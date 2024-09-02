@@ -24,9 +24,10 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
-      - uses: ocaml/setup-ocaml@v2
+      - uses: ocaml/setup-ocaml@v3
         with:
-          dune-cache: dune-cache
+          ocaml-compiler: 5.2.0
+          dune-cache: true
       - name: build
         run: dune build @all
           
