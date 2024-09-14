@@ -1,0 +1,6 @@
+(library
+ (name bfa_symex)
+ (libraries core simple_smt fmt logs)
+ (preprocess
+  (pps ppx_symex))
+ (flags -open Core))

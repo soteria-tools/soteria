@@ -1,4 +1,4 @@
 (executable
  (public_name bfa)
  (name main)
- (libraries bfa))
+ (libraries bfa_cli))

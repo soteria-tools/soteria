@@ -6,9 +6,9 @@
 
 (license BSD-3-Clause)
 
-(authors "Sacha-\195\137lie Ayoun <s.ayoun17@imperial.ac.uk>")
+(authors "Sacha-Élie Ayoun <s.ayoun17@imperial.ac.uk>")
 
-(maintainers "Sacha-\195\137lie Ayoun <s.ayoun17@imperial.ac.uk>")
+(maintainers "Sacha-Élie Ayoun <s.ayoun17@imperial.ac.uk>")
 
 (source
  (github bugs-for-all/bfa))
@@ -20,13 +20,20 @@
  (depends
   (ocaml
    (>= 5.2.0))
-  (ocamlformat
-   (and
-    :dev
-    (>= 1.3.0)))
-  (ocaml-lsp-server :dev)
+  simple-smt-ocaml
+  (ppx_expect
+   (>= 0.17.0))
+  (core
+   (>= 0.17.1))
+  fmt
+  logs
   (odoc :with-doc)
   (dune
    (and
     :build
-    (>= 3.14.0)))))
+    (>= 3.14.0)))
+  (ocamlformat
+   (and
+    :dev
+    (>= 1.3.0)))
+  (ocaml-lsp-server :dev)))
