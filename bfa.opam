@@ -9,9 +9,11 @@ homepage: "https://github.com/bugs-for-all/bfa"
 bug-reports: "https://github.com/bugs-for-all/bfa/issues"
 depends: [
   "ocaml" {>= "5.2.0"}
-  "simple-smt-ocaml"
+  "simple_smt"
   "ppx_expect" {>= "0.17.0"}
   "core" {>= "0.17.1"}
+  "frontc"
+  "cmdliner"
   "fmt"
   "logs"
   "odoc" {with-doc}

@@ -1,5 +1,7 @@
 (lang dune 3.14)
 
+(cram enable)
+
 (name bfa)
 
 (generate_opam_files)
@@ -20,11 +22,13 @@
  (depends
   (ocaml
    (>= 5.2.0))
-  simple-smt-ocaml
+  simple_smt
   (ppx_expect
    (>= 0.17.0))
   (core
    (>= 0.17.1))
+  frontc
+  cmdliner
   fmt
   logs
   (odoc :with-doc)
