@@ -27,7 +27,10 @@
    (>= 0.17.0))
   (core
    (>= 0.17.1))
-  frontc
+  cerberus-lib
+  zarith
+  ppx_deriving
+  hashcons
   cmdliner
   fmt
   logs

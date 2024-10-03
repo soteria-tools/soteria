@@ -1,0 +1,18 @@
+(library
+ (name bfa_c_lib)
+ (libraries
+  core
+  cmdliner
+  fmt
+  logs
+  logs.fmt
+  fmt.tty
+  cerberus-lib.c_parser
+  cerberus-lib.mem.concrete
+  cerberus-lib.backend_common
+  zarith
+  hashcons
+  simple_smt)
+ (preprocess
+  (pps ppx_deriving.std))
+ (flags :standard -open Core))

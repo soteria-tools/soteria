@@ -1,4 +1,4 @@
 (executable
- (public_name bfa)
- (name main)
- (libraries bfa_cli))
+ (public_name bfa-c)
+ (name bfa_c)
+ (libraries bfa_c_lib logs.cli))
