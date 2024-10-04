@@ -3,3 +3,4 @@ Just reading an empty file
   Symex terminated with the following outcomes: [Ok (0, ())]
 
   $ bfa-c conc.c -q
+  Symex terminated with the following outcomes: [Ok (2, ())]
