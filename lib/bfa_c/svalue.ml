@@ -29,7 +29,7 @@ module Unop = struct
 end
 
 module Binop = struct
-  type t = Eq [@@deriving eq, show { with_path = false }]
+  type t = Eq | Geq [@@deriving eq, show { with_path = false }]
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -87,3 +87,13 @@ let not sv =
   if equal sv v_true then v_false
   else if equal sv v_false then v_true
   else hashcons (Unop (Not, sv))
+
+let geq v1 v2 =
+  match (v1.node, v2.node) with
+  | Int i1, Int i2 -> bool (Z.geq i1 i2)
+  | _ -> hashcons (Binop (Geq, v1, v2))
+
+let gt v1 v2 =
+  match (v1.node, v2.node) with
+  | Int i1, Int i2 -> bool (Z.gt i1 i2)
+  | _ -> not (geq v1 v2)

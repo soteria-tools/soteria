@@ -15,5 +15,5 @@
   hashcons
   simple_smt)
  (preprocess
-  (pps ppx_deriving.std))
+  (pps ppx_deriving.std ppx_symex))
  (flags :standard -open Core))

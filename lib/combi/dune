@@ -1,3 +1,0 @@
-(library
- (name combi)
- (libraries core))

@@ -2,15 +2,15 @@ int empty(int x, int y)
 {
   if (x > y)
   {
-    return 0;
+    return 1;
   }
   else
   {
-    return 0;
+    return 2;
   }
 }
 
 int main()
 {
-  return empty(12, 13);
+  return empty(11, 12);
 }
