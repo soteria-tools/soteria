@@ -17,6 +17,13 @@ let t_seq ty = list [ atom "Seq"; ty ]
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts
 
+let t_void, void =
+  let voidT = "Void" in
+  let voidV = "CONST_VOID" in
+  let cmd = Simple_smt.declare_datatype voidT [] [ (voidV, []) ] in
+  ack_command cmd;
+  (atom voidT, atom voidV)
+
 let t_ptr, mk_ptr, get_loc, get_ofs =
   let ptr = "Ptr" in
   let mk_ptr = "mk-ptr" in
@@ -37,6 +44,7 @@ let rec sort_of_ty = function
   | TInt -> Simple_smt.t_int
   | TSeq ty -> t_seq (sort_of_ty ty)
   | TPointer -> t_ptr
+  | TVoid -> t_void
 
 let declare_v (var : Value.t) =
   let v, ty =
@@ -66,6 +74,7 @@ let rec encode_value (v : Value.t) =
       let v1 = encode_value v1 in
       let v2 = encode_value v2 in
       match binop with Eq -> eq v1 v2)
+  | Void -> void
 
 let fresh ty =
   let v = Value.fresh ty in

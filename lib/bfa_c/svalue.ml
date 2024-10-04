@@ -19,6 +19,7 @@ type ty =
   | TBool
   | TInt
   | TPointer
+  | TVoid
   (* | BitVec of int *)
   | TSeq of ty
 [@@deriving eq, show]
@@ -43,6 +44,7 @@ type t_node =
   | Seq of t list
   | Unop of (Unop.t * t)
   | Binop of (Binop.t * t * t)
+  | Void
 
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq]
 
@@ -71,6 +73,7 @@ let zero = int_z Z.zero
 let one = int_z Z.one
 let v_true = hashcons (Bool true)
 let v_false = hashcons (Bool false)
+let void = hashcons Void
 
 let bool b =
   (* avoid hashconsing re-alloc *)

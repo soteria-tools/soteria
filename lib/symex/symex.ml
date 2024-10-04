@@ -13,6 +13,7 @@ module type S = sig
   val force : 'a t -> 'a list
   val all : 'a t list -> 'a list t
   val abort : unit -> 'a t
+  val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
 
   val iter : ('a -> unit) -> 'a t -> unit
   (** Forces the sequence, providing an iterator through the outcomes *)
@@ -24,6 +25,9 @@ module type S = sig
     val error : ?learned:Value.t list -> 'b -> ('a, 'b) t
     val bind : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
     val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
+
+    val fold_left :
+      'a list -> init:'acc -> f:('acc -> 'a -> ('acc, 'b) t) -> ('acc, 'b) t
   end
 
   module Syntax : sig
@@ -100,19 +104,9 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
     in
     aux [] xs
 
-  (* let mapM f xs =
-     let rec aux acc rs =
-       match rs with
-       | [] -> return (List.rev acc)
-       | r :: rs -> bind r @@ fun x -> aux (f x :: acc) rs
-     in
-     aux [] xs *)
-
-  (* let foldM f init xs =
-     let rec aux acc rs =
-       match rs with [] -> acc | r :: rs -> bind r @@ fun x -> aux (f acc x) rs
-     in
-     aux (f init) xs *)
+  let fold_left xs ~init ~f =
+    List.fold_left xs ~init:(return init) ~f:(fun acc x ->
+        bind acc @@ fun acc -> f acc x)
 
   module Result = struct
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
@@ -121,6 +115,10 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
     let error ?learned x = return ?learned (Error x)
     let bind x f = bind x (function Ok x -> f x | Error z -> return (Error z))
     let map f x = map (Result.map ~f) x
+
+    let fold_left xs ~init ~f =
+      List.fold_left xs ~init:(ok init) ~f:(fun acc x ->
+          bind acc @@ fun acc -> f acc x)
   end
 
   module Syntax = struct

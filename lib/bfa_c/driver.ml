@@ -73,9 +73,9 @@ let frontend cpp_cmd filename =
   in
   set_cerb_conf ();
   Ocaml_implementation.(set HafniumImpl.impl);
-  L.debug (fun m -> m "About to load core stdlib@?");
+  L.debug (fun m -> m "About to load core stdlib");
   let* stdlib = load_core_stdlib_shim () in
-  L.debug (fun m -> m "Core stdlib loaded@?");
+  L.debug (fun m -> m "Core stdlib loaded");
   let* impl = load_core_impl_shim stdlib impl_name in
   c_frontend (conf, io) (stdlib, impl) ~filename
 
@@ -98,17 +98,20 @@ let is_main (def : Cabs.function_definition) =
 
 let exec_main log_level file_name =
   setup_log log_level;
-  L.debug (fun m -> m "Starting to execute\n@?");
+  L.debug (fun m -> m "Starting to execute");
   let entry_point, sigma = parse_ail file_name in
-  let () =
-    let d = Pp_ail.pp_program ~show_include:true (entry_point, sigma) in
-    L.debug (fun m -> m "Parsed as follows");
-    PPrint.ToFormatter.pretty 0.5 80 Fmt.stdout d
-  in
+  L.debug (fun m ->
+      m "Parsed as follows:\n=============\n%a=============" Fmt_ail.pp_program
+        (entry_point, sigma));
   let entry_point = Option.value_exn ~message:"No main function" entry_point in
-  L.debug (fun m -> m "Ending parse\n@?");
+  L.debug (fun m -> m "Ending parse");
   let entry_point =
     List.find_exn sigma.function_definitions ~f:(fun (id, _) ->
         Symbol.equal_sym id entry_point)
   in
-  Interp.exec_fun ~prog:sigma ~args:[] entry_point
+  let symex = Interp.exec_fun ~prog:sigma ~args:[] () entry_point in
+  let () = L.debug (fun m -> m "Starting symex") in
+  let result = Csymex.force symex in
+  Fmt.pr "Symex terminated with the following outcomes: %a"
+    Fmt.Dump.(list @@ result ~ok:(pair Svalue.pp (Fmt.any "()")) ~error:string)
+    result
