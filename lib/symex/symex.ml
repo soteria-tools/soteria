@@ -5,6 +5,7 @@ module type S = sig
 
   val return : ?learned:Value.t list -> 'a -> 'a t
   val vanish : unit -> 'a t
+  val nondet : Value.ty -> Value.t t
   val must : Value.t list -> (unit, string) result t
   val value_eq : Value.t -> Value.t -> Value.t
   val branch_on : Value.t -> then_:'a t -> else_:'a t -> 'a t
@@ -62,10 +63,11 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
 
     Seq.Cons (res, Seq.empty)
 
-  let value_eq x y = Value.eq x y
+  let nondet ty = Seq.return (Solver.fresh ty)
+  let value_eq x y = Value.sem_eq x y
 
   let branch_on guard ~then_ ~else_ =
-    match Solver.simplified guard with
+    match Solver.simplified_bool guard with
     | Some true -> then_
     | Some false -> else_
     | None ->

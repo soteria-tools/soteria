@@ -1,6 +1,7 @@
 (library
  (name bfa_c_lib)
  (libraries
+  bfa_symex
   core
   cmdliner
   fmt

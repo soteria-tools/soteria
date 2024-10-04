@@ -12,7 +12,8 @@ module type S = sig
 
   val save : unit -> unit
   val backtrack : unit -> unit
-  val simplified : Value.t -> bool option
+  val simplified_bool : Value.t -> bool option
+  val fresh : Value.ty -> Value.t
 
   val check_entailment : Value.t list -> bool
   (** Returns [true] if current state entails the given constraint, false otherwise. *)
