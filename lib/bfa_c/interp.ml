@@ -119,6 +119,7 @@ and exec_fun ~prog ~args state (fundef : fundef) =
   let name, (_, _, _, params, stmt) = fundef in
   L.info (fun m ->
       m "Executing function %s" (Cerb_frontend.Pp_symbol.to_string name));
+  let store = Store.of_list (List.zip_exn params args) in
   L.debug (fun m -> m "Store: %a" Store.pp store);
   let++ val_opt, state = exec_stmt ~prog store state stmt in
   let value = Option.value ~default:Svalue.void val_opt in
