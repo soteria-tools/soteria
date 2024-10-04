@@ -73,7 +73,17 @@ let rec encode_value (v : Value.t) =
   | Binop (binop, v1, v2) -> (
       let v1 = encode_value v1 in
       let v2 = encode_value v2 in
-      match binop with Eq -> eq v1 v2 | Geq -> num_geq v1 v2)
+      match binop with
+      | Eq -> eq v1 v2
+      | Geq -> num_geq v1 v2
+      | Gt -> num_gt v1 v2
+      | Leq -> num_leq v1 v2
+      | Lt -> num_lt v1 v2
+      | And -> bool_and v1 v2
+      | Plus -> num_add v1 v2
+      | Minus -> num_sub v1 v2
+      | Times -> num_mul v1 v2
+      | Div -> num_div v1 v2)
   | Void -> void
 
 let fresh ty =

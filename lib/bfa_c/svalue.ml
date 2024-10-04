@@ -15,6 +15,8 @@ module Var_name = struct
   let equal = Int.equal
 end
 
+type t_ptr
+
 type ty =
   | TBool
   | TInt
@@ -29,7 +31,18 @@ module Unop = struct
 end
 
 module Binop = struct
-  type t = Eq | Geq [@@deriving eq, show { with_path = false }]
+  type t =
+    | (* Bool *) And
+    | (* Comparison *) Eq
+    | Geq
+    | Gt
+    | Leq
+    | Lt
+    | Plus
+    | Minus
+    | Times
+    | Div
+  [@@deriving eq, show { with_path = false }]
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -83,17 +96,40 @@ let sem_eq v1 v2 =
   if equal v1 v2 then v_true (* Start with a syntactic check *)
   else hashcons (Binop (Eq, v1, v2))
 
+let and_ v1 v2 =
+  match (v1.node, v2.node) with
+  | Bool b1, Bool b2 -> bool (b1 && b2)
+  | _ -> hashcons (Binop (And, v1, v2))
+
 let not sv =
   if equal sv v_true then v_false
   else if equal sv v_false then v_true
   else hashcons (Unop (Not, sv))
 
-let geq v1 v2 =
+(** [out_cons] is the outcome constructor, [f] is the function to apply to the int values, [b] is the binop *)
+let lift_int_binop ~out_cons ~f ~binop v1 v2 =
   match (v1.node, v2.node) with
-  | Int i1, Int i2 -> bool (Z.geq i1 i2)
-  | _ -> hashcons (Binop (Geq, v1, v2))
+  | Int i1, Int i2 -> out_cons (f i1 i2)
+  | _ -> hashcons (Binop (binop, v1, v2))
 
-let gt v1 v2 =
-  match (v1.node, v2.node) with
-  | Int i1, Int i2 -> bool (Z.gt i1 i2)
-  | _ -> not (geq v1 v2)
+let geq = lift_int_binop ~out_cons:bool ~f:Z.geq ~binop:Geq
+let leq = lift_int_binop ~out_cons:bool ~f:Z.leq ~binop:Leq
+let lt = lift_int_binop ~out_cons:bool ~f:Z.lt ~binop:Lt
+let gt = lift_int_binop ~out_cons:bool ~f:Z.gt ~binop:Gt
+let plus = lift_int_binop ~out_cons:int_z ~f:Z.add ~binop:Plus
+let minus = lift_int_binop ~out_cons:int_z ~f:Z.sub ~binop:Minus
+let times = lift_int_binop ~out_cons:int_z ~f:Z.mul ~binop:Times
+let div = lift_int_binop ~out_cons:int_z ~f:Z.div ~binop:Div
+
+module Infix = struct
+  let ( #== ) = sem_eq
+  let ( #> ) = gt
+  let ( #>= ) = geq
+  let ( #< ) = lt
+  let ( #<= ) = leq
+  let ( #&& ) = and_
+  let ( #+ ) = plus
+  let ( #- ) = minus
+  let ( #* ) = times
+  let ( #/ ) = div
+end
