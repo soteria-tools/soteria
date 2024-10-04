@@ -21,7 +21,7 @@ depends: [
   "logs"
   "odoc" {with-doc}
   "dune" {>= "3.14" & build & >= "3.14.0"}
-  "ocamlformat" {dev & >= "1.3.0"}
+  "ocamlformat" {dev & = "0.26.2"}
   "ocaml-lsp-server" {dev}
 ]
 build: [

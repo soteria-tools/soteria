@@ -42,5 +42,5 @@
   (ocamlformat
    (and
     :dev
-    (>= 1.3.0)))
+    (= 0.26.2)))
   (ocaml-lsp-server :dev)))
