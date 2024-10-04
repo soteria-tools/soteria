@@ -28,6 +28,8 @@ jobs:
         with:
           ocaml-compiler: 5.2.0
           dune-cache: true
+      - name: setup dependencies
+        run: opam install . --deps-only --with-test --with-doc --yes
       - name: build
         run: dune build @all
           
