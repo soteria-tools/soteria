@@ -2,7 +2,6 @@
  (name bfa_c_lib)
  (libraries
   bfa_symex
-  core
   cmdliner
   fmt
   logs
@@ -15,5 +14,4 @@
   hashcons
   simple_smt)
  (preprocess
-  (pps ppx_deriving.std ppx_symex))
- (flags :standard -open Core))
+  (pps ppx_deriving.std ppx_symex)))

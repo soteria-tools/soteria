@@ -12,7 +12,8 @@ module type S = sig
 
   val save : unit -> unit
   val backtrack : unit -> unit
-  val simplified_bool : Value.t -> bool option
+  val simplify : Value.t -> Value.t
+  val as_bool : Value.t -> bool option
   val fresh : Value.ty -> Value.t
 
   val check_entailment : Value.t list -> bool

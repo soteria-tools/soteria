@@ -5,12 +5,7 @@ open Ail_tys
 type state = unit
 type store = Svalue.t Store.t
 
-let not_impl source_loc loc what =
-  L.info (fun m ->
-      m "%s@\n%s not supported (%s)"
-        (Cerb_location.location_to_string source_loc)
-        what loc);
-  Csymex.vanish ()
+let not_impl source_loc loc what = not_impl ~source_loc ~loc what
 
 let value_of_constant (c : constant) =
   match c with
@@ -54,8 +49,9 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
               Fmt_ail.pp_expr f
       in
       let fundef =
-        List.find prog.function_definitions ~f:(fun (id, _) ->
-            Cerb_frontend.Symbol.equal_sym id fname)
+        prog.function_definitions
+        |> List.find_opt (fun (id, _) ->
+               Cerb_frontend.Symbol.equal_sym id fname)
       in
       let* fundef =
         match fundef with
@@ -119,7 +115,7 @@ and exec_fun ~prog ~args state (fundef : fundef) =
   let name, (_, _, _, params, stmt) = fundef in
   L.info (fun m ->
       m "Executing function %s" (Cerb_frontend.Pp_symbol.to_string name));
-  let store = Store.of_list (List.zip_exn params args) in
+  let store = Store.of_list (List.combine params args) in
   L.debug (fun m -> m "Store: %a" Store.pp store);
   let++ val_opt, state = exec_stmt ~prog store state stmt in
   let value = Option.value ~default:Svalue.void val_opt in

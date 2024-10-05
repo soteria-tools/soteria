@@ -9,7 +9,7 @@ let setup_log level =
 (** Copying most of the wrapper from RefinedC *)
 
 let impl_name =
-  match Sys.getenv "IMPL_NAME" with
+  match Sys.getenv_opt "IMPL_NAME" with
   | Some impl -> impl
   | None -> "gcc_4.9.0_x86_64-apple-darwin10.8.0"
 
@@ -103,11 +103,15 @@ let exec_main log_level file_name =
   L.debug (fun m ->
       m "Parsed as follows:\n=============\n%a=============" Fmt_ail.pp_program
         (entry_point, sigma));
-  let entry_point = Option.value_exn ~message:"No main function" entry_point in
+  let entry_point =
+    match entry_point with
+    | None -> Fmt.failwith "No entry point function"
+    | Some e -> e
+  in
   L.debug (fun m -> m "Ending parse");
   let entry_point =
-    List.find_exn sigma.function_definitions ~f:(fun (id, _) ->
-        Symbol.equal_sym id entry_point)
+    sigma.function_definitions
+    |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)
   in
   let symex = Interp.exec_fun ~prog:sigma ~args:[] () entry_point in
   let () = L.debug (fun m -> m "Starting symex") in

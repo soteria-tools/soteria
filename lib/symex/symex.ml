@@ -1,3 +1,5 @@
+module List = ListLabels
+
 module type S = sig
   module Value : Value.S
 
@@ -5,8 +7,8 @@ module type S = sig
 
   val return : ?learned:Value.t list -> 'a -> 'a t
   val vanish : unit -> 'a t
-  val nondet : Value.ty -> Value.t t
-  val must : Value.t list -> (unit, string) result t
+  val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
+  val must : Value.t list -> (unit, string) Result.t t
   val value_eq : Value.t -> Value.t -> Value.t
   val branch_on : Value.t -> then_:'a t -> else_:'a t -> 'a t
   val bind : 'a t -> ('a -> 'b t) -> 'b t
@@ -67,11 +69,20 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
 
     Seq.Cons (res, Seq.empty)
 
-  let nondet ty = Seq.return (Solver.fresh ty)
+  let nondet ?constrs ty =
+    let v = Solver.fresh ty in
+    let () =
+      match constrs with
+      | Some constrs -> Solver.add_constraints (constrs v)
+      | None -> ()
+    in
+    Seq.return (Solver.fresh ty)
+
   let value_eq x y = Value.sem_eq x y
 
   let branch_on guard ~then_ ~else_ =
-    match Solver.simplified_bool guard with
+    let guard = Solver.simplify guard in
+    match Solver.as_bool guard with
     | Some true -> then_
     | Some false -> else_
     | None ->
@@ -114,7 +125,7 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
     let ok ?learned x = return ?learned (Ok x)
     let error ?learned x = return ?learned (Error x)
     let bind x f = bind x (function Ok x -> f x | Error z -> return (Error z))
-    let map f x = map (Result.map ~f) x
+    let map f x = map (Result.map f) x
 
     let fold_left xs ~init ~f =
       List.fold_left xs ~init:(ok init) ~f:(fun acc x ->

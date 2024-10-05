@@ -25,8 +25,6 @@
   simple_smt
   (ppx_expect
    (>= 0.17.0))
-  (core
-   (>= 0.17.1))
   cerberus-lib
   zarith
   ppx_deriving

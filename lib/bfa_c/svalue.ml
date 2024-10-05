@@ -4,7 +4,8 @@ module Var_name = struct
   type t = int
 
   let next = ref 0
-  let to_string i = "|$V" ^ string_of_int i ^ "|"
+  let to_string i = "|" ^ string_of_int i ^ "|"
+  let of_string s = int_of_string (String.sub s 1 (String.length s - 2))
   let pp = Fmt.of_to_string to_string
 
   let fresh () =
@@ -24,10 +25,11 @@ type ty =
   | TVoid
   (* | BitVec of int *)
   | TSeq of ty
+  | TOption of ty
 [@@deriving eq, show]
 
 module Unop = struct
-  type t = Not [@@deriving eq, show]
+  type t = Not | IsSome | IsNone | UnwrapOpt [@@deriving eq, show]
 end
 
 module Binop = struct
@@ -58,6 +60,7 @@ type t_node =
   | Unop of (Unop.t * t)
   | Binop of (Binop.t * t * t)
   | Void
+  | Opt of t option
 
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq]
 
@@ -71,22 +74,17 @@ module Hcons = Hashcons.Make (struct
   let hash = Hashtbl.hash
 end)
 
-let table = create 1024
-let hashcons = hashcons table
+let table = Hcons.create 1024
+let hashcons = Hcons.hashcons table
 
 let fresh ty =
   let v = Var_name.fresh () in
   hashcons (Var (v, ty))
 
-let int_z z = hashcons (Int z)
-let int i = int_z (Z.of_int i)
-let ptr l o = hashcons (Ptr (l, o))
-let seq s = hashcons (Seq s)
-let zero = int_z Z.zero
-let one = int_z Z.one
+(** {2 Booleans}  *)
+
 let v_true = hashcons (Bool true)
 let v_false = hashcons (Bool false)
-let void = hashcons Void
 
 let bool b =
   (* avoid hashconsing re-alloc *)
@@ -106,6 +104,13 @@ let not sv =
   else if equal sv v_false then v_true
   else hashcons (Unop (Not, sv))
 
+(** {2 Integers}  *)
+
+let int_z z = hashcons (Int z)
+let int i = int_z (Z.of_int i)
+let zero = int_z Z.zero
+let one = int_z Z.one
+
 (** [out_cons] is the outcome constructor, [f] is the function to apply to the int values, [b] is the binop *)
 let lift_int_binop ~out_cons ~f ~binop v1 v2 =
   match (v1.node, v2.node) with
@@ -121,7 +126,44 @@ let minus = lift_int_binop ~out_cons:int_z ~f:Z.sub ~binop:Minus
 let times = lift_int_binop ~out_cons:int_z ~f:Z.mul ~binop:Times
 let div = lift_int_binop ~out_cons:int_z ~f:Z.div ~binop:Div
 
+(** {2 Pointers} *)
+
+let ptr l o = hashcons (Ptr (l, o))
+
+(** {2 Option} *)
+
+let is_some v =
+  match v.node with
+  | Opt (Some _) -> v_true
+  | Opt None -> v_false
+  | _ -> hashcons (Unop (IsSome, v))
+
+let is_none v =
+  match v.node with
+  | Opt None -> v_true
+  | Opt (Some _) -> v_false
+  | _ -> hashcons (Unop (IsNone, v))
+
+let unwrap_opt v =
+  match v.node with
+  | Opt (Some v) -> v
+  | Opt None -> failwith "opt_unwrap: got None"
+  | _ -> hashcons (Unop (UnwrapOpt, v))
+
+(** {2 Sequences} *)
+
+let seq s = hashcons (Seq s)
+
+(** {2 Void} *)
+let void = hashcons Void
+
+(** {2 Infix operators}  *)
+
 module Infix = struct
+  let int_z = int_z
+  let int = int
+  let ptr = ptr
+  let seq = seq
   let ( #== ) = sem_eq
   let ( #> ) = gt
   let ( #>= ) = geq

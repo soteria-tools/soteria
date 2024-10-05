@@ -5,5 +5,5 @@ module type S = sig
   val fresh : ty -> t
   val not : t -> t
   val sem_eq : t -> t -> t
-  val pp : Format.formatter -> t -> unit
+  val pp : t Fmt.t
 end
