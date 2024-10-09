@@ -15,6 +15,7 @@ module Make
     (Key : KeyS with type 'a symex = 'a Symex.t and type value = Symex.Value.t) =
 struct
   open Symex.Syntax
+  open Symex
   module M = Stdlib.Map.Make (Key)
 
   type 'a t = 'a M.t
@@ -32,8 +33,11 @@ struct
     | Some v -> Symex.return (Some v)
     | None -> find_bindings (M.bindings st)
 
-  (* let alloc ~new_codom () =
-     let key *)
+  let alloc (type a) ~(new_codom : a) (st : a t) : (Key.t * a t, 'err) Result.t
+      =
+    let* key = Key.fresh () in
+    let constr = Key.distinct (key :: (M.bindings st |> List.map fst)) in
+    Result.ok ~learned:[ constr ] (key, M.add key new_codom st)
 
   let wrap (f : 'a -> ('b * 'a, 'err) Symex.Result.t) (loc : Key.t) (st : 'a t)
       =
