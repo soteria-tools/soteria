@@ -144,6 +144,8 @@ let rec encode_value (v : Svalue.t) =
       | Not -> bool_not v
       | IsSome -> is_some v
       | IsNone -> is_none v
+      | GetPtrLoc -> get_loc v
+      | GetPtrOfs -> get_ofs v
       | UnwrapOpt -> opt_unwrap v)
   | Binop (binop, v1, v2) -> (
       let v1 = encode_value_memo v1 in
@@ -159,6 +161,9 @@ let rec encode_value (v : Svalue.t) =
       | Minus -> num_sub v1 v2
       | Times -> num_mul v1 v2
       | Div -> num_div v1 v2)
+  | Nop (nop, vs) -> (
+      let vs = List.map encode_value_memo vs in
+      match nop with Distinct -> distinct vs)
   | Void -> void
 
 and encode_value_memo v = (memoz memo_encode_value_tbl encode_value) v

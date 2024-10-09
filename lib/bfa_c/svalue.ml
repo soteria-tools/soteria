@@ -14,9 +14,8 @@ module Var_name = struct
     r
 
   let equal = Int.equal
+  let compare = Int.compare
 end
-
-type t_ptr
 
 type ty =
   | TBool
@@ -26,10 +25,15 @@ type ty =
   (* | BitVec of int *)
   | TSeq of ty
   | TOption of ty
-[@@deriving eq, show]
+[@@deriving eq, show, ord]
+
+module Nop = struct
+  type t = Distinct [@@deriving eq, show, ord]
+end
 
 module Unop = struct
-  type t = Not | IsSome | IsNone | UnwrapOpt [@@deriving eq, show]
+  type t = Not | IsSome | IsNone | UnwrapOpt | GetPtrLoc | GetPtrOfs
+  [@@deriving eq, show, ord]
 end
 
 module Binop = struct
@@ -44,11 +48,12 @@ module Binop = struct
     | Minus
     | Times
     | Div
-  [@@deriving eq, show { with_path = false }]
+  [@@deriving eq, show { with_path = false }, ord]
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
 let equal_hash_consed _ t1 t2 = Int.equal t1.tag t2.tag
+let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 
 type t_node =
   | Var of (Var_name.t * ty)
@@ -59,10 +64,11 @@ type t_node =
   | Seq of t list
   | Unop of (Unop.t * t)
   | Binop of (Binop.t * t * t)
+  | Nop of Nop.t * t list
   | Void
   | Opt of t option
 
-and t = t_node hash_consed [@@deriving show { with_path = false }, eq]
+and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
 let pp ft t = pp_t_node ft t.node
 let equal a b = Int.equal a.tag b.tag
@@ -104,6 +110,8 @@ let not sv =
   else if equal sv v_false then v_true
   else hashcons (Unop (Not, sv))
 
+let distinct l = hashcons (Nop (Distinct, l))
+
 (** {2 Integers}  *)
 
 let int_z z = hashcons (Int z)
@@ -128,7 +136,15 @@ let div = lift_int_binop ~out_cons:int_z ~f:Z.div ~binop:Div
 
 (** {2 Pointers} *)
 
-let ptr l o = hashcons (Ptr (l, o))
+module Ptr = struct
+  let mk l o = hashcons (Ptr (l, o))
+
+  let loc p =
+    match p.node with Ptr (l, _) -> l | _ -> hashcons (Unop (GetPtrLoc, p))
+
+  let ofs p =
+    match p.node with Ptr (_, o) -> o | _ -> hashcons (Unop (GetPtrOfs, p))
+end
 
 (** {2 Option} *)
 
@@ -162,7 +178,7 @@ let void = hashcons Void
 module Infix = struct
   let int_z = int_z
   let int = int
-  let ptr = ptr
+  let ptr = Ptr.mk
   let seq = seq
   let ( #== ) = sem_eq
   let ( #> ) = gt

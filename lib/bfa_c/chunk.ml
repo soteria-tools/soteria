@@ -65,6 +65,8 @@ let size = function
   | U64 | I64 | F64 -> 8
   | U128 | I128 -> 16
 
+let size_s c = Svalue.int (size c)
+
 let align = function
   | U8 | I8 -> 1
   | U16 | I16 -> 2

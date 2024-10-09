@@ -72,10 +72,11 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
           Fmt.kstr (not_impl loc __LOC__) "Unsupported binary operator: %a"
             Fmt_ail.pp_binop op)
   | AilErvalue e ->
-      L.warn (fun m ->
-          m "Rvalue expression: %a, will change when we put things in heap!!"
-            Fmt_ail.pp_expr e);
-      eval_expr ~prog ~store state e
+      let _lvalue = eval_expr ~prog ~store state e in
+      failwith "todo"
+      (* let chunk = chunk_of_lvalue lvalue in
+         let loc, ofs = Svalue.to_loc_ofs lvalue in
+         Heap.load loc ofs chunk state *)
   | AilEident id -> (
       match Store.find_opt id store with
       | Some v -> Result.ok (v, state)

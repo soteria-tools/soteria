@@ -52,6 +52,8 @@ module Node = struct
   type t = NotOwned of qty | Owned of mem_val
   [@@deriving show { with_path = false }]
 
+  let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
+
   let merge ~left ~right =
     match (left, right) with
     | NotOwned Totally, NotOwned Totally -> return (NotOwned Totally)
@@ -305,4 +307,36 @@ module Tree = struct
     ((), tree)
 end
 
-(* I now need to add freeable and pmap around this *)
+type t = { root : Tree.t; bound : Svalue.t option }
+[@@deriving show { with_path = false }]
+
+let with_bound_check (t : t) (ofs : Svalue.t) f =
+  let** () =
+    match t.bound with
+    | None -> Result.ok ()
+    | Some bound ->
+        if%sat Svalue.geq ofs bound then Result.error `OutOfBounds
+        else Result.ok ()
+  in
+  let++ res, root = f () in
+  (res, { t with root })
+
+let is_exclusively_owned t =
+  match t.bound with
+  | None -> return Svalue.v_false
+  | Some bound ->
+      let Tree.{ range = low, high; node; _ } = t.root in
+      if Node.is_fully_owned node then
+        return low #== Svalue.zero #&& (high #== bound)
+      else return Svalue.v_false
+
+let load (ofs : Svalue.t) (chunk : Chunk.t) (t : t) :
+    (Svalue.t * t, 'err) Result.t =
+  with_bound_check t ofs #+ (Chunk.size_s chunk) @@ fun () ->
+  Tree.load ofs chunk t.root
+
+let store ofs chunk sval t =
+  with_bound_check t ofs #+ (Chunk.size_s chunk) @@ fun () ->
+  Tree.store ofs chunk sval t.root
+
+let alloc size = { root = Tree.uninit (Svalue.zero, size); bound = Some size }

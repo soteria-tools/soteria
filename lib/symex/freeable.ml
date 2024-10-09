@@ -1,31 +1,23 @@
-type 'a t = Freed | Substate of 'a [@@deriving eq, show]
+type 'a t = Freed | Substate of 'a [@@deriving show { with_path = false }]
 
-module type P = sig
-  type 'a symex
-  type value
-  type t
-
-  val is_exclusively_owned : t -> value symex
-end
-
-module Make
-    (Symex : Symex.S)
-    (P : P with type 'a symex = 'a Symex.t and type value = Symex.Value.t) =
-struct
+module Make (Symex : Symex.S) = struct
   open Symex.Syntax
 
-  let free freeable =
+  type nonrec 'a t = 'a t [@@deriving show { with_path = false }]
+
+  let free ~is_exclusively_owned freeable =
     match freeable with
     | Freed -> Symex.Result.error `DoubleFree
     | Substate s ->
-        let* owned = P.is_exclusively_owned s in
-        if%sat owned then Symex.Result.ok Freed
+        let* owned = is_exclusively_owned s in
+        if%sat owned then Symex.Result.ok ((), Freed)
         else Symex.Result.error `MissingOwnership
 
-  let wrap f x =
-    match x with
+  (* [f] must be a "symex state monad" *)
+  let wrap (f : 'a -> ('b * 'a, 'err) Symex.Result.t) (st : 'a t) =
+    match st with
     | Freed -> Symex.Result.error `UseAfterFree
-    | Substate s ->
-        let++ res = f s in
-        Substate res
+    | Substate st ->
+        let++ res, st' = f st in
+        (res, Substate st')
 end

@@ -1,4 +1,5 @@
-include Bfa_symex.Symex.M (Z3solver)
+module SYMEX = Bfa_symex.Symex.M (Z3solver)
+include SYMEX
 
 let not_impl ?source_loc ?loc what =
   let pp_source_loc ft sl =
@@ -10,3 +11,6 @@ let not_impl ?source_loc ?loc what =
         Fmt.(option (parens string))
         loc what);
   vanish ()
+
+module Freeable = Bfa_symex.Freeable.Make (SYMEX)
+module Pmap = Bfa_symex.Pmap.Make (SYMEX)
