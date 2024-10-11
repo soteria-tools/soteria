@@ -64,7 +64,7 @@ let value_of_constant (c : constant) =
   match c with
   | ConstantInteger (IConstant (z, _basis, _suff)) ->
       Csymex.return (Svalue.int_z z)
-  | _ -> Csymex.vanish ()
+  | _ -> Csymex.not_impl "value of constant?"
 
 let nondet_int_fun ~prog:_ ~args:_ ~state =
   let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
