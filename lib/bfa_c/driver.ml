@@ -96,6 +96,14 @@ let is_main (def : Cabs.function_definition) =
       String.equal name "main"
   | _ -> false
 
+let pp_err ft t =
+  match t with
+  | `MissingKey -> Fmt.string ft "MissingKey"
+  | `MissingResource -> Fmt.string ft "MissingResource"
+  | `OutOfBounds -> Fmt.string ft "OutOfBounds"
+  | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
+  | `UseAfterFree -> Fmt.string ft "UseAfterFree"
+
 let exec_main log_level file_name =
   setup_log log_level;
   L.debug (fun m -> m "Starting to execute");
@@ -113,9 +121,9 @@ let exec_main log_level file_name =
     sigma.function_definitions
     |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)
   in
-  let symex = Interp.exec_fun ~prog:sigma ~args:[] () entry_point in
+  let symex = Interp.exec_fun ~prog:sigma ~args:[] Heap.empty entry_point in
   let () = L.debug (fun m -> m "Starting symex") in
   let result = Csymex.force symex in
   Fmt.pr "Symex terminated with the following outcomes: %a"
-    Fmt.Dump.(list @@ result ~ok:(pair Svalue.pp (Fmt.any "()")) ~error:string)
+    Fmt.Dump.(list @@ result ~ok:(pair Svalue.pp (Fmt.any "()")) ~error:pp_err)
     result

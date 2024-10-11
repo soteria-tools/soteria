@@ -9,6 +9,7 @@ let pp_to_fmt (pprinter : 'a -> PPrint.document) : 'a Fmt.t =
 
 let pp_loc = Fmt.of_to_string Cerb_location.location_to_string
 let pp_sym = Fmt.of_to_string Cerb_frontend.Pp_symbol.to_string
+let pp_ty = pp_to_fmt Cerb_frontend.Pp_core_ctype.pp_ctype
 let pp_binop = pp_to_fmt pp_binaryOperator
 let pp_expr : expr Fmt.t = pp_to_fmt (fun e -> pp_expression e)
 let pp_stmt : stmt Fmt.t = pp_to_fmt (fun s -> pp_statement s)

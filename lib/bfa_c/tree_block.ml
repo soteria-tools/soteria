@@ -1,29 +1,31 @@
 open Csymex.Syntax
 open Svalue.Infix
 open Csymex
+module Ctype = Cerb_frontend.Ctype
 
 (* Priority: everything's a value right now... We could probably do better! *)
 
 module MemVal = struct
   (* The svalue must be of type Int, where the int is a valid representative of chunk *)
-  type t = { value : Svalue.t; chunk : Chunk.t }
+  type t = { value : Svalue.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
   [@@deriving make, show { with_path = false }]
 
-  let any_of_chunk chunk =
-    let+ value = Csymex.nondet ~constrs:(Chunk.constrs_of_chunk chunk) TInt in
-    { value; chunk }
+  let any_of_type (Ctype.Ctype (_, kty) as ty) =
+    match kty with
+    | Basic (Integer int_ty) ->
+        let* constrs =
+          Csymex.of_opt_not_impl ~msg:"Int constraints"
+            (Layout.int_constraints int_ty)
+        in
+        let+ value = Csymex.nondet ~constrs TInt in
+        { value; ty }
+    | _ -> Fmt.kstr (not_impl ~loc:__LOC__) "Nondet of type %a" Fmt_ail.pp_ty ty
 end
 
 module MUMemVal = struct
   (* The svalue must be of type Int option, where the int is a valid representative of chunk (i.e. a bitvector.) *)
-  type t = { value : Svalue.t; chunk : Chunk.t }
+  type t = { value : Svalue.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
   [@@deriving make, show { with_path = false }]
-
-  let any_of_chunk chunk =
-    let+ value =
-      Csymex.nondet ~constrs:(Chunk.constrs_of_chunk chunk) (TOption TInt)
-    in
-    { value; chunk }
 
   let unwrap_or ~err v =
     if%sat Svalue.is_some v then Result.ok (Svalue.unwrap_opt v)
@@ -71,33 +73,35 @@ module Node = struct
         return (Owned (Uninit Totally), Owned (Uninit Totally))
     | Owned Zeros -> return (Owned Zeros, Owned Zeros)
     | Owned (Init _ | MaybeUninit _) ->
-        Fmt.kstr (not_impl ~loc:__LOC__) "Spliiting %a" pp node
+        Fmt.kstr (not_impl ~loc:__LOC__) "Spliting %a" pp node
     | NotOwned Partially | Owned (Uninit Partially) | Owned Lazy ->
         failwith "Should never split an intermediate node"
 
   let uninit = Owned (Uninit Totally)
 
-  let decode ~chunk t =
+  let decode ~ty t =
     match t with
     | NotOwned _ -> Result.error `MissingResource
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
-        if Chunk.is_int chunk then Result.ok Svalue.zero
+        if Layout.is_int ty then Result.ok Svalue.zero
         else not_impl ~loc:__LOC__ "Float zeros"
     | Owned Lazy ->
         Fmt.kstr (not_impl ~loc:__LOC__) "Lazy memory access, cannot decode %a"
           pp t
-    | Owned (Init { value; chunk = chunkw }) ->
-        if Chunk.equal chunk chunkw then Result.ok value
+    | Owned (Init { value; ty = tyw }) ->
+        if Ctype.ctypeEqual ty tyw then Result.ok value
         else
-          Fmt.kstr (not_impl ~loc:__LOC__) "Chunk mismatch: %a vs %a" Chunk.pp
-            chunk Chunk.pp chunkw
-    | Owned (MaybeUninit { value; chunk = chunkw }) ->
-        if Chunk.equal chunk chunkw then
+          Fmt.kstr (not_impl ~loc:__LOC__)
+            "Type mismatch when decoding value: %a vs %a" Fmt_ail.pp_ty ty
+            Fmt_ail.pp_ty tyw
+    | Owned (MaybeUninit { value; ty = tyw }) ->
+        if Ctype.ctypeEqual ty tyw then
           MUMemVal.unwrap_or ~err:`UninitializedMemoryAccess value
         else
-          Fmt.kstr (not_impl ~loc:__LOC__) "Chunk mismatch: %a vs %a" Chunk.pp
-            chunk Chunk.pp chunkw
+          Fmt.kstr (not_impl ~loc:__LOC__)
+            "Type mismatch when decoding maybe_uninit value: %a vs %a"
+            Fmt_ail.pp_ty ty Fmt_ail.pp_ty tyw
 end
 
 module Tree = struct
@@ -111,8 +115,8 @@ module Tree = struct
   let zeros range = make ~node:(Node.Owned Node.Zeros) ~range ?children:None ()
   let not_owned range = make ~node:(NotOwned Totally) ~range ?children:None ()
 
-  let sval_leaf ~range ~value ~chunk =
-    make ~node:(Owned (Init { value; chunk })) ~range ?children:None ()
+  let sval_leaf ~range ~value ~ty =
+    make ~node:(Owned (Init { value; ty })) ~range ?children:None ()
 
   let of_children_s ~left ~right =
     let range = (fst left.range, snd right.range) in
@@ -283,19 +287,19 @@ module Tree = struct
     let* root = extend_if_needed t range in
     frame_inside ~replace_node ~rebuild_parent root range
 
-  let load (ofs : Svalue.t) (chunk : Chunk.t) (t : t) :
+  let load (ofs : Svalue.t) (ty : Ctype.ctype) (t : t) :
       (Svalue.t * t, 'err) Result.t =
-    let range = Range.of_low_and_chunk ofs chunk in
+    let* range = Range.of_low_and_type ofs ty in
     let replace_node node = node in
     let rebuild_parent = with_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let++ sval = Node.decode ~chunk framed.node in
+    let++ sval = Node.decode ~ty framed.node in
     (sval, tree)
 
-  let store (low : Svalue.t) (chunk : Chunk.t) (sval : Svalue.t) (t : t) :
+  let store (low : Svalue.t) (ty : Ctype.ctype) (sval : Svalue.t) (t : t) :
       (unit * t, 'err) Result.t =
-    let range = Range.of_low_and_chunk low chunk in
-    let replace_node _ = sval_leaf ~range ~value:sval ~chunk in
+    let* range = Range.of_low_and_type low ty in
+    let replace_node _ = sval_leaf ~range ~value:sval ~ty in
     let rebuild_parent = of_children in
     let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
@@ -315,7 +319,10 @@ let with_bound_check (t : t) (ofs : Svalue.t) f =
     match t.bound with
     | None -> Result.ok ()
     | Some bound ->
-        if%sat Svalue.geq ofs bound then Result.error `OutOfBounds
+        if%sat Svalue.gt ofs bound then (
+          L.debug (fun m ->
+              m "Out of bounds access: %a > %a" Svalue.pp ofs Svalue.pp bound);
+          Result.error `OutOfBounds)
         else Result.ok ()
   in
   let++ res, root = f () in
@@ -330,13 +337,13 @@ let is_exclusively_owned t =
         return low #== Svalue.zero #&& (high #== bound)
       else return Svalue.v_false
 
-let load (ofs : Svalue.t) (chunk : Chunk.t) (t : t) :
+let load (ofs : Svalue.t) (ty : Ctype.ctype) (t : t) :
     (Svalue.t * t, 'err) Result.t =
-  with_bound_check t ofs #+ (Chunk.size_s chunk) @@ fun () ->
-  Tree.load ofs chunk t.root
+  let* size = Layout.size_of_s ty in
+  with_bound_check t ofs #+ size @@ fun () -> Tree.load ofs ty t.root
 
-let store ofs chunk sval t =
-  with_bound_check t ofs #+ (Chunk.size_s chunk) @@ fun () ->
-  Tree.store ofs chunk sval t.root
+let store ofs ty sval t =
+  let* size = Layout.size_of_s ty in
+  with_bound_check t ofs #+ size @@ fun () -> Tree.store ofs ty sval t.root
 
 let alloc size = { root = Tree.uninit (Svalue.zero, size); bound = Some size }

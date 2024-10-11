@@ -2,10 +2,37 @@ open Csymex
 open Csymex.Syntax
 open Ail_tys
 
-type state = unit
+let type_of expr = Cerb_frontend.Translation_aux.ctype_of expr
+
+type state = Heap.t
 type store = Svalue.t Store.t
 
 let not_impl source_loc loc what = not_impl ~source_loc ~loc what
+
+(* TODO: handle qualifiers! *)
+let get_param_tys ~prog fid =
+  let ptys =
+    List.find_map
+      (fun (id, (_, _, decl)) ->
+        if Cerb_frontend.Symbol.equal_sym id fid then
+          match decl with
+          | Cerb_frontend.AilSyntax.Decl_function
+              (_proto, _ret_qual, ptys, _is_variadic, _is_inline, _is_noreturn)
+            ->
+              Some (List.map (fun (_, ty, _) -> ty) ptys)
+          | _ -> None
+        else None)
+      prog.Cerb_frontend.AilSyntax.declarations
+  in
+  Csymex.of_opt_not_impl ~msg:"Couldn't find function prototype" ptys
+
+let alloc_params params st =
+  let store = Store.empty in
+  Csymex.Result.fold_left params ~init:(store, st)
+    ~f:(fun (store, st) (pname, ty, value) ->
+      let** ptr, st = Heap.alloc_ty ty st in
+      let++ (), st = Heap.store ptr ty value st in
+      (Store.add pname ptr store, st))
 
 let value_of_constant (c : constant) =
   match c with
@@ -72,8 +99,9 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
           Fmt.kstr (not_impl loc __LOC__) "Unsupported binary operator: %a"
             Fmt_ail.pp_binop op)
   | AilErvalue e ->
-      let _lvalue = eval_expr ~prog ~store state e in
-      failwith "todo"
+      let** lvalue, state = eval_expr ~prog ~store state e in
+      let ty = type_of e in
+      Heap.load lvalue ty state
       (* let chunk = chunk_of_lvalue lvalue in
          let loc, ofs = Svalue.to_loc_ofs lvalue in
          Heap.load loc ofs chunk state *)
@@ -89,7 +117,7 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
 
 (** Executing a statement returns an optional value outcome (if a return statement was hit), or  *)
 and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
-    (Svalue.t option * state, string) Csymex.Result.t =
+    (Svalue.t option * state, 'err) Csymex.Result.t =
   let (AnnotatedStatement (loc, _, stmt)) = astmt in
   match stmt with
   | AilSskip -> Result.ok (None, state)
@@ -116,7 +144,10 @@ and exec_fun ~prog ~args state (fundef : fundef) =
   let name, (_, _, _, params, stmt) = fundef in
   L.info (fun m ->
       m "Executing function %s" (Cerb_frontend.Pp_symbol.to_string name));
-  let store = Store.of_list (List.combine params args) in
+  let* ptys = get_param_tys ~prog name in
+  let ps = Utils.List_ex.combine3 params ptys args in
+  let** store, state = alloc_params ps state in
+  (* TODO: local optimisation to put values in store directly when no address is taken. *)
   L.debug (fun m -> m "Store: %a" Store.pp store);
   let++ val_opt, state = exec_stmt ~prog store state stmt in
   let value = Option.value ~default:Svalue.void val_opt in

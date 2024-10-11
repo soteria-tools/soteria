@@ -2,4 +2,5 @@
  (name ppx_symex_expander)
  (public_name bfa.ppx.expander)
  (libraries ppxlib)
- (preprocess no_preprocessing))
+ (preprocess
+  (pps ppxlib.metaquot)))

@@ -3,7 +3,8 @@ type 'a t = Freed | Substate of 'a [@@deriving show { with_path = false }]
 module Make (Symex : Symex.S) = struct
   open Symex.Syntax
 
-  type nonrec 'a t = 'a t [@@deriving show { with_path = false }]
+  type nonrec 'a t = 'a t = Freed | Substate of 'a
+  [@@deriving show { with_path = false }]
 
   let free ~is_exclusively_owned freeable =
     match freeable with

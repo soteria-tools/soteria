@@ -20,6 +20,8 @@ struct
 
   type 'a t = 'a M.t
 
+  let empty = M.empty
+
   (* Symbolic process that under-approximates Map.find_opt *)
   let find_opt_sym (loc : Key.t) (st : 'a t) =
     let rec find_bindings = function
@@ -36,8 +38,11 @@ struct
   let alloc (type a) ~(new_codom : a) (st : a t) : (Key.t * a t, 'err) Result.t
       =
     let* key = Key.fresh () in
-    let constr = Key.distinct (key :: (M.bindings st |> List.map fst)) in
-    Result.ok ~learned:[ constr ] (key, M.add key new_codom st)
+    let learned =
+      if M.is_empty st then []
+      else [ Key.distinct (key :: (M.bindings st |> List.map fst)) ]
+    in
+    Result.ok ~learned (key, M.add key new_codom st)
 
   let wrap (f : 'a -> ('b * 'a, 'err) Symex.Result.t) (loc : Key.t) (st : 'a t)
       =

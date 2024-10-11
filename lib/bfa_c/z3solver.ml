@@ -1,7 +1,7 @@
 module Value = Svalue
 
 let log_src = Logs.Src.create "bfa_c.SOLVER"
-let debug_str s = Logs.debug ~src:log_src (fun m -> m "%s" s)
+let debug_str ~prefix s = Logs.debug ~src:log_src (fun m -> m "%s: %s" prefix s)
 
 open Simple_smt
 
@@ -19,7 +19,13 @@ let smallest_power_of_two_greater_than n =
   in
   f (n + 1)
 
-let solver_log = { send = debug_str; receive = debug_str; stop = Fun.id }
+let solver_log =
+  {
+    send = debug_str ~prefix:"SMT/SEND";
+    receive = debug_str ~prefix:"SMT/RECV";
+    stop = Fun.id;
+  }
+
 let solver_config = { z3 with log = solver_log }
 let solver = new_solver solver_config
 let simplify v = solver.command (list [ atom "simplify"; v ])
@@ -193,17 +199,18 @@ let add_constraints vs =
          let constr = encode_value v in
          ack_command (assume constr))
 
-let simplify v =
-  let enc = encode_value v in
-  let res = simplify enc in
-  match decode_value res with Some d -> d | None -> v
+let simplify (v : Svalue.t) =
+  match v.node with
+  | Int _ | Bool _ -> v
+  | _ -> (
+      let enc = encode_value v in
+      let res = simplify enc in
+      match decode_value res with Some d -> d | None -> v)
 
 let as_bool v =
   if Svalue.equal v Svalue.v_true then Some true
   else if Svalue.equal v Svalue.v_false then Some false
   else None
-
-let memo_sat_tbl : bool Utils.Hint.t = Utils.Hint.create 1024
 
 (* Incremental doesn't allow for caching queries... *)
 let sat () =

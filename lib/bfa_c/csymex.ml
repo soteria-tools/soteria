@@ -12,5 +12,11 @@ let not_impl ?source_loc ?loc what =
         loc what);
   vanish ()
 
+let of_opt = function Some x -> return x | None -> vanish ()
+
+let of_opt_not_impl ?source_loc ?loc ~msg = function
+  | Some x -> return x
+  | None -> not_impl ?source_loc ?loc msg
+
 module Freeable = Bfa_symex.Freeable.Make (SYMEX)
 module Pmap = Bfa_symex.Pmap.Make (SYMEX)

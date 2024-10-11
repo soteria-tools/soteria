@@ -15,6 +15,8 @@ end)
 
 type t = Tree_block.t Freeable.t SPmap.t
 
+let empty = SPmap.empty
+
 let with_ptr (ptr : Svalue.t) (st : t)
     (f : ofs:Svalue.t -> Tree_block.t -> ('a * Tree_block.t, 'err) Result.t) :
     ('a * t, 'err) Result.t =
@@ -22,17 +24,21 @@ let with_ptr (ptr : Svalue.t) (st : t)
   let ofs = Svalue.Ptr.ofs ptr in
   (SPmap.wrap (Freeable.wrap (f ~ofs))) loc st
 
-let load ptr chunk st =
-  with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs chunk block)
+let load ptr ty st =
+  with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
-let store ptr chunk sval st =
-  with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs chunk sval block)
+let store ptr ty sval st =
+  with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
 
 let alloc size st =
-  let block = Tree_block.alloc size in
+  let block = Freeable.Substate (Tree_block.alloc size) in
   let++ loc, st = SPmap.alloc ~new_codom:block st in
   let ptr = Svalue.Ptr.mk loc Svalue.zero in
   (ptr, st)
+
+let alloc_ty ty st =
+  let* size = Layout.size_of_s ty in
+  alloc size st
 
 let free (ptr : Svalue.t) (st : t) : (unit * t, 'err) Result.t =
   if%sat Svalue.Ptr.ofs ptr #== Svalue.zero then
