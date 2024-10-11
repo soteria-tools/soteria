@@ -1,11 +1,21 @@
 open Csymex
 open Csymex.Syntax
 open Ail_tys
+module Ctype = Cerb_frontend.Ctype
+module AilSyntax = Cerb_frontend.AilSyntax
+
+exception Unsupported of string
 
 let type_of expr = Cerb_frontend.Translation_aux.ctype_of expr
 
 type state = Heap.t
-type store = Svalue.t Store.t
+type store = (Svalue.t option * Ctype.ctype) Store.t
+
+type 'err fun_exec =
+  prog:sigma ->
+  args:Svalue.t list ->
+  state:state ->
+  (Svalue.t * state, 'err) Result.t
 
 let not_impl source_loc loc what = not_impl ~source_loc ~loc what
 
@@ -26,13 +36,29 @@ let get_param_tys ~prog fid =
   in
   Csymex.of_opt_not_impl ~msg:"Couldn't find function prototype" ptys
 
+(* TODO: Ask Keyvan what the boolean [_what] is. *)
+let attach_bindings store (bindings : AilSyntax.bindings) =
+  ListLabels.fold_left bindings ~init:store
+    ~f:(fun store (pname, ((_loc, duration, _what), align, _quals, ty)) ->
+      (match duration with
+      | AilSyntax.Static | Thread -> raise (Unsupported "static/tread")
+      | _ -> ());
+      if Option.is_some align then raise (Unsupported "align");
+      Store.add pname (None, ty) store)
+
+let attach_bindings store bindings =
+  try
+    let store = attach_bindings store bindings in
+    Csymex.return store
+  with Unsupported msg -> Csymex.not_impl msg
+
 let alloc_params params st =
-  let store = Store.empty in
-  Csymex.Result.fold_left params ~init:(store, st)
+  Csymex.Result.fold_left params ~init:(Store.empty, st)
     ~f:(fun (store, st) (pname, ty, value) ->
       let** ptr, st = Heap.alloc_ty ty st in
+      let store = Store.add pname (Some ptr, ty) store in
       let++ (), st = Heap.store ptr ty value st in
-      (Store.add pname ptr store, st))
+      (store, st))
 
 let value_of_constant (c : constant) =
   match c with
@@ -40,7 +66,49 @@ let value_of_constant (c : constant) =
       Csymex.return (Svalue.int_z z)
   | _ -> Csymex.vanish ()
 
-let rec eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
+let nondet_int_fun ~prog:_ ~args:_ ~state =
+  let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
+  let+ v = Csymex.nondet ~constrs TInt in
+  Ok (v, state)
+
+(* TODO: clean up! Ask Keyvan what can be done? *)
+let find_stub ~prog:_ fname =
+  L.debug (fun m -> m "Looking for a stub for %a" Fmt_ail.pp_sym fname);
+  if
+    String.starts_with ~prefix:"__nondet__"
+      (Cerb_frontend.Pp_symbol.to_string fname)
+  then Some nondet_int_fun
+  else None
+
+let rec resolve_function ~(prog : sigma) ~loc fexpr : 'err fun_exec Csymex.t =
+  let* loc, fname =
+    match fexpr with
+    | AilSyntax.AnnotatedExpression
+        ( _,
+          _,
+          loc,
+          AilEfunction_decay (AnnotatedExpression (_, _, _, AilEident fname)) )
+      ->
+        Csymex.return (loc, fname)
+    | _ ->
+        Fmt.kstr (not_impl loc __LOC__)
+          "Function expression isn't a simple identifier: %a" Fmt_ail.pp_expr
+          fexpr
+  in
+  let fundef_opt =
+    prog.function_definitions
+    |> List.find_opt (fun (id, _) -> Cerb_frontend.Symbol.equal_sym id fname)
+  in
+  match fundef_opt with
+  | Some fundef -> Csymex.return (exec_fun fundef)
+  | None -> (
+      match find_stub ~prog fname with
+      | Some stub -> Csymex.return stub
+      | None ->
+          Fmt.kstr (not_impl loc __LOC__) "Cannot call external function: %a"
+            Fmt_ail.pp_sym fname)
+
+and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
     (el : expr list) =
   let++ vs, state =
     Csymex.Result.fold_left el ~init:([], state) ~f:(fun (acc, state) e ->
@@ -55,40 +123,11 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
   | AilEconst c ->
       let+ v = value_of_constant c in
       Ok (v, state)
-  (* | AilEfunction_decay k -> (
-      match k with
-      | AnnotatedExpression (_, _, _, AilEident _) ->
-          not_impl loc __LOC__ "Unsupported function call expr"
-      | _ -> not_impl loc __LOC__ "AilEfunction_decay is not an ident") *)
+  (* TODO: Ask Keyvan what function decay is *)
   | AilEcall (f, args) ->
-      let* fname =
-        match f with
-        | AnnotatedExpression
-            ( _,
-              _,
-              _,
-              AilEfunction_decay
-                (AnnotatedExpression (_, _, _, AilEident fname)) ) ->
-            Csymex.return fname
-        | _ ->
-            Fmt.kstr (not_impl loc __LOC__)
-              "Function expression isn't a simple identifier: %a"
-              Fmt_ail.pp_expr f
-      in
-      let fundef =
-        prog.function_definitions
-        |> List.find_opt (fun (id, _) ->
-               Cerb_frontend.Symbol.equal_sym id fname)
-      in
-      let* fundef =
-        match fundef with
-        | Some fundef -> Csymex.return fundef
-        | None ->
-            Fmt.kstr (not_impl loc __LOC__) "Cannot call external function: %a"
-              Fmt_ail.pp_expr f
-      in
+      let* exec_fun = resolve_function ~prog ~loc f in
       let** args, state = eval_expr_list ~prog ~store state args in
-      exec_fun ~prog ~args state fundef
+      exec_fun ~prog ~args ~state
   | AilEbinary (e1, op, e2) -> (
       let** v1, state = eval_expr ~prog ~store state e1 in
       let** v2, state = eval_expr ~prog ~store state e2 in
@@ -102,11 +141,8 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       let** lvalue, state = eval_expr ~prog ~store state e in
       let ty = type_of e in
       Heap.load lvalue ty state
-      (* let chunk = chunk_of_lvalue lvalue in
-         let loc, ofs = Svalue.to_loc_ofs lvalue in
-         Heap.load loc ofs chunk state *)
   | AilEident id -> (
-      match Store.find_opt id store with
+      match Store.find_value id store with
       | Some v -> Result.ok (v, state)
       | None ->
           Fmt.kstr (not_impl loc __LOC__) "Variable %a not found in store"
@@ -117,38 +153,69 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
 
 (** Executing a statement returns an optional value outcome (if a return statement was hit), or  *)
 and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
-    (Svalue.t option * state, 'err) Csymex.Result.t =
+    (Svalue.t option * store * state, 'err) Csymex.Result.t =
   let (AnnotatedStatement (loc, _, stmt)) = astmt in
   match stmt with
-  | AilSskip -> Result.ok (None, state)
+  | AilSskip -> Result.ok (None, store, state)
   | AilSreturn e ->
       let** v, state = eval_expr ~prog ~store state e in
       L.info (fun m -> m "Returning: %a" Svalue.pp v);
-      Result.ok (Some v, state)
-  | AilSblock (_, stmtl) ->
-      Csymex.Result.fold_left stmtl ~init:(None, state)
-        ~f:(fun (res, state) stmt ->
-          match res with
-          | Some _ -> Csymex.Result.ok (res, state)
-          | None -> exec_stmt ~prog store state stmt)
+      Result.ok (Some v, store, state)
+  | AilSblock (bindings, stmtl) ->
+      (* Discarding the block-scoped store *)
+      let* store = attach_bindings store bindings in
+      let++ res, _, state =
+        Csymex.Result.fold_left stmtl ~init:(None, store, state)
+          ~f:(fun (res, store, state) stmt ->
+            match res with
+            | Some _ -> Csymex.Result.ok (res, store, state)
+            | None -> exec_stmt ~prog store state stmt)
+      in
+      (res, store, state)
+  | AilSexpr e ->
+      let** _, state = eval_expr ~prog ~store state e in
+      Result.ok (None, store, state)
   | AilSif (cond, then_stmt, else_stmt) ->
       let** v, state = eval_expr ~prog ~store state cond in
       if%sat v then exec_stmt ~prog store state then_stmt
       else exec_stmt ~prog store state else_stmt
+  | AilSdeclaration decls ->
+      let++ store, st =
+        Csymex.Result.fold_left decls ~init:(store, state)
+          ~f:(fun (store, state) (pname, expr) ->
+            let* ty =
+              Store.find_type pname store
+              |> Csymex.of_opt_not_impl ~source_loc:loc ~loc:__LOC__
+                   ~msg:"Missing binding??"
+            in
+            let** ptr, state = Heap.alloc_ty ty state in
+            let++ (), state =
+              match expr with
+              | None -> Result.ok ((), state)
+              | Some expr ->
+                  let** v, state = eval_expr ~prog ~store state expr in
+                  Heap.store ptr ty v state
+            in
+            let store = Store.add pname (Some ptr, ty) store in
+            (store, state))
+      in
+      (None, store, st)
   | _ ->
       Fmt.kstr (not_impl loc __LOC__) "Unsupported statement: %a"
         Fmt_ail.pp_stmt astmt
 
-and exec_fun ~prog ~args state (fundef : fundef) =
+and exec_fun ~prog ~args ~state (fundef : fundef) =
   (* Put arguments in store *)
   let name, (_, _, _, params, stmt) = fundef in
   L.info (fun m ->
       m "Executing function %s" (Cerb_frontend.Pp_symbol.to_string name));
   let* ptys = get_param_tys ~prog name in
   let ps = Utils.List_ex.combine3 params ptys args in
+  (* TODO: Introduce a with_stack_allocation.
+           That would require some kind of continutation passing for executing a bunch of statements. *)
   let** store, state = alloc_params ps state in
   (* TODO: local optimisation to put values in store directly when no address is taken. *)
   L.debug (fun m -> m "Store: %a" Store.pp store);
-  let++ val_opt, state = exec_stmt ~prog store state stmt in
+  let++ val_opt, _, state = exec_stmt ~prog store state stmt in
   let value = Option.value ~default:Svalue.void val_opt in
   (value, state)

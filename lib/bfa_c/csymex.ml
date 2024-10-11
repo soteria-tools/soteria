@@ -6,7 +6,7 @@ let not_impl ?source_loc ?loc what =
     Fmt.pf ft "%s@\n" (Cerb_location.location_to_string sl)
   in
   L.info (fun m ->
-      m "%aMISSING FEATURE, VANISHING%a@\n%s" (Fmt.option pp_source_loc)
+      m "%aMISSING FEATURE, VANISHING %a@\n%s" (Fmt.option pp_source_loc)
         source_loc
         Fmt.(option (parens string))
         loc what);

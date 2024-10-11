@@ -179,7 +179,7 @@ let decode_value (v : sexp) =
   | Atom "true" -> Some Value.v_true
   | Atom "false" -> Some Value.v_false
   | _ ->
-      L.debug (fun m -> m "Cannot decode value %a" Sexplib.Sexp.pp v);
+      L.debug (fun m -> m "SMT: Cannot decode value %a" Sexplib.Sexp.pp v);
       None
 
 let fresh ty =

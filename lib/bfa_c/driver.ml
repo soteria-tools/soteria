@@ -121,7 +121,9 @@ let exec_main log_level file_name =
     sigma.function_definitions
     |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)
   in
-  let symex = Interp.exec_fun ~prog:sigma ~args:[] Heap.empty entry_point in
+  let symex =
+    Interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
+  in
   let () = L.debug (fun m -> m "Starting symex") in
   let result = Csymex.force symex in
   Fmt.pr "Symex terminated with the following outcomes: %a"
