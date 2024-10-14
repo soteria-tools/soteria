@@ -10,8 +10,11 @@ let is_int (Ctype (_, ty)) =
 let size_of_int_ty (int_ty : integerType) =
   Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity int_ty
 
-let size_of (Ctype (_, ty)) =
-  match ty with Basic (Integer inty) -> size_of_int_ty inty | _ -> None
+let rec size_of (Ctype (_, ty)) =
+  match ty with
+  | Basic (Integer inty) -> size_of_int_ty inty
+  | Pointer _ -> size_of (Ctype ([], Basic (Integer Size_t)))
+  | _ -> None
 
 let size_of_s ty =
   match size_of ty with

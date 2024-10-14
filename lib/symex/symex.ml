@@ -14,6 +14,7 @@ module type S = sig
   val branch_on :
     Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
 
+  val branches : (unit -> 'a t) list -> 'a t
   val bind : 'a t -> ('a -> 'b t) -> 'b t
   val force : 'a t -> 'a list
   val all : 'a t list -> 'a list t
@@ -100,6 +101,9 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
             Solver.backtrack ();
             Solver.add_constraints [ Value.(not guard) ];
             if Solver.delayed_sat () then else_ () () else Seq.empty ())
+
+  let branches (brs : (unit -> 'a t) list) : 'a t =
+    Seq.concat_map (fun br -> br ()) (List.to_seq brs)
 
   let bind x f = Seq.concat_map f x
   let map = Seq.map

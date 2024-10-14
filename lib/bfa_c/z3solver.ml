@@ -48,16 +48,20 @@ let log_sexp sexp =
       flush oc
 
 let solver_config = { z3 with log = solver_log }
-let solver = new_solver solver_config
+
+let solver =
+  let solver = new_solver solver_config in
+  let command sexp =
+    log_sexp sexp;
+    solver.command sexp
+  in
+  { solver with command }
+
 let simplify v = solver.command (list [ atom "simplify"; v ])
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
 let is_constr constr = list [ atom "_"; atom "is"; atom constr ]
-
-let ack_command sexp =
-  log_sexp sexp;
-  ack_command solver sexp
-
+let ack_command sexp = ack_command solver sexp
 let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts

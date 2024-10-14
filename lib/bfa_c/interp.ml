@@ -74,10 +74,9 @@ let nondet_int_fun ~prog:_ ~args:_ ~state =
 (* TODO: clean up! Ask Keyvan what can be done? *)
 let find_stub ~prog:_ fname =
   L.debug (fun m -> m "Looking for a stub for %a" Fmt_ail.pp_sym fname);
-  if
-    String.starts_with ~prefix:"__nondet__"
-      (Cerb_frontend.Pp_symbol.to_string fname)
-  then Some nondet_int_fun
+  let name = Cerb_frontend.Pp_symbol.to_string fname in
+  if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
+  else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
   else None
 
 let rec resolve_function ~(prog : sigma) ~loc fexpr : 'err fun_exec Csymex.t =
