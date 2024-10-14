@@ -7,13 +7,14 @@ module SPmap = Pmap (struct
   type value = t
   type 'a symex = 'a Csymex.t
 
+  let pp = Svalue.pp
   let sem_eq = Svalue.sem_eq
   let compare = Svalue.compare
   let distinct = Svalue.distinct
   let fresh () = Csymex.nondet TInt
 end)
 
-type t = Tree_block.t Freeable.t SPmap.t
+type t = Tree_block.t Freeable.t SPmap.t [@@deriving show]
 
 let empty = SPmap.empty
 

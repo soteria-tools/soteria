@@ -4,7 +4,8 @@ module Make (Symex : Symex.S) = struct
   open Symex.Syntax
 
   type nonrec 'a t = 'a t = Freed | Substate of 'a
-  [@@deriving show { with_path = false }]
+
+  let pp = pp
 
   let free ~is_exclusively_owned freeable =
     match freeable with

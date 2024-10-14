@@ -5,6 +5,7 @@ module type KeyS = sig
 
   include Stdlib.Map.OrderedType with type t := t
 
+  val pp : t Fmt.t
   val sem_eq : t -> t -> value
   val fresh : unit -> t symex
   val distinct : t list -> value
@@ -19,6 +20,10 @@ struct
   module M = Stdlib.Map.Make (Key)
 
   type 'a t = 'a M.t
+
+  let pp pp_value ft t =
+    let pp_binding ft (k, v) = Fmt.pf ft "%a -> %a" Key.pp k pp_value v in
+    Fmt.pf ft "{%a}" (Fmt.list ~sep:(Fmt.any "; ") pp_binding) (M.bindings t)
 
   let empty = M.empty
 

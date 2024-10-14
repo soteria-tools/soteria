@@ -2,4 +2,4 @@
  (name bfa_symex)
  (libraries simple_smt fmt logs)
  (preprocess
-  (pps ppx_symex)))
+  (pps ppx_symex ppx_deriving.std)))

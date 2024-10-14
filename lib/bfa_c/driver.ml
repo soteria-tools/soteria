@@ -128,5 +128,5 @@ let exec_main log_level smt_file file_name =
   let () = L.debug (fun m -> m "Starting symex") in
   let result = Csymex.force symex in
   Fmt.pr "Symex terminated with the following outcomes: %a"
-    Fmt.Dump.(list @@ result ~ok:(pair Svalue.pp (Fmt.any "()")) ~error:pp_err)
+    Fmt.Dump.(list @@ result ~ok:(pair Svalue.pp Heap.pp) ~error:pp_err)
     result
