@@ -26,13 +26,38 @@ let solver_log =
     stop = Fun.id;
   }
 
+let smt_log_file = ref None
+
+let close_smt_log_file () =
+  match !smt_log_file with None -> () | Some oc -> close_out oc
+
+let () = at_exit close_smt_log_file
+
+let set_smt_file f =
+  close_smt_log_file ();
+  match f with
+  | None -> smt_log_file := None
+  | Some f -> smt_log_file := Some (open_out f)
+
+let log_sexp sexp =
+  match !smt_log_file with
+  | None -> ()
+  | Some oc ->
+      Sexplib.Sexp.output_hum oc sexp;
+      output_char oc '\n';
+      flush oc
+
 let solver_config = { z3 with log = solver_log }
 let solver = new_solver solver_config
 let simplify v = solver.command (list [ atom "simplify"; v ])
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
 let is_constr constr = list [ atom "_"; atom "is"; atom constr ]
-let ack_command = ack_command solver
+
+let ack_command sexp =
+  log_sexp sexp;
+  ack_command solver sexp
+
 let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts

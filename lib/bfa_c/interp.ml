@@ -134,6 +134,8 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       match op with
       | Ge -> Result.ok (Svalue.geq v1 v2, state)
       | Gt -> Result.ok (Svalue.gt v1 v2, state)
+      | Lt -> Result.ok (Svalue.lt v1 v2, state)
+      | Le -> Result.ok (Svalue.leq v1 v2, state)
       | _ ->
           Fmt.kstr (not_impl loc __LOC__) "Unsupported binary operator: %a"
             Fmt_ail.pp_binop op)

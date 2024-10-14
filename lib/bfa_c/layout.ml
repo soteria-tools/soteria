@@ -28,7 +28,7 @@ let int_constraints (int_ty : integerType) =
   | Bool -> Some (fun x -> [ Svalue.zero #<= x; x #< (Svalue.int 2) ])
   | Signed _ ->
       let+ size = size_of_int_ty int_ty in
-      let min = Z.shift_left Z.one ((size * 8) - 1) in
+      let min = Z.neg (Z.shift_left Z.one ((size * 8) - 1)) in
       let max = Z.pred (Z.shift_left Z.one ((size * 8) - 1)) in
       fun x -> [ (Svalue.int_z min) #<= x; x #<= (Svalue.int_z max) ]
   | Unsigned _ ->

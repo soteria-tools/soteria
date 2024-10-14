@@ -18,6 +18,6 @@ int simple(int x)
 
 int main()
 {
-  int x = __nondet__(); long y = 12L;
+  int x = __nondet__();
   return simple(x);
 }

@@ -104,7 +104,8 @@ let pp_err ft t =
   | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
   | `UseAfterFree -> Fmt.string ft "UseAfterFree"
 
-let exec_main log_level file_name =
+let exec_main log_level smt_file file_name =
+  Z3solver.set_smt_file smt_file;
   setup_log log_level;
   L.debug (fun m -> m "Starting to execute");
   let entry_point, sigma = parse_ail file_name in
