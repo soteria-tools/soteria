@@ -1,10 +1,27 @@
 open Cerb_frontend
 
-let setup_log level =
+let setup_console_log level =
   Fmt_tty.setup_std_outputs ();
   Logs.set_level level;
   Logs.set_reporter (Logs_fmt.reporter ());
   ()
+
+let setup_stderr_log level =
+  Logs.set_level level;
+  let fmt_reporter = Logs.format_reporter ~app:Fmt.stderr ~dst:Fmt.stderr () in
+  (* A reporter that filters out logging from SMT. *)
+  let reporter =
+    Logs.
+      {
+        report =
+          (fun src level ~over k msgf ->
+            if Src.equal src Z3solver.log_src then (
+              over ();
+              k ())
+            else fmt_reporter.report src level ~over k msgf);
+      }
+  in
+  Logs.set_reporter reporter
 
 (** Copying most of the wrapper from RefinedC *)
 
@@ -128,10 +145,13 @@ let exec_main file_name =
 
 let exec_main_and_print log_level smt_file file_name =
   Z3solver.set_smt_file smt_file;
-  setup_log log_level;
+  setup_console_log log_level;
   let result = exec_main file_name in
-  Fmt.pr "Symex terminated with the following outcomes: %a"
-    Fmt.Dump.(list @@ result ~ok:(pair Svalue.pp Heap.pp) ~error:pp_err)
-    result
+  L.app (fun m ->
+      m "Symex terminated with the following outcomes: %a"
+        Fmt.Dump.(list @@ result ~ok:(pair Svalue.pp Heap.pp) ~error:pp_err)
+        result)
 
-let lsp () = Bfa_lsp.run ()
+let lsp () =
+  setup_stderr_log (Some Logs.Debug);
+  Bfa_lsp.Server.run ()

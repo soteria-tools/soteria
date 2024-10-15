@@ -1,8 +1,3 @@
-include Logs
-
 let src = Logs.Src.create "BFA.bfa_C"
-let info m = Logs.info ~src m
-let warn m = Logs.warn ~src m
-let err m = Logs.err ~src m
-let debug m = Logs.debug ~src m
-let app m = Logs.app ~src m
+
+include (val Logs.src_log src)

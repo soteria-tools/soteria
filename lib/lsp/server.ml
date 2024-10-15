@@ -35,7 +35,7 @@ let diagnostics (_state : state_after_processing) : Lsp.Types.Diagnostic.t list
    so that users only need to override methods that they want the server to
    actually meaningfully interpret and respond to.
 *)
-class lsp_server =
+class bfa_lsp_server =
   object (self)
     inherit Linol_eio.Jsonrpc2.server
 
@@ -80,7 +80,7 @@ class lsp_server =
    and runs it as a task. *)
 let run () =
   Eio_main.run @@ fun env ->
-  let s = new lsp_server in
+  let s = new bfa_lsp_server in
   let server = Linol_eio.Jsonrpc2.create_stdio ~env s in
   let task () =
     let shutdown () = s#get_status = `ReceivedExit in
