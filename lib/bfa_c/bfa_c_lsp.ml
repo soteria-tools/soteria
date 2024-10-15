@@ -57,7 +57,7 @@ class bfa_lsp_server =
 
     (* On document closes, we remove the state associated to the file from the global
        hashtable state, to avoid leaking memory. *)
-    method on_notif_doc_did_close ~notify_back:_ d : unit Linol_eio.t = ()
+    method on_notif_doc_did_close ~notify_back:_ _d : unit Linol_eio.t = ()
   end
 
 (* Main code

@@ -14,5 +14,6 @@
   zarith
   hashcons
   simple_smt)
+ (inline_tests)
  (preprocess
-  (pps ppx_deriving.std ppx_symex)))
+  (pps ppx_deriving.std ppx_symex ppx_inline_test)))

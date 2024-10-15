@@ -19,7 +19,7 @@ module MemVal = struct
         in
         let+ value = Csymex.nondet ~constrs TInt in
         { value; ty }
-    | _ -> Fmt.kstr (not_impl ~loc:__LOC__) "Nondet of type %a" Fmt_ail.pp_ty ty
+    | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
 end
 
 module MUMemVal = struct
@@ -72,8 +72,7 @@ module Node = struct
     | Owned (Uninit Totally) ->
         return (Owned (Uninit Totally), Owned (Uninit Totally))
     | Owned Zeros -> return (Owned Zeros, Owned Zeros)
-    | Owned (Init _ | MaybeUninit _) ->
-        Fmt.kstr (not_impl ~loc:__LOC__) "Spliting %a" pp node
+    | Owned (Init _ | MaybeUninit _) -> Fmt.kstr not_impl "Spliting %a" pp node
     | NotOwned Partially | Owned (Uninit Partially) | Owned Lazy ->
         failwith "Should never split an intermediate node"
 
@@ -85,21 +84,19 @@ module Node = struct
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok Svalue.zero
-        else not_impl ~loc:__LOC__ "Float zeros"
+        else not_impl "Float zeros"
     | Owned Lazy ->
-        Fmt.kstr (not_impl ~loc:__LOC__) "Lazy memory access, cannot decode %a"
-          pp t
+        Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
     | Owned (Init { value; ty = tyw }) ->
         if Ctype.ctypeEqual ty tyw then Result.ok value
         else
-          Fmt.kstr (not_impl ~loc:__LOC__)
-            "Type mismatch when decoding value: %a vs %a" Fmt_ail.pp_ty ty
-            Fmt_ail.pp_ty tyw
+          Fmt.kstr not_impl "Type mismatch when decoding value: %a vs %a"
+            Fmt_ail.pp_ty ty Fmt_ail.pp_ty tyw
     | Owned (MaybeUninit { value; ty = tyw }) ->
         if Ctype.ctypeEqual ty tyw then
           MUMemVal.unwrap_or ~err:`UninitializedMemoryAccess value
         else
-          Fmt.kstr (not_impl ~loc:__LOC__)
+          Fmt.kstr not_impl
             "Type mismatch when decoding maybe_uninit value: %a vs %a"
             Fmt_ail.pp_ty ty Fmt_ail.pp_ty tyw
 end

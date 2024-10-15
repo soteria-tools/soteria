@@ -17,8 +17,6 @@ type 'err fun_exec =
   state:state ->
   (Svalue.t * state, 'err) Result.t
 
-let not_impl source_loc loc what = not_impl ~source_loc ~loc what
-
 (* TODO: handle qualifiers! *)
 let get_param_tys ~prog fid =
   let ptys =
@@ -79,7 +77,7 @@ let find_stub ~prog:_ fname =
   else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
   else None
 
-let rec resolve_function ~(prog : sigma) ~loc fexpr : 'err fun_exec Csymex.t =
+let rec resolve_function ~(prog : sigma) fexpr : 'err fun_exec Csymex.t =
   let* loc, fname =
     match fexpr with
     | AilSyntax.AnnotatedExpression
@@ -90,10 +88,10 @@ let rec resolve_function ~(prog : sigma) ~loc fexpr : 'err fun_exec Csymex.t =
       ->
         Csymex.return (loc, fname)
     | _ ->
-        Fmt.kstr (not_impl loc __LOC__)
-          "Function expression isn't a simple identifier: %a" Fmt_ail.pp_expr
-          fexpr
+        Fmt.kstr not_impl "Function expression isn't a simple identifier: %a"
+          Fmt_ail.pp_expr fexpr
   in
+  let@ () = with_loc ~loc in
   let fundef_opt =
     prog.function_definitions
     |> List.find_opt (fun (id, _) -> Cerb_frontend.Symbol.equal_sym id fname)
@@ -104,8 +102,8 @@ let rec resolve_function ~(prog : sigma) ~loc fexpr : 'err fun_exec Csymex.t =
       match find_stub ~prog fname with
       | Some stub -> Csymex.return stub
       | None ->
-          Fmt.kstr (not_impl loc __LOC__) "Cannot call external function: %a"
-            Fmt_ail.pp_sym fname)
+          Fmt.kstr not_impl "Cannot call external function: %a" Fmt_ail.pp_sym
+            fname)
 
 and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
     (el : expr list) =
@@ -118,13 +116,14 @@ and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
 
 and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
   let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
+  let@ () = with_loc ~loc in
   match expr with
   | AilEconst c ->
       let+ v = value_of_constant c in
       Ok (v, state)
   (* TODO: Ask Keyvan what function decay is *)
   | AilEcall (f, args) ->
-      let* exec_fun = resolve_function ~prog ~loc f in
+      let* exec_fun = resolve_function ~prog f in
       let** args, state = eval_expr_list ~prog ~store state args in
       exec_fun ~prog ~args ~state
   | AilEbinary (e1, op, e2) -> (
@@ -136,8 +135,8 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       | Lt -> Result.ok (Svalue.lt v1 v2, state)
       | Le -> Result.ok (Svalue.leq v1 v2, state)
       | _ ->
-          Fmt.kstr (not_impl loc __LOC__) "Unsupported binary operator: %a"
-            Fmt_ail.pp_binop op)
+          Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
+            op)
   | AilErvalue e ->
       let** lvalue, state = eval_expr ~prog ~store state e in
       let ty = type_of e in
@@ -146,16 +145,14 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       match Store.find_value id store with
       | Some v -> Result.ok (v, state)
       | None ->
-          Fmt.kstr (not_impl loc __LOC__) "Variable %a not found in store"
-            Fmt_ail.pp_sym id)
-  | _ ->
-      Fmt.kstr (not_impl loc __LOC__) "Unsupported expr: %a" Fmt_ail.pp_expr
-        aexpr
+          Fmt.kstr not_impl "Variable %a not found in store" Fmt_ail.pp_sym id)
+  | _ -> Fmt.kstr not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
 (** Executing a statement returns an optional value outcome (if a return statement was hit), or  *)
 and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
     (Svalue.t option * store * state, 'err) Csymex.Result.t =
   let (AnnotatedStatement (loc, _, stmt)) = astmt in
+  let@ () = with_loc ~loc in
   match stmt with
   | AilSskip -> Result.ok (None, store, state)
   | AilSreturn e ->
@@ -186,8 +183,7 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
           ~f:(fun (store, state) (pname, expr) ->
             let* ty =
               Store.find_type pname store
-              |> Csymex.of_opt_not_impl ~source_loc:loc ~loc:__LOC__
-                   ~msg:"Missing binding??"
+              |> Csymex.of_opt_not_impl ~msg:"Missing binding??"
             in
             let** ptr, state = Heap.alloc_ty ty state in
             let++ (), state =
@@ -201,13 +197,12 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
             (store, state))
       in
       (None, store, st)
-  | _ ->
-      Fmt.kstr (not_impl loc __LOC__) "Unsupported statement: %a"
-        Fmt_ail.pp_stmt astmt
+  | _ -> Fmt.kstr not_impl "Unsupported statement: %a" Fmt_ail.pp_stmt astmt
 
 and exec_fun ~prog ~args ~state (fundef : fundef) =
   (* Put arguments in store *)
-  let name, (_, _, _, params, stmt) = fundef in
+  let name, (loc, _, _, params, stmt) = fundef in
+  let@ () = with_loc ~loc in
   L.info (fun m ->
       m "Executing function %s" (Cerb_frontend.Pp_symbol.to_string name));
   let* ptys = get_param_tys ~prog name in
