@@ -1,0 +1,3 @@
+(library
+ (package bfa-vscode)
+ (name bfa_vscode))

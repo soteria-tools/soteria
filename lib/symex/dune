@@ -1,4 +1,5 @@
 (library
+ (public_name bfa.bfa_symex)
  (name bfa_symex)
  (libraries simple_smt fmt logs)
  (preprocess

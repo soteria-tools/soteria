@@ -1,8 +1,9 @@
 (library
+ (package bfa-c)
  (name bfa_c_lib)
  (libraries
-  bfa_symex
-  bfa_lsp
+  bfa.bfa_symex
+  bfa.bfa_lsp
   cmdliner
   fmt
   logs

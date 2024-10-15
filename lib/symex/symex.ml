@@ -31,6 +31,7 @@ module type S = sig
     val error : ?learned:Value.t list -> 'b -> ('a, 'b) t
     val bind : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
     val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
+    val map_error : ('b -> 'c) -> ('a, 'b) t -> ('a, 'c) t
 
     val fold_left :
       'a list -> init:'acc -> f:('acc -> 'a -> ('acc, 'b) t) -> ('acc, 'b) t
@@ -44,6 +45,7 @@ module type S = sig
       ('a, 'b) Result.t -> ('a -> ('c, 'b) Result.t) -> ('c, 'b) Result.t
 
     val ( let++ ) : ('a, 'c) Result.t -> ('a -> 'b) -> ('b, 'c) Result.t
+    val ( let+- ) : ('a, 'b) Result.t -> ('b -> 'c) -> ('a, 'c) Result.t
 
     module Symex_syntax : sig
       val branch_on :
@@ -134,6 +136,7 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
     let ok ?learned x = return ?learned (Ok x)
     let error ?learned x = return ?learned (Error x)
     let bind x f = bind x (function Ok x -> f x | Error z -> return (Error z))
+    let map_error f x = map (Result.map_error f) x
     let map f x = map (Result.map f) x
 
     let fold_left xs ~init ~f =
@@ -146,6 +149,7 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
     let ( let+ ) x f = map f x
     let ( let** ) = Result.bind
     let ( let++ ) x f = Result.map f x
+    let ( let+- ) x f = Result.map_error f x
 
     module Symex_syntax = struct
       let branch_on = branch_on

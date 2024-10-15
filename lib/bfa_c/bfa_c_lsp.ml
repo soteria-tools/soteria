@@ -1,32 +1,40 @@
-(* This file is free software, part of linol. See file "LICENSE" for more information *)
+let cerb_loc_to_range loc =
+  let open Lsp.Types in
+  let (start_l, start_c), (end_l, end_c) =
+    Option.value ~default:((0, 0), (0, 0)) (Cerb_location.to_cartesian loc)
+  in
+  Range.
+    {
+      start = { character = start_c; line = start_l };
+      end_ = { character = end_c; line = end_l };
+    }
 
-(* Some user code
+(* This gathers all the reasons why the analysis gave up. *)
+let get_abort_diagnostics () =
+  let open Syntaxes.List in
+  let+ msg, loc = Csymex.flush_give_up () in
+  let range = cerb_loc_to_range loc in
+  Lsp.Types.Diagnostic.create ~message:msg ~severity:Information ~range
+    ~source:"bfa" ()
 
-   The code here is just a placeholder to make this file compile, it is expected
-   that users have an implementation of a processing function for input contents.
+let error_to_diagnostic_opt (err, loc) =
+  let open Lsp.Types in
+  let open Syntaxes.Option in
+  let+ severity, message =
+    (* When we hide non-bug things, some patterns will return None *)
+    match err with
+    | `MissingKey -> Some (DiagnosticSeverity.Information, "Missing Key")
+    | `MissingResource ->
+        Some (DiagnosticSeverity.Information, "Missing Resource")
+    | `OutOfBounds -> Some (DiagnosticSeverity.Error, "Out of Bounds")
+    | `UninitializedMemoryAccess ->
+        Some (DiagnosticSeverity.Error, "Uninitialized Memory Access")
+    | `UseAfterFree -> Some (DiagnosticSeverity.Error, "Use After Free")
+  in
+  Lsp.Types.Diagnostic.create ~message ~severity ~range:(cerb_loc_to_range loc)
+    ~source:"bfa" ()
 
-   Here we expect a few things:
-   - a type to represent a state/environment that results from processing an
-     input file
-   - a function procdessing an input file (given the file contents as a string),
-     which return a state/environment
-   - a function to extract a list of diagnostics from a state/environment.
-     Diagnostics includes all the warnings, errors and messages that the processing
-     of a document are expected to be able to return.
-*)
-
-(* Lsp server class
-
-   This is the main point of interaction beetween the code checking documents
-   (parsing, typing, etc...), and the code of linol.
-
-   The [Linol_eio.Jsonrpc2.server] class defines a method for each of the action
-   that the lsp server receives, such as opening of a document, when a document
-   changes, etc.. By default, the method predefined does nothing (or errors out ?),
-   so that users only need to override methods that they want the server to
-   actually meaningfully interpret and respond to.
-*)
-class bfa_lsp_server =
+class bfa_lsp_server run_to_errors =
   object (self)
     inherit Linol_eio.Jsonrpc2.server
 
@@ -40,8 +48,12 @@ class bfa_lsp_server =
        - return the diagnostics from the new state
     *)
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
-        (_uri : Lsp.Types.DocumentUri.t) (_contents : string) =
-      let diags = [] in
+        (_uri : Lsp.Types.DocumentUri.t) (contents : string) =
+      let errors = run_to_errors contents in
+      let diags =
+        get_abort_diagnostics ()
+        @ List.filter_map error_to_diagnostic_opt errors
+      in
       notify_back#send_diagnostic diags
 
     (* We now override the [on_notify_doc_did_open] method that will be called
@@ -60,12 +72,9 @@ class bfa_lsp_server =
     method on_notif_doc_did_close ~notify_back:_ _d : unit Linol_eio.t = ()
   end
 
-(* Main code
-   This is the code that creates an instance of the lsp server class
-   and runs it as a task. *)
-let run () =
+let run ~run_to_errors () =
   Eio_main.run @@ fun env ->
-  let s = new bfa_lsp_server in
+  let s = new bfa_lsp_server run_to_errors in
   let server = Linol_eio.Jsonrpc2.create_stdio ~env s in
   let task () =
     let shutdown () = s#get_status = `ReceivedExit in

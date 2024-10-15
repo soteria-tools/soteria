@@ -33,9 +33,14 @@ let get_loc () = Effect.perform GetLoc
 let not_impl msg =
   let msg = "MISSING FEATURE, VANISHING: " ^ msg in
   L.info (fun m -> m "%s" msg);
-  push_give_up (msg, get_loc);
+  push_give_up (msg, get_loc ());
   vanish ()
 
+let with_loc_err () f =
+  let loc = get_loc () in
+  Result.map_error (fun e -> (e, loc)) (f ())
+
+let error ?learned e = Result.error ?learned (e, get_loc ())
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 

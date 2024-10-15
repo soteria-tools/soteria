@@ -1,4 +1,5 @@
 (executable
+ (package bfa-c)
  (public_name bfa-c)
  (name bfa_c)
  (libraries bfa_c_lib logs.cli))

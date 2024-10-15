@@ -26,12 +26,15 @@ let with_ptr (ptr : Svalue.t) (st : t)
   (SPmap.wrap (Freeable.wrap (f ~ofs))) loc st
 
 let load ptr ty st =
+  let@ () = with_loc_err () in
   with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
+  let@ () = with_loc_err () in
   with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
 
 let alloc size st =
+  let@ () = with_loc_err () in
   let block = Freeable.Substate (Tree_block.alloc size) in
   let++ loc, st = SPmap.alloc ~new_codom:block st in
   let ptr = Svalue.Ptr.mk loc Svalue.zero in
@@ -43,7 +46,8 @@ let alloc_ty ty st =
 
 let free (ptr : Svalue.t) (st : t) : (unit * t, 'err) Result.t =
   if%sat Svalue.Ptr.ofs ptr #== Svalue.zero then
+    let@ () = with_loc_err () in
     (SPmap.wrap
        (Freeable.free ~is_exclusively_owned:Tree_block.is_exclusively_owned))
       (Svalue.Ptr.loc ptr) st
-  else Result.error `InvalidFree
+  else error `InvalidFree
