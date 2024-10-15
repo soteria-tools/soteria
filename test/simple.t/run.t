@@ -1,8 +1,8 @@
 Just reading an empty file
-  $ bfa-c exec-main empty.c -q
+  $ bfa-c exec-main empty.c
   Symex terminated with the following outcomes: [Ok (0, {})]
 
-  $ bfa-c exec-main conc.c -q
+  $ bfa-c exec-main conc.c
   Symex terminated with the following outcomes: [Ok
                                                    (2,
                                                     {(Var (|1|, Svalue.TInt)) -> (
@@ -30,7 +30,7 @@ Just reading an empty file
                                                           children = None };
                                                         bound = (Some 4) })})]
 
-  $ bfa-c exec-main sym.c -q
+  $ bfa-c exec-main sym.c
   Symex terminated with the following outcomes: [Ok
                                                    (1,
                                                     {(Var (|1|, Svalue.TInt)) -> (
