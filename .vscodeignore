@@ -1,0 +1,17 @@
+_build
+_opam
+.github
+.vscode
+bin
+extension
+lib
+node_modules
+ppx
+test
+.gitignore
+.ocamlformat
+*.opam
+*.opam.template
+dune-project
+Makefile
+yarn.lock

@@ -9,14 +9,23 @@
     "type": "git",
     "url": "https://github.com/bugs-for-all/bfa"
   },
+  "type": "commonjs",
+  "main": "./dist/bfa_vscode.bc.js",
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
   "engines": {
     "vscode": "^1.75.0"
   },
+  "activationEvents": [
+    "onLanguage:c"
+  ],
   "dependencies": {
-    "vscode": "^1.1.37",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
+    "vscode": "^1.1.37",
     "@biomejs/biome": "^1.9.3",
     "@tsconfig/node22": "^22.0.0",
     "@tsconfig/strictest": "^2.0.5",
@@ -25,6 +34,7 @@
     "esbuild": "^0.24.0"
   },
   "scripts": {
-    "build": "esbuild _build/default/extension/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --sourcemap"
+    "compile": "esbuild _build/default/extension/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --sourcemap --minify",
+    "package": "vsce package --out bfa-vscode.vsix --no-dependencies"
   }
 }
