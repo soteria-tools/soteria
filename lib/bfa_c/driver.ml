@@ -154,4 +154,4 @@ let exec_main_and_print log_level smt_file file_name =
 
 let lsp () =
   setup_stderr_log (Some Logs.Debug);
-  Bfa_lsp.Server.run ()
+  Bfa_c_lsp.run ()
