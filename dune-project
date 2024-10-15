@@ -22,6 +22,7 @@
  (depends
   (ocaml
    (>= 5.2.0))
+  eio_main
   simple_smt
   (ppx_expect
    (>= 0.17.0))
@@ -32,6 +33,10 @@
   cmdliner
   fmt
   logs
+  (linol
+   (>= 0.6))
+  (linol-eio
+   (>= 0.6))
   (odoc :with-doc)
   (dune
    (and

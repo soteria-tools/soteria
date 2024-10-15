@@ -104,9 +104,7 @@ let pp_err ft t =
   | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
   | `UseAfterFree -> Fmt.string ft "UseAfterFree"
 
-let exec_main log_level smt_file file_name =
-  Z3solver.set_smt_file smt_file;
-  setup_log log_level;
+let exec_main file_name =
   L.debug (fun m -> m "Starting to execute");
   let entry_point, sigma = parse_ail file_name in
   L.debug (fun m ->
@@ -126,7 +124,14 @@ let exec_main log_level smt_file file_name =
     Interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
   in
   let () = L.debug (fun m -> m "Starting symex") in
-  let result = Csymex.force symex in
+  Csymex.force symex
+
+let exec_main_and_print log_level smt_file file_name =
+  Z3solver.set_smt_file smt_file;
+  setup_log log_level;
+  let result = exec_main file_name in
   Fmt.pr "Symex terminated with the following outcomes: %a"
     Fmt.Dump.(list @@ result ~ok:(pair Svalue.pp Heap.pp) ~error:pp_err)
     result
+
+let lsp () = Bfa_lsp.run ()

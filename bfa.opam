@@ -9,6 +9,7 @@ homepage: "https://github.com/bugs-for-all/bfa"
 bug-reports: "https://github.com/bugs-for-all/bfa/issues"
 depends: [
   "ocaml" {>= "5.2.0"}
+  "eio_main"
   "simple_smt"
   "ppx_expect" {>= "0.17.0"}
   "cerberus-lib"
@@ -18,6 +19,8 @@ depends: [
   "cmdliner"
   "fmt"
   "logs"
+  "linol" {>= "0.6"}
+  "linol-eio" {>= "0.6"}
   "odoc" {with-doc}
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ocamlformat" {dev & = "0.26.2"}

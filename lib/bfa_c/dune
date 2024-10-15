@@ -2,6 +2,7 @@
  (name bfa_c_lib)
  (libraries
   bfa_symex
+  bfa_lsp
   cmdliner
   fmt
   logs

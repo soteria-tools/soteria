@@ -1,0 +1,3 @@
+(library
+ (name bfa_lsp)
+ (libraries linol linol-eio eio_main))
