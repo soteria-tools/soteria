@@ -1,0 +1,3 @@
+pin-depends: [
+  ["vscode.~dev" "git+https://github.com/ocamllabs/vscode-ocaml-platform#757a2d1c3895e412c285a191de006c04ca05e4ce"]
+]

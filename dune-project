@@ -41,19 +41,6 @@
   (ocaml-lsp-server :dev)))
 
 (package
- (name bfa-vscode)
- (synopsis "VSCode extension for BFA")
- (description "VSCode extension for BFA")
- (depends
-  (ocaml
-   (>= 5.2.0))
-  (dune
-   (and
-    :build
-    (>= 3.14.0)))
-  (ocaml-lsp-server :dev)))
-
-(package
  (name bfa-c)
  (synopsis "Bugs for All, for C.")
  (description "Bugs for All, for C.")
@@ -84,3 +71,21 @@
     :dev
     (= 0.26.2)))
   (ocaml-lsp-server :dev)))
+
+(package
+ (name bfa-vscode)
+ (allow_empty)
+ (synopsis "VSCode extension for BFA")
+ (description "VSCode extension for BFA")
+ (depends
+  (ocaml
+   (>= 5.2.0))
+  (dune
+   (and
+    :build
+    (>= 3.14.0)))
+  (ocaml-lsp-server :dev)
+  js_of_ocaml
+  js_of_ocaml-ppx
+  promise_jsoo
+  vscode))

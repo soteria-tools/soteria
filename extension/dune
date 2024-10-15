@@ -1,3 +1,8 @@
-(library
- (package bfa-vscode)
- (name bfa_vscode))
+(executable
+ (name bfa_vscode)
+ (libraries js_of_ocaml vscode promise_jsoo)
+ (preprocess
+  (pps js_of_ocaml-ppx))
+ (modes js)
+ (js_of_ocaml
+  (flags --source-map --pretty)))
