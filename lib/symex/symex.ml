@@ -16,13 +16,13 @@ module type S = sig
 
   val branches : (unit -> 'a t) list -> 'a t
   val bind : 'a t -> ('a -> 'b t) -> 'b t
-  val force : 'a t -> 'a list
+  val run : 'a t -> 'a list
   val all : 'a t list -> 'a list t
   val abort : unit -> 'a t
   val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
 
   val iter : ('a -> unit) -> 'a t -> unit
-  (** Forces the sequence, providing an iterator through the outcomes *)
+  (** Careful, this consumes the symbolic execution! *)
 
   module Result : sig
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
@@ -109,7 +109,7 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
 
   let bind x f = Seq.concat_map f x
   let map = Seq.map
-  let force = Stdlib.List.of_seq
+  let run = Stdlib.List.of_seq
   let iter = Seq.iter
   let vanish () = Seq.empty
 

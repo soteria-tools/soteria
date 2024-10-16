@@ -6,20 +6,22 @@ let setup_console_log level =
   Logs.set_reporter (Logs_fmt.reporter ());
   ()
 
-let setup_stderr_log level =
+let setup_stderr_log ~log_lsp level =
   Logs.set_level level;
   let fmt_reporter = Logs.format_reporter ~app:Fmt.stderr ~dst:Fmt.stderr () in
-  (* A reporter that filters out logging from SMT. *)
   let reporter =
-    Logs.
-      {
-        report =
-          (fun src level ~over k msgf ->
-            if Src.equal src Z3solver.log_src then (
-              over ();
-              k ())
-            else fmt_reporter.report src level ~over k msgf);
-      }
+    if log_lsp then fmt_reporter
+    else
+      (* A reporter that filters out logging from SMT. *)
+      Logs.
+        {
+          report =
+            (fun src level ~over k msgf ->
+              if Src.equal src Z3solver.log_src then (
+                over ();
+                k ())
+              else fmt_reporter.report src level ~over k msgf);
+        }
   in
   Logs.set_reporter reporter
 
@@ -71,35 +73,47 @@ let load_core_stdlib_shim () =
 let load_core_impl_shim _stdlib _impl_name =
   Exception.Result (Pmap.empty Implementation.implementation_constant_compare)
 
-let frontend cpp_cmd filename =
-  let open Cerb_backend.Pipeline in
-  let ( let* ) = Exception.except_bind in
-  let conf =
-    {
-      debug_level = 0;
-      pprints = [];
-      astprints = [];
-      ppflags = [];
-      ppouts = [];
-      typecheck_core = false;
-      rewrite_core = false;
-      sequentialise_core = false;
-      cpp_cmd;
-      cpp_stderr = true;
-    }
-  in
-  set_cerb_conf ();
-  Ocaml_implementation.(set HafniumImpl.impl);
-  L.debug (fun m -> m "About to load core stdlib");
-  let* stdlib = load_core_stdlib_shim () in
-  L.debug (fun m -> m "Core stdlib loaded");
-  let* impl = load_core_impl_shim stdlib impl_name in
-  c_frontend (conf, io) (stdlib, impl) ~filename
+module Frontend = struct
+  let frontend = ref (fun _ -> failwith "Frontend not set")
 
-let cpp_cmd = "cc -E -C -Werror -nostdinc -undef "
+  let init () =
+    let result =
+      let open Cerb_backend.Pipeline in
+      let cpp_cmd = "cc -E -C -Werror -nostdinc -undef " in
+      let ( let* ) = Exception.except_bind in
+      let conf =
+        {
+          debug_level = 0;
+          pprints = [];
+          astprints = [];
+          ppflags = [];
+          ppouts = [];
+          typecheck_core = false;
+          rewrite_core = false;
+          sequentialise_core = false;
+          cpp_cmd;
+          cpp_stderr = true;
+        }
+      in
+      set_cerb_conf ();
+      Ocaml_implementation.(set HafniumImpl.impl);
+      L.debug (fun m -> m "About to load core stdlib");
+      let* stdlib = load_core_stdlib_shim () in
+      L.debug (fun m -> m "Core stdlib loaded");
+      let* impl = load_core_impl_shim stdlib impl_name in
+      Exception.Result
+        (fun filename -> c_frontend (conf, io) (stdlib, impl) ~filename)
+    in
+    match result with
+    | Exception.Result f -> frontend := f
+    | Exception.Exception msg ->
+        frontend := fun _ -> failwith ("Failed to initialize frontend: " ^ msg)
+
+  let frontend filename = !frontend filename
+end
 
 let parse_ail file =
-  match frontend cpp_cmd file with
+  match Frontend.frontend file with
   | Result (_, (_, ast)) -> ast
   | Exception (loc, err) ->
       Fmt.failwith "Failed to parse ail with error:\n%s\n\nat %s"
@@ -141,11 +155,12 @@ let exec_main file_name =
     Interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
   in
   let () = L.debug (fun m -> m "Starting symex") in
-  Csymex.force symex
+  Csymex.run symex
 
 let exec_main_and_print log_level smt_file file_name =
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
+  Frontend.init ();
   let result = exec_main file_name in
   L.app (fun m ->
       m "Symex terminated with the following outcomes: %a"
@@ -163,5 +178,6 @@ let run_to_errors content =
   |> List.filter_map (function Ok _ -> None | Error e -> Some e)
 
 let lsp () =
-  setup_stderr_log (Some Logs.Debug);
+  setup_stderr_log ~log_lsp:true (Some Logs.Debug);
+  Frontend.init ();
   Bfa_c_lsp.run ~run_to_errors ()

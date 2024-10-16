@@ -1,8 +1,8 @@
 (executable
  (name bfa_vscode)
- (libraries js_of_ocaml vscode promise_jsoo)
+ (libraries js_of_ocaml vscode vscode.languageclient promise_jsoo)
  (preprocess
-  (pps js_of_ocaml-ppx))
+  (pps js_of_ocaml-ppx ppx_deriving.make))
  (modes js)
  (js_of_ocaml
   (flags --source-map --pretty)))

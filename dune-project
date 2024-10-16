@@ -87,5 +87,6 @@
   (ocaml-lsp-server :dev)
   js_of_ocaml
   js_of_ocaml-ppx
+  ppx_deriving
   promise_jsoo
   vscode))
