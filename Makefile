@@ -10,6 +10,9 @@ ocaml-test:
 .PHONY: switch
 switch:
 	opam switch create . --deps-only --with-test --with-doc
+	
+ocaml-deps:
+	opam install . --deps-only --with-test --with-doc
 
 .PHONY: npm-deps
 npm-deps:

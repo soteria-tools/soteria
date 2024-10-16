@@ -1,5 +1,6 @@
 module Value = Svalue
 
+let z3_env_var = "BFA_Z3_PATH"
 let log_src = Logs.Src.create "bfa_c.SOLVER"
 let debug_str ~prefix s = Logs.debug ~src:log_src (fun m -> m "%s: %s" prefix s)
 
@@ -21,8 +22,8 @@ let smallest_power_of_two_greater_than n =
 
 let solver_log =
   {
-    send = debug_str ~prefix:"SMT/SEND";
-    receive = debug_str ~prefix:"SMT/RECV";
+    send = debug_str ~prefix:"SMT:SEND";
+    receive = debug_str ~prefix:"SMT:RECV";
     stop = Fun.id;
   }
 
@@ -47,7 +48,11 @@ let log_sexp sexp =
       output_char oc '\n';
       flush oc
 
-let solver_config = { z3 with log = solver_log }
+let solver_config =
+  let base_config = { z3 with log = solver_log } in
+  match Sys.getenv_opt z3_env_var with
+  | None -> base_config
+  | Some exe -> { z3 with exe }
 
 let solver =
   let solver = new_solver solver_config in
