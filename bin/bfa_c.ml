@@ -14,7 +14,9 @@ let dump_smt_arg =
 let exec_main_t =
   Term.(
     const Bfa_c_lib.Driver.exec_main_and_print
-    $ Logs_cli.level () $ dump_smt_arg $ file_arg)
+    $ Logs_cli.level ()
+    $ dump_smt_arg
+    $ file_arg)
 
 let exec_main_cmd = Cmd.v (Cmd.info "exec-main") exec_main_t
 let lsp_t = Term.(const Bfa_c_lib.Driver.lsp $ const ())

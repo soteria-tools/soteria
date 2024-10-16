@@ -34,6 +34,7 @@
    (and
     :build
     (>= 3.14.0)))
+  (shexp :build)
   (ocamlformat
    (and
     :dev

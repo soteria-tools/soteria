@@ -1,5 +1,6 @@
-# Created by https://www.toptal.com/developers/gitignore/api/node,ocaml
-# Edit at https://www.toptal.com/developers/gitignore?templates=node,ocaml
+### Packaging ###
+*.vsix
+package
 
 ### Node ###
 # Logs
@@ -205,8 +206,5 @@ Temporary Items
 # iCloud generated files
 *.icloud
 
-### VSCode ###
-
-*.vsix
-
-# End of https://www.toptal.com/developers/gitignore/api/node,ocaml
+# Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
+# and modified by hand afterwards

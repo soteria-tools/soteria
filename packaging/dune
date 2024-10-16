@@ -1,0 +1,13 @@
+(executable
+ (name package)
+ (libraries cmdliner shexp.process str))
+
+(rule ; This rule makes sure the macOS_dylibs.txt are up-to-date.
+ (alias dylist-file)
+ (deps %{bin:bfa-c} ./package.exe)
+ (action
+  (progn
+   (with-stdout-to
+    macOS_dylibs_found.txt
+    (run ./package.exe infer-dylibs %{bin:bfa-c}))
+   (diff? macOS_dylibs.txt macOS_dylibs_found.txt))))
