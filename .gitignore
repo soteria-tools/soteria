@@ -205,4 +205,8 @@ Temporary Items
 # iCloud generated files
 *.icloud
 
+### VSCode ###
+
+*.vsix
+
 # End of https://www.toptal.com/developers/gitignore/api/node,ocaml
