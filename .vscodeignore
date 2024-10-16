@@ -15,4 +15,5 @@ test
 dune-project
 Makefile
 yarn.lock
+packaging
 package

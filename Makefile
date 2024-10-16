@@ -1,6 +1,7 @@
 OPAM=opam
 OPAMX=$(OPAM) exec --
 DUNE=$(OPAMX) dune
+WHICHX=$(DUNE) exec -- which 
 
 YARN=yarn
 
@@ -20,16 +21,21 @@ ocaml-test:
 	
 	
 ##### Packaging bfa-c #####
+
+# From inside the package folder one can run:
+# BFA_Z3_PATH=./bin/z3 DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main file.c
 .PHONY: package
-package:
-	rm -rf $(PACKAGE_DIST)
+package: packaging/bin-locations.txt
 	$(DUNE) build @dylist-file
-	$(PACKAGING_BIN) copy-libs $(DYLIB_LIST_FILE) $(PACKAGE_DIST)/lib
-# TODO: the rm -rf should not be there, the packaging script should be removing existing dylibs to avoid errors
-# Next thing to do: copy the bfa-c binary, copy a version of z3? or just leave it to do on the extension's side?
-# Ask manon to try with the following command: BFA_Z3_PATH=bin/z3 DYLD_LIBRARY_PATH=lib:$DYLD_LIBRARY_PATH bin/bfa_c.exe exec-main test/simple.t/sym.c
+	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(PACKAGE_DIST)/lib
+	$(PACKAGING_BIN) copy-files packaging/bin-locations.txt $(PACKAGE_DIST)/bin
+	rm -f package.zip
+	zip package.zip -r $(PACKAGE_DIST)
 	
 
+packaging/bin-locations.txt:
+	$(WHICHX) bfa-c > $@
+	$(WHICHX) z3 >> $@
 
 ##### Switch creation / dependency setup #####
 

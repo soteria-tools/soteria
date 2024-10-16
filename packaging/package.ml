@@ -22,18 +22,21 @@ module Infer_Dylibs = struct
   let cmd = Cmd.v (Cmd.info "infer-dylibs") term
 end
 
-module Copy_libs = struct
+module Copy_files = struct
   let ignored_regexp = Str.quote "libSystem.B.dylib" |> Str.regexp
 
   let should_ignore lib =
     try Str.search_forward ignored_regexp lib 0 >= 0 with Not_found -> false
 
-  let copy_libs list_file dest_dir =
+  let copy_files list_file dest_dir =
     let () = mkdir ~p:() dest_dir |> eval in
-    let copy_lib lib =
-      let dest = Filename.concat dest_dir (Filename.basename lib) in
-      let () = run "cp" [ lib; dest ] |> eval in
-      Printf.printf "Copied %s to %s\n" lib dest
+    let copy_file f =
+      let dest = Filename.concat dest_dir (Filename.basename f) in
+      if Sys.file_exists dest then (
+        Printf.printf "%s already exists, removing it\n" dest;
+        eval (rm dest));
+      let () = run "cp" [ f; dest ] |> eval in
+      Printf.printf "Copied %s to %s\n" f dest
     in
     let ic = open_in list_file in
     try
@@ -41,7 +44,7 @@ module Copy_libs = struct
         let il = input_line ic |> String.trim in
         (* We take care of trailing whitespace / new lines *)
         if should_ignore il then Printf.printf "Ignoring %s\n" il
-        else if il <> "" then copy_lib il
+        else if il <> "" then copy_file il
         else raise End_of_file
       done
     with End_of_file -> close_in ic
@@ -52,8 +55,8 @@ module Copy_libs = struct
       & pos 0 (some file) None
       & info [] ~docv:"LIST_FILE"
           ~doc:
-            "Path to the file that contains the list of libraries to copy. One \
-             library per line")
+            "Path to the file that contains the list of files to copy. One \
+             file per line")
 
   let dest_dir_arg =
     Arg.(
@@ -61,9 +64,9 @@ module Copy_libs = struct
       & pos 1 (some string) None
       & info [] ~docv:"DEST_DIR" ~doc:"Path to the destination directory")
 
-  let term = Term.(const copy_libs $ list_file_arg $ dest_dir_arg)
-  let cmd = Cmd.v (Cmd.info "copy-libs") term
+  let term = Term.(const copy_files $ list_file_arg $ dest_dir_arg)
+  let cmd = Cmd.v (Cmd.info "copy-files") term
 end
 
-let cmd = Cmd.group (Cmd.info "package") [ Infer_Dylibs.cmd; Copy_libs.cmd ]
+let cmd = Cmd.group (Cmd.info "package") [ Infer_Dylibs.cmd; Copy_files.cmd ]
 let () = exit @@ Cmd.eval cmd

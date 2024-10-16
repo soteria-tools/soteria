@@ -1,6 +1,8 @@
 ### Packaging ###
 *.vsix
 package
+packaging/bin-locations.txt
+package.zip
 
 ### Node ###
 # Logs
