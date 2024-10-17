@@ -1,6 +1,12 @@
 (executable
  (name bfa_vscode)
- (libraries js_of_ocaml vscode vscode.languageclient promise_jsoo)
+ (libraries
+  js_of_ocaml
+  vscode
+  vscode.languageclient
+  vscode.node
+  vscode.interop
+  promise_jsoo)
  (preprocess
   (pps js_of_ocaml-ppx ppx_deriving.make))
  (modes js)
