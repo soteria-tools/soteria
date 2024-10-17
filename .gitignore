@@ -2,6 +2,7 @@
 *.vsix
 package
 packaging/bin-locations.txt
+packaging/macOS_dylibs.txt
 package.zip
 
 ### Node ###

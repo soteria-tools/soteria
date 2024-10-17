@@ -7,6 +7,7 @@ YARN=yarn
 
 DYLIB_LIST_FILE=packaging/macOS_dylibs.txt
 PACKAGING_BIN=$(DUNE) exec -- packaging/package.exe
+BFA_C_BIN=_build/install/default/bin/bfa-c
 
 PACKAGE_DIST=package
 
@@ -25,7 +26,7 @@ ocaml-test:
 # From inside the package folder one can run:
 # BFA_Z3_PATH=./bin/z3 DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main file.c
 .PHONY: package
-package: packaging/bin-locations.txt
+package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	$(DUNE) build @dylist-file
 	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(PACKAGE_DIST)/lib
 	$(PACKAGING_BIN) copy-files packaging/bin-locations.txt $(PACKAGE_DIST)/bin
@@ -37,12 +38,16 @@ packaging/bin-locations.txt:
 	$(WHICHX) bfa-c > $@
 	$(WHICHX) z3 >> $@
 
+packaging/macOS_dylibs.txt:
+	$(PACKAGING_BIN) infer-dylibs $(BFA_C_BIN) > $@
+
 ##### Switch creation / dependency setup #####
 
 .PHONY: switch
 switch:
 	$(OPAM) switch create . --deps-only --with-test --with-doc
 	
+.PHONY: ocaml-deps
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc
 
@@ -68,3 +73,9 @@ js-bundle: vscode-ocaml
 .PHONY: vscode-ocaml
 vscode-ocaml:
 	$(DUNE) build extension/bfa_vscode.bc.js
+	
+.PHONY: clean
+clean:
+	$(DUNE) clean
+	rm -rf $(PACKAGE_DIST)
+	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt

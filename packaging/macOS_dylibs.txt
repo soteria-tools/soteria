@@ -1,3 +1,0 @@
-/usr/local/opt/zstd/lib/libzstd.1.dylib
-/usr/local/opt/gmp/lib/libgmp.10.dylib
-/usr/lib/libSystem.B.dylib
