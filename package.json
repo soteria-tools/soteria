@@ -21,6 +21,13 @@
   "activationEvents": [
     "onLanguage:c"
   ],
+  "commands": [
+    {
+      "command": "bfa.server.restart",
+      "category": "BFA",
+      "title": "Restart server"
+    }
+  ],
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
   },

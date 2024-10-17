@@ -12,6 +12,7 @@ test
 .ocamlformat
 *.opam
 *.opam.template
+*.vsix
 dune-project
 Makefile
 yarn.lock

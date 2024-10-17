@@ -1,2 +1,3 @@
 version=0.26.2
 break-infix=wrap-or-vertical
+doc-comments=before

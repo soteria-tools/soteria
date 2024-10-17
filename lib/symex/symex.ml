@@ -21,8 +21,8 @@ module type S = sig
   val abort : unit -> 'a t
   val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
 
-  val iter : ('a -> unit) -> 'a t -> unit
   (** Careful, this consumes the symbolic execution! *)
+  val iter : ('a -> unit) -> 'a t -> unit
 
   module Result : sig
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
