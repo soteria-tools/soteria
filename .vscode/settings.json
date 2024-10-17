@@ -2,5 +2,5 @@
   "ocaml.sandbox": {
     "kind": "opam",
     "switch": "${workspaceFolder:bfa-ocaml}"
-  }
+  },
 }

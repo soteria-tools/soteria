@@ -1,5 +1,6 @@
 include Vscode
 include Vscode_languageclient
+include Promise.Syntax
 
 let show_message kind fmt =
   let k message =

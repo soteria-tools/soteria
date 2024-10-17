@@ -13,6 +13,7 @@ test
 *.opam
 *.opam.template
 *.vsix
+package.zip
 dune-project
 Makefile
 yarn.lock

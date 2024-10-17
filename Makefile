@@ -55,6 +55,11 @@ ocaml-deps:
 npm-deps:
 	$(YARN) install --immutable
 	
+.PHONY: vscode-reinstall-dev
+vscode-reinstall-dev: vscode-package
+	$(YARN) install
+		
+	
 .PHONY: vscode-package
 vscode-package: vscode
 	$(YARN) package

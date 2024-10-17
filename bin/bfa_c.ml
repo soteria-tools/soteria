@@ -11,15 +11,28 @@ let dump_smt_arg =
     & opt (some string) None
     & info [ "dump-smt-to"; "dump-smt" ] ~docv:"SMT_FILE" ~doc)
 
-let exec_main_t =
-  Term.(
-    const Bfa_c_lib.Driver.exec_main_and_print
-    $ Logs_cli.level ()
-    $ dump_smt_arg
-    $ file_arg)
+let version_arg =
+  let doc = "Print version information" in
+  Arg.(value & flag & info [ "version" ] ~doc)
 
-let exec_main_cmd = Cmd.v (Cmd.info "exec-main") exec_main_t
-let lsp_t = Term.(const Bfa_c_lib.Driver.lsp $ const ())
-let lsp_cmd = Cmd.v (Cmd.info "lsp") lsp_t
-let cmd = Cmd.group (Cmd.info "bfa-c") [ exec_main_cmd; lsp_cmd ]
+module Exec_main = struct
+  let term =
+    Term.(
+      const Bfa_c_lib.Driver.exec_main_and_print
+      $ Logs_cli.level ()
+      $ dump_smt_arg
+      $ file_arg)
+
+  let cmd = Cmd.v (Cmd.info "exec-main") term
+end
+
+module Lsp = struct
+  let lsp show_version =
+    if show_version then print_endline "dev" else Bfa_c_lib.Driver.lsp ()
+
+  let term = Term.(const lsp $ version_arg)
+  let cmd = Cmd.v (Cmd.info "lsp") term
+end
+
+let cmd = Cmd.group (Cmd.info "bfa-c") [ Exec_main.cmd; Lsp.cmd ]
 let () = exit @@ Cmd.eval cmd

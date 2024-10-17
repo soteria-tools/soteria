@@ -21,13 +21,37 @@
   "activationEvents": [
     "onLanguage:c"
   ],
-  "commands": [
-    {
-      "command": "bfa.server.restart",
-      "category": "BFA",
-      "title": "Restart server"
+  "contributes": {
+    "commands": [
+      {
+        "command": "bfa.server.restart",
+        "category": "BFA",
+        "title": "Restart server"
+      }
+    ],
+    "configuration": {
+      "title": "BFA for C",
+      "properties": {
+        "bfa.server.kind": {
+          "type": "object",
+          "default": {
+            "kind": "shell",
+            "cmd": "opam",
+            "args": [
+              "exec",
+              "--",
+              "dune",
+              "exec",
+              "--",
+              "bfa-c",
+              "lsp"
+            ]
+          },
+          "description": "Kind of BFA server: either shell, or auto (where the server is fetched and installed on the user's side)"
+        }
+      }
     }
-  ],
+  },
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
   },
@@ -43,7 +67,7 @@
   "scripts": {
     "watch": "esbuild _build/default/extension/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --sourcemap --watch",
     "compile": "esbuild _build/default/extension/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --sourcemap --minify",
-    "package": "vsce package --out package/bfa-vscode.vsix --no-dependencies",
+    "package": "vsce package --out bfa-vscode.vsix --no-dependencies",
     "install": "code --force --install-extension bfa-vscode.vsix"
   }
 }
