@@ -30,8 +30,6 @@ package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	$(DUNE) build @dylist-file
 	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(PACKAGE_DIST)/lib
 	$(PACKAGING_BIN) copy-files packaging/bin-locations.txt $(PACKAGE_DIST)/bin
-	rm -f package.zip
-	zip package.zip -r $(PACKAGE_DIST)
 	
 
 packaging/bin-locations.txt:

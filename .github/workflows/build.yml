@@ -13,20 +13,52 @@ on:
 jobs:
 
   build:
-
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        operating-system: [macos-latest]
+    runs-on: ${{ matrix.operating-system }}
     steps:
+      # Setup steps: checkout, z3, node, ocaml
       - uses: actions/checkout@v4
       - name: Setup Z3
         uses: cda-tum/setup-z3@v1
         id: z3
-      - uses: ocaml/setup-ocaml@v3
+      - name: Setup node
+        uses: actions/setup-node@v4
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: 5.2.0
           dune-cache: true
+      # OCaml build and tests
       - name: setup dependencies
-        run: opam install . --deps-only --with-test --with-doc --yes
-      - name: build
-        run: opam exec -- dune build @all
+        run: make ocaml-deps
+      - name: build all
+        run: make ocaml
       - name: test
-        run: opam exec -- dune test
+        run: make ocaml-test
+      # Packaging OCaml distribution and sending it as artifact
+      - name: OCaml zip file creation
+        run: make package
+      - name: Upload zip file
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-package
+          path: package
+          if-no-files-found: error
+        
+  test-package:
+    strategy:
+      matrix:
+        operating-system: [macos-latest]
+    runs-on: ${{ matrix.operating-system }}
+    needs: build
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-package
+      - name: Write dummy C file
+        run: echo "int main() { return 12; }" > test.c
+      - run: BFA_Z3_PATH=./bin/z3 DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main test.c
+        
