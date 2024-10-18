@@ -13,6 +13,14 @@ let _restart_server =
   Dynarray.add_last commands cmd;
   cmd
 
+let _toggle_debug_mode =
+  let handler (instance : Instance.t) ~args:_ =
+    Instance.toggle_debug_mode instance
+  in
+  let cmd = { id = Constants.Commands.toggle_debug_mode; handler } in
+  Dynarray.add_last commands cmd;
+  cmd
+
 let register_command extension instance { id; handler } =
   let callback = handler instance in
   let disposable = Vscode.Commands.registerCommand ~command:id ~callback in

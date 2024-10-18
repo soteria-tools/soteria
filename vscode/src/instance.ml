@@ -47,6 +47,13 @@ let start_server instance =
   in
   LanguageClient.start client
 
+let toggle_debug_mode instance =
+  match !(instance.server) with
+  | None -> show_message `Warn "Server is not running"
+  | Some server ->
+      (* TODO: Put constant in a common library shared between frontend and backend *)
+      LanguageClient.sendNotification server "bfa/toggleDebugMode" Ojs.null
+
 let disposable instance =
   Disposable.make ~dispose:(fun () ->
       let (_ : unit Promise.t) = stop_server instance in

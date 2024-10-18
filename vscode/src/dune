@@ -4,8 +4,8 @@
   js_of_ocaml
   vscode
   vscode.languageclient
-  vscode.node
-  vscode.interop
+  vscode-node
+  vscode-interop
   promise_jsoo)
  (preprocess
   (pps gen_js_api.ppx ppx_deriving.make))

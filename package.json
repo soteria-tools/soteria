@@ -27,6 +27,11 @@
         "command": "bfa.server.restart",
         "category": "BFA",
         "title": "Restart server"
+      },
+      {
+        "command": "bfa.server.toggleDebugMode",
+        "category": "BFA",
+        "title": "Toggle debug mode"
       }
     ],
     "configuration": {
