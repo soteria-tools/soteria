@@ -1,0 +1,44 @@
+// A launch configuration that compiles the extension and then opens it inside a new window
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "extensionHost",
+      "request": "launch",
+      "name": "Launch Client And Watch",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceRoot}",
+        "${workspaceRoot}/extension-test-workspace"
+      ],
+      "outFiles": [
+        "${workspaceRoot}/dist/bfa_vscode.bc.js",
+        "${workspaceRoot}/dist/bfa_vscode.bc.js.map"
+      ],
+      "autoAttachChildProcesses": true,
+      "preLaunchTask": {
+        "type": "npm",
+        "script": "watch-all",
+      }
+    },
+    {
+      "type": "extensionHost",
+      "request": "launch",
+      "name": "Launch Client",
+      "runtimeExecutable": "${execPath}",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceRoot}",
+        "${workspaceRoot}/extension-test-workspace"
+      ],
+      "outFiles": [
+        "${workspaceRoot}/dist/bfa_vscode.bc.js",
+        "${workspaceRoot}/dist/bfa_vscode.bc.js.map"
+      ],
+      "autoAttachChildProcesses": true,
+      "preLaunchTask": {
+        "type": "npm",
+        "script": "watch-all",
+      }
+    }
+  ]
+}

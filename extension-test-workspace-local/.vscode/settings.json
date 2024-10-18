@@ -1,0 +1,15 @@
+{
+  "bfa.server.kind": {
+    "kind": "shell",
+    "cmd": "opam",
+    "args": [
+      "exec",
+      "--",
+      "dune",
+      "exec",
+      "--",
+      "bfa-c",
+      "lsp"
+    ]
+  }
+}

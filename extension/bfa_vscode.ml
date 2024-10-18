@@ -1,17 +1,45 @@
 open Import
 
-let storage_path instance extension =
-  let uri = ExtensionContext.globalStorageUri extension in
-  let path = Uri.fsPath uri in
-  Server.log_message ~instance `Info "Got storage path: %s" path;
-  path
+let should_install ~ask extension =
+  match Settings.Server_kind.get () with
+  | Auto ->
+      (* In auto mode we check for the current installation *)
+      let* installed = Install.check_version (install_path extension) in
+      if not installed then
+        if ask then
+          let msg =
+            "BFA is not installed. Do you want to install it now? This will \
+             download a binary from the internet."
+          in
+          let action = ("Install", `NeedInstall) in
+          let* choice =
+            Window.showInformationMessage ~message:msg ~choices:[ action ] ()
+          in
+          Promise.return (Option.value ~default:`RefusedInstall choice)
+        else Promise.return `NeedInstall
+      else Promise.return `NoInstall
+  | _ -> Promise.return `NoInstall
+
+let with_stop f =
+  try f ()
+  with StopExtension msg ->
+    show_message `Error "Stopping BFA: %s" msg;
+    Promise.return ()
 
 let activate (extension : Vscode.ExtensionContext.t) =
-  let instance = Server.empty_instance () in
-  Server.log_message ~instance `Info "About to get storage path";
-  let* _ = Install.check_version (storage_path instance extension) in
-  let* () = Server.start instance in
-  ExtensionContext.subscribe ~disposable:(Server.disposable instance) extension;
+  with_stop @@ fun () ->
+  let instance = Instance.empty extension in
+  let* should_install = should_install ~ask:true extension in
+  let* () =
+    match should_install with
+    | `NeedInstall -> Install.install (storage_path extension)
+    | `RefusedInstall -> raise (StopExtension "Installation refused")
+    | `NoInstall -> Promise.return ()
+  in
+  let* () = Instance.start_server instance in
+  ExtensionContext.subscribe
+    ~disposable:(Instance.disposable instance)
+    extension;
   Bfa_commands.register_all_commands extension instance;
   Promise.return ()
 

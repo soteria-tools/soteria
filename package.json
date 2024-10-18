@@ -53,21 +53,25 @@
     }
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
-    "vscode": "^1.1.37",
     "@biomejs/biome": "^1.9.3",
     "@tsconfig/node22": "^22.0.0",
     "@tsconfig/strictest": "^2.0.5",
     "@types/vscode": "^1.75.1",
     "@vscode/test-electron": "^2.3.9",
-    "esbuild": "^0.24.0"
+    "concurrently": "^9.0.1",
+    "esbuild": "^0.24.0",
+    "vscode": "^1.1.37"
   },
   "scripts": {
+    "compile-all": "make for-local",
+    "watch-all": "concurrently --kill-others -c red,blue --names 'ocaml,vscode' 'yarn watch' 'opam exec -- dune build --watch'",
     "watch": "esbuild _build/default/extension/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --sourcemap --watch",
     "compile": "esbuild _build/default/extension/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --sourcemap --minify",
     "package": "vsce package --out bfa-vscode.vsix --no-dependencies",
-    "install": "code --force --install-extension bfa-vscode.vsix"
+    "install-ext": "code --force --install-extension bfa-vscode.vsix"
   }
 }

@@ -57,7 +57,7 @@ npm-deps:
 	
 .PHONY: vscode-reinstall-dev
 vscode-reinstall-dev: vscode-package
-	$(YARN) install
+	$(YARN) install-ext
 		
 	
 .PHONY: vscode-package
@@ -71,14 +71,17 @@ vscode: js-bundle
 .PHONY: js-bundle
 js-bundle: vscode-ocaml
 	$(YARN) compile
-	
 
 .PHONY: vscode-ocaml
 vscode-ocaml:
 	$(DUNE) build extension/bfa_vscode.bc.js
 	
+.PHONY: for-local
+for-local: ocaml vscode
+	
 .PHONY: clean
 clean:
 	$(DUNE) clean
+	$(YARN) clean
 	rm -rf $(PACKAGE_DIST)
 	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt

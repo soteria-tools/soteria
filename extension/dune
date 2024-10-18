@@ -8,7 +8,8 @@
   vscode.interop
   promise_jsoo)
  (preprocess
-  (pps js_of_ocaml-ppx ppx_deriving.make))
+  (pps gen_js_api.ppx ppx_deriving.make))
  (modes js)
  (js_of_ocaml
+  (javascript_files download_file.js)
   (flags --source-map --pretty)))

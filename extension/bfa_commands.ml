@@ -1,12 +1,12 @@
 open Import
 
-type t = { id : string; handler : Server.instance -> args:Ojs.t list -> unit }
+type t = { id : string; handler : Instance.t -> args:Ojs.t list -> unit }
 
 let commands = Dynarray.create ()
 
 let _restart_server =
-  let handler (instance : Server.instance) ~args:_ =
-    let (_ : unit Promise.t) = Server.start instance in
+  let handler (instance : Instance.t) ~args:_ =
+    let (_ : unit Promise.t) = Instance.start_server instance in
     ()
   in
   let cmd = { id = Constants.Commands.restart_server; handler } in
@@ -16,7 +16,7 @@ let _restart_server =
 let register_command extension instance { id; handler } =
   let callback = handler instance in
   let disposable = Vscode.Commands.registerCommand ~command:id ~callback in
-  Server.log_message ~instance `Info "Registered command %s" id;
+  Logging.info "Registered command %s" id;
   ExtensionContext.subscribe extension ~disposable
 
 let register_all_commands extension instance =

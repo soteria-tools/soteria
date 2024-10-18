@@ -29,8 +29,9 @@ let set ?section setting v =
         ~configurationTarget:(`ConfigurationTarget setting.scope) ()
 
 module Server_kind = struct
-  type t = Auto | Shell of Executable.t
+  type t = Auto | Shell of Install.executable
 
+  let default = Auto
   let key = "bfa.server.kind"
 
   let of_json json =
@@ -38,10 +39,9 @@ module Server_kind = struct
     match field "kind" string json with
     | "auto" -> Auto
     | "shell" ->
-        let cmd = field "cmd" string json in
+        let command = field "cmd" string json in
         let args = field "args" (list string) json in
-        let opt = ExecutableOptions.create ~shell:false () in
-        let exe = Executable.create ~command:cmd ~args ~options:opt () in
+        let exe = Install.make_executable ~command ~args () in
         Shell exe
     | _ -> raise (Jsonoo.Decode_error "Invalid server kind")
 
@@ -52,11 +52,10 @@ module Server_kind = struct
           object_
             [
               ("kind", string "shell");
-              ("cmd", string (Executable.command exe));
-              ( "args",
-                (list string) (Executable.args exe |> Option.value ~default:[])
-              );
+              ("cmd", string exe.command);
+              ("args", (list string) exe.args);
             ])
 
   let s = make ~key ~of_json ~to_json ~scope:ConfigurationTarget.Workspace
+  let get () = get ~section:"bfa" s |> Option.value ~default
 end
