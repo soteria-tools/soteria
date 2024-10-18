@@ -2,7 +2,7 @@ open Import
 
 let archive_name () =
   match (Node.Process.arch, Node.Process.platform) with
-  | "x64", "darwin" -> "macos-intel-package" (* Intel MacOS *)
+  | "x64", "darwin" -> "macos-13-package" (* Intel MacOS *)
   | "arm64", "darwin" -> "macos-latest-package" (* Apple Silicon MacOS *)
   | _ -> raise (StopExtension "Unsupported platform")
 

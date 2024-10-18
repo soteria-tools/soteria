@@ -5,17 +5,16 @@ name: CI
 permissions: read-all
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
-
   build:
     strategy:
       matrix:
-        operating-system: [macos-latest]
+        operating-system: [macos-latest, macos-13]
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3, node, ocaml
@@ -33,10 +32,15 @@ jobs:
       # OCaml build and tests
       - name: setup dependencies
         run: make ocaml-deps
-      - name: build all
+      - name: Build OCaml stuff
         run: make ocaml
       - name: test
-        run: make ocaml-test
+        run: Make ocaml-test
+      # Building js stuff
+      - name: Install JS dependencies
+        run: yarn install
+      - name: Build JS stuff
+        run: yarn compile
       # Packaging OCaml distribution and sending it as artifact
       - name: OCaml zip file creation
         run: make package
@@ -46,7 +50,7 @@ jobs:
           name: ${{ matrix.operating-system }}-package
           path: package
           if-no-files-found: error
-        
+
   test-package:
     strategy:
       matrix:
@@ -61,10 +65,9 @@ jobs:
       - name: Add executable permissions
         run: |
           chmod +x ./bin/bfa-c
-          chmod +x ./bin/z3 
+          chmod +x ./bin/z3
       - name: Write dummy C file
         run: echo "int main() { return 12; }" > test.c
       - run: DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main test.c
         env:
           BFA_Z3_PATH: ./bin/z3
-        
