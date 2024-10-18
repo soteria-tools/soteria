@@ -23,8 +23,8 @@ depends: [
   "linol-eio" {>= "0.6"}
   "odoc" {with-doc}
   "dune" {>= "3.14" & build & >= "3.14.0"}
-  "ocamlformat" {dev & = "0.26.2"}
-  "ocaml-lsp-server" {dev}
+  "ocamlformat" {with-dev-detup & = "0.26.2"}
+  "ocaml-lsp-server" {with-dev-detupv}
 ]
 build: [
   ["dune" "subst"] {dev}

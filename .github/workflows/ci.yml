@@ -54,7 +54,7 @@ jobs:
   test-package:
     strategy:
       matrix:
-        operating-system: [macos-latest]
+        operating-system: [macos-latest, macos-13]
     runs-on: ${{ matrix.operating-system }}
     needs: build
     steps:

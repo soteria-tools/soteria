@@ -70,8 +70,8 @@
   "scripts": {
     "compile-all": "make for-local",
     "watch-all": "concurrently --kill-others -c red,blue --names 'ocaml,vscode' 'yarn watch' 'opam exec -- dune build --watch'",
-    "watch": "esbuild _build/default/extension/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --sourcemap --watch",
-    "compile": "esbuild _build/default/extension/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --sourcemap --minify",
+    "watch": "esbuild _build/default/vscode/src/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --watch",
+    "compile": "esbuild _build/default/vscode/src/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --minify",
     "package": "vsce package --out bfa-vscode.vsix --no-dependencies",
     "install-ext": "code --force --install-extension bfa-vscode.vsix",
     "test": "vscode-test"

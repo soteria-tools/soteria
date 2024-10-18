@@ -8,8 +8,10 @@ YARN=yarn
 DYLIB_LIST_FILE=packaging/macOS_dylibs.txt
 PACKAGING_BIN=$(DUNE) exec -- packaging/package.exe
 BFA_C_BIN=_build/install/default/bin/bfa-c
+VSCODE_BC_JS=vscode/src/bfa_vscode.bc.js
 
 PACKAGE_DIST=package
+VSCODE_DIST=dist
 
 ##### Normal ocaml stuff #####
 .PHONY: ocaml
@@ -74,7 +76,7 @@ js-bundle: vscode-ocaml
 
 .PHONY: vscode-ocaml
 vscode-ocaml:
-	$(DUNE) build extension/bfa_vscode.bc.js
+	$(DUNE) build $(BFA_BC_JS)
 	
 .PHONY: for-local
 for-local: ocaml vscode
@@ -82,6 +84,7 @@ for-local: ocaml vscode
 .PHONY: clean
 clean:
 	$(DUNE) clean
-	$(YARN) clean
 	rm -rf $(PACKAGE_DIST)
+	rm -rf $(VSCODE_DIST)
 	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt
+	rm -f bfa-vscode.vsix

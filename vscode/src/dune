@@ -12,4 +12,4 @@
  (modes js)
  (js_of_ocaml
   (javascript_files download_file.js)
-  (flags --source-map --pretty)))
+  (flags --pretty)))

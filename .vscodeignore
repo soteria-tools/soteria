@@ -19,3 +19,4 @@ Makefile
 yarn.lock
 packaging
 package
+secrets.env

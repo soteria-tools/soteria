@@ -9,6 +9,7 @@
       "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceRoot}",
+        "--disable-extensions",
         "${workspaceRoot}/extension-test-workspace"
       ],
       "outFiles": [

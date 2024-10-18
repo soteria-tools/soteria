@@ -37,9 +37,9 @@
   (shexp :build)
   (ocamlformat
    (and
-    :dev
+    :with-dev-detup
     (= 0.26.2)))
-  (ocaml-lsp-server :dev)))
+  (ocaml-lsp-server :with-dev-detup)))
 
 (package
  (name bfa-c)
@@ -69,9 +69,9 @@
     (>= 3.14.0)))
   (ocamlformat
    (and
-    :dev
+    :with-dev-detup
     (= 0.26.2)))
-  (ocaml-lsp-server :dev)))
+  (ocaml-lsp-server :with-dev-detupv)))
 
 (package
  (name bfa-vscode)
@@ -85,7 +85,11 @@
    (and
     :build
     (>= 3.14.0)))
-  (ocaml-lsp-server :dev)
+  (ocaml-lsp-server :with-dev-detup)
+  (ocamlformat
+   (and
+    :with-dev-detup
+    (= 0.26.2)))
   js_of_ocaml
   js_of_ocaml-ppx
   ppx_deriving
