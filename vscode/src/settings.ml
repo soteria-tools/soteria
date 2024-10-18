@@ -41,7 +41,10 @@ module Server_kind = struct
     | "shell" ->
         let command = field "cmd" string json in
         let args = field "args" (list string) json in
-        let exe = Install.make_executable ~command ~args () in
+        let env =
+          field "env" (dict string) json |> Hashtbl.to_seq |> List.of_seq
+        in
+        let exe = Install.make_executable ~command ~args ~env () in
         Shell exe
     | _ -> raise (Jsonoo.Decode_error "Invalid server kind")
 
@@ -57,5 +60,5 @@ module Server_kind = struct
             ])
 
   let s = make ~key ~of_json ~to_json ~scope:ConfigurationTarget.Workspace
-  let get () = get ~section:"bfa" s |> Option.value ~default
+  let get () = get s |> Option.value ~default
 end

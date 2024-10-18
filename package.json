@@ -50,7 +50,8 @@
               "--",
               "bfa-c",
               "lsp"
-            ]
+            ],
+            "env": {}
           },
           "description": "Kind of BFA server: either shell, or auto (where the server is fetched and installed on the user's side)"
         }

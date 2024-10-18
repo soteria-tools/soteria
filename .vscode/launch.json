@@ -10,7 +10,7 @@
       "args": [
         "--extensionDevelopmentPath=${workspaceRoot}",
         "--disable-extensions",
-        "${workspaceRoot}/extension-test-workspace"
+        "${workspaceRoot}/vscode/test-workspaces/auto-install"
       ],
       "outFiles": [
         "${workspaceRoot}/dist/bfa_vscode.bc.js",
@@ -29,7 +29,8 @@
       "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceRoot}",
-        "${workspaceRoot}/extension-test-workspace"
+        "--disable-extensions",
+        "${workspaceRoot}/vscode/test-workspaces/local-install"
       ],
       "outFiles": [
         "${workspaceRoot}/dist/bfa_vscode.bc.js",
@@ -38,7 +39,7 @@
       "autoAttachChildProcesses": true,
       "preLaunchTask": {
         "type": "npm",
-        "script": "watch-all",
+        "script": "compile-all",
       }
     }
   ]

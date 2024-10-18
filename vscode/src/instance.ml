@@ -14,10 +14,12 @@ let server_exe (exe : Install.executable) =
 let server_options instance =
   let open Settings.Server_kind in
   let server_kind = Settings.Server_kind.get () in
-  (* let server_kind = Settings.(get ~section:"bfa" s) in *)
   match server_kind with
-  | Shell exe -> server_exe exe
+  | Shell exe ->
+      Logging.info "Using shell server!";
+      server_exe exe
   | Auto ->
+      Logging.info "Using auto-installed server!";
       let exe = Install.executable instance.installed_path in
       server_exe exe
 
@@ -45,6 +47,7 @@ let start_server instance =
     LanguageClient.make ~id:"bfa-c" ~name:"Bfa for C" ~serverOptions
       ~clientOptions ()
   in
+  instance.server := Some client;
   LanguageClient.start client
 
 let toggle_debug_mode instance =

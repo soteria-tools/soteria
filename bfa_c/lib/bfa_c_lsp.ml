@@ -29,6 +29,7 @@ let error_to_diagnostic_opt (err, loc) =
     | `OutOfBounds -> Some (DiagnosticSeverity.Error, "Out of Bounds")
     | `UninitializedMemoryAccess ->
         Some (DiagnosticSeverity.Error, "Uninitialized Memory Access")
+    | `ParsingError s -> Some (DiagnosticSeverity.Error, s)
     | `UseAfterFree -> Some (DiagnosticSeverity.Error, "Use After Free")
   in
   Lsp.Types.Diagnostic.create ~message ~severity ~range:(cerb_loc_to_range loc)
@@ -36,7 +37,8 @@ let error_to_diagnostic_opt (err, loc) =
 
 class bfa_lsp_server run_to_errors =
   object (self)
-    inherit Linol_eio.Jsonrpc2.server
+    inherit Linol_eio.Jsonrpc2.server as super
+    val mutable debug_mode = true
 
     (* one env per document *)
 
@@ -50,9 +52,9 @@ class bfa_lsp_server run_to_errors =
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
         (_uri : Lsp.Types.DocumentUri.t) (contents : string) =
       let errors = run_to_errors contents in
+      let diags = List.filter_map error_to_diagnostic_opt errors in
       let diags =
-        get_abort_diagnostics ()
-        @ List.filter_map error_to_diagnostic_opt errors
+        if debug_mode then get_abort_diagnostics () @ diags else diags
       in
       notify_back#send_diagnostic diags
 
@@ -70,6 +72,13 @@ class bfa_lsp_server run_to_errors =
     (* On document closes, we remove the state associated to the file from the global
        hashtable state, to avoid leaking memory. *)
     method on_notif_doc_did_close ~notify_back:_ _d : unit Linol_eio.t = ()
+
+    method! on_notification ~notify_back ~server_request notif =
+      match notif with
+      | UnknownNotification { method_ = "bfa/toggleDebugMode"; _ } ->
+          L.debug (fun m -> m "Toggling debug mode");
+          debug_mode <- not debug_mode
+      | _ -> super#on_notification ~notify_back ~server_request notif
   end
 
 let run ~run_to_errors () =

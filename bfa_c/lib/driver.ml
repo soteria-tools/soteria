@@ -114,11 +114,13 @@ end
 
 let parse_ail file =
   match Frontend.frontend file with
-  | Result (_, (_, ast)) -> ast
+  | Result (_, (_, ast)) -> Ok ast
   | Exception (loc, err) ->
-      Fmt.failwith "Failed to parse ail with error:\n%s\n\nat %s"
-        (Pp_errors.short_message err)
-        (Cerb_location.location_to_string loc)
+      let msg =
+        Printf.sprintf "Failed to parse ail with error:\n%s"
+          (Pp_errors.short_message err)
+      in
+      Error (`ParsingError msg, loc)
 
 let is_main (def : Cabs.function_definition) =
   let decl = match def with FunDef (_, _, _, decl, _) -> decl in
@@ -134,28 +136,31 @@ let pp_err ft (err, _loc) =
   | `OutOfBounds -> Fmt.string ft "OutOfBounds"
   | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
   | `UseAfterFree -> Fmt.string ft "UseAfterFree"
+  | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
 
 let exec_main file_name =
   L.debug (fun m -> m "Starting to execute");
-  let entry_point, sigma = parse_ail file_name in
-  L.debug (fun m ->
-      m "Parsed as follows:\n=============\n%a=============" Fmt_ail.pp_program
-        (entry_point, sigma));
-  let entry_point =
-    match entry_point with
-    | None -> Fmt.failwith "No entry point function"
-    | Some e -> e
+  let open Syntaxes.Result in
+  let result =
+    let* entry_point, sigma = parse_ail file_name in
+    let* entry_point =
+      match entry_point with
+      | None ->
+          Error (`ParsingError "No entry point function", Cerb_location.unknown)
+      | Some e -> Ok e
+    in
+    L.debug (fun m -> m "Ending parse");
+    let entry_point =
+      sigma.function_definitions
+      |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)
+    in
+    let symex =
+      Interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
+    in
+    let () = L.debug (fun m -> m "Starting symex") in
+    Ok (Csymex.run symex)
   in
-  L.debug (fun m -> m "Ending parse");
-  let entry_point =
-    sigma.function_definitions
-    |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)
-  in
-  let symex =
-    Interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
-  in
-  let () = L.debug (fun m -> m "Starting symex") in
-  Csymex.run symex
+  match result with Ok v -> v | Error e -> [ Error e ]
 
 let exec_main_and_print log_level smt_file file_name =
   Z3solver.set_smt_file smt_file;

@@ -1,15 +1,12 @@
 {
   "bfa.server.kind": {
     "kind": "shell",
-    "cmd": "opam",
+    "cmd": "../../../_build/install/default/bin/bfa-c",
     "args": [
-      "exec",
-      "--",
-      "dune",
-      "exec",
-      "--",
-      "bfa-c",
       "lsp"
-    ]
+    ],
+    "env": {
+      "BFA_Z3_PATH": "/usr/local/bin/z3"
+    }
   }
 }
