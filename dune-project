@@ -94,4 +94,6 @@
   js_of_ocaml-ppx
   ppx_deriving
   promise_jsoo
-  vscode))
+  vscode
+  vscode-interop
+  vscode-node))

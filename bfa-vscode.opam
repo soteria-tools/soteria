@@ -17,6 +17,8 @@ depends: [
   "ppx_deriving"
   "promise_jsoo"
   "vscode"
+  "vscode-interop"
+  "vscode-node"
   "odoc" {with-doc}
 ]
 build: [
@@ -35,5 +37,7 @@ build: [
 ]
 dev-repo: "git+https://github.com/bugs-for-all/bfa.git"
 pin-depends: [
-  ["vscode.~dev" "git+https://github.com/giltho/vscode-ocaml-platform#e910f18b62c4e06385e92c51938c7e711b1edecf"]
+  ["vscode.~dev" "git+https://github.com/giltho/vscode-ocaml-platform#6e83e72c7ea71fbecbabaaf36056d20bbbdcfff4"]
+  ["vscode-node.~dev" "git+https://github.com/giltho/vscode-ocaml-platform#6e83e72c7ea71fbecbabaaf36056d20bbbdcfff4"]
+  ["vscode-interop.~dev" "git+https://github.com/giltho/vscode-ocaml-platform#6e83e72c7ea71fbecbabaaf36056d20bbbdcfff4"]
 ]
