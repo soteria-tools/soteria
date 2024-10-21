@@ -92,7 +92,7 @@ module Frontend = struct
           rewrite_core = false;
           sequentialise_core = false;
           cpp_cmd;
-          cpp_stderr = true;
+          cpp_stderr = false;
         }
       in
       set_cerb_conf ();
@@ -115,8 +115,8 @@ let parse_ail file =
   | Result (_, (_, ast)) -> Ok ast
   | Exception (loc, err) ->
       let msg =
-        Printf.sprintf "Failed to parse ail with error:\n%s"
-          (Pp_errors.short_message err)
+        Printf.sprintf "Failed to parse ail: %s"
+          (Pp_errors.to_string (loc, err))
       in
       Error (`ParsingError msg, loc)
 

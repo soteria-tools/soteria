@@ -35,7 +35,6 @@ let get_param_tys ~prog fid =
   in
   Csymex.of_opt_not_impl ~msg:"Couldn't find function prototype" ptys
 
-(* TODO: Ask Kayvan what the boolean [_what] is. *)
 let attach_bindings store (bindings : AilSyntax.bindings) =
   ListLabels.fold_left bindings ~init:store
     ~f:(fun store (pname, ((_loc, duration, _what), align, _quals, ty)) ->
@@ -70,7 +69,6 @@ let nondet_int_fun ~prog:_ ~args:_ ~state =
   let+ v = Csymex.nondet ~constrs TInt in
   Ok (v, state)
 
-(* TODO: clean up! Ask Kayvan what can be done? *)
 let find_stub ~prog:_ fname =
   let name = Cerb_frontend.Pp_symbol.to_string fname in
   if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
@@ -124,7 +122,6 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       let+ v = value_of_constant c in
       Ok (v, state)
   | AilEcall (f, args) ->
-      (* TODO: Ask Kayvan what function decay is *)
       let* exec_fun = resolve_function ~prog f in
       let** args, state = eval_expr_list ~prog ~store state args in
       exec_fun ~prog ~args ~state
