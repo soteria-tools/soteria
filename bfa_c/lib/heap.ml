@@ -27,10 +27,12 @@ let with_ptr (ptr : Svalue.t) (st : t)
 
 let load ptr ty st =
   let@ () = with_loc_err () in
+  L.debug (fun m -> m "load %a" Svalue.pp ptr);
   if%sat Svalue.Ptr.is_null ptr then Result.error `NullDereference
   else with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
+  L.debug (fun m -> m "store %a <- %a" Svalue.pp ptr Svalue.pp sval);
   let@ () = with_loc_err () in
   if%sat Svalue.Ptr.is_null ptr then Result.error `NullDereference
   else with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)

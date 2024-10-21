@@ -97,8 +97,12 @@ let bool b =
   if b then v_true else v_false
 
 let sem_eq v1 v2 =
-  if equal v1 v2 then v_true (* Start with a syntactic check *)
-  else hashcons (Binop (Eq, v1, v2))
+  match (v1.node, v2.node) with
+  | Int z1, Int z2 -> bool (Z.equal z1 z2)
+  | Bool b1, Bool b2 -> bool (b1 = b2)
+  | _ ->
+      if equal v1 v2 then v_true (* Start with a syntactic check *)
+      else hashcons (Binop (Eq, v1, v2))
 
 let and_ v1 v2 =
   match (v1.node, v2.node) with

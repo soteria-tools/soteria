@@ -114,7 +114,12 @@ and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
   in
   (List.rev vs, state)
 
-and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
+(* (x -> $x) *)
+(* $x -> $m
+   $m -> _ *)
+
+and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
+    (aexpr : expr) =
   L.debug (fun m -> m "Evaluating expression: %a" Fmt_ail.pp_expr aexpr);
   let eval_expr = eval_expr ~prog ~store in
   let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
@@ -132,8 +137,10 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       let** v, state = eval_expr state e in
       match op with
       | Indirection ->
-          let ty = type_of aexpr in
-          Heap.load v ty state
+          if lvalue then Result.ok (v, state)
+          else
+            let ty = type_of aexpr in
+            Heap.load v ty state
       | _ ->
           Fmt.kstr not_impl "Unsupported binary operator %a" Fmt_ail.pp_unop op)
   | AilEbinary (e1, op, e2) -> (
@@ -160,7 +167,7 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
   | AilEassign (lvalue, rvalue) ->
       (* Evaluate rvalue first *)
       let** rval, state = eval_expr state rvalue in
-      let** ptr, state = eval_expr state lvalue in
+      let** ptr, state = eval_expr ~lvalue:true state lvalue in
       let ty = type_of lvalue in
       let++ (), state = Heap.store ptr ty rval state in
       (rval, state)
