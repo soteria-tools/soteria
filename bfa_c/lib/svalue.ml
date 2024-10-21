@@ -103,6 +103,9 @@ let sem_eq v1 v2 =
 let and_ v1 v2 =
   match (v1.node, v2.node) with
   | Bool b1, Bool b2 -> bool (b1 && b2)
+  | Bool false, _ | _, Bool false -> v_false
+  | Bool true, _ -> v2
+  | _, Bool true -> v1
   | _ -> hashcons (Binop (And, v1, v2))
 
 let not sv =

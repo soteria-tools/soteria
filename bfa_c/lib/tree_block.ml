@@ -84,7 +84,7 @@ module Node = struct
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok Svalue.zero
-        else not_impl "Float zeros"
+        else Fmt.kstr not_impl "Float zeros"
     | Owned Lazy ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
     | Owned (Init { value; ty = tyw }) ->

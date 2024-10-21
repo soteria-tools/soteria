@@ -5,6 +5,7 @@ packaging/bin-locations.txt
 packaging/macOS_dylibs.txt
 package.zip
 secrets.env
+upload_package.sh
 
 ### Node ###
 # Logs

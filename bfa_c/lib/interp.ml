@@ -115,20 +115,31 @@ and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
   (List.rev vs, state)
 
 and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
+  let eval_expr = eval_expr ~prog ~store in
   let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
   let@ () = with_loc ~loc in
   match expr with
   | AilEconst c ->
       let+ v = value_of_constant c in
       Ok (v, state)
-  (* TODO: Ask Kayvan what function decay is *)
   | AilEcall (f, args) ->
+      (* TODO: Ask Kayvan what function decay is *)
       let* exec_fun = resolve_function ~prog f in
       let** args, state = eval_expr_list ~prog ~store state args in
       exec_fun ~prog ~args ~state
+  | AilEunary (op, e) -> (
+      let** v, state = eval_expr state e in
+      match op with
+      | Indirection ->
+          let ty = type_of aexpr in
+          L.debug (fun m ->
+              m "Loading %a with type %a" Svalue.pp v Fmt_ail.pp_ty ty);
+          Heap.load v ty state
+      | _ ->
+          Fmt.kstr not_impl "Unsupported binary operator %a" Fmt_ail.pp_unop op)
   | AilEbinary (e1, op, e2) -> (
-      let** v1, state = eval_expr ~prog ~store state e1 in
-      let** v2, state = eval_expr ~prog ~store state e2 in
+      let** v1, state = eval_expr state e1 in
+      let** v2, state = eval_expr state e2 in
       (* FIXME: the semantics of value comparison is a lot more complex than this! *)
       match op with
       | Ge -> Result.ok (Svalue.geq v1 v2, state)
@@ -139,7 +150,7 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
           Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
             op)
   | AilErvalue e ->
-      let** lvalue, state = eval_expr ~prog ~store state e in
+      let** lvalue, state = eval_expr state e in
       let ty = type_of e in
       Heap.load lvalue ty state
   | AilEident id -> (
@@ -147,6 +158,13 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       | Some v -> Result.ok (v, state)
       | None ->
           Fmt.kstr not_impl "Variable %a not found in store" Fmt_ail.pp_sym id)
+  | AilEassign (lvalue, rvalue) ->
+      (* Evaluate rvalue first *)
+      let** rval, state = eval_expr state rvalue in
+      let** ptr, state = eval_expr state lvalue in
+      let ty = type_of lvalue in
+      let++ (), state = Heap.store ptr ty rval state in
+      (rval, state)
   | _ -> Fmt.kstr not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
 (** Executing a statement returns an optional value outcome (if a return statement was hit), or  *)

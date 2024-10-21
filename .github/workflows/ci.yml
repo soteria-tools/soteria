@@ -71,3 +71,17 @@ jobs:
       - run: DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main test.c
         env:
           BFA_Z3_PATH: ./bin/z3
+      - name: make archive
+        run: |
+          mkdir -p ${{ matrix.operating-system }}-package
+          cp -r bin ${{ matrix.operating-system }}-package/
+          cp -r lib ${{ matrix.operating-system }}-package/
+          zip ${{ matrix.operating-system }}-package.zip -r ${{ matrix.operating-system }}-package
+      - name: upload artifact to shell
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SHELL_SSH_HOST }}
+          username: ${{ secrets.SHELL_SSH_USERNAME }}
+          overwrite: true
+          source: ${{ matrix.operating-system }}-package.zip
+          target: ${{ secrets.SHELL_SSH_PATH }}
