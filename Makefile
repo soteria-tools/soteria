@@ -76,7 +76,7 @@ js-bundle: vscode-ocaml
 
 .PHONY: vscode-ocaml
 vscode-ocaml:
-	$(DUNE) build $(BFA_BC_JS)
+	$(DUNE) build $(VSCODE_BC_JS)
 	
 .PHONY: for-local
 for-local: ocaml vscode
