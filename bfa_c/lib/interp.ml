@@ -114,10 +114,6 @@ and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
   in
   (List.rev vs, state)
 
-(* (x -> $x) *)
-(* $x -> $m
-   $m -> _ *)
-
 and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
     (aexpr : expr) =
   let eval_expr = eval_expr ~prog ~store in

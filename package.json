@@ -40,18 +40,7 @@
         "bfa.server.kind": {
           "type": "object",
           "default": {
-            "kind": "shell",
-            "cmd": "opam",
-            "args": [
-              "exec",
-              "--",
-              "dune",
-              "exec",
-              "--",
-              "bfa-c",
-              "lsp"
-            ],
-            "env": {}
+            "kind": "auto"
           },
           "description": "Kind of BFA server: either shell, or auto (where the server is fetched and installed on the user's side)"
         }
