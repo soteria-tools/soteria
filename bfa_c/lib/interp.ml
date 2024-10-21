@@ -34,7 +34,7 @@ let get_param_tys ~prog fid =
   in
   Csymex.of_opt_not_impl ~msg:"Couldn't find function prototype" ptys
 
-(* TODO: Ask Keyvan what the boolean [_what] is. *)
+(* TODO: Ask Kayvan what the boolean [_what] is. *)
 let attach_bindings store (bindings : AilSyntax.bindings) =
   ListLabels.fold_left bindings ~init:store
     ~f:(fun store (pname, ((_loc, duration, _what), align, _quals, ty)) ->
@@ -69,7 +69,7 @@ let nondet_int_fun ~prog:_ ~args:_ ~state =
   let+ v = Csymex.nondet ~constrs TInt in
   Ok (v, state)
 
-(* TODO: clean up! Ask Keyvan what can be done? *)
+(* TODO: clean up! Ask Kayvan what can be done? *)
 let find_stub ~prog:_ fname =
   L.debug (fun m -> m "Looking for a stub for %a" Fmt_ail.pp_sym fname);
   let name = Cerb_frontend.Pp_symbol.to_string fname in
@@ -121,7 +121,7 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
   | AilEconst c ->
       let+ v = value_of_constant c in
       Ok (v, state)
-  (* TODO: Ask Keyvan what function decay is *)
+  (* TODO: Ask Kayvan what function decay is *)
   | AilEcall (f, args) ->
       let* exec_fun = resolve_function ~prog f in
       let** args, state = eval_expr_list ~prog ~store state args in
@@ -129,6 +129,7 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
   | AilEbinary (e1, op, e2) -> (
       let** v1, state = eval_expr ~prog ~store state e1 in
       let** v2, state = eval_expr ~prog ~store state e2 in
+      (* FIXME: the semantics of value comparison is a lot more complex than this! *)
       match op with
       | Ge -> Result.ok (Svalue.geq v1 v2, state)
       | Gt -> Result.ok (Svalue.gt v1 v2, state)
@@ -160,8 +161,8 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
       L.info (fun m -> m "Returning: %a" Svalue.pp v);
       Result.ok (Some v, store, state)
   | AilSblock (bindings, stmtl) ->
-      (* Discarding the block-scoped store *)
       let* store = attach_bindings store bindings in
+      (* Second result, corresponding to the block-scoped store, is discarded *)
       let++ res, _, state =
         Csymex.Result.fold_left stmtl ~init:(None, store, state)
           ~f:(fun (res, store, state) stmt ->
