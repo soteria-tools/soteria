@@ -32,7 +32,11 @@ let activate (extension : Vscode.ExtensionContext.t) =
   let* should_install = should_install ~ask:true extension in
   let* () =
     match should_install with
-    | `NeedInstall -> Install.install (storage_path extension)
+    | `NeedInstall -> (
+        let+ res = Install.install (storage_path extension) in
+        match res with
+        | Ok () -> ()
+        | Error () -> raise (StopExtension "Installation failed"))
     | `RefusedInstall -> raise (StopExtension "Installation refused")
     | `NoInstall -> Promise.return ()
   in

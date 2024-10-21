@@ -1,14 +1,22 @@
+module String = struct
+  type t = string [@@js]
+end
+
+module Result = Interop.Js.Result (Interop.Js.Unit) (String)
+
 include
   [%js:
-  val download_and_extract : string -> string -> unit Promise.t
+  val download_and_extract :
+    progress:Vscode.Progress.t -> string -> string -> Result.t Promise.t
   [@@js.global "downloadAndExtract"]
 
-  val rename : string -> string -> unit Promise.t [@@js.global "fsRename"]
-  val make_executable : string -> unit Promise.t [@@js.global "makeExec"]]
+  val rename : string -> string -> Result.t Promise.t [@@js.global "fsRename"]
+  val make_executable : string -> Result.t Promise.t [@@js.global "makeExec"]
+  val dl_archive_name : string [@@js.global "dlArchiveName"]]
 
-let download_and_extract url dest =
+let download_and_extract ~progress url dest =
   Logging.debug "Downloading %s to %s" url dest;
-  download_and_extract url dest
+  download_and_extract ~progress url dest
 
 let rename src dest =
   Logging.debug "Renaming %s to %s" src dest;

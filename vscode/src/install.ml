@@ -62,20 +62,56 @@ let check_version installed_path =
     stderr;
   exitCode = 0
 
+let p_report ~progress ?message ?increment () =
+  Progress.report progress ~value:{ message; increment }
+
 let install storage_path =
+  let open Syntaxes.Result_promise in
   let ( / ) = Filename.concat in
-  let url = url () in
-  let* () = Download_file.download_and_extract url storage_path in
-  let* () =
-    Download_file.rename
-      (storage_path / archive_name ())
-      (storage_path / "installed")
+  let options =
+    ProgressOptions.create ~location:(`ProgressLocation Notification)
+      ~title:"Installing BFA" ~cancellable:false ()
   in
-  let* () =
-    Download_file.make_executable (storage_path / "installed" / "bin" / "z3")
-  in
-  let* () =
-    Download_file.make_executable (storage_path / "installed" / "bin" / "bfa-c")
-  in
-  let+ _ = check_version (storage_path / "installed") in
-  ()
+  Window.withProgress
+    (module Interop.Js.Result (Interop.Js.Unit) (Interop.Js.Unit))
+    ~options
+    ~task:(fun ~progress ~token:_ ->
+      p_report ~progress ~message:"Fetching download URL" ();
+      let url = url () in
+      (* fetching Url is 1% *)
+      p_report ~progress ~message:"Downloading binaries... 0%" ~increment:1 ();
+      (* Downlading 98%, progress is notified as it goes *)
+      let* res =
+        let** () =
+          Download_file.download_and_extract ~progress url storage_path
+        in
+        (* Final steps are 1% *)
+        p_report ~progress ~message:"Renaming and editing access" ();
+        let** () =
+          Download_file.rename
+            (storage_path / archive_name ())
+            (storage_path / "installed")
+        in
+        let** () =
+          Download_file.make_executable
+            (storage_path / "installed" / "bin" / "z3")
+        in
+        let** () =
+          Download_file.make_executable
+            (storage_path / "installed" / "bin" / "bfa-c")
+        in
+        p_report ~progress ~increment:1 ();
+        Promise.return (Ok ())
+      in
+      match res with
+      | Ok () ->
+          let+ success = check_version (storage_path / "installed") in
+          if success then (
+            show_message `Info "BFA was successfuly installed";
+            Ok ())
+          else (
+            show_message `Error "Something went wrong, failed to install BFA";
+            Error ())
+      | Error msg ->
+          show_message `Error "%s" msg;
+          Promise.return (Error ()))
