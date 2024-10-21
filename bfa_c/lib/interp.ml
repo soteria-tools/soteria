@@ -115,6 +115,7 @@ and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
   (List.rev vs, state)
 
 and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
+  L.debug (fun m -> m "Evaluating expression: %a" Fmt_ail.pp_expr aexpr);
   let eval_expr = eval_expr ~prog ~store in
   let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
   let@ () = with_loc ~loc in
@@ -132,8 +133,6 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       match op with
       | Indirection ->
           let ty = type_of aexpr in
-          L.debug (fun m ->
-              m "Loading %a with type %a" Svalue.pp v Fmt_ail.pp_ty ty);
           Heap.load v ty state
       | _ ->
           Fmt.kstr not_impl "Unsupported binary operator %a" Fmt_ail.pp_unop op)

@@ -83,15 +83,11 @@ let install storage_path =
       (* Downlading 98%, progress is notified as it goes *)
       let* res =
         let** () =
-          Download_file.download_and_extract ~progress url storage_path
+          Download_file.download_and_extract ~progress url
+            (storage_path / "installed")
         in
         (* Final steps are 1% *)
         p_report ~progress ~message:"Renaming and editing access" ();
-        let** () =
-          Download_file.rename
-            (storage_path / archive_name ())
-            (storage_path / "installed")
-        in
         let** () =
           Download_file.make_executable
             (storage_path / "installed" / "bin" / "z3")
@@ -100,7 +96,8 @@ let install storage_path =
           Download_file.make_executable
             (storage_path / "installed" / "bin" / "bfa-c")
         in
-        p_report ~progress ~increment:1 ();
+        p_report ~progress ~increment:1
+          ~message:"Done installing, checking success" ();
         Promise.return (Ok ())
       in
       match res with

@@ -10,5 +10,5 @@ let malloc ~prog:_ ~args ~state =
   Csymex.branches
     [
       (fun () -> Heap.alloc sz state);
-      (fun () -> Result.ok (Svalue.zero, state));
+      (fun () -> Result.ok (Svalue.Ptr.null, state));
     ]

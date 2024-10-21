@@ -27,18 +27,21 @@ let with_ptr (ptr : Svalue.t) (st : t)
 
 let load ptr ty st =
   let@ () = with_loc_err () in
-  with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
+  if%sat Svalue.Ptr.is_null ptr then Result.error `NullDereference
+  else with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
   let@ () = with_loc_err () in
-  with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
+  if%sat Svalue.Ptr.is_null ptr then Result.error `NullDereference
+  else with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
 
 let alloc size st =
   let@ () = with_loc_err () in
   let block = Freeable.Substate (Tree_block.alloc size) in
-  let++ loc, st = SPmap.alloc ~new_codom:block st in
+  let** loc, st = SPmap.alloc ~new_codom:block st in
   let ptr = Svalue.Ptr.mk loc Svalue.zero in
-  (ptr, st)
+  (* The pointer is necessarily not null *)
+  Result.ok ~learned:Svalue.[ not Infix.(loc #== zero) ] (ptr, st)
 
 let alloc_ty ty st =
   let* size = Layout.size_of_s ty in

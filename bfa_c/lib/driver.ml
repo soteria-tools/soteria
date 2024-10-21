@@ -131,6 +131,7 @@ let is_main (def : Cabs.function_definition) =
 
 let pp_err ft (err, _loc) =
   match err with
+  | `NullDereference -> Fmt.string ft "NullDereference"
   | `MissingKey -> Fmt.string ft "MissingKey"
   | `MissingResource -> Fmt.string ft "MissingResource"
   | `OutOfBounds -> Fmt.string ft "OutOfBounds"

@@ -147,6 +147,9 @@ module Ptr = struct
 
   let ofs p =
     match p.node with Ptr (_, o) -> o | _ -> hashcons (Unop (GetPtrOfs, p))
+
+  let null = mk zero zero
+  let is_null p = sem_eq p null
 end
 
 (** {2 Option} *)

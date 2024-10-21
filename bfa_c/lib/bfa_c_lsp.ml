@@ -23,6 +23,7 @@ let error_to_diagnostic_opt (err, loc) =
   let+ severity, message =
     (* When we hide non-bug things, some patterns will return None *)
     match err with
+    | `NullDereference -> Some (DiagnosticSeverity.Error, "Null Dereference")
     | `MissingKey -> Some (DiagnosticSeverity.Information, "Missing Key")
     | `MissingResource ->
         Some (DiagnosticSeverity.Information, "Missing Resource")
