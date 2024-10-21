@@ -25,6 +25,7 @@ function downloadFile(url, destinationPath, progress) {
     const file = fs.createWriteStream(destinationPath);
     https.get(url, (response) => {
       const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+      console.log(`Total size ${totalSize}`);
       let downloadedSize = 0;
       response.on('data', (chunk) => {
         downloadedSize += chunk.length;
@@ -36,6 +37,7 @@ function downloadFile(url, destinationPath, progress) {
       })
 
       response.pipe(file);
+
       file.on('finish', () => {
         file.close(resolve);
       });
@@ -45,7 +47,7 @@ function downloadFile(url, destinationPath, progress) {
   });
 }
 
-function extractArchive(archivePath, extractTo) {
+function extractArchive(archivePath, extractTo, progress) {
   progress.report({
     message: `Extracting archive...`
   });
@@ -63,7 +65,7 @@ async function downloadAndExtract(progress, url, destinationFolder) {
   const archivePath = path.join(destinationFolder, dlArchiveName);
   try {
     await downloadFile(url, archivePath, progress);
-    extractArchive(archivePath, destinationFolder);
+    extractArchive(archivePath, destinationFolder, progress);
     await fs.promises.unlink(archivePath);
     return ok()
   } catch (error) {
@@ -90,7 +92,7 @@ async function makeExec(fileName) {
     fs.promises.chmod(fileName, newMode);
     return ok();
   } catch (error) {
-    let msg = `Failed to change mode of {fileName}`;
+    let msg = `Failed to change mode of ${fileName}`;
     console.error(msg, error);
     return err(msg)
   }
@@ -101,7 +103,7 @@ async function rename(src, dest) {
     await fs.promises.rename(src, dest);
     return ok();
   } catch (error) {
-    let msg = `Failed to rename {src} into {dest}`;
+    let msg = `Failed to rename ${src} into ${dest}`;
     console.error(msg, error);
     return err(msg);
   }
