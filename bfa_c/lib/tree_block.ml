@@ -224,7 +224,6 @@ module Tree = struct
       (range : Range.t) : (t * t) Csymex.t =
     let rec frame_inside ~(replace_node : t -> t) ~rebuild_parent (t : t)
         (range : Range.t) : (t * t) Csymex.t =
-      L.debug (fun m -> m "Frame inside %a %a" Range.pp range pp t);
       if%sat Range.sem_eq range t.range then
         let new_tree = replace_node t in
         return (t, new_tree)

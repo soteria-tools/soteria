@@ -97,9 +97,7 @@ module Frontend = struct
       in
       set_cerb_conf ();
       Ocaml_implementation.(set HafniumImpl.impl);
-      L.debug (fun m -> m "About to load core stdlib");
       let* stdlib = load_core_stdlib_shim () in
-      L.debug (fun m -> m "Core stdlib loaded");
       let* impl = load_core_impl_shim stdlib impl_name in
       Exception.Result
         (fun filename -> c_frontend (conf, io) (stdlib, impl) ~filename)
@@ -141,7 +139,6 @@ let pp_err ft (err, _loc) =
   | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
 
 let exec_main file_name =
-  L.debug (fun m -> m "Starting to execute");
   let open Syntaxes.Result in
   let result =
     let* entry_point, sigma = parse_ail file_name in
@@ -151,7 +148,6 @@ let exec_main file_name =
           Error (`ParsingError "No entry point function", Cerb_location.unknown)
       | Some e -> Ok e
     in
-    L.debug (fun m -> m "Ending parse");
     let entry_point =
       sigma.function_definitions
       |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)
@@ -159,7 +155,6 @@ let exec_main file_name =
     let symex =
       Interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
     in
-    let () = L.debug (fun m -> m "Starting symex") in
     Ok (Csymex.run symex)
   in
   match result with Ok v -> v | Error e -> [ Error e ]

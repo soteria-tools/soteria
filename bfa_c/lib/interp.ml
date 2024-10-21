@@ -72,7 +72,6 @@ let nondet_int_fun ~prog:_ ~args:_ ~state =
 
 (* TODO: clean up! Ask Kayvan what can be done? *)
 let find_stub ~prog:_ fname =
-  L.debug (fun m -> m "Looking for a stub for %a" Fmt_ail.pp_sym fname);
   let name = Cerb_frontend.Pp_symbol.to_string fname in
   if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
   else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
@@ -121,7 +120,6 @@ and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
 
 and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
     (aexpr : expr) =
-  L.debug (fun m -> m "Evaluating expression: %a" Fmt_ail.pp_expr aexpr);
   let eval_expr = eval_expr ~prog ~store in
   let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
   let@ () = with_loc ~loc in
@@ -240,7 +238,6 @@ and exec_fun ~prog ~args ~state (fundef : fundef) =
            That would require some kind of continutation passing for executing a bunch of statements. *)
   let** store, state = alloc_params ps state in
   (* TODO: local optimisation to put values in store directly when no address is taken. *)
-  L.debug (fun m -> m "Store: %a" Store.pp store);
   let++ val_opt, _, state = exec_stmt ~prog store state stmt in
   let value = Option.value ~default:Svalue.void val_opt in
   (value, state)

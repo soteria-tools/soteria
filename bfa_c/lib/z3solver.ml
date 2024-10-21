@@ -248,7 +248,14 @@ let as_bool v =
 
 (* Incremental doesn't allow for caching queries... *)
 let sat () =
-  match check solver with
+  let answer =
+    try check solver
+    with Simple_smt.UnexpectedSolverResponse s ->
+      Logs.err ~src:log_src (fun m ->
+          m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
+      Unknown
+  in
+  match answer with
   | Sat -> true
   | Unsat -> false
   | Unknown ->
