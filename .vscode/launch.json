@@ -5,7 +5,7 @@
     {
       "type": "extensionHost",
       "request": "launch",
-      "name": "Launch Client And Watch",
+      "name": "Launch (Auto)",
       "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceRoot}",
@@ -19,13 +19,13 @@
       "autoAttachChildProcesses": true,
       "preLaunchTask": {
         "type": "npm",
-        "script": "watch-all",
+        "script": "watch",
       }
     },
     {
       "type": "extensionHost",
       "request": "launch",
-      "name": "Launch Client",
+      "name": "Launch (Local)",
       "runtimeExecutable": "${execPath}",
       "args": [
         "--extensionDevelopmentPath=${workspaceRoot}",
@@ -39,7 +39,7 @@
       "autoAttachChildProcesses": true,
       "preLaunchTask": {
         "type": "npm",
-        "script": "compile-all",
+        "script": "watch-all",
       }
     }
   ]

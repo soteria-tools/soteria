@@ -1,5 +1,9 @@
 _build
 _opam
+vscode
+bfa
+bfa_c
+.ocamlformat-ignore
 .github
 .vscode
 bin
@@ -13,6 +17,8 @@ test
 *.opam
 *.opam.template
 *.vsix
+*.log
+*.sh
 package.zip
 dune-project
 Makefile
