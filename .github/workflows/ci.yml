@@ -77,11 +77,7 @@ jobs:
           cp -r bin ${{ matrix.operating-system }}-package/
           cp -r lib ${{ matrix.operating-system }}-package/
           zip ${{ matrix.operating-system }}-package.zip -r ${{ matrix.operating-system }}-package
-      - name: upload artifact to shell
-        uses: appleboy/scp-action@v0.1.7
+      - uses: webfactory/ssh-agent@v0.9.0
         with:
-          host: ${{ secrets.SHELL_SSH_HOST }}
-          username: ${{ secrets.SHELL_SSH_USERNAME }}
-          overwrite: true
-          source: ${{ matrix.operating-system }}-package.zip
-          target: ${{ secrets.SHELL_SSH_PATH }}
+          ssh-private-key: ${{ secrets.SHELL_SSH_KEY }}
+      - run: scp ${{ matrix.operating-system }}-package.zip ${{ secrets.SHELL_SSH_USERNAME }}@${{ secrets.SHELL_SSH_HOST }}:~/public_html/artifact/
