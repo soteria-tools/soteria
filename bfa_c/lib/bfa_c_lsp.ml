@@ -73,12 +73,12 @@ class bfa_lsp_server run_to_errors =
        hashtable state, to avoid leaking memory. *)
     method on_notif_doc_did_close ~notify_back:_ _d : unit Linol_eio.t = ()
 
-    method! on_notification ~notify_back ~server_request notif =
-      match notif with
-      | UnknownNotification { method_ = "bfa/toggleDebugMode"; _ } ->
+    method! on_unknown_notification ~notify_back notif =
+      match notif.method_ with
+      | "bfa/toggleDebugMode" ->
           L.debug (fun m -> m "Toggling debug mode");
           debug_mode <- not debug_mode
-      | _ -> super#on_notification ~notify_back ~server_request notif
+      | _ -> super#on_unknown_notification ~notify_back notif
   end
 
 let run ~run_to_errors () =
