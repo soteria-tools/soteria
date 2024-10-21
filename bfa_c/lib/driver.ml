@@ -137,6 +137,7 @@ let pp_err ft (err, _loc) =
   | `OutOfBounds -> Fmt.string ft "OutOfBounds"
   | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
   | `UseAfterFree -> Fmt.string ft "UseAfterFree"
+  | `DivisionByZero -> Fmt.string ft "DivisionByZero"
   | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
 
 let exec_main file_name =

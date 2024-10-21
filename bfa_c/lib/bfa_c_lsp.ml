@@ -32,6 +32,7 @@ let error_to_diagnostic_opt (err, loc) =
         Some (DiagnosticSeverity.Error, "Uninitialized Memory Access")
     | `ParsingError s -> Some (DiagnosticSeverity.Error, s)
     | `UseAfterFree -> Some (DiagnosticSeverity.Error, "Use After Free")
+    | `DivisionByZero -> Some (DiagnosticSeverity.Error, "Division By Zero")
   in
   Lsp.Types.Diagnostic.create ~message ~severity ~range:(cerb_loc_to_range loc)
     ~source:"bfa" ()

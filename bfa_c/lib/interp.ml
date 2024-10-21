@@ -1,5 +1,6 @@
 open Csymex
 open Csymex.Syntax
+open Svalue.Infix
 open Ail_tys
 module Ctype = Cerb_frontend.Ctype
 module AilSyntax = Cerb_frontend.AilSyntax
@@ -152,6 +153,9 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       | Gt -> Result.ok (Svalue.gt v1 v2, state)
       | Lt -> Result.ok (Svalue.lt v1 v2, state)
       | Le -> Result.ok (Svalue.leq v1 v2, state)
+      | Arithmetic Div ->
+          if%sat v2 #== Svalue.zero then Result.error (`DivisionByZero, loc)
+          else Result.ok (Svalue.div v1 v2, state)
       | _ ->
           Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
             op)
