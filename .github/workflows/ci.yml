@@ -71,13 +71,3 @@ jobs:
       - run: DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main test.c
         env:
           BFA_Z3_PATH: ./bin/z3
-      - name: make archive
-        run: |
-          mkdir -p ${{ matrix.operating-system }}-package
-          cp -r bin ${{ matrix.operating-system }}-package/
-          cp -r lib ${{ matrix.operating-system }}-package/
-          zip ${{ matrix.operating-system }}-package.zip -r ${{ matrix.operating-system }}-package
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SHELL_SSH_KEY }}
-      - run: scp ${{ matrix.operating-system }}-package.zip ${{ secrets.SHELL_SSH_USERNAME }}@${{ secrets.SHELL_SSH_HOST }}:~/public_html/artifact/
