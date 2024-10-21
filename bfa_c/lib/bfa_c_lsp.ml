@@ -38,7 +38,7 @@ let error_to_diagnostic_opt (err, loc) =
 class bfa_lsp_server run_to_errors =
   object (self)
     inherit Linol_eio.Jsonrpc2.server as super
-    val mutable debug_mode = true
+    val mutable debug_mode = false
 
     (* one env per document *)
 
