@@ -17,14 +17,7 @@ module Var_name = struct
   let compare = Int.compare
 end
 
-type ty =
-  | TBool
-  | TInt
-  | TPointer
-  | TVoid
-  (* | BitVec of int *)
-  | TSeq of ty
-  | TOption of ty
+type ty = TBool | TInt | TPointer | TVoid | TSeq of ty | TOption of ty
 [@@deriving eq, show, ord]
 
 module Nop = struct
@@ -80,7 +73,7 @@ module Hcons = Hashcons.Make (struct
   let hash = Hashtbl.hash
 end)
 
-let table = Hcons.create 1024
+let table = Hcons.create 1023
 let hashcons = Hcons.hashcons table
 
 let fresh ty =

@@ -37,7 +37,8 @@ let get_param_tys ~prog fid =
 
 let attach_bindings store (bindings : AilSyntax.bindings) =
   ListLabels.fold_left bindings ~init:store
-    ~f:(fun store (pname, ((_loc, duration, _what), align, _quals, ty)) ->
+    ~f:(fun
+        store (pname, ((_loc, duration, _is_register), align, _quals, ty)) ->
       (match duration with
       | AilSyntax.Static | Thread -> raise (Unsupported "static/tread")
       | _ -> ());

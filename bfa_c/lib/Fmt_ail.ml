@@ -3,7 +3,7 @@ open Cerb_frontend.Pp_ail
 
 let pp_to_fmt (pprinter : 'a -> PPrint.document) : 'a Fmt.t =
  fun ft a ->
-  let buffer = Buffer.create 1024 in
+  let buffer = Buffer.create 1023 in
   PPrint.ToBuffer.pretty 0.5 80 buffer (pprinter a);
   Fmt.pf ft "%s" (Buffer.contents buffer)
 

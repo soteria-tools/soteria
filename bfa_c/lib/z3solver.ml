@@ -119,7 +119,7 @@ let rec sort_of_ty = function
   | TVoid -> t_void
   | TOption ty -> t_opt $ sort_of_ty ty
 
-let var_history = ref (Array.make 1024 Svalue.void)
+let var_history = ref (Array.make 1023 Svalue.void)
 
 let var_of_int i =
   let res = Array.get !var_history i in
@@ -151,7 +151,7 @@ let declare_v (var : Value.t) =
   let v = Value.Var_name.to_string v in
   declare v (sort_of_ty ty)
 
-let memo_encode_value_tbl : sexp Utils.Hint.t = Utils.Hint.create 1024
+let memo_encode_value_tbl : sexp Utils.Hint.t = Utils.Hint.create 1023
 
 let memoz table f v =
   match Utils.Hint.find_opt table v.Hashcons.tag with
