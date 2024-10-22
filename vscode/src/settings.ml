@@ -28,6 +28,17 @@ let set ?section setting v =
       WorkspaceConfiguration.update section ~section:setting.key ~value
         ~configurationTarget:(`ConfigurationTarget setting.scope) ()
 
+module Debug = struct
+  let default = false
+  let key = "bfa.server.debug"
+
+  let s =
+    make ~key ~to_json:Jsonoo.Encode.bool ~of_json:Jsonoo.Decode.bool
+      ~scope:ConfigurationTarget.Workspace
+
+  let get () = get s |> Option.value ~default
+end
+
 module Server_kind = struct
   type t = Auto | Shell of Install.executable
 

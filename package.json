@@ -43,6 +43,11 @@
             "kind": "auto"
           },
           "description": "Kind of BFA server: either shell, or auto (where the server is fetched and installed on the user's side)"
+        },
+        "bfa.server.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to run the server in debug mode"
         }
       }
     }

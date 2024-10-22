@@ -134,7 +134,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
             let ty = type_of aexpr in
             Heap.load v ty state
       | _ ->
-          Fmt.kstr not_impl "Unsupported binary operator %a" Fmt_ail.pp_unop op)
+          Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op)
   | AilEbinary (e1, op, e2) -> (
       let** v1, state = eval_expr state e1 in
       let** v2, state = eval_expr state e2 in

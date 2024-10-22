@@ -8,5 +8,6 @@
     "env": {
       "BFA_Z3_PATH": "/usr/local/bin/z3"
     }
-  }
+  },
+  "bfa.server.debug": true,
 }

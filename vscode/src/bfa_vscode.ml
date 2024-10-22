@@ -26,25 +26,30 @@ let with_stop f =
     show_message `Error "Stopping BFA: %s" msg;
     Promise.return ()
 
+let install_if_needed extension =
+  let* should_install = should_install ~ask:true extension in
+  match should_install with
+  | `NeedInstall -> (
+      let+ res = Install.install (storage_path extension) in
+      match res with
+      | Ok () -> ()
+      | Error () -> raise (StopExtension "Installation failed"))
+  | `RefusedInstall -> raise (StopExtension "Installation refused")
+  | `NoInstall -> Promise.return ()
+
+let enable_debug_if_requested instance =
+  if Settings.Debug.get () then Instance.toggle_debug_mode instance
+
 let activate (extension : Vscode.ExtensionContext.t) =
   with_stop @@ fun () ->
   let instance = Instance.empty extension in
-  let* should_install = should_install ~ask:true extension in
-  let* () =
-    match should_install with
-    | `NeedInstall -> (
-        let+ res = Install.install (storage_path extension) in
-        match res with
-        | Ok () -> ()
-        | Error () -> raise (StopExtension "Installation failed"))
-    | `RefusedInstall -> raise (StopExtension "Installation refused")
-    | `NoInstall -> Promise.return ()
-  in
+  let* () = install_if_needed extension in
   let* () = Instance.start_server instance in
   ExtensionContext.subscribe
     ~disposable:(Instance.disposable instance)
     extension;
   Bfa_commands.register_all_commands extension instance;
+  enable_debug_if_requested instance;
   Promise.return ()
 
 let () =
