@@ -3,7 +3,6 @@
  (name bfa_c_lib)
  (libraries
   bfa.bfa_symex
-  bfa.bfa_lsp
   cmdliner
   fmt
   logs
@@ -14,7 +13,10 @@
   cerberus-lib.backend_common
   zarith
   hashcons
-  simple_smt)
+  simple_smt
+  linol
+  linol-eio
+  eio_main)
  (inline_tests)
  (preprocess
   (pps ppx_deriving.std ppx_symex ppx_inline_test)))

@@ -1,4 +1,0 @@
-(library
- (public_name bfa.bfa_lsp)
- (name bfa_lsp)
- (libraries linol linol-eio eio_main logs))
