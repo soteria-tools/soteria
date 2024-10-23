@@ -1,6 +1,8 @@
 module Make (Symex : Symex.S) = struct
   type 'a t = 'a option
 
+  let owned x = Some x
+
   let load st =
     match st with
     | Some x -> Symex.Result.ok (x, st)
