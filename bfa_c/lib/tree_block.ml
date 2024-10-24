@@ -1,13 +1,12 @@
 open Csymex.Syntax
-open Svalue.Infix
+open Typed
+open Typed.Infix
+open Typed.Syntax
 open Csymex
 module Ctype = Cerb_frontend.Ctype
 
-(* Priority: everything's a value right now... We could probably do better! *)
-
 module MemVal = struct
-  (* The svalue must be of type Int, where the int is a valid representative of chunk *)
-  type t = { value : Svalue.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
+  type t = { value : T.cval Typed.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
   [@@deriving make, show { with_path = false }]
 
   let any_of_type (Ctype.Ctype (_, kty) as ty) =
@@ -17,18 +16,21 @@ module MemVal = struct
           Csymex.of_opt_not_impl ~msg:"Int constraints"
             (Layout.int_constraints int_ty)
         in
-        let+ value = Csymex.nondet ~constrs TInt in
-        { value; ty }
+        let+ value = Typed.nondet ~constrs Typed.t_int in
+        { value :> T.cval Typed.t; ty }
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
 end
 
 module MUMemVal = struct
   (* The svalue must be of type Int option, where the int is a valid representative of chunk (i.e. a bitvector.) *)
-  type t = { value : Svalue.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
+  type t = {
+    value : T.cval T.sopt Typed.t;
+    ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]
+  }
   [@@deriving make, show { with_path = false }]
 
   let unwrap_or ~err v =
-    if%sat Svalue.SOption.is_some v then Result.ok (Svalue.SOption.unwrap v)
+    if%sat Typed.SOption.is_some v then Result.ok (Typed.SOption.unwrap v)
     else Result.error err
 end
 
@@ -78,12 +80,12 @@ module Node = struct
 
   let uninit = Owned (Uninit Totally)
 
-  let decode ~ty t =
+  let decode ~ty t : ([> T.sint ] Typed.t, 'err) Csymex.Result.t =
     match t with
     | NotOwned _ -> Result.error `MissingResource
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
-        if Layout.is_int ty then Result.ok Svalue.zero
+        if Layout.is_int ty then Result.ok Typed.zero
         else Fmt.kstr not_impl "Float zeros"
     | Owned Lazy ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
@@ -284,17 +286,17 @@ module Tree = struct
     let* root = extend_if_needed t range in
     frame_inside ~replace_node ~rebuild_parent root range
 
-  let load (ofs : Svalue.t) (ty : Ctype.ctype) (t : t) :
-      (Svalue.t * t, 'err) Result.t =
+  let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
+      (T.cval Typed.t * t, 'err) Result.t =
     let* range = Range.of_low_and_type ofs ty in
     let replace_node node = node in
     let rebuild_parent = with_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ sval = Node.decode ~ty framed.node in
-    (sval, tree)
+    ((sval :> T.cval Typed.t), tree)
 
-  let store (low : Svalue.t) (ty : Ctype.ctype) (sval : Svalue.t) (t : t) :
-      (unit * t, 'err) Result.t =
+  let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
+      (sval : [< T.cval ] Typed.t) (t : t) : (unit * t, 'err) Result.t =
     let* range = Range.of_low_and_type low ty in
     let replace_node _ = sval_leaf ~range ~value:sval ~ty in
     let rebuild_parent = of_children in
@@ -308,17 +310,17 @@ module Tree = struct
     ((), tree)
 end
 
-type t = { root : Tree.t; bound : Svalue.t option }
+type t = { root : Tree.t; bound : T.sint Typed.t option }
 [@@deriving show { with_path = false }]
 
-let with_bound_check (t : t) (ofs : Svalue.t) f =
+let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let** () =
     match t.bound with
     | None -> Result.ok ()
     | Some bound ->
-        if%sat Svalue.gt ofs bound then (
+        if%sat ofs #> bound then (
           L.debug (fun m ->
-              m "Out of bounds access: %a > %a" Svalue.pp ofs Svalue.pp bound);
+              m "Out of bounds access: %a > %a" Typed.ppa ofs Typed.ppa bound);
           Result.error `OutOfBounds)
         else Result.ok ()
   in
@@ -327,15 +329,15 @@ let with_bound_check (t : t) (ofs : Svalue.t) f =
 
 let is_exclusively_owned t =
   match t.bound with
-  | None -> return Svalue.v_false
+  | None -> return Typed.v_false
   | Some bound ->
       let Tree.{ range = low, high; node; _ } = t.root in
       if Node.is_fully_owned node then
-        return low #== Svalue.zero #&& (high #== bound)
-      else return Svalue.v_false
+        return low #== Typed.zero #&& (high #== bound)
+      else return Typed.v_false
 
-let load (ofs : Svalue.t) (ty : Ctype.ctype) (t : t) :
-    (Svalue.t * t, 'err) Result.t =
+let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
+    ([> T.sint ] Typed.t * t, 'err) Result.t =
   let* size = Layout.size_of_s ty in
   with_bound_check t ofs #+ size @@ fun () -> Tree.load ofs ty t.root
 
@@ -343,4 +345,4 @@ let store ofs ty sval t =
   let* size = Layout.size_of_s ty in
   with_bound_check t ofs #+ size @@ fun () -> Tree.store ofs ty sval t.root
 
-let alloc size = { root = Tree.uninit (Svalue.zero, size); bound = Some size }
+let alloc size = { root = Tree.uninit (Typed.zero, size); bound = Some size }

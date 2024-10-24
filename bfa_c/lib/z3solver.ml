@@ -71,13 +71,6 @@ let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts
 
-let t_void, void =
-  let voidT = "Void" in
-  let voidV = "CONST_VOID" in
-  let cmd = Simple_smt.declare_datatype voidT [] [ (voidV, []) ] in
-  ack_command cmd;
-  (atom voidT, atom voidV)
-
 let t_ptr, mk_ptr, get_loc, get_ofs =
   let ptr = "Ptr" in
   let mk_ptr = "mk-ptr" in
@@ -116,14 +109,13 @@ let rec sort_of_ty = function
   | TInt -> Simple_smt.t_int
   | TSeq ty -> t_seq $ sort_of_ty ty
   | TPointer -> t_ptr
-  | TVoid -> t_void
   | TOption ty -> t_opt $ sort_of_ty ty
 
-let var_history = ref (Array.make 1023 Svalue.void)
+let var_history = ref (Array.make 1023 Svalue.zero)
 
 let var_of_int i =
   let res = Array.get !var_history i in
-  if Svalue.equal Svalue.void res then invalid_arg "var_of_int" else res
+  if Svalue.equal Svalue.zero res then invalid_arg "var_of_int" else res
 
 let var_of_str s = var_of_int (Value.Var_name.of_string s)
 
@@ -133,7 +125,7 @@ let record_var (var : Value.t) =
       if v < Array.length !var_history then Array.set !var_history v var
       else
         let new_arr =
-          Array.make (smallest_power_of_two_greater_than v) Svalue.void
+          Array.make (smallest_power_of_two_greater_than v) Svalue.zero
         in
         Array.blit !var_history 0 new_arr 0 (Array.length !var_history);
         Array.set new_arr v var;
@@ -204,7 +196,6 @@ let rec encode_value (v : Svalue.t) =
   | Nop (nop, vs) -> (
       let vs = List.map encode_value_memo vs in
       match nop with Distinct -> distinct vs)
-  | Void -> void
 
 and encode_value_memo v = (memoz memo_encode_value_tbl encode_value) v
 

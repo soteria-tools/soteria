@@ -1,22 +1,25 @@
 open Csymex
 open Csymex.Syntax
-open Svalue.Infix
+open Typed.Infix
+open Typed.Syntax
 open Ail_tys
 module Ctype = Cerb_frontend.Ctype
 module AilSyntax = Cerb_frontend.AilSyntax
+module T = Typed.T
 
 exception Unsupported of string
 
 let type_of expr = Cerb_frontend.Translation_aux.ctype_of expr
 
+type cval = [ T.sint | T.sptr ]
 type state = Heap.t
-type store = (Svalue.t option * Ctype.ctype) Store.t
+type store = (T.sptr Typed.t option * Ctype.ctype) Store.t
 
 type 'err fun_exec =
   prog:sigma ->
-  args:Svalue.t list ->
+  args:T.cval Typed.t list ->
   state:state ->
-  (Svalue.t * state, 'err) Result.t
+  (cval Typed.t * state, 'err) Result.t
 
 (* TODO: handle qualifiers! *)
 let get_param_tys ~prog fid =
@@ -59,18 +62,20 @@ let alloc_params params st =
       let++ (), st = Heap.store ptr ty value st in
       (store, st))
 
-let value_of_constant (c : constant) =
+let value_of_constant (c : constant) : T.cval Typed.t Csymex.t =
   match c with
   | ConstantInteger (IConstant (z, _basis, _suff)) ->
-      Csymex.return (Svalue.int_z z)
+      Csymex.return (Typed.int_z z)
   | _ -> Csymex.not_impl "value of constant?"
 
-let nondet_int_fun ~prog:_ ~args:_ ~state =
+let nondet_int_fun ~prog:_ ~args:_ ~state :
+    ([> Typed.T.sint ] Typed.t * state, 'err) Result.t =
   let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
-  let+ v = Csymex.nondet ~constrs TInt in
+  let+ v = Typed.nondet ~constrs Typed.t_int in
+  let v = (v :> cval Typed.t) in
   Ok (v, state)
 
-let find_stub ~prog:_ fname =
+let find_stub ~prog:_ fname : 'err fun_exec option =
   let name = Cerb_frontend.Pp_symbol.to_string fname in
   if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
   else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
@@ -133,37 +138,50 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
           if lvalue then Result.ok (v, state)
           else
             let ty = type_of aexpr in
+            let v = Typed.cast v in
             Heap.load v ty state
       | _ ->
           Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op)
-  | AilEbinary (e1, op, e2) -> (
+  (* | AilEbinary (e1, op, e2) -> (
+      (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
       let** v1, state = eval_expr state e1 in
       let** v2, state = eval_expr state e2 in
+      let v1 = Typed.cast v1 in
+      let v2 = Typed.cast v2 in
       (* FIXME: the semantics of value comparison is a lot more complex than this! *)
       match op with
-      | Ge -> Result.ok (Svalue.geq v1 v2, state)
-      | Gt -> Result.ok (Svalue.gt v1 v2, state)
-      | Lt -> Result.ok (Svalue.lt v1 v2, state)
-      | Le -> Result.ok (Svalue.leq v1 v2, state)
+      | Ge -> Result.ok (v1 #>= v2, state)
+      | Gt -> Result.ok (v1 #> v2, state)
+      | Lt -> Result.ok (v1 #< v2, state)
+      | Le -> Result.ok (v1 #<= v2, state)
       | Arithmetic Div ->
-          if%sat v2 #== Svalue.zero then Result.error (`DivisionByZero, loc)
-          else Result.ok (Svalue.div v1 v2, state)
+          if%sat v2 #== Typed.zero then Result.error (`DivisionByZero, loc)
+          else Result.ok (v1 #/ v2, state)
       | _ ->
           Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
-            op)
+            op) *)
   | AilErvalue e ->
       let** lvalue, state = eval_expr state e in
       let ty = type_of e in
+      (* At this point, lvalue must be a pointer (including to the stack) *)
+      let lvalue = Typed.cast lvalue in
       Heap.load lvalue ty state
   | AilEident id -> (
       match Store.find_value id store with
-      | Some v -> Result.ok (v, state)
+      | Some v ->
+          (* A pointer is a value *)
+          let v = (v :> cval Typed.t) in
+          Result.ok (v, state)
       | None ->
           Fmt.kstr not_impl "Variable %a not found in store" Fmt_ail.pp_sym id)
   | AilEassign (lvalue, rvalue) ->
       (* Evaluate rvalue first *)
       let** rval, state = eval_expr state rvalue in
       let** ptr, state = eval_expr ~lvalue:true state lvalue in
+      (* [ptr] is a necessarily a pointer, and [rval] is a memory value.
+         I don't support pointer fragments for now, so let's say it's an *)
+      let ptr = Typed.cast ptr in
+      let rval = Typed.cast rval in
       let ty = type_of lvalue in
       let++ (), state = Heap.store ptr ty rval state in
       (rval, state)
@@ -171,14 +189,14 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
 
 (** Executing a statement returns an optional value outcome (if a return statement was hit), or  *)
 and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
-    (Svalue.t option * store * state, 'err) Csymex.Result.t =
+    (T.cval Typed.t option * store * state, 'err) Csymex.Result.t =
   let (AnnotatedStatement (loc, _, stmt)) = astmt in
   let@ () = with_loc ~loc in
   match stmt with
   | AilSskip -> Result.ok (None, store, state)
   | AilSreturn e ->
       let** v, state = eval_expr ~prog ~store state e in
-      L.info (fun m -> m "Returning: %a" Svalue.pp v);
+      L.info (fun m -> m "Returning: %a" Typed.ppa v);
       Result.ok (Some v, store, state)
   | AilSblock (bindings, stmtl) ->
       let* store = attach_bindings store bindings in
@@ -196,7 +214,10 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
       Result.ok (None, store, state)
   | AilSif (cond, then_stmt, else_stmt) ->
       let** v, state = eval_expr ~prog ~store state cond in
-      if%sat v then exec_stmt ~prog store state then_stmt
+      (* [v] must be an integer! (TODO: or NULL possibly...) *)
+      let v : T.sint Typed.t = Typed.cast v in
+      if%sat Typed.(not v #== Typed.zero) then
+        exec_stmt ~prog store state then_stmt
       else exec_stmt ~prog store state else_stmt
   | AilSdeclaration decls ->
       let++ store, st =
@@ -233,5 +254,6 @@ and exec_fun ~prog ~args ~state (fundef : fundef) =
   let** store, state = alloc_params ps state in
   (* TODO: local optimisation to put values in store directly when no address is taken. *)
   let++ val_opt, _, state = exec_stmt ~prog store state stmt in
-  let value = Option.value ~default:Svalue.void val_opt in
+  (* We model void as zero, it should never be used anyway *)
+  let value = Option.value ~default:Typed.zero val_opt in
   (value, state)

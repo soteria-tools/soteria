@@ -17,13 +17,12 @@ module Var_name = struct
   let compare = Int.compare
 end
 
-type ty = TBool | TInt | TPointer | TVoid | TSeq of ty | TOption of ty
+type ty = TBool | TInt | TPointer | TSeq of ty | TOption of ty
 [@@deriving eq, show, ord]
 
 let t_bool = TBool
 let t_int = TInt
 let t_ptr = TPointer
-let t_void = TVoid
 let t_seq ty = TSeq ty
 let t_opt ty = TOption ty
 
@@ -65,7 +64,6 @@ type t_node =
   | Unop of (Unop.t * t)
   | Binop of (Binop.t * t * t)
   | Nop of Nop.t * t list
-  | Void
   | Opt of t option
 
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
@@ -184,9 +182,6 @@ end
 module SSeq = struct
   let mk l = hashcons (Seq l)
 end
-
-(** {2 Void} *)
-let void = hashcons Void
 
 (** {2 Infix operators}  *)
 
