@@ -165,7 +165,7 @@ let exec_main_and_print log_level smt_file file_name =
   Frontend.init ();
   let result = exec_main file_name in
   L.app (fun m ->
-      m "Symex terminated with the following outcomes: %a"
+      m "@[<v 2>Symex terminated with the following outcomes:@ %a@]"
         Fmt.Dump.(list @@ result ~ok:(pair Typed.ppa Heap.pp) ~error:pp_err)
         result)
 
