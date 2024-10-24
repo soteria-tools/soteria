@@ -7,7 +7,7 @@ module Ctype = Cerb_frontend.Ctype
 module AilSyntax = Cerb_frontend.AilSyntax
 module T = Typed.T
 
-exception Unsupported of string
+exception Unsupported of (string * Cerb_location.t)
 
 let type_of expr = Cerb_frontend.Translation_aux.ctype_of expr
 
@@ -40,19 +40,22 @@ let get_param_tys ~prog fid =
 
 let attach_bindings store (bindings : AilSyntax.bindings) =
   ListLabels.fold_left bindings ~init:store
-    ~f:(fun
-        store (pname, ((_loc, duration, _is_register), align, _quals, ty)) ->
+    ~f:(fun store (pname, ((loc, duration, _is_register), align, _quals, ty)) ->
+      let@ () = with_loc_immediate ~loc in
       (match duration with
-      | AilSyntax.Static | Thread -> raise (Unsupported "static/tread")
+      | AilSyntax.Static | Thread ->
+          raise (Unsupported ("static/tread", get_loc ()))
       | _ -> ());
-      if Option.is_some align then raise (Unsupported "align");
+      if Option.is_some align then raise (Unsupported ("align", get_loc ()));
       Store.add pname (None, ty) store)
 
 let attach_bindings store bindings =
   try
     let store = attach_bindings store bindings in
     Csymex.return store
-  with Unsupported msg -> Csymex.not_impl msg
+  with Unsupported (msg, loc) ->
+    let@ () = with_loc ~loc in
+    Csymex.not_impl msg
 
 let alloc_params params st =
   Csymex.Result.fold_left params ~init:(Store.empty, st)

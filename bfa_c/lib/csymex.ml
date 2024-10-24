@@ -24,6 +24,13 @@ let with_loc ~(loc : Cerb_location.t) f =
   current_loc := old_loc;
   return res
 
+let with_loc_immediate ~loc f =
+  let old_loc = !current_loc in
+  current_loc := loc;
+  let res = f () in
+  current_loc := old_loc;
+  res
+
 let not_impl msg =
   let msg = "MISSING FEATURE, VANISHING: " ^ msg in
   L.info (fun m -> m "%s" msg);
