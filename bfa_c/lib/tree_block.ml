@@ -28,7 +28,7 @@ module MUMemVal = struct
   [@@deriving make, show { with_path = false }]
 
   let unwrap_or ~err v =
-    if%sat Svalue.is_some v then Result.ok (Svalue.unwrap_opt v)
+    if%sat Svalue.SOption.is_some v then Result.ok (Svalue.SOption.unwrap v)
     else Result.error err
 end
 

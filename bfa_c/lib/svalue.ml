@@ -20,6 +20,13 @@ end
 type ty = TBool | TInt | TPointer | TVoid | TSeq of ty | TOption of ty
 [@@deriving eq, show, ord]
 
+let t_bool = TBool
+let t_int = TInt
+let t_ptr = TPointer
+let t_void = TVoid
+let t_seq ty = TSeq ty
+let t_opt ty = TOption ty
+
 module Nop = struct
   type t = Distinct [@@deriving eq, show, ord]
 end
@@ -149,29 +156,34 @@ module Ptr = struct
   let is_null p = sem_eq p null
 end
 
-(** {2 Option} *)
+module SOption = struct
+  let is_some v =
+    match v.node with
+    | Opt (Some _) -> v_true
+    | Opt None -> v_false
+    | _ -> hashcons (Unop (IsSome, v))
 
-let is_some v =
-  match v.node with
-  | Opt (Some _) -> v_true
-  | Opt None -> v_false
-  | _ -> hashcons (Unop (IsSome, v))
+  let is_none v =
+    match v.node with
+    | Opt None -> v_true
+    | Opt (Some _) -> v_false
+    | _ -> hashcons (Unop (IsNone, v))
 
-let is_none v =
-  match v.node with
-  | Opt None -> v_true
-  | Opt (Some _) -> v_false
-  | _ -> hashcons (Unop (IsNone, v))
+  let none = hashcons (Opt None)
+  let some v = hashcons (Opt (Some v))
 
-let unwrap_opt v =
-  match v.node with
-  | Opt (Some v) -> v
-  | Opt None -> failwith "opt_unwrap: got None"
-  | _ -> hashcons (Unop (UnwrapOpt, v))
+  let unwrap v =
+    match v.node with
+    | Opt (Some v) -> v
+    | Opt None -> failwith "opt_unwrap: got None"
+    | _ -> hashcons (Unop (UnwrapOpt, v))
+end
 
 (** {2 Sequences} *)
 
-let seq s = hashcons (Seq s)
+module SSeq = struct
+  let mk l = hashcons (Seq l)
+end
 
 (** {2 Void} *)
 let void = hashcons Void
@@ -182,7 +194,7 @@ module Infix = struct
   let int_z = int_z
   let int = int
   let ptr = Ptr.mk
-  let seq = seq
+  let seq = SSeq.mk
   let ( #== ) = sem_eq
   let ( #> ) = gt
   let ( #>= ) = geq
