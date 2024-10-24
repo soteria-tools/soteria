@@ -142,7 +142,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
             Heap.load v ty state
       | _ ->
           Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op)
-  (* | AilEbinary (e1, op, e2) -> (
+  | AilEbinary (e1, op, e2) -> (
       (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
       let** v1, state = eval_expr state e1 in
       let** v2, state = eval_expr state e2 in
@@ -150,16 +150,16 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       let v2 = Typed.cast v2 in
       (* FIXME: the semantics of value comparison is a lot more complex than this! *)
       match op with
-      | Ge -> Result.ok (v1 #>= v2, state)
-      | Gt -> Result.ok (v1 #> v2, state)
-      | Lt -> Result.ok (v1 #< v2, state)
-      | Le -> Result.ok (v1 #<= v2, state)
+      | Ge -> Result.ok (v1 #>= v2 |> Typed.int_of_bool, state)
+      | Gt -> Result.ok (v1 #> v2 |> Typed.int_of_bool, state)
+      | Lt -> Result.ok (v1 #< v2 |> Typed.int_of_bool, state)
+      | Le -> Result.ok (v1 #<= v2 |> Typed.int_of_bool, state)
       | Arithmetic Div ->
           if%sat v2 #== Typed.zero then Result.error (`DivisionByZero, loc)
           else Result.ok (v1 #/ v2, state)
       | _ ->
           Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
-            op) *)
+            op)
   | AilErvalue e ->
       let** lvalue, state = eval_expr state e in
       let ty = type_of e in

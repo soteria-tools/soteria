@@ -61,6 +61,7 @@ val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t
 val nonzero_z : Z.t -> [> nonzero ] t
 val nonzero : int -> [> nonzero ] t
+val int_of_bool : [< sbool ] t -> [> sint ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
 val null_loc : [> sloc ] t
@@ -99,14 +100,14 @@ end
 module Infix : sig
   val ( #== ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
   val ( #> ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( #>= ) : [< sint ] t -> [< sint ] t -> sbool t
-  val ( #< ) : [< sint ] t -> [< sint ] t -> sbool t
-  val ( #<= ) : [< sint ] t -> [< sint ] t -> sbool t
+  val ( #>= ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( #< ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( #<= ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( #&& ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
-  val ( #+ ) : [< sint ] t -> [< sint ] t -> sint t
-  val ( #- ) : [< sint ] t -> [< sint ] t -> sint t
-  val ( #* ) : [< sint ] t -> [< sint ] t -> sint t
-  val ( #/ ) : [< sint ] t -> nonzero t -> sint t
+  val ( #+ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( #- ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( #* ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( #/ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 end
 
 module Result : sig

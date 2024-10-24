@@ -31,7 +31,14 @@ module Nop = struct
 end
 
 module Unop = struct
-  type t = Not | IsSome | IsNone | UnwrapOpt | GetPtrLoc | GetPtrOfs
+  type t =
+    | Not
+    | IsSome
+    | IsNone
+    | UnwrapOpt
+    | GetPtrLoc
+    | GetPtrOfs
+    | IntOfBool
   [@@deriving eq, show, ord]
 end
 
@@ -121,6 +128,13 @@ let distinct l = hashcons (Nop (Distinct, l))
 
 let int_z z = hashcons (Int z)
 let int i = int_z (Z.of_int i)
+
+let int_of_bool b =
+  match b.node with
+  | Bool true -> int 1
+  | Bool false -> int 0
+  | _ -> hashcons (Unop (IntOfBool, b))
+
 let zero = int_z Z.zero
 let one = int_z Z.one
 

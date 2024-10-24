@@ -178,7 +178,8 @@ let rec encode_value (v : Svalue.t) =
       | IsNone -> is_none v
       | GetPtrLoc -> get_loc v
       | GetPtrOfs -> get_ofs v
-      | UnwrapOpt -> opt_unwrap v)
+      | UnwrapOpt -> opt_unwrap v
+      | IntOfBool -> ite v (int_k 1) (int_k 0))
   | Binop (binop, v1, v2) -> (
       let v1 = encode_value_memo v1 in
       let v2 = encode_value_memo v2 in
