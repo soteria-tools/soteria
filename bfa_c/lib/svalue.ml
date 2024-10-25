@@ -120,7 +120,8 @@ let and_ v1 v2 =
 let not sv =
   if equal sv v_true then v_false
   else if equal sv v_false then v_true
-  else hashcons (Unop (Not, sv))
+  else
+    match sv.node with Unop (Not, sv) -> sv | _ -> hashcons (Unop (Not, sv))
 
 let distinct l = hashcons (Nop (Distinct, l))
 

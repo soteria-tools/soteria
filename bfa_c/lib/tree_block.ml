@@ -30,6 +30,11 @@ module MUMemVal = struct
   [@@deriving make, show { with_path = false }]
 
   let unwrap_or ~err v =
+    (* What I would like to be writing:
+       match%sat v with
+       | Some v -> Result.ok v
+       | _ -> Result.error err
+    *)
     if%sat Typed.SOption.is_some v then Result.ok (Typed.SOption.unwrap v)
     else Result.error err
 end
@@ -85,7 +90,7 @@ module Node = struct
     | NotOwned _ -> Result.error `MissingResource
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
-        if Layout.is_int ty then Result.ok Typed.zero
+        if Layout.is_int ty then Result.ok 0s
         else Fmt.kstr not_impl "Float zeros"
     | Owned Lazy ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
@@ -332,8 +337,7 @@ let is_exclusively_owned t =
   | None -> return Typed.v_false
   | Some bound ->
       let Tree.{ range = low, high; node; _ } = t.root in
-      if Node.is_fully_owned node then
-        return low #== Typed.zero #&& (high #== bound)
+      if Node.is_fully_owned node then return low #== 0s #&& (high #== bound)
       else return Typed.v_false
 
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
@@ -345,4 +349,4 @@ let store ofs ty sval t =
   let* size = Layout.size_of_s ty in
   with_bound_check t ofs #+ size @@ fun () -> Tree.store ofs ty sval t.root
 
-let alloc size = { root = Tree.uninit (Typed.zero, size); bound = Some size }
+let alloc size = { root = Tree.uninit (0s, size); bound = Some size }

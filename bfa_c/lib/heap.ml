@@ -44,7 +44,7 @@ let alloc size st =
   let@ () = with_loc_err () in
   let block = Freeable.Substate (Tree_block.alloc size) in
   let** loc, st = SPmap.alloc ~new_codom:block st in
-  let ptr = Typed.Ptr.mk loc Typed.zero in
+  let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
   Result.ok ~learned:Typed.[ not loc #== null_loc ] (ptr, st)
 
@@ -58,7 +58,7 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) : (unit * t, 'err) Result.t =
     let+ r = Tree_block.is_exclusively_owned tb in
     Typed.untyped r
   in
-  if%sat (Typed.Ptr.ofs ptr) #== Typed.zero then
+  if%sat (Typed.Ptr.ofs ptr) #== 0s then
     let@ () = with_loc_err () in
     (SPmap.wrap (Freeable.free ~is_exclusively_owned)) (Typed.Ptr.loc ptr) st
   else error `InvalidFree

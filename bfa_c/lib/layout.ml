@@ -1,4 +1,5 @@
 open Cerb_frontend.Ctype
+open Typed.Syntax
 
 module Archi = struct
   let word_size = 8
@@ -27,8 +28,8 @@ let int_constraints (int_ty : integerType) =
   let open Typed.Infix in
   let open Syntaxes.Option in
   match int_ty with
-  | Char -> Some (fun x -> [ Typed.zero #<= x; x #< (Typed.int 256) ])
-  | Bool -> Some (fun x -> [ Typed.zero #<= x; x #< (Typed.int 2) ])
+  | Char -> Some (fun x -> [ 0s #<= x; x #< 256s ])
+  | Bool -> Some (fun x -> [ 0s #<= x; x #< 2s ])
   | Signed _ ->
       let+ size = size_of_int_ty int_ty in
       let min = Z.neg (Z.shift_left Z.one ((size * 8) - 1)) in
@@ -37,5 +38,5 @@ let int_constraints (int_ty : integerType) =
   | Unsigned _ ->
       let+ size = size_of_int_ty int_ty in
       let max = Z.pred (Z.shift_left Z.one (size * 8)) in
-      fun x -> [ Typed.zero #<= x; x #<= (Typed.int_z max) ]
+      fun x -> [ 0s #<= x; x #<= (Typed.int_z max) ]
   | _ -> None

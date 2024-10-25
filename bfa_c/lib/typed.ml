@@ -50,6 +50,12 @@ let nondet = Csymex.nondet
 
 module Syntax = struct
   module Symex_syntax = Csymex.SYMEX.Syntax.Symex_syntax
+
+  module Sym_int_syntax = struct
+    let mk_int = int
+    let zero = zero
+    let one = one
+  end
 end
 
 module Result = struct

@@ -158,7 +158,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       | Lt -> Result.ok (v1 #< v2 |> Typed.int_of_bool, state)
       | Le -> Result.ok (v1 #<= v2 |> Typed.int_of_bool, state)
       | Arithmetic Div ->
-          if%sat v2 #== Typed.zero then Result.error (`DivisionByZero, loc)
+          if%sat v2 #== 0s then Result.error (`DivisionByZero, loc)
           else Result.ok (v1 #/ v2, state)
       | _ ->
           Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
@@ -219,8 +219,7 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
       let** v, state = eval_expr ~prog ~store state cond in
       (* [v] must be an integer! (TODO: or NULL possibly...) *)
       let v : T.sint Typed.t = Typed.cast v in
-      if%sat Typed.(not v #== Typed.zero) then
-        exec_stmt ~prog store state then_stmt
+      if%sat Typed.(not v #== 0s) then exec_stmt ~prog store state then_stmt
       else exec_stmt ~prog store state else_stmt
   | AilSdeclaration decls ->
       let++ store, st =
@@ -258,5 +257,5 @@ and exec_fun ~prog ~args ~state (fundef : fundef) =
   (* TODO: local optimisation to put values in store directly when no address is taken. *)
   let++ val_opt, _, state = exec_stmt ~prog store state stmt in
   (* We model void as zero, it should never be used anyway *)
-  let value = Option.value ~default:Typed.zero val_opt in
+  let value = Option.value ~default:0s val_opt in
   (value, state)

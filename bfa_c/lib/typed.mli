@@ -132,4 +132,10 @@ module Syntax : sig
       else_:(unit -> 'a Csymex.t) ->
       'a Csymex.t
   end
+
+  module Sym_int_syntax : sig
+    val mk_int : int -> [> sint ] t
+    val zero : [> sint ] t
+    val one : [> sint ] t
+  end
 end
