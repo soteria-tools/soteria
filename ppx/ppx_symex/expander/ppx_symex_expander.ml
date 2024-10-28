@@ -32,7 +32,7 @@ end
 
 module Sym_constants = struct
   let rewriter loc s =
-    let i = Ast_builder.Default.eint ~loc (int_of_string s * 100) in
+    let i = Ast_builder.Default.eint ~loc (int_of_string s) in
     [%expr Sym_int_syntax.mk_int [%e i]]
 
   let suffix = 's'
