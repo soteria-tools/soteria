@@ -19,7 +19,7 @@
       "autoAttachChildProcesses": true,
       "preLaunchTask": {
         "type": "npm",
-        "script": "watch",
+        "script": "compile-all",
       }
     },
     {
@@ -39,7 +39,7 @@
       "autoAttachChildProcesses": true,
       "preLaunchTask": {
         "type": "npm",
-        "script": "watch-all",
+        "script": "compile-all",
       }
     }
   ]
