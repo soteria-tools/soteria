@@ -169,8 +169,10 @@ let exec_main_and_print log_level smt_file file_name =
         Fmt.Dump.(list @@ result ~ok:(pair Typed.ppa Heap.pp) ~error:pp_err)
         result)
 
+let temp_file = lazy (Filename.temp_file "bfa_c" ".c")
+
 let run_to_errors content =
-  let file_name = Filename.temp_file "bfa_c" ".c" in
+  let (lazy file_name) = temp_file in
   let () =
     let oc = open_out file_name in
     output_string oc content;
