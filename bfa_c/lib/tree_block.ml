@@ -22,7 +22,7 @@ module MemVal = struct
 end
 
 module MUMemVal = struct
-  (* The svalue must be of type Int option, where the int is a valid representative of chunk (i.e. a bitvector.) *)
+  (* The svalue must be of type Int option, where the int is a valid representative of a type *)
   type t = {
     value : T.cval T.sopt Typed.t;
     ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]

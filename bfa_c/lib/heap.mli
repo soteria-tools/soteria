@@ -5,14 +5,6 @@ type t [@@deriving show]
 
 val empty : t
 
-val with_ptr :
-  [< sptr ] Typed.t ->
-  t ->
-  (ofs:sint Typed.t ->
-  Tree_block.t ->
-  ('a * Tree_block.t, ([> `MissingKey | `UseAfterFree ] as 'b)) Result.t) ->
-  ('a * t, 'b) Result.t
-
 val load :
   [< sptr ] Typed.t ->
   Tree_block.Ctype.ctype ->
