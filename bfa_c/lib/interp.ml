@@ -98,11 +98,19 @@ let nondet_int_fun ~prog:_ ~args:_ ~state :
   let v = (v :> cval Typed.t) in
   Ok (v, state)
 
+let debug_show ~prog:_ ~args:_ ~state =
+  let loc = get_loc () in
+  let str = (Fmt.to_to_string Heap.pp) state in
+  Csymex.push_give_up (str, loc);
+  Result.ok (0s, state)
+
 let find_stub ~prog:_ fname : 'err fun_exec option =
   let name = Cerb_frontend.Pp_symbol.to_string fname in
   if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
   else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
   else if String.starts_with ~prefix:"free" name then Some C_std.free
+  else if String.starts_with ~prefix:"___bfa_debug_show" name then
+    Some debug_show
   else None
 
 let rec equality_check ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
@@ -117,7 +125,26 @@ let rec equality_check ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
       else Result.error (`UBPointerComparison, loc)
   | TInt, TPointer -> equality_check ~loc ~state v2 v1
   | _ ->
-      Fmt.kstr not_impl "Unexpected types in cval: %a and %a" Typed.ppa v1
+      Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a" Typed.ppa
+        v1 Typed.ppa v2
+
+let rec arith_add ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
+    (v2 : [< Typed.T.cval ] Typed.t) =
+  match (Typed.get_ty v1, Typed.get_ty v2) with
+  | TInt, TInt ->
+      let v1 = Typed.cast v1 in
+      let v2 = Typed.cast v2 in
+      Result.ok (v1 #+ v2, state)
+  | TPointer, TInt ->
+      let v1 : T.sptr Typed.t = Typed.cast v1 in
+      let v2 : T.sint Typed.t = Typed.cast v2 in
+      let loc = Typed.Ptr.loc v1 in
+      let ofs = (Typed.Ptr.ofs v1) #+ v2 in
+      Result.ok (Typed.Ptr.mk loc ofs, state)
+  | TInt, TPointer -> arith_add ~loc ~state v2 v1
+  | TPointer, TPointer -> Result.error (`UBPointerArithmetic, loc)
+  | _ ->
+      Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
         Typed.ppa v2
 
 let rec resolve_function ~(prog : sigma) fexpr : 'err fun_exec Csymex.t =
@@ -220,6 +247,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
               let* v1 = cast_checked v1 Typed.t_int in
               let+ v2 = cast_checked v2 Typed.t_int in
               Stdlib.Result.ok (v1 #* v2, state)
+          | Add -> arith_add ~loc ~state v1 v2
           | _ ->
               Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
                 Fmt_ail.pp_arithop a_op)
@@ -254,6 +282,16 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       let+ res = Layout.size_of_s ty in
 
       Ok (res, state)
+  | AilSyntax.AilEmemberofptr (ptr, member) ->
+      let** ptr_v, state = eval_expr state ptr in
+      let* ty_pointee =
+        type_of ptr
+        |> Cerb_frontend.AilTypesAux.referenced_type
+        |> Csymex.of_opt_not_impl
+             ~msg:"Member of Pointer that isn't of type pointer"
+      in
+      let* mem_ofs = Layout.member_ofs member ty_pointee in
+      arith_add ~loc ~state ptr_v mem_ofs
   | AilSyntax.AilEcompoundAssign (_, _, _)
   | AilSyntax.AilEcond (_, _, _)
   | AilSyntax.AilEcast (_, _, _)
@@ -265,7 +303,6 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
   | AilSyntax.AilEunion (_, _, _)
   | AilSyntax.AilEcompound (_, _, _)
   | AilSyntax.AilEmemberof (_, _)
-  | AilSyntax.AilEmemberofptr (_, _)
   | AilSyntax.AilEbuiltin _ | AilSyntax.AilEstr _ | AilSyntax.AilEsizeof_expr _
   | AilSyntax.AilEalignof (_, _)
   | AilSyntax.AilEannot (_, _)

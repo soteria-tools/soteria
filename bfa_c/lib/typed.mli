@@ -71,7 +71,6 @@ val nonzero : int -> [> nonzero ] t
 val int_of_bool : [< sbool ] t -> [> sint ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
-val null_loc : [> sloc ] t
 val geq : [< sint ] t -> [< sint ] t -> [> sbool ] t
 val gt : [< sint ] t -> [< sint ] t -> [> sbool ] t
 val leq : [< sint ] t -> [< sint ] t -> [> sbool ] t
@@ -89,7 +88,9 @@ module Ptr : sig
   val loc : [< sptr ] t -> [> sloc ] t
   val ofs : [< sptr ] t -> [> sint ] t
   val null : [> sptr ] t
+  val null_loc : [> sloc ] t
   val is_null : [< sptr ] t -> [> sbool ] t
+  val is_at_null_loc : [< sptr ] t -> [> sbool ] t
 end
 
 module SOption : sig

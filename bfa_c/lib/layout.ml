@@ -6,7 +6,11 @@ module Archi = struct
   let word_size = 8
 end
 
-type layout = { size : int; align : int }
+type layout = {
+  size : int;
+  align : int;
+  members_ofs : (CF.Symbol.identifier * int) Array.t;
+}
 
 module Tag_defs = struct
   type def = Cerb_location.t * Cerb_frontend.Ctype.tag_definition
@@ -54,7 +58,7 @@ let rec layout_of ty =
     | Basic (Integer inty) ->
         let* size = size_of_int_ty inty in
         let+ align = align_of_int_ty inty in
-        { size; align }
+        { size; align; members_ofs = [||] }
     | Pointer _ -> layout_of (Ctype ([], Basic (Integer Size_t)))
     | Struct tag ->
         let* loc, def = Tag_defs.find_opt tag in
@@ -86,23 +90,50 @@ Then the structure’s size is rounded up to a multiple of its alignment.
 That may require leaving a gap at the end of the structure. *)
 and layout_of_members members =
   let open Syntaxes.Option in
-  let rec aux layout = function
-    | [] -> layout
-    | (_field_name, (_attrs, _align, _quals, ty)) :: rest ->
-        let* { size = curr_size; align = curr_align } = layout in
-        let* { size; align } = layout_of ty in
-        let new_size = curr_size + (curr_size mod align) + size in
+  let rec aux members_ofs (layout : layout) = function
+    | [] -> Some (List.rev members_ofs, layout)
+    | (field_name, (_attrs, _align, _quals, ty)) :: rest ->
+        let { size = curr_size; align = curr_align; members_ofs = _ } =
+          layout
+        in
+        let* { size; align; _ } = layout_of ty in
+        let mem_ofs = curr_size + (curr_size mod align) in
+        let new_size = mem_ofs + size in
         let new_align = Int.max align curr_align in
-        aux (Some { size = new_size; align = new_align }) rest
+        aux
+          ((field_name, mem_ofs) :: members_ofs)
+          { size = new_size; align = new_align; members_ofs = [||] }
+          rest
   in
-  let+ { size; align } = aux (Some { size = 0; align = 1 }) members in
-  { size = size + (size mod align); align }
+  let+ members_ofs, { size; align; members_ofs = _ } =
+    aux [] { size = 0; align = 1; members_ofs = [||] } members
+  in
+  {
+    size = size + (size mod align);
+    align;
+    members_ofs = Array.of_list members_ofs;
+  }
 
 let size_of_s ty =
   match layout_of ty with
   | Some { size; _ } -> Csymex.return (Typed.int size)
   | None ->
       Fmt.kstr Csymex.not_impl "Cannot yet compute size of type %a"
+        Fmt_ail.pp_ty ty
+
+let member_ofs id ty =
+  match layout_of ty with
+  | Some { members_ofs; _ } -> (
+      let res =
+        Array.find_opt (fun (id', _) -> CF.Symbol.idEqual id id') members_ofs
+      in
+      match res with
+      | Some (_, ofs) -> Csymex.return (Typed.int ofs)
+      | None ->
+          Fmt.kstr Csymex.not_impl "Cannot find member %a in type %a"
+            Fmt_ail.pp_id id Fmt_ail.pp_ty ty)
+  | None ->
+      Fmt.kstr Csymex.not_impl "Cannot yet compute layout of type %a"
         Fmt_ail.pp_ty ty
 
 let int_constraints (int_ty : integerType) =

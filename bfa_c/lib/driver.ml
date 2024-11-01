@@ -139,6 +139,7 @@ let pp_err ft (err, _loc) =
   | `DivisionByZero -> Fmt.string ft "DivisionByZero"
   | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
   | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
+  | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
   | `DoubleFree -> Fmt.string ft "DoubleFree"
   | `InvalidFree -> Fmt.string ft "InvalidFree"
   | `MissingOwnership -> Fmt.string ft "MissingOwnership"

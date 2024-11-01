@@ -171,8 +171,10 @@ module Ptr = struct
   let ofs p =
     match p.node.kind with Ptr (_, o) -> o | _ -> Unop (GetPtrOfs, p) <| TInt
 
-  let null = mk zero zero
+  let null_loc = Int Z.zero <| TLoc
+  let null = mk null_loc zero
   let is_null p = sem_eq p null
+  let is_at_null_loc p = sem_eq (loc p) zero
 end
 
 module SOption = struct

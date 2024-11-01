@@ -8,6 +8,7 @@ let pp_to_fmt (pprinter : 'a -> PPrint.document) : 'a Fmt.t =
   Fmt.pf ft "%s" (Buffer.contents buffer)
 
 let pp_loc = Fmt.of_to_string Cerb_location.location_to_string
+let pp_id = pp_to_fmt (Cerb_frontend.Pp_symbol.pp_identifier ~clever:true)
 let pp_sym = Fmt.of_to_string Cerb_frontend.Pp_symbol.to_string
 let pp_ty = pp_to_fmt Cerb_frontend.Pp_core_ctype.pp_ctype
 let pp_arithop = pp_to_fmt pp_arithmeticOperator

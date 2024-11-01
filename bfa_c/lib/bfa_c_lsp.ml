@@ -32,6 +32,8 @@ let error_to_diagnostic_opt (err, loc) =
     | `DivisionByZero -> Some (Error, "Division By Zero")
     | `UBPointerComparison ->
         Some (Error, "Undefined Behavior for Pointer Comparison")
+    | `UBPointerArithmetic ->
+        Some (Error, "Undefined Behavior for Pointer Arithmetic")
     | `DoubleFree -> Some (Error, "Double Free")
     | `InvalidFree -> Some (Error, "Invalid Pointer passed to free")
     | `MissingKey -> Some (Information, "Missing Key")

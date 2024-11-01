@@ -50,7 +50,6 @@ let check_nonzero t =
   if%sat Infix.(t #== zero) then Csymex.Result.error `NonZeroIsZero
   else Csymex.Result.ok t
 
-let null_loc = zero
 let nondet = Csymex.nondet
 
 module Syntax = struct
