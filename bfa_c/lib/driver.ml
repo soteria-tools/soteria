@@ -107,6 +107,7 @@ module Frontend = struct
     | Exception.Exception msg ->
         frontend := fun _ -> failwith ("Failed to initialize frontend: " ^ msg)
 
+  let () = Initialize_analysis.register_once_initialiser init
   let frontend filename = !frontend filename
 end
 
@@ -148,11 +149,11 @@ let exec_main file_name =
           Error (`ParsingError "No entry point function", Cerb_location.unknown)
       | Some e -> Ok e
     in
-    let () = Initialize_analysis.reinit sigma in
     let entry_point =
       sigma.function_definitions
       |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)
     in
+    let () = Initialize_analysis.reinit sigma in
     let symex =
       Interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
     in
@@ -162,9 +163,10 @@ let exec_main file_name =
 
 (* Entry point function *)
 let exec_main_and_print log_level smt_file file_name =
+  (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
-  Frontend.init ();
+  Initialize_analysis.init_once ();
   let result = exec_main file_name in
   L.app (fun m ->
       m "@[<v 2>Symex terminated with the following outcomes:@ %a@]"
@@ -186,7 +188,7 @@ let run_to_errors content =
 (* Entry point function *)
 let lsp () =
   setup_stderr_log ~log_lsp:true (Some Logs.Debug);
-  Frontend.init ();
+  Initialize_analysis.init_once ();
   Bfa_c_lsp.run ~run_to_errors ()
 
 (* Entry point function *)

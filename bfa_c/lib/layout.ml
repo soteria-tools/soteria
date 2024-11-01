@@ -29,7 +29,7 @@ module Tag_defs = struct
         Hashtbl.clear cached_layouts)
 
   let () =
-    Initialize_analysis.register_initializer (fun sigma ->
+    Initialize_analysis.register_before_each_initialiser (fun sigma ->
         add_defs sigma.tag_definitions)
 end
 

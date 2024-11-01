@@ -28,8 +28,11 @@ end
 type nonrec +'a t = t
 type nonrec +'a ty = ty
 
+let get_ty x = x.node.ty
 let ppa = pp
 let pp _ = pp
+let ppa_ty = pp_ty
+let pp_ty _ = pp_ty
 let cast x = x
 let untyped x = x
 let type_ x = x

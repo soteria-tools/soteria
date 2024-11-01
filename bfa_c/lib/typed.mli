@@ -29,6 +29,10 @@ open T
 (** {2 Types} *)
 type +'a ty
 
+val pp_ty :
+  (Format.formatter -> 'a ty -> unit) -> Format.formatter -> 'a ty -> unit
+
+val ppa_ty : Format.formatter -> 'a ty -> unit
 val t_bool : [> sbool ] ty
 val t_int : [> sint ] ty
 val t_ptr : [> sptr ] ty
@@ -43,6 +47,7 @@ type +'a t
 val nondet :
   ?constrs:(([< any ] as 'a) t -> [> sbool ] t list) -> 'a ty -> 'a t Csymex.t
 
+val get_ty : 'a t -> Svalue.ty
 val type_ : Svalue.t -> 'a t
 val type_checked : Svalue.t -> 'a ty -> 'a t option
 val cast : 'a t -> 'b t

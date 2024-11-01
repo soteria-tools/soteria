@@ -1,103 +1,138 @@
 Just reading an empty file
   $ bfa-c exec-main empty.c
   Symex terminated with the following outcomes:
-    [Ok (0, {})]
+    [Ok ({ kind = 0; ty = Svalue.TInt }, {})]
 
 Symbolic execution of a simple program with concrete values only
   $ bfa-c exec-main conc.c
   Symex terminated with the following outcomes:
     [Ok
-       (2,
-        {(Var (|1|, Svalue.TInt)) -> (Substate
-                                        { root =
-                                          { node =
-                                            (Owned
-                                               (Init
-                                                  { value = 11; ty = signed int
-                                                    }));
-                                            range = [0, 4[; children = None };
-                                          bound = (Some 4) }); (Var
-                                                                  (|3|,
-                                                                   Svalue.TInt)) -> (
-        Substate
-          { root =
-            { node = (Owned (Init { value = 12; ty = signed int }));
-              range = [0, 4[; children = None };
-            bound = (Some 4) })})]
+       ({ kind = 2; ty = Svalue.TInt },
+        {[{ kind = (Var |1|); ty = Svalue.TLoc } ->
+         (Alive
+            { root =
+              { node =
+                (Owned
+                   (Init
+                      { value = { kind = 11; ty = Svalue.TInt };
+                        ty = signed int }));
+                range =
+                [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
+                children = None };
+              bound = (Some { kind = 4; ty = Svalue.TInt }) });
+        [{ kind = (Var |3|); ty = Svalue.TLoc } ->
+        (Alive
+           { root =
+             { node =
+               (Owned
+                  (Init
+                     { value = { kind = 12; ty = Svalue.TInt }; ty = signed int
+                       }));
+               range =
+               [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
+               children = None };
+             bound = (Some { kind = 4; ty = Svalue.TInt }) })})]
 
 Symbolic execution of a simple program with symbolic values
   $ bfa-c exec-main sym.c
   Symex terminated with the following outcomes:
     [Ok
-       (1,
-        {(Var (|1|, Svalue.TInt)) -> (Substate
-                                        { root =
-                                          { node =
-                                            (Owned
-                                               (Init
-                                                  { value =
-                                                    (Var (|3|, Svalue.TInt));
-                                                    ty = signed int }));
-                                            range = [0, 4[; children = None };
-                                          bound = (Some 4) }); (Var
-                                                                  (|5|,
-                                                                   Svalue.TInt)) -> (
-        Substate
-          { root =
-            { node =
-              (Owned
-                 (Init { value = (Var (|3|, Svalue.TInt)); ty = signed int }));
-              range = [0, 4[; children = None };
-            bound = (Some 4) })});
-     Ok
-       (2,
-        {(Var (|1|, Svalue.TInt)) -> (Substate
-                                        { root =
-                                          { node =
-                                            (Owned
-                                               (Init
-                                                  { value =
-                                                    (Var (|3|, Svalue.TInt));
-                                                    ty = signed int }));
-                                            range = [0, 4[; children = None };
-                                          bound = (Some 4) }); (Var
-                                                                  (|5|,
-                                                                   Svalue.TInt)) -> (
-        Substate
-          { root =
-            { node =
-              (Owned
-                 (Init { value = (Var (|3|, Svalue.TInt)); ty = signed int }));
-              range = [0, 4[; children = None };
-            bound = (Some 4) })})]
+       ({ kind = 1; ty = Svalue.TInt },
+        {[{ kind = (Var |1|); ty = Svalue.TLoc } ->
+         (Alive
+            { root =
+              { node =
+                (Owned
+                   (Init
+                      { value = { kind = (Var |3|); ty = Svalue.TInt };
+                        ty = signed int }));
+                range =
+                [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
+                children = None };
+              bound = (Some { kind = 4; ty = Svalue.TInt }) });
+        [{ kind = (Var |5|); ty = Svalue.TLoc } ->
+        (Alive
+           { root =
+             { node =
+               (Owned
+                  (Init
+                     { value = { kind = (Var |3|); ty = Svalue.TInt };
+                       ty = signed int }));
+               range =
+               [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
+               children = None };
+             bound = (Some { kind = 4; ty = Svalue.TInt }) })});
+  Ok
+    ({ kind = 2; ty = Svalue.TInt },
+     {[{ kind = (Var |1|); ty = Svalue.TLoc } ->
+      (Alive
+         { root =
+           { node =
+             (Owned
+                (Init
+                   { value = { kind = (Var |3|); ty = Svalue.TInt };
+                     ty = signed int }));
+             range =
+             [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
+             children = None };
+           bound = (Some { kind = 4; ty = Svalue.TInt }) });
+     [{ kind = (Var |5|); ty = Svalue.TLoc } ->
+     (Alive
+        { root =
+          { node =
+            (Owned
+               (Init
+                  { value = { kind = (Var |3|); ty = Svalue.TInt };
+                    ty = signed int }));
+            range =
+            [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
+            children = None };
+          bound = (Some { kind = 4; ty = Svalue.TInt }) })})]
 
 Symbolic execution of a simple program with symbolic values that fails because of an allocation error
   $ bfa-c exec-main err.c
   Symex terminated with the following outcomes:
     [Ok
-       (0,
-        {(Var (|1|, Svalue.TInt)) -> (Substate
-                                        { root =
-                                          { node =
-                                            (Owned
-                                               (Init
-                                                  { value =
-                                                    (Ptr
-                                                       ((Var (|3|, Svalue.TInt)),
-                                                        0));
-                                                    ty = signed int* }));
-                                            range = [0, 8[; children = None };
-                                          bound = (Some 8) }); (Var
-                                                                  (|3|,
-                                                                   Svalue.TInt)) -> (
-        Substate
-          { root =
-            { node = (Owned Lazy); range = [0, 1024[;
-              children =
-              (Some ({ node = (Owned (Init { value = 12; ty = signed int }));
-                       range = [0, 4[; children = None },
-                     { node = (Owned (Uninit Totally)); range = [4, 1024[;
-                       children = None }))
-              };
-            bound = (Some 1024) })});
-     Error NullDereference]
+       ({ kind = 0; ty = Svalue.TInt },
+        {[{ kind = (Var |1|); ty = Svalue.TLoc } ->
+         (Alive
+            { root =
+              { node =
+                (Owned
+                   (Init
+                      { value =
+                        { kind =
+                          (Ptr
+                             ({ kind = (Var |3|); ty = Svalue.TLoc },
+                              { kind = 0; ty = Svalue.TInt }));
+                          ty = Svalue.TPointer };
+                        ty = signed int* }));
+                range =
+                [{ kind = 0; ty = Svalue.TInt }, { kind = 8; ty = Svalue.TInt }[;
+                children = None };
+              bound = (Some { kind = 8; ty = Svalue.TInt }) });
+        [{ kind = (Var |3|); ty = Svalue.TLoc } ->
+        (Alive
+           { root =
+             { node = (Owned Lazy);
+               range =
+               [{ kind = 0; ty = Svalue.TInt }, { kind = 1024; ty = Svalue.TInt
+                                                  }[;
+               children =
+               (Some ({ node =
+                        (Owned
+                           (Init
+                              { value = { kind = 12; ty = Svalue.TInt };
+                                ty = signed int }));
+                        range =
+                        [{ kind = 0; ty = Svalue.TInt }, { kind = 4;
+                                                           ty = Svalue.TInt }[;
+                        children = None },
+                      { node = (Owned (Uninit Totally));
+                        range =
+                        [{ kind = 4; ty = Svalue.TInt }, { kind = 1024;
+                                                           ty = Svalue.TInt }[;
+                        children = None }))
+               };
+             bound = (Some { kind = 1024; ty = Svalue.TInt }) })});
+  Error NullDereference]

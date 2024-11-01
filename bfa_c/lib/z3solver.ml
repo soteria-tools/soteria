@@ -54,7 +54,7 @@ let solver_config =
   | None -> base_config
   | Some exe -> { z3 with exe }
 
-let solver =
+let solver () =
   let solver = new_solver solver_config in
   let command sexp =
     log_sexp sexp;
@@ -62,11 +62,20 @@ let solver =
   in
   { solver with command }
 
-let simplify v = solver.command (list [ atom "simplify"; v ])
+let solver = lazy (solver ())
+
+let simplify v =
+  let (lazy solver) = solver in
+  solver.command (list [ atom "simplify"; v ])
+
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
 let is_constr constr = list [ atom "_"; atom "is"; atom constr ]
-let ack_command sexp = ack_command solver sexp
+
+let ack_command sexp =
+  let (lazy solver) = solver in
+  ack_command solver sexp
+
 let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts
@@ -80,7 +89,7 @@ let t_ptr, mk_ptr, get_loc, get_ofs =
     Simple_smt.(
       declare_datatype ptr [] [ (mk_ptr, [ (loc, t_int); (ofs, t_int) ]) ])
   in
-  ack_command cmd;
+  Initialize_analysis.register_once_initialiser (fun () -> ack_command cmd);
   ( atom ptr,
     (fun l o -> atom mk_ptr $$ [ l; o ]),
     (fun p -> atom loc $$ [ p ]),
@@ -96,13 +105,40 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
       declare_datatype opt [ "P" ]
         [ (mk_some, [ (opt_unwrap, atom "P") ]); (none, []) ])
   in
-  ack_command cmd;
+  Initialize_analysis.register_once_initialiser (fun () -> ack_command cmd);
   ( atom opt,
     (fun v -> atom mk_some $ v),
     (fun v -> atom opt_unwrap $ v),
     atom none,
     (fun v -> is_constr mk_some $ v),
     fun v -> is_constr none $ v )
+
+(********* End of solver declarations *********)
+
+let save_counter = ref 0
+
+let save () =
+  incr save_counter;
+  ack_command (Simple_smt.push 1)
+
+let backtrack_n n =
+  save_counter := !save_counter - n;
+  ack_command (Simple_smt.pop n)
+
+let backtrack () = backtrack_n 1
+
+(* Initialise and reset *)
+
+let () = Initialize_analysis.register_once_initialiser (fun () -> save ())
+
+(* TODO: Add 2 kinds of initialisers to `Initialize_analysis`: BeforeAll and BeforeEach.
+   This one is a BeforeEach, but we need a BeforeAll to initalise the solver context *)
+let () =
+  Initialize_analysis.register_resetter (fun () ->
+      (* We want to go back to 1, meaning after the first push which saved the declarations *)
+      L.debug (fun m -> m "Resetting solver: %d" !save_counter);
+      if !save_counter > 0 then backtrack_n !save_counter;
+      save ())
 
 let rec sort_of_ty = function
   | Value.TBool -> Simple_smt.t_bool
@@ -215,11 +251,6 @@ let fresh ty =
   ack_command c;
   v
 
-let save_cmd = Simple_smt.push 1
-let save () = ack_command save_cmd
-let backtrack_cmd = Simple_smt.pop 1
-let backtrack () = ack_command backtrack_cmd
-
 let add_constraints vs =
   vs
   |> List.iter (fun v ->
@@ -241,6 +272,7 @@ let as_bool v =
 
 (* Incremental doesn't allow for caching queries... *)
 let sat () =
+  let (lazy solver) = solver in
   let answer =
     try check solver
     with Simple_smt.UnexpectedSolverResponse s ->

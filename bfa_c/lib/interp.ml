@@ -15,6 +15,26 @@ type cval = [ T.sint | T.sptr ]
 type state = Heap.t
 type store = (T.sptr Typed.t option * Ctype.ctype) Store.t
 
+let cast_checked x ty =
+  match Typed.cast_checked x ty with
+  | Some x -> Csymex.return x
+  | None ->
+      Fmt.kstr Csymex.not_impl "Failed to cast %a to %a" Typed.ppa x
+        Typed.ppa_ty ty
+
+let cast_to_ptr x =
+  let open Csymex.Syntax in
+  let open Svalue.Infix in
+  match Typed.get_ty x with
+  | TInt ->
+      if%sat (Typed.untyped x) #== Svalue.zero then Csymex.return Typed.Ptr.null
+      else
+        Fmt.kstr Csymex.not_impl "Int-to-pointer that is not 0: %a" Typed.ppa x
+  | TPointer ->
+      let x : T.sptr Typed.t = Typed.cast x in
+      Csymex.return x
+  | _ -> Fmt.kstr Csymex.not_impl "Not a pointer: %a" Typed.ppa x
+
 type 'err fun_exec =
   prog:sigma ->
   args:T.cval Typed.t list ->
@@ -142,7 +162,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
           if lvalue then Result.ok (v, state)
           else
             let ty = type_of aexpr in
-            let v = Typed.cast v in
+            let* v = cast_to_ptr v in
             Heap.load v ty state
       | Address -> failwith "unreachable: address"
       | _ ->
@@ -151,17 +171,19 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
       let** v1, state = eval_expr state e1 in
       let** v2, state = eval_expr state e2 in
-      let v1 = Typed.cast v1 in
-      let v2 = Typed.cast v2 in
+      let* v1 = cast_checked v1 Typed.t_int in
+      let* v2 = cast_checked v2 Typed.t_int in
       (* FIXME: the semantics of value comparison is a lot more complex than this! *)
       match op with
       | Ge -> Result.ok (v1 #>= v2 |> Typed.int_of_bool, state)
       | Gt -> Result.ok (v1 #> v2 |> Typed.int_of_bool, state)
       | Lt -> Result.ok (v1 #< v2 |> Typed.int_of_bool, state)
       | Le -> Result.ok (v1 #<= v2 |> Typed.int_of_bool, state)
-      | Arithmetic Div ->
-          if%sat v2 #== 0s then Result.error (`DivisionByZero, loc)
-          else Result.ok (v1 #/ v2, state)
+      | Arithmetic Div -> (
+          let+ v2 = Typed.check_nonzero v2 in
+          match v2 with
+          | Ok v2 -> Stdlib.Result.ok (v1 #/ v2, state)
+          | Error `NonZeroIsZero -> Stdlib.Result.error (`DivisionByZero, loc))
       | _ ->
           Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
             op)
@@ -169,7 +191,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       let** lvalue, state = eval_expr state e in
       let ty = type_of e in
       (* At this point, lvalue must be a pointer (including to the stack) *)
-      let lvalue = Typed.cast lvalue in
+      let* lvalue = cast_to_ptr lvalue in
       Heap.load lvalue ty state
   | AilEident id -> (
       match Store.find_value id store with
@@ -185,8 +207,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       let** ptr, state = eval_expr ~lvalue:true state lvalue in
       (* [ptr] is a necessarily a pointer, and [rval] is a memory value.
          I don't support pointer fragments for now, so let's say it's an *)
-      let ptr = Typed.cast ptr in
-      let rval = Typed.cast rval in
+      let* ptr = cast_to_ptr ptr in
       let ty = type_of lvalue in
       let++ (), state = Heap.store ptr ty rval state in
       (rval, state)
@@ -247,7 +268,7 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
   | AilSif (cond, then_stmt, else_stmt) ->
       let** v, state = eval_expr ~prog ~store state cond in
       (* [v] must be an integer! (TODO: or NULL possibly...) *)
-      let v : T.sint Typed.t = Typed.cast v in
+      let* v = cast_checked v Typed.t_int in
       if%sat Typed.(not v #== 0s) then exec_stmt ~prog store state then_stmt
       else exec_stmt ~prog store state else_stmt
   | AilSdeclaration decls ->
