@@ -138,6 +138,7 @@ let pp_err ft (err, _loc) =
   | `UseAfterFree -> Fmt.string ft "UseAfterFree"
   | `DivisionByZero -> Fmt.string ft "DivisionByZero"
   | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
+  | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
 
 let exec_main file_name =
   let open Syntaxes.Result in

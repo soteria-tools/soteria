@@ -104,6 +104,21 @@ let find_stub ~prog:_ fname : 'err fun_exec option =
   else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
   else None
 
+let rec equality_check ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
+    (v2 : [< Typed.T.cval ] Typed.t) =
+  match (Typed.get_ty v1, Typed.get_ty v2) with
+  | TInt, TInt | TPointer, TPointer ->
+      Result.ok (v1 #== v2 |> Typed.int_of_bool, state)
+  | TPointer, TInt ->
+      let v2 : T.sint Typed.t = Typed.cast v2 in
+      if%sat Typed.(v2 #== zero) then
+        Result.ok (v1 #== Typed.Ptr.null |> Typed.int_of_bool, state)
+      else Result.error (`UBPointerComparison, loc)
+  | TInt, TPointer -> equality_check ~loc ~state v2 v1
+  | _ ->
+      Fmt.kstr not_impl "Unexpected types in cval: %a and %a" Typed.ppa v1
+        Typed.ppa v2
+
 let rec resolve_function ~(prog : sigma) fexpr : 'err fun_exec Csymex.t =
   let* loc, fname =
     match fexpr with
@@ -171,19 +186,42 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
       let** v1, state = eval_expr state e1 in
       let** v2, state = eval_expr state e2 in
-      let* v1 = cast_checked v1 Typed.t_int in
-      let* v2 = cast_checked v2 Typed.t_int in
-      (* FIXME: the semantics of value comparison is a lot more complex than this! *)
       match op with
-      | Ge -> Result.ok (v1 #>= v2 |> Typed.int_of_bool, state)
-      | Gt -> Result.ok (v1 #> v2 |> Typed.int_of_bool, state)
-      | Lt -> Result.ok (v1 #< v2 |> Typed.int_of_bool, state)
-      | Le -> Result.ok (v1 #<= v2 |> Typed.int_of_bool, state)
-      | Arithmetic Div -> (
-          let+ v2 = Typed.check_nonzero v2 in
-          match v2 with
-          | Ok v2 -> Stdlib.Result.ok (v1 #/ v2, state)
-          | Error `NonZeroIsZero -> Stdlib.Result.error (`DivisionByZero, loc))
+      | Ge ->
+          (* TODO: comparison operators for pointers *)
+          let* v1 = cast_checked v1 Typed.t_int in
+          let* v2 = cast_checked v2 Typed.t_int in
+          Result.ok (v1 #>= v2 |> Typed.int_of_bool, state)
+      | Gt ->
+          let* v1 = cast_checked v1 Typed.t_int in
+          let* v2 = cast_checked v2 Typed.t_int in
+          Result.ok (v1 #> v2 |> Typed.int_of_bool, state)
+      | Lt ->
+          let* v1 = cast_checked v1 Typed.t_int in
+          let* v2 = cast_checked v2 Typed.t_int in
+          Result.ok (v1 #< v2 |> Typed.int_of_bool, state)
+      | Le ->
+          let* v1 = cast_checked v1 Typed.t_int in
+          let* v2 = cast_checked v2 Typed.t_int in
+          Result.ok (v1 #<= v2 |> Typed.int_of_bool, state)
+      | Eq -> equality_check ~loc ~state v1 v2
+      | Arithmetic a_op -> (
+          match a_op with
+          | Div -> (
+              let* v1 = cast_checked v1 Typed.t_int in
+              let* v2 = cast_checked v2 Typed.t_int in
+              let+ v2 = Typed.check_nonzero v2 in
+              match v2 with
+              | Ok v2 -> Stdlib.Result.ok (v1 #/ v2, state)
+              | Error `NonZeroIsZero ->
+                  Stdlib.Result.error (`DivisionByZero, loc))
+          | Mul ->
+              let* v1 = cast_checked v1 Typed.t_int in
+              let+ v2 = cast_checked v2 Typed.t_int in
+              Stdlib.Result.ok (v1 #* v2, state)
+          | _ ->
+              Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
+                Fmt_ail.pp_arithop a_op)
       | _ ->
           Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
             op)

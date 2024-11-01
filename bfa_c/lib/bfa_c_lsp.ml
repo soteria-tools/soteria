@@ -33,6 +33,9 @@ let error_to_diagnostic_opt (err, loc) =
     | `ParsingError s -> Some (DiagnosticSeverity.Error, s)
     | `UseAfterFree -> Some (DiagnosticSeverity.Error, "Use After Free")
     | `DivisionByZero -> Some (DiagnosticSeverity.Error, "Division By Zero")
+    | `UBPointerComparison ->
+        Some
+          (DiagnosticSeverity.Error, "Undefined Behavior for Pointer Comparison")
   in
   Lsp.Types.Diagnostic.create ~message ~severity ~range:(cerb_loc_to_range loc)
     ~source:"bfa" ()
