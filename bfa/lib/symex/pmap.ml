@@ -21,9 +21,11 @@ struct
 
   type 'a t = 'a M.t
 
-  let pp pp_value ft t =
-    let pp_binding ft (k, v) = Fmt.pf ft "%a -> %a" Key.pp k pp_value v in
-    Fmt.pf ft "{%a}" (Fmt.list ~sep:(Fmt.any "; ") pp_binding) (M.bindings t)
+  let pp pp_value =
+    let open Fmt in
+    let iter f = M.iter (fun k v -> f (k, v)) in
+    let pp_binding ft (k, v) = pf ft "[@<2>%a ->@ %a@]" Key.pp k pp_value v in
+    braces (Fmt.iter ~sep:(any ";@ ") iter pp_binding)
 
   let empty = M.empty
 

@@ -42,7 +42,7 @@ let store ptr ty sval st =
 
 let alloc size st =
   let@ () = with_loc_err () in
-  let block = Freeable.Substate (Tree_block.alloc size) in
+  let block = Freeable.Alive (Tree_block.alloc size) in
   let** loc, st = SPmap.alloc ~new_codom:block st in
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)

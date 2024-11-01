@@ -44,7 +44,9 @@ val nondet :
   ?constrs:(([< any ] as 'a) t -> [> sbool ] t list) -> 'a ty -> 'a t Csymex.t
 
 val type_ : Svalue.t -> 'a t
+val type_checked : Svalue.t -> 'a ty -> 'a t option
 val cast : 'a t -> 'b t
+val cast_checked : 'a t -> 'b ty -> 'b t option
 val untyped : 'a t -> Svalue.t
 val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 val ppa : Format.formatter -> 'a t -> unit
@@ -89,12 +91,12 @@ module SOption : sig
   val is_some : [< 'a sopt ] t -> [> sbool ] t
   val is_none : [< 'a sopt ] t -> [> sbool ] t
   val unwrap : [< 'a sopt ] t -> 'a t
-  val none : 'a sopt t
+  val none : inner_ty:([< any ] as 'a) ty -> 'a sopt t
   val some : 'a t -> 'a sopt t
 end
 
 module SSeq : sig
-  val mk : ([< any ] as 'a) t list -> [> 'a sseq ] t
+  val mk : inner_ty:([< any ] as 'a) ty -> 'a t list -> [> 'a sseq ] t
 end
 
 module Infix : sig

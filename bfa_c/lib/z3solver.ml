@@ -107,6 +107,7 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
 let rec sort_of_ty = function
   | Value.TBool -> Simple_smt.t_bool
   | TInt -> Simple_smt.t_int
+  | TLoc -> Simple_smt.t_int
   | TSeq ty -> t_seq $ sort_of_ty ty
   | TPointer -> t_ptr
   | TOption ty -> t_opt $ sort_of_ty ty
@@ -120,8 +121,8 @@ let var_of_int i =
 let var_of_str s = var_of_int (Value.Var_name.of_string s)
 
 let record_var (var : Value.t) =
-  match var.node with
-  | Var (v, _) ->
+  match var.node.kind with
+  | Var v ->
       if v < Array.length !var_history then Array.set !var_history v var
       else
         let new_arr =
@@ -137,7 +138,7 @@ let declare_v (var : Value.t) =
   let v, ty =
     (* SValue and Solver should really be merged... *)
     match var.node with
-    | Var (v, ty) -> (v, ty)
+    | { kind = Var v; ty } -> (v, ty)
     | _ -> failwith "UNREACHABLE: alloc_v not a var"
   in
   let v = Value.Var_name.to_string v in
@@ -154,8 +155,8 @@ let memoz table f v =
       k
 
 let rec encode_value (v : Svalue.t) =
-  match v.node with
-  | Var (v, _) -> atom (Value.Var_name.to_string v)
+  match v.node.kind with
+  | Var v -> atom (Value.Var_name.to_string v)
   | Int z -> int_zk z
   | Bool b -> bool_k b
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
@@ -226,7 +227,7 @@ let add_constraints vs =
          ack_command (assume constr))
 
 let simplify (v : Svalue.t) =
-  match v.node with
+  match v.node.kind with
   | Int _ | Bool _ -> v
   | _ -> (
       let enc = encode_value v in

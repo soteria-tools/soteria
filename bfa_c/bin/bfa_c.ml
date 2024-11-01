@@ -34,5 +34,10 @@ module Lsp = struct
   let cmd = Cmd.v (Cmd.info "lsp") term
 end
 
-let cmd = Cmd.group (Cmd.info "bfa-c") [ Exec_main.cmd; Lsp.cmd ]
+module Show_ail = struct
+  let term = Term.(const Bfa_c_lib.Driver.show_ail $ file_arg)
+  let cmd = Cmd.v (Cmd.info "show-ail") term
+end
+
+let cmd = Cmd.group (Cmd.info "bfa-c") [ Exec_main.cmd; Lsp.cmd; Show_ail.cmd ]
 let () = exit @@ Cmd.eval cmd

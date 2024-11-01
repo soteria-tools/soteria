@@ -18,11 +18,12 @@ module Var_name = struct
   let compare = Int.compare
 end
 
-type ty = TBool | TInt | TPointer | TSeq of ty | TOption of ty
+type ty = TBool | TInt | TLoc | TPointer | TSeq of ty | TOption of ty
 [@@deriving eq, show, ord]
 
 let t_bool = TBool
 let t_int = TInt
+let t_loc = TLoc
 let t_ptr = TPointer
 let t_seq ty = TSeq ty
 let t_opt ty = TOption ty
@@ -62,8 +63,8 @@ let pp_hash_consed pp_node ft t = pp_node ft t.node
 let equal_hash_consed _ t1 t2 = Int.equal t1.tag t2.tag
 let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 
-type t_node =
-  | Var of (Var_name.t * ty)
+type t_kind =
+  | Var of Var_name.t
   | Bool of bool
   | Int of Z.t [@printer Fmt.of_to_string Z.to_string]
   | Ptr of (t * t)
@@ -74,6 +75,7 @@ type t_node =
   | Nop of Nop.t * t list
   | Opt of t option
 
+and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
 let pp ft t = pp_t_node ft t.node
@@ -88,83 +90,86 @@ end)
 
 let table = Hcons.create 1023
 let hashcons = Hcons.hashcons table
+let ( <| ) kind ty : t = hashcons { kind; ty }
 
 let fresh ty =
   let v = Var_name.fresh () in
-  hashcons (Var (v, ty))
+  Var v <| ty
 
 (** {2 Booleans}  *)
 
-let v_true = hashcons (Bool true)
-let v_false = hashcons (Bool false)
+let v_true = Bool true <| TBool
+let v_false = Bool false <| TBool
 
 let bool b =
-  (* avoid hashconsing re-alloc *)
+  (* avoid re-alloc and re-hashconsing *)
   if b then v_true else v_false
 
 let sem_eq v1 v2 =
-  match (v1.node, v2.node) with
+  match (v1.node.kind, v2.node.kind) with
   | Int z1, Int z2 -> bool (Z.equal z1 z2)
   | Bool b1, Bool b2 -> bool (b1 = b2)
   | _ ->
       if equal v1 v2 then v_true (* Start with a syntactic check *)
-      else hashcons (Binop (Eq, v1, v2))
+      else Binop (Eq, v1, v2) <| TBool
 
 let and_ v1 v2 =
-  match (v1.node, v2.node) with
+  match (v1.node.kind, v2.node.kind) with
   | Bool b1, Bool b2 -> bool (b1 && b2)
   | Bool false, _ | _, Bool false -> v_false
   | Bool true, _ -> v2
   | _, Bool true -> v1
-  | _ -> hashcons (Binop (And, v1, v2))
+  | _ -> Binop (And, v1, v2) <| TBool
 
 let not sv =
   if equal sv v_true then v_false
   else if equal sv v_false then v_true
   else
-    match sv.node with Unop (Not, sv) -> sv | _ -> hashcons (Unop (Not, sv))
+    match sv.node.kind with
+    | Unop (Not, sv) -> sv
+    | _ -> Unop (Not, sv) <| TBool
 
-let distinct l = hashcons (Nop (Distinct, l))
+let distinct l = Nop (Distinct, l) <| TBool
 
 (** {2 Integers}  *)
 
-let int_z z = hashcons (Int z)
+let int_z z = Int z <| TInt
 let int i = int_z (Z.of_int i)
 
 let int_of_bool b =
-  match b.node with
+  match b.node.kind with
   | Bool true -> int 1
   | Bool false -> int 0
-  | _ -> hashcons (Unop (IntOfBool, b))
+  | _ -> Unop (IntOfBool, b) <| TInt
 
 let zero = int_z Z.zero
 let one = int_z Z.one
 
 (** [out_cons] is the outcome constructor, [f] is the function to apply to the int values, [b] is the binop *)
-let lift_int_binop ~out_cons ~f ~binop v1 v2 =
-  match (v1.node, v2.node) with
+let lift_int_binop ~out_cons ~out_ty ~f ~binop v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> out_cons (f i1 i2)
-  | _ -> hashcons (Binop (binop, v1, v2))
+  | _ -> Binop (binop, v1, v2) <| out_ty
 
-let geq = lift_int_binop ~out_cons:bool ~f:Z.geq ~binop:Geq
-let leq = lift_int_binop ~out_cons:bool ~f:Z.leq ~binop:Leq
-let lt = lift_int_binop ~out_cons:bool ~f:Z.lt ~binop:Lt
-let gt = lift_int_binop ~out_cons:bool ~f:Z.gt ~binop:Gt
-let plus = lift_int_binop ~out_cons:int_z ~f:Z.add ~binop:Plus
-let minus = lift_int_binop ~out_cons:int_z ~f:Z.sub ~binop:Minus
-let times = lift_int_binop ~out_cons:int_z ~f:Z.mul ~binop:Times
-let div = lift_int_binop ~out_cons:int_z ~f:Z.div ~binop:Div
+let geq = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.geq ~binop:Geq
+let leq = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.leq ~binop:Leq
+let lt = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.lt ~binop:Lt
+let gt = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.gt ~binop:Gt
+let plus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.add ~binop:Plus
+let minus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.sub ~binop:Minus
+let times = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.mul ~binop:Times
+let div = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.div ~binop:Div
 
 (** {2 Pointers} *)
 
 module Ptr = struct
-  let mk l o = hashcons (Ptr (l, o))
+  let mk l o = Ptr (l, o) <| TPointer
 
   let loc p =
-    match p.node with Ptr (l, _) -> l | _ -> hashcons (Unop (GetPtrLoc, p))
+    match p.node.kind with Ptr (l, _) -> l | _ -> Unop (GetPtrLoc, p) <| TLoc
 
   let ofs p =
-    match p.node with Ptr (_, o) -> o | _ -> hashcons (Unop (GetPtrOfs, p))
+    match p.node.kind with Ptr (_, o) -> o | _ -> Unop (GetPtrOfs, p) <| TInt
 
   let null = mk zero zero
   let is_null p = sem_eq p null
@@ -172,31 +177,37 @@ end
 
 module SOption = struct
   let is_some v =
-    match v.node with
+    match v.node.kind with
     | Opt (Some _) -> v_true
     | Opt None -> v_false
-    | _ -> hashcons (Unop (IsSome, v))
+    | _ -> Unop (IsSome, v) <| TBool
 
   let is_none v =
-    match v.node with
+    match v.node.kind with
     | Opt None -> v_true
     | Opt (Some _) -> v_false
-    | _ -> hashcons (Unop (IsNone, v))
+    | _ -> Unop (IsNone, v) <| TBool
 
-  let none = hashcons (Opt None)
-  let some v = hashcons (Opt (Some v))
+  let none ~inner_ty = Opt None <| TOption inner_ty
+  let some v = Opt (Some v) <| TOption v.node.ty
 
   let unwrap v =
-    match v.node with
+    match v.node.kind with
     | Opt (Some v) -> v
     | Opt None -> failwith "opt_unwrap: got None"
-    | _ -> hashcons (Unop (UnwrapOpt, v))
+    | _ ->
+        let ty =
+          match v.node.ty with
+          | TOption ty -> ty
+          | _ -> failwith "opt_unwrap: not an Option"
+        in
+        Unop (UnwrapOpt, v) <| ty
 end
 
 (** {2 Sequences} *)
 
 module SSeq = struct
-  let mk l = hashcons (Seq l)
+  let mk ~inner_ty l = Seq l <| TSeq inner_ty
 end
 
 (** {2 Infix operators}  *)

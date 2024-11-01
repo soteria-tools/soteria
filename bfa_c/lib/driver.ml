@@ -160,6 +160,7 @@ let exec_main file_name =
   in
   match result with Ok v -> v | Error e -> [ Error e ]
 
+(* Entry point function *)
 let exec_main_and_print log_level smt_file file_name =
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
@@ -182,7 +183,16 @@ let run_to_errors content =
   exec_main file_name
   |> List.filter_map (function Ok _ -> None | Error e -> Some e)
 
+(* Entry point function *)
 let lsp () =
   setup_stderr_log ~log_lsp:true (Some Logs.Debug);
   Frontend.init ();
   Bfa_c_lsp.run ~run_to_errors ()
+
+(* Entry point function *)
+let show_ail file_name =
+  setup_console_log (Some Debug);
+  Frontend.init ();
+  match parse_ail file_name with
+  | Ok prog -> Fmt.pr "@[<v>%a@]" Fmt_ail.pp_program prog
+  | Error err -> Fmt.pr "%a@." pp_err err

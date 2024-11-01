@@ -1,3 +1,4 @@
+open Hashcons
 include Svalue
 
 module T = struct
@@ -27,12 +28,13 @@ end
 type nonrec +'a t = t
 type nonrec +'a ty = ty
 
-let t_loc = t_int
 let ppa = pp
 let pp _ = pp
 let cast x = x
 let untyped x = x
 let type_ x = x
+let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
+let cast_checked = type_checked
 
 let nonzero_z z =
   if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z")
