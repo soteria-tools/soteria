@@ -20,22 +20,23 @@ let get_abort_diagnostics () =
 let error_to_diagnostic_opt (err, loc) =
   let open Lsp.Types in
   let open Syntaxes.Option in
+  let open DiagnosticSeverity in
   let+ severity, message =
     (* When we hide non-bug things, some patterns will return None *)
     match err with
-    | `NullDereference -> Some (DiagnosticSeverity.Error, "Null Dereference")
-    | `MissingKey -> Some (DiagnosticSeverity.Information, "Missing Key")
-    | `MissingResource ->
-        Some (DiagnosticSeverity.Information, "Missing Resource")
-    | `OutOfBounds -> Some (DiagnosticSeverity.Error, "Out of Bounds")
-    | `UninitializedMemoryAccess ->
-        Some (DiagnosticSeverity.Error, "Uninitialized Memory Access")
-    | `ParsingError s -> Some (DiagnosticSeverity.Error, s)
-    | `UseAfterFree -> Some (DiagnosticSeverity.Error, "Use After Free")
-    | `DivisionByZero -> Some (DiagnosticSeverity.Error, "Division By Zero")
+    | `NullDereference -> Some (Error, "Null Dereference")
+    | `OutOfBounds -> Some (Error, "Out of Bounds")
+    | `UninitializedMemoryAccess -> Some (Error, "Uninitialized Memory Access")
+    | `ParsingError s -> Some (Error, s)
+    | `UseAfterFree -> Some (Error, "Use After Free")
+    | `DivisionByZero -> Some (Error, "Division By Zero")
     | `UBPointerComparison ->
-        Some
-          (DiagnosticSeverity.Error, "Undefined Behavior for Pointer Comparison")
+        Some (Error, "Undefined Behavior for Pointer Comparison")
+    | `DoubleFree -> Some (Error, "Double Free")
+    | `InvalidFree -> Some (Error, "Invalid Pointer passed to free")
+    | `MissingKey -> Some (Information, "Missing Key")
+    | `MissingResource -> Some (Information, "Missing Resource")
+    | `MissingOwnership -> Some (Information, "MissingOwnership")
   in
   Lsp.Types.Diagnostic.create ~message ~severity ~range:(cerb_loc_to_range loc)
     ~source:"bfa" ()

@@ -102,6 +102,7 @@ let find_stub ~prog:_ fname : 'err fun_exec option =
   let name = Cerb_frontend.Pp_symbol.to_string fname in
   if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
   else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
+  else if String.starts_with ~prefix:"free" name then Some C_std.free
   else None
 
 let rec equality_check ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
