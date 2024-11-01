@@ -148,6 +148,7 @@ let exec_main file_name =
           Error (`ParsingError "No entry point function", Cerb_location.unknown)
       | Some e -> Ok e
     in
+    let () = Initialize_analysis.reinit sigma in
     let entry_point =
       sigma.function_definitions
       |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)

@@ -4,6 +4,7 @@ module Var_name = struct
   type t = int
 
   let next = ref 0
+  let () = Initialize_analysis.register_resetter (fun () -> next := 0)
   let to_string i = "|" ^ string_of_int i ^ "|"
   let of_string s = int_of_string (String.sub s 1 (String.length s - 2))
   let pp = Fmt.of_to_string to_string

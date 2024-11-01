@@ -134,6 +134,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       let* exec_fun = resolve_function ~prog f in
       let** args, state = eval_expr_list ~prog ~store state args in
       exec_fun ~prog ~args ~state
+  | AilEunary (Address, e) -> eval_expr ~lvalue:true state e
   | AilEunary (op, e) -> (
       let** v, state = eval_expr state e in
       match op with
@@ -143,6 +144,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
             let ty = type_of aexpr in
             let v = Typed.cast v in
             Heap.load v ty state
+      | Address -> failwith "unreachable: address"
       | _ ->
           Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op)
   | AilEbinary (e1, op, e2) -> (
@@ -188,7 +190,34 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       let ty = type_of lvalue in
       let++ (), state = Heap.store ptr ty rval state in
       (rval, state)
-  | _ -> Fmt.kstr not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
+  | AilSyntax.AilEsizeof (_quals, ty) ->
+      let+ res = Layout.size_of_s ty in
+
+      Ok (res, state)
+  | AilSyntax.AilEcompoundAssign (_, _, _)
+  | AilSyntax.AilEcond (_, _, _)
+  | AilSyntax.AilEcast (_, _, _)
+  | AilSyntax.AilEassert _
+  | AilSyntax.AilEoffsetof (_, _)
+  | AilSyntax.AilEgeneric (_, _)
+  | AilSyntax.AilEarray (_, _, _)
+  | AilSyntax.AilEstruct (_, _)
+  | AilSyntax.AilEunion (_, _, _)
+  | AilSyntax.AilEcompound (_, _, _)
+  | AilSyntax.AilEmemberof (_, _)
+  | AilSyntax.AilEmemberofptr (_, _)
+  | AilSyntax.AilEbuiltin _ | AilSyntax.AilEstr _ | AilSyntax.AilEsizeof_expr _
+  | AilSyntax.AilEalignof (_, _)
+  | AilSyntax.AilEannot (_, _)
+  | AilSyntax.AilEva_start (_, _)
+  | AilSyntax.AilEva_arg (_, _)
+  | AilSyntax.AilEva_copy (_, _)
+  | AilSyntax.AilEva_end _ | AilSyntax.AilEprint_type _
+  | AilSyntax.AilEbmc_assume _ | AilSyntax.AilEreg_load _
+  | AilSyntax.AilEarray_decay _ | AilSyntax.AilEfunction_decay _
+  | AilSyntax.AilEatomic _
+  | AilSyntax.AilEgcc_statement (_, _) ->
+      Fmt.kstr not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
 (** Executing a statement returns an optional value outcome (if a return statement was hit), or  *)
 and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
