@@ -160,6 +160,13 @@ let minus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.sub ~binop:Minus
 let times = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.mul ~binop:Times
 let div = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.div ~binop:Div
 
+(* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
+let not_int_bool sv =
+  match sv.node.kind with
+  | Int z -> int_z (if Z.equal z Z.zero then Z.one else Z.zero)
+  | Unop (IntOfBool, sv') -> int_of_bool (not sv')
+  | _ -> int_of_bool (sem_eq sv one)
+
 (** {2 Pointers} *)
 
 module Ptr = struct

@@ -104,6 +104,8 @@ let debug_show ~prog:_ ~args:_ ~state =
   Csymex.push_give_up (str, loc);
   Result.ok (0s, state)
 
+let unwrap_expr (AnnotatedExpression (_, _, _, e) : expr) = e
+
 let find_stub ~prog:_ fname : 'err fun_exec option =
   let name = Cerb_frontend.Pp_symbol.to_string fname in
   if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
@@ -112,6 +114,20 @@ let find_stub ~prog:_ fname : 'err fun_exec option =
   else if String.starts_with ~prefix:"___bfa_debug_show" name then
     Some debug_show
   else None
+
+let cast ~old_ty:(Ctype.Ctype (_, old_ty)) ~new_ty:(Ctype.Ctype (_, new_ty))
+    (v : [> T.cval ] Typed.t) =
+  let open Typed in
+  match (old_ty, new_ty) with
+  | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
+      match get_ty v with
+      | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
+      | TPointer -> return v
+      | _ -> Fmt.kstr Csymex.not_impl "BUG: not a valid C value: %a" Typed.ppa v
+      )
+  | _ ->
+      Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
+        Fmt_ail.pp_ty_ new_ty
 
 let rec equality_check ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
     (v2 : [< Typed.T.cval ] Typed.t) =
@@ -184,8 +200,7 @@ and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
   in
   (List.rev vs, state)
 
-and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
-    (aexpr : expr) =
+and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
   let eval_expr = eval_expr ~prog ~store in
   let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
   let@ () = with_loc ~loc in
@@ -197,17 +212,22 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       let* exec_fun = resolve_function ~prog f in
       let** args, state = eval_expr_list ~prog ~store state args in
       exec_fun ~prog ~args ~state
-  | AilEunary (Address, e) -> eval_expr ~lvalue:true state e
+  | AilEunary (Address, e) -> (
+      match unwrap_expr e with
+      | AilEunary (Indirection, e) -> (* &*e <=> e *) eval_expr state e
+      | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
   | AilEunary (op, e) -> (
       let** v, state = eval_expr state e in
       match op with
-      | Indirection ->
-          if lvalue then Result.ok (v, state)
-          else
-            let ty = type_of aexpr in
-            let* v = cast_to_ptr v in
-            Heap.load v ty state
-      | Address -> failwith "unreachable: address"
+      | PostfixIncr ->
+          (* TODO: not quite sure if I should be evaluating e in lvalue mode or not *)
+          let* ptr = cast_to_ptr v in
+          let** v, state = Heap.load ptr (type_of e) state in
+          let** v_incr, state = arith_add ~loc ~state v 1s in
+          let++ (), state = Heap.store ptr (type_of e) v_incr state in
+          (v, state)
+      | Indirection -> Result.ok (v, state)
+      | Address -> failwith "unreachable: address_of already handled"
       | _ ->
           Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op)
   | AilEbinary (e1, op, e2) -> (
@@ -233,6 +253,10 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
           let* v2 = cast_checked v2 Typed.t_int in
           Result.ok (v1 #<= v2 |> Typed.int_of_bool, state)
       | Eq -> equality_check ~loc ~state v1 v2
+      | Ne ->
+          (* TODO: Semantics of Ne might be different from semantics of not eq? *)
+          let++ res, state = equality_check ~loc ~state v1 v2 in
+          (Typed.not_int_bool res, state)
       | Arithmetic a_op -> (
           match a_op with
           | Div -> (
@@ -271,7 +295,7 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
   | AilEassign (lvalue, rvalue) ->
       (* Evaluate rvalue first *)
       let** rval, state = eval_expr state rvalue in
-      let** ptr, state = eval_expr ~lvalue:true state lvalue in
+      let** ptr, state = eval_expr state lvalue in
       (* [ptr] is a necessarily a pointer, and [rval] is a memory value.
          I don't support pointer fragments for now, so let's say it's an *)
       let* ptr = cast_to_ptr ptr in
@@ -280,7 +304,6 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       (rval, state)
   | AilSyntax.AilEsizeof (_quals, ty) ->
       let+ res = Layout.size_of_s ty in
-
       Ok (res, state)
   | AilSyntax.AilEmemberofptr (ptr, member) ->
       let** ptr_v, state = eval_expr state ptr in
@@ -292,9 +315,13 @@ and eval_expr ~(prog : sigma) ~(store : store) ?(lvalue = false) (state : state)
       in
       let* mem_ofs = Layout.member_ofs member ty_pointee in
       arith_add ~loc ~state ptr_v mem_ofs
+  | AilSyntax.AilEcast (_quals, new_ty, expr) ->
+      let old_ty = type_of expr in
+      let** v, state = eval_expr state expr in
+      let+ new_v = cast ~old_ty ~new_ty v in
+      Ok (new_v, state)
   | AilSyntax.AilEcompoundAssign (_, _, _)
   | AilSyntax.AilEcond (_, _, _)
-  | AilSyntax.AilEcast (_, _, _)
   | AilSyntax.AilEassert _
   | AilSyntax.AilEoffsetof (_, _)
   | AilSyntax.AilEgeneric (_, _)

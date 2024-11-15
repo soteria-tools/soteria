@@ -11,4 +11,4 @@ let pp_binding ft (v, ty) =
 
 let pp = Fmt.Dump.iter_bindings iter Fmt.nop Fmt_ail.pp_sym pp_binding
 let find_type sym store = Option.map snd (find_opt sym store)
-let find_value sym store = Option.map fst (find_opt sym store) |> Option.join
+let find_value sym store = Option.bind (find_opt sym store) fst

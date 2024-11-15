@@ -63,6 +63,7 @@ val v_false : [> sbool ] t
 val bool : bool -> [> sbool ] t
 val and_ : [< sbool ] t -> sbool t -> [> sbool ] t
 val not : [< sbool ] t -> [> sbool ] t
+val not_int_bool : [< sint ] t -> [> sint ] t
 val distinct : 'a t list -> [> sbool ] t
 val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t
