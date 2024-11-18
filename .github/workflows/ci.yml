@@ -17,6 +17,10 @@ jobs:
         operating-system: [macos-latest, macos-13]
     runs-on: ${{ matrix.operating-system }}
     steps:
+      # if system is macos, install m4 and pkg-config
+      - name: Install m4 and pkg-config
+        if: runner.os == 'macos'
+        run: brew install m4 pkg-config
       # Setup steps: checkout, z3, node, ocaml
       - uses: actions/checkout@v4
       - name: Setup Z3
