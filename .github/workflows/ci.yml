@@ -17,9 +17,6 @@ jobs:
         operating-system: [macos-latest, macos-13]
     runs-on: ${{ matrix.operating-system }}
     steps:
-      - name: Install m4 and pkgconf
-        if: runner.os == 'macos'
-        run: brew install m4 pkgconf
       # Setup steps: checkout, z3, node, ocaml
       - uses: actions/checkout@v4
       - name: Setup Z3
@@ -32,7 +29,8 @@ jobs:
         with:
           ocaml-compiler: 5.2.0
           dune-cache: true
-      # OCaml build and tests
+          # OCaml build and tests
+      - run: opam update
       - name: setup dependencies
         run: make ocaml-deps
       - name: Build OCaml stuff
