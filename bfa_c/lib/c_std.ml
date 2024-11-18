@@ -31,3 +31,15 @@ let free ~prog:_ ~(args : T.cval Typed.t list) ~state =
       (0s, state)
   | TInt -> Fmt.kstr not_impl "free with int argument: %a" Typed.ppa ptr
   | _ -> Fmt.kstr not_impl "free with non-pointer argument: %a" Typed.ppa ptr
+
+let memcpy ~prog:_ ~(args : T.cval Typed.t list) ~state =
+  let* dst, src, size =
+    match args with
+    | [ dst; src; size ] -> return (dst, src, size)
+    | _ -> not_impl "memcpy with non-three arguments"
+  in
+  let dst = Typed.cast dst in
+  let src = Typed.cast src in
+  let size = Typed.cast size in
+  let++ (), state = Heap.copy_nonoverlapping ~dst ~src ~size state in
+  (dst, state)

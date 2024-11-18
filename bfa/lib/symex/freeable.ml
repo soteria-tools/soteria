@@ -22,4 +22,8 @@ module Make (Symex : Symex.S) = struct
     | Alive st ->
         let++ res, st' = f st in
         (res, Alive st')
+
+  (* [f] does not modify the state *)
+  let wrap_read_only (f : 'a -> ('b, 'err) Symex.Result.t) (st : 'a t) =
+    match st with Freed -> Symex.Result.error `UseAfterFree | Alive st -> f st
 end

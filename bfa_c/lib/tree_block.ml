@@ -137,6 +137,14 @@ module Tree = struct
   let with_children t ~left ~right =
     return { t with children = Some (left, right) }
 
+  let rec offset ~by tree =
+    let low, high = tree.range in
+    let range = (low #+ by, high #+ by) in
+    let children =
+      Option.map (fun (l, r) -> (offset ~by l, offset ~by r)) tree.children
+    in
+    make ~node:tree.node ~range ?children ()
+
   let rec split ~range t : (Node.t * t * t) Csymex.t =
     (* this function splits a tree and returns the node in the given range *)
     (* We're assuming that range is inside old_span *)
@@ -313,6 +321,25 @@ module Tree = struct
       | _ -> Result.ok ()
     in
     ((), tree)
+
+  let get_raw ofs size t =
+    let range = (ofs, ofs #+ size) in
+    let replace_node node = node in
+    let rebuild_parent = with_children in
+    frame_range t ~replace_node ~rebuild_parent range
+
+  let put_raw tree t =
+    let replace_node _ = tree in
+    let rebuild_parent = of_children in
+    let* old_node, new_tree =
+      frame_range t ~replace_node ~rebuild_parent tree.range
+    in
+    let++ () =
+      match old_node.node with
+      | NotOwned _ -> Result.error `MissingResource
+      | _ -> Result.ok ()
+    in
+    ((), new_tree)
 end
 
 type t = { root : Tree.t; bound : T.sint Typed.t option }
@@ -343,10 +370,28 @@ let is_exclusively_owned t =
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
     ([> T.sint ] Typed.t * t, 'err) Result.t =
   let* size = Layout.size_of_s ty in
-  with_bound_check t ofs #+ size @@ fun () -> Tree.load ofs ty t.root
+  let@ () = with_bound_check t ofs #+ size in
+  Tree.load ofs ty t.root
 
 let store ofs ty sval t =
   let* size = Layout.size_of_s ty in
-  with_bound_check t ofs #+ size @@ fun () -> Tree.store ofs ty sval t.root
+  let@ () = with_bound_check t ofs #+ size in
+  Tree.store ofs ty sval t.root
+
+let get_raw_tree_owned ofs size t =
+  let@ () = with_bound_check t ofs #+ size in
+  let+ tree, t = Tree.get_raw ofs size t.root in
+  if Node.is_fully_owned tree.node then
+    let tree = Tree.offset ~by:~-ofs tree in
+    Ok (tree, t)
+  else Error `MissingResource
+
+(* This is used for copy_nonoverapping.
+   It is an action on the destination block, and assumes the received tree is at offset 0 *)
+let put_raw_tree ofs (tree : Tree.t) t : (unit * t, 'err) Result.t =
+  let size = Range.size tree.range in
+  let tree = Tree.offset ~by:ofs tree in
+  let@ () = with_bound_check t ofs #+ size in
+  Tree.put_raw tree t.root
 
 let alloc size = { root = Tree.uninit (0s, size); bound = Some size }

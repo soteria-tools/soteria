@@ -61,7 +61,8 @@ val sem_eq : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
 val bool : bool -> [> sbool ] t
-val and_ : [< sbool ] t -> sbool t -> [> sbool ] t
+val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val not : [< sbool ] t -> [> sbool ] t
 val not_int_bool : [< sint ] t -> [> sint ] t
 val distinct : 'a t list -> [> sbool ] t
@@ -114,8 +115,10 @@ module Infix : sig
   val ( #< ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( #<= ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( #&& ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
+  val ( #|| ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
   val ( #+ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( #- ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( ~- ) : [< sint ] t -> [> sint ] t
   val ( #* ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( #/ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 end

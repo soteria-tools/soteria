@@ -126,6 +126,7 @@ let find_stub ~prog:_ fname : 'err fun_exec option =
   if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
   else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
   else if String.starts_with ~prefix:"free" name then Some C_std.free
+  else if String.starts_with ~prefix:"memcpy" name then Some C_std.memcpy
   else if String.starts_with ~prefix:"___bfa_debug_show" name then
     Some debug_show
   else None
@@ -294,6 +295,11 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
           (* TODO: Semantics of Ne might be different from semantics of not eq? *)
           let++ res, state = equality_check ~loc ~state v1 v2 in
           (Typed.not_int_bool res, state)
+      | And ->
+          let* v1 = cast_checked v1 ~ty:Typed.t_int in
+          let+ v2 = cast_checked v2 ~ty:Typed.t_int in
+          let b_res = (Typed.bool_of_int v1) #&& (Typed.bool_of_int v2) in
+          Ok (Typed.int_of_bool b_res, state)
       | Arithmetic a_op -> (
           match a_op with
           | Div -> (

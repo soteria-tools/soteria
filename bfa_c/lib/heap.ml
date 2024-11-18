@@ -30,6 +30,12 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
   let ofs = Typed.Ptr.ofs ptr in
   (SPmap.wrap (Freeable.wrap (f ~ofs))) loc st
 
+let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
+    (f : ofs:[< T.sint ] Typed.t -> Tree_block.t -> ('a, 'err) Result.t) =
+  let loc = Typed.Ptr.loc ptr in
+  let ofs = Typed.Ptr.ofs ptr in
+  (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc st
+
 let load ptr ty st =
   let@ () = with_loc_err () in
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
@@ -39,6 +45,20 @@ let store ptr ty sval st =
   let@ () = with_loc_err () in
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
   else with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
+
+let copy_nonoverlapping ~dst ~src ~size st =
+  let open Typed.Infix in
+  let@ () = with_loc_err () in
+  if%sat (Typed.Ptr.is_at_null_loc dst) #|| (Typed.Ptr.is_at_null_loc src) then
+    Result.error `NullDereference
+  else
+    let** tree_to_write =
+      with_ptr_read_only src st (fun ~ofs block ->
+          let++ tree, _ = Tree_block.get_raw_tree_owned ofs size block in
+          tree)
+    in
+    with_ptr dst st (fun ~ofs block ->
+        Tree_block.put_raw_tree ofs tree_to_write block)
 
 let alloc size st =
   let@ () = with_loc_err () in

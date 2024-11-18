@@ -60,4 +60,11 @@ struct
         (* Should I check for emptyness here? *)
         (res, M.add loc sst' st)
     | None -> Symex.Result.error `MissingKey
+
+  let wrap_read_only (f : 'a -> ('b, 'err) Symex.Result.t) (loc : Key.t)
+      (st : 'a t) =
+    let* found = find_opt_sym loc st in
+    match found with
+    | Some sst -> f sst
+    | None -> Symex.Result.error `MissingKey
 end

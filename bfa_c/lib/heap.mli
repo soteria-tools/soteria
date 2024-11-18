@@ -50,3 +50,18 @@ val free :
     [> `DoubleFree | `InvalidFree | `MissingKey | `MissingOwnership ]
     * Cerb_location.t )
   Result.t
+
+val copy_nonoverlapping :
+  dst:[< sptr ] Typed.t ->
+  src:[< sptr ] Typed.t ->
+  size:sint Typed.t ->
+  t ->
+  ( unit * t,
+    [> `MissingKey
+    | `NullDereference
+    | `OutOfBounds
+    | `UseAfterFree
+    | `MissingOwnership
+    | `MissingResource ]
+    * Cerb_location.t )
+  Result.t

@@ -227,6 +227,7 @@ let rec encode_value (v : Svalue.t) =
       | Leq -> num_leq v1 v2
       | Lt -> num_lt v1 v2
       | And -> bool_and v1 v2
+      | Or -> bool_or v1 v2
       | Plus -> num_add v1 v2
       | Minus -> num_sub v1 v2
       | Times -> num_mul v1 v2

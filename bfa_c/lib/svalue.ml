@@ -46,12 +46,16 @@ end
 
 module Binop = struct
   type t =
-    | (* Bool *) And
-    | (* Comparison *) Eq
+    (* Bool *)
+    | And
+    | Or
+    (* Comparison *)
+    | Eq
     | Geq
     | Gt
     | Leq
     | Lt
+    (* Arith *)
     | Plus
     | Minus
     | Times
@@ -120,6 +124,14 @@ let and_ v1 v2 =
   | Bool true, _ -> v2
   | _, Bool true -> v1
   | _ -> Binop (And, v1, v2) <| TBool
+
+let or_ v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Bool b1, Bool b2 -> bool (b1 || b2)
+  | Bool true, _ | _, Bool true -> v_true
+  | Bool false, _ -> v2
+  | _, Bool false -> v1
+  | _ -> Binop (Or, v1, v2) <| TBool
 
 let not sv =
   if equal sv v_true then v_false
@@ -237,8 +249,10 @@ module Infix = struct
   let ( #< ) = lt
   let ( #<= ) = leq
   let ( #&& ) = and_
+  let ( #|| ) = or_
   let ( #+ ) = plus
   let ( #- ) = minus
+  let ( ~- ) x = minus zero x
   let ( #* ) = times
   let ( #/ ) = div
 end
