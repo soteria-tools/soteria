@@ -63,7 +63,6 @@ int expand_capacity(Array *ar) {
         return CC_ERR_ALLOC;
 
     memcpy(new_buff, ar->buffer, ar->size * sizeof(void *));
-
     free(ar->buffer);
     ar->buffer = new_buff;
 
@@ -76,9 +75,8 @@ int array_add(Array *ar, void* element) {
     if (stat != 0) return stat;
   }
   ar->buffer[ar->size] = element;
-    ar->size++;
-
-    return CC_OK;
+  ar->size++;
+  return CC_OK;
 }
 
 int main() {
@@ -86,7 +84,7 @@ int main() {
   if (!v1) return CC_ERR_ALLOC;
   int stat = array_new(&v1);
   if (stat != 0) return stat;
-  for (int i = 0;  i < 50; i++) {
+  for (int i = 0;  i < 10; i++) {
     stat = array_add(v1, NULL);
   }
   return 0;

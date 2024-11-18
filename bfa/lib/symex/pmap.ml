@@ -24,8 +24,8 @@ struct
   let pp pp_value =
     let open Fmt in
     let iter f = M.iter (fun k v -> f (k, v)) in
-    let pp_binding ft (k, v) = pf ft "[@<2>%a ->@ %a@]" Key.pp k pp_value v in
-    braces (Fmt.iter ~sep:(any ";@ ") iter pp_binding)
+    let pp_binding ft (k, v) = pf ft "@[<2>%a ->@ %a@]" Key.pp k pp_value v in
+    braces (Fmt.iter ~sep:(any ";@\n") iter pp_binding)
 
   let empty = M.empty
 

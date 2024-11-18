@@ -82,7 +82,22 @@ type t_kind =
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
-let pp ft t = pp_t_node ft t.node
+let pp_full ft t = pp_t_node ft t.node
+
+let rec pp ft t =
+  let open Fmt in
+  match t.node.kind with
+  | Var v -> pf ft "V%a" Var_name.pp v
+  | Bool b -> pf ft "%b" b
+  | Int z -> pf ft "%a" Z.pp_print z
+  | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
+  | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
+  | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
+  | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
+  | Nop (Distinct, l) -> pf ft "distinct(%a)" (list ~sep:comma pp) l
+  | Opt None -> pf ft "None"
+  | Opt (Some v) -> pf ft "Some(%a)" pp v
+
 let equal a b = Int.equal a.tag b.tag
 
 module Hcons = Hashcons.Make (struct
