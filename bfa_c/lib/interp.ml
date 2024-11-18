@@ -10,12 +10,16 @@ module T = Typed.T
 exception Unsupported of (string * Cerb_location.t)
 
 let type_of expr = Cerb_frontend.Translation_aux.ctype_of expr
+let unwrap_ctype (Ctype.Ctype (_, ty)) = ty
+
+let pointer_inner (Ctype.Ctype (_, ty)) =
+  match ty with Pointer (_, ty) -> Some ty | _ -> None
 
 type cval = [ T.sint | T.sptr ]
 type state = Heap.t
 type store = (T.sptr Typed.t option * Ctype.ctype) Store.t
 
-let cast_checked x ty =
+let cast_checked ~ty x =
   match Typed.cast_checked x ty with
   | Some x -> Csymex.return x
   | None ->
@@ -76,6 +80,17 @@ let attach_bindings store bindings =
   with Unsupported (msg, loc) ->
     let@ () = with_loc ~loc in
     Csymex.not_impl msg
+
+(* We're assuming all bindings declared, and they have already been removed from the store. *)
+let free_bindings store state (bindings : AilSyntax.bindings) =
+  Result.fold_left bindings ~init:state
+    ~f:(fun heap (pname, ((loc, _, _), _, _, _)) ->
+      let@ () = with_loc_immediate ~loc in
+      match Store.find_value pname store with
+      | Some ptr ->
+          let++ (), heap = Heap.free ptr heap in
+          heap
+      | None -> Result.ok heap)
 
 let alloc_params params st =
   Csymex.Result.fold_left params ~init:(Store.empty, st)
@@ -163,6 +178,18 @@ let rec arith_add ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
       Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
         Typed.ppa v2
 
+let arith_mul ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
+    (v2 : [< Typed.T.cval ] Typed.t) =
+  match (Typed.get_ty v1, Typed.get_ty v2) with
+  | TInt, TInt ->
+      let v1 = Typed.cast v1 in
+      let v2 = Typed.cast v2 in
+      Result.ok (v1 #* v2, state)
+  | TPointer, _ | _, TPointer -> Result.error (`UBPointerArithmetic, loc)
+  | _ ->
+      Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
+        Typed.ppa v1 Typed.ppa v2
+
 let rec resolve_function ~(prog : sigma) fexpr : 'err fun_exec Csymex.t =
   let* loc, fname =
     match fexpr with
@@ -215,6 +242,11 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
   | AilEunary (Address, e) -> (
       match unwrap_expr e with
       | AilEunary (Indirection, e) -> (* &*e <=> e *) eval_expr state e
+      | AilEident id -> (
+          match Store.find_value id store with
+          | Some ptr -> Result.ok ((ptr :> cval Typed.t), state)
+          | None ->
+              Fmt.kstr not_impl "Variable %a is not declared" Fmt_ail.pp_sym id)
       | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
   | AilEunary (op, e) -> (
       let** v, state = eval_expr state e in
@@ -223,7 +255,12 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
           (* TODO: not quite sure if I should be evaluating e in lvalue mode or not *)
           let* ptr = cast_to_ptr v in
           let** v, state = Heap.load ptr (type_of e) state in
-          let** v_incr, state = arith_add ~loc ~state v 1s in
+          let* incr_operand =
+            match type_of e |> pointer_inner with
+            | Some ty -> Layout.size_of_s ty
+            | None -> return 1s
+          in
+          let** v_incr, state = arith_add ~loc ~state v incr_operand in
           let++ (), state = Heap.store ptr (type_of e) v_incr state in
           (v, state)
       | Indirection -> Result.ok (v, state)
@@ -237,20 +274,20 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       match op with
       | Ge ->
           (* TODO: comparison operators for pointers *)
-          let* v1 = cast_checked v1 Typed.t_int in
-          let* v2 = cast_checked v2 Typed.t_int in
+          let* v1 = cast_checked v1 ~ty:Typed.t_int in
+          let* v2 = cast_checked v2 ~ty:Typed.t_int in
           Result.ok (v1 #>= v2 |> Typed.int_of_bool, state)
       | Gt ->
-          let* v1 = cast_checked v1 Typed.t_int in
-          let* v2 = cast_checked v2 Typed.t_int in
+          let* v1 = cast_checked v1 ~ty:Typed.t_int in
+          let* v2 = cast_checked v2 ~ty:Typed.t_int in
           Result.ok (v1 #> v2 |> Typed.int_of_bool, state)
       | Lt ->
-          let* v1 = cast_checked v1 Typed.t_int in
-          let* v2 = cast_checked v2 Typed.t_int in
+          let* v1 = cast_checked v1 ~ty:Typed.t_int in
+          let* v2 = cast_checked v2 ~ty:Typed.t_int in
           Result.ok (v1 #< v2 |> Typed.int_of_bool, state)
       | Le ->
-          let* v1 = cast_checked v1 Typed.t_int in
-          let* v2 = cast_checked v2 Typed.t_int in
+          let* v1 = cast_checked v1 ~ty:Typed.t_int in
+          let* v2 = cast_checked v2 ~ty:Typed.t_int in
           Result.ok (v1 #<= v2 |> Typed.int_of_bool, state)
       | Eq -> equality_check ~loc ~state v1 v2
       | Ne ->
@@ -260,18 +297,28 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
       | Arithmetic a_op -> (
           match a_op with
           | Div -> (
-              let* v1 = cast_checked v1 Typed.t_int in
-              let* v2 = cast_checked v2 Typed.t_int in
+              let* v1 = cast_checked v1 ~ty:Typed.t_int in
+              let* v2 = cast_checked v2 ~ty:Typed.t_int in
               let+ v2 = Typed.check_nonzero v2 in
               match v2 with
               | Ok v2 -> Stdlib.Result.ok (v1 #/ v2, state)
               | Error `NonZeroIsZero ->
                   Stdlib.Result.error (`DivisionByZero, loc))
-          | Mul ->
-              let* v1 = cast_checked v1 Typed.t_int in
-              let+ v2 = cast_checked v2 Typed.t_int in
-              Stdlib.Result.ok (v1 #* v2, state)
-          | Add -> arith_add ~loc ~state v1 v2
+          | Mul -> arith_mul ~loc ~state v1 v2
+          | Add -> (
+              match
+                (type_of e1 |> pointer_inner, type_of e2 |> pointer_inner)
+              with
+              | Some _, Some _ -> Result.error (`UBPointerArithmetic, loc)
+              | Some ty, None ->
+                  let* factor = Layout.size_of_s ty in
+                  let** v2, state = arith_mul ~loc ~state v2 factor in
+                  arith_add ~loc ~state v1 v2
+              | None, Some ty ->
+                  let* factor = Layout.size_of_s ty in
+                  let** v1, state = arith_mul ~loc ~state v1 factor in
+                  arith_add ~loc ~state v2 v1
+              | None, None -> arith_add ~loc ~state v1 v2)
           | _ ->
               Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
                 Fmt_ail.pp_arithop a_op)
@@ -346,6 +393,7 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
 (** Executing a statement returns an optional value outcome (if a return statement was hit), or  *)
 and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
     (T.cval Typed.t option * store * state, 'err) Csymex.Result.t =
+  L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
   let (AnnotatedStatement (loc, _, stmt)) = astmt in
   let@ () = with_loc ~loc in
   match stmt with
@@ -355,25 +403,42 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
       L.info (fun m -> m "Returning: %a" Typed.ppa v);
       Result.ok (Some v, store, state)
   | AilSblock (bindings, stmtl) ->
+      let previous_store = store in
       let* store = attach_bindings store bindings in
       (* Second result, corresponding to the block-scoped store, is discarded *)
-      let++ res, _, state =
+      let** res, store, state =
         Csymex.Result.fold_left stmtl ~init:(None, store, state)
           ~f:(fun (res, store, state) stmt ->
             match res with
             | Some _ -> Csymex.Result.ok (res, store, state)
             | None -> exec_stmt ~prog store state stmt)
       in
-      (res, store, state)
+      let++ state = free_bindings store state bindings in
+      (res, previous_store, state)
   | AilSexpr e ->
       let** _, state = eval_expr ~prog ~store state e in
       Result.ok (None, store, state)
   | AilSif (cond, then_stmt, else_stmt) ->
       let** v, state = eval_expr ~prog ~store state cond in
       (* [v] must be an integer! (TODO: or NULL possibly...) *)
-      let* v = cast_checked v Typed.t_int in
-      if%sat Typed.(not v #== 0s) then exec_stmt ~prog store state then_stmt
+      let* v = cast_checked v ~ty:Typed.t_int in
+      if%sat Typed.bool_of_int v then exec_stmt ~prog store state then_stmt
       else exec_stmt ~prog store state else_stmt
+  | AilSwhile (cond, stmt, _loopid) ->
+      let rec loop store state =
+        let** cond_v, state = eval_expr ~prog ~store state cond in
+        let* cond_v = cast_checked cond_v ~ty:Typed.t_int in
+        if%sat Typed.bool_of_int cond_v then
+          let** res, store, state = exec_stmt ~prog store state stmt in
+          match res with
+          | Some _ -> Result.ok (res, store, state)
+          | None -> loop store state
+        else Result.ok (None, store, state)
+      in
+      loop store state
+  | AilSlabel (_label, stmt, _annot) ->
+      (* TODO: keep track of labels in a record or something!! *)
+      exec_stmt ~prog store state stmt
   | AilSdeclaration decls ->
       let++ store, st =
         Csymex.Result.fold_left decls ~init:(store, state)

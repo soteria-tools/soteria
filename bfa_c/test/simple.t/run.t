@@ -38,18 +38,7 @@ Symbolic execution of a simple program with symbolic values
   Symex terminated with the following outcomes:
     [Ok
        ({ kind = 1; ty = Svalue.TInt },
-        {[{ kind = (Var |1|); ty = Svalue.TLoc } ->
-         (Alive
-            { root =
-              { node =
-                (Owned
-                   (Init
-                      { value = { kind = (Var |3|); ty = Svalue.TInt };
-                        ty = signed int }));
-                range =
-                [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
-                children = None };
-              bound = (Some { kind = 4; ty = Svalue.TInt }) });
+        {[{ kind = (Var |1|); ty = Svalue.TLoc } -> Freed;
         [{ kind = (Var |5|); ty = Svalue.TLoc } ->
         (Alive
            { root =
@@ -64,18 +53,7 @@ Symbolic execution of a simple program with symbolic values
              bound = (Some { kind = 4; ty = Svalue.TInt }) })});
   Ok
     ({ kind = 2; ty = Svalue.TInt },
-     {[{ kind = (Var |1|); ty = Svalue.TLoc } ->
-      (Alive
-         { root =
-           { node =
-             (Owned
-                (Init
-                   { value = { kind = (Var |3|); ty = Svalue.TInt };
-                     ty = signed int }));
-             range =
-             [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
-             children = None };
-           bound = (Some { kind = 4; ty = Svalue.TInt }) });
+     {[{ kind = (Var |1|); ty = Svalue.TLoc } -> Freed;
      [{ kind = (Var |5|); ty = Svalue.TLoc } ->
      (Alive
         { root =
@@ -94,23 +72,7 @@ Symbolic execution of a simple program with symbolic values that fails because o
   Symex terminated with the following outcomes:
     [Ok
        ({ kind = 0; ty = Svalue.TInt },
-        {[{ kind = (Var |1|); ty = Svalue.TLoc } ->
-         (Alive
-            { root =
-              { node =
-                (Owned
-                   (Init
-                      { value =
-                        { kind =
-                          (Ptr
-                             ({ kind = (Var |3|); ty = Svalue.TLoc },
-                              { kind = 0; ty = Svalue.TInt }));
-                          ty = Svalue.TPointer };
-                        ty = signed int* }));
-                range =
-                [{ kind = 0; ty = Svalue.TInt }, { kind = 8; ty = Svalue.TInt }[;
-                children = None };
-              bound = (Some { kind = 8; ty = Svalue.TInt }) });
+        {[{ kind = (Var |1|); ty = Svalue.TLoc } -> Freed;
         [{ kind = (Var |3|); ty = Svalue.TLoc } ->
         (Alive
            { root =
@@ -136,3 +98,25 @@ Symbolic execution of a simple program with symbolic values that fails because o
                };
              bound = (Some { kind = 1024; ty = Svalue.TInt }) })});
   Error NullDereference]
+
+Symbolic execution of a simple program with a horrible pointer indirection *&*x
+  $ bfa-c exec-main indirections.c
+  Symex terminated with the following outcomes:
+    [Ok
+       ({ kind = 0; ty = Svalue.TInt },
+        {[{ kind = (Var |1|); ty = Svalue.TLoc } -> Freed;
+        [{ kind = (Var |3|); ty = Svalue.TLoc } ->
+        (Alive
+           { root =
+             { node =
+               (Owned
+                  (Init
+                     { value = { kind = 12; ty = Svalue.TInt }; ty = signed int
+                       }));
+               range =
+               [{ kind = 0; ty = Svalue.TInt }, { kind = 4; ty = Svalue.TInt }[;
+               children = None };
+             bound = (Some { kind = 4; ty = Svalue.TInt }) })});
+  Ok
+    ({ kind = 1; ty = Svalue.TInt },
+     {[{ kind = (Var |1|); ty = Svalue.TLoc } -> Freed})]

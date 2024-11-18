@@ -1,2 +1,1 @@
-  $ echo "ok"
-  ok
+  $ bfa-c exec-main array_remove.c

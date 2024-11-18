@@ -70,6 +70,7 @@ val int : int -> [> sint ] t
 val nonzero_z : Z.t -> [> nonzero ] t
 val nonzero : int -> [> nonzero ] t
 val int_of_bool : [< sbool ] t -> [> sint ] t
+val bool_of_int : [< sint ] t -> [> sbool ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
 val geq : [< sint ] t -> [< sint ] t -> [> sbool ] t

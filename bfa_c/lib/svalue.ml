@@ -135,15 +135,20 @@ let distinct l = Nop (Distinct, l) <| TBool
 
 let int_z z = Int z <| TInt
 let int i = int_z (Z.of_int i)
+let zero = int_z Z.zero
+let one = int_z Z.one
 
 let int_of_bool b =
   match b.node.kind with
-  | Bool true -> int 1
-  | Bool false -> int 0
+  | Bool true -> one
+  | Bool false -> zero
   | _ -> Unop (IntOfBool, b) <| TInt
 
-let zero = int_z Z.zero
-let one = int_z Z.one
+let bool_of_int sv =
+  match sv.node.kind with
+  | Int z -> bool (Stdlib.not (Z.equal z Z.zero))
+  | Unop (IntOfBool, sv') -> sv'
+  | _ -> not (sem_eq sv zero)
 
 (** [out_cons] is the outcome constructor, [f] is the function to apply to the int values, [b] is the binop *)
 let lift_int_binop ~out_cons ~out_ty ~f ~binop v1 v2 =

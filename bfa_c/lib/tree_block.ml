@@ -79,7 +79,7 @@ module Node = struct
     | Owned (Uninit Totally) ->
         return (Owned (Uninit Totally), Owned (Uninit Totally))
     | Owned Zeros -> return (Owned Zeros, Owned Zeros)
-    | Owned (Init _ | MaybeUninit _) -> Fmt.kstr not_impl "Spliting %a" pp node
+    | Owned (Init _ | MaybeUninit _) -> Fmt.kstr not_impl "Splitting %a" pp node
     | NotOwned Partially | Owned (Uninit Partially) | Owned Lazy ->
         failwith "Should never split an intermediate node"
 
