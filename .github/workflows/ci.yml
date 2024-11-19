@@ -18,7 +18,11 @@ jobs:
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Temporary workaround for https://github.com/actions/runner-images/issues/10984
-      - run: brew uninstall --ignore-dependencies --force pkg-config@0.29.2
+      - name: Runtime workaround for brew pkg-config -> pkgconf
+        run: |
+          brew update
+          brew upgrade
+          brew install pkgconf
       # Setup steps: checkout, z3, node, ocaml
       - uses: actions/checkout@v4
       - name: Setup Z3
