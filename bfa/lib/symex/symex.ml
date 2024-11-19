@@ -54,12 +54,10 @@ module type S = sig
   end
 end
 
-type 'a t = 'a Seq.t
-
 module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
   module Value = Solver.Value
 
-  type nonrec 'a t = 'a t
+  type 'a t = 'a Seq.t
 
   let return ?learned x () =
     Solver.add_constraints (Option.value ~default:[] learned);
@@ -105,7 +103,40 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
             if Solver.delayed_sat () then else_ () () else Seq.empty ())
 
   let branches (brs : (unit -> 'a t) list) : 'a t =
-    Seq.concat_map (fun br -> br ()) (List.to_seq brs)
+    match brs with
+    | [] -> Seq.empty
+    | [ a ] -> a ()
+    (* Optimised case *)
+    | [ a; b ] ->
+        Seq.append
+          (fun () ->
+            Solver.save ();
+            a () ())
+          (fun () ->
+            Solver.backtrack ();
+            b () ())
+    | a :: (_ :: _ as r) ->
+        (* First branch should not backtrack and last branch should not save *)
+        let rec loop brs =
+          match brs with
+          | [ x ] ->
+              fun () ->
+                Solver.backtrack ();
+                x () ()
+          | x :: r ->
+              Seq.append
+                (fun () ->
+                  Solver.backtrack ();
+                  Solver.save ();
+                  x () ())
+                (loop r)
+          | [] -> failwith "unreachable"
+        in
+        Seq.append
+          (fun () ->
+            Solver.save ();
+            a () ())
+          (loop r)
 
   let bind x f = Seq.concat_map f x
   let map = Seq.map

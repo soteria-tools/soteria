@@ -3,6 +3,9 @@ open T
 
 type t [@@deriving show]
 
+(** Prettier but expensive printing. *)
+val pp_pretty : ignore_freed:bool -> Format.formatter -> t -> unit
+
 val empty : t
 
 val load :

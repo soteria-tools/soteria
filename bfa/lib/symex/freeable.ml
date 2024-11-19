@@ -1,4 +1,8 @@
-type 'a t = Freed | Alive of 'a [@@deriving show { with_path = false }]
+type 'a t = Freed | Alive of 'a
+
+let pp ?(alive_prefix = "") pp_alive ft = function
+  | Freed -> Fmt.pf ft "Freed"
+  | Alive a -> Fmt.pf ft "%s%a" alive_prefix pp_alive a
 
 module Make (Symex : Symex.S) = struct
   open Symex.Syntax

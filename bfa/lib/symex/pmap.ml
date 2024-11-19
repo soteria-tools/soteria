@@ -21,11 +21,14 @@ struct
 
   type 'a t = 'a M.t
 
-  let pp pp_value =
+  let pp ?(ignore = fun _ -> false) pp_value =
     let open Fmt in
     let iter f = M.iter (fun k v -> f (k, v)) in
     let pp_binding ft (k, v) = pf ft "@[<2>%a ->@ %a@]" Key.pp k pp_value v in
-    braces (Fmt.iter ~sep:(any ";@\n") iter pp_binding)
+    let iter_non_ignored f m =
+      iter (fun (k, v) -> if ignore (k, v) then () else f (k, v)) m
+    in
+    braces (Fmt.iter ~sep:(any ";@\n") iter_non_ignored pp_binding)
 
   let empty = M.empty
 

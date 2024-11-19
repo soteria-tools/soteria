@@ -174,9 +174,16 @@ let exec_main_and_print log_level smt_file file_name =
   Initialize_analysis.init_once ();
   let result = exec_main file_name in
   L.app (fun m ->
-      m "@[<v 2>Symex terminated with the following outcomes:@ %a@]"
-        Fmt.Dump.(list @@ result ~ok:(pair Typed.ppa Heap.pp) ~error:pp_err)
-        result)
+      m
+        "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
+         Executed %d statements"
+        Fmt.Dump.(
+          list
+          @@ result
+               ~ok:(pair Typed.ppa (Heap.pp_pretty ~ignore_freed:true))
+               ~error:pp_err)
+        result
+        (Stats.get_executed_statements ()))
 
 let temp_file = lazy (Filename.temp_file "bfa_c" ".c")
 

@@ -57,7 +57,7 @@ int expand_capacity(Array *ar) {
     else
         ar->capacity = new_capacity;
 
-    void **new_buff = malloc(new_capacity * sizeof(void *));
+    void **new_buff = malloc(ar->capacity * sizeof(void *));
 
     if (!new_buff)
         return CC_ERR_ALLOC;
@@ -72,6 +72,7 @@ int expand_capacity(Array *ar) {
 int array_add(Array *ar, void* element) {
   if (ar->size >= ar->capacity) {
     int stat = expand_capacity(ar);
+    ___bfa_debug_show ();
     if (stat != 0) return stat;
   }
   ar->buffer[ar->size] = element;
@@ -79,12 +80,16 @@ int array_add(Array *ar, void* element) {
   return CC_OK;
 }
 
+// TODO: This is an excellent example to experiment with tree rebalancing.
+// When increasing the loop limit (currently 50), things get extremely slow.
+// I suspect it the time to access the correct cell in the heap that just gets deeper and deeper into the corresponding tree.
+
 int main() {
   Array *v1 = malloc(sizeof(Array));
   if (!v1) return CC_ERR_ALLOC;
   int stat = array_new(&v1);
-  if (stat != 0) return stat;
-  for (int i = 0;  i < 10; i++) {
+  for (int i = 0;  i < 50; i++) {
+    if (stat != 0) return stat;
     stat = array_add(v1, NULL);
   }
   return 0;

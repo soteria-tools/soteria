@@ -100,6 +100,15 @@ let alloc_params params st =
       let++ (), st = Heap.store ptr ty value st in
       (store, st))
 
+let dealloc_store store st =
+  Csymex.Result.fold_left (Store.bindings store) ~init:st
+    ~f:(fun st (_, (ptr, _)) ->
+      match ptr with
+      | None -> Result.ok st
+      | Some ptr ->
+          let++ (), st = Heap.free ptr st in
+          st)
+
 let value_of_constant (c : constant) : T.cval Typed.t Csymex.t =
   match c with
   | ConstantInteger (IConstant (z, _basis, _suff)) ->
@@ -239,7 +248,9 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
   | AilEcall (f, args) ->
       let* exec_fun = resolve_function ~prog f in
       let** args, state = eval_expr_list ~prog ~store state args in
-      exec_fun ~prog ~args ~state
+      let++ v, state = exec_fun ~prog ~args ~state in
+      L.debug (fun m -> m "returned %a from %a" Typed.ppa v Fmt_ail.pp_expr f);
+      (v, state)
   | AilEunary (Address, e) -> (
       match unwrap_expr e with
       | AilEunary (Indirection, e) -> (* &*e <=> e *) eval_expr state e
@@ -400,6 +411,7 @@ and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr) =
 and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
     (T.cval Typed.t option * store * state, 'err) Csymex.Result.t =
   L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
+  Stats.incr_executed_statements ();
   let (AnnotatedStatement (loc, _, stmt)) = astmt in
   let@ () = with_loc ~loc in
   match stmt with
@@ -479,7 +491,8 @@ and exec_fun ~prog ~args ~state (fundef : fundef) =
            That would require some kind of continutation passing for executing a bunch of statements. *)
   let** store, state = alloc_params ps state in
   (* TODO: local optimisation to put values in store directly when no address is taken. *)
-  let++ val_opt, _, state = exec_stmt ~prog store state stmt in
+  let** val_opt, _, state = exec_stmt ~prog store state stmt in
+  let++ state = dealloc_store store state in
   (* We model void as zero, it should never be used anyway *)
   let value = Option.value ~default:0s val_opt in
   (value, state)

@@ -17,9 +17,23 @@ module SPmap = Pmap (struct
   let fresh () = Typed.nondet Typed.t_loc
 end)
 
-type t = Tree_block.t Freeable.t SPmap.t [@@deriving show]
+type t = Tree_block.t Freeable.t SPmap.t [@@deriving show { with_path = false }]
+
+let pp_pretty ~ignore_freed =
+  let ignore =
+    if ignore_freed then function _, Freeable.Freed -> true | _ -> false
+    else fun _ -> false
+  in
+  SPmap.pp ~ignore (Freeable.pp Tree_block.pp_pretty)
 
 let empty = SPmap.empty
+
+let log action ptr st =
+  L.debug (fun m ->
+      m "About to execute action: %s at %a (%a)@\n@[<2>HEAP:@ %a@]" action
+        Typed.ppa ptr Fmt_ail.pp_loc (get_loc ())
+        (pp_pretty ~ignore_freed:true)
+        st)
 
 let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
@@ -38,11 +52,13 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
 
 let load ptr ty st =
   let@ () = with_loc_err () in
+  log "load" ptr st;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
   else with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
   let@ () = with_loc_err () in
+  log "store" ptr st;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
   else with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
 

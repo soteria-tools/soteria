@@ -7,7 +7,11 @@ module Ctype = Cerb_frontend.Ctype
 
 module MemVal = struct
   type t = { value : T.cval Typed.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
-  [@@deriving make, show { with_path = false }]
+  [@@deriving make]
+
+  let pp ft t =
+    let open Fmt in
+    pf ft "%a : %a" Typed.ppa t.value Fmt_ail.pp_ty t.ty
 
   let any_of_type (Ctype.Ctype (_, kty) as ty) =
     match kty with
@@ -27,7 +31,11 @@ module MUMemVal = struct
     value : T.cval T.sopt Typed.t;
     ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]
   }
-  [@@deriving make, show { with_path = false }]
+  [@@deriving make]
+
+  let pp ft t =
+    let open Fmt in
+    pf ft "%a : %a?" Typed.ppa t.value Fmt_ail.pp_ty t.ty
 
   let unwrap_or ~err v =
     (* What I would like to be writing:
@@ -40,7 +48,11 @@ module MUMemVal = struct
 end
 
 module Node = struct
-  type qty = Partially | Totally [@@deriving show { with_path = false }]
+  type qty = Partially | Totally
+
+  let pp_qty ft = function
+    | Partially -> Fmt.pf ft "Part."
+    | Totally -> Fmt.pf ft "Tot."
 
   let merge_qty left right =
     match (left, right) with Totally, Totally -> Totally | _, _ -> Partially
@@ -51,7 +63,15 @@ module Node = struct
     | Lazy
     | Init of MemVal.t
     | MaybeUninit of MUMemVal.t
-  [@@deriving show { with_path = false }]
+
+  let pp_mem_val ft =
+    let open Fmt in
+    function
+    | Zeros -> pf ft "Zeros"
+    | Uninit qty -> pf ft "Uninit %a" pp_qty qty
+    | Lazy -> pf ft "Lazy"
+    | Init mv -> MemVal.pp ft mv
+    | MaybeUninit mv -> MUMemVal.pp ft mv
 
   (* Later we could add arbitrary annotations to the mem_val variant.
      For example, we can keep track of read-only or tainted bytes.
@@ -59,7 +79,10 @@ module Node = struct
      Quite probably, Node module can be parametrized by a module
      capturing the annotations behavior in analysis. *)
   type t = NotOwned of qty | Owned of mem_val
-  [@@deriving show { with_path = false }]
+
+  let pp ft = function
+    | NotOwned qty -> Fmt.pf ft "NotOwned %a" pp_qty qty
+    | Owned mv -> pp_mem_val ft mv
 
   let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
 
@@ -121,6 +144,13 @@ module Tree = struct
 
   let sval_leaf ~range ~value ~ty =
     make ~node:(Owned (Init { value; ty })) ~range ?children:None ()
+
+  let rec iter_leaves_rev t f =
+    match t.children with
+    | None -> f t
+    | Some (l, r) ->
+        iter_leaves_rev r f;
+        iter_leaves_rev l f
 
   let of_children_s ~left ~right =
     let range = (fst left.range, snd right.range) in
@@ -345,14 +375,33 @@ end
 type t = { root : Tree.t; bound : T.sint Typed.t option }
 [@@deriving show { with_path = false }]
 
-let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
+let pp_pretty ft t =
+  let open PrintBox in
+  let r = ref [] in
+  let () =
+    Option.iter
+      (fun b ->
+        let range_str = Fmt.str "[%a; ∞[" Typed.ppa b in
+        r := [ (range_str, text "OOB") ])
+      t.bound
+  in
+  let () =
+    Tree.iter_leaves_rev t.root (fun leaf ->
+        let range_str = (Fmt.to_to_string Range.pp) leaf.range in
+        let node_str = Fmt.kstr text "%a" Node.pp leaf.node in
+        r := (range_str, node_str) :: !r)
+  in
+  PrintBox_text.pp ft (frame @@ record !r)
+
+let with_bound_check ?msg (t : t) (ofs : [< T.sint ] Typed.t) f =
   let** () =
     match t.bound with
     | None -> Result.ok ()
     | Some bound ->
         if%sat ofs #> bound then (
           L.debug (fun m ->
-              m "Out of bounds access: %a > %a" Typed.ppa ofs Typed.ppa bound);
+              m "Out of bounds access: %a > %a (%a)" Typed.ppa ofs Typed.ppa
+                bound (Fmt.option Fmt.string) msg);
           Result.error `OutOfBounds)
         else Result.ok ()
   in
@@ -370,12 +419,18 @@ let is_exclusively_owned t =
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
     ([> T.sint ] Typed.t * t, 'err) Result.t =
   let* size = Layout.size_of_s ty in
-  let@ () = with_bound_check t ofs #+ size in
+  let@ () = with_bound_check ~msg:"loading" t ofs #+ size in
   Tree.load ofs ty t.root
 
 let store ofs ty sval t =
   let* size = Layout.size_of_s ty in
-  let@ () = with_bound_check t ofs #+ size in
+  let@ () =
+    with_bound_check
+      ~msg:
+        (Fmt.str "storing %a of type %a at offset %a in block@ %a" Typed.ppa
+           sval Fmt_ail.pp_ty ty Typed.ppa ofs pp_pretty t)
+      t ofs #+ size
+  in
   Tree.store ofs ty sval t.root
 
 let get_raw_tree_owned ofs size t =

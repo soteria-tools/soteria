@@ -58,6 +58,7 @@
   cmdliner
   fmt
   logs
+  printbox-text
   (linol
    (>= 0.6))
   (linol-eio

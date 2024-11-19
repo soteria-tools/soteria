@@ -16,7 +16,8 @@
   simple_smt
   linol
   linol-eio
-  eio_main)
+  eio_main
+  printbox-text)
  (inline_tests)
  (preprocess
   (pps ppx_deriving.std ppx_symex ppx_inline_test)))
