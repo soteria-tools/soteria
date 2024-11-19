@@ -17,6 +17,8 @@ jobs:
         operating-system: [macos-latest, macos-13]
     runs-on: ${{ matrix.operating-system }}
     steps:
+      # Temporary workaround for https://github.com/actions/runner-images/issues/10984
+      - run: brew uninstall --ignore-dependencies --force pkg-config@0.29.2
       # Setup steps: checkout, z3, node, ocaml
       - uses: actions/checkout@v4
       - name: Setup Z3

@@ -124,7 +124,7 @@ let nondet_int_fun ~prog:_ ~args:_ ~state :
 
 let debug_show ~prog:_ ~args:_ ~state =
   let loc = get_loc () in
-  let str = (Fmt.to_to_string Heap.pp) state in
+  let str = (Fmt.to_to_string (Heap.pp_pretty ~ignore_freed:false)) state in
   Csymex.push_give_up (str, loc);
   Result.ok (0s, state)
 

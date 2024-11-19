@@ -15,6 +15,8 @@ typedef __cerbty_size_t size_t;
 #define CC_OK 0
 #define CC_ERR_ALLOC 1
 #define CC_ERR_MAX_CAPACITY 2
+#define CC_ERR_OUT_OF_RANGE 3
+#define CC_ERR_VALUE_NOT_FOUND 4
 
 
 struct array_s {
@@ -72,12 +74,42 @@ int expand_capacity(Array *ar) {
 int array_add(Array *ar, void* element) {
   if (ar->size >= ar->capacity) {
     int stat = expand_capacity(ar);
-    ___bfa_debug_show ();
     if (stat != 0) return stat;
   }
   ar->buffer[ar->size] = element;
   ar->size++;
   return CC_OK;
+}
+
+int array_index_of(Array *ar, void *element, size_t *index) {
+    size_t i;
+    for (i = 0; i < ar->size; i++) {
+        if (ar->buffer[i] == element) {
+            *index = i;
+            return CC_OK;
+        }
+    }
+    return CC_ERR_OUT_OF_RANGE;
+}
+
+int array_remove(Array *ar, void *element, void **out) {
+    size_t index;
+    int status = array_index_of(ar, element, &index);
+
+    if (status == CC_ERR_OUT_OF_RANGE)
+        return CC_ERR_VALUE_NOT_FOUND;
+
+    if (index != ar->size - 1) {
+        size_t block_size = (ar->size - index) * sizeof(void *);
+
+        memcpy(&(ar->buffer[index]), &(ar->buffer[index + 1]), block_size);
+    }
+    ar->size--;
+
+    if (out)
+        *out = element;
+
+    return CC_OK;
 }
 
 // TODO: This is an excellent example to experiment with tree rebalancing.
@@ -87,10 +119,22 @@ int array_add(Array *ar, void* element) {
 int main() {
   Array *v1 = malloc(sizeof(Array));
   if (!v1) return CC_ERR_ALLOC;
+  
   int stat = array_new(&v1);
-  for (int i = 0;  i < 50; i++) {
-    if (stat != 0) return stat;
-    stat = array_add(v1, NULL);
+  if (stat != 0) return stat;
+  
+  int *last = NULL;
+  int *next_to_last;
+  
+  for (int i = 0; i < 16; i++) {
+      int *a = malloc(sizeof(int));
+      if (!a) return CC_ERR_ALLOC;
+      array_add(v1, a);
+      next_to_last = last;
+      last = a;
   }
+  
+  array_remove(v1, next_to_last, NULL);
+  
   return 0;
 }
