@@ -1,4 +1,4 @@
-  $ bfa-c exec-main array_remove.c
+  $ bfa-c exec-main array_add.c
   Symex terminated with the following outcomes:
     [Ok
        (0,
