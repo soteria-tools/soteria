@@ -64,9 +64,9 @@ let solver () =
 
 let solver = lazy (solver ())
 
-let simplify v =
-  let (lazy solver) = solver in
-  solver.command (list [ atom "simplify"; v ])
+(* let simplify v =
+   let (lazy solver) = solver in
+   solver.command (list [ atom "simplify"; v ]) *)
 
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
@@ -258,13 +258,13 @@ let add_constraints vs =
          let constr = encode_value v in
          ack_command (assume constr))
 
-let simplify (v : Svalue.t) =
-  match v.node.kind with
-  | Int _ | Bool _ -> v
-  | _ -> (
-      let enc = encode_value v in
-      let res = simplify enc in
-      match decode_value res with Some d -> d | None -> v)
+let simplify (v : Svalue.t) = v
+(* match v.node.kind with
+   | Int _ | Bool _ -> v
+   | _ -> (
+       let enc = encode_value v in
+       let res = simplify enc in
+       match decode_value res with Some d -> d | None -> v) *)
 
 let as_bool v =
   if Svalue.equal v Svalue.v_true then Some true
