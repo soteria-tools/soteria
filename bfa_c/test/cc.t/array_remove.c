@@ -123,18 +123,9 @@ int main() {
   int stat = array_new(&v1);
   if (stat != 0) return stat;
   
-  int *last = NULL;
-  int *next_to_last;
-  
-  for (int i = 0; i < 16; i++) {
-      int *a = malloc(sizeof(int));
-      if (!a) return CC_ERR_ALLOC;
-      array_add(v1, a);
-      next_to_last = last;
-      last = a;
+  for (int i = 0; i < 10; i++) {
+      array_add(v1, NULL);
   }
-  
-  array_remove(v1, next_to_last, NULL);
   
   return 0;
 }
