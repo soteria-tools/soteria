@@ -3,7 +3,9 @@ module type S = sig
 
   module Value : Value.S
 
-  val add_constraints : Value.t list -> unit
+  (** simplified indicates if constraits were already simplified *)
+  val add_constraints : ?simplified:bool -> Value.t list -> unit
+
   val sat : unit -> bool
 
   (** Like [sat] but may return true for now even though the constraint isn't actually sat.

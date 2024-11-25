@@ -4,6 +4,42 @@ let z3_env_var = "BFA_Z3_PATH"
 let log_src = Logs.Src.create "bfa_c.SOLVER"
 let debug_str ~prefix s = Logs.debug ~src:log_src (fun m -> m "%s: %s" prefix s)
 
+module Dist_set = struct
+  (* Pairs of distinct expressions *)
+
+  type t = (int * int, unit) Hashtbl.t Dynarray.t
+
+  let create () =
+    let r = Dynarray.create () in
+    Dynarray.ensure_capacity r 1023;
+    Dynarray.add_last r (Hashtbl.create 0);
+    r
+
+  let reset (ds : t) =
+    Dynarray.clear ds;
+    Dynarray.add_last ds (Hashtbl.create 0)
+
+  let sure_are_diff (ds : t) i j =
+    let rec find n pair =
+      if n <= 0 then false
+      else
+        let h = Dynarray.get ds n in
+        if Hashtbl.mem h pair then true else find (n - 1) pair
+    in
+    if i = j then false
+    else
+      let pair = if i < j then (i, j) else (j, i) in
+      find (Dynarray.length ds - 1) pair
+
+  let add (ds : t) i j =
+    let pair = if i < j then (i, j) else (j, i) in
+    let h = Dynarray.get_last ds in
+    Hashtbl.add h pair ()
+
+  let save (ds : t) = Dynarray.add_last ds (Hashtbl.create 0)
+  let backtrack_n (ds : t) n = Dynarray.truncate ds (Dynarray.length ds - n)
+end
+
 open Simple_smt
 
 let smallest_power_of_two_greater_than n =
@@ -54,7 +90,7 @@ let solver_config =
   | None -> base_config
   | Some exe -> { z3 with exe }
 
-let solver () =
+let z3_solver () =
   let solver = new_solver solver_config in
   let command sexp =
     log_sexp sexp;
@@ -62,7 +98,22 @@ let solver () =
   in
   { solver with command }
 
-let solver = lazy (solver ())
+type t = {
+  z3_solver : Simple_smt.solver;
+  mutable save_counter : int;
+  mutable var_history : Svalue.t array;
+  mutable dist_set : Dist_set.t;
+}
+
+let init () =
+  {
+    z3_solver = z3_solver ();
+    save_counter = 0;
+    var_history = Array.make 1023 Svalue.zero;
+    dist_set = Dist_set.create ();
+  }
+
+let solver = lazy (init ())
 
 (* let simplify v =
    let (lazy solver) = solver in
@@ -74,7 +125,7 @@ let is_constr constr = list [ atom "_"; atom "is"; atom constr ]
 
 let ack_command sexp =
   let (lazy solver) = solver in
-  ack_command solver sexp
+  ack_command solver.z3_solver sexp
 
 let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
@@ -115,14 +166,16 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
 
 (********* End of solver declarations *********)
 
-let save_counter = ref 0
-
 let save () =
-  incr save_counter;
+  let (lazy solver) = solver in
+  solver.save_counter <- solver.save_counter + 1;
+  Dist_set.save solver.dist_set;
   ack_command (Simple_smt.push 1)
 
 let backtrack_n n =
-  save_counter := !save_counter - n;
+  let (lazy solver) = solver in
+  Dist_set.backtrack_n solver.dist_set n;
+  solver.save_counter <- solver.save_counter - n;
   ack_command (Simple_smt.pop n)
 
 let backtrack () = backtrack_n 1
@@ -131,13 +184,12 @@ let backtrack () = backtrack_n 1
 
 let () = Initialize_analysis.register_once_initialiser (fun () -> save ())
 
-(* TODO: Add 2 kinds of initialisers to `Initialize_analysis`: BeforeAll and BeforeEach.
-   This one is a BeforeEach, but we need a BeforeAll to initalise the solver context *)
 let () =
   Initialize_analysis.register_resetter (fun () ->
+      let (lazy solver) = solver in
       (* We want to go back to 1, meaning after the first push which saved the declarations *)
-      L.debug (fun m -> m "Resetting solver: %d" !save_counter);
-      if !save_counter > 0 then backtrack_n !save_counter;
+      L.debug (fun m -> m "Resetting solver: %d" solver.save_counter);
+      if solver.save_counter > 0 then backtrack_n solver.save_counter;
       save ())
 
 let rec sort_of_ty = function
@@ -148,25 +200,27 @@ let rec sort_of_ty = function
   | TPointer -> t_ptr
   | TOption ty -> t_opt $ sort_of_ty ty
 
-let var_history = ref (Array.make 1023 Svalue.zero)
-
 let var_of_int i =
-  let res = Array.get !var_history i in
+  let (lazy solver) = solver in
+  let res = Array.get solver.var_history i in
   if Svalue.equal Svalue.zero res then invalid_arg "var_of_int" else res
 
 let var_of_str s = var_of_int (Value.Var_name.of_string s)
 
 let record_var (var : Value.t) =
+  let (lazy solver) = solver in
   match var.node.kind with
   | Var v ->
-      if v < Array.length !var_history then Array.set !var_history v var
+      if v < Array.length solver.var_history then
+        Array.set solver.var_history v var
       else
         let new_arr =
           Array.make (smallest_power_of_two_greater_than v) Svalue.zero
         in
-        Array.blit !var_history 0 new_arr 0 (Array.length !var_history);
+        Array.blit solver.var_history 0 new_arr 0
+          (Array.length solver.var_history);
         Array.set new_arr v var;
-        var_history := new_arr
+        solver.var_history <- new_arr
   | _ -> failwith "UNREACHABLE: record_var not a var"
 
 let declare_v (var : Value.t) =
@@ -252,19 +306,42 @@ let fresh ty =
   ack_command c;
   v
 
-let add_constraints vs =
+let rec simplify (v : Svalue.t) =
+  let (lazy solver) = solver in
+  match v.node.kind with
+  | Int _ | Bool _ -> v
+  | Unop (Not, e) ->
+      let e' = simplify e in
+      if Svalue.equal e e' then v else Svalue.not (simplify e)
+  | Binop (Eq, e1, e2) ->
+      if Svalue.equal e1 e2 then Svalue.v_true
+      else if
+        Dist_set.sure_are_diff solver.dist_set e1.Hashcons.tag e2.Hashcons.tag
+      then Svalue.v_false
+      else v
+  | _ -> v
+
+let is_diff_op (v : Svalue.t) =
+  match v.node.kind with
+  | Unop (Not, { node = { kind = Binop (Eq, v1, v2); _ }; _ }) ->
+      Some [ v1; v2 ]
+  | Nop (Distinct, vs) -> Some vs
+  | _ -> None
+
+let add_constraints ?(simplified = false) vs =
+  let (lazy solver) = solver in
   vs
   |> List.iter (fun v ->
+         let v = if simplified then v else simplify v in
+         let () =
+           match is_diff_op v with
+           | None -> ()
+           | Some vl ->
+               Utils.List_ex.iter_self_cross_product vl (fun (i, j) ->
+                   Dist_set.add solver.dist_set i.tag j.tag)
+         in
          let constr = encode_value v in
          ack_command (assume constr))
-
-let simplify (v : Svalue.t) = v
-(* match v.node.kind with
-   | Int _ | Bool _ -> v
-   | _ -> (
-       let enc = encode_value v in
-       let res = simplify enc in
-       match decode_value res with Some d -> d | None -> v) *)
 
 let as_bool v =
   if Svalue.equal v Svalue.v_true then Some true
@@ -275,7 +352,7 @@ let as_bool v =
 let sat () =
   let (lazy solver) = solver in
   let answer =
-    try check solver
+    try check solver.z3_solver
     with Simple_smt.UnexpectedSolverResponse s ->
       Logs.err ~src:log_src (fun m ->
           m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));

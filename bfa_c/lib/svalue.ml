@@ -71,11 +71,11 @@ type t_kind =
   | Var of Var_name.t
   | Bool of bool
   | Int of Z.t [@printer Fmt.of_to_string Z.to_string]
-  | Ptr of (t * t)
+  | Ptr of t * t
   (* | BitVec of (Z.t * int) *)
   | Seq of t list
-  | Unop of (Unop.t * t)
-  | Binop of (Binop.t * t * t)
+  | Unop of Unop.t * t
+  | Binop of Binop.t * t * t
   | Nop of Nop.t * t list
   | Opt of t option
 

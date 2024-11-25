@@ -95,7 +95,7 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
         Seq.append
           (fun () ->
             Solver.save ();
-            Solver.add_constraints [ guard ];
+            Solver.add_constraints ~simplified:true [ guard ];
             if Solver.delayed_sat () then then_ () () else Seq.empty ())
           (fun () ->
             Solver.backtrack ();
