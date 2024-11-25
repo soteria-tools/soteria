@@ -375,6 +375,8 @@ end
 type t = { root : Tree.t; bound : T.sint Typed.t option }
 [@@deriving show { with_path = false }]
 
+let is_empty t = Option.is_none t.bound && Tree.is_empty t.root
+
 let pp_pretty ft t =
   let open PrintBox in
   let r = ref [] in
@@ -393,60 +395,80 @@ let pp_pretty ft t =
   in
   PrintBox_text.pp ft (frame @@ record !r)
 
-let with_bound_check ?msg (t : t) (ofs : [< T.sint ] Typed.t) f =
+let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let** () =
     match t.bound with
     | None -> Result.ok ()
     | Some bound ->
         if%sat ofs #> bound then (
           L.debug (fun m ->
-              m "Out of bounds access: %a > %a (%a)" Typed.ppa ofs Typed.ppa
-                bound (Fmt.option Fmt.string) msg);
+              m "Out of bounds access: %a > %a" Typed.ppa ofs Typed.ppa bound);
           Result.error `OutOfBounds)
         else Result.ok ()
   in
   let++ res, root = f () in
   (res, { t with root })
 
-let is_exclusively_owned t =
+let of_opt = function
+  | None -> Result.error `MissingResource
+  | Some t -> Result.ok t
+
+let to_opt t = if is_empty t then None else Some t
+
+let assert_exclusively_owned t =
+  let** t = of_opt t in
+  let err = Result.error `MissingResource in
   match t.bound with
-  | None -> return Typed.v_false
+  | None -> err
   | Some bound ->
       let Tree.{ range = low, high; node; _ } = t.root in
-      if Node.is_fully_owned node then return low #== 0s #&& (high #== bound)
-      else return Typed.v_false
+      if Node.is_fully_owned node then
+        if%sat low #== 0s #&& (high #== bound) then Result.ok () else err
+      else err
 
-let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
-    ([> T.sint ] Typed.t * t, 'err) Result.t =
+let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t option) :
+    ([> T.sint ] Typed.t * t option, 'err) Result.t =
+  let** t = of_opt t in
   let* size = Layout.size_of_s ty in
-  let@ () = with_bound_check ~msg:"loading" t ofs #+ size in
-  Tree.load ofs ty t.root
+  let++ res, tree =
+    let@ () = with_bound_check t ofs #+ size in
+    Tree.load ofs ty t.root
+  in
+  (res, to_opt tree)
 
 let store ofs ty sval t =
-  let* size = Layout.size_of_s ty in
-  let@ () =
-    with_bound_check
-      ~msg:
-        (Fmt.str "storing %a of type %a at offset %a in block@ %a" Typed.ppa
-           sval Fmt_ail.pp_ty ty Typed.ppa ofs pp_pretty t)
-      t ofs #+ size
-  in
-  Tree.store ofs ty sval t.root
+  match t with
+  | None -> Result.error `MissingResource
+  | Some t ->
+      let* size = Layout.size_of_s ty in
+      let++ (), tree =
+        let@ () = with_bound_check t ofs #+ size in
+        Tree.store ofs ty sval t.root
+      in
+      ((), to_opt tree)
 
 let get_raw_tree_owned ofs size t =
-  let@ () = with_bound_check t ofs #+ size in
-  let+ tree, t = Tree.get_raw ofs size t.root in
-  if Node.is_fully_owned tree.node then
-    let tree = Tree.offset ~by:~-ofs tree in
-    Ok (tree, t)
-  else Error `MissingResource
+  let** t = of_opt t in
+  let++ res, tree =
+    let@ () = with_bound_check t ofs #+ size in
+    let+ tree, t = Tree.get_raw ofs size t.root in
+    if Node.is_fully_owned tree.node then
+      let tree = Tree.offset ~by:~-ofs tree in
+      Ok (tree, t)
+    else Error `MissingResource
+  in
+  (res, to_opt tree)
 
 (* This is used for copy_nonoverapping.
    It is an action on the destination block, and assumes the received tree is at offset 0 *)
-let put_raw_tree ofs (tree : Tree.t) t : (unit * t, 'err) Result.t =
+let put_raw_tree ofs (tree : Tree.t) t : (unit * t option, 'err) Result.t =
+  let** t = of_opt t in
   let size = Range.size tree.range in
   let tree = Tree.offset ~by:ofs tree in
-  let@ () = with_bound_check t ofs #+ size in
-  Tree.put_raw tree t.root
+  let++ res, t =
+    let@ () = with_bound_check t ofs #+ size in
+    Tree.put_raw tree t.root
+  in
+  (res, to_opt t)
 
 let alloc size = { root = Tree.uninit (0s, size); bound = Some size }

@@ -17,16 +17,19 @@ module SPmap = Pmap (struct
   let fresh () = Typed.nondet Typed.t_loc
 end)
 
-type t = Tree_block.t Freeable.t SPmap.t [@@deriving show { with_path = false }]
+type t = Tree_block.t Freeable.t SPmap.t option
+[@@deriving show { with_path = false }]
 
-let pp_pretty ~ignore_freed =
+let pp_pretty ~ignore_freed ft st =
   let ignore =
     if ignore_freed then function _, Freeable.Freed -> true | _ -> false
     else fun _ -> false
   in
-  SPmap.pp ~ignore (Freeable.pp Tree_block.pp_pretty)
+  match st with
+  | None -> Fmt.pf ft "Empty Heap"
+  | Some st -> SPmap.pp ~ignore (Freeable.pp Tree_block.pp_pretty) ft st
 
-let empty = SPmap.empty
+let empty = None
 
 let log action ptr st =
   L.debug (fun m ->
@@ -38,14 +41,15 @@ let log action ptr st =
 let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
-      Tree_block.t ->
-      ('a * Tree_block.t, 'err) Result.t) : ('a * t, 'err) Result.t =
+      Tree_block.t option ->
+      ('a * Tree_block.t option, 'err) Result.t) : ('a * t, 'err) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   (SPmap.wrap (Freeable.wrap (f ~ofs))) loc st
 
 let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
-    (f : ofs:[< T.sint ] Typed.t -> Tree_block.t -> ('a, 'err) Result.t) =
+    (f : ofs:[< T.sint ] Typed.t -> Tree_block.t option -> ('a, 'err) Result.t)
+    =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc st
@@ -89,12 +93,10 @@ let alloc_ty ty st =
   alloc size st
 
 let free (ptr : [< T.sptr ] Typed.t) (st : t) : (unit * t, 'err) Result.t =
-  let is_exclusively_owned tb =
-    (* TODO: this will be unnecessary when the core library is properly typed *)
-    let+ r = Tree_block.is_exclusively_owned tb in
-    Typed.untyped r
-  in
   if%sat (Typed.Ptr.ofs ptr) #== 0s then
     let@ () = with_loc_err () in
-    (SPmap.wrap (Freeable.free ~is_exclusively_owned)) (Typed.Ptr.loc ptr) st
+    (SPmap.wrap
+       (Freeable.free
+          ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
+      (Typed.Ptr.loc ptr) st
   else error `InvalidFree

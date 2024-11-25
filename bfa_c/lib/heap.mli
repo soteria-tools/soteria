@@ -13,8 +13,7 @@ val load :
   Tree_block.Ctype.ctype ->
   t ->
   ( cval Typed.t * t,
-    [> `MissingKey
-    | `MissingResource
+    [> `MissingResource
     | `NullDereference
     | `OutOfBounds
     | `UninitializedMemoryAccess
@@ -28,11 +27,7 @@ val store :
   cval Typed.t ->
   t ->
   ( unit * t,
-    [> `MissingKey
-    | `MissingResource
-    | `NullDereference
-    | `OutOfBounds
-    | `UseAfterFree ]
+    [> `MissingResource | `NullDereference | `OutOfBounds | `UseAfterFree ]
     * Cerb_location.t )
   Csymex.Result.t
 
@@ -50,8 +45,7 @@ val free :
   [< sptr ] Typed.t ->
   t ->
   ( unit * t,
-    [> `DoubleFree | `InvalidFree | `MissingKey | `MissingOwnership ]
-    * Cerb_location.t )
+    [> `InvalidFree | `MissingResource | `UseAfterFree ] * Cerb_location.t )
   Result.t
 
 val copy_nonoverlapping :
@@ -60,11 +54,6 @@ val copy_nonoverlapping :
   size:sint Typed.t ->
   t ->
   ( unit * t,
-    [> `MissingKey
-    | `NullDereference
-    | `OutOfBounds
-    | `UseAfterFree
-    | `MissingOwnership
-    | `MissingResource ]
+    [> `NullDereference | `OutOfBounds | `UseAfterFree | `MissingResource ]
     * Cerb_location.t )
   Result.t

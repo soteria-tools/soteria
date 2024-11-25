@@ -34,11 +34,8 @@ let error_to_diagnostic_opt (err, loc) =
         Some (Error, "Undefined Behavior for Pointer Comparison")
     | `UBPointerArithmetic ->
         Some (Error, "Undefined Behavior for Pointer Arithmetic")
-    | `DoubleFree -> Some (Error, "Double Free")
     | `InvalidFree -> Some (Error, "Invalid Pointer passed to free")
-    | `MissingKey -> Some (Information, "Missing Key")
     | `MissingResource -> Some (Information, "Missing Resource")
-    | `MissingOwnership -> Some (Information, "MissingOwnership")
   in
   Lsp.Types.Diagnostic.create ~message ~severity ~range:(cerb_loc_to_range loc)
     ~source:"bfa" ()

@@ -30,7 +30,9 @@ struct
     in
     braces (Fmt.iter ~sep:(any ";@\n") iter_non_ignored pp_binding)
 
-  let empty = M.empty
+  let of_opt = function None -> M.empty | Some m -> m
+  let to_opt m = if M.is_empty m then None else Some m
+  let add_opt k v m = M.update k (fun _ -> v) m
 
   (* Symbolic process that under-approximates Map.find_opt *)
   let find_opt_sym (loc : Key.t) (st : 'a t) =
@@ -45,29 +47,26 @@ struct
     | Some v -> Symex.return (Some v)
     | None -> find_bindings (M.bindings st)
 
-  let alloc (type a) ~(new_codom : a) (st : a t) : (Key.t * a t, 'err) Result.t
-      =
+  let alloc (type a) ~(new_codom : a) (st : a t option) :
+      (Key.t * a t option, 'err) Result.t =
+    let st = of_opt st in
     let* key = Key.fresh () in
     let learned =
       if M.is_empty st then []
       else [ Key.distinct (key :: (M.bindings st |> List.map fst)) ]
     in
-    Result.ok ~learned (key, M.add key new_codom st)
+    Result.ok ~learned (key, to_opt (M.add key new_codom st))
 
-  let wrap (f : 'a -> ('b * 'a, 'err) Symex.Result.t) (loc : Key.t) (st : 'a t)
-      =
-    let* found = find_opt_sym loc st in
-    match found with
-    | Some sst ->
-        let++ res, sst' = f sst in
-        (* Should I check for emptyness here? *)
-        (res, M.add loc sst' st)
-    | None -> Symex.Result.error `MissingKey
+  let wrap (f : 'a option -> ('b * 'a option, 'err) Symex.Result.t)
+      (loc : Key.t) (st : 'a t option) =
+    let st = of_opt st in
+    let* codom = find_opt_sym loc st in
+    let++ res, codom = f codom in
+    (res, to_opt (add_opt loc codom st))
 
-  let wrap_read_only (f : 'a -> ('b, 'err) Symex.Result.t) (loc : Key.t)
-      (st : 'a t) =
-    let* found = find_opt_sym loc st in
-    match found with
-    | Some sst -> f sst
-    | None -> Symex.Result.error `MissingKey
+  let wrap_read_only (f : 'a option -> ('b, 'err) Symex.Result.t) (loc : Key.t)
+      (st : 'a t option) =
+    let st = of_opt st in
+    let* codom = find_opt_sym loc st in
+    f codom
 end
