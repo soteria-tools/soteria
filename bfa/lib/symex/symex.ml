@@ -8,7 +8,6 @@ module type S = sig
   val return : ?learned:Value.t list -> 'a -> 'a t
   val vanish : unit -> 'a t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
-  val must : Value.t list -> (unit, string) Result.t t
   val value_eq : Value.t -> Value.t -> Value.t
 
   val branch_on :
@@ -67,16 +66,6 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
   let return ?learned x () =
     Solver.add_constraints (Option.value ~default:[] learned);
     Seq.Cons (x, Seq.empty)
-
-  let must constraints () =
-    let res =
-      if Solver.check_entailment constraints then Ok ()
-      else
-        Fmt.error "must failed: %a"
-          (Fmt.list ~sep:(Fmt.any "/\\") Value.pp)
-          constraints
-    in
-    Seq.Cons (res, Seq.empty)
 
   let nondet ?constrs ty =
     let v = Solver.fresh ty in

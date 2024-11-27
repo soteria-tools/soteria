@@ -390,30 +390,3 @@ let set_pc l =
           else ack_command (declare_v i ty)))
     l;
   add_constraints l
-
-let check_entailment vs =
-  ack_command (Simple_smt.push 1);
-  let (lazy solver) = solver in
-  Solver_state.iter solver.state (fun v ->
-      ack_command (assume (encode_value v)));
-  List.iter
-    (fun v ->
-      let constr = encode_value (Value.not v) in
-      ack_command (assume constr))
-    vs;
-  let answer =
-    try check solver.z3_solver
-    with Simple_smt.UnexpectedSolverResponse s ->
-      Logs.err ~src:log_src (fun m ->
-          m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
-      Unknown
-  in
-  ack_command (Simple_smt.pop 1);
-  match answer with
-  | Sat -> false
-  | Unsat -> true
-  | Unknown ->
-      Logs.info ~src:log_src (fun m ->
-          m "Solver returned unknown during entailemnt");
-      (* We return true by default: under-approximating behaviour *)
-      true

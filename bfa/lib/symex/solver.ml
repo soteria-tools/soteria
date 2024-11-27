@@ -20,7 +20,4 @@ module type S = sig
 
   (** Resets the solver state and sets some. *)
   val set_pc : Value.t list -> unit
-
-  (** Returns [true] if current state entails the given constraint, false otherwise. *)
-  val check_entailment : Value.t list -> bool
 end
