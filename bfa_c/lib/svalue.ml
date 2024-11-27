@@ -75,6 +75,16 @@ type t_kind =
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
+let rec iter_vars (sv : t) (f : Var_name.t * ty -> unit) : unit =
+  match sv.node.kind with
+  | Var v -> f (v, sv.node.ty)
+  | Bool _ | Int _ | Opt None -> ()
+  | Ptr (l, r) | Binop (_, l, r) ->
+      iter_vars l f;
+      iter_vars r f
+  | Unop (_, sv) | Opt (Some sv) -> iter_vars sv f
+  | Seq t -> List.iter (fun sv -> iter_vars sv f) t
+
 let pp_full ft t = pp_t_node ft t.node
 
 let rec pp ft t =
@@ -154,9 +164,9 @@ let rec split_ands (sv : t) (f : t -> unit) : unit =
   | _ -> f sv
 
 let distinct l =
-  let current = ref v_true in
+  let current = ref [] in
   Utils.List_ex.iter_self_cross_product l (fun (i, j) ->
-      current := and_ !current (not (sem_eq i j)));
+      current := not (sem_eq i j) :: !current);
   !current
 
 (** {2 Integers}  *)

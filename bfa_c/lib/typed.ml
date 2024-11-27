@@ -35,6 +35,7 @@ let ppa_ty = pp_ty
 let pp_ty _ = pp_ty
 let cast x = x
 let untyped x = x
+let untyped_list l = l
 let type_ x = x
 let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
 let cast_checked = type_checked

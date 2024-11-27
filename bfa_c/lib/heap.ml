@@ -10,16 +10,19 @@ module SPmap = Pmap (struct
   type value = Svalue.t
   type 'a symex = 'a Csymex.t
 
-  let counter = ref 1 (* We start at non-null! *)
   let pp = Typed.ppa
   let sem_eq x y = Typed.sem_eq x y |> Typed.untyped
   let compare = Typed.compare
-  let distinct l = Typed.distinct l |> Typed.untyped
+  let distinct l = Typed.distinct l |> Typed.untyped_list
 
-  let fresh () =
-    let i = !counter in
-    incr counter;
-    return (Typed.Ptr.loc_of_int i)
+  let fresh ?(constrs : (t -> value list) option) () : t symex =
+    let (constrs : (value -> value list) option) =
+      match constrs with
+      | None -> None
+      | Some f -> Some (fun loc -> f (Typed.type_ loc))
+    in
+    let+ v = Csymex.nondet ?constrs TLoc in
+    Typed.type_ v
 end)
 
 type t = Tree_block.t Freeable.t SPmap.t option

@@ -7,8 +7,8 @@ module type KeyS = sig
 
   val pp : t Fmt.t
   val sem_eq : t -> t -> value
-  val fresh : unit -> t symex
-  val distinct : t list -> value
+  val fresh : ?constrs:(t -> value list) -> unit -> t symex
+  val distinct : t list -> value list
 end
 
 module Make
@@ -51,12 +51,13 @@ struct
   let alloc (type a) ~(new_codom : a) (st : a t option) :
       (Key.t * a t option, 'err) Result.t =
     let st = of_opt st in
-    let* key = Key.fresh () in
-    let learned =
-      if M.is_empty st then []
-      else [ Key.distinct (key :: (M.bindings st |> List.map fst)) ]
+    let* key =
+      Key.fresh
+        ~constrs:(fun key ->
+          Key.distinct (key :: (M.bindings st |> List.map fst)))
+        ()
     in
-    Result.ok ~learned (key, to_opt (M.add key new_codom st))
+    Result.ok (key, to_opt (M.add key new_codom st))
 
   let wrap (f : 'a option -> ('b * 'a option, 'err) Symex.Result.t)
       (loc : Key.t) (st : 'a t option) =

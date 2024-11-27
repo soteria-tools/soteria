@@ -229,13 +229,14 @@ let backtrack () = backtrack_n 1
 
 let () = Initialize_analysis.register_once_initialiser (fun () -> save ())
 
-let () =
-  Initialize_analysis.register_resetter (fun () ->
-      let (lazy solver) = solver in
-      (* We want to go back to 1, meaning after the first push which saved the declarations *)
-      L.debug (fun m -> m "Resetting solver: %d" solver.save_counter);
-      if solver.save_counter > 0 then backtrack_n solver.save_counter;
-      save ())
+let reset () =
+  let (lazy solver) = solver in
+  (* We want to go back to 1, meaning after the first push which saved the declarations *)
+  L.debug (fun m -> m "Resetting solver: %d" solver.save_counter);
+  if solver.save_counter > 0 then backtrack_n solver.save_counter;
+  save ()
+
+let () = Initialize_analysis.register_resetter reset
 
 let rec sort_of_ty = function
   | Value.TBool -> Simple_smt.t_bool
@@ -378,6 +379,17 @@ let sat () =
 let get_pc () =
   let (lazy solver) = solver in
   Solver_state.to_value_list solver.state
+
+let set_pc l =
+  reset ();
+  let declared_vars = Hashtbl.create 0 in
+  List.iter
+    (fun sv ->
+      Svalue.iter_vars sv (fun (i, ty) ->
+          if Hashtbl.mem declared_vars i then ()
+          else ack_command (declare_v i ty)))
+    l;
+  add_constraints l
 
 let check_entailment vs =
   ack_command (Simple_smt.push 1);

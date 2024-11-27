@@ -53,6 +53,7 @@ val type_checked : Svalue.t -> 'a ty -> 'a t option
 val cast : 'a t -> 'b t
 val cast_checked : 'a t -> 'b ty -> 'b t option
 val untyped : 'a t -> Svalue.t
+val untyped_list : 'a t list -> Svalue.t list
 val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
@@ -65,7 +66,7 @@ val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val not : [< sbool ] t -> [> sbool ] t
 val not_int_bool : [< sint ] t -> [> sint ] t
-val distinct : 'a t list -> [> sbool ] t
+val distinct : 'a t list -> [> sbool ] t list
 val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t
 val nonzero_z : Z.t -> [> nonzero ] t
