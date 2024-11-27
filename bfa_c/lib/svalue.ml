@@ -3,17 +3,10 @@ open Hashcons
 module Var_name = struct
   type t = int
 
-  let next = ref 0
-  let () = Initialize_analysis.register_resetter (fun () -> next := 0)
+  let[@inline] of_int i = i
   let to_string i = "|" ^ string_of_int i ^ "|"
   let of_string s = int_of_string (String.sub s 1 (String.length s - 2))
   let pp = Fmt.of_to_string to_string
-
-  let fresh () =
-    let r = !next in
-    incr next;
-    r
-
   let equal = Int.equal
   let compare = Int.compare
 end
@@ -110,10 +103,7 @@ end)
 let table = Hcons.create 1023
 let hashcons = Hcons.hashcons table
 let ( <| ) kind ty : t = hashcons { kind; ty }
-
-let fresh ty =
-  let v = Var_name.fresh () in
-  Var v <| ty
+let mk_var v ty = Var v <| ty
 
 (** {2 Booleans}  *)
 

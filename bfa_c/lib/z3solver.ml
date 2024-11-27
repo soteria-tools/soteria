@@ -101,16 +101,18 @@ let z3_solver () =
 type t = {
   z3_solver : Simple_smt.solver;
   mutable save_counter : int;
-  mutable var_history : Svalue.t array;
+  mutable var_stack : int Dynarray.t;
   mutable dist_set : Dist_set.t;
 }
 
 let init () =
+  let var_stack = Dynarray.create () in
+  Dynarray.add_last var_stack 0;
   {
     z3_solver = z3_solver ();
     save_counter = 0;
-    var_history = Array.make 1023 Svalue.zero;
     dist_set = Dist_set.create ();
+    var_stack;
   }
 
 let solver = lazy (init ())
@@ -168,6 +170,7 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
 
 let save () =
   let (lazy solver) = solver in
+  Dynarray.add_last solver.var_stack (Dynarray.get_last solver.var_stack);
   solver.save_counter <- solver.save_counter + 1;
   Dist_set.save solver.dist_set;
   ack_command (Simple_smt.push 1)
@@ -176,6 +179,7 @@ let backtrack_n n =
   let (lazy solver) = solver in
   Dist_set.backtrack_n solver.dist_set n;
   solver.save_counter <- solver.save_counter - n;
+  Dynarray.truncate solver.var_stack (solver.save_counter + 1);
   ack_command (Simple_smt.pop n)
 
 let backtrack () = backtrack_n 1
@@ -200,38 +204,8 @@ let rec sort_of_ty = function
   | TPointer -> t_ptr
   | TOption ty -> t_opt $ sort_of_ty ty
 
-let var_of_int i =
-  let (lazy solver) = solver in
-  let res = Array.get solver.var_history i in
-  if Svalue.equal Svalue.zero res then invalid_arg "var_of_int" else res
-
-let var_of_str s = var_of_int (Value.Var_name.of_string s)
-
-let record_var (var : Value.t) =
-  let (lazy solver) = solver in
-  match var.node.kind with
-  | Var v ->
-      if v < Array.length solver.var_history then
-        Array.set solver.var_history v var
-      else
-        let new_arr =
-          Array.make (smallest_power_of_two_greater_than v) Svalue.zero
-        in
-        Array.blit solver.var_history 0 new_arr 0
-          (Array.length solver.var_history);
-        Array.set new_arr v var;
-        solver.var_history <- new_arr
-  | _ -> failwith "UNREACHABLE: record_var not a var"
-
-let declare_v (var : Value.t) =
-  record_var var;
-  let v, ty =
-    (* SValue and Solver should really be merged... *)
-    match var.node with
-    | { kind = Var v; ty } -> (v, ty)
-    | _ -> failwith "UNREACHABLE: alloc_v not a var"
-  in
-  let v = Value.Var_name.to_string v in
+let declare_v v_id ty =
+  let v = Value.Var_name.to_string v_id in
   declare v (sort_of_ty ty)
 
 let memo_encode_value_tbl : sexp Utils.Hint.t = Utils.Hint.create 1023
@@ -301,10 +275,12 @@ let decode_value (v : sexp) =
       None
 
 let fresh ty =
-  let v = Value.fresh ty in
-  let c = declare_v v in
+  let (lazy solver) = solver in
+  let v_id = Dynarray.pop_last solver.var_stack in
+  Dynarray.add_last solver.var_stack (v_id + 1);
+  let c = declare_v v_id ty in
   ack_command c;
-  v
+  Svalue.mk_var v_id ty
 
 let rec simplify (v : Svalue.t) =
   let (lazy solver) = solver in

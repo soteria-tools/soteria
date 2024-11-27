@@ -80,7 +80,7 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
       | Some constrs -> Solver.add_constraints (constrs v)
       | None -> ()
     in
-    Seq.return (Solver.fresh ty)
+    Seq.return v
 
   let value_eq x y = Value.sem_eq x y
 

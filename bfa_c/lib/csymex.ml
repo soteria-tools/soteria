@@ -37,10 +37,9 @@ let not_impl msg =
   push_give_up (msg, get_loc ());
   vanish ()
 
-let with_loc_err () f =
+let[@inline] with_loc_err () f =
   let loc = get_loc () in
   Result.map_error (fun e -> (e, loc)) (f ())
-[@@inline]
 
 let error ?learned e = Result.error ?learned (e, get_loc ())
 let of_opt = function Some x -> return x | None -> vanish ()
