@@ -10,11 +10,16 @@ module SPmap = Pmap (struct
   type value = Svalue.t
   type 'a symex = 'a Csymex.t
 
+  let counter = ref 0
   let pp = Typed.ppa
   let sem_eq x y = Typed.sem_eq x y |> Typed.untyped
   let compare = Typed.compare
   let distinct l = Typed.distinct l |> Typed.untyped
-  let fresh () = Typed.nondet Typed.t_loc
+
+  let fresh () =
+    let i = !counter in
+    incr counter;
+    return (Typed.Ptr.loc_of_int i)
 end)
 
 type t = Tree_block.t Freeable.t SPmap.t option

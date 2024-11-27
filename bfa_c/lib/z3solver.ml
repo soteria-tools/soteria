@@ -342,8 +342,6 @@ let sat () =
       (* We return UNSAT by default: under-approximating behaviour *)
       false
 
-let delayed_sat = sat
-
 let check_entailment vs =
   save ();
   vs

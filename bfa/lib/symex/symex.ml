@@ -96,11 +96,11 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
           (fun () ->
             Solver.save ();
             Solver.add_constraints ~simplified:true [ guard ];
-            if Solver.delayed_sat () then then_ () () else Seq.empty ())
+            if Solver.sat () then then_ () () else Seq.empty ())
           (fun () ->
             Solver.backtrack ();
             Solver.add_constraints [ Value.(not guard) ];
-            if Solver.delayed_sat () then else_ () () else Seq.empty ())
+            if Solver.sat () then else_ () () else Seq.empty ())
 
   let branches (brs : (unit -> 'a t) list) : 'a t =
     match brs with
