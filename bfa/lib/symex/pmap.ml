@@ -20,6 +20,7 @@ struct
   module M = Stdlib.Map.Make (Key)
 
   type 'a t = 'a M.t
+  type 'a cp = Key.t * 'a
 
   let pp ?(ignore = fun _ -> false) pp_value =
     let open Fmt in
@@ -62,6 +63,27 @@ struct
     let st = of_opt st in
     let* codom = find_opt_sym loc st in
     let++ res, codom = f codom in
+    (res, to_opt (add_opt loc codom st))
+
+  let produce (prod : 'inner_cp -> 'inner_st option -> 'inner_st option Symex.t)
+      (cp : 'inner_cp cp) (st : 'inner_st t option) : 'inner_st t option Symex.t
+      =
+    let st = of_opt st in
+    let loc, inner_cp = cp in
+    let* codom = find_opt_sym loc st in
+    let+ codom = prod inner_cp codom in
+    to_opt (add_opt loc codom st)
+
+  let consume
+      (cons :
+        'inner_cp ->
+        'inner_st option ->
+        ('a * 'inner_st option, 'err) Symex.Result.t) (cp : 'inner_cp cp)
+      (st : 'inner_st t option) =
+    let st = of_opt st in
+    let loc, inner_cp = cp in
+    let* codom = find_opt_sym loc st in
+    let++ res, codom = cons inner_cp codom in
     (res, to_opt (add_opt loc codom st))
 
   let wrap_read_only (f : 'a option -> ('b, 'err) Symex.Result.t) (loc : Key.t)
