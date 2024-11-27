@@ -1,3 +1,5 @@
+(include_subdirs qualified)
+
 (library
  (package bfa-c)
  (name bfa_c_lib)
@@ -8,6 +10,7 @@
   logs
   logs.fmt
   fmt.tty
+  iter
   cerberus-lib.c_parser
   cerberus-lib.mem.concrete
   cerberus-lib.backend_common

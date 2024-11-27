@@ -163,7 +163,7 @@ let exec_main file_name =
     in
     Ok (Csymex.run symex)
   in
-  match result with Ok v -> v | Error e -> [ Error e ]
+  match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
 (* Entry point function *)
 let exec_main_and_print log_level smt_file file_name =
@@ -178,9 +178,11 @@ let exec_main_and_print log_level smt_file file_name =
          Executed %d statements"
         Fmt.Dump.(
           list
-          @@ result
-               ~ok:(pair Typed.ppa (Heap.pp_pretty ~ignore_freed:true))
-               ~error:pp_err)
+          @@ pair
+               (result
+                  ~ok:(pair Typed.ppa (Heap.pp_pretty ~ignore_freed:true))
+                  ~error:pp_err)
+               (list Svalue.pp))
         result
         (Stats.get_executed_statements ()))
 
@@ -194,7 +196,7 @@ let run_to_errors content =
     close_out oc
   in
   exec_main file_name
-  |> List.filter_map (function Ok _ -> None | Error e -> Some e)
+  |> List.filter_map (function Ok _, _ -> None | Error e, _ -> Some e)
 
 (* Entry point function *)
 let lsp () =

@@ -24,6 +24,7 @@
    (>= 5.2.0))
   eio_main
   simple_smt
+  iter
   (ppx_expect
    (>= 0.17.0))
   ppx_deriving

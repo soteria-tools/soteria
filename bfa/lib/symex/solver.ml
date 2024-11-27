@@ -16,6 +16,7 @@ module type S = sig
   val simplify : Value.t -> Value.t
   val as_bool : Value.t -> bool option
   val fresh : Value.ty -> Value.t
+  val get_pc : unit -> Value.t list
 
   (** Returns [true] if current state entails the given constraint, false otherwise. *)
   val check_entailment : Value.t list -> bool

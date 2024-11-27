@@ -10,7 +10,7 @@ module SPmap = Pmap (struct
   type value = Svalue.t
   type 'a symex = 'a Csymex.t
 
-  let counter = ref 0
+  let counter = ref 1 (* We start at non-null! *)
   let pp = Typed.ppa
   let sem_eq x y = Typed.sem_eq x y |> Typed.untyped
   let compare = Typed.compare

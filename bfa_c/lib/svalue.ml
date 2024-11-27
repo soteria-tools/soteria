@@ -22,7 +22,7 @@ let t_seq ty = TSeq ty
 let t_opt ty = TOption ty
 
 module Nop = struct
-  type t = Distinct [@@deriving eq, show, ord]
+  type t = | [@@deriving eq, show, ord]
 end
 
 module Unop = struct
@@ -69,7 +69,7 @@ type t_kind =
   | Seq of t list
   | Unop of Unop.t * t
   | Binop of Binop.t * t * t
-  | Nop of Nop.t * t list
+  (* | Nop of Nop.t * t list *)
   | Opt of t option
 
 and t_node = { kind : t_kind; ty : ty }
@@ -87,11 +87,10 @@ let rec pp ft t =
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
   | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
   | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
-  | Nop (Distinct, l) -> pf ft "distinct(%a)" (list ~sep:comma pp) l
   | Opt None -> pf ft "None"
   | Opt (Some v) -> pf ft "Some(%a)" pp v
 
-let equal a b = Int.equal a.tag b.tag
+let[@inline] equal a b = Int.equal a.tag b.tag
 
 module Hcons = Hashcons.Make (struct
   type t = t_node
@@ -114,14 +113,6 @@ let bool b =
   (* avoid re-alloc and re-hashconsing *)
   if b then v_true else v_false
 
-let sem_eq v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int z1, Int z2 -> bool (Z.equal z1 z2)
-  | Bool b1, Bool b2 -> bool (b1 = b2)
-  | _ ->
-      if equal v1 v2 then v_true (* Start with a syntactic check *)
-      else Binop (Eq, v1, v2) <| TBool
-
 let and_ v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Bool b1, Bool b2 -> bool (b1 && b2)
@@ -129,6 +120,15 @@ let and_ v1 v2 =
   | Bool true, _ -> v2
   | _, Bool true -> v1
   | _ -> Binop (And, v1, v2) <| TBool
+
+let rec sem_eq v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int z1, Int z2 -> bool (Z.equal z1 z2)
+  | Bool b1, Bool b2 -> bool (b1 = b2)
+  | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
+  | _ ->
+      if equal v1 v2 then v_true (* Start with a syntactic check *)
+      else Binop (Eq, v1, v2) <| TBool
 
 let or_ v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -146,7 +146,18 @@ let not sv =
     | Unop (Not, sv) -> sv
     | _ -> Unop (Not, sv) <| TBool
 
-let distinct l = Nop (Distinct, l) <| TBool
+let rec split_ands (sv : t) (f : t -> unit) : unit =
+  match sv.node.kind with
+  | Binop (And, s1, s2) ->
+      split_ands s1 f;
+      split_ands s2 f
+  | _ -> f sv
+
+let distinct l =
+  let current = ref v_true in
+  Utils.List_ex.iter_self_cross_product l (fun (i, j) ->
+      current := and_ !current (not (sem_eq i j)));
+  !current
 
 (** {2 Integers}  *)
 

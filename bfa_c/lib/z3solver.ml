@@ -98,11 +98,54 @@ let z3_solver () =
   in
   { solver with command }
 
+module Solver_state = struct
+  type t = Svalue.t Dynarray.t list
+
+  let empty = []
+  let to_value_list (t : t) = List.concat_map Dynarray.to_list t
+  let save t = Dynarray.create () :: t
+
+  let rec backtrack_n l n =
+    if n <= 0 then l
+    else
+      match l with
+      | [] -> failwith "backtrack_n: empty list"
+      | _ :: tl -> backtrack_n tl (n - 1)
+
+  let add_constraint t v =
+    if Svalue.equal v Svalue.v_true then ()
+    else
+      match t with
+      | [] -> failwith "add_constraint: empty list"
+      | hd :: _ ->
+          if Svalue.equal v Svalue.v_false then (
+            Dynarray.clear hd;
+            Dynarray.add_last hd Svalue.v_false)
+          else Dynarray.add_last hd v
+
+  (** This function returns [Some b] if the solver state is trivially [b] (true or false).
+      We maintain solver state such that trivial truths are never added to the state, and false is false erases everything else.
+      Therefore, it is enough to check either for emptyness of the topmost layer or falseness of the latest element.
+    *)
+  let trivial_truthiness (t : t) =
+    match t with
+    | [] -> Some true
+    | hd :: _ -> (
+        match Dynarray.find_last hd with
+        | None -> Some true
+        | Some v when Svalue.equal v Svalue.v_false -> Some false
+        | _ -> None)
+
+  let iter (t : t) =
+    Iter.flat_map (fun d f -> Dynarray.iter f d) (Iter.of_list t)
+end
+
 type t = {
   z3_solver : Simple_smt.solver;
   mutable save_counter : int;
   mutable var_stack : int Dynarray.t;
-  mutable dist_set : Dist_set.t;
+  dist_set : Dist_set.t;
+  mutable state : Solver_state.t;
 }
 
 let init () =
@@ -113,14 +156,10 @@ let init () =
     save_counter = 0;
     dist_set = Dist_set.create ();
     var_stack;
+    state = Solver_state.empty;
   }
 
 let solver = lazy (init ())
-
-(* let simplify v =
-   let (lazy solver) = solver in
-   solver.command (list [ atom "simplify"; v ]) *)
-
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
 let is_constr constr = list [ atom "_"; atom "is"; atom constr ]
@@ -172,12 +211,14 @@ let save () =
   let (lazy solver) = solver in
   Dynarray.add_last solver.var_stack (Dynarray.get_last solver.var_stack);
   solver.save_counter <- solver.save_counter + 1;
+  solver.state <- Solver_state.save solver.state;
   Dist_set.save solver.dist_set;
   ack_command (Simple_smt.push 1)
 
 let backtrack_n n =
   let (lazy solver) = solver in
   Dist_set.backtrack_n solver.dist_set n;
+  solver.state <- Solver_state.backtrack_n solver.state n;
   solver.save_counter <- solver.save_counter - n;
   Dynarray.truncate solver.var_stack (solver.save_counter + 1);
   ack_command (Simple_smt.pop n)
@@ -260,19 +301,8 @@ let rec encode_value (v : Svalue.t) =
       | Minus -> num_sub v1 v2
       | Times -> num_mul v1 v2
       | Div -> num_div v1 v2)
-  | Nop (nop, vs) -> (
-      let vs = List.map encode_value_memo vs in
-      match nop with Distinct -> distinct vs)
 
 and encode_value_memo v = (memoz memo_encode_value_tbl encode_value) v
-
-let decode_value (v : sexp) =
-  match v with
-  | Atom "true" -> Some Value.v_true
-  | Atom "false" -> Some Value.v_false
-  | _ ->
-      L.debug (fun m -> m "SMT: Cannot decode value %a" Sexplib.Sexp.pp v);
-      None
 
 let fresh ty =
   let (lazy solver) = solver in
@@ -299,25 +329,20 @@ let rec simplify (v : Svalue.t) =
 
 let is_diff_op (v : Svalue.t) =
   match v.node.kind with
-  | Unop (Not, { node = { kind = Binop (Eq, v1, v2); _ }; _ }) ->
-      Some [ v1; v2 ]
-  | Nop (Distinct, vs) -> Some vs
+  | Unop (Not, { node = { kind = Binop (Eq, v1, v2); _ }; _ }) -> Some (v1, v2)
   | _ -> None
 
 let add_constraints ?(simplified = false) vs =
   let (lazy solver) = solver in
-  vs
-  |> List.iter (fun v ->
-         let v = if simplified then v else simplify v in
-         let () =
-           match is_diff_op v with
-           | None -> ()
-           | Some vl ->
-               Utils.List_ex.iter_self_cross_product vl (fun (i, j) ->
-                   Dist_set.add solver.dist_set i.tag j.tag)
-         in
-         let constr = encode_value v in
-         ack_command (assume constr))
+  let iter = vs |> Iter.of_list |> Iter.flat_map Svalue.split_ands in
+  iter @@ fun v ->
+  let v = if simplified then v else simplify v in
+  let () =
+    match is_diff_op v with
+    | None -> ()
+    | Some (i, j) -> Dist_set.add solver.dist_set i.tag j.tag
+  in
+  Solver_state.add_constraint solver.state v
 
 let as_bool v =
   if Svalue.equal v Svalue.v_true then Some true
@@ -327,6 +352,43 @@ let as_bool v =
 (* Incremental doesn't allow for caching queries... *)
 let sat () =
   let (lazy solver) = solver in
+  match Solver_state.trivial_truthiness solver.state with
+  | Some true -> true
+  | Some false -> false
+  | None -> (
+      let () = ack_command (Simple_smt.push 1) in
+      Solver_state.iter solver.state (fun v ->
+          ack_command (assume (encode_value v)));
+      let answer =
+        try check solver.z3_solver
+        with Simple_smt.UnexpectedSolverResponse s ->
+          Logs.err ~src:log_src (fun m ->
+              m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
+          Unknown
+      in
+      ack_command (Simple_smt.pop 1);
+      match answer with
+      | Sat -> true
+      | Unsat -> false
+      | Unknown ->
+          Logs.info ~src:log_src (fun m -> m "Solver returned unknown");
+          (* We return UNSAT by default: under-approximating behaviour *)
+          false)
+
+let get_pc () =
+  let (lazy solver) = solver in
+  Solver_state.to_value_list solver.state
+
+let check_entailment vs =
+  ack_command (Simple_smt.push 1);
+  let (lazy solver) = solver in
+  Solver_state.iter solver.state (fun v ->
+      ack_command (assume (encode_value v)));
+  List.iter
+    (fun v ->
+      let constr = encode_value (Value.not v) in
+      ack_command (assume constr))
+    vs;
   let answer =
     try check solver.z3_solver
     with Simple_smt.UnexpectedSolverResponse s ->
@@ -334,20 +396,12 @@ let sat () =
           m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
       Unknown
   in
+  ack_command (Simple_smt.pop 1);
   match answer with
-  | Sat -> true
-  | Unsat -> false
+  | Sat -> false
+  | Unsat -> true
   | Unknown ->
-      Logs.info ~src:log_src (fun m -> m "Solver returned unknown");
-      (* We return UNSAT by default: under-approximating behaviour *)
-      false
-
-let check_entailment vs =
-  save ();
-  vs
-  |> List.iter (fun v ->
-         let constr = encode_value (Value.not v) in
-         ack_command (assume constr));
-  let res = sat () in
-  backtrack ();
-  res
+      Logs.info ~src:log_src (fun m ->
+          m "Solver returned unknown during entailemnt");
+      (* We return true by default: under-approximating behaviour *)
+      true

@@ -16,7 +16,11 @@ module type S = sig
 
   val branches : (unit -> 'a t) list -> 'a t
   val bind : 'a t -> ('a -> 'b t) -> 'b t
-  val run : 'a t -> 'a list
+
+  (** [run] p actually performs symbolic execution and returns a list of obtained branches
+      which capture the outcome together with a path condition that is a list of boolean symbolic values *)
+  val run : 'a t -> ('a * Value.t list) list
+
   val all : 'a t list -> 'a list t
   val abort : unit -> 'a t
   val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
@@ -140,7 +144,18 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
 
   let bind x f = Seq.concat_map f x
   let map = Seq.map
-  let run = Stdlib.List.of_seq
+
+  let[@tail_mod_cons] rec run seq =
+    match seq () with
+    | Seq.Nil -> []
+    | Seq.Cons (x1, seq) -> (
+        let pc1 = Solver.get_pc () in
+        match seq () with
+        | Seq.Nil -> [ (x1, pc1) ]
+        | Seq.Cons (x2, seq) ->
+            let pc2 = Solver.get_pc () in
+            (x1, pc1) :: (x2, pc2) :: run seq)
+
   let iter = Seq.iter
   let vanish () = Seq.empty
 
