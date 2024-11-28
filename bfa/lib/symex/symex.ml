@@ -20,7 +20,6 @@ module type S = sig
       which capture the outcome together with a path condition that is a list of boolean symbolic values *)
   val run : 'a t -> ('a * Value.t list) list
 
-  val run_with_pc : pc:Value.t list -> 'a t -> ('a * Value.t list) list
   val all : 'a t list -> 'a list t
   val abort : unit -> 'a t
   val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
@@ -80,6 +79,7 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
 
   let branch_on guard ~then_ ~else_ =
     let guard = Solver.simplify guard in
+    let left_sat = ref true in
     match Solver.as_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
        if we remove the Some true and Some false optimisation. *)
@@ -90,11 +90,18 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
           (fun () ->
             Solver.save ();
             Solver.add_constraints ~simplified:true [ guard ];
-            if Solver.sat () then then_ () () else Seq.empty ())
+            if Solver.sat () then then_ () ()
+            else (
+              left_sat := false;
+              Seq.empty ()))
           (fun () ->
             Solver.backtrack ();
             Solver.add_constraints [ Value.(not guard) ];
-            if Solver.sat () then else_ () () else Seq.empty ())
+            if !left_sat then
+              (* We have to check right *)
+              if Solver.sat () then else_ () () else Seq.empty ()
+            else (* Right must be sat since left was not! *)
+              else_ () ())
 
   let branches (brs : (unit -> 'a t) list) : 'a t =
     match brs with
@@ -135,7 +142,7 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
   let bind x f = Seq.concat_map f x
   let map = Seq.map
 
-  let[@tail_mod_cons] rec run_aux seq =
+  let[@tail_mod_cons] rec run seq =
     match seq () with
     | Seq.Nil -> []
     | Seq.Cons (x1, seq) -> (
@@ -144,13 +151,8 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
         | Seq.Nil -> [ (x1, pc1) ]
         | Seq.Cons (x2, seq) ->
             let pc2 = Solver.get_pc () in
-            (x1, pc1) :: (x2, pc2) :: run_aux seq)
+            (x1, pc1) :: (x2, pc2) :: run seq)
 
-  let run_with_pc ~pc t =
-    Solver.set_pc pc;
-    run_aux t
-
-  let run t = run_with_pc ~pc:[] t
   let iter = Seq.iter
   let vanish () = Seq.empty
 

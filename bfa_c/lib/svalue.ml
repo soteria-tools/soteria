@@ -75,6 +75,8 @@ type t_kind =
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
+let hash t = t.hkey
+
 let rec iter_vars (sv : t) (f : Var_name.t * ty -> unit) : unit =
   match sv.node.kind with
   | Var v -> f (v, sv.node.ty)
@@ -226,7 +228,7 @@ module Ptr = struct
   let null_loc = Int Z.zero <| TLoc
   let null = mk null_loc zero
   let is_null p = sem_eq p null
-  let is_at_null_loc p = sem_eq (loc p) zero
+  let is_at_null_loc p = sem_eq (loc p) null_loc
 end
 
 module SOption = struct

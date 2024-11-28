@@ -17,7 +17,4 @@ module type S = sig
   val as_bool : Value.t -> bool option
   val fresh : Value.ty -> Value.t
   val get_pc : unit -> Value.t list
-
-  (** Resets the solver state and sets some. *)
-  val set_pc : Value.t list -> unit
 end

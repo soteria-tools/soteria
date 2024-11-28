@@ -7,7 +7,28 @@ let debug_str ~prefix s = Logs.debug ~src:log_src (fun m -> m "%s: %s" prefix s)
 module Dist_set = struct
   (* Pairs of distinct expressions *)
 
-  type t = (int * int, unit) Hashtbl.t Dynarray.t
+  module Hashtbl = Hashtbl.Make (struct
+    type t = Svalue.t * Svalue.t
+
+    let equal (a1, b1) (a2, b2) = Svalue.equal a1 a2 && Svalue.equal b1 b2
+
+    let hash (a, b) =
+      let a, b = (a.Hashcons.tag, b.Hashcons.tag) in
+      ((a land ((1 lsl 31) - 1)) lsl 31) lor b
+  end)
+
+  type t = unit Hashtbl.t Dynarray.t
+
+  let pp ft t =
+    let first = ref true in
+    Dynarray.iter
+      (fun h ->
+        Hashtbl.iter
+          (fun (i, j) _ ->
+            if !first then first := false else Fmt.pf ft "; ";
+            Fmt.pf ft "(%d != %d)" i.Hashcons.tag j.Hashcons.tag)
+          h)
+      t
 
   let create () =
     let r = Dynarray.create () in
@@ -19,20 +40,22 @@ module Dist_set = struct
     Dynarray.clear ds;
     Dynarray.add_last ds (Hashtbl.create 0)
 
-  let sure_are_diff (ds : t) i j =
-    let rec find n pair =
-      if n <= 0 then false
+  let sure_are_diff (ds : t) (i : Svalue.t) (j : Svalue.t) =
+    let rec find idx pair =
+      if idx < 0 then false
       else
-        let h = Dynarray.get ds n in
-        if Hashtbl.mem h pair then true else find (n - 1) pair
+        let h = Dynarray.get ds idx in
+        if Hashtbl.mem h pair then true else find (idx - 1) pair
     in
-    if i = j then false
+    let tagi = i.Hashcons.tag in
+    let tagj = j.Hashcons.tag in
+    if tagi = tagj then false
     else
-      let pair = if i < j then (i, j) else (j, i) in
+      let pair = if tagi < tagj then (i, j) else (j, i) in
       find (Dynarray.length ds - 1) pair
 
   let add (ds : t) i j =
-    let pair = if i < j then (i, j) else (j, i) in
+    let pair = if i.Hashcons.tag < j.Hashcons.tag then (i, j) else (j, i) in
     let h = Dynarray.get_last ds in
     Hashtbl.add h pair ()
 
@@ -319,12 +342,10 @@ let rec simplify (v : Svalue.t) =
   | Int _ | Bool _ -> v
   | Unop (Not, e) ->
       let e' = simplify e in
-      if Svalue.equal e e' then v else Svalue.not (simplify e)
+      if Svalue.equal e e' then v else Svalue.not e'
   | Binop (Eq, e1, e2) ->
       if Svalue.equal e1 e2 then Svalue.v_true
-      else if
-        Dist_set.sure_are_diff solver.dist_set e1.Hashcons.tag e2.Hashcons.tag
-      then Svalue.v_false
+      else if Dist_set.sure_are_diff solver.dist_set e1 e2 then Svalue.v_false
       else v
   | _ -> v
 
@@ -341,7 +362,7 @@ let add_constraints ?(simplified = false) vs =
   let () =
     match is_diff_op v with
     | None -> ()
-    | Some (i, j) -> Dist_set.add solver.dist_set i.tag j.tag
+    | Some (i, j) -> Dist_set.add solver.dist_set i j
   in
   Solver_state.add_constraint solver.state v
 
@@ -379,14 +400,3 @@ let sat () =
 let get_pc () =
   let (lazy solver) = solver in
   Solver_state.to_value_list solver.state
-
-let set_pc l =
-  reset ();
-  let declared_vars = Hashtbl.create 0 in
-  List.iter
-    (fun sv ->
-      Svalue.iter_vars sv (fun (i, ty) ->
-          if Hashtbl.mem declared_vars i then ()
-          else ack_command (declare_v i ty)))
-    l;
-  add_constraints l

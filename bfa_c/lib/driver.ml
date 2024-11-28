@@ -177,12 +177,11 @@ let exec_main_and_print log_level smt_file file_name =
         "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
          Executed %d statements"
         Fmt.Dump.(
-          list
-          @@ pair
-               (result
-                  ~ok:(pair Typed.ppa (Heap.pp_pretty ~ignore_freed:true))
-                  ~error:pp_err)
-               (list Svalue.pp))
+          list @@ fun ft (r, _) ->
+          (result
+             ~ok:(pair Typed.ppa (Heap.pp_pretty ~ignore_freed:true))
+             ~error:pp_err)
+            ft r)
         result
         (Stats.get_executed_statements ()))
 
