@@ -1,6 +1,6 @@
 (library
  (public_name bfa.bfa_symex)
  (name bfa_symex)
- (libraries simple_smt fmt logs)
+ (libraries simple_smt fmt logs iter)
  (preprocess
   (pps ppx_symex ppx_deriving.std)))

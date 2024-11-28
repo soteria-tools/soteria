@@ -24,9 +24,6 @@ module type S = sig
   val abort : unit -> 'a t
   val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
 
-  (** Careful, this consumes the symbolic execution! *)
-  val iter : ('a -> unit) -> 'a t -> unit
-
   module Result : sig
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
 
@@ -57,7 +54,8 @@ module type S = sig
   end
 end
 
-module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
+module Make_seq (Solver : Solver.S) : S with module Value = Solver.Value =
+struct
   module Value = Solver.Value
 
   type 'a t = 'a Seq.t
@@ -153,8 +151,132 @@ module M (Solver : Solver.S) : S with module Value = Solver.Value = struct
             let pc2 = Solver.get_pc () in
             (x1, pc1) :: (x2, pc2) :: run seq)
 
-  let iter = Seq.iter
   let vanish () = Seq.empty
+
+  (* Under-approximating behaviour *)
+  let abort () =
+    Logs.debug (fun m -> m "Aborting execution here");
+    vanish ()
+
+  let all xs =
+    let rec aux acc rs =
+      match rs with
+      | [] -> return (List.rev acc)
+      | r :: rs -> bind r @@ fun x -> aux (x :: acc) rs
+    in
+    aux [] xs
+
+  let fold_left xs ~init ~f =
+    List.fold_left xs ~init:(return init) ~f:(fun acc x ->
+        bind acc @@ fun acc -> f acc x)
+
+  module Result = struct
+    type nonrec ('a, 'b) t = ('a, 'b) Result.t t
+
+    let ok ?learned x = return ?learned (Ok x)
+    let error ?learned x = return ?learned (Error x)
+    let bind x f = bind x (function Ok x -> f x | Error z -> return (Error z))
+    let map_error f x = map (Result.map_error f) x
+    let map f x = map (Result.map f) x
+
+    let fold_left xs ~init ~f =
+      List.fold_left xs ~init:(ok init) ~f:(fun acc x ->
+          bind acc @@ fun acc -> f acc x)
+  end
+
+  module Syntax = struct
+    let ( let* ) = bind
+    let ( let+ ) x f = map f x
+    let ( let** ) = Result.bind
+    let ( let++ ) x f = Result.map f x
+    let ( let+- ) x f = Result.map_error f x
+
+    module Symex_syntax = struct
+      let branch_on = branch_on
+    end
+  end
+end
+
+module Make_iter (Solver : Solver.S) : S with module Value = Solver.Value =
+struct
+  module Value = Solver.Value
+
+  type 'a t = 'a Iter.t
+
+  let return ?learned x f =
+    Solver.add_constraints (Option.value ~default:[] learned);
+    f x
+
+  let nondet ?constrs ty f =
+    let v = Solver.fresh ty in
+    let () =
+      match constrs with
+      | Some constrs -> Solver.add_constraints (constrs v)
+      | None -> ()
+    in
+    f v
+
+  let value_eq x y = Value.sem_eq x y
+
+  let branch_on guard ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
+   fun f ->
+    let guard = Solver.simplify guard in
+    let left_sat = ref true in
+    match Solver.as_bool guard with
+    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
+       if we remove the Some true and Some false optimisation. *)
+    | Some true -> then_ () f
+    | Some false -> else_ () f
+    | None ->
+        Solver.save ();
+        Solver.add_constraints ~simplified:true [ guard ];
+        if Solver.sat () then then_ () f else left_sat := false;
+        Solver.backtrack ();
+        Solver.add_constraints [ Value.(not guard) ];
+        if !left_sat then (
+          if (* We have to check right *)
+             Solver.sat () then else_ () f)
+        else (* Right must be sat since left was not! *)
+          else_ () f
+
+  let branches (brs : (unit -> 'a t) list) : 'a t =
+   fun f ->
+    match brs with
+    | [] -> ()
+    | [ a ] -> a () f
+    (* Optimised case *)
+    | [ a; b ] ->
+        Solver.save ();
+        a () f;
+        Solver.backtrack ();
+        b () f
+    | a :: (_ :: _ as r) ->
+        (* First branch should not backtrack and last branch should not save *)
+        let rec loop brs =
+          match brs with
+          | [ x ] ->
+              Solver.backtrack ();
+              x () f
+          | x :: r ->
+              Solver.backtrack ();
+              Solver.save ();
+              x () f;
+              loop r
+          | [] -> failwith "unreachable"
+        in
+        Solver.save ();
+        a () f;
+        loop r
+
+  let bind x f = Iter.flat_map f x
+  let map = Iter.map
+
+  let run iter =
+    let l = ref [] in
+    (iter @@ fun x -> l := (x, Solver.get_pc ()) :: !l);
+    List.rev !l
+
+  let vanish () _f = ()
 
   (* Under-approximating behaviour *)
   let abort () =

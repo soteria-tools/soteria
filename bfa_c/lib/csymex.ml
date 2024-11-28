@@ -1,4 +1,4 @@
-module SYMEX = Bfa_symex.Symex.M (Z3solver)
+module SYMEX = Bfa_symex.Symex.Make_seq (Z3solver)
 include SYMEX
 
 let ( let@ ) = ( @@ )
