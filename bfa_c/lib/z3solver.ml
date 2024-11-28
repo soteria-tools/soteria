@@ -347,6 +347,11 @@ let rec simplify (v : Svalue.t) =
       if Svalue.equal e1 e2 then Svalue.v_true
       else if Dist_set.sure_are_diff solver.dist_set e1 e2 then Svalue.v_false
       else v
+  | Binop (Or, e1, e2) ->
+      let se1 = simplify e1 in
+      let se2 = simplify e2 in
+      if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
+      else Svalue.or_ se1 se2
   | _ -> v
 
 let is_diff_op (v : Svalue.t) =
