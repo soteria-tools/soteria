@@ -1,0 +1,5 @@
+(executable
+ (name batch)
+ (libraries bfa_c_lib)
+ (preprocess
+  (pps ppx_symex)))

@@ -286,3 +286,11 @@ module Infix = struct
   let ( #* ) = times
   let ( #/ ) = div
 end
+
+module Syntax = struct
+  module Sym_int_syntax = struct
+    let mk_int = int
+    let zero = zero
+    let one = one
+  end
+end

@@ -9,6 +9,7 @@ module type S = sig
   val vanish : unit -> 'a t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
   val value_eq : Value.t -> Value.t -> Value.t
+  val batched : (unit -> 'a t) -> 'a t
 
   val branch_on :
     Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
@@ -74,6 +75,11 @@ struct
     Seq.return v
 
   let value_eq x y = Value.sem_eq x y
+
+  let batched s =
+    Seq.concat_map
+      (fun x -> if Solver.sat () then Seq.return x else Seq.empty)
+      (s ())
 
   let branch_on guard ~then_ ~else_ =
     let guard = Solver.simplify guard in
@@ -238,6 +244,11 @@ struct
              Solver.sat () then else_ () f)
         else (* Right must be sat since left was not! *)
           else_ () f
+
+  let batched s =
+    Iter.flat_map
+      (fun x -> if Solver.sat () then Iter.return x else Iter.empty)
+      (s ())
 
   let branches (brs : (unit -> 'a t) list) : 'a t =
    fun f ->
