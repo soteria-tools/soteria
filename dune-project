@@ -65,6 +65,7 @@
   (linol-eio
    (>= 0.6))
   (odoc :with-doc)
+  (alcotest :with-test)
   (dune
    (and
     :build
@@ -73,7 +74,7 @@
    (and
     :with-dev-detup
     (= 0.26.2)))
-  (ocaml-lsp-server :with-dev-detupv)))
+  (ocaml-lsp-server :with-dev-setup)))
 
 (package
  (name bfa-vscode)
