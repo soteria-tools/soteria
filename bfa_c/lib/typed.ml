@@ -8,11 +8,8 @@ module T = struct
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
-  type 'a sopt = [ `Opt of 'a ]
   type cval = [ sint | sptr ]
-
-  type any =
-    [ `Bool | `Ptr | `Loc | `List of any | `Opt of any | `NonZero | `MaybeZero ]
+  type any = [ `Bool | `Ptr | `Loc | `List of any | `NonZero | `MaybeZero ]
 
   let pp_sint _ _ = ()
   let pp_nonzero _ _ = ()
@@ -20,7 +17,6 @@ module T = struct
   let pp_sptr _ _ = ()
   let pp_sloc _ _ = ()
   let pp_sseq _ _ _ = ()
-  let pp_sopt _ _ _ = ()
   let pp_any _ _ = ()
   let pp_cval _ _ = ()
 end
@@ -40,6 +36,9 @@ let type_ x = x
 let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
 let cast_checked = type_checked
 
+let sem_eq_untyped x y =
+  if equal_ty x.node.ty y.node.ty then sem_eq x y else v_false
+
 let nonzero_z z =
   if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z")
   else Svalue.int_z z
@@ -52,6 +51,7 @@ let check_nonzero t =
   else Csymex.Result.ok t
 
 let nondet = Csymex.nondet
+let return = Csymex.return
 
 module Syntax = struct
   module Symex_syntax = Csymex.SYMEX.Syntax.Symex_syntax

@@ -11,7 +11,7 @@ module Var_name = struct
   let compare = Int.compare
 end
 
-type ty = TBool | TInt | TLoc | TPointer | TSeq of ty | TOption of ty
+type ty = TBool | TInt | TLoc | TPointer | TSeq of ty
 [@@deriving eq, show, ord]
 
 let t_bool = TBool
@@ -19,22 +19,13 @@ let t_int = TInt
 let t_loc = TLoc
 let t_ptr = TPointer
 let t_seq ty = TSeq ty
-let t_opt ty = TOption ty
 
 module Nop = struct
   type t = | [@@deriving eq, show, ord]
 end
 
 module Unop = struct
-  type t =
-    | Not
-    | IsSome
-    | IsNone
-    | UnwrapOpt
-    | GetPtrLoc
-    | GetPtrOfs
-    | IntOfBool
-  [@@deriving eq, show, ord]
+  type t = Not | GetPtrLoc | GetPtrOfs | IntOfBool [@@deriving eq, show, ord]
 end
 
 module Binop = struct
@@ -69,8 +60,7 @@ type t_kind =
   | Seq of t list
   | Unop of Unop.t * t
   | Binop of Binop.t * t * t
-  (* | Nop of Nop.t * t list *)
-  | Opt of t option
+(* | Nop of Nop.t * t list *)
 
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
@@ -80,11 +70,11 @@ let hash t = t.hkey
 let rec iter_vars (sv : t) (f : Var_name.t * ty -> unit) : unit =
   match sv.node.kind with
   | Var v -> f (v, sv.node.ty)
-  | Bool _ | Int _ | Opt None -> ()
+  | Bool _ | Int _ -> ()
   | Ptr (l, r) | Binop (_, l, r) ->
       iter_vars l f;
       iter_vars r f
-  | Unop (_, sv) | Opt (Some sv) -> iter_vars sv f
+  | Unop (_, sv) -> iter_vars sv f
   | Seq t -> List.iter (fun sv -> iter_vars sv f) t
 
 let pp_full ft t = pp_t_node ft t.node
@@ -99,8 +89,6 @@ let rec pp ft t =
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
   | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
   | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
-  | Opt None -> pf ft "None"
-  | Opt (Some v) -> pf ft "Some(%a)" pp v
 
 let[@inline] equal a b = Int.equal a.tag b.tag
 
@@ -229,35 +217,6 @@ module Ptr = struct
   let null = mk null_loc zero
   let is_null p = sem_eq p null
   let is_at_null_loc p = sem_eq (loc p) null_loc
-end
-
-module SOption = struct
-  let is_some v =
-    match v.node.kind with
-    | Opt (Some _) -> v_true
-    | Opt None -> v_false
-    | _ -> Unop (IsSome, v) <| TBool
-
-  let is_none v =
-    match v.node.kind with
-    | Opt None -> v_true
-    | Opt (Some _) -> v_false
-    | _ -> Unop (IsNone, v) <| TBool
-
-  let none ~inner_ty = Opt None <| TOption inner_ty
-  let some v = Opt (Some v) <| TOption v.node.ty
-
-  let unwrap v =
-    match v.node.kind with
-    | Opt (Some v) -> v
-    | Opt None -> failwith "opt_unwrap: got None"
-    | _ ->
-        let ty =
-          match v.node.ty with
-          | TOption ty -> ty
-          | _ -> failwith "opt_unwrap: not an Option"
-        in
-        Unop (UnwrapOpt, v) <| ty
 end
 
 (** {2 Sequences} *)

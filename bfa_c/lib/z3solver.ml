@@ -267,7 +267,6 @@ let rec sort_of_ty = function
   | TLoc -> Simple_smt.t_int
   | TSeq ty -> t_seq $ sort_of_ty ty
   | TPointer -> t_ptr
-  | TOption ty -> t_opt $ sort_of_ty ty
 
 let declare_v v_id ty =
   let v = Value.Var_name.to_string v_id in
@@ -289,12 +288,6 @@ let rec encode_value (v : Svalue.t) =
   | Int z -> int_zk z
   | Bool b -> bool_k b
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
-  | Opt opt -> (
-      match opt with
-      | None -> none
-      | Some v ->
-          let v = encode_value_memo v in
-          mk_some v)
   | Seq vs -> (
       match vs with
       | [] -> failwith "need type to encode empty lists"
@@ -304,11 +297,8 @@ let rec encode_value (v : Svalue.t) =
       let v = encode_value_memo v in
       match unop with
       | Not -> bool_not v
-      | IsSome -> is_some v
-      | IsNone -> is_none v
       | GetPtrLoc -> get_loc v
       | GetPtrOfs -> get_ofs v
-      | UnwrapOpt -> opt_unwrap v
       | IntOfBool -> ite v (int_k 1) (int_k 0))
   | Binop (binop, v1, v2) -> (
       let v1 = encode_value_memo v1 in

@@ -7,11 +7,8 @@ module T : sig
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
-  type 'a sopt = [ `Opt of 'a ]
   type cval = [ sint | sptr ]
-
-  type any =
-    [ `Bool | `Ptr | `Loc | `List of any | `Opt of any | `NonZero | `MaybeZero ]
+  type any = [ `Bool | `Ptr | `Loc | `List of any | `NonZero | `MaybeZero ]
 
   val pp_sint : sint Fmt.t
   val pp_nonzero : nonzero Fmt.t
@@ -20,7 +17,6 @@ module T : sig
   val pp_sloc : sloc Fmt.t
   val pp_cval : cval Fmt.t
   val pp_sseq : 'a Fmt.t -> 'a sseq Fmt.t
-  val pp_sopt : 'a Fmt.t -> 'a sopt Fmt.t
   val pp_any : any Fmt.t
 end
 
@@ -38,7 +34,6 @@ val t_int : [> sint ] ty
 val t_ptr : [> sptr ] ty
 val t_loc : [> sloc ] ty
 val t_seq : ([< any ] as 'a) ty -> [> 'a sseq ] ty
-val t_opt : ([< any ] as 'a) ty -> [> 'a sopt ] ty
 
 (** {2 Typed svalues} *)
 
@@ -47,6 +42,7 @@ type +'a t
 val nondet :
   ?constrs:(([< any ] as 'a) t -> [> sbool ] t list) -> 'a ty -> 'a t Csymex.t
 
+val return : ?learned:[> sbool ] t list -> 'a -> 'a Csymex.t
 val get_ty : 'a t -> Svalue.ty
 val type_ : Svalue.t -> 'a t
 val type_checked : Svalue.t -> 'a ty -> 'a t option
@@ -59,6 +55,7 @@ val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
 val sem_eq : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
+val sem_eq_untyped : 'a t -> 'b t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
 val bool : bool -> [> sbool ] t
@@ -96,14 +93,6 @@ module Ptr : sig
   val null_loc : [> sloc ] t
   val is_null : [< sptr ] t -> [> sbool ] t
   val is_at_null_loc : [< sptr ] t -> [> sbool ] t
-end
-
-module SOption : sig
-  val is_some : [< 'a sopt ] t -> [> sbool ] t
-  val is_none : [< 'a sopt ] t -> [> sbool ] t
-  val unwrap : [< 'a sopt ] t -> 'a t
-  val none : inner_ty:([< any ] as 'a) ty -> 'a sopt t
-  val some : 'a t -> 'a sopt t
 end
 
 module SSeq : sig

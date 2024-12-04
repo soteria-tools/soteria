@@ -61,9 +61,20 @@ struct
 
   type 'a t = 'a Seq.t
 
-  let return ?learned x () =
-    Solver.add_constraints (Option.value ~default:[] learned);
-    Seq.Cons (x, Seq.empty)
+  let return ?(learned = []) x () =
+    let rec aux acc learned =
+      match learned with
+      | [] ->
+          Solver.add_constraints acc;
+          Seq.Cons (x, Seq.empty)
+      | l :: ls -> (
+          let l = Solver.simplify l in
+          match Solver.as_bool l with
+          | Some true -> aux acc ls
+          | Some false -> Nil
+          | None -> aux (l :: acc) ls)
+    in
+    aux [] learned
 
   let nondet ?constrs ty =
     let v = Solver.fresh ty in

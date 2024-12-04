@@ -25,28 +25,6 @@ module MemVal = struct
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
 end
 
-module MUMemVal = struct
-  (* The svalue must be of type Int option, where the int is a valid representative of a type *)
-  type t = {
-    value : T.cval T.sopt Typed.t;
-    ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]
-  }
-  [@@deriving make]
-
-  let pp ft t =
-    let open Fmt in
-    pf ft "%a : %a?" Typed.ppa t.value Fmt_ail.pp_ty t.ty
-
-  let unwrap_or ~err v =
-    (* What I would like to be writing:
-       match%sat v with
-       | Some v -> Result.ok v
-       | _ -> Result.error err
-    *)
-    if%sat Typed.SOption.is_some v then Result.ok (Typed.SOption.unwrap v)
-    else Result.error err
-end
-
 module Node = struct
   type qty = Partially | Totally
 
@@ -57,12 +35,7 @@ module Node = struct
   let merge_qty left right =
     match (left, right) with Totally, Totally -> Totally | _, _ -> Partially
 
-  type mem_val =
-    | Zeros
-    | Uninit of qty
-    | Lazy
-    | Init of MemVal.t
-    | MaybeUninit of MUMemVal.t
+  type mem_val = Zeros | Uninit of qty | Lazy | Init of MemVal.t | Any
 
   let pp_mem_val ft =
     let open Fmt in
@@ -71,12 +44,12 @@ module Node = struct
     | Uninit qty -> pf ft "Uninit %a" pp_qty qty
     | Lazy -> pf ft "Lazy"
     | Init mv -> MemVal.pp ft mv
-    | MaybeUninit mv -> MUMemVal.pp ft mv
+    | Any -> pf ft "Any"
 
   (* Later we could add arbitrary annotations to the mem_val variant.
      For example, we can keep track of read-only or tainted bytes.
      i.e. MemVal { v: mem_val; annot: 'a }.
-     Quite probably, Node module can be parametrized by a module
+     Quite probably, the Node module can be parametrized by a module
      capturing the annotations behavior in analysis. *)
   type t = NotOwned of qty | Owned of mem_val
 
@@ -102,7 +75,8 @@ module Node = struct
     | Owned (Uninit Totally) ->
         return (Owned (Uninit Totally), Owned (Uninit Totally))
     | Owned Zeros -> return (Owned Zeros, Owned Zeros)
-    | Owned (Init _ | MaybeUninit _) -> Fmt.kstr not_impl "Splitting %a" pp node
+    | Owned Any -> return (Owned Any, Owned Any)
+    | Owned (Init _) -> Fmt.kstr not_impl "Splitting %a" pp node
     | NotOwned Partially | Owned (Uninit Partially) | Owned Lazy ->
         failwith "Should never split an intermediate node"
 
@@ -122,13 +96,11 @@ module Node = struct
         else
           Fmt.kstr not_impl "Type mismatch when decoding value: %a vs %a"
             Fmt_ail.pp_ty ty Fmt_ail.pp_ty tyw
-    | Owned (MaybeUninit { value; ty = tyw }) ->
-        if Ctype.ctypeEqual ty tyw then
-          MUMemVal.unwrap_or ~err:`UninitializedMemoryAccess value
-        else
-          Fmt.kstr not_impl
-            "Type mismatch when decoding maybe_uninit value: %a vs %a"
-            Fmt_ail.pp_ty ty Fmt_ail.pp_ty tyw
+    | Owned Any ->
+        (* We don't know if this read is valid, as memory could be uninitialised.
+           We have to approximate and vanish. *)
+        L.debug (fun m -> m "Reading from Any memory, vanishing.");
+        Csymex.vanish ()
 end
 
 module Tree = struct
@@ -144,6 +116,8 @@ module Tree = struct
 
   let sval_leaf ~range ~value ~ty =
     make ~node:(Owned (Init { value; ty })) ~range ?children:None ()
+
+  let any range = make ~node:(Owned Node.Any) ~range ?children:None ()
 
   let rec iter_leaves_rev t f =
     match t.children with
@@ -370,6 +344,66 @@ module Tree = struct
       | _ -> Result.ok ()
     in
     ((), new_tree)
+
+  (** Cons/prod *)
+
+  let consume_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
+      (T.cval Typed.t * t, 'err) Result.t =
+    let* range = Range.of_low_and_type low ty in
+    let replace_node _ = not_owned range in
+    let rebuild_parent = of_children in
+    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    let++ sval = Node.decode ~ty framed.node in
+    ((sval :> T.cval Typed.t), tree)
+
+  let produce_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
+      (value : T.cval Typed.t) (t : t) : t Csymex.t =
+    let* range = Range.of_low_and_type low ty in
+    let replace_node _ = sval_leaf ~range ~value ~ty in
+    let rebuild_parent = of_children in
+    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    match framed.node with
+    | NotOwned Totally -> return tree
+    | _ -> Csymex.vanish ()
+
+  let consume_any (low : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
+      (unit * t, 'err) Result.t =
+    let* range = Range.of_low_and_type low ty in
+    let replace_node _ = not_owned range in
+    let rebuild_parent = of_children in
+    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    let++ () =
+      match framed.node with
+      | NotOwned _ -> Result.error `MissingResource
+      | _ -> Result.ok ()
+    in
+    ((), tree)
+
+  let produce_any (low : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
+      t Csymex.t =
+    let* range = Range.of_low_and_type low ty in
+    let replace_node _ = any range in
+    let rebuild_parent = of_children in
+    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    match framed.node with
+    | NotOwned Totally -> return tree
+    | _ -> Csymex.vanish ()
+
+  let consume_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
+      (t : t) : (unit * t, 'err) Result.t =
+    let range = (low, low #+ len) in
+    let replace_node _ = not_owned range in
+    let rebuild_parent = of_children in
+    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    let++ () =
+      match framed.node with
+      | NotOwned _ -> Result.error `MissingResource
+      | Owned (Uninit Totally) -> Result.ok ()
+      | _ ->
+          L.debug (fun m -> m "Consuming uninit but no uninit, vanishing");
+          Csymex.vanish ()
+    in
+    ((), tree)
 end
 
 type t = { root : Tree.t; bound : T.sint Typed.t option }
@@ -472,3 +506,58 @@ let put_raw_tree ofs (tree : Tree.t) t : (unit * t option, 'err) Result.t =
   (res, to_opt t)
 
 let alloc size = { root = Tree.uninit (0s, size); bound = Some size }
+
+(** Logic *)
+
+type serialized =
+  | TypedVal of {
+      offset : T.sint Typed.t;
+      ty : Ctype.ctype;
+      v : T.cval Typed.t;
+    }
+  | Bound of T.sint Typed.t
+  | Uninit of { offset : T.sint Typed.t; len : T.sint Typed.t }
+
+let serialize _ = Fmt.failwith "TODO: %s" __LOC__
+
+let assume_bound_check_res (t : t) (ofs : [< T.sint ] Typed.t) f =
+  let* () =
+    match t.bound with
+    | None -> Csymex.return ()
+    | Some bound -> Typed.return ~learned:[ ofs #<= bound ] ()
+  in
+  let++ res, root = f () in
+  (res, { t with root })
+
+let assume_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
+  let* () =
+    match t.bound with
+    | None -> Csymex.return ()
+    | Some bound -> Typed.return ~learned:[ ofs #<= bound ] ()
+  in
+  let+ root = f () in
+  { t with root }
+
+let consume_typed_val ofs ty t =
+  let** t = of_opt t in
+  let* size = Layout.size_of_s ty in
+  let++ res, tree =
+    let@ () = assume_bound_check_res t ofs #+ size in
+    Tree.consume_typed_val ofs ty t.root
+  in
+  (res, to_opt tree)
+
+let produce_typed_val ofs ty v t =
+  match t with
+  | None ->
+      let+ range = Range.of_low_and_type ofs ty in
+      Some { bound = None; root = Tree.sval_leaf ~range ~value:v ~ty }
+  | Some t ->
+      let* size = Layout.size_of_s ty in
+      let+ tree =
+        let@ () = assume_bound_check t ofs #+ size in
+        Tree.produce_typed_val ofs ty v t.root
+      in
+      to_opt tree
+
+(* let cons_typed_val ofs ty  *)
