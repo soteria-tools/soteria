@@ -1,6 +1,6 @@
 open Hashcons
 
-module Var_name = struct
+module Var = struct
   type t = int
 
   let[@inline] of_int i = i
@@ -52,7 +52,7 @@ let equal_hash_consed _ t1 t2 = Int.equal t1.tag t2.tag
 let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 
 type t_kind =
-  | Var of Var_name.t
+  | Var of Var.t
   | Bool of bool
   | Int of Z.t [@printer Fmt.of_to_string Z.to_string]
   | Ptr of t * t
@@ -67,7 +67,7 @@ and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
 let hash t = t.hkey
 
-let rec iter_vars (sv : t) (f : Var_name.t * ty -> unit) : unit =
+let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
   match sv.node.kind with
   | Var v -> f (v, sv.node.ty)
   | Bool _ | Int _ -> ()
@@ -82,7 +82,7 @@ let pp_full ft t = pp_t_node ft t.node
 let rec pp ft t =
   let open Fmt in
   match t.node.kind with
-  | Var v -> pf ft "V%a" Var_name.pp v
+  | Var v -> pf ft "V%a" Var.pp v
   | Bool b -> pf ft "%b" b
   | Int z -> pf ft "%a" Z.pp_print z
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
@@ -96,13 +96,50 @@ module Hcons = Hashcons.Make (struct
   type t = t_node
 
   let equal = equal_t_node
-  let hash = Hashtbl.hash
+
+  (* We could do a lot more efficient in terms of hashing probably,
+     if this ever becomes a bottleneck. *)
+  let hash { kind; ty } =
+    let hty = Hashtbl.hash ty in
+    match kind with
+    | Var _ | Bool _ | Int _ -> Hashtbl.hash (kind, hty)
+    | Ptr (l, r) -> Hashtbl.hash (l.hkey, r.hkey, hty)
+    | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.hkey) l, hty)
+    | Unop (op, v) -> Hashtbl.hash (op, v.hkey, hty)
+    | Binop (op, l, r) -> Hashtbl.hash (op, l.hkey, r.hkey, hty)
 end)
 
 let table = Hcons.create 1023
 let hashcons = Hcons.hashcons table
 let ( <| ) kind ty : t = hashcons { kind; ty }
 let mk_var v ty = Var v <| ty
+
+let rec subst subst_var sv =
+  match sv.node.kind with
+  | Var v -> mk_var (subst_var v) sv.node.ty
+  | Bool _ | Int _ -> sv
+  | Ptr (l, r) ->
+      let l' = subst subst_var l in
+      let r' = subst subst_var r in
+      if equal l l' && equal r r' then sv else Ptr (l', r') <| TPointer
+  | Seq l ->
+      let changed = ref false in
+      let l' =
+        List.map
+          (fun sv ->
+            let new_sv = subst subst_var sv in
+            if equal new_sv sv then changed := true;
+            new_sv)
+          l
+      in
+      if !changed then Seq l' <| sv.node.ty else sv
+  | Unop (op, v) ->
+      let v' = subst subst_var v in
+      if equal v v' then sv else Unop (op, v') <| sv.node.ty
+  | Binop (op, l, r) ->
+      let l' = subst subst_var l in
+      let r' = subst subst_var r in
+      if equal l l' && equal r r' then sv else Binop (op, l', r') <| sv.node.ty
 
 (** {2 Booleans}  *)
 
@@ -129,6 +166,9 @@ let rec sem_eq v1 v2 =
   | _ ->
       if equal v1 v2 then v_true (* Start with a syntactic check *)
       else Binop (Eq, v1, v2) <| TBool
+
+let sem_eq_untyped v1 v2 =
+  if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
 
 let or_ v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -233,6 +273,7 @@ module Infix = struct
   let ptr = Ptr.mk
   let seq = SSeq.mk
   let ( #== ) = sem_eq
+  let ( #==? ) = sem_eq_untyped
   let ( #> ) = gt
   let ( #>= ) = geq
   let ( #< ) = lt

@@ -269,7 +269,7 @@ let rec sort_of_ty = function
   | TPointer -> t_ptr
 
 let declare_v v_id ty =
-  let v = Value.Var_name.to_string v_id in
+  let v = Value.Var.to_string v_id in
   declare v (sort_of_ty ty)
 
 let memo_encode_value_tbl : sexp Utils.Hint.t = Utils.Hint.create 1023
@@ -284,7 +284,7 @@ let memoz table f v =
 
 let rec encode_value (v : Svalue.t) =
   match v.node.kind with
-  | Var v -> atom (Value.Var_name.to_string v)
+  | Var v -> atom (Value.Var.to_string v)
   | Int z -> int_zk z
   | Bool b -> bool_k b
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
@@ -318,12 +318,16 @@ let rec encode_value (v : Svalue.t) =
 
 and encode_value_memo v = (memoz memo_encode_value_tbl encode_value) v
 
-let fresh ty =
+let fresh_var ty =
   let (lazy solver) = solver in
   let v_id = Dynarray.pop_last solver.var_stack in
   Dynarray.add_last solver.var_stack (v_id + 1);
   let c = declare_v v_id ty in
   ack_command c;
+  v_id
+
+let fresh ty =
+  let v_id = fresh_var ty in
   Svalue.mk_var v_id ty
 
 let rec simplify (v : Svalue.t) =

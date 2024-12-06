@@ -1,3 +1,5 @@
+(* TODO: Build this with the Sum transformer and `Excl(Freed)` *)
+
 type 'a t = Freed | Alive of 'a
 
 let pp ?(alive_prefix = "") pp_alive ft = function
@@ -8,9 +10,21 @@ module Make (Symex : Symex.S) = struct
   open Symex.Syntax
 
   type nonrec 'a t = 'a t = Freed | Alive of 'a
-  type 'a cp = 'a t
+  type 'a serialized = 'a t
+
+  let serialize serialize_inner = function
+    | Freed -> Freed
+    | Alive a -> Alive (serialize_inner a)
+
+  let subst_serialized subst_inner subst_var = function
+    | Freed -> Freed
+    | Alive a -> Alive (subst_inner subst_var a)
+
+  let iter_vars_serialized iter_inner serialized f =
+    match serialized with Freed -> () | Alive a -> iter_inner a f
 
   let pp = pp
+  let pp_serialized = pp
 
   let unwrap_alive = function
     | None -> Symex.Result.ok None
@@ -37,41 +51,43 @@ module Make (Symex : Symex.S) = struct
   (* In the context of UX, using a non-matching spec will simply vanish *)
   let consume
       (cons :
-        'inner_cp ->
+        'inner_ser ->
         'inner_st option ->
-        ('a * 'inner_st option, 'err) Symex.Result.t) (cp : 'inner_cp cp)
-      (st : 'inner_st t option) =
-    match cp with
+        ('inner_st option, 'err) Symex.Result.t)
+      (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
+      ('inner_st t option, 'err2) Symex.Result.t =
+    match serialized with
     | Freed -> (
         match st with
         | None -> Symex.Result.error `MissingResource
-        | Some Freed -> Symex.Result.ok ([], None)
+        | Some Freed -> Symex.Result.ok None
         | Some (Alive _) -> Symex.vanish ())
-    | Alive cp -> (
+    | Alive ser -> (
         match st with
         | None ->
-            let++ res, st' = cons cp None in
-            (res, Option.map (fun x -> Alive x) st')
+            let++ st' = cons ser None in
+            Option.map (fun x -> Alive x) st'
         | Some Freed -> Symex.vanish ()
         | Some (Alive st) ->
-            let++ res, st' = cons cp (Some st) in
-            (res, Option.map (fun x -> Alive x) st'))
+            let++ st' = cons ser (Some st) in
+            Option.map (fun x -> Alive x) st')
 
-  let produce (prod : 'inner_cp -> 'inner_st option -> 'inner_st option Symex.t)
-      (cp : 'inner_cp cp) (st : 'inner_st t option) : 'inner_st t option Symex.t
-      =
-    match cp with
+  let produce
+      (prod : 'inner_ser -> 'inner_st option -> 'inner_st option Symex.t)
+      (serialize : 'inner_ser serialized) (st : 'inner_st t option) :
+      'inner_st t option Symex.t =
+    match serialize with
     | Freed -> (
         match st with
         | None -> Symex.return (Some Freed)
         | Some _ -> Symex.vanish ())
-    | Alive cp -> (
+    | Alive ser -> (
         match st with
         | None ->
-            let+ st' = prod cp None in
+            let+ st' = prod ser None in
             Option.map (fun s -> Alive s) st'
         | Some (Alive st) ->
-            let+ st' = prod cp (Some st) in
+            let+ st' = prod ser (Some st) in
             Option.map (fun s -> Alive s) st'
         | Some Freed -> Symex.vanish ())
 

@@ -496,3 +496,28 @@ and exec_fun ~prog ~args ~state (fundef : fundef) =
   (* We model void as zero, it should never be used anyway *)
   let value = Option.value ~default:0s val_opt in
   (value, state)
+
+let exec_fun_from_summary ~prog ~args ~serialized_state ~path_condition
+    (fundef : fundef) =
+  let* bi_subst =
+    let iter_args f = List.iter (fun tsv -> Typed.iter_vars tsv f) args in
+    let iter_pc f =
+      List.iter (fun sv -> Svalue.iter_vars sv f) path_condition
+    in
+    let iter_heap = Heap.iter_vars_serialized serialized_state in
+    let iter_all = Iter.append (Iter.append iter_args iter_pc) iter_heap in
+    Bi_subst.create iter_all
+  in
+  let serialized_state, path_condition, args =
+    if Bi_subst.is_empty bi_subst then (serialized_state, path_condition, args)
+    else
+      let subst_var = Bi_subst.forward bi_subst in
+      ( Heap.subst_serialized subst_var serialized_state,
+        List.map (Svalue.subst subst_var) path_condition,
+        List.map (Typed.subst subst_var) args )
+  in
+  let* () = Csymex.return ~learned:path_condition () in
+  let* state = Heap.produce serialized_state Heap.empty in
+  let++ res, _final_state = exec_fun ~prog ~args ~state fundef in
+  let backward_subst = Bi_subst.backward bi_subst in
+  (Typed.subst backward_subst res, 0)

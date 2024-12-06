@@ -7,16 +7,17 @@ module Result = Typed.Result
 
 module SPmap = Pmap (struct
   type t = T.sloc Typed.t
-  type value = Svalue.t
-  type 'a symex = 'a Csymex.t
+
+  module Symex = Csymex
 
   let pp = Typed.ppa
   let sem_eq x y = Typed.sem_eq x y |> Typed.untyped
   let compare = Typed.compare
   let distinct l = Typed.distinct l |> Typed.untyped_list
+  let subst subst_var t = Typed.subst subst_var t
 
-  let fresh ?(constrs : (t -> value list) option) () : t symex =
-    let (constrs : (value -> value list) option) =
+  let fresh ?(constrs : (t -> Svalue.t list) option) () : t Csymex.t =
+    let (constrs : (Svalue.t -> Svalue.t list) option) =
       match constrs with
       | None -> None
       | Some f -> Some (fun loc -> f (Typed.type_ loc))
@@ -27,6 +28,27 @@ end)
 
 type t = Tree_block.t Freeable.t SPmap.t option
 [@@deriving show { with_path = false }]
+
+type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
+[@@deriving show { with_path = false }]
+
+let serialize st =
+  match st with
+  | None -> []
+  | Some st -> SPmap.serialize (Freeable.serialize Tree_block.serialize) st
+
+let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
+    (serialized : serialized) : serialized =
+  SPmap.subst_serialized
+    (Freeable.subst_serialized Tree_block.subst_serialized)
+    subst_var serialized
+
+let iter_vars_serialized (serialized : serialized) f =
+  List.iter
+    (fun (loc, block) ->
+      Typed.iter_vars loc f;
+      Freeable.iter_vars_serialized Tree_block.iter_vars_serialized block f)
+    serialized
 
 let pp_pretty ~ignore_freed ft st =
   let ignore =
@@ -108,3 +130,9 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) : (unit * t, 'err) Result.t =
           ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
       (Typed.Ptr.loc ptr) st
   else error `InvalidFree
+
+let produce (serialized : serialized) (heap : t) : t Csymex.t =
+  SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
+
+let consume (serialized : serialized) (heap : t) : (t, 'err) Csymex.Result.t =
+  SPmap.consume (Freeable.consume Tree_block.consume) serialized heap

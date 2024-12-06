@@ -15,6 +15,7 @@ module type S = sig
   val backtrack : unit -> unit
   val simplify : Value.t -> Value.t
   val as_bool : Value.t -> bool option
+  val fresh_var : Value.ty -> Value.Var.t
   val fresh : Value.ty -> Value.t
   val get_pc : unit -> Value.t list
 end

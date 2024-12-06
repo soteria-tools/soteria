@@ -3,6 +3,18 @@ open T
 
 type t [@@deriving show]
 
+type serialized =
+  (T.sloc Typed.t * Tree_block.serialized Csymex.Freeable.serialized) list
+[@@deriving show]
+
+val serialize : t -> serialized
+
+val iter_vars_serialized :
+  serialized -> (Svalue.Var.t * Svalue.ty -> unit) -> unit
+
+val subst_serialized :
+  (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
+
 (** Prettier but expensive printing. *)
 val pp_pretty : ignore_freed:bool -> Format.formatter -> t -> unit
 
@@ -56,4 +68,7 @@ val copy_nonoverlapping :
   ( unit * t,
     [> `NullDereference | `OutOfBounds | `UseAfterFree | `MissingResource ]
     * Cerb_location.t )
-  Result.t
+  Csymex.Result.t
+
+val produce : serialized -> t -> t Csymex.t
+val consume : serialized -> t -> (t, [> `MissingResource ]) Csymex.Result.t

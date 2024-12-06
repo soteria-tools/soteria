@@ -1,26 +1,35 @@
 module type KeyS = sig
   type t
-  type 'a symex
-  type value
 
+  module Symex : Symex.S
   include Stdlib.Map.OrderedType with type t := t
 
   val pp : t Fmt.t
-  val sem_eq : t -> t -> value
-  val fresh : ?constrs:(t -> value list) -> unit -> t symex
-  val distinct : t list -> value list
+  val sem_eq : t -> t -> Symex.Value.t
+  val fresh : ?constrs:(t -> Symex.Value.t list) -> unit -> t Symex.t
+  val distinct : t list -> Symex.Value.t list
+  val subst : (Symex.Value.Var.t -> Symex.Value.Var.t) -> t -> t
 end
 
-module Make
-    (Symex : Symex.S)
-    (Key : KeyS with type 'a symex = 'a Symex.t and type value = Symex.Value.t) =
-struct
+module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
   open Symex.Syntax
   open Symex
   module M = Stdlib.Map.Make (Key)
 
   type 'a t = 'a M.t
-  type 'a cp = Key.t * 'a
+  type 'a serialized = (Key.t * 'a) list
+
+  let pp_serialized pp_inner : 'a serialized Fmt.t =
+    Fmt.brackets
+      (Fmt.iter ~sep:(Fmt.any ";@ ") List.iter Fmt.Dump.(pair Key.pp pp_inner))
+
+  let serialize serialize_inner m =
+    M.to_seq m |> Seq.map (fun (k, v) -> (k, serialize_inner v)) |> List.of_seq
+
+  let subst_serialized subst_inner subst_var l =
+    List.map
+      (fun (key, v) -> (Key.subst subst_var key, subst_inner subst_var v))
+      l
 
   let pp ?(ignore = fun _ -> false) pp_value =
     let open Fmt in
@@ -36,15 +45,15 @@ struct
   let add_opt k v m = M.update k (fun _ -> v) m
 
   (* Symbolic process that under-approximates Map.find_opt *)
-  let find_opt_sym (loc : Key.t) (st : 'a t) =
+  let find_opt_sym (key : Key.t) (st : 'a t) =
     let rec find_bindings = function
       | [] -> Symex.return None
       | (k, v) :: tl ->
-          if%sat Key.sem_eq loc k then Symex.return (Some v)
+          if%sat Key.sem_eq key k then Symex.return (Some v)
           else find_bindings tl
       (* TODO: Investigate: this is not a tailcall, because if%sat is not an if. *)
     in
-    match M.find_opt loc st with
+    match M.find_opt key st with
     | Some v -> Symex.return (Some v)
     | None -> find_bindings (M.bindings st)
 
@@ -60,36 +69,43 @@ struct
     Result.ok (key, to_opt (M.add key new_codom st))
 
   let wrap (f : 'a option -> ('b * 'a option, 'err) Symex.Result.t)
-      (loc : Key.t) (st : 'a t option) =
+      (key : Key.t) (st : 'a t option) =
     let st = of_opt st in
-    let* codom = find_opt_sym loc st in
+    let* codom = find_opt_sym key st in
     let++ res, codom = f codom in
-    (res, to_opt (add_opt loc codom st))
+    (res, to_opt (add_opt key codom st))
 
-  let produce (prod : 'inner_cp -> 'inner_st option -> 'inner_st option Symex.t)
-      (cp : 'inner_cp cp) (st : 'inner_st t option) : 'inner_st t option Symex.t
-      =
+  let produce
+      (prod : 'inner_serialized -> 'inner_st option -> 'inner_st option Symex.t)
+      (serialized : 'inner_cp serialized) (st : 'inner_st t option) :
+      'inner_st t option Symex.t =
     let st = of_opt st in
-    let loc, inner_cp = cp in
-    let* codom = find_opt_sym loc st in
-    let+ codom = prod inner_cp codom in
-    to_opt (add_opt loc codom st)
+    let+ st =
+      Symex.fold_left serialized ~init:st ~f:(fun st (key, inner_ser) ->
+          let* codom = find_opt_sym key st in
+          let+ codom = prod inner_ser codom in
+          add_opt key codom st)
+    in
+    to_opt st
 
   let consume
       (cons :
-        'inner_cp ->
+        'inner_serialized ->
         'inner_st option ->
-        ('a * 'inner_st option, 'err) Symex.Result.t) (cp : 'inner_cp cp)
-      (st : 'inner_st t option) =
+        ('inner_st option, 'err) Symex.Result.t)
+      (serialized : 'inner_serialized serialized) (st : 'inner_st t option) =
     let st = of_opt st in
-    let loc, inner_cp = cp in
-    let* codom = find_opt_sym loc st in
-    let++ res, codom = cons inner_cp codom in
-    (res, to_opt (add_opt loc codom st))
+    let++ st =
+      Result.fold_left serialized ~init:st ~f:(fun st (key, inner_ser) ->
+          let* codom = find_opt_sym key st in
+          let++ codom = cons inner_ser codom in
+          add_opt key codom st)
+    in
+    to_opt st
 
-  let wrap_read_only (f : 'a option -> ('b, 'err) Symex.Result.t) (loc : Key.t)
+  let wrap_read_only (f : 'a option -> ('b, 'err) Symex.Result.t) (key : Key.t)
       (st : 'a t option) =
     let st = of_opt st in
-    let* codom = find_opt_sym loc st in
+    let* codom = find_opt_sym key st in
     f codom
 end

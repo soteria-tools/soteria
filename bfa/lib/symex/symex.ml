@@ -8,6 +8,7 @@ module type S = sig
   val return : ?learned:Value.t list -> 'a -> 'a t
   val vanish : unit -> 'a t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
+  val fresh_var : Value.ty -> Value.Var.t t
   val value_eq : Value.t -> Value.t -> Value.t
   val batched : (unit -> 'a t) -> 'a t
 
@@ -24,6 +25,8 @@ module type S = sig
   val all : 'a t list -> 'a list t
   val abort : unit -> 'a t
   val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
+  val fold_seq : 'a Seq.t -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
+  val fold_iter : 'a Iter.t -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
 
   module Result : sig
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
@@ -36,6 +39,9 @@ module type S = sig
 
     val fold_left :
       'a list -> init:'acc -> f:('acc -> 'a -> ('acc, 'b) t) -> ('acc, 'b) t
+
+    val fold_seq :
+      'a Seq.t -> init:'acc -> f:('acc -> 'a -> ('acc, 'b) t) -> ('acc, 'b) t
   end
 
   module Syntax : sig
@@ -85,6 +91,7 @@ struct
     in
     Seq.return v
 
+  let fresh_var ty = Seq.return (Solver.fresh_var ty)
   let value_eq x y = Value.sem_eq x y
 
   let batched s =
@@ -187,6 +194,12 @@ struct
     List.fold_left xs ~init:(return init) ~f:(fun acc x ->
         bind acc @@ fun acc -> f acc x)
 
+  let fold_seq xs ~init ~f =
+    Seq.fold_left (fun acc x -> bind acc @@ fun acc -> f acc x) (return init) xs
+
+  let fold_iter xs ~init ~f =
+    Iter.fold (fun acc x -> bind acc @@ fun acc -> f acc x) (return init) xs
+
   module Result = struct
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
 
@@ -199,6 +212,9 @@ struct
     let fold_left xs ~init ~f =
       List.fold_left xs ~init:(ok init) ~f:(fun acc x ->
           bind acc @@ fun acc -> f acc x)
+
+    let fold_seq xs ~init ~f =
+      Seq.fold_left (fun acc x -> bind acc @@ fun acc -> f acc x) (ok init) xs
   end
 
   module Syntax = struct
@@ -233,6 +249,7 @@ struct
     in
     f v
 
+  let fresh_var ty f = f (Solver.fresh_var ty)
   let value_eq x y = Value.sem_eq x y
 
   let branch_on guard ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
@@ -317,6 +334,12 @@ struct
     List.fold_left xs ~init:(return init) ~f:(fun acc x ->
         bind acc @@ fun acc -> f acc x)
 
+  let fold_seq xs ~init ~f =
+    Seq.fold_left (fun acc x -> bind acc @@ fun acc -> f acc x) (return init) xs
+
+  let fold_iter xs ~init ~f =
+    Iter.fold (fun acc x -> bind acc @@ fun acc -> f acc x) (return init) xs
+
   module Result = struct
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
 
@@ -329,6 +352,9 @@ struct
     let fold_left xs ~init ~f =
       List.fold_left xs ~init:(ok init) ~f:(fun acc x ->
           bind acc @@ fun acc -> f acc x)
+
+    let fold_seq xs ~init ~f =
+      Seq.fold_left (fun acc x -> bind acc @@ fun acc -> f acc x) (ok init) xs
   end
 
   module Syntax = struct

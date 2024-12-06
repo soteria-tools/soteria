@@ -39,11 +39,18 @@ val t_seq : ([< any ] as 'a) ty -> [> 'a sseq ] ty
 
 type +'a t
 
+(** Typed monadic operations *)
+
 val nondet :
   ?constrs:(([< any ] as 'a) t -> [> sbool ] t list) -> 'a ty -> 'a t Csymex.t
 
 val return : ?learned:[> sbool ] t list -> 'a -> 'a Csymex.t
+
+(** Basic value operations *)
+
 val get_ty : 'a t -> Svalue.ty
+val iter_vars : 'a t -> (Svalue.Var.t * Svalue.ty -> unit) -> unit
+val subst : (Svalue.Var.t -> Svalue.Var.t) -> 'a t -> 'a t
 val type_ : Svalue.t -> 'a t
 val type_checked : Svalue.t -> 'a ty -> 'a t option
 val cast : 'a t -> 'b t
@@ -54,6 +61,9 @@ val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
+
+(** Typed constructors *)
+
 val sem_eq : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
 val sem_eq_untyped : 'a t -> 'b t -> [> sbool ] t
 val v_true : [> sbool ] t
@@ -101,6 +111,7 @@ end
 
 module Infix : sig
   val ( #== ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
+  val ( #==? ) : 'a t -> 'a t -> [> sbool ] t
   val ( #> ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( #>= ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( #< ) : [< sint ] t -> [< sint ] t -> [> sbool ] t

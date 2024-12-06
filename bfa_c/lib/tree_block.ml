@@ -1,3 +1,5 @@
+(* This could be parametric on an integer type and Node type. But is there realy a reason ? *)
+
 open Csymex.Syntax
 open Typed
 open Typed.Infix
@@ -347,14 +349,17 @@ module Tree = struct
 
   (** Cons/prod *)
 
-  let consume_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
-      (T.cval Typed.t * t, 'err) Result.t =
+  let consume_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
+      (v : [< T.cval ] Typed.t) (t : t) : (t, 'err) Result.t =
     let* range = Range.of_low_and_type low ty in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let++ sval = Node.decode ~ty framed.node in
-    ((sval :> T.cval Typed.t), tree)
+    let* sval_res = Node.decode ~ty framed.node in
+    match sval_res with
+    | Ok sv -> Typed.Result.ok ~learned:[ sv #==? v ] tree
+    | Error `MissingResource -> Csymex.Result.error `MissingResource
+    | Error `UninitializedMemoryAccess -> Csymex.vanish ()
 
   let produce_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
       (value : T.cval Typed.t) (t : t) : t Csymex.t =
@@ -366,9 +371,9 @@ module Tree = struct
     | NotOwned Totally -> return tree
     | _ -> Csymex.vanish ()
 
-  let consume_any (low : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
-      (unit * t, 'err) Result.t =
-    let* range = Range.of_low_and_type low ty in
+  let consume_any (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
+      (t : t) : (t, 'err) Result.t =
+    let range = (low, low #+ len) in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -377,11 +382,11 @@ module Tree = struct
       | NotOwned _ -> Result.error `MissingResource
       | _ -> Result.ok ()
     in
-    ((), tree)
+    tree
 
-  let produce_any (low : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
-      t Csymex.t =
-    let* range = Range.of_low_and_type low ty in
+  let produce_any (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
+      (t : t) : t Csymex.t =
+    let range = (low, low #+ len) in
     let replace_node _ = any range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -390,7 +395,7 @@ module Tree = struct
     | _ -> Csymex.vanish ()
 
   let consume_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
-      (t : t) : (unit * t, 'err) Result.t =
+      (t : t) : (t, 'err) Result.t =
     let range = (low, low #+ len) in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
@@ -403,7 +408,42 @@ module Tree = struct
           L.debug (fun m -> m "Consuming uninit but no uninit, vanishing");
           Csymex.vanish ()
     in
-    ((), tree)
+    tree
+
+  let produce_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
+      (t : t) : t Csymex.t =
+    let range = (low, low #+ len) in
+    let replace_node _ = uninit range in
+    let rebuild_parent = of_children in
+    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    match framed.node with
+    | NotOwned Totally -> return tree
+    | _ -> Csymex.vanish ()
+
+  let consume_zeros (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
+      (t : t) : (t, 'err) Result.t =
+    let range = (low, low #+ len) in
+    let replace_node _ = not_owned range in
+    let rebuild_parent = of_children in
+    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    match framed.node with
+    | NotOwned _ -> Result.error `MissingResource
+    | Owned Zeros -> Result.ok tree
+    | Owned (Init { ty = _; value }) ->
+        Typed.Result.ok ~learned:[ value #==? 0s ] tree
+    | _ ->
+        L.debug (fun m -> m "Consuming zero but not zero, vanishing");
+        Csymex.vanish ()
+
+  let produce_zeros (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
+      (t : t) : t Csymex.t =
+    let range = (low, low #+ len) in
+    let replace_node _ = zeros range in
+    let rebuild_parent = of_children in
+    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    match framed.node with
+    | NotOwned Totally -> return tree
+    | _ -> Csymex.vanish ()
 end
 
 type t = { root : Tree.t; bound : T.sint Typed.t option }
@@ -509,16 +549,81 @@ let alloc size = { root = Tree.uninit (0s, size); bound = Some size }
 
 (** Logic *)
 
-type serialized =
+type serialized_atom =
   | TypedVal of {
       offset : T.sint Typed.t;
-      ty : Ctype.ctype;
+      ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]
       v : T.cval Typed.t;
     }
   | Bound of T.sint Typed.t
   | Uninit of { offset : T.sint Typed.t; len : T.sint Typed.t }
+  | Zeros of { offset : T.sint Typed.t; len : T.sint Typed.t }
+  | Any of { offset : T.sint Typed.t; len : T.sint Typed.t }
+[@@deriving show { with_path = false }]
 
-let serialize _ = Fmt.failwith "TODO: %s" __LOC__
+type serialized = serialized_atom list
+
+let subst_serialized subst_var (serialized : serialized) =
+  let v_subst v = Typed.subst subst_var v in
+  let subst_atom = function
+    | TypedVal { offset; ty; v } ->
+        TypedVal { offset = v_subst offset; ty; v = v_subst v }
+    | Bound v -> Bound (v_subst v)
+    | Uninit { offset; len } ->
+        Uninit { offset = v_subst offset; len = v_subst len }
+    | Zeros { offset; len } ->
+        Zeros { offset = v_subst offset; len = v_subst len }
+    | Any { offset; len } -> Any { offset = v_subst offset; len = v_subst len }
+  in
+  List.map subst_atom serialized
+
+let iter_vars_serialized serialized f =
+  List.iter
+    (function
+      | TypedVal { offset; v; _ } ->
+          Typed.iter_vars offset f;
+          Typed.iter_vars v f
+      | Bound v -> Typed.iter_vars v f
+      | Uninit { offset; len } ->
+          Typed.iter_vars offset f;
+          Typed.iter_vars len f
+      | Zeros { offset; len } ->
+          Typed.iter_vars offset f;
+          Typed.iter_vars len f
+      | Any { offset; len } ->
+          Typed.iter_vars offset f;
+          Typed.iter_vars len f)
+    serialized
+
+let pp_serialized = Fmt.Dump.list pp_serialized_atom
+
+let serialize t =
+  let bound =
+    match t.bound with
+    | None -> Seq.empty
+    | Some bound -> Seq.return (Bound bound)
+  in
+  let rec serialize_tree (tree : Tree.t) =
+    match tree.node with
+    | Node.NotOwned _ -> Seq.empty
+    | Owned Zeros ->
+        Seq.return
+          (Zeros { offset = fst tree.range; len = Range.size tree.range })
+    | Owned (Uninit Totally) ->
+        Seq.return
+          (Uninit { offset = fst tree.range; len = Range.size tree.range })
+    | Owned (Init { value = v; ty }) ->
+        Seq.return (TypedVal { offset = fst tree.range; ty; v })
+    | Owned Any ->
+        Seq.return
+          (Any { offset = fst tree.range; len = Range.size tree.range })
+    | Owned (Lazy | Uninit Partially) ->
+        let children = Option.get tree.children in
+        Seq.append
+          (serialize_tree (fst children))
+          (serialize_tree (snd children))
+  in
+  Seq.append (serialize_tree t.root) bound |> List.of_seq
 
 let assume_bound_check_res (t : t) (ofs : [< T.sint ] Typed.t) f =
   let* () =
@@ -526,8 +631,8 @@ let assume_bound_check_res (t : t) (ofs : [< T.sint ] Typed.t) f =
     | None -> Csymex.return ()
     | Some bound -> Typed.return ~learned:[ ofs #<= bound ] ()
   in
-  let++ res, root = f () in
-  (res, { t with root })
+  let++ root = f () in
+  { t with root }
 
 let assume_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let* () =
@@ -538,26 +643,121 @@ let assume_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let+ root = f () in
   { t with root }
 
-let consume_typed_val ofs ty t =
+let abstract_cons bound cons_tree t =
   let** t = of_opt t in
-  let* size = Layout.size_of_s ty in
-  let++ res, tree =
-    let@ () = assume_bound_check_res t ofs #+ size in
-    Tree.consume_typed_val ofs ty t.root
+  let* bound = bound () in
+  let++ tree =
+    let@ () = assume_bound_check_res t bound in
+    cons_tree t.root
   in
-  (res, to_opt tree)
+  to_opt tree
 
-let produce_typed_val ofs ty v t =
+let abstract_prod bound mk_root_from_empty prod_tree t =
   match t with
   | None ->
-      let+ range = Range.of_low_and_type ofs ty in
-      Some { bound = None; root = Tree.sval_leaf ~range ~value:v ~ty }
+      let+ root = mk_root_from_empty () in
+      Some { bound = None; root }
   | Some t ->
-      let* size = Layout.size_of_s ty in
+      let* bound = bound () in
       let+ tree =
-        let@ () = assume_bound_check t ofs #+ size in
-        Tree.produce_typed_val ofs ty v t.root
+        let@ () = assume_bound_check t bound in
+        prod_tree t.root
       in
       to_opt tree
 
-(* let cons_typed_val ofs ty  *)
+let typed_bound ofs ty =
+  let+ size = Layout.size_of_s ty in
+  ofs #+ size
+
+let consume_typed_val ofs ty v t =
+  let bound () = typed_bound ofs ty in
+  let cons_tree root = Tree.consume_typed_val ofs ty v root in
+  abstract_cons bound cons_tree t
+
+let produce_typed_val ofs ty v t =
+  let bound () = typed_bound ofs ty in
+  let prod_tree root = Tree.produce_typed_val ofs ty v root in
+  let mk_root_from_empty () =
+    let+ range = Range.of_low_and_type ofs ty in
+    Tree.sval_leaf ~range ~value:v ~ty
+  in
+  abstract_prod bound mk_root_from_empty prod_tree t
+
+let consume_any ofs len t =
+  let bound () = Csymex.return ofs #+ len in
+  let cons_tree root = Tree.consume_any ofs len root in
+  abstract_cons bound cons_tree t
+
+let produce_any ofs len t =
+  let bound () = Csymex.return ofs #+ len in
+  let prod_tree root = Tree.produce_any ofs len root in
+  let mk_root_from_empty () =
+    let range = (ofs, ofs #+ len) in
+    Csymex.return (Tree.any range)
+  in
+  abstract_prod bound mk_root_from_empty prod_tree t
+
+let consume_uninit ofs len t =
+  let bound () = Csymex.return ofs #+ len in
+  let cons_tree root = Tree.consume_uninit ofs len root in
+  abstract_cons bound cons_tree t
+
+let produce_uninit ofs len t =
+  let bound () = Csymex.return ofs #+ len in
+  let prod_tree root = Tree.produce_uninit ofs len root in
+  let mk_root_from_empty () =
+    let range = (ofs, ofs #+ len) in
+    Csymex.return (Tree.uninit range)
+  in
+  abstract_prod bound mk_root_from_empty prod_tree t
+
+let consume_zeros ofs len t =
+  let bound () = Csymex.return ofs #+ len in
+  let cons_tree root = Tree.consume_zeros ofs len root in
+  abstract_cons bound cons_tree t
+
+let produce_zeros ofs len t =
+  let bound () = Csymex.return ofs #+ len in
+  let prod_tree root = Tree.produce_zeros ofs len root in
+  let mk_root_from_empty () =
+    let range = (ofs, ofs #+ len) in
+    Csymex.return (Tree.zeros range)
+  in
+  abstract_prod bound mk_root_from_empty prod_tree t
+
+let consume_bound bound t =
+  match t with
+  | None | Some { bound = None; _ } -> Result.error `MissingResource
+  | Some { bound = Some v; root } ->
+      Typed.Result.ok ~learned:[ v #== bound ] (to_opt { bound = None; root })
+
+let produce_bound bound t =
+  match t with
+  | None ->
+      Csymex.return
+        (Some { bound = Some bound; root = Tree.not_owned (0s, bound) })
+  | Some { bound = None; root } ->
+      Csymex.return (Some { bound = Some bound; root })
+  | Some { bound = Some _; _ } -> Csymex.vanish ()
+
+let consume_atom atom t =
+  match atom with
+  | Bound bound -> consume_bound bound t
+  | TypedVal { offset; ty; v } -> consume_typed_val offset ty v t
+  | Uninit { offset; len } -> consume_uninit offset len t
+  | Any { offset; len } -> consume_any offset len t
+  | Zeros { offset; len } -> consume_zeros offset len t
+
+let produce_atom atom t =
+  match atom with
+  | Bound bound -> produce_bound bound t
+  | TypedVal { offset; ty; v } -> produce_typed_val offset ty v t
+  | Uninit { offset; len } -> produce_uninit offset len t
+  | Any { offset; len } -> produce_any offset len t
+  | Zeros { offset; len } -> produce_zeros offset len t
+
+let consume (list : serialized) (t : t option) =
+  Csymex.Result.fold_left ~f:(fun acc st -> consume_atom st acc) ~init:t list
+
+let produce (list : serialized) (t : t option) =
+  Csymex.fold_left ~f:(fun acc st -> produce_atom st acc) ~init:t list

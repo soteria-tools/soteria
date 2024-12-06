@@ -36,9 +36,6 @@ let type_ x = x
 let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
 let cast_checked = type_checked
 
-let sem_eq_untyped x y =
-  if equal_ty x.node.ty y.node.ty then sem_eq x y else v_false
-
 let nonzero_z z =
   if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z")
   else Svalue.int_z z
