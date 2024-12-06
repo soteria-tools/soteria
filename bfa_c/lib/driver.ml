@@ -172,16 +172,14 @@ let exec_main_and_print log_level smt_file file_name =
   setup_console_log log_level;
   Initialize_analysis.init_once ();
   let result = exec_main file_name in
+  let pp_heap ft heap = Heap.pp_serialized ft (Heap.serialize heap) in
   L.app (fun m ->
       m
         "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
          Executed %d statements"
         Fmt.Dump.(
           list @@ fun ft (r, _) ->
-          (result
-             ~ok:(pair Typed.ppa (Heap.pp_pretty ~ignore_freed:true))
-             ~error:pp_err)
-            ft r)
+          (result ~ok:(pair Typed.ppa pp_heap) ~error:pp_err) ft r)
         result
         (Stats.get_executed_statements ()))
 
