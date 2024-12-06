@@ -3,6 +3,7 @@ open Hashcons
 module Var = struct
   type t = int
 
+  let hash = Int.hash
   let[@inline] of_int i = i
   let to_string i = "|" ^ string_of_int i ^ "|"
   let of_string s = int_of_string (String.sub s 1 (String.length s - 2))

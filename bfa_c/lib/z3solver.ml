@@ -57,7 +57,7 @@ module Dist_set = struct
   let add (ds : t) i j =
     let pair = if i.Hashcons.tag < j.Hashcons.tag then (i, j) else (j, i) in
     let h = Dynarray.get_last ds in
-    Hashtbl.add h pair ()
+    Hashtbl.replace h pair ()
 
   let save (ds : t) = Dynarray.add_last ds (Hashtbl.create 0)
   let backtrack_n (ds : t) n = Dynarray.truncate ds (Dynarray.length ds - n)
