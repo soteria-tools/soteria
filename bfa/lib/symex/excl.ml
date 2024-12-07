@@ -24,8 +24,8 @@ module Make (Symex : Symex.S) = struct
     | Some x -> Symex.Result.ok ~learned:[ sem_eq x serialized ] None
     | None -> Symex.Result.error `MissingValue
 
-  let produce ~sem_eq (serialized : 'a serialized) (t : 'a t option) =
+  let produce (serialized : 'a serialized) (t : 'a t option) =
     match t with
     | None -> Symex.return (Some serialized)
-    | Some -> Symex.vanish ()
+    | Some _ -> Symex.vanish ()
 end
