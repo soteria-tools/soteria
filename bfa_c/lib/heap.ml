@@ -24,6 +24,8 @@ module SPmap = Pmap (struct
     in
     let+ v = Csymex.nondet ?constrs TLoc in
     Typed.type_ v
+
+  let iter_vars = Typed.iter_vars
 end)
 
 type t = Tree_block.t Freeable.t SPmap.t option
@@ -43,12 +45,9 @@ let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
     (Freeable.subst_serialized Tree_block.subst_serialized)
     subst_var serialized
 
-let iter_vars_serialized (serialized : serialized) f =
-  List.iter
-    (fun (loc, block) ->
-      Typed.iter_vars loc f;
-      Freeable.iter_vars_serialized Tree_block.iter_vars_serialized block f)
-    serialized
+let iter_vars_serialized =
+  SPmap.iter_vars_serialized
+    (Freeable.iter_vars_serialized Tree_block.iter_vars_serialized)
 
 let pp_pretty ~ignore_freed ft st =
   let ignore =

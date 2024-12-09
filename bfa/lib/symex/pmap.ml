@@ -9,6 +9,7 @@ module type KeyS = sig
   val fresh : ?constrs:(t -> Symex.Value.t list) -> unit -> t Symex.t
   val distinct : t list -> Symex.Value.t list
   val subst : (Symex.Value.Var.t -> Symex.Value.Var.t) -> t -> t
+  val iter_vars : t -> (Symex.Value.Var.t * Symex.Value.ty -> unit) -> unit
 end
 
 module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
@@ -29,6 +30,13 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
   let subst_serialized subst_inner subst_var l =
     List.map
       (fun (key, v) -> (Key.subst subst_var key, subst_inner subst_var v))
+      l
+
+  let iter_vars_serialized iter_inner l f =
+    List.iter
+      (fun (key, v) ->
+        Key.iter_vars key f;
+        iter_inner v f)
       l
 
   let pp ?(ignore = fun _ -> false) pp_value =
