@@ -14,7 +14,7 @@ module type SInt_sig = sig
   val in_range : t -> t * t -> Value.t
   val greater_or_equal : t -> t -> Value.t
   val subst : (Value.Var.t -> Value.Var.t) -> t -> t
-  val iter_vars : (Value.Var.t * Value.ty -> unit) -> t -> unit
+  val iter_vars : t -> (Value.Var.t * Value.ty -> unit) -> unit
 end
 
 module Make (Symex : Symex.S) (SInt : SInt_sig with module Symex = Symex) =
@@ -157,10 +157,10 @@ struct
       Option.map (SInt.subst subst_var) b )
 
   let iter_vars_serialized iter_inner (l, b) f =
-    Option.iter (fun b -> SInt.iter_vars f b) b;
+    Option.iter (fun b -> SInt.iter_vars b f) b;
     List.iter
       (fun (k, v) ->
-        SInt.iter_vars f k;
-        iter_inner f v)
+        SInt.iter_vars k f;
+        iter_inner v f)
       l
 end

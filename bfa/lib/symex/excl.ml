@@ -17,7 +17,7 @@ module Make (Symex : Symex.S) = struct
   type 'a serialized = 'a
 
   let serialize serialize_val x = serialize_val x
-  let iter_vars i x = i x
+  let iter_vars i x f = (i f) x
 
   let consume ~sem_eq (serialized : 'a serialized) (t : 'a t option) =
     match t with
