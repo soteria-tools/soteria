@@ -19,8 +19,9 @@ module Make (Symex : Symex.S) = struct
   let serialize serialize_val x = serialize_val x
 
   let iter_vars_serialized
-      (i : 'a -> (Symex.Value.t * Symex.Value.ty -> unit) -> unit)
-      (x : 'a serialized) (f : Symex.Value.t * Symex.Value.ty -> unit) : unit =
+      (i : 'a -> (Symex.Value.Var.t * Symex.Value.ty -> unit) -> unit)
+      (x : 'a serialized) (f : Symex.Value.Var.t * Symex.Value.ty -> unit) :
+      unit =
     i x f
 
   let consume ~sem_eq (serialized : 'a serialized) (t : 'a t option) =
