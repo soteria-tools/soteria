@@ -17,6 +17,7 @@ module Make (Symex : Symex.S) = struct
   type 'a serialized = 'a
 
   let serialize serialize_val x = serialize_val x
+  let pp_serialized = pp
 
   let iter_vars_serialized
       (i : 'a -> (Symex.Value.Var.t * Symex.Value.ty -> unit) -> unit)
