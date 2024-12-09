@@ -24,6 +24,8 @@ module Make (Symex : Symex.S) = struct
       unit =
     i x f
 
+  let subst_serialized subst_inner subst_var x = subst_inner subst_var x
+
   let consume ~sem_eq (serialized : 'a serialized) (t : 'a t option) =
     match t with
     | Some x -> Symex.Result.ok ~learned:[ sem_eq x serialized ] None
