@@ -54,14 +54,14 @@ struct
   (* Symbolic process that under-approximates Map.find_opt *)
   let find_opt_sym (ofs : SInt.t) (m : 'a M.t) =
     let rec find_bindings = function
-      | [] -> Symex.return None
+      | [] -> Symex.return (ofs, None)
       | (k, v) :: tl ->
-          if%sat SInt.sem_eq ofs k then Symex.return (Some v)
+          if%sat SInt.sem_eq ofs k then Symex.return (k, Some v)
           else find_bindings tl
       (* TODO: Investigate: this is not a tailcall, because if%sat is not an if. *)
     in
     match M.find_opt ofs m with
-    | Some v -> Symex.return (Some v)
+    | Some v -> Symex.return (ofs, Some v)
     | None -> find_bindings (M.bindings m)
 
   let assert_in_bounds (ofs : SInt.t) (b : SInt.t option) =
@@ -92,7 +92,7 @@ struct
       ('b * 'a t option, 'err) Symex.Result.t =
     let m, b = of_opt t_opt in
     let** () = assert_in_bounds ofs b in
-    let* sst = find_opt_sym ofs m in
+    let* ofs, sst = find_opt_sym ofs m in
     let++ res, sst' = f sst in
     (* Should I check for emptyness here? *)
     (res, to_opt (add_opt ofs sst' m, b))
@@ -119,7 +119,7 @@ struct
     let++ m =
       Symex.Result.fold_left l ~init:m ~f:(fun m (ofs, inner_ser) ->
           let* () = Symex.return ~learned:[ in_bounds_opt ofs ] () in
-          let* codom = find_opt_sym ofs m in
+          let* ofs, codom = find_opt_sym ofs m in
           let++ codom = cons inner_ser codom in
           add_opt ofs codom m)
     in
@@ -144,7 +144,7 @@ struct
     let+ m =
       Symex.fold_left l ~init:m ~f:(fun m (ofs, inner_ser) ->
           let* () = Symex.return ~learned:[ in_bounds_opt ofs ] () in
-          let* codom = find_opt_sym ofs m in
+          let* ofs, codom = find_opt_sym ofs m in
           let+ codom = prod inner_ser codom in
           add_opt ofs codom m)
     in

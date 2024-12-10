@@ -55,14 +55,14 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
   (* Symbolic process that under-approximates Map.find_opt *)
   let find_opt_sym (key : Key.t) (st : 'a t) =
     let rec find_bindings = function
-      | [] -> Symex.return None
+      | [] -> Symex.return (key, None)
       | (k, v) :: tl ->
-          if%sat Key.sem_eq key k then Symex.return (Some v)
+          if%sat Key.sem_eq key k then Symex.return (k, Some v)
           else find_bindings tl
       (* TODO: Investigate: this is not a tailcall, because if%sat is not an if. *)
     in
     match M.find_opt key st with
-    | Some v -> Symex.return (Some v)
+    | Some v -> Symex.return (key, Some v)
     | None -> find_bindings (M.bindings st)
 
   let alloc (type a) ~(new_codom : a) (st : a t option) :
@@ -79,7 +79,7 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
   let wrap (f : 'a option -> ('b * 'a option, 'err) Symex.Result.t)
       (key : Key.t) (st : 'a t option) =
     let st = of_opt st in
-    let* codom = find_opt_sym key st in
+    let* key, codom = find_opt_sym key st in
     let++ res, codom = f codom in
     (res, to_opt (add_opt key codom st))
 
@@ -90,7 +90,7 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
     let st = of_opt st in
     let+ st =
       Symex.fold_left serialized ~init:st ~f:(fun st (key, inner_ser) ->
-          let* codom = find_opt_sym key st in
+          let* key, codom = find_opt_sym key st in
           let+ codom = prod inner_ser codom in
           add_opt key codom st)
     in
@@ -105,7 +105,7 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
     let st = of_opt st in
     let++ st =
       Result.fold_left serialized ~init:st ~f:(fun st (key, inner_ser) ->
-          let* codom = find_opt_sym key st in
+          let* key, codom = find_opt_sym key st in
           let++ codom = cons inner_ser codom in
           add_opt key codom st)
     in
@@ -114,6 +114,6 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
   let wrap_read_only (f : 'a option -> ('b, 'err) Symex.Result.t) (key : Key.t)
       (st : 'a t option) =
     let st = of_opt st in
-    let* codom = find_opt_sym key st in
+    let* _, codom = find_opt_sym key st in
     f codom
 end
