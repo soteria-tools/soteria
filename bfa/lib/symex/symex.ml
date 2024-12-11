@@ -8,7 +8,7 @@ module type S = sig
   val return : ?learned:Value.t list -> 'a -> 'a t
   val vanish : unit -> 'a t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
-  val fresh_var : Value.ty -> Value.Var.t t
+  val fresh_var : Value.ty -> Var.t t
   val value_eq : Value.t -> Value.t -> Value.t
   val batched : (unit -> 'a t) -> 'a t
 

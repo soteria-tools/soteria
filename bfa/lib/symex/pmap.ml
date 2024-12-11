@@ -8,8 +8,8 @@ module type KeyS = sig
   val sem_eq : t -> t -> Symex.Value.t
   val fresh : ?constrs:(t -> Symex.Value.t list) -> unit -> t Symex.t
   val distinct : t list -> Symex.Value.t list
-  val subst : (Symex.Value.Var.t -> Symex.Value.Var.t) -> t -> t
-  val iter_vars : t -> (Symex.Value.Var.t * Symex.Value.ty -> unit) -> unit
+  val subst : (Var.t -> Var.t) -> t -> t
+  val iter_vars : t -> Symex.Value.ty Var.iter_vars
 end
 
 module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct

@@ -1,5 +1,6 @@
 open Csymex
 open Csymex.Syntax
+open Bfa_symex.Substs
 open Typed.Infix
 open Typed.Syntax
 open Ail_tys
@@ -506,7 +507,8 @@ let exec_fun_from_summary ~prog ~args ~serialized_state ~path_condition
     in
     let iter_heap = Heap.iter_vars_serialized serialized_state in
     let iter_all = Iter.append (Iter.append iter_args iter_pc) iter_heap in
-    Bi_subst.create iter_all
+    let module From_iter = Bi_subst.From_iter (Csymex.SYMEX) in
+    From_iter.from_iter iter_all
   in
   let serialized_state, path_condition, args =
     if Bi_subst.is_empty bi_subst then (serialized_state, path_condition, args)

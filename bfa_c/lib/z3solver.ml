@@ -1,4 +1,5 @@
 module Value = Svalue
+module Var = Svalue.Var
 
 let z3_env_var = "BFA_Z3_PATH"
 let log_src = Logs.Src.create "bfa_c.SOLVER"
@@ -166,19 +167,18 @@ end
 type t = {
   z3_solver : Simple_smt.solver;
   mutable save_counter : int;
-  mutable var_stack : int Dynarray.t;
+  mutable var_counter : Var.Incr_counter_mut.t;
   dist_set : Dist_set.t;
   mutable state : Solver_state.t;
 }
 
 let init () =
-  let var_stack = Dynarray.create () in
-  Dynarray.add_last var_stack 0;
+  let var_counter = Var.Incr_counter_mut.init () in
   {
     z3_solver = z3_solver ();
     save_counter = 0;
     dist_set = Dist_set.create ();
-    var_stack;
+    var_counter;
     state = Solver_state.empty;
   }
 
@@ -232,7 +232,7 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
 
 let save () =
   let (lazy solver) = solver in
-  Dynarray.add_last solver.var_stack (Dynarray.get_last solver.var_stack);
+  Var.Incr_counter_mut.save solver.var_counter;
   solver.save_counter <- solver.save_counter + 1;
   solver.state <- Solver_state.save solver.state;
   Dist_set.save solver.dist_set;
@@ -241,9 +241,9 @@ let save () =
 let backtrack_n n =
   let (lazy solver) = solver in
   Dist_set.backtrack_n solver.dist_set n;
+  Var.Incr_counter_mut.backtrack_n solver.var_counter n;
   solver.state <- Solver_state.backtrack_n solver.state n;
   solver.save_counter <- solver.save_counter - n;
-  Dynarray.truncate solver.var_stack (solver.save_counter + 1);
   ack_command (Simple_smt.pop n)
 
 let backtrack () = backtrack_n 1
@@ -262,14 +262,14 @@ let reset () =
 let () = Initialize_analysis.register_resetter reset
 
 let rec sort_of_ty = function
-  | Value.TBool -> Simple_smt.t_bool
+  | Svalue.TBool -> Simple_smt.t_bool
   | TInt -> Simple_smt.t_int
   | TLoc -> Simple_smt.t_int
   | TSeq ty -> t_seq $ sort_of_ty ty
   | TPointer -> t_ptr
 
 let declare_v v_id ty =
-  let v = Value.Var.to_string v_id in
+  let v = Svalue.Var.to_string v_id in
   declare v (sort_of_ty ty)
 
 let memo_encode_value_tbl : sexp Utils.Hint.t = Utils.Hint.create 1023
@@ -284,7 +284,7 @@ let memoz table f v =
 
 let rec encode_value (v : Svalue.t) =
   match v.node.kind with
-  | Var v -> atom (Value.Var.to_string v)
+  | Var v -> atom (Svalue.Var.to_string v)
   | Int z -> int_zk z
   | Bool b -> bool_k b
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
@@ -320,8 +320,7 @@ and encode_value_memo v = (memoz memo_encode_value_tbl encode_value) v
 
 let fresh_var ty =
   let (lazy solver) = solver in
-  let v_id = Dynarray.pop_last solver.var_stack in
-  Dynarray.add_last solver.var_stack (v_id + 1);
+  let v_id = Var.Incr_counter_mut.get_next solver.var_counter in
   let c = declare_v v_id ty in
   ack_command c;
   v_id

@@ -1,16 +1,5 @@
 open Hashcons
-
-module Var = struct
-  type t = int
-
-  let hash = Int.hash
-  let[@inline] of_int i = i
-  let to_string i = "|" ^ string_of_int i ^ "|"
-  let of_string s = int_of_string (String.sub s 1 (String.length s - 2))
-  let pp = Fmt.of_to_string to_string
-  let equal = Int.equal
-  let compare = Int.compare
-end
+module Var = Bfa_symex.Var
 
 type ty = TBool | TInt | TLoc | TPointer | TSeq of ty
 [@@deriving eq, show, ord]
