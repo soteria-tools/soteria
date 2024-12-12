@@ -89,7 +89,7 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
       'inner_st t option Symex.t =
     let st = of_opt st in
     let+ st =
-      Symex.fold_left serialized ~init:st ~f:(fun st (key, inner_ser) ->
+      Symex.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
           let* key, codom = find_opt_sym key st in
           let+ codom = prod inner_ser codom in
           add_opt key codom st)
@@ -104,7 +104,7 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
       (serialized : 'inner_serialized serialized) (st : 'inner_st t option) =
     let st = of_opt st in
     let++ st =
-      Result.fold_left serialized ~init:st ~f:(fun st (key, inner_ser) ->
+      Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
           let* key, codom = find_opt_sym key st in
           let++ codom = cons inner_ser codom in
           add_opt key codom st)

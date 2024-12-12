@@ -761,7 +761,7 @@ let produce_atom atom t =
   | Zeros { offset; len } -> produce_zeros offset len t
 
 let consume (list : serialized) (t : t option) =
-  Csymex.Result.fold_left ~f:(fun acc st -> consume_atom st acc) ~init:t list
+  Csymex.Result.fold_list ~f:(fun acc st -> consume_atom st acc) ~init:t list
 
 let produce (list : serialized) (t : t option) =
-  Csymex.fold_left ~f:(fun acc st -> produce_atom st acc) ~init:t list
+  Csymex.fold_list ~f:(fun acc st -> produce_atom st acc) ~init:t list

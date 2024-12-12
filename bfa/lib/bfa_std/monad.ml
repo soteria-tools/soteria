@@ -6,24 +6,12 @@ module type Base = sig
   val map : 'a t -> ('a -> 'b) -> 'b t
 end
 
-module type FoldM = sig
-  type 'a foldable
-  type 'a monad
-
-  type ('a, 'b) folder =
-    'a foldable -> init:'b -> f:('b -> 'a -> 'b monad) -> 'b monad
-
-  val fold : ('a, 'b) folder
-end
-
-module FoldM (M : Base) (F : Foldable.S) :
-  FoldM with type 'a foldable := 'a F.t and type 'a monad := 'a M.t = struct
+module FoldM (M : Base) (F : Foldable.S) = struct
   type ('a, 'b) folder = 'a F.t -> init:'b -> f:('b -> 'a -> 'b M.t) -> 'b M.t
-
-  let fold t ~init ~f =
-    F.fold t ~init:(M.return init) ~f:(fun acc x ->
-        M.bind acc (fun acc -> f acc x))
 end
+
+let foldM ~return ~bind ~fold xs ~init ~f =
+  fold xs ~init:(return init) ~f:(fun acc x -> bind acc @@ fun acc -> f acc x)
 
 module type Syntax = sig
   type 'a t
@@ -37,7 +25,7 @@ module type S = sig
   module Syntax : Syntax with type 'a t := 'a t
 end
 
-module Extend (Base : Base) : S with type 'a t := 'a Base.t = struct
+module Extend (Base : Base) : S with type 'a t = 'a Base.t = struct
   include Base
 
   module Syntax = struct
@@ -55,6 +43,11 @@ module type Base2 = sig
   val error : 'b -> ('a, 'b) t
   val bind_error : ('a, 'b) t -> ('b -> ('a, 'c) t) -> ('a, 'c) t
   val map_error : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t
+end
+
+module FoldM2 (M : Base2) (F : Foldable.S) = struct
+  type ('elem, 'a, 'b) folder =
+    'elem F.t -> init:'a -> f:('a -> 'elem -> ('a, 'b) M.t) -> ('a, 'b) M.t
 end
 
 module type Syntax2 = sig
@@ -91,6 +84,23 @@ module Id = Extend (struct
   let[@inline] map x f = f x
 end)
 
+module ResultT (M : Base) : Base2 with type ('a, 'b) t = ('a, 'b) Result.t M.t =
+struct
+  type ('a, 'b) t = ('a, 'b) Result.t M.t
+
+  let ok x = M.return (Ok x)
+  let error x = M.return (Error x)
+
+  let bind x f =
+    M.bind x (function Ok x -> f x | Error z -> M.return (Error z))
+
+  let bind_error x f =
+    M.bind x (function Ok x -> M.return (Ok x) | Error z -> f z)
+
+  let map x f = M.map x (Result.map f)
+  let map_error x f = M.map x (Result.map_error f)
+end
+
 module ListM = Extend (struct
   type 'a t = 'a list
 
@@ -116,4 +126,20 @@ module OptionM = Extend (struct
   let bind = Option.bind
   let map x f = Option.map f x
   let return x = Some x
+end)
+
+module SeqM = Extend (struct
+  type 'a t = 'a Seq.t
+
+  let[@inline] bind x f = Seq.concat_map f x
+  let[@inline] map x f = Seq.map f x
+  let[@inline] return x = Seq.return x
+end)
+
+module IterM = Extend (struct
+  type 'a t = 'a Iter.t
+
+  let[@inline] bind x f = Iter.flat_map f x
+  let[@inline] map x f = Iter.map f x
+  let[@inline] return x = Iter.return x
 end)

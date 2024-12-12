@@ -117,7 +117,7 @@ struct
       | Some b -> SInt.in_range x (SInt.of_int 0, b)
     in
     let++ m =
-      Symex.Result.fold_left l ~init:m ~f:(fun m (ofs, inner_ser) ->
+      Symex.Result.fold_list l ~init:m ~f:(fun m (ofs, inner_ser) ->
           let* () = Symex.assume [ in_bounds_opt ofs ] in
           let* ofs, codom = find_opt_sym ofs m in
           let++ codom = cons inner_ser codom in
@@ -142,7 +142,7 @@ struct
       | Some b -> SInt.in_range x (SInt.of_int 0, b)
     in
     let+ m =
-      Symex.fold_left l ~init:m ~f:(fun m (ofs, inner_ser) ->
+      Symex.fold_list l ~init:m ~f:(fun m (ofs, inner_ser) ->
           let* () = Symex.assume [ in_bounds_opt ofs ] in
           let* ofs, codom = find_opt_sym ofs m in
           let+ codom = prod inner_ser codom in

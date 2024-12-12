@@ -1,11 +1,33 @@
 module List = ListLabels
 
+module type Base = sig
+  module Value : Value.S
+  module MONAD : Monad.Base
+
+  val assume : Value.t list -> unit MONAD.t
+  val vanish : unit -> 'a MONAD.t
+  val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t MONAD.t
+  val fresh_var : Value.ty -> Var.t MONAD.t
+  val batched : (unit -> 'a MONAD.t) -> 'a MONAD.t
+
+  val branch_on :
+    Value.t ->
+    then_:(unit -> 'a MONAD.t) ->
+    else_:(unit -> 'a MONAD.t) ->
+    'a MONAD.t
+
+  val branches : (unit -> 'a MONAD.t) list -> 'a MONAD.t
+
+  (** [run] p actually performs symbolic execution and returns a list of obtained branches
+      which capture the outcome together with a path condition that is a list of boolean symbolic values *)
+  val run : 'a MONAD.t -> ('a * Value.t list) list
+end
+
 module type S = sig
   module Value : Value.S
+  include Monad.Base
+  module MONAD : Monad.Base with type 'a t = 'a t
 
-  type 'a t
-
-  val return : 'a -> 'a t
   val assume : Value.t list -> unit t
   val vanish : unit -> 'a t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
@@ -16,31 +38,22 @@ module type S = sig
     Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
 
   val branches : (unit -> 'a t) list -> 'a t
-  val bind : 'a t -> ('a -> 'b t) -> 'b t
 
   (** [run] p actually performs symbolic execution and returns a list of obtained branches
       which capture the outcome together with a path condition that is a list of boolean symbolic values *)
   val run : 'a t -> ('a * Value.t list) list
 
   val all : 'a t list -> 'a list t
-  val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
-  val fold_seq : 'a Seq.t -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
-  val fold_iter : 'a Iter.t -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
+  val fold_list : ('a, 'b) Monad.FoldM(MONAD)(Foldable.List).folder
+  val fold_iter : ('a, 'b) Monad.FoldM(MONAD)(Foldable.Iter).folder
+  val fold_seq : ('a, 'b) Monad.FoldM(MONAD)(Foldable.Seq).folder
 
-  module Result : sig
-    type nonrec ('a, 'b) t = ('a, 'b) Result.t t
+  module rec Result : sig
+    include Monad.Base2 with type ('a, 'b) t = ('a, 'b) result t
 
-    val ok : 'a -> ('a, 'b) t
-    val error : 'b -> ('a, 'b) t
-    val bind : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
-    val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
-    val map_error : ('b -> 'c) -> ('a, 'b) t -> ('a, 'c) t
-
-    val fold_left :
-      'a list -> init:'acc -> f:('acc -> 'a -> ('acc, 'b) t) -> ('acc, 'b) t
-
-    val fold_seq :
-      'a Seq.t -> init:'acc -> f:('acc -> 'a -> ('acc, 'b) t) -> ('acc, 'b) t
+    val fold_list : ('elem, 'a, 'b) Monad.FoldM2(Result)(Foldable.List).folder
+    val fold_iter : ('elem, 'a, 'b) Monad.FoldM2(Result)(Foldable.Iter).folder
+    val fold_seq : ('elem, 'a, 'b) Monad.FoldM2(Result)(Foldable.Seq).folder
   end
 
   module Syntax : sig
@@ -60,18 +73,50 @@ module type S = sig
   end
 end
 
-(* module Extend (Base : Base) :
-   S with module Value = Base.Value and type 'a t = 'a Base.t = struct
-   end *)
+module Extend (Base : Base) = struct
+  include Base
+  include MONAD
+
+  let all xs =
+    let rec aux acc rs =
+      match rs with
+      | [] -> return (List.rev acc)
+      | r :: rs -> bind r @@ fun x -> aux (x :: acc) rs
+    in
+    aux [] xs
+
+  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
+  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
+  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
+  let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+
+  module Result = struct
+    include Monad.ResultT (MONAD)
+
+    let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
+    let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
+    let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
+    let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+  end
+
+  module Syntax = struct
+    let ( let* ) = bind
+    let ( let+ ) = map
+    let ( let** ) = Result.bind
+    let ( let++ ) = Result.map
+    let ( let+- ) = Result.map_error
+
+    module Symex_syntax = struct
+      let branch_on = branch_on
+    end
+  end
+end
 
 module Make_seq (Sol : Solver.Mutable_incremental) :
-  S with module Value = Sol.Value = struct
+  S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
   module Value = Solver.Value
-
-  type 'a t = 'a Seq.t
-
-  let return x = Seq.return x
+  module MONAD = Monad.SeqM
 
   let assume learned () =
     let rec aux acc learned =
@@ -126,7 +171,7 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
             else (* Right must be sat since left was not! *)
               else_ () ())
 
-  let branches (brs : (unit -> 'a t) list) : 'a t =
+  let branches (brs : (unit -> 'a Seq.t) list) : 'a Seq.t =
     match brs with
     | [] -> Seq.empty
     | [ a ] -> a ()
@@ -162,8 +207,6 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
             a () ())
           (loop r)
 
-  let bind x f = Seq.concat_map f x
-  let map = Seq.map
   let vanish () = Seq.empty
 
   let[@tail_mod_cons] rec run seq =
@@ -182,64 +225,15 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
     run s
 
   let batched s =
-    bind (s ()) @@ fun x -> if Solver.sat () then return x else vanish ()
-
-  let all xs =
-    let rec aux acc rs =
-      match rs with
-      | [] -> return (List.rev acc)
-      | r :: rs -> bind r @@ fun x -> aux (x :: acc) rs
-    in
-    aux [] xs
-
-  let fold_left xs ~init ~f =
-    List.fold_left xs ~init:(return init) ~f:(fun acc x ->
-        bind acc @@ fun acc -> f acc x)
-
-  let fold_seq xs ~init ~f =
-    Seq.fold_left (fun acc x -> bind acc @@ fun acc -> f acc x) (return init) xs
-
-  let fold_iter xs ~init ~f =
-    Iter.fold (fun acc x -> bind acc @@ fun acc -> f acc x) (return init) xs
-
-  module Result = struct
-    type nonrec ('a, 'b) t = ('a, 'b) Result.t t
-
-    let ok x = return (Ok x)
-    let error x = return (Error x)
-    let bind x f = bind x (function Ok x -> f x | Error z -> return (Error z))
-    let map_error f x = map (Result.map_error f) x
-    let map f x = map (Result.map f) x
-
-    let fold_left xs ~init ~f =
-      List.fold_left xs ~init:(ok init) ~f:(fun acc x ->
-          bind acc @@ fun acc -> f acc x)
-
-    let fold_seq xs ~init ~f =
-      Seq.fold_left (fun acc x -> bind acc @@ fun acc -> f acc x) (ok init) xs
-  end
-
-  module Syntax = struct
-    let ( let* ) = bind
-    let ( let+ ) x f = map f x
-    let ( let** ) = Result.bind
-    let ( let++ ) x f = Result.map f x
-    let ( let+- ) x f = Result.map_error f x
-
-    module Symex_syntax = struct
-      let branch_on = branch_on
-    end
-  end
-end
+    MONAD.bind (s ()) @@ fun x ->
+    if Solver.sat () then MONAD.return x else vanish ()
+end)
 
 module Make_iter (Sol : Solver.Mutable_incremental) :
-  S with module Value = Sol.Value = struct
+  S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
   module Value = Solver.Value
-
-  type 'a t = 'a Iter.t
-
-  let return x f = f x
+  module MONAD = Monad.IterM
 
   let assume learned f =
     let rec aux acc learned =
@@ -264,7 +258,8 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
 
   let fresh_var ty f = f (Solver.fresh_var ty)
 
-  let branch_on guard ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
+  let branch_on guard ~(then_ : unit -> 'a Iter.t) ~(else_ : unit -> 'a Iter.t)
+      : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
     let left_sat = ref true in
@@ -290,7 +285,7 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
       (fun x -> if Solver.sat () then Iter.return x else Iter.empty)
       (s ())
 
-  let branches (brs : (unit -> 'a t) list) : 'a t =
+  let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
     match brs with
     | [] -> ()
@@ -319,9 +314,6 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
         a () f;
         loop r
 
-  let bind x f = Iter.flat_map f x
-  let map = Iter.map
-
   let run iter =
     Solver.reset ();
     let l = ref [] in
@@ -329,51 +321,4 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
     List.rev !l
 
   let vanish () _f = ()
-
-  let all xs =
-    let rec aux acc rs =
-      match rs with
-      | [] -> return (List.rev acc)
-      | r :: rs -> bind r @@ fun x -> aux (x :: acc) rs
-    in
-    aux [] xs
-
-  let fold_left xs ~init ~f =
-    List.fold_left xs ~init:(return init) ~f:(fun acc x ->
-        bind acc @@ fun acc -> f acc x)
-
-  let fold_seq xs ~init ~f =
-    Seq.fold_left (fun acc x -> bind acc @@ fun acc -> f acc x) (return init) xs
-
-  let fold_iter xs ~init ~f =
-    Iter.fold (fun acc x -> bind acc @@ fun acc -> f acc x) (return init) xs
-
-  module Result = struct
-    type nonrec ('a, 'b) t = ('a, 'b) Result.t t
-
-    let ok x = return (Ok x)
-    let error x = return (Error x)
-    let bind x f = bind x (function Ok x -> f x | Error z -> return (Error z))
-    let map_error f x = map (Result.map_error f) x
-    let map f x = map (Result.map f) x
-
-    let fold_left xs ~init ~f =
-      List.fold_left xs ~init:(ok init) ~f:(fun acc x ->
-          bind acc @@ fun acc -> f acc x)
-
-    let fold_seq xs ~init ~f =
-      Seq.fold_left (fun acc x -> bind acc @@ fun acc -> f acc x) (ok init) xs
-  end
-
-  module Syntax = struct
-    let ( let* ) = bind
-    let ( let+ ) x f = map f x
-    let ( let** ) = Result.bind
-    let ( let++ ) x f = Result.map f x
-    let ( let+- ) x f = Result.map_error f x
-
-    module Symex_syntax = struct
-      let branch_on = branch_on
-    end
-  end
-end
+end)

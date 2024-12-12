@@ -84,7 +84,7 @@ let attach_bindings store bindings =
 
 (* We're assuming all bindings declared, and they have already been removed from the store. *)
 let free_bindings store state (bindings : AilSyntax.bindings) =
-  Result.fold_left bindings ~init:state
+  Result.fold_list bindings ~init:state
     ~f:(fun heap (pname, ((loc, _, _), _, _, _)) ->
       let@ () = with_loc_immediate ~loc in
       match Store.find_value pname store with
@@ -94,7 +94,7 @@ let free_bindings store state (bindings : AilSyntax.bindings) =
       | None -> Result.ok heap)
 
 let alloc_params params st =
-  Csymex.Result.fold_left params ~init:(Store.empty, st)
+  Csymex.Result.fold_list params ~init:(Store.empty, st)
     ~f:(fun (store, st) (pname, ty, value) ->
       let** ptr, st = Heap.alloc_ty ty st in
       let store = Store.add pname (Some ptr, ty) store in
@@ -102,7 +102,7 @@ let alloc_params params st =
       (store, st))
 
 let dealloc_store store st =
-  Csymex.Result.fold_left (Store.bindings store) ~init:st
+  Csymex.Result.fold_list (Store.bindings store) ~init:st
     ~f:(fun st (_, (ptr, _)) ->
       match ptr with
       | None -> Result.ok st
@@ -232,7 +232,7 @@ let rec resolve_function ~(prog : sigma) fexpr : 'err fun_exec Csymex.t =
 and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
     (el : expr list) =
   let++ vs, state =
-    Csymex.Result.fold_left el ~init:([], state) ~f:(fun (acc, state) e ->
+    Csymex.Result.fold_list el ~init:([], state) ~f:(fun (acc, state) e ->
         let++ new_res, state = eval_expr ~prog ~store state e in
         (new_res :: acc, state))
   in
@@ -426,7 +426,7 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
       let* store = attach_bindings store bindings in
       (* Second result, corresponding to the block-scoped store, is discarded *)
       let** res, store, state =
-        Csymex.Result.fold_left stmtl ~init:(None, store, state)
+        Csymex.Result.fold_list stmtl ~init:(None, store, state)
           ~f:(fun (res, store, state) stmt ->
             match res with
             | Some _ -> Csymex.Result.ok (res, store, state)
@@ -460,7 +460,7 @@ and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
       exec_stmt ~prog store state stmt
   | AilSdeclaration decls ->
       let++ store, st =
-        Csymex.Result.fold_left decls ~init:(store, state)
+        Csymex.Result.fold_list decls ~init:(store, state)
           ~f:(fun (store, state) (pname, expr) ->
             let* ty =
               Store.find_type pname store

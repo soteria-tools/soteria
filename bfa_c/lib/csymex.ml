@@ -39,7 +39,7 @@ let not_impl msg =
 
 let[@inline] with_loc_err () f =
   let loc = get_loc () in
-  Result.map_error (fun e -> (e, loc)) (f ())
+  Result.map_error (f ()) (fun e -> (e, loc))
 
 let error e = Result.error (e, get_loc ())
 let of_opt = function Some x -> return x | None -> vanish ()
