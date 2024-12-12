@@ -1,19 +1,9 @@
-module List = Monad.Extend (struct
-  type 'a t = 'a list
+module List = Monad.ListM.Syntax
 
-  let bind x f = List.concat_map f x
-  let return x = [ x ]
-  let map x f = List.map f x
-end)
+module Option = struct
+  include Monad.OptionM.Syntax
 
-module List = List.Syntax
+  let ( let/ ) x f = match x with Some _ as x -> x | None -> f ()
+end
 
-module Option = Monad.Extend (struct
-  type 'a t = 'a option
-
-  let bind = Option.bind
-  let map x f = Option.map f x
-  let return x = Some x
-end)
-
-module Option = Option.Syntax
+module Result = Monad.ResultM.Syntax
