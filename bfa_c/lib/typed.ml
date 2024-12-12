@@ -48,7 +48,7 @@ let check_nonzero t =
   else Csymex.Result.ok t
 
 let nondet = Csymex.nondet
-let return = Csymex.return
+let assume = Csymex.assume
 
 module Syntax = struct
   module Symex_syntax = Csymex.SYMEX.Syntax.Symex_syntax
@@ -58,10 +58,4 @@ module Syntax = struct
     let zero = zero
     let one = one
   end
-end
-
-module Result = struct
-  type pc = T.sbool t
-
-  include Csymex.Result
 end

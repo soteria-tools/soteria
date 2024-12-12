@@ -357,7 +357,9 @@ module Tree = struct
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let* sval_res = Node.decode ~ty framed.node in
     match sval_res with
-    | Ok sv -> Typed.Result.ok ~learned:[ sv #==? v ] tree
+    | Ok sv ->
+        let+ () = Typed.assume [ sv #==? v ] in
+        Ok tree
     | Error `MissingResource -> Csymex.Result.error `MissingResource
     | Error `UninitializedMemoryAccess -> Csymex.vanish ()
 
@@ -430,7 +432,8 @@ module Tree = struct
     | NotOwned _ -> Result.error `MissingResource
     | Owned Zeros -> Result.ok tree
     | Owned (Init { ty = _; value }) ->
-        Typed.Result.ok ~learned:[ value #==? 0s ] tree
+        let+ () = Typed.assume [ value #==? 0s ] in
+        Ok tree
     | _ ->
         L.debug (fun m -> m "Consuming zero but not zero, vanishing");
         Csymex.vanish ()
@@ -629,7 +632,7 @@ let assume_bound_check_res (t : t) (ofs : [< T.sint ] Typed.t) f =
   let* () =
     match t.bound with
     | None -> Csymex.return ()
-    | Some bound -> Typed.return ~learned:[ ofs #<= bound ] ()
+    | Some bound -> Typed.assume [ ofs #<= bound ]
   in
   let++ root = f () in
   { t with root }
@@ -638,7 +641,7 @@ let assume_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let* () =
     match t.bound with
     | None -> Csymex.return ()
-    | Some bound -> Typed.return ~learned:[ ofs #<= bound ] ()
+    | Some bound -> Typed.assume [ ofs #<= bound ]
   in
   let+ root = f () in
   { t with root }
@@ -729,7 +732,8 @@ let consume_bound bound t =
   match t with
   | None | Some { bound = None; _ } -> Result.error `MissingResource
   | Some { bound = Some v; root } ->
-      Typed.Result.ok ~learned:[ v #== bound ] (to_opt { bound = None; root })
+      let+ () = Typed.assume [ v #== bound ] in
+      Ok (to_opt { bound = None; root })
 
 let produce_bound bound t =
   match t with

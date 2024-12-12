@@ -518,7 +518,7 @@ let exec_fun_from_summary ~prog ~args ~serialized_state ~path_condition
         List.map (Svalue.subst subst_var) path_condition,
         List.map (Typed.subst subst_var) args )
   in
-  let* () = Csymex.return ~learned:path_condition () in
+  let* () = Csymex.assume path_condition in
   let* state = Heap.produce serialized_state Heap.empty in
   let++ res, _final_state = exec_fun ~prog ~args ~state fundef in
   let backward_subst = Bi_subst.backward bi_subst in

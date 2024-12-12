@@ -5,7 +5,8 @@ module type S = sig
 
   type 'a t
 
-  val return : ?learned:Value.t list -> 'a -> 'a t
+  val return : 'a -> 'a t
+  val assume : Value.t list -> unit t
   val vanish : unit -> 'a t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
   val fresh_var : Value.ty -> Var.t t
@@ -29,8 +30,8 @@ module type S = sig
   module Result : sig
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
 
-    val ok : ?learned:Value.t list -> 'a -> ('a, 'b) t
-    val error : ?learned:Value.t list -> 'b -> ('a, 'b) t
+    val ok : 'a -> ('a, 'b) t
+    val error : 'b -> ('a, 'b) t
     val bind : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
     val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
     val map_error : ('b -> 'c) -> ('a, 'b) t -> ('a, 'c) t
@@ -70,12 +71,14 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
 
   type 'a t = 'a Seq.t
 
-  let return ?(learned = []) x () =
+  let return x = Seq.return x
+
+  let assume learned () =
     let rec aux acc learned =
       match learned with
       | [] ->
           Solver.add_constraints acc;
-          Seq.Cons (x, Seq.empty)
+          Seq.Cons ((), Seq.empty)
       | l :: ls -> (
           let l = Solver.simplify l in
           match Value.as_bool l with
@@ -202,8 +205,8 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
   module Result = struct
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
 
-    let ok ?learned x = return ?learned (Ok x)
-    let error ?learned x = return ?learned (Error x)
+    let ok x = return (Ok x)
+    let error x = return (Error x)
     let bind x f = bind x (function Ok x -> f x | Error z -> return (Error z))
     let map_error f x = map (Result.map_error f) x
     let map f x = map (Result.map f) x
@@ -236,9 +239,22 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
 
   type 'a t = 'a Iter.t
 
-  let return ?learned x f =
-    Solver.add_constraints (Option.value ~default:[] learned);
-    f x
+  let return x f = f x
+
+  let assume learned f =
+    let rec aux acc learned =
+      match learned with
+      | [] ->
+          Solver.add_constraints acc;
+          f ()
+      | l :: ls -> (
+          let l = Solver.simplify l in
+          match Value.as_bool l with
+          | Some true -> aux acc ls
+          | Some false -> ()
+          | None -> aux (l :: acc) ls)
+    in
+    aux [] learned
 
   let nondet ?(constrs = fun _ -> []) ty f =
     let v = Solver.fresh_var ty in
@@ -335,8 +351,8 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
   module Result = struct
     type nonrec ('a, 'b) t = ('a, 'b) Result.t t
 
-    let ok ?learned x = return ?learned (Ok x)
-    let error ?learned x = return ?learned (Error x)
+    let ok x = return (Ok x)
+    let error x = return (Error x)
     let bind x f = bind x (function Ok x -> f x | Error z -> return (Error z))
     let map_error f x = map (Result.map_error f) x
     let map f x = map (Result.map f) x

@@ -4,6 +4,7 @@
  (package bfa-c)
  (name bfa_c_lib)
  (libraries
+  bfa.std
   bfa.bfa_symex
   cmdliner
   fmt
@@ -21,6 +22,7 @@
   linol-eio
   eio_main
   printbox-text)
+ (flags :standard -open Bfa_std)
  (inline_tests)
  (preprocess
   (pps ppx_deriving.std ppx_symex ppx_inline_test)))

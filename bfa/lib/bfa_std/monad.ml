@@ -6,6 +6,25 @@ module type Base = sig
   val map : 'a t -> ('a -> 'b) -> 'b t
 end
 
+module type FoldM = sig
+  type 'a foldable
+  type 'a monad
+
+  type ('a, 'b) folder =
+    'a foldable -> init:'b -> f:('b -> 'a -> 'b monad) -> 'b monad
+
+  val fold : ('a, 'b) folder
+end
+
+module FoldM (M : Base) (F : Foldable.S) :
+  FoldM with type 'a foldable := 'a F.t and type 'a monad := 'a M.t = struct
+  type ('a, 'b) folder = 'a F.t -> init:'b -> f:('b -> 'a -> 'b M.t) -> 'b M.t
+
+  let fold t ~init ~f =
+    F.fold t ~init:(M.return init) ~f:(fun acc x ->
+        M.bind acc (fun acc -> f acc x))
+end
+
 module type Syntax = sig
   type 'a t
 

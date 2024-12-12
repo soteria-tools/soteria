@@ -3,7 +3,6 @@ open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
 open Csymex
-module Result = Typed.Result
 
 module SPmap = Pmap (struct
   type t = T.sloc Typed.t
@@ -115,7 +114,8 @@ let alloc size st =
   let** loc, st = SPmap.alloc ~new_codom:block st in
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
-  Result.ok ~learned:Typed.[ not loc #== Ptr.null_loc ] (ptr, st)
+  let+ () = Typed.(assume [ not loc #== Ptr.null_loc ]) in
+  Ok (ptr, st)
 
 let alloc_ty ty st =
   let* size = Layout.size_of_s ty in

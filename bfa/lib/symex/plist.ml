@@ -118,7 +118,7 @@ struct
     in
     let++ m =
       Symex.Result.fold_left l ~init:m ~f:(fun m (ofs, inner_ser) ->
-          let* () = Symex.return ~learned:[ in_bounds_opt ofs ] () in
+          let* () = Symex.assume [ in_bounds_opt ofs ] in
           let* ofs, codom = find_opt_sym ofs m in
           let++ codom = cons inner_ser codom in
           add_opt ofs codom m)
@@ -143,7 +143,7 @@ struct
     in
     let+ m =
       Symex.fold_left l ~init:m ~f:(fun m (ofs, inner_ser) ->
-          let* () = Symex.return ~learned:[ in_bounds_opt ofs ] () in
+          let* () = Symex.assume [ in_bounds_opt ofs ] in
           let* ofs, codom = find_opt_sym ofs m in
           let+ codom = prod inner_ser codom in
           add_opt ofs codom m)

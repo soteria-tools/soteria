@@ -41,7 +41,7 @@ let[@inline] with_loc_err () f =
   let loc = get_loc () in
   Result.map_error (fun e -> (e, loc)) (f ())
 
-let error ?learned e = Result.error ?learned (e, get_loc ())
+let error e = Result.error (e, get_loc ())
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 

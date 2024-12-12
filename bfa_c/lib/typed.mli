@@ -44,7 +44,7 @@ type +'a t
 val nondet :
   ?constrs:(([< any ] as 'a) t -> [> sbool ] t list) -> 'a ty -> 'a t Csymex.t
 
-val return : ?learned:[> sbool ] t list -> 'a -> 'a Csymex.t
+val assume : [> sbool ] t list -> unit Csymex.t
 
 (** Basic value operations *)
 
@@ -123,20 +123,6 @@ module Infix : sig
   val ( ~- ) : [< sint ] t -> [> sint ] t
   val ( #* ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( #/ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
-end
-
-module Result : sig
-  type pc = sbool t
-  type nonrec ('a, 'b) t = ('a, 'b) Result.t Csymex.t
-
-  val ok : ?learned:pc list -> 'a -> ('a, 'b) t
-  val error : ?learned:pc list -> 'b -> ('a, 'b) t
-  val bind : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
-  val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
-  val map_error : ('b -> 'c) -> ('a, 'b) t -> ('a, 'c) t
-
-  val fold_left :
-    'a list -> init:'acc -> f:('acc -> 'a -> ('acc, 'b) t) -> ('acc, 'b) t
 end
 
 module Syntax : sig

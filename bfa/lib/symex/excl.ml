@@ -26,8 +26,11 @@ module Make (Symex : Symex.S) = struct
   let subst_serialized subst_inner subst_var x = subst_inner subst_var x
 
   let consume ~sem_eq (serialized : 'a serialized) (t : 'a t option) =
+    let open Symex.Syntax in
     match t with
-    | Some x -> Symex.Result.ok ~learned:[ sem_eq x serialized ] None
+    | Some x ->
+        let+ () = Symex.assume [ sem_eq x serialized ] in
+        Ok None
     | None -> Symex.Result.error `MissingValue
 
   let produce (serialized : 'a serialized) (t : 'a t option) =

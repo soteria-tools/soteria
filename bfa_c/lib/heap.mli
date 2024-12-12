@@ -51,14 +51,14 @@ val alloc :
 val alloc_ty :
   Tree_block.Ctype.ctype ->
   t ->
-  ([> sptr ] Typed.t * t, 'a * Cerb_location.t) result Csymex.t
+  ([> sptr ] Typed.t * t, 'a * Cerb_location.t) Csymex.Result.t
 
 val free :
   [< sptr ] Typed.t ->
   t ->
   ( unit * t,
     [> `InvalidFree | `MissingResource | `UseAfterFree ] * Cerb_location.t )
-  Result.t
+  Csymex.Result.t
 
 val copy_nonoverlapping :
   dst:[< sptr ] Typed.t ->
