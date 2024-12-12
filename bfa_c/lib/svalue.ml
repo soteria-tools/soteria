@@ -11,7 +11,7 @@ let t_ptr = TPointer
 let t_seq ty = TSeq ty
 
 module Nop = struct
-  type t = | [@@deriving eq, show, ord]
+  type t = Distinct [@@deriving eq, show, ord]
 end
 
 module Unop = struct
@@ -50,7 +50,7 @@ type t_kind =
   | Seq of t list
   | Unop of Unop.t * t
   | Binop of Binop.t * t * t
-(* | Nop of Nop.t * t list *)
+  | Nop of Nop.t * t list
 
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
@@ -65,7 +65,7 @@ let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
       iter_vars l f;
       iter_vars r f
   | Unop (_, sv) -> iter_vars sv f
-  | Seq t -> List.iter (fun sv -> iter_vars sv f) t
+  | Nop (_, l) | Seq l -> List.iter (fun sv -> iter_vars sv f) l
 
 let pp_full ft t = pp_t_node ft t.node
 
@@ -79,8 +79,18 @@ let rec pp ft t =
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
   | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
   | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
+  | Nop (op, l) -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l
 
 let[@inline] equal a b = Int.equal a.tag b.tag
+
+let rec sure_neq a b =
+  (not (equal_ty a.node.ty b.node.ty))
+  ||
+  match (a.node.kind, b.node.kind) with
+  | Int a, Int b -> not (Z.equal a b)
+  | Bool a, Bool b -> a <> b
+  | Ptr (la, oa), Ptr (lb, ob) -> sure_neq la lb || sure_neq oa ob
+  | _ -> false
 
 module Hcons = Hashcons.Make (struct
   type t = t_node
@@ -97,6 +107,7 @@ module Hcons = Hashcons.Make (struct
     | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.hkey) l, hty)
     | Unop (op, v) -> Hashtbl.hash (op, v.hkey, hty)
     | Binop (op, l, r) -> Hashtbl.hash (op, l.hkey, r.hkey, hty)
+    | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.hkey) l, hty)
 end)
 
 let table = Hcons.create 1023
@@ -130,11 +141,27 @@ let rec subst subst_var sv =
       let l' = subst subst_var l in
       let r' = subst subst_var r in
       if equal l l' && equal r r' then sv else Binop (op, l', r') <| sv.node.ty
+  | Nop (op, l) ->
+      let changed = ref false in
+      let l' =
+        List.map
+          (fun sv ->
+            let new_sv = subst subst_var sv in
+            if equal new_sv sv then changed := true;
+            new_sv)
+          l
+      in
+      if !changed then Nop (op, l') <| sv.node.ty else sv
 
 (** {2 Booleans}  *)
 
 let v_true = Bool true <| TBool
 let v_false = Bool false <| TBool
+
+let as_bool t =
+  if equal t v_true then Some true
+  else if equal t v_false then Some false
+  else None
 
 let bool b =
   (* avoid re-alloc and re-hashconsing *)
@@ -183,11 +210,7 @@ let rec split_ands (sv : t) (f : t -> unit) : unit =
       split_ands s2 f
   | _ -> f sv
 
-let distinct l =
-  let current = ref [] in
-  Utils.List_ex.iter_self_cross_product l (fun (i, j) ->
-      current := not (sem_eq i j) :: !current);
-  !current
+let distinct l = Nop (Distinct, l) <| TBool
 
 (** {2 Integers}  *)
 

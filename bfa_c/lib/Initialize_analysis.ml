@@ -14,14 +14,8 @@ let mk_eff () =
   in
   ((fun x -> !eff x), register)
 
-let (reset, register_resetter) : unit eff = mk_eff ()
-
-let (init_before_each, register_before_each_initialiser) :
+let (reinit, register_before_each_initialiser) :
     'a Cerb_frontend.AilSyntax.sigma eff =
   mk_eff ()
 
 let (init_once, register_once_initialiser) : unit eff = mk_eff ()
-
-let reinit sigma =
-  reset ();
-  init_before_each sigma

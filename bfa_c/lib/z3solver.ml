@@ -5,65 +5,6 @@ let z3_env_var = "BFA_Z3_PATH"
 let log_src = Logs.Src.create "bfa_c.SOLVER"
 let debug_str ~prefix s = Logs.debug ~src:log_src (fun m -> m "%s: %s" prefix s)
 
-module Dist_set = struct
-  (* Pairs of distinct expressions *)
-
-  module Hashtbl = Hashtbl.Make (struct
-    type t = Svalue.t * Svalue.t
-
-    let equal (a1, b1) (a2, b2) = Svalue.equal a1 a2 && Svalue.equal b1 b2
-
-    let hash (a, b) =
-      let a, b = (a.Hashcons.tag, b.Hashcons.tag) in
-      ((a land ((1 lsl 31) - 1)) lsl 31) lor b
-  end)
-
-  type t = unit Hashtbl.t Dynarray.t
-
-  let pp ft t =
-    let first = ref true in
-    Dynarray.iter
-      (fun h ->
-        Hashtbl.iter
-          (fun (i, j) _ ->
-            if !first then first := false else Fmt.pf ft "; ";
-            Fmt.pf ft "(%d != %d)" i.Hashcons.tag j.Hashcons.tag)
-          h)
-      t
-
-  let create () =
-    let r = Dynarray.create () in
-    Dynarray.ensure_capacity r 1023;
-    Dynarray.add_last r (Hashtbl.create 0);
-    r
-
-  let reset (ds : t) =
-    Dynarray.clear ds;
-    Dynarray.add_last ds (Hashtbl.create 0)
-
-  let sure_are_diff (ds : t) (i : Svalue.t) (j : Svalue.t) =
-    let rec find idx pair =
-      if idx < 0 then false
-      else
-        let h = Dynarray.get ds idx in
-        if Hashtbl.mem h pair then true else find (idx - 1) pair
-    in
-    let tagi = i.Hashcons.tag in
-    let tagj = j.Hashcons.tag in
-    if tagi = tagj then false
-    else
-      let pair = if tagi < tagj then (i, j) else (j, i) in
-      find (Dynarray.length ds - 1) pair
-
-  let add (ds : t) i j =
-    let pair = if i.Hashcons.tag < j.Hashcons.tag then (i, j) else (j, i) in
-    let h = Dynarray.get_last ds in
-    Hashtbl.replace h pair ()
-
-  let save (ds : t) = Dynarray.add_last ds (Hashtbl.create 0)
-  let backtrack_n (ds : t) n = Dynarray.truncate ds (Dynarray.length ds - n)
-end
-
 open Simple_smt
 
 let smallest_power_of_two_greater_than n =
@@ -90,7 +31,11 @@ let solver_log =
 let smt_log_file = ref None
 
 let close_smt_log_file () =
-  match !smt_log_file with None -> () | Some oc -> close_out oc
+  match !smt_log_file with
+  | None -> ()
+  | Some oc ->
+      close_out oc;
+      smt_log_file := None
 
 let () = at_exit close_smt_log_file
 
@@ -122,75 +67,90 @@ let z3_solver () =
   in
   { solver with command }
 
+module Save_counter : Bfa_symex.Incremental.Mutable with type t = int ref =
+struct
+  type t = int ref
+
+  let init () = ref 0
+  let reset t = t := 0
+  let save t = incr t
+  let backtrack_n t n = t := !t - n
+end
+
 module Solver_state = struct
-  type t = Svalue.t Dynarray.t list
+  type t = Svalue.t Dynarray.t Dynarray.t
 
-  let empty = []
-  let to_value_list (t : t) = List.concat_map Dynarray.to_list t
-  let save t = Dynarray.create () :: t
+  let init () =
+    let t = Dynarray.create () in
+    Dynarray.add_last t (Dynarray.create ());
+    t
 
-  let rec backtrack_n l n =
-    if n <= 0 then l
-    else
-      match l with
-      | [] -> failwith "backtrack_n: empty list"
-      | _ :: tl -> backtrack_n tl (n - 1)
+  let reset t =
+    Dynarray.clear t;
+    Dynarray.add_last t (Dynarray.create ())
 
-  let add_constraint t v =
+  let save t = Dynarray.add_last t (Dynarray.create ())
+  let backtrack_n t n = Dynarray.truncate t (Dynarray.length t - n)
+
+  let add_constraint (t : t) v =
     if Svalue.equal v Svalue.v_true then ()
     else
-      match t with
-      | [] -> failwith "add_constraint: empty list"
-      | hd :: _ ->
+      match Dynarray.find_last t with
+      | None -> failwith "add_constraint: empty array"
+      | Some last ->
           if Svalue.equal v Svalue.v_false then (
-            Dynarray.clear hd;
-            Dynarray.add_last hd Svalue.v_false)
-          else Dynarray.add_last hd v
+            Dynarray.clear last;
+            Dynarray.add_last last Svalue.v_false)
+          else Dynarray.add_last last v
 
   (** This function returns [Some b] if the solver state is trivially [b] (true or false).
       We maintain solver state such that trivial truths are never added to the state, and false is false erases everything else.
       Therefore, it is enough to check either for emptyness of the topmost layer or falseness of the latest element.
     *)
   let trivial_truthiness (t : t) =
-    match t with
-    | [] -> Some true
-    | hd :: _ -> (
-        match Dynarray.find_last hd with
+    match Dynarray.find_last t with
+    | None -> Some true
+    | Some last -> (
+        match Dynarray.find_last last with
         | None -> Some true
         | Some v when Svalue.equal v Svalue.v_false -> Some false
         | _ -> None)
 
-  let iter (t : t) =
-    Iter.flat_map (fun d f -> Dynarray.iter f d) (Iter.of_list t)
+  let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
+  let to_value_list (t : t) = Iter.to_rev_list (iter t)
 end
 
 type t = {
   z3_solver : Simple_smt.solver;
-  mutable save_counter : int;
-  mutable var_counter : Var.Incr_counter_mut.t;
-  dist_set : Dist_set.t;
-  mutable state : Solver_state.t;
+  save_counter : Save_counter.t;
+  var_counter : Var.Incr_counter_mut.t;
+  state : Solver_state.t;
 }
 
+let initialize_solver : (Simple_smt.solver -> unit) ref = ref (fun _ -> ())
+
+let register_solver_init f =
+  let old = !initialize_solver in
+  let f' solver =
+    old solver;
+    f solver
+  in
+  initialize_solver := f'
+
 let init () =
-  let var_counter = Var.Incr_counter_mut.init () in
+  let z3_solver = z3_solver () in
+  !initialize_solver z3_solver;
   {
-    z3_solver = z3_solver ();
-    save_counter = 0;
-    dist_set = Dist_set.create ();
-    var_counter;
-    state = Solver_state.empty;
+    z3_solver;
+    save_counter = Save_counter.init ();
+    var_counter = Var.Incr_counter_mut.init ();
+    state = Solver_state.init ();
   }
 
-let solver = lazy (init ())
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
 let is_constr constr = list [ atom "_"; atom "is"; atom constr ]
-
-let ack_command sexp =
-  let (lazy solver) = solver in
-  ack_command solver.z3_solver sexp
-
+let ack_command solver sexp = ack_command solver sexp
 let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts
@@ -204,7 +164,7 @@ let t_ptr, mk_ptr, get_loc, get_ofs =
     Simple_smt.(
       declare_datatype ptr [] [ (mk_ptr, [ (loc, t_int); (ofs, t_int) ]) ])
   in
-  Initialize_analysis.register_once_initialiser (fun () -> ack_command cmd);
+  register_solver_init (fun solver -> ack_command solver cmd);
   ( atom ptr,
     (fun l o -> atom mk_ptr $$ [ l; o ]),
     (fun p -> atom loc $$ [ p ]),
@@ -220,7 +180,7 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
       declare_datatype opt [ "P" ]
         [ (mk_some, [ (opt_unwrap, atom "P") ]); (none, []) ])
   in
-  Initialize_analysis.register_once_initialiser (fun () -> ack_command cmd);
+  register_solver_init (fun solver -> ack_command solver cmd);
   ( atom opt,
     (fun v -> atom mk_some $ v),
     (fun v -> atom opt_unwrap $ v),
@@ -228,38 +188,29 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
     (fun v -> is_constr mk_some $ v),
     fun v -> is_constr none $ v )
 
+let () =
+  register_solver_init (fun solver -> ack_command solver (Simple_smt.push 1))
+
 (********* End of solver declarations *********)
 
-let save () =
-  let (lazy solver) = solver in
+let save solver =
   Var.Incr_counter_mut.save solver.var_counter;
-  solver.save_counter <- solver.save_counter + 1;
-  solver.state <- Solver_state.save solver.state;
-  Dist_set.save solver.dist_set;
-  ack_command (Simple_smt.push 1)
+  Save_counter.save solver.save_counter;
+  Solver_state.save solver.state;
+  ack_command solver.z3_solver (Simple_smt.push 1)
 
-let backtrack_n n =
-  let (lazy solver) = solver in
-  Dist_set.backtrack_n solver.dist_set n;
+let backtrack_n solver n =
   Var.Incr_counter_mut.backtrack_n solver.var_counter n;
-  solver.state <- Solver_state.backtrack_n solver.state n;
-  solver.save_counter <- solver.save_counter - n;
-  ack_command (Simple_smt.pop n)
-
-let backtrack () = backtrack_n 1
+  Solver_state.backtrack_n solver.state n;
+  Save_counter.backtrack_n solver.save_counter n;
+  ack_command solver.z3_solver (Simple_smt.pop n)
 
 (* Initialise and reset *)
 
-let () = Initialize_analysis.register_once_initialiser (fun () -> save ())
-
-let reset () =
-  let (lazy solver) = solver in
+let reset solver =
   (* We want to go back to 1, meaning after the first push which saved the declarations *)
-  L.debug (fun m -> m "Resetting solver: %d" solver.save_counter);
-  if solver.save_counter > 0 then backtrack_n solver.save_counter;
-  save ()
-
-let () = Initialize_analysis.register_resetter reset
+  L.debug (fun m -> m "Resetting solver: %d" !(solver.save_counter));
+  if !(solver.save_counter) > 0 then backtrack_n solver !(solver.save_counter)
 
 let rec sort_of_ty = function
   | Svalue.TBool -> Simple_smt.t_bool
@@ -315,34 +266,35 @@ let rec encode_value (v : Svalue.t) =
       | Minus -> num_sub v1 v2
       | Times -> num_mul v1 v2
       | Div -> num_div v1 v2)
+  | Nop (Distinct, vs) ->
+      let vs = List.map encode_value_memo vs in
+      distinct vs
 
 and encode_value_memo v = (memoz memo_encode_value_tbl encode_value) v
 
-let fresh_var ty =
-  let (lazy solver) = solver in
+let fresh_var solver ty =
   let v_id = Var.Incr_counter_mut.get_next solver.var_counter in
   let c = declare_v v_id ty in
-  ack_command c;
+  ack_command solver.z3_solver c;
   v_id
 
-let fresh ty =
-  let v_id = fresh_var ty in
+let fresh solver ty =
+  let v_id = fresh_var solver ty in
   Svalue.mk_var v_id ty
 
-let rec simplify (v : Svalue.t) =
-  let (lazy solver) = solver in
+let rec simplify solver (v : Svalue.t) =
   match v.node.kind with
   | Int _ | Bool _ -> v
   | Unop (Not, e) ->
-      let e' = simplify e in
+      let e' = simplify solver e in
       if Svalue.equal e e' then v else Svalue.not e'
   | Binop (Eq, e1, e2) ->
       if Svalue.equal e1 e2 then Svalue.v_true
-      else if Dist_set.sure_are_diff solver.dist_set e1 e2 then Svalue.v_false
+      else if Svalue.sure_neq e1 e2 then Svalue.v_false
       else v
   | Binop (Or, e1, e2) ->
-      let se1 = simplify e1 in
-      let se2 = simplify e2 in
+      let se1 = simplify solver e1 in
+      let se2 = simplify solver e2 in
       if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
       else Svalue.or_ se1 se2
   | _ -> v
@@ -352,17 +304,12 @@ let is_diff_op (v : Svalue.t) =
   | Unop (Not, { node = { kind = Binop (Eq, v1, v2); _ }; _ }) -> Some (v1, v2)
   | _ -> None
 
-let add_constraints ?(simplified = false) vs =
-  let (lazy solver) = solver in
+let add_constraints solver ?(simplified = false) vs =
   let iter = vs |> Iter.of_list |> Iter.flat_map Svalue.split_ands in
   iter @@ fun v ->
-  let v = if simplified then v else simplify v in
-  let () =
-    match is_diff_op v with
-    | None -> ()
-    | Some (i, j) -> Dist_set.add solver.dist_set i j
-  in
-  Solver_state.add_constraint solver.state v
+  let v = if simplified then v else simplify solver v in
+  Solver_state.add_constraint solver.state v;
+  ack_command solver.z3_solver (assume (encode_value v))
 
 let as_bool v =
   if Svalue.equal v Svalue.v_true then Some true
@@ -370,15 +317,11 @@ let as_bool v =
   else None
 
 (* Incremental doesn't allow for caching queries... *)
-let sat () =
-  let (lazy solver) = solver in
+let sat solver =
   match Solver_state.trivial_truthiness solver.state with
   | Some true -> true
   | Some false -> false
   | None -> (
-      let () = ack_command (Simple_smt.push 1) in
-      Solver_state.iter solver.state (fun v ->
-          ack_command (assume (encode_value v)));
       let answer =
         try check solver.z3_solver
         with Simple_smt.UnexpectedSolverResponse s ->
@@ -386,7 +329,6 @@ let sat () =
               m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
           Unknown
       in
-      ack_command (Simple_smt.pop 1);
       match answer with
       | Sat -> true
       | Unsat -> false
@@ -395,6 +337,4 @@ let sat () =
           (* We return UNSAT by default: under-approximating behaviour *)
           false)
 
-let get_pc () =
-  let (lazy solver) = solver in
-  Solver_state.to_value_list solver.state
+let as_values solver = Solver_state.to_value_list solver.state

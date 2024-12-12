@@ -7,6 +7,19 @@ module type Mutable = sig
   val reset : t -> unit
 end
 
+module type In_place = sig
+  val backtrack_n : int -> unit
+  val save : unit -> unit
+  val reset : unit -> unit
+end
+
+module Mutable_to_in_place (M : Mutable) = struct
+  let state = lazy (M.init ())
+  let save () = M.save (Lazy.force state)
+  let backtrack_n n = M.backtrack_n (Lazy.force state) n
+  let reset () = M.reset (Lazy.force state)
+end
+
 module type Immutable = sig
   type t
 

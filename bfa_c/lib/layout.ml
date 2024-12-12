@@ -28,12 +28,9 @@ module Tag_defs = struct
   let get_cached_layout id = Hashtbl.find_opt cached_layouts id
 
   let () =
-    Initialize_analysis.register_resetter (fun () ->
-        Hashtbl.clear current_defs;
-        Hashtbl.clear cached_layouts)
-
-  let () =
     Initialize_analysis.register_before_each_initialiser (fun sigma ->
+        Hashtbl.clear current_defs;
+        Hashtbl.clear cached_layouts;
         add_defs sigma.tag_definitions)
 end
 

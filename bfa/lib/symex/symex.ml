@@ -9,7 +9,6 @@ module type S = sig
   val vanish : unit -> 'a t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
   val fresh_var : Value.ty -> Var.t t
-  val value_eq : Value.t -> Value.t -> Value.t
   val batched : (unit -> 'a t) -> 'a t
 
   val branch_on :
@@ -23,7 +22,6 @@ module type S = sig
   val run : 'a t -> ('a * Value.t list) list
 
   val all : 'a t list -> 'a list t
-  val abort : unit -> 'a t
   val fold_left : 'a list -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
   val fold_seq : 'a Seq.t -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
   val fold_iter : 'a Iter.t -> init:'acc -> f:('acc -> 'a -> 'acc t) -> 'acc t
@@ -61,8 +59,13 @@ module type S = sig
   end
 end
 
-module Make_seq (Solver : Solver.S) : S with module Value = Solver.Value =
-struct
+(* module Extend (Base : Base) :
+   S with module Value = Base.Value and type 'a t = 'a Base.t = struct
+   end *)
+
+module Make_seq (Sol : Solver.Mutable_incremental) :
+  S with module Value = Sol.Value = struct
+  module Solver = Solver.Mutable_to_in_place (Sol)
   module Value = Solver.Value
 
   type 'a t = 'a Seq.t
@@ -75,34 +78,29 @@ struct
           Seq.Cons (x, Seq.empty)
       | l :: ls -> (
           let l = Solver.simplify l in
-          match Solver.as_bool l with
+          match Value.as_bool l with
           | Some true -> aux acc ls
           | Some false -> Nil
           | None -> aux (l :: acc) ls)
     in
     aux [] learned
 
-  let nondet ?constrs ty =
-    let v = Solver.fresh ty in
+  let nondet ?constrs ty () =
+    let v = Solver.fresh_var ty in
+    let v = Value.mk_var v ty in
     let () =
       match constrs with
       | Some constrs -> Solver.add_constraints (constrs v)
       | None -> ()
     in
-    Seq.return v
+    Seq.Cons (v, Seq.empty)
 
   let fresh_var ty = Seq.return (Solver.fresh_var ty)
-  let value_eq x y = Value.sem_eq x y
-
-  let batched s =
-    Seq.concat_map
-      (fun x -> if Solver.sat () then Seq.return x else Seq.empty)
-      (s ())
 
   let branch_on guard ~then_ ~else_ =
     let guard = Solver.simplify guard in
     let left_sat = ref true in
-    match Solver.as_bool guard with
+    match Value.as_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
        if we remove the Some true and Some false optimisation. *)
     | Some true -> then_ ()
@@ -117,7 +115,7 @@ struct
               left_sat := false;
               Seq.empty ()))
           (fun () ->
-            Solver.backtrack ();
+            Solver.backtrack_n 1;
             Solver.add_constraints [ Value.(not guard) ];
             if !left_sat then
               (* We have to check right *)
@@ -136,7 +134,7 @@ struct
             Solver.save ();
             a () ())
           (fun () ->
-            Solver.backtrack ();
+            Solver.backtrack_n 1;
             b () ())
     | a :: (_ :: _ as r) ->
         (* First branch should not backtrack and last branch should not save *)
@@ -144,12 +142,12 @@ struct
           match brs with
           | [ x ] ->
               fun () ->
-                Solver.backtrack ();
+                Solver.backtrack_n 1;
                 x () ()
           | x :: r ->
               Seq.append
                 (fun () ->
-                  Solver.backtrack ();
+                  Solver.backtrack_n 1;
                   Solver.save ();
                   x () ())
                 (loop r)
@@ -163,24 +161,25 @@ struct
 
   let bind x f = Seq.concat_map f x
   let map = Seq.map
+  let vanish () = Seq.empty
 
   let[@tail_mod_cons] rec run seq =
     match seq () with
     | Seq.Nil -> []
     | Seq.Cons (x1, seq) -> (
-        let pc1 = Solver.get_pc () in
+        let pc1 = Solver.as_values () in
         match seq () with
         | Seq.Nil -> [ (x1, pc1) ]
         | Seq.Cons (x2, seq) ->
-            let pc2 = Solver.get_pc () in
+            let pc2 = Solver.as_values () in
             (x1, pc1) :: (x2, pc2) :: run seq)
 
-  let vanish () = Seq.empty
+  let run s =
+    Solver.reset ();
+    run s
 
-  (* Under-approximating behaviour *)
-  let abort () =
-    Logs.debug (fun m -> m "Aborting execution here");
-    vanish ()
+  let batched s =
+    bind (s ()) @@ fun x -> if Solver.sat () then return x else vanish ()
 
   let all xs =
     let rec aux acc rs =
@@ -230,8 +229,9 @@ struct
   end
 end
 
-module Make_iter (Solver : Solver.S) : S with module Value = Solver.Value =
-struct
+module Make_iter (Sol : Solver.Mutable_incremental) :
+  S with module Value = Sol.Value = struct
+  module Solver = Solver.Mutable_to_in_place (Sol)
   module Value = Solver.Value
 
   type 'a t = 'a Iter.t
@@ -240,23 +240,19 @@ struct
     Solver.add_constraints (Option.value ~default:[] learned);
     f x
 
-  let nondet ?constrs ty f =
-    let v = Solver.fresh ty in
-    let () =
-      match constrs with
-      | Some constrs -> Solver.add_constraints (constrs v)
-      | None -> ()
-    in
+  let nondet ?(constrs = fun _ -> []) ty f =
+    let v = Solver.fresh_var ty in
+    let v = Value.mk_var v ty in
+    Solver.add_constraints (constrs v);
     f v
 
   let fresh_var ty f = f (Solver.fresh_var ty)
-  let value_eq x y = Value.sem_eq x y
 
   let branch_on guard ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
     let guard = Solver.simplify guard in
     let left_sat = ref true in
-    match Solver.as_bool guard with
+    match Value.as_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
        if we remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
@@ -265,7 +261,7 @@ struct
         Solver.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         if Solver.sat () then then_ () f else left_sat := false;
-        Solver.backtrack ();
+        Solver.backtrack_n 1;
         Solver.add_constraints [ Value.(not guard) ];
         if !left_sat then (
           if (* We have to check right *)
@@ -287,17 +283,17 @@ struct
     | [ a; b ] ->
         Solver.save ();
         a () f;
-        Solver.backtrack ();
+        Solver.backtrack_n 1;
         b () f
     | a :: (_ :: _ as r) ->
         (* First branch should not backtrack and last branch should not save *)
         let rec loop brs =
           match brs with
           | [ x ] ->
-              Solver.backtrack ();
+              Solver.backtrack_n 1;
               x () f
           | x :: r ->
-              Solver.backtrack ();
+              Solver.backtrack_n 1;
               Solver.save ();
               x () f;
               loop r
@@ -311,16 +307,12 @@ struct
   let map = Iter.map
 
   let run iter =
+    Solver.reset ();
     let l = ref [] in
-    (iter @@ fun x -> l := (x, Solver.get_pc ()) :: !l);
+    (iter @@ fun x -> l := (x, Solver.as_values ()) :: !l);
     List.rev !l
 
   let vanish () _f = ()
-
-  (* Under-approximating behaviour *)
-  let abort () =
-    Logs.debug (fun m -> m "Aborting execution here");
-    vanish ()
 
   let all xs =
     let rec aux acc rs =
