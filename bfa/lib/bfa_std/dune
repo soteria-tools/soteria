@@ -1,3 +1,4 @@
 (library
  (name bfa_std)
- (public_name bfa.std))
+ (public_name bfa.std)
+ (libraries iter))
