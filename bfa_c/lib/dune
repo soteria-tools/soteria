@@ -23,6 +23,7 @@
   eio_main
   printbox-text)
  (flags :standard -open Bfa_std)
- (inline_tests)
  (preprocess
-  (pps ppx_deriving.std ppx_symex ppx_inline_test)))
+  (pps ppx_deriving.std ppx_symex))
+ (instrumentation
+  (backend landmarks --auto)))
