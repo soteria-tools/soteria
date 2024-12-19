@@ -153,7 +153,7 @@ let rec subst subst_var sv =
       in
       if !changed then Nop (op, l') <| sv.node.ty else sv
 
-(** {2 Booleans}  *)
+(** {2 Booleans} *)
 
 let v_true = Bool true <| TBool
 let v_false = Bool false <| TBool
@@ -212,7 +212,7 @@ let rec split_ands (sv : t) (f : t -> unit) : unit =
 
 let distinct l = Nop (Distinct, l) <| TBool
 
-(** {2 Integers}  *)
+(** {2 Integers} *)
 
 let int_z z = Int z <| TInt
 let int i = int_z (Z.of_int i)
@@ -231,7 +231,8 @@ let bool_of_int sv =
   | Unop (IntOfBool, sv') -> sv'
   | _ -> not (sem_eq sv zero)
 
-(** [out_cons] is the outcome constructor, [f] is the function to apply to the int values, [b] is the binop *)
+(** [out_cons] is the outcome constructor, [f] is the function to apply to the
+    int values, [b] is the binop *)
 let lift_int_binop ~out_cons ~out_ty ~f ~binop v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> out_cons (f i1 i2)
@@ -278,26 +279,26 @@ module SSeq = struct
   let mk ~inner_ty l = Seq l <| TSeq inner_ty
 end
 
-(** {2 Infix operators}  *)
+(** {2 Infix operators} *)
 
 module Infix = struct
   let int_z = int_z
   let int = int
   let ptr = Ptr.mk
   let seq = SSeq.mk
-  let ( #== ) = sem_eq
-  let ( #==? ) = sem_eq_untyped
-  let ( #> ) = gt
-  let ( #>= ) = geq
-  let ( #< ) = lt
-  let ( #<= ) = leq
-  let ( #&& ) = and_
-  let ( #|| ) = or_
-  let ( #+ ) = plus
-  let ( #- ) = minus
+  let ( ==@ ) = sem_eq
+  let ( ==?@ ) = sem_eq_untyped
+  let ( >@ ) = gt
+  let ( >=@ ) = geq
+  let ( <@ ) = lt
+  let ( <=@ ) = leq
+  let ( &&@ ) = and_
+  let ( ||@ ) = or_
+  let ( +@ ) = plus
+  let ( -@ ) = minus
   let ( ~- ) x = minus zero x
-  let ( #* ) = times
-  let ( #/ ) = div
+  let ( *@ ) = times
+  let ( /@ ) = div
 end
 
 module Syntax = struct

@@ -75,16 +75,19 @@ let rec layout_of ty =
   Tag_defs.cache_layout ty result;
   result
 
-(** From: https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Structure-Layout.html
-The structure’s fields appear in the structure layout in the order they are declared.
-When possible, consecutive fields occupy consecutive bytes within the structure.
-However, if a field’s type demands more alignment than it would get that way,
-C gives it the alignment it requires by leaving a gap after the previous field.
+(** From:
+    https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Structure-Layout.html
+    The structure’s fields appear in the structure layout in the order they are
+    declared. When possible, consecutive fields occupy consecutive bytes within
+    the structure. However, if a field’s type demands more alignment than it
+    would get that way, C gives it the alignment it requires by leaving a gap
+    after the previous field.
 
-Once all the fields have been laid out, it is possible to determine the structure’s alignment and size.
-The structure’s alignment is the maximum alignment of any of the fields in it.
-Then the structure’s size is rounded up to a multiple of its alignment.
-That may require leaving a gap at the end of the structure. *)
+    Once all the fields have been laid out, it is possible to determine the
+    structure’s alignment and size. The structure’s alignment is the maximum
+    alignment of any of the fields in it. Then the structure’s size is rounded
+    up to a multiple of its alignment. That may require leaving a gap at the end
+    of the structure. *)
 and layout_of_members members =
   let open Syntaxes.Option in
   let rec aux members_ofs (layout : layout) = function
@@ -137,15 +140,15 @@ let int_constraints (int_ty : integerType) =
   let open Typed.Infix in
   let open Syntaxes.Option in
   match int_ty with
-  | Char -> Some (fun x -> [ 0s #<= x; x #< 256s ])
-  | Bool -> Some (fun x -> [ 0s #<= x; x #< 2s ])
+  | Char -> Some (fun x -> [ 0s <=@ x; x <@ 256s ])
+  | Bool -> Some (fun x -> [ 0s <=@ x; x <@ 2s ])
   | Signed _ ->
       let+ size = size_of_int_ty int_ty in
       let min = Z.neg (Z.shift_left Z.one ((size * 8) - 1)) in
       let max = Z.pred (Z.shift_left Z.one ((size * 8) - 1)) in
-      fun x -> [ (Typed.int_z min) #<= x; x #<= (Typed.int_z max) ]
+      fun x -> [ Typed.int_z min <=@ x; x <=@ Typed.int_z max ]
   | Unsigned _ ->
       let+ size = size_of_int_ty int_ty in
       let max = Z.pred (Z.shift_left Z.one (size * 8)) in
-      fun x -> [ 0s #<= x; x #<= (Typed.int_z max) ]
+      fun x -> [ 0s <=@ x; x <=@ Typed.int_z max ]
   | _ -> None

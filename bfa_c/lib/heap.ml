@@ -70,14 +70,17 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       Tree_block.t option ->
-      ('a * Tree_block.t option, 'err) Result.t) : ('a * t, 'err) Result.t =
+      ('a * Tree_block.t option, 'err, 'fix) Result.t) :
+    ('a * t, 'err, serialized) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   (SPmap.wrap (Freeable.wrap (f ~ofs))) loc st
 
 let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
-    (f : ofs:[< T.sint ] Typed.t -> Tree_block.t option -> ('a, 'err) Result.t)
-    =
+    (f :
+      ofs:[< T.sint ] Typed.t ->
+      Tree_block.t option ->
+      ('a, 'err, Tree_block.serialized) Result.t) =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc st
@@ -97,7 +100,7 @@ let store ptr ty sval st =
 let copy_nonoverlapping ~dst ~src ~size st =
   let open Typed.Infix in
   let@ () = with_loc_err () in
-  if%sat (Typed.Ptr.is_at_null_loc dst) #|| (Typed.Ptr.is_at_null_loc src) then
+  if%sat Typed.Ptr.is_at_null_loc dst ||@ Typed.Ptr.is_at_null_loc src then
     Result.error `NullDereference
   else
     let** tree_to_write =
@@ -114,15 +117,16 @@ let alloc size st =
   let** loc, st = SPmap.alloc ~new_codom:block st in
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
-  let+ () = Typed.(assume [ not loc #== Ptr.null_loc ]) in
-  Ok (ptr, st)
+  let+ () = Typed.(assume [ not (loc ==@ Ptr.null_loc) ]) in
+  Bfa_symex.Compo_res.ok (ptr, st)
 
 let alloc_ty ty st =
   let* size = Layout.size_of_s ty in
   alloc size st
 
-let free (ptr : [< T.sptr ] Typed.t) (st : t) : (unit * t, 'err) Result.t =
-  if%sat (Typed.Ptr.ofs ptr) #== 0s then
+let free (ptr : [< T.sptr ] Typed.t) (st : t) :
+    (unit * t, 'err, serialized) Result.t =
+  if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ () = with_loc_err () in
     (SPmap.wrap
        (Freeable.free
@@ -133,5 +137,6 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) : (unit * t, 'err) Result.t =
 let produce (serialized : serialized) (heap : t) : t Csymex.t =
   SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
 
-let consume (serialized : serialized) (heap : t) : (t, 'err) Csymex.Result.t =
+let consume (serialized : serialized) (heap : t) :
+    (t, 'err, serialized) Csymex.Result.t =
   SPmap.consume (Freeable.consume Tree_block.consume) serialized heap

@@ -15,9 +15,8 @@ val to_int : t -> int
 (** Sets up the variable name into an SMTlib-valid string name. *)
 val to_string : t -> string
 
-(** [of_string [to_string t]] is always [t],
-    but the function may raise an exception if the input
-    was not obtained through [to_string] *)
+(** [of_string [to_string t]] is always [t], but the function may raise an
+    exception if the input was not obtained through [to_string] *)
 val of_string : string -> t
 
 val pp : Format.formatter -> t -> unit

@@ -1,4 +1,6 @@
 open Cerb_frontend
+module Wpst_interp = Interp.Make (Heap)
+module Bi_interp = Interp.Make (Bi_heap)
 
 let setup_console_log level =
   Fmt_tty.setup_std_outputs ();
@@ -131,7 +133,6 @@ let is_main (def : Cabs.function_definition) =
 let pp_err ft (err, _loc) =
   match err with
   | `NullDereference -> Fmt.string ft "NullDereference"
-  | `MissingResource -> Fmt.string ft "MissingResource"
   | `OutOfBounds -> Fmt.string ft "OutOfBounds"
   | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
   | `UseAfterFree -> Fmt.string ft "UseAfterFree"
@@ -141,7 +142,6 @@ let pp_err ft (err, _loc) =
   | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
   | `DoubleFree -> Fmt.string ft "DoubleFree"
   | `InvalidFree -> Fmt.string ft "InvalidFree"
-  | `MissingOwnership -> Fmt.string ft "MissingOwnership"
 
 let exec_main file_name =
   let open Syntaxes.Result in
@@ -159,7 +159,7 @@ let exec_main file_name =
     in
     let () = Initialize_analysis.reinit sigma in
     let symex =
-      Interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
+      Wpst_interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
     in
     Ok (Csymex.run symex)
   in
@@ -179,7 +179,9 @@ let exec_main_and_print log_level smt_file file_name =
          Executed %d statements"
         Fmt.Dump.(
           list @@ fun ft (r, _) ->
-          (result ~ok:(pair Typed.ppa pp_heap) ~error:pp_err) ft r)
+          (Bfa_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_heap) ~err:pp_err
+             ~miss:Heap.pp_serialized)
+            ft r)
         result
         (Stats.get_executed_statements ()))
 
@@ -193,7 +195,9 @@ let run_to_errors content =
     close_out oc
   in
   exec_main file_name
-  |> List.filter_map (function Ok _, _ -> None | Error e, _ -> Some e)
+  |> List.filter_map (function
+       | Bfa_symex.Compo_res.Ok _, _ | Missing _, _ -> None
+       | Error e, _ -> Some e)
 
 (* Entry point function *)
 let lsp () =

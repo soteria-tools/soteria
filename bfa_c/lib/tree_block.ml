@@ -1,11 +1,14 @@
 (* This could be parametric on an integer type and Node type. But is there realy a reason ? *)
 
+open Bfa_symex.Compo_res
 open Csymex.Syntax
 open Typed
 open Typed.Infix
 open Typed.Syntax
 open Csymex
 module Ctype = Cerb_frontend.Ctype
+
+let no_fix = []
 
 module MemVal = struct
   type t = { value : T.cval Typed.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
@@ -84,9 +87,9 @@ module Node = struct
 
   let uninit = Owned (Uninit Totally)
 
-  let decode ~ty t : ([> T.sint ] Typed.t, 'err) Csymex.Result.t =
+  let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
     match t with
-    | NotOwned _ -> Result.error `MissingResource
+    | NotOwned _ -> Result.miss no_fix
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok 0s
@@ -145,7 +148,7 @@ module Tree = struct
 
   let rec offset ~by tree =
     let low, high = tree.range in
-    let range = (low #+ by, high #+ by) in
+    let range = (low +@ by, high +@ by) in
     let children =
       Option.map (fun (l, r) -> (offset ~by l, offset ~by r)) tree.children
     in
@@ -157,7 +160,7 @@ module Tree = struct
     let old_span = t.range in
     let ol, oh = old_span in
     let nl, nh = range in
-    if%sat ol #== nl then
+    if%sat ol ==@ nl then
       let at = nh in
       let+ left_node, right_node = Node.split ~range:old_span ~at t.node in
       let left_span, right_span = Range.split_at old_span at in
@@ -165,7 +168,7 @@ module Tree = struct
       let right = make ~node:right_node ~range:right_span () in
       (left_node, left, right)
     else
-      if%sat oh #== nh then
+      if%sat oh ==@ nh then
         let+ left_node, right_node = Node.split ~range:old_span ~at:nl t.node in
         let left_span, right_span = Range.split_at old_span nl in
         let left = make ~node:left_node ~range:left_span () in
@@ -187,7 +190,7 @@ module Tree = struct
     let rl, rh = range in
     let sl, sh = t.range in
     let* t_with_left =
-      if%sat rl #< sl then
+      if%sat rl <@ sl then
         let new_left_tree = make ~node:(NotOwned Totally) ~range:(rl, sl) () in
         let children = (new_left_tree, t) in
         let qty = if is_empty t then Node.Totally else Partially in
@@ -196,7 +199,7 @@ module Tree = struct
     in
     let sl, _ = t_with_left.range in
     let* result =
-      if%sat rh #> sh then
+      if%sat rh >@ sh then
         let new_right_tree = make ~node:(NotOwned Totally) ~range:(sh, rh) () in
         let children = (t_with_left, new_right_tree) in
         let qty = if is_empty t_with_left then Node.Totally else Partially in
@@ -306,7 +309,7 @@ module Tree = struct
     frame_inside ~replace_node ~rebuild_parent root range
 
   let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t) :
-      (T.cval Typed.t * t, 'err) Result.t =
+      (T.cval Typed.t * t, 'err, 'fix) Result.t =
     let* range = Range.of_low_and_type ofs ty in
     let replace_node node = node in
     let rebuild_parent = with_children in
@@ -315,21 +318,21 @@ module Tree = struct
     ((sval :> T.cval Typed.t), tree)
 
   let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
-      (sval : [< T.cval ] Typed.t) (t : t) : (unit * t, 'err) Result.t =
+      (sval : [< T.cval ] Typed.t) (t : t) : (unit * t, 'err, 'fix) Result.t =
     let* range = Range.of_low_and_type low ty in
     let replace_node _ = sval_leaf ~range ~value:sval ~ty in
     let rebuild_parent = of_children in
     let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match node.node with
-      | NotOwned Totally -> Result.error `MissingResource
-      | NotOwned Partially -> Result.error `MissingResource
+      | NotOwned Totally -> Result.miss no_fix
+      | NotOwned Partially -> Result.miss no_fix
       | _ -> Result.ok ()
     in
     ((), tree)
 
   let get_raw ofs size t =
-    let range = (ofs, ofs #+ size) in
+    let range = (ofs, ofs +@ size) in
     let replace_node node = node in
     let rebuild_parent = with_children in
     frame_range t ~replace_node ~rebuild_parent range
@@ -342,7 +345,7 @@ module Tree = struct
     in
     let++ () =
       match old_node.node with
-      | NotOwned _ -> Result.error `MissingResource
+      | NotOwned _ -> Result.miss no_fix
       | _ -> Result.ok ()
     in
     ((), new_tree)
@@ -350,7 +353,7 @@ module Tree = struct
   (** Cons/prod *)
 
   let consume_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
-      (v : [< T.cval ] Typed.t) (t : t) : (t, 'err) Result.t =
+      (v : [< T.cval ] Typed.t) (t : t) : (t, 'err, 'fix) Result.t =
     let* range = Range.of_low_and_type low ty in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
@@ -358,9 +361,9 @@ module Tree = struct
     let* sval_res = Node.decode ~ty framed.node in
     match sval_res with
     | Ok sv ->
-        let+ () = Typed.assume [ sv #==? v ] in
+        let+ () = Typed.assume [ sv ==?@ v ] in
         Ok tree
-    | Error `MissingResource -> Csymex.Result.error `MissingResource
+    | Missing fix -> Csymex.Result.miss fix
     | Error `UninitializedMemoryAccess -> Csymex.vanish ()
 
   let produce_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
@@ -374,21 +377,21 @@ module Tree = struct
     | _ -> Csymex.vanish ()
 
   let consume_any (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
-      (t : t) : (t, 'err) Result.t =
-    let range = (low, low #+ len) in
+      (t : t) : (t, 'err, 'fix) Result.t =
+    let range = (low, low +@ len) in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match framed.node with
-      | NotOwned _ -> Result.error `MissingResource
+      | NotOwned _ -> Result.miss no_fix
       | _ -> Result.ok ()
     in
     tree
 
   let produce_any (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : t Csymex.t =
-    let range = (low, low #+ len) in
+    let range = (low, low +@ len) in
     let replace_node _ = any range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -397,14 +400,14 @@ module Tree = struct
     | _ -> Csymex.vanish ()
 
   let consume_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
-      (t : t) : (t, 'err) Result.t =
-    let range = (low, low #+ len) in
+      (t : t) : (t, 'err, 'fix) Result.t =
+    let range = (low, low +@ len) in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match framed.node with
-      | NotOwned _ -> Result.error `MissingResource
+      | NotOwned _ -> Result.miss no_fix
       | Owned (Uninit Totally) -> Result.ok ()
       | _ ->
           L.debug (fun m -> m "Consuming uninit but no uninit, vanishing");
@@ -414,7 +417,7 @@ module Tree = struct
 
   let produce_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : t Csymex.t =
-    let range = (low, low #+ len) in
+    let range = (low, low +@ len) in
     let replace_node _ = uninit range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -423,16 +426,16 @@ module Tree = struct
     | _ -> Csymex.vanish ()
 
   let consume_zeros (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
-      (t : t) : (t, 'err) Result.t =
-    let range = (low, low #+ len) in
+      (t : t) : (t, 'err, 'fix) Result.t =
+    let range = (low, low +@ len) in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     match framed.node with
-    | NotOwned _ -> Result.error `MissingResource
+    | NotOwned _ -> Result.miss no_fix
     | Owned Zeros -> Result.ok tree
     | Owned (Init { ty = _; value }) ->
-        let+ () = Typed.assume [ value #==? 0s ] in
+        let+ () = Typed.assume [ value ==?@ 0s ] in
         Ok tree
     | _ ->
         L.debug (fun m -> m "Consuming zero but not zero, vanishing");
@@ -440,7 +443,7 @@ module Tree = struct
 
   let produce_zeros (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : t Csymex.t =
-    let range = (low, low #+ len) in
+    let range = (low, low +@ len) in
     let replace_node _ = zeros range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -477,7 +480,7 @@ let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
     match t.bound with
     | None -> Result.ok ()
     | Some bound ->
-        if%sat ofs #> bound then (
+        if%sat ofs >@ bound then (
           L.debug (fun m ->
               m "Out of bounds access: %a > %a" Typed.ppa ofs Typed.ppa bound);
           Result.error `OutOfBounds)
@@ -486,40 +489,37 @@ let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let++ res, root = f () in
   (res, { t with root })
 
-let of_opt = function
-  | None -> Result.error `MissingResource
-  | Some t -> Result.ok t
-
+let of_opt = function None -> Result.miss no_fix | Some t -> Result.ok t
 let to_opt t = if is_empty t then None else Some t
 
 let assert_exclusively_owned t =
   let** t = of_opt t in
-  let err = Result.error `MissingResource in
+  let err = Result.miss no_fix in
   match t.bound with
   | None -> err
   | Some bound ->
       let Tree.{ range = low, high; node; _ } = t.root in
       if Node.is_fully_owned node then
-        if%sat low #== 0s #&& (high #== bound) then Result.ok () else err
+        if%sat low ==@ 0s &&@ (high ==@ bound) then Result.ok () else err
       else err
 
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t option) :
-    ([> T.sint ] Typed.t * t option, 'err) Result.t =
+    ([> T.sint ] Typed.t * t option, 'err, 'fix) Result.t =
   let** t = of_opt t in
   let* size = Layout.size_of_s ty in
   let++ res, tree =
-    let@ () = with_bound_check t ofs #+ size in
+    let@ () = with_bound_check t (ofs +@ size) in
     Tree.load ofs ty t.root
   in
   (res, to_opt tree)
 
 let store ofs ty sval t =
   match t with
-  | None -> Result.error `MissingResource
+  | None -> Result.miss no_fix
   | Some t ->
       let* size = Layout.size_of_s ty in
       let++ (), tree =
-        let@ () = with_bound_check t ofs #+ size in
+        let@ () = with_bound_check t (ofs +@ size) in
         Tree.store ofs ty sval t.root
       in
       ((), to_opt tree)
@@ -527,23 +527,24 @@ let store ofs ty sval t =
 let get_raw_tree_owned ofs size t =
   let** t = of_opt t in
   let++ res, tree =
-    let@ () = with_bound_check t ofs #+ size in
+    let@ () = with_bound_check t (ofs +@ size) in
     let+ tree, t = Tree.get_raw ofs size t.root in
     if Node.is_fully_owned tree.node then
       let tree = Tree.offset ~by:~-ofs tree in
       Ok (tree, t)
-    else Error `MissingResource
+    else Missing no_fix
   in
   (res, to_opt tree)
 
 (* This is used for copy_nonoverapping.
    It is an action on the destination block, and assumes the received tree is at offset 0 *)
-let put_raw_tree ofs (tree : Tree.t) t : (unit * t option, 'err) Result.t =
+let put_raw_tree ofs (tree : Tree.t) t : (unit * t option, 'err, 'fix) Result.t
+    =
   let** t = of_opt t in
   let size = Range.size tree.range in
   let tree = Tree.offset ~by:ofs tree in
   let++ res, t =
-    let@ () = with_bound_check t ofs #+ size in
+    let@ () = with_bound_check t (ofs +@ size) in
     Tree.put_raw tree t.root
   in
   (res, to_opt t)
@@ -632,7 +633,7 @@ let assume_bound_check_res (t : t) (ofs : [< T.sint ] Typed.t) f =
   let* () =
     match t.bound with
     | None -> Csymex.return ()
-    | Some bound -> Typed.assume [ ofs #<= bound ]
+    | Some bound -> Typed.assume [ ofs <=@ bound ]
   in
   let++ root = f () in
   { t with root }
@@ -641,7 +642,7 @@ let assume_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let* () =
     match t.bound with
     | None -> Csymex.return ()
-    | Some bound -> Typed.assume [ ofs #<= bound ]
+    | Some bound -> Typed.assume [ ofs <=@ bound ]
   in
   let+ root = f () in
   { t with root }
@@ -670,7 +671,7 @@ let abstract_prod bound mk_root_from_empty prod_tree t =
 
 let typed_bound ofs ty =
   let+ size = Layout.size_of_s ty in
-  ofs #+ size
+  ofs +@ size
 
 let consume_typed_val ofs ty v t =
   let bound () = typed_bound ofs ty in
@@ -687,52 +688,52 @@ let produce_typed_val ofs ty v t =
   abstract_prod bound mk_root_from_empty prod_tree t
 
 let consume_any ofs len t =
-  let bound () = Csymex.return ofs #+ len in
+  let bound () = Csymex.return (ofs +@ len) in
   let cons_tree root = Tree.consume_any ofs len root in
   abstract_cons bound cons_tree t
 
 let produce_any ofs len t =
-  let bound () = Csymex.return ofs #+ len in
+  let bound () = Csymex.return (ofs +@ len) in
   let prod_tree root = Tree.produce_any ofs len root in
   let mk_root_from_empty () =
-    let range = (ofs, ofs #+ len) in
+    let range = (ofs, ofs +@ len) in
     Csymex.return (Tree.any range)
   in
   abstract_prod bound mk_root_from_empty prod_tree t
 
 let consume_uninit ofs len t =
-  let bound () = Csymex.return ofs #+ len in
+  let bound () = Csymex.return (ofs +@ len) in
   let cons_tree root = Tree.consume_uninit ofs len root in
   abstract_cons bound cons_tree t
 
 let produce_uninit ofs len t =
-  let bound () = Csymex.return ofs #+ len in
+  let bound () = Csymex.return (ofs +@ len) in
   let prod_tree root = Tree.produce_uninit ofs len root in
   let mk_root_from_empty () =
-    let range = (ofs, ofs #+ len) in
+    let range = (ofs, ofs +@ len) in
     Csymex.return (Tree.uninit range)
   in
   abstract_prod bound mk_root_from_empty prod_tree t
 
 let consume_zeros ofs len t =
-  let bound () = Csymex.return ofs #+ len in
+  let bound () = Csymex.return (ofs +@ len) in
   let cons_tree root = Tree.consume_zeros ofs len root in
   abstract_cons bound cons_tree t
 
 let produce_zeros ofs len t =
-  let bound () = Csymex.return ofs #+ len in
+  let bound () = Csymex.return (ofs +@ len) in
   let prod_tree root = Tree.produce_zeros ofs len root in
   let mk_root_from_empty () =
-    let range = (ofs, ofs #+ len) in
+    let range = (ofs, ofs +@ len) in
     Csymex.return (Tree.zeros range)
   in
   abstract_prod bound mk_root_from_empty prod_tree t
 
 let consume_bound bound t =
   match t with
-  | None | Some { bound = None; _ } -> Result.error `MissingResource
+  | None | Some { bound = None; _ } -> Result.miss no_fix
   | Some { bound = Some v; root } ->
-      let+ () = Typed.assume [ v #== bound ] in
+      let+ () = Typed.assume [ v ==?@ bound ] in
       Ok (to_opt { bound = None; root })
 
 let produce_bound bound t =

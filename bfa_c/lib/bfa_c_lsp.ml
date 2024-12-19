@@ -35,7 +35,6 @@ let error_to_diagnostic_opt (err, loc) =
     | `UBPointerArithmetic ->
         Some (Error, "Undefined Behavior for Pointer Arithmetic")
     | `InvalidFree -> Some (Error, "Invalid Pointer passed to free")
-    | `MissingResource -> Some (Information, "Missing Resource")
   in
   Lsp.Types.Diagnostic.create ~message ~severity ~range:(cerb_loc_to_range loc)
     ~source:"bfa" ()

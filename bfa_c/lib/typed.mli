@@ -92,7 +92,7 @@ val times : [< sint ] t -> [< sint ] t -> [> sint ] t
 val div : [< sint ] t -> nonzero t -> [> sint ] t
 
 val check_nonzero :
-  sint t -> ([> nonzero ] t, [> `NonZeroIsZero ]) Csymex.Result.t
+  sint t -> ([> nonzero ] t, [> `NonZeroIsZero ], 'fix) Csymex.Result.t
 
 module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t
@@ -110,19 +110,19 @@ module SSeq : sig
 end
 
 module Infix : sig
-  val ( #== ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
-  val ( #==? ) : 'a t -> 'a t -> [> sbool ] t
-  val ( #> ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( #>= ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( #< ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( #<= ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( #&& ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
-  val ( #|| ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
-  val ( #+ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
-  val ( #- ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( ==@ ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
+  val ( ==?@ ) : 'a t -> 'a t -> [> sbool ] t
+  val ( >@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( >=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( <@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( <=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( &&@ ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
+  val ( ||@ ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
+  val ( +@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( -@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( ~- ) : [< sint ] t -> [> sint ] t
-  val ( #* ) : [< sint ] t -> [< sint ] t -> [> sint ] t
-  val ( #/ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+  val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( /@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 end
 
 module Syntax : sig

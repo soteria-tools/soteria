@@ -18,8 +18,9 @@ module type Base = sig
 
   val branches : (unit -> 'a MONAD.t) list -> 'a MONAD.t
 
-  (** [run] p actually performs symbolic execution and returns a list of obtained branches
-      which capture the outcome together with a path condition that is a list of boolean symbolic values *)
+  (** [run] p actually performs symbolic execution and returns a list of
+      obtained branches which capture the outcome together with a path condition
+      that is a list of boolean symbolic values *)
   val run : 'a MONAD.t -> ('a * Value.t list) list
 end
 
@@ -39,8 +40,9 @@ module type S = sig
 
   val branches : (unit -> 'a t) list -> 'a t
 
-  (** [run] p actually performs symbolic execution and returns a list of obtained branches
-      which capture the outcome together with a path condition that is a list of boolean symbolic values *)
+  (** [run] p actually performs symbolic execution and returns a list of
+      obtained branches which capture the outcome together with a path condition
+      that is a list of boolean symbolic values *)
   val run : 'a t -> ('a * Value.t list) list
 
   val all : 'a t list -> 'a list t
@@ -49,11 +51,34 @@ module type S = sig
   val fold_seq : ('a, 'b) Monad.FoldM(MONAD)(Foldable.Seq).folder
 
   module rec Result : sig
-    include Monad.Base2 with type ('a, 'b) t = ('a, 'b) result t
+    type ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t MONAD.t
 
-    val fold_list : ('elem, 'a, 'b) Monad.FoldM2(Result)(Foldable.List).folder
-    val fold_iter : ('elem, 'a, 'b) Monad.FoldM2(Result)(Foldable.Iter).folder
-    val fold_seq : ('elem, 'a, 'b) Monad.FoldM2(Result)(Foldable.Seq).folder
+    val ok : 'ok -> ('ok, 'err, 'fix) t
+    val error : 'err -> ('ok, 'err, 'fix) t
+    val miss : 'fix -> ('ok, 'err, 'fix) t
+
+    val bind :
+      ('ok, 'err, 'fix) t -> ('ok -> ('a, 'err, 'fix) t) -> ('a, 'err, 'fix) t
+
+    val map : ('ok, 'err, 'fix) t -> ('ok -> 'a) -> ('a, 'err, 'fix) t
+
+    val bind_error :
+      ('ok, 'err, 'fix) t -> ('err -> ('ok, 'a, 'fix) t) -> ('ok, 'a, 'fix) t
+
+    val map_error : ('ok, 'err, 'fix) t -> ('err -> 'a) -> ('ok, 'a, 'fix) t
+
+    val bind_missing :
+      ('ok, 'err, 'fix) t -> ('fix -> ('ok, 'err, 'a) t) -> ('ok, 'err, 'a) t
+
+    val map_missing : ('ok, 'err, 'fix) t -> ('fix -> 'a) -> ('ok, 'err, 'a) t
+
+    val fold_list :
+      ('elem, 'a, 'b, 'c) Monad.FoldM3(Result)(Foldable.List).folder
+
+    val fold_iter :
+      ('elem, 'a, 'b, 'c) Monad.FoldM3(Result)(Foldable.Iter).folder
+
+    val fold_seq : ('elem, 'a, 'b, 'c) Monad.FoldM3(Result)(Foldable.Seq).folder
   end
 
   module Syntax : sig
@@ -61,10 +86,19 @@ module type S = sig
     val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
 
     val ( let** ) :
-      ('a, 'b) Result.t -> ('a -> ('c, 'b) Result.t) -> ('c, 'b) Result.t
+      ('a, 'c, 'd) Result.t ->
+      ('a -> ('b, 'c, 'd) Result.t) ->
+      ('b, 'c, 'd) Result.t
 
-    val ( let++ ) : ('a, 'c) Result.t -> ('a -> 'b) -> ('b, 'c) Result.t
-    val ( let+- ) : ('a, 'b) Result.t -> ('b -> 'c) -> ('a, 'c) Result.t
+    val ( let++ ) : ('a, 'c, 'd) Result.t -> ('a -> 'b) -> ('b, 'c, 'd) Result.t
+    val ( let+- ) : ('a, 'b, 'd) Result.t -> ('b -> 'c) -> ('a, 'c, 'd) Result.t
+
+    val ( let*? ) :
+      ('a, 'b, 'c) Result.t ->
+      ('c -> ('a, 'b, 'd) Result.t) ->
+      ('a, 'b, 'd) Result.t
+
+    val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax : sig
       val branch_on :
@@ -91,7 +125,7 @@ module Extend (Base : Base) = struct
   let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
 
   module Result = struct
-    include Monad.ResultT (MONAD)
+    include Compo_res.T (MONAD)
 
     let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
     let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
@@ -105,6 +139,8 @@ module Extend (Base : Base) = struct
     let ( let** ) = Result.bind
     let ( let++ ) = Result.map
     let ( let+- ) = Result.map_error
+    let ( let*? ) = Result.bind_missing
+    let ( let+? ) = Result.map_missing
 
     module Symex_syntax = struct
       let branch_on = branch_on
@@ -275,8 +311,10 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
         Solver.backtrack_n 1;
         Solver.add_constraints [ Value.(not guard) ];
         if !left_sat then (
-          if (* We have to check right *)
-             Solver.sat () then else_ () f)
+          if
+            (* We have to check right *)
+            Solver.sat ()
+          then else_ () f)
         else (* Right must be sat since left was not! *)
           else_ () f
 

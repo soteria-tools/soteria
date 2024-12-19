@@ -44,7 +44,7 @@ let nonzero x = nonzero_z (Z.of_int x)
 
 let check_nonzero t =
   let open Csymex.Syntax in
-  if%sat Infix.(t #== zero) then Csymex.Result.error `NonZeroIsZero
+  if%sat Infix.(t ==@ zero) then Csymex.Result.error `NonZeroIsZero
   else Csymex.Result.ok t
 
 let nondet = Csymex.nondet

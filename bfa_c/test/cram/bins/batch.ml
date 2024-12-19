@@ -8,9 +8,9 @@ let process =
   let open Svalue.Syntax in
   let@ () = Csymex.batched in
   let* n = Csymex.nondet Svalue.TInt in
-  let* () = Csymex.assume [ n #>= 0s ] in
-  let* () = Csymex.assume [ n #< 10s ] in
-  Csymex.assume [ n #< 0s ]
+  let* () = Csymex.assume [ n >=@ 0s ] in
+  let* () = Csymex.assume [ n <@ 10s ] in
+  Csymex.assume [ n <@ 0s ]
 
 let () =
   let file = Some "batch.smt" in

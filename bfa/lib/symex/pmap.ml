@@ -20,6 +20,10 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
   type 'a t = 'a M.t
   type 'a serialized = (Key.t * 'a) list
 
+  let lift_fix_s ~key res =
+    let+? fix = res in
+    [ (key, fix) ]
+
   let pp_serialized pp_inner : 'a serialized Fmt.t =
     Fmt.brackets
       (Fmt.iter ~sep:(Fmt.any ";@ ") List.iter Fmt.Dump.(pair Key.pp pp_inner))
@@ -66,7 +70,7 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
     | None -> find_bindings (M.bindings st)
 
   let alloc (type a) ~(new_codom : a) (st : a t option) :
-      (Key.t * a t option, 'err) Result.t =
+      (Key.t * a t option, 'err, 'fix) Result.t =
     let st = of_opt st in
     let* key =
       Key.fresh
@@ -76,11 +80,12 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
     in
     Result.ok (key, to_opt (M.add key new_codom st))
 
-  let wrap (f : 'a option -> ('b * 'a option, 'err) Symex.Result.t)
-      (key : Key.t) (st : 'a t option) =
+  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
+      (key : Key.t) (st : 'a t option) :
+      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
     let st = of_opt st in
     let* key, codom = find_opt_sym key st in
-    let++ res, codom = f codom in
+    let++ res, codom = f codom |> lift_fix_s ~key in
     (res, to_opt (add_opt key codom st))
 
   let produce
@@ -100,20 +105,22 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
       (cons :
         'inner_serialized ->
         'inner_st option ->
-        ('inner_st option, 'err) Symex.Result.t)
-      (serialized : 'inner_serialized serialized) (st : 'inner_st t option) =
+        ('inner_st option, 'err, 'inner_serialized) Symex.Result.t)
+      (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
+      ('inner_st t option, 'err, 'inner_serialized serialized) Symex.Result.t =
     let st = of_opt st in
     let++ st =
       Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
           let* key, codom = find_opt_sym key st in
-          let++ codom = cons inner_ser codom in
+          let++ codom = cons inner_ser codom |> lift_fix_s ~key in
           add_opt key codom st)
     in
     to_opt st
 
-  let wrap_read_only (f : 'a option -> ('b, 'err) Symex.Result.t) (key : Key.t)
-      (st : 'a t option) =
+  let wrap_read_only (f : 'a option -> ('b, 'err, 'fix) Symex.Result.t)
+      (key : Key.t) (st : 'a t option) :
+      ('b, 'err, 'fix serialized) Symex.Result.t =
     let st = of_opt st in
     let* _, codom = find_opt_sym key st in
-    f codom
+    f codom |> lift_fix_s ~key
 end

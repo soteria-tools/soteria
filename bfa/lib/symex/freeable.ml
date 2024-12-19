@@ -12,6 +12,12 @@ module Make (Symex : Symex.S) = struct
   type nonrec 'a t = 'a t = Freed | Alive of 'a
   type 'a serialized = 'a t
 
+  let lift_fix fix = Alive fix
+
+  let lift_fix_s r =
+    let+? fix = r in
+    lift_fix fix
+
   let serialize serialize_inner = function
     | Freed -> Freed
     | Alive a -> Alive (serialize_inner a)
@@ -33,18 +39,19 @@ module Make (Symex : Symex.S) = struct
 
   let free ~assert_exclusively_owned freeable =
     let** s = unwrap_alive freeable in
-    let++ () = assert_exclusively_owned s in
+    let++ () = assert_exclusively_owned s |> lift_fix_s in
     ((), Some Freed)
 
   (* [f] must be a "symex state monad" *)
-  let wrap (f : 'a option -> ('b * 'a option, 'err) Symex.Result.t)
-      (st : 'a t option) =
+  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
+      (st : 'a t option) :
+      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
     match st with
     | None ->
-        let++ res, st' = f None in
+        let++ res, st' = f None |> lift_fix_s in
         (res, Option.map (fun x -> Alive x) st')
     | Some (Alive st) ->
-        let++ res, st' = f (Some st) in
+        let++ res, st' = f (Some st) |> lift_fix_s in
         (res, Option.map (fun x -> Alive x) st')
     | Some Freed -> Symex.Result.error `UseAfterFree
 
@@ -53,23 +60,23 @@ module Make (Symex : Symex.S) = struct
       (cons :
         'inner_ser ->
         'inner_st option ->
-        ('inner_st option, 'err) Symex.Result.t)
+        ('inner_st option, 'err, 'inner_ser) Symex.Result.t)
       (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
-      ('inner_st t option, 'err2) Symex.Result.t =
+      ('inner_st t option, 'err, 'inner_ser serialized) Symex.Result.t =
     match serialized with
     | Freed -> (
         match st with
-        | None -> Symex.Result.error `MissingResource
+        | None -> Symex.Result.miss Freed
         | Some Freed -> Symex.Result.ok None
         | Some (Alive _) -> Symex.vanish ())
     | Alive ser -> (
         match st with
         | None ->
-            let++ st' = cons ser None in
+            let++ st' = cons ser None |> lift_fix_s in
             Option.map (fun x -> Alive x) st'
         | Some Freed -> Symex.vanish ()
         | Some (Alive st) ->
-            let++ st' = cons ser (Some st) in
+            let++ st' = cons ser (Some st) |> lift_fix_s in
             Option.map (fun x -> Alive x) st')
 
   let produce
@@ -92,10 +99,10 @@ module Make (Symex : Symex.S) = struct
         | Some Freed -> Symex.vanish ())
 
   (* [f] does not modify the state *)
-  let wrap_read_only (f : 'a option -> ('b, 'err) Symex.Result.t)
+  let wrap_read_only (f : 'a option -> ('b, 'err, 'fix) Symex.Result.t)
       (st : 'a t option) =
     match st with
-    | Some (Alive st) -> f (Some st)
-    | None -> f None
+    | Some (Alive st) -> f (Some st) |> lift_fix_s
+    | None -> f None |> lift_fix_s
     | Some Freed -> Symex.Result.error `UseAfterFree
 end

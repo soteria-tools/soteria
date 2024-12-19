@@ -50,6 +50,18 @@ module FoldM2 (M : Base2) (F : Foldable.S) = struct
     'elem F.t -> init:'a -> f:('a -> 'elem -> ('a, 'b) M.t) -> ('a, 'b) M.t
 end
 
+module type Ty3 = sig
+  type ('a, 'b, 'c) t
+end
+
+module FoldM3 (M : Ty3) (F : Foldable.S) = struct
+  type ('elem, 'a, 'b, 'c) folder =
+    'elem F.t ->
+    init:'a ->
+    f:('a -> 'elem -> ('a, 'b, 'c) M.t) ->
+    ('a, 'b, 'c) M.t
+end
+
 module type Syntax2 = sig
   type ('a, 'b) t
 

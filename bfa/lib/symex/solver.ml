@@ -9,8 +9,8 @@ module type Mutable_incremental = sig
 
   val sat : t -> bool
 
-  (** Like [sat] but may return true for now even though the constraint isn't actually sat.
-      Therefore batching the sat checks *)
+  (** Like [sat] but may return true for now even though the constraint isn't
+      actually sat. Therefore batching the sat checks *)
 
   val simplify : t -> Value.t -> Value.t
   val fresh_var : t -> Value.ty -> Var.t
@@ -26,8 +26,8 @@ module type In_place_incremental = sig
 
   val sat : unit -> bool
 
-  (** Like [sat] but may return true for now even though the constraint isn't actually sat.
-      Therefore batching the sat checks *)
+  (** Like [sat] but may return true for now even though the constraint isn't
+      actually sat. Therefore batching the sat checks *)
 
   val simplify : Value.t -> Value.t
   val fresh_var : Value.ty -> Var.t

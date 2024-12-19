@@ -103,10 +103,11 @@ module Solver_state = struct
             Dynarray.add_last last Svalue.v_false)
           else Dynarray.add_last last v
 
-  (** This function returns [Some b] if the solver state is trivially [b] (true or false).
-      We maintain solver state such that trivial truths are never added to the state, and false is false erases everything else.
-      Therefore, it is enough to check either for emptyness of the topmost layer or falseness of the latest element.
-    *)
+  (** This function returns [Some b] if the solver state is trivially [b] (true
+      or false). We maintain solver state such that trivial truths are never
+      added to the state, and false is false erases everything else. Therefore,
+      it is enough to check either for emptyness of the topmost layer or
+      falseness of the latest element. *)
   let trivial_truthiness (t : t) =
     match Dynarray.find_last t with
     | None -> Some true
