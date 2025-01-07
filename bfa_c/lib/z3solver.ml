@@ -119,6 +119,7 @@ module Solver_state = struct
 
   let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
   let to_value_list (t : t) = Iter.to_rev_list (iter t)
+  let mem (t : t) v = Iter.exists (Svalue.equal v) (iter t)
 end
 
 type t = {
@@ -286,6 +287,7 @@ let fresh solver ty =
 let rec simplify solver (v : Svalue.t) =
   match v.node.kind with
   | Int _ | Bool _ -> v
+  | _ when Solver_state.mem solver.state v -> Svalue.v_true
   | Unop (Not, e) ->
       let e' = simplify solver e in
       if Svalue.equal e e' then v else Svalue.not e'

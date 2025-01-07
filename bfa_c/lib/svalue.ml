@@ -2,7 +2,7 @@ open Hashcons
 module Var = Bfa_symex.Var
 
 type ty = TBool | TInt | TLoc | TPointer | TSeq of ty
-[@@deriving eq, show, ord]
+[@@deriving eq, show { with_path = false }, ord]
 
 let t_bool = TBool
 let t_int = TInt
@@ -11,11 +11,12 @@ let t_ptr = TPointer
 let t_seq ty = TSeq ty
 
 module Nop = struct
-  type t = Distinct [@@deriving eq, show, ord]
+  type t = Distinct [@@deriving eq, show { with_path = false }, ord]
 end
 
 module Unop = struct
-  type t = Not | GetPtrLoc | GetPtrOfs | IntOfBool [@@deriving eq, show, ord]
+  type t = Not | GetPtrLoc | GetPtrOfs | IntOfBool
+  [@@deriving eq, show { with_path = false }, ord]
 end
 
 module Binop = struct
@@ -210,7 +211,11 @@ let rec split_ands (sv : t) (f : t -> unit) : unit =
       split_ands s2 f
   | _ -> f sv
 
-let distinct l = Nop (Distinct, l) <| TBool
+let distinct l =
+  (* [Distinct l] when l is empty or of size 1 is always true *)
+  match l with
+  | [] | _ :: [] -> v_true
+  | l -> Nop (Distinct, l) <| TBool
 
 (** {2 Integers} *)
 

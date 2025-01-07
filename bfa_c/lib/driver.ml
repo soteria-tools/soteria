@@ -236,10 +236,6 @@ let generate_main_summary file_name =
   setup_console_log (Some Debug);
   Initialize_analysis.init_once ();
   let results = exec_main_bi file_name in
-  let pp_bi_err ft (err, _) = pp_err ft err in
-  let res_printer =
-    Bfa_symex.Compo_res.pp ~ok:Abductor.Summary.pp ~err:pp_bi_err
-      ~miss:Heap.pp_serialized
-  in
-  let printer = Fmt.list ~sep:Fmt.sp res_printer in
+  let pp_summary = Abductor.Summary.pp pp_err in
+  let printer = Fmt.list ~sep:Fmt.sp pp_summary in
   Fmt.pr "@[<v>%a@]@." printer results
