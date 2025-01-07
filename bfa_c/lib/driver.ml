@@ -1,6 +1,5 @@
 open Cerb_frontend
 module Wpst_interp = Interp.Make (Heap)
-module Bi_interp = Interp.Make (Bi_heap)
 
 let setup_console_log level =
   Fmt_tty.setup_std_outputs ();
@@ -113,7 +112,7 @@ module Frontend = struct
   let frontend filename = !frontend filename
 end
 
-let parse_ail file =
+let parse_ail_raw file =
   match Frontend.frontend file with
   | Result (_, (_, ast)) -> Ok ast
   | Exception (loc, err) ->
@@ -143,20 +142,31 @@ let pp_err ft (err, _loc) =
   | `DoubleFree -> Fmt.string ft "DoubleFree"
   | `InvalidFree -> Fmt.string ft "InvalidFree"
 
+let parse_ail file_name =
+  let open Syntaxes.Result in
+  let* entry_point, sigma = parse_ail_raw file_name in
+  let* entry_point =
+    match entry_point with
+    | None ->
+        Error (`ParsingError "No entry point function", Cerb_location.unknown)
+    | Some e -> Ok e
+  in
+  let+ entry_point =
+    let entry_opt =
+      sigma.function_definitions
+      |> List.find_opt (fun (id, _) -> Symbol.equal_sym id entry_point)
+    in
+    match entry_opt with
+    | None ->
+        Error (`ParsingError "Entry point not found", Cerb_location.unknown)
+    | Some e -> Ok e
+  in
+  (entry_point, sigma)
+
 let exec_main file_name =
   let open Syntaxes.Result in
   let result =
     let* entry_point, sigma = parse_ail file_name in
-    let* entry_point =
-      match entry_point with
-      | None ->
-          Error (`ParsingError "No entry point function", Cerb_location.unknown)
-      | Some e -> Ok e
-    in
-    let entry_point =
-      sigma.function_definitions
-      |> List.find (fun (id, _) -> Symbol.equal_sym id entry_point)
-    in
     let () = Initialize_analysis.reinit sigma in
     let symex =
       Wpst_interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
@@ -208,7 +218,28 @@ let lsp () =
 (* Entry point function *)
 let show_ail file_name =
   setup_console_log (Some Debug);
-  Frontend.init ();
-  match parse_ail file_name with
+  Initialize_analysis.init_once ();
+  match parse_ail_raw file_name with
   | Ok prog -> Fmt.pr "@[<v>%a@]" Fmt_ail.pp_program prog
   | Error err -> Fmt.pr "%a@." pp_err err
+
+let exec_main_bi file_name =
+  match parse_ail file_name with
+  | Ok (entry_point, prog) ->
+      let () = Initialize_analysis.reinit prog in
+      Abductor.generate_summaries ~prog entry_point
+  | Error (`ParsingError s, loc) ->
+      Fmt.failwith "Failed to parse AIL at loc %a: %s" Fmt_ail.pp_loc loc s
+
+(* Entry point function *)
+let generate_main_summary file_name =
+  setup_console_log (Some Debug);
+  Initialize_analysis.init_once ();
+  let results = exec_main_bi file_name in
+  let pp_bi_err ft (err, _) = pp_err ft err in
+  let res_printer =
+    Bfa_symex.Compo_res.pp ~ok:Abductor.Summary.pp ~err:pp_bi_err
+      ~miss:Heap.pp_serialized
+  in
+  let printer = Fmt.list ~sep:Fmt.sp res_printer in
+  Fmt.pr "@[<v>%a@]@." printer results

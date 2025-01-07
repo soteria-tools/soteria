@@ -4,6 +4,7 @@ open T
 module type S = sig
   type t
   type serialized
+  type 'a err
 
   val pp : Format.formatter -> t -> unit
 
@@ -21,7 +22,7 @@ module type S = sig
       | `OutOfBounds
       | `UninitializedMemoryAccess
       | `UseAfterFree ]
-      * Cerb_location.t,
+      err,
       serialized )
     Csymex.Result.t
 
@@ -31,25 +32,25 @@ module type S = sig
     cval Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] * Cerb_location.t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
       serialized )
     Csymex.Result.t
 
   val alloc :
     sint Typed.t ->
     t ->
-    ([> sptr ] Typed.t * t, 'a * Cerb_location.t, serialized) Csymex.Result.t
+    ([> sptr ] Typed.t * t, [> ] err, serialized) Csymex.Result.t
 
   val alloc_ty :
     Tree_block.Ctype.ctype ->
     t ->
-    ([> sptr ] Typed.t * t, 'a * Cerb_location.t, serialized) Csymex.Result.t
+    ([> sptr ] Typed.t * t, [> ] err, serialized) Csymex.Result.t
 
   val free :
     [< sptr ] Typed.t ->
     t ->
     ( unit * t,
-      [> `InvalidFree | `UseAfterFree ] * Cerb_location.t,
+      [> `InvalidFree | `UseAfterFree ] err,
       serialized )
     Csymex.Result.t
 
@@ -59,10 +60,11 @@ module type S = sig
     size:sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] * Cerb_location.t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
       serialized )
     Csymex.Result.t
 
+  val error : 'a -> t -> ('ok * t, 'a err, serialized) Csymex.Result.t
   val produce : serialized -> t -> t Csymex.t
-  val consume : serialized -> t -> (t, 'err, serialized) Csymex.Result.t
+  val consume : serialized -> t -> (t, [> ] err, serialized) Csymex.Result.t
 end

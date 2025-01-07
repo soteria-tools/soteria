@@ -4,6 +4,8 @@ open Typed.Syntax
 module T = Typed.T
 open Csymex
 
+type 'a err = 'a * Cerb_location.t
+
 module SPmap = Pmap (struct
   type t = T.sloc Typed.t
 
@@ -112,7 +114,8 @@ let copy_nonoverlapping ~dst ~src ~size st =
         Tree_block.put_raw_tree ofs tree_to_write block)
 
 let alloc size st =
-  let@ () = with_loc_err () in
+  (* Commenting this out as alloc cannot fail *)
+  (* let@ () = with_loc_err () in*)
   let block = Freeable.Alive (Tree_block.alloc size) in
   let** loc, st = SPmap.alloc ~new_codom:block st in
   let ptr = Typed.Ptr.mk loc 0s in
@@ -133,6 +136,8 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) :
           ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
       (Typed.Ptr.loc ptr) st
   else error `InvalidFree
+
+let error err _st = error err
 
 let produce (serialized : serialized) (heap : t) : t Csymex.t =
   SPmap.produce (Freeable.produce Tree_block.produce) serialized heap

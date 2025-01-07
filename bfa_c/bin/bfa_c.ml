@@ -39,5 +39,13 @@ module Show_ail = struct
   let cmd = Cmd.v (Cmd.info "show-ail") term
 end
 
-let cmd = Cmd.group (Cmd.info "bfa-c") [ Exec_main.cmd; Lsp.cmd; Show_ail.cmd ]
+module Bi_main = struct
+  let term = Term.(const Bfa_c_lib.Driver.generate_main_summary $ file_arg)
+  let cmd = Cmd.v (Cmd.info "bi-main") term
+end
+
+let cmd =
+  Cmd.group (Cmd.info "bfa-c")
+    [ Exec_main.cmd; Lsp.cmd; Show_ail.cmd; Bi_main.cmd ]
+
 let () = exit @@ Cmd.eval cmd

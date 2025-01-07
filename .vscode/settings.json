@@ -3,4 +3,5 @@
     "kind": "opam",
     "switch": "${workspaceFolder:bfa-ocaml}"
   },
+  "makefile.configureOnOpen": false,
 }

@@ -8,6 +8,13 @@ module Ctype = Cerb_frontend.Ctype
 module AilSyntax = Cerb_frontend.AilSyntax
 module T = Typed.T
 
+let nondet_int_fun ~prog:_ ~args:_ ~(state : 'state) :
+    ([> Typed.T.sint ] Typed.t * 'state, 'err, 'fix) Result.t =
+  let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
+  let+ v = Typed.nondet ~constrs Typed.t_int in
+  let v = (v :> T.cval Typed.t) in
+  Ok (v, state)
+
 module Make (Heap : Heap_intf.S) = struct
   module C_std = C_std.M (Heap)
 
@@ -19,7 +26,6 @@ module Make (Heap : Heap_intf.S) = struct
   let pointer_inner (Ctype.Ctype (_, ty)) =
     match ty with Pointer (_, ty) -> Some ty | _ -> None
 
-  type cval = [ T.sint | T.sptr ]
   type state = Heap.t
   type store = (T.sptr Typed.t option * Ctype.ctype) Store.t
 
@@ -48,23 +54,10 @@ module Make (Heap : Heap_intf.S) = struct
     prog:sigma ->
     args:T.cval Typed.t list ->
     state:state ->
-    (cval Typed.t * state, 'err, Heap.serialized) Result.t
+    (T.cval Typed.t * state, 'err, Heap.serialized) Result.t
 
-  (* TODO: handle qualifiers! *)
-  let get_param_tys ~prog fid =
-    let ptys =
-      List.find_map
-        (fun (id, (_, _, decl)) ->
-          if Cerb_frontend.Symbol.equal_sym id fid then
-            match decl with
-            | Cerb_frontend.AilSyntax.Decl_function
-                (_proto, _ret_qual, ptys, _is_variadic, _is_inline, _is_noreturn)
-              ->
-                Some (List.map (fun (_, ty, _) -> ty) ptys)
-            | _ -> None
-          else None)
-        prog.Cerb_frontend.AilSyntax.declarations
-    in
+  let get_param_tys ~prog name =
+    let ptys = Ail_helpers.get_param_tys ~prog name in
     Csymex.of_opt_not_impl ~msg:"Couldn't find function prototype" ptys
 
   let attach_bindings store (bindings : AilSyntax.bindings) =
@@ -121,13 +114,6 @@ module Make (Heap : Heap_intf.S) = struct
         Csymex.return (Typed.int_z z)
     | _ -> Csymex.not_impl "value of constant?"
 
-  let nondet_int_fun ~prog:_ ~args:_ ~state :
-      ([> Typed.T.sint ] Typed.t * state, 'err, Heap.serialized) Result.t =
-    let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
-    let+ v = Typed.nondet ~constrs Typed.t_int in
-    let v = (v :> cval Typed.t) in
-    Ok (v, state)
-
   let debug_show ~prog:_ ~args:_ ~state =
     let loc = get_loc () in
     let str = (Fmt.to_to_string (Heap.pp_pretty ~ignore_freed:false)) state in
@@ -160,7 +146,7 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
           Fmt_ail.pp_ty_ new_ty
 
-  let rec equality_check ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
+  let rec equality_check ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TInt, TInt | TPointer, TPointer ->
@@ -169,13 +155,13 @@ module Make (Heap : Heap_intf.S) = struct
         let v2 : T.sint Typed.t = Typed.cast v2 in
         if%sat Typed.(v2 ==@ zero) then
           Result.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool, state)
-        else Result.error (`UBPointerComparison, loc)
-    | TInt, TPointer -> equality_check ~loc ~state v2 v1
+        else Heap.error `UBPointerComparison state
+    | TInt, TPointer -> equality_check ~state v2 v1
     | _ ->
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
           Typed.ppa v1 Typed.ppa v2
 
-  let rec arith_add ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
+  let rec arith_add ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TInt, TInt ->
@@ -188,20 +174,20 @@ module Make (Heap : Heap_intf.S) = struct
         let loc = Typed.Ptr.loc v1 in
         let ofs = Typed.Ptr.ofs v1 +@ v2 in
         Result.ok (Typed.Ptr.mk loc ofs, state)
-    | TInt, TPointer -> arith_add ~loc ~state v2 v1
-    | TPointer, TPointer -> Result.error (`UBPointerArithmetic, loc)
+    | TInt, TPointer -> arith_add ~state v2 v1
+    | TPointer, TPointer -> Heap.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
 
-  let arith_mul ~loc ~state (v1 : [< Typed.T.cval ] Typed.t)
+  let arith_mul ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TInt, TInt ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
         Result.ok (v1 *@ v2, state)
-    | TPointer, _ | _, TPointer -> Result.error (`UBPointerArithmetic, loc)
+    | TPointer, _ | _, TPointer -> Heap.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
           Typed.ppa v1 Typed.ppa v2
@@ -263,7 +249,7 @@ module Make (Heap : Heap_intf.S) = struct
         | AilEunary (Indirection, e) -> (* &*e <=> e *) eval_expr state e
         | AilEident id -> (
             match Store.find_value id store with
-            | Some ptr -> Result.ok ((ptr :> cval Typed.t), state)
+            | Some ptr -> Result.ok ((ptr :> T.cval Typed.t), state)
             | None ->
                 Fmt.kstr not_impl "Variable %a is not declared" Fmt_ail.pp_sym
                   id)
@@ -280,7 +266,7 @@ module Make (Heap : Heap_intf.S) = struct
               | Some ty -> Layout.size_of_s ty
               | None -> return 1s
             in
-            let** v_incr, state = arith_add ~loc ~state v incr_operand in
+            let** v_incr, state = arith_add ~state v incr_operand in
             let++ (), state = Heap.store ptr (type_of e) v_incr state in
             (v, state)
         | Indirection -> Result.ok (v, state)
@@ -310,10 +296,10 @@ module Make (Heap : Heap_intf.S) = struct
             let* v1 = cast_checked v1 ~ty:Typed.t_int in
             let* v2 = cast_checked v2 ~ty:Typed.t_int in
             Result.ok (v1 <=@ v2 |> Typed.int_of_bool, state)
-        | Eq -> equality_check ~loc ~state v1 v2
+        | Eq -> equality_check ~state v1 v2
         | Ne ->
             (* TODO: Semantics of Ne might be different from semantics of not eq? *)
-            let++ res, state = equality_check ~loc ~state v1 v2 in
+            let++ res, state = equality_check ~state v1 v2 in
             (Typed.not_int_bool res, state)
         | And ->
             let* v1 = cast_checked v1 ~ty:Typed.t_int in
@@ -325,26 +311,26 @@ module Make (Heap : Heap_intf.S) = struct
             | Div -> (
                 let* v1 = cast_checked v1 ~ty:Typed.t_int in
                 let* v2 = cast_checked v2 ~ty:Typed.t_int in
-                let+ v2 = Typed.check_nonzero v2 in
+                let* v2 = Typed.check_nonzero v2 in
                 match v2 with
-                | Ok v2 -> Ok (v1 /@ v2, state)
-                | Error `NonZeroIsZero -> Error (`DivisionByZero, loc)
-                | Missing e -> (* Unreachable but still *) Missing e)
-            | Mul -> arith_mul ~loc ~state v1 v2
+                | Ok v2 -> Csymex.Result.ok (v1 /@ v2, state)
+                | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
+                | Missing e -> (* Unreachable but still *) Csymex.Result.miss e)
+            | Mul -> arith_mul ~state v1 v2
             | Add -> (
                 match
                   (type_of e1 |> pointer_inner, type_of e2 |> pointer_inner)
                 with
-                | Some _, Some _ -> Result.error (`UBPointerArithmetic, loc)
+                | Some _, Some _ -> Heap.error `UBPointerArithmetic state
                 | Some ty, None ->
                     let* factor = Layout.size_of_s ty in
-                    let** v2, state = arith_mul ~loc ~state v2 factor in
-                    arith_add ~loc ~state v1 v2
+                    let** v2, state = arith_mul ~state v2 factor in
+                    arith_add ~state v1 v2
                 | None, Some ty ->
                     let* factor = Layout.size_of_s ty in
-                    let** v1, state = arith_mul ~loc ~state v1 factor in
-                    arith_add ~loc ~state v2 v1
-                | None, None -> arith_add ~loc ~state v1 v2)
+                    let** v1, state = arith_mul ~state v1 factor in
+                    arith_add ~state v2 v1
+                | None, None -> arith_add ~state v1 v2)
             | _ ->
                 Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
                   Fmt_ail.pp_arithop a_op)
@@ -361,7 +347,7 @@ module Make (Heap : Heap_intf.S) = struct
         match Store.find_value id store with
         | Some v ->
             (* A pointer is a value *)
-            let v = (v :> cval Typed.t) in
+            let v = (v :> T.cval Typed.t) in
             Result.ok (v, state)
         | None ->
             Fmt.kstr not_impl "Variable %a not found in store" Fmt_ail.pp_sym id
@@ -388,7 +374,7 @@ module Make (Heap : Heap_intf.S) = struct
                ~msg:"Member of Pointer that isn't of type pointer"
         in
         let* mem_ofs = Layout.member_ofs member ty_pointee in
-        arith_add ~loc ~state ptr_v mem_ofs
+        arith_add ~state ptr_v mem_ofs
     | AilSyntax.AilEcast (_quals, new_ty, expr) ->
         let old_ty = type_of expr in
         let** v, state = eval_expr state expr in
@@ -511,30 +497,4 @@ module Make (Heap : Heap_intf.S) = struct
     (* We model void as zero, it should never be used anyway *)
     let value = Option.value ~default:0s val_opt in
     (value, state)
-
-  (* let exec_fun_from_summary ~prog ~args ~serialized_state ~path_condition
-      (fundef : fundef) =
-    let* bi_subst =
-      let iter_args f = List.iter (fun tsv -> Typed.iter_vars tsv f) args in
-      let iter_pc f =
-        List.iter (fun sv -> Svalue.iter_vars sv f) path_condition
-      in
-      let iter_heap = Heap.iter_vars_serialized serialized_state in
-      let iter_all = Iter.append (Iter.append iter_args iter_pc) iter_heap in
-      let module From_iter = Bi_subst.From_iter (Csymex.SYMEX) in
-      From_iter.from_iter iter_all
-    in
-    let serialized_state, path_condition, args =
-      if Bi_subst.is_empty bi_subst then (serialized_state, path_condition, args)
-      else
-        let subst_var = Bi_subst.forward bi_subst in
-        ( Heap.subst_serialized subst_var serialized_state,
-          List.map (Svalue.subst subst_var) path_condition,
-          List.map (Typed.subst subst_var) args )
-    in
-    let* () = Csymex.assume path_condition in
-    let* state = Heap.produce serialized_state Heap.empty in
-    let++ res, _final_state = exec_fun ~prog ~args ~state fundef in
-    let backward_subst = Bi_subst.backward bi_subst in
-    (Typed.subst backward_subst res, 0) *)
 end
