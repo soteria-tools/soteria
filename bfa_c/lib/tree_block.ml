@@ -8,7 +8,11 @@ open Typed.Syntax
 open Csymex
 module Ctype = Cerb_frontend.Ctype
 
-let no_fix = []
+let miss_no_fix_immediate () =
+  L.debug (fun m -> m "MISSING WITH NO FIX");
+  Bfa_symex.Compo_res.Missing []
+
+let miss_no_fix () = Csymex.return (miss_no_fix_immediate ())
 
 module MemVal = struct
   type t = { value : T.cval Typed.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
@@ -89,7 +93,7 @@ module Node = struct
 
   let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
     match t with
-    | NotOwned _ -> Result.miss no_fix
+    | NotOwned _ -> miss_no_fix ()
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok 0s
@@ -325,8 +329,8 @@ module Tree = struct
     let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match node.node with
-      | NotOwned Totally -> Result.miss no_fix
-      | NotOwned Partially -> Result.miss no_fix
+      | NotOwned Totally -> miss_no_fix ()
+      | NotOwned Partially -> miss_no_fix ()
       | _ -> Result.ok ()
     in
     ((), tree)
@@ -345,7 +349,7 @@ module Tree = struct
     in
     let++ () =
       match old_node.node with
-      | NotOwned _ -> Result.miss no_fix
+      | NotOwned _ -> miss_no_fix ()
       | _ -> Result.ok ()
     in
     ((), new_tree)
@@ -383,9 +387,7 @@ module Tree = struct
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
-      match framed.node with
-      | NotOwned _ -> Result.miss no_fix
-      | _ -> Result.ok ()
+      match framed.node with NotOwned _ -> miss_no_fix () | _ -> Result.ok ()
     in
     tree
 
@@ -407,7 +409,7 @@ module Tree = struct
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match framed.node with
-      | NotOwned _ -> Result.miss no_fix
+      | NotOwned _ -> miss_no_fix ()
       | Owned (Uninit Totally) -> Result.ok ()
       | _ ->
           L.debug (fun m -> m "Consuming uninit but no uninit, vanishing");
@@ -432,7 +434,7 @@ module Tree = struct
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     match framed.node with
-    | NotOwned _ -> Result.miss no_fix
+    | NotOwned _ -> miss_no_fix ()
     | Owned Zeros -> Result.ok tree
     | Owned (Init { ty = _; value }) ->
         let+ () = Typed.assume [ value ==?@ 0s ] in
@@ -489,12 +491,12 @@ let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let++ res, root = f () in
   (res, { t with root })
 
-let of_opt = function None -> Result.miss no_fix | Some t -> Result.ok t
+let of_opt = function None -> miss_no_fix () | Some t -> Result.ok t
 let to_opt t = if is_empty t then None else Some t
 
 let assert_exclusively_owned t =
   let** t = of_opt t in
-  let err = Result.miss no_fix in
+  let err = miss_no_fix () in
   match t.bound with
   | None -> err
   | Some bound ->
@@ -515,7 +517,7 @@ let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t option) :
 
 let store ofs ty sval t =
   match t with
-  | None -> Result.miss no_fix
+  | None -> miss_no_fix ()
   | Some t ->
       let* size = Layout.size_of_s ty in
       let++ (), tree =
@@ -532,7 +534,7 @@ let get_raw_tree_owned ofs size t =
     if Node.is_fully_owned tree.node then
       let tree = Tree.offset ~by:~-ofs tree in
       Ok (tree, t)
-    else Missing no_fix
+    else miss_no_fix_immediate ()
   in
   (res, to_opt tree)
 
@@ -731,7 +733,7 @@ let produce_zeros ofs len t =
 
 let consume_bound bound t =
   match t with
-  | None | Some { bound = None; _ } -> Result.miss no_fix
+  | None | Some { bound = None; _ } -> miss_no_fix ()
   | Some { bound = Some v; root } ->
       let+ () = Typed.assume [ v ==?@ bound ] in
       Ok (to_opt { bound = None; root })
