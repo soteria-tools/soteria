@@ -157,6 +157,7 @@ dist
 *.cmx
 *.cmxs
 *.cmxa
+dune.lock
 
 # ocamlbuild working directory
 _build/
