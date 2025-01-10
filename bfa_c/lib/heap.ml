@@ -6,7 +6,7 @@ open Csymex
 
 type 'a err = 'a * Cerb_location.t
 
-module SPmap = Pmap (struct
+module SPmap = Pmap_direct_access (struct
   type t = T.sloc Typed.t
 
   module Symex = Csymex
@@ -14,7 +14,7 @@ module SPmap = Pmap (struct
   let pp = Typed.ppa
   let sem_eq x y = Typed.sem_eq x y |> Typed.untyped
   let compare = Typed.compare
-  let distinct l = [ Typed.distinct l |> Typed.untyped ]
+  let distinct l = Typed.distinct l |> Typed.untyped
   let subst subst_var t = Typed.subst subst_var t
 
   let fresh ?(constrs : (t -> Svalue.t list) option) () : t Csymex.t =

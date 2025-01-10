@@ -21,7 +21,7 @@
  (description "Bugs for All!")
  (depends
   (ocaml
-   (>= 5.2.0))
+   (>= 5.3.0))
   eio_main
   simple_smt
   iter
@@ -35,7 +35,7 @@
    (and
     :build
     (>= 3.14.0)))
-  (shexp :build)
+  ppxlib
   (ocamlformat
    (and
     :with-dev-detup
@@ -48,7 +48,8 @@
  (description "Bugs for All, for C.")
  (depends
   (ocaml
-   (>= 5.2.0))
+   (>= 5.3.0))
+  (shexp :build)
   eio_main
   bfa
   ppx_inline_test
@@ -83,7 +84,7 @@
  (description "VSCode extension for BFA")
  (depends
   (ocaml
-   (>= 5.2.0))
+   (>= 5.3.0))
   (dune
    (and
     :build

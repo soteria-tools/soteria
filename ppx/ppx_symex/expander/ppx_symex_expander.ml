@@ -2,14 +2,19 @@ open Ppxlib
 
 module If_sat = struct
   module Extension_name = struct
-    type t = Sat
+    type t = Sat | Sat1
 
-    let to_string = function Sat -> "sat"
+    let to_string = function Sat -> "sat" | Sat1 -> "sat1"
   end
 
-  let expand_if ~loc expr then_ else_ =
+  let associated_fn ~loc = function
+    | Extension_name.Sat -> [%expr Symex_syntax.branch_on]
+    | Sat1 -> [%expr Symex_syntax.branch_on_take_one]
+
+  let expand_if ~loc ~ext expr then_ else_ =
+    let associated_fn = associated_fn ~loc ext in
     [%expr
-      Symex_syntax.branch_on [%e expr]
+      [%e associated_fn] [%e expr]
         ~then_:(fun () -> [%e then_])
         ~else_:(fun () -> [%e else_])]
 
@@ -18,7 +23,7 @@ module If_sat = struct
     let expansion =
       match expr with
       | [%expr if [%e? expr] then [%e? then_] else [%e? else_]] ->
-          expand_if ~loc expr then_ else_
+          expand_if ~loc ~ext expr then_ else_
       | [%expr if [%e? _] then [%e? _]] ->
           Location.raise_errorf ~loc "'if%%%s' must include an else branch"
             (Extension_name.to_string ext)

@@ -13,7 +13,10 @@ let () =
   let open Ppx_symex_expander.If_sat in
   Driver.register_transformation
     (Extension_name.to_string Sat)
-    ~extensions:[ ext Sat ]
+    ~extensions:[ ext Sat ];
+  Driver.register_transformation
+    (Extension_name.to_string Sat1)
+    ~extensions:[ ext Sat1 ]
 
 let () =
   let open Ppx_symex_expander.Sym_constants in

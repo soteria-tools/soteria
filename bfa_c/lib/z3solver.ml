@@ -119,7 +119,9 @@ module Solver_state = struct
 
   let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
   let to_value_list (t : t) = Iter.to_rev_list (iter t)
-  let mem (t : t) v = Iter.exists (Svalue.equal v) (iter t)
+
+  let mem (t : t) v =
+    Dynarray.exists (fun d -> Dynarray.exists (Svalue.equal v) d) t
 end
 
 type t = {

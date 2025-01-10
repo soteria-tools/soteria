@@ -8,7 +8,7 @@ license: "BSD-3-Clause"
 homepage: "https://github.com/bugs-for-all/bfa"
 bug-reports: "https://github.com/bugs-for-all/bfa/issues"
 depends: [
-  "ocaml" {>= "5.2.0"}
+  "ocaml" {>= "5.3.0"}
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ocaml-lsp-server" {with-dev-detup}
   "ocamlformat" {with-dev-detup & = "0.26.2"}

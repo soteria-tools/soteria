@@ -2,7 +2,7 @@ open Ppxlib
 
 module If_sat : sig
   module Extension_name : sig
-    type t = Sat
+    type t = Sat | Sat1
 
     val to_string : t -> string
   end

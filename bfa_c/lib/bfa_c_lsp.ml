@@ -14,8 +14,8 @@ let get_abort_diagnostics () =
   let open Syntaxes.List in
   let+ msg, loc = Csymex.flush_give_up () in
   let range = cerb_loc_to_range loc in
-  Lsp.Types.Diagnostic.create ~message:msg ~severity:Information ~range
-    ~source:"bfa" ()
+  Lsp.Types.Diagnostic.create ~message:(`String msg) ~severity:Information
+    ~range ~source:"bfa" ()
 
 let error_to_diagnostic_opt (err, loc) =
   let open Lsp.Types in
@@ -36,8 +36,8 @@ let error_to_diagnostic_opt (err, loc) =
         Some (Error, "Undefined Behavior for Pointer Arithmetic")
     | `InvalidFree -> Some (Error, "Invalid Pointer passed to free")
   in
-  Lsp.Types.Diagnostic.create ~message ~severity ~range:(cerb_loc_to_range loc)
-    ~source:"bfa" ()
+  Lsp.Types.Diagnostic.create ~message:(`String message) ~severity
+    ~range:(cerb_loc_to_range loc) ~source:"bfa" ()
 
 class bfa_lsp_server run_to_errors =
   object (self)

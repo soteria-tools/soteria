@@ -16,6 +16,16 @@ module type Base = sig
     else_:(unit -> 'a MONAD.t) ->
     'a MONAD.t
 
+  (** Branches on value, and takes at most one branch, starting with the [then]
+      branch. This means that if the [then_] branch is SAT, it is taken and the
+      [else_] branch is ignored, otherwise the [else_] branch is taken. This is,
+      of course, UX-sound, but not OX-sound. *)
+  val branch_on_take_one :
+    Value.t ->
+    then_:(unit -> 'a MONAD.t) ->
+    else_:(unit -> 'a MONAD.t) ->
+    'a MONAD.t
+
   val branches : (unit -> 'a MONAD.t) list -> 'a MONAD.t
 
   (** [run] p actually performs symbolic execution and returns a list of
@@ -37,6 +47,16 @@ module type S = sig
 
   val branch_on :
     Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
+
+  (** Branches on value, and takes at most one branch, starting with the [then]
+      branch. This means that if the [then_] branch is SAT, it is taken and the
+      [else_] branch is ignored, otherwise the [else_] branch is taken. This is,
+      of course, UX-sound, but not OX-sound. *)
+  val branch_on_take_one :
+    Value.t ->
+    then_:(unit -> 'a MONAD.t) ->
+    else_:(unit -> 'a MONAD.t) ->
+    'a MONAD.t
 
   val branches : (unit -> 'a t) list -> 'a t
 
@@ -103,6 +123,9 @@ module type S = sig
     module Symex_syntax : sig
       val branch_on :
         Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
+
+      val branch_on_take_one :
+        Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
     end
   end
 end
@@ -144,6 +167,7 @@ module Extend (Base : Base) = struct
 
     module Symex_syntax = struct
       let branch_on = branch_on
+      let branch_on_take_one = branch_on_take_one
     end
   end
 end
@@ -181,14 +205,15 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
 
   let fresh_var ty = Seq.return (Solver.fresh_var ty)
 
-  let branch_on guard ~then_ ~else_ =
+  let branch_on guard ~then_ ~else_ : 'a Seq.t =
+   fun () ->
     let guard = Solver.simplify guard in
     let left_sat = ref true in
     match Value.as_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
        if we remove the Some true and Some false optimisation. *)
-    | Some true -> then_ ()
-    | Some false -> else_ ()
+    | Some true -> then_ () ()
+    | Some false -> else_ () ()
     | None ->
         Seq.append
           (fun () ->
@@ -206,11 +231,27 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
               if Solver.sat () then else_ () () else Seq.empty ()
             else (* Right must be sat since left was not! *)
               else_ () ())
+          ()
 
-  let branches (brs : (unit -> 'a Seq.t) list) : 'a Seq.t =
+  let branch_on_take_one guard ~then_ ~else_ : 'a Seq.t =
+   fun () ->
+    let guard = Solver.simplify guard in
+    match Value.as_bool guard with
+    | Some true -> then_ () ()
+    | Some false -> else_ () ()
+    | None ->
+        Solver.save ();
+        Solver.add_constraints ~simplified:true [ guard ];
+        if Solver.sat () then then_ () ()
+        else (
+          Solver.backtrack_n 1;
+          Solver.add_constraints [ Value.(not guard) ];
+          else_ () ())
+
+  let branches (brs : (unit -> 'a Seq.t) list) () =
     match brs with
-    | [] -> Seq.empty
-    | [ a ] -> a ()
+    | [] -> Seq.Nil
+    | [ a ] -> a () ()
     (* Optimised case *)
     | [ a; b ] ->
         Seq.append
@@ -220,6 +261,7 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
           (fun () ->
             Solver.backtrack_n 1;
             b () ())
+          ()
     | a :: (_ :: _ as r) ->
         (* First branch should not backtrack and last branch should not save *)
         let rec loop brs =
@@ -241,7 +283,7 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
           (fun () ->
             Solver.save ();
             a () ())
-          (loop r)
+          (loop r) ()
 
   let vanish () = Seq.empty
 
@@ -317,6 +359,22 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
           then else_ () f)
         else (* Right must be sat since left was not! *)
           else_ () f
+
+  let branch_on_take_one guard ~then_ ~else_ : 'a Iter.t =
+   fun f ->
+    let guard = Solver.simplify guard in
+
+    match Value.as_bool guard with
+    | Some true -> then_ () f
+    | Some false -> else_ () f
+    | None ->
+        Solver.save ();
+        Solver.add_constraints ~simplified:true [ guard ];
+        if Solver.sat () then then_ () f
+        else (
+          Solver.backtrack_n 1;
+          Solver.add_constraints [ Value.(not guard) ];
+          else_ () f)
 
   let batched s =
     Iter.flat_map
