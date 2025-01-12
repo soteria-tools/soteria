@@ -129,18 +129,23 @@ let is_main (def : Cabs.function_definition) =
       String.equal name "main"
   | _ -> false
 
-let pp_err ft (err, _loc) =
-  match err with
-  | `NullDereference -> Fmt.string ft "NullDereference"
-  | `OutOfBounds -> Fmt.string ft "OutOfBounds"
-  | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
-  | `UseAfterFree -> Fmt.string ft "UseAfterFree"
-  | `DivisionByZero -> Fmt.string ft "DivisionByZero"
-  | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
-  | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
-  | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
-  | `DoubleFree -> Fmt.string ft "DoubleFree"
-  | `InvalidFree -> Fmt.string ft "InvalidFree"
+let pp_err ft (err, loc) =
+  Format.open_hbox ();
+  let () =
+    match err with
+    | `NullDereference -> Fmt.string ft "NullDereference"
+    | `OutOfBounds -> Fmt.string ft "OutOfBounds"
+    | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
+    | `UseAfterFree -> Fmt.string ft "UseAfterFree"
+    | `DivisionByZero -> Fmt.string ft "DivisionByZero"
+    | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
+    | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
+    | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
+    | `DoubleFree -> Fmt.string ft "DoubleFree"
+    | `InvalidFree -> Fmt.string ft "InvalidFree"
+  in
+  Fmt.pf ft " at %a" Fmt_ail.pp_loc loc;
+  Format.close_box ()
 
 let parse_ail file_name =
   let open Syntaxes.Result in
