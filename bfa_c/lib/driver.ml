@@ -227,7 +227,7 @@ let exec_main_bi file_name =
   match parse_ail file_name with
   | Ok (entry_point, prog) ->
       let () = Initialize_analysis.reinit prog in
-      Abductor.generate_summaries ~prog entry_point
+      Abductor.generate_summaries_for ~prog entry_point
   | Error (`ParsingError s, loc) ->
       Fmt.failwith "Failed to parse AIL at loc %a: %s" Fmt_ail.pp_loc loc s
 
@@ -245,11 +245,11 @@ let exec_fun_bi file_name fun_name =
   | Ok (_entry_point, prog) ->
       let () = Initialize_analysis.reinit prog in
       let fundef =
-        match Ail_helpers.find_fun ~prog fun_name with
+        match Ail_helpers.find_fun_name ~prog fun_name with
         | Some fundef -> fundef
         | None -> Fmt.failwith "Couldn't find function %s" fun_name
       in
-      Abductor.generate_summaries ~prog fundef
+      Abductor.generate_summaries_for ~prog fundef
   | Error (`ParsingError s, loc) ->
       Fmt.failwith "Failed to parse AIL at loc %a: %s" Fmt_ail.pp_loc loc s
 
@@ -262,3 +262,19 @@ let generate_summary_for file_name fun_name =
   let pp_summary = Abductor.Summary.pp pp_err in
   let printer = Fmt.list ~sep:Fmt.sp pp_summary in
   Fmt.pr "@[<v>%a@]@." printer results
+
+let generate_all_summaries file_name =
+  setup_console_log (Some Debug);
+  Initialize_analysis.init_once ();
+  let prog =
+    match parse_ail_raw file_name with
+    | Error e -> Fmt.failwith "Failed to parse AIL: %a" pp_err e
+    | Ok (_, prog) -> prog
+  in
+  let results = Abductor.generate_all_summaries prog in
+  List.iter
+    (fun (fid, summaries) ->
+      Fmt.pr "@[<v 2>Summaries for %a:@ %a@]@." Fmt_ail.pp_sym fid
+        (Fmt.list ~sep:Fmt.sp (Abductor.Summary.pp pp_err))
+        summaries)
+    results

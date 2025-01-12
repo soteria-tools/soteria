@@ -55,8 +55,20 @@ module Generate_summary = struct
   let cmd = Cmd.v (Cmd.info "gen-summary") term
 end
 
+module Generate_summaries = struct
+  let term = Term.(const Bfa_c_lib.Driver.generate_all_summaries $ file_arg)
+  let cmd = Cmd.v (Cmd.info "gen-summaries") term
+end
+
 let cmd =
   Cmd.group (Cmd.info "bfa-c")
-    [ Exec_main.cmd; Lsp.cmd; Show_ail.cmd; Bi_main.cmd; Generate_summary.cmd ]
+    [
+      Exec_main.cmd;
+      Lsp.cmd;
+      Show_ail.cmd;
+      Bi_main.cmd;
+      Generate_summary.cmd;
+      Generate_summaries.cmd;
+    ]
 
 let () = exit @@ Cmd.eval cmd

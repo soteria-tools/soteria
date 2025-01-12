@@ -11,7 +11,13 @@ let get_param_tys ~prog fid =
       else None)
     prog.Cerb_frontend.AilSyntax.declarations
 
-let find_fun ~prog to_find =
+let find_fun_sym ~prog to_find =
+  List.find_map
+    (fun ((id, _) as decl) ->
+      if Cerb_frontend.Symbol.equal_sym id to_find then Some decl else None)
+    prog.Cerb_frontend.AilSyntax.function_definitions
+
+let find_fun_name ~prog to_find =
   List.find_map
     (fun ((id, _) as decl) ->
       let name = Cerb_frontend.Pp_symbol.to_string id in

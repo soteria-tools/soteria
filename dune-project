@@ -52,6 +52,8 @@
   (shexp :build)
   eio_main
   bfa
+  (tsort
+   (>= 2.1.0))
   ppx_inline_test
   cerberus-lib
   zarith
