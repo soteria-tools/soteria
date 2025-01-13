@@ -241,7 +241,7 @@ let generate_main_summary file_name =
   setup_console_log (Some Debug);
   Initialize_analysis.init_once ();
   let results = exec_main_bi file_name in
-  let pp_summary = Abductor.Summary.pp pp_err in
+  let pp_summary = Summary.pp pp_err in
   let printer = Fmt.list ~sep:Fmt.sp pp_summary in
   Fmt.pr "@[<v>%a@]@." printer results
 
@@ -264,7 +264,7 @@ let generate_summary_for file_name fun_name =
   setup_console_log (Some Debug);
   Initialize_analysis.init_once ();
   let results = exec_fun_bi file_name fun_name in
-  let pp_summary = Abductor.Summary.pp pp_err in
+  let pp_summary = Summary.pp pp_err in
   let printer = Fmt.list ~sep:Fmt.sp pp_summary in
   Fmt.pr "@[<v>%a@]@." printer results
 
@@ -280,6 +280,6 @@ let generate_all_summaries log_level file_name =
   List.iter
     (fun (fid, summaries) ->
       Fmt.pr "@[<v 2>Summaries for %a:@ %a@]@." Fmt_ail.pp_sym fid
-        (Fmt.list ~sep:Fmt.sp (Abductor.Summary.pp pp_err))
+        (Fmt.list ~sep:Fmt.sp (Summary.pp pp_err))
         summaries)
     results

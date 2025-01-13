@@ -31,3 +31,6 @@ module Incr_counter_mut : sig
 
   val get_next : t -> var
 end
+
+module Hashset : Hashset.S with type elt = t
+module Set : Set.S with type elt = t

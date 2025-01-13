@@ -10,9 +10,17 @@ let pp = Fmt.of_to_string to_string
 let equal = Int.equal
 let compare = Int.compare
 
+module Set = Set.Make (Int)
+
+module Hashset = Hashset.Make (struct
+  include Int
+
+  let pp = pp
+end)
+
 module Incr_counter_mut = struct
   type var = t
-  type nonrec t = t Dynarray.t
+  type t = int Dynarray.t
 
   let init () =
     let t = Dynarray.create () in

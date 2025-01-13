@@ -1,24 +1,5 @@
 module Bi_interp = Interp.Make (Bi_heap)
 open Ail_tys
-module T = Typed.T
-
-module Summary = struct
-  type 'err t = {
-    args : T.cval Typed.t list;
-        (** List of arguments values, corresponding to the formal arguments in
-            order. Really a form of [(x == a0) * (y == a1)] *)
-    pre : Heap.serialized list;  (** Pre-condition as a list of fixes *)
-    pc : Svalue.t list;
-        (** Path condition. Whether it is in the post or in the pre, it doesn't
-            matter for UX. *)
-    post : Heap.serialized;  (** Post condition as a serialized heap *)
-    ret : (T.cval Typed.t, 'err) result;
-        (** Return value. If `ok` then it is the C value that the function
-            returned, if `err` then it is a description of the bug exhibitied by
-            the code *)
-  }
-  [@@deriving show { with_path = false }]
-end
 
 module Summaries = struct
   module H = Hashtbl.Make (struct
