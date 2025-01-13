@@ -142,6 +142,7 @@ module Make (Heap : Heap_intf.S) = struct
         | TPointer -> return v
         | _ ->
             Fmt.kstr Csymex.not_impl "BUG: not a valid C value: %a" Typed.ppa v)
+    | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
     | _ ->
         Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
           Fmt_ail.pp_ty_ new_ty

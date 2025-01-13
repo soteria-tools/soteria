@@ -140,6 +140,10 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) :
 let error err _st = error err
 
 let produce (serialized : serialized) (heap : t) : t Csymex.t =
+  let non_null_locs =
+    List.map (fun (loc, _) -> Typed.not (Typed.Ptr.null_loc ==@ loc)) serialized
+  in
+  let* () = Typed.assume non_null_locs in
   SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
 
 let consume (serialized : serialized) (heap : t) :

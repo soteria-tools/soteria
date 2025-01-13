@@ -243,10 +243,20 @@ let lift_int_binop ~out_cons ~out_ty ~f ~binop v1 v2 =
   | Int i1, Int i2 -> out_cons (f i1 i2)
   | _ -> Binop (binop, v1, v2) <| out_ty
 
+let gt v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> bool (Z.gt i1 i2)
+  | _, _ when equal v1 v2 -> v_false
+  | _ -> Binop (Gt, v1, v2) <| TBool
+
+let lt v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> bool (Z.lt i1 i2)
+  | _, _ when equal v1 v2 -> v_false
+  | _ -> Binop (Lt, v1, v2) <| TBool
+
 let geq = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.geq ~binop:Geq
 let leq = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.leq ~binop:Leq
-let lt = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.lt ~binop:Lt
-let gt = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.gt ~binop:Gt
 let plus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.add ~binop:Plus
 let minus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.sub ~binop:Minus
 let times = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.mul ~binop:Times
