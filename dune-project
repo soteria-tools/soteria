@@ -64,9 +64,9 @@
   logs
   printbox-text
   (linol
-   (>= 0.7))
+   (>= 0.8))
   (linol-eio
-   (>= 0.7))
+   (>= 0.8))
   (odoc :with-doc)
   (alcotest :with-test)
   (dune
