@@ -8,11 +8,11 @@ open Typed.Syntax
 open Csymex
 module Ctype = Cerb_frontend.Ctype
 
-let miss_no_fix_immediate () =
-  L.debug (fun m -> m "MISSING WITH NO FIX");
+let miss_no_fix_immediate ?(msg = "") () =
+  L.info (fun m -> m "MISSING WITH NO FIX %s" msg);
   Bfa_symex.Compo_res.Missing []
 
-let miss_no_fix () = Csymex.return (miss_no_fix_immediate ())
+let miss_no_fix ?msg () = Csymex.return (miss_no_fix_immediate ?msg ())
 
 module MemVal = struct
   type t = { value : T.cval Typed.t; ty : Ctype.ctype [@printer Fmt_ail.pp_ty] }
@@ -93,7 +93,7 @@ module Node = struct
 
   let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
     match t with
-    | NotOwned _ -> miss_no_fix ()
+    | NotOwned _ -> miss_no_fix ~msg:"not owned" ()
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok 0s
@@ -108,7 +108,7 @@ module Node = struct
     | Owned Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
            We have to approximate and vanish. *)
-        L.debug (fun m -> m "Reading from Any memory, vanishing.");
+        L.info (fun m -> m "Reading from Any memory, vanishing.");
         Csymex.vanish ()
 end
 
@@ -329,8 +329,7 @@ module Tree = struct
     let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match node.node with
-      | NotOwned Totally -> miss_no_fix ()
-      | NotOwned Partially -> miss_no_fix ()
+      | NotOwned _ -> miss_no_fix ~msg:"store" ()
       | _ -> Result.ok ()
     in
     ((), tree)
@@ -349,7 +348,7 @@ module Tree = struct
     in
     let++ () =
       match old_node.node with
-      | NotOwned _ -> miss_no_fix ()
+      | NotOwned _ -> miss_no_fix ~msg:"put_raw" ()
       | _ -> Result.ok ()
     in
     ((), new_tree)
@@ -387,7 +386,9 @@ module Tree = struct
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
-      match framed.node with NotOwned _ -> miss_no_fix () | _ -> Result.ok ()
+      match framed.node with
+      | NotOwned _ -> miss_no_fix ~msg:"consume_any" ()
+      | _ -> Result.ok ()
     in
     tree
 
@@ -409,10 +410,10 @@ module Tree = struct
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match framed.node with
-      | NotOwned _ -> miss_no_fix ()
+      | NotOwned _ -> miss_no_fix ~msg:"consume_uninit" ()
       | Owned (Uninit Totally) -> Result.ok ()
       | _ ->
-          L.debug (fun m -> m "Consuming uninit but no uninit, vanishing");
+          L.info (fun m -> m "Consuming uninit but no uninit, vanishing");
           Csymex.vanish ()
     in
     tree
@@ -434,13 +435,13 @@ module Tree = struct
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     match framed.node with
-    | NotOwned _ -> miss_no_fix ()
+    | NotOwned _ -> miss_no_fix ~msg:"consume_zeros" ()
     | Owned Zeros -> Result.ok tree
     | Owned (Init { ty = _; value }) ->
         let+ () = Typed.assume [ value ==?@ 0s ] in
         Ok tree
     | _ ->
-        L.debug (fun m -> m "Consuming zero but not zero, vanishing");
+        L.info (fun m -> m "Consuming zero but not zero, vanishing");
         Csymex.vanish ()
 
   let produce_zeros (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
@@ -477,6 +478,26 @@ let pp_pretty ft t =
   in
   PrintBox_text.pp ft (frame @@ record !r)
 
+(** Logic *)
+
+type serialized_atom =
+  | TypedVal of {
+      offset : T.sint Typed.t;
+      ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]
+      v : T.cval Typed.t;
+    }
+  | Bound of T.sint Typed.t
+  | Uninit of { offset : T.sint Typed.t; len : T.sint Typed.t }
+  | Zeros of { offset : T.sint Typed.t; len : T.sint Typed.t }
+  | Any of { offset : T.sint Typed.t; len : T.sint Typed.t }
+[@@deriving show { with_path = false }]
+
+type serialized = serialized_atom list
+
+let mk_fix_typed offset ty () =
+  let* v = Layout.nondet_c_ty ty in
+  return [ TypedVal { offset; ty; v } ]
+
 let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let** () =
     match t.bound with
@@ -491,24 +512,31 @@ let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let++ res, root = f () in
   (res, { t with root })
 
-let of_opt = function None -> miss_no_fix () | Some t -> Result.ok t
+let of_opt ?(mk_fixes = fun () -> Csymex.return []) = function
+  | None ->
+      let+ fixes = mk_fixes () in
+      Bfa_symex.Compo_res.miss fixes
+  | Some t -> Result.ok t
+
 let to_opt t = if is_empty t then None else Some t
 
 let assert_exclusively_owned t =
   let** t = of_opt t in
-  let err = miss_no_fix () in
   match t.bound with
-  | None -> err
+  | None -> miss_no_fix ~msg:"assert_exclusively_owned - no bound" ()
   | Some bound ->
       let Tree.{ range = low, high; node; _ } = t.root in
       if Node.is_fully_owned node then
-        if%sat low ==@ 0s &&@ (high ==@ bound) then Result.ok () else err
-      else err
+        if%sat low ==@ 0s &&@ (high ==@ bound) then Result.ok ()
+        else
+          miss_no_fix
+            ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
+      else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t option) :
     ([> T.sint ] Typed.t * t option, 'err, 'fix) Result.t =
-  let** t = of_opt t in
   let* size = Layout.size_of_s ty in
+  let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
     Tree.load ofs ty t.root
@@ -517,7 +545,7 @@ let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t option) :
 
 let store ofs ty sval t =
   match t with
-  | None -> miss_no_fix ()
+  | None -> miss_no_fix ~msg:"outer store" ()
   | Some t ->
       let* size = Layout.size_of_s ty in
       let++ (), tree =
@@ -554,20 +582,6 @@ let put_raw_tree ofs (tree : Tree.t) t : (unit * t option, 'err, 'fix) Result.t
 let alloc size = { root = Tree.uninit (0s, size); bound = Some size }
 
 (** Logic *)
-
-type serialized_atom =
-  | TypedVal of {
-      offset : T.sint Typed.t;
-      ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]
-      v : T.cval Typed.t;
-    }
-  | Bound of T.sint Typed.t
-  | Uninit of { offset : T.sint Typed.t; len : T.sint Typed.t }
-  | Zeros of { offset : T.sint Typed.t; len : T.sint Typed.t }
-  | Any of { offset : T.sint Typed.t; len : T.sint Typed.t }
-[@@deriving show { with_path = false }]
-
-type serialized = serialized_atom list
 
 let subst_serialized subst_var (serialized : serialized) =
   let v_subst v = Typed.subst subst_var v in
@@ -733,7 +747,7 @@ let produce_zeros ofs len t =
 
 let consume_bound bound t =
   match t with
-  | None | Some { bound = None; _ } -> miss_no_fix ()
+  | None | Some { bound = None; _ } -> miss_no_fix ~msg:"consume_bound" ()
   | Some { bound = Some v; root } ->
       let+ () = Typed.assume [ v ==?@ bound ] in
       Ok (to_opt { bound = None; root })

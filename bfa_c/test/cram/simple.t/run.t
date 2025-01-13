@@ -25,7 +25,7 @@ Symbolic execution of a simple program with symbolic values that fails because o
            (V|1|,
             [TypedVal {offset = 0; ty = signed int; v = 12};
              Uninit {offset = 4; len = 1020}; (Bound 1024)])]);
-     Error: NullDereference]
+     Error: NullDereference at err.c:6:3-10 (cursor: 6:6)]
   Executed 5 statements
 
 Symbolic execution of a simple program with a horrible pointer indirection *&*x

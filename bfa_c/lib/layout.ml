@@ -152,3 +152,19 @@ let int_constraints (int_ty : integerType) =
       let max = Z.pred (Z.shift_left Z.one (size * 8)) in
       fun x -> [ 0s <=@ x; x <=@ Typed.int_z max ]
   | _ -> None
+
+let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
+  let open Csymex.Syntax in
+  match proj_ctype_ ty with
+  | Void -> Csymex.return 0s
+  | Pointer _ ->
+      let* loc = Typed.nondet Typed.t_loc in
+      let* ofs = Typed.nondet Typed.t_int in
+      Csymex.return (Typed.Ptr.mk loc ofs)
+  | Basic (Integer ity) ->
+      let constrs = int_constraints ity |> Option.get in
+      let+ res = Typed.nondet ~constrs Typed.t_int in
+      (res :> Typed.T.cval Typed.t)
+  | Basic (Floating _) -> Csymex.not_impl "nondet_c_ty: floating"
+  | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->
+      Csymex.not_impl "nondet_c_ty: unsupported type"

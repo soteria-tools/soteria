@@ -27,7 +27,7 @@
              TypedVal {offset = 72; ty = void*; v = &(0, 0)};
              Uninit {offset = 80; len = 48}; (Bound 128)]);
            (V|32|, Freed); (V|33|, Freed)]);
-     Error: OutOfBounds;
+     Error: OutOfBounds at array_add.c:79:3-33 (cursor: 79:24);
      Ok: (1,
           [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 24}; (Bound 24)]);
            (V|2|, Freed); (V|3|, Freed); (V|4|, Freed); (V|5|, Freed);

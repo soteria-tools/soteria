@@ -56,7 +56,12 @@ module Generate_summary = struct
 end
 
 module Generate_summaries = struct
-  let term = Term.(const Bfa_c_lib.Driver.generate_all_summaries $ file_arg)
+  let term =
+    Term.(
+      const Bfa_c_lib.Driver.generate_all_summaries
+      $ Logs_cli.level ()
+      $ file_arg)
+
   let cmd = Cmd.v (Cmd.info "gen-summaries") term
 end
 

@@ -268,8 +268,8 @@ let generate_summary_for file_name fun_name =
   let printer = Fmt.list ~sep:Fmt.sp pp_summary in
   Fmt.pr "@[<v>%a@]@." printer results
 
-let generate_all_summaries file_name =
-  setup_console_log (Some Debug);
+let generate_all_summaries log_level file_name =
+  setup_console_log log_level;
   Initialize_analysis.init_once ();
   let prog =
     match parse_ail_raw file_name with
