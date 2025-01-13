@@ -17,15 +17,27 @@ module Tag_defs = struct
 
   let current_defs : (CF.Symbol.sym, def) Hashtbl.t = Hashtbl.create 1020
   let cached_layouts : (CF.Ctype.ctype, layout) Hashtbl.t = Hashtbl.create 1020
-  let find_opt id = Hashtbl.find_opt current_defs id
+
+  let find_opt id =
+    match Hashtbl.find_opt current_defs id with
+    | Some x -> Some x
+    | None ->
+        L.debug (fun m -> m "Cannot find definition for %a" Fmt_ail.pp_sym id);
+        None
 
   let add_defs defs =
     List.iter
       (fun (id, (loc, _, def)) -> Hashtbl.add current_defs id (loc, def))
       defs
 
-  let cache_layout id layout = Hashtbl.add cached_layouts id layout
-  let get_cached_layout id = Hashtbl.find_opt cached_layouts id
+  let get_or_compute_cached_layout id f =
+    match Hashtbl.find_opt cached_layouts id with
+    | Some layout -> Some layout
+    | None ->
+        let open Syntaxes.Option in
+        let* layout = f () in
+        Hashtbl.add cached_layouts id layout;
+        Some layout
 
   let () =
     Initialize_analysis.register_before_each_initialiser (fun sigma ->
@@ -37,43 +49,50 @@ end
 let is_int (Ctype (_, ty)) =
   match ty with Basic (Integer _) -> true | _ -> false
 
+let normalise_int_ty int_ty =
+  Cerb_frontend.Ocaml_implementation.(normalise_integerType DefaultImpl.impl)
+    int_ty
+
 let size_of_int_ty (int_ty : integerType) =
-  CF.Ocaml_implementation.DefaultImpl.impl.sizeof_ity int_ty
+  (* DefaultImpl has a type for everything *)
+  CF.Ocaml_implementation.DefaultImpl.impl.sizeof_ity (normalise_int_ty int_ty)
 
 let align_of_int_ty (int_ty : integerType) =
-  CF.Ocaml_implementation.DefaultImpl.impl.alignof_ity int_ty
+  CF.Ocaml_implementation.DefaultImpl.impl.alignof_ity (normalise_int_ty int_ty)
 
 (* TODO: unsupported things need to be signaled a bit better here. *)
 
 let rec layout_of ty =
   let open Syntaxes.Option in
-  (* If cache is found, function stops *)
-  let/ () = Tag_defs.get_cached_layout ty in
-  let+ result =
-    let (Ctype (_, ty)) = ty in
-    match ty with
-    | Basic (Integer inty) ->
-        let* size = size_of_int_ty inty in
-        let+ align = align_of_int_ty inty in
-        { size; align; members_ofs = [||] }
-    | Pointer _ -> layout_of (Ctype ([], Basic (Integer Size_t)))
-    | Struct tag ->
-        let* loc, def = Tag_defs.find_opt tag in
-        let* members, flexible_array_member =
-          match def with StructDef (m, fam) -> Some (m, fam) | _ -> None
-        in
-        let* () =
-          (* TODO: flexible array members *)
-          if Option.is_some flexible_array_member then (
-            Csymex.push_give_up ("Unsupported flexible array member", loc);
-            None)
-          else Some ()
-        in
-        layout_of_members members
-    | _ -> None
-  in
-  Tag_defs.cache_layout ty result;
-  result
+  (* Get cache, if not found, compute and update cache. *)
+  Tag_defs.get_or_compute_cached_layout ty @@ fun () ->
+  let (Ctype (_, ty)) = ty in
+  match ty with
+  | Basic (Integer inty) ->
+      let* size = size_of_int_ty inty in
+      let+ align = align_of_int_ty inty in
+      { size; align; members_ofs = [||] }
+  | Pointer _ -> layout_of (Ctype ([], Basic (Integer Size_t)))
+  | Struct tag ->
+      let* loc, def = Tag_defs.find_opt tag in
+      let* members, flexible_array_member =
+        match def with
+        | StructDef (m, fam) -> Some (m, fam)
+        | _ ->
+            L.debug (fun m -> m "Don't have a definition fo structure");
+            None
+      in
+      let* () =
+        (* TODO: flexible array members *)
+        if Option.is_some flexible_array_member then (
+          Csymex.push_give_up ("Unsupported flexible array member", loc);
+          None)
+        else Some ()
+      in
+      layout_of_members members
+  | _ ->
+      L.debug (fun m -> m "Cannot compute layout of %a" Fmt_ail.pp_ty_ ty);
+      None
 
 (** From:
     https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Structure-Layout.html
@@ -139,6 +158,7 @@ let member_ofs id ty =
 let int_constraints (int_ty : integerType) =
   let open Typed.Infix in
   let open Syntaxes.Option in
+  let int_ty = normalise_int_ty int_ty in
   match int_ty with
   | Char -> Some (fun x -> [ 0s <=@ x; x <@ 256s ])
   | Bool -> Some (fun x -> [ 0s <=@ x; x <@ 2s ])
@@ -151,7 +171,9 @@ let int_constraints (int_ty : integerType) =
       let+ size = size_of_int_ty int_ty in
       let max = Z.pred (Z.shift_left Z.one (size * 8)) in
       fun x -> [ 0s <=@ x; x <=@ Typed.int_z max ]
-  | _ -> None
+  | _ ->
+      L.debug (fun m -> m "No int constraints for %a" Fmt_ail.pp_int_ty int_ty);
+      None
 
 let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   let open Csymex.Syntax in
