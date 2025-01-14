@@ -33,7 +33,7 @@ let generate_summaries_for ~prog (fundef : fundef) =
   in
   let+ (args, ret, bi_heap), pc = Csymex.run process in
   let pre, post = Bi_heap.to_spec bi_heap in
-  Summary.{ args; pre; pc; post; ret }
+  Summary.make ~args ~ret ~pre ~post ~pc ()
 
 let generate_all_summaries prog =
   Initialize_analysis.reinit prog;

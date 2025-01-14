@@ -14,21 +14,42 @@ type 'err t = {
       (** Return value. If `ok` then it is the C value that the function
           returned, if `err` then it is a description of the bug exhibitied by
           the code *)
+  memory_leak : bool;
 }
 [@@deriving show { with_path = false }]
 
-(* TODO: for below: do we only need to compute reachability of variables of type Loc, since
-   they are the only one that cannot be created out of the blue, and need provenance? e*)
+type 'err bug = Memory_leak | Manifest_UB of 'err
 
-(** This function prunes the summary by removing anything that isn't reachable
-    from the arguments or the return value. It returns the updated summary, as
-    well as a boolean capturing whether a memory leak was detected. A memory
-    leak is detected if there was an unreachable block that was not freed. *)
-let prune summary =
-  let module Var_graph = Graph.Make_in_place (Var) in
-  let graph = Var_graph.with_node_capacity 0 in
-  let reachable = Var.Hashset.with_capacity 0 in
-  let mark_reachable x = Var.Hashset.add reachable x in
+module Var_graph = Graph.Make_in_place (Var)
+module Var_hashset = Var_graph.Node_set
+
+let filter_pc relevant_vars pc =
+  ListLabels.filter pc ~f:(fun v ->
+      Iter.exists
+        (fun (var, _) -> Var_hashset.mem relevant_vars var)
+        (Svalue.iter_vars v))
+
+let filter_serialized_heap relvant_vars pc =
+  let leak = ref false in
+  let resulting_heap =
+    ListLabels.filter pc ~f:(fun (loc, b) ->
+        let relevant =
+          Iter.exists
+            (fun (var, _) -> Var_hashset.mem relvant_vars var)
+            (Typed.iter_vars loc)
+        in
+        if relevant then true
+        else
+          let () =
+            match b with Csymex.Freeable.Freed -> () | Alive _ -> leak := true
+          in
+          false)
+  in
+  (resulting_heap, !leak)
+
+let init_reachable_vars summary =
+  let init_reachable = Var_hashset.with_capacity 0 in
+  let mark_reachable x = Var_hashset.add init_reachable x in
   (* We mark all variables from the arguments and return value as reachable *)
   let () =
     List.iter
@@ -40,6 +61,19 @@ let prune summary =
       (fun cval -> Typed.iter_vars cval (fun (x, _) -> mark_reachable x))
       summary.ret
   in
+  init_reachable
+
+(* TODO: for below: do we only need to compute reachability of variables of type Loc, since
+   they are the only one that cannot be created out of the blue, and need provenance? e*)
+
+(** This function prunes the summary by removing anything that isn't reachable
+    from the arguments or the return value. It returns the updated summary, as
+    well as a boolean capturing whether a memory leak was detected. A memory
+    leak is detected if there was an unreachable block that was not freed. *)
+let pruned summary =
+  let module Var_graph = Graph.Make_in_place (Var) in
+  let graph = Var_graph.with_node_capacity 0 in
+  let init_reachable = init_reachable_vars summary in
   (* For each equality [e1 = e2] in the path condition,
      we add a double edge from all variables of [e1] to all variables of [e2] *)
   ListLabels.iter summary.pc ~f:(fun (v : Svalue.t) ->
@@ -50,44 +84,39 @@ let prune summary =
           let product = Iter.product (Svalue.iter_vars el) r_iter in
           product (fun ((x, _), (y, _)) -> Var_graph.add_double_edge graph x y)
       | _ -> ());
-  (* For each block $l -> B in the post heap, we add a single-sided arrow from $l to all variables contained in the values of B.
-     Since offsets in a block are integers, they cannot be "learned". *)
+  (* For each block $l -> B in the post heap, we add a single-sided arrow
+     from $l to all variables contained in B. *)
   ListLabels.iter summary.post ~f:(fun (l, b) ->
       let b_iter =
-       fun k ->
-        match b with
-        | Csymex.Freeable.Freed -> ()
-        | Csymex.Freeable.Alive b ->
-            Tree_block.iter_values_serialized b (fun v -> Typed.iter_vars v k)
+        Csymex.Freeable.iter_vars_serialized Tree_block.iter_vars_serialized b
       in
+
       Iter.product (Typed.iter_vars l) (Iter.persistent_lazy b_iter)
         (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));
-
-  (* [reachable] is the set of initially-reachable variables, and we have a reachability [graph].
+  (* [init_reachable] is the set of initially-reachable variables, and we have a reachability [graph].
      We can compute all reachable values. *)
+  let reachable = Var_graph.reachable_from graph init_reachable in
+  (* We can now filter the summary to keep only the reachable values *)
+  let new_pc = filter_pc reachable summary.pc in
+  let new_post, memory_leak = filter_serialized_heap reachable summary.post in
+  {
+    summary with
+    pc = new_pc;
+    post = new_post;
+    memory_leak =
+      (* Memory leaks only make sense for functions that terminate successfully *)
+      Result.is_ok summary.ret && (summary.memory_leak || memory_leak);
+  }
 
-  (* TODO:
-    -> Create a graph by creating double-edges for
-        - each equality in the PC: careful, this is OX?
-        - loc to all variables in a block,
-    -> Use a reachability algorithm on the graph to get all reachable vakues from `reachable`.
-    -> Prune all heaps that have unreachable address.
-    *)
-  ()
+let make ~args ~pre ~pc ~post ~ret () =
+  pruned { args; pre; pc; post; ret; memory_leak = false }
 
-let is_memory_leak _summary =
-  (* This should be a reachability analysis checking for locations that are:
-     - Not reachable (through the heap or PC) from the the arguments
-     - Not reachable from the return value (through the heap or PC)
-     - Point to non-freed blocks *)
-  false
+let manifest_bug _summary = None
 
-let is_manifest_bug _summary =
-  (* Here are the steps to implement this reachability analysis.
-     - Filter the post-condition and PC to keep only the pieces that are reachable from the arguments or the return value.
-     - produce the post-condition into the empty heap, keep the resulting PC, calling it PC_post.
-     - If PC_post => PC, then the bug is manifest.
-  *)
-  false
-
-let analyse_summary _summary = []
+let analyse_summary (summary : 'err t) : 'err bug list =
+  let manifest_bugs =
+    match manifest_bug summary with
+    | None -> []
+    | Some bug -> [ Manifest_UB bug ]
+  in
+  if summary.memory_leak then Memory_leak :: manifest_bugs else manifest_bugs

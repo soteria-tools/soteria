@@ -175,6 +175,26 @@ let int_constraints (int_ty : integerType) =
       L.debug (fun m -> m "No int constraints for %a" Fmt_ail.pp_int_ty int_ty);
       None
 
+let constraints (ty : ctype) :
+    (Typed.T.cval Typed.t -> Typed.T.sbool Typed.t list) option =
+  let open Typed.Infix in
+  match proj_ctype_ ty with
+  | Void -> Some (fun x -> [ x ==@ 0s ])
+  | Pointer _ -> Some (fun _ -> [])
+  | Basic (Integer ity) -> (
+      match int_constraints ity with
+      | None -> None
+      | Some constrs ->
+          Some
+            (fun x ->
+              match Typed.cast_checked x Typed.t_int with
+              | None -> [ Typed.v_false ]
+              | Some x -> constrs x))
+  | _ ->
+      L.info (fun m ->
+          m "No constraints implemented for type %a" Fmt_ail.pp_ty ty);
+      None
+
 let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   let open Csymex.Syntax in
   match proj_ctype_ ty with

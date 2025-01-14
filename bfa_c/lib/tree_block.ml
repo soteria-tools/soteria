@@ -372,6 +372,11 @@ module Tree = struct
   let produce_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
       (value : T.cval Typed.t) (t : t) : t Csymex.t =
     let* range = Range.of_low_and_type low ty in
+    let* constrs =
+      Csymex.of_opt_not_impl ~msg:"Produce typed_val constraints"
+        (Layout.constraints ty)
+    in
+    let* () = Typed.assume (constrs value) in
     let replace_node _ = sval_leaf ~range ~value ~ty in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in

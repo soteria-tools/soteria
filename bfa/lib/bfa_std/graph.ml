@@ -1,4 +1,6 @@
 module Make_in_place (Node : Hashset.PrintableHashedType) = struct
+  type node = Node.t
+
   module Node_set = Hashset.Make (Node)
   module Hashtbl = Hashtbl.Make (Node)
 
@@ -42,6 +44,18 @@ module Make_in_place (Node : Hashset.PrintableHashedType) = struct
     in
     bfs ();
     visited
+
+  (** A topological order where SCCs are not necessarily well-ordered *)
+  let weak_topological_order (cg : t) : node list =
+    let cg_list =
+      Hashtbl.to_seq cg
+      |> Seq.map (fun (caller, callees) ->
+             (caller, Node_set.to_seq callees |> List.of_seq))
+      |> List.of_seq
+    in
+    let sorted_components = Tsort.sort_strongly_connected_components cg_list in
+    (* We could order the components themselves a bit better, but let's ignore it for now. *)
+    List.concat sorted_components
 end
 
 let%test_module "Graph tests" =
@@ -55,7 +69,7 @@ let%test_module "Graph tests" =
     let simple_graph =
       let graph = G.with_node_capacity 3 in
       G.add_edge graph 1 2;
-      G.add_edge graph 1 2;
+      G.add_edge graph 1 3;
       graph
 
     let bigger_graph =
@@ -68,6 +82,16 @@ let%test_module "Graph tests" =
       G.add_edge graph 7 8;
       G.add_edge graph 6 4;
       G.add_edge graph 10 11;
+      graph
+
+    let straight_line =
+      let graph = G.with_node_capacity 3 in
+      G.add_edge graph 1 2;
+      G.add_edge graph 2 3;
+      G.add_edge graph 6 7;
+      G.add_edge graph 5 6;
+      G.add_edge graph 4 5;
+      G.add_edge graph 3 4;
       graph
 
     let%test "empty reachable set" =
@@ -117,11 +141,13 @@ let%test_module "Graph tests" =
       G.Node_set.equal reachables expected
 
     let%test "node with multiple edges" =
-      let graph = G.with_node_capacity 3 in
-      G.add_edge graph 1 2;
-      G.add_edge graph 1 3;
       let init = G.Node_set.singleton 1 in
       let expected = G.Node_set.of_seq (List.to_seq [ 1; 2; 3 ]) in
-      let reachables = G.reachable_from graph init in
+      let reachables = G.reachable_from simple_graph init in
       G.Node_set.equal reachables expected
+
+    let%test "topological order" =
+      let order = G.weak_topological_order straight_line in
+      let expected = [ 7; 6; 5; 4; 3; 2; 1 ] in
+      List.for_all2 ( = ) order expected
   end)

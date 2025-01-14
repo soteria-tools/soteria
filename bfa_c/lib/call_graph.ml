@@ -105,15 +105,3 @@ let of_prog (prog : Ail_tys.sigma) : t =
   in
   List.iter add_fonction_callees prog.function_definitions;
   graph
-
-(** A topological order where SCCs are not necessarily well-ordered *)
-let weak_topological_order (cg : t) : Symbol.sym list =
-  let cg_list =
-    Hashtbl.to_seq cg
-    |> Seq.map (fun (caller, callees) ->
-           (caller, Node_set.to_seq callees |> List.of_seq))
-    |> List.of_seq
-  in
-  let sorted_components = Tsort.sort_strongly_connected_components cg_list in
-  (* We could order the components themselves a bit better, but let's ignore it for now. *)
-  List.concat sorted_components
