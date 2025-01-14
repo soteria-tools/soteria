@@ -9,6 +9,8 @@ end
 module Subst = struct
   include Map.Make (Var)
 
+  let pp = Fmt.Dump.iter_bindings iter Fmt.nop Var.pp Var.pp
+
   let substitute_extensible ~f ~subst x =
     let next =
       ref

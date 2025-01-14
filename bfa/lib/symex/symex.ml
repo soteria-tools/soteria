@@ -6,6 +6,7 @@ module type Base = sig
 
   val assume : Value.t list -> unit MONAD.t
   val vanish : unit -> 'a MONAD.t
+  val assert_ : Value.t -> bool MONAD.t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t MONAD.t
   val fresh_var : Value.ty -> Var.t MONAD.t
   val batched : (unit -> 'a MONAD.t) -> 'a MONAD.t
@@ -40,6 +41,7 @@ module type S = sig
   module MONAD : Monad.Base with type 'a t = 'a t
 
   val assume : Value.t list -> unit t
+  val assert_ : Value.t -> bool t
   val vanish : unit -> 'a t
   val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
   val fresh_var : Value.ty -> Var.t t
@@ -193,6 +195,18 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
     in
     aux [] learned
 
+  let assert_ value () =
+    let value = Solver.simplify value in
+    match Value.as_bool value with
+    | Some true -> Seq.Cons (true, Seq.empty)
+    | Some false -> Seq.Cons (false, Seq.empty)
+    | None ->
+        Solver.save ();
+        Solver.add_constraints [ Value.(not value) ];
+        let sat = Solver.sat () in
+        Solver.backtrack_n 1;
+        Seq.Cons (not sat, Seq.empty)
+
   let nondet ?constrs ty () =
     let v = Solver.fresh_var ty in
     let v = Value.mk_var v ty in
@@ -327,6 +341,18 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
           | None -> aux (l :: acc) ls)
     in
     aux [] learned
+
+  let assert_ value f =
+    let value = Solver.simplify value in
+    match Value.as_bool value with
+    | Some true -> f true
+    | Some false -> f false
+    | None ->
+        Solver.save ();
+        Solver.add_constraints [ Value.(not value) ];
+        let sat = Solver.sat () in
+        Solver.backtrack_n 1;
+        f (not sat)
 
   let nondet ?(constrs = fun _ -> []) ty f =
     let v = Solver.fresh_var ty in

@@ -176,6 +176,8 @@ let and_ v1 v2 =
   | _, Bool true -> v1
   | _ -> Binop (And, v1, v2) <| TBool
 
+let conj l = List.fold_left and_ v_true l
+
 let rec sem_eq v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int z1, Int z2 -> bool (Z.equal z1 z2)

@@ -70,6 +70,7 @@ val v_true : [> sbool ] t
 val v_false : [> sbool ] t
 val bool : bool -> [> sbool ] t
 val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+val conj : [< sbool ] t list -> [> sbool ] t
 val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val not : [< sbool ] t -> [> sbool ] t
 val not_int_bool : [< sint ] t -> [> sint ] t

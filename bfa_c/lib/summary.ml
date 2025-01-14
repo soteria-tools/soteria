@@ -19,6 +19,7 @@ type 'err t = {
 [@@deriving show { with_path = false }]
 
 type 'err bug = Memory_leak | Manifest_UB of 'err
+[@@deriving show { with_path = false }]
 
 module Var_graph = Graph.Make_in_place (Var)
 module Var_hashset = Var_graph.Node_set
@@ -111,11 +112,55 @@ let pruned summary =
 let make ~args ~pre ~pc ~post ~ret () =
   pruned { args; pre; pc; post; ret; memory_leak = false }
 
-let manifest_bug _summary = None
+(** Current criterion: a bug is manifest if its path condition is a consequence
+    of the heap's and function arguments well-formedness conditions *)
+let manifest_bug ~arg_tys summary =
+  match summary.ret with
+  | Ok _ -> None
+  | Error error ->
+      let module Subst = Bfa_symex.Substs.Subst in
+      let module From_iter = Subst.From_iter (Csymex) in
+      let iter_pc f = List.iter (fun v -> Svalue.iter_vars v f) summary.pc in
+      let iter_post = Heap.iter_vars_serialized summary.post in
+      let iter_args f =
+        List.iter (fun cval -> Typed.iter_vars cval f) summary.args
+      in
+      let process =
+        let open Csymex.Syntax in
+        let* subst =
+          From_iter.from_iter
+            (Iter.append iter_pc (Iter.append iter_post iter_args))
+        in
+        let subst = Subst.to_fn subst in
+        let args = List.map (Typed.subst subst) summary.args in
+        let constrs =
+          List.map2
+            (fun arg ty ->
+              let constr = Option.get (Layout.constraints ty) in
+              constr arg)
+            args arg_tys
+        in
+        let constrs = List.concat constrs in
+        let* () = Typed.assume constrs in
+        let serialized_heap = Heap.subst_serialized subst summary.post in
+        (* We don't need the produced heap, just its wf condition *)
+        (* We might want to use another symex monad, à grisette,
+           that produces the condition as a writer monad in an \/ or something *)
+        let* _heap = Heap.produce serialized_heap Heap.empty in
+        let pc = List.map (Svalue.subst subst) summary.pc in
+        Csymex.assert_ (Svalue.conj pc)
+      in
+      let result = Csymex.run process in
+      (* The bug is manifest if the assert passed in every branch. *)
+      let is_manifest =
+        List.for_all (function true, _ -> true | _ -> false) result
+      in
+      if is_manifest then Some error else None
 
-let analyse_summary (summary : 'err t) : 'err bug list =
+let analyse_summary ~prog ~fid (summary : 'err t) : 'err bug list =
+  let arg_tys = Option.get (Ail_helpers.get_param_tys ~prog fid) in
   let manifest_bugs =
-    match manifest_bug summary with
+    match manifest_bug ~arg_tys summary with
     | None -> []
     | Some bug -> [ Manifest_UB bug ]
   in

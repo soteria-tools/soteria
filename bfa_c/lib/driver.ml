@@ -277,9 +277,15 @@ let generate_all_summaries log_level file_name =
     | Ok (_, prog) -> prog
   in
   let results = Abductor.generate_all_summaries prog in
+  let pp_summary ~fid ft summary =
+    Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
+      summary
+      (Fmt.Dump.list (Summary.pp_bug pp_err))
+      (Summary.analyse_summary ~prog ~fid summary)
+  in
   List.iter
     (fun (fid, summaries) ->
       Fmt.pr "@[<v 2>Summaries for %a:@ %a@]@ @." Fmt_ail.pp_sym fid
-        (Fmt.list ~sep:Fmt.sp (Summary.pp pp_err))
+        (Fmt.list ~sep:Fmt.sp (pp_summary ~fid))
         summaries)
     results
