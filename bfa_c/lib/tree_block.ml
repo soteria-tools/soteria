@@ -494,6 +494,9 @@ type serialized_atom =
 
 type serialized = serialized_atom list
 
+let iter_values_serialized serialized f =
+  List.iter (function TypedVal { v; _ } -> f v | _ -> ()) serialized
+
 let mk_fix_typed offset ty () =
   let* v = Layout.nondet_c_ty ty in
   return [ TypedVal { offset; ty; v } ]

@@ -1,4 +1,9 @@
-include Heap_intf.S with type 'a err = 'a * Cerb_location.t
+include
+  Heap_intf.S
+    with type 'a err = 'a * Cerb_location.t
+     and type serialized =
+      (Typed.T.sloc Typed.t * Tree_block.serialized Csymex.Freeable.serialized)
+      list
 
 val serialize : t -> serialized
 val pp_serialized : Format.formatter -> serialized -> unit

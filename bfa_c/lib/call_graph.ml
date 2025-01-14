@@ -2,7 +2,7 @@ open Cerb_frontend
 open AilSyntax
 open Bfa_std
 
-module Sym_hashset = Hashset.Make (struct
+include Graph.Make_in_place (struct
   type t = Symbol.sym
 
   let pp = Fmt_ail.pp_sym
@@ -11,13 +11,6 @@ module Sym_hashset = Hashset.Make (struct
 end)
 
 (** A callgraph is just a hashtbl mapping caller to the list of their callees *)
-type t = (Symbol.sym, Sym_hashset.t) Hashtbl.t
-
-let pp =
-  let pp_caller ft (caller, callees) =
-    Fmt.pf ft "@[<h>%a ->@ %a@]" Fmt_ail.pp_sym caller Sym_hashset.pp callees
-  in
-  Fmt.vbox (Fmt.iter_bindings ~sep:Fmt.sp Hashtbl.iter pp_caller)
 
 let resolve_static_function fexpr =
   match fexpr with
@@ -34,7 +27,7 @@ let rec expr_callees d (e : Ail_tys.expr) =
   let expr_callees = expr_callees d in
   match e with
   | AilEfunction_decay (AnnotatedExpression (_, _, _, AilEident fname)) ->
-      Sym_hashset.add d fname
+      Node_set.add d fname
   | AilEfunction_decay _ -> ()
   | AilEcall (func_expr, arg_exprs) ->
       expr_callees func_expr;
@@ -102,23 +95,23 @@ and stmt_callees d stmt =
       List.iter (fun (_, e_opt) -> Option.iter expr_callees e_opt) l
 
 let of_prog (prog : Ail_tys.sigma) : t =
-  let tbl = Hashtbl.create 253 in
+  let graph = with_node_capacity 253 in
   let add_fonction_callees (f : Ail_tys.fundef) : unit =
     let id, (_, _, _, _, stmts) = f in
-    if not (Hashtbl.mem tbl id) then (
-      let callees = Sym_hashset.create 0 in
+    if not (Hashtbl.mem graph id) then (
+      let callees = Node_set.with_capacity 0 in
       stmt_callees callees stmts;
-      Hashtbl.replace tbl id callees)
+      set_edges_from graph id callees)
   in
   List.iter add_fonction_callees prog.function_definitions;
-  tbl
+  graph
 
 (** A topological order where SCCs are not necessarily well-ordered *)
 let weak_topological_order (cg : t) : Symbol.sym list =
   let cg_list =
     Hashtbl.to_seq cg
     |> Seq.map (fun (caller, callees) ->
-           (caller, Sym_hashset.to_seq callees |> List.of_seq))
+           (caller, Node_set.to_seq callees |> List.of_seq))
     |> List.of_seq
   in
   let sorted_components = Tsort.sort_strongly_connected_components cg_list in

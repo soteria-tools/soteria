@@ -1,4 +1,7 @@
 (library
  (name bfa_std)
  (public_name bfa.std)
- (libraries iter fmt))
+ (libraries iter fmt)
+ (inline_tests)
+ (preprocess
+  (pps ppx_inline_test)))

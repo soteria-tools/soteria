@@ -36,10 +36,11 @@
     :build
     (>= 3.14.0)))
   ppxlib
+  (ppx_inline_test :with-test)
   (ocamlformat
    (and
     :with-dev-detup
-    (= 0.26.2)))
+    (= 0.27.0)))
   (ocaml-lsp-server :with-dev-detup)))
 
 (package
@@ -54,7 +55,6 @@
   bfa
   (tsort
    (>= 2.1.0))
-  ppx_inline_test
   cerberus-lib
   zarith
   ppx_deriving
@@ -76,7 +76,7 @@
   (ocamlformat
    (and
     :with-dev-detup
-    (= 0.26.2)))
+    (= 0.27.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
