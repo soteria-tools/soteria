@@ -35,11 +35,12 @@ let error_to_diagnostic_opt (err, loc) =
     | `UBPointerArithmetic ->
         Some (Error, "Undefined Behavior for Pointer Arithmetic")
     | `InvalidFree -> Some (Error, "Invalid Pointer passed to free")
+    | `Memory_leak -> Some (Warning, "Memory leak")
   in
   Lsp.Types.Diagnostic.create ~message:(`String message) ~severity
     ~range:(cerb_loc_to_range loc) ~source:"bfa" ()
 
-class bfa_lsp_server run_to_errors =
+class bfa_lsp_server generate_errors =
   object (self)
     inherit Linol_eio.Jsonrpc2.server as super
     val mutable debug_mode = false
@@ -55,7 +56,7 @@ class bfa_lsp_server run_to_errors =
     *)
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
         (_uri : Lsp.Types.DocumentUri.t) (contents : string) =
-      let errors = run_to_errors contents in
+      let errors = generate_errors contents in
       let diags = List.filter_map error_to_diagnostic_opt errors in
       let diags =
         if debug_mode then get_abort_diagnostics () @ diags else diags
@@ -85,9 +86,9 @@ class bfa_lsp_server run_to_errors =
       | _ -> super#on_unknown_notification ~notify_back notif
   end
 
-let run ~run_to_errors () =
+let run ~generate_errors () =
   Eio_main.run @@ fun env ->
-  let s = new bfa_lsp_server run_to_errors in
+  let s = new bfa_lsp_server generate_errors in
   let server = Linol_eio.Jsonrpc2.create_stdio ~env s in
   let task () =
     let shutdown () = s#get_status = `ReceivedExit in

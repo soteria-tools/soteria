@@ -18,9 +18,6 @@ type 'err t = {
 }
 [@@deriving show { with_path = false }]
 
-type 'err bug = Memory_leak | Manifest_UB of 'err
-[@@deriving show { with_path = false }]
-
 module Var_graph = Graph.Make_in_place (Var)
 module Var_hashset = Var_graph.Node_set
 
@@ -157,11 +154,12 @@ let manifest_bug ~arg_tys summary =
       in
       if is_manifest then Some error else None
 
-let analyse_summary ~prog ~fid (summary : 'err t) : 'err bug list =
+let analyse_summary ~prog ~fid (summary : 'err t) =
   let arg_tys = Option.get (Ail_helpers.get_param_tys ~prog fid) in
   let manifest_bugs =
-    match manifest_bug ~arg_tys summary with
-    | None -> []
-    | Some bug -> [ Manifest_UB bug ]
+    match manifest_bug ~arg_tys summary with None -> [] | Some bug -> [ bug ]
   in
-  if summary.memory_leak then Memory_leak :: manifest_bugs else manifest_bugs
+  if summary.memory_leak then
+    let loc = Ail_helpers.find_fun_loc ~prog fid in
+    (`Memory_leak, Option.get loc) :: manifest_bugs
+  else manifest_bugs

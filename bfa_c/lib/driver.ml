@@ -143,6 +143,7 @@ let pp_err ft (err, loc) =
     | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
+    | `Memory_leak -> Fmt.string ft "Memory leak"
   in
   Fmt.pf ft " at %a" Fmt_ail.pp_loc loc;
   Format.close_box ()
@@ -202,23 +203,29 @@ let exec_main_and_print log_level smt_file file_name =
 
 let temp_file = lazy (Filename.temp_file "bfa_c" ".c")
 
-let run_to_errors content =
+let generate_errors content =
   let (lazy file_name) = temp_file in
   let () =
     let oc = open_out file_name in
     output_string oc content;
     close_out oc
   in
-  exec_main file_name
-  |> List.filter_map (function
-       | Bfa_symex.Compo_res.Ok _, _ | Missing _, _ -> None
-       | Error e, _ -> Some e)
+  let prog =
+    match parse_ail_raw file_name with
+    | Error e -> Fmt.failwith "Failed to parse AIL: %a" pp_err e
+    | Ok (_, prog) -> prog
+  in
+  let summaries = Abductor.generate_all_summaries prog in
+  List.concat_map
+    (fun (fid, summaries) ->
+      List.concat_map (Summary.analyse_summary ~prog ~fid) summaries)
+    summaries
 
 (* Entry point function *)
 let lsp () =
   setup_stderr_log ~log_lsp:true (Some Logs.Debug);
   Initialize_analysis.init_once ();
-  Bfa_c_lsp.run ~run_to_errors ()
+  Bfa_c_lsp.run ~generate_errors ()
 
 (* Entry point function *)
 let show_ail file_name =
@@ -279,8 +286,7 @@ let generate_all_summaries log_level file_name =
   let results = Abductor.generate_all_summaries prog in
   let pp_summary ~fid ft summary =
     Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
-      summary
-      (Fmt.Dump.list (Summary.pp_bug pp_err))
+      summary (Fmt.Dump.list pp_err)
       (Summary.analyse_summary ~prog ~fid summary)
   in
   List.iter

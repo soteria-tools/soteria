@@ -6,7 +6,7 @@
       "lsp"
     ],
     "env": {
-      "BFA_Z3_PATH": "/usr/local/bin/z3"
+      "BFA_Z3_PATH": "/opt/homebrew/bin/z3"
     }
   },
   "bfa.server.debug": true,

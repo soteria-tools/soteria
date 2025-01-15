@@ -23,3 +23,9 @@ let find_fun_name ~prog to_find =
       let name = Cerb_frontend.Pp_symbol.to_string id in
       if String.starts_with ~prefix:to_find name then Some decl else None)
     prog.Cerb_frontend.AilSyntax.function_definitions
+
+let find_fun_loc ~prog to_find =
+  List.find_map
+    (fun (id, (loc, _, _, _, _)) ->
+      if Cerb_frontend.Symbol.equal_sym id to_find then Some loc else None)
+    prog.Cerb_frontend.AilSyntax.function_definitions
