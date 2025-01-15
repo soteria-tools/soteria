@@ -12,8 +12,8 @@ module Make (Symex : Symex.S) = struct
     Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" pp_inner st
       (Fmt.Dump.list pp_fix) fixes
 
-  let wrap ?(fuel = 1) ~produce (f : 'a -> ('v * 'a, 'err, 'fix) Symex.Result.t)
-      (bi_st : ('a, 'fix) t) :
+  let wrap ?(fuel = 1) ~(produce : 'fix -> 'a -> 'a Symex.t)
+      (f : 'a -> ('v * 'a, 'err, 'fix) Symex.Result.t) (bi_st : ('a, 'fix) t) :
       ('v * ('a, 'fix) t, 'err * ('a, 'fix) t, 'fix) Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
     let rec with_fuel fuel bi_st =

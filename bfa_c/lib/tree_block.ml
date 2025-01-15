@@ -9,7 +9,9 @@ open Csymex
 module Ctype = Cerb_frontend.Ctype
 
 let miss_no_fix_immediate ?(msg = "") () =
-  L.info (fun m -> m "MISSING WITH NO FIX %s" msg);
+  let msg = "MISSING WITH NO FIX " ^ msg in
+  L.info (fun m -> m "%s" msg);
+  Csymex.push_give_up (msg, get_loc ());
   Bfa_symex.Compo_res.Missing []
 
 let miss_no_fix ?msg () = Csymex.return (miss_no_fix_immediate ?msg ())
@@ -93,7 +95,7 @@ module Node = struct
 
   let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
     match t with
-    | NotOwned _ -> miss_no_fix ~msg:"not owned" ()
+    | NotOwned _ -> miss_no_fix ~msg:"decode" ()
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok 0s
@@ -570,7 +572,7 @@ let get_raw_tree_owned ofs size t =
     if Node.is_fully_owned tree.node then
       let tree = Tree.offset ~by:~-ofs tree in
       Ok (tree, t)
-    else miss_no_fix_immediate ()
+    else miss_no_fix_immediate ~msg:"get_raw_tree_owned" ()
   in
   (res, to_opt tree)
 

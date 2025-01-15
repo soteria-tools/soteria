@@ -212,10 +212,13 @@ let generate_errors content =
   | Error e -> [ e ]
   | Ok (_, prog) ->
       let summaries = Abductor.generate_all_summaries prog in
-      List.concat_map
-        (fun (fid, summaries) ->
-          List.concat_map (Summary.analyse_summary ~prog ~fid) summaries)
-        summaries
+      let results =
+        List.concat_map
+          (fun (fid, summaries) ->
+            List.concat_map (Summary.analyse_summary ~prog ~fid) summaries)
+          summaries
+      in
+      List.sort_uniq Stdlib.compare results
 
 (* Entry point function *)
 let lsp () =
