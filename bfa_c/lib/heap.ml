@@ -4,7 +4,15 @@ open Typed.Syntax
 module T = Typed.T
 open Csymex
 
-type 'a err = 'a * Cerb_location.t
+type 'a err = 'a * Call_trace.t
+
+let add_to_call_trace (err, trace_elem) trace_elem' =
+  (err, trace_elem' :: trace_elem)
+
+let with_error_loc_as_call_trace () f =
+  let open Csymex.Syntax in
+  let+- err, loc = f () in
+  (err, Call_trace.singleton ~loc ~msg:"Triggering memory operation" ())
 
 module SPmap = Pmap_direct_access (struct
   type t = T.sloc Typed.t
@@ -88,12 +96,14 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc st
 
 let load ptr ty st =
+  let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
   else with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
+  let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "store" ptr st;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
@@ -101,6 +111,7 @@ let store ptr ty sval st =
 
 let copy_nonoverlapping ~dst ~src ~size st =
   let open Typed.Infix in
+  let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   if%sat Typed.Ptr.is_at_null_loc dst ||@ Typed.Ptr.is_at_null_loc src then
     Result.error `NullDereference
@@ -116,6 +127,7 @@ let copy_nonoverlapping ~dst ~src ~size st =
 let alloc size st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
+  let@ () = with_error_loc_as_call_trace () in
   let block = Freeable.Alive (Tree_block.alloc size) in
   let** loc, st = SPmap.alloc ~new_codom:block st in
   let ptr = Typed.Ptr.mk loc 0s in
@@ -129,6 +141,7 @@ let alloc_ty ty st =
 
 let free (ptr : [< T.sptr ] Typed.t) (st : t) :
     (unit * t, 'err, serialized) Result.t =
+  let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ () = with_loc_err () in
     (SPmap.wrap
@@ -137,7 +150,9 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) :
       (Typed.Ptr.loc ptr) st
   else error `InvalidFree
 
-let error err _st = error err
+let error err _st =
+  let@ () = with_error_loc_as_call_trace () in
+  error err
 
 let produce (serialized : serialized) (heap : t) : t Csymex.t =
   let non_null_locs =

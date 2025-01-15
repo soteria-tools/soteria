@@ -242,7 +242,11 @@ module Make (Heap : Heap_intf.S) = struct
     | AilEcall (f, args) ->
         let* exec_fun = resolve_function ~prog f in
         let** args, state = eval_expr_list ~prog ~store state args in
-        let++ v, state = exec_fun ~prog ~args ~state in
+        let++ v, state =
+          let+- err = exec_fun ~prog ~args ~state in
+          Heap.add_to_call_trace err
+            (Call_trace.make_element ~loc ~msg:"Call trace" ())
+        in
         L.debug (fun m -> m "returned %a from %a" Typed.ppa v Fmt_ail.pp_expr f);
         (v, state)
     | AilEunary (Address, e) -> (

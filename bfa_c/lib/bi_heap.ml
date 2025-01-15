@@ -4,6 +4,9 @@ type t = (Heap.t, Heap.serialized) Bi.t
 type serialized = Heap.serialized
 type 'a err = 'a Heap.err * t
 
+let add_to_call_trace (err, heap) trace_elem =
+  (Heap.add_to_call_trace err trace_elem, heap)
+
 let pp = Bi.pp Heap.pp Heap.pp_serialized
 
 let pp_pretty ~ignore_freed =

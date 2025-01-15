@@ -1,7 +1,9 @@
   $ bfa-c gen-summaries load.c
   Summaries for f_1:
     { args = [&(V|0|, V|1|)]; pre = []; pc = [(V|0| Eq 0)]; post = [];
-      ret = (Error NullDereference at load.c:3:10-12 (cursor: 3:10));
+      ret =
+      (Error NullDereference with trace [(load.c:3:10-12 (cursor: 3:10),
+                                          Triggering memory operation)]);
       memory_leak = false }
       manifest bugs: []
     { args = [&(V|0|, V|1|)];
@@ -17,7 +19,9 @@
   $ bfa-c gen-summaries manifest.c
   Summaries for load_3:
     { args = [&(V|0|, V|1|)]; pre = []; pc = [(V|0| Eq 0)]; post = [];
-      ret = (Error NullDereference at manifest.c:6:10-12 (cursor: 6:10));
+      ret =
+      (Error NullDereference with trace [(manifest.c:6:10-12 (cursor: 6:10),
+                                          Triggering memory operation)]);
       memory_leak = false }
       manifest bugs: []
     { args = [&(V|0|, V|1|)];
@@ -32,20 +36,31 @@
   Summaries for test_np_uninit_5:
     { args = []; pre = []; pc = []; post = [];
       ret =
-      (Error UninitializedMemoryAccess at manifest.c:6:10-12 (cursor: 6:10));
+      (Error UninitializedMemoryAccess with trace [(manifest.c:12:3-10,
+                                                    Call trace);
+                                                   (manifest.c:6:10-12 (cursor: 6:10),
+                                                    Triggering memory operation)]);
       memory_leak = false }
-      manifest bugs: [(Manifest_UB
-                         UninitializedMemoryAccess at manifest.c:6:10-12 (cursor: 6:10))]
+      manifest bugs: [UninitializedMemoryAccess with trace [(manifest.c:12:3-10,
+                                                             Call trace);
+                                                            (manifest.c:6:10-12 (cursor: 6:10),
+                                                             Triggering memory operation)]]
     { args = []; pre = []; pc = []; post = [];
-      ret = (Error NullDereference at manifest.c:6:10-12 (cursor: 6:10));
+      ret =
+      (Error NullDereference with trace [(manifest.c:12:3-10, Call trace);
+                                         (manifest.c:6:10-12 (cursor: 6:10),
+                                          Triggering memory operation)]);
       memory_leak = false }
-      manifest bugs: [(Manifest_UB
-                         NullDereference at manifest.c:6:10-12 (cursor: 6:10))]
+      manifest bugs: [NullDereference with trace [(manifest.c:12:3-10,
+                                                   Call trace);
+                                                  (manifest.c:6:10-12 (cursor: 6:10),
+                                                   Triggering memory operation)]]
   
   Summaries for test_leak_11:
     { args = []; pre = []; pc = []; post = []; ret = (Ok 0); memory_leak = true
       }
-      manifest bugs: [Memory_leak]
+      manifest bugs: [Memory leak with trace [(manifest.c:26:1-34:2 (cursor: 26:5 - 26:14),
+                                               )]]
     { args = []; pre = []; pc = []; post = []; ret = (Ok 1);
       memory_leak = false }
       manifest bugs: []
@@ -53,10 +68,15 @@
   Summaries for test_uninit_8:
     { args = []; pre = []; pc = []; post = [];
       ret =
-      (Error UninitializedMemoryAccess at manifest.c:6:10-12 (cursor: 6:10));
+      (Error UninitializedMemoryAccess with trace [(manifest.c:21:3-10,
+                                                    Call trace);
+                                                   (manifest.c:6:10-12 (cursor: 6:10),
+                                                    Triggering memory operation)]);
       memory_leak = false }
-      manifest bugs: [(Manifest_UB
-                         UninitializedMemoryAccess at manifest.c:6:10-12 (cursor: 6:10))]
+      manifest bugs: [UninitializedMemoryAccess with trace [(manifest.c:21:3-10,
+                                                             Call trace);
+                                                            (manifest.c:6:10-12 (cursor: 6:10),
+                                                             Triggering memory operation)]]
     { args = []; pre = []; pc = []; post = []; ret = (Ok 1);
       memory_leak = false }
       manifest bugs: []
@@ -66,10 +86,12 @@
       memory_leak = false }
       manifest bugs: []
     { args = []; pre = []; pc = []; post = [];
-      ret = (Error NullDereference at manifest.c:51:3-10 (cursor: 51:6));
+      ret =
+      (Error NullDereference with trace [(manifest.c:51:3-10 (cursor: 51:6),
+                                          Triggering memory operation)]);
       memory_leak = false }
-      manifest bugs: [(Manifest_UB
-                         NullDereference at manifest.c:51:3-10 (cursor: 51:6))]
+      manifest bugs: [NullDereference with trace [(manifest.c:51:3-10 (cursor: 51:6),
+                                                   Triggering memory operation)]]
   
   Summaries for test_ok_14:
     { args = []; pre = []; pc = []; post = []; ret = (Ok 0);

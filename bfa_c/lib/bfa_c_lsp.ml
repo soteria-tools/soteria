@@ -17,28 +17,45 @@ let get_abort_diagnostics () =
   Lsp.Types.Diagnostic.create ~message:(`String msg) ~severity:Information
     ~range ~source:"bfa" ()
 
-let error_to_diagnostic_opt (err, loc) =
+let error_to_diagnostic_opt ~uri (err, call_trace) =
   let open Lsp.Types in
-  let open Syntaxes.Option in
   let open DiagnosticSeverity in
-  let+ severity, message =
+  let severity, message =
     (* When we hide non-bug things, some patterns will return None *)
     match err with
-    | `NullDereference -> Some (Error, "Null Dereference")
-    | `OutOfBounds -> Some (Error, "Out of Bounds")
-    | `UninitializedMemoryAccess -> Some (Error, "Uninitialized Memory Access")
-    | `ParsingError s -> Some (Error, s)
-    | `UseAfterFree -> Some (Error, "Use After Free")
-    | `DivisionByZero -> Some (Error, "Division By Zero")
+    | `NullDereference -> (Error, "Null Dereference")
+    | `OutOfBounds -> (Error, "Out of Bounds")
+    | `UninitializedMemoryAccess -> (Error, "Uninitialized Memory Access")
+    | `ParsingError s -> (Error, s)
+    | `UseAfterFree -> (Error, "Use After Free")
+    | `DivisionByZero -> (Error, "Division By Zero")
     | `UBPointerComparison ->
-        Some (Error, "Undefined Behavior for Pointer Comparison")
+        (Error, "Undefined Behavior for Pointer Comparison")
     | `UBPointerArithmetic ->
-        Some (Error, "Undefined Behavior for Pointer Arithmetic")
-    | `InvalidFree -> Some (Error, "Invalid Pointer passed to free")
-    | `Memory_leak -> Some (Warning, "Memory leak")
+        (Error, "Undefined Behavior for Pointer Arithmetic")
+    | `InvalidFree -> (Error, "Invalid Pointer passed to free")
+    | `Memory_leak -> (Warning, "Memory leak")
   in
-  Lsp.Types.Diagnostic.create ~message:(`String message) ~severity
-    ~range:(cerb_loc_to_range loc) ~source:"bfa" ()
+  let parens_if_non_empty = function "" -> "" | s -> " (" ^ s ^ ")" in
+  let range, relatedInformation, msg_addendum =
+    match (call_trace : Call_trace.t) with
+    | [] -> (cerb_loc_to_range Cerb_location.unknown, None, "")
+    | [ { loc; msg } ] -> (cerb_loc_to_range loc, None, parens_if_non_empty msg)
+    | { loc; msg } :: locs ->
+        let related_info =
+          List.map
+            (fun Call_trace.{ loc; msg } ->
+              let location =
+                Location.create ~range:(cerb_loc_to_range loc) ~uri
+              in
+              DiagnosticRelatedInformation.create ~location ~message:msg)
+            locs
+        in
+        (cerb_loc_to_range loc, Some related_info, parens_if_non_empty msg)
+  in
+  Lsp.Types.Diagnostic.create
+    ~message:(`String (message ^ msg_addendum))
+    ~severity ~range ?relatedInformation ~source:"bfa" ()
 
 class bfa_lsp_server generate_errors =
   object (self)
@@ -55,9 +72,9 @@ class bfa_lsp_server generate_errors =
        - return the diagnostics from the new state
     *)
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
-        (_uri : Lsp.Types.DocumentUri.t) (contents : string) =
+        (uri : Lsp.Types.DocumentUri.t) (contents : string) =
       let errors = generate_errors contents in
-      let diags = List.filter_map error_to_diagnostic_opt errors in
+      let diags = List.map (error_to_diagnostic_opt ~uri) errors in
       let diags =
         if debug_mode then get_abort_diagnostics () @ diags else diags
       in

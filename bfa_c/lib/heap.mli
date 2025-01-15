@@ -1,6 +1,6 @@
 include
   Heap_intf.S
-    with type 'a err = 'a * Cerb_location.t
+    with type 'a err = 'a * Call_trace.t
      and type serialized =
       (Typed.T.sloc Typed.t * Tree_block.serialized Csymex.Freeable.serialized)
       list

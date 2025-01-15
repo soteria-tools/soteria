@@ -120,7 +120,7 @@ let parse_ail_raw file =
         Printf.sprintf "Failed to parse ail: %s"
           (Pp_errors.to_string (loc, err))
       in
-      Error (`ParsingError msg, loc)
+      Error (`ParsingError msg, Call_trace.singleton ~loc ())
 
 let is_main (def : Cabs.function_definition) =
   let decl = match def with FunDef (_, _, _, decl, _) -> decl in
@@ -129,7 +129,7 @@ let is_main (def : Cabs.function_definition) =
       String.equal name "main"
   | _ -> false
 
-let pp_err ft (err, loc) =
+let pp_err ft (err, call_trace) =
   Format.open_hbox ();
   let () =
     match err with
@@ -145,7 +145,7 @@ let pp_err ft (err, loc) =
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `Memory_leak -> Fmt.string ft "Memory leak"
   in
-  Fmt.pf ft " at %a" Fmt_ail.pp_loc loc;
+  Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
   Format.close_box ()
 
 let parse_ail file_name =
@@ -153,8 +153,7 @@ let parse_ail file_name =
   let* entry_point, sigma = parse_ail_raw file_name in
   let* entry_point =
     match entry_point with
-    | None ->
-        Error (`ParsingError "No entry point function", Cerb_location.unknown)
+    | None -> Error (`ParsingError "No entry point function", Call_trace.empty)
     | Some e -> Ok e
   in
   let+ entry_point =
@@ -163,8 +162,7 @@ let parse_ail file_name =
       |> List.find_opt (fun (id, _) -> Symbol.equal_sym id entry_point)
     in
     match entry_opt with
-    | None ->
-        Error (`ParsingError "Entry point not found", Cerb_location.unknown)
+    | None -> Error (`ParsingError "Entry point not found", Call_trace.empty)
     | Some e -> Ok e
   in
   (entry_point, sigma)
@@ -210,16 +208,14 @@ let generate_errors content =
     output_string oc content;
     close_out oc
   in
-  let prog =
-    match parse_ail_raw file_name with
-    | Error e -> Fmt.failwith "Failed to parse AIL: %a" pp_err e
-    | Ok (_, prog) -> prog
-  in
-  let summaries = Abductor.generate_all_summaries prog in
-  List.concat_map
-    (fun (fid, summaries) ->
-      List.concat_map (Summary.analyse_summary ~prog ~fid) summaries)
-    summaries
+  match parse_ail_raw file_name with
+  | Error e -> [ e ]
+  | Ok (_, prog) ->
+      let summaries = Abductor.generate_all_summaries prog in
+      List.concat_map
+        (fun (fid, summaries) ->
+          List.concat_map (Summary.analyse_summary ~prog ~fid) summaries)
+        summaries
 
 (* Entry point function *)
 let lsp () =
@@ -240,8 +236,9 @@ let exec_main_bi file_name =
   | Ok (entry_point, prog) ->
       let () = Initialize_analysis.reinit prog in
       Abductor.generate_summaries_for ~prog entry_point
-  | Error (`ParsingError s, loc) ->
-      Fmt.failwith "Failed to parse AIL at loc %a: %s" Fmt_ail.pp_loc loc s
+  | Error (`ParsingError s, call_trace) ->
+      Fmt.failwith "Failed to parse AIL at loc %a: %s" Call_trace.pp call_trace
+        s
 
 (* Entry point function *)
 let generate_main_summary file_name =
@@ -262,8 +259,9 @@ let exec_fun_bi file_name fun_name =
         | None -> Fmt.failwith "Couldn't find function %s" fun_name
       in
       Abductor.generate_summaries_for ~prog fundef
-  | Error (`ParsingError s, loc) ->
-      Fmt.failwith "Failed to parse AIL at loc %a: %s" Fmt_ail.pp_loc loc s
+  | Error (`ParsingError s, call_trace) ->
+      Fmt.failwith "Failed to parse AIL at loc %a: %s" Call_trace.pp call_trace
+        s
 
 (* Entry point function *)
 
