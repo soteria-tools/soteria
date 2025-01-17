@@ -18,27 +18,17 @@ module Hashset = Hashset.Make (struct
   let pp = pp
 end)
 
+module Counter = struct
+  type nonrec t = t
+
+  let default = 0
+  let[@inline] next i = (i, i + 1)
+end
+
 module Incr_counter_mut = struct
-  type var = t
-  type t = int Dynarray.t
+  type var = int
 
-  let init () =
-    let t = Dynarray.create () in
-    Dynarray.add_last t 0;
-    t
+  include Incremental.Make_mutable (Counter)
 
-  let backtrack_n t n =
-    let len = Dynarray.length t in
-    Dynarray.truncate t (len - n)
-
-  let save t = Dynarray.add_last t (Dynarray.get_last t)
-
-  let reset t =
-    Dynarray.truncate t 1;
-    Dynarray.set t 0 0
-
-  let get_next t =
-    let var = Dynarray.pop_last t in
-    Dynarray.add_last t (var + 1);
-    var
+  let get_next = wrap Counter.next
 end

@@ -153,28 +153,36 @@ end
 module Make_seq (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
-  module Fuel_in_place = Incremental.Mutable_to_in_place (Fuel)
+
+  module Fuel = struct
+    include Incremental.Make_in_place (Fuel_gauge)
+
+    let consume_branching n = wrap (Fuel_gauge.consume_branching n)
+    let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n)
+    let branching_left = wrap_read Fuel_gauge.branching_left
+  end
+
   module Value = Solver.Value
   module MONAD = Monad.SeqM
 
   module Symex_state : Incremental.In_place = struct
     let backtrack_n n =
       Solver.backtrack_n n;
-      Fuel_in_place.backtrack_n n
+      Fuel.backtrack_n n
 
     let save () =
       Solver.save ();
-      Fuel_in_place.save ()
+      Fuel.save ()
 
     let reset () =
       Solver.reset ();
-      Fuel_in_place.reset ()
+      Fuel.reset ()
   end
 
   let consume_fuel_steps n () =
-    match Fuel_in_place.wrap (Fuel.consume_fuel_steps n) with
-    | Fuel.Exhausted -> Seq.Nil
-    | Fuel.Not_exhausted -> Seq.Cons ((), Seq.empty)
+    match Fuel.consume_fuel_steps n () with
+    | Exhausted -> Seq.Nil
+    | Not_exhausted -> Seq.Cons ((), Seq.empty)
 
   let assume learned () =
     let rec aux acc learned =
@@ -239,7 +247,7 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
             if !left_sat then
               (* We have to check right *)
               if Solver.sat () then
-                match Fuel_in_place.wrap (Fuel.consume_branching 1) with
+                match Fuel.consume_branching 1 () with
                 | Exhausted -> Seq.empty ()
                 | Not_exhausted -> else_ () ()
               else Seq.empty ()
@@ -263,13 +271,11 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
           else_ () ())
 
   let branches (brs : (unit -> 'a Seq.t) list) () =
-    let brs = List.take (Fuel_in_place.wrap (Fuel.branching_left ()) + 1) brs in
+    let brs = List.take (Fuel.branching_left () + 1) brs in
     let () =
-      match
-        Fuel_in_place.wrap (Fuel.consume_branching (List.length brs - 1))
-      with
-      | Fuel.Not_exhausted -> ()
-      | Fuel.Exhausted -> failwith "Exhausted fuel? Unreachable"
+      match Fuel.consume_branching (List.length brs - 1) () with
+      | Not_exhausted -> ()
+      | Exhausted -> failwith "Exhausted fuel? Unreachable"
     in
     match brs with
     | [] -> Seq.Nil
@@ -332,28 +338,36 @@ end)
 module Make_iter (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
-  module Fuel_in_place = Incremental.Mutable_to_in_place (Fuel)
+
+  module Fuel = struct
+    include Incremental.Make_in_place (Fuel_gauge)
+
+    let consume_branching n = wrap (Fuel_gauge.consume_branching n)
+    let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n)
+    let branching_left = wrap_read Fuel_gauge.branching_left
+  end
+
   module Value = Solver.Value
   module MONAD = Monad.IterM
 
   module Symex_state : Incremental.In_place = struct
     let backtrack_n n =
       Solver.backtrack_n n;
-      Fuel_in_place.backtrack_n n
+      Fuel.backtrack_n n
 
     let save () =
       Solver.save ();
-      Fuel_in_place.save ()
+      Fuel.save ()
 
     let reset () =
       Solver.reset ();
-      Fuel_in_place.reset ()
+      Fuel.reset ()
   end
 
   let consume_fuel_steps n f =
-    match Fuel_in_place.wrap (Fuel.consume_fuel_steps n) with
-    | Fuel.Exhausted -> Logging.debug (fun m -> m "Exhausted step fuel")
-    | Fuel.Not_exhausted -> f ()
+    match Fuel.consume_fuel_steps n () with
+    | Exhausted -> Logging.debug (fun m -> m "Exhausted step fuel")
+    | Not_exhausted -> f ()
 
   let assume learned f =
     let rec aux acc learned =
@@ -411,7 +425,7 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
             (* We have to check right *)
             Solver.sat ()
           then
-            match Fuel_in_place.wrap (Fuel.consume_branching 1) with
+            match Fuel.consume_branching 1 () with
             | Exhausted -> Logging.debug (fun m -> m "Exhausted branching fuel")
             | Not_exhausted -> else_ () f)
         else (* Right must be sat since left was not! *)
@@ -440,13 +454,11 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
 
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
-    let brs = List.take (Fuel_in_place.wrap (Fuel.branching_left ()) + 1) brs in
+    let brs = List.take (Fuel.branching_left () + 1) brs in
     let () =
-      match
-        Fuel_in_place.wrap (Fuel.consume_branching (List.length brs - 1))
-      with
-      | Fuel.Not_exhausted -> ()
-      | Fuel.Exhausted -> failwith "Exhausted fuel? Unreachable"
+      match Fuel.consume_branching (List.length brs - 1) () with
+      | Not_exhausted -> ()
+      | Exhausted -> failwith "Exhausted fuel? Unreachable"
     in
     match brs with
     | [] -> ()
