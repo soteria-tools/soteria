@@ -128,6 +128,7 @@ module Make (Heap : Heap_intf.S) = struct
     else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
     else if String.starts_with ~prefix:"free" name then Some C_std.free
     else if String.starts_with ~prefix:"memcpy" name then Some C_std.memcpy
+    else if String.starts_with ~prefix:"__assert__" name then Some C_std.assert_
     else if String.starts_with ~prefix:"___bfa_debug_show" name then
       Some debug_show
     else None
@@ -417,6 +418,7 @@ module Make (Heap : Heap_intf.S) = struct
         Heap.serialized )
       Csymex.Result.t =
     L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
+    let* () = Csymex.consume_fuel_steps 1 in
     Stats.incr_executed_statements ();
     let (AnnotatedStatement (loc, _, stmt)) = astmt in
     let@ () = with_loc ~loc in

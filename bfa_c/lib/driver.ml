@@ -144,6 +144,7 @@ let pp_err ft (err, call_trace) =
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `Memory_leak -> Fmt.string ft "Memory leak"
+    | `FailedAssert -> Fmt.string ft "Failed assertion"
   in
   Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
   Format.close_box ()

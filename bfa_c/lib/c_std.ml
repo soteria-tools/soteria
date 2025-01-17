@@ -44,4 +44,16 @@ module M (Heap : Heap_intf.S) = struct
     let size = Typed.cast size in
     let++ (), state = Heap.copy_nonoverlapping ~dst ~src ~size state in
     (dst, state)
+
+  let assert_ ~prog:_ ~(args : T.cval Typed.t list) ~state =
+    let open Typed.Infix in
+    let* to_assert =
+      match args with
+      | [ t ] ->
+          Csymex.of_opt_not_impl ~msg:"not an integer"
+            (Typed.cast_checked t Typed.t_int)
+      | _ -> not_impl "to_assert with non-one arguments"
+    in
+    if%sat to_assert ==@ 0s then Heap.error `FailedAssert state
+    else Result.ok (0s, state)
 end

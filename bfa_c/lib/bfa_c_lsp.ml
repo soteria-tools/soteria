@@ -35,6 +35,7 @@ let error_to_diagnostic_opt ~uri (err, call_trace) =
         (Error, "Undefined Behavior for Pointer Arithmetic")
     | `InvalidFree -> (Error, "Invalid Pointer passed to free")
     | `Memory_leak -> (Warning, "Memory leak")
+    | `FailedAssert -> (Error, "FailedAssert")
   in
   let parens_if_non_empty = function "" -> "" | s -> " (" ^ s ^ ")" in
   let range, relatedInformation, msg_addendum =

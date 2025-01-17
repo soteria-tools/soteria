@@ -29,6 +29,10 @@ module type Base = sig
 
   val branches : (unit -> 'a MONAD.t) list -> 'a MONAD.t
 
+  (** {2 Fuel} *)
+
+  val consume_fuel_steps : int -> unit MONAD.t
+
   (** [run] p actually performs symbolic execution and returns a list of
       obtained branches which capture the outcome together with a path condition
       that is a list of boolean symbolic values *)
@@ -36,36 +40,8 @@ module type Base = sig
 end
 
 module type S = sig
-  module Value : Value.S
-  include Monad.Base
-  module MONAD : Monad.Base with type 'a t = 'a t
-
-  val assume : Value.t list -> unit t
-  val assert_ : Value.t -> bool t
-  val vanish : unit -> 'a t
-  val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t t
-  val fresh_var : Value.ty -> Var.t t
-  val batched : (unit -> 'a t) -> 'a t
-
-  val branch_on :
-    Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
-
-  (** Branches on value, and takes at most one branch, starting with the [then]
-      branch. This means that if the [then_] branch is SAT, it is taken and the
-      [else_] branch is ignored, otherwise the [else_] branch is taken. This is,
-      of course, UX-sound, but not OX-sound. *)
-  val branch_on_take_one :
-    Value.t ->
-    then_:(unit -> 'a MONAD.t) ->
-    else_:(unit -> 'a MONAD.t) ->
-    'a MONAD.t
-
-  val branches : (unit -> 'a t) list -> 'a t
-
-  (** [run] p actually performs symbolic execution and returns a list of
-      obtained branches which capture the outcome together with a path condition
-      that is a list of boolean symbolic values *)
-  val run : 'a t -> ('a * Value.t list) list
+  include Base
+  include Monad.Base with type 'a t = 'a MONAD.t
 
   val all : 'a t list -> 'a list t
   val fold_list : ('a, 'b) Monad.FoldM(MONAD)(Foldable.List).folder
@@ -177,8 +153,28 @@ end
 module Make_seq (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
+  module Fuel_in_place = Incremental.Mutable_to_in_place (Fuel)
   module Value = Solver.Value
   module MONAD = Monad.SeqM
+
+  module Symex_state : Incremental.In_place = struct
+    let backtrack_n n =
+      Solver.backtrack_n n;
+      Fuel_in_place.backtrack_n n
+
+    let save () =
+      Solver.save ();
+      Fuel_in_place.save ()
+
+    let reset () =
+      Solver.reset ();
+      Fuel_in_place.reset ()
+  end
+
+  let consume_fuel_steps n () =
+    match Fuel_in_place.wrap (Fuel.consume_fuel_steps n) with
+    | Fuel.Exhausted -> Seq.Nil
+    | Fuel.Not_exhausted -> Seq.Cons ((), Seq.empty)
 
   let assume learned () =
     let rec aux acc learned =
@@ -201,10 +197,10 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
     | Some true -> Seq.Cons (true, Seq.empty)
     | Some false -> Seq.Cons (false, Seq.empty)
     | None ->
-        Solver.save ();
+        Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
         let sat = Solver.sat () in
-        Solver.backtrack_n 1;
+        Symex_state.backtrack_n 1;
         Seq.Cons (not sat, Seq.empty)
 
   let nondet ?constrs ty () =
@@ -231,18 +227,22 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
     | None ->
         Seq.append
           (fun () ->
-            Solver.save ();
+            Symex_state.save ();
             Solver.add_constraints ~simplified:true [ guard ];
             if Solver.sat () then then_ () ()
             else (
               left_sat := false;
               Seq.empty ()))
           (fun () ->
-            Solver.backtrack_n 1;
+            Symex_state.backtrack_n 1;
             Solver.add_constraints [ Value.(not guard) ];
             if !left_sat then
               (* We have to check right *)
-              if Solver.sat () then else_ () () else Seq.empty ()
+              if Solver.sat () then
+                match Fuel_in_place.wrap (Fuel.consume_branching ()) with
+                | Exhausted -> Seq.empty ()
+                | Not_exhausted -> else_ () ()
+              else Seq.empty ()
             else (* Right must be sat since left was not! *)
               else_ () ())
           ()
@@ -254,11 +254,11 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
     | Some true -> then_ () ()
     | Some false -> else_ () ()
     | None ->
-        Solver.save ();
+        Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         if Solver.sat () then then_ () ()
         else (
-          Solver.backtrack_n 1;
+          Symex_state.backtrack_n 1;
           Solver.add_constraints [ Value.(not guard) ];
           else_ () ())
 
@@ -273,7 +273,7 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
             Solver.save ();
             a () ())
           (fun () ->
-            Solver.backtrack_n 1;
+            Symex_state.backtrack_n 1;
             b () ())
           ()
     | a :: (_ :: _ as r) ->
@@ -282,20 +282,20 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
           match brs with
           | [ x ] ->
               fun () ->
-                Solver.backtrack_n 1;
+                Symex_state.backtrack_n 1;
                 x () ()
           | x :: r ->
               Seq.append
                 (fun () ->
-                  Solver.backtrack_n 1;
-                  Solver.save ();
+                  Symex_state.backtrack_n 1;
+                  Symex_state.save ();
                   x () ())
                 (loop r)
           | [] -> failwith "unreachable"
         in
         Seq.append
           (fun () ->
-            Solver.save ();
+            Symex_state.save ();
             a () ())
           (loop r) ()
 
@@ -324,8 +324,28 @@ end)
 module Make_iter (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
+  module Fuel_in_place = Incremental.Mutable_to_in_place (Fuel)
   module Value = Solver.Value
   module MONAD = Monad.IterM
+
+  module Symex_state : Incremental.In_place = struct
+    let backtrack_n n =
+      Solver.backtrack_n n;
+      Fuel_in_place.backtrack_n n
+
+    let save () =
+      Solver.save ();
+      Fuel_in_place.save ()
+
+    let reset () =
+      Solver.reset ();
+      Fuel_in_place.reset ()
+  end
+
+  let consume_fuel_steps n f =
+    match Fuel_in_place.wrap (Fuel.consume_fuel_steps n) with
+    | Fuel.Exhausted -> Logging.debug (fun m -> m "Exhausted step fuel")
+    | Fuel.Not_exhausted -> f ()
 
   let assume learned f =
     let rec aux acc learned =
@@ -348,7 +368,7 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
     | Some true -> f true
     | Some false -> f false
     | None ->
-        Solver.save ();
+        Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
         let sat = Solver.sat () in
         Solver.backtrack_n 1;
@@ -373,7 +393,7 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
-        Solver.save ();
+        Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         if Solver.sat () then then_ () f else left_sat := false;
         Solver.backtrack_n 1;
@@ -382,7 +402,10 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
           if
             (* We have to check right *)
             Solver.sat ()
-          then else_ () f)
+          then
+            match Fuel_in_place.wrap (Fuel.consume_branching ()) with
+            | Exhausted -> Logging.debug (fun m -> m "Exhausted branching fuel")
+            | Not_exhausted -> else_ () f)
         else (* Right must be sat since left was not! *)
           else_ () f
 
@@ -394,11 +417,11 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
-        Solver.save ();
+        Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         if Solver.sat () then then_ () f
         else (
-          Solver.backtrack_n 1;
+          Symex_state.backtrack_n 1;
           Solver.add_constraints [ Value.(not guard) ];
           else_ () f)
 
@@ -414,30 +437,30 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
     | [ a ] -> a () f
     (* Optimised case *)
     | [ a; b ] ->
-        Solver.save ();
+        Symex_state.save ();
         a () f;
-        Solver.backtrack_n 1;
+        Symex_state.backtrack_n 1;
         b () f
     | a :: (_ :: _ as r) ->
         (* First branch should not backtrack and last branch should not save *)
         let rec loop brs =
           match brs with
           | [ x ] ->
-              Solver.backtrack_n 1;
+              Symex_state.backtrack_n 1;
               x () f
           | x :: r ->
-              Solver.backtrack_n 1;
-              Solver.save ();
+              Symex_state.backtrack_n 1;
+              Symex_state.save ();
               x () f;
               loop r
           | [] -> failwith "unreachable"
         in
-        Solver.save ();
+        Symex_state.save ();
         a () f;
         loop r
 
   let run iter =
-    Solver.reset ();
+    Symex_state.reset ();
     let l = ref [] in
     (iter @@ fun x -> l := (x, Solver.as_values ()) :: !l);
     List.rev !l

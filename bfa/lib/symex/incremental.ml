@@ -18,6 +18,7 @@ module Mutable_to_in_place (M : Mutable) = struct
   let save () = M.save (Lazy.force state)
   let backtrack_n n = M.backtrack_n (Lazy.force state) n
   let reset () = M.reset (Lazy.force state)
+  let wrap (f : M.t -> 'a) : 'a = f (Lazy.force state)
 end
 
 module type Immutable = sig

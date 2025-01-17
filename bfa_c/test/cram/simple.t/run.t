@@ -37,6 +37,8 @@ Symbolic execution of a simple program with a horrible pointer indirection *&*x
            (V|1|, [TypedVal {offset = 0; ty = signed int; v = 12}; (Bound 4)])]);
      Ok: (1, [(V|0|, Freed)])]
   Executed 9 statements
+
+Checking that memcpy works correctly
   $ bfa-c exec-main cpy.c
   Symex terminated with the following outcomes:
     [Ok: (1,
@@ -59,3 +61,87 @@ Symbolic execution of a simple program with a horrible pointer indirection *&*x
            (V|2|, Freed)]);
      Ok: (2, [(V|0|, Freed)])]
   Executed 15 statements
+Checking that fuel gets exhausted properly
+  $ bfa-c exec-main while_true.c
+  Symex terminated with the following outcomes:
+    [Error: Failed assertion with trace [(while_true.c:10:5-18, Call trace);
+                                         (while_true.c:10:5-18,
+                                          Triggering memory operation)]]
+  Executed 200 statements
+Checking that code cannot branch infinitely
+  $ bfa-c exec-main max_branching.c
+  Symex terminated with the following outcomes:
+    [Ok: (1, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
+     Ok: (0, [(V|0|, Freed); (V|2|, Freed)])]
+  Executed 200 statements
