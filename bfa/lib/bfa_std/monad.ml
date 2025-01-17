@@ -155,3 +155,20 @@ module IterM = Extend (struct
   let[@inline] map x f = Iter.map f x
   let[@inline] return x = Iter.return x
 end)
+
+module StateM (State : sig
+  type t
+end) =
+Extend (struct
+  type 'a t = State.t -> 'a * State.t
+
+  let[@inline] return x s = (x, s)
+
+  let[@inline] bind x f s =
+    let x', s' = x s in
+    f x' s'
+
+  let[@inline] map x f s =
+    let x', s' = x s in
+    (f x', s')
+end)
