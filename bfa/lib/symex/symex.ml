@@ -226,32 +226,26 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
   let branch_on guard ~then_ ~else_ : 'a Seq.t =
    fun () ->
     let guard = Solver.simplify guard in
-    let left_sat = ref true in
     match Value.as_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
        if we remove the Some true and Some false optimisation. *)
     | Some true -> then_ () ()
     | Some false -> else_ () ()
     | None ->
+        Symex_state.save ();
+        Solver.add_constraints ~simplified:true [ guard ];
+        let left_sat = Solver.sat () in
         Seq.append
-          (fun () ->
-            Symex_state.save ();
-            Solver.add_constraints ~simplified:true [ guard ];
-            if Solver.sat () then then_ () ()
-            else (
-              left_sat := false;
-              Seq.empty ()))
+          (fun () -> if left_sat then then_ () () else Seq.Nil)
           (fun () ->
             Symex_state.backtrack_n 1;
             Solver.add_constraints [ Value.(not guard) ];
-            if !left_sat then
-              (* We have to check right *)
-              if Solver.sat () then
-                match Fuel.consume_branching 1 () with
-                | Exhausted -> Seq.empty ()
-                | Not_exhausted -> else_ () ()
-              else Seq.empty ()
-            else (* Right must be sat since left was not! *)
+            if left_sat then
+              match Fuel.consume_branching 1 () with
+              | Exhausted -> Seq.Nil
+              | Not_exhausted -> if Solver.sat () then else_ () () else Seq.Nil
+            else
+              (* Right must be sat since left was not! We didn't branch so we don't consume the counter. *)
               else_ () ())
           ()
 
@@ -264,32 +258,28 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
-        if Solver.sat () then then_ () ()
-        else (
-          Symex_state.backtrack_n 1;
-          Solver.add_constraints [ Value.(not guard) ];
-          else_ () ())
+        let left_sat = Solver.sat () in
+        Seq.append
+          (fun () -> if left_sat then then_ () () else Seq.Nil)
+          (fun () ->
+            Symex_state.backtrack_n 1;
+            if left_sat then Seq.Nil
+            else (
+              Solver.add_constraints [ Value.(not guard) ];
+              else_ () ()))
+          ()
 
-  let branches (brs : (unit -> 'a Seq.t) list) () =
-    let brs = List.take (Fuel.branching_left () + 1) brs in
+  let branches (brs : (unit -> 'a Seq.t) list) : 'a Seq.t =
+   fun () ->
+    let brs, count = Bfa_std.List.take_count (Fuel.branching_left () + 1) brs in
     let () =
-      match Fuel.consume_branching (List.length brs - 1) () with
+      match Fuel.consume_branching (max (count - 1) 0) () with
       | Not_exhausted -> ()
       | Exhausted -> failwith "Exhausted fuel? Unreachable"
     in
     match brs with
     | [] -> Seq.Nil
     | [ a ] -> a () ()
-    (* Optimised case *)
-    | [ a; b ] ->
-        Seq.append
-          (fun () ->
-            Solver.save ();
-            a () ())
-          (fun () ->
-            Symex_state.backtrack_n 1;
-            b () ())
-          ()
     | a :: (_ :: _ as r) ->
         (* First branch should not backtrack and last branch should not save *)
         let rec loop brs =
@@ -307,11 +297,8 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
                 (loop r)
           | [] -> failwith "unreachable"
         in
-        Seq.append
-          (fun () ->
-            Symex_state.save ();
-            a () ())
-          (loop r) ()
+        Symex_state.save ();
+        Seq.append (fun () -> a () ()) (loop r) ()
 
   let vanish () = Seq.empty
 
@@ -393,7 +380,7 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
         Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
         let sat = Solver.sat () in
-        Solver.backtrack_n 1;
+        Symex_state.backtrack_n 1;
         f (not sat)
 
   let nondet ?(constrs = fun _ -> []) ty f =
@@ -418,17 +405,14 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         if Solver.sat () then then_ () f else left_sat := false;
-        Solver.backtrack_n 1;
+        Symex_state.backtrack_n 1;
         Solver.add_constraints [ Value.(not guard) ];
         if !left_sat then (
-          if
-            (* We have to check right *)
-            Solver.sat ()
-          then
-            match Fuel.consume_branching 1 () with
-            | Exhausted -> Logging.debug (fun m -> m "Exhausted branching fuel")
-            | Not_exhausted -> else_ () f)
-        else (* Right must be sat since left was not! *)
+          match Fuel.consume_branching 1 () with
+          | Exhausted -> Logging.debug (fun m -> m "Exhausted branching fuel")
+          | Not_exhausted -> if Solver.sat () then else_ () f)
+        else
+          (* Right must be sat since left was not! We didn't branch so we don't consume the counter. *)
           else_ () f
 
   let branch_on_take_one guard ~then_ ~else_ : 'a Iter.t =
@@ -454,22 +438,16 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
 
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
-    let brs = List.take (Fuel.branching_left () + 1) brs in
+    let brs, count = Bfa_std.List.take_count (Fuel.branching_left () + 1) brs in
     let () =
-      match Fuel.consume_branching (List.length brs - 1) () with
+      match Fuel.consume_branching (max (count - 1) 0) () with
       | Not_exhausted -> ()
       | Exhausted -> failwith "Exhausted fuel? Unreachable"
     in
     match brs with
     | [] -> ()
     | [ a ] -> a () f
-    (* Optimised case *)
-    | [ a; b ] ->
-        Symex_state.save ();
-        a () f;
-        Symex_state.backtrack_n 1;
-        b () f
-    | a :: (_ :: _ as r) ->
+    | a :: r ->
         (* First branch should not backtrack and last branch should not save *)
         let rec loop brs =
           match brs with

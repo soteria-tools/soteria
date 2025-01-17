@@ -67,14 +67,152 @@ Checking that fuel gets exhausted properly
     [Error: Failed assertion with trace [(while_true.c:10:5-18, Call trace);
                                          (while_true.c:10:5-18,
                                           Triggering memory operation)]]
-  Executed 200 statements
+  Executed 152 statements
 Checking that code cannot branch infinitely
   $ bfa-c exec-main max_branching.c
   Symex terminated with the following outcomes:
-    [Ok: (1, [(V|0|, Freed); (V|2|, Freed)]);
-     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
-     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
-     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
-     Ok: (0, [(V|0|, Freed); (V|2|, Freed)]);
-     Ok: (0, [(V|0|, Freed); (V|2|, Freed)])]
-  Executed 200 statements
+    [Ok: (0,
+          [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|2|, Freed); (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|4|, Freed); (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|6|, Freed); (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|8|, Freed); (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|10|, Freed); (V|11|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|12|, Freed); (V|13|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|14|, Freed); (V|15|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|16|, Freed); (V|17|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|2|, Freed); (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|4|, Freed); (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|6|, Freed); (V|7|, Freed);
+           (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|9|, Freed);
+           (V|10|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|11|, Freed);
+           (V|12|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|13|, Freed);
+           (V|14|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|15|, Freed);
+           (V|16|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|2|, Freed); (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|4|, Freed); (V|5|, Freed);
+           (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|7|, Freed);
+           (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|9|, Freed);
+           (V|10|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|11|, Freed);
+           (V|12|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|13|, Freed);
+           (V|14|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|15|, Freed);
+           (V|16|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|2|, Freed); (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|4|, Freed); (V|5|, Freed); (V|6|, Freed);
+           (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|8|, Freed);
+           (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|10|, Freed);
+           (V|11|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|12|, Freed);
+           (V|13|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|14|, Freed);
+           (V|15|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|2|, Freed); (V|3|, Freed);
+           (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|5|, Freed);
+           (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|7|, Freed);
+           (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|9|, Freed);
+           (V|10|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|11|, Freed);
+           (V|12|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|13|, Freed);
+           (V|14|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|15|, Freed);
+           (V|16|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|2|, Freed); (V|3|, Freed);
+           (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|5|, Freed);
+           (V|6|, Freed); (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|8|, Freed); (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|10|, Freed); (V|11|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|12|, Freed); (V|13|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|14|, Freed); (V|15|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|2|, Freed); (V|3|, Freed); (V|4|, Freed);
+           (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|6|, Freed);
+           (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|8|, Freed);
+           (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|10|, Freed);
+           (V|11|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|12|, Freed);
+           (V|13|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|14|, Freed);
+           (V|15|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|2|, Freed); (V|3|, Freed); (V|4|, Freed); (V|5|, Freed);
+           (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|7|, Freed);
+           (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|9|, Freed);
+           (V|10|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|11|, Freed);
+           (V|12|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|13|, Freed);
+           (V|14|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, Freed);
+           (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|3|, Freed);
+           (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|5|, Freed);
+           (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|7|, Freed);
+           (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|9|, Freed);
+           (V|10|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|11|, Freed);
+           (V|12|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|13|, Freed);
+           (V|14|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|15|, Freed);
+           (V|16|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, Freed);
+           (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|3|, Freed);
+           (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|5|, Freed);
+           (V|6|, Freed); (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|8|, Freed); (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|10|, Freed); (V|11|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|12|, Freed); (V|13|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|14|, Freed); (V|15|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, Freed);
+           (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|3|, Freed);
+           (V|4|, Freed); (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|6|, Freed); (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|8|, Freed); (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|10|, Freed); (V|11|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|12|, Freed); (V|13|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|14|, Freed); (V|15|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, Freed);
+           (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|3|, Freed);
+           (V|4|, Freed); (V|5|, Freed);
+           (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|7|, Freed);
+           (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|9|, Freed);
+           (V|10|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|11|, Freed);
+           (V|12|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|13|, Freed);
+           (V|14|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, Freed); (V|2|, Freed);
+           (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|4|, Freed);
+           (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|6|, Freed);
+           (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|8|, Freed);
+           (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|10|, Freed);
+           (V|11|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|12|, Freed);
+           (V|13|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|14|, Freed);
+           (V|15|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, Freed); (V|2|, Freed);
+           (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|4|, Freed);
+           (V|5|, Freed); (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|7|, Freed); (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|9|, Freed); (V|10|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|11|, Freed); (V|12|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|13|, Freed); (V|14|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, Freed); (V|2|, Freed); (V|3|, Freed);
+           (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|5|, Freed);
+           (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|7|, Freed);
+           (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|9|, Freed);
+           (V|10|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|11|, Freed);
+           (V|12|, [Uninit {offset = 0; len = 4}; (Bound 4)]); (V|13|, Freed);
+           (V|14|, [Uninit {offset = 0; len = 4}; (Bound 4)])]);
+     Ok: (0,
+          [(V|0|, Freed); (V|1|, Freed); (V|2|, Freed); (V|3|, Freed);
+           (V|4|, Freed); (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|6|, Freed); (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|8|, Freed); (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|10|, Freed); (V|11|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
+           (V|12|, Freed); (V|13|, [Uninit {offset = 0; len = 4}; (Bound 4)])])]
+  Executed 112 statements

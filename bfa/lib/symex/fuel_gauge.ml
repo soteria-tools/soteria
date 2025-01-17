@@ -5,9 +5,14 @@ type t = {
   branching : int;
       (** Number of times branching happens. Careful, the total number of
           branches is potentially exponential in the number of branchings *)
+      (* TODO:
+          Realised that we could just have the symex monad do a
+          [Iter.take branches] and we wouldn't ever have to keep track of
+          branching inside execution since everything is lazily executed *)
 }
+[@@deriving show { with_path = false }]
 
-let default = { steps = 200; branching = 6 }
+let default = { steps = 150; branching = 4 }
 
 let consume_fuel_steps n gauge =
   if gauge.steps >= n then

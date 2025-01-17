@@ -63,12 +63,8 @@ module Make_in_place (M : sig
   type t
 
   val default : t
-end) : sig
-  include In_place
-
-  val wrap : (M.t -> 'a * M.t) -> unit -> 'a
-  val wrap_read : (M.t -> 'a) -> unit -> 'a
-end = struct
+end) =
+struct
   module Mutable = Make_mutable (M)
   include Mutable_to_in_place (Mutable)
 
