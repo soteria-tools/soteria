@@ -80,8 +80,8 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       Tree_block.t option ->
-      ('a * Tree_block.t option, 'err, 'fix) Result.t) :
-    ('a * t, 'err, serialized) Result.t =
+      ('a * Tree_block.t option, 'err, 'fix list) Result.t) :
+    ('a * t, 'err, serialized list) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   (SPmap.wrap (Freeable.wrap (f ~ofs))) loc st
@@ -90,7 +90,8 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       Tree_block.t option ->
-      ('a, 'err, Tree_block.serialized) Result.t) =
+      ('a, 'err, Tree_block.serialized list) Result.t) :
+    ('a, 'err, serialized list) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc st
@@ -140,7 +141,7 @@ let alloc_ty ty st =
   alloc size st
 
 let free (ptr : [< T.sptr ] Typed.t) (st : t) :
-    (unit * t, 'err, serialized) Result.t =
+    (unit * t, 'err, serialized list) Result.t =
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ () = with_loc_err () in
@@ -162,5 +163,5 @@ let produce (serialized : serialized) (heap : t) : t Csymex.t =
   SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
 
 let consume (serialized : serialized) (heap : t) :
-    (t, 'err, serialized) Csymex.Result.t =
+    (t, 'err, serialized list) Csymex.Result.t =
   SPmap.consume (Freeable.consume Tree_block.consume) serialized heap

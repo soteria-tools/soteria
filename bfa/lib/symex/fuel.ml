@@ -35,9 +35,13 @@ let consume_fuel_steps n d =
     Not_exhausted)
   else Exhausted
 
-let consume_branching () d =
+let consume_branching n d =
   let f = Dynarray.pop_last d in
-  if f.branching > 0 then (
-    Dynarray.add_last d { f with branching = f.branching - 1 };
+  if f.branching >= n then (
+    Dynarray.add_last d { f with branching = f.branching - n };
     Not_exhausted)
   else Exhausted
+
+let branching_left () d =
+  let f = Dynarray.get_last d in
+  f.branching

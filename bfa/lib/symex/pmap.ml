@@ -27,8 +27,8 @@ struct
   type 'a serialized = (Key.t * 'a) list
 
   let lift_fix_s ~key res =
-    let+? fix = res in
-    [ (key, fix) ]
+    let+? fixes = res in
+    List.map (fun fix -> [ (key, fix) ]) fixes
 
   let pp_serialized pp_inner : 'a serialized Fmt.t =
     Fmt.brackets
@@ -63,7 +63,7 @@ struct
   let add_opt k v m = M.update k (fun _ -> v) m
 
   let alloc (type a) ~(new_codom : a) (st : a t option) :
-      (Key.t * a t option, 'err, 'fix) Result.t =
+      (Key.t * a t option, 'err, 'fix list) Result.t =
     let st = of_opt st in
     let* key =
       Key.fresh
@@ -73,9 +73,9 @@ struct
     in
     Result.ok (key, to_opt (M.add key new_codom st))
 
-  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
+  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix list) Symex.Result.t)
       (key : Key.t) (st : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
+      ('b * 'a t option, 'err, 'fix serialized list) Symex.Result.t =
     let st = of_opt st in
     let* key, codom = Find_opt_sym.f key st in
     let++ res, codom = f codom |> lift_fix_s ~key in
@@ -98,9 +98,12 @@ struct
       (cons :
         'inner_serialized ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_serialized) Symex.Result.t)
+        ('inner_st option, 'err, 'inner_serializedlist) Symex.Result.t)
       (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-      ('inner_st t option, 'err, 'inner_serialized serialized) Symex.Result.t =
+      ( 'inner_st t option,
+        'err,
+        'inner_serialized serialized list )
+      Symex.Result.t =
     let st = of_opt st in
     let++ st =
       Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
@@ -110,9 +113,9 @@ struct
     in
     to_opt st
 
-  let wrap_read_only (f : 'a option -> ('b, 'err, 'fix) Symex.Result.t)
+  let wrap_read_only (f : 'a option -> ('b, 'err, 'fix list) Symex.Result.t)
       (key : Key.t) (st : 'a t option) :
-      ('b, 'err, 'fix serialized) Symex.Result.t =
+      ('b, 'err, 'fix serialized list) Symex.Result.t =
     let st = of_opt st in
     let* _, codom = Find_opt_sym.f key st in
     f codom |> lift_fix_s ~key

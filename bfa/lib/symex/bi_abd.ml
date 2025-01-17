@@ -13,8 +13,9 @@ module Make (Symex : Symex.S) = struct
       (Fmt.Dump.list pp_fix) fixes
 
   let wrap ?(fuel = 1) ~(produce : 'fix -> 'a -> 'a Symex.t)
-      (f : 'a -> ('v * 'a, 'err, 'fix) Symex.Result.t) (bi_st : ('a, 'fix) t) :
-      ('v * ('a, 'fix) t, 'err * ('a, 'fix) t, 'fix) Result.t =
+      (f : 'a -> ('v * 'a, 'err, 'fix list) Symex.Result.t)
+      (bi_st : ('a, 'fix) t) :
+      ('v * ('a, 'fix) t, 'err * ('a, 'fix) t, 'fix list) Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
     let rec with_fuel fuel bi_st =
       let st, fixes = bi_st in
@@ -22,11 +23,16 @@ module Make (Symex : Symex.S) = struct
       match res with
       | Ok (v, st) -> Result.ok (v, (st, fixes))
       | Error e -> Result.error (e, bi_st)
-      | Missing fix ->
+      | Missing fix_choices ->
           if fuel <= 0 then Symex.vanish ()
           else
-            let* st = produce fix st in
-            with_fuel (fuel - 1) (st, fix :: fixes)
+            Symex.branches
+              (List.map
+                 (fun fix ->
+                   fun () ->
+                    let* st = produce fix st in
+                    with_fuel (fuel - 1) (st, fix :: fixes))
+                 fix_choices)
     in
     with_fuel fuel bi_st
 
@@ -36,9 +42,9 @@ module Make (Symex : Symex.S) = struct
     (st, fixes)
 
   let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)
-      (cons : 'ser -> 't -> ('t, 'err, 'ser) Symex.Result.t) (inner_ser : 'ser)
-      (bi_st : ('t, 'ser) t) :
-      (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser) Symex.Result.t =
+      (cons : 'ser -> 't -> ('t, 'err, 'ser list) Symex.Result.t)
+      (inner_ser : 'ser) (bi_st : ('t, 'ser) t) :
+      (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser list) Symex.Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
     let rec with_fuel fuel bi_st =
       let st, fixes = bi_st in
@@ -48,11 +54,16 @@ module Make (Symex : Symex.S) = struct
       | Error _e ->
           Logs.info (fun m -> m "Bi_abd.consume: vanishing an error");
           Symex.vanish ()
-      | Missing fix ->
+      | Missing fix_choices ->
           if fuel <= 0 then Symex.vanish ()
           else
-            let* st = produce fix st in
-            with_fuel (fuel - 1) (st, fix :: fixes)
+            Symex.branches
+              (List.map
+                 (fun fix ->
+                   fun () ->
+                    let* st = produce fix st in
+                    with_fuel (fuel - 1) (st, fix :: fixes))
+                 fix_choices)
     in
     with_fuel fuel bi_st
 end

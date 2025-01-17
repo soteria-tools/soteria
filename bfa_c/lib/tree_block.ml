@@ -358,7 +358,7 @@ module Tree = struct
   (** Cons/prod *)
 
   let consume_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
-      (v : [< T.cval ] Typed.t) (t : t) : (t, 'err, 'fix) Result.t =
+      (v : [< T.cval ] Typed.t) (t : t) : (t, 'err, 'fix list) Result.t =
     let* range = Range.of_low_and_type low ty in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
@@ -368,7 +368,7 @@ module Tree = struct
     | Ok sv ->
         let+ () = Typed.assume [ sv ==?@ v ] in
         Ok tree
-    | Missing fix -> Csymex.Result.miss fix
+    | Missing fixes -> Csymex.Result.miss fixes
     | Error `UninitializedMemoryAccess -> Csymex.vanish ()
 
   let produce_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
@@ -387,7 +387,7 @@ module Tree = struct
     | _ -> Csymex.vanish ()
 
   let consume_any (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
-      (t : t) : (t, 'err, 'fix) Result.t =
+      (t : t) : (t, 'err, 'fix list) Result.t =
     let range = (low, low +@ len) in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
@@ -410,7 +410,7 @@ module Tree = struct
     | _ -> Csymex.vanish ()
 
   let consume_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
-      (t : t) : (t, 'err, 'fix) Result.t =
+      (t : t) : (t, 'err, 'fix list) Result.t =
     let range = (low, low +@ len) in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
@@ -436,7 +436,7 @@ module Tree = struct
     | _ -> Csymex.vanish ()
 
   let consume_zeros (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
-      (t : t) : (t, 'err, 'fix) Result.t =
+      (t : t) : (t, 'err, 'fix list) Result.t =
     let range = (low, low +@ len) in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
@@ -506,7 +506,7 @@ let iter_values_serialized serialized f =
 
 let mk_fix_typed offset ty () =
   let* v = Layout.nondet_c_ty ty in
-  return [ TypedVal { offset; ty; v } ]
+  return [ [ TypedVal { offset; ty; v } ] ]
 
 let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let** () =
@@ -578,8 +578,8 @@ let get_raw_tree_owned ofs size t =
 
 (* This is used for copy_nonoverapping.
    It is an action on the destination block, and assumes the received tree is at offset 0 *)
-let put_raw_tree ofs (tree : Tree.t) t : (unit * t option, 'err, 'fix) Result.t
-    =
+let put_raw_tree ofs (tree : Tree.t) t :
+    (unit * t option, 'err, 'fix list) Result.t =
   let** t = of_opt t in
   let size = Range.size tree.range in
   let tree = Tree.offset ~by:ofs tree in

@@ -195,7 +195,7 @@ let exec_main_and_print log_level smt_file file_name =
         Fmt.Dump.(
           list @@ fun ft (r, _) ->
           (Bfa_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_heap) ~err:pp_err
-             ~miss:Heap.pp_serialized)
+             ~miss:(Fmt.Dump.list Heap.pp_serialized))
             ft r)
         result
         (Stats.get_executed_statements ()))

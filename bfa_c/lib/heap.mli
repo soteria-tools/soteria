@@ -14,5 +14,5 @@ val iter_vars_serialized :
 val subst_serialized :
   (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
 
-val consume : serialized -> t -> (t, 'err, serialized) Csymex.Result.t
+val consume : serialized -> t -> (t, 'err, serialized list) Csymex.Result.t
 val produce : serialized -> t -> t Csymex.t

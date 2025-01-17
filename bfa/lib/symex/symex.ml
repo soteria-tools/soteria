@@ -239,7 +239,7 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
             if !left_sat then
               (* We have to check right *)
               if Solver.sat () then
-                match Fuel_in_place.wrap (Fuel.consume_branching ()) with
+                match Fuel_in_place.wrap (Fuel.consume_branching 1) with
                 | Exhausted -> Seq.empty ()
                 | Not_exhausted -> else_ () ()
               else Seq.empty ()
@@ -263,6 +263,14 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
           else_ () ())
 
   let branches (brs : (unit -> 'a Seq.t) list) () =
+    let brs = List.take (Fuel_in_place.wrap (Fuel.branching_left ()) + 1) brs in
+    let () =
+      match
+        Fuel_in_place.wrap (Fuel.consume_branching (List.length brs - 1))
+      with
+      | Fuel.Not_exhausted -> ()
+      | Fuel.Exhausted -> failwith "Exhausted fuel? Unreachable"
+    in
     match brs with
     | [] -> Seq.Nil
     | [ a ] -> a () ()
@@ -403,7 +411,7 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
             (* We have to check right *)
             Solver.sat ()
           then
-            match Fuel_in_place.wrap (Fuel.consume_branching ()) with
+            match Fuel_in_place.wrap (Fuel.consume_branching 1) with
             | Exhausted -> Logging.debug (fun m -> m "Exhausted branching fuel")
             | Not_exhausted -> else_ () f)
         else (* Right must be sat since left was not! *)
@@ -432,6 +440,14 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
 
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
+    let brs = List.take (Fuel_in_place.wrap (Fuel.branching_left ()) + 1) brs in
+    let () =
+      match
+        Fuel_in_place.wrap (Fuel.consume_branching (List.length brs - 1))
+      with
+      | Fuel.Not_exhausted -> ()
+      | Fuel.Exhausted -> failwith "Exhausted fuel? Unreachable"
+    in
     match brs with
     | [] -> ()
     | [ a ] -> a () f

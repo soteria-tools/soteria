@@ -9,7 +9,7 @@ module AilSyntax = Cerb_frontend.AilSyntax
 module T = Typed.T
 
 let nondet_int_fun ~prog:_ ~args:_ ~(state : 'state) :
-    ([> Typed.T.sint ] Typed.t * 'state, 'err, 'fix) Result.t =
+    ([> Typed.T.sint ] Typed.t * 'state, 'err, 'fix list) Result.t =
   let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
   let+ v = Typed.nondet ~constrs Typed.t_int in
   let v = (v :> T.cval Typed.t) in
@@ -54,7 +54,7 @@ module Make (Heap : Heap_intf.S) = struct
     prog:sigma ->
     args:T.cval Typed.t list ->
     state:state ->
-    (T.cval Typed.t * state, 'err, Heap.serialized) Result.t
+    (T.cval Typed.t * state, 'err, Heap.serialized list) Result.t
 
   let get_param_tys ~prog name =
     let ptys = Ail_helpers.get_param_tys ~prog name in
@@ -415,7 +415,7 @@ module Make (Heap : Heap_intf.S) = struct
   and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
       ( T.cval Typed.t option * store * state,
         'err,
-        Heap.serialized )
+        Heap.serialized list )
       Csymex.Result.t =
     L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
     let* () = Csymex.consume_fuel_steps 1 in
