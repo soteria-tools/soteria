@@ -1,6 +1,15 @@
 module SYMEX = Bfa_symex.Symex.Make_iter (Z3solver)
 include SYMEX
 
+let check_nonzero (t : Typed.T.sint Typed.t) :
+    ([> Typed.T.nonzero ] Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
+  let open Syntax in
+  let open Typed.Infix in
+  if%sat t ==@ Typed.zero then Result.error `NonZeroIsZero
+  else Result.ok (Typed.cast t)
+
+(* sint t -> ([> nonzero ] t, [> `NonZeroIsZero ], 'fix) Csymex.Result.t *)
+
 let ( let@ ) = ( @@ )
 
 let push_give_up, flush_give_up =

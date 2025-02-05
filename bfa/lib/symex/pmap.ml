@@ -1,6 +1,5 @@
 module type KeyS = sig
   type t
-  type kt
 
   module Symex : Symex.S
   include Stdlib.Map.OrderedType with type t := t
@@ -13,7 +12,7 @@ module type KeyS = sig
 
   val distinct : t list -> Symex.Value.sbool Symex.Value.t
   val subst : (Var.t -> Var.t) -> t -> t
-  val iter_vars : t -> kt Symex.Value.ty Var.iter_vars
+  val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
 end
 
 module Build_from_find_opt_sym

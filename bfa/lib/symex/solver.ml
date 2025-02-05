@@ -15,7 +15,7 @@ module type Mutable_incremental = sig
 
   val simplify : t -> 'a Value.t -> 'a Value.t
   val fresh_var : t -> 'a Value.ty -> Var.t
-  val as_values : t -> 'a Value.t list
+  val as_values : t -> Value.sbool Value.t list
 end
 
 module type In_place_incremental = sig
