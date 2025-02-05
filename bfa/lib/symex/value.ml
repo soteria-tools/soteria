@@ -4,7 +4,7 @@ module type S = sig
   type sbool
 
   val not : sbool t -> sbool t
-  val sem_eq : 'a t -> 'b t -> sbool t
+  val sem_eq : 'a t -> 'a t -> sbool t
   val ppa : 'a t Fmt.t
   val iter_vars : 'a t -> 'b ty Var.iter_vars
   val subst : (Var.t -> Var.t) -> 'a t -> 'a t

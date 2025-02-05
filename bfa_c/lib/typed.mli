@@ -59,8 +59,8 @@ val compare : ([< any ] as 'a) t -> 'a t -> int
 
 (** Typed constructors *)
 
-val sem_eq : 'a t -> 'b t -> sbool t
-val sem_eq_untyped : 'a t -> 'b t -> [> sbool ] t
+val sem_eq : 'a t -> 'a t -> sbool t
+val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
 val bool : bool -> [> sbool ] t
