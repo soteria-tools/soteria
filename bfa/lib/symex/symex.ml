@@ -103,17 +103,13 @@ module type S = sig
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax : sig
+      type sbool_v := Value.sbool Value.t
+
       val branch_on :
-        Value.sbool Value.t ->
-        then_:(unit -> 'a t) ->
-        else_:(unit -> 'a t) ->
-        'a t
+        sbool_v -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
 
       val branch_on_take_one :
-        Value.sbool Value.t ->
-        then_:(unit -> 'a t) ->
-        else_:(unit -> 'a t) ->
-        'a t
+        sbool_v -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
     end
   end
 end

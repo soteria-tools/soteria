@@ -4,9 +4,10 @@ module type Mutable_incremental = sig
   include Incremental.Mutable
   module Value : Value.S
 
+  type sbool_v := Value.sbool Value.t
+
   (** simplified indicates if constraits were already simplified *)
-  val add_constraints :
-    t -> ?simplified:bool -> Value.sbool Value.t list -> unit
+  val add_constraints : t -> ?simplified:bool -> sbool_v list -> unit
 
   val sat : t -> bool
 
@@ -15,7 +16,7 @@ module type Mutable_incremental = sig
 
   val simplify : t -> 'a Value.t -> 'a Value.t
   val fresh_var : t -> 'a Value.ty -> Var.t
-  val as_values : t -> Value.sbool Value.t list
+  val as_values : t -> sbool_v list
 end
 
 module type In_place_incremental = sig
