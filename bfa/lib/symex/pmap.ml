@@ -1,15 +1,19 @@
 module type KeyS = sig
   type t
+  type kt
 
   module Symex : Symex.S
   include Stdlib.Map.OrderedType with type t := t
 
   val pp : t Fmt.t
-  val sem_eq : t -> t -> Symex.Value.t
-  val fresh : ?constrs:(t -> Symex.Value.t list) -> unit -> t Symex.t
-  val distinct : t list -> Symex.Value.t
+  val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
+
+  val fresh :
+    ?constrs:(t -> Symex.Value.sbool Symex.Value.t list) -> unit -> t Symex.t
+
+  val distinct : t list -> Symex.Value.sbool Symex.Value.t
   val subst : (Var.t -> Var.t) -> t -> t
-  val iter_vars : t -> Symex.Value.ty Var.iter_vars
+  val iter_vars : t -> kt Symex.Value.ty Var.iter_vars
 end
 
 module Build_from_find_opt_sym

@@ -18,8 +18,8 @@ module Make (Symex : Symex.S) = struct
   let serialize serialize_val x = serialize_val x
   let pp_serialized = pp
 
-  let iter_vars_serialized (i : 'a -> Symex.Value.ty Var.iter_vars)
-      (x : 'a serialized) : Symex.Value.ty Var.iter_vars =
+  let iter_vars_serialized (i : 'a -> 'b Symex.Value.ty Var.iter_vars)
+      (x : 'a serialized) : 'b Symex.Value.ty Var.iter_vars =
    fun f -> i x f
 
   let subst_serialized subst_inner subst_var x = subst_inner subst_var x
