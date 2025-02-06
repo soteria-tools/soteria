@@ -57,6 +57,7 @@ and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
 let hash t = t.hkey
+let kind t = t.node.kind
 
 let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
   match sv.node.kind with

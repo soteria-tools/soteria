@@ -31,7 +31,7 @@ module MemVal = struct
           Csymex.of_opt_not_impl ~msg:"Int constraints"
             (Layout.int_constraints int_ty)
         in
-        let+ value = Typed.nondet ~constrs Typed.t_int in
+        let+ value = Csymex.nondet ~constrs Typed.t_int in
         { value :> T.cval Typed.t; ty }
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
 end
@@ -366,7 +366,7 @@ module Tree = struct
     let* sval_res = Node.decode ~ty framed.node in
     match sval_res with
     | Ok sv ->
-        let+ () = Typed.assume [ sv ==?@ v ] in
+        let+ () = Csymex.assume [ sv ==?@ v ] in
         Ok tree
     | Missing fixes -> Csymex.Result.miss fixes
     | Error `UninitializedMemoryAccess -> Csymex.vanish ()
@@ -378,7 +378,7 @@ module Tree = struct
       Csymex.of_opt_not_impl ~msg:"Produce typed_val constraints"
         (Layout.constraints ty)
     in
-    let* () = Typed.assume (constrs value) in
+    let* () = Csymex.assume (constrs value) in
     let replace_node _ = sval_leaf ~range ~value ~ty in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -445,7 +445,7 @@ module Tree = struct
     | NotOwned _ -> miss_no_fix ~msg:"consume_zeros" ()
     | Owned Zeros -> Result.ok tree
     | Owned (Init { ty = _; value }) ->
-        let+ () = Typed.assume [ value ==?@ 0s ] in
+        let+ () = Csymex.assume [ value ==?@ 0s ] in
         Ok tree
     | _ ->
         L.info (fun m -> m "Consuming zero but not zero, vanishing");
@@ -607,7 +607,8 @@ let subst_serialized subst_var (serialized : serialized) =
   in
   List.map subst_atom serialized
 
-let iter_vars_serialized serialized f =
+let iter_vars_serialized serialized (f : Svalue.Var.t * [< T.cval ] ty -> unit)
+    =
   List.iter
     (function
       | TypedVal { offset; v; _ } ->
@@ -659,7 +660,7 @@ let assume_bound_check_res (t : t) (ofs : [< T.sint ] Typed.t) f =
   let* () =
     match t.bound with
     | None -> Csymex.return ()
-    | Some bound -> Typed.assume [ ofs <=@ bound ]
+    | Some bound -> Csymex.assume [ ofs <=@ bound ]
   in
   let++ root = f () in
   { t with root }
@@ -668,7 +669,7 @@ let assume_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let* () =
     match t.bound with
     | None -> Csymex.return ()
-    | Some bound -> Typed.assume [ ofs <=@ bound ]
+    | Some bound -> Csymex.assume [ ofs <=@ bound ]
   in
   let+ root = f () in
   { t with root }
@@ -759,7 +760,7 @@ let consume_bound bound t =
   match t with
   | None | Some { bound = None; _ } -> miss_no_fix ~msg:"consume_bound" ()
   | Some { bound = Some v; root } ->
-      let+ () = Typed.assume [ v ==?@ bound ] in
+      let+ () = Csymex.assume [ v ==?@ bound ] in
       Ok (to_opt { bound = None; root })
 
 let produce_bound bound t =

@@ -11,7 +11,7 @@ module T = Typed.T
 let nondet_int_fun ~prog:_ ~args:_ ~(state : 'state) :
     ([> Typed.T.sint ] Typed.t * 'state, 'err, 'fix list) Result.t =
   let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
-  let+ v = Typed.nondet ~constrs Typed.t_int in
+  let+ v = Csymex.nondet ~constrs Typed.t_int in
   let v = (v :> T.cval Typed.t) in
   Ok (v, state)
 
@@ -38,10 +38,10 @@ module Make (Heap : Heap_intf.S) = struct
 
   let cast_to_ptr x =
     let open Csymex.Syntax in
-    let open Svalue.Infix in
+    let open Typed.Infix in
     match Typed.get_ty x with
     | TInt ->
-        if%sat Typed.untyped x ==@ Svalue.zero then Csymex.return Typed.Ptr.null
+        if%sat x ==@ Typed.zero then Csymex.return Typed.Ptr.null
         else
           Fmt.kstr Csymex.not_impl "Int-to-pointer that is not 0: %a" Typed.ppa
             x
@@ -317,7 +317,7 @@ module Make (Heap : Heap_intf.S) = struct
             | Div -> (
                 let* v1 = cast_checked v1 ~ty:Typed.t_int in
                 let* v2 = cast_checked v2 ~ty:Typed.t_int in
-                let* v2 = Typed.check_nonzero v2 in
+                let* v2 = Csymex.check_nonzero v2 in
                 match v2 with
                 | Ok v2 -> Csymex.Result.ok (v1 /@ v2, state)
                 | Error `NonZeroIsZero -> Heap.error `DivisionByZero state

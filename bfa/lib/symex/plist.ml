@@ -10,13 +10,15 @@ module type SInt_sig = sig
 
   include Stdlib.Map.OrderedType with type t := t
 
+  type sbool_v := Value.sbool Value.t
+
   val pp : t Fmt.t
-  val sem_eq : t -> t -> Value.t
+  val sem_eq : t -> t -> sbool_v
   val of_int : int -> t
-  val in_range : t -> t * t -> Value.t
-  val greater_or_equal : t -> t -> Value.t
+  val in_range : t -> t * t -> sbool_v
+  val greater_or_equal : t -> t -> sbool_v
   val subst : (Var.t -> Var.t) -> t -> t
-  val iter_vars : t -> (Var.t * Value.ty -> unit) -> unit
+  val iter_vars : t -> (Var.t * 'a Value.ty -> unit) -> unit
 end
 
 module Make (Symex : Symex.S) (SInt : SInt_sig with module Symex = Symex) =

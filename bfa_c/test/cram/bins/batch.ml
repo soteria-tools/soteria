@@ -4,10 +4,10 @@ open Csymex.Syntax
 let ( let@ ) = ( @@ )
 
 let process =
-  let open Svalue.Infix in
-  let open Svalue.Syntax in
+  let open Typed.Infix in
+  let open Typed.Syntax in
   let@ () = Csymex.batched in
-  let* n = Csymex.nondet Svalue.TInt in
+  let* n = Csymex.nondet Typed.t_int in
   let* () = Csymex.assume [ n >=@ 0s ] in
   let* () = Csymex.assume [ n <@ 10s ] in
   Csymex.assume [ n <@ 0s ]

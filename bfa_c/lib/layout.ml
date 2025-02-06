@@ -200,12 +200,12 @@ let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   match proj_ctype_ ty with
   | Void -> Csymex.return 0s
   | Pointer _ ->
-      let* loc = Typed.nondet Typed.t_loc in
-      let* ofs = Typed.nondet Typed.t_int in
+      let* loc = Csymex.nondet Typed.t_loc in
+      let* ofs = Csymex.nondet Typed.t_int in
       Csymex.return (Typed.Ptr.mk loc ofs)
   | Basic (Integer ity) ->
       let constrs = int_constraints ity |> Option.get in
-      let+ res = Typed.nondet ~constrs Typed.t_int in
+      let+ res = Csymex.nondet ~constrs Typed.t_int in
       (res :> Typed.T.cval Typed.t)
   | Basic (Floating _) -> Csymex.not_impl "nondet_c_ty: floating"
   | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->

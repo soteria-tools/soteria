@@ -15,26 +15,13 @@ let with_error_loc_as_call_trace () f =
   (err, Call_trace.singleton ~loc ~msg:"Triggering memory operation" ())
 
 module SPmap = Pmap_direct_access (struct
-  type t = T.sloc Typed.t
-
+  include Typed
   module Symex = Csymex
 
-  let pp = Typed.ppa
-  let sem_eq x y = Typed.sem_eq x y |> Typed.untyped
-  let compare = Typed.compare
-  let distinct l = Typed.distinct l |> Typed.untyped
-  let subst subst_var t = Typed.subst subst_var t
+  type t = T.sloc Typed.t
 
-  let fresh ?(constrs : (t -> Svalue.t list) option) () : t Csymex.t =
-    let (constrs : (Svalue.t -> Svalue.t list) option) =
-      match constrs with
-      | None -> None
-      | Some f -> Some (fun loc -> f (Typed.type_ loc))
-    in
-    let+ v = Csymex.nondet ?constrs TLoc in
-    Typed.type_ v
-
-  let iter_vars = Typed.iter_vars
+  let pp = ppa
+  let fresh ?constrs () = Csymex.nondet ?constrs Typed.t_loc
 end)
 
 type t = Tree_block.t Freeable.t SPmap.t option
@@ -54,9 +41,11 @@ let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
     (Freeable.subst_serialized Tree_block.subst_serialized)
     subst_var serialized
 
-let iter_vars_serialized =
+let iter_vars_serialized (s : serialized) :
+    (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit =
   SPmap.iter_vars_serialized
     (Freeable.iter_vars_serialized Tree_block.iter_vars_serialized)
+    s
 
 let pp_pretty ~ignore_freed ft st =
   let ignore =
@@ -159,7 +148,7 @@ let produce (serialized : serialized) (heap : t) : t Csymex.t =
   let non_null_locs =
     List.map (fun (loc, _) -> Typed.not (Typed.Ptr.null_loc ==@ loc)) serialized
   in
-  let* () = Typed.assume non_null_locs in
+  let* () = Csymex.assume non_null_locs in
   SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
 
 let consume (serialized : serialized) (heap : t) :

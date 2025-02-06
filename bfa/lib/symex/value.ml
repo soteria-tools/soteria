@@ -1,12 +1,13 @@
 module type S = sig
-  type t
-  type ty
+  type +'a t
+  type +'a ty
+  type sbool
 
-  val not : t -> t
-  val sem_eq : t -> t -> t
-  val pp : t Fmt.t
-  val iter_vars : t -> ty Var.iter_vars
-  val subst : (Var.t -> Var.t) -> t -> t
-  val mk_var : Var.t -> ty -> t
-  val as_bool : t -> bool option
+  val not : sbool t -> sbool t
+  val sem_eq : 'a t -> 'a t -> sbool t
+  val ppa : 'a t Fmt.t
+  val iter_vars : 'a t -> 'b ty Var.iter_vars
+  val subst : (Var.t -> Var.t) -> 'a t -> 'a t
+  val mk_var : Var.t -> 'a ty -> 'a t
+  val as_bool : 'a t -> bool option
 end

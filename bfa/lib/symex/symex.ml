@@ -4,15 +4,19 @@ module type Base = sig
   module Value : Value.S
   module MONAD : Monad.Base
 
-  val assume : Value.t list -> unit MONAD.t
+  type 'a v := 'a Value.t
+  type 'a vt := 'a Value.ty
+  type sbool := Value.sbool
+
+  val assume : sbool v list -> unit MONAD.t
   val vanish : unit -> 'a MONAD.t
-  val assert_ : Value.t -> bool MONAD.t
-  val nondet : ?constrs:(Value.t -> Value.t list) -> Value.ty -> Value.t MONAD.t
-  val fresh_var : Value.ty -> Var.t MONAD.t
+  val assert_ : sbool v -> bool MONAD.t
+  val nondet : ?constrs:('a v -> sbool v list) -> 'a vt -> 'a v MONAD.t
+  val fresh_var : 'a vt -> Var.t MONAD.t
   val batched : (unit -> 'a MONAD.t) -> 'a MONAD.t
 
   val branch_on :
-    Value.t ->
+    sbool v ->
     then_:(unit -> 'a MONAD.t) ->
     else_:(unit -> 'a MONAD.t) ->
     'a MONAD.t
@@ -22,7 +26,7 @@ module type Base = sig
       [else_] branch is ignored, otherwise the [else_] branch is taken. This is,
       of course, UX-sound, but not OX-sound. *)
   val branch_on_take_one :
-    Value.t ->
+    sbool v ->
     then_:(unit -> 'a MONAD.t) ->
     else_:(unit -> 'a MONAD.t) ->
     'a MONAD.t
@@ -36,7 +40,7 @@ module type Base = sig
   (** [run] p actually performs symbolic execution and returns a list of
       obtained branches which capture the outcome together with a path condition
       that is a list of boolean symbolic values *)
-  val run : 'a MONAD.t -> ('a * Value.t list) list
+  val run : 'a MONAD.t -> ('a * sbool v list) list
 end
 
 module type S = sig
@@ -99,11 +103,13 @@ module type S = sig
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax : sig
+      type sbool_v := Value.sbool Value.t
+
       val branch_on :
-        Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
+        sbool_v -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
 
       val branch_on_take_one :
-        Value.t -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
+        sbool_v -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
     end
   end
 end
