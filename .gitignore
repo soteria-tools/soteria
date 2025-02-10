@@ -179,6 +179,9 @@ setup.log
 # Local OPAM switch
 _opam/
 
+# LLBC generated files by Charon
+*.llbc.json
+
 ### macOS ###
 # General
 .DS_Store
