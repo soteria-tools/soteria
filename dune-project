@@ -22,6 +22,8 @@
  (depends
   (ocaml
    (>= 5.3.0))
+  (tsort
+   (>= 2.1.0))
   eio_main
   simple_smt
   iter
@@ -53,8 +55,6 @@
   (shexp :build)
   eio_main
   bfa
-  (tsort
-   (>= 2.1.0))
   cerberus-lib
   zarith
   ppx_deriving

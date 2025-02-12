@@ -12,7 +12,6 @@ depends: [
   "shexp" {build}
   "eio_main"
   "bfa"
-  "tsort" {>= "2.1.0"}
   "cerberus-lib"
   "zarith"
   "ppx_deriving"
