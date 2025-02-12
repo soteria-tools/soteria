@@ -6,7 +6,7 @@ type 'err t = {
       (** List of arguments values, corresponding to the formal arguments in
           order. Really a form of [(x == a0) * (y == a1)] *)
   pre : Heap.serialized list;  (** Pre-condition as a list of fixes *)
-  pc : Svalue.t list;
+  pc : Typed.T.sbool Typed.t list;
       (** Path condition. Whether it is in the post or in the pre, it doesn't
           matter for UX. *)
   post : Heap.serialized;  (** Post condition as a serialized heap *)
@@ -25,7 +25,7 @@ let filter_pc relevant_vars pc =
   ListLabels.filter pc ~f:(fun v ->
       Iter.exists
         (fun (var, _) -> Var_hashset.mem relevant_vars var)
-        (Svalue.iter_vars v))
+        (Typed.iter_vars v))
 
 let filter_serialized_heap relvant_vars pc =
   let leak = ref false in
@@ -74,8 +74,8 @@ let pruned summary =
   let init_reachable = init_reachable_vars summary in
   (* For each equality [e1 = e2] in the path condition,
      we add a double edge from all variables of [e1] to all variables of [e2] *)
-  ListLabels.iter summary.pc ~f:(fun (v : Svalue.t) ->
-      match v.node.kind with
+  ListLabels.iter summary.pc ~f:(fun v ->
+      match Typed.kind v with
       | Binop (Eq, el, er) ->
           (* We make the second iterator peristent to avoid going over the structure too many times if there are many *)
           let r_iter = Iter.persistent_lazy (Svalue.iter_vars er) in
@@ -117,7 +117,7 @@ let manifest_bug ~arg_tys summary =
   | Error error ->
       let module Subst = Bfa_symex.Substs.Subst in
       let module From_iter = Subst.From_iter (Csymex) in
-      let iter_pc f = List.iter (fun v -> Svalue.iter_vars v f) summary.pc in
+      let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
       let iter_post = Heap.iter_vars_serialized summary.post in
       let iter_args f =
         List.iter (fun cval -> Typed.iter_vars cval f) summary.args
@@ -138,14 +138,14 @@ let manifest_bug ~arg_tys summary =
             args arg_tys
         in
         let constrs = List.concat constrs in
-        let* () = Typed.assume constrs in
+        let* () = Csymex.assume constrs in
         let serialized_heap = Heap.subst_serialized subst summary.post in
         (* We don't need the produced heap, just its wf condition *)
         (* We might want to use another symex monad, à grisette,
            that produces the condition as a writer monad in an \/ or something *)
         let* _heap = Heap.produce serialized_heap Heap.empty in
-        let pc = List.map (Svalue.subst subst) summary.pc in
-        Csymex.assert_ (Svalue.conj pc)
+        let pc = List.map (Typed.subst subst) summary.pc in
+        Csymex.assert_ (Typed.conj pc)
       in
       let result = Csymex.run process in
       (* The bug is manifest if the assert passed in every branch. *)

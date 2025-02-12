@@ -1,9 +1,9 @@
 module type From_iter = sig
   type t
-  type ty
+  type 'a ty
   type 'a symex
 
-  val from_iter : ty Var.iter_vars -> t symex
+  val from_iter : 'a ty Var.iter_vars -> t symex
 end
 
 module Subst = struct
@@ -36,7 +36,7 @@ module Subst = struct
   module From_iter (Symex : Symex.S) :
     From_iter
       with type t := Var.t t
-       and type ty := Symex.Value.ty
+       and type 'a ty := 'a Symex.Value.ty
        and type 'a symex := 'a Symex.t = struct
     let from_iter iter_vars =
       let open Symex.Syntax in
@@ -72,7 +72,7 @@ module Subst_mut = struct
   module From_iter (Symex : Symex.S) :
     From_iter
       with type t := Var.t t
-       and type ty := Symex.Value.ty
+       and type 'a ty := 'a Symex.Value.ty
        and type 'a symex := 'a Symex.t = struct
     let from_iter iter_vars =
       let open Symex.Syntax in
@@ -101,7 +101,7 @@ module Bi_subst = struct
   module From_iter (Symex : Symex.S) :
     From_iter
       with type t := t
-       and type ty := Symex.Value.ty
+       and type 'a ty := 'a Symex.Value.ty
        and type 'a symex := 'a Symex.t = struct
     open Symex.Syntax
 

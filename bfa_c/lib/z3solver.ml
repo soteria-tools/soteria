@@ -1,4 +1,4 @@
-module Value = Svalue
+module Value = Typed
 module Var = Svalue.Var
 
 let z3_env_var = "BFA_Z3_PATH"
@@ -78,7 +78,7 @@ struct
 end
 
 module Solver_state = struct
-  type t = Svalue.t Dynarray.t Dynarray.t
+  type t = Typed.sbool Typed.t Dynarray.t Dynarray.t
 
   let init () =
     let t = Dynarray.create () in
@@ -93,14 +93,14 @@ module Solver_state = struct
   let backtrack_n t n = Dynarray.truncate t (Dynarray.length t - n)
 
   let add_constraint (t : t) v =
-    if Svalue.equal v Svalue.v_true then ()
+    if Typed.equal v Typed.v_true then ()
     else
       match Dynarray.find_last t with
       | None -> failwith "add_constraint: empty array"
       | Some last ->
-          if Svalue.equal v Svalue.v_false then (
+          if Typed.equal v Typed.v_false then (
             Dynarray.clear last;
-            Dynarray.add_last last Svalue.v_false)
+            Dynarray.add_last last Typed.v_false)
           else Dynarray.add_last last v
 
   (** This function returns [Some b] if the solver state is trivially [b] (true
@@ -114,14 +114,14 @@ module Solver_state = struct
     | Some last -> (
         match Dynarray.find_last last with
         | None -> Some true
-        | Some v when Svalue.equal v Svalue.v_false -> Some false
+        | Some v when Typed.equal v Typed.v_false -> Some false
         | _ -> None)
 
   let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
   let to_value_list (t : t) = Iter.to_rev_list (iter t)
 
   let mem (t : t) v =
-    Dynarray.exists (fun d -> Dynarray.exists (Svalue.equal v) d) t
+    Dynarray.exists (fun d -> Dynarray.exists (Typed.equal v) d) t
 end
 
 type t = {
@@ -225,7 +225,7 @@ let rec sort_of_ty = function
 
 let declare_v v_id ty =
   let v = Svalue.Var.to_string v_id in
-  declare v (sort_of_ty ty)
+  declare v (sort_of_ty (Typed.untype_type ty))
 
 let memo_encode_value_tbl : sexp Utils.Hint.t = Utils.Hint.create 1023
 
@@ -284,25 +284,28 @@ let fresh_var solver ty =
 
 let fresh solver ty =
   let v_id = fresh_var solver ty in
-  Svalue.mk_var v_id ty
+  Typed.mk_var v_id ty
 
-let rec simplify solver (v : Svalue.t) =
+let rec simplify' solver (v : Svalue.t) : Svalue.t =
   match v.node.kind with
   | Int _ | Bool _ -> v
-  | _ when Solver_state.mem solver.state v -> Svalue.v_true
+  | _ when Solver_state.mem solver.state (Typed.type_ v) -> Svalue.v_true
   | Unop (Not, e) ->
-      let e' = simplify solver e in
+      let e' = simplify' solver e in
       if Svalue.equal e e' then v else Svalue.not e'
   | Binop (Eq, e1, e2) ->
       if Svalue.equal e1 e2 then Svalue.v_true
       else if Svalue.sure_neq e1 e2 then Svalue.v_false
       else v
   | Binop (Or, e1, e2) ->
-      let se1 = simplify solver e1 in
-      let se2 = simplify solver e2 in
+      let se1 = simplify' solver e1 in
+      let se2 = simplify' solver e2 in
       if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
       else Svalue.or_ se1 se2
   | _ -> v
+
+and simplify solver (v : 'a Typed.t) : 'a Typed.t =
+  v |> Typed.untyped |> simplify' solver |> Typed.type_
 
 let is_diff_op (v : Svalue.t) =
   match v.node.kind with
@@ -310,16 +313,13 @@ let is_diff_op (v : Svalue.t) =
   | _ -> None
 
 let add_constraints solver ?(simplified = false) vs =
-  let iter = vs |> Iter.of_list |> Iter.flat_map Svalue.split_ands in
+  let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
   iter @@ fun v ->
   let v = if simplified then v else simplify solver v in
   Solver_state.add_constraint solver.state v;
-  ack_command solver.z3_solver (assume (encode_value v))
+  ack_command solver.z3_solver @@ assume @@ encode_value @@ Typed.untyped v
 
-let as_bool v =
-  if Svalue.equal v Svalue.v_true then Some true
-  else if Svalue.equal v Svalue.v_false then Some false
-  else None
+let as_bool = Typed.as_bool
 
 (* Incremental doesn't allow for caching queries... *)
 let sat solver =
