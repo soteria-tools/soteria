@@ -15,7 +15,7 @@ module List_ex = struct
 
   (* An iteration over the cross-product of l with itself,
       excluding pairs (x, x) of the same element.
-     For instance, [self_cross_product [1; 2; 3]] will iterate over [(1, 2), (1, 2), (2, 3)] *)
+     For instance, [self_cross_product [1; 2; 3]] will iterate over [(1, 2), (1, 3), (2, 3)] *)
   let iter_self_cross_product l f =
     let rec aux = function
       | [] -> ()

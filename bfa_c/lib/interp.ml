@@ -8,13 +8,6 @@ module Ctype = Cerb_frontend.Ctype
 module AilSyntax = Cerb_frontend.AilSyntax
 module T = Typed.T
 
-let nondet_int_fun ~prog:_ ~args:_ ~(state : 'state) :
-    ([> Typed.T.sint ] Typed.t * 'state, 'err, 'fix list) Result.t =
-  let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
-  let+ v = Csymex.nondet ~constrs Typed.t_int in
-  let v = (v :> T.cval Typed.t) in
-  Ok (v, state)
-
 module Make (Heap : Heap_intf.S) = struct
   module C_std = C_std.M (Heap)
 
@@ -124,7 +117,8 @@ module Make (Heap : Heap_intf.S) = struct
 
   let find_stub ~prog:_ fname : 'err fun_exec option =
     let name = Cerb_frontend.Pp_symbol.to_string fname in
-    if String.starts_with ~prefix:"__nondet__" name then Some nondet_int_fun
+    if String.starts_with ~prefix:"__nondet__" name then
+      Some C_std.nondet_int_fun
     else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
     else if String.starts_with ~prefix:"free" name then Some C_std.free
     else if String.starts_with ~prefix:"memcpy" name then Some C_std.memcpy
