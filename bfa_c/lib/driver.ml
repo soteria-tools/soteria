@@ -76,11 +76,14 @@ let load_core_impl_shim _stdlib _impl_name =
 
 module Frontend = struct
   let frontend = ref (fun _ -> failwith "Frontend not set")
+  let includes = ref ""
+  let add_include s = includes := !includes ^ "-I" ^ s ^ " "
+  let add_includes ss = List.iter add_include ss
 
   let init () =
     let result =
       let open Cerb_backend.Pipeline in
-      let cpp_cmd = "cc -E -C -Werror -nostdinc -undef " in
+      let cpp_cmd = "cc -E -C -Werror -nostdinc -undef " ^ !includes in
       let ( let* ) = Exception.except_bind in
       let conf =
         {
@@ -277,7 +280,8 @@ let generate_summary_for file_name fun_name =
   let printer = Fmt.list ~sep:Fmt.sp pp_summary in
   Fmt.pr "@[<v>%a@]@." printer results
 
-let generate_all_summaries log_level file_name =
+let generate_all_summaries log_level includes file_name =
+  Frontend.add_includes includes;
   setup_console_log log_level;
   Initialize_analysis.init_once ();
   let prog =

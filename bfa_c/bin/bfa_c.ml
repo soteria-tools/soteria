@@ -15,6 +15,10 @@ let version_arg =
   let doc = "Print version information" in
   Arg.(value & flag & info [ "version" ] ~doc)
 
+let includes =
+  let doc = "Add a directory to the include path" in
+  Arg.(value & opt_all dir [] & info [ "I" ] ~doc)
+
 module Exec_main = struct
   let term =
     Term.(
@@ -60,6 +64,7 @@ module Generate_summaries = struct
     Term.(
       const Bfa_c_lib.Driver.generate_all_summaries
       $ Logs_cli.level ()
+      $ includes
       $ file_arg)
 
   let cmd = Cmd.v (Cmd.info "gen-summaries") term
