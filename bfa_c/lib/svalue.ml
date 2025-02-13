@@ -239,13 +239,6 @@ let bool_of_int sv =
   | Unop (IntOfBool, sv') -> sv'
   | _ -> not (sem_eq sv zero)
 
-(** [out_cons] is the outcome constructor, [f] is the function to apply to the
-    int values, [b] is the binop *)
-let lift_int_binop ~out_cons ~out_ty ~f ~binop v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> out_cons (f i1 i2)
-  | _ -> Binop (binop, v1, v2) <| out_ty
-
 let gt v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> bool (Z.gt i1 i2)
@@ -258,12 +251,44 @@ let lt v1 v2 =
   | _, _ when equal v1 v2 -> v_false
   | _ -> Binop (Lt, v1, v2) <| TBool
 
-let geq = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.geq ~binop:Geq
-let leq = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.leq ~binop:Leq
-let plus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.add ~binop:Plus
-let minus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.sub ~binop:Minus
-let times = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.mul ~binop:Times
-let div = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.div ~binop:Div
+let plus v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v1 zero -> v2
+  | _, _ when equal v2 zero -> v1
+  | Int i1, Int i2 -> int_z (Z.add i1 i2)
+  | _ -> Binop (Plus, v1, v2) <| TInt
+
+let minus v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v2 zero -> v1
+  | Int i1, Int i2 -> int_z (Z.sub i1 i2)
+  | _ -> Binop (Minus, v1, v2) <| TInt
+
+let times v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v1 zero || equal v2 zero -> zero
+  | _, _ when equal v1 one -> v2
+  | _, _ when equal v2 one -> v1
+  | Int i1, Int i2 -> int_z (Z.mul i1 i2)
+  | _ -> Binop (Times, v1, v2) <| TInt
+
+let geq v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> bool (Z.geq i1 i2)
+  | _, _ when equal v1 v2 -> v_true
+  | _ -> Binop (Geq, v1, v2) <| TBool
+
+let leq v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> bool (Z.leq i1 i2)
+  | _, _ when equal v1 v2 -> v_true
+  | _ -> Binop (Leq, v1, v2) <| TBool
+
+let div v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v2 one -> v1
+  | Int i1, Int i2 -> int_z (Z.div i1 i2)
+  | _ -> Binop (Div, v1, v2) <| TInt
 
 (* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
 let not_int_bool sv =
