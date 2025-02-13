@@ -36,6 +36,24 @@ module MemVal = struct
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
 end
 
+type serialized_atom =
+  | TypedVal of {
+      offset : T.sint Typed.t;
+      ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]
+      v : T.cval Typed.t;
+    }
+  | Bound of T.sint Typed.t
+  | Uninit of { offset : T.sint Typed.t; len : T.sint Typed.t }
+  | Zeros of { offset : T.sint Typed.t; len : T.sint Typed.t }
+  | Any of { offset : T.sint Typed.t; len : T.sint Typed.t }
+[@@deriving show { with_path = false }]
+
+let mk_fix_typed offset ty () =
+  let* v = Layout.nondet_c_ty ty in
+  return [ [ TypedVal { offset; ty; v } ] ]
+
+let mk_fix_any ~ofs ~len () = [ [ Any { offset = ofs; len } ] ]
+
 module Node = struct
   type qty = Partially | Totally
 
@@ -93,9 +111,11 @@ module Node = struct
 
   let uninit = Owned (Uninit Totally)
 
-  let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
+  let decode ~ofs ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
     match t with
-    | NotOwned _ -> miss_no_fix ~msg:"decode" ()
+    | NotOwned _ ->
+        let+ fixes = mk_fix_typed ofs ty () in
+        Bfa_symex.Compo_res.miss fixes
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok 0s
@@ -320,7 +340,7 @@ module Tree = struct
     let replace_node node = node in
     let rebuild_parent = with_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let++ sval = Node.decode ~ty framed.node in
+    let++ sval = Node.decode ~ofs ~ty framed.node in
     ((sval :> T.cval Typed.t), tree)
 
   let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
@@ -331,7 +351,11 @@ module Tree = struct
     let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match node.node with
-      | NotOwned _ -> miss_no_fix ~msg:"store" ()
+      | NotOwned Totally ->
+          let* len = Layout.size_of_s ty in
+          let fixes = mk_fix_any ~ofs:low ~len () in
+          Result.miss fixes
+      | NotOwned Partially -> miss_no_fix ~msg:"partially missing store" ()
       | _ -> Result.ok ()
     in
     ((), tree)
@@ -357,13 +381,13 @@ module Tree = struct
 
   (** Cons/prod *)
 
-  let consume_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
+  let consume_typed_val (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype)
       (v : [< T.cval ] Typed.t) (t : t) : (t, 'err, 'fix list) Result.t =
-    let* range = Range.of_low_and_type low ty in
+    let* range = Range.of_low_and_type ofs ty in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let* sval_res = Node.decode ~ty framed.node in
+    let* sval_res = Node.decode ~ofs ~ty framed.node in
     match sval_res with
     | Ok sv ->
         let+ () = Csymex.assume [ sv ==?@ v ] in
@@ -487,26 +511,10 @@ let pp_pretty ft t =
 
 (** Logic *)
 
-type serialized_atom =
-  | TypedVal of {
-      offset : T.sint Typed.t;
-      ty : Ctype.ctype; [@printer Fmt_ail.pp_ty]
-      v : T.cval Typed.t;
-    }
-  | Bound of T.sint Typed.t
-  | Uninit of { offset : T.sint Typed.t; len : T.sint Typed.t }
-  | Zeros of { offset : T.sint Typed.t; len : T.sint Typed.t }
-  | Any of { offset : T.sint Typed.t; len : T.sint Typed.t }
-[@@deriving show { with_path = false }]
-
 type serialized = serialized_atom list
 
 let iter_values_serialized serialized f =
   List.iter (function TypedVal { v; _ } -> f v | _ -> ()) serialized
-
-let mk_fix_typed offset ty () =
-  let* v = Layout.nondet_c_ty ty in
-  return [ [ TypedVal { offset; ty; v } ] ]
 
 let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let** () =
@@ -554,10 +562,12 @@ let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t option) :
   (res, to_opt tree)
 
 let store ofs ty sval t =
+  let* size = Layout.size_of_s ty in
   match t with
-  | None -> miss_no_fix ~msg:"outer store" ()
+  | None ->
+      let fixes = mk_fix_any ~ofs ~len:size () in
+      Result.miss fixes
   | Some t ->
-      let* size = Layout.size_of_s ty in
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
         Tree.store ofs ty sval t.root
