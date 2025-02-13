@@ -63,7 +63,11 @@ module Generate_summary = struct
     Arg.(required & pos 1 (some string) None & info [] ~docv:"FUNCTION" ~doc)
 
   let term =
-    Term.(const Bfa_c_lib.Driver.generate_summary_for $ file_arg $ fun_name_arg)
+    Term.(
+      const Bfa_c_lib.Driver.generate_summary_for
+      $ includes_arg
+      $ file_arg
+      $ fun_name_arg)
 
   let cmd = Cmd.v (Cmd.info "gen-summary") term
 end

@@ -276,7 +276,8 @@ let exec_fun_bi file_name fun_name =
 
 (* Entry point function *)
 
-let generate_summary_for file_name fun_name =
+let generate_summary_for include_args file_name fun_name =
+  Frontend.add_includes include_args;
   setup_console_log (Some Debug);
   Initialize_analysis.init_once ();
   let results = exec_fun_bi file_name fun_name in
