@@ -269,7 +269,11 @@ let exec_fun_bi file_name fun_name =
         | Some fundef -> fundef
         | None -> Fmt.failwith "Couldn't find function %s" fun_name
       in
-      Abductor.generate_summaries_for ~prog fundef
+      let fid, _ = fundef in
+      let results = Abductor.generate_summaries_for ~prog fundef in
+      List.map
+        (fun summary -> (summary, Summary.analyse_summary ~prog ~fid summary))
+        results
   | Error (`ParsingError s, call_trace) ->
       Fmt.failwith "Failed to parse AIL at loc %a: %s" Call_trace.pp call_trace
         s
@@ -281,9 +285,11 @@ let generate_summary_for include_args file_name fun_name =
   setup_console_log (Some Debug);
   Initialize_analysis.init_once ();
   let results = exec_fun_bi file_name fun_name in
-  let pp_summary = Summary.pp pp_err in
-  let printer = Fmt.list ~sep:Fmt.sp pp_summary in
-  Fmt.pr "@[<v>%a@]@." printer results
+  let pp_summary ft (summary, analysis) =
+    Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
+      summary (Fmt.Dump.list pp_err) analysis
+  in
+  Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
 let generate_all_summaries log_level dump_unsupported_file includes file_name =
   Csymex.unsupported_file := dump_unsupported_file;

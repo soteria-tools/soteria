@@ -82,9 +82,11 @@ let pruned summary =
           let product = Iter.product (Svalue.iter_vars el) r_iter in
           product (fun ((x, _), (y, _)) -> Var_graph.add_double_edge graph x y)
       | _ -> ());
-  (* For each block $l -> B in the post heap, we add a single-sided arrow
+  (* For each block $l -> B in the pre and post heap, we add a single-sided arrow
      from $l to all variables contained in B. *)
-  ListLabels.iter summary.post ~f:(fun (l, b) ->
+  ListLabels.iter
+    (List.concat summary.pre @ summary.post)
+    ~f:(fun (l, b) ->
       let b_iter =
         Csymex.Freeable.iter_vars_serialized Tree_block.iter_vars_serialized b
       in
