@@ -26,8 +26,6 @@ module Binop = struct
     | Or
     (* Comparison *)
     | Eq
-    | Geq
-    | Gt
     | Leq
     | Lt
     (* Arith *)
@@ -184,6 +182,7 @@ let rec sem_eq v1 v2 =
   | Int z1, Int z2 -> bool (Z.equal z1 z2)
   | Bool b1, Bool b2 -> bool (b1 = b2)
   | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> sem_eq v2 v4
   | _ ->
       if equal v1 v2 then v_true (* Start with a syntactic check *)
       else Binop (Eq, v1, v2) <| TBool
@@ -239,23 +238,23 @@ let bool_of_int sv =
   | Unop (IntOfBool, sv') -> sv'
   | _ -> not (sem_eq sv zero)
 
-let gt v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.gt i1 i2)
-  | _, _ when equal v1 v2 -> v_false
-  | _ -> Binop (Gt, v1, v2) <| TBool
-
-let lt v1 v2 =
+let rec lt v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> bool (Z.lt i1 i2)
   | _, _ when equal v1 v2 -> v_false
+  | _, Binop (Plus, v2, v3) when equal v1 v2 -> lt zero v3
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> lt v2 v4
   | _ -> Binop (Lt, v1, v2) <| TBool
 
-let plus v1 v2 =
+let gt v1 v2 = lt v2 v1
+
+let rec plus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v1 zero -> v2
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.add i1 i2)
+  | Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }), Int i3 ->
+      plus v1 (int_z (Z.add i2 i3))
   | _ -> Binop (Plus, v1, v2) <| TInt
 
 let minus v1 v2 =
@@ -272,17 +271,15 @@ let times v1 v2 =
   | Int i1, Int i2 -> int_z (Z.mul i1 i2)
   | _ -> Binop (Times, v1, v2) <| TInt
 
-let geq v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.geq i1 i2)
-  | _, _ when equal v1 v2 -> v_true
-  | _ -> Binop (Geq, v1, v2) <| TBool
-
-let leq v1 v2 =
+let rec leq v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> bool (Z.leq i1 i2)
   | _, _ when equal v1 v2 -> v_true
+  | _, Binop (Plus, v2, v3) when equal v1 v2 -> leq zero v3
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> leq v2 v4
   | _ -> Binop (Leq, v1, v2) <| TBool
+
+let geq v1 v2 = leq v2 v1
 
 let div v1 v2 =
   match (v1.node.kind, v2.node.kind) with
