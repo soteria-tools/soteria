@@ -77,9 +77,9 @@ let load_core_impl_shim _stdlib _impl_name =
 module Frontend = struct
   let frontend = ref (fun _ -> failwith "Frontend not set")
   let includes = ref ""
-  let add_include s = includes := !includes ^ "-I" ^ s ^ " "
+  let add_include s = includes := !includes ^ "-I " ^ s ^ " "
   let add_includes ss = List.iter add_include ss
-  let libc () = Filename.concat (Cerb_runtime.runtime ()) "libc/include"
+  let libc () = Filename.concat (Cerb_runtime.runtime ()) "libc/include "
 
   let init () =
     let result =
@@ -104,14 +104,15 @@ module Frontend = struct
       in
       set_cerb_conf ();
       Ocaml_implementation.(set HafniumImpl.impl);
-      let* stdlib = load_core_stdlib_shim () in
-      let* impl = load_core_impl_shim stdlib impl_name in
+      let* stdlib = load_core_stdlib () in
+      let* impl = load_core_impl stdlib impl_name in
       Exception.Result
         (fun filename -> c_frontend (conf, io) (stdlib, impl) ~filename)
     in
     match result with
     | Exception.Result f -> frontend := f
-    | Exception.Exception msg ->
+    | Exception.Exception err ->
+        let msg = Pp_errors.to_string err in
         frontend := fun _ -> failwith ("Failed to initialize frontend: " ^ msg)
 
   let () = Initialize_analysis.register_once_initialiser init
@@ -283,7 +284,8 @@ let generate_summary_for file_name fun_name =
   let printer = Fmt.list ~sep:Fmt.sp pp_summary in
   Fmt.pr "@[<v>%a@]@." printer results
 
-let generate_all_summaries log_level includes file_name =
+let generate_all_summaries log_level dump_unsupported_file includes file_name =
+  Csymex.unsupported_file := dump_unsupported_file;
   Frontend.add_includes includes;
   setup_console_log log_level;
   Initialize_analysis.init_once ();
@@ -293,6 +295,7 @@ let generate_all_summaries log_level includes file_name =
     | Ok (_, prog) -> prog
   in
   let results = Abductor.generate_all_summaries prog in
+  Csymex.dump_unsupported ();
   let pp_summary ~fid ft summary =
     Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
       summary (Fmt.Dump.list pp_err)

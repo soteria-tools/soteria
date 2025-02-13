@@ -11,13 +11,22 @@ let dump_smt_arg =
     & opt (some string) None
     & info [ "dump-smt-to"; "dump-smt" ] ~docv:"SMT_FILE" ~doc)
 
+let dump_unsupported_arg =
+  let doc =
+    "Dump a json file with unsupported features and their number of occurences"
+  in
+  Arg.(
+    value
+    & opt (some string) None
+    & info [ "dump-unsupported" ] ~docv:"FILE" ~doc)
+
 let version_arg =
   let doc = "Print version information" in
   Arg.(value & flag & info [ "version" ] ~doc)
 
-let includes =
+let includes_arg =
   let doc = "Add a directory to the include path" in
-  Arg.(value & opt_all dir [] & info [ "I" ] ~doc)
+  Arg.(value & opt_all dir [] & info [ "I" ] ~doc ~docv:"DIR")
 
 module Exec_main = struct
   let term =
@@ -64,7 +73,8 @@ module Generate_summaries = struct
     Term.(
       const Bfa_c_lib.Driver.generate_all_summaries
       $ Logs_cli.level ()
-      $ includes
+      $ dump_unsupported_arg
+      $ includes_arg
       $ file_arg)
 
   let cmd = Cmd.v (Cmd.info "gen-summaries") term
