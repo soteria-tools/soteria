@@ -79,11 +79,14 @@ module Frontend = struct
   let includes = ref ""
   let add_include s = includes := !includes ^ "-I" ^ s ^ " "
   let add_includes ss = List.iter add_include ss
+  let libc () = Filename.concat (Cerb_runtime.runtime ()) "libc/include"
 
   let init () =
     let result =
       let open Cerb_backend.Pipeline in
-      let cpp_cmd = "cc -E -C -Werror -nostdinc -undef " ^ !includes in
+      let cpp_cmd =
+        "cc -E -C -Werror -nostdinc -undef " ^ "-I" ^ libc () ^ !includes
+      in
       let ( let* ) = Exception.except_bind in
       let conf =
         {
