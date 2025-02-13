@@ -16,6 +16,7 @@ let pp_int_ty = pp_to_fmt Cerb_frontend.Pp_ail.pp_integerType
 let pp_arithop = pp_to_fmt pp_arithmeticOperator
 let pp_binop = pp_to_fmt pp_binaryOperator
 let pp_unop = pp_to_fmt pp_unaryOperator
+let pp_constant = pp_to_fmt (pp_constant ~executable_spec:false)
 let pp_expr : expr Fmt.t = pp_to_fmt (fun e -> pp_expression e)
 let pp_stmt : stmt Fmt.t = pp_to_fmt (fun s -> pp_statement s)
 

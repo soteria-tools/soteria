@@ -105,7 +105,9 @@ module Make (Heap : Heap_intf.S) = struct
     match c with
     | ConstantInteger (IConstant (z, _basis, _suff)) ->
         Csymex.return (Typed.int_z z)
-    | _ -> Csymex.not_impl "value of constant?"
+    | ConstantNull -> Csymex.return Typed.Ptr.null
+    | _ ->
+        Fmt.kstr Csymex.not_impl "value of constant? %a" Fmt_ail.pp_constant c
 
   let debug_show ~prog:_ ~args:_ ~state =
     let loc = get_loc () in
@@ -422,6 +424,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** v, state = eval_expr ~prog ~store state e in
         L.info (fun m -> m "Returning: %a" Typed.ppa v);
         Result.ok (Some v, store, state)
+    | AilSreturnVoid -> Result.ok (Some 0s, store, state)
     | AilSblock (bindings, stmtl) ->
         let previous_store = store in
         let* store = attach_bindings store bindings in
