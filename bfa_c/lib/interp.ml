@@ -178,6 +178,23 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
 
+  let arith_sub ~state (v1 : [< Typed.T.cval ] Typed.t)
+      (v2 : [< Typed.T.cval ] Typed.t) =
+    match (Typed.get_ty v1, Typed.get_ty v2) with
+    | TInt, TInt ->
+        let v1 = Typed.cast v1 in
+        let v2 = Typed.cast v2 in
+        Result.ok (v1 -@ v2, state)
+    | TPointer, TInt ->
+        let v1 : T.sptr Typed.t = Typed.cast v1 in
+        let v2 : T.sint Typed.t = Typed.cast v2 in
+        let loc = Typed.Ptr.loc v1 in
+        let ofs = Typed.Ptr.ofs v1 -@ v2 in
+        Result.ok (Typed.Ptr.mk loc ofs, state)
+    | _ ->
+        Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
+          Typed.ppa v2
+
   let arith_mul ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
@@ -333,6 +350,16 @@ module Make (Heap : Heap_intf.S) = struct
                     let** v1, state = arith_mul ~state v1 factor in
                     arith_add ~state v2 v1
                 | None, None -> arith_add ~state v1 v2)
+            | Sub -> (
+                match
+                  (type_of e1 |> pointer_inner, type_of e2 |> pointer_inner)
+                with
+                | _, Some _ -> Heap.error `UBPointerArithmetic state
+                | Some ty, None ->
+                    let* factor = Layout.size_of_s ty in
+                    let** v2, state = arith_mul ~state v2 factor in
+                    arith_sub ~state v1 v2
+                | None, None -> arith_sub ~state v1 v2)
             | _ ->
                 Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
                   Fmt_ail.pp_arithop a_op)
