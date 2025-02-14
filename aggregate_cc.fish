@@ -6,7 +6,7 @@ rm -rf json_dump
 mkdir -p json_dump
 for file in ../Collections-C/src/*.c
   echo (basename $file .c)
-  dune exec -- bfa-c gen-summaries $file -I ../Collections-C/src/include/ --dump-unsupported json_dump/(basename $file .c).json || set err_counter (math $err_counter + 1)
+  _build/install/default/bin/bfa-c gen-summaries $file -I ../Collections-C/src/include/ --dump-unsupported json_dump/(basename $file .c).json || set err_counter (math $err_counter + 1)
 end
 
 
