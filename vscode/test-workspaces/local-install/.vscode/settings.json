@@ -6,7 +6,8 @@
       "lsp"
     ],
     "env": {
-      "BFA_Z3_PATH": "/opt/homebrew/bin/z3"
+      "BFA_Z3_PATH": "/opt/homebrew/bin/z3",
+      "CERB_RUNTIME": "../../../_opam/lib/cerberus/runtime/"
     }
   },
   "bfa.server.debug": true,

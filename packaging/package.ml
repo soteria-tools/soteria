@@ -68,5 +68,25 @@ module Copy_files = struct
   let cmd = Cmd.v (Cmd.info "copy-files") term
 end
 
-let cmd = Cmd.group (Cmd.info "package") [ Infer_Dylibs.cmd; Copy_files.cmd ]
+module Copy_cerb_runtime = struct
+  let copy_cerb_runtime dest_dir =
+    let path = Cerb_runtime.runtime () in
+    let () = run "cp" [ "-r"; path; dest_dir ] |> eval in
+    let () = run "rm" [ "-rf"; Filename.concat dest_dir "bmc" ] |> eval in
+    Printf.printf "Copied Cerb runtime from %s to %s\n" path dest_dir
+
+  let dest_dir_arg =
+    Arg.(
+      required
+      & pos 0 (some string) None
+      & info [] ~docv:"DEST_DIR" ~doc:"Path to the destination directory")
+
+  let term = Term.(const copy_cerb_runtime $ dest_dir_arg)
+  let cmd = Cmd.v (Cmd.info "copy-cerb-runtime") term
+end
+
+let cmd =
+  Cmd.group (Cmd.info "package")
+    [ Infer_Dylibs.cmd; Copy_files.cmd; Copy_cerb_runtime.cmd ]
+
 let () = exit @@ Cmd.eval cmd

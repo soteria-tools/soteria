@@ -68,12 +68,6 @@ let io : Cerb_backend.Pipeline.io_helpers =
   in
   { pass_message; set_progress; run_pp; print_endline; print_debug; warn }
 
-let load_core_stdlib_shim () =
-  Exception.Result (Pmap.empty String.compare, Pmap.empty Symbol.compare_sym)
-
-let load_core_impl_shim _stdlib _impl_name =
-  Exception.Result (Pmap.empty Implementation.implementation_constant_compare)
-
 module Frontend = struct
   let frontend = ref (fun _ -> failwith "Frontend not set")
   let includes = ref ""
