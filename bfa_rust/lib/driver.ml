@@ -14,18 +14,18 @@ let res_of_code = function
 let ( let*> ) x f = Result.bind (res_of_code x) f
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file file_name =
-  let output = Printf.sprintf "%s.llbc.json" file_name in
+let parse_ullbc_of_file ~no_compile file_path =
+  let file_name = file_path |> Filename.basename |> Filename.remove_extension in
+  let output = Printf.sprintf "../stable-mir-json/%s.smir.json" file_name in
   let*> () =
-    Printf.sprintf
-      "charon --ullbc --rustc-arg=--extern=std --extract-opaque-bodies \
-       --no-cargo --include '*' --input %s --dest-file %s"
-      file_name output
-    |> Sys.command
+    match no_compile with
+    | true -> 0
+    | false ->
+        Printf.ksprintf Sys.command
+          "cd ../stable-mir-json && cargo run -- ../bfa-ocaml/%s" file_path
   in
-  let json = Yojson.Basic.from_file output in
-  let crate = UllbcOfJson.crate_of_json json in
-  crate
+  let json = Yojson.Safe.from_file output in
+  Omir.parse json
 
 let exec_main (crate : UllbcAst.crate) =
   let open Syntaxes.Result in
@@ -48,14 +48,14 @@ let exec_main (crate : UllbcAst.crate) =
   let result = Ok (Rustsymex.run symex) in
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
-let exec_main_and_print log_level _smt_file file_name =
+let exec_main_and_print log_level _smt_file no_compile file_name =
   let open Syntaxes.Result in
   setup_console_log log_level;
   let res =
-    let* crate = parse_ullbc_of_file file_name in
-    let* res = exec_main crate in
-    Ok (List.length res)
+    let* crate = parse_ullbc_of_file ~no_compile file_name in
+    (* let* res = exec_main crate in *)
+    Ok crate
   in
   match res with
-  | Ok n -> Fmt.pf Fmt.stdout "Done. - Ran %i branches" n
+  | Ok crate -> Fmt.pf Fmt.stdout "Done. - %a" Omir.pp crate
   | Error e -> Printf.printf "Error: %s\n" e

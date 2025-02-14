@@ -4,6 +4,7 @@
  (package bfa-rust)
  (name bfa_rust_lib)
  (libraries
+  bfa-rust.omir
   bfa.std
   bfa.bfa_symex
   cmdliner
