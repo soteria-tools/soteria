@@ -2,12 +2,7 @@ module Bi_interp = Interp.Make (Bi_heap)
 open Ail_tys
 
 module Summaries = struct
-  module H = Hashtbl.Make (struct
-    type t = Cerb_frontend.Symbol.sym
-
-    let equal = Cerb_frontend.Symbol.equal_sym
-    let hash = Hashtbl.hash
-  end)
+  module H = Hashtbl.Make (Ail_helpers.Symbol_std)
 end
 
 let generate_summaries_for ~prog (fundef : fundef) =

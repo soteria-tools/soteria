@@ -1,3 +1,16 @@
+(*** More standard interface to [Symbol], making it nicer for 
+   using with Stdlib functors *)
+module Symbol_std = struct
+  open Cerb_frontend.Symbol
+
+  type t = Cerb_frontend.Symbol.sym
+
+  let equal = equal_sym
+  let compare = compare_sym
+  let hash = Hashtbl.hash
+  let pp = Fmt_ail.pp_sym
+end
+
 (* TODO: handle qualifiers! *)
 let get_param_tys ~prog fid =
   List.find_map
