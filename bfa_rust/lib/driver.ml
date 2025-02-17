@@ -1,11 +1,32 @@
 open Charon
 module Wpst_interp = Interp.Make (Heap)
+module Compo_res = Bfa_symex.Compo_res
 
 let setup_console_log level =
   Fmt_tty.setup_std_outputs ();
   Logs.set_level level;
   Logs.set_reporter (Logs_fmt.reporter ());
   ()
+
+let pp_err ft (err, call_trace) =
+  Format.open_hbox ();
+  let () =
+    match err with
+    | `NullDereference -> Fmt.string ft "NullDereference"
+    | `OutOfBounds -> Fmt.string ft "OutOfBounds"
+    | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
+    | `UseAfterFree -> Fmt.string ft "UseAfterFree"
+    | `DivisionByZero -> Fmt.string ft "DivisionByZero"
+    | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
+    | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
+    | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
+    | `DoubleFree -> Fmt.string ft "DoubleFree"
+    | `InvalidFree -> Fmt.string ft "InvalidFree"
+    | `Memory_leak -> Fmt.string ft "Memory leak"
+    | `FailedAssert -> Fmt.string ft "Failed assertion"
+  in
+  Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
+  Format.close_box ()
 
 let res_of_code = function
   | 0 -> Ok ()
@@ -14,22 +35,35 @@ let res_of_code = function
 let ( let*> ) x f = Result.bind (res_of_code x) f
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~no_compile file_path =
-  let file_name = file_path |> Filename.basename |> Filename.remove_extension in
-  let output = Printf.sprintf "../stable-mir-json/%s.smir.json" file_name in
+let parse_ullbc_of_file ~no_compile file_name =
+  let output = Printf.sprintf "%s.llbc.json" file_name in
   let*> () =
     match no_compile with
     | true -> 0
     | false ->
-        Printf.ksprintf Sys.command
-          "cd ../stable-mir-json && cargo run -- ../bfa-ocaml/%s" file_path
+        Fmt.kstr Sys.command
+          "charon --ullbc --rustc-arg=--extern=std --extract-opaque-bodies \
+           --no-cargo --include '*' --input %s --dest-file %s"
+          file_name output
   in
-  let json = Yojson.Safe.from_file output in
-  Omir.parse json
+  let json = Yojson.Basic.from_file output in
+  let crate = UllbcOfJson.crate_of_json json in
+  (* save crate to local file *)
+  let () =
+    match (crate, no_compile) with
+    | Ok crate, false ->
+        let oc = open_out_bin (Printf.sprintf "%s.crate" file_name) in
+        let str = PrintUllbcAst.Crate.crate_to_string crate in
+        output_string oc str;
+        close_out oc
+    | _ -> ()
+  in
+  crate
 
 let exec_main (crate : UllbcAst.crate) =
   let open Syntaxes.Result in
   let open Charon in
+  Layout.Session.set_crate crate;
   let+ _, entry_point =
     Types.FunDeclId.Map.bindings crate.fun_decls
     |> List.find_opt (fun (_, (decl : UllbcAst.blocks UllbcAst.gfun_decl)) ->
@@ -45,17 +79,22 @@ let exec_main (crate : UllbcAst.crate) =
   let symex =
     Wpst_interp.exec_fun ~prog:crate ~args:[] ~state:Heap.empty entry_point
   in
-  let result = Ok (Rustsymex.run symex) in
-  match result with Ok v -> v | Error e -> [ (Error e, []) ]
+  Rustsymex.run symex
 
-let exec_main_and_print log_level _smt_file no_compile file_name =
+let exec_main_and_print log_level smt_file no_compile file_name =
   let open Syntaxes.Result in
+  Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
   let res =
     let* crate = parse_ullbc_of_file ~no_compile file_name in
-    (* let* res = exec_main crate in *)
-    Ok crate
+    (* Fmt.pr "Parsed crate:@\n%s\n" (PrintUllbcAst.Crate.crate_to_string crate); *)
+    let* res = exec_main crate in
+    let errors = Compo_res.only_errors @@ List.map fst res in
+    if List.is_empty errors then Ok (List.length res)
+    else
+      let errors_parsed = Fmt.str "Errors: %a" Fmt.(Dump.list pp_err) errors in
+      Error errors_parsed
   in
   match res with
-  | Ok crate -> Fmt.pf Fmt.stdout "Done. - %a" Omir.pp crate
-  | Error e -> Printf.printf "Error: %s\n" e
+  | Ok n -> Fmt.pr "Done. - Ran %i branches" n
+  | Error e -> Fmt.pr "Error: %s" e

@@ -8,6 +8,8 @@ open Charon
 open Charon_util
 module T = Typed.T
 
+type termination = RetVal of T.cval Typed.t | GoToBlock of UllbcAst.block_id
+
 module Make (Heap : Heap_intf.S) = struct
   exception Unsupported of (string * Meta.span)
 
@@ -22,27 +24,34 @@ module Make (Heap : Heap_intf.S) = struct
           Typed.ppa_ty ty
 
   type 'err fun_exec =
-    prog:UllbcAst.fun_decl ->
+    prog:UllbcAst.crate ->
     args:T.cval Typed.t list ->
     state:state ->
     (T.cval Typed.t * state, 'err, Heap.serialized list) Result.t
 
-  let get_param_tys ~(fn : UllbcAst.fun_decl) = fn.signature.inputs
-
-  let alloc_params params st =
-    Rustsymex.Result.fold_list params ~init:(Store.empty, st)
-      ~f:(fun (store, st) (pname, ty, value) ->
+  let alloc_stack (locals : GAst.locals) args st =
+    if List.length args <> locals.arg_count then
+      Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
+        (List.length args);
+    Rustsymex.Result.fold_list locals.vars ~init:(Store.empty, st)
+      ~f:(fun (store, st) { index; var_ty = ty; _ } ->
         let** ptr, st = Heap.alloc_ty ty st in
-        let store = Store.add pname (Some ptr, ty) store in
-        let++ (), st = Heap.store ptr ty value st in
-        (store, st))
+        let store = Store.add index (Some ptr, ty) store in
+        let index = Expressions.VarId.to_int index in
+        if 0 < index && index <= locals.arg_count then
+          let value = List.nth args (index - 1) in
+          let++ (), st = Heap.store ptr ty value st in
+          (store, st)
+        else Result.ok (store, st))
 
   let dealloc_store store st =
     Rustsymex.Result.fold_list (Store.bindings store) ~init:st
-      ~f:(fun st (_, (ptr, _)) ->
+      ~f:(fun st (v, (ptr, _)) ->
         match ptr with
         | None -> Result.ok st
         | Some ptr ->
+            Fmt.pr "Deallocating var %a -> %a\n" Expressions.pp_var_id v
+              Typed.ppa ptr;
             let++ (), st = Heap.free ptr st in
             st)
 
@@ -55,6 +64,23 @@ module Make (Heap : Heap_intf.S) = struct
   let find_stub ~prog:_ (fname : Types.name) : 'err fun_exec option =
     let name = List.hd @@ List.rev fname in
     match name with PeIdent (_name, _) -> None | _ -> None
+
+  let resolve_place_kind ~store _state :
+      Expressions.place_kind -> T.sptr Typed.t Rustsymex.t = function
+    | PlaceBase var -> (
+        Fmt.pr "Resolving place to var %a\n" Expressions.pp_var_id var;
+        let ptr = Store.find_value var store in
+        match ptr with
+        | Some ptr -> return ptr
+        | None ->
+            Fmt.kstr not_impl "Variable %a not found in store"
+              Expressions.pp_var_id var)
+    | PlaceProjection _ as kind ->
+        Fmt.kstr not_impl "Projection not supported: %a"
+          Expressions.pp_place_kind kind
+
+  let resolve_place ~store state ({ kind; _ } : Expressions.place) =
+    resolve_place_kind ~store state kind
 
   let rec equality_check ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
@@ -102,32 +128,77 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
           Typed.ppa v1 Typed.ppa v2
 
-  let rec eval_operand ~prog:_prog ~store:_store state
-      (op : Expressions.operand) =
+  let rec resolve_function ~(prog : UllbcAst.crate) (fnop : GAst.fn_operand) :
+      'err fun_exec Rustsymex.t =
+    let* fid =
+      match fnop with
+      | FnOpRegular
+          {
+            func = FunId (FRegular fid);
+            generics =
+              { regions = []; types = []; const_generics = []; trait_refs = [] };
+          } ->
+          Rustsymex.return fid
+      | FnOpRegular { func = FunId (FBuiltin _); _ } ->
+          Fmt.kstr not_impl "Builtin function call is not supported: %a"
+            GAst.pp_fn_operand fnop
+      | FnOpRegular { func = FunId _; _ } ->
+          Fmt.kstr not_impl "Generic function call is not supported: %a"
+            GAst.pp_fn_operand fnop
+      | FnOpRegular { func = TraitMethod _; _ } ->
+          Fmt.kstr not_impl "Trait method call is not supported: %a"
+            GAst.pp_fn_operand fnop
+      | FnOpMove _ ->
+          Fmt.kstr not_impl "Move function call is not supported: %a"
+            GAst.pp_fn_operand fnop
+    in
+    let fundef_opt = Expressions.FunDeclId.Map.find_opt fid prog.fun_decls in
+    match fundef_opt with
+    | Some fundef -> Rustsymex.return (exec_fun fundef)
+    | None ->
+        Fmt.kstr not_impl "Cannot call external function: %a"
+          Expressions.FunDeclId.pp_id fid
+
+  and eval_operand ~prog:_prog ~store state (op : Expressions.operand) =
     match op with
     | Constant c ->
-        let+ v = value_of_constant c in
-        (v, state)
-    | Copy _ | Move _ ->
-        Fmt.kstr not_impl "Unsupported operand: %a" Expressions.pp_operand op
+        let* v = value_of_constant c in
+        Result.ok (v, state)
+    | Move loc ->
+        let ty = loc.ty in
+        let* loc = resolve_place ~store state loc in
+        Fmt.pr "Moving from %a\n" Typed.ppa loc;
+        let** v, state = Heap.load loc ty state in
+        (* TODO: mark value as moved!!! !== freeing it, btw *)
+        Result.ok (v, state)
+    | Copy loc ->
+        let ty = loc.ty in
+        let* loc = resolve_place ~store state loc in
+        let** v, state = Heap.load loc ty state in
+        Result.ok (v, state)
 
-  and eval_rvalue ~prog ~(store : store) (state : state)
-      (expr : Expressions.rvalue) =
+  and eval_operand_list ~prog ~store state ops =
+    let++ vs, state =
+      Result.fold_list ops ~init:([], state) ~f:(fun (acc, state) op ->
+          let++ new_res, state = eval_operand ~prog ~store state op in
+          (new_res :: acc, state))
+    in
+    (List.rev vs, state)
+
+  and eval_rvalue ~prog ~store state (expr : Expressions.rvalue) =
     let eval_operand = eval_operand ~prog ~store in
     match expr with
-    | Use op ->
-        let+ v, state = eval_operand state op in
-        Ok (v, state)
+    | Use op -> eval_operand state op
     | UnaryOp (op, e) -> (
-        let* _v, _state = eval_operand state e in
+        let** _v, _state = eval_operand state e in
         match op with
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a"
               Expressions.pp_unop op)
     | BinaryOp (op, e1, e2) -> (
         (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
-        let* v1, state = eval_operand state e1 in
-        let* v2, state = eval_operand state e2 in
+        let** v1, state = eval_operand state e1 in
+        let** v2, state = eval_operand state e2 in
         match op with
         | Ge ->
             (* TODO: comparison operators for pointers *)
@@ -160,6 +231,10 @@ module Make (Heap : Heap_intf.S) = struct
             | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
             | Missing e -> (* Unreachable but still *) Rustsymex.Result.miss e)
         | Mul -> arith_mul ~state v1 v2
+        | Add -> arith_add ~state v1 v2
+        | Sub ->
+            let* v2 = cast_checked v2 ~ty:Typed.t_int in
+            arith_add ~state v1 (Typed.minus 0s v2)
         | bop ->
             Fmt.kstr not_impl "Unsupported binary operator: %a"
               Expressions.pp_binop bop)
@@ -173,29 +248,113 @@ module Make (Heap : Heap_intf.S) = struct
     in
     (List.rev vs, state)
 
-  (** Executing a statement returns an optional value outcome (if a return
-      statement was hit), or *)
-  and exec_stmt ~prog (store : store) (state : state)
-      (astmt : UllbcAst.statement) :
-      ( T.cval Typed.t option * store * state,
-        'err,
-        Heap.serialized list )
-      Rustsymex.Result.t =
+  and exec_stmt ~prog store state astmt :
+      (store * state, 'err, Heap.serialized list) Rustsymex.Result.t =
     L.debug (fun m -> m "Executing statement: %a" UllbcAst.pp_statement astmt);
+    let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
+    Fmt.pr
+      "Executing statement: %s ------------------------------------------\n"
+      (PrintUllbcAst.Ast.statement_to_string ctx "" astmt);
     let* () = Rustsymex.consume_fuel_steps 1 in
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
     let@ () = with_loc ~loc in
     match stmt with
-    | Nop -> Result.ok (None, store, state)
-    | Assign ({ ty; kind = PlaceBase var }, rval) ->
-        let** ptr, state = Heap.alloc_ty ty state in
+    | Nop -> Result.ok (store, state)
+    | Assign (({ ty; _ } as place), rval) ->
+        let* ptr = resolve_place ~store state place in
         let** v, state = eval_rvalue ~prog ~store state rval in
+        Fmt.pr "Assigning %a to ptr %a\n" Typed.ppa v Typed.ppa ptr;
         let++ (), state = Heap.store ptr ty v state in
-        let store = Store.add var (Some ptr, ty) store in
-        (None, store, state)
+        (store, state)
+    | Call { func; args; dest = { kind = PlaceBase var; ty } } ->
+        let* exec_fun = resolve_function ~prog func in
+        let** args, state = eval_operand_list ~prog ~store state args in
+        let** v, state =
+          let+- err = exec_fun ~prog ~args ~state in
+          Heap.add_to_call_trace err
+            (Call_trace.make_element ~loc ~msg:"Call trace" ())
+        in
+        Fmt.pr "Returned from function call %a\n" Typed.ppa v;
+        L.debug (fun m ->
+            m "returned %a from %a" Typed.ppa v GAst.pp_fn_operand func);
+        let ptr =
+          match Store.find_value var store with
+          | Some ptr -> ptr
+          | None ->
+              failwith "Tried storing in a variable that was not allocated"
+        in
+        let++ (), state = Heap.store ptr ty v state in
+        (store, state)
+    | StorageDead var ->
+        let* ptr, ty =
+          (* TODO: maybe only mark as unusable and dont deallocate? maybe NOP? *)
+          match Store.find_opt var store with
+          | Some (Some ptr, ty) -> return (ptr, ty)
+          | Some (None, _) ->
+              Fmt.kstr not_impl
+                "Variable %a already deallocated - UB? unreachable?"
+                Expressions.pp_var_id var
+          | None ->
+              Fmt.kstr not_impl "Variable %a not found in store"
+                Expressions.pp_var_id var
+        in
+        let++ (), state = Heap.free ptr state in
+        Fmt.pr "Deallocating var %a -> %a\n" Expressions.pp_var_id var Typed.ppa
+          ptr;
+        let store = Store.add var (None, ty) store in
+        (store, state)
+    | FakeRead _ ->
+        (* TODO: update tree borrow with read *)
+        Result.ok (store, state)
     | s ->
         Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
           s
+
+  and exec_block ~prog ~(body : UllbcAst.expr_body) store state
+      ({ statements; terminator } : UllbcAst.block) =
+    let** store, state =
+      Rustsymex.Result.fold_list statements ~init:(store, state)
+        ~f:(fun (store, state) stmt -> exec_stmt ~prog store state stmt)
+    in
+    let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
+    Fmt.pr
+      "Executing terminator: %s ------------------------------------------\n"
+      (PrintUllbcAst.Ast.terminator_to_string ctx "" terminator);
+    let { span = loc; content = term; _ } : UllbcAst.terminator = terminator in
+    let@ () = with_loc ~loc in
+    match term with
+    | Goto b ->
+        let block = UllbcAst.BlockId.nth body.body b in
+        exec_block ~prog ~body store state block
+    | Return ->
+        let value_ptr, value_ty = Store.find Expressions.VarId.zero store in
+        let* value_ptr =
+          match value_ptr with
+          | Some x -> return x
+          | None -> Fmt.kstr not_impl "Return value unset, but returned"
+        in
+        Fmt.pr "Returning var %a -> %a\n" Expressions.pp_var_id
+          Expressions.VarId.zero Typed.ppa value_ptr;
+        let++ value, _ = Heap.load value_ptr value_ty state in
+        Fmt.pr "Returning value %a\n" Typed.ppa value;
+        (value, store, state)
+    | Switch (discr, switch) -> (
+        let** discr, state = eval_operand ~prog ~store state discr in
+        match switch with
+        | If (if_block, else_block) ->
+            let open Typed.Infix in
+            Fmt.pr "Switch if/else %a/%a for %a\n" UllbcAst.pp_block_id if_block
+              UllbcAst.pp_block_id else_block Typed.ppa discr;
+            let* block =
+              if%sat discr ==@ Typed.one then return if_block
+              else return else_block
+            in
+            let block = UllbcAst.BlockId.nth body.body block in
+            exec_block ~prog ~body store state block
+        | SwitchInt _ -> Fmt.kstr not_impl "SwitchInt not supported")
+    | t ->
+        Fmt.kstr not_impl "Unsupported terminator: %a"
+          UllbcAst.pp_raw_terminator t
 
   and exec_fun ~prog ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
@@ -209,25 +368,15 @@ module Make (Heap : Heap_intf.S) = struct
     let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
     L.info (fun m ->
         m "Executing function %s" (PrintTypes.name_to_string ctx name));
-    let ptys = get_param_tys ~fn:fundef in
-    let params = List.map (fun (v : GAst.var) -> v.index) body.locals.vars in
-    let ps = Utils_.List_ex.combine3 params ptys args in
     (* TODO: Introduce a with_stack_allocation.
            That would require some kind of continutation passing for executing a bunch of statements. *)
-    let** store, state = alloc_params ps state in
+    let** store, state = alloc_stack body.locals args state in
     (* TODO: local optimisation to put values in store directly when no address is taken. *)
-    let stts =
-      List.concat_map (fun (b : UllbcAst.block) -> b.statements) body.body
-    in
-    let** val_opt, _, state =
-      Rustsymex.Result.fold_list stts ~init:(None, store, state)
-        ~f:(fun (res, store, state) stmt ->
-          match res with
-          | Some _ -> Rustsymex.Result.ok (res, store, state)
-          | None -> exec_stmt ~prog store state stmt)
+    let starting_block = List.hd body.body in
+    let** value, store, state =
+      exec_block ~prog ~body store state starting_block
     in
     let++ state = dealloc_store store state in
     (* We model void as zero, it should never be used anyway *)
-    let value = Option.value ~default:0s val_opt in
     (value, state)
 end

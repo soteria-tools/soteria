@@ -215,5 +215,10 @@ Temporary Items
 # iCloud generated files
 *.icloud
 
+### Rust ###
+Cargo.lock
+target/
+
+
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
 # and modified by hand afterwards

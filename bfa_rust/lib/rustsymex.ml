@@ -54,6 +54,7 @@ let with_loc_immediate ~loc f =
 let not_impl msg =
   let msg = "MISSING FEATURE, VANISHING: " ^ msg in
   L.info (fun m -> m "%s" msg);
+  print_endline msg;
   push_give_up (msg, get_loc ());
   vanish ()
 
