@@ -89,15 +89,45 @@ let load ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
+  Fmt.kstr print_endline "Loading from %a type %a\n" Typed.ppa ptr
+    Charon.Types.pp_ty ty;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
-  else with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
+  else (* TODO: reverse, find a way of encoding the conversion to a rust val *)
+    with_ptr ptr st (fun ~ofs block ->
+        let rec aux (blocks, callback) =
+          let** values, block =
+            Result.fold_list blocks ~init:([], block)
+              ~f:(fun (vals, block) (ty, size, ofs) ->
+                let++ value, block = Tree_block.load ofs size ty block in
+                (value :: vals, block))
+          in
+          let* res = callback values in
+          match res with
+          | `Done v -> Result.ok (v, block)
+          | `More info -> aux info
+        in
+        aux (Layout.rust_of_cvals ~offset:ofs ty))
 
 let store ptr ty sval st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "store" ptr st;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
-  else with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
+  else
+    let parts = Layout.rust_to_cvals sval ty in
+    let pp_quad f (v, l, s, o) =
+      Fmt.pf f "%a: %a at:%a[..%a]" Typed.ppa v Charon.Values.pp_literal_type l
+        Typed.ppa o Typed.ppa s
+    in
+
+    Fmt.kstr print_endline "Parsed to parts [%a]\n"
+      (Fmt.list ~sep:Fmt.comma pp_quad)
+      parts;
+    with_ptr ptr st (fun ~ofs block ->
+        Result.fold_list parts ~init:((), block)
+          ~f:(fun ((), block) (sval, ty, size, inner_ofs) ->
+            let ofs = ofs +@ inner_ofs in
+            Tree_block.store ofs size ty sval block))
 
 let copy_nonoverlapping ~dst ~src ~size st =
   let open Typed.Infix in

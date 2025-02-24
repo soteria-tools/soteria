@@ -42,8 +42,9 @@ let parse_ullbc_of_file ~no_compile file_name =
     | true -> 0
     | false ->
         Fmt.kstr Sys.command
-          "charon --ullbc --rustc-arg=--extern=std --extract-opaque-bodies \
-           --no-cargo --include '*' --input %s --dest-file %s"
+          "charon --ullbc --rustc-arg=--extern=std --monomorphize \
+           --extract-opaque-bodies --no-cargo --include '*' --input %s \
+           --dest-file %s"
           file_name output
   in
   let json = Yojson.Basic.from_file output in
@@ -64,6 +65,13 @@ let exec_main (crate : UllbcAst.crate) =
   let open Syntaxes.Result in
   let open Charon in
   Layout.Session.set_crate crate;
+  let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+  UllbcAst.FunDeclId.Map.iter
+    (fun _ (f : UllbcAst.fun_decl) ->
+      let s = PrintUllbcAst.Ast.any_decl_id_to_string (Types.IdFun f.def_id) in
+      let name = PrintTypes.name_to_string ctx f.item_meta.name in
+      Fmt.pr " %s, %s\n" name s)
+    crate.fun_decls;
   let+ _, entry_point =
     Types.FunDeclId.Map.bindings crate.fun_decls
     |> List.find_opt (fun (_, (decl : UllbcAst.blocks UllbcAst.gfun_decl)) ->
@@ -87,7 +95,6 @@ let exec_main_and_print log_level smt_file no_compile file_name =
   setup_console_log log_level;
   let res =
     let* crate = parse_ullbc_of_file ~no_compile file_name in
-    (* Fmt.pr "Parsed crate:@\n%s\n" (PrintUllbcAst.Crate.crate_to_string crate); *)
     let* res = exec_main crate in
     let errors = Compo_res.only_errors @@ List.map fst res in
     if List.is_empty errors then Ok (List.length res)

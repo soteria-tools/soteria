@@ -17,11 +17,12 @@ let miss_no_fix_immediate ?(msg = "") () =
 let miss_no_fix ?msg () = Rustsymex.return (miss_no_fix_immediate ?msg ())
 
 module MemVal = struct
-  type t = { value : T.cval Typed.t; ty : Types.ty } [@@deriving make]
+  type t = { value : T.cval Typed.t; ty : Values.literal_type }
+  [@@deriving make]
 
   let pp ft t =
     let open Fmt in
-    pf ft "%a : %a" Typed.ppa t.value Types.pp_ty t.ty
+    pf ft "%a : %a" Typed.ppa t.value Values.pp_literal_type t.ty
 end
 
 module Node = struct
@@ -85,16 +86,14 @@ module Node = struct
     match t with
     | NotOwned _ -> miss_no_fix ~msg:"decode" ()
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
-    | Owned Zeros ->
-        if Layout.is_int ty then Result.ok 0s
-        else Fmt.kstr not_impl "Float zeros"
+    | Owned Zeros -> Result.ok @@ Layout.to_zeros ty
     | Owned Lazy ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
     | Owned (Init { value; ty = tyw }) ->
-        if Types.compare_ty ty tyw = 0 then Result.ok value
+        if Values.equal_literal_type ty tyw then Result.ok value
         else
           Fmt.kstr not_impl "Type mismatch when decoding value: %a vs %a"
-            Types.pp_ty ty Types.pp_ty tyw
+            Types.pp_literal_type ty Types.pp_literal_type tyw
     | Owned Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
            We have to approximate and vanish. *)
@@ -302,18 +301,20 @@ module Tree = struct
     let* root = extend_if_needed t range in
     frame_inside ~replace_node ~rebuild_parent root range
 
-  let load (ofs : [< T.sint ] Typed.t) (ty : Types.ty) (t : t) :
+  let load (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+      (ty : Values.literal_type) (t : t) :
       (T.cval Typed.t * t, 'err, 'fix) Result.t =
-    let* range = Range.of_low_and_type ofs ty in
+    let range = Range.of_low_and_size ofs size in
     let replace_node node = node in
     let rebuild_parent = with_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ sval = Node.decode ~ty framed.node in
     ((sval :> T.cval Typed.t), tree)
 
-  let store (low : [< T.sint ] Typed.t) (ty : Types.ty)
-      (sval : [< T.cval ] Typed.t) (t : t) : (unit * t, 'err, 'fix) Result.t =
-    let* range = Range.of_low_and_type low ty in
+  let store (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+      (ty : Types.literal_type) (sval : [< T.cval ] Typed.t) (t : t) :
+      (unit * t, 'err, 'fix) Result.t =
+    let range = Range.of_low_and_size low size in
     let replace_node _ = sval_leaf ~range ~value:sval ~ty in
     let rebuild_parent = of_children in
     let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -345,9 +346,10 @@ module Tree = struct
 
   (** Cons/prod *)
 
-  let consume_typed_val (low : [< T.sint ] Typed.t) (ty : Types.ty)
-      (v : [< T.cval ] Typed.t) (t : t) : (t, 'err, 'fix list) Result.t =
-    let* range = Range.of_low_and_type low ty in
+  let consume_typed_val (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+      (ty : Types.literal_type) (v : [< T.cval ] Typed.t) (t : t) :
+      (t, 'err, 'fix list) Result.t =
+    let range = Range.of_low_and_size low size in
     let replace_node _ = not_owned range in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -359,9 +361,10 @@ module Tree = struct
     | Missing fixes -> Rustsymex.Result.miss fixes
     | Error `UninitializedMemoryAccess -> Rustsymex.vanish ()
 
-  let produce_typed_val (low : [< T.sint ] Typed.t) (ty : Types.ty)
-      (value : T.cval Typed.t) (t : t) : t Rustsymex.t =
-    let* range = Range.of_low_and_type low ty in
+  let produce_typed_val (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+      (ty : Types.literal_type) (value : T.cval Typed.t) (t : t) : t Rustsymex.t
+      =
+    let range = Range.of_low_and_size low size in
     let* constrs =
       Rustsymex.of_opt_not_impl ~msg:"Produce typed_val constraints"
         (Layout.constraints ty)
@@ -478,7 +481,7 @@ let pp_pretty ft t =
 type serialized_atom =
   | TypedVal of {
       offset : T.sint Typed.t;
-      ty : Types.ty; [@printer Types.pp_ty]
+      ty : Types.literal_type; [@printer Types.pp_literal_type]
       v : T.cval Typed.t;
     }
   | Bound of T.sint Typed.t
@@ -493,7 +496,7 @@ let iter_values_serialized serialized f =
   List.iter (function TypedVal { v; _ } -> f v | _ -> ()) serialized
 
 let mk_fix_typed offset ty () =
-  let* v = Layout.nondet_ty ty in
+  let* v = Layout.nondet_literal_ty ty in
   return [ [ TypedVal { offset; ty; v } ] ]
 
 let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
@@ -531,24 +534,21 @@ let assert_exclusively_owned t =
             ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
-let load (ofs : [< T.sint ] Typed.t) (ty : Types.ty) (t : t option) :
-    ([> T.sint ] Typed.t * t option, 'err, 'fix) Result.t =
-  let* size = Layout.size_of_s ty in
+let load ofs size ty t =
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
-    Tree.load ofs ty t.root
+    Tree.load ofs size ty t.root
   in
   (res, to_opt tree)
 
-let store ofs ty sval t =
+let store ofs size ty sval t =
   match t with
   | None -> miss_no_fix ~msg:"outer store" ()
   | Some t ->
-      let* size = Layout.size_of_s ty in
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
-        Tree.store ofs ty sval t.root
+        Tree.store ofs size ty sval t.root
       in
       ((), to_opt tree)
 
@@ -664,7 +664,6 @@ let assume_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
 
 let abstract_cons bound cons_tree t =
   let** t = of_opt t in
-  let* bound = bound () in
   let++ tree =
     let@ () = assume_bound_check_res t bound in
     cons_tree t.root
@@ -677,69 +676,58 @@ let abstract_prod bound mk_root_from_empty prod_tree t =
       let+ root = mk_root_from_empty () in
       Some { bound = None; root }
   | Some t ->
-      let* bound = bound () in
       let+ tree =
         let@ () = assume_bound_check t bound in
         prod_tree t.root
       in
       to_opt tree
 
-let typed_bound ofs ty =
-  let+ size = Layout.size_of_s ty in
-  ofs +@ size
+let consume_typed_val ofs size ty v t =
+  let cons_tree root = Tree.consume_typed_val ofs size ty v root in
+  abstract_cons (ofs +@ size) cons_tree t
 
-let consume_typed_val ofs ty v t =
-  let bound () = typed_bound ofs ty in
-  let cons_tree root = Tree.consume_typed_val ofs ty v root in
-  abstract_cons bound cons_tree t
-
-let produce_typed_val ofs ty v t =
-  let bound () = typed_bound ofs ty in
-  let prod_tree root = Tree.produce_typed_val ofs ty v root in
+let produce_typed_val ofs size ty v t =
+  let prod_tree root = Tree.produce_typed_val ofs size ty v root in
   let mk_root_from_empty () =
-    let+ range = Range.of_low_and_type ofs ty in
-    Tree.sval_leaf ~range ~value:v ~ty
+    let range = Range.of_low_and_size ofs size in
+    return @@ Tree.sval_leaf ~range ~value:v ~ty
   in
-  abstract_prod bound mk_root_from_empty prod_tree t
+  abstract_prod (ofs +@ size) mk_root_from_empty prod_tree t
 
 let consume_any ofs len t =
-  let bound () = Rustsymex.return (ofs +@ len) in
   let cons_tree root = Tree.consume_any ofs len root in
-  abstract_cons bound cons_tree t
+  abstract_cons (ofs +@ len) cons_tree t
 
 let produce_any ofs len t =
-  let bound () = Rustsymex.return (ofs +@ len) in
   let prod_tree root = Tree.produce_any ofs len root in
   let mk_root_from_empty () =
     let range = (ofs, ofs +@ len) in
     Rustsymex.return (Tree.any range)
   in
-  abstract_prod bound mk_root_from_empty prod_tree t
+  abstract_prod (ofs +@ len) mk_root_from_empty prod_tree t
 
 let consume_uninit ofs len t =
-  let bound () = Rustsymex.return (ofs +@ len) in
   let cons_tree root = Tree.consume_uninit ofs len root in
-  abstract_cons bound cons_tree t
+  abstract_cons (ofs +@ len) cons_tree t
 
 let produce_uninit ofs len t =
-  let bound () = Rustsymex.return (ofs +@ len) in
+  let bound = ofs +@ len in
   let prod_tree root = Tree.produce_uninit ofs len root in
   let mk_root_from_empty () =
-    let range = (ofs, ofs +@ len) in
+    let range = (ofs, bound) in
     Rustsymex.return (Tree.uninit range)
   in
   abstract_prod bound mk_root_from_empty prod_tree t
 
 let consume_zeros ofs len t =
-  let bound () = Rustsymex.return (ofs +@ len) in
   let cons_tree root = Tree.consume_zeros ofs len root in
-  abstract_cons bound cons_tree t
+  abstract_cons (ofs +@ len) cons_tree t
 
 let produce_zeros ofs len t =
-  let bound () = Rustsymex.return (ofs +@ len) in
+  let bound = ofs +@ len in
   let prod_tree root = Tree.produce_zeros ofs len root in
   let mk_root_from_empty () =
-    let range = (ofs, ofs +@ len) in
+    let range = (ofs, bound) in
     Rustsymex.return (Tree.zeros range)
   in
   abstract_prod bound mk_root_from_empty prod_tree t
@@ -763,7 +751,9 @@ let produce_bound bound t =
 let consume_atom atom t =
   match atom with
   | Bound bound -> consume_bound bound t
-  | TypedVal { offset; ty; v } -> consume_typed_val offset ty v t
+  | TypedVal { offset; ty; v } ->
+      let size = Typed.int @@ Layout.size_of_literal_ty ty in
+      consume_typed_val offset size ty v t
   | Uninit { offset; len } -> consume_uninit offset len t
   | Any { offset; len } -> consume_any offset len t
   | Zeros { offset; len } -> consume_zeros offset len t
@@ -771,7 +761,9 @@ let consume_atom atom t =
 let produce_atom atom t =
   match atom with
   | Bound bound -> produce_bound bound t
-  | TypedVal { offset; ty; v } -> produce_typed_val offset ty v t
+  | TypedVal { offset; ty; v } ->
+      let size = Typed.int @@ Layout.size_of_literal_ty ty in
+      produce_typed_val offset size ty v t
   | Uninit { offset; len } -> produce_uninit offset len t
   | Any { offset; len } -> produce_any offset len t
   | Zeros { offset; len } -> produce_zeros offset len t

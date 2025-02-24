@@ -66,30 +66,3 @@ fn fib::fib(n^1 : u32) -> u32
     goto block@3;
   }
 }
-
-fn fib::main()
-{
-  v@0 : ();
-  _a^1 : u32;
-  v@2 : u32;
-  _b^3 : u32;
-  v@4 : u32;
-  v@5 : ();
-
-  block@0 {
-    v@2 := move fib::fib((2: u32 : u32));
-    _a^1 := (10: u32 : u32) / move v@2;
-    storage_dead v@2;
-    fake_read _a^1;
-    v@4 := move fib::fib((0: u32 : u32));
-    _b^3 := (0: u32 : u32) / move v@4;
-    storage_dead v@4;
-    fake_read _b^3;
-    v@5 := ();
-    v@0 := move v@5;
-    storage_dead _b^3;
-    storage_dead _a^1;
-    v@0 := ();
-    return;
-  }
-}

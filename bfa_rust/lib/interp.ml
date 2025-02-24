@@ -25,9 +25,9 @@ module Make (Heap : Heap_intf.S) = struct
 
   type 'err fun_exec =
     prog:UllbcAst.crate ->
-    args:T.cval Typed.t list ->
+    args:rust_val list ->
     state:state ->
-    (T.cval Typed.t * state, 'err, Heap.serialized list) Result.t
+    (rust_val * state, 'err, Heap.serialized list) Result.t
 
   let alloc_stack (locals : GAst.locals) args st =
     if List.length args <> locals.arg_count then
@@ -162,8 +162,8 @@ module Make (Heap : Heap_intf.S) = struct
   and eval_operand ~prog:_prog ~store state (op : Expressions.operand) =
     match op with
     | Constant c ->
-        let* v = value_of_constant c in
-        Result.ok (v, state)
+        let v = value_of_constant c in
+        Result.ok (Base v, state)
     | Move loc ->
         let ty = loc.ty in
         let* loc = resolve_place ~store state loc in
@@ -195,49 +195,122 @@ module Make (Heap : Heap_intf.S) = struct
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a"
               Expressions.pp_unop op)
-    | BinaryOp (op, e1, e2) -> (
+    | BinaryOp (op, e1, e2) ->
         (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
         let** v1, state = eval_operand state e1 in
         let** v2, state = eval_operand state e2 in
-        match op with
-        | Ge ->
-            (* TODO: comparison operators for pointers *)
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            Result.ok (v1 >=@ v2 |> Typed.int_of_bool, state)
-        | Gt ->
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            Result.ok (v1 >@ v2 |> Typed.int_of_bool, state)
-        | Lt ->
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            Result.ok (v1 <@ v2 |> Typed.int_of_bool, state)
-        | Le ->
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            Result.ok (v1 <=@ v2 |> Typed.int_of_bool, state)
-        | Eq -> equality_check ~state v1 v2
-        | Ne ->
-            (* TODO: Semantics of Ne might be different from semantics of not eq? *)
-            let++ res, state = equality_check ~state v1 v2 in
-            (Typed.not_int_bool res, state)
-        | Div -> (
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            let* v2 = Rustsymex.check_nonzero v2 in
-            match v2 with
-            | Ok v2 -> Rustsymex.Result.ok (v1 /@ v2, state)
-            | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
-            | Missing e -> (* Unreachable but still *) Rustsymex.Result.miss e)
-        | Mul -> arith_mul ~state v1 v2
-        | Add -> arith_add ~state v1 v2
-        | Sub ->
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            arith_add ~state v1 (Typed.minus 0s v2)
-        | bop ->
-            Fmt.kstr not_impl "Unsupported binary operator: %a"
-              Expressions.pp_binop bop)
+        let v1, v2 =
+          match (v1, v2) with
+          | Base v1, Base v2 -> (v1, v2)
+          | _, _ ->
+              Fmt.failwith "Expected base values in BinaryOp: %a/%a" pp_rust_val
+                v1 pp_rust_val v2
+        in
+        let++ res, state =
+          match op with
+          | Ge ->
+              (* TODO: comparison operators for pointers *)
+              let* v1 = cast_checked v1 ~ty:Typed.t_int in
+              let* v2 = cast_checked v2 ~ty:Typed.t_int in
+              Result.ok (v1 >=@ v2 |> Typed.int_of_bool, state)
+          | Gt ->
+              let* v1 = cast_checked v1 ~ty:Typed.t_int in
+              let* v2 = cast_checked v2 ~ty:Typed.t_int in
+              Result.ok (v1 >@ v2 |> Typed.int_of_bool, state)
+          | Lt ->
+              let* v1 = cast_checked v1 ~ty:Typed.t_int in
+              let* v2 = cast_checked v2 ~ty:Typed.t_int in
+              Result.ok (v1 <@ v2 |> Typed.int_of_bool, state)
+          | Le ->
+              let* v1 = cast_checked v1 ~ty:Typed.t_int in
+              let* v2 = cast_checked v2 ~ty:Typed.t_int in
+              Result.ok (v1 <=@ v2 |> Typed.int_of_bool, state)
+          | Eq ->
+              let v1 = Typed.cast v1 in
+              let v2 = Typed.cast v2 in
+              equality_check ~state v1 v2
+          | Ne ->
+              (* TODO: Semantics of Ne might be different from semantics of not eq? *)
+              let v1 = Typed.cast v1 in
+              let v2 = Typed.cast v2 in
+              let++ res, state = equality_check ~state v1 v2 in
+              (Typed.not_int_bool res, state)
+          | Div -> (
+              let* v1 = cast_checked v1 ~ty:Typed.t_int in
+              let* v2 = cast_checked v2 ~ty:Typed.t_int in
+              let* v2 = Rustsymex.check_nonzero v2 in
+              match v2 with
+              | Ok v2 -> Rustsymex.Result.ok (v1 /@ v2, state)
+              | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
+              | Missing e -> (* Unreachable but still *) Rustsymex.Result.miss e
+              )
+          | Mul ->
+              let v1 = Typed.cast v1 in
+              let v2 = Typed.cast v2 in
+              arith_mul ~state v1 v2
+          | Add ->
+              let v1 = Typed.cast v1 in
+              let v2 = Typed.cast v2 in
+              arith_add ~state v1 v2
+          | Sub ->
+              let v1 = Typed.cast v1 in
+              let v2 = Typed.cast v2 in
+              arith_add ~state v1 (Typed.minus 0s v2)
+          | bop ->
+              Fmt.kstr not_impl "Unsupported binary operator: %a"
+                Expressions.pp_binop bop
+        in
+        (Base res, state)
+    | Discriminant (place, kind) ->
+        let* place = resolve_place ~store state place in
+        let enum = Types.TypeDeclId.Map.find kind UllbcAst.(prog.type_decls) in
+        let* enum_discr_ty =
+          match enum.kind with
+          | Enum (var :: _) ->
+              let int_ty = var.discriminant.int_ty in
+              return (Types.TLiteral (TInteger int_ty))
+          | Enum [] ->
+              Fmt.kstr not_impl "Unsupported discriminant for emty enums"
+          | k ->
+              Fmt.failwith "Expected an enum for discriminant, got %a"
+                Types.pp_type_decl_kind k
+        in
+        Fmt.kstr print_endline "Loading discriminant of type %a at %a"
+          Types.pp_ty enum_discr_ty Typed.ppa place;
+        let++ value, state = Heap.load place enum_discr_ty state in
+        Fmt.kstr print_endline "Loaded discriminant %a at %a"
+          Charon_util.pp_rust_val value Typed.ppa place;
+        (value, state)
+    (* Enum aggregate *)
+    | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
+        let type_decl =
+          Types.TypeDeclId.Map.find t_id UllbcAst.(prog.type_decls)
+        in
+        let variant =
+          match (type_decl : Types.type_decl) with
+          | { kind = Enum variants; _ } -> Types.VariantId.nth variants v_id
+          | _ ->
+              Fmt.failwith "Unexpected type declaration in enum aggregate: %a"
+                Types.pp_type_decl type_decl
+        in
+        let discr = value_of_scalar variant.discriminant in
+        let++ vals, state = eval_operand_list ~prog ~store state vals in
+        (Enum (discr, vals), state)
+    (* Union aggregate *)
+    | Aggregate (AggregatedAdt (_, None, Some _, _), _) as v ->
+        Fmt.kstr not_impl "Union rvalues not supported: %a"
+          Expressions.pp_rvalue v
+    (* Special case? unit (zero-tuple) *)
+    | Aggregate (AggregatedAdt (TTuple, None, None, g), _)
+      when g = TypesUtils.empty_generic_args ->
+        Result.ok (Charon_util.Tuple [], state)
+    (* Struct aggregate *)
+    | Aggregate (AggregatedAdt (_, None, None, _), _) as v ->
+        Fmt.kstr not_impl "Struct rvalues not supported: %a"
+          Expressions.pp_rvalue v
+    (* Invalid aggregate (not sure, but seems like it) *)
+    | Aggregate _ as v ->
+        Fmt.failwith "Invalid aggregate rvalue: %a" Expressions.pp_rvalue v
     | v -> Fmt.kstr not_impl "Unsupported rvalue: %a" Expressions.pp_rvalue v
 
   and eval_rvalue_list ~prog ~(store : store) (state : state) el =
@@ -263,7 +336,7 @@ module Make (Heap : Heap_intf.S) = struct
     | Assign (({ ty; _ } as place), rval) ->
         let* ptr = resolve_place ~store state place in
         let** v, state = eval_rvalue ~prog ~store state rval in
-        Fmt.pr "Assigning %a to ptr %a\n" Typed.ppa v Typed.ppa ptr;
+        Fmt.pr "Assigning %a to ptr %a\n" pp_rust_val v Typed.ppa ptr;
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
     | Call { func; args; dest = { kind = PlaceBase var; ty } } ->
@@ -274,9 +347,8 @@ module Make (Heap : Heap_intf.S) = struct
           Heap.add_to_call_trace err
             (Call_trace.make_element ~loc ~msg:"Call trace" ())
         in
-        Fmt.pr "Returned from function call %a\n" Typed.ppa v;
         L.debug (fun m ->
-            m "returned %a from %a" Typed.ppa v GAst.pp_fn_operand func);
+            m "returned %a from %a" pp_rust_val v GAst.pp_fn_operand func);
         let ptr =
           match Store.find_value var store with
           | Some ptr -> ptr
@@ -306,6 +378,15 @@ module Make (Heap : Heap_intf.S) = struct
     | FakeRead _ ->
         (* TODO: update tree borrow with read *)
         Result.ok (store, state)
+    | Drop place ->
+        let* place_ptr = resolve_place ~store state place in
+        let++ (), state = Heap.free place_ptr state in
+        let store =
+          match place.kind with
+          | PlaceBase var_id -> Store.add var_id (None, place.ty) store
+          | _ -> store
+        in
+        (store, state)
     | s ->
         Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
           s
@@ -336,10 +417,17 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.pr "Returning var %a -> %a\n" Expressions.pp_var_id
           Expressions.VarId.zero Typed.ppa value_ptr;
         let++ value, _ = Heap.load value_ptr value_ty state in
-        Fmt.pr "Returning value %a\n" Typed.ppa value;
+        Fmt.pr "Returning value %a\n" pp_rust_val value;
         (value, store, state)
     | Switch (discr, switch) -> (
         let** discr, state = eval_operand ~prog ~store state discr in
+        let discr =
+          match discr with
+          | Base discr -> discr
+          | _ ->
+              Fmt.failwith "Expected base value for discriminant, got %a"
+                pp_rust_val discr
+        in
         match switch with
         | If (if_block, else_block) ->
             let open Typed.Infix in
@@ -351,7 +439,22 @@ module Make (Heap : Heap_intf.S) = struct
             in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~prog ~body store state block
-        | SwitchInt _ -> Fmt.kstr not_impl "SwitchInt not supported")
+        | SwitchInt (_, options, default) -> (
+            let* block =
+              Rustsymex.fold_list options ~init:(Some default)
+                ~f:(fun block (test, if_equal) ->
+                  match block with
+                  | Some _ -> return block
+                  | None ->
+                      let test = Charon_util.value_of_scalar test in
+                      if%sat discr ==@ test then return (Some if_equal)
+                      else return None)
+            in
+            match block with
+            | None -> vanish ()
+            | Some block ->
+                let block = UllbcAst.BlockId.nth body.body block in
+                exec_block ~prog ~body store state block))
     | t ->
         Fmt.kstr not_impl "Unsupported terminator: %a"
           UllbcAst.pp_raw_terminator t

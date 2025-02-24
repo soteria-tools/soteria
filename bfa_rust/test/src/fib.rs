@@ -9,6 +9,8 @@ fn fib (n: u32) -> u32 {
 }
 
 
+#[cfg(kani)]
+#[kani::proof]
 fn main() {
     let _a = 10 / fib(2);
     let _b = 0 / fib(0);

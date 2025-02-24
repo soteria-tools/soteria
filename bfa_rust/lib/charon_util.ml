@@ -1,11 +1,17 @@
 open Charon
 open Typed
 
-let value_of_constant : Expressions.constant_expr -> T.cval Typed.t Rustsymex.t
-    = function
-  | { value = CLiteral (VScalar { value = v; _ }); _ } ->
-      (* TODO: add constraints depending on the integer type *)
-      Rustsymex.return (int_z v)
+type rust_val =
+  | Base of T.cval Typed.t
+  | Enum of T.cval Typed.t * rust_val list  (** discriminant * values *)
+  | Tuple of rust_val list
+[@@deriving show]
+
+let value_of_scalar : Values.scalar_value -> T.cval Typed.t = function
+  | { value = v; _ } -> int_z v
+
+let value_of_constant : Expressions.constant_expr -> T.cval Typed.t = function
+  | { value = CLiteral (VScalar scalar); _ } -> value_of_scalar scalar
+  | { value = CLiteral (VBool b); _ } -> int (if b then 1 else 0)
   | e ->
-      Fmt.kstr Rustsymex.not_impl "TODO: value_of_constant %a"
-        Expressions.pp_constant_expr e
+      Fmt.failwith "TODO: value_of_constant %a" Expressions.pp_constant_expr e

@@ -18,7 +18,7 @@ module type S = sig
     [< sptr ] Typed.t ->
     Charon.Types.ty ->
     t ->
-    ( cval Typed.t * t,
+    ( Charon_util.rust_val * t,
       [> `NullDereference
       | `OutOfBounds
       | `UninitializedMemoryAccess
@@ -30,7 +30,7 @@ module type S = sig
   val store :
     [< sptr ] Typed.t ->
     Charon.Types.ty ->
-    cval Typed.t ->
+    Charon_util.rust_val ->
     t ->
     ( unit * t,
       [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
