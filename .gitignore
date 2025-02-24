@@ -179,8 +179,9 @@ setup.log
 # Local OPAM switch
 _opam/
 
-# LLBC generated files by Charon
+# LLBC generated files by Charon, debug file
 *.llbc.json
+*.crate
 
 ### macOS ###
 # General

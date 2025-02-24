@@ -209,7 +209,48 @@ let nondet_literal_ty : Types.literal_type -> cval Rustsymex.t =
       (res :> cval)
   | ty ->
       Rustsymex.not_impl
-        (Fmt.str "nondet_ty: unsupported type %a" Types.pp_literal_type ty)
+        (Fmt.str "nondet_literal_ty: unsupported type %a" Types.pp_literal_type
+           ty)
+
+let rec nondet : Types.ty -> Charon_util.rust_val Rustsymex.t =
+  let open Rustsymex.Syntax in
+  function
+  | TLiteral lit ->
+      let+ cval = nondet_literal_ty lit in
+      Charon_util.Base cval
+  | TAdt (TAdtId t_id, _) -> (
+      let crate = Session.get_crate () in
+      let type_decl =
+        Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
+      in
+      match type_decl.kind with
+      | Enum variants -> (
+          let disc_ty = (List.hd variants).discriminant.int_ty in
+          let* disc_val = nondet_literal_ty (Values.TInteger disc_ty) in
+          let* res =
+            Rustsymex.fold_list variants ~init:None
+              ~f:(fun value (variant : Types.variant) ->
+                match value with
+                | Some _ -> return value
+                | None ->
+                    let d = Charon_util.value_of_scalar variant.discriminant in
+                    if%sat disc_val ==@ d then
+                      let* fields =
+                        Rustsymex.fold_list variant.fields ~init:[]
+                          ~f:(fun fields ty ->
+                            let+ f = nondet ty.field_ty in
+                            f :: fields)
+                      in
+                      let fields = List.rev fields in
+                      return (Some (Charon_util.Enum (d, fields)))
+                    else return None)
+          in
+          match res with None -> vanish () | Some value -> return value)
+      | ty ->
+          Rustsymex.not_impl
+            (Fmt.str "nondet: unsupported type %a" Types.pp_type_decl_kind ty))
+  | ty ->
+      Rustsymex.not_impl (Fmt.str "nondet: unsupported type %a" Types.pp_ty ty)
 
 (** Converts a Rust value of the given type into a list of C values, along with
     their size and offset *)
@@ -233,7 +274,6 @@ let rec rust_to_cvals (v : Charon_util.rust_val) (ty : Types.ty) :
             Fmt.failwith "Unexpected enum discriminant kind: %a"
               Svalue.pp_t_kind k
       in
-      Fmt.kstr print_endline "ENUM ---> %a" Types.pp_type_decl type_decl;
       let variant =
         match (type_decl : Types.type_decl) with
         | { kind = Enum variants; _ } ->

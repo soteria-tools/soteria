@@ -97,11 +97,17 @@ let exec_main_and_print log_level smt_file no_compile file_name =
     let* crate = parse_ullbc_of_file ~no_compile file_name in
     let* res = exec_main crate in
     let errors = Compo_res.only_errors @@ List.map fst res in
-    if List.is_empty errors then Ok (List.length res)
+    if List.is_empty errors then Ok (List.map snd res)
     else
       let errors_parsed = Fmt.str "Errors: %a" Fmt.(Dump.list pp_err) errors in
       Error errors_parsed
   in
   match res with
-  | Ok n -> Fmt.pr "Done. - Ran %i branches" n
+  | Ok pcs ->
+      let open Fmt in
+      let n = List.length pcs in
+      let pp_pc ft pc =
+        pf ft "- @[%a@]" (list ~sep:(any " /\\ ") Typed.ppa) pc
+      in
+      pr "Done. - Ran %i branches\n%a" n (list ~sep:(any "@\n@\n") pp_pc) pcs
   | Error e -> Fmt.pr "Error: %s" e

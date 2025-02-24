@@ -11,6 +11,8 @@ module T = Typed.T
 type termination = RetVal of T.cval Typed.t | GoToBlock of UllbcAst.block_id
 
 module Make (Heap : Heap_intf.S) = struct
+  module Std = Rust_std.M (Heap)
+
   exception Unsupported of (string * Meta.span)
 
   type state = Heap.t
@@ -154,7 +156,12 @@ module Make (Heap : Heap_intf.S) = struct
     in
     let fundef_opt = Expressions.FunDeclId.Map.find_opt fid prog.fun_decls in
     match fundef_opt with
-    | Some fundef -> Rustsymex.return (exec_fun fundef)
+    | Some fundef -> (
+        match List.rev fundef.item_meta.name with
+        | PeIdent ("any", _) :: _ ->
+            let ty = fundef.signature.output in
+            Rustsymex.return (Std.nondet ty)
+        | _ -> Rustsymex.return (exec_fun fundef))
     | None ->
         Fmt.kstr not_impl "Cannot call external function: %a"
           Expressions.FunDeclId.pp_id fid
