@@ -10,13 +10,13 @@ fn is_bar<T>(f: Foo<T>) -> bool {
     }
 }
 
-pub fn any<T>(concrete: T) -> T {
-    concrete
+pub fn any<T>() -> T {
+    panic!()
 }
 
 fn main() {
-    let a: Foo<i64> = any(Foo::Bar(1));
-    let b: Foo<u128> = any(Foo::Baz);
+    let a: Foo<i64> = any();
+    let b: Foo<u128> = any();
 
     is_bar(a);
     is_bar(b);
