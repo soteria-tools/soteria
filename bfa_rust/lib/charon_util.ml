@@ -5,6 +5,7 @@ type rust_val =
   | Base of T.cval Typed.t
   | Enum of T.cval Typed.t * rust_val list  (** discriminant * values *)
   | Tuple of rust_val list
+  | Never  (** Useful for base cases -- should be ignored *)
 [@@deriving show]
 
 let value_of_scalar : Values.scalar_value -> T.cval Typed.t = function

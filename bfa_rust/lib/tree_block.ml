@@ -20,9 +20,29 @@ module MemVal = struct
   type t = { value : T.cval Typed.t; ty : Values.literal_type }
   [@@deriving make]
 
+  let lit_to_string : Values.literal_type -> string = function
+    | TInteger Isize -> "isize"
+    | TInteger I8 -> "i8"
+    | TInteger I16 -> "i16"
+    | TInteger I32 -> "i32"
+    | TInteger I64 -> "i64"
+    | TInteger I128 -> "i128"
+    | TInteger Usize -> "usize"
+    | TInteger U8 -> "u8"
+    | TInteger U16 -> "u16"
+    | TInteger U32 -> "u32"
+    | TInteger U64 -> "u64"
+    | TInteger U128 -> "u128"
+    | TFloat F16 -> "f16"
+    | TFloat F32 -> "f32"
+    | TFloat F64 -> "f64"
+    | TFloat F128 -> "f128"
+    | TChar -> "char"
+    | TBool -> "bool"
+
   let pp ft t =
     let open Fmt in
-    pf ft "%a : %a" Typed.ppa t.value Values.pp_literal_type t.ty
+    pf ft "%a : %s" Typed.ppa t.value (lit_to_string t.ty)
 end
 
 module Node = struct
@@ -69,14 +89,15 @@ module Node = struct
         return (Owned (Uninit qty))
     | Owned _, Owned _ -> return (Owned Lazy)
 
-  let split ~range:(_, _) ~at:_ node =
+  let split ~range:(_, _) ~at node =
     match node with
     | NotOwned Totally -> return (NotOwned Totally, NotOwned Totally)
     | Owned (Uninit Totally) ->
         return (Owned (Uninit Totally), Owned (Uninit Totally))
     | Owned Zeros -> return (Owned Zeros, Owned Zeros)
     | Owned Any -> return (Owned Any, Owned Any)
-    | Owned (Init _) -> Fmt.kstr not_impl "Splitting %a" pp node
+    | Owned (Init _) ->
+        Fmt.kstr not_impl "Splitting %a at %a" pp node Typed.ppa at
     | NotOwned Partially | Owned (Uninit Partially) | Owned Lazy ->
         failwith "Should never split an intermediate node"
 
@@ -104,6 +125,12 @@ end
 module Tree = struct
   type t = { node : Node.t; range : Range.t; children : (t * t) option }
   [@@deriving show { with_path = false }, make]
+
+  let rec pp ft { node; range; children } =
+    let open Fmt in
+    pf ft "@[<v 2>{%a %a%a}@]" Node.pp node Range.pp range
+      (option ~none:nop (fun fmt (l, r) -> pf fmt " --> @[%a@,%a@]" pp l pp r))
+      children
 
   let is_empty { node; _ } =
     match node with NotOwned Totally -> true | _ -> false

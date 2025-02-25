@@ -3,6 +3,7 @@ open Rustsymex.Syntax
 open Typed.Infix
 open Typed.Syntax
 open Rustsymex
+open Charon_util
 
 exception CantComputeLayout of Types.ty
 
@@ -212,12 +213,12 @@ let nondet_literal_ty : Types.literal_type -> cval Rustsymex.t =
         (Fmt.str "nondet_literal_ty: unsupported type %a" Types.pp_literal_type
            ty)
 
-let rec nondet : Types.ty -> Charon_util.rust_val Rustsymex.t =
+let rec nondet : Types.ty -> rust_val Rustsymex.t =
   let open Rustsymex.Syntax in
   function
   | TLiteral lit ->
       let+ cval = nondet_literal_ty lit in
-      Charon_util.Base cval
+      Base cval
   | TAdt (TAdtId t_id, _) -> (
       let crate = Session.get_crate () in
       let type_decl =
@@ -233,7 +234,7 @@ let rec nondet : Types.ty -> Charon_util.rust_val Rustsymex.t =
                 match value with
                 | Some _ -> return value
                 | None ->
-                    let d = Charon_util.value_of_scalar variant.discriminant in
+                    let d = value_of_scalar variant.discriminant in
                     if%sat disc_val ==@ d then
                       let* fields =
                         Rustsymex.fold_list variant.fields ~init:[]
@@ -242,7 +243,7 @@ let rec nondet : Types.ty -> Charon_util.rust_val Rustsymex.t =
                             f :: fields)
                       in
                       let fields = List.rev fields in
-                      return (Some (Charon_util.Enum (d, fields)))
+                      return (Some (Enum (d, fields)))
                     else return None)
           in
           match res with None -> vanish () | Some value -> return value)
@@ -254,11 +255,9 @@ let rec nondet : Types.ty -> Charon_util.rust_val Rustsymex.t =
 
 (** Converts a Rust value of the given type into a list of C values, along with
     their size and offset *)
-let rec rust_to_cvals (v : Charon_util.rust_val) (ty : Types.ty) :
+let rec rust_to_cvals (v : rust_val) (ty : Types.ty) :
     (cval * Types.literal_type * sint * sint) list =
   let crate = Session.get_crate () in
-  Fmt.kstr print_endline "Converting %a to C values of type %a\n"
-    Charon_util.pp_rust_val v Types.pp_ty ty;
   match (v, ty) with
   | Base v, TLiteral ty ->
       [ (v, ty, Typed.int (size_of_literal_ty ty), Typed.zero) ]
@@ -288,12 +287,6 @@ let rec rust_to_cvals (v : Charon_util.rust_val) (ty : Types.ty) :
       let disc_size = Typed.int (size_of_literal_ty disc_ty) in
       let disc_val = (disc, disc_ty, disc_size, 0s) in
       let variant_tys = List.map (fun f -> Types.(f.field_ty)) variant.fields in
-      Fmt.kstr print_endline "Combining in Rust-CVals for disc %a: [%a] / [%a]"
-        Z.pp_print disc_z
-        Fmt.(list Charon_util.pp_rust_val)
-        vals
-        Fmt.(list Types.pp_ty)
-        variant_tys;
       let rest = List.map2 rust_to_cvals vals variant_tys in
       let open Typed.Infix in
       let cvals =
@@ -313,30 +306,29 @@ let rec rust_to_cvals (v : Charon_util.rust_val) (ty : Types.ty) :
       disc_val :: cvals
   | _ ->
       Fmt.failwith "Unhandled / Mismatched rust_value and Charon.ty: %a / %a"
-        Charon_util.pp_rust_val v Types.pp_ty ty
+        pp_rust_val v Types.pp_ty ty
 
 type aux_ret = (Types.literal_type * sint * sint) list * parse_callback
 and parse_callback = cval list -> callback_return
-
-and callback_return =
-  [ `Done of Charon_util.rust_val | `More of aux_ret ] Rustsymex.t
+and callback_return = [ `Done of rust_val | `More of aux_ret ] Rustsymex.t
 
 (** Converts a Rust type into a list of C blocks, along with their size and
     offset; once these are read, symbolically decides whether we must keep
     reading. *)
 let rust_of_cvals ?offset ty =
   let crate = Session.get_crate () in
-  let rec aux (offset : sint) : Types.ty -> aux_ret = function
+
+  (* Base case, parses all types. *)
+  let rec aux offset : Types.ty -> aux_ret = function
     | TLiteral ty ->
         ( [ (ty, Typed.int (size_of_literal_ty ty), offset) ],
           (* TODO: conversions? *)
           fun v ->
             if Stdlib.not (List.length v = 1) then failwith "Expected one cval"
-            else return (`Done (Charon_util.Base (List.hd v))) )
+            else return (`Done (Base (List.hd v))) )
     | TAdt (TTuple, g) when g = empty_generics ->
-        ([], fun _ -> return (`Done (Charon_util.Tuple [])))
+        ([], fun _ -> return (`Done (Tuple [])))
     | TAdt (TAdtId t_id, _) ->
-        Fmt.kstr print_endline "Parsing ADT %a\n" Types.pp_ty ty;
         let type_decl =
           Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
         in
@@ -362,35 +354,47 @@ let rust_of_cvals ?offset ty =
                 match acc with
                 | Some _ -> return acc
                 | None ->
-                    let var_disc =
-                      Charon_util.value_of_scalar var.discriminant
-                    in
-                    if%sat var_disc ==@ cval then
-                      if List.is_empty var.fields then
-                        return (Some (`Done (Charon_util.Enum (var_disc, []))))
-                      else
-                        let next_ty = (List.hd var.fields).field_ty in
-                        let blocks, callback = aux next_offset next_ty in
-                        (* TODO: do more than the first field *)
-                        let rec mk_callback (callback : parse_callback) cvals :
-                            callback_return =
-                          let+ res = callback cvals in
-                          match res with
-                          | `Done fields ->
-                              let disc_cval =
-                                Charon_util.value_of_scalar disc
-                              in
-                              `Done (Charon_util.Enum (disc_cval, [ fields ]))
-                          | `More (blocks, callback) ->
-                              `More (blocks, mk_callback callback)
-                        in
-                        return (Some (`More (blocks, mk_callback callback)))
+                    let var_disc = value_of_scalar var.discriminant in
+                    if%sat var_disc ==@ cval then aux_enum next_offset var
                     else return None)
           in
           match res with None -> vanish () | Some res -> return res
         in
         ([ (TInteger disc.int_ty, disc_size, offset) ], callback)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
+  (* Parses an enum variant *)
+  and aux_enum offset (var : Types.variant) =
+    let calc_offset = function
+      | [] -> 0s
+      | blocks ->
+          let _, size, offset = List.hd @@ List.rev blocks in
+          offset +@ size
+    in
+    (* Recursively keep doing callbacks until we're 100% finished.
+      Requires parsing each field as many times as needed, and putting
+      all the fields together in the end. *)
+    let rec mk_callback next_offset to_parse parsed (callback : parse_callback)
+        cvals : callback_return =
+      let+ res = callback cvals in
+      match res with
+      | `Done f -> (
+          let parsed = if f = Never then parsed else f :: parsed in
+          match to_parse with
+          | [] ->
+              let disc_cval = value_of_scalar var.discriminant in
+              `Done (Enum (disc_cval, List.rev parsed))
+          | ty :: rest ->
+              let blocks, callback = aux next_offset ty in
+              let next_off = calc_offset blocks in
+              `More (blocks, mk_callback next_off rest parsed callback))
+      | `More (blocks, callback) ->
+          let next_off = calc_offset blocks in
+          `More (blocks, mk_callback next_off to_parse parsed callback)
+    in
+    (* Little trick to avoid having to special case empty enums *)
+    let empty_callback _ = return (`Done Never) in
+    let field_tys = List.rev_map (fun f -> Types.(f.field_ty)) var.fields in
+    return (Some (`More ([], mk_callback offset field_tys [] empty_callback)))
   in
   let off = Option.value ~default:0s offset in
   aux off ty

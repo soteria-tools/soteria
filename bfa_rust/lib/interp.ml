@@ -48,12 +48,10 @@ module Make (Heap : Heap_intf.S) = struct
 
   let dealloc_store store st =
     Rustsymex.Result.fold_list (Store.bindings store) ~init:st
-      ~f:(fun st (v, (ptr, _)) ->
+      ~f:(fun st (_, (ptr, _)) ->
         match ptr with
         | None -> Result.ok st
         | Some ptr ->
-            Fmt.pr "Deallocating var %a -> %a\n" Expressions.pp_var_id v
-              Typed.ppa ptr;
             let++ (), st = Heap.free ptr st in
             st)
 
@@ -70,7 +68,6 @@ module Make (Heap : Heap_intf.S) = struct
   let resolve_place_kind ~store _state :
       Expressions.place_kind -> T.sptr Typed.t Rustsymex.t = function
     | PlaceBase var -> (
-        Fmt.pr "Resolving place to var %a\n" Expressions.pp_var_id var;
         let ptr = Store.find_value var store in
         match ptr with
         | Some ptr -> return ptr
@@ -174,7 +171,6 @@ module Make (Heap : Heap_intf.S) = struct
     | Move loc ->
         let ty = loc.ty in
         let* loc = resolve_place ~store state loc in
-        Fmt.pr "Moving from %a\n" Typed.ppa loc;
         let** v, state = Heap.load loc ty state in
         (* TODO: mark value as moved!!! !== freeing it, btw *)
         Result.ok (v, state)
@@ -277,17 +273,12 @@ module Make (Heap : Heap_intf.S) = struct
               let int_ty = var.discriminant.int_ty in
               return (Types.TLiteral (TInteger int_ty))
           | Enum [] ->
-              Fmt.kstr not_impl "Unsupported discriminant for emty enums"
+              Fmt.kstr not_impl "Unsupported discriminant for empty enums"
           | k ->
               Fmt.failwith "Expected an enum for discriminant, got %a"
                 Types.pp_type_decl_kind k
         in
-        Fmt.kstr print_endline "Loading discriminant of type %a at %a"
-          Types.pp_ty enum_discr_ty Typed.ppa place;
-        let++ value, state = Heap.load place enum_discr_ty state in
-        Fmt.kstr print_endline "Loaded discriminant %a at %a"
-          Charon_util.pp_rust_val value Typed.ppa place;
-        (value, state)
+        Heap.load place enum_discr_ty state
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
         let type_decl =
@@ -330,11 +321,9 @@ module Make (Heap : Heap_intf.S) = struct
 
   and exec_stmt ~prog store state astmt :
       (store * state, 'err, Heap.serialized list) Rustsymex.Result.t =
-    L.debug (fun m -> m "Executing statement: %a" UllbcAst.pp_statement astmt);
-    let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
-    Fmt.pr
-      "Executing statement: %s ------------------------------------------\n"
-      (PrintUllbcAst.Ast.statement_to_string ctx "" astmt);
+    L.info (fun m ->
+        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
+        m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
     let* () = Rustsymex.consume_fuel_steps 1 in
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
     let@ () = with_loc ~loc in
@@ -343,7 +332,6 @@ module Make (Heap : Heap_intf.S) = struct
     | Assign (({ ty; _ } as place), rval) ->
         let* ptr = resolve_place ~store state place in
         let** v, state = eval_rvalue ~prog ~store state rval in
-        Fmt.pr "Assigning %a to ptr %a\n" pp_rust_val v Typed.ppa ptr;
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
     | Call { func; args; dest = { kind = PlaceBase var; ty } } ->
@@ -355,7 +343,7 @@ module Make (Heap : Heap_intf.S) = struct
             (Call_trace.make_element ~loc ~msg:"Call trace" ())
         in
         L.debug (fun m ->
-            m "returned %a from %a" pp_rust_val v GAst.pp_fn_operand func);
+            m "Returned %a from %a" pp_rust_val v GAst.pp_fn_operand func);
         let ptr =
           match Store.find_value var store with
           | Some ptr -> ptr
@@ -378,8 +366,6 @@ module Make (Heap : Heap_intf.S) = struct
                 Expressions.pp_var_id var
         in
         let++ (), state = Heap.free ptr state in
-        Fmt.pr "Deallocating var %a -> %a\n" Expressions.pp_var_id var Typed.ppa
-          ptr;
         let store = Store.add var (None, ty) store in
         (store, state)
     | FakeRead _ ->
@@ -404,10 +390,10 @@ module Make (Heap : Heap_intf.S) = struct
       Rustsymex.Result.fold_list statements ~init:(store, state)
         ~f:(fun (store, state) stmt -> exec_stmt ~prog store state stmt)
     in
-    let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
-    Fmt.pr
-      "Executing terminator: %s ------------------------------------------\n"
-      (PrintUllbcAst.Ast.terminator_to_string ctx "" terminator);
+    L.debug (fun f ->
+        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
+        f "Terminator: %s"
+          (PrintUllbcAst.Ast.terminator_to_string ctx "" terminator));
     let { span = loc; content = term; _ } : UllbcAst.terminator = terminator in
     let@ () = with_loc ~loc in
     match term with
@@ -421,10 +407,7 @@ module Make (Heap : Heap_intf.S) = struct
           | Some x -> return x
           | None -> Fmt.kstr not_impl "Return value unset, but returned"
         in
-        Fmt.pr "Returning var %a -> %a\n" Expressions.pp_var_id
-          Expressions.VarId.zero Typed.ppa value_ptr;
         let++ value, _ = Heap.load value_ptr value_ty state in
-        Fmt.pr "Returning value %a\n" pp_rust_val value;
         (value, store, state)
     | Switch (discr, switch) -> (
         let** discr, state = eval_operand ~prog ~store state discr in
@@ -448,7 +431,7 @@ module Make (Heap : Heap_intf.S) = struct
             exec_block ~prog ~body store state block
         | SwitchInt (_, options, default) -> (
             let* block =
-              Rustsymex.fold_list options ~init:(Some default)
+              Rustsymex.fold_list options ~init:None
                 ~f:(fun block (test, if_equal) ->
                   match block with
                   | Some _ -> return block
@@ -458,13 +441,16 @@ module Make (Heap : Heap_intf.S) = struct
                       else return None)
             in
             match block with
-            | None -> vanish ()
+            | None ->
+                let block = UllbcAst.BlockId.nth body.body default in
+                exec_block ~prog ~body store state block
             | Some block ->
                 let block = UllbcAst.BlockId.nth body.body block in
                 exec_block ~prog ~body store state block))
-    | t ->
-        Fmt.kstr not_impl "Unsupported terminator: %a"
-          UllbcAst.pp_raw_terminator t
+    | Abort kind -> (
+        match kind with
+        | UndefinedBehavior -> Heap.error `UBAbort state
+        | _ -> Fmt.kstr not_impl "Abort kind %a" Types.pp_abort_kind kind)
 
   and exec_fun ~prog ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
@@ -475,11 +461,12 @@ module Make (Heap : Heap_intf.S) = struct
       | Some body -> Result.ok body
     in
     let@ () = with_loc ~loc in
-    let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
     L.info (fun m ->
-        m "Executing function %s" (PrintTypes.name_to_string ctx name));
-    (* TODO: Introduce a with_stack_allocation.
-           That would require some kind of continutation passing for executing a bunch of statements. *)
+        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
+        m "Calling %s with @[%a@]"
+          (PrintTypes.name_to_string ctx name)
+          Fmt.(list ~sep:comma pp_rust_val)
+          args);
     let** store, state = alloc_stack body.locals args state in
     (* TODO: local optimisation to put values in store directly when no address is taken. *)
     let starting_block = List.hd body.body in

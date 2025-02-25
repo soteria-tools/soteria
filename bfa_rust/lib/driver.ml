@@ -20,6 +20,7 @@ let pp_err ft (err, call_trace) =
     | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
     | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
     | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
+    | `UBAbort -> Fmt.string ft "UBAbort"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `Memory_leak -> Fmt.string ft "Memory leak"
@@ -65,13 +66,6 @@ let exec_main (crate : UllbcAst.crate) =
   let open Syntaxes.Result in
   let open Charon in
   Layout.Session.set_crate crate;
-  let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-  UllbcAst.FunDeclId.Map.iter
-    (fun _ (f : UllbcAst.fun_decl) ->
-      let s = PrintUllbcAst.Ast.any_decl_id_to_string (Types.IdFun f.def_id) in
-      let name = PrintTypes.name_to_string ctx f.item_meta.name in
-      Fmt.pr " %s, %s\n" name s)
-    crate.fun_decls;
   let+ _, entry_point =
     Types.FunDeclId.Map.bindings crate.fun_decls
     |> List.find_opt (fun (_, (decl : UllbcAst.blocks UllbcAst.gfun_decl)) ->
@@ -97,17 +91,28 @@ let exec_main_and_print log_level smt_file no_compile file_name =
     let* crate = parse_ullbc_of_file ~no_compile file_name in
     let* res = exec_main crate in
     let errors = Compo_res.only_errors @@ List.map fst res in
-    if List.is_empty errors then Ok (List.map snd res)
+    if List.is_empty errors then
+      res
+      |> List.filter_map (function
+           | Compo_res.Ok ok, pcs -> Some (ok, pcs)
+           | _ -> None)
+      |> Result.ok
     else
       let errors_parsed = Fmt.str "Errors: %a" Fmt.(Dump.list pp_err) errors in
       Error errors_parsed
   in
   match res with
-  | Ok pcs ->
+  | Ok res ->
       let open Fmt in
-      let n = List.length pcs in
+      let n = List.length res in
       let pp_pc ft pc =
-        pf ft "- @[%a@]" (list ~sep:(any " /\\ ") Typed.ppa) pc
+        pf ft "@[%a@]" (list ~sep:(any " /\\@, ") Typed.ppa) pc
       in
-      pr "Done. - Ran %i branches\n%a" n (list ~sep:(any "@\n@\n") pp_pc) pcs
-  | Error e -> Fmt.pr "Error: %s" e
+      let pp_info ft ((ret, heap), pc) =
+        pf ft "Returned: %a@\nHeap:@\n%a@\nPC: @[%a@]" Charon_util.pp_rust_val
+          ret Heap.pp heap pp_pc pc
+      in
+      Fmt.pr "Done. - Ran %i branches\n%a\n" n
+        (list ~sep:(any "@\n@\n") pp_info)
+        res
+  | Error e -> L.err (fun f -> f "Error: %s" e)

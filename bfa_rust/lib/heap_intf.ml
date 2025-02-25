@@ -65,7 +65,7 @@ module type S = sig
       serialized list )
     Rustsymex.Result.t
 
-  val error : 'a -> t -> ('ok * t, 'a err, serialized list) Rustsymex.Result.t
+  val error : 'a -> t -> ('ok, 'a err, serialized list) Rustsymex.Result.t
   val produce : serialized -> t -> t Rustsymex.t
 
   val consume :

@@ -17,6 +17,12 @@ end
 module Unop = struct
   type t = Not | GetPtrLoc | GetPtrOfs | IntOfBool
   [@@deriving eq, show { with_path = false }, ord]
+
+  let pp ft = function
+    | Not -> Fmt.string ft "!"
+    | GetPtrLoc -> Fmt.string ft "loc"
+    | GetPtrOfs -> Fmt.string ft "ofs"
+    | IntOfBool -> Fmt.string ft "int"
 end
 
 module Binop = struct
@@ -36,6 +42,19 @@ module Binop = struct
     | Times
     | Div
   [@@deriving eq, show { with_path = false }, ord]
+
+  let pp ft = function
+    | And -> Fmt.string ft "&&"
+    | Or -> Fmt.string ft "||"
+    | Eq -> Fmt.string ft "=="
+    | Geq -> Fmt.string ft ">="
+    | Gt -> Fmt.string ft ">"
+    | Leq -> Fmt.string ft "<="
+    | Lt -> Fmt.string ft "<"
+    | Plus -> Fmt.string ft "+"
+    | Minus -> Fmt.string ft "-"
+    | Times -> Fmt.string ft "*"
+    | Div -> Fmt.string ft "/"
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -79,6 +98,8 @@ let rec pp ft t =
   | Int z -> pf ft "%a" Z.pp_print z
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
+  | Unop (Not, { node = { kind = Binop (Eq, v1, v2); _ }; _ }) ->
+      pf ft "(%a != %a)" pp v1 pp v2
   | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
   | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
   | Nop (op, l) -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l

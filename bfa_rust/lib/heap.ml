@@ -61,7 +61,7 @@ let empty = None
 let log action ptr st =
   L.debug (fun m ->
       m "About to execute action: %s at %a (%a)@\n@[<2>HEAP:@ %a@]" action
-        Typed.ppa ptr Charon.Meta.pp_span (get_loc ())
+        Typed.ppa ptr Call_trace.pp_span (get_loc ())
         (pp_pretty ~ignore_freed:true)
         st)
 
@@ -89,12 +89,20 @@ let load ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
-  Fmt.kstr print_endline "Loading from %a type %a\n" Typed.ppa ptr
-    Charon.Types.pp_ty ty;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
   else (* TODO: reverse, find a way of encoding the conversion to a rust val *)
     with_ptr ptr st (fun ~ofs block ->
+        L.debug (fun f ->
+            f "Recursively reading from block tree:@\n%a@\n"
+              Fmt.(option ~none:(any "None") Tree_block.pp)
+              block);
         let rec aux (blocks, callback) =
+          let pp_block ft (ty, size, ofs) =
+            Fmt.pf ft "%a[%a] at %a" Charon.Types.pp_literal_type ty Typed.ppa
+              size Typed.ppa ofs
+          in
+          L.debug (fun f ->
+              f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
           let** values, block =
             Result.fold_list blocks ~init:([], block)
               ~f:(fun (vals, block) (ty, size, ofs) ->
@@ -104,9 +112,12 @@ let load ptr ty st =
           let* res = callback values in
           match res with
           | `Done v -> Result.ok (v, block)
-          | `More info -> aux info
+          | `More info -> (aux [@tailcall]) info
         in
-        aux (Layout.rust_of_cvals ~offset:ofs ty))
+        let++ value, block = aux (Layout.rust_of_cvals ~offset:ofs ty) in
+        L.debug (fun f ->
+            f "Finished reading rust value %a" Charon_util.pp_rust_val value);
+        (value, block))
 
 let store ptr ty sval st =
   let@ () = with_error_loc_as_call_trace () in
@@ -120,9 +131,8 @@ let store ptr ty sval st =
         Typed.ppa o Typed.ppa s
     in
 
-    Fmt.kstr print_endline "Parsed to parts [%a]\n"
-      (Fmt.list ~sep:Fmt.comma pp_quad)
-      parts;
+    L.debug (fun f ->
+        f "Parsed to parts [%a]\n" (Fmt.list ~sep:Fmt.comma pp_quad) parts);
     with_ptr ptr st (fun ~ofs block ->
         Result.fold_list parts ~init:((), block)
           ~f:(fun ((), block) (sval, ty, size, inner_ofs) ->
