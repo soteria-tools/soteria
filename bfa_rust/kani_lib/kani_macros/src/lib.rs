@@ -45,6 +45,7 @@ pub fn proof(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Adds `#[kanitool::proof]` and other attributes
     quote!(
         #[allow(dead_code)]
+        #[kanitool::proof]
         #(#attrs)*
         #vis #sig #body
     )

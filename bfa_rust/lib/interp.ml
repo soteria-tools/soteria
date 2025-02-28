@@ -158,6 +158,8 @@ module Make (Heap : Heap_intf.S) = struct
         | PeIdent ("any", _) :: _ ->
             let ty = fundef.signature.output in
             Rustsymex.return (Std.nondet ty)
+        | PeIdent ("assert", _) :: _ -> Rustsymex.return Std.assert_
+        | PeIdent ("assume", _) :: _ -> Rustsymex.return Std.assume
         | _ -> Rustsymex.return (exec_fun fundef))
     | None ->
         Fmt.kstr not_impl "Cannot call external function: %a"
@@ -192,6 +194,14 @@ module Make (Heap : Heap_intf.S) = struct
     let eval_operand = eval_operand ~prog ~store in
     match expr with
     | Use op -> eval_operand state op
+    | Global { global_id; _ } -> (
+        let decl =
+          UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(prog.global_decls)
+        in
+        match Std.global_eval ~crate:prog decl with
+        | None ->
+            Fmt.kstr not_impl "Global %a not found" GAst.pp_global_decl decl
+        | Some global -> Result.ok (global, state))
     | UnaryOp (op, e) -> (
         let** _v, _state = eval_operand state e in
         match op with
@@ -243,7 +253,20 @@ module Make (Heap : Heap_intf.S) = struct
               let* v2 = cast_checked v2 ~ty:Typed.t_int in
               let* v2 = Rustsymex.check_nonzero v2 in
               match v2 with
-              | Ok v2 -> Rustsymex.Result.ok (v1 /@ v2, state)
+              | Ok v2 ->
+                  let res = v1 /@ v2 in
+                  let* constraints =
+                    match type_of_operand e1 with
+                    | TLiteral ty ->
+                        Rustsymex.of_opt_not_impl ~msg:"Division constraints"
+                          (Layout.constraints ty)
+                    | ty ->
+                        Fmt.kstr Rustsymex.not_impl
+                          "Unexpected type in division: %a" Types.pp_ty ty
+                  in
+                  if%sat Typed.conj @@ constraints res then
+                    Rustsymex.Result.ok (v1 /@ v2, state)
+                  else Heap.error `Overflow state
               | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
               | Missing e -> (* Unreachable but still *) Rustsymex.Result.miss e
               )
