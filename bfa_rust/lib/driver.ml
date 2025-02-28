@@ -1,4 +1,4 @@
-open Charon
+open Utils.Syntax
 module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Bfa_symex.Compo_res
 
@@ -30,45 +30,65 @@ let pp_err ft (err, call_trace) =
   Format.close_box ()
 
 let res_of_code = function
-  | 0 -> Ok ()
-  | code -> Fmt.error "Error code: %d" code
+  | Ok 0 -> Ok ()
+  | Ok code -> Fmt.error "Error code: %d" code
+  | Error e -> Error e
 
 let ( let*> ) x f = Result.bind (res_of_code x) f
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~no_compile file_name =
+  let open Syntaxes.Result in
+  let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   let*> () =
     match no_compile with
-    | true -> 0
+    | true -> Ok 0
     | false ->
-        Fmt.kstr Sys.command
-          "charon --ullbc --rustc-arg=--extern=std --monomorphize \
-           --extract-opaque-bodies --no-cargo --include '*' --input %s \
-           --dest-file %s"
-          file_name output
+        (* load from env *)
+        let+ kani_lib =
+          try
+            match Sys.getenv "KANI_LIB_PATH" with
+            | path when String.ends_with ~suffix:"/" path -> Ok path
+            | path -> Ok (path ^ "/")
+          with Not_found -> Error "KANI_LIB_PATH not set"
+        in
+        let command =
+          Fmt.str
+            "cd %s && RUSTFLAGS=\"-Zcrate-attr=feature(register_tool) \
+             -Zcrate-attr=register_tool(kanitool)\" && charon --ullbc \
+             --opaque=kani --translate-all-methods --no-cargo \
+             --rustc-arg=--crate-type=lib --rustc-arg=-Zunstable-options \
+             --rustc-arg=-Zcrate-attr=feature\\(register_tool\\) \
+             --rustc-arg=--cfg=kani --rustc-arg=--extern=kani --rustc-arg=-v \
+             --rustc-arg=-L%skani/target/aarch64-apple-darwin/debug/deps \
+             --rustc-arg=-L%skani/target/debug/deps --input %s --dest-file %s"
+            parent_folder kani_lib kani_lib file_name output
+        in
+        Fmt.pf Fmt.stderr "Running command: %s\n" command;
+        Sys.command command
   in
   let json = Yojson.Basic.from_file output in
-  let crate = UllbcOfJson.crate_of_json json in
+  let crate = Charon.UllbcOfJson.crate_of_json json in
   (* save crate to local file *)
   let () =
     match (crate, no_compile) with
     | Ok crate, false ->
         let oc = open_out_bin (Printf.sprintf "%s.crate" file_name) in
-        let str = PrintUllbcAst.Crate.crate_to_string crate in
+        let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
         output_string oc str;
         close_out oc
     | _ -> ()
   in
   crate
 
-let exec_main (crate : UllbcAst.crate) =
+let exec_main (crate : Charon.UllbcAst.crate) =
   let open Syntaxes.Result in
   let open Charon in
   Layout.Session.set_crate crate;
-  let+ _, entry_point =
+  let+ entry_points =
     Types.FunDeclId.Map.bindings crate.fun_decls
-    |> List.find_opt (fun (_, (decl : UllbcAst.blocks UllbcAst.gfun_decl)) ->
+    |> List.filter (fun (_, (decl : UllbcAst.blocks UllbcAst.gfun_decl)) ->
            let name_rev = List.rev decl.item_meta.name in
            (* TODO: is the entry point the function with index 0? *)
            match (decl.item_meta.name, name_rev) with
@@ -76,12 +96,13 @@ let exec_main (crate : UllbcAst.crate) =
              when root = crate.name && fn = "main" ->
                true
            | _ -> false)
-    |> Option.fold ~none:(Error "No main function found") ~some:Result.ok
+    |> List.map snd
+    |> function
+    | [] -> Error "No main function found"
+    | rest -> Ok rest
   in
-  let symex =
-    Wpst_interp.exec_fun ~prog:crate ~args:[] ~state:Heap.empty entry_point
-  in
-  Rustsymex.run symex
+  let exec_fun = Wpst_interp.exec_fun ~prog:crate ~args:[] ~state:Heap.empty in
+  entry_points |> List.concat_map (Rustsymex.run << exec_fun)
 
 let exec_main_and_print log_level smt_file no_compile file_name =
   let open Syntaxes.Result in
@@ -114,5 +135,8 @@ let exec_main_and_print log_level smt_file no_compile file_name =
       in
       Fmt.pr "Done. - Ran %i branches\n%a\n" n
         (list ~sep:(any "@\n@\n") pp_info)
-        res
-  | Error e -> L.err (fun f -> f "Error: %s" e)
+        res;
+      exit 0
+  | Error e ->
+      L.err (fun f -> f "Error: %s" e);
+      exit 1

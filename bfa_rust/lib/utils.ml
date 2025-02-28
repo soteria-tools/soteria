@@ -25,3 +25,7 @@ module List_ex = struct
     in
     aux l
 end
+
+module Syntax = struct
+  let ( << ) f g x = f (g x)
+end
