@@ -34,16 +34,54 @@ dune build
 export KANI_LIB_PATH=$KANI_LIB_PATH
 (cd $KANI_LIB_PATH/kani && charon --only-cargo --lib --input ./src/)
 
+# Silence warnings
+export RUSTFLAGS="-Awarnings"
+
+# Handle arguments:
+# -f: filter tests
+FILTER=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+      -f|--filter)
+            FILTER=$2
+            shift
+            shift
+            ;;
+        -*|--*)
+            echo "Unknown option $1"
+            exit 1
+            ;;
+    esac
+done
+
+# If on MacOS, use coreutils:
+shopt -s expand_aliases
+alias date="gdate"
+alias realpath="grealpath"
+
 # Run all tests
-for test in $(find $KANI_PATH/tests/kani -name '*.rs' | sort); do
-    echo -e "${CYAN}-${RESET} Running $test ..."
-    start=$(date +%s)
-    dune exec --no-build -- bfa-rust exec-main $test 2>&1 >> $LOG_FILE
-    if [ $? -eq 0 ]; then
-        end=$(date +%s)
-        echo -e "  ${GREEN}Test passed in $((end-start)) seconds${RESET}"
+for test in $(find $KANI_PATH/tests/kani -name '*.rs' | grep $FILTER | sort); do
+    test_rel_name=$(realpath --relative-to=$KANI_PATH $test)
+    expect_failure=$(echo $test_rel_name | grep "_fail.rs")
+    echo -e "${CYAN}⭑${RESET} Running $test_rel_name ..."
+    echo "Running $test" >> $LOG_FILE
+    start=$(($(date +%s%N)/1000000))
+    # redirect both stdout and stderr to the log file
+    dune exec --no-build -- bfa-rust exec-main $test >> $LOG_FILE 2>>$LOG_FILE
+    result=$?
+    end=$(($(date +%s%N)/1000000))
+
+    if [ $result -eq 0 ] && [ -z $expect_failure ]; then
+        echo -e "  ${GREEN}Test passed${RESET} in $((end-start))ms"
+    elif [ $result -eq 1 ] && [ -n $expect_failure ]; then
+        echo -e "  ${GREEN}Test failed (expected)${RESET} in $((end-start))ms"
+    elif [ $result -eq 0 ] && [ -n $expect_failure ]; then
+        echo -e "  ${RED}Test passed (expected failure)${RESET}"
+        exit 1
     else
         echo -e "  ${RED}Test failed${RESET}"
         exit 1
     fi
+
+    echo -e "\n" >> $LOG_FILE
 done
