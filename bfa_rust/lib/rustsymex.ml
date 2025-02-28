@@ -3,7 +3,7 @@ include SYMEX
 module Meta = Charon.Meta
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
-    ([> Typed.T.nonzero ] Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
+    (Typed.T.nonzero Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
   let open Syntax in
   let open Typed.Infix in
   if%sat t ==@ Typed.zero then Result.error `NonZeroIsZero

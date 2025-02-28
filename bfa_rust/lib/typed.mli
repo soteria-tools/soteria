@@ -118,6 +118,7 @@ module Infix : sig
   val ( ~- ) : [< sint ] t -> [> sint ] t
   val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( /@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+  val ( %@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 end
 
 module Syntax : sig

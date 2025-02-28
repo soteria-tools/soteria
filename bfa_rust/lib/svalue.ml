@@ -41,6 +41,7 @@ module Binop = struct
     | Minus
     | Times
     | Div
+    | Rem
   [@@deriving eq, show { with_path = false }, ord]
 
   let pp ft = function
@@ -55,6 +56,7 @@ module Binop = struct
     | Minus -> Fmt.string ft "-"
     | Times -> Fmt.string ft "*"
     | Div -> Fmt.string ft "/"
+    | Rem -> Fmt.string ft "%"
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -285,6 +287,7 @@ let plus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.add ~binop:Plus
 let minus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.sub ~binop:Minus
 let times = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.mul ~binop:Times
 let div = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.div ~binop:Div
+let rem = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.rem ~binop:Rem
 
 (* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
 let not_int_bool sv =
@@ -338,6 +341,7 @@ module Infix = struct
   let ( ~- ) x = minus zero x
   let ( *@ ) = times
   let ( /@ ) = div
+  let ( %@ ) = rem
 end
 
 module Syntax = struct

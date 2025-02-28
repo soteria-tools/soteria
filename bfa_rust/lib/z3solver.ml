@@ -269,7 +269,8 @@ let rec encode_value (v : Svalue.t) =
       | Plus -> num_add v1 v2
       | Minus -> num_sub v1 v2
       | Times -> num_mul v1 v2
-      | Div -> num_div v1 v2)
+      | Div -> num_div v1 v2
+      | Rem -> num_rem v1 v2)
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in
       distinct vs

@@ -81,6 +81,19 @@ module Make (Heap : Heap_intf.S) = struct
   let resolve_place ~store state ({ kind; _ } : Expressions.place) =
     resolve_place_kind ~store state kind
 
+  let overflow_check state v (ty : Types.ty) =
+    let* constraints =
+      match ty with
+      | TLiteral ty ->
+          Rustsymex.of_opt_not_impl ~msg:"Constraints for overflow check"
+            (Layout.constraints ty)
+      | ty ->
+          Fmt.kstr Rustsymex.not_impl "Unexpected type for overflow check: %a"
+            Types.pp_ty ty
+    in
+    if%sat Typed.conj @@ constraints v then Rustsymex.Result.ok (v, state)
+    else Heap.error `Overflow state
+
   let rec equality_check ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
@@ -253,20 +266,29 @@ module Make (Heap : Heap_intf.S) = struct
               let* v2 = cast_checked v2 ~ty:Typed.t_int in
               let* v2 = Rustsymex.check_nonzero v2 in
               match v2 with
-              | Ok v2 ->
-                  let res = v1 /@ v2 in
-                  let* constraints =
-                    match type_of_operand e1 with
-                    | TLiteral ty ->
-                        Rustsymex.of_opt_not_impl ~msg:"Division constraints"
-                          (Layout.constraints ty)
-                    | ty ->
-                        Fmt.kstr Rustsymex.not_impl
-                          "Unexpected type in division: %a" Types.pp_ty ty
-                  in
-                  if%sat Typed.conj @@ constraints res then
-                    Rustsymex.Result.ok (v1 /@ v2, state)
-                  else Heap.error `Overflow state
+              | Ok v2 -> overflow_check state (v1 /@ v2) (type_of_operand e1)
+              | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
+              | Missing e -> (* Unreachable but still *) Rustsymex.Result.miss e
+              )
+          | Rem -> (
+              let* v1 = cast_checked v1 ~ty:Typed.t_int in
+              let* v2 = cast_checked v2 ~ty:Typed.t_int in
+              let* v2 = Rustsymex.check_nonzero v2 in
+              match v2 with
+              | Ok v2 -> (
+                  match type_of_operand e1 with
+                  | TLiteral (TInteger ty) ->
+                      let min_val = Layout.min_value ty in
+                      (* Overflow if left is MIN and right is -1 *)
+                      if%sat
+                        v1
+                        ==@ min_val
+                        &&@ ((v2 :> T.sint Typed.t) ==@ Typed.int (-1))
+                      then Heap.error `Overflow state
+                      else Rustsymex.Result.ok (v1 %@ v2, state)
+                  | ty ->
+                      Fmt.kstr not_impl "Unsupported type for rem: %a"
+                        Types.pp_ty ty)
               | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
               | Missing e -> (* Unreachable but still *) Rustsymex.Result.miss e
               )

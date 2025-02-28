@@ -178,6 +178,16 @@ let size_of_s ty =
     Fmt.kstr Rustsymex.not_impl "Cannot yet compute size of type %a" Types.pp_ty
       ty
 
+let min_value : Types.integer_type -> sint = function
+  | U128 | U64 | U32 | U16 | U8 | Usize -> Typed.int_z Z.zero
+  | Isize ->
+      Typed.int_z (Z.neg (Z.shift_left Z.one ((8 * Archi.word_size) - 1)))
+  | I128 -> Typed.int_z (Z.neg (Z.shift_left Z.one 127))
+  | I64 -> Typed.int_z (Z.neg (Z.shift_left Z.one 63))
+  | I32 -> Typed.int_z (Z.neg (Z.shift_left Z.one 31))
+  | I16 -> Typed.int_z (Z.neg (Z.shift_left Z.one 15))
+  | I8 -> Typed.int_z (Z.neg (Z.shift_left Z.one 7))
+
 let int_constraints : Types.integer_type -> sint -> sbool list = function
   | (I128 | I64 | I32 | I16 | I8 | Isize) as int_ty ->
       let size = size_of_int_ty int_ty in
