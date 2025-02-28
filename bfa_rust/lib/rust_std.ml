@@ -53,7 +53,7 @@ module M (Heap : Heap_intf.S) = struct
     let ctx = ctx_from_crate crate in
     NameMatcherMap.find_opt ctx match_config g.item_meta.name global_map
 
-  let assert_ ~prog:_ ~(args : rust_val list) ~state =
+  let assert_ ~crate:_ ~(args : rust_val list) ~state =
     let open Typed.Infix in
     let* to_assert =
       match args with
@@ -65,7 +65,7 @@ module M (Heap : Heap_intf.S) = struct
     if%sat to_assert ==@ 0s then Heap.error `FailedAssert state
     else Result.ok (Charon_util.unit_, state)
 
-  let assume ~prog:_ ~args ~state =
+  let assume ~crate:_ ~args ~state =
     let* to_assume =
       match args with
       | [ Base t ] ->
@@ -77,7 +77,7 @@ module M (Heap : Heap_intf.S) = struct
     let* () = Rustsymex.assume [ Typed.bool_of_int to_assume ] in
     Result.ok (Charon_util.unit_, state)
 
-  let nondet ~prog:_ ~args:_ ~state ty =
+  let nondet ~crate:_ ~args:_ ~state ty =
     let* value = Layout.nondet ty in
     Result.ok (value, state)
 end

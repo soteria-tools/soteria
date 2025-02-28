@@ -99,7 +99,7 @@ step=0
 for test in $TESTS; do
     test_rel_name=$(realpath --relative-to=$KANI_PATH $test)
     expect_failure=$(echo $test_rel_name | grep "_fail.rs")
-    echo -en "$(rainbow step)⭑${RESET} Running $test_rel_name ..."
+    echo -en "$(rainbow step)|${RESET} Running $test_rel_name ..."
     echo "Running $test" >> $LOG_FILE
     start=$(($(date +%s%N)/1000000))
     # redirect both stdout and stderr to the log file

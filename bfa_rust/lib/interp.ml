@@ -26,7 +26,7 @@ module Make (Heap : Heap_intf.S) = struct
           Typed.ppa_ty ty
 
   type 'err fun_exec =
-    prog:UllbcAst.crate ->
+    crate:UllbcAst.crate ->
     args:rust_val list ->
     state:state ->
     (rust_val * state, 'err, Heap.serialized list) Result.t
@@ -55,13 +55,13 @@ module Make (Heap : Heap_intf.S) = struct
             let++ (), st = Heap.free ptr st in
             st)
 
-  let debug_show ~prog:_ ~args:_ ~state =
+  let debug_show ~crate:_ ~args:_ ~state =
     let loc = get_loc () in
     let str = (Fmt.to_to_string (Heap.pp_pretty ~ignore_freed:false)) state in
     Rustsymex.push_give_up (str, loc);
     Result.ok (0s, state)
 
-  let find_stub ~prog:_ (fname : Types.name) : 'err fun_exec option =
+  let find_stub ~crate:_ (fname : Types.name) : 'err fun_exec option =
     let name = List.hd @@ List.rev fname in
     match name with PeIdent (_name, _) -> None | _ -> None
 
@@ -140,7 +140,7 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
           Typed.ppa v1 Typed.ppa v2
 
-  let rec resolve_function ~(prog : UllbcAst.crate) (fnop : GAst.fn_operand) :
+  let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
       'err fun_exec Rustsymex.t =
     let* fid =
       match fnop with
@@ -164,7 +164,7 @@ module Make (Heap : Heap_intf.S) = struct
           Fmt.kstr not_impl "Move function call is not supported: %a"
             GAst.pp_fn_operand fnop
     in
-    let fundef_opt = Expressions.FunDeclId.Map.find_opt fid prog.fun_decls in
+    let fundef_opt = Expressions.FunDeclId.Map.find_opt fid crate.fun_decls in
     match fundef_opt with
     | Some fundef -> (
         match List.rev fundef.item_meta.name with
@@ -178,7 +178,7 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Cannot call external function: %a"
           Expressions.FunDeclId.pp_id fid
 
-  and eval_operand ~prog:_prog ~store state (op : Expressions.operand) =
+  and eval_operand ~crate:_ ~store state (op : Expressions.operand) =
     match op with
     | Constant c ->
         let v = value_of_constant c in
@@ -195,23 +195,23 @@ module Make (Heap : Heap_intf.S) = struct
         let** v, state = Heap.load loc ty state in
         Result.ok (v, state)
 
-  and eval_operand_list ~prog ~store state ops =
+  and eval_operand_list ~crate ~store state ops =
     let++ vs, state =
       Result.fold_list ops ~init:([], state) ~f:(fun (acc, state) op ->
-          let++ new_res, state = eval_operand ~prog ~store state op in
+          let++ new_res, state = eval_operand ~crate ~store state op in
           (new_res :: acc, state))
     in
     (List.rev vs, state)
 
-  and eval_rvalue ~prog ~store state (expr : Expressions.rvalue) =
-    let eval_operand = eval_operand ~prog ~store in
+  and eval_rvalue ~crate ~store state (expr : Expressions.rvalue) =
+    let eval_operand = eval_operand ~crate ~store in
     match expr with
     | Use op -> eval_operand state op
     | Global { global_id; _ } -> (
         let decl =
-          UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(prog.global_decls)
+          UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
         in
-        match Std.global_eval ~crate:prog decl with
+        match Std.global_eval ~crate decl with
         | None ->
             Fmt.kstr not_impl "Global %a not found" GAst.pp_global_decl decl
         | Some global -> Result.ok (global, state))
@@ -311,7 +311,7 @@ module Make (Heap : Heap_intf.S) = struct
         (Base res, state)
     | Discriminant (place, kind) ->
         let* place = resolve_place ~store state place in
-        let enum = Types.TypeDeclId.Map.find kind UllbcAst.(prog.type_decls) in
+        let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
         let* enum_discr_ty =
           match enum.kind with
           | Enum (var :: _) ->
@@ -327,7 +327,7 @@ module Make (Heap : Heap_intf.S) = struct
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
         let type_decl =
-          Types.TypeDeclId.Map.find t_id UllbcAst.(prog.type_decls)
+          Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
         in
         let variant =
           match (type_decl : Types.type_decl) with
@@ -337,7 +337,7 @@ module Make (Heap : Heap_intf.S) = struct
                 Types.pp_type_decl type_decl
         in
         let discr = value_of_scalar variant.discriminant in
-        let++ vals, state = eval_operand_list ~prog ~store state vals in
+        let++ vals, state = eval_operand_list ~crate ~store state vals in
         (Enum (discr, vals), state)
     (* Union aggregate *)
     | Aggregate (AggregatedAdt (_, None, Some _, _), _) as v ->
@@ -356,18 +356,18 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.failwith "Invalid aggregate rvalue: %a" Expressions.pp_rvalue v
     | v -> Fmt.kstr not_impl "Unsupported rvalue: %a" Expressions.pp_rvalue v
 
-  and eval_rvalue_list ~prog ~(store : store) (state : state) el =
+  and eval_rvalue_list ~crate ~(store : store) (state : state) el =
     let++ vs, state =
       Rustsymex.Result.fold_list el ~init:([], state) ~f:(fun (acc, state) e ->
-          let++ new_res, state = eval_rvalue ~prog ~store state e in
+          let++ new_res, state = eval_rvalue ~crate ~store state e in
           (new_res :: acc, state))
     in
     (List.rev vs, state)
 
-  and exec_stmt ~prog store state astmt :
+  and exec_stmt ~crate store state astmt :
       (store * state, 'err, Heap.serialized list) Rustsymex.Result.t =
     L.info (fun m ->
-        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
+        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
     let* () = Rustsymex.consume_fuel_steps 1 in
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
@@ -376,14 +376,14 @@ module Make (Heap : Heap_intf.S) = struct
     | Nop -> Result.ok (store, state)
     | Assign (({ ty; _ } as place), rval) ->
         let* ptr = resolve_place ~store state place in
-        let** v, state = eval_rvalue ~prog ~store state rval in
+        let** v, state = eval_rvalue ~crate ~store state rval in
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
     | Call { func; args; dest = { kind = PlaceBase var; ty } } ->
-        let* exec_fun = resolve_function ~prog func in
-        let** args, state = eval_operand_list ~prog ~store state args in
+        let* exec_fun = resolve_function ~crate func in
+        let** args, state = eval_operand_list ~crate ~store state args in
         let** v, state =
-          let+- err = exec_fun ~prog ~args ~state in
+          let+- err = exec_fun ~crate ~args ~state in
           Heap.add_to_call_trace err
             (Call_trace.make_element ~loc ~msg:"Call trace" ())
         in
@@ -429,14 +429,14 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
           s
 
-  and exec_block ~prog ~(body : UllbcAst.expr_body) store state
+  and exec_block ~crate ~(body : UllbcAst.expr_body) store state
       ({ statements; terminator } : UllbcAst.block) =
     let** store, state =
       Rustsymex.Result.fold_list statements ~init:(store, state)
-        ~f:(fun (store, state) stmt -> exec_stmt ~prog store state stmt)
+        ~f:(fun (store, state) stmt -> exec_stmt ~crate store state stmt)
     in
     L.debug (fun f ->
-        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
+        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         f "Terminator: %s"
           (PrintUllbcAst.Ast.terminator_to_string ctx "" terminator));
     let { span = loc; content = term; _ } : UllbcAst.terminator = terminator in
@@ -444,7 +444,7 @@ module Make (Heap : Heap_intf.S) = struct
     match term with
     | Goto b ->
         let block = UllbcAst.BlockId.nth body.body b in
-        exec_block ~prog ~body store state block
+        exec_block ~crate ~body store state block
     | Return ->
         let value_ptr, value_ty = Store.find Expressions.VarId.zero store in
         let* value_ptr =
@@ -455,7 +455,7 @@ module Make (Heap : Heap_intf.S) = struct
         let++ value, _ = Heap.load value_ptr value_ty state in
         (value, store, state)
     | Switch (discr, switch) -> (
-        let** discr, state = eval_operand ~prog ~store state discr in
+        let** discr, state = eval_operand ~crate ~store state discr in
         let discr =
           match discr with
           | Base discr -> discr
@@ -473,7 +473,7 @@ module Make (Heap : Heap_intf.S) = struct
               else return else_block
             in
             let block = UllbcAst.BlockId.nth body.body block in
-            exec_block ~prog ~body store state block
+            exec_block ~crate ~body store state block
         | SwitchInt (_, options, default) -> (
             let* block =
               Rustsymex.fold_list options ~init:None
@@ -488,26 +488,29 @@ module Make (Heap : Heap_intf.S) = struct
             match block with
             | None ->
                 let block = UllbcAst.BlockId.nth body.body default in
-                exec_block ~prog ~body store state block
+                exec_block ~crate ~body store state block
             | Some block ->
                 let block = UllbcAst.BlockId.nth body.body block in
-                exec_block ~prog ~body store state block))
+                exec_block ~crate ~body store state block))
     | Abort kind -> (
         match kind with
         | UndefinedBehavior -> Heap.error `UBAbort state
         | _ -> Fmt.kstr not_impl "Abort kind %a" Types.pp_abort_kind kind)
 
-  and exec_fun ~prog ~args ~state (fundef : UllbcAst.fun_decl) =
+  and exec_fun ~crate ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
     let** body =
       match body with
-      | None -> Fmt.kstr not_impl "Function %a is opaque" Types.pp_name name
+      | None ->
+          let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+          Fmt.kstr not_impl "Function %s is opaque"
+            (PrintTypes.name_to_string ctx name)
       | Some body -> Result.ok body
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
-        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env prog in
+        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         m "Calling %s with @[%a@]"
           (PrintTypes.name_to_string ctx name)
           Fmt.(list ~sep:comma pp_rust_val)
@@ -516,7 +519,7 @@ module Make (Heap : Heap_intf.S) = struct
     (* TODO: local optimisation to put values in store directly when no address is taken. *)
     let starting_block = List.hd body.body in
     let** value, store, state =
-      exec_block ~prog ~body store state starting_block
+      exec_block ~crate ~body store state starting_block
     in
     let++ state = dealloc_store store state in
     (* We model void as zero, it should never be used anyway *)

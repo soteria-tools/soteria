@@ -144,7 +144,7 @@ let exec_main (crate : Charon.UllbcAst.crate) =
     | [] -> Fatal "No main function found"
     | rest -> Ok rest
   in
-  let exec_fun = Wpst_interp.exec_fun ~prog:crate ~args:[] ~state:Heap.empty in
+  let exec_fun = Wpst_interp.exec_fun ~crate ~args:[] ~state:Heap.empty in
   entry_points |> List.concat_map (Rustsymex.run << exec_fun)
 
 let exec_main_and_print log_level smt_file no_compile file_name =
