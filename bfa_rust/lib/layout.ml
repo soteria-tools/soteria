@@ -141,6 +141,8 @@ let rec layout_of : Types.ty -> layout = function
       | { kind; _ } ->
           Fmt.pr "Unspported ADT kind %a" Types.pp_type_decl_kind kind;
           failwith "Unsupported ADT kind")
+  | TRef (_, _, _) ->
+      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   | ty ->
       L.debug (fun m -> m "Cannot compute layout of %a" Types.pp_ty ty);
       raise (CantComputeLayout ty)
@@ -178,8 +180,8 @@ let size_of_s ty =
     Fmt.kstr Rustsymex.not_impl "Cannot yet compute size of type %a" Types.pp_ty
       ty
 
-let min_value : Types.integer_type -> sint = function
-  | U128 | U64 | U32 | U16 | U8 | Usize -> Typed.int_z Z.zero
+let min_value : Types.integer_type -> [> Typed.T.sint ] Typed.t = function
+  | U128 | U64 | U32 | U16 | U8 | Usize -> 0s
   | Isize ->
       Typed.int_z (Z.neg (Z.shift_left Z.one ((8 * Archi.word_size) - 1)))
   | I128 -> Typed.int_z (Z.neg (Z.shift_left Z.one 127))
@@ -188,16 +190,25 @@ let min_value : Types.integer_type -> sint = function
   | I16 -> Typed.int_z (Z.neg (Z.shift_left Z.one 15))
   | I8 -> Typed.int_z (Z.neg (Z.shift_left Z.one 7))
 
-let int_constraints : Types.integer_type -> sint -> sbool list = function
-  | (I128 | I64 | I32 | I16 | I8 | Isize) as int_ty ->
-      let size = size_of_int_ty int_ty in
-      let min = Z.neg (Z.shift_left Z.one ((size * 8) - 1)) in
-      let max = Z.pred (Z.shift_left Z.one ((size * 8) - 1)) in
-      fun x -> [ Typed.int_z min <=@ x; x <=@ Typed.int_z max ]
-  | (U128 | U64 | U32 | U16 | U8 | Usize) as int_ty ->
-      let size = size_of_int_ty int_ty in
-      let max = Z.pred (Z.shift_left Z.one (size * 8)) in
-      fun x -> [ 0s <=@ x; x <=@ Typed.int_z max ]
+let max_value : Types.integer_type -> [> Typed.T.sint ] Typed.t = function
+  | U128 -> Typed.int_z (Z.pred (Z.shift_left Z.one 128))
+  | U64 -> Typed.int_z (Z.pred (Z.shift_left Z.one 64))
+  | U32 -> Typed.int_z (Z.pred (Z.shift_left Z.one 32))
+  | U16 -> Typed.int_z (Z.pred (Z.shift_left Z.one 16))
+  | U8 -> Typed.int_z (Z.pred (Z.shift_left Z.one 8))
+  | Usize -> Typed.int_z (Z.pred (Z.shift_left Z.one (8 * Archi.word_size)))
+  | I128 -> Typed.int_z (Z.pred (Z.shift_left Z.one 127))
+  | I64 -> Typed.int_z (Z.pred (Z.shift_left Z.one 63))
+  | I32 -> Typed.int_z (Z.pred (Z.shift_left Z.one 31))
+  | I16 -> Typed.int_z (Z.pred (Z.shift_left Z.one 15))
+  | I8 -> Typed.int_z (Z.pred (Z.shift_left Z.one 7))
+  | Isize ->
+      Typed.int_z (Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1)))
+
+let int_constraints ty =
+  let min = min_value ty in
+  let max = max_value ty in
+  fun x -> [ min <=@ x; x <=@ max ]
 
 let constraints : Types.literal_type -> (cval -> sbool list) option = function
   | TInteger ity ->

@@ -61,10 +61,6 @@ module Make (Heap : Heap_intf.S) = struct
     Rustsymex.push_give_up (str, loc);
     Result.ok (0s, state)
 
-  let find_stub ~crate:_ (fname : Types.name) : 'err fun_exec option =
-    let name = List.hd @@ List.rev fname in
-    match name with PeIdent (_name, _) -> None | _ -> None
-
   let resolve_place_kind ~store _state :
       Expressions.place_kind -> T.sptr Typed.t Rustsymex.t = function
     | PlaceBase var -> (
@@ -167,13 +163,9 @@ module Make (Heap : Heap_intf.S) = struct
     let fundef_opt = Expressions.FunDeclId.Map.find_opt fid crate.fun_decls in
     match fundef_opt with
     | Some fundef -> (
-        match List.rev fundef.item_meta.name with
-        | PeIdent ("any", _) :: _ ->
-            let ty = fundef.signature.output in
-            Rustsymex.return (Std.nondet ty)
-        | PeIdent ("assert", _) :: _ -> Rustsymex.return Std.assert_
-        | PeIdent ("assume", _) :: _ -> Rustsymex.return Std.assume
-        | _ -> Rustsymex.return (exec_fun fundef))
+        match Std.std_fun_eval ~crate fundef with
+        | Some fn -> Rustsymex.return fn
+        | None -> Rustsymex.return (exec_fun fundef))
     | None ->
         Fmt.kstr not_impl "Cannot call external function: %a"
           Expressions.FunDeclId.pp_id fid
