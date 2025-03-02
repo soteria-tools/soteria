@@ -88,6 +88,7 @@ val plus : [< sint ] t -> [< sint ] t -> [> sint ] t
 val minus : [< sint ] t -> [< sint ] t -> [> sint ] t
 val times : [< sint ] t -> [< sint ] t -> [> sint ] t
 val div : [< sint ] t -> nonzero t -> [> sint ] t
+val rem : [< sint ] t -> nonzero t -> [> sint ] t
 
 module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t

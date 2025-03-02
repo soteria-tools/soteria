@@ -230,6 +230,10 @@ let nondet_literal_ty : Types.literal_type -> cval Rustsymex.t =
       let constrs = int_constraints ity in
       let+ res = Rustsymex.nondet ~constrs Typed.t_int in
       (res :> cval)
+  | TBool ->
+      let constrs = fun x -> [ x ==@ 0s ||@ (x ==@ 1s) ] in
+      let+ res = Rustsymex.nondet ~constrs Typed.t_int in
+      (res :> cval)
   | ty ->
       Rustsymex.not_impl
         (Fmt.str "nondet_literal_ty: unsupported type %a" Types.pp_literal_type

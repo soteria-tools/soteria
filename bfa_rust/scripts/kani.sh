@@ -104,6 +104,13 @@ step=0
 for test in $TESTS; do
     test_rel_name=$(realpath --relative-to=$KANI_PATH $test)
     expect_failure=$(echo $test_rel_name | grep "_fail.rs")
+
+    # if file ends with "/unsafe.rs",
+    if [[ "$test_rel_name" == *"/unsafe.rs" ]]; then
+        cp "$test" "__temp_unsafe.rs"
+        test="__temp_unsafe.rs"
+    fi
+
     echo -en "$(rainbow step)|${RESET} Running $test_rel_name ..."
     echo "Running $test" >> $LOG_FILE
     start=$(($(date +%s%N)/1000000))
@@ -111,6 +118,10 @@ for test in $TESTS; do
     dune exec --no-build -- $CMD $test >> $LOG_FILE 2>>$LOG_FILE
     result=$?
     end=$(($(date +%s%N)/1000000))
+
+    if [ "$test" == "__temp_unsafe.rs" ]; then
+        rm "__temp_unsafe.rs"
+    fi
 
     if [ $result -eq 0 ] && [ -z $expect_failure ]; then
         echo -e " ${GREEN}passed${RESET} in $((end-start))ms"

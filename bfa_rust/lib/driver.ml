@@ -178,10 +178,7 @@ let exec_main_and_print log_level smt_file no_compile file_name =
       let pp_pc ft pc =
         pf ft "@[%a@]" (list ~sep:(any " /\\@, ") Typed.ppa) pc
       in
-      let pp_info ft ((ret, heap), pc) =
-        pf ft "Returned: %a@\nHeap:@\n%a@\nPC: @[%a@]" Charon_util.pp_rust_val
-          ret Heap.pp heap pp_pc pc
-      in
+      let pp_info ft (_, pc) = pf ft "PC: @[%a@]" pp_pc pc in
       Fmt.pr "Done. - Ran %i branches\n%a\n" n
         (list ~sep:(any "@\n@\n") pp_info)
         res;

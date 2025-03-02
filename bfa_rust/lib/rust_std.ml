@@ -96,6 +96,36 @@ module M (Heap : Heap_intf.S) = struct
     if%sat Typed.conj @@ constrs res then Result.ok (Base res, state)
     else Heap.error `Overflow state
 
+  let wrapping_add (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+    let* ty =
+      match fun_sig.inputs with
+      | TLiteral (TInteger ty) :: _ -> return ty
+      | ty :: _ ->
+          Fmt.kstr not_impl "wrapping_add with non integer: %a" Types.pp_ty ty
+      | [] -> not_impl "wrapping_add with no inputs"
+    in
+    let min = Layout.min_value ty in
+    let max = Layout.max_value ty in
+    let* left, right =
+      match args with
+      | [ Base left; Base right ] ->
+          let* left =
+            of_opt_not_impl ~msg:"not an integer"
+              (Typed.cast_checked left Typed.t_int)
+          in
+          let+ right =
+            of_opt_not_impl ~msg:"not an integer"
+              (Typed.cast_checked right Typed.t_int)
+          in
+          (left, right)
+      | _ -> not_impl "checked_op with not two arguments"
+    in
+    let res = left +@ right in
+    if%sat res >@ max then Result.ok (Base (min +@ (res -@ max)), state)
+    else
+      if%sat res <@ min then Result.ok (Base (max -@ (min -@ res)), state)
+      else Result.ok (Base res, state)
+
   let is_some (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let* val_ptr =
       match args with
@@ -120,6 +150,31 @@ module M (Heap : Heap_intf.S) = struct
     in
     if%sat discr ==@ 0s then Result.ok (Base 0s, state)
     else Result.ok (Base 1s, state)
+
+  let is_none (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+    let* val_ptr =
+      match args with
+      | [ Base ptr ] ->
+          of_opt_not_impl ~msg:"not an integer"
+            (Typed.cast_checked ptr Typed.t_ptr)
+      | _ -> not_impl "is_none expects a single ptr argument"
+    in
+    let* opt_ty =
+      match fun_sig.inputs with
+      | [ Types.TRef (_, ty, _) ] -> return ty
+      | _ -> not_impl "unexpected is_none input type"
+    in
+    let** enum_value, state = Heap.load val_ptr opt_ty state in
+    let* discr =
+      match enum_value with
+      | Enum (discr, _) -> return discr
+      | _ ->
+          Fmt.kstr not_impl
+            "expected value pointed to in is_none to be an enum, got %a"
+            pp_rust_val enum_value
+    in
+    if%sat discr ==@ 0s then Result.ok (Base 1s, state)
+    else Result.ok (Base 0s, state)
 
   let unwrap _ ~crate:_ ~args ~state =
     let* discr, value =
@@ -172,7 +227,9 @@ module M (Heap : Heap_intf.S) = struct
     | Any
     | Checked of std_op
     | Unchecked of std_op
+    | WrappingAdd
     | IsSome
+    | IsNone
     | Unwrap
 
   let std_fun_map =
@@ -186,7 +243,10 @@ module M (Heap : Heap_intf.S) = struct
       ("core::num::{@N}::unchecked_sub", Unchecked Sub);
       ("core::num::{@N}::checked_mul", Checked Mul);
       ("core::num::{@N}::unchecked_mul", Unchecked Mul);
+      ("core::num::{@N}::wrapping_add", WrappingAdd);
+      ("core::intrinsics::wrapping_add", WrappingAdd);
       ("core::option::{@T}::is_some", IsSome);
+      ("core::option::{@T}::is_none", IsNone);
       ("core::option::{@T}::unwrap", Unwrap);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
@@ -211,6 +271,8 @@ module M (Heap : Heap_intf.S) = struct
        | Any -> nondet f.signature
        | Checked op -> checked_op (op_of op) f.signature
        | Unchecked op -> unchecked_op (op_of op) f.signature
+       | WrappingAdd -> wrapping_add f.signature
        | IsSome -> is_some f.signature
+       | IsNone -> is_none f.signature
        | Unwrap -> unwrap f.signature
 end
