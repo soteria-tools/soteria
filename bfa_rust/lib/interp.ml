@@ -199,6 +199,9 @@ module Make (Heap : Heap_intf.S) = struct
     let eval_operand = eval_operand ~crate ~store in
     match expr with
     | Use op -> eval_operand state op
+    | RvRef (place, _borrow) ->
+        let* ptr = resolve_place ~store state place in
+        Result.ok (Base (ptr :> T.cval Typed.t), state)
     | Global { global_id; _ } -> (
         let decl =
           UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
@@ -361,6 +364,7 @@ module Make (Heap : Heap_intf.S) = struct
     L.info (fun m ->
         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
+    L.debug (fun m -> m "Statement full: %a" UllbcAst.pp_statement astmt);
     let* () = Rustsymex.consume_fuel_steps 1 in
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
     let@ () = with_loc ~loc in

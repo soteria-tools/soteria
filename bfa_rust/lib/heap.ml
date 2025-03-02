@@ -98,8 +98,9 @@ let load ptr ty st =
               block);
         let rec aux (blocks, callback) =
           let pp_block ft (ty, size, ofs) =
-            Fmt.pf ft "%a[%a] at %a" Charon.Types.pp_literal_type ty Typed.ppa
-              size Typed.ppa ofs
+            Fmt.pf ft "%s [%a, +%a[ "
+              (Charon_util.lit_to_string ty)
+              Typed.ppa ofs Typed.ppa size
           in
           L.debug (fun f ->
               f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);

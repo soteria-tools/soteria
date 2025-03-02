@@ -283,6 +283,8 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) :
   match (v, ty) with
   | Base v, TLiteral ty ->
       [ (v, ty, Typed.int (size_of_literal_ty ty), Typed.zero) ]
+  | Base v, TRef _ ->
+      [ (v, TInteger Isize, Typed.int Archi.word_size, Typed.zero) ]
   | Tuple [], TAdt (TTuple, g) when g = empty_generics -> []
   | Enum (disc, vals), TAdt (TAdtId t_id, _) ->
       let type_decl =
@@ -348,9 +350,15 @@ let rust_of_cvals ?offset ty =
           fun v ->
             if Stdlib.not (List.length v = 1) then failwith "Expected one cval"
             else return (`Done (Base (List.hd v))) )
+    | TRef _ ->
+        ( [ (TInteger Isize, Typed.int Archi.word_size, 0s) ],
+          fun v ->
+            if Stdlib.not (List.length v = 1) then failwith "Expected one cval"
+            else return (`Done (Base (List.hd v))) )
     | TAdt (TTuple, g) when g = empty_generics ->
         ([], fun _ -> return (`Done (Tuple [])))
     | TAdt (TAdtId t_id, _) ->
+        L.info (fun g -> g "Looking for TAdtId %a" Types.pp_type_decl_id t_id);
         let type_decl =
           Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
         in

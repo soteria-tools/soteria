@@ -64,6 +64,7 @@ export RUSTFLAGS="-Awarnings"
 # -f --filter: filter tests
 # -e --exclude: exclude tests
 # --no-compile: do not compile the tests
+# -v: verbose
 CMD="bfa-rust exec-main"
 TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)
 while [[ $# -gt 0 ]]; do
@@ -80,6 +81,10 @@ while [[ $# -gt 0 ]]; do
             ;;
       --no-compile)
             CMD="$CMD --no-compile"
+            shift
+            ;;
+      -v)
+            CMD="$CMD -v"
             shift
             ;;
       -*|--*)

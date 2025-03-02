@@ -20,29 +20,9 @@ module MemVal = struct
   type t = { value : T.cval Typed.t; ty : Values.literal_type }
   [@@deriving make]
 
-  let lit_to_string : Values.literal_type -> string = function
-    | TInteger Isize -> "isize"
-    | TInteger I8 -> "i8"
-    | TInteger I16 -> "i16"
-    | TInteger I32 -> "i32"
-    | TInteger I64 -> "i64"
-    | TInteger I128 -> "i128"
-    | TInteger Usize -> "usize"
-    | TInteger U8 -> "u8"
-    | TInteger U16 -> "u16"
-    | TInteger U32 -> "u32"
-    | TInteger U64 -> "u64"
-    | TInteger U128 -> "u128"
-    | TFloat F16 -> "f16"
-    | TFloat F32 -> "f32"
-    | TFloat F64 -> "f64"
-    | TFloat F128 -> "f128"
-    | TChar -> "char"
-    | TBool -> "bool"
-
   let pp ft t =
     let open Fmt in
-    pf ft "%a : %s" Typed.ppa t.value (lit_to_string t.ty)
+    pf ft "%a : %s" Typed.ppa t.value (Charon_util.lit_to_string t.ty)
 end
 
 module Node = struct

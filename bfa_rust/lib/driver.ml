@@ -60,6 +60,7 @@ let pp_err ft (err, call_trace) =
     | `Memory_leak -> Fmt.string ft "Memory leak"
     | `FailedAssert -> Fmt.string ft "Failed assertion"
     | `Overflow -> Fmt.string ft "Overflow"
+    | `StdErr msg -> Fmt.pf ft "Std error: %s" msg
   in
   Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
   Format.close_box ()
