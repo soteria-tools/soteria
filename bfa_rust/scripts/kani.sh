@@ -107,6 +107,10 @@ echo -n > $LOG_FILE
 # Build Rusteria
 eval $(opam env)
 dune build
+if [ $? -ne 0 ]; then
+    echo -e "${RED}${BOLD}Failed to build Rusteria!"
+    exit 1
+fi
 
 # Build our Kani library
 export KANI_LIB_PATH=$KANI_LIB_PATH
@@ -126,13 +130,7 @@ passed=0
 script_start=$(($(date +%s%N)/1000000))
 for test in $TESTS; do
     test_rel_name=$(realpath --relative-to=$KANI_PATH $test)
-    expect_failure=$(echo $test_rel_name | grep "_fail.rs")
-
-    # if file ends with "/unsafe.rs",
-    if [[ "$test_rel_name" == *"/unsafe.rs" ]]; then
-        cp "$test" "__temp_unsafe.rs"
-        test="__temp_unsafe.rs"
-    fi
+    expect_failure=$(grep -c "kani-verify-fail" "$test")
 
     echo -en "$(rainbow step)|${RESET} Running $test_rel_name ..."
     echo "Running $test" >> $LOG_FILE
@@ -141,21 +139,16 @@ for test in $TESTS; do
     dune exec --no-build -- $CMD $test >> $LOG_FILE 2>>$LOG_FILE
     result=$?
     end=$(($(date +%s%N)/1000000))
-
-    if [ "$test" == "__temp_unsafe.rs" ]; then
-        rm "__temp_unsafe.rs"
-    fi
-
-    if [ $result -eq 0 ] && [ -z $expect_failure ]; then
+    if [ $result -eq 0 ] && [ $expect_failure -eq 0 ]; then
         echo -e " ${GREEN}passed${RESET} in $((end-start))ms"
         passed=$((passed+1))
-    elif [ $result -eq 1 ] && [ -n $expect_failure ]; then
+    elif [ $result -eq 1 ] && [ $expect_failure -eq 1 ]; then
         echo -e " ${GREEN}failed (expected)${RESET} in $((end-start))ms"
         passed=$((passed+1))
     else
-        if [ $result -eq 0 ] && [ -n $expect_failure ]; then
+        if [ $result -eq 0 ] && [ $expect_failure -eq 1 ]; then
             echo -e " ${RED}passed (expected failure)${RESET}"
-        elif [ $result -eq 1 ] && [ -z $expect_failure ]; then
+        elif [ $result -eq 1 ] && [ $expect_failure -eq 0 ]; then
             echo -e " ${RED}failed${RESET}"
         else
             echo -e " ${PURPLE}crashed: status code $result${RESET}"
