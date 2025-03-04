@@ -554,7 +554,10 @@ module Make (Heap : Heap_intf.S) = struct
     | Abort kind -> (
         match kind with
         | UndefinedBehavior -> Heap.error `UBAbort state
-        | _ -> Fmt.kstr not_impl "Abort kind %a" Types.pp_abort_kind kind)
+        | Panic name ->
+            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+            let name_str = PrintTypes.name_to_string ctx name in
+            Heap.error (`Panic name_str) state)
 
   and exec_fun ~crate ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
