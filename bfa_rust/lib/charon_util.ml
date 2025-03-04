@@ -6,7 +6,7 @@ type rust_val =
   | Enum of T.cval Typed.t * rust_val list  (** discriminant * values *)
   | Tuple of rust_val list
   | Never  (** Useful for base cases -- should be ignored *)
-[@@deriving show]
+[@@deriving show { with_path = false }]
 
 let unit_ = Tuple []
 
@@ -42,3 +42,11 @@ let lit_to_string : Values.literal_type -> string = function
   | TFloat F128 -> "f128"
   | TChar -> "char"
   | TBool -> "bool"
+
+let rustval_as_ptr = function
+  | Base ptr ->
+      Rustsymex.of_opt_not_impl ~msg:"not a pointer"
+        (Typed.cast_checked ptr Typed.t_ptr)
+  | v ->
+      Fmt.kstr Rustsymex.not_impl
+        "Unexpected rust_val kind, expected a pointer got: %a" pp_rust_val v

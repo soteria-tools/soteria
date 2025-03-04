@@ -61,21 +61,55 @@ module Make (Heap : Heap_intf.S) = struct
     Rustsymex.push_give_up (str, loc);
     Result.ok (0s, state)
 
-  let resolve_place_kind ~store _state :
-      Expressions.place_kind -> T.sptr Typed.t Rustsymex.t = function
+  let rec resolve_place ~store state ({ kind; _ } : Expressions.place) =
+    match kind with
+    (* Just a variable *)
     | PlaceBase var -> (
         let ptr = Store.find_value var store in
         match ptr with
-        | Some ptr -> return ptr
+        | Some ptr ->
+            L.debug (fun f ->
+                f "Found pointer %a of variable %a" Typed.ppa ptr
+                  Expressions.pp_var_id var);
+            Result.ok (ptr, state)
         | None ->
             Fmt.kstr not_impl "Variable %a not found in store"
               Expressions.pp_var_id var)
-    | PlaceProjection _ as kind ->
-        Fmt.kstr not_impl "Projection not supported: %a"
-          Expressions.pp_place_kind kind
-
-  let resolve_place ~store state ({ kind; _ } : Expressions.place) =
-    resolve_place_kind ~store state kind
+    (* Dereference a pointer *)
+    | PlaceProjection (base, Deref) ->
+        let** ptr, state = resolve_place ~store state base in
+        L.debug (fun f ->
+            f "Dereferencing ptr %a of %a" Typed.ppa ptr Types.pp_ty base.ty);
+        let** v, state = Heap.load ptr base.ty state in
+        let* v' = rustval_as_ptr v in
+        L.debug (fun f ->
+            f "Dereferenced pointer %a to pointer %a" Typed.ppa ptr Typed.ppa v');
+        Result.ok (v', state)
+    | PlaceProjection (base, Field (kind, field)) ->
+        let** ptr, state = resolve_place ~store state base in
+        L.debug (fun f ->
+            f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
+              Expressions.pp_field_proj_kind kind Typed.ppa ptr);
+        let layout =
+          match kind with
+          | ProjAdt (adt_id, Some variant) ->
+              Layout.of_enum_variant adt_id variant
+          | ProjAdt (adt_id, None) -> Layout.of_adt_id adt_id
+          | ProjTuple _arity -> Layout.layout_of base.ty
+        in
+        let offset =
+          Array.get layout.members_ofs (Types.FieldId.to_int field)
+        in
+        let loc = Typed.Ptr.loc ptr in
+        let ofs = Typed.Ptr.ofs ptr +@ Typed.int offset in
+        let ptr = Typed.Ptr.mk loc ofs in
+        L.debug (fun f ->
+            f
+              "Dereferenced ADT projection %a, field %a, with pointer %a to \
+               pointer %a"
+              Expressions.pp_field_proj_kind kind Types.pp_field_id field
+              Typed.ppa ptr Typed.ppa ptr);
+        Result.ok (ptr, state)
 
   let overflow_check state v (ty : Types.ty) =
     let* constraints =
@@ -177,13 +211,13 @@ module Make (Heap : Heap_intf.S) = struct
         Result.ok (Base v, state)
     | Move loc ->
         let ty = loc.ty in
-        let* loc = resolve_place ~store state loc in
+        let** loc, state = resolve_place ~store state loc in
         let** v, state = Heap.load loc ty state in
         (* TODO: mark value as moved!!! !== freeing it, btw *)
         Result.ok (v, state)
     | Copy loc ->
         let ty = loc.ty in
-        let* loc = resolve_place ~store state loc in
+        let** loc, state = resolve_place ~store state loc in
         let** v, state = Heap.load loc ty state in
         Result.ok (v, state)
 
@@ -200,7 +234,7 @@ module Make (Heap : Heap_intf.S) = struct
     match expr with
     | Use op -> eval_operand state op
     | RvRef (place, _borrow) ->
-        let* ptr = resolve_place ~store state place in
+        let** ptr, state = resolve_place ~store state place in
         Result.ok (Base (ptr :> T.cval Typed.t), state)
     | Global { global_id; _ } -> (
         let decl =
@@ -305,7 +339,7 @@ module Make (Heap : Heap_intf.S) = struct
         in
         (Base res, state)
     | Discriminant (place, kind) ->
-        let* place = resolve_place ~store state place in
+        let** place, state = resolve_place ~store state place in
         let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
         let* enum_discr_ty =
           match enum.kind with
@@ -339,9 +373,9 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Union rvalues not supported: %a"
           Expressions.pp_rvalue v
     (* Special case? unit (zero-tuple) *)
-    | Aggregate (AggregatedAdt (TTuple, None, None, g), _)
-      when g = TypesUtils.empty_generic_args ->
-        Result.ok (Charon_util.Tuple [], state)
+    | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
+        let++ values, state = eval_operand_list ~crate ~store state operands in
+        (Charon_util.Tuple values, state)
     (* Struct aggregate *)
     | Aggregate (AggregatedAdt (_, None, None, _), _) as v ->
         Fmt.kstr not_impl "Struct rvalues not supported: %a"
@@ -371,7 +405,7 @@ module Make (Heap : Heap_intf.S) = struct
     match stmt with
     | Nop -> Result.ok (store, state)
     | Assign (({ ty; _ } as place), rval) ->
-        let* ptr = resolve_place ~store state place in
+        let** ptr, state = resolve_place ~store state place in
         let** v, state = eval_rvalue ~crate ~store state rval in
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
@@ -413,7 +447,7 @@ module Make (Heap : Heap_intf.S) = struct
         (* TODO: update tree borrow with read *)
         Result.ok (store, state)
     | Drop place ->
-        let* place_ptr = resolve_place ~store state place in
+        let** place_ptr, state = resolve_place ~store state place in
         let++ (), state = Heap.free place_ptr state in
         let store =
           match place.kind with

@@ -173,10 +173,11 @@ module M (Heap : Heap_intf.S) = struct
             "expected value pointed to in is_none to be an enum, got %a"
             pp_rust_val enum_value
     in
-    if%sat discr ==@ 0s then Result.ok (Base 1s, state)
-    else Result.ok (Base 0s, state)
+    Result.ok (Base (Typed.int_of_bool (discr ==@ 0s)), state)
+  (* if%sat discr ==@ 0s then Result.ok (Base 1s, state)
+    else Result.ok (Base 0s, state) *)
 
-  let unwrap _ ~crate:_ ~args ~state =
+  let unwrap_opt _ ~crate:_ ~args ~state =
     let* discr, value =
       match args with
       | [ Enum (disc, value) ] -> return (disc, value)
@@ -187,6 +188,44 @@ module M (Heap : Heap_intf.S) = struct
       match value with
       | [ value ] -> Result.ok (value, state)
       | _ -> not_impl "option is some, but doesn't have one value"
+
+  let unwrap_res _ ~crate:_ ~args ~state =
+    let* discr, value =
+      match args with
+      | [ Enum (disc, value) ] -> return (disc, value)
+      | _ -> not_impl "is_some expects a single option argument"
+    in
+    if%sat discr ==@ 1s then Heap.error (`StdErr "Unwrapped Err") state
+    else
+      match value with
+      | [ value ] -> Result.ok (value, state)
+      | _ -> not_impl "Result is Ok, but doesn't have one value"
+
+  let eq_values (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+    let* ty =
+      match fun_sig.inputs with
+      | Types.TRef (_, ty, _) :: _ -> return ty
+      | ty :: _ ->
+          Fmt.kstr not_impl "Unexpected type for eq_values: %a" Types.pp_ty ty
+      | _ -> not_impl "Error: eq_values received no arguments?"
+    in
+    L.info (fun g -> g "%a" Types.pp_ty ty);
+    let* left_ptr, right_ptr =
+      match args with
+      | [ left; right ] ->
+          let* left = rustval_as_ptr left in
+          let+ right = rustval_as_ptr right in
+          (left, right)
+      | _ -> not_impl "eq_values expects two arguments"
+    in
+    let** left, state = Heap.load left_ptr ty state in
+    let** right, state = Heap.load right_ptr ty state in
+    match (left, right) with
+    | Base left, Base right ->
+        Result.ok (Base (Typed.int_of_bool (left ==@ right)), state)
+    | _ ->
+        Fmt.kstr not_impl "Unexpected eq_values pair: %a / %a" pp_rust_val left
+          pp_rust_val right
 
   let global_map =
     let open Values in
@@ -230,7 +269,9 @@ module M (Heap : Heap_intf.S) = struct
     | WrappingAdd
     | IsSome
     | IsNone
-    | Unwrap
+    | OptUnwrap
+    | ResUnwrap
+    | Eq
 
   let std_fun_map =
     [
@@ -247,7 +288,9 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::wrapping_add", WrappingAdd);
       ("core::option::{@T}::is_some", IsSome);
       ("core::option::{@T}::is_none", IsNone);
-      ("core::option::{@T}::unwrap", Unwrap);
+      ("core::option::{@T}::unwrap", OptUnwrap);
+      ("core::result::{@T}::unwrap", ResUnwrap);
+      ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
@@ -274,5 +317,7 @@ module M (Heap : Heap_intf.S) = struct
        | WrappingAdd -> wrapping_add f.signature
        | IsSome -> is_some f.signature
        | IsNone -> is_none f.signature
-       | Unwrap -> unwrap f.signature
+       | OptUnwrap -> unwrap_opt f.signature
+       | ResUnwrap -> unwrap_res f.signature
+       | Eq -> eq_values f.signature
 end

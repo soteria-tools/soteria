@@ -128,12 +128,13 @@ let store ptr ty sval st =
   else
     let parts = Layout.rust_to_cvals sval ty in
     let pp_quad f (v, l, s, o) =
-      Fmt.pf f "%a: %a at:%a[..%a]" Typed.ppa v Charon.Values.pp_literal_type l
+      Fmt.pf f "%a: %s [%a, +%a[" Typed.ppa v
+        (Charon_util.lit_to_string l)
         Typed.ppa o Typed.ppa s
     in
 
     L.debug (fun f ->
-        f "Parsed to parts [%a]\n" (Fmt.list ~sep:Fmt.comma pp_quad) parts);
+        f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_quad) parts);
     with_ptr ptr st (fun ~ofs block ->
         Result.fold_list parts ~init:((), block)
           ~f:(fun ((), block) (sval, ty, size, inner_ofs) ->

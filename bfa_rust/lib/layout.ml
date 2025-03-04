@@ -63,13 +63,19 @@ module Session = struct
 
   let set_crate = ( := ) current_crate
   let get_crate () = !current_crate
+
+  let get_adt adt_id =
+    let crate = get_crate () in
+    Types.TypeDeclId.Map.find adt_id crate.type_decls
 end
 
 type layout = {
   size : int;
   align : int;
-  members_ofs : (int * int) Array.t;
-      (** Array of (member-index; offset in layout) *)
+  members_ofs : int Array.t;
+      (** Array of offset in layout for field with given id (index) *)
+      (* TODO: this should probably become (Types.FieldId.id * int) Array.t eventually,
+        but that requires converting integers to field ids for tuples i think. *)
 }
 
 type sint = Typed.T.sint Typed.t
@@ -114,13 +120,14 @@ let rec layout_of : Types.ty -> layout = function
       (* unit () *)
       (* TODO: this actually has size 0, which makes things... awkward *)
       { size = 1; align = 1; members_ofs = [||] }
+  | TAdt (TTuple, { types; _ }) -> layout_of_members types
   | TAdt (TAdtId id, g) when g = empty_generics -> (
-      let crate = Session.get_crate () in
-      let adt = Types.TypeDeclId.Map.find id crate.type_decls in
+      let adt = Session.get_adt id in
       match adt with
       | { kind = Struct fields; _ } ->
           let fields = List.map (fun (f : Types.field) -> f.field_ty) fields in
           layout_of_members fields
+      | { kind = Enum []; _ } -> { size = 0; align = 1; members_ofs = [||] }
       | { kind = Enum variants; _ } ->
           (* TODO: empty enums? *)
           (* assume all discriminants are of equal size (should be ok?) *)
@@ -158,8 +165,7 @@ and layout_of_members members =
         let mem_ofs = curr_size + (curr_size mod align) in
         let new_size = mem_ofs + size in
         let new_align = Int.max align curr_align in
-        aux (i + 1)
-          ((i, mem_ofs) :: members_ofs)
+        aux (i + 1) (mem_ofs :: members_ofs)
           { size = new_size; align = new_align; members_ofs = [||] }
           rest
   in
@@ -171,6 +177,26 @@ and layout_of_members members =
     align;
     members_ofs = Array.of_list members_ofs;
   }
+
+and of_enum_variant adt_id variant =
+  let adt = Session.get_adt adt_id in
+  let variants =
+    match adt with { kind = Enum variants; _ } -> variants | _ -> assert false
+  in
+  let variant : Types.variant = Types.VariantId.nth variants variant in
+  let discr_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
+  let members =
+    discr_ty :: List.map (fun (f : Types.field) -> f.field_ty) variant.fields
+  in
+  layout_of_members members
+
+and of_adt_id id =
+  let adt = Session.get_adt id in
+  match adt.kind with
+  | Struct fields ->
+      let members = List.map (fun (f : Types.field) -> f.field_ty) fields in
+      layout_of_members members
+  | k -> Fmt.failwith "Unhandled ADT in of_adt_id: %a" Types.pp_type_decl_kind k
 
 let size_of_s ty =
   try
@@ -246,10 +272,7 @@ let rec nondet : Types.ty -> rust_val Rustsymex.t =
       let+ cval = nondet_literal_ty lit in
       Base cval
   | TAdt (TAdtId t_id, _) -> (
-      let crate = Session.get_crate () in
-      let type_decl =
-        Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
-      in
+      let type_decl = Session.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
           let disc_ty = (List.hd variants).discriminant.int_ty in
@@ -279,21 +302,38 @@ let rec nondet : Types.ty -> rust_val Rustsymex.t =
   | ty ->
       Rustsymex.not_impl (Fmt.str "nondet: unsupported type %a" Types.pp_ty ty)
 
+type cval_info = cval * Types.literal_type * sint * sint
+
 (** Converts a Rust value of the given type into a list of C values, along with
     their size and offset *)
-let rec rust_to_cvals (v : rust_val) (ty : Types.ty) :
-    (cval * Types.literal_type * sint * sint) list =
-  let crate = Session.get_crate () in
+let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
+  let chain_cvals (vals : cval_info list list) : cval_info list =
+    let open Typed.Infix in
+    vals
+    |> List.filter (fun l -> not @@ List.is_empty l)
+    |> List.fold_left_map
+         (fun off vals ->
+           let _, _, l_size, l_off = List.hd (List.rev vals) in
+           let off' = off +@ l_off +@ l_size in
+           let vals = List.map (fun (v, t, s, o) -> (v, t, s, o +@ off)) vals in
+           (off', vals))
+         0s
+    |> snd
+    |> List.flatten
+  in
+
   match (v, ty) with
   | Base v, TLiteral ty ->
       [ (v, ty, Typed.int (size_of_literal_ty ty), Typed.zero) ]
   | Base v, TRef _ ->
       [ (v, TInteger Isize, Typed.int Archi.word_size, Typed.zero) ]
-  | Tuple [], TAdt (TTuple, g) when g = empty_generics -> []
+  | Tuple vs, TAdt (TTuple, { types; _ }) ->
+      if List.compare_lengths vs types <> 0 then
+        Fmt.failwith "Mistmached rust_val / TTuple lengths: %d/%d"
+          (List.length vs) (List.length types)
+      else List.map2 rust_to_cvals vs types |> chain_cvals
   | Enum (disc, vals), TAdt (TAdtId t_id, _) ->
-      let type_decl =
-        Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
-      in
+      let type_decl = Session.get_adt t_id in
       let disc_z =
         match Typed.kind disc with
         | Int d -> d
@@ -316,25 +356,12 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) :
       let disc_val = (disc, disc_ty, disc_size, 0s) in
       let variant_tys = List.map (fun f -> Types.(f.field_ty)) variant.fields in
       let rest = List.map2 rust_to_cvals vals variant_tys in
-      let open Typed.Infix in
-      let cvals =
-        List.rev rest
-        |> List.fold_left_map
-             (fun off vals ->
-               let _, _, l_size, l_off = List.hd (List.rev vals) in
-               let off' = off +@ l_off +@ l_size in
-               let vals =
-                 List.map (fun (v, t, s, o) -> (v, t, s, o +@ off)) vals
-               in
-               (off', vals))
-             disc_size
-        |> snd
-        |> List.flatten
-      in
-      disc_val :: cvals
+      chain_cvals ([ disc_val ] :: rest)
   | _ ->
-      Fmt.failwith "Unhandled / Mismatched rust_value and Charon.ty: %a / %a"
-        pp_rust_val v Types.pp_ty ty
+      L.err (fun m ->
+          m "Unhandled / Mismatched rust_value and Charon.ty: %a / %a"
+            pp_rust_val v Types.pp_ty ty);
+      failwith "Unhandled / Mismatched rust_value and Charon.ty"
 
 type aux_ret = (Types.literal_type * sint * sint) list * parse_callback
 and parse_callback = cval list -> callback_return
@@ -344,8 +371,6 @@ and callback_return = [ `Done of rust_val | `More of aux_ret ] Rustsymex.t
     offset; once these are read, symbolically decides whether we must keep
     reading. *)
 let rust_of_cvals ?offset ty =
-  let crate = Session.get_crate () in
-
   (* Base case, parses all types. *)
   let rec aux offset : Types.ty -> aux_ret = function
     | TLiteral ty ->
@@ -362,10 +387,7 @@ let rust_of_cvals ?offset ty =
     | TAdt (TTuple, g) when g = empty_generics ->
         ([], fun _ -> return (`Done (Tuple [])))
     | TAdt (TAdtId t_id, _) ->
-        L.info (fun g -> g "Looking for TAdtId %a" Types.pp_type_decl_id t_id);
-        let type_decl =
-          Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
-        in
+        let type_decl = Session.get_adt t_id in
         let variants =
           match (type_decl : Types.type_decl) with
           | { kind = Enum variants; _ } -> variants
@@ -392,7 +414,15 @@ let rust_of_cvals ?offset ty =
                     if%sat var_disc ==@ cval then aux_enum next_offset var
                     else return None)
           in
-          match res with None -> vanish () | Some res -> return res
+          match res with
+          | None ->
+              L.warn (fun f ->
+                  f
+                    "Vanishing rust_of_cvals, as no variant matches variant id \
+                     %a"
+                    Typed.ppa cval);
+              vanish ()
+          | Some res -> return res
         in
         ([ (TInteger disc.int_ty, disc_size, offset) ], callback)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
