@@ -90,25 +90,25 @@ module Make (Heap : Heap_intf.S) = struct
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Typed.ppa ptr);
-        let layout =
+        let field = Types.FieldId.to_int field in
+        let layout, field =
           match kind with
           | ProjAdt (adt_id, Some variant) ->
-              Layout.of_enum_variant adt_id variant
-          | ProjAdt (adt_id, None) -> Layout.of_adt_id adt_id
-          | ProjTuple _arity -> Layout.layout_of base.ty
+              (* Skip discriminator, so field + 1 *)
+              (Layout.of_enum_variant adt_id variant, field + 1)
+          | ProjAdt (adt_id, None) -> (Layout.of_adt_id adt_id, field)
+          | ProjTuple _arity -> (Layout.layout_of base.ty, field)
         in
-        let offset =
-          Array.get layout.members_ofs (Types.FieldId.to_int field)
-        in
+        let offset = Array.get layout.members_ofs field in
         let loc = Typed.Ptr.loc ptr in
         let ofs = Typed.Ptr.ofs ptr +@ Typed.int offset in
         let ptr = Typed.Ptr.mk loc ofs in
         L.debug (fun f ->
             f
-              "Dereferenced ADT projection %a, field %a, with pointer %a to \
+              "Dereferenced ADT projection %a, field %d, with pointer %a to \
                pointer %a"
-              Expressions.pp_field_proj_kind kind Types.pp_field_id field
-              Typed.ppa ptr Typed.ppa ptr);
+              Expressions.pp_field_proj_kind kind field Typed.ppa ptr Typed.ppa
+              ptr);
         Result.ok (ptr, state)
 
   let overflow_check state v (ty : Types.ty) =
