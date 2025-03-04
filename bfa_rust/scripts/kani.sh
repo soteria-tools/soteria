@@ -64,8 +64,10 @@ export RUSTFLAGS="-Awarnings"
 # -f --filter: filter tests
 # -e --exclude: exclude tests
 # --no-compile: do not compile the tests
+# --ok: do not stop on failures
 # -v: verbose
 CMD="bfa-rust exec-main"
+STOP_ON_FAIL=true
 TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -81,6 +83,10 @@ while [[ $# -gt 0 ]]; do
             ;;
       --no-compile)
             CMD="$CMD --no-compile"
+            shift
+            ;;
+      --ok)
+            STOP_ON_FAIL=false
             shift
             ;;
       -v)
@@ -127,15 +133,17 @@ for test in $TESTS; do
         echo -e " ${GREEN}passed${RESET} in $((end-start))ms"
     elif [ $result -eq 1 ] && [ -n $expect_failure ]; then
         echo -e " ${GREEN}failed (expected)${RESET} in $((end-start))ms"
-    elif [ $result -eq 0 ] && [ -n $expect_failure ]; then
-        echo -e " ${RED}passed (expected failure)${RESET}"
-        exit 1
-    elif [ $result -eq 1 ] && [ -z $expect_failure ]; then
-        echo -e " ${RED}failed${RESET}"
-        exit 1
     else
-        echo -e " ${PURPLE}crashed: status code $result${RESET}"
-        exit 1
+        if [ $result -eq 0 ] && [ -n $expect_failure ]; then
+            echo -e " ${RED}passed (expected failure)${RESET}"
+        elif [ $result -eq 1 ] && [ -z $expect_failure ]; then
+            echo -e " ${RED}failed${RESET}"
+        else
+            echo -e " ${PURPLE}crashed: status code $result${RESET}"
+        fi
+        if $STOP_ON_FAIL; then
+            exit 1
+        fi
     fi
 
     echo -e "\n" >> $LOG_FILE
