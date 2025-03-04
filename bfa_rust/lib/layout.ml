@@ -67,6 +67,11 @@ module Session = struct
   let get_adt adt_id =
     let crate = get_crate () in
     Types.TypeDeclId.Map.find adt_id crate.type_decls
+
+  let pp_name ft name =
+    let ctx = PrintUllbcAst.Crate.crate_to_fmt_env (get_crate ()) in
+    let str = PrintTypes.name_to_string ctx name in
+    Fmt.pf ft "%s" str
 end
 
 type layout = {
@@ -123,12 +128,12 @@ let rec layout_of : Types.ty -> layout = function
   | TAdt (TTuple, { types; _ }) -> layout_of_members types
   | TAdt (TAdtId id, g) when g = empty_generics -> (
       let adt = Session.get_adt id in
-      match adt with
-      | { kind = Struct fields; _ } ->
+      match adt.kind with
+      | Struct fields ->
           let fields = List.map (fun (f : Types.field) -> f.field_ty) fields in
           layout_of_members fields
-      | { kind = Enum []; _ } -> { size = 0; align = 1; members_ofs = [||] }
-      | { kind = Enum variants; _ } ->
+      | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
+      | Enum variants ->
           (* TODO: empty enums? *)
           (* assume all discriminants are of equal size (should be ok?) *)
           let layouts =
@@ -145,9 +150,12 @@ let rec layout_of : Types.ty -> layout = function
           List.fold_left
             (fun acc l -> if l.size > acc.size then l else acc)
             (List.hd layouts) (List.tl layouts)
-      | { kind; _ } ->
-          Fmt.pr "Unspported ADT kind %a" Types.pp_type_decl_kind kind;
-          failwith "Unsupported ADT kind")
+      | Opaque ->
+          Fmt.kstr failwith "Opaque ADT found: %a" Session.pp_name
+            adt.item_meta.name
+      | TError _ -> failwith "Unsupported ADT kind: TError"
+      | Alias _ -> failwith "Unsupported ADT kind: Alias"
+      | Union _ -> failwith "Unsupported ADT kind: Union")
   | TRef (_, _, _) ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   | ty ->
@@ -196,6 +204,10 @@ and of_adt_id id =
   | Struct fields ->
       let members = List.map (fun (f : Types.field) -> f.field_ty) fields in
       layout_of_members members
+  | Enum _ ->
+      Fmt.failwith
+        "Enum cannot be used in Layout.of_adt_id, use Layout.of_enum_variant \
+         instead"
   | k -> Fmt.failwith "Unhandled ADT in of_adt_id: %a" Types.pp_type_decl_kind k
 
 let size_of_s ty =

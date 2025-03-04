@@ -28,7 +28,7 @@ module M (Heap : Heap_intf.S) = struct
             (Typed.cast_checked t Typed.t_int)
       | _ -> not_impl "assume with non-one arguments"
     in
-    Fmt.pr "Assuming: %a\n" Typed.ppa to_assume;
+    L.debug (fun g -> g "Assuming: %a\n" Typed.ppa to_assume);
     let* () = assume [ Typed.bool_of_int to_assume ] in
     Result.ok (Charon_util.unit_, state)
 
@@ -202,6 +202,29 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> not_impl "Result is Ok, but doesn't have one value"
 
   let eq_values (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+    let rec aux state left right =
+      match (left, right) with
+      | Base left, Base right -> Result.ok (left ==@ right, state)
+      | Enum (l_d, l_vs), Enum (r_d, r_vs) ->
+          if List.compare_lengths l_vs r_vs <> 0 then
+            if%sat Typed.not (l_d ==@ r_d) then Result.ok (Typed.v_false, state)
+            else
+              Fmt.kstr not_impl
+                "eq_values: same enum discriminant, but mismatched lengths"
+          else
+            let disc_match = l_d ==@ r_d in
+            let value_pairs = List.combine l_vs r_vs in
+            if disc_match = Typed.v_false then Result.ok (Typed.v_false, state)
+            else
+              Result.fold_list value_pairs ~init:(Typed.v_true, state)
+                ~f:(fun (acc, state) (left, right) ->
+                  let++ b_val, state = aux state left right in
+                  (b_val &&@ acc, state))
+      | _ ->
+          Fmt.kstr not_impl "Unexpected eq_values pair: %a / %a" pp_rust_val
+            left pp_rust_val right
+    in
+
     let* ty =
       match fun_sig.inputs with
       | Types.TRef (_, ty, _) :: _ -> return ty
@@ -220,12 +243,27 @@ module M (Heap : Heap_intf.S) = struct
     in
     let** left, state = Heap.load left_ptr ty state in
     let** right, state = Heap.load right_ptr ty state in
-    match (left, right) with
-    | Base left, Base right ->
-        Result.ok (Base (Typed.int_of_bool (left ==@ right)), state)
-    | _ ->
-        Fmt.kstr not_impl "Unexpected eq_values pair: %a / %a" pp_rust_val left
-          pp_rust_val right
+    let++ b_val, state = aux state left right in
+    (Base (Typed.int_of_bool b_val), state)
+
+  let bool_not _ ~crate:_ ~args ~state =
+    let* b_ptr =
+      match args with
+      | [ Base b ] ->
+          of_opt_not_impl ~msg:"bool_not expected a pointer"
+            (Typed.cast_checked b Typed.t_ptr)
+      | _ -> not_impl "bool_not expects one Base argument"
+    in
+    let** b_rval, state = Heap.load b_ptr (Types.TLiteral TBool) state in
+    let* b_int =
+      match b_rval with
+      | Base b ->
+          of_opt_not_impl ~msg:"bool_not expected a single integer"
+            (Typed.cast_checked b Typed.t_int)
+      | _ -> not_impl "bool_not expects a Base"
+    in
+    let b_int' = b_int |> Typed.bool_of_int |> Typed.not |> Typed.int_of_bool in
+    Result.ok (Base b_int', state)
 
   let global_map =
     let open Values in
@@ -272,6 +310,7 @@ module M (Heap : Heap_intf.S) = struct
     | OptUnwrap
     | ResUnwrap
     | Eq
+    | BoolNot
 
   let std_fun_map =
     [
@@ -291,6 +330,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::option::{@T}::unwrap", OptUnwrap);
       ("core::result::{@T}::unwrap", ResUnwrap);
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq);
+      ("core::result::{core::cmp::PartialEq}::eq", Eq);
+      ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
@@ -298,14 +339,13 @@ module M (Heap : Heap_intf.S) = struct
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-  let global_eval ~(crate : UllbcAst.crate) (g : UllbcAst.global_decl) :
-      rust_val option =
+  let global_eval ~crate (g : UllbcAst.global_decl) =
     let ctx = NameMatcher.ctx_from_crate crate in
     NameMatcherMap.find_opt ctx match_config g.item_meta.name global_map
 
   let op_of = function Add -> ( +@ ) | Sub -> ( -@ ) | Mul -> ( *@ )
 
-  let std_fun_eval ~(crate : UllbcAst.crate) (f : UllbcAst.fun_decl) =
+  let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let ctx = NameMatcher.ctx_from_crate crate in
     NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
     |> Option.map @@ function
@@ -320,4 +360,19 @@ module M (Heap : Heap_intf.S) = struct
        | OptUnwrap -> unwrap_opt f.signature
        | ResUnwrap -> unwrap_res f.signature
        | Eq -> eq_values f.signature
+       | BoolNot -> bool_not f.signature
+end
+
+module Types = struct
+  let std_type_map =
+    []
+    |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
+    |> NameMatcherMap.of_list
+
+  let match_config =
+    NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
+
+  let type_eval ~(crate : UllbcAst.crate) (t : Types.type_decl) =
+    let ctx = NameMatcher.ctx_from_crate crate in
+    NameMatcherMap.find_opt ctx match_config t.item_meta.name std_type_map
 end

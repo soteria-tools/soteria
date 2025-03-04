@@ -245,8 +245,21 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "Global %a not found" GAst.pp_global_decl decl
         | Some global -> Result.ok (global, state))
     | UnaryOp (op, e) -> (
-        let** _v, _state = eval_operand state e in
+        let** v, _state = eval_operand state e in
         match op with
+        | Not ->
+            let* v_int =
+              match v with
+              | Base v ->
+                  of_opt_not_impl ~msg:"Not requires int argument"
+                    (Typed.cast_checked v Typed.t_int)
+              | _ -> not_impl "Not requires a Base argument"
+            in
+            let v_int' =
+              v_int |> Typed.bool_of_int |> Typed.not |> Typed.int_of_bool
+            in
+            let v' = Base v_int' in
+            Result.ok (v', state)
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a"
               Expressions.pp_unop op)
@@ -455,6 +468,21 @@ module Make (Heap : Heap_intf.S) = struct
           | _ -> store
         in
         (store, state)
+    | Assert { cond; expected } ->
+        let** cond, state = eval_operand ~crate ~store state cond in
+        let* cond_int =
+          match cond with
+          | Base cond ->
+              of_opt_not_impl ~msg:"Expected an integer assertion"
+                (Typed.cast_checked cond Typed.t_int)
+          | _ -> not_impl "Expected a base Rust value in assert"
+        in
+        let cond_bool = Typed.bool_of_int cond_int in
+        let cond_bool =
+          if expected = true then cond_bool else Typed.not cond_bool
+        in
+        if%sat cond_bool then Result.ok (store, state)
+        else Heap.error `FailedAssert state
     | s ->
         Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
           s
@@ -496,8 +524,9 @@ module Make (Heap : Heap_intf.S) = struct
         match switch with
         | If (if_block, else_block) ->
             let open Typed.Infix in
-            Fmt.pr "Switch if/else %a/%a for %a\n" UllbcAst.pp_block_id if_block
-              UllbcAst.pp_block_id else_block Typed.ppa discr;
+            L.info (fun g ->
+                g "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
+                  UllbcAst.pp_block_id else_block Typed.ppa discr);
             let* block =
               if%sat discr ==@ Typed.one then return if_block
               else return else_block
