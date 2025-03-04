@@ -78,16 +78,15 @@ let parse_ullbc_of_file ~no_compile file_name =
   let*> () =
     match no_compile with
     | true -> Ok 0
-    | false ->
+    | false -> (
         (* load from env *)
         let+ kani_lib =
           try
-            match Sys.getenv "KANI_LIB_PATH" with
-            | path when String.ends_with ~suffix:"/" path -> Ok path
-            | path -> Ok (path ^ "/")
+            let path = Sys.getenv "KANI_LIB_PATH" in
+            if String.ends_with ~suffix:"/" path then Ok path
+            else Ok (path ^ "/")
           with Not_found -> Fatal "KANI_LIB_PATH not set"
         in
-        Cleaner.touched output;
         String.concat " "
           [
             Fmt.str "cd %s &&" parent_folder;
@@ -117,9 +116,19 @@ let parse_ullbc_of_file ~no_compile file_name =
             Fmt.str "--dest-file %s" output;
           ]
         |> Sys.command
+        |> function
+        | 0 ->
+            Cleaner.touched output;
+            0
+        | n -> n)
   in
-  let json = Yojson.Basic.from_file output in
-  let crate = Charon.UllbcOfJson.crate_of_json json in
+  let* crate =
+    try
+      output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json |> ok
+    with
+    | Sys_error _ -> Fatal "File doesn't exist"
+    | _ -> Fatal "Failed to parse ULLBC"
+  in
   (* save crate to local file *)
   let () =
     match (crate, no_compile) with

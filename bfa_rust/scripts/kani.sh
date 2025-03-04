@@ -9,14 +9,6 @@
 # Usage: ./kani.sh
 #
 
-# Tests are in kani/tests/<category...>/<test>.rs
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-KANI_LIB_PATH=$(realpath $SCRIPT_DIR/../kani_lib)
-KANI_PATH=$(realpath $SCRIPT_DIR/../../../kani)
-
-touch "$SCRIPT_DIR/kani.log"
-LOG_FILE=$(realpath $SCRIPT_DIR/kani.log)
-
 # Formatting =^^=
 PURPLE='\033[0;35m'
 RED='\033[0;31m'
@@ -25,6 +17,7 @@ YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 BLUE='\033[0;34m'
+BOLD='\033[1m'
 RESET='\033[0m'
 
 function rainbow() {
@@ -46,26 +39,13 @@ function rainbow() {
     fi
 }
 
-# Clean log file
-echo -n > $LOG_FILE
 
-# Build Rusteria
-eval $(opam env)
-dune build
-
-# Build our Kani library
-export KANI_LIB_PATH=$KANI_LIB_PATH
-(cd $KANI_LIB_PATH/kani && charon --only-cargo --lib --input ./src/)
-
-# Silence warnings
-export RUSTFLAGS="-Awarnings"
+# Tests are in kani/tests/<category...>/<test>.rs
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+KANI_LIB_PATH=$(realpath $SCRIPT_DIR/../kani_lib)
+KANI_PATH=$(realpath $SCRIPT_DIR/../../../kani)
 
 # Handle arguments:
-# -f --filter: filter tests
-# -e --exclude: exclude tests
-# --no-compile: do not compile the tests
-# --ok: do not stop on failures
-# -v: verbose
 CMD="bfa-rust exec-main"
 STOP_ON_FAIL=true
 TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)
@@ -81,24 +61,59 @@ while [[ $# -gt 0 ]]; do
             shift
             shift
             ;;
-      --no-compile)
+        --no-compile)
             CMD="$CMD --no-compile"
             shift
             ;;
-      --ok)
+        --clean)
+            CMD="$CMD --clean"
+            shift
+            ;;
+        --ok)
             STOP_ON_FAIL=false
             shift
             ;;
-      -v)
+        -v)
             CMD="$CMD -v"
             shift
+            ;;
+        --help)
+            echo -e "${BOLD}Options:$RESET"
+            echo -e "  $CYAN-f, --filter <pattern>$RESET     Filter by a given pattern"
+            echo -e "  $CYAN-e, --exclude <pattern>$RESET    Exclude by a given pattern"
+            echo -e "  $CYAN--no-compile$RESET               Do not re-compile files"
+            echo -e "  $CYAN--clean$RESET                    Clean the build directory"
+            echo -e "  $CYAN--ok$RESET                       Ignore errors"
+            echo -e "  $CYAN-v$RESET                         Verbose logging"
+            exit 1
             ;;
       -*|--*)
             echo "Unknown option $1"
             exit 1
             ;;
+      *)
+            echo "Unhandled arg $1"
+            exit 1
+            ;;
     esac
 done
+
+touch "$SCRIPT_DIR/kani.log"
+LOG_FILE=$(realpath $SCRIPT_DIR/kani.log)
+
+# Clean log file
+echo -n > $LOG_FILE
+
+# Build Rusteria
+eval $(opam env)
+dune build
+
+# Build our Kani library
+export KANI_LIB_PATH=$KANI_LIB_PATH
+(cd $KANI_LIB_PATH/kani && charon --only-cargo --lib --input ./src/)
+
+# Silence warnings
+export RUSTFLAGS="-Awarnings"
 
 # If on MacOS, use coreutils:
 shopt -s expand_aliases
@@ -107,6 +122,8 @@ alias realpath="grealpath"
 
 # Run all tests
 step=0
+passed=0
+script_start=$(($(date +%s%N)/1000000))
 for test in $TESTS; do
     test_rel_name=$(realpath --relative-to=$KANI_PATH $test)
     expect_failure=$(echo $test_rel_name | grep "_fail.rs")
@@ -131,8 +148,10 @@ for test in $TESTS; do
 
     if [ $result -eq 0 ] && [ -z $expect_failure ]; then
         echo -e " ${GREEN}passed${RESET} in $((end-start))ms"
+        passed=$((passed+1))
     elif [ $result -eq 1 ] && [ -n $expect_failure ]; then
         echo -e " ${GREEN}failed (expected)${RESET} in $((end-start))ms"
+        passed=$((passed+1))
     else
         if [ $result -eq 0 ] && [ -n $expect_failure ]; then
             echo -e " ${RED}passed (expected failure)${RESET}"
@@ -149,3 +168,9 @@ for test in $TESTS; do
     echo -e "\n" >> $LOG_FILE
     step=$((step+1))
 done
+
+script_end=$(($(date +%s%N)/1000000))
+script_duration=$((script_end-script_start))
+
+# | Passed N/N tests in N ms.    Have a nice day 〜
+echo -e "$(rainbow step)|${RESET} ${BOLD}Passed ${CYAN}$passed${RESET}${BOLD}/$step tests in ${CYAN}$script_duration ms${RESET}   ${PURPLE}Have a nice day 〜${RESET}"
