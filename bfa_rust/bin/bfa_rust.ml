@@ -15,6 +15,10 @@ let no_compile_flag =
   let doc = "Do not compile the Rust code, as it is already compiled" in
   Arg.(value & flag & info [ "no-compile" ] ~doc)
 
+let cleanup_flag =
+  let doc = "Clean up compiles files after execution" in
+  Arg.(value & flag & info [ "clean" ] ~doc)
+
 module Exec_main = struct
   let term =
     Term.(
@@ -22,6 +26,7 @@ module Exec_main = struct
       $ Logs_cli.level ()
       $ dump_smt_arg
       $ no_compile_flag
+      $ cleanup_flag
       $ file_arg)
 
   let cmd = Cmd.v (Cmd.info "exec-main") term

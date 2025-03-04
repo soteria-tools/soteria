@@ -36,6 +36,12 @@ end
 
 open ExecResult
 
+module Cleaner = struct
+  let files = ref []
+  let touched file = files := file :: !files
+  let cleanup () = List.iter Sys.remove !files
+end
+
 let setup_console_log level =
   Fmt_tty.setup_std_outputs ();
   Logs.set_level level;
@@ -81,6 +87,7 @@ let parse_ullbc_of_file ~no_compile file_name =
             | path -> Ok (path ^ "/")
           with Not_found -> Fatal "KANI_LIB_PATH not set"
         in
+        Cleaner.touched output;
         String.concat " "
           [
             Fmt.str "cd %s &&" parent_folder;
@@ -117,10 +124,12 @@ let parse_ullbc_of_file ~no_compile file_name =
   let () =
     match (crate, no_compile) with
     | Ok crate, false ->
-        let oc = open_out_bin (Printf.sprintf "%s.crate" file_name) in
+        let crate_file = Printf.sprintf "%s.crate" file_name in
+        let oc = open_out_bin crate_file in
         let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
         output_string oc str;
-        close_out oc
+        close_out oc;
+        Cleaner.touched crate_file
     | _ -> ()
   in
   of_result_fatal crate
@@ -148,12 +157,14 @@ let exec_main (crate : Charon.UllbcAst.crate) =
   let exec_fun = Wpst_interp.exec_fun ~crate ~args:[] ~state:Heap.empty in
   entry_points |> List.concat_map (Rustsymex.run << exec_fun)
 
-let exec_main_and_print log_level smt_file no_compile file_name =
+let exec_main_and_print log_level smt_file no_compile clean_up file_name =
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
   let res =
     let* crate = parse_ullbc_of_file ~no_compile file_name in
-    let* res = exec_main crate in
+    let* res =
+      try exec_main crate with e -> Fmt.kstr fatal "Exn: %a" Fmt.exn e
+    in
     if List.is_empty res then Fatal "Execution vanished"
     else if List.exists (Compo_res.is_missing << fst) res then
       Fatal "Miss encountered in WPST"
@@ -171,6 +182,7 @@ let exec_main_and_print log_level smt_file no_compile file_name =
         in
         Error errors_parsed
   in
+  if clean_up then Cleaner.cleanup ();
   match res with
   | Ok res ->
       let open Fmt in
