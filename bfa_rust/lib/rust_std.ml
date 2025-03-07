@@ -261,7 +261,7 @@ module M (Heap : Heap_intf.S) = struct
             (Typed.cast_checked b Typed.t_int)
       | _ -> not_impl "bool_not expects a Base"
     in
-    let b_int' = b_int |> Typed.bool_of_int |> Typed.not |> Typed.int_of_bool in
+    let b_int' = Typed.not_int_bool b_int in
     Result.ok (Base b_int', state)
 
   let zeroed (fun_sig : UllbcAst.fun_sig) ~(crate : UllbcAst.crate) ~args:_

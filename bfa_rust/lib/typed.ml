@@ -42,4 +42,5 @@ let nonzero_z z =
   if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z")
   else Svalue.int_z z
 
-let nonzero x = nonzero_z (Z.of_int x)
+let nonzero x =
+  if x = 0 then raise (Invalid_argument "nonzero_z") else Svalue.int x

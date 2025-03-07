@@ -254,10 +254,7 @@ module Make (Heap : Heap_intf.S) = struct
                     (Typed.cast_checked v Typed.t_int)
               | _ -> not_impl "Not requires a Base argument"
             in
-            let v_int' =
-              v_int |> Typed.bool_of_int |> Typed.not |> Typed.int_of_bool
-            in
-            let v' = Base v_int' in
+            let v' = Base (Typed.not_int_bool v_int) in
             Result.ok (v', state)
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a"
