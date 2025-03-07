@@ -148,8 +148,7 @@ module M (Heap : Heap_intf.S) = struct
             "expected value pointed to in is_some to be an enum, got %a"
             pp_rust_val enum_value
     in
-    if%sat discr ==@ 0s then Result.ok (Base 0s, state)
-    else Result.ok (Base 1s, state)
+    Result.ok (Base (Typed.int_of_bool (discr ==@ 1s)), state)
 
   let is_none (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let* val_ptr =
@@ -174,8 +173,6 @@ module M (Heap : Heap_intf.S) = struct
             pp_rust_val enum_value
     in
     Result.ok (Base (Typed.int_of_bool (discr ==@ 0s)), state)
-  (* if%sat discr ==@ 0s then Result.ok (Base 1s, state)
-    else Result.ok (Base 0s, state) *)
 
   let unwrap_opt _ ~crate:_ ~args ~state =
     let* discr, value =
@@ -232,13 +229,13 @@ module M (Heap : Heap_intf.S) = struct
           Fmt.kstr not_impl "Unexpected type for eq_values: %a" Types.pp_ty ty
       | _ -> not_impl "Error: eq_values received no arguments?"
     in
-    let* left_ptr, right_ptr =
+    let left_ptr, right_ptr =
       match args with
       | [ left; right ] ->
-          let* left = rustval_as_ptr left in
-          let+ right = rustval_as_ptr right in
+          let left = as_base_of ~ty:Typed.t_ptr left in
+          let right = as_base_of ~ty:Typed.t_ptr right in
           (left, right)
-      | _ -> not_impl "eq_values expects two arguments"
+      | _ -> failwith "eq_values expects two arguments"
     in
     let** left, state = Heap.load left_ptr ty state in
     let** right, state = Heap.load right_ptr ty state in
@@ -254,14 +251,11 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> not_impl "bool_not expects one Base argument"
     in
     let** b_rval, state = Heap.load b_ptr (Types.TLiteral TBool) state in
-    let* b_int =
-      match b_rval with
-      | Base b ->
-          of_opt_not_impl ~msg:"bool_not expected a single integer"
-            (Typed.cast_checked b Typed.t_int)
-      | _ -> not_impl "bool_not expects a Base"
-    in
+    let b_int = as_base_of ~ty:Typed.t_int b_rval in
     let b_int' = Typed.not_int_bool b_int in
+    L.info (fun f ->
+        f "bool_not: %a -> %a = %a" Typed.ppa b_ptr Typed.ppa b_int Typed.ppa
+          b_int');
     Result.ok (Base b_int', state)
 
   let zeroed (fun_sig : UllbcAst.fun_sig) ~(crate : UllbcAst.crate) ~args:_

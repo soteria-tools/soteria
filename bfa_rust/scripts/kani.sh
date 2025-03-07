@@ -74,6 +74,10 @@ while [[ $# -gt 0 ]]; do
             CMD="$CMD --clean"
             shift
             ;;
+        --smt)
+            CMD="$CMD --dump-smt $SCRIPT_DIR/smt.log"
+            shift
+            ;;
         --ok)
             STOP_ON_FAIL=false
             shift
@@ -120,7 +124,9 @@ fi
 
 # Build our Kani library
 export KANI_LIB_PATH=$KANI_LIB_PATH
-(cd $KANI_LIB_PATH/kani && charon --only-cargo --lib --input ./src/)
+if [[ ! $CMD =~ "--no-compile" ]]; then
+    (cd $KANI_LIB_PATH/kani && charon --only-cargo --lib --input ./src/)
+fi
 
 # Silence warnings
 export RUSTFLAGS="-Awarnings"

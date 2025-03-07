@@ -11,6 +11,19 @@ module Archi = struct
   let word_size = 8
 end
 
+type layout = {
+  size : int;
+  align : int;
+  members_ofs : int Array.t;
+      (** Array of offset in layout for field with given id (index) *)
+      (* TODO: this should probably become (Types.FieldId.id * int) Array.t eventually,
+        but that requires converting integers to field ids for tuples i think. *)
+}
+
+type sint = Typed.T.sint Typed.t
+type cval = Typed.T.cval Typed.t
+type sbool = Typed.T.sbool Typed.t
+
 module Session = struct
   let current_crate : UllbcAst.crate ref =
     ref
@@ -61,31 +74,27 @@ module Session = struct
           trait_impls = TraitImplId.Map.empty;
         }
 
-  let set_crate = ( := ) current_crate
+  let layout_cache : (Types.ty, layout) Hashtbl.t = Hashtbl.create 128
+  let set_crate c = current_crate := c
   let get_crate () = !current_crate
 
   let get_adt adt_id =
     let crate = get_crate () in
     Types.TypeDeclId.Map.find adt_id crate.type_decls
 
+  let get_or_compute_cached_layout ty f =
+    match Hashtbl.find_opt layout_cache ty with
+    | Some layout -> layout
+    | None ->
+        let layout = f () in
+        Hashtbl.add layout_cache ty layout;
+        layout
+
   let pp_name ft name =
     let ctx = PrintUllbcAst.Crate.crate_to_fmt_env (get_crate ()) in
     let str = PrintTypes.name_to_string ctx name in
     Fmt.pf ft "%s" str
 end
-
-type layout = {
-  size : int;
-  align : int;
-  members_ofs : int Array.t;
-      (** Array of offset in layout for field with given id (index) *)
-      (* TODO: this should probably become (Types.FieldId.id * int) Array.t eventually,
-        but that requires converting integers to field ids for tuples i think. *)
-}
-
-type sint = Typed.T.sint Typed.t
-type cval = Typed.T.cval Typed.t
-type sbool = Typed.T.sbool Typed.t
 
 let is_int : Types.ty -> bool = function
   | TLiteral (TInteger _) -> true
@@ -115,7 +124,9 @@ let size_of_literal_ty : Types.literal_type -> int = function
 let align_of_int_ty : Types.integer_type -> int = size_of_int_ty
 let empty_generics = TypesUtils.empty_generic_args
 
-let rec layout_of : Types.ty -> layout = function
+let rec layout_of (ty : Types.ty) : layout =
+  Session.get_or_compute_cached_layout ty @@ fun () ->
+  match ty with
   | TLiteral (TInteger inty) ->
       let size = size_of_int_ty inty in
       let align = align_of_int_ty inty in
@@ -316,8 +327,21 @@ type cval_info = {
     their size and offset *)
 let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
   let offset_cval off cval = { cval with offset = cval.offset +@ off } in
-  let chain_cvals vals =
-    let layout = layout_of ty in
+  let chain_cvals layout vals =
+    let pp_cval ft { value; ty; size; offset } =
+      Fmt.pf ft "(%a: %s [%a;+%a[)" Typed.ppa value
+        (Charon_util.lit_to_string ty)
+        Typed.ppa offset Typed.ppa size
+    in
+    let pp_cval_list ft l =
+      Fmt.pf ft "[%a]" (Fmt.list ~sep:Fmt.comma pp_cval) l
+    in
+    L.info (fun f ->
+        f "chain_cvals - layout: [%a], items: [%a]"
+          Fmt.(array ~sep:comma int)
+          layout.members_ofs
+          Fmt.(list ~sep:comma pp_cval_list)
+          vals);
     vals
     |> List.mapi (fun i vals ->
            let offset = Array.get layout.members_ofs i |> Typed.int in
@@ -349,7 +373,7 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
       if List.compare_lengths vs types <> 0 then
         Fmt.failwith "Mistmached rust_val / TTuple lengths: %d/%d"
           (List.length vs) (List.length types)
-      else List.map2 rust_to_cvals vs types |> chain_cvals
+      else List.map2 rust_to_cvals vs types |> chain_cvals (layout_of ty)
   | Struct vals, TAdt (TAdtId t_id, _) ->
       let type_decl = Session.get_adt t_id in
       let fields =
@@ -360,7 +384,7 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
             Fmt.failwith "Unexpected type declaration in struct value: %a"
               Types.pp_type_decl type_decl
       in
-      List.map2 rust_to_cvals vals fields |> chain_cvals
+      List.map2 rust_to_cvals vals fields |> chain_cvals (layout_of ty)
   | Enum (disc, vals), TAdt (TAdtId t_id, _) ->
       let type_decl = Session.get_adt t_id in
       let disc_z =
@@ -384,7 +408,9 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
       in
       let disc_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
       let variant_tys = List.map (fun f -> Types.(f.field_ty)) variant.fields in
-      disc_ty :: variant_tys |> List.map2 rust_to_cvals vals |> chain_cvals
+      disc_ty :: variant_tys
+      |> List.map2 rust_to_cvals (Base disc :: vals)
+      |> chain_cvals (of_variant variant)
   | _ ->
       L.err (fun m ->
           m "Unhandled / Mismatched rust_value and Charon.ty: %a / %a"
@@ -433,9 +459,6 @@ let rust_of_cvals ?offset ty =
     let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
     let rec mk_callback to_parse parsed (callback : parse_callback) cvals :
         callback_return =
-      L.debug (fun f ->
-          f "Mk callback, cvals %a / todo: %a / did: %a" (Fmt.list Typed.ppa)
-            cvals (Fmt.list Types.pp_ty) to_parse (Fmt.list pp_rust_val) parsed);
       let+ res = callback cvals in
       match res with
       | `Done field -> (
@@ -473,7 +496,7 @@ let rust_of_cvals ?offset ty =
                   let layout = of_variant var in
                   let next_offset =
                     if var.fields = [] then offset
-                    else Typed.int (Array.get layout.members_ofs 0) +@ offset
+                    else Typed.int (Array.get layout.members_ofs 1) +@ offset
                   in
                   let parser =
                     var.fields

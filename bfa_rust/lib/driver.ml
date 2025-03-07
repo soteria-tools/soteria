@@ -95,7 +95,9 @@ let parse_ullbc_of_file ~no_compile file_name =
         String.concat " "
           [
             Fmt.str "cd %s &&" parent_folder;
-            "charon --ullbc --mir_optimized";
+            "charon --ullbc";
+            (* We can't enable this because it removes statements we care about... *)
+            (* "--mir_optimized"; *)
             (* We don't care about our implementation *)
             "--opaque=kani";
             "--translate-all-methods";
@@ -174,7 +176,10 @@ let exec_main_and_print log_level smt_file no_compile clean_up file_name =
   let res =
     let* crate = parse_ullbc_of_file ~no_compile file_name in
     let* res =
-      try exec_main crate with e -> Fmt.kstr fatal "Exn: %a" Fmt.exn e
+      try exec_main crate
+      with e ->
+        Fmt.kstr fatal "Exn: %a@\nTrace: %s" Fmt.exn e
+          (Printexc.get_backtrace ())
     in
     if List.is_empty res then Fatal "Execution vanished"
     else if List.exists (Compo_res.is_missing << fst) res then

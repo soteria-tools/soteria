@@ -44,10 +44,13 @@ let lit_to_string : Values.literal_type -> string = function
   | TChar -> "char"
   | TBool -> "bool"
 
-let rustval_as_ptr = function
-  | Base ptr ->
-      Rustsymex.of_opt_not_impl ~msg:"not a pointer"
-        (Typed.cast_checked ptr Typed.t_ptr)
+let as_base_of ~ty = function
+  | Base v -> (
+      match Typed.cast_checked v ty with
+      | Some v -> v
+      | None ->
+          Fmt.failwith "Unexpected rust_val type, expected %a, got %a"
+            Typed.ppa_ty ty Typed.ppa v)
   | v ->
-      Fmt.kstr Rustsymex.not_impl
-        "Unexpected rust_val kind, expected a pointer got: %a" pp_rust_val v
+      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
+        pp_rust_val v

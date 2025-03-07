@@ -8,8 +8,6 @@ open Charon
 open Charon_util
 module T = Typed.T
 
-type termination = RetVal of T.cval Typed.t | GoToBlock of UllbcAst.block_id
-
 module Make (Heap : Heap_intf.S) = struct
   module Std = Rust_std.M (Heap)
 
@@ -81,7 +79,7 @@ module Make (Heap : Heap_intf.S) = struct
         L.debug (fun f ->
             f "Dereferencing ptr %a of %a" Typed.ppa ptr Types.pp_ty base.ty);
         let** v, state = Heap.load ptr base.ty state in
-        let* v' = rustval_as_ptr v in
+        let v' = as_base_of ~ty:Typed.t_ptr v in
         L.debug (fun f ->
             f "Dereferenced pointer %a to pointer %a" Typed.ppa ptr Typed.ppa v');
         Result.ok (v', state)
@@ -196,6 +194,10 @@ module Make (Heap : Heap_intf.S) = struct
     let fundef_opt = Expressions.FunDeclId.Map.find_opt fid crate.fun_decls in
     match fundef_opt with
     | Some fundef -> (
+        L.info (fun g ->
+            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+            g "Resolved function call to %s"
+              (PrintTypes.name_to_string ctx fundef.item_meta.name));
         match Std.std_fun_eval ~crate fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
@@ -407,7 +409,8 @@ module Make (Heap : Heap_intf.S) = struct
     L.info (fun m ->
         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
-    L.debug (fun m -> m "Statement full: %a" UllbcAst.pp_statement astmt);
+    L.debug (fun m ->
+        m "Statement full: %a" UllbcAst.pp_raw_statement astmt.content);
     let* () = Rustsymex.consume_fuel_steps 1 in
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
     let@ () = with_loc ~loc in
@@ -421,6 +424,10 @@ module Make (Heap : Heap_intf.S) = struct
     | Call { func; args; dest = { kind = PlaceBase var; ty } } ->
         let* exec_fun = resolve_function ~crate func in
         let** args, state = eval_operand_list ~crate ~store state args in
+        L.info (fun g ->
+            g "Executing function with arguments [%a]"
+              Fmt.(list ~sep:comma pp_rust_val)
+              args);
         let** v, state =
           let+- err = exec_fun ~crate ~args ~state in
           Heap.add_to_call_trace err
@@ -490,7 +497,7 @@ module Make (Heap : Heap_intf.S) = struct
       Rustsymex.Result.fold_list statements ~init:(store, state)
         ~f:(fun (store, state) stmt -> exec_stmt ~crate store state stmt)
     in
-    L.debug (fun f ->
+    L.info (fun f ->
         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         f "Terminator: %s"
           (PrintUllbcAst.Ast.terminator_to_string ctx "" terminator));
@@ -525,8 +532,12 @@ module Make (Heap : Heap_intf.S) = struct
                 g "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
                   UllbcAst.pp_block_id else_block Typed.ppa discr);
             let* block =
-              if%sat discr ==@ Typed.one then return if_block
-              else return else_block
+              if%sat discr ==@ Typed.zero then (
+                L.debug (fun g -> g "Took else block");
+                return else_block)
+              else (
+                L.debug (fun g -> g "Took if block");
+                return if_block)
             in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~crate ~body store state block

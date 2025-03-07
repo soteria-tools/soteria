@@ -48,8 +48,14 @@ let set_smt_file f =
 let log_sexp sexp =
   match !smt_log_file with
   | None -> ()
+  | Some oc -> Sexplib.Sexp.output_hum oc sexp
+
+let log_response response =
+  match !smt_log_file with
+  | None -> ()
   | Some oc ->
-      Sexplib.Sexp.output_hum oc sexp;
+      output_string oc " ; -> ";
+      Sexplib.Sexp.output_hum oc response;
       output_char oc '\n';
       flush oc
 
@@ -63,7 +69,9 @@ let z3_solver () =
   let solver = new_solver solver_config in
   let command sexp =
     log_sexp sexp;
-    solver.command sexp
+    let res = solver.command sexp in
+    log_response res;
+    res
   in
   { solver with command }
 
