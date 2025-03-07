@@ -586,6 +586,13 @@ let put_raw_tree ofs (tree : Tree.t) t :
 
 let alloc size = { root = Tree.uninit (0s, size); bound = Some size }
 
+let uninit t =
+  match t with
+  | None -> miss_no_fix ~msg:"uninit on none" ()
+  | Some t ->
+      let root = Tree.uninit t.root.range in
+      Result.ok ((), Some { t with root })
+
 (** Logic *)
 
 let subst_serialized subst_var (serialized : serialized) =

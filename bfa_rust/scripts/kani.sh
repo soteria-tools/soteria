@@ -51,6 +51,11 @@ STOP_ON_FAIL=true
 TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)
 while [[ $# -gt 0 ]]; do
     case $1 in
+        -d|--directory)
+            TESTS=$(find $KANI_PATH/tests/$2 -name '*.rs' | sort)
+            shift
+            shift
+            ;;
         -f|--filter)
             TESTS=$(echo $TESTS | xargs -n1 | grep $2)
             shift
@@ -79,6 +84,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help)
             echo -e "${BOLD}Options:$RESET"
+            echo -e "  $CYAN-d, --directory <path>$RESET     Specify the subdirectory to search for tests, default is kani"
             echo -e "  $CYAN-f, --filter <pattern>$RESET     Filter by a given pattern"
             echo -e "  $CYAN-e, --exclude <pattern>$RESET    Exclude by a given pattern"
             echo -e "  $CYAN--no-compile$RESET               Do not re-compile files"

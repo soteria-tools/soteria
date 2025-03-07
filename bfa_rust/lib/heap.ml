@@ -93,7 +93,7 @@ let load ptr ty st =
   else (* TODO: reverse, find a way of encoding the conversion to a rust val *)
     with_ptr ptr st (fun ~ofs block ->
         L.debug (fun f ->
-            f "Recursively reading from block tree:@\n%a@\n"
+            f "Recursively reading from block tree at %a:@\n%a@\n" Typed.ppa ptr
               Fmt.(option ~none:(any "None") Tree_block.pp)
               block);
         let rec aux (blocks, callback) =
@@ -181,6 +181,14 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) :
           ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
       (Typed.Ptr.loc ptr) st
   else error `InvalidFree
+
+let uninit (ptr : [< T.sptr ] Typed.t) (st : t) :
+    (unit * t, 'err, serialized list) Result.t =
+  let@ () = with_error_loc_as_call_trace () in
+  let@ () = with_loc_err () in
+  log "uninit" ptr st;
+  if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
+  else with_ptr ptr st (fun ~ofs:_ block -> Tree_block.uninit block)
 
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in

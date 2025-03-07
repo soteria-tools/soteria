@@ -4,6 +4,7 @@ open Typed
 type rust_val =
   | Base of T.cval Typed.t
   | Enum of T.cval Typed.t * rust_val list  (** discriminant * values *)
+  | Struct of rust_val list  (** contains ordered fields *)
   | Tuple of rust_val list
   | Never  (** Useful for base cases -- should be ignored *)
 [@@deriving show { with_path = false }]

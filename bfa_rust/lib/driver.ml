@@ -79,7 +79,7 @@ let parse_ullbc_of_file ~no_compile file_name =
   let*> () =
     match no_compile with
     | true -> Ok 0
-    | false -> (
+    | false ->
         (* load from env *)
         let+ kani_lib =
           try
@@ -88,10 +88,14 @@ let parse_ullbc_of_file ~no_compile file_name =
             else Ok (path ^ "/")
           with Not_found -> Fatal "KANI_LIB_PATH not set"
         in
+        let peek f s =
+          f s;
+          s
+        in
         String.concat " "
           [
             Fmt.str "cd %s &&" parent_folder;
-            "charon --ullbc";
+            "charon --ullbc --mir_optimized";
             (* We don't care about our implementation *)
             "--opaque=kani";
             "--translate-all-methods";
@@ -116,12 +120,9 @@ let parse_ullbc_of_file ~no_compile file_name =
             Fmt.str "--input %s" file_name;
             Fmt.str "--dest-file %s" output;
           ]
+        |> peek (fun s -> L.debug (fun g -> g "Running command: %s" s))
         |> Sys.command
-        |> function
-        | 0 ->
-            Cleaner.touched output;
-            0
-        | n -> n)
+        |> peek (function 0 -> Cleaner.touched output | _ -> ())
   in
   let* crate =
     try

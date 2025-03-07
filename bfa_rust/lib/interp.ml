@@ -187,9 +187,8 @@ module Make (Heap : Heap_intf.S) = struct
       | FnOpRegular { func = FunId _; _ } ->
           Fmt.kstr not_impl "Generic function call is not supported: %a"
             GAst.pp_fn_operand fnop
-      | FnOpRegular { func = TraitMethod _; _ } ->
-          Fmt.kstr not_impl "Trait method call is not supported: %a"
-            GAst.pp_fn_operand fnop
+      | FnOpRegular { func = TraitMethod (_, _, fid); _ } ->
+          Rustsymex.return fid
       | FnOpMove _ ->
           Fmt.kstr not_impl "Move function call is not supported: %a"
             GAst.pp_fn_operand fnop
@@ -390,9 +389,9 @@ module Make (Heap : Heap_intf.S) = struct
         let++ values, state = eval_operand_list ~crate ~store state operands in
         (Charon_util.Tuple values, state)
     (* Struct aggregate *)
-    | Aggregate (AggregatedAdt (_, None, None, _), _) as v ->
-        Fmt.kstr not_impl "Struct rvalues not supported: %a"
-          Expressions.pp_rvalue v
+    | Aggregate (AggregatedAdt (TAdtId _, None, None, _), operands) ->
+        let++ values, state = eval_operand_list ~crate ~store state operands in
+        (Charon_util.Struct values, state)
     (* Invalid aggregate (not sure, but seems like it) *)
     | Aggregate _ as v ->
         Fmt.failwith "Invalid aggregate rvalue: %a" Expressions.pp_rvalue v
@@ -460,13 +459,14 @@ module Make (Heap : Heap_intf.S) = struct
         (* TODO: update tree borrow with read *)
         Result.ok (store, state)
     | Drop place ->
+        (* TODO: this is probably super wrong, drop glue etc. *)
         let** place_ptr, state = resolve_place ~store state place in
-        let++ (), state = Heap.free place_ptr state in
-        let store =
+        let++ (), state = Heap.uninit place_ptr state in
+        (* let store =
           match place.kind with
           | PlaceBase var_id -> Store.add var_id (None, place.ty) store
           | _ -> store
-        in
+        in *)
         (store, state)
     | Assert { cond; expected } ->
         let** cond, state = eval_operand ~crate ~store state cond in

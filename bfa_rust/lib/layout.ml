@@ -121,12 +121,12 @@ let rec layout_of : Types.ty -> layout = function
       let align = align_of_int_ty inty in
       { size; align; members_ofs = [||] }
   | TLiteral TBool -> { size = 1; align = 1; members_ofs = [||] }
-  | TAdt (TTuple, g) when g = empty_generics ->
+  | TAdt (TTuple, { types = []; _ }) ->
       (* unit () *)
       (* TODO: this actually has size 0, which makes things... awkward *)
       { size = 1; align = 1; members_ofs = [||] }
   | TAdt (TTuple, { types; _ }) -> layout_of_members types
-  | TAdt (TAdtId id, g) when g = empty_generics -> (
+  | TAdt (TAdtId id, _) -> (
       let adt = Session.get_adt id in
       match adt.kind with
       | Struct fields ->
@@ -134,17 +134,15 @@ let rec layout_of : Types.ty -> layout = function
           layout_of_members fields
       | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
       | Enum variants ->
-          (* TODO: empty enums? *)
-          (* assume all discriminants are of equal size (should be ok?) *)
           let layouts =
             List.map
               (fun ({ fields; discriminant; _ } : Types.variant) ->
-                let layout =
-                  List.map (fun (f : Types.field) -> f.field_ty) fields
-                  |> layout_of_members
+                let discr_ty = Types.TLiteral (TInteger discriminant.int_ty) in
+                let members =
+                  discr_ty
+                  :: List.map (fun (f : Types.field) -> f.field_ty) fields
                 in
-                let disc_size = size_of_int_ty discriminant.int_ty in
-                { layout with size = layout.size + disc_size })
+                layout_of_members members)
               variants
           in
           List.fold_left
@@ -163,7 +161,7 @@ let rec layout_of : Types.ty -> layout = function
       raise (CantComputeLayout ty)
 
 and layout_of_members members =
-  let rec aux i members_ofs (layout : layout) = function
+  let rec aux members_ofs (layout : layout) = function
     | [] -> (List.rev members_ofs, layout)
     | ty :: rest ->
         let { size = curr_size; align = curr_align; members_ofs = _ } =
@@ -173,12 +171,12 @@ and layout_of_members members =
         let mem_ofs = curr_size + (curr_size mod align) in
         let new_size = mem_ofs + size in
         let new_align = Int.max align curr_align in
-        aux (i + 1) (mem_ofs :: members_ofs)
+        aux (mem_ofs :: members_ofs)
           { size = new_size; align = new_align; members_ofs = [||] }
           rest
   in
   let members_ofs, { size; align; members_ofs = _ } =
-    aux 0 [] { size = 0; align = 1; members_ofs = [||] } members
+    aux [] { size = 0; align = 1; members_ofs = [||] } members
   in
   {
     size = size + (size mod align);
@@ -344,6 +342,17 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
         Fmt.failwith "Mistmached rust_val / TTuple lengths: %d/%d"
           (List.length vs) (List.length types)
       else List.map2 rust_to_cvals vs types |> chain_cvals
+  | Struct vals, TAdt (TAdtId t_id, _) ->
+      let type_decl = Session.get_adt t_id in
+      let fields =
+        match type_decl with
+        | { kind = Struct fields; _ } ->
+            fields |> List.map (fun (f : Generated_Types.field) -> f.field_ty)
+        | _ ->
+            Fmt.failwith "Unexpected type declaration in struct value: %a"
+              Types.pp_type_decl type_decl
+      in
+      List.map2 rust_to_cvals vals fields |> chain_cvals
   | Enum (disc, vals), TAdt (TAdtId t_id, _) ->
       let type_decl = Session.get_adt t_id in
       let disc_z =
@@ -360,7 +369,9 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
               (fun v -> Types.(Z.equal disc_z v.discriminant.value))
               variants
         | _ ->
-            Fmt.failwith "Unexpected type declaration in enum aggregate: %a"
+            Fmt.failwith
+              "Unexpected type declaration in enum aggregate in rust_to_cvals: \
+               %a"
               Types.pp_type_decl type_decl
       in
       let disc_ty = Values.TInteger variant.discriminant.int_ty in
@@ -377,7 +388,8 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
 
 type aux_ret = (Types.literal_type * sint * sint) list * parse_callback
 and parse_callback = cval list -> callback_return
-and callback_return = [ `Done of rust_val | `More of aux_ret ] Rustsymex.t
+and parser_return = [ `Done of rust_val | `More of aux_ret ]
+and callback_return = parser_return Rustsymex.t
 
 (** Converts a Rust type into a list of C blocks, along with their size and
     offset; once these are read, symbolically decides whether we must keep
@@ -396,69 +408,39 @@ let rust_of_cvals ?offset ty =
           fun v ->
             if Stdlib.not (List.length v = 1) then failwith "Expected one cval"
             else return (`Done (Base (List.hd v))) )
-    | TAdt (TTuple, g) when g = empty_generics ->
-        ([], fun _ -> return (`Done (Tuple [])))
-    | TAdt (TAdtId t_id, _) ->
+    | TAdt (TTuple, { types; _ }) ->
+        aux_fields ~f:(fun fs -> Tuple fs) offset types
+    | TAdt (TAdtId t_id, _) -> (
         let type_decl = Session.get_adt t_id in
-        let variants =
-          match (type_decl : Types.type_decl) with
-          | { kind = Enum variants; _ } -> variants
-          | _ ->
-              Fmt.failwith "Unexpected type declaration in enum aggregate: %a"
-                Types.pp_type_decl type_decl
-        in
-        let disc = (List.hd variants).discriminant in
-        let disc_size = Typed.int (size_of_int_ty disc.int_ty) in
-        let next_offset = offset +@ disc_size in
-        let callback cval : callback_return =
-          let cval =
-            match cval with
-            | [ cval ] -> cval
-            | _ -> failwith "Expected one cval"
-          in
-          let* res =
-            Rustsymex.fold_list variants ~init:None
-              ~f:(fun acc (var : Types.variant) ->
-                match acc with
-                | Some _ -> return acc
-                | None ->
-                    let var_disc = value_of_scalar var.discriminant in
-                    if%sat var_disc ==@ cval then aux_enum next_offset var
-                    else return None)
-          in
-          match res with
-          | None ->
-              L.warn (fun f ->
-                  f
-                    "Vanishing rust_of_cvals, as no variant matches variant id \
-                     %a"
-                    Typed.ppa cval);
-              vanish ()
-          | Some res -> return res
-        in
-        ([ (TInteger disc.int_ty, disc_size, offset) ], callback)
+        match (type_decl : Types.type_decl) with
+        | { kind = Enum variants; _ } -> aux_enum_discriminant offset variants
+        | { kind = Struct fields; _ } ->
+            fields
+            |> List.map (fun (f : Types.field) -> f.field_ty)
+            |> aux_fields ~f:(fun fs -> Struct fs) offset
+        | _ ->
+            Fmt.failwith "Unhandled type declaration in rust_of_cvals: %a"
+              Types.pp_type_decl type_decl)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
-  (* Parses an enum variant *)
-  and aux_enum offset (var : Types.variant) =
+  (* Parses a list of fields (for structs and tuples) *)
+  and aux_fields ~f offset fields : aux_ret =
     let calc_offset = function
       | [] -> 0s
       | blocks ->
           let _, size, offset = List.hd @@ List.rev blocks in
           offset +@ size
     in
-    (* Recursively keep doing callbacks until we're 100% finished.
-      Requires parsing each field as many times as needed, and putting
-      all the fields together in the end. *)
     let rec mk_callback next_offset to_parse parsed (callback : parse_callback)
         cvals : callback_return =
+      L.debug (fun f ->
+          f "Mk callback, cvals %a / todo: %a / did: %a" (Fmt.list Typed.ppa)
+            cvals (Fmt.list Types.pp_ty) to_parse (Fmt.list pp_rust_val) parsed);
       let+ res = callback cvals in
       match res with
-      | `Done f -> (
-          let parsed = if f = Never then parsed else f :: parsed in
+      | `Done field -> (
+          let parsed = if field = Never then parsed else field :: parsed in
           match to_parse with
-          | [] ->
-              let disc_cval = value_of_scalar var.discriminant in
-              `Done (Enum (disc_cval, List.rev parsed))
+          | [] -> `Done (f (List.rev parsed))
           | ty :: rest ->
               let blocks, callback = aux next_offset ty in
               let next_off = calc_offset blocks in
@@ -467,10 +449,41 @@ let rust_of_cvals ?offset ty =
           let next_off = calc_offset blocks in
           `More (blocks, mk_callback next_off to_parse parsed callback)
     in
-    (* Little trick to avoid having to special case empty enums *)
+    (* Little trick to avoid having to special case empty fields *)
     let empty_callback _ = return (`Done Never) in
-    let field_tys = List.rev_map (fun f -> Types.(f.field_ty)) var.fields in
-    return (Some (`More ([], mk_callback offset field_tys [] empty_callback)))
+    ([], mk_callback offset fields [] empty_callback)
+  (* Parses what enum variant we're handling *)
+  and aux_enum_discriminant offset (variants : Types.variant list) : aux_ret =
+    let disc = (List.hd variants).discriminant in
+    let disc_size = Typed.int (size_of_int_ty disc.int_ty) in
+    let next_offset = offset +@ disc_size in
+    let callback cval : callback_return =
+      let cval = List.hd cval in
+      let* res =
+        Rustsymex.fold_list variants ~init:None
+          ~f:(fun acc (var : Types.variant) ->
+            match acc with
+            | Some _ -> return acc
+            | None ->
+                let var_disc = value_of_scalar var.discriminant in
+                if%sat var_disc ==@ cval then
+                  let parser =
+                    var.fields
+                    |> List.map (fun (f : Types.field) -> f.field_ty)
+                    |> aux_fields ~f:(fun fs -> Enum (var_disc, fs)) next_offset
+                  in
+                  return (Some (`More parser))
+                else return None)
+      in
+      match res with
+      | None ->
+          L.warn (fun f ->
+              f "Vanishing rust_of_cvals, as no variant matches variant id %a"
+                Typed.ppa cval);
+          vanish ()
+      | Some res -> return res
+    in
+    ([ (TInteger disc.int_ty, disc_size, offset) ], callback)
   in
   let off = Option.value ~default:0s offset in
   aux off ty

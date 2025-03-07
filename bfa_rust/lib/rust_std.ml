@@ -232,7 +232,6 @@ module M (Heap : Heap_intf.S) = struct
           Fmt.kstr not_impl "Unexpected type for eq_values: %a" Types.pp_ty ty
       | _ -> not_impl "Error: eq_values received no arguments?"
     in
-    L.info (fun g -> g "%a" Types.pp_ty ty);
     let* left_ptr, right_ptr =
       match args with
       | [ left; right ] ->
@@ -264,6 +263,23 @@ module M (Heap : Heap_intf.S) = struct
     in
     let b_int' = b_int |> Typed.bool_of_int |> Typed.not |> Typed.int_of_bool in
     Result.ok (Base b_int', state)
+
+  let zeroed (fun_sig : UllbcAst.fun_sig) ~(crate : UllbcAst.crate) ~args:_
+      ~state =
+    let rec aux : Types.ty -> rust_val = function
+      | TLiteral _ -> Base Typed.zero
+      | TAdt (TAdtId t_id, _) -> (
+          let adt = Types.TypeDeclId.Map.find t_id crate.type_decls in
+          match adt.kind with
+          | Struct fields ->
+              Struct (List.map (fun (f : Types.field) -> aux f.field_ty) fields)
+          | Enum [] -> failwith "zeroed does not handle empty enums!"
+          | k ->
+              Fmt.failwith "Unhandled zeroed ADT kind: %a"
+                Types.pp_type_decl_kind k)
+      | ty -> Fmt.failwith "Unhandled zeroed type: %a" Types.pp_ty ty
+    in
+    try Result.ok (aux fun_sig.output, state) with Failure f -> not_impl f
 
   let global_map =
     let open Values in
@@ -311,6 +327,7 @@ module M (Heap : Heap_intf.S) = struct
     | ResUnwrap
     | Eq
     | BoolNot
+    | Zeroed
 
   let std_fun_map =
     [
@@ -332,6 +349,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq);
       ("core::result::{core::cmp::PartialEq}::eq", Eq);
       ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
+      ("core::mem::zeroed", Zeroed);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
@@ -361,6 +379,7 @@ module M (Heap : Heap_intf.S) = struct
        | ResUnwrap -> unwrap_res f.signature
        | Eq -> eq_values f.signature
        | BoolNot -> bool_not f.signature
+       | Zeroed -> zeroed f.signature
 end
 
 module Types = struct

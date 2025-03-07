@@ -55,6 +55,14 @@ module type S = sig
       serialized list )
     Rustsymex.Result.t
 
+  val uninit :
+    [< sptr ] Typed.t ->
+    t ->
+    ( unit * t,
+      [> `NullDereference | `UseAfterFree ] err,
+      serialized list )
+    Rustsymex.Result.t
+
   val copy_nonoverlapping :
     dst:[< sptr ] Typed.t ->
     src:[< sptr ] Typed.t ->
