@@ -45,9 +45,16 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 KANI_LIB_PATH=$(realpath $SCRIPT_DIR/../kani_lib)
 KANI_PATH=$(realpath $SCRIPT_DIR/../../../kani)
 
+# Output files
+touch "$SCRIPT_DIR/kani.log"
+LOG_FILE=$SCRIPT_DIR/kani.log
+SMT_FILE=$SCRIPT_DIR/smt.log
+PASS_FILE=$SCRIPT_DIR/passes.log
+
 # Handle arguments:
 CMD="bfa-rust exec-main"
 STOP_ON_FAIL=true
+STORE_PASSES=false
 TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -75,11 +82,15 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --smt)
-            CMD="$CMD --dump-smt $SCRIPT_DIR/smt.log"
+            CMD="$CMD --dump-smt $SMT_FILE"
             shift
             ;;
         --ok)
             STOP_ON_FAIL=false
+            shift
+            ;;
+        --store-passes)
+            STORE_PASSES=true
             shift
             ;;
         -v)
@@ -93,6 +104,8 @@ while [[ $# -gt 0 ]]; do
             echo -e "  $CYAN-e, --exclude <pattern>$RESET    Exclude by a given pattern"
             echo -e "  $CYAN--no-compile$RESET               Do not re-compile files"
             echo -e "  $CYAN--clean$RESET                    Clean the build directory"
+            echo -e "  $CYAN--smt$RESET                      Dump SMT queries to a file"
+            echo -e "  $CYAN--store-passes$RESET             Store passed tests in a file"
             echo -e "  $CYAN--ok$RESET                       Ignore errors"
             echo -e "  $CYAN-v$RESET                         Verbose logging"
             exit 1
@@ -108,11 +121,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-touch "$SCRIPT_DIR/kani.log"
-LOG_FILE=$(realpath $SCRIPT_DIR/kani.log)
-
 # Clean log file
 echo -n > $LOG_FILE
+if [ $STORE_PASSES ]; then
+    echo -n > $PASS_FILE
+fi
 
 # Build Rusteria
 eval $(opam env)
@@ -151,12 +164,16 @@ for test in $TESTS; do
     dune exec --no-build -- $CMD $test >> $LOG_FILE 2>>$LOG_FILE
     result=$?
     end=$(($(date +%s%N)/1000000))
-    if [ $result -eq 0 ] && [ $expect_failure -eq 0 ]; then
-        echo -e " ${GREEN}passed${RESET} in $((end-start))ms"
+    if [ $result -eq $expect_failure ]; then
+        if [ $result -eq 0 ]; then
+            echo -e " ${GREEN}passed${RESET} in $((end-start))ms"
+        else
+            echo -e " ${GREEN}failed (expected)${RESET} in $((end-start))ms"
+        fi
         passed=$((passed+1))
-    elif [ $result -eq 1 ] && [ $expect_failure -eq 1 ]; then
-        echo -e " ${GREEN}failed (expected)${RESET} in $((end-start))ms"
-        passed=$((passed+1))
+        if [ $STORE_PASSES ]; then
+            echo $test >> $PASS_FILE
+        fi
     else
         if [ $result -eq 0 ] && [ $expect_failure -eq 1 ]; then
             echo -e " ${RED}passed (expected failure)${RESET}"
