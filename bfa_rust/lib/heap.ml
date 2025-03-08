@@ -96,26 +96,26 @@ let load ptr ty st =
             f "Recursively reading from block tree at %a:@\n%a" Typed.ppa ptr
               Fmt.(option ~none:(any "None") Tree_block.pp)
               block);
-        let rec aux (blocks, callback) =
-          let pp_block ft (ty, size, ofs) =
-            Fmt.pf ft "%s [%a, +%a[ "
-              (Charon_util.lit_to_string ty)
-              Typed.ppa ofs Typed.ppa size
-          in
-          L.debug (fun f ->
-              f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
-          let** values, block =
-            Result.fold_list blocks ~init:([], block)
-              ~f:(fun (vals, block) (ty, size, ofs) ->
-                let++ value, block = Tree_block.load ofs size ty block in
-                (value :: vals, block))
-          in
-          let* res = callback values in
-          match res with
+        let rec aux block = function
           | `Done v -> Result.ok (v, block)
-          | `More info -> (aux [@tailcall]) info
+          | `More (blocks, callback) ->
+              let pp_block ft (ty, size, ofs) =
+                Fmt.pf ft "%s [%a, +%a[ "
+                  (Charon_util.lit_to_string ty)
+                  Typed.ppa ofs Typed.ppa size
+              in
+              L.debug (fun f ->
+                  f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
+              let** values, block =
+                Result.fold_list blocks ~init:([], block)
+                  ~f:(fun (vals, block) (ty, size, ofs) ->
+                    let++ value, block = Tree_block.load ofs size ty block in
+                    (value :: vals, block))
+              in
+              let* res = callback values in
+              aux block res
         in
-        let++ value, block = aux (Layout.rust_of_cvals ~offset:ofs ty) in
+        let++ value, block = aux block (Layout.rust_of_cvals ~offset:ofs ty) in
         L.debug (fun f ->
             f "Finished reading rust value %a" Charon_util.pp_rust_val value);
         (value, block))

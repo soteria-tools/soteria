@@ -424,20 +424,21 @@ and callback_return = parser_return Rustsymex.t
 (** Converts a Rust type into a list of C blocks, along with their size and
     offset; once these are read, symbolically decides whether we must keep
     reading. *)
-let rust_of_cvals ?offset ty =
+let rust_of_cvals ?offset ty : parser_return =
   (* Base case, parses all types. *)
-  let rec aux offset : Types.ty -> aux_ret = function
+  let rec aux offset : Types.ty -> parser_return = function
     | TLiteral ty ->
-        ( [ (ty, Typed.int (size_of_literal_ty ty), offset) ],
-          (* TODO: conversions? *)
-          fun v ->
-            if Stdlib.not (List.length v = 1) then failwith "Expected one cval"
-            else return (`Done (Base (List.hd v))) )
+        `More
+          ( [ (ty, Typed.int (size_of_literal_ty ty), offset) ],
+            function
+            | [ v ] -> return (`Done (Base v))
+            | _ -> failwith "Expected one cval" )
     | TRef _ ->
-        ( [ (TInteger Isize, Typed.int Archi.word_size, 0s) ],
-          fun v ->
-            if Stdlib.not (List.length v = 1) then failwith "Expected one cval"
-            else return (`Done (Base (List.hd v))) )
+        `More
+          ( [ (TInteger Isize, Typed.int Archi.word_size, 0s) ],
+            function
+            | [ v ] -> return (`Done (Base v))
+            | _ -> failwith "Expected one cval" )
     | TAdt (TTuple, { types; _ }) ->
         let layout = layout_of ty in
         aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
@@ -455,30 +456,32 @@ let rust_of_cvals ?offset ty =
               Types.pp_type_decl type_decl)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* Parses a list of fields (for structs and tuples) *)
-  and aux_fields ~f ~layout offset fields : aux_ret =
+  and aux_fields ~f ~layout offset fields : parser_return =
     let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
-    let rec mk_callback to_parse parsed (callback : parse_callback) cvals :
-        callback_return =
-      let+ res = callback cvals in
-      match res with
-      | `Done field -> (
-          let parsed = if field = Never then parsed else field :: parsed in
-          match to_parse with
-          | [] -> `Done (f (List.rev parsed))
-          | ty :: rest ->
-              let idx = List.length parsed in
-              let offset = Array.get layout.members_ofs idx |> Typed.int in
-              let offset = base_offset +@ offset in
-              let blocks, callback = aux offset ty in
-              `More (blocks, mk_callback rest parsed callback))
-      | `More (blocks, callback) ->
-          `More (blocks, mk_callback to_parse parsed callback)
+    let rec mk_callback to_parse parsed : parser_return =
+      match to_parse with
+      | [] -> `Done (f (List.rev parsed))
+      | ty :: rest -> (
+          let idx = List.length parsed in
+          let offset = Array.get layout.members_ofs idx |> Typed.int in
+          let offset = base_offset +@ offset in
+          match aux offset ty with
+          | `More (blocks, callback) ->
+              wrap_callback rest parsed blocks callback
+          | `Done value -> mk_callback rest (value :: parsed))
+    and wrap_callback to_parse parsed blocks callback =
+      `More
+        ( blocks,
+          fun values ->
+            let+ res = callback values in
+            match res with
+            | `More (blocks, callback) ->
+                wrap_callback to_parse parsed blocks callback
+            | `Done value -> mk_callback to_parse (value :: parsed) )
     in
-    (* Little trick to avoid having to special case empty fields *)
-    let empty_callback _ = return (`Done Never) in
-    ([], mk_callback fields [] empty_callback)
+    mk_callback fields []
   (* Parses what enum variant we're handling *)
-  and aux_enum offset (variants : Types.variant list) : aux_ret =
+  and aux_enum offset (variants : Types.variant list) : parser_return =
     let disc = (List.hd variants).discriminant in
     let disc_align = Typed.nonzero (align_of_int_ty disc.int_ty) in
     let disc_size = Typed.int (size_of_int_ty disc.int_ty) in
@@ -504,7 +507,7 @@ let rust_of_cvals ?offset ty =
                          ~f:(fun fs -> Enum (var_disc, fs))
                          ~layout offset
                   in
-                  return (Some (`More parser))
+                  return (Some parser)
                 else return None)
       in
       of_opt_not_impl
@@ -514,7 +517,7 @@ let rust_of_cvals ?offset ty =
              Typed.ppa cval)
         res
     in
-    ([ (TInteger disc.int_ty, disc_size, offset) ], callback)
+    `More ([ (TInteger disc.int_ty, disc_size, offset) ], callback)
   in
   let off = Option.value ~default:0s offset in
   aux off ty
