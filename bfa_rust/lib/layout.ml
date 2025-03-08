@@ -341,20 +341,6 @@ type cval_info = {
 let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
   let offset_cval off cval = { cval with offset = cval.offset +@ off } in
   let chain_cvals layout vals =
-    let pp_cval ft { value; ty; size; offset } =
-      Fmt.pf ft "(%a: %s [%a;+%a[)" Typed.ppa value
-        (Charon_util.lit_to_string ty)
-        Typed.ppa offset Typed.ppa size
-    in
-    let pp_cval_list ft l =
-      Fmt.pf ft "[%a]" (Fmt.list ~sep:Fmt.comma pp_cval) l
-    in
-    L.info (fun f ->
-        f "chain_cvals - layout: [%a], items: [%a]"
-          Fmt.(array ~sep:comma int)
-          layout.members_ofs
-          Fmt.(list ~sep:comma pp_cval_list)
-          vals);
     vals
     |> List.mapi (fun i vals ->
            let offset = Array.get layout.members_ofs i |> Typed.int in
@@ -453,22 +439,23 @@ let rust_of_cvals ?offset ty =
             if Stdlib.not (List.length v = 1) then failwith "Expected one cval"
             else return (`Done (Base (List.hd v))) )
     | TAdt (TTuple, { types; _ }) ->
-        aux_fields ~f:(fun fs -> Tuple fs) offset types
+        let layout = layout_of ty in
+        aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
     | TAdt (TAdtId t_id, _) -> (
         let type_decl = Session.get_adt t_id in
         match (type_decl : Types.type_decl) with
         | { kind = Enum variants; _ } -> aux_enum offset variants
         | { kind = Struct fields; _ } ->
+            let layout = layout_of ty in
             fields
             |> List.map (fun (f : Types.field) -> f.field_ty)
-            |> aux_fields ~f:(fun fs -> Struct fs) offset
+            |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
         | _ ->
             Fmt.failwith "Unhandled type declaration in rust_of_cvals: %a"
               Types.pp_type_decl type_decl)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* Parses a list of fields (for structs and tuples) *)
-  and aux_fields ~f offset fields : aux_ret =
-    let layout = layout_of_members fields in
+  and aux_fields ~f ~layout offset fields : aux_ret =
     let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
     let rec mk_callback to_parse parsed (callback : parse_callback) cvals :
         callback_return =
@@ -506,15 +493,16 @@ let rust_of_cvals ?offset ty =
             | None ->
                 let var_disc = value_of_scalar var.discriminant in
                 if%sat var_disc ==@ cval then
-                  let layout = of_variant var in
-                  let next_offset =
-                    if var.fields = [] then offset
-                    else Typed.int (Array.get layout.members_ofs 1) +@ offset
-                  in
+                  (* skip discriminant *)
+                  let ({ members_ofs = mems; _ } as layout) = of_variant var in
+                  let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
+                  let layout = { layout with members_ofs } in
                   let parser =
                     var.fields
                     |> List.map (fun (f : Types.field) -> f.field_ty)
-                    |> aux_fields ~f:(fun fs -> Enum (var_disc, fs)) next_offset
+                    |> aux_fields
+                         ~f:(fun fs -> Enum (var_disc, fs))
+                         ~layout offset
                   in
                   return (Some (`More parser))
                 else return None)
