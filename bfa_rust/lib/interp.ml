@@ -9,7 +9,7 @@ open Charon_util
 module T = Typed.T
 
 module Make (Heap : Heap_intf.S) = struct
-  module Std = Rust_std.M (Heap)
+  module Std_funs = Std_funs.M (Heap)
 
   exception Unsupported of (string * Meta.span)
 
@@ -170,40 +170,26 @@ module Make (Heap : Heap_intf.S) = struct
 
   let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
       'err fun_exec Rustsymex.t =
-    let* fid =
-      match fnop with
-      | FnOpRegular
-          {
-            func = FunId (FRegular fid);
-            generics =
-              { regions = []; types = []; const_generics = []; trait_refs = [] };
-          } ->
-          Rustsymex.return fid
-      | FnOpRegular { func = FunId (FBuiltin _); _ } ->
-          Fmt.kstr not_impl "Builtin function call is not supported: %a"
-            GAst.pp_fn_operand fnop
-      | FnOpRegular { func = FunId _; _ } ->
-          Fmt.kstr not_impl "Generic function call is not supported: %a"
-            GAst.pp_fn_operand fnop
-      | FnOpRegular { func = TraitMethod (_, _, fid); _ } ->
-          Rustsymex.return fid
-      | FnOpMove _ ->
-          Fmt.kstr not_impl "Move function call is not supported: %a"
-            GAst.pp_fn_operand fnop
-    in
-    let fundef_opt = Expressions.FunDeclId.Map.find_opt fid crate.fun_decls in
-    match fundef_opt with
-    | Some fundef -> (
+    match fnop with
+    | FnOpRegular { func = FunId (FRegular fid); _ }
+    | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
+        let fundef = Expressions.FunDeclId.Map.find fid crate.fun_decls in
         L.info (fun g ->
             let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
             g "Resolved function call to %s"
               (PrintTypes.name_to_string ctx fundef.item_meta.name));
-        match Std.std_fun_eval ~crate fundef with
+        match Std_funs.std_fun_eval ~crate fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
-    | None ->
-        Fmt.kstr not_impl "Cannot call external function: %a"
-          Expressions.FunDeclId.pp_id fid
+    | FnOpRegular { func = FunId (FBuiltin fn); _ } -> (
+        match Std_funs.builtin_fun_eval ~crate fn with
+        | Some fn -> Rustsymex.return fn
+        | None ->
+            Fmt.kstr not_impl "Builtin function not supported: %a"
+              Expressions.pp_builtin_fun_id fn)
+    | FnOpMove _ ->
+        Fmt.kstr not_impl "Move function call is not supported: %a"
+          GAst.pp_fn_operand fnop
 
   and eval_operand ~crate:_ ~store state (op : Expressions.operand) =
     match op with
@@ -241,7 +227,7 @@ module Make (Heap : Heap_intf.S) = struct
         let decl =
           UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
         in
-        match Std.global_eval ~crate decl with
+        match Std_globals.global_eval ~crate decl with
         | None ->
             Fmt.kstr not_impl "Global %a not found" GAst.pp_global_decl decl
         | Some global -> Result.ok (global, state))

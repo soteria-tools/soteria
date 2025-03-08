@@ -149,14 +149,27 @@ let rec layout_of (ty : Types.ty) : layout =
           List.fold_left
             (fun acc l -> if l.size > acc.size then l else acc)
             (List.hd layouts) (List.tl layouts)
-      | Opaque ->
-          Fmt.kstr failwith "Opaque ADT found: %a" Session.pp_name
-            adt.item_meta.name
+      | Opaque -> (
+          let crate = Session.get_crate () in
+          match Std_types.type_eval ~crate adt with
+          | Some ty -> layout_of ty
+          | None ->
+              Fmt.kstr failwith "Opaque ADT found: %a" Session.pp_name
+                adt.item_meta.name)
       | TError _ -> failwith "Unsupported ADT kind: TError"
       | Alias _ -> failwith "Unsupported ADT kind: Alias"
       | Union _ -> failwith "Unsupported ADT kind: Union")
   | TRef (_, _, _) ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
+  | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ size ]; _ }) ->
+      let size =
+        match size with
+        | CgValue (VScalar { value; _ }) -> Z.to_int value
+        | _ -> failwith "Unhandled array size"
+      in
+      let sub_layout = layout_of ty in
+      let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
+      { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
   | ty ->
       L.debug (fun m -> m "Cannot compute layout of %a" Types.pp_ty ty);
       raise (CantComputeLayout ty)
