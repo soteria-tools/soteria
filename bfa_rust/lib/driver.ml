@@ -1,40 +1,6 @@
-open Utils.Syntax
 module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Bfa_symex.Compo_res
-
-module ExecResult = struct
-  type ('ok, 'err, 'fatal) exresult =
-    | Ok of 'ok
-    | Error of 'err
-    | Fatal of 'fatal
-
-  let ok x = Ok x
-  let error e = Error e
-  let fatal e = Fatal e
-
-  let bind x f =
-    match x with Ok x -> f x | Error e -> Error e | Fatal e -> Fatal e
-
-  let map f = function
-    | Ok x -> Ok (f x)
-    | Error e -> Error e
-    | Fatal e -> Fatal e
-
-  let res_of_code = function
-    | Ok 0 -> Ok ()
-    | Ok code -> Fmt.kstr fatal "Error code: %d" code
-    | Error e -> Error e
-    | Fatal e -> Fatal e
-
-  let of_result = function Result.Ok x -> Ok x | Error e -> Error e
-  let of_result_fatal = function Result.Ok x -> Ok x | Error e -> Fatal e
-  let ( let* ) = bind
-  let ( let+ ) x f = map f x
-  let ( let*> ) x f = bind (res_of_code x) f
-  let ( let*! ) x f = bind (of_result_fatal x) f
-end
-
-open ExecResult
+open Utils.ExecResult
 
 module Cleaner = struct
   let files = ref []
@@ -150,9 +116,10 @@ let parse_ullbc_of_file ~no_compile file_name =
 let exec_main (crate : Charon.UllbcAst.crate) =
   let open Charon in
   Layout.Session.set_crate crate;
-  let+ entry_points =
-    Types.FunDeclId.Map.bindings crate.fun_decls
-    |> List.filter (fun (_, (decl : UllbcAst.blocks UllbcAst.gfun_decl)) ->
+  let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+  let* entry_points =
+    Types.FunDeclId.Map.values crate.fun_decls
+    |> List.filter (fun (decl : UllbcAst.blocks UllbcAst.gfun_decl) ->
            (* TODO: is the entry point the function with index 0? *)
            (match List.rev decl.item_meta.name with
            | PeIdent ("main", _) :: _ -> true
@@ -162,41 +129,46 @@ let exec_main (crate : Charon.UllbcAst.crate) =
                   | Meta.AttrUnknown { path; _ } -> path = "kanitool::proof"
                   | _ -> false)
                 decl.item_meta.attr_info.attributes)
-    |> List.map snd
     |> function
     | [] -> Fatal "No main function found"
     | rest -> Ok rest
   in
   let exec_fun = Wpst_interp.exec_fun ~crate ~args:[] ~state:Heap.empty in
-  entry_points |> List.concat_map (Rustsymex.run << exec_fun)
+  let outcomes =
+    entry_points
+    |> List.map (fun (entry_point : UllbcAst.fun_decl) ->
+           L.info (fun g ->
+               g "Executing entry point: %s"
+                 (PrintTypes.name_to_string ctx entry_point.item_meta.name));
+           try
+             let exec_fun = exec_fun entry_point in
+             let branches = Rustsymex.run exec_fun in
+             let outcomes = List.map fst branches in
+             if List.is_empty branches then Fatal "Execution vanished"
+             else if List.exists Compo_res.is_missing outcomes then
+               Fatal "Miss encountered in WPST"
+             else
+               let errors = Compo_res.only_errors outcomes in
+               if List.is_empty errors then
+                 branches
+                 |> List.filter_map (function
+                      | Compo_res.Ok ok, pcs -> Some (ok, pcs)
+                      | _ -> None)
+                 |> ok
+               else Fmt.kstr error "Errors: %a" Fmt.(Dump.list pp_err) errors
+           with exn ->
+             Fmt.kstr fatal "Exn: %a@\nTrace: %s" Fmt.exn exn
+               (Printexc.get_backtrace ()))
+  in
+  combine outcomes
+  |> map_full List.flatten (String.concat "\n\n") (String.concat "\n\n")
 
 let exec_main_and_print log_level smt_file no_compile clean_up file_name =
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
   let res =
     let* crate = parse_ullbc_of_file ~no_compile file_name in
-    let* res =
-      try exec_main crate
-      with e ->
-        Fmt.kstr fatal "Exn: %a@\nTrace: %s" Fmt.exn e
-          (Printexc.get_backtrace ())
-    in
-    if List.is_empty res then Fatal "Execution vanished"
-    else if List.exists (Compo_res.is_missing << fst) res then
-      Fatal "Miss encountered in WPST"
-    else
-      let errors = Compo_res.only_errors @@ List.map fst res in
-      if List.is_empty errors then
-        res
-        |> List.filter_map (function
-             | Compo_res.Ok ok, pcs -> Some (ok, pcs)
-             | _ -> None)
-        |> ok
-      else
-        let errors_parsed =
-          Fmt.str "Errors: %a" Fmt.(Dump.list pp_err) errors
-        in
-        Error errors_parsed
+    exec_main crate
   in
   if clean_up then Cleaner.cleanup ();
   match res with
