@@ -20,6 +20,11 @@ type layout = {
         but that requires converting integers to field ids for tuples i think. *)
 }
 
+let pp_layout fmt { size; align; members_ofs } =
+  Format.fprintf fmt "{ size = %d; align = %d; members_ofs = [%a] }" size align
+    Fmt.(array ~sep:comma int)
+    members_ofs
+
 type sint = Typed.T.sint Typed.t
 type cval = Typed.T.cval Typed.t
 type sbool = Typed.T.sbool Typed.t
@@ -178,9 +183,7 @@ and layout_of_members members =
   let rec aux members_ofs (layout : layout) = function
     | [] -> (List.rev members_ofs, layout)
     | ty :: rest ->
-        let { size = curr_size; align = curr_align; members_ofs = _ } =
-          layout
-        in
+        let { size = curr_size; align = curr_align; _ } = layout in
         let { size; align; _ } = layout_of ty in
         let mem_ofs = curr_size + (curr_size mod align) in
         let new_size = mem_ofs + size in
@@ -305,24 +308,20 @@ let rec nondet : Types.ty -> rust_val Rustsymex.t =
           let disc_ty = (List.hd variants).discriminant.int_ty in
           let* disc_val = nondet_literal_ty (Values.TInteger disc_ty) in
           let* res =
-            Rustsymex.fold_list variants ~init:None
-              ~f:(fun value (variant : Types.variant) ->
-                match value with
-                | Some _ -> return value
-                | None ->
-                    let d = value_of_scalar variant.discriminant in
-                    if%sat disc_val ==@ d then
-                      let* fields =
-                        Rustsymex.fold_list variant.fields ~init:[]
-                          ~f:(fun fields ty ->
-                            let+ f = nondet ty.field_ty in
-                            f :: fields)
-                      in
-                      let fields = List.rev fields in
-                      return (Some (Enum (d, fields)))
-                    else return None)
+            match_on variants ~constr:(fun (v : Types.variant) ->
+                disc_val ==@ value_of_scalar v.discriminant)
           in
-          match res with None -> vanish () | Some value -> return value)
+          match res with
+          | None -> vanish ()
+          | Some variant ->
+              let discr = value_of_scalar variant.discriminant in
+              let+ fields =
+                Rustsymex.fold_list variant.fields ~init:[] ~f:(fun fields ty ->
+                    let+ f = nondet ty.field_ty in
+                    f :: fields)
+              in
+              let fields = List.rev fields in
+              Enum (discr, fields))
       | ty ->
           Rustsymex.not_impl
             (Fmt.str "nondet: unsupported type %a" Types.pp_type_decl_kind ty))
@@ -489,33 +488,26 @@ let rust_of_cvals ?offset ty : parser_return =
     let callback cval : callback_return =
       let cval = List.hd cval in
       let* res =
-        Rustsymex.fold_list variants ~init:None
-          ~f:(fun acc (var : Types.variant) ->
-            match acc with
-            | Some _ -> return acc
-            | None ->
-                let var_disc = value_of_scalar var.discriminant in
-                if%sat var_disc ==@ cval then
-                  (* skip discriminant *)
-                  let ({ members_ofs = mems; _ } as layout) = of_variant var in
-                  let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
-                  let layout = { layout with members_ofs } in
-                  let parser =
-                    var.fields
-                    |> List.map (fun (f : Types.field) -> f.field_ty)
-                    |> aux_fields
-                         ~f:(fun fs -> Enum (var_disc, fs))
-                         ~layout offset
-                  in
-                  return (Some parser)
-                else return None)
+        match_on variants ~constr:(fun (v : Types.variant) ->
+            cval ==@ value_of_scalar v.discriminant)
       in
-      of_opt_not_impl
-        ~msg:
-          (Fmt.str
-             "Vanishing rust_of_cvals, as no variant matches variant id %a"
-             Typed.ppa cval)
-        res
+      match res with
+      | Some var ->
+          (* skip discriminant *)
+          let discr = value_of_scalar var.discriminant in
+          let ({ members_ofs = mems; _ } as layout) = of_variant var in
+          let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
+          let layout = { layout with members_ofs } in
+          let parser =
+            var.fields
+            |> List.map (fun (f : Types.field) -> f.field_ty)
+            |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
+          in
+          return parser
+      | None ->
+          Fmt.kstr not_impl
+            "Vanishing rust_of_cvals, as no variant matches variant id %a"
+            Typed.ppa cval
     in
     `More ([ (TInteger disc.int_ty, disc_size, offset) ], callback)
   in

@@ -518,25 +518,15 @@ module Make (Heap : Heap_intf.S) = struct
                 g "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
                   UllbcAst.pp_block_id else_block Typed.ppa discr);
             let* block =
-              if%sat discr ==@ Typed.zero then (
-                L.debug (fun g -> g "Took else block");
-                return else_block)
-              else (
-                L.debug (fun g -> g "Took if block");
-                return if_block)
+              if%sat discr ==@ Typed.zero then return else_block
+              else return if_block
             in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~crate ~body store state block
         | SwitchInt (_, options, default) -> (
             let* block =
-              Rustsymex.fold_list options ~init:None
-                ~f:(fun block (test, if_equal) ->
-                  match block with
-                  | Some _ -> return block
-                  | None ->
-                      let test = Charon_util.value_of_scalar test in
-                      if%sat discr ==@ test then return (Some if_equal)
-                      else return None)
+              match_on options ~constr:(fun (v, _) ->
+                  discr ==@ Charon_util.value_of_scalar v)
             in
             match block with
             | None ->

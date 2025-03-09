@@ -12,7 +12,7 @@ type t = {
 }
 [@@deriving show { with_path = false }]
 
-let default = { steps = 500; branching = 4 }
+let default = { steps = 500; branching = 10 }
 
 let consume_fuel_steps n gauge =
   if gauge.steps >= n then
