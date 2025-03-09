@@ -12,19 +12,11 @@ let check_nonzero (t : Typed.T.sint Typed.t) :
 let match_on ~(constr : 'a -> Typed.sbool Typed.t) (elements : 'a list) :
     'a option t =
   let open Syntax in
-  let ok_branches =
-    List.map
-      (fun elem () ->
-        if%sat1 constr elem then return (Some elem) else vanish ())
-      elements
+  let rec aux = function
+    | e :: rest -> if%sat constr e then return (Some e) else aux rest
+    | [] -> return None
   in
-  let default_branch =
-   fun () ->
-    let open Typed in
-    let cond = elements |> List.map (fun e -> not (constr e)) |> conj in
-    if%sat1 cond then return None else vanish ()
-  in
-  branches (default_branch :: ok_branches)
+  aux elements
 
 let ( let@ ) = ( @@ )
 
