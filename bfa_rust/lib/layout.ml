@@ -154,9 +154,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TAdt (TAdtId id, _) -> (
       let adt = Session.get_adt id in
       match adt.kind with
-      | Struct fields ->
-          let fields = List.map (fun (f : Types.field) -> f.field_ty) fields in
-          layout_of_members fields
+      | Struct fields -> layout_of_members @@ field_tys fields
       | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
       | Enum variants ->
           let layouts = List.map of_variant variants in
@@ -176,14 +174,17 @@ let rec layout_of (ty : Types.ty) : layout =
   | TRef (_, _, _) ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ size ]; _ }) ->
-      let size =
-        match size with
-        | CgValue (VScalar { value; _ }) -> Z.to_int value
-        | _ -> failwith "Unhandled array size"
-      in
+      let size = Charon_util.int_of_const_generic size in
       let sub_layout = layout_of ty in
       let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
       { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
+  | TAdt (TBuiltin TSlice, _) ->
+      (* A slice is a pointer and the size of the view *)
+      {
+        size = Archi.word_size * 2;
+        align = Archi.word_size;
+        members_ofs = [||];
+      }
   | ty ->
       L.debug (fun m -> m "Cannot compute layout of %a" Types.pp_ty ty);
       raise (CantComputeLayout ty)
@@ -213,9 +214,7 @@ and layout_of_members members =
 and of_variant (variant : Types.variant) =
   Session.get_or_compute_cached_layout_var variant @@ fun () ->
   let discr_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
-  let members =
-    discr_ty :: List.map (fun (f : Types.field) -> f.field_ty) variant.fields
-  in
+  let members = discr_ty :: field_tys variant.fields in
   layout_of_members members
 
 and of_enum_variant adt_id variant =
@@ -229,9 +228,7 @@ and of_enum_variant adt_id variant =
 and of_adt_id id =
   let adt = Session.get_adt id in
   match adt.kind with
-  | Struct fields ->
-      let members = List.map (fun (f : Types.field) -> f.field_ty) fields in
-      layout_of_members members
+  | Struct fields -> layout_of_members @@ field_tys fields
   | Enum _ ->
       Fmt.failwith
         "Enum cannot be used in Layout.of_adt_id, use Layout.of_enum_variant \
@@ -348,51 +345,52 @@ type cval_info = {
 (** Converts a Rust value of the given type into a list of C values, along with
     their size and offset *)
 let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
+  let illegal_pair () =
+    L.err (fun m ->
+        m "Wrong pair of rust_value and Charon.ty: %a / %a" pp_rust_val v
+          Types.pp_ty ty);
+    failwith "Wrong pair of rust_value and Charon.ty"
+  in
   let offset_cval off cval = { cval with offset = cval.offset +@ off } in
   let chain_cvals layout vals =
     vals
     |> List.mapi (fun i vals ->
            let offset = Array.get layout.members_ofs i |> Typed.int in
-           let vals = List.map (offset_cval offset) vals in
-           vals)
+           List.map (offset_cval offset) vals)
     |> List.flatten
   in
 
   match (v, ty) with
+  (* Literals *)
   | Base value, TLiteral ty ->
-      [
-        {
-          value;
-          ty;
-          size = Typed.int (size_of_literal_ty ty);
-          offset = Typed.zero;
-        };
-      ]
+      let size = Typed.int (size_of_literal_ty ty) in
+      [ { value; ty; size; offset = Typed.zero } ]
+  | _, TLiteral _ -> illegal_pair ()
+  (* References / Pointers *)
   | Base value, TRef _ ->
-      [
-        {
-          value;
-          ty = TInteger Isize;
-          size = Typed.int Archi.word_size;
-          offset = Typed.zero;
-        };
-      ]
+      let size = Typed.int Archi.word_size in
+      [ { value; ty = TInteger Isize; size; offset = Typed.zero } ]
+  | _, TRef _ -> illegal_pair ()
+  (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) ->
       if List.compare_lengths vs types <> 0 then
         Fmt.failwith "Mistmached rust_val / TTuple lengths: %d/%d"
           (List.length vs) (List.length types)
       else List.map2 rust_to_cvals vs types |> chain_cvals (layout_of ty)
+  | Tuple _, _ | _, TAdt (TTuple, _) -> illegal_pair ()
+  (* Structs *)
   | Struct vals, TAdt (TAdtId t_id, _) ->
       let type_decl = Session.get_adt t_id in
       let fields =
-        match type_decl with
-        | { kind = Struct fields; _ } ->
-            fields |> List.map (fun (f : Generated_Types.field) -> f.field_ty)
+        match type_decl.kind with
+        | Struct fields -> field_tys fields
         | _ ->
             Fmt.failwith "Unexpected type declaration in struct value: %a"
               Types.pp_type_decl type_decl
       in
       List.map2 rust_to_cvals vals fields |> chain_cvals (layout_of ty)
+  | Struct _, _ -> illegal_pair ()
+  (* Enums *)
   | Enum (disc, vals), TAdt (TAdtId t_id, _) ->
       let type_decl = Session.get_adt t_id in
       let disc_z =
@@ -403,22 +401,21 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
               Svalue.pp_t_kind k
       in
       let variant =
-        match (type_decl : Types.type_decl) with
-        | { kind = Enum variants; _ } ->
+        match type_decl.kind with
+        | Enum variants ->
             List.find
-              (fun v -> Types.(Z.equal disc_z v.discriminant.value))
+              (fun v -> Z.equal disc_z Types.(v.discriminant.value))
               variants
         | _ ->
-            Fmt.failwith
-              "Unexpected type declaration in enum aggregate in rust_to_cvals: \
-               %a"
-              Types.pp_type_decl type_decl
+            Fmt.failwith "Unexpected ADT type for enum: %a" Types.pp_type_decl
+              type_decl
       in
       let disc_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
-      let variant_tys = List.map (fun f -> Types.(f.field_ty)) variant.fields in
-      disc_ty :: variant_tys
+      disc_ty :: field_tys variant.fields
       |> List.map2 rust_to_cvals (Base disc :: vals)
       |> chain_cvals (of_variant variant)
+  | Enum _, _ -> illegal_pair ()
+  (* Arrays *)
   | Array vals, TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
       let layout = layout_of ty in
       let size = Array.length layout.members_ofs in
@@ -426,11 +423,21 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
       else
         List.map2 rust_to_cvals vals (List.init size (fun _ -> sub_ty))
         |> chain_cvals layout
+  | Array _, _ | _, TAdt (TBuiltin TArray, _) -> illegal_pair ()
+  (* Slices *)
+  | Slice (ptr, slice_size), TAdt (TBuiltin TSlice, _) ->
+      let size = Typed.int Archi.word_size in
+      let isize = Values.TInteger Isize in
+      [
+        { value = (ptr :> cval); ty = isize; size; offset = Typed.zero };
+        { value = (slice_size :> cval); ty = isize; size; offset = size };
+      ]
+  (* Rest *)
   | _ ->
       L.err (fun m ->
-          m "Unhandled / Mismatched rust_value and Charon.ty: %a / %a"
-            pp_rust_val v Types.pp_ty ty);
-      failwith "Unhandled / Mismatched rust_value and Charon.ty"
+          m "Unhandled rust_value and Charon.ty: %a / %a" pp_rust_val v
+            Types.pp_ty ty);
+      failwith "Unhandled rust_value and Charon.ty"
 
 type aux_ret = (Types.literal_type * sint * sint) list * parse_callback
 and parse_callback = cval list -> callback_return
@@ -455,7 +462,7 @@ let rust_of_cvals ?offset ty : parser_return =
             function
             | [ v ] -> return (`Done (Base v))
             | _ -> failwith "Expected one cval" )
-    | TAdt (TTuple, { types; _ }) ->
+    | TAdt (TTuple, { types; _ }) as ty ->
         let layout = layout_of ty in
         aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
     | TAdt (TAdtId t_id, _) -> (
@@ -465,16 +472,36 @@ let rust_of_cvals ?offset ty : parser_return =
         | { kind = Struct fields; _ } ->
             let layout = layout_of ty in
             fields
-            |> List.map (fun (f : Types.field) -> f.field_ty)
+            |> field_tys
             |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
         | _ ->
             Fmt.failwith "Unhandled type declaration in rust_of_cvals: %a"
               Types.pp_type_decl type_decl)
-    | TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
+    | TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) as ty ->
         let layout = layout_of ty in
         let size = Array.length layout.members_ofs in
+        L.warn (fun m ->
+            m "Layout is %a for type %a" pp_layout layout Types.pp_ty ty);
         let fields = List.init size (fun _ -> sub_ty) in
         aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
+    | TAdt (TBuiltin TSlice, _) ->
+        let ptr_size = Typed.int Archi.word_size in
+        let isize = Values.TInteger Isize in
+        `More
+          ( [ (isize, ptr_size, offset); (isize, ptr_size, offset +@ ptr_size) ],
+            function
+            | [ ptr; len ] ->
+                L.info (fun m -> m "Read %a / %a" Typed.ppa ptr Typed.ppa len);
+                let* ptr =
+                  of_opt_not_impl ~msg:"Slice value 1 should be a pointer"
+                    (Typed.cast_checked ptr Typed.t_ptr)
+                in
+                let* len =
+                  of_opt_not_impl ~msg:"Slice value 2 should be an integer"
+                    (Typed.cast_checked len Typed.t_int)
+                in
+                return (`Done (Slice (ptr, len)))
+            | _ -> failwith "Expected one cval" )
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* Parses a list of fields (for structs and tuples) *)
   and aux_fields ~f ~layout offset fields : parser_return =
@@ -522,7 +549,7 @@ let rust_of_cvals ?offset ty : parser_return =
           let layout = { layout with members_ofs } in
           let parser =
             var.fields
-            |> List.map (fun (f : Types.field) -> f.field_ty)
+            |> field_tys
             |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
           in
           return parser

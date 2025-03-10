@@ -275,8 +275,8 @@ module M (Heap : Heap_intf.S) = struct
   let array_repeat (gen_args : Types.generic_args) ~crate:_ ~args ~state =
     let rust_val, size =
       match (args, gen_args.const_generics) with
-      | [ rust_val ], [ CgValue (VScalar { value; _ }) ] ->
-          (rust_val, Z.to_int value)
+      | [ rust_val ], [ size ] ->
+          (rust_val, Charon_util.int_of_const_generic size)
       | _ -> failwith "array_repeat: unexpected generic constants"
     in
     Result.ok (Array (List.init size (fun _ -> rust_val)), state)
@@ -285,13 +285,14 @@ module M (Heap : Heap_intf.S) = struct
       (gen_args : Types.generic_args) ~crate:_ ~args ~state =
     let size =
       match gen_args.const_generics with
-      | [ CgValue (VScalar { value; _ }) ] -> Z.to_int value
+      | [ size ] -> Charon_util.int_of_const_generic size
       | _ -> failwith "array_repeat: unexpected generic constants"
     in
     match (idx.is_range, idx.is_array) with
     | true, _ -> failwith "array_index: range indexing not supported"
     | _, false -> failwith "array_index: slice indexing not supported"
     | false, true -> (
+        (* TODO: take into account idx.mutability *)
         let* ptr, idx =
           match args with
           | [ Base ptr; Base idx ] ->
@@ -319,6 +320,46 @@ module M (Heap : Heap_intf.S) = struct
             Result.ok (Base ptr', state)
         | None -> Heap.error `OutOfBounds state)
 
+  let array_slice ~mut:_ (gen_args : Types.generic_args) ~crate:_ ~args ~state =
+    let size =
+      match gen_args.const_generics with
+      | [ size ] -> Charon_util.int_of_const_generic size
+      | _ -> failwith "array_slice: unexpected generic constants"
+    in
+    let* arr_ptr =
+      match args with
+      | [ Base arr_ptr ] ->
+          of_opt_not_impl ~msg:"array_index: expected pointer"
+            (Typed.cast_checked arr_ptr Typed.t_ptr)
+      | _ -> failwith "array_index: unexpected arguments"
+    in
+    let elem_ty = List.hd gen_args.types in
+    let slice_ty : Types.ty =
+      TAdt (TBuiltin TSlice, TypesUtils.mk_generic_args_from_types [ elem_ty ])
+    in
+    let slice = Slice (arr_ptr, Typed.int size) in
+    let** ptr, state = Heap.alloc_ty slice_ty state in
+    let** (), state = Heap.store ptr slice_ty slice state in
+    Result.ok (Base (ptr :> T.cval Typed.t), state)
+
+  let slice_len (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+    let* slice_ptr =
+      match args with
+      | [ Base slice_ptr ] ->
+          of_opt_not_impl ~msg:"slice_len: expected pointer"
+            (Typed.cast_checked slice_ptr Typed.t_ptr)
+      | _ -> failwith "slice_len: unexpected arguments"
+    in
+    let slice_ty =
+      match funsig.inputs with
+      | [ TRef (_, slice_ty, _) ] -> slice_ty
+      | _ -> failwith "slice_len: unexpected arguments"
+    in
+    let++ slice, state = Heap.load slice_ptr slice_ty state in
+    match slice with
+    | Slice (_, len) -> (Base (len :> T.cval Typed.t), state)
+    | _ -> failwith "slice_len: unexpected slice"
+
   type std_op = Add | Sub | Mul
 
   type std_fun =
@@ -335,6 +376,7 @@ module M (Heap : Heap_intf.S) = struct
     | Eq
     | BoolNot
     | Zeroed
+    | SliceLen
 
   let std_fun_map =
     [
@@ -358,6 +400,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::option::{core::cmp::PartialEq}::eq", Eq);
       ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
       ("core::mem::zeroed", Zeroed);
+      ("core::slice::{@T}::len", SliceLen);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
@@ -384,10 +427,13 @@ module M (Heap : Heap_intf.S) = struct
        | Eq -> eq_values f.signature
        | BoolNot -> bool_not f.signature
        | Zeroed -> zeroed f.signature
+       | SliceLen -> slice_len f.signature
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
     match f with
     | ArrayRepeat -> Some (array_repeat generics)
     | Index idx -> Some (array_index idx generics)
-    | BoxNew | ArrayToSliceShared | ArrayToSliceMut -> None
+    | ArrayToSliceMut -> Some (array_slice ~mut:true generics)
+    | ArrayToSliceShared -> Some (array_slice ~mut:false generics)
+    | BoxNew -> None
 end

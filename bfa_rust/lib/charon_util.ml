@@ -7,6 +7,7 @@ type rust_val =
   | Struct of rust_val list  (** contains ordered fields *)
   | Tuple of rust_val list
   | Array of rust_val list
+  | Slice of T.sptr Typed.t * T.sint Typed.t  (** ptr * len *)
   | Never  (** Useful for base cases -- should be ignored *)
 [@@deriving show { with_path = false }]
 
@@ -55,3 +56,11 @@ let as_base_of ~ty = function
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         pp_rust_val v
+
+let int_of_const_generic : Types.const_generic -> int = function
+  | CgValue (VScalar v) -> Z.to_int v.value
+  | cg ->
+      Fmt.failwith "int_of_const_generic: unhandled const: %a"
+        Types.pp_const_generic cg
+
+let field_tys = List.map (fun (f : Types.field) -> f.field_ty)

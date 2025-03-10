@@ -112,6 +112,7 @@ let load ptr ty st =
                     let++ value, block = Tree_block.load ofs size ty block in
                     (value :: vals, block))
               in
+              let values = List.rev values in
               let* res = callback values in
               aux block res
         in
