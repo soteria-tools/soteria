@@ -1,6 +1,5 @@
 module SYMEX = Bfa_symex.Symex.Make_iter (Z3solver)
 include SYMEX
-module Meta = Charon.Meta
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
     (Typed.T.nonzero Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
@@ -45,7 +44,7 @@ let current_loc =
 
 let get_loc () = !current_loc
 
-let with_loc ~(loc : Meta.span) f =
+let with_loc ~(loc : Charon.Meta.span) f =
   let open Syntax in
   let old_loc = !current_loc in
   current_loc := loc;
@@ -60,7 +59,10 @@ let with_loc_immediate ~loc f =
   current_loc := old_loc;
   res
 
+let not_impl_happened = ref false
+
 let not_impl msg =
+  not_impl_happened := true;
   let msg = "MISSING FEATURE, VANISHING: " ^ msg in
   L.info (fun m -> m "%s" msg);
   print_endline msg;

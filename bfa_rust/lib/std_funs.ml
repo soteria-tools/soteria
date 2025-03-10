@@ -253,9 +253,6 @@ module M (Heap : Heap_intf.S) = struct
     let** b_rval, state = Heap.load b_ptr (Types.TLiteral TBool) state in
     let b_int = as_base_of ~ty:Typed.t_int b_rval in
     let b_int' = Typed.not_int_bool b_int in
-    L.info (fun f ->
-        f "bool_not: %a -> %a = %a" Typed.ppa b_ptr Typed.ppa b_int Typed.ppa
-          b_int');
     Result.ok (Base b_int', state)
 
   let zeroed (fun_sig : UllbcAst.fun_sig) ~(crate : UllbcAst.crate) ~args:_
@@ -275,8 +272,52 @@ module M (Heap : Heap_intf.S) = struct
     in
     try Result.ok (aux fun_sig.output, state) with Failure f -> not_impl f
 
-  let array_repeat ~crate:_ ~args ~state:_ =
-    Fmt.kstr not_impl "Args: %a" Fmt.(list pp_rust_val) args
+  let array_repeat (gen_args : Types.generic_args) ~crate:_ ~args ~state =
+    let rust_val, size =
+      match (args, gen_args.const_generics) with
+      | [ rust_val ], [ CgValue (VScalar { value; _ }) ] ->
+          (rust_val, Z.to_int value)
+      | _ -> failwith "array_repeat: unexpected generic constants"
+    in
+    Result.ok (Array (List.init size (fun _ -> rust_val)), state)
+
+  let array_index (idx : Expressions.builtin_index_op)
+      (gen_args : Types.generic_args) ~crate:_ ~args ~state =
+    let size =
+      match gen_args.const_generics with
+      | [ CgValue (VScalar { value; _ }) ] -> Z.to_int value
+      | _ -> failwith "array_repeat: unexpected generic constants"
+    in
+    match (idx.is_range, idx.is_array) with
+    | true, _ -> failwith "array_index: range indexing not supported"
+    | _, false -> failwith "array_index: slice indexing not supported"
+    | false, true -> (
+        let* ptr, idx =
+          match args with
+          | [ Base ptr; Base idx ] ->
+              let* ptr =
+                of_opt_not_impl ~msg:"array_index: expected pointer"
+                  (Typed.cast_checked ptr Typed.t_ptr)
+              in
+              let+ idx =
+                of_opt_not_impl ~msg:"array_index: expected integer"
+                  (Typed.cast_checked idx Typed.t_int)
+              in
+              (ptr, idx)
+          | _ -> failwith "array_index: unexpected arguments"
+        in
+        let arr_ty = Types.TAdt (TBuiltin TArray, gen_args) in
+        let layout = Layout.layout_of arr_ty in
+        let indices = List.init size Fun.id in
+        let* res = match_on indices ~constr:(fun i -> idx ==@ Typed.int i) in
+        match res with
+        | Some i ->
+            let offset = Array.get layout.members_ofs i in
+            let ptr_loc, ptr_off = (Typed.Ptr.loc ptr, Typed.Ptr.ofs ptr) in
+            let ptr_off' = ptr_off +@ Typed.int offset in
+            let ptr' = Typed.Ptr.mk ptr_loc ptr_off' in
+            Result.ok (Base ptr', state)
+        | None -> Heap.error `OutOfBounds state)
 
   type std_op = Add | Sub | Mul
 
@@ -314,6 +355,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::result::{@T}::unwrap", ResUnwrap);
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq);
       ("core::result::{core::cmp::PartialEq}::eq", Eq);
+      ("core::option::{core::cmp::PartialEq}::eq", Eq);
       ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
       ("core::mem::zeroed", Zeroed);
     ]
@@ -343,8 +385,9 @@ module M (Heap : Heap_intf.S) = struct
        | BoolNot -> bool_not f.signature
        | Zeroed -> zeroed f.signature
 
-  let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) =
+  let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
     match f with
-    | ArrayRepeat -> Some array_repeat
-    | BoxNew | ArrayToSliceShared | ArrayToSliceMut | Index _ -> None
+    | ArrayRepeat -> Some (array_repeat generics)
+    | Index idx -> Some (array_index idx generics)
+    | BoxNew | ArrayToSliceShared | ArrayToSliceMut -> None
 end

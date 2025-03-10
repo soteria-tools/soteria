@@ -131,7 +131,7 @@ let exec_main (crate : Charon.UllbcAst.crate) =
                 decl.item_meta.attr_info.attributes)
     |> function
     | [] -> Fatal "No main function found"
-    | rest -> Ok rest
+    | l -> Ok l
   in
   let exec_fun = Wpst_interp.exec_fun ~crate ~args:[] ~state:Heap.empty in
   let outcomes =
@@ -144,7 +144,10 @@ let exec_main (crate : Charon.UllbcAst.crate) =
              let exec_fun = exec_fun entry_point in
              let branches = Rustsymex.run exec_fun in
              let outcomes = List.map fst branches in
-             if List.is_empty branches then Fatal "Execution vanished"
+             if !Rustsymex.not_impl_happened then (
+               Rustsymex.not_impl_happened := false;
+               Fatal "A not_impl was triggered")
+             else if List.is_empty branches then Fatal "Execution vanished"
              else if List.exists Compo_res.is_missing outcomes then
                Fatal "Miss encountered in WPST"
              else

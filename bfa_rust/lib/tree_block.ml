@@ -109,7 +109,7 @@ module Tree = struct
   let rec pp ft { node; range; children } =
     let open Fmt in
     pf ft "@[<v 2>{%a %a%a}@]" Node.pp node Range.pp range
-      (option ~none:nop (fun fmt (l, r) -> pf fmt " --> @[%a@,%a@]" pp l pp r))
+      (option ~none:nop (fun fmt (l, r) -> pf fmt " -->@,@[%a@,%a@]" pp l pp r))
       children
 
   let is_empty { node; _ } =

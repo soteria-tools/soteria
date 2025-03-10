@@ -79,7 +79,10 @@ module Session = struct
           trait_impls = TraitImplId.Map.empty;
         }
 
-  let layout_cache : (Types.ty, layout) Hashtbl.t = Hashtbl.create 128
+  (** Cache of (type or variant) -> layout *)
+  let layout_cache : ((Types.ty, Types.variant) Either.t, layout) Hashtbl.t =
+    Hashtbl.create 128
+
   let set_crate c = current_crate := c
   let get_crate () = !current_crate
 
@@ -94,6 +97,12 @@ module Session = struct
         let layout = f () in
         Hashtbl.add layout_cache ty layout;
         layout
+
+  let get_or_compute_cached_layout_ty ty =
+    get_or_compute_cached_layout (Left ty)
+
+  let get_or_compute_cached_layout_var var =
+    get_or_compute_cached_layout (Right var)
 
   let pp_name ft name =
     let ctx = PrintUllbcAst.Crate.crate_to_fmt_env (get_crate ()) in
@@ -130,7 +139,7 @@ let align_of_int_ty : Types.integer_type -> int = size_of_int_ty
 let empty_generics = TypesUtils.empty_generic_args
 
 let rec layout_of (ty : Types.ty) : layout =
-  Session.get_or_compute_cached_layout ty @@ fun () ->
+  Session.get_or_compute_cached_layout_ty ty @@ fun () ->
   match ty with
   | TLiteral (TInteger inty) ->
       let size = size_of_int_ty inty in
@@ -159,7 +168,7 @@ let rec layout_of (ty : Types.ty) : layout =
           match Std_types.type_eval ~crate adt with
           | Some ty -> layout_of ty
           | None ->
-              Fmt.kstr failwith "Opaque ADT found: %a" Session.pp_name
+              Fmt.failwith "Opaque ADT found: %a" Session.pp_name
                 adt.item_meta.name)
       | TError _ -> failwith "Unsupported ADT kind: TError"
       | Alias _ -> failwith "Unsupported ADT kind: Alias"
@@ -185,7 +194,7 @@ and layout_of_members members =
     | ty :: rest ->
         let { size = curr_size; align = curr_align; _ } = layout in
         let { size; align; _ } = layout_of ty in
-        let mem_ofs = curr_size + (curr_size mod align) in
+        let mem_ofs = curr_size + ((align - (curr_size mod align)) mod align) in
         let new_size = mem_ofs + size in
         let new_align = Int.max align curr_align in
         aux (mem_ofs :: members_ofs)
@@ -196,12 +205,13 @@ and layout_of_members members =
     aux [] { size = 0; align = 1; members_ofs = [||] } members
   in
   {
-    size = size + (size mod align);
+    size = size + ((align - (size mod align)) mod align);
     align;
     members_ofs = Array.of_list members_ofs;
   }
 
 and of_variant (variant : Types.variant) =
+  Session.get_or_compute_cached_layout_var variant @@ fun () ->
   let discr_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
   let members =
     discr_ty :: List.map (fun (f : Types.field) -> f.field_ty) variant.fields
@@ -409,6 +419,13 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
       disc_ty :: variant_tys
       |> List.map2 rust_to_cvals (Base disc :: vals)
       |> chain_cvals (of_variant variant)
+  | Array vals, TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
+      let layout = layout_of ty in
+      let size = Array.length layout.members_ofs in
+      if List.length vals <> size then failwith "Array length mismatch"
+      else
+        List.map2 rust_to_cvals vals (List.init size (fun _ -> sub_ty))
+        |> chain_cvals layout
   | _ ->
       L.err (fun m ->
           m "Unhandled / Mismatched rust_value and Charon.ty: %a / %a"
@@ -453,6 +470,11 @@ let rust_of_cvals ?offset ty : parser_return =
         | _ ->
             Fmt.failwith "Unhandled type declaration in rust_of_cvals: %a"
               Types.pp_type_decl type_decl)
+    | TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
+        let layout = layout_of ty in
+        let size = Array.length layout.members_ofs in
+        let fields = List.init size (fun _ -> sub_ty) in
+        aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* Parses a list of fields (for structs and tuples) *)
   and aux_fields ~f ~layout offset fields : parser_return =

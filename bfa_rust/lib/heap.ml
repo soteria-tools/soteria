@@ -93,7 +93,7 @@ let load ptr ty st =
   else (* TODO: reverse, find a way of encoding the conversion to a rust val *)
     with_ptr ptr st (fun ~ofs block ->
         L.debug (fun f ->
-            f "Recursively reading from block tree at %a:@\n%a" Typed.ppa ptr
+            f "Recursively reading from block tree at %a:@.%a" Typed.ppa ptr
               Fmt.(option ~none:(any "None") Tree_block.pp)
               block);
         let rec aux block = function

@@ -6,6 +6,7 @@ type rust_val =
   | Enum of T.cval Typed.t * rust_val list  (** discriminant * values *)
   | Struct of rust_val list  (** contains ordered fields *)
   | Tuple of rust_val list
+  | Array of rust_val list
   | Never  (** Useful for base cases -- should be ignored *)
 [@@deriving show { with_path = false }]
 

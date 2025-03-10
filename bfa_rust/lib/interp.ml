@@ -181,8 +181,8 @@ module Make (Heap : Heap_intf.S) = struct
         match Std_funs.std_fun_eval ~crate fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
-    | FnOpRegular { func = FunId (FBuiltin fn); _ } -> (
-        match Std_funs.builtin_fun_eval ~crate fn with
+    | FnOpRegular { func = FunId (FBuiltin fn); generics } -> (
+        match Std_funs.builtin_fun_eval ~crate fn generics with
         | Some fn -> Rustsymex.return fn
         | None ->
             Fmt.kstr not_impl "Builtin function not supported: %a"
@@ -532,7 +532,7 @@ module Make (Heap : Heap_intf.S) = struct
             | None ->
                 let block = UllbcAst.BlockId.nth body.body default in
                 exec_block ~crate ~body store state block
-            | Some block ->
+            | Some (_, block) ->
                 let block = UllbcAst.BlockId.nth body.body block in
                 exec_block ~crate ~body store state block))
     | Abort kind -> (
@@ -557,7 +557,7 @@ module Make (Heap : Heap_intf.S) = struct
     let@ () = with_loc ~loc in
     L.info (fun m ->
         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-        m "Calling %s with @[%a@]"
+        m "Calling %s with [@[%a@]]"
           (PrintTypes.name_to_string ctx name)
           Fmt.(list ~sep:comma pp_rust_val)
           args);

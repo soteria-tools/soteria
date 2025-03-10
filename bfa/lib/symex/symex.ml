@@ -472,9 +472,10 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
         loop r
 
   let run iter =
-    Symex_state.reset ();
+    Symex_state.save ();
     let l = ref [] in
     (iter @@ fun x -> l := (x, Solver.as_values ()) :: !l);
+    Symex_state.reset ();
     List.rev !l
 
   let vanish () _f = ()

@@ -104,7 +104,24 @@ let rec pp ft t =
       pf ft "(%a != %a)" pp v1 pp v2
   | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
   | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
-  | Nop (op, l) -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l
+  | Nop (op, l) -> (
+      let rec aux = function
+        | acc, [] -> acc
+        | Some l, { node = { kind = Var v; _ }; _ } :: rest ->
+            aux (Some (Var.to_int v :: l), rest)
+        | _, _ -> None
+      in
+      let range = aux (Some [], l) in
+      let range =
+        Option.bind range (fun l ->
+            let l = List.sort Int.compare l in
+            let min = List.hd l in
+            let max = List.hd @@ List.rev l in
+            if max - min + 1 = List.length l then Some (min, max) else None)
+      in
+      match range with
+      | Some (min, max) -> pf ft "%a(V|%d-%d|)" Nop.pp op min max
+      | None -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l)
 
 let[@inline] equal a b = Int.equal a.tag b.tag
 
