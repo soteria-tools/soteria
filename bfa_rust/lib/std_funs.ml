@@ -221,13 +221,6 @@ module M (Heap : Heap_intf.S) = struct
           Fmt.kstr not_impl "Unexpected eq_values pair: %a / %a" pp_rust_val
             left pp_rust_val right
     in
-    let* ty =
-      match fun_sig.inputs with
-      | Types.TRef (_, ty, _) :: _ -> return ty
-      | ty :: _ ->
-          Fmt.kstr not_impl "Unexpected type for eq_values: %a" Types.pp_ty ty
-      | _ -> not_impl "Error: eq_values received no arguments?"
-    in
     let left_ptr, right_ptr =
       match args with
       | [ left; right ] ->
@@ -235,6 +228,21 @@ module M (Heap : Heap_intf.S) = struct
           let right = as_base_of ~ty:Typed.t_ptr right in
           (left, right)
       | _ -> failwith "eq_values expects two arguments"
+    in
+    let** left_ptr, right_ptr, ty, state =
+      match fun_sig.inputs with
+      | Types.TRef (_, (Types.TRef (_, ty, _) as outer_ty), _) :: _ ->
+          (* STD provides an implementation of eq for references (&T), where the arguments are
+             thus &&T -- we handle this here by adding an indirection. *)
+          let** left, state = Heap.load left_ptr outer_ty state in
+          let** right, state = Heap.load right_ptr outer_ty state in
+          let left_ptr = as_base_of ~ty:Typed.t_ptr left in
+          let right_ptr = as_base_of ~ty:Typed.t_ptr right in
+          Result.ok (left_ptr, right_ptr, ty, state)
+      | Types.TRef (_, ty, _) :: _ -> Result.ok (left_ptr, right_ptr, ty, state)
+      | ty :: _ ->
+          Fmt.kstr not_impl "Unexpected type for eq_values: %a" Types.pp_ty ty
+      | _ -> not_impl "Error: eq_values received no arguments?"
     in
     let** left, state = Heap.load left_ptr ty state in
     let** right, state = Heap.load right_ptr ty state in
