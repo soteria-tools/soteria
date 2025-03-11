@@ -32,8 +32,6 @@ module Binop = struct
     | Or
     (* Comparison *)
     | Eq
-    | Geq
-    | Gt
     | Leq
     | Lt
     (* Arith *)
@@ -48,8 +46,6 @@ module Binop = struct
     | And -> Fmt.string ft "&&"
     | Or -> Fmt.string ft "||"
     | Eq -> Fmt.string ft "=="
-    | Geq -> Fmt.string ft ">="
-    | Gt -> Fmt.string ft ">"
     | Leq -> Fmt.string ft "<="
     | Lt -> Fmt.string ft "<"
     | Plus -> Fmt.string ft "+"
@@ -287,20 +283,15 @@ let[@inline] lift_int_binop ~out_cons ~out_ty ~f ~binop =
   | Int i1, Int i2 -> out_cons (f i1 i2)
   | _ -> Binop (binop, v1, v2) <| out_ty
 
-let gt v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.gt i1 i2)
-  | _, _ when equal v1 v2 -> v_false
-  | _ -> Binop (Gt, v1, v2) <| TBool
-
 let lt v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> bool (Z.lt i1 i2)
   | _, _ when equal v1 v2 -> v_false
   | _ -> Binop (Lt, v1, v2) <| TBool
 
-let geq = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.geq ~binop:Geq
+let[@inline] gt v1 v2 = lt v2 v1
 let leq = lift_int_binop ~out_cons:bool ~out_ty:TBool ~f:Z.leq ~binop:Leq
+let[@inline] geq v1 v2 = leq v2 v1
 let plus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.add ~binop:Plus
 let minus = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.sub ~binop:Minus
 let times = lift_int_binop ~out_cons:int_z ~out_ty:TInt ~f:Z.mul ~binop:Times
