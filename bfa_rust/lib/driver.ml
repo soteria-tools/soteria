@@ -62,12 +62,15 @@ let parse_ullbc_of_file ~no_compile file_name =
           [
             Fmt.str "cd %s &&" parent_folder;
             "charon --ullbc";
+            Fmt.str "--input %s" file_name;
+            Fmt.str "--dest-file %s" output;
             (* We can't enable this because it removes statements we care about... *)
             (* "--mir_optimized"; *)
             (* We don't care about our implementation *)
             "--opaque=kani";
             "--translate-all-methods";
             "--monomorphize";
+            "--extract-opaque-bodies";
             (* Go through rustc to allow injecting the kani deps *)
             "--no-cargo";
             (* i.e. not always a binary! *)
@@ -85,8 +88,6 @@ let parse_ullbc_of_file ~no_compile file_name =
               "--rustc-arg=-L%skani/target/aarch64-apple-darwin/debug/deps"
               kani_lib;
             Fmt.str "--rustc-arg=-L%skani/target/debug/deps" kani_lib;
-            Fmt.str "--input %s" file_name;
-            Fmt.str "--dest-file %s" output;
           ]
         |> peek (fun s -> L.debug (fun g -> g "Running command: %s" s))
         |> Sys.command

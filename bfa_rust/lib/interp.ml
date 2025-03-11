@@ -235,18 +235,17 @@ module Make (Heap : Heap_intf.S) = struct
         let** v, _state = eval_operand state e in
         match op with
         | Not ->
-            let* v_int =
-              match v with
-              | Base v ->
-                  of_opt_not_impl ~msg:"Not requires int argument"
-                    (Typed.cast_checked v Typed.t_int)
-              | _ -> not_impl "Not requires a Base argument"
-            in
+            let v_int = as_base_of ~ty:Typed.t_int v in
             let v' = Base (Typed.not_int_bool v_int) in
             Result.ok (v', state)
-        | _ ->
-            Fmt.kstr not_impl "Unsupported unary operator %a"
-              Expressions.pp_unop op)
+        | Neg ->
+            let v_int = as_base_of ~ty:Typed.t_int v in
+            let v' = Base (0s -@ v_int) in
+            Result.ok (v', state)
+        | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
+        | Cast kind ->
+            Fmt.kstr not_impl "Unsupported cast kind: %a"
+              Expressions.pp_cast_kind kind)
     | BinaryOp (op, e1, e2) ->
         (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
         let** v1, state = eval_operand state e1 in
@@ -372,14 +371,18 @@ module Make (Heap : Heap_intf.S) = struct
     (* Special case? unit (zero-tuple) *)
     | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
-        (Charon_util.Tuple values, state)
+        (Tuple values, state)
     (* Struct aggregate *)
     | Aggregate (AggregatedAdt (TAdtId _, None, None, _), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
-        (Charon_util.Struct values, state)
+        (Struct values, state)
     (* Invalid aggregate (not sure, but seems like it) *)
     | Aggregate _ as v ->
         Fmt.failwith "Invalid aggregate rvalue: %a" Expressions.pp_rvalue v
+    (* Raw pointer *)
+    | RawPtr (place, _kind) ->
+        let++ ptr, state = resolve_place ~store state place in
+        (Base (ptr :> T.cval Typed.t), state)
     | v -> Fmt.kstr not_impl "Unsupported rvalue: %a" Expressions.pp_rvalue v
 
   and eval_rvalue_list ~crate ~(store : store) (state : state) el =

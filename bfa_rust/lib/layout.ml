@@ -5,7 +5,7 @@ open Typed.Syntax
 open Rustsymex
 open Charon_util
 
-exception CantComputeLayout of Types.ty
+exception CantComputeLayout of string * Types.ty
 
 module Archi = struct
   let word_size = 8
@@ -141,16 +141,25 @@ let empty_generics = TypesUtils.empty_generic_args
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
   match ty with
+  (* Literals *)
   | TLiteral (TInteger inty) ->
       let size = size_of_int_ty inty in
       let align = align_of_int_ty inty in
       { size; align; members_ofs = [||] }
   | TLiteral TBool -> { size = 1; align = 1; members_ofs = [||] }
+  | TLiteral TChar -> raise (CantComputeLayout ("Char", ty))
+  | TLiteral (TFloat _) -> raise (CantComputeLayout ("Float", ty))
+  (* Refs, pointers, boxes *)
+  | TRef (_, _, _) | TRawPtr (_, _) ->
+      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
+  | TAdt (TBuiltin TBox, _) -> raise (CantComputeLayout ("Box", ty))
+  (* Tuples *)
   | TAdt (TTuple, { types = []; _ }) ->
       (* unit () *)
       (* TODO: this actually has size 0, which makes things... awkward *)
       { size = 1; align = 1; members_ofs = [||] }
   | TAdt (TTuple, { types; _ }) -> layout_of_members types
+  (* Custom ADTs (struct, enum, etc.) *)
   | TAdt (TAdtId id, _) -> (
       let adt = Session.get_adt id in
       match adt.kind with
@@ -166,18 +175,25 @@ let rec layout_of (ty : Types.ty) : layout =
           match Std_types.type_eval ~crate adt with
           | Some ty -> layout_of ty
           | None ->
-              Fmt.failwith "Opaque ADT found: %a" Session.pp_name
-                adt.item_meta.name)
+              let msg =
+                Fmt.str "Opaque %a " Session.pp_name adt.item_meta.name
+              in
+              raise (CantComputeLayout (msg, ty)))
       | TError _ -> failwith "Unsupported ADT kind: TError"
       | Alias _ -> failwith "Unsupported ADT kind: Alias"
       | Union _ -> failwith "Unsupported ADT kind: Union")
-  | TRef (_, _, _) ->
-      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
-  | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ size ]; _ }) ->
+  (* Arrays *)
+  | TAdt (TBuiltin TArray, generics) ->
+      let ty, size =
+        match generics with
+        | { types = [ ty ]; const_generics = [ size ]; _ } -> (ty, size)
+        | _ -> failwith "Unexpected TArray generics"
+      in
       let size = Charon_util.int_of_const_generic size in
       let sub_layout = layout_of ty in
       let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
       { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
+  (* Slices *)
   | TAdt (TBuiltin TSlice, _) ->
       (* A slice is a pointer and the size of the view *)
       {
@@ -185,9 +201,13 @@ let rec layout_of (ty : Types.ty) : layout =
         align = Archi.word_size;
         members_ofs = [||];
       }
-  | ty ->
-      L.debug (fun m -> m "Cannot compute layout of %a" Types.pp_ty ty);
-      raise (CantComputeLayout ty)
+  (* Others (unhandled for now) *)
+  | TAdt (TBuiltin TStr, _) -> raise (CantComputeLayout ("String", ty))
+  | TNever -> raise (CantComputeLayout ("Never", ty))
+  | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
+  | TTraitType (_, _) -> raise (CantComputeLayout ("Trait type", ty))
+  | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
+  | TArrow _ -> raise (CantComputeLayout ("Arrow", ty))
 
 and layout_of_members members =
   let rec aux members_ofs (layout : layout) = function
@@ -239,9 +259,9 @@ let size_of_s ty =
   try
     let { size; _ } = layout_of ty in
     return (Typed.int size)
-  with CantComputeLayout ty ->
-    Fmt.kstr Rustsymex.not_impl "Cannot yet compute size of type %a" Types.pp_ty
-      ty
+  with CantComputeLayout (msg, ty) ->
+    Fmt.kstr Rustsymex.not_impl "Cannot yet compute size of %s:\n%a" msg
+      Types.pp_ty ty
 
 let min_value : Types.integer_type -> [> Typed.T.sint ] Typed.t = function
   | U128 | U64 | U32 | U16 | U8 | Usize -> 0s
@@ -370,6 +390,9 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
   | Base value, TRef _ ->
       let size = Typed.int Archi.word_size in
       [ { value; ty = TInteger Isize; size; offset = Typed.zero } ]
+  | Base value, TRawPtr _ ->
+      let size = Typed.int Archi.word_size in
+      [ { value; ty = TInteger Isize; size; offset = Typed.zero } ]
   | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) ->
@@ -457,6 +480,12 @@ let rust_of_cvals ?offset ty : parser_return =
             | [ v ] -> return (`Done (Base v))
             | _ -> failwith "Expected one cval" )
     | TRef _ ->
+        `More
+          ( [ (TInteger Isize, Typed.int Archi.word_size, 0s) ],
+            function
+            | [ v ] -> return (`Done (Base v))
+            | _ -> failwith "Expected one cval" )
+    | TRawPtr _ ->
         `More
           ( [ (TInteger Isize, Typed.int Archi.word_size, 0s) ],
             function
