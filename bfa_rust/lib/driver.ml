@@ -144,9 +144,10 @@ let exec_main (crate : Charon.UllbcAst.crate) =
              let exec_fun = exec_fun entry_point in
              let branches = Rustsymex.run exec_fun in
              let outcomes = List.map fst branches in
-             if !Rustsymex.not_impl_happened then (
-               Rustsymex.not_impl_happened := false;
-               Fatal "A not_impl was triggered")
+             if Option.is_some !Rustsymex.not_impl_happened then (
+               let msg = Option.get !Rustsymex.not_impl_happened in
+               Rustsymex.not_impl_happened := None;
+               Fmt.kstr fatal "A not_impl was triggered: %s" msg)
              else if List.is_empty branches then Fatal "Execution vanished"
              else if List.exists Compo_res.is_missing outcomes then
                Fatal "Miss encountered in WPST"

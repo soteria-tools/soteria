@@ -59,10 +59,10 @@ let with_loc_immediate ~loc f =
   current_loc := old_loc;
   res
 
-let not_impl_happened = ref false
+let not_impl_happened = ref None
 
 let not_impl msg =
-  not_impl_happened := true;
+  if !not_impl_happened = None then not_impl_happened := Some msg;
   let msg = "MISSING FEATURE, VANISHING: " ^ msg in
   L.info (fun m -> m "%s" msg);
   print_endline msg;
