@@ -480,8 +480,6 @@ let rust_of_cvals ?offset ty : parser_return =
     | TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) as ty ->
         let layout = layout_of ty in
         let size = Array.length layout.members_ofs in
-        L.warn (fun m ->
-            m "Layout is %a for type %a" pp_layout layout Types.pp_ty ty);
         let fields = List.init size (fun _ -> sub_ty) in
         aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
     | TAdt (TBuiltin TSlice, _) ->

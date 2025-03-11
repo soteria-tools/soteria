@@ -361,50 +361,72 @@ module M (Heap : Heap_intf.S) = struct
     | Slice (_, len) -> (Base (len :> T.cval Typed.t), state)
     | _ -> failwith "slice_len: unexpected slice"
 
+  let discriminant_value (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+    let* value_ptr =
+      match args with
+      | [ Base value_ptr ] ->
+          of_opt_not_impl ~msg:"discriminant_value: expected pointer"
+            (Typed.cast_checked value_ptr Typed.t_ptr)
+      | _ -> failwith "discriminant_value: unexpected arguments"
+    in
+    let value_ty =
+      match funsig.inputs with
+      | [ TRef (_, value_ty, _) ] -> value_ty
+      | _ -> failwith "discriminant_value: unexpected arguments"
+    in
+    let++ value, state = Heap.load value_ptr value_ty state in
+    match value with
+    | Enum (discr, _) -> (Base discr, state)
+    | _ -> failwith "discriminant_value: unexpected value"
+
   type std_op = Add | Sub | Mul
   type std_bool = Id | Neg
 
   type std_fun =
-    | Assume
-    | Assert
     | Any
+    | Assert
+    | Assume
+    | BoolNot
     | Checked of std_op
-    | Unchecked of std_op
-    | WrappingAdd
-    | IsSome
+    | DiscriminantValue
+    | Eq of std_bool
     | IsNone
+    | IsSome
     | OptUnwrap
     | ResUnwrap
-    | Eq of std_bool
-    | BoolNot
-    | Zeroed
     | SliceLen
+    | Unchecked of std_op
+    | WrappingAdd
+    | Zeroed
 
   let std_fun_map =
     [
+      (* Kani *)
       ("kani::assert", Assert);
       ("kani::assume", Assume);
       ("kani::any", Any);
-      ("core::num::{@N}::checked_add", Checked Add);
-      ("core::num::{@N}::unchecked_add", Unchecked Add);
-      ("core::num::{@N}::checked_sub", Checked Sub);
-      ("core::num::{@N}::unchecked_sub", Unchecked Sub);
-      ("core::num::{@N}::checked_mul", Checked Mul);
-      ("core::num::{@N}::unchecked_mul", Unchecked Mul);
-      ("core::num::{@N}::wrapping_add", WrappingAdd);
+      (* Core *)
+      ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
+      ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
+      ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::wrapping_add", WrappingAdd);
-      ("core::option::{@T}::is_some", IsSome);
+      ("core::mem::zeroed", Zeroed);
+      ("core::num::{@N}::checked_add", Checked Add);
+      ("core::num::{@N}::checked_mul", Checked Mul);
+      ("core::num::{@N}::checked_sub", Checked Sub);
+      ("core::num::{@N}::unchecked_add", Unchecked Add);
+      ("core::num::{@N}::unchecked_mul", Unchecked Mul);
+      ("core::num::{@N}::unchecked_sub", Unchecked Sub);
+      ("core::num::{@N}::wrapping_add", WrappingAdd);
+      ("core::option::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::option::{@T}::is_none", IsNone);
+      ("core::option::{@T}::is_some", IsSome);
       ("core::option::{@T}::unwrap", OptUnwrap);
       ("core::result::{@T}::unwrap", ResUnwrap);
-      ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
-      ("core::option::{core::cmp::PartialEq}::eq", Eq Id);
-      ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::option::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
-      ("core::mem::zeroed", Zeroed);
       ("core::slice::{@T}::len", SliceLen);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
@@ -419,26 +441,27 @@ module M (Heap : Heap_intf.S) = struct
     let ctx = NameMatcher.ctx_from_crate crate in
     NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
     |> Option.map @@ function
-       | Assume -> assume f.signature
-       | Assert -> assert_ f.signature
        | Any -> nondet f.signature
+       | Assert -> assert_ f.signature
+       | Assume -> assume f.signature
+       | BoolNot -> bool_not f.signature
        | Checked op -> checked_op (op_of op) f.signature
-       | Unchecked op -> unchecked_op (op_of op) f.signature
-       | WrappingAdd -> wrapping_add f.signature
-       | IsSome -> is_some f.signature
+       | DiscriminantValue -> discriminant_value f.signature
+       | Eq b -> eq_values ~neg:(b = Neg) f.signature
        | IsNone -> is_none f.signature
+       | IsSome -> is_some f.signature
        | OptUnwrap -> unwrap_opt f.signature
        | ResUnwrap -> unwrap_res f.signature
-       | Eq b -> eq_values ~neg:(b = Neg) f.signature
-       | BoolNot -> bool_not f.signature
-       | Zeroed -> zeroed f.signature
        | SliceLen -> slice_len f.signature
+       | Unchecked op -> unchecked_op (op_of op) f.signature
+       | WrappingAdd -> wrapping_add f.signature
+       | Zeroed -> zeroed f.signature
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
     match f with
     | ArrayRepeat -> Some (array_repeat generics)
-    | Index idx -> Some (array_index idx generics)
     | ArrayToSliceMut -> Some (array_slice ~mut:true generics)
     | ArrayToSliceShared -> Some (array_slice ~mut:false generics)
+    | Index idx -> Some (array_index idx generics)
     | BoxNew -> None
 end
