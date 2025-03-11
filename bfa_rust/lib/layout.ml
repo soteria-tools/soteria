@@ -1,3 +1,4 @@
+module Utils_ = Utils
 open Charon
 open Rustsymex.Syntax
 open Typed.Infix
@@ -201,9 +202,10 @@ let rec layout_of (ty : Types.ty) : layout =
         align = Archi.word_size;
         members_ofs = [||];
       }
+  (* Never -- zero sized type *)
+  | TNever -> { size = 0; align = 0; members_ofs = [||] }
   (* Others (unhandled for now) *)
   | TAdt (TBuiltin TStr, _) -> raise (CantComputeLayout ("String", ty))
-  | TNever -> raise (CantComputeLayout ("Never", ty))
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
   | TTraitType (_, _) -> raise (CantComputeLayout ("Trait type", ty))
   | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
@@ -364,19 +366,20 @@ type cval_info = {
 
 (** Converts a Rust value of the given type into a list of C values, along with
     their size and offset *)
-let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
+let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
+    cval_info list =
   let illegal_pair () =
     L.err (fun m ->
         m "Wrong pair of rust_value and Charon.ty: %a / %a" pp_rust_val v
           Types.pp_ty ty);
     failwith "Wrong pair of rust_value and Charon.ty"
   in
-  let offset_cval off cval = { cval with offset = cval.offset +@ off } in
-  let chain_cvals layout vals =
-    vals
-    |> List.mapi (fun i vals ->
-           let offset = Array.get layout.members_ofs i |> Typed.int in
-           List.map (offset_cval offset) vals)
+  let chain_cvals layout vals types =
+    Utils_.List_ex.map2i
+      (fun i value ty ->
+        let offset = (Array.get layout.members_ofs i |> Typed.int) +@ offset in
+        rust_to_cvals ~offset value ty)
+      vals types
     |> List.flatten
   in
 
@@ -384,22 +387,22 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
   (* Literals *)
   | Base value, TLiteral ty ->
       let size = Typed.int (size_of_literal_ty ty) in
-      [ { value; ty; size; offset = Typed.zero } ]
+      [ { value; ty; size; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
   | Base value, TRef _ ->
       let size = Typed.int Archi.word_size in
-      [ { value; ty = TInteger Isize; size; offset = Typed.zero } ]
+      [ { value; ty = TInteger Isize; size; offset } ]
   | Base value, TRawPtr _ ->
       let size = Typed.int Archi.word_size in
-      [ { value; ty = TInteger Isize; size; offset = Typed.zero } ]
+      [ { value; ty = TInteger Isize; size; offset } ]
   | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) ->
       if List.compare_lengths vs types <> 0 then
         Fmt.failwith "Mistmached rust_val / TTuple lengths: %d/%d"
           (List.length vs) (List.length types)
-      else List.map2 rust_to_cvals vs types |> chain_cvals (layout_of ty)
+      else chain_cvals (layout_of ty) vs types
   | Tuple _, _ | _, TAdt (TTuple, _) -> illegal_pair ()
   (* Structs *)
   | Struct vals, TAdt (TAdtId t_id, _) ->
@@ -411,7 +414,7 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
             Fmt.failwith "Unexpected type declaration in struct value: %a"
               Types.pp_type_decl type_decl
       in
-      List.map2 rust_to_cvals vals fields |> chain_cvals (layout_of ty)
+      chain_cvals (layout_of ty) vals fields
   | Struct _, _ -> illegal_pair ()
   (* Enums *)
   | Enum (disc, vals), TAdt (TAdtId t_id, _) ->
@@ -434,26 +437,23 @@ let rec rust_to_cvals (v : rust_val) (ty : Types.ty) : cval_info list =
               type_decl
       in
       let disc_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
-      disc_ty :: field_tys variant.fields
-      |> List.map2 rust_to_cvals (Base disc :: vals)
-      |> chain_cvals (of_variant variant)
+      chain_cvals (of_variant variant) (Base disc :: vals)
+        (disc_ty :: field_tys variant.fields)
   | Enum _, _ -> illegal_pair ()
   (* Arrays *)
   | Array vals, TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
       let layout = layout_of ty in
       let size = Array.length layout.members_ofs in
       if List.length vals <> size then failwith "Array length mismatch"
-      else
-        List.map2 rust_to_cvals vals (List.init size (fun _ -> sub_ty))
-        |> chain_cvals layout
+      else chain_cvals layout vals (List.init size (fun _ -> sub_ty))
   | Array _, _ | _, TAdt (TBuiltin TArray, _) -> illegal_pair ()
   (* Slices *)
-  | Slice (ptr, slice_size), TAdt (TBuiltin TSlice, _) ->
+  | Slice (ptr, sl_size), TAdt (TBuiltin TSlice, _) ->
       let size = Typed.int Archi.word_size in
       let isize = Values.TInteger Isize in
       [
-        { value = (ptr :> cval); ty = isize; size; offset = Typed.zero };
-        { value = (slice_size :> cval); ty = isize; size; offset = size };
+        { value = (ptr :> cval); ty = isize; size; offset };
+        { value = (sl_size :> cval); ty = isize; size; offset = offset +@ size };
       ]
   (* Rest *)
   | _ ->
@@ -481,13 +481,13 @@ let rust_of_cvals ?offset ty : parser_return =
             | _ -> failwith "Expected one cval" )
     | TRef _ ->
         `More
-          ( [ (TInteger Isize, Typed.int Archi.word_size, 0s) ],
+          ( [ (TInteger Isize, Typed.int Archi.word_size, offset) ],
             function
             | [ v ] -> return (`Done (Base v))
             | _ -> failwith "Expected one cval" )
     | TRawPtr _ ->
         `More
-          ( [ (TInteger Isize, Typed.int Archi.word_size, 0s) ],
+          ( [ (TInteger Isize, Typed.int Archi.word_size, offset) ],
             function
             | [ v ] -> return (`Done (Base v))
             | _ -> failwith "Expected one cval" )

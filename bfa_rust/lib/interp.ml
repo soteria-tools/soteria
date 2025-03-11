@@ -243,11 +243,22 @@ module Make (Heap : Heap_intf.S) = struct
             let v' = Base (0s -@ v_int) in
             Result.ok (v', state)
         | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
+        | Cast (CastTransmute (from_ty, to_ty)) -> (
+            match (from_ty, to_ty) with
+            | TRawPtr _, TLiteral (TInteger Usize) ->
+                let v_ptr = as_base_of ~ty:Typed.t_ptr v in
+                (* TODO: is this right? Or do we want to convert the location to an integer?
+                         (probably not...)
+                let loc = Typed.Ptr.loc v_ptr in
+                let loc_int = Typed.Ptr.int_of_loc loc in *)
+                Result.ok (Base v_ptr, state)
+            | _ ->
+                Fmt.kstr not_impl "Unsupported transmutation, from %a to %a"
+                  Types.pp_ty from_ty Types.pp_ty to_ty)
         | Cast kind ->
             Fmt.kstr not_impl "Unsupported cast kind: %a"
               Expressions.pp_cast_kind kind)
     | BinaryOp (op, e1, e2) ->
-        (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
         let** v1, state = eval_operand state e1 in
         let** v2, state = eval_operand state e2 in
         let v1, v2 =
@@ -334,6 +345,16 @@ module Make (Heap : Heap_intf.S) = struct
                 Expressions.pp_binop bop
         in
         (Base res, state)
+    | NullaryOp (op, _ty) -> (
+        match op with
+        | UbChecks ->
+            (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
+               From what I understand: our execution already checks for UB, so we should return
+               true to skip past code that manually does these checks. *)
+            Result.ok (Base (Typed.int_of_bool Typed.v_true), state)
+        | op ->
+            Fmt.kstr not_impl "Unsupported nullary operator: %a"
+              Expressions.pp_nullop op)
     | Discriminant (place, kind) ->
         let** place, state = resolve_place ~store state place in
         let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
@@ -348,6 +369,7 @@ module Make (Heap : Heap_intf.S) = struct
               Fmt.failwith "Expected an enum for discriminant, got %a"
                 Types.pp_type_decl_kind k
         in
+        (* TODO: we probably should get the discriminant's offset from layout first *)
         Heap.load place enum_discr_ty state
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->

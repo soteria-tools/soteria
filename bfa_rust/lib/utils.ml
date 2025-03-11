@@ -35,6 +35,20 @@ module List_ex = struct
           aux l
     in
     aux l
+
+  let[@tail_mod_cons] rec map2i i f l1 l2 =
+    match (l1, l2) with
+    | [], [] -> []
+    | [ a1 ], [ b1 ] ->
+        let r1 = f i a1 b1 in
+        [ r1 ]
+    | a1 :: a2 :: l1, b1 :: b2 :: l2 ->
+        let r1 = f i a1 b1 in
+        let r2 = f (i + 1) a2 b2 in
+        r1 :: r2 :: map2i (i + 2) f l1 l2
+    | _, _ -> invalid_arg "List_ex.map2i"
+
+  let map2i f l1 l2 = map2i 0 f l1 l2
 end
 
 module Syntax = struct
