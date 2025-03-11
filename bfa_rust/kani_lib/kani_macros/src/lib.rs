@@ -44,6 +44,12 @@ pub fn derive_arbitrary(item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_error]
+#[proc_macro_derive(Invariant, attributes(safety_constraint))]
+pub fn derive_invariant(item: TokenStream) -> TokenStream {
+    derive::expand_derive_invariant(item)
+}
+
+#[proc_macro_error]
 #[proc_macro_attribute]
 pub fn proof(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_item = parse_macro_input!(item as ItemFn);
