@@ -150,6 +150,19 @@ let rec layout_of (ty : Types.ty) : layout =
   | TLiteral TBool -> { size = 1; align = 1; members_ofs = [||] }
   | TLiteral TChar -> raise (CantComputeLayout ("Char", ty))
   | TLiteral (TFloat _) -> raise (CantComputeLayout ("Float", ty))
+  (* Slices *)
+  (* Slices *)
+  | TRef (_, TAdt (TBuiltin TSlice, _), _)
+  | TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
+      (* A slice is a pointer and the size of the view *)
+      {
+        size = Archi.word_size * 2;
+        align = Archi.word_size;
+        members_ofs = [||];
+      }
+  | TAdt (TBuiltin TSlice, _) ->
+      (* Slices should be hidden behind references *)
+      raise (CantComputeLayout ("Raw slice", ty))
   (* Refs, pointers, boxes *)
   | TRef (_, _, _) | TRawPtr (_, _) ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
@@ -194,14 +207,6 @@ let rec layout_of (ty : Types.ty) : layout =
       let sub_layout = layout_of ty in
       let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
       { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
-  (* Slices *)
-  | TAdt (TBuiltin TSlice, _) ->
-      (* A slice is a pointer and the size of the view *)
-      {
-        size = Archi.word_size * 2;
-        align = Archi.word_size;
-        members_ofs = [||];
-      }
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 0; members_ofs = [||] }
   (* Others (unhandled for now) *)
@@ -390,13 +395,19 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
       [ { value; ty; size; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
-  | Base value, TRef _ ->
+  | Base value, TRef _ | Base value, TRawPtr _ ->
       let size = Typed.int Archi.word_size in
       [ { value; ty = TInteger Isize; size; offset } ]
-  | Base value, TRawPtr _ ->
+  (* Slices *)
+  | Slice (ptr, sl_size), TRef (_, TAdt (TBuiltin TSlice, _), _)
+  | Slice (ptr, sl_size), TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
       let size = Typed.int Archi.word_size in
-      [ { value; ty = TInteger Isize; size; offset } ]
-  | _, TRef _ -> illegal_pair ()
+      let isize = Values.TInteger Isize in
+      [
+        { value = (ptr :> cval); ty = isize; size; offset };
+        { value = (sl_size :> cval); ty = isize; size; offset = offset +@ size };
+      ]
+  | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) ->
       if List.compare_lengths vs types <> 0 then
@@ -447,14 +458,6 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
       if List.length vals <> size then failwith "Array length mismatch"
       else chain_cvals layout vals (List.init size (fun _ -> sub_ty))
   | Array _, _ | _, TAdt (TBuiltin TArray, _) -> illegal_pair ()
-  (* Slices *)
-  | Slice (ptr, sl_size), TAdt (TBuiltin TSlice, _) ->
-      let size = Typed.int Archi.word_size in
-      let isize = Values.TInteger Isize in
-      [
-        { value = (ptr :> cval); ty = isize; size; offset };
-        { value = (sl_size :> cval); ty = isize; size; offset = offset +@ size };
-      ]
   (* Rest *)
   | _ ->
       L.err (fun m ->
@@ -479,6 +482,26 @@ let rust_of_cvals ?offset ty : parser_return =
             function
             | [ v ] -> return (`Done (Base v))
             | _ -> failwith "Expected one cval" )
+    | TRef (_, TAdt (TBuiltin TSlice, _), _)
+    | TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
+        let callback = function
+          | [ ptr; len ] ->
+              let* ptr =
+                of_opt_not_impl ~msg:"Slice value 1 should be a pointer"
+                  (Typed.cast_checked ptr Typed.t_ptr)
+              in
+              let* len =
+                of_opt_not_impl ~msg:"Slice value 2 should be an integer"
+                  (Typed.cast_checked len Typed.t_int)
+              in
+              return (`Done (Slice (ptr, len)))
+          | _ -> failwith "Expected two cvals"
+        in
+        let ptr_size = Typed.int Archi.word_size in
+        let isize = Values.TInteger Isize in
+        `More
+          ( [ (isize, ptr_size, offset); (isize, ptr_size, offset +@ ptr_size) ],
+            callback )
     | TRef _ ->
         `More
           ( [ (TInteger Isize, Typed.int Archi.word_size, offset) ],
@@ -511,24 +534,6 @@ let rust_of_cvals ?offset ty : parser_return =
         let size = Array.length layout.members_ofs in
         let fields = List.init size (fun _ -> sub_ty) in
         aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
-    | TAdt (TBuiltin TSlice, _) ->
-        let ptr_size = Typed.int Archi.word_size in
-        let isize = Values.TInteger Isize in
-        `More
-          ( [ (isize, ptr_size, offset); (isize, ptr_size, offset +@ ptr_size) ],
-            function
-            | [ ptr; len ] ->
-                L.info (fun m -> m "Read %a / %a" Typed.ppa ptr Typed.ppa len);
-                let* ptr =
-                  of_opt_not_impl ~msg:"Slice value 1 should be a pointer"
-                    (Typed.cast_checked ptr Typed.t_ptr)
-                in
-                let* len =
-                  of_opt_not_impl ~msg:"Slice value 2 should be an integer"
-                    (Typed.cast_checked len Typed.t_int)
-                in
-                return (`Done (Slice (ptr, len)))
-            | _ -> failwith "Expected one cval" )
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* Parses a list of fields (for structs and tuples) *)
   and aux_fields ~f ~layout offset fields : parser_return =

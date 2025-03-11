@@ -286,16 +286,33 @@ module M (Heap : Heap_intf.S) = struct
       match (args, gen_args.const_generics) with
       | [ rust_val ], [ size ] ->
           (rust_val, Charon_util.int_of_const_generic size)
-      | _ -> failwith "array_repeat: unexpected generic constants"
+      | args, cgens ->
+          Fmt.failwith
+            "array_repeat: unexpected params / generic constants: %a / %a"
+            Fmt.(list pp_rust_val)
+            args
+            Fmt.(list Types.pp_const_generic)
+            cgens
     in
     Result.ok (Array (List.init size (fun _ -> rust_val)), state)
 
   let array_index (idx : Expressions.builtin_index_op)
       (gen_args : Types.generic_args) ~crate:_ ~args ~state =
     let size =
-      match gen_args.const_generics with
-      | [ size ] -> Charon_util.int_of_const_generic size
-      | _ -> failwith "array_repeat: unexpected generic constants"
+      match (args, gen_args.const_generics) with
+      (* Array with static size *)
+      | _, [ size ] -> Charon_util.int_of_const_generic size
+      (* Slice, with dynamic size *)
+      | Slice (_, size) :: _, _ -> (
+          match Typed.kind size with
+          | Int size -> Z.to_int size
+          | _ -> failwith "array_index: unexpected slice size")
+      | _ ->
+          Fmt.failwith "array_index: unexpected generic constants %a / %a"
+            Fmt.(list pp_rust_val)
+            args
+            Fmt.(list Types.pp_const_generic)
+            gen_args.const_generics
     in
     match (idx.is_range, idx.is_array) with
     | true, _ -> failwith "array_index: range indexing not supported"
@@ -342,32 +359,13 @@ module M (Heap : Heap_intf.S) = struct
             (Typed.cast_checked arr_ptr Typed.t_ptr)
       | _ -> failwith "array_index: unexpected arguments"
     in
-    let elem_ty = List.hd gen_args.types in
-    let slice_ty : Types.ty =
-      TAdt (TBuiltin TSlice, TypesUtils.mk_generic_args_from_types [ elem_ty ])
-    in
     let slice = Slice (arr_ptr, Typed.int size) in
-    let** ptr, state = Heap.alloc_ty slice_ty state in
-    let** (), state = Heap.store ptr slice_ty slice state in
-    Result.ok (Base (ptr :> T.cval Typed.t), state)
+    Result.ok (slice, state)
 
-  let slice_len (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
-    let* slice_ptr =
-      match args with
-      | [ Base slice_ptr ] ->
-          of_opt_not_impl ~msg:"slice_len: expected pointer"
-            (Typed.cast_checked slice_ptr Typed.t_ptr)
-      | _ -> failwith "slice_len: unexpected arguments"
-    in
-    let slice_ty =
-      match funsig.inputs with
-      | [ TRef (_, slice_ty, _) ] -> slice_ty
-      | _ -> failwith "slice_len: unexpected arguments"
-    in
-    let++ slice, state = Heap.load slice_ptr slice_ty state in
-    match slice with
-    | Slice (_, len) -> (Base (len :> T.cval Typed.t), state)
-    | _ -> failwith "slice_len: unexpected slice"
+  let slice_len _ ~crate:_ ~args ~state =
+    match args with
+    | [ Slice (_, len) ] -> Result.ok (Base (len :> T.cval Typed.t), state)
+    | _ -> failwith "slice_len: unexpected arguments"
 
   let discriminant_value (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     let* value_ptr =

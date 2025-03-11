@@ -399,8 +399,13 @@ module Make (Heap : Heap_intf.S) = struct
         let++ values, state = eval_operand_list ~crate ~store state operands in
         (Struct values, state)
     (* Invalid aggregate (not sure, but seems like it) *)
-    | Aggregate _ as v ->
-        Fmt.failwith "Invalid aggregate rvalue: %a" Expressions.pp_rvalue v
+    | Aggregate ((AggregatedAdt _ as v), _) ->
+        Fmt.failwith "Invalid aggregate kind: %a" Expressions.pp_aggregate_kind
+          v
+    (* Array aggregate *)
+    | Aggregate (AggregatedArray (_ty, _size), operands) ->
+        let++ values, state = eval_operand_list ~crate ~store state operands in
+        (Array values, state)
     (* Raw pointer *)
     | RawPtr (place, _kind) ->
         let++ ptr, state = resolve_place ~store state place in
