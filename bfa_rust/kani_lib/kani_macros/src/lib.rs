@@ -1,3 +1,7 @@
+#![feature(proc_macro_diagnostic)]
+#![feature(proc_macro_span)]
+mod derive;
+
 use {
     proc_macro::TokenStream,
     proc_macro_error2::proc_macro_error,
@@ -31,6 +35,12 @@ macro_rules! kani_attribute {
             ).into()
         }
     };
+}
+
+#[proc_macro_error]
+#[proc_macro_derive(Arbitrary, attributes(safety_constraint))]
+pub fn derive_arbitrary(item: TokenStream) -> TokenStream {
+    derive::expand_derive_arbitrary(item)
 }
 
 #[proc_macro_error]
