@@ -123,7 +123,7 @@ done
 
 # Clean log file
 echo -n > $LOG_FILE
-if [ $STORE_PASSES ]; then
+if $STORE_PASSES; then
     echo -n > $PASS_FILE
 fi
 
@@ -171,7 +171,7 @@ for test in $TESTS; do
             echo -e " ${GREEN}failed (expected)${RESET} in $((end-start))ms"
         fi
         passed=$((passed+1))
-        if [ $STORE_PASSES ]; then
+        if $STORE_PASSES; then
             echo $test >> $PASS_FILE
         fi
     else

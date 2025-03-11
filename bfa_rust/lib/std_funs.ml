@@ -198,7 +198,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ value ] -> Result.ok (value, state)
       | _ -> not_impl "Result is Ok, but doesn't have one value"
 
-  let eq_values (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+  let eq_values ~neg (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let rec aux state left right =
       match (left, right) with
       | Base left, Base right -> Result.ok (left ==@ right, state)
@@ -221,7 +221,6 @@ module M (Heap : Heap_intf.S) = struct
           Fmt.kstr not_impl "Unexpected eq_values pair: %a / %a" pp_rust_val
             left pp_rust_val right
     in
-
     let* ty =
       match fun_sig.inputs with
       | Types.TRef (_, ty, _) :: _ -> return ty
@@ -240,7 +239,9 @@ module M (Heap : Heap_intf.S) = struct
     let** left, state = Heap.load left_ptr ty state in
     let** right, state = Heap.load right_ptr ty state in
     let++ b_val, state = aux state left right in
-    (Base (Typed.int_of_bool b_val), state)
+    let b_val = if neg then Typed.not b_val else b_val in
+    let res = Typed.int_of_bool b_val in
+    (Base res, state)
 
   let bool_not _ ~crate:_ ~args ~state =
     let* b_ptr =
@@ -361,6 +362,7 @@ module M (Heap : Heap_intf.S) = struct
     | _ -> failwith "slice_len: unexpected slice"
 
   type std_op = Add | Sub | Mul
+  type std_bool = Id | Neg
 
   type std_fun =
     | Assume
@@ -373,7 +375,7 @@ module M (Heap : Heap_intf.S) = struct
     | IsNone
     | OptUnwrap
     | ResUnwrap
-    | Eq
+    | Eq of std_bool
     | BoolNot
     | Zeroed
     | SliceLen
@@ -395,9 +397,12 @@ module M (Heap : Heap_intf.S) = struct
       ("core::option::{@T}::is_none", IsNone);
       ("core::option::{@T}::unwrap", OptUnwrap);
       ("core::result::{@T}::unwrap", ResUnwrap);
-      ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq);
-      ("core::result::{core::cmp::PartialEq}::eq", Eq);
-      ("core::option::{core::cmp::PartialEq}::eq", Eq);
+      ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
+      ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
+      ("core::option::{core::cmp::PartialEq}::eq", Eq Id);
+      ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
+      ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);
+      ("core::option::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
       ("core::mem::zeroed", Zeroed);
       ("core::slice::{@T}::len", SliceLen);
@@ -424,7 +429,7 @@ module M (Heap : Heap_intf.S) = struct
        | IsNone -> is_none f.signature
        | OptUnwrap -> unwrap_opt f.signature
        | ResUnwrap -> unwrap_res f.signature
-       | Eq -> eq_values f.signature
+       | Eq b -> eq_values ~neg:(b = Neg) f.signature
        | BoolNot -> bool_not f.signature
        | Zeroed -> zeroed f.signature
        | SliceLen -> slice_len f.signature
