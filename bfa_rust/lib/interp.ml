@@ -59,6 +59,10 @@ module Make (Heap : Heap_intf.S) = struct
     Rustsymex.push_give_up (str, loc);
     Result.ok (0s, state)
 
+  (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
+      rather than T.sptr Typed.t, to be able to handle fat pointers; however
+      there is the guarantee that this function returns either a Base or a
+      FatPointer value. *)
   let rec resolve_place ~store state ({ kind; _ } : Expressions.place) =
     match kind with
     (* Just a variable *)
@@ -69,7 +73,7 @@ module Make (Heap : Heap_intf.S) = struct
             L.debug (fun f ->
                 f "Found pointer %a of variable %a" Typed.ppa ptr
                   Expressions.pp_var_id var);
-            Result.ok (ptr, state)
+            Result.ok (Ptr ptr, state)
         | None ->
             Fmt.kstr not_impl "Variable %a not found in store"
               Expressions.pp_var_id var)
@@ -77,17 +81,19 @@ module Make (Heap : Heap_intf.S) = struct
     | PlaceProjection (base, Deref) ->
         let** ptr, state = resolve_place ~store state base in
         L.debug (fun f ->
-            f "Dereferencing ptr %a of %a" Typed.ppa ptr Types.pp_ty base.ty);
-        let** v, state = Heap.load ptr base.ty state in
-        let v' = as_base_of ~ty:Typed.t_ptr v in
+            f "Dereferencing ptr %a of %a" pp_rust_val ptr Types.pp_ty base.ty);
+        let ptr_raw = as_ptr ptr in
+        let** v, state = Heap.load ptr_raw base.ty state in
         L.debug (fun f ->
-            f "Dereferenced pointer %a to pointer %a" Typed.ppa ptr Typed.ppa v');
-        Result.ok (v', state)
+            f "Dereferenced pointer %a to pointer %a" pp_rust_val ptr
+              pp_rust_val v);
+        Result.ok (v, state)
     | PlaceProjection (base, Field (kind, field)) ->
         let** ptr, state = resolve_place ~store state base in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
-              Expressions.pp_field_proj_kind kind Typed.ppa ptr);
+              Expressions.pp_field_proj_kind kind pp_rust_val ptr);
+        let ptr = as_ptr ptr in
         let field = Types.FieldId.to_int field in
         let layout, field =
           match kind with
@@ -107,7 +113,7 @@ module Make (Heap : Heap_intf.S) = struct
                pointer %a"
               Expressions.pp_field_proj_kind kind field Typed.ppa ptr Typed.ppa
               ptr);
-        Result.ok (ptr, state)
+        Result.ok (Ptr ptr, state)
 
   let overflow_check state v (ty : Types.ty) =
     let* constraints =
@@ -199,12 +205,14 @@ module Make (Heap : Heap_intf.S) = struct
     | Move loc ->
         let ty = loc.ty in
         let** loc, state = resolve_place ~store state loc in
+        let loc = as_ptr loc in
         let** v, state = Heap.load loc ty state in
         (* TODO: mark value as moved!!! !== freeing it, btw *)
         Result.ok (v, state)
     | Copy loc ->
         let ty = loc.ty in
         let** loc, state = resolve_place ~store state loc in
+        let loc = as_ptr loc in
         let** v, state = Heap.load loc ty state in
         Result.ok (v, state)
 
@@ -222,7 +230,7 @@ module Make (Heap : Heap_intf.S) = struct
     | Use op -> eval_operand state op
     | RvRef (place, _borrow) ->
         let** ptr, state = resolve_place ~store state place in
-        Result.ok (Base (ptr :> T.cval Typed.t), state)
+        Result.ok (ptr, state)
     | Global { global_id; _ } -> (
         let decl =
           UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
@@ -356,7 +364,8 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
     | Discriminant (place, kind) ->
-        let** place, state = resolve_place ~store state place in
+        let** loc, state = resolve_place ~store state place in
+        let loc = as_ptr loc in
         let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
         let* enum_discr_ty =
           match enum.kind with
@@ -370,7 +379,7 @@ module Make (Heap : Heap_intf.S) = struct
                 Types.pp_type_decl_kind k
         in
         (* TODO: we probably should get the discriminant's offset from layout first *)
-        Heap.load place enum_discr_ty state
+        Heap.load loc enum_discr_ty state
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
         let type_decl =
@@ -409,7 +418,7 @@ module Make (Heap : Heap_intf.S) = struct
     (* Raw pointer *)
     | RawPtr (place, _kind) ->
         let++ ptr, state = resolve_place ~store state place in
-        (Base (ptr :> T.cval Typed.t), state)
+        (ptr, state)
     | v -> Fmt.kstr not_impl "Unsupported rvalue: %a" Expressions.pp_rvalue v
 
   and eval_rvalue_list ~crate ~(store : store) (state : state) el =
@@ -426,7 +435,7 @@ module Make (Heap : Heap_intf.S) = struct
         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
     L.debug (fun m ->
-        m "Statement full: %a" UllbcAst.pp_raw_statement astmt.content);
+        m "Statement full:@.%a" UllbcAst.pp_raw_statement astmt.content);
     let* () = Rustsymex.consume_fuel_steps 1 in
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
     let@ () = with_loc ~loc in
@@ -434,6 +443,7 @@ module Make (Heap : Heap_intf.S) = struct
     | Nop -> Result.ok (store, state)
     | Assign (({ ty; _ } as place), rval) ->
         let** ptr, state = resolve_place ~store state place in
+        let ptr = as_ptr ptr in
         let** v, state = eval_rvalue ~crate ~store state rval in
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
@@ -481,6 +491,7 @@ module Make (Heap : Heap_intf.S) = struct
     | Drop place ->
         (* TODO: this is probably super wrong, drop glue etc. *)
         let** place_ptr, state = resolve_place ~store state place in
+        let place_ptr = as_ptr place_ptr in
         let++ (), state = Heap.uninit place_ptr state in
         (* let store =
           match place.kind with

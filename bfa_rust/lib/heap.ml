@@ -127,20 +127,18 @@ let store ptr ty sval st =
   log "store" ptr st;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
   else
-    let parts = Layout.rust_to_cvals sval ty in
-    let pp_quad f ({ value; ty; size; offset } : Layout.cval_info) =
-      Fmt.pf f "%a: %s [%a, +%a[" Typed.ppa value
-        (Charon_util.lit_to_string ty)
-        Typed.ppa offset Typed.ppa size
-    in
-
-    L.debug (fun f ->
-        f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_quad) parts);
     with_ptr ptr st (fun ~ofs block ->
+        let parts = Layout.rust_to_cvals ~offset:ofs sval ty in
+        let pp_quad f ({ value; ty; size; offset } : Layout.cval_info) =
+          Fmt.pf f "%a: %s [%a, +%a[" Typed.ppa value
+            (Charon_util.lit_to_string ty)
+            Typed.ppa offset Typed.ppa size
+        in
+        L.debug (fun f ->
+            f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_quad) parts);
         Result.fold_list parts ~init:((), block)
           ~f:(fun ((), block) { value; ty; size; offset } ->
-            let ofs = ofs +@ offset in
-            Tree_block.store ofs size ty value block))
+            Tree_block.store offset size ty value block))
 
 let copy_nonoverlapping ~dst ~src ~size st =
   let open Typed.Infix in

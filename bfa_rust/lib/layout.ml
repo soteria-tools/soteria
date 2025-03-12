@@ -151,7 +151,6 @@ let rec layout_of (ty : Types.ty) : layout =
   | TLiteral TChar -> raise (CantComputeLayout ("Char", ty))
   | TLiteral (TFloat _) -> raise (CantComputeLayout ("Float", ty))
   (* Slices *)
-  (* Slices *)
   | TRef (_, TAdt (TBuiltin TSlice, _), _)
   | TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
       (* A slice is a pointer and the size of the view *)
@@ -261,6 +260,10 @@ and of_adt_id id =
         "Enum cannot be used in Layout.of_adt_id, use Layout.of_enum_variant \
          instead"
   | k -> Fmt.failwith "Unhandled ADT in of_adt_id: %a" Types.pp_type_decl_kind k
+
+let offset_in_array ty idx =
+  let sub_layout = layout_of ty in
+  idx * sub_layout.size
 
 let size_of_s ty =
   try
@@ -395,17 +398,17 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
       [ { value; ty; size; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
-  | Base value, TRef _ | Base value, TRawPtr _ ->
+  | Ptr value, TRef _ | Ptr value, TRawPtr _ ->
       let size = Typed.int Archi.word_size in
-      [ { value; ty = TInteger Isize; size; offset } ]
+      [ { value :> cval; ty = TInteger Isize; size; offset } ]
   (* Slices *)
-  | Slice (ptr, sl_size), TRef (_, TAdt (TBuiltin TSlice, _), _)
-  | Slice (ptr, sl_size), TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
+  | FatPtr (value, sl_size), TRef (_, TAdt (TBuiltin TSlice, _), _)
+  | FatPtr (value, sl_size), TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
       let size = Typed.int Archi.word_size in
       let isize = Values.TInteger Isize in
       [
-        { value = (ptr :> cval); ty = isize; size; offset };
-        { value = (sl_size :> cval); ty = isize; size; offset = offset +@ size };
+        { value :> cval; ty = isize; size; offset };
+        { value = sl_size; ty = isize; size; offset = offset +@ size };
       ]
   | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
@@ -494,7 +497,7 @@ let rust_of_cvals ?offset ty : parser_return =
                 of_opt_not_impl ~msg:"Slice value 2 should be an integer"
                   (Typed.cast_checked len Typed.t_int)
               in
-              return (`Done (Slice (ptr, len)))
+              return (`Done (FatPtr (ptr, len)))
           | _ -> failwith "Expected two cvals"
         in
         let ptr_size = Typed.int Archi.word_size in
@@ -502,17 +505,16 @@ let rust_of_cvals ?offset ty : parser_return =
         `More
           ( [ (isize, ptr_size, offset); (isize, ptr_size, offset +@ ptr_size) ],
             callback )
-    | TRef _ ->
+    | TRef _ | TRawPtr _ ->
         `More
           ( [ (TInteger Isize, Typed.int Archi.word_size, offset) ],
             function
-            | [ v ] -> return (`Done (Base v))
-            | _ -> failwith "Expected one cval" )
-    | TRawPtr _ ->
-        `More
-          ( [ (TInteger Isize, Typed.int Archi.word_size, offset) ],
-            function
-            | [ v ] -> return (`Done (Base v))
+            | [ v ] ->
+                let+ v =
+                  of_opt_not_impl ~msg:"Pointer value should be a pointer"
+                    (Typed.cast_checked v Typed.t_ptr)
+                in
+                `Done (Ptr v)
             | _ -> failwith "Expected one cval" )
     | TAdt (TTuple, { types; _ }) as ty ->
         let layout = layout_of ty in

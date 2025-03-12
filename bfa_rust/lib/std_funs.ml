@@ -127,17 +127,12 @@ module M (Heap : Heap_intf.S) = struct
       else Result.ok (Base res, state)
 
   let is_some (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
-    let* val_ptr =
-      match args with
-      | [ Base ptr ] ->
-          of_opt_not_impl ~msg:"not an integer"
-            (Typed.cast_checked ptr Typed.t_ptr)
-      | _ -> not_impl "is_some expects a single ptr argument"
-    in
-    let* opt_ty =
-      match fun_sig.inputs with
-      | [ Types.TRef (_, ty, _) ] -> return ty
-      | _ -> not_impl "unexpected is_some input type"
+    let val_ptr, opt_ty =
+      match (args, fun_sig.inputs) with
+      | [ Ptr ptr ], [ Types.TRef (_, ty, _) ] -> (ptr, ty)
+      | _ ->
+          failwith
+            "is_some expects a single ptr argument and a single tref input type"
     in
     let** enum_value, state = Heap.load val_ptr opt_ty state in
     let* discr =
@@ -151,17 +146,12 @@ module M (Heap : Heap_intf.S) = struct
     Result.ok (Base (Typed.int_of_bool (discr ==@ 1s)), state)
 
   let is_none (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
-    let* val_ptr =
-      match args with
-      | [ Base ptr ] ->
-          of_opt_not_impl ~msg:"not an integer"
-            (Typed.cast_checked ptr Typed.t_ptr)
-      | _ -> not_impl "is_none expects a single ptr argument"
-    in
-    let* opt_ty =
-      match fun_sig.inputs with
-      | [ Types.TRef (_, ty, _) ] -> return ty
-      | _ -> not_impl "unexpected is_none input type"
+    let val_ptr, opt_ty =
+      match (args, fun_sig.inputs) with
+      | [ Ptr ptr ], [ Types.TRef (_, ty, _) ] -> (ptr, ty)
+      | _ ->
+          failwith
+            "is_none expects a single ptr argument and a single tref input type"
     in
     let** enum_value, state = Heap.load val_ptr opt_ty state in
     let* discr =
@@ -223,10 +213,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     let left_ptr, right_ptr =
       match args with
-      | [ left; right ] ->
-          let left = as_base_of ~ty:Typed.t_ptr left in
-          let right = as_base_of ~ty:Typed.t_ptr right in
-          (left, right)
+      | [ Ptr left; Ptr right ] -> (left, right)
       | _ -> failwith "eq_values expects two arguments"
     in
     let** left_ptr, right_ptr, ty, state =
@@ -236,8 +223,8 @@ module M (Heap : Heap_intf.S) = struct
              thus &&T -- we handle this here by adding an indirection. *)
           let** left, state = Heap.load left_ptr outer_ty state in
           let** right, state = Heap.load right_ptr outer_ty state in
-          let left_ptr = as_base_of ~ty:Typed.t_ptr left in
-          let right_ptr = as_base_of ~ty:Typed.t_ptr right in
+          let left_ptr = as_ptr left in
+          let right_ptr = as_ptr right in
           Result.ok (left_ptr, right_ptr, ty, state)
       | Types.TRef (_, ty, _) :: _ -> Result.ok (left_ptr, right_ptr, ty, state)
       | ty :: _ ->
@@ -252,12 +239,10 @@ module M (Heap : Heap_intf.S) = struct
     (Base res, state)
 
   let bool_not _ ~crate:_ ~args ~state =
-    let* b_ptr =
+    let b_ptr =
       match args with
-      | [ Base b ] ->
-          of_opt_not_impl ~msg:"bool_not expected a pointer"
-            (Typed.cast_checked b Typed.t_ptr)
-      | _ -> not_impl "bool_not expects one Base argument"
+      | [ Ptr b ] -> b
+      | _ -> failwith "bool_not expects one Ptr argument"
     in
     let** b_rval, state = Heap.load b_ptr (Types.TLiteral TBool) state in
     let b_int = as_base_of ~ty:Typed.t_int b_rval in
@@ -268,6 +253,7 @@ module M (Heap : Heap_intf.S) = struct
       ~state =
     let rec aux : Types.ty -> rust_val = function
       | TLiteral _ -> Base Typed.zero
+      | TRawPtr _ | TRef _ -> Ptr Typed.Ptr.null
       | TAdt (TAdtId t_id, _) -> (
           let adt = Types.TypeDeclId.Map.find t_id crate.type_decls in
           match adt.kind with
@@ -296,55 +282,54 @@ module M (Heap : Heap_intf.S) = struct
     in
     Result.ok (Array (List.init size (fun _ -> rust_val)), state)
 
-  let array_index (idx : Expressions.builtin_index_op)
+  let array_index (idx_op : Expressions.builtin_index_op)
       (gen_args : Types.generic_args) ~crate:_ ~args ~state =
-    let size =
-      match (args, gen_args.const_generics) with
+    let ptr, size =
+      match (idx_op.is_array, args, gen_args.const_generics) with
       (* Array with static size *)
-      | _, [ size ] -> Charon_util.int_of_const_generic size
-      (* Slice, with dynamic size *)
-      | Slice (_, size) :: _, _ -> (
-          match Typed.kind size with
-          | Int size -> Z.to_int size
-          | _ -> failwith "array_index: unexpected slice size")
+      | true, Ptr ptr :: _, [ size ] ->
+          (ptr, Typed.int @@ Charon_util.int_of_const_generic size)
+      | false, FatPtr (ptr, size) :: _, [] -> (ptr, Typed.cast size)
       | _ ->
-          Fmt.failwith "array_index: unexpected generic constants %a / %a"
+          Fmt.failwith "array_index: unexpected arguments: %a / %a"
             Fmt.(list pp_rust_val)
             args
             Fmt.(list Types.pp_const_generic)
             gen_args.const_generics
     in
-    match (idx.is_range, idx.is_array) with
-    | true, _ -> failwith "array_index: range indexing not supported"
-    | _, false -> failwith "array_index: slice indexing not supported"
-    | false, true -> (
-        (* TODO: take into account idx.mutability *)
-        let* ptr, idx =
-          match args with
-          | [ Base ptr; Base idx ] ->
-              let* ptr =
-                of_opt_not_impl ~msg:"array_index: expected pointer"
-                  (Typed.cast_checked ptr Typed.t_ptr)
-              in
-              let+ idx =
-                of_opt_not_impl ~msg:"array_index: expected integer"
-                  (Typed.cast_checked idx Typed.t_int)
-              in
-              (ptr, idx)
-          | _ -> failwith "array_index: unexpected arguments"
+    (* TODO: take into account idx.mutability *)
+    let idx = as_base_of ~ty:Typed.t_int (List.nth args 1) in
+    if%sat 0s <=@ idx &&@ (idx <@ size) then
+      let ty = List.hd gen_args.types in
+      let* offset = Layout.size_of_s ty in
+      let ptr_loc, ptr_off = (Typed.Ptr.loc ptr, Typed.Ptr.ofs ptr) in
+      let ptr_off' = ptr_off +@ (offset *@ idx) in
+      let ptr' = Typed.Ptr.mk ptr_loc ptr_off' in
+      if not idx_op.is_range then Result.ok (Ptr ptr', state)
+      else
+        let range_end = as_base_of ~ty:Typed.t_int (List.nth args 2) in
+        (* range_end is exclusive *)
+        if%sat idx <=@ range_end &&@ (range_end <=@ size) then
+          let size = range_end -@ idx in
+          Result.ok (FatPtr (ptr', size), state)
+        else
+          (* not sure this is the right diagnostic *)
+          Heap.error `OutOfBounds state
+    else Heap.error `OutOfBounds state
+
+  (* Some array accesses are ran on functions, so we handle those here and redirect them.
+     Eventually, it would be good to maybe make a Charon pass that gets rid of these before. *)
+  let array_index_fn (fun_sig : UllbcAst.fun_sig) ~crate ~args ~state =
+    match (args, fun_sig.inputs) with
+    (* Unfortunate, but right now i don't have a better way to handle this *)
+    | ( [ ptr; Struct [ idx_from; idx_to ] ],
+        TRef (_, TAdt (TBuiltin ((TArray | TSlice) as mode), gargs), _) :: _ )
+      ->
+        let idx_op : Expressions.builtin_index_op =
+          { is_array = mode = TArray; mutability = RShared; is_range = true }
         in
-        let arr_ty = Types.TAdt (TBuiltin TArray, gen_args) in
-        let layout = Layout.layout_of arr_ty in
-        let indices = List.init size Fun.id in
-        let* res = match_on indices ~constr:(fun i -> idx ==@ Typed.int i) in
-        match res with
-        | Some i ->
-            let offset = Array.get layout.members_ofs i in
-            let ptr_loc, ptr_off = (Typed.Ptr.loc ptr, Typed.Ptr.ofs ptr) in
-            let ptr_off' = ptr_off +@ Typed.int offset in
-            let ptr' = Typed.Ptr.mk ptr_loc ptr_off' in
-            Result.ok (Base ptr', state)
-        | None -> Heap.error `OutOfBounds state)
+        array_index idx_op gargs ~crate ~args:[ ptr; idx_from; idx_to ] ~state
+    | _ -> failwith "array_index (fn): unexpected arguments"
 
   let array_slice ~mut:_ (gen_args : Types.generic_args) ~crate:_ ~args ~state =
     let size =
@@ -352,27 +337,23 @@ module M (Heap : Heap_intf.S) = struct
       | [ size ] -> Charon_util.int_of_const_generic size
       | _ -> failwith "array_slice: unexpected generic constants"
     in
-    let* arr_ptr =
+    let arr_ptr =
       match args with
-      | [ Base arr_ptr ] ->
-          of_opt_not_impl ~msg:"array_index: expected pointer"
-            (Typed.cast_checked arr_ptr Typed.t_ptr)
+      | [ Ptr arr_ptr ] -> arr_ptr
       | _ -> failwith "array_index: unexpected arguments"
     in
-    let slice = Slice (arr_ptr, Typed.int size) in
+    let slice = FatPtr (arr_ptr, Typed.int size) in
     Result.ok (slice, state)
 
   let slice_len _ ~crate:_ ~args ~state =
     match args with
-    | [ Slice (_, len) ] -> Result.ok (Base (len :> T.cval Typed.t), state)
+    | [ FatPtr (_, len) ] -> Result.ok (Base len, state)
     | _ -> failwith "slice_len: unexpected arguments"
 
   let discriminant_value (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
-    let* value_ptr =
+    let value_ptr =
       match args with
-      | [ Base value_ptr ] ->
-          of_opt_not_impl ~msg:"discriminant_value: expected pointer"
-            (Typed.cast_checked value_ptr Typed.t_ptr)
+      | [ Ptr value_ptr ] -> value_ptr
       | _ -> failwith "discriminant_value: unexpected arguments"
     in
     let value_ty =
@@ -396,6 +377,7 @@ module M (Heap : Heap_intf.S) = struct
     | Checked of std_op
     | DiscriminantValue
     | Eq of std_bool
+    | Index
     | IsNone
     | IsSome
     | OptUnwrap
@@ -412,6 +394,7 @@ module M (Heap : Heap_intf.S) = struct
       ("kani::assume", Assume);
       ("kani::any", Any);
       (* Core *)
+      ("core::array::{core::ops::index::Index}::index", Index);
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
@@ -431,6 +414,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::result::{@T}::unwrap", ResUnwrap);
       ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);
+      ("core::slice::index::{core::ops::index::Index}::index", Index);
       ("core::option::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
       ("core::slice::{@T}::len", SliceLen);
@@ -454,6 +438,7 @@ module M (Heap : Heap_intf.S) = struct
        | Checked op -> checked_op (op_of op) f.signature
        | DiscriminantValue -> discriminant_value f.signature
        | Eq b -> eq_values ~neg:(b = Neg) f.signature
+       | Index -> array_index_fn f.signature
        | IsNone -> is_none f.signature
        | IsSome -> is_some f.signature
        | OptUnwrap -> unwrap_opt f.signature

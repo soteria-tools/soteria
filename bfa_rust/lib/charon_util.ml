@@ -3,11 +3,12 @@ open Typed
 
 type rust_val =
   | Base of T.cval Typed.t
+  | Ptr of T.sptr Typed.t
+  | FatPtr of T.sptr Typed.t * T.cval Typed.t  (** ptr * metadata *)
   | Enum of T.cval Typed.t * rust_val list  (** discriminant * values *)
   | Struct of rust_val list  (** contains ordered fields *)
   | Tuple of rust_val list
   | Array of rust_val list
-  | Slice of T.sptr Typed.t * T.sint Typed.t  (** ptr * len *)
   | Never  (** Useful for base cases -- should be ignored *)
 [@@deriving show { with_path = false }]
 
@@ -45,6 +46,13 @@ let lit_to_string : Values.literal_type -> string = function
   | TFloat F128 -> "f128"
   | TChar -> "char"
   | TBool -> "bool"
+
+let as_ptr = function
+  | Ptr ptr -> ptr
+  | FatPtr (ptr, _) -> ptr
+  | v ->
+      Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a"
+        pp_rust_val v
 
 let as_base_of ~ty = function
   | Base v -> (
