@@ -143,21 +143,20 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
           Typed.ppa v1 Typed.ppa v2
 
-  let rec arith_add ~state (v1 : [< Typed.T.cval ] Typed.t)
+  let arith_add ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
-    match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt ->
+    match ((Typed.get_ty v1, v1), (Typed.get_ty v2, v2)) with
+    | (TInt, v1), (TInt, v2) ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
         Result.ok (v1 +@ v2, state)
-    | TPointer, TInt ->
+    | (TPointer, v1), (TInt, v2) | (TInt, v2), (TPointer, v1) ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
         let loc = Typed.Ptr.loc v1 in
         let ofs = Typed.Ptr.ofs v1 +@ v2 in
         Result.ok (Typed.Ptr.mk loc ofs, state)
-    | TInt, TPointer -> arith_add ~state v2 v1
-    | TPointer, TPointer -> Heap.error `UBPointerArithmetic state
+    | (TPointer, _), (TPointer, _) -> Heap.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
