@@ -17,12 +17,6 @@ let unit_ = Tuple []
 let value_of_scalar : Values.scalar_value -> T.cval Typed.t = function
   | { value = v; _ } -> int_z v
 
-let value_of_constant : Expressions.constant_expr -> T.cval Typed.t = function
-  | { value = CLiteral (VScalar scalar); _ } -> value_of_scalar scalar
-  | { value = CLiteral (VBool b); _ } -> int (if b then 1 else 0)
-  | e ->
-      Fmt.failwith "TODO: value_of_constant %a" Expressions.pp_constant_expr e
-
 let type_of_operand : Expressions.operand -> Types.ty = function
   | Constant c -> c.ty
   | Copy p | Move p -> p.ty
@@ -72,3 +66,35 @@ let int_of_const_generic : Types.const_generic -> int = function
         Types.pp_const_generic cg
 
 let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
+
+let empty_span : Meta.span =
+  {
+    span =
+      {
+        beg_loc = { line = 0; col = 0 };
+        end_loc = { line = 0; col = 0 };
+        file = { name = Virtual ""; contents = None };
+      };
+    generated_from_span = None;
+  }
+
+let fields_of_tys : Types.ty list -> Types.field list =
+  List.map (fun field_ty : Types.field ->
+      {
+        span = empty_span;
+        attr_info =
+          { attributes = []; inline = None; rename = None; public = true };
+        field_name = None;
+        field_ty;
+      })
+
+let mk_array_ty ty len : Types.ty =
+  TAdt
+    ( TBuiltin TArray,
+      {
+        types = [ ty ];
+        const_generics =
+          [ CgValue (VScalar { value = Z.of_int len; int_ty = Isize }) ];
+        regions = [];
+        trait_refs = [];
+      } )

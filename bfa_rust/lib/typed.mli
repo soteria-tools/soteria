@@ -94,6 +94,8 @@ module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t
   val loc : [< sptr ] t -> [> sloc ] t
   val ofs : [< sptr ] t -> [> sint ] t
+  val decompose : [< sptr ] t -> [> sloc ] t * [> sint ] t
+  val add_ofs : [< sptr ] t -> [< sint ] t -> [> sptr ] t
   val loc_of_int : int -> [> sloc ] t
   val null : [> sptr ] t
   val null_loc : [> sloc ] t

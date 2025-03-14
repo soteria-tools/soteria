@@ -30,17 +30,7 @@ let push_give_up, flush_give_up =
   (push_give_up, flush_give_up)
 
 let current_loc =
-  ref
-    Charon.Meta.
-      {
-        span =
-          {
-            beg_loc = { line = 0; col = 0 };
-            end_loc = { line = 0; col = 0 };
-            file = { name = Virtual ""; contents = None };
-          };
-        generated_from_span = None;
-      }
+  ref Charon_util.empty_span
 
 let get_loc () = !current_loc
 

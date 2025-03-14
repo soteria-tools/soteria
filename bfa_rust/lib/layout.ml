@@ -89,7 +89,7 @@ module Session = struct
 
   let get_adt adt_id =
     let crate = get_crate () in
-    Types.TypeDeclId.Map.find adt_id crate.type_decls
+    Std_types.get_adt ~crate adt_id
 
   let get_or_compute_cached_layout ty f =
     match Hashtbl.find_opt layout_cache ty with
@@ -132,28 +132,32 @@ let size_of_int_ty : Types.integer_type -> int = function
 let size_of_literal_ty : Types.literal_type -> int = function
   | TInteger int_ty -> size_of_int_ty int_ty
   | TBool -> 1
-  | ty -> Fmt.failwith "Unspported literal type %a" Types.pp_literal_type ty
+  | TChar -> 4
+  | TFloat F16 -> 2
+  | TFloat F32 -> 4
+  | TFloat F64 -> 8
+  | TFloat F128 -> 16
 
 (* TODO: this is not really accurate, but good enough for now.
    See https://doc.rust-lang.org/reference/type-layout.html#r-layout.primitive.align *)
-let align_of_int_ty : Types.integer_type -> int = size_of_int_ty
+let align_of_literal_ty : Types.literal_type -> int = size_of_literal_ty
 let empty_generics = TypesUtils.empty_generic_args
+
+(** If a pointer/reference to the given type requires a fat pointer *)
+let is_fat_ptr : Types.ty -> bool = function
+  | TAdt (TBuiltin TSlice, _) | TAdt (TBuiltin TStr, _) -> true
+  | _ -> false
 
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
   match ty with
   (* Literals *)
-  | TLiteral (TInteger inty) ->
-      let size = size_of_int_ty inty in
-      let align = align_of_int_ty inty in
+  | TLiteral ty ->
+      let size = size_of_literal_ty ty in
+      let align = align_of_literal_ty ty in
       { size; align; members_ofs = [||] }
-  | TLiteral TBool -> { size = 1; align = 1; members_ofs = [||] }
-  | TLiteral TChar -> raise (CantComputeLayout ("Char", ty))
-  | TLiteral (TFloat _) -> raise (CantComputeLayout ("Float", ty))
-  (* Slices *)
-  | TRef (_, TAdt (TBuiltin TSlice, _), _)
-  | TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
-      (* A slice is a pointer and the size of the view *)
+  (* Fat pointers *)
+  | (TRef (_, sub_ty, _) | TRawPtr (sub_ty, _)) when is_fat_ptr sub_ty ->
       {
         size = Archi.word_size * 2;
         align = Archi.word_size;
@@ -183,18 +187,12 @@ let rec layout_of (ty : Types.ty) : layout =
           List.fold_left
             (fun acc l -> if l.size > acc.size then l else acc)
             (List.hd layouts) (List.tl layouts)
-      | Opaque -> (
-          let crate = Session.get_crate () in
-          match Std_types.type_eval ~crate adt with
-          | Some ty -> layout_of ty
-          | None ->
-              let msg =
-                Fmt.str "Opaque %a " Session.pp_name adt.item_meta.name
-              in
-              raise (CantComputeLayout (msg, ty)))
-      | TError _ -> failwith "Unsupported ADT kind: TError"
-      | Alias _ -> failwith "Unsupported ADT kind: Alias"
-      | Union _ -> failwith "Unsupported ADT kind: Union")
+      | Opaque ->
+          let msg = Fmt.str "Opaque %a " Session.pp_name adt.item_meta.name in
+          raise (CantComputeLayout (msg, ty))
+      | TError _ -> raise (CantComputeLayout ("Error", ty))
+      | Alias _ -> raise (CantComputeLayout ("Alias", ty))
+      | Union _ -> raise (CantComputeLayout ("Union", ty)))
   (* Arrays *)
   | TAdt (TBuiltin TArray, generics) ->
       let ty, size =
@@ -311,6 +309,34 @@ let constraints : Types.literal_type -> (cval -> sbool list) option = function
           match Typed.cast_checked x Typed.t_int with
           | None -> [ Typed.v_false ]
           | Some x -> constrs x)
+  | TBool ->
+      Some
+        (fun x ->
+          match Typed.cast_checked x Typed.t_int with
+          | None -> [ Typed.v_false ]
+          (* Maybe worth checking which of these is better (if it matters at all)
+          | Some x -> [ x ==@ 0s ||@ (x ==@ 1s) ]) *)
+          | Some x -> [ 0s <=@ x; x <=@ 1s ])
+  | TChar ->
+      (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’ other than
+       a surrogate code point. This has a fixed numerical definition: code points are in
+       the range 0 to 0x10FFFF, inclusive. Surrogate code points, used by UTF-16, are in
+       the range 0xD800 to 0xDFFF.
+       https://doc.rust-lang.org/std/primitive.char.html *)
+      let codepoint_min = Typed.zero in
+      let codepoint_max = Typed.int 0x10FFFF in
+      let surrogate_min = Typed.int 0xD800 in
+      let surrogate_max = Typed.int 0xDFFF in
+      Some
+        (fun x ->
+          match Typed.cast_checked x Typed.t_int with
+          | None -> [ Typed.v_false ]
+          | Some x ->
+              [
+                codepoint_min <=@ x;
+                x <=@ codepoint_max;
+                Typed.not (surrogate_min <=@ x &&@ (x <=@ surrogate_max));
+              ])
   | ty ->
       L.info (fun m ->
           m "No constraints implemented for type %a" Types.pp_literal_type ty);
@@ -319,12 +345,8 @@ let constraints : Types.literal_type -> (cval -> sbool list) option = function
 let nondet_literal_ty : Types.literal_type -> cval Rustsymex.t =
   let open Rustsymex.Syntax in
   function
-  | TInteger ity ->
-      let constrs = int_constraints ity in
-      let+ res = Rustsymex.nondet ~constrs Typed.t_int in
-      (res :> cval)
-  | TBool ->
-      let constrs = fun x -> [ x ==@ 0s ||@ (x ==@ 1s) ] in
+  | (TInteger _ | TBool | TChar) as ty ->
+      let constrs = Option.get @@ constraints ty in
       let+ res = Rustsymex.nondet ~constrs Typed.t_int in
       (res :> cval)
   | ty ->
@@ -402,8 +424,8 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
       let size = Typed.int Archi.word_size in
       [ { value :> cval; ty = TInteger Isize; size; offset } ]
   (* Slices *)
-  | FatPtr (value, sl_size), TRef (_, TAdt (TBuiltin TSlice, _), _)
-  | FatPtr (value, sl_size), TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
+  | FatPtr (value, sl_size), (TRef (_, sub_ty, _) | TRawPtr (sub_ty, _))
+    when is_fat_ptr sub_ty ->
       let size = Typed.int Archi.word_size in
       let isize = Values.TInteger Isize in
       [
@@ -485,8 +507,7 @@ let rust_of_cvals ?offset ty : parser_return =
             function
             | [ v ] -> return (`Done (Base v))
             | _ -> failwith "Expected one cval" )
-    | TRef (_, TAdt (TBuiltin TSlice, _), _)
-    | TRawPtr (TAdt (TBuiltin TSlice, _), _) ->
+    | (TRef (_, sub_ty, _) | TRawPtr (sub_ty, _)) when is_fat_ptr sub_ty ->
         let callback = function
           | [ ptr; len ] ->
               let* ptr =
@@ -565,8 +586,9 @@ let rust_of_cvals ?offset ty : parser_return =
   (* Parses what enum variant we're handling *)
   and aux_enum offset (variants : Types.variant list) : parser_return =
     let disc = (List.hd variants).discriminant in
-    let disc_align = Typed.nonzero (align_of_int_ty disc.int_ty) in
-    let disc_size = Typed.int (size_of_int_ty disc.int_ty) in
+    let disc_ty = Values.TInteger disc.int_ty in
+    let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
+    let disc_size = Typed.int (size_of_literal_ty disc_ty) in
     let offset = offset +@ (offset %@ disc_align) in
     let callback cval : callback_return =
       let cval = List.hd cval in

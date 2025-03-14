@@ -302,9 +302,7 @@ module M (Heap : Heap_intf.S) = struct
     if%sat 0s <=@ idx &&@ (idx <@ size) then
       let ty = List.hd gen_args.types in
       let* offset = Layout.size_of_s ty in
-      let ptr_loc, ptr_off = (Typed.Ptr.loc ptr, Typed.Ptr.ofs ptr) in
-      let ptr_off' = ptr_off +@ (offset *@ idx) in
-      let ptr' = Typed.Ptr.mk ptr_loc ptr_off' in
+      let ptr' = Typed.Ptr.add_ofs ptr (offset *@ idx) in
       if not idx_op.is_range then Result.ok (Ptr ptr', state)
       else
         let range_end = as_base_of ~ty:Typed.t_int (List.nth args 2) in
@@ -366,6 +364,100 @@ module M (Heap : Heap_intf.S) = struct
     | Enum (discr, _) -> (Base discr, state)
     | _ -> failwith "discriminant_value: unexpected value"
 
+  let to_string _ ~crate:_ ~args ~state =
+    match args with
+    | [ (FatPtr (_, len) as slice) ] ->
+        Result.ok (Struct [ slice; Base len ], state)
+    | _ -> failwith "to_string: unexpected value"
+
+  let str_chars _ ~crate:_ ~args ~state =
+    let ptr, len =
+      match args with
+      | [ FatPtr (ptr, len) ] -> (ptr, len)
+      | _ -> failwith "str_chars: unexpected value"
+    in
+    let len = Typed.cast len in
+    let ptr_loc, ptr_off = Typed.Ptr.decompose ptr in
+    let ty_size = Layout.size_of_literal_ty TChar in
+    let arr_end_ofs = ptr_off +@ (Typed.int ty_size *@ len) in
+    let arr_end = Typed.Ptr.mk ptr_loc arr_end_ofs in
+    Result.ok (Struct [ Ptr ptr; Ptr arr_end ], state)
+
+  let iter_nth (fun_sig : GAst.fun_sig) ~crate ~args ~state =
+    let iter_ptr, idx =
+      match args with
+      | [ Ptr iter_ptr; Base idx ] -> (iter_ptr, idx)
+      | _ -> failwith "iter_nth: unexpected value"
+    in
+    let* idx =
+      of_opt_not_impl ~msg:"iter_nth: expected int idx"
+        (Typed.cast_checked idx Typed.t_int)
+    in
+    let iter_ty, sub_ty =
+      match fun_sig.inputs with
+      | TRef (_, (TAdt (TAdtId adt_id, _) as iter_ty), _) :: _ -> (
+          let adt = Std_types.get_adt ~crate adt_id in
+          match adt.kind with
+          | Struct (_ :: { field_ty = TRawPtr (sub_ty, _); _ } :: _) ->
+              (iter_ty, sub_ty)
+          | _ -> failwith "iter_nth: unexpected signature")
+      | _ -> failwith "iter_nth: unexpected signature"
+    in
+    let* sub_ty_size = Layout.size_of_s sub_ty in
+    let** iter, state = Heap.load iter_ptr iter_ty state in
+    let start_ptr, end_ptr =
+      match iter with
+      | Struct [ Ptr start_ptr; Ptr end_ptr ] -> (start_ptr, end_ptr)
+      | _ -> failwith "iter_nth: unexpected iter structure"
+    in
+    let start_loc, start_ofs = Typed.Ptr.decompose start_ptr in
+    let end_loc, end_ofs = Typed.Ptr.decompose end_ptr in
+    if%sat start_loc ==@ end_loc then
+      let ofs = start_ofs +@ (idx *@ sub_ty_size) in
+      if%sat ofs <@ end_ofs then
+        let ptr = Typed.Ptr.mk start_loc ofs in
+        let iter' = Struct [ Ptr ptr; Ptr end_ptr ] in
+        let** value, state = Heap.load ptr sub_ty state in
+        let++ (), state = Heap.store iter_ptr iter_ty iter' state in
+        (Enum (1s, [ value ]), state)
+      else
+        (* return None *)
+        Result.ok (Enum (0s, []), state)
+    else Heap.error `UBPointerArithmetic state
+
+  let deref (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+    (* This works for string deref -- don't know about the rest *)
+    let ptr =
+      match args with
+      | [ Ptr ptr ] -> ptr
+      | _ -> failwith "deref: unexpected argument"
+    in
+    let ty =
+      match funsig.inputs with
+      | TRef (_, ty, _) :: _ -> ty
+      | _ -> failwith "deref: unexpected signature"
+    in
+    let++ v, state = Heap.load ptr ty state in
+    match v with
+    | Struct [ v; _ ] -> (v, state)
+    | _ -> Fmt.failwith "deref: unexpected value: %a" pp_rust_val v
+
+  let str_len (fun_sig : GAst.fun_sig) ~crate:_ ~args ~state =
+    let str_ptr =
+      match args with
+      | [ Ptr ptr ] -> ptr
+      | _ -> failwith "str_len: unexpected argument"
+    in
+    let str_ty =
+      match fun_sig.inputs with
+      | [ TRef (_, str_ty, _) ] -> str_ty
+      | _ -> failwith "str_len: unexpected input"
+    in
+    let++ str_obj, state = Heap.load str_ptr str_ty state in
+    match str_obj with
+    | Struct [ FatPtr (_, len); _ ] -> (Base len, state)
+    | _ -> failwith "str_len: unexpected string type"
+
   type std_op = Add | Sub | Mul
   type std_bool = Id | Neg
 
@@ -375,14 +467,19 @@ module M (Heap : Heap_intf.S) = struct
     | Assume
     | BoolNot
     | Checked of std_op
+    | Deref
     | DiscriminantValue
     | Eq of std_bool
     | Index
     | IsNone
     | IsSome
+    | IterNth
     | OptUnwrap
     | ResUnwrap
     | SliceLen
+    | StrChars
+    | StrLen
+    | ToString
     | Unchecked of std_op
     | WrappingAdd
     | Zeroed
@@ -394,6 +491,9 @@ module M (Heap : Heap_intf.S) = struct
       ("kani::assume", Assume);
       ("kani::any", Any);
       (* Core *)
+      ("alloc::string::{alloc::string::String}::len", StrLen);
+      ("alloc::string::{alloc::string::ToString}::to_string", ToString);
+      ("alloc::string::{core::ops::deref::Deref}::deref", Deref);
       ("core::array::{core::ops::index::Index}::index", Index);
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
@@ -415,6 +515,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::slice::index::{core::ops::index::Index}::index", Index);
+      ("core::str::iter::{core::iter::traits::iterator::Iterator}::nth", IterNth);
+      ("core::str::{str}::chars", StrChars);
       ("core::option::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
       ("core::slice::{@T}::len", SliceLen);
@@ -436,14 +538,19 @@ module M (Heap : Heap_intf.S) = struct
        | Assume -> assume f.signature
        | BoolNot -> bool_not f.signature
        | Checked op -> checked_op (op_of op) f.signature
+       | Deref -> deref f.signature
        | DiscriminantValue -> discriminant_value f.signature
        | Eq b -> eq_values ~neg:(b = Neg) f.signature
        | Index -> array_index_fn f.signature
        | IsNone -> is_none f.signature
        | IsSome -> is_some f.signature
+       | IterNth -> iter_nth f.signature
        | OptUnwrap -> unwrap_opt f.signature
        | ResUnwrap -> unwrap_res f.signature
        | SliceLen -> slice_len f.signature
+       | StrChars -> str_chars f.signature
+       | StrLen -> str_len f.signature
+       | ToString -> to_string f.signature
        | Unchecked op -> unchecked_op (op_of op) f.signature
        | WrappingAdd -> wrapping_add f.signature
        | Zeroed -> zeroed f.signature

@@ -318,6 +318,16 @@ module Ptr = struct
   let ofs p =
     match p.node.kind with Ptr (_, o) -> o | _ -> Unop (GetPtrOfs, p) <| TInt
 
+  let decompose p =
+    match p.node.kind with
+    | Ptr (l, o) -> (l, o)
+    | _ -> (Unop (GetPtrOfs, p) <| TInt, Unop (GetPtrOfs, p) <| TInt)
+
+  let add_ofs p o =
+    match p.node.kind with
+    | Ptr (l, o') -> mk l (plus o' o)
+    | _ -> mk (loc p) (plus (ofs p) o)
+
   let null_loc = Int Z.zero <| TLoc
   let null = mk null_loc zero
   let is_null p = sem_eq p null

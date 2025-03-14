@@ -53,11 +53,32 @@ module Make (Heap : Heap_intf.S) = struct
             let++ (), st = Heap.free ptr st in
             st)
 
-  let debug_show ~crate:_ ~args:_ ~state =
-    let loc = get_loc () in
-    let str = (Fmt.to_to_string (Heap.pp_pretty ~ignore_freed:false)) state in
-    Rustsymex.push_give_up (str, loc);
-    Result.ok (0s, state)
+  let resolve_constant (const : Expressions.constant_expr) state =
+    match const with
+    | { value = CLiteral (VScalar scalar); _ } ->
+        Result.ok (Base (value_of_scalar scalar), state)
+    | { value = CLiteral (VBool b); _ } ->
+        Result.ok (Base (if b then Typed.one else Typed.zero), state)
+    | { value = CLiteral (VChar c); _ } ->
+        Result.ok (Base (Typed.int (Char.code c)), state)
+    | { value = CLiteral (VStr str); _ } ->
+        (* TODO: contants are compiled *once* to a location in memory and re-used -- we need
+                 to somehow have a cache (string -> ptr) to avoid duplication. *)
+        (* We "cheat" and model strings as a vector of chars, with &str a slice *)
+        let len = String.length str in
+        let chars =
+          String.to_seq str
+          |> Seq.fold_left (fun l c -> Base (Typed.int (Char.code c)) :: l) []
+          |> List.rev
+        in
+        let char_arr = Array chars in
+        let str_ty : Types.ty = mk_array_ty (TLiteral TChar) len in
+        let** ptr, state = Heap.alloc_ty str_ty state in
+        let++ (), state = Heap.store ptr str_ty char_arr state in
+        (FatPtr (ptr, Typed.int len), state)
+    | e ->
+        Fmt.kstr not_impl "TODO: resolve_constant %a"
+          Expressions.pp_constant_expr e
 
   (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
@@ -104,9 +125,7 @@ module Make (Heap : Heap_intf.S) = struct
           | ProjTuple _arity -> (Layout.layout_of base.ty, field)
         in
         let offset = Array.get layout.members_ofs field in
-        let loc = Typed.Ptr.loc ptr in
-        let ofs = Typed.Ptr.ofs ptr +@ Typed.int offset in
-        let ptr = Typed.Ptr.mk loc ofs in
+        let ptr = Typed.Ptr.add_ofs ptr (Typed.int offset) in
         L.debug (fun f ->
             f
               "Dereferenced ADT projection %a, field %d, with pointer %a to \
@@ -153,9 +172,8 @@ module Make (Heap : Heap_intf.S) = struct
     | (TPointer, v1), (TInt, v2) | (TInt, v2), (TPointer, v1) ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
-        let loc = Typed.Ptr.loc v1 in
-        let ofs = Typed.Ptr.ofs v1 +@ v2 in
-        Result.ok (Typed.Ptr.mk loc ofs, state)
+        let v' = Typed.Ptr.add_ofs v1 v2 in
+        Result.ok (v', state)
     | (TPointer, _), (TPointer, _) -> Heap.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
@@ -199,8 +217,8 @@ module Make (Heap : Heap_intf.S) = struct
   and eval_operand ~crate:_ ~store state (op : Expressions.operand) =
     match op with
     | Constant c ->
-        let v = value_of_constant c in
-        Result.ok (Base v, state)
+        let++ v, state = resolve_constant c state in
+        (v, state)
     | Move loc ->
         let ty = loc.ty in
         let** loc, state = resolve_place ~store state loc in
@@ -566,7 +584,7 @@ module Make (Heap : Heap_intf.S) = struct
         | SwitchInt (_, options, default) -> (
             let* block =
               match_on options ~constr:(fun (v, _) ->
-                  discr ==@ Charon_util.value_of_scalar v)
+                  discr ==@ value_of_scalar v)
             in
             match block with
             | None ->
