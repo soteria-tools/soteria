@@ -24,16 +24,34 @@ module SPmap = Pmap_direct_access (struct
   let fresh ?constrs () = Rustsymex.nondet ?constrs Typed.t_loc
 end)
 
-type t = Tree_block.t Freeable.t SPmap.t option
+type global = String of string | Global of Charon.Types.global_decl_id
+[@@deriving show { with_path = false }, ord]
+
+module GlobMap = struct
+  include Map.Make (struct
+    type t = global
+
+    let compare = compare_global
+  end)
+
+  let pp pp_v fmt m =
+    let pp_pair = Fmt.pair ~sep:(Fmt.any " -> ") pp_global pp_v in
+    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) m
+end
+
+type t = {
+  heap : Tree_block.t Freeable.t SPmap.t option;
+  globals : Charon_util.rust_val GlobMap.t;
+}
 [@@deriving show { with_path = false }]
 
 type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
 [@@deriving show { with_path = false }]
 
-let serialize st =
-  match st with
+let serialize { heap; _ } =
+  match heap with
   | None -> []
-  | Some st -> SPmap.serialize (Freeable.serialize Tree_block.serialize) st
+  | Some heap -> SPmap.serialize (Freeable.serialize Tree_block.serialize) heap
 
 let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
     (serialized : serialized) : serialized =
@@ -47,16 +65,16 @@ let iter_vars_serialized (s : serialized) :
     (Freeable.iter_vars_serialized Tree_block.iter_vars_serialized)
     s
 
-let pp_pretty ~ignore_freed ft st =
+let pp_pretty ~ignore_freed ft { heap; _ } =
   let ignore =
     if ignore_freed then function _, Freeable.Freed -> true | _ -> false
     else fun _ -> false
   in
-  match st with
+  match heap with
   | None -> Fmt.pf ft "Empty Heap"
   | Some st -> SPmap.pp ~ignore (Freeable.pp Tree_block.pp_pretty) ft st
 
-let empty = None
+let empty = { heap = None; globals = GlobMap.empty }
 
 let log action ptr st =
   L.debug (fun m ->
@@ -65,23 +83,24 @@ let log action ptr st =
         (pp_pretty ~ignore_freed:true)
         st)
 
-let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
+let with_ptr (ptr : [< T.sptr ] Typed.t) ({ heap; _ } as st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       Tree_block.t option ->
       ('a * Tree_block.t option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
   let loc, ofs = Typed.Ptr.decompose ptr in
-  (SPmap.wrap (Freeable.wrap (f ~ofs))) loc st
+  let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
+  (v, { st with heap })
 
-let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
+let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) ({ heap; _ } : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       Tree_block.t option ->
       ('a, 'err, Tree_block.serialized list) Result.t) :
     ('a, 'err, serialized list) Result.t =
   let loc, ofs = Typed.Ptr.decompose ptr in
-  (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc st
+  (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc heap
 
 let load ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
@@ -153,30 +172,33 @@ let copy_nonoverlapping ~dst ~src ~size st =
     with_ptr dst st (fun ~ofs block ->
         Tree_block.put_raw_tree ofs tree_to_write block)
 
-let alloc size st =
+let alloc size ({ heap; _ } as st) =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
   let@ () = with_error_loc_as_call_trace () in
   let block = Freeable.Alive (Tree_block.alloc size) in
-  let** loc, st = SPmap.alloc ~new_codom:block st in
+  let** loc, heap = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
-  let+ () = Typed.(assume [ not (loc ==@ Ptr.null_loc) ]) in
-  Bfa_symex.Compo_res.ok (ptr, st)
+  let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
+  Bfa_symex.Compo_res.ok (ptr, { st with heap })
 
 let alloc_ty ty st =
   let* size = Layout.size_of_s ty in
   alloc size st
 
-let free (ptr : [< T.sptr ] Typed.t) (st : t) :
+let free (ptr : [< T.sptr ] Typed.t) ({ heap; _ } as st : t) :
     (unit * t, 'err, serialized list) Result.t =
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ () = with_loc_err () in
-    (SPmap.wrap
-       (Freeable.free
-          ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
-      (Typed.Ptr.loc ptr) st
+    let++ (), heap =
+      (SPmap.wrap
+         (Freeable.free
+            ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
+        (Typed.Ptr.loc ptr) heap
+    in
+    ((), { st with heap })
   else error `InvalidFree
 
 let uninit (ptr : [< T.sptr ] Typed.t) (st : t) :
@@ -191,13 +213,35 @@ let error err _st =
   let@ () = with_error_loc_as_call_trace () in
   error err
 
-let produce (serialized : serialized) (heap : t) : t Rustsymex.t =
+let produce (serialized : serialized) ({ heap; _ } as st : t) : t Rustsymex.t =
   let non_null_locs =
     List.map (fun (loc, _) -> Typed.not (Typed.Ptr.null_loc ==@ loc)) serialized
   in
   let* () = Rustsymex.assume non_null_locs in
-  SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
+  let+ heap =
+    SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
+  in
+  { st with heap }
 
-let consume (serialized : serialized) (heap : t) :
+let consume (serialized : serialized) ({ heap; _ } as st : t) :
     (t, 'err, serialized list) Rustsymex.Result.t =
-  SPmap.consume (Freeable.consume Tree_block.consume) serialized heap
+  let++ heap =
+    SPmap.consume (Freeable.consume Tree_block.consume) serialized heap
+  in
+  { st with heap }
+
+let store_str_global str v ({ globals; _ } as st) =
+  let globals = GlobMap.add (String str) v globals in
+  Result.ok ((), { st with globals })
+
+let store_global g v ({ globals; _ } as st) =
+  let globals = GlobMap.add (Global g) v globals in
+  Result.ok ((), { st with globals })
+
+let load_str_global str ({ globals; _ } as st) =
+  let v = GlobMap.find_opt (String str) globals in
+  Result.ok (v, st)
+
+let load_global g ({ globals; _ } as st) =
+  let v = GlobMap.find_opt (Global g) globals in
+  Result.ok (v, st)

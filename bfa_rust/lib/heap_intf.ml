@@ -78,4 +78,32 @@ module type S = sig
 
   val consume :
     serialized -> t -> (t, [> ] err, serialized list) Rustsymex.Result.t
+
+  val store_str_global :
+    string ->
+    Charon_util.rust_val ->
+    t ->
+    (unit * t, [> ] err, serialized list) Rustsymex.Result.t
+
+  val store_global :
+    Charon.Types.global_decl_id ->
+    Charon_util.rust_val ->
+    t ->
+    (unit * t, [> ] err, serialized list) Rustsymex.Result.t
+
+  val load_str_global :
+    string ->
+    t ->
+    ( Charon_util.rust_val option * t,
+      [> ] err,
+      serialized list )
+    Rustsymex.Result.t
+
+  val load_global :
+    Charon.Types.global_decl_id ->
+    t ->
+    ( Charon_util.rust_val option * t,
+      [> ] err,
+      serialized list )
+    Rustsymex.Result.t
 end

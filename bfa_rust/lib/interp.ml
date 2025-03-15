@@ -44,14 +44,19 @@ module Make (Heap : Heap_intf.S) = struct
           (store, st)
         else Result.ok (store, st))
 
-  let dealloc_store store st =
+  let dealloc_store ?protected_address store st =
     Rustsymex.Result.fold_list (Store.bindings store) ~init:st
       ~f:(fun st (_, (ptr, _)) ->
-        match ptr with
-        | None -> Result.ok st
-        | Some ptr ->
+        match (ptr, protected_address) with
+        | None, _ -> Result.ok st
+        | Some ptr, None ->
             let++ (), st = Heap.free ptr st in
-            st)
+            st
+        | Some ptr, Some protect ->
+            if%sat ptr ==@ protect then Result.ok st
+            else
+              let++ (), st = Heap.free ptr st in
+              st)
 
   let resolve_constant (const : Expressions.constant_expr) state =
     match const with
@@ -61,21 +66,27 @@ module Make (Heap : Heap_intf.S) = struct
         Result.ok (Base (if b then Typed.one else Typed.zero), state)
     | { value = CLiteral (VChar c); _ } ->
         Result.ok (Base (Typed.int (Char.code c)), state)
-    | { value = CLiteral (VStr str); _ } ->
-        (* TODO: contants are compiled *once* to a location in memory and re-used -- we need
-                 to somehow have a cache (string -> ptr) to avoid duplication. *)
-        (* We "cheat" and model strings as a vector of chars, with &str a slice *)
-        let len = String.length str in
-        let chars =
-          String.to_seq str
-          |> Seq.fold_left (fun l c -> Base (Typed.int (Char.code c)) :: l) []
-          |> List.rev
-        in
-        let char_arr = Array chars in
-        let str_ty : Types.ty = mk_array_ty (TLiteral TChar) len in
-        let** ptr, state = Heap.alloc_ty str_ty state in
-        let++ (), state = Heap.store ptr str_ty char_arr state in
-        (FatPtr (ptr, Typed.int len), state)
+    | { value = CLiteral (VStr str); _ } -> (
+        let** ptr_opt, state = Heap.load_str_global str state in
+        match ptr_opt with
+        | Some v -> Result.ok (v, state)
+        | None ->
+            (* We "cheat" and model strings as a vector of chars, with &str a slice *)
+            let len = String.length str in
+            let chars =
+              String.to_seq str
+              |> Seq.fold_left
+                   (fun l c -> Base (Typed.int (Char.code c)) :: l)
+                   []
+              |> List.rev
+            in
+            let char_arr = Array chars in
+            let str_ty : Types.ty = mk_array_ty (TLiteral TChar) len in
+            let** ptr, state = Heap.alloc_ty str_ty state in
+            let** (), state = Heap.store ptr str_ty char_arr state in
+            let value = FatPtr (ptr, Typed.int len) in
+            let++ (), state = Heap.store_str_global str value state in
+            (value, state))
     | e ->
         Fmt.kstr not_impl "TODO: resolve_constant %a"
           Expressions.pp_constant_expr e
@@ -214,6 +225,32 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Move function call is not supported: %a"
           GAst.pp_fn_operand fnop
 
+  and resolve_global ~crate (g : Types.global_decl_id) state =
+    let decl = UllbcAst.GlobalDeclId.Map.find g UllbcAst.(crate.global_decls) in
+    match Std_globals.global_eval ~crate decl with
+    | Some global -> Result.ok (global, state)
+    | None -> (
+        let** v_opt, state = Heap.load_global g state in
+        match v_opt with
+        | Some v -> Result.ok (v, state)
+        | None ->
+            (* Same as with strings -- here we need to somehow cache where we store the globals *)
+            let fundef =
+              UllbcAst.FunDeclId.Map.find decl.body crate.fun_decls
+            in
+            L.info (fun g ->
+                let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+                g "Resolved function call to %s"
+                  (PrintTypes.name_to_string ctx fundef.item_meta.name));
+            let global_fn =
+              match Std_funs.std_fun_eval ~crate fundef with
+              | Some fn -> fn
+              | None -> exec_fun fundef
+            in
+            let** v, state = global_fn ~crate ~args:[] ~state in
+            let++ (), state = Heap.store_global g v state in
+            (v, state))
+
   and eval_operand ~crate:_ ~store state (op : Expressions.operand) =
     match op with
     | Constant c ->
@@ -245,17 +282,8 @@ module Make (Heap : Heap_intf.S) = struct
     let eval_operand = eval_operand ~crate ~store in
     match expr with
     | Use op -> eval_operand state op
-    | RvRef (place, _borrow) ->
-        let** ptr, state = resolve_place ~store state place in
-        Result.ok (ptr, state)
-    | Global { global_id; _ } -> (
-        let decl =
-          UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
-        in
-        match Std_globals.global_eval ~crate decl with
-        | None ->
-            Fmt.kstr not_impl "Global %a not found" GAst.pp_global_decl decl
-        | Some global -> Result.ok (global, state))
+    | RvRef (place, _borrow) -> resolve_place ~store state place
+    | Global { global_id; _ } -> resolve_global ~crate global_id state
     | UnaryOp (op, e) -> (
         let** v, _state = eval_operand state e in
         match op with
@@ -438,14 +466,6 @@ module Make (Heap : Heap_intf.S) = struct
         (ptr, state)
     | v -> Fmt.kstr not_impl "Unsupported rvalue: %a" Expressions.pp_rvalue v
 
-  and eval_rvalue_list ~crate ~(store : store) (state : state) el =
-    let++ vs, state =
-      Rustsymex.Result.fold_list el ~init:([], state) ~f:(fun (acc, state) e ->
-          let++ new_res, state = eval_rvalue ~crate ~store state e in
-          (new_res :: acc, state))
-    in
-    (List.rev vs, state)
-
   and exec_stmt ~crate store state astmt :
       (store * state, 'err, Heap.serialized list) Rustsymex.Result.t =
     L.info (fun m ->
@@ -458,6 +478,15 @@ module Make (Heap : Heap_intf.S) = struct
     let@ () = with_loc ~loc in
     match stmt with
     | Nop -> Result.ok (store, state)
+    (* small optimisation, avoids parsing to-from rust. *)
+    | Assign (({ ty; _ } as dst_place), Use (Copy src_place)) ->
+        let** dst, state = resolve_place ~store state dst_place in
+        let dst = as_ptr dst in
+        let** src, state = resolve_place ~store state src_place in
+        let src = as_ptr src in
+        let* size = Layout.size_of_s ty in
+        let++ (), state = Heap.copy_nonoverlapping ~dst ~src ~size state in
+        (store, state)
     | Assign (({ ty; _ } as place), rval) ->
         let** ptr, state = resolve_place ~store state place in
         let ptr = as_ptr ptr in
@@ -625,7 +654,14 @@ module Make (Heap : Heap_intf.S) = struct
     let** value, store, state =
       exec_block ~crate ~body store state starting_block
     in
-    let++ state = dealloc_store store state in
+    let protected_address =
+      match (fundef.signature.output, value) with
+      | TRef (RStatic, _, RShared), Ptr addr
+      | TRef (RStatic, _, RShared), FatPtr (addr, _) ->
+          Some addr
+      | _ -> None
+    in
+    let++ state = dealloc_store ?protected_address store state in
     (* We model void as zero, it should never be used anyway *)
     (value, state)
 end
