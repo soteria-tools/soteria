@@ -121,7 +121,6 @@ let exec_main (crate : Charon.UllbcAst.crate) =
   let* entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
     |> List.filter (fun (decl : UllbcAst.blocks UllbcAst.gfun_decl) ->
-           (* TODO: is the entry point the function with index 0? *)
            (match List.rev decl.item_meta.name with
            | PeIdent ("main", _) :: _ -> true
            | _ -> false)

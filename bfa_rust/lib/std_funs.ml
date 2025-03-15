@@ -458,12 +458,42 @@ module M (Heap : Heap_intf.S) = struct
     | Struct [ FatPtr (_, len); _ ] -> (Base len, state)
     | _ -> failwith "str_len: unexpected string type"
 
+  let assert_zero_is_valid (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+    let ty =
+      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
+        .types
+      |> List.hd
+    in
+    match ty with
+    | TRef _ -> Heap.error (`Panic "core::intrinsics::assert_zero_valid") state
+    | _ -> Result.ok (Tuple [], state)
+
+  let size_of (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+    let ty =
+      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
+        .types
+      |> List.hd
+    in
+    let+ size = Layout.size_of_s ty in
+    Bfa_symex.Compo_res.Ok (Base size, state)
+
+  let min_align_of (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+    let ty =
+      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
+        .types
+      |> List.hd
+    in
+    let layout = Layout.layout_of ty in
+    let align = Typed.int layout.align in
+    Result.ok (Base align, state)
+
   type std_op = Add | Sub | Mul
   type std_bool = Id | Neg
 
   type std_fun =
     | Any
     | Assert
+    | AssertZeroValid
     | Assume
     | BoolNot
     | Checked of std_op
@@ -474,8 +504,10 @@ module M (Heap : Heap_intf.S) = struct
     | IsNone
     | IsSome
     | IterNth
+    | MinAlignOf
     | OptUnwrap
     | ResUnwrap
+    | SizeOf
     | SliceLen
     | StrChars
     | StrLen
@@ -497,7 +529,11 @@ module M (Heap : Heap_intf.S) = struct
       ("core::array::{core::ops::index::Index}::index", Index);
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
+      ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
+      ("core::intrinsics::min_align_of", MinAlignOf);
+      ("core::intrinsics::pref_align_of", MinAlignOf);
+      ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::wrapping_add", WrappingAdd);
       ("core::mem::zeroed", Zeroed);
       ("core::num::{@N}::checked_add", Checked Add);
@@ -535,6 +571,7 @@ module M (Heap : Heap_intf.S) = struct
     |> Option.map @@ function
        | Any -> nondet f.signature
        | Assert -> assert_ f.signature
+       | AssertZeroValid -> assert_zero_is_valid f.signature
        | Assume -> assume f.signature
        | BoolNot -> bool_not f.signature
        | Checked op -> checked_op (op_of op) f.signature
@@ -545,8 +582,10 @@ module M (Heap : Heap_intf.S) = struct
        | IsNone -> is_none f.signature
        | IsSome -> is_some f.signature
        | IterNth -> iter_nth f.signature
+       | MinAlignOf -> min_align_of f.signature
        | OptUnwrap -> unwrap_opt f.signature
        | ResUnwrap -> unwrap_res f.signature
+       | SizeOf -> size_of f.signature
        | SliceLen -> slice_len f.signature
        | StrChars -> str_chars f.signature
        | StrLen -> str_len f.signature

@@ -301,9 +301,7 @@ module Make (Heap : Heap_intf.S) = struct
             | TRawPtr _, TLiteral (TInteger Usize) ->
                 let v_ptr = as_base_of ~ty:Typed.t_ptr v in
                 (* TODO: is this right? Or do we want to convert the location to an integer?
-                         (probably not...)
-                let loc = Typed.Ptr.loc v_ptr in
-                let loc_int = Typed.Ptr.int_of_loc loc in *)
+                         (probably not...) *)
                 Result.ok (Base v_ptr, state)
             | _ ->
                 Fmt.kstr not_impl "Unsupported transmutation, from %a to %a"
@@ -412,19 +410,21 @@ module Make (Heap : Heap_intf.S) = struct
         let** loc, state = resolve_place ~store state place in
         let loc = as_ptr loc in
         let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
-        let* enum_discr_ty =
+        let* discr_ofs, discr_ty =
           match enum.kind with
           | Enum (var :: _) ->
               let int_ty = var.discriminant.int_ty in
-              return (Types.TLiteral (TInteger int_ty))
+              let layout = Layout.of_variant var in
+              let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
+              return (discr_ofs, Types.TLiteral (TInteger int_ty))
           | Enum [] ->
               Fmt.kstr not_impl "Unsupported discriminant for empty enums"
           | k ->
               Fmt.failwith "Expected an enum for discriminant, got %a"
                 Types.pp_type_decl_kind k
         in
-        (* TODO: we probably should get the discriminant's offset from layout first *)
-        Heap.load loc enum_discr_ty state
+        let loc = Typed.Ptr.add_ofs loc discr_ofs in
+        Heap.load loc discr_ty state
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
         let type_decl =

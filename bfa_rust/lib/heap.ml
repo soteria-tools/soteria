@@ -107,7 +107,7 @@ let load ptr ty st =
   let@ () = with_loc_err () in
   log "load" ptr st;
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
-  else (* TODO: reverse, find a way of encoding the conversion to a rust val *)
+  else
     with_ptr ptr st (fun ~ofs block ->
         L.debug (fun f ->
             f "Recursively reading from block tree at %a:@.%a" Typed.ppa ptr
