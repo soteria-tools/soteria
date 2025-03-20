@@ -21,6 +21,7 @@
   linol
   linol-eio
   eio_main
+  yojson
   printbox-text)
  (flags :standard -open Bfa_std)
  (preprocess

@@ -54,11 +54,17 @@ let normalise_int_ty int_ty =
     int_ty
 
 let size_of_int_ty (int_ty : integerType) =
-  (* DefaultImpl has a type for everything *)
+  (* DefaultImpl has a size for everything *)
   CF.Ocaml_implementation.DefaultImpl.impl.sizeof_ity (normalise_int_ty int_ty)
 
 let align_of_int_ty (int_ty : integerType) =
   CF.Ocaml_implementation.DefaultImpl.impl.alignof_ity (normalise_int_ty int_ty)
+
+let size_of_float_ty (fty : floatingType) =
+  CF.Ocaml_implementation.DefaultImpl.impl.sizeof_fty fty
+
+let align_of_float_ty (fty : floatingType) =
+  CF.Ocaml_implementation.DefaultImpl.impl.alignof_fty fty
 
 (* TODO: unsupported things need to be signaled a bit better here. *)
 
@@ -72,6 +78,10 @@ let rec layout_of ty =
       let* size = size_of_int_ty inty in
       let+ align = align_of_int_ty inty in
       { size; align; members_ofs = [||] }
+  | Basic (Floating fty) ->
+      let* size = size_of_float_ty fty in
+      let+ align = align_of_float_ty fty in
+      { size; align; members_ofs = [||] }
   | Pointer _ -> layout_of (Ctype ([], Basic (Integer Size_t)))
   | Struct tag ->
       let* loc, def = Tag_defs.find_opt tag in
@@ -79,7 +89,7 @@ let rec layout_of ty =
         match def with
         | StructDef (m, fam) -> Some (m, fam)
         | _ ->
-            L.debug (fun m -> m "Don't have a definition fo structure");
+            L.debug (fun m -> m "Don't have a definition of structure");
             None
       in
       let* () =

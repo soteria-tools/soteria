@@ -105,7 +105,9 @@ module Make (Heap : Heap_intf.S) = struct
     match c with
     | ConstantInteger (IConstant (z, _basis, _suff)) ->
         Csymex.return (Typed.int_z z)
-    | _ -> Csymex.not_impl "value of constant?"
+    | ConstantNull -> Csymex.return Typed.Ptr.null
+    | _ ->
+        Fmt.kstr Csymex.not_impl "value of constant? %a" Fmt_ail.pp_constant c
 
   let debug_show ~prog:_ ~args:_ ~state =
     let loc = get_loc () in
@@ -176,6 +178,23 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
 
+  let arith_sub ~state (v1 : [< Typed.T.cval ] Typed.t)
+      (v2 : [< Typed.T.cval ] Typed.t) =
+    match (Typed.get_ty v1, Typed.get_ty v2) with
+    | TInt, TInt ->
+        let v1 = Typed.cast v1 in
+        let v2 = Typed.cast v2 in
+        Result.ok (v1 -@ v2, state)
+    | TPointer, TInt ->
+        let v1 : T.sptr Typed.t = Typed.cast v1 in
+        let v2 : T.sint Typed.t = Typed.cast v2 in
+        let loc = Typed.Ptr.loc v1 in
+        let ofs = Typed.Ptr.ofs v1 -@ v2 in
+        Result.ok (Typed.Ptr.mk loc ofs, state)
+    | _ ->
+        Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
+          Typed.ppa v2
+
   let arith_mul ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
@@ -187,6 +206,41 @@ module Make (Heap : Heap_intf.S) = struct
     | _ ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
           Typed.ppa v1 Typed.ppa v2
+
+  let arith ~state (v1, t1) a_op (v2, t2) =
+    match (a_op : AilSyntax.arithmeticOperator) with
+    | Div -> (
+        let* v1 = cast_checked v1 ~ty:Typed.t_int in
+        let* v2 = cast_checked v2 ~ty:Typed.t_int in
+        let* v2 = Csymex.check_nonzero v2 in
+        match v2 with
+        | Ok v2 -> Csymex.Result.ok (v1 /@ v2, state)
+        | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
+        | Missing e -> (* Unreachable but still *) Csymex.Result.miss e)
+    | Mul -> arith_mul ~state v1 v2
+    | Add -> (
+        match (t1 |> pointer_inner, t2 |> pointer_inner) with
+        | Some _, Some _ -> Heap.error `UBPointerArithmetic state
+        | Some ty, None ->
+            let* factor = Layout.size_of_s ty in
+            let** v2, state = arith_mul ~state v2 factor in
+            arith_add ~state v1 v2
+        | None, Some ty ->
+            let* factor = Layout.size_of_s ty in
+            let** v1, state = arith_mul ~state v1 factor in
+            arith_add ~state v2 v1
+        | None, None -> arith_add ~state v1 v2)
+    | Sub -> (
+        match (t1 |> pointer_inner, t2 |> pointer_inner) with
+        | _, Some _ -> Heap.error `UBPointerArithmetic state
+        | Some ty, None ->
+            let* factor = Layout.size_of_s ty in
+            let** v2, state = arith_mul ~state v2 factor in
+            arith_sub ~state v1 v2
+        | None, None -> arith_sub ~state v1 v2)
+    | _ ->
+        Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
+          Fmt_ail.pp_arithop a_op
 
   let rec resolve_function ~(prog : sigma) fexpr : 'err fun_exec Csymex.t =
     let* loc, fname =
@@ -306,34 +360,12 @@ module Make (Heap : Heap_intf.S) = struct
             let+ v2 = cast_checked v2 ~ty:Typed.t_int in
             let b_res = Typed.bool_of_int v1 &&@ Typed.bool_of_int v2 in
             Ok (Typed.int_of_bool b_res, state)
-        | Arithmetic a_op -> (
-            match a_op with
-            | Div -> (
-                let* v1 = cast_checked v1 ~ty:Typed.t_int in
-                let* v2 = cast_checked v2 ~ty:Typed.t_int in
-                let* v2 = Csymex.check_nonzero v2 in
-                match v2 with
-                | Ok v2 -> Csymex.Result.ok (v1 /@ v2, state)
-                | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
-                | Missing e -> (* Unreachable but still *) Csymex.Result.miss e)
-            | Mul -> arith_mul ~state v1 v2
-            | Add -> (
-                match
-                  (type_of e1 |> pointer_inner, type_of e2 |> pointer_inner)
-                with
-                | Some _, Some _ -> Heap.error `UBPointerArithmetic state
-                | Some ty, None ->
-                    let* factor = Layout.size_of_s ty in
-                    let** v2, state = arith_mul ~state v2 factor in
-                    arith_add ~state v1 v2
-                | None, Some ty ->
-                    let* factor = Layout.size_of_s ty in
-                    let** v1, state = arith_mul ~state v1 factor in
-                    arith_add ~state v2 v1
-                | None, None -> arith_add ~state v1 v2)
-            | _ ->
-                Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
-                  Fmt_ail.pp_arithop a_op)
+        | Or ->
+            let* v1 = cast_checked v1 ~ty:Typed.t_int in
+            let+ v2 = cast_checked v2 ~ty:Typed.t_int in
+            let b_res = Typed.bool_of_int v1 ||@ Typed.bool_of_int v2 in
+            Ok (Typed.int_of_bool b_res, state)
+        | Arithmetic a_op -> arith ~state (v1, type_of e1) a_op (v2, type_of e2)
         | _ ->
             Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
               op)
@@ -362,6 +394,18 @@ module Make (Heap : Heap_intf.S) = struct
         let ty = type_of lvalue in
         let++ (), state = Heap.store ptr ty rval state in
         (rval, state)
+    | AilEcompoundAssign (lvalue, op, rvalue) ->
+        let** rval, state = eval_expr state rvalue in
+        let** ptr, state = eval_expr state lvalue in
+        let ty = type_of rvalue in
+        (* At this point, lvalue must be a pointer (including to the stack) *)
+        let* ptr = cast_to_ptr ptr in
+        let** operand, state = Heap.load ptr ty state in
+        let** res, state =
+          arith ~state (operand, type_of lvalue) op (rval, ty)
+        in
+        let++ (), state = Heap.store ptr ty res state in
+        (res, state)
     | AilSyntax.AilEsizeof (_quals, ty) ->
         let+ res = Layout.size_of_s ty in
         Ok (res, state)
@@ -380,7 +424,6 @@ module Make (Heap : Heap_intf.S) = struct
         let** v, state = eval_expr state expr in
         let+ new_v = cast ~old_ty ~new_ty v in
         Ok (new_v, state)
-    | AilSyntax.AilEcompoundAssign (_, _, _)
     | AilSyntax.AilEcond (_, _, _)
     | AilSyntax.AilEassert _
     | AilSyntax.AilEoffsetof (_, _)
@@ -422,6 +465,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** v, state = eval_expr ~prog ~store state e in
         L.info (fun m -> m "Returning: %a" Typed.ppa v);
         Result.ok (Some v, store, state)
+    | AilSreturnVoid -> Result.ok (Some 0s, store, state)
     | AilSblock (bindings, stmtl) ->
         let previous_store = store in
         let* store = attach_bindings store bindings in

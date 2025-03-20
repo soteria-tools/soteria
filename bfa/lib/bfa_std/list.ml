@@ -1,5 +1,8 @@
 include Stdlib.List
 
+(** [take_count n l] takes the prefix [l'] of at most [n] from the beginning of
+    the list [l], or the entire list if the length of [l] is smaller than [n].
+    It returns the pair [(k, l')], where [k] is the length of [l']. *)
 let take_count n l =
   let taken = ref 0 in
   let[@tail_mod_cons] rec aux n l =
