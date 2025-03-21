@@ -126,6 +126,8 @@
   logs
   printbox-text
   unionFind
+  name_matcher_parser
+  charon
   (linol
    (>= 0.8))
   (linol-eio
