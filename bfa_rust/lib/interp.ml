@@ -343,7 +343,6 @@ module Make (Heap : Heap_intf.S) = struct
               let v2 = Typed.cast v2 in
               equality_check ~state v1 v2
           | Ne ->
-              (* TODO: Semantics of Ne might be different from semantics of not eq? *)
               let v1 = Typed.cast v1 in
               let v2 = Typed.cast v2 in
               let++ res, state = equality_check ~state v1 v2 in

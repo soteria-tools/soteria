@@ -16,9 +16,8 @@ type layout = {
   size : int;
   align : int;
   members_ofs : int Array.t;
-      (** Array of offset in layout for field with given id (index) *)
-      (* TODO: this should probably become (Types.FieldId.id * int) Array.t eventually,
-        but that requires converting integers to field ids for tuples i think. *)
+      (** Array of offset in layout for field with given index. For enums,
+          includes the discriminator at index 0 *)
 }
 
 let pp_layout fmt { size; align; members_ofs } =

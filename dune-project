@@ -10,11 +10,11 @@
 
 (authors
  "Sacha-Élie Ayoun <s.ayoun17@imperial.ac.uk>"
- "Opale Sjöstedt <ols23@ic.ac.uk>")
+ "Opale Sjöstedt <opale.sjostedt23@imperial.ac.uk>")
 
 (maintainers
  "Sacha-Élie Ayoun <s.ayoun17@imperial.ac.uk>"
- "Opale Sjöstedt <ols23@ic.ac.uk>")
+ "Opale Sjöstedt <opale.sjostedt23@imperial.ac.uk>")
 
 (source
  (github bugs-for-all/bfa))
