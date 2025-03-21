@@ -1,4 +1,11 @@
-module SYMEX = Bfa_symex.Symex.Make_iter (Z3solver)
+module SYMEX =
+  Bfa_symex.Symex.Make_iter
+    (struct
+      let steps = 150
+      let branching = 4
+    end)
+    (Z3solver)
+
 include SYMEX
 
 let check_nonzero (t : Typed.T.sint Typed.t) :

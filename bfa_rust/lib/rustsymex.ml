@@ -1,4 +1,11 @@
-module SYMEX = Bfa_symex.Symex.Make_iter (Z3solver)
+module SYMEX =
+  Bfa_symex.Symex.Make_iter
+    (struct
+      let steps = 500
+      let branching = 10
+    end)
+    (Z3solver)
+
 include SYMEX
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
@@ -29,9 +36,7 @@ let push_give_up, flush_give_up =
   in
   (push_give_up, flush_give_up)
 
-let current_loc =
-  ref Charon_util.empty_span
-
+let current_loc = ref Charon_util.empty_span
 let get_loc () = !current_loc
 
 let with_loc ~(loc : Charon.Meta.span) f =

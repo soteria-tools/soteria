@@ -156,11 +156,12 @@ module Extend (Base : Base) = struct
   end
 end
 
-module Make_seq (Sol : Solver.Mutable_incremental) :
+module Make_seq (C: Fuel_gauge.Config) (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
 
   module Fuel = struct
+    module Fuel_gauge = Fuel_gauge.Make (C)
     include Incremental.Make_in_place (Fuel_gauge)
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n)
@@ -328,11 +329,12 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
     if Solver.sat () then MONAD.return x else vanish ()
 end)
 
-module Make_iter (Sol : Solver.Mutable_incremental) :
+module Make_iter (C: Fuel_gauge.Config) (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
 
   module Fuel = struct
+    module Fuel_gauge = Fuel_gauge.Make (C)
     include Incremental.Make_in_place (Fuel_gauge)
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n)
