@@ -152,6 +152,7 @@ alias realpath="grealpath"
 # Run all tests
 step=0
 passed=0
+failed=0
 script_start=$(($(date +%s%N)/1000000))
 for test in $TESTS; do
     test_rel_name=$(realpath --relative-to=$KANI_PATH $test)
@@ -177,8 +178,10 @@ for test in $TESTS; do
     else
         if [ $result -eq 0 ] && [ $expect_failure -eq 1 ]; then
             echo -e " ${RED}passed (expected failure)${RESET}"
+            failed=$((failed+1))
         elif [ $result -eq 1 ] && [ $expect_failure -eq 0 ]; then
             echo -e " ${RED}failed${RESET}"
+            failed=$((failed+1))
         else
             echo -e " ${PURPLE}crashed: status code $result${RESET}"
         fi
@@ -195,4 +198,10 @@ script_end=$(($(date +%s%N)/1000000))
 script_duration=$((script_end-script_start))
 
 # | Passed N/N tests in N ms.    Have a nice day 〜
-echo -e "$(rainbow step)|${RESET} ${BOLD}Passed ${CYAN}$passed${RESET}${BOLD}/$step tests in ${CYAN}$script_duration ms${RESET}   ${PURPLE}Have a nice day 〜${RESET}"
+echo -e "$(rainbow step)|${RESET} \
+${BOLD}Result: \
+${GREEN}$passed${RESET}\
+${BOLD}/\
+${RED}$failed${RESET}\
+${BOLD}/$step tests in ${CYAN}$script_duration ms${RESET}    \
+${PURPLE}Have a nice day 〜${RESET}"

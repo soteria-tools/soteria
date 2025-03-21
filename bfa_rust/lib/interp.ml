@@ -225,31 +225,37 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Move function call is not supported: %a"
           GAst.pp_fn_operand fnop
 
+  (** Resolves a global into a *pointer* Rust value to where that global is *)
   and resolve_global ~crate (g : Types.global_decl_id) state =
     let decl = UllbcAst.GlobalDeclId.Map.find g UllbcAst.(crate.global_decls) in
-    match Std_globals.global_eval ~crate decl with
-    | Some global -> Result.ok (global, state)
-    | None -> (
-        let** v_opt, state = Heap.load_global g state in
-        match v_opt with
-        | Some v -> Result.ok (v, state)
-        | None ->
-            (* Same as with strings -- here we need to somehow cache where we store the globals *)
-            let fundef =
-              UllbcAst.FunDeclId.Map.find decl.body crate.fun_decls
-            in
-            L.info (fun g ->
-                let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-                g "Resolved function call to %s"
-                  (PrintTypes.name_to_string ctx fundef.item_meta.name));
-            let global_fn =
-              match Std_funs.std_fun_eval ~crate fundef with
-              | Some fn -> fn
-              | None -> exec_fun fundef
-            in
-            let** v, state = global_fn ~crate ~args:[] ~state in
-            let++ (), state = Heap.store_global g v state in
-            (v, state))
+    let** v_opt, state = Heap.load_global g state in
+    match v_opt with
+    | Some v -> Result.ok (v, state)
+    | None ->
+        let** v, state =
+          match Std_globals.global_eval ~crate decl with
+          | Some global -> Result.ok (global, state)
+          | None ->
+              (* Same as with strings -- here we need to somehow cache where we store the globals *)
+              let fundef =
+                UllbcAst.FunDeclId.Map.find decl.body crate.fun_decls
+              in
+              L.info (fun g ->
+                  let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+                  g "Resolved function call to %s"
+                    (PrintTypes.name_to_string ctx fundef.item_meta.name));
+              let global_fn =
+                match Std_funs.std_fun_eval ~crate fundef with
+                | Some fn -> fn
+                | None -> exec_fun fundef
+              in
+              global_fn ~crate ~args:[] ~state
+        in
+        let** ptr, state = Heap.alloc_ty decl.ty state in
+        let** (), state = Heap.store ptr decl.ty v state in
+        let ptr = Ptr ptr in
+        let++ (), state = Heap.store_global g ptr state in
+        (ptr, state)
 
   and eval_operand ~crate:_ ~store state (op : Expressions.operand) =
     match op with
@@ -283,7 +289,16 @@ module Make (Heap : Heap_intf.S) = struct
     match expr with
     | Use op -> eval_operand state op
     | RvRef (place, _borrow) -> resolve_place ~store state place
-    | Global { global_id; _ } -> resolve_global ~crate global_id state
+    | Global { global_id; _ } ->
+        let decl =
+          UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
+        in
+        let** ptr, state = resolve_global ~crate global_id state in
+        let ptr = as_ptr ptr in
+        Heap.load ptr decl.ty state
+    | GlobalRef ({ global_id; _ }, _mut) ->
+        (* TODO: handle mutability *)
+        resolve_global ~crate global_id state
     | UnaryOp (op, e) -> (
         let** v, _state = eval_operand state e in
         match op with
@@ -306,6 +321,34 @@ module Make (Heap : Heap_intf.S) = struct
             | _ ->
                 Fmt.kstr not_impl "Unsupported transmutation, from %a to %a"
                   Types.pp_ty from_ty Types.pp_ty to_ty)
+        | Cast (CastScalar (TInteger from_ty, TInteger to_ty)) ->
+            let from_size = Layout.size_of_int_ty from_ty in
+            let to_size = Layout.size_of_int_ty to_ty in
+            if Layout.is_signed from_ty = Layout.is_signed to_ty then
+              (* same sign: *)
+              if from_size <= to_size then
+                (* to a larger number *)
+                Result.ok (v, state)
+              else if not @@ Layout.is_signed from_ty then
+                (* to a smaller number (unsigned) *)
+                let max_value = Layout.max_value_z to_ty in
+                let v_int = as_base_of ~ty:Typed.t_int v in
+                let v_int' = v_int %@ Typed.nonzero_z max_value in
+                Result.ok (Base v_int', state)
+              else
+                (* to a smaller number (signed) *)
+                not_impl "Unsupported: integer cast to a smaller signed number"
+            else if from_size = to_size then
+              (* same size *)
+              let min = Typed.int_z @@ Layout.min_value_z from_ty in
+              let v_int = as_base_of ~ty:Typed.t_int v in
+              let v_int' =
+                if Layout.is_signed from_ty then v_int -@ min else v_int +@ min
+              in
+              Result.ok (Base v_int', state)
+            else
+              not_impl
+                "Unsupported: integer cast with different signedness and sign"
         | Cast kind ->
             Fmt.kstr not_impl "Unsupported cast kind: %a"
               Expressions.pp_cast_kind kind)

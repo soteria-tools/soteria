@@ -270,30 +270,36 @@ let size_of_s ty =
     Fmt.kstr Rustsymex.not_impl "Cannot yet compute size of %s:\n%a" msg
       Types.pp_ty ty
 
-let min_value : Types.integer_type -> [> Typed.T.sint ] Typed.t = function
-  | U128 | U64 | U32 | U16 | U8 | Usize -> 0s
-  | Isize ->
-      Typed.int_z (Z.neg (Z.shift_left Z.one ((8 * Archi.word_size) - 1)))
-  | I128 -> Typed.int_z (Z.neg (Z.shift_left Z.one 127))
-  | I64 -> Typed.int_z (Z.neg (Z.shift_left Z.one 63))
-  | I32 -> Typed.int_z (Z.neg (Z.shift_left Z.one 31))
-  | I16 -> Typed.int_z (Z.neg (Z.shift_left Z.one 15))
-  | I8 -> Typed.int_z (Z.neg (Z.shift_left Z.one 7))
+let is_signed : Types.integer_type -> bool = function
+  | I128 | I64 | I32 | I16 | I8 | Isize -> true
+  | U128 | U64 | U32 | U16 | U8 | Usize -> false
 
-let max_value : Types.integer_type -> [> Typed.T.sint ] Typed.t = function
-  | U128 -> Typed.int_z (Z.pred (Z.shift_left Z.one 128))
-  | U64 -> Typed.int_z (Z.pred (Z.shift_left Z.one 64))
-  | U32 -> Typed.int_z (Z.pred (Z.shift_left Z.one 32))
-  | U16 -> Typed.int_z (Z.pred (Z.shift_left Z.one 16))
-  | U8 -> Typed.int_z (Z.pred (Z.shift_left Z.one 8))
-  | Usize -> Typed.int_z (Z.pred (Z.shift_left Z.one (8 * Archi.word_size)))
-  | I128 -> Typed.int_z (Z.pred (Z.shift_left Z.one 127))
-  | I64 -> Typed.int_z (Z.pred (Z.shift_left Z.one 63))
-  | I32 -> Typed.int_z (Z.pred (Z.shift_left Z.one 31))
-  | I16 -> Typed.int_z (Z.pred (Z.shift_left Z.one 15))
-  | I8 -> Typed.int_z (Z.pred (Z.shift_left Z.one 7))
-  | Isize ->
-      Typed.int_z (Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1)))
+let min_value_z : Types.integer_type -> Z.t = function
+  | U128 | U64 | U32 | U16 | U8 | Usize -> Z.zero
+  | Isize -> Z.neg (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
+  | I128 -> Z.neg (Z.shift_left Z.one 127)
+  | I64 -> Z.neg (Z.shift_left Z.one 63)
+  | I32 -> Z.neg (Z.shift_left Z.one 31)
+  | I16 -> Z.neg (Z.shift_left Z.one 15)
+  | I8 -> Z.neg (Z.shift_left Z.one 7)
+
+let min_value int_ty = Typed.int_z (min_value_z int_ty)
+
+let max_value_z : Types.integer_type -> Z.t = function
+  | U128 -> Z.pred (Z.shift_left Z.one 128)
+  | U64 -> Z.pred (Z.shift_left Z.one 64)
+  | U32 -> Z.pred (Z.shift_left Z.one 32)
+  | U16 -> Z.pred (Z.shift_left Z.one 16)
+  | U8 -> Z.pred (Z.shift_left Z.one 8)
+  | Usize -> Z.pred (Z.shift_left Z.one (8 * Archi.word_size))
+  | I128 -> Z.pred (Z.shift_left Z.one 127)
+  | I64 -> Z.pred (Z.shift_left Z.one 63)
+  | I32 -> Z.pred (Z.shift_left Z.one 31)
+  | I16 -> Z.pred (Z.shift_left Z.one 15)
+  | I8 -> Z.pred (Z.shift_left Z.one 7)
+  | Isize -> Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
+
+let max_value int_ty = Typed.int_z (max_value_z int_ty)
 
 let int_constraints ty =
   let min = min_value ty in
@@ -380,9 +386,23 @@ let rec nondet : Types.ty -> rust_val Rustsymex.t =
               in
               let fields = List.rev fields in
               Enum (discr, fields))
+      | Struct fields ->
+          let+ fields =
+            Rustsymex.fold_list fields ~init:[] ~f:(fun fields ty ->
+                let+ f = nondet ty.field_ty in
+                f :: fields)
+          in
+          Struct fields
       | ty ->
           Rustsymex.not_impl
             (Fmt.str "nondet: unsupported type %a" Types.pp_type_decl_kind ty))
+  | TAdt (TTuple, { types; _ }) ->
+      let+ fields =
+        Rustsymex.fold_list types ~init:[] ~f:(fun fields ty ->
+            let+ f = nondet ty in
+            f :: fields)
+      in
+      Tuple fields
   | ty ->
       Rustsymex.not_impl (Fmt.str "nondet: unsupported type %a" Types.pp_ty ty)
 
