@@ -215,12 +215,8 @@ module Make (Heap : Heap_intf.S) = struct
         match Std_funs.std_fun_eval ~crate fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
-    | FnOpRegular { func = FunId (FBuiltin fn); generics } -> (
-        match Std_funs.builtin_fun_eval ~crate fn generics with
-        | Some fn -> Rustsymex.return fn
-        | None ->
-            Fmt.kstr not_impl "Builtin function not supported: %a"
-              Expressions.pp_builtin_fun_id fn)
+    | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
+        Rustsymex.return @@ Std_funs.builtin_fun_eval ~crate fn generics
     | FnOpMove _ ->
         Fmt.kstr not_impl "Move function call is not supported: %a"
           GAst.pp_fn_operand fnop
@@ -349,6 +345,24 @@ module Make (Heap : Heap_intf.S) = struct
             else
               not_impl
                 "Unsupported: integer cast with different signedness and sign"
+        | Cast
+            (CastUnsize
+               ( TAdt
+                   ( TBuiltin TBox,
+                     {
+                       types =
+                         [
+                           TAdt
+                             (TBuiltin TArray, { const_generics = [ size ]; _ });
+                         ];
+                       _;
+                     } ),
+                 TAdt
+                   (TBuiltin TBox, { types = [ TAdt (TBuiltin TSlice, _) ]; _ })
+               )) ->
+            let ptr = as_ptr v in
+            let size = Typed.int @@ int_of_const_generic size in
+            Result.ok (FatPtr (ptr, size), state)
         | Cast kind ->
             Fmt.kstr not_impl "Unsupported cast kind: %a"
               Expressions.pp_cast_kind kind)

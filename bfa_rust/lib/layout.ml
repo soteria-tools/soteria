@@ -156,7 +156,10 @@ let rec layout_of (ty : Types.ty) : layout =
       let align = align_of_literal_ty ty in
       { size; align; members_ofs = [||] }
   (* Fat pointers *)
-  | (TRef (_, sub_ty, _) | TRawPtr (sub_ty, _)) when is_fat_ptr sub_ty ->
+  | TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+  | TRef (_, sub_ty, _)
+  | TRawPtr (sub_ty, _)
+    when is_fat_ptr sub_ty ->
       {
         size = Archi.word_size * 2;
         align = Archi.word_size;
@@ -166,9 +169,8 @@ let rec layout_of (ty : Types.ty) : layout =
       (* Slices should be hidden behind references *)
       raise (CantComputeLayout ("Raw slice", ty))
   (* Refs, pointers, boxes *)
-  | TRef (_, _, _) | TRawPtr (_, _) ->
+  | TAdt (TBuiltin TBox, _) | TRef (_, _, _) | TRawPtr (_, _) ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
-  | TAdt (TBuiltin TBox, _) -> raise (CantComputeLayout ("Box", ty))
   (* Tuples *)
   | TAdt (TTuple, { types = []; _ }) ->
       (* unit () *)
@@ -439,11 +441,15 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
       [ { value; ty; size; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
-  | Ptr value, TRef _ | Ptr value, TRawPtr _ ->
+  | Ptr value, TAdt (TBuiltin TBox, _)
+  | Ptr value, TRef _
+  | Ptr value, TRawPtr _ ->
       let size = Typed.int Archi.word_size in
       [ { value :> cval; ty = TInteger Isize; size; offset } ]
   (* Slices *)
-  | FatPtr (value, sl_size), (TRef (_, sub_ty, _) | TRawPtr (sub_ty, _))
+  | FatPtr (value, sl_size), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+  | FatPtr (value, sl_size), TRef (_, sub_ty, _)
+  | FatPtr (value, sl_size), TRawPtr (sub_ty, _)
     when is_fat_ptr sub_ty ->
       let size = Typed.int Archi.word_size in
       let isize = Values.TInteger Isize in
@@ -451,7 +457,7 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
         { value :> cval; ty = isize; size; offset };
         { value = sl_size; ty = isize; size; offset = offset +@ size };
       ]
-  | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
+  | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) ->
       if List.compare_lengths vs types <> 0 then
@@ -526,7 +532,10 @@ let rust_of_cvals ?offset ty : parser_return =
             function
             | [ v ] -> return (`Done (Base v))
             | _ -> failwith "Expected one cval" )
-    | (TRef (_, sub_ty, _) | TRawPtr (sub_ty, _)) when is_fat_ptr sub_ty ->
+    | TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+    | TRef (_, sub_ty, _)
+    | TRawPtr (sub_ty, _)
+      when is_fat_ptr sub_ty ->
         let callback = function
           | [ ptr; len ] ->
               let* ptr =
@@ -545,7 +554,7 @@ let rust_of_cvals ?offset ty : parser_return =
         `More
           ( [ (isize, ptr_size, offset); (isize, ptr_size, offset +@ ptr_size) ],
             callback )
-    | TRef _ | TRawPtr _ ->
+    | TAdt (TBuiltin TBox, _) | TRef _ | TRawPtr _ ->
         `More
           ( [ (TInteger Isize, Typed.int Archi.word_size, offset) ],
             function
@@ -559,7 +568,7 @@ let rust_of_cvals ?offset ty : parser_return =
     | TAdt (TTuple, { types; _ }) as ty ->
         let layout = layout_of ty in
         aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
-    | TAdt (TAdtId t_id, _) -> (
+    | TAdt (TAdtId t_id, _) as ty -> (
         let type_decl = Session.get_adt t_id in
         match (type_decl : Types.type_decl) with
         | { kind = Enum variants; _ } -> aux_enum offset variants

@@ -487,6 +487,16 @@ module M (Heap : Heap_intf.S) = struct
     let align = Typed.int layout.align in
     Result.ok (Base align, state)
 
+  let box_new (gen_args : Types.generic_args) ~crate:_ ~args ~state =
+    let ty, v =
+      match (gen_args, args) with
+      | { types = [ ty ]; _ }, [ v ] -> (ty, v)
+      | _ -> failwith "box new: invalid arguments"
+    in
+    let** ptr, state = Heap.alloc_ty ty state in
+    let++ (), state = Heap.store ptr ty v state in
+    (Ptr ptr, state)
+
   type std_op = Add | Sub | Mul
   type std_bool = Id | Neg
 
@@ -596,9 +606,9 @@ module M (Heap : Heap_intf.S) = struct
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
     match f with
-    | ArrayRepeat -> Some (array_repeat generics)
-    | ArrayToSliceMut -> Some (array_slice ~mut:true generics)
-    | ArrayToSliceShared -> Some (array_slice ~mut:false generics)
-    | Index idx -> Some (array_index idx generics)
-    | BoxNew -> None
+    | ArrayRepeat -> array_repeat generics
+    | ArrayToSliceMut -> array_slice ~mut:true generics
+    | ArrayToSliceShared -> array_slice ~mut:false generics
+    | Index idx -> array_index idx generics
+    | BoxNew -> box_new generics
 end
