@@ -448,14 +448,20 @@ module Make (Heap : Heap_intf.S) = struct
                 Expressions.pp_binop bop
         in
         (Base res, state)
-    | NullaryOp (op, _ty) -> (
+    | NullaryOp (op, ty) -> (
         match op with
         | UbChecks ->
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
                From what I understand: our execution already checks for UB, so we should return
                true to skip past code that manually does these checks. *)
             Result.ok (Base (Typed.int_of_bool Typed.v_true), state)
-        | op ->
+        | SizeOf ->
+            let layout = Layout.layout_of ty in
+            Result.ok (Base (Typed.int layout.size), state)
+        | AlignOf ->
+            let layout = Layout.layout_of ty in
+            Result.ok (Base (Typed.int layout.align), state)
+        | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
     | Discriminant (place, kind) ->
@@ -548,15 +554,19 @@ module Make (Heap : Heap_intf.S) = struct
         let** src, state = resolve_place ~store state src_place in
         let src = as_ptr src in
         let* size = Layout.size_of_s ty in
+        L.info (fun m ->
+            m "Copying %a <- %a (size %a)" Typed.ppa dst Typed.ppa src Typed.ppa
+              size);
         let++ (), state = Heap.copy_nonoverlapping ~dst ~src ~size state in
         (store, state)
     | Assign (({ ty; _ } as place), rval) ->
         let** ptr, state = resolve_place ~store state place in
         let ptr = as_ptr ptr in
         let** v, state = eval_rvalue ~crate ~store state rval in
+        L.info (fun m -> m "Assigning %a <- %a" Typed.ppa ptr pp_rust_val v);
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
-    | Call { func; args; dest = { kind = PlaceBase var; ty } } ->
+    | Call { func; args; dest = { ty; _ } as place } ->
         let* exec_fun = resolve_function ~crate func in
         let** args, state = eval_operand_list ~crate ~store state args in
         L.info (fun g ->
@@ -568,14 +578,12 @@ module Make (Heap : Heap_intf.S) = struct
           Heap.add_to_call_trace err
             (Call_trace.make_element ~loc ~msg:"Call trace" ())
         in
-        L.debug (fun m ->
-            m "Returned %a from %a" pp_rust_val v GAst.pp_fn_operand func);
-        let ptr =
-          match Store.find_value var store with
-          | Some ptr -> ptr
-          | None ->
-              failwith "Tried storing in a variable that was not allocated"
-        in
+        let** ptr, state = resolve_place ~store state place in
+        let ptr = as_ptr ptr in
+        L.info (fun m ->
+            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+            m "Returned %a from %s" pp_rust_val v
+              (PrintGAst.fn_operand_to_string ctx func));
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
     | StorageDead var ->

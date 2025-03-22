@@ -439,6 +439,9 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
   | Base value, TLiteral ty ->
       let size = Typed.int (size_of_literal_ty ty) in
       [ { value; ty; size; offset } ]
+  | Ptr value, TLiteral (TInteger (Isize | Usize) as ty) ->
+      let size = Typed.int (size_of_literal_ty ty) in
+      [ { value :> cval; ty; size; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
   | Ptr value, TAdt (TBuiltin TBox, _)
@@ -453,16 +456,20 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
       let size = Typed.int Archi.word_size in
       [ { value; ty = TInteger Isize; size; offset } ]
   (* Fat pointers *)
-  | FatPtr (value, sl_size), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
-  | FatPtr (value, sl_size), TRef (_, sub_ty, _)
-  | FatPtr (value, sl_size), TRawPtr (sub_ty, _)
-    when is_fat_ptr sub_ty ->
-      let size = Typed.int Archi.word_size in
-      let isize = Values.TInteger Isize in
-      [
-        { value :> cval; ty = isize; size; offset };
-        { value = sl_size; ty = isize; size; offset = offset +@ size };
-      ]
+  | FatPtr (value, meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+  | FatPtr (value, meta), TRef (_, sub_ty, _)
+  | FatPtr (value, meta), TRawPtr (sub_ty, _) ->
+      if is_fat_ptr sub_ty then
+        let size = Typed.int Archi.word_size in
+        let isize = Values.TInteger Isize in
+        [
+          { value :> cval; ty = isize; size; offset };
+          { value = meta; ty = isize; size; offset = offset +@ size };
+        ]
+      else
+        (* if a fat pointer is not requires, we ignore the metadata *)
+        let size = Typed.int Archi.word_size in
+        [ { value :> cval; ty = TInteger Isize; size; offset } ]
   | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) ->

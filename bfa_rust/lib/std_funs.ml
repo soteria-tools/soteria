@@ -545,11 +545,17 @@ module M (Heap : Heap_intf.S) = struct
     let+ size = Layout.size_of_s ty in
     Bfa_symex.Compo_res.Ok (Base size, state)
 
-  let min_align_of (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let min_align_of ~in_input (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
     let ty =
-      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
-        .types
-      |> List.hd
+      if in_input then
+        match fun_sig.inputs with
+        | [ TRawPtr (ty, _) ] -> ty
+        | _ -> failwith "min_align_of: invalid input type"
+      else
+        (List.hd fun_sig.generics.trait_clauses).trait.binder_value
+          .decl_generics
+          .types
+        |> List.hd
     in
     let layout = Layout.layout_of ty in
     let align = Typed.int layout.align in
@@ -565,8 +571,57 @@ module M (Heap : Heap_intf.S) = struct
     let++ (), state = Heap.store ptr ty v state in
     (Ptr ptr, state)
 
+  let ptr_op op (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+    let ptr, v =
+      match args with
+      | [ Ptr ptr; Base v ] -> (ptr, v)
+      | _ -> failwith "ptr_add: invalid arguments"
+    in
+    let v =
+      match Typed.cast_checked v Typed.t_int with
+      | Some v -> v
+      | None -> failwith "ptr_add: invalid offset type"
+    in
+    let ty =
+      match funsig.inputs with
+      | TRawPtr (ty, _) :: _ -> ty
+      | _ -> failwith "ptr_offset_from: invalid arguments"
+    in
+    let* size = Layout.size_of_s ty in
+    let loc, ofs = Typed.Ptr.decompose ptr in
+    let ofs' = op ofs (v *@ size) in
+    let ptr' = Typed.Ptr.mk loc ofs' in
+    Result.ok (Ptr ptr', state)
+
+  let box_into_raw _ ~crate:_ ~args ~state =
+    (* internally a box is exactly a pointer so nothing to do *)
+    let box_ptr = List.hd args in
+    Result.ok (box_ptr, state)
+
+  let ptr_offset_from (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+    let ptr1, ptr2 =
+      match args with
+      | [ Ptr ptr1; Ptr ptr2 ] -> (ptr1, ptr2)
+      | _ -> failwith "ptr_offset_from: invalid arguments"
+    in
+    let ty =
+      match funsig.inputs with
+      | TRawPtr (ty, _) :: _ -> ty
+      | _ -> failwith "ptr_offset_from: invalid arguments"
+    in
+    let* size = Layout.size_of_s ty in
+    let loc1, off1 = Typed.Ptr.decompose ptr1 in
+    let loc2, off2 = Typed.Ptr.decompose ptr2 in
+    if%sat loc1 ==@ loc2 &&@ (size >@ 0s) then
+      let size = Typed.cast size in
+      let off = off1 -@ off2 in
+      if%sat off %@ size ==@ 0s then Result.ok (Base (off /@ size), state)
+      else Heap.error `UBPointerComparison state
+    else Heap.error `UBPointerComparison state
+
   type std_op = Add | Sub | Mul
   type std_bool = Id | Neg
+  type type_loc = GenArg | Input
 
   type std_fun =
     | Any
@@ -574,6 +629,7 @@ module M (Heap : Heap_intf.S) = struct
     | AssertZeroValid
     | Assume
     | BoolNot
+    | BoxIntoRaw
     | Checked of std_op
     | Deref
     | DiscriminantValue
@@ -582,8 +638,10 @@ module M (Heap : Heap_intf.S) = struct
     | IsNone
     | IsSome
     | IterNth
-    | MinAlignOf
+    | MinAlignOf of type_loc
     | OptUnwrap
+    | PtrOp of std_op
+    | PtrOffsetFrom
     | ResUnwrap
     | SizeOf
     | SliceLen
@@ -601,6 +659,7 @@ module M (Heap : Heap_intf.S) = struct
       ("kani::assume", Assume);
       ("kani::any", Any);
       (* Core *)
+      ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
       ("alloc::string::{alloc::string::String}::len", StrLen);
       ("alloc::string::{alloc::string::ToString}::to_string", ToString);
       ("alloc::string::{core::ops::deref::Deref}::deref", Deref);
@@ -609,8 +668,10 @@ module M (Heap : Heap_intf.S) = struct
       ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
-      ("core::intrinsics::min_align_of", MinAlignOf);
-      ("core::intrinsics::pref_align_of", MinAlignOf);
+      ("core::intrinsics::min_align_of", MinAlignOf GenArg);
+      ("core::intrinsics::min_align_of_val", MinAlignOf Input);
+      ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
+      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom);
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::wrapping_add", WrappingAdd);
       ("core::mem::zeroed", Zeroed);
@@ -625,6 +686,9 @@ module M (Heap : Heap_intf.S) = struct
       ("core::option::{@T}::is_none", IsNone);
       ("core::option::{@T}::is_some", IsSome);
       ("core::option::{@T}::unwrap", OptUnwrap);
+      ("core::ptr::const_ptr::{@T}::add", PtrOp Add);
+      ("core::ptr::const_ptr::{@T}::offset", PtrOp Add);
+      ("core::ptr::const_ptr::{@T}::sub", PtrOp Sub);
       ("core::result::{@T}::unwrap", ResUnwrap);
       ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);
@@ -652,6 +716,7 @@ module M (Heap : Heap_intf.S) = struct
        | AssertZeroValid -> assert_zero_is_valid f.signature
        | Assume -> assume f.signature
        | BoolNot -> bool_not f.signature
+       | BoxIntoRaw -> box_into_raw f.signature
        | Checked op -> checked_op (op_of op) f.signature
        | Deref -> deref f.signature
        | DiscriminantValue -> discriminant_value f.signature
@@ -660,8 +725,10 @@ module M (Heap : Heap_intf.S) = struct
        | IsNone -> is_none f.signature
        | IsSome -> is_some f.signature
        | IterNth -> iter_nth f.signature
-       | MinAlignOf -> min_align_of f.signature
+       | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
        | OptUnwrap -> unwrap_opt f.signature
+       | PtrOp op -> ptr_op (op_of op) f.signature
+       | PtrOffsetFrom -> ptr_offset_from f.signature
        | ResUnwrap -> unwrap_res f.signature
        | SizeOf -> size_of f.signature
        | SliceLen -> slice_len f.signature
