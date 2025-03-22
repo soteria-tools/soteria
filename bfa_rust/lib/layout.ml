@@ -446,6 +446,12 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
   | Ptr value, TRawPtr _ ->
       let size = Typed.int Archi.word_size in
       [ { value :> cval; ty = TInteger Isize; size; offset } ]
+  (* References / Pointers obtained from casting *)
+  | Base value, TAdt (TBuiltin TBox, _)
+  | Base value, TRef _
+  | Base value, TRawPtr _ ->
+      let size = Typed.int Archi.word_size in
+      [ { value; ty = TInteger Isize; size; offset } ]
   (* Fat pointers *)
   | FatPtr (value, sl_size), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
   | FatPtr (value, sl_size), TRef (_, sub_ty, _)
@@ -558,12 +564,11 @@ let rust_of_cvals ?offset ty : parser_return =
         `More
           ( [ (TInteger Isize, Typed.int Archi.word_size, offset) ],
             function
-            | [ v ] ->
-                let+ v =
-                  of_opt_not_impl ~msg:"Pointer value should be a pointer"
-                    (Typed.cast_checked v Typed.t_ptr)
-                in
-                `Done (Ptr v)
+            | [ v ] -> (
+                match Typed.cast_checked v Typed.t_ptr with
+                | Some v_ptr -> return (`Done (Ptr v_ptr))
+                (* This should only happen on weird pointer casting. *)
+                | None -> return (`Done (Base v)))
             | _ -> failwith "Expected one cval" )
     | TAdt (TTuple, { types; _ }) as ty ->
         let layout = layout_of ty in

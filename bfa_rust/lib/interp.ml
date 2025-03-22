@@ -309,11 +309,7 @@ module Make (Heap : Heap_intf.S) = struct
         | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
         | Cast (CastTransmute (from_ty, to_ty)) -> (
             match (from_ty, to_ty) with
-            | TRawPtr _, TLiteral (TInteger Usize) ->
-                let v_ptr = as_base_of ~ty:Typed.t_ptr v in
-                (* TODO: is this right? Or do we want to convert the location to an integer?
-                         (probably not...) *)
-                Result.ok (Base v_ptr, state)
+            | TRawPtr _, TLiteral (TInteger Usize) -> Result.ok (v, state)
             | _ ->
                 Fmt.kstr not_impl "Unsupported transmutation, from %a to %a"
                   Types.pp_ty from_ty Types.pp_ty to_ty)
