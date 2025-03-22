@@ -516,11 +516,22 @@ module Make (Heap : Heap_intf.S) = struct
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
         (Array values, state)
+    | Aggregate (AggregatedClosure _, _) ->
+        not_impl "Unsupported rvalue: aggregated closure"
     (* Raw pointer *)
     | RawPtr (place, _kind) ->
         let++ ptr, state = resolve_place ~store state place in
         (ptr, state)
-    | v -> Fmt.kstr not_impl "Unsupported rvalue: %a" Expressions.pp_rvalue v
+    (* Length of a &[T;N] or &[T] *)
+    | Len (place, _, size_opt) ->
+        let** ptr, state = resolve_place ~store state place in
+        let+ len =
+          match (ptr, size_opt) with
+          | Ptr _, Some size -> return (Typed.int @@ int_of_const_generic size)
+          | FatPtr (_, len), None -> return len
+          | _ -> not_impl "Unexpected len rvalue"
+        in
+        Bfa_symex.Compo_res.Ok (Base len, state)
 
   and exec_stmt ~crate store state astmt :
       (store * state, 'err, Heap.serialized list) Rustsymex.Result.t =

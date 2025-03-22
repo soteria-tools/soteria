@@ -446,7 +446,7 @@ let rec rust_to_cvals ?(offset = 0s) (v : rust_val) (ty : Types.ty) :
   | Ptr value, TRawPtr _ ->
       let size = Typed.int Archi.word_size in
       [ { value :> cval; ty = TInteger Isize; size; offset } ]
-  (* Slices *)
+  (* Fat pointers *)
   | FatPtr (value, sl_size), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
   | FatPtr (value, sl_size), TRef (_, sub_ty, _)
   | FatPtr (value, sl_size), TRawPtr (sub_ty, _)
@@ -542,11 +542,11 @@ let rust_of_cvals ?offset ty : parser_return =
                 of_opt_not_impl ~msg:"Slice value 1 should be a pointer"
                   (Typed.cast_checked ptr Typed.t_ptr)
               in
-              let* len =
+              let+ len =
                 of_opt_not_impl ~msg:"Slice value 2 should be an integer"
                   (Typed.cast_checked len Typed.t_int)
               in
-              return (`Done (FatPtr (ptr, len)))
+              `Done (FatPtr (ptr, len))
           | _ -> failwith "Expected two cvals"
         in
         let ptr_size = Typed.int Archi.word_size in

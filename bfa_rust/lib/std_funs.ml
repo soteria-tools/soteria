@@ -192,47 +192,82 @@ module M (Heap : Heap_intf.S) = struct
     let rec aux state left right =
       match (left, right) with
       | Base left, Base right -> Result.ok (left ==@ right, state)
+      | Struct lefts, Struct rights
+      | Array lefts, Array rights
+      | Tuple lefts, Tuple rights ->
+          if List.compare_lengths lefts rights <> 0 then
+            Result.ok (Typed.v_false, state)
+          else aux_list Typed.v_true state lefts rights
       | Enum (l_d, l_vs), Enum (r_d, r_vs) ->
           if List.compare_lengths l_vs r_vs <> 0 then
-            if%sat Typed.not (l_d ==@ r_d) then Result.ok (Typed.v_false, state)
-            else
-              Fmt.kstr not_impl
-                "eq_values: same enum discriminant, but mismatched lengths"
+            Result.ok (Typed.v_false, state)
           else
             let disc_match = l_d ==@ r_d in
-            let value_pairs = List.combine l_vs r_vs in
             if disc_match = Typed.v_false then Result.ok (Typed.v_false, state)
-            else
-              Result.fold_list value_pairs ~init:(Typed.v_true, state)
-                ~f:(fun (acc, state) (left, right) ->
-                  let++ b_val, state = aux state left right in
-                  (b_val &&@ acc, state))
+            else aux_list disc_match state l_vs r_vs
       | _ ->
           Fmt.kstr not_impl "Unexpected eq_values pair: %a / %a" pp_rust_val
             left pp_rust_val right
+    and aux_list init state lefts rights =
+      let value_pairs = List.combine lefts rights in
+      Result.fold_list value_pairs ~init:(init, state)
+        ~f:(fun (acc, state) (left, right) ->
+          if acc = Typed.v_false then Result.ok (Typed.v_false, state)
+          else
+            let++ b_val, state = aux state left right in
+            (b_val &&@ acc, state))
     in
     let left_ptr, right_ptr =
       match args with
       | [ Ptr left; Ptr right ] -> (left, right)
       | _ -> failwith "eq_values expects two arguments"
     in
-    let** left_ptr, right_ptr, ty, state =
+    let** left, right, state =
       match fun_sig.inputs with
-      | Types.TRef (_, (Types.TRef (_, ty, _) as outer_ty), _) :: _ ->
+      | Types.TRef
+          ( _,
+            (TRef (_, TAdt (TBuiltin TSlice, { types = [ ty ]; _ }), _) as
+             outer_ty),
+            _ )
+        :: _ ->
+          (* STD provides an implementation of eq for slices (&[T]), we kind of cheat by converting
+             them to arrays, to make life easier *)
+          let** left, state = Heap.load left_ptr outer_ty state in
+          let** right, state = Heap.load right_ptr outer_ty state in
+          let left_ptr, len_left, right_ptr, len_right =
+            match (left, right) with
+            (* really not great but not sure how else to do it for now without it being hell *)
+            | FatPtr (pl, l), FatPtr (pr, r) -> (
+                match (Typed.kind l, Typed.kind r) with
+                | Int l, Int r -> (pl, Z.to_int l, pr, Z.to_int r)
+                | _ ->
+                    failwith "eq_values expects two slices of non-symbolic size"
+                )
+            | _ -> failwith "eq_values expects two slices"
+          in
+          let ty_left = mk_array_ty ty len_left in
+          let ty_right = mk_array_ty ty len_right in
+          let** left, state = Heap.load left_ptr ty_left state in
+          let++ right, state = Heap.load right_ptr ty_right state in
+          (left, right, state)
+      | Types.TRef (_, (TRef (_, ty, _) as outer_ty), _) :: _ ->
           (* STD provides an implementation of eq for references (&T), where the arguments are
              thus &&T -- we handle this here by adding an indirection. *)
           let** left, state = Heap.load left_ptr outer_ty state in
           let** right, state = Heap.load right_ptr outer_ty state in
           let left_ptr = as_ptr left in
           let right_ptr = as_ptr right in
-          Result.ok (left_ptr, right_ptr, ty, state)
-      | Types.TRef (_, ty, _) :: _ -> Result.ok (left_ptr, right_ptr, ty, state)
+          let** left, state = Heap.load left_ptr ty state in
+          let++ right, state = Heap.load right_ptr ty state in
+          (left, right, state)
+      | Types.TRef (_, ty, _) :: _ ->
+          let** left, state = Heap.load left_ptr ty state in
+          let++ right, state = Heap.load right_ptr ty state in
+          (left, right, state)
       | ty :: _ ->
           Fmt.kstr not_impl "Unexpected type for eq_values: %a" Types.pp_ty ty
       | _ -> not_impl "Error: eq_values received no arguments?"
     in
-    let** left, state = Heap.load left_ptr ty state in
-    let** right, state = Heap.load right_ptr ty state in
     let++ b_val, state = aux state left right in
     let b_val = if neg then Typed.not b_val else b_val in
     let res = Typed.int_of_bool b_val in
@@ -318,16 +353,49 @@ module M (Heap : Heap_intf.S) = struct
   (* Some array accesses are ran on functions, so we handle those here and redirect them.
      Eventually, it would be good to maybe make a Charon pass that gets rid of these before. *)
   let array_index_fn (fun_sig : UllbcAst.fun_sig) ~crate ~args ~state =
-    match (args, fun_sig.inputs) with
-    (* Unfortunate, but right now i don't have a better way to handle this *)
-    | ( [ ptr; Struct [ idx_from; idx_to ] ],
-        TRef (_, TAdt (TBuiltin ((TArray | TSlice) as mode), gargs), _) :: _ )
-      ->
-        let idx_op : Expressions.builtin_index_op =
-          { is_array = mode = TArray; mutability = RShared; is_range = true }
-        in
-        array_index idx_op gargs ~crate ~args:[ ptr; idx_from; idx_to ] ~state
-    | _ -> failwith "array_index (fn): unexpected arguments"
+    let mode, gargs, range_ty_id =
+      match fun_sig.inputs with
+      (* Unfortunate, but right now i don't have a better way to handle this... *)
+      | [
+       TRef (_, TAdt (TBuiltin ((TArray | TSlice) as mode), gargs), _);
+       TAdt (TAdtId range_ty_id, _);
+      ] ->
+          (mode, gargs, range_ty_id)
+      | _ -> failwith "Unexpected input type"
+    in
+    let range_adt =
+      Types.TypeDeclId.Map.find range_ty_id UllbcAst.(crate.type_decls)
+    in
+    let range_name =
+      match List.rev range_adt.item_meta.name with
+      | PeIdent (name, _) :: _ -> name
+      | _ -> failwith "Unexpected range name"
+    in
+    let size =
+      match (args, gargs.const_generics) with
+      (* Array with static size *)
+      | _, [ size ] -> Typed.int @@ Charon_util.int_of_const_generic size
+      | FatPtr (_, size) :: _, [] -> Typed.cast size
+      | _ -> failwith "array_index (fn): couldn't calculate size"
+    in
+    let ptr, idx_from, idx_to =
+      match (args, range_name) with
+      | [ ptr; Struct [] ], "RangeFull" -> (ptr, Base 0s, Base size)
+      | [ ptr; Struct [ idx_from ] ], "RangeFrom" -> (ptr, idx_from, Base size)
+      | [ ptr; Struct [ idx_to ] ], "RangeTo" -> (ptr, Base 0s, idx_to)
+      | [ ptr; Struct [ idx_from; idx_to ] ], "Range" -> (ptr, idx_from, idx_to)
+      | [ ptr; Struct [ idx_from; idx_to ] ], "RangeInclusive" ->
+          let idx_to = as_base_of ~ty:Typed.t_int idx_to in
+          (ptr, idx_from, Base (idx_to +@ 1s))
+      | [ ptr; Struct [ idx_to ] ], "RangeToInclusive" ->
+          let idx_to = as_base_of ~ty:Typed.t_int idx_to in
+          (ptr, Base 0s, Base (idx_to +@ 1s))
+      | _ -> Fmt.failwith "array_index (fn): unexpected range %s" range_name
+    in
+    let idx_op : Expressions.builtin_index_op =
+      { is_array = mode = TArray; mutability = RShared; is_range = true }
+    in
+    array_index idx_op gargs ~crate ~args:[ ptr; idx_from; idx_to ] ~state
 
   let array_slice ~mut:_ (gen_args : Types.generic_args) ~crate:_ ~args ~state =
     let size =
