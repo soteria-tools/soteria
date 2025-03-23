@@ -8,6 +8,23 @@ open Charon_util
 module T = Typed.T
 
 module M (Heap : Heap_intf.S) = struct
+  type std_op = Add | Sub | Mul | Div | Rem
+  type std_bool = Id | Neg
+  type type_loc = GenArg | Input
+
+  let op_of = function
+    | Add -> fun x y _ -> Result.ok (x +@ y)
+    | Sub -> fun x y _ -> Result.ok (x -@ y)
+    | Mul -> fun x y _ -> Result.ok (x *@ y)
+    | Div ->
+        fun x y st ->
+          if%sat y ==@ 0s then Heap.error `DivisionByZero st
+          else Result.ok (x /@ Typed.cast y)
+    | Rem ->
+        fun x y st ->
+          if%sat y ==@ 0s then Heap.error `DivisionByZero st
+          else Result.ok (Typed.rem x (Typed.cast y))
+
   let assert_ _ ~crate:_ ~(args : rust_val list) ~state =
     let open Typed.Infix in
     let* to_assert =
@@ -37,95 +54,52 @@ module M (Heap : Heap_intf.S) = struct
     let* value = Layout.nondet ty in
     Result.ok (value, state)
 
-  let checked_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
-    let* ty =
-      match fun_sig.inputs with
-      | TLiteral ty :: _ -> return ty
-      | ty :: _ ->
-          Fmt.kstr not_impl "checked_op with non literal: %a" Types.pp_ty ty
-      | [] -> not_impl "checked_op with no inputs"
-    in
+  let cast_to_int v st =
+    match Typed.cast_checked v Typed.t_int with
+    | Some v -> Result.ok v
+    | None -> Heap.error `UBPointerArithmetic st
+
+  let safe_binop (bop : std_op) l r ty st =
     let* constrs =
       of_opt_not_impl ~msg:"constraints not implemented" (Layout.constraints ty)
     in
-    let* left, right =
-      match args with
-      | [ Base left; Base right ] ->
-          let* left =
-            of_opt_not_impl ~msg:"not an integer"
-              (Typed.cast_checked left Typed.t_int)
-          in
-          let+ right =
-            of_opt_not_impl ~msg:"not an integer"
-              (Typed.cast_checked right Typed.t_int)
-          in
-          (left, right)
-      | _ -> not_impl "checked_op with not two arguments"
+    let** l = cast_to_int l st in
+    let** r = cast_to_int r st in
+    let** res = (op_of bop) l r st in
+    let** () =
+      (* additional check for rem, since the result doesn't directly overflow *)
+      if bop = Rem then
+        let* min =
+          match ty with
+          | TInteger inty -> return (Layout.min_value inty)
+          | _ -> not_impl "Unexpected type in rem"
+        in
+        if%sat l ==@ min &&@ (r ==@ -1s) then Heap.error `Overflow st
+        else Result.ok ()
+      else Result.ok ()
     in
-    let** res = op left right state in
-    if%sat Typed.conj @@ constrs res then
-      Result.ok (Enum (1s, [ Base res ]), state)
-    else Result.ok (Enum (0s, []), state)
+    if%sat Typed.conj @@ constrs res then Result.ok res
+    else Heap.error `Overflow st
 
   let unchecked_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let* ty =
       match fun_sig.inputs with
       | TLiteral ty :: _ -> return ty
-      | ty :: _ ->
-          Fmt.kstr not_impl "unchecked_op with non literal: %a" Types.pp_ty ty
-      | [] -> not_impl "unchecked_op with no inputs"
-    in
-    let* constrs =
-      of_opt_not_impl ~msg:"constraints not implemented" (Layout.constraints ty)
+      | _ -> not_impl "unchecked_op wrong inputs"
     in
     let* left, right =
       match args with
-      | [ Base left; Base right ] ->
-          let* left =
-            of_opt_not_impl ~msg:"not an integer"
-              (Typed.cast_checked left Typed.t_int)
-          in
-          let+ right =
-            of_opt_not_impl ~msg:"not an integer"
-              (Typed.cast_checked right Typed.t_int)
-          in
-          (left, right)
+      | [ Base left; Base right ] -> return (left, right)
       | _ -> not_impl "unchecked_op with not two arguments"
     in
-    let** res = op left right state in
-    if%sat Typed.conj @@ constrs res then Result.ok (Base res, state)
-    else Heap.error `Overflow state
+    let++ res = safe_binop op left right ty state in
+    (Base res, state)
 
-  let unchecked_rem (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
-    (* do this separately for the check *)
-    let* ty =
-      match fun_sig.inputs with
-      | TLiteral (TInteger ty) :: _ -> return ty
-      | ty :: _ ->
-          Fmt.kstr not_impl "unchecked_rem with non literal: %a" Types.pp_ty ty
-      | [] -> not_impl "unchecked_rem = with no inputs"
-    in
-    let* left, right =
-      match args with
-      | [ Base left; Base right ] ->
-          let* left =
-            of_opt_not_impl ~msg:"not an integer"
-              (Typed.cast_checked left Typed.t_int)
-          in
-          let+ right =
-            of_opt_not_impl ~msg:"not an integer"
-              (Typed.cast_checked right Typed.t_int)
-          in
-          (left, right)
-      | _ -> not_impl "unchecked_rem with not two arguments"
-    in
-    let min = Layout.min_value ty in
-    if%sat right ==@ 0s then Heap.error `DivisionByZero state
-    else
-      if%sat left ==@ min &&@ (right ==@ -1s) then Heap.error `Overflow state
-      else
-        let res = Typed.rem left (Typed.cast right) in
-        Result.ok (Base res, state)
+  let checked_op op (fun_sig : UllbcAst.fun_sig) ~crate ~args ~state =
+    let+ res = unchecked_op op fun_sig ~crate ~args ~state in
+    match res with
+    | Ok (res, state) -> Bfa_symex.Compo_res.Ok (Enum (1s, [ res ]), state)
+    | _ -> Bfa_symex.Compo_res.Ok (Enum (0s, []), state)
 
   let wrapping_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let* ty =
@@ -662,10 +636,6 @@ module M (Heap : Heap_intf.S) = struct
     | [ v ] -> Result.ok (v, state)
     | _ -> failwith "black_box: invalid arguments"
 
-  type std_op = Add | Sub | Mul | Div | Rem
-  type std_bool = Id | Neg
-  type type_loc = GenArg | Input
-
   type std_fun =
     | Any
     | Assert
@@ -693,7 +663,6 @@ module M (Heap : Heap_intf.S) = struct
     | StrLen
     | ToString
     | Unchecked of std_op
-    | UncheckedRem
     | Wrapping of std_op
     | Zeroed
 
@@ -723,7 +692,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::unchecked_add", Unchecked Add);
       ("core::intrinsics::unchecked_div", Unchecked Div);
       ("core::intrinsics::unchecked_mul", Unchecked Mul);
-      ("core::intrinsics::unchecked_rem", UncheckedRem);
+      ("core::intrinsics::unchecked_rem", Unchecked Rem);
       ("core::intrinsics::unchecked_sub", Unchecked Sub);
       ("core::intrinsics::wrapping_add", Wrapping Add);
       ("core::intrinsics::wrapping_div", Wrapping Div);
@@ -738,7 +707,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::num::{@N}::unchecked_add", Unchecked Add);
       ("core::num::{@N}::unchecked_div", Unchecked Div);
       ("core::num::{@N}::unchecked_mul", Unchecked Mul);
-      ("core::num::{@N}::unchecked_rem", UncheckedRem);
+      ("core::num::{@N}::unchecked_rem", Unchecked Rem);
       ("core::num::{@N}::unchecked_sub", Unchecked Sub);
       ("core::num::{@N}::wrapping_add", Wrapping Add);
       ("core::num::{@N}::wrapping_div", Wrapping Div);
@@ -768,19 +737,6 @@ module M (Heap : Heap_intf.S) = struct
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-  let op_of = function
-    | Add -> fun x y _ -> Result.ok (x +@ y)
-    | Sub -> fun x y _ -> Result.ok (x -@ y)
-    | Mul -> fun x y _ -> Result.ok (x *@ y)
-    | Div ->
-        fun x y st ->
-          if%sat y ==@ 0s then Heap.error `DivisionByZero st
-          else Result.ok (x /@ Typed.cast y)
-    | Rem ->
-        fun x y st ->
-          if%sat y ==@ 0s then Heap.error `DivisionByZero st
-          else Result.ok (Typed.rem x (Typed.cast y))
-
   let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let ctx = NameMatcher.ctx_from_crate crate in
     NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
@@ -792,7 +748,7 @@ module M (Heap : Heap_intf.S) = struct
        | BlackBox -> black_box f.signature
        | BoolNot -> bool_not f.signature
        | BoxIntoRaw -> box_into_raw f.signature
-       | Checked op -> checked_op (op_of op) f.signature
+       | Checked op -> checked_op op f.signature
        | Deref -> deref f.signature
        | DiscriminantValue -> discriminant_value f.signature
        | Eq b -> eq_values ~neg:(b = Neg) f.signature
@@ -810,8 +766,7 @@ module M (Heap : Heap_intf.S) = struct
        | StrChars -> str_chars f.signature
        | StrLen -> str_len f.signature
        | ToString -> to_string f.signature
-       | Unchecked op -> unchecked_op (op_of op) f.signature
-       | UncheckedRem -> unchecked_rem f.signature
+       | Unchecked op -> unchecked_op op f.signature
        | Wrapping op -> wrapping_op (op_of op) f.signature
        | Zeroed -> zeroed f.signature
 

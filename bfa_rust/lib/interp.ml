@@ -1,4 +1,3 @@
-open Bfa_symex.Compo_res
 open Rustsymex
 open Rustsymex.Syntax
 open Typed.Infix
@@ -145,19 +144,6 @@ module Make (Heap : Heap_intf.S) = struct
               ptr);
         Result.ok (Ptr ptr, state)
 
-  let overflow_check state v (ty : Types.ty) =
-    let* constraints =
-      match ty with
-      | TLiteral ty ->
-          Rustsymex.of_opt_not_impl ~msg:"Constraints for overflow check"
-            (Layout.constraints ty)
-      | ty ->
-          Fmt.kstr Rustsymex.not_impl "Unexpected type for overflow check: %a"
-            Types.pp_ty ty
-    in
-    if%sat Typed.conj @@ constraints v then Rustsymex.Result.ok (v, state)
-    else Heap.error `Overflow state
-
   let rec equality_check ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
@@ -171,35 +157,6 @@ module Make (Heap : Heap_intf.S) = struct
     | TInt, TPointer -> equality_check ~state v2 v1
     | _ ->
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
-          Typed.ppa v1 Typed.ppa v2
-
-  let arith_add ~state (v1 : [< Typed.T.cval ] Typed.t)
-      (v2 : [< Typed.T.cval ] Typed.t) =
-    match ((Typed.get_ty v1, v1), (Typed.get_ty v2, v2)) with
-    | (TInt, v1), (TInt, v2) ->
-        let v1 = Typed.cast v1 in
-        let v2 = Typed.cast v2 in
-        Result.ok (v1 +@ v2, state)
-    | (TPointer, v1), (TInt, v2) | (TInt, v2), (TPointer, v1) ->
-        let v1 : T.sptr Typed.t = Typed.cast v1 in
-        let v2 : T.sint Typed.t = Typed.cast v2 in
-        let v' = Typed.Ptr.add_ofs v1 v2 in
-        Result.ok (v', state)
-    | (TPointer, _), (TPointer, _) -> Heap.error `UBPointerArithmetic state
-    | _ ->
-        Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
-          Typed.ppa v2
-
-  let arith_mul ~state (v1 : [< Typed.T.cval ] Typed.t)
-      (v2 : [< Typed.T.cval ] Typed.t) =
-    match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt ->
-        let v1 = Typed.cast v1 in
-        let v2 = Typed.cast v2 in
-        Result.ok (v1 *@ v2, state)
-    | TPointer, _ | _, TPointer -> Heap.error `UBPointerArithmetic state
-    | _ ->
-        Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
           Typed.ppa v1 Typed.ppa v2
 
   let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
@@ -400,49 +357,23 @@ module Make (Heap : Heap_intf.S) = struct
               let v2 = Typed.cast v2 in
               let++ res, state = equality_check ~state v1 v2 in
               (Typed.not_int_bool res, state)
-          | Div -> (
-              let* v1 = cast_checked v1 ~ty:Typed.t_int in
-              let* v2 = cast_checked v2 ~ty:Typed.t_int in
-              let* v2 = Rustsymex.check_nonzero v2 in
-              match v2 with
-              | Ok v2 -> overflow_check state (v1 /@ v2) (type_of_operand e1)
-              | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
-              | Missing e -> (* Unreachable but still *) Rustsymex.Result.miss e
-              )
-          | Rem -> (
-              let* v1 = cast_checked v1 ~ty:Typed.t_int in
-              let* v2 = cast_checked v2 ~ty:Typed.t_int in
-              let* v2 = Rustsymex.check_nonzero v2 in
-              match v2 with
-              | Ok v2 -> (
-                  match type_of_operand e1 with
-                  | TLiteral (TInteger ty) ->
-                      let min_val = Layout.min_value ty in
-                      (* Overflow if left is MIN and right is -1 *)
-                      if%sat
-                        v1
-                        ==@ min_val
-                        &&@ ((v2 :> T.sint Typed.t) ==@ Typed.int (-1))
-                      then Heap.error `Overflow state
-                      else Rustsymex.Result.ok (Typed.rem v1 v2, state)
-                  | ty ->
-                      Fmt.kstr not_impl "Unsupported type for rem: %a"
-                        Types.pp_ty ty)
-              | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
-              | Missing e -> (* Unreachable but still *) Rustsymex.Result.miss e
-              )
-          | Mul ->
-              let v1 = Typed.cast v1 in
-              let v2 = Typed.cast v2 in
-              arith_mul ~state v1 v2
-          | Add ->
-              let v1 = Typed.cast v1 in
-              let v2 = Typed.cast v2 in
-              arith_add ~state v1 v2
-          | Sub ->
-              let v1 = Typed.cast v1 in
-              let v2 = Typed.cast v2 in
-              arith_add ~state v1 (Typed.minus 0s v2)
+          | Add | Sub | Mul | Div | Rem ->
+              let bop : Std_funs.std_op =
+                match op with
+                | Add -> Add
+                | Sub -> Sub
+                | Mul -> Mul
+                | Div -> Div
+                | Rem -> Rem
+                | _ -> assert false
+              in
+              let ty =
+                match type_of_operand e1 with
+                | TLiteral ty -> ty
+                | _ -> failwith "Non-literal in binary operation"
+              in
+              let++ res = Std_funs.safe_binop bop v1 v2 ty state in
+              (res, state)
           | bop ->
               Fmt.kstr not_impl "Unsupported binary operator: %a"
                 Expressions.pp_binop bop
