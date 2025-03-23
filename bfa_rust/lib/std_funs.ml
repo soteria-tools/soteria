@@ -62,7 +62,7 @@ module M (Heap : Heap_intf.S) = struct
           (left, right)
       | _ -> not_impl "checked_op with not two arguments"
     in
-    let res = op left right in
+    let** res = op left right state in
     if%sat Typed.conj @@ constrs res then
       Result.ok (Enum (1s, [ Base res ]), state)
     else Result.ok (Enum (0s, []), state)
@@ -72,8 +72,8 @@ module M (Heap : Heap_intf.S) = struct
       match fun_sig.inputs with
       | TLiteral ty :: _ -> return ty
       | ty :: _ ->
-          Fmt.kstr not_impl "checked_op with non literal: %a" Types.pp_ty ty
-      | [] -> not_impl "checked_op with no inputs"
+          Fmt.kstr not_impl "unchecked_op with non literal: %a" Types.pp_ty ty
+      | [] -> not_impl "unchecked_op with no inputs"
     in
     let* constrs =
       of_opt_not_impl ~msg:"constraints not implemented" (Layout.constraints ty)
@@ -90,22 +90,21 @@ module M (Heap : Heap_intf.S) = struct
               (Typed.cast_checked right Typed.t_int)
           in
           (left, right)
-      | _ -> not_impl "checked_op with not two arguments"
+      | _ -> not_impl "unchecked_op with not two arguments"
     in
-    let res = op left right in
+    let** res = op left right state in
     if%sat Typed.conj @@ constrs res then Result.ok (Base res, state)
     else Heap.error `Overflow state
 
-  let wrapping_add (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+  let unchecked_rem (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+    (* do this separately for the check *)
     let* ty =
       match fun_sig.inputs with
       | TLiteral (TInteger ty) :: _ -> return ty
       | ty :: _ ->
-          Fmt.kstr not_impl "wrapping_add with non integer: %a" Types.pp_ty ty
-      | [] -> not_impl "wrapping_add with no inputs"
+          Fmt.kstr not_impl "unchecked_rem with non literal: %a" Types.pp_ty ty
+      | [] -> not_impl "unchecked_rem = with no inputs"
     in
-    let min = Layout.min_value ty in
-    let max = Layout.max_value ty in
     let* left, right =
       match args with
       | [ Base left; Base right ] ->
@@ -118,13 +117,49 @@ module M (Heap : Heap_intf.S) = struct
               (Typed.cast_checked right Typed.t_int)
           in
           (left, right)
-      | _ -> not_impl "checked_op with not two arguments"
+      | _ -> not_impl "unchecked_rem with not two arguments"
     in
-    let res = left +@ right in
-    if%sat res >@ max then Result.ok (Base (min +@ (res -@ max)), state)
+    let min = Layout.min_value ty in
+    if%sat right ==@ 0s then Heap.error `DivisionByZero state
     else
-      if%sat res <@ min then Result.ok (Base (max -@ (min -@ res)), state)
-      else Result.ok (Base res, state)
+      if%sat left ==@ min &&@ (right ==@ -1s) then Heap.error `Overflow state
+      else
+        let res = Typed.rem left (Typed.cast right) in
+        Result.ok (Base res, state)
+
+  let wrapping_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+    let* ty =
+      match fun_sig.inputs with
+      | TLiteral (TInteger ty) :: _ -> return ty
+      | ty :: _ ->
+          Fmt.kstr not_impl "wrapping_op with non integer: %a" Types.pp_ty ty
+      | [] -> not_impl "wrapping_op with no inputs"
+    in
+    let* left, right =
+      match args with
+      | [ Base left; Base right ] ->
+          let* left =
+            of_opt_not_impl ~msg:"not an integer"
+              (Typed.cast_checked left Typed.t_int)
+          in
+          let+ right =
+            of_opt_not_impl ~msg:"not an integer"
+              (Typed.cast_checked right Typed.t_int)
+          in
+          (left, right)
+      | _ -> not_impl "wrapping_op with not two arguments"
+    in
+    let size = Layout.size_of_int_ty ty in
+    (* 2^N *)
+    let unsigned_max = Typed.nonzero_z (Z.shift_left Z.one (8 * size)) in
+    let max : T.nonzero Typed.t = Typed.cast @@ Layout.max_value ty in
+    let signed = Layout.is_signed ty in
+    let** res = op left right state in
+    let res = res %@ unsigned_max in
+    if not signed then Result.ok (Base res, state)
+    else
+      if%sat res <=@ max then Result.ok (Base res, state)
+      else Result.ok (Base (res -@ unsigned_max), state)
 
   let is_some (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let val_ptr, opt_ty =
@@ -587,11 +622,14 @@ module M (Heap : Heap_intf.S) = struct
       | TRawPtr (ty, _) :: _ -> ty
       | _ -> failwith "ptr_offset_from: invalid arguments"
     in
+    let offset_constrs = Layout.int_constraints Values.Isize in
     let* size = Layout.size_of_s ty in
     let loc, ofs = Typed.Ptr.decompose ptr in
-    let ofs' = op ofs (v *@ size) in
-    let ptr' = Typed.Ptr.mk loc ofs' in
-    Result.ok (Ptr ptr', state)
+    let** ofs' = op ofs (v *@ size) state in
+    if%sat Typed.conj (offset_constrs ofs') then
+      let ptr' = Typed.Ptr.mk loc ofs' in
+      Result.ok (Ptr ptr', state)
+    else Heap.error `Overflow state
 
   let box_into_raw _ ~crate:_ ~args ~state =
     (* internally a box is exactly a pointer so nothing to do *)
@@ -619,7 +657,12 @@ module M (Heap : Heap_intf.S) = struct
       else Heap.error `UBPointerComparison state
     else Heap.error `UBPointerComparison state
 
-  type std_op = Add | Sub | Mul
+  let black_box _ ~crate:_ ~args ~state =
+    match args with
+    | [ v ] -> Result.ok (v, state)
+    | _ -> failwith "black_box: invalid arguments"
+
+  type std_op = Add | Sub | Mul | Div | Rem
   type std_bool = Id | Neg
   type type_loc = GenArg | Input
 
@@ -628,6 +671,7 @@ module M (Heap : Heap_intf.S) = struct
     | Assert
     | AssertZeroValid
     | Assume
+    | BlackBox
     | BoolNot
     | BoxIntoRaw
     | Checked of std_op
@@ -649,7 +693,8 @@ module M (Heap : Heap_intf.S) = struct
     | StrLen
     | ToString
     | Unchecked of std_op
-    | WrappingAdd
+    | UncheckedRem
+    | Wrapping of std_op
     | Zeroed
 
   let std_fun_map =
@@ -666,22 +711,40 @@ module M (Heap : Heap_intf.S) = struct
       ("core::array::{core::ops::index::Index}::index", Index);
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
+      ("core::hint::black_box", BlackBox);
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
+      ("core::intrinsics::black_box", BlackBox);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::min_align_of", MinAlignOf GenArg);
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
       ("core::intrinsics::ptr_offset_from", PtrOffsetFrom);
       ("core::intrinsics::size_of", SizeOf);
-      ("core::intrinsics::wrapping_add", WrappingAdd);
+      ("core::intrinsics::unchecked_add", Unchecked Add);
+      ("core::intrinsics::unchecked_div", Unchecked Div);
+      ("core::intrinsics::unchecked_mul", Unchecked Mul);
+      ("core::intrinsics::unchecked_rem", UncheckedRem);
+      ("core::intrinsics::unchecked_sub", Unchecked Sub);
+      ("core::intrinsics::wrapping_add", Wrapping Add);
+      ("core::intrinsics::wrapping_div", Wrapping Div);
+      ("core::intrinsics::wrapping_mul", Wrapping Mul);
+      ("core::intrinsics::wrapping_rem", Wrapping Rem);
+      ("core::intrinsics::wrapping_sub", Wrapping Sub);
       ("core::mem::zeroed", Zeroed);
       ("core::num::{@N}::checked_add", Checked Add);
+      ("core::num::{@N}::checked_div", Checked Div);
       ("core::num::{@N}::checked_mul", Checked Mul);
       ("core::num::{@N}::checked_sub", Checked Sub);
       ("core::num::{@N}::unchecked_add", Unchecked Add);
+      ("core::num::{@N}::unchecked_div", Unchecked Div);
       ("core::num::{@N}::unchecked_mul", Unchecked Mul);
+      ("core::num::{@N}::unchecked_rem", UncheckedRem);
       ("core::num::{@N}::unchecked_sub", Unchecked Sub);
-      ("core::num::{@N}::wrapping_add", WrappingAdd);
+      ("core::num::{@N}::wrapping_add", Wrapping Add);
+      ("core::num::{@N}::wrapping_div", Wrapping Div);
+      ("core::num::{@N}::wrapping_mul", Wrapping Mul);
+      ("core::num::{@N}::wrapping_rem", Wrapping Rem);
+      ("core::num::{@N}::wrapping_sub", Wrapping Sub);
       ("core::option::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::option::{@T}::is_none", IsNone);
       ("core::option::{@T}::is_some", IsSome);
@@ -705,7 +768,18 @@ module M (Heap : Heap_intf.S) = struct
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-  let op_of = function Add -> ( +@ ) | Sub -> ( -@ ) | Mul -> ( *@ )
+  let op_of = function
+    | Add -> fun x y _ -> Result.ok (x +@ y)
+    | Sub -> fun x y _ -> Result.ok (x -@ y)
+    | Mul -> fun x y _ -> Result.ok (x *@ y)
+    | Div ->
+        fun x y st ->
+          if%sat y ==@ 0s then Heap.error `DivisionByZero st
+          else Result.ok (x /@ Typed.cast y)
+    | Rem ->
+        fun x y st ->
+          if%sat y ==@ 0s then Heap.error `DivisionByZero st
+          else Result.ok (Typed.rem x (Typed.cast y))
 
   let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let ctx = NameMatcher.ctx_from_crate crate in
@@ -715,6 +789,7 @@ module M (Heap : Heap_intf.S) = struct
        | Assert -> assert_ f.signature
        | AssertZeroValid -> assert_zero_is_valid f.signature
        | Assume -> assume f.signature
+       | BlackBox -> black_box f.signature
        | BoolNot -> bool_not f.signature
        | BoxIntoRaw -> box_into_raw f.signature
        | Checked op -> checked_op (op_of op) f.signature
@@ -736,7 +811,8 @@ module M (Heap : Heap_intf.S) = struct
        | StrLen -> str_len f.signature
        | ToString -> to_string f.signature
        | Unchecked op -> unchecked_op (op_of op) f.signature
-       | WrappingAdd -> wrapping_add f.signature
+       | UncheckedRem -> unchecked_rem f.signature
+       | Wrapping op -> wrapping_op (op_of op) f.signature
        | Zeroed -> zeroed f.signature
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =

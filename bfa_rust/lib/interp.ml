@@ -424,7 +424,7 @@ module Make (Heap : Heap_intf.S) = struct
                         ==@ min_val
                         &&@ ((v2 :> T.sint Typed.t) ==@ Typed.int (-1))
                       then Heap.error `Overflow state
-                      else Rustsymex.Result.ok (v1 %@ v2, state)
+                      else Rustsymex.Result.ok (Typed.rem v1 v2, state)
                   | ty ->
                       Fmt.kstr not_impl "Unsupported type for rem: %a"
                         Types.pp_ty ty)
