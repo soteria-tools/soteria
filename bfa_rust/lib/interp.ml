@@ -30,7 +30,7 @@ module Make (Heap : Heap_intf.S) = struct
     (rust_val * state, 'err, Heap.serialized list) Result.t
 
   let alloc_stack (locals : GAst.locals) args st =
-    if List.length args <> locals.arg_count then
+    if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
     Rustsymex.Result.fold_list locals.vars ~init:(Store.empty, st)
@@ -71,7 +71,7 @@ module Make (Heap : Heap_intf.S) = struct
         match ptr_opt with
         | Some v -> Result.ok (v, state)
         | None ->
-            (* We "cheat" and model strings as a vector of chars, with &str a slice *)
+            (* We "cheat" and model strings as an array of chars, with &str a slice *)
             let len = String.length str in
             let chars =
               String.to_seq str
