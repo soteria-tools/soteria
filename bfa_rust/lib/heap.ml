@@ -201,13 +201,14 @@ let free (ptr : [< T.sptr ] Typed.t) ({ heap; _ } as st : t) :
     ((), { st with heap })
   else error `InvalidFree
 
-let uninit (ptr : [< T.sptr ] Typed.t) (st : t) :
-    (unit * t, 'err, serialized list) Result.t =
+let uninit ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "uninit" ptr st;
+  let* size = Layout.size_of_s ty in
   if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
-  else with_ptr ptr st (fun ~ofs:_ block -> Tree_block.uninit block)
+  else
+    with_ptr ptr st (fun ~ofs block -> Tree_block.uninit_range ofs size block)
 
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in

@@ -263,8 +263,8 @@ module Make (Heap : Heap_intf.S) = struct
         let** loc, state = resolve_place ~store state loc in
         let loc = as_ptr loc in
         let** v, state = Heap.load loc ty state in
-        (* TODO: mark value as moved!!! !== freeing it, btw *)
-        Result.ok (v, state)
+        let++ (), state = Heap.uninit loc ty state in
+        (v, state)
     | Copy loc ->
         let ty = loc.ty in
         let** loc, state = resolve_place ~store state loc in
@@ -609,12 +609,7 @@ module Make (Heap : Heap_intf.S) = struct
         (* TODO: this is probably super wrong, drop glue etc. *)
         let** place_ptr, state = resolve_place ~store state place in
         let place_ptr = as_ptr place_ptr in
-        let++ (), state = Heap.uninit place_ptr state in
-        (* let store =
-          match place.kind with
-          | PlaceBase var_id -> Store.add var_id (None, place.ty) store
-          | _ -> store
-        in *)
+        let++ (), state = Heap.uninit place_ptr place.ty state in
         (store, state)
     | Assert { cond; expected } ->
         let** cond, state = eval_operand ~crate ~store state cond in

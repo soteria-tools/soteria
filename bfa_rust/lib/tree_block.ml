@@ -332,6 +332,19 @@ module Tree = struct
     in
     ((), tree)
 
+  let uninit_range (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+      (t : t) : (unit * t, 'err, 'fix) Result.t =
+    let range = Range.of_low_and_size low size in
+    let replace_node _ = uninit range in
+    let rebuild_parent = of_children in
+    let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
+    let++ () =
+      match node.node with
+      | NotOwned _ -> miss_no_fix ~msg:"store" ()
+      | _ -> Result.ok ()
+    in
+    ((), tree)
+
   let get_raw ofs size t =
     let range = (ofs, ofs +@ size) in
     let replace_node node = node in
@@ -586,12 +599,15 @@ let put_raw_tree ofs (tree : Tree.t) t :
 
 let alloc size = { root = Tree.uninit (0s, size); bound = Some size }
 
-let uninit t =
+let uninit_range ofs size t =
   match t with
   | None -> miss_no_fix ~msg:"uninit on none" ()
   | Some t ->
-      let root = Tree.uninit t.root.range in
-      Result.ok ((), Some { t with root })
+      let++ (), tree =
+        let@ () = with_bound_check t (ofs +@ size) in
+        Tree.uninit_range ofs size t.root
+      in
+      ((), to_opt tree)
 
 (** Logic *)
 

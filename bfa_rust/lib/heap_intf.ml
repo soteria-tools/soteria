@@ -57,9 +57,10 @@ module type S = sig
 
   val uninit :
     [< sptr ] Typed.t ->
+    Charon.Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `UseAfterFree ] err,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
       serialized list )
     Rustsymex.Result.t
 
