@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #![feature(register_tool)]
 #![register_tool(kanitool)]
 
