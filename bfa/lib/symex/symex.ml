@@ -1,5 +1,9 @@
 module List = ListLabels
 
+module type Config = sig
+  val fuel : Fuel_gauge.t
+end
+
 module type Base = sig
   module Value : Value.S
   module MONAD : Monad.Base
@@ -156,13 +160,16 @@ module Extend (Base : Base) = struct
   end
 end
 
-module Make_seq (C: Fuel_gauge.Config) (Sol : Solver.Mutable_incremental) :
+module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
 
   module Fuel = struct
-    module Fuel_gauge = Fuel_gauge.Make (C)
-    include Incremental.Make_in_place (Fuel_gauge)
+    include Incremental.Make_in_place (struct
+      include Fuel_gauge
+
+      let default = C.fuel
+    end)
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n)
     let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n)
@@ -329,13 +336,16 @@ module Make_seq (C: Fuel_gauge.Config) (Sol : Solver.Mutable_incremental) :
     if Solver.sat () then MONAD.return x else vanish ()
 end)
 
-module Make_iter (C: Fuel_gauge.Config) (Sol : Solver.Mutable_incremental) :
+module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
 
   module Fuel = struct
-    module Fuel_gauge = Fuel_gauge.Make (C)
-    include Incremental.Make_in_place (Fuel_gauge)
+    include Incremental.Make_in_place (struct
+      include Fuel_gauge
+
+      let default = C.fuel
+    end)
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n)
     let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n)

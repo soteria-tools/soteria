@@ -1,8 +1,7 @@
 module SYMEX =
   Bfa_symex.Symex.Make_iter
     (struct
-      let steps = 150
-      let branching = 4
+      let fuel : Bfa_symex.Fuel_gauge.t = { steps = 150; branching = 4 }
     end)
     (Z3solver)
 
