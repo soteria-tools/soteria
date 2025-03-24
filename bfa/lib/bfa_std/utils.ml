@@ -12,17 +12,6 @@ module List_ex = struct
     in
     if List.is_empty errors then Ok oks else Error errors
 
-  let partition3_map p l =
-    let rec part l1 l2 l3 = function
-      | [] -> (List.rev l1, List.rev l2, List.rev l3)
-      | x :: l -> (
-          match p x with
-          | Either.Left v -> part (v :: l1) l2 l3 l
-          | Either.Right (Either.Left v) -> part l1 (v :: l2) l3 l
-          | Either.Right (Either.Right v) -> part l1 l2 (v :: l3) l)
-    in
-    part [] [] [] l
-
   let rec combine3 l1 l2 l3 =
     match (l1, l2, l3) with
     | a :: l1, b :: l2, c :: l3 -> (a, b, c) :: combine3 l1 l2 l3
@@ -34,7 +23,7 @@ module List_ex = struct
 
   (* An iteration over the cross-product of l with itself,
       excluding pairs (x, x) of the same element.
-     For instance, [self_cross_product [1; 2; 3]] will iterate over [(1, 2), (1, 2), (2, 3)] *)
+     For instance, [self_cross_product [1; 2; 3]] will iterate over [(1, 2), (1, 3), (2, 3)] *)
   let iter_self_cross_product l f =
     let rec aux = function
       | [] -> ()
