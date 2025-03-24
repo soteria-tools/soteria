@@ -36,6 +36,7 @@ let pp_err ft (err, call_trace) =
     | `Overflow -> Fmt.string ft "Overflow"
     | `StdErr msg -> Fmt.pf ft "Std error: %s" msg
     | `Panic msg -> Fmt.pf ft "Panic: %s" msg
+    | `MetaExpectedError -> Fmt.string ft "MetaExpectedError"
   in
   Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
   Format.close_box ()
@@ -117,52 +118,72 @@ let exec_main (crate : Charon.UllbcAst.crate) =
   let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
   let entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
-    |> List.filter (fun (decl : UllbcAst.blocks UllbcAst.gfun_decl) ->
-           (match List.rev decl.item_meta.name with
-           | PeIdent ("main", _) :: _ -> true
-           | _ -> false)
-           || List.exists
-                (function
-                  | Meta.AttrUnknown { path; _ } -> path = "kanitool::proof"
-                  | _ -> false)
-                decl.item_meta.attr_info.attributes)
+    |> List.filter_map (fun (decl : UllbcAst.blocks UllbcAst.gfun_decl) ->
+           let is_main =
+             match List.rev decl.item_meta.name with
+             | PeIdent ("main", _) :: _ -> true
+             | _ -> false
+           in
+           if is_main then Some (decl, false)
+           else
+             let is_proof = Charon_util.decl_has_attr decl "kanitool::proof" in
+             if is_proof then
+               let should_err =
+                 Charon_util.decl_has_attr decl "kanitool::should_panic"
+               in
+               Some (decl, should_err)
+             else None)
   in
   if List.is_empty entry_points then
     raise (ExecutionError "No entry points found");
   let exec_fun = Wpst_interp.exec_fun ~crate ~args:[] ~state:Heap.empty in
   let outcomes =
     entry_points
-    |> List.map (fun (entry_point : UllbcAst.fun_decl) ->
-           L.info (fun g ->
-               g "Executing entry point: %s"
-                 (PrintTypes.name_to_string ctx entry_point.item_meta.name));
-           let branches =
-             try Rustsymex.run @@ exec_fun entry_point
-             with exn ->
-               let msg =
-                 Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
-                   (Printexc.get_backtrace ())
-               in
-               raise (ExecutionError msg)
+    |> List.map @@ fun ((entry_point : UllbcAst.fun_decl), should_err) ->
+       L.info (fun g ->
+           g "Executing entry point: %s"
+             (PrintTypes.name_to_string ctx entry_point.item_meta.name));
+       let branches =
+         try Rustsymex.run @@ exec_fun entry_point
+         with exn ->
+           let msg =
+             Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
+               (Printexc.get_backtrace ())
            in
-           let outcomes = List.map fst branches in
-           if Option.is_some !Rustsymex.not_impl_happened then
-             let msg = Option.get !Rustsymex.not_impl_happened in
-             raise (ExecutionError msg)
-           else if List.is_empty branches then
-             raise (ExecutionError "Execution vanished")
-           else if List.exists Compo_res.is_missing outcomes then
-             raise (ExecutionError "Miss encountered in WPST")
-           else
-             let errors = Compo_res.only_errors outcomes in
-             if List.is_empty errors then
-               branches
-               |> List.filter_map (function
-                    | Compo_res.Ok ok, pcs -> Some (ok, pcs)
-                    | _ -> None)
-               |> Result.ok
-             else
-               Fmt.kstr Result.error "Errors: %a" Fmt.(Dump.list pp_err) errors)
+           raise (ExecutionError msg)
+       in
+       let branches =
+         if not should_err then branches
+         else
+           List.map
+             (function
+               | Compo_res.Ok _, pcs ->
+                   let trace =
+                     Call_trace.singleton ~loc:entry_point.item_meta.span ()
+                   in
+                   (Compo_res.Error (`MetaExpectedError, trace), pcs)
+               | Compo_res.Error _, pcs ->
+                   (Compo_res.Ok (Charon_util.Base Typed.zero, Heap.empty), pcs)
+               | v -> v)
+             branches
+       in
+       let outcomes = List.map fst branches in
+       if Option.is_some !Rustsymex.not_impl_happened then
+         let msg = Option.get !Rustsymex.not_impl_happened in
+         raise (ExecutionError msg)
+       else if List.is_empty branches then
+         raise (ExecutionError "Execution vanished")
+       else if List.exists Compo_res.is_missing outcomes then
+         raise (ExecutionError "Miss encountered in WPST")
+       else
+         let errors = Compo_res.only_errors outcomes in
+         if List.is_empty errors then
+           branches
+           |> List.filter_map (function
+                | Compo_res.Ok _, pcs -> Some pcs
+                | _ -> None)
+           |> Result.ok
+         else Fmt.error "Errors: %a" Fmt.(Dump.list pp_err) errors
   in
   List_ex.join_results outcomes
   |> Result.map List.flatten
@@ -182,7 +203,7 @@ let exec_main_and_print log_level smt_file no_compile clean_up file_name =
         let pp_pc ft pc =
           pf ft "@[%a@]" (list ~sep:(any " /\\@, ") Typed.ppa) pc
         in
-        let pp_info ft (_, pc) = pf ft "PC: @[%a@]" pp_pc pc in
+        let pp_info ft pc = pf ft "PC: @[%a@]" pp_pc pc in
         Fmt.pr "Done. - Ran %i branches\n%a\n" n
           (list ~sep:(any "@\n@\n") pp_info)
           res;

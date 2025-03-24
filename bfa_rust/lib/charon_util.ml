@@ -97,3 +97,8 @@ let mk_array_ty ty len : Types.ty =
         regions = [];
         trait_refs = [];
       } )
+
+let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
+  List.exists
+    (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)
+    decl.item_meta.attr_info.attributes
