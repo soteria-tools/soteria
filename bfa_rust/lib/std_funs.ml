@@ -634,6 +634,23 @@ module M (Heap : Heap_intf.S) = struct
     | [ v ] -> Result.ok (v, state)
     | _ -> failwith "black_box: invalid arguments"
 
+  let transmute (funsig : GAst.fun_sig) ~crate ~args ~state =
+    let from_ty = List.hd funsig.inputs in
+    let to_ty = funsig.output in
+    let v = List.hd args in
+    match (from_ty, to_ty, v) with
+    | TLiteral _, TLiteral to_ty, Base v ->
+        let* constrs =
+          of_opt_not_impl ~msg:"Constraints missing" (Layout.constraints to_ty)
+        in
+        if%sat Typed.conj (constrs v) then Result.ok (Base v, state)
+        else Heap.error `UBTransmute state
+    | _ ->
+        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+        Fmt.failwith "Unhandled transmute of %a: %s -> %s" pp_rust_val v
+          (PrintTypes.ty_to_string ctx from_ty)
+          (PrintTypes.ty_to_string ctx to_ty)
+
   type std_fun =
     | Any
     | Assert
@@ -660,6 +677,7 @@ module M (Heap : Heap_intf.S) = struct
     | StrChars
     | StrLen
     | ToString
+    | Transmute
     | Unchecked of std_op
     | Wrapping of std_op
     | Zeroed
@@ -687,6 +705,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
       ("core::intrinsics::ptr_offset_from", PtrOffsetFrom);
       ("core::intrinsics::size_of", SizeOf);
+      ("core::intrinsics::transmute", Transmute);
       ("core::intrinsics::unchecked_add", Unchecked Add);
       ("core::intrinsics::unchecked_div", Unchecked Div);
       ("core::intrinsics::unchecked_mul", Unchecked Mul);
@@ -764,6 +783,7 @@ module M (Heap : Heap_intf.S) = struct
        | StrChars -> str_chars f.signature
        | StrLen -> str_len f.signature
        | ToString -> to_string f.signature
+       | Transmute -> transmute f.signature
        | Unchecked op -> unchecked_op op f.signature
        | Wrapping op -> wrapping_op (op_of op) f.signature
        | Zeroed -> zeroed f.signature

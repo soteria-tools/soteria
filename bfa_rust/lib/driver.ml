@@ -29,6 +29,7 @@ let pp_err ft (err, call_trace) =
     | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
     | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
     | `UBAbort -> Fmt.string ft "UBAbort"
+    | `UBTransmute -> Fmt.string ft "UBTransmute"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `Memory_leak -> Fmt.string ft "Memory leak"

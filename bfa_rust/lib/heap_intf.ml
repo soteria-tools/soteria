@@ -23,7 +23,8 @@ module type S = sig
       [> `NullDereference
       | `OutOfBounds
       | `UninitializedMemoryAccess
-      | `UseAfterFree ]
+      | `UseAfterFree
+      | `UBTransmute ]
       err,
       serialized list )
     Rustsymex.Result.t

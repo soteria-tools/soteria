@@ -90,11 +90,18 @@ module Node = struct
     | Owned Zeros -> Result.ok @@ Layout.to_zeros ty
     | Owned Lazy ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
-    | Owned (Init { value; ty = tyw }) ->
+    | Owned (Init { value; ty = tyw }) -> (
         if Values.equal_literal_type ty tyw then Result.ok value
         else
-          Fmt.kstr not_impl "Type mismatch when decoding value: %a vs %a"
-            Types.pp_literal_type ty Types.pp_literal_type tyw
+          match Layout.constraints ty with
+          | Some constrs ->
+              if%sat Typed.conj (constrs value) then Result.ok value
+              else Result.error `UBTransmute
+          | None ->
+              Fmt.kstr not_impl
+                "Couldn't convert type, contraints unknown for %s -> %s"
+                (Charon_util.lit_to_string ty)
+                (Charon_util.lit_to_string tyw))
     | Owned Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
            We have to approximate and vanish. *)
@@ -379,7 +386,7 @@ module Tree = struct
         let+ () = Rustsymex.assume [ sv ==?@ v ] in
         Ok tree
     | Missing fixes -> Rustsymex.Result.miss fixes
-    | Error `UninitializedMemoryAccess -> Rustsymex.vanish ()
+    | Error _ -> Rustsymex.vanish ()
 
   let produce_typed_val (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
       (ty : Types.literal_type) (value : T.cval Typed.t) (t : t) : t Rustsymex.t

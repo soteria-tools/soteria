@@ -476,7 +476,7 @@ module Make (Heap : Heap_intf.S) = struct
     let@ () = with_loc ~loc in
     match stmt with
     | Nop -> Result.ok (store, state)
-    (* small optimisation, avoids parsing to-from rust. *)
+    (* (* optimisation to avoid parsing to-from rust -- this is UX, as it misses type errors. *)
     | Assign (({ ty; _ } as dst_place), Use (Copy src_place)) ->
         let** dst, state = resolve_place ~store state dst_place in
         let dst = as_ptr dst in
@@ -487,7 +487,7 @@ module Make (Heap : Heap_intf.S) = struct
             m "Copying %a <- %a (size %a)" Typed.ppa dst Typed.ppa src Typed.ppa
               size);
         let++ (), state = Heap.copy_nonoverlapping ~dst ~src ~size state in
-        (store, state)
+        (store, state) *)
     | Assign (({ ty; _ } as place), rval) ->
         let** ptr, state = resolve_place ~store state place in
         let ptr = as_ptr ptr in
