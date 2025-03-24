@@ -102,7 +102,7 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) ({ heap; _ } : t)
   let loc, ofs = Typed.Ptr.decompose ptr in
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc heap
 
-let load ?is_move ptr ty st =
+let load ?is_move ?meta ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
@@ -135,7 +135,8 @@ let load ?is_move ptr ty st =
               let* res = callback values in
               aux block res
         in
-        let++ value, block = aux block (Layout.rust_of_cvals ~offset:ofs ty) in
+        let parser = Layout.rust_of_cvals ~offset:ofs ?meta ty in
+        let++ value, block = aux block parser in
         L.debug (fun f ->
             f "Finished reading rust value %a" Charon_util.pp_rust_val value);
         (value, block))

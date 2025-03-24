@@ -16,6 +16,7 @@ module type S = sig
 
   val load :
     ?is_move:bool ->
+    ?meta:[< cval ] Typed.t ->
     [< sptr ] Typed.t ->
     Charon.Types.ty ->
     t ->

@@ -47,6 +47,13 @@ let as_ptr = function
       Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a"
         pp_rust_val v
 
+let as_ptr_meta_opt = function
+  | Ptr _ -> None
+  | FatPtr (_, meta) -> Some meta
+  | v ->
+      Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a"
+        pp_rust_val v
+
 let as_base_of ~ty = function
   | Base v -> (
       match Typed.cast_checked v ty with

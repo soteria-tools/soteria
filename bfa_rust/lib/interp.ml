@@ -214,18 +214,14 @@ module Make (Heap : Heap_intf.S) = struct
     | Constant c ->
         let++ v, state = resolve_constant c state in
         (v, state)
-    | Move loc ->
+    | Move loc | Copy loc ->
         let ty = loc.ty in
-        let** loc, state = resolve_place ~store state loc in
-        let loc = as_ptr loc in
-        let++ v, state = Heap.load ~is_move:true loc ty state in
+        let** rptr, state = resolve_place ~store state loc in
+        let loc = as_ptr rptr in
+        let meta = as_ptr_meta_opt rptr in
+        let is_move = match op with Move _ -> true | _ -> false in
+        let++ v, state = Heap.load ~is_move ?meta loc ty state in
         (v, state)
-    | Copy loc ->
-        let ty = loc.ty in
-        let** loc, state = resolve_place ~store state loc in
-        let loc = as_ptr loc in
-        let** v, state = Heap.load loc ty state in
-        Result.ok (v, state)
 
   and eval_operand_list ~crate ~store state ops =
     let++ vs, state =

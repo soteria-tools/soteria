@@ -535,8 +535,9 @@ and callback_return = parser_return Rustsymex.t
 
 (** Converts a Rust type into a list of C blocks, along with their size and
     offset; once these are read, symbolically decides whether we must keep
-    reading. *)
-let rust_of_cvals ?offset ty : parser_return =
+    reading. @offset is the initial offset to read from, @meta is the optional
+    metadata, that originates from a fat pointer. *)
+let rust_of_cvals ?offset ?meta ty : parser_return =
   (* Base case, parses all types. *)
   let rec aux offset : Types.ty -> parser_return = function
     | TLiteral ty ->
@@ -594,9 +595,24 @@ let rust_of_cvals ?offset ty : parser_return =
               Types.pp_type_decl type_decl)
     | TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) as ty ->
         let layout = layout_of ty in
-        let size = Array.length layout.members_ofs in
-        let fields = List.init size (fun _ -> sub_ty) in
+        let len = Array.length layout.members_ofs in
+        let fields = List.init len (fun _ -> sub_ty) in
         aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
+    | TAdt (TBuiltin TSlice, { types = [ sub_ty ]; _ }) -> (
+        (* We can only read a slice if we have the metadata of its length, in which case
+           we interpret it as an array of that length. *)
+        match meta with
+        | None -> Fmt.failwith "Tried reading slice without metadata"
+        | Some meta ->
+            let len =
+              match Typed.kind meta with
+              | Int len -> Z.to_int len
+              | _ -> failwith "Can't read a slice of non-concrete size"
+            in
+            let arr_ty = mk_array_ty sub_ty len in
+            let layout = layout_of arr_ty in
+            let fields = List.init len (fun _ -> sub_ty) in
+            aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* Parses a list of fields (for structs and tuples) *)
   and aux_fields ~f ~layout offset fields : parser_return =
