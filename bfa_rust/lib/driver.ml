@@ -2,6 +2,7 @@ module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Bfa_symex.Compo_res
 
 exception ExecutionError of string
+exception CharonError of string
 
 module Cleaner = struct
   let files = ref []
@@ -88,13 +89,13 @@ let parse_ullbc_of_file ~no_compile file_name =
     if res = 0 then Cleaner.touched output
     else
       let msg = Fmt.str "Failed compilation to ULLBC: code %d" res in
-      raise (ExecutionError msg));
+      raise (CharonError msg));
   let crate =
     try
       output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json
     with
     | Sys_error _ -> raise (ExecutionError "File doesn't exist")
-    | _ -> raise (ExecutionError "Failed to parse ULLBC")
+    | _ -> raise (CharonError "Failed to parse ULLBC")
   in
   match crate with
   | Ok crate ->
@@ -107,7 +108,7 @@ let parse_ullbc_of_file ~no_compile file_name =
         close_out oc;
         Cleaner.touched crate_file);
       crate
-  | Error err -> raise (ExecutionError err)
+  | Error err -> raise (CharonError err)
 
 let exec_main (crate : Charon.UllbcAst.crate) =
   let module List_ex = Utils.List_ex in
@@ -189,6 +190,12 @@ let exec_main_and_print log_level smt_file no_compile clean_up file_name =
     | Error e ->
         L.err (fun f -> f "Error: %s" e);
         exit 1
-  with ExecutionError e ->
-    L.err (fun f -> f "Fatal: %s" e);
-    exit 2
+  with
+  | ExecutionError e ->
+      if clean_up then Cleaner.cleanup ();
+      L.err (fun f -> f "Fatal: %s" e);
+      exit 2
+  | CharonError e ->
+      if clean_up then Cleaner.cleanup ();
+      L.err (fun f -> f "Fatal (Charon): %s" e);
+      exit 3
