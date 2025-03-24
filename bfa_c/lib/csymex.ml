@@ -28,6 +28,29 @@ let push_give_up, flush_give_up =
   in
   (push_give_up, flush_give_up)
 
+let unsupported_file = ref None
+
+let dump_unsupported () =
+  match !unsupported_file with
+  | None -> ()
+  | Some file ->
+      let reasons = flush_give_up () in
+      let module M = Map.Make (String) in
+      let map =
+        List.fold_left
+          (fun map (reason, _loc) ->
+            M.update reason
+              (function None -> Some 1 | Some k -> Some (k + 1))
+              map)
+          M.empty reasons
+      in
+      let oc = open_out file in
+      let json : Yojson.Safe.t =
+        `Assoc (List.map (fun (k, v) -> (k, `Int v)) (M.bindings map))
+      in
+      Yojson.Safe.to_channel oc json;
+      close_out oc
+
 let current_loc = ref Cerb_location.unknown
 let get_loc () = !current_loc
 

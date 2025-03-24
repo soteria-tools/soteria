@@ -46,9 +46,16 @@ let executable ?(args = []) installed_path =
     let path = installed_path / "bin" / "z3" in
     (name, path)
   in
+  let cerb_runtime =
+    let name = "CERB_RUNTIME" in
+    let path = installed_path / "share" / "cerb_runtime" in
+    (name, path)
+  in
   let command = installed_path / "bin" / "bfa-c" in
   let args = "lsp" :: args in
-  make_executable ~command ~args ~env:[ dyld_lib_path; z3_path ] ()
+  make_executable ~command ~args
+    ~env:[ dyld_lib_path; z3_path; cerb_runtime ]
+    ()
 
 let check_version installed_path =
   let exe = executable ~args:[ "--version" ] installed_path in

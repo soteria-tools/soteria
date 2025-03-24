@@ -32,6 +32,8 @@ package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	$(DUNE) build @dylist-file
 	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(PACKAGE_DIST)/lib
 	$(PACKAGING_BIN) copy-files packaging/bin-locations.txt $(PACKAGE_DIST)/bin
+	mkdir $(PACKAGE_DIST)/share
+	$(PACKAGING_BIN) copy-cerb-runtime $(PACKAGE_DIST)/share/cerb_runtime
 	
 
 packaging/bin-locations.txt:

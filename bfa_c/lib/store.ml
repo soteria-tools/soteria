@@ -1,10 +1,4 @@
-open Cerb_frontend
-
-include Stdlib.Map.Make (struct
-  type t = Symbol.sym
-
-  let compare = Symbol.compare_sym
-end)
+include Stdlib.Map.Make (Ail_helpers.Symbol_std)
 
 let pp_binding ft (v, ty) =
   Fmt.pf ft "%a : %a" (Fmt.Dump.option Svalue.pp) v Fmt_ail.pp_ty ty

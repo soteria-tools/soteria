@@ -1,3 +1,4 @@
+module Ctype = Cerb_frontend.Ctype
 open Csymex
 open Csymex.Syntax
 open Typed.Syntax
@@ -56,4 +57,10 @@ module M (Heap : Heap_intf.S) = struct
     in
     if%sat to_assert ==@ 0s then Heap.error `FailedAssert state
     else Result.ok (0s, state)
+
+  let nondet_int_fun ~prog:_ ~args:_ ~state =
+    let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
+    let* v = Csymex.nondet ~constrs Typed.t_int in
+    let v = (v :> T.cval Typed.t) in
+    Result.ok (v, state)
 end

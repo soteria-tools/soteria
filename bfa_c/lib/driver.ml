@@ -68,19 +68,19 @@ let io : Cerb_backend.Pipeline.io_helpers =
   in
   { pass_message; set_progress; run_pp; print_endline; print_debug; warn }
 
-let load_core_stdlib_shim () =
-  Exception.Result (Pmap.empty String.compare, Pmap.empty Symbol.compare_sym)
-
-let load_core_impl_shim _stdlib _impl_name =
-  Exception.Result (Pmap.empty Implementation.implementation_constant_compare)
-
 module Frontend = struct
   let frontend = ref (fun _ -> failwith "Frontend not set")
+  let includes = ref ""
+  let add_include s = includes := !includes ^ "-I " ^ s ^ " "
+  let add_includes ss = List.iter add_include ss
+  let libc () = Filename.concat (Cerb_runtime.runtime ()) "libc/include "
 
   let init () =
     let result =
       let open Cerb_backend.Pipeline in
-      let cpp_cmd = "cc -E -C -Werror -nostdinc -undef " in
+      let cpp_cmd =
+        "cc -E -C -Werror -nostdinc -undef " ^ "-I" ^ libc () ^ !includes
+      in
       let ( let* ) = Exception.except_bind in
       let conf =
         {
@@ -98,14 +98,15 @@ module Frontend = struct
       in
       set_cerb_conf ();
       Ocaml_implementation.(set HafniumImpl.impl);
-      let* stdlib = load_core_stdlib_shim () in
-      let* impl = load_core_impl_shim stdlib impl_name in
+      let* stdlib = load_core_stdlib () in
+      let* impl = load_core_impl stdlib impl_name in
       Exception.Result
         (fun filename -> c_frontend (conf, io) (stdlib, impl) ~filename)
     in
     match result with
     | Exception.Result f -> frontend := f
-    | Exception.Exception msg ->
+    | Exception.Exception err ->
+        let msg = Pp_errors.to_string err in
         frontend := fun _ -> failwith ("Failed to initialize frontend: " ^ msg)
 
   let () = Initialize_analysis.register_once_initialiser init
@@ -262,22 +263,31 @@ let exec_fun_bi file_name fun_name =
         | Some fundef -> fundef
         | None -> Fmt.failwith "Couldn't find function %s" fun_name
       in
-      Abductor.generate_summaries_for ~prog fundef
+      let fid, _ = fundef in
+      let results = Abductor.generate_summaries_for ~prog fundef in
+      List.map
+        (fun summary -> (summary, Summary.analyse_summary ~prog ~fid summary))
+        results
   | Error (`ParsingError s, call_trace) ->
       Fmt.failwith "Failed to parse AIL at loc %a: %s" Call_trace.pp call_trace
         s
 
 (* Entry point function *)
 
-let generate_summary_for file_name fun_name =
+let generate_summary_for include_args file_name fun_name =
+  Frontend.add_includes include_args;
   setup_console_log (Some Debug);
   Initialize_analysis.init_once ();
   let results = exec_fun_bi file_name fun_name in
-  let pp_summary = Summary.pp pp_err in
-  let printer = Fmt.list ~sep:Fmt.sp pp_summary in
-  Fmt.pr "@[<v>%a@]@." printer results
+  let pp_summary ft (summary, analysis) =
+    Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
+      summary (Fmt.Dump.list pp_err) analysis
+  in
+  Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
-let generate_all_summaries log_level file_name =
+let generate_all_summaries log_level dump_unsupported_file includes file_name =
+  Csymex.unsupported_file := dump_unsupported_file;
+  Frontend.add_includes includes;
   setup_console_log log_level;
   Initialize_analysis.init_once ();
   let prog =
@@ -286,6 +296,7 @@ let generate_all_summaries log_level file_name =
     | Ok (_, prog) -> prog
   in
   let results = Abductor.generate_all_summaries prog in
+  Csymex.dump_unsupported ();
   let pp_summary ~fid ft summary =
     Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
       summary (Fmt.Dump.list pp_err)

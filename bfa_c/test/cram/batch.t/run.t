@@ -4,7 +4,7 @@
   (push 1)
   (push 1)
   (declare-fun |0| () Int)
-  (assert (>= |0| 0))
+  (assert (<= 0 |0|))
   (assert (< |0| 10))
   (assert (< |0| 0))
   (check-sat)

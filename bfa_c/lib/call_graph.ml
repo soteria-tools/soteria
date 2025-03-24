@@ -1,14 +1,7 @@
 open Cerb_frontend
 open AilSyntax
 open Bfa_std
-
-include Graph.Make_in_place (struct
-  type t = Symbol.sym
-
-  let pp = Fmt_ail.pp_sym
-  let hash = Hashtbl.hash
-  let equal = Symbol.equal_sym
-end)
+include Graph.Make_in_place (Ail_helpers.Symbol_std)
 
 (** A callgraph is just a hashtbl mapping caller to the list of their callees *)
 

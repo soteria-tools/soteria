@@ -22,11 +22,22 @@ end
 
 module type S = sig
   include Base
+
+  val all : 'a t list -> 'a list t
+
   module Syntax : Syntax with type 'a t := 'a t
 end
 
 module Extend (Base : Base) : S with type 'a t = 'a Base.t = struct
   include Base
+
+  let all xs =
+    let rec aux vs l =
+      match l with
+      | [] -> return (List.rev vs)
+      | x :: xs -> bind x (fun x -> aux (x :: vs) xs)
+    in
+    aux [] xs
 
   module Syntax = struct
     let ( let* ) = Base.bind
@@ -73,12 +84,23 @@ end
 
 module type S2 = sig
   include Base2
+
+  val all : ('a, 'b) t list -> ('a list, 'b) t
+
   module Syntax : Syntax2 with type ('a, 'b) t := ('a, 'b) t
 end
 
 module Extend2 (Base : Base2) : S2 with type ('a, 'b) t := ('a, 'b) Base.t =
 struct
   include Base
+
+  let all xs =
+    let rec aux vs l =
+      match l with
+      | [] -> ok (List.rev vs)
+      | x :: xs -> bind x (fun x -> aux (x :: vs) xs)
+    in
+    aux [] xs
 
   module Syntax = struct
     let ( let* ) = Base.bind
