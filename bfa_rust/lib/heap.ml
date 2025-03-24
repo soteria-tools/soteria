@@ -102,7 +102,7 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) ({ heap; _ } : t)
   let loc, ofs = Typed.Ptr.decompose ptr in
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc heap
 
-let load ptr ty st =
+let load ?is_move ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
@@ -126,7 +126,9 @@ let load ptr ty st =
               let** values, block =
                 Result.fold_list blocks ~init:([], block)
                   ~f:(fun (vals, block) (ty, size, ofs) ->
-                    let++ value, block = Tree_block.load ofs size ty block in
+                    let++ value, block =
+                      Tree_block.load ?is_move ofs size ty block
+                    in
                     (value :: vals, block))
               in
               let values = List.rev values in

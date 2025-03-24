@@ -308,11 +308,11 @@ module Tree = struct
     let* root = extend_if_needed t range in
     frame_inside ~replace_node ~rebuild_parent root range
 
-  let load (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Values.literal_type) (t : t) :
+  let load ?(is_move = false) (ofs : [< T.sint ] Typed.t)
+      (size : [< T.sint ] Typed.t) (ty : Values.literal_type) (t : t) :
       (T.cval Typed.t * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size ofs size in
-    let replace_node node = node in
+    let replace_node node = if is_move then uninit range else node in
     let rebuild_parent = with_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ sval = Node.decode ~ty framed.node in
@@ -554,11 +554,11 @@ let assert_exclusively_owned t =
             ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
-let load ofs size ty t =
+let load ?is_move ofs size ty t =
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
-    Tree.load ofs size ty t.root
+    Tree.load ?is_move ofs size ty t.root
   in
   (res, to_opt tree)
 

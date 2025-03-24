@@ -210,21 +210,19 @@ module M (Heap : Heap_intf.S) = struct
       | Enum (l_d, l_vs), Enum (r_d, r_vs) ->
           if List.compare_lengths l_vs r_vs <> 0 then
             Result.ok (Typed.v_false, state)
-          else
-            let disc_match = l_d ==@ r_d in
-            if disc_match = Typed.v_false then Result.ok (Typed.v_false, state)
-            else aux_list disc_match state l_vs r_vs
+          else aux_list (l_d ==@ r_d) state l_vs r_vs
       | _ ->
           Fmt.kstr not_impl "Unexpected eq_values pair: %a / %a" pp_rust_val
             left pp_rust_val right
     and aux_list init state lefts rights =
-      let value_pairs = List.combine lefts rights in
-      Result.fold_list value_pairs ~init:(init, state)
-        ~f:(fun (acc, state) (left, right) ->
-          if acc = Typed.v_false then Result.ok (Typed.v_false, state)
-          else
-            let++ b_val, state = aux state left right in
-            (b_val &&@ acc, state))
+      if init = Typed.v_false then Result.ok (Typed.v_false, state)
+      else
+        match (lefts, rights) with
+        | [], [] -> Result.ok (init, state)
+        | l :: lefts, r :: rights ->
+            let** b_val, state = aux state l r in
+            aux_list (b_val &&@ init) state lefts rights
+        | [], _ | _, [] -> Result.ok (Typed.v_false, state)
     in
     let left_ptr, right_ptr =
       match args with

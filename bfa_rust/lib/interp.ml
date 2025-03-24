@@ -58,14 +58,13 @@ module Make (Heap : Heap_intf.S) = struct
               st)
 
   let resolve_constant (const : Expressions.constant_expr) state =
-    match const with
-    | { value = CLiteral (VScalar scalar); _ } ->
+    match const.value with
+    | CLiteral (VScalar scalar) ->
         Result.ok (Base (value_of_scalar scalar), state)
-    | { value = CLiteral (VBool b); _ } ->
+    | CLiteral (VBool b) ->
         Result.ok (Base (if b then Typed.one else Typed.zero), state)
-    | { value = CLiteral (VChar c); _ } ->
-        Result.ok (Base (Typed.int (Char.code c)), state)
-    | { value = CLiteral (VStr str); _ } -> (
+    | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Char.code c)), state)
+    | CLiteral (VStr str) -> (
         let** ptr_opt, state = Heap.load_str_global str state in
         match ptr_opt with
         | Some v -> Result.ok (v, state)
@@ -88,7 +87,7 @@ module Make (Heap : Heap_intf.S) = struct
             (value, state))
     | e ->
         Fmt.kstr not_impl "TODO: resolve_constant %a"
-          Expressions.pp_constant_expr e
+          Expressions.pp_raw_constant_expr e
 
   (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
@@ -219,8 +218,7 @@ module Make (Heap : Heap_intf.S) = struct
         let ty = loc.ty in
         let** loc, state = resolve_place ~store state loc in
         let loc = as_ptr loc in
-        let** v, state = Heap.load loc ty state in
-        let++ (), state = Heap.uninit loc ty state in
+        let++ v, state = Heap.load ~is_move:true loc ty state in
         (v, state)
     | Copy loc ->
         let ty = loc.ty in
