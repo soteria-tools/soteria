@@ -12,8 +12,6 @@ type t = {
 }
 [@@deriving show { with_path = false }]
 
-let default = { steps = 150; branching = 4 }
-
 let consume_fuel_steps n gauge =
   if gauge.steps >= n then
     (Not_exhausted, { gauge with steps = gauge.steps - n })
