@@ -330,7 +330,7 @@ module M (Heap : Heap_intf.S) = struct
         (* range_end is exclusive *)
         if%sat idx <=@ range_end &&@ (range_end <=@ size) then
           let size = range_end -@ idx in
-          let ptr' = Sptr.with_meta ptr' (Some size) in
+          let ptr' = Sptr.with_meta ~meta:size ptr' in
           Result.ok (Ptr ptr', state)
         else
           (* not sure this is the right diagnostic *)
@@ -391,13 +391,14 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> failwith "array_slice: unexpected generic constants"
     in
     match args with
-    | [ Ptr (arr_ptr, None) ] ->
-        Result.ok (Ptr (arr_ptr, Some (Typed.int size)), state)
+    | [ Ptr arr_ptr ] ->
+      let ptr' = Sptr.with_meta ~meta:(Typed.int size) arr_ptr in
+        Result.ok (Ptr ptr', state)
     | _ -> failwith "array_index: unexpected arguments"
 
   let slice_len _ ~crate:_ ~args ~state =
     match args with
-    | [ Ptr (_, Some len) ] -> Result.ok (Base len, state)
+    | [ Ptr ptr ] -> Result.ok (Base (Option.get @@ Sptr.meta ptr), state)
     | _ -> failwith "slice_len: unexpected arguments"
 
   let discriminant_value (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
@@ -418,16 +419,17 @@ module M (Heap : Heap_intf.S) = struct
 
   let to_string _ ~crate:_ ~args ~state =
     match args with
-    | [ (Ptr (_, Some len) as slice) ] ->
-        Result.ok (Struct [ slice; Base len ], state)
+    | [ (Ptr (ptr) as slice) ] ->
+        Result.ok (Struct [ slice; Base (Option.get @@ Sptr.meta ptr) ], state)
     | _ -> failwith "to_string: unexpected value"
 
   let str_chars _ ~crate:_ ~args ~state =
-    let ptr, len =
+    let ptr =
       match args with
-      | [ Ptr ((_, Some len) as ptr) ] -> (ptr, len)
+      | [ Ptr ptr ] -> ptr
       | _ -> failwith "str_chars: unexpected value"
     in
+    let len = Option.get @@ Sptr.meta ptr in
     let len = Typed.cast len in
     let ty = Types.TLiteral TChar in
     let arr_end = Sptr.offset ~ty ptr len in
@@ -453,20 +455,15 @@ module M (Heap : Heap_intf.S) = struct
           | _ -> failwith "iter_nth: unexpected signature")
       | _ -> failwith "iter_nth: unexpected signature"
     in
-    let* sub_ty_size = Layout.size_of_s sub_ty in
     let** iter, state = Heap.load iter_ptr iter_ty state in
     let start_ptr, end_ptr =
       match iter with
       | Struct [ Ptr start_ptr; Ptr end_ptr ] -> (start_ptr, end_ptr)
       | _ -> failwith "iter_nth: unexpected iter structure"
     in
-    let start_loc, start_ofs = Typed.Ptr.decompose @@ fst start_ptr in
-    let end_loc, end_ofs = Typed.Ptr.decompose @@ fst end_ptr in
-    if%sat start_loc ==@ end_loc then
-      let ofs = start_ofs +@ (idx *@ sub_ty_size) in
-      if%sat ofs <@ end_ofs then
-        let ptr = Typed.Ptr.mk start_loc ofs in
-        let ptr = (ptr, None) in
+    if%sat Sptr.is_same_loc start_ptr end_ptr then
+      let ptr = Sptr.offset ~ty:sub_ty start_ptr idx in
+      if%sat Sptr.is_before ptr end_ptr then
         let iter' = Struct [ Ptr ptr; Ptr end_ptr ] in
         let** value, state = Heap.load ptr sub_ty state in
         let++ (), state = Heap.store iter_ptr iter_ty iter' state in
@@ -506,7 +503,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     let++ str_obj, state = Heap.load str_ptr str_ty state in
     match str_obj with
-    | Struct [ Ptr (_, Some len); _ ] -> (Base len, state)
+    | Struct [ Ptr ptr; _ ] -> (Base (Option.get @@ Sptr.meta ptr), state)
     | _ -> failwith "str_len: unexpected string type"
 
   let assert_zero_is_valid (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
@@ -570,11 +567,9 @@ module M (Heap : Heap_intf.S) = struct
       | TRawPtr (ty, _) :: _ -> ty
       | _ -> failwith "ptr_offset_from: invalid arguments"
     in
-    let offset_constrs = Layout.int_constraints Values.Isize in
     let v = if op = Add then v else ~-v in
     let ptr' = Sptr.offset ~ty ptr v in
-    let ofs' = Typed.Ptr.ofs @@ fst ptr' in
-    if%sat Typed.conj (offset_constrs ofs') then Result.ok (Ptr ptr', state)
+    if%sat Sptr.constraints ptr'  then Result.ok (Ptr ptr', state)
     else Heap.error `Overflow state
 
   let box_into_raw _ ~crate:_ ~args ~state =
@@ -585,7 +580,7 @@ module M (Heap : Heap_intf.S) = struct
   let ptr_offset_from (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     let ptr1, ptr2 =
       match args with
-      | [ Ptr (ptr1, _); Ptr (ptr2, _) ] -> (ptr1, ptr2)
+      | [ Ptr ptr1; Ptr ptr2 ] -> (ptr1, ptr2)
       | _ -> failwith "ptr_offset_from: invalid arguments"
     in
     let ty =
@@ -594,11 +589,9 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> failwith "ptr_offset_from: invalid arguments"
     in
     let* size = Layout.size_of_s ty in
-    let loc1, off1 = Typed.Ptr.decompose ptr1 in
-    let loc2, off2 = Typed.Ptr.decompose ptr2 in
-    if%sat loc1 ==@ loc2 &&@ (size >@ 0s) then
+    if%sat Sptr.is_same_loc ptr1 ptr2 &&@ (size >@ 0s) then
       let size = Typed.cast size in
-      let off = off1 -@ off2 in
+      let off = Sptr.distance ptr1 ptr2 in
       if%sat off %@ size ==@ 0s then Result.ok (Base (off /@ size), state)
       else Heap.error `UBPointerComparison state
     else Heap.error `UBPointerComparison state
