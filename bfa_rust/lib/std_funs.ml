@@ -8,6 +8,12 @@ open Charon_util
 module T = Typed.T
 
 module M (Heap : Heap_intf.S) = struct
+  module Sptr = Heap.Sptr
+
+  type nonrec rust_val = Sptr.t rust_val
+
+  let pp_rust_val = pp_rust_val Sptr.pp
+
   type std_op = Add | Sub | Mul | Div | Rem
   type std_bool = Id | Neg
   type type_loc = GenArg | Input
@@ -231,32 +237,6 @@ module M (Heap : Heap_intf.S) = struct
     in
     let** left, right, state =
       match fun_sig.inputs with
-      | Types.TRef
-          ( _,
-            (TRef (_, TAdt (TBuiltin TSlice, { types = [ ty ]; _ }), _) as
-             outer_ty),
-            _ )
-        :: _ ->
-          (* STD provides an implementation of eq for slices (&[T]), we kind of cheat by converting
-             them to arrays, to make life easier *)
-          let** left, state = Heap.load left_ptr outer_ty state in
-          let** right, state = Heap.load right_ptr outer_ty state in
-          let left_ptr, len_left, right_ptr, len_right =
-            match (left, right) with
-            (* really not great but not sure how else to do it for now without it being hell *)
-            | FatPtr (pl, l), FatPtr (pr, r) -> (
-                match (Typed.kind l, Typed.kind r) with
-                | Int l, Int r -> (pl, Z.to_int l, pr, Z.to_int r)
-                | _ ->
-                    failwith "eq_values expects two slices of non-symbolic size"
-                )
-            | _ -> failwith "eq_values expects two slices"
-          in
-          let ty_left = mk_array_ty ty len_left in
-          let ty_right = mk_array_ty ty len_right in
-          let** left, state = Heap.load left_ptr ty_left state in
-          let++ right, state = Heap.load right_ptr ty_right state in
-          (left, right, state)
       | Types.TRef (_, (TRef (_, ty, _) as outer_ty), _) :: _ ->
           (* STD provides an implementation of eq for references (&T), where the arguments are
              thus &&T -- we handle this here by adding an indirection. *)
@@ -295,7 +275,7 @@ module M (Heap : Heap_intf.S) = struct
       ~state =
     let rec aux : Types.ty -> rust_val = function
       | TLiteral _ -> Base Typed.zero
-      | TRawPtr _ | TRef _ -> Ptr Typed.Ptr.null
+      | TRawPtr _ | TRef _ -> Ptr Sptr.null_ptr
       | TAdt (TAdtId t_id, _) -> (
           let adt = Types.TypeDeclId.Map.find t_id crate.type_decls in
           match adt.kind with
@@ -326,12 +306,12 @@ module M (Heap : Heap_intf.S) = struct
 
   let array_index (idx_op : Expressions.builtin_index_op)
       (gen_args : Types.generic_args) ~crate:_ ~args ~state =
-    let ptr, size =
-      match (idx_op.is_array, args, gen_args.const_generics) with
+    let ptr = as_ptr @@ List.hd args in
+    let size =
+      match (idx_op.is_array, Sptr.meta ptr, gen_args.const_generics) with
       (* Array with static size *)
-      | true, Ptr ptr :: _, [ size ] ->
-          (ptr, Typed.int @@ Charon_util.int_of_const_generic size)
-      | false, FatPtr (ptr, size) :: _, [] -> (ptr, Typed.cast size)
+      | true, _, [ size ] -> Typed.int @@ Charon_util.int_of_const_generic size
+      | false, Some size, [] -> Typed.cast size
       | _ ->
           Fmt.failwith "array_index: unexpected arguments: %a / %a"
             Fmt.(list pp_rust_val)
@@ -343,15 +323,15 @@ module M (Heap : Heap_intf.S) = struct
     let idx = as_base_of ~ty:Typed.t_int (List.nth args 1) in
     if%sat 0s <=@ idx &&@ (idx <@ size) then
       let ty = List.hd gen_args.types in
-      let* offset = Layout.size_of_s ty in
-      let ptr' = Typed.Ptr.add_ofs ptr (offset *@ idx) in
+      let ptr' = Sptr.offset ~ty ptr idx in
       if not idx_op.is_range then Result.ok (Ptr ptr', state)
       else
         let range_end = as_base_of ~ty:Typed.t_int (List.nth args 2) in
         (* range_end is exclusive *)
         if%sat idx <=@ range_end &&@ (range_end <=@ size) then
           let size = range_end -@ idx in
-          Result.ok (FatPtr (ptr', size), state)
+          let ptr' = Sptr.with_meta ptr' (Some size) in
+          Result.ok (Ptr ptr', state)
         else
           (* not sure this is the right diagnostic *)
           Heap.error `OutOfBounds state
@@ -382,7 +362,7 @@ module M (Heap : Heap_intf.S) = struct
       match (args, gargs.const_generics) with
       (* Array with static size *)
       | _, [ size ] -> Typed.int @@ Charon_util.int_of_const_generic size
-      | FatPtr (_, size) :: _, [] -> Typed.cast size
+      | Ptr ptr :: _, [] -> Typed.cast @@ Option.get @@ Sptr.meta ptr
       | _ -> failwith "array_index (fn): couldn't calculate size"
     in
     let ptr, idx_from, idx_to =
@@ -410,17 +390,14 @@ module M (Heap : Heap_intf.S) = struct
       | [ size ] -> Charon_util.int_of_const_generic size
       | _ -> failwith "array_slice: unexpected generic constants"
     in
-    let arr_ptr =
-      match args with
-      | [ Ptr arr_ptr ] -> arr_ptr
-      | _ -> failwith "array_index: unexpected arguments"
-    in
-    let slice = FatPtr (arr_ptr, Typed.int size) in
-    Result.ok (slice, state)
+    match args with
+    | [ Ptr (arr_ptr, None) ] ->
+        Result.ok (Ptr (arr_ptr, Some (Typed.int size)), state)
+    | _ -> failwith "array_index: unexpected arguments"
 
   let slice_len _ ~crate:_ ~args ~state =
     match args with
-    | [ FatPtr (_, len) ] -> Result.ok (Base len, state)
+    | [ Ptr (_, Some len) ] -> Result.ok (Base len, state)
     | _ -> failwith "slice_len: unexpected arguments"
 
   let discriminant_value (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
@@ -441,21 +418,19 @@ module M (Heap : Heap_intf.S) = struct
 
   let to_string _ ~crate:_ ~args ~state =
     match args with
-    | [ (FatPtr (_, len) as slice) ] ->
+    | [ (Ptr (_, Some len) as slice) ] ->
         Result.ok (Struct [ slice; Base len ], state)
     | _ -> failwith "to_string: unexpected value"
 
   let str_chars _ ~crate:_ ~args ~state =
     let ptr, len =
       match args with
-      | [ FatPtr (ptr, len) ] -> (ptr, len)
+      | [ Ptr ((_, Some len) as ptr) ] -> (ptr, len)
       | _ -> failwith "str_chars: unexpected value"
     in
     let len = Typed.cast len in
-    let ptr_loc, ptr_off = Typed.Ptr.decompose ptr in
-    let ty_size = Layout.size_of_literal_ty TChar in
-    let arr_end_ofs = ptr_off +@ (Typed.int ty_size *@ len) in
-    let arr_end = Typed.Ptr.mk ptr_loc arr_end_ofs in
+    let ty = Types.TLiteral TChar in
+    let arr_end = Sptr.offset ~ty ptr len in
     Result.ok (Struct [ Ptr ptr; Ptr arr_end ], state)
 
   let iter_nth (fun_sig : GAst.fun_sig) ~crate ~args ~state =
@@ -485,12 +460,13 @@ module M (Heap : Heap_intf.S) = struct
       | Struct [ Ptr start_ptr; Ptr end_ptr ] -> (start_ptr, end_ptr)
       | _ -> failwith "iter_nth: unexpected iter structure"
     in
-    let start_loc, start_ofs = Typed.Ptr.decompose start_ptr in
-    let end_loc, end_ofs = Typed.Ptr.decompose end_ptr in
+    let start_loc, start_ofs = Typed.Ptr.decompose @@ fst start_ptr in
+    let end_loc, end_ofs = Typed.Ptr.decompose @@ fst end_ptr in
     if%sat start_loc ==@ end_loc then
       let ofs = start_ofs +@ (idx *@ sub_ty_size) in
       if%sat ofs <@ end_ofs then
         let ptr = Typed.Ptr.mk start_loc ofs in
+        let ptr = (ptr, None) in
         let iter' = Struct [ Ptr ptr; Ptr end_ptr ] in
         let** value, state = Heap.load ptr sub_ty state in
         let++ (), state = Heap.store iter_ptr iter_ty iter' state in
@@ -530,7 +506,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     let++ str_obj, state = Heap.load str_ptr str_ty state in
     match str_obj with
-    | Struct [ FatPtr (_, len); _ ] -> (Base len, state)
+    | Struct [ Ptr (_, Some len); _ ] -> (Base len, state)
     | _ -> failwith "str_len: unexpected string type"
 
   let assert_zero_is_valid (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
@@ -595,12 +571,10 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> failwith "ptr_offset_from: invalid arguments"
     in
     let offset_constrs = Layout.int_constraints Values.Isize in
-    let* size = Layout.size_of_s ty in
-    let loc, ofs = Typed.Ptr.decompose ptr in
-    let** ofs' = op ofs (v *@ size) state in
-    if%sat Typed.conj (offset_constrs ofs') then
-      let ptr' = Typed.Ptr.mk loc ofs' in
-      Result.ok (Ptr ptr', state)
+    let v = if op = Add then v else ~-v in
+    let ptr' = Sptr.offset ~ty ptr v in
+    let ofs' = Typed.Ptr.ofs @@ fst ptr' in
+    if%sat Typed.conj (offset_constrs ofs') then Result.ok (Ptr ptr', state)
     else Heap.error `Overflow state
 
   let box_into_raw _ ~crate:_ ~args ~state =
@@ -611,7 +585,7 @@ module M (Heap : Heap_intf.S) = struct
   let ptr_offset_from (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     let ptr1, ptr2 =
       match args with
-      | [ Ptr ptr1; Ptr ptr2 ] -> (ptr1, ptr2)
+      | [ Ptr (ptr1, _); Ptr (ptr2, _) ] -> (ptr1, ptr2)
       | _ -> failwith "ptr_offset_from: invalid arguments"
     in
     let ty =
@@ -775,7 +749,7 @@ module M (Heap : Heap_intf.S) = struct
        | IterNth -> iter_nth f.signature
        | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
        | OptUnwrap -> unwrap_opt f.signature
-       | PtrOp op -> ptr_op (op_of op) f.signature
+       | PtrOp op -> ptr_op op f.signature
        | PtrOffsetFrom -> ptr_offset_from f.signature
        | ResUnwrap -> unwrap_res f.signature
        | SizeOf -> size_of f.signature
