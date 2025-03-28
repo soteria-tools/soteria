@@ -392,7 +392,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     match args with
     | [ Ptr arr_ptr ] ->
-      let ptr' = Sptr.with_meta ~meta:(Typed.int size) arr_ptr in
+        let ptr' = Sptr.with_meta ~meta:(Typed.int size) arr_ptr in
         Result.ok (Ptr ptr', state)
     | _ -> failwith "array_index: unexpected arguments"
 
@@ -419,7 +419,7 @@ module M (Heap : Heap_intf.S) = struct
 
   let to_string _ ~crate:_ ~args ~state =
     match args with
-    | [ (Ptr (ptr) as slice) ] ->
+    | [ (Ptr ptr as slice) ] ->
         Result.ok (Struct [ slice; Base (Option.get @@ Sptr.meta ptr) ], state)
     | _ -> failwith "to_string: unexpected value"
 
@@ -569,7 +569,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     let v = if op = Add then v else ~-v in
     let ptr' = Sptr.offset ~ty ptr v in
-    if%sat Sptr.constraints ptr'  then Result.ok (Ptr ptr', state)
+    if%sat Sptr.constraints ptr' then Result.ok (Ptr ptr', state)
     else Heap.error `Overflow state
 
   let box_into_raw _ ~crate:_ ~args ~state =

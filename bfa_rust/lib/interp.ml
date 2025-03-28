@@ -118,31 +118,20 @@ module Make (Heap : Heap_intf.S) = struct
         let** v, state = Heap.load ptr base.ty state in
         let v = as_ptr v in
         L.debug (fun f ->
-            f "Dereferenced pointer %a to pointer %a" Sptr.pp ptr
-              Sptr.pp v);
+            f "Dereferenced pointer %a to pointer %a" Sptr.pp ptr Sptr.pp v);
         Result.ok (v, state)
     | PlaceProjection (base, Field (kind, field)) ->
         let** ptr, state = resolve_place ~store state base in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
-        let field = Types.FieldId.to_int field in
-        let layout, field =
-          match kind with
-          | ProjAdt (adt_id, Some variant) ->
-              (* Skip discriminator, so field + 1 *)
-              (Layout.of_enum_variant adt_id variant, field + 1)
-          | ProjAdt (adt_id, None) -> (Layout.of_adt_id adt_id, field)
-          | ProjTuple _arity -> (Layout.layout_of base.ty, field)
-        in
-        let offset = Array.get layout.members_ofs field in
-        let ptr' = Sptr.offset ptr (Typed.int offset) in
+        let ptr' = Sptr.project base.ty kind field ptr in
         L.debug (fun f ->
             f
-              "Dereferenced ADT projection %a, field %d, with pointer %a to \
+              "Dereferenced ADT projection %a, field %a, with pointer %a to \
                pointer %a"
-              Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp
-              ptr');
+              Expressions.pp_field_proj_kind kind Types.pp_field_id field
+              Sptr.pp ptr Sptr.pp ptr');
         Result.ok (ptr', state)
 
   let rec equality_check ~state (v1 : [< Typed.T.cval ] Typed.t)
@@ -235,8 +224,8 @@ module Make (Heap : Heap_intf.S) = struct
     match expr with
     | Use op -> eval_operand state op
     | RvRef (place, _borrow) ->
-      let++ ptr, state = resolve_place ~store state place in
-      (Ptr ptr, state)
+        let++ ptr, state = resolve_place ~store state place in
+        (Ptr ptr, state)
     | Global { global_id; _ } ->
         let decl =
           UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
@@ -454,7 +443,7 @@ module Make (Heap : Heap_intf.S) = struct
     | Len (place, _, size_opt) ->
         let** ptr, state = resolve_place ~store state place in
         let+ len =
-          match ( Sptr.meta ptr, size_opt) with
+          match (Sptr.meta ptr, size_opt) with
           | _, Some size -> return (Typed.int @@ int_of_const_generic size)
           | Some len, None -> return len
           | _ -> not_impl "Unexpected len rvalue"
@@ -645,8 +634,7 @@ module Make (Heap : Heap_intf.S) = struct
     in
     let protected_address =
       match (fundef.signature.output, value) with
-      | TRef (RStatic, _, RShared), Ptr addr ->
-          Some addr
+      | TRef (RStatic, _, RShared), Ptr addr -> Some addr
       | _ -> None
     in
     let++ state = dealloc_store ?protected_address store state in
