@@ -96,7 +96,7 @@ let parse_ullbc_of_file ~no_compile file_name =
     try
       output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json
     with
-    | Sys_error _ -> raise (ExecutionError "File doesn't exist")
+    | Sys_error _ -> raise (CharonError "File doesn't exist")
     | _ -> raise (CharonError "Failed to parse ULLBC")
   in
   match crate with

@@ -33,6 +33,7 @@ let error_to_diagnostic_opt ~uri (err, call_trace) =
         (Error, "Undefined Behavior for Pointer Comparison")
     | `UBPointerArithmetic ->
         (Error, "Undefined Behavior for Pointer Arithmetic")
+    | `UBTransmute -> (Error, "Undefined Behavior for Transmutation")
     | `InvalidFree -> (Error, "Invalid Pointer passed to free")
     | `Memory_leak -> (Warning, "Memory leak")
     | `FailedAssert -> (Error, "FailedAssert")

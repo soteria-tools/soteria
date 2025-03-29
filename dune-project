@@ -43,6 +43,7 @@
     (>= 3.14.0)))
   ppxlib
   (ppx_inline_test :with-test)
+  printbox-text
   (ocamlformat
    (and
     :with-dev-detup
@@ -67,7 +68,6 @@
   cmdliner
   fmt
   logs
-  printbox-text
   (linol
    (>= 0.8))
   (linol-eio
@@ -125,7 +125,6 @@
   cmdliner
   fmt
   logs
-  printbox-text
   unionFind
   name_matcher_parser
   charon

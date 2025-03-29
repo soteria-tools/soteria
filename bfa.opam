@@ -27,6 +27,7 @@ depends: [
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ppxlib"
   "ppx_inline_test" {with-test}
+  "printbox-text"
   "ocamlformat" {with-dev-detup & = "0.27.0"}
   "ocaml-lsp-server" {with-dev-detup}
 ]

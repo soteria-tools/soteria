@@ -142,6 +142,7 @@ let pp_err ft (err, call_trace) =
     | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
     | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
     | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
+    | `UBTransmute -> Fmt.string ft "UBTransmute"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `Memory_leak -> Fmt.string ft "Memory leak"
