@@ -10,13 +10,20 @@ module type S = sig
   val pp : t Fmt.t
   val null_ptr : t
 
-  (** pointer equality, irrespective of metadata *)
+  (** Pointer equality, irrespective of metadata *)
   val eq : t -> t -> sbool Typed.t
 
+  (** If this is the null pointer *)
   val is_null : t -> sbool Typed.t
+
+  (** If these two pointers are at the same location (ie. same allocation) *)
   val is_same_loc : t -> t -> sbool Typed.t
-  val is_before : t -> t -> sbool Typed.t
+
+  (** The distance, in bytes, between two pointers -- assumes they are at the
+      same location. *)
   val distance : t -> t -> sint Typed.t
+
+  (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
 
   (** [offset ~ty ptr off] Offsets [ptr] by the size of [ty] * [off]. [ty]
@@ -29,18 +36,21 @@ module type S = sig
   (** Sets the metadata of the pointer *)
   val with_meta : ?meta:T.cval Typed.t -> t -> t
 
-  (** Project a pointer to a field *)
+  (** Project a pointer to a field of the given type. *)
   val project :
     Types.ty -> Expressions.field_proj_kind -> Types.field_id -> t -> t
 end
 
-module T : S with type t = T.sptr Typed.t * T.cval Typed.t option = struct
+(** A pointer that can perform pointer arithmetics -- all pointers are a pair of
+    location and offset, along with an optional metadata. *)
+module ArithPtr : S with type t = T.sptr Typed.t * T.cval Typed.t option =
+struct
   type t = T.sptr Typed.t * T.cval Typed.t option
 
   let pp fmt (ptr, meta) =
-    Format.fprintf fmt "(%a, %a)" Typed.ppa ptr
-      Fmt.(option ~none:(Fmt.any "-") Typed.ppa)
-      meta
+    match meta with
+    | Some meta -> Format.fprintf fmt "%a (%a)" Typed.ppa ptr Typed.ppa meta
+    | None -> Format.fprintf fmt "%a" Typed.ppa ptr
 
   let null_ptr = (Typed.Ptr.null, None)
   let eq (ptr1, _) (ptr2, _) = ptr1 ==@ ptr2
@@ -49,7 +59,6 @@ module T : S with type t = T.sptr Typed.t * T.cval Typed.t option = struct
   let is_same_loc (ptr1, _) (ptr2, _) =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
 
-  let is_before (ptr1, _) (ptr2, _) = Typed.Ptr.ofs ptr1 <@ Typed.Ptr.ofs ptr2
   let distance (ptr1, _) (ptr2, _) = Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
 
   let constraints =

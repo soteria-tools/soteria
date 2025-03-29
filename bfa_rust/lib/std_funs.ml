@@ -463,7 +463,8 @@ module M (Heap : Heap_intf.S) = struct
     in
     if%sat Sptr.is_same_loc start_ptr end_ptr then
       let ptr = Sptr.offset ~ty:sub_ty start_ptr idx in
-      if%sat Sptr.is_before ptr end_ptr then
+      let dist = Sptr.distance ptr end_ptr in
+      if%sat dist <@ 0s then
         let iter' = Struct [ Ptr ptr; Ptr end_ptr ] in
         let** value, state = Heap.load ptr sub_ty state in
         let++ (), state = Heap.store iter_ptr iter_ty iter' state in

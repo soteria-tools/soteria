@@ -7,7 +7,7 @@ open T
 open Charon_util
 open Rustsymex
 open Rustsymex.Syntax
-module Sptr = Sptr.T
+module Sptr = Sptr.ArithPtr
 open Layout
 
 type cval_info = {

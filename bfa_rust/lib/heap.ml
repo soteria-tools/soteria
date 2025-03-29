@@ -3,7 +3,7 @@ open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
 open Rustsymex
-module Sptr = Sptr.T
+module Sptr = Sptr.ArithPtr
 
 type 'a err = 'a * Call_trace.t
 
