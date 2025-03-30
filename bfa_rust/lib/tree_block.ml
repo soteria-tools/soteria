@@ -561,7 +561,8 @@ let assert_exclusively_owned t =
             ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
-let load ?is_move ofs size ty t =
+let load ?is_move ofs ty t =
+  let size = Typed.int @@ Layout.size_of_literal_ty ty in
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
@@ -569,10 +570,11 @@ let load ?is_move ofs size ty t =
   in
   (res, to_opt tree)
 
-let store ofs size ty sval t =
+let store ofs ty sval t =
   match t with
   | None -> miss_no_fix ~msg:"outer store" ()
   | Some t ->
+      let size = Typed.int @@ Layout.size_of_literal_ty ty in
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
         Tree.store ofs size ty sval t.root

@@ -117,18 +117,18 @@ let load ?is_move ((_, meta) as ptr) ty st =
         let rec aux block = function
           | `Done v -> Result.ok (v, block)
           | `More (blocks, callback) ->
-              let pp_block ft (ty, size, ofs) =
-                Fmt.pf ft "%s [%a, +%a[ "
+              let pp_block ft (ty, ofs) =
+                Fmt.pf ft "%s [%a] "
                   (Charon_util.lit_to_string ty)
-                  Typed.ppa ofs Typed.ppa size
+                  Typed.ppa ofs
               in
               L.debug (fun f ->
                   f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
               let** values, block =
                 Result.fold_list blocks ~init:([], block)
-                  ~f:(fun (vals, block) (ty, size, ofs) ->
+                  ~f:(fun (vals, block) (ty, ofs) ->
                     let++ value, block =
-                      Tree_block.load ?is_move ofs size ty block
+                      Tree_block.load ?is_move ofs ty block
                     in
                     (value :: vals, block))
               in
@@ -152,16 +152,16 @@ let store ptr ty sval st =
   else
     with_ptr ptr st (fun ~ofs block ->
         let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
-        let pp_quad f ({ value; ty; size; offset } : Encoder.cval_info) =
-          Fmt.pf f "%a: %s [%a, +%a[" Typed.ppa value
+        let pp_quad f ({ value; ty; offset } : Encoder.cval_info) =
+          Fmt.pf f "%a: %s [%a]" Typed.ppa value
             (Charon_util.lit_to_string ty)
-            Typed.ppa offset Typed.ppa size
+            Typed.ppa offset
         in
         L.debug (fun f ->
             f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_quad) parts);
         Result.fold_list parts ~init:((), block)
-          ~f:(fun ((), block) { value; ty; size; offset } ->
-            Tree_block.store offset size ty value block))
+          ~f:(fun ((), block) { value; ty; offset } ->
+            Tree_block.store offset ty value block))
 
 let copy_nonoverlapping ~dst ~src ~size st =
   let open Typed.Infix in
