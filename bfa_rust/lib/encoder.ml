@@ -13,6 +13,7 @@ open Layout
 type cval_info = {
   value : cval Typed.t;
   ty : Types.literal_type;
+  size : sint Typed.t;
   offset : sint Typed.t;
 }
 
@@ -37,29 +38,35 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
 
   match (v, ty) with
   (* Literals *)
-  | Base value, TLiteral ty -> [ { value; ty; offset } ]
+  | Base value, TLiteral ty ->
+      let size = Typed.int (size_of_literal_ty ty) in
+      [ { value; ty; size; offset } ]
   | Ptr (value, None), TLiteral (TInteger (Isize | Usize) as ty) ->
-      [ { value :> cval Typed.t; ty; offset } ]
+      let size = Typed.int (size_of_literal_ty ty) in
+      [ { value :> cval Typed.t; ty; size; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
   | Ptr (value, meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
   | Ptr (value, meta), TRef (_, sub_ty, _)
   | Ptr (value, meta), TRawPtr (sub_ty, _) -> (
       match (meta, is_fat_ptr sub_ty) with
-      | _, false -> [ { value :> cval Typed.t; ty = TInteger Isize; offset } ]
+      | _, false ->
+          let size = Typed.int Archi.word_size in
+          [ { value :> cval Typed.t; ty = TInteger Isize; size; offset } ]
       | Some meta, true ->
           let size = Typed.int Archi.word_size in
           let isize = Values.TInteger Isize in
           [
-            { value :> cval Typed.t; ty = isize; offset };
-            { value = meta; ty = isize; offset = offset +@ size };
+            { value :> cval Typed.t; ty = isize; size; offset };
+            { value = meta; ty = isize; size; offset = offset +@ size };
           ]
       | None, true -> failwith "Expected a fat pointer, got a thin pointer.")
   (* References / Pointers obtained from casting *)
   | Base value, TAdt (TBuiltin TBox, _)
   | Base value, TRef _
   | Base value, TRawPtr _ ->
-      [ { value; ty = TInteger Isize; offset } ]
+      let size = Typed.int Archi.word_size in
+      [ { value; ty = TInteger Isize; size; offset } ]
   | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) ->
@@ -118,12 +125,14 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
             v Types.pp_ty ty);
       failwith "Unhandled rust_value and Charon.ty"
 
-type aux_ret = (Types.literal_type * sint Typed.t) list * parse_callback
+type aux_ret =
+  (Types.literal_type * sint Typed.t * sint Typed.t) list * parse_callback
+
 and parse_callback = cval Typed.t list -> callback_return
 and parser_return = [ `Done of Sptr.t rust_val | `More of aux_ret ]
 and callback_return = parser_return Rustsymex.t
 
-(** Converts a Rust type into a list of C blocks, along with their
+(** Converts a Rust type into a list of C blocks, along with their size and
     offset; once these are read, symbolically decides whether we must keep
     reading. @offset is the initial offset to read from, @meta is the optional
     metadata, that originates from a fat pointer. *)
@@ -132,7 +141,7 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
   let rec aux offset : Types.ty -> parser_return = function
     | TLiteral ty ->
         `More
-          ( [ (ty, offset) ],
+          ( [ (ty, Typed.int (size_of_literal_ty ty), offset) ],
             function
             | [ v ] -> return (`Done (Base v))
             | _ -> failwith "Expected one cval" )
@@ -155,10 +164,12 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
         in
         let ptr_size = Typed.int Archi.word_size in
         let isize = Values.TInteger Isize in
-        `More ([ (isize, offset); (isize, offset +@ ptr_size) ], callback)
+        `More
+          ( [ (isize, ptr_size, offset); (isize, ptr_size, offset +@ ptr_size) ],
+            callback )
     | TAdt (TBuiltin TBox, _) | TRef _ | TRawPtr _ ->
         `More
-          ( [ (TInteger Isize, offset) ],
+          ( [ (TInteger Isize, Typed.int Archi.word_size, offset) ],
             function
             | [ v ] -> (
                 match Typed.cast_checked v Typed.t_ptr with
@@ -232,6 +243,7 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
     let disc = (List.hd variants).discriminant in
     let disc_ty = Values.TInteger disc.int_ty in
     let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
+    let disc_size = Typed.int (size_of_literal_ty disc_ty) in
     let offset = offset +@ (offset %@ disc_align) in
     let callback cval : callback_return =
       let cval = List.hd cval in
@@ -257,7 +269,7 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
             "Vanishing rust_of_cvals, as no variant matches variant id %a"
             Typed.ppa cval
     in
-    `More ([ (TInteger disc.int_ty, offset) ], callback)
+    `More ([ (TInteger disc.int_ty, disc_size, offset) ], callback)
   in
   let off = Option.value ~default:0s offset in
   aux off ty

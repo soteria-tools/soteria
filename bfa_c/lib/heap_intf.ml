@@ -21,7 +21,6 @@ module type S = sig
     ( cval Typed.t * t,
       [> `NullDereference
       | `OutOfBounds
-      | `UBTransmute
       | `UninitializedMemoryAccess
       | `UseAfterFree ]
       err,

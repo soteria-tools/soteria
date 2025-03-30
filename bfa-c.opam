@@ -26,6 +26,7 @@ depends: [
   "cmdliner"
   "fmt"
   "logs"
+  "printbox-text"
   "linol" {>= "0.8"}
   "linol-eio" {>= "0.8"}
   "odoc" {with-doc}

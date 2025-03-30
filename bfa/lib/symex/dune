@@ -1,7 +1,7 @@
 (library
  (public_name bfa.bfa_symex)
  (name bfa_symex)
- (libraries bfa_std simple_smt fmt logs iter printbox-text)
+ (libraries bfa_std simple_smt fmt logs iter)
  (flags :standard -open Bfa_std)
  (preprocess
   (pps ppx_symex ppx_deriving.std)))

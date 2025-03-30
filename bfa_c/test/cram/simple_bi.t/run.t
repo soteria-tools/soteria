@@ -7,13 +7,11 @@
       memory_leak = false }
       manifest bugs: []
     { args = [&(V|0|, V|1|)];
-      pre =
-      [[(V|0|, [TypedVal {offset = V|1|; v = { ty = signed int; v = V|3| }}])]];
+      pre = [[(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])]];
       pc =
       [Not((0 Eq V|0|)); (V|3| Leq 2147483647); (-2147483648 Leq V|3|);
         Not((V|0| Eq 0))];
-      post =
-      [(V|0|, [TypedVal {offset = V|1|; v = { ty = signed int; v = V|3| }}])];
+      post = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
       ret = (Ok V|3|); memory_leak = false }
       manifest bugs: []
   
@@ -27,13 +25,11 @@
       memory_leak = false }
       manifest bugs: []
     { args = [&(V|0|, V|1|)];
-      pre =
-      [[(V|0|, [TypedVal {offset = V|1|; v = { ty = signed int; v = V|3| }}])]];
+      pre = [[(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])]];
       pc =
       [Not((0 Eq V|0|)); (V|3| Leq 2147483647); (-2147483648 Leq V|3|);
         Not((V|0| Eq 0))];
-      post =
-      [(V|0|, [TypedVal {offset = V|1|; v = { ty = signed int; v = V|3| }}])];
+      post = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
       ret = (Ok V|3|); memory_leak = false }
       manifest bugs: []
   

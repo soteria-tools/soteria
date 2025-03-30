@@ -24,6 +24,7 @@ depends: [
   "cmdliner"
   "fmt"
   "logs"
+  "printbox-text"
   "unionFind"
   "name_matcher_parser"
   "charon"
