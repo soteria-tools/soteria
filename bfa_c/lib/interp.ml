@@ -397,14 +397,14 @@ module Make (Heap : Heap_intf.S) = struct
     | AilEcompoundAssign (lvalue, op, rvalue) ->
         let** rval, state = eval_expr state rvalue in
         let** ptr, state = eval_expr state lvalue in
-        let ty = type_of rvalue in
+        let lty = type_of lvalue in
         (* At this point, lvalue must be a pointer (including to the stack) *)
         let* ptr = cast_to_ptr ptr in
-        let** operand, state = Heap.load ptr ty state in
+        let** operand, state = Heap.load ptr lty state in
         let** res, state =
-          arith ~state (operand, type_of lvalue) op (rval, ty)
+          arith ~state (operand, lty) op (rval, type_of rvalue)
         in
-        let++ (), state = Heap.store ptr ty res state in
+        let++ (), state = Heap.store ptr lty res state in
         (res, state)
     | AilSyntax.AilEsizeof (_quals, ty) ->
         let+ res = Layout.size_of_s ty in
