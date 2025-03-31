@@ -14,6 +14,18 @@ module type KeyS = sig
   val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
 end
 
+module Mk_concrete_key (Symex : Symex.S) (Key : Bfa_std.Ordered_type.S) :
+  KeyS with module Symex = Symex and type t = Key.t = struct
+  module Symex = Symex
+  include Key
+
+  let sem_eq x y = Symex.Value.bool (Key.compare x y = 0)
+  let fresh ?constrs:_ () = failwith "Fresh not implemented for concrete keys"
+  let distinct _ = Symex.Value.bool true
+  let subst _ x = x
+  let iter_vars _ = fun _ -> ()
+end
+
 module Build_from_find_opt_sym
     (Symex : Symex.S)
     (Key : KeyS with module Symex = Symex)
@@ -167,6 +179,22 @@ struct
         in
         if%sat1 not_in_map then Symex.return (key, None)
         else find_bindings (M'.bindings st)
+
+  include
+    Build_from_find_opt_sym (Symex) (Key)
+      (struct
+        let f = find_opt_sym
+      end)
+end
+
+(** Only sound to use if the keys of the map are invariant under interpretations
+    of the symbolic variables *)
+module Concrete (Symex : Symex.S) (Key : Bfa_std.Ordered_type.S) = struct
+  module Key = Mk_concrete_key (Symex) (Key)
+  module M' = Stdlib.Map.Make (Key)
+
+  let find_opt_sym (key : Key.t) (st : 'a M'.t) =
+    Symex.return (key, M'.find_opt key st)
 
   include
     Build_from_find_opt_sym (Symex) (Key)

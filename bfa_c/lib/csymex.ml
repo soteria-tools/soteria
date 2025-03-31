@@ -86,4 +86,5 @@ let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 module Freeable = Bfa_symex.Freeable.Make (SYMEX)
 module Pmap_direct_access = Bfa_symex.Pmap.Direct_access (SYMEX)
 module Pmap = Bfa_symex.Pmap.Make (SYMEX)
+module Concrete_map = Bfa_symex.Pmap.Concrete (SYMEX)
 module Bi = Bfa_symex.Bi_abd.Make (SYMEX)

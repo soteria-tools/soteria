@@ -1,9 +1,19 @@
 open Typed
 open T
 
+module Template = struct
+  type ('a, 'b) t = { heap : 'a; globs : 'b }
+  [@@deriving show { with_path = false }]
+end
+
 module type S = sig
   type t
-  type serialized
+
+  type serialized =
+    ( (sloc Typed.t * Tree_block.serialized Csymex.Freeable.serialized) list,
+      (Cerb_frontend.Symbol.sym * sloc Typed.t) list )
+    Template.t
+
   type 'a err
 
   val add_to_call_trace : 'a err -> Call_trace.element -> 'a err

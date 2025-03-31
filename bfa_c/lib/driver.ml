@@ -176,7 +176,9 @@ let exec_main file_name =
     let* entry_point, sigma = parse_ail file_name in
     let () = Initialize_analysis.reinit sigma in
     let symex =
-      Wpst_interp.exec_fun ~prog:sigma ~args:[] ~state:Heap.empty entry_point
+      let open Csymex.Syntax in
+      let* state = Wpst_interp.init_prog_state sigma in
+      Wpst_interp.exec_fun ~prog:sigma ~args:[] ~state entry_point
     in
     Ok (Csymex.run symex)
   in

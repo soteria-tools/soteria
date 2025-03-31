@@ -9,8 +9,11 @@ module type Codom = sig
 
   type t
 
+  val pp : Format.formatter -> t -> unit
   val fresh : unit -> t Symex.t
   val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
+  val subst : (Var.t -> Var.t) -> t -> t
+  val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
 end
 
 module Make (C : Codom) = struct
@@ -20,7 +23,11 @@ module Make (C : Codom) = struct
   type t = C.t
   type serialized = t
 
-  let pp pp_value = pp_value
+  let serialize s = s
+  let subst_serialized subst_var s = C.subst subst_var s
+  let iter_vars_serialized s f = C.iter_vars s f
+  let pp = C.pp
+  let pp_serialized = pp
 
   let load (st : t option) : ('a * t option, 'err, 'fix list) Symex.Result.t =
     match st with
@@ -43,6 +50,6 @@ module Make (C : Codom) = struct
     Some new_x
 
   let consume (serialized : serialized) (t : t option) =
-    let+ new_x = aux serialized t in
-    Symex.Result.ok (new_x, Some new_x)
+    let+ st = produce serialized t in
+    Compo_res.Ok st
 end

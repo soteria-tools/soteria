@@ -3,6 +3,7 @@ open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
 open Csymex
+open Heap_intf.Template
 
 type 'a err = 'a * Call_trace.t
 
@@ -24,39 +25,54 @@ module SPmap = Pmap_direct_access (struct
   let fresh ?constrs () = Csymex.nondet ?constrs Typed.t_loc
 end)
 
-type t = Tree_block.t Freeable.t SPmap.t option
+type t = (Tree_block.t Freeable.t SPmap.t option, Globs.t) Heap_intf.Template.t
 [@@deriving show { with_path = false }]
 
-type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
+type serialized =
+  ( Tree_block.serialized Freeable.serialized SPmap.serialized,
+    Globs.serialized )
+  Heap_intf.Template.t
 [@@deriving show { with_path = false }]
 
-let serialize st =
-  match st with
-  | None -> []
-  | Some st -> SPmap.serialize (Freeable.serialize Tree_block.serialize) st
+let serialize (st : t) : serialized =
+  let heap =
+    match st.heap with
+    | None -> []
+    | Some st -> SPmap.serialize (Freeable.serialize Tree_block.serialize) st
+  in
+  let globs = Globs.serialize st.globs in
+  { heap; globs }
 
 let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
     (serialized : serialized) : serialized =
-  SPmap.subst_serialized
-    (Freeable.subst_serialized Tree_block.subst_serialized)
-    subst_var serialized
+  let heap =
+    SPmap.subst_serialized
+      (Freeable.subst_serialized Tree_block.subst_serialized)
+      subst_var serialized.heap
+  in
+  let globs = Globs.subst_serialized subst_var serialized.globs in
+  { heap; globs }
 
 let iter_vars_serialized (s : serialized) :
     (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit =
-  SPmap.iter_vars_serialized
-    (Freeable.iter_vars_serialized Tree_block.iter_vars_serialized)
-    s
+  let iter_heap =
+    SPmap.iter_vars_serialized
+      (Freeable.iter_vars_serialized Tree_block.iter_vars_serialized)
+      s.heap
+  in
+  let iter_globs = Globs.iter_vars_serialized s.globs in
+  Iter.append iter_heap iter_globs
 
 let pp_pretty ~ignore_freed ft st =
   let ignore =
     if ignore_freed then function _, Freeable.Freed -> true | _ -> false
     else fun _ -> false
   in
-  match st with
+  match st.heap with
   | None -> Fmt.pf ft "Empty Heap"
   | Some st -> SPmap.pp ~ignore (Freeable.pp Tree_block.pp_pretty) ft st
 
-let empty = None
+let empty = { heap = None; globs = Globs.empty }
 
 let log action ptr st =
   L.debug (fun m ->
@@ -64,6 +80,25 @@ let log action ptr st =
         Typed.ppa ptr Fmt_ail.pp_loc (get_loc ())
         (pp_pretty ~ignore_freed:true)
         st)
+
+let with_heap st f =
+  let+ res = f st.heap in
+  match res with
+  | Bfa_symex.Compo_res.Ok (v, h) ->
+      Bfa_symex.Compo_res.Ok (v, { st with heap = h })
+  | Missing fixes ->
+      let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
+      Missing fixes
+  | Error e -> Error e
+
+let with_heap_read_only st f =
+  let+ res = f st.heap in
+  match res with
+  | Bfa_symex.Compo_res.Ok v -> Bfa_symex.Compo_res.Ok v
+  | Missing fixes ->
+      let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
+      Missing fixes
+  | Error e -> Error e
 
 let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
@@ -73,7 +108,8 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     ('a * t, 'err, serialized list) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
-  (SPmap.wrap (Freeable.wrap (f ~ofs))) loc st
+  let@ heap = with_heap st in
+  (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap
 
 let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
@@ -83,7 +119,8 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
     ('a, 'err, serialized list) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
-  (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc st
+  let@ heap = with_heap_read_only st in
+  (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc heap
 
 let load ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
@@ -118,8 +155,9 @@ let alloc size st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
   let@ () = with_error_loc_as_call_trace () in
+  let@ heap = with_heap st in
   let block = Freeable.Alive (Tree_block.alloc size) in
-  let** loc, st = SPmap.alloc ~new_codom:block st in
+  let** loc, st = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
   let+ () = Typed.(assume [ not (loc ==@ Ptr.null_loc) ]) in
@@ -134,23 +172,51 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) :
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ () = with_loc_err () in
+    let@ heap = with_heap st in
     (SPmap.wrap
        (Freeable.free
           ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
-      (Typed.Ptr.loc ptr) st
+      (Typed.Ptr.loc ptr) heap
   else error `InvalidFree
 
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in
   error err
 
-let produce (serialized : serialized) (heap : t) : t Csymex.t =
+let produce (serialized : serialized) (st : t) : t Csymex.t =
   let non_null_locs =
-    List.map (fun (loc, _) -> Typed.not (Typed.Ptr.null_loc ==@ loc)) serialized
+    let locs =
+      let heap_locs = List.to_seq serialized.heap |> Seq.map fst in
+      let globs_locs = List.to_seq serialized.globs |> Seq.map snd in
+      Seq.append heap_locs globs_locs
+    in
+    Seq.map (fun loc -> Typed.not (Typed.Ptr.null_loc ==@ loc)) locs
+    |> List.of_seq
   in
   let* () = Csymex.assume non_null_locs in
-  SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
+  let* heap =
+    SPmap.produce (Freeable.produce Tree_block.produce) serialized.heap st.heap
+  in
+  let+ globs = Globs.produce serialized.globs st.globs in
+  { heap; globs }
 
-let consume (serialized : serialized) (heap : t) :
+let consume (serialized : serialized) (st : t) :
     (t, 'err, serialized list) Csymex.Result.t =
-  SPmap.consume (Freeable.consume Tree_block.consume) serialized heap
+  let** globs =
+    let+ res = Globs.consume serialized.globs st.globs in
+    match res with
+    | Ok globs -> Bfa_symex.Compo_res.Ok globs
+    | Error e -> Error e
+    | Missing fixes ->
+        let fixes = List.map (fun fix -> { heap = []; globs = fix }) fixes in
+        Missing fixes
+  in
+  let+ res =
+    SPmap.consume (Freeable.consume Tree_block.consume) serialized.heap st.heap
+  in
+  match res with
+  | Ok heap -> Bfa_symex.Compo_res.Ok { heap; globs }
+  | Error e -> Error e
+  | Missing fixes ->
+      let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
+      Missing fixes

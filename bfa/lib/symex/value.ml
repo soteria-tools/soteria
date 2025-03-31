@@ -10,4 +10,5 @@ module type S = sig
   val subst : (Var.t -> Var.t) -> 'a t -> 'a t
   val mk_var : Var.t -> 'a ty -> 'a t
   val as_bool : 'a t -> bool option
+  val bool : bool -> sbool t
 end
