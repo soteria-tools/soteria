@@ -10,7 +10,7 @@ module type S = sig
   val pp : t Fmt.t
   val null_ptr : t
 
-  (** Pointer equality, irrespective of metadata *)
+  (** Pointer equality *)
   val eq : t -> t -> sbool Typed.t
 
   (** If this is the null pointer *)
@@ -30,12 +30,6 @@ module type S = sig
       defaults to u8. *)
   val offset : ?ty:Charon.Types.ty -> t -> sint Typed.t -> t
 
-  (** The metadata of the pointer, if it's a fat pointer *)
-  val meta : t -> T.cval Typed.t option
-
-  (** Sets the metadata of the pointer *)
-  val with_meta : ?meta:T.cval Typed.t -> t -> t
-
   (** Project a pointer to a field of the given type. *)
   val project :
     Types.ty -> Expressions.field_proj_kind -> Types.field_id -> t -> t
@@ -43,40 +37,31 @@ end
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
-module ArithPtr :
-  S with type t = T.sptr Typed.t * T.cval Typed.t option * Tree_borrow.tag =
-struct
-  type t = T.sptr Typed.t * T.cval Typed.t option * Tree_borrow.tag
+module ArithPtr : S with type t = T.sptr Typed.t * Tree_borrow.tag = struct
+  type t = T.sptr Typed.t * Tree_borrow.tag
 
-  let pp fmt (ptr, meta, tag) =
-    let pp_meta fmt m = Fmt.pf fmt "[%a]" Typed.ppa m in
-    Fmt.pf fmt "%a%a[%a]" Typed.ppa ptr
-      Fmt.(option pp_meta)
-      meta Tree_borrow.pp_tag tag
+  let pp fmt (ptr, tag) =
+    Fmt.pf fmt "%a[%a]" Typed.ppa ptr Tree_borrow.pp_tag tag
 
-  let null_ptr = (Typed.Ptr.null, None, Tree_borrow.zero)
-  let eq (ptr1, _, _) (ptr2, _, _) = ptr1 ==@ ptr2
-  let is_null (ptr, _, _) = Typed.Ptr.is_null ptr
+  let null_ptr = (Typed.Ptr.null, Tree_borrow.zero)
+  let eq (ptr1, _) (ptr2, _) = ptr1 ==@ ptr2
+  let is_null (ptr, _) = Typed.Ptr.is_null ptr
 
-  let is_same_loc (ptr1, _, _) (ptr2, _, _) =
+  let is_same_loc (ptr1, _) (ptr2, _) =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
 
-  let distance (ptr1, _, _) (ptr2, _, _) =
-    Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
+  let distance (ptr1, _) (ptr2, _) = Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
 
   let constraints =
     let offset_constrs = Layout.int_constraints Values.Isize in
-    fun (ptr, _, _) ->
+    fun (ptr, _) ->
       let ofs = Typed.Ptr.ofs ptr in
       Typed.conj (offset_constrs ofs)
 
-  let offset ?(ty = Types.TLiteral (TInteger U8)) (ptr, meta, tag) off =
+  let offset ?(ty = Types.TLiteral (TInteger U8)) (ptr, tag) off =
     let { size; _ } : Layout.layout = Layout.layout_of ty in
     let ptr' = Typed.Ptr.add_ofs ptr (Typed.int size *@ off) in
-    (ptr', meta, tag)
-
-  let meta (_, meta, _) = meta
-  let with_meta ?meta (ptr, _, tag) = (ptr, meta, tag)
+    (ptr', tag)
 
   let project ty kind field ptr =
     let field = Types.FieldId.to_int field in

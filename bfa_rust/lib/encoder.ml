@@ -38,24 +38,28 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
   match (v, ty) with
   (* Literals *)
   | Base _, TLiteral ty -> [ { value = v; ty; offset } ]
-  | Ptr (_, None, _), TLiteral (TInteger (Isize | Usize) as ty) ->
+  | Ptr _, TLiteral (TInteger (Isize | Usize) as ty) ->
       [ { value = v; ty; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
-  | Ptr ((_, meta, _) as ptr), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
-  | Ptr ((_, meta, _) as ptr), TRef (_, sub_ty, _)
-  | Ptr ((_, meta, _) as ptr), TRawPtr (sub_ty, _) -> (
-      let value = Ptr (Sptr.with_meta ?meta:None ptr) in
-      match (meta, is_fat_ptr sub_ty) with
-      | _, false -> [ { value; ty = TInteger Isize; offset } ]
-      | Some meta, true ->
-          let size = Typed.int Archi.word_size in
-          let isize = Values.TInteger Isize in
-          [
-            { value; ty = isize; offset };
-            { value = Base meta; ty = isize; offset = offset +@ size };
-          ]
-      | None, true -> failwith "Expected a fat pointer, got a thin pointer.")
+  | Ptr (_, None), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+  | Ptr (_, None), TRef (_, sub_ty, _)
+  | Ptr (_, None), TRawPtr (sub_ty, _) ->
+      let ty = Values.TInteger Isize in
+      if is_fat_ptr sub_ty then failwith "Expected a fat pointer"
+      else [ { value = v; ty; offset } ]
+  | Ptr (ptr, Some meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+  | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
+  | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
+      let ty = Values.TInteger Isize in
+      let value = Ptr (ptr, None) in
+      if is_fat_ptr sub_ty then
+        let size = Typed.int Archi.word_size in
+        [
+          { value; ty; offset };
+          { value = Base meta; ty; offset = offset +@ size };
+        ]
+      else [ { value; ty; offset } ]
   (* References / Pointers obtained from casting *)
   | Base _, TAdt (TBuiltin TBox, _) | Base _, TRef _ | Base _, TRawPtr _ ->
       [ { value = v; ty = TInteger Isize; offset } ]
@@ -133,8 +137,8 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
     | TRawPtr (sub_ty, _)
       when is_fat_ptr sub_ty ->
         let callback = function
-          | [ Ptr ptr; Base meta ] ->
-              return @@ `Done (Ptr (Sptr.with_meta ~meta ptr))
+          | [ Ptr (ptr, None); Base meta ] ->
+              return @@ `Done (Ptr (ptr, Some meta))
           | _ -> failwith "Expected a pointer and base"
         in
         let ptr_size = Typed.int Archi.word_size in

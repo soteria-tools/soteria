@@ -15,8 +15,11 @@ module Make (Heap : Heap_intf.S) = struct
 
   exception Unsupported of (string * Meta.span)
 
+  type full_ptr = Sptr.t Charon_util.full_ptr
   type state = Heap.t
-  type store = (Sptr.t option * Types.ty) Store.t
+  type store = (full_ptr option * Types.ty) Store.t
+
+  let pp_full_ptr = Charon_util.pp_full_ptr Sptr.pp
 
   let cast_checked ~ty x =
     match Typed.cast_checked x ty with
@@ -31,7 +34,8 @@ module Make (Heap : Heap_intf.S) = struct
     state:state ->
     (Sptr.t rust_val * state, 'err, Heap.serialized list) Result.t
 
-  let alloc_stack (locals : GAst.locals) args st =
+  let alloc_stack (locals : GAst.locals) args st :
+      (store * state, 'e, 'm) Result.t =
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
@@ -54,10 +58,10 @@ module Make (Heap : Heap_intf.S) = struct
         | Some ptr, None ->
             let++ (), st = Heap.free ptr st in
             st
-        | Some ptr, Some protect ->
+        | Some ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.eq ptr protect then Result.ok st
             else
-              let++ (), st = Heap.free ptr st in
+              let++ (), st = Heap.free fptr st in
               st)
 
   let resolve_constant (const : Expressions.constant_expr) state =
@@ -85,9 +89,8 @@ module Make (Heap : Heap_intf.S) = struct
             let str_ty : Types.ty = mk_array_ty (TLiteral TChar) len in
             let** ptr, state = Heap.alloc_ty str_ty state in
             let** (), state = Heap.store ptr str_ty char_arr state in
-            let value = Sptr.with_meta ~meta:(Typed.int len) ptr in
-            let++ (), state = Heap.store_str_global str value state in
-            (Ptr value, state))
+            let++ (), state = Heap.store_str_global str ptr state in
+            (Ptr ptr, state))
     | e ->
         Fmt.kstr not_impl "TODO: resolve_constant %a"
           Expressions.pp_raw_constant_expr e
@@ -96,7 +99,8 @@ module Make (Heap : Heap_intf.S) = struct
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ~store state ({ kind; _ } : Expressions.place) =
+  let rec resolve_place ~store state ({ kind; _ } : Expressions.place) :
+      (full_ptr * state, 'e, 'm) Result.t =
     match kind with
     (* Just a variable *)
     | PlaceBase var -> (
@@ -104,7 +108,7 @@ module Make (Heap : Heap_intf.S) = struct
         match ptr with
         | Some ptr ->
             L.debug (fun f ->
-                f "Found pointer %a of variable %a" Sptr.pp ptr
+                f "Found pointer %a of variable %a" pp_full_ptr ptr
                   Expressions.pp_var_id var);
             Result.ok (ptr, state)
         | None ->
@@ -114,14 +118,16 @@ module Make (Heap : Heap_intf.S) = struct
     | PlaceProjection (base, Deref) ->
         let** ptr, state = resolve_place ~store state base in
         L.debug (fun f ->
-            f "Dereferencing ptr %a of %a" Sptr.pp ptr Types.pp_ty base.ty);
+            f "Dereferencing ptr %a of %a" pp_full_ptr ptr Types.pp_ty base.ty);
         let** v, state = Heap.load ptr base.ty state in
         let v = as_ptr v in
         L.debug (fun f ->
-            f "Dereferenced pointer %a to pointer %a" Sptr.pp ptr Sptr.pp v);
+            f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
+              pp_full_ptr v);
         Result.ok (v, state)
     | PlaceProjection (base, Field (kind, field)) ->
-        let** ptr, state = resolve_place ~store state base in
+        (* when projecting, we lose the metadata *)
+        let** (ptr, _), state = resolve_place ~store state base in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
@@ -132,7 +138,7 @@ module Make (Heap : Heap_intf.S) = struct
                pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
-        Result.ok (ptr', state)
+        Result.ok ((ptr', None), state)
 
   let rec equality_check ~state (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
@@ -224,6 +230,7 @@ module Make (Heap : Heap_intf.S) = struct
     match expr with
     | Use op -> eval_operand state op
     | RvRef (place, _borrow) ->
+        (* TODO: borrow pointer, new tag  *)
         let++ ptr, state = resolve_place ~store state place in
         (Ptr ptr, state)
     | Global { global_id; _ } ->
@@ -297,10 +304,9 @@ module Make (Heap : Heap_intf.S) = struct
                  TAdt
                    (TBuiltin TBox, { types = [ TAdt (TBuiltin TSlice, _) ]; _ })
                )) ->
-            let ptr = as_ptr v in
+            let ptr, _ = as_ptr v in
             let size = Typed.int @@ int_of_const_generic size in
-            let ptr = Sptr.with_meta ~meta:size ptr in
-            Result.ok (Ptr ptr, state)
+            Result.ok (Ptr (ptr, Some size), state)
         | Cast kind ->
             Fmt.kstr not_impl "Unsupported cast kind: %a"
               Expressions.pp_cast_kind kind)
@@ -381,7 +387,7 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
     | Discriminant (place, kind) ->
-        let** loc, state = resolve_place ~store state place in
+        let** (loc, _), state = resolve_place ~store state place in
         let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
         let* discr_ofs, discr_ty =
           match enum.kind with
@@ -397,7 +403,7 @@ module Make (Heap : Heap_intf.S) = struct
                 Types.pp_type_decl_kind k
         in
         let loc = Sptr.offset loc discr_ofs in
-        Heap.load loc discr_ty state
+        Heap.load (loc, None) discr_ty state
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
         let type_decl =
@@ -441,9 +447,9 @@ module Make (Heap : Heap_intf.S) = struct
         (Ptr ptr, state)
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) ->
-        let** ptr, state = resolve_place ~store state place in
+        let** (_, meta), state = resolve_place ~store state place in
         let+ len =
-          match (Sptr.meta ptr, size_opt) with
+          match (meta, size_opt) with
           | _, Some size -> return (Typed.int @@ int_of_const_generic size)
           | Some len, None -> return len
           | _ -> not_impl "Unexpected len rvalue"
@@ -462,22 +468,10 @@ module Make (Heap : Heap_intf.S) = struct
     let@ () = with_loc ~loc in
     match stmt with
     | Nop -> Result.ok (store, state)
-    (* (* optimisation to avoid parsing to-from rust -- this is UX, as it misses type errors. *)
-    | Assign (({ ty; _ } as dst_place), Use (Copy src_place)) ->
-        let** dst, state = resolve_place ~store state dst_place in
-        let dst = as_ptr dst in
-        let** src, state = resolve_place ~store state src_place in
-        let src = as_ptr src in
-        let* size = Layout.size_of_s ty in
-        L.info (fun m ->
-            m "Copying %a <- %a (size %a)" Typed.ppa dst Typed.ppa src Typed.ppa
-              size);
-        let++ (), state = Heap.copy_nonoverlapping ~dst ~src ~size state in
-        (store, state) *)
     | Assign (({ ty; _ } as place), rval) ->
         let** ptr, state = resolve_place ~store state place in
         let** v, state = eval_rvalue ~crate ~store state rval in
-        L.info (fun m -> m "Assigning %a <- %a" Sptr.pp ptr pp_rust_val v);
+        L.info (fun m -> m "Assigning %a <- %a" pp_full_ptr ptr pp_rust_val v);
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
     | Call { func; args; dest = { ty; _ } as place } ->
@@ -580,7 +574,7 @@ module Make (Heap : Heap_intf.S) = struct
               | Base discr ->
                   if%sat discr ==@ 0s then return else_block
                   else return if_block
-              | Ptr ptr ->
+              | Ptr (ptr, _) ->
                   if%sat Sptr.is_null ptr then return else_block
                   else return if_block
               | _ ->
@@ -605,7 +599,7 @@ module Make (Heap : Heap_intf.S) = struct
             let compare_discr =
               match discr with
               | Base discr -> fun (v, _) -> discr ==@ value_of_scalar v
-              | Ptr ptr ->
+              | Ptr (ptr, _) ->
                   fun (v, _) ->
                     if Z.equal Z.zero v.value then Sptr.is_null ptr
                     else failwith "Can't compare pointer with non-0 scalar"
@@ -659,7 +653,7 @@ module Make (Heap : Heap_intf.S) = struct
     in
     let protected_address =
       match (fundef.signature.output, value) with
-      | TRef (RStatic, _, RShared), Ptr addr -> Some addr
+      | TRef (RStatic, _, RShared), Ptr (addr, _) -> Some addr
       | _ -> None
     in
     let++ state = dealloc_store ?protected_address store state in

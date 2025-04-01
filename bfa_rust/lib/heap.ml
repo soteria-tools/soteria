@@ -44,7 +44,7 @@ type sub_t = Tree_block.t * Tree_borrow.t
 
 type t = {
   heap : (Tree_block.t * Tree_borrow.t) Freeable.t SPmap.t option;
-  globals : Sptr.t GlobMap.t;
+  globals : Sptr.t Charon_util.full_ptr GlobMap.t;
 }
 [@@deriving show { with_path = false }]
 
@@ -92,7 +92,7 @@ let log action ptr st =
         (pp_pretty ~ignore_freed:true)
         st)
 
-let with_ptr ((ptr, _, _) : Sptr.t) ({ heap; _ } as st : t)
+let with_ptr ((ptr, _) : Sptr.t) ({ heap; _ } as st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       sub_t option ->
@@ -102,7 +102,7 @@ let with_ptr ((ptr, _, _) : Sptr.t) ({ heap; _ } as st : t)
   let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
   (v, { st with heap })
 
-let load ?is_move ((_, meta, tag) as ptr) ty st =
+let load ?is_move (((_, tag) as ptr), meta) ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
@@ -149,7 +149,7 @@ let load ?is_move ((_, meta, tag) as ptr) ty st =
         let block = Option.map (fun b -> (b, tb)) block in
         (value, block))
 
-let store ((_, _, tag) as ptr) ty sval st =
+let store (((_, tag) as ptr), _) ty sval st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "store" ptr st;
@@ -187,16 +187,22 @@ let alloc size ({ heap; _ } as st) =
   let block = Freeable.Alive (Tree_block.alloc size, tb) in
   let** loc, heap = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
-  let ptr = (ptr, None, tb.tag) in
+  (* no metadata *)
+  let ptr = ((ptr, tb.tag), None) in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
   Bfa_symex.Compo_res.ok (ptr, { st with heap })
 
 let alloc_ty ty st =
   let* size = Layout.size_of_s ty in
-  alloc size st
+  let++ ((ptr, _) as fptr), st = alloc size st in
+  match ty with
+  | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
+      let len = Charon_util.int_of_const_generic len in
+      ((ptr, Some (Typed.int len)), st)
+  | _ -> (fptr, st)
 
-let free ((ptr, _, _) : Sptr.t) ({ heap; _ } as st : t) :
+let free ((ptr, _), _) ({ heap; _ } as st : t) :
     (unit * t, 'err, serialized list) Result.t =
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
@@ -211,7 +217,7 @@ let free ((ptr, _, _) : Sptr.t) ({ heap; _ } as st : t) :
     ((), { st with heap })
   else error `InvalidFree
 
-let uninit ptr ty st =
+let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "uninit" ptr st;

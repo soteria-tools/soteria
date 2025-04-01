@@ -1,9 +1,13 @@
 open Charon
 open Typed
 
+type 'ptr full_ptr = 'ptr * T.cval Typed.t option
+[@@deriving show { with_path = false }]
+
 type 'ptr rust_val =
   | Base of T.cval Typed.t
-  | Ptr of 'ptr  (** pointer, parametric to enable Ruxt *)
+  | Ptr of 'ptr full_ptr
+      (** pointer, parametric to enable Ruxt, with optional meta *)
   | Enum of T.cval Typed.t * 'ptr rust_val list  (** discriminant * values *)
   | Struct of 'ptr rust_val list  (** contains ordered fields *)
   | Tuple of 'ptr rust_val list

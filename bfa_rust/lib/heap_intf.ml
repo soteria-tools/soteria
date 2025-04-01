@@ -1,8 +1,11 @@
+open Charon_util
 open Typed
 open T
 
 module type S = sig
   module Sptr : Sptr.S
+
+  type full_ptr := Sptr.t full_ptr
 
   (* state *)
   type t
@@ -19,10 +22,10 @@ module type S = sig
 
   val load :
     ?is_move:bool ->
-    Sptr.t ->
+    full_ptr ->
     Charon.Types.ty ->
     t ->
-    ( Sptr.t Charon_util.rust_val * t,
+    ( Sptr.t rust_val * t,
       [> `NullDereference
       | `OutOfBounds
       | `UninitializedMemoryAccess
@@ -34,9 +37,9 @@ module type S = sig
     Rustsymex.Result.t
 
   val store :
-    Sptr.t ->
+    full_ptr ->
     Charon.Types.ty ->
-    Sptr.t Charon_util.rust_val ->
+    Sptr.t rust_val ->
     t ->
     ( unit * t,
       [> `NullDereference | `OutOfBounds | `UBTreeBorrow | `UseAfterFree ] err,
@@ -46,15 +49,15 @@ module type S = sig
   val alloc :
     sint Typed.t ->
     t ->
-    (Sptr.t * t, [> ] err, serialized list) Rustsymex.Result.t
+    (full_ptr * t, [> ] err, serialized list) Rustsymex.Result.t
 
   val alloc_ty :
     Charon.Types.ty ->
     t ->
-    (Sptr.t * t, [> ] err, serialized list) Rustsymex.Result.t
+    (full_ptr * t, [> ] err, serialized list) Rustsymex.Result.t
 
   val free :
-    Sptr.t ->
+    full_ptr ->
     t ->
     ( unit * t,
       [> `InvalidFree | `UseAfterFree ] err,
@@ -62,7 +65,7 @@ module type S = sig
     Rustsymex.Result.t
 
   val uninit :
-    Sptr.t ->
+    full_ptr ->
     Charon.Types.ty ->
     t ->
     ( unit * t,
@@ -74,23 +77,23 @@ module type S = sig
 
   val store_str_global :
     string ->
-    Sptr.t ->
+    full_ptr ->
     t ->
     (unit * t, [> ] err, serialized list) Rustsymex.Result.t
 
   val store_global :
     Charon.Types.global_decl_id ->
-    Sptr.t ->
+    full_ptr ->
     t ->
     (unit * t, [> ] err, serialized list) Rustsymex.Result.t
 
   val load_str_global :
     string ->
     t ->
-    (Sptr.t option * t, [> ] err, serialized list) Rustsymex.Result.t
+    (full_ptr option * t, [> ] err, serialized list) Rustsymex.Result.t
 
   val load_global :
     Charon.Types.global_decl_id ->
     t ->
-    (Sptr.t option * t, [> ] err, serialized list) Rustsymex.Result.t
+    (full_ptr option * t, [> ] err, serialized list) Rustsymex.Result.t
 end
