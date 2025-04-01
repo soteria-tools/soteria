@@ -6,7 +6,7 @@ module type KeyS = sig
 
   type sbool_v := Symex.Value.sbool Symex.Value.t
 
-  val pp : t Fmt.t
+  val pp : Format.formatter -> t -> unit
   val sem_eq : t -> t -> sbool_v
   val fresh : ?constrs:(t -> sbool_v list) -> unit -> t Symex.t
   val distinct : t list -> sbool_v
@@ -44,7 +44,7 @@ struct
     let+? fixes = res in
     List.map (fun fix -> [ (key, fix) ]) fixes
 
-  let pp_serialized pp_inner : 'a serialized Fmt.t =
+  let pp_serialized pp_inner : Format.formatter -> 'a serialized -> unit =
     Fmt.brackets
       (Fmt.iter ~sep:(Fmt.any ";@ ") List.iter Fmt.Dump.(pair Key.pp pp_inner))
 

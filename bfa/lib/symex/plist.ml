@@ -12,7 +12,7 @@ module type SInt_sig = sig
 
   type sbool_v := Value.sbool Value.t
 
-  val pp : t Fmt.t
+  val pp : Format.formatter -> t -> unit
   val sem_eq : t -> t -> sbool_v
   val of_int : int -> t
   val in_range : t -> t * t -> sbool_v
@@ -53,7 +53,7 @@ struct
     in
     (List.of_seq bindings, b)
 
-  let pp_serialized pp_inner : 'a serialized Fmt.t =
+  let pp_serialized pp_inner : Format.formatter -> 'a serialized -> unit =
    fun ft (l, b) ->
     let m = M.of_seq (List.to_seq l) in
     pp pp_inner ft (m, b)
