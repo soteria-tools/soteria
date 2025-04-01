@@ -115,6 +115,12 @@ let hashcons = Hcons.hashcons table
 let ( <| ) kind ty : t = hashcons { kind; ty }
 let mk_var v ty = Var v <| ty
 
+(** We put commutative binary operators in some sort of normal form where
+    element with the smallest id is on the LHS, to increase cache hits. *)
+let mk_commut_binop op l r =
+  if l.tag <= r.tag then Binop (op, l, r) else Binop (op, r, l)
+
+(* TODO: substitution will break normal forms. *)
 let rec subst subst_var sv =
   match sv.node.kind with
   | Var v -> mk_var (subst_var v) sv.node.ty
@@ -173,19 +179,20 @@ let and_ v1 v2 =
   | Bool false, _ | _, Bool false -> v_false
   | Bool true, _ -> v2
   | _, Bool true -> v1
-  | _ -> Binop (And, v1, v2) <| TBool
+  | _ -> mk_commut_binop And v1 v2 <| TBool
 
 let conj l = List.fold_left and_ v_true l
 
 let rec sem_eq v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int z1, Int z2 -> bool (Z.equal z1 z2)
-  | Bool b1, Bool b2 -> bool (b1 = b2)
-  | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> sem_eq v2 v4
-  | _ ->
-      if equal v1 v2 then v_true (* Start with a syntactic check *)
-      else Binop (Eq, v1, v2) <| TBool
+  if equal v1 v2 then v_true
+  else
+    match (v1.node.kind, v2.node.kind) with
+    | Int z1, Int z2 -> bool (Z.equal z1 z2)
+    | Bool b1, Bool b2 -> bool (b1 = b2)
+    | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 ->
+        sem_eq v2 v4
+    | _ -> mk_commut_binop Eq v1 v2 <| TBool
 
 let sem_eq_untyped v1 v2 =
   if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
@@ -196,7 +203,7 @@ let or_ v1 v2 =
   | Bool true, _ | _, Bool true -> v_true
   | Bool false, _ -> v2
   | _, Bool false -> v1
-  | _ -> Binop (Or, v1, v2) <| TBool
+  | _ -> mk_commut_binop Or v1 v2 <| TBool
 
 let not sv =
   if equal sv v_true then v_false
@@ -255,7 +262,7 @@ let rec plus v1 v2 =
   | Int i1, Int i2 -> int_z (Z.add i1 i2)
   | Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }), Int i3 ->
       plus v1 (int_z (Z.add i2 i3))
-  | _ -> Binop (Plus, v1, v2) <| TInt
+  | _ -> mk_commut_binop Plus v1 v2 <| TInt
 
 let minus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -269,7 +276,7 @@ let times v1 v2 =
   | _, _ when equal v1 one -> v2
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.mul i1 i2)
-  | _ -> Binop (Times, v1, v2) <| TInt
+  | _ -> mk_commut_binop Times v1 v2 <| TInt
 
 let rec leq v1 v2 =
   match (v1.node.kind, v2.node.kind) with

@@ -9,4 +9,4 @@ type t = element list
 
 let empty : t = []
 let singleton ~loc ?(msg = "") () : t = [ make_element ~loc ~msg () ]
-let pp : t Fmt.t = Fmt.Dump.list pp_element
+let pp : Format.formatter -> t -> unit = Fmt.Dump.list pp_element

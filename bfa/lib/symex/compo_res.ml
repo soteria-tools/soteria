@@ -11,6 +11,9 @@ let[@inline] miss x = Missing x
 let is_ok = function Ok _ -> true | _ -> false
 let is_error = function Error _ -> true | _ -> false
 let is_missing = function Missing _ -> true | _ -> false
+let get_ok = function Ok x -> x | _ -> failwith "get_ok"
+let get_error = function Error x -> x | _ -> failwith "get_error"
+let get_missing = function Missing x -> x | _ -> failwith "get_missing"
 let only_oks l = List.filter_map (function Ok x -> Some x | _ -> None) l
 let only_errors l = List.filter_map (function Error x -> Some x | _ -> None) l
 

@@ -1,9 +1,4 @@
-include
-  Heap_intf.S
-    with type 'a err = 'a * Call_trace.t
-     and type serialized =
-      (Typed.T.sloc Typed.t * Tree_block.serialized Csymex.Freeable.serialized)
-      list
+include Heap_intf.S with type 'a err = 'a * Call_trace.t
 
 val serialize : t -> serialized
 val pp_serialized : Format.formatter -> serialized -> unit
@@ -16,3 +11,4 @@ val subst_serialized :
 
 val consume : serialized -> t -> (t, 'err, serialized list) Csymex.Result.t
 val produce : serialized -> t -> t Csymex.t
+val init_prog_state : Ail_tys.sigma -> t Csymex.t
