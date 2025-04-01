@@ -18,7 +18,7 @@ module T : sig
   val pp_cval : Format.formatter -> cval -> unit
 
   val pp_sseq :
-    Format.formatter -> 'a -> unit -> Format.formatter -> 'a sseq -> unit
+    (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a sseq -> unit
 
   val pp_any : Format.formatter -> any -> unit
 end
@@ -29,7 +29,7 @@ open T
 type +'a ty
 
 val pp_ty :
-  Format.formatter -> 'a ty -> unit -> Format.formatter -> 'a ty -> unit
+  (Format.formatter -> 'a ty -> unit) -> Format.formatter -> 'a ty -> unit
 
 val ppa_ty : Format.formatter -> 'a ty -> unit
 val t_bool : [> sbool ] ty
@@ -57,7 +57,7 @@ val cast : 'a t -> 'b t
 val cast_checked : 'a t -> 'b ty -> 'b t option
 val untyped : 'a t -> Svalue.t
 val untyped_list : 'a t list -> Svalue.t list
-val pp : Format.formatter -> 'a -> unit -> Format.formatter -> 'a t -> unit
+val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
