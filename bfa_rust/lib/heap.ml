@@ -117,12 +117,12 @@ let load ?is_move ((_, meta) as ptr) ty st =
         let rec aux block = function
           | `Done v -> Result.ok (v, block)
           | `More (blocks, callback) ->
-              let pp_block ft (ty, ofs) =
-                Fmt.pf ft "%s [%a] "
-                  (Charon_util.lit_to_string ty)
-                  Typed.ppa ofs
-              in
               L.debug (fun f ->
+                  let pp_block ft (ty, ofs) =
+                    Fmt.pf ft "%s [%a] "
+                      (Charon_util.lit_to_string ty)
+                      Typed.ppa ofs
+                  in
                   f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
               let** values, block =
                 Result.fold_list blocks ~init:([], block)
@@ -151,17 +151,9 @@ let store ptr ty sval st =
   if%sat Sptr.is_null ptr then Result.error `NullDereference
   else
     with_ptr ptr st (fun ~ofs block ->
-        let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
-        let pp_quad f ({ value; ty; offset } : Encoder.cval_info) =
-          Fmt.pf f "%a: %s [%a]" Typed.ppa value
-            (Charon_util.lit_to_string ty)
-            Typed.ppa offset
         in
+        let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
         L.debug (fun f ->
-            f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_quad) parts);
-        Result.fold_list parts ~init:((), block)
-          ~f:(fun ((), block) { value; ty; offset } ->
-            Tree_block.store offset ty value block))
 
 let copy_nonoverlapping ~dst ~src ~size st =
   let open Typed.Infix in
@@ -177,6 +169,21 @@ let copy_nonoverlapping ~dst ~src ~size st =
     in
     with_ptr dst st (fun ~ofs block ->
         Tree_block.put_raw_tree ofs tree_to_write block)
+            let pp_part f ({ value; ty; offset } : Encoder.cval_info) =
+              Fmt.pf f "%a: %s [%a]"
+                (Charon_util.pp_rust_val Sptr.pp)
+                value
+                (Charon_util.lit_to_string ty)
+                Typed.ppa offset
+            in
+            f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_part) parts);
+        let++ (), block =
+          Result.fold_list parts ~init:((), block)
+            ~f:(fun ((), block) { value; ty; offset } ->
+              Tree_block.store offset ty value block)
+        in
+        let block = Option.map (fun b -> (b, tb)) block in
+        ((), block))
 
 let alloc size ({ heap; _ } as st) =
   (* Commenting this out as alloc cannot fail *)

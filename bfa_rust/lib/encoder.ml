@@ -11,7 +11,7 @@ module Sptr = Sptr.ArithPtr
 open Layout
 
 type cval_info = {
-  value : cval Typed.t;
+  value : Sptr.t rust_val;
   ty : Types.literal_type;
   offset : sint Typed.t;
 }
@@ -37,29 +37,28 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
 
   match (v, ty) with
   (* Literals *)
-  | Base value, TLiteral ty -> [ { value; ty; offset } ]
-  | Ptr (value, None), TLiteral (TInteger (Isize | Usize) as ty) ->
-      [ { value :> cval Typed.t; ty; offset } ]
+  | Base _, TLiteral ty -> [ { value = v; ty; offset } ]
+  | Ptr (_, None, _), TLiteral (TInteger (Isize | Usize) as ty) ->
+      [ { value = v; ty; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
-  | Ptr (value, meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
-  | Ptr (value, meta), TRef (_, sub_ty, _)
-  | Ptr (value, meta), TRawPtr (sub_ty, _) -> (
+  | Ptr ((_, meta, _) as ptr), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+  | Ptr ((_, meta, _) as ptr), TRef (_, sub_ty, _)
+  | Ptr ((_, meta, _) as ptr), TRawPtr (sub_ty, _) -> (
+      let value = Ptr (Sptr.with_meta ?meta:None ptr) in
       match (meta, is_fat_ptr sub_ty) with
-      | _, false -> [ { value :> cval Typed.t; ty = TInteger Isize; offset } ]
+      | _, false -> [ { value; ty = TInteger Isize; offset } ]
       | Some meta, true ->
           let size = Typed.int Archi.word_size in
           let isize = Values.TInteger Isize in
           [
-            { value :> cval Typed.t; ty = isize; offset };
-            { value = meta; ty = isize; offset = offset +@ size };
+            { value; ty = isize; offset };
+            { value = Base meta; ty = isize; offset = offset +@ size };
           ]
       | None, true -> failwith "Expected a fat pointer, got a thin pointer.")
   (* References / Pointers obtained from casting *)
-  | Base value, TAdt (TBuiltin TBox, _)
-  | Base value, TRef _
-  | Base value, TRawPtr _ ->
-      [ { value; ty = TInteger Isize; offset } ]
+  | Base _, TAdt (TBuiltin TBox, _) | Base _, TRef _ | Base _, TRawPtr _ ->
+      [ { value = v; ty = TInteger Isize; offset } ]
   | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) ->
@@ -83,22 +82,15 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
   (* Enums *)
   | Enum (disc, vals), TAdt (TAdtId t_id, _) ->
       let type_decl = Session.get_adt t_id in
-      let disc_z =
-        match Typed.kind disc with
-        | Int d -> d
-        | k ->
-            Fmt.failwith "Unexpected enum discriminant kind: %a"
-              Svalue.pp_t_kind k
-      in
       let variant =
-        match type_decl.kind with
-        | Enum variants ->
+        match (type_decl.kind, Typed.kind disc) with
+        | Enum variants, Int disc_z ->
             List.find
               (fun v -> Z.equal disc_z Types.(v.discriminant.value))
               variants
         | _ ->
-            Fmt.failwith "Unexpected ADT type for enum: %a" Types.pp_type_decl
-              type_decl
+            Fmt.failwith "Unexpected ADT type or discr for enum: %a"
+              Types.pp_type_decl type_decl
       in
       let disc_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
       chain_cvals (of_variant variant) (Base disc :: vals)
@@ -119,7 +111,7 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
       failwith "Unhandled rust_value and Charon.ty"
 
 type aux_ret = (Types.literal_type * sint Typed.t) list * parse_callback
-and parse_callback = cval Typed.t list -> callback_return
+and parse_callback = Sptr.t rust_val list -> callback_return
 and parser_return = [ `Done of Sptr.t rust_val | `More of aux_ret ]
 and callback_return = parser_return Rustsymex.t
 
@@ -134,24 +126,16 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
         `More
           ( [ (ty, offset) ],
             function
-            | [ v ] -> return (`Done (Base v))
-            | _ -> failwith "Expected one cval" )
+            | [ ((Base _ | Ptr _) as v) ] -> return (`Done v)
+            | _ -> failwith "Expected a base" )
     | TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
     | TRef (_, sub_ty, _)
     | TRawPtr (sub_ty, _)
       when is_fat_ptr sub_ty ->
         let callback = function
-          | [ ptr; len ] ->
-              let* ptr =
-                of_opt_not_impl ~msg:"Slice value 1 should be a pointer"
-                  (Typed.cast_checked ptr Typed.t_ptr)
-              in
-              let+ len =
-                of_opt_not_impl ~msg:"Slice value 2 should be an integer"
-                  (Typed.cast_checked len Typed.t_int)
-              in
-              `Done (Ptr (ptr, Some len))
-          | _ -> failwith "Expected two cvals"
+          | [ Ptr ptr; Base meta ] ->
+              return @@ `Done (Ptr (Sptr.with_meta ~meta ptr))
+          | _ -> failwith "Expected a pointer and base"
         in
         let ptr_size = Typed.int Archi.word_size in
         let isize = Values.TInteger Isize in
@@ -160,12 +144,8 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
         `More
           ( [ (TInteger Isize, offset) ],
             function
-            | [ v ] -> (
-                match Typed.cast_checked v Typed.t_ptr with
-                | Some v_ptr -> return (`Done (Ptr (v_ptr, None)))
-                (* This should only happen on weird pointer casting. *)
-                | None -> return (`Done (Base v)))
-            | _ -> failwith "Expected one cval" )
+            | [ ((Ptr _ | Base _) as ptr) ] -> return (`Done ptr)
+            | _ -> failwith "Expected a pointer or base" )
     | TAdt (TTuple, { types; _ }) as ty ->
         let layout = layout_of ty in
         aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
@@ -234,7 +214,7 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
     let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
     let offset = offset +@ (offset %@ disc_align) in
     let callback cval : callback_return =
-      let cval = List.hd cval in
+      let cval = Charon_util.as_base_of ~ty:Typed.t_int @@ List.hd cval in
       let* res =
         match_on variants ~constr:(fun (v : Types.variant) ->
             cval ==@ value_of_scalar v.discriminant)

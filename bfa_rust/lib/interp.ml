@@ -569,30 +569,55 @@ module Make (Heap : Heap_intf.S) = struct
         (value, store, state)
     | Switch (discr, switch) -> (
         let** discr, state = eval_operand ~crate ~store state discr in
-        let discr =
-          match discr with
-          | Base discr -> discr
-          | _ ->
-              Fmt.failwith "Expected base value for discriminant, got %a"
-                pp_rust_val discr
-        in
         match switch with
         | If (if_block, else_block) ->
-            let open Typed.Infix in
             L.info (fun g ->
                 g "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
-                  UllbcAst.pp_block_id else_block Typed.ppa discr);
+                  UllbcAst.pp_block_id else_block pp_rust_val discr);
             let* block =
-              if%sat discr ==@ Typed.zero then return else_block
-              else return if_block
+              (* if a base value, compare with 0 -- if a pointer, check for null *)
+              match discr with
+              | Base discr ->
+                  if%sat discr ==@ 0s then return else_block
+                  else return if_block
+              | Ptr ptr ->
+                  if%sat Sptr.is_null ptr then return else_block
+                  else return if_block
+              | _ ->
+                  Fmt.kstr not_impl
+                    "Expected base value for discriminant, got %a" pp_rust_val
+                    discr
             in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~crate ~body store state block
         | SwitchInt (_, options, default) -> (
-            let* block =
-              match_on options ~constr:(fun (v, _) ->
-                  discr ==@ value_of_scalar v)
+            L.info (fun g ->
+                let options =
+                  List.map
+                    (fun (v, b) -> (PrintValues.scalar_value_to_string v, b))
+                    options
+                in
+                g "Switch options %a (else %a) for %a"
+                  Fmt.(
+                    list ~sep:comma
+                    @@ pair ~sep:(any "->") string UllbcAst.pp_block_id)
+                  options UllbcAst.pp_block_id default pp_rust_val discr);
+            let compare_discr =
+              match discr with
+              | Base discr -> fun (v, _) -> discr ==@ value_of_scalar v
+              | Ptr ptr ->
+                  fun (v, _) ->
+                    if Z.equal Z.zero v.value then Sptr.is_null ptr
+                    else failwith "Can't compare pointer with non-0 scalar"
+              | _ ->
+                  fun (v, _) ->
+                    Fmt.failwith
+                      "Didn't know how to compare discriminant %a with scalar \
+                       %s"
+                      pp_rust_val discr
+                      (PrintValues.scalar_value_to_string v)
             in
+            let* block = match_on options ~constr:compare_discr in
             match block with
             | None ->
                 let block = UllbcAst.BlockId.nth body.body default in

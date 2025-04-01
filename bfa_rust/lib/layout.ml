@@ -111,7 +111,7 @@ let is_int : Types.ty -> bool = function
   | _ -> false
 
 let to_zeros : Types.literal_type -> T.cval Typed.t = function
-  | TInteger _ -> 0s
+  | TInteger _ | TBool | TChar -> 0s
   | t ->
       Fmt.failwith "to_zeros: unsupported literal type %a" Types.pp_literal_type
         t

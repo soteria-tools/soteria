@@ -16,13 +16,17 @@ let miss_no_fix_immediate ?(msg = "") () =
 
 let miss_no_fix ?msg () = Rustsymex.return (miss_no_fix_immediate ?msg ())
 
+type rust_val = Sptr.ArithPtr.t Charon_util.rust_val
+
 module MemVal = struct
-  type t = { value : T.cval Typed.t; ty : Values.literal_type }
-  [@@deriving make]
+  type t = { value : rust_val; ty : Values.literal_type } [@@deriving make]
 
   let pp ft t =
     let open Fmt in
-    pf ft "%a : %s" Typed.ppa t.value (Charon_util.lit_to_string t.ty)
+    pf ft "%a : %s"
+      (Charon_util.pp_rust_val Sptr.ArithPtr.pp)
+      t.value
+      (Charon_util.lit_to_string t.ty)
 end
 
 module Node = struct
@@ -96,12 +100,17 @@ module Node = struct
           match Layout.constraints ty with
           | Some constrs ->
               if%sat Typed.conj (constrs value) then Result.ok value
+          match (Layout.constraints ty, value) with
+          | Some constrs, Base cval ->
+              if%sat Typed.conj (constrs cval) then Result.ok value
               else Result.error `UBTransmute
-          | None ->
+          | _ ->
               Fmt.kstr not_impl
-                "Couldn't convert type, contraints unknown for %s -> %s"
+                "Couldn't convert type, contraints unknown for %s -> %s with %a"
                 (Charon_util.lit_to_string ty)
-                (Charon_util.lit_to_string tyw))
+                (Charon_util.lit_to_string tyw)
+                (Charon_util.pp_rust_val Sptr.ArithPtr.pp)
+                value)
     | Owned Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
            We have to approximate and vanish. *)
@@ -317,16 +326,16 @@ module Tree = struct
 
   let load ?(is_move = false) (ofs : [< T.sint ] Typed.t)
       (size : [< T.sint ] Typed.t) (ty : Values.literal_type) (t : t) :
-      (T.cval Typed.t * t, 'err, 'fix) Result.t =
+      (rust_val * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size ofs size in
     let replace_node node = if is_move then uninit range else node in
     let rebuild_parent = with_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ sval = Node.decode ~ty framed.node in
-    ((sval :> T.cval Typed.t), tree)
+    (sval, tree)
 
   let store (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Types.literal_type) (sval : [< T.cval ] Typed.t) (t : t) :
+      (ty : Types.literal_type) (value : rust_val) (t : t) :
       (unit * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size low size in
     let replace_node _ = sval_leaf ~range ~value:sval ~ty in
@@ -374,7 +383,7 @@ module Tree = struct
   (** Cons/prod *)
 
   let consume_typed_val (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Types.literal_type) (v : [< T.cval ] Typed.t) (t : t) :
+      (ty : Types.literal_type) (_ : rust_val) (t : t) :
       (t, 'err, 'fix list) Result.t =
     let range = Range.of_low_and_size low size in
     let replace_node _ = not_owned range in
@@ -382,22 +391,23 @@ module Tree = struct
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let* sval_res = Node.decode ~ty framed.node in
     match sval_res with
-    | Ok sv ->
-        let+ () = Rustsymex.assume [ sv ==?@ v ] in
-        Ok tree
+    | Ok _sv ->
+        not_impl "Consume typed value on rust_val equality."
+        (* let+ () = Rustsymex.assume [ sv ==?@ v ] in
+        Ok tree *)
     | Missing fixes -> Rustsymex.Result.miss fixes
     | Error _ -> Rustsymex.vanish ()
 
   let produce_typed_val (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Types.literal_type) (value : T.cval Typed.t) (t : t) : t Rustsymex.t
-      =
+      (ty : Types.literal_type) (value : rust_val) (t : t) : t Rustsymex.t =
     let range = Range.of_low_and_size low size in
-    let* constrs =
+    let* () = not_impl "Produce typed_val constraints for rust_val" in
+    (* let* constrs =
       Rustsymex.of_opt_not_impl ~msg:"Produce typed_val constraints"
         (Layout.constraints ty)
     in
-    let* () = Rustsymex.assume (constrs value) in
     let replace_node _ = sval_leaf ~range ~value ~ty in
+    let* () = Rustsymex.assume (constrs value) in *)
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     match framed.node with
@@ -509,7 +519,7 @@ type serialized_atom =
   | TypedVal of {
       offset : T.sint Typed.t;
       ty : Types.literal_type; [@printer Types.pp_literal_type]
-      v : T.cval Typed.t;
+      v : rust_val; [@printer Charon_util.pp_rust_val Sptr.ArithPtr.pp]
     }
   | Bound of T.sint Typed.t
   | Uninit of { offset : T.sint Typed.t; len : T.sint Typed.t }
@@ -523,8 +533,8 @@ let iter_values_serialized serialized f =
   List.iter (function TypedVal { v; _ } -> f v | _ -> ()) serialized
 
 let mk_fix_typed offset ty () =
-  let* v = Layout.nondet_literal_ty ty in
-  return [ [ TypedVal { offset; ty; v } ] ]
+  let+ v = Layout.nondet_literal_ty ty in
+  [ [ TypedVal { offset; ty; v = Charon_util.Base v } ] ]
 
 let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let** () =
@@ -623,8 +633,9 @@ let uninit_range ofs size t =
 let subst_serialized subst_var (serialized : serialized) =
   let v_subst v = Typed.subst subst_var v in
   let subst_atom = function
-    | TypedVal { offset; ty; v } ->
-        TypedVal { offset = v_subst offset; ty; v = v_subst v }
+    | TypedVal _ ->
+        failwith "not_impl: subst_serialized TypedVal"
+        (* TypedVal { offset = v_subst offset; ty; v = v_subst v } *)
     | Bound v -> Bound (v_subst v)
     | Uninit { offset; len } ->
         Uninit { offset = v_subst offset; len = v_subst len }
@@ -638,9 +649,10 @@ let iter_vars_serialized serialized (f : Svalue.Var.t * [< T.cval ] ty -> unit)
     =
   List.iter
     (function
-      | TypedVal { offset; v; _ } ->
+      | TypedVal { offset; _ } ->
           Typed.iter_vars offset f;
-          Typed.iter_vars v f
+          failwith "not_impl: iter_vars_serialized TypedVal"
+          (* Typed.iter_vars v f *)
       | Bound v -> Typed.iter_vars v f
       | Uninit { offset; len } ->
           Typed.iter_vars offset f;
