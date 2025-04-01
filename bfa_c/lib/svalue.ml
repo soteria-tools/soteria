@@ -178,14 +178,20 @@ let and_ v1 v2 =
 let conj l = List.fold_left and_ v_true l
 
 let rec sem_eq v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int z1, Int z2 -> bool (Z.equal z1 z2)
-  | Bool b1, Bool b2 -> bool (b1 = b2)
-  | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> sem_eq v2 v4
-  | _ ->
-      if equal v1 v2 then v_true (* Start with a syntactic check *)
-      else Binop (Eq, v1, v2) <| TBool
+  if equal v1 v2 then v_true
+  else
+    match (v1.node.kind, v2.node.kind) with
+    | Int z1, Int z2 -> bool (Z.equal z1 z2)
+    | Bool b1, Bool b2 -> bool (b1 = b2)
+    | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 ->
+        sem_eq v2 v4
+    | _ ->
+        (* We put equality in some sort of normal form where 
+         element with the smallest id is on the LHS. *)
+        (* TODO: Generalise to all commutative operators. *)
+        if v1.tag <= v2.tag then Binop (Eq, v1, v2) <| TBool
+        else Binop (Eq, v2, v1) <| TBool
 
 let sem_eq_untyped v1 v2 =
   if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
