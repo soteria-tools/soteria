@@ -305,8 +305,8 @@ module Make (Heap : Heap_intf.S) = struct
             match Store.find_value id store with
             | Some ptr -> Result.ok ((ptr :> T.cval Typed.t), state)
             | None ->
-                Fmt.kstr not_impl "Variable %a is not declared" Fmt_ail.pp_sym
-                  id)
+                let+ ptr, state = Heap.get_global id state in
+                Ok (ptr, state))
         | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
     | AilEunary (op, e) -> (
         let** v, state = eval_expr state e in
