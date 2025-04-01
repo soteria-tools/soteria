@@ -43,37 +43,40 @@ end
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
-module ArithPtr : S with type t = T.sptr Typed.t * T.cval Typed.t option =
+module ArithPtr :
+  S with type t = T.sptr Typed.t * T.cval Typed.t option * Tree_borrow.tag =
 struct
-  type t = T.sptr Typed.t * T.cval Typed.t option
+  type t = T.sptr Typed.t * T.cval Typed.t option * Tree_borrow.tag
 
-  let pp fmt (ptr, meta) =
-    match meta with
-    | Some meta -> Format.fprintf fmt "%a (%a)" Typed.ppa ptr Typed.ppa meta
-    | None -> Format.fprintf fmt "%a" Typed.ppa ptr
+  let pp fmt (ptr, meta, tag) =
+    let pp_meta fmt m = Fmt.pf fmt "[%a]" Typed.ppa m in
+    Fmt.pf fmt "%a%a[%a]" Typed.ppa ptr
+      Fmt.(option pp_meta)
+      meta Tree_borrow.pp_tag tag
 
-  let null_ptr = (Typed.Ptr.null, None)
-  let eq (ptr1, _) (ptr2, _) = ptr1 ==@ ptr2
-  let is_null (ptr, _) = Typed.Ptr.is_null ptr
+  let null_ptr = (Typed.Ptr.null, None, Tree_borrow.zero)
+  let eq (ptr1, _, _) (ptr2, _, _) = ptr1 ==@ ptr2
+  let is_null (ptr, _, _) = Typed.Ptr.is_null ptr
 
-  let is_same_loc (ptr1, _) (ptr2, _) =
+  let is_same_loc (ptr1, _, _) (ptr2, _, _) =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
 
-  let distance (ptr1, _) (ptr2, _) = Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
+  let distance (ptr1, _, _) (ptr2, _, _) =
+    Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
 
   let constraints =
     let offset_constrs = Layout.int_constraints Values.Isize in
-    fun (ptr, _) ->
+    fun (ptr, _, _) ->
       let ofs = Typed.Ptr.ofs ptr in
       Typed.conj (offset_constrs ofs)
 
-  let offset ?(ty = Types.TLiteral (TInteger U8)) (ptr, meta) off =
+  let offset ?(ty = Types.TLiteral (TInteger U8)) (ptr, meta, tag) off =
     let { size; _ } : Layout.layout = Layout.layout_of ty in
     let ptr' = Typed.Ptr.add_ofs ptr (Typed.int size *@ off) in
-    (ptr', meta)
+    (ptr', meta, tag)
 
-  let meta = snd
-  let with_meta ?meta (ptr, _) = (ptr, meta)
+  let meta (_, meta, _) = meta
+  let with_meta ?meta (ptr, _, tag) = (ptr, meta, tag)
 
   let project ty kind field ptr =
     let field = Types.FieldId.to_int field in

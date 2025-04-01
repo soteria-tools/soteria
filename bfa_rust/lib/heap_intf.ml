@@ -27,7 +27,8 @@ module type S = sig
       | `OutOfBounds
       | `UninitializedMemoryAccess
       | `UseAfterFree
-      | `UBTransmute ]
+      | `UBTransmute
+      | `UBTreeBorrow ]
       err,
       serialized list )
     Rustsymex.Result.t
@@ -38,7 +39,7 @@ module type S = sig
     Sptr.t Charon_util.rust_val ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      [> `NullDereference | `OutOfBounds | `UBTreeBorrow | `UseAfterFree ] err,
       serialized list )
     Rustsymex.Result.t
 
@@ -69,21 +70,7 @@ module type S = sig
       serialized list )
     Rustsymex.Result.t
 
-  val copy_nonoverlapping :
-    dst:Sptr.t ->
-    src:Sptr.t ->
-    size:sint Typed.t ->
-    t ->
-    ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
-      serialized list )
-    Rustsymex.Result.t
-
   val error : 'a -> t -> ('ok, 'a err, serialized list) Rustsymex.Result.t
-  val produce : serialized -> t -> t Rustsymex.t
-
-  val consume :
-    serialized -> t -> (t, [> ] err, serialized list) Rustsymex.Result.t
 
   val store_str_global :
     string ->

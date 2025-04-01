@@ -55,11 +55,13 @@ module Node = struct
      i.e. MemVal { v: mem_val; annot: 'a }.
      Quite probably, the Node module can be parametrized by a module
      capturing the annotations behavior in analysis. *)
-  type t = NotOwned of qty | Owned of mem_val
+  type t =
+    | NotOwned of qty
+    | Owned of { v : mem_val; tb : Tree_borrow.tb_state }
 
   let pp ft = function
     | NotOwned qty -> Fmt.pf ft "NotOwned %a" pp_qty qty
-    | Owned mv -> pp_mem_val ft mv
+    | Owned { v; tb = _ } -> pp_mem_val ft v
 
   let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
 
@@ -67,39 +69,44 @@ module Node = struct
     match (left, right) with
     | NotOwned Totally, NotOwned Totally -> return (NotOwned Totally)
     | NotOwned _, _ | _, NotOwned _ -> return (NotOwned Partially)
-    | Owned Zeros, Owned Zeros -> return (Owned Zeros)
-    | Owned (Uninit lq), Owned (Uninit rq) ->
-        let qty = merge_qty lq rq in
-        return (Owned (Uninit qty))
-    | Owned _, Owned _ -> return (Owned Lazy)
+    | Owned { v = v1; tb = tb1 }, Owned { v = v2; tb = tb2 } -> (
+        let tb = Tree_borrow.merge tb1 tb2 in
+        match (v1, v2) with
+        | Zeros, Zeros -> return (Owned { v = Zeros; tb })
+        | Uninit lq, Uninit rq ->
+            let qty = merge_qty lq rq in
+            return (Owned { v = Uninit qty; tb = Tree_borrow.merge tb1 tb2 })
+        | _, _ -> return (Owned { v = Lazy; tb }))
 
   let split ~range:(_, _) ~at node =
     match node with
     | NotOwned Totally -> return (NotOwned Totally, NotOwned Totally)
-    | Owned (Uninit Totally) ->
-        return (Owned (Uninit Totally), Owned (Uninit Totally))
-    | Owned Zeros -> return (Owned Zeros, Owned Zeros)
-    | Owned Any -> return (Owned Any, Owned Any)
-    | Owned (Init _) ->
+    | Owned { v = Uninit Totally; tb } ->
+        return
+          (Owned { v = Uninit Totally; tb }, Owned { v = Uninit Totally; tb })
+    | Owned { v = Zeros; tb } ->
+        return (Owned { v = Zeros; tb }, Owned { v = Zeros; tb })
+    | Owned { v = Any; tb } ->
+        return (Owned { v = Any; tb }, Owned { v = Any; tb })
+    | Owned { v = Init _; tb = _ } ->
         Fmt.kstr not_impl "Splitting %a at %a" pp node Typed.ppa at
-    | NotOwned Partially | Owned (Uninit Partially) | Owned Lazy ->
+    | NotOwned Partially | Owned { v = Lazy | Uninit Partially; _ } ->
         failwith "Should never split an intermediate node"
 
-  let uninit = Owned (Uninit Totally)
+  let uninit tb = Owned { v = Uninit Totally; tb }
+  let zeros tb = Owned { v = Zeros; tb }
 
-  let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Rustsymex.Result.t =
+  let decode ~ty t =
     match t with
     | NotOwned _ -> miss_no_fix ~msg:"decode" ()
-    | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
-    | Owned Zeros -> Result.ok @@ Layout.to_zeros ty
-    | Owned Lazy ->
+    | Owned { v = Uninit _; _ } -> Result.error `UninitializedMemoryAccess
+    | Owned { v = Zeros; _ } ->
+        Result.ok @@ Charon_util.Base (Layout.to_zeros ty)
+    | Owned { v = Lazy; _ } ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
-    | Owned (Init { value; ty = tyw }) -> (
+    | Owned { v = Init { value; ty = tyw }; _ } -> (
         if Values.equal_literal_type ty tyw then Result.ok value
         else
-          match Layout.constraints ty with
-          | Some constrs ->
-              if%sat Typed.conj (constrs value) then Result.ok value
           match (Layout.constraints ty, value) with
           | Some constrs, Base cval ->
               if%sat Typed.conj (constrs cval) then Result.ok value
@@ -111,7 +118,7 @@ module Node = struct
                 (Charon_util.lit_to_string tyw)
                 (Charon_util.pp_rust_val Sptr.ArithPtr.pp)
                 value)
-    | Owned Any ->
+    | Owned { v = Any; _ } ->
         (* We don't know if this read is valid, as memory could be uninitialised.
            We have to approximate and vanish. *)
         L.info (fun m -> m "Reading from Any memory, vanishing.");
@@ -131,14 +138,14 @@ module Tree = struct
   let is_empty { node; _ } =
     match node with NotOwned Totally -> true | _ -> false
 
-  let uninit range = make ~node:Node.uninit ~range ?children:None ()
-  let zeros range = make ~node:(Node.Owned Node.Zeros) ~range ?children:None ()
+  let uninit tb range = make ~node:(Node.uninit tb) ~range ?children:None ()
+  let zeros tb range = make ~node:(Node.zeros tb) ~range ?children:None ()
   let not_owned range = make ~node:(NotOwned Totally) ~range ?children:None ()
 
-  let sval_leaf ~range ~value ~ty =
-    make ~node:(Owned (Init { value; ty })) ~range ?children:None ()
+  let sval_leaf ~range ~value ~ty ~tb =
+    make ~node:(Owned { v = Init { value; ty }; tb }) ~range ?children:None ()
 
-  let any range = make ~node:(Owned Node.Any) ~range ?children:None ()
+  let any tb range = make ~node:(Owned { v = Any; tb }) ~range ?children:None ()
 
   let rec iter_leaves_rev t f =
     match t.children with
@@ -152,7 +159,7 @@ module Tree = struct
     let+ node = Node.merge ~left:left.node ~right:right.node in
     let children =
       match node with
-      | Node.NotOwned Totally | Owned (Zeros | Uninit Totally) -> None
+      | Node.NotOwned Totally | Owned { v = Zeros | Uninit Totally; _ } -> None
       | _ -> Some (left, right)
     in
     { range; children; node }
@@ -260,13 +267,13 @@ module Tree = struct
         let* new_left = add_to_the_left left addition in
         of_children_s ~left:new_left ~right
 
-  let frame_range (t : t) ~(replace_node : t -> t) ~rebuild_parent
-      (range : Range.t) : (t * t) Rustsymex.t =
-    let rec frame_inside ~(replace_node : t -> t) ~rebuild_parent (t : t)
-        (range : Range.t) : (t * t) Rustsymex.t =
+  let frame_range (t : t) ~(replace_node : t -> (t, 'e, 'm) Result.t)
+      ~rebuild_parent (range : Range.t) : (t * t, 'e, 'm) Result.t =
+    let rec frame_inside ~(replace_node : t -> (t, 'e, 'm) Result.t)
+        ~rebuild_parent (t : t) (range : Range.t) : (t * t, 'e, 'm) Result.t =
       if%sat Range.sem_eq range t.range then
-        let new_tree = replace_node t in
-        return (t, new_tree)
+        let++ new_tree = replace_node t in
+        (t, new_tree)
       else
         match t.children with
         | Some (left, right) ->
@@ -274,14 +281,14 @@ module Tree = struct
             if%sat Range.strictly_inside mid range then
               let l, h = range in
               let upper_range = (mid, h) in
-              let dont_replace_node t = t in
+              let dont_replace_node = Result.ok in
               if%sat
                 (* High-range already good *)
                 Range.sem_eq upper_range right.range
               then
                 (* Rearrange left*)
                 let lower_range = (l, mid) in
-                let* _, left =
+                let** _, left =
                   frame_inside ~replace_node:dont_replace_node
                     ~rebuild_parent:with_children left lower_range
                 in
@@ -292,7 +299,7 @@ module Tree = struct
                 in
                 frame_inside ~replace_node ~rebuild_parent new_self range
               else
-                let* _, right =
+                let** _, right =
                   frame_inside ~replace_node:dont_replace_node
                     ~rebuild_parent:with_children right upper_range
                 in
@@ -304,18 +311,18 @@ module Tree = struct
                 frame_inside ~replace_node ~rebuild_parent new_self range
             else
               if%sat Range.is_inside range left.range then
-                let* node, left =
+                let** node, left =
                   frame_inside ~replace_node ~rebuild_parent left range
                 in
                 let+ new_parent = rebuild_parent t ~left ~right in
-                (node, new_parent)
+                Ok (node, new_parent)
               else
                 (* Range is necessarily inside of right *)
-                let* node, right =
+                let** node, right =
                   frame_inside ~replace_node ~rebuild_parent right range
                 in
                 let+ new_parent = rebuild_parent t ~left ~right in
-                (node, new_parent)
+                Ok (node, new_parent)
         | None ->
             let* _, left, right = split ~range t in
             let* new_self = with_children t ~left ~right in
@@ -325,22 +332,38 @@ module Tree = struct
     frame_inside ~replace_node ~rebuild_parent root range
 
   let load ?(is_move = false) (ofs : [< T.sint ] Typed.t)
-      (size : [< T.sint ] Typed.t) (ty : Values.literal_type) (t : t) :
+      (size : [< T.sint ] Typed.t) (ty : Values.literal_type)
+      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t) :
       (rust_val * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size ofs size in
-    let replace_node node = if is_move then uninit range else node in
+    let replace_node t =
+      match t.node with
+      | Node.NotOwned _ -> miss_no_fix ~msg:"load" ()
+      | Owned { tb = tb_st; v } ->
+          let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Read tb_st in
+          if ub then Result.error `UBTreeBorrow
+          else if is_move then Result.ok (uninit tb_st' range)
+          else Result.ok { t with node = Owned { tb = tb_st'; v } }
+    in
     let rebuild_parent = with_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    let** framed, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ sval = Node.decode ~ty framed.node in
     (sval, tree)
 
   let store (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Types.literal_type) (value : rust_val) (t : t) :
-      (unit * t, 'err, 'fix) Result.t =
+      (ty : Types.literal_type) (value : rust_val) (tag : Tree_borrow.tag)
+      (tb : Tree_borrow.t) (t : t) : (unit * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size low size in
-    let replace_node _ = sval_leaf ~range ~value:sval ~ty in
+    let replace_node t =
+      match t.node with
+      | Node.NotOwned _ -> miss_no_fix ~msg:"store" ()
+      | Owned { tb = tb_st; _ } ->
+          let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Write tb_st in
+          if ub then Result.error `UBTreeBorrow
+          else Result.ok @@ sval_leaf ~range ~value ~ty ~tb:tb_st'
+    in
     let rebuild_parent = of_children in
-    let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
+    let** node, tree = frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match node.node with
       | NotOwned _ -> miss_no_fix ~msg:"store" ()
@@ -351,44 +374,28 @@ module Tree = struct
   let uninit_range (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
       (t : t) : (unit * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size low size in
-    let replace_node _ = uninit range in
-    let rebuild_parent = of_children in
-    let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let++ () =
-      match node.node with
-      | NotOwned _ -> miss_no_fix ~msg:"store" ()
-      | _ -> Result.ok ()
+    let replace_node t =
+      match t.node with
+      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
+      | Owned { tb; _ } ->
+          (* Is there something to do with the tree borrow here? *)
+          Result.ok @@ uninit tb range
     in
+    let rebuild_parent = of_children in
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
     ((), tree)
 
-  let get_raw ofs size t =
-    let range = (ofs, ofs +@ size) in
-    let replace_node node = node in
-    let rebuild_parent = with_children in
-    frame_range t ~replace_node ~rebuild_parent range
-
-  let put_raw tree t =
-    let replace_node _ = tree in
-    let rebuild_parent = of_children in
-    let* old_node, new_tree =
-      frame_range t ~replace_node ~rebuild_parent tree.range
-    in
-    let++ () =
-      match old_node.node with
-      | NotOwned _ -> miss_no_fix ~msg:"put_raw" ()
-      | _ -> Result.ok ()
-    in
-    ((), new_tree)
-
   (** Cons/prod *)
+
+  (* TODO: we currently don't handle anything TreeBorrow related in cons/prod ! *)
 
   let consume_typed_val (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
       (ty : Types.literal_type) (_ : rust_val) (t : t) :
       (t, 'err, 'fix list) Result.t =
     let range = Range.of_low_and_size low size in
-    let replace_node _ = not_owned range in
+    let replace_node _ = Result.ok @@ not_owned range in
     let rebuild_parent = of_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
+    let** framed, _tree = frame_range t ~replace_node ~rebuild_parent range in
     let* sval_res = Node.decode ~ty framed.node in
     match sval_res with
     | Ok _sv ->
@@ -406,88 +413,98 @@ module Tree = struct
       Rustsymex.of_opt_not_impl ~msg:"Produce typed_val constraints"
         (Layout.constraints ty)
     in
-    let replace_node _ = sval_leaf ~range ~value ~ty in
     let* () = Rustsymex.assume (constrs value) in *)
+    let replace_node t =
+      match t.node with
+      | NotOwned Totally ->
+          Result.ok @@ sval_leaf ~range ~value ~ty ~tb:Tree_borrow.empty_state
+      | _ -> vanish ()
+    in
     let rebuild_parent = of_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    match framed.node with
-    | NotOwned Totally -> return tree
-    | _ -> Rustsymex.vanish ()
+    let* res = frame_range t ~replace_node ~rebuild_parent range in
+    match res with Ok (_, tree) -> return tree | _ -> vanish ()
 
   let consume_any (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : (t, 'err, 'fix list) Result.t =
-    let range = (low, low +@ len) in
-    let replace_node _ = not_owned range in
-    let rebuild_parent = of_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let++ () =
-      match framed.node with
+    let range = Range.of_low_and_size low len in
+    let replace_node t =
+      match t.node with
       | NotOwned _ -> miss_no_fix ~msg:"consume_any" ()
-      | _ -> Result.ok ()
+      | Owned _ -> Result.ok @@ not_owned range
     in
+    let rebuild_parent = of_children in
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
     tree
 
   let produce_any (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : t Rustsymex.t =
-    let range = (low, low +@ len) in
-    let replace_node _ = any range in
+    let range = Range.of_low_and_size low len in
+    let replace_node t =
+      match t.node with
+      | NotOwned Totally -> Result.ok @@ any Tree_borrow.empty_state range
+      | _ -> vanish ()
+    in
     let rebuild_parent = of_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    match framed.node with
-    | NotOwned Totally -> return tree
-    | _ -> Rustsymex.vanish ()
+    let* res = frame_range t ~replace_node ~rebuild_parent range in
+    match res with Ok (_, tree) -> return tree | _ -> Rustsymex.vanish ()
 
   let consume_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : (t, 'err, 'fix list) Result.t =
-    let range = (low, low +@ len) in
-    let replace_node _ = not_owned range in
-    let rebuild_parent = of_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let++ () =
-      match framed.node with
+    let range = Range.of_low_and_size low len in
+    let replace_node t =
+      match t.node with
       | NotOwned _ -> miss_no_fix ~msg:"consume_uninit" ()
-      | Owned (Uninit Totally) -> Result.ok ()
+      | Owned { v = Uninit Totally; _ } -> Result.ok @@ not_owned range
       | _ ->
           L.info (fun m -> m "Consuming uninit but no uninit, vanishing");
-          Rustsymex.vanish ()
+          vanish ()
     in
+    let rebuild_parent = of_children in
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
     tree
 
   let produce_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : t Rustsymex.t =
-    let range = (low, low +@ len) in
-    let replace_node _ = uninit range in
+    let range = Range.of_low_and_size low len in
+    let replace_node t =
+      match t.node with
+      | NotOwned Totally -> Result.ok @@ uninit Tree_borrow.empty_state range
+      | _ -> vanish ()
+    in
     let rebuild_parent = of_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    match framed.node with
-    | NotOwned Totally -> return tree
-    | _ -> Rustsymex.vanish ()
+    let* res = frame_range t ~replace_node ~rebuild_parent range in
+    match res with Ok (_, tree) -> return tree | _ -> vanish ()
 
   let consume_zeros (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : (t, 'err, 'fix list) Result.t =
-    let range = (low, low +@ len) in
-    let replace_node _ = not_owned range in
+    let range = Range.of_low_and_size low len in
+    let replace_node t =
+      match t.node with
+      | NotOwned _ -> miss_no_fix ~msg:"consume_zeros" ()
+      | Owned { v = Zeros; _ } -> Result.ok @@ not_owned range
+      | Owned { v = Init _; _ } ->
+          not_impl "Assume rust_val == 0s"
+          (* let+ () = Rustsymex.assume [ value ==?@ 0s ] in
+          Ok (not_owned range) *)
+      | _ ->
+          L.info (fun m -> m "Consuming zero but not zero, vanishing");
+          Rustsymex.vanish ()
+    in
     let rebuild_parent = of_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    match framed.node with
-    | NotOwned _ -> miss_no_fix ~msg:"consume_zeros" ()
-    | Owned Zeros -> Result.ok tree
-    | Owned (Init { ty = _; value }) ->
-        let+ () = Rustsymex.assume [ value ==?@ 0s ] in
-        Ok tree
-    | _ ->
-        L.info (fun m -> m "Consuming zero but not zero, vanishing");
-        Rustsymex.vanish ()
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
+    tree
 
   let produce_zeros (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
       (t : t) : t Rustsymex.t =
-    let range = (low, low +@ len) in
-    let replace_node _ = zeros range in
+    let range = Range.of_low_and_size low len in
+    let replace_node t =
+      match t.node with
+      | NotOwned Totally -> Result.ok @@ zeros Tree_borrow.empty_state range
+      | _ -> vanish ()
+    in
     let rebuild_parent = of_children in
-    let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    match framed.node with
-    | NotOwned Totally -> return tree
-    | _ -> Rustsymex.vanish ()
+    let* res = frame_range t ~replace_node ~rebuild_parent range in
+    match res with Ok (_, tree) -> return tree | _ -> vanish ()
 end
 
 type t = { root : Tree.t; bound : T.sint Typed.t option }
@@ -571,52 +588,28 @@ let assert_exclusively_owned t =
             ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
-let load ?is_move ofs ty t =
+let load ?is_move ofs ty tag tb t =
   let size = Typed.int @@ Layout.size_of_literal_ty ty in
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
-    Tree.load ?is_move ofs size ty t.root
+    Tree.load ?is_move ofs size ty tag tb t.root
   in
   (res, to_opt tree)
 
-let store ofs ty sval t =
+let store ofs ty sval tag tb t =
   match t with
   | None -> miss_no_fix ~msg:"outer store" ()
   | Some t ->
       let size = Typed.int @@ Layout.size_of_literal_ty ty in
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
-        Tree.store ofs size ty sval t.root
+        Tree.store ofs size ty sval tag tb t.root
       in
       ((), to_opt tree)
 
-let get_raw_tree_owned ofs size t =
-  let** t = of_opt t in
-  let++ res, tree =
-    let@ () = with_bound_check t (ofs +@ size) in
-    let+ tree, t = Tree.get_raw ofs size t.root in
-    if Node.is_fully_owned tree.node then
-      let tree = Tree.offset ~by:~-ofs tree in
-      Ok (tree, t)
-    else miss_no_fix_immediate ~msg:"get_raw_tree_owned" ()
-  in
-  (res, to_opt tree)
-
-(* This is used for copy_nonoverapping.
-   It is an action on the destination block, and assumes the received tree is at offset 0 *)
-let put_raw_tree ofs (tree : Tree.t) t :
-    (unit * t option, 'err, 'fix list) Result.t =
-  let** t = of_opt t in
-  let size = Range.size tree.range in
-  let tree = Tree.offset ~by:ofs tree in
-  let++ res, t =
-    let@ () = with_bound_check t (ofs +@ size) in
-    Tree.put_raw tree t.root
-  in
-  (res, to_opt t)
-
-let alloc size = { root = Tree.uninit (0s, size); bound = Some size }
+let alloc size =
+  { root = Tree.uninit Tree_borrow.empty_state (0s, size); bound = Some size }
 
 let uninit_range ofs size t =
   match t with
@@ -676,18 +669,18 @@ let serialize t =
   let rec serialize_tree (tree : Tree.t) =
     match tree.node with
     | Node.NotOwned _ -> Seq.empty
-    | Owned Zeros ->
+    | Owned { v = Zeros; _ } ->
         Seq.return
           (Zeros { offset = fst tree.range; len = Range.size tree.range })
-    | Owned (Uninit Totally) ->
+    | Owned { v = Uninit Totally; _ } ->
         Seq.return
           (Uninit { offset = fst tree.range; len = Range.size tree.range })
-    | Owned (Init { value = v; ty }) ->
+    | Owned { v = Init { value = v; ty }; _ } ->
         Seq.return (TypedVal { offset = fst tree.range; ty; v })
-    | Owned Any ->
+    | Owned { v = Any; _ } ->
         Seq.return
           (Any { offset = fst tree.range; len = Range.size tree.range })
-    | Owned (Lazy | Uninit Partially) ->
+    | Owned { v = Lazy | Uninit Partially; _ } ->
         let children = Option.get tree.children in
         Seq.append
           (serialize_tree (fst children))
@@ -741,7 +734,7 @@ let produce_typed_val ofs size ty v t =
   let prod_tree root = Tree.produce_typed_val ofs size ty v root in
   let mk_root_from_empty () =
     let range = Range.of_low_and_size ofs size in
-    return @@ Tree.sval_leaf ~range ~value:v ~ty
+    return @@ Tree.sval_leaf ~range ~value:v ~ty ~tb:Tree_borrow.empty_state
   in
   abstract_prod (ofs +@ size) mk_root_from_empty prod_tree t
 
@@ -753,7 +746,7 @@ let produce_any ofs len t =
   let prod_tree root = Tree.produce_any ofs len root in
   let mk_root_from_empty () =
     let range = (ofs, ofs +@ len) in
-    Rustsymex.return (Tree.any range)
+    Rustsymex.return (Tree.any Tree_borrow.empty_state range)
   in
   abstract_prod (ofs +@ len) mk_root_from_empty prod_tree t
 
@@ -766,7 +759,7 @@ let produce_uninit ofs len t =
   let prod_tree root = Tree.produce_uninit ofs len root in
   let mk_root_from_empty () =
     let range = (ofs, bound) in
-    Rustsymex.return (Tree.uninit range)
+    Rustsymex.return (Tree.uninit Tree_borrow.empty_state range)
   in
   abstract_prod bound mk_root_from_empty prod_tree t
 
@@ -779,7 +772,7 @@ let produce_zeros ofs len t =
   let prod_tree root = Tree.produce_zeros ofs len root in
   let mk_root_from_empty () =
     let range = (ofs, bound) in
-    Rustsymex.return (Tree.zeros range)
+    Rustsymex.return (Tree.zeros Tree_borrow.empty_state range)
   in
   abstract_prod bound mk_root_from_empty prod_tree t
 
