@@ -20,6 +20,7 @@ let free ptr = bi_wrap (Heap.free ptr)
 let alloc size = bi_wrap (Heap.alloc size)
 let alloc_ty ty = bi_wrap (Heap.alloc_ty ty)
 let error e = bi_wrap (Heap.error e)
+let get_global sym st = Bi.wrap_no_fail (Heap.get_global sym) st
 
 let copy_nonoverlapping ~dst ~src ~size =
   bi_wrap (Heap.copy_nonoverlapping ~dst ~src ~size)

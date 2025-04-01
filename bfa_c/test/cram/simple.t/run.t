@@ -301,5 +301,7 @@ Checking that code cannot branch infinitely
 
   $ bfa-c exec-main global.c
   Symex terminated with the following outcomes:
-    []
-  Executed 2 statements
+    [Ok: (1,
+          { heap = [(V|0|, [TypedVal {offset = 0; ty = signed int; v = 1}])];
+            globs = [(x_483, V|0|)] })]
+  Executed 5 statements

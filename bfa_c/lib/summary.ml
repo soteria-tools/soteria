@@ -27,13 +27,15 @@ let filter_pc relevant_vars pc =
         (fun (var, _) -> Var_hashset.mem relevant_vars var)
         (Typed.iter_vars v))
 
-let filter_serialized_state relvant_vars (state : Heap.serialized) =
+(** Removes any bit of the state that does not any "relevant variables". i.e.,
+    bits that are not reachable from the precondition. *)
+let filter_serialized_state relevant_vars (state : Heap.serialized) =
   let leak = ref false in
   let resulting_heap =
     ListLabels.filter state.heap ~f:(fun (loc, b) ->
         let relevant =
           Iter.exists
-            (fun (var, _) -> Var_hashset.mem relvant_vars var)
+            (fun (var, _) -> Var_hashset.mem relevant_vars var)
             (Typed.iter_vars loc)
         in
         if relevant then true
@@ -43,23 +45,23 @@ let filter_serialized_state relvant_vars (state : Heap.serialized) =
           in
           false)
   in
-  (* Globals are not filtered: if they are in the post, they were necessarily bi-abduced and necessary *)
+  (* Globals are not filtered: if they are in the spec, they were bi-abduced and necessary *)
   let resulting_state = { state with heap = resulting_heap } in
   (resulting_state, !leak)
 
 let init_reachable_vars summary =
   let init_reachable = Var_hashset.with_capacity 0 in
   let mark_reachable x = Var_hashset.add init_reachable x in
-  (* We mark all variables from the arguments and return value as reachable *)
-  let () =
-    List.iter
-      (fun cval -> Typed.iter_vars cval (fun (x, _) -> mark_reachable x))
-      summary.args
+  let mark_cval_reachable cval =
+    Typed.iter_vars cval (fun (x, _) -> mark_reachable x)
   in
+  (* We mark all variables from the arguments and return value as reachable *)
+  let () = List.iter mark_cval_reachable summary.args in
+  let () = Result.iter mark_cval_reachable summary.ret in
   let () =
-    Result.iter
-      (fun cval -> Typed.iter_vars cval (fun (x, _) -> mark_reachable x))
-      summary.ret
+    (* We mark all accessed globals as reachable. *)
+    Globs.iter_vars_serialized summary.post.Heap_intf.Template.globs
+      (fun (x, _) -> mark_reachable x)
   in
   init_reachable
 

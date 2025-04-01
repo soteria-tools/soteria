@@ -65,6 +65,9 @@ module type S = sig
       serialized list )
     Csymex.Result.t
 
+  val get_global :
+    Cerb_frontend.Symbol.sym -> t -> ([> sptr ] Typed.t * t) Csymex.t
+
   val copy_nonoverlapping :
     dst:[< sptr ] Typed.t ->
     src:[< sptr ] Typed.t ->

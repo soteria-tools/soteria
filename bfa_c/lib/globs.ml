@@ -13,7 +13,13 @@ module Loc :
   type t = Typed.T.sloc Typed.t
 
   let pp = Typed.ppa
-  let fresh () = Csymex.nondet Typed.t_loc
+
+  let fresh () =
+    let open Typed.Infix in
+    Csymex.nondet
+      ~constrs:(fun x -> [ Typed.not (x ==@ Typed.Ptr.null_loc) ])
+      Typed.t_loc
+
   let sem_eq = Typed.sem_eq
   let subst = Typed.subst
   let iter_vars = Typed.iter_vars

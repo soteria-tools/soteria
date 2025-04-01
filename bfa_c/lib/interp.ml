@@ -382,8 +382,9 @@ module Make (Heap : Heap_intf.S) = struct
             let v = (v :> T.cval Typed.t) in
             Result.ok (v, state)
         | None ->
-            Fmt.kstr not_impl "Variable %a not found in store" Fmt_ail.pp_sym id
-        )
+            (* If the variable isn't in the store, it must be a global variable. *)
+            let+ ptr, state = Heap.get_global id state in
+            Ok (ptr, state))
     | AilEassign (lvalue, rvalue) ->
         (* Evaluate rvalue first *)
         let** rval, state = eval_expr state rvalue in

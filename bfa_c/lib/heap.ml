@@ -220,3 +220,33 @@ let consume (serialized : serialized) (st : t) :
   | Missing fixes ->
       let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
       Missing fixes
+
+let get_global (sym : Cerb_frontend.Symbol.sym) (st : t) =
+  let+ loc, globs = Globs.get sym st.globs in
+  let ptr = Typed.Ptr.mk loc 0s in
+  (ptr, { st with globs })
+
+let init_prog_state (prog : Ail_tys.sigma) : t Csymex.t =
+  let produce_zero (ptr : [< T.sptr ] Typed.t) ty (state : t) : t Csymex.t =
+    let loc = Typed.Ptr.loc ptr in
+    let offset = Typed.Ptr.ofs ptr in
+    let* len = Layout.size_of_s ty in
+    let serialized : serialized =
+      {
+        heap = [ (loc, Freeable.Alive [ Tree_block.Zeros { offset; len } ]) ];
+        globs = [];
+      }
+    in
+    produce serialized state
+  in
+  Csymex.fold_list prog.declarations ~init:empty ~f:(fun (state : t) decl ->
+      let id, (_loc, _attrs, decl) = decl in
+      match decl with
+      | Cerb_frontend.AilSyntax.Decl_function _ -> Csymex.return state
+      | Decl_object (_, _, _, ty) ->
+          (* TODO: handle other parameters here *)
+          let* loc, globs = Globs.get id state.Heap_intf.Template.globs in
+          let state = { state with globs } in
+          let ptr = Typed.Ptr.mk loc 0s in
+          let* state = produce_zero ptr ty state in
+          Csymex.return state)
