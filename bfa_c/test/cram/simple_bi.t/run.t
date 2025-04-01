@@ -1,6 +1,6 @@
   $ bfa-c gen-summaries load.c
   Summaries for f_484:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(V|0| Eq 0)];
+    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 Eq V|0|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(load.c:3:10-12 (cursor: 3:10),
@@ -12,9 +12,7 @@
       [{ heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
          globs = [] }
         ];
-      pc =
-      [Not((0 Eq V|0|)); (V|3| Leq 2147483647); (-2147483648 Leq V|3|);
-        Not((V|0| Eq 0))];
+      pc = [(V|3| Leq 2147483647); (-2147483648 Leq V|3|); Not((0 Eq V|0|))];
       post =
       { heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
         globs = [] };
@@ -24,7 +22,7 @@
 
   $ bfa-c gen-summaries manifest.c
   Summaries for load_486:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(V|0| Eq 0)];
+    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 Eq V|0|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(manifest.c:6:10-12 (cursor: 6:10),
@@ -36,9 +34,7 @@
       [{ heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
          globs = [] }
         ];
-      pc =
-      [Not((0 Eq V|0|)); (V|3| Leq 2147483647); (-2147483648 Leq V|3|);
-        Not((V|0| Eq 0))];
+      pc = [(V|3| Leq 2147483647); (-2147483648 Leq V|3|); Not((0 Eq V|0|))];
       post =
       { heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
         globs = [] };

@@ -305,3 +305,11 @@ Checking that code cannot branch infinitely
           { heap = [(V|0|, [TypedVal {offset = 0; ty = signed int; v = 1}])];
             globs = [(x_483, V|0|)] })]
   Executed 5 statements
+  $ bfa-c exec-main global_alias.c
+  Symex terminated with the following outcomes:
+    [Ok: (0,
+          { heap =
+            [(V|0|, [Zeros {offset = 0; len = 4}]);
+             (V|1|, [Zeros {offset = 0; len = 4}])];
+            globs = [(x_585, V|0|); (y_586, V|1|)] })]
+  Executed 3 statements
