@@ -43,18 +43,31 @@ let pp_err ft (err, call_trace) =
   Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
   Format.close_box ()
 
+let find_kani_lib ~no_compile () =
+  let path =
+    try
+      let path = Sys.getenv "KANI_LIB_PATH" in
+      if String.ends_with ~suffix:"/" path then
+        String.sub path 0 (String.length path - 1)
+      else path
+    with Not_found -> List.hd Runtime_sites.Sites.kani_lib
+  in
+  match no_compile with
+  | true -> path
+  | false ->
+      let res =
+        Fmt.kstr Sys.command
+          "cd %s/kani && charon --only-cargo --lib --input ./src/" path
+      in
+      if res <> 0 then raise (ExecutionError "Couldn't compile Kani lib");
+      path
+
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~no_compile file_name =
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   if not no_compile then (
-    (* load from env *)
-    let kani_lib =
-      try
-        let path = Sys.getenv "KANI_LIB_PATH" in
-        if String.ends_with ~suffix:"/" path then path else path ^ "/"
-      with Not_found -> raise (ExecutionError "KANI_LIB_PATH not set")
-    in
+    let kani_lib = find_kani_lib ~no_compile () in
     let cmd =
       String.concat " "
         [
