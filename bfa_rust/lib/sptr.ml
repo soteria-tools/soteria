@@ -11,10 +11,10 @@ module type S = sig
   val null_ptr : t
 
   (** Pointer equality, irrespective of metadata *)
-  val eq : t -> t -> sbool Typed.t
+  val sem_eq : t -> t -> sbool Typed.t
 
-  (** If this is the null pointer *)
-  val is_null : t -> sbool Typed.t
+  (** If this pointer is at a null location, i.e. has no provenance *)
+  val is_at_null_loc : t -> sbool Typed.t
 
   (** If these two pointers are at the same location (ie. same allocation) *)
   val is_same_loc : t -> t -> sbool Typed.t
@@ -53,8 +53,8 @@ struct
     | None -> Format.fprintf fmt "%a" Typed.ppa ptr
 
   let null_ptr = (Typed.Ptr.null, None)
-  let eq (ptr1, _) (ptr2, _) = ptr1 ==@ ptr2
-  let is_null (ptr, _) = Typed.Ptr.is_null ptr
+  let sem_eq (ptr1, _) (ptr2, _) = ptr1 ==@ ptr2
+  let is_at_null_loc (ptr, _) = Typed.Ptr.is_at_null_loc ptr
 
   let is_same_loc (ptr1, _) (ptr2, _) =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2

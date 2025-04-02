@@ -107,7 +107,7 @@ let load ?is_move ((_, meta) as ptr) ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
-  if%sat Sptr.is_null ptr then Result.error `NullDereference
+  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
   else
     with_ptr ptr st (fun ~ofs block ->
         L.debug (fun f ->
@@ -148,7 +148,7 @@ let store ptr ty sval st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "store" ptr st;
-  if%sat Sptr.is_null ptr then Result.error `NullDereference
+  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
   else
     with_ptr ptr st (fun ~ofs block ->
         let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
@@ -167,7 +167,7 @@ let copy_nonoverlapping ~dst ~src ~size st =
   let open Typed.Infix in
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
-  if%sat Sptr.is_null dst ||@ Sptr.is_null src then
+  if%sat Sptr.is_at_null_loc dst ||@ Sptr.is_at_null_loc src then
     Result.error `NullDereference
   else
     let** tree_to_write =
@@ -213,7 +213,7 @@ let uninit ptr ty st =
   let@ () = with_loc_err () in
   log "uninit" ptr st;
   let* size = Layout.size_of_s ty in
-  if%sat Sptr.is_null ptr then Result.error `NullDereference
+  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
   else
     with_ptr ptr st (fun ~ofs block -> Tree_block.uninit_range ofs size block)
 

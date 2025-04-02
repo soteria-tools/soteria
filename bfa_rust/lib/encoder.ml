@@ -134,8 +134,8 @@ and callback_return = parser_return Rustsymex.t
 
 (** Converts a Rust type into a list of C blocks, along with their size and
     offset; once these are read, symbolically decides whether we must keep
-    reading. @offset is the initial offset to read from, @meta is the optional
-    metadata, that originates from a fat pointer. *)
+    reading. [offset] is the initial offset to read from, [meta] is the optional
+    metadata, that originates from a fat pointer, used e.g. to read a slice. *)
 let rust_of_cvals ?offset ?meta ty : parser_return =
   (* Base case, parses all types. *)
   let rec aux offset : Types.ty -> parser_return = function
