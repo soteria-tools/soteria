@@ -92,15 +92,38 @@ let log action ptr st =
         (pp_pretty ~ignore_freed:true)
         st)
 
-let with_ptr ((ptr, _) : Sptr.t) ({ heap; _ } as st : t)
+let with_heap st f =
+  let+ res = f st.heap in
+  match res with
+  | Bfa_symex.Compo_res.Ok (v, h) ->
+      Bfa_symex.Compo_res.Ok (v, { st with heap = h })
+  | Missing fixes -> Missing fixes
+  | Error e -> Error e
+
+let with_tbs b f =
+  let block, tree_borrow =
+    match b with
+    | None -> (None, Tree_borrow.init ~state:UB ())
+    | Some (block, tb) -> (Some block, tb)
+  in
+  let+ res = f (block, tree_borrow) in
+  match res with
+  | Bfa_symex.Compo_res.Ok (v, block) ->
+      let block = Option.map (fun b -> (b, tree_borrow)) block in
+      Bfa_symex.Compo_res.Ok (v, block)
+  | Missing fixes -> Missing fixes
+  | Error e -> Error e
+
+let with_ptr ((ptr, _) : Sptr.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       sub_t option ->
       ('a * sub_t option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
   let loc, ofs = Typed.Ptr.decompose ptr in
+  let@ heap = with_heap st in
   let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
-  (v, { st with heap })
+  (v, heap)
 
 let load ?is_move (((_, tag) as ptr), meta) ty st =
   let@ () = with_error_loc_as_call_trace () in
@@ -109,11 +132,7 @@ let load ?is_move (((_, tag) as ptr), meta) ty st =
   if%sat Sptr.is_null ptr then Result.error `NullDereference
   else
     with_ptr ptr st (fun ~ofs block ->
-        let block, tb =
-          match block with
-          | None -> (None, Tree_borrow.init ())
-          | Some (block, tb) -> (Some block, tb)
-        in
+        let@ block, tb = with_tbs block in
         L.debug (fun f ->
             f "Recursively reading from block tree at %a:@.%a" Sptr.pp ptr
               Fmt.(option ~none:(any "None") Tree_block.pp)
@@ -146,7 +165,6 @@ let load ?is_move (((_, tag) as ptr), meta) ty st =
             f "Finished reading rust value %a"
               (Charon_util.pp_rust_val Sptr.pp)
               value);
-        let block = Option.map (fun b -> (b, tb)) block in
         (value, block))
 
 let store (((_, tag) as ptr), _) ty sval st =
@@ -156,11 +174,8 @@ let store (((_, tag) as ptr), _) ty sval st =
   if%sat Sptr.is_null ptr then Result.error `NullDereference
   else
     with_ptr ptr st (fun ~ofs block ->
-        let block, tb =
-          match block with
-          | None -> (None, Tree_borrow.init ())
-          | Some (block, tb) -> (Some block, tb)
-        in
+        let@ block, tb = with_tbs block in
+
         let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
         L.debug (fun f ->
             let pp_part f ({ value; ty; offset } : Encoder.cval_info) =
@@ -171,19 +186,16 @@ let store (((_, tag) as ptr), _) ty sval st =
                 Typed.ppa offset
             in
             f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_part) parts);
-        let++ (), block =
-          Result.fold_list parts ~init:((), block)
-            ~f:(fun ((), block) { value; ty; offset } ->
-              Tree_block.store offset ty value tag tb block)
-        in
-        let block = Option.map (fun b -> (b, tb)) block in
-        ((), block))
+        Result.fold_list parts ~init:((), block)
+          ~f:(fun ((), block) { value; ty; offset } ->
+            Tree_block.store offset ty value tag tb block))
 
-let alloc size ({ heap; _ } as st) =
+let alloc size st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
+  let@ heap = with_heap st in
   let@ () = with_error_loc_as_call_trace () in
-  let tb = Tree_borrow.init () in
+  let tb = Tree_borrow.init ~state:Unique () in
   let block = Freeable.Alive (Tree_block.alloc size, tb) in
   let** loc, heap = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
@@ -191,7 +203,7 @@ let alloc size ({ heap; _ } as st) =
   let ptr = ((ptr, tb.tag), None) in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
-  Bfa_symex.Compo_res.ok (ptr, { st with heap })
+  Bfa_symex.Compo_res.ok (ptr, heap)
 
 let alloc_ty ty st =
   let* size = Layout.size_of_s ty in
@@ -225,14 +237,8 @@ let uninit (ptr, _) ty st =
   if%sat Sptr.is_null ptr then Result.error `NullDereference
   else
     with_ptr ptr st (fun ~ofs block ->
-        let block, tb =
-          match block with
-          | None -> (None, Tree_borrow.init ())
-          | Some (block, tb) -> (Some block, tb)
-        in
-        let++ (), block = Tree_block.uninit_range ofs size block in
-        let block = Option.map (fun b -> (b, tb)) block in
-        ((), block))
+        let@ block, _ = with_tbs block in
+        Tree_block.uninit_range ofs size block)
 
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in
@@ -253,3 +259,26 @@ let load_str_global str ({ globals; _ } as st) =
 let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
+
+let borrow ((((_, parent) as ptr), meta) : Sptr.t Charon_util.full_ptr)
+    (kind : Charon.Expressions.borrow_kind) st =
+  let@ () = with_error_loc_as_call_trace () in
+  if%sat Sptr.is_null ptr then
+    (* nothing to borrow *)
+    Result.ok ((ptr, meta), st)
+  else
+    let@ () = with_loc_err () in
+    with_ptr ptr st (fun ~ofs:_ block ->
+        let* tag_st =
+          match kind with
+          | BShared -> return Tree_borrow.Frozen
+          | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
+          | _ ->
+              Fmt.kstr not_impl "Unhandled borrow kind: %a"
+                Charon.Expressions.pp_borrow_kind kind
+        in
+        let node = Tree_borrow.init ~state:tag_st () in
+        let block, tb = Option.get block in
+        let tb' = Tree_borrow.add_child ~parent ~root:tb node in
+        let block = Some (block, tb') in
+        Result.ok ((ptr, meta), block))

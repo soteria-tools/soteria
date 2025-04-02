@@ -229,10 +229,10 @@ module Make (Heap : Heap_intf.S) = struct
     let eval_operand = eval_operand ~crate ~store in
     match expr with
     | Use op -> eval_operand state op
-    | RvRef (place, _borrow) ->
-        (* TODO: borrow pointer, new tag  *)
-        let++ ptr, state = resolve_place ~store state place in
-        (Ptr ptr, state)
+    | RvRef (place, borrow) ->
+        let** ptr, state = resolve_place ~store state place in
+        let++ ptr', state = Heap.borrow ptr borrow state in
+        (Ptr ptr', state)
     | Global { global_id; _ } ->
         let decl =
           UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)

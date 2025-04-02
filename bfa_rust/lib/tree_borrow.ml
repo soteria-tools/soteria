@@ -8,7 +8,9 @@ and t = {
   tag_protected : bool;
   (* parent : node option; *)
   children : t list;
+  initial_state : state;
 }
+[@@deriving show { with_path = false }]
 
 let tag_counter = ref 0
 
@@ -19,20 +21,24 @@ let fresh_tag () =
 let zero = 0
 
 let rec pp fmt t =
-  Fmt.pf fmt
-    (if t.tag_protected then "[%d](%a)" else "<%d>(%a)")
-    t.tag
-    Fmt.(list ~sep:comma pp)
-    t.children
+  if List.is_empty t.children then
+    Fmt.pf fmt (if t.tag_protected then "{%d}" else "[%d]") t.tag
+  else
+    Fmt.pf fmt
+      (if t.tag_protected then "{%d}(%a)" else "[%d](%a)")
+      t.tag
+      Fmt.(list ~sep:comma pp)
+      t.children
 
 let pp_tag : tag Fmt.t = Fmt.int
 
-let init ?(protected = false) () =
+let init ?(protected = false) ~state () =
   {
     tag = fresh_tag ();
     tag_protected = protected;
     (* parent = None; *)
     children = [];
+    initial_state = state;
   }
 
 let equal n1 n2 = n1.tag == n2.tag
@@ -43,8 +49,10 @@ let meet st1 st2 =
   | Disabled, _ | _, Disabled -> Disabled
   | Frozen, _ | _, Frozen -> Frozen
   | Unique, _ | _, Unique -> Unique
-  | Reserved _, _ | _, Reserved _ -> ReservedIM
-  | ReservedIM, _ -> ReservedIM
+  | Reserved b1, Reserved b2 -> Reserved (b1 || b2)
+  | ReservedIM, ReservedIM -> ReservedIM
+  | Reserved _, ReservedIM | ReservedIM, Reserved _ ->
+      raise @@ Failure "Can't compare Reserved and ReservedIM"
 
 let transition =
   let transition st e =
@@ -79,7 +87,7 @@ let transition =
 
 (* let[@tailrec] rec root n = match n.parent with None -> n | Some p -> root p *)
 
-(** [find n t] Looks for the node with tag [t] in the tree rooter at [n] *)
+(** [find n t] Looks for the node with tag [t] in the tree rooted at [n] *)
 let find n t =
   let[@tailrec] rec aux = function
     | [] -> raise Not_found
@@ -88,14 +96,31 @@ let find n t =
   in
   aux [ n ]
 
-(** [relation n t]: Relation of the tag [t], with regards to node [n]; if
-    [n.tag = t] or if [t] is a descendant of [n], then it is Local, otherwise it
-    is Foreign. *)
-let relation n t =
+(** [is_derived n t]: Returns true if [t] is derived from [n], i.e. [t] is a
+    descendant of [n] *)
+let is_derived n t =
   try
     let _ = find n t in
     Local
   with Not_found -> Foreign
+
+let add_child ~parent ~root child =
+  let found = ref false in
+  let rec aux node =
+    if node.tag = parent then (
+      found := true;
+      { node with children = child :: node.children })
+    else { node with children = List.map aux node.children }
+  in
+  let root' = aux root in
+  if !found then root' else raise Not_found
+
+let all_nodes root =
+  let rec aux acc = function
+    | [] -> acc
+    | n :: ns -> aux (n :: acc) (n.children @ ns)
+  in
+  aux [] [ root ]
 
 module TagMap = Map.Make (struct
   type t = tag
@@ -106,21 +131,39 @@ end)
 type tb_state = state TagMap.t
 
 let empty_state = TagMap.empty
+let set_state = TagMap.add
 
-(** [access root tag e state]: Update all nodes in the mapping [state] for the
-    tree rooted at [root] with an event [e], that happened at [tag]. Returns the
-    new state and a boolean indicating whether an undefined behavior was
-    encountered *)
-let access (root : t) tag e st : tb_state * bool =
-  let accessed = find root tag in
+(** [access root accessed e state]: Update all nodes in the mapping [state] for
+    the tree rooted at [root] with an event [e], that happened at [accessed].
+    Returns the new state and a boolean indicating whether an undefined behavior
+    was encountered *)
+let access (root : t) accessed e st : tb_state * bool =
   let ub_happened = ref false in
+  let st =
+    List.fold_left
+      (fun st node ->
+        if not @@ TagMap.mem node.tag st then
+          set_state node.tag node.initial_state st
+        else st)
+      st
+    @@ all_nodes root
+  in
+  L.debug (fun m ->
+      let pp_binding fmt (tag, st) = Fmt.pf fmt "%d->%a" tag pp_state st in
+      m "%a at %d, for state (%a) and tree %a" pp_access e accessed
+        Fmt.(iter_bindings ~sep:comma TagMap.iter pp_binding)
+        st pp root);
   let st' =
     TagMap.mapi
-      (fun tag' st ->
-        let node = find root tag' in
-        let rel = relation accessed tag' in
+      (fun tag st ->
+        let node = find root tag in
+        let rel = is_derived node accessed in
         let st' = transition ~protected:node.tag_protected st (rel, e) in
-        if st' = UB then ub_happened := true;
+        if st' = UB then (
+          ub_happened := true;
+          L.debug (fun m ->
+              m "Undefined behavior encountered for %d/%a/%a: %a->%a" tag
+                pp_locality rel pp_access e pp_state st pp_state st'));
         st')
       st
   in
