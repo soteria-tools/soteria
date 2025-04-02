@@ -59,7 +59,7 @@ module Make (Heap : Heap_intf.S) = struct
             let++ (), st = Heap.free ptr st in
             st
         | Some ((ptr, _) as fptr), Some protect ->
-            if%sat Sptr.eq ptr protect then Result.ok st
+            if%sat Sptr.sem_eq ptr protect then Result.ok st
             else
               let++ (), st = Heap.free fptr st in
               st)
