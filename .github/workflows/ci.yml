@@ -26,7 +26,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly-2024-10-23
-          components: rustc-dev,llvm-tools-preview
+          components: rustc-dev,llvm-tools-preview,cargo-fmt
       - name: Setup Charon
         run: |
           brew install make
