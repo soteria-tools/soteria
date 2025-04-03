@@ -29,10 +29,11 @@ jobs:
           components: rustc-dev,llvm-tools-preview
       - name: Setup Charon
         run: |
+          brew install make
           git clone https://github.com/N1ark/charon.git
           cd charon
           git checkout monomorphize
-          make build-charon-rust
+          gmake build-charon-rust
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Setup node
         uses: actions/setup-node@v4
