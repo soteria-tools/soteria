@@ -8,6 +8,7 @@ module Cleaner = struct
   let files = ref []
   let touched file = files := file :: !files
   let cleanup () = List.iter Sys.remove !files
+  let init ~clean () = if clean then at_exit cleanup
 end
 
 let setup_console_log level =
@@ -57,13 +58,20 @@ let find_kani_lib ~no_compile () =
   | false ->
       let res =
         Fmt.kstr Sys.command
-          "cd %s/kani && charon --only-cargo --lib --input ./src/" path
+          "cd %s/kani && charon --only-cargo --lib --input ./src/ > /dev/null \
+           2>/dev/null"
+          path
       in
       if res <> 0 then raise (ExecutionError "Couldn't compile Kani lib");
       path
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~no_compile file_name =
+  let file_name =
+    if Filename.is_relative file_name then
+      Filename.concat (Sys.getcwd ()) file_name
+    else file_name
+  in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   if not no_compile then (
@@ -94,6 +102,8 @@ let parse_ullbc_of_file ~no_compile file_name =
           (* Not sure this is needed *)
           "--rustc-arg=--extern=kani";
           "--rustc-arg=--extern=std";
+          (* No warning *)
+          "--rustc-arg=-Awarnings";
           (* The below is cursed and should be fixed !!! *)
           Fmt.str "--rustc-arg=-L%skani/target/aarch64-apple-darwin/debug/deps"
             kani_lib;
@@ -204,13 +214,13 @@ let exec_main (crate : Charon.UllbcAst.crate) =
   |> Result.map List.flatten
   |> Result.map_error (String.concat "\n\n")
 
-let exec_main_and_print log_level smt_file no_compile clean_up file_name =
+let exec_main_and_print log_level smt_file no_compile clean file_name =
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
+  Cleaner.init ~clean ();
   try
     let crate = parse_ullbc_of_file ~no_compile file_name in
     let res = exec_main crate in
-    if clean_up then Cleaner.cleanup ();
     match res with
     | Ok res ->
         let open Fmt in
@@ -228,10 +238,8 @@ let exec_main_and_print log_level smt_file no_compile clean_up file_name =
         exit 1
   with
   | ExecutionError e ->
-      if clean_up then Cleaner.cleanup ();
       L.err (fun f -> f "Fatal: %s" e);
       exit 2
   | CharonError e ->
-      if clean_up then Cleaner.cleanup ();
       L.err (fun f -> f "Fatal (Charon): %s" e);
       exit 3
