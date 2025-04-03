@@ -27,6 +27,7 @@ jobs:
       - name: Setup Charon
         run: |
           brew install make
+          cd ..
           git clone https://github.com/N1ark/charon.git
           cd charon
           git checkout monomorphize
