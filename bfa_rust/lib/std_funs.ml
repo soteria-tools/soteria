@@ -544,7 +544,7 @@ module M (Heap : Heap_intf.S) = struct
     let++ (), state = Heap.store ptr ty v state in
     (Ptr ptr, state)
 
-  let ptr_op op (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let ptr_op ?(byte = false) op (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     let ptr, meta, v =
       match args with
       | [ Ptr (ptr, meta); Base v ] -> (ptr, meta, v)
@@ -556,9 +556,11 @@ module M (Heap : Heap_intf.S) = struct
       | None -> failwith "ptr_add: invalid offset type"
     in
     let ty =
-      match funsig.inputs with
-      | TRawPtr (ty, _) :: _ -> ty
-      | _ -> failwith "ptr_offset_from: invalid arguments"
+      if byte then Types.TLiteral (TInteger U8)
+      else
+        match funsig.inputs with
+        | TRawPtr (ty, _) :: _ -> ty
+        | _ -> failwith "ptr_offset_from: invalid arguments"
     in
     let v = if op = Add then v else ~-v in
     let ptr' = Sptr.offset ~ty ptr v in
@@ -605,6 +607,7 @@ module M (Heap : Heap_intf.S) = struct
         in
         if%sat Typed.conj (constrs v) then Result.ok (Base v, state)
         else Heap.error `UBTransmute state
+    | TRef _, TRef _, Ptr _ -> Result.ok (v, state)
     | _ ->
         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         Fmt.failwith "Unhandled transmute of %a: %s -> %s" pp_rust_val v
@@ -629,6 +632,7 @@ module M (Heap : Heap_intf.S) = struct
     | IterNth
     | MinAlignOf of type_loc
     | OptUnwrap
+    | PtrByteOp of std_op
     | PtrOp of std_op
     | PtrOffsetFrom
     | ResUnwrap
@@ -696,9 +700,13 @@ module M (Heap : Heap_intf.S) = struct
       ("core::option::{@T}::is_some", IsSome);
       ("core::option::{@T}::unwrap", OptUnwrap);
       ("core::ptr::const_ptr::{@T}::add", PtrOp Add);
+      ("core::ptr::const_ptr::{@T}::byte_add", PtrByteOp Add);
+      ("core::ptr::const_ptr::{@T}::byte_sub", PtrByteOp Sub);
       ("core::ptr::const_ptr::{@T}::offset", PtrOp Add);
       ("core::ptr::const_ptr::{@T}::sub", PtrOp Sub);
       ("core::ptr::mut_ptr::{@T}::add", PtrOp Add);
+      ("core::ptr::mut_ptr::{@T}::byte_add", PtrByteOp Add);
+      ("core::ptr::mut_ptr::{@T}::byte_sub", PtrByteOp Sub);
       ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
       ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
       ("core::result::{@T}::unwrap", ResUnwrap);
@@ -738,6 +746,7 @@ module M (Heap : Heap_intf.S) = struct
        | IterNth -> iter_nth f.signature
        | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
        | OptUnwrap -> unwrap_opt f.signature
+       | PtrByteOp op -> ptr_op ~byte:true op f.signature
        | PtrOp op -> ptr_op op f.signature
        | PtrOffsetFrom -> ptr_offset_from f.signature
        | ResUnwrap -> unwrap_res f.signature
