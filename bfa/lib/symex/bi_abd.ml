@@ -36,6 +36,11 @@ module Make (Symex : Symex.S) = struct
     in
     with_fuel fuel bi_st
 
+  let wrap_no_fail f bi_st =
+    let st, fixes = bi_st in
+    let+ v, st = f st in
+    (v, (st, fixes))
+
   let produce prod inner_ser st =
     let st, fixes = st in
     let+ st = prod inner_ser st in

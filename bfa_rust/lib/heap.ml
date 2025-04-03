@@ -114,81 +114,79 @@ let with_tbs b f =
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
-let with_ptr ((ptr, _) : Sptr.t) (st : t)
+let with_ptr ((raw_ptr, _) as ptr : Sptr.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       sub_t option ->
       ('a * sub_t option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
-  let loc, ofs = Typed.Ptr.decompose ptr in
-  let@ heap = with_heap st in
-  let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
-  (v, heap)
+  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
+  else
+    let loc, ofs = Typed.Ptr.decompose raw_ptr in
+    let@ heap = with_heap st in
+    let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
+    (v, heap)
 
 let load ?is_move (((_, tag) as ptr), meta) ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
-  if%sat Sptr.is_null ptr then Result.error `NullDereference
-  else
-    with_ptr ptr st (fun ~ofs block ->
-        let@ block, tb = with_tbs block in
-        L.debug (fun f ->
-            f "Recursively reading from block tree at %a:@.%a" Sptr.pp ptr
-              Fmt.(option ~none:(any "None") Tree_block.pp)
-              block);
-        let rec aux block = function
-          | `Done v -> Result.ok (v, block)
-          | `More (blocks, callback) ->
-              L.debug (fun f ->
-                  let pp_block ft (ty, ofs) =
-                    Fmt.pf ft "%s [%a] "
-                      (Charon_util.lit_to_string ty)
-                      Typed.ppa ofs
+  with_ptr ptr st (fun ~ofs block ->
+      let@ block, tb = with_tbs block in
+      L.debug (fun f ->
+          f "Recursively reading from block tree at %a:@.%a" Sptr.pp ptr
+            Fmt.(option ~none:(any "None") Tree_block.pp)
+            block);
+      let rec aux block = function
+        | `Done v -> Result.ok (v, block)
+        | `More (blocks, callback) ->
+            L.debug (fun f ->
+                let pp_block ft (ty, ofs) =
+                  Fmt.pf ft "%s [%a] "
+                    (Charon_util.lit_to_string ty)
+                    Typed.ppa ofs
+                in
+                f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
+            let** values, block =
+              Result.fold_list blocks ~init:([], block)
+                ~f:(fun (vals, block) (ty, ofs) ->
+                  let++ value, block =
+                    Tree_block.load ?is_move ofs ty tag tb block
                   in
-                  f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
-              let** values, block =
-                Result.fold_list blocks ~init:([], block)
-                  ~f:(fun (vals, block) (ty, ofs) ->
-                    let++ value, block =
-                      Tree_block.load ?is_move ofs ty tag tb block
-                    in
-                    (value :: vals, block))
-              in
-              let values = List.rev values in
-              let* res = callback values in
-              aux block res
-        in
-        let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
-        let++ value, block = aux block parser in
-        L.debug (fun f ->
-            f "Finished reading rust value %a"
-              (Charon_util.pp_rust_val Sptr.pp)
-              value);
-        (value, block))
+                  (value :: vals, block))
+            in
+            let values = List.rev values in
+            let* res = callback values in
+            aux block res
+      in
+      let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
+      let++ value, block = aux block parser in
+      L.debug (fun f ->
+          f "Finished reading rust value %a"
+            (Charon_util.pp_rust_val Sptr.pp)
+            value);
+      (value, block))
 
 let store (((_, tag) as ptr), _) ty sval st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "store" ptr st;
-  if%sat Sptr.is_null ptr then Result.error `NullDereference
-  else
-    with_ptr ptr st (fun ~ofs block ->
-        let@ block, tb = with_tbs block in
+  with_ptr ptr st (fun ~ofs block ->
+      let@ block, tb = with_tbs block in
 
-        let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
-        L.debug (fun f ->
-            let pp_part f ({ value; ty; offset } : Encoder.cval_info) =
-              Fmt.pf f "%a: %s [%a]"
-                (Charon_util.pp_rust_val Sptr.pp)
-                value
-                (Charon_util.lit_to_string ty)
-                Typed.ppa offset
-            in
-            f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_part) parts);
-        Result.fold_list parts ~init:((), block)
-          ~f:(fun ((), block) { value; ty; offset } ->
-            Tree_block.store offset ty value tag tb block))
+      let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
+      L.debug (fun f ->
+          let pp_part f ({ value; ty; offset } : Encoder.cval_info) =
+            Fmt.pf f "%a: %s [%a]"
+              (Charon_util.pp_rust_val Sptr.pp)
+              value
+              (Charon_util.lit_to_string ty)
+              Typed.ppa offset
+          in
+          f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_part) parts);
+      Result.fold_list parts ~init:((), block)
+        ~f:(fun ((), block) { value; ty; offset } ->
+          Tree_block.store offset ty value tag tb block))
 
 let alloc size st =
   (* Commenting this out as alloc cannot fail *)
@@ -234,11 +232,9 @@ let uninit (ptr, _) ty st =
   let@ () = with_loc_err () in
   log "uninit" ptr st;
   let* size = Layout.size_of_s ty in
-  if%sat Sptr.is_null ptr then Result.error `NullDereference
-  else
-    with_ptr ptr st (fun ~ofs block ->
-        let@ block, _ = with_tbs block in
-        Tree_block.uninit_range ofs size block)
+  with_ptr ptr st (fun ~ofs block ->
+      let@ block, _ = with_tbs block in
+      Tree_block.uninit_range ofs size block)
 
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in
@@ -263,25 +259,20 @@ let load_global g ({ globals; _ } as st) =
 let borrow ((((raw_ptr, parent) as ptr), meta) : Sptr.t Charon_util.full_ptr)
     (kind : Charon.Expressions.borrow_kind) st =
   let@ () = with_error_loc_as_call_trace () in
-  if%sat Sptr.is_null ptr then
-    (* nothing to borrow *)
-    Result.ok ((ptr, meta), st)
-  else
-    let@ () = with_loc_err () in
-    with_ptr ptr st (fun ~ofs:_ block ->
-        let* tag_st =
-          match kind with
-          | BShared -> return Tree_borrow.Frozen
-          | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
-          | _ ->
-              Fmt.kstr not_impl "Unhandled borrow kind: %a"
-                Charon.Expressions.pp_borrow_kind kind
-        in
-        let node = Tree_borrow.init ~state:tag_st () in
-        let block, tb = Option.get block in
-        let tb' = Tree_borrow.add_child ~parent ~root:tb node in
-        let block = Some (block, tb') in
-        let ptr' = (raw_ptr, node.tag) in
-        L.debug (fun m ->
-            m "Borrowed pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
-        Result.ok ((ptr', meta), block))
+  let@ () = with_loc_err () in
+  with_ptr ptr st (fun ~ofs:_ block ->
+      let* tag_st =
+        match kind with
+        | BShared -> return Tree_borrow.Frozen
+        | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
+        | _ ->
+            Fmt.kstr not_impl "Unhandled borrow kind: %a"
+              Charon.Expressions.pp_borrow_kind kind
+      in
+      let node = Tree_borrow.init ~state:tag_st () in
+      let block, tb = Option.get block in
+      let tb' = Tree_borrow.add_child ~parent ~root:tb node in
+      let block = Some (block, tb') in
+      let ptr' = (raw_ptr, node.tag) in
+      L.debug (fun m -> m "Borrowed pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
+      Result.ok ((ptr', meta), block))

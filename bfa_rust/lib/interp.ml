@@ -575,7 +575,7 @@ module Make (Heap : Heap_intf.S) = struct
                   if%sat discr ==@ 0s then return else_block
                   else return if_block
               | Ptr (ptr, _) ->
-                  if%sat Sptr.is_null ptr then return else_block
+                  if%sat Sptr.is_at_null_loc ptr then return else_block
                   else return if_block
               | _ ->
                   Fmt.kstr not_impl
@@ -601,7 +601,7 @@ module Make (Heap : Heap_intf.S) = struct
               | Base discr -> fun (v, _) -> discr ==@ value_of_scalar v
               | Ptr (ptr, _) ->
                   fun (v, _) ->
-                    if Z.equal Z.zero v.value then Sptr.is_null ptr
+                    if Z.equal Z.zero v.value then Sptr.is_at_null_loc ptr
                     else failwith "Can't compare pointer with non-0 scalar"
               | _ ->
                   fun (v, _) ->

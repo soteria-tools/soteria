@@ -21,18 +21,6 @@ module List_ex = struct
   let combine3_opt l1 l2 l3 =
     try Some (combine3 l1 l2 l3) with Invalid_argument _ -> None
 
-  (* An iteration over the cross-product of l with itself,
-      excluding pairs (x, x) of the same element.
-     For instance, [self_cross_product [1; 2; 3]] will iterate over [(1, 2), (1, 3), (2, 3)] *)
-  let iter_self_cross_product l f =
-    let rec aux = function
-      | [] -> ()
-      | x :: l ->
-          List.iter (fun y -> f (x, y)) l;
-          aux l
-    in
-    aux l
-
   let[@tail_mod_cons] rec map2i i f l1 l2 =
     match (l1, l2) with
     | [], [] -> []
@@ -46,6 +34,21 @@ module List_ex = struct
     | _, _ -> invalid_arg "List_ex.map2i"
 
   let map2i f l1 l2 = map2i 0 f l1 l2
+end
+
+module Seq_ex = struct
+  (** An iteration over the cross-product of [seq] with itself, excluding pairs
+      (x, x) of the same element. For instance, [self_cross_product [1; 2; 3]]
+      will iterate over [(1, 2), (1, 3), (2, 3)] Note that the sequence needs to
+      be persistent, otherwise result is unspecified. *)
+  let self_cross_product seq =
+    let rec aux seq =
+      match seq () with
+      | Seq.Nil -> Seq.empty
+      | Seq.Cons (x, seq) ->
+          Seq.append (Seq.map (fun y -> (x, y)) seq) (aux seq)
+    in
+    aux seq
 end
 
 module Syntax = struct

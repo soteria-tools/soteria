@@ -70,7 +70,10 @@ end
 
 module Copy_cerb_runtime = struct
   let copy_cerb_runtime dest_dir =
-    let path = Cerb_runtime.runtime () in
+    let ( / ) = Filename.concat in
+    let path = Cerb_runtime.in_runtime "" in
+    let dest_dir = dest_dir / "cerberus-lib" / "runtime" in
+    let () = run "mkdir" [ "-p"; dest_dir ] |> eval in
     let () = run "cp" [ "-r"; path; dest_dir ] |> eval in
     let () = run "rm" [ "-rf"; Filename.concat dest_dir "bmc" ] |> eval in
     Printf.printf "Copied Cerb runtime from %s to %s\n" path dest_dir

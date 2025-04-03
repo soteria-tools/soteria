@@ -13,8 +13,8 @@ module type S = sig
   (** Pointer equality *)
   val sem_eq : t -> t -> sbool Typed.t
 
-  (** If this is the null pointer *)
-  val is_null : t -> sbool Typed.t
+  (** If this pointer is at a null location, i.e. has no provenance *)
+  val is_at_null_loc : t -> sbool Typed.t
 
   (** If these two pointers are at the same location (ie. same allocation) *)
   val is_same_loc : t -> t -> sbool Typed.t
@@ -45,7 +45,7 @@ module ArithPtr : S with type t = T.sptr Typed.t * Tree_borrow.tag = struct
 
   let null_ptr = (Typed.Ptr.null, Tree_borrow.zero)
   let sem_eq (ptr1, _) (ptr2, _) = ptr1 ==@ ptr2
-  let is_null (ptr, _) = Typed.Ptr.is_at_null_loc ptr
+  let is_at_null_loc (ptr, _) = Typed.Ptr.is_at_null_loc ptr
 
   let is_same_loc (ptr1, _) (ptr2, _) =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2

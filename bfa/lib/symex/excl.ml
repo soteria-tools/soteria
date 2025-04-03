@@ -3,7 +3,6 @@ module Make (Symex : Symex.S) = struct
   type 'a serialized = 'a
 
   let pp pp_value = pp_value
-  let owned x = x
 
   let load (st : 'a t option) =
     match st with

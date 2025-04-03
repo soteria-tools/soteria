@@ -27,13 +27,15 @@ let filter_pc relevant_vars pc =
         (fun (var, _) -> Var_hashset.mem relevant_vars var)
         (Typed.iter_vars v))
 
-let filter_serialized_heap relvant_vars pc =
+(** Removes any bit of the state that does not any "relevant variables". i.e.,
+    bits that are not reachable from the precondition. *)
+let filter_serialized_state relevant_vars (state : Heap.serialized) =
   let leak = ref false in
   let resulting_heap =
-    ListLabels.filter pc ~f:(fun (loc, b) ->
+    ListLabels.filter state.heap ~f:(fun (loc, b) ->
         let relevant =
           Iter.exists
-            (fun (var, _) -> Var_hashset.mem relvant_vars var)
+            (fun (var, _) -> Var_hashset.mem relevant_vars var)
             (Typed.iter_vars loc)
         in
         if relevant then true
@@ -43,21 +45,23 @@ let filter_serialized_heap relvant_vars pc =
           in
           false)
   in
-  (resulting_heap, !leak)
+  (* Globals are not filtered: if they are in the spec, they were bi-abduced and necessary *)
+  let resulting_state = { state with heap = resulting_heap } in
+  (resulting_state, !leak)
 
 let init_reachable_vars summary =
   let init_reachable = Var_hashset.with_capacity 0 in
   let mark_reachable x = Var_hashset.add init_reachable x in
-  (* We mark all variables from the arguments and return value as reachable *)
-  let () =
-    List.iter
-      (fun cval -> Typed.iter_vars cval (fun (x, _) -> mark_reachable x))
-      summary.args
+  let mark_cval_reachable cval =
+    Typed.iter_vars cval (fun (x, _) -> mark_reachable x)
   in
+  (* We mark all variables from the arguments and return value as reachable *)
+  let () = List.iter mark_cval_reachable summary.args in
+  let () = Result.iter mark_cval_reachable summary.ret in
   let () =
-    Result.iter
-      (fun cval -> Typed.iter_vars cval (fun (x, _) -> mark_reachable x))
-      summary.ret
+    (* We mark all accessed globals as reachable. *)
+    Globs.iter_vars_serialized summary.post.Heap_intf.Template.globs
+      (fun (x, _) -> mark_reachable x)
   in
   init_reachable
 
@@ -83,9 +87,10 @@ let pruned summary =
           product (fun ((x, _), (y, _)) -> Var_graph.add_double_edge graph x y)
       | _ -> ());
   (* For each block $l -> B in the pre and post heap, we add a single-sided arrow
-     from $l to all variables contained in B. *)
+     from all variables in $l to all variables contained in B. *)
   ListLabels.iter
-    (List.concat summary.pre @ summary.post)
+    (List.concat (List.map (fun x -> x.Heap_intf.Template.heap) summary.pre)
+    @ summary.post.heap)
     ~f:(fun (l, b) ->
       let b_iter =
         Csymex.Freeable.iter_vars_serialized Tree_block.iter_vars_serialized b
@@ -98,7 +103,7 @@ let pruned summary =
   let reachable = Var_graph.reachable_from graph init_reachable in
   (* We can now filter the summary to keep only the reachable values *)
   let new_pc = filter_pc reachable summary.pc in
-  let new_post, memory_leak = filter_serialized_heap reachable summary.post in
+  let new_post, memory_leak = filter_serialized_state reachable summary.post in
   {
     summary with
     pc = new_pc;

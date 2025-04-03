@@ -22,7 +22,9 @@ let cardinal tbl = Hashtbl.length tbl
 let copy tbl = Hashtbl.copy tbl
 let subseteq lset rset = to_seq lset |> Seq.for_all (fun x -> mem rset x)
 let equal lset rset = cardinal lset = cardinal rset && subseteq lset rset
-let pp pp_elt : 'a t Fmt.t = Fmt.braces @@ Fmt.iter ~sep:Fmt.comma iter pp_elt
+
+let pp pp_elt : Format.formatter -> 'a t -> unit =
+  Fmt.braces @@ Fmt.iter ~sep:Fmt.comma iter pp_elt
 
 module type PrintableHashedType = sig
   include Hashtbl.HashedType

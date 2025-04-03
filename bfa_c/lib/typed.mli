@@ -10,14 +10,17 @@ module T : sig
   type cval = [ sint | sptr ]
   type any = [ `Bool | `Ptr | `Loc | `List of any | `NonZero | `MaybeZero ]
 
-  val pp_sint : sint Fmt.t
-  val pp_nonzero : nonzero Fmt.t
-  val pp_sbool : sbool Fmt.t
-  val pp_sptr : sptr Fmt.t
-  val pp_sloc : sloc Fmt.t
-  val pp_cval : cval Fmt.t
-  val pp_sseq : 'a Fmt.t -> 'a sseq Fmt.t
-  val pp_any : any Fmt.t
+  val pp_sint : Format.formatter -> sint -> unit
+  val pp_nonzero : Format.formatter -> nonzero -> unit
+  val pp_sbool : Format.formatter -> sbool -> unit
+  val pp_sptr : Format.formatter -> sptr -> unit
+  val pp_sloc : Format.formatter -> sloc -> unit
+  val pp_cval : Format.formatter -> cval -> unit
+
+  val pp_sseq :
+    (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a sseq -> unit
+
+  val pp_any : Format.formatter -> any -> unit
 end
 
 open T
@@ -25,8 +28,10 @@ open T
 (** {2 Types} *)
 type +'a ty
 
-val pp_ty : 'a ty Fmt.t -> 'a ty Fmt.t
-val ppa_ty : 'a ty Fmt.t
+val pp_ty :
+  (Format.formatter -> 'a ty -> unit) -> Format.formatter -> 'a ty -> unit
+
+val ppa_ty : Format.formatter -> 'a ty -> unit
 val t_bool : [> sbool ] ty
 val t_int : [> sint ] ty
 val t_ptr : [> sptr ] ty
@@ -52,8 +57,8 @@ val cast : 'a t -> 'b t
 val cast_checked : 'a t -> 'b ty -> 'b t option
 val untyped : 'a t -> Svalue.t
 val untyped_list : 'a t list -> Svalue.t list
-val pp : 'a Fmt.t -> 'a t Fmt.t
-val ppa : 'a t Fmt.t
+val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
+val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
 

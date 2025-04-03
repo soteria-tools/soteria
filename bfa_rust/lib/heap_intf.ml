@@ -92,7 +92,7 @@ module type S = sig
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
-      [> `OutOfBounds | `UseAfterFree ] err,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
       serialized list )
     Result.t
 end
