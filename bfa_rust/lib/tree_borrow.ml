@@ -150,7 +150,7 @@ let access (root : t) accessed e st : tb_state * bool =
   in
   L.debug (fun m ->
       let pp_binding fmt (tag, st) = Fmt.pf fmt "%d->%a" tag pp_state st in
-      m "%a at %d, for state (%a) and tree %a" pp_access e accessed
+      m "TB: %a at %d, for state (%a) and tree %a" pp_access e accessed
         Fmt.(iter_bindings ~sep:comma TagMap.iter pp_binding)
         st pp root);
   let st' =
@@ -162,7 +162,7 @@ let access (root : t) accessed e st : tb_state * bool =
         if st' = UB then (
           ub_happened := true;
           L.debug (fun m ->
-              m "Undefined behavior encountered for %d/%a/%a: %a->%a" tag
+              m "TB: Undefined behavior encountered for %d/%a/%a: %a->%a" tag
                 pp_locality rel pp_access e pp_state st pp_state st'));
         st')
       st

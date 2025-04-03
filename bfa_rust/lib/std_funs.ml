@@ -698,6 +698,9 @@ module M (Heap : Heap_intf.S) = struct
       ("core::ptr::const_ptr::{@T}::add", PtrOp Add);
       ("core::ptr::const_ptr::{@T}::offset", PtrOp Add);
       ("core::ptr::const_ptr::{@T}::sub", PtrOp Sub);
+      ("core::ptr::mut_ptr::{@T}::add", PtrOp Add);
+      ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
+      ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
       ("core::result::{@T}::unwrap", ResUnwrap);
       ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);

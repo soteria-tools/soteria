@@ -260,7 +260,7 @@ let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
 
-let borrow ((((_, parent) as ptr), meta) : Sptr.t Charon_util.full_ptr)
+let borrow ((((raw_ptr, parent) as ptr), meta) : Sptr.t Charon_util.full_ptr)
     (kind : Charon.Expressions.borrow_kind) st =
   let@ () = with_error_loc_as_call_trace () in
   if%sat Sptr.is_null ptr then
@@ -281,4 +281,7 @@ let borrow ((((_, parent) as ptr), meta) : Sptr.t Charon_util.full_ptr)
         let block, tb = Option.get block in
         let tb' = Tree_borrow.add_child ~parent ~root:tb node in
         let block = Some (block, tb') in
-        Result.ok ((ptr, meta), block))
+        let ptr' = (raw_ptr, node.tag) in
+        L.debug (fun m ->
+            m "Borrowed pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
+        Result.ok ((ptr', meta), block))
