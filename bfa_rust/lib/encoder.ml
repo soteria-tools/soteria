@@ -18,11 +18,11 @@ type cval_info = {
 
 (** Converts a Rust value of the given type into a list of C values, along with
     their size and offset *)
-let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
+let rec rust_to_cvals ?(offset = 0s) (value : Sptr.t rust_val) (ty : Types.ty) :
     cval_info list =
   let illegal_pair () =
     L.err (fun m ->
-        m "Wrong pair of rust_value and Charon.ty: %a / %a" ppa_rust_val v
+        m "Wrong pair of rust_value and Charon.ty: %a / %a" ppa_rust_val value
           Types.pp_ty ty);
     failwith "Wrong pair of rust_value and Charon.ty"
   in
@@ -35,11 +35,11 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
     |> List.flatten
   in
 
-  match (v, ty) with
+  match (value, ty) with
   (* Literals *)
-  | Base _, TLiteral ty -> [ { value = v; ty; offset } ]
+  | Base _, TLiteral ty -> [ { value; ty; offset } ]
   | Ptr _, TLiteral (TInteger (Isize | Usize) as ty) ->
-      [ { value = v; ty; offset } ]
+      [ { value; ty; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
   | Ptr (_, None), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
@@ -47,7 +47,7 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
   | Ptr (_, None), TRawPtr (sub_ty, _) ->
       let ty = Values.TInteger Isize in
       if is_fat_ptr sub_ty then failwith "Expected a fat pointer"
-      else [ { value = v; ty; offset } ]
+      else [ { value; ty; offset } ]
   | Ptr (ptr, Some meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
   | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
   | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
@@ -62,14 +62,10 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
       else [ { value; ty; offset } ]
   (* References / Pointers obtained from casting *)
   | Base _, TAdt (TBuiltin TBox, _) | Base _, TRef _ | Base _, TRawPtr _ ->
-      [ { value = v; ty = TInteger Isize; offset } ]
+      [ { value; ty = TInteger Isize; offset } ]
   | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
-  | Tuple vs, TAdt (TTuple, { types; _ }) ->
-      if List.compare_lengths vs types <> 0 then
-        Fmt.failwith "Mistmached rust_val / TTuple lengths: %d/%d"
-          (List.length vs) (List.length types)
-      else chain_cvals (layout_of ty) vs types
+  | Tuple vs, TAdt (TTuple, { types; _ }) -> chain_cvals (layout_of ty) vs types
   | Tuple _, _ | _, TAdt (TTuple, _) -> illegal_pair ()
   (* Structs *)
   | Struct vals, TAdt (TAdtId t_id, _) ->
@@ -111,7 +107,7 @@ let rec rust_to_cvals ?(offset = 0s) (v : Sptr.t rust_val) (ty : Types.ty) :
   | _ ->
       L.err (fun m ->
           m "Unhandled rust_value and Charon.ty: %a / %a" (pp_rust_val Sptr.pp)
-            v Types.pp_ty ty);
+            value Types.pp_ty ty);
       failwith "Unhandled rust_value and Charon.ty"
 
 type aux_ret = (Types.literal_type * sint Typed.t) list * parse_callback
