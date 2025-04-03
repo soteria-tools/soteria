@@ -62,7 +62,10 @@ let find_kani_lib ~no_compile () =
            2>/dev/null"
           path
       in
-      if res <> 0 then raise (ExecutionError "Couldn't compile Kani lib");
+      if res <> 0 && res <> 255 then
+        raise
+          (ExecutionError
+             ("Couldn't compile Kani lib: error " ^ Int.to_string res));
       path
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
@@ -120,7 +123,7 @@ let parse_ullbc_of_file ~no_compile file_name =
     try
       output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json
     with
-    | Sys_error _ -> raise (ExecutionError "File doesn't exist")
+    | Sys_error _ -> raise (CharonError "File doesn't exist")
     | _ -> raise (CharonError "Failed to parse ULLBC")
   in
   match crate with
