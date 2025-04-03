@@ -92,7 +92,16 @@ module type S = sig
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      [> `NullDereference | `UseAfterFree ] err,
+      serialized list )
+    Result.t
+
+  val protect :
+    full_ptr ->
+    Charon.Types.ref_kind ->
+    t ->
+    ( full_ptr * t,
+      [> `NullDereference | `UseAfterFree ] err,
       serialized list )
     Result.t
 end

@@ -74,8 +74,7 @@ let transition =
 
   let transition_protected st e =
     match (st, e) with
-    | Reserved b, (Local, Read) -> Reserved b
-    | Reserved _, (Foreign, Read) -> Reserved true
+    | Reserved false, (Foreign, Read) -> Reserved true
     | Reserved true, (_, Write) -> UB
     | Unique, (Foreign, Read) -> UB
     | _ ->

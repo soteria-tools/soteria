@@ -46,6 +46,13 @@ module Make (Heap : Heap_intf.S) = struct
         let index = Expressions.VarId.to_int index in
         if 0 < index && index <= locals.arg_count then
           let value = List.nth args (index - 1) in
+          let** value, st =
+            match (value, ty) with
+            | Ptr ptr, (TRawPtr (_, mut) | TRef (_, _, mut)) ->
+                let++ ptr', st = Heap.protect ptr mut st in
+                (Ptr ptr', st)
+            | _ -> Result.ok (value, st)
+          in
           let++ (), st = Heap.store ptr ty value st in
           (store, st)
         else Result.ok (store, st))
@@ -646,7 +653,6 @@ module Make (Heap : Heap_intf.S) = struct
           Fmt.(list ~sep:comma pp_rust_val)
           args);
     let** store, state = alloc_stack body.locals args state in
-    (* TODO: local optimisation to put values in store directly when no address is taken. *)
     let starting_block = List.hd body.body in
     let** value, store, state =
       exec_block ~crate ~body store state starting_block

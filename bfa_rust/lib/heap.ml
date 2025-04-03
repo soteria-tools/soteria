@@ -256,7 +256,7 @@ let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
 
-let borrow ((((raw_ptr, parent) as ptr), meta) : Sptr.t Charon_util.full_ptr)
+let borrow (((raw_ptr, parent) as ptr), meta)
     (kind : Charon.Expressions.borrow_kind) st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
@@ -275,4 +275,20 @@ let borrow ((((raw_ptr, parent) as ptr), meta) : Sptr.t Charon_util.full_ptr)
       let block = Some (block, tb') in
       let ptr' = (raw_ptr, node.tag) in
       L.debug (fun m -> m "Borrowed pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
+      Result.ok ((ptr', meta), block))
+
+let protect (((raw_ptr, parent) as ptr), meta) (mut : Charon.Types.ref_kind) st
+    =
+  let@ () = with_error_loc_as_call_trace () in
+  let@ () = with_loc_err () in
+  with_ptr ptr st (fun ~ofs:_ block ->
+      let tag_st =
+        match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
+      in
+      let node = Tree_borrow.init ~state:tag_st ~protected:true () in
+      let block, tb = Option.get block in
+      let tb' = Tree_borrow.add_child ~parent ~root:tb node in
+      let block = Some (block, tb') in
+      let ptr' = (raw_ptr, node.tag) in
+      L.debug (fun m -> m "Protected pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
       Result.ok ((ptr', meta), block))
