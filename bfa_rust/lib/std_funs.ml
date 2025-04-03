@@ -361,7 +361,7 @@ module M (Heap : Heap_intf.S) = struct
       match (args, gargs.const_generics) with
       (* Array with static size *)
       | _, [ size ] -> Typed.int @@ Charon_util.int_of_const_generic size
-      | Ptr (_, Some size) :: _, [] -> Typed.cast @@ size
+      | Ptr (_, Some size) :: _, [] -> Typed.cast size
       | _ -> failwith "array_index (fn): couldn't calculate size"
     in
     let ptr, idx_from, idx_to =

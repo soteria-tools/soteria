@@ -1,4 +1,4 @@
-type tag = (int[@opaque])
+type tag = int
 and access = Read | Write
 and locality = Local | Foreign
 and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
@@ -6,7 +6,6 @@ and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
 and t = {
   tag : tag;
   tag_protected : bool;
-  (* parent : node option; *)
   children : t list;
   initial_state : state;
 }
@@ -142,9 +141,9 @@ let access (root : t) accessed e st : tb_state * bool =
   let st =
     List.fold_left
       (fun st node ->
-        if not @@ TagMap.mem node.tag st then
-          set_state node.tag node.initial_state st
-        else st)
+        TagMap.update node.tag
+          (function None -> Some node.initial_state | st -> st)
+          st)
       st
     @@ all_nodes root
   in
