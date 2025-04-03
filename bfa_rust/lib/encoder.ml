@@ -7,19 +7,18 @@ open T
 open Charon_util
 open Rustsymex
 open Rustsymex.Syntax
-module Sptr = Sptr.ArithPtr
 open Layout
 
-type cval_info = {
-  value : Sptr.t rust_val;
+type 'ptr cval_info = {
+  value : 'ptr rust_val;
   ty : Types.literal_type;
   offset : sint Typed.t;
 }
 
 (** Converts a Rust value of the given type into a list of C values, along with
     their size and offset *)
-let rec rust_to_cvals ?(offset = 0s) (value : Sptr.t rust_val) (ty : Types.ty) :
-    cval_info list =
+let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
+    'ptr cval_info list =
   let illegal_pair () =
     L.err (fun m ->
         m "Wrong pair of rust_value and Charon.ty: %a / %a" ppa_rust_val value
@@ -106,22 +105,24 @@ let rec rust_to_cvals ?(offset = 0s) (value : Sptr.t rust_val) (ty : Types.ty) :
   (* Rest *)
   | _ ->
       L.err (fun m ->
-          m "Unhandled rust_value and Charon.ty: %a / %a" (pp_rust_val Sptr.pp)
-            value Types.pp_ty ty);
+          m "Unhandled rust_value and Charon.ty: %a / %a" ppa_rust_val value
+            Types.pp_ty ty);
       failwith "Unhandled rust_value and Charon.ty"
 
-type aux_ret = (Types.literal_type * sint Typed.t) list * parse_callback
-and parse_callback = Sptr.t rust_val list -> callback_return
-and parser_return = [ `Done of Sptr.t rust_val | `More of aux_ret ]
-and callback_return = parser_return Rustsymex.t
+type 'ptr aux_ret =
+  (Types.literal_type * sint Typed.t) list * 'ptr parse_callback
+
+and 'ptr parse_callback = 'ptr rust_val list -> 'ptr callback_return
+and 'ptr parser_return = [ `Done of 'ptr rust_val | `More of 'ptr aux_ret ]
+and 'ptr callback_return = 'ptr parser_return Rustsymex.t
 
 (** Converts a Rust type into a list of C blocks, along with their offset; once
     these are read, symbolically decides whether we must keep reading. [offset]
     is the initial offset to read from, [meta] is the optional metadata, that
     originates from a fat pointer. *)
-let rust_of_cvals ?offset ?meta ty : parser_return =
+let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
   (* Base case, parses all types. *)
-  let rec aux offset : Types.ty -> parser_return = function
+  let rec aux offset : Types.ty -> 'ptr parser_return = function
     | TLiteral ty ->
         `More
           ( [ (ty, offset) ],
@@ -183,9 +184,9 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
             aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* Parses a list of fields (for structs and tuples) *)
-  and aux_fields ~f ~layout offset fields : parser_return =
+  and aux_fields ~f ~layout offset fields : 'ptr parser_return =
     let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
-    let rec mk_callback to_parse parsed : parser_return =
+    let rec mk_callback to_parse parsed : 'ptr parser_return =
       match to_parse with
       | [] -> `Done (f (List.rev parsed))
       | ty :: rest -> (
@@ -208,12 +209,12 @@ let rust_of_cvals ?offset ?meta ty : parser_return =
     in
     mk_callback fields []
   (* Parses what enum variant we're handling *)
-  and aux_enum offset (variants : Types.variant list) : parser_return =
+  and aux_enum offset (variants : Types.variant list) : 'ptr parser_return =
     let disc = (List.hd variants).discriminant in
     let disc_ty = Values.TInteger disc.int_ty in
     let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
     let offset = offset +@ (offset %@ disc_align) in
-    let callback cval : callback_return =
+    let callback cval : 'ptr callback_return =
       let cval = Charon_util.as_base_of ~ty:Typed.t_int @@ List.hd cval in
       let* res =
         match_on variants ~constr:(fun (v : Types.variant) ->

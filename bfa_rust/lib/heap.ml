@@ -176,7 +176,7 @@ let store (((_, tag) as ptr), _) ty sval st =
 
       let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
       L.debug (fun f ->
-          let pp_part f ({ value; ty; offset } : Encoder.cval_info) =
+          let pp_part f ({ value; ty; offset } : Sptr.t Encoder.cval_info) =
             Fmt.pf f "%a: %s [%a]"
               (Charon_util.pp_rust_val Sptr.pp)
               value
