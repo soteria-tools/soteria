@@ -271,23 +271,10 @@ module M (Heap : Heap_intf.S) = struct
     let b_int' = Typed.not_int_bool b_int in
     Result.ok (Base b_int', state)
 
-  let zeroed (fun_sig : UllbcAst.fun_sig) ~(crate : UllbcAst.crate) ~args:_
-      ~state =
-    let rec aux : Types.ty -> rust_val = function
-      | TLiteral _ -> Base Typed.zero
-      | TRawPtr _ | TRef _ -> Ptr (Sptr.null_ptr, None)
-      | TAdt (TAdtId t_id, _) -> (
-          let adt = Types.TypeDeclId.Map.find t_id crate.type_decls in
-          match adt.kind with
-          | Struct fields ->
-              Struct (List.map (fun (f : Types.field) -> aux f.field_ty) fields)
-          | Enum [] -> failwith "zeroed does not handle empty enums!"
-          | k ->
-              Fmt.failwith "Unhandled zeroed ADT kind: %a"
-                Types.pp_type_decl_kind k)
-      | ty -> Fmt.failwith "Unhandled zeroed type: %a" Types.pp_ty ty
-    in
-    try Result.ok (aux fun_sig.output, state) with Failure f -> not_impl f
+  let zeroed (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
+    match Layout.zeroed ~null_ptr:Sptr.null_ptr fun_sig.output with
+    | Some v -> Result.ok (v, state)
+    | None -> Heap.error (`StdErr "Non-zeroable type") state
 
   let array_repeat (gen_args : Types.generic_args) ~crate:_ ~args ~state =
     let rust_val, size =
@@ -501,12 +488,13 @@ module M (Heap : Heap_intf.S) = struct
 
   let assert_zero_is_valid (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
     let ty =
-      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
-        .types
-      |> List.hd
+      List.hd
+        (List.hd fun_sig.generics.trait_clauses).trait.binder_value
+          .decl_generics
+          .types
     in
-    match ty with
-    | TRef _ -> Heap.error (`Panic "core::intrinsics::assert_zero_valid") state
+    match Layout.zeroed ~null_ptr:Sptr.null_ptr ty with
+    | None -> Heap.error (`Panic "core::intrinsics::assert_zero_valid") state
     | _ -> Result.ok (Tuple [], state)
 
   let size_of (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =

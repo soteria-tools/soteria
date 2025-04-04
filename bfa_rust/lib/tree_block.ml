@@ -101,7 +101,7 @@ module Node = struct
     | NotOwned _ -> miss_no_fix ~msg:"decode" ()
     | Owned { v = Uninit _; _ } -> Result.error `UninitializedMemoryAccess
     | Owned { v = Zeros; _ } ->
-        Result.ok @@ Charon_util.Base (Layout.to_zeros ty)
+        Result.ok @@ Charon_util.Base (Layout.zeroed_lit ty)
     | Owned { v = Lazy; _ } ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
     | Owned { v = Init { value; ty = tyw }; _ } -> (
