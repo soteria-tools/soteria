@@ -1,5 +1,6 @@
 open Charon
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
+open Bfa_symex.Compo_res
 open Rustsymex
 open Rustsymex.Syntax
 open Typed.Syntax
@@ -104,8 +105,8 @@ module M (Heap : Heap_intf.S) = struct
   let checked_op op (fun_sig : UllbcAst.fun_sig) ~crate ~args ~state =
     let+ res = unchecked_op op fun_sig ~crate ~args ~state in
     match res with
-    | Ok (res, state) -> Bfa_symex.Compo_res.Ok (Enum (1s, [ res ]), state)
-    | _ -> Bfa_symex.Compo_res.Ok (Enum (0s, []), state)
+    | Ok (res, state) -> Ok (Enum (1s, [ res ]), state)
+    | _ -> Ok (Enum (0s, []), state)
 
   let wrapping_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let* ty =
@@ -150,7 +151,7 @@ module M (Heap : Heap_intf.S) = struct
             "is_some expects a single ptr argument and a single tref input type"
     in
     let** enum_value, state = Heap.load val_ptr opt_ty state in
-    let* discr =
+    let+ discr =
       match enum_value with
       | Enum (discr, _) -> return discr
       | _ ->
@@ -158,7 +159,7 @@ module M (Heap : Heap_intf.S) = struct
             "expected value pointed to in is_some to be an enum, got %a"
             pp_rust_val enum_value
     in
-    Result.ok (Base (Typed.int_of_bool (discr ==@ 1s)), state)
+    Ok (Base (Typed.int_of_bool (discr ==@ 1s)), state)
 
   let is_none (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let val_ptr, opt_ty =
@@ -266,10 +267,10 @@ module M (Heap : Heap_intf.S) = struct
       | [ Ptr b ] -> b
       | _ -> failwith "bool_not expects one Ptr argument"
     in
-    let** b_rval, state = Heap.load b_ptr (Types.TLiteral TBool) state in
+    let++ b_rval, state = Heap.load b_ptr (Types.TLiteral TBool) state in
     let b_int = as_base_of ~ty:Typed.t_int b_rval in
     let b_int' = Typed.not_int_bool b_int in
-    Result.ok (Base b_int', state)
+    (Base b_int', state)
 
   let zeroed (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
     match Layout.zeroed ~null_ptr:Sptr.null_ptr fun_sig.output with
@@ -504,7 +505,35 @@ module M (Heap : Heap_intf.S) = struct
       |> List.hd
     in
     let+ size = Layout.size_of_s ty in
-    Bfa_symex.Compo_res.Ok (Base size, state)
+    Ok (Base size, state)
+
+  let size_of_val (fun_sig : GAst.fun_sig) ~crate:_ ~args ~state =
+    let ty =
+      match fun_sig.inputs with
+      | [ TRawPtr (ty, _) ] -> ty
+      | _ -> failwith "size_of_val: Invalid input type"
+    in
+    match (ty, args) with
+    | TAdt (TBuiltin TSlice, { types = [ sub_ty ]; _ }), [ Ptr (_, Some meta) ]
+      ->
+        let* len =
+          of_opt_not_impl ~msg:"meta expected int"
+            (Typed.cast_checked meta Typed.t_int)
+        in
+        let+ size = Layout.size_of_s sub_ty in
+        let size = size *@ len in
+        Ok (Base size, state)
+    | TAdt (TBuiltin TStr, _), [ Ptr (_, Some meta) ] ->
+        let+ len =
+          of_opt_not_impl ~msg:"meta expected int"
+            (Typed.cast_checked meta Typed.t_int)
+        in
+        let size = Layout.size_of_int_ty U8 in
+        let size = Typed.int size *@ len in
+        Ok (Base size, state)
+    | ty, _ ->
+        let+ size = Layout.size_of_s ty in
+        Ok (Base size, state)
 
   let min_align_of ~in_input (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
     let ty =
@@ -661,6 +690,7 @@ module M (Heap : Heap_intf.S) = struct
     | PtrOffsetFrom
     | ResUnwrap
     | SizeOf
+    | SizeOfVal
     | SliceLen
     | StrChars
     | StrLen
@@ -694,6 +724,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
       ("core::intrinsics::ptr_offset_from", PtrOffsetFrom);
       ("core::intrinsics::size_of", SizeOf);
+      ("core::intrinsics::size_of_val", SizeOfVal);
       ("core::intrinsics::transmute", Transmute);
       ("core::intrinsics::unchecked_add", Unchecked Add);
       ("core::intrinsics::unchecked_div", Unchecked Div);
@@ -777,6 +808,7 @@ module M (Heap : Heap_intf.S) = struct
        | PtrOffsetFrom -> ptr_offset_from f.signature
        | ResUnwrap -> unwrap_res f.signature
        | SizeOf -> size_of f.signature
+       | SizeOfVal -> size_of_val f.signature
        | SliceLen -> slice_len f.signature
        | StrChars -> str_chars f.signature
        | StrLen -> str_len f.signature

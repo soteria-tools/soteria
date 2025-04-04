@@ -182,6 +182,23 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
             let layout = layout_of arr_ty in
             let fields = List.init len (fun _ -> sub_ty) in
             aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
+    | TAdt (TBuiltin TStr, _) -> (
+        (* We can only read a slice if we have the metadata of its length, in which case
+       we interpret it as an array of that length. *)
+        match meta with
+        | None -> Fmt.failwith "Tried reading string without metadata"
+        | Some meta ->
+            let len =
+              match Typed.kind meta with
+              | Int len -> Z.to_int len
+              | _ -> failwith "Can't read a slice of non-concrete size"
+            in
+            let arr_ty = mk_array_ty (TLiteral (TInteger U8)) len in
+            let layout = layout_of arr_ty in
+            let fields =
+              List.init len (fun _ -> Types.TLiteral (TInteger U8))
+            in
+            aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* Parses a list of fields (for structs and tuples) *)
   and aux_fields ~f ~layout offset fields : 'ptr parser_return =

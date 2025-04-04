@@ -94,14 +94,14 @@ module Make (Heap : Heap_intf.S) = struct
             (* We "cheat" and model strings as an array of chars, with &str a slice *)
             let len = String.length str in
             let chars =
-              String.to_seq str
-              |> Seq.fold_left
+              String.to_bytes str
+              |> Bytes.fold_left
                    (fun l c -> Base (Typed.int (Char.code c)) :: l)
                    []
               |> List.rev
             in
             let char_arr = Array chars in
-            let str_ty : Types.ty = mk_array_ty (TLiteral TChar) len in
+            let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
             let** ptr, state = Heap.alloc_ty str_ty state in
             let** (), state = Heap.store ptr str_ty char_arr state in
             let++ (), state = Heap.store_str_global str ptr state in
