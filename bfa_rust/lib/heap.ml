@@ -188,6 +188,19 @@ let store (((_, tag) as ptr), _) ty sval st =
         ~f:(fun ((), block) { value; ty; offset } ->
           Tree_block.store offset ty value tag tb block))
 
+let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
+  let@ () = with_error_loc_as_call_trace () in
+  let@ () = with_loc_err () in
+  let** tree_to_write, st =
+    with_ptr src st (fun ~ofs block ->
+        let@ block, _ = with_tbs block in
+        let++ tree, _ = Tree_block.get_raw_tree_owned ofs size block in
+        (tree, block))
+  in
+  with_ptr dst st (fun ~ofs block ->
+      let@ block, _ = with_tbs block in
+      Tree_block.put_raw_tree ofs tree_to_write block)
+
 let alloc size st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)

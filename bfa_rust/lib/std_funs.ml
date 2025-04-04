@@ -607,12 +607,47 @@ module M (Heap : Heap_intf.S) = struct
         in
         if%sat Typed.conj (constrs v) then Result.ok (Base v, state)
         else Heap.error `UBTransmute state
-    | TRef _, TRef _, Ptr _ -> Result.ok (v, state)
+    | (TRef _ | TRawPtr _), (TRef _ | TRawPtr _), Ptr _ -> Result.ok (v, state)
     | _ ->
         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         Fmt.failwith "Unhandled transmute of %a: %s -> %s" pp_rust_val v
           (PrintTypes.ty_to_string ctx from_ty)
           (PrintTypes.ty_to_string ctx to_ty)
+
+  let copy_nonoverlapping (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+    let (from_ptr, _), (to_ptr, _), len =
+      match args with
+      | [ Ptr from_ptr; Ptr to_ptr; Base len ] ->
+          (from_ptr, to_ptr, Typed.cast len)
+      | _ -> failwith "copy_nonoverlapping: invalid arguments"
+    in
+    let ty =
+      match funsig.inputs with
+      | TRawPtr (ty, _) :: _ -> ty
+      | _ -> failwith "copy_nonoverlapping: invalid arguments"
+    in
+    let* ty_size = Layout.size_of_s ty in
+    let size = ty_size *@ len in
+    let** () =
+      if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then
+        Heap.error `NullDereference state
+      else
+        (* check for overlap *)
+        let from_ptr_end = Sptr.offset from_ptr size in
+        let to_ptr_end = Sptr.offset to_ptr size in
+        if%sat
+          Sptr.is_same_loc from_ptr to_ptr
+          &&@ (Sptr.distance from_ptr to_ptr_end
+              <@ 0s
+              &&@ (Sptr.distance to_ptr from_ptr_end <@ 0s))
+        then Heap.error (`StdErr "copy_nonoverlapping overlapped") state
+        else Result.ok ()
+    in
+    let++ (), state =
+      Heap.copy_nonoverlapping ~dst:(to_ptr, None) ~src:(from_ptr, None) ~size
+        state
+    in
+    (Tuple [], state)
 
   type std_fun =
     | Any
@@ -623,6 +658,7 @@ module M (Heap : Heap_intf.S) = struct
     | BoolNot
     | BoxIntoRaw
     | Checked of std_op
+    | CopyNonOverlapping
     | Deref
     | DiscriminantValue
     | Eq of std_bool
@@ -663,6 +699,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::hint::black_box", BlackBox);
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::black_box", BlackBox);
+      ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::min_align_of", MinAlignOf GenArg);
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
@@ -737,6 +774,7 @@ module M (Heap : Heap_intf.S) = struct
        | BoolNot -> bool_not f.signature
        | BoxIntoRaw -> box_into_raw f.signature
        | Checked op -> checked_op op f.signature
+       | CopyNonOverlapping -> copy_nonoverlapping f.signature
        | Deref -> deref f.signature
        | DiscriminantValue -> discriminant_value f.signature
        | Eq b -> eq_values ~neg:(b = Neg) f.signature

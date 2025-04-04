@@ -385,6 +385,24 @@ module Tree = struct
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
     ((), tree)
 
+  let get_raw ofs size t =
+    let range = Range.of_low_and_size ofs size in
+    let replace_node node = Result.ok node in
+    let rebuild_parent = with_children in
+    frame_range t ~replace_node ~rebuild_parent range
+
+  let put_raw tree t =
+    let replace_node t =
+      match t.node with
+      | NotOwned _ -> miss_no_fix ~msg:"put_raw" ()
+      | _ -> Result.ok tree
+    in
+    let rebuild_parent = of_children in
+    let++ _, new_tree =
+      frame_range t ~replace_node ~rebuild_parent tree.range
+    in
+    ((), new_tree)
+
   (** Cons/prod *)
 
   (* TODO: we currently don't handle anything TreeBorrow related in cons/prod ! *)
@@ -607,6 +625,31 @@ let store ofs ty sval tag tb t =
         Tree.store ofs size ty sval tag tb t.root
       in
       ((), to_opt tree)
+
+let get_raw_tree_owned ofs size t =
+  let** t = of_opt t in
+  let++ res, tree =
+    let@ () = with_bound_check t (ofs +@ size) in
+    let** tree, t = Tree.get_raw ofs size t.root in
+    if Node.is_fully_owned tree.node then
+      let tree = Tree.offset ~by:~-ofs tree in
+      Result.ok (tree, t)
+    else miss_no_fix ~msg:"get_raw_tree_owned" ()
+  in
+  (res, to_opt tree)
+
+(* This is used for copy_nonoverapping.
+   It is an action on the destination block, and assumes the received tree is at offset 0 *)
+let put_raw_tree ofs (tree : Tree.t) t :
+    (unit * t option, 'err, 'fix list) Result.t =
+  let** t = of_opt t in
+  let size = Range.size tree.range in
+  let tree = Tree.offset ~by:ofs tree in
+  let++ res, t =
+    let@ () = with_bound_check t (ofs +@ size) in
+    Tree.put_raw tree t.root
+  in
+  (res, to_opt t)
 
 let alloc size =
   { root = Tree.uninit Tree_borrow.empty_state (0s, size); bound = Some size }

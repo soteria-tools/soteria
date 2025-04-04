@@ -59,6 +59,16 @@ module type S = sig
     t ->
     (unit * t, [> `InvalidFree | `UseAfterFree ] err, serialized list) Result.t
 
+  val copy_nonoverlapping :
+    dst:full_ptr ->
+    src:full_ptr ->
+    size:sint Typed.t ->
+    t ->
+    ( unit * t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      serialized list )
+    Result.t
+
   val uninit :
     full_ptr ->
     Types.ty ->
