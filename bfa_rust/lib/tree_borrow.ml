@@ -5,7 +5,7 @@ and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
 
 and t = {
   tag : tag;
-  tag_protected : bool;
+  protected : bool;
   children : t list;
   initial_state : state;
 }
@@ -21,10 +21,10 @@ let zero = 0
 
 let rec pp fmt t =
   if List.is_empty t.children then
-    Fmt.pf fmt (if t.tag_protected then "{%d}" else "[%d]") t.tag
+    Fmt.pf fmt (if t.protected then "{%d}" else "[%d]") t.tag
   else
     Fmt.pf fmt
-      (if t.tag_protected then "{%d}(%a)" else "[%d](%a)")
+      (if t.protected then "{%d}(%a)" else "[%d](%a)")
       t.tag
       Fmt.(list ~sep:comma pp)
       t.children
@@ -34,7 +34,7 @@ let pp_tag : tag Fmt.t = Fmt.int
 let init ?(protected = false) ~state () =
   {
     tag = fresh_tag ();
-    tag_protected = protected;
+    protected;
     (* parent = None; *)
     children = [];
     initial_state = state;
@@ -120,6 +120,17 @@ let all_nodes root =
   in
   aux [] [ root ]
 
+let update root f tag =
+  let found = ref false in
+  let rec aux node =
+    if node.tag = tag then (
+      found := true;
+      f node)
+    else { node with children = List.map aux node.children }
+  in
+  let root' = aux root in
+  if !found then root' else raise Not_found
+
 module TagMap = Map.Make (struct
   type t = tag
 
@@ -156,12 +167,15 @@ let access (root : t) accessed e st : tb_state * bool =
       (fun tag st ->
         let node = find root tag in
         let rel = is_derived node accessed in
-        let st' = transition ~protected:node.tag_protected st (rel, e) in
+        let st' = transition ~protected:node.protected st (rel, e) in
         if st' = UB then (
           ub_happened := true;
           L.debug (fun m ->
-              m "TB: Undefined behavior encountered for %d/%a/%a: %a->%a" tag
-                pp_locality rel pp_access e pp_state st pp_state st'));
+              m
+                "TB: Undefined behavior encountered for %d, %a %a (protected? \
+                 %b): %a->%a"
+                tag pp_locality rel pp_access e node.protected pp_state st
+                pp_state st'));
         st')
       st
   in

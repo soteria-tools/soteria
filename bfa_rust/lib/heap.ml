@@ -305,3 +305,15 @@ let protect (((raw_ptr, parent) as ptr), meta) (mut : Charon.Types.ref_kind) st
       let ptr' = (raw_ptr, node.tag) in
       L.debug (fun m -> m "Protected pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
       Result.ok ((ptr', meta), block))
+
+let unprotect (((_, tag) as ptr), _) st =
+  let@ () = with_error_loc_as_call_trace () in
+  let@ () = with_loc_err () in
+  with_ptr ptr st (fun ~ofs:_ block ->
+      let block, tb = Option.get block in
+      let tb' =
+        Tree_borrow.update tb (fun n -> { n with protected = false }) tag
+      in
+      let block = Some (block, tb') in
+      L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
+      Result.ok ((), block))

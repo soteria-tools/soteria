@@ -35,41 +35,47 @@ module Make (Heap : Heap_intf.S) = struct
     (Sptr.t rust_val * state, 'err, Heap.serialized list) Result.t
 
   let alloc_stack (locals : GAst.locals) args st :
-      (store * state, 'e, 'm) Result.t =
+      (store * full_ptr list * state, 'e, 'm) Result.t =
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
-    Rustsymex.Result.fold_list locals.vars ~init:(Store.empty, st)
-      ~f:(fun (store, st) { index; var_ty = ty; _ } ->
+    Rustsymex.Result.fold_list locals.vars ~init:(Store.empty, [], st)
+      ~f:(fun (store, protected, st) { index; var_ty = ty; _ } ->
         let** ptr, st = Heap.alloc_ty ty st in
         let store = Store.add index (Some ptr, ty) store in
         let index = Expressions.VarId.to_int index in
         if 0 < index && index <= locals.arg_count then
           let value = List.nth args (index - 1) in
-          let** value, st =
+          let** value, protected', st =
             match (value, ty) with
             | Ptr ptr, (TRawPtr (_, mut) | TRef (_, _, mut)) ->
                 let++ ptr', st = Heap.protect ptr mut st in
-                (Ptr ptr', st)
-            | _ -> Result.ok (value, st)
+                (Ptr ptr', ptr' :: protected, st)
+            | _ -> Result.ok (value, protected, st)
           in
           let++ (), st = Heap.store ptr ty value st in
-          (store, st)
-        else Result.ok (store, st))
+          (store, protected', st)
+        else Result.ok (store, protected, st))
 
-  let dealloc_store ?protected_address store st =
-    Rustsymex.Result.fold_list (Store.bindings store) ~init:st
-      ~f:(fun st (_, (ptr, _)) ->
+  (** [dealloc_store ?protected_address store protected st] Deallocates the
+      locations in [st] used for the variables in [store]; if
+      [protected_address] is provided, will not deallocate that location (this
+      is used e.g. for globals, that return a &'static reference). Will also
+      remove the protectors from the pointers [protected] that were given at the
+      function's entry. *)
+  let dealloc_store ?protected_address store protected st =
+    let** (), st =
+      Result.fold_list protected ~init:((), st) ~f:(fun ((), st) ptr ->
+          Heap.unprotect ptr st)
+    in
+    Result.fold_list (Store.bindings store) ~init:((), st)
+      ~f:(fun ((), st) (_, (ptr, _)) ->
         match (ptr, protected_address) with
-        | None, _ -> Result.ok st
-        | Some ptr, None ->
-            let++ (), st = Heap.free ptr st in
-            st
+        | None, _ -> Result.ok ((), st)
+        | Some ptr, None -> Heap.free ptr st
         | Some ((ptr, _) as fptr), Some protect ->
-            if%sat Sptr.sem_eq ptr protect then Result.ok st
-            else
-              let++ (), st = Heap.free fptr st in
-              st)
+            if%sat Sptr.sem_eq ptr protect then Result.ok ((), st)
+            else Heap.free fptr st)
 
   let resolve_constant (const : Expressions.constant_expr) state =
     match const.value with
@@ -265,6 +271,7 @@ module Make (Heap : Heap_intf.S) = struct
         | Cast (CastTransmute (from_ty, to_ty)) -> (
             match (from_ty, to_ty) with
             | TRawPtr _, TLiteral (TInteger Usize) -> Result.ok (v, state)
+            | TRef _, TRef _ -> Result.ok (v, state)
             | _ ->
                 Fmt.kstr not_impl "Unsupported transmutation, from %a to %a"
                   Types.pp_ty from_ty Types.pp_ty to_ty)
@@ -652,7 +659,7 @@ module Make (Heap : Heap_intf.S) = struct
           (PrintTypes.name_to_string ctx name)
           Fmt.(list ~sep:comma pp_rust_val)
           args);
-    let** store, state = alloc_stack body.locals args state in
+    let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in
     let** value, store, state =
       exec_block ~crate ~body store state starting_block
@@ -662,7 +669,7 @@ module Make (Heap : Heap_intf.S) = struct
       | TRef (RStatic, _, RShared), Ptr (addr, _) -> Some addr
       | _ -> None
     in
-    let++ state = dealloc_store ?protected_address store state in
+    let++ (), state = dealloc_store ?protected_address store protected state in
     (* We model void as zero, it should never be used anyway *)
     (value, state)
 end

@@ -4,7 +4,7 @@ and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
 
 and t = {
   tag : tag;
-  tag_protected : bool;
+  protected : bool;
   children : t list;
   initial_state : state;
 }
@@ -17,6 +17,7 @@ val pp : t Fmt.t
 val pp_tag : tag Fmt.t
 val init : ?protected:bool -> state:state -> unit -> t
 val equal : t -> t -> bool
+val update : t -> (t -> t) -> tag -> t
 val add_child : parent:tag -> root:t -> t -> t
 val empty_state : tb_state
 val set_state : tag -> state -> tb_state -> tb_state

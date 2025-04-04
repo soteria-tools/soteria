@@ -114,4 +114,12 @@ module type S = sig
       [> `NullDereference | `UseAfterFree ] err,
       serialized list )
     Result.t
+
+  val unprotect :
+    full_ptr ->
+    t ->
+    ( unit * t,
+      [> `NullDereference | `UseAfterFree ] err,
+      serialized list )
+    Result.t
 end
