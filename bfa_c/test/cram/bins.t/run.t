@@ -11,3 +11,6 @@
   $ ../bins/run_twice.exe
   Number of outcomes for process_one: 0
   Number of outcomes for process_two: 1
+
+  $ ../bins/pc_clears.exe
+  Branches: true / true

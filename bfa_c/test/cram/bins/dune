@@ -1,5 +1,5 @@
 (executables
- (names batch run_twice)
+ (names batch run_twice pc_clears)
  (libraries bfa_c_lib)
  (preprocess
   (pps ppx_symex)))
