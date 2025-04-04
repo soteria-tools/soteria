@@ -48,8 +48,10 @@ module Make (Heap : Heap_intf.S) = struct
           let value = List.nth args (index - 1) in
           let** value, protected', st =
             match (value, ty) with
-            | Ptr ptr, (TRawPtr (_, mut) | TRef (_, _, mut)) ->
-                let++ ptr', st = Heap.protect ptr mut st in
+            | Ptr ptr, (TRawPtr (subty, mut) | TRef (_, subty, mut)) ->
+                let** ptr', st = Heap.protect ptr mut st in
+                (* Function calls perform a dummy read on the variable *)
+                let++ _, st = Heap.load ptr' subty st in
                 (Ptr ptr', ptr' :: protected, st)
             | _ -> Result.ok (value, protected, st)
           in
