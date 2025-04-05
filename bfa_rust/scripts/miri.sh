@@ -26,12 +26,12 @@ STORE_PASSES=false
 # - native-lib/ (don't handle it)
 # - many-seeds/ (multithreading)
 # - utils/ (not tests)
-# - *stacked-borrows*
+# - *stacked-borrows*, *stacked_borrows*
 # - *concurrency*
 TESTS=$(find $MIRI_PATH/tests -name '*.rs' ! -name 'ui.rs' \
   ! -path '*/fail-dep/*' ! -path '*/pass-dep/*' ! -path '*/native-lib/*' \
   ! -path '*/many-seeds/*' ! -path '*/utils/*' ! -path '*/stacked-borrows/*' \
-  ! -path '*/concurrency/*' \
+  ! -path '*/concurrency/*' ! -path '*/stacked_borrows/*' \
   | sort)
 while [[ $# -gt 0 ]]; do
     case $1 in
