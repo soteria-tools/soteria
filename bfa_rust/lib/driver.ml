@@ -44,6 +44,10 @@ let pp_err ft (err, call_trace) =
   Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
   Format.close_box ()
 
+let exec_cmd cmd =
+  L.debug (fun g -> g "Running command: %s" cmd);
+  Sys.command cmd
+
 let find_kani_lib ~no_compile () =
   let path =
     try
@@ -57,7 +61,7 @@ let find_kani_lib ~no_compile () =
   | true -> path
   | false ->
       let res =
-        Fmt.kstr Sys.command
+        Fmt.kstr exec_cmd
           "cd %s/kani && charon --only-cargo --lib --input ./src/ > /dev/null \
            2>/dev/null"
           path
@@ -77,56 +81,55 @@ let parse_ullbc_of_file ~no_compile file_name =
   in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
-  if not no_compile then (
-    let kani_args =
-      let kani_lib = find_kani_lib ~no_compile () in
-      [
-        "--opaque=kani";
-        "--rustc-arg=-Zcrate-attr=feature\\(register_tool\\)";
-        "--rustc-arg=-Zcrate-attr=register_tool\\(kanitool\\)";
-        (* Code often hides kani proofs behind a cfg *)
-        "--rustc-arg=--cfg=kani";
-        "--rustc-arg=--extern=kani";
-        (* The below is cursed and should be fixed !!! *)
-        Fmt.str "--rustc-arg=-L%skani/target/aarch64-apple-darwin/debug/deps"
-          kani_lib;
-        Fmt.str "--rustc-arg=-L%skani/target/debug/deps" kani_lib;
-      ]
-    in
-    let miri_args = [ "--opaque=miri_extern" ] in
-    let cmd =
-      String.concat " "
-      @@ [
-           Fmt.str "cd %s &&" parent_folder;
-           "charon --ullbc";
-           Fmt.str "--input %s" file_name;
-           Fmt.str "--dest-file %s" output;
-           (* We can't enable this because it removes statements we care about... *)
-           (* "--mir_optimized"; *)
-           (* We don't care about our implementation *)
-           "--translate-all-methods";
-           "--monomorphize";
-           "--extract-opaque-bodies";
-           (* Go through rustc to allow injecting the kani deps *)
-           "--no-cargo";
-           (* i.e. not always a binary! *)
-           "--rustc-arg=--crate-type=lib";
-           "--rustc-arg=-Zunstable-options";
-           (* Not sure this is needed *)
-           "--rustc-arg=--extern=std";
-           "--rustc-arg=--extern=core";
-           (* No warning *)
-           "--rustc-arg=-Awarnings";
-         ]
-      @ kani_args
-      @ miri_args
-    in
-    L.debug (fun g -> g "Running command: %s" cmd);
-    let res = Sys.command cmd in
-    if res = 0 then Cleaner.touched output
-    else
-      let msg = Fmt.str "Failed compilation to ULLBC: code %d" res in
-      raise (CharonError msg));
+  (if not no_compile then
+     let kani_args =
+       let kani_lib = find_kani_lib ~no_compile () in
+       [
+         "--opaque=kani";
+         "--rustc-arg=-Zcrate-attr=feature\\(register_tool\\)";
+         "--rustc-arg=-Zcrate-attr=register_tool\\(kanitool\\)";
+         (* Code often hides kani proofs behind a cfg *)
+         "--rustc-arg=--cfg=kani";
+         "--rustc-arg=--extern=kani";
+         (* The below is cursed and should be fixed !!! *)
+         Fmt.str "--rustc-arg=-L%s/kani/target/aarch64-apple-darwin/debug/deps"
+           kani_lib;
+         Fmt.str "--rustc-arg=-L%s/kani/target/debug/deps" kani_lib;
+       ]
+     in
+     let miri_args = [ "--opaque=miri_extern" ] in
+     let res =
+       String.concat " "
+       @@ [
+            Fmt.str "cd %s &&" parent_folder;
+            "charon --ullbc";
+            Fmt.str "--input %s" file_name;
+            Fmt.str "--dest-file %s" output;
+            (* We can't enable this because it removes statements we care about... *)
+            (* "--mir_optimized"; *)
+            (* We don't care about our implementation *)
+            "--translate-all-methods";
+            "--monomorphize";
+            "--extract-opaque-bodies";
+            (* Go through rustc to allow injecting the kani deps *)
+            "--no-cargo";
+            (* i.e. not always a binary! *)
+            "--rustc-arg=--crate-type=lib";
+            "--rustc-arg=-Zunstable-options";
+            (* Not sure this is needed *)
+            "--rustc-arg=--extern=std";
+            "--rustc-arg=--extern=core";
+            (* No warning *)
+            "--rustc-arg=-Awarnings";
+          ]
+       @ kani_args
+       @ miri_args
+       |> exec_cmd
+     in
+     if res = 0 then Cleaner.touched output
+     else
+       let msg = Fmt.str "Failed compilation to ULLBC: code %d" res in
+       raise (CharonError msg));
   let crate =
     try
       output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json
