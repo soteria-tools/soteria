@@ -221,6 +221,17 @@ let int i = int_z (Z.of_int i)
 let zero = int_z Z.zero
 let one = int_z Z.one
 
+let not sv =
+  if equal sv v_true then v_false
+  else if equal sv v_false then v_true
+  else
+    match sv.node.kind with
+    | Unop (Not, sv) -> sv
+    | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
+    | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
+    | Binop (Or, v1, v2) -> Binop (And, v1, v2) <| TBool
+    | _ -> Unop (Not, sv) <| TBool
+
 let rec sem_eq v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int z1, Int z2 -> bool (Z.equal z1 z2)
@@ -236,6 +247,7 @@ let rec sem_eq v1 v2 =
   | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ })
   | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
       sem_eq v1 (int_z @@ Z.add y x)
+  | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
   | _ ->
       if equal v1 v2 then v_true (* Start with a syntactic check *)
       else Binop (Eq, v1, v2) <| TBool
@@ -250,14 +262,6 @@ let or_ v1 v2 =
   | Bool false, _ -> v2
   | _, Bool false -> v1
   | _ -> Binop (Or, v1, v2) <| TBool
-
-let not sv =
-  if equal sv v_true then v_false
-  else if equal sv v_false then v_true
-  else
-    match sv.node.kind with
-    | Unop (Not, sv) -> sv
-    | _ -> Unop (Not, sv) <| TBool
 
 let rec split_ands (sv : t) (f : t -> unit) : unit =
   match sv.node.kind with
