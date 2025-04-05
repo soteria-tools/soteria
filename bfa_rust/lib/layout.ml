@@ -406,14 +406,14 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option = function
   | TRawPtr _ -> Some (Ptr (null_ptr, None))
   | TRef _ -> None
   | TAdt (TTuple, { types; _ }) ->
-      Utils_.List_ex.join_options (zeroed ~null_ptr) types
+      Monad.OptionM.all (zeroed ~null_ptr) types
       |> Option.map (fun fields -> Tuple fields)
   | TAdt (TAdtId t_id, _) -> (
       let adt = Session.get_adt t_id in
       match adt.kind with
       | Struct fields ->
           fields
-          |> Utils_.List_ex.join_options (fun (f : Types.field) ->
+          |> Monad.OptionM.all (fun (f : Types.field) ->
                  zeroed ~null_ptr f.field_ty)
           |> Option.map (fun fields -> Struct fields)
       | Enum vars ->
@@ -423,7 +423,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option = function
           |> Option.bind)
           @@ fun (v : Types.variant) ->
           v.fields
-          |> Utils_.List_ex.join_options (fun (f : Types.field) ->
+          |> Monad.OptionM.all (fun (f : Types.field) ->
                  zeroed ~null_ptr f.field_ty)
           |> Option.map (fun fs -> Enum (value_of_scalar v.discriminant, fs))
       | k ->

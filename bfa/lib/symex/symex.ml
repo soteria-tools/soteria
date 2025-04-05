@@ -51,7 +51,7 @@ module type S = sig
   include Base
   include Monad.Base with type 'a t = 'a MONAD.t
 
-  val all : 'a t list -> 'a list t
+  val all : ('a -> 'b t) -> 'a list -> 'b list t
   val fold_list : ('a, 'b) Monad.FoldM(MONAD)(Foldable.List).folder
   val fold_iter : ('a, 'b) Monad.FoldM(MONAD)(Foldable.Iter).folder
   val fold_seq : ('a, 'b) Monad.FoldM(MONAD)(Foldable.Seq).folder
@@ -122,11 +122,11 @@ module Extend (Base : Base) = struct
   include Base
   include MONAD
 
-  let all xs =
+  let all fn xs =
     let rec aux acc rs =
       match rs with
       | [] -> return (List.rev acc)
-      | r :: rs -> bind r @@ fun x -> aux (x :: acc) rs
+      | r :: rs -> bind (fn r) @@ fun x -> aux (x :: acc) rs
     in
     aux [] xs
 
