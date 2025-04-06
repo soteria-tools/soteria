@@ -229,7 +229,7 @@ let not sv =
     | Unop (Not, sv) -> sv
     | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
     | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
-    | Binop (Or, v1, v2) -> Binop (And, v1, v2) <| TBool
+    | Binop (Or, v1, v2) -> Binop (And, not v1, not v2) <| TBool
     | _ -> Unop (Not, sv) <| TBool
 
 let rec sem_eq v1 v2 =
