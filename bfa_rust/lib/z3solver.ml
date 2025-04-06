@@ -228,7 +228,9 @@ let rec sort_of_ty = function
   | Svalue.TBool -> Simple_smt.t_bool
   | TInt -> Simple_smt.t_int
   | TLoc -> Simple_smt.t_int
-  | TFloat -> Z3floats.t_f64
+  | TFloat F64 -> Z3floats.t_f64
+  | TFloat F32 -> Z3floats.t_f32
+  | TFloat _ -> failwith "Unsupported float type"
   | TSeq ty -> t_seq $ sort_of_ty ty
   | TPointer -> t_ptr
 
@@ -250,7 +252,11 @@ let rec encode_value (v : Svalue.t) =
   match v.node.kind with
   | Var v -> atom (Svalue.Var.to_string v)
   | Int z -> int_zk z
-  | Float f -> Z3floats.f64_k f
+  | Float f -> (
+      match v.node.ty with
+      | TFloat F64 -> Z3floats.f64_k f
+      | TFloat F32 -> Z3floats.f32_k f
+      | _ -> Fmt.failwith "Unsupported float type")
   | Bool b -> bool_k b
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
   | Seq vs -> (
@@ -267,7 +273,7 @@ let rec encode_value (v : Svalue.t) =
       | GetPtrOfs -> get_ofs v
       | IntOfBool -> ite v (int_k 1) (int_k 0)
       | Abs ->
-          if ty = TFloat then Z3floats.fp_abs v
+          if Svalue.is_float ty then Z3floats.fp_abs v
           else ite (num_lt v (int_k 0)) (num_neg v) v)
   | Binop (binop, v1, v2) -> (
       let ty = v1.node.ty in
@@ -275,17 +281,18 @@ let rec encode_value (v : Svalue.t) =
       let v2 = encode_value_memo v2 in
       match binop with
       | Eq -> eq v1 v2
-      | Leq -> (if ty = TFloat then Z3floats.fp_leq else num_leq) v1 v2
-      | Lt -> (if ty = TFloat then Z3floats.fp_lt else num_lt) v1 v2
+      | Leq -> (if Svalue.is_float ty then Z3floats.fp_leq else num_leq) v1 v2
+      | Lt -> (if Svalue.is_float ty then Z3floats.fp_lt else num_lt) v1 v2
       | And -> bool_and v1 v2
       | Or -> bool_or v1 v2
-      | Plus -> (if ty = TFloat then Z3floats.fp_add else num_add) v1 v2
-      | Minus -> (if ty = TFloat then Z3floats.fp_sub else num_sub) v1 v2
-      | Times -> (if ty = TFloat then Z3floats.fp_mul else num_mul) v1 v2
-      | Div -> (if ty = TFloat then Z3floats.fp_div else num_div) v1 v2
-      | Rem -> (if ty = TFloat then Z3floats.fp_rem else num_rem) v1 v2
+      | Plus -> (if Svalue.is_float ty then Z3floats.fp_add else num_add) v1 v2
+      | Minus -> (if Svalue.is_float ty then Z3floats.fp_sub else num_sub) v1 v2
+      | Times -> (if Svalue.is_float ty then Z3floats.fp_mul else num_mul) v1 v2
+      | Div -> (if Svalue.is_float ty then Z3floats.fp_div else num_div) v1 v2
+      | Rem -> (if Svalue.is_float ty then Z3floats.fp_rem else num_rem) v1 v2
       | Mod ->
-          if ty = TFloat then failwith "mod not implemented for floating points"
+          if Svalue.is_float ty then
+            failwith "mod not implemented for floating points"
           else num_mod v1 v2)
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in

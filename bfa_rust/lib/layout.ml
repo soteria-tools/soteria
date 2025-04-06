@@ -336,9 +336,13 @@ let nondet_literal_ty : Types.literal_type -> T.cval Typed.t Rustsymex.t =
   | (TInteger _ | TBool | TChar) as ty ->
       let constrs = constraints ty in
       Rustsymex.nondet ~constrs Typed.t_int
-  | TFloat _ as ty ->
+  | TFloat F32 as ty ->
       let constrs = constraints ty in
-      Rustsymex.nondet ~constrs Typed.t_float
+      Rustsymex.nondet ~constrs Typed.t_f32
+  | TFloat F64 as ty ->
+      let constrs = constraints ty in
+      Rustsymex.nondet ~constrs Typed.t_f64
+  | TFloat _ -> failwith "Unsupported float type"
 
 let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
   let open Rustsymex.Syntax in

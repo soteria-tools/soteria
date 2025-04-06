@@ -1,15 +1,28 @@
 open Hashcons
 module Var = Bfa_symex.Var
 
-type ty = TBool | TInt | TFloat | TLoc | TPointer | TSeq of ty
+module FloatPrecision = struct
+  type t = F16 | F32 | F64 | F128
+  [@@deriving eq, show { with_path = false }, ord]
+end
+
+type ty =
+  | TBool
+  | TInt
+  | TFloat of FloatPrecision.t
+  | TLoc
+  | TPointer
+  | TSeq of ty
 [@@deriving eq, show { with_path = false }, ord]
 
 let t_bool = TBool
 let t_int = TInt
-let t_float = TFloat
+let t_f64 = TFloat F64
+let t_f32 = TFloat F32
 let t_loc = TLoc
 let t_ptr = TPointer
 let t_seq ty = TSeq ty
+let is_float ty = match ty with TFloat _ -> true | _ -> false
 
 module Nop = struct
   type t = Distinct [@@deriving eq, show { with_path = false }, ord]
@@ -223,7 +236,10 @@ let int_z z = Int z <| TInt
 let int i = int_z (Z.of_int i)
 let zero = int_z Z.zero
 let one = int_z Z.one
-let float f = Float f <| TFloat
+let float fp f = Float f <| TFloat fp
+let float_like v f = Float f <| v.node.ty
+let f64 f = float F64 f
+let f32 f = float F32 f
 
 let rec not sv =
   if equal sv v_true then v_false
@@ -346,7 +362,7 @@ let rec plus v1 v2 =
   | _, _ when equal v1 zero -> v2
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.add i1 i2)
-  | Float f1, Float f2 -> float (f1 +. f2)
+  | Float f1, Float f2 -> float_like v1 (f1 +. f2)
   | Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }), Int i3 ->
       plus v1 (int_z (Z.add i2 i3))
   | _ -> Binop (Plus, v1, v2) <| v1.node.ty
@@ -355,7 +371,7 @@ let minus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.sub i1 i2)
-  | Float f1, Float f2 -> float (f1 -. f2)
+  | Float f1, Float f2 -> float_like v1 (f1 -. f2)
   | _ -> Binop (Minus, v1, v2) <| v1.node.ty
 
 let times v1 v2 =
@@ -364,14 +380,14 @@ let times v1 v2 =
   | _, _ when equal v1 one -> v2
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.mul i1 i2)
-  | Float f1, Float f2 -> float (f1 *. f2)
+  | Float f1, Float f2 -> float_like v1 (f1 *. f2)
   | _ -> Binop (Times, v1, v2) <| v1.node.ty
 
 let div v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.div i1 i2)
-  | Float f1, Float f2 -> float (f1 /. f2)
+  | Float f1, Float f2 -> float_like v1 (f1 /. f2)
   | _ -> Binop (Div, v1, v2) <| v1.node.ty
 
 let rec is_mod v n =
@@ -397,7 +413,7 @@ let ( mod ) v1 v2 =
 let abs v =
   match v.node.kind with
   | Int i -> int_z (Z.abs i)
-  | Float f -> float (abs_float f)
+  | Float f -> float_like v (abs_float f)
   | _ -> Unop (Abs, v) <| v.node.ty
 
 (* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
@@ -478,8 +494,8 @@ module Syntax = struct
   end
 
   module Sym_float_syntax = struct
-    let mk_float = float
-    let zero = float 0.0
-    let one = float 1.0
+    let mk_float = f64
+    let zero = f64 0.0
+    let one = f64 1.0
   end
 end

@@ -38,11 +38,11 @@ module M (Heap : Heap_intf.S) = struct
     | Mul -> fun x y _ -> Result.ok (x *.@ y)
     | Div ->
         fun x y st ->
-          if%sat y ==@ 0.0s then Heap.error `DivisionByZero st
+          if%sat y ==@ Typed.float_like y 0.0 then Heap.error `DivisionByZero st
           else Result.ok (x /.@ Typed.cast y)
     | Rem ->
         fun x y st ->
-          if%sat y ==@ 0.0s then Heap.error `DivisionByZero st
+          if%sat y ==@ Typed.float_like y 0.0 then Heap.error `DivisionByZero st
           else Result.ok (Typed.rem x (Typed.cast y))
 
   let assert_ _ ~crate:_ ~(args : rust_val list) ~state =
@@ -99,7 +99,7 @@ module M (Heap : Heap_intf.S) = struct
         in
         if%sat Typed.conj @@ constrs res then Result.ok (res :> T.cval Typed.t)
         else Heap.error `Overflow st
-    | TFloat, TFloat ->
+    | TFloat _, TFloat _ ->
         let constrs = Layout.constraints ty in
         let** res = (fop_of bop) (Typed.cast l) (Typed.cast r) st in
         if%sat Typed.conj @@ constrs res then Result.ok (res :> T.cval Typed.t)
@@ -754,7 +754,9 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::fabsf64", Abs);
+      ("core::intrinsics::fabsf32", Abs);
       ("core::intrinsics::fmaf64", MulAdd);
+      ("core::intrinsics::fmaf32", MulAdd);
       ("core::intrinsics::min_align_of", MinAlignOf GenArg);
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);

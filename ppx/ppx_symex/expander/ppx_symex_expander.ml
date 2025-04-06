@@ -35,18 +35,10 @@ module If_sat = struct
     }
 end
 
-module Sym_int_constants = struct
+module Sym_constants = struct
   let rewriter loc s =
     let i = Ast_builder.Default.eint ~loc (int_of_string s) in
     [%expr Sym_int_syntax.mk_int [%e i]]
-
-  let suffix = 's'
-end
-
-module Sym_float_constants = struct
-  let rewriter loc s =
-    let f = Ast_builder.Default.efloat ~loc s in
-    [%expr Sym_float_syntax.mk_float [%e f]]
 
   let suffix = 's'
 end
