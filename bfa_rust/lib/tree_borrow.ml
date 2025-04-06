@@ -85,17 +85,15 @@ let transition =
 
 (* let[@tailrec] rec root n = match n.parent with None -> n | Some p -> root p *)
 
-(** [find n t] Looks for the node with tag [t] in the tree rooted at [n] *)
-let find n t =
-  let[@tailrec] rec aux = function
-    | [] -> raise Not_found
-    | n :: _ when n.tag = t -> n
-    | n :: ns -> aux (n.children @ ns)
-  in
-  aux [ n ]
+let rec iter n f =
+  f n;
+  List.iter (fun n -> iter n f) n.children
 
-(** [is_derived n t]: Returns true if [t] is derived from [n], i.e. [t] is a
-    descendant of [n] *)
+(** [find n t] Looks for the node with tag [t] in the tree rooted at [n] *)
+let find n t = Iter.find_pred_exn (fun n -> n.tag = t) (iter n)
+
+(** [is_derived n t]: Returns [Local] if [t] is derived from [n], i.e. [t] is a
+    descendant of [n], [Foreign] otherwise *)
 let is_derived n t =
   try
     let _ = find n t in
@@ -112,13 +110,6 @@ let add_child ~parent ~root child =
   in
   let root' = aux root in
   if !found then root' else raise Not_found
-
-let all_nodes root =
-  let rec aux acc = function
-    | [] -> acc
-    | n :: ns -> aux (n :: acc) (n.children @ ns)
-  in
-  aux [] [ root ]
 
 let update root f tag =
   let found = ref false in
@@ -149,13 +140,13 @@ let set_state = TagMap.add
 let access (root : t) accessed e st : tb_state * bool =
   let ub_happened = ref false in
   let st =
-    List.fold_left
+    Iter.fold
       (fun st node ->
         TagMap.update node.tag
           (function None -> Some node.initial_state | st -> st)
           st)
       st
-    @@ all_nodes root
+    @@ iter root
   in
   L.debug (fun m ->
       let pp_binding fmt (tag, st) = Fmt.pf fmt "%d->%a" tag pp_state st in
