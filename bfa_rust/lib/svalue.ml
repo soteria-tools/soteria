@@ -17,8 +17,10 @@ type ty =
 
 let t_bool = TBool
 let t_int = TInt
-let t_f64 = TFloat F64
+let t_f16 = TFloat F16
 let t_f32 = TFloat F32
+let t_f64 = TFloat F64
+let t_f128 = TFloat F128
 let t_loc = TLoc
 let t_ptr = TPointer
 let t_seq ty = TSeq ty
@@ -254,8 +256,10 @@ let fp_of v =
   | TFloat fp -> fp
   | _ -> Fmt.failwith "Unsupported float type"
 
-let f64 f = float F64 f
+let f16 f = float F16 f
 let f32 f = float F32 f
+let f64 f = float F64 f
+let f128 f = float F128 f
 
 let rec not sv =
   if equal sv v_true then v_false
@@ -524,11 +528,5 @@ module Syntax = struct
     let mk_int = int
     let zero = zero
     let one = one
-  end
-
-  module Sym_float_syntax = struct
-    let mk_float = f64
-    let zero = f64 0.0
-    let one = f64 1.0
   end
 end

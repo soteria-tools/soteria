@@ -331,18 +331,17 @@ let constraints :
             ])
   | TFloat (F16 | F32 | F64 | F128) -> fun _ -> []
 
-let nondet_literal_ty : Types.literal_type -> T.cval Typed.t Rustsymex.t =
-  function
-  | (TInteger _ | TBool | TChar) as ty ->
-      let constrs = constraints ty in
-      Rustsymex.nondet ~constrs Typed.t_int
-  | TFloat F32 as ty ->
-      let constrs = constraints ty in
-      Rustsymex.nondet ~constrs Typed.t_f32
-  | TFloat F64 as ty ->
-      let constrs = constraints ty in
-      Rustsymex.nondet ~constrs Typed.t_f64
-  | TFloat _ -> failwith "Unsupported float type"
+let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
+  let rty =
+    match ty with
+    | TInteger _ | TBool | TChar -> Typed.t_int
+    | TFloat F16 -> Typed.t_f16
+    | TFloat F32 -> Typed.t_f32
+    | TFloat F64 -> Typed.t_f64
+    | TFloat F128 -> Typed.t_f128
+  in
+  let constrs = constraints ty in
+  Rustsymex.nondet ~constrs rty
 
 let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
   let open Rustsymex.Syntax in
@@ -393,9 +392,10 @@ let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
   | TInteger _ | TBool | TChar -> 0s
-  | t ->
-      Fmt.failwith "to_zeros: unsupported literal type %a" Types.pp_literal_type
-        t
+  | TFloat F16 -> Typed.f16 0.0
+  | TFloat F32 -> Typed.f32 0.0
+  | TFloat F64 -> Typed.f64 0.0
+  | TFloat F128 -> Typed.f128 0.0
 
 let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option = function
   | TLiteral lit_ty -> ( try Some (Base (zeroed_lit lit_ty)) with _ -> None)

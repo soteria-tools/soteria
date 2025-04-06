@@ -93,10 +93,14 @@ module Make (Heap : Heap_intf.S) = struct
     | CLiteral (VBool b) ->
         Result.ok (Base (if b then Typed.one else Typed.zero), state)
     | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Char.code c)), state)
-    | CLiteral (VFloat { float_value; float_ty = F64 }) ->
-        Result.ok (Base (Typed.f64 @@ Float.of_string float_value), state)
+    | CLiteral (VFloat { float_value; float_ty = F16 }) ->
+        Result.ok (Base (Typed.f16 @@ Float.of_string float_value), state)
     | CLiteral (VFloat { float_value; float_ty = F32 }) ->
         Result.ok (Base (Typed.f32 @@ Float.of_string float_value), state)
+    | CLiteral (VFloat { float_value; float_ty = F64 }) ->
+        Result.ok (Base (Typed.f64 @@ Float.of_string float_value), state)
+    | CLiteral (VFloat { float_value; float_ty = F128 }) ->
+        Result.ok (Base (Typed.f128 @@ Float.of_string float_value), state)
     | CLiteral (VStr str) -> (
         let** ptr_opt, state = Heap.load_str_global str state in
         match ptr_opt with
@@ -329,14 +333,12 @@ module Make (Heap : Heap_intf.S) = struct
                 "Unsupported: integer cast with different signedness and sign"
         | Cast (CastScalar (TInteger _, TFloat to_ty)) ->
             let v = as_base_of ~ty:Typed.t_int v in
-            let fp =
+            let fp : Svalue.FloatPrecision.t =
               match to_ty with
-              | F32 -> Svalue.FloatPrecision.F32
+              | F16 -> F16
+              | F32 -> F32
               | F64 -> F64
-              | _ ->
-                  failwith
-                    "Unsupported: integer cast to a float of unsupported \
-                     precision"
+              | F128 -> F128
             in
             let v' = Typed.float_of_int fp v in
             Result.ok (Base v', state)

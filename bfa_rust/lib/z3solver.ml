@@ -234,9 +234,10 @@ let rec sort_of_ty = function
   | Svalue.TBool -> Simple_smt.t_bool
   | TInt -> Simple_smt.t_int
   | TLoc -> Simple_smt.t_int
-  | TFloat F64 -> Z3floats.t_f64
+  | TFloat F16 -> Z3floats.t_f16
   | TFloat F32 -> Z3floats.t_f32
-  | TFloat _ -> failwith "Unsupported float type"
+  | TFloat F64 -> Z3floats.t_f64
+  | TFloat F128 -> Z3floats.t_f128
   | TSeq ty -> t_seq $ sort_of_ty ty
   | TPointer -> t_ptr
 
@@ -260,9 +261,11 @@ let rec encode_value (v : Svalue.t) =
   | Int z -> int_zk z
   | Float f -> (
       match v.node.ty with
-      | TFloat F64 -> Z3floats.f64_k f
+      | TFloat F16 -> Z3floats.f16_k f
       | TFloat F32 -> Z3floats.f32_k f
-      | _ -> Fmt.failwith "Unsupported float type")
+      | TFloat F64 -> Z3floats.f64_k f
+      | TFloat F128 -> Z3floats.f128_k f
+      | _ -> failwith "Non-float type given")
   | Bool b -> bool_k b
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
   | Seq vs -> (
@@ -282,17 +285,19 @@ let rec encode_value (v : Svalue.t) =
           if Svalue.is_float ty then Z3floats.fp_abs v1
           else ite (num_lt v1 (int_k 0)) (num_neg v1) v1
       | FloatOfInt -> (
-          let ty = v.node.ty in
-          match ty with
-          | TFloat F64 -> Z3floats.f64_of_int v1
+          match v.node.ty with
+          | TFloat F16 -> Z3floats.f16_of_int v1
           | TFloat F32 -> Z3floats.f32_of_int v1
-          | _ -> Fmt.failwith "Unsupported float type")
+          | TFloat F64 -> Z3floats.f64_of_int v1
+          | TFloat F128 -> Z3floats.f128_of_int v1
+          | _ -> failwith "Non-float type given")
       | IntOfFloat -> (
-          let ty = v1_.node.ty in
-          match ty with
-          | TFloat F64 -> Z3floats.int_of_f64 v1
+          match v1_.node.ty with
+          | TFloat F16 -> Z3floats.int_of_f16 v1
           | TFloat F32 -> Z3floats.int_of_f32 v1
-          | _ -> Fmt.failwith "Unsupported float type"))
+          | TFloat F64 -> Z3floats.int_of_f64 v1
+          | TFloat F128 -> Z3floats.int_of_f128 v1
+          | _ -> failwith "Non-float type given"))
   | Binop (binop, v1, v2) -> (
       let ty = v1.node.ty in
       let v1 = encode_value_memo v1 in

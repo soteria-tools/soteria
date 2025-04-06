@@ -42,8 +42,10 @@ val pp_ty : 'a ty Fmt.t -> 'a ty Fmt.t
 val ppa_ty : 'a ty Fmt.t
 val t_bool : [> sbool ] ty
 val t_int : [> sint ] ty
+val t_f16 : [> sfloat ] ty
 val t_f32 : [> sfloat ] ty
 val t_f64 : [> sfloat ] ty
+val t_f128 : [> sfloat ] ty
 val t_ptr : [> sptr ] ty
 val t_loc : [> sloc ] ty
 val t_seq : ([< any ] as 'a) ty -> [> 'a sseq ] ty
@@ -97,8 +99,10 @@ val float_of_int : Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
 val int_of_float : [< sfloat ] t -> [> sint ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
+val f16 : float -> [> sfloat ] t
 val f32 : float -> [> sfloat ] t
 val f64 : float -> [> sfloat ] t
+val f128 : float -> [> sfloat ] t
 val float_like : [> sfloat ] t -> float -> [> sfloat ] t
 val fp_of : [> sfloat ] t -> Svalue.FloatPrecision.t
 val geq : ([< sint | sfloat ] as 'a) t -> 'a t -> [> sbool ] t
@@ -157,11 +161,5 @@ module Syntax : sig
     val mk_int : int -> [> sint ] t
     val zero : [> sint ] t
     val one : [> sint ] t
-  end
-
-  module Sym_float_syntax : sig
-    val mk_float : float -> [> sfloat ] t
-    val zero : [> sfloat ] t
-    val one : [> sfloat ] t
   end
 end
