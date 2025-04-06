@@ -225,6 +225,26 @@ let alloc_ty ty st =
       ((ptr, Some (Typed.int len)), st)
   | _ -> (fptr, st)
 
+let alloc_tys tys st =
+  let@ heap = with_heap st in
+  let@ () = with_error_loc_as_call_trace () in
+  SPmap.allocs heap ~els:tys ~fn:(fun ty loc ->
+      (* make treeblock *)
+      let* size = Layout.size_of_s ty in
+      let tb = Tree_borrow.init ~state:Unique () in
+      let block = Freeable.Alive (Tree_block.alloc size, tb) in
+      (* create pointer *)
+      let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
+      let ptr = Typed.Ptr.mk loc 0s in
+      let ptr =
+        match ty with
+        | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
+            let len = Charon_util.int_of_const_generic len in
+            ((ptr, tb.tag), Some (Typed.int len))
+        | _ -> ((ptr, tb.tag), None)
+      in
+      (block, ptr))
+
 let free ((ptr, _), _) ({ heap; _ } as st : t) :
     (unit * t, 'err, serialized list) Result.t =
   let@ () = with_error_loc_as_call_trace () in

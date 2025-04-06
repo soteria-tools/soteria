@@ -46,9 +46,11 @@ module Make (Heap : Heap_intf.S) = struct
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
-    Rustsymex.Result.fold_list locals.vars ~init:(Store.empty, [], st)
-      ~f:(fun (store, protected, st) { index; var_ty = ty; _ } ->
-        let** ptr, st = Heap.alloc_ty ty st in
+    let tys = List.map (fun ({ var_ty; _ } : GAst.var) -> var_ty) locals.vars in
+    let** ptrs, st = Heap.alloc_tys tys st in
+    let tys_ptrs = List.combine locals.vars ptrs in
+    Rustsymex.Result.fold_list tys_ptrs ~init:(Store.empty, [], st)
+      ~f:(fun (store, protected, st) ({ index; var_ty = ty; _ }, ptr) ->
         let store = Store.add index (Some ptr, ty) store in
         let index = Expressions.VarId.to_int index in
         if 0 < index && index <= locals.arg_count then

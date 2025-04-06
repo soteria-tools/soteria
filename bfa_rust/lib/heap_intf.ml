@@ -54,6 +54,11 @@ module type S = sig
   val alloc_ty :
     Types.ty -> t -> (full_ptr * t, [> ] err, serialized list) Result.t
 
+  val alloc_tys :
+    Types.ty list ->
+    t ->
+    (full_ptr list * t, [> ] err, serialized list) Result.t
+
   val free :
     full_ptr ->
     t ->

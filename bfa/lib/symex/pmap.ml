@@ -87,6 +87,20 @@ struct
     in
     Result.ok (key, to_opt (M.add key new_codom st))
 
+  let allocs (type a b k) ~(fn : b -> Key.t -> (a * k) Symex.t) ~(els : b list)
+      (st : a t option) : (k list * a t option, 'err, 'fix list) Result.t =
+    let st = of_opt st in
+    let* bindings, out_keys =
+      Symex.fold_list els ~init:(Seq.empty, []) ~f:(fun (b, ks') e ->
+          let* k = Key.fresh () in
+          let+ v, k' = fn e k in
+          (Seq.cons (k, v) b, k' :: ks'))
+    in
+    let out_keys = List.rev out_keys in
+    let st = M.add_seq bindings st in
+    let+ () = Symex.assume [ Key.distinct @@ List.map fst @@ M.bindings st ] in
+    Compo_res.Ok (out_keys, to_opt st)
+
   let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix list) Symex.Result.t)
       (key : Key.t) (st : 'a t option) :
       ('b * 'a t option, 'err, 'fix serialized list) Symex.Result.t =
