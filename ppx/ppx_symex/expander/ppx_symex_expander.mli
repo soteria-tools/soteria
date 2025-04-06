@@ -10,7 +10,12 @@ module If_sat : sig
   val expand : ext:Extension_name.t -> expression -> expression
 end
 
-module Sym_constants : sig
+module Sym_int_constants : sig
+  val rewriter : Location.t -> string -> expression
+  val suffix : char
+end
+
+module Sym_float_constants : sig
   val rewriter : Location.t -> string -> expression
   val suffix : char
 end

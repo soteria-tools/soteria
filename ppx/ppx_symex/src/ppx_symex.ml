@@ -18,8 +18,16 @@ let () =
     (Extension_name.to_string Sat1)
     ~extensions:[ ext Sat1 ]
 
+(* Register [0s], [1s] etc. *)
 let () =
-  let open Ppx_symex_expander.Sym_constants in
+  let open Ppx_symex_expander.Sym_int_constants in
   let kind = Context_free.Rule.Constant_kind.Integer in
   let rule = Context_free.Rule.constant kind suffix rewriter in
-  Driver.register_transformation ~rules:[ rule ] "sym_constants"
+  Driver.register_transformation ~rules:[ rule ] "sym_int_constants"
+
+(* Register [0.0s], [1.5s] etc. *)
+let () =
+  let open Ppx_symex_expander.Sym_float_constants in
+  let kind = Context_free.Rule.Constant_kind.Float in
+  let rule = Context_free.Rule.constant kind suffix rewriter in
+  Driver.register_transformation ~rules:[ rule ] "sym_float_constants"
