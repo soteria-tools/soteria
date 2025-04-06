@@ -285,6 +285,17 @@ module Make (Heap : Heap_intf.S) = struct
             match (from_ty, to_ty) with
             | TRawPtr _, TLiteral (TInteger Usize) -> Result.ok (v, state)
             | TRef _, TRef _ -> Result.ok (v, state)
+            | TLiteral (TFloat _), TLiteral (TInteger _) ->
+                let v =
+                  match v with
+                  | Base v -> (
+                      match Typed.get_ty v with
+                      | Svalue.TFloat _ -> Typed.cast v
+                      | _ -> failwith "Unsupported: invalid value in cast")
+                  | _ -> failwith "Unsupported: invalid value in cast"
+                in
+                let v' = Typed.int_of_float v in
+                Result.ok (Base v', state)
             | _ ->
                 Fmt.kstr not_impl "Unsupported transmutation, from %a to %a"
                   Types.pp_ty from_ty Types.pp_ty to_ty)
@@ -316,6 +327,19 @@ module Make (Heap : Heap_intf.S) = struct
             else
               not_impl
                 "Unsupported: integer cast with different signedness and sign"
+        | Cast (CastScalar (TInteger _, TFloat to_ty)) ->
+            let v = as_base_of ~ty:Typed.t_int v in
+            let fp =
+              match to_ty with
+              | F32 -> Svalue.FloatPrecision.F32
+              | F64 -> F64
+              | _ ->
+                  failwith
+                    "Unsupported: integer cast to a float of unsupported \
+                     precision"
+            in
+            let v' = Typed.float_of_int fp v in
+            Result.ok (Base v', state)
         | Cast
             (CastUnsize
                ( TAdt

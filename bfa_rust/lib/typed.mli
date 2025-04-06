@@ -93,11 +93,14 @@ val nonzero_z : Z.t -> [> nonzero ] t
 val nonzero : int -> [> nonzero ] t
 val int_of_bool : [< sbool ] t -> [> sint ] t
 val bool_of_int : [< sint ] t -> [> sbool ] t
+val float_of_int : Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
+val int_of_float : [< sfloat ] t -> [> sint ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
 val f32 : float -> [> sfloat ] t
 val f64 : float -> [> sfloat ] t
 val float_like : [> sfloat ] t -> float -> [> sfloat ] t
+val fp_of : [> sfloat ] t -> Svalue.FloatPrecision.t
 val geq : ([< sint | sfloat ] as 'a) t -> 'a t -> [> sbool ] t
 val gt : ([< sint | sfloat ] as 'a) t -> 'a t -> [> sbool ] t
 val leq : ([< sint | sfloat ] as 'a) t -> 'a t -> [> sbool ] t

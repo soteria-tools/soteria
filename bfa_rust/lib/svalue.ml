@@ -29,14 +29,24 @@ module Nop = struct
 end
 
 module Unop = struct
-  type t = Not | GetPtrLoc | GetPtrOfs | IntOfBool | Abs [@@deriving eq, ord]
+  type t =
+    | Not
+    | GetPtrLoc
+    | GetPtrOfs
+    | IntOfBool
+    | Abs
+    | FloatOfInt
+    | IntOfFloat
+  [@@deriving eq, ord]
 
   let pp ft = function
     | Not -> Fmt.string ft "!"
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
-    | IntOfBool -> Fmt.string ft "int"
+    | IntOfBool -> Fmt.string ft "b2i"
     | Abs -> Fmt.string ft "abs"
+    | FloatOfInt -> Fmt.string ft "i2f"
+    | IntOfFloat -> Fmt.string ft "f2i"
 end
 
 module Binop = struct
@@ -238,6 +248,12 @@ let zero = int_z Z.zero
 let one = int_z Z.one
 let float fp f = Float f <| TFloat fp
 let float_like v f = Float f <| v.node.ty
+
+let fp_of v =
+  match v.node.ty with
+  | TFloat fp -> fp
+  | _ -> Fmt.failwith "Unsupported float type"
+
 let f64 f = float F64 f
 let f32 f = float F32 f
 
@@ -297,7 +313,7 @@ let distinct l =
   | [] | _ :: [] -> v_true
   | l -> Nop (Distinct, l) <| TBool
 
-(** {2 Integers} *)
+(** {2 Integers and Floats} *)
 
 let int_of_bool b =
   match b.node.kind with
@@ -398,10 +414,15 @@ let rec is_mod v n =
   | Binop (Times, v2, v3) -> is_mod v2 n || is_mod v3 n
   | _ -> false
 
-let rem v1 v2 =
+let rec rem v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, Int i2 when is_mod v1 i2 -> int_z Z.zero
   | Int i1, Int i2 -> int_z (Z.rem i1 i2)
+  | Float f1, Float f2 -> float_like v1 (mod_float f1 f2)
+  | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
+      times n (rem v1 v2)
+  | Binop (Times, n, v1), Binop (Times, m, v2) when equal n m ->
+      times n (rem v1 v2)
   | _ -> Binop (Rem, v1, v2) <| v1.node.ty
 
 let ( mod ) v1 v2 =
@@ -422,6 +443,18 @@ let not_int_bool sv =
   | Int z -> if Z.equal z Z.zero then one else zero
   | Unop (IntOfBool, sv') -> int_of_bool (not sv')
   | _ -> int_of_bool (sem_eq sv zero)
+
+let float_of_int fp v =
+  match v.node.kind with
+  | Int i -> float fp (Z.to_float i)
+  | Unop (IntOfFloat, v) -> v
+  | _ -> Unop (FloatOfInt, v) <| TFloat fp
+
+let int_of_float v =
+  match v.node.kind with
+  | Float f -> int_z (Z.of_float f)
+  | Unop (FloatOfInt, v) -> v
+  | _ -> Unop (IntOfFloat, v) <| TInt
 
 (** {2 Pointers} *)
 

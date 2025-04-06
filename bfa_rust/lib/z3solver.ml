@@ -50,12 +50,16 @@ let log_sexp sexp =
   | None -> ()
   | Some oc -> Sexplib.Sexp.output_hum oc sexp
 
-let log_response response =
+let log_response response elapsed =
   match !smt_log_file with
   | None -> ()
   | Some oc ->
       output_string oc " ; -> ";
       Sexplib.Sexp.output_hum oc response;
+      if elapsed > 0 then (
+        output_string oc " (";
+        output_string oc (string_of_int elapsed);
+        output_string oc "ms)");
       output_char oc '\n';
       flush oc
 
@@ -69,8 +73,10 @@ let z3_solver () =
   let solver = new_solver solver_config in
   let command sexp =
     log_sexp sexp;
+    let now = Unix.gettimeofday () in
     let res = solver.command sexp in
-    log_response res;
+    let elapsed = Int.of_float ((Unix.gettimeofday () -. now) *. 1000.) in
+    log_response res elapsed;
     res
   in
   { solver with command }
@@ -264,17 +270,29 @@ let rec encode_value (v : Svalue.t) =
       | [] -> failwith "need type to encode empty lists"
       | _ :: _ ->
           List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat)
-  | Unop (unop, v) -> (
-      let ty = v.node.ty in
-      let v = encode_value_memo v in
+  | Unop (unop, v1_) -> (
+      let v1 = encode_value_memo v1_ in
       match unop with
-      | Not -> bool_not v
-      | GetPtrLoc -> get_loc v
-      | GetPtrOfs -> get_ofs v
-      | IntOfBool -> ite v (int_k 1) (int_k 0)
+      | Not -> bool_not v1
+      | GetPtrLoc -> get_loc v1
+      | GetPtrOfs -> get_ofs v1
+      | IntOfBool -> ite v1 (int_k 1) (int_k 0)
       | Abs ->
-          if Svalue.is_float ty then Z3floats.fp_abs v
-          else ite (num_lt v (int_k 0)) (num_neg v) v)
+          let ty = v1_.node.ty in
+          if Svalue.is_float ty then Z3floats.fp_abs v1
+          else ite (num_lt v1 (int_k 0)) (num_neg v1) v1
+      | FloatOfInt -> (
+          let ty = v.node.ty in
+          match ty with
+          | TFloat F64 -> Z3floats.f64_of_int v1
+          | TFloat F32 -> Z3floats.f32_of_int v1
+          | _ -> Fmt.failwith "Unsupported float type")
+      | IntOfFloat -> (
+          let ty = v1_.node.ty in
+          match ty with
+          | TFloat F64 -> Z3floats.int_of_f64 v1
+          | TFloat F32 -> Z3floats.int_of_f32 v1
+          | _ -> Fmt.failwith "Unsupported float type"))
   | Binop (binop, v1, v2) -> (
       let ty = v1.node.ty in
       let v1 = encode_value_memo v1 in
