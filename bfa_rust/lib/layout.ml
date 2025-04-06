@@ -169,6 +169,9 @@ let rec layout_of (ty : Types.ty) : layout =
       match adt.kind with
       | Struct fields -> layout_of_members @@ field_tys fields
       | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
+      (* fieldless enums with one variant are zero-sized *)
+      | Enum [ { fields = []; _ } ] ->
+          { size = 0; align = 1; members_ofs = [||] }
       | Enum variants ->
           let layouts = List.map of_variant variants in
           List.fold_left

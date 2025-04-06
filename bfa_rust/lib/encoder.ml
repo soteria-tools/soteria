@@ -79,21 +79,23 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
       chain_cvals (layout_of ty) vals fields
   | Struct _, _ -> illegal_pair ()
   (* Enums *)
-  | Enum (disc, vals), TAdt (TAdtId t_id, _) ->
+  | Enum (disc, vals), TAdt (TAdtId t_id, _) -> (
       let type_decl = Session.get_adt t_id in
-      let variant =
-        match (type_decl.kind, Typed.kind disc) with
-        | Enum variants, Int disc_z ->
+      match (type_decl.kind, Typed.kind disc) with
+      (* fieldless enums with one option are zero-sized *)
+      | Enum [ { fields = []; _ } ], _ -> []
+      | Enum variants, Int disc_z ->
+          let variant =
             List.find
               (fun v -> Z.equal disc_z Types.(v.discriminant.value))
               variants
-        | _ ->
-            Fmt.failwith "Unexpected ADT type or discr for enum: %a"
-              Types.pp_type_decl type_decl
-      in
-      let disc_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
-      chain_cvals (of_variant variant) (Base disc :: vals)
-        (disc_ty :: field_tys variant.fields)
+          in
+          let disc_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
+          chain_cvals (of_variant variant) (Base disc :: vals)
+            (disc_ty :: field_tys variant.fields)
+      | _ ->
+          Fmt.failwith "Unexpected ADT type or discr for enum: %a"
+            Types.pp_type_decl type_decl)
   | Enum _, _ -> illegal_pair ()
   (* Arrays *)
   | Array vals, TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
@@ -152,9 +154,11 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
         aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
     | TAdt (TAdtId t_id, _) as ty -> (
         let type_decl = Session.get_adt t_id in
-        match (type_decl : Types.type_decl) with
-        | { kind = Enum variants; _ } -> aux_enum offset variants
-        | { kind = Struct fields; _ } ->
+        match type_decl.kind with
+        | Enum [ { fields = []; discriminant; _ } ] ->
+            `Done (Enum (value_of_scalar discriminant, []))
+        | Enum variants -> aux_enum offset variants
+        | Struct fields ->
             let layout = layout_of ty in
             fields
             |> field_tys
