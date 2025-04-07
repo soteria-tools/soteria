@@ -15,6 +15,9 @@ module M (Heap : Heap_intf.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
+  let match_config =
+    NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
+
   type std_op = Add | Sub | Mul | Div | Rem
   type std_bool = Id | Neg
   type type_loc = GenArg | Input
@@ -69,10 +72,55 @@ module M (Heap : Heap_intf.S) = struct
     let* () = assume [ Typed.bool_of_int to_assume ] in
     Result.ok (Charon_util.unit_, state)
 
-  let nondet (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let kani_any fn_exec (fun_sig : UllbcAst.fun_sig) ~crate ~args ~state :
+      (rust_val * Heap.t, 'e, 'm) Result.t =
+    let is_kani_any =
+      let matches_name =
+        let kani_arbitrary = NameMatcher.parse_pattern "kani::Arbitrary" in
+        let m_ctx = NameMatcher.ctx_from_crate crate in
+        NameMatcher.match_name m_ctx match_config kani_arbitrary
+      in
+      let kani_any_decls =
+        Types.TraitDeclId.Map.fold
+          (fun _ (decl : GAst.trait_decl) anys ->
+            if matches_name decl.item_meta.name then decl.def_id :: anys
+            else anys)
+          crate.trait_decls []
+      in
+      fun x -> List.mem x kani_any_decls
+    in
+
+    (* For a given ty, returns a function that returns its user-defined arbitrary value,
+       as implemented in a [kani::Arbitrary] trait. Returns None if the type doesn't implement
+       [kani::Arbitrary] *)
+    let opt_any ty =
+      let fn_decl = ref None in
+      let _ =
+        crate.trait_impls
+        |> Types.TraitImplId.Map.exists @@ fun _ (impl : GAst.trait_impl) ->
+           is_kani_any impl.impl_trait.trait_decl_id
+           &&
+           match impl.methods with
+           | ("any", { binder_value = { fun_id; _ }; _ }) :: _ ->
+               let fn =
+                 Types.FunDeclId.Map.find fun_id GAst.(crate.fun_decls)
+               in
+               if fn.signature.output = ty then (
+                 fn_decl := Some fn;
+                 true)
+               else false
+           | _ -> false
+      in
+      L.info (fun m ->
+          m "kani::any resolved to an implemented trait? -> %a"
+            Fmt.(option ~none:(any "no") UllbcAst.pp_fun_decl)
+            !fn_decl);
+      Option.map (fun d state -> fn_exec ~crate ~args ~state d) !fn_decl
+    in
     let ty = fun_sig.output in
-    let* value = Layout.nondet ty in
-    Result.ok (value, state)
+    match opt_any ty with
+    | Some fn -> fn state
+    | None -> Layout.nondet ~extern:opt_any ~init:state ty
 
   let cast_to_int v st =
     match Typed.cast_checked v Typed.t_int with
@@ -816,15 +864,12 @@ module M (Heap : Heap_intf.S) = struct
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
 
-  let match_config =
-    NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
-
-  let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
+  let std_fun_eval ~crate ~exec_fun (f : UllbcAst.fun_decl) =
     let ctx = NameMatcher.ctx_from_crate crate in
     NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
     |> Option.map @@ function
        | Abs -> abs f.signature
-       | Any -> nondet f.signature
+       | Any -> kani_any exec_fun f.signature
        | Assert -> assert_ f.signature
        | AssertZeroValid -> assert_zero_is_valid f.signature
        | Assume -> assume f.signature

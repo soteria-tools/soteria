@@ -195,7 +195,7 @@ module Make (Heap : Heap_intf.S) = struct
             let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
             g "Resolved function call to %s"
               (PrintTypes.name_to_string ctx fundef.item_meta.name));
-        match Std_funs.std_fun_eval ~crate fundef with
+        match Std_funs.std_fun_eval ~crate ~exec_fun fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
@@ -224,7 +224,7 @@ module Make (Heap : Heap_intf.S) = struct
                   g "Resolved function call to %s"
                     (PrintTypes.name_to_string ctx fundef.item_meta.name));
               let global_fn =
-                match Std_funs.std_fun_eval ~crate fundef with
+                match Std_funs.std_fun_eval ~crate ~exec_fun fundef with
                 | Some fn -> fn
                 | None -> exec_fun fundef
               in

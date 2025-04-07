@@ -199,7 +199,7 @@ let rec layout_of (ty : Types.ty) : layout =
   (* Others (unhandled for now) *)
   | TAdt (TBuiltin TStr, _) -> raise (CantComputeLayout ("String", ty))
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
-  | TTraitType (_, _) -> raise (CantComputeLayout ("Trait type", ty))
+  | TTraitType _ -> raise (CantComputeLayout ("Trait type", ty))
   | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
   | TArrow _ -> raise (CantComputeLayout ("Arrow", ty))
 
@@ -346,13 +346,23 @@ let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
   let constrs = constraints ty in
   Rustsymex.nondet ~constrs rty
 
-let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
+(** [nondet ~extern ~init ty] returns a nondeterministic value for [ty], along
+    with some "state". It receives a function [extern] to get an optional
+    external function that computes the arbitrary value; it tries using it, and
+    otherwise guesses the valid values. [init] is the initial "state", that is
+    modified and returned by [extern]. *)
+let rec nondet ~extern ~init ty : ('a rust_val * 's, 'e, 'm) Result.t =
   let open Rustsymex.Syntax in
-  function
-  | TLiteral lit ->
+  let nondets = nondets ~extern ~init in
+  match (extern ty, ty) with
+  | Some any_fn, _ -> any_fn init
+  | _, Types.TLiteral lit ->
       let+ cval = nondet_literal_ty lit in
-      Base cval
-  | TAdt (TAdtId t_id, _) -> (
+      Bfa_symex.Compo_res.Ok (Base cval, init)
+  | _, TAdt (TTuple, { types; _ }) ->
+      let++ fields, x = nondets types in
+      (Tuple fields, x)
+  | _, TAdt (TAdtId t_id, _) -> (
       let type_decl = Session.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
@@ -366,32 +376,34 @@ let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
           | None -> vanish ()
           | Some variant ->
               let discr = value_of_scalar variant.discriminant in
-              let+ fields =
-                Rustsymex.fold_list variant.fields ~init:[] ~f:(fun fields ty ->
-                    let+ f = nondet ty.field_ty in
-                    f :: fields)
+              let++ fields, x =
+                nondets @@ Charon_util.field_tys variant.fields
               in
-              let fields = List.rev fields in
-              Enum (discr, fields))
+              (Enum (discr, fields), x))
       | Struct fields ->
-          let+ fields =
-            Rustsymex.fold_list fields ~init:[] ~f:(fun fields ty ->
-                let+ f = nondet ty.field_ty in
-                f :: fields)
-          in
-          Struct fields
+          let++ fields, x = nondets @@ Charon_util.field_tys fields in
+          (Struct fields, x)
       | ty ->
           Rustsymex.not_impl
             (Fmt.str "nondet: unsupported type %a" Types.pp_type_decl_kind ty))
-  | TAdt (TTuple, { types; _ }) ->
-      let+ fields =
-        Rustsymex.fold_list types ~init:[] ~f:(fun fields ty ->
-            let+ f = nondet ty in
-            f :: fields)
-      in
-      Tuple fields
-  | ty ->
+  | _, ty ->
       Rustsymex.not_impl (Fmt.str "nondet: unsupported type %a" Types.pp_ty ty)
+
+and nondets ~extern ~init tys =
+  let open Rustsymex.Syntax in
+  let++ vs, x =
+    Result.fold_list (List.rev tys) ~init:([], init) ~f:(fun (fields, x) ty ->
+        let++ f, x = nondet ~extern ~init:x ty in
+        (f :: fields, x))
+  in
+  (List.rev vs, x)
+
+let nondet_pure ty =
+  let open Rustsymex.Syntax in
+  let+ res = nondet ~extern:(fun _ -> None) ~init:() ty in
+  match res with
+  | Ok (x, ()) -> x
+  | _ -> failwith "nondet_pure failed -- this can't happen"
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
   | TInteger _ | TBool | TChar -> 0s
