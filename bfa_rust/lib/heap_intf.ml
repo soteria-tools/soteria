@@ -83,6 +83,15 @@ module type S = sig
       serialized list )
     Result.t
 
+  val zeros :
+    full_ptr ->
+    sint Typed.t ->
+    t ->
+    ( unit * t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      serialized list )
+    Result.t
+
   val error : 'a -> t -> ('ok, 'a err, serialized list) Result.t
 
   val store_str_global :

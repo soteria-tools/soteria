@@ -269,6 +269,14 @@ let uninit (ptr, _) ty st =
       let@ block, _ = with_tbs block in
       Tree_block.uninit_range ofs size block)
 
+let zeros (ptr, _) size st =
+  let@ () = with_error_loc_as_call_trace () in
+  let@ () = with_loc_err () in
+  log "zeroes" ptr st;
+  with_ptr ptr st (fun ~ofs block ->
+      let@ block, _ = with_tbs block in
+      Tree_block.zero_range ofs size block)
+
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in
   error err

@@ -737,6 +737,41 @@ module M (Heap : Heap_intf.S) = struct
         Result.ok (Base (Typed.cast @@ Typed.abs @@ Typed.cast v), state)
     | _ -> failwith "abs expects one argument"
 
+  let write_bytes (fun_sig : GAst.fun_sig) ~crate:_ ~args ~state =
+    let ptr, dst, v, count =
+      match args with
+      | [ Ptr ((ptr, _) as dst); Base v; Base count ] -> (ptr, dst, v, count)
+      | _ -> failwith "unexpected write_bytes arguments"
+    in
+    let count =
+      match Typed.cast_checked count Typed.t_int with
+      | Some count -> count
+      | None -> failwith "write_bytes: invalid count type"
+    in
+    let ty =
+      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
+        .types
+      |> List.hd
+    in
+    let* size = Layout.size_of_s ty in
+    let size = size *@ count in
+    (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
+    if%sat v ==@ 0s then
+      let++ (), state = Heap.zeros dst size state in
+      (Tuple [], state)
+    else
+      match Typed.kind size with
+      | Int bytes ->
+          let list = List.init (Z.to_int bytes) Fun.id in
+          let++ (), state =
+            Result.fold_list list ~init:((), state) ~f:(fun ((), state) i ->
+                let ptr = Sptr.offset ptr @@ Typed.int i in
+                Heap.store (ptr, None) (Types.TLiteral (TInteger U8)) (Base v)
+                  state)
+          in
+          (Tuple [], state)
+      | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
+
   type std_fun =
     (* Kani *)
     | Assert
@@ -773,6 +808,7 @@ module M (Heap : Heap_intf.S) = struct
     | Transmute
     | Unchecked of std_op
     | Wrapping of std_op
+    | WriteBytes
     | Zeroed
 
   let std_fun_map =
@@ -815,6 +851,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::wrapping_mul", Wrapping Mul);
       ("core::intrinsics::wrapping_rem", Wrapping Rem);
       ("core::intrinsics::wrapping_sub", Wrapping Sub);
+      ("core::intrinsics::write_bytes::write_bytes", WriteBytes);
       ("core::mem::zeroed", Zeroed);
       ("core::num::{@N}::checked_add", Checked Add);
       ("core::num::{@N}::checked_div", Checked Div);
@@ -894,6 +931,7 @@ module M (Heap : Heap_intf.S) = struct
        | Transmute -> transmute f.signature
        | Unchecked op -> unchecked_op op f.signature
        | Wrapping op -> wrapping_op (op_of op) f.signature
+       | WriteBytes -> write_bytes f.signature
        | Zeroed -> zeroed f.signature
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =

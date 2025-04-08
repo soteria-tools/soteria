@@ -386,6 +386,20 @@ module Tree = struct
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
     ((), tree)
 
+  let zero_range (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+      (t : t) : (unit * t, 'err, 'fix) Result.t =
+    let range = Range.of_low_and_size low size in
+    let replace_node t =
+      match t.node with
+      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
+      | Owned { tb; _ } ->
+          (* Is there something to do with the tree borrow here? *)
+          Result.ok @@ zeros tb range
+    in
+    let rebuild_parent = of_children in
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
+    ((), tree)
+
   let get_raw ofs size t =
     let range = Range.of_low_and_size ofs size in
     let replace_node node = Result.ok node in
@@ -662,6 +676,16 @@ let uninit_range ofs size t =
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
         Tree.uninit_range ofs size t.root
+      in
+      ((), to_opt tree)
+
+let zero_range ofs size t =
+  match t with
+  | None -> miss_no_fix ~msg:"zero on none" ()
+  | Some t ->
+      let++ (), tree =
+        let@ () = with_bound_check t (ofs +@ size) in
+        Tree.zero_range ofs size t.root
       in
       ((), to_opt tree)
 
