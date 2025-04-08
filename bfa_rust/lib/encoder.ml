@@ -174,8 +174,8 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
             |> field_tys
             |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
         | _ ->
-            Fmt.failwith "Unhandled type declaration in rust_of_cvals: %a"
-              Types.pp_type_decl type_decl)
+            Fmt.failwith "Unhandled type kind in rust_of_cvals: %a"
+              Types.pp_type_decl_kind type_decl.kind)
     | TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) as ty ->
         let layout = layout_of ty in
         let len = Array.length layout.members_ofs in
@@ -273,3 +273,35 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
   in
   let off = Option.value ~default:0s offset in
   aux off ty
+
+let transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
+  let some x = return (Some x) in
+  let none = return None in
+  match (from_ty, to_ty, v) with
+  | TLiteral (TFloat _), TLiteral (TInteger _), Base sv ->
+      let+ sv =
+        of_opt_not_impl ~msg:"Unsupported: non-float in float-to-int"
+        @@ Typed.cast_float sv
+      in
+      let sv' = Typed.int_of_float sv in
+      Some (Base sv')
+  | TLiteral (TInteger _), TLiteral (TFloat f), Base sv ->
+      let+ sv =
+        of_opt_not_impl ~msg:"Unsupported: non-integer in integer-to-float"
+        @@ Typed.cast_checked sv Typed.t_int
+      in
+      let fp = Charon_util.float_precision f in
+      let sv' = Typed.float_of_int fp sv in
+      Some (Base sv')
+  | TLiteral _, TLiteral to_ty, Base sv ->
+      let constrs = Layout.constraints to_ty in
+      if%sat Typed.conj (constrs sv) then some v else none
+  | ( (TRef _ | TRawPtr _ | TLiteral (TInteger Usize)),
+      (TRef _ | TRawPtr _ | TLiteral (TInteger Usize)),
+      (Ptr _ | Base _) ) ->
+      some v
+  | _ ->
+      let ctx = PrintUllbcAst.Crate.crate_to_fmt_env @@ Session.get_crate () in
+      Fmt.kstr not_impl "Unhandled transmute of %a: %s -> %s" ppa_rust_val v
+        (PrintTypes.ty_to_string ctx from_ty)
+        (PrintTypes.ty_to_string ctx to_ty)

@@ -288,23 +288,10 @@ module Make (Heap : Heap_intf.S) = struct
             Result.ok (v', state)
         | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
         | Cast (CastTransmute (from_ty, to_ty)) -> (
-            match (from_ty, to_ty) with
-            | TRawPtr _, TLiteral (TInteger Usize) -> Result.ok (v, state)
-            | TRef _, TRef _ -> Result.ok (v, state)
-            | TLiteral (TFloat _), TLiteral (TInteger _) ->
-                let v =
-                  match v with
-                  | Base v -> (
-                      match Typed.get_ty v with
-                      | Svalue.TFloat _ -> Typed.cast v
-                      | _ -> failwith "Unsupported: invalid value in cast")
-                  | _ -> failwith "Unsupported: invalid value in cast"
-                in
-                let v' = Typed.int_of_float v in
-                Result.ok (Base v', state)
-            | _ ->
-                Fmt.kstr not_impl "Unsupported transmutation, from %a to %a"
-                  Types.pp_ty from_ty Types.pp_ty to_ty)
+            let* v = Encoder.transmute ~from_ty ~to_ty v in
+            match v with
+            | Some v -> Result.ok (v, state)
+            | None -> Heap.error `UBTransmute state)
         | Cast (CastScalar (TInteger from_ty, TInteger to_ty)) ->
             let from_size = Layout.size_of_int_ty from_ty in
             let to_size = Layout.size_of_int_ty to_ty in
@@ -335,13 +322,7 @@ module Make (Heap : Heap_intf.S) = struct
                 "Unsupported: integer cast with different signedness and sign"
         | Cast (CastScalar (TInteger _, TFloat to_ty)) ->
             let v = as_base_of ~ty:Typed.t_int v in
-            let fp : Svalue.FloatPrecision.t =
-              match to_ty with
-              | F16 -> F16
-              | F32 -> F32
-              | F64 -> F64
-              | F128 -> F128
-            in
+            let fp = Charon_util.float_precision to_ty in
             let v' = Typed.float_of_int fp v in
             Result.ok (Base v', state)
         | Cast
@@ -428,8 +409,8 @@ module Make (Heap : Heap_intf.S) = struct
         | UbChecks ->
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
                From what I understand: our execution already checks for UB, so we should return
-               true to skip past code that manually does these checks. *)
-            Result.ok (Base (Typed.int_of_bool Typed.v_true), state)
+               false, to say we don't want to do UB checks at runtime. *)
+            Result.ok (Base (Typed.int_of_bool Typed.v_false), state)
         | SizeOf ->
             let layout = Layout.layout_of ty in
             Result.ok (Base (Typed.int layout.size), state)

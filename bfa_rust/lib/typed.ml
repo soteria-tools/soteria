@@ -49,6 +49,7 @@ let[@inline] untyped x = x
 let[@inline] untyped_list l = l
 let[@inline] type_ x = x
 let cast_checked x ty = if equal_ty x.node.ty ty then Some x else None
+let cast_float x = if is_float x.node.ty then Some x else None
 
 let cast_checked2 x y =
   if equal_ty x.node.ty y.node.ty then Some (x, y, x.node.ty) else None

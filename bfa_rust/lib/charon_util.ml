@@ -88,3 +88,9 @@ let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
   List.exists
     (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)
     decl.item_meta.attr_info.attributes
+
+let float_precision : Types.float_type -> Svalue.FloatPrecision.t = function
+  | F16 -> F16
+  | F32 -> F32
+  | F64 -> F64
+  | F128 -> F128

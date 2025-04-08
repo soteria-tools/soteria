@@ -680,21 +680,14 @@ module M (Heap : Heap_intf.S) = struct
     | [ v ] -> Result.ok (v, state)
     | _ -> failwith "black_box: invalid arguments"
 
-  let transmute (funsig : GAst.fun_sig) ~crate ~args ~state =
+  let transmute (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     let from_ty = List.hd funsig.inputs in
     let to_ty = funsig.output in
     let v = List.hd args in
-    match (from_ty, to_ty, v) with
-    | TLiteral _, TLiteral to_ty, Base v ->
-        let constrs = Layout.constraints to_ty in
-        if%sat Typed.conj (constrs v) then Result.ok (Base v, state)
-        else Heap.error `UBTransmute state
-    | (TRef _ | TRawPtr _), (TRef _ | TRawPtr _), Ptr _ -> Result.ok (v, state)
-    | _ ->
-        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-        Fmt.failwith "Unhandled transmute of %a: %s -> %s" pp_rust_val v
-          (PrintTypes.ty_to_string ctx from_ty)
-          (PrintTypes.ty_to_string ctx to_ty)
+    let* res = Encoder.transmute ~from_ty ~to_ty v in
+    match res with
+    | Some v -> Result.ok (v, state)
+    | None -> Heap.error `UBTransmute state
 
   let copy_nonoverlapping (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     let (from_ptr, _), (to_ptr, _), len =

@@ -67,6 +67,7 @@ val type_ : Svalue.t -> 'a t
 val cast : 'a t -> 'b t
 val cast_checked : 'a t -> 'b ty -> 'b t option
 val cast_checked2 : 'a t -> 'b t -> ('a t * 'a t * 'a ty) option
+val cast_float : 'a t -> [> sfloat ] t option
 val untyped : 'a t -> Svalue.t
 val untyped_list : 'a t list -> Svalue.t list
 val pp : 'a Fmt.t -> 'a t Fmt.t
