@@ -221,7 +221,7 @@ let int i = int_z (Z.of_int i)
 let zero = int_z Z.zero
 let one = int_z Z.one
 
-let not sv =
+let rec not sv =
   if equal sv v_true then v_false
   else if equal sv v_false then v_true
   else
