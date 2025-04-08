@@ -264,10 +264,10 @@ module Make (Heap : Heap_intf.S) = struct
         let++ ptr', state = Heap.borrow ptr borrow state in
         (Ptr ptr', state)
     | Global { global_id; _ } ->
-        let decl =
-          UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
-        in
         let** ptr, state = resolve_global ~crate global_id state in
+        let decl =
+          UllbcAst.GlobalDeclId.Map.find global_id crate.global_decls
+        in
         Heap.load ptr decl.ty state
     | GlobalRef ({ global_id; _ }, _mut) ->
         (* TODO: handle mutability *)
@@ -471,9 +471,14 @@ module Make (Heap : Heap_intf.S) = struct
         let++ vals, state = eval_operand_list ~crate ~store state vals in
         (Enum (discr, vals), state)
     (* Union aggregate *)
-    | Aggregate (AggregatedAdt (_, None, Some _, _), _) as v ->
-        Fmt.kstr not_impl "Union rvalues not supported: %a"
-          Expressions.pp_rvalue v
+    | Aggregate (AggregatedAdt (_, None, Some field, _), ops) ->
+        let* op =
+          match ops with
+          | [ op ] -> return op
+          | _ -> not_impl "union aggregate with >1 values?"
+        in
+        let++ value, state = eval_operand state op in
+        (Union (value, field), state)
     (* Special case? unit (zero-tuple) *)
     | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in

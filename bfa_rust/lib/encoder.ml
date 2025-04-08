@@ -104,6 +104,16 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
       if List.length vals <> size then failwith "Array length mismatch"
       else chain_cvals layout vals (List.init size (fun _ -> sub_ty))
   | Array _, _ | _, TAdt (TBuiltin TArray, _) -> illegal_pair ()
+  (* Unions *)
+  | Union (v, f), TAdt (TAdtId id, _) ->
+      let type_decl = Session.get_adt id in
+      let field =
+        match type_decl.kind with
+        | Union fs -> Types.FieldId.nth fs f
+        | _ -> failwith "Unexpected ADT type for union"
+      in
+      rust_to_cvals ~offset v field.field_ty
+  | Union _, _ -> illegal_pair ()
   (* Rest *)
   | _ ->
       L.err (fun m ->

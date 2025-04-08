@@ -12,6 +12,7 @@ type 'ptr rust_val =
   | Struct of 'ptr rust_val list  (** contains ordered fields *)
   | Tuple of 'ptr rust_val list
   | Array of 'ptr rust_val list
+  | Union of 'ptr rust_val * Types.field_id  (** value and field of union *)
 [@@deriving show { with_path = false }]
 
 let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv

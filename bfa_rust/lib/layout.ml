@@ -180,9 +180,13 @@ let rec layout_of (ty : Types.ty) : layout =
       | Opaque ->
           let msg = Fmt.str "Opaque %a " Session.pp_name adt.item_meta.name in
           raise (CantComputeLayout (msg, ty))
+      | Union fs ->
+          let layouts = List.map layout_of @@ Charon_util.field_tys fs in
+          List.fold_left
+            (fun acc l -> if l.size > acc.size then l else acc)
+            (List.hd layouts) (List.tl layouts)
       | TError _ -> raise (CantComputeLayout ("Error", ty))
-      | Alias _ -> raise (CantComputeLayout ("Alias", ty))
-      | Union _ -> raise (CantComputeLayout ("Union", ty)))
+      | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
   (* Arrays *)
   | TAdt (TBuiltin TArray, generics) ->
       let ty, size =
