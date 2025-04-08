@@ -57,20 +57,29 @@ let find_kani_lib ~no_compile () =
       else path
     with Not_found -> List.hd Runtime_sites.Sites.kani_lib
   in
-  match no_compile with
-  | true -> path
-  | false ->
-      let res =
-        Fmt.kstr exec_cmd
-          "cd %s/kani && charon --only-cargo --lib --input ./src/ > /dev/null \
-           2>/dev/null"
-          path
-      in
-      if res <> 0 && res <> 255 then
-        raise
-          (ExecutionError
-             ("Couldn't compile Kani lib: error " ^ Int.to_string res));
-      path
+  (if not no_compile then
+     let res =
+       Fmt.kstr exec_cmd
+         "cd %s/kani && charon --only-cargo --lib --input ./src/ > /dev/null \
+          2>/dev/null"
+         path
+     in
+     if res <> 0 && res <> 255 then
+       raise
+         (ExecutionError
+            ("Couldn't compile Kani lib: error " ^ Int.to_string res)));
+  let ( / ) = Filename.concat in
+  let target = path / "kani" / "target" in
+  let subfiles = Sys.readdir target in
+  (* find folder that is neither debug, nor a file (e.g. "aarch64-apple-darwin") *)
+  let os =
+    Array.find_opt
+      (fun s -> s <> "debug" && Sys.is_directory (target / s))
+      subfiles
+  in
+  match os with
+  | Some os -> (path, os)
+  | None -> raise (ExecutionError "Couldn't find Kani lib binaries")
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~no_compile file_name =
@@ -83,7 +92,7 @@ let parse_ullbc_of_file ~no_compile file_name =
   let output = Printf.sprintf "%s.llbc.json" file_name in
   (if not no_compile then
      let kani_args =
-       let kani_lib = find_kani_lib ~no_compile () in
+       let kani_lib, os = find_kani_lib ~no_compile () in
        [
          "--opaque=kani";
          "--rustc-arg=-Zcrate-attr=feature\\(register_tool\\)";
@@ -92,8 +101,7 @@ let parse_ullbc_of_file ~no_compile file_name =
          "--rustc-arg=--cfg=kani";
          "--rustc-arg=--extern=kani";
          (* The below is cursed and should be fixed !!! *)
-         Fmt.str "--rustc-arg=-L%s/kani/target/aarch64-apple-darwin/debug/deps"
-           kani_lib;
+         Fmt.str "--rustc-arg=-L%s/kani/target/%s/debug/deps" kani_lib os;
          Fmt.str "--rustc-arg=-L%s/kani/target/debug/deps" kani_lib;
        ]
      in
