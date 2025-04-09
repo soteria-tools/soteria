@@ -12,8 +12,26 @@ type 'ptr rust_val =
   | Struct of 'ptr rust_val list  (** contains ordered fields *)
   | Tuple of 'ptr rust_val list
   | Array of 'ptr rust_val list
-  | Union of 'ptr rust_val * Types.field_id  (** value and field of union *)
-[@@deriving show { with_path = false }]
+  | Union of Types.field_id * 'ptr rust_val  (** field and value of union *)
+
+let rec pp_rust_val pp_ptr fmt =
+  let pp_rust_val = pp_rust_val pp_ptr in
+  function
+  | Base v -> Fmt.pf fmt "%a" Typed.ppa v
+  | Ptr (p, None) -> Fmt.pf fmt "Ptr(%a)" pp_ptr p
+  | Ptr (p, Some meta) -> Fmt.pf fmt "Ptr(%a, %a)" pp_ptr p Typed.ppa meta
+  | Enum (disc, vals) ->
+      Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
+        (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val)
+        vals
+  | Struct fields ->
+      Fmt.pf fmt "{%a}" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) fields
+  | Tuple vals ->
+      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
+  | Array vals ->
+      Fmt.pf fmt "[%a]" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
+  | Union (field_id, v) ->
+      Fmt.pf fmt "Union(%a: %a)" Types.pp_field_id field_id pp_rust_val v
 
 let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv
 let unit_ = Tuple []

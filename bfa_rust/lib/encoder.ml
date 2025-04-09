@@ -104,7 +104,7 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
       else chain_cvals layout vals (List.init size (fun _ -> sub_ty))
   | Array _, _ | _, TAdt (TBuiltin TArray, _) -> illegal_pair ()
   (* Unions *)
-  | Union (v, f), TAdt (TAdtId id, _) ->
+  | Union (f, v), TAdt (TAdtId id, _) ->
       let type_decl = Session.get_adt id in
       let field =
         match type_decl.kind with
@@ -162,14 +162,15 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
     | TAdt (TAdtId t_id, _) as ty -> (
         let type_decl = Session.get_adt t_id in
         match type_decl.kind with
-        | Enum [ { fields = []; discriminant; _ } ] ->
-            `Done (Enum (value_of_scalar discriminant, []))
-        | Enum variants -> aux_enum offset variants
         | Struct fields ->
             let layout = layout_of ty in
             fields
             |> field_tys
             |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
+        | Enum [ { fields = []; discriminant; _ } ] ->
+            `Done (Enum (value_of_scalar discriminant, []))
+        | Enum variants -> aux_enum offset variants
+        | Union fs -> aux_union offset fs
         | _ ->
             Fmt.failwith "Unhandled type kind in rust_of_cvals: %a"
               Types.pp_type_decl_kind type_decl.kind)
@@ -211,29 +212,27 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
             in
             aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
+  (* basically, a parser is just a sort of monad, so we can have the usual operations on it *)
+  and aux_bind ~f parser_ret : 'ptr parser_return =
+    match parser_ret with
+    | `More (blocks, callback) ->
+        let callback v = Rustsymex.map (callback v) (aux_bind ~f) in
+        `More (blocks, callback)
+    | `Done value -> f value
+  (* util to map a parser result, at the end *)
+  and aux_map ~f parser_ret : 'ptr parser_return =
+    aux_bind ~f:(fun v -> `Done (f v)) parser_ret
   (* Parses a list of fields (for structs and tuples) *)
   and aux_fields ~f ~layout offset fields : 'ptr parser_return =
     let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
     let rec mk_callback to_parse parsed : 'ptr parser_return =
       match to_parse with
       | [] -> `Done (f (List.rev parsed))
-      | ty :: rest -> (
+      | ty :: rest ->
           let idx = List.length parsed in
           let offset = Array.get layout.members_ofs idx |> Typed.int in
           let offset = base_offset +@ offset in
-          match aux offset ty with
-          | `More (blocks, callback) ->
-              wrap_callback rest parsed blocks callback
-          | `Done value -> mk_callback rest (value :: parsed))
-    and wrap_callback to_parse parsed blocks callback =
-      `More
-        ( blocks,
-          fun values ->
-            let+ res = callback values in
-            match res with
-            | `More (blocks, callback) ->
-                wrap_callback to_parse parsed blocks callback
-            | `Done value -> mk_callback to_parse (value :: parsed) )
+          aux_bind ~f:(fun v -> mk_callback rest (v :: parsed)) @@ aux offset ty
     in
     mk_callback fields []
   (* Parses what enum variant we're handling *)
@@ -267,6 +266,20 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
             Typed.ppa cval
     in
     `More ([ (TLiteral disc_ty, offset) ], callback)
+  and aux_union offset fs : 'ptr parser_return =
+    (* read largest field *)
+    let layouts =
+      fs
+      |> List.mapi @@ fun i (f : Types.field) ->
+         (i, f.field_ty, layout_of f.field_ty)
+    in
+    let f, ty, _ =
+      List.fold_left
+        (fun ((_, _, accl) as acc) ((_, _, l) as cur) ->
+          if l.size > accl.size then cur else acc)
+        (List.hd layouts) (List.tl layouts)
+    in
+    aux_map ~f:(fun fs -> Union (Types.FieldId.of_int f, fs)) @@ aux offset ty
   in
   let off = Option.value ~default:0s offset in
   aux off ty

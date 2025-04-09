@@ -461,7 +461,7 @@ module Make (Heap : Heap_intf.S) = struct
           | _ -> not_impl "union aggregate with >1 values?"
         in
         let++ value, state = eval_operand state op in
-        (Union (value, field), state)
+        (Union (field, value), state)
     (* Special case? unit (zero-tuple) *)
     | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
