@@ -40,36 +40,16 @@ module GlobMap = struct
     Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) m
 end
 
-type sub_t = Tree_block.t * Tree_borrow.t
+type sub = Tree_block.t * Tree_borrow.t
 
-type t = {
-  heap : (Tree_block.t * Tree_borrow.t) Freeable.t SPmap.t option;
+and t = {
+  heap : sub Freeable.t SPmap.t option;
   globals : Sptr.t Charon_util.full_ptr GlobMap.t;
 }
 [@@deriving show { with_path = false }]
 
 type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
 [@@deriving show { with_path = false }]
-
-let serialize { heap; _ } =
-  match heap with
-  | None -> []
-  | Some heap ->
-      SPmap.serialize
-        (Freeable.serialize (fun (tb, _) -> Tree_block.serialize tb))
-        heap
-
-let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
-    (serialized : serialized) : serialized =
-  SPmap.subst_serialized
-    (Freeable.subst_serialized Tree_block.subst_serialized)
-    subst_var serialized
-
-let iter_vars_serialized (s : serialized) :
-    (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit =
-  SPmap.iter_vars_serialized
-    (Freeable.iter_vars_serialized Tree_block.iter_vars_serialized)
-    s
 
 let pp_pretty ~ignore_freed ft { heap; _ } =
   let ignore =
@@ -117,8 +97,8 @@ let with_tbs b f =
 let with_ptr ((raw_ptr, _) as ptr : Sptr.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
-      sub_t option ->
-      ('a * sub_t option, 'err, 'fix list) Result.t) :
+      sub option ->
+      ('a * sub option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
   if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
   else
