@@ -21,7 +21,7 @@ Raw pointers don't get new tags
 Raw pointers can access outside the parent's range, with offsets
   $ bfa-rust exec-main offsets.rs --clean
   warning: Unsupported binary operation: offset
-   --> /rustc/library/core/src/ptr/mut_ptr.rs:1016:18
+   --> /rustc/library/core/src/ptr/mut_ptr.rs:1030:18
   
   note: the error occurred when translating `core::ptr::mut_ptr::{*mut T}::add`, which is (transitively) used at the following location(s):
    --> $TESTCASE_ROOT/offsets.rs:7:17

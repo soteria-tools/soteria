@@ -38,7 +38,6 @@ module Session = struct
               bin = None;
               mir_promoted = false;
               mir_optimized = false;
-              crate_name = None;
               input_file = None;
               read_llbc = None;
               dest_dir = None;
@@ -65,7 +64,6 @@ module Session = struct
               print_built_llbc = false;
               print_llbc = false;
               no_merge_goto_chains = false;
-              only_cargo = false;
             };
           declarations = [];
           type_decls = Types.TypeDeclId.Map.empty;
@@ -197,7 +195,7 @@ let rec layout_of (ty : Types.ty) : layout =
           (* All fields in the union start at 0 and overlap *)
           let members_ofs = Array.init (List.length fs) (fun _ -> 0) in
           { size; align; members_ofs }
-      | TError _ -> raise (CantComputeLayout ("Error", ty))
+      | TDeclError _ -> raise (CantComputeLayout ("DeclError", ty))
       | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
   (* Arrays *)
   | TAdt (TBuiltin TArray, generics) ->
@@ -215,6 +213,7 @@ let rec layout_of (ty : Types.ty) : layout =
   (* Others (unhandled for now) *)
   | TAdt (TBuiltin TStr, _) -> raise (CantComputeLayout ("String", ty))
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
+  | TError _ -> raise (CantComputeLayout ("Error", ty))
   | TTraitType _ -> raise (CantComputeLayout ("Trait type", ty))
   | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
   | TArrow _ -> raise (CantComputeLayout ("Arrow", ty))

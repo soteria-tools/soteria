@@ -30,7 +30,7 @@ jobs:
           cd ..
           git clone https://github.com/N1ark/charon.git
           cd charon
-          git checkout monomorphize
+          git checkout e01017b2767b5e55ba981697617b09181693d4a6
           gmake build-dev-charon-rust
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Setup node
