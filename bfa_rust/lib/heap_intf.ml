@@ -93,6 +93,7 @@ module type S = sig
     Result.t
 
   val error : 'a -> t -> ('ok, 'a err, serialized list) Result.t
+  val lift_err : t -> ('ok, 'err, 'f) Result.t -> ('ok, 'err err, 'f) Result.t
 
   val store_str_global :
     string -> full_ptr -> t -> (unit * t, [> ] err, serialized list) Result.t

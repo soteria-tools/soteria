@@ -11,12 +11,12 @@ open Layout
 
 type 'ptr cval_info = {
   value : 'ptr rust_val;
-  ty : Types.literal_type;
+  ty : Types.ty;
   offset : sint Typed.t;
 }
 
-(** Converts a Rust value of the given type into a list of C values, along with
-    their size and offset *)
+(** Converts a Rust value of the given type into a list of sub values, along
+    with their size and offset *)
 let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
     'ptr cval_info list =
   let illegal_pair () =
@@ -36,21 +36,20 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
 
   match (value, ty) with
   (* Literals *)
-  | Base _, TLiteral ty -> [ { value; ty; offset } ]
-  | Ptr _, TLiteral (TInteger (Isize | Usize) as ty) ->
-      [ { value; ty; offset } ]
+  | Base _, TLiteral _ -> [ { value; ty; offset } ]
+  | Ptr _, TLiteral (TInteger (Isize | Usize)) -> [ { value; ty; offset } ]
   | _, TLiteral _ -> illegal_pair ()
   (* References / Pointers *)
   | Ptr (_, None), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
   | Ptr (_, None), TRef (_, sub_ty, _)
   | Ptr (_, None), TRawPtr (sub_ty, _) ->
-      let ty = Values.TInteger Isize in
+      let ty : Types.ty = TLiteral (TInteger Isize) in
       if is_fat_ptr sub_ty then failwith "Expected a fat pointer"
       else [ { value; ty; offset } ]
   | Ptr (ptr, Some meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
   | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
   | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
-      let ty = Values.TInteger Isize in
+      let ty : Types.ty = TLiteral (TInteger Isize) in
       let value = Ptr (ptr, None) in
       if is_fat_ptr sub_ty then
         let size = Typed.int Archi.word_size in
@@ -61,7 +60,7 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
       else [ { value; ty; offset } ]
   (* References / Pointers obtained from casting *)
   | Base _, TAdt (TBuiltin TBox, _) | Base _, TRef _ | Base _, TRawPtr _ ->
-      [ { value; ty = TInteger Isize; offset } ]
+      [ { value; ty = TLiteral (TInteger Isize); offset } ]
   | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) -> chain_cvals (layout_of ty) vs types
@@ -121,9 +120,7 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
             Types.pp_ty ty);
       failwith "Unhandled rust_value and Charon.ty"
 
-type 'ptr aux_ret =
-  (Types.literal_type * sint Typed.t) list * 'ptr parse_callback
-
+type 'ptr aux_ret = (Types.ty * sint Typed.t) list * 'ptr parse_callback
 and 'ptr parse_callback = 'ptr rust_val list -> 'ptr callback_return
 and 'ptr parser_return = [ `Done of 'ptr rust_val | `More of 'ptr aux_ret ]
 and 'ptr callback_return = 'ptr parser_return Rustsymex.t
@@ -135,7 +132,7 @@ and 'ptr callback_return = 'ptr parser_return Rustsymex.t
 let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
   (* Base case, parses all types. *)
   let rec aux offset : Types.ty -> 'ptr parser_return = function
-    | TLiteral ty ->
+    | TLiteral _ as ty ->
         `More
           ( [ (ty, offset) ],
             function
@@ -151,11 +148,11 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
           | _ -> failwith "Expected a pointer and base"
         in
         let ptr_size = Typed.int Archi.word_size in
-        let isize = Values.TInteger Isize in
+        let isize : Types.ty = TLiteral (TInteger Isize) in
         `More ([ (isize, offset); (isize, offset +@ ptr_size) ], callback)
     | TAdt (TBuiltin TBox, _) | TRef _ | TRawPtr _ ->
         `More
-          ( [ (TInteger Isize, offset) ],
+          ( [ (TLiteral (TInteger Isize), offset) ],
             function
             | [ ((Ptr _ | Base _) as ptr) ] -> return (`Done ptr)
             | _ -> failwith "Expected a pointer or base" )
@@ -269,14 +266,20 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
             "Vanishing rust_of_cvals, as no variant matches variant id %a"
             Typed.ppa cval
     in
-    `More ([ (TInteger disc.int_ty, offset) ], callback)
+    `More ([ (TLiteral disc_ty, offset) ], callback)
   in
   let off = Option.value ~default:0s offset in
   aux off ty
 
 let transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
-  let some x = return (Some x) in
-  let none = return None in
+  let open Bfa_symex.Compo_res in
+  let open Result in
+  let unhandled () =
+    let ctx = PrintUllbcAst.Crate.crate_to_fmt_env @@ Session.get_crate () in
+    Fmt.kstr not_impl "Unhandled transmute of %a: %s -> %s" ppa_rust_val v
+      (PrintTypes.ty_to_string ctx from_ty)
+      (PrintTypes.ty_to_string ctx to_ty)
+  in
   match (from_ty, to_ty, v) with
   | TLiteral (TFloat _), TLiteral (TInteger _), Base sv ->
       let+ sv =
@@ -284,7 +287,7 @@ let transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
         @@ Typed.cast_float sv
       in
       let sv' = Typed.int_of_float sv in
-      Some (Base sv')
+      Ok (Base sv')
   | TLiteral (TInteger _), TLiteral (TFloat f), Base sv ->
       let+ sv =
         of_opt_not_impl ~msg:"Unsupported: non-integer in integer-to-float"
@@ -292,16 +295,12 @@ let transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
       in
       let fp = Charon_util.float_precision f in
       let sv' = Typed.float_of_int fp sv in
-      Some (Base sv')
+      Ok (Base sv')
   | TLiteral _, TLiteral to_ty, Base sv ->
       let constrs = Layout.constraints to_ty in
-      if%sat Typed.conj (constrs sv) then some v else none
+      if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
   | ( (TRef _ | TRawPtr _ | TLiteral (TInteger Usize)),
       (TRef _ | TRawPtr _ | TLiteral (TInteger Usize)),
       (Ptr _ | Base _) ) ->
-      some v
-  | _ ->
-      let ctx = PrintUllbcAst.Crate.crate_to_fmt_env @@ Session.get_crate () in
-      Fmt.kstr not_impl "Unhandled transmute of %a: %s -> %s" ppa_rust_val v
-        (PrintTypes.ty_to_string ctx from_ty)
-        (PrintTypes.ty_to_string ctx to_ty)
+      ok v
+  | _ -> unhandled ()

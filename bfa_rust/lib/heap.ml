@@ -142,9 +142,7 @@ let load ?is_move (((_, tag) as ptr), meta) ty st =
         | `More (blocks, callback) ->
             L.debug (fun f ->
                 let pp_block ft (ty, ofs) =
-                  Fmt.pf ft "%s [%a] "
-                    (Charon_util.lit_to_string ty)
-                    Typed.ppa ofs
+                  Fmt.pf ft "%a:%a" Typed.ppa ofs Charon_util.pp_ty ty
                 in
                 f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
             let** values, block =
@@ -177,11 +175,9 @@ let store (((_, tag) as ptr), _) ty sval st =
       let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
       L.debug (fun f ->
           let pp_part f ({ value; ty; offset } : Sptr.t Encoder.cval_info) =
-            Fmt.pf f "%a: %s [%a]"
+            Fmt.pf f "%a: %a [%a]"
               (Charon_util.pp_rust_val Sptr.pp)
-              value
-              (Charon_util.lit_to_string ty)
-              Typed.ppa offset
+              value Charon_util.pp_ty ty Typed.ppa offset
           in
           f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_part) parts);
       Result.fold_list parts ~init:((), block)
@@ -280,6 +276,13 @@ let zeros (ptr, _) size st =
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in
   error err
+
+let lift_err st (symex : ('a, 'e, 'f) Result.t) =
+  let* res = symex in
+  match res with
+  | Error e -> error e st
+  | Ok ok -> Result.ok ok
+  | Missing fix -> Result.miss fix
 
 let store_str_global str ptr ({ globals; _ } as st) =
   let globals = GlobMap.add (String str) ptr globals in

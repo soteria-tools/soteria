@@ -684,10 +684,8 @@ module M (Heap : Heap_intf.S) = struct
     let from_ty = List.hd funsig.inputs in
     let to_ty = funsig.output in
     let v = List.hd args in
-    let* res = Encoder.transmute ~from_ty ~to_ty v in
-    match res with
-    | Some v -> Result.ok (v, state)
-    | None -> Heap.error `UBTransmute state
+    let++ v = Heap.lift_err state @@ Encoder.transmute ~from_ty ~to_ty v in
+    (v, state)
 
   let copy_nonoverlapping (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     let (from_ptr, _), (to_ptr, _), len =

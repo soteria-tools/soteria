@@ -12,21 +12,20 @@ let miss_no_fix_immediate ?(msg = "") () =
   let msg = "MISSING WITH NO FIX " ^ msg in
   L.info (fun m -> m "%s" msg);
   Rustsymex.push_give_up (msg, get_loc ());
-  Bfa_symex.Compo_res.Missing []
+  Missing []
 
 let miss_no_fix ?msg () = Rustsymex.return (miss_no_fix_immediate ?msg ())
 
 type rust_val = Sptr.ArithPtr.t Charon_util.rust_val
 
 module MemVal = struct
-  type t = { value : rust_val; ty : Values.literal_type } [@@deriving make]
+  type t = { value : rust_val; ty : Types.ty } [@@deriving make]
 
   let pp ft t =
     let open Fmt in
-    pf ft "%a : %s"
+    pf ft "%a : %a"
       (Charon_util.pp_rust_val Sptr.ArithPtr.pp)
-      t.value
-      (Charon_util.lit_to_string t.ty)
+      t.value Charon_util.pp_ty t.ty
 end
 
 module Node = struct
@@ -101,24 +100,19 @@ module Node = struct
     | NotOwned _ -> miss_no_fix ~msg:"decode" ()
     | Owned { v = Uninit _; _ } -> Result.error `UninitializedMemoryAccess
     | Owned { v = Zeros; _ } ->
-        Result.ok @@ Charon_util.Base (Layout.zeroed_lit ty)
+        let+ v =
+          of_opt_not_impl ~msg:"Don't know how to zero this type"
+          @@ Layout.zeroed ~null_ptr:Sptr.ArithPtr.null_ptr ty
+        in
+        Ok v
     | Owned { v = Lazy; _ } ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
-    | Owned { v = Init { value; ty = tyw }; _ } -> (
-        if Values.equal_literal_type ty tyw then Result.ok value
-        else
-          match value with
-          | Base cval ->
-              let constrs = Layout.constraints ty in
-              if%sat Typed.conj (constrs cval) then Result.ok value
-              else Result.error `UBTransmute
-          | _ ->
-              Fmt.kstr not_impl
-                "Couldn't convert type, contraints unknown for %s -> %s with %a"
-                (Charon_util.lit_to_string ty)
-                (Charon_util.lit_to_string tyw)
-                (Charon_util.pp_rust_val Sptr.ArithPtr.pp)
-                value)
+    | Owned { v = Init { value; ty = tyw }; _ } ->
+        if Types.equal_ty ty tyw then Result.ok value
+        else (
+          L.warn (fun m ->
+              m "Transmuting %a to %a" Types.pp_ty tyw Types.pp_ty ty);
+          Encoder.transmute ~from_ty:tyw ~to_ty:ty value)
     | Owned { v = Any; _ } ->
         (* We don't know if this read is valid, as memory could be uninitialised.
            We have to approximate and vanish. *)
@@ -333,9 +327,8 @@ module Tree = struct
     frame_inside ~replace_node ~rebuild_parent root range
 
   let load ?(is_move = false) (ofs : [< T.sint ] Typed.t)
-      (size : [< T.sint ] Typed.t) (ty : Values.literal_type)
-      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t) :
-      (rust_val * t, 'err, 'fix) Result.t =
+      (size : [< T.sint ] Typed.t) (ty : Types.ty) (tag : Tree_borrow.tag)
+      (tb : Tree_borrow.t) (t : t) : (rust_val * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size ofs size in
     let replace_node t =
       match t.node with
@@ -352,7 +345,7 @@ module Tree = struct
     (sval, tree)
 
   let store (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Types.literal_type) (value : rust_val) (tag : Tree_borrow.tag)
+      (ty : Types.ty) (value : rust_val) (tag : Tree_borrow.tag)
       (tb : Tree_borrow.t) (t : t) : (unit * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size low size in
     let replace_node t =
@@ -423,8 +416,7 @@ module Tree = struct
   (* TODO: we currently don't handle anything TreeBorrow related in cons/prod ! *)
 
   let consume_typed_val (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Types.literal_type) (_ : rust_val) (t : t) :
-      (t, 'err, 'fix list) Result.t =
+      (ty : Types.ty) (_ : rust_val) (t : t) : (t, 'err, 'fix list) Result.t =
     let range = Range.of_low_and_size low size in
     let replace_node _ = Result.ok @@ not_owned range in
     let rebuild_parent = of_children in
@@ -439,7 +431,7 @@ module Tree = struct
     | Error _ -> Rustsymex.vanish ()
 
   let produce_typed_val (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Types.literal_type) (value : rust_val) (t : t) : t Rustsymex.t =
+      (ty : Types.ty) (value : rust_val) (t : t) : t Rustsymex.t =
     let range = Range.of_low_and_size low size in
     let* () = not_impl "Produce typed_val constraints for rust_val" in
     (* let* constrs =
@@ -568,7 +560,7 @@ let pp_pretty ft t =
 type serialized_atom =
   | TypedVal of {
       offset : T.sint Typed.t;
-      ty : Types.literal_type; [@printer Types.pp_literal_type]
+      ty : Types.ty; [@printer Charon_util.pp_ty]
       v : rust_val; [@printer Charon_util.pp_rust_val Sptr.ArithPtr.pp]
     }
   | Bound of T.sint Typed.t
@@ -583,8 +575,8 @@ let iter_values_serialized serialized f =
   List.iter (function TypedVal { v; _ } -> f v | _ -> ()) serialized
 
 let mk_fix_typed offset ty () =
-  let+ v = Layout.nondet_literal_ty ty in
-  [ [ TypedVal { offset; ty; v = Charon_util.Base v } ] ]
+  let+ v = Layout.nondet_pure ty in
+  [ [ TypedVal { offset; ty; v } ] ]
 
 let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
   let** () =
@@ -603,7 +595,7 @@ let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
 let of_opt ?(mk_fixes = fun () -> Rustsymex.return []) = function
   | None ->
       let+ fixes = mk_fixes () in
-      Bfa_symex.Compo_res.miss fixes
+      Missing fixes
   | Some t -> Result.ok t
 
 let to_opt t = if is_empty t then None else Some t
@@ -622,7 +614,7 @@ let assert_exclusively_owned t =
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
 let load ?is_move ofs ty tag tb t =
-  let size = Typed.int @@ Layout.size_of_literal_ty ty in
+  let* size = Layout.size_of_s ty in
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
@@ -634,7 +626,7 @@ let store ofs ty sval tag tb t =
   match t with
   | None -> miss_no_fix ~msg:"outer store" ()
   | Some t ->
-      let size = Typed.int @@ Layout.size_of_literal_ty ty in
+      let* size = Layout.size_of_s ty in
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
         Tree.store ofs size ty sval tag tb t.root
@@ -864,7 +856,7 @@ let consume_atom atom t =
   match atom with
   | Bound bound -> consume_bound bound t
   | TypedVal { offset; ty; v } ->
-      let size = Typed.int @@ Layout.size_of_literal_ty ty in
+      let* size = Layout.size_of_s ty in
       consume_typed_val offset size ty v t
   | Uninit { offset; len } -> consume_uninit offset len t
   | Any { offset; len } -> consume_any offset len t
@@ -874,7 +866,7 @@ let produce_atom atom t =
   match atom with
   | Bound bound -> produce_bound bound t
   | TypedVal { offset; ty; v } ->
-      let size = Typed.int @@ Layout.size_of_literal_ty ty in
+      let* size = Layout.size_of_s ty in
       produce_typed_val offset size ty v t
   | Uninit { offset; len } -> produce_uninit offset len t
   | Any { offset; len } -> produce_any offset len t

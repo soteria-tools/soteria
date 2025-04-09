@@ -27,6 +27,25 @@ let type_of_operand : Expressions.operand -> Types.ty = function
 
 let lit_to_string = PrintValues.literal_type_to_string
 
+let rec pp_ty fmt : Types.ty -> unit = function
+  | TAdt (TAdtId id, _) -> Fmt.pf fmt "Adt(%a)" Types.pp_type_decl_id id
+  | TAdt (TTuple, { types = tys; _ }) ->
+      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_ty) tys
+  | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) -> Fmt.pf fmt "Box(%a)" pp_ty ty
+  | TAdt
+      ( TBuiltin TArray,
+        { types = [ ty ]; const_generics = [ CgValue (VScalar len) ]; _ } ) ->
+      Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print len.value
+  | TAdt (TBuiltin TSlice, { types = [ ty ]; _ }) -> Fmt.pf fmt "[%a]" pp_ty ty
+  | TAdt (TBuiltin TStr, _) -> Fmt.string fmt "str"
+  | TLiteral lit -> Fmt.string fmt @@ PrintValues.literal_type_to_string lit
+  | TNever -> Fmt.string fmt "!"
+  | TRef (_, ty, RMut) -> Fmt.pf fmt "&mut %a" pp_ty ty
+  | TRef (_, ty, RShared) -> Fmt.pf fmt "&%a" pp_ty ty
+  | TRawPtr (ty, RMut) -> Fmt.pf fmt "*mut %a" pp_ty ty
+  | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
+  | ty -> Fmt.pf fmt "%a" Types.pp_ty ty
+
 let as_ptr = function
   | Ptr ptr -> ptr
   | v ->

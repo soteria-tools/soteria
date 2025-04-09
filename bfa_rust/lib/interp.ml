@@ -287,11 +287,11 @@ module Make (Heap : Heap_intf.S) = struct
             let v' = Base (0s -@ v_int) in
             Result.ok (v', state)
         | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
-        | Cast (CastTransmute (from_ty, to_ty)) -> (
-            let* v = Encoder.transmute ~from_ty ~to_ty v in
-            match v with
-            | Some v -> Result.ok (v, state)
-            | None -> Heap.error `UBTransmute state)
+        | Cast (CastTransmute (from_ty, to_ty)) ->
+            let++ v =
+              Heap.lift_err state @@ Encoder.transmute ~from_ty ~to_ty v
+            in
+            (v, state)
         | Cast (CastScalar (TInteger from_ty, TInteger to_ty)) ->
             let from_size = Layout.size_of_int_ty from_ty in
             let to_size = Layout.size_of_int_ty to_ty in
