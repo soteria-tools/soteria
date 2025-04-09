@@ -461,3 +461,20 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option = function
           Fmt.failwith "Unhandled zeroed ADT kind: %a" Types.pp_type_decl_kind k
       )
   | ty -> Fmt.failwith "Unhandled zeroed type: %a" Types.pp_ty ty
+
+let rec is_inhabited : Types.ty -> bool = function
+  | TNever -> false
+  | TAdt (TAdtId id, _) -> (
+      let adt = Session.get_adt id in
+      match adt.kind with
+      | Struct fs -> List.for_all is_inhabited @@ Charon_util.field_tys fs
+      | Union fs -> List.exists is_inhabited @@ Charon_util.field_tys fs
+      | Enum [] -> false
+      | Enum vars ->
+          List.exists
+            (fun (v : Types.variant) ->
+              List.for_all is_inhabited @@ Charon_util.field_tys v.fields)
+            vars
+      | _ -> true)
+  | TAdt (TTuple, { types; _ }) -> List.for_all is_inhabited types
+  | _ -> true

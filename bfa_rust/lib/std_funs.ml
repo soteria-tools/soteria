@@ -770,6 +770,15 @@ module M (Heap : Heap_intf.S) = struct
           (Tuple [], state)
       | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
 
+  let assert_inhabited (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+    let ty =
+      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
+        .types
+      |> List.hd
+    in
+    if Layout.is_inhabited ty then Result.ok (Tuple [], state)
+    else Heap.error (`Panic "core::intrinsics::assert_inhabited") state
+
   type std_fun =
     (* Kani *)
     | Assert
@@ -778,6 +787,7 @@ module M (Heap : Heap_intf.S) = struct
     (* Std *)
     | Abs
     | AssertZeroValid
+    | AssertInhabited
     | BlackBox
     | BoolNot
     | BoxIntoRaw
@@ -824,6 +834,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::hint::black_box", BlackBox);
+      ("core::intrinsics::assert_inhabited", AssertInhabited);
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::black_box", BlackBox);
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
@@ -883,11 +894,11 @@ module M (Heap : Heap_intf.S) = struct
       ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::slice::index::{core::ops::index::Index}::index", Index);
+      ("core::slice::{@T}::len", SliceLen);
       ("core::str::iter::{core::iter::traits::iterator::Iterator}::nth", IterNth);
       ("core::str::{str}::chars", StrChars);
       ("core::option::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
-      ("core::slice::{@T}::len", SliceLen);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
@@ -900,6 +911,7 @@ module M (Heap : Heap_intf.S) = struct
        | Any -> kani_any exec_fun f.signature
        | Assert -> assert_ f.signature
        | AssertZeroValid -> assert_zero_is_valid f.signature
+       | AssertInhabited -> assert_inhabited f.signature
        | Assume -> assume f.signature
        | BlackBox -> black_box f.signature
        | BoolNot -> bool_not f.signature
