@@ -829,6 +829,11 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::wrapping_sub", Wrapping Sub);
       ("core::intrinsics::write_bytes::write_bytes", WriteBytes);
       ("core::mem::zeroed", Zeroed);
+      ("core::num::{@N}::wrapping_add", Wrapping Add);
+      ("core::num::{@N}::wrapping_div", Wrapping Div);
+      ("core::num::{@N}::wrapping_mul", Wrapping Mul);
+      ("core::num::{@N}::wrapping_rem", Wrapping Rem);
+      ("core::num::{@N}::wrapping_sub", Wrapping Sub);
       ("core::option::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::option::{@T}::is_none", IsNone);
       ("core::option::{@T}::is_some", IsSome);

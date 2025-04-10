@@ -284,7 +284,7 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
   let off = Option.value ~default:0s offset in
   aux off ty
 
-let transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
+let rec transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
   let open Bfa_symex.Compo_res in
   let open Result in
   let unhandled () =
@@ -313,4 +313,11 @@ let transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
       (TRef _ | TRawPtr _ | TLiteral (TInteger Usize)),
       (Ptr _ | Base _) ) ->
       ok v
+  | TAdt (TAdtId id, _), _, Struct [ v ] -> (
+      let adt = Session.get_adt id in
+      match adt.kind with
+      (* For 1-field structs, see if the field can be transmuted; this is e.g. the case with
+         core::ptr::NonNull<T> { pointer: *const T }. *)
+      | Struct [ { field_ty = from_ty; _ } ] -> transmute ~from_ty ~to_ty v
+      | _ -> unhandled ())
   | _ -> unhandled ()
