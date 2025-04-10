@@ -7,12 +7,12 @@ module Make (Symex : Symex.S) = struct
   let load (st : 'a t option) =
     match st with
     | Some x -> Symex.Result.ok (x, st)
-    | None -> Symex.Result.miss ()
+    | None -> Symex.Result.miss []
 
   let store x (st : 'a t option) =
     match st with
     | Some _ -> Symex.Result.ok ((), Some x)
-    | None -> Symex.Result.miss ()
+    | None -> Symex.Result.miss []
 
   let serialize serialize_val x = serialize_val x
   let pp_serialized = pp
