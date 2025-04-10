@@ -279,6 +279,11 @@ module Make (Heap : Heap_intf.S) = struct
             let v_int = as_base_of ~ty:Typed.t_int v in
             let v' = Base (0s -@ v_int) in
             Result.ok (v', state)
+        | PtrMetadata -> (
+            match v with
+            | Ptr (_, None) -> Result.ok (Tuple [], state)
+            | Ptr (_, Some v) -> Result.ok (Base v, state)
+            | _ -> not_impl "Invalid value for PtrMetadata")
         | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let++ v =

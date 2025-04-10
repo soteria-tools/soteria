@@ -75,8 +75,12 @@ let default_cmd ~file_name ~output () =
 let mk_kani_cmd ~no_compile () =
   let path = List.hd Runtime_sites.Sites.kani_lib in
   (if not no_compile then
+     let cargo =
+       "RUSTC=$(charon toolchain-path)/bin/rustc $(charon \
+        toolchain-path)/bin/cargo"
+     in
      (* look for line "host: <host>", to get the target architecture *)
-     let info = exec_and_read "cargo +$(charon toolchain-path) -vV" in
+     let info = Fmt.kstr exec_and_read "%s -vV" cargo in
      let target =
        match List.find_opt (String.starts_with ~prefix:"host") info with
        | Some s -> String.sub s 6 (String.length s - 6)
@@ -85,9 +89,8 @@ let mk_kani_cmd ~no_compile () =
      (* build Kani lib *)
      let res =
        Fmt.kstr exec_cmd
-         "cd %s/kani && cargo +$(charon toolchain-path) build --lib --target \
-          %s > /dev/null 2>/dev/null"
-         path target
+         "cd %s/kani && %s build --lib --target %s > /dev/null 2>/dev/null" path
+         cargo target
      in
      if res <> 0 && res <> 255 then
        let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
