@@ -71,6 +71,19 @@ let error e = Result.error (e, get_loc ())
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 
+let cast_checked ~ty x =
+  match Typed.cast_checked x ty with
+  | Some x -> return x
+  | None ->
+      Fmt.kstr not_impl "Failed to cast %a to %a" Typed.ppa x Typed.ppa_ty ty
+
+let cast_checked2 x y =
+  match Typed.cast_checked2 x y with
+  | Some x -> return x
+  | None ->
+      Fmt.kstr not_impl "Values %a and %a have mismatched types" Typed.ppa x
+        Typed.ppa y
+
 module Freeable = Bfa_symex.Freeable.Make (SYMEX)
 module Pmap_direct_access = Bfa_symex.Pmap.Direct_access (SYMEX)
 module Pmap = Bfa_symex.Pmap.Make (SYMEX)

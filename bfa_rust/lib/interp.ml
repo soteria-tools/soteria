@@ -21,20 +21,6 @@ module Make (Heap : Heap_intf.S) = struct
 
   let pp_full_ptr = Charon_util.pp_full_ptr Sptr.pp
 
-  let cast_checked ~ty x =
-    match Typed.cast_checked x ty with
-    | Some x -> Rustsymex.return x
-    | None ->
-        Fmt.kstr Rustsymex.not_impl "Failed to cast %a to %a" Typed.ppa x
-          Typed.ppa_ty ty
-
-  let cast_checked2 x y =
-    match Typed.cast_checked2 x y with
-    | Some x -> Rustsymex.return x
-    | None ->
-        Fmt.kstr Rustsymex.not_impl "Values %a and %a have mismatched types"
-          Typed.ppa x Typed.ppa y
-
   type 'err fun_exec =
     crate:UllbcAst.crate ->
     args:Sptr.t rust_val list ->
@@ -245,7 +231,14 @@ module Make (Heap : Heap_intf.S) = struct
     | Move loc | Copy loc ->
         let ty = loc.ty in
         let** ptr, state = resolve_place ~store state loc in
-        let is_move = match op with Move _ -> true | _ -> false in
+        let is_move =
+          (* TODO: properly detect if ty has the Copy trait, in which case is_move is
+             always false. *)
+          match (op, ty) with
+          | _, TLiteral _ -> false
+          | Move _, _ -> true
+          | _ -> false
+        in
         let++ v, state = Heap.load ~is_move ptr ty state in
         (v, state)
 
@@ -346,7 +339,7 @@ module Make (Heap : Heap_intf.S) = struct
         | Cast kind ->
             Fmt.kstr not_impl "Unsupported cast kind: %a"
               Expressions.pp_cast_kind kind)
-    | BinaryOp (op, e1, e2) ->
+    | BinaryOp (op, e1, e2) -> (
         let** v1, state = eval_operand state e1 in
         let** v2, state = eval_operand state e2 in
         let v1, v2 =
@@ -356,54 +349,85 @@ module Make (Heap : Heap_intf.S) = struct
               Fmt.failwith "Expected base values in BinaryOp: %a/%a" pp_rust_val
                 v1 pp_rust_val v2
         in
-        let++ res, state =
-          match op with
-          | Ge | Gt | Lt | Le ->
-              let op =
-                match op with
-                | Ge -> Typed.geq
-                | Gt -> Typed.gt
-                | Lt -> Typed.lt
-                | Le -> Typed.leq
-                | _ -> assert false
-              in
-              let* v1, v2, ty = cast_checked2 v1 v2 in
-              if ty = Typed.t_ptr then Heap.error `UBPointerComparison state
+        match op with
+        | Ge | Gt | Lt | Le ->
+            let op =
+              match op with
+              | Ge -> Typed.geq
+              | Gt -> Typed.gt
+              | Lt -> Typed.lt
+              | Le -> Typed.leq
+              | _ -> assert false
+            in
+            let* v1, v2, ty = cast_checked2 v1 v2 in
+            if ty = Typed.t_ptr then Heap.error `UBPointerComparison state
+            else
+              let v = op (Typed.cast v1) (Typed.cast v2) |> Typed.int_of_bool in
+              Result.ok (Base v, state)
+        | Eq ->
+            let v1 = Typed.cast v1 in
+            let v2 = Typed.cast v2 in
+            let++ res, state = equality_check ~state v1 v2 in
+            (Base res, state)
+        | Ne ->
+            let v1 = Typed.cast v1 in
+            let v2 = Typed.cast v2 in
+            let++ res, state = equality_check ~state v1 v2 in
+            (Base (Typed.not_int_bool res), state)
+        | Add | Sub | Mul | Div | Rem ->
+            let bop : Std_funs.std_op =
+              match op with
+              | Add -> Add
+              | Sub -> Sub
+              | Mul -> Mul
+              | Div -> Div
+              | Rem -> Rem
+              | _ -> assert false
+            in
+            let ty =
+              match type_of_operand e1 with
+              | TLiteral ty -> ty
+              | _ -> failwith "Non-literal in binary operation"
+            in
+            let++ res = Std_funs.safe_binop bop v1 v2 ty state in
+            (Base res, state)
+        | CheckedAdd | CheckedSub | CheckedMul ->
+            let op =
+              match op with
+              | CheckedAdd -> Typed.plus
+              | CheckedSub -> Typed.minus
+              | CheckedMul -> Typed.times
+              | _ -> assert false
+            in
+
+            let ty =
+              match type_of_operand e1 with
+              | TLiteral (TInteger ty) -> ty
+              | _ -> failwith "Non-integer in checked binary operation"
+            in
+            let size = Layout.size_of_int_ty ty in
+            let unsigned_max =
+              Typed.nonzero_z (Z.shift_left Z.one (8 * size))
+            in
+            let max : T.nonzero Typed.t = Typed.cast @@ Layout.max_value ty in
+            let signed = Layout.is_signed ty in
+
+            let* v1 = cast_checked ~ty:Typed.t_int v1 in
+            let* v2 = cast_checked ~ty:Typed.t_int v2 in
+            let v = op v1 v2 in
+            let res = v %@ unsigned_max in
+            let* res =
+              if not signed then return res
               else
-                Result.ok
-                  ( op (Typed.cast v1) (Typed.cast v2) |> Typed.int_of_bool,
-                    state )
-          | Eq ->
-              let v1 = Typed.cast v1 in
-              let v2 = Typed.cast v2 in
-              equality_check ~state v1 v2
-          | Ne ->
-              let v1 = Typed.cast v1 in
-              let v2 = Typed.cast v2 in
-              let++ res, state = equality_check ~state v1 v2 in
-              (Typed.not_int_bool res, state)
-          | Add | Sub | Mul | Div | Rem ->
-              let bop : Std_funs.std_op =
-                match op with
-                | Add -> Add
-                | Sub -> Sub
-                | Mul -> Mul
-                | Div -> Div
-                | Rem -> Rem
-                | _ -> assert false
-              in
-              let ty =
-                match type_of_operand e1 with
-                | TLiteral ty -> ty
-                | _ -> failwith "Non-literal in binary operation"
-              in
-              let++ res = Std_funs.safe_binop bop v1 v2 ty state in
-              (res, state)
-          | bop ->
-              Fmt.kstr not_impl "Unsupported binary operator: %a"
-                Expressions.pp_binop bop
-        in
-        (Base res, state)
+                if%sat res <=@ max then return res
+                else return (res -@ unsigned_max)
+            in
+            let overflowed = Typed.int_of_bool @@ Typed.not (v ==@ res) in
+            let ret = Tuple [ Base (res :> T.cval Typed.t); Base overflowed ] in
+            Result.ok (ret, state)
+        | bop ->
+            Fmt.kstr not_impl "Unsupported binary operator: %a"
+              Expressions.pp_binop bop)
     | NullaryOp (op, ty) -> (
         match op with
         | UbChecks ->
@@ -560,9 +584,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** cond, state = eval_operand ~crate ~store state cond in
         let* cond_int =
           match cond with
-          | Base cond ->
-              of_opt_not_impl ~msg:"Expected an integer assertion"
-                (Typed.cast_checked cond Typed.t_int)
+          | Base cond -> cast_checked cond ~ty:Typed.t_int
           | _ -> not_impl "Expected a base Rust value in assert"
         in
         let cond_bool = Typed.bool_of_int cond_int in

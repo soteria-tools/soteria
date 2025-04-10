@@ -302,10 +302,7 @@ let transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
       let sv' = Typed.int_of_float sv in
       Ok (Base sv')
   | TLiteral (TInteger _), TLiteral (TFloat f), Base sv ->
-      let+ sv =
-        of_opt_not_impl ~msg:"Unsupported: non-integer in integer-to-float"
-        @@ Typed.cast_checked sv Typed.t_int
-      in
+      let+ sv = cast_checked sv ~ty:Typed.t_int in
       let fp = Charon_util.float_precision f in
       let sv' = Typed.float_of_int fp sv in
       Ok (Base sv')

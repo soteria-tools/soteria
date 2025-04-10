@@ -1,3 +1,4 @@
+module Utils_ = Utils
 open Charon
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 open Bfa_symex.Compo_res
@@ -52,9 +53,7 @@ module M (Heap : Heap_intf.S) = struct
     let open Typed.Infix in
     let* to_assert =
       match args with
-      | [ Base t ] ->
-          of_opt_not_impl ~msg:"not an integer"
-            (Typed.cast_checked t Typed.t_int)
+      | [ Base t ] -> cast_checked t ~ty:Typed.t_int
       | _ -> not_impl "to_assert with non-one arguments"
     in
     if%sat to_assert ==@ 0s then Heap.error `FailedAssert state
@@ -63,9 +62,7 @@ module M (Heap : Heap_intf.S) = struct
   let assume _ ~crate:_ ~args ~state =
     let* to_assume =
       match args with
-      | [ Base t ] ->
-          of_opt_not_impl ~msg:"not an integer"
-            (Typed.cast_checked t Typed.t_int)
+      | [ Base t ] -> cast_checked t ~ty:Typed.t_int
       | _ -> not_impl "assume with non-one arguments"
     in
     L.debug (fun g -> g "Assuming: %a\n" Typed.ppa to_assume);
@@ -169,12 +166,6 @@ module M (Heap : Heap_intf.S) = struct
     let++ res = safe_binop op left right ty state in
     (Base res, state)
 
-  let checked_op op (fun_sig : UllbcAst.fun_sig) ~crate ~args ~state =
-    let+ res = unchecked_op op fun_sig ~crate ~args ~state in
-    match res with
-    | Ok (res, state) -> Ok (Enum (1s, [ res ]), state)
-    | _ -> Ok (Enum (0s, []), state)
-
   let wrapping_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let* ty =
       match fun_sig.inputs with
@@ -186,14 +177,8 @@ module M (Heap : Heap_intf.S) = struct
     let* left, right =
       match args with
       | [ Base left; Base right ] ->
-          let* left =
-            of_opt_not_impl ~msg:"not an integer"
-              (Typed.cast_checked left Typed.t_int)
-          in
-          let+ right =
-            of_opt_not_impl ~msg:"not an integer"
-              (Typed.cast_checked right Typed.t_int)
-          in
+          let* left = cast_checked left ~ty:Typed.t_int in
+          let+ right = cast_checked right ~ty:Typed.t_int in
           (left, right)
       | _ -> not_impl "wrapping_op with not two arguments"
     in
@@ -491,10 +476,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ Ptr iter_ptr; Base idx ] -> (iter_ptr, idx)
       | _ -> failwith "iter_nth: unexpected value"
     in
-    let* idx =
-      of_opt_not_impl ~msg:"iter_nth: expected int idx"
-        (Typed.cast_checked idx Typed.t_int)
-    in
+    let* idx = cast_checked idx ~ty:Typed.t_int in
     let iter_ty, sub_ty =
       match fun_sig.inputs with
       | TRef (_, (TAdt (TAdtId adt_id, _) as iter_ty), _) :: _ -> (
@@ -583,18 +565,12 @@ module M (Heap : Heap_intf.S) = struct
     match (ty, args) with
     | TAdt (TBuiltin TSlice, { types = [ sub_ty ]; _ }), [ Ptr (_, Some meta) ]
       ->
-        let* len =
-          of_opt_not_impl ~msg:"meta expected int"
-            (Typed.cast_checked meta Typed.t_int)
-        in
+        let* len = cast_checked meta ~ty:Typed.t_int in
         let+ size = Layout.size_of_s sub_ty in
         let size = size *@ len in
         Ok (Base size, state)
     | TAdt (TBuiltin TStr, _), [ Ptr (_, Some meta) ] ->
-        let+ len =
-          of_opt_not_impl ~msg:"meta expected int"
-            (Typed.cast_checked meta Typed.t_int)
-        in
+        let+ len = cast_checked meta ~ty:Typed.t_int in
         let size = Layout.size_of_int_ty U8 in
         let size = Typed.int size *@ len in
         Ok (Base size, state)
@@ -634,11 +610,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ Ptr (ptr, meta); Base v ] -> (ptr, meta, v)
       | _ -> failwith "ptr_add: invalid arguments"
     in
-    let v =
-      match Typed.cast_checked v Typed.t_int with
-      | Some v -> v
-      | None -> failwith "ptr_add: invalid offset type"
-    in
+    let* v = cast_checked v ~ty:Typed.t_int in
     let ty =
       if byte then Types.TLiteral (TInteger U8)
       else
@@ -669,7 +641,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     let* size = Layout.size_of_s ty in
     if%sat Sptr.is_same_loc ptr1 ptr2 &&@ (size >@ 0s) then
-      let size = Typed.cast size in
+      let size : T.nonzero Typed.t = Typed.cast size in
       let off = Sptr.distance ptr1 ptr2 in
       if%sat off %@ size ==@ 0s then Result.ok (Base (off /@ size), state)
       else Heap.error `UBPointerComparison state
@@ -741,11 +713,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ Ptr ((ptr, _) as dst); Base v; Base count ] -> (ptr, dst, v, count)
       | _ -> failwith "unexpected write_bytes arguments"
     in
-    let count =
-      match Typed.cast_checked count Typed.t_int with
-      | Some count -> count
-      | None -> failwith "write_bytes: invalid count type"
-    in
+    let* count = cast_checked count ~ty:Typed.t_int in
     let ty =
       (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
         .types
@@ -791,7 +759,6 @@ module M (Heap : Heap_intf.S) = struct
     | BlackBox
     | BoolNot
     | BoxIntoRaw
-    | Checked of std_op
     | CopyNonOverlapping
     | Deref
     | DiscriminantValue
@@ -862,20 +829,6 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::wrapping_sub", Wrapping Sub);
       ("core::intrinsics::write_bytes::write_bytes", WriteBytes);
       ("core::mem::zeroed", Zeroed);
-      ("core::num::{@N}::checked_add", Checked Add);
-      ("core::num::{@N}::checked_div", Checked Div);
-      ("core::num::{@N}::checked_mul", Checked Mul);
-      ("core::num::{@N}::checked_sub", Checked Sub);
-      ("core::num::{@N}::unchecked_add", Unchecked Add);
-      ("core::num::{@N}::unchecked_div", Unchecked Div);
-      ("core::num::{@N}::unchecked_mul", Unchecked Mul);
-      ("core::num::{@N}::unchecked_rem", Unchecked Rem);
-      ("core::num::{@N}::unchecked_sub", Unchecked Sub);
-      ("core::num::{@N}::wrapping_add", Wrapping Add);
-      ("core::num::{@N}::wrapping_div", Wrapping Div);
-      ("core::num::{@N}::wrapping_mul", Wrapping Mul);
-      ("core::num::{@N}::wrapping_rem", Wrapping Rem);
-      ("core::num::{@N}::wrapping_sub", Wrapping Sub);
       ("core::option::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::option::{@T}::is_none", IsNone);
       ("core::option::{@T}::is_some", IsSome);
@@ -916,7 +869,6 @@ module M (Heap : Heap_intf.S) = struct
        | BlackBox -> black_box f.signature
        | BoolNot -> bool_not f.signature
        | BoxIntoRaw -> box_into_raw f.signature
-       | Checked op -> checked_op op f.signature
        | CopyNonOverlapping -> copy_nonoverlapping f.signature
        | Deref -> deref f.signature
        | DiscriminantValue -> discriminant_value f.signature
