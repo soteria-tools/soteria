@@ -9,17 +9,9 @@ RUN sudo apt-get update && sudo apt-get install -y \
   m4 \
   libgmp-dev \
   pkg-config
-RUN sudo apt-get update && sudo apt-get install -y \
-  m4 \
-  libgmp-dev \
-  pkg-config
 
 # Switch to the default opam user
 USER opam
-
-# Initialize opam environment and install dependencies
-RUN opam update && \
-  opam install dune -y
 
 # Install Z3 solver from GitHub release
 RUN sudo apt-get install -y wget unzip && \
@@ -29,10 +21,18 @@ RUN sudo apt-get install -y wget unzip && \
   sudo chmod +x /usr/bin/z3 && \
   rm -rf z3 z3-4.14.1-arm64-glibc-2.34.zip
 
-# Copy project files
+# Initialize opam environment and install dependencies
+RUN opam update
+
+# Copy only the opam file to install all dependencies (better for caching)
+COPY --chown=opam:opam bfa.opam bfa-c.opam /app/
+RUN opam install ./bfa.opam ./bfa-c.opam --deps-only -y
+
+# Copy the rest of the project files
 COPY --chown=opam:opam . /app
 
-RUN opam install ./bfa-c.opam -y
+
+RUN opam install ./bfa.opam ./bfa-c.opam -y
 
 # Set the default command
 CMD ["opam", "exec", "--", "bfa-c", "lsp"]
