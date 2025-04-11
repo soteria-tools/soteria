@@ -328,7 +328,7 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
             (x1, pc1) :: (x2, pc2) :: run seq)
 
   let run s =
-    Solver.reset ();
+    Symex_state.reset ();
     run s
 
   let batched s =
