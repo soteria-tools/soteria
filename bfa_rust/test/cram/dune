@@ -1,3 +1,2 @@
 (cram
- (deps
-  ../../bin/bfa_rust.exe))
+ (deps ../../bin/bfa_rust.exe))
