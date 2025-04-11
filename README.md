@@ -30,7 +30,7 @@ To do so, open the `Run and Debug` tab of the sidebar, select the "Launch (Local
 
 BFA-Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
 
-It can run standalone files, symbolically executing the `main` function, or any function with the attribute `#{kani::proof}`. To run it, you must first export the environment variable `KANI_LIB_PATH` to `path/to/bfa-ocaml/bfa_rust/kani_lib`. You must also have [Charon](https://github.com/AeneasVerif/charon) built and on your path -- to do so, clone Charon and run `make build-dev-charon-rust`. Once this is done, simply run:
+It can run standalone files, symbolically executing the `main` function, or any function with the attribute `#{kani::proof}`. You must have [Charon](https://github.com/AeneasVerif/charon) built and on your path -- to do so, clone Charon and run `make build-dev-charon-rust` and add `charon/bin` to your path. Once this is done, simply run:
 ```sh
 bfa-rust exec-main <file>
 ```

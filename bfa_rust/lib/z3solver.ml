@@ -152,6 +152,7 @@ let register_solver_init f =
 let init () =
   let z3_solver = z3_solver () in
   !initialize_solver z3_solver;
+  ack_command z3_solver (Simple_smt.push 1);
   {
     z3_solver;
     save_counter = Save_counter.init ();
@@ -200,9 +201,6 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
     (fun v -> is_constr mk_some $ v),
     fun v -> is_constr none $ v )
 
-let () =
-  register_solver_init (fun solver -> ack_command solver (Simple_smt.push 1))
-
 (********* End of solver declarations *********)
 
 let save solver =
@@ -221,8 +219,14 @@ let backtrack_n solver n =
 
 let reset solver =
   (* We want to go back to 1, meaning after the first push which saved the declarations *)
-  L.debug (fun m -> m "Resetting solver: %d" !(solver.save_counter));
-  if !(solver.save_counter) > 0 then backtrack_n solver !(solver.save_counter)
+  let save_counter = !(solver.save_counter) in
+  if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
+  Save_counter.reset solver.save_counter;
+  Var.Incr_counter_mut.reset solver.var_counter;
+  Solver_state.reset solver.state;
+  ack_command solver.z3_solver (Simple_smt.pop (save_counter + 1));
+  (* Make sure the basic definitions are saved again *)
+  ack_command solver.z3_solver (Simple_smt.push 1)
 
 let rec sort_of_ty = function
   | Svalue.TBool -> Simple_smt.t_bool
