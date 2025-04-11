@@ -1,9 +1,12 @@
 open Cerb_frontend
 open AilSyntax
 module Sym_set = Set.Make (Ail_helpers.Symbol_std)
+module Sym_map = Map.Make (Ail_helpers.Symbol_std)
 
 type extern_idmap = (Symbol.identifier, sigma_extern_id) Pmap.map
 type redundant_globs = (Symbol.sym * Symbol.sym) list
+
+exception LinkError of string
 
 (* Ext2 should be the accumulator! *)
 let link_extern (ext_cur : extern_idmap) (ext_oth : extern_idmap)
@@ -144,7 +147,61 @@ and free_syms_stmt acc stmt =
       Sym_set.diff res exclude
   | AilSpar stmtl -> List.fold_left free_syms_stmt acc stmtl
 
-let free_syms_object_definition acc (_, expr) = free_syms_expr acc expr
+let free_syms_object_definition acc expr = free_syms_expr acc expr
+
+let merge_globs (globs_1 : 'a sigma_object_definition list)
+    (globs_2 : 'a sigma_object_definition list)
+    (redundant_globs : (Symbol.sym * Symbol.sym) list) =
+  let catch f = try Ok (f ()) with LinkError s -> Error s in
+  catch @@ fun () ->
+  (* globs_1 is the accumulator, so it is potentially much bigger than globs_2. *)
+  let globs = List.rev_append globs_2 globs_1 in
+  (* Create an associate list of the dependencies for each global *)
+  let dep_map =
+    List.map
+      (fun (sym, glob) ->
+        let acc =
+          List.filter_map
+            (fun (def, k) -> if Symbol.equal_sym def sym then Some k else None)
+            redundant_globs
+        in
+        ( sym,
+          Sym_set.to_list
+            (free_syms_object_definition (Sym_set.of_list acc) glob) ))
+      globs
+  in
+  (* init_set is the list of symbol with no dependencies *)
+  (* We order the symbols in topological order! *)
+  let ordered_syms =
+    match Tsort.sort dep_map with
+    | ErrorCycle _ -> raise (LinkError "cycle in global dependencies!")
+    | Sorted l -> l
+  in
+  (* We remove the redundant globs from the list of globs *)
+  let gs_map =
+    List.fold_left (fun acc (s, g) -> Sym_map.add s g acc) Sym_map.empty globs
+  in
+  let ordered_gs =
+    List.map
+      (fun k ->
+        match Sym_map.find_opt k gs_map with
+        | None -> raise (LinkError "linking: merge_globs")
+        | Some g -> (k, g))
+      ordered_syms
+  in
+  (* We have now ordered the globs *)
+  (* We remove the redundant globs from the list of globs *)
+  List.fold_left
+    (fun acc g ->
+      (* We remove the association for each redundant glob *)
+      List.remove_assoc g acc)
+    (List.rev ordered_gs)
+    (List.map fst redundant_globs)
+
+(* We need to check that there is only one main function. *)
+(* If there are multiple main functions, we return an error. *)
+(* If there is no main function, we return None. *)
+(* If there is one main function, we return Some main function. *)
 
 let link_main opt_m1 opt_m2 =
   match (opt_m1, opt_m2) with
@@ -166,6 +223,7 @@ let has_cn_stuff (sigma : 'a sigma) =
       false
   | _ -> true
 
+(* [(m1, f1)] is the accumulator, and [(m2, f2)] is being added to it. *)
 let link_aux ((m1, f1) : 'a ail_program) ((m2, f2) : 'a ail_program)
     (symmap : Ail_tys.extern_symmap) : (Ail_tys.linked_program, string) result =
   let open Syntaxes.Result in
@@ -179,18 +237,17 @@ let link_aux ((m1, f1) : 'a ail_program) ((m2, f2) : 'a ail_program)
   (* TODO: it should be some kind of merge_globs where we iterate through all
            decl_obj declarations and then remove redundancies from both declarations
            and object_definitions *)
-  let+ extern_idmap, _redundant_globs, symmap =
+  let* extern_idmap, redundant_globs, symmap =
     link_extern f1.extern_idmap f2.extern_idmap symmap
   in
-  Fmt.pr "Redudant globs: @[<v 2>%a@]@\n"
-    (Fmt.list ~sep:Fmt.cut
-       (Fmt.hbox (Fmt.pair ~sep:(Fmt.any " -> ") Fmt_ail.pp_sym Fmt_ail.pp_sym)))
-    _redundant_globs;
+  let+ object_definitions =
+    merge_globs f1.object_definitions f2.object_definitions redundant_globs
+  in
   Ail_tys.
     {
       sigma =
         {
-          object_definitions = f1.object_definitions @ f2.object_definitions;
+          object_definitions;
           function_definitions =
             f1.function_definitions @ f2.function_definitions;
           declarations = f1.declarations @ f2.declarations;

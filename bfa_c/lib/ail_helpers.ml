@@ -58,3 +58,16 @@ let find_obj_def ~(prog : Ail_tys.linked_program)
     (fun (id, e) ->
       if Cerb_frontend.Symbol.equal_sym id to_find then Some e else None)
     prog.sigma.object_definitions
+
+let find_obj_decl ~(prog : Ail_tys.linked_program)
+    (to_find : Cerb_frontend.Symbol.sym) =
+  let to_find = resolve_sym ~prog to_find in
+  List.find_map
+    (fun (id, (_, _, decl)) ->
+      if Cerb_frontend.Symbol.equal_sym id to_find then
+        match decl with
+        | Cerb_frontend.AilSyntax.Decl_object (sto, al, quals, ty) ->
+            Some (sto, al, quals, ty)
+        | _ -> None
+      else None)
+    prog.sigma.declarations

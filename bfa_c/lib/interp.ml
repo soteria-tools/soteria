@@ -545,7 +545,8 @@ module Make (Heap : Heap_intf.S) = struct
     (value, state)
 
   let init_prog_state (prog : Ail_tys.linked_program) =
-    let produce_zero (ptr : [< T.sptr ] Typed.t) ty (state : Heap.t) =
+    (* Produce_zero will be useful when Kayvan allows for knowing when no declaration is given. *)
+    let _produce_zero (ptr : [< T.sptr ] Typed.t) ty (state : Heap.t) =
       let loc = Typed.Ptr.loc ptr in
       let offset = Typed.Ptr.ofs ptr in
       let* len = Layout.size_of_s ty in
@@ -574,15 +575,15 @@ module Make (Heap : Heap_intf.S) = struct
       let+ state = Heap.produce serialized state in
       Bfa_symex.Compo_res.ok state
     in
-    Csymex.Result.fold_list prog.sigma.declarations ~init:Heap.empty
-      ~f:(fun (state : Heap.t) decl ->
-        let id, (_loc, _attrs, decl) = decl in
-        match decl with
-        | Cerb_frontend.AilSyntax.Decl_function _ -> Csymex.Result.ok state
-        | Decl_object (_, _, _, ty) -> (
-            (* TODO: handle other parameters here *)
-            let* ptr, state = Heap.get_global id state in
-            match Ail_helpers.find_obj_def ~prog id with
-            | None -> produce_zero ptr ty state
-            | Some e -> produce_value ptr ty e state))
+    Csymex.Result.fold_list prog.sigma.object_definitions ~init:Heap.empty
+      ~f:(fun (state : Heap.t) def ->
+        let id, e = def in
+        let* ty =
+          match Ail_helpers.find_obj_decl ~prog id with
+          | None -> Csymex.not_impl "Couldn't find object declaration"
+          | Some (_, _, _, ty) -> Csymex.return ty
+        in
+        (* TODO: handle other parameters here *)
+        let* ptr, state = Heap.get_global id state in
+        produce_value ptr ty e state)
 end
