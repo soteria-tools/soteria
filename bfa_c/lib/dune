@@ -22,7 +22,8 @@
   linol-eio
   eio_main
   yojson
-  printbox-text)
+  printbox-text
+  tsort)
  (flags :standard -open Bfa_std)
  (preprocess
   (pps ppx_deriving.std ppx_symex))

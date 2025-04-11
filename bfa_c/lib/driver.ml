@@ -124,6 +124,14 @@ let parse_ail_raw file =
       in
       Error (`ParsingError msg, Call_trace.singleton ~loc ())
 
+let parse_and_link_ail files =
+  let open Syntaxes.Result in
+  match files with
+  | [] -> Error (`ParsingError "No files to parse?", Call_trace.empty)
+  | files ->
+      let* parsed = Monad.ResultM.all (List.map parse_ail_raw files) in
+      Ail_linking.link parsed
+
 let is_main (def : Cabs.function_definition) =
   let decl = match def with FunDef (_, _, _, decl, _) -> decl in
   match decl with
@@ -141,6 +149,7 @@ let pp_err ft (err, call_trace) =
     | `UseAfterFree -> Fmt.string ft "UseAfterFree"
     | `DivisionByZero -> Fmt.string ft "DivisionByZero"
     | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
+    | `LinkError s -> Fmt.pf ft "LinkError: %s" s
     | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
     | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
@@ -151,46 +160,43 @@ let pp_err ft (err, call_trace) =
   Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
   Format.close_box ()
 
-let parse_ail file_name =
+let resolve_entry_point (linked : Ail_tys.linked_program) =
   let open Syntaxes.Result in
-  let* entry_point, sigma = parse_ail_raw file_name in
   let* entry_point =
-    match entry_point with
-    | None -> Error (`ParsingError "No entry point function", Call_trace.empty)
-    | Some e -> Ok e
+    Bfa_std.Utils.Result_ex.of_opt
+      ~err:(`ParsingError "No entry point function", Call_trace.empty)
+      linked.entry_point
   in
-  let+ entry_point =
-    let entry_opt =
-      sigma.function_definitions
-      |> List.find_opt (fun (id, _) -> Symbol.equal_sym id entry_point)
-    in
-    match entry_opt with
-    | None -> Error (`ParsingError "Entry point not found", Call_trace.empty)
-    | Some e -> Ok e
-  in
-  (entry_point, sigma)
+  linked.sigma.function_definitions
+  |> List.find_opt (fun (id, _) -> Symbol.equal_sym id entry_point)
+  |> Bfa_std.Utils.Result_ex.of_opt
+       ~err:(`ParsingError "Entry point not found", Call_trace.empty)
 
-let exec_main file_name =
+let exec_main file_names =
   let open Syntaxes.Result in
   let result =
-    let* entry_point, sigma = parse_ail file_name in
+    let* linked = parse_and_link_ail file_names in
+    let* entry_point = resolve_entry_point linked in
+    let sigma = linked.sigma in
     let () = Initialize_analysis.reinit sigma in
     let symex =
       let open Csymex.Syntax in
-      let* state = Heap.init_prog_state sigma in
-      Wpst_interp.exec_fun ~prog:sigma ~args:[] ~state entry_point
+      let** state = Wpst_interp.init_prog_state linked in
+      L.debug (fun m -> m "@[<2>Initial heap state:@ %a@]" Heap.pp state);
+      Wpst_interp.exec_fun ~prog:linked ~args:[] ~state entry_point
     in
     Ok (Csymex.run symex)
   in
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
 (* Entry point function *)
-let exec_main_and_print log_level smt_file file_name =
+let exec_main_and_print log_level smt_file includes file_names =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
   Initialize_analysis.init_once ();
-  let result = exec_main file_name in
+  Frontend.add_includes includes;
+  let result = exec_main file_names in
   let pp_heap ft heap = Heap.pp_serialized ft (Heap.serialize heap) in
   L.app (fun m ->
       m
@@ -213,9 +219,9 @@ let generate_errors content =
     output_string oc content;
     close_out oc
   in
-  match parse_ail_raw file_name with
+  match parse_and_link_ail [ file_name ] with
   | Error e -> [ e ]
-  | Ok (_, prog) ->
+  | Ok prog ->
       let summaries = Abductor.generate_all_summaries prog in
       let results =
         List.concat_map
@@ -232,21 +238,62 @@ let lsp () =
   Bfa_c_lsp.run ~generate_errors ()
 
 (* Entry point function *)
-let show_ail file_name =
+let show_ail (include_args : string list) (files : string list) =
   setup_console_log (Some Debug);
+  Frontend.add_includes include_args;
   Initialize_analysis.init_once ();
-  match parse_ail_raw file_name with
-  | Ok prog -> Fmt.pr "@[<v>%a@]" Fmt_ail.pp_program prog
+  match parse_and_link_ail files with
+  | Ok { symmap; sigma; entry_point } ->
+      Fmt.pr "@[<v 2>Extern idmap:@ %a@]@\n@\n"
+        Fmt.(
+          iter_bindings ~sep:semi Pmap.iter
+            (hbox
+               (pair ~sep:(any " ->@ ") Fmt_ail.pp_id
+                  (Dump.pair Fmt_ail.pp_sym Fmt_ail.pp_id_kind))))
+        sigma.AilSyntax.extern_idmap;
+
+      Fmt.pr "@[<v 2>Declarations:@ %a@]@\n@\n"
+        (Fmt.list ~sep:Fmt.semi (fun ft (sym, (_, _, decl)) ->
+             let declstr =
+               match decl with
+               | AilSyntax.Decl_object _ -> "object"
+               | Decl_function _ -> "function"
+             in
+             Fmt.pf ft "@[<h>%a ->@ %s@]" Fmt_ail.pp_sym sym declstr))
+        sigma.declarations;
+
+      Fmt.pr "@[<v 2>Object definitions:@ %a@]@\n@\n"
+        (Fmt.list ~sep:Fmt.sp (Fmt.Dump.pair Fmt_ail.pp_sym Fmt_ail.pp_expr))
+        sigma.object_definitions;
+
+      Fmt.pr "@[<v 2>Function definitions:@ %a@]@\n@\n"
+        (Fmt.list ~sep:Fmt.sp (fun ft (sym, _) -> Fmt_ail.pp_sym ft sym))
+        sigma.function_definitions;
+
+      Fmt.pr "@[<v 2> Symmap:@ %a@]@\n@\n"
+        Fmt.(
+          iter_bindings ~sep:semi Pmap.iter
+            (hbox Fmt_ail.(pair ~sep:(any " ->@ ") pp_sym pp_sym)))
+        symmap;
+
+      Fmt.pr "@[<v>%a@]" Fmt_ail.pp_program (entry_point, sigma)
   | Error err -> Fmt.pr "%a@." pp_err err
 
 let exec_main_bi file_name =
-  match parse_ail file_name with
-  | Ok (entry_point, prog) ->
-      let () = Initialize_analysis.reinit prog in
-      Abductor.generate_summaries_for ~prog entry_point
+  let res =
+    let open Syntaxes.Result in
+    let* linked = parse_and_link_ail [ file_name ] in
+    let+ entry_point = resolve_entry_point linked in
+    (linked, entry_point)
+  in
+  match res with
+  | Ok (linked, entry_point) ->
+      let () = Initialize_analysis.reinit linked.sigma in
+      Abductor.generate_summaries_for ~prog:linked entry_point
   | Error (`ParsingError s, call_trace) ->
       Fmt.failwith "Failed to parse AIL at loc %a: %s" Call_trace.pp call_trace
         s
+  | Error (`LinkError s, _) -> Fmt.failwith "Failed to link AIL: %s" s
 
 (* Entry point function *)
 let generate_main_summary file_name =
@@ -258,9 +305,9 @@ let generate_main_summary file_name =
   Fmt.pr "@[<v>%a@]@." printer results
 
 let exec_fun_bi file_name fun_name =
-  match parse_ail_raw file_name with
-  | Ok (_entry_point, prog) ->
-      let () = Initialize_analysis.reinit prog in
+  match parse_and_link_ail [ file_name ] with
+  | Ok prog ->
+      let () = Initialize_analysis.reinit prog.sigma in
       let fundef =
         match Ail_helpers.find_fun_name ~prog fun_name with
         | Some fundef -> fundef
@@ -274,6 +321,7 @@ let exec_fun_bi file_name fun_name =
   | Error (`ParsingError s, call_trace) ->
       Fmt.failwith "Failed to parse AIL at loc %a: %s" Call_trace.pp call_trace
         s
+  | Error (`LinkError s, _) -> Fmt.failwith "Failed to link AIL: %s" s
 
 (* Entry point function *)
 
@@ -294,9 +342,8 @@ let generate_all_summaries log_level dump_unsupported_file includes file_name =
   setup_console_log log_level;
   Initialize_analysis.init_once ();
   let prog =
-    match parse_ail_raw file_name with
-    | Error e -> Fmt.failwith "Failed to parse AIL: %a" pp_err e
-    | Ok (_, prog) -> prog
+    parse_and_link_ail [ file_name ]
+    |> Bfa_std.Utils.Result_ex.get_or ~err:(fun e -> Fmt.failwith "%a" pp_err e)
   in
   let results = Abductor.generate_all_summaries prog in
   Csymex.dump_unsupported ();

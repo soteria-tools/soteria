@@ -11,4 +11,3 @@ val subst_serialized :
 
 val consume : serialized -> t -> (t, 'err, serialized list) Csymex.Result.t
 val produce : serialized -> t -> t Csymex.t
-val init_prog_state : Ail_tys.sigma -> t Csymex.t
