@@ -129,7 +129,7 @@ let parse_and_link_ail files =
   match files with
   | [] -> Error (`ParsingError "No files to parse?", Call_trace.empty)
   | files ->
-      let* parsed = Monad.ResultM.all (List.map parse_ail_raw files) in
+      let* parsed = Monad.ResultM.all parse_ail_raw files in
       Ail_linking.link parsed
 
 let is_main (def : Cabs.function_definition) =
