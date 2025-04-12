@@ -1,3 +1,5 @@
+#include "test4.h"
+
 int funcA(int x)
 {
   if (x <= 0)

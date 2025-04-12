@@ -1,3 +1,5 @@
+#include "test5.h"
+
 int main()
 {
   int ret = fnA() + fnB();

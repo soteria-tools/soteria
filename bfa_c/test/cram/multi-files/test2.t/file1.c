@@ -2,7 +2,7 @@
 
 static int helper()
 {
-  return 5;
+  return 7;
 }
 
 int compute()
