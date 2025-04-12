@@ -1,5 +1,4 @@
   $ bfa-c show-ail file1.c file2.c -I .
-  Redudant globs: 
   Extern idmap:
     get_x -> (get_x_485, def);
     get_xx -> (get_xx_483, def);
@@ -59,7 +58,6 @@
   }
 
   $ bfa-c exec-main file1.c file2.c -I .
-  Redudant globs: 
   Symex terminated with the following outcomes:
     [Ok: (25,
           { heap =
