@@ -2,7 +2,7 @@
 FROM ocaml/opam:debian-ocaml-5.3-flambda
 
 # Set working directory
-WORKDIR /app
+WORKDIR /soteria
 
 # Install only necessary system dependencies
 RUN sudo apt-get update && sudo apt-get install -y \
@@ -25,14 +25,5 @@ RUN sudo apt-get install -y wget unzip && \
 RUN opam update
 
 # Copy only the opam file to install all dependencies (better for caching)
-COPY --chown=opam:opam bfa.opam bfa-c.opam /app/
-RUN opam install ./bfa.opam ./bfa-c.opam --deps-only -y
-
-# Copy the rest of the project files
-COPY --chown=opam:opam . /app
-
-
-RUN opam install ./bfa.opam ./bfa-c.opam -y
-
-# Set the default command
-CMD ["opam", "exec", "--", "bfa-c", "lsp"]
+COPY --chown=opam:opam bfa.opam /soteria/
+RUN opam install ./bfa.opam --with-test --with-doc --deps-only -y
