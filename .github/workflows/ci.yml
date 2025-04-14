@@ -12,20 +12,20 @@ on:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        operating-system: [ubuntu-latest]
-    runs-on: ${{ matrix.operating-system }}
+    runs-on: ubuntu-latest
+    container: ghcr.io/${{ github.repository }}-deps:main
     steps:
       # Setup steps: checkout, z3, node, ocaml
       - uses: actions/checkout@v4
-      # OCaml build and tests
-      # Building js stuff
-      # Packaging OCaml distribution and sending it as artifact
-      # - uses: docker/setup-buildx-action@v3
-      #   with:
-      #     version: latest
-      #     install: true
-      #     driver: docker
-      # - run: docker build -t all-deps -f .docker/all-deps.Dockerfile .
-      # - run: docker build -f .docker/tests.Dockerfile .
+      - name: install dependencies
+        run: opam install . --deps-only --with-test --with-doc -y
+      - name: install ocamformat
+        run: opam install ocamlformat.0.27.0 -y
+      - name: build-all
+        run: opam exec -- dune build @all
+      - name: test-all
+        run: opam exec -- dune runtest
+      - name: format-check
+        run: opam exec -- dune build @fmt
+      
+      
