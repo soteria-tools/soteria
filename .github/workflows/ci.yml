@@ -19,68 +19,12 @@ jobs:
     steps:
       # Setup steps: checkout, z3, node, ocaml
       - uses: actions/checkout@v4
-      - name: Setup Z3
-        uses: cda-tum/setup-z3@v1
-        id: z3
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Setup Charon
-        run: |
-          brew install make
-          cd ..
-          git clone https://github.com/N1ark/charon.git
-          cd charon
-          git checkout 24cce6151f166ec540ef3daa24112d0e3ace4aad
-          gmake build-dev-charon-rust
-          echo "$PWD/bin" >> $GITHUB_PATH
-      - name: Setup node
-        uses: actions/setup-node@v4
-      - name: Setup OCaml
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: 5.3.0
-          dune-cache: true
       # OCaml build and tests
-      - run: opam update
-      - name: setup dependencies
-        run: make ocaml-deps
-      - name: Build OCaml stuff
-        run: make ocaml
-      - name: test
-        run: Make ocaml-test
       # Building js stuff
-      - name: Install JS dependencies
-        run: yarn install
-      - name: Build JS stuff
-        run: yarn compile
       # Packaging OCaml distribution and sending it as artifact
-      - name: OCaml zip file creation
-        run: make package
-      - name: Upload zip file
-        uses: actions/upload-artifact@v4
+      - uses: docker/setup-buildx-action@v3
         with:
-          name: ${{ matrix.operating-system }}-package
-          path: package
-          if-no-files-found: error
-
-  test-package:
-    strategy:
-      matrix:
-        operating-system: [macos-latest, macos-13]
-    runs-on: ${{ matrix.operating-system }}
-    needs: build
-    steps:
-      - name: Download package
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.operating-system }}-package
-      - name: Add executable permissions
-        run: |
-          chmod +x ./bin/bfa-c
-          chmod +x ./bin/z3
-      - name: Write dummy C file
-        run: echo "int main() { return 12; }" > test.c
-      - run: DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main test.c
-        env:
-          BFA_Z3_PATH: ./bin/z3
-          CERB_INSTALL_PREFIX: .
+          version: latest
+          install: true
+      - run: docker build -t all-deps -f .docker/all-deps.Dockerfile .
+      - run: docker build -f .docker/tests/Dockerfile .

@@ -2,4 +2,6 @@ _opam
 node_modules
 _build
 package
+.docker
 .git
+*.log
