@@ -3,11 +3,9 @@ FROM ocaml/opam:debian-12-ocaml-5.3-flambda
 
 WORKDIR /tmp
 
-# Setup Node.js repository
-RUN curl -fsSL https://deb.nodesource.com/setup_23.x | bash
-
-# Install apt dependencies
-RUN sudo apt-get update && \
+# Setup Node.js repository and install apt dependencies
+RUN (curl -fsSL https://deb.nodesource.com/setup_23.x | sudo bash) && \
+  sudo apt-get update && \
   sudo apt-get install -y --no-install-recommends \
   libgmp-dev \
   m4 \
