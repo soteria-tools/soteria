@@ -747,6 +747,11 @@ module M (Heap : Heap_intf.S) = struct
     if Layout.is_inhabited ty then Result.ok (Tuple [], state)
     else Heap.error (`Panic "core::intrinsics::assert_inhabited") state
 
+  let from_raw_parts ~crate:_ ~args ~state =
+    match args with
+    | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
+    | _ -> failwith "from_raw_parts: invalid arguments"
+
   type std_fun =
     (* Kani *)
     | Assert
@@ -908,4 +913,5 @@ module M (Heap : Heap_intf.S) = struct
     | ArrayToSliceShared -> array_slice ~mut:false generics
     | Index idx -> array_index idx generics
     | BoxNew -> box_new generics
+    | PtrFromParts _ -> from_raw_parts
 end
