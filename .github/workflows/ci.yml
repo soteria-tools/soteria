@@ -26,5 +26,6 @@ jobs:
         with:
           version: latest
           install: true
+          driver: docker
       - run: docker build -t all-deps -f .docker/all-deps.Dockerfile .
-      - run: docker build -f .docker/tests/Dockerfile .
+      - run: docker build -f .docker/tests.Dockerfile .
