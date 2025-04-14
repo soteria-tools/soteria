@@ -1,6 +1,8 @@
 name: Publish Dependencies Image
 
 on:
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
     inputs:
       tag-name:
