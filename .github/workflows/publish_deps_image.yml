@@ -1,0 +1,39 @@
+name: Publish Dependencies Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag-name:
+        required: true
+        
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-deps
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to the container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push the image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ github.repository }}-deps:${{ github.event.inputs.tag-name }}
+          file: .docker/all-deps.Dockerfile
+          provenance: mode=max
