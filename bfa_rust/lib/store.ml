@@ -1,9 +1,9 @@
 open Charon
 
 include Stdlib.Map.Make (struct
-  type t = Expressions.VarId.id
+  type t = Expressions.LocalId.id
 
-  let compare = Expressions.VarId.compare_id
+  let compare = Expressions.LocalId.compare_id
 end)
 
 let find_type sym store = Option.map snd (find_opt sym store)

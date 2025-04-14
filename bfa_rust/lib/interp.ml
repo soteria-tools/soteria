@@ -32,13 +32,15 @@ module Make (Heap : Heap_intf.S) = struct
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
-    let tys = List.map (fun ({ var_ty; _ } : GAst.var) -> var_ty) locals.vars in
+    let tys =
+      List.map (fun ({ var_ty; _ } : GAst.local) -> var_ty) locals.locals
+    in
     let** ptrs, st = Heap.alloc_tys tys st in
-    let tys_ptrs = List.combine locals.vars ptrs in
+    let tys_ptrs = List.combine locals.locals ptrs in
     Rustsymex.Result.fold_list tys_ptrs ~init:(Store.empty, [], st)
       ~f:(fun (store, protected, st) ({ index; var_ty = ty; _ }, ptr) ->
         let store = Store.add index (Some ptr, ty) store in
-        let index = Expressions.VarId.to_int index in
+        let index = Expressions.LocalId.to_int index in
         if 0 < index && index <= locals.arg_count then
           let value = List.nth args (index - 1) in
           let** value, protected', st =
@@ -120,18 +122,18 @@ module Make (Heap : Heap_intf.S) = struct
   let rec resolve_place ~store state ({ kind; _ } : Expressions.place) :
       (full_ptr * state, 'e, 'm) Result.t =
     match kind with
-    (* Just a variable *)
-    | PlaceBase var -> (
-        let ptr = Store.find_value var store in
+    (* Just a local *)
+    | PlaceLocal local -> (
+        let ptr = Store.find_value local store in
         match ptr with
         | Some ptr ->
             L.debug (fun f ->
                 f "Found pointer %a of variable %a" pp_full_ptr ptr
-                  Expressions.pp_var_id var);
+                  Expressions.pp_var_id local);
             Result.ok (ptr, state)
         | None ->
             Fmt.kstr not_impl "Variable %a not found in store"
-              Expressions.pp_var_id var)
+              Expressions.pp_var_id local)
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) ->
         let** ptr, state = resolve_place ~store state base in
@@ -619,7 +621,7 @@ module Make (Heap : Heap_intf.S) = struct
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~crate ~body store state block
     | Return ->
-        let value_ptr, value_ty = Store.find Expressions.VarId.zero store in
+        let value_ptr, value_ty = Store.find Expressions.LocalId.zero store in
         let* value_ptr =
           match value_ptr with
           | Some x -> return x
