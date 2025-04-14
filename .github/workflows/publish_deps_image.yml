@@ -36,4 +36,3 @@ jobs:
           push: true
           tags: ${{ github.repository }}-deps:${{ github.event.inputs.tag-name }}
           file: .docker/all-deps.Dockerfile
-          provenance: mode=max
