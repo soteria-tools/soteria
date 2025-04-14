@@ -43,7 +43,7 @@ module Make (Heap : Heap_intf.S) = struct
         Csymex.return x
     | _ -> Fmt.kstr Csymex.not_impl "Not a pointer: %a" Typed.ppa x
 
-  type ('a, 'err) fun_exec =
+  type 'err fun_exec =
     prog:linked_program ->
     args:T.cval Typed.t list ->
     state:state ->
@@ -117,7 +117,7 @@ module Make (Heap : Heap_intf.S) = struct
 
   let unwrap_expr (AnnotatedExpression (_, _, _, e) : expr) = e
 
-  let find_stub ~prog:_ fname : ('a, 'err) fun_exec option =
+  let find_stub ~prog:_ fname : 'err fun_exec option =
     let name = Cerb_frontend.Pp_symbol.to_string fname in
     if String.starts_with ~prefix:"__nondet__" name then
       Some C_std.nondet_int_fun
@@ -243,7 +243,7 @@ module Make (Heap : Heap_intf.S) = struct
           Fmt_ail.pp_arithop a_op
 
   let rec resolve_function ~(prog : linked_program) fexpr :
-      ('a, 'err) fun_exec Csymex.t =
+      'err fun_exec Csymex.t =
     let* loc, fname =
       match fexpr with
       | AilSyntax.AnnotatedExpression
