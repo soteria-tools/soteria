@@ -30,9 +30,11 @@ To do so, open the `Run and Debug` tab of the sidebar, select the "Launch (Local
 
 BFA-Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
 
-It can run standalone files, symbolically executing the `main` function, or any function with the attribute `#{kani::proof}`. You must have [Charon](https://github.com/AeneasVerif/charon) built and on your path -- to do so, clone Charon and run `make build-dev-charon-rust` and add `charon/bin` to your path. Once this is done, simply run:
+It can run standalone files, symbolically executing the `main` function, or any function with the attribute `#[kani::proof]`. You must have [Charon](https://github.com/AeneasVerif/charon) built and on your path -- to do so, clone Charon and run `make build-dev-charon-rust` and add `charon/bin` to your path. Once this is done, simply run:
 ```sh
 bfa-rust exec-main <file>
 ```
 
 To test Rusteria on the Kani test suite, clone [Kani](https://github.com/model-checking/kani) next to `bfa-ocaml`, and run `bfa_rust/scripts/kani.sh`. Run `bfa_rust/scripts/kani.sh --help` to see all available arguments.
+
+You can also rust Rusteria on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `bfa-ocaml` and run `bfa_rust/scripts/miri.sh`.
