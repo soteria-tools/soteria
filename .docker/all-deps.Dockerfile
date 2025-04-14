@@ -21,14 +21,14 @@ RUN sudo apt-get update && \
 USER opam
 
 # Install Z3 solver from GitHub release
-RUN curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.14.1/z3-4.14.1-arm64-glibc-2.34.zip -o z3-4.14.1-arm64-glibc-2.34.zip && \
-  unzip z3-4.14.1-arm64-glibc-2.34.zip -d z3 && \
-  sudo cp z3/z3-4.14.1-arm64-glibc-2.34/bin/z3 /usr/bin/ && \
+RUN curl -L https://github.com/Z3Prover/z3/releases/download/z3-4.14.1/z3-4.14.1-x64-glibc-2.35.zip -o z3-4.14.1-x64-glibc-2.35.zip && \
+  unzip z3-4.14.1-x64-glibc-2.35.zip -d z3 && \
+  sudo cp z3/z3-4.14.1-x64-glibc-2.35/bin/z3 /usr/bin/ && \
   sudo chmod +x /usr/bin/z3 && \
-  rm -rf z3 z3-4.14.1-arm64-glibc-2.34.zip
+  rm -rf z3 z3-4.14.1-x64-glibc-2.35.zip
 
 # Install yq to read yaml files
-RUN curl -L https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_arm64 -o yq && \
+RUN curl -L https://github.com/mikefarah/yq/releases/download/v4.45.1/yq_linux_amd64 -o yq && \
   sudo cp yq /usr/bin/yq && \
   sudo chmod +x /usr/bin/yq && \
   rm -f yq && \
@@ -67,7 +67,7 @@ RUN charon --help
 
 # Copy only the opam file to install all dependencies (better for caching)
 COPY --chown=opam:opam bfa.opam bfa-c.opam bfa-rust.opam bfa-vscode.opam /soteria/
-RUN opam install ./bfa.opam ./bfa-c.opam ./bfa-rust.opam ./bfa-vscode.opam --with-test --with-docT --deps-only -y && \
+RUN opam install ./bfa.opam ./bfa-c.opam ./bfa-rust.opam ./bfa-vscode.opam --with-test --with-doc --deps-only -y && \
   opam clean -a -c -s --logs
 
 
