@@ -134,7 +134,11 @@ for test in $TESTS; do
             echo -e " ${RED}failed${RESET}"
             failed=$((failed+1))
         else
-            echo -e " ${PURPLE}crashed: status code $result${RESET}"
+            if [ $result -eq 3 ]; then
+                echo -e " ${PURPLE}crashed due to Charon${RESET}"
+            else
+                echo -e " ${ORANGE}crashed: status code $result${RESET}"
+            fi
         fi
         if $STOP_ON_FAIL; then
             exit 1

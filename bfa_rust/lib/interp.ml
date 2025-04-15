@@ -257,16 +257,26 @@ module Make (Heap : Heap_intf.S) = struct
         let++ ptr, state = resolve_global ~crate global_id state in
         (Ptr ptr, state)
     | UnaryOp (op, e) -> (
-        let** v, _state = eval_operand state e in
+        let** v, state = eval_operand state e in
         match op with
         | Not ->
-            let v_int = as_base_of ~ty:Typed.t_int v in
-            let v' = Base (Typed.not_int_bool v_int) in
-            Result.ok (v', state)
+            let v = as_base_of ~ty:Typed.t_int v in
+            let* v' =
+              match type_of_operand e with
+              | TLiteral TBool -> return (Typed.not_int_bool v)
+              | TLiteral
+                  (TInteger ((Usize | U8 | U16 | U32 | U64 | U128) as ty)) ->
+                  let max = Layout.max_value ty in
+                  return (max -@ v)
+              | TLiteral (TInteger (Isize | I8 | I16 | I32 | I64 | I128)) ->
+                  return (~-v -@ 1s)
+              | ty ->
+                  Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty
+            in
+            Result.ok (Base v', state)
         | Neg ->
-            let v_int = as_base_of ~ty:Typed.t_int v in
-            let v' = Base (0s -@ v_int) in
-            Result.ok (v', state)
+            let v = as_base_of ~ty:Typed.t_int v in
+            Result.ok (Base ~-v, state)
         | PtrMetadata -> (
             match v with
             | Ptr (_, None) -> Result.ok (Tuple [], state)
@@ -362,16 +372,8 @@ module Make (Heap : Heap_intf.S) = struct
                 let++ res = Core.eval_lit_binop op ty v1 v2 state in
                 (Base res, state)
             | CheckedAdd | CheckedSub | CheckedMul ->
-                let ity =
-                  match ty with
-                  | TInteger ity -> ity
-                  | _ -> failwith "Non-integer in checked binary operation"
-                in
-                let** v = Core.safe_binop op v1 v2 state in
-                let* wrapped = Core.wrap_value ity v in
-                let overflowed = Typed.(int_of_bool (not (v ==@ wrapped))) in
-                let ret = Tuple [ Base wrapped; Base overflowed ] in
-                Result.ok (ret, state)
+                let++ res = Core.eval_checked_lit_binop op ty v1 v2 state in
+                (res, state)
             | Cmp ->
                 let* v1, v2, ty = cast_checked2 v1 v2 in
                 if Typed.equal_ty ty Typed.t_ptr then

@@ -104,6 +104,18 @@ module M (Heap : Heap_intf.S) = struct
     if Stdlib.not signed then return res
     else if%sat res <=@ max then return res else return (res -@ unsigned_max)
 
+  (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
+  let eval_checked_lit_binop op lit_ty l r st =
+    let ty =
+      match lit_ty with
+      | Values.TInteger ity -> ity
+      | _ -> failwith "Non-integer in checked binary operation"
+    in
+    let** v = safe_binop op l r st in
+    let* wrapped = wrap_value ty v in
+    let overflowed = Typed.(int_of_bool (not (v ==@ wrapped))) in
+    Result.ok (Tuple [ Base wrapped; Base overflowed ])
+
   let rec eval_ptr_binop (bop : Expressions.binop) l r st :
       ([> T.cval ] Typed.t, 'e, 'm) Result.t =
     match (bop, l, r) with

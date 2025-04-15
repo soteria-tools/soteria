@@ -110,7 +110,7 @@ module Node = struct
     | Owned { v = Init { value; ty = tyw }; _ } ->
         if Types.equal_ty ty tyw then Result.ok value
         else (
-          L.warn (fun m ->
+          L.debug (fun m ->
               m "Transmuting %a to %a" Types.pp_ty tyw Types.pp_ty ty);
           Encoder.transmute ~from_ty:tyw ~to_ty:ty value)
     | Owned { v = Any; _ } ->

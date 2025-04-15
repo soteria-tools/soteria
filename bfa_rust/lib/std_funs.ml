@@ -123,6 +123,23 @@ module M (Heap : Heap_intf.S) = struct
     let* res = Core.wrap_value ity res in
     Result.ok (Base res, state)
 
+  let checked_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+    let* ty =
+      match fun_sig.inputs with
+      | TLiteral ty :: _ -> return ty
+      | tys ->
+          Fmt.kstr not_impl "wrapping_op invalid type: %a"
+            Fmt.(list Types.pp_ty)
+            tys
+    in
+    let* left, right =
+      match args with
+      | [ Base left; Base right ] -> return (left, right)
+      | _ -> not_impl "wrapping_op with not two arguments"
+    in
+    let++ res = Core.eval_checked_lit_binop op ty left right state in
+    (res, state)
+
   let is_some (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
     let val_ptr, opt_ty =
       match (args, fun_sig.inputs) with
@@ -681,18 +698,35 @@ module M (Heap : Heap_intf.S) = struct
     | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
     | _ -> failwith "from_raw_parts: invalid arguments"
 
+  let nop ~crate:_ ~args:_ ~state = Result.ok (Tuple [], state)
+
+  let is_val_statically_known ~crate:_ ~args:_ ~state =
+    (* see: https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
+    let* b = Rustsymex.nondet Typed.t_bool in
+    Result.ok (Base (Typed.int_of_bool b), state)
+
+  let std_assume ~crate:_ ~args ~state =
+    match args with
+    | [ Base cond ] ->
+        let* cond = cast_checked ~ty:Typed.t_int cond in
+        if%sat Typed.bool_of_int cond then Result.ok (Tuple [], state)
+        else Heap.error (`Panic "core::intrinsics::assume") state
+    | _ -> failwith "std_assume: invalid arguments"
+
   type std_fun =
     (* Kani *)
-    | Assert
-    | Assume
-    | Any
+    | KaniAssert
+    | KaniAssume
+    | KaniAny
     (* Std *)
     | Abs
     | AssertZeroValid
     | AssertInhabited
+    | Assume
     | BlackBox
     | BoolNot
     | BoxIntoRaw
+    | Checked of Expressions.binop
     | CopyNonOverlapping
     | Deref
     | DiscriminantValue
@@ -700,9 +734,11 @@ module M (Heap : Heap_intf.S) = struct
     | Index
     | IsNone
     | IsSome
+    | IsValStaticallyKnown
     | IterNth
     | MinAlignOf of type_loc
     | MulAdd
+    | Nop
     | OptUnwrap
     | PtrByteOp of Expressions.binop
     | PtrOp of Expressions.binop
@@ -723,9 +759,9 @@ module M (Heap : Heap_intf.S) = struct
   let std_fun_map =
     [
       (* Kani *)
-      ("kani::assert", Assert);
-      ("kani::assume", Assume);
-      ("kani::any", Any);
+      ("kani::assert", KaniAssert);
+      ("kani::assume", KaniAssume);
+      ("kani::any", KaniAny);
       (* Core *)
       ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
       ("alloc::string::{alloc::string::String}::len", StrLen);
@@ -735,15 +771,20 @@ module M (Heap : Heap_intf.S) = struct
       ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
       ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::hint::black_box", BlackBox);
+      ("core::intrinsics::add_with_overflow", Checked Add);
       ("core::intrinsics::assert_inhabited", AssertInhabited);
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
+      ("core::intrinsics::assume", Assume);
       ("core::intrinsics::black_box", BlackBox);
+      ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::fabsf64", Abs);
       ("core::intrinsics::fabsf32", Abs);
       ("core::intrinsics::fmaf64", MulAdd);
       ("core::intrinsics::fmaf32", MulAdd);
+      ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
+      ("core::intrinsics::likely", Nop);
       ("core::intrinsics::min_align_of", MinAlignOf GenArg);
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
@@ -801,14 +842,13 @@ module M (Heap : Heap_intf.S) = struct
     NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
     |> ( Option.map @@ function
          | Abs -> abs f.signature
-         | Any -> kani_any exec_fun f.signature
-         | Assert -> assert_
          | AssertZeroValid -> assert_zero_is_valid f.signature
          | AssertInhabited -> assert_inhabited f.signature
-         | Assume -> assume
+         | Assume -> std_assume
          | BlackBox -> black_box f.signature
          | BoolNot -> bool_not
          | BoxIntoRaw -> box_into_raw f.signature
+         | Checked op -> checked_op op f.signature
          | CopyNonOverlapping -> copy_nonoverlapping f.signature
          | Deref -> deref f.signature
          | DiscriminantValue -> discriminant_value f.signature
@@ -816,9 +856,14 @@ module M (Heap : Heap_intf.S) = struct
          | Index -> array_index_fn f.signature
          | IsNone -> is_none f.signature
          | IsSome -> is_some f.signature
+         | IsValStaticallyKnown -> is_val_statically_known
          | IterNth -> iter_nth f.signature
+         | KaniAny -> kani_any exec_fun f.signature
+         | KaniAssert -> assert_
+         | KaniAssume -> assume
          | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
          | MulAdd -> mul_add f.signature
+         | Nop -> nop
          | OptUnwrap -> unwrap_opt
          | PtrByteOp op -> ptr_op ~byte:true op f.signature
          | PtrOp op -> ptr_op op f.signature
