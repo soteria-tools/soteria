@@ -296,7 +296,7 @@ let max_value_z : Types.integer_type -> Z.t = function
   | I8 -> Z.pred (Z.shift_left Z.one 7)
   | Isize -> Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
 
-let max_value int_ty = Typed.int_z (max_value_z int_ty)
+let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
 
 let int_constraints ty =
   let min = min_value ty in

@@ -8,6 +8,7 @@ open Charon_util
 module T = Typed.T
 
 module Make (Heap : Heap_intf.S) = struct
+  module Core = Core.M (Heap)
   module Std_funs = Std_funs.M (Heap)
   module Sptr = Heap.Sptr
 
@@ -159,21 +160,6 @@ module Make (Heap : Heap_intf.S) = struct
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
         Result.ok ((ptr', None), state)
-
-  let rec equality_check ~state (v1 : [< Typed.T.cval ] Typed.t)
-      (v2 : [< Typed.T.cval ] Typed.t) =
-    match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt | TPointer, TPointer | TFloat _, TFloat _ ->
-        Result.ok (v1 ==@ v2 |> Typed.int_of_bool, state)
-    | TPointer, TInt ->
-        let v2 : T.sint Typed.t = Typed.cast v2 in
-        if%sat Typed.(v2 ==@ zero) then
-          Result.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool, state)
-        else Heap.error `UBPointerComparison state
-    | TInt, TPointer -> equality_check ~state v2 v1
-    | _ ->
-        Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
-          Typed.ppa v1 Typed.ppa v2
 
   let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
       'err fun_exec Rustsymex.t =
@@ -349,92 +335,74 @@ module Make (Heap : Heap_intf.S) = struct
     | BinaryOp (op, e1, e2) -> (
         let** v1, state = eval_operand state e1 in
         let** v2, state = eval_operand state e2 in
-        let v1, v2 =
-          match (v1, v2) with
-          | Base v1, Base v2 -> (v1, v2)
-          | _, _ ->
-              Fmt.failwith "Expected base values in BinaryOp: %a/%a" pp_rust_val
-                v1 pp_rust_val v2
-        in
-        match op with
-        | Ge | Gt | Lt | Le ->
-            let op =
-              match op with
-              | Ge -> Typed.geq
-              | Gt -> Typed.gt
-              | Lt -> Typed.lt
-              | Le -> Typed.leq
-              | _ -> assert false
-            in
-            let* v1, v2, ty = cast_checked2 v1 v2 in
-            if ty = Typed.t_ptr then Heap.error `UBPointerComparison state
-            else
-              let v = op (Typed.cast v1) (Typed.cast v2) |> Typed.int_of_bool in
-              Result.ok (Base v, state)
-        | Eq ->
-            let v1 = Typed.cast v1 in
-            let v2 = Typed.cast v2 in
-            let++ res, state = equality_check ~state v1 v2 in
-            (Base res, state)
-        | Ne ->
-            let v1 = Typed.cast v1 in
-            let v2 = Typed.cast v2 in
-            let++ res, state = equality_check ~state v1 v2 in
-            (Base (Typed.not_int_bool res), state)
-        | Add | Sub | Mul | Div | Rem ->
-            let bop : Std_funs.std_op =
-              match op with
-              | Add -> Add
-              | Sub -> Sub
-              | Mul -> Mul
-              | Div -> Div
-              | Rem -> Rem
-              | _ -> assert false
-            in
-            let ty =
-              match type_of_operand e1 with
-              | TLiteral ty -> ty
-              | _ -> failwith "Non-literal in binary operation"
-            in
-            let++ res = Std_funs.safe_binop bop v1 v2 ty state in
-            (Base res, state)
-        | CheckedAdd | CheckedSub | CheckedMul ->
-            let op =
-              match op with
-              | CheckedAdd -> Typed.plus
-              | CheckedSub -> Typed.minus
-              | CheckedMul -> Typed.times
-              | _ -> assert false
-            in
-
-            let ty =
-              match type_of_operand e1 with
-              | TLiteral (TInteger ty) -> ty
-              | _ -> failwith "Non-integer in checked binary operation"
-            in
-            let size = Layout.size_of_int_ty ty in
-            let unsigned_max =
-              Typed.nonzero_z (Z.shift_left Z.one (8 * size))
-            in
-            let max : T.nonzero Typed.t = Typed.cast @@ Layout.max_value ty in
-            let signed = Layout.is_signed ty in
-
-            let* v1 = cast_checked ~ty:Typed.t_int v1 in
-            let* v2 = cast_checked ~ty:Typed.t_int v2 in
-            let v = op v1 v2 in
-            let res = v %@ unsigned_max in
-            let* res =
-              if not signed then return res
-              else
-                if%sat res <=@ max then return res
-                else return (res -@ unsigned_max)
-            in
-            let overflowed = Typed.int_of_bool @@ Typed.not (v ==@ res) in
-            let ret = Tuple [ Base (res :> T.cval Typed.t); Base overflowed ] in
-            Result.ok (ret, state)
-        | bop ->
-            Fmt.kstr not_impl "Unsupported binary operator: %a"
-              Expressions.pp_binop bop)
+        match (v1, v2, type_of_operand e1) with
+        | Base v1, Base v2, TLiteral ty -> (
+            match op with
+            | Ge | Gt | Lt | Le ->
+                let op =
+                  match op with
+                  | Ge -> Typed.geq
+                  | Gt -> Typed.gt
+                  | Lt -> Typed.lt
+                  | Le -> Typed.leq
+                  | _ -> assert false
+                in
+                let* v1, v2, ty = cast_checked2 v1 v2 in
+                if Typed.equal_ty ty Typed.t_ptr then
+                  Heap.error `UBPointerComparison state
+                else
+                  let v = op v1 v2 |> Typed.int_of_bool in
+                  Result.ok (Base v, state)
+            | Eq | Ne ->
+                let* v1, v2, _ = cast_checked2 v1 v2 in
+                let++ res = Core.equality_check v1 v2 state in
+                let res = if op = Eq then res else Typed.not_int_bool res in
+                (Base (res :> T.cval Typed.t), state)
+            | Add | Sub | Mul | Div | Rem ->
+                let++ res = Core.eval_lit_binop op ty v1 v2 state in
+                (Base res, state)
+            | CheckedAdd | CheckedSub | CheckedMul ->
+                let ity =
+                  match ty with
+                  | TInteger ity -> ity
+                  | _ -> failwith "Non-integer in checked binary operation"
+                in
+                let** v = Core.safe_binop op v1 v2 state in
+                let* wrapped = Core.wrap_value ity v in
+                let overflowed = Typed.(int_of_bool (not (v ==@ wrapped))) in
+                let ret = Tuple [ Base wrapped; Base overflowed ] in
+                Result.ok (ret, state)
+            | Cmp ->
+                let* v1, v2, ty = cast_checked2 v1 v2 in
+                if Typed.equal_ty ty Typed.t_ptr then
+                  Heap.error `UBPointerComparison state
+                else
+                  let v = Typed.minus v1 v2 in
+                  let* cmp = Core.cmp_of_int v in
+                  Result.ok (Base cmp, state)
+            | Offset -> not_impl "Offset cannot be used on non-pointer values"
+            | (BitOr | BitAnd | BitXor | Shl | Shr) as bop ->
+                Fmt.kstr not_impl "Unsupported binary operator: %a"
+                  Expressions.pp_binop bop)
+        | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2), _ -> (
+            match op with
+            | Offset ->
+                let* p, meta, v =
+                  match (p1, p2) with
+                  | Ptr (p, meta), Base v | Base v, Ptr (p, meta) ->
+                      return (p, meta, v)
+                  | _ -> not_impl "Invalid operands in offset"
+                in
+                let* v = cast_checked ~ty:Typed.t_int v in
+                let p' = Sptr.offset p v in
+                Result.ok (Ptr (p', meta), state)
+            | _ ->
+                let++ res = Core.eval_ptr_binop op p1 p2 state in
+                (Base res, state))
+        | v1, v2, _ ->
+            Fmt.kstr not_impl
+              "Unsupported values for binary operator (%a): %a / %a"
+              Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
     | NullaryOp (op, ty) -> (
         match op with
         | UbChecks ->

@@ -9,6 +9,7 @@ module T : sig
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
+  type cnum = [ sint | sfloat ]
   type cval = [ sint | sptr | sfloat ]
 
   type any =
@@ -40,6 +41,7 @@ type +'a ty
 
 val pp_ty : 'a ty Fmt.t -> 'a ty Fmt.t
 val ppa_ty : 'a ty Fmt.t
+val equal_ty : 'a ty -> 'b ty -> bool
 val t_bool : [> sbool ] ty
 val t_int : [> sint ] ty
 val t_f16 : [> sfloat ] ty
@@ -66,7 +68,7 @@ val subst : (Svalue.Var.t -> Svalue.Var.t) -> 'a t -> 'a t
 val type_ : Svalue.t -> 'a t
 val cast : 'a t -> 'b t
 val cast_checked : 'a t -> 'b ty -> 'b t option
-val cast_checked2 : 'a t -> 'b t -> ('a t * 'a t * 'a ty) option
+val cast_checked2 : 'a t -> 'b t -> ('c t * 'c t * 'c ty) option
 val cast_float : 'a t -> [> sfloat ] t option
 val untyped : 'a t -> Svalue.t
 val untyped_list : 'a t list -> Svalue.t list
@@ -105,18 +107,18 @@ val f32 : float -> [> sfloat ] t
 val f64 : float -> [> sfloat ] t
 val f128 : float -> [> sfloat ] t
 val float_like : [> sfloat ] t -> float -> [> sfloat ] t
-val fp_of : [> sfloat ] t -> Svalue.FloatPrecision.t
-val geq : ([< sint | sfloat ] as 'a) t -> 'a t -> [> sbool ] t
-val gt : ([< sint | sfloat ] as 'a) t -> 'a t -> [> sbool ] t
-val leq : ([< sint | sfloat ] as 'a) t -> 'a t -> [> sbool ] t
-val lt : ([< sint | sfloat ] as 'a) t -> 'a t -> [> sbool ] t
-val plus : ([< sint | sfloat ] as 'a) t -> 'a t -> 'a t
-val minus : ([< sint | sfloat ] as 'a) t -> 'a t -> 'a t
-val times : ([< sint | sfloat ] as 'a) t -> 'a t -> 'a t
-val div : ([< sint | sfloat ] as 'a) t -> [< nonzero ] t -> 'a t
-val rem : ([< sint | sfloat ] as 'a) t -> [< nonzero ] t -> 'a t
-val ( mod ) : ([< sint | sfloat ] as 'a) t -> [< nonzero ] t -> 'a t
-val abs : ([< sint | sfloat ] as 'a) t -> 'a t
+val fp_of : [< sfloat ] t -> Svalue.FloatPrecision.t
+val geq : ([< cnum ] as 'a) t -> 'a t -> [> sbool ] t
+val gt : ([< cnum ] as 'a) t -> 'a t -> [> sbool ] t
+val leq : ([< cnum ] as 'a) t -> 'a t -> [> sbool ] t
+val lt : ([< cnum ] as 'a) t -> 'a t -> [> sbool ] t
+val plus : ([< cnum ] as 'a) t -> 'a t -> 'a t
+val minus : ([< cnum ] as 'a) t -> 'a t -> 'a t
+val times : ([< cnum ] as 'a) t -> 'a t -> 'a t
+val div : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
+val rem : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
+val ( mod ) : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
+val abs : ([< cnum ] as 'a) t -> 'a t
 
 module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t

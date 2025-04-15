@@ -10,6 +10,7 @@ module T = struct
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
+  type cnum = [ sint | sfloat ]
   type cval = [ sint | sptr | sfloat ]
 
   type any =

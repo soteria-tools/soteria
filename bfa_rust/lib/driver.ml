@@ -222,6 +222,7 @@ let exec_main (crate : Charon.UllbcAst.crate) =
        let outcomes = List.map fst branches in
        if Option.is_some !Rustsymex.not_impl_happened then
          let msg = Option.get !Rustsymex.not_impl_happened in
+         let () = Rustsymex.not_impl_happened := None in
          raise (ExecutionError msg)
        else if List.is_empty branches then
          raise (ExecutionError "Execution vanished")
