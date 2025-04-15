@@ -8,6 +8,14 @@ module Ctype = Cerb_frontend.Ctype
 module AilSyntax = Cerb_frontend.AilSyntax
 module T = Typed.T
 
+(* It's a good occasion to play with effects: we have a global immutable state,
+   and want to avoid passing it to every single function in the interpreter.
+   TODO: If this works well, do the same thing for prog.
+   *)
+type _ Effect.t += Get_fun_ctx : Fun_ctx.t Effect.t
+
+let get_fun_ctx () = Effect.perform Get_fun_ctx
+
 module Make (State : State_intf.S) = struct
   module C_std = C_std.M (State)
 
@@ -34,6 +42,7 @@ module Make (State : State_intf.S) = struct
     let open Typed.Infix in
     match Typed.get_ty x with
     | TInt ->
+        (* TODO: Should we just make a pointer with null loc, but any offset? *)
         if%sat x ==@ Typed.zero then Csymex.return Typed.Ptr.null
         else
           Fmt.kstr Csymex.not_impl "Int-to-pointer that is not 0: %a" Typed.ppa
@@ -242,28 +251,30 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
           Fmt_ail.pp_arithop a_op
 
-  let rec resolve_function ~(prog : linked_program) fexpr :
-      'err fun_exec Csymex.t =
-    let* loc, fname =
-      match fexpr with
-      | AilSyntax.AnnotatedExpression
-          ( _,
-            _,
-            loc,
-            AilEfunction_decay (AnnotatedExpression (_, _, _, AilEident fname))
-          ) ->
-          Csymex.return (loc, fname)
+  let rec resolve_function ~(prog : linked_program) ~store state fexpr =
+    let** (loc, fname), state =
+      let (AilSyntax.AnnotatedExpression (_, _, loc, inner_expr)) = fexpr in
+      match inner_expr with
+      (* Special case when we can immediately resolve the function name *)
+      | AilEfunction_decay (AnnotatedExpression (_, _, _, AilEident fname)) ->
+          Csymex.Result.ok ((loc, fname), state)
       | _ ->
-          Fmt.kstr not_impl "Function expression isn't a simple identifier: %a"
-            Fmt_ail.pp_expr fexpr
+          (* Some function pointer *)
+          let** fptr, state = eval_expr ~prog ~store state fexpr in
+          let* fptr = cast_to_ptr fptr in
+          let fctx = get_fun_ctx () in
+          let* sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
+          if%sat Typed.not (Typed.Ptr.ofs fptr ==@ 0s) then
+            State.error `InvalidFunctionPtr state
+          else Csymex.Result.ok ((loc, sym), state)
     in
     let@ () = with_loc ~loc in
     let fundef_opt = Ail_helpers.find_fun_def ~prog fname in
     match fundef_opt with
-    | Some fundef -> Csymex.return (exec_fun fundef)
+    | Some fundef -> Csymex.Result.ok (exec_fun fundef, state)
     | None -> (
         match find_stub ~prog fname with
-        | Some stub -> Csymex.return stub
+        | Some stub -> Csymex.Result.ok (stub, state)
         | None ->
             Fmt.kstr not_impl "Cannot call external function: %a" Fmt_ail.pp_sym
               fname)
@@ -287,7 +298,7 @@ module Make (State : State_intf.S) = struct
         let+ v = value_of_constant c in
         Ok (v, state)
     | AilEcall (f, args) ->
-        let* exec_fun = resolve_function ~prog f in
+        let** exec_fun, state = resolve_function ~prog ~store state f in
         let** args, state = eval_expr_list ~prog ~store state args in
         let++ v, state =
           let+- err = exec_fun ~prog ~args ~state in
@@ -425,6 +436,17 @@ module Make (State : State_intf.S) = struct
         let** v, state = eval_expr state expr in
         let+ new_v = cast ~old_ty ~new_ty v in
         Ok (new_v, state)
+    | AilSyntax.AilEfunction_decay
+        (AnnotatedExpression (_, _, _, fexpr) as outer_fexpr) -> (
+        match fexpr with
+        | AilEident id ->
+            let id = Ail_helpers.resolve_sym ~prog id in
+            let ctx = get_fun_ctx () in
+            let+ floc = Fun_ctx.decay_fn_sym id ctx in
+            Bfa_symex.Compo_res.Ok (Typed.Ptr.mk floc 0s, state)
+        | _ ->
+            Fmt.kstr not_impl "Unsupported function decay: %a" Fmt_ail.pp_expr
+              outer_fexpr)
     | AilSyntax.AilEcond (_, _, _)
     | AilSyntax.AilEassert _
     | AilSyntax.AilEoffsetof (_, _)
@@ -443,8 +465,7 @@ module Make (State : State_intf.S) = struct
     | AilSyntax.AilEva_copy (_, _)
     | AilSyntax.AilEva_end _ | AilSyntax.AilEprint_type _
     | AilSyntax.AilEbmc_assume _ | AilSyntax.AilEreg_load _
-    | AilSyntax.AilEarray_decay _ | AilSyntax.AilEfunction_decay _
-    | AilSyntax.AilEatomic _
+    | AilSyntax.AilEarray_decay _ | AilSyntax.AilEatomic _
     | AilSyntax.AilEgcc_statement (_, _) ->
         Fmt.kstr not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 

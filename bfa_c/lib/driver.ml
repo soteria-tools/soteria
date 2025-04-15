@@ -2,6 +2,8 @@ module SState = State (* Clashes with Cerb_frontend.State *)
 open Cerb_frontend
 module Wpst_interp = Interp.Make (SState)
 
+let ( let@ ) = ( @@ )
+
 let setup_console_log level =
   Fmt_tty.setup_std_outputs ();
   Logs.set_level level;
@@ -153,6 +155,7 @@ let pp_err ft (err, call_trace) =
     | `LinkError s -> Fmt.pf ft "LinkError: %s" s
     | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
     | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
+    | `InvalidFunctionPtr -> Fmt.string ft "InvalidFunctionPtr"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `Memory_leak -> Fmt.string ft "Memory leak"
@@ -173,6 +176,11 @@ let resolve_entry_point (linked : Ail_tys.linked_program) =
   |> Bfa_std.Utils.Result_ex.of_opt
        ~err:(`ParsingError "Entry point not found", Call_trace.empty)
 
+let with_function_context prog f =
+  let open Effect.Deep in
+  let fctx = Fun_ctx.of_linked_program prog in
+  try f () with effect Interp.Get_fun_ctx, k -> continue k fctx
+
 let exec_main file_names =
   let open Syntaxes.Result in
   let result =
@@ -186,6 +194,7 @@ let exec_main file_names =
       L.debug (fun m -> m "@[<2>Initial state:@ %a@]" SState.pp state);
       Wpst_interp.exec_fun ~prog:linked ~args:[] ~state entry_point
     in
+    let@ () = with_function_context linked in
     Ok (Csymex.run symex)
   in
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
@@ -223,6 +232,7 @@ let generate_errors content =
   match parse_and_link_ail [ file_name ] with
   | Error e -> [ e ]
   | Ok prog ->
+      let@ () = with_function_context prog in
       let summaries = Abductor.generate_all_summaries prog in
       let results =
         List.concat_map
@@ -289,6 +299,7 @@ let exec_main_bi file_name =
   in
   match res with
   | Ok (linked, entry_point) ->
+      let@ () = with_function_context linked in
       let () = Initialize_analysis.reinit linked.sigma in
       Abductor.generate_summaries_for ~prog:linked entry_point
   | Error (`ParsingError s, call_trace) ->
@@ -308,6 +319,7 @@ let generate_main_summary file_name =
 let exec_fun_bi file_name fun_name =
   match parse_and_link_ail [ file_name ] with
   | Ok prog ->
+      let@ () = with_function_context prog in
       let () = Initialize_analysis.reinit prog.sigma in
       let fundef =
         match Ail_helpers.find_fun_name ~prog fun_name with
