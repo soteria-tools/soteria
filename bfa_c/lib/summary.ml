@@ -5,11 +5,11 @@ type 'err t = {
   args : T.cval Typed.t list;
       (** List of arguments values, corresponding to the formal arguments in
           order. Really a form of [(x == a0) * (y == a1)] *)
-  pre : Heap.serialized list;  (** Pre-condition as a list of fixes *)
+  pre : State.serialized list;  (** Pre-condition as a list of fixes *)
   pc : Typed.T.sbool Typed.t list;
       (** Path condition. Whether it is in the post or in the pre, it doesn't
           matter for UX. *)
-  post : Heap.serialized;  (** Post condition as a serialized heap *)
+  post : State.serialized;  (** Post condition as a serialized heap *)
   ret : (T.cval Typed.t, 'err) result;
       (** Return value. If `ok` then it is the C value that the function
           returned, if `err` then it is a description of the bug exhibitied by
@@ -29,7 +29,7 @@ let filter_pc relevant_vars pc =
 
 (** Removes any bit of the state that does not any "relevant variables". i.e.,
     bits that are not reachable from the precondition. *)
-let filter_serialized_state relevant_vars (state : Heap.serialized) =
+let filter_serialized_state relevant_vars (state : State.serialized) =
   let leak = ref false in
   let resulting_heap =
     ListLabels.filter state.heap ~f:(fun (loc, b) ->
@@ -60,7 +60,7 @@ let init_reachable_vars summary =
   let () = Result.iter mark_cval_reachable summary.ret in
   let () =
     (* We mark all accessed globals as reachable. *)
-    Globs.iter_vars_serialized summary.post.Heap_intf.Template.globs
+    Globs.iter_vars_serialized summary.post.State_intf.Template.globs
       (fun (x, _) -> mark_reachable x)
   in
   init_reachable
@@ -86,10 +86,10 @@ let pruned summary =
           let product = Iter.product (Svalue.iter_vars el) r_iter in
           product (fun ((x, _), (y, _)) -> Var_graph.add_double_edge graph x y)
       | _ -> ());
-  (* For each block $l -> B in the pre and post heap, we add a single-sided arrow
+  (* For each block $l -> B in the pre and post state, we add a single-sided arrow
      from all variables in $l to all variables contained in B. *)
   ListLabels.iter
-    (List.concat (List.map (fun x -> x.Heap_intf.Template.heap) summary.pre)
+    (List.concat (List.map (fun x -> x.State_intf.Template.heap) summary.pre)
     @ summary.post.heap)
     ~f:(fun (l, b) ->
       let b_iter =
@@ -125,7 +125,7 @@ let manifest_bug ~arg_tys summary =
       let module Subst = Bfa_symex.Substs.Subst in
       let module From_iter = Subst.From_iter (Csymex) in
       let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
-      let iter_post = Heap.iter_vars_serialized summary.post in
+      let iter_post = State.iter_vars_serialized summary.post in
       let iter_args f =
         List.iter (fun cval -> Typed.iter_vars cval f) summary.args
       in
@@ -146,11 +146,11 @@ let manifest_bug ~arg_tys summary =
         in
         let constrs = List.concat constrs in
         let* () = Csymex.assume constrs in
-        let serialized_heap = Heap.subst_serialized subst summary.post in
+        let serialized_heap = State.subst_serialized subst summary.post in
         (* We don't need the produced heap, just its wf condition *)
         (* We might want to use another symex monad, à grisette,
            that produces the condition as a writer monad in an \/ or something *)
-        let* _heap = Heap.produce serialized_heap Heap.empty in
+        let* _heap = State.produce serialized_heap State.empty in
         let pc = List.map (Typed.subst subst) summary.pc in
         Csymex.assert_ (Typed.conj pc)
       in
