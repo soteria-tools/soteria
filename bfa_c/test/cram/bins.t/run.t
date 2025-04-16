@@ -2,6 +2,8 @@
   (declare-datatype Ptr ((mk-ptr (loc Int) (ofs Int))))
   (declare-datatype Opt (par (P) ((mk-some (opt-unwrap P)) (none))))
   (push 1)
+  (pop 1)
+  (push 1)
   (declare-fun |0| () Int)
   (assert (<= 0 |0|))
   (assert (< |0| 10))
@@ -11,3 +13,7 @@
   $ ../bins/run_twice.exe
   Number of outcomes for process_one: 0
   Number of outcomes for process_two: 1
+  
+  
+  Branches: {true, [Not((1 Eq V|0|)); (0 Eq V|0|)]}
+  Branches: {true, [Not((1 Eq V|0|)); (0 Eq V|0|)]}

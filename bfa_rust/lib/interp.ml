@@ -22,11 +22,11 @@ module Make (Heap : Heap_intf.S) = struct
 
   let pp_full_ptr = Charon_util.pp_full_ptr Sptr.pp
 
-  type 'err fun_exec =
+  type ('err, 'fixes) fun_exec =
     crate:UllbcAst.crate ->
     args:Sptr.t rust_val list ->
     state:state ->
-    (Sptr.t rust_val * state, 'err, Heap.serialized list) Result.t
+    (Sptr.t rust_val * state, 'err, 'fixes) Result.t
 
   let alloc_stack (locals : GAst.locals) args st :
       (store * full_ptr list * state, 'e, 'm) Result.t =
@@ -162,7 +162,7 @@ module Make (Heap : Heap_intf.S) = struct
         Result.ok ((ptr', None), state)
 
   let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
-      'err fun_exec Rustsymex.t =
+      ('err, 'fixes) fun_exec Rustsymex.t =
     match fnop with
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
