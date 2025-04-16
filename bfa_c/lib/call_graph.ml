@@ -87,7 +87,7 @@ and stmt_callees d stmt =
   | AilSdeclaration l ->
       List.iter (fun (_, e_opt) -> Option.iter expr_callees e_opt) l
 
-let of_prog (prog : Ail_tys.sigma) : t =
+let of_prog (prog : Ail_tys.linked_program) : t =
   let graph = with_node_capacity 253 in
   let add_fonction_callees (f : Ail_tys.fundef) : unit =
     let id, (_, _, _, _, stmts) = f in
@@ -96,5 +96,5 @@ let of_prog (prog : Ail_tys.sigma) : t =
       stmt_callees callees stmts;
       set_edges_from graph id callees)
   in
-  List.iter add_fonction_callees prog.function_definitions;
+  List.iter add_fonction_callees prog.sigma.function_definitions;
   graph
