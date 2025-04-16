@@ -316,9 +316,8 @@ module Make (Heap : Heap_intf.S) = struct
             else
               not_impl
                 "Unsupported: integer cast with different signedness and sign"
-        | Cast (CastScalar (TInteger _, TFloat to_ty)) ->
+        | Cast (CastScalar (TInteger _, TFloat fp)) ->
             let v = as_base_of ~ty:Typed.t_int v in
-            let fp = Charon_util.float_precision to_ty in
             let v' = Typed.float_of_int fp v in
             Result.ok (Base v', state)
         | Cast

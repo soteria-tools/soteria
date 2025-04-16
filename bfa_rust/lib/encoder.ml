@@ -301,9 +301,8 @@ let rec transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
       in
       let sv' = Typed.int_of_float sv in
       Ok (Base sv')
-  | TLiteral (TInteger _), TLiteral (TFloat f), Base sv ->
+  | TLiteral (TInteger _), TLiteral (TFloat fp), Base sv ->
       let+ sv = cast_checked sv ~ty:Typed.t_int in
-      let fp = Charon_util.float_precision f in
       let sv' = Typed.float_of_int fp sv in
       Ok (Base sv')
   | TLiteral _, TLiteral to_ty, Base sv ->
