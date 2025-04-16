@@ -86,7 +86,7 @@ module Generate_summaries = struct
       $ Logs_cli.level ()
       $ dump_unsupported_arg
       $ includes_arg
-      $ file_arg)
+      $ files_arg)
 
   let cmd = Cmd.v (Cmd.info "gen-summaries") term
 end
