@@ -303,8 +303,9 @@ let exec_main_bi file_name =
       let () = Initialize_analysis.reinit linked.sigma in
       Abductor.generate_summaries_for ~prog:linked entry_point
   | Error (`ParsingError s, call_trace) ->
-      Fmt.failwith "Failed to parse AIL at loc %a: %s" Call_trace.pp call_trace
-        s
+      Fmt.epr "Failed to parse AIL at loc %a: %s@\n@?" Call_trace.pp call_trace
+        s;
+      Fmt.failwith "Failed to parse AIL"
   | Error (`LinkError s, _) -> Fmt.failwith "Failed to link AIL: %s" s
 
 (* Entry point function *)
@@ -332,8 +333,9 @@ let exec_fun_bi file_name fun_name =
         (fun summary -> (summary, Summary.analyse_summary ~prog ~fid summary))
         results
   | Error (`ParsingError s, call_trace) ->
-      Fmt.failwith "Failed to parse AIL at loc %a: %s" Call_trace.pp call_trace
-        s
+    Fmt.epr "Failed to parse AIL at loc %a: %s@\n@?" Call_trace.pp call_trace
+        s;
+    Fmt.failwith "Failed to parse AIL"
   | Error (`LinkError s, _) -> Fmt.failwith "Failed to link AIL: %s" s
 
 (* Entry point function *)
@@ -349,16 +351,20 @@ let generate_summary_for include_args file_name fun_name =
   in
   Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
-let generate_all_summaries log_level dump_unsupported_file includes file_name =
+let generate_all_summaries log_level dump_unsupported_file includes file_names =
   Csymex.unsupported_file := dump_unsupported_file;
   Frontend.add_includes includes;
   setup_console_log log_level;
   Initialize_analysis.init_once ();
   let prog =
-    parse_and_link_ail [ file_name ]
-    |> Soteria_std.Utils.Result_ex.get_or ~err:(fun e -> Fmt.failwith "%a" pp_err e)
+    parse_and_link_ail file_names
+    |> Soteria_std.Utils.Result_ex.get_or ~err:(fun e -> Fmt.epr "%a@\n@?" pp_err e; failwith
+         "Failed to parse AIL")
   in
-  let results = Abductor.generate_all_summaries prog in
+  let results =
+    let@ () = with_function_context prog in
+    Abductor.generate_all_summaries prog
+  in
   Csymex.dump_unsupported ();
   let pp_summary ~fid ft summary =
     Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
