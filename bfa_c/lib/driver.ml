@@ -1,5 +1,6 @@
+module SState = State (* Clashes with Cerb_frontend.State *)
 open Cerb_frontend
-module Wpst_interp = Interp.Make (Heap)
+module Wpst_interp = Interp.Make (SState)
 
 let setup_console_log level =
   Fmt_tty.setup_std_outputs ();
@@ -182,7 +183,7 @@ let exec_main file_names =
     let symex =
       let open Csymex.Syntax in
       let** state = Wpst_interp.init_prog_state linked in
-      L.debug (fun m -> m "@[<2>Initial heap state:@ %a@]" Heap.pp state);
+      L.debug (fun m -> m "@[<2>Initial state:@ %a@]" SState.pp state);
       Wpst_interp.exec_fun ~prog:linked ~args:[] ~state entry_point
     in
     Ok (Csymex.run symex)
@@ -197,15 +198,15 @@ let exec_main_and_print log_level smt_file includes file_names =
   Initialize_analysis.init_once ();
   Frontend.add_includes includes;
   let result = exec_main file_names in
-  let pp_heap ft heap = Heap.pp_serialized ft (Heap.serialize heap) in
+  let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
   L.app (fun m ->
       m
         "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
          Executed %d statements"
         Fmt.Dump.(
           list @@ fun ft (r, _) ->
-          (Bfa_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_heap) ~err:pp_err
-             ~miss:(Fmt.Dump.list Heap.pp_serialized))
+          (Bfa_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
+             ~miss:(Fmt.Dump.list SState.pp_serialized))
             ft r)
         result
         (Stats.get_executed_statements ()))

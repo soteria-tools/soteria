@@ -3,7 +3,7 @@ open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
 open Csymex
-open Heap_intf.Template
+open State_intf.Template
 
 type 'a err = 'a * Call_trace.t
 
@@ -25,13 +25,13 @@ module SPmap = Pmap_direct_access (struct
   let fresh ?constrs () = Csymex.nondet ?constrs Typed.t_loc
 end)
 
-type t = (Tree_block.t Freeable.t SPmap.t option, Globs.t) Heap_intf.Template.t
+type t = (Tree_block.t Freeable.t SPmap.t option, Globs.t) State_intf.Template.t
 [@@deriving show { with_path = false }]
 
 type serialized =
   ( Tree_block.serialized Freeable.serialized SPmap.serialized,
     Globs.serialized )
-  Heap_intf.Template.t
+  State_intf.Template.t
 [@@deriving show { with_path = false }]
 
 let serialize (st : t) : serialized =

@@ -8,8 +8,8 @@ module Ctype = Cerb_frontend.Ctype
 module AilSyntax = Cerb_frontend.AilSyntax
 module T = Typed.T
 
-module Make (Heap : Heap_intf.S) = struct
-  module C_std = C_std.M (Heap)
+module Make (State : State_intf.S) = struct
+  module C_std = C_std.M (State)
 
   exception Unsupported of (string * Cerb_location.t)
 
@@ -19,7 +19,7 @@ module Make (Heap : Heap_intf.S) = struct
   let pointer_inner (Ctype.Ctype (_, ty)) =
     match ty with Pointer (_, ty) -> Some ty | _ -> None
 
-  type state = Heap.t
+  type state = State.t
   type store = (T.sptr Typed.t option * Ctype.ctype) Store.t
 
   let cast_checked ~ty x =
@@ -47,7 +47,7 @@ module Make (Heap : Heap_intf.S) = struct
     prog:linked_program ->
     args:T.cval Typed.t list ->
     state:state ->
-    (T.cval Typed.t * state, 'err, Heap.serialized list) Result.t
+    (T.cval Typed.t * state, 'err, State.serialized list) Result.t
 
   let get_param_tys ~prog name =
     let ptys = Ail_helpers.get_param_tys ~prog name in
@@ -76,20 +76,20 @@ module Make (Heap : Heap_intf.S) = struct
   (* We're assuming all bindings declared, and they have already been removed from the store. *)
   let free_bindings store state (bindings : AilSyntax.bindings) =
     Result.fold_list bindings ~init:state
-      ~f:(fun heap (pname, ((loc, _, _), _, _, _)) ->
+      ~f:(fun state (pname, ((loc, _, _), _, _, _)) ->
         let@ () = with_loc_immediate ~loc in
         match Store.find_value pname store with
         | Some ptr ->
-            let++ (), heap = Heap.free ptr heap in
-            heap
-        | None -> Result.ok heap)
+            let++ (), state = State.free ptr state in
+            state
+        | None -> Result.ok state)
 
   let alloc_params params st =
     Csymex.Result.fold_list params ~init:(Store.empty, st)
       ~f:(fun (store, st) (pname, ty, value) ->
-        let** ptr, st = Heap.alloc_ty ty st in
+        let** ptr, st = State.alloc_ty ty st in
         let store = Store.add pname (Some ptr, ty) store in
-        let++ (), st = Heap.store ptr ty value st in
+        let++ (), st = State.store ptr ty value st in
         (store, st))
 
   let dealloc_store store st =
@@ -98,7 +98,7 @@ module Make (Heap : Heap_intf.S) = struct
         match ptr with
         | None -> Result.ok st
         | Some ptr ->
-            let++ (), st = Heap.free ptr st in
+            let++ (), st = State.free ptr st in
             st)
 
   let value_of_constant (c : constant) : T.cval Typed.t Csymex.t =
@@ -111,7 +111,7 @@ module Make (Heap : Heap_intf.S) = struct
 
   let debug_show ~prog:_ ~args:_ ~state =
     let loc = get_loc () in
-    let str = (Fmt.to_to_string (Heap.pp_pretty ~ignore_freed:false)) state in
+    let str = (Fmt.to_to_string (State.pp_pretty ~ignore_freed:false)) state in
     Csymex.push_give_up (str, loc);
     Result.ok (0s, state)
 
@@ -153,7 +153,7 @@ module Make (Heap : Heap_intf.S) = struct
         let v2 : T.sint Typed.t = Typed.cast v2 in
         if%sat Typed.(v2 ==@ zero) then
           Result.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool, state)
-        else Heap.error `UBPointerComparison state
+        else State.error `UBPointerComparison state
     | TInt, TPointer -> equality_check ~state v2 v1
     | _ ->
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
@@ -173,7 +173,7 @@ module Make (Heap : Heap_intf.S) = struct
         let ofs = Typed.Ptr.ofs v1 +@ v2 in
         Result.ok (Typed.Ptr.mk loc ofs, state)
     | TInt, TPointer -> arith_add ~state v2 v1
-    | TPointer, TPointer -> Heap.error `UBPointerArithmetic state
+    | TPointer, TPointer -> State.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
@@ -202,7 +202,7 @@ module Make (Heap : Heap_intf.S) = struct
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
         Result.ok (v1 *@ v2, state)
-    | TPointer, _ | _, TPointer -> Heap.error `UBPointerArithmetic state
+    | TPointer, _ | _, TPointer -> State.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
           Typed.ppa v1 Typed.ppa v2
@@ -215,12 +215,12 @@ module Make (Heap : Heap_intf.S) = struct
         let* v2 = Csymex.check_nonzero v2 in
         match v2 with
         | Ok v2 -> Csymex.Result.ok (v1 /@ v2, state)
-        | Error `NonZeroIsZero -> Heap.error `DivisionByZero state
+        | Error `NonZeroIsZero -> State.error `DivisionByZero state
         | Missing e -> (* Unreachable but still *) Csymex.Result.miss e)
     | Mul -> arith_mul ~state v1 v2
     | Add -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
-        | Some _, Some _ -> Heap.error `UBPointerArithmetic state
+        | Some _, Some _ -> State.error `UBPointerArithmetic state
         | Some ty, None ->
             let* factor = Layout.size_of_s ty in
             let** v2, state = arith_mul ~state v2 factor in
@@ -232,7 +232,7 @@ module Make (Heap : Heap_intf.S) = struct
         | None, None -> arith_add ~state v1 v2)
     | Sub -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
-        | _, Some _ -> Heap.error `UBPointerArithmetic state
+        | _, Some _ -> State.error `UBPointerArithmetic state
         | Some ty, None ->
             let* factor = Layout.size_of_s ty in
             let** v2, state = arith_mul ~state v2 factor in
@@ -291,7 +291,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** args, state = eval_expr_list ~prog ~store state args in
         let++ v, state =
           let+- err = exec_fun ~prog ~args ~state in
-          Heap.add_to_call_trace err
+          State.add_to_call_trace err
             (Call_trace.make_element ~loc ~msg:"Call trace" ())
         in
         L.debug (fun m -> m "returned %a from %a" Typed.ppa v Fmt_ail.pp_expr f);
@@ -304,7 +304,7 @@ module Make (Heap : Heap_intf.S) = struct
             match Store.find_value id store with
             | Some ptr -> Result.ok ((ptr :> T.cval Typed.t), state)
             | None ->
-                let+ ptr, state = Heap.get_global id state in
+                let+ ptr, state = State.get_global id state in
                 Ok (ptr, state))
         | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
     | AilEunary (op, e) -> (
@@ -313,14 +313,14 @@ module Make (Heap : Heap_intf.S) = struct
         | PostfixIncr ->
             (* TODO: not quite sure if I should be evaluating e in lvalue mode or not *)
             let* ptr = cast_to_ptr v in
-            let** v, state = Heap.load ptr (type_of e) state in
+            let** v, state = State.load ptr (type_of e) state in
             let* incr_operand =
               match type_of e |> pointer_inner with
               | Some ty -> Layout.size_of_s ty
               | None -> return 1s
             in
             let** v_incr, state = arith_add ~state v incr_operand in
-            let++ (), state = Heap.store ptr (type_of e) v_incr state in
+            let++ (), state = State.store ptr (type_of e) v_incr state in
             (v, state)
         | Indirection -> Result.ok (v, state)
         | Address -> failwith "unreachable: address_of already handled"
@@ -373,7 +373,7 @@ module Make (Heap : Heap_intf.S) = struct
         let ty = type_of e in
         (* At this point, lvalue must be a pointer (including to the stack) *)
         let* lvalue = cast_to_ptr lvalue in
-        Heap.load lvalue ty state
+        State.load lvalue ty state
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym ~prog id in
         match Store.find_value id store with
@@ -383,7 +383,7 @@ module Make (Heap : Heap_intf.S) = struct
             Result.ok (v, state)
         | None ->
             (* If the variable isn't in the store, it must be a global variable. *)
-            let+ ptr, state = Heap.get_global id state in
+            let+ ptr, state = State.get_global id state in
             Ok (ptr, state))
     | AilEassign (lvalue, rvalue) ->
         (* Evaluate rvalue first *)
@@ -393,7 +393,7 @@ module Make (Heap : Heap_intf.S) = struct
          I don't support pointer fragments for now, so let's say it's an *)
         let* ptr = cast_to_ptr ptr in
         let ty = type_of lvalue in
-        let++ (), state = Heap.store ptr ty rval state in
+        let++ (), state = State.store ptr ty rval state in
         (rval, state)
     | AilEcompoundAssign (lvalue, op, rvalue) ->
         let** rval, state = eval_expr state rvalue in
@@ -401,11 +401,11 @@ module Make (Heap : Heap_intf.S) = struct
         let lty = type_of lvalue in
         (* At this point, lvalue must be a pointer (including to the stack) *)
         let* ptr = cast_to_ptr ptr in
-        let** operand, state = Heap.load ptr lty state in
+        let** operand, state = State.load ptr lty state in
         let** res, state =
           arith ~state (operand, lty) op (rval, type_of rvalue)
         in
-        let++ (), state = Heap.store ptr lty res state in
+        let++ (), state = State.store ptr lty res state in
         (res, state)
     | AilSyntax.AilEsizeof (_quals, ty) ->
         let+ res = Layout.size_of_s ty in
@@ -453,7 +453,7 @@ module Make (Heap : Heap_intf.S) = struct
   and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
       ( T.cval Typed.t option * store * state,
         'err,
-        Heap.serialized list )
+        State.serialized list )
       Csymex.Result.t =
     L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
     let* () = Csymex.consume_fuel_steps 1 in
@@ -512,13 +512,13 @@ module Make (Heap : Heap_intf.S) = struct
                 Store.find_type pname store
                 |> Csymex.of_opt_not_impl ~msg:"Missing binding??"
               in
-              let** ptr, state = Heap.alloc_ty ty state in
+              let** ptr, state = State.alloc_ty ty state in
               let++ (), state =
                 match expr with
                 | None -> Result.ok ((), state)
                 | Some expr ->
                     let** v, state = eval_expr ~prog ~store state expr in
-                    Heap.store ptr ty v state
+                    State.store ptr ty v state
               in
               let store = Store.add pname (Some ptr, ty) store in
               (store, state))
@@ -546,37 +546,37 @@ module Make (Heap : Heap_intf.S) = struct
 
   let init_prog_state (prog : Ail_tys.linked_program) =
     (* Produce_zero will be useful when Kayvan allows for knowing when no declaration is given. *)
-    let _produce_zero (ptr : [< T.sptr ] Typed.t) ty (state : Heap.t) =
+    let _produce_zero (ptr : [< T.sptr ] Typed.t) ty (state : State.t) =
       let loc = Typed.Ptr.loc ptr in
       let offset = Typed.Ptr.ofs ptr in
       let* len = Layout.size_of_s ty in
-      let serialized : Heap.serialized =
+      let serialized : State.serialized =
         {
           heap = [ (loc, Freeable.Alive [ Tree_block.Zeros { offset; len } ]) ];
           globs = [];
         }
       in
-      let+ state = Heap.produce serialized state in
+      let+ state = State.produce serialized state in
       Bfa_symex.Compo_res.ok state
     in
-    let produce_value (ptr : [< T.sptr ] Typed.t) ty expr (state : Heap.t) =
+    let produce_value (ptr : [< T.sptr ] Typed.t) ty expr (state : State.t) =
       let loc = Typed.Ptr.loc ptr in
       let offset = Typed.Ptr.ofs ptr in
       (* I somehow have to support global initialisation urgh.
        I might be able to extract some of that into interp *)
       let** v, state = eval_expr ~prog ~store:Store.empty state expr in
-      let serialized : Heap.serialized =
+      let serialized : State.serialized =
         {
           heap =
             [ (loc, Freeable.Alive [ Tree_block.TypedVal { offset; ty; v } ]) ];
           globs = [];
         }
       in
-      let+ state = Heap.produce serialized state in
+      let+ state = State.produce serialized state in
       Bfa_symex.Compo_res.ok state
     in
-    Csymex.Result.fold_list prog.sigma.object_definitions ~init:Heap.empty
-      ~f:(fun (state : Heap.t) def ->
+    Csymex.Result.fold_list prog.sigma.object_definitions ~init:State.empty
+      ~f:(fun (state : State.t) def ->
         let id, e = def in
         let* ty =
           match Ail_helpers.find_obj_decl ~prog id with
@@ -584,6 +584,6 @@ module Make (Heap : Heap_intf.S) = struct
           | Some (_, _, _, ty) -> Csymex.return ty
         in
         (* TODO: handle other parameters here *)
-        let* ptr, state = Heap.get_global id state in
+        let* ptr, state = State.get_global id state in
         produce_value ptr ty e state)
 end

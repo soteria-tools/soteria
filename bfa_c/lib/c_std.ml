@@ -4,7 +4,7 @@ open Csymex.Syntax
 open Typed.Syntax
 module T = Typed.T
 
-module M (Heap : Heap_intf.S) = struct
+module M (State : State_intf.S) = struct
   let malloc ~prog:_ ~(args : T.cval Typed.t list) ~state =
     let* sz =
       match args with
@@ -14,7 +14,7 @@ module M (Heap : Heap_intf.S) = struct
     let sz = Typed.cast sz in
     Csymex.branches
       [
-        (fun () -> Heap.alloc sz state);
+        (fun () -> State.alloc sz state);
         (fun () -> Result.ok (Typed.Ptr.null, state));
       ]
 
@@ -28,7 +28,7 @@ module M (Heap : Heap_intf.S) = struct
     | TPointer ->
         let++ (), state =
           if%sat Typed.Ptr.is_null (Typed.cast ptr) then Result.ok ((), state)
-          else Heap.free (Typed.cast ptr) state
+          else State.free (Typed.cast ptr) state
         in
         (0s, state)
     | TInt -> Fmt.kstr not_impl "free with int argument: %a" Typed.ppa ptr
@@ -43,7 +43,7 @@ module M (Heap : Heap_intf.S) = struct
     let dst = Typed.cast dst in
     let src = Typed.cast src in
     let size = Typed.cast size in
-    let++ (), state = Heap.copy_nonoverlapping ~dst ~src ~size state in
+    let++ (), state = State.copy_nonoverlapping ~dst ~src ~size state in
     (dst, state)
 
   let assert_ ~prog:_ ~(args : T.cval Typed.t list) ~state =
@@ -55,7 +55,7 @@ module M (Heap : Heap_intf.S) = struct
             (Typed.cast_checked t Typed.t_int)
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ 0s then Heap.error `FailedAssert state
+    if%sat to_assert ==@ 0s then State.error `FailedAssert state
     else Result.ok (0s, state)
 
   let nondet_int_fun ~prog:_ ~args:_ ~state =
