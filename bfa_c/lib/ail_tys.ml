@@ -1,6 +1,7 @@
 open Cerb_frontend
 open AilSyntax
 
+type sym = Symbol.sym
 type nonrec constant = constant
 type expr = GenTypes.genTypeCategory expression
 type stmt = GenTypes.genTypeCategory statement
