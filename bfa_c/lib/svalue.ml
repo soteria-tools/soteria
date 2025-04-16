@@ -309,7 +309,8 @@ module Ptr = struct
   let loc p =
     match p.node.kind with Ptr (l, _) -> l | _ -> Unop (GetPtrLoc, p) <| TLoc
 
-  let loc_of_int i = Int (Z.of_int i) <| TLoc
+  let loc_of_z z = Int z <| TLoc
+  let loc_of_int i = loc_of_z (Z.of_int i)
 
   let ofs p =
     match p.node.kind with Ptr (_, o) -> o | _ -> Unop (GetPtrOfs, p) <| TInt

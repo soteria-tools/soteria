@@ -4,6 +4,10 @@ let file_arg =
   let doc = "FILE" in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
+let files_arg =
+  let doc = "FILES" in
+  Arg.(non_empty & pos_all file [] & info [] ~docv:"FILES" ~doc)
+
 let dump_smt_arg =
   let doc = "Dump the SMT queries to the given file" in
   Arg.(
@@ -34,7 +38,8 @@ module Exec_main = struct
       const Bfa_c_lib.Driver.exec_main_and_print
       $ Logs_cli.level ()
       $ dump_smt_arg
-      $ file_arg)
+      $ includes_arg
+      $ files_arg)
 
   let cmd = Cmd.v (Cmd.info "exec-main") term
 end
@@ -48,7 +53,7 @@ module Lsp = struct
 end
 
 module Show_ail = struct
-  let term = Term.(const Bfa_c_lib.Driver.show_ail $ file_arg)
+  let term = Term.(const Bfa_c_lib.Driver.show_ail $ includes_arg $ files_arg)
   let cmd = Cmd.v (Cmd.info "show-ail") term
 end
 
