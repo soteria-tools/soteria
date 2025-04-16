@@ -668,13 +668,13 @@ module Make (Heap : Heap_intf.S) = struct
   and exec_fun ~crate ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
-    let** body =
+    let* body =
       match body with
       | None ->
           let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
           Fmt.kstr not_impl "Function %s is opaque"
             (PrintTypes.name_to_string ctx name)
-      | Some body -> Result.ok body
+      | Some body -> return body
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
@@ -694,6 +694,5 @@ module Make (Heap : Heap_intf.S) = struct
       | _ -> None
     in
     let++ (), state = dealloc_store ?protected_address store protected state in
-    (* We model void as zero, it should never be used anyway *)
     (value, state)
 end

@@ -80,13 +80,12 @@ module M (Heap : Heap_intf.S) = struct
     let** () =
       if bop <> Rem then Result.ok ()
       else
-        let min =
-          match lit_ty with
-          | Values.TInteger inty -> Layout.min_value inty
-          | _ -> failwith "Unexpected type in rem"
-        in
-        if%sat l ==@ min &&@ (r ==@ -1s) then Heap.error `Overflow st
-        else Result.ok ()
+        match lit_ty with
+        | Values.TInteger inty ->
+            let min = Layout.min_value inty in
+            if%sat l ==@ min &&@ (r ==@ -1s) then Heap.error `Overflow st
+            else Result.ok ()
+        | _ -> Result.ok ()
     in
     let constrs = Layout.constraints lit_ty in
     if%sat conj (constrs res) then Result.ok (res :> T.cval Typed.t)
