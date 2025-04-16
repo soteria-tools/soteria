@@ -27,7 +27,7 @@ let empty = { counter = Z.zero; bmap = Bidirectional_map.empty }
 let declare_fn sym t =
   let counter = t.counter in
   let bmap = Bidirectional_map.add sym counter t.bmap in
-  { counter = Z.add counter Z.one; bmap }
+  { counter = Z.succ counter; bmap }
 
 let of_linked_program (prog : Ail_tys.linked_program) =
   ListLabels.fold_left prog.sigma.function_definitions ~init:empty
