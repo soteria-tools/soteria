@@ -233,10 +233,6 @@ let link_aux ((m1, f1) : 'a ail_program) ((m2, f2) : 'a ail_program)
     else Ok ()
   in
   let* m = link_main m1 m2 in
-  (* TODO: figure out what to do with redundant_globs *)
-  (* TODO: it should be some kind of merge_globs where we iterate through all
-           decl_obj declarations and then remove redundancies from both declarations
-           and object_definitions *)
   let* extern_idmap, redundant_globs, symmap =
     link_extern f1.extern_idmap f2.extern_idmap symmap
   in
