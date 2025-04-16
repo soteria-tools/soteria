@@ -44,9 +44,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: _opam
-          key: ${{ runner.os }}-opam-${{ hashFiles('*.opam') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ hashFiles('*.opam') }}
           restore-keys: |
-            ${{ runner.os }}-opam-
+            ${{ runner.os }}-${{ runner.arch }}-opam-
       # OCaml build and tests
       - name: setup dependencies
         run: make ocaml-deps
