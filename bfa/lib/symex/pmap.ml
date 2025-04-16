@@ -147,6 +147,14 @@ struct
     let st = of_opt st in
     let* _, codom = Find_opt_sym.f key st in
     f codom |> lift_fix_s ~key
+
+  let fold
+      (f :
+        'acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized list) Symex.Result.t)
+      (init : 'acc) (st : 'a t option) :
+      ('acc, 'err, 'fix serialized list) Symex.Result.t =
+    let st = of_opt st in
+    Result.fold_seq (M.to_seq st) ~init ~f
 end
 
 module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct

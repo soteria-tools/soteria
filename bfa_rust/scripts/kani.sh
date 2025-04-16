@@ -19,7 +19,7 @@ LOG_FILE=$SCRIPT_DIR/kani.log
 KANI_PATH=$(realpath $SCRIPT_DIR/../../../kani)
 
 # Handle arguments:
-CMD="bfa-rust exec-main"
+CMD="bfa-rust exec-main --ignore-leaks"
 STOP_ON_FAIL=true
 STORE_PASSES=false
 TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)

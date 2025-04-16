@@ -137,4 +137,7 @@ module type S = sig
       [> `NullDereference | `UseAfterFree ] err,
       serialized list )
     Result.t
+
+  val leak_check :
+    t -> (unit * t, [> `MemoryLeak ] err, serialized list) Result.t
 end

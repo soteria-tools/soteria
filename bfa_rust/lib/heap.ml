@@ -328,3 +328,13 @@ let unprotect (((_, tag) as ptr), _) st =
       let block = Some (block, tb') in
       L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
       Result.ok ((), block))
+
+let leak_check st =
+  let@ heap = with_heap st in
+  let** leaks =
+    SPmap.fold
+      (fun leaks (k, v) ->
+        if Freeable.Freed <> v then Result.ok (k :: leaks) else Result.ok leaks)
+      [] heap
+  in
+  if List.is_empty leaks then Result.ok ((), heap) else error `MemoryLeak st

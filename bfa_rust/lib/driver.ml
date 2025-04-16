@@ -35,7 +35,7 @@ let pp_err ft (err, call_trace) =
     | `UBTreeBorrow -> Fmt.string ft "UBTreeBorrow"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
-    | `Memory_leak -> Fmt.string ft "Memory leak"
+    | `MemoryLeak -> Fmt.string ft "Memory leak"
     | `FailedAssert -> Fmt.string ft "Failed assertion"
     | `Overflow -> Fmt.string ft "Overflow"
     | `StdErr msg -> Fmt.pf ft "Std error: %s" msg
@@ -163,7 +163,7 @@ let parse_ullbc_of_file ~no_compile file_name =
       crate
   | Error err -> raise (CharonError err)
 
-let exec_main (crate : Charon.UllbcAst.crate) =
+let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
   let module List_ex = Utils.List_ex in
   let open Charon in
   Layout.Session.set_crate crate;
@@ -188,7 +188,9 @@ let exec_main (crate : Charon.UllbcAst.crate) =
   in
   if List.is_empty entry_points then
     raise (ExecutionError "No entry points found");
-  let exec_fun = Wpst_interp.exec_fun ~crate ~args:[] ~state:Heap.empty in
+  let exec_fun =
+    Wpst_interp.exec_fun ~ignore_leaks ~crate ~args:[] ~state:Heap.empty
+  in
   let outcomes =
     entry_points
     |> List.map @@ fun ((entry_point : UllbcAst.fun_decl), should_err) ->
@@ -242,13 +244,14 @@ let exec_main (crate : Charon.UllbcAst.crate) =
   |> Result.map List.flatten
   |> Result.map_error (String.concat "\n\n")
 
-let exec_main_and_print log_level smt_file no_compile clean file_name =
+let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
+    file_name =
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
   Cleaner.init ~clean ();
   try
     let crate = parse_ullbc_of_file ~no_compile file_name in
-    let res = exec_main crate in
+    let res = exec_main ~ignore_leaks crate in
     match res with
     | Ok res ->
         let open Fmt in

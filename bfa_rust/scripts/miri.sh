@@ -112,11 +112,16 @@ for test in $TESTS; do
     # expect failure if "fail" or "panic" in test_rel_name
     expect_failure=$(grep -c -e "fail" -e "panic" <<< "$test_rel_name")
 
+    extra_flags=""
+    if [[ $(grep -c "\-Zmiri\-ignore\-leaks" "$test") -gt 0 ]]; then
+        extra_flags="--ignore-leaks"
+    fi
+
     echo -en "$(rainbow step)|${RESET} Running $test_rel_name ..."
     echo "Running $test" >> $LOG_FILE
     start=$(($(date +%s%N)/1000000))
     # redirect both stdout and stderr to the log file
-    dune exec --no-build -- $CMD $test >> $LOG_FILE 2>>$LOG_FILE
+    dune exec --no-build -- $CMD $extra_flags $test >> $LOG_FILE 2>>$LOG_FILE
     result=$?
     end=$(($(date +%s%N)/1000000))
     if [ $result -eq $expect_failure ]; then
