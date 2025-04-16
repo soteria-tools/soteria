@@ -18,7 +18,7 @@ jobs:
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3, node, ocaml
-      - uses: actions/checkout@v4
+      # - uses: actions/checkout@v4
       # - name: Setup Z3
       #   uses: cda-tum/setup-z3@v1
       #   id: z3
@@ -40,7 +40,7 @@ jobs:
         with:
           ocaml-compiler: 5.3.0
           dune-cache: true
-      - run: which ocaml
+      - run: opam clean -a --dry-run
       # OCaml build and tests
       # - name: setup dependencies
       #   run: make ocaml-deps
