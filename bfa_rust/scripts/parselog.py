@@ -174,14 +174,14 @@ def main(files: list[str]):
 
     i = 0
     items = [
-        (cause, color, tests)
+        (cause, color, len(set(test[0] for test in tests)), tests)
         for (cause, color), tests in stats.items()
         if (len(cause_filters) == 0 or any(
             filter in cause
             for filter in cause_filters
         ))
     ]
-    items.sort(key=lambda x: -len(x[2]))
+    items.sort(key=lambda x: -x[2])
 
     if "--rev" in sys.argv:
         items.reverse()
@@ -189,8 +189,8 @@ def main(files: list[str]):
     verbosity = sum(1 for flag in sys.argv if flag == "-v")
 
     print(f"{BOLD}Summary:{RESET}")
-    for (cause, color, tests) in items:
-        print(f"{rainbow(i)}|{RESET} {color}{len(tests):3d}{RESET} {cause}")
+    for (cause, color, num, tests) in items:
+        print(f"{rainbow(i)}|{RESET} {color}{num:3d}{RESET} {cause}")
         if verbosity >= 1:
             dot = f"{rainbow(i)}•{RESET}"
             if all(test[1] is None for test in tests):
@@ -207,13 +207,16 @@ def main(files: list[str]):
                     reasons[reason] = reasons.get(reason, []) + [file]
                 reasons = reasons.items()
                 reasons = sorted(reasons, key=lambda x: -len(x[1]))
+                if "--rev" in sys.argv:
+                    reasons.reverse()
                 for reason, files in reasons:
                     print(f"  {dot} {reason} ({len(files)})")
                     if verbosity >= 2:
                         files.sort()
                         print(f"      {'\n      '.join(files)}")
         i+=1
-    print(f"{BOLD}Total:{RESET} {sum(len(tests) for tests in stats.values())}")
+
+    print(f"{BOLD}Total:{RESET} {len(set(t[0] for tests in stats.values() for t in tests))}")
 
 
 
@@ -221,6 +224,18 @@ if __name__ == "__main__":
     if len(sys.argv) < 2 or "--help" in sys.argv:
         print("Usage: parselog.py <logfile> [...logfiles] [...--flags]")
         sys.exit(1)
+
+
+    # Normalise arguments: ["-F", "abc"] becomes ["-F=abc"]
+    args = sys.argv
+    i = 0
+    while i < len(args):
+        if args[i] == "-F" or args[i] == "-f":
+            args[i] = args[i] + "=" + args[i+1]
+            args.pop(i+1)
+        i += 1
+    sys.argv = args
+
     files = [ arg for arg in sys.argv[1:] if not arg.startswith("-") ]
     if files is []:
         print("Usage: parselog.py <logfile> [...logfiles] [...--flags]")
