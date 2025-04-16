@@ -19,9 +19,9 @@ let cleanup_flag =
   let doc = "Clean up compiles files after execution" in
   Arg.(value & flag & info [ "clean" ] ~doc)
 
-let leak_check_flag =
-  let doc = "Check for memory leaks" in
-  Arg.(value & flag & info [ "leaks" ] ~doc)
+let ignore_leaks_flag =
+  let doc = "Ignore memory leaks" in
+  Arg.(value & flag & info [ "ignore-leaks" ] ~doc)
 
 module Exec_main = struct
   let term =
@@ -31,7 +31,7 @@ module Exec_main = struct
       $ dump_smt_arg
       $ no_compile_flag
       $ cleanup_flag
-      $ leak_check_flag
+      $ ignore_leaks_flag
       $ file_arg)
 
   let cmd = Cmd.v (Cmd.info "exec-main") term

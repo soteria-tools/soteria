@@ -711,10 +711,10 @@ module Make (Heap : Heap_intf.S) = struct
     (value, state)
 
   (* re-define this for the export, nowhere else: *)
-  let exec_fun ?(leak_check = false) ~crate ~args ~state fundef =
+  let exec_fun ?(ignore_leaks = false) ~crate ~args ~state fundef =
     let** value, state = exec_fun ~crate ~args ~state fundef in
     let++ (), state =
-      if leak_check then Heap.leak_check state else Result.ok ((), state)
+      if ignore_leaks then Result.ok ((), state) else Heap.leak_check state
     in
     (value, state)
 end

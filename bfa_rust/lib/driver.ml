@@ -158,7 +158,7 @@ let parse_ullbc_of_file ~no_compile file_name =
       crate
   | Error err -> raise (CharonError err)
 
-let exec_main ?(leak_check = false) (crate : Charon.UllbcAst.crate) =
+let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
   let module List_ex = Utils.List_ex in
   let open Charon in
   Layout.Session.set_crate crate;
@@ -184,7 +184,7 @@ let exec_main ?(leak_check = false) (crate : Charon.UllbcAst.crate) =
   if List.is_empty entry_points then
     raise (ExecutionError "No entry points found");
   let exec_fun =
-    Wpst_interp.exec_fun ~leak_check ~crate ~args:[] ~state:Heap.empty
+    Wpst_interp.exec_fun ~ignore_leaks ~crate ~args:[] ~state:Heap.empty
   in
   let outcomes =
     entry_points
@@ -238,14 +238,14 @@ let exec_main ?(leak_check = false) (crate : Charon.UllbcAst.crate) =
   |> Result.map List.flatten
   |> Result.map_error (String.concat "\n\n")
 
-let exec_main_and_print log_level smt_file no_compile clean leak_check file_name
-    =
+let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
+    file_name =
   Z3solver.set_smt_file smt_file;
   setup_console_log log_level;
   Cleaner.init ~clean ();
   try
     let crate = parse_ullbc_of_file ~no_compile file_name in
-    let res = exec_main ~leak_check crate in
+    let res = exec_main ~ignore_leaks crate in
     match res with
     | Ok res ->
         let open Fmt in

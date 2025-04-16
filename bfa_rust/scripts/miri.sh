@@ -110,8 +110,8 @@ for test in $TESTS; do
     expect_failure=$(grep -c -e "fail" -e "panic" <<< "$test_rel_name")
 
     extra_flags=""
-    if [[ $(grep -c "\-Zmiri\-ignore\-leaks" "$test") -eq 0 ]]; then
-        extra_flags="--leaks"
+    if [[ $(grep -c "\-Zmiri\-ignore\-leaks" "$test") -gt 0 ]]; then
+        extra_flags="--ignore-leaks"
     fi
 
     echo -en "$(rainbow step)|${RESET} Running $test_rel_name ..."
