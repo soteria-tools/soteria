@@ -37,4 +37,4 @@ bfa-rust exec-main <file>
 
 To test Rusteria on the Kani test suite, clone [Kani](https://github.com/model-checking/kani) next to `bfa-ocaml`, and run `bfa_rust/scripts/kani.sh`. Run `bfa_rust/scripts/kani.sh --help` to see all available arguments.
 
-You can also rust Rusteria on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `bfa-ocaml` and run `bfa_rust/scripts/miri.sh`.
+You can also test Rusteria on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `bfa-ocaml` and run `bfa_rust/scripts/miri.sh`.
