@@ -2,8 +2,8 @@
 # Formatting =^^=
 PURPLE='\033[0;35m'
 RED='\033[0;31m'
-ORANGE='\033[0;33m'
-YELLOW='\033[1;33m'
+ORANGE="\033[38;5;208m"
+YELLOW="\033[38;5;220m"
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 BLUE='\033[0;34m'
@@ -49,7 +49,5 @@ alias realpath="grealpath"
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Output files
-touch "$SCRIPT_DIR/file.log"
-LOG_FILE=$SCRIPT_DIR/file.log
 SMT_FILE=$SCRIPT_DIR/smt.log
 PASS_FILE=$SCRIPT_DIR/passes.log

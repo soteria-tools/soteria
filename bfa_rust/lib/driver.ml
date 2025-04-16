@@ -1,5 +1,6 @@
 module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Bfa_symex.Compo_res
+open Cmd
 
 exception ExecutionError of string
 exception CharonError of string
@@ -44,42 +45,81 @@ let pp_err ft (err, call_trace) =
   Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
   Format.close_box ()
 
-let exec_cmd cmd =
-  L.debug (fun g -> g "Running command: %s" cmd);
-  Sys.command cmd
+let default_cmd ~file_name ~output () =
+  mk_cmd
+    ~charon:
+      [
+        "--ullbc";
+        Fmt.str "--input %s" file_name;
+        Fmt.str "--dest-file %s" output;
+        (* We can't enable this because it removes statements we care about... *)
+        (* "--mir_optimized"; *)
+        (* We don't care about our implementation *)
+        "--translate-all-methods";
+        "--extract-opaque-bodies";
+        "--monomorphize";
+      ]
+    ~rustc:
+      [
+        (* i.e. not always a binary! *)
+        "--crate-type=lib";
+        "-Zunstable-options";
+        (* Not sure this is needed *)
+        "--extern=std";
+        "--extern=core";
+        (* No warning *)
+        "-Awarnings";
+      ]
+    ()
 
-let find_kani_lib ~no_compile () =
-  let path =
-    try
-      let path = Sys.getenv "KANI_LIB_PATH" in
-      if String.ends_with ~suffix:"/" path then
-        String.sub path 0 (String.length path - 1)
-      else path
-    with Not_found -> List.hd Runtime_sites.Sites.kani_lib
-  in
+let mk_kani_cmd ~no_compile () =
+  let path = List.hd Runtime_sites.Sites.kani_lib in
   (if not no_compile then
+     let cargo =
+       "RUSTC=$(charon toolchain-path)/bin/rustc $(charon \
+        toolchain-path)/bin/cargo"
+     in
+     (* look for line "host: <host>", to get the target architecture *)
+     let info = Fmt.kstr exec_and_read "%s -vV" cargo in
+     let target =
+       match List.find_opt (String.starts_with ~prefix:"host") info with
+       | Some s -> String.sub s 6 (String.length s - 6)
+       | None -> raise (ExecutionError "Couldn't find target host")
+     in
+     (* build Kani lib *)
      let res =
        Fmt.kstr exec_cmd
-         "cd %s/kani && charon --only-cargo --lib --input ./src/ > /dev/null \
-          2>/dev/null"
-         path
+         "cd %s/kani && %s build --lib --target %s > /dev/null 2>/dev/null" path
+         cargo target
      in
      if res <> 0 && res <> 255 then
-       raise
-         (ExecutionError
-            ("Couldn't compile Kani lib: error " ^ Int.to_string res)));
+       let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
+       raise (ExecutionError msg));
   let ( / ) = Filename.concat in
   let target = path / "kani" / "target" in
-  let subfiles = Sys.readdir target in
   (* find folder that is neither debug, nor a file (e.g. "aarch64-apple-darwin") *)
   let os =
-    Array.find_opt
-      (fun s -> s <> "debug" && Sys.is_directory (target / s))
-      subfiles
+    try
+      Sys.readdir target
+      |> Array.find_opt (fun s -> s <> "debug" && Sys.is_directory (target / s))
+      |> Option.get
+    with Not_found -> raise (ExecutionError "Couldn't find Kani lib binaries")
   in
-  match os with
-  | Some os -> (path, os)
-  | None -> raise (ExecutionError "Couldn't find Kani lib binaries")
+  mk_cmd ~charon:[ "--opaque=kani" ]
+    ~rustc:
+      [
+        "-Zcrate-attr=feature\\(register_tool\\)";
+        "-Zcrate-attr=register_tool\\(kanitool\\)";
+        (* Code often hides kani proofs behind a cfg *)
+        "--cfg=kani";
+        "--extern=kani";
+        (* The below is cursed and should be fixed !!! *)
+        Fmt.str "-L%s/kani/target/%s/debug/deps" path os;
+        Fmt.str "-L%s/kani/target/debug/deps" path;
+      ]
+    ()
+
+let mk_miri_cmd ~no_compile:_ () = mk_cmd ~charon:[ "--opaque=miri_extern" ] ()
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~no_compile file_name =
@@ -91,49 +131,14 @@ let parse_ullbc_of_file ~no_compile file_name =
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   (if not no_compile then
-     let kani_args =
-       let kani_lib, os = find_kani_lib ~no_compile () in
-       [
-         "--opaque=kani";
-         "--rustc-arg=-Zcrate-attr=feature\\(register_tool\\)";
-         "--rustc-arg=-Zcrate-attr=register_tool\\(kanitool\\)";
-         (* Code often hides kani proofs behind a cfg *)
-         "--rustc-arg=--cfg=kani";
-         "--rustc-arg=--extern=kani";
-         (* The below is cursed and should be fixed !!! *)
-         Fmt.str "--rustc-arg=-L%s/kani/target/%s/debug/deps" kani_lib os;
-         Fmt.str "--rustc-arg=-L%s/kani/target/debug/deps" kani_lib;
-       ]
+     (* TODO: make these flags! *)
+     let with_kani, with_miri = (true, true) in
+     let args =
+       default_cmd ~file_name ~output ()
+       |> concat_cmd_if with_kani (mk_kani_cmd ~no_compile)
+       |> concat_cmd_if with_miri (mk_miri_cmd ~no_compile)
      in
-     let miri_args = [ "--opaque=miri_extern" ] in
-     let res =
-       String.concat " "
-       @@ [
-            Fmt.str "cd %s &&" parent_folder;
-            "charon --ullbc";
-            Fmt.str "--input %s" file_name;
-            Fmt.str "--dest-file %s" output;
-            (* We can't enable this because it removes statements we care about... *)
-            (* "--mir_optimized"; *)
-            (* We don't care about our implementation *)
-            "--translate-all-methods";
-            "--monomorphize";
-            "--extract-opaque-bodies";
-            (* Go through rustc to allow injecting the kani deps *)
-            "--no-cargo";
-            (* i.e. not always a binary! *)
-            "--rustc-arg=--crate-type=lib";
-            "--rustc-arg=-Zunstable-options";
-            (* Not sure this is needed *)
-            "--rustc-arg=--extern=std";
-            "--rustc-arg=--extern=core";
-            (* No warning *)
-            "--rustc-arg=-Awarnings";
-          ]
-       @ kani_args
-       @ miri_args
-       |> exec_cmd
-     in
+     let res = exec_cmd @@ "cd " ^ parent_folder ^ " && " ^ build_cmd args in
      if res = 0 then Cleaner.touched output
      else
        let msg = Fmt.str "Failed compilation to ULLBC: code %d" res in
@@ -217,6 +222,7 @@ let exec_main (crate : Charon.UllbcAst.crate) =
        let outcomes = List.map fst branches in
        if Option.is_some !Rustsymex.not_impl_happened then
          let msg = Option.get !Rustsymex.not_impl_happened in
+         let () = Rustsymex.not_impl_happened := None in
          raise (ExecutionError msg)
        else if List.is_empty branches then
          raise (ExecutionError "Execution vanished")

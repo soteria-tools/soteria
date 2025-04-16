@@ -12,7 +12,26 @@ type 'ptr rust_val =
   | Struct of 'ptr rust_val list  (** contains ordered fields *)
   | Tuple of 'ptr rust_val list
   | Array of 'ptr rust_val list
-[@@deriving show { with_path = false }]
+  | Union of Types.field_id * 'ptr rust_val  (** field and value of union *)
+
+let rec pp_rust_val pp_ptr fmt =
+  let pp_rust_val = pp_rust_val pp_ptr in
+  function
+  | Base v -> Fmt.pf fmt "%a" Typed.ppa v
+  | Ptr (p, None) -> Fmt.pf fmt "Ptr(%a)" pp_ptr p
+  | Ptr (p, Some meta) -> Fmt.pf fmt "Ptr(%a, %a)" pp_ptr p Typed.ppa meta
+  | Enum (disc, vals) ->
+      Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
+        (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val)
+        vals
+  | Struct fields ->
+      Fmt.pf fmt "{%a}" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) fields
+  | Tuple vals ->
+      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
+  | Array vals ->
+      Fmt.pf fmt "[%a]" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
+  | Union (field_id, v) ->
+      Fmt.pf fmt "Union(%a: %a)" Types.pp_field_id field_id pp_rust_val v
 
 let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv
 let unit_ = Tuple []
@@ -25,6 +44,25 @@ let type_of_operand : Expressions.operand -> Types.ty = function
   | Copy p | Move p -> p.ty
 
 let lit_to_string = PrintValues.literal_type_to_string
+
+let rec pp_ty fmt : Types.ty -> unit = function
+  | TAdt (TAdtId id, _) -> Fmt.pf fmt "Adt(%a)" Types.pp_type_decl_id id
+  | TAdt (TTuple, { types = tys; _ }) ->
+      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_ty) tys
+  | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) -> Fmt.pf fmt "Box(%a)" pp_ty ty
+  | TAdt
+      ( TBuiltin TArray,
+        { types = [ ty ]; const_generics = [ CgValue (VScalar len) ]; _ } ) ->
+      Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print len.value
+  | TAdt (TBuiltin TSlice, { types = [ ty ]; _ }) -> Fmt.pf fmt "[%a]" pp_ty ty
+  | TAdt (TBuiltin TStr, _) -> Fmt.string fmt "str"
+  | TLiteral lit -> Fmt.string fmt @@ PrintValues.literal_type_to_string lit
+  | TNever -> Fmt.string fmt "!"
+  | TRef (_, ty, RMut) -> Fmt.pf fmt "&mut %a" pp_ty ty
+  | TRef (_, ty, RShared) -> Fmt.pf fmt "&%a" pp_ty ty
+  | TRawPtr (ty, RMut) -> Fmt.pf fmt "*mut %a" pp_ty ty
+  | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
+  | ty -> Fmt.pf fmt "%a" Types.pp_ty ty
 
 let as_ptr = function
   | Ptr ptr -> ptr

@@ -70,8 +70,7 @@ module ArithPtr : S with type t = T.sptr Typed.t * Tree_borrow.tag = struct
       | Expressions.ProjAdt (adt_id, Some variant) ->
           (* Skip discriminator, so field + 1 *)
           (Layout.of_enum_variant adt_id variant, field + 1)
-      | ProjAdt (adt_id, None) -> (Layout.of_adt_id adt_id, field)
-      | ProjTuple _arity -> (Layout.layout_of ty, field)
+      | ProjAdt (_, None) | ProjTuple _ -> (Layout.layout_of ty, field)
     in
     let off = Array.get layout.members_ofs field in
     offset ptr (Typed.int off)

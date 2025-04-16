@@ -12,6 +12,9 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 source $SCRIPT_DIR/common.sh
 
+touch "$SCRIPT_DIR/kani.log"
+LOG_FILE=$SCRIPT_DIR/kani.log
+
 # Tests are in kani/tests/<category...>/<test>.rs
 KANI_PATH=$(realpath $SCRIPT_DIR/../../../kani)
 
@@ -100,6 +103,9 @@ script_start=$(($(date +%s%N)/1000000))
 for test in $TESTS; do
     test_rel_name=$(realpath --relative-to=$KANI_PATH $test)
     expect_failure=$(grep -c "kani-verify-fail" "$test")
+    if (( $expect_failure > 1 )); then
+        expect_failure=1
+    fi
 
     echo -en "$(rainbow step)|${RESET} Running $test_rel_name ..."
     echo "Running $test" >> $LOG_FILE
@@ -126,7 +132,11 @@ for test in $TESTS; do
             echo -e " ${RED}failed${RESET}"
             failed=$((failed+1))
         else
-            echo -e " ${PURPLE}crashed: status code $result${RESET}"
+            if [ $result -eq 3 ]; then
+                echo -e " ${PURPLE}crashed due to Charon${RESET}"
+            else
+                echo -e " ${ORANGE}crashed: status code $result${RESET}"
+            fi
         fi
         if $STOP_ON_FAIL; then
             exit 1

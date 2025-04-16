@@ -8,6 +8,7 @@ open Charon_util
 module T = Typed.T
 
 module Make (Heap : Heap_intf.S) = struct
+  module Core = Core.M (Heap)
   module Std_funs = Std_funs.M (Heap)
   module Sptr = Heap.Sptr
 
@@ -21,20 +22,6 @@ module Make (Heap : Heap_intf.S) = struct
 
   let pp_full_ptr = Charon_util.pp_full_ptr Sptr.pp
 
-  let cast_checked ~ty x =
-    match Typed.cast_checked x ty with
-    | Some x -> Rustsymex.return x
-    | None ->
-        Fmt.kstr Rustsymex.not_impl "Failed to cast %a to %a" Typed.ppa x
-          Typed.ppa_ty ty
-
-  let cast_checked2 x y =
-    match Typed.cast_checked2 x y with
-    | Some x -> Rustsymex.return x
-    | None ->
-        Fmt.kstr Rustsymex.not_impl "Values %a and %a have mismatched types"
-          Typed.ppa x Typed.ppa y
-
   type ('err, 'fixes) fun_exec =
     crate:UllbcAst.crate ->
     args:Sptr.t rust_val list ->
@@ -46,11 +33,15 @@ module Make (Heap : Heap_intf.S) = struct
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
-    Rustsymex.Result.fold_list locals.vars ~init:(Store.empty, [], st)
-      ~f:(fun (store, protected, st) { index; var_ty = ty; _ } ->
-        let** ptr, st = Heap.alloc_ty ty st in
+    let tys =
+      List.map (fun ({ var_ty; _ } : GAst.local) -> var_ty) locals.locals
+    in
+    let** ptrs, st = Heap.alloc_tys tys st in
+    let tys_ptrs = List.combine locals.locals ptrs in
+    Rustsymex.Result.fold_list tys_ptrs ~init:(Store.empty, [], st)
+      ~f:(fun (store, protected, st) ({ index; var_ty = ty; _ }, ptr) ->
         let store = Store.add index (Some ptr, ty) store in
-        let index = Expressions.VarId.to_int index in
+        let index = Expressions.LocalId.to_int index in
         if 0 < index && index <= locals.arg_count then
           let value = List.nth args (index - 1) in
           let** value, protected', st =
@@ -132,18 +123,18 @@ module Make (Heap : Heap_intf.S) = struct
   let rec resolve_place ~store state ({ kind; _ } : Expressions.place) :
       (full_ptr * state, 'e, 'm) Result.t =
     match kind with
-    (* Just a variable *)
-    | PlaceBase var -> (
-        let ptr = Store.find_value var store in
+    (* Just a local *)
+    | PlaceLocal local -> (
+        let ptr = Store.find_value local store in
         match ptr with
         | Some ptr ->
             L.debug (fun f ->
                 f "Found pointer %a of variable %a" pp_full_ptr ptr
-                  Expressions.pp_var_id var);
+                  Expressions.pp_var_id local);
             Result.ok (ptr, state)
         | None ->
             Fmt.kstr not_impl "Variable %a not found in store"
-              Expressions.pp_var_id var)
+              Expressions.pp_var_id local)
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) ->
         let** ptr, state = resolve_place ~store state base in
@@ -170,21 +161,6 @@ module Make (Heap : Heap_intf.S) = struct
               Sptr.pp ptr Sptr.pp ptr');
         Result.ok ((ptr', None), state)
 
-  let rec equality_check ~state (v1 : [< Typed.T.cval ] Typed.t)
-      (v2 : [< Typed.T.cval ] Typed.t) =
-    match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt | TPointer, TPointer | TFloat _, TFloat _ ->
-        Result.ok (v1 ==@ v2 |> Typed.int_of_bool, state)
-    | TPointer, TInt ->
-        let v2 : T.sint Typed.t = Typed.cast v2 in
-        if%sat Typed.(v2 ==@ zero) then
-          Result.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool, state)
-        else Heap.error `UBPointerComparison state
-    | TInt, TPointer -> equality_check ~state v2 v1
-    | _ ->
-        Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
-          Typed.ppa v1 Typed.ppa v2
-
   let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
       ('err, 'fixes) fun_exec Rustsymex.t =
     match fnop with
@@ -195,7 +171,7 @@ module Make (Heap : Heap_intf.S) = struct
             let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
             g "Resolved function call to %s"
               (PrintTypes.name_to_string ctx fundef.item_meta.name));
-        match Std_funs.std_fun_eval ~crate fundef with
+        match Std_funs.std_fun_eval ~crate ~exec_fun fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
@@ -224,7 +200,7 @@ module Make (Heap : Heap_intf.S) = struct
                   g "Resolved function call to %s"
                     (PrintTypes.name_to_string ctx fundef.item_meta.name));
               let global_fn =
-                match Std_funs.std_fun_eval ~crate fundef with
+                match Std_funs.std_fun_eval ~crate ~exec_fun fundef with
                 | Some fn -> fn
                 | None -> exec_fun fundef
               in
@@ -243,7 +219,14 @@ module Make (Heap : Heap_intf.S) = struct
     | Move loc | Copy loc ->
         let ty = loc.ty in
         let** ptr, state = resolve_place ~store state loc in
-        let is_move = match op with Move _ -> true | _ -> false in
+        let is_move =
+          (* TODO: properly detect if ty has the Copy trait, in which case is_move is
+             always false. *)
+          match (op, ty) with
+          | _, TLiteral _ -> false
+          | Move _, _ -> true
+          | _ -> false
+        in
         let++ v, state = Heap.load ~is_move ptr ty state in
         (v, state)
 
@@ -264,45 +247,47 @@ module Make (Heap : Heap_intf.S) = struct
         let++ ptr', state = Heap.borrow ptr borrow state in
         (Ptr ptr', state)
     | Global { global_id; _ } ->
-        let decl =
-          UllbcAst.GlobalDeclId.Map.find global_id UllbcAst.(crate.global_decls)
-        in
         let** ptr, state = resolve_global ~crate global_id state in
+        let decl =
+          UllbcAst.GlobalDeclId.Map.find global_id crate.global_decls
+        in
         Heap.load ptr decl.ty state
     | GlobalRef ({ global_id; _ }, _mut) ->
         (* TODO: handle mutability *)
         let++ ptr, state = resolve_global ~crate global_id state in
         (Ptr ptr, state)
     | UnaryOp (op, e) -> (
-        let** v, _state = eval_operand state e in
+        let** v, state = eval_operand state e in
         match op with
         | Not ->
-            let v_int = as_base_of ~ty:Typed.t_int v in
-            let v' = Base (Typed.not_int_bool v_int) in
-            Result.ok (v', state)
+            let v = as_base_of ~ty:Typed.t_int v in
+            let* v' =
+              match type_of_operand e with
+              | TLiteral TBool -> return (Typed.not_int_bool v)
+              | TLiteral
+                  (TInteger ((Usize | U8 | U16 | U32 | U64 | U128) as ty)) ->
+                  let max = Layout.max_value ty in
+                  return (max -@ v)
+              | TLiteral (TInteger (Isize | I8 | I16 | I32 | I64 | I128)) ->
+                  return (~-v -@ 1s)
+              | ty ->
+                  Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty
+            in
+            Result.ok (Base v', state)
         | Neg ->
-            let v_int = as_base_of ~ty:Typed.t_int v in
-            let v' = Base (0s -@ v_int) in
-            Result.ok (v', state)
+            let v = as_base_of ~ty:Typed.t_int v in
+            Result.ok (Base ~-v, state)
+        | PtrMetadata -> (
+            match v with
+            | Ptr (_, None) -> Result.ok (Tuple [], state)
+            | Ptr (_, Some v) -> Result.ok (Base v, state)
+            | _ -> not_impl "Invalid value for PtrMetadata")
         | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
-        | Cast (CastTransmute (from_ty, to_ty)) -> (
-            match (from_ty, to_ty) with
-            | TRawPtr _, TLiteral (TInteger Usize) -> Result.ok (v, state)
-            | TRef _, TRef _ -> Result.ok (v, state)
-            | TLiteral (TFloat _), TLiteral (TInteger _) ->
-                let v =
-                  match v with
-                  | Base v -> (
-                      match Typed.get_ty v with
-                      | Svalue.TFloat _ -> Typed.cast v
-                      | _ -> failwith "Unsupported: invalid value in cast")
-                  | _ -> failwith "Unsupported: invalid value in cast"
-                in
-                let v' = Typed.int_of_float v in
-                Result.ok (Base v', state)
-            | _ ->
-                Fmt.kstr not_impl "Unsupported transmutation, from %a to %a"
-                  Types.pp_ty from_ty Types.pp_ty to_ty)
+        | Cast (CastTransmute (from_ty, to_ty)) ->
+            let++ v =
+              Heap.lift_err state @@ Encoder.transmute ~from_ty ~to_ty v
+            in
+            (v, state)
         | Cast (CastScalar (TInteger from_ty, TInteger to_ty)) ->
             let from_size = Layout.size_of_int_ty from_ty in
             let to_size = Layout.size_of_int_ty to_ty in
@@ -331,15 +316,8 @@ module Make (Heap : Heap_intf.S) = struct
             else
               not_impl
                 "Unsupported: integer cast with different signedness and sign"
-        | Cast (CastScalar (TInteger _, TFloat to_ty)) ->
+        | Cast (CastScalar (TInteger _, TFloat fp)) ->
             let v = as_base_of ~ty:Typed.t_int v in
-            let fp : Svalue.FloatPrecision.t =
-              match to_ty with
-              | F16 -> F16
-              | F32 -> F32
-              | F64 -> F64
-              | F128 -> F128
-            in
             let v' = Typed.float_of_int fp v in
             Result.ok (Base v', state)
         | Cast
@@ -363,71 +341,76 @@ module Make (Heap : Heap_intf.S) = struct
         | Cast kind ->
             Fmt.kstr not_impl "Unsupported cast kind: %a"
               Expressions.pp_cast_kind kind)
-    | BinaryOp (op, e1, e2) ->
+    | BinaryOp (op, e1, e2) -> (
         let** v1, state = eval_operand state e1 in
         let** v2, state = eval_operand state e2 in
-        let v1, v2 =
-          match (v1, v2) with
-          | Base v1, Base v2 -> (v1, v2)
-          | _, _ ->
-              Fmt.failwith "Expected base values in BinaryOp: %a/%a" pp_rust_val
-                v1 pp_rust_val v2
-        in
-        let++ res, state =
-          match op with
-          | Ge | Gt | Lt | Le ->
-              let op =
-                match op with
-                | Ge -> Typed.geq
-                | Gt -> Typed.gt
-                | Lt -> Typed.lt
-                | Le -> Typed.leq
-                | _ -> assert false
-              in
-              let* v1, v2, ty = cast_checked2 v1 v2 in
-              if ty = Typed.t_ptr then Heap.error `UBPointerComparison state
-              else
-                Result.ok
-                  ( op (Typed.cast v1) (Typed.cast v2) |> Typed.int_of_bool,
-                    state )
-          | Eq ->
-              let v1 = Typed.cast v1 in
-              let v2 = Typed.cast v2 in
-              equality_check ~state v1 v2
-          | Ne ->
-              let v1 = Typed.cast v1 in
-              let v2 = Typed.cast v2 in
-              let++ res, state = equality_check ~state v1 v2 in
-              (Typed.not_int_bool res, state)
-          | Add | Sub | Mul | Div | Rem ->
-              let bop : Std_funs.std_op =
-                match op with
-                | Add -> Add
-                | Sub -> Sub
-                | Mul -> Mul
-                | Div -> Div
-                | Rem -> Rem
-                | _ -> assert false
-              in
-              let ty =
-                match type_of_operand e1 with
-                | TLiteral ty -> ty
-                | _ -> failwith "Non-literal in binary operation"
-              in
-              let++ res = Std_funs.safe_binop bop v1 v2 ty state in
-              (res, state)
-          | bop ->
-              Fmt.kstr not_impl "Unsupported binary operator: %a"
-                Expressions.pp_binop bop
-        in
-        (Base res, state)
+        match (v1, v2, type_of_operand e1) with
+        | Base v1, Base v2, TLiteral ty -> (
+            match op with
+            | Ge | Gt | Lt | Le ->
+                let op =
+                  match op with
+                  | Ge -> Typed.geq
+                  | Gt -> Typed.gt
+                  | Lt -> Typed.lt
+                  | Le -> Typed.leq
+                  | _ -> assert false
+                in
+                let* v1, v2, ty = cast_checked2 v1 v2 in
+                if Typed.equal_ty ty Typed.t_ptr then
+                  Heap.error `UBPointerComparison state
+                else
+                  let v = op v1 v2 |> Typed.int_of_bool in
+                  Result.ok (Base v, state)
+            | Eq | Ne ->
+                let* v1, v2, _ = cast_checked2 v1 v2 in
+                let++ res = Core.equality_check v1 v2 state in
+                let res = if op = Eq then res else Typed.not_int_bool res in
+                (Base (res :> T.cval Typed.t), state)
+            | Add | Sub | Mul | Div | Rem ->
+                let++ res = Core.eval_lit_binop op ty v1 v2 state in
+                (Base res, state)
+            | CheckedAdd | CheckedSub | CheckedMul ->
+                let++ res = Core.eval_checked_lit_binop op ty v1 v2 state in
+                (res, state)
+            | Cmp ->
+                let* v1, v2, ty = cast_checked2 v1 v2 in
+                if Typed.equal_ty ty Typed.t_ptr then
+                  Heap.error `UBPointerComparison state
+                else
+                  let v = Typed.minus v1 v2 in
+                  let* cmp = Core.cmp_of_int v in
+                  Result.ok (Base cmp, state)
+            | Offset -> not_impl "Offset cannot be used on non-pointer values"
+            | (BitOr | BitAnd | BitXor | Shl | Shr) as bop ->
+                Fmt.kstr not_impl "Unsupported binary operator: %a"
+                  Expressions.pp_binop bop)
+        | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2), _ -> (
+            match op with
+            | Offset ->
+                let* p, meta, v =
+                  match (p1, p2) with
+                  | Ptr (p, meta), Base v | Base v, Ptr (p, meta) ->
+                      return (p, meta, v)
+                  | _ -> not_impl "Invalid operands in offset"
+                in
+                let* v = cast_checked ~ty:Typed.t_int v in
+                let p' = Sptr.offset p v in
+                Result.ok (Ptr (p', meta), state)
+            | _ ->
+                let++ res = Core.eval_ptr_binop op p1 p2 state in
+                (Base res, state))
+        | v1, v2, _ ->
+            Fmt.kstr not_impl
+              "Unsupported values for binary operator (%a): %a / %a"
+              Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
     | NullaryOp (op, ty) -> (
         match op with
         | UbChecks ->
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
                From what I understand: our execution already checks for UB, so we should return
-               true to skip past code that manually does these checks. *)
-            Result.ok (Base (Typed.int_of_bool Typed.v_true), state)
+               false, to say we don't want to do UB checks at runtime. *)
+            Result.ok (Base (Typed.int_of_bool Typed.v_false), state)
         | SizeOf ->
             let layout = Layout.layout_of ty in
             Result.ok (Base (Typed.int layout.size), state)
@@ -471,9 +454,14 @@ module Make (Heap : Heap_intf.S) = struct
         let++ vals, state = eval_operand_list ~crate ~store state vals in
         (Enum (discr, vals), state)
     (* Union aggregate *)
-    | Aggregate (AggregatedAdt (_, None, Some _, _), _) as v ->
-        Fmt.kstr not_impl "Union rvalues not supported: %a"
-          Expressions.pp_rvalue v
+    | Aggregate (AggregatedAdt (_, None, Some field, _), ops) ->
+        let* op =
+          match ops with
+          | [ op ] -> return op
+          | _ -> not_impl "union aggregate with >1 values?"
+        in
+        let++ value, state = eval_operand state op in
+        (Union (field, value), state)
     (* Special case? unit (zero-tuple) *)
     | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
@@ -572,9 +560,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** cond, state = eval_operand ~crate ~store state cond in
         let* cond_int =
           match cond with
-          | Base cond ->
-              of_opt_not_impl ~msg:"Expected an integer assertion"
-                (Typed.cast_checked cond Typed.t_int)
+          | Base cond -> cast_checked cond ~ty:Typed.t_int
           | _ -> not_impl "Expected a base Rust value in assert"
         in
         let cond_bool = Typed.bool_of_int cond_int in
@@ -604,7 +590,7 @@ module Make (Heap : Heap_intf.S) = struct
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~crate ~body store state block
     | Return ->
-        let value_ptr, value_ty = Store.find Expressions.VarId.zero store in
+        let value_ptr, value_ty = Store.find Expressions.LocalId.zero store in
         let* value_ptr =
           match value_ptr with
           | Some x -> return x
@@ -681,13 +667,13 @@ module Make (Heap : Heap_intf.S) = struct
   and exec_fun ~crate ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
-    let** body =
+    let* body =
       match body with
       | None ->
           let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
           Fmt.kstr not_impl "Function %s is opaque"
             (PrintTypes.name_to_string ctx name)
-      | Some body -> Result.ok body
+      | Some body -> return body
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
@@ -707,6 +693,5 @@ module Make (Heap : Heap_intf.S) = struct
       | _ -> None
     in
     let++ (), state = dealloc_store ?protected_address store protected state in
-    (* We model void as zero, it should never be used anyway *)
     (value, state)
 end

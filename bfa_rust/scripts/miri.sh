@@ -12,6 +12,9 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 source $SCRIPT_DIR/common.sh
 
+touch "$SCRIPT_DIR/miri.log"
+LOG_FILE=$SCRIPT_DIR/miri.log
+
 # Tests are in miri/tests/<pass/panic/fail>/<...test>.rs
 MIRI_PATH=$(realpath $SCRIPT_DIR/../../../miri)
 
@@ -134,7 +137,11 @@ for test in $TESTS; do
             echo -e " ${RED}failed${RESET}"
             failed=$((failed+1))
         else
-            echo -e " ${PURPLE}crashed: status code $result${RESET}"
+            if [ $result -eq 3 ]; then
+                echo -e " ${PURPLE}crashed due to Charon${RESET}"
+            else
+                echo -e " ${ORANGE}crashed: status code $result${RESET}"
+            fi
         fi
         if $STOP_ON_FAIL; then
             exit 1

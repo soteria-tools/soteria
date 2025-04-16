@@ -28,9 +28,9 @@ jobs:
         run: |
           brew install make
           cd ..
-          git clone https://github.com/N1ark/charon.git
+          git clone https://github.com/AeneasVerif/charon.git
           cd charon
-          git checkout 24cce6151f166ec540ef3daa24112d0e3ace4aad
+          git checkout f164b4acf7bda7271c3aa0b433a393ad14117aca
           gmake build-dev-charon-rust
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Setup node

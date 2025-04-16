@@ -122,9 +122,7 @@ let load ?is_move (((_, tag) as ptr), meta) ty st =
         | `More (blocks, callback) ->
             L.debug (fun f ->
                 let pp_block ft (ty, ofs) =
-                  Fmt.pf ft "%s [%a] "
-                    (Charon_util.lit_to_string ty)
-                    Typed.ppa ofs
+                  Fmt.pf ft "%a:%a" Typed.ppa ofs Charon_util.pp_ty ty
                 in
                 f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
             let** values, block =
@@ -157,11 +155,9 @@ let store (((_, tag) as ptr), _) ty sval st =
       let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
       L.debug (fun f ->
           let pp_part f ({ value; ty; offset } : Sptr.t Encoder.cval_info) =
-            Fmt.pf f "%a: %s [%a]"
+            Fmt.pf f "%a: %a [%a]"
               (Charon_util.pp_rust_val Sptr.pp)
-              value
-              (Charon_util.lit_to_string ty)
-              Typed.ppa offset
+              value Charon_util.pp_ty ty Typed.ppa offset
           in
           f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_part) parts);
       Result.fold_list parts ~init:((), block)
@@ -205,6 +201,26 @@ let alloc_ty ty st =
       ((ptr, Some (Typed.int len)), st)
   | _ -> (fptr, st)
 
+let alloc_tys tys st =
+  let@ heap = with_heap st in
+  let@ () = with_error_loc_as_call_trace () in
+  SPmap.allocs heap ~els:tys ~fn:(fun ty loc ->
+      (* make treeblock *)
+      let* size = Layout.size_of_s ty in
+      let tb = Tree_borrow.init ~state:Unique () in
+      let block = Freeable.Alive (Tree_block.alloc size, tb) in
+      (* create pointer *)
+      let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
+      let ptr = Typed.Ptr.mk loc 0s in
+      let ptr =
+        match ty with
+        | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
+            let len = Charon_util.int_of_const_generic len in
+            ((ptr, tb.tag), Some (Typed.int len))
+        | _ -> ((ptr, tb.tag), None)
+      in
+      (block, ptr))
+
 let free ((ptr, _), _) ({ heap; _ } as st : t) :
     (unit * t, 'err, serialized list) Result.t =
   let@ () = with_error_loc_as_call_trace () in
@@ -229,9 +245,24 @@ let uninit (ptr, _) ty st =
       let@ block, _ = with_tbs block in
       Tree_block.uninit_range ofs size block)
 
+let zeros (ptr, _) size st =
+  let@ () = with_error_loc_as_call_trace () in
+  let@ () = with_loc_err () in
+  log "zeroes" ptr st;
+  with_ptr ptr st (fun ~ofs block ->
+      let@ block, _ = with_tbs block in
+      Tree_block.zero_range ofs size block)
+
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in
   error err
+
+let lift_err st (symex : ('a, 'e, 'f) Result.t) =
+  let* res = symex in
+  match res with
+  | Error e -> error e st
+  | Ok ok -> Result.ok ok
+  | Missing fix -> Result.miss fix
 
 let store_str_global str ptr ({ globals; _ } as st) =
   let globals = GlobMap.add (String str) ptr globals in

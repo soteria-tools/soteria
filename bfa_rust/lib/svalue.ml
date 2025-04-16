@@ -2,7 +2,7 @@ open Hashcons
 module Var = Bfa_symex.Var
 
 module FloatPrecision = struct
-  type t = F16 | F32 | F64 | F128
+  type t = Charon.Values.float_type = F16 | F32 | F64 | F128
   [@@deriving eq, show { with_path = false }, ord]
 end
 

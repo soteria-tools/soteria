@@ -38,7 +38,6 @@ module Session = struct
               bin = None;
               mir_promoted = false;
               mir_optimized = false;
-              crate_name = None;
               input_file = None;
               read_llbc = None;
               dest_dir = None;
@@ -65,7 +64,6 @@ module Session = struct
               print_built_llbc = false;
               print_llbc = false;
               no_merge_goto_chains = false;
-              only_cargo = false;
             };
           declarations = [];
           type_decls = Types.TypeDeclId.Map.empty;
@@ -137,6 +135,10 @@ let is_fat_ptr : Types.ty -> bool = function
   | TAdt (TBuiltin TSlice, _) | TAdt (TBuiltin TStr, _) -> true
   | _ -> false
 
+let size_to_fit ~size ~align =
+  let ( % ) = Stdlib.( mod ) in
+  if size % align = 0 then size else size + align - (size % align)
+
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
   match ty with
@@ -169,6 +171,9 @@ let rec layout_of (ty : Types.ty) : layout =
       match adt.kind with
       | Struct fields -> layout_of_members @@ field_tys fields
       | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
+      (* fieldless enums with one variant are zero-sized *)
+      | Enum [ { fields = []; _ } ] ->
+          { size = 0; align = 1; members_ofs = [||] }
       | Enum variants ->
           let layouts = List.map of_variant variants in
           List.fold_left
@@ -177,9 +182,21 @@ let rec layout_of (ty : Types.ty) : layout =
       | Opaque ->
           let msg = Fmt.str "Opaque %a " Session.pp_name adt.item_meta.name in
           raise (CantComputeLayout (msg, ty))
-      | TError _ -> raise (CantComputeLayout ("Error", ty))
-      | Alias _ -> raise (CantComputeLayout ("Alias", ty))
-      | Union _ -> raise (CantComputeLayout ("Union", ty)))
+      | Union fs ->
+          let layouts = List.map layout_of @@ Charon_util.field_tys fs in
+          let hd = List.hd layouts in
+          let tl = List.tl layouts in
+          let size, align =
+            List.fold_left
+              (fun (size, align) l -> (max size l.size, max align l.align))
+              (hd.size, hd.align) tl
+          in
+          let size = size_to_fit ~size ~align in
+          (* All fields in the union start at 0 and overlap *)
+          let members_ofs = Array.init (List.length fs) (fun _ -> 0) in
+          { size; align; members_ofs }
+      | TDeclError _ -> raise (CantComputeLayout ("DeclError", ty))
+      | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
   (* Arrays *)
   | TAdt (TBuiltin TArray, generics) ->
       let ty, size =
@@ -196,20 +213,20 @@ let rec layout_of (ty : Types.ty) : layout =
   (* Others (unhandled for now) *)
   | TAdt (TBuiltin TStr, _) -> raise (CantComputeLayout ("String", ty))
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
-  | TTraitType (_, _) -> raise (CantComputeLayout ("Trait type", ty))
+  | TError _ -> raise (CantComputeLayout ("Error", ty))
+  | TTraitType _ -> raise (CantComputeLayout ("Trait type", ty))
   | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
   | TArrow _ -> raise (CantComputeLayout ("Arrow", ty))
 
 and layout_of_members members =
-  let ( % ) = Stdlib.( mod ) in
   let rec aux members_ofs (layout : layout) = function
     | [] -> (List.rev members_ofs, layout)
     | ty :: rest ->
         let { size = curr_size; align = curr_align; _ } = layout in
         let { size; align; _ } = layout_of ty in
-        let mem_ofs = curr_size + ((align - (curr_size % align)) % align) in
+        let mem_ofs = size_to_fit ~size:curr_size ~align in
         let new_size = mem_ofs + size in
-        let new_align = Int.max align curr_align in
+        let new_align = max align curr_align in
         aux (mem_ofs :: members_ofs)
           { size = new_size; align = new_align; members_ofs = [||] }
           rest
@@ -218,7 +235,7 @@ and layout_of_members members =
     aux [] { size = 0; align = 1; members_ofs = [||] } members
   in
   {
-    size = size + ((align - (size % align)) % align);
+    size = size_to_fit ~size ~align;
     align;
     members_ofs = Array.of_list members_ofs;
   }
@@ -232,20 +249,10 @@ and of_variant (variant : Types.variant) =
 and of_enum_variant adt_id variant =
   let adt = Session.get_adt adt_id in
   let variants =
-    match adt with { kind = Enum variants; _ } -> variants | _ -> assert false
+    match adt.kind with Enum variants -> variants | _ -> assert false
   in
-  let variant : Types.variant = Types.VariantId.nth variants variant in
+  let variant = Types.VariantId.nth variants variant in
   of_variant variant
-
-and of_adt_id id =
-  let adt = Session.get_adt id in
-  match adt.kind with
-  | Struct fields -> layout_of_members @@ field_tys fields
-  | Enum _ ->
-      Fmt.failwith
-        "Enum cannot be used in Layout.of_adt_id, use Layout.of_enum_variant \
-         instead"
-  | k -> Fmt.failwith "Unhandled ADT in of_adt_id: %a" Types.pp_type_decl_kind k
 
 let offset_in_array ty idx =
   let sub_layout = layout_of ty in
@@ -255,9 +262,10 @@ let size_of_s ty =
   try
     let { size; _ } = layout_of ty in
     return (Typed.int size)
-  with CantComputeLayout (msg, ty) ->
-    Fmt.kstr Rustsymex.not_impl "Cannot yet compute size of %s:\n%a" msg
-      Types.pp_ty ty
+  with CantComputeLayout (msg, ty') ->
+    Fmt.kstr Rustsymex.not_impl
+      "Cannot yet compute size of %s:@.%a@.Occurred when computing:@.%a" msg
+      Types.pp_ty ty' Types.pp_ty ty
 
 let is_signed : Types.integer_type -> bool = function
   | I128 | I64 | I32 | I16 | I8 | Isize -> true
@@ -288,7 +296,7 @@ let max_value_z : Types.integer_type -> Z.t = function
   | I8 -> Z.pred (Z.shift_left Z.one 7)
   | Isize -> Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
 
-let max_value int_ty = Typed.int_z (max_value_z int_ty)
+let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
 
 let int_constraints ty =
   let min = min_value ty in
@@ -343,13 +351,23 @@ let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
   let constrs = constraints ty in
   Rustsymex.nondet ~constrs rty
 
-let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
+(** [nondet ~extern ~init ty] returns a nondeterministic value for [ty], along
+    with some "state". It receives a function [extern] to get an optional
+    external function that computes the arbitrary value; it tries using it, and
+    otherwise guesses the valid values. [init] is the initial "state", that is
+    modified and returned by [extern]. *)
+let rec nondet ~extern ~init ty : ('a rust_val * 's, 'e, 'm) Result.t =
   let open Rustsymex.Syntax in
-  function
-  | TLiteral lit ->
+  let nondets = nondets ~extern ~init in
+  match (extern ty, ty) with
+  | Some any_fn, _ -> any_fn init
+  | _, Types.TLiteral lit ->
       let+ cval = nondet_literal_ty lit in
-      Base cval
-  | TAdt (TAdtId t_id, _) -> (
+      Bfa_symex.Compo_res.Ok (Base cval, init)
+  | _, TAdt (TTuple, { types; _ }) ->
+      let++ fields, x = nondets types in
+      (Tuple fields, x)
+  | _, TAdt (TAdtId t_id, _) -> (
       let type_decl = Session.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
@@ -363,32 +381,34 @@ let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
           | None -> vanish ()
           | Some variant ->
               let discr = value_of_scalar variant.discriminant in
-              let+ fields =
-                Rustsymex.fold_list variant.fields ~init:[] ~f:(fun fields ty ->
-                    let+ f = nondet ty.field_ty in
-                    f :: fields)
+              let++ fields, x =
+                nondets @@ Charon_util.field_tys variant.fields
               in
-              let fields = List.rev fields in
-              Enum (discr, fields))
+              (Enum (discr, fields), x))
       | Struct fields ->
-          let+ fields =
-            Rustsymex.fold_list fields ~init:[] ~f:(fun fields ty ->
-                let+ f = nondet ty.field_ty in
-                f :: fields)
-          in
-          Struct fields
+          let++ fields, x = nondets @@ Charon_util.field_tys fields in
+          (Struct fields, x)
       | ty ->
           Rustsymex.not_impl
             (Fmt.str "nondet: unsupported type %a" Types.pp_type_decl_kind ty))
-  | TAdt (TTuple, { types; _ }) ->
-      let+ fields =
-        Rustsymex.fold_list types ~init:[] ~f:(fun fields ty ->
-            let+ f = nondet ty in
-            f :: fields)
-      in
-      Tuple fields
-  | ty ->
+  | _, ty ->
       Rustsymex.not_impl (Fmt.str "nondet: unsupported type %a" Types.pp_ty ty)
+
+and nondets ~extern ~init tys =
+  let open Rustsymex.Syntax in
+  let++ vs, x =
+    Result.fold_list (List.rev tys) ~init:([], init) ~f:(fun (fields, x) ty ->
+        let++ f, x = nondet ~extern ~init:x ty in
+        (f :: fields, x))
+  in
+  (List.rev vs, x)
+
+let nondet_pure ty =
+  let open Rustsymex.Syntax in
+  let+ res = nondet ~extern:(fun _ -> None) ~init:() ty in
+  match res with
+  | Ok (x, ()) -> x
+  | _ -> failwith "nondet_pure failed -- this can't happen"
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
   | TInteger _ | TBool | TChar -> 0s
@@ -422,7 +442,38 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option = function
           |> Monad.OptionM.all (fun (f : Types.field) ->
                  zeroed ~null_ptr f.field_ty)
           |> Option.map (fun fs -> Enum (value_of_scalar v.discriminant, fs))
+      | Union fs ->
+          let layouts =
+            List.mapi
+              (fun i (f : Types.field) -> (f.field_ty, i, layout_of f.field_ty))
+              fs
+          in
+          let ty, i, _ =
+            List.fold_left
+              (fun ((_, _, accl) as acc) ((_, _, l) as cur) ->
+                if l.size > accl.size then cur else acc)
+              (List.hd layouts) (List.tl layouts)
+          in
+          let field = Types.FieldId.of_int i in
+          zeroed ~null_ptr ty |> Option.map (fun v -> Union (field, v))
       | k ->
           Fmt.failwith "Unhandled zeroed ADT kind: %a" Types.pp_type_decl_kind k
       )
   | ty -> Fmt.failwith "Unhandled zeroed type: %a" Types.pp_ty ty
+
+let rec is_inhabited : Types.ty -> bool = function
+  | TNever -> false
+  | TAdt (TAdtId id, _) -> (
+      let adt = Session.get_adt id in
+      match adt.kind with
+      | Struct fs -> List.for_all is_inhabited @@ Charon_util.field_tys fs
+      | Union fs -> List.exists is_inhabited @@ Charon_util.field_tys fs
+      | Enum [] -> false
+      | Enum vars ->
+          List.exists
+            (fun (v : Types.variant) ->
+              List.for_all is_inhabited @@ Charon_util.field_tys v.fields)
+            vars
+      | _ -> true)
+  | TAdt (TTuple, { types; _ }) -> List.for_all is_inhabited types
+  | _ -> true
