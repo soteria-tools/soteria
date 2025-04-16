@@ -31,10 +31,10 @@ let generate_summaries_for ~prog (fundef : fundef) =
   Summary.make ~args ~ret ~pre ~post ~pc ()
 
 let generate_all_summaries prog =
-  Initialize_analysis.reinit prog;
+  Initialize_analysis.reinit prog.sigma;
   let order = Call_graph.weak_topological_order (Call_graph.of_prog prog) in
   ListLabels.filter_map order ~f:(fun fid ->
       let open Syntaxes.Option in
-      let+ fundef = Ail_helpers.find_fun_sym ~prog fid in
+      let+ fundef = Ail_helpers.find_fun_def ~prog fid in
       let summaries = generate_summaries_for ~prog fundef in
       (fid, summaries))

@@ -51,6 +51,11 @@ module Seq_ex = struct
     aux seq
 end
 
+module Result_ex = struct
+  let of_opt ~err = function Some v -> Ok v | None -> Error err
+  let get_or ~err = function Ok v -> v | Error e -> err e
+end
+
 module Syntax = struct
   let ( << ) f g x = f (g x)
 end

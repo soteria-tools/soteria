@@ -44,7 +44,7 @@ module Make (Heap : Heap_intf.S) = struct
     | _ -> Fmt.kstr Csymex.not_impl "Not a pointer: %a" Typed.ppa x
 
   type 'err fun_exec =
-    prog:sigma ->
+    prog:linked_program ->
     args:T.cval Typed.t list ->
     state:state ->
     (T.cval Typed.t * state, 'err, Heap.serialized list) Result.t
@@ -242,7 +242,8 @@ module Make (Heap : Heap_intf.S) = struct
         Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
           Fmt_ail.pp_arithop a_op
 
-  let rec resolve_function ~(prog : sigma) fexpr : 'err fun_exec Csymex.t =
+  let rec resolve_function ~(prog : linked_program) fexpr :
+      'err fun_exec Csymex.t =
     let* loc, fname =
       match fexpr with
       | AilSyntax.AnnotatedExpression
@@ -257,10 +258,7 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt_ail.pp_expr fexpr
     in
     let@ () = with_loc ~loc in
-    let fundef_opt =
-      prog.function_definitions
-      |> List.find_opt (fun (id, _) -> Cerb_frontend.Symbol.equal_sym id fname)
-    in
+    let fundef_opt = Ail_helpers.find_fun_def ~prog fname in
     match fundef_opt with
     | Some fundef -> Csymex.return (exec_fun fundef)
     | None -> (
@@ -270,7 +268,7 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "Cannot call external function: %a" Fmt_ail.pp_sym
               fname)
 
-  and eval_expr_list ~(prog : sigma) ~(store : store) (state : state)
+  and eval_expr_list ~(prog : linked_program) ~(store : store) (state : state)
       (el : expr list) =
     let++ vs, state =
       Csymex.Result.fold_list el ~init:([], state) ~f:(fun (acc, state) e ->
@@ -279,8 +277,8 @@ module Make (Heap : Heap_intf.S) = struct
     in
     (List.rev vs, state)
 
-  and eval_expr ~(prog : sigma) ~(store : store) (state : state) (aexpr : expr)
-      =
+  and eval_expr ~(prog : linked_program) ~(store : store) (state : state)
+      (aexpr : expr) =
     let eval_expr = eval_expr ~prog ~store in
     let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
     let@ () = with_loc ~loc in
@@ -302,6 +300,7 @@ module Make (Heap : Heap_intf.S) = struct
         match unwrap_expr e with
         | AilEunary (Indirection, e) -> (* &*e <=> e *) eval_expr state e
         | AilEident id -> (
+            let id = Ail_helpers.resolve_sym ~prog id in
             match Store.find_value id store with
             | Some ptr -> Result.ok ((ptr :> T.cval Typed.t), state)
             | None ->
@@ -376,6 +375,7 @@ module Make (Heap : Heap_intf.S) = struct
         let* lvalue = cast_to_ptr lvalue in
         Heap.load lvalue ty state
     | AilEident id -> (
+        let id = Ail_helpers.resolve_sym ~prog id in
         match Store.find_value id store with
         | Some v ->
             (* A pointer is a value *)
@@ -543,4 +543,47 @@ module Make (Heap : Heap_intf.S) = struct
     (* We model void as zero, it should never be used anyway *)
     let value = Option.value ~default:0s val_opt in
     (value, state)
+
+  let init_prog_state (prog : Ail_tys.linked_program) =
+    (* Produce_zero will be useful when Kayvan allows for knowing when no declaration is given. *)
+    let _produce_zero (ptr : [< T.sptr ] Typed.t) ty (state : Heap.t) =
+      let loc = Typed.Ptr.loc ptr in
+      let offset = Typed.Ptr.ofs ptr in
+      let* len = Layout.size_of_s ty in
+      let serialized : Heap.serialized =
+        {
+          heap = [ (loc, Freeable.Alive [ Tree_block.Zeros { offset; len } ]) ];
+          globs = [];
+        }
+      in
+      let+ state = Heap.produce serialized state in
+      Bfa_symex.Compo_res.ok state
+    in
+    let produce_value (ptr : [< T.sptr ] Typed.t) ty expr (state : Heap.t) =
+      let loc = Typed.Ptr.loc ptr in
+      let offset = Typed.Ptr.ofs ptr in
+      (* I somehow have to support global initialisation urgh.
+       I might be able to extract some of that into interp *)
+      let** v, state = eval_expr ~prog ~store:Store.empty state expr in
+      let serialized : Heap.serialized =
+        {
+          heap =
+            [ (loc, Freeable.Alive [ Tree_block.TypedVal { offset; ty; v } ]) ];
+          globs = [];
+        }
+      in
+      let+ state = Heap.produce serialized state in
+      Bfa_symex.Compo_res.ok state
+    in
+    Csymex.Result.fold_list prog.sigma.object_definitions ~init:Heap.empty
+      ~f:(fun (state : Heap.t) def ->
+        let id, e = def in
+        let* ty =
+          match Ail_helpers.find_obj_decl ~prog id with
+          | None -> Csymex.not_impl "Couldn't find object declaration"
+          | Some (_, _, _, ty) -> Csymex.return ty
+        in
+        (* TODO: handle other parameters here *)
+        let* ptr, state = Heap.get_global id state in
+        produce_value ptr ty e state)
 end
