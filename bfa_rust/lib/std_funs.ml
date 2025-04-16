@@ -713,6 +713,19 @@ module M (Heap : Heap_intf.S) = struct
         else Heap.error (`Panic "core::intrinsics::assume") state
     | _ -> failwith "std_assume: invalid arguments"
 
+  let exact_div (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+    match (funsig.inputs, args) with
+    | TLiteral lit :: _, [ Base l; Base r ] ->
+        let* l, r, ty = cast_checked2 l r in
+        let open Typed in
+        let** res = Core.eval_lit_binop Expressions.Div lit l r state in
+        if is_float ty then Result.ok (Base res, state)
+        else
+          if%sat (not (r ==@ 0s)) &&@ (l %@ cast r ==@ 0s) then
+            Result.ok (Base res, state)
+          else Heap.error (`Panic "core::intrinsics::exact_div") state
+    | _ -> failwith "exact_div: invalid arguments"
+
   type std_fun =
     (* Kani *)
     | KaniAssert
@@ -731,6 +744,7 @@ module M (Heap : Heap_intf.S) = struct
     | Deref
     | DiscriminantValue
     | Eq of std_bool
+    | ExactDiv
     | Index
     | IsNone
     | IsSome
@@ -779,6 +793,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
+      ("core::intrinsics::exact_div", ExactDiv);
       ("core::intrinsics::fabsf64", Abs);
       ("core::intrinsics::fabsf32", Abs);
       ("core::intrinsics::fmaf64", MulAdd);
@@ -853,6 +868,7 @@ module M (Heap : Heap_intf.S) = struct
          | Deref -> deref f.signature
          | DiscriminantValue -> discriminant_value f.signature
          | Eq b -> eq_values ~neg:(b = Neg) f.signature
+         | ExactDiv -> exact_div f.signature
          | Index -> array_index_fn f.signature
          | IsNone -> is_none f.signature
          | IsSome -> is_some f.signature
