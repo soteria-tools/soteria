@@ -40,8 +40,14 @@ jobs:
         with:
           ocaml-compiler: 5.3.0
           dune-cache: true
+      - name: Restore opam cache
+        uses: actions/cache@v4
+        with:
+          path: _opam
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-opam-
       # OCaml build and tests
-      - run: opam update
       - name: setup dependencies
         run: make ocaml-deps
       - name: Build OCaml stuff
@@ -62,6 +68,8 @@ jobs:
           name: ${{ matrix.operating-system }}-package
           path: package
           if-no-files-found: error
+      - name: Opam Cleanup
+        run: opam clean -a -r
 
   test-package:
     strategy:
