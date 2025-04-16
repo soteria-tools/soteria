@@ -610,7 +610,7 @@ module Make (Heap : Heap_intf.S) = struct
           | Some x -> return x
           | None -> Fmt.kstr not_impl "Return value unset, but returned"
         in
-        let++ value, _ = Heap.load value_ptr value_ty state in
+        let++ value, state = Heap.load value_ptr value_ty state in
         (value, store, state)
     | Switch (discr, switch) -> (
         let** discr, state = eval_operand ~crate ~store state discr in
@@ -708,5 +708,13 @@ module Make (Heap : Heap_intf.S) = struct
     in
     let++ (), state = dealloc_store ?protected_address store protected state in
     (* We model void as zero, it should never be used anyway *)
+    (value, state)
+
+  (* re-define this for the export, nowhere else: *)
+  let exec_fun ?(leak_check = false) ~crate ~args ~state fundef =
+    let** value, state = exec_fun ~crate ~args ~state fundef in
+    let++ (), state =
+      if leak_check then Heap.leak_check state else Result.ok ((), state)
+    in
     (value, state)
 end
