@@ -12,6 +12,9 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 source $SCRIPT_DIR/common.sh
 
+touch "$SCRIPT_DIR/miri.log"
+LOG_FILE=$SCRIPT_DIR/miri.log
+
 # Tests are in miri/tests/<pass/panic/fail>/<...test>.rs
 MIRI_PATH=$(realpath $SCRIPT_DIR/../../../miri)
 
