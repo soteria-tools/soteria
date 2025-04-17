@@ -2,7 +2,7 @@
 # Script to run all Kani tests using SOTERIA Rust.
 #
 # Requirement: the https://github.com/model-checking/kani repository must be cloned
-#              as a sibling directory to the soteria-ocaml repository.
+#              as a sibling directory to the soteria repository.
 #
 # Behaviour: runs tests, one by one. Stops on the first failure.
 #

@@ -1,7 +1,7 @@
 {
   "ocaml.sandbox": {
     "kind": "opam",
-    "switch": "${workspaceFolder:soteria-ocaml}"
+    "switch": "${workspaceFolder:soteria}"
   },
   "makefile.configureOnOpen": false,
 }

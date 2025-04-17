@@ -5,7 +5,7 @@
 set -ex
 
 # Variables
-REPO="soteria-tools/soteria-ocaml"
+REPO="soteria-tools/soteria"
 source secrets.env
 ARTIFACTS=("macos-latest-package" "macos-13-package")
 
