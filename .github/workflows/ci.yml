@@ -32,7 +32,7 @@ jobs:
         uses: actions/cache@v4
         id: restore-charon-cache
         with:
-          path: charon-bins
+          path: charon-bin
           key: ${{ runner.os }}-${{ runner.arch }}-charon-$CHARON_COMMIT_HASH
       - name: Install charon if not cached
         run: |
