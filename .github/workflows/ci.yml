@@ -45,10 +45,10 @@ jobs:
           git fetch --depth=1 origin $CHARON_COMMIT_HASH
           git checkout $CHARON_COMMIT_HASH
           gmake build-dev-charon-rust
-          cp -r bin ../soteria/charon-bins
+          cp -r bin ../soteria/charon-bin
         if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
       - name: Add Charon to path
-        run: echo "$PWD/charon-bins/bin" >> $GITHUB_PATH
+        run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
       - name: Setup node
         uses: actions/setup-node@v4
         with:
