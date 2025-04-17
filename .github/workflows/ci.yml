@@ -35,6 +35,8 @@ jobs:
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Setup node
         uses: actions/setup-node@v4
+        with:
+          cache: 'yarn'
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:

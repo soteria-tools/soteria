@@ -77,7 +77,7 @@ let install storage_path =
   let ( / ) = Filename.concat in
   let options =
     ProgressOptions.create ~location:(`ProgressLocation Notification)
-      ~title:"Installing SOTERIA" ~cancellable:false ()
+      ~title:"Installing Soteria" ~cancellable:false ()
   in
   Window.withProgress
     (module Interop.Js.Result (Interop.Js.Unit) (Interop.Js.Unit))
@@ -111,11 +111,11 @@ let install storage_path =
       | Ok () ->
           let+ success = check_version (storage_path / "installed") in
           if success then (
-            show_message `Info "SOTERIA was successfuly installed";
+            show_message `Info "Soteria was successfuly installed";
             Ok ())
           else (
             show_message `Error
-              "Something went wrong, failed to install SOTERIA";
+              "Something went wrong, failed to install Soteria";
             Error ())
       | Error msg ->
           show_message `Error "%s" msg;

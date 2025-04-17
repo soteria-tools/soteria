@@ -1,6 +1,6 @@
 {
   "name": "soteria-vscode",
-  "description": "VSCode extension for SOTERIA",
+  "description": "VSCode extension for Soteria",
   "author": "Sacha-Élie Ayoun",
   "license": "BSD-3-Clause",
   "version": "0.0.1",
@@ -25,24 +25,24 @@
     "commands": [
       {
         "command": "soteria.server.restart",
-        "category": "SOTERIA",
+        "category": "Soteria",
         "title": "Restart server"
       },
       {
         "command": "soteria.server.toggleDebugMode",
-        "category": "SOTERIA",
+        "category": "Soteria",
         "title": "Toggle debug mode"
       }
     ],
     "configuration": {
-      "title": "SOTERIA for C",
+      "title": "Soteria for C",
       "properties": {
         "soteria.server.kind": {
           "type": "object",
           "default": {
             "kind": "auto"
           },
-          "description": "Kind of SOTERIA server: either shell, or auto (where the server is fetched and installed on the user's side)"
+          "description": "Kind of Soteria server: either shell, or auto (where the server is fetched and installed on the user's side)"
         },
         "soteria.server.debug": {
           "type": "boolean",
@@ -57,7 +57,6 @@
     "vscode-languageclient": "^9.0.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.3",
     "@tsconfig/node22": "^22.0.0",
     "@tsconfig/strictest": "^2.0.5",
     "@types/vscode": "^1.75.1",

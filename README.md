@@ -19,22 +19,22 @@ You can make sure that everything is working properly by running the test suite:
 dune test
 ```
 
-# soteria-c (working name)
+# Soteria-c (working name)
 
-SOTERIA-C is an automatic in-IDE bug finder for C programs. It is in heavy development.
+Soteria-C is an automatic in-IDE bug finder for C programs. It is in heavy development.
 
 It can currently be tested on standalone files by opening this project in VSCode.
 To do so, open the `Run and Debug` tab of the sidebar, select the "Launch (Local)" configuration and click the "play" button.
 
 # Rusteria (soteria-rust)
 
-SOTERIA-Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
+Soteria-Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
 
 It can run standalone files, symbolically executing the `main` function, or any function with the attribute `#[kani::proof]`. You must have [Charon](https://github.com/AeneasVerif/charon) built and on your path -- to do so, clone Charon and run `make build-dev-charon-rust` and add `charon/bin` to your path. Once this is done, simply run:
 ```sh
 soteria-rust exec-main <file>
 ```
 
-To test Rusteria on the Kani test suite, clone [Kani](https://github.com/model-checking/kani) next to `soteria-ocaml`, and run `soteria-rust/scripts/kani.sh`. Run `soteria-rust/scripts/kani.sh --help` to see all available arguments.
+To test Rusteria on the Kani test suite, clone [Kani](https://github.com/model-checking/kani) next to `soteria`, and run `soteria-rust/scripts/kani.sh`. Run `soteria-rust/scripts/kani.sh --help` to see all available arguments.
 
-You can also test Rusteria on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `soteria-ocaml` and run `soteria-rust/scripts/miri.sh`.
+You can also test Rusteria on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `soteria` and run `soteria-rust/scripts/miri.sh`.
