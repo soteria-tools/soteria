@@ -6,7 +6,7 @@ set err_counter 0
 
 rm -rf json_dump
 mkdir -p json_dump
-opam exec -- dune exec -- soteria-c gen-summaries \
+OCAML_LANDMARKS=on opam exec -- dune exec --instrument-with landmarks -- soteria-c gen-summaries \
        ../Collections-C/src/cc_array.c ../Collections-C/src/cc_common.c \
        ../Collections-C/src/cc_deque.c ../Collections-C/src/cc_hashset.c \
        ../Collections-C/src/cc_list.c \
