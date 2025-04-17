@@ -15,9 +15,6 @@
   zarith
   hashcons
   simple_smt
-  linol
-  linol-eio
-  eio_main
   printbox-text
   charon
   dune-site)

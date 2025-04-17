@@ -23,8 +23,8 @@
 
 (package
  (name soteria)
- (synopsis "Bugs for All!")
- (description "Bugs for All!")
+ (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools.")
+ (description "Soteria is a toolkit for writing symbolic bug-finding tools.")
  (depends
   (ocaml
    (>= 5.3.0))
@@ -53,8 +53,8 @@
 
 (package
  (name soteria-c)
- (synopsis "Bugs for All, for C.")
- (description "Bugs for All, for C.")
+ (synopsis "A C bug-finder based on Soteria.")
+ (description "A C bug-finder based on Soteria.")
  (depends
   (ocaml
    (>= 5.3.0))
@@ -88,8 +88,8 @@
 (package
  (name soteria-vscode)
  (allow_empty)
- (synopsis "VSCode extension for SOTERIA")
- (description "VSCode extension for SOTERIA")
+ (synopsis "VSCode extension for Soteria-C")
+ (description "VSCode extension for Soteria-C")
  (depends
   (ocaml
    (>= 5.3.0))
@@ -112,15 +112,14 @@
 
 (package
  (name soteria-rust)
- (synopsis "Bugs for All, for Rust.")
- (description "Bugs for All, for Rust.")
+ (synopsis "Rust symbolic execution tool based on Soteria.")
+ (description "Rust symbolic execution tool based on Soteria.")
  (sites
   (share kani_lib))
  (depends
   (ocaml
    (>= 5.3.0))
   (shexp :build)
-  eio_main
   soteria
   dune-site
   zarith
@@ -133,10 +132,6 @@
   unionFind
   name_matcher_parser
   charon
-  (linol
-   (>= 0.8))
-  (linol-eio
-   (>= 0.8))
   (odoc :with-doc)
   (alcotest :with-test)
   (dune
