@@ -1,0 +1,31 @@
+(include_subdirs qualified)
+
+(library
+ (package soteria-c)
+ (name soteria_c_lib)
+ (libraries
+  soteria.std
+  soteria.soteria_symex
+  cmdliner
+  fmt
+  logs
+  logs.fmt
+  fmt.tty
+  iter
+  cerberus-lib.c_parser
+  cerberus-lib.mem.concrete
+  cerberus-lib.backend_common
+  zarith
+  hashcons
+  simple_smt
+  linol
+  linol-eio
+  eio_main
+  yojson
+  printbox-text
+  tsort)
+ (flags :standard -open Soteria_std)
+ (preprocess
+  (pps ppx_deriving.std ppx_symex))
+ (instrumentation
+  (backend landmarks --auto)))

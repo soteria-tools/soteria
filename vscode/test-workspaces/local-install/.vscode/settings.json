@@ -1,14 +1,14 @@
 {
-  "bfa.server.kind": {
+  "soteria.server.kind": {
     "kind": "shell",
-    "cmd": "../../../_build/install/default/bin/bfa-c",
+    "cmd": "../../../_build/install/default/bin/soteria-c",
     "args": [
       "lsp"
     ],
     "env": {
-      "BFA_Z3_PATH": "/opt/homebrew/bin/z3",
+      "SOTERIA_Z3_PATH": "/opt/homebrew/bin/z3",
       "OPAM_SWITCH_PREFIX": "../../../_opam"
     }
   },
-  "bfa.server.debug": true,
+  "soteria.server.debug": true,
 }

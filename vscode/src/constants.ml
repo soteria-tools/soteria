@@ -1,4 +1,4 @@
-let prefixed key = "bfa." ^ key
+let prefixed key = "soteria." ^ key
 
 module Commands = struct
   let restart_server = prefixed "server.restart"

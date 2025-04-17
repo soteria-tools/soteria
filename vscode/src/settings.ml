@@ -30,7 +30,7 @@ let set ?section setting v =
 
 module Debug = struct
   let default = false
-  let key = "bfa.server.debug"
+  let key = "soteria.server.debug"
 
   let s =
     make ~key ~to_json:Jsonoo.Encode.bool ~of_json:Jsonoo.Decode.bool
@@ -43,7 +43,7 @@ module Server_kind = struct
   type t = Auto | Shell of Install.executable
 
   let default = Auto
-  let key = "bfa.server.kind"
+  let key = "soteria.server.kind"
 
   let of_json json =
     let open Jsonoo.Decode in

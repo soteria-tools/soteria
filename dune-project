@@ -2,7 +2,7 @@
 
 (cram enable)
 
-(name bfa)
+(name soteria)
 
 (using dune_site 0.1)
 
@@ -19,12 +19,12 @@
  "Opale Sjöstedt <opale.sjostedt23@imperial.ac.uk>")
 
 (source
- (github bugs-for-all/bfa))
+ (github soteria-tools/soteria))
 
 (package
- (name bfa)
- (synopsis "Bugs for All!")
- (description "Bugs for All!")
+ (name soteria)
+ (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools.")
+ (description "Soteria is a toolkit for writing symbolic bug-finding tools.")
  (depends
   (ocaml
    (>= 5.3.0))
@@ -52,15 +52,15 @@
   (ocaml-lsp-server :with-dev-detup)))
 
 (package
- (name bfa-c)
- (synopsis "Bugs for All, for C.")
- (description "Bugs for All, for C.")
+ (name soteria-c)
+ (synopsis "A C bug-finder based on Soteria.")
+ (description "A C bug-finder based on Soteria.")
  (depends
   (ocaml
    (>= 5.3.0))
   (shexp :build)
   eio_main
-  bfa
+  soteria
   cerberus-lib
   zarith
   ppx_deriving
@@ -86,10 +86,10 @@
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
- (name bfa-vscode)
+ (name soteria-vscode)
  (allow_empty)
- (synopsis "VSCode extension for BFA")
- (description "VSCode extension for BFA")
+ (synopsis "VSCode extension for Soteria-C")
+ (description "VSCode extension for Soteria-C")
  (depends
   (ocaml
    (>= 5.3.0))
@@ -111,17 +111,16 @@
   vscode-node))
 
 (package
- (name bfa-rust)
- (synopsis "Bugs for All, for Rust.")
- (description "Bugs for All, for Rust.")
+ (name soteria-rust)
+ (synopsis "Rust symbolic execution tool based on Soteria.")
+ (description "Rust symbolic execution tool based on Soteria.")
  (sites
   (share kani_lib))
  (depends
   (ocaml
    (>= 5.3.0))
   (shexp :build)
-  eio_main
-  bfa
+  soteria
   dune-site
   zarith
   ppx_deriving
@@ -133,10 +132,6 @@
   unionFind
   name_matcher_parser
   charon
-  (linol
-   (>= 0.8))
-  (linol-eio
-   (>= 0.8))
   (odoc :with-doc)
   (alcotest :with-test)
   (dune

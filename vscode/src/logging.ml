@@ -1,6 +1,6 @@
 open Vscode
 
-let output_channel = lazy (Window.createOutputChannel ~name:"Bfa-C")
+let output_channel = lazy (Window.createOutputChannel ~name:"Soteria-C")
 
 let log_message kind fmt =
   let kind_s =

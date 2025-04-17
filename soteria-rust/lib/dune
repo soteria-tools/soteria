@@ -1,0 +1,29 @@
+(include_subdirs qualified)
+
+(library
+ (package soteria-rust)
+ (name soteria_rust_lib)
+ (libraries
+  soteria.std
+  soteria.soteria_symex
+  cmdliner
+  fmt
+  logs
+  logs.fmt
+  fmt.tty
+  iter
+  zarith
+  hashcons
+  simple_smt
+  printbox-text
+  charon
+  dune-site)
+ (flags :standard -open Soteria_std)
+ (preprocess
+  (pps ppx_deriving.std ppx_symex))
+ (instrumentation
+  (backend landmarks --auto)))
+
+(generate_sites_module
+ (module runtime_sites)
+ (sites soteria-rust))

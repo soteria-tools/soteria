@@ -1,7 +1,0 @@
-(library
- (name bfa_std)
- (public_name bfa.std)
- (libraries iter fmt tsort)
- (inline_tests)
- (preprocess
-  (pps ppx_inline_test)))

@@ -7,8 +7,8 @@ YARN=yarn
 
 DYLIB_LIST_FILE=packaging/macOS_dylibs.txt
 PACKAGING_BIN=$(DUNE) exec -- packaging/package.exe
-BFA_C_BIN=_build/install/default/bin/bfa-c
-VSCODE_BC_JS=vscode/src/bfa_vscode.bc.js
+SOTERIA_C_BIN=_build/install/default/bin/soteria-c
+VSCODE_BC_JS=vscode/src/soteria_vscode.bc.js
 
 PACKAGE_DIST=package
 VSCODE_DIST=dist
@@ -23,10 +23,10 @@ ocaml-test:
 	$(DUNE) test
 	
 	
-##### Packaging bfa-c #####
+##### Packaging soteria-c #####
 
 # From inside the package folder one can run:
-# BFA_Z3_PATH=./bin/z3 DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main file.c
+# SOTERIA_Z3_PATH=./bin/z3 DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c exec-main file.c
 .PHONY: package
 package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	$(DUNE) build @dylist-file
@@ -37,11 +37,11 @@ package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	
 
 packaging/bin-locations.txt:
-	$(WHICHX) bfa-c > $@
+	$(WHICHX) soteria-c > $@
 	$(WHICHX) z3 >> $@
 
 packaging/macOS_dylibs.txt:
-	$(PACKAGING_BIN) infer-dylibs $(BFA_C_BIN) > $@
+	$(PACKAGING_BIN) infer-dylibs $(SOTERIA_C_BIN) > $@
 
 ##### Switch creation / dependency setup #####
 
@@ -90,4 +90,4 @@ clean:
 	rm -rf $(PACKAGE_DIST)
 	rm -rf $(VSCODE_DIST)
 	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt
-	rm -f bfa-vscode.vsix
+	rm -f soteria-vscode.vsix

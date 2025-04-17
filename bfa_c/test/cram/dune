@@ -1,4 +1,0 @@
-(cram
- (deps
-  ../../bin/bfa_c.exe
-  (glob_files bins/*.exe)))

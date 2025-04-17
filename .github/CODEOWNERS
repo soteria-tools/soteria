@@ -1,5 +1,5 @@
 # Sacha takes precedence unless otherwise specified
 * @giltho
 
-# Opale has control over `bfa_rust`
-bfa_rust/ @N1ark
+# Opale has control over `soteria-rust`
+soteria-rust/ @N1ark
