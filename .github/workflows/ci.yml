@@ -33,7 +33,7 @@ jobs:
         id: restore-charon-cache
         with:
           path: charon-bin
-          key: ${{ runner.os }}-${{ runner.arch }}-charon-$CHARON_COMMIT_HASH
+          key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
       - name: Install charon if not cached
         run: |
           brew install make
