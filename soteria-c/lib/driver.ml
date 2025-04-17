@@ -351,7 +351,9 @@ let generate_summary_for include_args file_name fun_name =
   in
   Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
-let generate_all_summaries log_level dump_unsupported_file includes file_names =
+let generate_all_summaries log_level dump_unsupported_file smt_file includes
+    file_names =
+  Z3solver.set_smt_file smt_file;
   Csymex.unsupported_file := dump_unsupported_file;
   Frontend.add_includes includes;
   setup_console_log log_level;
