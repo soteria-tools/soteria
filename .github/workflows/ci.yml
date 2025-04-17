@@ -84,11 +84,11 @@ jobs:
           name: ${{ matrix.operating-system }}-package
       - name: Add executable permissions
         run: |
-          chmod +x ./bin/bfa-c
+          chmod +x ./bin/soteria-c
           chmod +x ./bin/z3
       - name: Write dummy C file
         run: echo "int main() { return 12; }" > test.c
-      - run: DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/bfa-c exec-main test.c
+      - run: DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c exec-main test.c
         env:
-          BFA_Z3_PATH: ./bin/z3
+          SOTERIA_Z3_PATH: ./bin/z3
           CERB_INSTALL_PREFIX: .

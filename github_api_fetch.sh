@@ -5,7 +5,7 @@
 set -ex
 
 # Variables
-REPO="bugs-for-all/bfa-ocaml"
+REPO="soteria-tools/soteria-ocaml"
 source secrets.env
 ARTIFACTS=("macos-latest-package" "macos-13-package")
 

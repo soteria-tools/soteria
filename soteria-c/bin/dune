@@ -1,0 +1,5 @@
+(executable
+ (package soteria-c)
+ (public_name soteria-c)
+ (name soteria_c)
+ (libraries soteria_c_lib logs.cli))

@@ -1,5 +1,5 @@
 (executable
- (name bfa_vscode)
+ (name soteria_vscode)
  (libraries
   js_of_ocaml
   vscode

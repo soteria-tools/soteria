@@ -1,16 +1,16 @@
 {
-  "name": "bfa-vscode",
-  "description": "VSCode extension for BFA",
+  "name": "soteria-vscode",
+  "description": "VSCode extension for SOTERIA",
   "author": "Sacha-Élie Ayoun",
   "license": "BSD-3-Clause",
   "version": "0.0.1",
   "publisher": "giltho",
   "repository": {
     "type": "git",
-    "url": "https://github.com/bugs-for-all/bfa"
+    "url": "https://github.com/soteria-tools/soteria"
   },
   "type": "commonjs",
-  "main": "./dist/bfa_vscode.bc.js",
+  "main": "./dist/soteria_vscode.bc.js",
   "files": [
     "dist",
     "LICENSE"
@@ -24,27 +24,27 @@
   "contributes": {
     "commands": [
       {
-        "command": "bfa.server.restart",
-        "category": "BFA",
+        "command": "soteria.server.restart",
+        "category": "SOTERIA",
         "title": "Restart server"
       },
       {
-        "command": "bfa.server.toggleDebugMode",
-        "category": "BFA",
+        "command": "soteria.server.toggleDebugMode",
+        "category": "SOTERIA",
         "title": "Toggle debug mode"
       }
     ],
     "configuration": {
-      "title": "BFA for C",
+      "title": "SOTERIA for C",
       "properties": {
-        "bfa.server.kind": {
+        "soteria.server.kind": {
           "type": "object",
           "default": {
             "kind": "auto"
           },
-          "description": "Kind of BFA server: either shell, or auto (where the server is fetched and installed on the user's side)"
+          "description": "Kind of SOTERIA server: either shell, or auto (where the server is fetched and installed on the user's side)"
         },
-        "bfa.server.debug": {
+        "soteria.server.debug": {
           "type": "boolean",
           "default": false,
           "description": "Whether to run the server in debug mode"
@@ -70,10 +70,10 @@
   "scripts": {
     "compile-all": "make for-local",
     "watch-all": "concurrently --kill-others -c red,blue --names 'ocaml,vscode' 'yarn watch' 'opam exec -- dune build --watch'",
-    "watch": "esbuild _build/default/vscode/src/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --watch",
-    "compile": "esbuild _build/default/vscode/src/bfa_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --minify",
-    "package": "vsce package --out bfa-vscode.vsix --no-dependencies",
-    "install-ext": "code --force --install-extension bfa-vscode.vsix",
+    "watch": "esbuild _build/default/vscode/src/soteria_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --watch",
+    "compile": "esbuild _build/default/vscode/src/soteria_vscode.bc.js --bundle --packages=bundle --external:vscode --outdir=dist --platform=node --target=es2022 --minify",
+    "package": "vsce package --out soteria-vscode.vsix --no-dependencies",
+    "install-ext": "code --force --install-extension soteria-vscode.vsix",
     "test": "vscode-test"
   }
 }

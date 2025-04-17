@@ -44,7 +44,7 @@ let start_server instance =
   let clientOptions = client_options instance in
   let serverOptions = server_options instance in
   let client =
-    LanguageClient.make ~id:"bfa-c" ~name:"Bfa for C" ~serverOptions
+    LanguageClient.make ~id:"soteria-c" ~name:"Soteria for C" ~serverOptions
       ~clientOptions ()
   in
   instance.server := Some client;
@@ -55,7 +55,7 @@ let toggle_debug_mode instance =
   | None -> show_message `Warn "Server is not running"
   | Some server ->
       (* TODO: Put constant in a common library shared between frontend and backend *)
-      LanguageClient.sendNotification server "bfa/toggleDebugMode" Ojs.null
+      LanguageClient.sendNotification server "soteria/toggleDebugMode" Ojs.null
 
 let disposable instance =
   Disposable.make ~dispose:(fun () ->

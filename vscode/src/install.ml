@@ -42,7 +42,7 @@ let executable ?(args = []) installed_path =
     (name, path)
   in
   let z3_path =
-    let name = "BFA_Z3_PATH" in
+    let name = "SOTERIA_Z3_PATH" in
     let path = installed_path / "bin" / "z3" in
     (name, path)
   in
@@ -51,7 +51,7 @@ let executable ?(args = []) installed_path =
     let path = installed_path in
     (name, path)
   in
-  let command = installed_path / "bin" / "bfa-c" in
+  let command = installed_path / "bin" / "soteria-c" in
   let args = "lsp" :: args in
   make_executable ~command ~args
     ~env:[ dyld_lib_path; z3_path; cerb_runtime ]
@@ -77,7 +77,7 @@ let install storage_path =
   let ( / ) = Filename.concat in
   let options =
     ProgressOptions.create ~location:(`ProgressLocation Notification)
-      ~title:"Installing BFA" ~cancellable:false ()
+      ~title:"Installing SOTERIA" ~cancellable:false ()
   in
   Window.withProgress
     (module Interop.Js.Result (Interop.Js.Unit) (Interop.Js.Unit))
@@ -101,7 +101,7 @@ let install storage_path =
         in
         let** () =
           Download_file.make_executable
-            (storage_path / "installed" / "bin" / "bfa-c")
+            (storage_path / "installed" / "bin" / "soteria-c")
         in
         p_report ~progress ~increment:1
           ~message:"Done installing, checking success" ();
@@ -111,10 +111,11 @@ let install storage_path =
       | Ok () ->
           let+ success = check_version (storage_path / "installed") in
           if success then (
-            show_message `Info "BFA was successfuly installed";
+            show_message `Info "SOTERIA was successfuly installed";
             Ok ())
           else (
-            show_message `Error "Something went wrong, failed to install BFA";
+            show_message `Error
+              "Something went wrong, failed to install SOTERIA";
             Error ())
       | Error msg ->
           show_message `Error "%s" msg;

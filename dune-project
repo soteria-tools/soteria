@@ -2,7 +2,7 @@
 
 (cram enable)
 
-(name bfa)
+(name soteria)
 
 (using dune_site 0.1)
 
@@ -19,10 +19,10 @@
  "Opale Sjöstedt <opale.sjostedt23@imperial.ac.uk>")
 
 (source
- (github bugs-for-all/bfa))
+ (github soteria-tools/soteria))
 
 (package
- (name bfa)
+ (name soteria)
  (synopsis "Bugs for All!")
  (description "Bugs for All!")
  (depends
@@ -52,7 +52,7 @@
   (ocaml-lsp-server :with-dev-detup)))
 
 (package
- (name bfa-c)
+ (name soteria-c)
  (synopsis "Bugs for All, for C.")
  (description "Bugs for All, for C.")
  (depends
@@ -60,7 +60,7 @@
    (>= 5.3.0))
   (shexp :build)
   eio_main
-  bfa
+  soteria
   cerberus-lib
   zarith
   ppx_deriving
@@ -86,10 +86,10 @@
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
- (name bfa-vscode)
+ (name soteria-vscode)
  (allow_empty)
- (synopsis "VSCode extension for BFA")
- (description "VSCode extension for BFA")
+ (synopsis "VSCode extension for SOTERIA")
+ (description "VSCode extension for SOTERIA")
  (depends
   (ocaml
    (>= 5.3.0))
@@ -111,7 +111,7 @@
   vscode-node))
 
 (package
- (name bfa-rust)
+ (name soteria-rust)
  (synopsis "Bugs for All, for Rust.")
  (description "Bugs for All, for Rust.")
  (sites
@@ -121,7 +121,7 @@
    (>= 5.3.0))
   (shexp :build)
   eio_main
-  bfa
+  soteria
   dune-site
   zarith
   ppx_deriving
