@@ -1,4 +1,4 @@
-let src = Logs.Src.create "SOTERIA.Symex"
+let src = Logs.Src.create "Soteria.Symex"
 let info m = Logs.info ~src m
 let warn m = Logs.warn ~src m
 let err m = Logs.err ~src m

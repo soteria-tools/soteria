@@ -8,7 +8,7 @@ let should_install ~ask extension =
       if not installed then
         if ask then
           let msg =
-            "SOTERIA is not installed. Do you want to install it now? This \
+            "Soteria is not installed. Do you want to install it now? This \
              will download a binary from the internet."
           in
           let action = ("Install", `NeedInstall) in
@@ -23,7 +23,7 @@ let should_install ~ask extension =
 let with_stop f =
   try f ()
   with StopExtension msg ->
-    show_message `Error "Stopping SOTERIA: %s" msg;
+    show_message `Error "Stopping Soteria: %s" msg;
     Promise.return ()
 
 let install_if_needed extension =

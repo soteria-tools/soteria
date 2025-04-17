@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Script to run all Kani tests using SOTERIA Rust.
+# Script to run all Kani tests using Soteria Rust.
 #
 # Requirement: the https://github.com/model-checking/kani repository must be cloned
 #              as a sibling directory to the soteria repository.
