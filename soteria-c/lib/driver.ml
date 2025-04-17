@@ -333,9 +333,9 @@ let exec_fun_bi file_name fun_name =
         (fun summary -> (summary, Summary.analyse_summary ~prog ~fid summary))
         results
   | Error (`ParsingError s, call_trace) ->
-    Fmt.epr "Failed to parse AIL at loc %a: %s@\n@?" Call_trace.pp call_trace
+      Fmt.epr "Failed to parse AIL at loc %a: %s@\n@?" Call_trace.pp call_trace
         s;
-    Fmt.failwith "Failed to parse AIL"
+      Fmt.failwith "Failed to parse AIL"
   | Error (`LinkError s, _) -> Fmt.failwith "Failed to link AIL: %s" s
 
 (* Entry point function *)
@@ -358,8 +358,9 @@ let generate_all_summaries log_level dump_unsupported_file includes file_names =
   Initialize_analysis.init_once ();
   let prog =
     parse_and_link_ail file_names
-    |> Soteria_std.Utils.Result_ex.get_or ~err:(fun e -> Fmt.epr "%a@\n@?" pp_err e; failwith
-         "Failed to parse AIL")
+    |> Soteria_std.Utils.Result_ex.get_or ~err:(fun e ->
+           Fmt.epr "%a@\n@?" pp_err e;
+           failwith "Failed to parse AIL")
   in
   let results =
     let@ () = with_function_context prog in

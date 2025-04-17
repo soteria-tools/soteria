@@ -1,4 +1,5 @@
 version=0.27.0
+ocaml-version = 5.3
 break-infix=wrap-or-vertical
 doc-comments=before
 infix-precedence=parens
