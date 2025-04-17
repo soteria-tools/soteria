@@ -9,6 +9,10 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+    
+env:
+  CHARON_REPO: https://github.com/AeneasVerif/charon.git
+  CHARON_COMMIT_HASH: f164b4acf7bda7271c3aa0b433a393ad14117aca
 
 jobs:
   build:
@@ -24,15 +28,26 @@ jobs:
         id: z3
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Setup Charon
+      - name: Restore Charon cache
+        uses: actions/cache@v4
+        id: restore-charon-cache
+        with:
+          path: ../charon/bin
+          key: ${{ runner.os }}-${{ runner.arch }}-charon-$CHARON_COMMIT_HASH
+      - name: Install charon if not cached
         run: |
           brew install make
           cd ..
-          git clone https://github.com/AeneasVerif/charon.git
+          mkdir charon
           cd charon
-          git checkout f164b4acf7bda7271c3aa0b433a393ad14117aca
+          git init
+          git remote add origin $CHARON_REPO
+          git fetch --depth=1 origin $CHARON_COMMIT_HASH
+          git checkout $CHARON_COMMIT_HASH
           gmake build-dev-charon-rust
-          echo "$PWD/bin" >> $GITHUB_PATH
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
+      - name: Add Charon to path
+        run: echo "$PWD/../charon/bin" >> $GITHUB_PATH
       - name: Setup node
         uses: actions/setup-node@v4
         with:
