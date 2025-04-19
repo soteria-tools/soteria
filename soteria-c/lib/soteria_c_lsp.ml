@@ -1,3 +1,5 @@
+module Lsp = Linol.Lsp
+
 let cerb_loc_to_range loc =
   let open Lsp.Types in
   let (start_l, start_c), (end_l, end_c) =
