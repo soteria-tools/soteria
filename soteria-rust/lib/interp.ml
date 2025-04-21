@@ -650,7 +650,7 @@ module Make (Heap : Heap_intf.S) = struct
             in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~crate ~body store state block
-        | SwitchInt (_, options, default) -> (
+        | SwitchInt (_, options, default) ->
             L.info (fun g ->
                 let options =
                   List.map
@@ -678,13 +678,9 @@ module Make (Heap : Heap_intf.S) = struct
                       (PrintValues.scalar_value_to_string v)
             in
             let* block = match_on options ~constr:compare_discr in
-            match block with
-            | None ->
-                let block = UllbcAst.BlockId.nth body.body default in
-                exec_block ~crate ~body store state block
-            | Some (_, block) ->
-                let block = UllbcAst.BlockId.nth body.body block in
-                exec_block ~crate ~body store state block))
+            let block = Option.fold ~none:default ~some:snd block in
+            let block = UllbcAst.BlockId.nth body.body block in
+            exec_block ~crate ~body store state block)
     | Abort kind -> (
         match kind with
         | UndefinedBehavior -> Heap.error `UBAbort state
