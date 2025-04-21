@@ -30,13 +30,13 @@ jobs:
           cd ..
           git clone https://github.com/AeneasVerif/charon.git
           cd charon
-          git checkout f164b4acf7bda7271c3aa0b433a393ad14117aca
+          git checkout 28787c6d38cf486ebc753f03b05ecc0a84fd54ef
           gmake build-dev-charon-rust
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          cache: 'yarn'
+          cache: "yarn"
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:

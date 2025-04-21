@@ -64,6 +64,7 @@ module Session = struct
               print_built_llbc = false;
               print_llbc = false;
               no_merge_goto_chains = false;
+              start_from = [];
             };
           declarations = [];
           type_decls = Types.TypeDeclId.Map.empty;
