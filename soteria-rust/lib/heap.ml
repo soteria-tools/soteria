@@ -22,7 +22,23 @@ module SPmap = Pmap_direct_access (struct
   type t = T.sloc Typed.t
 
   let pp = ppa
-  let fresh ?constrs () = Rustsymex.nondet ?constrs Typed.t_loc
+
+  (* let fresh ?constrs () = Rustsymex.nondet ?constrs Typed.t_loc *)
+  let indices = ref 0
+
+  (* We know all keys are distinct, so we avoid the extra assertion *)
+  let distinct _ = Typed.v_true
+
+  (* This *only* works in WPST!!! *)
+  let fresh ?constrs () =
+    incr indices;
+    let idx = !indices in
+    let loc = Ptr.loc_of_int idx in
+    match constrs with
+    | Some constrs ->
+        let+ () = Rustsymex.assume (constrs loc) in
+        loc
+    | None -> return loc
 end)
 
 type global = String of string | Global of Charon.Types.global_decl_id
