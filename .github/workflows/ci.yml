@@ -9,9 +9,9 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
-    
+
 env:
-  CHARON_REPO: https://github.com/AeneasVerif/charon.git
+  CHARON_REPO: AeneasVerif/charon
   CHARON_COMMIT_HASH: f164b4acf7bda7271c3aa0b433a393ad14117aca
 
 jobs:
@@ -26,6 +26,8 @@ jobs:
       - name: Setup Z3
         uses: cda-tum/setup-z3@v1
         id: z3
+      - name: Get Rust toolchain
+        run: curl https://raw.githubusercontent.com/$CHARON_REPO/$CHARON_COMMIT_HASH/charon/rust-toolchain > rust-toolchain
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Restore Charon cache
@@ -41,7 +43,7 @@ jobs:
           mkdir charon
           cd charon
           git init
-          git remote add origin $CHARON_REPO
+          git remote add origin https://github.com/$CHARON_REPO.git
           git fetch --depth=1 origin $CHARON_COMMIT_HASH
           git checkout $CHARON_COMMIT_HASH
           gmake build-dev-charon-rust
