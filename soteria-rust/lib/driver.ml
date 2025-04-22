@@ -54,7 +54,6 @@ let default_cmd ~file_name ~output () =
         Fmt.str "--dest-file %s" output;
         (* We can't enable this because it removes statements we care about... *)
         (* "--mir_optimized"; *)
-        (* We don't care about our implementation *)
         "--translate-all-methods";
         "--extract-opaque-bodies";
         "--monomorphize";
@@ -105,7 +104,7 @@ let mk_kani_cmd ~no_compile () =
       |> Option.get
     with Not_found -> raise (ExecutionError "Couldn't find Kani lib binaries")
   in
-  mk_cmd ~charon:[ "--opaque=kani" ]
+  mk_cmd
     ~rustc:
       [
         "-Zcrate-attr=feature\\(register_tool\\)";

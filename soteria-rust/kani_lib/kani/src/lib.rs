@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+#![feature(f16)]
+#![feature(f128)]
 #![feature(register_tool)]
 #![register_tool(kanitool)]
 
 extern crate self as kani;
 
 pub use kani_macros::*;
-
-pub fn any<T>() -> T {
-    panic!();
-}
 
 #[inline(never)]
 #[kanitool::fn_marker = "assert"]
@@ -19,12 +17,15 @@ pub const fn assert(_cond: bool, _msg: &'static str) {}
 #[kanitool::fn_marker = "assume"]
 pub const fn assume(_cond: bool) {}
 
-pub trait Arbitrary
-where
-    Self: Sized,
-{
-    fn any() -> Self;
-    fn any_array<const MAX_ARRAY_LENGTH: usize>() -> [Self; MAX_ARRAY_LENGTH] {
-        [(); MAX_ARRAY_LENGTH].map(|_| Self::any())
-    }
+#[inline(never)]
+#[kanitool::fn_marker = "nondet"]
+pub const fn nondet<T>() -> T {
+    unreachable!()
+}
+
+mod arbitrary;
+pub use arbitrary::*;
+
+pub fn any<T: Arbitrary>() -> T {
+    T::any()
 }

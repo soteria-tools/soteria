@@ -575,7 +575,7 @@ let iter_values_serialized serialized f =
   List.iter (function TypedVal { v; _ } -> f v | _ -> ()) serialized
 
 let mk_fix_typed offset ty () =
-  let+ v = Layout.nondet_pure ty in
+  let+ v = Layout.nondet ty in
   [ [ TypedVal { offset; ty; v } ] ]
 
 let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
