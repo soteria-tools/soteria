@@ -55,12 +55,8 @@ jobs:
       # Install Rust and Charon
       - name: Get Charon's commit hash
         run: |
-          echo $(opam pin)
-          echo $(opam pin | grep "charon\.")
-          echo $(opam pin | grep "charon\." | sed -E 's/.*#([a-f0-9]{40}).*/\1/')
           HASH=$(opam pin | grep "charon\." | sed -E 's/.*#([a-f0-9]{40}).*/\1/' | head -n 1)
-          echo $HASH
-          echo "CHARON_COMMIT_HASH=$(HASH)" >> $GITHUB_ENV
+          echo "CHARON_COMMIT_HASH=$HASH" >> $GITHUB_ENV
       - name: Get Rust toolchain
         run: curl https://raw.githubusercontent.com/$CHARON_REPO/$CHARON_COMMIT_HASH/charon/rust-toolchain > rust-toolchain
       - name: Setup Rust
