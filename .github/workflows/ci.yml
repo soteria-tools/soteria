@@ -1,5 +1,3 @@
-# This is a basic workflow to help you get started with Actions
-
 name: CI
 
 permissions: read-all
@@ -9,6 +7,11 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+
+# Cancel previous versions of this job that are still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   CHARON_REPO: AeneasVerif/charon
@@ -54,7 +57,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          cache: 'yarn'
+          cache: "yarn"
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:
