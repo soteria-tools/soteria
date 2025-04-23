@@ -100,7 +100,7 @@ module Make (Heap : Heap_intf.S) = struct
         Result.ok (Base (value_of_scalar scalar), state)
     | CLiteral (VBool b) ->
         Result.ok (Base (if b then Typed.one else Typed.zero), state)
-    | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Char.code c)), state)
+    | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Uchar.to_int c)), state)
     | CLiteral (VFloat { float_value; float_ty = F16 }) ->
         Result.ok (Base (Typed.f16 @@ Float.of_string float_value), state)
     | CLiteral (VFloat { float_value; float_ty = F32 }) ->

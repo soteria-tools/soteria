@@ -30,7 +30,7 @@ jobs:
           cd ..
           git clone https://github.com/AeneasVerif/charon.git
           cd charon
-          git checkout 28787c6d38cf486ebc753f03b05ecc0a84fd54ef
+          git checkout 39edf8d415a2b3335457a10905d2e771c01fe890
           gmake build-dev-charon-rust
           echo "$PWD/bin" >> $GITHUB_PATH
       - name: Setup node
