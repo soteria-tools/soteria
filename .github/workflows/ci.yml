@@ -1,5 +1,3 @@
-# This is a basic workflow to help you get started with Actions
-
 name: CI
 
 permissions: read-all
@@ -9,6 +7,15 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:
+
+# Cancel previous versions of this job that are still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHARON_REPO: AeneasVerif/charon
+  CHARON_COMMIT_HASH: 39edf8d415a2b3335457a10905d2e771c01fe890
 
 jobs:
   build:
@@ -22,17 +29,31 @@ jobs:
       - name: Setup Z3
         uses: cda-tum/setup-z3@v1
         id: z3
+      - name: Get Rust toolchain
+        run: curl https://raw.githubusercontent.com/$CHARON_REPO/$CHARON_COMMIT_HASH/charon/rust-toolchain > rust-toolchain
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Setup Charon
+      - name: Restore Charon cache
+        uses: actions/cache@v4
+        id: restore-charon-cache
+        with:
+          path: charon-bin
+          key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
+      - name: Install charon if not cached
         run: |
           brew install make
           cd ..
-          git clone https://github.com/AeneasVerif/charon.git
+          mkdir charon
           cd charon
-          git checkout 39edf8d415a2b3335457a10905d2e771c01fe890
+          git init
+          git remote add origin https://github.com/$CHARON_REPO.git
+          git fetch --depth=1 origin $CHARON_COMMIT_HASH
+          git checkout $CHARON_COMMIT_HASH
           gmake build-dev-charon-rust
-          echo "$PWD/bin" >> $GITHUB_PATH
+          cp -r bin ../soteria/charon-bin
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
+      - name: Add Charon to path
+        run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
       - name: Setup node
         uses: actions/setup-node@v4
         with:
@@ -42,6 +63,7 @@ jobs:
         with:
           ocaml-compiler: 5.3.0
           dune-cache: true
+          opam-pin: false
       - name: Restore opam cache
         uses: actions/cache@v4
         with:
