@@ -1,4 +1,3 @@
-open Utils
 open Charon
 open Typed
 open Typed.Syntax
@@ -26,7 +25,7 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
     failwith "Wrong pair of rust_value and Charon.ty"
   in
   let chain_cvals layout vals types =
-    List_ex.map2i
+    List.map2i
       (fun i value ty ->
         let offset = (Array.get layout.members_ofs i |> Typed.int) +@ offset in
         rust_to_cvals ~offset value ty)

@@ -165,7 +165,7 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
   module Solver = Solver.Mutable_to_in_place (Sol)
 
   module Fuel = struct
-    include Incremental.Make_in_place (struct
+    include Reversible.Make_in_place (struct
       include Fuel_gauge
 
       let default = C.fuel
@@ -179,7 +179,7 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
   module Value = Solver.Value
   module MONAD = Monad.SeqM
 
-  module Symex_state : Incremental.In_place = struct
+  module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
       Solver.backtrack_n n;
       Fuel.backtrack_n n
@@ -343,7 +343,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
   module Solver = Solver.Mutable_to_in_place (Sol)
 
   module Fuel = struct
-    include Incremental.Make_in_place (struct
+    include Reversible.Make_in_place (struct
       include Fuel_gauge
 
       let default = C.fuel
@@ -357,7 +357,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
   module Value = Solver.Value
   module MONAD = Monad.IterM
 
-  module Symex_state : Incremental.In_place = struct
+  module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
       Solver.backtrack_n n;
       Fuel.backtrack_n n

@@ -1,5 +1,5 @@
 (library
- (public_name soteria.soteria_symex)
+ (public_name soteria.symex)
  (name soteria_symex)
  (libraries soteria_std simple_smt fmt logs iter)
  (flags :standard -open Soteria_std)

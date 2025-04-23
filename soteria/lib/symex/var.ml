@@ -28,7 +28,7 @@ end
 module Incr_counter_mut = struct
   type var = int
 
-  include Incremental.Make_mutable (Counter)
+  include Reversible.Make_mutable (Counter)
 
   let get_next = wrap Counter.next
 end

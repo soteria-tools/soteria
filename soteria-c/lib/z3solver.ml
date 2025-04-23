@@ -67,8 +67,7 @@ let z3_solver () =
   in
   { solver with command }
 
-module Save_counter : Soteria_symex.Incremental.Mutable with type t = int ref =
-struct
+module Save_counter : Reversible.Mutable with type t = int ref = struct
   type t = int ref
 
   let init () = ref 0
@@ -232,14 +231,14 @@ let declare_v v_id ty =
   let v = Svalue.Var.to_string v_id in
   declare v (sort_of_ty (Typed.untype_type ty))
 
-let memo_encode_value_tbl : sexp Utils.Hint.t = Utils.Hint.create 1023
+let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 
 let memoz table f v =
-  match Utils.Hint.find_opt table v.Hashcons.tag with
+  match Hashtbl.Hint.find_opt table v.Hashcons.tag with
   | Some k -> k
   | None ->
       let k = f v in
-      Utils.Hint.add table v.Hashcons.tag k;
+      Hashtbl.Hint.add table v.Hashcons.tag k;
       k
 
 let rec encode_value (v : Svalue.t) =

@@ -2,7 +2,6 @@ open Rustsymex
 open Rustsymex.Syntax
 open Typed.Infix
 open Typed.Syntax
-module Utils_ = Utils
 open Charon
 open Charon_util
 module T = Typed.T

@@ -1,4 +1,3 @@
-module Utils_ = Utils
 open Charon
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 open Soteria_symex.Compo_res

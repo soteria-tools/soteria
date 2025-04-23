@@ -554,7 +554,7 @@ module Make (State : State_intf.S) = struct
     L.info (fun m ->
         m "Executing function %s" (Cerb_frontend.Pp_symbol.to_string name));
     let* ptys = get_param_tys ~prog name in
-    let ps = Utils.List_ex.combine3 params ptys args in
+    let ps = List.combine3 params ptys args in
     (* TODO: Introduce a with_stack_allocation.
            That would require some kind of continutation passing for executing a bunch of statements. *)
     let** store, state = alloc_params ps state in
