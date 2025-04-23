@@ -15,7 +15,6 @@ concurrency:
 
 env:
   CHARON_REPO: AeneasVerif/charon
-  CHARON_COMMIT_HASH: 39edf8d415a2b3335457a10905d2e771c01fe890
 
 jobs:
   build:
@@ -24,11 +23,40 @@ jobs:
         operating-system: [macos-latest, macos-13]
     runs-on: ${{ matrix.operating-system }}
     steps:
-      # Setup steps: checkout, z3, node, ocaml
+      # Setup steps: checkout, z3, node, ocaml and opam
       - uses: actions/checkout@v4
       - name: Setup Z3
         uses: cda-tum/setup-z3@v1
         id: z3
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          cache: "yarn"
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.3.0
+          dune-cache: true
+          opam-pin: false
+      - name: Restore opam cache
+        uses: actions/cache@v4
+        with:
+          path: _opam
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-opam-
+
+      # OCaml build
+      - name: setup dependencies
+        run: make ocaml-deps
+      - name: Build OCaml stuff
+        run: make ocaml
+
+      # Install Rust and Charon
+      - name: Get Charon's commit hash
+        run: |
+          HASH=$(opam pin | grep "charon\." | sed -E 's/.*#([a-f0-9]{40}).*/\1/' | head -n 1)
+          echo "CHARON_COMMIT_HASH=$(HASH)" >> $GITHUB_ENV
       - name: Get Rust toolchain
         run: curl https://raw.githubusercontent.com/$CHARON_REPO/$CHARON_COMMIT_HASH/charon/rust-toolchain > rust-toolchain
       - name: Setup Rust
@@ -54,35 +82,17 @@ jobs:
         if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
       - name: Add Charon to path
         run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          cache: "yarn"
-      - name: Setup OCaml
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: 5.3.0
-          dune-cache: true
-          opam-pin: false
-      - name: Restore opam cache
-        uses: actions/cache@v4
-        with:
-          path: _opam
-          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ hashFiles('*.opam') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-opam-
-      # OCaml build and tests
-      - name: setup dependencies
-        run: make ocaml-deps
-      - name: Build OCaml stuff
-        run: make ocaml
-      - name: test
+
+      # Run tests
+      - name: Test
         run: Make ocaml-test
+
       # Building js stuff
       - name: Install JS dependencies
         run: yarn install
       - name: Build JS stuff
         run: yarn compile
+
       # Packaging OCaml distribution and sending it as artifact
       - name: OCaml zip file creation
         run: make package
