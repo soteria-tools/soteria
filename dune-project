@@ -101,7 +101,7 @@
   (ocamlformat
    (and
     :with-dev-detup
-    (= 0.26.2)))
+    (= 0.27.0)))
   js_of_ocaml
   js_of_ocaml-ppx
   ppx_deriving

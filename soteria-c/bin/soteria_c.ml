@@ -85,8 +85,9 @@ module Generate_summaries = struct
       const Soteria_c_lib.Driver.generate_all_summaries
       $ Logs_cli.level ()
       $ dump_unsupported_arg
+      $ dump_smt_arg
       $ includes_arg
-      $ file_arg)
+      $ files_arg)
 
   let cmd = Cmd.v (Cmd.info "gen-summaries") term
 end
