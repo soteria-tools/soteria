@@ -27,7 +27,7 @@ module Incr_counter_mut : sig
   type var = t
   type t
 
-  include Incremental.Mutable with type t := t
+  include Reversible.Mutable with type t := t
 
   val get_next : t -> var
 end

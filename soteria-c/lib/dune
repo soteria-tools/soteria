@@ -5,7 +5,7 @@
  (name soteria_c_lib)
  (libraries
   soteria.std
-  soteria.soteria_symex
+  soteria.symex
   cmdliner
   fmt
   logs

@@ -81,8 +81,7 @@ let z3_solver () =
   in
   { solver with command }
 
-module Save_counter : Soteria_symex.Incremental.Mutable with type t = int ref =
-struct
+module Save_counter : Reversible.Mutable with type t = int ref = struct
   type t = int ref
 
   let init () = ref 0
