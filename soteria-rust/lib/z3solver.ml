@@ -90,6 +90,53 @@ module Save_counter : Reversible.Mutable with type t = int ref = struct
   let backtrack_n t n = t := !t - n
 end
 
+module Solver_queue = struct
+  (* array of: (queued expressions * dirty flag)
+     the dirty flag indicates whether a pop command must be sent when backtracking *)
+  type t = (sexp Dynarray.t * bool ref) Dynarray.t
+
+  let mk_leaf () = Dynarray.make 1 (Simple_smt.push 1)
+
+  let init () =
+    let t = Dynarray.create () in
+    Dynarray.add_last t (mk_leaf (), ref false);
+    t
+
+  let reset ~ack_command t =
+    let to_pop =
+      Dynarray.fold_left
+        (fun acc (_, dirty) -> if !dirty then succ acc else acc)
+        0 t
+    in
+    if to_pop > 0 then ack_command (Simple_smt.pop to_pop);
+    Dynarray.clear t;
+    Dynarray.add_last t (mk_leaf (), ref false)
+
+  let save t = Dynarray.add_last t (mk_leaf (), ref false)
+
+  let rec backtrack_n ~ack_command t n =
+    match Dynarray.find_last t with
+    | None -> failwith "queue: empty array"
+    | Some (_, dirty) ->
+        if !dirty then ack_command (Simple_smt.pop 1);
+        Dynarray.remove_last t;
+        if n > 1 then backtrack_n ~ack_command t (n - 1)
+
+  let queue t sexp =
+    match Dynarray.find_last t with
+    | None -> failwith "queue: empty array"
+    | Some (last, _) -> Dynarray.add_last last sexp
+
+  let flush t f =
+    Dynarray.iter
+      (fun (queue, dirty) ->
+        if not (Dynarray.is_empty queue) then (
+          Dynarray.iter f queue;
+          Dynarray.clear queue;
+          dirty := true))
+      t
+end
+
 module Solver_state = struct
   type t = Typed.sbool Typed.t Dynarray.t Dynarray.t
 
@@ -138,28 +185,46 @@ module Solver_state = struct
 end
 
 type t = {
-  z3_solver : Simple_smt.solver;
+  z3_solver : Simple_smt.solver option ref;
+  sexp_queue : Solver_queue.t;
   save_counter : Save_counter.t;
   var_counter : Var.Incr_counter_mut.t;
   state : Solver_state.t;
 }
 
-let initialize_solver : (Simple_smt.solver -> unit) ref = ref (fun _ -> ())
+let initial_solver_state : sexp list ref = ref []
 
-let register_solver_init f =
-  let old = !initialize_solver in
-  let f' solver =
-    old solver;
-    f solver
-  in
-  initialize_solver := f'
+let register_solver_init exps =
+  initial_solver_state := !initial_solver_state @ exps
+
+let z3_of t =
+  match !(t.z3_solver) with
+  | Some z3 -> z3
+  | None ->
+      let z3 = z3_solver () in
+      List.iter (ack_command z3) !initial_solver_state;
+      t.z3_solver := Some z3;
+      z3
+
+let flush_queue solver =
+  Solver_queue.flush solver.sexp_queue (fun e -> ack_command (z3_of solver) e)
+
+let raw_ack solver sexp = ack_command (z3_of solver) sexp
+
+let ack_command solver sexp =
+  flush_queue solver;
+  ack_command (z3_of solver) sexp
+
+let queue_command solver sexp = Solver_queue.queue solver.sexp_queue sexp
+
+let check solver =
+  flush_queue solver;
+  check (z3_of solver)
 
 let init () =
-  let z3_solver = z3_solver () in
-  !initialize_solver z3_solver;
-  ack_command z3_solver (Simple_smt.push 1);
   {
-    z3_solver;
+    z3_solver = ref None;
+    sexp_queue = Solver_queue.init ();
     save_counter = Save_counter.init ();
     var_counter = Var.Incr_counter_mut.init ();
     state = Solver_state.init ();
@@ -168,7 +233,6 @@ let init () =
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
 let is_constr constr = list [ atom "_"; atom "is"; atom constr ]
-let ack_command solver sexp = ack_command solver sexp
 let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts
@@ -182,7 +246,7 @@ let t_ptr, mk_ptr, get_loc, get_ofs =
     Simple_smt.(
       declare_datatype ptr [] [ (mk_ptr, [ (loc, t_int); (ofs, t_int) ]) ])
   in
-  register_solver_init (fun solver -> ack_command solver cmd);
+  register_solver_init [ cmd ];
   ( atom ptr,
     (fun l o -> atom mk_ptr $$ [ l; o ]),
     (fun p -> atom loc $$ [ p ]),
@@ -198,7 +262,7 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
       declare_datatype opt [ "P" ]
         [ (mk_some, [ (opt_unwrap, atom "P") ]); (none, []) ])
   in
-  register_solver_init (fun solver -> ack_command solver cmd);
+  register_solver_init [ cmd ];
   ( atom opt,
     (fun v -> atom mk_some $ v),
     (fun v -> atom opt_unwrap $ v),
@@ -206,19 +270,21 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
     (fun v -> is_constr mk_some $ v),
     fun v -> is_constr none $ v )
 
+let () = register_solver_init [ Simple_smt.push 1 ]
+
 (********* End of solver declarations *********)
 
 let save solver =
   Var.Incr_counter_mut.save solver.var_counter;
   Save_counter.save solver.save_counter;
   Solver_state.save solver.state;
-  ack_command solver.z3_solver (Simple_smt.push 1)
+  Solver_queue.save solver.sexp_queue
 
 let backtrack_n solver n =
   Var.Incr_counter_mut.backtrack_n solver.var_counter n;
   Solver_state.backtrack_n solver.state n;
   Save_counter.backtrack_n solver.save_counter n;
-  ack_command solver.z3_solver (Simple_smt.pop n)
+  Solver_queue.backtrack_n solver.sexp_queue n ~ack_command:(raw_ack solver)
 
 (* Initialise and reset *)
 
@@ -229,9 +295,7 @@ let reset solver =
   Save_counter.reset solver.save_counter;
   Var.Incr_counter_mut.reset solver.var_counter;
   Solver_state.reset solver.state;
-  ack_command solver.z3_solver (Simple_smt.pop (save_counter + 1));
-  (* Make sure the basic definitions are saved again *)
-  ack_command solver.z3_solver (Simple_smt.push 1)
+  Solver_queue.reset solver.sexp_queue ~ack_command:(raw_ack solver)
 
 let rec sort_of_ty = function
   | Svalue.TBool -> Simple_smt.t_bool
@@ -329,7 +393,7 @@ and encode_value_memo v = (memoz memo_encode_value_tbl encode_value) v
 let fresh_var solver ty =
   let v_id = Var.Incr_counter_mut.get_next solver.var_counter in
   let c = declare_v v_id ty in
-  ack_command solver.z3_solver c;
+  queue_command solver c;
   v_id
 
 let fresh solver ty =
@@ -367,7 +431,7 @@ let add_constraints solver ?(simplified = false) vs =
   iter @@ fun v ->
   let v = if simplified then v else simplify solver v in
   Solver_state.add_constraint solver.state v;
-  ack_command solver.z3_solver @@ assume @@ encode_value @@ Typed.untyped v
+  queue_command solver @@ assume @@ encode_value @@ Typed.untyped v
 
 let as_bool = Typed.as_bool
 
@@ -378,7 +442,7 @@ let sat solver =
   | Some false -> false
   | None -> (
       let answer =
-        try check solver.z3_solver
+        try check solver
         with Simple_smt.UnexpectedSolverResponse s ->
           Logs.err ~src:log_src (fun m ->
               m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
