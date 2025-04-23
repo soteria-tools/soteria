@@ -4,7 +4,7 @@ Test memory leaks
                                     Triggering memory operation)]]
   [1]
 
-Test reading the max char, and then incrementing it (invalid)
+Test reading the max and min chars (used to crash Charon-ML)
   $ soteria-rust exec-main char_min_max.rs --clean
   Done. - Ran 1 branches
   PC: empty
