@@ -54,7 +54,6 @@ let default_cmd ~file_name ~output () =
         Fmt.str "--dest-file %s" output;
         (* We can't enable this because it removes statements we care about... *)
         (* "--mir_optimized"; *)
-        (* We don't care about our implementation *)
         "--translate-all-methods";
         "--extract-opaque-bodies";
         "--monomorphize";
@@ -105,7 +104,7 @@ let mk_kani_cmd ~no_compile () =
       |> Option.get
     with Not_found -> raise (ExecutionError "Couldn't find Kani lib binaries")
   in
-  mk_cmd ~charon:[ "--opaque=kani" ]
+  mk_cmd
     ~rustc:
       [
         "-Zcrate-attr=feature\\(register_tool\\)";
@@ -257,7 +256,10 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
         let open Fmt in
         let n = List.length res in
         let pp_pc ft pc = pf ft "%a" (list ~sep:(any " /\\@, ") Typed.ppa) pc in
-        let pp_info ft pc = pf ft "PC: @.  @[<-1>%a@]" pp_pc pc in
+        let pp_info ft pc =
+          if List.is_empty pc then pf ft "PC: empty"
+          else pf ft "PC: @.  @[<-1>%a@]" pp_pc pc
+        in
         Fmt.pr "Done. - Ran %i branches\n%a\n" n
           (list ~sep:(any "@\n@\n") pp_info)
           res;

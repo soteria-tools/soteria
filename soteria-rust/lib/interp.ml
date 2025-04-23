@@ -33,16 +33,32 @@ module Make (Heap : Heap_intf.S) = struct
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
+    (* create a store with all types *)
+    let store =
+      List.fold_left
+        (fun st (local : GAst.local) ->
+          Store.add local.index (None, local.var_ty) st)
+        Store.empty locals.locals
+    in
+    (* allocate arguments and return value, updating store *)
+    let alloc_locs = List.take (1 + locals.arg_count) locals.locals in
     let tys =
-      List.map (fun ({ var_ty; _ } : GAst.local) -> var_ty) locals.locals
+      List.map (fun ({ var_ty; _ } : GAst.local) -> var_ty) alloc_locs
     in
     let** ptrs, st = Heap.alloc_tys tys st in
-    let tys_ptrs = List.combine locals.locals ptrs in
-    Rustsymex.Result.fold_list tys_ptrs ~init:(Store.empty, [], st)
-      ~f:(fun (store, protected, st) ({ index; var_ty = ty; _ }, ptr) ->
-        let store = Store.add index (Some ptr, ty) store in
-        let index = Expressions.LocalId.to_int index in
-        if 0 < index && index <= locals.arg_count then
+    let tys_ptrs = List.combine alloc_locs ptrs in
+    let store =
+      List.fold_left
+        (fun store ((local : GAst.local), ptr) ->
+          Store.add local.index (Some ptr, local.var_ty) store)
+        store tys_ptrs
+    in
+    (* store values for the arguments *)
+    let tys_ptrs = List.tl tys_ptrs in
+    let++ protected, st =
+      Result.fold_list tys_ptrs ~init:([], st)
+        ~f:(fun (protected, st) ({ index; var_ty = ty; _ }, ptr) ->
+          let index = Expressions.LocalId.to_int index in
           let value = List.nth args (index - 1) in
           let** value, protected', st =
             match (value, ty) with
@@ -54,8 +70,9 @@ module Make (Heap : Heap_intf.S) = struct
             | _ -> Result.ok (value, protected, st)
           in
           let++ (), st = Heap.store ptr ty value st in
-          (store, protected', st)
-        else Result.ok (store, protected, st))
+          (protected', st))
+    in
+    (store, protected, st)
 
   (** [dealloc_store ?protected_address store protected st] Deallocates the
       locations in [st] used for the variables in [store]; if
@@ -83,7 +100,7 @@ module Make (Heap : Heap_intf.S) = struct
         Result.ok (Base (value_of_scalar scalar), state)
     | CLiteral (VBool b) ->
         Result.ok (Base (if b then Typed.one else Typed.zero), state)
-    | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Char.code c)), state)
+    | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Uchar.to_int c)), state)
     | CLiteral (VFloat { float_value; float_ty = F16 }) ->
         Result.ok (Base (Typed.f16 @@ Float.of_string float_value), state)
     | CLiteral (VFloat { float_value; float_ty = F32 }) ->
@@ -171,7 +188,7 @@ module Make (Heap : Heap_intf.S) = struct
             let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
             g "Resolved function call to %s"
               (PrintTypes.name_to_string ctx fundef.item_meta.name));
-        match Std_funs.std_fun_eval ~crate ~exec_fun fundef with
+        match Std_funs.std_fun_eval ~crate fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
@@ -200,7 +217,7 @@ module Make (Heap : Heap_intf.S) = struct
                   g "Resolved function call to %s"
                     (PrintTypes.name_to_string ctx fundef.item_meta.name));
               let global_fn =
-                match Std_funs.std_fun_eval ~crate ~exec_fun fundef with
+                match Std_funs.std_fun_eval ~crate fundef with
                 | Some fn -> fn
                 | None -> exec_fun fundef
               in
@@ -316,6 +333,10 @@ module Make (Heap : Heap_intf.S) = struct
             else
               not_impl
                 "Unsupported: integer cast with different signedness and sign"
+        | Cast (CastScalar (TBool, TInteger (U8 | U16 | U32 | U64 | U128))) ->
+            Result.ok (v, state)
+        | Cast (CastScalar (TChar, TInteger (U32 | U64 | U128))) ->
+            Result.ok (v, state)
         | Cast (CastScalar (TInteger _, TFloat fp)) ->
             let v = as_base_of ~ty:Typed.t_int v in
             let v' = Typed.float_of_int fp v in
@@ -532,31 +553,36 @@ module Make (Heap : Heap_intf.S) = struct
               (PrintGAst.fn_operand_to_string ctx func));
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
-    | StorageDead var ->
-        let* ptr, ty =
-          (* TODO: maybe only mark as unusable and dont deallocate? maybe NOP? *)
-          match Store.find_opt var store with
-          | Some (Some ptr, ty) -> return (ptr, ty)
-          | Some (None, _) ->
-              Fmt.kstr not_impl
-                "Variable %a already deallocated - UB? unreachable?"
-                Expressions.pp_var_id var
+    | StorageLive local ->
+        let** ty, state =
+          match Store.find_opt local store with
+          | Some (None, ty) -> Result.ok (ty, state)
+          | Some (Some ptr, ty) ->
+              let++ (), state = Heap.free ptr state in
+              (ty, state)
           | None ->
-              Fmt.kstr not_impl "Variable %a not found in store"
-                Expressions.pp_var_id var
+              Fmt.kstr not_impl "Local %a not found in store?"
+                Expressions.pp_var_id local
         in
-        let++ (), state = Heap.free ptr state in
-        let store = Store.add var (None, ty) store in
+        let++ ptr, state = Heap.alloc_ty ty state in
+        let store = Store.add local (Some ptr, ty) store in
         (store, state)
-    | FakeRead _ ->
-        (* TODO: update tree borrow with read *)
-        Result.ok (store, state)
+    | StorageDead local -> (
+        match Store.find_opt local store with
+        | Some (Some ptr, ty) ->
+            let++ (), state = Heap.free ptr state in
+            let store = Store.add local (None, ty) store in
+            (store, state)
+        | Some (None, _) -> Result.ok (store, state)
+        | None ->
+            Fmt.kstr not_impl "Local %a not found in store"
+              Expressions.pp_var_id local)
     | Drop place ->
         (* TODO: this is probably super wrong, drop glue etc. *)
         let** place_ptr, state = resolve_place ~store state place in
         let++ (), state = Heap.uninit place_ptr place.ty state in
         (store, state)
-    | Assert { cond; expected } ->
+    | Assert { cond; expected; on_failure } -> (
         let** cond, state = eval_operand ~crate ~store state cond in
         let* cond_int =
           match cond with
@@ -568,7 +594,14 @@ module Make (Heap : Heap_intf.S) = struct
           if expected = true then cond_bool else Typed.not cond_bool
         in
         if%sat cond_bool then Result.ok (store, state)
-        else Heap.error `FailedAssert state
+        else
+          match on_failure with
+          | UndefinedBehavior -> Heap.error `UBAbort state
+          | Panic None -> Heap.error (`Panic "unnamed") state
+          | Panic (Some name) ->
+              let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+              let name = PrintTypes.name_to_string ctx name in
+              Heap.error (`Panic name) state)
     | s ->
         Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
           s
@@ -621,7 +654,7 @@ module Make (Heap : Heap_intf.S) = struct
             in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~crate ~body store state block
-        | SwitchInt (_, options, default) -> (
+        | SwitchInt (_, options, default) ->
             L.info (fun g ->
                 let options =
                   List.map
@@ -649,17 +682,14 @@ module Make (Heap : Heap_intf.S) = struct
                       (PrintValues.scalar_value_to_string v)
             in
             let* block = match_on options ~constr:compare_discr in
-            match block with
-            | None ->
-                let block = UllbcAst.BlockId.nth body.body default in
-                exec_block ~crate ~body store state block
-            | Some (_, block) ->
-                let block = UllbcAst.BlockId.nth body.body block in
-                exec_block ~crate ~body store state block))
+            let block = Option.fold ~none:default ~some:snd block in
+            let block = UllbcAst.BlockId.nth body.body block in
+            exec_block ~crate ~body store state block)
     | Abort kind -> (
         match kind with
         | UndefinedBehavior -> Heap.error `UBAbort state
-        | Panic name ->
+        | Panic None -> Heap.error (`Panic "unnamed") state
+        | Panic (Some name) ->
             let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
             let name_str = PrintTypes.name_to_string ctx name in
             Heap.error (`Panic name_str) state)

@@ -22,7 +22,23 @@ module SPmap = Pmap_direct_access (struct
   type t = T.sloc Typed.t
 
   let pp = ppa
-  let fresh ?constrs () = Rustsymex.nondet ?constrs Typed.t_loc
+
+  (* let fresh ?constrs () = Rustsymex.nondet ?constrs Typed.t_loc *)
+  let indices = ref 0
+
+  (* We know all keys are distinct, so we avoid the extra assertion *)
+  let distinct _ = Typed.v_true
+
+  (* This *only* works in WPST!!! *)
+  let fresh ?constrs () =
+    incr indices;
+    let idx = !indices in
+    let loc = Ptr.loc_of_int idx in
+    match constrs with
+    | Some constrs ->
+        let+ () = Rustsymex.assume (constrs loc) in
+        loc
+    | None -> return loc
 end)
 
 type global = String of string | Global of Charon.Types.global_decl_id
@@ -330,11 +346,18 @@ let unprotect (((_, tag) as ptr), _) st =
       Result.ok ((), block))
 
 let leak_check st =
+  let global_addresses =
+    GlobMap.bindings st.globals
+    |> List.map (fun (_, ((ptr, _), _)) -> Typed.Ptr.loc ptr)
+  in
   let@ heap = with_heap st in
   let** leaks =
     SPmap.fold
       (fun leaks (k, v) ->
-        if Freeable.Freed <> v then Result.ok (k :: leaks) else Result.ok leaks)
+        (* FIXME: This only works because our addresses are concrete *)
+        if Freeable.Freed <> v && not (List.mem k global_addresses) then
+          Result.ok (k :: leaks)
+        else Result.ok leaks)
       [] heap
   in
   if List.is_empty leaks then Result.ok ((), heap) else error `MemoryLeak st
