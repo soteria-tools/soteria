@@ -167,14 +167,13 @@ let pp_err ft (err, call_trace) =
 let resolve_entry_point (linked : Ail_tys.linked_program) =
   let open Syntaxes.Result in
   let* entry_point =
-    Soteria_std.Utils.Result_ex.of_opt
+    Result.of_opt
       ~err:(`ParsingError "No entry point function", Call_trace.empty)
       linked.entry_point
   in
   linked.sigma.function_definitions
   |> List.find_opt (fun (id, _) -> Symbol.equal_sym id entry_point)
-  |> Soteria_std.Utils.Result_ex.of_opt
-       ~err:(`ParsingError "Entry point not found", Call_trace.empty)
+  |> Result.of_opt ~err:(`ParsingError "Entry point not found", Call_trace.empty)
 
 let with_function_context prog f =
   let open Effect.Deep in
@@ -356,7 +355,7 @@ let generate_all_summaries log_level dump_unsupported_file includes file_name =
   Initialize_analysis.init_once ();
   let prog =
     parse_and_link_ail [ file_name ]
-    |> Soteria_std.Utils.Result_ex.get_or ~err:(fun e -> Fmt.failwith "%a" pp_err e)
+    |> Result.get_or ~err:(fun e -> Fmt.failwith "%a" pp_err e)
   in
   let results = Abductor.generate_all_summaries prog in
   Csymex.dump_unsupported ();

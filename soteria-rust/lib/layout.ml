@@ -1,4 +1,3 @@
-module Utils_ = Utils
 open Charon
 open Typed
 open Typed.Infix

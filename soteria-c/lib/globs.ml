@@ -75,7 +75,7 @@ let produce serialized st =
     (* Bit heavy-handed but we just massively assume the well-formedness *)
     let to_assume =
       Sym_map.M.to_seq (Option.value ~default:Sym_map.M.empty st')
-      |> Soteria_std.Utils.Seq_ex.self_cross_product
+      |> Seq.self_cross_product
       |> Seq.map (fun ((_, loca), (_, locb)) ->
              let open Typed.Infix in
              Typed.not (loca ==@ locb))

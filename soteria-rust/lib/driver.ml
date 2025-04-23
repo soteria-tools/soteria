@@ -164,7 +164,6 @@ let parse_ullbc_of_file ~no_compile file_name =
   | Error err -> raise (CharonError err)
 
 let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
-  let module List_ex = Utils.List_ex in
   let open Charon in
   Layout.Session.set_crate crate;
   let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
@@ -240,7 +239,7 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
            |> Result.ok
          else Fmt.error "Errors: %a" Fmt.(Dump.list pp_err) errors
   in
-  List_ex.join_results outcomes
+  List.join_results outcomes
   |> Result.map List.flatten
   |> Result.map_error (String.concat "\n\n")
 
