@@ -333,6 +333,10 @@ module Make (Heap : Heap_intf.S) = struct
             else
               not_impl
                 "Unsupported: integer cast with different signedness and sign"
+        | Cast (CastScalar (TBool, TInteger (U8 | U16 | U32 | U64 | U128))) ->
+            Result.ok (v, state)
+        | Cast (CastScalar (TChar, TInteger (U32 | U64 | U128))) ->
+            Result.ok (v, state)
         | Cast (CastScalar (TInteger _, TFloat fp)) ->
             let v = as_base_of ~ty:Typed.t_int v in
             let v' = Typed.float_of_int fp v in

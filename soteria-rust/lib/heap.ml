@@ -346,11 +346,18 @@ let unprotect (((_, tag) as ptr), _) st =
       Result.ok ((), block))
 
 let leak_check st =
+  let global_addresses =
+    GlobMap.bindings st.globals
+    |> List.map (fun (_, ((ptr, _), _)) -> Typed.Ptr.loc ptr)
+  in
   let@ heap = with_heap st in
   let** leaks =
     SPmap.fold
       (fun leaks (k, v) ->
-        if Freeable.Freed <> v then Result.ok (k :: leaks) else Result.ok leaks)
+        (* FIXME: This only works because our addresses are concrete *)
+        if Freeable.Freed <> v && not (List.mem k global_addresses) then
+          Result.ok (k :: leaks)
+        else Result.ok leaks)
       [] heap
   in
   if List.is_empty leaks then Result.ok ((), heap) else error `MemoryLeak st
