@@ -556,7 +556,6 @@ module Make (Heap : Heap_intf.S) = struct
         m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
     L.debug (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_raw_statement astmt.content);
-    let* () = Rustsymex.consume_fuel_steps 1 in
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
     let@ () = with_loc ~loc in
     match stmt with
@@ -641,6 +640,7 @@ module Make (Heap : Heap_intf.S) = struct
 
   and exec_block ~crate ~(body : UllbcAst.expr_body) store state
       ({ statements; terminator } : UllbcAst.block) =
+    let* () = Rustsymex.consume_fuel_steps 1 in
     let** store, state =
       Rustsymex.Result.fold_list statements ~init:(store, state)
         ~f:(fun (store, state) stmt -> exec_stmt ~crate store state stmt)
