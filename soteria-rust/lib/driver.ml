@@ -31,6 +31,7 @@ let pp_err ft (err, call_trace) =
     | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
     | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
     | `UBAbort -> Fmt.string ft "UBAbort"
+    | `UBArithShift -> Fmt.string ft "UBArithShift"
     | `UBTransmute -> Fmt.string ft "UBTransmute"
     | `UBTreeBorrow -> Fmt.string ft "UBTreeBorrow"
     | `DoubleFree -> Fmt.string ft "DoubleFree"

@@ -10,6 +10,8 @@ let bv_to_int signed bv =
 let bv_and l r = app_ "bvand" [ l; r ]
 let bv_or l r = app_ "bvor" [ l; r ]
 let bv_xor l r = app_ "bvxor" [ l; r ]
+let bv_shl l r = app_ "bvshl" [ l; r ]
+let bv_shr l r = app_ "bvshr" [ l; r ]
 
 let lift_binary fn size signed l r =
   bv_to_int signed (fn (int_to_bv size l) (int_to_bv size r))
@@ -17,3 +19,5 @@ let lift_binary fn size signed l r =
 let int_band = lift_binary bv_and
 let int_bor = lift_binary bv_or
 let int_bxor = lift_binary bv_xor
+let int_bshl = lift_binary bv_shl
+let int_bshr = lift_binary bv_shr

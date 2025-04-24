@@ -71,6 +71,8 @@ module Binop = struct
     | BitAnd of (int * bool)
     | BitOr of (int * bool)
     | BitXor of (int * bool)
+    | BitShl of (int * bool)
+    | BitShr of (int * bool)
   [@@deriving eq, ord]
 
   let pp ft = function
@@ -88,6 +90,8 @@ module Binop = struct
     | BitAnd _ -> Fmt.string ft "&"
     | BitOr _ -> Fmt.string ft "|"
     | BitXor _ -> Fmt.string ft "^"
+    | BitShl _ -> Fmt.string ft "<<"
+    | BitShr _ -> Fmt.string ft ">>"
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -465,6 +469,16 @@ let bit_xor size signed v1 v2 =
   | Int i1, Int i2 -> int_z (Z.( lxor ) i1 i2)
   | Bool b1, Bool b2 -> bool (b1 <> b2)
   | _ -> Binop (BitXor (size, signed), v1, v2) <| TInt
+
+let bit_shl size signed v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> int_z (Z.( lsl ) i1 (Z.to_int i2))
+  | _ -> Binop (BitShl (size, signed), v1, v2) <| TInt
+
+let bit_shr size signed v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> int_z (Z.( asr ) i1 (Z.to_int i2))
+  | _ -> Binop (BitShr (size, signed), v1, v2) <| TInt
 
 (* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
 let not_int_bool sv =

@@ -436,9 +436,29 @@ module Make (Heap : Heap_intf.S) = struct
                 | BitXor ->
                     Result.ok (Base (Typed.bit_xor size signed v1 v2), state)
                 | _ -> assert false)
-            | (Shl | Shr) as bop ->
-                Fmt.kstr not_impl "Unsupported binary operator: %a"
-                  Expressions.pp_binop bop)
+            | Shl | Shr -> (
+                let* ity =
+                  match type_of_operand e1 with
+                  | TLiteral (TInteger ity) -> return ity
+                  | TLiteral TBool -> return Values.U8
+                  | TLiteral TChar -> return Values.U32
+                  | ty ->
+                      Fmt.kstr not_impl
+                        "Unsupported type for bitwise operation: %a" pp_ty ty
+                in
+                let size = 8 * Layout.size_of_int_ty ity in
+                let signed = Layout.is_signed ity in
+                let* v1 = cast_checked ~ty:Typed.t_int v1 in
+                let* v2 = cast_checked ~ty:Typed.t_int v2 in
+                if%sat v2 <@ 0s ||@ (v2 >=@ Typed.int size) then
+                  Heap.error `UBArithShift state
+                else
+                  match op with
+                  | Shl ->
+                      Result.ok (Base (Typed.bit_shl size signed v1 v2), state)
+                  | Shr ->
+                      Result.ok (Base (Typed.bit_shr size signed v1 v2), state)
+                  | _ -> assert false))
         | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2) -> (
             match op with
             | Offset ->
