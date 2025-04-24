@@ -267,7 +267,7 @@ let size_of_s ty =
   with CantComputeLayout (msg, ty') ->
     Fmt.kstr Rustsymex.not_impl
       "Cannot yet compute size of %s:@.%a@.Occurred when computing:@.%a" msg
-      Types.pp_ty ty' Types.pp_ty ty
+      pp_ty ty' pp_ty ty
 
 let is_signed : Types.integer_type -> bool = function
   | I128 | I64 | I32 | I16 | I8 | Isize -> true
@@ -393,8 +393,7 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       | ty ->
           Rustsymex.not_impl
             (Fmt.str "nondet: unsupported type %a" Types.pp_type_decl_kind ty))
-  | ty ->
-      Rustsymex.not_impl (Fmt.str "nondet: unsupported type %a" Types.pp_ty ty)
+  | ty -> Rustsymex.not_impl (Fmt.str "nondet: unsupported type %a" pp_ty ty)
 
 and nondets tys =
   let open Rustsymex.Syntax in
@@ -409,20 +408,25 @@ let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
   | TFloat F64 -> Typed.f64 0.0
   | TFloat F128 -> Typed.f128 0.0
 
-let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option = function
+let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
+  let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in
+  function
   | TLiteral lit_ty -> ( try Some (Base (zeroed_lit lit_ty)) with _ -> None)
   | TRawPtr _ -> Some (Ptr (null_ptr, None))
   | TRef _ -> None
   | TAdt (TTuple, { types; _ }) ->
-      Monad.OptionM.all (zeroed ~null_ptr) types
-      |> Option.map (fun fields -> Tuple fields)
+      zeroeds types |> Option.map (fun fields -> Tuple fields)
+  | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ len ]; _ }) ->
+      let len = int_of_const_generic len in
+      zeroed ~null_ptr ty
+      |> Option.map (fun v -> Array (List.init len (fun _ -> v)))
   | TAdt (TAdtId t_id, _) -> (
       let adt = Session.get_adt t_id in
       match adt.kind with
       | Struct fields ->
           fields
-          |> Monad.OptionM.all (fun (f : Types.field) ->
-                 zeroed ~null_ptr f.field_ty)
+          |> Charon_util.field_tys
+          |> zeroeds
           |> Option.map (fun fields -> Struct fields)
       | Enum vars ->
           (vars
@@ -431,8 +435,8 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option = function
           |> Option.bind)
           @@ fun (v : Types.variant) ->
           v.fields
-          |> Monad.OptionM.all (fun (f : Types.field) ->
-                 zeroed ~null_ptr f.field_ty)
+          |> Charon_util.field_tys
+          |> zeroeds
           |> Option.map (fun fs -> Enum (value_of_scalar v.discriminant, fs))
       | Union fs ->
           let layouts =
@@ -451,7 +455,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option = function
       | k ->
           Fmt.failwith "Unhandled zeroed ADT kind: %a" Types.pp_type_decl_kind k
       )
-  | ty -> Fmt.failwith "Unhandled zeroed type: %a" Types.pp_ty ty
+  | ty -> Fmt.failwith "Unhandled zeroed type: %a" pp_ty ty
 
 let rec is_inhabited : Types.ty -> bool = function
   | TNever -> false
