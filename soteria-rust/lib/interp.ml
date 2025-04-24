@@ -332,8 +332,8 @@ module Make (Heap : Heap_intf.S) = struct
             else
               not_impl
                 "Unsupported: integer cast with different signedness and sign"
-        | Cast (CastScalar (TBool, TInteger (U8 | U16 | U32 | U64 | U128))) ->
-            Result.ok (v, state)
+        | Cast (CastScalar (TInteger U8, TChar))
+        | Cast (CastScalar (TBool, TInteger (U8 | U16 | U32 | U64 | U128)))
         | Cast (CastScalar (TChar, TInteger (U32 | U64 | U128))) ->
             Result.ok (v, state)
         | Cast (CastScalar (TInteger _, TFloat fp)) ->

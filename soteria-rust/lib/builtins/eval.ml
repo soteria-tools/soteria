@@ -73,6 +73,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::hint::black_box", BlackBox);
       ("core::intrinsics::add_with_overflow", Checked Add);
+      ("core::intrinsics::arith_offset", PtrOp Add);
       ("core::intrinsics::assert_inhabited", AssertInhabited);
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::assume", Assume);
