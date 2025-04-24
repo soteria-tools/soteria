@@ -205,9 +205,11 @@ let rec layout_of (ty : Types.ty) : layout =
         | _ -> failwith "Unexpected TArray generics"
       in
       let size = Charon_util.int_of_const_generic size in
-      let sub_layout = layout_of ty in
-      let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
-      { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
+      if size = 0 then { size = 0; align = 1; members_ofs = [||] }
+      else
+        let sub_layout = layout_of ty in
+        let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
+        { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
   (* Others (unhandled for now) *)

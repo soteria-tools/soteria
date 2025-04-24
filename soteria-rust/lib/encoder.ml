@@ -318,4 +318,13 @@ let rec transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
          core::ptr::NonNull<T> { pointer: *const T }. *)
       | Struct [ { field_ty = from_ty; _ } ] -> transmute ~from_ty ~to_ty v
       | _ -> unhandled ())
+  | _, TAdt (TAdtId id, _), v -> (
+      let adt = Session.get_adt id in
+      match (from_ty, adt.kind, v) with
+      | TLiteral (TInteger _), Enum _, Base sv -> ok (Enum (sv, []))
+      (* For 1-field structs, see if the value can be transmuted to that field. *)
+      | _, Struct [ { field_ty = to_ty; _ } ], _ ->
+          let++ v = transmute ~from_ty ~to_ty v in
+          Struct [ v ]
+      | _ -> unhandled ())
   | _ -> unhandled ()
