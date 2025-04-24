@@ -67,6 +67,10 @@ module Binop = struct
     | Div
     | Rem
     | Mod
+    (* Binary operators (size * signed) *)
+    | BitAnd of (int * bool)
+    | BitOr of (int * bool)
+    | BitXor of (int * bool)
   [@@deriving eq, ord]
 
   let pp ft = function
@@ -81,6 +85,9 @@ module Binop = struct
     | Div -> Fmt.string ft "/"
     | Rem -> Fmt.string ft "rem"
     | Mod -> Fmt.string ft "mod"
+    | BitAnd _ -> Fmt.string ft "&"
+    | BitOr _ -> Fmt.string ft "|"
+    | BitXor _ -> Fmt.string ft "^"
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -440,6 +447,24 @@ let abs v =
   | Int i -> int_z (Z.abs i)
   | Float f -> float_like v (abs_float f)
   | _ -> Unop (Abs, v) <| v.node.ty
+
+let bit_and size signed v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> int_z (Z.( land ) i1 i2)
+  | Bool b1, Bool b2 -> bool (b1 && b2)
+  | _ -> Binop (BitAnd (size, signed), v1, v2) <| TInt
+
+let bit_or size signed v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> int_z (Z.( lor ) i1 i2)
+  | Bool b1, Bool b2 -> bool (b1 || b2)
+  | _ -> Binop (BitOr (size, signed), v1, v2) <| TInt
+
+let bit_xor size signed v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> int_z (Z.( lxor ) i1 i2)
+  | Bool b1, Bool b2 -> bool (b1 <> b2)
+  | _ -> Binop (BitXor (size, signed), v1, v2) <| TInt
 
 (* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
 let not_int_bool sv =

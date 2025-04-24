@@ -120,6 +120,9 @@ val div : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
 val rem : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
 val ( mod ) : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
 val abs : ([< cnum ] as 'a) t -> 'a t
+val bit_and : int -> bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+val bit_or : int -> bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+val bit_xor : int -> bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
 module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t

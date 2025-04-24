@@ -364,8 +364,8 @@ module Make (Heap : Heap_intf.S) = struct
     | BinaryOp (op, e1, e2) -> (
         let** v1, state = eval_operand state e1 in
         let** v2, state = eval_operand state e2 in
-        match (v1, v2, type_of_operand e1) with
-        | Base v1, Base v2, TLiteral ty -> (
+        match (v1, v2) with
+        | Base v1, Base v2 -> (
             match op with
             | Ge | Gt | Lt | Le ->
                 let op =
@@ -388,9 +388,21 @@ module Make (Heap : Heap_intf.S) = struct
                 let res = if op = Eq then res else Typed.not_int_bool res in
                 (Base (res :> T.cval Typed.t), state)
             | Add | Sub | Mul | Div | Rem ->
+                let* ty =
+                  match type_of_operand e1 with
+                  | TLiteral ty -> return ty
+                  | ty ->
+                      Fmt.kstr not_impl "Unexpected type in binop: %a" pp_ty ty
+                in
                 let++ res = Core.eval_lit_binop op ty v1 v2 state in
                 (Base res, state)
             | CheckedAdd | CheckedSub | CheckedMul ->
+                let* ty =
+                  match type_of_operand e1 with
+                  | TLiteral ty -> return ty
+                  | ty ->
+                      Fmt.kstr not_impl "Unexpected type in binop: %a" pp_ty ty
+                in
                 let++ res = Core.eval_checked_lit_binop op ty v1 v2 state in
                 (res, state)
             | Cmp ->
@@ -402,10 +414,32 @@ module Make (Heap : Heap_intf.S) = struct
                   let* cmp = Core.cmp_of_int v in
                   Result.ok (Base cmp, state)
             | Offset -> not_impl "Offset cannot be used on non-pointer values"
-            | (BitOr | BitAnd | BitXor | Shl | Shr) as bop ->
+            | BitOr | BitAnd | BitXor -> (
+                let* ity =
+                  match type_of_operand e1 with
+                  | TLiteral (TInteger ity) -> return ity
+                  | TLiteral TBool -> return Values.U8
+                  | TLiteral TChar -> return Values.U32
+                  | ty ->
+                      Fmt.kstr not_impl
+                        "Unsupported type for bitwise operation: %a" pp_ty ty
+                in
+                let size = 8 * Layout.size_of_int_ty ity in
+                let signed = Layout.is_signed ity in
+                let* v1 = cast_checked ~ty:Typed.t_int v1 in
+                let* v2 = cast_checked ~ty:Typed.t_int v2 in
+                match op with
+                | BitOr ->
+                    Result.ok (Base (Typed.bit_or size signed v1 v2), state)
+                | BitAnd ->
+                    Result.ok (Base (Typed.bit_and size signed v1 v2), state)
+                | BitXor ->
+                    Result.ok (Base (Typed.bit_xor size signed v1 v2), state)
+                | _ -> assert false)
+            | (Shl | Shr) as bop ->
                 Fmt.kstr not_impl "Unsupported binary operator: %a"
                   Expressions.pp_binop bop)
-        | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2), _ -> (
+        | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2) -> (
             match op with
             | Offset ->
                 let* p, meta, v =
@@ -420,7 +454,7 @@ module Make (Heap : Heap_intf.S) = struct
             | _ ->
                 let++ res = Core.eval_ptr_binop op p1 p2 state in
                 (Base res, state))
-        | v1, v2, _ ->
+        | v1, v2 ->
             Fmt.kstr not_impl
               "Unsupported values for binary operator (%a): %a / %a"
               Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
