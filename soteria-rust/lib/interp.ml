@@ -8,7 +8,7 @@ module T = Typed.T
 
 module Make (Heap : Heap_intf.S) = struct
   module Core = Core.M (Heap)
-  module Std_funs = Std_funs.M (Heap)
+  module Std_funs = Builtins.Eval.M (Heap)
   module Sptr = Heap.Sptr
 
   let pp_rust_val = pp_rust_val Sptr.pp
