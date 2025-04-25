@@ -19,6 +19,10 @@ let header =
       position: relative;
     }
 
+    summary {
+      cursor: pointer;
+    }
+
     details {
       margin: 0.5em 0;
       padding: 0.5em;
@@ -37,6 +41,11 @@ let header =
     }
     .timestamp:hover {
       opacity: 0;
+    }
+
+    .log-msg.branch {
+      font-style: italic;
+      color: #888;
     }
 
     .TRACE {
@@ -61,7 +70,7 @@ let header =
     function summaryToMsg(elem) {
       if (elem.tagName == "SUMMARY") {
         const div = document.createElement("div");
-        div.className = "log-msg";
+        div.className = "log-msg branch";
         for (let child of elem.childNodes) {
           div.appendChild(child);
         }
