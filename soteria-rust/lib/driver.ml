@@ -245,7 +245,7 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
 let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
     file_name =
   Z3solver.set_smt_file smt_file;
-  setup_console_log log_level;
+  Soteria_logs.Config.set_log_level log_level;
   Cleaner.init ~clean ();
   try
     let crate = parse_ullbc_of_file ~no_compile file_name in
@@ -264,12 +264,12 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
           res;
         exit 0
     | Error e ->
-        L.err (fun f -> f "Error: %s" e);
+        L.error (fun f -> f "Error: %s" e);
         exit 1
   with
   | ExecutionError e ->
-      L.err (fun f -> f "Fatal: %s" e);
+      L.error (fun f -> f "Fatal: %s" e);
       exit 2
   | CharonError e ->
-      L.err (fun f -> f "Fatal (Charon): %s" e);
+      L.error (fun f -> f "Fatal (Charon): %s" e);
       exit 3

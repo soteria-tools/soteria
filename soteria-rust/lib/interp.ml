@@ -553,6 +553,8 @@ module Make (Heap : Heap_intf.S) = struct
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
     | StorageLive local ->
+        L.warn (fun m -> m "Something scary happened");
+        L.error (fun m -> m "oh no!!!");
         let** ty, state =
           match Store.find_opt local store with
           | Some (None, ty) -> Result.ok (ty, state)
