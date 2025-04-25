@@ -476,7 +476,9 @@ module Make (State : State_intf.S) = struct
         'err,
         State.serialized list )
       Csymex.Result.t =
-    L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
+    let@ () =
+      L.with_section (Fmt.str "Executing statement: %a" Fmt_ail.pp_stmt astmt)
+    in
     let* () = Csymex.consume_fuel_steps 1 in
     Stats.incr_executed_statements ();
     let (AnnotatedStatement (loc, _, stmt)) = astmt in

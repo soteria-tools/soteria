@@ -100,6 +100,7 @@ module Frontend = struct
       Exception.Result
         (fun filename -> c_frontend (conf, io) (stdlib, impl) ~filename)
     in
+    let () = Cerb_colour.do_colour := false in
     match result with
     | Exception.Result f -> frontend := f
     | Exception.Exception err ->

@@ -1,4 +1,5 @@
-module L = Soteria_logs.Logs.L
+open Soteria_logs
+module L = Logs.L
 module List = ListLabels
 
 module type Config = sig
@@ -458,16 +459,26 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
-        if Solver.sat () then then_ () f else left_sat := false;
+        if Solver.sat () then (
+          Logs.start_section "Left branch";
+          then_ () f;
+          Logs.end_section ())
+        else left_sat := false;
         Symex_state.backtrack_n 1;
         Solver.add_constraints [ Value.(not guard) ];
+        let right_branch () =
+          Logs.start_section "Right branch";
+          else_ () f;
+          Logs.end_section ()
+        in
         if !left_sat then (
           match Fuel.consume_branching 1 () with
           | Exhausted -> L.debug (fun m -> m "Exhausted branching fuel")
-          | Not_exhausted -> if Solver.sat () then else_ () f)
+          | Not_exhausted -> if Solver.sat () then right_branch ())
         else
-          (* Right must be sat since left was not! We didn't branch so we don't consume the counter. *)
-          else_ () f
+          (* Right must be sat since left was not! We didn't branch so we don't consume the counter
+             FIXME: we should also check that the solver hasn't returned "UNKNOWN"! *)
+          right_branch ()
 
   let branch_on_take_one guard ~then_ ~else_ : 'a Iter.t =
    fun f ->
@@ -505,20 +516,28 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     | [ a ] -> a () f
     | a :: r ->
         (* First branch should not backtrack and last branch should not save *)
+        let with_section =
+          let branch_counter = ref 0 in
+          fun k ->
+            Logs.start_section ("Branch number " ^ string_of_int !branch_counter);
+            k ();
+            Logs.end_section ();
+            incr branch_counter
+        in
         let rec loop brs =
           match brs with
           | [ x ] ->
               Symex_state.backtrack_n 1;
-              x () f
+              with_section @@ fun () -> x () f
           | x :: r ->
               Symex_state.backtrack_n 1;
               Symex_state.save ();
-              x () f;
+              (with_section @@ fun () -> x () f);
               loop r
           | [] -> failwith "unreachable"
         in
         Symex_state.save ();
-        a () f;
+        (with_section @@ fun () -> a () f);
         loop r
 
   let run iter =
@@ -530,8 +549,6 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
   let vanish () _f = ()
 
   module L = struct
-    open Soteria_logs
-
     let with_section : string -> (unit -> 'b MONAD.t) -> 'b MONAD.t =
      fun title k f ->
       Logs.start_section title;

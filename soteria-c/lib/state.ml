@@ -126,7 +126,9 @@ let load ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
-  if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
+  if%sat Typed.Ptr.is_at_null_loc ptr then (
+    L.info (fun m -> m "Null dereference detected for %a" Typed.ppa ptr);
+    Result.error `NullDereference)
   else with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =

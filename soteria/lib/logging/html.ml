@@ -13,6 +13,13 @@ let header =
           font-family: monospace;
           white-space: pre;
         }
+        
+        details {
+          margin: 0.5em 0;
+          padding: 0.5em;
+          border: 1px solid #ccc;
+          border-radius: 5px;
+        }
       </style>
       <title>Symex Log</title>
     </head>
