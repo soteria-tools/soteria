@@ -1,5 +1,6 @@
 module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Soteria_symex.Compo_res
+open Syntaxes.FunctionWrap
 open Cmd
 
 exception ExecutionError of string
@@ -192,9 +193,10 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
   let outcomes =
     entry_points
     |> List.map @@ fun ((entry_point : UllbcAst.fun_decl), should_err) ->
-       L.info (fun g ->
-           g "Executing entry point: %s"
-             (PrintTypes.name_to_string ctx entry_point.item_meta.name));
+       let@ () =
+         L.entry_point_section
+         @@ PrintTypes.name_to_string ctx entry_point.item_meta.name
+       in
        let branches =
          try Rustsymex.run @@ exec_fun entry_point
          with exn ->

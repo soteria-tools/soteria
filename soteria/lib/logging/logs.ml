@@ -37,7 +37,7 @@ let decr_depth_counter () =
   let logger = logger () in
   logger.depth_counter <- logger.depth_counter - 1
 
-let start_section ~is_branch str =
+let start_section ?(is_branch = false) str =
   incr_depth_counter ();
   write_string (Html.section_opening ~is_branch);
   write_string (Html.section_title str)
@@ -45,6 +45,16 @@ let start_section ~is_branch str =
 let end_section () =
   decr_depth_counter ();
   write_string Html.section_closing
+
+let with_section ?(is_branch = false) str f =
+  start_section ~is_branch str;
+  try
+    let x = f () in
+    end_section ();
+    x
+  with e ->
+    end_section ();
+    raise e
 
 module L = struct
   let log ~level msgf =
