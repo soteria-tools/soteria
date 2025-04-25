@@ -48,7 +48,9 @@ let header =
       if (elem.tagName == "SUMMARY") {
         const div = document.createElement("div");
         div.className = "log-msg";
-        div.innerText = elem.innerText;
+        for (let child of elem.childNodes) {
+          div.appendChild(child);
+        }
         elem.parentNode.replaceChild(div, elem);
       }
     }
