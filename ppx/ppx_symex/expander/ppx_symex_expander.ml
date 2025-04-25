@@ -12,15 +12,6 @@ module If_sat = struct
       | _ ->
           Location.raise_errorf ~loc:attr.attr_name.loc
             "Invalid branch name attribute payload"
-
-    let lift_opt ~default_loc (expr_opt : expression option) =
-      match expr_opt with
-      | Some exp ->
-          let loc = exp.pexp_loc in
-          [%expr Stdlib.Option.Some [%e exp]]
-      | None ->
-          let loc = default_loc in
-          [%expr Stdlib.Option.None]
   end
 
   module Extension_name = struct
@@ -56,16 +47,19 @@ module If_sat = struct
 
   let expand_if ~loc ~ext guard then_ else_ =
     let associated_fn = associated_fn ~loc ext in
-    let branch_name expr =
-      get_attr ~name:Branch_names.branch_name expr
-      |> Option.map Branch_names.attribute_expr
-      |> Branch_names.lift_opt ~default_loc:loc
+    let lname =
+      get_attr ~name:Branch_names.branch_name then_
+      |> Option.fold ~some:Branch_names.attribute_expr
+           ~none:[%expr Stdlib.String.cat "Left branch at " __LOC__]
     in
-    let lname = branch_name then_ in
-    let rname = branch_name else_ in
+    let rname =
+      get_attr ~name:Branch_names.branch_name else_
+      |> Option.fold ~some:Branch_names.attribute_expr
+           ~none:[%expr Stdlib.String.cat "Right branch at " __LOC__]
+    in
     [%expr
-      [%e associated_fn] [%e guard] ?left_branch_name:[%e lname]
-        ?right_branch_name:[%e rname]
+      [%e associated_fn] [%e guard] ~left_branch_name:[%e lname]
+        ~right_branch_name:[%e rname]
         ~then_:(fun () -> [%e then_])
         ~else_:(fun () -> [%e else_])]
 

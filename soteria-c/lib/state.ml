@@ -122,28 +122,39 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
   let@ heap = with_heap_read_only st in
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc heap
 
+let check_non_null (ptrs : [< T.sptr ] Typed.t list) =
+  let condition =
+    List.fold_left
+      (fun acc ptr -> acc ||@ Typed.Ptr.is_at_null_loc ptr)
+      Typed.v_false ptrs
+  in
+  if%sat condition then (
+    (L.info (fun m -> m "Null dereference detected");
+     Result.error `NullDereference)
+    [@name "Null-deref case"])
+  else Result.ok () [@name "Non-null case"]
+
 let load ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
-  if%sat Typed.Ptr.is_at_null_loc ptr then (
-    L.info (fun m -> m "Null dereference detected for %a" Typed.ppa ptr);
-    Result.error `NullDereference)
-  else with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
+  let** () = check_non_null [ ptr ] in
+  with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "store" ptr st;
-  if%sat Typed.Ptr.is_at_null_loc ptr then Result.error `NullDereference
-  else with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
+  let** () = check_non_null [ ptr ] in
+  with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
 
-let copy_nonoverlapping ~dst ~src ~size st =
+let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
   let open Typed.Infix in
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
-  if%sat Typed.Ptr.is_at_null_loc dst ||@ Typed.Ptr.is_at_null_loc src then
-    Result.error `NullDereference
+  if%sat [@rname "Both pointers are non-null"]
+    Typed.Ptr.is_at_null_loc dst ||@ Typed.Ptr.is_at_null_loc src
+  then Result.error `NullDereference [@name "One of the pointers is null"]
   else
     let** tree_to_write =
       with_ptr_read_only src st (fun ~ofs block ->
@@ -187,7 +198,7 @@ let error err _st =
   error err
 
 let produce (serialized : serialized) (st : t) : t Csymex.t =
-  L.debug (fun m -> m "Producing state from %a" pp_serialized serialized);
+  L.debug (fun m -> m "Producing: %a" pp_serialized serialized);
   let non_null_locs =
     let locs =
       let heap_locs = List.to_seq serialized.heap |> Seq.map fst in
