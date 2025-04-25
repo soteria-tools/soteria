@@ -703,4 +703,29 @@ module M (Heap : Heap_intf.S) = struct
                 Result.ok (Base (res :> Typed.T.cval Typed.t), state)
             | _ -> failwith "ctpop: invalid arguments"))
     | _ -> failwith "ctpop: invalid arguments"
+
+  let compare_bytes ~crate:_ ~args ~state =
+    let l, r, len =
+      match args with
+      | [ Ptr (l, _); Ptr (r, _); Base len ] -> (l, r, len)
+      | _ -> failwith "compare_bytes: invalid arguments"
+    in
+    let* len = cast_checked ~ty:Typed.t_int len in
+    let byte = Types.TLiteral (TInteger U8) in
+    let rec aux l r len state =
+      if%sat len ==@ 0s then Result.ok (Base 0s, state)
+      else
+        let** bl, state = Heap.load (l, None) byte state in
+        let bl = as_base_of ~ty:Typed.t_int bl in
+        let** br, state = Heap.load (r, None) byte state in
+        let br = as_base_of ~ty:Typed.t_int br in
+        if%sat bl ==@ br then
+          let l = Sptr.offset l 1s in
+          let r = Sptr.offset r 1s in
+          aux l r (len -@ 1s) state
+        else
+          if%sat bl <@ br then Result.ok (Base (-1s), state)
+          else Result.ok (Base 1s, state)
+    in
+    aux l r len state
 end

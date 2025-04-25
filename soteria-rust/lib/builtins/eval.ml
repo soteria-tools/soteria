@@ -26,6 +26,7 @@ module M (Heap : Heap_intf.S) = struct
     | BoolNot
     | BoxIntoRaw
     | Checked of Expressions.binop
+    | CompareBytes
     | CopyNonOverlapping
     | Ctpop
     | Deref
@@ -79,6 +80,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::assume", Assume);
       ("core::intrinsics::black_box", BlackBox);
       ("core::intrinsics::cold_path", Nop);
+      ("core::intrinsics::compare_bytes", CompareBytes);
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
       ("core::intrinsics::ctpop", Ctpop);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
@@ -155,6 +157,7 @@ module M (Heap : Heap_intf.S) = struct
          | BoolNot -> bool_not
          | BoxIntoRaw -> box_into_raw f.signature
          | Checked op -> checked_op op f.signature
+         | CompareBytes -> compare_bytes
          | CopyNonOverlapping -> copy_nonoverlapping f.signature
          | Ctpop -> ctpop f.signature
          | Deref -> deref f.signature
