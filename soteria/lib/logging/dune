@@ -1,5 +1,5 @@
 (library
  (name soteria_logs)
  (public_name soteria.logs)
- (libraries soteria_std htmlit cmdliner)
+ (libraries soteria_std htmlit cmdliner unix)
  (synopsis "Logging library for symbolic execution"))
