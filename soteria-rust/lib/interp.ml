@@ -305,33 +305,22 @@ module Make (Heap : Heap_intf.S) = struct
             in
             (v, state)
         | Cast (CastScalar (TInteger from_ty, TInteger to_ty)) ->
-            let from_size = Layout.size_of_int_ty from_ty in
-            let to_size = Layout.size_of_int_ty to_ty in
-            if Layout.is_signed from_ty = Layout.is_signed to_ty then
-              (* same sign: *)
-              if from_size <= to_size then
-                (* to a larger number *)
-                Result.ok (v, state)
-              else if not @@ Layout.is_signed from_ty then
-                (* to a smaller number (unsigned) *)
-                let max_value = Layout.max_value_z to_ty in
-                let v_int = as_base_of ~ty:Typed.t_int v in
-                let v_int' = v_int %@ Typed.nonzero_z max_value in
-                Result.ok (Base v_int', state)
-              else
-                (* to a smaller number (signed) *)
-                not_impl "Unsupported: integer cast to a smaller signed number"
-            else if from_size = to_size then
-              (* same size *)
-              let min = Typed.int_z @@ Layout.min_value_z from_ty in
-              let v_int = as_base_of ~ty:Typed.t_int v in
-              let v_int' =
-                if Layout.is_signed from_ty then v_int -@ min else v_int +@ min
-              in
-              Result.ok (Base v_int', state)
-            else
-              not_impl
-                "Unsupported: integer cast with different signedness and sign"
+            let v = as_base_of ~ty:Typed.t_int v in
+            let bits = 8 * Layout.size_of_int_ty to_ty in
+            let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
+            let maxsigned = Typed.nonzero_z (Z.shift_left Z.one (bits - 1)) in
+            let* v =
+              if Layout.is_signed from_ty then
+                if%sat v <@ 0s then return (((v %@ max) +@ max) %@ max)
+                else return (v %@ max)
+              else return (v %@ max)
+            in
+            let* v =
+              if Layout.is_signed to_ty then
+                if%sat v >=@ maxsigned then return (v -@ max) else return v
+              else return v
+            in
+            Result.ok (Base (v :> T.cval Typed.t), state)
         | Cast (CastScalar (TInteger U8, TChar))
         | Cast (CastScalar (TBool, TInteger (U8 | U16 | U32 | U64 | U128)))
         | Cast (CastScalar (TChar, TInteger (U32 | U64 | U128))) ->
