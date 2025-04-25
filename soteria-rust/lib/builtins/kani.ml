@@ -12,7 +12,7 @@ module M (Heap : Heap_intf.S) = struct
     let open Typed.Infix in
     let* to_assert =
       match args with
-      | [ Base t ] -> cast_checked t ~ty:Typed.t_int
+      | [ Base t; _msg ] -> cast_checked t ~ty:Typed.t_int
       | _ -> not_impl "to_assert with non-one arguments"
     in
     if%sat to_assert ==@ 0s then Heap.error `FailedAssert state

@@ -677,6 +677,12 @@ module M (Heap : Heap_intf.S) = struct
   let ctpop (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     match args with
     | [ Base v ] -> (
+        let ty =
+          match funsig.inputs with
+          | [ TLiteral (TInteger ty) ] -> ty
+          | _ -> failwith "ctpop: invalid arguments"
+        in
+        let bits = 8 * Layout.size_of_int_ty ty in
         let* v = cast_checked ~ty:Typed.t_int v in
         match Typed.kind v with
         | Int v ->
@@ -686,22 +692,33 @@ module M (Heap : Heap_intf.S) = struct
                 let next = Z.shift_right v 1 in
                 if Z.testbit v 0 then aux (succ acc) next else aux acc next
             in
+            (* convert to unsigned *)
+            let v =
+              if Layout.is_signed ty then
+                let maxv = Z.shift_left Z.one bits in
+                if Z.(v < zero) then Z.(((v mod maxv) + maxv) mod maxv) else v
+              else v
+            in
             Result.ok (Base (aux 0 v), state)
-        | _ -> (
-            match funsig.inputs with
-            | [ TLiteral (TInteger ity) ] when not (Layout.is_signed ity) ->
-                let size = 8 * Layout.size_of_int_ty ity in
-                let two = Typed.nonzero 2 in
-                let res =
-                  List.fold_left
-                    (fun acc off ->
-                      let pow = Typed.nonzero_z (Z.shift_left Z.one off) in
-                      acc +@ (v /@ pow %@ two))
-                    0s
-                  @@ List.init size (fun i -> i)
-                in
-                Result.ok (Base (res :> Typed.T.cval Typed.t), state)
-            | _ -> failwith "ctpop: invalid arguments"))
+        | _ ->
+            (* convert to unsigned *)
+            let* v =
+              if Layout.is_signed ty then
+                let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
+                if%sat v <@ 0s then return (((v %@ max) +@ max) %@ max)
+                else return v
+              else return v
+            in
+            let two = Typed.nonzero 2 in
+            let res =
+              List.init bits (fun i -> i)
+              |> List.fold_left
+                   (fun acc off ->
+                     let pow = Typed.nonzero_z (Z.shift_left Z.one off) in
+                     acc +@ (v /@ pow %@ two))
+                   0s
+            in
+            Result.ok (Base (res :> Typed.T.cval Typed.t), state))
     | _ -> failwith "ctpop: invalid arguments"
 
   let compare_bytes ~crate:_ ~args ~state =

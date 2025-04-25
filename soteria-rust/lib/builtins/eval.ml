@@ -76,6 +76,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::add_with_overflow", Checked Add);
       ("core::intrinsics::arith_offset", PtrOp Add);
       ("core::intrinsics::assert_inhabited", AssertInhabited);
+      (* TODO: is this correct? *)
+      ("core::intrinsics::assert_mem_uninitialized_valid", Nop);
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::assume", Assume);
       ("core::intrinsics::black_box", BlackBox);
