@@ -1,7 +1,7 @@
 module SYMEX =
   Soteria_symex.Symex.Make_iter
     (struct
-      let fuel : Soteria_symex.Fuel_gauge.t = { steps = 100; branching = 10 }
+      let fuel : Soteria_symex.Fuel_gauge.t = { steps = 300; branching = 4 }
     end)
     (Z3solver)
 
