@@ -2,4 +2,4 @@
  (package soteria-rust)
  (public_name soteria-rust)
  (name soteria_rust)
- (libraries soteria_rust_lib logs.cli))
+ (libraries soteria_rust_lib logs.cli soteria.logs))

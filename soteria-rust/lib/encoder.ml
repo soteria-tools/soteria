@@ -19,7 +19,7 @@ type 'ptr cval_info = {
 let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
     'ptr cval_info list =
   let illegal_pair () =
-    L.err (fun m ->
+    L.error (fun m ->
         m "Wrong pair of rust_value and Charon.ty: %a / %a" ppa_rust_val value
           Types.pp_ty ty);
     failwith "Wrong pair of rust_value and Charon.ty"
@@ -114,7 +114,7 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
   | Union _, _ -> illegal_pair ()
   (* Rest *)
   | _ ->
-      L.err (fun m ->
+      L.error (fun m ->
           m "Unhandled rust_value and Charon.ty: %a / %a" ppa_rust_val value
             Types.pp_ty ty);
       failwith "Unhandled rust_value and Charon.ty"
