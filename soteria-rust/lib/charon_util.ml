@@ -71,12 +71,12 @@ let as_ptr = function
         ppa_rust_val v
 
 let as_base_of ~ty = function
-  | Base v -> (
+  | Enum (v, []) | Base v -> (
       match Typed.cast_checked v ty with
       | Some v -> v
       | None ->
-          Fmt.failwith "Unexpected rust_val type, expected %a, got %a"
-            Typed.ppa_ty ty Typed.ppa v)
+          Fmt.failwith "Unexpected rust_val type, expected %a, got %a (%a)"
+            Typed.ppa_ty ty Typed.ppa v Svalue.pp_ty (Typed.get_ty v))
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         ppa_rust_val v

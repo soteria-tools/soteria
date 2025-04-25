@@ -84,6 +84,12 @@ module Session = struct
     let crate = get_crate () in
     Std_types.get_adt ~crate adt_id
 
+  let is_enum adt_id =
+    match (get_adt adt_id).kind with Enum _ -> true | _ -> false
+
+  let is_struct adt_id =
+    match (get_adt adt_id).kind with Struct _ -> true | _ -> false
+
   let get_or_compute_cached_layout ty f =
     match Hashtbl.find_opt layout_cache ty with
     | Some layout -> layout

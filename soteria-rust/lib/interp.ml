@@ -331,6 +331,11 @@ module Make (Heap : Heap_intf.S) = struct
             Result.ok (Base v', state)
         | Cast
             (CastUnsize
+               ( TRawPtr
+                   (TAdt (TBuiltin TArray, { const_generics = [ size ]; _ }), _),
+                 TRawPtr (TAdt (TBuiltin TSlice, _), _) ))
+        | Cast
+            (CastUnsize
                ( TAdt
                    ( TBuiltin TBox,
                      {
@@ -483,24 +488,26 @@ module Make (Heap : Heap_intf.S) = struct
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
-    | Discriminant (place, kind) ->
+    | Discriminant (place, kind) -> (
         let** (loc, _), state = resolve_place ~store state place in
         let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
-        let* discr_ofs, discr_ty =
-          match enum.kind with
-          | Enum (var :: _) ->
-              let int_ty = var.discriminant.int_ty in
-              let layout = Layout.of_variant var in
-              let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
-              return (discr_ofs, Types.TLiteral (TInteger int_ty))
-          | Enum [] ->
-              Fmt.kstr not_impl "Unsupported discriminant for empty enums"
-          | k ->
-              Fmt.failwith "Expected an enum for discriminant, got %a"
-                Types.pp_type_decl_kind k
-        in
-        let loc = Sptr.offset loc discr_ofs in
-        Heap.load (loc, None) discr_ty state
+        match enum.kind with
+        (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
+        | Enum [ { fields = []; discriminant; _ } ] ->
+            let discr = Typed.int_z discriminant.value in
+            Result.ok (Base discr, state)
+        | Enum (var :: _) ->
+            let int_ty = var.discriminant.int_ty in
+            let layout = Layout.of_variant var in
+            let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
+            let discr_ty = Types.TLiteral (TInteger int_ty) in
+            let loc = Sptr.offset loc discr_ofs in
+            Heap.load (loc, None) discr_ty state
+        | Enum [] ->
+            Fmt.kstr not_impl "Unsupported discriminant for empty enums"
+        | k ->
+            Fmt.failwith "Expected an enum for discriminant, got %a"
+              Types.pp_type_decl_kind k)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
         let type_decl =

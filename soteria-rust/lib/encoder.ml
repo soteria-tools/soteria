@@ -63,6 +63,7 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
   | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) -> chain_cvals (layout_of ty) vs types
+  | Tuple [], TNever -> []
   | Tuple _, _ | _, TAdt (TTuple, _) -> illegal_pair ()
   (* Structs *)
   | Struct vals, TAdt (TAdtId t_id, _) ->
@@ -94,6 +95,15 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
       | _ ->
           Fmt.failwith "Unexpected ADT type or discr for enum: %a"
             Types.pp_type_decl type_decl)
+  | Base value, TAdt (TAdtId t_id, _) when Session.is_enum t_id ->
+      let type_decl = Session.get_adt t_id in
+      let disc_ty =
+        match type_decl.kind with
+        | Enum [] -> failwith "Can't convert discriminant for empty enum"
+        | Enum (v :: _) -> v.discriminant.int_ty
+        | _ -> assert false
+      in
+      [ { value = Enum (value, []); ty = TLiteral (TInteger disc_ty); offset } ]
   | Enum _, _ -> illegal_pair ()
   (* Arrays *)
   | Array vals, TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
@@ -327,4 +337,8 @@ let rec transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
           let++ v = transmute ~from_ty ~to_ty v in
           Struct [ v ]
       | _ -> unhandled ())
+  | from_ty, to_ty, v
+    when (Layout.layout_of from_ty).size = 0
+         && (Layout.layout_of to_ty).size = 0 ->
+      ok v
   | _ -> unhandled ()
