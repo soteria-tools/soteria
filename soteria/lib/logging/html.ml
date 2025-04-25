@@ -3,33 +3,78 @@ let log_msg_class = "log-msg"
 
 let header =
   {|
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        .log-msg {
-          font-family: monospace;
-          white-space: pre;
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    .log-msg {
+      font-family: monospace;
+      white-space: pre;
+    }
+
+    details {
+      margin: 0.5em 0;
+      padding: 0.5em;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+  </style>
+  <script>
+    function summaryToMsg(elem) {
+      if (elem.tagName == "SUMMARY") {
+        const div = document.createElement("div");
+        div.className = "log-msg";
+        div.innerText = elem.innerText;
+        elem.parentNode.replaceChild(div, elem);
+      }
+    } 
+
+    function flattenDirectDetails(element) {
+      // Recurse first
+      for (let child of element.children) {
+        flattenDirectDetails(child);
+      }
+
+      // Will not be undefined iff there is a single <details> tag
+      let detailChild = undefined;
+      for (let child of element.children) {
+        if (child.tagName == "DETAILS") {
+          if (detailChild == undefined) {
+            detailChild = child;
+          } else {
+            detailChild = undefined;
+            break;
+          }
         }
-        
-        details {
-          margin: 0.5em 0;
-          padding: 0.5em;
-          border: 1px solid #ccc;
-          border-radius: 5px;
-        }
-      </style>
-      <title>Symex Log</title>
-    </head>
-    <body>
-      <h1>Symex Log</h1>
+      }
+
+      if (detailChild == undefined) {
+        return;
+      }
+      while (detailChild.firstChild) {
+        summaryToMsg(detailChild.firstChild);
+        element.insertBefore(detailChild.firstChild, detailChild);
+      }
+
+      element.removeChild(detailChild);
+    }
+      
+    // Start from the body
+    document.addEventListener('DOMContentLoaded', () => { flattenDirectDetails(document.body) });
+  </script>
+  <title>Symex Log</title>
+</head>
+
+<body>
+  <h1>Symex Log</h1>
   |}
 
 let footer = {|
-      </body>
-      </html>
+</body>
+</html>
   |}
 
 let log_msg ?(inline = false) msg =

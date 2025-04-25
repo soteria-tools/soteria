@@ -476,9 +476,7 @@ module Make (State : State_intf.S) = struct
         'err,
         State.serialized list )
       Csymex.Result.t =
-    let@ () =
-      L.with_section (Fmt.str "Executing statement: %a" Fmt_ail.pp_stmt astmt)
-    in
+    L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
     let* () = Csymex.consume_fuel_steps 1 in
     Stats.incr_executed_statements ();
     let (AnnotatedStatement (loc, _, stmt)) = astmt in
@@ -554,10 +552,7 @@ module Make (State : State_intf.S) = struct
     (* Put arguments in store *)
     let name, (loc, _, _, params, stmt) = fundef in
     let@ () = with_loc ~loc in
-    let@ () =
-      Csymex.L.with_section
-        (Fmt.str "Executing function %a" Fmt_ail.pp_sym name)
-    in
+    L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);
     let* ptys = get_param_tys ~prog name in
     let ps = List.combine3 params ptys args in
     (* TODO: Introduce a with_stack_allocation.

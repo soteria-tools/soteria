@@ -123,7 +123,6 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc heap
 
 let load ptr ty st =
-  let@ () = L.with_section "executing load" in
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
@@ -133,7 +132,6 @@ let load ptr ty st =
   else with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
-  let@ () = L.with_section "executing store" in
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "store" ptr st;
@@ -142,7 +140,6 @@ let store ptr ty sval st =
 
 let copy_nonoverlapping ~dst ~src ~size st =
   let open Typed.Infix in
-  let@ () = L.with_section "executing copy_nonoverlapping" in
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   if%sat Typed.Ptr.is_at_null_loc dst ||@ Typed.Ptr.is_at_null_loc src then
@@ -159,7 +156,6 @@ let copy_nonoverlapping ~dst ~src ~size st =
 let alloc size st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
-  let@ () = L.with_section "executing alloc" in
   let@ () = with_error_loc_as_call_trace () in
   let@ heap = with_heap st in
   let block = Freeable.Alive (Tree_block.alloc size) in
@@ -175,7 +171,6 @@ let alloc_ty ty st =
 
 let free (ptr : [< T.sptr ] Typed.t) (st : t) :
     (unit * t, 'err, serialized list) Result.t =
-  let@ () = L.with_section "executing free" in
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ () = with_loc_err () in
@@ -192,7 +187,7 @@ let error err _st =
   error err
 
 let produce (serialized : serialized) (st : t) : t Csymex.t =
-  let@ () = L.with_section "Production" in
+  L.debug (fun m -> m "Producing state from %a" pp_serialized serialized);
   let non_null_locs =
     let locs =
       let heap_locs = List.to_seq serialized.heap |> Seq.map fst in
@@ -211,7 +206,7 @@ let produce (serialized : serialized) (st : t) : t Csymex.t =
 
 let consume (serialized : serialized) (st : t) :
     (t, 'err, serialized list) Csymex.Result.t =
-  let@ () = L.with_section "Consumption" in
+  L.debug (fun m -> m "Consuming state from %a" pp_serialized serialized);
   let** globs =
     let+ res = Globs.consume serialized.globs st.globs in
     match res with
