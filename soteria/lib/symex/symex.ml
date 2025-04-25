@@ -1,3 +1,4 @@
+module L = Soteria_logs.Logs.L
 module List = ListLabels
 
 module type Config = sig
@@ -45,10 +46,21 @@ module type Base = sig
       obtained branches which capture the outcome together with a path condition
       that is a list of boolean symbolic values *)
   val run : 'a MONAD.t -> ('a * sbool v list) list
+
+  module L : sig
+    val with_section : string -> (unit -> 'a MONAD.t) -> 'a MONAD.t
+  end
 end
 
 module type S = sig
   include Base
+
+  module L : sig
+    include module type of Soteria_logs.Logs.L
+
+    val with_section : string -> (unit -> 'a MONAD.t) -> 'a MONAD.t
+  end
+
   include Monad.Base with type 'a t = 'a MONAD.t
 
   val all : ('a -> 'b t) -> 'a list -> 'b list t
@@ -121,6 +133,11 @@ end
 module Extend (Base : Base) = struct
   include Base
   include MONAD
+
+  module L = struct
+    include Base.L
+    include Soteria_logs.Logs.L
+  end
 
   let all fn xs =
     let rec aux acc rs =
@@ -336,6 +353,23 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
   let batched s =
     MONAD.bind (s ()) @@ fun x ->
     if Solver.sat () then MONAD.return x else vanish ()
+
+  module L = struct
+    (* This doesn't type check, something to do with the type of the msgf I think... *)
+    (* let with_section msgf (k : unit -> 'a MONAD.t) : 'a MONAD.t =
+     fun () ->
+      msgf @@ fun fmt ->
+      Format.kasprintf
+        (fun title ->
+          Logs.write_string Html.section_opening;
+          Logs.write_string (Html.section_title title);
+          let res = k () in
+          Logs.write_string Html.section_closing;
+          res)
+        fmt *)
+
+    let with_section _msgf _k = failwith "Unimplemented: with_section for Seq"
+  end
 end)
 
 module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
@@ -373,7 +407,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
 
   let consume_fuel_steps n f =
     match Fuel.consume_fuel_steps n () with
-    | Exhausted -> Logging.debug (fun m -> m "Exhausted step fuel")
+    | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted -> f ()
 
   let assume learned f =
@@ -429,7 +463,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
         Solver.add_constraints [ Value.(not guard) ];
         if !left_sat then (
           match Fuel.consume_branching 1 () with
-          | Exhausted -> Logging.debug (fun m -> m "Exhausted branching fuel")
+          | Exhausted -> L.debug (fun m -> m "Exhausted branching fuel")
           | Not_exhausted -> if Solver.sat () then else_ () f)
         else
           (* Right must be sat since left was not! We didn't branch so we don't consume the counter. *)
@@ -494,4 +528,14 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     List.rev !l
 
   let vanish () _f = ()
+
+  module L = struct
+    open Soteria_logs
+
+    let with_section : string -> (unit -> 'b MONAD.t) -> 'b MONAD.t =
+     fun title k f ->
+      Logs.start_section title;
+      k () f;
+      Logs.end_section ()
+  end
 end)

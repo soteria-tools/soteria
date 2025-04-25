@@ -1,14 +1,7 @@
 module SState = State (* Clashes with Cerb_frontend.State *)
 open Cerb_frontend
+open Syntaxes.FunctionWrap
 module Wpst_interp = Interp.Make (SState)
-
-let ( let@ ) = ( @@ )
-
-let setup_console_log level =
-  Fmt_tty.setup_std_outputs ();
-  Logs.set_level level;
-  Logs.set_reporter (Logs_fmt.reporter ());
-  ()
 
 let setup_stderr_log ~log_lsp level =
   Logs.set_level level;
@@ -202,7 +195,7 @@ let exec_main file_names =
 let exec_main_and_print log_level smt_file includes file_names =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   Z3solver.set_smt_file smt_file;
-  setup_console_log log_level;
+  Soteria_logs.Config.set_log_level log_level;
   Initialize_analysis.init_once ();
   Frontend.add_includes includes;
   let result = exec_main file_names in
@@ -249,7 +242,7 @@ let lsp () =
 
 (* Entry point function *)
 let show_ail (include_args : string list) (files : string list) =
-  setup_console_log (Some Debug);
+  Soteria_logs.Config.set_log_level Trace;
   Frontend.add_includes include_args;
   Initialize_analysis.init_once ();
   match parse_and_link_ail files with
@@ -309,7 +302,7 @@ let exec_main_bi file_name =
 
 (* Entry point function *)
 let generate_main_summary file_name =
-  setup_console_log (Some Debug);
+  Soteria_logs.Config.set_log_level Trace;
   Initialize_analysis.init_once ();
   let results = exec_main_bi file_name in
   let pp_summary = Summary.pp pp_err in
@@ -341,7 +334,7 @@ let exec_fun_bi file_name fun_name =
 
 let generate_summary_for include_args file_name fun_name =
   Frontend.add_includes include_args;
-  setup_console_log (Some Debug);
+  Soteria_logs.Config.set_log_level Trace;
   Initialize_analysis.init_once ();
   let results = exec_fun_bi file_name fun_name in
   let pp_summary ft (summary, analysis) =
@@ -355,7 +348,7 @@ let generate_all_summaries log_level dump_unsupported_file smt_file includes
   Z3solver.set_smt_file smt_file;
   Csymex.unsupported_file := dump_unsupported_file;
   Frontend.add_includes includes;
-  setup_console_log log_level;
+  Soteria_logs.Config.set_log_level log_level;
   Initialize_analysis.init_once ();
   let prog =
     parse_and_link_ail file_names

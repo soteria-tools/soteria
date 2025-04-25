@@ -7,3 +7,7 @@ module Option : sig
 end
 
 module Result : Monad.Syntax2 with type ('a, 'b) t := ('a, 'b) result
+
+module FunctionWrap : sig
+  val ( let@ ) : ('a -> 'b) -> 'a -> 'b
+end

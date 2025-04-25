@@ -7,3 +7,7 @@ module Option = struct
 end
 
 module Result = Monad.ResultM.Syntax
+
+module FunctionWrap = struct
+  let ( let@ ) = Stdlib.( @@ )
+end

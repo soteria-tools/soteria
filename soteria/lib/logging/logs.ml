@@ -1,0 +1,65 @@
+type logger = { oc : Out_channel.t; mutable depth_counter : int }
+type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
+
+let init () =
+  let oc = open_out !Config.log_file in
+  Out_channel.output_string oc Html.header;
+  Out_channel.output_char oc '\n';
+  Out_channel.flush oc;
+  let logger = { oc; depth_counter = 0 } in
+  let () =
+    at_exit (fun () ->
+        (* If program is interrupted and not all sections have been closed, close them all! *)
+        for _ = 0 to logger.depth_counter - 1 do
+          Out_channel.output_string oc Html.section_closing;
+          Out_channel.output_char oc '\n'
+        done;
+        Out_channel.output_string oc Html.footer;
+        Out_channel.close oc)
+  in
+  logger
+
+let logger = lazy (init ())
+let[@inline] logger () = Lazy.force logger
+
+let write_string str =
+  if !Config.logs_enabled then (
+    let logger = logger () in
+    Out_channel.output_string logger.oc str;
+    Out_channel.output_char logger.oc '\n';
+    Out_channel.flush logger.oc)
+
+let incr_depth_counter () =
+  let logger = logger () in
+  logger.depth_counter <- logger.depth_counter + 1
+
+let decr_depth_counter () =
+  let logger = logger () in
+  logger.depth_counter <- logger.depth_counter - 1
+
+let start_section str =
+  incr_depth_counter ();
+  write_string Html.section_opening;
+  write_string (Html.section_title str)
+
+let end_section () =
+  decr_depth_counter ();
+  write_string Html.section_closing
+
+module L = struct
+  let log ~level msgf =
+    if !Config.logs_enabled && Level.leq level !Config.current_log_level then
+      msgf @@ fun fmt ->
+      Format.kasprintf
+        (fun msg ->
+          let msg = Html.message level msg in
+          write_string msg)
+        fmt
+
+  let trace : ('a, unit) msgf -> unit = fun msgf -> log ~level:Level.Trace msgf
+  let debug msgf = log ~level:Level.Debug msgf
+  let info msgf = log ~level:Level.Info msgf
+  let warn msgf = log ~level:Level.Warn msgf
+  let app msgf = log ~level:Level.App msgf
+  let error msgf = log ~level:Level.Error msgf
+end

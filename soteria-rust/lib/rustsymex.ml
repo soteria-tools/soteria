@@ -1,3 +1,5 @@
+module Old_logs = L
+
 module SYMEX =
   Soteria_symex.Symex.Make_iter
     (struct
@@ -6,6 +8,12 @@ module SYMEX =
     (Z3solver)
 
 include SYMEX
+include Syntaxes.FunctionWrap
+
+(** TODO: migrate to new logging system. But that will mess up Opale's scripts
+    without care. We should ensure some messages are still sent to stdout.dune
+*)
+module L = Old_logs
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
     (Typed.T.nonzero Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
@@ -22,8 +30,6 @@ let match_on ~(constr : 'a -> Typed.sbool Typed.t) (elements : 'a list) :
     | [] -> return None
   in
   aux elements
-
-let ( let@ ) = ( @@ )
 
 let push_give_up, flush_give_up =
   let give_up_reasons = Dynarray.create () in

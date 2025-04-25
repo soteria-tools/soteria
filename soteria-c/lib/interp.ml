@@ -551,8 +551,10 @@ module Make (State : State_intf.S) = struct
     (* Put arguments in store *)
     let name, (loc, _, _, params, stmt) = fundef in
     let@ () = with_loc ~loc in
-    L.info (fun m ->
-        m "Executing function %s" (Cerb_frontend.Pp_symbol.to_string name));
+    let@ () =
+      Csymex.L.with_section
+        (Fmt.str "Executing function %a" Fmt_ail.pp_sym name)
+    in
     let* ptys = get_param_tys ~prog name in
     let ps = List.combine3 params ptys args in
     (* TODO: Introduce a with_stack_allocation.
