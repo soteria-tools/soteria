@@ -266,7 +266,7 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
           res;
         exit 0
     | Error e ->
-        L.error (fun f -> f "Error: %s" e);
+        Fmt.pr "Error: %s" e;
         exit 1
   with
   | ExecutionError e ->

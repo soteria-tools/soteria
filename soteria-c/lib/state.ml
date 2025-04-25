@@ -129,7 +129,7 @@ let check_non_null (ptrs : [< T.sptr ] Typed.t list) =
       Typed.v_false ptrs
   in
   if%sat condition then (
-    (L.info (fun m -> m "Null dereference detected");
+    (L.error (fun m -> m "Null dereference detected");
      Result.error `NullDereference)
     [@name "Null-deref case"])
   else Result.ok () [@name "Non-null case"]

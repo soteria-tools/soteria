@@ -201,17 +201,16 @@ let exec_main_and_print log_level smt_file includes file_names =
   Frontend.add_includes includes;
   let result = exec_main file_names in
   let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
-  L.app (fun m ->
-      m
-        "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
-         Executed %d statements"
-        Fmt.Dump.(
-          list @@ fun ft (r, _) ->
-          (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
-             ~miss:(Fmt.Dump.list SState.pp_serialized))
-            ft r)
-        result
-        (Stats.get_executed_statements ()))
+  Fmt.pr
+    "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
+     Executed %d statements"
+    Fmt.Dump.(
+      list @@ fun ft (r, _) ->
+      (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
+         ~miss:(Fmt.Dump.list SState.pp_serialized))
+        ft r)
+    result
+    (Stats.get_executed_statements ())
 
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
