@@ -328,10 +328,20 @@ let rec transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
          core::ptr::NonNull<T> { pointer: *const T }. *)
       | Struct [ { field_ty = from_ty; _ } ] -> transmute ~from_ty ~to_ty v
       | _ -> unhandled ())
+  | TLiteral (TInteger _), TAdt (TAdtId id, _), Base sv when Session.is_enum id
+    -> (
+      let variants =
+        Session.as_enum id
+        |> List.map (fun (v : Types.variant) ->
+               Typed.int_z v.discriminant.value)
+      in
+      let* variant = match_on ~constr:(( ==@ ) sv) variants in
+      match variant with
+      | Some v -> ok (Enum (v, []))
+      | None -> error `UBTransmute)
   | _, TAdt (TAdtId id, _), v -> (
       let adt = Session.get_adt id in
       match (from_ty, adt.kind, v) with
-      | TLiteral (TInteger _), Enum _, Base sv -> ok (Enum (sv, []))
       (* For 1-field structs, see if the value can be transmuted to that field. *)
       | _, Struct [ { field_ty = to_ty; _ } ], _ ->
           let++ v = transmute ~from_ty ~to_ty v in
