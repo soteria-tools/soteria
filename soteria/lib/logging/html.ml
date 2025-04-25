@@ -134,7 +134,7 @@ let header =
       const logMessages = document.querySelectorAll('div.log-msg');
 
       searchInput.addEventListener('input', () => {
-        const searchRe = new RegExp(searchInput.value, 'ig');
+        const searchRe = new RegExp(searchInput.value, 'i');
 
         logMessages.forEach(message => {
           const messageText = message.childNodes[0].textContent;
