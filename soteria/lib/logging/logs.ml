@@ -58,7 +58,7 @@ let with_section ?(is_branch = false) str f =
 
 module L = struct
   let log ~level msgf =
-    if !Config.logs_enabled && Level.leq level !Config.current_log_level then
+    if !Config.logs_enabled && Level.(level >= !Config.current_log_level) then
       msgf @@ fun fmt ->
       Format.kasprintf
         (fun msg ->
@@ -72,4 +72,5 @@ module L = struct
   let warn msgf = log ~level:Level.Warn msgf
   let app msgf = log ~level:Level.App msgf
   let error msgf = log ~level:Level.Error msgf
+  let smt msgf = log ~level:Level.Smt msgf
 end

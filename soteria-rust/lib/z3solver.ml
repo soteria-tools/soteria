@@ -3,7 +3,7 @@ module Var = Svalue.Var
 
 let z3_env_var = "SOTERIA_Z3_PATH"
 let log_src = Logs.Src.create "soteria_rust.SOLVER"
-let debug_str ~prefix s = Logs.debug ~src:log_src (fun m -> m "%s: %s" prefix s)
+let debug_str ~prefix s = L.smt (fun m -> m "%s: %s" prefix s)
 
 open Simple_smt
 
@@ -23,8 +23,8 @@ let smallest_power_of_two_greater_than n =
 
 let solver_log =
   {
-    send = debug_str ~prefix:"SMT:SEND";
-    receive = debug_str ~prefix:"SMT:RECV";
+    send = debug_str ~prefix:"-> ";
+    receive = debug_str ~prefix:"<- ";
     stop = Fun.id;
   }
 

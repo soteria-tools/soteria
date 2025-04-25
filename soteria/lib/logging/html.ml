@@ -10,10 +10,13 @@ let header =
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
+    body {
+      font-family: system-ui;
+    }
     .log-msg {
       font-family: monospace;
       white-space: pre-wrap;
-      margin: 2px;
+      margin: 2px 0;
       padding: 2px;
       border-radius: 4px;
       position: relative;
@@ -43,6 +46,20 @@ let header =
     .timestamp:hover {
       opacity: 0;
     }
+    .search-input {
+      position: sticky;
+      top: 8px;
+      width: calc(100% - 18px);
+      font-family: monospace;
+      font-size: 14px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      outline: none;
+      margin-bottom: 8px;
+      z-index: 1;
+      box-shadow: 0 0 3px rgba(0, 0, 0, 0.1);
+    }
 
     .log-msg.branch {
       font-style: italic;
@@ -65,6 +82,9 @@ let header =
     .ERROR {
       background-color: #ed3e3e;
       font-weight: bold;
+    }
+    .SMT {
+      background-color: #DDD;
     }
   </style>
   <script>
@@ -109,14 +129,57 @@ let header =
       element.removeChild(detailChild);
     }
 
+    function observeSearch() {
+      const searchInput = document.querySelector('.search-input');
+      const logMessages = document.querySelectorAll('div.log-msg');
+
+      searchInput.addEventListener('input', () => {
+        const searchRe = new RegExp(searchInput.value, 'ig');
+
+        logMessages.forEach(message => {
+          const messageText = message.childNodes[0].textContent;
+          message.style.display = searchRe.test(messageText) ? 'block' : 'none';
+        });
+      });
+    }
+
+    function keybindings() {
+      const searchInput = document.querySelector('.search-input');
+
+      document.addEventListener('keydown', event => {
+        const details = document.querySelectorAll('details');
+        console.log(event.key);
+        if (event.key === 'Escape') {
+          searchInput.value = '';
+          searchInput.dispatchEvent(new Event('input'));
+          searchInput.focus();
+          event.preventDefault();
+          event.stopPropagation();
+        } else if (event.key === 'o') {
+          details.forEach(detail => {
+            detail.open = true;
+          });
+        } else if (event.key === 'c') {
+          details.forEach(detail => {
+            detail.open = false;
+          });
+        }
+      });
+    }
+
     // Start from the body
-    document.addEventListener('DOMContentLoaded', () => { flattenDirectDetails(document.body) });
+    document.addEventListener('DOMContentLoaded', () => {
+      flattenDirectDetails(document.body);
+      observeSearch();
+      keybindings();
+    });
   </script>
   <title>Symex Log</title>
 </head>
 
 <body>
   <h1>Symex Log</h1>
+  <input class="search-input" type="text" placeholder="Search...">
   |}
 
 let footer = {|

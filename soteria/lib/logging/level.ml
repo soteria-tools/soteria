@@ -1,4 +1,4 @@
-type t = Trace | Debug | Info | Warn | App | Error
+type t = Trace | Debug | Info | Warn | App | Error | Smt
 
 let to_string = function
   | Trace -> "TRACE"
@@ -7,22 +7,26 @@ let to_string = function
   | Warn -> "WARN"
   | Error -> "ERROR"
   | App -> "APP"
+  | Smt -> "SMT"
 
-let ( <= ) l r =
+let ( >= ) l r =
   match (l, r) with
-  | Trace, Trace -> true
+  | _, _ when l = r -> true
   | Trace, _ -> false
-  | Debug, (Trace | Debug) -> true
+  | _, Trace -> true
+  | Smt, _ -> false
+  | _, Smt -> true
   | Debug, _ -> false
-  | Info, (Trace | Debug | Info) -> true
+  | _, Debug -> true
   | Info, _ -> false
-  | Warn, (Trace | Debug | Info | Warn) -> true
+  | _, Info -> true
   | Warn, _ -> false
-  | App, (Trace | Debug | Info | Warn) -> true
+  | _, Warn -> true
   | App, _ -> false
+  | _, App -> true
   | Error, _ -> true
 
-let leq = ( <= )
+let geq = ( >= )
 
 let cmdliner_t =
   let to_level l =

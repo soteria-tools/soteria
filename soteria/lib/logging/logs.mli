@@ -6,6 +6,7 @@ val with_section : ?is_branch:bool -> string -> (unit -> 'a) -> 'a
 
 module L : sig
   val log : level:Level.t -> ('a, unit) msgf -> unit
+  val smt : ('a, unit) msgf -> unit
   val trace : ('a, unit) msgf -> unit
   val debug : ('a, unit) msgf -> unit
   val info : ('a, unit) msgf -> unit
