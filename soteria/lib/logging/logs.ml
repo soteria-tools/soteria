@@ -56,7 +56,7 @@ module L = struct
           write_string msg)
         fmt
 
-  let trace : ('a, unit) msgf -> unit = fun msgf -> log ~level:Level.Trace msgf
+  let trace msgf = log ~level:Level.Trace msgf
   let debug msgf = log ~level:Level.Debug msgf
   let info msgf = log ~level:Level.Info msgf
   let warn msgf = log ~level:Level.Warn msgf

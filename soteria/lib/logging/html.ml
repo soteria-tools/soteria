@@ -11,14 +11,35 @@ let header =
       <style>
         .log-msg {
           font-family: monospace;
-          white-space: pre;
+          white-space: pre-wrap;
+          margin: 2px;
+          padding: 2px;
+          border-radius: 4px;
         }
-        
+
         details {
           margin: 0.5em 0;
           padding: 0.5em;
           border: 1px solid #ccc;
           border-radius: 5px;
+        }
+
+        .TRACE {
+          background-color: #c4c4c4;
+        }
+        .DEBUG {
+          background-color: #dee;
+          color: #777;
+        }
+        .INFO {
+          background-color: #fff;
+        }
+        .WARN {
+          background-color: #ffeb3b;
+        }
+        .ERROR {
+          background-color: #ed3e3e;
+          font-weight: bold;
         }
       </style>
       <title>Symex Log</title>
@@ -32,9 +53,9 @@ let footer = {|
       </html>
   |}
 
-let log_msg ?(inline = false) msg =
+let log_msg ?(attrs = []) ?(inline = false) msg =
   let cons = if inline then Htmlit.El.span else Htmlit.El.div in
-  Htmlit.(cons ~at:[ At.class' log_msg_class ] [ El.txt msg ])
+  Htmlit.(cons ~at:(At.class' log_msg_class :: attrs) [ El.txt msg ])
 
 let section_opening ~is_branch =
   if is_branch then {|<details class="is-branch">|} else {|<details>|}
@@ -44,4 +65,5 @@ let section_closing = {|</details>|}
 let section_title title_txt =
   Htmlit.El.(summary [ log_msg ~inline:true title_txt ]) |> to_string
 
-let message _level str = to_string (log_msg str)
+let message level str =
+  to_string @@ log_msg ~attrs:[ Htmlit.At.class' (Level.to_string level) ] str
