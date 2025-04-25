@@ -36,7 +36,9 @@ let log_msg ?(inline = false) msg =
   let cons = if inline then Htmlit.El.span else Htmlit.El.div in
   Htmlit.(cons ~at:[ At.class' log_msg_class ] [ El.txt msg ])
 
-let section_opening = {|<details>|}
+let section_opening ~is_branch =
+  if is_branch then {|<details class="is-branch">|} else {|<details>|}
+
 let section_closing = {|</details>|}
 
 let section_title title_txt =

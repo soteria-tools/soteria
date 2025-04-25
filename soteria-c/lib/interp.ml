@@ -510,8 +510,9 @@ module Make (State : State_intf.S) = struct
         let** v, state = eval_expr ~prog ~store state cond in
         (* [v] must be an integer! (TODO: or NULL possibly...) *)
         let* v = cast_checked v ~ty:Typed.t_int in
-        if%sat Typed.bool_of_int v then exec_stmt ~prog store state then_stmt
-        else exec_stmt ~prog store state else_stmt
+        if%sat Typed.bool_of_int v then
+          exec_stmt ~prog store state then_stmt [@name "if branch"]
+        else exec_stmt ~prog store state else_stmt [@name "else branch"]
     | AilSwhile (cond, stmt, _loopid) ->
         let rec loop store state =
           let** cond_v, state = eval_expr ~prog ~store state cond in

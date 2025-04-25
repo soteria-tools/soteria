@@ -1,6 +1,6 @@
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
 
-val start_section : string -> unit
+val start_section : is_branch:bool -> string -> unit
 val end_section : unit -> unit
 
 module L : sig

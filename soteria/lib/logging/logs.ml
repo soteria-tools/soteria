@@ -37,9 +37,9 @@ let decr_depth_counter () =
   let logger = logger () in
   logger.depth_counter <- logger.depth_counter - 1
 
-let start_section str =
+let start_section ~is_branch str =
   incr_depth_counter ();
-  write_string Html.section_opening;
+  write_string (Html.section_opening ~is_branch);
   write_string (Html.section_title str)
 
 let end_section () =

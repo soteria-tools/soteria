@@ -1,6 +1,6 @@
 (library
  (name ppx_symex)
- (public_name soteria.ppx_symex)
+ (public_name soteria.ppx)
  (kind ppx_rewriter)
  (libraries ppxlib ppx_symex_expander)
  (preprocess no_preprocessing))

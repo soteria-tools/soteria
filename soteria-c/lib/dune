@@ -24,6 +24,6 @@
   tsort)
  (flags :standard -open Soteria_std)
  (preprocess
-  (pps ppx_deriving.std ppx_symex))
+  (pps ppx_deriving.std soteria.ppx))
  (instrumentation
   (backend landmarks --auto)))
