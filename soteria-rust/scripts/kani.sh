@@ -116,9 +116,9 @@ for test in $TESTS; do
     end=$(($(date +%s%N)/1000000))
     if [ $result -eq $expect_failure ]; then
         if [ $result -eq 0 ]; then
-            echo -e " ${GREEN}passed${RESET} in $((end-start))ms"
+            echo -ne " ${GREEN}passed"
         else
-            echo -e " ${GREEN}failed (expected)${RESET} in $((end-start))ms"
+            echo -ne " ${GREEN}failed (expected)"
         fi
         passed=$((passed+1))
         if $STORE_PASSES; then
@@ -126,16 +126,16 @@ for test in $TESTS; do
         fi
     else
         if [ $result -eq 0 ] && [ $expect_failure -eq 1 ]; then
-            echo -e " ${RED}passed (expected failure)${RESET}"
+            echo -ne " ${RED}passed (expected failure)"
             failed=$((failed+1))
         elif [ $result -eq 1 ] && [ $expect_failure -eq 0 ]; then
-            echo -e " ${RED}failed${RESET}"
+            echo -ne " ${RED}failed"
             failed=$((failed+1))
         else
             if [ $result -eq 3 ]; then
-                echo -e " ${PURPLE}crashed due to Charon${RESET}"
+                echo -ne " ${PURPLE}crashed due to Charon"
             else
-                echo -e " ${ORANGE}crashed: status code $result${RESET}"
+                echo -ne " ${ORANGE}crashed: status code $result"
             fi
         fi
         if $STOP_ON_FAIL; then
@@ -143,6 +143,7 @@ for test in $TESTS; do
         fi
     fi
 
+    echo -e "${RESET} in $((end-start))ms"
     echo -e "\n" >> $LOG_FILE
     step=$((step+1))
 done
