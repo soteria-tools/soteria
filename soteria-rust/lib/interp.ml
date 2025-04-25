@@ -542,13 +542,50 @@ module Make (Heap : Heap_intf.S) = struct
         in
         let++ value, state = eval_operand state op in
         (Union (field, value), state)
-    (* Special case? unit (zero-tuple) *)
+    (* Tuple aggregate *)
     | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
         (Tuple values, state)
     (* Struct aggregate *)
-    | Aggregate (AggregatedAdt (TAdtId _, None, None, _), operands) ->
-        let++ values, state = eval_operand_list ~crate ~store state operands in
+    | Aggregate (AggregatedAdt (TAdtId t_id, None, None, _), operands) ->
+        let type_decl =
+          Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
+        in
+        let** values, state = eval_operand_list ~crate ~store state operands in
+        let++ (), state =
+          if 0 <> List.compare_length_with values 1 then Result.ok ((), state)
+          else
+            let v = List.hd values in
+            (* if only one value, check if any attributes to verify *)
+            Result.fold_list type_decl.item_meta.attr_info.attributes
+              ~init:((), state) ~f:(fun ((), state) attr ->
+                match (v, attr) with
+                | ( Base v,
+                    AttrUnknown
+                      {
+                        path = "rustc_layout_scalar_valid_range_start";
+                        args = Some min;
+                      } ) ->
+                    let min = int_of_string min in
+                    let* v = cast_checked ~ty:Typed.t_int v in
+                    if%sat v >=@ Typed.int min then Result.ok ((), state)
+                    else
+                      Heap.error
+                        (`StdErr "rustc_layout_scalar_valid_range_start") state
+                | ( Base v,
+                    AttrUnknown
+                      {
+                        path = "rustc_layout_scalar_valid_range_end";
+                        args = Some max;
+                      } ) ->
+                    let max = int_of_string max in
+                    let* v = cast_checked ~ty:Typed.t_int v in
+                    if%sat v <=@ Typed.int max then Result.ok ((), state)
+                    else
+                      Heap.error (`StdErr "rustc_layout_scalar_valid_range_end")
+                        state
+                | _ -> Result.ok ((), state))
+        in
         (Struct values, state)
     (* Invalid aggregate (not sure, but seems like it) *)
     | Aggregate ((AggregatedAdt _ as v), _) ->
