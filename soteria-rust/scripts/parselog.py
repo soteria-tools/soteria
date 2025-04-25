@@ -127,6 +127,10 @@ def main(files: list[str]):
                 log(file_name, "No entry points found", RED)
                 continue
 
+            if "resolve_constant (Generated_Expressions.COpaque" in test:
+                log(file_name, "Charon", PURPLE, "Constant resolving")
+                continue
+
             if "MISSING FEATURE, VANISHING" in test:
                 cause = re.search(r'MISSING FEATURE, VANISHING: (.+)\n', test)
                 if not cause:
