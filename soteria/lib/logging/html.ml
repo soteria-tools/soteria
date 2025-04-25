@@ -88,7 +88,7 @@ let header =
       // Will not be undefined iff there is a single <details> tag
       let detailChild = undefined;
       for (let child of element.children) {
-        if (child.tagName == "DETAILS" && !child.hasClass("is-branch")) {
+        if (child.tagName == "DETAILS" && child.classList.contains("is-branch")) {
           if (detailChild == undefined) {
             detailChild = child;
           } else {
