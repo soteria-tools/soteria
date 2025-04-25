@@ -152,16 +152,23 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "Variable %a not found in store"
               Expressions.pp_var_id local)
     (* Dereference a pointer *)
-    | PlaceProjection (base, Deref) ->
+    | PlaceProjection (base, Deref) -> (
         let** ptr, state = resolve_place ~store state base in
         L.debug (fun f ->
             f "Dereferencing ptr %a of %a" pp_full_ptr ptr Types.pp_ty base.ty);
         let** v, state = Heap.load ptr base.ty state in
-        let v = as_ptr v in
-        L.debug (fun f ->
-            f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
-              pp_full_ptr v);
-        Result.ok (v, state)
+        match v with
+        | Ptr v ->
+            L.debug (fun f ->
+                f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
+                  pp_full_ptr v);
+            Result.ok (v, state)
+        | Base off ->
+            let* off = cast_checked ~ty:Typed.t_int off in
+            let ptr = Sptr.null_ptr in
+            let ptr = Sptr.offset ptr off in
+            Result.ok ((ptr, None), state)
+        | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
         (* when projecting, we lose the metadata *)
         let** (ptr, _), state = resolve_place ~store state base in
@@ -232,19 +239,22 @@ module Make (Heap : Heap_intf.S) = struct
     | Constant c ->
         let++ v, state = resolve_constant c state in
         (v, state)
-    | Move loc | Copy loc ->
+    | Move loc | Copy loc -> (
         let ty = loc.ty in
-        let** ptr, state = resolve_place ~store state loc in
-        let is_move =
-          (* TODO: properly detect if ty has the Copy trait, in which case is_move is
+        match Layout.as_zst ty with
+        | Some zst -> Result.ok (zst, state)
+        | None ->
+            let** ptr, state = resolve_place ~store state loc in
+            let is_move =
+              (* TODO: properly detect if ty has the Copy trait, in which case is_move is
              always false. *)
-          match (op, ty) with
-          | _, TLiteral _ -> false
-          | Move _, _ -> true
-          | _ -> false
-        in
-        let++ v, state = Heap.load ~is_move ptr ty state in
-        (v, state)
+              match (op, ty) with
+              | _, TLiteral _ -> false
+              | Move _, _ -> true
+              | _ -> false
+            in
+            let++ v, state = Heap.load ~is_move ptr ty state in
+            (v, state))
 
   and eval_operand_list ~crate ~store state ops =
     let++ vs, state =

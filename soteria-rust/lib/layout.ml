@@ -90,6 +90,16 @@ module Session = struct
   let is_struct adt_id =
     match (get_adt adt_id).kind with Struct _ -> true | _ -> false
 
+  let as_enum adt_id =
+    match (get_adt adt_id).kind with
+    | Enum variants -> variants
+    | _ -> assert false
+
+  let as_struct adt_id =
+    match (get_adt adt_id).kind with
+    | Struct fields -> fields
+    | _ -> assert false
+
   let get_or_compute_cached_layout ty f =
     match Hashtbl.find_opt layout_cache ty with
     | Some layout -> layout
@@ -479,3 +489,28 @@ let rec is_inhabited : Types.ty -> bool = function
       | _ -> true)
   | TAdt (TTuple, { types; _ }) -> List.for_all is_inhabited types
   | _ -> true
+
+(** Returns the given type as it's unique representant if it's a ZST; otherwise
+    [None]. *)
+let rec as_zst : Types.ty -> 'a rust_val option =
+  let as_zsts tys = Monad.OptionM.all as_zst tys in
+  function
+  | TNever -> Some (Tuple [])
+  | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ })
+    when int_of_const_generic len = 0 ->
+      Some (Array [])
+  | TAdt (TAdtId id, _) -> (
+      let adt = Session.get_adt id in
+      match adt.kind with
+      | Struct fs ->
+          as_zsts @@ Charon_util.field_tys fs
+          |> Option.map (fun fs -> Struct fs)
+      | Union _ -> None
+      | Enum [] -> Some (Enum (0s, []))
+      | Enum [ { fields = []; discriminant; _ } ] ->
+          Some (Enum (Typed.int_z discriminant.value, []))
+      | Enum _ -> None
+      | _ -> None)
+  | TAdt (TTuple, { types; _ }) ->
+      as_zsts types |> Option.map (fun fs -> Tuple fs)
+  | _ -> None
