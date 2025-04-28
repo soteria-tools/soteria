@@ -13,12 +13,6 @@ module Cleaner = struct
   let init ~clean () = if clean then at_exit cleanup
 end
 
-let setup_console_log level =
-  Fmt_tty.setup_std_outputs ();
-  Logs.set_level level;
-  Logs.set_reporter (Logs_fmt.reporter ());
-  ()
-
 let pp_err ft (err, call_trace) =
   Format.open_hbox ();
   let () =

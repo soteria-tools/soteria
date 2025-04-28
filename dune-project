@@ -37,7 +37,6 @@
    (>= 0.17.0))
   ppx_deriving
   fmt
-  logs
   htmlit
   (odoc :with-doc)
   (dune
@@ -68,7 +67,6 @@
   hashcons
   cmdliner
   fmt
-  logs
   printbox-text
   (linol
    (>= 0.10))
@@ -132,7 +130,6 @@
   hashcons
   cmdliner
   fmt
-  logs
   printbox-text
   unionFind
   name_matcher_parser

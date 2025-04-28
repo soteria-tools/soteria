@@ -22,7 +22,6 @@ depends: [
   "ppx_expect" {>= "0.17.0"}
   "ppx_deriving"
   "fmt"
-  "logs"
   "htmlit"
   "odoc" {with-doc}
   "dune" {>= "3.14" & build & >= "3.14.0"}

@@ -9,8 +9,6 @@
   soteria.logs
   cmdliner
   fmt
-  logs
-  logs.fmt
   fmt.tty
   iter
   zarith

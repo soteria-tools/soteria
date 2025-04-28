@@ -24,7 +24,6 @@ depends: [
   "hashcons"
   "cmdliner"
   "fmt"
-  "logs"
   "printbox-text"
   "linol" {>= "0.10"}
   "linol-eio" {>= "0.10"}
