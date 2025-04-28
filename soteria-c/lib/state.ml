@@ -100,6 +100,13 @@ let with_heap_read_only st f =
       Missing fixes
   | Error e -> Error e
 
+let[@inline] check_non_null loc =
+  if%sat Typed.Ptr.is_null_loc loc then (
+    (L.info (fun m -> m "Null dereference detected");
+     Result.error `NullDereference)
+    [@name "Null-deref case"])
+  else Result.ok () [@name "Non-null case"]
+
 let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
@@ -108,6 +115,7 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     ('a * t, 'err, serialized list) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
+  let** () = check_non_null loc in
   let@ heap = with_heap st in
   (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap
 
@@ -122,30 +130,16 @@ let with_ptr_read_only (ptr : [< T.sptr ] Typed.t) (st : t)
   let@ heap = with_heap_read_only st in
   (SPmap.wrap_read_only (Freeable.wrap_read_only (f ~ofs))) loc heap
 
-let check_non_null (ptrs : [< T.sptr ] Typed.t list) =
-  let condition =
-    List.fold_left
-      (fun acc ptr -> acc ||@ Typed.Ptr.is_at_null_loc ptr)
-      Typed.v_false ptrs
-  in
-  if%sat condition then (
-    (L.info (fun m -> m "Null dereference detected");
-     Result.error `NullDereference)
-    [@name "Null-deref case"])
-  else Result.ok () [@name "Non-null case"]
-
 let load ptr ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
-  let** () = check_non_null [ ptr ] in
   with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "store" ptr st;
-  let** () = check_non_null [ ptr ] in
   with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
 
 let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
