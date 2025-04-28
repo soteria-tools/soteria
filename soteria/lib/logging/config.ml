@@ -40,7 +40,7 @@ let channel =
         match (get ()).kind with
         | Stderr -> Out_channel.stderr
         | Html ->
-            let oc = open_out "soterial_logs.html" in
+            let oc = open_out "soteria_logs.html" in
             at_exit (fun () -> close_out oc);
             oc_ref := Some oc;
             oc)

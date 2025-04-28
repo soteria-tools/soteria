@@ -22,8 +22,8 @@ let process_args v_list silent log_kind html =
           | 0 -> Some Warn
           | 1 -> Some Info
           | 2 -> Some Debug
-          | 3 -> Some Smt
-          | _ -> Some Trace
+          | 3 -> Some Trace
+          | _ -> Some Smt
         in
         Ok level
   in

@@ -1,8 +1,8 @@
 type t = Trace | Smt | Debug | Info | Warn | App | Error
 
 let to_string = function
-  | Trace -> "TRACE"
   | Smt -> "SMT"
+  | Trace -> "TRACE"
   | Debug -> "DEBUG"
   | Info -> "INFO"
   | Warn -> "WARN"
@@ -12,10 +12,10 @@ let to_string = function
 let ( >= ) l r =
   match (l, r) with
   | _, _ when l == r -> true
-  | Trace, _ -> false
-  | _, Trace -> true
   | Smt, _ -> false
   | _, Smt -> true
+  | Trace, _ -> false
+  | _, Trace -> true
   | Debug, _ -> false
   | _, Debug -> true
   | Info, _ -> false

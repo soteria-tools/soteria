@@ -76,6 +76,10 @@
    (>= 0.10))
   (odoc :with-doc)
   (alcotest :with-test)
+  (ppx_blob
+   (and
+    :build
+    (>= 0.9.0)))
   (dune
    (and
     :build

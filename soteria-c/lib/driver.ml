@@ -3,27 +3,6 @@ open Cerb_frontend
 open Syntaxes.FunctionWrap
 module Wpst_interp = Interp.Make (SState)
 
-let setup_stderr_log ~log_lsp level =
-  Logs.set_level level;
-  let fmt_reporter = Logs.format_reporter ~app:Fmt.stderr ~dst:Fmt.stderr () in
-  let reporter =
-    if log_lsp then fmt_reporter
-    else
-      (* A reporter that filters out logging from SMT. *)
-      Logs.
-        {
-          report =
-            (fun src level ~over k msgf ->
-              if Src.equal src Z3solver.log_src then (
-                over ();
-                k ())
-              else fmt_reporter.report src level ~over k msgf);
-        }
-  in
-  Logs.set_reporter reporter
-
-(** Copying most of the wrapper from RefinedC *)
-
 let impl_name =
   match Sys.getenv_opt "IMPL_NAME" with
   | Some impl -> impl
@@ -236,7 +215,6 @@ let generate_errors content =
 
 (* Entry point function *)
 let lsp () =
-  setup_stderr_log ~log_lsp:true (Some Logs.Debug);
   Initialize_analysis.init_once ();
   Soteria_c_lsp.run ~generate_errors ()
 
