@@ -21,7 +21,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ Base t ] -> cast_checked t ~ty:Typed.t_int
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ 0s then Heap.error `FailedAssert state
+    if%sat to_assert ==@ 0s then Heap.error (`FailedAssert None) state
     else Result.ok (Charon_util.unit_, state)
 
   let assume ~crate:_ ~args ~state =

@@ -10,12 +10,31 @@ module M (Heap : Heap_intf.S) = struct
 
   let assert_ ~crate:_ ~(args : rust_val list) ~state =
     let open Typed.Infix in
-    let* to_assert =
+    let* to_assert, msg =
       match args with
-      | [ Base t; _msg ] -> cast_checked t ~ty:Typed.t_int
+      | [ Base t; Ptr msg ] ->
+          let+ t = cast_checked t ~ty:Typed.t_int in
+          (t, msg)
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ 0s then Heap.error `FailedAssert state
+    if%sat to_assert ==@ 0s then
+      let str_ty =
+        Charon.Types.TAdt (TBuiltin TStr, Charon.TypesUtils.empty_generic_args)
+      in
+      let** str_data, state = Heap.load msg str_ty state in
+      let map_opt f l = Option.bind l (Monad.OptionM.all f) in
+      let str =
+        match str_data with
+        | Array bytes ->
+            Some bytes
+            |> map_opt (function Base b -> Some (Typed.kind b) | _ -> None)
+            |> map_opt (function
+                 | Svalue.Int b -> Some (Char.chr (Z.to_int b))
+                 | _ -> None)
+            |> Option.map (fun cs -> String.of_seq @@ List.to_seq cs)
+        | _ -> None
+      in
+      Heap.error (`FailedAssert str) state
     else Result.ok (Charon_util.unit_, state)
 
   let assume ~crate:_ ~args ~state =

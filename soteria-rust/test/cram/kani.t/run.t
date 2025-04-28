@@ -26,7 +26,21 @@ Test kani::assume
     ((11 / V|0|) <= 2147483647) /\ (-2147483648 <= (11 / V|0|)) /\
     (V|0| != 0) /\ (V|0| <= 2147483647) /\ (-2147483648 <= V|0|)
 
-Test valid values
+Test #[kani::should_panic]
   $ soteria-rust exec-main should_panic.rs --clean
   Done. - Ran 1 branches
   PC: empty
+
+Test kani::assert
+  $ soteria-rust exec-main assert.rs --clean
+  soteria-rust: [ERROR] Error: Errors: [Failed assertion: Expected true! with trace [($TESTCASE_ROOT/assert.rs:4:4-37,
+                                                         Call trace);
+                                                        ($TESTCASE_ROOT/assert.rs:4:4-37,
+                                                         Triggering memory operation)]]
+  
+  Errors: [Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 with trace 
+           [($TESTCASE_ROOT/assert.rs:10:4-42,
+             Call trace);
+            ($TESTCASE_ROOT/assert.rs:10:4-42,
+             Triggering memory operation)]]
+  [1]
