@@ -75,13 +75,37 @@ function keybindings() {
       details.forEach(detail => {
         detail.open = false;
       });
+    } else if (event.key === 'ArrowRight') {
+      let active = document.activeElement;
+      if (active.tagName === 'SUMMARY') {
+        active = active.parentNode;
+      }
+      if (active.open) {
+        active
+          .querySelectorAll('details')
+          .forEach(detail => { detail.open = true; });
+      } else {
+        active.open = true;
+      }
+    } else if (event.key === 'ArrowLeft') {
+      let active = document.activeElement;
+      if (active.tagName === 'SUMMARY') {
+        active = active.parentNode;
+      }
+      active
+        .querySelectorAll('details')
+        .forEach(detail => { if (detail !== active) { detail.open = false; } });
+      active.open = false;
     }
   });
 }
 
 // Start from the body
 document.addEventListener('DOMContentLoaded', () => {
-  flattenDirectDetails(document.body);
+  // This is now useless since we show all branches as sections
+  // even those which are not feasible.
+  // Let's keep the code around for now, in case we want to change this.
+  // flattenDirectDetails(document.body);
   observeSearch();
   keybindings();
 });

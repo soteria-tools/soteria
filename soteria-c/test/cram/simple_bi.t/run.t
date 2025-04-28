@@ -109,3 +109,34 @@
                                                   (manifest.c:6:10-12 (cursor: 6:10),
                                                    Triggering memory operation)]]
   
+The following test case is for regression testing.
+if%sat1 had the wrong semantics and would not correctly backtrack.
+  $ soteria-c gen-summaries if_sat_one_ok.c
+  Summaries for test_485:
+    { args = [V|0|; &(V|1|, V|2|)]; pre = [];
+      pc =
+      [(0 Eq V|1|); (0 Lt V|0|); (V|0| Leq 2147483647); (-2147483648 Leq V|0|)];
+      post = { heap = []; globs = [] };
+      ret =
+      (Error NullDereference with trace [(if_sat_one_ok.c:6:12-14 (cursor: 6:12),
+                                          Triggering memory operation)]);
+      memory_leak = false }
+      manifest bugs: []
+    { args = [V|0|; &(V|1|, V|2|)];
+      pre =
+      [{ heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|5|}])];
+         globs = [] }
+        ];
+      pc =
+      [(V|5| Leq 2147483647); (-2147483648 Leq V|5|); Not((0 Eq V|1|));
+        (0 Lt V|0|); (V|0| Leq 2147483647); (-2147483648 Leq V|0|)];
+      post =
+      { heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|5|}])];
+        globs = [] };
+      ret = (Ok V|5|); memory_leak = false }
+      manifest bugs: []
+    { args = [V|0|; &(V|1|, V|2|)]; pre = [];
+      pc = [Not((0 Lt V|0|)); (V|0| Leq 2147483647); (-2147483648 Leq V|0|)];
+      post = { heap = []; globs = [] }; ret = (Ok 0); memory_leak = false }
+      manifest bugs: []
+  

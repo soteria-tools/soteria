@@ -96,6 +96,7 @@ module Make (State : State_intf.S) = struct
   let alloc_params params st =
     Csymex.Result.fold_list params ~init:(Store.empty, st)
       ~f:(fun (store, st) (pname, ty, value) ->
+        L.trace (fun m -> m "Allocating variable %a" Fmt_ail.pp_sym pname);
         let** ptr, st = State.alloc_ty ty st in
         let store = Store.add pname (Some ptr, ty) store in
         let++ (), st = State.store ptr ty value st in

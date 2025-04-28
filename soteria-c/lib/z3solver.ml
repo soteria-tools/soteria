@@ -1,3 +1,4 @@
+open Syntaxes.FunctionWrap
 module Value = Typed
 module Var = Svalue.Var
 open Soteria_logs.Logs
@@ -121,6 +122,11 @@ module Solver_state = struct
 
   let mem (t : t) v =
     Dynarray.exists (fun d -> Dynarray.exists (Typed.equal v) d) t
+
+  let pp : t Fmt.t =
+    let open Fmt in
+    let pp_inner = brackets @@ hbox @@ iter ~sep:semi Dynarray.iter Typed.ppa in
+    iter ~sep:comma Dynarray.iter pp_inner
 end
 
 type t = {
@@ -315,19 +321,34 @@ let is_diff_op (v : Svalue.t) =
   | _ -> None
 
 let add_constraints solver ?(simplified = false) vs =
+  L.smt (fun m ->
+      m
+        "@[<v>@[<v 2>Adding constraints:@ %a@]@ @[<hov 2>to solver state:@ \
+         %a@]@]"
+        (Fmt.Dump.list Typed.ppa) vs Solver_state.pp solver.state);
+  (* We need to check if the constraint is already in the solver state *)
   let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
   iter @@ fun v ->
   let v = if simplified then v else simplify solver v in
-  Solver_state.add_constraint solver.state v;
-  ack_command solver.z3_solver @@ assume @@ encode_value @@ Typed.untyped v
+  if not (Value.equal v Typed.v_true) then (
+    Solver_state.add_constraint solver.state v;
+    ack_command solver.z3_solver @@ assume @@ encode_value @@ Typed.untyped v)
+  else L.smt (fun m -> m "Asserted true")
 
 let as_bool = Typed.as_bool
 
 (* Incremental doesn't allow for caching queries... *)
 let sat solver =
+  let@ () = Soteria_logs.Logs.with_section "Checking sat" in
+  L.smt (fun m ->
+      m "@[<2>Current solver state is:@ %a@]" Solver_state.pp solver.state);
   match Solver_state.trivial_truthiness solver.state with
-  | Some true -> true
-  | Some false -> false
+  | Some true ->
+      L.smt (fun m -> m "Trivially true");
+      true
+  | Some false ->
+      L.smt (fun m -> m "Trivially false");
+      false
   | None -> (
       let answer =
         try check solver.z3_solver

@@ -1,3 +1,5 @@
+open Syntaxes.FunctionWrap
+open Soteria_logs.Logs
 module Bi_interp = Interp.Make (Bi_state)
 open Ail_tys
 
@@ -8,6 +10,10 @@ end
 let generate_summaries_for ~prog (fundef : fundef) =
   let open Syntaxes.List in
   let fid, (floc, _, _, _, _) = fundef in
+  let@ () =
+    with_section
+      ("Generate summaries for " ^ Cerb_frontend.Symbol.show_symbol fid)
+  in
   let* arg_tys =
     match Ail_helpers.get_param_tys ~prog fid with
     | None ->
@@ -26,7 +32,10 @@ let generate_summaries_for ~prog (fundef : fundef) =
     | Error (err, bi_state) -> Csymex.return (args, Error err, bi_state)
     | Missing _ -> Csymex.vanish ()
   in
-  let+ (args, ret, bi_state), pc = Csymex.run process in
+  let+ (args, ret, bi_state), pc =
+    let@ () = with_section "Running symbolic execution" in
+    Csymex.run process
+  in
   let pre, post = Bi_state.to_spec bi_state in
   Summary.make ~args ~ret ~pre ~post ~pc ()
 
