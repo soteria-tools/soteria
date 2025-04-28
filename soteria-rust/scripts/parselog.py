@@ -163,7 +163,8 @@ def main(files: list[str]):
                     log(file_name, "Failure", RED)
                 continue
 
-            if "[ERROR] Error: Errors:" in test:
+            err_re = re.compile(r"Error in (\d+) branch")
+            if err_re.search(test):
                 if expect_failure:
                     log(file_name, "Success", GREEN)
                 else:

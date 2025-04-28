@@ -728,7 +728,10 @@ module Make (Heap : Heap_intf.S) = struct
   let exec_fun ?(ignore_leaks = false) ~crate ~args ~state fundef =
     let** value, state = exec_fun ~crate ~args ~state fundef in
     let++ (), state =
-      if ignore_leaks then Result.ok ((), state) else Heap.leak_check state
+      if ignore_leaks then Result.ok ((), state)
+      else
+        let@ () = with_loc ~loc:fundef.item_meta.span in
+        Heap.leak_check state
     in
     (value, state)
 end
