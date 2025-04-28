@@ -223,6 +223,7 @@ let rust_of_cvals ?offset ?meta ty : ('ptr, 'e, 'f) parser_return =
               List.init len (fun _ -> Types.TLiteral (TInteger U8))
             in
             aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
+    | TNever -> `More ([], fun _ -> Result.error `UBTransmute)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* basically, a parser is just a sort of monad, so we can have the usual operations on it *)
   and aux_bind ~f parser_ret : ('ptr, 'e, 'f) parser_return =

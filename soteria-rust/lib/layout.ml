@@ -491,7 +491,8 @@ let rec is_inhabited : Types.ty -> bool = function
   | _ -> true
 
 (** Returns the given type as it's unique representant if it's a ZST; otherwise
-    [None]. *)
+    [None].
+    FIXME: @giltho: this plays awfuly with polymorphism. *)
 let rec as_zst : Types.ty -> 'a rust_val option =
   let as_zsts tys = Monad.OptionM.all as_zst tys in
   function
