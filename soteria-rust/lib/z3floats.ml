@@ -78,20 +78,20 @@ let f128_of_int i =
 
 let int_of_f16 f =
   let fam = ifam "fp.to_sbv" [ 16 ] in
-  let bv = app fam [ f ] in
+  let bv = app fam [ rm; f ] in
   app_ "sbv_to_int" [ bv ]
 
 let int_of_f32 f =
   let fam = ifam "fp.to_sbv" [ 32 ] in
-  let bv = app fam [ f ] in
+  let bv = app fam [ rm; f ] in
   app_ "sbv_to_int" [ bv ]
 
 let int_of_f64 f =
   let fam = ifam "fp.to_sbv" [ 64 ] in
-  let bv = app fam [ f ] in
+  let bv = app fam [ rm; f ] in
   app_ "sbv_to_int" [ bv ]
 
 let int_of_f128 f =
   let fam = ifam "fp.to_sbv" [ 128 ] in
-  let bv = app fam [ f ] in
+  let bv = app fam [ rm; f ] in
   app_ "sbv_to_int" [ bv ]
