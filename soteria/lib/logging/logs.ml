@@ -2,7 +2,7 @@ type logger = { oc : Out_channel.t; mutable depth_counter : int }
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
 
 let init () =
-  let oc = open_out !Config.log_file in
+  let oc = Config.channel () in
   Out_channel.output_string oc Html.header;
   Out_channel.output_char oc '\n';
   Out_channel.flush oc;
@@ -23,11 +23,10 @@ let logger = lazy (init ())
 let[@inline] logger () = Lazy.force logger
 
 let write_string str =
-  if !Config.logs_enabled then (
-    let logger = logger () in
-    Out_channel.output_string logger.oc str;
-    Out_channel.output_char logger.oc '\n';
-    Out_channel.flush logger.oc)
+  let logger = logger () in
+  Out_channel.output_string logger.oc str;
+  Out_channel.output_char logger.oc '\n';
+  Out_channel.flush logger.oc
 
 let incr_depth_counter () =
   let logger = logger () in
@@ -38,16 +37,18 @@ let decr_depth_counter () =
   logger.depth_counter <- logger.depth_counter - 1
 
 let start_section ?(is_branch = false) str =
-  incr_depth_counter ();
-  write_string (Html.section_opening ~is_branch);
-  write_string (Html.section_title str)
+  if Config.logs_enabled () then (
+    incr_depth_counter ();
+    write_string (Html.section_opening ~is_branch);
+    write_string (Html.section_title str))
 
 let end_section () =
-  decr_depth_counter ();
-  write_string Html.section_closing
+  if Config.logs_enabled () then (
+    decr_depth_counter ();
+    write_string Html.section_closing)
 
-let with_section ?(is_branch = false) str f =
-  start_section ~is_branch str;
+let with_section str f =
+  start_section ~is_branch:false str;
   try
     let x = f () in
     end_section ();
@@ -58,7 +59,7 @@ let with_section ?(is_branch = false) str f =
 
 module L = struct
   let log ~level msgf =
-    if !Config.logs_enabled && Level.(level >= !Config.current_log_level) then
+    if Config.should_log level then
       msgf @@ fun fmt ->
       Format.kasprintf
         (fun msg ->

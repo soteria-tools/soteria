@@ -27,7 +27,7 @@ module Exec_main = struct
   let term =
     Term.(
       const Soteria_rust_lib.Driver.exec_main_and_print
-      $ Soteria_logs.Level.cmdliner_t
+      $ Soteria_logs.Cli.term
       $ dump_smt_arg
       $ no_compile_flag
       $ cleanup_flag

@@ -193,10 +193,10 @@ let exec_main file_names =
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
 (* Entry point function *)
-let exec_main_and_print log_level smt_file includes file_names =
+let exec_main_and_print log_config smt_file includes file_names =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   Z3solver.set_smt_file smt_file;
-  Soteria_logs.Config.set_log_level log_level;
+  Soteria_logs.Config.check_set_and_lock log_config;
   Initialize_analysis.init_once ();
   Frontend.add_includes includes;
   let result = exec_main file_names in
@@ -242,7 +242,7 @@ let lsp () =
 
 (* Entry point function *)
 let show_ail (include_args : string list) (files : string list) =
-  Soteria_logs.Config.set_log_level Trace;
+  Soteria_logs.Config.(check_set_and_lock (Ok console_trace));
   Frontend.add_includes include_args;
   Initialize_analysis.init_once ();
   match parse_and_link_ail files with
@@ -302,7 +302,7 @@ let exec_main_bi file_name =
 
 (* Entry point function *)
 let generate_main_summary file_name =
-  Soteria_logs.Config.set_log_level Trace;
+  Soteria_logs.Config.(check_set_and_lock (Ok console_trace));
   Initialize_analysis.init_once ();
   let results = exec_main_bi file_name in
   let pp_summary = Summary.pp pp_err in
@@ -334,7 +334,7 @@ let exec_fun_bi file_name fun_name =
 
 let generate_summary_for include_args file_name fun_name =
   Frontend.add_includes include_args;
-  Soteria_logs.Config.set_log_level Trace;
+  Soteria_logs.Config.(check_set_and_lock (Ok html_trace));
   Initialize_analysis.init_once ();
   let results = exec_fun_bi file_name fun_name in
   let pp_summary ft (summary, analysis) =
@@ -343,12 +343,12 @@ let generate_summary_for include_args file_name fun_name =
   in
   Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
-let generate_all_summaries log_level dump_unsupported_file smt_file includes
+let generate_all_summaries log_config dump_unsupported_file smt_file includes
     file_names =
   Z3solver.set_smt_file smt_file;
   Csymex.unsupported_file := dump_unsupported_file;
   Frontend.add_includes includes;
-  Soteria_logs.Config.set_log_level log_level;
+  Soteria_logs.Config.check_set_and_lock log_config;
   Initialize_analysis.init_once ();
   let prog =
     parse_and_link_ail file_names

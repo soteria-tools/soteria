@@ -247,7 +247,7 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
 let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
     file_name =
   Z3solver.set_smt_file smt_file;
-  Soteria_logs.Config.set_log_level log_level;
+  Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
   try
     let crate = parse_ullbc_of_file ~no_compile file_name in
