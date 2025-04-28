@@ -2,20 +2,30 @@ type logger = { oc : Out_channel.t; mutable depth_counter : int }
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
 
 let init () =
-  let oc = Config.channel () in
-  Out_channel.output_string oc Html.header;
-  Out_channel.output_char oc '\n';
-  Out_channel.flush oc;
+  let oc =
+    (* This already sets up the filedesc closing *)
+    Config.channel ()
+  in
+  let () =
+    match (Config.get ()).kind with
+    | Html ->
+        Out_channel.output_string oc Html.header;
+        Out_channel.output_char oc '\n';
+        Out_channel.flush oc
+    | _ -> ()
+  in
   let logger = { oc; depth_counter = 0 } in
   let () =
-    at_exit (fun () ->
-        (* If program is interrupted and not all sections have been closed, close them all! *)
-        for _ = 0 to logger.depth_counter - 1 do
-          Out_channel.output_string oc Html.section_closing;
-          Out_channel.output_char oc '\n'
-        done;
-        Out_channel.output_string oc Html.footer;
-        Out_channel.close oc)
+    match (Config.get ()).kind with
+    | Html ->
+        at_exit (fun () ->
+            (* If program is interrupted and not all sections have been closed, close them all! *)
+            for _ = 0 to logger.depth_counter - 1 do
+              Out_channel.output_string oc Html.section_closing;
+              Out_channel.output_char oc '\n'
+            done;
+            Out_channel.output_string oc Html.footer)
+    | Stderr -> ()
   in
   logger
 
@@ -39,13 +49,20 @@ let decr_depth_counter () =
 let start_section ?(is_branch = false) str =
   if Config.logs_enabled () then (
     incr_depth_counter ();
-    write_string (Html.section_opening ~is_branch);
-    write_string (Html.section_title str))
+    match (Config.get ()).kind with
+    | Html ->
+        write_string (Html.section_opening ~is_branch);
+        write_string (Html.section_title str)
+    | Stderr ->
+        (* Not writing start/end sections in text format *)
+        ())
 
 let end_section () =
   if Config.logs_enabled () then (
     decr_depth_counter ();
-    write_string Html.section_closing)
+    match (Config.get ()).kind with
+    | Html -> write_string Html.section_closing
+    | Stderr -> ())
 
 let with_section str f =
   start_section ~is_branch:false str;
@@ -63,7 +80,12 @@ module L = struct
       msgf @@ fun fmt ->
       Format.kasprintf
         (fun msg ->
-          let msg = Html.message level msg in
+          let msg =
+            (* TODO: Write a different logger for each kind, instead of pattern matching in each function *)
+            match (Config.get ()).kind with
+            | Html -> Html.message level msg
+            | Stderr -> Printf.sprintf "[%s] %s" (Level.to_string level) msg
+          in
           write_string msg)
         fmt
 
