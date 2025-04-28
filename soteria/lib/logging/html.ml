@@ -147,6 +147,8 @@ let header =
       const searchInput = document.querySelector('.search-input');
 
       document.addEventListener('keydown', event => {
+        if (event.target === searchInput) return;
+
         const details = document.querySelectorAll('details');
         console.log(event.key);
         if (event.key === 'Escape') {
