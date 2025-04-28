@@ -545,39 +545,13 @@ module Make (Heap : Heap_intf.S) = struct
           Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
         in
         let** values, state = eval_operand_list ~crate ~store state operands in
-        let++ (), state =
-          if 0 <> List.compare_length_with values 1 then Result.ok ((), state)
-          else
-            let v = List.hd values in
-            (* if only one value, check if any attributes to verify *)
-            Result.fold_list type_decl.item_meta.attr_info.attributes
-              ~init:((), state) ~f:(fun ((), state) attr ->
-                match (v, attr) with
-                | ( Base v,
-                    AttrUnknown
-                      {
-                        path = "rustc_layout_scalar_valid_range_start";
-                        args = Some min;
-                      } ) ->
-                    let min = int_of_string min in
-                    let* v = cast_checked ~ty:Typed.t_int v in
-                    if%sat v >=@ Typed.int min then Result.ok ((), state)
-                    else
-                      Heap.error
-                        (`StdErr "rustc_layout_scalar_valid_range_start") state
-                | ( Base v,
-                    AttrUnknown
-                      {
-                        path = "rustc_layout_scalar_valid_range_end";
-                        args = Some max_s;
-                      } ) ->
-                    let max = Z.of_string max_s in
-                    let* v = cast_checked ~ty:Typed.t_int v in
-                    if%sat v <=@ Typed.int_z max then Result.ok ((), state)
-                    else
-                      Heap.error (`StdErr "rustc_layout_scalar_valid_range_end")
-                        state
-                | _ -> Result.ok ((), state))
+        let++ () =
+          match values with
+          | [ v ] ->
+              Heap.lift_err state
+              @@ Layout.apply_attributes v
+                   type_decl.item_meta.attr_info.attributes
+          | _ -> Result.ok ()
         in
         (Struct values, state)
     (* Invalid aggregate (not sure, but seems like it) *)

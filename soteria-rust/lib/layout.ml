@@ -515,3 +515,26 @@ let rec as_zst : Types.ty -> 'a rust_val option =
   | TAdt (TTuple, { types; _ }) ->
       as_zsts types |> Option.map (fun fs -> Tuple fs)
   | _ -> None
+
+(** Apply the compiler-attribute to the given value *)
+let apply_attribute v attr =
+  let open Rustsymex.Syntax in
+  match (v, attr) with
+  | ( Base v,
+      Meta.AttrUnknown
+        { path = "rustc_layout_scalar_valid_range_start"; args = Some min } ) ->
+      let min = int_of_string min in
+      let* v = cast_checked ~ty:Typed.t_int v in
+      if%sat v >=@ Typed.int min then Result.ok ()
+      else Result.error (`StdErr "rustc_layout_scalar_valid_range_start")
+  | ( Base v,
+      AttrUnknown
+        { path = "rustc_layout_scalar_valid_range_end"; args = Some max_s } ) ->
+      let max = Z.of_string max_s in
+      let* v = cast_checked ~ty:Typed.t_int v in
+      if%sat v <=@ Typed.int_z max then Result.ok ()
+      else Result.error (`StdErr "rustc_layout_scalar_valid_range_end")
+  | _ -> Result.ok ()
+
+let apply_attributes v attributes =
+  Result.fold_list attributes ~f:(fun () -> apply_attribute v) ~init:()

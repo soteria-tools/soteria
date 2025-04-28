@@ -64,7 +64,6 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
   | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
   (* Tuples *)
   | Tuple vs, TAdt (TTuple, { types; _ }) -> chain_cvals (layout_of ty) vs types
-  | Tuple [], TNever -> []
   | Tuple _, _ | _, TAdt (TTuple, _) -> illegal_pair ()
   (* Structs *)
   | Struct vals, TAdt (TAdtId t_id, _) ->
