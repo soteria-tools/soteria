@@ -36,7 +36,7 @@ module Exec_main = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.exec_main_and_print
-      $ Logs_cli.level ()
+      $ Soteria_logs.Cli.term
       $ dump_smt_arg
       $ includes_arg
       $ files_arg)
@@ -83,7 +83,7 @@ module Generate_summaries = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.generate_all_summaries
-      $ Logs_cli.level ()
+      $ Soteria_logs.Cli.term
       $ dump_unsupported_arg
       $ dump_smt_arg
       $ includes_arg

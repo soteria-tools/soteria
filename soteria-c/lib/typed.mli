@@ -99,8 +99,9 @@ module Ptr : sig
   val loc : [< sptr ] t -> [> sloc ] t
   val ofs : [< sptr ] t -> [> sint ] t
   val loc_of_int : int -> [> sloc ] t
-  val null : [> sptr ] t
   val null_loc : [> sloc ] t
+  val null : [> sptr ] t
+  val is_null_loc : [< sloc ] t -> [> sbool ] t
   val is_null : [< sptr ] t -> [> sbool ] t
   val is_at_null_loc : [< sptr ] t -> [> sbool ] t
 end

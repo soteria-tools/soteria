@@ -1,3 +1,5 @@
+open Soteria_logs
+module L = Logs.L
 module List = ListLabels
 
 module type Config = sig
@@ -20,6 +22,8 @@ module type Base = sig
   val batched : (unit -> 'a MONAD.t) -> 'a MONAD.t
 
   val branch_on :
+    ?left_branch_name:string ->
+    ?right_branch_name:string ->
     sbool v ->
     then_:(unit -> 'a MONAD.t) ->
     else_:(unit -> 'a MONAD.t) ->
@@ -30,6 +34,8 @@ module type Base = sig
       [else_] branch is ignored, otherwise the [else_] branch is taken. This is,
       of course, UX-sound, but not OX-sound. *)
   val branch_on_take_one :
+    ?left_branch_name:string ->
+    ?right_branch_name:string ->
     sbool v ->
     then_:(unit -> 'a MONAD.t) ->
     else_:(unit -> 'a MONAD.t) ->
@@ -110,10 +116,20 @@ module type S = sig
       type sbool_v := Value.sbool Value.t
 
       val branch_on :
-        sbool_v -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
+        ?left_branch_name:string ->
+        ?right_branch_name:string ->
+        sbool_v ->
+        then_:(unit -> 'a t) ->
+        else_:(unit -> 'a t) ->
+        'a t
 
       val branch_on_take_one :
-        sbool_v -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
+        ?left_branch_name:string ->
+        ?right_branch_name:string ->
+        sbool_v ->
+        then_:(unit -> 'a t) ->
+        else_:(unit -> 'a t) ->
+        'a t
     end
   end
 end
@@ -237,7 +253,8 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
 
   let fresh_var ty = Seq.return (Solver.fresh_var ty)
 
-  let branch_on guard ~then_ ~else_ : 'a Seq.t =
+  let branch_on ?left_branch_name:_ ?right_branch_name:_ guard ~then_ ~else_ :
+      'a Seq.t =
    fun () ->
     let guard = Solver.simplify guard in
     match Value.as_bool guard with
@@ -263,7 +280,8 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
               else_ () ())
           ()
 
-  let branch_on_take_one guard ~then_ ~else_ : 'a Seq.t =
+  let branch_on_take_one ?left_branch_name:_ ?right_branch_name:_ guard ~then_
+      ~else_ : 'a Seq.t =
    fun () ->
     let guard = Solver.simplify guard in
     match Value.as_bool guard with
@@ -354,8 +372,22 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     let branching_left = wrap_read Fuel_gauge.branching_left
   end
 
+  type _ Effect.t += Close_last_section : unit Effect.t
+
   module Value = Solver.Value
-  module MONAD = Monad.IterM
+
+  module MONAD = struct
+    type 'a t = 'a Iter.t
+
+    let return x = Iter.return x
+    let map x f = Iter.map f x
+
+    let bind iter f =
+     fun k ->
+      iter (fun x ->
+          Effect.perform Close_last_section;
+          f x k)
+  end
 
   module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
@@ -373,7 +405,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
 
   let consume_fuel_steps n f =
     match Fuel.consume_fuel_steps n () with
-    | Exhausted -> Logging.debug (fun m -> m "Exhausted step fuel")
+    | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted -> f ()
 
   let assume learned f =
@@ -411,8 +443,9 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
 
   let fresh_var ty f = f (Solver.fresh_var ty)
 
-  let branch_on guard ~(then_ : unit -> 'a Iter.t) ~(else_ : unit -> 'a Iter.t)
-      : 'a Iter.t =
+  let branch_on ?(left_branch_name = "Left branch")
+      ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a Iter.t)
+      ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
     let left_sat = ref true in
@@ -424,18 +457,29 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
-        if Solver.sat () then then_ () f else left_sat := false;
+        if Solver.sat () then (
+          Logs.start_section ~is_branch:true left_branch_name;
+          then_ () f;
+          Logs.end_section ())
+        else left_sat := false;
         Symex_state.backtrack_n 1;
         Solver.add_constraints [ Value.(not guard) ];
+        let right_branch () =
+          Logs.start_section ~is_branch:true right_branch_name;
+          else_ () f;
+          Logs.end_section ()
+        in
         if !left_sat then (
           match Fuel.consume_branching 1 () with
-          | Exhausted -> Logging.debug (fun m -> m "Exhausted branching fuel")
-          | Not_exhausted -> if Solver.sat () then else_ () f)
+          | Exhausted -> L.debug (fun m -> m "Exhausted branching fuel")
+          | Not_exhausted -> if Solver.sat () then right_branch ())
         else
-          (* Right must be sat since left was not! We didn't branch so we don't consume the counter. *)
-          else_ () f
+          (* Right must be sat since left was not! We didn't branch so we don't consume the counter
+             FIXME: we should also check that the solver hasn't returned "UNKNOWN"! *)
+          right_branch ()
 
-  let branch_on_take_one guard ~then_ ~else_ : 'a Iter.t =
+  let branch_on_take_one ?left_branch_name:_ ?right_branch_name:_ guard ~then_
+      ~else_ : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
 
@@ -471,26 +515,38 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     | [ a ] -> a () f
     | a :: r ->
         (* First branch should not backtrack and last branch should not save *)
+        let with_section =
+          let branch_counter = ref 0 in
+          fun k ->
+            Logs.start_section ~is_branch:true
+              ("Branch number " ^ string_of_int !branch_counter);
+            k ();
+            Logs.end_section ();
+            incr branch_counter
+        in
         let rec loop brs =
           match brs with
           | [ x ] ->
               Symex_state.backtrack_n 1;
-              x () f
+              with_section @@ fun () -> x () f
           | x :: r ->
               Symex_state.backtrack_n 1;
               Symex_state.save ();
-              x () f;
+              (with_section @@ fun () -> x () f);
               loop r
           | [] -> failwith "unreachable"
         in
         Symex_state.save ();
-        a () f;
+        (with_section @@ fun () -> a () f);
         loop r
 
   let run iter =
     Symex_state.reset ();
     let l = ref [] in
-    (iter @@ fun x -> l := (x, Solver.as_values ()) :: !l);
+    let () =
+      try iter @@ fun x -> l := (x, Solver.as_values ()) :: !l
+      with effect Close_last_section, k -> Effect.Deep.continue k ()
+    in
     List.rev !l
 
   let vanish () _f = ()

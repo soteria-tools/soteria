@@ -1,0 +1,12 @@
+(library
+ (name soteria_logs)
+ (public_name soteria.logs)
+ (libraries soteria_std htmlit cmdliner unix)
+ (flags
+  (:standard -open Soteria_std))
+ (synopsis "Logging library for symbolic execution")
+ (preprocess
+  (pps ppx_blob))
+ (preprocessor_deps
+  (file "assets/soteria_logs.js")
+  (file "assets/soteria_logs.css")))

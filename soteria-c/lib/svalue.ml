@@ -309,16 +309,17 @@ module Ptr = struct
   let loc p =
     match p.node.kind with Ptr (l, _) -> l | _ -> Unop (GetPtrLoc, p) <| TLoc
 
+  let null_loc = Int Z.zero <| TLoc
+  let is_null_loc l = sem_eq l null_loc
   let loc_of_z z = Int z <| TLoc
   let loc_of_int i = loc_of_z (Z.of_int i)
 
   let ofs p =
     match p.node.kind with Ptr (_, o) -> o | _ -> Unop (GetPtrOfs, p) <| TInt
 
-  let null_loc = Int Z.zero <| TLoc
   let null = mk null_loc zero
   let is_null p = sem_eq p null
-  let is_at_null_loc p = sem_eq (loc p) null_loc
+  let is_at_null_loc p = is_null_loc (loc p)
 end
 
 (** {2 Sequences} *)

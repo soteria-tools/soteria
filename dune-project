@@ -23,8 +23,8 @@
 
 (package
  (name soteria)
- (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools.")
- (description "Soteria is a toolkit for writing symbolic bug-finding tools.")
+ (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools")
+ (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
   (ocaml
    (>= 5.3.0))
@@ -37,7 +37,7 @@
    (>= 0.17.0))
   ppx_deriving
   fmt
-  logs
+  htmlit
   (odoc :with-doc)
   (dune
    (and
@@ -53,8 +53,8 @@
 
 (package
  (name soteria-c)
- (synopsis "A C bug-finder based on Soteria.")
- (description "A C bug-finder based on Soteria.")
+ (synopsis "A C bug-finder based on Soteria")
+ (description "A C bug-finder based on Soteria")
  (depends
   (ocaml
    (>= 5.3.0))
@@ -67,7 +67,6 @@
   hashcons
   cmdliner
   fmt
-  logs
   printbox-text
   (linol
    (>= 0.10))
@@ -75,6 +74,10 @@
    (>= 0.10))
   (odoc :with-doc)
   (alcotest :with-test)
+  (ppx_blob
+   (and
+    :build
+    (>= 0.9.0)))
   (dune
    (and
     :build
@@ -112,8 +115,8 @@
 
 (package
  (name soteria-rust)
- (synopsis "Rust symbolic execution tool based on Soteria.")
- (description "Rust symbolic execution tool based on Soteria.")
+ (synopsis "Rust symbolic execution tool based on Soteria")
+ (description "Rust symbolic execution tool based on Soteria")
  (sites
   (share kani_lib))
  (depends
@@ -127,7 +130,6 @@
   hashcons
   cmdliner
   fmt
-  logs
   printbox-text
   unionFind
   name_matcher_parser

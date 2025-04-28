@@ -1,7 +1,6 @@
 open Soteria_c_lib
 open Csymex.Syntax
-
-let ( let@ ) = ( @@ )
+open Soteria_std.Syntaxes.FunctionWrap
 
 let process =
   let open Typed.Infix in

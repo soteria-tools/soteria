@@ -5,8 +5,9 @@ Basic code, reference gets invalidated
 
 Simple tree borrow violation
   $ soteria-rust exec-main simple-fail.rs --clean
-  soteria-rust: [ERROR] Error: Errors: [UBTreeBorrow with trace [($TESTCASE_ROOT/simple-fail.rs:8:4-11,
-                                     Triggering memory operation)]]
+  Error in 1 branch:
+  - UBTreeBorrow with trace [($TESTCASE_ROOT/simple-fail.rs:8:4-11,
+                                                 Triggering memory operation)]
   [1]
 
 Raw pointers don't get new tags

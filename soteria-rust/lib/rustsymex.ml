@@ -6,6 +6,7 @@ module SYMEX =
     (Z3solver)
 
 include SYMEX
+include Syntaxes.FunctionWrap
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
     (Typed.T.nonzero Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
@@ -22,8 +23,6 @@ let match_on ~(constr : 'a -> Typed.sbool Typed.t) (elements : 'a list) :
     | [] -> return None
   in
   aux elements
-
-let ( let@ ) = ( @@ )
 
 let push_give_up, flush_give_up =
   let give_up_reasons = Dynarray.create () in

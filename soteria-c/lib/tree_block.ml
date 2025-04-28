@@ -48,6 +48,13 @@ type serialized_atom =
   | Any of { offset : T.sint Typed.t; len : T.sint Typed.t }
 [@@deriving show { with_path = false }]
 
+let log_fixes fixes =
+  L.trace (fun m ->
+      m "MISSING WITH FIXES: %a"
+        (Fmt.Dump.list (Fmt.Dump.list pp_serialized_atom))
+        fixes);
+  fixes
+
 let mk_fix_typed offset ty () =
   let* v = Layout.nondet_c_ty ty in
   return [ [ TypedVal { offset; ty; v } ] ]
@@ -115,7 +122,7 @@ module Node = struct
     match t with
     | NotOwned _ ->
         let+ fixes = mk_fix_typed ofs ty () in
-        Soteria_symex.Compo_res.miss fixes
+        Soteria_symex.Compo_res.miss (log_fixes fixes)
     | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok 0s
@@ -354,7 +361,7 @@ module Tree = struct
       | NotOwned Totally ->
           let* len = Layout.size_of_s ty in
           let fixes = mk_fix_any ~ofs:low ~len () in
-          Result.miss fixes
+          Result.miss (log_fixes fixes)
       | NotOwned Partially -> miss_no_fix ~msg:"partially missing store" ()
       | _ -> Result.ok ()
     in
@@ -392,7 +399,7 @@ module Tree = struct
     | Ok sv ->
         let+ () = Csymex.assume [ sv ==?@ v ] in
         Ok tree
-    | Missing fixes -> Csymex.Result.miss fixes
+    | Missing fixes -> Csymex.Result.miss (log_fixes fixes)
     | Error `UninitializedMemoryAccess -> Csymex.vanish ()
 
   let produce_typed_val (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
@@ -533,7 +540,7 @@ let with_bound_check (t : t) (ofs : [< T.sint ] Typed.t) f =
 let of_opt ?(mk_fixes = fun () -> Csymex.return []) = function
   | None ->
       let+ fixes = mk_fixes () in
-      Soteria_symex.Compo_res.miss fixes
+      Soteria_symex.Compo_res.miss (log_fixes fixes)
   | Some t -> Result.ok t
 
 let to_opt t = if is_empty t then None else Some t
@@ -566,7 +573,7 @@ let store ofs ty sval t =
   match t with
   | None ->
       let fixes = mk_fix_any ~ofs ~len:size () in
-      Result.miss fixes
+      Result.miss (log_fixes fixes)
   | Some t ->
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in

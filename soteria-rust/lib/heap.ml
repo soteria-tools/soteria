@@ -17,7 +17,8 @@ let with_error_loc_as_call_trace () f =
 
 module SPmap = Pmap_direct_access (struct
   include Typed
-  module Symex = Rustsymex
+  module Symex = Rustsymex.SYMEX
+  (* FIXME: Rustsymex.SYMEX instead of just Rustsymex because Rustsymex overrides the L module right now. *)
 
   type t = T.sloc Typed.t
 

@@ -2,8 +2,7 @@ module Value = Typed
 module Var = Svalue.Var
 
 let z3_env_var = "SOTERIA_Z3_PATH"
-let log_src = Logs.Src.create "soteria_rust.SOLVER"
-let debug_str ~prefix s = Logs.debug ~src:log_src (fun m -> m "%s: %s" prefix s)
+let debug_str ~prefix s = L.smt (fun m -> m "%s: %s" prefix s)
 
 open Simple_smt
 
@@ -23,8 +22,8 @@ let smallest_power_of_two_greater_than n =
 
 let solver_log =
   {
-    send = debug_str ~prefix:"SMT:SEND";
-    receive = debug_str ~prefix:"SMT:RECV";
+    send = debug_str ~prefix:"-> ";
+    receive = debug_str ~prefix:"<- ";
     stop = Fun.id;
   }
 
@@ -385,7 +384,7 @@ let sat solver =
       let answer =
         try check solver.z3_solver
         with Simple_smt.UnexpectedSolverResponse s ->
-          Logs.err ~src:log_src (fun m ->
+          L.error (fun m ->
               m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
           Unknown
       in
@@ -393,7 +392,7 @@ let sat solver =
       | Sat -> true
       | Unsat -> false
       | Unknown ->
-          Logs.info ~src:log_src (fun m -> m "Solver returned unknown");
+          L.warn (fun m -> m "Solver returned unknown");
           (* We return UNSAT by default: under-approximating behaviour *)
           false)
 
