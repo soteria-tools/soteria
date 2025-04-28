@@ -1,5 +1,3 @@
-module Old_logs = L
-
 module SYMEX =
   Soteria_symex.Symex.Make_iter
     (struct
@@ -9,11 +7,6 @@ module SYMEX =
 
 include SYMEX
 include Syntaxes.FunctionWrap
-
-(** TODO: migrate to new logging system. But that will mess up Opale's scripts
-    without care. We should ensure some messages are still sent to stdout.dune
-*)
-module L = Old_logs
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
     (Typed.T.nonzero Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
