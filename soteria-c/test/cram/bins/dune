@@ -2,4 +2,4 @@
  (names batch run_twice)
  (libraries soteria_c_lib)
  (preprocess
-  (pps ppx_symex)))
+  (pps soteria.ppx)))

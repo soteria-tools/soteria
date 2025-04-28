@@ -6,10 +6,9 @@
  (libraries
   soteria.std
   soteria.symex
+  soteria.logs
   cmdliner
   fmt
-  logs
-  logs.fmt
   fmt.tty
   iter
   zarith
@@ -20,7 +19,7 @@
   dune-site)
  (flags :standard -open Soteria_std)
  (preprocess
-  (pps ppx_deriving.std ppx_symex))
+  (pps ppx_deriving.std soteria.ppx))
  (instrumentation
   (backend landmarks --auto)))
 

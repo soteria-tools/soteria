@@ -508,8 +508,9 @@ module Make (State : State_intf.S) = struct
         let** v, state = eval_expr ~prog ~store state cond in
         (* [v] must be an integer! (TODO: or NULL possibly...) *)
         let* v = cast_checked v ~ty:Typed.t_int in
-        if%sat Typed.bool_of_int v then exec_stmt ~prog store state then_stmt
-        else exec_stmt ~prog store state else_stmt
+        if%sat Typed.bool_of_int v then
+          exec_stmt ~prog store state then_stmt [@name "if branch"]
+        else exec_stmt ~prog store state else_stmt [@name "else branch"]
     | AilSwhile (cond, stmt, _loopid) ->
         let rec loop store state =
           let** cond_v, state = eval_expr ~prog ~store state cond in
@@ -551,8 +552,7 @@ module Make (State : State_intf.S) = struct
     (* Put arguments in store *)
     let name, (loc, _, _, params, stmt) = fundef in
     let@ () = with_loc ~loc in
-    L.info (fun m ->
-        m "Executing function %s" (Cerb_frontend.Pp_symbol.to_string name));
+    L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);
     let* ptys = get_param_tys ~prog name in
     let ps = List.combine3 params ptys args in
     (* TODO: Introduce a with_stack_allocation.

@@ -1,5 +1,6 @@
 module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Soteria_symex.Compo_res
+open Syntaxes.FunctionWrap
 open Cmd
 
 exception ExecutionError of string
@@ -11,12 +12,6 @@ module Cleaner = struct
   let cleanup () = List.iter Sys.remove !files
   let init ~clean () = if clean then at_exit cleanup
 end
-
-let setup_console_log level =
-  Fmt_tty.setup_std_outputs ();
-  Logs.set_level level;
-  Logs.set_reporter (Logs_fmt.reporter ());
-  ()
 
 let pp_err ft (err, call_trace) =
   Format.open_hbox ();
@@ -192,9 +187,10 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
   let outcomes =
     entry_points
     |> List.map @@ fun ((entry_point : UllbcAst.fun_decl), should_err) ->
-       L.info (fun g ->
-           g "Executing entry point: %s"
-             (PrintTypes.name_to_string ctx entry_point.item_meta.name));
+       let@ () =
+         L.entry_point_section
+         @@ PrintTypes.name_to_string ctx entry_point.item_meta.name
+       in
        let branches =
          try Rustsymex.run @@ exec_fun entry_point
          with exn ->
@@ -236,16 +232,16 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
                 | Compo_res.Ok _, pcs -> Some pcs
                 | _ -> None)
            |> Result.ok
-         else Fmt.error "Errors: %a" Fmt.(Dump.list pp_err) errors
+         else Result.error errors
   in
   List.join_results outcomes
   |> Result.map List.flatten
-  |> Result.map_error (String.concat "\n\n")
+  |> Result.map_error List.flatten
 
 let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
     file_name =
   Z3solver.set_smt_file smt_file;
-  setup_console_log log_level;
+  Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
   try
     let crate = parse_ullbc_of_file ~no_compile file_name in
@@ -263,13 +259,19 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
           (list ~sep:(any "@\n@\n") pp_info)
           res;
         exit 0
-    | Error e ->
-        L.err (fun f -> f "Error: %s" e);
+    | Error res ->
+        let open Fmt in
+        let pp_err ft e = pf ft "- %a" pp_err e in
+        let n = List.length res in
+        Fmt.pr "Error in %i branch%s:\n%a\n" n
+          (if n = 1 then "" else "s")
+          (list ~sep:(any "@\n@\n") pp_err)
+          res;
         exit 1
   with
   | ExecutionError e ->
-      L.err (fun f -> f "Fatal: %s" e);
+      Fmt.pr "Fatal: %s" e;
       exit 2
   | CharonError e ->
-      L.err (fun f -> f "Fatal (Charon): %s" e);
+      Fmt.pr "Fatal (Charon): %s" e;
       exit 3

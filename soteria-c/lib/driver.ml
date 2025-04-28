@@ -1,35 +1,7 @@
 module SState = State (* Clashes with Cerb_frontend.State *)
 open Cerb_frontend
+open Syntaxes.FunctionWrap
 module Wpst_interp = Interp.Make (SState)
-
-let ( let@ ) = ( @@ )
-
-let setup_console_log level =
-  Fmt_tty.setup_std_outputs ();
-  Logs.set_level level;
-  Logs.set_reporter (Logs_fmt.reporter ());
-  ()
-
-let setup_stderr_log ~log_lsp level =
-  Logs.set_level level;
-  let fmt_reporter = Logs.format_reporter ~app:Fmt.stderr ~dst:Fmt.stderr () in
-  let reporter =
-    if log_lsp then fmt_reporter
-    else
-      (* A reporter that filters out logging from SMT. *)
-      Logs.
-        {
-          report =
-            (fun src level ~over k msgf ->
-              if Src.equal src Z3solver.log_src then (
-                over ();
-                k ())
-              else fmt_reporter.report src level ~over k msgf);
-        }
-  in
-  Logs.set_reporter reporter
-
-(** Copying most of the wrapper from RefinedC *)
 
 let impl_name =
   match Sys.getenv_opt "IMPL_NAME" with
@@ -107,6 +79,7 @@ module Frontend = struct
       Exception.Result
         (fun filename -> c_frontend (conf, io) (stdlib, impl) ~filename)
     in
+    let () = Cerb_colour.do_colour := false in
     match result with
     | Exception.Result f -> frontend := f
     | Exception.Exception err ->
@@ -199,25 +172,24 @@ let exec_main file_names =
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
 (* Entry point function *)
-let exec_main_and_print log_level smt_file includes file_names =
+let exec_main_and_print log_config smt_file includes file_names =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   Z3solver.set_smt_file smt_file;
-  setup_console_log log_level;
+  Soteria_logs.Config.check_set_and_lock log_config;
   Initialize_analysis.init_once ();
   Frontend.add_includes includes;
   let result = exec_main file_names in
   let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
-  L.app (fun m ->
-      m
-        "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
-         Executed %d statements"
-        Fmt.Dump.(
-          list @@ fun ft (r, _) ->
-          (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
-             ~miss:(Fmt.Dump.list SState.pp_serialized))
-            ft r)
-        result
-        (Stats.get_executed_statements ()))
+  Fmt.pr
+    "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
+     Executed %d statements"
+    Fmt.Dump.(
+      list @@ fun ft (r, _) ->
+      (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
+         ~miss:(Fmt.Dump.list SState.pp_serialized))
+        ft r)
+    result
+    (Stats.get_executed_statements ())
 
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
@@ -243,13 +215,12 @@ let generate_errors content =
 
 (* Entry point function *)
 let lsp () =
-  setup_stderr_log ~log_lsp:true (Some Logs.Debug);
   Initialize_analysis.init_once ();
   Soteria_c_lsp.run ~generate_errors ()
 
 (* Entry point function *)
 let show_ail (include_args : string list) (files : string list) =
-  setup_console_log (Some Debug);
+  Soteria_logs.Config.(check_set_and_lock (Ok console_trace));
   Frontend.add_includes include_args;
   Initialize_analysis.init_once ();
   match parse_and_link_ail files with
@@ -309,7 +280,7 @@ let exec_main_bi file_name =
 
 (* Entry point function *)
 let generate_main_summary file_name =
-  setup_console_log (Some Debug);
+  Soteria_logs.Config.(check_set_and_lock (Ok console_trace));
   Initialize_analysis.init_once ();
   let results = exec_main_bi file_name in
   let pp_summary = Summary.pp pp_err in
@@ -341,7 +312,7 @@ let exec_fun_bi file_name fun_name =
 
 let generate_summary_for include_args file_name fun_name =
   Frontend.add_includes include_args;
-  setup_console_log (Some Debug);
+  Soteria_logs.Config.(check_set_and_lock (Ok html_trace));
   Initialize_analysis.init_once ();
   let results = exec_fun_bi file_name fun_name in
   let pp_summary ft (summary, analysis) =
@@ -350,12 +321,12 @@ let generate_summary_for include_args file_name fun_name =
   in
   Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
-let generate_all_summaries log_level dump_unsupported_file smt_file includes
+let generate_all_summaries log_config dump_unsupported_file smt_file includes
     file_names =
   Z3solver.set_smt_file smt_file;
   Csymex.unsupported_file := dump_unsupported_file;
   Frontend.add_includes includes;
-  setup_console_log log_level;
+  Soteria_logs.Config.check_set_and_lock log_config;
   Initialize_analysis.init_once ();
   let prog =
     parse_and_link_ail file_names
