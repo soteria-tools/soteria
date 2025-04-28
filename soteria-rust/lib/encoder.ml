@@ -275,7 +275,7 @@ let rust_of_cvals ?offset ?meta ty : ('ptr, 'e, 'f) parser_return =
           in
           Result.ok parser
       | None ->
-          L.err (fun m ->
+          L.error (fun m ->
               m "Unmatched discriminant in rust_of_cvals: %a" Typed.ppa cval);
           Result.error `UBTransmute
     in
