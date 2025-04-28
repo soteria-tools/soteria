@@ -372,22 +372,8 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     let branching_left = wrap_read Fuel_gauge.branching_left
   end
 
-  type _ Effect.t += Close_last_section : unit Effect.t
-
   module Value = Solver.Value
-
-  module MONAD = struct
-    type 'a t = 'a Iter.t
-
-    let return x = Iter.return x
-    let map x f = Iter.map f x
-
-    let bind iter f =
-     fun k ->
-      iter (fun x ->
-          Effect.perform Close_last_section;
-          f x k)
-  end
+  module MONAD = Monad.IterM
 
   module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
@@ -543,10 +529,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
   let run iter =
     Symex_state.reset ();
     let l = ref [] in
-    let () =
-      try iter @@ fun x -> l := (x, Solver.as_values ()) :: !l
-      with effect Close_last_section, k -> Effect.Deep.continue k ()
-    in
+    let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
     List.rev !l
 
   let vanish () _f = ()
