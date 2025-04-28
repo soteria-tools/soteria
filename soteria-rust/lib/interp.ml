@@ -314,31 +314,13 @@ module Make (Heap : Heap_intf.S) = struct
               Heap.lift_err state @@ Encoder.transmute ~from_ty ~to_ty v
             in
             (v, state)
-        | Cast (CastScalar (TInteger from_ty, TInteger to_ty)) ->
-            let v = as_base_of ~ty:Typed.t_int v in
-            let bits = 8 * Layout.size_of_int_ty to_ty in
-            let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
-            let maxsigned = Typed.nonzero_z (Z.shift_left Z.one (bits - 1)) in
-            let* v =
-              if Layout.is_signed from_ty then
-                if%sat v <@ 0s then return (((v %@ max) +@ max) %@ max)
-                else return (v %@ max)
-              else return (v %@ max)
+        | Cast (CastScalar (from_ty, to_ty)) ->
+            let++ v =
+              Heap.lift_err state
+              @@ Encoder.transmute ~from_ty:(TLiteral from_ty)
+                   ~to_ty:(TLiteral to_ty) v
             in
-            let* v =
-              if Layout.is_signed to_ty then
-                if%sat v >=@ maxsigned then return (v -@ max) else return v
-              else return v
-            in
-            Result.ok (Base (v :> T.cval Typed.t), state)
-        | Cast (CastScalar (TInteger U8, TChar))
-        | Cast (CastScalar (TBool, TInteger (U8 | U16 | U32 | U64 | U128)))
-        | Cast (CastScalar (TChar, TInteger (U32 | U64 | U128))) ->
-            Result.ok (v, state)
-        | Cast (CastScalar (TInteger _, TFloat fp)) ->
-            let v = as_base_of ~ty:Typed.t_int v in
-            let v' = Typed.float_of_int fp v in
-            Result.ok (Base v', state)
+            (v, state)
         | Cast
             (CastUnsize
                ( TRawPtr
@@ -417,7 +399,18 @@ module Make (Heap : Heap_intf.S) = struct
                   let v = Typed.minus v1 v2 in
                   let* cmp = Core.cmp_of_int v in
                   Result.ok (Base cmp, state)
-            | Offset -> not_impl "Offset cannot be used on non-pointer values"
+            | Offset ->
+                (* if offset is done on integers, we just add the (size(T) * rhs) *)
+                let* v1, v2, ty = cast_checked2 v1 v2 in
+                if Typed.equal_ty ty Typed.t_ptr then
+                  Fmt.kstr not_impl
+                    "Offset cannot be used on non-int values: %a / %a" Typed.ppa
+                    v1 Typed.ppa v2
+                else
+                  let pointee = Charon_util.get_pointee (type_of_operand e1) in
+                  let* size = Layout.size_of_s pointee in
+                  let res = v1 +@ (v2 *@ size) in
+                  Result.ok (Base res, state)
             | BitOr | BitAnd | BitXor -> (
                 let* ity =
                   match type_of_operand e1 with
@@ -576,11 +569,11 @@ module Make (Heap : Heap_intf.S) = struct
                     AttrUnknown
                       {
                         path = "rustc_layout_scalar_valid_range_end";
-                        args = Some max;
+                        args = Some max_s;
                       } ) ->
-                    let max = int_of_string max in
+                    let max = Z.of_string max_s in
                     let* v = cast_checked ~ty:Typed.t_int v in
-                    if%sat v <=@ Typed.int max then Result.ok ((), state)
+                    if%sat v <=@ Typed.int_z max then Result.ok ((), state)
                     else
                       Heap.error (`StdErr "rustc_layout_scalar_valid_range_end")
                         state

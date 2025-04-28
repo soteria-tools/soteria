@@ -125,3 +125,10 @@ let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
   List.exists
     (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)
     decl.item_meta.attr_info.attributes
+
+let get_pointee : Types.ty -> Types.ty = function
+  | TRef (_, ty, _)
+  | TRawPtr (ty, _)
+  | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) ->
+      ty
+  | _ -> failwith "Non-pointer type given to get_pointee"

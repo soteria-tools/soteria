@@ -150,7 +150,7 @@ let load ?is_move (((_, tag) as ptr), meta) ty st =
                   (value :: vals, block))
             in
             let values = List.rev values in
-            let* res = callback values in
+            let** res = callback values in
             aux block res
       in
       let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
