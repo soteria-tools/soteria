@@ -644,7 +644,14 @@ module M (Heap : Heap_intf.S) = struct
   let from_raw_parts ~crate:_ ~args ~state =
     match args with
     | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
-    | _ -> failwith "from_raw_parts: invalid arguments"
+    | [ Base v; Base meta ] ->
+        let* v = cast_checked ~ty:Typed.t_int v in
+        let ptr = Sptr.offset Sptr.null_ptr v in
+        Result.ok (Ptr (ptr, Some meta), state)
+    | _ ->
+        Fmt.failwith "from_raw_parts: invalid arguments %a"
+          Fmt.(list ~sep:comma pp_rust_val)
+          args
 
   let nop ~crate:_ ~args:_ ~state = Result.ok (Tuple [], state)
 
@@ -745,4 +752,9 @@ module M (Heap : Heap_intf.S) = struct
           else Result.ok (Base 1s, state)
     in
     aux l r len state
+
+  let likely ~crate:_ ~args ~state =
+    match args with
+    | [ (Base _ as res) ] -> Result.ok (res, state)
+    | _ -> failwith "likely: invalid arguments"
 end

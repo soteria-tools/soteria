@@ -38,6 +38,7 @@ module M (Heap : Heap_intf.S) = struct
     | IsSome
     | IsValStaticallyKnown
     | IterNth
+    | Likely
     | MinAlignOf of type_loc
     | MulAdd
     | Nop
@@ -92,7 +93,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::fmaf64", MulAdd);
       ("core::intrinsics::fmaf32", MulAdd);
       ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
-      ("core::intrinsics::likely", Nop);
+      ("core::intrinsics::likely", Likely);
       ("core::intrinsics::min_align_of", MinAlignOf GenArg);
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
@@ -105,6 +106,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::unchecked_mul", Unchecked Mul);
       ("core::intrinsics::unchecked_rem", Unchecked Rem);
       ("core::intrinsics::unchecked_sub", Unchecked Sub);
+      ("core::intrinsics::unlikely", Likely);
       ("core::intrinsics::wrapping_add", Wrapping Add);
       ("core::intrinsics::wrapping_div", Wrapping Div);
       ("core::intrinsics::wrapping_mul", Wrapping Mul);
@@ -174,6 +176,7 @@ module M (Heap : Heap_intf.S) = struct
          | KaniAssert -> assert_
          | KaniAssume -> assume
          | KaniNondet -> kani_nondet f.signature
+         | Likely -> likely
          | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
          | MulAdd -> mul_add f.signature
          | Nop -> nop
