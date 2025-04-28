@@ -238,11 +238,11 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
                 | Compo_res.Ok _, pcs -> Some pcs
                 | _ -> None)
            |> Result.ok
-         else Fmt.error "Errors: %a" Fmt.(Dump.list pp_err) errors
+         else Result.error errors
   in
   List.join_results outcomes
   |> Result.map List.flatten
-  |> Result.map_error (String.concat "\n\n")
+  |> Result.map_error List.flatten
 
 let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
     file_name =
@@ -265,8 +265,14 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
           (list ~sep:(any "@\n@\n") pp_info)
           res;
         exit 0
-    | Error e ->
-        Fmt.pr "Error: %s" e;
+    | Error res ->
+        let open Fmt in
+        let pp_err ft e = pf ft "- %a" pp_err e in
+        let n = List.length res in
+        Fmt.pr "Error in %i branch%s:\n%a\n" n
+          (if n = 1 then "" else "s")
+          (list ~sep:(any "@\n@\n") pp_err)
+          res;
         exit 1
   with
   | ExecutionError e ->
