@@ -181,7 +181,14 @@ def main(files: list[str]):
                 log(file_name, "Raised exception", RED, cause.group(1))
                 continue
 
-            if "Fatal: Execution vanished":
+            if "Fatal: Exn" in test:
+                cause = re.search(r"Fatal: Exn: (.+)", test)
+                if not cause:
+                    exit(f"No cause found for fatal exn in {test}")
+                log(file_name, "Raised exception", RED, cause.group(1))
+                continue
+
+            if "Fatal: Execution vanished" in test:
                 log(file_name, "Vanished", RED)
                 continue
 
