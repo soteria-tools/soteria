@@ -270,8 +270,8 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
         exit 1
   with
   | ExecutionError e ->
-      L.error (fun f -> f "Fatal: %s" e);
+      Fmt.pr "Fatal: %s" e;
       exit 2
   | CharonError e ->
-      L.error (fun f -> f "Fatal (Charon): %s" e);
+      Fmt.pr "Fatal (Charon): %s" e;
       exit 3
