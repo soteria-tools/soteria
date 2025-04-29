@@ -40,70 +40,68 @@ function flattenDirectDetails(element) {
 }
 
 function observeSearch() {
-  const searchInput = document.querySelector(".search-input");
-  const logMessages = document.querySelectorAll("div.log-msg");
+  const searchInput = document.querySelector('.search-input');
+  const logMessages = document.querySelectorAll('div.log-msg');
 
-  searchInput.addEventListener("input", () => {
-    const searchRe = new RegExp(searchInput.value, "i");
+  searchInput.addEventListener('input', () => {
+    const searchRe = new RegExp(searchInput.value, 'i');
 
-    logMessages.forEach((message) => {
+    logMessages.forEach(message => {
       const messageText = message.childNodes[0].textContent;
-      message.style.display = searchRe.test(messageText) ? "block" : "none";
+      message.style.display = searchRe.test(messageText) ? 'block' : 'none';
     });
   });
 }
 
 function keybindings() {
-  const searchInput = document.querySelector(".search-input");
+  const searchInput = document.querySelector('.search-input');
 
-  document.addEventListener("keydown", (event) => {
+  document.addEventListener('keydown', event => {
     if (event.target === searchInput) return;
 
-    const details = document.querySelectorAll("details");
+    const details = document.querySelectorAll('details');
     console.log(event.key);
-    if (event.key === "Escape") {
-      searchInput.value = "";
-      searchInput.dispatchEvent(new Event("input"));
+    if (event.key === 'Escape') {
+      searchInput.value = '';
+      searchInput.dispatchEvent(new Event('input'));
       searchInput.focus();
       event.preventDefault();
       event.stopPropagation();
-    } else if (event.key === "o") {
-      details.forEach((detail) => {
+    } else if (event.key === 'o') {
+      details.forEach(detail => {
         detail.open = true;
       });
-    } else if (event.key === "c") {
-      details.forEach((detail) => {
+    } else if (event.key === 'c') {
+      details.forEach(detail => {
         detail.open = false;
       });
-    } else if (event.key === "ArrowRight") {
+    } else if (event.key === 'ArrowRight') {
       let active = document.activeElement;
-      if (active.tagName === "SUMMARY") {
+      if (active.tagName === 'SUMMARY') {
         active = active.parentNode;
       }
       if (active.open) {
-        active.querySelectorAll("details").forEach((detail) => {
-          detail.open = true;
-        });
+        active
+          .querySelectorAll('details')
+          .forEach(detail => { detail.open = true; });
       } else {
         active.open = true;
       }
-    } else if (event.key === "ArrowLeft") {
+    } else if (event.key === 'ArrowLeft') {
       let active = document.activeElement;
-      if (active.tagName === "SUMMARY") {
+      if (active.tagName === 'SUMMARY') {
         active = active.parentNode;
       }
-      active.querySelectorAll("details").forEach((detail) => {
-        if (detail !== active) {
-          detail.open = false;
-        }
-      });
+      active
+        .querySelectorAll('details')
+        .forEach(detail => { if (detail !== active) { detail.open = false; } });
       active.open = false;
     }
   });
 }
 
 // Start from the body
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener('DOMContentLoaded', () => {
   // This is now useless since we show all branches as sections
   // even those which are not feasible.
   // Let's keep the code around for now, in case we want to change this.
