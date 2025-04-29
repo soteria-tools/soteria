@@ -34,8 +34,8 @@ module Make (State : State_intf.S) = struct
     match Typed.cast_checked x ty with
     | Some x -> Csymex.return x
     | None ->
-        Fmt.kstr Csymex.not_impl "Failed to cast %a to %a" Typed.ppa x
-          Typed.ppa_ty ty
+        Fmt.kstr Csymex.not_impl "Failed to cast %a to %a" Svalue.pp_ty
+          (Typed.get_ty x) Typed.ppa_ty ty
 
   let cast_to_ptr x =
     let open Csymex.Syntax in
@@ -252,6 +252,23 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
           Fmt_ail.pp_arithop a_op
 
+  (* We do this in the untyped world *)
+  let ineq_comparison ~state ~cmp_op left right =
+    let cmp_op left right = cmp_op left right |> Typed.int_of_bool in
+    match (Typed.get_ty left, Typed.get_ty right) with
+    | TInt, TInt ->
+        let left = Typed.cast left in
+        let right = Typed.cast right in
+        Result.ok (cmp_op left right, state)
+    | TPointer, TPointer ->
+        let left = Typed.cast left in
+        let right = Typed.cast right in
+        if%sat Typed.Ptr.loc left ==@ Typed.Ptr.loc right then
+          Csymex.Result.ok
+            (cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right), state)
+        else State.error `UBPointerComparison state
+    | _ -> State.error `UBPointerComparison state
+
   let rec resolve_function ~(prog : linked_program) ~store state fexpr =
     let** (loc, fname), state =
       let (AilSyntax.AnnotatedExpression (_, _, loc, inner_expr)) = fexpr in
@@ -336,6 +353,9 @@ module Make (State : State_intf.S) = struct
             (v, state)
         | Indirection -> Result.ok (v, state)
         | Address -> failwith "unreachable: address_of already handled"
+        | Minus ->
+            let* v = cast_checked v ~ty:Typed.t_int in
+            arith_sub ~state Typed.zero v
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op
         )
@@ -344,23 +364,10 @@ module Make (State : State_intf.S) = struct
         let** v1, state = eval_expr state e1 in
         let** v2, state = eval_expr state e2 in
         match op with
-        | Ge ->
-            (* TODO: comparison operators for pointers *)
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            Result.ok (v1 >=@ v2 |> Typed.int_of_bool, state)
-        | Gt ->
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            Result.ok (v1 >@ v2 |> Typed.int_of_bool, state)
-        | Lt ->
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            Result.ok (v1 <@ v2 |> Typed.int_of_bool, state)
-        | Le ->
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let* v2 = cast_checked v2 ~ty:Typed.t_int in
-            Result.ok (v1 <=@ v2 |> Typed.int_of_bool, state)
+        | Ge -> ineq_comparison ~state ~cmp_op:( >=@ ) v1 v2
+        | Gt -> ineq_comparison ~state ~cmp_op:( >@ ) v1 v2
+        | Lt -> ineq_comparison ~state ~cmp_op:( <@ ) v1 v2
+        | Le -> ineq_comparison ~state ~cmp_op:( <=@ ) v1 v2
         | Eq -> equality_check ~state v1 v2
         | Ne ->
             (* TODO: Semantics of Ne might be different from semantics of not eq? *)

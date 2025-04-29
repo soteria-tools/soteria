@@ -54,7 +54,10 @@ module Frontend = struct
     let result =
       let open Cerb_backend.Pipeline in
       let cpp_cmd =
-        "cc -E -C -Werror -nostdinc -undef " ^ "-I" ^ libc () ^ !includes
+        "cc -E -C -Werror -nostdinc -undef -include soteria-c.h "
+        ^ "-I"
+        ^ libc ()
+        ^ !includes
       in
       let ( let* ) = Exception.except_bind in
       let conf =
