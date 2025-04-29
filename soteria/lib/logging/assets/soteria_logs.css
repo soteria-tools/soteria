@@ -1,84 +1,100 @@
 body {
-  font-family: system-ui;
+    font-family: system-ui;
 }
 
 .log-msg {
-  font-family: monospace;
-  white-space: pre-wrap;
-  margin: 2px 0;
-  padding: 2px;
-  border-radius: 4px;
-  position: relative;
+    font-family: monospace;
+    white-space: pre-wrap;
+    margin: 2px 0;
+    padding: 2px;
+    border-radius: 4px;
+    position: relative;
 }
 
 summary {
-  font-style: italic;
-  cursor: pointer;
+    font-style: italic;
+    cursor: pointer;
 }
 
 details {
-  margin: 0.5em 0;
-  padding: 0.5em;
-  border: 1px solid #ccc;
-  border-radius: 5px;
+    margin: 0.5em 0;
+    padding: 0.5em;
+    border: 1px solid #ccc;
+    border-radius: 5px;
 }
 
 .timestamp {
-  position: absolute;
-  top: 0;
-  right: 0;
-  background: #ffffff80;
-  color: #000;
-  font-weight: normal;
-  font-size: 0.8em;
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: #ffffff80;
+    color: #000;
+    font-weight: normal;
+    font-size: 0.8em;
 }
 
 .timestamp:hover {
-  opacity: 0;
+    opacity: 0;
 }
 
-.search-input {
-  position: sticky;
-  top: 8px;
-  width: calc(100% - 18px);
-  font-family: monospace;
-  font-size: 14px;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  outline: none;
-  margin-bottom: 8px;
-  z-index: 1;
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.1);
+header {
+    position: sticky;
+    top: 8px;
+    width: calc(100% - 10px);
+    z-index: 1;
+
+    display: grid;
+    grid-template-columns: 1fr;
+    background: #ffffff;
+    border: 1px solid #ccc;
+    padding: 4px;
+    border-radius: 8px;
+}
+
+#search-input {
+    padding: 8px;
+    font-family: monospace;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    outline: none;
+    margin-bottom: 8px;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.1);
+}
+
+#filters > label {
+    padding: 2px;
+    border-radius: 4px;
+    margin-right: 8px;
 }
 
 .log-msg.branch {
-  font-style: italic;
-  color: #888;
+    font-style: italic;
+    color: #888;
 }
 
 .TRACE {
-  background-color: #c4c4c4;
+    background-color: #c4c4c4;
 }
 
 .DEBUG {
-  background-color: #dee;
-  color: #777;
+    background-color: #dee;
+    color: #777;
 }
 
 .INFO {
-  background-color: #fff;
+    background-color: #fff;
 }
 
 .WARN {
-  background-color: #ffeb3b;
+    background-color: #ffeb3b;
 }
 
 .ERROR {
-  background-color: #ed3e3e;
-  font-weight: bold;
+    background-color: #ed3e3e;
+    font-weight: bold;
 }
 
 .SMT {
-  background-color: #DDD;
+    background-color: #ddd;
 }
