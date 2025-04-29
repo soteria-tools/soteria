@@ -265,12 +265,19 @@ let rec encode_value (v : Svalue.t) =
   | Int z -> int_zk z
   | Float f -> (
       match v.node.ty with
-      | TFloat F16 -> f16_k f
-      | TFloat F32 -> f32_k f
-      | TFloat F64 -> f64_k f
-      | TFloat F128 -> f128_k f
+      | TFloat F16 -> f16_k @@ Float.of_string f
+      | TFloat F32 -> f32_k @@ Float.of_string f
+      | TFloat F64 -> f64_k @@ Float.of_string f
+      | TFloat F128 -> f128_k @@ Float.of_string f
       | _ -> failwith "Non-float type given")
   | Bool b -> bool_k b
+  | BitVec z ->
+      let n =
+        match v.node.ty with
+        | TBitVector n -> n
+        | _ -> failwith "Non-bitvector type given"
+      in
+      bv_k n z
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
   | Seq vs -> (
       match vs with

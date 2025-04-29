@@ -100,14 +100,8 @@ module Make (Heap : Heap_intf.S) = struct
     | CLiteral (VBool b) ->
         Result.ok (Base (if b then Typed.one else Typed.zero), state)
     | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Uchar.to_int c)), state)
-    | CLiteral (VFloat { float_value; float_ty = F16 }) ->
-        Result.ok (Base (Typed.f16 @@ Float.of_string float_value), state)
-    | CLiteral (VFloat { float_value; float_ty = F32 }) ->
-        Result.ok (Base (Typed.f32 @@ Float.of_string float_value), state)
-    | CLiteral (VFloat { float_value; float_ty = F64 }) ->
-        Result.ok (Base (Typed.f64 @@ Float.of_string float_value), state)
-    | CLiteral (VFloat { float_value; float_ty = F128 }) ->
-        Result.ok (Base (Typed.f128 @@ Float.of_string float_value), state)
+    | CLiteral (VFloat { float_value; float_ty }) ->
+        Result.ok (Base (Typed.float float_ty float_value), state)
     | CLiteral (VStr str) -> (
         let** ptr_opt, state = Heap.load_str_global str state in
         match ptr_opt with

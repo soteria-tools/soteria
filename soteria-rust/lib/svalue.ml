@@ -121,9 +121,9 @@ type t_kind =
   | Var of Var.t
   | Bool of bool
   | Int of Z.t [@printer Fmt.of_to_string Z.to_string]
-  | Float of float
+  | Float of string
   | Ptr of t * t
-  (* | BitVec of (Z.t * int) *)
+  | BitVec of Z.t [@printer Fmt.of_to_string (Z.format "%#x")]
   | Seq of t list
   | Unop of Unop.t * t
   | Binop of Binop.t * t * t
@@ -139,7 +139,7 @@ let kind t = t.node.kind
 let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
   match sv.node.kind with
   | Var v -> f (v, sv.node.ty)
-  | Bool _ | Int _ | Float _ -> ()
+  | Bool _ | Int _ | Float _ | BitVec _ -> ()
   | Ptr (l, r) | Binop (_, l, r) ->
       iter_vars l f;
       iter_vars r f
@@ -158,7 +158,8 @@ let rec pp ft t =
   | Var v -> pf ft "V%a" Var.pp v
   | Bool b -> pf ft "%b" b
   | Int z -> pf ft "%a" Z.pp_print z
-  | Float f -> pf ft "%f" f
+  | Float f -> pf ft "%s" f
+  | BitVec bv -> pf ft "%s" (Z.format "%#x" bv)
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
   | Ite (c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
@@ -206,7 +207,7 @@ module Hcons = Hashcons.Make (struct
   let hash { kind; ty } =
     let hty = Hashtbl.hash ty in
     match kind with
-    | Var _ | Bool _ | Int _ | Float _ -> Hashtbl.hash (kind, hty)
+    | Var _ | Bool _ | Int _ | Float _ | BitVec _ -> Hashtbl.hash (kind, hty)
     | Ptr (l, r) -> Hashtbl.hash (l.hkey, r.hkey, hty)
     | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.hkey) l, hty)
     | Unop (op, v) -> Hashtbl.hash (op, v.hkey, hty)
@@ -223,7 +224,7 @@ let mk_var v ty = Var v <| ty
 let rec subst subst_var sv =
   match sv.node.kind with
   | Var v -> mk_var (subst_var v) sv.node.ty
-  | Bool _ | Int _ | Float _ -> sv
+  | Bool _ | Int _ | Float _ | BitVec _ -> sv
   | Ptr (l, r) ->
       let l' = subst subst_var l in
       let r' = subst subst_var r in
@@ -292,17 +293,18 @@ let int i = int_z (Z.of_int i)
 let zero = int_z Z.zero
 let one = int_z Z.one
 let float fp f = Float f <| t_f fp
-let float_like v f = Float f <| v.node.ty
+let float_f fp f = Float (Float.to_string f) <| t_f fp
+let float_like v f = Float (Float.to_string f) <| v.node.ty
 
 let fp_of v =
   match v.node.ty with
   | TFloat fp -> fp
   | _ -> Fmt.failwith "Unsupported float type"
 
-let f16 f = float F16 f
-let f32 f = float F32 f
-let f64 f = float F64 f
-let f128 f = float F128 f
+let f16 f = float_f F16 f
+let f32 f = float_f F32 f
+let f64 f = float_f F64 f
+let f128 f = float_f F128 f
 
 let rec not sv =
   if equal sv v_true then v_false
@@ -319,7 +321,6 @@ let rec sem_eq v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int z1, Int z2 -> bool (Z.equal z1 z2)
   | Bool b1, Bool b2 -> bool (b1 = b2)
-  | Float f1, Float f2 -> bool (Float.equal f1 f2)
   | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
   | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y
@@ -385,12 +386,21 @@ let bool_of_int sv =
 let bv_of_float v =
   match (v.node.ty, v.node.kind) with
   | TFloat _, Unop (FloatOfBv, v) -> v
+  | TFloat F32, Float f ->
+      let z = Z.of_int32 (Int32.bits_of_float (Float.of_string f)) in
+      BitVec z <| t_bv 32
+  | TFloat F64, Float f ->
+      let z = Z.of_int64 (Int64.bits_of_float (Float.of_string f)) in
+      BitVec z <| t_bv 64
   | TFloat fp, _ -> Unop (BvOfFloat, v) <| t_bv (FloatPrecision.size fp)
   | _ -> failwith "Expected a float value in bv_of_float"
 
 let bv_of_int n v =
   match v.node.kind with
   | Unop (IntOfBv _, v) -> v
+  | Int z ->
+      let z = if Z.geq z Z.zero then z else Z.neg z in
+      BitVec z <| t_bv n
   | _ -> Unop (BvOfInt, v) <| t_bv n
 
 let int_of_bv signed v =
@@ -406,14 +416,15 @@ let float_of_bv v =
 
 let float_of_int fp v =
   match v.node.kind with
-  (* FIXME: this is unsound, as it only works for OCaml floats (ie. f64) *)
-  | Int i -> float fp (Z.to_float i)
+  | Int i -> float fp (Z.to_string i)
   | _ -> float_of_bv (bv_of_int (FloatPrecision.size fp) v)
 
 let int_of_float v =
   match (v.node.ty, v.node.kind) with
-  | TFloat F32, Float f -> int_z (Z.of_int32 (Int32.bits_of_float f))
-  | TFloat F64, Float f -> int_z (Z.of_int64 (Int64.bits_of_float f))
+  | TFloat F32, Float f ->
+      int_z (Z.of_int32 (Int32.bits_of_float (Float.of_string f)))
+  | TFloat F64, Float f ->
+      int_z (Z.of_int64 (Int64.bits_of_float (Float.of_string f)))
   | _ -> int_of_bv true (bv_of_float v)
 
 let rec lt v1 v2 =
@@ -467,7 +478,6 @@ let rec plus v1 v2 =
   | _, _ when equal v1 zero -> v2
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.add i1 i2)
-  | Float f1, Float f2 -> float_like v1 (f1 +. f2)
   | Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }), Int i3 ->
       plus v1 (int_z (Z.add i2 i3))
   | _ -> Binop (Plus, v1, v2) <| v1.node.ty
@@ -476,7 +486,6 @@ let minus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.sub i1 i2)
-  | Float f1, Float f2 -> float_like v1 (f1 -. f2)
   | _ -> Binop (Minus, v1, v2) <| v1.node.ty
 
 let times v1 v2 =
@@ -485,14 +494,12 @@ let times v1 v2 =
   | _, _ when equal v1 one -> v2
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.mul i1 i2)
-  | Float f1, Float f2 -> float_like v1 (f1 *. f2)
   | _ -> Binop (Times, v1, v2) <| v1.node.ty
 
 let div v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.div i1 i2)
-  | Float f1, Float f2 -> float_like v1 (f1 /. f2)
   | _ -> Binop (Div, v1, v2) <| v1.node.ty
 
 let rec is_mod v n =
@@ -507,7 +514,6 @@ let rec rem v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, Int i2 when is_mod v1 i2 -> int_z Z.zero
   | Int i1, Int i2 -> int_z (Z.rem i1 i2)
-  | Float f1, Float f2 -> float_like v1 (mod_float f1 f2)
   | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
       times n (rem v1 v2)
   | Binop (Times, n, v1), Binop (Times, m, v2) when equal n m ->
@@ -571,17 +577,30 @@ let bit_shr size signed v1 v2 =
 let abs v =
   match (v.node.ty, v.node.kind) with
   | TInt, Int i -> int_z (Z.abs i)
-  | TFloat _, Float f -> float_like v (abs_float f)
   | TFloat fp, _ ->
       (* we just set the bit of the sign to 0 *)
       let bits = FloatPrecision.size fp in
-      let mask = int_z @@ Z.pred @@ Z.pow Z.one bits in
+      let mask = int_z @@ Z.pred @@ Z.shift_left Z.one (bits - 1) in
       let mask_bv = bv_of_int bits mask in
       let float_bv = bv_of_float v in
       (* make the BitAnd directly since bit_and converts to an int *)
       let bit_and = Binop (BitAnd, mask_bv, float_bv) <| mask_bv.node.ty in
       float_of_bv bit_and
   | _ -> ite (lt v zero) (minus zero v) v
+
+let neg v =
+  match (v.node.ty, v.node.kind) with
+  | TInt, Int i -> int_z (Z.neg i)
+  | TFloat fp, _ ->
+      (* we just flip the bit of the sign *)
+      let bits = FloatPrecision.size fp in
+      let mask = int_z @@ Z.shift_left Z.one (bits - 1) in
+      let mask_bv = bv_of_int bits mask in
+      let float_bv = bv_of_float v in
+      (* make the BitOr directly since bit_or converts to an int *)
+      let bit_or = Binop (BitXor, mask_bv, float_bv) <| mask_bv.node.ty in
+      float_of_bv bit_or
+  | _ -> minus zero v
 
 (* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
 let not_int_bool sv =
@@ -642,7 +661,7 @@ module Infix = struct
   let ( ||@ ) = or_
   let ( +@ ) = plus
   let ( -@ ) = minus
-  let ( ~- ) x = minus zero x
+  let ( ~- ) = neg
   let ( *@ ) = times
   let ( /@ ) = div
   let ( %@ ) = ( mod )

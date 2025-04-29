@@ -764,10 +764,10 @@ module M (Heap : Heap_intf.S) = struct
       let zero = Typed.float_like r 0.0 in
       if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] Typed.lt r zero
       then
-        let l' = zero -.@ Typed.abs l in
-        Result.ok (Base l', state)
+        let l' = Typed.neg (Typed.abs l) in
+        Result.ok (Base (Typed.cast l'), state)
       else
-        let l' = Typed.cast @@ Typed.abs l in
-        Result.ok (Base l', state)
+        let l' = Typed.abs l in
+        Result.ok (Base (Typed.cast l'), state)
     else not_impl "Expected floats in copy_sign"
 end
