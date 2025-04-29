@@ -100,14 +100,8 @@ module Make (Heap : Heap_intf.S) = struct
     | CLiteral (VBool b) ->
         Result.ok (Base (if b then Typed.one else Typed.zero), state)
     | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Uchar.to_int c)), state)
-    | CLiteral (VFloat { float_value; float_ty = F16 }) ->
-        Result.ok (Base (Typed.f16 @@ Float.of_string float_value), state)
-    | CLiteral (VFloat { float_value; float_ty = F32 }) ->
-        Result.ok (Base (Typed.f32 @@ Float.of_string float_value), state)
-    | CLiteral (VFloat { float_value; float_ty = F64 }) ->
-        Result.ok (Base (Typed.f64 @@ Float.of_string float_value), state)
-    | CLiteral (VFloat { float_value; float_ty = F128 }) ->
-        Result.ok (Base (Typed.f128 @@ Float.of_string float_value), state)
+    | CLiteral (VFloat { float_value; float_ty }) ->
+        Result.ok (Base (Typed.float float_ty float_value), state)
     | CLiteral (VStr str) -> (
         let** ptr_opt, state = Heap.load_str_global str state in
         match ptr_opt with
@@ -300,9 +294,18 @@ module Make (Heap : Heap_intf.S) = struct
                   Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty
             in
             Result.ok (Base v', state)
-        | Neg ->
-            let v = as_base_of ~ty:Typed.t_int v in
-            Result.ok (Base ~-v, state)
+        | Neg -> (
+            match type_of_operand e with
+            | TLiteral (TInteger _) ->
+                let v = as_base_of ~ty:Typed.t_int v in
+                Result.ok (Base ~-v, state)
+            | TLiteral (TFloat _) ->
+                let* v =
+                  of_opt_not_impl ~msg:"Expected a float type"
+                  @@ Typed.cast_float (as_base v)
+                in
+                Result.ok (Base (Typed.float_like v 0.0 -.@ v), state)
+            | _ -> not_impl "Invalid type for Neg")
         | PtrMetadata -> (
             match v with
             | Ptr (_, None) -> Result.ok (Tuple [], state)

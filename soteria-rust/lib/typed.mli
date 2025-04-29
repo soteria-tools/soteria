@@ -97,6 +97,7 @@ val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t
 val nonzero_z : Z.t -> [> nonzero ] t
 val nonzero : int -> [> nonzero ] t
+val float : Svalue.FloatPrecision.t -> string -> [> sfloat ] t
 val int_of_bool : [< sbool ] t -> [> sint ] t
 val bool_of_int : [< sint ] t -> [> sbool ] t
 val float_of_int : Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
@@ -120,6 +121,7 @@ val div : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
 val rem : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
 val ( mod ) : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
 val abs : ([< cnum ] as 'a) t -> 'a t
+val neg : ([< cnum ] as 'a) t -> 'a t
 val bit_and : int -> bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 val bit_or : int -> bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 val bit_xor : int -> bool -> [< sint ] t -> [< sint ] t -> [> sint ] t

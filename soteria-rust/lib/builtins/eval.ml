@@ -28,6 +28,7 @@ module M (Heap : Heap_intf.S) = struct
     | Checked of Expressions.binop
     | CompareBytes
     | CopyNonOverlapping
+    | CopySign
     | Ctpop
     | Deref
     | DiscriminantValue
@@ -85,6 +86,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::compare_bytes", CompareBytes);
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
+      ("core::intrinsics::copysignf32", CopySign);
+      ("core::intrinsics::copysignf64", CopySign);
       ("core::intrinsics::ctpop", Ctpop);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::exact_div", ExactDiv);
@@ -163,6 +166,7 @@ module M (Heap : Heap_intf.S) = struct
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes
          | CopyNonOverlapping -> copy_nonoverlapping f.signature
+         | CopySign -> copy_sign
          | Ctpop -> ctpop f.signature
          | Deref -> deref f.signature
          | DiscriminantValue -> discriminant_value f.signature
@@ -197,13 +201,21 @@ module M (Heap : Heap_intf.S) = struct
          | WriteBytes -> write_bytes f.signature
          | Zeroed -> zeroed f.signature )
     |> opt_bind @@ fun () ->
-       match f.item_meta.name with
-       | PeIdent (("core" | "std"), _) :: PeIdent ("intrinsics", _) :: _ ->
-           Option.some @@ fun ~crate ~args:_ ~state:_ ->
-           let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-           Fmt.kstr not_impl "Unsupported intrinsic: %s"
-             (PrintTypes.name_to_string ctx f.item_meta.name)
-       | _ -> None
+       let is_intrinsic =
+         (match f.item_meta.name with
+         | PeIdent (("core" | "std"), _) :: PeIdent ("intrinsics", _) :: _ ->
+             true
+         | _ -> false)
+         || List.mem
+              Meta.(AttrUnknown { path = "rustc_intrinsic"; args = None })
+              f.item_meta.attr_info.attributes
+       in
+       if is_intrinsic then
+         Option.some @@ fun ~crate ~args:_ ~state:_ ->
+         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+         Fmt.kstr not_impl "Unsupported intrinsic: %s"
+           (PrintTypes.name_to_string ctx f.item_meta.name)
+       else None
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
     let open Std in
