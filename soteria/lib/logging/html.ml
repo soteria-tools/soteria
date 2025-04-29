@@ -25,7 +25,10 @@ let header =
 
   <body>
     <h1>Symex Log</h1>
-    <input class="search-input" type="text" placeholder="Search...">
+    <header>
+      <input id="search-input" type="text" placeholder="Search...">
+      <div id="filters"></div>
+    </header>
   |}
 
 let footer = {|
