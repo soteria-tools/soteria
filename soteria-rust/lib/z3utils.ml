@@ -1,5 +1,6 @@
 open Simple_smt
 
+(* Float types and constants *)
 (* Helpful: https://smt-lib.org/theories-FloatingPoint.shtml *)
 
 let rm = atom "RNA" (* equivalent to roundNearestTiesToAway *)
@@ -14,7 +15,8 @@ let f32_k f =
   app_ "fp"
     [
       bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
-      bv_nat_bin 8 (Z.of_int32 @@ Int32.shift_right_logical bin 23);
+      bv_nat_bin 8
+        (Z.of_int32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
       bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
     ]
 
@@ -24,7 +26,8 @@ let f64_k f =
   app_ "fp"
     [
       bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
-      bv_nat_bin 11 (Z.of_int64 @@ Int64.shift_right_logical bin 52);
+      bv_nat_bin 11
+        (Z.of_int64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
       bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
     ]
 
@@ -42,6 +45,8 @@ let f16_k f =
   let fam = ifam "to_fp" [ 5; 11 ] in
   app fam [ rm; f32 ]
 
+(* Float ops *)
+
 let fp_abs f = app_ "fp.abs" [ f ]
 let fp_eq f1 f2 = app_ "fp.eq" [ f1; f2 ]
 let fp_leq f1 f2 = app_ "fp.leq" [ f1; f2 ]
@@ -52,46 +57,20 @@ let fp_mul f1 f2 = app_ "fp.mul" [ rm; f1; f2 ]
 let fp_div f1 f2 = app_ "fp.div" [ rm; f1; f2 ]
 let fp_rem f1 f2 = app_ "fp.rem" [ f1; f2 ]
 
-let f16_of_int i =
-  let bv_fam = ifam "int_to_bv" [ 16 ] in
-  let bv = app bv_fam [ i ] in
-  let fam = ifam "to_fp" [ 5; 11 ] in
-  app fam [ bv ]
+(* Float{Of,To}Bv *)
 
-let f32_of_int i =
-  let bv_fam = ifam "int_to_bv" [ 32 ] in
-  let bv = app bv_fam [ i ] in
-  let fam = ifam "to_fp" [ 8; 24 ] in
-  app fam [ bv ]
+let f16_of_bv bv = app (ifam "to_fp" [ 5; 11 ]) [ bv ]
+let f32_of_bv bv = app (ifam "to_fp" [ 8; 24 ]) [ bv ]
+let f64_of_bv bv = app (ifam "to_fp" [ 11; 53 ]) [ bv ]
+let f128_of_bv bv = app (ifam "to_fp" [ 15; 113 ]) [ bv ]
+let bv_of_f16 f = app (ifam "fp.to_sbv" [ 16 ]) [ rm; f ]
+let bv_of_f32 f = app (ifam "fp.to_sbv" [ 32 ]) [ rm; f ]
+let bv_of_f64 f = app (ifam "fp.to_sbv" [ 64 ]) [ rm; f ]
+let bv_of_f128 f = app (ifam "fp.to_sbv" [ 128 ]) [ rm; f ]
 
-let f64_of_int i =
-  let bv_fam = ifam "int_to_bv" [ 64 ] in
-  let bv = app bv_fam [ i ] in
-  let fam = ifam "to_fp" [ 11; 53 ] in
-  app fam [ bv ]
+(* Int{Of,To}Bv *)
 
-let f128_of_int i =
-  let bv_fam = ifam "int_to_bv" [ 128 ] in
-  let bv = app bv_fam [ i ] in
-  let fam = ifam "to_fp" [ 15; 113 ] in
-  app fam [ bv ]
+let int_of_bv signed bv =
+  if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
 
-let int_of_f16 f =
-  let fam = ifam "fp.to_sbv" [ 16 ] in
-  let bv = app fam [ rm; f ] in
-  app_ "sbv_to_int" [ bv ]
-
-let int_of_f32 f =
-  let fam = ifam "fp.to_sbv" [ 32 ] in
-  let bv = app fam [ rm; f ] in
-  app_ "sbv_to_int" [ bv ]
-
-let int_of_f64 f =
-  let fam = ifam "fp.to_sbv" [ 64 ] in
-  let bv = app fam [ rm; f ] in
-  app_ "sbv_to_int" [ bv ]
-
-let int_of_f128 f =
-  let fam = ifam "fp.to_sbv" [ 128 ] in
-  let bv = app fam [ rm; f ] in
-  app_ "sbv_to_int" [ bv ]
+let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]

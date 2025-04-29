@@ -5,6 +5,7 @@ let z3_env_var = "SOTERIA_Z3_PATH"
 let debug_str ~prefix s = L.smt (fun m -> m "%s: %s" prefix s)
 
 open Simple_smt
+open Z3utils
 
 let smallest_power_of_two_greater_than n =
   let f n =
@@ -236,12 +237,13 @@ let rec sort_of_ty = function
   | Svalue.TBool -> Simple_smt.t_bool
   | TInt -> Simple_smt.t_int
   | TLoc -> Simple_smt.t_int
-  | TFloat F16 -> Z3floats.t_f16
-  | TFloat F32 -> Z3floats.t_f32
-  | TFloat F64 -> Z3floats.t_f64
-  | TFloat F128 -> Z3floats.t_f128
+  | TFloat F16 -> t_f16
+  | TFloat F32 -> t_f32
+  | TFloat F64 -> t_f64
+  | TFloat F128 -> t_f128
   | TSeq ty -> t_seq $ sort_of_ty ty
   | TPointer -> t_ptr
+  | TBitVector n -> t_bits n
 
 let declare_v v_id ty =
   let v = Svalue.Var.to_string v_id in
@@ -263,10 +265,10 @@ let rec encode_value (v : Svalue.t) =
   | Int z -> int_zk z
   | Float f -> (
       match v.node.ty with
-      | TFloat F16 -> Z3floats.f16_k f
-      | TFloat F32 -> Z3floats.f32_k f
-      | TFloat F64 -> Z3floats.f64_k f
-      | TFloat F128 -> Z3floats.f128_k f
+      | TFloat F16 -> f16_k f
+      | TFloat F32 -> f32_k f
+      | TFloat F64 -> f64_k f
+      | TFloat F128 -> f128_k f
       | _ -> failwith "Non-float type given")
   | Bool b -> bool_k b
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
@@ -284,21 +286,29 @@ let rec encode_value (v : Svalue.t) =
       | IntOfBool -> ite v1 (int_k 1) (int_k 0)
       | Abs ->
           let ty = v1_.node.ty in
-          if Svalue.is_float ty then Z3floats.fp_abs v1
+          if Svalue.is_float ty then fp_abs v1
           else ite (num_lt v1 (int_k 0)) (num_neg v1) v1
-      | FloatOfInt -> (
-          match v.node.ty with
-          | TFloat F16 -> Z3floats.f16_of_int v1
-          | TFloat F32 -> Z3floats.f32_of_int v1
-          | TFloat F64 -> Z3floats.f64_of_int v1
-          | TFloat F128 -> Z3floats.f128_of_int v1
-          | _ -> failwith "Non-float type given")
-      | IntOfFloat -> (
+      | BvOfInt ->
+          let size =
+            match v.node.ty with
+            | TBitVector n -> n
+            | _ -> failwith "Non-bitvector type given"
+          in
+          bv_of_int size v1
+      | IntOfBv signed -> int_of_bv signed v1
+      | BvOfFloat -> (
           match v1_.node.ty with
-          | TFloat F16 -> Z3floats.int_of_f16 v1
-          | TFloat F32 -> Z3floats.int_of_f32 v1
-          | TFloat F64 -> Z3floats.int_of_f64 v1
-          | TFloat F128 -> Z3floats.int_of_f128 v1
+          | TFloat F16 -> bv_of_f16 v1
+          | TFloat F32 -> bv_of_f32 v1
+          | TFloat F64 -> bv_of_f64 v1
+          | TFloat F128 -> bv_of_f128 v1
+          | _ -> failwith "Non-float type given")
+      | FloatOfBv -> (
+          match v.node.ty with
+          | TFloat F16 -> f16_of_bv v1
+          | TFloat F32 -> f32_of_bv v1
+          | TFloat F64 -> f64_of_bv v1
+          | TFloat F128 -> f128_of_bv v1
           | _ -> failwith "Non-float type given"))
   | Binop (binop, v1, v2) -> (
       let ty = v1.node.ty in
@@ -306,24 +316,24 @@ let rec encode_value (v : Svalue.t) =
       let v2 = encode_value_memo v2 in
       match binop with
       | Eq -> eq v1 v2
-      | Leq -> (if Svalue.is_float ty then Z3floats.fp_leq else num_leq) v1 v2
-      | Lt -> (if Svalue.is_float ty then Z3floats.fp_lt else num_lt) v1 v2
+      | Leq -> (if Svalue.is_float ty then fp_leq else num_leq) v1 v2
+      | Lt -> (if Svalue.is_float ty then fp_lt else num_lt) v1 v2
       | And -> bool_and v1 v2
       | Or -> bool_or v1 v2
-      | Plus -> (if Svalue.is_float ty then Z3floats.fp_add else num_add) v1 v2
-      | Minus -> (if Svalue.is_float ty then Z3floats.fp_sub else num_sub) v1 v2
-      | Times -> (if Svalue.is_float ty then Z3floats.fp_mul else num_mul) v1 v2
-      | Div -> (if Svalue.is_float ty then Z3floats.fp_div else num_div) v1 v2
-      | Rem -> (if Svalue.is_float ty then Z3floats.fp_rem else num_rem) v1 v2
+      | Plus -> (if Svalue.is_float ty then fp_add else num_add) v1 v2
+      | Minus -> (if Svalue.is_float ty then fp_sub else num_sub) v1 v2
+      | Times -> (if Svalue.is_float ty then fp_mul else num_mul) v1 v2
+      | Div -> (if Svalue.is_float ty then fp_div else num_div) v1 v2
+      | Rem -> (if Svalue.is_float ty then fp_rem else num_rem) v1 v2
       | Mod ->
           if Svalue.is_float ty then
             failwith "mod not implemented for floating points"
           else num_mod v1 v2
-      | BitAnd (size, signed) -> Z3ints.int_band size signed v1 v2
-      | BitOr (size, signed) -> Z3ints.int_bor size signed v1 v2
-      | BitXor (size, signed) -> Z3ints.int_bxor size signed v1 v2
-      | BitShl (size, signed) -> Z3ints.int_bshl size signed v1 v2
-      | BitShr (size, signed) -> Z3ints.int_bshr size signed v1 v2)
+      | BitAnd -> bv_and v1 v2
+      | BitOr -> bv_or v1 v2
+      | BitXor -> bv_xor v1 v2
+      | BitShl -> bv_shl v1 v2
+      | BitShr -> bv_ashr v1 v2)
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in
       distinct vs
