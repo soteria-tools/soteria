@@ -127,6 +127,10 @@ def main(files: list[str]):
                 log(file_name, "No entry points found", RED)
                 continue
 
+            if "resolve_constant (Generated_Expressions.COpaque" in test:
+                log(file_name, "Charon", PURPLE, "Constant resolving")
+                continue
+
             if "MISSING FEATURE, VANISHING" in test:
                 cause = re.search(r'MISSING FEATURE, VANISHING: (.+)\n', test)
                 if not cause:
@@ -169,6 +173,24 @@ def main(files: list[str]):
                     log(file_name, "Success", GREEN)
                 else:
                     log(file_name, "Failure", RED)
+                continue
+
+            if "Fatal: Exn: Failure" in test:
+                cause = re.search(r"Fatal: Exn: Failure\(\"(.+)\"\)", test)
+                if not cause:
+                    exit(f"No cause found for fatal exn in {test}")
+                log(file_name, "Raised exception", RED, cause.group(1))
+                continue
+
+            if "Fatal: Exn" in test:
+                cause = re.search(r"Fatal: Exn: (.+)", test)
+                if not cause:
+                    exit(f"No cause found for fatal exn in {test}")
+                log(file_name, "Raised exception", RED, cause.group(1))
+                continue
+
+            if "Fatal: Execution vanished" in test:
+                log(file_name, "Vanished", RED)
                 continue
 
             log(file_name, f"Unknown (Fatal error)", RED)

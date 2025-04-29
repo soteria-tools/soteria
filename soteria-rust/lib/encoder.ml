@@ -13,6 +13,7 @@ type 'ptr cval_info = {
   ty : Types.ty;
   offset : sint Typed.t;
 }
+[@@deriving show]
 
 (** Converts a Rust value of the given type into a list of sub values, along
     with their size and offset *)
@@ -94,6 +95,15 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
       | _ ->
           Fmt.failwith "Unexpected ADT type or discr for enum: %a"
             Types.pp_type_decl type_decl)
+  | Base value, TAdt (TAdtId t_id, _) when Session.is_enum t_id ->
+      let type_decl = Session.get_adt t_id in
+      let disc_ty =
+        match type_decl.kind with
+        | Enum [] -> failwith "Can't convert discriminant for empty enum"
+        | Enum (v :: _) -> v.discriminant.int_ty
+        | _ -> assert false
+      in
+      [ { value = Enum (value, []); ty = TLiteral (TInteger disc_ty); offset } ]
   | Enum _, _ -> illegal_pair ()
   (* Arrays *)
   | Array vals, TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
@@ -119,32 +129,34 @@ let rec rust_to_cvals ?(offset = 0s) (value : 'ptr rust_val) (ty : Types.ty) :
             Types.pp_ty ty);
       failwith "Unhandled rust_value and Charon.ty"
 
-type 'ptr aux_ret = (Types.ty * sint Typed.t) list * 'ptr parse_callback
-and 'ptr parse_callback = 'ptr rust_val list -> 'ptr callback_return
-and 'ptr parser_return = [ `Done of 'ptr rust_val | `More of 'ptr aux_ret ]
-and 'ptr callback_return = 'ptr parser_return Rustsymex.t
+type ('ptr, 'e, 'f) parse_callback =
+  'ptr rust_val list -> (('ptr, 'e, 'f) parser_return, 'e, 'f) Result.t
+
+and ('ptr, 'e, 'f) parser_return =
+  [ `Done of 'ptr rust_val
+  | `More of (Types.ty * sint Typed.t) list * ('ptr, 'e, 'f) parse_callback ]
 
 (** Converts a Rust type into a list of C blocks, along with their offset; once
     these are read, symbolically decides whether we must keep reading. [offset]
     is the initial offset to read from, [meta] is the optional metadata, that
     originates from a fat pointer. *)
-let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
+let rust_of_cvals ?offset ?meta ty : ('ptr, 'e, 'f) parser_return =
   (* Base case, parses all types. *)
-  let rec aux offset : Types.ty -> 'ptr parser_return = function
+  let rec aux offset : Types.ty -> ('ptr, 'e, 'f) parser_return = function
     | TLiteral _ as ty ->
         `More
           ( [ (ty, offset) ],
             function
-            | [ ((Base _ | Ptr _) as v) ] -> return (`Done v)
-            | _ -> failwith "Expected a base" )
+            | [ ((Base _ | Ptr _) as v) ] -> Result.ok (`Done v)
+            | _ -> not_impl "Expected a base" )
     | TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
     | TRef (_, sub_ty, _)
     | TRawPtr (sub_ty, _)
       when is_fat_ptr sub_ty ->
         let callback = function
           | [ Ptr (ptr, None); Base meta ] ->
-              return @@ `Done (Ptr (ptr, Some meta))
-          | _ -> failwith "Expected a pointer and base"
+              Result.ok @@ `Done (Ptr (ptr, Some meta))
+          | _ -> not_impl "Expected a pointer and base"
         in
         let ptr_size = Typed.int Archi.word_size in
         let isize : Types.ty = TLiteral (TInteger Isize) in
@@ -153,8 +165,8 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
         `More
           ( [ (TLiteral (TInteger Isize), offset) ],
             function
-            | [ ((Ptr _ | Base _) as ptr) ] -> return (`Done ptr)
-            | _ -> failwith "Expected a pointer or base" )
+            | [ ((Ptr _ | Base _) as ptr) ] -> Result.ok (`Done ptr)
+            | _ -> not_impl "Expected a pointer or base" )
     | TAdt (TTuple, { types; _ }) as ty ->
         let layout = layout_of ty in
         aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
@@ -210,21 +222,22 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
               List.init len (fun _ -> Types.TLiteral (TInteger U8))
             in
             aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
+    | TNever -> `More ([], fun _ -> Result.error `UBTransmute)
     | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
   (* basically, a parser is just a sort of monad, so we can have the usual operations on it *)
-  and aux_bind ~f parser_ret : 'ptr parser_return =
+  and aux_bind ~f parser_ret : ('ptr, 'e, 'f) parser_return =
     match parser_ret with
     | `More (blocks, callback) ->
-        let callback v = Rustsymex.map (callback v) (aux_bind ~f) in
+        let callback v = Result.map (callback v) (aux_bind ~f) in
         `More (blocks, callback)
     | `Done value -> f value
   (* util to map a parser result, at the end *)
-  and aux_map ~f parser_ret : 'ptr parser_return =
+  and aux_map ~f parser_ret : ('ptr, 'e, 'f) parser_return =
     aux_bind ~f:(fun v -> `Done (f v)) parser_ret
   (* Parses a list of fields (for structs and tuples) *)
-  and aux_fields ~f ~layout offset fields : 'ptr parser_return =
+  and aux_fields ~f ~layout offset fields : ('ptr, 'e, 'f) parser_return =
     let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
-    let rec mk_callback to_parse parsed : 'ptr parser_return =
+    let rec mk_callback to_parse parsed : ('ptr, 'e, 'f) parser_return =
       match to_parse with
       | [] -> `Done (f (List.rev parsed))
       | ty :: rest ->
@@ -235,12 +248,13 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
     in
     mk_callback fields []
   (* Parses what enum variant we're handling *)
-  and aux_enum offset (variants : Types.variant list) : 'ptr parser_return =
+  and aux_enum offset (variants : Types.variant list) :
+      ('ptr, 'e, 'f) parser_return =
     let disc = (List.hd variants).discriminant in
     let disc_ty = Values.TInteger disc.int_ty in
     let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
     let offset = offset +@ (offset %@ disc_align) in
-    let callback cval : 'ptr callback_return =
+    let callback cval =
       let cval = Charon_util.as_base_of ~ty:Typed.t_int @@ List.hd cval in
       let* res =
         match_on variants ~constr:(fun (v : Types.variant) ->
@@ -258,14 +272,14 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
             |> field_tys
             |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
           in
-          return parser
+          Result.ok parser
       | None ->
-          Fmt.kstr not_impl
-            "Vanishing rust_of_cvals, as no variant matches variant id %a"
-            Typed.ppa cval
+          L.error (fun m ->
+              m "Unmatched discriminant in rust_of_cvals: %a" Typed.ppa cval);
+          Result.error `UBTransmute
     in
     `More ([ (TLiteral disc_ty, offset) ], callback)
-  and aux_union offset fs : 'ptr parser_return =
+  and aux_union offset fs : ('ptr, 'e, 'f) parser_return =
     (* read largest field *)
     let layouts =
       fs
@@ -286,36 +300,105 @@ let rust_of_cvals ?offset ?meta ty : 'ptr parser_return =
 let rec transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
   let open Soteria_symex.Compo_res in
   let open Result in
-  let unhandled () =
+  let _unhandled () =
     let ctx = PrintUllbcAst.Crate.crate_to_fmt_env @@ Session.get_crate () in
     Fmt.kstr not_impl "Unhandled transmute of %a: %s -> %s" ppa_rust_val v
       (PrintTypes.ty_to_string ctx from_ty)
       (PrintTypes.ty_to_string ctx to_ty)
   in
-  match (from_ty, to_ty, v) with
-  | TLiteral (TFloat _), TLiteral (TInteger _), Base sv ->
-      let+ sv =
-        of_opt_not_impl ~msg:"Unsupported: non-float in float-to-int"
-        @@ Typed.cast_float sv
-      in
-      let sv' = Typed.int_of_float sv in
-      Ok (Base sv')
-  | TLiteral (TInteger _), TLiteral (TFloat fp), Base sv ->
-      let+ sv = cast_checked sv ~ty:Typed.t_int in
-      let sv' = Typed.float_of_int fp sv in
-      Ok (Base sv')
-  | TLiteral _, TLiteral to_ty, Base sv ->
-      let constrs = Layout.constraints to_ty in
-      if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
-  | ( (TRef _ | TRawPtr _ | TLiteral (TInteger Usize)),
-      (TRef _ | TRawPtr _ | TLiteral (TInteger Usize)),
-      (Ptr _ | Base _) ) ->
-      ok v
-  | TAdt (TAdtId id, _), _, Struct [ v ] -> (
-      let adt = Session.get_adt id in
-      match adt.kind with
-      (* For 1-field structs, see if the field can be transmuted; this is e.g. the case with
-         core::ptr::NonNull<T> { pointer: *const T }. *)
-      | Struct [ { field_ty = from_ty; _ } ] -> transmute ~from_ty ~to_ty v
-      | _ -> unhandled ())
-  | _ -> unhandled ()
+  if from_ty = to_ty then ok v
+  else
+    match (from_ty, to_ty, v) with
+    | TLiteral (TFloat _), TLiteral (TInteger _), Base sv ->
+        let+ sv =
+          of_opt_not_impl ~msg:"Unsupported: non-float in float-to-int"
+          @@ Typed.cast_float sv
+        in
+        let sv' = Typed.int_of_float sv in
+        Ok (Base sv')
+    | TLiteral (TInteger _), TLiteral (TFloat fp), Base sv ->
+        let+ sv = cast_checked sv ~ty:Typed.t_int in
+        let sv' = Typed.float_of_int fp sv in
+        Ok (Base sv')
+    | TLiteral (TInteger U8), TLiteral TChar, v
+    | TLiteral TBool, TLiteral (TInteger (U8 | U16 | U32 | U64 | U128)), v
+    | TLiteral TChar, TLiteral (TInteger (U32 | U64 | U128)), v ->
+        Result.ok v
+    | TLiteral (TInteger from_ty), TLiteral (TInteger to_ty), Base sv ->
+        let* v = cast_checked ~ty:Typed.t_int sv in
+        let bits = 8 * Layout.size_of_int_ty to_ty in
+        let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
+        let maxsigned = Typed.nonzero_z (Z.shift_left Z.one (bits - 1)) in
+        let* v =
+          if Layout.is_signed from_ty then
+            if%sat v <@ 0s then return (((v %@ max) +@ max) %@ max)
+            else return (v %@ max)
+          else return (v %@ max)
+        in
+        let* v =
+          if Layout.is_signed to_ty then
+            if%sat v >=@ maxsigned then return (v -@ max) else return v
+          else return v
+        in
+        ok (Base (v :> Typed.T.cval Typed.t))
+    | TLiteral _, TLiteral to_ty, Base sv ->
+        let constrs = Layout.constraints to_ty in
+        if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
+    | ( ( TRef _ | TRawPtr _
+        | TAdt (TBuiltin TBox, _)
+        | TLiteral (TInteger (Isize | Usize)) ),
+        ( TRef _ | TRawPtr _
+        | TAdt (TBuiltin TBox, _)
+        | TLiteral (TInteger (Isize | Usize)) ),
+        (Ptr _ | Base _) ) ->
+        ok v
+    | _ ->
+        let open Syntaxes.Option in
+        let ( |>** ) = Result.bind in
+        let size_of ty = (Layout.layout_of ty).size in
+        let int_of_val v =
+          match Typed.kind v with
+          | Int v -> Z.to_int v
+          | _ -> failwith "Expected a concrete integer"
+        in
+        (* to make our life easier, we check for concrete offsets in the layout; this should
+           always be true anyways. *)
+        let blocks = rust_to_cvals v from_ty in
+        let** blocks =
+          try
+            Result.ok
+            @@ List.map
+                 (fun { value; ty; offset } -> (value, ty, int_of_val offset))
+                 blocks
+          with _ -> not_impl "Symbolic offset in layout"
+        in
+        let extract_block (ty, off) =
+          (* 1. ideal case, we find a block with the same size and offset *)
+          let- () =
+            List.find_map
+              (fun (v, ty', o) ->
+                let off = int_of_val off in
+                if o = off && size_of ty = size_of ty' then
+                  Some (transmute ~from_ty:ty' ~to_ty:ty v)
+                else None)
+              blocks
+          in
+          (* X. give up *)
+          let pp_triple fmt (v, ty, o) =
+            Fmt.pf fmt "(%a:%a, %d)" ppa_rust_val v pp_ty ty o
+          in
+          Fmt.kstr not_impl "Transmute: Couldn't extract %a at %a from %a" pp_ty
+            ty Typed.ppa off
+            Fmt.(list ~sep:comma pp_triple)
+            blocks
+        in
+        let rec aux = function
+          | `Done v -> Result.ok v
+          | `More (blocks, callback) ->
+              Result.fold_list blocks ~init:[] ~f:(fun acc block ->
+                  let++ block = extract_block block in
+                  block :: acc)
+              |>** callback
+              |>** aux
+        in
+        aux @@ rust_of_cvals to_ty

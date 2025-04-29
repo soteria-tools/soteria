@@ -121,25 +121,43 @@ module M (Heap : Heap_intf.S) = struct
     | Ne, _, _ ->
         let++ res = eval_ptr_binop Eq l r st in
         not_int_bool (cast res)
-    | Eq, Ptr (l, _), Ptr (r, _) -> Result.ok (int_of_bool (Sptr.sem_eq l r))
-    | Eq, Base l, Base r -> Result.ok (int_of_bool (l ==@ r))
+    | Eq, Ptr (l, None), Ptr (r, None) ->
+        Result.ok (int_of_bool (Sptr.sem_eq l r))
+    | Eq, Ptr (l, Some ml), Ptr (r, Some mr) ->
+        Result.ok (int_of_bool (Sptr.sem_eq l r &&@ (ml ==@ mr)))
+    | Eq, Ptr (_, Some _), Ptr (_, None) | Eq, Ptr (_, None), Ptr (_, Some _) ->
+        Result.ok (int_of_bool Typed.v_false)
     | Eq, Ptr (p, _), Base v | Eq, Base v, Ptr (p, _) ->
         if%sat v ==@ 0s then Result.ok (int_of_bool (Sptr.is_at_null_loc p))
         else
           Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p
             Typed.ppa v
-    | (Lt | Le | Gt | Ge), Ptr (l, _), Ptr (r, _) ->
+    | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then
-          let v = Sptr.distance l r in
-          let v =
+          let dist = Sptr.distance l r in
+          let bop =
             match bop with
-            | Lt -> v <@ 0s
-            | Le -> v <=@ 0s
-            | Gt -> v >@ 0s
-            | Ge -> v >=@ 0s
+            | Lt -> ( <@ )
+            | Le -> ( <=@ )
+            | Gt -> ( >@ )
+            | Ge -> ( >=@ )
             | _ -> assert false
           in
-          Result.ok (int_of_bool v)
+          let v = bop dist 0s in
+          match (ml, mr) with
+          | Some ml, Some mr ->
+              if%sat dist ==@ 0s then
+                let* ml, mr, mty = cast_checked2 ml mr in
+                match untype_type mty with
+                | TInt -> Result.ok (int_of_bool (bop ml mr))
+                | mty ->
+                    Fmt.kstr not_impl
+                      "Don't know how to compare metadata of type %a"
+                      Svalue.pp_ty mty
+              else Result.ok (int_of_bool v)
+          (* is this correct? *)
+          | Some _, None | None, Some _ -> Result.ok (int_of_bool v)
+          | None, None -> Result.ok (int_of_bool v)
         else Heap.error `UBPointerComparison st
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         if%sat Sptr.is_same_loc l r then

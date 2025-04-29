@@ -26,12 +26,14 @@ let pp_err ft (err, call_trace) =
     | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
     | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
     | `UBAbort -> Fmt.string ft "UBAbort"
+    | `UBArithShift -> Fmt.string ft "UBArithShift"
     | `UBTransmute -> Fmt.string ft "UBTransmute"
     | `UBTreeBorrow -> Fmt.string ft "UBTreeBorrow"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `MemoryLeak -> Fmt.string ft "Memory leak"
-    | `FailedAssert -> Fmt.string ft "Failed assertion"
+    | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
+    | `FailedAssert None -> Fmt.string ft "Failed assertion"
     | `Overflow -> Fmt.string ft "Overflow"
     | `StdErr msg -> Fmt.pf ft "Std error: %s" msg
     | `Panic msg -> Fmt.pf ft "Panic: %s" msg
@@ -203,17 +205,18 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
        let branches =
          if not should_err then branches
          else
-           List.map
-             (function
-               | Compo_res.Ok _, pcs ->
-                   let trace =
-                     Call_trace.singleton ~loc:entry_point.item_meta.span ()
-                   in
-                   (Compo_res.Error (`MetaExpectedError, trace), pcs)
-               | Compo_res.Error _, pcs ->
-                   (Compo_res.Ok (Charon_util.Base Typed.zero, Heap.empty), pcs)
-               | v -> v)
+           let open Compo_res in
+           let trace =
+             Call_trace.singleton ~loc:entry_point.item_meta.span ()
+           in
+           let oks, errors =
              branches
+             |> List.partition_map @@ function
+                | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
+                | Error _, pcs -> Right (Ok (Charon_util.unit_, Heap.empty), pcs)
+                | v -> Left v
+           in
+           if List.is_empty errors then oks else errors
        in
        let outcomes = List.map fst branches in
        if Option.is_some !Rustsymex.not_impl_happened then

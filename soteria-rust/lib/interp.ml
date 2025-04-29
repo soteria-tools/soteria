@@ -8,7 +8,7 @@ module T = Typed.T
 
 module Make (Heap : Heap_intf.S) = struct
   module Core = Core.M (Heap)
-  module Std_funs = Std_funs.M (Heap)
+  module Std_funs = Builtins.Eval.M (Heap)
   module Sptr = Heap.Sptr
 
   let pp_rust_val = pp_rust_val Sptr.pp
@@ -152,16 +152,23 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "Variable %a not found in store"
               Expressions.pp_var_id local)
     (* Dereference a pointer *)
-    | PlaceProjection (base, Deref) ->
+    | PlaceProjection (base, Deref) -> (
         let** ptr, state = resolve_place ~store state base in
         L.debug (fun f ->
             f "Dereferencing ptr %a of %a" pp_full_ptr ptr Types.pp_ty base.ty);
         let** v, state = Heap.load ptr base.ty state in
-        let v = as_ptr v in
-        L.debug (fun f ->
-            f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
-              pp_full_ptr v);
-        Result.ok (v, state)
+        match v with
+        | Ptr v ->
+            L.debug (fun f ->
+                f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
+                  pp_full_ptr v);
+            Result.ok (v, state)
+        | Base off ->
+            let* off = cast_checked ~ty:Typed.t_int off in
+            let ptr = Sptr.null_ptr in
+            let ptr = Sptr.offset ptr off in
+            Result.ok ((ptr, None), state)
+        | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
         (* when projecting, we lose the metadata *)
         let** (ptr, _), state = resolve_place ~store state base in
@@ -232,19 +239,22 @@ module Make (Heap : Heap_intf.S) = struct
     | Constant c ->
         let++ v, state = resolve_constant c state in
         (v, state)
-    | Move loc | Copy loc ->
+    | Move loc | Copy loc -> (
         let ty = loc.ty in
-        let** ptr, state = resolve_place ~store state loc in
-        let is_move =
-          (* TODO: properly detect if ty has the Copy trait, in which case is_move is
+        match Layout.as_zst ty with
+        | Some zst -> Result.ok (zst, state)
+        | None ->
+            let** ptr, state = resolve_place ~store state loc in
+            let is_move =
+              (* TODO: properly detect if ty has the Copy trait, in which case is_move is
              always false. *)
-          match (op, ty) with
-          | _, TLiteral _ -> false
-          | Move _, _ -> true
-          | _ -> false
-        in
-        let++ v, state = Heap.load ~is_move ptr ty state in
-        (v, state)
+              match (op, ty) with
+              | _, TLiteral _ -> false
+              | Move _, _ -> true
+              | _ -> false
+            in
+            let++ v, state = Heap.load ~is_move ptr ty state in
+            (v, state))
 
   and eval_operand_list ~crate ~store state ops =
     let++ vs, state =
@@ -304,42 +314,18 @@ module Make (Heap : Heap_intf.S) = struct
               Heap.lift_err state @@ Encoder.transmute ~from_ty ~to_ty v
             in
             (v, state)
-        | Cast (CastScalar (TInteger from_ty, TInteger to_ty)) ->
-            let from_size = Layout.size_of_int_ty from_ty in
-            let to_size = Layout.size_of_int_ty to_ty in
-            if Layout.is_signed from_ty = Layout.is_signed to_ty then
-              (* same sign: *)
-              if from_size <= to_size then
-                (* to a larger number *)
-                Result.ok (v, state)
-              else if not @@ Layout.is_signed from_ty then
-                (* to a smaller number (unsigned) *)
-                let max_value = Layout.max_value_z to_ty in
-                let v_int = as_base_of ~ty:Typed.t_int v in
-                let v_int' = v_int %@ Typed.nonzero_z max_value in
-                Result.ok (Base v_int', state)
-              else
-                (* to a smaller number (signed) *)
-                not_impl "Unsupported: integer cast to a smaller signed number"
-            else if from_size = to_size then
-              (* same size *)
-              let min = Typed.int_z @@ Layout.min_value_z from_ty in
-              let v_int = as_base_of ~ty:Typed.t_int v in
-              let v_int' =
-                if Layout.is_signed from_ty then v_int -@ min else v_int +@ min
-              in
-              Result.ok (Base v_int', state)
-            else
-              not_impl
-                "Unsupported: integer cast with different signedness and sign"
-        | Cast (CastScalar (TBool, TInteger (U8 | U16 | U32 | U64 | U128))) ->
-            Result.ok (v, state)
-        | Cast (CastScalar (TChar, TInteger (U32 | U64 | U128))) ->
-            Result.ok (v, state)
-        | Cast (CastScalar (TInteger _, TFloat fp)) ->
-            let v = as_base_of ~ty:Typed.t_int v in
-            let v' = Typed.float_of_int fp v in
-            Result.ok (Base v', state)
+        | Cast (CastScalar (from_ty, to_ty)) ->
+            let++ v =
+              Heap.lift_err state
+              @@ Encoder.transmute ~from_ty:(TLiteral from_ty)
+                   ~to_ty:(TLiteral to_ty) v
+            in
+            (v, state)
+        | Cast
+            (CastUnsize
+               ( TRawPtr
+                   (TAdt (TBuiltin TArray, { const_generics = [ size ]; _ }), _),
+                 TRawPtr (TAdt (TBuiltin TSlice, _), _) ))
         | Cast
             (CastUnsize
                ( TAdt
@@ -364,8 +350,8 @@ module Make (Heap : Heap_intf.S) = struct
     | BinaryOp (op, e1, e2) -> (
         let** v1, state = eval_operand state e1 in
         let** v2, state = eval_operand state e2 in
-        match (v1, v2, type_of_operand e1) with
-        | Base v1, Base v2, TLiteral ty -> (
+        match (v1, v2) with
+        | Base v1, Base v2 -> (
             match op with
             | Ge | Gt | Lt | Le ->
                 let op =
@@ -388,9 +374,21 @@ module Make (Heap : Heap_intf.S) = struct
                 let res = if op = Eq then res else Typed.not_int_bool res in
                 (Base (res :> T.cval Typed.t), state)
             | Add | Sub | Mul | Div | Rem ->
+                let* ty =
+                  match type_of_operand e1 with
+                  | TLiteral ty -> return ty
+                  | ty ->
+                      Fmt.kstr not_impl "Unexpected type in binop: %a" pp_ty ty
+                in
                 let++ res = Core.eval_lit_binop op ty v1 v2 state in
                 (Base res, state)
             | CheckedAdd | CheckedSub | CheckedMul ->
+                let* ty =
+                  match type_of_operand e1 with
+                  | TLiteral ty -> return ty
+                  | ty ->
+                      Fmt.kstr not_impl "Unexpected type in binop: %a" pp_ty ty
+                in
                 let++ res = Core.eval_checked_lit_binop op ty v1 v2 state in
                 (res, state)
             | Cmp ->
@@ -401,11 +399,64 @@ module Make (Heap : Heap_intf.S) = struct
                   let v = Typed.minus v1 v2 in
                   let* cmp = Core.cmp_of_int v in
                   Result.ok (Base cmp, state)
-            | Offset -> not_impl "Offset cannot be used on non-pointer values"
-            | (BitOr | BitAnd | BitXor | Shl | Shr) as bop ->
-                Fmt.kstr not_impl "Unsupported binary operator: %a"
-                  Expressions.pp_binop bop)
-        | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2), _ -> (
+            | Offset ->
+                (* if offset is done on integers, we just add the (size(T) * rhs) *)
+                let* v1, v2, ty = cast_checked2 v1 v2 in
+                if Typed.equal_ty ty Typed.t_ptr then
+                  Fmt.kstr not_impl
+                    "Offset cannot be used on non-int values: %a / %a" Typed.ppa
+                    v1 Typed.ppa v2
+                else
+                  let pointee = Charon_util.get_pointee (type_of_operand e1) in
+                  let* size = Layout.size_of_s pointee in
+                  let res = v1 +@ (v2 *@ size) in
+                  Result.ok (Base res, state)
+            | BitOr | BitAnd | BitXor -> (
+                let* ity =
+                  match type_of_operand e1 with
+                  | TLiteral (TInteger ity) -> return ity
+                  | TLiteral TBool -> return Values.U8
+                  | TLiteral TChar -> return Values.U32
+                  | ty ->
+                      Fmt.kstr not_impl
+                        "Unsupported type for bitwise operation: %a" pp_ty ty
+                in
+                let size = 8 * Layout.size_of_int_ty ity in
+                let signed = Layout.is_signed ity in
+                let* v1 = cast_checked ~ty:Typed.t_int v1 in
+                let* v2 = cast_checked ~ty:Typed.t_int v2 in
+                match op with
+                | BitOr ->
+                    Result.ok (Base (Typed.bit_or size signed v1 v2), state)
+                | BitAnd ->
+                    Result.ok (Base (Typed.bit_and size signed v1 v2), state)
+                | BitXor ->
+                    Result.ok (Base (Typed.bit_xor size signed v1 v2), state)
+                | _ -> assert false)
+            | Shl | Shr -> (
+                let* ity =
+                  match type_of_operand e1 with
+                  | TLiteral (TInteger ity) -> return ity
+                  | TLiteral TBool -> return Values.U8
+                  | TLiteral TChar -> return Values.U32
+                  | ty ->
+                      Fmt.kstr not_impl
+                        "Unsupported type for bitwise operation: %a" pp_ty ty
+                in
+                let size = 8 * Layout.size_of_int_ty ity in
+                let signed = Layout.is_signed ity in
+                let* v1 = cast_checked ~ty:Typed.t_int v1 in
+                let* v2 = cast_checked ~ty:Typed.t_int v2 in
+                if%sat v2 <@ 0s ||@ (v2 >=@ Typed.int size) then
+                  Heap.error `UBArithShift state
+                else
+                  match op with
+                  | Shl ->
+                      Result.ok (Base (Typed.bit_shl size signed v1 v2), state)
+                  | Shr ->
+                      Result.ok (Base (Typed.bit_shr size signed v1 v2), state)
+                  | _ -> assert false))
+        | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2) -> (
             match op with
             | Offset ->
                 let* p, meta, v =
@@ -420,7 +471,7 @@ module Make (Heap : Heap_intf.S) = struct
             | _ ->
                 let++ res = Core.eval_ptr_binop op p1 p2 state in
                 (Base res, state))
-        | v1, v2, _ ->
+        | v1, v2 ->
             Fmt.kstr not_impl
               "Unsupported values for binary operator (%a): %a / %a"
               Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
@@ -440,24 +491,26 @@ module Make (Heap : Heap_intf.S) = struct
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
-    | Discriminant (place, kind) ->
+    | Discriminant (place, kind) -> (
         let** (loc, _), state = resolve_place ~store state place in
         let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
-        let* discr_ofs, discr_ty =
-          match enum.kind with
-          | Enum (var :: _) ->
-              let int_ty = var.discriminant.int_ty in
-              let layout = Layout.of_variant var in
-              let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
-              return (discr_ofs, Types.TLiteral (TInteger int_ty))
-          | Enum [] ->
-              Fmt.kstr not_impl "Unsupported discriminant for empty enums"
-          | k ->
-              Fmt.failwith "Expected an enum for discriminant, got %a"
-                Types.pp_type_decl_kind k
-        in
-        let loc = Sptr.offset loc discr_ofs in
-        Heap.load (loc, None) discr_ty state
+        match enum.kind with
+        (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
+        | Enum [ { fields = []; discriminant; _ } ] ->
+            let discr = Typed.int_z discriminant.value in
+            Result.ok (Base discr, state)
+        | Enum (var :: _) ->
+            let int_ty = var.discriminant.int_ty in
+            let layout = Layout.of_variant var in
+            let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
+            let discr_ty = Types.TLiteral (TInteger int_ty) in
+            let loc = Sptr.offset loc discr_ofs in
+            Heap.load (loc, None) discr_ty state
+        | Enum [] ->
+            Fmt.kstr not_impl "Unsupported discriminant for empty enums"
+        | k ->
+            Fmt.failwith "Expected an enum for discriminant, got %a"
+              Types.pp_type_decl_kind k)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
         let type_decl =
@@ -482,13 +535,24 @@ module Make (Heap : Heap_intf.S) = struct
         in
         let++ value, state = eval_operand state op in
         (Union (field, value), state)
-    (* Special case? unit (zero-tuple) *)
+    (* Tuple aggregate *)
     | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
         (Tuple values, state)
     (* Struct aggregate *)
-    | Aggregate (AggregatedAdt (TAdtId _, None, None, _), operands) ->
-        let++ values, state = eval_operand_list ~crate ~store state operands in
+    | Aggregate (AggregatedAdt (TAdtId t_id, None, None, _), operands) ->
+        let type_decl =
+          Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
+        in
+        let** values, state = eval_operand_list ~crate ~store state operands in
+        let++ () =
+          match values with
+          | [ v ] ->
+              Heap.lift_err state
+              @@ Layout.apply_attributes v
+                   type_decl.item_meta.attr_info.attributes
+          | _ -> Result.ok ()
+        in
         (Struct values, state)
     (* Invalid aggregate (not sure, but seems like it) *)
     | Aggregate ((AggregatedAdt _ as v), _) ->
@@ -522,7 +586,6 @@ module Make (Heap : Heap_intf.S) = struct
         m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
     L.debug (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_raw_statement astmt.content);
-    let* () = Rustsymex.consume_fuel_steps 1 in
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
     let@ () = with_loc ~loc in
     match stmt with
@@ -607,6 +670,7 @@ module Make (Heap : Heap_intf.S) = struct
 
   and exec_block ~crate ~(body : UllbcAst.expr_body) store state
       ({ statements; terminator } : UllbcAst.block) =
+    let* () = Rustsymex.consume_fuel_steps 1 in
     let** store, state =
       Rustsymex.Result.fold_list statements ~init:(store, state)
         ~f:(fun (store, state) stmt -> exec_stmt ~crate store state stmt)

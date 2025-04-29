@@ -1,12 +1,10 @@
 open Charon
-module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 open Soteria_symex.Compo_res
 open Rustsymex
 open Rustsymex.Syntax
 open Typed.Syntax
 open Typed.Infix
 open Charon_util
-module T = Typed.T
 
 module M (Heap : Heap_intf.S) = struct
   module Sptr = Heap.Sptr
@@ -16,12 +14,6 @@ module M (Heap : Heap_intf.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
-  let match_config =
-    NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
-
-  type std_bool = Id | Neg
-  type type_loc = GenArg | Input
-
   let assert_ ~crate:_ ~(args : rust_val list) ~state =
     let open Typed.Infix in
     let* to_assert =
@@ -29,7 +21,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ Base t ] -> cast_checked t ~ty:Typed.t_int
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ 0s then Heap.error `FailedAssert state
+    if%sat to_assert ==@ 0s then Heap.error (`FailedAssert None) state
     else Result.ok (Charon_util.unit_, state)
 
   let assume ~crate:_ ~args ~state =
@@ -543,7 +535,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     let* size = Layout.size_of_s ty in
     if%sat Sptr.is_same_loc ptr1 ptr2 &&@ (size >@ 0s) then
-      let size : T.nonzero Typed.t = Typed.cast size in
+      let size = Typed.cast size in
       let off = Sptr.distance ptr1 ptr2 in
       if%sat off %@ size ==@ 0s then Result.ok (Base (off /@ size), state)
       else Heap.error `UBPointerComparison state
@@ -652,7 +644,14 @@ module M (Heap : Heap_intf.S) = struct
   let from_raw_parts ~crate:_ ~args ~state =
     match args with
     | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
-    | _ -> failwith "from_raw_parts: invalid arguments"
+    | [ Base v; Base meta ] ->
+        let* v = cast_checked ~ty:Typed.t_int v in
+        let ptr = Sptr.offset Sptr.null_ptr v in
+        Result.ok (Ptr (ptr, Some meta), state)
+    | _ ->
+        Fmt.failwith "from_raw_parts: invalid arguments %a"
+          Fmt.(list ~sep:comma pp_rust_val)
+          args
 
   let nop ~crate:_ ~args:_ ~state = Result.ok (Tuple [], state)
 
@@ -682,191 +681,80 @@ module M (Heap : Heap_intf.S) = struct
           else Heap.error (`Panic "core::intrinsics::exact_div") state
     | _ -> failwith "exact_div: invalid arguments"
 
-  type std_fun =
-    (* Kani *)
-    | KaniAssert
-    | KaniAssume
-    | KaniNondet
-    (* Std *)
-    | Abs
-    | AssertZeroValid
-    | AssertInhabited
-    | Assume
-    | BlackBox
-    | BoolNot
-    | BoxIntoRaw
-    | Checked of Expressions.binop
-    | CopyNonOverlapping
-    | Deref
-    | DiscriminantValue
-    | Eq of std_bool
-    | ExactDiv
-    | Index
-    | IsNone
-    | IsSome
-    | IsValStaticallyKnown
-    | IterNth
-    | MinAlignOf of type_loc
-    | MulAdd
-    | Nop
-    | OptUnwrap
-    | PtrByteOp of Expressions.binop
-    | PtrOp of Expressions.binop
-    | PtrOffsetFrom
-    | ResUnwrap
-    | SizeOf
-    | SizeOfVal
-    | SliceLen
-    | StrChars
-    | StrLen
-    | ToString
-    | Transmute
-    | Unchecked of Expressions.binop
-    | Wrapping of Expressions.binop
-    | WriteBytes
-    | Zeroed
+  let ctpop (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+    match args with
+    | [ Base v ] -> (
+        let ty =
+          match funsig.inputs with
+          | [ TLiteral (TInteger ty) ] -> ty
+          | _ -> failwith "ctpop: invalid arguments"
+        in
+        let bits = 8 * Layout.size_of_int_ty ty in
+        let* v = cast_checked ~ty:Typed.t_int v in
+        match Typed.kind v with
+        | Int v ->
+            let rec aux acc v =
+              if Z.equal v Z.zero then Typed.int acc
+              else
+                let next = Z.shift_right v 1 in
+                if Z.testbit v 0 then aux (succ acc) next else aux acc next
+            in
+            (* convert to unsigned *)
+            let v =
+              if Layout.is_signed ty then
+                let maxv = Z.shift_left Z.one bits in
+                if Z.(v < zero) then Z.(((v mod maxv) + maxv) mod maxv) else v
+              else v
+            in
+            Result.ok (Base (aux 0 v), state)
+        | _ ->
+            (* convert to unsigned *)
+            let* v =
+              if Layout.is_signed ty then
+                let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
+                if%sat v <@ 0s then return (((v %@ max) +@ max) %@ max)
+                else return v
+              else return v
+            in
+            let two = Typed.nonzero 2 in
+            let res =
+              List.init bits (fun i -> i)
+              |> List.fold_left
+                   (fun acc off ->
+                     let pow = Typed.nonzero_z (Z.shift_left Z.one off) in
+                     acc +@ (v /@ pow %@ two))
+                   0s
+            in
+            Result.ok (Base (res :> Typed.T.cval Typed.t), state))
+    | _ -> failwith "ctpop: invalid arguments"
 
-  let std_fun_map =
-    [
-      (* Kani *)
-      ("kani::assert", KaniAssert);
-      ("kani::assume", KaniAssume);
-      ("kani::nondet", KaniNondet);
-      (* Core *)
-      ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
-      ("alloc::string::{alloc::string::String}::len", StrLen);
-      ("alloc::string::{alloc::string::ToString}::to_string", ToString);
-      ("alloc::string::{core::ops::deref::Deref}::deref", Deref);
-      ("core::array::{core::ops::index::Index}::index", Index);
-      ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
-      ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
-      ("core::hint::black_box", BlackBox);
-      ("core::intrinsics::add_with_overflow", Checked Add);
-      ("core::intrinsics::assert_inhabited", AssertInhabited);
-      ("core::intrinsics::assert_zero_valid", AssertZeroValid);
-      ("core::intrinsics::assume", Assume);
-      ("core::intrinsics::black_box", BlackBox);
-      ("core::intrinsics::cold_path", Nop);
-      ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
-      ("core::intrinsics::discriminant_value", DiscriminantValue);
-      ("core::intrinsics::exact_div", ExactDiv);
-      ("core::intrinsics::fabsf64", Abs);
-      ("core::intrinsics::fabsf32", Abs);
-      ("core::intrinsics::fmaf64", MulAdd);
-      ("core::intrinsics::fmaf32", MulAdd);
-      ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
-      ("core::intrinsics::likely", Nop);
-      ("core::intrinsics::min_align_of", MinAlignOf GenArg);
-      ("core::intrinsics::min_align_of_val", MinAlignOf Input);
-      ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
-      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom);
-      ("core::intrinsics::size_of", SizeOf);
-      ("core::intrinsics::size_of_val", SizeOfVal);
-      ("core::intrinsics::transmute", Transmute);
-      ("core::intrinsics::unchecked_add", Unchecked Add);
-      ("core::intrinsics::unchecked_div", Unchecked Div);
-      ("core::intrinsics::unchecked_mul", Unchecked Mul);
-      ("core::intrinsics::unchecked_rem", Unchecked Rem);
-      ("core::intrinsics::unchecked_sub", Unchecked Sub);
-      ("core::intrinsics::wrapping_add", Wrapping Add);
-      ("core::intrinsics::wrapping_div", Wrapping Div);
-      ("core::intrinsics::wrapping_mul", Wrapping Mul);
-      ("core::intrinsics::wrapping_rem", Wrapping Rem);
-      ("core::intrinsics::wrapping_sub", Wrapping Sub);
-      ("core::intrinsics::write_bytes::write_bytes", WriteBytes);
-      ("core::mem::zeroed", Zeroed);
-      ("core::num::{@N}::wrapping_add", Wrapping Add);
-      ("core::num::{@N}::wrapping_div", Wrapping Div);
-      ("core::num::{@N}::wrapping_mul", Wrapping Mul);
-      ("core::num::{@N}::wrapping_rem", Wrapping Rem);
-      ("core::num::{@N}::wrapping_sub", Wrapping Sub);
-      ("core::option::{core::cmp::PartialEq}::eq", Eq Id);
-      ("core::option::{@T}::is_none", IsNone);
-      ("core::option::{@T}::is_some", IsSome);
-      ("core::option::{@T}::unwrap", OptUnwrap);
-      ("core::ptr::const_ptr::{@T}::add", PtrOp Add);
-      ("core::ptr::const_ptr::{@T}::byte_add", PtrByteOp Add);
-      ("core::ptr::const_ptr::{@T}::byte_sub", PtrByteOp Sub);
-      ("core::ptr::const_ptr::{@T}::offset", PtrOp Add);
-      ("core::ptr::const_ptr::{@T}::sub", PtrOp Sub);
-      ("core::ptr::mut_ptr::{@T}::add", PtrOp Add);
-      ("core::ptr::mut_ptr::{@T}::byte_add", PtrByteOp Add);
-      ("core::ptr::mut_ptr::{@T}::byte_sub", PtrByteOp Sub);
-      ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
-      ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
-      ("core::result::{@T}::unwrap", ResUnwrap);
-      ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
-      ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);
-      ("core::slice::index::{core::ops::index::Index}::index", Index);
-      ("core::slice::{@T}::len", SliceLen);
-      ("core::str::iter::{core::iter::traits::iterator::Iterator}::nth", IterNth);
-      ("core::str::{str}::chars", StrChars);
-      ("core::option::{core::cmp::PartialEq}::ne", Eq Neg);
-      ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
-    ]
-    |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
-    |> NameMatcherMap.of_list
+  let compare_bytes ~crate:_ ~args ~state =
+    let l, r, len =
+      match args with
+      | [ Ptr (l, _); Ptr (r, _); Base len ] -> (l, r, len)
+      | _ -> failwith "compare_bytes: invalid arguments"
+    in
+    let* len = cast_checked ~ty:Typed.t_int len in
+    let byte = Types.TLiteral (TInteger U8) in
+    let rec aux l r len state =
+      if%sat len ==@ 0s then Result.ok (Base 0s, state)
+      else
+        let** bl, state = Heap.load (l, None) byte state in
+        let bl = as_base_of ~ty:Typed.t_int bl in
+        let** br, state = Heap.load (r, None) byte state in
+        let br = as_base_of ~ty:Typed.t_int br in
+        if%sat bl ==@ br then
+          let l = Sptr.offset l 1s in
+          let r = Sptr.offset r 1s in
+          aux l r (len -@ 1s) state
+        else
+          if%sat bl <@ br then Result.ok (Base (-1s), state)
+          else Result.ok (Base 1s, state)
+    in
+    aux l r len state
 
-  let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
-    let opt_bind f opt = match opt with None -> f () | x -> x in
-    let ctx = NameMatcher.ctx_from_crate crate in
-    NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
-    |> ( Option.map @@ function
-         | Abs -> abs f.signature
-         | AssertZeroValid -> assert_zero_is_valid f.signature
-         | AssertInhabited -> assert_inhabited f.signature
-         | Assume -> std_assume
-         | BlackBox -> black_box f.signature
-         | BoolNot -> bool_not
-         | BoxIntoRaw -> box_into_raw f.signature
-         | Checked op -> checked_op op f.signature
-         | CopyNonOverlapping -> copy_nonoverlapping f.signature
-         | Deref -> deref f.signature
-         | DiscriminantValue -> discriminant_value f.signature
-         | Eq b -> eq_values ~neg:(b = Neg) f.signature
-         | ExactDiv -> exact_div f.signature
-         | Index -> array_index_fn f.signature
-         | IsNone -> is_none f.signature
-         | IsSome -> is_some f.signature
-         | IsValStaticallyKnown -> is_val_statically_known
-         | IterNth -> iter_nth f.signature
-         | KaniAssert -> assert_
-         | KaniAssume -> assume
-         | KaniNondet -> kani_nondet f.signature
-         | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
-         | MulAdd -> mul_add f.signature
-         | Nop -> nop
-         | OptUnwrap -> unwrap_opt
-         | PtrByteOp op -> ptr_op ~byte:true op f.signature
-         | PtrOp op -> ptr_op op f.signature
-         | PtrOffsetFrom -> ptr_offset_from f.signature
-         | ResUnwrap -> unwrap_res
-         | SizeOf -> size_of f.signature
-         | SizeOfVal -> size_of_val f.signature
-         | SliceLen -> slice_len f.signature
-         | StrChars -> str_chars f.signature
-         | StrLen -> str_len f.signature
-         | ToString -> to_string f.signature
-         | Transmute -> transmute f.signature
-         | Unchecked op -> unchecked_op op f.signature
-         | Wrapping op -> wrapping_op op f.signature
-         | WriteBytes -> write_bytes f.signature
-         | Zeroed -> zeroed f.signature )
-    |> opt_bind @@ fun () ->
-       match f.item_meta.name with
-       | PeIdent (("core" | "std"), _) :: PeIdent ("intrinsics", _) :: _ ->
-           Option.some @@ fun ~crate ~args:_ ~state:_ ->
-           let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-           Fmt.kstr not_impl "Unsupported intrinsic: %s"
-             (PrintTypes.name_to_string ctx f.item_meta.name)
-       | _ -> None
-
-  let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
-    match f with
-    | ArrayRepeat -> array_repeat generics
-    | ArrayToSliceMut -> array_slice ~mut:true generics
-    | ArrayToSliceShared -> array_slice ~mut:false generics
-    | Index idx -> array_index idx generics
-    | BoxNew -> box_new generics
-    | PtrFromParts _ -> from_raw_parts
+  let likely ~crate:_ ~args ~state =
+    match args with
+    | [ (Base _ as res) ] -> Result.ok (res, state)
+    | _ -> failwith "likely: invalid arguments"
 end

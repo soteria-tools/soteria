@@ -151,7 +151,7 @@ let load ?is_move (((_, tag) as ptr), meta) ty st =
                   (value :: vals, block))
             in
             let values = List.rev values in
-            let* res = callback values in
+            let** res = callback values in
             aux block res
       in
       let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
@@ -163,23 +163,26 @@ let load ?is_move (((_, tag) as ptr), meta) ty st =
       (value, block))
 
 let store (((_, tag) as ptr), _) ty sval st =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  log "store" ptr st;
-  with_ptr ptr st (fun ~ofs block ->
-      let@ block, tb = with_tbs block in
-
-      let parts = Encoder.rust_to_cvals ~offset:ofs sval ty in
+  let parts = Encoder.rust_to_cvals sval ty in
+  if List.is_empty parts then Result.ok ((), st)
+  else
+    let () =
       L.debug (fun f ->
           let pp_part f ({ value; ty; offset } : Sptr.t Encoder.cval_info) =
             Fmt.pf f "%a: %a [%a]"
               (Charon_util.pp_rust_val Sptr.pp)
               value Charon_util.pp_ty ty Typed.ppa offset
           in
-          f "Parsed to parts [%a]" (Fmt.list ~sep:Fmt.comma pp_part) parts);
-      Result.fold_list parts ~init:((), block)
-        ~f:(fun ((), block) { value; ty; offset } ->
-          Tree_block.store offset ty value tag tb block))
+          f "Parsed to parts [%a]" Fmt.(list ~sep:comma pp_part) parts)
+    in
+    let@ () = with_error_loc_as_call_trace () in
+    let@ () = with_loc_err () in
+    log "store" ptr st;
+    with_ptr ptr st (fun ~ofs block ->
+        let@ block, tb = with_tbs block in
+        Result.fold_list parts ~init:((), block)
+          ~f:(fun ((), block) { value; ty; offset } ->
+            Tree_block.store (offset +@ ofs) ty value tag tb block))
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace () in

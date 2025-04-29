@@ -23,6 +23,9 @@ pub const fn nondet<T>() -> T {
     unreachable!()
 }
 
+pub mod invariant;
+pub use invariant::Invariant;
+
 mod arbitrary;
 pub use arbitrary::*;
 

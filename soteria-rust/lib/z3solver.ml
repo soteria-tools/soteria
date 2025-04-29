@@ -318,7 +318,12 @@ let rec encode_value (v : Svalue.t) =
       | Mod ->
           if Svalue.is_float ty then
             failwith "mod not implemented for floating points"
-          else num_mod v1 v2)
+          else num_mod v1 v2
+      | BitAnd (size, signed) -> Z3ints.int_band size signed v1 v2
+      | BitOr (size, signed) -> Z3ints.int_bor size signed v1 v2
+      | BitXor (size, signed) -> Z3ints.int_bxor size signed v1 v2
+      | BitShl (size, signed) -> Z3ints.int_bshl size signed v1 v2
+      | BitShr (size, signed) -> Z3ints.int_bshr size signed v1 v2)
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in
       distinct vs

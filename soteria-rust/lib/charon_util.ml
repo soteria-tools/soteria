@@ -71,12 +71,12 @@ let as_ptr = function
         ppa_rust_val v
 
 let as_base_of ~ty = function
-  | Base v -> (
+  | Enum (v, []) | Base v -> (
       match Typed.cast_checked v ty with
       | Some v -> v
       | None ->
-          Fmt.failwith "Unexpected rust_val type, expected %a, got %a"
-            Typed.ppa_ty ty Typed.ppa v)
+          Fmt.failwith "Unexpected rust_val type, expected %a, got %a (%a)"
+            Typed.ppa_ty ty Typed.ppa v Svalue.pp_ty (Typed.get_ty v))
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         ppa_rust_val v
@@ -125,3 +125,10 @@ let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
   List.exists
     (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)
     decl.item_meta.attr_info.attributes
+
+let get_pointee : Types.ty -> Types.ty = function
+  | TRef (_, ty, _)
+  | TRawPtr (ty, _)
+  | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) ->
+      ty
+  | _ -> failwith "Non-pointer type given to get_pointee"
