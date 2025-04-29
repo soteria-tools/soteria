@@ -383,6 +383,14 @@ let rec transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
                 else None)
               blocks
           in
+          (* 2. only one block, so we convert that if we expect an integer *)
+          let- () =
+            match (blocks, ty) with
+            | ( [ (v, (TLiteral (TInteger _) as from_ty), 0) ],
+                (TLiteral (TInteger _) as to_ty) ) ->
+                Some (transmute ~from_ty ~to_ty v)
+            | _ -> None
+          in
           (* X. give up *)
           let pp_triple fmt (v, ty, o) =
             Fmt.pf fmt "(%a:%a, %d)" ppa_rust_val v pp_ty ty o

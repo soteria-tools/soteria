@@ -201,13 +201,21 @@ module M (Heap : Heap_intf.S) = struct
          | WriteBytes -> write_bytes f.signature
          | Zeroed -> zeroed f.signature )
     |> opt_bind @@ fun () ->
-       match f.item_meta.name with
-       | PeIdent (("core" | "std"), _) :: PeIdent ("intrinsics", _) :: _ ->
-           Option.some @@ fun ~crate ~args:_ ~state:_ ->
-           let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-           Fmt.kstr not_impl "Unsupported intrinsic: %s"
-             (PrintTypes.name_to_string ctx f.item_meta.name)
-       | _ -> None
+       let is_intrinsic =
+         (match f.item_meta.name with
+         | PeIdent (("core" | "std"), _) :: PeIdent ("intrinsics", _) :: _ ->
+             true
+         | _ -> false)
+         || List.mem
+              Meta.(AttrUnknown { path = "rustc_intrinsic"; args = None })
+              f.item_meta.attr_info.attributes
+       in
+       if is_intrinsic then
+         Option.some @@ fun ~crate ~args:_ ~state:_ ->
+         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+         Fmt.kstr not_impl "Unsupported intrinsic: %s"
+           (PrintTypes.name_to_string ctx f.item_meta.name)
+       else None
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
     let open Std in
