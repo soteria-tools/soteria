@@ -70,6 +70,12 @@ let as_ptr = function
       Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a"
         ppa_rust_val v
 
+let as_base = function
+  | Enum (v, []) | Base v -> v
+  | v ->
+      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
+        ppa_rust_val v
+
 let as_base_of ~ty = function
   | Enum (v, []) | Base v -> (
       match Typed.cast_checked v ty with

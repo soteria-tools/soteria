@@ -693,12 +693,6 @@ module M (Heap : Heap_intf.S) = struct
         let* v = cast_checked ~ty:Typed.t_int v in
         match Typed.kind v with
         | Int v ->
-            let rec aux acc v =
-              if Z.equal v Z.zero then Typed.int acc
-              else
-                let next = Z.shift_right v 1 in
-                if Z.testbit v 0 then aux (succ acc) next else aux acc next
-            in
             (* convert to unsigned *)
             let v =
               if Layout.is_signed ty then
@@ -706,7 +700,8 @@ module M (Heap : Heap_intf.S) = struct
                 if Z.(v < zero) then Z.(((v mod maxv) + maxv) mod maxv) else v
               else v
             in
-            Result.ok (Base (aux 0 v), state)
+            let v = Typed.int @@ Z.popcount v in
+            Result.ok (Base v, state)
         | _ ->
             (* convert to unsigned *)
             let* v =
@@ -757,4 +752,22 @@ module M (Heap : Heap_intf.S) = struct
     match args with
     | [ (Base _ as res) ] -> Result.ok (res, state)
     | _ -> failwith "likely: invalid arguments"
+
+  let copy_sign ~crate:_ ~args ~state =
+    let l, r =
+      match args with
+      | [ Base l; Base r ] -> (l, r)
+      | _ -> failwith "copy_sign: invalid arguments"
+    in
+    let* l, r, ty = cast_checked2 l r in
+    if Typed.is_float ty then
+      let zero = Typed.float_like r 0.0 in
+      if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] Typed.lt r zero
+      then
+        let l' = zero -.@ Typed.abs l in
+        Result.ok (Base l', state)
+      else
+        let l' = Typed.cast @@ Typed.abs l in
+        Result.ok (Base l', state)
+    else not_impl "Expected floats in copy_sign"
 end

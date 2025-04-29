@@ -277,6 +277,8 @@ let rec encode_value (v : Svalue.t) =
       | [] -> failwith "need type to encode empty lists"
       | _ :: _ ->
           List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat)
+  | Ite (c, t, e) ->
+      ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
   | Unop (unop, v1_) -> (
       let v1 = encode_value_memo v1_ in
       match unop with
@@ -284,10 +286,6 @@ let rec encode_value (v : Svalue.t) =
       | GetPtrLoc -> get_loc v1
       | GetPtrOfs -> get_ofs v1
       | IntOfBool -> ite v1 (int_k 1) (int_k 0)
-      | Abs ->
-          let ty = v1_.node.ty in
-          if Svalue.is_float ty then fp_abs v1
-          else ite (num_lt v1 (int_k 0)) (num_neg v1) v1
       | BvOfInt ->
           let size =
             match v.node.ty with
@@ -358,7 +356,8 @@ let rec simplify' solver (v : Svalue.t) : Svalue.t =
       let e' = simplify' solver e in
       if Svalue.equal e e' then v else Svalue.not e'
   | Binop (Eq, e1, e2) ->
-      if Svalue.equal e1 e2 then Svalue.v_true
+      if Svalue.equal e1 e2 && (not @@ Svalue.is_float e1.node.ty) then
+        Svalue.v_true
       else if Svalue.sure_neq e1 e2 then Svalue.v_false
       else v
   | Binop (Or, e1, e2) ->

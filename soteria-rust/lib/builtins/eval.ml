@@ -28,6 +28,7 @@ module M (Heap : Heap_intf.S) = struct
     | Checked of Expressions.binop
     | CompareBytes
     | CopyNonOverlapping
+    | CopySign
     | Ctpop
     | Deref
     | DiscriminantValue
@@ -85,6 +86,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::compare_bytes", CompareBytes);
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
+      ("core::intrinsics::copysignf32", CopySign);
+      ("core::intrinsics::copysignf64", CopySign);
       ("core::intrinsics::ctpop", Ctpop);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::exact_div", ExactDiv);
@@ -163,6 +166,7 @@ module M (Heap : Heap_intf.S) = struct
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes
          | CopyNonOverlapping -> copy_nonoverlapping f.signature
+         | CopySign -> copy_sign
          | Ctpop -> ctpop f.signature
          | Deref -> deref f.signature
          | DiscriminantValue -> discriminant_value f.signature

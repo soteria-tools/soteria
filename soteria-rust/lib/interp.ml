@@ -300,9 +300,18 @@ module Make (Heap : Heap_intf.S) = struct
                   Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty
             in
             Result.ok (Base v', state)
-        | Neg ->
-            let v = as_base_of ~ty:Typed.t_int v in
-            Result.ok (Base ~-v, state)
+        | Neg -> (
+            match type_of_operand e with
+            | TLiteral (TInteger _) ->
+                let v = as_base_of ~ty:Typed.t_int v in
+                Result.ok (Base ~-v, state)
+            | TLiteral (TFloat _) ->
+                let* v =
+                  of_opt_not_impl ~msg:"Expected a float type"
+                  @@ Typed.cast_float (as_base v)
+                in
+                Result.ok (Base (Typed.float_like v 0.0 -.@ v), state)
+            | _ -> not_impl "Invalid type for Neg")
         | PtrMetadata -> (
             match v with
             | Ptr (_, None) -> Result.ok (Tuple [], state)
