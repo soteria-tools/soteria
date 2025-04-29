@@ -208,6 +208,10 @@ let generate_errors content =
       let results =
         List.concat_map
           (fun (fid, summaries) ->
+            let@ () =
+              Soteria_logs.Logs.with_section
+                ("Anaysing summaries for function" ^ Symbol.show_symbol fid)
+            in
             List.concat_map (Summary.analyse_summary ~prog ~fid) summaries)
           summaries
       in
@@ -329,6 +333,7 @@ let generate_all_summaries log_config dump_unsupported_file smt_file includes
   Soteria_logs.Config.check_set_and_lock log_config;
   Initialize_analysis.init_once ();
   let prog =
+    let@ () = Soteria_logs.Logs.with_section "Parsing and Linking" in
     parse_and_link_ail file_names
     |> Result.get_or ~err:(fun e ->
            Fmt.epr "%a@\n@?" pp_err e;
@@ -339,6 +344,7 @@ let generate_all_summaries log_config dump_unsupported_file smt_file includes
     Abductor.generate_all_summaries prog
   in
   Csymex.dump_unsupported ();
+
   let pp_summary ~fid ft summary =
     Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
       summary (Fmt.Dump.list pp_err)

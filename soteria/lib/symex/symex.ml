@@ -1,4 +1,5 @@
 open Soteria_logs
+open Syntaxes.FunctionWrap
 module L = Logs.L
 module List = ListLabels
 
@@ -372,22 +373,8 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     let branching_left = wrap_read Fuel_gauge.branching_left
   end
 
-  type _ Effect.t += Close_last_section : unit Effect.t
-
   module Value = Solver.Value
-
-  module MONAD = struct
-    type 'a t = 'a Iter.t
-
-    let return x = Iter.return x
-    let map x f = Iter.map f x
-
-    let bind iter f =
-     fun k ->
-      iter (fun x ->
-          Effect.perform Close_last_section;
-          f x k)
-  end
+  module MONAD = Monad.IterM
 
   module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
@@ -418,7 +405,8 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
           let l = Solver.simplify l in
           match Value.as_bool l with
           | Some true -> aux acc ls
-          | Some false -> ()
+          | Some false ->
+              L.trace (fun m -> m "Assuming false, stopping this branch")
           | None -> aux (l :: acc) ls)
     in
     aux [] learned
@@ -429,11 +417,18 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     | Some true -> f true
     | Some false -> f false
     | None ->
-        Symex_state.save ();
-        Solver.add_constraints [ Value.(not value) ];
-        let sat = Solver.sat () in
-        Symex_state.backtrack_n 1;
-        f (not sat)
+        let result =
+          let@ () =
+            Logs.with_section
+              (Fmt.str "Checking entailment for %a" Value.ppa value)
+          in
+          Symex_state.save ();
+          Solver.add_constraints [ Value.(not value) ];
+          let sat = Solver.sat () in
+          Symex_state.backtrack_n 1;
+          not sat
+        in
+        f result
 
   let nondet ?(constrs = fun _ -> []) ty f =
     let v = Solver.fresh_var ty in
@@ -456,27 +451,30 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     | Some false -> else_ () f
     | None ->
         Symex_state.save ();
+        Logs.start_section ~is_branch:true left_branch_name;
         Solver.add_constraints ~simplified:true [ guard ];
-        if Solver.sat () then (
-          Logs.start_section ~is_branch:true left_branch_name;
-          then_ () f;
-          Logs.end_section ())
-        else left_sat := false;
+        if Solver.sat () then then_ () f
+        else (
+          left_sat := false;
+          L.trace (fun m -> m "Branch is not feasible"));
+        Logs.end_section ();
         Symex_state.backtrack_n 1;
+        Logs.start_section ~is_branch:true right_branch_name;
         Solver.add_constraints [ Value.(not guard) ];
-        let right_branch () =
-          Logs.start_section ~is_branch:true right_branch_name;
-          else_ () f;
-          Logs.end_section ()
-        in
-        if !left_sat then (
-          match Fuel.consume_branching 1 () with
-          | Exhausted -> L.debug (fun m -> m "Exhausted branching fuel")
-          | Not_exhausted -> if Solver.sat () then right_branch ())
-        else
-          (* Right must be sat since left was not! We didn't branch so we don't consume the counter
+        let () =
+          if !left_sat then
+            match Fuel.consume_branching 1 () with
+            | Exhausted ->
+                L.debug (fun m -> m "Exhausted branching fuel, not continuing")
+            | Not_exhausted ->
+                if Solver.sat () then else_ () f
+                else L.trace (fun m -> m "Branch is not feasible")
+          else
+            (* Right must be sat since left was not! We didn't branch so we don't consume the counter
              FIXME: we should also check that the solver hasn't returned "UNKNOWN"! *)
-          right_branch ()
+            else_ () f
+        in
+        Logs.end_section ()
 
   let branch_on_take_one ?left_branch_name:_ ?right_branch_name:_ guard ~then_
       ~else_ : 'a Iter.t =
@@ -489,9 +487,10 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
-        if Solver.sat () then then_ () f
-        else (
-          Symex_state.backtrack_n 1;
+        let left_sat = ref true in
+        if Solver.sat () then then_ () f else left_sat := false;
+        Symex_state.backtrack_n 1;
+        if not !left_sat then (
           Solver.add_constraints [ Value.(not guard) ];
           else_ () f)
 
@@ -543,10 +542,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
   let run iter =
     Symex_state.reset ();
     let l = ref [] in
-    let () =
-      try iter @@ fun x -> l := (x, Solver.as_values ()) :: !l
-      with effect Close_last_section, k -> Effect.Deep.continue k ()
-    in
+    let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
     List.rev !l
 
   let vanish () _f = ()
