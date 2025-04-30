@@ -497,7 +497,7 @@ module Make (Heap : Heap_intf.S) = struct
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
                From what I understand: our execution already checks for UB, so we should return
                false, to say we don't want to do UB checks at runtime. *)
-            Result.ok (Base (Typed.int_of_bool Typed.v_false), state)
+            Result.ok (Base (Typed.int_of_bool Typed.v_true), state)
         | SizeOf ->
             let layout = Layout.layout_of ty in
             Result.ok (Base (Typed.int layout.size), state)

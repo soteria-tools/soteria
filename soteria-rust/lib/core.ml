@@ -42,9 +42,9 @@ module M (Heap : Heap_intf.S) = struct
     | TInt ->
         let** res =
           match bop with
-          | Add | CheckedAdd -> Result.ok (l +@ r)
-          | Sub | CheckedSub -> Result.ok (l -@ r)
-          | Mul | CheckedMul -> Result.ok (l *@ r)
+          | Add | CheckedAdd | WrappingAdd -> Result.ok (l +@ r)
+          | Sub | CheckedSub | WrappingSub -> Result.ok (l -@ r)
+          | Mul | CheckedMul | WrappingMul -> Result.ok (l *@ r)
           | Div ->
               if%sat r ==@ 0s then Heap.error `DivisionByZero st
               else Result.ok (l /@ cast r)

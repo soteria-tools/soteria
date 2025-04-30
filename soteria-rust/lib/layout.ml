@@ -226,6 +226,8 @@ let rec layout_of (ty : Types.ty) : layout =
         let sub_layout = layout_of ty in
         let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
         { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
+  (* Closures *)
+  | TClosure (_, _, state, _) -> layout_of_members state
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
   (* Others (unhandled for now) *)
