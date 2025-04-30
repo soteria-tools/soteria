@@ -14,7 +14,15 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
+# if piping output, remove colors:
+NO_COLOR = not sys.stdout.isatty()
+if NO_COLOR:
+    PURPLE = RED = ORANGE = YELLOW = GREEN = CYAN = BLUE = BOLD = RESET = ''
+
 def rainbow(i):
+    if NO_COLOR:
+        return ''
+
     i = i % 7
     return [
         '\033[38;5;197m',
@@ -204,7 +212,11 @@ def main(files: list[str]):
             for filter in cause_filters
         ))
     ]
-    items.sort(key=lambda x: -x[2])
+
+    if "--az" in sys.argv:
+        items.sort(key=lambda x: x[0])
+    else:
+        items.sort(key=lambda x: -x[2])
 
     if "--rev" in sys.argv:
         items.reverse()
@@ -223,13 +235,16 @@ def main(files: list[str]):
                 print(f"  {dot} {f'\n  {dot} '.join(tests)}")
             else:
                 # aggregate by reason
-                reasons = {}
+                reasons_d: dict[str, list[str]] = {}
                 for file, reason in tests:
                     if reason is None:
                         reason = "Unknown reason"
-                    reasons[reason] = reasons.get(reason, []) + [file]
-                reasons = reasons.items()
-                reasons = sorted(reasons, key=lambda x: -len(x[1]))
+                    reasons_d[reason] = reasons_d.get(reason, []) + [file]
+                reasons = reasons_d.items()
+                if "--az" in sys.argv:
+                    reasons = sorted(reasons, key=lambda x: x[0])
+                else:
+                    reasons = sorted(reasons, key=lambda x: -len(x[1]))
                 if "--rev" in sys.argv:
                     reasons.reverse()
                 for reason, files in reasons:
