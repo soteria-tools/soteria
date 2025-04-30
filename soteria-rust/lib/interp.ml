@@ -394,6 +394,19 @@ module Make (Heap : Heap_intf.S) = struct
                 in
                 let++ res = Core.eval_checked_lit_binop op ty v1 v2 state in
                 (res, state)
+            | WrappingAdd | WrappingSub | WrappingMul -> (
+                match type_of_operand e1 with
+                | TLiteral (TInteger ty) ->
+                    let** v = Core.safe_binop op v1 v2 state in
+                    let+ res = Core.wrap_value ty v in
+                    Soteria_symex.Compo_res.Ok (Base res, state)
+                | TLiteral ty ->
+                    (* Wrapping operations can apply to floating points too, but in that case
+                       it is equivalent to the regular operation. *)
+                    let++ res = Core.eval_lit_binop op ty v1 v2 state in
+                    (Base res, state)
+                | ty ->
+                    Fmt.kstr not_impl "Unexpected type in binop: %a" pp_ty ty)
             | Cmp ->
                 let* v1, v2, ty = cast_checked2 v1 v2 in
                 if Typed.equal_ty ty Typed.t_ptr then

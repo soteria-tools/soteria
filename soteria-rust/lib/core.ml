@@ -58,9 +58,9 @@ module M (Heap : Heap_intf.S) = struct
         let l, r = (cast l, cast r) in
         let** res =
           match bop with
-          | Add -> Result.ok (l +.@ r)
-          | Sub -> Result.ok (l -.@ r)
-          | Mul -> Result.ok (l *.@ r)
+          | Add | CheckedAdd | WrappingAdd -> Result.ok (l +.@ r)
+          | Sub | CheckedSub | WrappingSub -> Result.ok (l -.@ r)
+          | Mul | CheckedMul | WrappingMul -> Result.ok (l *.@ r)
           | Div ->
               if%sat r ==@ float_like r 0.0 then Heap.error `DivisionByZero st
               else Result.ok (l /.@ cast r)
