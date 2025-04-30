@@ -30,13 +30,6 @@ module Make (State : State_intf.S) = struct
   type state = State.t
   type store = (T.sptr Typed.t option * Ctype.ctype) Store.t
 
-  let cast_checked ~ty x =
-    match Typed.cast_checked x ty with
-    | Some x -> Csymex.return x
-    | None ->
-        Fmt.kstr Csymex.not_impl "Failed to cast %a to %a" Svalue.pp_ty
-          (Typed.get_ty x) Typed.ppa_ty ty
-
   let cast_to_ptr x =
     let open Csymex.Syntax in
     let open Typed.Infix in
@@ -51,6 +44,22 @@ module Make (State : State_intf.S) = struct
         let x : T.sptr Typed.t = Typed.cast x in
         Csymex.return x
     | _ -> Fmt.kstr Csymex.not_impl "Not a pointer: %a" Typed.ppa x
+
+  let cast_to_int (x : [< T.cval ] Typed.t) : [> T.sint ] Typed.t Csymex.t =
+    match Typed.get_ty x with
+    | TInt -> Csymex.return (Typed.cast x)
+    | TPointer ->
+        let x = Typed.cast x in
+        if%sat Typed.Ptr.is_at_null_loc x then Csymex.return (Typed.Ptr.ofs x)
+        else not_impl "Pointer to int that is not at null loc"
+    | _ -> failwith "cast_to_int a cval?"
+
+  let cast_to_bool (x : [< T.cval ] Typed.t) : [> T.sbool ] Typed.t =
+    let open Typed in
+    match get_ty x with
+    | TInt -> bool_of_int (cast x)
+    | TPointer -> not (Ptr.is_null (cast x))
+    | _ -> failwith "unreachable"
 
   type 'err fun_exec =
     prog:linked_program ->
@@ -220,8 +229,8 @@ module Make (State : State_intf.S) = struct
   let arith ~state (v1, t1) a_op (v2, t2) =
     match (a_op : AilSyntax.arithmeticOperator) with
     | Div -> (
-        let* v1 = cast_checked v1 ~ty:Typed.t_int in
-        let* v2 = cast_checked v2 ~ty:Typed.t_int in
+        let* v1 = cast_to_int v1 in
+        let* v2 = cast_to_int v2 in
         let* v2 = Csymex.check_nonzero v2 in
         match v2 with
         | Ok v2 -> Csymex.Result.ok (v1 /@ v2, state)
@@ -340,7 +349,6 @@ module Make (State : State_intf.S) = struct
         let** v, state = eval_expr state e in
         match op with
         | PostfixIncr ->
-            (* TODO: not quite sure if I should be evaluating e in lvalue mode or not *)
             let* ptr = cast_to_ptr v in
             let** v, state = State.load ptr (type_of e) state in
             let* incr_operand =
@@ -351,10 +359,21 @@ module Make (State : State_intf.S) = struct
             let** v_incr, state = arith_add ~state v incr_operand in
             let++ (), state = State.store ptr (type_of e) v_incr state in
             (v, state)
+        | PostfixDecr ->
+            let* ptr = cast_to_ptr v in
+            let** v, state = State.load ptr (type_of e) state in
+            let* incr_operand =
+              match type_of e |> pointer_inner with
+              | Some ty -> Layout.size_of_s ty
+              | None -> return 1s
+            in
+            let** v_decr, state = arith_sub ~state v incr_operand in
+            let++ (), state = State.store ptr (type_of e) v_decr state in
+            (v, state)
         | Indirection -> Result.ok (v, state)
         | Address -> failwith "unreachable: address_of already handled"
         | Minus ->
-            let* v = cast_checked v ~ty:Typed.t_int in
+            let* v = cast_to_int v in
             arith_sub ~state Typed.zero v
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op
@@ -374,15 +393,11 @@ module Make (State : State_intf.S) = struct
             let++ res, state = equality_check ~state v1 v2 in
             (Typed.not_int_bool res, state)
         | And ->
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let+ v2 = cast_checked v2 ~ty:Typed.t_int in
-            let b_res = Typed.bool_of_int v1 &&@ Typed.bool_of_int v2 in
-            Ok (Typed.int_of_bool b_res, state)
+            let b_res = cast_to_bool v1 &&@ cast_to_bool v2 in
+            Result.ok (Typed.int_of_bool b_res, state)
         | Or ->
-            let* v1 = cast_checked v1 ~ty:Typed.t_int in
-            let+ v2 = cast_checked v2 ~ty:Typed.t_int in
-            let b_res = Typed.bool_of_int v1 ||@ Typed.bool_of_int v2 in
-            Ok (Typed.int_of_bool b_res, state)
+            let b_res = cast_to_bool v1 ||@ cast_to_bool v2 in
+            Result.ok (Typed.int_of_bool b_res, state)
         | Arithmetic a_op -> arith ~state (v1, type_of e1) a_op (v2, type_of e2)
         | _ ->
             Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
@@ -515,20 +530,30 @@ module Make (State : State_intf.S) = struct
     | AilSif (cond, then_stmt, else_stmt) ->
         let** v, state = eval_expr ~prog ~store state cond in
         (* [v] must be an integer! (TODO: or NULL possibly...) *)
-        let* v = cast_checked v ~ty:Typed.t_int in
+        let* v = cast_to_int v in
         if%sat Typed.bool_of_int v then
           exec_stmt ~prog store state then_stmt [@name "if branch"]
         else exec_stmt ~prog store state else_stmt [@name "else branch"]
     | AilSwhile (cond, stmt, _loopid) ->
         let rec loop store state =
           let** cond_v, state = eval_expr ~prog ~store state cond in
-          let* cond_v = cast_checked cond_v ~ty:Typed.t_int in
-          if%sat Typed.bool_of_int cond_v then
+          if%sat cast_to_bool cond_v then
             let** res, store, state = exec_stmt ~prog store state stmt in
             match res with
             | Some _ -> Result.ok (res, store, state)
             | None -> loop store state
           else Result.ok (None, store, state)
+        in
+        loop store state
+    | AilSdo (stmt, cond, _loop_id) ->
+        let rec loop store state =
+          let** res, store, state = exec_stmt ~prog store state stmt in
+          match res with
+          | Some _ -> Result.ok (res, store, state)
+          | None ->
+              let** cond_v, state = eval_expr ~prog ~store state cond in
+              if%sat cast_to_bool cond_v then loop store state
+              else Result.ok (None, store, state)
         in
         loop store state
     | AilSlabel (_label, stmt, _annot) ->

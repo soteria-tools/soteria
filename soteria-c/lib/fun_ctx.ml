@@ -39,7 +39,8 @@ let decay_fn_sym sym t =
          let loc = Svalue.Ptr.loc_of_z z in
          let loc : Typed.T.sloc Typed.t = Typed.type_ loc in
          loc)
-  |> Csymex.of_opt_not_impl ~msg:"Function has not been declared!"
+  |> Csymex.of_opt_not_impl
+       ~msg:(Fmt.str "Function has not been declared! %a" Fmt_ail.pp_sym sym)
 
 let get_sym sv t =
   let res =
