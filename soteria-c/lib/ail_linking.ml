@@ -291,5 +291,20 @@ let link : Ail_tys.program list -> (Ail_tys.linked_program, string) result =
           -> link_aux (entry_point_acc, sigma_acc) f' symmap_acc)
         (Ok init_linked) fs
 
+let compress_union_find (map : Ail_tys.extern_symmap) : Ail_tys.extern_symmap =
+  let rec resolve (map : Ail_tys.extern_symmap) (key : Symbol.sym) =
+    match Pmap.lookup key map with
+    | None -> key
+    | Some k when Symbol.equal_sym k key -> key
+    | Some k -> resolve map k
+  in
+  Pmap.fold
+    (fun k _ acc -> Pmap.add k (resolve map k) acc)
+    map
+    (Pmap.empty Symbol.compare_sym)
+
 let link progs =
-  Result.map_error (fun s -> (`LinkError s, Call_trace.empty)) (link progs)
+  match link progs with
+  | Ok linked_prog ->
+      Ok { linked_prog with symmap = compress_union_find linked_prog.symmap }
+  | Error s -> Error (`LinkError s, Call_trace.empty)
