@@ -606,7 +606,9 @@ let put_raw_tree ofs (tree : Tree.t) t :
   in
   (res, to_opt t)
 
-let alloc size = { root = Tree.uninit (0s, size); bound = Some size }
+let alloc ~zeroed size =
+  let constr = if zeroed then Tree.zeros else Tree.uninit in
+  { root = constr (0s, size); bound = Some size }
 
 (** Logic *)
 

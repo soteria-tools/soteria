@@ -136,17 +136,21 @@ module Make (State : State_intf.S) = struct
 
   let unwrap_expr (AnnotatedExpression (_, _, _, e) : expr) = e
 
-  let find_stub ~prog:_ fname : 'err fun_exec option =
-    let name = Cerb_frontend.Pp_symbol.to_string fname in
-    if String.starts_with ~prefix:"__nondet__" name then
-      Some C_std.nondet_int_fun
-    else if String.starts_with ~prefix:"malloc" name then Some C_std.malloc
-    else if String.starts_with ~prefix:"free" name then Some C_std.free
-    else if String.starts_with ~prefix:"memcpy" name then Some C_std.memcpy
-    else if String.starts_with ~prefix:"__assert__" name then Some C_std.assert_
-    else if String.starts_with ~prefix:"___soteria_debug_show" name then
-      Some debug_show
-    else None
+  let find_stub ~prog:_ (fname : Cerb_frontend.Symbol.sym) :
+      'err fun_exec option =
+    let (Symbol (_, _, descr)) = fname in
+    match descr with
+    | Cerb_frontend.Symbol.SD_Id name -> (
+        match name with
+        | "__nondet__" -> Some C_std.nondet_int_fun
+        | "malloc" -> Some C_std.malloc
+        | "calloc" -> Some C_std.calloc
+        | "free" -> Some C_std.free
+        | "memcpy" -> Some C_std.memcpy
+        | "__assert__" -> Some C_std.assert_
+        | "__soteria_debug_show" -> Some debug_show
+        | _ -> None)
+    | _ -> None
 
   let cast ~old_ty:(Ctype.Ctype (_, old_ty)) ~new_ty:(Ctype.Ctype (_, new_ty))
       (v : [> T.cval ] Typed.t) =
@@ -289,11 +293,14 @@ module Make (State : State_intf.S) = struct
           (* Some function pointer *)
           let** fptr, state = eval_expr ~prog ~store state fexpr in
           let* fptr = cast_to_ptr fptr in
-          let fctx = get_fun_ctx () in
-          let* sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
-          if%sat Typed.not (Typed.Ptr.ofs fptr ==@ 0s) then
-            State.error `InvalidFunctionPtr state
-          else Csymex.Result.ok ((loc, sym), state)
+          if%sat
+            Typed.not (Typed.Ptr.ofs fptr ==@ 0s)
+            ||@ Typed.Ptr.is_at_null_loc fptr
+          then State.error `InvalidFunctionPtr state
+          else
+            let fctx = get_fun_ctx () in
+            let* sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
+            Csymex.Result.ok ((loc, sym), state)
     in
     let@ () = with_loc ~loc in
     let fundef_opt = Ail_helpers.find_fun_def ~prog fname in

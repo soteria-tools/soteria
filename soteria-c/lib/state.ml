@@ -158,12 +158,12 @@ let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
     with_ptr dst st (fun ~ofs block ->
         Tree_block.put_raw_tree ofs tree_to_write block)
 
-let alloc size st =
+let alloc ?(zeroed = false) size st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
   let@ () = with_error_loc_as_call_trace () in
   let@ heap = with_heap st in
-  let block = Freeable.Alive (Tree_block.alloc size) in
+  let block = Freeable.Alive (Tree_block.alloc ~zeroed size) in
   let** loc, st = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
