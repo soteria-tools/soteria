@@ -553,4 +553,17 @@ module M (Heap : Heap_intf.S) = struct
         let l' = Typed.abs l in
         Result.ok (Base (Typed.cast l'), state)
     else not_impl "Expected floats in copy_sign"
+
+  let variant_count (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+    let ty =
+      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
+        .types
+      |> List.hd
+    in
+    match ty with
+    | Types.TAdt (TAdtId id, _) when Layout.Session.is_enum id ->
+        let variants = Layout.Session.as_enum id in
+        let n = Typed.int @@ List.length variants in
+        Result.ok (Base n, state)
+    | _ -> Heap.error (`Panic "core::intrinsics::variant_count") state
 end

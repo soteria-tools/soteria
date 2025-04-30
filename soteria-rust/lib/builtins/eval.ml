@@ -44,6 +44,7 @@ module M (Heap : Heap_intf.S) = struct
     | SizeOfVal
     | Transmute
     | Unchecked of Expressions.binop
+    | VariantCount
     | Wrapping of Expressions.binop
     | WriteBytes
     | Zeroed
@@ -111,6 +112,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::unchecked_rem", Unchecked Rem);
       ("core::intrinsics::unchecked_sub", Unchecked Sub);
       ("core::intrinsics::unlikely", Likely);
+      ("core::intrinsics::variant_count", VariantCount);
       ("core::intrinsics::wrapping_add", Wrapping Add);
       ("core::intrinsics::wrapping_div", Wrapping Div);
       ("core::intrinsics::wrapping_mul", Wrapping Mul);
@@ -157,6 +159,7 @@ module M (Heap : Heap_intf.S) = struct
          | SizeOfVal -> size_of_val f.signature
          | Transmute -> transmute f.signature
          | Unchecked op -> unchecked_op op f.signature
+         | VariantCount -> variant_count f.signature
          | Wrapping op -> wrapping_op op f.signature
          | WriteBytes -> write_bytes f.signature
          | Zeroed -> zeroed f.signature )
