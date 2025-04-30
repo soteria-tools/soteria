@@ -70,37 +70,30 @@ let default_cmd ~file_name ~output () =
 
 let mk_kani_cmd ~no_compile () =
   let path = List.hd Runtime_sites.Sites.kani_lib in
-  (if not no_compile then
-     let cargo =
-       "RUSTC=$(charon toolchain-path)/bin/rustc $(charon \
-        toolchain-path)/bin/cargo"
-     in
-     (* look for line "host: <host>", to get the target architecture *)
-     let info = Fmt.kstr exec_and_read "%s -vV" cargo in
-     let target =
-       match List.find_opt (String.starts_with ~prefix:"host") info with
-       | Some s -> String.sub s 6 (String.length s - 6)
-       | None -> raise (ExecutionError "Couldn't find target host")
-     in
-     (* build Kani lib *)
-     let res =
-       Fmt.kstr exec_cmd
-         "cd %s/kani && %s build --lib --target %s > /dev/null 2>/dev/null" path
-         cargo target
-     in
-     if res <> 0 && res <> 255 then
-       let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
-       raise (ExecutionError msg));
-  let ( / ) = Filename.concat in
-  let target = path / "kani" / "target" in
-  (* find folder that is neither debug, nor a file (e.g. "aarch64-apple-darwin") *)
-  let os =
-    try
-      Sys.readdir target
-      |> Array.find_opt (fun s -> s <> "debug" && Sys.is_directory (target / s))
-      |> Option.get
-    with Not_found -> raise (ExecutionError "Couldn't find Kani lib binaries")
+  let cargo =
+    "RUSTC=$(charon toolchain-path)/bin/rustc $(charon \
+     toolchain-path)/bin/cargo"
   in
+  let target =
+    (* look for line "host: <host>", to get the target architecture *)
+    let info = Fmt.kstr exec_and_read "%s -vV" cargo in
+    match List.find_opt (String.starts_with ~prefix:"host") info with
+    | Some s -> String.sub s 6 (String.length s - 6)
+    | None -> raise (ExecutionError "Couldn't find target host")
+  in
+  (if not no_compile then
+     (* build Kani lib *)
+     match
+       Fmt.kstr exec_cmd
+         "cd %s/std && %s build --lib --target %s > /dev/null 2>/dev/null" path
+         cargo target
+     with
+     | 0 | 255 -> ()
+     | res ->
+         let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
+         raise (ExecutionError msg));
+  let ( / ) = Filename.concat in
+  let rlib = path / "std" / "target" / target / "debug" / "libstd.rlib" in
   mk_cmd
     ~rustc:
       [
@@ -110,8 +103,9 @@ let mk_kani_cmd ~no_compile () =
         "--cfg=kani";
         "--extern=kani";
         (* The below is cursed and should be fixed !!! *)
-        Fmt.str "-L%s/kani/target/%s/debug/deps" path os;
-        Fmt.str "-L%s/kani/target/debug/deps" path;
+        Fmt.str "-L%s/std/target/%s/debug/deps" path target;
+        Fmt.str "-L%s/std/target/debug/deps" path;
+        Fmt.str "--extern noprelude:std=%s" rlib;
       ]
     ()
 
