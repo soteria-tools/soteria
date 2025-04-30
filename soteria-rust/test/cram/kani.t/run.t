@@ -33,7 +33,7 @@ Test #[kani::should_panic]
 
 Test kani::assert
   $ soteria-rust exec-main assert.rs --clean
-  Error in 2 branchs:
+  Error in 4 branchs:
   - Failed assertion: Expected true! with trace [($TESTCASE_ROOT/assert.rs:4:4-37,
                                                                       Call trace);
                                                                      ($TESTCASE_ROOT/assert.rs:4:4-37,
@@ -43,4 +43,14 @@ Test kani::assert
                                                                       Call trace);
                                                                       ($TESTCASE_ROOT/assert.rs:10:4-42,
                                                                       Triggering memory operation)]
+  
+  - Failed assertion: "I used \"assert!\"" with trace [(/Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/kani_lib/std/src/lib.rs:45:8-60,
+                                                        Call trace);
+                                                       (/Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/kani_lib/std/src/lib.rs:45:8-60,
+                                                        Triggering memory operation)]
+  
+  - Failed assertion: "I used \"assert_eq!\"" with trace [(/Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/kani_lib/std/src/lib.rs:45:8-60,
+                                                           Call trace);
+                                                          (/Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/kani_lib/std/src/lib.rs:45:8-60,
+                                                           Triggering memory operation)]
   [1]
