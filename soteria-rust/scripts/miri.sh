@@ -19,7 +19,7 @@ LOG_FILE=$SCRIPT_DIR/miri.log
 MIRI_PATH=$(realpath $SCRIPT_DIR/../../../miri)
 
 # Handle arguments:
-CMD="soteria-rust exec-main"
+CMD="soteria-rust exec-main --miri"
 STOP_ON_FAIL=true
 STORE_PASSES=false
 

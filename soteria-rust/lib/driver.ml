@@ -68,7 +68,7 @@ let default_cmd ~file_name ~output () =
       ]
     ()
 
-let mk_kani_cmd ~no_compile () =
+let mk_kani_cmd () =
   let path = List.hd Runtime_sites.Sites.kani_lib in
   let cargo =
     "RUSTC=$(charon toolchain-path)/bin/rustc $(charon \
@@ -81,17 +81,16 @@ let mk_kani_cmd ~no_compile () =
     | Some s -> String.sub s 6 (String.length s - 6)
     | None -> raise (ExecutionError "Couldn't find target host")
   in
-  (if not no_compile then
-     (* build Kani lib *)
-     match
-       Fmt.kstr exec_cmd
-         "cd %s/std && %s build --lib --target %s > /dev/null 2>/dev/null" path
-         cargo target
-     with
-     | 0 | 255 -> ()
-     | res ->
-         let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
-         raise (ExecutionError msg));
+  (* build Kani lib *)
+  let res =
+    Fmt.kstr exec_cmd
+      "cd %s/std && %s build --lib --target %s > /dev/null 2>/dev/null" path
+      cargo target
+  in
+  if res <> 0 && res <> 255 then
+    let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
+    raise (ExecutionError msg)
+  else ();
   let ( / ) = Filename.concat in
   let rlib = path / "std" / "target" / target / "debug" / "libstd.rlib" in
   mk_cmd
@@ -109,10 +108,11 @@ let mk_kani_cmd ~no_compile () =
       ]
     ()
 
-let mk_miri_cmd ~no_compile:_ () = mk_cmd ~charon:[ "--opaque=miri_extern" ] ()
+let mk_miri_cmd () =
+  mk_cmd ~charon:[ "--opaque=miri_extern" ] ~rustc:[ "--cfg=miri" ] ()
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~no_compile file_name =
+let parse_ullbc_of_file ~no_compile ~kani ~miri file_name =
   let file_name =
     if Filename.is_relative file_name then
       Filename.concat (Sys.getcwd ()) file_name
@@ -122,11 +122,10 @@ let parse_ullbc_of_file ~no_compile file_name =
   let output = Printf.sprintf "%s.llbc.json" file_name in
   (if not no_compile then
      (* TODO: make these flags! *)
-     let with_kani, with_miri = (true, true) in
      let args =
        default_cmd ~file_name ~output ()
-       |> concat_cmd_if with_kani (mk_kani_cmd ~no_compile)
-       |> concat_cmd_if with_miri (mk_miri_cmd ~no_compile)
+       |> concat_cmd_if kani mk_kani_cmd
+       |> concat_cmd_if miri mk_miri_cmd
      in
      let res = exec_cmd @@ "cd " ^ parent_folder ^ " && " ^ build_cmd args in
      if res = 0 then Cleaner.touched output
@@ -235,13 +234,13 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
   |> Result.map List.flatten
   |> Result.map_error List.flatten
 
-let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
-    file_name =
+let exec_main_and_print log_level smt_file no_compile clean ignore_leaks kani
+    miri file_name =
   Z3solver.set_smt_file smt_file;
   Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
   try
-    let crate = parse_ullbc_of_file ~no_compile file_name in
+    let crate = parse_ullbc_of_file ~no_compile ~kani ~miri file_name in
     let res = exec_main ~ignore_leaks crate in
     match res with
     | Ok res ->

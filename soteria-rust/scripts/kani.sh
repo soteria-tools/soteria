@@ -19,7 +19,7 @@ LOG_FILE=$SCRIPT_DIR/kani.log
 KANI_PATH=$(realpath $SCRIPT_DIR/../../../kani)
 
 # Handle arguments:
-CMD="soteria-rust exec-main --ignore-leaks"
+CMD="soteria-rust exec-main --ignore-leaks --kani"
 STOP_ON_FAIL=true
 STORE_PASSES=false
 TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)
