@@ -354,6 +354,7 @@ let rec sem_eq v1 v2 =
       let rec msb_of v =
         match v.node.kind with
         | BitVec v when Z.(v > zero) -> Some (Z.log2up v)
+        | BitVec v when Z.(v = zero) -> Some 0
         | Binop (BitAnd, bv1, bv2) -> Option.merge min (msb_of bv1) (msb_of bv2)
         | _ -> None
       in
