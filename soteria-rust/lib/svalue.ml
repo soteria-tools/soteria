@@ -57,6 +57,7 @@ module Unop = struct
     | BvOfInt
     | FloatOfBv
     | IntOfBv of bool (* signed *)
+    | BvExtract of int * int (* from * to *)
   [@@deriving eq, ord]
 
   let pp ft = function
@@ -68,6 +69,7 @@ module Unop = struct
     | BvOfInt -> Fmt.string ft "i2bv"
     | FloatOfBv -> Fmt.string ft "bv2f"
     | IntOfBv _ -> Fmt.string ft "bv2i"
+    | BvExtract (from, to_) -> Fmt.pf ft "extract(%d-%d)" from to_
 end
 
 module Binop = struct
@@ -306,6 +308,18 @@ let f32 f = float_f F32 f
 let f64 f = float_f F64 f
 let f128 f = float_f F128 f
 
+let bv_extract from_ to_ v =
+  match v.node.kind with
+  | BitVec bv ->
+      let bv =
+        let open Z in
+        let bv = shift_right bv from_ in
+        logand bv (pred @@ shift_left one to_)
+      in
+      BitVec bv <| t_bv (to_ - from_ + 1)
+  | Unop (BvOfInt, v) when from_ = 0 -> Unop (BvOfInt, v) <| t_bv (to_ + 1)
+  | _ -> Unop (BvExtract (from_, to_), v) <| t_bv (to_ - from_ + 1)
+
 let rec not sv =
   if equal sv v_true then v_false
   else if equal sv v_false then v_true
@@ -333,6 +347,44 @@ let rec sem_eq v1 v2 =
   | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
       sem_eq v1 (int_z @@ Z.add y x)
   | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
+  (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
+  | Binop (BitAnd, x1, x2), x3 | x3, Binop (BitAnd, x1, x2) -> (
+      let most_significant_bit v =
+        match v.node.kind with
+        | BitVec v when Z.(v > zero) -> Some (Z.log2up v)
+        | _ -> None
+      in
+      let current_size =
+        match x1.node.ty with
+        | TBitVector s -> s
+        | _ -> failwith "Expected BitVector type"
+      in
+      let msb =
+        match (most_significant_bit x1, most_significant_bit x2) with
+        | Some s1, Some s2 -> Some (min s1 s2 + 1)
+        | Some s, None | None, Some s -> Some (s + 1)
+        | None, None -> None
+      in
+      let msb = if msb = Some (current_size - 1) then None else msb in
+      match msb with
+      | None ->
+          (* regular sem_eq *)
+          if equal v1 v2 then v_true else Binop (Eq, v1, v2) <| TBool
+      | Some msb ->
+          let x3_t = if x3 == v2.node.kind then v2 else v1 in
+          let x1 = bv_extract 0 msb x1 in
+          let x2 = bv_extract 0 msb x2 in
+          let bv_r = bv_extract 0 msb x3_t in
+          let bv_l = Binop (BitAnd, x1, x2) <| t_bv (msb + 1) in
+          sem_eq bv_l bv_r)
+  | Unop (IntOfBv _, bv), Int n | Int n, Unop (IntOfBv _, bv) ->
+      let size =
+        match bv.node.ty with
+        | TBitVector size -> size
+        | _ -> failwith "Expected BV type"
+      in
+      let n = if Z.geq n Z.zero then n else Z.neg n in
+      sem_eq bv (BitVec n <| t_bv size)
   | _ when is_float v1.node.ty -> Binop (Eq, v1, v2) <| TBool
   | _ ->
       if equal v1 v2 then v_true (* Start with a syntactic check *)

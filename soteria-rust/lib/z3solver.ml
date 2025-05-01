@@ -314,7 +314,8 @@ let rec encode_value (v : Svalue.t) =
           | TFloat F32 -> f32_of_bv v1
           | TFloat F64 -> f64_of_bv v1
           | TFloat F128 -> f128_of_bv v1
-          | _ -> failwith "Non-float type given"))
+          | _ -> failwith "Non-float type given")
+      | BvExtract (from_, to_) -> bv_extract to_ from_ v1)
   | Binop (binop, v1, v2) -> (
       let ty = v1.node.ty in
       let v1 = encode_value_memo v1 in
