@@ -9,6 +9,10 @@ function summaryToMsg(elem) {
   }
 }
 
+function isBranch(element) {
+  return (element.tagName == "DETAILS" && element.classList.contains("is-branch"));
+}
+
 function flattenDirectDetails(element) {
   // Recurse first
   for (let child of element.children) {
@@ -18,7 +22,7 @@ function flattenDirectDetails(element) {
   // Will not be undefined iff there is a single <details> tag
   let detailChild = undefined;
   for (let child of element.children) {
-    if (child.tagName == "DETAILS" && child.classList.contains("is-branch")) {
+    if (isBranch(child)) {
       if (detailChild == undefined) {
         detailChild = child;
       } else {
@@ -66,6 +70,7 @@ function keybindings() {
       searchInput.value = "";
       searchInput.dispatchEvent(new Event("input"));
       searchInput.focus();
+      undoRestrictBranches();
       event.preventDefault();
       event.stopPropagation();
     } else if (event.key === "o") {
@@ -144,6 +149,66 @@ function populateFilter() {
   });
 }
 
+function restrictBranches(element) {
+  // First we find what branch we are in
+  while (!isBranch(element)) {
+    element = element.parentNode;
+  }
+  let parent = element.parentNode;
+  while (parent != document.body) {
+    for (let child of parent.childNodes) {
+      if (isBranch(child) && child != element) {
+        child.classList.add("hidden-branch");
+      }
+    };
+    element.classList.add("active-branch");
+    element = parent;
+    while (!isBranch(element)) {
+      element = element.parentNode;
+    }
+    parent = element.parentNode;
+  }
+}
+
+function addRestrictButton(element) {
+  if (element.classList.contains("active-branch")) { return; }
+  const button = document.createElement("button");
+  const buttonText = document.createTextNode("Restrict to branch");
+  button.appendChild(buttonText);
+  button.className = "restrict-button";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    restrictBranches(element);
+  })
+  element.prepend(button);
+}
+
+function removeRestrictButton(element) {
+  buttons = element.querySelectorAll(".restrict-button");
+  buttons.forEach((button) => {
+    button.remove();
+  });
+}
+
+function undoRestrictBranches() {
+  document.querySelectorAll("details.is-branch").forEach((branch) => {
+    branch.classList.remove("active-branch");
+    branch.classList.remove("hidden-branch");
+  })
+}
+
+function addHoverListeners() {
+  const branches = document.querySelectorAll("details.is-branch");
+  branches.forEach((message) => {
+    message.addEventListener("mouseenter", () => {
+      addRestrictButton(message);
+    });
+    message.addEventListener("mouseleave", () => {
+      removeRestrictButton(message);
+    });
+  });
+}
+
 // Start from the body
 document.addEventListener("DOMContentLoaded", () => {
   // This is now useless since we show all branches as sections
@@ -153,4 +218,5 @@ document.addEventListener("DOMContentLoaded", () => {
   observeSearch();
   keybindings();
   populateFilter();
+  addHoverListeners();
 });
