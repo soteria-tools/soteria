@@ -809,7 +809,11 @@ module Make (Heap : Heap_intf.S) = struct
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ?(ignore_leaks = false) ~crate ~args ~state fundef =
-    let** value, state = exec_fun ~crate ~args ~state fundef in
+    let** value, state =
+      let+- err = exec_fun ~crate ~args ~state fundef in
+      Heap.add_to_call_trace err
+        (Call_trace.make_element ~loc:fundef.item_meta.span ~msg:"Call trace" ())
+    in
     let++ (), state =
       if ignore_leaks then Result.ok ((), state)
       else

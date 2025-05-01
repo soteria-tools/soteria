@@ -37,7 +37,7 @@ let push_give_up, flush_give_up =
 let current_loc = ref Charon_util.empty_span
 let get_loc () = !current_loc
 
-let with_loc ~(loc : Charon.Meta.span) f =
+let with_loc ~loc f =
   let open Syntax in
   let old_loc = !current_loc in
   current_loc := loc;

@@ -14,7 +14,7 @@ module Cleaner = struct
 end
 
 let pp_err ft (err, call_trace) =
-  Format.open_hbox ();
+  Format.open_vbox 0;
   let () =
     match err with
     | `NullDereference -> Fmt.string ft "NullDereference"
@@ -39,7 +39,7 @@ let pp_err ft (err, call_trace) =
     | `Panic msg -> Fmt.pf ft "Panic: %s" msg
     | `MetaExpectedError -> Fmt.string ft "MetaExpectedError"
   in
-  Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
+  Fmt.pf ft "@,Trace:@,%a" Call_trace.pp call_trace;
   Format.close_box ()
 
 let default_cmd ~file_name ~output () =
@@ -259,8 +259,8 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks kani
         let open Fmt in
         let pp_err ft e = pf ft "- %a" pp_err e in
         let n = List.length res in
-        Fmt.pr "Error in %i branch%s:\n%a\n" n
-          (if n = 1 then "" else "s")
+        Fmt.pr "Error in %i branch%s:@\n%a\n" n
+          (if n = 1 then "" else "es")
           (list ~sep:(any "@\n@\n") pp_err)
           res;
         exit 1

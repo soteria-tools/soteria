@@ -21,7 +21,15 @@ module M (Heap : Heap_intf.S) = struct
         |> map_opt (function
              | Svalue.Int b -> Some (Char.chr (Z.to_int b))
              | _ -> None)
-        |> Option.map (fun cs -> String.of_seq @@ List.to_seq cs)
+        |> Option.map (fun cs ->
+               let str = String.of_seq @@ List.to_seq cs in
+               if
+                 String.starts_with ~prefix:"\"" str
+                 && String.ends_with ~suffix:"\"" str
+               then
+                 let unquoted = String.sub str 1 (String.length str - 2) in
+                 try Scanf.unescaped unquoted with _ -> unquoted
+               else str)
     | _ -> None
 
   let assert_ ~crate:_ ~(args : rust_val list) ~state =

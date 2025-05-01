@@ -33,24 +33,28 @@ Test #[kani::should_panic]
 
 Test kani::assert
   $ soteria-rust exec-main assert.rs --clean --kani
-  Error in 4 branchs:
-  - Failed assertion: Expected true! with trace [($TESTCASE_ROOT/assert.rs:4:4-37,
-                                                                      Call trace);
-                                                                     ($TESTCASE_ROOT/assert.rs:4:4-37,
-                                                                      Triggering memory operation)]
+  Error in 4 branches:
+  - Failed assertion: Expected true!
+    Trace:
+    • Call trace: ../cram/kani.t/assert.rs:2:0-5:1
+    • Call trace: ../cram/kani.t/assert.rs:4:4-37
+    • Triggering memory operation: ../cram/kani.t/assert.rs:4:4-37
   
-  - Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 with trace [($TESTCASE_ROOT/assert.rs:10:4-42,
-                                                                      Call trace);
-                                                                      ($TESTCASE_ROOT/assert.rs:10:4-42,
-                                                                      Triggering memory operation)]
+  - Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴
+    Trace:
+    • Call trace: ../cram/kani.t/assert.rs:8:0-11:1
+    • Call trace: ../cram/kani.t/assert.rs:10:4-42
+    • Triggering memory operation: ../cram/kani.t/assert.rs:10:4-42
   
-  - Failed assertion: "I used \"assert!\"" with trace [(/Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/kani_lib/std/src/lib.rs:45:8-60,
-                                                        Call trace);
-                                                       (/Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/kani_lib/std/src/lib.rs:45:8-60,
-                                                        Triggering memory operation)]
+  - Failed assertion: I used "assert!"
+    Trace:
+    • Call trace: ../cram/kani.t/assert.rs:14:0-17:1
+    • Call trace: ../std/src/lib.rs:45:8-60
+    • Triggering memory operation: ../std/src/lib.rs:45:8-60
   
-  - Failed assertion: "I used \"assert_eq!\"" with trace [(/Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/kani_lib/std/src/lib.rs:45:8-60,
-                                                           Call trace);
-                                                          (/Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/kani_lib/std/src/lib.rs:45:8-60,
-                                                           Triggering memory operation)]
+  - Failed assertion: I used "assert_eq!"
+    Trace:
+    • Call trace: ../cram/kani.t/assert.rs:20:0-24:1
+    • Call trace: ../std/src/lib.rs:45:8-60
+    • Triggering memory operation: ../std/src/lib.rs:45:8-60
   [1]
