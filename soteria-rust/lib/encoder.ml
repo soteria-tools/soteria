@@ -13,8 +13,12 @@ module Make (Sptr : Sptr.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
-  type cval_info = { value : rust_val; ty : Types.ty; offset : sint Typed.t }
-  [@@deriving show]
+  type cval_info = {
+    value : rust_val;
+    ty : Types.ty; [@printer Charon_util.pp_ty]
+    offset : sint Typed.t;
+  }
+  [@@deriving show { with_path = false }]
 
   (** Converts a Rust value of the given type into a list of sub values, along
       with their size and offset *)
