@@ -292,14 +292,22 @@ let offset_in_array ty idx =
   let sub_layout = layout_of ty in
   idx * sub_layout.size
 
-let size_of_s ty =
-  try
-    let { size; _ } = layout_of ty in
-    return (Typed.int size)
+let layout_of_s ty =
+  try return @@ layout_of ty
   with CantComputeLayout (msg, ty') ->
     Fmt.kstr Rustsymex.not_impl
       "Cannot yet compute size of %s:@.%a@.Occurred when computing:@.%a" msg
       pp_ty ty' pp_ty ty
+
+let size_of_s ty =
+  let open Rustsymex.Syntax in
+  let+ { size; _ } = layout_of_s ty in
+  Typed.int size
+
+let align_of_s ty =
+  let open Rustsymex.Syntax in
+  let+ { align; _ } = layout_of_s ty in
+  Typed.nonzero align
 
 let is_signed : Types.integer_type -> bool = function
   | I128 | I64 | I32 | I16 | I8 | Isize -> true

@@ -268,8 +268,7 @@ module M (Heap : Heap_intf.S) = struct
           .types
         |> List.hd
     in
-    let layout = Layout.layout_of ty in
-    let align = Typed.int layout.align in
+    let* align = Layout.align_of_s ty in
     Result.ok (Base align, state)
 
   let box_new (gen_args : Types.generic_args) ~crate:_ ~args ~state =

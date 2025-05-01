@@ -502,11 +502,11 @@ module Make (Heap : Heap_intf.S) = struct
                false, to say we don't want to do UB checks at runtime. *)
             Result.ok (Base (Typed.int_of_bool Typed.v_true), state)
         | SizeOf ->
-            let layout = Layout.layout_of ty in
-            Result.ok (Base (Typed.int layout.size), state)
+            let* size = Layout.size_of_s ty in
+            Result.ok (Base size, state)
         | AlignOf ->
-            let layout = Layout.layout_of ty in
-            Result.ok (Base (Typed.int layout.align), state)
+            let* align = Layout.align_of_s ty in
+            Result.ok (Base align, state)
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)

@@ -219,7 +219,7 @@ let alloc size align st =
   Soteria_symex.Compo_res.ok (ptr, heap)
 
 let alloc_ty ty st =
-  let layout = Layout.layout_of ty in
+  let* layout = Layout.layout_of_s ty in
   let++ (ptr, _), st = alloc layout.size layout.align st in
   let meta = Charon_util.meta_for ty in
   ((ptr, meta), st)
@@ -229,7 +229,7 @@ let alloc_tys tys st =
   let@ () = with_error_loc_as_call_trace () in
   SPmap.allocs heap ~els:tys ~fn:(fun ty loc ->
       (* make treeblock *)
-      let layout = Layout.layout_of ty in
+      let* layout = Layout.layout_of_s ty in
       let size = Typed.int layout.size in
       let tb = Tree_borrow.init ~state:Unique () in
       let block = Freeable.Alive (Tree_block.alloc size, tb) in
