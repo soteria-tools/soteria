@@ -316,9 +316,9 @@ let bv_extract from_ to_ v =
         let bv = shift_right bv from_ in
         logand bv (pred @@ shift_left one to_)
       in
-      BitVec bv <| t_bv (to_ - from_ + 1)
-  | Unop (BvOfInt, v) when from_ = 0 -> Unop (BvOfInt, v) <| t_bv (to_ + 1)
-  | _ -> Unop (BvExtract (from_, to_), v) <| t_bv (to_ - from_ + 1)
+      BitVec bv <| t_bv (to_ - from_)
+  | Unop (BvOfInt, v) when from_ = 0 -> Unop (BvOfInt, v) <| t_bv to_
+  | _ -> Unop (BvExtract (from_, to_), v) <| t_bv (to_ - from_)
 
 let rec not sv =
   if equal sv v_true then v_false
@@ -361,11 +361,11 @@ let rec sem_eq v1 v2 =
       in
       let msb =
         match (most_significant_bit x1, most_significant_bit x2) with
-        | Some s1, Some s2 -> Some (min s1 s2 + 1)
-        | Some s, None | None, Some s -> Some (s + 1)
+        | Some s1, Some s2 -> Some (min s1 s2)
+        | Some s, None | None, Some s -> Some s
         | None, None -> None
       in
-      let msb = if msb = Some (current_size - 1) then None else msb in
+      let msb = if msb = Some current_size then None else msb in
       match msb with
       | None ->
           (* regular sem_eq *)
@@ -375,7 +375,7 @@ let rec sem_eq v1 v2 =
           let x1 = bv_extract 0 msb x1 in
           let x2 = bv_extract 0 msb x2 in
           let bv_r = bv_extract 0 msb x3_t in
-          let bv_l = Binop (BitAnd, x1, x2) <| t_bv (msb + 1) in
+          let bv_l = Binop (BitAnd, x1, x2) <| t_bv msb in
           sem_eq bv_l bv_r)
   | Unop (IntOfBv _, bv), Int n | Int n, Unop (IntOfBv _, bv) ->
       let size =
