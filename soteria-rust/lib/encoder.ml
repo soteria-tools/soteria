@@ -47,14 +47,14 @@ module Make (Sptr : Sptr.S) = struct
     | Ptr (_, None), TRef (_, sub_ty, _)
     | Ptr (_, None), TRawPtr (sub_ty, _) ->
         let ty : Types.ty = TLiteral (TInteger Isize) in
-        if is_fat_ptr sub_ty then failwith "Expected a fat pointer"
+        if is_dst sub_ty then failwith "Expected a fat pointer"
         else [ { value; ty; offset } ]
     | Ptr (ptr, Some meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
     | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
     | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
         let ty : Types.ty = TLiteral (TInteger Isize) in
         let value = Ptr (ptr, None) in
-        if is_fat_ptr sub_ty then
+        if is_dst sub_ty then
           let size = Typed.int Archi.word_size in
           [
             { value; ty; offset };
@@ -163,7 +163,7 @@ module Make (Sptr : Sptr.S) = struct
       | ( TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
         | TRef (_, sub_ty, _)
         | TRawPtr (sub_ty, _) ) as ty
-        when is_fat_ptr sub_ty ->
+        when is_dst sub_ty ->
           let callback = function
             | [ ((Base _ | Ptr (_, None)) as ptr); Base meta ] -> (
                 let* ptr =
@@ -233,7 +233,8 @@ module Make (Sptr : Sptr.S) = struct
           let len = Array.length layout.members_ofs in
           let fields = List.init len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
-      | TAdt (TBuiltin TSlice, { types = [ sub_ty ]; _ }) -> (
+      | TAdt (TBuiltin (TStr as ty), generics)
+      | TAdt (TBuiltin (TSlice as ty), generics) -> (
           (* We can only read a slice if we have the metadata of its length, in which case
            we interpret it as an array of that length. *)
           match meta with
@@ -244,26 +245,15 @@ module Make (Sptr : Sptr.S) = struct
                 | Int len -> Z.to_int len
                 | _ -> failwith "Can't read a slice of non-concrete size"
               in
+              let sub_ty =
+                if ty = TSlice then List.hd generics.types
+                else TLiteral (TInteger U8)
+              in
+              (* FIXME: This is a bit hacky, and not performant -- instead we should try to
+                 group the reads together, at least for primitive types. *)
               let arr_ty = mk_array_ty sub_ty len in
               let layout = layout_of arr_ty in
               let fields = List.init len (fun _ -> sub_ty) in
-              aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
-      | TAdt (TBuiltin TStr, _) -> (
-          (* We can only read a slice if we have the metadata of its length, in which case
-       we interpret it as an array of that length. *)
-          match meta with
-          | None -> Fmt.failwith "Tried reading string without metadata"
-          | Some meta ->
-              let len =
-                match Typed.kind meta with
-                | Int len -> Z.to_int len
-                | _ -> failwith "Can't read a slice of non-concrete size"
-              in
-              let arr_ty = mk_array_ty (TLiteral (TInteger U8)) len in
-              let layout = layout_of arr_ty in
-              let fields =
-                List.init len (fun _ -> Types.TLiteral (TInteger U8))
-              in
               aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
       | TNever -> `More ([], fun _ -> Result.error `UBTransmute)
       | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty

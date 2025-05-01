@@ -38,6 +38,7 @@ def rainbow(i):
 
 
 known_issue = {
+    "kani/Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
     "kani/Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
 }

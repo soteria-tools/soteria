@@ -57,3 +57,6 @@ let[@tail_mod_cons] rec map2i i f l1 l2 =
   | _, _ -> invalid_arg "List_ex.map2i"
 
 let map2i f l1 l2 = map2i 0 f l1 l2
+
+let rec last_opt l =
+  match l with [] -> None | [ x ] -> Some x | _ :: l -> last_opt l
