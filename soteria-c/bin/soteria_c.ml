@@ -32,6 +32,11 @@ let includes_arg =
   let doc = "Add a directory to the include path" in
   Arg.(value & opt_all dir [] & info [ "I" ] ~doc ~docv:"DIR")
 
+let solver_timeout_arg =
+  let doc = "Set the solver timeout in miliseconds" in
+  Arg.(
+    value & opt (some int) None & info [ "solver-timeout" ] ~doc ~docv:"TIMEOUT")
+
 module Exec_main = struct
   let term =
     Term.(
@@ -67,13 +72,18 @@ end
 module Generate_summary = struct
   let fun_name_arg =
     let doc = "FUNCTION" in
-    Arg.(required & pos 1 (some string) None & info [] ~docv:"FUNCTION" ~doc)
+    Arg.(
+      required
+      & opt (some string) None
+      & info [ "f"; "fn"; "function" ] ~docv:"FUNCTION" ~doc)
 
   let term =
     Term.(
       const Soteria_c_lib.Driver.generate_summary_for
+      $ Soteria_logs.Cli.term
+      $ solver_timeout_arg
       $ includes_arg
-      $ file_arg
+      $ files_arg
       $ fun_name_arg)
 
   let cmd = Cmd.v (Cmd.info "gen-summary") term
@@ -84,6 +94,7 @@ module Generate_summaries = struct
     Term.(
       const Soteria_c_lib.Driver.generate_all_summaries
       $ Soteria_logs.Cli.term
+      $ solver_timeout_arg
       $ dump_unsupported_arg
       $ dump_smt_arg
       $ includes_arg

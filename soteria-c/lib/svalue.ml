@@ -33,6 +33,8 @@ module Binop = struct
     | Minus
     | Times
     | Div
+    (* Bitwise *)
+    | BitAnd
   [@@deriving eq, show { with_path = false }, ord]
 end
 
@@ -286,6 +288,11 @@ let rec leq v1 v2 =
   | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> leq v2 v4
   | _ -> Binop (Leq, v1, v2) <| TBool
 
+let bit_and v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> int_z (Z.logand i1 i2)
+  | _ -> mk_commut_binop Binop.BitAnd v1 v2 <| TInt
+
 let geq v1 v2 = leq v2 v1
 
 let div v1 v2 =
@@ -348,6 +355,7 @@ module Infix = struct
   let ( ~- ) x = minus zero x
   let ( *@ ) = times
   let ( /@ ) = div
+  let ( &@ ) = bit_and
 end
 
 module Syntax = struct

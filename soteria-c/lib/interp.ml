@@ -28,7 +28,6 @@ module Make (State : State_intf.S) = struct
     match ty with Pointer (_, ty) -> Some ty | _ -> None
 
   type state = State.t
-  type store = (T.sptr Typed.t option * Ctype.ctype) Store.t
 
   let cast_to_ptr x =
     let open Csymex.Syntax in
@@ -261,6 +260,11 @@ module Make (State : State_intf.S) = struct
             let** v2, state = arith_mul ~state v2 factor in
             arith_sub ~state v1 v2
         | None, None -> arith_sub ~state v1 v2)
+    (* FIXME: This is unsound, we don't properly handle signing! *)
+    | Band ->
+        let* v1 = cast_to_int v1 in
+        let* v2 = cast_to_int v2 in
+        Result.ok (v1 &@ v2, state)
     | _ ->
         Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
           Fmt_ail.pp_arithop a_op
@@ -313,7 +317,7 @@ module Make (State : State_intf.S) = struct
             Fmt.kstr not_impl "Cannot call external function: %a" Fmt_ail.pp_sym
               fname)
 
-  and eval_expr_list ~(prog : linked_program) ~(store : store) (state : state)
+  and eval_expr_list ~(prog : linked_program) ~(store : Store.t) (state : state)
       (el : expr list) =
     let++ vs, state =
       Csymex.Result.fold_list el ~init:([], state) ~f:(fun (acc, state) e ->
@@ -322,7 +326,7 @@ module Make (State : State_intf.S) = struct
     in
     (List.rev vs, state)
 
-  and eval_expr ~(prog : linked_program) ~(store : store) (state : state)
+  and eval_expr ~(prog : linked_program) ~(store : Store.t) (state : state)
       (aexpr : expr) =
     let eval_expr = eval_expr ~prog ~store in
     let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
@@ -406,9 +410,7 @@ module Make (State : State_intf.S) = struct
             let b_res = cast_to_bool v1 ||@ cast_to_bool v2 in
             Result.ok (Typed.int_of_bool b_res, state)
         | Arithmetic a_op -> arith ~state (v1, type_of e1) a_op (v2, type_of e2)
-        | _ ->
-            Fmt.kstr not_impl "Unsupported binary operator: %a" Fmt_ail.pp_binop
-              op)
+        | Comma -> Result.ok (v2, state))
     | AilErvalue e ->
         let** lvalue, state = eval_expr state e in
         let ty = type_of e in
@@ -501,12 +503,13 @@ module Make (State : State_intf.S) = struct
 
   (** Executing a statement returns an optional value outcome (if a return
       statement was hit), or *)
-  and exec_stmt ~prog (store : store) (state : state) (astmt : stmt) :
-      ( T.cval Typed.t option * store * state,
+  and exec_stmt ~prog (store : Store.t) (state : state) (astmt : stmt) :
+      ( T.cval Typed.t option * Store.t * state,
         'err,
         State.serialized list )
       Csymex.Result.t =
     L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
+    L.debug (fun m -> m "@[<v 2>STORE:@ %a@]" Store.pp store);
     let* () = Csymex.consume_fuel_steps 1 in
     Stats.incr_executed_statements ();
     let (AnnotatedStatement (loc, _, stmt)) = astmt in
@@ -515,7 +518,7 @@ module Make (State : State_intf.S) = struct
     | AilSskip -> Result.ok (None, store, state)
     | AilSreturn e ->
         let** v, state = eval_expr ~prog ~store state e in
-        L.info (fun m -> m "Returning: %a" Typed.ppa v);
+        L.debug (fun m -> m "Returning: %a" Typed.ppa v);
         Result.ok (Some v, store, state)
     | AilSreturnVoid -> Result.ok (Some 0s, store, state)
     | AilSblock (bindings, stmtl) ->

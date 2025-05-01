@@ -102,7 +102,7 @@ let with_heap_read_only st f =
 
 let[@inline] check_non_null loc =
   if%sat Typed.Ptr.is_null_loc loc then (
-    (L.info (fun m -> m "Null dereference detected");
+    (L.debug (fun m -> m "Null dereference detected");
      Result.error `NullDereference)
     [@name "Null-deref case"])
   else Result.ok () [@name "Non-null case"]
@@ -187,7 +187,7 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) :
   else error `InvalidFree
 
 let error err _st =
-  L.info (fun m -> m "Using state to error!");
+  L.trace (fun m -> m "Using state to error!");
   let@ () = with_error_loc_as_call_trace () in
   error err
 

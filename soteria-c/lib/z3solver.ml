@@ -8,6 +8,11 @@ let debug_str ~prefix s = L.smt (fun m -> m "%s %s" prefix s)
 
 open Simple_smt
 
+let int_of_bv signed bv =
+  if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
+
+let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
+
 let smallest_power_of_two_greater_than n =
   let f n =
     if n < 1 then 1
@@ -146,6 +151,13 @@ let register_solver_init f =
   in
   initialize_solver := f'
 
+let () =
+  register_solver_init (fun solver ->
+      match !Config.z3_timeout with
+      | None -> ()
+      | Some timeout ->
+          ack_command solver (set_option ":timeout" (string_of_int timeout)))
+
 let init () =
   let z3_solver = z3_solver () in
   !initialize_solver z3_solver;
@@ -277,7 +289,12 @@ let rec encode_value (v : Svalue.t) =
       | Plus -> num_add v1 v2
       | Minus -> num_sub v1 v2
       | Times -> num_mul v1 v2
-      | Div -> num_div v1 v2)
+      | Div -> num_div v1 v2
+      | BitAnd ->
+          let bv_size = 64 in
+          (* Should always work in C? *)
+          int_of_bv false (bv_and (bv_of_int bv_size v1) (bv_of_int bv_size v2))
+      )
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in
       distinct vs
@@ -361,7 +378,7 @@ let sat solver =
       | Sat -> true
       | Unsat -> false
       | Unknown ->
-          Logs.warn (fun m -> m "Solver returned unknown");
+          L.warn (fun m -> m "Solver returned unknown");
           (* We return UNSAT by default: under-approximating behaviour *)
           false)
 

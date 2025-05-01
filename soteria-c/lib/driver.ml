@@ -294,8 +294,8 @@ let generate_main_summary file_name =
   let printer = Fmt.list ~sep:Fmt.sp pp_summary in
   Fmt.pr "@[<v>%a@]@." printer results
 
-let exec_fun_bi file_name fun_name =
-  match parse_and_link_ail [ file_name ] with
+let exec_fun_bi file_names fun_name =
+  match parse_and_link_ail file_names with
   | Ok prog ->
       let@ () = with_function_context prog in
       let () = Initialize_analysis.reinit prog.sigma in
@@ -317,19 +317,22 @@ let exec_fun_bi file_name fun_name =
 
 (* Entry point function *)
 
-let generate_summary_for include_args file_name fun_name =
+let generate_summary_for log_config z3_timeout include_args file_names fun_name
+    =
+  Soteria_logs.Config.(check_set_and_lock log_config);
+  Config.z3_timeout := z3_timeout;
   Frontend.add_includes include_args;
-  Soteria_logs.Config.(check_set_and_lock (Ok html_trace));
   Initialize_analysis.init_once ();
-  let results = exec_fun_bi file_name fun_name in
+  let results = exec_fun_bi file_names fun_name in
   let pp_summary ft (summary, analysis) =
     Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
       summary (Fmt.Dump.list pp_err) analysis
   in
   Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
-let generate_all_summaries log_config dump_unsupported_file smt_file includes
-    file_names =
+let generate_all_summaries log_config z3_timeout dump_unsupported_file smt_file
+    includes file_names =
+  Config.z3_timeout := z3_timeout;
   Z3solver.set_smt_file smt_file;
   Csymex.unsupported_file := dump_unsupported_file;
   Frontend.add_includes includes;
