@@ -274,7 +274,7 @@ let zeros (ptr, _) size st =
 
 let error err _st =
   let@ () = with_error_loc_as_call_trace () in
-  L.error (fun m -> m "Heap errored !");
+  L.info (fun m -> m "Heap errored !");
   error err
 
 let lift_err st (symex : ('a, 'e, 'f) Result.t) =
