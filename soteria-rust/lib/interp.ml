@@ -315,14 +315,16 @@ module Make (Heap : Heap_intf.S) = struct
         | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let++ v =
-              Heap.lift_err state @@ Encoder.transmute ~from_ty ~to_ty v
+              Heap.lift_err state
+              @@ Encoder.transmute ~verify_ptr:(Heap.is_valid_ptr state)
+                   ~from_ty ~to_ty v
             in
             (v, state)
         | Cast (CastScalar (from_ty, to_ty)) ->
             let++ v =
               Heap.lift_err state
-              @@ Encoder.transmute ~from_ty:(TLiteral from_ty)
-                   ~to_ty:(TLiteral to_ty) v
+              @@ Encoder.transmute ~verify_ptr:(Heap.is_valid_ptr state)
+                   ~from_ty:(TLiteral from_ty) ~to_ty:(TLiteral to_ty) v
             in
             (v, state)
         | Cast
@@ -601,7 +603,7 @@ module Make (Heap : Heap_intf.S) = struct
     L.info (fun m ->
         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
         m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
-    L.debug (fun m ->
+    L.trace (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_raw_statement astmt.content);
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
     let@ () = with_loc ~loc in

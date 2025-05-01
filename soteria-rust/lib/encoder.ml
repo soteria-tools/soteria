@@ -195,11 +195,20 @@ module Make (Sptr : Sptr.S) = struct
           let ptr_size = Typed.int Archi.word_size in
           let isize : Types.ty = TLiteral (TInteger Isize) in
           `More ([ (isize, offset); (isize, offset +@ ptr_size) ], callback)
-      | TAdt (TBuiltin TBox, _) | TRef _ | TRawPtr _ ->
+      (* Raw pointers can be both a valid pointer or a number, whereas a reference must
+         always be a valid pointer. *)
+      | TRawPtr _ ->
           `More
             ( [ (TLiteral (TInteger Isize), offset) ],
               function
               | [ ((Ptr _ | Base _) as ptr) ] -> Result.ok (`Done ptr)
+              | _ -> not_impl "Expected a pointer or base" )
+      | TAdt (TBuiltin TBox, _) | TRef _ ->
+          `More
+            ( [ (TLiteral (TInteger Isize), offset) ],
+              function
+              | [ (Ptr _ as ptr) ] -> Result.ok (`Done ptr)
+              | [ Base _ ] -> Result.error `UBTransmute
               | _ -> not_impl "Expected a pointer or base" )
       | TAdt (TTuple, { types; _ }) as ty ->
           let layout = layout_of ty in
@@ -332,15 +341,16 @@ module Make (Sptr : Sptr.S) = struct
     let off = Option.value ~default:0s offset in
     aux off ty
 
-  let rec transmute ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
+  (** Transmute a value of the given type into the other type.
+
+      Accepts an optional [verify_ptr] function, that symbolically checks if a
+      pointer can be used to read a value of the given type. This verification
+      is a *ghost read*, and should not have side-effects. *)
+  let rec transmute ?verify_ptr ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
     let open Soteria_symex.Compo_res in
     let open Result in
-    let _unhandled () =
-      let ctx = PrintUllbcAst.Crate.crate_to_fmt_env @@ Session.get_crate () in
-      Fmt.kstr not_impl "Unhandled transmute of %a: %s -> %s" ppa_rust_val v
-        (PrintTypes.ty_to_string ctx from_ty)
-        (PrintTypes.ty_to_string ctx to_ty)
-    in
+    L.debug (fun m ->
+        m "Transmuting %a: %a -> %a" pp_rust_val v pp_ty from_ty pp_ty to_ty);
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
@@ -379,6 +389,18 @@ module Make (Sptr : Sptr.S) = struct
       | TLiteral _, TLiteral to_ty, Base sv ->
           let constrs = Layout.constraints to_ty in
           if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
+      (* A ref cannot be an invalid pointer *)
+      | _, (TRef _ | TAdt (TBuiltin TBox, _)), Base _ -> error `UBTransmute
+      (* A ref must point to a readable location *)
+      | ( (TRef _ | TRawPtr _ | TAdt (TBuiltin TBox, _)),
+          ( TRef (_, inner_ty, _)
+          | TAdt (TBuiltin TBox, { types = [ inner_ty ]; _ }) ),
+          Ptr ptr ) -> (
+          match verify_ptr with
+          | None -> Result.ok v
+          | Some fn ->
+              let* is_valid = fn ptr inner_ty in
+              if is_valid then ok v else error `UBTransmute)
       | ( ( TRef _ | TRawPtr _
           | TAdt (TBuiltin TBox, _)
           | TLiteral (TInteger (Isize | Usize | I64 | U64)) ),

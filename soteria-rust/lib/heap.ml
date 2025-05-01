@@ -84,7 +84,7 @@ let pp_pretty ~ignore_freed ft { heap; _ } =
 let empty = { heap = None; globals = GlobMap.empty }
 
 let log action ptr st =
-  L.debug (fun m ->
+  L.trace (fun m ->
       m "About to execute action: %s at %a (%a)@\n@[<2>HEAP:@ %a@]" action
         Sptr.pp ptr Call_trace.pp_span (get_loc ())
         (pp_pretty ~ignore_freed:true)
@@ -125,7 +125,7 @@ let with_ptr ({ ptr; _ } as full_ptr : Sptr.t) (st : t)
     let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
     (v, heap)
 
-let load ?is_move (({ tag; _ } as ptr : Sptr.t), meta) ty st =
+let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
@@ -147,7 +147,8 @@ let load ?is_move (({ tag; _ } as ptr : Sptr.t), meta) ty st =
               Result.fold_list blocks ~init:([], block)
                 ~f:(fun (vals, block) (ty, ofs) ->
                   let++ value, block =
-                    Tree_block.load ?is_move ofs ty tag tb block
+                    Tree_block.load ?is_move ?ignore_borrow ofs ty ptr.tag tb
+                      block
                   in
                   (value :: vals, block))
             in
@@ -163,21 +164,24 @@ let load ?is_move (({ tag; _ } as ptr : Sptr.t), meta) ty st =
             value);
       (value, block))
 
+(** Performs a side-effect free ghost read -- this does not modify the state or
+    the tree-borrow state. Returns true if the value was read successfully,
+    false otherwise. *)
+let is_valid_ptr st ptr ty =
+  L.debug (fun m -> m "The following read is a GHOST read");
+  let+ res = load ~ignore_borrow:true ptr ty st in
+  match res with Ok _ -> true | _ -> false
+
 let store (({ tag; _ } as ptr : Sptr.t), _) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
-    let () =
-      L.debug (fun f ->
-          let pp_part f ({ value; ty; offset } : Encoder.cval_info) =
-            Fmt.pf f "%a: %a [%a]"
-              (Charon_util.pp_rust_val Sptr.pp)
-              value Charon_util.pp_ty ty Typed.ppa offset
-          in
-          f "Parsed to parts [%a]" Fmt.(list ~sep:comma pp_part) parts)
-    in
     let@ () = with_error_loc_as_call_trace () in
     let@ () = with_loc_err () in
+    L.debug (fun f ->
+        f "Parsed to parts [%a]"
+          Fmt.(list ~sep:comma Encoder.pp_cval_info)
+          parts);
     log "store" ptr st;
     with_ptr ptr st (fun ~ofs block ->
         let@ block, tb = with_tbs block in

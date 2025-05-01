@@ -24,6 +24,7 @@ module type S = sig
 
   val load :
     ?is_move:bool ->
+    ?ignore_borrow:bool ->
     full_ptr ->
     Types.ty ->
     t ->
@@ -37,6 +38,8 @@ module type S = sig
       err,
       serialized list )
     Result.t
+
+  val is_valid_ptr : t -> full_ptr -> Types.ty -> bool Rustsymex.t
 
   val store :
     full_ptr ->

@@ -93,5 +93,5 @@ module ArithPtr : S with type t = arithptr_t = struct
     nondet Typed.t_int ~constrs:(fun x ->
         let isize_max = Layout.max_value Values.Isize in
         let base = x -@ Typed.Ptr.ofs ptr in
-        [ base %@ Typed.nonzero align ==@ 0s; base >=@ 0s; base <=@ isize_max ])
+        [ base %@ Typed.nonzero align ==@ 0s; base >@ 0s; base <=@ isize_max ])
 end

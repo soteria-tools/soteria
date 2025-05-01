@@ -331,15 +331,19 @@ module Tree = struct
     let* root = extend_if_needed t range in
     frame_inside ~replace_node ~rebuild_parent root range
 
-  let load ?(is_move = false) (ofs : [< T.sint ] Typed.t)
-      (size : [< T.sint ] Typed.t) (ty : Types.ty) (tag : Tree_borrow.tag)
-      (tb : Tree_borrow.t) (t : t) : (rust_val * t, 'err, 'fix) Result.t =
+  let load ?(is_move = false) ?(ignore_borrow = false)
+      (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) (ty : Types.ty)
+      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t) :
+      (rust_val * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size ofs size in
     let replace_node t =
       match t.node with
       | Node.NotOwned _ -> miss_no_fix ~msg:"load" ()
       | Owned { tb = tb_st; v } ->
-          let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Read tb_st in
+          let tb_st', ub =
+            if ignore_borrow then (tb_st, false)
+            else Tree_borrow.access tb tag Tree_borrow.Read tb_st
+          in
           if ub then Result.error `UBTreeBorrow
           else if is_move then Result.ok (uninit tb_st' range)
           else Result.ok { t with node = Owned { tb = tb_st'; v } }
@@ -618,12 +622,12 @@ let assert_exclusively_owned t =
             ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
-let load ?is_move ofs ty tag tb t =
+let load ?is_move ?ignore_borrow ofs ty tag tb t =
   let* size = Layout.size_of_s ty in
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
-    Tree.load ?is_move ofs size ty tag tb t.root
+    Tree.load ?is_move ?ignore_borrow ofs size ty tag tb t.root
   in
   (res, to_opt tree)
 
