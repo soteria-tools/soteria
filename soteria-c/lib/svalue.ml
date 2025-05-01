@@ -194,6 +194,12 @@ let rec sem_eq v1 v2 =
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
     | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 ->
         sem_eq v2 v4
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 ->
+        sem_eq v2 v3
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 ->
+        sem_eq v1 v4
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 ->
+        sem_eq v1 v3
     | _ -> mk_commut_binop Eq v1 v2 <| TBool
 
 let sem_eq_untyped v1 v2 =
@@ -252,7 +258,13 @@ let rec lt v1 v2 =
   | Int i1, Int i2 -> bool (Z.lt i1 i2)
   | _, _ when equal v1 v2 -> v_false
   | _, Binop (Plus, v2, v3) when equal v1 v2 -> lt zero v3
+  | _, Binop (Plus, v2, v3) when equal v1 v3 -> lt zero v2
+  | Binop (Plus, v1, v3), _ when equal v1 v2 -> lt v3 zero
+  | Binop (Plus, v1, v3), _ when equal v3 v2 -> lt v1 zero
   | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> lt v2 v4
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 -> lt v1 v4
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 -> lt v2 v3
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 -> lt v1 v3
   | _ -> Binop (Lt, v1, v2) <| TBool
 
 let gt v1 v2 = lt v2 v1
@@ -264,6 +276,12 @@ let rec plus v1 v2 =
   | Int i1, Int i2 -> int_z (Z.add i1 i2)
   | Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }), Int i3 ->
       plus v1 (int_z (Z.add i2 i3))
+  | Binop (Plus, { node = { kind = Int i1; _ }; _ }, v2), Int i3 ->
+      plus (int_z (Z.add i1 i3)) v2
+  | Int i1, Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }) ->
+      plus (int_z (Z.add i1 i2)) v1
+  | Int i1, Binop (Plus, { node = { kind = Int i2; _ }; _ }, v2) ->
+      plus (int_z (Z.add i1 i2)) v2
   | _ -> mk_commut_binop Plus v1 v2 <| TInt
 
 let minus v1 v2 =
@@ -286,6 +304,9 @@ let rec leq v1 v2 =
   | _, _ when equal v1 v2 -> v_true
   | _, Binop (Plus, v2, v3) when equal v1 v2 -> leq zero v3
   | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> leq v2 v4
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 -> leq v1 v4
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 -> leq v2 v3
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 -> leq v1 v3
   | _ -> Binop (Leq, v1, v2) <| TBool
 
 let bit_and v1 v2 =

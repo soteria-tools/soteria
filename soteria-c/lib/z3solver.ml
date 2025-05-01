@@ -362,10 +362,10 @@ let sat solver =
   match Solver_state.trivial_truthiness solver.state with
   | Some true ->
       L.smt (fun m -> m "Trivially true");
-      true
+      Soteria_symex.Solver.Sat
   | Some false ->
       L.smt (fun m -> m "Trivially false");
-      false
+      Unsat
   | None -> (
       let answer =
         try check solver.z3_solver
@@ -375,11 +375,11 @@ let sat solver =
           Unknown
       in
       match answer with
-      | Sat -> true
-      | Unsat -> false
+      | Sat -> Sat
+      | Unsat -> Unsat
       | Unknown ->
           L.warn (fun m -> m "Solver returned unknown");
           (* We return UNSAT by default: under-approximating behaviour *)
-          false)
+          Unknown)
 
 let as_values solver = Solver_state.to_value_list solver.state

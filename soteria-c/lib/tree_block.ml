@@ -123,7 +123,9 @@ module Node = struct
     | NotOwned _ ->
         let+ fixes = mk_fix_typed ofs ty () in
         Soteria_symex.Compo_res.miss (log_fixes fixes)
-    | Owned (Uninit _) -> Result.error `UninitializedMemoryAccess
+    | Owned (Uninit _) ->
+        L.trace (fun m -> m "Uninitialized Memory Access detected!");
+        Result.error `UninitializedMemoryAccess
     | Owned Zeros ->
         if Layout.is_int ty then Result.ok 0s
         else Fmt.kstr not_impl "Float zeros"

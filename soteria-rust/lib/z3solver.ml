@@ -394,8 +394,8 @@ let as_bool = Typed.as_bool
 (* Incremental doesn't allow for caching queries... *)
 let sat solver =
   match Solver_state.trivial_truthiness solver.state with
-  | Some true -> true
-  | Some false -> false
+  | Some true -> Soteria_symex.Solver.Sat
+  | Some false -> Unsat
   | None -> (
       let answer =
         try check solver.z3_solver
@@ -405,11 +405,11 @@ let sat solver =
           Unknown
       in
       match answer with
-      | Sat -> true
-      | Unsat -> false
+      | Sat -> Sat
+      | Unsat -> Unsat
       | Unknown ->
           L.warn (fun m -> m "Solver returned unknown");
           (* We return UNSAT by default: under-approximating behaviour *)
-          false)
+          Unknown)
 
 let as_values solver = Solver_state.to_value_list solver.state
