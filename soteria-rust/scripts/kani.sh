@@ -60,6 +60,10 @@ while [[ $# -gt 0 ]]; do
             STORE_PASSES=true
             shift
             ;;
+        --html)
+            CMD="$CMD --html"
+            shift
+            ;;
         -v)
             CMD="$CMD -v"
             shift

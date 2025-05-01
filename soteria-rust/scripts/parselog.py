@@ -4,75 +4,84 @@ import sys
 import re
 from typing import Optional
 
-PURPLE='\033[0;35m'
-RED='\033[0;31m'
-ORANGE='\033[38;5;208m'
-YELLOW='\033[38;5;220m'
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-BLUE='\033[0;34m'
-BOLD='\033[1m'
-RESET='\033[0m'
+PURPLE = "\033[0;35m"
+RED = "\033[0;31m"
+ORANGE = "\033[38;5;208m"
+YELLOW = "\033[38;5;220m"
+GREEN = "\033[0;32m"
+CYAN = "\033[0;36m"
+BLUE = "\033[0;34m"
+GRAY = "\033[0;90m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
 
 # if piping output, remove colors:
 NO_COLOR = not sys.stdout.isatty()
 if NO_COLOR:
-    PURPLE = RED = ORANGE = YELLOW = GREEN = CYAN = BLUE = BOLD = RESET = ''
+    PURPLE = RED = ORANGE = YELLOW = GREEN = CYAN = BLUE = GRAY = BOLD = RESET = ""
+
 
 def rainbow(i):
     if NO_COLOR:
-        return ''
+        return ""
 
     i = i % 7
     return [
-        '\033[38;5;197m',
-        '\033[38;5;208m',
-        '\033[38;5;220m',
-        '\033[38;5;70m',
-        '\033[38;5;74m',
-        '\033[38;5;33m',
-        '\033[38;5;127m'
+        "\033[38;5;197m",
+        "\033[38;5;208m",
+        "\033[38;5;220m",
+        "\033[38;5;70m",
+        "\033[38;5;74m",
+        "\033[38;5;33m",
+        "\033[38;5;127m",
     ][i]
 
+
+known_issue = {
+    "kani/Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
+    "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
+}
+
+
+def file_str(file_name: str):
+    issue = known_issue.get(file_name, None)
+    if issue:
+        return f"{GRAY}{file_name} {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
+    return file_name
+
+
 def main(files: list[str]):
-    cause_filters = [
-        arg[3:]
-        for arg in sys.argv
-        if arg.startswith("-F=")
-    ]
-    file_filters = [
-        arg[3:]
-        for arg in sys.argv
-        if arg.startswith("-f=")
-    ]
+    cause_filters = [arg[3:] for arg in sys.argv if arg.startswith("-F=")]
+    file_filters = [arg[3:] for arg in sys.argv if arg.startswith("-f=")]
 
     # for each reason, the list of tests
     stats: dict[tuple[str, str], set[tuple[str, Optional[str]]]] = {}
-    def log(test:str, cause:str, color:str, reason: Optional[str] = None):
+
+    def log(test: str, cause: str, color: str, reason: Optional[str] = None):
         key = (cause, color)
         if key not in stats:
             stats[key] = set()
         stats[key].add((test, reason))
 
     for file in files:
-        content = open(file, 'r').read()
+        content = open(file, "r").read()
         tests = content.split("\nRunning ")
         print(f"• Found {len(tests)} tests in {file}")
         tests[0] = tests[0].replace("Running ", "")
         for test in tests:
-            file_path = re.search(r'(.+)\n', test)
+            file_path = re.search(r"(.+)\n", test)
             if not file_path:
                 exit(f"No file found in {test}")
             file_path = file_path.group(1)
-            if len(file_filters) and not any([
-                filter in file_path for filter in file_filters
-            ]):
+            if len(file_filters) and not any(
+                [filter in file_path for filter in file_filters]
+            ):
                 continue
 
             expect_failure = False
             if "kani" in file_path:
                 try:
-                    with open(file_path, 'r') as f:
+                    with open(file_path, "r") as f:
                         content = f.read()
                         # this only holds for kani!
                         expect_failure = "kani-verify-fail" in content
@@ -81,21 +90,24 @@ def main(files: list[str]):
             elif "miri" in file_path:
                 expect_failure = "/fail/" in file_path or "/panic/" in file_path
 
-            tests_idx = file_path.split('/').index('tests')+1
-            file_name = "/".join(file_path.split('/')[tests_idx:])
+            tests_idx = file_path.split("/").index("tests") + 1
+            file_name = "/".join(file_path.split("/")[tests_idx:])
 
             if "Fatal (Charon)" in test:
                 # this isn't Charon's fault, really
-                unresolved = re.findall(r'failed to resolve: could not find `(.+)` in `(.+)`', test)
+                unresolved = re.findall(
+                    r"failed to resolve: could not find `(.+)` in `(.+)`", test
+                )
                 if unresolved:
-                    for (fn, crate) in unresolved:
+                    for fn, crate in unresolved:
                         log(file_name, "Missing dependency", ORANGE, f"{crate}::{fn}")
                     continue
 
-                compile_errors = re.findall(r'error(\[E\d+\]: .+)\n', test)
+                compile_errors = re.findall(r"error(\[E\d+\]: .+)\n", test)
                 compile_errors = [
                     # these are Hax/Charon errors!
-                    err for err in compile_errors
+                    err
+                    for err in compile_errors
                     if not err.startswith("[E9999]")
                 ]
                 if compile_errors:
@@ -114,8 +126,10 @@ def main(files: list[str]):
                 err_labels = re.findall(r'The label is "(.+)"', test)
                 sub_errors = sub_errors + err_labels
 
-                hax_panics = re.findall(r'thread \'rustc\' panicked at .+/frontend/(exporter/src/.+):', test)
-                sub_errors = sub_errors + [ f"Hax panicked: {err}" for err in hax_panics ]
+                hax_panics = re.findall(
+                    r"thread \'rustc\' panicked at .+/frontend/(exporter/src/.+):", test
+                )
+                sub_errors = sub_errors + [f"Hax panicked: {err}" for err in hax_panics]
 
                 if "Unexpected trait reference kind" in test:
                     sub_errors.append("Unexpected trait reference kind")
@@ -140,7 +154,7 @@ def main(files: list[str]):
                 continue
 
             if "MISSING FEATURE, VANISHING" in test:
-                cause = re.search(r'MISSING FEATURE, VANISHING: (.+)\n', test)
+                cause = re.search(r"MISSING FEATURE, VANISHING: (.+)\n", test)
                 if not cause:
                     exit(f"No cause found for vanish in {test}")
                 cause = cause.group(1)
@@ -170,17 +184,17 @@ def main(files: list[str]):
 
             if "Done." in test:
                 if not expect_failure:
-                    log(file_name, "Success", GREEN)
+                    log(file_name, "Success", GREEN, "Expected success, got success")
                 else:
-                    log(file_name, "Failure", RED)
+                    log(file_name, "Failure", RED, "Expected success, got failure")
                 continue
 
             err_re = re.compile(r"Error in (\d+) branch")
             if err_re.search(test):
                 if expect_failure:
-                    log(file_name, "Success", GREEN)
+                    log(file_name, "Success", GREEN, "Expected failure, got failure")
                 else:
-                    log(file_name, "Failure", RED)
+                    log(file_name, "Failure", RED, "Expected failure, got success")
                 continue
 
             if "Fatal: Exn: Failure" in test:
@@ -207,10 +221,7 @@ def main(files: list[str]):
     items = [
         (cause, color, len(set(test[0] for test in tests)), tests)
         for (cause, color), tests in stats.items()
-        if (len(cause_filters) == 0 or any(
-            filter in cause
-            for filter in cause_filters
-        ))
+        if (len(cause_filters) == 0 or any(filter in cause for filter in cause_filters))
     ]
 
     if "--az" in sys.argv:
@@ -224,7 +235,7 @@ def main(files: list[str]):
     verbosity = sum(1 for flag in sys.argv if flag == "-v")
 
     print(f"{BOLD}Summary:{RESET}")
-    for (cause, color, num, tests) in items:
+    for cause, color, num, tests in items:
         print(f"{rainbow(i)}|{RESET} {color}{num:3d}{RESET} {cause}")
         if verbosity >= 1:
             dot = f"{rainbow(i)}•{RESET}"
@@ -232,7 +243,8 @@ def main(files: list[str]):
                 # print tests one by one
                 tests = [file for file, _ in tests]
                 tests.sort()
-                print(f"  {dot} {f'\n  {dot} '.join(tests)}")
+                tests_str = f"\n  {dot} ".join([file_str(f) for f in tests])
+                print(f"  {dot} {tests_str}")
             else:
                 # aggregate by reason
                 reasons_d: dict[str, list[str]] = {}
@@ -251,11 +263,13 @@ def main(files: list[str]):
                     print(f"  {dot} {reason} ({len(files)})")
                     if verbosity >= 2:
                         files.sort()
-                        print(f"      {'\n      '.join(files)}")
-        i+=1
+                        files_str = "\n      ".join([file_str(f) for f in files])
+                        print(f"      {files_str}")
+        i += 1
 
-    print(f"{BOLD}Total:{RESET} {len(set(t[0] for tests in stats.values() for t in tests))}")
-
+    print(
+        f"{BOLD}Total:{RESET} {len(set(t[0] for tests in stats.values() for t in tests))}"
+    )
 
 
 if __name__ == "__main__":
@@ -263,18 +277,17 @@ if __name__ == "__main__":
         print("Usage: parselog.py <logfile> [...logfiles] [...--flags]")
         sys.exit(1)
 
-
     # Normalise arguments: ["-F", "abc"] becomes ["-F=abc"]
     args = sys.argv
     i = 0
     while i < len(args):
         if args[i] == "-F" or args[i] == "-f":
-            args[i] = args[i] + "=" + args[i+1]
-            args.pop(i+1)
+            args[i] = args[i] + "=" + args[i + 1]
+            args.pop(i + 1)
         i += 1
     sys.argv = args
 
-    files = [ arg for arg in sys.argv[1:] if not arg.startswith("-") ]
+    files = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
     if files is []:
         print("Usage: parselog.py <logfile> [...logfiles] [...--flags]")
         sys.exit(1)
