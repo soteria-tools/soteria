@@ -68,11 +68,13 @@ module M (Heap : Heap_intf.S) = struct
          on the integer value of the pointer to ensure it is well aligned etc. *)
       ("core::ptr::const_ptr::{@T}::add", PtrOp Add);
       ("core::ptr::const_ptr::{@T}::byte_add", PtrByteOp Add);
+      ("core::ptr::const_ptr::{@T}::byte_offset", PtrByteOp Add);
       ("core::ptr::const_ptr::{@T}::byte_sub", PtrByteOp Sub);
       ("core::ptr::const_ptr::{@T}::offset", PtrOp Add);
       ("core::ptr::const_ptr::{@T}::sub", PtrOp Sub);
       ("core::ptr::mut_ptr::{@T}::add", PtrOp Add);
       ("core::ptr::mut_ptr::{@T}::byte_add", PtrByteOp Add);
+      ("core::ptr::mut_ptr::{@T}::byte_offset", PtrByteOp Add);
       ("core::ptr::mut_ptr::{@T}::byte_sub", PtrByteOp Sub);
       ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
       ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
