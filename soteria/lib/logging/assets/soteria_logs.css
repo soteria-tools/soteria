@@ -23,6 +23,16 @@ details {
     border-radius: 5px;
 }
 
+details.active-branch {
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+details.hidden-branch {
+    display: none;
+}
+
 .timestamp {
     position: absolute;
     top: 0;
@@ -62,7 +72,7 @@ header {
     box-shadow: 0 0 3px rgba(0, 0, 0, 0.1);
 }
 
-#filters > label {
+#filters>label {
     padding: 2px;
     border-radius: 4px;
     margin-right: 8px;
