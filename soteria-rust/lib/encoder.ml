@@ -155,17 +155,42 @@ module Make (Sptr : Sptr.S) = struct
           `More
             ( [ (ty, offset) ],
               function
-              | [ ((Base _ | Ptr _) as v) ] -> Result.ok (`Done v)
-              | _ -> not_impl "Expected a base" )
-      | TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
-      | TRef (_, sub_ty, _)
-      | TRawPtr (sub_ty, _)
+              | [ (Base _ as v) ] -> Result.ok (`Done v)
+              | [ Ptr (ptr, None) ] ->
+                  let* ptr_v = Sptr.decay ptr in
+                  Result.ok (`Done (Base (ptr_v :> T.cval Typed.t)))
+              | _ -> not_impl "Expected a base or a thin pointer" )
+      | ( TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+        | TRef (_, sub_ty, _)
+        | TRawPtr (sub_ty, _) ) as ty
         when is_fat_ptr sub_ty ->
           let callback = function
-            | [ Ptr (ptr, None); Base meta ] ->
-                Result.ok @@ `Done (Ptr (ptr, Some meta))
-                (* | [ Base ptr_v; Base meta] -> *)
-            | _ -> not_impl "Expected a pointer and base"
+            | [ ((Base _ | Ptr (_, None)) as ptr); Base meta ] -> (
+                let* ptr =
+                  match ptr with
+                  | Ptr (ptr_v, None) -> return ptr_v
+                  | Base ptr_v ->
+                      let+ ptr_v = cast_checked ~ty:Typed.t_int ptr_v in
+                      Sptr.offset Sptr.null_ptr ptr_v
+                  | _ -> assert false
+                in
+                (* The check for the validity of the metadata is only required for references,
+                   not raw pointers. *)
+                match ty with
+                | TRawPtr _ ->
+                    Result.ok
+                    @@ `Done (Ptr (ptr, Some (meta :> T.cval Typed.t)))
+                | _ ->
+                    let* meta = cast_checked ~ty:Typed.t_int meta in
+                    (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
+                    if%sat meta <@ 0s then Result.error `UBTransmute
+                    else
+                      Result.ok
+                      @@ `Done (Ptr (ptr, Some (meta :> T.cval Typed.t))))
+            | vs ->
+                Fmt.kstr not_impl "Expected a pointer and base, got %a"
+                  Fmt.(list ~sep:comma pp_rust_val)
+                  vs
           in
           let ptr_size = Typed.int Archi.word_size in
           let isize : Types.ty = TLiteral (TInteger Isize) in
@@ -363,61 +388,66 @@ module Make (Sptr : Sptr.S) = struct
           (Ptr _ | Base _) ) ->
           ok v
       | _ ->
-          let open Syntaxes.Option in
-          let ( |>** ) = Result.bind in
-          let size_of ty = (Layout.layout_of ty).size in
-          let int_of_val v =
-            match Typed.kind v with
-            | Int v -> Z.to_int v
-            | _ -> failwith "Expected a concrete integer"
-          in
-          (* to make our life easier, we check for concrete offsets in the layout; this should
-           always be true anyways. *)
           let blocks = rust_to_cvals v from_ty in
-          let** blocks =
-            try
-              Result.ok
-              @@ List.map
-                   (fun { value; ty; offset } -> (value, ty, int_of_val offset))
-                   blocks
-            with _ -> not_impl "Symbolic offset in layout"
-          in
-          let extract_block (ty, off) =
-            (* 1. ideal case, we find a block with the same size and offset *)
-            let- () =
-              List.find_map
-                (fun (v, ty', o) ->
-                  let off = int_of_val off in
-                  if o = off && size_of ty = size_of ty' then
-                    Some (transmute ~from_ty:ty' ~to_ty:ty v)
-                  else None)
-                blocks
-            in
-            (* 2. only one block, so we convert that if we expect an integer *)
-            let- () =
-              match (blocks, ty) with
-              | ( [ (v, (TLiteral (TInteger _) as from_ty), 0) ],
-                  (TLiteral (TInteger _) as to_ty) ) ->
-                  Some (transmute ~from_ty ~to_ty v)
-              | _ -> None
-            in
-            (* X. give up *)
-            let pp_triple fmt (v, ty, o) =
-              Fmt.pf fmt "(%a:%a, %d)" ppa_rust_val v pp_ty ty o
-            in
-            Fmt.kstr not_impl "Transmute: Couldn't extract %a at %a from %a"
-              pp_ty ty Typed.ppa off
-              Fmt.(list ~sep:comma pp_triple)
-              blocks
-          in
-          let rec aux = function
-            | `Done v -> Result.ok v
-            | `More (blocks, callback) ->
-                Result.fold_list blocks ~init:[] ~f:(fun acc block ->
-                    let++ block = extract_block block in
-                    block :: acc)
-                |>** callback
-                |>** aux
-          in
-          aux @@ rust_of_cvals to_ty
+          transmute_many ~to_ty blocks
+
+  and transmute_many ~(to_ty : Types.ty) vs =
+    let open Syntaxes.Option in
+    let ( |>** ) = Result.bind in
+    let ( |>++ ) = Result.map in
+    let size_of ty = (Layout.layout_of ty).size in
+    let int_of_val v =
+      match Typed.kind v with
+      | Int v -> Z.to_int v
+      | _ -> failwith "Expected a concrete integer"
+    in
+    (* to make our life easier, we check for concrete offsets in the layout; this should
+           always be true anyways. *)
+    let** vs =
+      try
+        Result.ok
+        @@ List.map
+             (fun { value; ty; offset } -> (value, ty, int_of_val offset))
+             vs
+      with _ -> not_impl "Symbolic offset in layout"
+    in
+    let extract_block (ty, off) =
+      (* 1. ideal case, we find a block with the same size and offset *)
+      let- () =
+        List.find_map
+          (fun (v, ty', o) ->
+            let off = int_of_val off in
+            if o = off && size_of ty = size_of ty' then
+              Some (transmute ~from_ty:ty' ~to_ty:ty v)
+            else None)
+          vs
+      in
+      (* 2. only one block, so we convert that if we expect an integer *)
+      let- () =
+        match (vs, ty) with
+        | ( [ (v, (TLiteral (TInteger _) as from_ty), 0) ],
+            (TLiteral (TInteger _) as to_ty) ) ->
+            Some (transmute ~from_ty ~to_ty v)
+        | _ -> None
+      in
+      (* X. give up *)
+      let pp_triple fmt (v, ty, o) =
+        Fmt.pf fmt "(%a:%a, %d)" ppa_rust_val v pp_ty ty o
+      in
+      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %a from %a" pp_ty ty
+        Typed.ppa off
+        Fmt.(list ~sep:comma pp_triple)
+        vs
+    in
+    let rec aux = function
+      | `Done v -> Result.ok v
+      | `More (blocks, callback) ->
+          Result.fold_list blocks ~init:[] ~f:(fun acc block ->
+              let++ block = extract_block block in
+              block :: acc)
+          |>++ List.rev
+          |>** callback
+          |>** aux
+    in
+    aux @@ rust_of_cvals to_ty
 end

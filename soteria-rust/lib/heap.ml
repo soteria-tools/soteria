@@ -112,20 +112,20 @@ let with_tbs b f =
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
-let with_ptr ((raw_ptr, _) as ptr : Sptr.t) (st : t)
+let with_ptr ({ ptr; _ } as full_ptr : Sptr.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       sub option ->
       ('a * sub option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
-  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
+  if%sat Sptr.is_at_null_loc full_ptr then Result.error `NullDereference
   else
-    let loc, ofs = Typed.Ptr.decompose raw_ptr in
+    let loc, ofs = Typed.Ptr.decompose ptr in
     let@ heap = with_heap st in
     let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
     (v, heap)
 
-let load ?is_move (((_, tag) as ptr), meta) ty st =
+let load ?is_move (({ tag; _ } as ptr : Sptr.t), meta) ty st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;
@@ -163,7 +163,7 @@ let load ?is_move (((_, tag) as ptr), meta) ty st =
             value);
       (value, block))
 
-let store (((_, tag) as ptr), _) ty sval st =
+let store (({ tag; _ } as ptr : Sptr.t), _) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
@@ -198,51 +198,45 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
       let@ block, _ = with_tbs block in
       Tree_block.put_raw_tree ofs tree_to_write block)
 
-let alloc size st =
+let alloc size align st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
   let@ heap = with_heap st in
   let@ () = with_error_loc_as_call_trace () in
   let tb = Tree_borrow.init ~state:Unique () in
-  let block = Freeable.Alive (Tree_block.alloc size, tb) in
+  let block = Freeable.Alive (Tree_block.alloc (Typed.int size), tb) in
   let** loc, heap = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
-  (* no metadata *)
-  let ptr = ((ptr, tb.tag), None) in
+  let ptr : Sptr.t Charon_util.full_ptr =
+    ({ ptr; tag = tb.tag; align }, None)
+  in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
   Soteria_symex.Compo_res.ok (ptr, heap)
 
 let alloc_ty ty st =
-  let* size = Layout.size_of_s ty in
-  let++ ((ptr, _) as fptr), st = alloc size st in
-  match ty with
-  | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
-      let len = Charon_util.int_of_const_generic len in
-      ((ptr, Some (Typed.int len)), st)
-  | _ -> (fptr, st)
+  let layout = Layout.layout_of ty in
+  let++ (ptr, _), st = alloc layout.size layout.align st in
+  let meta = Charon_util.meta_for ty in
+  ((ptr, meta), st)
 
 let alloc_tys tys st =
   let@ heap = with_heap st in
   let@ () = with_error_loc_as_call_trace () in
   SPmap.allocs heap ~els:tys ~fn:(fun ty loc ->
       (* make treeblock *)
-      let* size = Layout.size_of_s ty in
+      let layout = Layout.layout_of ty in
+      let size = Typed.int layout.size in
       let tb = Tree_borrow.init ~state:Unique () in
       let block = Freeable.Alive (Tree_block.alloc size, tb) in
       (* create pointer *)
       let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
       let ptr = Typed.Ptr.mk loc 0s in
-      let ptr =
-        match ty with
-        | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
-            let len = Charon_util.int_of_const_generic len in
-            ((ptr, tb.tag), Some (Typed.int len))
-        | _ -> ((ptr, tb.tag), None)
-      in
-      (block, ptr))
+      let ptr : Sptr.t = { ptr; tag = tb.tag; align = layout.align } in
+      let meta = Charon_util.meta_for ty in
+      (block, (ptr, meta)))
 
-let free ((ptr, _), _) ({ heap; _ } as st : t) :
+let free (({ ptr; _ } : Sptr.t), _) ({ heap; _ } as st : t) :
     (unit * t, 'err, serialized list) Result.t =
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
@@ -301,7 +295,7 @@ let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
 
-let borrow (((raw_ptr, parent) as ptr), meta)
+let borrow (({ tag; _ } as ptr : Sptr.t), meta)
     (kind : Charon.Expressions.borrow_kind) st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
@@ -316,14 +310,14 @@ let borrow (((raw_ptr, parent) as ptr), meta)
       in
       let node = Tree_borrow.init ~state:tag_st () in
       let block, tb = Option.get block in
-      let tb' = Tree_borrow.add_child ~parent ~root:tb node in
+      let tb' = Tree_borrow.add_child ~parent:tag ~root:tb node in
       let block = Some (block, tb') in
-      let ptr' = (raw_ptr, node.tag) in
+      let ptr' = { ptr with tag = node.tag } in
       L.debug (fun m -> m "Borrowed pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
       Result.ok ((ptr', meta), block))
 
-let protect (((raw_ptr, parent) as ptr), meta) (mut : Charon.Types.ref_kind) st
-    =
+let protect (({ tag; _ } as ptr : Sptr.t), meta) (mut : Charon.Types.ref_kind)
+    st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   with_ptr ptr st (fun ~ofs:_ block ->
@@ -332,13 +326,13 @@ let protect (((raw_ptr, parent) as ptr), meta) (mut : Charon.Types.ref_kind) st
       in
       let node = Tree_borrow.init ~state:tag_st ~protected:true () in
       let block, tb = Option.get block in
-      let tb' = Tree_borrow.add_child ~parent ~root:tb node in
+      let tb' = Tree_borrow.add_child ~parent:tag ~root:tb node in
       let block = Some (block, tb') in
-      let ptr' = (raw_ptr, node.tag) in
+      let ptr' = { ptr with tag = node.tag } in
       L.debug (fun m -> m "Protected pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
       Result.ok ((ptr', meta), block))
 
-let unprotect (((_, tag) as ptr), _) st =
+let unprotect (({ tag; _ } as ptr : Sptr.t), _) st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   with_ptr ptr st (fun ~ofs:_ block ->
@@ -353,7 +347,7 @@ let unprotect (((_, tag) as ptr), _) st =
 let leak_check st =
   let global_addresses =
     GlobMap.bindings st.globals
-    |> List.map (fun (_, ((ptr, _), _)) -> Typed.Ptr.loc ptr)
+    |> List.map (fun (_, (({ ptr; _ } : Sptr.t), _)) -> Typed.Ptr.loc ptr)
   in
   let@ heap = with_heap st in
   let** leaks =
