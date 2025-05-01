@@ -4,6 +4,7 @@ open Typed.Syntax
 module T = Typed.T
 open Rustsymex
 module Sptr = Sptr.ArithPtr
+module Encoder = Encoder.Make (Sptr)
 
 type 'a err = 'a * Call_trace.t
 
@@ -168,7 +169,7 @@ let store (((_, tag) as ptr), _) ty sval st =
   else
     let () =
       L.debug (fun f ->
-          let pp_part f ({ value; ty; offset } : Sptr.t Encoder.cval_info) =
+          let pp_part f ({ value; ty; offset } : Encoder.cval_info) =
             Fmt.pf f "%a: %a [%a]"
               (Charon_util.pp_rust_val Sptr.pp)
               value Charon_util.pp_ty ty Typed.ppa offset

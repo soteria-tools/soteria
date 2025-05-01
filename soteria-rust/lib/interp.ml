@@ -10,6 +10,7 @@ module Make (Heap : Heap_intf.S) = struct
   module Core = Core.M (Heap)
   module Std_funs = Builtins.Eval.M (Heap)
   module Sptr = Heap.Sptr
+  module Encoder = Encoder.Make (Sptr)
 
   let pp_rust_val = pp_rust_val Sptr.pp
 

@@ -9,6 +9,7 @@ open Charon_util
 module M (Heap : Heap_intf.S) = struct
   module Sptr = Heap.Sptr
   module Core = Core.M (Heap)
+  module Encoder = Encoder.Make (Sptr)
 
   type nonrec rust_val = Sptr.t rust_val
 

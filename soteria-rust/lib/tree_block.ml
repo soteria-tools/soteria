@@ -16,7 +16,12 @@ let miss_no_fix_immediate ?(msg = "") () =
 
 let miss_no_fix ?msg () = Rustsymex.return (miss_no_fix_immediate ?msg ())
 
+(* FIXME: here we hardcode the use of ArithPtr, but that's not really needed, it's just to avoid
+   the type parameter going everywhere. We may want to make this module a functor on the pointer
+   type, or make it work on any ptr *)
 type rust_val = Sptr.ArithPtr.t Charon_util.rust_val
+
+module Encoder = Encoder.Make (Sptr.ArithPtr)
 
 module MemVal = struct
   type t = { value : rust_val; ty : Types.ty } [@@deriving make]
