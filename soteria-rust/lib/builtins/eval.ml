@@ -120,17 +120,34 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::wrapping_mul", Wrapping Mul);
       ("core::intrinsics::wrapping_rem", Wrapping Rem);
       ("core::intrinsics::wrapping_sub", Wrapping Sub);
+      ("core::intrinsics::write_bytes", WriteBytes);
       ("core::intrinsics::write_bytes::write_bytes", WriteBytes);
+      ("core::intrinsics::write_bytes::precondition_check", Nop);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
+
+  let has_rustc_intrinsic_attrib (f : UllbcAst.fun_decl) =
+    List.mem
+      Meta.(AttrUnknown { path = "rustc_intrinsic"; args = None })
+      f.item_meta.attr_info.attributes
 
   let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let open Std in
     let open Kani in
     let opt_bind f opt = match opt with None -> f () | x -> x in
     let ctx = NameMatcher.ctx_from_crate crate in
-    NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
+    let real_name =
+      if has_rustc_intrinsic_attrib f then
+        Types.
+          [
+            PeIdent ("core", Disambiguator.zero);
+            PeIdent ("intrinsics", Disambiguator.zero);
+            List.last f.item_meta.name;
+          ]
+      else f.item_meta.name
+    in
+    NameMatcherMap.find_opt ctx match_config real_name std_fun_map
     |> ( Option.map @@ function
          | Abs -> abs f.signature
          | AssertZeroValid -> assert_zero_is_valid f.signature
@@ -167,19 +184,16 @@ module M (Heap : Heap_intf.S) = struct
          | Zeroed -> zeroed f.signature )
     |> opt_bind @@ fun () ->
        let is_intrinsic =
-         (match f.item_meta.name with
+         match real_name with
          | PeIdent (("core" | "std"), _) :: PeIdent ("intrinsics", _) :: _ ->
              true
-         | _ -> false)
-         || List.mem
-              Meta.(AttrUnknown { path = "rustc_intrinsic"; args = None })
-              f.item_meta.attr_info.attributes
+         | _ -> false
        in
        if is_intrinsic then
          Option.some @@ fun ~crate ~args:_ ~state:_ ->
          let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
          Fmt.kstr not_impl "Unsupported intrinsic: %s"
-           (PrintTypes.name_to_string ctx f.item_meta.name)
+           (PrintTypes.name_to_string ctx real_name)
        else None
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
