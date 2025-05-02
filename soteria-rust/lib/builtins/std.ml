@@ -158,8 +158,8 @@ module M (Heap : Heap_intf.S) = struct
       Types.TypeDeclId.Map.find range_ty_id UllbcAst.(crate.type_decls)
     in
     let range_name =
-      match List.rev range_adt.item_meta.name with
-      | PeIdent (name, _) :: _ -> name
+      match List.last_opt range_adt.item_meta.name with
+      | Some (PeIdent (name, _)) -> name
       | _ -> failwith "Unexpected range name"
     in
     let size =
@@ -282,10 +282,11 @@ module M (Heap : Heap_intf.S) = struct
     (Ptr ptr, state)
 
   let ptr_op ?(byte = false) op (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
-    let ptr, meta, v =
+    let** ptr, meta, v =
       match args with
-      | [ Ptr (ptr, meta); Base v ] -> (ptr, meta, v)
-      | _ -> failwith "ptr_add: invalid arguments"
+      | [ Ptr (ptr, meta); Base v ] -> Result.ok (ptr, meta, v)
+      | [ Base _; Base _ ] -> Heap.error `UBPointerArithmetic state
+      | _ -> not_impl "ptr_add: invalid arguments"
     in
     let* v = cast_checked v ~ty:Typed.t_int in
     let ty =
@@ -352,6 +353,8 @@ module M (Heap : Heap_intf.S) = struct
       | TRawPtr (ty, _) :: _ -> ty
       | _ -> failwith "copy_nonoverlapping: invalid arguments"
     in
+    let** () = Heap.check_ptr_align from_ptr ty in
+    let** () = Heap.check_ptr_align to_ptr ty in
     let* ty_size = Layout.size_of_s ty in
     let size = ty_size *@ len in
     let** () =

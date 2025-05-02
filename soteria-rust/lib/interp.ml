@@ -172,7 +172,7 @@ module Make (Heap : Heap_intf.S) = struct
         | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
         (* when projecting, we lose the metadata *)
-        let** (ptr, _), state = resolve_place ~store state base in
+        let** (ptr, meta), state = resolve_place ~store state base in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
@@ -184,7 +184,7 @@ module Make (Heap : Heap_intf.S) = struct
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
         if not @@ Layout.is_inhabited ty then Heap.error `RefToUninhabited state
-        else Result.ok ((ptr', None), state)
+        else Result.ok ((ptr', meta), state)
 
   let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
       ('err, 'fixes) fun_exec Rustsymex.t =
@@ -333,30 +333,29 @@ module Make (Heap : Heap_intf.S) = struct
                    ~from_ty:(TLiteral from_ty) ~to_ty:(TLiteral to_ty) v
             in
             (v, state)
-        | Cast
-            (CastUnsize
-               ( TRawPtr
-                   (TAdt (TBuiltin TArray, { const_generics = [ size ]; _ }), _),
-                 TRawPtr (TAdt (TBuiltin TSlice, _), _) ))
-        | Cast
-            (CastUnsize
-               ( TAdt
-                   ( TBuiltin TBox,
-                     {
-                       types =
-                         [
-                           TAdt
-                             (TBuiltin TArray, { const_generics = [ size ]; _ });
-                         ];
-                       _;
-                     } ),
-                 TAdt
-                   (TBuiltin TBox, { types = [ TAdt (TBuiltin TSlice, _) ]; _ })
-               )) ->
+        | Cast (CastUnsize (from_ty, _)) ->
+            let rec get_size = function
+              | Types.TRawPtr (ty, _)
+              | TRef (_, ty, _)
+              | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) ->
+                  get_size ty
+              | TAdt (TAdtId id, _) -> (
+                  let type_decl =
+                    Types.TypeDeclId.Map.find id UllbcAst.(crate.type_decls)
+                  in
+                  match type_decl.kind with
+                  | Struct (_ :: _ as fields) ->
+                      get_size (List.last fields).field_ty
+                  | _ -> not_impl "Couldn't get size in CastUnsize")
+              | TAdt (TBuiltin TArray, { const_generics = [ size ]; _ }) ->
+                  return size
+              | _ -> not_impl "Couldn't get size in CastUnsize"
+            in
+            let* size = get_size from_ty in
             let ptr, _ = as_ptr v in
             let size = Typed.int @@ int_of_const_generic size in
             Result.ok (Ptr (ptr, Some size), state)
-        | Cast kind ->
+        | Cast (CastFnPtr _ as kind) ->
             Fmt.kstr not_impl "Unsupported cast kind: %a"
               Expressions.pp_cast_kind kind)
     | BinaryOp (op, e1, e2) -> (

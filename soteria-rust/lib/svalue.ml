@@ -486,7 +486,6 @@ let rec int_of_bv signed v =
         let mask = Z.pred @@ Z.shift_left Z.one zeroes in
         Z.(Z.equal (z land mask) zero) && bv_size = size
   in
-  L.warn (fun m -> m "int_of_bv: %a" pp v);
   match v.node.kind with
   | Unop (BvOfInt, v) -> v
   | Binop (BitAnd, v, { node = { kind = BitVec mask; _ }; _ })
