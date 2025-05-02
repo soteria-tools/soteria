@@ -512,6 +512,28 @@ module Make (Sptr : Sptr.S) = struct
                Base v)
         | _ -> None
       in
+      (* 5. If there's an integer block that contains what we're looking for, we split it *)
+      let- () =
+        match ty with
+        | TLiteral (TInteger ity) as target_ty ->
+            let size = size_of_int_ty ity in
+            vs
+            |> List.find_opt (function
+                 | _, Types.TLiteral (TInteger ity), o ->
+                     o <= 0 && size <= o + size_of_int_ty ity
+                 | _ -> false)
+            |> Option.map @@ fun (v, ty, o) ->
+               let parent_size = size_of_int_ty (TypesUtils.ty_as_integer ty) in
+               let** v = transmute ~from_ty:ty ~to_ty:(int_to_unsigned ty) v in
+               let v = Typed.cast @@ as_base v in
+               let shift = o + parent_size - size in
+               let shift = Z.shift_left Z.one (shift * 8) in
+               let v = v /@ Typed.nonzero_z shift in
+               transmute
+                 ~from_ty:(int_to_unsigned target_ty)
+                 ~to_ty:target_ty (Base v)
+        | _ -> None
+      in
       (* X. give up *)
       Fmt.kstr not_impl "Transmute: Couldn't extract %a at %d from %a" pp_ty ty
         off
