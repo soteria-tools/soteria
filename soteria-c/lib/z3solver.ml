@@ -290,6 +290,7 @@ let rec encode_value (v : Svalue.t) =
       | Minus -> num_sub v1 v2
       | Times -> num_mul v1 v2
       | Div -> num_div v1 v2
+      | Mod -> num_mod v1 v2
       | BitAnd ->
           let bv_size = 64 in
           (* Should always work in C? *)

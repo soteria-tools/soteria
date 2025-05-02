@@ -50,7 +50,9 @@ module Make (State : State_intf.S) = struct
     | TPointer ->
         let x = Typed.cast x in
         if%sat Typed.Ptr.is_at_null_loc x then Csymex.return (Typed.Ptr.ofs x)
-        else not_impl "Pointer to int that is not at null loc"
+        else
+          Fmt.kstr not_impl "Pointer to int that is not at null loc %a at %a"
+            Typed.ppa x Fmt_ail.pp_loc (get_loc ())
     | _ -> failwith "cast_to_int a cval?"
 
   let cast_to_bool (x : [< T.cval ] Typed.t) : [> T.sbool ] Typed.t =
@@ -159,9 +161,23 @@ module Make (State : State_intf.S) = struct
         match get_ty v with
         | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
         | TPointer -> return v
-        | _ ->
-            Fmt.kstr Csymex.not_impl "BUG: not a valid C value: %a" Typed.ppa v)
+        | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
     | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
+    | Ctype.Basic (Integer ity_left), Ctype.Basic (Integer ity_right) -> (
+        let* v = cast_to_int v in
+        let ity_left = Layout.normalise_int_ty ity_left in
+        let ity_right = Layout.normalise_int_ty ity_right in
+        match (ity_left, ity_right) with
+        | Signed _, Unsigned _ ->
+            let+ size_right =
+              Layout.size_of_int_ty ity_right
+              |> Csymex.of_opt_not_impl ~msg:"Size of int ty"
+            in
+            let size_right = Typed.nonzero size_right in
+            Typed.mod_ v size_right
+        | _, _ ->
+            Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
+              ity_left Fmt_ail.pp_int_ty ity_right)
     | _ ->
         Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
           Fmt_ail.pp_ty_ new_ty
@@ -213,6 +229,12 @@ module Make (State : State_intf.S) = struct
         let loc = Typed.Ptr.loc v1 in
         let ofs = Typed.Ptr.ofs v1 -@ v2 in
         Result.ok (Typed.Ptr.mk loc ofs, state)
+    | TPointer, TPointer ->
+        let v1 : T.sptr Typed.t = Typed.cast v1 in
+        let v2 : T.sptr Typed.t = Typed.cast v2 in
+        if%sat Typed.Ptr.loc v1 ==@ Typed.Ptr.loc v2 then
+          Result.ok (Typed.Ptr.ofs v1 -@ Typed.Ptr.ofs v2, state)
+        else State.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
@@ -254,12 +276,12 @@ module Make (State : State_intf.S) = struct
         | None, None -> arith_add ~state v1 v2)
     | Sub -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
-        | _, Some _ -> State.error `UBPointerArithmetic state
         | Some ty, None ->
             let* factor = Layout.size_of_s ty in
             let** v2, state = arith_mul ~state v2 factor in
             arith_sub ~state v1 v2
-        | None, None -> arith_sub ~state v1 v2)
+        | None, Some _ -> State.error `UBPointerArithmetic state
+        | Some _, Some _ | None, None -> arith_sub ~state v1 v2)
     (* FIXME: This is unsound, we don't properly handle signing! *)
     | Band ->
         let* v1 = cast_to_int v1 in
@@ -355,6 +377,16 @@ module Make (State : State_intf.S) = struct
             | None ->
                 let+ ptr, state = State.get_global id state in
                 Ok (ptr, state))
+        | AilEmemberofptr (ptr, member) ->
+            let** ptr_v, state = eval_expr state ptr in
+            let* ty_pointee =
+              type_of ptr
+              |> Cerb_frontend.AilTypesAux.referenced_type
+              |> Csymex.of_opt_not_impl
+                   ~msg:"Member of Pointer that isn't of type pointer"
+            in
+            let* mem_ofs = Layout.member_ofs member ty_pointee in
+            arith_add ~state ptr_v mem_ofs
         | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
     | AilEunary (op, e) -> (
         let** v, state = eval_expr state e in
@@ -450,10 +482,10 @@ module Make (State : State_intf.S) = struct
         in
         let++ (), state = State.store ptr lty res state in
         (res, state)
-    | AilSyntax.AilEsizeof (_quals, ty) ->
+    | AilEsizeof (_quals, ty) ->
         let+ res = Layout.size_of_s ty in
         Ok (res, state)
-    | AilSyntax.AilEmemberofptr (ptr, member) ->
+    | AilEmemberofptr (ptr, member) ->
         let** ptr_v, state = eval_expr state ptr in
         let* ty_pointee =
           type_of ptr
@@ -463,13 +495,18 @@ module Make (State : State_intf.S) = struct
         in
         let* mem_ofs = Layout.member_ofs member ty_pointee in
         arith_add ~state ptr_v mem_ofs
-    | AilSyntax.AilEcast (_quals, new_ty, expr) ->
+    | AilEmemberof (obj, member) ->
+        let** ptr_v, state = eval_expr state obj in
+        let ty_obj = type_of obj in
+        let* mem_ofs = Layout.member_ofs member ty_obj in
+        arith_add ~state ptr_v mem_ofs
+    | AilEcast (_quals, new_ty, expr) ->
         let old_ty = type_of expr in
         let** v, state = eval_expr state expr in
         let+ new_v = cast ~old_ty ~new_ty v in
         Ok (new_v, state)
-    | AilSyntax.AilEfunction_decay
-        (AnnotatedExpression (_, _, _, fexpr) as outer_fexpr) -> (
+    | AilEfunction_decay (AnnotatedExpression (_, _, _, fexpr) as outer_fexpr)
+      -> (
         match fexpr with
         | AilEident id ->
             let id = Ail_helpers.resolve_sym ~prog id in
@@ -479,26 +516,23 @@ module Make (State : State_intf.S) = struct
         | _ ->
             Fmt.kstr not_impl "Unsupported function decay: %a" Fmt_ail.pp_expr
               outer_fexpr)
-    | AilSyntax.AilEcond (_, _, _)
-    | AilSyntax.AilEassert _
-    | AilSyntax.AilEoffsetof (_, _)
-    | AilSyntax.AilEgeneric (_, _)
-    | AilSyntax.AilEarray (_, _, _)
-    | AilSyntax.AilEstruct (_, _)
-    | AilSyntax.AilEunion (_, _, _)
-    | AilSyntax.AilEcompound (_, _, _)
-    | AilSyntax.AilEmemberof (_, _)
-    | AilSyntax.AilEbuiltin _ | AilSyntax.AilEstr _
-    | AilSyntax.AilEsizeof_expr _
-    | AilSyntax.AilEalignof (_, _)
-    | AilSyntax.AilEannot (_, _)
-    | AilSyntax.AilEva_start (_, _)
-    | AilSyntax.AilEva_arg (_, _)
-    | AilSyntax.AilEva_copy (_, _)
-    | AilSyntax.AilEva_end _ | AilSyntax.AilEprint_type _
-    | AilSyntax.AilEbmc_assume _ | AilSyntax.AilEreg_load _
-    | AilSyntax.AilEarray_decay _ | AilSyntax.AilEatomic _
-    | AilSyntax.AilEgcc_statement (_, _) ->
+    | AilEcond (_, _, _)
+    | AilEassert _
+    | AilEoffsetof (_, _)
+    | AilEgeneric (_, _)
+    | AilEarray (_, _, _)
+    | AilEstruct (_, _)
+    | AilEunion (_, _, _)
+    | AilEcompound (_, _, _)
+    | AilEbuiltin _ | AilEstr _ | AilEsizeof_expr _
+    | AilEalignof (_, _)
+    | AilEannot (_, _)
+    | AilEva_start (_, _)
+    | AilEva_arg (_, _)
+    | AilEva_copy (_, _)
+    | AilEva_end _ | AilEprint_type _ | AilEbmc_assume _ | AilEreg_load _
+    | AilEarray_decay _ | AilEatomic _
+    | AilEgcc_statement (_, _) ->
         Fmt.kstr not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
   (** Executing a statement returns an optional value outcome (if a return
@@ -540,9 +574,8 @@ module Make (State : State_intf.S) = struct
     | AilSif (cond, then_stmt, else_stmt) ->
         let** v, state = eval_expr ~prog ~store state cond in
         (* [v] must be an integer! (TODO: or NULL possibly...) *)
-        let* v = cast_to_int v in
-        if%sat Typed.bool_of_int v then
-          exec_stmt ~prog store state then_stmt [@name "if branch"]
+        let v = cast_to_bool v in
+        if%sat v then exec_stmt ~prog store state then_stmt [@name "if branch"]
         else exec_stmt ~prog store state else_stmt [@name "else branch"]
     | AilSwhile (cond, stmt, _loopid) ->
         let rec loop store state =

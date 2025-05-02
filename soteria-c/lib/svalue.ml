@@ -33,6 +33,7 @@ module Binop = struct
     | Minus
     | Times
     | Div
+    | Mod (* Modulo, not remainder *)
     (* Bitwise *)
     | BitAnd
   [@@deriving eq, show { with_path = false }, ord]
@@ -161,10 +162,16 @@ let rec subst subst_var sv =
       in
       if !changed then Nop (op, l') <| sv.node.ty else sv
 
-(** {2 Booleans} *)
+(** {2 Constants} *)
 
 let v_true = Bool true <| TBool
 let v_false = Bool false <| TBool
+let int_z z = Int z <| TInt
+let int i = int_z (Z.of_int i)
+let zero = int_z Z.zero
+let one = int_z Z.one
+
+(** {2 Booleans} *)
 
 let as_bool t =
   if equal t v_true then Some true
@@ -192,6 +199,10 @@ let rec sem_eq v1 v2 =
     | Int z1, Int z2 -> bool (Z.equal z1 z2)
     | Bool b1, Bool b2 -> bool (b1 = b2)
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
+    | _, Binop (Plus, v2, v3) when equal v1 v2 -> sem_eq v3 zero
+    | _, Binop (Plus, v2, v3) when equal v1 v3 -> sem_eq v2 zero
+    | Binop (Plus, v1, v3), _ when equal v1 v2 -> sem_eq v3 zero
+    | Binop (Plus, v1, v3), _ when equal v3 v2 -> sem_eq v1 zero
     | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 ->
         sem_eq v2 v4
     | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 ->
@@ -235,11 +246,6 @@ let distinct l =
   | l -> Nop (Distinct, l) <| TBool
 
 (** {2 Integers} *)
-
-let int_z z = Int z <| TInt
-let int i = int_z (Z.of_int i)
-let zero = int_z Z.zero
-let one = int_z Z.one
 
 let int_of_bool b =
   match b.node.kind with
@@ -321,6 +327,15 @@ let div v1 v2 =
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.div i1 i2)
   | _ -> Binop (Div, v1, v2) <| TInt
+
+let mod_ v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v2 one -> zero
+  | Int i1, Int i2 ->
+      (* OCaml's mod computes the remainer... *)
+      let rem = Z.( mod ) i1 i2 in
+      if Z.lt rem Z.zero then int_z (Z.add rem i2) else int_z rem
+  | _ -> Binop (Mod, v1, v2) <| TInt
 
 (* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
 let not_int_bool sv =
