@@ -313,3 +313,10 @@ Checking that code cannot branch infinitely
              (V|1|, [TypedVal {offset = 0; ty = signed int; v = 0}])];
             globs = [(x_585, V|0|); (y_586, V|1|)] })]
   Executed 3 statements
+
+  $ soteria-c exec-main structs.c
+  Symex terminated with the following outcomes:
+    [Ok: (0,
+          { heap = [(V|0|, Freed); (V|1|, Freed); (V|2|, Freed)]; globs = [] });
+     Ok: (1, { heap = [(V|0|, Freed); (V|1|, Freed)]; globs = [] })]
+  Executed 16 statements
