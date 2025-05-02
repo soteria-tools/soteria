@@ -52,7 +52,8 @@ function observeSearch() {
 
     logMessages.forEach((message) => {
       const messageText = message.childNodes[0].textContent;
-      message.style.display = searchRe.test(messageText) ? "block" : "none";
+      if (searchRe.test(messageText)) message.classList.remove("hidden-search");
+      else message.classList.add("hidden-search");
     });
   });
 }
@@ -143,7 +144,8 @@ function populateFilter() {
       const checked = option.checked;
       const messages = document.querySelectorAll(`.log-msg.${className}`);
       messages.forEach((msg) => {
-        msg.style.display = checked ? "block" : "none";
+        if (checked) msg.classList.remove("hidden-filter");
+        else msg.classList.add("hidden-filter");
       });
     });
   });
@@ -173,8 +175,7 @@ function restrictBranches(element) {
 function addRestrictButton(element) {
   if (element.classList.contains("active-branch")) { return; }
   const button = document.createElement("button");
-  const buttonText = document.createTextNode("Restrict to branch");
-  button.appendChild(buttonText);
+  button.innerText = "Restrict to branch";
   button.className = "restrict-button";
   button.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -198,7 +199,7 @@ function undoRestrictBranches() {
 }
 
 function addHoverListeners() {
-  const branches = document.querySelectorAll("details.is-branch");
+  const branches = document.querySelectorAll("details.is-branch summary");
   branches.forEach((message) => {
     message.addEventListener("mouseenter", () => {
       addRestrictButton(message);

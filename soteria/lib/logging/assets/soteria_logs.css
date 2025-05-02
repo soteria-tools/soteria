@@ -29,7 +29,9 @@ details.active-branch {
     border: none;
 }
 
-details.hidden-branch {
+details.hidden-branch,
+.hidden-filter,
+.hidden-search {
     display: none;
 }
 
@@ -41,6 +43,8 @@ details.hidden-branch {
     color: #000;
     font-weight: normal;
     font-size: 0.8em;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .timestamp:hover {
