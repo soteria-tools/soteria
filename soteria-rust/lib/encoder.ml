@@ -529,4 +529,31 @@ module Make (Sptr : Sptr.S) = struct
           |>** aux
     in
     aux @@ rust_of_cvals to_ty
+
+  let split v (ty : Types.ty) at =
+    let transmute ~from_ty ~to_ty v =
+      let* res = transmute ~from_ty ~to_ty v in
+      match res with
+      | Ok v -> return v
+      | _ -> not_impl "Transmute failed in split - vanishing"
+    in
+    let* at =
+      match Typed.kind at with
+      | Int size -> return (Z.to_int size)
+      | _ -> not_impl "Don't know how to read this size"
+    in
+    match (v, ty) with
+    | Base _, TLiteral (TInteger ity) ->
+        let size = size_of_int_ty ity in
+        let left_ty = size_to_uint (size - at) in
+        let right_ty = size_to_uint at in
+        let+ as_uint = transmute ~from_ty:ty ~to_ty:(int_to_unsigned ty) v in
+        let v = Typed.cast @@ as_base as_uint in
+        let pow = Z.shift_left Z.one (at * 8) in
+        let left = v /@ Typed.nonzero_z pow in
+        let right = v %@ Typed.nonzero_z pow in
+        ((Base left, left_ty), (Base right, right_ty))
+    | _ ->
+        Fmt.kstr not_impl "Split unspported: %a: %a at %d" pp_rust_val v pp_ty
+          ty at
 end

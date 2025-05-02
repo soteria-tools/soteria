@@ -92,8 +92,10 @@ module Node = struct
         return (Owned { v = Zeros; tb }, Owned { v = Zeros; tb })
     | Owned { v = Any; tb } ->
         return (Owned { v = Any; tb }, Owned { v = Any; tb })
-    | Owned { v = Init _; tb = _ } ->
-        Fmt.kstr not_impl "Splitting %a at %a" pp node Typed.ppa at
+    | Owned { v = Init { value; ty }; tb } ->
+        let+ (l_v, l_ty), (r_v, r_ty) = Encoder.split value ty at in
+        ( Owned { v = Init { value = l_v; ty = l_ty }; tb },
+          Owned { v = Init { value = r_v; ty = r_ty }; tb } )
     | NotOwned Partially | Owned { v = Lazy | Uninit Partially; _ } ->
         failwith "Should never split an intermediate node"
 
@@ -384,7 +386,7 @@ module Tree = struct
     in
     let rebuild_parent = with_children in
     let** framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let++ sval = Node.decode ~ty framed.node in
+    let++ sval = decode ~ty framed in
     (sval, tree)
 
   let store (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
@@ -464,7 +466,7 @@ module Tree = struct
     let replace_node _ = Result.ok @@ not_owned range in
     let rebuild_parent = of_children in
     let** framed, _tree = frame_range t ~replace_node ~rebuild_parent range in
-    let* sval_res = Node.decode ~ty framed.node in
+    let* sval_res = decode ~ty framed in
     match sval_res with
     | Ok _sv ->
         not_impl "Consume typed value on rust_val equality."
