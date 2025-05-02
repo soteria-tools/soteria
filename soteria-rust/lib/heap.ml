@@ -112,6 +112,19 @@ let with_tbs b f =
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
+let check_ptr_align ({ ptr; align; _ } as fptr : Sptr.t) ty =
+  let@ () = with_error_loc_as_call_trace () in
+  let* expected_align = Layout.align_of_s ty in
+  L.debug (fun m ->
+      m "Checking pointer alignment of %a: ofs %a mod %d / expect %a for %a"
+        Sptr.pp fptr Typed.ppa (Typed.Ptr.ofs ptr) align Typed.ppa
+        expected_align Charon_util.pp_ty ty);
+  let ofs = Typed.Ptr.ofs ptr in
+  if%sat
+    ofs %@ expected_align ==@ 0s &&@ (Typed.int align %@ expected_align ==@ 0s)
+  then Result.ok ()
+  else error `MisalignedPointer
+
 let with_ptr ({ ptr; _ } as full_ptr : Sptr.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
@@ -126,6 +139,7 @@ let with_ptr ({ ptr; _ } as full_ptr : Sptr.t) (st : t)
     (v, heap)
 
 let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
+  let** () = check_ptr_align ptr ty in
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   log "load" ptr st;

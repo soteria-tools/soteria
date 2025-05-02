@@ -31,6 +31,7 @@ let pp_err ft (err, call_trace) =
     | `UBTreeBorrow -> Fmt.string ft "UBTreeBorrow"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
+    | `MisalignedPointer -> Fmt.string ft "MisalignedPointer"
     | `MemoryLeak -> Fmt.string ft "Memory leak"
     | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
     | `FailedAssert None -> Fmt.string ft "Failed assertion"

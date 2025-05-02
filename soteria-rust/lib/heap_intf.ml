@@ -34,12 +34,12 @@ module type S = sig
       | `UninitializedMemoryAccess
       | `UseAfterFree
       | `UBTransmute
-      | `UBTreeBorrow ]
+      | `UBTreeBorrow
+      | `MisalignedPointer
+      | `RefToUninhabited ]
       err,
       serialized list )
     Result.t
-
-  val is_valid_ptr : t -> full_ptr -> Types.ty -> bool Rustsymex.t
 
   val store :
     full_ptr ->
@@ -47,7 +47,12 @@ module type S = sig
     Sptr.t rust_val ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UBTreeBorrow | `UseAfterFree ] err,
+      [> `NullDereference
+      | `OutOfBounds
+      | `UBTreeBorrow
+      | `UseAfterFree
+      | `MisalignedPointer ]
+      err,
       serialized list )
     Result.t
 
@@ -63,6 +68,13 @@ module type S = sig
     full_ptr ->
     t ->
     (unit * t, [> `InvalidFree | `UseAfterFree ] err, serialized list) Result.t
+
+  val is_valid_ptr : t -> full_ptr -> Types.ty -> bool Rustsymex.t
+
+  val check_ptr_align :
+    Sptr.t ->
+    Types.ty ->
+    (unit, [> `MisalignedPointer ] err, serialized list) Result.t
 
   val copy_nonoverlapping :
     dst:full_ptr ->

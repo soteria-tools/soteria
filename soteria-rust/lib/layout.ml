@@ -229,18 +229,12 @@ let rec layout_of (ty : Types.ty) : layout =
       | TDeclError _ -> raise (CantComputeLayout ("DeclError", ty))
       | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
   (* Arrays *)
-  | TAdt (TBuiltin TArray, generics) ->
-      let ty, size =
-        match generics with
-        | { types = [ ty ]; const_generics = [ size ]; _ } -> (ty, size)
-        | _ -> failwith "Unexpected TArray generics"
-      in
+  | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ size ]; _ }) ->
       let size = Charon_util.int_of_const_generic size in
-      if size = 0 then { size = 0; align = 1; members_ofs = [||] }
-      else
-        let sub_layout = layout_of ty in
-        let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
-        { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
+      let sub_layout = layout_of ty in
+      let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
+      { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
+  | TAdt (TBuiltin TArray, _) -> failwith "Invalid TArray shape"
   (* Closures *)
   | TClosure (_, _, state, _) -> layout_of_members state
   (* Never -- zero sized type *)
@@ -339,6 +333,23 @@ let max_value_z : Types.integer_type -> Z.t = function
   | Isize -> Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
 
 let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
+
+let int_to_unsigned : Types.ty -> Types.ty = function
+  | TLiteral (TInteger (U8 | I8)) -> TLiteral (TInteger U8)
+  | TLiteral (TInteger (U16 | I16)) -> TLiteral (TInteger U16)
+  | TLiteral (TInteger (U32 | I32)) -> TLiteral (TInteger U32)
+  | TLiteral (TInteger (U64 | I64)) -> TLiteral (TInteger U64)
+  | TLiteral (TInteger (U128 | I128)) -> TLiteral (TInteger U128)
+  | TLiteral (TInteger (Usize | Isize)) -> TLiteral (TInteger Usize)
+  | _ -> failwith "Expected integer type"
+
+let size_to_uint : int -> Types.ty = function
+  | 1 -> TLiteral (TInteger U8)
+  | 2 -> TLiteral (TInteger U16)
+  | 4 -> TLiteral (TInteger U32)
+  | 8 -> TLiteral (TInteger U64)
+  | 16 -> TLiteral (TInteger U128)
+  | _ -> failwith "Invalid integer size"
 
 let int_constraints ty =
   let min = min_value ty in

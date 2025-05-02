@@ -154,6 +154,40 @@ module Tree = struct
         iter_leaves_rev r f;
         iter_leaves_rev l f
 
+  let collect_leaves t =
+    Result.fold_iter (iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
+        let offset, _ = leaf.range in
+        let offset = offset -@ fst t.range in
+        let as_u8_ty () =
+          match Typed.kind (Range.size leaf.range) with
+          | Int size -> return (Layout.size_to_uint (Z.to_int size))
+          | _ -> not_impl "Don't know how to read this size"
+        in
+        match leaf.node with
+        | NotOwned _ -> miss_no_fix ~msg:"decode" ()
+        | Owned { v = Uninit _; _ } -> Result.error `UninitializedMemoryAccess
+        | Owned { v = Zeros; _ } ->
+            let* ty = as_u8_ty () in
+            let+ value =
+              of_opt_not_impl ~msg:"Don't know how to zero this type"
+              @@ Layout.zeroed ~null_ptr:Sptr.ArithPtr.null_ptr ty
+            in
+            Ok (Encoder.{ value; ty; offset } :: vs)
+        | Owned { v = Lazy; _ } ->
+            Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
+        | Owned { v = Init { value; ty }; _ } ->
+            Result.ok (Encoder.{ value; ty; offset } :: vs)
+        | Owned { v = Any; _ } ->
+            L.info (fun m -> m "Reading from Any memory, vanishing.");
+            vanish ())
+
+  let decode ~ty t =
+    match t.node with
+    | Owned { v = Lazy; _ } ->
+        let** leaves = collect_leaves t in
+        Encoder.transmute_many ~to_ty:ty leaves
+    | node -> Node.decode ~ty node
+
   let of_children_s ~left ~right =
     let range = (fst left.range, snd right.range) in
     let+ node = Node.merge ~left:left.node ~right:right.node in

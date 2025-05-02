@@ -58,5 +58,11 @@ let[@tail_mod_cons] rec map2i i f l1 l2 =
 
 let map2i f l1 l2 = map2i 0 f l1 l2
 
+let rec last l =
+  match l with
+  | [] -> raise (Invalid_argument "List.last")
+  | [ x ] -> x
+  | _ :: l -> last l
+
 let rec last_opt l =
   match l with [] -> None | [ x ] -> Some x | _ :: l -> last_opt l

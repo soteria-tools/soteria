@@ -340,7 +340,8 @@ module Make (Sptr : Sptr.S) = struct
       Accepts an optional [verify_ptr] function, that symbolically checks if a
       pointer can be used to read a value of the given type. This verification
       is a *ghost read*, and should not have side-effects. *)
-  let rec transmute ?verify_ptr ~(from_ty : Types.ty) ~(to_ty : Types.ty) v =
+  let rec transmute ?verify_ptr ?(try_splitting = true) ~(from_ty : Types.ty)
+      ~(to_ty : Types.ty) v =
     let open Soteria_symex.Compo_res in
     let open Result in
     L.debug (fun m ->
@@ -403,14 +404,21 @@ module Make (Sptr : Sptr.S) = struct
           | TLiteral (TInteger (Isize | Usize | I64 | U64)) ),
           (Ptr _ | Base _) ) ->
           ok v
-      | _ ->
+      | _ when try_splitting ->
           let blocks = rust_to_cvals v from_ty in
           transmute_many ~to_ty blocks
+      | _ ->
+          Fmt.kstr not_impl "Unhandled transmute of %a: %a -> %a" pp_rust_val v
+            pp_ty from_ty pp_ty to_ty
 
   and transmute_many ~(to_ty : Types.ty) vs =
     let open Syntaxes.Option in
     let ( |>** ) = Result.bind in
     let ( |>++ ) = Result.map in
+    let pp_triple fmt (v, ty, o) =
+      Fmt.pf fmt "(%a:%a, %d)" ppa_rust_val v pp_ty ty o
+    in
+    let transmute = transmute ~try_splitting:false in
     let size_of ty = (Layout.layout_of ty).size in
     let int_of_val v =
       match Typed.kind v with
@@ -427,13 +435,18 @@ module Make (Sptr : Sptr.S) = struct
              vs
       with _ -> not_impl "Symbolic offset in layout"
     in
-    let extract_block (ty, off) =
+    L.debug (fun m ->
+        m "Transmute many: %a <- [%a]" pp_ty to_ty
+          Fmt.(list ~sep:comma pp_triple)
+          vs);
+    let rec extract_block (ty, off) =
+      let off = int_of_val off in
+      let vs = List.map (fun (v, ty, o) -> (v, ty, o - off)) vs in
       (* 1. ideal case, we find a block with the same size and offset *)
       let- () =
         List.find_map
           (fun (v, ty', o) ->
-            let off = int_of_val off in
-            if o = off && size_of ty = size_of ty' then
+            if o = 0 && size_of ty = size_of ty' then
               Some (transmute ~from_ty:ty' ~to_ty:ty v)
             else None)
           vs
@@ -446,12 +459,61 @@ module Make (Sptr : Sptr.S) = struct
             Some (transmute ~from_ty ~to_ty v)
         | _ -> None
       in
-      (* X. give up *)
-      let pp_triple fmt (v, ty, o) =
-        Fmt.pf fmt "(%a:%a, %d)" ppa_rust_val v pp_ty ty o
+      (* 3. Several integers that can be merged together without splitting *)
+      let- () =
+        match ty with
+        | TLiteral (TInteger ity) ->
+            let size = size_of_int_ty ity in
+            let bytes = Array.init size (fun _ -> false) in
+            let relevant =
+              List.filter
+                (function
+                  | _, Types.TLiteral (TInteger ity), o
+                    when 0 <= o && o + size_of_int_ty ity <= size ->
+                      Iter.(0 -- (size_of_int_ty ity - 1)) (fun i ->
+                          bytes.(o + i) <- true);
+                      true
+                  | _ -> false)
+                vs
+            in
+            if Array.for_all (fun b -> b) bytes then
+              Some
+                (let++ v =
+                   Result.fold_list relevant ~init:0s ~f:(fun acc (v, ty, o) ->
+                       let++ v =
+                         transmute ~from_ty:ty ~to_ty:(int_to_unsigned ty) v
+                       in
+                       let v = Typed.cast @@ as_base v in
+                       let pow = Z.shift_left Z.one (o * 8) in
+                       acc +@ (v *@ Typed.int_z pow))
+                 in
+                 Base (v :> T.cval Typed.t))
+            else None
+        | _ -> None
       in
-      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %a from %a" pp_ty ty
-        Typed.ppa off
+      (* 4. Floats can be parsed from ints *)
+      let- () =
+        match ty with
+        | TLiteral (TFloat fp) ->
+            Some
+              (let ity : Types.integer_type =
+                 match fp with
+                 | F16 -> U16
+                 | F32 -> U32
+                 | F64 -> U64
+                 | F128 -> U128
+               in
+               let++ v =
+                 extract_block (TLiteral (TInteger ity), Typed.int off)
+               in
+               let v = Typed.cast @@ as_base v in
+               let v = Typed.float_of_int fp v in
+               Base v)
+        | _ -> None
+      in
+      (* X. give up *)
+      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %d from %a" pp_ty ty
+        off
         Fmt.(list ~sep:comma pp_triple)
         vs
     in

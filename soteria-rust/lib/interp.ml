@@ -131,7 +131,7 @@ module Make (Heap : Heap_intf.S) = struct
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ~store state ({ kind; _ } : Expressions.place) :
+  let rec resolve_place ~store state ({ kind; ty } : Expressions.place) :
       (full_ptr * state, 'e, 'm) Result.t =
     match kind with
     (* Just a local *)
@@ -157,6 +157,8 @@ module Make (Heap : Heap_intf.S) = struct
             L.debug (fun f ->
                 f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
                   pp_full_ptr v);
+            let pointee = Charon_util.get_pointee base.ty in
+            let** () = Heap.check_ptr_align (fst v) pointee in
             Result.ok (v, state)
         | Base off ->
             let* off = cast_checked ~ty:Typed.t_int off in
@@ -237,7 +239,9 @@ module Make (Heap : Heap_intf.S) = struct
     | Move loc | Copy loc -> (
         let ty = loc.ty in
         match Layout.as_zst ty with
-        | Some zst -> Result.ok (zst, state)
+        | Some zst ->
+            let** _, state = resolve_place ~store state loc in
+            Result.ok (zst, state)
         | None ->
             let** ptr, state = resolve_place ~store state loc in
             let is_move =

@@ -400,6 +400,7 @@ module M (Heap : Heap_intf.S) = struct
         .types
       |> List.hd
     in
+    let** () = Heap.check_ptr_align ptr ty in
     let* size = Layout.size_of_s ty in
     let size = size *@ count in
     (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
