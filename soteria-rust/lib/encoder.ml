@@ -225,6 +225,7 @@ module Make (Sptr : Sptr.S) = struct
               fields
               |> field_tys
               |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
+          | Enum [] -> `More ([], fun _ -> Result.error `RefToUninhabited)
           | Enum [ { fields = []; discriminant; _ } ] ->
               `Done (Enum (value_of_scalar discriminant, []))
           | Enum variants -> aux_enum offset variants
@@ -259,7 +260,7 @@ module Make (Sptr : Sptr.S) = struct
               let layout = layout_of arr_ty in
               let fields = List.init len (fun _ -> sub_ty) in
               aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
-      | TNever -> `More ([], fun _ -> Result.error `UBTransmute)
+      | TNever -> `More ([], fun _ -> Result.error `RefToUninhabited)
       | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* basically, a parser is just a sort of monad, so we can have the usual operations on it *)
     and aux_bind ~f parser_ret : ('e, 'f) parser_return =

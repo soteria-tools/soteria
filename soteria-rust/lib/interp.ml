@@ -179,7 +179,8 @@ module Make (Heap : Heap_intf.S) = struct
                pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
-        Result.ok ((ptr', None), state)
+        if not @@ Layout.is_inhabited ty then Heap.error `RefToUninhabited state
+        else Result.ok ((ptr', None), state)
 
   let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
       ('err, 'fixes) fun_exec Rustsymex.t =
