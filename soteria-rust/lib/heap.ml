@@ -112,28 +112,29 @@ let with_tbs b f =
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
-let check_ptr_align ({ ptr; align; _ } as fptr : Sptr.t) ty =
+let check_ptr_align (ptr : Sptr.t) ty =
   let@ () = with_error_loc_as_call_trace () in
   let* expected_align = Layout.align_of_s ty in
+  let ofs = Typed.Ptr.ofs ptr.ptr in
+  let align = ptr.align in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: ofs %a mod %d / expect %a for %a"
-        Sptr.pp fptr Typed.ppa (Typed.Ptr.ofs ptr) align Typed.ppa
-        expected_align Charon_util.pp_ty ty);
-  let ofs = Typed.Ptr.ofs ptr in
+        Sptr.pp ptr Typed.ppa ofs align Typed.ppa expected_align
+        Charon_util.pp_ty ty);
   if%sat
     ofs %@ expected_align ==@ 0s &&@ (Typed.int align %@ expected_align ==@ 0s)
   then Result.ok ()
   else error `MisalignedPointer
 
-let with_ptr ({ ptr; _ } as full_ptr : Sptr.t) (st : t)
+let with_ptr (ptr : Sptr.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
       sub option ->
       ('a * sub option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
-  if%sat Sptr.is_at_null_loc full_ptr then Result.error `NullDereference
+  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
   else
-    let loc, ofs = Typed.Ptr.decompose ptr in
+    let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     let@ heap = with_heap st in
     let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
     (v, heap)
@@ -195,7 +196,7 @@ let is_valid_ptr st ptr ty =
   let+ res = load ~ignore_borrow:true ptr ty st in
   match res with Ok _ -> true | _ -> false
 
-let store (({ tag; _ } as ptr : Sptr.t), _) ty sval st =
+let store ((ptr : Sptr.t), _) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
@@ -214,7 +215,7 @@ let store (({ tag; _ } as ptr : Sptr.t), _) ty sval st =
         let** (), block = Tree_block.uninit_range ofs size block in
         Result.fold_list parts ~init:((), block)
           ~f:(fun ((), block) { value; ty; offset } ->
-            Tree_block.store (offset +@ ofs) ty value tag tb block))
+            Tree_block.store (offset +@ ofs) ty value ptr.tag tb block))
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace () in
@@ -320,8 +321,7 @@ let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
 
-let borrow (({ tag; _ } as ptr : Sptr.t), meta)
-    (kind : Charon.Expressions.borrow_kind) st =
+let borrow ((ptr : Sptr.t), meta) (kind : Charon.Expressions.borrow_kind) st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   with_ptr ptr st (fun ~ofs:_ block ->
@@ -335,14 +335,13 @@ let borrow (({ tag; _ } as ptr : Sptr.t), meta)
       in
       let node = Tree_borrow.init ~state:tag_st () in
       let block, tb = Option.get block in
-      let tb' = Tree_borrow.add_child ~parent:tag ~root:tb node in
+      let tb' = Tree_borrow.add_child ~parent:ptr.tag ~root:tb node in
       let block = Some (block, tb') in
       let ptr' = { ptr with tag = node.tag } in
       L.debug (fun m -> m "Borrowed pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
       Result.ok ((ptr', meta), block))
 
-let protect (({ tag; _ } as ptr : Sptr.t), meta) (mut : Charon.Types.ref_kind)
-    st =
+let protect ((ptr : Sptr.t), meta) (mut : Charon.Types.ref_kind) st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   with_ptr ptr st (fun ~ofs:_ block ->
@@ -351,19 +350,19 @@ let protect (({ tag; _ } as ptr : Sptr.t), meta) (mut : Charon.Types.ref_kind)
       in
       let node = Tree_borrow.init ~state:tag_st ~protected:true () in
       let block, tb = Option.get block in
-      let tb' = Tree_borrow.add_child ~parent:tag ~root:tb node in
+      let tb' = Tree_borrow.add_child ~parent:ptr.tag ~root:tb node in
       let block = Some (block, tb') in
       let ptr' = { ptr with tag = node.tag } in
       L.debug (fun m -> m "Protected pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
       Result.ok ((ptr', meta), block))
 
-let unprotect (({ tag; _ } as ptr : Sptr.t), _) st =
+let unprotect ((ptr : Sptr.t), _) st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   with_ptr ptr st (fun ~ofs:_ block ->
       let block, tb = Option.get block in
       let tb' =
-        Tree_borrow.update tb (fun n -> { n with protected = false }) tag
+        Tree_borrow.update tb (fun n -> { n with protected = false }) ptr.tag
       in
       let block = Some (block, tb') in
       L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
@@ -372,7 +371,7 @@ let unprotect (({ tag; _ } as ptr : Sptr.t), _) st =
 let leak_check st =
   let global_addresses =
     GlobMap.bindings st.globals
-    |> List.map (fun (_, (({ ptr; _ } : Sptr.t), _)) -> Typed.Ptr.loc ptr)
+    |> List.map (fun (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr)
   in
   let@ heap = with_heap st in
   let** leaks =
