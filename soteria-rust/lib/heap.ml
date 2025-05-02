@@ -138,6 +138,15 @@ let with_ptr ({ ptr; _ } as full_ptr : Sptr.t) (st : t)
     let++ v, heap = (SPmap.wrap (Freeable.wrap (f ~ofs))) loc heap in
     (v, heap)
 
+let uninit (ptr, _) ty st =
+  let@ () = with_error_loc_as_call_trace () in
+  let@ () = with_loc_err () in
+  log "uninit" ptr st;
+  let* size = Layout.size_of_s ty in
+  with_ptr ptr st (fun ~ofs block ->
+      let@ block, _ = with_tbs block in
+      Tree_block.uninit_range ofs size block)
+
 let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
   let** () = check_ptr_align ptr ty in
   let@ () = with_error_loc_as_call_trace () in
@@ -199,6 +208,10 @@ let store (({ tag; _ } as ptr : Sptr.t), _) ty sval st =
     log "store" ptr st;
     with_ptr ptr st (fun ~ofs block ->
         let@ block, tb = with_tbs block in
+        let* size = Layout.size_of_s ty in
+        (* We uninitialise the whole range before writing, to ensure padding bytes are copied if
+           there are any. *)
+        let** (), block = Tree_block.uninit_range ofs size block in
         Result.fold_list parts ~init:((), block)
           ~f:(fun ((), block) { value; ty; offset } ->
             Tree_block.store (offset +@ ofs) ty value tag tb block))
@@ -268,15 +281,6 @@ let free (({ ptr; _ } : Sptr.t), _) ({ heap; _ } as st : t) :
     in
     ((), { st with heap })
   else error `InvalidFree
-
-let uninit (ptr, _) ty st =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  log "uninit" ptr st;
-  let* size = Layout.size_of_s ty in
-  with_ptr ptr st (fun ~ofs block ->
-      let@ block, _ = with_tbs block in
-      Tree_block.uninit_range ofs size block)
 
 let zeros (ptr, _) size st =
   let@ () = with_error_loc_as_call_trace () in

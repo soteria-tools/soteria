@@ -155,6 +155,14 @@ module Tree = struct
 
   let any tb range = make ~node:(Owned { v = Any; tb }) ~range ?children:None ()
 
+  let rec map_leaves t f =
+    match t.children with
+    | None -> f t
+    | Some (l, r) ->
+        let l = map_leaves l f in
+        let r = map_leaves r f in
+        { t with children = Some (l, r) }
+
   let rec iter_leaves_rev t f =
     match t.children with
     | None -> f t
@@ -166,17 +174,16 @@ module Tree = struct
     Result.fold_iter (iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
         let offset, _ = leaf.range in
         let offset = offset -@ fst t.range in
-        let as_u8_ty () =
-          match Typed.kind (Range.size leaf.range) with
-          | Int size -> return (Layout.size_to_uint (Z.to_int size))
-          | _ -> not_impl "Don't know how to read this size"
-        in
         match leaf.node with
         | NotOwned Totally -> miss_no_fix ~msg:"decode" ()
         | Owned { v = Uninit Totally; _ } ->
             Result.error `UninitializedMemoryAccess
         | Owned { v = Zeros; _ } ->
-            let* ty = as_u8_ty () in
+            let* ty =
+              match Typed.kind (Range.size leaf.range) with
+              | Int size -> return (Layout.size_to_uint (Z.to_int size))
+              | _ -> not_impl "Don't know how to read this size"
+            in
             let+ value =
               of_opt_not_impl ~msg:"Don't know how to zero this type"
               @@ Layout.zeroed ~null_ptr:Sptr.ArithPtr.null_ptr ty
@@ -402,7 +409,7 @@ module Tree = struct
     let range = Range.of_low_and_size ofs size in
     let replace_node t =
       match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"load" ()
+      | NotOwned _ -> miss_no_fix ~msg:"load" ()
       | Owned { tb = tb_st; v } ->
           let tb_st', ub =
             if ignore_borrow then (tb_st, false)
@@ -423,7 +430,7 @@ module Tree = struct
     let range = Range.of_low_and_size low size in
     let replace_node t =
       match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"store" ()
+      | NotOwned _ -> miss_no_fix ~msg:"store" ()
       | Owned { tb = tb_st; _ } ->
           let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Write tb_st in
           if ub then Result.error `UBTreeBorrow
@@ -443,10 +450,14 @@ module Tree = struct
     let range = Range.of_low_and_size low size in
     let replace_node t =
       match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
-      | Owned { tb; _ } ->
-          (* Is there something to do with the tree borrow here? *)
-          Result.ok @@ uninit tb range
+      | NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
+      | Owned _ -> (
+          Result.ok
+          @@ map_leaves t
+          @@ fun t ->
+          match t.node with
+          | Owned { tb; _ } -> uninit tb t.range
+          | _ -> assert false)
     in
     let rebuild_parent = of_children in
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
