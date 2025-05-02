@@ -82,20 +82,26 @@ module Node = struct
             return (Owned { v = Uninit qty; tb = Tree_borrow.merge tb1 tb2 })
         | _, _ -> return (Owned { v = Lazy; tb }))
 
-  let split ~range:(_, _) ~at node =
+  let split ~range:(off, _) ~at node :
+      (t Encoder.split_tree * t Encoder.split_tree) Rustsymex.t =
     match node with
-    | NotOwned Totally -> return (NotOwned Totally, NotOwned Totally)
+    | NotOwned Totally ->
+        return (`Leaf (NotOwned Totally), `Leaf (NotOwned Totally))
     | Owned { v = Uninit Totally; tb } ->
         return
-          (Owned { v = Uninit Totally; tb }, Owned { v = Uninit Totally; tb })
+          ( `Leaf (Owned { v = Uninit Totally; tb }),
+            `Leaf (Owned { v = Uninit Totally; tb }) )
     | Owned { v = Zeros; tb } ->
-        return (Owned { v = Zeros; tb }, Owned { v = Zeros; tb })
+        return (`Leaf (Owned { v = Zeros; tb }), `Leaf (Owned { v = Zeros; tb }))
     | Owned { v = Any; tb } ->
-        return (Owned { v = Any; tb }, Owned { v = Any; tb })
+        return (`Leaf (Owned { v = Any; tb }), `Leaf (Owned { v = Any; tb }))
     | Owned { v = Init { value; ty }; tb } ->
-        let+ (l_v, l_ty), (r_v, r_ty) = Encoder.split value ty at in
-        ( Owned { v = Init { value = l_v; ty = l_ty }; tb },
-          Owned { v = Init { value = r_v; ty = r_ty }; tb } )
+        let rec aux = function
+          | `Leaf (value, ty) -> `Leaf (Owned { v = Init { value; ty }; tb })
+          | `Node (at, l, r) -> `Node (at, aux l, aux r)
+        in
+        let+ ltree, rtree = Encoder.split value ty (at -@ off) in
+        (aux ltree, aux rtree)
     | NotOwned Partially | Owned { v = Lazy | Uninit Partially; _ } ->
         failwith "Should never split an intermediate node"
 
@@ -166,8 +172,9 @@ module Tree = struct
           | _ -> not_impl "Don't know how to read this size"
         in
         match leaf.node with
-        | NotOwned _ -> miss_no_fix ~msg:"decode" ()
-        | Owned { v = Uninit _; _ } -> Result.error `UninitializedMemoryAccess
+        | NotOwned Totally -> miss_no_fix ~msg:"decode" ()
+        | Owned { v = Uninit Totally; _ } ->
+            Result.error `UninitializedMemoryAccess
         | Owned { v = Zeros; _ } ->
             let* ty = as_u8_ty () in
             let+ value =
@@ -175,12 +182,13 @@ module Tree = struct
               @@ Layout.zeroed ~null_ptr:Sptr.ArithPtr.null_ptr ty
             in
             Ok (Encoder.{ value; ty; offset } :: vs)
-        | Owned { v = Lazy; _ } ->
-            Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
         | Owned { v = Init { value; ty }; _ } ->
             Result.ok (Encoder.{ value; ty; offset } :: vs)
         | Owned { v = Any; _ } ->
             L.info (fun m -> m "Reading from Any memory, vanishing.");
+            vanish ()
+        | NotOwned Partially | Owned { v = Lazy | Uninit Partially; _ } ->
+            L.debug (fun m -> m "Iterating over an intermediate node?");
             vanish ())
 
   let decode ~ty t =
@@ -213,6 +221,18 @@ module Tree = struct
     in
     make ~node:tree.node ~range ?children ()
 
+  let rec tree_of_rec_node range = function
+    | `Leaf node -> make ~node ~range ()
+    | `Node (at, left, right) ->
+        let left_span, right_span = Range.split_at range (fst range +@ at) in
+        let left = tree_of_rec_node left_span left in
+        let right = tree_of_rec_node right_span right in
+        let tb =
+          match left.node with Owned { tb; _ } -> tb | _ -> assert false
+        in
+        let node = Node.(Owned { v = Lazy; tb }) in
+        { range; children = Some (left, right); node }
+
   let rec split ~range t : (Node.t * t * t) Rustsymex.t =
     (* this function splits a tree and returns the node in the given range *)
     (* We're assuming that range is inside old_span *)
@@ -223,27 +243,57 @@ module Tree = struct
       let at = nh in
       let+ left_node, right_node = Node.split ~range:old_span ~at t.node in
       let left_span, right_span = Range.split_at old_span at in
-      let left = make ~node:left_node ~range:left_span () in
-      let right = make ~node:right_node ~range:right_span () in
-      (left_node, left, right)
+      let left = tree_of_rec_node left_span left_node in
+      let right = tree_of_rec_node right_span right_node in
+      (left.node, left, right)
     else
       if%sat oh ==@ nh then
         let+ left_node, right_node = Node.split ~range:old_span ~at:nl t.node in
         let left_span, right_span = Range.split_at old_span nl in
-        let left = make ~node:left_node ~range:left_span () in
-        let right = make ~node:right_node ~range:right_span () in
-        (right_node, left, right)
+        let left = tree_of_rec_node left_span left_node in
+        let right = tree_of_rec_node right_span right_node in
+        (right.node, left, right)
       else
         (* We're first splitting on the left then splitting again on the right *)
         let* left_node, right_node = Node.split ~range:old_span ~at:nl t.node in
         let left_span, right_span = Range.split_at old_span nl in
-        let left = make ~node:left_node ~range:left_span () in
-        let full_right = make ~node:right_node ~range:right_span () in
-        let* node, right_left, right_right = split ~range full_right in
-        let+ right =
-          with_children full_right ~left:right_left ~right:right_right
+        let left = tree_of_rec_node left_span left_node in
+        let full_right = tree_of_rec_node right_span right_node in
+        let* sub_right, right_extra = extract full_right range in
+        let* node, right_left, right_right = split ~range sub_right in
+        let* right =
+          with_children sub_right ~left:right_left ~right:right_right
         in
-        (node, left, right)
+        match right_extra with
+        | None -> return (node, left, right)
+        | Some right_extra ->
+            let+ right =
+              with_children full_right ~left:right ~right:right_extra
+            in
+            (node, left, right)
+
+  and extract (t : t) (range : Range.t) : (t * t option) Rustsymex.t =
+    (* First result is the extracted tree, second is the remain *)
+    if%sat Range.sem_eq range t.range then return (t, None)
+    else if Option.is_none t.children then return (t, None)
+    else
+      let left, right = Option.get t.children in
+      if%sat Range.is_inside range left.range then
+        let* extracted, new_left = extract left range in
+        let+ new_self =
+          match new_left with
+          | Some left -> of_children_s ~right ~left
+          | None -> return right
+        in
+        (extracted, Some new_self)
+      else
+        let* extracted, new_right = extract right range in
+        let+ new_self =
+          match new_right with
+          | Some right -> of_children_s ~right ~left
+          | None -> return left
+        in
+        (extracted, Some new_self)
 
   let extend_if_needed t range =
     let rl, rh = range in
@@ -266,28 +316,6 @@ module Tree = struct
       else return t_with_left
     in
     return result
-
-  let rec extract (t : t) (range : Range.t) : (t * t option) Rustsymex.t =
-    (* First result is the extracted tree, second is the remain *)
-    if%sat Range.sem_eq range t.range then return (t, None)
-    else
-      let left, right = Option.get t.children in
-      if%sat Range.is_inside range left.range then
-        let* extracted, new_left = extract left range in
-        let+ new_self =
-          match new_left with
-          | Some left -> of_children_s ~right ~left
-          | None -> return right
-        in
-        (extracted, Some new_self)
-      else
-        let* extracted, new_right = extract right range in
-        let+ new_self =
-          match new_right with
-          | Some right -> of_children_s ~right ~left
-          | None -> return left
-        in
-        (extracted, Some new_self)
 
   let rec add_to_the_right t addition : t Rustsymex.t =
     match t.children with

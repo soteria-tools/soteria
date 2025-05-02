@@ -530,7 +530,12 @@ module Make (Sptr : Sptr.S) = struct
     in
     aux @@ rust_of_cvals to_ty
 
-  let split v (ty : Types.ty) at =
+  type 'a split_tree =
+    [ `Node of T.sint Typed.t * 'a split_tree * 'a split_tree | `Leaf of 'a ]
+
+  let split v (ty : Types.ty) at :
+      ((rust_val * Types.ty) split_tree * (rust_val * Types.ty) split_tree)
+      Rustsymex.t =
     let transmute ~from_ty ~to_ty v =
       let* res = transmute ~from_ty ~to_ty v in
       match res with
@@ -544,15 +549,36 @@ module Make (Sptr : Sptr.S) = struct
     in
     match (v, ty) with
     | Base _, TLiteral (TInteger ity) ->
+        (* Given an integer value and its size in bits, returns a binary tree with leaves that are
+           of size 2^n *)
+        let rec aux v sz =
+          (* we're a power of two, so we're done *)
+          if Z.popcount sz = 1 then
+            let ty = size_to_uint (Z.to_int sz) in
+            `Leaf (Base (v :> T.cval Typed.t), ty)
+          else
+            (* Split at the most significant bit; e.g. for size 7 (0b111), will split at 0b100,
+               resulting in a leaf of size 3 (0b11) and a right leaf of size 4 (0b100) *)
+            let at = Z.(one lsl log2 sz) in
+            let leaf_l, leaf_r = split v sz at in
+            `Node (Typed.int_z at, leaf_l, leaf_r)
+        and split v sz at =
+          let size_l = at in
+          let size_r = Z.(sz - at) in
+          let pow = Z.shift_left Z.one (Z.to_int size_l * 8) in
+          let left = v %@ Typed.nonzero_z pow in
+          let right = v /@ Typed.nonzero_z pow in
+          let leaf_l = aux left size_l in
+          let leaf_r = aux right size_r in
+          (leaf_l, leaf_r)
+        in
+        (* get our starting size and unsigned integer *)
         let size = size_of_int_ty ity in
-        let left_ty = size_to_uint (size - at) in
-        let right_ty = size_to_uint at in
+        if at < 1 || at >= size then
+          Fmt.failwith "Invalid split: %a at %d" pp_ty ty at;
         let+ as_uint = transmute ~from_ty:ty ~to_ty:(int_to_unsigned ty) v in
         let v = Typed.cast @@ as_base as_uint in
-        let pow = Z.shift_left Z.one (at * 8) in
-        let left = v /@ Typed.nonzero_z pow in
-        let right = v %@ Typed.nonzero_z pow in
-        ((Base left, left_ty), (Base right, right_ty))
+        split v (Z.of_int size) (Z.of_int at)
     | _ ->
         Fmt.kstr not_impl "Split unspported: %a: %a at %d" pp_rust_val v pp_ty
           ty at

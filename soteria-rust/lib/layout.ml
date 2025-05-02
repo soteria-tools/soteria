@@ -6,7 +6,6 @@ open Rustsymex
 open Charon_util
 
 exception CantComputeLayout of string * Types.ty
-exception CantComputeDST of string * Types.ty
 
 module Archi = struct
   let word_size = 8
@@ -178,6 +177,9 @@ let rec layout_of (ty : Types.ty) : layout =
         align = Archi.word_size;
         members_ofs = [||];
       }
+  (* Refs, pointers, boxes *)
+  | TAdt (TBuiltin TBox, _) | TRef (_, _, _) | TRawPtr (_, _) ->
+      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   (* Dynamically sized types -- we assume they have a size of 0. In truth, these types should
      simply never be allocated directly, and instead can only be obtained hidden behind
      references; however we must be able to compute their layout, to get e.g. the offset of
@@ -191,9 +193,6 @@ let rec layout_of (ty : Types.ty) : layout =
       in
       let sub_layout = layout_of sub_ty in
       { size = 0; align = sub_layout.align; members_ofs = [||] }
-  (* Refs, pointers, boxes *)
-  | TAdt (TBuiltin TBox, _) | TRef (_, _, _) | TRawPtr (_, _) ->
-      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   (* Tuples *)
   | TAdt (TTuple, { types; _ }) -> layout_of_members types
   (* Custom ADTs (struct, enum, etc.) *)
@@ -239,12 +238,16 @@ let rec layout_of (ty : Types.ty) : layout =
   | TClosure (_, _, state, _) -> layout_of_members state
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
+  (* Arrows -- we don't support these, but need to compute a size for them, because some code
+     (notably core::fmt::rt::ArgumentType) has them, despite not being initialised.
+     An arrow is a pointer to a function, I believe. *)
+  | TArrow _ ->
+      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   (* Others (unhandled for now) *)
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
   | TError _ -> raise (CantComputeLayout ("Error", ty))
   | TTraitType _ -> raise (CantComputeLayout ("Trait type", ty))
   | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
-  | TArrow _ -> raise (CantComputeLayout ("Arrow", ty))
 
 and layout_of_members members =
   let rec aux members_ofs (layout : layout) = function
