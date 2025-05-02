@@ -82,7 +82,7 @@ module Session = struct
 
   let get_adt adt_id =
     let crate = get_crate () in
-    Std_types.get_adt ~crate adt_id
+    Types.TypeDeclId.Map.find adt_id crate.type_decls
 
   let is_enum adt_id =
     match (get_adt adt_id).kind with Enum _ -> true | _ -> false

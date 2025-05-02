@@ -208,25 +208,18 @@ module Make (Heap : Heap_intf.S) = struct
     match v_opt with
     | Some v -> Result.ok (v, state)
     | None ->
-        let** v, state =
-          match Std_globals.global_eval ~crate decl with
-          | Some global -> Result.ok (global, state)
-          | None ->
-              (* Same as with strings -- here we need to somehow cache where we store the globals *)
-              let fundef =
-                UllbcAst.FunDeclId.Map.find decl.body crate.fun_decls
-              in
-              L.info (fun g ->
-                  let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-                  g "Resolved function call to %s"
-                    (PrintTypes.name_to_string ctx fundef.item_meta.name));
-              let global_fn =
-                match Std_funs.std_fun_eval ~crate fundef with
-                | Some fn -> fn
-                | None -> exec_fun fundef
-              in
-              global_fn ~crate ~args:[] ~state
+        (* Same as with strings -- here we need to somehow cache where we store the globals *)
+        let fundef = UllbcAst.FunDeclId.Map.find decl.body crate.fun_decls in
+        L.info (fun g ->
+            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+            g "Resolved function call to %s"
+              (PrintTypes.name_to_string ctx fundef.item_meta.name));
+        let global_fn =
+          match Std_funs.std_fun_eval ~crate fundef with
+          | Some fn -> fn
+          | None -> exec_fun fundef
         in
+        let** v, state = global_fn ~crate ~args:[] ~state in
         let** ptr, state = Heap.alloc_ty decl.ty state in
         let** (), state = Heap.store ptr decl.ty v state in
         let++ (), state = Heap.store_global g ptr state in
