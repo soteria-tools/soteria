@@ -159,7 +159,8 @@ let rec pp ft t =
   match t.node.kind with
   | Var v -> pf ft "V%a" Var.pp v
   | Bool b -> pf ft "%b" b
-  | Int z when Z.(z > of_int 2048) -> pf ft "%s" (Z.format "%#x" z)
+  | Int z when Z.(z > of_int 2048 || z < of_int (-2048)) ->
+      pf ft "%s" (Z.format "%#x" z)
   | Int z -> pf ft "%a" Z.pp_print z
   | Float f -> pf ft "%s" f
   | BitVec bv -> pf ft "%s" (Z.format "%#x" bv)

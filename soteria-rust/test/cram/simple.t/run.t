@@ -15,3 +15,8 @@ Test casting between integer types
   $ soteria-rust exec-main int_casting.rs --clean
   Done. - Ran 1 branches
   PC: empty
+
+Splitting and merging, via a union
+  $ soteria-rust exec-main split_merges.rs --clean
+  Done. - Ran 1 branches
+  PC: empty

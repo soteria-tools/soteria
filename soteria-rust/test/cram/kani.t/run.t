@@ -23,8 +23,8 @@ Test kani::assume
     (V|0| != 0) /\ (V|0| <= 1) /\ (0 <= V|0|)
   
   PC: 
-    ((11 / V|0|) <= 2147483647) /\ (-2147483648 <= (11 / V|0|)) /\
-    (V|0| != 0) /\ (V|0| <= 2147483647) /\ (-2147483648 <= V|0|)
+    ((11 / V|0|) <= 0x7fffffff) /\ (-0x80000000 <= (11 / V|0|)) /\
+    (V|0| != 0) /\ (V|0| <= 0x7fffffff) /\ (-0x80000000 <= V|0|)
 
 Test #[kani::should_panic]
   $ soteria-rust exec-main should_panic.rs --clean --kani
