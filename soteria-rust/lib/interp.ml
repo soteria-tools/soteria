@@ -223,10 +223,12 @@ module Make (Heap : Heap_intf.S) = struct
           | Some fn -> fn
           | None -> exec_fun fundef
         in
-        let** v, state = global_fn ~crate ~args:[] ~state in
+        (* First we allocate the global and store it in the heap  *)
         let** ptr, state = Heap.alloc_ty decl.ty state in
-        let** (), state = Heap.store ptr decl.ty v state in
-        let++ (), state = Heap.store_global g ptr state in
+        let** (), state = Heap.store_global g ptr state in
+        (* And only after we compute it; this enables recursive globals *)
+        let** v, state = global_fn ~crate ~args:[] ~state in
+        let++ (), state = Heap.store ptr decl.ty v state in
         (ptr, state)
 
   and eval_operand ~crate:_ ~store state (op : Expressions.operand) =
