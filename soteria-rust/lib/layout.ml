@@ -6,6 +6,7 @@ open Rustsymex
 open Charon_util
 
 exception CantComputeLayout of string * Types.ty
+exception InvalidLayout
 
 module Archi = struct
   let word_size = 8
@@ -159,6 +160,11 @@ let size_to_fit ~size ~align =
   let ( % ) = Stdlib.( mod ) in
   if size % align = 0 then size else size + align - (size % align)
 
+let max_array_len sub_size =
+  let isize_bits = Archi.word_size * 8 in
+  if sub_size = 0 then Z.of_int isize_bits
+  else Z.((one lsl isize_bits) / of_int sub_size)
+
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
   match ty with
@@ -229,10 +235,11 @@ let rec layout_of (ty : Types.ty) : layout =
       | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
   (* Arrays *)
   | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ size ]; _ }) ->
-      let size = Charon_util.int_of_const_generic size in
+      let len = Charon_util.int_of_const_generic size in
       let sub_layout = layout_of ty in
-      let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
-      { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
+      if Z.(of_int len > max_array_len sub_layout.size) then raise InvalidLayout;
+      let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
+      { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
   | TAdt (TBuiltin TArray, _) -> failwith "Invalid TArray shape"
   (* Closures *)
   | TClosure (_, _, state, _) -> layout_of_members state

@@ -34,6 +34,7 @@ let pp_err ft (err, call_trace) =
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `MisalignedPointer -> Fmt.string ft "MisalignedPointer"
     | `RefToUninhabited -> Fmt.string ft "RefToUninhabited"
+    | `InvalidLayout -> Fmt.string ft "InvalidLayout"
     | `MemoryLeak -> Fmt.string ft "Memory leak"
     | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
     | `FailedAssert None -> Fmt.string ft "Failed assertion"
@@ -190,13 +191,15 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
          @@ PrintTypes.name_to_string ctx entry_point.item_meta.name
        in
        let branches =
-         try Rustsymex.run @@ exec_fun entry_point
-         with exn ->
-           let msg =
-             Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
-               (Printexc.get_backtrace ())
-           in
-           raise (ExecutionError msg)
+         try Rustsymex.run @@ exec_fun entry_point with
+         | Layout.InvalidLayout ->
+             [ (Error (`InvalidLayout, Call_trace.empty), []) ]
+         | exn ->
+             let msg =
+               Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
+                 (Printexc.get_backtrace ())
+             in
+             raise (ExecutionError msg)
        in
        let branches =
          if not should_err then branches
