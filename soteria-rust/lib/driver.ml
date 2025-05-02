@@ -29,6 +29,7 @@ let pp_err ft (err, call_trace) =
     | `UBArithShift -> Fmt.string ft "UBArithShift"
     | `UBTransmute -> Fmt.string ft "UBTransmute"
     | `UBTreeBorrow -> Fmt.string ft "UBTreeBorrow"
+    | `DeadVariable -> Fmt.string ft "DeadVariable"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
     | `MisalignedPointer -> Fmt.string ft "MisalignedPointer"

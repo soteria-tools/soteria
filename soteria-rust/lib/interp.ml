@@ -28,6 +28,20 @@ module Make (Heap : Heap_intf.S) = struct
     state:state ->
     (Sptr.t rust_val * state, 'err, 'fixes) Result.t
 
+  let get_variable var_id (store : store) state =
+    match Store.find_value var_id store with
+    | Some ptr ->
+        L.debug (fun m ->
+            m "Variable %a has pointer %a" Expressions.pp_var_id var_id
+              pp_full_ptr ptr);
+        Result.ok (ptr, state)
+    | None -> Heap.error `DeadVariable state
+
+  let get_variable_and_ty var_id (store : store) state =
+    match Store.find_opt var_id store with
+    | Some ptr_and_ty -> Result.ok (ptr_and_ty, state)
+    | None -> Heap.error `DeadVariable state
+
   let alloc_stack (locals : GAst.locals) args st :
       (store * full_ptr list * state, 'e, 'm) Result.t =
     if List.compare_length_with args locals.arg_count <> 0 then
@@ -135,17 +149,7 @@ module Make (Heap : Heap_intf.S) = struct
       (full_ptr * state, 'e, 'm) Result.t =
     match kind with
     (* Just a local *)
-    | PlaceLocal local -> (
-        let ptr = Store.find_value local store in
-        match ptr with
-        | Some ptr ->
-            L.debug (fun f ->
-                f "Found pointer %a of variable %a" pp_full_ptr ptr
-                  Expressions.pp_var_id local);
-            Result.ok (ptr, state)
-        | None ->
-            Fmt.kstr not_impl "Variable %a not found in store"
-              Expressions.pp_var_id local)
+    | PlaceLocal v -> get_variable v store state
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         let** ptr, state = resolve_place ~store state base in
@@ -633,29 +637,23 @@ module Make (Heap : Heap_intf.S) = struct
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
     | StorageLive local ->
-        let** ty, state =
-          match Store.find_opt local store with
-          | Some (None, ty) -> Result.ok (ty, state)
-          | Some (Some ptr, ty) ->
-              let++ (), state = Heap.free ptr state in
-              (ty, state)
-          | None ->
-              Fmt.kstr not_impl "Local %a not found in store?"
-                Expressions.pp_var_id local
+        let** (ptr, ty), state = get_variable_and_ty local store state in
+        let** (), state =
+          match ptr with
+          | None -> Result.ok ((), state)
+          | Some ptr -> Heap.free ptr state
         in
         let++ ptr, state = Heap.alloc_ty ty state in
         let store = Store.add local (Some ptr, ty) store in
         (store, state)
     | StorageDead local -> (
-        match Store.find_opt local store with
-        | Some (Some ptr, ty) ->
+        let** (ptr, ty), state = get_variable_and_ty local store state in
+        match ptr with
+        | Some ptr ->
             let++ (), state = Heap.free ptr state in
             let store = Store.add local (None, ty) store in
             (store, state)
-        | Some (None, _) -> Result.ok (store, state)
-        | None ->
-            Fmt.kstr not_impl "Local %a not found in store"
-              Expressions.pp_var_id local)
+        | None -> Result.ok (store, state))
     | Drop place ->
         (* TODO: this is probably super wrong, drop glue etc. *)
         let** place_ptr, state = resolve_place ~store state place in
