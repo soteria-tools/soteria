@@ -356,7 +356,7 @@ let rec sem_eq v1 v2 =
       let rec msb_of v =
         match v.node.kind with
         | BitVec v when Z.(v > zero) -> Some (Z.log2up v)
-        | BitVec v when Z.(v = zero) -> Some 0
+        | BitVec v when Z.(equal v zero) -> Some 0
         | Binop (BitAnd, bv1, bv2) -> Option.merge min (msb_of bv1) (msb_of bv2)
         | _ -> None
       in
@@ -420,6 +420,17 @@ let ite guard if_ else_ =
 
 (** {2 Integers and Floats} *)
 
+let raw_bit_and n v1 v2 =
+  let covers_bitwidth z =
+    Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = n)
+  in
+  match (v1.node.kind, v2.node.kind) with
+  | BitVec mask, _ when Z.(equal mask zero) -> v1
+  | _, BitVec mask when Z.(equal mask zero) -> v2
+  | BitVec mask, _ when covers_bitwidth mask -> v2
+  | _, BitVec mask when covers_bitwidth mask -> v1
+  | _, _ -> Binop (BitAnd, v1, v2) <| t_bv n
+
 let int_of_bool b =
   match b.node.kind with
   | Bool true -> one
@@ -445,17 +456,48 @@ let bv_of_float v =
   | TFloat fp, _ -> Unop (BvOfFloat, v) <| t_bv (FloatPrecision.size fp)
   | _ -> failwith "Expected a float value in bv_of_float"
 
-let bv_of_int n v =
+let rec bv_of_int n v =
+  let is_2pow z = Z.(z > one && popcount z = 1) in
   match v.node.kind with
   | Unop (IntOfBv _, v) -> v
   | Int z ->
       let z = if Z.geq z Z.zero then z else Z.neg z in
       BitVec z <| t_bv n
+  | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
+      raw_bit_and n (bv_of_int n v) (BitVec (Z.pred mask) <| t_bv n)
+  | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
+      raw_bit_and n (bv_of_int n v) (BitVec (Z.pred mask) <| t_bv n)
   | _ -> Unop (BvOfInt, v) <| t_bv n
 
-let int_of_bv signed v =
+let rec int_of_bv signed v =
+  (* Tests if z is of the form 1+0+ *)
+  let is_left_mask z =
+    if Z.(z <= one) then false
+    else
+      let size = Z.log2up z in
+      let zeroes = size - Z.popcount z in
+      if zeroes = 0 then false
+      else
+        let bv_size =
+          match v.node.ty with
+          | TBitVector n -> n
+          | _ -> failwith "Expected a bitvector type"
+        in
+        let mask = Z.pred @@ Z.shift_left Z.one zeroes in
+        Z.(Z.equal (z land mask) zero) && bv_size = size
+  in
+  L.warn (fun m -> m "int_of_bv: %a" pp v);
   match v.node.kind with
   | Unop (BvOfInt, v) -> v
+  | Binop (BitAnd, v, { node = { kind = BitVec mask; _ }; _ })
+    when is_left_mask mask ->
+      (* left mask, of the form 1+0+. e.g. for 1111 1000, this is equivalent to dividing by 2^3,
+         and then re-multiplying, avoiding the bitvector.  *)
+      let zeroes = Z.log2 mask - Z.popcount mask in
+      let pow = int_z @@ Z.shift_left Z.one zeroes in
+      let v = int_of_bv signed v in
+      let v = Binop (Div, v, pow) <| t_int in
+      Binop (Times, v, pow) <| t_int
   | _ -> Unop (IntOfBv signed, v) <| t_int
 
 let float_of_bv v =
@@ -583,8 +625,8 @@ let bit_and size signed v1 v2 =
   | _ ->
       let v1_bv = bv_of_int size v1 in
       let v2_bv = bv_of_int size v2 in
-      let v = Binop (BitAnd, v1_bv, v2_bv) <| t_bv size in
-      Unop (IntOfBv signed, v) <| t_int
+      let v = raw_bit_and size v1_bv v2_bv in
+      int_of_bv signed v
 
 let bit_or size signed v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -594,7 +636,7 @@ let bit_or size signed v1 v2 =
       let v1_bv = bv_of_int size v1 in
       let v2_bv = bv_of_int size v2 in
       let v = Binop (BitOr, v1_bv, v2_bv) <| t_bv size in
-      Unop (IntOfBv signed, v) <| t_int
+      int_of_bv signed v
 
 let bit_xor size signed v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -604,7 +646,7 @@ let bit_xor size signed v1 v2 =
       let v1_bv = bv_of_int size v1 in
       let v2_bv = bv_of_int size v2 in
       let v = Binop (BitXor, v1_bv, v2_bv) <| t_bv size in
-      Unop (IntOfBv signed, v) <| t_int
+      int_of_bv signed v
 
 let bit_shl size signed v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -613,7 +655,7 @@ let bit_shl size signed v1 v2 =
       let v1_bv = bv_of_int size v1 in
       let v2_bv = bv_of_int size v2 in
       let v = Binop (BitShl, v1_bv, v2_bv) <| t_bv size in
-      Unop (IntOfBv signed, v) <| t_int
+      int_of_bv signed v
 
 let bit_shr size signed v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -622,7 +664,7 @@ let bit_shr size signed v1 v2 =
       let v1_bv = bv_of_int size v1 in
       let v2_bv = bv_of_int size v2 in
       let v = Binop (BitShr, v1_bv, v2_bv) <| t_bv size in
-      Unop (IntOfBv signed, v) <| t_int
+      int_of_bv signed v
 
 let abs v =
   match (v.node.ty, v.node.kind) with
@@ -633,8 +675,7 @@ let abs v =
       let mask = int_z @@ Z.pred @@ Z.shift_left Z.one (bits - 1) in
       let mask_bv = bv_of_int bits mask in
       let float_bv = bv_of_float v in
-      (* make the BitAnd directly since bit_and converts to an int *)
-      let bit_and = Binop (BitAnd, mask_bv, float_bv) <| mask_bv.node.ty in
+      let bit_and = raw_bit_and bits mask_bv float_bv in
       float_of_bv bit_and
   | _ -> ite (lt v zero) (minus zero v) v
 
