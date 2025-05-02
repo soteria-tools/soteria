@@ -61,12 +61,9 @@ module M (Heap : Heap_intf.S) = struct
           | Add | CheckedAdd | WrappingAdd -> Result.ok (l +.@ r)
           | Sub | CheckedSub | WrappingSub -> Result.ok (l -.@ r)
           | Mul | CheckedMul | WrappingMul -> Result.ok (l *.@ r)
-          | Div ->
-              if%sat r ==@ float_like r 0.0 then Heap.error `DivisionByZero st
-              else Result.ok (l /.@ cast r)
-          | Rem ->
-              if%sat r ==@ float_like r 0.0 then Heap.error `DivisionByZero st
-              else Result.ok (rem l (cast r))
+          (* no such thing as division by 0 for floats -- goes to infinity *)
+          | Div -> Result.ok (l /.@ cast r)
+          | Rem -> Result.ok (rem l (cast r))
           | _ -> not_impl "Invalid binop in eval_lit_binop"
         in
         Result.ok (res :> T.cval Typed.t)
@@ -100,7 +97,9 @@ module M (Heap : Heap_intf.S) = struct
     let max = Layout.max_value ty in
     let signed = Layout.is_signed ty in
     let res = v %@ unsigned_max in
-    if Stdlib.not signed then return res
+    if Stdlib.not signed then
+      if%sat res <@ 0s then return ((res +@ unsigned_max) %@ unsigned_max)
+      else return res
     else if%sat res <=@ max then return res else return (res -@ unsigned_max)
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)

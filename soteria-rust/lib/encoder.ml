@@ -388,7 +388,7 @@ module Make (Sptr : Sptr.S) = struct
       (* A ref cannot be an invalid pointer *)
       | _, (TRef _ | TAdt (TBuiltin TBox, _)), Base _ -> error `UBTransmute
       (* A ref must point to a readable location *)
-      | ( (TRef _ | TRawPtr _ | TAdt (TBuiltin TBox, _)),
+      | ( _,
           ( TRef (_, inner_ty, _)
           | TAdt (TBuiltin TBox, { types = [ inner_ty ]; _ }) ),
           Ptr ptr ) -> (
@@ -397,14 +397,15 @@ module Make (Sptr : Sptr.S) = struct
           | Some fn ->
               let* is_valid = fn ptr inner_ty in
               if is_valid then ok v else error `UBTransmute)
-      | ( ( TRef _ | TRawPtr _
-          | TAdt (TBuiltin TBox, _)
-          | TLiteral (TInteger (Isize | Usize | I64 | U64)) ),
-          ( TRef _ | TRawPtr _
-          | TAdt (TBuiltin TBox, _)
-          | TLiteral (TInteger (Isize | Usize | I64 | U64)) ),
-          (Ptr _ | Base _) ) ->
-          ok v
+      (* A raw pointer can be whatever *)
+      | _, TRawPtr _, Base off ->
+          let* off = cast_checked ~ty:Typed.t_int off in
+          let ptr = Sptr.offset Sptr.null_ptr off in
+          ok (Ptr (ptr, None))
+      | _, TRawPtr _, Ptr _ -> ok v
+      | _, TLiteral (TInteger (Isize | Usize | I64 | U64)), Ptr (ptr, None) ->
+          let* ptr_v = Sptr.decay ptr in
+          ok (Base (ptr_v :> cval Typed.t))
       | _ when try_splitting ->
           let blocks = rust_to_cvals v from_ty in
           transmute_many ~to_ty blocks
@@ -440,7 +441,7 @@ module Make (Sptr : Sptr.S) = struct
         m "Transmute many: %a <- [%a]" pp_ty to_ty
           Fmt.(list ~sep:comma pp_triple)
           vs);
-    let rec extract_block (ty, off) =
+    let extract_block (ty, off) =
       let off = int_of_val off in
       let vs = List.map (fun (v, ty, o) -> (v, ty, o - off)) vs in
       (* 1. ideal case, we find a block with the same size and offset *)
@@ -460,18 +461,18 @@ module Make (Sptr : Sptr.S) = struct
             Some (transmute ~from_ty ~to_ty v)
         | _ -> None
       in
-      (* 3. Several integers that can be merged together without splitting *)
+      (* 3. Several integers that can be merged together without splitting. *)
       let- () =
         match ty with
-        | TLiteral (TInteger ity) ->
-            let size = size_of_int_ty ity in
+        | TLiteral lit_ty ->
+            let size = size_of_literal_ty lit_ty in
             let bytes = Array.init size (fun _ -> false) in
             let relevant =
               List.filter
                 (function
-                  | _, Types.TLiteral (TInteger ity), o
-                    when 0 <= o && o + size_of_int_ty ity <= size ->
-                      Iter.(0 -- (size_of_int_ty ity - 1)) (fun i ->
+                  | _, Types.TLiteral lit_ty, o
+                    when 0 <= o && o + size_of_literal_ty lit_ty <= size ->
+                      Iter.(0 -- (size_of_literal_ty lit_ty - 1)) (fun i ->
                           bytes.(o + i) <- true);
                       true
                   | _ -> false)
@@ -479,59 +480,44 @@ module Make (Sptr : Sptr.S) = struct
             in
             if Array.for_all (fun b -> b) bytes then
               Some
-                (let++ v =
+                (let** v =
                    Result.fold_list relevant ~init:0s ~f:(fun acc (v, ty, o) ->
-                       let++ v =
-                         transmute ~from_ty:ty ~to_ty:(int_to_unsigned ty) v
+                       let to_ty =
+                         lit_to_unsigned (TypesUtils.ty_as_literal ty)
                        in
+                       let++ v = transmute ~from_ty:ty ~to_ty v in
                        let v = Typed.cast @@ as_base v in
                        let pow = Z.shift_left Z.one (o * 8) in
                        acc +@ (v *@ Typed.int_z pow))
                  in
-                 Base (v :> T.cval Typed.t))
+                 let v = Base (v :> T.cval Typed.t) in
+                 (* we may need extra checks, e.g. for char *)
+                 transmute ~from_ty:(lit_to_unsigned lit_ty) ~to_ty:ty v)
             else None
         | _ -> None
       in
-      (* 4. Floats can be parsed from ints *)
+      (* 4. If there's an integer block that contains what we're looking for, we split it *)
       let- () =
         match ty with
-        | TLiteral (TFloat fp) ->
-            Some
-              (let ity : Types.integer_type =
-                 match fp with
-                 | F16 -> U16
-                 | F32 -> U32
-                 | F64 -> U64
-                 | F128 -> U128
-               in
-               let++ v =
-                 extract_block (TLiteral (TInteger ity), Typed.int off)
-               in
-               let v = Typed.cast @@ as_base v in
-               let v = Typed.float_of_int fp v in
-               Base v)
-        | _ -> None
-      in
-      (* 5. If there's an integer block that contains what we're looking for, we split it *)
-      let- () =
-        match ty with
-        | TLiteral (TInteger ity) as target_ty ->
-            let size = size_of_int_ty ity in
+        | TLiteral lit_ty as target_ty ->
+            let size = size_of_literal_ty lit_ty in
             vs
             |> List.find_opt (function
-                 | _, Types.TLiteral (TInteger ity), o ->
-                     o <= 0 && size <= o + size_of_int_ty ity
+                 | _, Types.TLiteral lit_ty, o ->
+                     o <= 0 && size <= o + size_of_literal_ty lit_ty
                  | _ -> false)
             |> Option.map @@ fun (v, ty, o) ->
-               let parent_size = size_of_int_ty (TypesUtils.ty_as_integer ty) in
-               let** v = transmute ~from_ty:ty ~to_ty:(int_to_unsigned ty) v in
+               let lit_ty = TypesUtils.ty_as_literal ty in
+               let parent_size = size_of_literal_ty lit_ty in
+               let** v =
+                 transmute ~from_ty:ty ~to_ty:(lit_to_unsigned lit_ty) v
+               in
                let v = Typed.cast @@ as_base v in
                let shift = o + parent_size - size in
                let shift = Z.shift_left Z.one (shift * 8) in
                let v = v /@ Typed.nonzero_z shift in
-               transmute
-                 ~from_ty:(int_to_unsigned target_ty)
-                 ~to_ty:target_ty (Base v)
+               transmute ~from_ty:(lit_to_unsigned lit_ty) ~to_ty:target_ty
+                 (Base v)
         | _ -> None
       in
       (* X. give up *)
@@ -555,7 +541,7 @@ module Make (Sptr : Sptr.S) = struct
   type 'a split_tree =
     [ `Node of T.sint Typed.t * 'a split_tree * 'a split_tree | `Leaf of 'a ]
 
-  let split v (ty : Types.ty) at :
+  let rec split v (ty : Types.ty) at :
       ((rust_val * Types.ty) split_tree * (rust_val * Types.ty) split_tree)
       Rustsymex.t =
     let transmute ~from_ty ~to_ty v =
@@ -570,8 +556,11 @@ module Make (Sptr : Sptr.S) = struct
       | _ -> not_impl "Don't know how to read this size"
     in
     match (v, ty) with
-    | Base _, TLiteral (TInteger ity) ->
-        (* Given an integer value and its size in bits, returns a binary tree with leaves that are
+    | Ptr (ptr, None), _ ->
+        let* v = Sptr.decay ptr in
+        split (Base (v :> T.cval Typed.t)) ty (Typed.int at)
+    | Base _, TLiteral ((TInteger _ | TChar) as lit_ty) ->
+        (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
            of size 2^n *)
         let rec aux v sz =
           (* we're a power of two, so we're done *)
@@ -595,13 +584,15 @@ module Make (Sptr : Sptr.S) = struct
           (leaf_l, leaf_r)
         in
         (* get our starting size and unsigned integer *)
-        let size = size_of_int_ty ity in
+        let size = size_of_literal_ty lit_ty in
         if at < 1 || at >= size then
           Fmt.failwith "Invalid split: %a at %d" pp_ty ty at;
-        let+ as_uint = transmute ~from_ty:ty ~to_ty:(int_to_unsigned ty) v in
+        let+ as_uint =
+          transmute ~from_ty:ty ~to_ty:(lit_to_unsigned lit_ty) v
+        in
         let v = Typed.cast @@ as_base as_uint in
         split v (Z.of_int size) (Z.of_int at)
     | _ ->
-        Fmt.kstr not_impl "Split unspported: %a: %a at %d" pp_rust_val v pp_ty
+        Fmt.kstr not_impl "Split unsupported: %a: %a at %d" pp_rust_val v pp_ty
           ty at
 end

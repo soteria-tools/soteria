@@ -337,15 +337,6 @@ let max_value_z : Types.integer_type -> Z.t = function
 
 let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
 
-let int_to_unsigned : Types.ty -> Types.ty = function
-  | TLiteral (TInteger (U8 | I8)) -> TLiteral (TInteger U8)
-  | TLiteral (TInteger (U16 | I16)) -> TLiteral (TInteger U16)
-  | TLiteral (TInteger (U32 | I32)) -> TLiteral (TInteger U32)
-  | TLiteral (TInteger (U64 | I64)) -> TLiteral (TInteger U64)
-  | TLiteral (TInteger (U128 | I128)) -> TLiteral (TInteger U128)
-  | TLiteral (TInteger (Usize | Isize)) -> TLiteral (TInteger Usize)
-  | _ -> failwith "Expected integer type"
-
 let size_to_uint : int -> Types.ty = function
   | 1 -> TLiteral (TInteger U8)
   | 2 -> TLiteral (TInteger U16)
@@ -353,6 +344,8 @@ let size_to_uint : int -> Types.ty = function
   | 8 -> TLiteral (TInteger U64)
   | 16 -> TLiteral (TInteger U128)
   | _ -> failwith "Invalid integer size"
+
+let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
 
 let int_constraints ty =
   let min = min_value ty in
