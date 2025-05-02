@@ -38,7 +38,12 @@ module type S = sig
   val decay : t -> sint Typed.t Rustsymex.t
 end
 
-type arithptr_t = { ptr : T.sptr Typed.t; tag : Tree_borrow.tag; align : int }
+type arithptr_t = {
+  ptr : T.sptr Typed.t;
+  tag : Tree_borrow.tag;
+  align : int;
+  size : int;
+}
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
@@ -47,12 +52,15 @@ module ArithPtr : S with type t = arithptr_t = struct
     ptr : T.sptr Typed.t;
     tag : Tree_borrow.tag;
     align : int;
+    size : int;
   }
 
   let pp fmt { ptr; tag; _ } =
     Fmt.pf fmt "%a[%a]" Typed.ppa ptr Tree_borrow.pp_tag tag
 
-  let null_ptr = { ptr = Typed.Ptr.null; tag = Tree_borrow.zero; align = 1 }
+  let null_ptr =
+    { ptr = Typed.Ptr.null; tag = Tree_borrow.zero; align = 1; size = 0 }
+
   let sem_eq { ptr = ptr1; _ } { ptr = ptr2; _ } = ptr1 ==@ ptr2
   let is_at_null_loc { ptr; _ } = Typed.Ptr.is_at_null_loc ptr
 
@@ -85,13 +93,33 @@ module ArithPtr : S with type t = arithptr_t = struct
     let off = Array.get layout.members_ofs field in
     offset ptr (Typed.int off)
 
-  let decay { ptr; align; _ } =
+  module ValMap = Map.Make (struct
+    type t = T.sloc Typed.t
+
+    let compare = Typed.compare
+  end)
+
+  let decayed_vars = ref ValMap.empty
+
+  let decay { ptr; align; size; _ } =
     let open Rustsymex in
+    let open Rustsymex.Syntax in
     let open Typed.Syntax in
     (* FIXME: if we want to be less unsound, we would also need to assert that this pointer's
        base is distinct from all other decayed pointers' bases... *)
-    nondet Typed.t_int ~constrs:(fun x ->
-        let isize_max = Layout.max_value Values.Isize in
-        let base = x -@ Typed.Ptr.ofs ptr in
-        [ base %@ Typed.nonzero align ==@ 0s; base >@ 0s; base <=@ isize_max ])
+    let loc, ofs = Typed.Ptr.decompose ptr in
+    match ValMap.find_opt loc !decayed_vars with
+    | Some loc_int -> return (loc_int +@ ofs)
+    | None ->
+        let+ loc_int =
+          nondet Typed.t_int ~constrs:(fun x ->
+              let isize_max = Layout.max_value Values.Isize in
+              [
+                x %@ Typed.nonzero align ==@ 0s;
+                0s <@ x;
+                x +@ Typed.int size <=@ isize_max;
+              ])
+        in
+        decayed_vars := ValMap.add loc loc_int !decayed_vars;
+        loc_int +@ ofs
 end

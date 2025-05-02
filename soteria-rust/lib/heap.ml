@@ -239,7 +239,7 @@ let alloc size align st =
   let** loc, heap = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
   let ptr : Sptr.t Charon_util.full_ptr =
-    ({ ptr; tag = tb.tag; align }, None)
+    ({ ptr; tag = tb.tag; align; size }, None)
   in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
@@ -263,7 +263,9 @@ let alloc_tys tys st =
       (* create pointer *)
       let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
       let ptr = Typed.Ptr.mk loc 0s in
-      let ptr : Sptr.t = { ptr; tag = tb.tag; align = layout.align } in
+      let ptr : Sptr.t =
+        { ptr; tag = tb.tag; align = layout.align; size = layout.size }
+      in
       let meta = Charon_util.meta_for ty in
       (block, (ptr, meta)))
 
