@@ -524,6 +524,7 @@ let rec lt v1 v2 =
   | Int i1, Int i2 -> bool (Z.lt i1 i2)
   | Float f1, Float f2 -> bool (f1 < f2)
   | _, _ when equal v1 v2 -> v_false
+  | _, _ when is_float v1.node.ty -> Binop (Lt, v1, v2) <| TBool
   | _, Binop (Plus, v2, v3) when equal v1 v2 -> lt zero v3
   | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> lt v2 v4
   | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
@@ -547,6 +548,7 @@ let rec leq v1 v2 =
   | Int i1, Int i2 -> bool (Z.leq i1 i2)
   | Float f1, Float f2 -> bool (f1 <= f2)
   | _, _ when equal v1 v2 -> v_true
+  | _, _ when is_float v1.node.ty -> Binop (Leq, v1, v2) <| TBool
   | _, Binop (Plus, v2, v3) when equal v1 v2 -> leq zero v3
   | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> leq v2 v4
   | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y

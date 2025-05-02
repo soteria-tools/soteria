@@ -236,6 +236,8 @@ module Make (Heap : Heap_intf.S) = struct
     | Constant c ->
         let++ v, state = resolve_constant c state in
         (v, state)
+    | (Move loc | Copy loc) when not (Layout.is_inhabited loc.ty) ->
+        Heap.error `RefToUninhabited state
     | Move loc | Copy loc -> (
         let ty = loc.ty in
         match Layout.as_zst ty with
