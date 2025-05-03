@@ -127,18 +127,13 @@ module M (Heap : Heap_intf.S) = struct
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
 
-  let has_rustc_intrinsic_attrib (f : UllbcAst.fun_decl) =
-    List.mem
-      Meta.(AttrUnknown { path = "rustc_intrinsic"; args = None })
-      f.item_meta.attr_info.attributes
-
   let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let open Std in
     let open Kani in
     let opt_bind f opt = match opt with None -> f () | x -> x in
     let ctx = NameMatcher.ctx_from_crate crate in
     let real_name =
-      if has_rustc_intrinsic_attrib f then
+      if Charon_util.decl_has_attr f "rustc_intrinsic" then
         Types.
           [
             PeIdent ("core", Disambiguator.zero);
