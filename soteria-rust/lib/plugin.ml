@@ -65,7 +65,7 @@ let default =
 
 let kani =
   let mk_cmd () =
-    let root = List.hd Runtime_sites.Sites.kani_lib in
+    let root = List.hd Runtime_sites.Sites.plugin_kani in
     let target = get_host () in
     (* build Kani lib *)
     let res =
