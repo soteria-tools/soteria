@@ -301,7 +301,7 @@ module M (Heap : Heap_intf.S) = struct
     if%sat Sptr.constraints ptr' then Result.ok (Ptr (ptr', meta), state)
     else Heap.error `Overflow state
 
-  let box_into_raw _ ~crate:_ ~args ~state =
+  let box_into_raw ~crate:_ ~args ~state =
     (* internally a box is exactly a pointer so nothing to do *)
     let box_ptr = List.hd args in
     Result.ok (box_ptr, state)
@@ -325,7 +325,7 @@ module M (Heap : Heap_intf.S) = struct
       else Heap.error `UBPointerComparison state
     else Heap.error `UBPointerComparison state
 
-  let black_box _ ~crate:_ ~args ~state =
+  let black_box ~crate:_ ~args ~state =
     match args with
     | [ v ] -> Result.ok (v, state)
     | _ -> failwith "black_box: invalid arguments"
@@ -341,16 +341,12 @@ module M (Heap : Heap_intf.S) = struct
     in
     (v, state)
 
-  let copy_nonoverlapping (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let copy_nonoverlapping (gargs : Types.generic_args) ~crate:_ ~args ~state =
+    let ty = List.hd gargs.types in
     let (from_ptr, _), (to_ptr, _), len =
       match args with
       | [ Ptr from_ptr; Ptr to_ptr; Base len ] ->
           (from_ptr, to_ptr, Typed.cast len)
-      | _ -> failwith "copy_nonoverlapping: invalid arguments"
-    in
-    let ty =
-      match funsig.inputs with
-      | TRawPtr (ty, _) :: _ -> ty
       | _ -> failwith "copy_nonoverlapping: invalid arguments"
     in
     let** () = Heap.check_ptr_align from_ptr ty in
@@ -378,14 +374,22 @@ module M (Heap : Heap_intf.S) = struct
     in
     (Tuple [], state)
 
-  let mul_add _ ~crate:_ ~args ~state =
+  let copy_nonoverlapping_fn (funsig : GAst.fun_sig) =
+    let ty =
+      match funsig.inputs with
+      | TRawPtr (ty, _) :: _ -> ty
+      | _ -> failwith "copy_nonoverlapping: invalid arguments"
+    in
+    copy_nonoverlapping (TypesUtils.mk_generic_args_from_types [ ty ])
+
+  let mul_add ~crate:_ ~args ~state =
     match args with
     | [ Base a; Base b; Base c ] ->
         let a, b, c = (Typed.cast a, Typed.cast b, Typed.cast c) in
         Result.ok (Base ((a *@ b) +@ c), state)
     | _ -> failwith "mul_add expects three arguments"
 
-  let abs _ ~crate:_ ~args ~state =
+  let abs ~crate:_ ~args ~state =
     match args with
     | [ Base v ] ->
         Result.ok (Base (Typed.cast @@ Typed.abs @@ Typed.cast v), state)
@@ -574,4 +578,8 @@ module M (Heap : Heap_intf.S) = struct
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
     | _ -> Heap.error (`Panic "core::intrinsics::variant_count") state
+
+  let slice_into_vec ~crate:_ ~args ~state:_ =
+    L.warn (fun m -> m "%a" Fmt.(list ~sep:comma pp_rust_val) args);
+    failwith ""
 end
