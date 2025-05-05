@@ -26,6 +26,20 @@ let get_host =
             host_
         | None -> raise (PluginError "Couldn't find target host"))
 
+let compile_lib path =
+  let target = get_host () in
+  let verbosity =
+    if Soteria_logs.(Config.should_log Level.Trace) then "--verbose"
+    else "> /dev/null 2>/dev/null"
+  in
+  let res =
+    Fmt.kstr exec_cmd "cd %s && %s build --lib --target %s %s" path cargo target
+      verbosity
+  in
+  if res <> 0 && res <> 255 then
+    let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
+    raise (PluginError msg)
+
 type plugin = {
   mk_cmd : unit -> Cmd.charon_cmd;
   get_entry_point : fun_decl -> entry_point option;
@@ -67,15 +81,8 @@ let kani =
   let mk_cmd () =
     let root = List.hd Runtime_sites.Sites.plugin_kani in
     let target = get_host () in
-    (* build Kani lib *)
-    let res =
-      Fmt.kstr exec_cmd
-        "cd %s/std && %s build --lib --target %s > /dev/null 2>/dev/null" root
-        cargo target
-    in
-    (if res <> 0 && res <> 255 then
-       let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
-       raise (PluginError msg));
+    let lib = root ^ "/std" in
+    compile_lib lib;
     mk_cmd
       ~rustc:
         [
@@ -85,10 +92,10 @@ let kani =
           "--cfg=kani";
           "--extern=kani";
           (* Manually include lib binaries *)
-          Fmt.str "-L%s/std/target/%s/debug/deps" root target;
-          Fmt.str "-L%s/std/target/debug/deps" root;
-          Fmt.str "--extern noprelude:std=%s/std/target/%s/debug/libstd.rlib"
-            root target;
+          Fmt.str "-L%s/target/%s/debug/deps" lib target;
+          Fmt.str "-L%s/target/debug/deps" lib;
+          Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib" lib
+            target;
         ]
       ()
   in
@@ -123,9 +130,7 @@ let merge_ifs (plugins : (bool * plugin) list) =
 
   let mk_cmd ~input ~output () =
     let init =
-      mk_cmd
-        ~charon:[ Fmt.str "--input %s" input; Fmt.str "--dest-file %s" output ]
-        ()
+      mk_cmd ~charon:[ "--input " ^ input; "--dest-file " ^ output ] ()
     in
     List.map (fun (p : plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left concat_cmd init
