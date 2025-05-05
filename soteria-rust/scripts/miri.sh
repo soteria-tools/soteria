@@ -114,7 +114,7 @@ script_start=$(($(date +%s%N)/1000000))
 for test in $TESTS; do
     test_rel_name=$(realpath --relative-to=$MIRI_PATH $test)
     # expect failure if "fail" or "panic" in test_rel_name
-    expect_failure=$(grep -c -e "fail" -e "panic" <<< "$test_rel_name")
+    expect_failure=$(grep -c -e "/fail/" -e "/panic/" <<< "$test_rel_name")
 
     extra_flags=""
     if [[ $(grep -c "\-Zmiri\-ignore\-leaks" "$test") -gt 0 ]]; then
