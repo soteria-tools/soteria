@@ -111,7 +111,22 @@ let kani =
 
 let miri =
   let mk_cmd () =
-    mk_cmd ~charon:[ "--opaque=miri_extern" ] ~rustc:[ "--cfg=miri" ] ()
+    let root = List.hd Runtime_sites.Sites.plugin_miri in
+    let target = get_host () in
+    let lib = root ^ "/miristd" in
+    compile_lib lib;
+    mk_cmd
+      ~rustc:
+        [
+          "--cfg=miri";
+          (* Manually include lib binaries *)
+          Fmt.str "-L%s/target/%s/debug/deps" lib target;
+          Fmt.str "-L%s/target/%s/debug" lib target;
+          Fmt.str "-L%s/target/debug/deps" lib;
+          (* Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib" lib
+            target; *)
+        ]
+      ()
   in
   let get_entry_point _ = None in
   { mk_cmd; get_entry_point }
