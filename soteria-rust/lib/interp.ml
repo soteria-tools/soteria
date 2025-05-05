@@ -200,7 +200,7 @@ module Make (Heap : Heap_intf.S) = struct
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
-        Rustsymex.return @@ Std_funs.builtin_fun_eval ~crate fn generics
+        Rustsymex.return @@ Std_funs.builtin_fun_eval fn generics
     | FnOpMove _ ->
         Fmt.kstr not_impl "Move function call is not supported: %a"
           GAst.pp_fn_operand fnop

@@ -144,15 +144,15 @@ module M (Heap : Heap_intf.S) = struct
     in
     NameMatcherMap.find_opt ctx match_config real_name std_fun_map
     |> ( Option.map @@ function
-         | Abs -> abs f.signature
+         | Abs -> abs
          | AssertZeroValid -> assert_zero_is_valid f.signature
          | AssertInhabited -> assert_inhabited f.signature
          | Assume -> std_assume
-         | BlackBox -> black_box f.signature
-         | BoxIntoRaw -> box_into_raw f.signature
+         | BlackBox -> black_box
+         | BoxIntoRaw -> box_into_raw
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes
-         | CopyNonOverlapping -> copy_nonoverlapping f.signature
+         | CopyNonOverlapping -> copy_nonoverlapping_fn f.signature
          | CopySign -> copy_sign
          | Ctpop -> ctpop f.signature
          | DiscriminantValue -> discriminant_value f.signature
@@ -164,7 +164,7 @@ module M (Heap : Heap_intf.S) = struct
          | KaniNondet -> kani_nondet f.signature
          | Likely -> likely
          | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
-         | MulAdd -> mul_add f.signature
+         | MulAdd -> mul_add
          | Nop -> nop
          | PtrByteOp op -> ptr_op ~byte:true op f.signature
          | PtrOp op -> ptr_op op f.signature
@@ -191,7 +191,7 @@ module M (Heap : Heap_intf.S) = struct
            (PrintTypes.name_to_string ctx real_name)
        else None
 
-  let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
+  let builtin_fun_eval (f : Expressions.builtin_fun_id) generics =
     let open Std in
     match f with
     | ArrayRepeat -> array_repeat generics
@@ -200,4 +200,5 @@ module M (Heap : Heap_intf.S) = struct
     | Index idx -> array_index idx generics
     | BoxNew -> box_new generics
     | PtrFromParts _ -> from_raw_parts
+    | CopyNonOverlapping -> copy_nonoverlapping generics
 end
