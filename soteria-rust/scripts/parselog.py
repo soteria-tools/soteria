@@ -136,10 +136,15 @@ def main(files: list[str]):
                 err_labels = re.findall(r'The label is "(.+)"', test)
                 sub_errors = sub_errors + err_labels
 
-                hax_panics = re.findall(
-                    r"thread \'rustc\' panicked at .+/frontend/(exporter/src/.+):", test
-                )
-                sub_errors = sub_errors + [f"Hax panicked: {err}" for err in hax_panics]
+                panics = re.findall(r"thread \'.+\' panicked at (.+):", test)
+                sub_errors = sub_errors + [
+                    (
+                        f"Hax panicked: {err}"
+                        if "frontend/exporter" in err
+                        else f"Panic: {err}"
+                    )
+                    for err in panics
+                ]
 
                 if "Unexpected trait reference kind" in test:
                     sub_errors.append("Unexpected trait reference kind")
