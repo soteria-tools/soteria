@@ -9,6 +9,16 @@ extern crate self as kani;
 
 pub use kani_macros::*;
 
+// Used to bind `core::assert` to a different name to avoid possible name conflicts if a
+// crate uses `extern crate std as core`.
+pub use core::assert as __kani__workaround_core_assert;
+
+#[inline(never)]
+#[kanitool::fn_marker = "panic"]
+pub const fn panic(_message: &'static str) -> ! {
+    unreachable!()
+}
+
 #[inline(never)]
 #[kanitool::fn_marker = "assert"]
 pub const fn assert(_cond: bool, _msg: &'static str) {}

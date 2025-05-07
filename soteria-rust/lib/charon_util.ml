@@ -1,8 +1,8 @@
 open Charon
 open Typed
 
-type 'ptr full_ptr = 'ptr * T.cval Typed.t option
-[@@deriving show { with_path = false }]
+type meta = T.cval Typed.t option
+and 'ptr full_ptr = 'ptr * meta [@@deriving show { with_path = false }]
 
 type 'ptr rust_val =
   | Base of T.cval Typed.t
@@ -92,6 +92,12 @@ let int_of_const_generic : Types.const_generic -> int = function
   | cg ->
       Fmt.failwith "int_of_const_generic: unhandled const: %a"
         Types.pp_const_generic cg
+
+let meta_for : Charon.Types.ty -> meta = function
+  | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
+      let len = int_of_const_generic len in
+      Some (Typed.int len)
+  | _ -> None
 
 let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
 

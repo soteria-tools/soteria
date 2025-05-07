@@ -9,6 +9,7 @@ open Charon_util
 module M (Heap : Heap_intf.S) = struct
   module Sptr = Heap.Sptr
   module Core = Core.M (Heap)
+  module Encoder = Encoder.Make (Sptr)
 
   type nonrec rust_val = Sptr.t rust_val
 
@@ -88,136 +89,6 @@ module M (Heap : Heap_intf.S) = struct
     let++ res = Core.eval_checked_lit_binop op ty left right state in
     (res, state)
 
-  let is_some (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
-    let val_ptr, opt_ty =
-      match (args, fun_sig.inputs) with
-      | [ Ptr ptr ], [ Types.TRef (_, ty, _) ] -> (ptr, ty)
-      | _ ->
-          failwith
-            "is_some expects a single ptr argument and a single tref input type"
-    in
-    let** enum_value, state = Heap.load val_ptr opt_ty state in
-    let+ discr =
-      match enum_value with
-      | Enum (discr, _) -> return discr
-      | _ ->
-          Fmt.kstr not_impl
-            "expected value pointed to in is_some to be an enum, got %a"
-            pp_rust_val enum_value
-    in
-    Ok (Base (Typed.int_of_bool (discr ==@ 1s)), state)
-
-  let is_none (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
-    let val_ptr, opt_ty =
-      match (args, fun_sig.inputs) with
-      | [ Ptr ptr ], [ Types.TRef (_, ty, _) ] -> (ptr, ty)
-      | _ ->
-          failwith
-            "is_none expects a single ptr argument and a single tref input type"
-    in
-    let** enum_value, state = Heap.load val_ptr opt_ty state in
-    let* discr =
-      match enum_value with
-      | Enum (discr, _) -> return discr
-      | _ ->
-          Fmt.kstr not_impl
-            "expected value pointed to in is_none to be an enum, got %a"
-            pp_rust_val enum_value
-    in
-    Result.ok (Base (Typed.int_of_bool (discr ==@ 0s)), state)
-
-  let unwrap_opt ~crate:_ ~args ~state =
-    let* discr, value =
-      match args with
-      | [ Enum (disc, value) ] -> return (disc, value)
-      | _ -> not_impl "is_some expects a single option argument"
-    in
-    if%sat discr ==@ 0s then Heap.error (`StdErr "Unwrapped none") state
-    else
-      match value with
-      | [ value ] -> Result.ok (value, state)
-      | _ -> not_impl "option is some, but doesn't have one value"
-
-  let unwrap_res ~crate:_ ~args ~state =
-    let* discr, value =
-      match args with
-      | [ Enum (disc, value) ] -> return (disc, value)
-      | _ -> not_impl "is_some expects a single option argument"
-    in
-    if%sat discr ==@ 1s then Heap.error (`StdErr "Unwrapped Err") state
-    else
-      match value with
-      | [ value ] -> Result.ok (value, state)
-      | _ -> not_impl "Result is Ok, but doesn't have one value"
-
-  let eq_values ~neg (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
-    let rec aux state left right =
-      match (left, right) with
-      | Base left, Base right -> Result.ok (left ==@ right, state)
-      | Struct lefts, Struct rights
-      | Array lefts, Array rights
-      | Tuple lefts, Tuple rights ->
-          if List.compare_lengths lefts rights <> 0 then
-            Result.ok (Typed.v_false, state)
-          else aux_list Typed.v_true state lefts rights
-      | Enum (l_d, l_vs), Enum (r_d, r_vs) ->
-          if List.compare_lengths l_vs r_vs <> 0 then
-            Result.ok (Typed.v_false, state)
-          else aux_list (l_d ==@ r_d) state l_vs r_vs
-      | _ ->
-          Fmt.kstr not_impl "Unexpected eq_values pair: %a / %a" pp_rust_val
-            left pp_rust_val right
-    and aux_list init state lefts rights =
-      if init = Typed.v_false then Result.ok (Typed.v_false, state)
-      else
-        match (lefts, rights) with
-        | [], [] -> Result.ok (init, state)
-        | l :: lefts, r :: rights ->
-            let** b_val, state = aux state l r in
-            aux_list (b_val &&@ init) state lefts rights
-        | [], _ | _, [] -> Result.ok (Typed.v_false, state)
-    in
-    let left_ptr, right_ptr =
-      match args with
-      | [ Ptr left; Ptr right ] -> (left, right)
-      | _ -> failwith "eq_values expects two arguments"
-    in
-    let** left, right, state =
-      match fun_sig.inputs with
-      | Types.TRef (_, (TRef (_, ty, _) as outer_ty), _) :: _ ->
-          (* STD provides an implementation of eq for references (&T), where the arguments are
-             thus &&T -- we handle this here by adding an indirection. *)
-          let** left, state = Heap.load left_ptr outer_ty state in
-          let** right, state = Heap.load right_ptr outer_ty state in
-          let left_ptr = as_ptr left in
-          let right_ptr = as_ptr right in
-          let** left, state = Heap.load left_ptr ty state in
-          let++ right, state = Heap.load right_ptr ty state in
-          (left, right, state)
-      | Types.TRef (_, ty, _) :: _ ->
-          let** left, state = Heap.load left_ptr ty state in
-          let++ right, state = Heap.load right_ptr ty state in
-          (left, right, state)
-      | ty :: _ ->
-          Fmt.kstr not_impl "Unexpected type for eq_values: %a" Types.pp_ty ty
-      | _ -> not_impl "Error: eq_values received no arguments?"
-    in
-    let++ b_val, state = aux state left right in
-    let b_val = if neg then Typed.not b_val else b_val in
-    let res = Typed.int_of_bool b_val in
-    (Base res, state)
-
-  let bool_not ~crate:_ ~args ~state =
-    let b_ptr =
-      match args with
-      | [ Ptr b ] -> b
-      | _ -> failwith "bool_not expects one Ptr argument"
-    in
-    let++ b_rval, state = Heap.load b_ptr (Types.TLiteral TBool) state in
-    let b_int = as_base_of ~ty:Typed.t_int b_rval in
-    let b_int' = Typed.not_int_bool b_int in
-    (Base b_int', state)
-
   let zeroed (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
     match Layout.zeroed ~null_ptr:Sptr.null_ptr fun_sig.output with
     | Some v -> Result.ok (v, state)
@@ -287,8 +158,8 @@ module M (Heap : Heap_intf.S) = struct
       Types.TypeDeclId.Map.find range_ty_id UllbcAst.(crate.type_decls)
     in
     let range_name =
-      match List.rev range_adt.item_meta.name with
-      | PeIdent (name, _) :: _ -> name
+      match List.last_opt range_adt.item_meta.name with
+      | Some (PeIdent (name, _)) -> name
       | _ -> failwith "Unexpected range name"
     in
     let size =
@@ -327,11 +198,6 @@ module M (Heap : Heap_intf.S) = struct
     | [ Ptr (ptr, None) ] -> Result.ok (Ptr (ptr, Some (Typed.int size)), state)
     | _ -> failwith "array_index: unexpected arguments"
 
-  let slice_len _ ~crate:_ ~args ~state =
-    match args with
-    | [ Ptr (_, Some size) ] -> Result.ok (Base size, state)
-    | _ -> failwith "slice_len: unexpected arguments"
-
   let discriminant_value (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
     let value_ptr =
       match args with
@@ -347,88 +213,6 @@ module M (Heap : Heap_intf.S) = struct
     match value with
     | Enum (discr, _) -> (Base discr, state)
     | _ -> failwith "discriminant_value: unexpected value"
-
-  let to_string _ ~crate:_ ~args ~state =
-    match args with
-    | [ (Ptr (_, Some len) as slice) ] ->
-        Result.ok (Struct [ slice; Base len ], state)
-    | _ -> failwith "to_string: unexpected value"
-
-  let str_chars _ ~crate:_ ~args ~state =
-    let ptr, len =
-      match args with
-      | [ Ptr (ptr, Some len) ] -> (ptr, Typed.cast len)
-      | _ -> failwith "str_chars: unexpected value"
-    in
-    let ty = Types.TLiteral TChar in
-    let arr_end = Sptr.offset ~ty ptr len in
-    Result.ok (Struct [ Ptr (ptr, None); Ptr (arr_end, None) ], state)
-
-  let iter_nth (fun_sig : GAst.fun_sig) ~crate ~args ~state =
-    let iter_ptr, idx =
-      match args with
-      | [ Ptr iter_ptr; Base idx ] -> (iter_ptr, idx)
-      | _ -> failwith "iter_nth: unexpected value"
-    in
-    let* idx = cast_checked idx ~ty:Typed.t_int in
-    let iter_ty, sub_ty =
-      match fun_sig.inputs with
-      | TRef (_, (TAdt (TAdtId adt_id, _) as iter_ty), _) :: _ -> (
-          let adt = Std_types.get_adt ~crate adt_id in
-          match adt.kind with
-          | Struct (_ :: { field_ty = TRawPtr (sub_ty, _); _ } :: _) ->
-              (iter_ty, sub_ty)
-          | _ -> failwith "iter_nth: unexpected signature")
-      | _ -> failwith "iter_nth: unexpected signature"
-    in
-    let** iter, state = Heap.load iter_ptr iter_ty state in
-    let start_ptr, end_ptr =
-      match iter with
-      | Struct [ Ptr (start_ptr, None); Ptr (end_ptr, None) ] ->
-          (start_ptr, end_ptr)
-      | _ -> failwith "iter_nth: unexpected iter structure"
-    in
-    if%sat Sptr.is_same_loc start_ptr end_ptr then
-      let ptr = Sptr.offset ~ty:sub_ty start_ptr idx in
-      let dist = Sptr.distance ptr end_ptr in
-      if%sat dist <@ 0s then
-        let iter' = Struct [ Ptr (ptr, None); Ptr (end_ptr, None) ] in
-        let** value, state = Heap.load (ptr, None) sub_ty state in
-        let++ (), state = Heap.store iter_ptr iter_ty iter' state in
-        (Enum (1s, [ value ]), state)
-      else
-        (* return None *)
-        Result.ok (Enum (0s, []), state)
-    else Heap.error `UBPointerArithmetic state
-
-  let deref (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
-    (* This works for string deref -- don't know about the rest *)
-    let ptr =
-      match args with
-      | [ Ptr ptr ] -> ptr
-      | _ -> failwith "deref: unexpected argument"
-    in
-    let ty =
-      match funsig.inputs with
-      | TRef (_, ty, _) :: _ -> ty
-      | _ -> failwith "deref: unexpected signature"
-    in
-    let++ v, state = Heap.load ptr ty state in
-    match v with
-    | Struct [ v; _ ] -> (v, state)
-    | _ -> Fmt.failwith "deref: unexpected value: %a" pp_rust_val v
-
-  let str_len (fun_sig : GAst.fun_sig) ~crate:_ ~args ~state =
-    let str_ptr = as_ptr @@ List.hd args in
-    let str_ty =
-      match fun_sig.inputs with
-      | [ TRef (_, str_ty, _) ] -> str_ty
-      | _ -> failwith "str_len: unexpected input"
-    in
-    let++ str_obj, state = Heap.load str_ptr str_ty state in
-    match str_obj with
-    | Struct [ Ptr (_, Some meta); _ ] -> (Base meta, state)
-    | _ -> failwith "str_len: unexpected string type"
 
   let assert_zero_is_valid (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
     let ty =
@@ -484,8 +268,7 @@ module M (Heap : Heap_intf.S) = struct
           .types
         |> List.hd
     in
-    let layout = Layout.layout_of ty in
-    let align = Typed.int layout.align in
+    let* align = Layout.align_of_s ty in
     Result.ok (Base align, state)
 
   let box_new (gen_args : Types.generic_args) ~crate:_ ~args ~state =
@@ -499,10 +282,11 @@ module M (Heap : Heap_intf.S) = struct
     (Ptr ptr, state)
 
   let ptr_op ?(byte = false) op (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
-    let ptr, meta, v =
+    let** ptr, meta, v =
       match args with
-      | [ Ptr (ptr, meta); Base v ] -> (ptr, meta, v)
-      | _ -> failwith "ptr_add: invalid arguments"
+      | [ Ptr (ptr, meta); Base v ] -> Result.ok (ptr, meta, v)
+      | [ Base _; Base _ ] -> Heap.error `UBPointerArithmetic state
+      | _ -> not_impl "ptr_add: invalid arguments"
     in
     let* v = cast_checked v ~ty:Typed.t_int in
     let ty =
@@ -550,7 +334,11 @@ module M (Heap : Heap_intf.S) = struct
     let from_ty = List.hd funsig.inputs in
     let to_ty = funsig.output in
     let v = List.hd args in
-    let++ v = Heap.lift_err state @@ Encoder.transmute ~from_ty ~to_ty v in
+    let++ v =
+      Heap.lift_err state
+      @@ Encoder.transmute ~verify_ptr:(Heap.is_valid_ptr state) ~from_ty ~to_ty
+           v
+    in
     (v, state)
 
   let copy_nonoverlapping (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
@@ -565,6 +353,8 @@ module M (Heap : Heap_intf.S) = struct
       | TRawPtr (ty, _) :: _ -> ty
       | _ -> failwith "copy_nonoverlapping: invalid arguments"
     in
+    let** () = Heap.check_ptr_align from_ptr ty in
+    let** () = Heap.check_ptr_align to_ptr ty in
     let* ty_size = Layout.size_of_s ty in
     let size = ty_size *@ len in
     let** () =
@@ -613,6 +403,7 @@ module M (Heap : Heap_intf.S) = struct
         .types
       |> List.hd
     in
+    let** () = Heap.check_ptr_align ptr ty in
     let* size = Layout.size_of_s ty in
     let size = size *@ count in
     (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
@@ -770,4 +561,17 @@ module M (Heap : Heap_intf.S) = struct
         let l' = Typed.abs l in
         Result.ok (Base (Typed.cast l'), state)
     else not_impl "Expected floats in copy_sign"
+
+  let variant_count (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+    let ty =
+      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
+        .types
+      |> List.hd
+    in
+    match ty with
+    | Types.TAdt (TAdtId id, _) when Layout.Session.is_enum id ->
+        let variants = Layout.Session.as_enum id in
+        let n = Typed.int @@ List.length variants in
+        Result.ok (Base n, state)
+    | _ -> Heap.error (`Panic "core::intrinsics::variant_count") state
 end

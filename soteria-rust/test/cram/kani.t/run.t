@@ -1,5 +1,5 @@
 Test kani::any
-  $ soteria-rust exec-main any.rs --clean
+  $ soteria-rust exec-main any.rs --clean --kani
   Done. - Ran 5 branches
   PC: 
     (V|0| == 0) /\ (V|0| <= 1) /\ (0 <= V|0|)
@@ -17,30 +17,44 @@ Test kani::any
     (V|0| == 0) /\ (V|0| <= 127) /\ (-128 <= V|0|)
 
 Test kani::assume
-  $ soteria-rust exec-main assume.rs --clean
+  $ soteria-rust exec-main assume.rs --clean --kani
   Done. - Ran 2 branches
   PC: 
     (V|0| != 0) /\ (V|0| <= 1) /\ (0 <= V|0|)
   
   PC: 
-    ((11 / V|0|) <= 2147483647) /\ (-2147483648 <= (11 / V|0|)) /\
-    (V|0| != 0) /\ (V|0| <= 2147483647) /\ (-2147483648 <= V|0|)
+    ((11 / V|0|) <= 0x7fffffff) /\ (-0x80000000 <= (11 / V|0|)) /\
+    (V|0| != 0) /\ (V|0| <= 0x7fffffff) /\ (-0x80000000 <= V|0|)
 
 Test #[kani::should_panic]
-  $ soteria-rust exec-main should_panic.rs --clean
+  $ soteria-rust exec-main should_panic.rs --clean --kani
   Done. - Ran 1 branches
   PC: empty
 
 Test kani::assert
-  $ soteria-rust exec-main assert.rs --clean
-  Error in 2 branchs:
-  - Failed assertion: Expected true! with trace [($TESTCASE_ROOT/assert.rs:4:4-37,
-                                                                      Call trace);
-                                                                     ($TESTCASE_ROOT/assert.rs:4:4-37,
-                                                                      Triggering memory operation)]
+  $ soteria-rust exec-main assert.rs --clean --kani
+  Error in 4 branches:
+  - Failed assertion: Expected true!
+    Trace:
+    • Call trace: ../cram/kani.t/assert.rs:2:0-5:1
+    • Call trace: ../cram/kani.t/assert.rs:4:4-37
+    • Triggering memory operation: ../cram/kani.t/assert.rs:4:4-37
   
-  - Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 with trace [($TESTCASE_ROOT/assert.rs:10:4-42,
-                                                                      Call trace);
-                                                                      ($TESTCASE_ROOT/assert.rs:10:4-42,
-                                                                      Triggering memory operation)]
+  - Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴
+    Trace:
+    • Call trace: ../cram/kani.t/assert.rs:8:0-11:1
+    • Call trace: ../cram/kani.t/assert.rs:10:4-42
+    • Triggering memory operation: ../cram/kani.t/assert.rs:10:4-42
+  
+  - Failed assertion: I used "assert!"
+    Trace:
+    • Call trace: ../cram/kani.t/assert.rs:14:0-17:1
+    • Call trace: ../std/src/lib.rs:45:8-60
+    • Triggering memory operation: ../std/src/lib.rs:45:8-60
+  
+  - Failed assertion: I used "assert_eq!"
+    Trace:
+    • Call trace: ../cram/kani.t/assert.rs:20:0-24:1
+    • Call trace: ../std/src/lib.rs:45:8-60
+    • Triggering memory operation: ../std/src/lib.rs:45:8-60
   [1]

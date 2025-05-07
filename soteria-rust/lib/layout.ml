@@ -6,6 +6,7 @@ open Rustsymex
 open Charon_util
 
 exception CantComputeLayout of string * Types.ty
+exception InvalidLayout
 
 module Archi = struct
   let word_size = 8
@@ -82,7 +83,7 @@ module Session = struct
 
   let get_adt adt_id =
     let crate = get_crate () in
-    Std_types.get_adt ~crate adt_id
+    Types.TypeDeclId.Map.find adt_id crate.type_decls
 
   let is_enum adt_id =
     match (get_adt adt_id).kind with Enum _ -> true | _ -> false
@@ -146,14 +147,23 @@ let size_of_literal_ty : Types.literal_type -> int = function
 let align_of_literal_ty : Types.literal_type -> int = size_of_literal_ty
 let empty_generics = TypesUtils.empty_generic_args
 
-(** If a pointer/reference to the given type requires a fat pointer *)
-let is_fat_ptr : Types.ty -> bool = function
+(** If this is a dynamically sized type (requiring a fat pointer) *)
+let rec is_dst : Types.ty -> bool = function
   | TAdt (TBuiltin TSlice, _) | TAdt (TBuiltin TStr, _) -> true
+  | TAdt (TAdtId id, _) when Session.is_struct id -> (
+      match List.last_opt (Session.as_struct id) with
+      | None -> false
+      | Some last -> is_dst Types.(last.field_ty))
   | _ -> false
 
 let size_to_fit ~size ~align =
   let ( % ) = Stdlib.( mod ) in
   if size % align = 0 then size else size + align - (size % align)
+
+let max_array_len sub_size =
+  let isize_bits = Archi.word_size * 8 in
+  if sub_size = 0 then Z.of_int isize_bits
+  else Z.((one lsl isize_bits) / of_int sub_size)
 
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
@@ -167,18 +177,28 @@ let rec layout_of (ty : Types.ty) : layout =
   | TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
   | TRef (_, sub_ty, _)
   | TRawPtr (sub_ty, _)
-    when is_fat_ptr sub_ty ->
+    when is_dst sub_ty ->
       {
         size = Archi.word_size * 2;
         align = Archi.word_size;
         members_ofs = [||];
       }
-  | TAdt (TBuiltin TSlice, _) ->
-      (* Slices should be hidden behind references *)
-      raise (CantComputeLayout ("Raw slice", ty))
   (* Refs, pointers, boxes *)
   | TAdt (TBuiltin TBox, _) | TRef (_, _, _) | TRawPtr (_, _) ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
+  (* Dynamically sized types -- we assume they have a size of 0. In truth, these types should
+     simply never be allocated directly, and instead can only be obtained hidden behind
+     references; however we must be able to compute their layout, to get e.g. the offset of
+     the tail in a DST struct.
+     FIXME: Maybe we should mark the layout as a DST, and ensure a DST layout's size is never
+     used for an allocation. *)
+  | TAdt (TBuiltin (TStr as ty), generics)
+  | TAdt (TBuiltin (TSlice as ty), generics) ->
+      let sub_ty =
+        if ty = TSlice then List.hd generics.types else TLiteral (TInteger U8)
+      in
+      let sub_layout = layout_of sub_ty in
+      { size = 0; align = sub_layout.align; members_ofs = [||] }
   (* Tuples *)
   | TAdt (TTuple, { types; _ }) -> layout_of_members types
   (* Custom ADTs (struct, enum, etc.) *)
@@ -214,27 +234,27 @@ let rec layout_of (ty : Types.ty) : layout =
       | TDeclError _ -> raise (CantComputeLayout ("DeclError", ty))
       | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
   (* Arrays *)
-  | TAdt (TBuiltin TArray, generics) ->
-      let ty, size =
-        match generics with
-        | { types = [ ty ]; const_generics = [ size ]; _ } -> (ty, size)
-        | _ -> failwith "Unexpected TArray generics"
-      in
-      let size = Charon_util.int_of_const_generic size in
-      if size = 0 then { size = 0; align = 1; members_ofs = [||] }
-      else
-        let sub_layout = layout_of ty in
-        let members_ofs = Array.init size (fun i -> i * sub_layout.size) in
-        { size = size * sub_layout.size; align = sub_layout.align; members_ofs }
+  | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ size ]; _ }) ->
+      let len = Charon_util.int_of_const_generic size in
+      let sub_layout = layout_of ty in
+      if Z.(of_int len > max_array_len sub_layout.size) then raise InvalidLayout;
+      let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
+      { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
+  | TAdt (TBuiltin TArray, _) -> failwith "Invalid TArray shape"
+  (* Closures *)
+  | TClosure (_, _, state, _) -> layout_of_members state
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
+  (* Arrows -- we don't support these, but need to compute a size for them, because some code
+     (notably core::fmt::rt::ArgumentType) has them, despite not being initialised.
+     An arrow is a pointer to a function, I believe. *)
+  | TArrow _ ->
+      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   (* Others (unhandled for now) *)
-  | TAdt (TBuiltin TStr, _) -> raise (CantComputeLayout ("String", ty))
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
   | TError _ -> raise (CantComputeLayout ("Error", ty))
   | TTraitType _ -> raise (CantComputeLayout ("Trait type", ty))
   | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
-  | TArrow _ -> raise (CantComputeLayout ("Arrow", ty))
 
 and layout_of_members members =
   let rec aux members_ofs (layout : layout) = function
@@ -276,14 +296,22 @@ let offset_in_array ty idx =
   let sub_layout = layout_of ty in
   idx * sub_layout.size
 
-let size_of_s ty =
-  try
-    let { size; _ } = layout_of ty in
-    return (Typed.int size)
+let layout_of_s ty =
+  try return @@ layout_of ty
   with CantComputeLayout (msg, ty') ->
     Fmt.kstr Rustsymex.not_impl
       "Cannot yet compute size of %s:@.%a@.Occurred when computing:@.%a" msg
       pp_ty ty' pp_ty ty
+
+let size_of_s ty =
+  let open Rustsymex.Syntax in
+  let+ { size; _ } = layout_of_s ty in
+  Typed.int size
+
+let align_of_s ty =
+  let open Rustsymex.Syntax in
+  let+ { align; _ } = layout_of_s ty in
+  Typed.nonzero align
 
 let is_signed : Types.integer_type -> bool = function
   | I128 | I64 | I32 | I16 | I8 | Isize -> true
@@ -315,6 +343,16 @@ let max_value_z : Types.integer_type -> Z.t = function
   | Isize -> Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
 
 let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
+
+let size_to_uint : int -> Types.ty = function
+  | 1 -> TLiteral (TInteger U8)
+  | 2 -> TLiteral (TInteger U16)
+  | 4 -> TLiteral (TInteger U32)
+  | 8 -> TLiteral (TInteger U64)
+  | 16 -> TLiteral (TInteger U128)
+  | _ -> failwith "Invalid integer size"
+
+let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
 
 let int_constraints ty =
   let min = min_value ty in

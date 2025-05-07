@@ -33,35 +33,53 @@ module type S = sig
   (** Project a pointer to a field of the given type. *)
   val project :
     Types.ty -> Expressions.field_proj_kind -> Types.field_id -> t -> t
+
+  (** Decay a pointer into an integer value, losing provenance. *)
+  val decay : t -> sint Typed.t Rustsymex.t
 end
+
+type arithptr_t = {
+  ptr : T.sptr Typed.t;
+  tag : Tree_borrow.tag;
+  align : int;
+  size : int;
+}
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
-module ArithPtr : S with type t = T.sptr Typed.t * Tree_borrow.tag = struct
-  type t = T.sptr Typed.t * Tree_borrow.tag
+module ArithPtr : S with type t = arithptr_t = struct
+  type t = arithptr_t = {
+    ptr : T.sptr Typed.t;
+    tag : Tree_borrow.tag;
+    align : int;
+    size : int;
+  }
 
-  let pp fmt (ptr, tag) =
+  let pp fmt { ptr; tag; _ } =
     Fmt.pf fmt "%a[%a]" Typed.ppa ptr Tree_borrow.pp_tag tag
 
-  let null_ptr = (Typed.Ptr.null, Tree_borrow.zero)
-  let sem_eq (ptr1, _) (ptr2, _) = ptr1 ==@ ptr2
-  let is_at_null_loc (ptr, _) = Typed.Ptr.is_at_null_loc ptr
+  let null_ptr =
+    { ptr = Typed.Ptr.null; tag = Tree_borrow.zero; align = 1; size = 0 }
 
-  let is_same_loc (ptr1, _) (ptr2, _) =
+  let sem_eq { ptr = ptr1; _ } { ptr = ptr2; _ } = ptr1 ==@ ptr2
+  let is_at_null_loc { ptr; _ } = Typed.Ptr.is_at_null_loc ptr
+
+  let is_same_loc { ptr = ptr1; _ } { ptr = ptr2; _ } =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
 
-  let distance (ptr1, _) (ptr2, _) = Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
+  let distance { ptr = ptr1; _ } { ptr = ptr2; _ } =
+    Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
 
   let constraints =
     let offset_constrs = Layout.int_constraints Values.Isize in
-    fun (ptr, _) ->
+    fun { ptr; _ } ->
       let ofs = Typed.Ptr.ofs ptr in
       Typed.conj (offset_constrs ofs)
 
-  let offset ?(ty = Types.TLiteral (TInteger U8)) (ptr, tag) off =
+  let offset ?(ty = Types.TLiteral (TInteger U8)) ({ ptr; _ } as fptr) off =
     let { size; _ } : Layout.layout = Layout.layout_of ty in
-    let ptr' = Typed.Ptr.add_ofs ptr (Typed.int size *@ off) in
-    (ptr', tag)
+    let ptr = Typed.Ptr.add_ofs ptr (Typed.int size *@ off) in
+    { fptr with ptr }
 
   let project ty kind field ptr =
     let field = Types.FieldId.to_int field in
@@ -74,4 +92,34 @@ module ArithPtr : S with type t = T.sptr Typed.t * Tree_borrow.tag = struct
     in
     let off = Array.get layout.members_ofs field in
     offset ptr (Typed.int off)
+
+  module ValMap = Map.Make (struct
+    type t = T.sloc Typed.t
+
+    let compare = Typed.compare
+  end)
+
+  let decayed_vars = ref ValMap.empty
+
+  let decay { ptr; align; size; _ } =
+    let open Rustsymex in
+    let open Rustsymex.Syntax in
+    let open Typed.Syntax in
+    (* FIXME: if we want to be less unsound, we would also need to assert that this pointer's
+       base is distinct from all other decayed pointers' bases... *)
+    let loc, ofs = Typed.Ptr.decompose ptr in
+    match ValMap.find_opt loc !decayed_vars with
+    | Some loc_int -> return (loc_int +@ ofs)
+    | None ->
+        let+ loc_int =
+          nondet Typed.t_int ~constrs:(fun x ->
+              let isize_max = Layout.max_value Values.Isize in
+              [
+                x %@ Typed.nonzero align ==@ 0s;
+                0s <@ x;
+                x +@ Typed.int size <=@ isize_max;
+              ])
+        in
+        decayed_vars := ValMap.add loc loc_int !decayed_vars;
+        loc_int +@ ofs
 end

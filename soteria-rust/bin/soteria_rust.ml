@@ -23,6 +23,14 @@ let ignore_leaks_flag =
   let doc = "Ignore memory leaks" in
   Arg.(value & flag & info [ "ignore-leaks" ] ~doc)
 
+let with_kani_flag =
+  let doc = "Use the Kani library" in
+  Arg.(value & flag & info [ "kani" ] ~doc)
+
+let with_miri_flag =
+  let doc = "Use the Miri library" in
+  Arg.(value & flag & info [ "miri" ] ~doc)
+
 module Exec_main = struct
   let term =
     Term.(
@@ -32,6 +40,8 @@ module Exec_main = struct
       $ no_compile_flag
       $ cleanup_flag
       $ ignore_leaks_flag
+      $ with_kani_flag
+      $ with_miri_flag
       $ file_arg)
 
   let cmd = Cmd.v (Cmd.info "exec-main") term

@@ -16,7 +16,12 @@ let miss_no_fix_immediate ?(msg = "") () =
 
 let miss_no_fix ?msg () = Rustsymex.return (miss_no_fix_immediate ?msg ())
 
+(* FIXME: here we hardcode the use of ArithPtr, but that's not really needed, it's just to avoid
+   the type parameter going everywhere. We may want to make this module a functor on the pointer
+   type, or make it work on any ptr *)
 type rust_val = Sptr.ArithPtr.t Charon_util.rust_val
+
+module Encoder = Encoder.Make (Sptr.ArithPtr)
 
 module MemVal = struct
   type t = { value : rust_val; ty : Types.ty } [@@deriving make]
@@ -77,18 +82,26 @@ module Node = struct
             return (Owned { v = Uninit qty; tb = Tree_borrow.merge tb1 tb2 })
         | _, _ -> return (Owned { v = Lazy; tb }))
 
-  let split ~range:(_, _) ~at node =
+  let split ~range:(off, _) ~at node :
+      (t Encoder.split_tree * t Encoder.split_tree) Rustsymex.t =
     match node with
-    | NotOwned Totally -> return (NotOwned Totally, NotOwned Totally)
+    | NotOwned Totally ->
+        return (`Leaf (NotOwned Totally), `Leaf (NotOwned Totally))
     | Owned { v = Uninit Totally; tb } ->
         return
-          (Owned { v = Uninit Totally; tb }, Owned { v = Uninit Totally; tb })
+          ( `Leaf (Owned { v = Uninit Totally; tb }),
+            `Leaf (Owned { v = Uninit Totally; tb }) )
     | Owned { v = Zeros; tb } ->
-        return (Owned { v = Zeros; tb }, Owned { v = Zeros; tb })
+        return (`Leaf (Owned { v = Zeros; tb }), `Leaf (Owned { v = Zeros; tb }))
     | Owned { v = Any; tb } ->
-        return (Owned { v = Any; tb }, Owned { v = Any; tb })
-    | Owned { v = Init _; tb = _ } ->
-        Fmt.kstr not_impl "Splitting %a at %a" pp node Typed.ppa at
+        return (`Leaf (Owned { v = Any; tb }), `Leaf (Owned { v = Any; tb }))
+    | Owned { v = Init { value; ty }; tb } ->
+        let rec aux = function
+          | `Leaf (value, ty) -> `Leaf (Owned { v = Init { value; ty }; tb })
+          | `Node (at, l, r) -> `Node (at, aux l, aux r)
+        in
+        let+ ltree, rtree = Encoder.split value ty (at -@ off) in
+        (aux ltree, aux rtree)
     | NotOwned Partially | Owned { v = Lazy | Uninit Partially; _ } ->
         failwith "Should never split an intermediate node"
 
@@ -142,12 +155,55 @@ module Tree = struct
 
   let any tb range = make ~node:(Owned { v = Any; tb }) ~range ?children:None ()
 
+  let rec map_leaves t f =
+    match t.children with
+    | None -> f t
+    | Some (l, r) ->
+        let l = map_leaves l f in
+        let r = map_leaves r f in
+        { t with children = Some (l, r) }
+
   let rec iter_leaves_rev t f =
     match t.children with
     | None -> f t
     | Some (l, r) ->
         iter_leaves_rev r f;
         iter_leaves_rev l f
+
+  let collect_leaves t =
+    Result.fold_iter (iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
+        let offset, _ = leaf.range in
+        let offset = offset -@ fst t.range in
+        match leaf.node with
+        | NotOwned Totally -> miss_no_fix ~msg:"decode" ()
+        | Owned { v = Uninit Totally; _ } ->
+            Result.error `UninitializedMemoryAccess
+        | Owned { v = Zeros; _ } ->
+            let* ty =
+              match Typed.kind (Range.size leaf.range) with
+              | Int size -> return (Layout.size_to_uint (Z.to_int size))
+              | _ -> not_impl "Don't know how to read this size"
+            in
+            let+ value =
+              of_opt_not_impl ~msg:"Don't know how to zero this type"
+              @@ Layout.zeroed ~null_ptr:Sptr.ArithPtr.null_ptr ty
+            in
+            Ok (Encoder.{ value; ty; offset } :: vs)
+        | Owned { v = Init { value; ty }; _ } ->
+            Result.ok (Encoder.{ value; ty; offset } :: vs)
+        | Owned { v = Any; _ } ->
+            L.info (fun m -> m "Reading from Any memory, vanishing.");
+            vanish ()
+        | NotOwned Partially | Owned { v = Lazy | Uninit Partially; _ } ->
+            L.debug (fun m -> m "Iterating over an intermediate node?");
+            vanish ())
+
+  let decode ~ty t =
+    match t.node with
+    | Owned { v = Lazy; _ } ->
+        let** leaves = collect_leaves t in
+        Encoder.transmute_many ~to_ty:ty leaves
+    | node -> Node.decode ~ty node
 
   let of_children_s ~left ~right =
     let range = (fst left.range, snd right.range) in
@@ -172,6 +228,18 @@ module Tree = struct
     in
     make ~node:tree.node ~range ?children ()
 
+  let rec tree_of_rec_node range = function
+    | `Leaf node -> make ~node ~range ()
+    | `Node (at, left, right) ->
+        let left_span, right_span = Range.split_at range (fst range +@ at) in
+        let left = tree_of_rec_node left_span left in
+        let right = tree_of_rec_node right_span right in
+        let tb =
+          match left.node with Owned { tb; _ } -> tb | _ -> assert false
+        in
+        let node = Node.(Owned { v = Lazy; tb }) in
+        { range; children = Some (left, right); node }
+
   let rec split ~range t : (Node.t * t * t) Rustsymex.t =
     (* this function splits a tree and returns the node in the given range *)
     (* We're assuming that range is inside old_span *)
@@ -182,27 +250,57 @@ module Tree = struct
       let at = nh in
       let+ left_node, right_node = Node.split ~range:old_span ~at t.node in
       let left_span, right_span = Range.split_at old_span at in
-      let left = make ~node:left_node ~range:left_span () in
-      let right = make ~node:right_node ~range:right_span () in
-      (left_node, left, right)
+      let left = tree_of_rec_node left_span left_node in
+      let right = tree_of_rec_node right_span right_node in
+      (left.node, left, right)
     else
       if%sat oh ==@ nh then
         let+ left_node, right_node = Node.split ~range:old_span ~at:nl t.node in
         let left_span, right_span = Range.split_at old_span nl in
-        let left = make ~node:left_node ~range:left_span () in
-        let right = make ~node:right_node ~range:right_span () in
-        (right_node, left, right)
+        let left = tree_of_rec_node left_span left_node in
+        let right = tree_of_rec_node right_span right_node in
+        (right.node, left, right)
       else
         (* We're first splitting on the left then splitting again on the right *)
         let* left_node, right_node = Node.split ~range:old_span ~at:nl t.node in
         let left_span, right_span = Range.split_at old_span nl in
-        let left = make ~node:left_node ~range:left_span () in
-        let full_right = make ~node:right_node ~range:right_span () in
-        let* node, right_left, right_right = split ~range full_right in
-        let+ right =
-          with_children full_right ~left:right_left ~right:right_right
+        let left = tree_of_rec_node left_span left_node in
+        let full_right = tree_of_rec_node right_span right_node in
+        let* sub_right, right_extra = extract full_right range in
+        let* node, right_left, right_right = split ~range sub_right in
+        let* right =
+          with_children sub_right ~left:right_left ~right:right_right
         in
-        (node, left, right)
+        match right_extra with
+        | None -> return (node, left, right)
+        | Some right_extra ->
+            let+ right =
+              with_children full_right ~left:right ~right:right_extra
+            in
+            (node, left, right)
+
+  and extract (t : t) (range : Range.t) : (t * t option) Rustsymex.t =
+    (* First result is the extracted tree, second is the remain *)
+    if%sat Range.sem_eq range t.range then return (t, None)
+    else if Option.is_none t.children then return (t, None)
+    else
+      let left, right = Option.get t.children in
+      if%sat Range.is_inside range left.range then
+        let* extracted, new_left = extract left range in
+        let+ new_self =
+          match new_left with
+          | Some left -> of_children_s ~right ~left
+          | None -> return right
+        in
+        (extracted, Some new_self)
+      else
+        let* extracted, new_right = extract right range in
+        let+ new_self =
+          match new_right with
+          | Some right -> of_children_s ~right ~left
+          | None -> return left
+        in
+        (extracted, Some new_self)
 
   let extend_if_needed t range =
     let rl, rh = range in
@@ -225,28 +323,6 @@ module Tree = struct
       else return t_with_left
     in
     return result
-
-  let rec extract (t : t) (range : Range.t) : (t * t option) Rustsymex.t =
-    (* First result is the extracted tree, second is the remain *)
-    if%sat Range.sem_eq range t.range then return (t, None)
-    else
-      let left, right = Option.get t.children in
-      if%sat Range.is_inside range left.range then
-        let* extracted, new_left = extract left range in
-        let+ new_self =
-          match new_left with
-          | Some left -> of_children_s ~right ~left
-          | None -> return right
-        in
-        (extracted, Some new_self)
-      else
-        let* extracted, new_right = extract right range in
-        let+ new_self =
-          match new_right with
-          | Some right -> of_children_s ~right ~left
-          | None -> return left
-        in
-        (extracted, Some new_self)
 
   let rec add_to_the_right t addition : t Rustsymex.t =
     match t.children with
@@ -326,22 +402,26 @@ module Tree = struct
     let* root = extend_if_needed t range in
     frame_inside ~replace_node ~rebuild_parent root range
 
-  let load ?(is_move = false) (ofs : [< T.sint ] Typed.t)
-      (size : [< T.sint ] Typed.t) (ty : Types.ty) (tag : Tree_borrow.tag)
-      (tb : Tree_borrow.t) (t : t) : (rust_val * t, 'err, 'fix) Result.t =
+  let load ?(is_move = false) ?(ignore_borrow = false)
+      (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) (ty : Types.ty)
+      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t) :
+      (rust_val * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size ofs size in
     let replace_node t =
       match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"load" ()
+      | NotOwned _ -> miss_no_fix ~msg:"load" ()
       | Owned { tb = tb_st; v } ->
-          let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Read tb_st in
+          let tb_st', ub =
+            if ignore_borrow then (tb_st, false)
+            else Tree_borrow.access tb tag Tree_borrow.Read tb_st
+          in
           if ub then Result.error `UBTreeBorrow
           else if is_move then Result.ok (uninit tb_st' range)
           else Result.ok { t with node = Owned { tb = tb_st'; v } }
     in
     let rebuild_parent = with_children in
     let** framed, tree = frame_range t ~replace_node ~rebuild_parent range in
-    let++ sval = Node.decode ~ty framed.node in
+    let++ sval = decode ~ty framed in
     (sval, tree)
 
   let store (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
@@ -350,7 +430,7 @@ module Tree = struct
     let range = Range.of_low_and_size low size in
     let replace_node t =
       match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"store" ()
+      | NotOwned _ -> miss_no_fix ~msg:"store" ()
       | Owned { tb = tb_st; _ } ->
           let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Write tb_st in
           if ub then Result.error `UBTreeBorrow
@@ -370,10 +450,14 @@ module Tree = struct
     let range = Range.of_low_and_size low size in
     let replace_node t =
       match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
-      | Owned { tb; _ } ->
-          (* Is there something to do with the tree borrow here? *)
-          Result.ok @@ uninit tb range
+      | NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
+      | Owned _ -> (
+          Result.ok
+          @@ map_leaves t
+          @@ fun t ->
+          match t.node with
+          | Owned { tb; _ } -> uninit tb t.range
+          | _ -> assert false)
     in
     let rebuild_parent = of_children in
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -421,7 +505,7 @@ module Tree = struct
     let replace_node _ = Result.ok @@ not_owned range in
     let rebuild_parent = of_children in
     let** framed, _tree = frame_range t ~replace_node ~rebuild_parent range in
-    let* sval_res = Node.decode ~ty framed.node in
+    let* sval_res = decode ~ty framed in
     match sval_res with
     | Ok _sv ->
         not_impl "Consume typed value on rust_val equality."
@@ -613,12 +697,12 @@ let assert_exclusively_owned t =
             ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
-let load ?is_move ofs ty tag tb t =
+let load ?is_move ?ignore_borrow ofs ty tag tb t =
   let* size = Layout.size_of_s ty in
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
-    Tree.load ?is_move ofs size ty tag tb t.root
+    Tree.load ?is_move ?ignore_borrow ofs size ty tag tb t.root
   in
   (res, to_opt tree)
 
