@@ -137,9 +137,16 @@ module Make (Heap : Heap_intf.S) = struct
             let** (), state = Heap.store ptr str_ty char_arr state in
             let++ (), state = Heap.store_str_global str ptr state in
             (Ptr ptr, state))
-    | e ->
+    | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
+    | CTraitConst _ -> not_impl "TODO: resolve const TraitConst"
+    | CFnPtr _ -> not_impl "TODO: resolve const FnPtr"
+    | CRawMemory _ -> not_impl "TODO: resolve const RawMemory"
+    | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
+    | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
+
+  (* | e ->
         Fmt.kstr not_impl "TODO: resolve_constant %a"
-          Expressions.pp_raw_constant_expr e
+          Expressions.pp_raw_constant_expr e *)
 
   (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
@@ -344,7 +351,7 @@ module Make (Heap : Heap_intf.S) = struct
                     Types.TypeDeclId.Map.find id UllbcAst.(crate.type_decls)
                   in
                   match type_decl.kind with
-                  | Struct (_ :: _ as fields) ->
+                  | Struct ((_ :: _ as fields), _) ->
                       get_size (List.last fields).field_ty
                   | _ -> not_impl "Couldn't get size in CastUnsize")
               | TAdt (TBuiltin TArray, { const_generics = [ size ]; _ }) ->
@@ -586,8 +593,6 @@ module Make (Heap : Heap_intf.S) = struct
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
         (Array values, state)
-    | Aggregate (AggregatedClosure _, _) ->
-        not_impl "Unsupported rvalue: aggregated closure"
     (* Raw pointer *)
     | RawPtr (place, _kind) ->
         let++ ptr, state = resolve_place ~store state place in

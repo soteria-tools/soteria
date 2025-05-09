@@ -65,6 +65,8 @@ module Session = struct
               print_llbc = false;
               no_merge_goto_chains = false;
               start_from = [];
+              mir = None;
+              preset = None;
             };
           declarations = [];
           type_decls = Types.TypeDeclId.Map.empty;
@@ -98,7 +100,7 @@ module Session = struct
 
   let as_struct adt_id =
     match (get_adt adt_id).kind with
-    | Struct fields -> fields
+    | Struct (fields, _) -> fields
     | _ -> assert false
 
   let get_or_compute_cached_layout ty f =
@@ -205,7 +207,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TAdt (TAdtId id, _) -> (
       let adt = Session.get_adt id in
       match adt.kind with
-      | Struct fields -> layout_of_members @@ field_tys fields
+      | Struct (fields, _) -> layout_of_members @@ field_tys fields
       | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
       (* fieldless enums with one variant are zero-sized *)
       | Enum [ { fields = []; _ } ] ->
@@ -241,8 +243,6 @@ let rec layout_of (ty : Types.ty) : layout =
       let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
       { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
   | TAdt (TBuiltin TArray, _) -> failwith "Invalid TArray shape"
-  (* Closures *)
-  | TClosure (_, _, state, _) -> layout_of_members state
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
   (* Arrows -- we don't support these, but need to compute a size for them, because some code
@@ -441,7 +441,7 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
               let discr = value_of_scalar variant.discriminant in
               let+ fields = nondets @@ Charon_util.field_tys variant.fields in
               Enum (discr, fields))
-      | Struct fields ->
+      | Struct (fields, _) ->
           let+ fields = nondets @@ Charon_util.field_tys fields in
           Struct fields
       | ty ->
@@ -477,7 +477,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   | TAdt (TAdtId t_id, _) -> (
       let adt = Session.get_adt t_id in
       match adt.kind with
-      | Struct fields ->
+      | Struct (fields, _) ->
           fields
           |> Charon_util.field_tys
           |> zeroeds
@@ -516,7 +516,7 @@ let rec is_inhabited : Types.ty -> bool = function
   | TAdt (TAdtId id, _) -> (
       let adt = Session.get_adt id in
       match adt.kind with
-      | Struct fs -> List.for_all is_inhabited @@ Charon_util.field_tys fs
+      | Struct (fs, _) -> List.for_all is_inhabited @@ Charon_util.field_tys fs
       | Union fs -> List.exists is_inhabited @@ Charon_util.field_tys fs
       | Enum [] -> false
       | Enum vars ->
@@ -541,7 +541,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
   | TAdt (TAdtId id, _) -> (
       let adt = Session.get_adt id in
       match adt.kind with
-      | Struct fs ->
+      | Struct (fs, _) ->
           as_zsts @@ Charon_util.field_tys fs
           |> Option.map (fun fs -> Struct fs)
       | Union _ -> None

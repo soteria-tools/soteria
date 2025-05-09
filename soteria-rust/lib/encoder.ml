@@ -78,7 +78,7 @@ module Make (Sptr : Sptr.S) = struct
         let type_decl = Session.get_adt t_id in
         let fields =
           match type_decl.kind with
-          | Struct fields -> field_tys fields
+          | Struct (fields, _) -> field_tys fields
           | _ ->
               Fmt.failwith "Unexpected type declaration in struct value: %a"
                 Types.pp_type_decl type_decl
@@ -220,7 +220,7 @@ module Make (Sptr : Sptr.S) = struct
       | TAdt (TAdtId t_id, _) as ty -> (
           let type_decl = Session.get_adt t_id in
           match type_decl.kind with
-          | Struct fields ->
+          | Struct (fields, _) ->
               let layout = layout_of ty in
               fields
               |> field_tys
