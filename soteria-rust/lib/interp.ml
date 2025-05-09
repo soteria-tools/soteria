@@ -137,9 +137,12 @@ module Make (Heap : Heap_intf.S) = struct
             let** (), state = Heap.store ptr str_ty char_arr state in
             let++ (), state = Heap.store_str_global str ptr state in
             (Ptr ptr, state))
-    | e ->
-        Fmt.kstr not_impl "TODO: resolve_constant %a"
-          Expressions.pp_raw_constant_expr e
+    | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
+    | CTraitConst _ -> not_impl "TODO: resolve const TraitConst"
+    | CFnPtr _ -> not_impl "TODO: resolve const FnPtr"
+    | CRawMemory _ -> not_impl "TODO: resolve const RawMemory"
+    | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
+    | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
   (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
