@@ -96,12 +96,6 @@ let int_of_const_generic : Types.const_generic -> int = function
       Fmt.failwith "int_of_const_generic: unhandled const: %a"
         Types.pp_const_generic cg
 
-let meta_for : Charon.Types.ty -> meta = function
-  | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
-      let len = int_of_const_generic len in
-      Some (Typed.int len)
-  | _ -> None
-
 let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
 
 let empty_span : Meta.span =

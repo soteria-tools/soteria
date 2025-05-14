@@ -65,6 +65,9 @@ module Session = struct
               print_llbc = false;
               no_merge_goto_chains = false;
               start_from = [];
+              mir = None;
+              preset = None;
+              no_ops_to_function_calls = false;
             };
           declarations = [];
           type_decls = Types.TypeDeclId.Map.empty;
@@ -250,7 +253,7 @@ let rec layout_of (ty : Types.ty) : layout =
   (* Others (unhandled for now) *)
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
   | TError _ -> raise (CantComputeLayout ("Error", ty))
-  | TTraitType _ -> raise (CantComputeLayout ("Trait type", ty))
+  | TTraitType (tref, ty_name) -> layout_of @@ resolve_trait_ty tref ty_name
   | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
 
 and layout_of_members members =
@@ -288,6 +291,16 @@ and of_enum_variant adt_id variant =
   in
   let variant = Types.VariantId.nth variants variant in
   of_variant variant
+
+and resolve_trait_ty (tref : Types.trait_ref) ty_name =
+  match tref.trait_id with
+  | TraitImpl (impl, _) ->
+      let crate = Session.get_crate () in
+      let impl = Types.TraitImplId.Map.find impl crate.trait_impls in
+      let _, ty = List.find (fun (n, _) -> ty_name = n) impl.types in
+      ty
+  | _ ->
+      raise (CantComputeLayout ("Trait type", Types.TTraitType (tref, ty_name)))
 
 let offset_in_array ty idx =
   let sub_layout = layout_of ty in

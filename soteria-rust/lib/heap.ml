@@ -156,7 +156,8 @@ let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
   with_ptr ptr st (fun ~ofs block ->
       let@ block, tb = with_tbs block in
       L.debug (fun f ->
-          f "Recursively reading from block tree at %a:@.%a" Sptr.pp ptr
+          f "Recursively reading %a from block tree at %a:@.%a"
+            Charon_util.pp_ty ty Sptr.pp ptr
             Fmt.(option ~none:(any "None") Tree_block.pp)
             block);
       let rec aux block = function
@@ -248,9 +249,7 @@ let alloc size align st =
 
 let alloc_ty ty st =
   let* layout = Layout.layout_of_s ty in
-  let++ (ptr, _), st = alloc layout.size layout.align st in
-  let meta = Charon_util.meta_for ty in
-  ((ptr, meta), st)
+  alloc layout.size layout.align st
 
 let alloc_tys tys st =
   let@ heap = with_heap st in
@@ -267,8 +266,7 @@ let alloc_tys tys st =
       let ptr : Sptr.t =
         { ptr; tag = tb.tag; align = layout.align; size = layout.size }
       in
-      let meta = Charon_util.meta_for ty in
-      (block, (ptr, meta)))
+      (block, (ptr, None)))
 
 let free (({ ptr; _ } : Sptr.t), _) ({ heap; _ } as st : t) :
     (unit * t, 'err, serialized list) Result.t =
