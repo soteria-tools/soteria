@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from os import error, truncate
 import sys
 import re
 from typing import Iterable, Optional
@@ -62,6 +63,149 @@ def file_str(file_name: str):
 
 # { (result, color) -> {(test, specific reason?)} }
 LogInfo = dict[tuple[str, str], set[tuple[str, Optional[str]]]]
+LogCategorisation_ = tuple[str, str, Optional[str]]
+LogCategorisation = LogCategorisation_ | list[LogCategorisation_]
+
+
+def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation:
+    if "Fatal (Charon)" in test:
+        # this isn't Charon's fault, really
+        unresolved = re.findall(
+            r"failed to resolve: could not find `(.+)` in `(.+)`", test
+        )
+        if unresolved:
+            return [
+                ("Missing dependency", ORANGE, f"{crate}::{fn}")
+                for fn, crate in unresolved
+            ]
+
+        compile_errors = re.findall(r"error(\[E\d+\]: .+)\n", test)
+        compile_errors = [
+            # these are Hax/Charon errors!
+            err
+            for err in compile_errors
+            if not err.startswith("[E9999]")
+        ]
+        if compile_errors:
+            return [("Compilation error", ORANGE, error) for error in compile_errors]
+
+        if "cannot find macro" in test:
+            err = re.search(r"(cannot find macro.*)\n", test)
+            if err is not None:
+                return ("Compilation error", ORANGE, f"{err}")
+
+        sub_errors = []
+
+        err_labels = re.findall(r'The label is "(.+)"', test)
+        sub_errors = sub_errors + err_labels
+
+        panics = re.findall(r"thread \'.+\' panicked at (.+):", test)
+        sub_errors = sub_errors + [
+            (f"Hax panicked: {err}" if "frontend/exporter" in err else f"Panic: {err}")
+            for err in panics
+        ]
+
+        if "Unexpected trait reference kind" in test:
+            sub_errors.append("Unexpected trait reference kind")
+        if "Cannot convert constant back to an expression" in test:
+            sub_errors.append("Cannot convert constant back to an expression")
+        if "Charon__GAstOfJson.gtranslated_crate_of_json" in test:
+            sub_errors.append("Parsing ULLBC from JSON")
+
+        if len(sub_errors) > 0:
+            return [("Charon", PURPLE, reason) for reason in sub_errors]
+        return ("Charon", PURPLE, None)
+
+    if "Fatal: No entry points found" in test:
+        return ("No entry points found", RED, None)
+
+    if "resolve_constant (Generated_Expressions.COpaque" in test:
+        return ("Charon", PURPLE, "Constant resolving")
+
+    if "MISSING FEATURE, VANISHING" in test:
+        cause = re.search(r"MISSING FEATURE, VANISHING: (.+)\n", test)
+        if not cause:
+            exit(f"No cause found for vanish in {test}")
+        cause = cause.group(1)
+        color = YELLOW
+        reason = None
+
+        if "Unsupported intrinsic" in cause and not "--intrinsics" in sys.argv:
+            reason = cause.replace("Unsupported intrinsic: ", "")
+            cause = "Unsupported intrinsic"
+            color = ORANGE
+
+        if "not found in store" in cause:
+            cause = "Variable not found in store"
+        if "Unsupported cast kind" in cause:
+            cause = "Unsupported cast kind"
+        if "Unhandled transmute" in cause:
+            cause = "Unhandled transmute"
+        if "is opaque" in cause:
+            reason = cause.replace("Function ", "").replace(" is opaque", "")
+            cause = "Opaque function - Charon?"
+            color = PURPLE
+        if "Splitting " in cause:
+            cause = "Splitting value"
+
+        return (cause, color, reason)
+
+    if "Done." in test:
+        if not expect_failure:
+            return ("Success", GREEN, "Expected success, got success")
+        else:
+            return ("Failure", RED, "Expected failure, got success")
+
+    err_re = re.compile(r"Error in (\d+) branch")
+    if err_re.search(test):
+        if expect_failure:
+            return ("Success", GREEN, "Expected failure, got failure")
+        else:
+            return ("Failure", RED, "Expected success, got failure")
+
+    if "Fatal: Exn: Failure" in test:
+        cause = re.search(r"Fatal: Exn: Failure\(\"(.+)\"\)", test)
+        if not cause:
+            exit(f"No cause found for fatal exn in {test}")
+        return ("Raised exception", RED, cause.group(1))
+
+    if "Fatal: Exn" in test:
+        cause = re.search(r"Fatal: Exn: (.+)", test)
+        if not cause:
+            exit(f"No cause found for fatal exn in {test}")
+        return ("Raised exception", RED, cause.group(1))
+
+    if "Fatal: Execution vanished" in test:
+        return ("Vanished", RED, None)
+
+    return (f"Unknown (Fatal error)", RED, None)
+
+
+def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
+    if "CBMC timed out" in test:
+        return ("Time out", ORANGE, None)
+    if (
+        "A Rust construct that is not currently supported by Kani was found to be reachable"
+        in test
+    ):
+        return ("Unsupported", ORANGE, None)
+
+    if "VERIFICATION:- SUCCESSFUL" in test:
+        if not expect_failure:
+            return ("Success", GREEN, "Expected success, got success")
+        else:
+            return ("Failure", RED, "Expected failure, got success")
+
+    if "VERIFICATION:- FAILED" in test:
+        if expect_failure:
+            return ("Success", GREEN, "Expected failure, got failure")
+        else:
+            return ("Failure", RED, "Expected success, got failure")
+
+    if "exited with status exit status" in test:
+        return ("Crashed", PURPLE, None)
+
+    return (f"Unknown", PURPLE, None)
 
 
 def analyse(file: str) -> LogInfo:
@@ -73,10 +217,12 @@ def analyse(file: str) -> LogInfo:
         key = (cause, color)
         if key not in stats:
             stats[key] = set()
+        if reason:
+            reason = reason.replace("\\n", "\n")
         stats[key].add((test, reason))
 
     content = open(file, "r").read()
-    tests = content.split("\nRunning ")
+    tests = content.split("\nRunning /")
     print(f"• Found {len(tests)} tests in {file}")
     tests[0] = tests[0].replace("Running ", "")
     for test in tests:
@@ -104,134 +250,19 @@ def analyse(file: str) -> LogInfo:
         tests_idx = file_path.split("/").index("tests") + 1
         file_name = "/".join(file_path.split("/")[tests_idx:])
 
-        if "Fatal (Charon)" in test:
-            # this isn't Charon's fault, really
-            unresolved = re.findall(
-                r"failed to resolve: could not find `(.+)` in `(.+)`", test
-            )
-            if unresolved:
-                for fn, crate in unresolved:
-                    log(file_name, "Missing dependency", ORANGE, f"{crate}::{fn}")
-                continue
+        # test run through kani
+        if "Kani Rust Verifier" in test:
+            categories = categorise_kani(test, expect_failure=expect_failure)
+        else:
+            categories = categorise_rusteria(test, expect_failure=expect_failure)
 
-            compile_errors = re.findall(r"error(\[E\d+\]: .+)\n", test)
-            compile_errors = [
-                # these are Hax/Charon errors!
-                err
-                for err in compile_errors
-                if not err.startswith("[E9999]")
-            ]
-            if compile_errors:
-                for error in compile_errors:
-                    log(file_name, "Compilation error", ORANGE, error)
-                continue
-
-            if "cannot find macro" in test:
-                err = re.search(r"(cannot find macro.*)\n", test)
-                if err is not None:
-                    log(file_path, "Compilation error", ORANGE, f"{err}")
-                    continue
-
-            sub_errors = []
-
-            err_labels = re.findall(r'The label is "(.+)"', test)
-            sub_errors = sub_errors + err_labels
-
-            panics = re.findall(r"thread \'.+\' panicked at (.+):", test)
-            sub_errors = sub_errors + [
-                (
-                    f"Hax panicked: {err}"
-                    if "frontend/exporter" in err
-                    else f"Panic: {err}"
-                )
-                for err in panics
-            ]
-
-            if "Unexpected trait reference kind" in test:
-                sub_errors.append("Unexpected trait reference kind")
-            if "Cannot convert constant back to an expression" in test:
-                sub_errors.append("Cannot convert constant back to an expression")
-            if "Charon__GAstOfJson.gtranslated_crate_of_json" in test:
-                sub_errors.append("Parsing ULLBC from JSON")
-
-            if len(sub_errors) > 0:
-                for reason in sub_errors:
-                    log(file_name, "Charon", PURPLE, reason)
-            else:
-                log(file_name, "Charon", PURPLE)
-            continue
-
-        if "Fatal: No entry points found" in test:
-            log(file_name, "No entry points found", RED)
-            continue
-
-        if "resolve_constant (Generated_Expressions.COpaque" in test:
-            log(file_name, "Charon", PURPLE, "Constant resolving")
-            continue
-
-        if "MISSING FEATURE, VANISHING" in test:
-            cause = re.search(r"MISSING FEATURE, VANISHING: (.+)\n", test)
-            if not cause:
-                exit(f"No cause found for vanish in {test}")
-            cause = cause.group(1)
-            color = YELLOW
-            reason = None
-
-            if "Unsupported intrinsic" in cause and not "--intrinsics" in sys.argv:
-                reason = cause.replace("Unsupported intrinsic: ", "")
-                cause = "Unsupported intrinsic"
-                color = ORANGE
-
-            if "not found in store" in cause:
-                cause = "Variable not found in store"
-            if "Unsupported cast kind" in cause:
-                cause = "Unsupported cast kind"
-            if "Unhandled transmute" in cause:
-                cause = "Unhandled transmute"
-            if "is opaque" in cause:
-                reason = cause.replace("Function ", "").replace(" is opaque", "")
-                cause = "Opaque function - Charon?"
-                color = PURPLE
-            if "Splitting " in cause:
-                cause = "Splitting value"
-
+        if isinstance(categories, list):
+            for cause, color, reason in categories:
+                log(file_name, cause, color, reason)
+        else:
+            cause, color, reason = categories
             log(file_name, cause, color, reason)
-            continue
 
-        if "Done." in test:
-            if not expect_failure:
-                log(file_name, "Success", GREEN, "Expected success, got success")
-            else:
-                log(file_name, "Failure", RED, "Expected success, got failure")
-            continue
-
-        err_re = re.compile(r"Error in (\d+) branch")
-        if err_re.search(test):
-            if expect_failure:
-                log(file_name, "Success", GREEN, "Expected failure, got failure")
-            else:
-                log(file_name, "Failure", RED, "Expected failure, got success")
-            continue
-
-        if "Fatal: Exn: Failure" in test:
-            cause = re.search(r"Fatal: Exn: Failure\(\"(.+)\"\)", test)
-            if not cause:
-                exit(f"No cause found for fatal exn in {test}")
-            log(file_name, "Raised exception", RED, cause.group(1))
-            continue
-
-        if "Fatal: Exn" in test:
-            cause = re.search(r"Fatal: Exn: (.+)", test)
-            if not cause:
-                exit(f"No cause found for fatal exn in {test}")
-            log(file_name, "Raised exception", RED, cause.group(1))
-            continue
-
-        if "Fatal: Execution vanished" in test:
-            log(file_name, "Vanished", RED)
-            continue
-
-        log(file_name, f"Unknown (Fatal error)", RED)
     return stats
 
 
@@ -245,6 +276,15 @@ def merge(logs: Iterable[LogInfo]) -> LogInfo:
     return ret
 
 
+def filtered(log: LogInfo) -> LogInfo:
+    cause_filters = [arg[3:] for arg in sys.argv if arg.startswith("-F=")]
+    return {
+        (cause, color): tests
+        for (cause, color), tests in log.items()
+        if (len(cause_filters) == 0 or any(filter in cause for filter in cause_filters))
+    }
+
+
 # List equivalent of LogInfo:
 # [( cause, color, test_num, {(test, specific reason?)} )]
 LogInfoList = list[tuple[str, str, int, set[tuple[str, Optional[str]]]]]
@@ -252,14 +292,12 @@ LogInfoList = list[tuple[str, str, int, set[tuple[str, Optional[str]]]]]
 
 # parses a LogInfo into a list TestItems, applying the required filtering and sorting
 def as_items(log: LogInfo) -> LogInfoList:
-    cause_filters = [arg[3:] for arg in sys.argv if arg.startswith("-F=")]
     alpha_sort = "--az" in sys.argv
     rev_sort = "--rev" in sys.argv
 
     items = [
         (cause, color, len(set(test[0] for test in tests)), tests)
         for (cause, color), tests in log.items()
-        if (len(cause_filters) == 0 or any(filter in cause for filter in cause_filters))
     ]
 
     if alpha_sort:
@@ -293,7 +331,7 @@ def as_test_outcome_map(log: LogInfo) -> TestOutcomeMap:
 def main(files: list[str]):
     stats_all: list[LogInfo] = [analyse(file) for file in files]
     stats: LogInfo = merge(stats_all)
-    items: LogInfoList = as_items(stats)
+    items: LogInfoList = as_items(filtered(stats))
 
     i = 0
     verbosity = sum(1 for flag in sys.argv if flag == "-v")
@@ -368,6 +406,21 @@ def diff(f1: str, f2: str):
         if len(only_before) != 0 or len(only_after) != 0:
             diffs[test] = (only_before, only_after)
 
+    cause_filters = [arg[3:] for arg in sys.argv if arg.startswith("-F=")]
+    if len(cause_filters) > 0:
+
+        def filter_diff(c: str | tuple[TestInfo, TestInfo]):
+            if isinstance(c, str):
+                return True
+            before, after = c
+            return any(
+                filter in cause
+                for filter in cause_filters
+                for (cause, _, _) in before.union(after)
+            )
+
+        diffs = {test: diff for test, diff in diffs.items() if filter_diff(diff)}
+
     all_causes = list(set(log1.keys()).union(log2.keys()))
     all_causes.sort(key=lambda x: x[0])
     verbosity = sum(1 for flag in sys.argv if flag == "-v")
@@ -385,11 +438,13 @@ def diff(f1: str, f2: str):
         else:
             msg = f"{len_before} -> {len_after}"
         print(f"{rainbow(i)}|{RESET} {color}{cause}{RESET}: {msg}")
+        i = i + 1
     if verbosity < 1:
         return
     print()
     print(f"{BOLD}Diffs:{RESET} ({len(diffs)})")
     for test, diff in diffs.items():
+        i = i + 1
         if isinstance(diff, str):
             print(f"{rainbow(i)}|{RESET} {test}{RESET} {diff}")
         else:
@@ -407,7 +462,6 @@ def diff(f1: str, f2: str):
                     print(f"  {plus} {color}{cause}{RESET} ({reason})")
                 else:
                     print(f"  {plus} {color}{cause}{RESET}")
-        i = i + 1
 
 
 if __name__ == "__main__":

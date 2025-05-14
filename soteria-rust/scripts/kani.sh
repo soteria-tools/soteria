@@ -12,14 +12,12 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 source $SCRIPT_DIR/common.sh
 
-touch "$SCRIPT_DIR/kani.log"
-LOG_FILE=$SCRIPT_DIR/kani.log
-
 # Tests are in kani/tests/<category...>/<test>.rs
 KANI_PATH=$(realpath $SCRIPT_DIR/../../../kani)
 
 # Handle arguments:
 CMD="soteria-rust exec-main --ignore-leaks --kani"
+TAG=""
 STOP_ON_FAIL=true
 STORE_PASSES=false
 TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)
@@ -64,6 +62,11 @@ while [[ $# -gt 0 ]]; do
             CMD="$CMD --html"
             shift
             ;;
+        --tag)
+            TAG="-$2"
+            shift
+            shift
+            ;;
         -v)
             CMD="$CMD -v"
             shift
@@ -93,6 +96,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Clean log file
+touch "$SCRIPT_DIR/kani$TAG.log"
+LOG_FILE=$SCRIPT_DIR/kani$TAG.log
 echo -n > $LOG_FILE
 if $STORE_PASSES; then
     echo -n > $PASS_FILE

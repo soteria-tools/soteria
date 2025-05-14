@@ -12,14 +12,12 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 source $SCRIPT_DIR/common.sh
 
-touch "$SCRIPT_DIR/miri.log"
-LOG_FILE=$SCRIPT_DIR/miri.log
-
 # Tests are in miri/tests/<pass/panic/fail>/<...test>.rs
 MIRI_PATH=$(realpath $SCRIPT_DIR/../../../miri)
 
 # Handle arguments:
 CMD="soteria-rust exec-main --miri"
+TAG=""
 STOP_ON_FAIL=true
 STORE_PASSES=false
 
@@ -72,6 +70,15 @@ while [[ $# -gt 0 ]]; do
             CMD="$CMD --html"
             shift
             ;;
+        --as-kani)
+            CMD="kani -Z unstable-options --harness-timeout=3s"
+            shift
+            ;;
+        --tag)
+            TAG="-$2"
+            shift
+            shift
+            ;;
         -v)
             CMD="$CMD -v"
             shift
@@ -100,6 +107,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Clean log file
+touch "$SCRIPT_DIR/miri$TAG.log"
+LOG_FILE=$SCRIPT_DIR/miri$TAG.log
 echo -n > $LOG_FILE
 if $STORE_PASSES; then
     echo -n > $PASS_FILE
