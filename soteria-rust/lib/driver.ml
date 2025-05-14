@@ -41,7 +41,8 @@ let pp_err ft (err, call_trace) =
     | `FailedAssert None -> Fmt.string ft "Failed assertion"
     | `Overflow -> Fmt.string ft "Overflow"
     | `StdErr msg -> Fmt.pf ft "Std error: %s" msg
-    | `Panic msg -> Fmt.pf ft "Panic: %s" msg
+    | `Panic (Some msg) -> Fmt.pf ft "Panic: %s" msg
+    | `Panic None -> Fmt.pf ft "Panic"
     | `MetaExpectedError -> Fmt.string ft "MetaExpectedError"
   in
   Fmt.pf ft "@,Trace:@,%a" Call_trace.pp call_trace;
@@ -87,7 +88,6 @@ let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
 let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
     (crate : Charon.UllbcAst.crate) =
   Layout.Session.set_crate crate;
-  let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
   let entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
     |> List.filter_map plugin.get_entry_point
@@ -102,7 +102,7 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
     |> List.map @@ fun (entry : Plugin.entry_point) ->
        let@ () =
          L.entry_point_section
-         @@ PrintTypes.name_to_string ctx entry.fun_decl.item_meta.name
+           (Charon_util.name_str crate entry.fun_decl.item_meta.name)
        in
        let branches =
          try Rustsymex.run @@ exec_fun entry.fun_decl with
@@ -162,7 +162,7 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks kani
   try
     let plugin =
       Plugin.merge_ifs
-        [ (kani, Plugin.kani); (miri, Plugin.miri); (true, Plugin.default) ]
+        [ (true, Plugin.default); (kani, Plugin.kani); (miri, Plugin.miri) ]
     in
     let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
     let res = exec_main ~ignore_leaks ~plugin crate in

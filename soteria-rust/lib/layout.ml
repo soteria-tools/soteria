@@ -115,10 +115,7 @@ module Session = struct
   let get_or_compute_cached_layout_var var =
     get_or_compute_cached_layout (Right var)
 
-  let pp_name ft name =
-    let ctx = PrintUllbcAst.Crate.crate_to_fmt_env (get_crate ()) in
-    let str = PrintTypes.name_to_string ctx name in
-    Fmt.pf ft "%s" str
+  let pp_name ft name = Fmt.pf ft "%s" (name_str (get_crate ()) name)
 end
 
 let is_int : Types.ty -> bool = function

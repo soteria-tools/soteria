@@ -193,9 +193,8 @@ module Make (Heap : Heap_intf.S) = struct
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
         let fundef = Expressions.FunDeclId.Map.find fid crate.fun_decls in
         L.info (fun g ->
-            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
             g "Resolved function call to %s"
-              (PrintTypes.name_to_string ctx fundef.item_meta.name));
+              (name_str crate fundef.item_meta.name));
         match Std_funs.std_fun_eval ~crate fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
@@ -215,9 +214,8 @@ module Make (Heap : Heap_intf.S) = struct
         (* Same as with strings -- here we need to somehow cache where we store the globals *)
         let fundef = UllbcAst.FunDeclId.Map.find decl.body crate.fun_decls in
         L.info (fun g ->
-            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-            g "Resolved function call to %s"
-              (PrintTypes.name_to_string ctx fundef.item_meta.name));
+            g "Resolved global init call to %s"
+              (name_str crate fundef.item_meta.name));
         let global_fn =
           match Std_funs.std_fun_eval ~crate fundef with
           | Some fn -> fn
@@ -677,10 +675,8 @@ module Make (Heap : Heap_intf.S) = struct
         else
           match on_failure with
           | UndefinedBehavior -> Heap.error `UBAbort state
-          | Panic None -> Heap.error (`Panic "unnamed") state
-          | Panic (Some name) ->
-              let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-              let name = PrintTypes.name_to_string ctx name in
+          | Panic name ->
+              let name = Option.map (name_str crate) name in
               Heap.error (`Panic name) state)
     | s ->
         Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
@@ -769,28 +765,21 @@ module Make (Heap : Heap_intf.S) = struct
     | Abort kind -> (
         match kind with
         | UndefinedBehavior -> Heap.error `UBAbort state
-        | Panic None -> Heap.error (`Panic "unnamed") state
-        | Panic (Some name) ->
-            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-            let name_str = PrintTypes.name_to_string ctx name in
-            Heap.error (`Panic name_str) state)
+        | Panic name ->
+            let name = Option.map (name_str crate) name in
+            Heap.error (`Panic name) state)
 
   and exec_fun ~crate ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
     let* body =
       match body with
-      | None ->
-          let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-          Fmt.kstr not_impl "Function %s is opaque"
-            (PrintTypes.name_to_string ctx name)
+      | None -> Fmt.kstr not_impl "Function %s is opaque" (name_str crate name)
       | Some body -> return body
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
-        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-        m "Calling %s with [@[%a@]]"
-          (PrintTypes.name_to_string ctx name)
+        m "Calling %s with [@[%a@]]" (name_str crate name)
           Fmt.(list ~sep:comma pp_rust_val)
           args);
     let** store, protected, state = alloc_stack body.locals args state in

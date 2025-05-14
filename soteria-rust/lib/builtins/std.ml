@@ -222,7 +222,8 @@ module M (Heap : Heap_intf.S) = struct
           .types
     in
     match Layout.zeroed ~null_ptr:Sptr.null_ptr ty with
-    | None -> Heap.error (`Panic "core::intrinsics::assert_zero_valid") state
+    | None ->
+        Heap.error (`Panic (Some "core::intrinsics::assert_zero_valid")) state
     | _ -> Result.ok (Tuple [], state)
 
   let size_of (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
@@ -434,7 +435,7 @@ module M (Heap : Heap_intf.S) = struct
       |> List.hd
     in
     if Layout.is_inhabited ty then Result.ok (Tuple [], state)
-    else Heap.error (`Panic "core::intrinsics::assert_inhabited") state
+    else Heap.error (`Panic (Some "core::intrinsics::assert_inhabited")) state
 
   let from_raw_parts ~crate:_ ~args ~state =
     match args with
@@ -460,7 +461,7 @@ module M (Heap : Heap_intf.S) = struct
     | [ Base cond ] ->
         let* cond = cast_checked ~ty:Typed.t_int cond in
         if%sat Typed.bool_of_int cond then Result.ok (Tuple [], state)
-        else Heap.error (`Panic "core::intrinsics::assume") state
+        else Heap.error (`Panic (Some "core::intrinsics::assume")) state
     | _ -> failwith "std_assume: invalid arguments"
 
   let exact_div (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
@@ -473,7 +474,7 @@ module M (Heap : Heap_intf.S) = struct
         else
           if%sat (not (r ==@ 0s)) &&@ (l %@ cast r ==@ 0s) then
             Result.ok (Base res, state)
-          else Heap.error (`Panic "core::intrinsics::exact_div") state
+          else Heap.error (`Panic (Some "core::intrinsics::exact_div")) state
     | _ -> failwith "exact_div: invalid arguments"
 
   let ctpop (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
@@ -577,7 +578,7 @@ module M (Heap : Heap_intf.S) = struct
         let variants = Layout.Session.as_enum id in
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
-    | _ -> Heap.error (`Panic "core::intrinsics::variant_count") state
+    | _ -> Heap.error (`Panic (Some "core::intrinsics::variant_count")) state
 
   let slice_into_vec ~crate:_ ~args ~state:_ =
     L.warn (fun m -> m "%a" Fmt.(list ~sep:comma pp_rust_val) args);

@@ -64,6 +64,9 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
   | ty -> Fmt.pf fmt "%a" Types.pp_ty ty
 
+let name_str crate =
+  PrintTypes.name_to_string @@ PrintUllbcAst.Crate.crate_to_fmt_env crate
+
 let as_ptr = function
   | Ptr ptr -> ptr
   | v ->

@@ -4,7 +4,7 @@ open Rustsymex
 
 module M (Heap : Heap_intf.S) = struct
   module Std = Std.M (Heap)
-  module Kani = Kani.M (Heap)
+  module Rusteria = Rusteria.M (Heap)
 
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
@@ -13,10 +13,11 @@ module M (Heap : Heap_intf.S) = struct
   type type_loc = GenArg | Input
 
   type std_fun =
-    (* Kani *)
-    | KaniAssert
-    | KaniAssume
-    | KaniNondet
+    (* Rusteria builtins *)
+    | RusteriaAssert
+    | RusteriaAssume
+    | RusteriaNondet
+    | RusteriaPanic
     (* Std *)
     | Abs
     | AssertZeroValid
@@ -51,10 +52,14 @@ module M (Heap : Heap_intf.S) = struct
 
   let std_fun_map =
     [
-      (* Kani *)
-      ("kani::assert", KaniAssert);
-      ("kani::assume", KaniAssume);
-      ("kani::nondet", KaniNondet);
+      (* Rusteria builtins *)
+      ("rusteria::assert", RusteriaAssert);
+      ("rusteria::assume", RusteriaAssume);
+      ("rusteria::nondet", RusteriaNondet);
+      ("rusteria::panic", RusteriaPanic);
+      (* Kani builtins -- we re-define these for nicer call traces *)
+      ("kani::assert", RusteriaAssert);
+      ("kani::panic", RusteriaPanic);
       (* Core *)
       (* FIXME: get rid of these, as Charon improves *)
       ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
@@ -129,7 +134,7 @@ module M (Heap : Heap_intf.S) = struct
 
   let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let open Std in
-    let open Kani in
+    let open Rusteria in
     let opt_bind f opt = match opt with None -> f () | x -> x in
     let ctx = NameMatcher.ctx_from_crate crate in
     let real_name =
@@ -159,9 +164,10 @@ module M (Heap : Heap_intf.S) = struct
          | ExactDiv -> exact_div f.signature
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
-         | KaniAssert -> assert_
-         | KaniAssume -> assume
-         | KaniNondet -> kani_nondet f.signature
+         | RusteriaAssert -> assert_
+         | RusteriaAssume -> assume
+         | RusteriaNondet -> nondet f.signature
+         | RusteriaPanic -> panic
          | Likely -> likely
          | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
          | MulAdd -> mul_add
@@ -186,9 +192,8 @@ module M (Heap : Heap_intf.S) = struct
        in
        if is_intrinsic then
          Option.some @@ fun ~crate ~args:_ ~state:_ ->
-         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
          Fmt.kstr not_impl "Unsupported intrinsic: %s"
-           (PrintTypes.name_to_string ctx real_name)
+           (Charon_util.name_str crate real_name)
        else None
 
   let builtin_fun_eval (f : Expressions.builtin_fun_id) generics =
@@ -200,5 +205,5 @@ module M (Heap : Heap_intf.S) = struct
     | Index idx -> array_index idx generics
     | BoxNew -> box_new generics
     | PtrFromParts _ -> from_raw_parts
-    | CopyNonOverlapping -> copy_nonoverlapping generics
+  (* | CopyNonOverlapping -> copy_nonoverlapping generics *)
 end

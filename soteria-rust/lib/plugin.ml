@@ -47,6 +47,10 @@ type plugin = {
 
 let default =
   let mk_cmd () =
+    let root = List.hd Runtime_sites.Sites.plugin_rusteria in
+    let target = get_host () in
+    let std_lib = root ^ "/std" in
+    compile_lib std_lib;
     mk_cmd
       ~charon:
         [
@@ -56,17 +60,20 @@ let default =
           "--translate-all-methods";
           "--extract-opaque-bodies";
           "--monomorphize";
+          "--mir promoted";
         ]
       ~rustc:
         [
           (* i.e. not always a binary! *)
           "--crate-type=lib";
           "-Zunstable-options";
-          (* Not sure this is needed *)
-          "--extern=std";
-          "--extern=core";
           (* No warning *)
           "-Awarnings";
+          (* include our std and rusteria crates *)
+          "--extern=rusteria";
+          Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
+          Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"
+            std_lib target;
         ]
       ()
   in
@@ -81,7 +88,7 @@ let kani =
   let mk_cmd () =
     let root = List.hd Runtime_sites.Sites.plugin_kani in
     let target = get_host () in
-    let lib = root ^ "/std" in
+    let lib = root ^ "/kani" in
     compile_lib lib;
     mk_cmd
       ~rustc:
@@ -94,8 +101,6 @@ let kani =
           (* Manually include lib binaries *)
           Fmt.str "-L%s/target/%s/debug/deps" lib target;
           Fmt.str "-L%s/target/debug/deps" lib;
-          Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib" lib
-            target;
         ]
       ()
   in
