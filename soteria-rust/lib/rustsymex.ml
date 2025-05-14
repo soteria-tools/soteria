@@ -1,7 +1,7 @@
 module SYMEX =
   Soteria_symex.Symex.Make_iter
     (struct
-      let fuel : Soteria_symex.Fuel_gauge.t = { steps = 300; branching = 4 }
+      let fuel : Soteria_symex.Fuel_gauge.t = { steps = 400; branching = 4 }
     end)
     (Z3solver)
 
@@ -37,7 +37,7 @@ let push_give_up, flush_give_up =
 let current_loc = ref Charon_util.empty_span
 let get_loc () = !current_loc
 
-let with_loc ~(loc : Charon.Meta.span) f =
+let with_loc ~loc f =
   let open Syntax in
   let old_loc = !current_loc in
   current_loc := loc;

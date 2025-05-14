@@ -172,9 +172,4 @@ let access (root : t) accessed e st : tb_state * bool =
   in
   (st', !ub_happened)
 
-let merge =
-  TagMap.merge @@ fun _ l r ->
-  match (l, r) with
-  | None, None -> None
-  | Some v, None | None, Some v -> Some v
-  | Some l, Some r -> Some (meet l r)
+let merge = TagMap.merge @@ fun _ -> Option.merge meet

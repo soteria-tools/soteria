@@ -14,7 +14,7 @@ module Cleaner = struct
 end
 
 let pp_err ft (err, call_trace) =
-  Format.open_hbox ();
+  Format.open_vbox 0;
   let () =
     match err with
     | `NullDereference -> Fmt.string ft "NullDereference"
@@ -29,8 +29,12 @@ let pp_err ft (err, call_trace) =
     | `UBArithShift -> Fmt.string ft "UBArithShift"
     | `UBTransmute -> Fmt.string ft "UBTransmute"
     | `UBTreeBorrow -> Fmt.string ft "UBTreeBorrow"
+    | `DeadVariable -> Fmt.string ft "DeadVariable"
     | `DoubleFree -> Fmt.string ft "DoubleFree"
     | `InvalidFree -> Fmt.string ft "InvalidFree"
+    | `MisalignedPointer -> Fmt.string ft "MisalignedPointer"
+    | `RefToUninhabited -> Fmt.string ft "RefToUninhabited"
+    | `InvalidLayout -> Fmt.string ft "InvalidLayout"
     | `MemoryLeak -> Fmt.string ft "Memory leak"
     | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
     | `FailedAssert None -> Fmt.string ft "Failed assertion"
@@ -39,7 +43,7 @@ let pp_err ft (err, call_trace) =
     | `Panic msg -> Fmt.pf ft "Panic: %s" msg
     | `MetaExpectedError -> Fmt.string ft "MetaExpectedError"
   in
-  Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
+  Fmt.pf ft "@,Trace:@,%a" Call_trace.pp call_trace;
   Format.close_box ()
 
 let default_cmd ~file_name ~output () =
@@ -68,39 +72,31 @@ let default_cmd ~file_name ~output () =
       ]
     ()
 
-let mk_kani_cmd ~no_compile () =
+let mk_kani_cmd () =
   let path = List.hd Runtime_sites.Sites.kani_lib in
-  (if not no_compile then
-     let cargo =
-       "RUSTC=$(charon toolchain-path)/bin/rustc $(charon \
-        toolchain-path)/bin/cargo"
-     in
-     (* look for line "host: <host>", to get the target architecture *)
-     let info = Fmt.kstr exec_and_read "%s -vV" cargo in
-     let target =
-       match List.find_opt (String.starts_with ~prefix:"host") info with
-       | Some s -> String.sub s 6 (String.length s - 6)
-       | None -> raise (ExecutionError "Couldn't find target host")
-     in
-     (* build Kani lib *)
-     let res =
-       Fmt.kstr exec_cmd
-         "cd %s/kani && %s build --lib --target %s > /dev/null 2>/dev/null" path
-         cargo target
-     in
-     if res <> 0 && res <> 255 then
-       let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
-       raise (ExecutionError msg));
-  let ( / ) = Filename.concat in
-  let target = path / "kani" / "target" in
-  (* find folder that is neither debug, nor a file (e.g. "aarch64-apple-darwin") *)
-  let os =
-    try
-      Sys.readdir target
-      |> Array.find_opt (fun s -> s <> "debug" && Sys.is_directory (target / s))
-      |> Option.get
-    with Not_found -> raise (ExecutionError "Couldn't find Kani lib binaries")
+  let cargo =
+    "RUSTC=$(charon toolchain-path)/bin/rustc $(charon \
+     toolchain-path)/bin/cargo"
   in
+  let target =
+    (* look for line "host: <host>", to get the target architecture *)
+    let info = Fmt.kstr exec_and_read "%s -vV" cargo in
+    match List.find_opt (String.starts_with ~prefix:"host") info with
+    | Some s -> String.sub s 6 (String.length s - 6)
+    | None -> raise (ExecutionError "Couldn't find target host")
+  in
+  (* build Kani lib *)
+  let res =
+    Fmt.kstr exec_cmd
+      "cd %s/std && %s build --lib --target %s > /dev/null 2>/dev/null" path
+      cargo target
+  in
+  if res <> 0 && res <> 255 then
+    let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
+    raise (ExecutionError msg)
+  else ();
+  let ( / ) = Filename.concat in
+  let rlib = path / "std" / "target" / target / "debug" / "libstd.rlib" in
   mk_cmd
     ~rustc:
       [
@@ -110,15 +106,17 @@ let mk_kani_cmd ~no_compile () =
         "--cfg=kani";
         "--extern=kani";
         (* The below is cursed and should be fixed !!! *)
-        Fmt.str "-L%s/kani/target/%s/debug/deps" path os;
-        Fmt.str "-L%s/kani/target/debug/deps" path;
+        Fmt.str "-L%s/std/target/%s/debug/deps" path target;
+        Fmt.str "-L%s/std/target/debug/deps" path;
+        Fmt.str "--extern noprelude:std=%s" rlib;
       ]
     ()
 
-let mk_miri_cmd ~no_compile:_ () = mk_cmd ~charon:[ "--opaque=miri_extern" ] ()
+let mk_miri_cmd () =
+  mk_cmd ~charon:[ "--opaque=miri_extern" ] ~rustc:[ "--cfg=miri" ] ()
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~no_compile file_name =
+let parse_ullbc_of_file ~no_compile ~kani ~miri file_name =
   let file_name =
     if Filename.is_relative file_name then
       Filename.concat (Sys.getcwd ()) file_name
@@ -128,11 +126,10 @@ let parse_ullbc_of_file ~no_compile file_name =
   let output = Printf.sprintf "%s.llbc.json" file_name in
   (if not no_compile then
      (* TODO: make these flags! *)
-     let with_kani, with_miri = (true, true) in
      let args =
        default_cmd ~file_name ~output ()
-       |> concat_cmd_if with_kani (mk_kani_cmd ~no_compile)
-       |> concat_cmd_if with_miri (mk_miri_cmd ~no_compile)
+       |> concat_cmd_if kani mk_kani_cmd
+       |> concat_cmd_if miri mk_miri_cmd
      in
      let res = exec_cmd @@ "cd " ^ parent_folder ^ " && " ^ build_cmd args in
      if res = 0 then Cleaner.touched output
@@ -194,13 +191,15 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
          @@ PrintTypes.name_to_string ctx entry_point.item_meta.name
        in
        let branches =
-         try Rustsymex.run @@ exec_fun entry_point
-         with exn ->
-           let msg =
-             Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
-               (Printexc.get_backtrace ())
-           in
-           raise (ExecutionError msg)
+         try Rustsymex.run @@ exec_fun entry_point with
+         | Layout.InvalidLayout ->
+             [ (Error (`InvalidLayout, Call_trace.empty), []) ]
+         | exn ->
+             let msg =
+               Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
+                 (Printexc.get_backtrace ())
+             in
+             raise (ExecutionError msg)
        in
        let branches =
          if not should_err then branches
@@ -241,13 +240,13 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
   |> Result.map List.flatten
   |> Result.map_error List.flatten
 
-let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
-    file_name =
+let exec_main_and_print log_level smt_file no_compile clean ignore_leaks kani
+    miri file_name =
   Z3solver.set_smt_file smt_file;
   Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
   try
-    let crate = parse_ullbc_of_file ~no_compile file_name in
+    let crate = parse_ullbc_of_file ~no_compile ~kani ~miri file_name in
     let res = exec_main ~ignore_leaks crate in
     match res with
     | Ok res ->
@@ -266,8 +265,8 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks
         let open Fmt in
         let pp_err ft e = pf ft "- %a" pp_err e in
         let n = List.length res in
-        Fmt.pr "Error in %i branch%s:\n%a\n" n
-          (if n = 1 then "" else "s")
+        Fmt.pr "Error in %i branch%s:@\n%a\n" n
+          (if n = 1 then "" else "es")
           (list ~sep:(any "@\n@\n") pp_err)
           res;
         exit 1
