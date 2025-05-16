@@ -64,6 +64,9 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
   | ty -> Fmt.pf fmt "%a" Types.pp_ty ty
 
+let name_str crate =
+  PrintTypes.name_to_string @@ PrintUllbcAst.Crate.crate_to_fmt_env crate
+
 let as_ptr = function
   | Ptr ptr -> ptr
   | v ->
@@ -92,12 +95,6 @@ let int_of_const_generic : Types.const_generic -> int = function
   | cg ->
       Fmt.failwith "int_of_const_generic: unhandled const: %a"
         Types.pp_const_generic cg
-
-let meta_for : Charon.Types.ty -> meta = function
-  | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
-      let len = int_of_const_generic len in
-      Some (Typed.int len)
-  | _ -> None
 
 let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
 

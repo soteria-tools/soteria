@@ -56,7 +56,7 @@ module M (Heap : Heap_intf.S) = struct
     let* () = assume [ Typed.bool_of_int to_assume ] in
     Result.ok (Charon_util.unit_, state)
 
-  let kani_nondet (fun_sig : Charon.UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let nondet (fun_sig : Charon.UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
     let ty = fun_sig.output in
     let* value = Layout.nondet ty in
     Result.ok (value, state)

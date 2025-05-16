@@ -222,7 +222,8 @@ module M (Heap : Heap_intf.S) = struct
           .types
     in
     match Layout.zeroed ~null_ptr:Sptr.null_ptr ty with
-    | None -> Heap.error (`Panic "core::intrinsics::assert_zero_valid") state
+    | None ->
+        Heap.error (`Panic (Some "core::intrinsics::assert_zero_valid")) state
     | _ -> Result.ok (Tuple [], state)
 
   let size_of (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
@@ -301,7 +302,7 @@ module M (Heap : Heap_intf.S) = struct
     if%sat Sptr.constraints ptr' then Result.ok (Ptr (ptr', meta), state)
     else Heap.error `Overflow state
 
-  let box_into_raw _ ~crate:_ ~args ~state =
+  let box_into_raw ~crate:_ ~args ~state =
     (* internally a box is exactly a pointer so nothing to do *)
     let box_ptr = List.hd args in
     Result.ok (box_ptr, state)
@@ -325,7 +326,7 @@ module M (Heap : Heap_intf.S) = struct
       else Heap.error `UBPointerComparison state
     else Heap.error `UBPointerComparison state
 
-  let black_box _ ~crate:_ ~args ~state =
+  let black_box ~crate:_ ~args ~state =
     match args with
     | [ v ] -> Result.ok (v, state)
     | _ -> failwith "black_box: invalid arguments"
@@ -341,16 +342,12 @@ module M (Heap : Heap_intf.S) = struct
     in
     (v, state)
 
-  let copy_nonoverlapping (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let copy_nonoverlapping (gargs : Types.generic_args) ~crate:_ ~args ~state =
+    let ty = List.hd gargs.types in
     let (from_ptr, _), (to_ptr, _), len =
       match args with
       | [ Ptr from_ptr; Ptr to_ptr; Base len ] ->
           (from_ptr, to_ptr, Typed.cast len)
-      | _ -> failwith "copy_nonoverlapping: invalid arguments"
-    in
-    let ty =
-      match funsig.inputs with
-      | TRawPtr (ty, _) :: _ -> ty
       | _ -> failwith "copy_nonoverlapping: invalid arguments"
     in
     let** () = Heap.check_ptr_align from_ptr ty in
@@ -378,14 +375,22 @@ module M (Heap : Heap_intf.S) = struct
     in
     (Tuple [], state)
 
-  let mul_add _ ~crate:_ ~args ~state =
+  let copy_nonoverlapping_fn (funsig : GAst.fun_sig) =
+    let ty =
+      match funsig.inputs with
+      | TRawPtr (ty, _) :: _ -> ty
+      | _ -> failwith "copy_nonoverlapping: invalid arguments"
+    in
+    copy_nonoverlapping (TypesUtils.mk_generic_args_from_types [ ty ])
+
+  let mul_add ~crate:_ ~args ~state =
     match args with
     | [ Base a; Base b; Base c ] ->
         let a, b, c = (Typed.cast a, Typed.cast b, Typed.cast c) in
         Result.ok (Base ((a *@ b) +@ c), state)
     | _ -> failwith "mul_add expects three arguments"
 
-  let abs _ ~crate:_ ~args ~state =
+  let abs ~crate:_ ~args ~state =
     match args with
     | [ Base v ] ->
         Result.ok (Base (Typed.cast @@ Typed.abs @@ Typed.cast v), state)
@@ -430,7 +435,7 @@ module M (Heap : Heap_intf.S) = struct
       |> List.hd
     in
     if Layout.is_inhabited ty then Result.ok (Tuple [], state)
-    else Heap.error (`Panic "core::intrinsics::assert_inhabited") state
+    else Heap.error (`Panic (Some "core::intrinsics::assert_inhabited")) state
 
   let from_raw_parts ~crate:_ ~args ~state =
     match args with
@@ -456,7 +461,7 @@ module M (Heap : Heap_intf.S) = struct
     | [ Base cond ] ->
         let* cond = cast_checked ~ty:Typed.t_int cond in
         if%sat Typed.bool_of_int cond then Result.ok (Tuple [], state)
-        else Heap.error (`Panic "core::intrinsics::assume") state
+        else Heap.error (`Panic (Some "core::intrinsics::assume")) state
     | _ -> failwith "std_assume: invalid arguments"
 
   let exact_div (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
@@ -469,7 +474,7 @@ module M (Heap : Heap_intf.S) = struct
         else
           if%sat (not (r ==@ 0s)) &&@ (l %@ cast r ==@ 0s) then
             Result.ok (Base res, state)
-          else Heap.error (`Panic "core::intrinsics::exact_div") state
+          else Heap.error (`Panic (Some "core::intrinsics::exact_div")) state
     | _ -> failwith "exact_div: invalid arguments"
 
   let ctpop (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
@@ -573,5 +578,5 @@ module M (Heap : Heap_intf.S) = struct
         let variants = Layout.Session.as_enum id in
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
-    | _ -> Heap.error (`Panic "core::intrinsics::variant_count") state
+    | _ -> Heap.error (`Panic (Some "core::intrinsics::variant_count")) state
 end

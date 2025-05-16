@@ -49,12 +49,12 @@ Test kani::assert
   - Failed assertion: I used "assert!"
     Trace:
     • Call trace: ../cram/kani.t/assert.rs:14:0-17:1
-    • Call trace: ../std/src/lib.rs:45:8-60
-    • Triggering memory operation: ../std/src/lib.rs:45:8-60
+    • Call trace: ../std/src/lib.rs:23:8-64
+    • Triggering memory operation: ../std/src/lib.rs:23:8-64
   
   - Failed assertion: I used "assert_eq!"
     Trace:
     • Call trace: ../cram/kani.t/assert.rs:20:0-24:1
-    • Call trace: ../std/src/lib.rs:45:8-60
-    • Triggering memory operation: ../std/src/lib.rs:45:8-60
+    • Call trace: ../std/src/lib.rs:23:8-64
+    • Triggering memory operation: ../std/src/lib.rs:23:8-64
   [1]
