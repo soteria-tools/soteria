@@ -29,20 +29,15 @@ module Make (State : State_intf.S) = struct
 
   type state = State.t
 
-  let cast_to_ptr x =
-    let open Csymex.Syntax in
-    let open Typed.Infix in
+  let cast_to_ptr (x : [< T.cval ] Typed.t) =
     match Typed.get_ty x with
     | TInt ->
-        (* TODO: Should we just make a pointer with null loc, but any offset? *)
-        if%sat x ==@ Typed.zero then Csymex.return Typed.Ptr.null
-        else
-          Fmt.kstr Csymex.not_impl "Int-to-pointer that is not 0: %a" Typed.ppa
-            x
+        (* We can cast an integer to a pointer by assigning the "null" location *)
+        Typed.Ptr.mk Typed.Ptr.null_loc (Typed.cast x)
     | TPointer ->
-        let x : T.sptr Typed.t = Typed.cast x in
-        Csymex.return x
-    | _ -> Fmt.kstr Csymex.not_impl "Not a pointer: %a" Typed.ppa x
+        (* Already a pointer *)
+        Typed.cast x
+    | _ -> failwith "Unreachable: not a C value"
 
   let cast_to_int (x : [< T.cval ] Typed.t) : [> T.sint ] Typed.t Csymex.t =
     match Typed.get_ty x with
@@ -317,8 +312,11 @@ module Make (State : State_intf.S) = struct
           Csymex.Result.ok ((loc, fname), state)
       | _ ->
           (* Some function pointer *)
+          L.trace (fun m ->
+              m "Resolving function pointer: %a" Fmt_ail.pp_expr fexpr);
           let** fptr, state = eval_expr ~prog ~store state fexpr in
-          let* fptr = cast_to_ptr fptr in
+          L.trace (fun m -> m "Function pointer is value: %a" Typed.ppa fptr);
+          let fptr = cast_to_ptr fptr in
           if%sat
             Typed.not (Typed.Ptr.ofs fptr ==@ 0s)
             ||@ Typed.Ptr.is_at_null_loc fptr
@@ -392,7 +390,7 @@ module Make (State : State_intf.S) = struct
         let** v, state = eval_expr state e in
         match op with
         | PostfixIncr ->
-            let* ptr = cast_to_ptr v in
+            let ptr = cast_to_ptr v in
             let** v, state = State.load ptr (type_of e) state in
             let* incr_operand =
               match type_of e |> pointer_inner with
@@ -403,7 +401,7 @@ module Make (State : State_intf.S) = struct
             let++ (), state = State.store ptr (type_of e) v_incr state in
             (v, state)
         | PostfixDecr ->
-            let* ptr = cast_to_ptr v in
+            let ptr = cast_to_ptr v in
             let** v, state = State.load ptr (type_of e) state in
             let* incr_operand =
               match type_of e |> pointer_inner with
@@ -447,7 +445,7 @@ module Make (State : State_intf.S) = struct
         let** lvalue, state = eval_expr state e in
         let ty = type_of e in
         (* At this point, lvalue must be a pointer (including to the stack) *)
-        let* lvalue = cast_to_ptr lvalue in
+        let lvalue = cast_to_ptr lvalue in
         State.load lvalue ty state
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym ~prog id in
@@ -466,7 +464,7 @@ module Make (State : State_intf.S) = struct
         let** ptr, state = eval_expr state lvalue in
         (* [ptr] is a necessarily a pointer, and [rval] is a memory value.
          I don't support pointer fragments for now, so let's say it's an *)
-        let* ptr = cast_to_ptr ptr in
+        let ptr = cast_to_ptr ptr in
         let ty = type_of lvalue in
         let++ (), state = State.store ptr ty rval state in
         (rval, state)
@@ -475,7 +473,7 @@ module Make (State : State_intf.S) = struct
         let** ptr, state = eval_expr state lvalue in
         let lty = type_of lvalue in
         (* At this point, lvalue must be a pointer (including to the stack) *)
-        let* ptr = cast_to_ptr ptr in
+        let ptr = cast_to_ptr ptr in
         let** operand, state = State.load ptr lty state in
         let** res, state =
           arith ~state (operand, lty) op (rval, type_of rvalue)
@@ -629,6 +627,8 @@ module Make (State : State_intf.S) = struct
     let name, (loc, _, _, params, stmt) = fundef in
     let@ () = with_loc ~loc in
     L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);
+    L.trace (fun m ->
+        m "Was given arguments: %a" (Fmt.Dump.list Typed.ppa) args);
     let* ptys = get_param_tys ~prog name in
     let ps = List.combine3 params ptys args in
     (* TODO: Introduce a with_stack_allocation.

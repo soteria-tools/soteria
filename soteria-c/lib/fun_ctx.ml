@@ -23,7 +23,7 @@ end
 *)
 type t = { counter : Z.t; bmap : Bidirectional_map.t }
 
-let empty = { counter = Z.zero; bmap = Bidirectional_map.empty }
+let empty = { counter = Z.one; bmap = Bidirectional_map.empty }
 
 let declare_fn sym t =
   let counter = t.counter in
