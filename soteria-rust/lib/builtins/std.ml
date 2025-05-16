@@ -579,8 +579,4 @@ module M (Heap : Heap_intf.S) = struct
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
     | _ -> Heap.error (`Panic (Some "core::intrinsics::variant_count")) state
-
-  let slice_into_vec ~crate:_ ~args ~state:_ =
-    L.warn (fun m -> m "%a" Fmt.(list ~sep:comma pp_rust_val) args);
-    failwith ""
 end

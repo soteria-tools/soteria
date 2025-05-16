@@ -46,7 +46,6 @@ module M (Heap : Heap_intf.S) = struct
     | PtrOffsetFrom
     | SizeOf
     | SizeOfVal
-    | SliceIntoVec
     | Transmute
     | Unchecked of Expressions.binop
     | VariantCount
@@ -72,7 +71,6 @@ module M (Heap : Heap_intf.S) = struct
       (* FIXME: get rid of these, as Charon improves *)
       ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
       ("alloc::boxed::{@T}::from_raw", BoxIntoRaw);
-      ("alloc::slice::{@T}::into_vec", SliceIntoVec);
       ("core::array::{core::ops::index::Index}::index", Index);
       ("core::hint::black_box", BlackBox);
       ("core::mem::zeroed", Zeroed);
@@ -189,7 +187,6 @@ module M (Heap : Heap_intf.S) = struct
          | PtrOffsetFrom -> ptr_offset_from f.signature
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
-         | SliceIntoVec -> slice_into_vec
          | Transmute -> transmute f.signature
          | Unchecked op -> unchecked_op op f.signature
          | VariantCount -> variant_count f.signature
@@ -218,5 +215,4 @@ module M (Heap : Heap_intf.S) = struct
     | Index idx -> array_index idx generics
     | BoxNew -> box_new generics
     | PtrFromParts _ -> from_raw_parts
-  (* | CopyNonOverlapping -> copy_nonoverlapping generics *)
 end
