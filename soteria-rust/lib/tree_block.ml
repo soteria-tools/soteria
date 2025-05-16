@@ -24,6 +24,7 @@ type rust_val = Sptr.ArithPtr.t Charon_util.rust_val
 module Encoder = Encoder.Make (Sptr.ArithPtr)
 
 module MemVal = struct
+  (** The Rust value associated and its type. *)
   type t = { value : rust_val; ty : Types.ty } [@@deriving make]
 
   let pp ft t =

@@ -133,26 +133,30 @@ module Make (Heap : Heap_intf.S) = struct
             in
             let char_arr = Array chars in
             let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
-            let** ptr, state = Heap.alloc_ty str_ty state in
+            let** (ptr, _), state = Heap.alloc_ty str_ty state in
+            let ptr = (ptr, Some (Typed.int len)) in
             let** (), state = Heap.store ptr str_ty char_arr state in
             let++ (), state = Heap.store_str_global str ptr state in
             (Ptr ptr, state))
-    | e ->
-        Fmt.kstr not_impl "TODO: resolve_constant %a"
-          Expressions.pp_raw_constant_expr e
+    | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
+    | CTraitConst _ -> not_impl "TODO: resolve const TraitConst"
+    | CFnPtr _ -> not_impl "TODO: resolve const FnPtr"
+    | CRawMemory _ -> not_impl "TODO: resolve const RawMemory"
+    | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
+    | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
   (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ~store state ({ kind; ty } : Expressions.place) :
+  let rec resolve_place ~crate ~store state ({ kind; ty } : Expressions.place) :
       (full_ptr * state, 'e, 'm) Result.t =
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v store state
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
-        let** ptr, state = resolve_place ~store state base in
+        let** ptr, state = resolve_place ~crate ~store state base in
         L.debug (fun f ->
             f "Dereferencing ptr %a of %a" pp_full_ptr ptr Types.pp_ty base.ty);
         let** v, state = Heap.load ptr base.ty state in
@@ -171,8 +175,7 @@ module Make (Heap : Heap_intf.S) = struct
             Result.ok ((ptr, None), state)
         | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
-        (* when projecting, we lose the metadata *)
-        let** (ptr, meta), state = resolve_place ~store state base in
+        let** (ptr, meta), state = resolve_place ~crate ~store state base in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
@@ -185,22 +188,71 @@ module Make (Heap : Heap_intf.S) = struct
               Sptr.pp ptr Sptr.pp ptr');
         if not @@ Layout.is_inhabited ty then Heap.error `RefToUninhabited state
         else Result.ok ((ptr', meta), state)
+    | PlaceProjection (base, ProjIndex (idx, from_end)) ->
+        let** (ptr, meta), state = resolve_place ~crate ~store state base in
+        let len =
+          match (meta, base.ty) with
+          (* Array with static size *)
+          | None, TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
+              Typed.int @@ Charon_util.int_of_const_generic len
+          | Some len, TAdt (TBuiltin TSlice, _) -> Typed.cast len
+          | _ -> Fmt.failwith "Index projection: unexpected arguments"
+        in
+        let** idx, state = eval_operand ~crate ~store state idx in
+        let idx = as_base_of ~ty:Typed.t_int idx in
+        let idx = if from_end then len -@ 1s -@ idx else idx in
+        if%sat 0s <=@ idx &&@ (idx <@ len) then (
+          let ptr' = Sptr.offset ~ty ptr idx in
+          L.debug (fun f ->
+              f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa
+                idx Sptr.pp ptr');
+          Result.ok ((ptr', None), state))
+        else Heap.error `OutOfBounds state
+    | PlaceProjection (base, Subslice (from, to_, from_end)) ->
+        let** (ptr, meta), state = resolve_place ~crate ~store state base in
+        let ty, len =
+          match (meta, base.ty) with
+          (* Array with static size *)
+          | ( None,
+              TAdt
+                ( TBuiltin TArray,
+                  { const_generics = [ len ]; types = [ ty ]; _ } ) ) ->
+              (ty, Typed.int @@ Charon_util.int_of_const_generic len)
+          | Some len, TAdt (TBuiltin TSlice, { types = [ ty ]; _ }) ->
+              (ty, Typed.cast len)
+          | _ -> Fmt.failwith "Index projection: unexpected arguments"
+        in
+        let** from, state = eval_operand ~crate ~store state from in
+        let** to_, state = eval_operand ~crate ~store state to_ in
+        let from = as_base_of ~ty:Typed.t_int from in
+        let to_ = as_base_of ~ty:Typed.t_int to_ in
+        let to_ = if from_end then len -@ to_ else to_ in
+        if%sat 0s <=@ from &&@ (from <@ len) &&@ (from <=@ to_) &&@ (to_ <=@ len)
+        then (
+          let ptr' = Sptr.offset ~ty ptr from in
+          let slice_len = to_ -@ from in
+          L.debug (fun f ->
+              f "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp
+                ptr Typed.ppa from Typed.ppa to_
+                (if from_end then "(from end)" else "")
+                Sptr.pp ptr' Typed.ppa slice_len);
+          Result.ok ((ptr', Some slice_len), state))
+        else Heap.error `OutOfBounds state
 
-  let rec resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
+  and resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
       ('err, 'fixes) fun_exec Rustsymex.t =
     match fnop with
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
         let fundef = Expressions.FunDeclId.Map.find fid crate.fun_decls in
         L.info (fun g ->
-            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
             g "Resolved function call to %s"
-              (PrintTypes.name_to_string ctx fundef.item_meta.name));
+              (name_str crate fundef.item_meta.name));
         match Std_funs.std_fun_eval ~crate fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
-        Rustsymex.return @@ Std_funs.builtin_fun_eval ~crate fn generics
+        Rustsymex.return @@ Std_funs.builtin_fun_eval fn generics
     | FnOpMove _ ->
         Fmt.kstr not_impl "Move function call is not supported: %a"
           GAst.pp_fn_operand fnop
@@ -215,9 +267,8 @@ module Make (Heap : Heap_intf.S) = struct
         (* Same as with strings -- here we need to somehow cache where we store the globals *)
         let fundef = UllbcAst.FunDeclId.Map.find decl.body crate.fun_decls in
         L.info (fun g ->
-            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-            g "Resolved function call to %s"
-              (PrintTypes.name_to_string ctx fundef.item_meta.name));
+            g "Resolved global init call to %s"
+              (name_str crate fundef.item_meta.name));
         let global_fn =
           match Std_funs.std_fun_eval ~crate fundef with
           | Some fn -> fn
@@ -231,7 +282,7 @@ module Make (Heap : Heap_intf.S) = struct
         let++ (), state = Heap.store ptr decl.ty v state in
         (ptr, state)
 
-  and eval_operand ~crate:_ ~store state (op : Expressions.operand) =
+  and eval_operand ~crate ~store state (op : Expressions.operand) =
     match op with
     | Constant c ->
         let++ v, state = resolve_constant c state in
@@ -242,10 +293,10 @@ module Make (Heap : Heap_intf.S) = struct
         let ty = loc.ty in
         match Layout.as_zst ty with
         | Some zst ->
-            let** _, state = resolve_place ~store state loc in
+            let** _, state = resolve_place ~crate ~store state loc in
             Result.ok (zst, state)
         | None ->
-            let** ptr, state = resolve_place ~store state loc in
+            let** ptr, state = resolve_place ~crate ~store state loc in
             let is_move =
               (* TODO: properly detect if ty has the Copy trait, in which case is_move is
              always false. *)
@@ -270,7 +321,7 @@ module Make (Heap : Heap_intf.S) = struct
     match expr with
     | Use op -> eval_operand state op
     | RvRef (place, borrow) ->
-        let** ptr, state = resolve_place ~store state place in
+        let** ptr, state = resolve_place ~crate ~store state place in
         let++ ptr', state = Heap.borrow ptr borrow state in
         (Ptr ptr', state)
     | Global { global_id; _ } ->
@@ -318,6 +369,12 @@ module Make (Heap : Heap_intf.S) = struct
             | Ptr (_, None) -> Result.ok (Tuple [], state)
             | Ptr (_, Some v) -> Result.ok (Base v, state)
             | _ -> not_impl "Invalid value for PtrMetadata")
+        | ArrayToSlice (_, _, len) -> (
+            match v with
+            | Ptr (ptr, None) ->
+                let len = Typed.int @@ int_of_const_generic len in
+                Result.ok (Ptr (ptr, Some len), state)
+            | _ -> not_impl "Invalid value for ArrayToSlice")
         | Cast (CastRawPtr (_from, _to)) -> Result.ok (v, state)
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let++ v =
@@ -516,7 +573,7 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
     | Discriminant (place, kind) -> (
-        let** (loc, _), state = resolve_place ~store state place in
+        let** (loc, _), state = resolve_place ~crate ~store state place in
         let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
         match enum.kind with
         (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
@@ -580,21 +637,43 @@ module Make (Heap : Heap_intf.S) = struct
         (Struct values, state)
     (* Invalid aggregate (not sure, but seems like it) *)
     | Aggregate ((AggregatedAdt _ as v), _) ->
-        Fmt.failwith "Invalid aggregate kind: %a" Expressions.pp_aggregate_kind
-          v
+        Fmt.failwith "Invalid ADT aggregate kind: %a"
+          Expressions.pp_aggregate_kind v
     (* Array aggregate *)
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
         let++ values, state = eval_operand_list ~crate ~store state operands in
         (Array values, state)
+    (* Raw pointer construction *)
+    | Aggregate (AggregatedRawPtr (_, _), operands) -> (
+        let** values, state = eval_operand_list ~crate ~store state operands in
+        match values with
+        | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
+        | [ Base v; Base meta ] ->
+            let* v = cast_checked ~ty:Typed.t_int v in
+            let ptr = Sptr.offset Sptr.null_ptr v in
+            Result.ok (Ptr (ptr, Some meta), state)
+        | _ ->
+            Fmt.kstr not_impl "AggregatedRawPtr: invalid arguments %a"
+              Fmt.(list ~sep:comma pp_rust_val)
+              values)
+    (* Closure state construction *)
     | Aggregate (AggregatedClosure _, _) ->
         not_impl "Unsupported rvalue: aggregated closure"
+    (* Array repetition *)
+    | Repeat (value, _, len) ->
+        let++ value, state = eval_operand state value in
+        let len = int_of_const_generic len in
+        let els = List.init len (fun _ -> value) in
+        (Array els, state)
+    (* Shallow init box -- just casts a ptr into a box *)
+    | ShallowInitBox (ptr, _) -> eval_operand state ptr
     (* Raw pointer *)
     | RawPtr (place, _kind) ->
-        let++ ptr, state = resolve_place ~store state place in
+        let++ ptr, state = resolve_place ~crate ~store state place in
         (Ptr ptr, state)
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) ->
-        let** (_, meta), state = resolve_place ~store state place in
+        let** (_, meta), state = resolve_place ~crate ~store state place in
         let+ len =
           match (meta, size_opt) with
           | _, Some size -> return (Typed.int @@ int_of_const_generic size)
@@ -615,28 +694,9 @@ module Make (Heap : Heap_intf.S) = struct
     match stmt with
     | Nop -> Result.ok (store, state)
     | Assign (({ ty; _ } as place), rval) ->
-        let** ptr, state = resolve_place ~store state place in
+        let** ptr, state = resolve_place ~crate ~store state place in
         let** v, state = eval_rvalue ~crate ~store state rval in
         L.info (fun m -> m "Assigning %a <- %a" pp_full_ptr ptr pp_rust_val v);
-        let++ (), state = Heap.store ptr ty v state in
-        (store, state)
-    | Call { func; args; dest = { ty; _ } as place } ->
-        let* exec_fun = resolve_function ~crate func in
-        let** args, state = eval_operand_list ~crate ~store state args in
-        L.info (fun g ->
-            g "Executing function with arguments [%a]"
-              Fmt.(list ~sep:comma pp_rust_val)
-              args);
-        let** v, state =
-          let+- err = exec_fun ~crate ~args ~state in
-          Heap.add_to_call_trace err
-            (Call_trace.make_element ~loc ~msg:"Call trace" ())
-        in
-        let** ptr, state = resolve_place ~store state place in
-        L.info (fun m ->
-            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-            m "Returned %a from %s" pp_rust_val v
-              (PrintGAst.fn_operand_to_string ctx func));
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
     | StorageLive local ->
@@ -659,7 +719,7 @@ module Make (Heap : Heap_intf.S) = struct
         | None -> Result.ok (store, state))
     | Drop place ->
         (* TODO: this is probably super wrong, drop glue etc. *)
-        let** place_ptr, state = resolve_place ~store state place in
+        let** place_ptr, state = resolve_place ~crate ~store state place in
         let++ (), state = Heap.uninit place_ptr place.ty state in
         (store, state)
     | Assert { cond; expected; on_failure } -> (
@@ -677,10 +737,8 @@ module Make (Heap : Heap_intf.S) = struct
         else
           match on_failure with
           | UndefinedBehavior -> Heap.error `UBAbort state
-          | Panic None -> Heap.error (`Panic "unnamed") state
-          | Panic (Some name) ->
-              let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-              let name = PrintTypes.name_to_string ctx name in
+          | Panic name ->
+              let name = Option.map (name_str crate) name in
               Heap.error (`Panic name) state)
     | s ->
         Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
@@ -700,6 +758,26 @@ module Make (Heap : Heap_intf.S) = struct
     let { span = loc; content = term; _ } : UllbcAst.terminator = terminator in
     let@ () = with_loc ~loc in
     match term with
+    | Call ({ func; args; dest = { ty; _ } as place }, target) ->
+        let* exec_fun = resolve_function ~crate func in
+        let** args, state = eval_operand_list ~crate ~store state args in
+        L.info (fun g ->
+            g "Executing function with arguments [%a]"
+              Fmt.(list ~sep:comma pp_rust_val)
+              args);
+        let** v, state =
+          let+- err = exec_fun ~crate ~args ~state in
+          Heap.add_to_call_trace err
+            (Call_trace.make_element ~loc ~msg:"Call trace" ())
+        in
+        let** ptr, state = resolve_place ~crate ~store state place in
+        L.info (fun m ->
+            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+            m "Returned %a from %s" pp_rust_val v
+              (PrintGAst.fn_operand_to_string ctx func));
+        let** (), state = Heap.store ptr ty v state in
+        let block = UllbcAst.BlockId.nth body.body target in
+        exec_block ~crate ~body store state block
     | Goto b ->
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~crate ~body store state block
@@ -769,28 +847,21 @@ module Make (Heap : Heap_intf.S) = struct
     | Abort kind -> (
         match kind with
         | UndefinedBehavior -> Heap.error `UBAbort state
-        | Panic None -> Heap.error (`Panic "unnamed") state
-        | Panic (Some name) ->
-            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-            let name_str = PrintTypes.name_to_string ctx name in
-            Heap.error (`Panic name_str) state)
+        | Panic name ->
+            let name = Option.map (name_str crate) name in
+            Heap.error (`Panic name) state)
 
   and exec_fun ~crate ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
     let* body =
       match body with
-      | None ->
-          let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-          Fmt.kstr not_impl "Function %s is opaque"
-            (PrintTypes.name_to_string ctx name)
+      | None -> Fmt.kstr not_impl "Function %s is opaque" (name_str crate name)
       | Some body -> return body
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
-        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-        m "Calling %s with [@[%a@]]"
-          (PrintTypes.name_to_string ctx name)
+        m "Calling %s with [@[%a@]]" (name_str crate name)
           Fmt.(list ~sep:comma pp_rust_val)
           args);
     let** store, protected, state = alloc_stack body.locals args state in

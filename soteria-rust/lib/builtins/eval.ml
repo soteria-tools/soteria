@@ -4,7 +4,8 @@ open Rustsymex
 
 module M (Heap : Heap_intf.S) = struct
   module Std = Std.M (Heap)
-  module Kani = Kani.M (Heap)
+  module Rusteria = Rusteria.M (Heap)
+  module Miri = Miri.M (Heap)
 
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
@@ -13,10 +14,13 @@ module M (Heap : Heap_intf.S) = struct
   type type_loc = GenArg | Input
 
   type std_fun =
-    (* Kani *)
-    | KaniAssert
-    | KaniAssume
-    | KaniNondet
+    (* Rusteria builtins *)
+    | RusteriaAssert
+    | RusteriaAssume
+    | RusteriaNondet
+    | RusteriaPanic
+    (* Miri builtins *)
+    | MiriAllocId
     (* Std *)
     | Abs
     | AssertZeroValid
@@ -51,13 +55,22 @@ module M (Heap : Heap_intf.S) = struct
 
   let std_fun_map =
     [
-      (* Kani *)
-      ("kani::assert", KaniAssert);
-      ("kani::assume", KaniAssume);
-      ("kani::nondet", KaniNondet);
+      (* Rusteria builtins *)
+      ("rusteria::assert", RusteriaAssert);
+      ("rusteria::assume", RusteriaAssume);
+      ("rusteria::nondet", RusteriaNondet);
+      ("rusteria::panic", RusteriaPanic);
+      (* Kani builtins -- we re-define these for nicer call traces *)
+      ("kani::assert", RusteriaAssert);
+      ("kani::panic", RusteriaPanic);
+      (* Miri builtins *)
+      ("miristd::miri_get_alloc_id", MiriAllocId);
+      ("miristd::miri_pointer_name", Nop);
+      ("miristd::miri_print_borrow_state", Nop);
       (* Core *)
       (* FIXME: get rid of these, as Charon improves *)
       ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
+      ("alloc::boxed::{@T}::from_raw", BoxIntoRaw);
       ("core::array::{core::ops::index::Index}::index", Index);
       ("core::hint::black_box", BlackBox);
       ("core::mem::zeroed", Zeroed);
@@ -127,18 +140,14 @@ module M (Heap : Heap_intf.S) = struct
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
 
-  let has_rustc_intrinsic_attrib (f : UllbcAst.fun_decl) =
-    List.mem
-      Meta.(AttrUnknown { path = "rustc_intrinsic"; args = None })
-      f.item_meta.attr_info.attributes
-
   let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let open Std in
-    let open Kani in
+    let open Rusteria in
+    let open Miri in
     let opt_bind f opt = match opt with None -> f () | x -> x in
     let ctx = NameMatcher.ctx_from_crate crate in
     let real_name =
-      if has_rustc_intrinsic_attrib f then
+      if Charon_util.decl_has_attr f "rustc_intrinsic" then
         Types.
           [
             PeIdent ("core", Disambiguator.zero);
@@ -149,27 +158,29 @@ module M (Heap : Heap_intf.S) = struct
     in
     NameMatcherMap.find_opt ctx match_config real_name std_fun_map
     |> ( Option.map @@ function
-         | Abs -> abs f.signature
+         | RusteriaAssert -> assert_
+         | RusteriaAssume -> assume
+         | RusteriaNondet -> nondet f.signature
+         | RusteriaPanic -> panic
+         | MiriAllocId -> alloc_id
+         | Abs -> abs
          | AssertZeroValid -> assert_zero_is_valid f.signature
          | AssertInhabited -> assert_inhabited f.signature
          | Assume -> std_assume
-         | BlackBox -> black_box f.signature
-         | BoxIntoRaw -> box_into_raw f.signature
+         | BlackBox -> black_box
+         | BoxIntoRaw -> box_into_raw
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes
-         | CopyNonOverlapping -> copy_nonoverlapping f.signature
+         | CopyNonOverlapping -> copy_nonoverlapping_fn f.signature
          | CopySign -> copy_sign
          | Ctpop -> ctpop f.signature
          | DiscriminantValue -> discriminant_value f.signature
          | ExactDiv -> exact_div f.signature
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
-         | KaniAssert -> assert_
-         | KaniAssume -> assume
-         | KaniNondet -> kani_nondet f.signature
          | Likely -> likely
          | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
-         | MulAdd -> mul_add f.signature
+         | MulAdd -> mul_add
          | Nop -> nop
          | PtrByteOp op -> ptr_op ~byte:true op f.signature
          | PtrOp op -> ptr_op op f.signature
@@ -191,12 +202,11 @@ module M (Heap : Heap_intf.S) = struct
        in
        if is_intrinsic then
          Option.some @@ fun ~crate ~args:_ ~state:_ ->
-         let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
          Fmt.kstr not_impl "Unsupported intrinsic: %s"
-           (PrintTypes.name_to_string ctx real_name)
+           (Charon_util.name_str crate real_name)
        else None
 
-  let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
+  let builtin_fun_eval (f : Expressions.builtin_fun_id) generics =
     let open Std in
     match f with
     | ArrayRepeat -> array_repeat generics

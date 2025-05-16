@@ -2,6 +2,7 @@ module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Soteria_symex.Compo_res
 open Syntaxes.FunctionWrap
 open Cmd
+open Charon
 
 exception ExecutionError of string
 exception CharonError of string
@@ -40,83 +41,15 @@ let pp_err ft (err, call_trace) =
     | `FailedAssert None -> Fmt.string ft "Failed assertion"
     | `Overflow -> Fmt.string ft "Overflow"
     | `StdErr msg -> Fmt.pf ft "Std error: %s" msg
-    | `Panic msg -> Fmt.pf ft "Panic: %s" msg
+    | `Panic (Some msg) -> Fmt.pf ft "Panic: %s" msg
+    | `Panic None -> Fmt.pf ft "Panic"
     | `MetaExpectedError -> Fmt.string ft "MetaExpectedError"
   in
   Fmt.pf ft "@,Trace:@,%a" Call_trace.pp call_trace;
   Format.close_box ()
 
-let default_cmd ~file_name ~output () =
-  mk_cmd
-    ~charon:
-      [
-        "--ullbc";
-        Fmt.str "--input %s" file_name;
-        Fmt.str "--dest-file %s" output;
-        (* We can't enable this because it removes statements we care about... *)
-        (* "--mir_optimized"; *)
-        "--translate-all-methods";
-        "--extract-opaque-bodies";
-        "--monomorphize";
-      ]
-    ~rustc:
-      [
-        (* i.e. not always a binary! *)
-        "--crate-type=lib";
-        "-Zunstable-options";
-        (* Not sure this is needed *)
-        "--extern=std";
-        "--extern=core";
-        (* No warning *)
-        "-Awarnings";
-      ]
-    ()
-
-let mk_kani_cmd () =
-  let path = List.hd Runtime_sites.Sites.kani_lib in
-  let cargo =
-    "RUSTC=$(charon toolchain-path)/bin/rustc $(charon \
-     toolchain-path)/bin/cargo"
-  in
-  let target =
-    (* look for line "host: <host>", to get the target architecture *)
-    let info = Fmt.kstr exec_and_read "%s -vV" cargo in
-    match List.find_opt (String.starts_with ~prefix:"host") info with
-    | Some s -> String.sub s 6 (String.length s - 6)
-    | None -> raise (ExecutionError "Couldn't find target host")
-  in
-  (* build Kani lib *)
-  let res =
-    Fmt.kstr exec_cmd
-      "cd %s/std && %s build --lib --target %s > /dev/null 2>/dev/null" path
-      cargo target
-  in
-  if res <> 0 && res <> 255 then
-    let msg = "Couldn't compile Kani lib: error " ^ Int.to_string res in
-    raise (ExecutionError msg)
-  else ();
-  let ( / ) = Filename.concat in
-  let rlib = path / "std" / "target" / target / "debug" / "libstd.rlib" in
-  mk_cmd
-    ~rustc:
-      [
-        "-Zcrate-attr=feature\\(register_tool\\)";
-        "-Zcrate-attr=register_tool\\(kanitool\\)";
-        (* Code often hides kani proofs behind a cfg *)
-        "--cfg=kani";
-        "--extern=kani";
-        (* The below is cursed and should be fixed !!! *)
-        Fmt.str "-L%s/std/target/%s/debug/deps" path target;
-        Fmt.str "-L%s/std/target/debug/deps" path;
-        Fmt.str "--extern noprelude:std=%s" rlib;
-      ]
-    ()
-
-let mk_miri_cmd () =
-  mk_cmd ~charon:[ "--opaque=miri_extern" ] ~rustc:[ "--cfg=miri" ] ()
-
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~no_compile ~kani ~miri file_name =
+let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
   let file_name =
     if Filename.is_relative file_name then
       Filename.concat (Sys.getcwd ()) file_name
@@ -126,12 +59,8 @@ let parse_ullbc_of_file ~no_compile ~kani ~miri file_name =
   let output = Printf.sprintf "%s.llbc.json" file_name in
   (if not no_compile then
      (* TODO: make these flags! *)
-     let args =
-       default_cmd ~file_name ~output ()
-       |> concat_cmd_if kani mk_kani_cmd
-       |> concat_cmd_if miri mk_miri_cmd
-     in
-     let res = exec_cmd @@ "cd " ^ parent_folder ^ " && " ^ build_cmd args in
+     let cmd = plugin.mk_cmd ~input:file_name ~output () in
+     let res = exec_cmd @@ "cd " ^ parent_folder ^ " && " ^ build_cmd cmd in
      if res = 0 then Cleaner.touched output
      else
        let msg = Fmt.str "Failed compilation to ULLBC: code %d" res in
@@ -156,27 +85,12 @@ let parse_ullbc_of_file ~no_compile ~kani ~miri file_name =
       crate
   | Error err -> raise (CharonError err)
 
-let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
-  let open Charon in
+let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
+    (crate : Charon.UllbcAst.crate) =
   Layout.Session.set_crate crate;
-  let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
   let entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
-    |> List.filter_map (fun (decl : UllbcAst.blocks UllbcAst.gfun_decl) ->
-           let is_main =
-             match List.rev decl.item_meta.name with
-             | PeIdent ("main", _) :: _ -> true
-             | _ -> false
-           in
-           if is_main then Some (decl, false)
-           else
-             let is_proof = Charon_util.decl_has_attr decl "kanitool::proof" in
-             if is_proof then
-               let should_err =
-                 Charon_util.decl_has_attr decl "kanitool::should_panic"
-               in
-               Some (decl, should_err)
-             else None)
+    |> List.filter_map plugin.get_entry_point
   in
   if List.is_empty entry_points then
     raise (ExecutionError "No entry points found");
@@ -185,13 +99,13 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
   in
   let outcomes =
     entry_points
-    |> List.map @@ fun ((entry_point : UllbcAst.fun_decl), should_err) ->
+    |> List.map @@ fun (entry : Plugin.entry_point) ->
        let@ () =
          L.entry_point_section
-         @@ PrintTypes.name_to_string ctx entry_point.item_meta.name
+           (Charon_util.name_str crate entry.fun_decl.item_meta.name)
        in
        let branches =
-         try Rustsymex.run @@ exec_fun entry_point with
+         try Rustsymex.run @@ exec_fun entry.fun_decl with
          | Layout.InvalidLayout ->
              [ (Error (`InvalidLayout, Call_trace.empty), []) ]
          | exn ->
@@ -202,11 +116,11 @@ let exec_main ?(ignore_leaks = false) (crate : Charon.UllbcAst.crate) =
              raise (ExecutionError msg)
        in
        let branches =
-         if not should_err then branches
+         if not entry.expect_error then branches
          else
            let open Compo_res in
            let trace =
-             Call_trace.singleton ~loc:entry_point.item_meta.span ()
+             Call_trace.singleton ~loc:entry.fun_decl.item_meta.span ()
            in
            let oks, errors =
              branches
@@ -246,8 +160,12 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks kani
   Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
   try
-    let crate = parse_ullbc_of_file ~no_compile ~kani ~miri file_name in
-    let res = exec_main ~ignore_leaks crate in
+    let plugin =
+      Plugin.merge_ifs
+        [ (true, Plugin.default); (kani, Plugin.kani); (miri, Plugin.miri) ]
+    in
+    let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
+    let res = exec_main ~ignore_leaks ~plugin crate in
     match res with
     | Ok res ->
         let open Fmt in
@@ -271,6 +189,9 @@ let exec_main_and_print log_level smt_file no_compile clean ignore_leaks kani
           res;
         exit 1
   with
+  | Plugin.PluginError e ->
+      Fmt.pr "Fatal (Plugin): %s" e;
+      exit 2
   | ExecutionError e ->
       Fmt.pr "Fatal: %s" e;
       exit 2
