@@ -36,6 +36,9 @@ module type S = sig
 
   (** Decay a pointer into an integer value, losing provenance. *)
   val decay : t -> sint Typed.t Rustsymex.t
+
+  (** For Miri: the allocation ID of this location, as a u64 *)
+  val as_id : t -> sint Typed.t
 end
 
 type arithptr_t = {
@@ -122,4 +125,6 @@ module ArithPtr : S with type t = arithptr_t = struct
         in
         decayed_vars := ValMap.add loc loc_int !decayed_vars;
         loc_int +@ ofs
+
+  let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
 end

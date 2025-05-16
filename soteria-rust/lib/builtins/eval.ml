@@ -5,6 +5,7 @@ open Rustsymex
 module M (Heap : Heap_intf.S) = struct
   module Std = Std.M (Heap)
   module Rusteria = Rusteria.M (Heap)
+  module Miri = Miri.M (Heap)
 
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
@@ -18,6 +19,8 @@ module M (Heap : Heap_intf.S) = struct
     | RusteriaAssume
     | RusteriaNondet
     | RusteriaPanic
+    (* Miri builtins *)
+    | MiriAllocId
     (* Std *)
     | Abs
     | AssertZeroValid
@@ -61,6 +64,10 @@ module M (Heap : Heap_intf.S) = struct
       (* Kani builtins -- we re-define these for nicer call traces *)
       ("kani::assert", RusteriaAssert);
       ("kani::panic", RusteriaPanic);
+      (* Miri builtins *)
+      ("miristd::miri_get_alloc_id", MiriAllocId);
+      ("miristd::miri_pointer_name", Nop);
+      ("miristd::miri_print_borrow_state", Nop);
       (* Core *)
       (* FIXME: get rid of these, as Charon improves *)
       ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
@@ -138,6 +145,7 @@ module M (Heap : Heap_intf.S) = struct
   let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let open Std in
     let open Rusteria in
+    let open Miri in
     let opt_bind f opt = match opt with None -> f () | x -> x in
     let ctx = NameMatcher.ctx_from_crate crate in
     let real_name =
@@ -152,6 +160,11 @@ module M (Heap : Heap_intf.S) = struct
     in
     NameMatcherMap.find_opt ctx match_config real_name std_fun_map
     |> ( Option.map @@ function
+         | RusteriaAssert -> assert_
+         | RusteriaAssume -> assume
+         | RusteriaNondet -> nondet f.signature
+         | RusteriaPanic -> panic
+         | MiriAllocId -> alloc_id
          | Abs -> abs
          | AssertZeroValid -> assert_zero_is_valid f.signature
          | AssertInhabited -> assert_inhabited f.signature
@@ -167,10 +180,6 @@ module M (Heap : Heap_intf.S) = struct
          | ExactDiv -> exact_div f.signature
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
-         | RusteriaAssert -> assert_
-         | RusteriaAssume -> assume
-         | RusteriaNondet -> nondet f.signature
-         | RusteriaPanic -> panic
          | Likely -> likely
          | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
          | MulAdd -> mul_add
