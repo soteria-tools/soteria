@@ -304,7 +304,7 @@ let rec encode_value (v : Svalue.t) =
       | Mod -> num_mod v1 v2
       | BitAnd ->
           let bv_size = 64 in
-          (* Should always work in C? *)
+          (* FIXME: Properly handle signedness for bitvectors *)
           int_of_bv false (bv_and (bv_of_int bv_size v1) (bv_of_int bv_size v2))
       )
   | Nop (Distinct, vs) ->
