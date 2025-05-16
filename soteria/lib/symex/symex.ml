@@ -24,6 +24,7 @@ module type Base = sig
   val assume : sbool v list -> unit MONAD.t
   val vanish : unit -> 'a MONAD.t
   val assert_ : sbool v -> bool MONAD.t
+  val assert_ox : sbool v -> bool MONAD.t
   val nondet : ?constrs:('a v -> sbool v list) -> 'a vt -> 'a v MONAD.t
   val fresh_var : 'a vt -> Var.t MONAD.t
   val batched : (unit -> 'a MONAD.t) -> 'a MONAD.t
@@ -250,6 +251,19 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
         Symex_state.backtrack_n 1;
         Seq.Cons (not sat, Seq.empty)
 
+  (** TODO: is this correct? *)
+  let assert_ox value () =
+    let value = Solver.simplify value in
+    match Value.as_bool value with
+    | Some true -> Seq.Cons (true, Seq.empty)
+    | Some false -> Seq.Cons (false, Seq.empty)
+    | None ->
+        Symex_state.save ();
+        Solver.add_constraints [ Value.(not value) ];
+        let unsat = is_unsat (Solver.sat ()) in
+        Symex_state.backtrack_n 1;
+        Seq.Cons (unsat, Seq.empty)
+
   let nondet ?constrs ty () =
     let v = Solver.fresh_var ty in
     let v = Value.mk_var v ty in
@@ -438,6 +452,25 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
           let sat = is_sat (Solver.sat ()) in
           Symex_state.backtrack_n 1;
           not sat
+        in
+        f result
+
+  let assert_ox value f =
+    let value = Solver.simplify value in
+    match Value.as_bool value with
+    | Some true -> f true
+    | Some false -> f false
+    | None ->
+        let result =
+          let@ () =
+            Logs.with_section
+              (Fmt.str "Checking entailment for %a" Value.ppa value)
+          in
+          Symex_state.save ();
+          Solver.add_constraints [ Value.(not value) ];
+          let unsat = is_unsat (Solver.sat ()) in
+          Symex_state.backtrack_n 1;
+          unsat
         in
         f result
 
