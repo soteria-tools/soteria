@@ -221,6 +221,8 @@ Temporary Items
 Cargo.lock
 target/
 
+### Other stuff ###
+json_dump/
 
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
 # and modified by hand afterwards

@@ -3,7 +3,6 @@ module Value = Typed
 module Var = Svalue.Var
 open Soteria_logs.Logs
 
-let z3_env_var = "SOTERIA_Z3_PATH"
 let debug_str ~prefix s = L.smt (fun m -> m "%s %s" prefix s)
 
 open Simple_smt
@@ -34,41 +33,53 @@ let solver_log =
     stop = Fun.id;
   }
 
-let smt_log_file = ref None
+module Dump = struct
+  let current_channel = ref None
 
-let close_smt_log_file () =
-  match !smt_log_file with
-  | None -> ()
-  | Some oc ->
-      close_out oc;
-      smt_log_file := None
+  let close_channel () =
+    match !current_channel with
+    | None -> ()
+    | Some (oc, _) ->
+        close_out oc;
+        current_channel := None
 
-let () = at_exit close_smt_log_file
+  let () = at_exit close_channel
 
-let set_smt_file f =
-  close_smt_log_file ();
-  match f with
-  | None -> smt_log_file := None
-  | Some f -> smt_log_file := Some (open_out f)
+  let open_channel f =
+    let oc = open_out f in
+    current_channel := Some (oc, f);
+    Some oc
 
-let log_sexp sexp =
-  match !smt_log_file with
-  | None -> ()
-  | Some oc ->
-      Sexplib.Sexp.output_hum oc sexp;
-      output_char oc '\n';
-      flush oc
+  let channel () =
+    (* We only open if current file is not None and its different from current config *)
+    match (!Config.current.dump_smt_file, !current_channel) with
+    | None, None -> None
+    | Some f, None -> open_channel f
+    | Some f, Some (oc, f') ->
+        if f == f' then Some oc
+        else (
+          close_channel ();
+          open_channel f)
+    | None, Some _ ->
+        close_channel ();
+        None
 
-let solver_config =
-  let base_config = { z3 with log = solver_log } in
-  match Sys.getenv_opt z3_env_var with
-  | None -> base_config
-  | Some exe -> { z3 with exe }
+  let log_sexp sexp =
+    match channel () with
+    | None -> ()
+    | Some oc ->
+        Sexplib.Sexp.output_hum oc sexp;
+        output_char oc '\n';
+        flush oc
+end
+
+let solver_config () =
+  { z3 with log = solver_log; exe = !Config.current.z3_path }
 
 let z3_solver () =
-  let solver = new_solver solver_config in
+  let solver = new_solver (solver_config ()) in
   let command sexp =
-    log_sexp sexp;
+    Dump.log_sexp sexp;
     solver.command sexp
   in
   { solver with command }
@@ -153,7 +164,7 @@ let register_solver_init f =
 
 let () =
   register_solver_init (fun solver ->
-      match !Config.z3_timeout with
+      match !Config.current.solver_timeout with
       | None -> ()
       | Some timeout ->
           ack_command solver (set_option ":timeout" (string_of_int timeout)))

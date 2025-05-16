@@ -1,5 +1,60 @@
 open Cmdliner
 
+module Config = struct
+  open Soteria_c_lib.Config
+
+  let auto_include_path_arg =
+    let doc = "Path to the directory that contains the soteria-c.h" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_AUTO_INCLUDE_PATH" in
+    Arg.(
+      value
+      & opt dir default.auto_include_path
+      & info [ "auto-include-path" ] ~env ~doc)
+
+  let dump_smt_arg =
+    let doc = "Dump the SMT queries to the given file" in
+    Arg.(
+      value
+      & opt (some string) default.dump_smt_file
+      & info [ "dump-smt-to"; "dump-smt" ] ~docv:"SMT_FILE" ~doc)
+
+  let dump_unsupported_arg =
+    let doc =
+      "Dump a json file with unsupported features and their number of \
+       occurences"
+    in
+    Arg.(
+      value
+      & opt (some string) default.dump_unsupported_file
+      & info [ "dump-unsupported" ] ~docv:"FILE" ~doc)
+
+  let solver_timeout_arg =
+    let doc = "Set the solver timeout in miliseconds" in
+    Arg.(
+      value
+      & opt (some int) default.solver_timeout
+      & info [ "solver-timeout" ] ~doc ~docv:"TIMEOUT")
+
+  let z3_path_arg =
+    let doc = "Path to the Z3 executable" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_Z3_PATH" in
+    Arg.(value & opt string default.z3_path & info [ "z3-path" ] ~env ~doc)
+
+  let make_from_args auto_include_path dump_smt_file dump_unsupported_file
+      solver_timeout z3_path =
+    make ~auto_include_path ~dump_smt_file ~dump_unsupported_file
+      ~solver_timeout ~z3_path ()
+
+  let term =
+    Cmdliner.Term.(
+      const make_from_args
+      $ auto_include_path_arg
+      $ dump_smt_arg
+      $ dump_unsupported_arg
+      $ solver_timeout_arg
+      $ z3_path_arg)
+end
+
 let file_arg =
   let doc = "FILE" in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
@@ -7,22 +62,6 @@ let file_arg =
 let files_arg =
   let doc = "FILES" in
   Arg.(non_empty & pos_all file [] & info [] ~docv:"FILES" ~doc)
-
-let dump_smt_arg =
-  let doc = "Dump the SMT queries to the given file" in
-  Arg.(
-    value
-    & opt (some string) None
-    & info [ "dump-smt-to"; "dump-smt" ] ~docv:"SMT_FILE" ~doc)
-
-let dump_unsupported_arg =
-  let doc =
-    "Dump a json file with unsupported features and their number of occurences"
-  in
-  Arg.(
-    value
-    & opt (some string) None
-    & info [ "dump-unsupported" ] ~docv:"FILE" ~doc)
 
 let version_arg =
   let doc = "Print version information" in
@@ -32,17 +71,12 @@ let includes_arg =
   let doc = "Add a directory to the include path" in
   Arg.(value & opt_all dir [] & info [ "I" ] ~doc ~docv:"DIR")
 
-let solver_timeout_arg =
-  let doc = "Set the solver timeout in miliseconds" in
-  Arg.(
-    value & opt (some int) None & info [ "solver-timeout" ] ~doc ~docv:"TIMEOUT")
-
 module Exec_main = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.exec_main_and_print
       $ Soteria_logs.Cli.term
-      $ dump_smt_arg
+      $ Config.term
       $ includes_arg
       $ files_arg)
 
@@ -81,7 +115,7 @@ module Generate_summary = struct
     Term.(
       const Soteria_c_lib.Driver.generate_summary_for
       $ Soteria_logs.Cli.term
-      $ solver_timeout_arg
+      $ Config.term
       $ includes_arg
       $ files_arg
       $ fun_name_arg)
@@ -94,9 +128,7 @@ module Generate_summaries = struct
     Term.(
       const Soteria_c_lib.Driver.generate_all_summaries
       $ Soteria_logs.Cli.term
-      $ solver_timeout_arg
-      $ dump_unsupported_arg
-      $ dump_smt_arg
+      $ Config.term
       $ includes_arg
       $ files_arg)
 

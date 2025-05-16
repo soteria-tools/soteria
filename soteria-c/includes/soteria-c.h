@@ -1,0 +1,1 @@
+#define __attribute__(X)

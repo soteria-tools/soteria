@@ -53,8 +53,18 @@ module Frontend = struct
   let init () =
     let result =
       let open Cerb_backend.Pipeline in
+      let include_soteria_c_h =
+        let filename =
+          Filename.concat !Config.current.auto_include_path "soteria-c.h"
+        in
+        if Sys.file_exists filename then "-include " ^ filename ^ " "
+        else (
+          L.warn (fun m -> m "soteria-c.h not found");
+          "")
+      in
       let cpp_cmd =
-        "cc -E -C -Werror -nostdinc -undef -include soteria-c.h "
+        "cc -E -C -Werror -nostdinc -undef "
+        ^ include_soteria_c_h
         ^ "-I"
         ^ libc ()
         ^ !includes
@@ -175,9 +185,9 @@ let exec_main file_names =
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
 (* Entry point function *)
-let exec_main_and_print log_config smt_file includes file_names =
+let exec_main_and_print log_config config includes file_names =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
-  Z3solver.set_smt_file smt_file;
+  Config.set config;
   Soteria_logs.Config.check_set_and_lock log_config;
   Initialize_analysis.init_once ();
   Frontend.add_includes includes;
@@ -297,7 +307,6 @@ let generate_main_summary file_name =
 let exec_fun_bi file_names fun_name =
   match parse_and_link_ail file_names with
   | Ok prog ->
-      let@ () = with_function_context prog in
       let () = Initialize_analysis.reinit prog.sigma in
       let fundef =
         match Ail_helpers.find_fun_name ~prog fun_name with
@@ -305,6 +314,7 @@ let exec_fun_bi file_names fun_name =
         | None -> Fmt.failwith "Couldn't find function %s" fun_name
       in
       let fid, _ = fundef in
+      let@ () = with_function_context prog in
       let results = Abductor.generate_summaries_for ~prog fundef in
       List.map
         (fun summary -> (summary, Summary.analyse_summary ~prog ~fid summary))
@@ -317,10 +327,9 @@ let exec_fun_bi file_names fun_name =
 
 (* Entry point function *)
 
-let generate_summary_for log_config z3_timeout include_args file_names fun_name
-    =
+let generate_summary_for log_config config include_args file_names fun_name =
   Soteria_logs.Config.(check_set_and_lock log_config);
-  Config.z3_timeout := z3_timeout;
+  Config.set config;
   Frontend.add_includes include_args;
   Initialize_analysis.init_once ();
   let results = exec_fun_bi file_names fun_name in
@@ -330,11 +339,8 @@ let generate_summary_for log_config z3_timeout include_args file_names fun_name
   in
   Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
-let generate_all_summaries log_config z3_timeout dump_unsupported_file smt_file
-    includes file_names =
-  Config.z3_timeout := z3_timeout;
-  Z3solver.set_smt_file smt_file;
-  Csymex.unsupported_file := dump_unsupported_file;
+let generate_all_summaries log_config config includes file_names =
+  Config.set config;
   Frontend.add_includes includes;
   Soteria_logs.Config.check_set_and_lock log_config;
   Initialize_analysis.init_once ();
