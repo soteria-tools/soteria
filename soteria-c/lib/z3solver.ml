@@ -391,7 +391,6 @@ let sat solver =
       | Unsat -> Unsat
       | Unknown ->
           L.warn (fun m -> m "Solver returned unknown");
-          (* We return UNSAT by default: under-approximating behaviour *)
           Unknown)
 
 let as_values solver = Solver_state.to_value_list solver.state
