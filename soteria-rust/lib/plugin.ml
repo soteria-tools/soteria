@@ -127,7 +127,11 @@ let miri =
         ]
       ()
   in
-  let get_entry_point _ = None in
+  let get_entry_point (decl : fun_decl) =
+    match List.last decl.item_meta.name with
+    | PeIdent ("miri_start", _) -> mk_entry_point decl
+    | _ -> None
+  in
   { mk_cmd; get_entry_point }
 
 type root_plugin = {
