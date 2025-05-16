@@ -3,7 +3,11 @@ type t = {
   dump_unsupported_file : string option; [@default None]
   dump_smt_file : string option; [@default None]
   auto_include_path : string;
-      [@default List.nth Auto_include_site.Sites.includes 0]
+      [@default
+        match Auto_include_site.Sites.includes with
+        | [] -> "."
+        | [ x ] -> x
+        | _ -> failwith "Multiple auto-include paths found"]
   z3_path : string; [@default "z3"]
 }
 [@@deriving make]
