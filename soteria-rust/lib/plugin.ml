@@ -55,8 +55,6 @@ let default =
       ~charon:
         [
           "--ullbc";
-          (* We can't enable this because it removes statements we care about... *)
-          (* "--mir_optimized"; *)
           "--translate-all-methods";
           "--extract-opaque-bodies";
           "--monomorphize";
@@ -72,6 +70,7 @@ let default =
           (* include our std and rusteria crates *)
           "--extern=rusteria";
           Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
+          Fmt.str "-L%s/target/debug/deps" std_lib;
           Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"
             std_lib target;
         ]
@@ -95,10 +94,8 @@ let kani =
         [
           "-Zcrate-attr=feature\\(register_tool\\)";
           "-Zcrate-attr=register_tool\\(kanitool\\)";
-          (* Code often hides kani proofs behind a cfg *)
           "--cfg=kani";
           "--extern=kani";
-          (* Manually include lib binaries *)
           Fmt.str "-L%s/target/%s/debug/deps" lib target;
           Fmt.str "-L%s/target/debug/deps" lib;
         ]
@@ -118,18 +115,15 @@ let miri =
   let mk_cmd () =
     let root = List.hd Runtime_sites.Sites.plugin_miri in
     let target = get_host () in
-    let lib = root ^ "/miristd" in
+    let lib = root ^ "/miri" in
     compile_lib lib;
     mk_cmd
       ~rustc:
         [
           "--cfg=miri";
-          (* Manually include lib binaries *)
+          "--extern=miristd";
           Fmt.str "-L%s/target/%s/debug/deps" lib target;
-          Fmt.str "-L%s/target/%s/debug" lib target;
           Fmt.str "-L%s/target/debug/deps" lib;
-          (* Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib" lib
-            target; *)
         ]
       ()
   in
