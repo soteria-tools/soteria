@@ -221,7 +221,10 @@ Temporary Items
 Cargo.lock
 target/
 
-### Other stuff ###
+### Zed ###
+.zed
+
+### Produced by Soteria ###
 json_dump/
 
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml

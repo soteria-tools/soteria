@@ -23,39 +23,28 @@ module M (Heap : Heap_intf.S) = struct
     | AssertInhabited
     | Assume
     | BlackBox
-    | BoolNot
     | BoxIntoRaw
     | Checked of Expressions.binop
     | CompareBytes
     | CopyNonOverlapping
     | CopySign
     | Ctpop
-    | Deref
     | DiscriminantValue
-    | Eq of std_bool
     | ExactDiv
     | Index
-    | IsNone
-    | IsSome
     | IsValStaticallyKnown
-    | IterNth
     | Likely
     | MinAlignOf of type_loc
     | MulAdd
     | Nop
-    | OptUnwrap
     | PtrByteOp of Expressions.binop
     | PtrOp of Expressions.binop
     | PtrOffsetFrom
-    | ResUnwrap
     | SizeOf
     | SizeOfVal
-    | SliceLen
-    | StrChars
-    | StrLen
-    | ToString
     | Transmute
     | Unchecked of Expressions.binop
+    | VariantCount
     | Wrapping of Expressions.binop
     | WriteBytes
     | Zeroed
@@ -67,18 +56,33 @@ module M (Heap : Heap_intf.S) = struct
       ("kani::assume", KaniAssume);
       ("kani::nondet", KaniNondet);
       (* Core *)
+      (* FIXME: get rid of these, as Charon improves *)
       ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
-      ("alloc::string::{alloc::string::String}::len", StrLen);
-      ("alloc::string::{alloc::string::ToString}::to_string", ToString);
-      ("alloc::string::{core::ops::deref::Deref}::deref", Deref);
       ("core::array::{core::ops::index::Index}::index", Index);
-      ("core::cmp::impls::{core::cmp::PartialEq}::eq", Eq Id);
-      ("core::cmp::impls::{core::cmp::PartialEq}::ne", Eq Neg);
       ("core::hint::black_box", BlackBox);
+      ("core::mem::zeroed", Zeroed);
+      ("core::slice::index::{core::ops::index::Index}::index", Index);
+      (* FIXME: all core::ptr operations could be removed, however because we must enable
+         ub_checks at runtime due to unchecked_op, this means ub checks also happen in
+         the impl of core::ptr::..., and these checks are *SLOW* -- they do binary operations
+         on the integer value of the pointer to ensure it is well aligned etc. *)
+      ("core::ptr::const_ptr::{@T}::add", PtrOp Add);
+      ("core::ptr::const_ptr::{@T}::byte_add", PtrByteOp Add);
+      ("core::ptr::const_ptr::{@T}::byte_offset", PtrByteOp Add);
+      ("core::ptr::const_ptr::{@T}::byte_sub", PtrByteOp Sub);
+      ("core::ptr::const_ptr::{@T}::offset", PtrOp Add);
+      ("core::ptr::const_ptr::{@T}::sub", PtrOp Sub);
+      ("core::ptr::mut_ptr::{@T}::add", PtrOp Add);
+      ("core::ptr::mut_ptr::{@T}::byte_add", PtrByteOp Add);
+      ("core::ptr::mut_ptr::{@T}::byte_offset", PtrByteOp Add);
+      ("core::ptr::mut_ptr::{@T}::byte_sub", PtrByteOp Sub);
+      ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
+      ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
+      (* Intrinsics *)
       ("core::intrinsics::add_with_overflow", Checked Add);
       ("core::intrinsics::arith_offset", PtrOp Add);
       ("core::intrinsics::assert_inhabited", AssertInhabited);
-      (* TODO: is this correct? *)
+      (* TODO: is the following correct? *)
       ("core::intrinsics::assert_mem_uninitialized_valid", Nop);
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::assume", Assume);
@@ -110,73 +114,56 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::unchecked_rem", Unchecked Rem);
       ("core::intrinsics::unchecked_sub", Unchecked Sub);
       ("core::intrinsics::unlikely", Likely);
+      ("core::intrinsics::variant_count", VariantCount);
       ("core::intrinsics::wrapping_add", Wrapping Add);
       ("core::intrinsics::wrapping_div", Wrapping Div);
       ("core::intrinsics::wrapping_mul", Wrapping Mul);
       ("core::intrinsics::wrapping_rem", Wrapping Rem);
       ("core::intrinsics::wrapping_sub", Wrapping Sub);
+      ("core::intrinsics::write_bytes", WriteBytes);
       ("core::intrinsics::write_bytes::write_bytes", WriteBytes);
-      ("core::mem::zeroed", Zeroed);
-      ("core::num::{@N}::wrapping_add", Wrapping Add);
-      ("core::num::{@N}::wrapping_div", Wrapping Div);
-      ("core::num::{@N}::wrapping_mul", Wrapping Mul);
-      ("core::num::{@N}::wrapping_rem", Wrapping Rem);
-      ("core::num::{@N}::wrapping_sub", Wrapping Sub);
-      ("core::option::{core::cmp::PartialEq}::eq", Eq Id);
-      ("core::option::{@T}::is_none", IsNone);
-      ("core::option::{@T}::is_some", IsSome);
-      ("core::option::{@T}::unwrap", OptUnwrap);
-      ("core::ptr::const_ptr::{@T}::add", PtrOp Add);
-      ("core::ptr::const_ptr::{@T}::byte_add", PtrByteOp Add);
-      ("core::ptr::const_ptr::{@T}::byte_sub", PtrByteOp Sub);
-      ("core::ptr::const_ptr::{@T}::offset", PtrOp Add);
-      ("core::ptr::const_ptr::{@T}::sub", PtrOp Sub);
-      ("core::ptr::mut_ptr::{@T}::add", PtrOp Add);
-      ("core::ptr::mut_ptr::{@T}::byte_add", PtrByteOp Add);
-      ("core::ptr::mut_ptr::{@T}::byte_sub", PtrByteOp Sub);
-      ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
-      ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
-      ("core::result::{@T}::unwrap", ResUnwrap);
-      ("core::result::{core::cmp::PartialEq}::eq", Eq Id);
-      ("core::result::{core::cmp::PartialEq}::ne", Eq Neg);
-      ("core::slice::index::{core::ops::index::Index}::index", Index);
-      ("core::slice::{@T}::len", SliceLen);
-      ("core::str::iter::{core::iter::traits::iterator::Iterator}::nth", IterNth);
-      ("core::str::{str}::chars", StrChars);
-      ("core::option::{core::cmp::PartialEq}::ne", Eq Neg);
-      ("core::ops::bit::{core::ops::bit::Not}::not", BoolNot);
+      ("core::intrinsics::write_bytes::precondition_check", Nop);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
+
+  let has_rustc_intrinsic_attrib (f : UllbcAst.fun_decl) =
+    List.mem
+      Meta.(AttrUnknown { path = "rustc_intrinsic"; args = None })
+      f.item_meta.attr_info.attributes
 
   let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
     let open Std in
     let open Kani in
     let opt_bind f opt = match opt with None -> f () | x -> x in
     let ctx = NameMatcher.ctx_from_crate crate in
-    NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
+    let real_name =
+      if has_rustc_intrinsic_attrib f then
+        Types.
+          [
+            PeIdent ("core", Disambiguator.zero);
+            PeIdent ("intrinsics", Disambiguator.zero);
+            List.last f.item_meta.name;
+          ]
+      else f.item_meta.name
+    in
+    NameMatcherMap.find_opt ctx match_config real_name std_fun_map
     |> ( Option.map @@ function
          | Abs -> abs f.signature
          | AssertZeroValid -> assert_zero_is_valid f.signature
          | AssertInhabited -> assert_inhabited f.signature
          | Assume -> std_assume
          | BlackBox -> black_box f.signature
-         | BoolNot -> bool_not
          | BoxIntoRaw -> box_into_raw f.signature
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes
          | CopyNonOverlapping -> copy_nonoverlapping f.signature
          | CopySign -> copy_sign
          | Ctpop -> ctpop f.signature
-         | Deref -> deref f.signature
          | DiscriminantValue -> discriminant_value f.signature
-         | Eq b -> eq_values ~neg:(b = Neg) f.signature
          | ExactDiv -> exact_div f.signature
          | Index -> array_index_fn f.signature
-         | IsNone -> is_none f.signature
-         | IsSome -> is_some f.signature
          | IsValStaticallyKnown -> is_val_statically_known
-         | IterNth -> iter_nth f.signature
          | KaniAssert -> assert_
          | KaniAssume -> assume
          | KaniNondet -> kani_nondet f.signature
@@ -184,37 +171,29 @@ module M (Heap : Heap_intf.S) = struct
          | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
          | MulAdd -> mul_add f.signature
          | Nop -> nop
-         | OptUnwrap -> unwrap_opt
          | PtrByteOp op -> ptr_op ~byte:true op f.signature
          | PtrOp op -> ptr_op op f.signature
          | PtrOffsetFrom -> ptr_offset_from f.signature
-         | ResUnwrap -> unwrap_res
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
-         | SliceLen -> slice_len f.signature
-         | StrChars -> str_chars f.signature
-         | StrLen -> str_len f.signature
-         | ToString -> to_string f.signature
          | Transmute -> transmute f.signature
          | Unchecked op -> unchecked_op op f.signature
+         | VariantCount -> variant_count f.signature
          | Wrapping op -> wrapping_op op f.signature
          | WriteBytes -> write_bytes f.signature
          | Zeroed -> zeroed f.signature )
     |> opt_bind @@ fun () ->
        let is_intrinsic =
-         (match f.item_meta.name with
+         match real_name with
          | PeIdent (("core" | "std"), _) :: PeIdent ("intrinsics", _) :: _ ->
              true
-         | _ -> false)
-         || List.mem
-              Meta.(AttrUnknown { path = "rustc_intrinsic"; args = None })
-              f.item_meta.attr_info.attributes
+         | _ -> false
        in
        if is_intrinsic then
          Option.some @@ fun ~crate ~args:_ ~state:_ ->
          let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
          Fmt.kstr not_impl "Unsupported intrinsic: %s"
-           (PrintTypes.name_to_string ctx f.item_meta.name)
+           (PrintTypes.name_to_string ctx real_name)
        else None
 
   let builtin_fun_eval ~crate:_ (f : Expressions.builtin_fun_id) generics =
