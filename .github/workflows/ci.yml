@@ -126,3 +126,4 @@ jobs:
         env:
           SOTERIA_Z3_PATH: ./bin/z3
           CERB_INSTALL_PREFIX: .
+          SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c

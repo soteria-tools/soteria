@@ -153,9 +153,15 @@ let manifest_bug ~arg_tys summary =
            that produces the condition as a writer monad in an \/ or something *)
         let* _heap = State.produce serialized_heap State.empty in
         let pc = List.map (Typed.subst subst) summary.pc in
-        Csymex.assert_ (Typed.conj pc)
+        L.trace (fun m ->
+            m
+              "Produced heap, about to check if path condition holds in every \
+               branch");
+        Csymex.assert_ox (Typed.conj pc)
       in
       let result = Csymex.run process in
+      L.trace (fun m ->
+          m "Results: %a" (Fmt.Dump.list (Fmt.pair Fmt.bool Fmt.nop)) result);
       (* The bug is manifest if the assert passed in every branch. *)
       let is_manifest =
         List.for_all (function true, _ -> true | _ -> false) result
@@ -167,6 +173,11 @@ let analyse_summary ~prog ~fid (summary : 'err t) =
     Soteria_logs.Logs.with_section
       ("Analysing a summary for " ^ Cerb_frontend.Symbol.show_symbol fid)
   in
+  L.debug (fun m ->
+      m "Analysing a summary for %s@\n%a"
+        (Cerb_frontend.Symbol.show_symbol fid)
+        (pp (Fmt.any "error"))
+        summary);
   let arg_tys = Option.get (Ail_helpers.get_param_tys ~prog fid) in
   let manifest_bugs =
     match manifest_bug ~arg_tys summary with None -> [] | Some bug -> [ bug ]

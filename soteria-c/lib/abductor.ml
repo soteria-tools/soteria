@@ -10,10 +10,11 @@ end
 let generate_summaries_for ~prog (fundef : fundef) =
   let open Syntaxes.List in
   let fid, (floc, _, _, _, _) = fundef in
-  let@ () =
-    with_section
-      ("Generate summaries for " ^ Cerb_frontend.Symbol.show_symbol fid)
+  let section_name =
+    "Generate summaries for " ^ Cerb_frontend.Symbol.show_symbol fid
   in
+  let@ () = with_section section_name in
+  L.info (fun m -> m "%s" section_name);
   let* arg_tys =
     match Ail_helpers.get_param_tys ~prog fid with
     | None ->

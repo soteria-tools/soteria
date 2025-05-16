@@ -51,10 +51,15 @@ let executable ?(args = []) installed_path =
     let path = installed_path in
     (name, path)
   in
+  let soteria_includes =
+    let name = "SOTERIA_AUTO_INCLUDE_PATH" in
+    let path = installed_path / "lib" / "soteria-c" in
+    (name, path)
+  in
   let command = installed_path / "bin" / "soteria-c" in
   let args = "lsp" :: args in
   make_executable ~command ~args
-    ~env:[ dyld_lib_path; z3_path; cerb_runtime ]
+    ~env:[ dyld_lib_path; z3_path; cerb_runtime; soteria_includes ]
     ()
 
 let check_version installed_path =

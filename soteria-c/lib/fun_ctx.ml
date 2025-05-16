@@ -5,6 +5,7 @@ module Bidirectional_map = struct
   type t = { s_to_i : Z.t SMap.t; i_to_s : Ail_helpers.Symbol_std.t IMap.t }
 
   let empty = { s_to_i = SMap.empty; i_to_s = IMap.empty }
+  let has_sym s map = SMap.mem s map.s_to_i
 
   let add s i map =
     let s_to_i = SMap.add s i map.s_to_i in
@@ -22,7 +23,7 @@ end
 *)
 type t = { counter : Z.t; bmap : Bidirectional_map.t }
 
-let empty = { counter = Z.zero; bmap = Bidirectional_map.empty }
+let empty = { counter = Z.one; bmap = Bidirectional_map.empty }
 
 let declare_fn sym t =
   let counter = t.counter in
@@ -30,8 +31,27 @@ let declare_fn sym t =
   { counter = Z.succ counter; bmap }
 
 let of_linked_program (prog : Ail_tys.linked_program) =
-  ListLabels.fold_left prog.sigma.function_definitions ~init:empty
-    ~f:(fun ctx (sym, _) -> declare_fn sym ctx)
+  (* We add all function definitions *)
+  let first_pass =
+    ListLabels.fold_left prog.sigma.function_definitions ~init:empty
+      ~f:(fun ctx (sym, _) -> declare_fn sym ctx)
+  in
+  (* We also add all *declarations* of a builtin function for which there is no *definition*. *)
+  ListLabels.fold_left prog.sigma.declarations ~init:first_pass
+    ~f:(fun ctx (sym, (_, _, decl)) ->
+      match decl with
+      | Cerb_frontend.AilSyntax.Decl_object _ -> ctx
+      | Decl_function _ ->
+          let sym = Ail_helpers.resolve_sym ~prog sym in
+          let sym_name =
+            match sym with
+            | Cerb_frontend.Symbol.Symbol (_, _, SD_Id name) -> name
+            | _ -> failwith "Expected a function symbol"
+          in
+          let is_a_builtin = List.mem sym_name C_std.builtin_functions in
+          let is_already_declared = Bidirectional_map.has_sym sym ctx.bmap in
+          if (not is_a_builtin) || is_already_declared then ctx
+          else declare_fn sym ctx)
 
 let decay_fn_sym sym t =
   Bidirectional_map.get_loc_id sym t.bmap
@@ -39,7 +59,8 @@ let decay_fn_sym sym t =
          let loc = Svalue.Ptr.loc_of_z z in
          let loc : Typed.T.sloc Typed.t = Typed.type_ loc in
          loc)
-  |> Csymex.of_opt_not_impl ~msg:"Function has not been declared!"
+  |> Csymex.of_opt_not_impl
+       ~msg:(Fmt.str "Function has not been declared! %a" Fmt_ail.pp_sym sym)
 
 let get_sym sv t =
   let res =

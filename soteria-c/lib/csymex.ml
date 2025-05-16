@@ -27,10 +27,8 @@ let push_give_up, flush_give_up =
   in
   (push_give_up, flush_give_up)
 
-let unsupported_file = ref None
-
 let dump_unsupported () =
-  match !unsupported_file with
+  match !Config.current.dump_unsupported_file with
   | None -> ()
   | Some file ->
       let reasons = flush_give_up () in

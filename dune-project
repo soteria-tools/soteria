@@ -55,6 +55,8 @@
  (name soteria-c)
  (synopsis "A C bug-finder based on Soteria")
  (description "A C bug-finder based on Soteria")
+ (sites
+  (share includes))
  (depends
   (ocaml
    (>= 5.3.0))

@@ -21,9 +21,14 @@
   eio_main
   yojson
   printbox-text
-  tsort)
+  tsort
+  dune-site)
  (flags :standard -open Soteria_std)
  (preprocess
   (pps ppx_deriving.std soteria.ppx))
  (instrumentation
   (backend landmarks --auto)))
+
+(generate_sites_module
+ (module auto_include_site)
+ (sites soteria-c))

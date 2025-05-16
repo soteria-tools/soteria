@@ -1,7 +1,14 @@
 open Shexp_process
+open Stdlib (* Shexp overrides `List`... *)
 open Cmdliner
 
 let ( |. ) f g = pipe f g
+
+let dest_dir_arg position =
+  Arg.(
+    required
+    & pos position (some string) None
+    & info [] ~docv:"DEST_DIR" ~doc:"Path to the destination directory")
 
 module Infer_Dylibs = struct
   let infer_dylibs exe =
@@ -58,13 +65,7 @@ module Copy_files = struct
             "Path to the file that contains the list of files to copy. One \
              file per line")
 
-  let dest_dir_arg =
-    Arg.(
-      required
-      & pos 1 (some string) None
-      & info [] ~docv:"DEST_DIR" ~doc:"Path to the destination directory")
-
-  let term = Term.(const copy_files $ list_file_arg $ dest_dir_arg)
+  let term = Term.(const copy_files $ list_file_arg $ dest_dir_arg 1)
   let cmd = Cmd.v (Cmd.info "copy-files") term
 end
 
@@ -78,18 +79,35 @@ module Copy_cerb_runtime = struct
     let () = run "rm" [ "-rf"; Filename.concat dest_dir "bmc" ] |> eval in
     Printf.printf "Copied Cerb runtime from %s to %s\n" path dest_dir
 
-  let dest_dir_arg =
-    Arg.(
-      required
-      & pos 0 (some string) None
-      & info [] ~docv:"DEST_DIR" ~doc:"Path to the destination directory")
-
-  let term = Term.(const copy_cerb_runtime $ dest_dir_arg)
+  let term = Term.(const copy_cerb_runtime $ dest_dir_arg 0)
   let cmd = Cmd.v (Cmd.info "copy-cerb-runtime") term
 end
 
+module Copy_soteria_c_auto_includes = struct
+  let copy_includes dest_dir =
+    let ( / ) = Filename.concat in
+    let path =
+      Stdlib.List.nth Soteria_c_lib.Auto_include_site.Sites.includes 0
+    in
+    let path = path / "soteria-c.h" in
+    let dest_dir = dest_dir / "soteria-c" in
+    let () = run "mkdir" [ "-p"; dest_dir ] |> eval in
+    let () = run "cp" [ path; dest_dir ] |> eval in
+    Printf.printf "Copied %s to %s\n" path dest_dir
+
+  let term = Term.(const copy_includes $ dest_dir_arg 0)
+  let cmd = Cmd.v (Cmd.info "copy-soteria-c-auto-includes") term
+end
+
+(* Main command *)
+
 let cmd =
   Cmd.group (Cmd.info "package")
-    [ Infer_Dylibs.cmd; Copy_files.cmd; Copy_cerb_runtime.cmd ]
+    [
+      Infer_Dylibs.cmd;
+      Copy_files.cmd;
+      Copy_cerb_runtime.cmd;
+      Copy_soteria_c_auto_includes.cmd;
+    ]
 
 let () = exit @@ Cmd.eval cmd

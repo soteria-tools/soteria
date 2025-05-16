@@ -64,8 +64,8 @@ let end_section () =
     | Html -> write_string Html.section_closing
     | Stderr -> ())
 
-let with_section str f =
-  start_section ~is_branch:false str;
+let with_section ?(is_branch = false) str f =
+  start_section ~is_branch str;
   try
     let x = f () in
     end_section ();
