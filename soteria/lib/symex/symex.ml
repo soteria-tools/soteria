@@ -3,6 +3,12 @@ open Syntaxes.FunctionWrap
 module L = Logs.L
 module List = ListLabels
 
+let is_sat (result : Solver.solver_result) =
+  match result with Sat -> true | Unsat | Unknown -> false
+
+let is_unsat (result : Solver.solver_result) =
+  match result with Unsat -> true | Sat | Unknown -> false
+
 module type Config = sig
   val fuel : Fuel_gauge.t
 end
@@ -18,6 +24,7 @@ module type Base = sig
   val assume : sbool v list -> unit MONAD.t
   val vanish : unit -> 'a MONAD.t
   val assert_ : sbool v -> bool MONAD.t
+  val assert_ox : sbool v -> bool MONAD.t
   val nondet : ?constrs:('a v -> sbool v list) -> 'a vt -> 'a v MONAD.t
   val fresh_var : 'a vt -> Var.t MONAD.t
   val batched : (unit -> 'a MONAD.t) -> 'a MONAD.t
@@ -230,6 +237,8 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
     in
     aux [] learned
 
+  (** Assert is [if%sat (not value) then error else ok]. In UX, assert only
+      returns false if (not value) is *really* satisfiable. *)
   let assert_ value () =
     let value = Solver.simplify value in
     match Value.as_bool value with
@@ -238,9 +247,22 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
-        let sat = Solver.sat () in
+        let sat = is_sat (Solver.sat ()) in
         Symex_state.backtrack_n 1;
         Seq.Cons (not sat, Seq.empty)
+
+  (** TODO: is this correct? *)
+  let assert_ox value () =
+    let value = Solver.simplify value in
+    match Value.as_bool value with
+    | Some true -> Seq.Cons (true, Seq.empty)
+    | Some false -> Seq.Cons (false, Seq.empty)
+    | None ->
+        Symex_state.save ();
+        Solver.add_constraints [ Value.(not value) ];
+        let unsat = is_unsat (Solver.sat ()) in
+        Symex_state.backtrack_n 1;
+        Seq.Cons (unsat, Seq.empty)
 
   let nondet ?constrs ty () =
     let v = Solver.fresh_var ty in
@@ -268,17 +290,18 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
         Solver.add_constraints ~simplified:true [ guard ];
         let left_sat = Solver.sat () in
         Seq.append
-          (fun () -> if left_sat then then_ () () else Seq.Nil)
+          (fun () -> if is_sat left_sat then then_ () () else Seq.Nil)
           (fun () ->
             Symex_state.backtrack_n 1;
             Solver.add_constraints [ Value.(not guard) ];
-            if left_sat then
+            if is_unsat left_sat then
+              (* Right must be sat since left was not! We didn't branch so we don't consume the counter. *)
+              else_ () ()
+            else
               match Fuel.consume_branching 1 () with
               | Exhausted -> Seq.Nil
-              | Not_exhausted -> if Solver.sat () then else_ () () else Seq.Nil
-            else
-              (* Right must be sat since left was not! We didn't branch so we don't consume the counter. *)
-              else_ () ())
+              | Not_exhausted ->
+                  if is_sat (Solver.sat ()) then else_ () () else Seq.Nil)
           ()
 
   let branch_on_take_one ?left_branch_name:_ ?right_branch_name:_ guard ~then_
@@ -291,7 +314,7 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
-        let left_sat = Solver.sat () in
+        let left_sat = is_sat (Solver.sat ()) in
         Seq.append
           (fun () -> if left_sat then then_ () () else Seq.Nil)
           (fun () ->
@@ -354,7 +377,7 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
 
   let batched s =
     MONAD.bind (s ()) @@ fun x ->
-    if Solver.sat () then MONAD.return x else vanish ()
+    if is_sat (Solver.sat ()) then MONAD.return x else vanish ()
 end)
 
 module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
@@ -411,6 +434,8 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     in
     aux [] learned
 
+  (** Assert is [if%sat (not value) then error else ok]. In UX, assert only
+      returns false if (not value) is *really* satisfiable. *)
   let assert_ value f =
     let value = Solver.simplify value in
     match Value.as_bool value with
@@ -424,9 +449,28 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
           in
           Symex_state.save ();
           Solver.add_constraints [ Value.(not value) ];
-          let sat = Solver.sat () in
+          let sat = is_sat (Solver.sat ()) in
           Symex_state.backtrack_n 1;
           not sat
+        in
+        f result
+
+  let assert_ox value f =
+    let value = Solver.simplify value in
+    match Value.as_bool value with
+    | Some true -> f true
+    | Some false -> f false
+    | None ->
+        let result =
+          let@ () =
+            Logs.with_section
+              (Fmt.str "Checking entailment for %a" Value.ppa value)
+          in
+          Symex_state.save ();
+          Solver.add_constraints [ Value.(not value) ];
+          let unsat = is_unsat (Solver.sat ()) in
+          Symex_state.backtrack_n 1;
+          unsat
         in
         f result
 
@@ -443,44 +487,39 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
       ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
-    let left_sat = ref true in
     match Value.as_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
        if we remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
+        let left_unsat = ref false in
         Symex_state.save ();
-        Logs.start_section ~is_branch:true left_branch_name;
-        Solver.add_constraints ~simplified:true [ guard ];
-        if Solver.sat () then then_ () f
-        else (
-          left_sat := false;
-          L.trace (fun m -> m "Branch is not feasible"));
-        Logs.end_section ();
+        Logs.with_section ~is_branch:true left_branch_name (fun () ->
+            Solver.add_constraints ~simplified:true [ guard ];
+            let sat_res = Solver.sat () in
+            left_unsat := is_unsat sat_res;
+            if is_sat sat_res then then_ () f
+            else L.trace (fun m -> m "Branch is not feasible"));
         Symex_state.backtrack_n 1;
-        Logs.start_section ~is_branch:true right_branch_name;
-        Solver.add_constraints [ Value.(not guard) ];
-        let () =
-          if !left_sat then
-            match Fuel.consume_branching 1 () with
-            | Exhausted ->
-                L.debug (fun m -> m "Exhausted branching fuel, not continuing")
-            | Not_exhausted ->
-                if Solver.sat () then else_ () f
-                else L.trace (fun m -> m "Branch is not feasible")
-          else
-            (* Right must be sat since left was not! We didn't branch so we don't consume the counter
-             FIXME: we should also check that the solver hasn't returned "UNKNOWN"! *)
-            else_ () f
-        in
-        Logs.end_section ()
+        Logs.with_section ~is_branch:true right_branch_name (fun () ->
+            Solver.add_constraints [ Value.(not guard) ];
+            if !left_unsat then
+              (* Right must be sat since left was not! We didn't branch so we don't consume the counter *)
+              else_ () f
+            else
+              match Fuel.consume_branching 1 () with
+              | Exhausted ->
+                  L.debug (fun m ->
+                      m "Exhausted branching fuel, not continuing")
+              | Not_exhausted ->
+                  if is_sat (Solver.sat ()) then else_ () f
+                  else L.trace (fun m -> m "Branch is not feasible"))
 
   let branch_on_take_one ?left_branch_name:_ ?right_branch_name:_ guard ~then_
       ~else_ : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
-
     match Value.as_bool guard with
     | Some true -> then_ () f
     | Some false -> else_ () f
@@ -488,7 +527,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         let left_sat = ref true in
-        if Solver.sat () then then_ () f else left_sat := false;
+        if is_sat (Solver.sat ()) then then_ () f else left_sat := false;
         Symex_state.backtrack_n 1;
         if not !left_sat then (
           Solver.add_constraints [ Value.(not guard) ];
@@ -496,7 +535,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
 
   let batched s =
     Iter.flat_map
-      (fun x -> if Solver.sat () then Iter.return x else Iter.empty)
+      (fun x -> if is_sat (Solver.sat ()) then Iter.return x else Iter.empty)
       (s ())
 
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =

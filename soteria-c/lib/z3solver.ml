@@ -3,10 +3,14 @@ module Value = Typed
 module Var = Svalue.Var
 open Soteria_logs.Logs
 
-let z3_env_var = "SOTERIA_Z3_PATH"
 let debug_str ~prefix s = L.smt (fun m -> m "%s %s" prefix s)
 
 open Simple_smt
+
+let int_of_bv signed bv =
+  if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
+
+let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
 
 let smallest_power_of_two_greater_than n =
   let f n =
@@ -29,41 +33,53 @@ let solver_log =
     stop = Fun.id;
   }
 
-let smt_log_file = ref None
+module Dump = struct
+  let current_channel = ref None
 
-let close_smt_log_file () =
-  match !smt_log_file with
-  | None -> ()
-  | Some oc ->
-      close_out oc;
-      smt_log_file := None
+  let close_channel () =
+    match !current_channel with
+    | None -> ()
+    | Some (oc, _) ->
+        close_out oc;
+        current_channel := None
 
-let () = at_exit close_smt_log_file
+  let () = at_exit close_channel
 
-let set_smt_file f =
-  close_smt_log_file ();
-  match f with
-  | None -> smt_log_file := None
-  | Some f -> smt_log_file := Some (open_out f)
+  let open_channel f =
+    let oc = open_out f in
+    current_channel := Some (oc, f);
+    Some oc
 
-let log_sexp sexp =
-  match !smt_log_file with
-  | None -> ()
-  | Some oc ->
-      Sexplib.Sexp.output_hum oc sexp;
-      output_char oc '\n';
-      flush oc
+  let channel () =
+    (* We only open if current file is not None and its different from current config *)
+    match (!Config.current.dump_smt_file, !current_channel) with
+    | None, None -> None
+    | Some f, None -> open_channel f
+    | Some f, Some (oc, f') ->
+        if f == f' then Some oc
+        else (
+          close_channel ();
+          open_channel f)
+    | None, Some _ ->
+        close_channel ();
+        None
 
-let solver_config =
-  let base_config = { z3 with log = solver_log } in
-  match Sys.getenv_opt z3_env_var with
-  | None -> base_config
-  | Some exe -> { z3 with exe }
+  let log_sexp sexp =
+    match channel () with
+    | None -> ()
+    | Some oc ->
+        Sexplib.Sexp.output_hum oc sexp;
+        output_char oc '\n';
+        flush oc
+end
+
+let solver_config () =
+  { z3 with log = solver_log; exe = !Config.current.z3_path }
 
 let z3_solver () =
-  let solver = new_solver solver_config in
+  let solver = new_solver (solver_config ()) in
   let command sexp =
-    log_sexp sexp;
+    Dump.log_sexp sexp;
     solver.command sexp
   in
   { solver with command }
@@ -145,6 +161,13 @@ let register_solver_init f =
     f solver
   in
   initialize_solver := f'
+
+let () =
+  register_solver_init (fun solver ->
+      match !Config.current.solver_timeout with
+      | None -> ()
+      | Some timeout ->
+          ack_command solver (set_option ":timeout" (string_of_int timeout)))
 
 let init () =
   let z3_solver = z3_solver () in
@@ -277,7 +300,13 @@ let rec encode_value (v : Svalue.t) =
       | Plus -> num_add v1 v2
       | Minus -> num_sub v1 v2
       | Times -> num_mul v1 v2
-      | Div -> num_div v1 v2)
+      | Div -> num_div v1 v2
+      | Mod -> num_mod v1 v2
+      | BitAnd ->
+          let bv_size = 64 in
+          (* FIXME: Properly handle signedness and sizes for bitvectors *)
+          int_of_bv false (bv_and (bv_of_int bv_size v1) (bv_of_int bv_size v2))
+      )
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in
       distinct vs
@@ -345,10 +374,10 @@ let sat solver =
   match Solver_state.trivial_truthiness solver.state with
   | Some true ->
       L.smt (fun m -> m "Trivially true");
-      true
+      Soteria_symex.Solver.Sat
   | Some false ->
       L.smt (fun m -> m "Trivially false");
-      false
+      Unsat
   | None -> (
       let answer =
         try check solver.z3_solver
@@ -358,11 +387,10 @@ let sat solver =
           Unknown
       in
       match answer with
-      | Sat -> true
-      | Unsat -> false
+      | Sat -> Sat
+      | Unsat -> Unsat
       | Unknown ->
-          Logs.warn (fun m -> m "Solver returned unknown");
-          (* We return UNSAT by default: under-approximating behaviour *)
-          false)
+          L.warn (fun m -> m "Solver returned unknown");
+          Unknown)
 
 let as_values solver = Solver_state.to_value_list solver.state

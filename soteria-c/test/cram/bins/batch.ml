@@ -13,11 +13,12 @@ let process =
 
 let () =
   let file = Some "batch.smt" in
-  Z3solver.set_smt_file file;
+  Soteria_c_lib.Config.set
+    { Soteria_c_lib.Config.default with dump_smt_file = file };
   Initialize_analysis.init_once ();
   let l = Csymex.run process in
   assert (List.length l = 0);
-  Z3solver.close_smt_log_file ();
+  Soteria_c_lib.Z3solver.Dump.close_channel ();
   let f = open_in "batch.smt" in
   let () =
     try

@@ -48,6 +48,7 @@ module type S = sig
     Csymex.Result.t
 
   val alloc :
+    ?zeroed:bool ->
     sint Typed.t ->
     t ->
     ([> sptr ] Typed.t * t, [> ] err, serialized list) Csymex.Result.t

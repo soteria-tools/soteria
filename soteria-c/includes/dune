@@ -1,0 +1,6 @@
+(install
+ (package soteria-c)
+ (section
+  (site
+   (soteria-c includes)))
+ (files soteria-c.h))

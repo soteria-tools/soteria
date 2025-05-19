@@ -93,6 +93,8 @@ val plus : [< sint ] t -> [< sint ] t -> [> sint ] t
 val minus : [< sint ] t -> [< sint ] t -> [> sint ] t
 val times : [< sint ] t -> [< sint ] t -> [> sint ] t
 val div : [< sint ] t -> nonzero t -> [> sint ] t
+val mod_ : [< sint ] t -> nonzero t -> [> sint ] t
+val bit_and : [< sint ] t -> [< sint ] t -> [> sint ] t
 
 module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t
@@ -124,6 +126,7 @@ module Infix : sig
   val ( ~- ) : [< sint ] t -> [> sint ] t
   val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( /@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+  val ( &@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
 end
 
 module Syntax : sig

@@ -4,6 +4,8 @@ open Csymex.Syntax
 open Typed.Syntax
 module T = Typed.T
 
+let builtin_functions = [ "malloc"; "free"; "memcpy"; "calloc" ]
+
 module M (State : State_intf.S) = struct
   let malloc ~prog:_ ~(args : T.cval Typed.t list) ~state =
     let* sz =
@@ -11,10 +13,29 @@ module M (State : State_intf.S) = struct
       | [ sz ] -> return sz
       | _ -> not_impl "malloc with non-one arguments"
     in
-    let sz = Typed.cast sz in
+    match Typed.cast_checked sz Typed.t_int with
+    | Some sz ->
+        Csymex.branches
+          [
+            (fun () -> State.alloc sz state);
+            (fun () -> Result.ok (Typed.Ptr.null, state));
+          ]
+    | None -> not_impl "malloc with non-integer argument"
+
+  let calloc ~prog:_ ~(args : T.cval Typed.t list) ~state =
+    let* sz =
+      match args with
+      | [ num; sz ] -> (
+          let num = Typed.cast_checked num Typed.t_int in
+          let sz = Typed.cast_checked sz Typed.t_int in
+          match (num, sz) with
+          | Some num, Some sz -> Csymex.return (Typed.times num sz)
+          | None, _ | _, None -> not_impl "calloc with non-integer arguments")
+      | _ -> not_impl "calloc with non-one arguments"
+    in
     Csymex.branches
       [
-        (fun () -> State.alloc sz state);
+        (fun () -> State.alloc ~zeroed:true sz state);
         (fun () -> Result.ok (Typed.Ptr.null, state));
       ]
 
