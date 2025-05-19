@@ -55,10 +55,6 @@ module Config = struct
       $ z3_path_arg)
 end
 
-let file_arg =
-  let doc = "FILE" in
-  Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
-
 let files_arg =
   let doc = "FILES" in
   Arg.(non_empty & pos_all file [] & info [] ~docv:"FILES" ~doc)
@@ -96,11 +92,6 @@ module Show_ail = struct
     Term.(const Soteria_c_lib.Driver.show_ail $ includes_arg $ files_arg)
 
   let cmd = Cmd.v (Cmd.info "show-ail") term
-end
-
-module Bi_main = struct
-  let term = Term.(const Soteria_c_lib.Driver.generate_main_summary $ file_arg)
-  let cmd = Cmd.v (Cmd.info "bi-main") term
 end
 
 module Generate_summary = struct
@@ -141,7 +132,6 @@ let cmd =
       Exec_main.cmd;
       Lsp.cmd;
       Show_ail.cmd;
-      Bi_main.cmd;
       Generate_summary.cmd;
       Generate_summaries.cmd;
     ]
