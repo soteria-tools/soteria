@@ -44,9 +44,7 @@ let io : Cerb_backend.Pipeline.io_helpers =
   { pass_message; set_progress; run_pp; print_endline; print_debug; warn }
 
 module Frontend = struct
-  let frontend =
-    ref (fun ~cpp_exe:_ ~cpp_args:_ _ -> failwith "Frontend not set")
-
+  let frontend = ref (fun ~cpp_cmd:_ _ -> failwith "Frontend not set")
   let libc () = Cerb_runtime.in_runtime "libc/include"
 
   let init () =
@@ -82,15 +80,13 @@ module Frontend = struct
       let* stdlib = load_core_stdlib () in
       let* impl = load_core_impl stdlib impl_name in
       Exception.Result
-        (fun ~cpp_exe ~cpp_args filename ->
+        (fun ~cpp_cmd filename ->
           let cpp_cmd =
-            cpp_exe
+            cpp_cmd
             ^ " -E -C -Werror -nostdinc "
             ^ include_soteria_c_h
             ^ "-I"
             ^ libc ()
-            ^ " "
-            ^ cpp_args
           in
           c_frontend (conf cpp_cmd, io) (stdlib, impl) ~filename)
     in
@@ -103,24 +99,30 @@ module Frontend = struct
 
   let () = Initialize_analysis.register_once_initialiser init
 
-  let frontend ~cpp_exe ~cpp_args filename =
-    !frontend ~cpp_exe ~cpp_args filename
+  let frontend ?cwd ~cpp_cmd filename =
+    match cwd with
+    | None -> !frontend ~cpp_cmd filename
+    | Some dir ->
+        Sys.with_working_dir dir @@ fun () -> !frontend ~cpp_cmd filename
 
   let simple_frontend ~includes filename =
-    let cpp_exe = "cc" in
-    let cpp_args = String.concat " " (List.map (fun s -> "-I" ^ s) includes) in
-    frontend ~cpp_exe ~cpp_args filename
+    let cmd = "cc" :: List.map (fun s -> "-I" ^ s) includes in
+    let cpp_cmd = String.concat " " cmd in
+    frontend ~cpp_cmd filename
 end
 
-let parse_ail_raw_default ~includes file =
-  match Frontend.simple_frontend ~includes file with
-  | Result (_, (_, ast)) -> Ok ast
+let lift_parsing_result res =
+  match res with
+  | Exception.Result (_, (_, ast)) -> Ok ast
   | Exception (loc, err) ->
       let msg =
-        Printf.sprintf "Failed to parse ail: %s"
+        Printf.sprintf "Failed to parse AIL: %s"
           (Pp_errors.to_string (loc, err))
       in
       Error (`ParsingError msg, Call_trace.singleton ~loc ())
+
+let parse_ail_raw_default ~includes file =
+  Frontend.simple_frontend ~includes file |> lift_parsing_result
 
 let parse_and_link_ail ~includes files =
   let open Syntaxes.Result in
@@ -129,6 +131,12 @@ let parse_and_link_ail ~includes files =
   | files ->
       let* parsed = Monad.ResultM.all (parse_ail_raw_default ~includes) files in
       Ail_linking.link parsed
+
+let parse_and_link_compilation_item (item : Compilation_database.cmd) =
+  Frontend.frontend ~cwd:item.directory
+    ~cpp_cmd:(String.concat " " item.command)
+    item.file
+  |> lift_parsing_result
 
 let is_main (def : Cabs.function_definition) =
   let decl = match def with FunDef (_, _, _, decl, _) -> decl in
@@ -193,25 +201,6 @@ let exec_main ~includes file_names =
   in
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
-(* Entry point function *)
-let exec_main_and_print log_config config includes file_names =
-  (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
-  Config.set config;
-  Soteria_logs.Config.check_set_and_lock log_config;
-  Initialize_analysis.init_once ();
-  let result = exec_main ~includes file_names in
-  let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
-  Fmt.pr
-    "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
-     Executed %d statements"
-    Fmt.Dump.(
-      list @@ fun ft (r, _) ->
-      (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
-         ~miss:(Fmt.Dump.list SState.pp_serialized))
-        ft r)
-    result
-    (Stats.get_executed_statements ())
-
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
 let generate_errors content =
@@ -237,6 +226,71 @@ let generate_errors content =
           summaries
       in
       List.sort_uniq Stdlib.compare results
+
+let exec_fun_bi ~includes file_names fun_name =
+  match parse_and_link_ail ~includes file_names with
+  | Ok prog ->
+      let () = Initialize_analysis.reinit prog.sigma in
+      let fundef =
+        match Ail_helpers.find_fun_name ~prog fun_name with
+        | Some fundef -> fundef
+        | None -> Fmt.failwith "Couldn't find function %s" fun_name
+      in
+      let fid, _ = fundef in
+      let@ () = with_function_context prog in
+      let results = Abductor.generate_summaries_for ~prog fundef in
+      List.map
+        (fun summary -> (summary, Summary.analyse_summary ~prog ~fid summary))
+        results
+  | Error (`ParsingError s, call_trace) ->
+      Fmt.epr "Failed to parse AIL at loc %a: %s@\n@?" Call_trace.pp call_trace
+        s;
+      Fmt.failwith "Failed to parse AIL"
+  | Error (`LinkError s, _) -> Fmt.failwith "Failed to link AIL: %s" s
+
+(** {2 Entry points} *)
+
+(* Helper for all main entry points *)
+let initialise log_config config =
+  Soteria_logs.Config.(check_set_and_lock log_config);
+  Config.set config;
+  Initialize_analysis.init_once ()
+
+(* Entry point function *)
+let exec_main_and_print log_config config includes file_names =
+  (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
+  initialise log_config config;
+  let result = exec_main ~includes file_names in
+  let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
+  Fmt.pr
+    "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
+     Executed %d statements"
+    Fmt.Dump.(
+      list @@ fun ft (r, _) ->
+      (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
+         ~miss:(Fmt.Dump.list SState.pp_serialized))
+        ft r)
+    result
+    (Stats.get_executed_statements ())
+
+let generate_summaries prog =
+  let results =
+    let@ () = with_function_context prog in
+    Abductor.generate_all_summaries prog
+  in
+  Csymex.dump_unsupported ();
+
+  let pp_summary ~fid ft summary =
+    Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
+      summary (Fmt.Dump.list pp_err)
+      (Summary.analyse_summary ~prog ~fid summary)
+  in
+  List.iter
+    (fun (fid, summaries) ->
+      Fmt.pr "@[<v 2>Summaries for %a:@ %a@]@ @." Fmt_ail.pp_sym fid
+        (Fmt.list ~sep:Fmt.sp (pp_summary ~fid))
+        summaries)
+    results
 
 (* Entry point function *)
 let lsp () =
@@ -284,33 +338,9 @@ let show_ail (includes : string list) (files : string list) =
       Fmt.pr "@[<v>%a@]" Fmt_ail.pp_program (entry_point, sigma)
   | Error err -> Fmt.pr "%a@." pp_err err
 
-let exec_fun_bi ~includes file_names fun_name =
-  match parse_and_link_ail ~includes file_names with
-  | Ok prog ->
-      let () = Initialize_analysis.reinit prog.sigma in
-      let fundef =
-        match Ail_helpers.find_fun_name ~prog fun_name with
-        | Some fundef -> fundef
-        | None -> Fmt.failwith "Couldn't find function %s" fun_name
-      in
-      let fid, _ = fundef in
-      let@ () = with_function_context prog in
-      let results = Abductor.generate_summaries_for ~prog fundef in
-      List.map
-        (fun summary -> (summary, Summary.analyse_summary ~prog ~fid summary))
-        results
-  | Error (`ParsingError s, call_trace) ->
-      Fmt.epr "Failed to parse AIL at loc %a: %s@\n@?" Call_trace.pp call_trace
-        s;
-      Fmt.failwith "Failed to parse AIL"
-  | Error (`LinkError s, _) -> Fmt.failwith "Failed to link AIL: %s" s
-
 (* Entry point function *)
-
 let generate_summary_for log_config config includes file_names fun_name =
-  Soteria_logs.Config.(check_set_and_lock log_config);
-  Config.set config;
-  Initialize_analysis.init_once ();
+  initialise log_config config;
   let results = exec_fun_bi ~includes file_names fun_name in
   let pp_summary ft (summary, analysis) =
     Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
@@ -318,10 +348,10 @@ let generate_summary_for log_config config includes file_names fun_name =
   in
   Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
 
+(* Entry point function *)
 let generate_all_summaries log_config config includes file_names =
-  Config.set config;
-  Soteria_logs.Config.check_set_and_lock log_config;
-  Initialize_analysis.init_once ();
+  (* TODO: generate a compilation database directly, to simplify the interface in this file. *)
+  initialise log_config config;
   let prog =
     let@ () = Soteria_logs.Logs.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
@@ -329,20 +359,25 @@ let generate_all_summaries log_config config includes file_names =
            Fmt.epr "%a@\n@?" pp_err e;
            failwith "Failed to parse AIL")
   in
-  let results =
-    let@ () = with_function_context prog in
-    Abductor.generate_all_summaries prog
-  in
-  Csymex.dump_unsupported ();
+  generate_summaries prog
 
-  let pp_summary ~fid ft summary =
-    Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
-      summary (Fmt.Dump.list pp_err)
-      (Summary.analyse_summary ~prog ~fid summary)
+(* Entry point function *)
+let capture_db log_config config json_file =
+  let open Syntaxes.Result in
+  initialise log_config config;
+  let linked_prog =
+    let@ () =
+      Soteria_logs.Logs.with_section "Parsing and Linking from database"
+    in
+    let db = Compilation_database.from_file json_file in
+    let* ails = Monad.ResultM.all parse_and_link_compilation_item db in
+    Ail_linking.link ails
   in
-  List.iter
-    (fun (fid, summaries) ->
-      Fmt.pr "@[<v 2>Summaries for %a:@ %a@]@ @." Fmt_ail.pp_sym fid
-        (Fmt.list ~sep:Fmt.sp (pp_summary ~fid))
-        summaries)
-    results
+  let linked_prog =
+    Result.get_or
+      ~err:(fun e ->
+        Fmt.epr "%a@\n@?" pp_err e;
+        failwith "Failed to parse AIL")
+      linked_prog
+  in
+  generate_summaries linked_prog

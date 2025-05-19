@@ -126,6 +126,22 @@ module Generate_summaries = struct
   let cmd = Cmd.v (Cmd.info "gen-summaries") term
 end
 
+module Capture_db = struct
+  let compilation_db_arg =
+    let doc = "JSON file following the Clang compilation database format" in
+    let docv = "COMPILE_COMMANDS.JSON" in
+    Arg.(required & pos 0 (some file) None & info [] ~doc ~docv)
+
+  let term =
+    Term.(
+      const Soteria_c_lib.Driver.capture_db
+      $ Soteria_logs.Cli.term
+      $ Config.term
+      $ compilation_db_arg)
+
+  let cmd = Cmd.v (Cmd.info "capture-db") term
+end
+
 let cmd =
   Cmd.group (Cmd.info "soteria-c")
     [
@@ -134,6 +150,7 @@ let cmd =
       Show_ail.cmd;
       Generate_summary.cmd;
       Generate_summaries.cmd;
+      Capture_db.cmd;
     ]
 
 let () = exit @@ Cmd.eval cmd
