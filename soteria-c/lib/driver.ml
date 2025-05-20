@@ -45,7 +45,11 @@ let io : Cerb_backend.Pipeline.io_helpers =
 
 module Frontend = struct
   let frontend = ref (fun ~cpp_cmd:_ _ -> failwith "Frontend not set")
-  let libc () = Cerb_runtime.in_runtime "libc/include"
+
+  let include_libc () =
+    let root_includes = Cerb_runtime.in_runtime "libc/include" in
+    let posix = Filename.concat root_includes "posix" in
+    "-I" ^ root_includes ^ " -I" ^ posix
 
   let init () =
     let result =
@@ -85,8 +89,7 @@ module Frontend = struct
             cpp_cmd
             ^ " -E -C -Werror -nostdinc "
             ^ include_soteria_c_h
-            ^ "-I"
-            ^ libc ()
+            ^ include_libc ()
           in
           c_frontend (conf cpp_cmd, io) (stdlib, impl) ~filename)
     in
@@ -209,17 +212,19 @@ let exec_main ~includes file_names =
   let open Syntaxes.Result in
   let result =
     let* linked = parse_and_link_ail ~includes file_names in
-    let* entry_point = resolve_entry_point linked in
-    let sigma = linked.sigma in
-    let () = Initialize_analysis.reinit sigma in
-    let symex =
-      let open Csymex.Syntax in
-      let** state = Wpst_interp.init_prog_state linked in
-      L.debug (fun m -> m "@[<2>Initial state:@ %a@]" SState.pp state);
-      Wpst_interp.exec_fun ~prog:linked ~args:[] ~state entry_point
-    in
-    let@ () = with_function_context linked in
-    Ok (Csymex.run symex)
+    if !Config.current.parse_only then Ok []
+    else
+      let* entry_point = resolve_entry_point linked in
+      let sigma = linked.sigma in
+      let () = Initialize_analysis.reinit sigma in
+      let symex =
+        let open Csymex.Syntax in
+        let** state = Wpst_interp.init_prog_state linked in
+        L.debug (fun m -> m "@[<2>Initial state:@ %a@]" SState.pp state);
+        Wpst_interp.exec_fun ~prog:linked ~args:[] ~state entry_point
+      in
+      let@ () = with_function_context linked in
+      Ok (Csymex.run symex)
   in
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
@@ -283,17 +288,18 @@ let exec_main_and_print log_config config includes file_names =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   initialise log_config config;
   let result = exec_main ~includes file_names in
-  let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
-  Fmt.pr
-    "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
-     Executed %d statements"
-    Fmt.Dump.(
-      list @@ fun ft (r, _) ->
-      (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
-         ~miss:(Fmt.Dump.list SState.pp_serialized))
-        ft r)
-    result
-    (Stats.get_executed_statements ())
+  if not !Config.current.parse_only then
+    let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
+    Fmt.pr
+      "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
+       Executed %d statements"
+      Fmt.Dump.(
+        list @@ fun ft (r, _) ->
+        (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
+           ~miss:(Fmt.Dump.list SState.pp_serialized))
+          ft r)
+      result
+      (Stats.get_executed_statements ())
 
 let generate_summaries prog =
   let results =
@@ -381,7 +387,7 @@ let generate_all_summaries log_config config includes file_names =
            Fmt.epr "%a@\n@?" pp_err e;
            failwith "Failed to parse AIL")
   in
-  generate_summaries prog
+  if not !Config.current.parse_only then generate_summaries prog
 
 (* Entry point function *)
 let capture_db log_config config json_file =
@@ -413,8 +419,8 @@ let capture_db log_config config json_file =
           let total = List.length db in
           if parsed < total then
             L.warn (fun m ->
-                m "Some files failed to parse, ignored %d out of %d"
-                  (total - parsed) total)
+                m "Some files failed to parse, successfully %d out of %d" parsed
+                  total)
         in
         Ok ails
     in
@@ -431,4 +437,4 @@ let capture_db log_config config json_file =
             failwith "Failed to link AIL")
       linked_prog
   in
-  generate_summaries linked_prog
+  if not !Config.current.parse_only then generate_summaries linked_prog

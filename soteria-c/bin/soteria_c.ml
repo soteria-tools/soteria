@@ -30,10 +30,11 @@ module Config = struct
 
   let solver_timeout_arg =
     let doc = "Set the solver timeout in miliseconds" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_SOLVER_TIMEOUT" in
     Arg.(
       value
       & opt (some int) default.solver_timeout
-      & info [ "solver-timeout" ] ~doc ~docv:"TIMEOUT")
+      & info [ "solver-timeout" ] ~doc ~docv:"TIMEOUT" ~env)
 
   let z3_path_arg =
     let doc = "Path to the Z3 executable" in
@@ -56,12 +57,17 @@ module Config = struct
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_IGNORE_DUPLICATE_SYMBOLS" in
     Arg.(value & flag & info [ "no-ignore-duplicate-symbols" ] ~env ~doc)
 
+  let parse_only_arg =
+    let doc = "Only parse and link the C program, do not perform analysis" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_PARSE_ONLY" in
+    Arg.(value & flag & info [ "parse-only" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_smt_file dump_unsupported_file
       solver_timeout z3_path no_ignore_parse_failures
-      no_ignore_duplicate_symbols =
+      no_ignore_duplicate_symbols parse_only =
     make ~auto_include_path ~dump_smt_file ~dump_unsupported_file
       ~solver_timeout ~z3_path ~no_ignore_parse_failures
-      ~no_ignore_duplicate_symbols ()
+      ~no_ignore_duplicate_symbols ~parse_only ()
 
   let term =
     Cmdliner.Term.(
@@ -72,7 +78,8 @@ module Config = struct
       $ solver_timeout_arg
       $ z3_path_arg
       $ no_ignore_parse_failures_arg
-      $ no_ignore_duplicate_symbols_arg)
+      $ no_ignore_duplicate_symbols_arg
+      $ parse_only_arg)
 end
 
 let files_arg =
