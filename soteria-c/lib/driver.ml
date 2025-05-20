@@ -129,10 +129,32 @@ let parse_and_link_ail ~includes files =
   match files with
   | [] -> Error (`ParsingError "No files to parse?", Call_trace.empty)
   | files ->
-      let* parsed = Monad.ResultM.all (parse_ail_raw_default ~includes) files in
+      let* parsed =
+        if !Config.current.no_ignore_parse_failures then
+          Monad.ResultM.all (parse_ail_raw_default ~includes) files
+        else
+          let parsed =
+            List.filter_map
+              (fun file ->
+                match parse_ail_raw_default ~includes file with
+                | Ok ast -> Some ast
+                | Error (msg, _loc) ->
+                    let msg =
+                      match msg with
+                      | `ParsingError s -> s
+                      | _ -> "Unknown error"
+                    in
+                    L.warn (fun m ->
+                        m "Ignoring file that did not parse correctly: %s@\n%s"
+                          file msg);
+                    None)
+              files
+          in
+          Ok parsed
+      in
       Ail_linking.link parsed
 
-let parse_and_link_compilation_item (item : Compilation_database.cmd) =
+let parse_compilation_item (item : Compilation_database.cmd) =
   Frontend.frontend ~cwd:item.directory
     ~cpp_cmd:(String.concat " " item.command)
     item.file
@@ -370,14 +392,43 @@ let capture_db log_config config json_file =
       Soteria_logs.Logs.with_section "Parsing and Linking from database"
     in
     let db = Compilation_database.from_file json_file in
-    let* ails = Monad.ResultM.all parse_and_link_compilation_item db in
+    let* ails =
+      if !Config.current.no_ignore_parse_failures then
+        Monad.ResultM.all parse_compilation_item db
+      else
+        let ails =
+          List.filter_map
+            (fun item ->
+              match parse_compilation_item item with
+              | Ok ail -> Some ail
+              | Error (`ParsingError msg, _loc) ->
+                  L.debug (fun m ->
+                      m "Ignoring file that did not parse correctly: %s@\n%s"
+                        item.file msg);
+                  None)
+            db
+        in
+        let () =
+          let parsed = List.length ails in
+          let total = List.length db in
+          if parsed < total then
+            L.warn (fun m ->
+                m "Some files failed to parse, ignored %d out of %d"
+                  (total - parsed) total)
+        in
+        Ok ails
+    in
     Ail_linking.link ails
   in
   let linked_prog =
     Result.get_or
-      ~err:(fun e ->
-        Fmt.epr "%a@\n@?" pp_err e;
-        failwith "Failed to parse AIL")
+      ~err:(function
+        | `ParsingError msg, _ ->
+            Fmt.epr "%s@\n@?" msg;
+            failwith "Failed to parse AIL"
+        | `LinkError msg, _ ->
+            Fmt.epr "%s@\n@?" msg;
+            failwith "Failed to link AIL")
       linked_prog
   in
   generate_summaries linked_prog

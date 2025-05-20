@@ -1,4 +1,4 @@
-  $ soteria-c exec-main array_add.c
+  $ soteria-c exec-main array_add.c --no-ignore-parse-failures
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =

@@ -40,10 +40,18 @@ module Config = struct
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_Z3_PATH" in
     Arg.(value & opt string default.z3_path & info [ "z3-path" ] ~env ~doc)
 
+  let no_ignore_parse_failures_arg =
+    let doc =
+      "Failed that cannot be parsed are simply ignored, as if they were not \
+       present"
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_IGNORE_PARSE_FAILURES" in
+    Arg.(value & flag & info [ "no-ignore-parse-failures" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_smt_file dump_unsupported_file
-      solver_timeout z3_path =
+      solver_timeout z3_path no_ignore_parse_failures =
     make ~auto_include_path ~dump_smt_file ~dump_unsupported_file
-      ~solver_timeout ~z3_path ()
+      ~solver_timeout ~z3_path ~no_ignore_parse_failures ()
 
   let term =
     Cmdliner.Term.(
@@ -52,7 +60,8 @@ module Config = struct
       $ dump_smt_arg
       $ dump_unsupported_arg
       $ solver_timeout_arg
-      $ z3_path_arg)
+      $ z3_path_arg
+      $ no_ignore_parse_failures_arg)
 end
 
 let files_arg =

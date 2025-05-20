@@ -1,4 +1,4 @@
-  $ soteria-c gen-summaries global_local_eq.c
+  $ soteria-c gen-summaries global_local_eq.c --no-ignore-parse-failures
   Summaries for main_486:
     { args = []; pre = [];
       pc = [(0 Eq IntOfBool(Not((V|0| Eq V|1|)))); Not((0 Eq V|1|))];
