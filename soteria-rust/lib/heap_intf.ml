@@ -140,15 +140,16 @@ module type S = sig
     Charon.Types.ref_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree ] err,
+      [> `NullDereference | `UseAfterFree | `OutOfBounds | `UBTreeBorrow ] err,
       serialized list )
     Result.t
 
   val unprotect :
     full_ptr ->
+    Charon.Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `UseAfterFree ] err,
+      [> `NullDereference | `UseAfterFree | `OutOfBounds ] err,
       serialized list )
     Result.t
 

@@ -43,7 +43,7 @@ module Make (Heap : Heap_intf.S) = struct
     | None -> Heap.error `DeadVariable state
 
   let alloc_stack (locals : GAst.locals) args st :
-      (store * full_ptr list * state, 'e, 'm) Result.t =
+      (store * (full_ptr * Types.ty) list * state, 'e, 'm) Result.t =
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
@@ -77,10 +77,8 @@ module Make (Heap : Heap_intf.S) = struct
           let** value, protected', st =
             match (value, ty) with
             | Ptr ptr, (TRawPtr (subty, mut) | TRef (_, subty, mut)) ->
-                let** ptr', st = Heap.protect ptr subty mut st in
-                (* Function calls perform a dummy read on the variable *)
-                let++ _, st = Heap.load ptr' subty st in
-                (Ptr ptr', ptr' :: protected, st)
+                let++ ptr', st = Heap.protect ptr subty mut st in
+                (Ptr ptr', (ptr', subty) :: protected, st)
             | _ -> Result.ok (value, protected, st)
           in
           let++ (), st = Heap.store ptr ty value st in
@@ -96,8 +94,8 @@ module Make (Heap : Heap_intf.S) = struct
       function's entry. *)
   let dealloc_store ?protected_address store protected st =
     let** (), st =
-      Result.fold_list protected ~init:((), st) ~f:(fun ((), st) ptr ->
-          Heap.unprotect ptr st)
+      Result.fold_list protected ~init:((), st) ~f:(fun ((), st) (ptr, ty) ->
+          Heap.unprotect ptr ty st)
     in
     Result.fold_list (Store.bindings store) ~init:((), st)
       ~f:(fun ((), st) (_, (ptr, _)) ->

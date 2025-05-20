@@ -403,6 +403,8 @@ module Tree = struct
     let* root = extend_if_needed t range in
     frame_inside ~replace_node ~rebuild_parent root range
 
+  (* Tree operations: load, store, zero, uninit *)
+
   let load ?(is_move = false) ?(ignore_borrow = false)
       (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) (ty : Types.ty)
       (tag : Tree_borrow.tag) (im : bool) (tb : Tree_borrow.t) (t : t) :
@@ -480,6 +482,8 @@ module Tree = struct
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
     ((), tree)
 
+  (* Used for copy_nonoverlapping *)
+
   let get_raw ofs size t =
     let range = Range.of_low_and_size ofs size in
     let replace_node node = Result.ok node in
@@ -497,6 +501,44 @@ module Tree = struct
       frame_range t ~replace_node ~rebuild_parent tree.range
     in
     ((), new_tree)
+
+  (* Tree borrow updates *)
+
+  let protect ofs size tag tb t =
+    let range = Range.of_low_and_size ofs size in
+    let replace_node t =
+      match t.node with
+      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
+      | Owned { tb = tb_st; v } ->
+          (* We need to do two things: protect this tag for the block, and perform a read, as
+             all function calls perform one on the parameters. *)
+          let tb_st' = Tree_borrow.set_protector ~protected:true tb tag tb_st in
+          let tb_st', ub =
+            Tree_borrow.access tb tag false Tree_borrow.Read tb_st'
+          in
+          if ub then Result.error `UBTreeBorrow
+          else Result.ok { t with node = Owned { tb = tb_st'; v } }
+    in
+    let rebuild_parent = of_children in
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
+    ((), tree)
+
+  let unprotect ofs size tag tb t =
+    let range = Range.of_low_and_size ofs size in
+    let replace_node t =
+      match t.node with
+      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
+      | Owned { tb = tb_st; v } ->
+          (* We need to do two things: protect this tag for the block, and perform a read, as
+               all function calls perform one on the parameters. *)
+          let tb_st' =
+            Tree_borrow.set_protector ~protected:false tb tag tb_st
+          in
+          Result.ok { t with node = Owned { tb = tb_st'; v } }
+    in
+    let rebuild_parent = of_children in
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
+    ((), tree)
 
   (** Cons/prod *)
 
@@ -765,6 +807,26 @@ let zero_range ofs size t =
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
         Tree.zero_range ofs size t.root
+      in
+      ((), to_opt tree)
+
+let protect ofs size tag tb t =
+  match t with
+  | None -> miss_no_fix ~msg:"protect on none" ()
+  | Some t ->
+      let++ (), tree =
+        let@ () = with_bound_check t (ofs +@ size) in
+        Tree.protect ofs size tag tb t.root
+      in
+      ((), to_opt tree)
+
+let unprotect ofs size tag tb t =
+  match t with
+  | None -> miss_no_fix ~msg:"protect on none" ()
+  | Some t ->
+      let++ (), tree =
+        let@ () = with_bound_check t (ofs +@ size) in
+        Tree.unprotect ofs size tag tb t.root
       in
       ((), to_opt tree)
 

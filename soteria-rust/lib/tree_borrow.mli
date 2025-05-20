@@ -4,7 +4,7 @@ and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
 
 and t = {
   tag : tag;
-  protected : bool;
+  protector : bool;
   children : t list;
   initial_state : state;
 }
@@ -16,12 +16,12 @@ val zero : tag
 val pp : t Fmt.t
 val pp_tag : tag Fmt.t
 val pp_state : state Fmt.t
-val init : ?protected:bool -> state:state -> unit -> t
+val init : ?protector:bool -> state:state -> unit -> t
 val equal : t -> t -> bool
 val update : t -> (t -> t) -> tag -> t
 val add_child : parent:tag -> root:t -> t -> t
 val empty_state : tb_state
-val set_state : tag -> state -> tb_state -> tb_state
+val set_protector : protected:bool -> t -> tag -> tb_state -> tb_state
 
 (** [access root accessed im e state]: Update all nodes in the mapping [state]
     for the tree rooted at [root] with an event [e], that happened at
