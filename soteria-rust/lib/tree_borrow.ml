@@ -18,27 +18,20 @@ let fresh_tag () =
   !tag_counter
 
 let zero = 0
+let pp_tag fmt tag = Fmt.pf fmt "‖%d‖" tag
 
 let rec pp fmt t =
   if List.is_empty t.children then
-    Fmt.pf fmt (if t.protected then "{%d}" else "[%d]") t.tag
+    Fmt.pf fmt (if t.protected then "{%a}" else "%a") pp_tag t.tag
   else
     Fmt.pf fmt
-      (if t.protected then "{%d}(%a)" else "[%d](%a)")
-      t.tag
+      (if t.protected then "{%a}(%a)" else "%a(%a)")
+      pp_tag t.tag
       Fmt.(list ~sep:comma pp)
       t.children
 
-let pp_tag : tag Fmt.t = Fmt.int
-
 let init ?(protected = false) ~state () =
-  {
-    tag = fresh_tag ();
-    protected;
-    (* parent = None; *)
-    children = [];
-    initial_state = state;
-  }
+  { tag = fresh_tag (); protected; children = []; initial_state = state }
 
 let equal n1 n2 = n1.tag == n2.tag
 
@@ -133,24 +126,36 @@ type tb_state = state TagMap.t
 let empty_state = TagMap.empty
 let set_state = TagMap.add
 
-(** [access root accessed e state]: Update all nodes in the mapping [state] for
-    the tree rooted at [root] with an event [e], that happened at [accessed].
+(** [access root accessed im e state]: Update all nodes in the mapping [state]
+    for the tree rooted at [root] with an event [e], that happened at
+    [accessed]. [im] indicates whether this location is considered interiorly
+    mutable, which affects the default state of tags (Reserved vs ReservedIM).
     Returns the new state and a boolean indicating whether an undefined behavior
     was encountered *)
-let access (root : t) accessed e st : tb_state * bool =
+let access (root : t) accessed im e st : tb_state * bool =
   let ub_happened = ref false in
   let st =
     Iter.fold
       (fun st node ->
         TagMap.update node.tag
-          (function None -> Some node.initial_state | st -> st)
+          (function
+            (* &mut UnsafeCell<T> starts in ReservedIM. *)
+            | None when im && node.initial_state = Reserved false ->
+                Some ReservedIM
+            (* &UnsafeCell<T> inherits from parent, so we don't create it *)
+            | None when im && node.initial_state = Frozen -> None
+            (* default case *)
+            | None -> Some node.initial_state
+            | st -> st)
           st)
       st
     @@ iter root
   in
   L.debug (fun m ->
-      let pp_binding fmt (tag, st) = Fmt.pf fmt "%d->%a" tag pp_state st in
-      m "TB: %a at %d, for state (%a) and tree %a" pp_access e accessed
+      let pp_binding fmt (tag, st) =
+        Fmt.pf fmt "%a->%a" pp_tag tag pp_state st
+      in
+      m "TB: %a at %a, for state (%a) and tree %a" pp_access e pp_tag accessed
         Fmt.(iter_bindings ~sep:comma TagMap.iter pp_binding)
         st pp root);
   let st' =
@@ -163,10 +168,10 @@ let access (root : t) accessed e st : tb_state * bool =
           ub_happened := true;
           L.debug (fun m ->
               m
-                "TB: Undefined behavior encountered for %d, %a %a (protected? \
+                "TB: Undefined behavior encountered for %a, %a %a (protected? \
                  %b): %a->%a"
-                tag pp_locality rel pp_access e node.protected pp_state st
-                pp_state st'));
+                pp_tag tag pp_locality rel pp_access e node.protected pp_state
+                st pp_state st'));
         st')
       st
   in

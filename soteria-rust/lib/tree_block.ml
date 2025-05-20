@@ -189,9 +189,9 @@ module Tree = struct
               of_opt_not_impl ~msg:"Don't know how to zero this type"
               @@ Layout.zeroed ~null_ptr:Sptr.ArithPtr.null_ptr ty
             in
-            Ok (Encoder.{ value; ty; offset } :: vs)
+            Ok (Encoder.{ value; ty; im = false; offset } :: vs)
         | Owned { v = Init { value; ty }; _ } ->
-            Result.ok (Encoder.{ value; ty; offset } :: vs)
+            Result.ok (Encoder.{ value; ty; im = false; offset } :: vs)
         | Owned { v = Any; _ } ->
             L.info (fun m -> m "Reading from Any memory, vanishing.");
             vanish ()
@@ -405,7 +405,7 @@ module Tree = struct
 
   let load ?(is_move = false) ?(ignore_borrow = false)
       (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) (ty : Types.ty)
-      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t) :
+      (tag : Tree_borrow.tag) (im : bool) (tb : Tree_borrow.t) (t : t) :
       (rust_val * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size ofs size in
     let replace_node t =
@@ -414,7 +414,7 @@ module Tree = struct
       | Owned { tb = tb_st; v } ->
           let tb_st', ub =
             if ignore_borrow then (tb_st, false)
-            else Tree_borrow.access tb tag Tree_borrow.Read tb_st
+            else Tree_borrow.access tb tag im Tree_borrow.Read tb_st
           in
           if ub then Result.error `UBTreeBorrow
           else if is_move then Result.ok (uninit tb_st' range)
@@ -426,14 +426,16 @@ module Tree = struct
     (sval, tree)
 
   let store (low : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (ty : Types.ty) (value : rust_val) (tag : Tree_borrow.tag)
+      (ty : Types.ty) (value : rust_val) (tag : Tree_borrow.tag) (im : bool)
       (tb : Tree_borrow.t) (t : t) : (unit * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size low size in
     let replace_node t =
       match t.node with
       | NotOwned _ -> miss_no_fix ~msg:"store" ()
       | Owned { tb = tb_st; _ } ->
-          let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Write tb_st in
+          let tb_st', ub =
+            Tree_borrow.access tb tag im Tree_borrow.Write tb_st
+          in
           if ub then Result.error `UBTreeBorrow
           else Result.ok @@ sval_leaf ~range ~value ~ty ~tb:tb_st'
     in
@@ -698,23 +700,23 @@ let assert_exclusively_owned t =
             ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
-let load ?is_move ?ignore_borrow ofs ty tag tb t =
+let load ?is_move ?ignore_borrow ofs ty tag im tb t =
   let* size = Layout.size_of_s ty in
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
-    Tree.load ?is_move ?ignore_borrow ofs size ty tag tb t.root
+    Tree.load ?is_move ?ignore_borrow ofs size ty tag im tb t.root
   in
   (res, to_opt tree)
 
-let store ofs ty sval tag tb t =
+let store ofs ty sval tag im tb t =
   match t with
   | None -> miss_no_fix ~msg:"outer store" ()
   | Some t ->
       let* size = Layout.size_of_s ty in
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
-        Tree.store ofs size ty sval tag tb t.root
+        Tree.store ofs size ty sval tag im tb t.root
       in
       ((), to_opt tree)
 

@@ -77,7 +77,7 @@ module Make (Heap : Heap_intf.S) = struct
           let** value, protected', st =
             match (value, ty) with
             | Ptr ptr, (TRawPtr (subty, mut) | TRef (_, subty, mut)) ->
-                let** ptr', st = Heap.protect ptr mut st in
+                let** ptr', st = Heap.protect ptr subty mut st in
                 (* Function calls perform a dummy read on the variable *)
                 let++ _, st = Heap.load ptr' subty st in
                 (Ptr ptr', ptr' :: protected, st)
@@ -322,7 +322,7 @@ module Make (Heap : Heap_intf.S) = struct
     | Use op -> eval_operand state op
     | RvRef (place, borrow) ->
         let** ptr, state = resolve_place ~crate ~store state place in
-        let++ ptr', state = Heap.borrow ptr borrow state in
+        let++ ptr', state = Heap.borrow ptr place.ty borrow state in
         (Ptr ptr', state)
     | Global { global_id; _ } ->
         let** ptr, state = resolve_global ~crate global_id state in
@@ -870,8 +870,8 @@ module Make (Heap : Heap_intf.S) = struct
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
-        m "Calling %s with [@[%a@]]" (name_str crate name)
-          Fmt.(list ~sep:comma pp_rust_val)
+        m "Calling %s with [%a]" (name_str crate name)
+          Fmt.(list ~sep:(any ", ") pp_rust_val)
           args);
     let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in

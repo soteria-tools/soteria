@@ -16,12 +16,13 @@ module Make (Sptr : Sptr.S) = struct
   type cval_info = {
     value : rust_val;
     ty : Types.ty; [@printer Charon_util.pp_ty]
+    im : bool;
     offset : sint Typed.t;
   }
   [@@deriving show { with_path = false }]
 
   (** Converts a Rust value of the given type into a list of sub values, along
-      with their size and offset *)
+      with their size and offset, and whether they are interiorly mutable. *)
   let rec rust_to_cvals ?(offset = 0s) (value : rust_val) (ty : Types.ty) :
       cval_info list =
     let illegal_pair () =
@@ -43,8 +44,9 @@ module Make (Sptr : Sptr.S) = struct
 
     match (value, ty) with
     (* Literals *)
-    | Base _, TLiteral _ -> [ { value; ty; offset } ]
-    | Ptr _, TLiteral (TInteger (Isize | Usize)) -> [ { value; ty; offset } ]
+    | Base _, TLiteral _ -> [ { value; ty; im = false; offset } ]
+    | Ptr _, TLiteral (TInteger (Isize | Usize)) ->
+        [ { value; ty; im = false; offset } ]
     | _, TLiteral _ -> illegal_pair ()
     (* References / Pointers *)
     | Ptr (_, None), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
@@ -52,7 +54,7 @@ module Make (Sptr : Sptr.S) = struct
     | Ptr (_, None), TRawPtr (sub_ty, _) ->
         let ty : Types.ty = TLiteral (TInteger Isize) in
         if is_dst sub_ty then failwith "Expected a fat pointer"
-        else [ { value; ty; offset } ]
+        else [ { value; ty; im = false; offset } ]
     | Ptr (ptr, Some meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
     | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
     | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
@@ -61,13 +63,13 @@ module Make (Sptr : Sptr.S) = struct
         if is_dst sub_ty then
           let size = Typed.int Archi.word_size in
           [
-            { value; ty; offset };
-            { value = Base meta; ty; offset = offset +@ size };
+            { value; ty; im = false; offset };
+            { value = Base meta; ty; im = false; offset = offset +@ size };
           ]
-        else [ { value; ty; offset } ]
+        else [ { value; ty; im = false; offset } ]
     (* References / Pointers obtained from casting *)
     | Base _, TAdt (TBuiltin TBox, _) | Base _, TRef _ | Base _, TRawPtr _ ->
-        [ { value; ty = TLiteral (TInteger Isize); offset } ]
+        [ { value; ty = TLiteral (TInteger Isize); im = false; offset } ]
     | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
     (* Tuples *)
     | Tuple vs, TAdt (TTuple, { types; _ }) ->
@@ -83,7 +85,13 @@ module Make (Sptr : Sptr.S) = struct
               Fmt.failwith "Unexpected type declaration in struct value: %a"
                 Types.pp_type_decl type_decl
         in
-        chain_cvals (layout_of ty) vals fields
+        let cvals = chain_cvals (layout_of ty) vals fields in
+        let cvals =
+          if is_unsafe_cell ty then
+            List.map (fun cval -> { cval with im = true }) cvals
+          else cvals
+        in
+        cvals
     | Struct _, _ -> illegal_pair ()
     (* Enums *)
     | Enum (disc, vals), TAdt (TAdtId t_id, _) -> (
@@ -114,7 +122,12 @@ module Make (Sptr : Sptr.S) = struct
           | _ -> assert false
         in
         [
-          { value = Enum (value, []); ty = TLiteral (TInteger disc_ty); offset };
+          {
+            value = Enum (value, []);
+            ty = TLiteral (TInteger disc_ty);
+            im = false;
+            offset;
+          };
         ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
@@ -146,9 +159,11 @@ module Make (Sptr : Sptr.S) = struct
 
   and ('e, 'f) parser_return =
     [ `Done of rust_val
-    | `More of (Types.ty * sint Typed.t) list * ('e, 'f) parse_callback ]
+    | `More of (Types.ty * bool * sint Typed.t) list * ('e, 'f) parse_callback
+    ]
 
-  (** Converts a Rust type into a list of C blocks, along with their offset;
+  (** Converts a Rust type into a list of types to read, along with their offset
+      and if whether they are interiorly immutable (needed for tree borrows);
       once these are read, symbolically decides whether we must keep reading.
       [offset] is the initial offset to read from, [meta] is the optional
       metadata, that originates from a fat pointer. *)
@@ -157,7 +172,7 @@ module Make (Sptr : Sptr.S) = struct
     let rec aux offset : Types.ty -> ('e, 'f) parser_return = function
       | TLiteral _ as ty ->
           `More
-            ( [ (ty, offset) ],
+            ( [ (ty, false, offset) ],
               function
               | [ (Base _ as v) ] -> Result.ok (`Done v)
               | [ Ptr (ptr, None) ] ->
@@ -198,18 +213,20 @@ module Make (Sptr : Sptr.S) = struct
           in
           let ptr_size = Typed.int Archi.word_size in
           let isize : Types.ty = TLiteral (TInteger Isize) in
-          `More ([ (isize, offset); (isize, offset +@ ptr_size) ], callback)
+          `More
+            ( [ (isize, false, offset); (isize, false, offset +@ ptr_size) ],
+              callback )
       (* Raw pointers can be both a valid pointer or a number, whereas a reference must
          always be a valid pointer. *)
       | TRawPtr _ ->
           `More
-            ( [ (TLiteral (TInteger Isize), offset) ],
+            ( [ (TLiteral (TInteger Isize), false, offset) ],
               function
               | [ ((Ptr _ | Base _) as ptr) ] -> Result.ok (`Done ptr)
               | _ -> not_impl "Expected a pointer or base" )
       | TAdt (TBuiltin TBox, _) | TRef _ ->
           `More
-            ( [ (TLiteral (TInteger Isize), offset) ],
+            ( [ (TLiteral (TInteger Isize), false, offset) ],
               function
               | [ (Ptr _ as ptr) ] -> Result.ok (`Done ptr)
               | [ Base _ ] -> Result.error `UBTransmute
@@ -222,9 +239,10 @@ module Make (Sptr : Sptr.S) = struct
           match type_decl.kind with
           | Struct fields ->
               let layout = layout_of ty in
+              let is_im = is_unsafe_cell ty in
               fields
               |> field_tys
-              |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
+              |> aux_fields ~is_im ~f:(fun fs -> Struct fs) ~layout offset
           | Enum [] -> `More ([], fun _ -> Result.error `RefToUninhabited)
           | Enum [ { fields = []; discriminant; _ } ] ->
               `Done (Enum (value_of_scalar discriminant, []))
@@ -263,17 +281,19 @@ module Make (Sptr : Sptr.S) = struct
       | TNever -> `More ([], fun _ -> Result.error `RefToUninhabited)
       | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* basically, a parser is just a sort of monad, so we can have the usual operations on it *)
-    and aux_bind ~f parser_ret : ('e, 'f) parser_return =
+    and aux_bind ?(map_blocks = Fun.id) ~f parser_ret : ('e, 'f) parser_return =
       match parser_ret with
       | `More (blocks, callback) ->
           let callback v = Result.map (callback v) (aux_bind ~f) in
+          let blocks = List.map map_blocks blocks in
           `More (blocks, callback)
       | `Done value -> f value
     (* util to map a parser result, at the end *)
     and aux_map ~f parser_ret : ('e, 'f) parser_return =
       aux_bind ~f:(fun v -> `Done (f v)) parser_ret
     (* Parses a list of fields (for structs and tuples) *)
-    and aux_fields ~f ~layout offset fields : ('e, 'f) parser_return =
+    and aux_fields ~f ~layout ?(is_im = false) offset fields :
+        ('e, 'f) parser_return =
       let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
       let rec mk_callback to_parse parsed : ('e, 'f) parser_return =
         match to_parse with
@@ -282,7 +302,10 @@ module Make (Sptr : Sptr.S) = struct
             let idx = List.length parsed in
             let offset = Array.get layout.members_ofs idx |> Typed.int in
             let offset = base_offset +@ offset in
-            aux_bind ~f:(fun v -> mk_callback rest (v :: parsed))
+            let map_blocks =
+              if is_im then fun (ty, _, ofs) -> (ty, true, ofs) else Fun.id
+            in
+            aux_bind ~map_blocks ~f:(fun v -> mk_callback rest (v :: parsed))
             @@ aux offset ty
       in
       mk_callback fields []
@@ -317,7 +340,7 @@ module Make (Sptr : Sptr.S) = struct
                 m "Unmatched discriminant in rust_of_cvals: %a" Typed.ppa cval);
             Result.error `UBTransmute
       in
-      `More ([ (TLiteral disc_ty, offset) ], callback)
+      `More ([ (TLiteral disc_ty, false, offset) ], callback)
     and aux_union offset fs : ('e, 'f) parser_return =
       (* read largest field *)
       let layouts =
@@ -433,7 +456,7 @@ module Make (Sptr : Sptr.S) = struct
       try
         Result.ok
         @@ List.map
-             (fun { value; ty; offset } -> (value, ty, int_of_val offset))
+             (fun { value; ty; offset; _ } -> (value, ty, int_of_val offset))
              vs
       with _ -> not_impl "Symbolic offset in layout"
     in
@@ -441,7 +464,7 @@ module Make (Sptr : Sptr.S) = struct
         m "Transmute many: %a <- [%a]" pp_ty to_ty
           Fmt.(list ~sep:comma pp_triple)
           vs);
-    let extract_block (ty, off) =
+    let extract_block (ty, _, off) =
       let off = int_of_val off in
       let vs = List.map (fun (v, ty, o) -> (v, ty, o - off)) vs in
       (* 1. ideal case, we find a block with the same size and offset *)

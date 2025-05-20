@@ -586,3 +586,9 @@ let apply_attribute v attr =
 
 let apply_attributes v attributes =
   Result.fold_list attributes ~f:(fun () -> apply_attribute v) ~init:()
+
+let is_unsafe_cell : Types.ty -> bool = function
+  | TAdt (TAdtId adt_id, _) ->
+      let adt = Session.get_adt adt_id in
+      adt.item_meta.lang_item = Some "unsafe_cell"
+  | _ -> false

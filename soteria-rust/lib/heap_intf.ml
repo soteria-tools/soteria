@@ -126,6 +126,7 @@ module type S = sig
 
   val borrow :
     full_ptr ->
+    Charon.Types.ty ->
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
@@ -135,6 +136,7 @@ module type S = sig
 
   val protect :
     full_ptr ->
+    Charon.Types.ty ->
     Charon.Types.ref_kind ->
     t ->
     ( full_ptr * t,

@@ -164,15 +164,18 @@ let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
         | `Done v -> Result.ok (v, block)
         | `More (blocks, callback) ->
             L.debug (fun f ->
-                let pp_block ft (ty, ofs) =
-                  Fmt.pf ft "%a:%a" Typed.ppa ofs Charon_util.pp_ty ty
+                let pp_block ft (ty, im, ofs) =
+                  Fmt.pf ft "%a:%a%s" Typed.ppa ofs Charon_util.pp_ty ty
+                    (if im then " (im)" else "")
                 in
-                f "Loading blocks [%a]" Fmt.(list ~sep:comma pp_block) blocks);
+                f "Loading blocks [%a]"
+                  Fmt.(list ~sep:(any ", ") pp_block)
+                  blocks);
             let** values, block =
               Result.fold_list blocks ~init:([], block)
-                ~f:(fun (vals, block) (ty, ofs) ->
+                ~f:(fun (vals, block) (ty, im, ofs) ->
                   let++ value, block =
-                    Tree_block.load ?is_move ?ignore_borrow ofs ty ptr.tag tb
+                    Tree_block.load ?is_move ?ignore_borrow ofs ty ptr.tag im tb
                       block
                   in
                   (value :: vals, block))
@@ -215,8 +218,8 @@ let store ((ptr : Sptr.t), _) ty sval st =
            there are any. *)
         let** (), block = Tree_block.uninit_range ofs size block in
         Result.fold_list parts ~init:((), block)
-          ~f:(fun ((), block) { value; ty; offset } ->
-            Tree_block.store (offset +@ ofs) ty value ptr.tag tb block))
+          ~f:(fun ((), block) { value; ty; im; offset } ->
+            Tree_block.store (offset +@ ofs) ty value ptr.tag im tb block))
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace () in
@@ -319,40 +322,52 @@ let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
 
-let borrow ((ptr : Sptr.t), meta) (kind : Charon.Expressions.borrow_kind) st =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  with_ptr ptr st (fun ~ofs:_ block ->
-      let* tag_st =
-        match kind with
-        | BShared -> return Tree_borrow.Frozen
-        | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
-        | _ ->
-            Fmt.kstr not_impl "Unhandled borrow kind: %a"
-              Charon.Expressions.pp_borrow_kind kind
-      in
-      let node = Tree_borrow.init ~state:tag_st () in
-      let block, tb = Option.get block in
-      let tb' = Tree_borrow.add_child ~parent:ptr.tag ~root:tb node in
-      let block = Some (block, tb') in
-      let ptr' = { ptr with tag = node.tag } in
-      L.debug (fun m -> m "Borrowed pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
-      Result.ok ((ptr', meta), block))
+let borrow ((ptr : Sptr.t), meta) (ty : Charon.Types.ty)
+    (kind : Charon.Expressions.borrow_kind) st =
+  (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
+  if Layout.is_unsafe_cell ty then Result.ok ((ptr, meta), st)
+  else
+    let@ () = with_error_loc_as_call_trace () in
+    let@ () = with_loc_err () in
+    with_ptr ptr st (fun ~ofs:_ block ->
+        let* tag_st =
+          match kind with
+          | BShared -> return Tree_borrow.Frozen
+          | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
+          | _ ->
+              Fmt.kstr not_impl "Unhandled borrow kind: %a"
+                Charon.Expressions.pp_borrow_kind kind
+        in
+        let node = Tree_borrow.init ~state:tag_st () in
+        let block, tb = Option.get block in
+        let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
+        let block = Some (block, tb') in
+        let ptr' = { ptr with tag = node.tag } in
+        L.debug (fun m ->
+            m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
+              Tree_borrow.pp_state tag_st);
+        Result.ok ((ptr', meta), block))
 
-let protect ((ptr : Sptr.t), meta) (mut : Charon.Types.ref_kind) st =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  with_ptr ptr st (fun ~ofs:_ block ->
-      let tag_st =
-        match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
-      in
-      let node = Tree_borrow.init ~state:tag_st ~protected:true () in
-      let block, tb = Option.get block in
-      let tb' = Tree_borrow.add_child ~parent:ptr.tag ~root:tb node in
-      let block = Some (block, tb') in
-      let ptr' = { ptr with tag = node.tag } in
-      L.debug (fun m -> m "Protected pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
-      Result.ok ((ptr', meta), block))
+let protect ((ptr : Sptr.t), meta) (ty : Charon.Types.ty)
+    (mut : Charon.Types.ref_kind) st =
+  if Layout.is_unsafe_cell ty then Result.ok ((ptr, meta), st)
+  else
+    let@ () = with_error_loc_as_call_trace () in
+    let@ () = with_loc_err () in
+    with_ptr ptr st (fun ~ofs:_ block ->
+        let block, tb = Option.get block in
+        let tag_st =
+          match mut with
+          | RMut -> Tree_borrow.Reserved false
+          | RShared -> Frozen
+        in
+        let node = Tree_borrow.init ~state:tag_st ~protected:true () in
+        let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
+        let block = Some (block, tb') in
+        let ptr' = { ptr with tag = node.tag } in
+        L.debug (fun m ->
+            m "Protected pointer %a -> %a" Sptr.pp ptr Sptr.pp ptr');
+        Result.ok ((ptr', meta), block))
 
 let unprotect ((ptr : Sptr.t), _) st =
   let@ () = with_error_loc_as_call_trace () in
