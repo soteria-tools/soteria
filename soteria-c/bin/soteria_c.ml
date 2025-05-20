@@ -42,16 +42,26 @@ module Config = struct
 
   let no_ignore_parse_failures_arg =
     let doc =
-      "Failed that cannot be parsed are simply ignored, as if they were not \
-       present"
+      "Files that cannot be parsed correctly are ignored by default, this flag \
+       deactivates that behaviour."
     in
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_IGNORE_PARSE_FAILURES" in
     Arg.(value & flag & info [ "no-ignore-parse-failures" ] ~env ~doc)
 
+  let no_ignore_duplicate_symbols_arg =
+    let doc =
+      "Programs that contain duplicate symbols are ignored by default, this \
+       flag deactivates that behaviour."
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_IGNORE_DUPLICATE_SYMBOLS" in
+    Arg.(value & flag & info [ "no-ignore-duplicate-symbols" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_smt_file dump_unsupported_file
-      solver_timeout z3_path no_ignore_parse_failures =
+      solver_timeout z3_path no_ignore_parse_failures
+      no_ignore_duplicate_symbols =
     make ~auto_include_path ~dump_smt_file ~dump_unsupported_file
-      ~solver_timeout ~z3_path ~no_ignore_parse_failures ()
+      ~solver_timeout ~z3_path ~no_ignore_parse_failures
+      ~no_ignore_duplicate_symbols ()
 
   let term =
     Cmdliner.Term.(
@@ -61,7 +71,8 @@ module Config = struct
       $ dump_unsupported_arg
       $ solver_timeout_arg
       $ z3_path_arg
-      $ no_ignore_parse_failures_arg)
+      $ no_ignore_parse_failures_arg
+      $ no_ignore_duplicate_symbols_arg)
 end
 
 let files_arg =

@@ -1,4 +1,4 @@
-  $ soteria-c exec-main array_add.c --no-ignore-parse-failures
+  $ soteria-c exec-main array_add.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
