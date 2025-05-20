@@ -47,6 +47,7 @@ module Frontend = struct
   let frontend = ref (fun ~cpp_cmd:_ _ -> failwith "Frontend not set")
 
   let include_libc () =
+    L.trace (fun m -> m "Cerb_runtime is at: %s" (Cerb_runtime.in_runtime ""));
     let root_includes = Cerb_runtime.in_runtime "libc/include" in
     let posix = Filename.concat root_includes "posix" in
     "-I" ^ root_includes ^ " -I" ^ posix
@@ -60,7 +61,7 @@ module Frontend = struct
         in
         if Sys.file_exists filename then "-include " ^ filename ^ " "
         else (
-          L.warn (fun m -> m "soteria-c.h not found");
+          L.warn (fun m -> m "%s not found" filename);
           "")
       in
       let ( let* ) = Exception.except_bind in
@@ -103,6 +104,7 @@ module Frontend = struct
   let () = Initialize_analysis.register_once_initialiser init
 
   let frontend ?cwd ~cpp_cmd filename =
+    L.debug (fun m -> m "Parsing %s" filename);
     match cwd with
     | None -> !frontend ~cpp_cmd filename
     | Some dir ->
@@ -111,6 +113,7 @@ module Frontend = struct
   let simple_frontend ~includes filename =
     let cmd = "cc" :: List.map (fun s -> "-I" ^ s) includes in
     let cpp_cmd = String.concat " " cmd in
+    L.trace (fun m -> m "Cpp_cmd: %s" cpp_cmd);
     frontend ~cpp_cmd filename
 end
 
@@ -321,13 +324,14 @@ let generate_summaries prog =
     results
 
 (* Entry point function *)
-let lsp () =
+let lsp config () =
+  Config.set config;
   Initialize_analysis.init_once ();
   Soteria_c_lsp.run ~generate_errors ()
 
 (* Entry point function *)
-let show_ail (includes : string list) (files : string list) =
-  Soteria_logs.Config.(check_set_and_lock (Ok console_trace));
+let show_ail logs_config (includes : string list) (files : string list) =
+  Soteria_logs.Config.(check_set_and_lock logs_config);
   Initialize_analysis.init_once ();
   match parse_and_link_ail ~includes files with
   | Ok { symmap; sigma; entry_point } ->

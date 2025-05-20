@@ -129,8 +129,7 @@ let rec free_syms_expr acc expr =
       acc
 
 and free_syms_stmt acc stmt =
-  let (AnnotatedStatement (_, _, stmt)) = stmt in
-  match stmt with
+  match stmt.node with
   | AilSexpr e | AilSreturn e | AilSreg_store (_, e) -> free_syms_expr acc e
   | AilSwhile (e, stmt, _) | AilSdo (stmt, e, _) | AilSswitch (e, stmt) ->
       free_syms_stmt (free_syms_expr acc e) stmt

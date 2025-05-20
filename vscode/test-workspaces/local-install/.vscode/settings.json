@@ -7,7 +7,8 @@
     ],
     "env": {
       "SOTERIA_Z3_PATH": "/opt/homebrew/bin/z3",
-      "OPAM_SWITCH_PREFIX": "../../../_opam"
+      "OPAM_SWITCH_PREFIX": "../../../_opam",
+      "SOTERIA_AUTO_INCLUDE_PATH": "../../../soteria-c/includes",
     }
   },
   "soteria.server.debug": true,

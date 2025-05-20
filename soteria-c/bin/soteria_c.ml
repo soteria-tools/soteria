@@ -2,13 +2,14 @@ open Cmdliner
 
 module Config = struct
   open Soteria_c_lib.Config
+  open Soteria_std.Cmdliner_helpers
 
   let auto_include_path_arg =
     let doc = "Path to the directory that contains the soteria-c.h" in
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_AUTO_INCLUDE_PATH" in
     Arg.(
       value
-      & opt dir default.auto_include_path
+      & opt dir_as_absolute default.auto_include_path
       & info [ "auto-include-path" ] ~env ~doc)
 
   let dump_smt_arg =
@@ -39,7 +40,10 @@ module Config = struct
   let z3_path_arg =
     let doc = "Path to the Z3 executable" in
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_Z3_PATH" in
-    Arg.(value & opt string default.z3_path & info [ "z3-path" ] ~env ~doc)
+    Arg.(
+      value
+      & opt file_as_absolute default.z3_path
+      & info [ "z3-path" ] ~env ~doc)
 
   let no_ignore_parse_failures_arg =
     let doc =
@@ -107,16 +111,21 @@ module Exec_main = struct
 end
 
 module Lsp = struct
-  let lsp show_version =
-    if show_version then print_endline "dev" else Soteria_c_lib.Driver.lsp ()
+  let lsp config show_version =
+    if show_version then print_endline "dev"
+    else Soteria_c_lib.Driver.lsp config ()
 
-  let term = Term.(const lsp $ version_arg)
+  let term = Term.(const lsp $ Config.term $ version_arg)
   let cmd = Cmd.v (Cmd.info "lsp") term
 end
 
 module Show_ail = struct
   let term =
-    Term.(const Soteria_c_lib.Driver.show_ail $ includes_arg $ files_arg)
+    Term.(
+      const Soteria_c_lib.Driver.show_ail
+      $ Soteria_logs.Cli.term
+      $ includes_arg
+      $ files_arg)
 
   let cmd = Cmd.v (Cmd.info "show-ail") term
 end
