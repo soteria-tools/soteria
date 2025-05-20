@@ -342,8 +342,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     (v, state)
 
-  let copy_nonoverlapping (gargs : Types.generic_args) ~crate:_ ~args ~state =
-    let ty = List.hd gargs.types in
+  let copy_nonoverlapping (ty : Types.ty) ~crate:_ ~args ~state =
     let (from_ptr, _), (to_ptr, _), len =
       match args with
       | [ Ptr from_ptr; Ptr to_ptr; Base len ] ->
@@ -381,7 +380,7 @@ module M (Heap : Heap_intf.S) = struct
       | TRawPtr (ty, _) :: _ -> ty
       | _ -> failwith "copy_nonoverlapping: invalid arguments"
     in
-    copy_nonoverlapping (TypesUtils.mk_generic_args_from_types [ ty ])
+    copy_nonoverlapping ty
 
   let mul_add ~crate:_ ~args ~state =
     match args with

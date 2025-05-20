@@ -740,9 +740,18 @@ module Make (Heap : Heap_intf.S) = struct
           | Panic name ->
               let name = Option.map (name_str crate) name in
               Heap.error (`Panic name) state)
-    | s ->
-        Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
-          s
+    | CopyNonOverlapping { src; dst; count } ->
+        let ty = get_pointee (type_of_operand src) in
+        let** args, state =
+          eval_operand_list ~crate ~store state [ src; dst; count ]
+        in
+        let++ _, state =
+          Std_funs.Std.copy_nonoverlapping ty ~crate ~args ~state
+        in
+        (store, state)
+    | SetDiscriminant (_, _) ->
+        not_impl "Unsupported statement: SetDiscriminant"
+    | Deinit _ -> not_impl "Unsupported statement: Deinit"
 
   and exec_block ~crate ~(body : UllbcAst.expr_body) store state
       ({ statements; terminator } : UllbcAst.block) =

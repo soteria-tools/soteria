@@ -71,10 +71,13 @@ module M (Heap : Heap_intf.S) = struct
       (* FIXME: get rid of these, as Charon improves *)
       ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
       ("alloc::boxed::{@T}::from_raw", BoxIntoRaw);
+      (* FIXME: the below indexes fail because the code doesn't get monomorphised properly, and
+         returns a thin pointer rather than a fat one. *)
       ("core::array::{core::ops::index::Index}::index", Index);
+      ("core::array::{core::ops::index::IndexMut}::index_mut", Index);
+      ("core::slice::index::{core::ops::index::Index}::index", Index);
       ("core::hint::black_box", BlackBox);
       ("core::mem::zeroed", Zeroed);
-      ("core::slice::index::{core::ops::index::Index}::index", Index);
       (* FIXME: all core::ptr operations could be removed, however because we must enable
          ub_checks at runtime due to unchecked_op, this means ub checks also happen in
          the impl of core::ptr::..., and these checks are *SLOW* -- they do binary operations
