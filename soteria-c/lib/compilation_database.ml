@@ -6,6 +6,9 @@ let cmd_of_yojson json =
     | [] -> (acc_c, List.rev acc_rest)
     | "-c" :: c_file :: rest ->
         split_c_files_args (c_file :: acc_c) acc_rest rest
+    | "-o" :: _ :: rest ->
+        (* The -o flag is causing clang to not output anything to stdout... *)
+        split_c_files_args acc_c acc_rest rest
     | x :: rest -> split_c_files_args acc_c (x :: acc_rest) rest
   in
   let open Yojson.Basic.Util in
