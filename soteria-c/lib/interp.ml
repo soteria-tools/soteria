@@ -544,7 +544,7 @@ module Make (State : State_intf.S) = struct
     L.debug (fun m -> m "@[<v 2>STORE:@ %a@]" Store.pp store);
     let* () = Csymex.consume_fuel_steps 1 in
     Stats.incr_executed_statements ();
-    let (AnnotatedStatement (loc, _, stmt)) = astmt in
+    let AilSyntax.{ loc; node = stmt; _ } = astmt in
     let@ () = with_loc ~loc in
     match stmt with
     | AilSskip -> Result.ok (None, store, state)

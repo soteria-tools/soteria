@@ -12,18 +12,9 @@ while test -e json_dump/cc$COUNTER.json
     set COUNTER (math $COUNTER + 1)
 end
 
-OCAML_LANDMARKS=on opam exec -- dune exec --instrument-with=landmarks -- soteria-c gen-summaries \
-       ../Collections-C/src/cc_array.c ../Collections-C/src/cc_common.c \
-       ../Collections-C/src/cc_deque.c ../Collections-C/src/cc_hashset.c \
-       ../Collections-C/src/cc_list.c \
-       ../Collections-C/src/cc_hashtable.c \
-       ../Collections-C/src/cc_pqueue.c ../Collections-C/src/cc_queue.c \
-       ../Collections-C/src/cc_ring_buffer.c ../Collections-C/src/cc_slist.c \
-       ../Collections-C/src/cc_stack.c ../Collections-C/src/cc_treeset.c \
-       ../Collections-C/src/cc_treetable.c ../Collections-C/src/cc_tsttable.c \
-       -I ../Collections-C/src/include/ \
+opam exec -- dune exec -- soteria-c capture-db ../Collections-C/build/compile_commands.json \
        --dump-unsupported json_dump/dump.json \
-       --solver-timeout 250
+       --solver-timeout 250 \
        > json_dump/out.summaries
 
 
