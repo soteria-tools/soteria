@@ -9,6 +9,9 @@ type t = {
         | [ x ] -> x
         | _ -> failwith "Multiple auto-include paths found"]
   z3_path : string; [@default "z3"]
+  no_ignore_parse_failures : bool; [@default false]
+  no_ignore_duplicate_symbols : bool; [@default false]
+  parse_only : bool; [@default false]
 }
 [@@deriving make]
 

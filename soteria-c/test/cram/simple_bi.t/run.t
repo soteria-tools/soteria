@@ -1,4 +1,4 @@
-  $ soteria-c gen-summaries load.c
+  $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for f_484:
     { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 Eq V|0|)];
       post = { heap = []; globs = [] };
@@ -20,7 +20,7 @@
       manifest bugs: []
   
 
-  $ soteria-c gen-summaries manifest.c
+  $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for load_486:
     { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 Eq V|0|)];
       post = { heap = []; globs = [] };
@@ -111,7 +111,7 @@
   
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
-  $ soteria-c gen-summaries if_sat_one_ok.c
+  $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for test_485:
     { args = [V|0|; &(V|1|, V|2|)]; pre = [];
       pc =
