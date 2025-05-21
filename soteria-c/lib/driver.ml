@@ -3,6 +3,9 @@ open Cerb_frontend
 open Syntaxes.FunctionWrap
 module Wpst_interp = Interp.Make (SState)
 
+let as_nonempty_list functions_to_analyse =
+  match functions_to_analyse with [] -> None | _ -> Some functions_to_analyse
+
 let impl_name =
   match Sys.getenv_opt "IMPL_NAME" with
   | Some impl -> impl
@@ -244,7 +247,9 @@ let generate_errors content =
   | Error e -> [ e ]
   | Ok prog ->
       let@ () = with_function_context prog in
-      let summaries = Abductor.generate_all_summaries prog in
+      let summaries =
+        Abductor.generate_all_summaries ~functions_to_analyse:None prog
+      in
       let results =
         List.concat_map
           (fun (fid, summaries) ->
@@ -256,27 +261,6 @@ let generate_errors content =
           summaries
       in
       List.sort_uniq Stdlib.compare results
-
-let exec_fun_bi ~includes file_names fun_name =
-  match parse_and_link_ail ~includes file_names with
-  | Ok prog ->
-      let () = Initialize_analysis.reinit prog.sigma in
-      let fundef =
-        match Ail_helpers.find_fun_name ~prog fun_name with
-        | Some fundef -> fundef
-        | None -> Fmt.failwith "Couldn't find function %s" fun_name
-      in
-      let fid, _ = fundef in
-      let@ () = with_function_context prog in
-      let results = Abductor.generate_summaries_for ~prog fundef in
-      List.map
-        (fun summary -> (summary, Summary.analyse_summary ~prog ~fid summary))
-        results
-  | Error (`ParsingError s, call_trace) ->
-      Fmt.epr "Failed to parse AIL at loc %a: %s@\n@?" Call_trace.pp call_trace
-        s;
-      Fmt.failwith "Failed to parse AIL"
-  | Error (`LinkError s, _) -> Fmt.failwith "Failed to link AIL: %s" s
 
 (** {2 Entry points} *)
 
@@ -304,10 +288,10 @@ let exec_main_and_print log_config config includes file_names =
       result
       (Stats.get_executed_statements ())
 
-let generate_summaries prog =
+let generate_summaries ~functions_to_analyse prog =
   let results =
     let@ () = with_function_context prog in
-    Abductor.generate_all_summaries prog
+    Abductor.generate_all_summaries ~functions_to_analyse prog
   in
   Csymex.dump_unsupported ();
 
@@ -371,18 +355,10 @@ let show_ail logs_config (includes : string list) (files : string list) =
   | Error err -> Fmt.pr "%a@." pp_err err
 
 (* Entry point function *)
-let generate_summary_for log_config config includes file_names fun_name =
-  initialise log_config config;
-  let results = exec_fun_bi ~includes file_names fun_name in
-  let pp_summary ft (summary, analysis) =
-    Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
-      summary (Fmt.Dump.list pp_err) analysis
-  in
-  Fmt.pr "@[<v>%a@]@." (Fmt.list ~sep:Fmt.sp pp_summary) results
-
-(* Entry point function *)
-let generate_all_summaries log_config config includes file_names =
+let generate_all_summaries log_config config includes functions_to_analyse
+    file_names =
   (* TODO: generate a compilation database directly, to simplify the interface in this file. *)
+  let functions_to_analyse = as_nonempty_list functions_to_analyse in
   initialise log_config config;
   let prog =
     let@ () = Soteria_logs.Logs.with_section "Parsing and Linking" in
@@ -391,11 +367,13 @@ let generate_all_summaries log_config config includes file_names =
            Fmt.epr "%a@\n@?" pp_err e;
            failwith "Failed to parse AIL")
   in
-  if not !Config.current.parse_only then generate_summaries prog
+  if not !Config.current.parse_only then
+    generate_summaries ~functions_to_analyse prog
 
 (* Entry point function *)
-let capture_db log_config config json_file =
+let capture_db log_config config json_file functions_to_analyse =
   let open Syntaxes.Result in
+  let functions_to_analyse = as_nonempty_list functions_to_analyse in
   initialise log_config config;
   let linked_prog =
     let@ () =
@@ -441,4 +419,5 @@ let capture_db log_config config json_file =
             failwith "Failed to link AIL")
       linked_prog
   in
-  if not !Config.current.parse_only then generate_summaries linked_prog
+  if not !Config.current.parse_only then
+    generate_summaries ~functions_to_analyse linked_prog

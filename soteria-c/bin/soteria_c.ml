@@ -1,5 +1,10 @@
 open Cmdliner
 
+let functions_arg =
+  let doc = "List of functions to analyse" in
+  let docv = "FUNCTION_NAME" in
+  Arg.(value & opt_all string [] & info [ "f" ] ~doc ~docv)
+
 module Config = struct
   open Soteria_c_lib.Config
   open Soteria_std.Cmdliner_helpers
@@ -130,26 +135,6 @@ module Show_ail = struct
   let cmd = Cmd.v (Cmd.info "show-ail") term
 end
 
-module Generate_summary = struct
-  let fun_name_arg =
-    let doc = "FUNCTION" in
-    Arg.(
-      required
-      & opt (some string) None
-      & info [ "f"; "fn"; "function" ] ~docv:"FUNCTION" ~doc)
-
-  let term =
-    Term.(
-      const Soteria_c_lib.Driver.generate_summary_for
-      $ Soteria_logs.Cli.term
-      $ Config.term
-      $ includes_arg
-      $ files_arg
-      $ fun_name_arg)
-
-  let cmd = Cmd.v (Cmd.info "gen-summary") term
-end
-
 module Generate_summaries = struct
   let term =
     Term.(
@@ -157,6 +142,7 @@ module Generate_summaries = struct
       $ Soteria_logs.Cli.term
       $ Config.term
       $ includes_arg
+      $ functions_arg
       $ files_arg)
 
   let cmd = Cmd.v (Cmd.info "gen-summaries") term
@@ -173,7 +159,8 @@ module Capture_db = struct
       const Soteria_c_lib.Driver.capture_db
       $ Soteria_logs.Cli.term
       $ Config.term
-      $ compilation_db_arg)
+      $ compilation_db_arg
+      $ functions_arg)
 
   let cmd = Cmd.v (Cmd.info "capture-db") term
 end
@@ -184,7 +171,6 @@ let cmd =
       Exec_main.cmd;
       Lsp.cmd;
       Show_ail.cmd;
-      Generate_summary.cmd;
       Generate_summaries.cmd;
       Capture_db.cmd;
     ]

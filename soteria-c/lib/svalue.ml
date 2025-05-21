@@ -342,7 +342,7 @@ let not_int_bool sv =
   match sv.node.kind with
   | Int z -> int_z (if Z.equal z Z.zero then Z.one else Z.zero)
   | Unop (IntOfBool, sv') -> int_of_bool (not sv')
-  | _ -> int_of_bool (sem_eq sv one)
+  | _ -> int_of_bool (sem_eq sv zero)
 
 (** {2 Pointers} *)
 
