@@ -40,11 +40,18 @@ let generate_summaries_for ~prog (fundef : fundef) =
   let pre, post = Bi_state.to_spec bi_state in
   Summary.make ~args ~ret ~pre ~post ~pc ()
 
-let generate_all_summaries prog =
+let generate_all_summaries ~functions_to_analyse prog =
   Initialize_analysis.reinit prog.sigma;
   let order = Call_graph.weak_topological_order (Call_graph.of_prog prog) in
+  let should_analyse =
+    match functions_to_analyse with
+    | None -> fun _ -> true
+    | Some l -> fun fid -> List.exists (Ail_helpers.sym_is_id fid) l
+  in
   ListLabels.filter_map order ~f:(fun fid ->
       let open Syntaxes.Option in
-      let+ fundef = Ail_helpers.find_fun_def ~prog fid in
-      let summaries = generate_summaries_for ~prog fundef in
-      (fid, summaries))
+      if should_analyse fid then
+        let+ fundef = Ail_helpers.find_fun_def ~prog fid in
+        let summaries = generate_summaries_for ~prog fundef in
+        (fid, summaries)
+      else None)

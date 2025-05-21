@@ -386,6 +386,8 @@ let sat solver =
               m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
           Unknown
       in
+      L.smt (fun m ->
+          m "@[<v 2>Solver response:@ %a@]" Simple_smt.pp_result answer);
       match answer with
       | Sat -> Sat
       | Unsat -> Unsat
