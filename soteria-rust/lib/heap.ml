@@ -363,32 +363,30 @@ let protect ((ptr : Sptr.t), meta) (ty : Charon.Types.ty)
     L.debug (fun m ->
         m "Protecting pointer %a -> %a, on [%a;%a]" Sptr.pp ptr Sptr.pp ptr'
           Typed.ppa ofs Typed.ppa size);
-    (* nothing to protect *)
-    if%sat size ==@ 0s then
-      let block = Some (block, tb') in
-      Result.ok ((ptr', meta), block)
-    else
-      let** (), block' =
-        Tree_block.protect ofs size node.tag tb' (Some block)
-      in
-      let block = Option.map (fun b' -> (b', tb')) block' in
-      Result.ok ((ptr', meta), block)
+    let++ (), block' =
+      (* nothing to protect *)
+      if%sat size ==@ 0s then Result.ok ((), Some block)
+      else Tree_block.protect ofs size node.tag tb' (Some block)
+    in
+    let block = Option.map (fun b' -> (b', tb')) block' in
+    ((ptr', meta), block)
 
 let unprotect ((ptr : Sptr.t), _) (ty : Charon.Types.ty) st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   let@ ofs, block = with_ptr ptr st in
   let* size = Layout.size_of_s ty in
-  if%sat size ==@ 0s then Result.ok ((), block)
-  else
-    let block, tb = Option.get block in
-    let tb' =
-      Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
-    in
-    let++ (), block' = Tree_block.unprotect ofs size ptr.tag tb (Some block) in
-    let block = Option.map (fun b' -> (b', tb')) block' in
-    L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
-    ((), block)
+  let block, tb = Option.get block in
+  let tb' =
+    Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
+  in
+  let++ (), block' =
+    if%sat size ==@ 0s then Result.ok ((), Some block)
+    else Tree_block.unprotect ofs size ptr.tag tb' (Some block)
+  in
+  let block' = Option.map (fun b' -> (b', tb')) block' in
+  L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
+  ((), block')
 
 let leak_check st =
   let global_addresses =

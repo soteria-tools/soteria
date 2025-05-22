@@ -104,6 +104,11 @@ module Session = struct
     | Struct fields -> fields
     | _ -> assert false
 
+  let as_union adt_id =
+    match (get_adt adt_id).kind with
+    | Union fields -> fields
+    | _ -> assert false
+
   let get_or_compute_cached_layout ty f =
     match Hashtbl.find_opt layout_cache ty with
     | Some layout -> layout
@@ -592,3 +597,39 @@ let is_unsafe_cell : Types.ty -> bool = function
       let adt = Session.get_adt adt_id in
       adt.item_meta.lang_item = Some "unsafe_cell"
   | _ -> false
+
+(** Traveses the given type and rust value, and returns all findable pointers
+    with their type. This is needed e.g. when needing to get the pointers along
+    with the size of their pointee, in particular in nested cases. *)
+let rec ptr_tys_in (v : 'a rust_val) (ty : Types.ty) :
+    ('a full_ptr * Types.ty) list =
+  match (v, ty) with
+  | Ptr ptr, (TAdt (TBuiltin TBox, _) | TRawPtr _ | TRef _) ->
+      [ (ptr, get_pointee ty) ]
+  | Base _, _ -> []
+  | Struct vs, TAdt (TAdtId adt_id, _) ->
+      let fields = Session.as_struct adt_id in
+      List.concat_map2 ptr_tys_in vs (field_tys fields)
+  | Array vs, TAdt (TBuiltin (TArray | TSlice), { types = [ ty ]; _ }) ->
+      List.concat_map (fun v -> ptr_tys_in v ty) vs
+  | Tuple vs, TAdt (TTuple, { types; _ }) ->
+      List.concat_map2 ptr_tys_in vs types
+  | Enum (d, vs), TAdt (TAdtId adt_id, _) -> (
+      match Typed.kind d with
+      | Int d -> (
+          let variants = Session.as_enum adt_id in
+          let v =
+            List.find_opt
+              (fun (v : Types.variant) -> Z.equal d v.discriminant.value)
+              variants
+          in
+          match v with
+          | Some v ->
+              List.concat_map2 ptr_tys_in vs (field_tys Types.(v.fields))
+          | None -> [])
+      | _ -> [])
+  | Union (fid, v), TAdt (TAdtId adt_id, _) ->
+      let fields = Session.as_union adt_id in
+      let field = Types.FieldId.nth fields fid in
+      ptr_tys_in v field.field_ty
+  | _ -> []

@@ -23,6 +23,15 @@ let fresh_tag () =
 let zero = 0
 let pp_tag fmt tag = Fmt.pf fmt "‖%d‖" tag
 
+let pp_state fmt = function
+  | Reserved true -> Fmt.string fmt "Re T"
+  | Reserved false -> Fmt.string fmt "Re F"
+  | Unique -> Fmt.string fmt "Uniq"
+  | Frozen -> Fmt.string fmt "Froz"
+  | ReservedIM -> Fmt.string fmt "ReIM"
+  | Disabled -> Fmt.string fmt "Dis "
+  | UB -> Fmt.string fmt "UB  "
+
 let rec pp fmt t =
   if List.is_empty t.children then pp_tag fmt t.tag
   else Fmt.pf fmt "%a(%a)" pp_tag t.tag Fmt.(list ~sep:comma pp) t.children
@@ -173,7 +182,7 @@ let access (root : t) accessed im e st : tb_state * bool =
         let node = find root tag in
         let rel = is_derived node accessed in
         (* if the tag has a protector and is accessed, this toggles the protector! *)
-        let protected = (node.protector && tag = accessed) || protected in
+        let protected = node.protector && (tag = accessed || protected) in
         let st' = transition ~protected st (rel, e) in
         if st' = UB then (
           ub_happened := true;

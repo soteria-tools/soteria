@@ -74,6 +74,7 @@ module Make (Heap : Heap_intf.S) = struct
         ~f:(fun (protected, st) ({ index; var_ty = ty; _ }, ptr) ->
           let index = Expressions.LocalId.to_int index in
           let value = List.nth args (index - 1) in
+          (* Passed references must be protected! *)
           let** value, protected', st =
             match (value, ty) with
             | Ptr ptr, (TRawPtr (subty, mut) | TRef (_, subty, mut)) ->
@@ -81,7 +82,15 @@ module Make (Heap : Heap_intf.S) = struct
                 (Ptr ptr', (ptr', subty) :: protected, st)
             | _ -> Result.ok (value, protected, st)
           in
-          let++ (), st = Heap.store ptr ty value st in
+          let** (), st = Heap.store ptr ty value st in
+          (* Ensure all passed references are valid, even nested ones! *)
+          let ptr_tys = Layout.ptr_tys_in value ty in
+          let++ (), st =
+            Result.fold_list ptr_tys ~init:((), st)
+              ~f:(fun ((), st) (ptr, ty) ->
+                let++ _, st = Heap.load ptr ty st in
+                ((), st))
+          in
           (protected', st))
     in
     (store, protected, st)
@@ -789,13 +798,18 @@ module Make (Heap : Heap_intf.S) = struct
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~crate ~body store state block
     | Return ->
-        let value_ptr, value_ty = Store.find Expressions.LocalId.zero store in
-        let* value_ptr =
-          match value_ptr with
-          | Some x -> return x
-          | None -> Fmt.kstr not_impl "Return value unset, but returned"
+        let ptr, ty = Store.find Expressions.LocalId.zero store in
+        let* ptr =
+          of_opt_not_impl ~msg:"Return value unset, but returned" ptr
         in
-        let++ value, state = Heap.load value_ptr value_ty state in
+        let** value, state = Heap.load ptr ty state in
+        let ptr_tys = Layout.ptr_tys_in value ty in
+        let++ (), state =
+          Result.fold_list ptr_tys ~init:((), state)
+            ~f:(fun ((), st) (ptr, ty) ->
+              let++ _, st = Heap.load ptr ty st in
+              ((), st))
+        in
         (value, store, state)
     | Switch (discr, switch) -> (
         let** discr, state = eval_operand ~crate ~store state discr in
