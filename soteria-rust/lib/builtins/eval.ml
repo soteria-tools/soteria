@@ -41,6 +41,7 @@ module M (Heap : Heap_intf.S) = struct
     | MinAlignOf of type_loc
     | MulAdd
     | Nop
+    | PanicSimple
     | PtrByteOp of Expressions.binop
     | PtrOp of Expressions.binop
     | PtrOffsetFrom
@@ -76,6 +77,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::array::{core::ops::index::Index}::index", Index);
       ("core::array::{core::ops::index::IndexMut}::index_mut", Index);
       ("core::slice::index::{core::ops::index::Index}::index", Index);
+      ("core::cell::panic_already_mutably_borrowed", PanicSimple);
       ("core::hint::black_box", BlackBox);
       ("core::mem::zeroed", Zeroed);
       (* FIXME: all core::ptr operations could be removed, however because we must enable
@@ -185,6 +187,7 @@ module M (Heap : Heap_intf.S) = struct
          | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
          | MulAdd -> mul_add
          | Nop -> nop
+         | PanicSimple -> std_panic
          | PtrByteOp op -> ptr_op ~byte:true op f.signature
          | PtrOp op -> ptr_op op f.signature
          | PtrOffsetFrom -> ptr_offset_from f.signature

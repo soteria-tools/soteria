@@ -578,4 +578,6 @@ module M (Heap : Heap_intf.S) = struct
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
     | _ -> Heap.error (`Panic (Some "core::intrinsics::variant_count")) state
+
+  let std_panic ~crate:_ ~args:_ ~state = Heap.error (`Panic None) state
 end
