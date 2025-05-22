@@ -149,33 +149,27 @@ let set_protector ~protected root tag st =
     mutable, which affects the default state of tags (Reserved vs ReservedIM).
     Returns the new state and a boolean indicating whether an undefined behavior
     was encountered *)
-let access (root : t) accessed im e st : tb_state * bool =
+let access (root : t) accessed _im e st : tb_state * bool =
   let ub_happened = ref false in
   let st =
     Iter.fold
       (fun st node ->
         TagMap.update node.tag
           (function
-            (* &mut UnsafeCell<T> starts in ReservedIM. *)
-            | None when im && node.initial_state = Reserved false ->
-                Some (false, ReservedIM)
-            (* &UnsafeCell<T> inherits from parent, so we don't create it *)
-            | None when im && node.initial_state = Frozen -> None
-            (* default case *)
-            | None -> Some (false, node.initial_state)
-            | Some _ as st -> st)
+            | None -> Some (false, node.initial_state) | Some _ as st -> st)
           st)
       st
     @@ iter root
   in
   L.debug (fun m ->
       let pp_binding fmt (tag, (protected, st)) =
-        Fmt.pf fmt "%a->%a%s" pp_tag tag pp_state st
+        Fmt.pf fmt "%a -> %a%s" pp_tag tag pp_state st
           (if protected then " (p)" else "")
       in
-      m "TB: %a at %a, for state (%a) and tree %a" pp_access e pp_tag accessed
-        Fmt.(iter_bindings ~sep:comma TagMap.iter pp_binding)
-        st pp root);
+      m "TB: %a at %a, for tree %a, state@[<hov 2> %a@]" pp_access e pp_tag
+        accessed pp root
+        Fmt.(iter_bindings ~sep:(Fmt.any ", ") TagMap.iter pp_binding)
+        st);
   let st' =
     TagMap.mapi
       (fun tag (protected, st) ->

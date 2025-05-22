@@ -31,3 +31,8 @@ UnsafeCell allow foreign writes followed by local writes
   $ soteria-rust exec-main cell.rs --clean
   Done. - Ran 1 branches
   PC: empty
+
+Nested UnsafeCells work too
+  $ soteria-rust exec-main nested.rs --clean
+  Done. - Ran 1 branches
+  PC: empty
