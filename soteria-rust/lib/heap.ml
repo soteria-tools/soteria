@@ -165,17 +165,15 @@ let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
     | `Done v -> Result.ok (v, block)
     | `More (blocks, callback) ->
         L.debug (fun f ->
-            let pp_block ft (ty, im, ofs) =
-              Fmt.pf ft "%a:%a%s" Typed.ppa ofs Charon_util.pp_ty ty
-                (if im then " (im)" else "")
+            let pp_block ft (ty, ofs) =
+              Fmt.pf ft "%a:%a" Typed.ppa ofs Charon_util.pp_ty ty
             in
             f "Loading blocks [%a]" Fmt.(list ~sep:(any ", ") pp_block) blocks);
         let** values, block =
           Result.fold_list blocks ~init:([], block)
-            ~f:(fun (vals, block) (ty, im, ofs) ->
+            ~f:(fun (vals, block) (ty, ofs) ->
               let++ value, block =
-                Tree_block.load ?is_move ?ignore_borrow ofs ty ptr.tag im tb
-                  block
+                Tree_block.load ?is_move ?ignore_borrow ofs ty ptr.tag tb block
               in
               (value :: vals, block))
         in
@@ -215,8 +213,8 @@ let store ((ptr : Sptr.t), _) ty sval st =
            there are any. *)
     let** (), block = Tree_block.uninit_range ofs size block in
     Result.fold_list parts ~init:((), block)
-      ~f:(fun ((), block) { value; ty; im; offset } ->
-        Tree_block.store (offset +@ ofs) ty value ptr.tag im tb block)
+      ~f:(fun ((), block) { value; ty; offset } ->
+        Tree_block.store (offset +@ ofs) ty value ptr.tag tb block)
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace () in

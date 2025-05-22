@@ -145,11 +145,8 @@ let set_protector ~protected root tag st =
 
 (** [access root accessed im e state]: Update all nodes in the mapping [state]
     for the tree rooted at [root] with an event [e], that happened at
-    [accessed]. [im] indicates whether this location is considered interiorly
-    mutable, which affects the default state of tags (Reserved vs ReservedIM).
-    Returns the new state and a boolean indicating whether an undefined behavior
-    was encountered *)
-let access (root : t) accessed _im e st : tb_state * bool =
+    [accessed]. *)
+let access (root : t) accessed e st : tb_state * bool =
   let ub_happened = ref false in
   let st =
     Iter.fold

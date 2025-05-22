@@ -592,10 +592,21 @@ let apply_attribute v attr =
 let apply_attributes v attributes =
   Result.fold_list attributes ~f:(fun () -> apply_attribute v) ~init:()
 
-let is_unsafe_cell : Types.ty -> bool = function
-  | TAdt (TAdtId adt_id, _) ->
+let rec is_unsafe_cell : Types.ty -> bool = function
+  | TAdt (TAdtId adt_id, _) -> (
       let adt = Session.get_adt adt_id in
-      adt.item_meta.lang_item = Some "unsafe_cell"
+      if adt.item_meta.lang_item = Some "unsafe_cell" then true
+      else
+        match adt.kind with
+        | Struct fs | Union fs -> List.exists is_unsafe_cell (field_tys fs)
+        | Enum vs ->
+            Iter.exists is_unsafe_cell
+            @@ Iter.flat_map_l (fun (v : Types.variant) -> field_tys v.fields)
+            @@ Iter.of_list vs
+        | _ -> false)
+  | TAdt (TBuiltin (TArray | TSlice), { types = [ ty ]; _ }) ->
+      is_unsafe_cell ty
+  | TAdt (TTuple, { types; _ }) -> List.exists is_unsafe_cell types
   | _ -> false
 
 (** Traveses the given type and rust value, and returns all findable pointers
