@@ -26,6 +26,10 @@ let get_host =
             host_
         | None -> raise (PluginError "Couldn't find target host"))
 
+let lib_path name =
+  let root = List.hd Runtime_sites.Sites.plugins in
+  root ^ "/" ^ name
+
 let compile_lib path =
   let target = get_host () in
   let verbosity =
@@ -47,9 +51,8 @@ type plugin = {
 
 let default =
   let mk_cmd () =
-    let root = List.hd Runtime_sites.Sites.plugin_rusteria in
+    let std_lib = lib_path "std" in
     let target = get_host () in
-    let std_lib = root ^ "/std" in
     compile_lib std_lib;
     mk_cmd
       ~charon:
@@ -85,9 +88,8 @@ let default =
 
 let kani =
   let mk_cmd () =
-    let root = List.hd Runtime_sites.Sites.plugin_kani in
+    let lib = lib_path "kani" in
     let target = get_host () in
-    let lib = root ^ "/kani" in
     compile_lib lib;
     mk_cmd
       ~rustc:
@@ -113,9 +115,8 @@ let kani =
 
 let miri =
   let mk_cmd () =
-    let root = List.hd Runtime_sites.Sites.plugin_miri in
+    let lib = lib_path "miri" in
     let target = get_host () in
-    let lib = root ^ "/miri" in
     compile_lib lib;
     mk_cmd
       ~rustc:

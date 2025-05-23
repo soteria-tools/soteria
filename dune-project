@@ -120,9 +120,7 @@
  (synopsis "Rust symbolic execution tool based on Soteria")
  (description "Rust symbolic execution tool based on Soteria")
  (sites
-  (share plugin_rusteria)
-  (share plugin_kani)
-  (share plugin_miri))
+  (share plugins))
  (depends
   (ocaml
    (>= 5.3.0))
