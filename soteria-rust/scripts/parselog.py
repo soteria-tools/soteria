@@ -143,7 +143,11 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             cause = "Unhandled transmute"
         if "is opaque" in cause:
             reason = cause.replace("Function ", "").replace(" is opaque", "")
-            cause = "Opaque function - Charon?"
+            cause = "Opaque function - Charon"
+            color = PURPLE
+        if "Opaque constant" in cause:
+            reason = cause.replace("Constant constant: ", "")
+            cause = "Opaque constant - Charon"
             color = PURPLE
         if "Splitting " in cause:
             cause = "Splitting value"
@@ -221,7 +225,10 @@ def analyse(file: str) -> LogInfo:
             reason = reason.replace("\\n", "\n")
         stats[key].add((test, reason))
 
-    content = open(file, "r").read()
+    try:
+        content = open(file, "r").read()
+    except FileNotFoundError:
+        exit(f"File not found: {file}")
     tests = content.split("\nRunning /")
     print(f"• Found {len(tests)} tests in {file}")
     tests[0] = tests[0].replace("Running ", "")
