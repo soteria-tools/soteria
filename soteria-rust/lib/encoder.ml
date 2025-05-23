@@ -2,7 +2,6 @@ open Charon
 open Typed
 open Typed.Syntax
 open Typed.Infix
-open T
 open Charon_util
 open Rustsymex
 open Rustsymex.Syntax
@@ -13,10 +12,95 @@ module Make (Sptr : Sptr.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
+  (** Basically, a parser is just a sort of monad, so we can have the usual
+      operations on it. We must allow errors to be passed to the callback when
+      parsing, as a parser may chose to ignore the error and still return
+      something (e.g. unions). *)
+  module ParserMonad = struct
+    type ('a, 'e) t =
+      | Done of 'a
+      | Error of 'e
+      | More of
+          (Types.ty * T.sint Typed.t) list
+          * ((rust_val list, 'e) result -> ('a, 'e) t Rustsymex.t)
+
+    let[@inline] ok v = Done v
+    let[@inline] error e = Error e
+    let is_done = function Done _ -> true | _ -> false
+    let is_more = function More _ -> true | _ -> false
+
+    let rec bind2 x f fe =
+      match x with
+      | More (blocks, callback) ->
+          let callback v = Rustsymex.map (callback v) (fun y -> bind2 y f fe) in
+          More (blocks, callback)
+      | Done v -> f v
+      | Error e -> fe e
+
+    let bind x f = bind2 x f error
+    let map x f = bind2 x (fun x -> ok (f x)) error
+
+    let[@inline] more blocks callback =
+      More
+        (blocks, function Ok xs -> callback xs | Error e -> return (Error e))
+
+    (** Returns the first element that parsed, if one parses succesfully, and
+        else returns the first error that occurred. *)
+    let first fn xs =
+      let rec aux es = function
+        | [] -> error (List.last es)
+        | x :: xs -> bind2 (fn x) (fun x -> ok x) (fun e -> aux (e :: es) xs)
+      in
+      aux [] xs
+
+    let all (fn : 'v -> ('a, 'b) t) (xs : 'v list) : (('a, 'b) t list, 'b) t =
+      let rec aux finished todos =
+        match todos with
+        | [] ->
+            finished
+            |> List.sort (fun (i, _) (j, _) -> i - j)
+            |> List.map snd
+            |> ok
+        | (i, todo) :: rest ->
+            bind2 todo
+              (fun x -> aux ((i, ok x) :: finished) rest)
+              (fun e -> aux ((i, error e) :: finished) rest)
+      in
+      let todos, finished =
+        xs
+        |> List.mapi (fun i v -> (i, fn v))
+        |> List.partition (fun (_, p) -> is_more p)
+      in
+      aux finished todos
+
+    let parse ~(init : 'i)
+        ~(f :
+           (Types.ty * T.sint Typed.t) list ->
+           'i ->
+           (rust_val list * 'i, 'e, 'f) Result.t) (p : ('a, 'e) t) :
+        ('a * 'i, 'e, 'f) Result.t =
+      let rec aux st = function
+        | Done v -> return (Done (v, st))
+        | Error e -> return (Error e)
+        | More (blocks, callback) -> (
+            let* res = f blocks st in
+            match res with
+            | Ok (vs, st) -> Rustsymex.bind (callback (Ok vs)) (aux st)
+            | Error e -> Rustsymex.bind (callback (Error e)) (aux st)
+            | Missing _ ->
+                not_impl "We don't handle misses in Parser.parse yet.")
+      in
+      let* res = aux init p in
+      match res with
+      | Done (v, st) -> Result.ok (v, st)
+      | Error e -> Result.error e
+      | More _ -> assert false
+  end
+
   type cval_info = {
     value : rust_val;
     ty : Types.ty; [@printer Charon_util.pp_ty]
-    offset : sint Typed.t;
+    offset : T.sint Typed.t;
   }
   [@@deriving show { with_path = false }]
 
@@ -141,29 +225,45 @@ module Make (Sptr : Sptr.S) = struct
               Types.pp_ty ty);
         failwith "Unhandled rust_value and Charon.ty"
 
-  type ('e, 'f) parse_callback =
-    rust_val list -> (('e, 'f) parser_return, 'e, 'f) Result.t
-
-  and ('e, 'f) parser_return =
-    [ `Done of rust_val
-    | `More of (Types.ty * sint Typed.t) list * ('e, 'f) parse_callback ]
+  type 'e parser = (rust_val, 'e) ParserMonad.t
 
   (** Converts a Rust type into a list of types to read, along with their
       offset; once these are read, symbolically decides whether we must keep
       reading. [offset] is the initial offset to read from, [meta] is the
       optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?offset ?meta ty : ('e, 'f) parser_return =
+  let rust_of_cvals ?offset ?meta ty : 'e parser =
+    let open ParserMonad in
+    let module T = Typed.T in
     (* Base case, parses all types. *)
-    let rec aux offset : Types.ty -> ('e, 'f) parser_return = function
+    let rec aux offset : Types.ty -> 'e parser = function
+      | ty
+        when L.warn (fun m -> m "rust_of %a" pp_ty ty);
+             (match ty with
+             | TAdt (TAdtId id, _) -> (
+                 let adt = Session.get_adt id in
+                 match adt.kind with
+                 | Union _ ->
+                     L.warn (fun m ->
+                         m "union %a" Session.pp_name adt.item_meta.name)
+                 | Struct _ ->
+                     L.warn (fun m ->
+                         m "struct %a" Session.pp_name adt.item_meta.name)
+                 | Enum _ ->
+                     L.warn (fun m ->
+                         m "enum %a" Session.pp_name adt.item_meta.name)
+                 | _ -> ())
+             | _ -> ());
+             false ->
+          assert false
       | TLiteral _ as ty ->
-          `More
-            ( [ (ty, offset) ],
-              function
-              | [ (Base _ as v) ] -> Result.ok (`Done v)
+          more
+            [ (ty, offset) ]
+            (function
+              | [ (Base _ as v) ] -> Rustsymex.return (ok v)
               | [ Ptr (ptr, None) ] ->
-                  let* ptr_v = Sptr.decay ptr in
-                  Result.ok (`Done (Base (ptr_v :> T.cval Typed.t)))
-              | _ -> not_impl "Expected a base or a thin pointer" )
+                  let+ ptr_v = Sptr.decay ptr in
+                  ok (Base (ptr_v :> T.cval Typed.t))
+              | _ -> not_impl "Expected a base or a thin pointer")
       | ( TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
         | TRef (_, sub_ty, _)
         | TRawPtr (sub_ty, _) ) as ty
@@ -178,19 +278,16 @@ module Make (Sptr : Sptr.S) = struct
                       Sptr.offset Sptr.null_ptr ptr_v
                   | _ -> assert false
                 in
+                let ptr = Ptr (ptr, Some (meta :> T.cval Typed.t)) in
                 (* The check for the validity of the metadata is only required for references,
                    not raw pointers. *)
                 match ty with
-                | TRawPtr _ ->
-                    Result.ok
-                    @@ `Done (Ptr (ptr, Some (meta :> T.cval Typed.t)))
+                | TRawPtr _ -> return (ok ptr)
                 | _ ->
                     let* meta = cast_checked ~ty:Typed.t_int meta in
                     (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
-                    if%sat meta <@ 0s then Result.error `UBTransmute
-                    else
-                      Result.ok
-                      @@ `Done (Ptr (ptr, Some (meta :> T.cval Typed.t))))
+                    if%sat meta <@ 0s then return (error `UBTransmute)
+                    else return (ok ptr))
             | vs ->
                 Fmt.kstr not_impl "Expected a pointer and base, got %a"
                   Fmt.(list ~sep:comma pp_rust_val)
@@ -198,22 +295,22 @@ module Make (Sptr : Sptr.S) = struct
           in
           let ptr_size = Typed.int Archi.word_size in
           let isize : Types.ty = TLiteral (TInteger Isize) in
-          `More ([ (isize, offset); (isize, offset +@ ptr_size) ], callback)
+          more [ (isize, offset); (isize, offset +@ ptr_size) ] callback
       (* Raw pointers can be both a valid pointer or a number, whereas a reference must
          always be a valid pointer. *)
       | TRawPtr _ ->
-          `More
-            ( [ (TLiteral (TInteger Isize), offset) ],
-              function
-              | [ ((Ptr _ | Base _) as ptr) ] -> Result.ok (`Done ptr)
-              | _ -> not_impl "Expected a pointer or base" )
+          more
+            [ (TLiteral (TInteger Isize), offset) ]
+            (function
+              | [ ((Ptr _ | Base _) as ptr) ] -> return (ok ptr)
+              | _ -> not_impl "Expected a pointer or base")
       | TAdt (TBuiltin TBox, _) | TRef _ ->
-          `More
-            ( [ (TLiteral (TInteger Isize), offset) ],
-              function
-              | [ (Ptr _ as ptr) ] -> Result.ok (`Done ptr)
-              | [ Base _ ] -> Result.error `UBTransmute
-              | _ -> not_impl "Expected a pointer or base" )
+          more
+            [ (TLiteral (TInteger Isize), offset) ]
+            (function
+              | [ (Ptr _ as ptr) ] -> return (ok ptr)
+              | [ Base _ ] -> return (error `UBTransmute)
+              | _ -> not_impl "Expected a pointer or base")
       | TAdt (TTuple, { types; _ }) as ty ->
           let layout = layout_of ty in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
@@ -225,9 +322,9 @@ module Make (Sptr : Sptr.S) = struct
               fields
               |> field_tys
               |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
-          | Enum [] -> `More ([], fun _ -> Result.error `RefToUninhabited)
+          | Enum [] -> more [] (fun _ -> return (error `RefToUninhabited))
           | Enum [ { fields = []; discriminant; _ } ] ->
-              `Done (Enum (value_of_scalar discriminant, []))
+              ok (Enum (value_of_scalar discriminant, []))
           | Enum variants -> aux_enum offset variants
           | Union fs -> aux_union offset fs
           | _ ->
@@ -260,43 +357,31 @@ module Make (Sptr : Sptr.S) = struct
               let layout = layout_of arr_ty in
               let fields = List.init len (fun _ -> sub_ty) in
               aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
-      | TNever -> `More ([], fun _ -> Result.error `RefToUninhabited)
+      | TNever -> more [] (fun _ -> return (error `RefToUninhabited))
       | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
-    (* basically, a parser is just a sort of monad, so we can have the usual operations on it *)
-    and aux_bind ~f parser_ret : ('e, 'f) parser_return =
-      match parser_ret with
-      | `More (blocks, callback) ->
-          let callback v = Result.map (callback v) (aux_bind ~f) in
-          `More (blocks, callback)
-      | `Done value -> f value
-    (* util to map a parser result, at the end *)
-    and aux_map ~f parser_ret : ('e, 'f) parser_return =
-      aux_bind ~f:(fun v -> `Done (f v)) parser_ret
     (* Parses a list of fields (for structs and tuples) *)
-    and aux_fields ~f ~layout offset fields : ('e, 'f) parser_return =
+    and aux_fields ~f ~layout offset fields : 'e parser =
       let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
-      let rec mk_callback to_parse parsed : ('e, 'f) parser_return =
+      let rec mk_callback to_parse parsed : 'e parser =
         match to_parse with
-        | [] -> `Done (f (List.rev parsed))
-        | ty :: rest ->
-            let idx = List.length parsed in
-            let offset = Array.get layout.members_ofs idx |> Typed.int in
-            let offset = base_offset +@ offset in
-
-            aux_bind ~f:(fun v -> mk_callback rest (v :: parsed))
-            @@ aux offset ty
+        | [] -> ok (f (List.rev parsed))
+        | (offset, ty) :: rest ->
+            let offset = base_offset +@ Typed.int offset in
+            bind (aux offset ty) (fun v -> mk_callback rest (v :: parsed))
+      in
+      let fields =
+        List.mapi (fun i ty -> (Array.get layout.members_ofs i, ty)) fields
       in
       mk_callback fields []
     (* Parses what enum variant we're handling *)
-    and aux_enum offset (variants : Types.variant list) : ('e, 'f) parser_return
-        =
+    and aux_enum offset (variants : Types.variant list) : 'e parser =
       let disc = (List.hd variants).discriminant in
       let disc_ty = Values.TInteger disc.int_ty in
       let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
       let offset = offset +@ (offset %@ disc_align) in
       let callback cval =
         let cval = Charon_util.as_base_of ~ty:Typed.t_int @@ List.hd cval in
-        let* res =
+        let+ res =
           match_on variants ~constr:(fun (v : Types.variant) ->
               cval ==@ value_of_scalar v.discriminant)
         in
@@ -307,32 +392,29 @@ module Make (Sptr : Sptr.S) = struct
             let ({ members_ofs = mems; _ } as layout) = of_variant var in
             let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
             let layout = { layout with members_ofs } in
-            let parser =
-              var.fields
-              |> field_tys
-              |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
-            in
-            Result.ok parser
+            var.fields
+            |> field_tys
+            |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
         | None ->
             L.error (fun m ->
                 m "Unmatched discriminant in rust_of_cvals: %a" Typed.ppa cval);
-            Result.error `UBTransmute
+            error `UBTransmute
       in
-      `More ([ (TLiteral disc_ty, offset) ], callback)
-    and aux_union offset fs : ('e, 'f) parser_return =
-      (* read largest field *)
-      let layouts =
-        fs
-        |> List.mapi @@ fun i (f : Types.field) ->
-           (i, f.field_ty, layout_of f.field_ty)
-      in
-      let f, ty, _ =
-        List.fold_left
-          (fun ((_, _, accl) as acc) ((_, _, l) as cur) ->
-            if l.size > accl.size then cur else acc)
-          (List.hd layouts) (List.tl layouts)
-      in
-      aux_map ~f:(fun fs -> Union (Types.FieldId.of_int f, fs)) @@ aux offset ty
+      more [ (TLiteral disc_ty, offset) ] callback
+    and aux_union offset fs : 'e parser =
+      let parse_field (i, ty) = map (aux offset ty) (fun v -> Union (i, v)) in
+      (* We try parsing all of fields of the enum, sorted by decreasing layout size.
+         The first that succeeds gets returned, and otherwise we return the first error.
+         We parse in decreasing type size, because if a union has () as a field (e.g.
+         MaybeUninit), that field would always be returned, even in the presence of data. *)
+      fs
+      |> List.mapi (fun i (f : Types.field) ->
+             let fid = Types.FieldId.of_int i in
+             let l = layout_of f.field_ty in
+             (fid, f.field_ty, l.size))
+      |> List.sort (fun (_, _, s1) (_, _, s2) -> s2 - s1)
+      |> List.map (fun (fid, ty, _) -> (fid, ty))
+      |> first parse_field
     in
     let off = Option.value ~default:0s offset in
     aux off ty
@@ -406,7 +488,7 @@ module Make (Sptr : Sptr.S) = struct
       | _, TRawPtr _, Ptr _ -> ok v
       | _, TLiteral (TInteger (Isize | Usize | I64 | U64)), Ptr (ptr, None) ->
           let* ptr_v = Sptr.decay ptr in
-          ok (Base (ptr_v :> cval Typed.t))
+          ok (Base (ptr_v :> Typed.T.cval Typed.t))
       | _ when try_splitting ->
           let blocks = rust_to_cvals v from_ty in
           transmute_many ~to_ty blocks
@@ -416,8 +498,6 @@ module Make (Sptr : Sptr.S) = struct
 
   and transmute_many ~(to_ty : Types.ty) vs =
     let open Syntaxes.Option in
-    let ( |>** ) = Result.bind in
-    let ( |>++ ) = Result.map in
     let pp_triple fmt (v, ty, o) =
       Fmt.pf fmt "(%a:%a, %d)" ppa_rust_val v pp_ty ty o
     in
@@ -527,17 +607,15 @@ module Make (Sptr : Sptr.S) = struct
         Fmt.(list ~sep:comma pp_triple)
         vs
     in
-    let rec aux = function
-      | `Done v -> Result.ok v
-      | `More (blocks, callback) ->
-          Result.fold_list blocks ~init:[] ~f:(fun acc block ->
-              let++ block = extract_block block in
-              block :: acc)
-          |>++ List.rev
-          |>** callback
-          |>** aux
+    let parse_fn blocks () =
+      Result.fold_list blocks ~init:([], ()) ~f:(fun (acc, ()) block ->
+          let++ block = extract_block block in
+          (block :: acc, ()))
     in
-    aux @@ rust_of_cvals to_ty
+    let++ res, () =
+      ParserMonad.parse ~init:() ~f:parse_fn @@ rust_of_cvals to_ty
+    in
+    res
 
   type 'a split_tree =
     [ `Node of T.sint Typed.t * 'a split_tree * 'a split_tree | `Leaf of 'a ]
