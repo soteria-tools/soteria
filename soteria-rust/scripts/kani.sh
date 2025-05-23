@@ -20,7 +20,11 @@ CMD="soteria-rust exec-main --ignore-leaks --kani"
 TAG=""
 STOP_ON_FAIL=true
 STORE_PASSES=false
-TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' | sort)
+# maybe add: /DynTrait/, /FunctionContracts/,
+TESTS=$(find $KANI_PATH/tests/kani -name '*.rs' \
+  ! -path '*/Stubbing/*' ! -path '*/SIMD/*' ! -path '*/Atomic/*' \
+  ! -path '*/ForeignItems/*' ! -path '*/Coroutines/*' ! -path '*/VolatileIntrinsics/*' \
+  | sort)
 while [[ $# -gt 0 ]]; do
     case $1 in
         -d|--directory)

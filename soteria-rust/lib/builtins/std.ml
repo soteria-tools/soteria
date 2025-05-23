@@ -410,7 +410,7 @@ module M (Heap : Heap_intf.S) = struct
     let** () = Heap.check_ptr_align ptr ty in
     let* size = Layout.size_of_s ty in
     let size = size *@ count in
-    (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
+    (* If v == 0, then we can replace this mess by initialising a Zeros subtree *)
     if%sat v ==@ 0s then
       let++ (), state = Heap.zeros dst size state in
       (Tuple [], state)
