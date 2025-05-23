@@ -236,25 +236,6 @@ module Make (Sptr : Sptr.S) = struct
     let module T = Typed.T in
     (* Base case, parses all types. *)
     let rec aux offset : Types.ty -> 'e parser = function
-      | ty
-        when L.warn (fun m -> m "rust_of %a" pp_ty ty);
-             (match ty with
-             | TAdt (TAdtId id, _) -> (
-                 let adt = Session.get_adt id in
-                 match adt.kind with
-                 | Union _ ->
-                     L.warn (fun m ->
-                         m "union %a" Session.pp_name adt.item_meta.name)
-                 | Struct _ ->
-                     L.warn (fun m ->
-                         m "struct %a" Session.pp_name adt.item_meta.name)
-                 | Enum _ ->
-                     L.warn (fun m ->
-                         m "enum %a" Session.pp_name adt.item_meta.name)
-                 | _ -> ())
-             | _ -> ());
-             false ->
-          assert false
       | TLiteral _ as ty ->
           more
             [ (ty, offset) ]
