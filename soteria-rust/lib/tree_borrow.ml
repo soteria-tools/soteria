@@ -1,3 +1,5 @@
+open Rustsymex
+
 type tag = int
 and access = Read | Write
 and locality = Local | Foreign
@@ -146,7 +148,7 @@ let set_protector ~protected root tag st =
 (** [access root accessed im e state]: Update all nodes in the mapping [state]
     for the tree rooted at [root] with an event [e], that happened at
     [accessed]. *)
-let access (root : t) accessed e st : tb_state * bool =
+let access (root : t) accessed e st =
   let ub_happened = ref false in
   let st =
     Iter.fold
@@ -186,6 +188,6 @@ let access (root : t) accessed e st : tb_state * bool =
         (protected, st'))
       st
   in
-  (st', !ub_happened)
+  if !ub_happened then Result.error `UBTreeBorrow else Result.ok st'
 
 let merge = TagMap.merge @@ fun _ -> Option.merge meet'

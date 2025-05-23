@@ -87,9 +87,7 @@ module Make (Heap : Heap_intf.S) = struct
           let ptr_tys = Layout.ptr_tys_in value ty in
           let++ (), st =
             Result.fold_list ptr_tys ~init:((), st)
-              ~f:(fun ((), st) (ptr, ty) ->
-                let++ _, st = Heap.load ptr ty st in
-                ((), st))
+              ~f:(fun ((), st) (ptr, ty) -> Heap.tb_load ptr ty st)
           in
           (protected', st))
     in
@@ -806,9 +804,7 @@ module Make (Heap : Heap_intf.S) = struct
         let ptr_tys = Layout.ptr_tys_in value ty in
         let++ (), state =
           Result.fold_list ptr_tys ~init:((), state)
-            ~f:(fun ((), st) (ptr, ty) ->
-              let++ _, st = Heap.load ptr ty st in
-              ((), st))
+            ~f:(fun ((), st) (ptr, ty) -> Heap.tb_load ptr ty st)
         in
         (value, store, state)
     | Switch (discr, switch) -> (

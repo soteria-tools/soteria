@@ -149,7 +149,7 @@ let uninit (ptr, _) ty st =
   let@ block, _ = with_tbs block in
   Tree_block.uninit_range ofs size block
 
-let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
+let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
   let** () = check_ptr_align ptr ty in
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
@@ -173,7 +173,7 @@ let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
           Result.fold_list blocks ~init:([], block)
             ~f:(fun (vals, block) (ty, ofs) ->
               let++ value, block =
-                Tree_block.load ?is_move ?ignore_borrow ofs ty ptr.tag tb block
+                Tree_block.load ~is_move ~ignore_borrow ofs ty ptr.tag tb block
               in
               (value :: vals, block))
         in
@@ -187,6 +187,20 @@ let load ?is_move ?ignore_borrow ((ptr : Sptr.t), meta) ty st =
       f "Finished reading rust value %a" (Charon_util.pp_rust_val Sptr.pp) value);
   (value, block)
 
+(** Performs a load at the tree borrow level, by updating the borrow state,
+    without attempting to validate the values or checking uninitialised memory
+    accesses; all of these are ignored. *)
+let tb_load (ptr, _) ty st =
+  let* size = Layout.size_of_s ty in
+  if%sat size ==@ 0s then Result.ok ((), st)
+  else
+    let@ () = with_error_loc_as_call_trace () in
+    let@ () = with_loc_err () in
+    log "tb_load" ptr st;
+    let@ ofs, block = with_ptr ptr st in
+    let@ block, tb = with_tbs block in
+    Tree_block.tb_access ofs size ptr.tag tb block
+
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns true if the value was read successfully,
     false otherwise. *)
@@ -195,7 +209,7 @@ let is_valid_ptr st ptr ty =
   let+ res = load ~ignore_borrow:true ptr ty st in
   match res with Ok _ -> true | _ -> false
 
-let store ((ptr : Sptr.t), _) ty sval st =
+let store (ptr, _) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
@@ -317,7 +331,7 @@ let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
 
-let borrow ((ptr : Sptr.t), meta) (ty : Charon.Types.ty)
+let borrow (ptr, meta) (ty : Charon.Types.ty)
     (kind : Charon.Expressions.borrow_kind) st =
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
   if Layout.is_unsafe_cell ty then Result.ok ((ptr, meta), st)
@@ -328,6 +342,8 @@ let borrow ((ptr : Sptr.t), meta) (ty : Charon.Types.ty)
     let* tag_st =
       match kind with
       | BShared -> return Tree_borrow.Frozen
+      | (BTwoPhaseMut | BMut) when Layout.is_unsafe_cell ty ->
+          return Tree_borrow.ReservedIM
       | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
       | _ ->
           Fmt.kstr not_impl "Unhandled borrow kind: %a"
@@ -343,8 +359,8 @@ let borrow ((ptr : Sptr.t), meta) (ty : Charon.Types.ty)
           Tree_borrow.pp_state tag_st);
     Result.ok ((ptr', meta), block)
 
-let protect ((ptr : Sptr.t), meta) (ty : Charon.Types.ty)
-    (mut : Charon.Types.ref_kind) st =
+let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
+    =
   if Layout.is_unsafe_cell ty then Result.ok ((ptr, meta), st)
   else
     let@ () = with_error_loc_as_call_trace () in
@@ -369,7 +385,7 @@ let protect ((ptr : Sptr.t), meta) (ty : Charon.Types.ty)
     let block = Option.map (fun b' -> (b', tb')) block' in
     ((ptr', meta), block)
 
-let unprotect ((ptr : Sptr.t), _) (ty : Charon.Types.ty) st =
+let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   let@ () = with_error_loc_as_call_trace () in
   let@ () = with_loc_err () in
   let@ ofs, block = with_ptr ptr st in

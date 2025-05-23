@@ -1,3 +1,5 @@
+open Rustsymex
+
 type tag
 and access = Read | Write
 and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
@@ -25,6 +27,7 @@ val set_protector : protected:bool -> t -> tag -> tb_state -> tb_state
 
 (** [access root accessed e state]: Update all nodes in the mapping [state] for
     the tree rooted at [root] with an event [e], that happened at [accessed]. *)
-val access : t -> tag -> access -> tb_state -> tb_state * bool
+val access :
+  t -> tag -> access -> tb_state -> (tb_state, [> `UBTreeBorrow ], 'm) Result.t
 
 val merge : tb_state -> tb_state -> tb_state

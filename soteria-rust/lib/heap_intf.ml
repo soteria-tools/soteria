@@ -41,6 +41,20 @@ module type S = sig
       serialized list )
     Result.t
 
+  val tb_load :
+    full_ptr ->
+    Types.ty ->
+    t ->
+    ( unit * t,
+      [> `NullDereference
+      | `OutOfBounds
+      | `UseAfterFree
+      | `UBTreeBorrow
+      | `MisalignedPointer ]
+      err,
+      serialized list )
+    Result.t
+
   val store :
     full_ptr ->
     Types.ty ->

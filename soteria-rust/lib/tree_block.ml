@@ -160,8 +160,8 @@ module Tree = struct
     match t.children with
     | None -> f t
     | Some (l, r) ->
-        let l = map_leaves l f in
-        let r = map_leaves r f in
+        let** l = map_leaves l f in
+        let++ r = map_leaves r f in
         { t with children = Some (l, r) }
 
   let rec iter_leaves_rev t f =
@@ -403,24 +403,25 @@ module Tree = struct
     let* root = extend_if_needed t range in
     frame_inside ~replace_node ~rebuild_parent root range
 
+  let as_owned t f =
+    match t.node with
+    | NotOwned _ -> miss_no_fix ~msg:"replace_node" ()
+    | Owned { v; tb } -> f (v, tb)
+
   (* Tree operations: load, store, zero, uninit *)
 
-  let load ?(is_move = false) ?(ignore_borrow = false)
-      (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) (ty : Types.ty)
-      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t) :
-      (rust_val * t, 'err, 'fix) Result.t =
+  let load ~(is_move : bool) ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t)
+      (size : [< T.sint ] Typed.t) (ty : Types.ty) (tag : Tree_borrow.tag)
+      (tb : Tree_borrow.t) (t : t) : (rust_val * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size ofs size in
     let replace_node t =
-      match t.node with
-      | NotOwned _ -> miss_no_fix ~msg:"load" ()
-      | Owned { tb = tb_st; v } ->
-          let tb_st', ub =
-            if ignore_borrow then (tb_st, false)
-            else Tree_borrow.access tb tag Tree_borrow.Read tb_st
-          in
-          if ub then Result.error `UBTreeBorrow
-          else if is_move then Result.ok (uninit tb_st' range)
-          else Result.ok { t with node = Owned { tb = tb_st'; v } }
+      let@ v, tb_st = as_owned t in
+      let++ tb_st' =
+        if ignore_borrow then Result.ok tb_st
+        else Tree_borrow.access tb tag Tree_borrow.Read tb_st
+      in
+      if is_move then uninit tb_st' range
+      else { t with node = Owned { tb = tb_st'; v } }
     in
     let rebuild_parent = with_children in
     let** framed, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -432,12 +433,9 @@ module Tree = struct
       (tb : Tree_borrow.t) (t : t) : (unit * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size low size in
     let replace_node t =
-      match t.node with
-      | NotOwned _ -> miss_no_fix ~msg:"store" ()
-      | Owned { tb = tb_st; _ } ->
-          let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Write tb_st in
-          if ub then Result.error `UBTreeBorrow
-          else Result.ok @@ sval_leaf ~range ~value ~ty ~tb:tb_st'
+      let@ _, tb_st = as_owned t in
+      let++ tb_st' = Tree_borrow.access tb tag Tree_borrow.Write tb_st in
+      sval_leaf ~range ~value ~ty ~tb:tb_st'
     in
     let rebuild_parent = of_children in
     let** node, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -452,15 +450,11 @@ module Tree = struct
       (t : t) : (unit * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size low size in
     let replace_node t =
-      match t.node with
-      | NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
-      | Owned _ -> (
-          Result.ok
-          @@ map_leaves t
-          @@ fun t ->
-          match t.node with
-          | Owned { tb; _ } -> uninit tb t.range
-          | _ -> assert false)
+      let@ _ = as_owned t in
+      map_leaves t @@ fun tt ->
+      match tt.node with
+      | Owned { tb; _ } -> Result.ok (uninit tb tt.range)
+      | _ -> assert false
     in
     let rebuild_parent = of_children in
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -470,11 +464,9 @@ module Tree = struct
       (t : t) : (unit * t, 'err, 'fix) Result.t =
     let range = Range.of_low_and_size low size in
     let replace_node t =
-      match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
-      | Owned { tb; _ } ->
-          (* Is there something to do with the tree borrow here? *)
-          Result.ok @@ zeros tb range
+      let@ _, tb = as_owned t in
+      (* Is there something to do with the tree borrow here? *)
+      Result.ok @@ zeros tb range
     in
     let rebuild_parent = of_children in
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -490,9 +482,8 @@ module Tree = struct
 
   let put_raw tree t =
     let replace_node t =
-      match t.node with
-      | NotOwned _ -> miss_no_fix ~msg:"put_raw" ()
-      | _ -> Result.ok tree
+      let@ _ = as_owned t in
+      Result.ok tree
     in
     let rebuild_parent = of_children in
     let++ _, new_tree =
@@ -505,15 +496,12 @@ module Tree = struct
   let protect ofs size tag tb t =
     let range = Range.of_low_and_size ofs size in
     let replace_node t =
-      match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
-      | Owned { tb = tb_st; v } ->
-          (* We need to do two things: protect this tag for the block, and perform a read, as
-             all function calls perform one on the parameters. *)
-          let tb_st' = Tree_borrow.set_protector ~protected:true tb tag tb_st in
-          let tb_st', ub = Tree_borrow.access tb tag Tree_borrow.Read tb_st' in
-          if ub then Result.error `UBTreeBorrow
-          else Result.ok { t with node = Owned { tb = tb_st'; v } }
+      let@ v, tb_st = as_owned t in
+      (* We need to do two things: protect this tag for the block, and perform a read, as
+         all function calls perform one on the parameters. *)
+      let tb_st' = Tree_borrow.set_protector ~protected:true tb tag tb_st in
+      let++ tb_st' = Tree_borrow.access tb tag Tree_borrow.Read tb_st' in
+      { t with node = Owned { tb = tb_st'; v } }
     in
     let rebuild_parent = of_children in
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
@@ -522,17 +510,30 @@ module Tree = struct
   let unprotect ofs size tag tb t =
     let range = Range.of_low_and_size ofs size in
     let replace_node t =
-      match t.node with
-      | Node.NotOwned _ -> miss_no_fix ~msg:"uninit_range" ()
-      | Owned { tb = tb_st; v } ->
-          (* We need to do two things: protect this tag for the block, and perform a read, as
-               all function calls perform one on the parameters. *)
-          let tb_st' =
-            Tree_borrow.set_protector ~protected:false tb tag tb_st
-          in
-          Result.ok { t with node = Owned { tb = tb_st'; v } }
+      let@ v, tb_st = as_owned t in
+      (* We need to do two things: protect this tag for the block, and perform a read, as
+         all function calls perform one on the parameters. *)
+      let tb_st' = Tree_borrow.set_protector ~protected:false tb tag tb_st in
+      Result.ok { t with node = Owned { tb = tb_st'; v } }
     in
     let rebuild_parent = of_children in
+    let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
+    ((), tree)
+
+  let tb_access (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t) :
+      (unit * t, 'err, 'fix) Result.t =
+    let range = Range.of_low_and_size ofs size in
+    let replace_node t =
+      let@ _ = as_owned t in
+      map_leaves t @@ fun tt ->
+      match tt.node with
+      | Owned { tb = tb_st; v } ->
+          let++ tb_st' = Tree_borrow.access tb tag Tree_borrow.Read tb_st in
+          { tt with node = Owned { tb = tb_st'; v } }
+      | _ -> assert false
+    in
+    let rebuild_parent = with_children in
     let++ _, tree = frame_range t ~replace_node ~rebuild_parent range in
     ((), tree)
 
@@ -738,12 +739,12 @@ let assert_exclusively_owned t =
             ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
       else miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
 
-let load ?is_move ?ignore_borrow ofs ty tag tb t =
+let load ~is_move ~ignore_borrow ofs ty tag tb t =
   let* size = Layout.size_of_s ty in
   let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
   let++ res, tree =
     let@ () = with_bound_check t (ofs +@ size) in
-    Tree.load ?is_move ?ignore_borrow ofs size ty tag tb t.root
+    Tree.load ~is_move ~ignore_borrow ofs size ty tag tb t.root
   in
   (res, to_opt tree)
 
@@ -823,6 +824,16 @@ let unprotect ofs size tag tb t =
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
         Tree.unprotect ofs size tag tb t.root
+      in
+      ((), to_opt tree)
+
+let tb_access ofs size tag tb t =
+  match t with
+  | None -> miss_no_fix ~msg:"protect on none" ()
+  | Some t ->
+      let++ (), tree =
+        let@ () = with_bound_check t (ofs +@ size) in
+        Tree.tb_access ofs size tag tb t.root
       in
       ((), to_opt tree)
 
