@@ -1,5 +1,5 @@
   $ soteria-c capture-db compilation_database.json
-  Summaries for test2_491:
+  Summaries for test2_492:
     { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
       ret = (Ok 0); memory_leak = false }
       manifest bugs: []
@@ -14,7 +14,7 @@
       ret = (Ok 0); memory_leak = false }
       manifest bugs: []
   
-  Summaries for main_492:
+  Summaries for main_493:
     { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
       ret = (Ok 0); memory_leak = false }
       manifest bugs: []

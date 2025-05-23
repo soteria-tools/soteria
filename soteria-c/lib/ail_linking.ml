@@ -125,7 +125,7 @@ let rec free_syms_expr acc expr =
       let res = List.fold_left free_syms_stmt acc stmts in
       Sym_set.diff res exclude
   | AilEbuiltin _ | AilEstr _ | AilEconst _ | AilEsizeof _ | AilEalignof _
-  | AilEreg_load _ | AilEoffsetof _ ->
+  | AilEreg_load _ | AilEoffsetof _ | AilEinvalid _ ->
       acc
 
 and free_syms_stmt acc stmt =

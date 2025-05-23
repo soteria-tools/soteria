@@ -517,6 +517,9 @@ module Make (State : State_intf.S) = struct
         | _ ->
             Fmt.kstr not_impl "Unsupported function decay: %a" Fmt_ail.pp_expr
               outer_fexpr)
+    | AilEinvalid (_ty, reason) ->
+        Fmt.kstr not_impl "Cerberus could not parse an expression because %a"
+          Fmt_ail.pp_invalid_reason reason
     | AilEcond (_, _, _)
     | AilEassert _
     | AilEoffsetof (_, _)

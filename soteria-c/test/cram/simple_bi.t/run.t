@@ -41,7 +41,28 @@
       ret = (Ok V|3|); memory_leak = false }
       manifest bugs: []
   
-  Summaries for test_uninit_491:
+  Summaries for test_leak_499:
+    { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+      ret = (Ok 0); memory_leak = true }
+      manifest bugs: [Memory leak with trace [(manifest.c:26:1-34:2 (cursor: 26:5 - 26:14),
+                                               )]]
+    { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+      ret = (Ok 1); memory_leak = false }
+      manifest bugs: []
+  
+  Summaries for test_np_510:
+    { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+      ret = (Ok 0); memory_leak = false }
+      manifest bugs: []
+    { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+      ret =
+      (Error NullDereference with trace [(manifest.c:51:3-10 (cursor: 51:6),
+                                          Triggering memory operation)]);
+      memory_leak = false }
+      manifest bugs: [NullDereference with trace [(manifest.c:51:3-10 (cursor: 51:6),
+                                                   Triggering memory operation)]]
+  
+  Summaries for test_uninit_493:
     { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
       ret =
       (Error UninitializedMemoryAccess with trace [(manifest.c:21:3-10,
@@ -57,28 +78,7 @@
       ret = (Ok 1); memory_leak = false }
       manifest bugs: []
   
-  Summaries for test_leak_494:
-    { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-      ret = (Ok 0); memory_leak = true }
-      manifest bugs: [Memory leak with trace [(manifest.c:26:1-34:2 (cursor: 26:5 - 26:14),
-                                               )]]
-    { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-      ret = (Ok 1); memory_leak = false }
-      manifest bugs: []
-  
-  Summaries for test_np_500:
-    { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-      ret = (Ok 0); memory_leak = false }
-      manifest bugs: []
-    { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-      ret =
-      (Error NullDereference with trace [(manifest.c:51:3-10 (cursor: 51:6),
-                                          Triggering memory operation)]);
-      memory_leak = false }
-      manifest bugs: [NullDereference with trace [(manifest.c:51:3-10 (cursor: 51:6),
-                                                   Triggering memory operation)]]
-  
-  Summaries for test_ok_497:
+  Summaries for test_ok_504:
     { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
       ret = (Ok 0); memory_leak = false }
       manifest bugs: []
