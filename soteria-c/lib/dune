@@ -7,6 +7,7 @@
   soteria.std
   soteria.symex
   soteria.logs
+  soteria.c_values
   cmdliner
   fmt
   iter
@@ -23,7 +24,7 @@
   printbox-text
   tsort
   dune-site)
- (flags :standard -open Soteria_std)
+ (flags :standard -open Soteria_std -open Soteria_c_values)
  (preprocess
   (pps ppx_deriving.std soteria.ppx))
  (instrumentation
