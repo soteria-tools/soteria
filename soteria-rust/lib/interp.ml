@@ -23,7 +23,6 @@ module Make (Heap : Heap_intf.S) = struct
   let pp_full_ptr = Charon_util.pp_full_ptr Sptr.pp
 
   type ('err, 'fixes) fun_exec =
-    crate:UllbcAst.crate ->
     args:Sptr.t rust_val list ->
     state:state ->
     (Sptr.t rust_val * state, 'err, 'fixes) Result.t
@@ -154,14 +153,14 @@ module Make (Heap : Heap_intf.S) = struct
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ~crate ~store state ({ kind; ty } : Expressions.place) :
+  let rec resolve_place ~store state ({ kind; ty } : Expressions.place) :
       (full_ptr * state, 'e, 'm) Result.t =
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v store state
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
-        let** ptr, state = resolve_place ~crate ~store state base in
+        let** ptr, state = resolve_place ~store state base in
         L.debug (fun f ->
             f "Dereferencing ptr %a of %a" pp_full_ptr ptr Types.pp_ty base.ty);
         let** v, state = Heap.load ptr base.ty state in
@@ -180,7 +179,7 @@ module Make (Heap : Heap_intf.S) = struct
             Result.ok ((ptr, None), state)
         | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
-        let** (ptr, meta), state = resolve_place ~crate ~store state base in
+        let** (ptr, meta), state = resolve_place ~store state base in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
@@ -194,7 +193,7 @@ module Make (Heap : Heap_intf.S) = struct
         if not @@ Layout.is_inhabited ty then Heap.error `RefToUninhabited state
         else Result.ok ((ptr', meta), state)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
-        let** (ptr, meta), state = resolve_place ~crate ~store state base in
+        let** (ptr, meta), state = resolve_place ~store state base in
         let len =
           match (meta, base.ty) with
           (* Array with static size *)
@@ -203,7 +202,7 @@ module Make (Heap : Heap_intf.S) = struct
           | Some len, TAdt (TBuiltin TSlice, _) -> Typed.cast len
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
-        let** idx, state = eval_operand ~crate ~store state idx in
+        let** idx, state = eval_operand ~store state idx in
         let idx = as_base_of ~ty:Typed.t_int idx in
         let idx = if from_end then len -@ 1s -@ idx else idx in
         if%sat 0s <=@ idx &&@ (idx <@ len) then (
@@ -214,7 +213,7 @@ module Make (Heap : Heap_intf.S) = struct
           Result.ok ((ptr', None), state))
         else Heap.error `OutOfBounds state
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
-        let** (ptr, meta), state = resolve_place ~crate ~store state base in
+        let** (ptr, meta), state = resolve_place ~store state base in
         let ty, len =
           match (meta, base.ty) with
           (* Array with static size *)
@@ -227,8 +226,8 @@ module Make (Heap : Heap_intf.S) = struct
               (ty, Typed.cast len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
-        let** from, state = eval_operand ~crate ~store state from in
-        let** to_, state = eval_operand ~crate ~store state to_ in
+        let** from, state = eval_operand ~store state from in
+        let** to_, state = eval_operand ~store state to_ in
         let from = as_base_of ~ty:Typed.t_int from in
         let to_ = as_base_of ~ty:Typed.t_int to_ in
         let to_ = if from_end then len -@ to_ else to_ in
@@ -244,16 +243,15 @@ module Make (Heap : Heap_intf.S) = struct
           Result.ok ((ptr', Some slice_len), state))
         else Heap.error `OutOfBounds state
 
-  and resolve_function ~(crate : UllbcAst.crate) (fnop : GAst.fn_operand) :
+  and resolve_function (fnop : GAst.fn_operand) :
       ('err, 'fixes) fun_exec Rustsymex.t =
     match fnop with
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
-        let fundef = Expressions.FunDeclId.Map.find fid crate.fun_decls in
+        let fundef = Crate.get_fun fid in
         L.info (fun g ->
-            g "Resolved function call to %s"
-              (name_str crate fundef.item_meta.name));
-        match Std_funs.std_fun_eval ~crate fundef with
+            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
+        match Std_funs.std_fun_eval fundef with
         | Some fn -> Rustsymex.return fn
         | None -> Rustsymex.return (exec_fun fundef))
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
@@ -263,19 +261,19 @@ module Make (Heap : Heap_intf.S) = struct
           GAst.pp_fn_operand fnop
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
-  and resolve_global ~crate (g : Types.global_decl_id) state =
-    let decl = UllbcAst.GlobalDeclId.Map.find g UllbcAst.(crate.global_decls) in
+  and resolve_global (g : Types.global_decl_id) state =
+    let decl = Crate.get_global g in
     let** v_opt, state = Heap.load_global g state in
     match v_opt with
     | Some v -> Result.ok (v, state)
     | None ->
         (* Same as with strings -- here we need to somehow cache where we store the globals *)
-        let fundef = UllbcAst.FunDeclId.Map.find decl.body crate.fun_decls in
+        let fundef = Crate.get_fun decl.body in
         L.info (fun g ->
-            g "Resolved global init call to %s"
-              (name_str crate fundef.item_meta.name));
+            g "Resolved global init call to %a" Crate.pp_name
+              fundef.item_meta.name);
         let global_fn =
-          match Std_funs.std_fun_eval ~crate fundef with
+          match Std_funs.std_fun_eval fundef with
           | Some fn -> fn
           | None -> exec_fun fundef
         in
@@ -283,11 +281,11 @@ module Make (Heap : Heap_intf.S) = struct
         let** ptr, state = Heap.alloc_ty decl.ty state in
         let** (), state = Heap.store_global g ptr state in
         (* And only after we compute it; this enables recursive globals *)
-        let** v, state = global_fn ~crate ~args:[] ~state in
+        let** v, state = global_fn ~args:[] ~state in
         let++ (), state = Heap.store ptr decl.ty v state in
         (ptr, state)
 
-  and eval_operand ~crate ~store state (op : Expressions.operand) =
+  and eval_operand ~store state (op : Expressions.operand) =
     match op with
     | Constant c ->
         let++ v, state = resolve_constant c state in
@@ -298,10 +296,10 @@ module Make (Heap : Heap_intf.S) = struct
         let ty = loc.ty in
         match Layout.as_zst ty with
         | Some zst ->
-            let** _, state = resolve_place ~crate ~store state loc in
+            let** _, state = resolve_place ~store state loc in
             Result.ok (zst, state)
         | None ->
-            let** ptr, state = resolve_place ~crate ~store state loc in
+            let** ptr, state = resolve_place ~store state loc in
             let is_move =
               (* TODO: properly detect if ty has the Copy trait, in which case is_move is
              always false. *)
@@ -313,31 +311,29 @@ module Make (Heap : Heap_intf.S) = struct
             let++ v, state = Heap.load ~is_move ptr ty state in
             (v, state))
 
-  and eval_operand_list ~crate ~store state ops =
+  and eval_operand_list ~store state ops =
     let++ vs, state =
       Result.fold_list ops ~init:([], state) ~f:(fun (acc, state) op ->
-          let++ new_res, state = eval_operand ~crate ~store state op in
+          let++ new_res, state = eval_operand ~store state op in
           (new_res :: acc, state))
     in
     (List.rev vs, state)
 
-  and eval_rvalue ~crate ~store state (expr : Expressions.rvalue) =
-    let eval_operand = eval_operand ~crate ~store in
+  and eval_rvalue ~store state (expr : Expressions.rvalue) =
+    let eval_operand = eval_operand ~store in
     match expr with
     | Use op -> eval_operand state op
     | RvRef (place, borrow) ->
-        let** ptr, state = resolve_place ~crate ~store state place in
+        let** ptr, state = resolve_place ~store state place in
         let++ ptr', state = Heap.borrow ptr place.ty borrow state in
         (Ptr ptr', state)
     | Global { global_id; _ } ->
-        let** ptr, state = resolve_global ~crate global_id state in
-        let decl =
-          UllbcAst.GlobalDeclId.Map.find global_id crate.global_decls
-        in
+        let** ptr, state = resolve_global global_id state in
+        let decl = Crate.get_global global_id in
         Heap.load ptr decl.ty state
     | GlobalRef ({ global_id; _ }, _mut) ->
         (* TODO: handle mutability *)
-        let++ ptr, state = resolve_global ~crate global_id state in
+        let++ ptr, state = resolve_global global_id state in
         (Ptr ptr, state)
     | UnaryOp (op, e) -> (
         let** v, state = eval_operand state e in
@@ -402,9 +398,7 @@ module Make (Heap : Heap_intf.S) = struct
               | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) ->
                   get_size ty
               | TAdt (TAdtId id, _) -> (
-                  let type_decl =
-                    Types.TypeDeclId.Map.find id UllbcAst.(crate.type_decls)
-                  in
+                  let type_decl = Crate.get_adt id in
                   match type_decl.kind with
                   | Struct (_ :: _ as fields) ->
                       get_size (List.last fields).field_ty
@@ -578,8 +572,8 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
     | Discriminant (place, kind) -> (
-        let** (loc, _), state = resolve_place ~crate ~store state place in
-        let enum = Types.TypeDeclId.Map.find kind UllbcAst.(crate.type_decls) in
+        let** (loc, _), state = resolve_place ~store state place in
+        let enum = Crate.get_adt kind in
         match enum.kind with
         (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
         | Enum [ { fields = []; discriminant; _ } ] ->
@@ -599,9 +593,7 @@ module Make (Heap : Heap_intf.S) = struct
               Types.pp_type_decl_kind k)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
-        let type_decl =
-          Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
-        in
+        let type_decl = Crate.get_adt t_id in
         let variant =
           match (type_decl : Types.type_decl) with
           | { kind = Enum variants; _ } -> Types.VariantId.nth variants v_id
@@ -610,7 +602,7 @@ module Make (Heap : Heap_intf.S) = struct
                 Types.pp_type_decl type_decl
         in
         let discr = value_of_scalar variant.discriminant in
-        let++ vals, state = eval_operand_list ~crate ~store state vals in
+        let++ vals, state = eval_operand_list ~store state vals in
         (Enum (discr, vals), state)
     (* Union aggregate *)
     | Aggregate (AggregatedAdt (_, None, Some field, _), ops) ->
@@ -623,14 +615,12 @@ module Make (Heap : Heap_intf.S) = struct
         (Union (field, value), state)
     (* Tuple aggregate *)
     | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
-        let++ values, state = eval_operand_list ~crate ~store state operands in
+        let++ values, state = eval_operand_list ~store state operands in
         (Tuple values, state)
     (* Struct aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, None, None, _), operands) ->
-        let type_decl =
-          Types.TypeDeclId.Map.find t_id UllbcAst.(crate.type_decls)
-        in
-        let** values, state = eval_operand_list ~crate ~store state operands in
+        let type_decl = Crate.get_adt t_id in
+        let** values, state = eval_operand_list ~store state operands in
         let++ () =
           match values with
           | [ v ] ->
@@ -646,11 +636,11 @@ module Make (Heap : Heap_intf.S) = struct
           Expressions.pp_aggregate_kind v
     (* Array aggregate *)
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
-        let++ values, state = eval_operand_list ~crate ~store state operands in
+        let++ values, state = eval_operand_list ~store state operands in
         (Array values, state)
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) -> (
-        let** values, state = eval_operand_list ~crate ~store state operands in
+        let** values, state = eval_operand_list ~store state operands in
         match values with
         | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
         | [ Base v; Base meta ] ->
@@ -674,11 +664,11 @@ module Make (Heap : Heap_intf.S) = struct
     | ShallowInitBox (ptr, _) -> eval_operand state ptr
     (* Raw pointer *)
     | RawPtr (place, _kind) ->
-        let++ ptr, state = resolve_place ~crate ~store state place in
+        let++ ptr, state = resolve_place ~store state place in
         (Ptr ptr, state)
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) ->
-        let** (_, meta), state = resolve_place ~crate ~store state place in
+        let** (_, meta), state = resolve_place ~store state place in
         let+ len =
           match (meta, size_opt) with
           | _, Some size -> return (Typed.int @@ int_of_const_generic size)
@@ -687,11 +677,9 @@ module Make (Heap : Heap_intf.S) = struct
         in
         Soteria_symex.Compo_res.Ok (Base len, state)
 
-  and exec_stmt ~crate store state astmt :
+  and exec_stmt store state astmt :
       (store * state, 'err, Heap.serialized list) Rustsymex.Result.t =
-    L.info (fun m ->
-        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-        m "Statement: %s" (PrintUllbcAst.Ast.statement_to_string ctx "" astmt));
+    L.info (fun m -> m "Statement: %a" Crate.pp_statement astmt);
     L.trace (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_raw_statement astmt.content);
     let { span = loc; content = stmt; _ } : UllbcAst.statement = astmt in
@@ -699,8 +687,8 @@ module Make (Heap : Heap_intf.S) = struct
     match stmt with
     | Nop -> Result.ok (store, state)
     | Assign (({ ty; _ } as place), rval) ->
-        let** ptr, state = resolve_place ~crate ~store state place in
-        let** v, state = eval_rvalue ~crate ~store state rval in
+        let** ptr, state = resolve_place ~store state place in
+        let** v, state = eval_rvalue ~store state rval in
         L.info (fun m -> m "Assigning %a <- %a" pp_full_ptr ptr pp_rust_val v);
         let++ (), state = Heap.store ptr ty v state in
         (store, state)
@@ -724,11 +712,11 @@ module Make (Heap : Heap_intf.S) = struct
         | None -> Result.ok (store, state))
     | Drop place ->
         (* TODO: this is probably super wrong, drop glue etc. *)
-        let** place_ptr, state = resolve_place ~crate ~store state place in
+        let** place_ptr, state = resolve_place ~store state place in
         let++ (), state = Heap.uninit place_ptr place.ty state in
         (store, state)
     | Assert { cond; expected; on_failure } -> (
-        let** cond, state = eval_operand ~crate ~store state cond in
+        let** cond, state = eval_operand ~store state cond in
         let* cond_int =
           match cond with
           | Base cond -> cast_checked cond ~ty:Typed.t_int
@@ -743,58 +731,51 @@ module Make (Heap : Heap_intf.S) = struct
           match on_failure with
           | UndefinedBehavior -> Heap.error `UBAbort state
           | Panic name ->
-              let name = Option.map (name_str crate) name in
+              let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
               Heap.error (`Panic name) state)
     | CopyNonOverlapping { src; dst; count } ->
         let ty = get_pointee (type_of_operand src) in
         let** args, state =
-          eval_operand_list ~crate ~store state [ src; dst; count ]
+          eval_operand_list ~store state [ src; dst; count ]
         in
-        let++ _, state =
-          Std_funs.Std.copy_nonoverlapping ty ~crate ~args ~state
-        in
+        let++ _, state = Std_funs.Std.copy_nonoverlapping ty ~args ~state in
         (store, state)
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
     | Deinit _ -> not_impl "Unsupported statement: Deinit"
 
-  and exec_block ~crate ~(body : UllbcAst.expr_body) store state
+  and exec_block ~(body : UllbcAst.expr_body) store state
       ({ statements; terminator } : UllbcAst.block) =
     let* () = Rustsymex.consume_fuel_steps 1 in
     let** store, state =
       Rustsymex.Result.fold_list statements ~init:(store, state)
-        ~f:(fun (store, state) stmt -> exec_stmt ~crate store state stmt)
+        ~f:(fun (store, state) stmt -> exec_stmt store state stmt)
     in
-    L.info (fun f ->
-        let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-        f "Terminator: %s"
-          (PrintUllbcAst.Ast.terminator_to_string ctx "" terminator));
+    L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
     let { span = loc; content = term; _ } : UllbcAst.terminator = terminator in
     let@ () = with_loc ~loc in
     match term with
     | Call ({ func; args; dest = { ty; _ } as place }, target) ->
-        let* exec_fun = resolve_function ~crate func in
-        let** args, state = eval_operand_list ~crate ~store state args in
+        let* exec_fun = resolve_function func in
+        let** args, state = eval_operand_list ~store state args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:comma pp_rust_val)
               args);
         let** v, state =
-          let+- err = exec_fun ~crate ~args ~state in
+          let+- err = exec_fun ~args ~state in
           Heap.add_to_call_trace err
             (Call_trace.make_element ~loc ~msg:"Call trace" ())
         in
-        let** ptr, state = resolve_place ~crate ~store state place in
+        let** ptr, state = resolve_place ~store state place in
         L.info (fun m ->
-            let ctx = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-            m "Returned %a from %s" pp_rust_val v
-              (PrintGAst.fn_operand_to_string ctx func));
+            m "Returned %a from %a" pp_rust_val v Crate.pp_fn_operand func);
         let** (), state = Heap.store ptr ty v state in
         let block = UllbcAst.BlockId.nth body.body target in
-        exec_block ~crate ~body store state block
+        exec_block ~body store state block
     | Goto b ->
         let block = UllbcAst.BlockId.nth body.body b in
-        exec_block ~crate ~body store state block
+        exec_block ~body store state block
     | Return ->
         let ptr, ty = Store.find Expressions.LocalId.zero store in
         let* ptr =
@@ -808,7 +789,7 @@ module Make (Heap : Heap_intf.S) = struct
         in
         (value, store, state)
     | Switch (discr, switch) -> (
-        let** discr, state = eval_operand ~crate ~store state discr in
+        let** discr, state = eval_operand ~store state discr in
         match switch with
         | If (if_block, else_block) ->
             L.info (fun g ->
@@ -829,7 +810,7 @@ module Make (Heap : Heap_intf.S) = struct
                     discr
             in
             let block = UllbcAst.BlockId.nth body.body block in
-            exec_block ~crate ~body store state block
+            exec_block ~body store state block
         | SwitchInt (_, options, default) ->
             L.info (fun g ->
                 let options =
@@ -860,32 +841,30 @@ module Make (Heap : Heap_intf.S) = struct
             let* block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in
             let block = UllbcAst.BlockId.nth body.body block in
-            exec_block ~crate ~body store state block)
+            exec_block ~body store state block)
     | Abort kind -> (
         match kind with
         | UndefinedBehavior -> Heap.error `UBAbort state
         | Panic name ->
-            let name = Option.map (name_str crate) name in
+            let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
             Heap.error (`Panic name) state)
 
-  and exec_fun ~crate ~args ~state (fundef : UllbcAst.fun_decl) =
+  and exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
     let* body =
       match body with
-      | None -> Fmt.kstr not_impl "Function %s is opaque" (name_str crate name)
+      | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> return body
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
-        m "Calling %s with [%a]" (name_str crate name)
+        m "Calling %a with [%a]" Crate.pp_name name
           Fmt.(list ~sep:(any ", ") pp_rust_val)
           args);
     let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in
-    let** value, store, state =
-      exec_block ~crate ~body store state starting_block
-    in
+    let** value, store, state = exec_block ~body store state starting_block in
     let protected_address =
       match (fundef.signature.output, value) with
       | TRef (RStatic, _, RShared), Ptr (addr, _) -> Some addr
@@ -895,9 +874,9 @@ module Make (Heap : Heap_intf.S) = struct
     (value, state)
 
   (* re-define this for the export, nowhere else: *)
-  let exec_fun ?(ignore_leaks = false) ~crate ~args ~state fundef =
+  let exec_fun ?(ignore_leaks = false) ~args ~state fundef =
     let** value, state =
-      let+- err = exec_fun ~crate ~args ~state fundef in
+      let+- err = exec_fun ~args ~state fundef in
       Heap.add_to_call_trace err
         (Call_trace.make_element ~loc:fundef.item_meta.span ~msg:"Call trace" ())
     in

@@ -159,23 +159,16 @@ module Make (Sptr : Sptr.S) = struct
     | Tuple _, _ | _, TAdt (TTuple, _) -> illegal_pair ()
     (* Structs *)
     | Struct vals, TAdt (TAdtId t_id, _) ->
-        let type_decl = Session.get_adt t_id in
-        let fields =
-          match type_decl.kind with
-          | Struct fields -> field_tys fields
-          | _ ->
-              Fmt.failwith "Unexpected type declaration in struct value: %a"
-                Types.pp_type_decl type_decl
-        in
+        let fields = field_tys @@ Crate.as_struct t_id in
         chain_cvals (layout_of ty) vals fields
     | Struct _, _ -> illegal_pair ()
     (* Enums *)
     | Enum (disc, vals), TAdt (TAdtId t_id, _) -> (
-        let type_decl = Session.get_adt t_id in
-        match (type_decl.kind, Typed.kind disc) with
+        let variants = Crate.as_enum t_id in
+        match (variants, Typed.kind disc) with
         (* fieldless enums with one option are zero-sized *)
-        | Enum [ { fields = []; _ } ], _ -> []
-        | Enum variants, Int disc_z ->
+        | [ { fields = []; _ } ], _ -> []
+        | variants, Int disc_z ->
             let variant =
               List.find
                 (fun v -> Z.equal disc_z Types.(v.discriminant.value))
@@ -186,17 +179,11 @@ module Make (Sptr : Sptr.S) = struct
             in
             chain_cvals (of_variant variant) (Base disc :: vals)
               (disc_ty :: field_tys variant.fields)
-        | _ ->
-            Fmt.failwith "Unexpected ADT type or discr for enum: %a"
-              Types.pp_type_decl type_decl)
-    | Base value, TAdt (TAdtId t_id, _) when Session.is_enum t_id ->
-        let type_decl = Session.get_adt t_id in
-        let disc_ty =
-          match type_decl.kind with
-          | Enum [] -> failwith "Can't convert discriminant for empty enum"
-          | Enum (v :: _) -> v.discriminant.int_ty
-          | _ -> assert false
-        in
+        | _ -> Fmt.failwith "Unexpected discriminant for enum: %a" pp_ty ty)
+    | Base value, TAdt (TAdtId t_id, _) when Crate.is_enum t_id ->
+        let variants = Crate.as_enum t_id in
+        (* FIXME: this is not correct, this doesn't represent the actual discriminant type. *)
+        let disc_ty = (List.hd variants).discriminant.int_ty in
         [
           { value = Enum (value, []); ty = TLiteral (TInteger disc_ty); offset };
         ]
@@ -210,12 +197,8 @@ module Make (Sptr : Sptr.S) = struct
     | Array _, _ | _, TAdt (TBuiltin TArray, _) -> illegal_pair ()
     (* Unions *)
     | Union (f, v), TAdt (TAdtId id, _) ->
-        let type_decl = Session.get_adt id in
-        let field =
-          match type_decl.kind with
-          | Union fs -> Types.FieldId.nth fs f
-          | _ -> failwith "Unexpected ADT type for union"
-        in
+        let fields = Crate.as_union id in
+        let field = Types.FieldId.nth fields f in
         rust_to_cvals ~offset v field.field_ty
     | Union _, _ -> illegal_pair ()
     (* Rest *)
@@ -296,7 +279,7 @@ module Make (Sptr : Sptr.S) = struct
           let layout = layout_of ty in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
       | TAdt (TAdtId t_id, _) as ty -> (
-          let type_decl = Session.get_adt t_id in
+          let type_decl = Crate.get_adt t_id in
           match type_decl.kind with
           | Struct fields ->
               let layout = layout_of ty in
@@ -309,7 +292,7 @@ module Make (Sptr : Sptr.S) = struct
           | Enum variants -> aux_enum offset variants
           | Union fs -> aux_union offset fs
           | _ ->
-              Fmt.failwith "Unhandled type kind in rust_of_cvals: %a"
+              Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
       | TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) as ty ->
           let layout = layout_of ty in
