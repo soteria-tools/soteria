@@ -50,7 +50,6 @@ module Frontend = struct
   let frontend = ref (fun ~cpp_cmd:_ _ -> failwith "Frontend not set")
 
   let include_libc () =
-    L.trace (fun m -> m "Cerb_runtime is at: %s" (Cerb_runtime.in_runtime ""));
     let root_includes = Cerb_runtime.in_runtime "libc/include" in
     let posix = Filename.concat root_includes "posix" in
     "-I" ^ root_includes ^ " -I" ^ posix

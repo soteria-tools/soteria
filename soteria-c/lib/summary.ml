@@ -184,6 +184,9 @@ let analyse_summary ~prog ~fid (summary : 'err t) =
   in
   if summary.memory_leak then
     let loc = Ail_helpers.find_fun_loc ~prog fid in
-    (`Memory_leak, Call_trace.singleton ~loc:(Option.get loc) ())
+    ( `Memory_leak,
+      Call_trace.singleton
+        ~loc:(Option.value ~default:Cerb_location.unknown loc)
+        () )
     :: manifest_bugs
   else manifest_bugs
