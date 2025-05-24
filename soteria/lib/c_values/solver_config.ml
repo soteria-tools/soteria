@@ -2,6 +2,7 @@ type t = {
   solver_timeout : int option; [@default None]
   dump_smt_file : string option; [@default None]
   z3_path : string; [@default "z3"]
+  hide_response_times : bool; [@default false]
 }
 [@@deriving make]
 
@@ -36,10 +37,22 @@ module Cli = struct
       & opt file_as_absolute default.z3_path
       & info [ "z3-path" ] ~env ~doc)
 
-  let make_from_args z3_path solver_timeout dump_smt_file =
-    make ~z3_path ~solver_timeout ~dump_smt_file ()
+  let hide_response_times_arg =
+    let doc =
+      "Hide the response times in the solver response logs, useful for \
+       reproducible output"
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_HIDE_RESPONSE_TIMES" in
+    Arg.(value & flag & info [ "hide-response-times" ] ~env ~doc)
+
+  let make_from_args z3_path solver_timeout dump_smt_file hide_response_times =
+    make ~z3_path ~solver_timeout ~dump_smt_file ~hide_response_times ()
 
   let term =
     Cmdliner.Term.(
-      const make_from_args $ z3_path_arg $ solver_timeout_arg $ dump_smt_arg)
+      const make_from_args
+      $ z3_path_arg
+      $ solver_timeout_arg
+      $ dump_smt_arg
+      $ hide_response_times_arg)
 end

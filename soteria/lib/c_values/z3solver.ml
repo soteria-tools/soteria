@@ -72,7 +72,7 @@ module Dump = struct
     | Some oc ->
         output_string oc " ; -> ";
         Sexplib.Sexp.output_hum oc response;
-        if elapsed > 0 then (
+        if elapsed > 0 && not !Solver_config.current.hide_response_times then (
           output_string oc " (";
           output_string oc (string_of_int elapsed);
           output_string oc "ms)");
