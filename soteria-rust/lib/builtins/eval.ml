@@ -145,12 +145,12 @@ module M (Heap : Heap_intf.S) = struct
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
 
-  let std_fun_eval ~crate (f : UllbcAst.fun_decl) =
+  let std_fun_eval (f : UllbcAst.fun_decl) =
     let open Std in
     let open Rusteria in
     let open Miri in
     let opt_bind f opt = match opt with None -> f () | x -> x in
-    let ctx = NameMatcher.ctx_from_crate crate in
+    let ctx = Crate.as_namematcher_ctx () in
     let real_name =
       if Charon_util.decl_has_attr f "rustc_intrinsic" then
         Types.
@@ -207,9 +207,8 @@ module M (Heap : Heap_intf.S) = struct
          | _ -> false
        in
        if is_intrinsic then
-         Option.some @@ fun ~crate ~args:_ ~state:_ ->
-         Fmt.kstr not_impl "Unsupported intrinsic: %s"
-           (Charon_util.name_str crate real_name)
+         Option.some @@ fun ~args:_ ~state:_ ->
+         Fmt.kstr not_impl "Unsupported intrinsic: %a" Crate.pp_name real_name
        else None
 
   let builtin_fun_eval (f : Expressions.builtin_fun_id) generics =

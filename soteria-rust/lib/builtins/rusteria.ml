@@ -32,7 +32,7 @@ module M (Heap : Heap_intf.S) = struct
                else str)
     | _ -> None
 
-  let assert_ ~crate:_ ~(args : rust_val list) ~state =
+  let assert_ ~(args : rust_val list) ~state =
     let open Typed.Infix in
     let* to_assert, msg =
       match args with
@@ -46,7 +46,7 @@ module M (Heap : Heap_intf.S) = struct
       Heap.error (`FailedAssert str) state
     else Result.ok (Charon_util.unit_, state)
 
-  let assume ~crate:_ ~args ~state =
+  let assume ~args ~state =
     let* to_assume =
       match args with
       | [ Base t ] -> cast_checked t ~ty:Typed.t_int
@@ -56,12 +56,12 @@ module M (Heap : Heap_intf.S) = struct
     let* () = assume [ Typed.bool_of_int to_assume ] in
     Result.ok (Charon_util.unit_, state)
 
-  let nondet (fun_sig : Charon.UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let nondet (fun_sig : Charon.UllbcAst.fun_sig) ~args:_ ~state =
     let ty = fun_sig.output in
     let* value = Layout.nondet ty in
     Result.ok (value, state)
 
-  let panic ~crate:_ ~args ~state =
+  let panic ~args ~state =
     let* msg =
       match args with
       | [ Ptr msg ] -> return msg
