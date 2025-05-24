@@ -1,22 +1,21 @@
 open Cmdliner
 
+let functions_arg =
+  let doc = "List of functions to analyse" in
+  let docv = "FUNCTION_NAME" in
+  Arg.(value & opt_all string [] & info [ "f" ] ~doc ~docv)
+
 module Config = struct
   open Soteria_c_lib.Config
+  open Soteria_std.Cmdliner_helpers
 
   let auto_include_path_arg =
     let doc = "Path to the directory that contains the soteria-c.h" in
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_AUTO_INCLUDE_PATH" in
     Arg.(
       value
-      & opt dir default.auto_include_path
+      & opt dir_as_absolute default.auto_include_path
       & info [ "auto-include-path" ] ~env ~doc)
-
-  let dump_smt_arg =
-    let doc = "Dump the SMT queries to the given file" in
-    Arg.(
-      value
-      & opt (some string) default.dump_smt_file
-      & info [ "dump-smt-to"; "dump-smt" ] ~docv:"SMT_FILE" ~doc)
 
   let dump_unsupported_arg =
     let doc =
@@ -28,36 +27,41 @@ module Config = struct
       & opt (some string) default.dump_unsupported_file
       & info [ "dump-unsupported" ] ~docv:"FILE" ~doc)
 
-  let solver_timeout_arg =
-    let doc = "Set the solver timeout in miliseconds" in
-    Arg.(
-      value
-      & opt (some int) default.solver_timeout
-      & info [ "solver-timeout" ] ~doc ~docv:"TIMEOUT")
+  let no_ignore_parse_failures_arg =
+    let doc =
+      "Files that cannot be parsed correctly are ignored by default, this flag \
+       deactivates that behaviour."
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_IGNORE_PARSE_FAILURES" in
+    Arg.(value & flag & info [ "no-ignore-parse-failures" ] ~env ~doc)
 
-  let z3_path_arg =
-    let doc = "Path to the Z3 executable" in
-    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_Z3_PATH" in
-    Arg.(value & opt string default.z3_path & info [ "z3-path" ] ~env ~doc)
+  let no_ignore_duplicate_symbols_arg =
+    let doc =
+      "Programs that contain duplicate symbols are ignored by default, this \
+       flag deactivates that behaviour."
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_IGNORE_DUPLICATE_SYMBOLS" in
+    Arg.(value & flag & info [ "no-ignore-duplicate-symbols" ] ~env ~doc)
 
-  let make_from_args auto_include_path dump_smt_file dump_unsupported_file
-      solver_timeout z3_path =
-    make ~auto_include_path ~dump_smt_file ~dump_unsupported_file
-      ~solver_timeout ~z3_path ()
+  let parse_only_arg =
+    let doc = "Only parse and link the C program, do not perform analysis" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_PARSE_ONLY" in
+    Arg.(value & flag & info [ "parse-only" ] ~env ~doc)
+
+  let make_from_args auto_include_path dump_unsupported_file
+      no_ignore_parse_failures no_ignore_duplicate_symbols parse_only =
+    make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
+      ~no_ignore_duplicate_symbols ~parse_only ()
 
   let term =
     Cmdliner.Term.(
       const make_from_args
       $ auto_include_path_arg
-      $ dump_smt_arg
       $ dump_unsupported_arg
-      $ solver_timeout_arg
-      $ z3_path_arg)
+      $ no_ignore_parse_failures_arg
+      $ no_ignore_duplicate_symbols_arg
+      $ parse_only_arg)
 end
-
-let file_arg =
-  let doc = "FILE" in
-  Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
 let files_arg =
   let doc = "FILES" in
@@ -76,6 +80,7 @@ module Exec_main = struct
     Term.(
       const Soteria_c_lib.Driver.exec_main_and_print
       $ Soteria_logs.Cli.term
+      $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ includes_arg
       $ files_arg)
@@ -84,43 +89,23 @@ module Exec_main = struct
 end
 
 module Lsp = struct
-  let lsp show_version =
-    if show_version then print_endline "dev" else Soteria_c_lib.Driver.lsp ()
+  let lsp config show_version =
+    if show_version then print_endline "dev"
+    else Soteria_c_lib.Driver.lsp config ()
 
-  let term = Term.(const lsp $ version_arg)
+  let term = Term.(const lsp $ Config.term $ version_arg)
   let cmd = Cmd.v (Cmd.info "lsp") term
 end
 
 module Show_ail = struct
   let term =
-    Term.(const Soteria_c_lib.Driver.show_ail $ includes_arg $ files_arg)
+    Term.(
+      const Soteria_c_lib.Driver.show_ail
+      $ Soteria_logs.Cli.term
+      $ includes_arg
+      $ files_arg)
 
   let cmd = Cmd.v (Cmd.info "show-ail") term
-end
-
-module Bi_main = struct
-  let term = Term.(const Soteria_c_lib.Driver.generate_main_summary $ file_arg)
-  let cmd = Cmd.v (Cmd.info "bi-main") term
-end
-
-module Generate_summary = struct
-  let fun_name_arg =
-    let doc = "FUNCTION" in
-    Arg.(
-      required
-      & opt (some string) None
-      & info [ "f"; "fn"; "function" ] ~docv:"FUNCTION" ~doc)
-
-  let term =
-    Term.(
-      const Soteria_c_lib.Driver.generate_summary_for
-      $ Soteria_logs.Cli.term
-      $ Config.term
-      $ includes_arg
-      $ files_arg
-      $ fun_name_arg)
-
-  let cmd = Cmd.v (Cmd.info "gen-summary") term
 end
 
 module Generate_summaries = struct
@@ -128,11 +113,31 @@ module Generate_summaries = struct
     Term.(
       const Soteria_c_lib.Driver.generate_all_summaries
       $ Soteria_logs.Cli.term
+      $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ includes_arg
+      $ functions_arg
       $ files_arg)
 
   let cmd = Cmd.v (Cmd.info "gen-summaries") term
+end
+
+module Capture_db = struct
+  let compilation_db_arg =
+    let doc = "JSON file following the Clang compilation database format" in
+    let docv = "COMPILE_COMMANDS.JSON" in
+    Arg.(required & pos 0 (some file) None & info [] ~doc ~docv)
+
+  let term =
+    Term.(
+      const Soteria_c_lib.Driver.capture_db
+      $ Soteria_logs.Cli.term
+      $ Soteria_c_values.Solver_config.Cli.term
+      $ Config.term
+      $ compilation_db_arg
+      $ functions_arg)
+
+  let cmd = Cmd.v (Cmd.info "capture-db") term
 end
 
 let cmd =
@@ -141,9 +146,8 @@ let cmd =
       Exec_main.cmd;
       Lsp.cmd;
       Show_ail.cmd;
-      Bi_main.cmd;
-      Generate_summary.cmd;
       Generate_summaries.cmd;
+      Capture_db.cmd;
     ]
 
 let () = exit @@ Cmd.eval cmd

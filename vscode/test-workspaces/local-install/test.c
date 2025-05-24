@@ -1,5 +1,5 @@
-void *malloc(__cerbty_size_t);
-void free(void *);
+#include <stdlib.h>
+
 
 int load(int *x)
 {

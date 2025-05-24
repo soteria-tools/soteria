@@ -1,0 +1,20 @@
+[
+  {
+    "directory": ".",
+    "command": "cc -Iincludes1 -c file1.c -o file1.c.o",
+    "file": "file1.c",
+    "output": "file1.c.o"
+  },
+  {
+    "directory": ".",
+    "command": "cc -Iincludes2 -c file2.c -o file2.c.o",
+    "file": "file2.c",
+    "output": "file2.c.o"
+  },
+  {
+    "directory": ".",
+    "command": "cc -I. -c file3.c -o file3.c.o",
+    "file": "file3.c",
+    "output": "file3.c.o"
+  }
+]

@@ -1,6 +1,6 @@
-  $ soteria-c gen-summaries load.c
+  $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for f_484:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 Eq V|0|)];
+    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 == V|0|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(load.c:3:10-12 (cursor: 3:10),
@@ -12,7 +12,7 @@
       [{ heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
          globs = [] }
         ];
-      pc = [(V|3| Leq 2147483647); (-2147483648 Leq V|3|); Not((0 Eq V|0|))];
+      pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|0|)];
       post =
       { heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
         globs = [] };
@@ -20,9 +20,9 @@
       manifest bugs: []
   
 
-  $ soteria-c gen-summaries manifest.c
+  $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for load_486:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 Eq V|0|)];
+    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 == V|0|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(manifest.c:6:10-12 (cursor: 6:10),
@@ -34,7 +34,7 @@
       [{ heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
          globs = [] }
         ];
-      pc = [(V|3| Leq 2147483647); (-2147483648 Leq V|3|); Not((0 Eq V|0|))];
+      pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|0|)];
       post =
       { heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
         globs = [] };
@@ -111,11 +111,11 @@
   
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
-  $ soteria-c gen-summaries if_sat_one_ok.c
+  $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for test_485:
     { args = [V|0|; &(V|1|, V|2|)]; pre = [];
       pc =
-      [(0 Eq V|1|); (0 Lt V|0|); (V|0| Leq 2147483647); (-2147483648 Leq V|0|)];
+      [(0 == V|1|); (0 < V|0|); (V|0| <= 0x7fffffff); (-0x80000000 <= V|0|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(if_sat_one_ok.c:6:12-14 (cursor: 6:12),
@@ -128,15 +128,15 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
          globs = [] }
         ];
       pc =
-      [(V|5| Leq 2147483647); (-2147483648 Leq V|5|); Not((0 Eq V|1|));
-        (0 Lt V|0|); (V|0| Leq 2147483647); (-2147483648 Leq V|0|)];
+      [(V|5| <= 0x7fffffff); (-0x80000000 <= V|5|); (0 != V|1|); (0 < V|0|);
+        (V|0| <= 0x7fffffff); (-0x80000000 <= V|0|)];
       post =
       { heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|5|}])];
         globs = [] };
       ret = (Ok V|5|); memory_leak = false }
       manifest bugs: []
     { args = [V|0|; &(V|1|, V|2|)]; pre = [];
-      pc = [Not((0 Lt V|0|)); (V|0| Leq 2147483647); (-2147483648 Leq V|0|)];
+      pc = [(V|0| <= 0); (V|0| <= 0x7fffffff); (-0x80000000 <= V|0|)];
       post = { heap = []; globs = [] }; ret = (Ok 0); memory_leak = false }
       manifest bugs: []
   

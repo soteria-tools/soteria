@@ -2,9 +2,7 @@ module CF = Cerb_frontend
 open CF.Ctype
 open Typed.Syntax
 
-module Archi = struct
-  let word_size = 8
-end
+type bv_info = { bv_size : int; signed : bool }
 
 type layout = {
   size : int;
@@ -164,6 +162,25 @@ let member_ofs id ty =
   | None ->
       Fmt.kstr Csymex.not_impl "Cannot yet compute layout of type %a"
         Fmt_ail.pp_ty ty
+
+let int_bv_info (int_ty : integerType) =
+  let open Syntaxes.Option in
+  let int_ty = normalise_int_ty int_ty in
+  match int_ty with
+  | Char | Bool -> Some { bv_size = 8; signed = false }
+  | Signed _ ->
+      let+ size = size_of_int_ty int_ty in
+      { bv_size = size * 8; signed = true }
+  | Unsigned _ ->
+      let+ size = size_of_int_ty int_ty in
+      { bv_size = size * 8; signed = false }
+  | _ ->
+      L.debug (fun m ->
+          m "Did not derive bv_info for %a" Fmt_ail.pp_int_ty int_ty);
+      None
+
+let bv_info (ty : ctype) =
+  match proj_ctype_ ty with Basic (Integer ity) -> int_bv_info ity | _ -> None
 
 let int_constraints (int_ty : integerType) =
   let open Typed.Infix in
