@@ -265,15 +265,16 @@ let generate_errors content =
 (** {2 Entry points} *)
 
 (* Helper for all main entry points *)
-let initialise log_config config =
+let initialise log_config solver_config config =
   Soteria_logs.Config.(check_set_and_lock log_config);
+  Solver_config.set solver_config;
   Config.set config;
   Initialize_analysis.init_once ()
 
 (* Entry point function *)
-let exec_main_and_print log_config config includes file_names =
+let exec_main_and_print log_config solver_config config includes file_names =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
-  initialise log_config config;
+  initialise log_config solver_config config;
   let result = exec_main ~includes file_names in
   if not !Config.current.parse_only then
     let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
@@ -355,11 +356,11 @@ let show_ail logs_config (includes : string list) (files : string list) =
   | Error err -> Fmt.pr "%a@." pp_err err
 
 (* Entry point function *)
-let generate_all_summaries log_config config includes functions_to_analyse
-    file_names =
+let generate_all_summaries log_config solver_config config includes
+    functions_to_analyse file_names =
   (* TODO: generate a compilation database directly, to simplify the interface in this file. *)
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  initialise log_config config;
+  initialise log_config solver_config config;
   let prog =
     let@ () = Soteria_logs.Logs.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
@@ -371,10 +372,10 @@ let generate_all_summaries log_config config includes functions_to_analyse
     generate_summaries ~functions_to_analyse prog
 
 (* Entry point function *)
-let capture_db log_config config json_file functions_to_analyse =
+let capture_db log_config solver_config config json_file functions_to_analyse =
   let open Syntaxes.Result in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  initialise log_config config;
+  initialise log_config solver_config config;
   let linked_prog =
     let@ () =
       Soteria_logs.Logs.with_section "Parsing and Linking from database"

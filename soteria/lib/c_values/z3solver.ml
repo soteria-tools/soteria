@@ -1,16 +1,11 @@
-open Syntaxes.FunctionWrap
 module Value = Typed
 module Var = Svalue.Var
-open Soteria_logs.Logs
+module L = Soteria_logs.Logs.L
 
-let debug_str ~prefix s = L.smt (fun m -> m "%s %s" prefix s)
+let debug_str ~prefix s = L.smt (fun m -> m "%s: %s" prefix s)
 
 open Simple_smt
-
-let int_of_bv signed bv =
-  if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
-
-let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
+open Z3utils
 
 let smallest_power_of_two_greater_than n =
   let f n =
@@ -28,8 +23,8 @@ let smallest_power_of_two_greater_than n =
 
 let solver_log =
   {
-    send = debug_str ~prefix:"->";
-    receive = debug_str ~prefix:"<-";
+    send = debug_str ~prefix:"-> ";
+    receive = debug_str ~prefix:"<- ";
     stop = Fun.id;
   }
 
@@ -52,7 +47,7 @@ module Dump = struct
 
   let channel () =
     (* We only open if current file is not None and its different from current config *)
-    match (!Config.current.dump_smt_file, !current_channel) with
+    match (!Solver_config.current.dump_smt_file, !current_channel) with
     | None, None -> None
     | Some f, None -> open_channel f
     | Some f, Some (oc, f') ->
@@ -69,18 +64,34 @@ module Dump = struct
     | None -> ()
     | Some oc ->
         Sexplib.Sexp.output_hum oc sexp;
+        flush oc
+
+  let log_response response elapsed =
+    match channel () with
+    | None -> ()
+    | Some oc ->
+        output_string oc " ; -> ";
+        Sexplib.Sexp.output_hum oc response;
+        if elapsed > 0 && not !Solver_config.current.hide_response_times then (
+          output_string oc " (";
+          output_string oc (string_of_int elapsed);
+          output_string oc "ms)");
         output_char oc '\n';
         flush oc
 end
 
 let solver_config () =
-  { z3 with log = solver_log; exe = !Config.current.z3_path }
+  { z3 with log = solver_log; exe = !Solver_config.current.z3_path }
 
 let z3_solver () =
   let solver = new_solver (solver_config ()) in
   let command sexp =
     Dump.log_sexp sexp;
-    solver.command sexp
+    let now = Unix.gettimeofday () in
+    let res = solver.command sexp in
+    let elapsed = Int.of_float ((Unix.gettimeofday () -. now) *. 1000.) in
+    Dump.log_response res elapsed;
+    res
   in
   { solver with command }
 
@@ -138,11 +149,6 @@ module Solver_state = struct
 
   let mem (t : t) v =
     Dynarray.exists (fun d -> Dynarray.exists (Typed.equal v) d) t
-
-  let pp : t Fmt.t =
-    let open Fmt in
-    let pp_inner = brackets @@ hbox @@ iter ~sep:semi Dynarray.iter Typed.ppa in
-    iter ~sep:comma Dynarray.iter pp_inner
 end
 
 type t = {
@@ -164,7 +170,7 @@ let register_solver_init f =
 
 let () =
   register_solver_init (fun solver ->
-      match !Config.current.solver_timeout with
+      match !Solver_config.current.solver_timeout with
       | None -> ()
       | Some timeout ->
           ack_command solver (set_option ":timeout" (string_of_int timeout)))
@@ -172,7 +178,6 @@ let () =
 let init () =
   let z3_solver = z3_solver () in
   !initialize_solver z3_solver;
-  (* Register the initialisation of the solver so that we never backtrack beyond *)
   ack_command z3_solver (Simple_smt.push 1);
   {
     z3_solver;
@@ -253,8 +258,13 @@ let rec sort_of_ty = function
   | Svalue.TBool -> Simple_smt.t_bool
   | TInt -> Simple_smt.t_int
   | TLoc -> Simple_smt.t_int
+  | TFloat F16 -> t_f16
+  | TFloat F32 -> t_f32
+  | TFloat F64 -> t_f64
+  | TFloat F128 -> t_f128
   | TSeq ty -> t_seq $ sort_of_ty ty
   | TPointer -> t_ptr
+  | TBitVector n -> t_bits n
 
 let declare_v v_id ty =
   let v = Svalue.Var.to_string v_id in
@@ -274,39 +284,83 @@ let rec encode_value (v : Svalue.t) =
   match v.node.kind with
   | Var v -> atom (Svalue.Var.to_string v)
   | Int z -> int_zk z
+  | Float f -> (
+      match v.node.ty with
+      | TFloat F16 -> f16_k @@ Float.of_string f
+      | TFloat F32 -> f32_k @@ Float.of_string f
+      | TFloat F64 -> f64_k @@ Float.of_string f
+      | TFloat F128 -> f128_k @@ Float.of_string f
+      | _ -> failwith "Non-float type given")
   | Bool b -> bool_k b
+  | BitVec z ->
+      let n =
+        match v.node.ty with
+        | TBitVector n -> n
+        | _ -> failwith "Non-bitvector type given"
+      in
+      bv_k n z
   | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
   | Seq vs -> (
       match vs with
       | [] -> failwith "need type to encode empty lists"
       | _ :: _ ->
           List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat)
-  | Unop (unop, v) -> (
-      let v = encode_value_memo v in
+  | Ite (c, t, e) ->
+      ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
+  | Unop (unop, v1_) -> (
+      let v1 = encode_value_memo v1_ in
       match unop with
-      | Not -> bool_not v
-      | GetPtrLoc -> get_loc v
-      | GetPtrOfs -> get_ofs v
-      | IntOfBool -> ite v (int_k 1) (int_k 0))
+      | Not -> bool_not v1
+      | GetPtrLoc -> get_loc v1
+      | GetPtrOfs -> get_ofs v1
+      | IntOfBool -> ite v1 (int_k 1) (int_k 0)
+      | BvOfInt ->
+          let size =
+            match v.node.ty with
+            | TBitVector n -> n
+            | _ -> failwith "Non-bitvector type given"
+          in
+          bv_of_int size v1
+      | IntOfBv signed -> int_of_bv signed v1
+      | BvOfFloat -> (
+          match v1_.node.ty with
+          | TFloat F16 -> bv_of_f16 v1
+          | TFloat F32 -> bv_of_f32 v1
+          | TFloat F64 -> bv_of_f64 v1
+          | TFloat F128 -> bv_of_f128 v1
+          | _ -> failwith "Non-float type given")
+      | FloatOfBv -> (
+          match v.node.ty with
+          | TFloat F16 -> f16_of_bv v1
+          | TFloat F32 -> f32_of_bv v1
+          | TFloat F64 -> f64_of_bv v1
+          | TFloat F128 -> f128_of_bv v1
+          | _ -> failwith "Non-float type given")
+      | BvExtract (from_, to_) -> bv_extract to_ from_ v1)
   | Binop (binop, v1, v2) -> (
+      let ty = v1.node.ty in
       let v1 = encode_value_memo v1 in
       let v2 = encode_value_memo v2 in
       match binop with
       | Eq -> eq v1 v2
-      | Leq -> num_leq v1 v2
-      | Lt -> num_lt v1 v2
+      | Leq -> (if Svalue.is_float ty then fp_leq else num_leq) v1 v2
+      | Lt -> (if Svalue.is_float ty then fp_lt else num_lt) v1 v2
       | And -> bool_and v1 v2
       | Or -> bool_or v1 v2
-      | Plus -> num_add v1 v2
-      | Minus -> num_sub v1 v2
-      | Times -> num_mul v1 v2
-      | Div -> num_div v1 v2
-      | Mod -> num_mod v1 v2
-      | BitAnd ->
-          let bv_size = 64 in
-          (* FIXME: Properly handle signedness and sizes for bitvectors *)
-          int_of_bv false (bv_and (bv_of_int bv_size v1) (bv_of_int bv_size v2))
-      )
+      | Plus -> (if Svalue.is_float ty then fp_add else num_add) v1 v2
+      | Minus -> (if Svalue.is_float ty then fp_sub else num_sub) v1 v2
+      | Times -> (if Svalue.is_float ty then fp_mul else num_mul) v1 v2
+      | Div -> (if Svalue.is_float ty then fp_div else num_div) v1 v2
+      | Rem -> (if Svalue.is_float ty then fp_rem else num_rem) v1 v2
+      | Mod ->
+          if Svalue.is_float ty then
+            failwith "mod not implemented for floating points"
+          else num_mod v1 v2
+      | BitAnd -> bv_and v1 v2
+      | BitOr -> bv_or v1 v2
+      | BitXor -> bv_xor v1 v2
+      | BitShl -> bv_shl v1 v2
+      | BitShr -> bv_ashr v1 v2)
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in
       distinct vs
@@ -331,7 +385,8 @@ let rec simplify' solver (v : Svalue.t) : Svalue.t =
       let e' = simplify' solver e in
       if Svalue.equal e e' then v else Svalue.not e'
   | Binop (Eq, e1, e2) ->
-      if Svalue.equal e1 e2 then Svalue.v_true
+      if Svalue.equal e1 e2 && (not @@ Svalue.is_float e1.node.ty) then
+        Svalue.v_true
       else if Svalue.sure_neq e1 e2 then Svalue.v_false
       else v
   | Binop (Or, e1, e2) ->
@@ -350,34 +405,19 @@ let is_diff_op (v : Svalue.t) =
   | _ -> None
 
 let add_constraints solver ?(simplified = false) vs =
-  L.smt (fun m ->
-      m
-        "@[<v>@[<v 2>Adding constraints:@ %a@]@ @[<hov 2>to solver state:@ \
-         %a@]@]"
-        (Fmt.Dump.list Typed.ppa) vs Solver_state.pp solver.state);
-  (* We need to check if the constraint is already in the solver state *)
   let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
   iter @@ fun v ->
   let v = if simplified then v else simplify solver v in
-  if not (Value.equal v Typed.v_true) then (
-    Solver_state.add_constraint solver.state v;
-    ack_command solver.z3_solver @@ assume @@ encode_value @@ Typed.untyped v)
-  else L.smt (fun m -> m "Asserted true")
+  Solver_state.add_constraint solver.state v;
+  ack_command solver.z3_solver @@ assume @@ encode_value @@ Typed.untyped v
 
 let as_bool = Typed.as_bool
 
 (* Incremental doesn't allow for caching queries... *)
 let sat solver =
-  let@ () = Soteria_logs.Logs.with_section "Checking sat" in
-  L.smt (fun m ->
-      m "@[<2>Current solver state is:@ %a@]" Solver_state.pp solver.state);
   match Solver_state.trivial_truthiness solver.state with
-  | Some true ->
-      L.smt (fun m -> m "Trivially true");
-      Soteria_symex.Solver.Sat
-  | Some false ->
-      L.smt (fun m -> m "Trivially false");
-      Unsat
+  | Some true -> Soteria_symex.Solver.Sat
+  | Some false -> Unsat
   | None -> (
       let answer =
         try check solver.z3_solver
@@ -386,8 +426,6 @@ let sat solver =
               m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
           Unknown
       in
-      L.smt (fun m ->
-          m "@[<v 2>Solver response:@ %a@]" Simple_smt.pp_result answer);
       match answer with
       | Sat -> Sat
       | Unsat -> Unsat

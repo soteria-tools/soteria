@@ -277,11 +277,14 @@ module Make (State : State_intf.S) = struct
             arith_sub ~state v1 v2
         | None, Some _ -> State.error `UBPointerArithmetic state
         | Some _, Some _ | None, None -> arith_sub ~state v1 v2)
-    (* FIXME: This is unsound, we don't properly handle signing! *)
     | Band ->
+        (* TODO: is it guaranteed that both have the same type? *)
+        let* { bv_size; signed } =
+          Layout.bv_info t1 |> of_opt_not_impl ~msg:"bv_info"
+        in
         let* v1 = cast_to_int v1 in
         let* v2 = cast_to_int v2 in
-        Result.ok (v1 &@ v2, state)
+        Result.ok (Typed.bit_and ~size:bv_size ~signed v1 v2, state)
     | _ ->
         Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
           Fmt_ail.pp_arithop a_op

@@ -17,13 +17,6 @@ module Config = struct
       & opt dir_as_absolute default.auto_include_path
       & info [ "auto-include-path" ] ~env ~doc)
 
-  let dump_smt_arg =
-    let doc = "Dump the SMT queries to the given file" in
-    Arg.(
-      value
-      & opt (some string) default.dump_smt_file
-      & info [ "dump-smt-to"; "dump-smt" ] ~docv:"SMT_FILE" ~doc)
-
   let dump_unsupported_arg =
     let doc =
       "Dump a json file with unsupported features and their number of \
@@ -33,22 +26,6 @@ module Config = struct
       value
       & opt (some string) default.dump_unsupported_file
       & info [ "dump-unsupported" ] ~docv:"FILE" ~doc)
-
-  let solver_timeout_arg =
-    let doc = "Set the solver timeout in miliseconds" in
-    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_SOLVER_TIMEOUT" in
-    Arg.(
-      value
-      & opt (some int) default.solver_timeout
-      & info [ "solver-timeout" ] ~doc ~docv:"TIMEOUT" ~env)
-
-  let z3_path_arg =
-    let doc = "Path to the Z3 executable" in
-    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_Z3_PATH" in
-    Arg.(
-      value
-      & opt file_as_absolute default.z3_path
-      & info [ "z3-path" ] ~env ~doc)
 
   let no_ignore_parse_failures_arg =
     let doc =
@@ -71,21 +48,16 @@ module Config = struct
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_PARSE_ONLY" in
     Arg.(value & flag & info [ "parse-only" ] ~env ~doc)
 
-  let make_from_args auto_include_path dump_smt_file dump_unsupported_file
-      solver_timeout z3_path no_ignore_parse_failures
-      no_ignore_duplicate_symbols parse_only =
-    make ~auto_include_path ~dump_smt_file ~dump_unsupported_file
-      ~solver_timeout ~z3_path ~no_ignore_parse_failures
+  let make_from_args auto_include_path dump_unsupported_file
+      no_ignore_parse_failures no_ignore_duplicate_symbols parse_only =
+    make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
       ~no_ignore_duplicate_symbols ~parse_only ()
 
   let term =
     Cmdliner.Term.(
       const make_from_args
       $ auto_include_path_arg
-      $ dump_smt_arg
       $ dump_unsupported_arg
-      $ solver_timeout_arg
-      $ z3_path_arg
       $ no_ignore_parse_failures_arg
       $ no_ignore_duplicate_symbols_arg
       $ parse_only_arg)
@@ -108,6 +80,7 @@ module Exec_main = struct
     Term.(
       const Soteria_c_lib.Driver.exec_main_and_print
       $ Soteria_logs.Cli.term
+      $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ includes_arg
       $ files_arg)
@@ -140,6 +113,7 @@ module Generate_summaries = struct
     Term.(
       const Soteria_c_lib.Driver.generate_all_summaries
       $ Soteria_logs.Cli.term
+      $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ includes_arg
       $ functions_arg
@@ -158,6 +132,7 @@ module Capture_db = struct
     Term.(
       const Soteria_c_lib.Driver.capture_db
       $ Soteria_logs.Cli.term
+      $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ compilation_db_arg
       $ functions_arg)
