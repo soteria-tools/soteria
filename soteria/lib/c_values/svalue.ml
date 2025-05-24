@@ -53,6 +53,7 @@ module Unop = struct
 
   type t =
     | Not
+    | Abs
     | GetPtrLoc
     | GetPtrOfs
     | IntOfBool
@@ -66,6 +67,7 @@ module Unop = struct
 
   let pp ft = function
     | Not -> Fmt.string ft "!"
+    | Abs -> Fmt.string ft "abs"
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
     | IntOfBool -> Fmt.string ft "b2i"
@@ -605,15 +607,7 @@ let minus v1 v2 =
 let neg v =
   match (v.node.ty, v.node.kind) with
   | TInt, Int i -> int_z (Z.neg i)
-  | TFloat fp, _ ->
-      (* we just flip the bit of the sign *)
-      let bits = FloatPrecision.size fp in
-      let mask = int_z @@ Z.shift_left Z.one (bits - 1) in
-      let mask_bv = bv_of_int bits mask in
-      let float_bv = bv_of_float v in
-      (* make the BitOr directly since bit_or converts to an int *)
-      let bit_or = mk_commut_binop BitXor mask_bv float_bv <| mask_bv.node.ty in
-      float_of_bv bit_or
+  | TFloat fp, _ -> minus (float fp "0.0") v
   | _ -> minus zero v
 
 let times v1 v2 =
@@ -699,17 +693,9 @@ let bit_shr ~size ~signed v1 v2 =
       int_of_bv signed v
 
 let abs v =
-  match (v.node.ty, v.node.kind) with
-  | TInt, Int i -> int_z (Z.abs i)
-  | TFloat fp, _ ->
-      (* we just set the bit of the sign to 0 *)
-      let bits = FloatPrecision.size fp in
-      let mask = int_z @@ Z.pred @@ Z.shift_left Z.one (bits - 1) in
-      let mask_bv = bv_of_int bits mask in
-      let float_bv = bv_of_float v in
-      let bit_and = raw_bit_and bits mask_bv float_bv in
-      float_of_bv bit_and
-  | _ -> ite (lt v zero) (minus zero v) v
+  match v.node.kind with
+  | Int i -> int_z (Z.abs i)
+  | _ -> Unop (Abs, v) <| v.node.ty
 
 let div v1 v2 =
   match (v1.node.kind, v2.node.kind) with

@@ -311,6 +311,11 @@ let rec encode_value (v : Svalue.t) =
       let v1 = encode_value_memo v1_ in
       match unop with
       | Not -> bool_not v1
+      | Abs -> (
+          match v1_.node.ty with
+          | TInt -> num_abs v1
+          | TFloat _ -> fp_abs v1
+          | _ -> failwith "Non-numeric type given")
       | GetPtrLoc -> get_loc v1
       | GetPtrOfs -> get_ofs v1
       | IntOfBool -> ite v1 (int_k 1) (int_k 0)
