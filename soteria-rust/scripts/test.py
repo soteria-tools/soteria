@@ -13,7 +13,7 @@ from common import *
 from parselog import *
 
 
-KANI_PATH = PWD / ".." / ".." / ".." / "kani" / "tests" / "kani"
+KANI_PATH = (PWD / ".." / ".." / ".." / "kani" / "tests" / "kani").resolve()
 KANI_EXCLUSIONS = [
     "/Stubbing/",
     "/SIMD/",
@@ -24,7 +24,7 @@ KANI_EXCLUSIONS = [
     "/DynTrait/",
 ]
 
-MIRI_PATH = PWD / ".." / ".." / ".." / "miri" / "tests"
+MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
 MIRI_EXCLUSIONS = [
     "/ui.rs",
     "/fail-dep/",
@@ -57,7 +57,7 @@ def exec_test(
         args = [*args, *dyn_flags(file)]
 
     pprint(f"Running {relative} ... ", inc=True, end="", flush=True)
-    log.write(f"Running {relative} - {datetime.datetime.now()}:\n")
+    log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
 
     before = time.time()
     cmd = f"soteria-rust exec-main {' '.join(args)} {file}"
@@ -84,7 +84,8 @@ def exec_test(
     return outcome
 
 
-def exec_tests(tests, *, log: Path, **kwargs):
+def exec_tests(tests: list[Path], *, log: Path, **kwargs):
+    pprint(f"{BOLD}Building Rusteria{RESET}", inc=True)
     build_rusteria()
     flags = parse_flags()
 
@@ -100,7 +101,7 @@ def exec_tests(tests, *, log: Path, **kwargs):
     tests.sort()
     log.touch()
     log.write_text(f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n")
-    pprint(f"Running {len(tests)} tests", inc=True)
+    pprint(f"{BOLD}Running {len(tests)} tests{RESET}", inc=True)
 
     oks = 0
     errs = 0

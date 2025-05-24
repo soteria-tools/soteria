@@ -183,11 +183,11 @@ def analyse(file: str) -> LogInfo:
         content = open(file, "r").read()
     except FileNotFoundError:
         exit(f"File not found: {file}")
-    tests = content.split("\nRunning /")
+    tests = content.split("[TEST] Running ")[1:]
     print(f"• Found {len(tests)} tests in {file}")
     tests[0] = tests[0].replace("Running ", "")
     for test in tests:
-        file_path = re.search(r"(.+)\n", test)
+        file_path = re.search(r"(.+) - .*\n", test)
         if not file_path:
             exit(f"No file found in {test}")
         file_path = file_path.group(1)
