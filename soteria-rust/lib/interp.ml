@@ -769,7 +769,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** args, state = eval_operand_list ~store state args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
-              Fmt.(list ~sep:comma pp_rust_val)
+              Fmt.(list ~sep:(any ", ") pp_rust_val)
               args);
         let** v, state =
           let+- err = exec_fun ~args ~state in
