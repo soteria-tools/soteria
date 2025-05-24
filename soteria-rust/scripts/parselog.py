@@ -124,13 +124,13 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if "Fatal: Exn: Failure" in test:
         cause = re.search(r"Fatal: Exn: Failure\(\"(.+)\"\)", test)
         if not cause:
-            exit(f"No cause found for fatal exn in {test}")
+            return ("Raised exception", RED, None)
         return ("Raised exception", RED, cause.group(1))
 
     if "Fatal: Exn" in test:
         cause = re.search(r"Fatal: Exn: (.+)", test)
         if not cause:
-            exit(f"No cause found for fatal exn in {test}")
+            return ("Raised exception", RED, None)
         return ("Raised exception", RED, cause.group(1))
 
     if "Fatal: Execution vanished" in test:
