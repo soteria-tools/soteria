@@ -162,7 +162,7 @@ let rec pp ft t =
   | Int z when Z.(z > of_int 2048 || z < of_int (-2048)) ->
       pf ft "%s" (Z.format "%#x" z)
   | Int z -> pf ft "%a" Z.pp_print z
-  | Float f -> pf ft "%s" f
+  | Float f -> pf ft "%sf" f
   | BitVec bv -> pf ft "%s" (Z.format "%#x" bv)
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
@@ -706,7 +706,7 @@ let div v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.div i1 i2)
-  | _ -> Binop (Div, v1, v2) <| TInt
+  | _ -> Binop (Div, v1, v2) <| v1.node.ty
 
 let rec is_mod v n =
   match v.node.kind with
