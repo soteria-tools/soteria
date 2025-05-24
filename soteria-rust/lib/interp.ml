@@ -231,8 +231,7 @@ module Make (Heap : Heap_intf.S) = struct
         let from = as_base_of ~ty:Typed.t_int from in
         let to_ = as_base_of ~ty:Typed.t_int to_ in
         let to_ = if from_end then len -@ to_ else to_ in
-        if%sat 0s <=@ from &&@ (from <@ len) &&@ (from <=@ to_) &&@ (to_ <=@ len)
-        then (
+        if%sat 0s <=@ from &&@ (from <=@ to_) &&@ (to_ <=@ len) then (
           let ptr' = Sptr.offset ~ty ptr from in
           let slice_len = to_ -@ from in
           L.debug (fun f ->

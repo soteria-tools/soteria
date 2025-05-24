@@ -126,60 +126,56 @@ module M (Heap : Heap_intf.S) = struct
     in
     (* TODO: take into account idx.mutability *)
     let idx = as_base_of ~ty:Typed.t_int (List.nth args 1) in
-    if%sat 0s <=@ idx &&@ (idx <@ size) then
-      let ty = List.hd gen_args.types in
-      let ptr' = Sptr.offset ~ty ptr idx in
-      if not idx_op.is_range then Result.ok (Ptr (ptr', None), state)
-      else
-        let range_end = as_base_of ~ty:Typed.t_int (List.nth args 2) in
-        (* range_end is exclusive *)
-        if%sat idx <=@ range_end &&@ (range_end <=@ size) then
-          let size = range_end -@ idx in
-          Result.ok (Ptr (ptr', Some size), state)
-        else
-          (* not sure this is the right diagnostic *)
-          Heap.error `OutOfBounds state
-    else Heap.error `OutOfBounds state
+    let ty = List.hd gen_args.types in
+    let ptr' = Sptr.offset ~ty ptr idx in
+    if not idx_op.is_range then
+      if%sat 0s <=@ idx &&@ (idx <@ size) then
+        Result.ok (Ptr (ptr', None), state)
+      else Heap.error `OutOfBounds state
+    else
+      let range_end = as_base_of ~ty:Typed.t_int (List.nth args 2) in
+      if%sat 0s <=@ idx &&@ (idx <=@ range_end) &&@ (range_end <=@ size) then
+        let size = range_end -@ idx in
+        Result.ok (Ptr (ptr', Some size), state)
+      else Heap.error `OutOfBounds state
 
   (* Some array accesses are ran on functions, so we handle those here and redirect them.
      Eventually, it would be good to maybe make a Charon pass that gets rid of these before. *)
   let array_index_fn (fun_sig : UllbcAst.fun_sig) ~args ~state =
-    let mode, gargs, range_ty_id =
-      match fun_sig.inputs with
+    let ptr, range, mode, gargs, range_id =
+      match (args, fun_sig.inputs) with
       (* Unfortunate, but right now i don't have a better way to handle this... *)
-      | [
-       TRef (_, TAdt (TBuiltin ((TArray | TSlice) as mode), gargs), _);
-       TAdt (TAdtId range_ty_id, _);
-      ] ->
-          (mode, gargs, range_ty_id)
+      | ( [ ptr; Struct range ],
+          [
+            TRef (_, TAdt (TBuiltin ((TArray | TSlice) as mode), gargs), _);
+            TAdt (TAdtId range_id, _);
+          ] ) ->
+          (ptr, range, mode, gargs, range_id)
       | _ -> failwith "Unexpected input type"
     in
-    let range_adt = Crate.get_adt range_ty_id in
-    let range_name =
-      match List.last_opt range_adt.item_meta.name with
-      | Some (PeIdent (name, _)) -> name
-      | _ -> failwith "Unexpected range name"
+    let range_item =
+      match (Crate.get_adt range_id).item_meta.lang_item with
+      | Some item -> item
+      | None -> failwith "Unexpected range item"
     in
     let size =
-      match (args, gargs.const_generics) with
+      match (ptr, gargs.const_generics) with
       (* Array with static size *)
       | _, [ size ] -> Typed.int @@ Charon_util.int_of_const_generic size
-      | Ptr (_, Some size) :: _, [] -> Typed.cast size
+      | Ptr (_, Some size), [] -> Typed.cast size
       | _ -> failwith "array_index (fn): couldn't calculate size"
     in
-    let ptr, idx_from, idx_to =
-      match (args, range_name) with
-      | [ ptr; Struct [] ], "RangeFull" -> (ptr, Base 0s, Base size)
-      | [ ptr; Struct [ idx_from ] ], "RangeFrom" -> (ptr, idx_from, Base size)
-      | [ ptr; Struct [ idx_to ] ], "RangeTo" -> (ptr, Base 0s, idx_to)
-      | [ ptr; Struct [ idx_from; idx_to ] ], "Range" -> (ptr, idx_from, idx_to)
-      | [ ptr; Struct [ idx_from; idx_to ] ], "RangeInclusive" ->
-          let idx_to = as_base_of ~ty:Typed.t_int idx_to in
-          (ptr, idx_from, Base (idx_to +@ 1s))
-      | [ ptr; Struct [ idx_to ] ], "RangeToInclusive" ->
-          let idx_to = as_base_of ~ty:Typed.t_int idx_to in
-          (ptr, Base 0s, Base (idx_to +@ 1s))
-      | _ -> Fmt.failwith "array_index (fn): unexpected range %s" range_name
+    let idx_from, idx_to =
+      match (range_item, range) with
+      | "RangeFull", [] -> (Base 0s, Base size)
+      | "RangeFrom", [ from ] -> (from, Base size)
+      | "RangeTo", [ to_ ] -> (Base 0s, to_)
+      | "Range", [ from; to_ ] -> (from, to_)
+      | "RangeInclusive", [ from; Base to_ ] ->
+          (from, Base (Typed.cast to_ +@ 1s))
+      | "RangeToInclusive", [ Base to_ ] ->
+          (Base 0s, Base (Typed.cast to_ +@ 1s))
+      | _ -> Fmt.failwith "array_index (fn): unexpected range %s" range_item
     in
     let idx_op : Expressions.builtin_index_op =
       { is_array = mode = TArray; mutability = RShared; is_range = true }

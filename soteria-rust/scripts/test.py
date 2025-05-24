@@ -95,7 +95,7 @@ def exec_tests(tests, *, log: Path, **kwargs):
         t
         for t in tests
         if (not any(e in str(t) for e in flags["exclusions"]))
-        and (flags["filters"] == [] or any(f in str(t) for f in flags["filters"]))
+        and (flags["filters"] == [] or all(f in str(t) for f in flags["filters"]))
     ]
     tests.sort()
     log.touch()
