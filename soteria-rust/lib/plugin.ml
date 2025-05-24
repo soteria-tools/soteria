@@ -147,9 +147,7 @@ let merge_ifs (plugins : (bool * plugin) list) =
   in
 
   let mk_cmd ~input ~output () =
-    let init =
-      mk_cmd ~charon:[ "--input " ^ input; "--dest-file " ^ output ] ()
-    in
+    let init = mk_cmd ~charon:[ "--dest-file " ^ output ] ~rustc:[ input ] () in
     List.map (fun (p : plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left concat_cmd init
   in

@@ -59,10 +59,18 @@ let[@tail_mod_cons] rec map2i i f l1 l2 =
 let map2i f l1 l2 = map2i 0 f l1 l2
 
 let rec last l =
-  match l with
-  | [] -> raise (Invalid_argument "List.last")
-  | [ x ] -> x
-  | _ :: l -> last l
+  match l with [] -> invalid_arg "List.last" | [ x ] -> x | _ :: l -> last l
 
 let rec last_opt l =
   match l with [] -> None | [ x ] -> Some x | _ :: l -> last_opt l
+
+let[@tail_mod_cons] rec concat_map2 f l1 l2 =
+  match (l1, l2) with
+  | [], [] -> []
+  | x :: xs, y :: ys -> prepend_concat_map2 (f x y) f xs ys
+  | _, _ -> invalid_arg "List_ex.concat_map2"
+
+and[@tail_mod_cons] prepend_concat_map2 zs f xs ys =
+  match zs with
+  | [] -> concat_map2 f xs ys
+  | z :: zs -> z :: prepend_concat_map2 zs f xs ys

@@ -90,7 +90,7 @@ module type S2 = sig
   module Syntax : Syntax2 with type ('a, 'b) t := ('a, 'b) t
 end
 
-module Extend2 (Base : Base2) : S2 with type ('a, 'b) t := ('a, 'b) Base.t =
+module Extend2 (Base : Base2) : S2 with type ('a, 'b) t = ('a, 'b) Base.t =
 struct
   include Base
 
