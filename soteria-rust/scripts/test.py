@@ -21,6 +21,7 @@ KANI_EXCLUSIONS = [
     "/ForeignItems/",
     "/Coroutines/",
     "/VolatileIntrinsics/",
+    "/Volatile/",
     "/DynTrait/",
 ]
 

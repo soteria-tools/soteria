@@ -48,6 +48,9 @@ module Nop = struct
 end
 
 module Unop = struct
+  let equal_fpclass = ( = )
+  let compare_fpclass = compare
+
   type t =
     | Not
     | GetPtrLoc
@@ -58,6 +61,7 @@ module Unop = struct
     | FloatOfBv
     | IntOfBv of bool (* signed *)
     | BvExtract of int * int (* from * to *)
+    | FIs of fpclass
   [@@deriving eq, ord]
 
   let pp ft = function
@@ -70,6 +74,11 @@ module Unop = struct
     | FloatOfBv -> Fmt.string ft "bv2f"
     | IntOfBv _ -> Fmt.string ft "bv2i"
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
+    | FIs FP_normal -> Fmt.string ft "fis_normal"
+    | FIs FP_subnormal -> Fmt.string ft "fis_subnormal"
+    | FIs FP_zero -> Fmt.string ft "fis_zero"
+    | FIs FP_infinite -> Fmt.string ft "fis_inf"
+    | FIs FP_nan -> Fmt.string ft "fis_nan"
 end
 
 module Binop = struct
@@ -741,6 +750,21 @@ let not_int_bool sv =
   | Int z -> if Z.equal z Z.zero then one else zero
   | Unop (IntOfBool, sv') -> int_of_bool (not sv')
   | _ -> int_of_bool (sem_eq sv zero)
+
+(** {2 Floating point ops} *)
+
+(* FIXME: all of these reductions are unsound for floats that aren't F64, I think *)
+let is_floatclass fc =
+ fun sv ->
+  match sv.node.kind with
+  | Float f -> bool (fc = classify_float (float_of_string f))
+  | _ -> Unop (FIs fc, sv) <| TBool
+
+let is_normal = is_floatclass FP_normal
+let is_subnormal = is_floatclass FP_subnormal
+let is_infinite = is_floatclass FP_infinite
+let is_nan = is_floatclass FP_nan
+let is_zero = is_floatclass FP_zero
 
 (** {2 Pointers} *)
 

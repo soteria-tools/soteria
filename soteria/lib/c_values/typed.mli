@@ -134,6 +134,12 @@ val bit_shl :
 val bit_shr :
   size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
+val is_normal : [< sfloat ] t -> [> sbool ] t
+val is_subnormal : [< sfloat ] t -> [> sbool ] t
+val is_zero : [< sfloat ] t -> [> sbool ] t
+val is_infinite : [< sfloat ] t -> [> sbool ] t
+val is_nan : [< sfloat ] t -> [> sbool ] t
+
 module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t
   val loc : [< sptr ] t -> [> sloc ] t
@@ -170,8 +176,8 @@ module Infix : sig
   val ( +.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( -.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( *.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
-  val ( /.@ ) : [< sfloat ] t -> [< nonzero ] t -> [> sfloat ] t
-  val ( %.@ ) : [< sfloat ] t -> [< nonzero ] t -> [> sfloat ] t
+  val ( /.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+  val ( %.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 end
 
 module Syntax : sig
