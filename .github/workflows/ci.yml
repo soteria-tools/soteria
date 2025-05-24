@@ -135,4 +135,3 @@ jobs:
           SOTERIA_Z3_PATH: ./bin/z3
           SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
           SOTERIA_SOLVER_TIMEOUT: 100
-          SOTERIA_HIDE_RESPONSE_TIMES: true
