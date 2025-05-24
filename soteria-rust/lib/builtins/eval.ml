@@ -10,7 +10,6 @@ module M (Heap : Heap_intf.S) = struct
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-  type std_bool = Id | Neg
   type type_loc = GenArg | Input
 
   type std_fun =
@@ -35,6 +34,10 @@ module M (Heap : Heap_intf.S) = struct
     | Ctpop
     | DiscriminantValue
     | ExactDiv
+    | FloatFast of Expressions.binop
+    | FloatIs of fpclass
+    | FloatIsFinite
+    | FloatIsSign of bool
     | Index
     | IsValStaticallyKnown
     | Likely
@@ -80,6 +83,37 @@ module M (Heap : Heap_intf.S) = struct
       ("core::cell::panic_already_mutably_borrowed", PanicSimple);
       ("core::hint::black_box", BlackBox);
       ("core::mem::zeroed", Zeroed);
+      (* all float operations could be removed, but we lack bit precision when getting the
+         const floats from Rust, meaning these don't really work. Either way, performance wise
+         it is much preferable to override these and use SMTLib builtins. *)
+      ("core::f16::{f16}::is_finite", FloatIsFinite);
+      ("core::f16::{f16}::is_infinite", FloatIs FP_infinite);
+      ("core::f16::{f16}::is_nan", FloatIs FP_nan);
+      ("core::f16::{f16}::is_normal", FloatIs FP_normal);
+      ("core::f16::{f16}::is_sign_negative", FloatIsSign false);
+      ("core::f16::{f16}::is_sign_positive", FloatIsSign true);
+      ("core::f16::{f16}::is_subnormal", FloatIs FP_subnormal);
+      ("core::f32::{f32}::is_finite", FloatIsFinite);
+      ("core::f32::{f32}::is_infinite", FloatIs FP_infinite);
+      ("core::f32::{f32}::is_nan", FloatIs FP_nan);
+      ("core::f32::{f32}::is_normal", FloatIs FP_normal);
+      ("core::f32::{f32}::is_sign_negative", FloatIsSign false);
+      ("core::f32::{f32}::is_sign_positive", FloatIsSign true);
+      ("core::f32::{f32}::is_subnormal", FloatIs FP_subnormal);
+      ("core::f64::{f64}::is_finite", FloatIsFinite);
+      ("core::f64::{f64}::is_infinite", FloatIs FP_infinite);
+      ("core::f64::{f64}::is_nan", FloatIs FP_nan);
+      ("core::f64::{f64}::is_normal", FloatIs FP_normal);
+      ("core::f64::{f64}::is_sign_negative", FloatIsSign false);
+      ("core::f64::{f64}::is_sign_positive", FloatIsSign true);
+      ("core::f64::{f64}::is_subnormal", FloatIs FP_subnormal);
+      ("core::f128::{f128}::is_finite", FloatIsFinite);
+      ("core::f128::{f128}::is_infinite", FloatIs FP_infinite);
+      ("core::f128::{f128}::is_nan", FloatIs FP_nan);
+      ("core::f128::{f128}::is_normal", FloatIs FP_normal);
+      ("core::f128::{f128}::is_sign_negative", FloatIsSign false);
+      ("core::f128::{f128}::is_sign_positive", FloatIsSign true);
+      ("core::f128::{f128}::is_subnormal", FloatIs FP_subnormal);
       (* FIXME: all core::ptr operations could be removed, however because we must enable
          ub_checks at runtime due to unchecked_op, this means ub checks also happen in
          the impl of core::ptr::..., and these checks are *SLOW* -- they do binary operations
@@ -115,12 +149,17 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::exact_div", ExactDiv);
       ("core::intrinsics::fabsf64", Abs);
       ("core::intrinsics::fabsf32", Abs);
+      ("core::intrinsics::fadd_fast", FloatFast Add);
+      ("core::intrinsics::fdiv_fast", FloatFast Div);
       ("core::intrinsics::fmaf64", MulAdd);
       ("core::intrinsics::fmaf32", MulAdd);
+      ("core::intrinsics::fmul_fast", FloatFast Mul);
+      ("core::intrinsics::fsub_fast", FloatFast Sub);
       ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
       ("core::intrinsics::likely", Likely);
       ("core::intrinsics::min_align_of", MinAlignOf GenArg);
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
+      ("core::intrinsics::offset", PtrOp Add);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
       ("core::intrinsics::ptr_offset_from", PtrOffsetFrom);
       ("core::intrinsics::size_of", SizeOf);
@@ -181,6 +220,10 @@ module M (Heap : Heap_intf.S) = struct
          | Ctpop -> ctpop f.signature
          | DiscriminantValue -> discriminant_value f.signature
          | ExactDiv -> exact_div f.signature
+         | FloatIs fc -> float_is fc
+         | FloatIsFinite -> float_is_finite
+         | FloatIsSign b -> float_is_sign b
+         | FloatFast bop -> float_fast bop
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
          | Likely -> likely

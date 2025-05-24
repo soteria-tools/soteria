@@ -575,4 +575,87 @@ module M (Heap : Heap_intf.S) = struct
     | _ -> Heap.error (`Panic (Some "core::intrinsics::variant_count")) state
 
   let std_panic ~args:_ ~state = Heap.error (`Panic None) state
+
+  let float_is (fp : fpclass) ~args ~state =
+    let v =
+      match args with
+      | [ Base f ] -> f
+      | _ -> failwith "float_is: invalid argument"
+    in
+    let* v =
+      of_opt_not_impl ~msg:"float_is expects float" @@ Typed.cast_float v
+    in
+    let res =
+      match fp with
+      | FP_nan -> Typed.is_nan v
+      | FP_normal -> Typed.is_normal v
+      | FP_infinite -> Typed.is_infinite v
+      | FP_zero -> Typed.is_zero v
+      | FP_subnormal -> Typed.is_subnormal v
+    in
+    Result.ok (Base (Typed.int_of_bool res), state)
+
+  let float_is_finite ~args ~state =
+    let v =
+      match args with
+      | [ Base f ] -> f
+      | _ -> failwith "float_is_finite: invalid argument"
+    in
+    let* v =
+      of_opt_not_impl ~msg:"float_is_finite expects float" @@ Typed.cast_float v
+    in
+    let res = Typed.((not (is_nan v)) &&@ not (is_infinite v)) in
+    Result.ok (Base (Typed.int_of_bool res), state)
+
+  let float_fast (bop : Expressions.binop) ~args ~state =
+    let l, r =
+      match args with
+      | [ Base l; Base r ] -> (l, r)
+      | _ -> failwith "fast_float: invalid arguments"
+    in
+    let l, r =
+      match (Typed.cast_float l, Typed.cast_float r) with
+      | Some l, Some r -> (l, r)
+      | _ -> failwith "fast_float: invalid arguments"
+    in
+    let is_finite f = Typed.((not (is_nan f)) &&@ not (is_infinite f)) in
+    if%sat is_finite l &&@ is_finite r then
+      let bop =
+        match bop with
+        | Add -> ( +.@ )
+        | Sub -> ( -.@ )
+        | Mul -> ( *.@ )
+        | Div -> ( /.@ )
+        | _ -> failwith "fast_float: invalid binop"
+      in
+      Result.ok (Base (bop l r), state)
+    else
+      let name =
+        match bop with
+        | Add -> "add"
+        | Sub -> "sub"
+        | Mul -> "mul"
+        | Div -> "div"
+        | _ -> assert false
+      in
+      let msg =
+        Fmt.str "core::intrinsics::f%s_fast: operands must be finite" name
+      in
+      Heap.error (`Panic (Some msg)) state
+
+  let float_is_sign pos ~args ~state =
+    let v =
+      match args with
+      | [ Base f ] -> f
+      | _ -> failwith "float_is_sign: invalid argument"
+    in
+    let* v =
+      of_opt_not_impl ~msg:"float_is_sign expects float" @@ Typed.cast_float v
+    in
+    let res =
+      if pos then Typed.(leq (float_like v 0.) v)
+      else Typed.(leq v (float_like v (-0.)))
+    in
+    let res = res ||@ Typed.is_nan v in
+    Result.ok (Base (Typed.int_of_bool res), state)
 end
