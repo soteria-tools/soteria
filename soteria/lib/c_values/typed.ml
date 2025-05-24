@@ -3,9 +3,8 @@ include Svalue
 
 module T = struct
   type sint = [ `NonZero | `MaybeZero ]
-  type sfloat = [ `NonZeroF | `MaybeZeroF ]
+  type sfloat = [ `Float ]
   type nonzero = [ `NonZero ]
-  type nonzerof = [ `NonZeroF ]
   type sbool = [ `Bool ]
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
@@ -14,19 +13,11 @@ module T = struct
   type cval = [ sint | sptr | sfloat ]
 
   type any =
-    [ `Bool
-    | `Ptr
-    | `Loc
-    | `List of any
-    | `NonZero
-    | `MaybeZero
-    | `NonZeroF
-    | `MaybeZeroF ]
+    [ `Bool | `Ptr | `Loc | `List of any | `NonZero | `MaybeZero | `Float ]
 
   let pp_sint _ _ = ()
   let pp_sfloat _ _ = ()
   let pp_nonzero _ _ = ()
-  let pp_nonzerof _ _ = ()
   let pp_sbool _ _ = ()
   let pp_sptr _ _ = ()
   let pp_sloc _ _ = ()
@@ -49,7 +40,8 @@ let[@inline] cast x = x
 let[@inline] untyped x = x
 let[@inline] untyped_list l = l
 let[@inline] type_ x = x
-let cast_checked x ty = if equal_ty x.node.ty ty then Some x else None
+let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
+let cast_checked = type_checked
 let cast_float x = if is_float x.node.ty then Some x else None
 
 let cast_checked2 x y =
@@ -59,5 +51,4 @@ let nonzero_z z =
   if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z")
   else Svalue.int_z z
 
-let nonzero x =
-  if x = 0 then raise (Invalid_argument "nonzero_z") else Svalue.int x
+let nonzero x = nonzero_z (Z.of_int x)

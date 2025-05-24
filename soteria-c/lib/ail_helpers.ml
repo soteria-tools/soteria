@@ -11,6 +11,10 @@ module Symbol_std = struct
   let pp = Fmt_ail.pp_sym
 end
 
+let sym_is_id sym id =
+  let open Cerb_frontend.Symbol in
+  match sym with Symbol (_digest, _i, SD_Id id') -> id = id' | _ -> false
+
 let rec resolve_sym ~(prog : Ail_tys.linked_program) sym =
   match Pmap.lookup sym prog.symmap with
   | None -> sym
@@ -33,9 +37,8 @@ let get_param_tys ~(prog : Ail_tys.linked_program) fid =
 
 let find_fun_name ~(prog : Ail_tys.linked_program) to_find =
   List.find_map
-    (fun ((id, _) as decl) ->
-      let name = Cerb_frontend.Pp_symbol.to_string id in
-      if String.starts_with ~prefix:to_find name then Some decl else None)
+    (fun ((sym, _) as decl) ->
+      if sym_is_id sym to_find then Some decl else None)
     prog.sigma.function_definitions
 
 let find_fun_loc ~(prog : Ail_tys.linked_program) to_find =

@@ -112,6 +112,16 @@ jobs:
     runs-on: ${{ matrix.operating-system }}
     needs: build
     steps:
+      - name: checkout Collections-C, version where we find a bug
+        uses: actions/checkout@v4
+        with:
+          repository: srdja/Collections-C
+          ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
+      - name: Create compilation database
+        run: |
+          mkdir -p build
+          cd build
+          cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
       - name: Download package
         uses: actions/download-artifact@v4
         with:
@@ -120,10 +130,8 @@ jobs:
         run: |
           chmod +x ./bin/soteria-c
           chmod +x ./bin/z3
-      - name: Write dummy C file
-        run: echo "int main() { return 12; }" > test.c
-      - run: DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c exec-main test.c
+      - run: CERB_INSTALL_PREFIX=$(pwd) DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c capture-db build/compile_commands.json
         env:
           SOTERIA_Z3_PATH: ./bin/z3
-          CERB_INSTALL_PREFIX: .
           SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
+          SOTERIA_SOLVER_TIMEOUT: 100

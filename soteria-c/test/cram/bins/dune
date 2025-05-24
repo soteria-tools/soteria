@@ -1,5 +1,6 @@
 (executables
  (names batch run_twice)
- (libraries soteria_c_lib)
+ (libraries soteria_c_values soteria_c_lib)
+ (flags -open Soteria_c_values)
  (preprocess
   (pps soteria.ppx)))

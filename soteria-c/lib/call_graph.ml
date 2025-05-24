@@ -66,8 +66,7 @@ let rec expr_callees d (e : Ail_tys.expr) =
 and stmt_callees d stmt =
   let expr_callees = expr_callees d in
   let stmt_callees = stmt_callees d in
-  let (AnnotatedStatement (_, _, stmt)) = stmt in
-  match stmt with
+  match stmt.node with
   | AilSskip | AilSbreak | AilScontinue | AilSreturnVoid | AilSgoto _ -> ()
   | AilSreturn e | AilSexpr e | AilSreg_store (_, e) -> expr_callees e
   | AilSblock (_, stmts) | AilSpar stmts -> List.iter stmt_callees stmts

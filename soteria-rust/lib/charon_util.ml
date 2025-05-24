@@ -138,3 +138,9 @@ let get_pointee : Types.ty -> Types.ty = function
   | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) ->
       ty
   | _ -> failwith "Non-pointer type given to get_pointee"
+
+let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
+  | F16 -> F16
+  | F32 -> F32
+  | F64 -> F64
+  | F128 -> F128

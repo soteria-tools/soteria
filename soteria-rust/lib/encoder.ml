@@ -53,26 +53,6 @@ module Make (Sptr : Sptr.S) = struct
       in
       aux [] xs
 
-    let all (fn : 'v -> ('a, 'b) t) (xs : 'v list) : (('a, 'b) t list, 'b) t =
-      let rec aux finished todos =
-        match todos with
-        | [] ->
-            finished
-            |> List.sort (fun (i, _) (j, _) -> i - j)
-            |> List.map snd
-            |> ok
-        | (i, todo) :: rest ->
-            bind2 todo
-              (fun x -> aux ((i, ok x) :: finished) rest)
-              (fun e -> aux ((i, error e) :: finished) rest)
-      in
-      let todos, finished =
-        xs
-        |> List.mapi (fun i v -> (i, fn v))
-        |> List.partition (fun (_, p) -> is_more p)
-      in
-      aux finished todos
-
     let parse ~(init : 'i)
         ~(f :
            (Types.ty * T.sint Typed.t) list ->
@@ -406,6 +386,7 @@ module Make (Sptr : Sptr.S) = struct
           Ok (Base sv')
       | TLiteral (TInteger _), TLiteral (TFloat fp), Base sv ->
           let+ sv = cast_checked sv ~ty:Typed.t_int in
+          let fp = float_precision fp in
           let sv' = Typed.float_of_int fp sv in
           Ok (Base sv')
       | TLiteral (TInteger U8), TLiteral TChar, v

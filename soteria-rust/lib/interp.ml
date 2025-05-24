@@ -120,7 +120,8 @@ module Make (Heap : Heap_intf.S) = struct
         Result.ok (Base (if b then Typed.one else Typed.zero), state)
     | CLiteral (VChar c) -> Result.ok (Base (Typed.int (Uchar.to_int c)), state)
     | CLiteral (VFloat { float_value; float_ty }) ->
-        Result.ok (Base (Typed.float float_ty float_value), state)
+        let fp = float_precision float_ty in
+        Result.ok (Base (Typed.float fp float_value), state)
     | CLiteral (VStr str) -> (
         let** ptr_opt, state = Heap.load_str_global str state in
         match ptr_opt with
@@ -490,7 +491,7 @@ module Make (Heap : Heap_intf.S) = struct
                   let* size = Layout.size_of_s pointee in
                   let res = v1 +@ (v2 *@ size) in
                   Result.ok (Base res, state)
-            | BitOr | BitAnd | BitXor -> (
+            | BitOr | BitAnd | BitXor ->
                 let* ity =
                   match type_of_operand e1 with
                   | TLiteral (TInteger ity) -> return ity
@@ -504,15 +505,15 @@ module Make (Heap : Heap_intf.S) = struct
                 let signed = Layout.is_signed ity in
                 let* v1 = cast_checked ~ty:Typed.t_int v1 in
                 let* v2 = cast_checked ~ty:Typed.t_int v2 in
-                match op with
-                | BitOr ->
-                    Result.ok (Base (Typed.bit_or size signed v1 v2), state)
-                | BitAnd ->
-                    Result.ok (Base (Typed.bit_and size signed v1 v2), state)
-                | BitXor ->
-                    Result.ok (Base (Typed.bit_xor size signed v1 v2), state)
-                | _ -> assert false)
-            | Shl | Shr -> (
+                let op =
+                  match op with
+                  | BitOr -> Typed.bit_or
+                  | BitAnd -> Typed.bit_and
+                  | BitXor -> Typed.bit_xor
+                  | _ -> assert false
+                in
+                Result.ok (Base (op ~size ~signed v1 v2), state)
+            | Shl | Shr ->
                 let* ity =
                   match type_of_operand e1 with
                   | TLiteral (TInteger ity) -> return ity
@@ -529,12 +530,8 @@ module Make (Heap : Heap_intf.S) = struct
                 if%sat v2 <@ 0s ||@ (v2 >=@ Typed.int size) then
                   Heap.error `UBArithShift state
                 else
-                  match op with
-                  | Shl ->
-                      Result.ok (Base (Typed.bit_shl size signed v1 v2), state)
-                  | Shr ->
-                      Result.ok (Base (Typed.bit_shr size signed v1 v2), state)
-                  | _ -> assert false))
+                  let op = if op = Shl then Typed.bit_shl else Typed.bit_shr in
+                  Result.ok (Base (op ~size ~signed v1 v2), state))
         | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2) -> (
             match op with
             | Offset ->

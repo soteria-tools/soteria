@@ -43,7 +43,16 @@ let link_extern (ext_cur : extern_idmap) (ext_oth : extern_idmap)
       | Some (cur_def, IK_definition) -> (
           match in_lk with
           | IK_definition ->
-              Error (Fmt.str "Duplicate external name %a" Fmt_ail.pp_id k)
+              if !Config.current.no_ignore_duplicate_symbols then
+                Error (Fmt.str "Duplicate external name %a" Fmt_ail.pp_id k)
+              else
+                (* There's no clear semantics for duplicate symbols, since it's not legal in C.
+                   We only accept in case the build we inferred is somewhat invalid.
+                   We make one choice, which is to treat the definition as a declaration. *)
+                Ok
+                  ( Pmap.add k (cur_def, IK_definition) acc_ext,
+                    acc_tent,
+                    Pmap.add in_d cur_def symmap )
           | IK_tentative ->
               Ok
                 ( Pmap.add k (cur_def, IK_definition) acc_ext,
@@ -120,8 +129,7 @@ let rec free_syms_expr acc expr =
       acc
 
 and free_syms_stmt acc stmt =
-  let (AnnotatedStatement (_, _, stmt)) = stmt in
-  match stmt with
+  match stmt.node with
   | AilSexpr e | AilSreturn e | AilSreg_store (_, e) -> free_syms_expr acc e
   | AilSwhile (e, stmt, _) | AilSdo (stmt, e, _) | AilSswitch (e, stmt) ->
       free_syms_stmt (free_syms_expr acc e) stmt
@@ -205,8 +213,13 @@ let merge_globs (globs_1 : 'a sigma_object_definition list)
 
 let link_main opt_m1 opt_m2 =
   match (opt_m1, opt_m2) with
-  | Some _, Some _ -> Error "linking: multiple main functions"
-  | Some m, None | None, Some m -> Ok (Some m)
+  | (Some _ as m1), Some _ ->
+      if !Config.current.no_ignore_duplicate_symbols then
+        Error "linking: multiple main functions"
+      else (
+        L.warn (fun m -> m "Detecting several main functions. ");
+        Ok m1)
+  | (Some _ as m), None | None, (Some _ as m) -> Ok m
   | None, None -> Ok None
 
 let has_cn_stuff (sigma : 'a sigma) =

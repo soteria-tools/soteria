@@ -1,7 +1,0 @@
-#!/usr/bin/env sh
-
-# Print all arguments passed to the script into "commands.log" and exit
-echo "$0 $@" >> /Users/sacha/Prog/Collections-C/build/commands.log
-echo "RUN IN: $(pwd)" >> /Users/sacha/Prog/Collections-C/build/commands.log
-echo "\n" >> /Users/sacha/Prog/Collections-C/build/commands.log
-exit 0
