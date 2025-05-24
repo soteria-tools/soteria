@@ -2,29 +2,29 @@ Test kani::any
   $ soteria-rust exec-main any.rs --clean --kani
   Done. - Ran 5 branches
   PC: 
-    (V|0| == 0) /\ (V|0| <= 1) /\ (0 <= V|0|)
+    (0 == V|0|) /\ (V|0| <= 1) /\ (0 <= V|0|)
   
   PC: 
-    (V|0| != 0) /\ (V|0| <= 1) /\ (0 <= V|0|)
+    (0 != V|0|) /\ (V|0| <= 1) /\ (0 <= V|0|)
   
   PC: 
-    (0 < V|0|) /\ (0 <= V|0|) /\ (V|0| != 0) /\ (V|0| <= 127) /\ (-128 <= V|0|)
+    (0 < V|0|) /\ (0 <= V|0|) /\ (0 != V|0|) /\ (V|0| <= 127) /\ (-128 <= V|0|)
   
   PC: 
-    (V|0| < 0) /\ (V|0| != 0) /\ (V|0| <= 127) /\ (-128 <= V|0|)
+    (V|0| < 0) /\ (0 != V|0|) /\ (V|0| <= 127) /\ (-128 <= V|0|)
   
   PC: 
-    (V|0| == 0) /\ (V|0| <= 127) /\ (-128 <= V|0|)
+    (0 == V|0|) /\ (V|0| <= 127) /\ (-128 <= V|0|)
 
 Test kani::assume
   $ soteria-rust exec-main assume.rs --clean --kani
   Done. - Ran 2 branches
   PC: 
-    (V|0| != 0) /\ (V|0| <= 1) /\ (0 <= V|0|)
+    (0 != V|0|) /\ (V|0| <= 1) /\ (0 <= V|0|)
   
   PC: 
-    ((11 / V|0|) <= 0x7fffffff) /\ (-0x80000000 <= (11 / V|0|)) /\
-    (V|0| != 0) /\ (V|0| <= 0x7fffffff) /\ (-0x80000000 <= V|0|)
+    (-0x80000000 <= (11 / V|0|)) /\ ((11 / V|0|) <= 0x7fffffff) /\
+    (0 != V|0|) /\ (V|0| <= 0x7fffffff) /\ (-0x80000000 <= V|0|)
 
 Test #[kani::should_panic]
   $ soteria-rust exec-main should_panic.rs --clean --kani

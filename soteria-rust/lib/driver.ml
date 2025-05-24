@@ -154,9 +154,9 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
   |> Result.map List.flatten
   |> Result.map_error List.flatten
 
-let exec_main_and_print log_level smt_file no_compile clean ignore_leaks kani
-    miri file_name =
-  Z3solver.set_smt_file smt_file;
+let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
+    kani miri file_name =
+  Solver_config.set solver_config;
   Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
   try
