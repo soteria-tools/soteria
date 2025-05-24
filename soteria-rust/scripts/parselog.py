@@ -9,7 +9,7 @@ from typing import Iterable, Optional
 
 
 def file_str(file_name: str):
-    issue = known_issue.get(file_name, None)
+    issue = KNOWN_ISSUES.get(file_name, None)
     if issue:
         return f"{GRAY}{file_name} {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
     return file_name
