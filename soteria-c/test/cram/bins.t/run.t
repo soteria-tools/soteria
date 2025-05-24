@@ -1,5 +1,5 @@
   $ ../bins/batch.exe
-  (declare-datatype Ptr ((mk-ptr (loc Int) (ofs Int)))) ; -> success (1ms)
+  (declare-datatype Ptr ((mk-ptr (loc Int) (ofs Int)))) ; -> success
   (declare-datatype Opt (par (P) ((mk-some (opt-unwrap P)) (none)))) ; -> success
   (push 1) ; -> success
   (pop 1) ; -> success

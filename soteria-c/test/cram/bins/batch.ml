@@ -13,7 +13,12 @@ let process =
 
 let () =
   let file = Some "batch.smt" in
-  Solver_config.set { Solver_config.default with dump_smt_file = file };
+  Solver_config.set
+    {
+      Solver_config.default with
+      dump_smt_file = file;
+      hide_response_times = true;
+    };
   Initialize_analysis.init_once ();
   let l = Csymex.run process in
   assert (List.length l = 0);
