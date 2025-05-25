@@ -210,6 +210,8 @@ def analyse(file: str) -> LogInfo:
 
         tests_idx = file_path.split("/").index("tests") + 1
         file_name = "/".join(file_path.split("/")[tests_idx:])
+        if file_name.startswith("kani/"):
+            file_name = file_name[len("kani/") :]
 
         # test run through kani
         if "Kani Rust Verifier" in test:
@@ -298,7 +300,7 @@ def main(files: list[str]):
 
     print(f"{BOLD}Summary:{RESET}")
     for cause, color, num, tests in items:
-        pprint(f"{color}{num:3d}{RESET} {cause}")
+        pprint(f"{BOLD}{num:3d}{RESET} {color}{cause}{RESET}")
         if verbosity >= 1:
             dot = f"{rainbow()}•{RESET}"
             if all(test[1] is None for test in tests):

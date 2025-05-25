@@ -86,8 +86,12 @@ def exec_test(
 
 
 def exec_tests(tests: list[Path], *, log: Path, **kwargs):
-    pprint(f"{BOLD}Building Rusteria{RESET}", inc=True)
+    pprint(f"Building {BOLD}Rusteria{RESET} ... ", inc=True, end="")
+    before = time.time()
     build_rusteria()
+    elapsed = time.time() - before
+    print(f"Took {elapsed:.3f}s to build")
+
     flags = parse_flags()
 
     args = kwargs.get("args", []) + flags["cmd_flags"]
