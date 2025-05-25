@@ -348,7 +348,7 @@ let rec encode_value (v : Svalue.t) =
       let v1 = encode_value_memo v1 in
       let v2 = encode_value_memo v2 in
       match binop with
-      | Eq -> eq v1 v2
+      | Eq -> (if Svalue.is_float ty then fp_eq else eq) v1 v2
       | Leq -> (if Svalue.is_float ty then fp_leq else num_leq) v1 v2
       | Lt -> (if Svalue.is_float ty then fp_lt else num_lt) v1 v2
       | And -> bool_and v1 v2

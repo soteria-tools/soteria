@@ -80,6 +80,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::array::{core::ops::index::Index}::index", Index);
       ("core::array::{core::ops::index::IndexMut}::index_mut", Index);
       ("core::slice::index::{core::ops::index::Index}::index", Index);
+      ("core::slice::index::{core::ops::index::IndexMut}::index_mut", Index);
       ("core::cell::panic_already_mutably_borrowed", PanicSimple);
       ("core::hint::black_box", BlackBox);
       ("core::mem::zeroed", Zeroed);

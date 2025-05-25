@@ -695,6 +695,7 @@ let bit_shr ~size ~signed v1 v2 =
 let abs v =
   match v.node.kind with
   | Int i -> int_z (Z.abs i)
+  | Unop (Abs, _) -> v
   | _ -> Unop (Abs, v) <| v.node.ty
 
 let div v1 v2 =
