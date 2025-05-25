@@ -205,7 +205,7 @@ module Make (Heap : Heap_intf.S) = struct
         in
         let** idx, state = eval_operand ~store state idx in
         let idx = as_base_of ~ty:Typed.t_int idx in
-        let idx = if from_end then len -@ 1s -@ idx else idx in
+        let idx = if from_end then len -@ idx else idx in
         if%sat 0s <=@ idx &&@ (idx <@ len) then (
           let ptr' = Sptr.offset ~ty ptr idx in
           L.debug (fun f ->
@@ -808,10 +808,13 @@ module Make (Heap : Heap_intf.S) = struct
               (* if a base value, compare with 0 -- if a pointer, check for null *)
               match discr with
               | Base discr ->
-                  if%sat discr ==@ 0s then return else_block
+                  if%sat [@lname "else case"] [@rname "if case"] discr ==@ 0s
+                  then return else_block
                   else return if_block
               | Ptr (ptr, _) ->
-                  if%sat Sptr.is_at_null_loc ptr then return else_block
+                  if%sat [@lname "else case"] [@rname "if case"]
+                    Sptr.is_at_null_loc ptr
+                  then return else_block
                   else return if_block
               | _ ->
                   Fmt.kstr not_impl
