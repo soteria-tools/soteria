@@ -464,10 +464,7 @@ module Make (State : State_intf.S) = struct
             (* TODO: Semantics of Ne might be different from semantics of not eq? *)
             let++ res, state = equality_check ~state v1 v2 in
             (Typed.not_int_bool res, state)
-        | And ->
-            let b_res = cast_to_bool v1 &&@ cast_to_bool v2 in
-            Result.ok (Typed.int_of_bool b_res, state)
-        | Or -> failwith "Unreachable, handled earlier."
+        | Or | And -> failwith "Unreachable, handled earlier."
         | Arithmetic a_op -> arith ~state (v1, type_of e1) a_op (v2, type_of e2)
         | Comma -> Result.ok (v2, state))
     | AilErvalue e ->
