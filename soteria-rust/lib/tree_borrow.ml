@@ -160,7 +160,7 @@ let access (root : t) accessed e st =
       st
     @@ iter root
   in
-  L.debug (fun m ->
+  L.trace (fun m ->
       let pp_binding fmt (tag, (protected, st)) =
         Fmt.pf fmt "%a -> %a%s" pp_tag tag pp_state st
           (if protected then " (p)" else "")
