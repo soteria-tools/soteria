@@ -789,36 +789,6 @@ let unprotect ofs size tag tb t =
 let tb_access ofs size tag tb t =
   with_bound_and_owned_check t (ofs +@ size) @@ Tree.tb_access ofs size tag tb
 
-let protect ofs size tag tb t =
-  match t with
-  | None -> miss_no_fix ~msg:"protect on none" ()
-  | Some t ->
-      let++ (), tree =
-        let@ () = with_bound_check t (ofs +@ size) in
-        Tree.protect ofs size tag tb t.root
-      in
-      ((), to_opt tree)
-
-let unprotect ofs size tag tb t =
-  match t with
-  | None -> miss_no_fix ~msg:"protect on none" ()
-  | Some t ->
-      let++ (), tree =
-        let@ () = with_bound_check t (ofs +@ size) in
-        Tree.unprotect ofs size tag tb t.root
-      in
-      ((), to_opt tree)
-
-let tb_access ofs size tag tb t =
-  match t with
-  | None -> miss_no_fix ~msg:"protect on none" ()
-  | Some t ->
-      let++ (), tree =
-        let@ () = with_bound_check t (ofs +@ size) in
-        Tree.tb_access ofs size tag tb t.root
-      in
-      ((), to_opt tree)
-
 (** Logic *)
 
 let subst_serialized subst_var (serialized : serialized) =
