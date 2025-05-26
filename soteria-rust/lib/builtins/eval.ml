@@ -51,6 +51,7 @@ module M (Heap : Heap_intf.S) = struct
     | SizeOf
     | SizeOfVal
     | Transmute
+    | TypedSwapNonOverlapping
     | Unchecked of Expressions.binop
     | VariantCount
     | Wrapping of Expressions.binop
@@ -166,6 +167,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
       ("core::intrinsics::transmute", Transmute);
+      ("core::intrinsics::typed_swap_nonoverlapping", TypedSwapNonOverlapping);
       ("core::intrinsics::unchecked_add", Unchecked Add);
       ("core::intrinsics::unchecked_div", Unchecked Div);
       ("core::intrinsics::unchecked_mul", Unchecked Mul);
@@ -238,6 +240,7 @@ module M (Heap : Heap_intf.S) = struct
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
          | Transmute -> transmute f.signature
+         | TypedSwapNonOverlapping -> typed_swap_nonoverlapping f.signature
          | Unchecked op -> unchecked_op op f.signature
          | VariantCount -> variant_count f.signature
          | Wrapping op -> wrapping_op op f.signature

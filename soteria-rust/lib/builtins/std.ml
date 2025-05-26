@@ -456,7 +456,7 @@ module M (Heap : Heap_intf.S) = struct
     | [ Base cond ] ->
         let* cond = cast_checked ~ty:Typed.t_int cond in
         if%sat Typed.bool_of_int cond then Result.ok (Tuple [], state)
-        else Heap.error (`Panic (Some "core::intrinsics::assume")) state
+        else Heap.error (`StdErr "core::intrinsics::assume with false") state
     | _ -> failwith "std_assume: invalid arguments"
 
   let exact_div (funsig : GAst.fun_sig) ~args ~state =
@@ -469,7 +469,9 @@ module M (Heap : Heap_intf.S) = struct
         else
           if%sat (not (r ==@ 0s)) &&@ (l %@ cast r ==@ 0s) then
             Result.ok (Base res, state)
-          else Heap.error (`Panic (Some "core::intrinsics::exact_div")) state
+          else
+            Heap.error (`StdErr "core::intrinsics::exact_div on non divisible")
+              state
     | _ -> failwith "exact_div: invalid arguments"
 
   let ctpop (funsig : GAst.fun_sig) ~args ~state =
@@ -572,7 +574,9 @@ module M (Heap : Heap_intf.S) = struct
         let variants = Crate.as_enum id in
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
-    | _ -> Heap.error (`Panic (Some "core::intrinsics::variant_count")) state
+    | _ ->
+        Heap.error
+          (`StdErr "core::intrinsics::variant_count used with non-enum") state
 
   let std_panic ~args:_ ~state = Heap.error (`Panic None) state
 
@@ -641,7 +645,7 @@ module M (Heap : Heap_intf.S) = struct
       let msg =
         Fmt.str "core::intrinsics::f%s_fast: operands must be finite" name
       in
-      Heap.error (`Panic (Some msg)) state
+      Heap.error (`StdErr msg) state
 
   let float_is_sign pos ~args ~state =
     let v =
@@ -658,4 +662,39 @@ module M (Heap : Heap_intf.S) = struct
     in
     let res = res ||@ Typed.is_nan v in
     Result.ok (Base (Typed.int_of_bool res), state)
+
+  let typed_swap_nonoverlapping (funsig : UllbcAst.fun_sig) ~args ~state =
+    let ty =
+      match funsig.inputs with
+      | TRawPtr (ty, _) :: _ -> ty
+      | _ -> failwith "copy_nonoverlapping: invalid arguments"
+    in
+    let ((from_ptr, _) as from), ((to_ptr, _) as to_) =
+      match args with
+      | [ Ptr from_ptr; Ptr to_ptr ] -> (from_ptr, to_ptr)
+      | _ -> failwith "copy_nonoverlapping: invalid arguments"
+    in
+    let** () = Heap.check_ptr_align from_ptr ty in
+    let** () = Heap.check_ptr_align to_ptr ty in
+    let* size = Layout.size_of_s ty in
+    let** () =
+      if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then
+        Heap.error `NullDereference state
+      else
+        (* check for overlap *)
+        let from_ptr_end = Sptr.offset from_ptr size in
+        let to_ptr_end = Sptr.offset to_ptr size in
+        if%sat
+          Sptr.is_same_loc from_ptr to_ptr
+          &&@ (Sptr.distance from_ptr to_ptr_end
+              <@ 0s
+              &&@ (Sptr.distance to_ptr from_ptr_end <@ 0s))
+        then Heap.error (`StdErr "typed_swap_nonoverlapping overlapped") state
+        else Result.ok ()
+    in
+    let** v_l, state = Heap.load from ty state in
+    let** v_r, state = Heap.load to_ ty state in
+    let** (), state = Heap.store from ty v_r state in
+    let++ (), state = Heap.store to_ ty v_l state in
+    (Tuple [], state)
 end
