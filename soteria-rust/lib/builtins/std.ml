@@ -695,4 +695,32 @@ module M (Heap : Heap_intf.S) = struct
     let** (), state = Heap.store from ty v_r state in
     let++ (), state = Heap.store to_ ty v_l state in
     (Tuple [], state)
+
+  let byte_swap (funsig : UllbcAst.fun_sig) ~args ~state =
+    match (funsig.inputs, args) with
+    | [ (TLiteral (TInteger ity as lit) as ty) ], [ v ] ->
+        let unsigned = Layout.lit_to_unsigned lit in
+        let nbytes = Layout.size_of_int_ty ity in
+        let** v =
+          Heap.lift_err state @@ Encoder.transmute ~from_ty:ty ~to_ty:unsigned v
+        in
+        let v = as_base_of ~ty:Typed.t_int v in
+        let bytes =
+          List.init nbytes (fun i ->
+              v /@ Typed.nonzero_z Z.(pow (of_int 256) i) %@ Typed.nonzero 256)
+        in
+        let bytes = List.rev bytes in
+        let _, v' =
+          List.fold_left
+            (fun (i, acc) byte ->
+              (i + 1, acc +@ (byte *@ Typed.int_z Z.(pow (of_int 256) i))))
+            (0, 0s) bytes
+        in
+        let v' = Base (v' :> Typed.T.cval Typed.t) in
+        let++ v' =
+          Heap.lift_err state
+          @@ Encoder.transmute ~from_ty:unsigned ~to_ty:ty v'
+        in
+        (v', state)
+    | _ -> not_impl "invalid arguments in byte_swap"
 end
