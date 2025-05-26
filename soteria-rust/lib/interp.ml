@@ -858,8 +858,8 @@ module Make (Heap : Heap_intf.S) = struct
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
-        m "Calling %a with [%a]" Crate.pp_name name
-          Fmt.(list ~sep:(any ", ") pp_rust_val)
+        m "Calling %a with %a" Crate.pp_name name
+          Fmt.(hbox @@ brackets @@ list ~sep:comma pp_rust_val)
           args);
     let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in
