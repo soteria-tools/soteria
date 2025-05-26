@@ -8,7 +8,6 @@ module T : sig
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
-  type cnum = [ sint | sfloat ]
   type cval = [ sint | sptr | sfloat ]
 
   type any =
@@ -106,18 +105,20 @@ val f64 : float -> [> sfloat ] t
 val f128 : float -> [> sfloat ] t
 val float_like : [> sfloat ] t -> float -> [> sfloat ] t
 val fp_of : [< sfloat ] t -> Svalue.FloatPrecision.t
-val geq : ([< cnum ] as 'a) t -> 'a t -> [> sbool ] t
-val gt : ([< cnum ] as 'a) t -> 'a t -> [> sbool ] t
-val leq : ([< cnum ] as 'a) t -> 'a t -> [> sbool ] t
-val lt : ([< cnum ] as 'a) t -> 'a t -> [> sbool ] t
-val plus : ([< cnum ] as 'a) t -> 'a t -> 'a t
-val minus : ([< cnum ] as 'a) t -> 'a t -> 'a t
-val times : ([< cnum ] as 'a) t -> 'a t -> 'a t
-val div : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
-val rem : ([< cnum ] as 'a) t -> [< nonzero ] t -> 'a t
+
+(** Integer operations *)
+
+val geq : [< sint ] t -> [< sint ] t -> [> sbool ] t
+val gt : [< sint ] t -> [< sint ] t -> [> sbool ] t
+val leq : [< sint ] t -> [< sint ] t -> [> sbool ] t
+val lt : [< sint ] t -> [< sint ] t -> [> sbool ] t
+val plus : [< sint ] t -> [< sint ] t -> [> sint ] t
+val minus : [< sint ] t -> [< sint ] t -> [> sint ] t
+val times : [< sint ] t -> [< sint ] t -> [> sint ] t
+val div : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+val rem : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 val mod_ : [< sint ] t -> nonzero t -> [> sint ] t
-val abs : ([< cnum ] as 'a) t -> 'a t
-val neg : ([< cnum ] as 'a) t -> 'a t
+val neg : ([< sint | sfloat ] as 'a) t -> 'a t
 
 val bit_and :
   size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
@@ -134,6 +135,19 @@ val bit_shl :
 val bit_shr :
   size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
+(** Floating point operations *)
+
+val eq_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+val geq_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+val gt_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+val leq_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+val lt_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+val plus_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+val minus_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+val times_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+val div_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+val rem_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+val abs_f : [< sfloat ] t -> [> sfloat ] t
 val is_normal : [< sfloat ] t -> [> sbool ] t
 val is_subnormal : [< sfloat ] t -> [> sbool ] t
 val is_zero : [< sfloat ] t -> [> sbool ] t
@@ -173,11 +187,15 @@ module Infix : sig
   val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( /@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
   val ( %@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+  val ( ==.@ ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
+  val ( >.@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( >=.@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( <.@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( <=.@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( +.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( -.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( *.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( /.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
-  val ( %.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 end
 
 module Syntax : sig

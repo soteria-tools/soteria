@@ -380,13 +380,12 @@ module M (Heap : Heap_intf.S) = struct
     match args with
     | [ Base a; Base b; Base c ] ->
         let a, b, c = (Typed.cast a, Typed.cast b, Typed.cast c) in
-        Result.ok (Base ((a *@ b) +@ c), state)
+        Result.ok (Base ((a *.@ b) +.@ c), state)
     | _ -> failwith "mul_add expects three arguments"
 
   let abs ~args ~state =
     match args with
-    | [ Base v ] ->
-        Result.ok (Base (Typed.cast @@ Typed.abs @@ Typed.cast v), state)
+    | [ Base v ] -> Result.ok (Base (Typed.abs_f @@ Typed.cast v), state)
     | _ -> failwith "abs expects one argument"
 
   let write_bytes (fun_sig : GAst.fun_sig) ~args ~state =
@@ -553,12 +552,12 @@ module M (Heap : Heap_intf.S) = struct
     let* l, r, ty = cast_checked2 l r in
     if Typed.is_float ty then
       let zero = Typed.float_like r 0.0 in
-      if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] Typed.lt r zero
+      if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] Typed.lt_f r zero
       then
-        let l' = Typed.neg (Typed.abs l) in
+        let l' = Typed.neg (Typed.abs_f l) in
         Result.ok (Base (Typed.cast l'), state)
       else
-        let l' = Typed.abs l in
+        let l' = Typed.abs_f l in
         Result.ok (Base (Typed.cast l'), state)
     else not_impl "Expected floats in copy_sign"
 
@@ -656,8 +655,8 @@ module M (Heap : Heap_intf.S) = struct
       of_opt_not_impl ~msg:"float_is_sign expects float" @@ Typed.cast_float v
     in
     let res =
-      if pos then Typed.(leq (float_like v 0.) v)
-      else Typed.(leq v (float_like v (-0.)))
+      if pos then Typed.(leq_f (float_like v 0.) v)
+      else Typed.(leq_f v (float_like v (-0.)))
     in
     let res = res ||@ Typed.is_nan v in
     Result.ok (Base (Typed.int_of_bool res), state)
