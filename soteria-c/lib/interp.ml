@@ -138,7 +138,7 @@ module Make (State : State_intf.S) = struct
     match descr with
     | Cerb_frontend.Symbol.SD_Id name -> (
         match name with
-        | "__nondet__" -> Some C_std.nondet_int_fun
+        | "__soteria_nondet__" -> Some C_std.nondet_int_fun
         | "malloc" -> Some C_std.malloc
         | "calloc" -> Some C_std.calloc
         | "free" -> Some C_std.free
@@ -422,8 +422,36 @@ module Make (State : State_intf.S) = struct
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op
         )
+    | AilEbinary (e1, Or, e2) ->
+        (* Or is short-circuiting. In case of side-effects on the RHS,
+           not doing this properly might lead to unsoundnesses.
+           We still optimize by returning a disjunction of the two
+           expressions if the RHS is side-effect free. *)
+        let** v1, state = eval_expr state e1 in
+        if Ail_helpers.sure_side_effect_free e2 then
+          let** v2, state = eval_expr state e2 in
+          let b_res = cast_to_bool v1 ||@ cast_to_bool v2 in
+          Result.ok (Typed.int_of_bool b_res, state)
+        else
+          if%sat cast_to_bool v1 then Result.ok (Typed.one, state)
+          else
+            let** v2, state = eval_expr state e2 in
+            let b_res = cast_to_bool v2 in
+            Result.ok (Typed.int_of_bool b_res, state)
+    | AilEbinary (e1, And, e2) ->
+        (* Same as Or, we need to short-circuit *)
+        let** v1, state = eval_expr state e1 in
+        if Ail_helpers.sure_side_effect_free e2 then
+          let** v2, state = eval_expr state e2 in
+          let b_res = cast_to_bool v1 &&@ cast_to_bool v2 in
+          Result.ok (Typed.int_of_bool b_res, state)
+        else
+          if%sat cast_to_bool v1 then
+            let** v2, state = eval_expr state e2 in
+            let b_res = cast_to_bool v2 in
+            Result.ok (Typed.int_of_bool b_res, state)
+          else Result.ok (Typed.zero, state)
     | AilEbinary (e1, op, e2) -> (
-        (* TODO: Binary operators should return a cval, right now this is not right, I need to model integers *)
         let** v1, state = eval_expr state e1 in
         let** v2, state = eval_expr state e2 in
         match op with
@@ -439,9 +467,7 @@ module Make (State : State_intf.S) = struct
         | And ->
             let b_res = cast_to_bool v1 &&@ cast_to_bool v2 in
             Result.ok (Typed.int_of_bool b_res, state)
-        | Or ->
-            let b_res = cast_to_bool v1 ||@ cast_to_bool v2 in
-            Result.ok (Typed.int_of_bool b_res, state)
+        | Or -> failwith "Unreachable, handled earlier."
         | Arithmetic a_op -> arith ~state (v1, type_of e1) a_op (v2, type_of e2)
         | Comma -> Result.ok (v2, state))
     | AilErvalue e ->

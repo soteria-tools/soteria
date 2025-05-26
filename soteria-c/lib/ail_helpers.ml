@@ -74,3 +74,22 @@ let find_obj_decl ~(prog : Ail_tys.linked_program)
         | _ -> None
       else None)
     prog.sigma.declarations
+
+(** Returns true if the expression is guaranteed to be side-effect free. *)
+let rec sure_side_effect_free (e : Ail_tys.expr) =
+  let (AnnotatedExpression (_, _, _, e)) = e in
+  match e with
+  | AilEunary (_, e) -> sure_side_effect_free e
+  | AilEbinary (e1, _, e2) ->
+      sure_side_effect_free e1 && sure_side_effect_free e2
+  | AilEcond (e1, e2opt, e3) ->
+      sure_side_effect_free e1
+      && Option.fold ~none:true ~some:sure_side_effect_free e2opt
+      && sure_side_effect_free e3
+  | AilEconst _ | AilEident _
+  (* Loading from a stack variable is side-effect free, it supposedly cannot fail. *)
+  | AilErvalue (AnnotatedExpression (_, _, _, AilEident _)) ->
+      true
+  | AilEcast (_, _, e) -> sure_side_effect_free e
+  (* TODO: add more if relevant *)
+  | _ -> false
