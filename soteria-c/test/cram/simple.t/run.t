@@ -329,6 +329,6 @@ Checking that code cannot branch infinitely
 Should return a single branch!
   $ soteria-c exec-main short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
-    [Ok: (IntOfBool((Not((0 Eq V|3|)) And Not((0 Eq V|1|)))),
+    [Ok: (b2i(((0 != V|3|) && (0 != V|1|))),
           { heap = [(V|0|, Freed); (V|2|, Freed)]; globs = [] })]
   Executed 4 statements

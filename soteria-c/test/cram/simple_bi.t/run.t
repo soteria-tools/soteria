@@ -1,11 +1,6 @@
   $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
-<<<<<<< HEAD
-  Summaries for f_484:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 == V|0|)];
-=======
   Summaries for f_485:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 Eq V|0|)];
->>>>>>> f8274ffd (short-circuit and tests)
+    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 == V|0|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(load.c:3:10-12 (cursor: 3:10),
@@ -26,13 +21,8 @@
   
 
   $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
-<<<<<<< HEAD
-  Summaries for load_486:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 == V|0|)];
-=======
   Summaries for load_487:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 Eq V|0|)];
->>>>>>> f8274ffd (short-circuit and tests)
+    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 == V|0|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(manifest.c:6:10-12 (cursor: 6:10),
