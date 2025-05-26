@@ -639,15 +639,17 @@ let rec leq v1 v2 =
   | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
       leq v1 (int_z @@ Z.sub y x)
-  | Binop (Minus, v1, { node = { kind = Int x; _ }; _ }), Int y
-  | Binop (Minus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-      leq v1 (int_z @@ Z.add y x)
   | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
   | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
       leq (int_z @@ Z.sub y x) v1
-  | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ })
-  | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
+  | Binop (Minus, v1, { node = { kind = Int x; _ }; _ }), Int y ->
+      leq v1 (int_z @@ Z.add y x)
+  | Binop (Minus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
+      leq (int_z @@ Z.sub x y) v1
+  | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ }) ->
       leq (int_z @@ Z.add y x) v1
+  | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
+      leq v1 (int_z @@ Z.sub x y)
   | _ -> Binop (Leq, v1, v2) <| TBool
 
 let geq v1 v2 = leq v2 v1
