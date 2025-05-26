@@ -162,7 +162,7 @@ let rec pp ft t =
   | Int z when Z.(z > of_int 2048 || z < of_int (-2048)) ->
       pf ft "%s" (Z.format "%#x" z)
   | Int z -> pf ft "%a" Z.pp_print z
-  | Float f -> pf ft "%s" f
+  | Float f -> pf ft "%sf" f
   | BitVec bv -> pf ft "%s" (Z.format "%#x" bv)
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
@@ -339,8 +339,19 @@ let and_ v1 v2 =
 
 let conj l = List.fold_left and_ v_true l
 
+let rec not sv =
+  if equal sv v_true then v_false
+  else if equal sv v_false then v_true
+  else
+    match sv.node.kind with
+    | Unop (Not, sv) -> sv
+    | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
+    | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
+    | Binop (Or, v1, v2) -> Binop (And, not v1, not v2) <| TBool
+    | _ -> Unop (Not, sv) <| TBool
+
 let rec sem_eq v1 v2 =
-  if equal v1 v2 && not (is_float v1.node.ty) then v_true
+  if equal v1 v2 && Stdlib.not (is_float v1.node.ty) then v_true
   else
     match (v1.node.kind, v2.node.kind) with
     | Int z1, Int z2 -> bool (Z.equal z1 z2)
@@ -363,7 +374,8 @@ let rec sem_eq v1 v2 =
     | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
     | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
         sem_eq v1 (int_z @@ Z.sub y x)
-        (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
+    | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
+    (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
     | Binop (BitAnd, _, _), _ | _, Binop (BitAnd, _, _) -> (
         let rec msb_of v =
           match v.node.kind with
@@ -408,17 +420,6 @@ let or_ v1 v2 =
   | Bool false, _ -> v2
   | _, Bool false -> v1
   | _ -> mk_commut_binop Or v1 v2 <| TBool
-
-let rec not sv =
-  if equal sv v_true then v_false
-  else if equal sv v_false then v_true
-  else
-    match sv.node.kind with
-    | Unop (Not, sv) -> sv
-    | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
-    | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
-    | Binop (Or, v1, v2) -> Binop (And, not v1, not v2) <| TBool
-    | _ -> Unop (Not, sv) <| TBool
 
 let rec split_ands (sv : t) (f : t -> unit) : unit =
   match sv.node.kind with
@@ -517,6 +518,14 @@ let float_of_int fp v =
   match v.node.kind with
   | Int i -> float fp (Z.to_string i)
   | _ -> float_of_bv (bv_of_int (FloatPrecision.size fp) v)
+
+let int_of_float v =
+  match (v.node.ty, v.node.kind) with
+  | TFloat F32, Float f ->
+      int_z (Z.of_int32 (Int32.bits_of_float (Float.of_string f)))
+  | TFloat F64, Float f ->
+      int_z (Z.of_int64 (Int64.bits_of_float (Float.of_string f)))
+  | _ -> int_of_bv true (bv_of_float v)
 
 (** {2 Integers} *)
 
@@ -697,7 +706,7 @@ let div v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.div i1 i2)
-  | _ -> Binop (Div, v1, v2) <| TInt
+  | _ -> Binop (Div, v1, v2) <| v1.node.ty
 
 let rec is_mod v n =
   match v.node.kind with

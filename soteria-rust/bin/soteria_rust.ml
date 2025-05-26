@@ -4,13 +4,6 @@ let file_arg =
   let doc = "FILE" in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
-let dump_smt_arg =
-  let doc = "Dump the SMT queries to the given file" in
-  Arg.(
-    value
-    & opt (some string) None
-    & info [ "dump-smt-to"; "dump-smt" ] ~docv:"SMT_FILE" ~doc)
-
 let no_compile_flag =
   let doc = "Do not compile the Rust code, as it is already compiled" in
   Arg.(value & flag & info [ "no-compile" ] ~doc)
@@ -36,7 +29,7 @@ module Exec_main = struct
     Term.(
       const Soteria_rust_lib.Driver.exec_main_and_print
       $ Soteria_logs.Cli.term
-      $ dump_smt_arg
+      $ Soteria_c_values.Solver_config.Cli.term
       $ no_compile_flag
       $ cleanup_flag
       $ ignore_leaks_flag

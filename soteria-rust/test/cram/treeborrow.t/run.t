@@ -36,5 +36,5 @@ Nested UnsafeCells work too
   $ soteria-rust exec-main nested.rs --clean
   Done. - Ran 1 branches
   PC: 
-    (V|0| != 0) /\ ((i2bv(V|0|) & 0x3) == 0x0) /\
-    (V|0| <= 0x7ffffffffffffffb) /\ (0 < V|0|) /\ ((V|0| mod 4) == 0)
+    (0 != V|0|) /\ ((i2bv(V|0|) & 0x3) == 0x0) /\
+    (V|0| <= 0x7ffffffffffffffb) /\ (0 < V|0|) /\ (0 == (V|0| mod 4))

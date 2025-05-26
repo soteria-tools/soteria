@@ -403,6 +403,7 @@ module Make (Sptr : Sptr.S) = struct
           Ok (Base sv')
       | TLiteral (TInteger _), TLiteral (TFloat fp), Base sv ->
           let+ sv = cast_checked sv ~ty:Typed.t_int in
+          let fp = float_precision fp in
           let sv' = Typed.float_of_int fp sv in
           Ok (Base sv')
       | TLiteral (TInteger U8), TLiteral TChar, v
