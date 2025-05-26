@@ -746,17 +746,13 @@ let assert_exclusively_owned t =
 
 let load ~is_move ~ignore_borrow ofs ty tag tb t =
   let* size = Layout.size_of_s ty in
-  let** t = of_opt ~mk_fixes:(mk_fix_typed ofs ty) t in
-  let++ res, tree =
-    let@ t = with_bound_check t (ofs +@ size) in
-    Tree.load ~is_move ~ignore_borrow ofs size ty tag tb t
-  in
-  (res, to_opt tree)
+  with_bound_and_owned_check ~mk_fixes:(mk_fix_typed ofs ty) t (ofs +@ size)
+  @@ Tree.load ~is_move ~ignore_borrow ofs size ty tag tb
 
 let store ofs ty sval tag tb t =
   let* size = Layout.size_of_s ty in
-  let@ t = with_bound_and_owned_check t (ofs +@ size) in
-  Tree.store ofs size ty sval tag tb t
+  with_bound_and_owned_check t (ofs +@ size)
+  @@ Tree.store ofs size ty sval tag tb
 
 let get_raw_tree_owned ofs size t =
   let@ t = with_bound_and_owned_check t (ofs +@ size) in
@@ -779,24 +775,19 @@ let alloc size =
   { root = Tree.uninit Tree_borrow.empty_state (0s, size); bound = Some size }
 
 let uninit_range ofs size t =
-  let@ t = with_bound_and_owned_check t (ofs +@ size) in
-  Tree.uninit_range ofs size t
+  with_bound_and_owned_check t (ofs +@ size) @@ Tree.uninit_range ofs size
 
 let zero_range ofs size t =
-  let@ t = with_bound_and_owned_check t (ofs +@ size) in
-  Tree.zero_range ofs size t
+  with_bound_and_owned_check t (ofs +@ size) @@ Tree.zero_range ofs size
 
 let protect ofs size tag tb t =
-  let@ t = with_bound_and_owned_check t (ofs +@ size) in
-  Tree.protect ofs size tag tb t
+  with_bound_and_owned_check t (ofs +@ size) @@ Tree.protect ofs size tag tb
 
 let unprotect ofs size tag tb t =
-  let@ t = with_bound_and_owned_check t (ofs +@ size) in
-  Tree.unprotect ofs size tag tb t
+  with_bound_and_owned_check t (ofs +@ size) @@ Tree.unprotect ofs size tag tb
 
 let tb_access ofs size tag tb t =
-  let@ t = with_bound_and_owned_check t (ofs +@ size) in
-  Tree.tb_access ofs size tag tb t
+  with_bound_and_owned_check t (ofs +@ size) @@ Tree.tb_access ofs size tag tb
 
 (** Logic *)
 
