@@ -25,6 +25,7 @@ module M (Heap : Heap_intf.S) = struct
     | AssertZeroValid
     | AssertInhabited
     | Assume
+    | ByteSwap
     | BlackBox
     | BoxIntoRaw
     | Checked of Expressions.binop
@@ -141,6 +142,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::assume", Assume);
       ("core::intrinsics::black_box", BlackBox);
+      ("core::intrinsics::bswap", ByteSwap);
       ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::compare_bytes", CompareBytes);
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
@@ -214,6 +216,7 @@ module M (Heap : Heap_intf.S) = struct
          | AssertZeroValid -> assert_zero_is_valid f.signature
          | AssertInhabited -> assert_inhabited f.signature
          | Assume -> std_assume
+         | ByteSwap -> byte_swap f.signature
          | BlackBox -> black_box
          | BoxIntoRaw -> box_into_raw
          | Checked op -> checked_op op f.signature
