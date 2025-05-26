@@ -41,6 +41,20 @@ module type S = sig
       serialized list )
     Result.t
 
+  val tb_load :
+    full_ptr ->
+    Types.ty ->
+    t ->
+    ( unit * t,
+      [> `NullDereference
+      | `OutOfBounds
+      | `UseAfterFree
+      | `UBTreeBorrow
+      | `MisalignedPointer ]
+      err,
+      serialized list )
+    Result.t
+
   val store :
     full_ptr ->
     Types.ty ->
@@ -126,6 +140,7 @@ module type S = sig
 
   val borrow :
     full_ptr ->
+    Charon.Types.ty ->
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
@@ -135,18 +150,20 @@ module type S = sig
 
   val protect :
     full_ptr ->
+    Charon.Types.ty ->
     Charon.Types.ref_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree ] err,
+      [> `NullDereference | `UseAfterFree | `OutOfBounds | `UBTreeBorrow ] err,
       serialized list )
     Result.t
 
   val unprotect :
     full_ptr ->
+    Charon.Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `UseAfterFree ] err,
+      [> `NullDereference | `UseAfterFree | `OutOfBounds ] err,
       serialized list )
     Result.t
 

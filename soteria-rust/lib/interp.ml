@@ -43,7 +43,7 @@ module Make (Heap : Heap_intf.S) = struct
     | None -> Heap.error `DeadVariable state
 
   let alloc_stack (locals : GAst.locals) args st :
-      (store * full_ptr list * state, 'e, 'm) Result.t =
+      (store * (full_ptr * Types.ty) list * state, 'e, 'm) Result.t =
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
@@ -74,16 +74,21 @@ module Make (Heap : Heap_intf.S) = struct
         ~f:(fun (protected, st) ({ index; var_ty = ty; _ }, ptr) ->
           let index = Expressions.LocalId.to_int index in
           let value = List.nth args (index - 1) in
+          (* Passed references must be protected! *)
           let** value, protected', st =
             match (value, ty) with
             | Ptr ptr, (TRawPtr (subty, mut) | TRef (_, subty, mut)) ->
-                let** ptr', st = Heap.protect ptr mut st in
-                (* Function calls perform a dummy read on the variable *)
-                let++ _, st = Heap.load ptr' subty st in
-                (Ptr ptr', ptr' :: protected, st)
+                let++ ptr', st = Heap.protect ptr subty mut st in
+                (Ptr ptr', (ptr', subty) :: protected, st)
             | _ -> Result.ok (value, protected, st)
           in
-          let++ (), st = Heap.store ptr ty value st in
+          let** (), st = Heap.store ptr ty value st in
+          (* Ensure all passed references are valid, even nested ones! *)
+          let ptr_tys = Layout.ptr_tys_in value ty in
+          let++ (), st =
+            Result.fold_list ptr_tys ~init:((), st)
+              ~f:(fun ((), st) (ptr, ty) -> Heap.tb_load ptr ty st)
+          in
           (protected', st))
     in
     (store, protected, st)
@@ -96,8 +101,8 @@ module Make (Heap : Heap_intf.S) = struct
       function's entry. *)
   let dealloc_store ?protected_address store protected st =
     let** (), st =
-      Result.fold_list protected ~init:((), st) ~f:(fun ((), st) ptr ->
-          Heap.unprotect ptr st)
+      Result.fold_list protected ~init:((), st) ~f:(fun ((), st) (ptr, ty) ->
+          Heap.unprotect ptr ty st)
     in
     Result.fold_list (Store.bindings store) ~init:((), st)
       ~f:(fun ((), st) (_, (ptr, _)) ->
@@ -322,7 +327,7 @@ module Make (Heap : Heap_intf.S) = struct
     | Use op -> eval_operand state op
     | RvRef (place, borrow) ->
         let** ptr, state = resolve_place ~crate ~store state place in
-        let++ ptr', state = Heap.borrow ptr borrow state in
+        let++ ptr', state = Heap.borrow ptr place.ty borrow state in
         (Ptr ptr', state)
     | Global { global_id; _ } ->
         let** ptr, state = resolve_global ~crate global_id state in
@@ -740,9 +745,18 @@ module Make (Heap : Heap_intf.S) = struct
           | Panic name ->
               let name = Option.map (name_str crate) name in
               Heap.error (`Panic name) state)
-    | s ->
-        Fmt.kstr not_impl "Unsupported statement: %a" UllbcAst.pp_raw_statement
-          s
+    | CopyNonOverlapping { src; dst; count } ->
+        let ty = get_pointee (type_of_operand src) in
+        let** args, state =
+          eval_operand_list ~crate ~store state [ src; dst; count ]
+        in
+        let++ _, state =
+          Std_funs.Std.copy_nonoverlapping ty ~crate ~args ~state
+        in
+        (store, state)
+    | SetDiscriminant (_, _) ->
+        not_impl "Unsupported statement: SetDiscriminant"
+    | Deinit _ -> not_impl "Unsupported statement: Deinit"
 
   and exec_block ~crate ~(body : UllbcAst.expr_body) store state
       ({ statements; terminator } : UllbcAst.block) =
@@ -782,13 +796,16 @@ module Make (Heap : Heap_intf.S) = struct
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~crate ~body store state block
     | Return ->
-        let value_ptr, value_ty = Store.find Expressions.LocalId.zero store in
-        let* value_ptr =
-          match value_ptr with
-          | Some x -> return x
-          | None -> Fmt.kstr not_impl "Return value unset, but returned"
+        let ptr, ty = Store.find Expressions.LocalId.zero store in
+        let* ptr =
+          of_opt_not_impl ~msg:"Return value unset, but returned" ptr
         in
-        let++ value, state = Heap.load value_ptr value_ty state in
+        let** value, state = Heap.load ptr ty state in
+        let ptr_tys = Layout.ptr_tys_in value ty in
+        let++ (), state =
+          Result.fold_list ptr_tys ~init:((), state)
+            ~f:(fun ((), st) (ptr, ty) -> Heap.tb_load ptr ty st)
+        in
         (value, store, state)
     | Switch (discr, switch) -> (
         let** discr, state = eval_operand ~crate ~store state discr in
@@ -861,8 +878,8 @@ module Make (Heap : Heap_intf.S) = struct
     in
     let@ () = with_loc ~loc in
     L.info (fun m ->
-        m "Calling %s with [@[%a@]]" (name_str crate name)
-          Fmt.(list ~sep:comma pp_rust_val)
+        m "Calling %s with %a" (name_str crate name)
+          Fmt.(hbox @@ brackets @@ list ~sep:comma pp_rust_val)
           args);
     let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in
