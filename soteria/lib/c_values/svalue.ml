@@ -385,6 +385,14 @@ let rec sem_eq v1 v2 =
     | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
     | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
         sem_eq v1 (int_z @@ Z.sub y x)
+    | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1)
+    | Int y, Binop (Times, v1, { node = { kind = Int x; _ }; _ })
+    | Binop (Times, v1, { node = { kind = Int x; _ }; _ }), Int y
+    | Binop (Times, { node = { kind = Int x; _ }; _ }, v1), Int y ->
+        if Z.equal Z.zero x then
+          if Z.equal Z.zero y then v_true else sem_eq v1 zero
+        else if Z.(equal zero (rem y x)) then sem_eq v1 (int_z Z.(y / x))
+        else v_false
     | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
     (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
     | Binop (BitAnd, _, _), _ | _, Binop (BitAnd, _, _) -> (
@@ -725,6 +733,7 @@ let rec rem v1 v2 =
 let mod_ v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> zero
+  | _, Int i2 when is_mod v1 i2 -> int_z Z.zero
   | Int i1, Int i2 ->
       (* OCaml's mod computes the remainer... *)
       let rem = Z.( mod ) i1 i2 in
