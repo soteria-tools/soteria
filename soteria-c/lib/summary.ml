@@ -44,6 +44,8 @@ let filter_serialized_state relevant_vars (state : State.serialized) =
           let () =
             match b with Csymex.Freeable.Freed -> () | Alive _ -> leak := true
           in
+          L.trace (fun m ->
+              m "Filtering out unreable location: %a" Typed.ppa loc);
           false)
   in
   (* Globals are not filtered: if they are in the spec, they were bi-abduced and necessary *)
@@ -74,6 +76,7 @@ let init_reachable_vars summary =
     well as a boolean capturing whether a memory leak was detected. A memory
     leak is detected if there was an unreachable block that was not freed. *)
 let pruned summary =
+  L.trace (fun m -> m "Pruning summary %a" (pp (Fmt.any "error")) summary);
   let module Var_graph = Graph.Make_in_place (Var) in
   let graph = Var_graph.with_node_capacity 0 in
   let init_reachable = init_reachable_vars summary in
