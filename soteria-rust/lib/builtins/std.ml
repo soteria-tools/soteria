@@ -376,12 +376,9 @@ module M (Heap : Heap_intf.S) = struct
     (Tuple [], state)
 
   let copy_nonoverlapping_fn (funsig : GAst.fun_sig) =
-    let ty =
-      match funsig.inputs with
-      | TRawPtr (ty, _) :: _ -> ty
-      | _ -> failwith "copy_nonoverlapping: invalid arguments"
-    in
-    copy_nonoverlapping ty
+    match funsig.inputs with
+    | TRawPtr (ty, _) :: _ -> copy_nonoverlapping ty
+    | _ -> failwith "copy_nonoverlapping: invalid arguments"
 
   let mul_add ~args ~state =
     match args with
@@ -789,4 +786,30 @@ module M (Heap : Heap_intf.S) = struct
         let** (), state = Heap.store ptr str_ty char_arr state in
         let++ (), state = Heap.store_str_global str ptr state in
         (Ptr ptr, state)
+
+  let raw_eq (fun_sig : UllbcAst.fun_sig) ~args ~state =
+    let l, r, ty =
+      match (args, fun_sig.inputs) with
+      | [ Ptr l; Ptr r ], TRef (_, ty, _) :: _ -> (l, r, ty)
+      | _ -> failwith "raw_eq expects two arguments"
+    in
+    let layout = Layout.layout_of ty in
+    let bytes = mk_array_ty (TLiteral (TInteger U8)) layout.size in
+    (* this is hacky, but we do not keep the state post-load, as it will have its tree blocks
+       split up per byte, which is suboptimal *)
+    let** l, _ = Heap.load l bytes state in
+    let** r, _ = Heap.load r bytes state in
+    let byte_pairs =
+      match (l, r) with
+      | Array l, Array r -> List.combine l r
+      | _ -> failwith "Unexpected read array"
+    in
+    let rec aux = function
+      | [] -> Result.ok Typed.v_true
+      | (Base l, Base r) :: rest ->
+          if%sat l ==@ r then aux rest else Result.ok Typed.v_false
+      | _ :: _ -> failwith "Unexpected read array"
+    in
+    let++ res = aux byte_pairs in
+    (Base (Typed.int_of_bool res), state)
 end

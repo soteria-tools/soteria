@@ -51,6 +51,7 @@ module M (Heap : Heap_intf.S) = struct
     | PtrGuaranteedCmp
     | PtrOp of Expressions.binop
     | PtrOffsetFrom of bool (* unsigned? *)
+    | RawEq
     | SizeOf
     | SizeOfVal
     | Transmute
@@ -187,6 +188,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::ptr_guaranteed_cmp", PtrGuaranteedCmp);
       ("core::intrinsics::ptr_offset_from", PtrOffsetFrom false);
       ("core::intrinsics::ptr_offset_from_unsigned", PtrOffsetFrom true);
+      ("core::intrinsics::raw_eq", RawEq);
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
       ("core::intrinsics::transmute", Transmute);
@@ -267,6 +269,7 @@ module M (Heap : Heap_intf.S) = struct
          | PtrGuaranteedCmp -> ptr_guaranteed_cmp
          | PtrOp op -> ptr_op op f.signature
          | PtrOffsetFrom unsigned -> ptr_offset_from unsigned f.signature
+         | RawEq -> raw_eq f.signature
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
          | Transmute -> transmute f.signature
