@@ -38,8 +38,8 @@ module M (Heap : Heap_intf.S) = struct
     | FloatFast of Expressions.binop
     | FloatIs of fpclass
     | FloatIsFinite
-    | FloatIsSign of bool (* true for positive, false for negative *)
-    | FloatMinMax of bool (* true for min, false for max *)
+    | FloatIsSign of { positive : bool }
+    | FloatMinMax of { min : bool }
     | Index
     | IsValStaticallyKnown
     | Likely
@@ -50,7 +50,7 @@ module M (Heap : Heap_intf.S) = struct
     | PtrByteOp of Expressions.binop
     | PtrGuaranteedCmp
     | PtrOp of Expressions.binop
-    | PtrOffsetFrom of bool (* unsigned? *)
+    | PtrOffsetFrom of { unsigned : bool }
     | RawEq
     | SizeOf
     | SizeOfVal
@@ -98,29 +98,29 @@ module M (Heap : Heap_intf.S) = struct
       ("core::f16::{f16}::is_infinite", FloatIs FP_infinite);
       ("core::f16::{f16}::is_nan", FloatIs FP_nan);
       ("core::f16::{f16}::is_normal", FloatIs FP_normal);
-      ("core::f16::{f16}::is_sign_negative", FloatIsSign false);
-      ("core::f16::{f16}::is_sign_positive", FloatIsSign true);
+      ("core::f16::{f16}::is_sign_negative", FloatIsSign { positive = false });
+      ("core::f16::{f16}::is_sign_positive", FloatIsSign { positive = true });
       ("core::f16::{f16}::is_subnormal", FloatIs FP_subnormal);
       ("core::f32::{f32}::is_finite", FloatIsFinite);
       ("core::f32::{f32}::is_infinite", FloatIs FP_infinite);
       ("core::f32::{f32}::is_nan", FloatIs FP_nan);
       ("core::f32::{f32}::is_normal", FloatIs FP_normal);
-      ("core::f32::{f32}::is_sign_negative", FloatIsSign false);
-      ("core::f32::{f32}::is_sign_positive", FloatIsSign true);
+      ("core::f32::{f32}::is_sign_negative", FloatIsSign { positive = false });
+      ("core::f32::{f32}::is_sign_positive", FloatIsSign { positive = true });
       ("core::f32::{f32}::is_subnormal", FloatIs FP_subnormal);
       ("core::f64::{f64}::is_finite", FloatIsFinite);
       ("core::f64::{f64}::is_infinite", FloatIs FP_infinite);
       ("core::f64::{f64}::is_nan", FloatIs FP_nan);
       ("core::f64::{f64}::is_normal", FloatIs FP_normal);
-      ("core::f64::{f64}::is_sign_negative", FloatIsSign false);
-      ("core::f64::{f64}::is_sign_positive", FloatIsSign true);
+      ("core::f64::{f64}::is_sign_negative", FloatIsSign { positive = false });
+      ("core::f64::{f64}::is_sign_positive", FloatIsSign { positive = true });
       ("core::f64::{f64}::is_subnormal", FloatIs FP_subnormal);
       ("core::f128::{f128}::is_finite", FloatIsFinite);
       ("core::f128::{f128}::is_infinite", FloatIs FP_infinite);
       ("core::f128::{f128}::is_nan", FloatIs FP_nan);
       ("core::f128::{f128}::is_normal", FloatIs FP_normal);
-      ("core::f128::{f128}::is_sign_negative", FloatIsSign false);
-      ("core::f128::{f128}::is_sign_positive", FloatIsSign true);
+      ("core::f128::{f128}::is_sign_negative", FloatIsSign { positive = false });
+      ("core::f128::{f128}::is_sign_positive", FloatIsSign { positive = true });
       ("core::f128::{f128}::is_subnormal", FloatIs FP_subnormal);
       (* FIXME: all core::ptr operations could be removed, however because we must enable
          ub_checks at runtime due to unchecked_op, this means ub checks also happen in
@@ -169,14 +169,14 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::fmaf32", MulAdd);
       ("core::intrinsics::fmaf64", MulAdd);
       ("core::intrinsics::fmaf128", MulAdd);
-      ("core::intrinsics::maxnumf16", FloatMinMax false);
-      ("core::intrinsics::maxnumf32", FloatMinMax false);
-      ("core::intrinsics::maxnumf64", FloatMinMax false);
-      ("core::intrinsics::maxnumf128", FloatMinMax false);
-      ("core::intrinsics::minnumf16", FloatMinMax true);
-      ("core::intrinsics::minnumf32", FloatMinMax true);
-      ("core::intrinsics::minnumf64", FloatMinMax true);
-      ("core::intrinsics::minnumf128", FloatMinMax true);
+      ("core::intrinsics::maxnumf16", FloatMinMax { min = false });
+      ("core::intrinsics::maxnumf32", FloatMinMax { min = false });
+      ("core::intrinsics::maxnumf64", FloatMinMax { min = false });
+      ("core::intrinsics::maxnumf128", FloatMinMax { min = false });
+      ("core::intrinsics::minnumf16", FloatMinMax { min = true });
+      ("core::intrinsics::minnumf32", FloatMinMax { min = true });
+      ("core::intrinsics::minnumf64", FloatMinMax { min = true });
+      ("core::intrinsics::minnumf128", FloatMinMax { min = true });
       ("core::intrinsics::fmul_fast", FloatFast Mul);
       ("core::intrinsics::fsub_fast", FloatFast Sub);
       ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
@@ -186,8 +186,9 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::offset", PtrOp Add);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
       ("core::intrinsics::ptr_guaranteed_cmp", PtrGuaranteedCmp);
-      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom false);
-      ("core::intrinsics::ptr_offset_from_unsigned", PtrOffsetFrom true);
+      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom { unsigned = false });
+      ( "core::intrinsics::ptr_offset_from_unsigned",
+        PtrOffsetFrom { unsigned = true } );
       ("core::intrinsics::raw_eq", RawEq);
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
@@ -256,8 +257,8 @@ module M (Heap : Heap_intf.S) = struct
          | FloatFast bop -> float_fast bop
          | FloatIs fc -> float_is fc
          | FloatIsFinite -> float_is_finite
-         | FloatIsSign b -> float_is_sign b
-         | FloatMinMax is_min -> float_minmax is_min
+         | FloatIsSign { positive } -> float_is_sign positive
+         | FloatMinMax { min } -> float_minmax min
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
          | Likely -> likely
@@ -268,7 +269,7 @@ module M (Heap : Heap_intf.S) = struct
          | PtrByteOp op -> ptr_op ~byte:true op f.signature
          | PtrGuaranteedCmp -> ptr_guaranteed_cmp
          | PtrOp op -> ptr_op op f.signature
-         | PtrOffsetFrom unsigned -> ptr_offset_from unsigned f.signature
+         | PtrOffsetFrom { unsigned } -> ptr_offset_from unsigned f.signature
          | RawEq -> raw_eq f.signature
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
