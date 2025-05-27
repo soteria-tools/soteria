@@ -54,15 +54,31 @@ def pprint(*args, inc: bool = False, **kwargs):
         inc_rainbow()
 
 
-SKIPPED_TESTS = {
+pass_ = lambda x: ("Success", GREEN, x)
+fail_ = lambda x: ("Failure", RED, x)
+unkn_ = lambda x: ("Unknown", YELLOW, x)
+
+SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     # Kani
-    "ArithOperators/rem_float_fixme.rs": "Complicated float expression, slow + fails",
-    "ConstEval/limit.rs": "Takes ages to compile (const eval loop of 131072)",
-    "FloatingPoint/main.rs": "Slow floating operation operations, passes",
-    "BitwiseShiftOperators/shift_neg_vals.rs": "Wrapping operations without loop unrolling branch too much",
-    "Intrinsics/Count/ctpop.rs": "The way the intrinsic is tested requires 2^N branches",
+    "ArithOperators/rem_float_fixme.rs": fail_("Complicated float expression"),
+    "ConstEval/limit.rs": unkn_("Takes ages to compile (const eval loop of 131072)"),
+    "FloatingPoint/main.rs": pass_("Slow floating operation operations"),
+    "BitwiseShiftOperators/shift_neg_vals.rs": unkn_(
+        "Wrapping operations without loop unrolling branch too much"
+    ),
+    "Intrinsics/Count/ctpop.rs": pass_("The test requires 2^N branches"),
+    "Intrinsics/Math/Rounding/Ceil/ceilf32.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Ceil/ceilf64.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Floor/floorf32.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Floor/floorf64.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Ceil/floorf32.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Ceil/floorf64.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Round/roundf32.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Round/roundf64.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
-    "pass/issues/issue-17877.rs": "Makes an array of size 16384, too slow",
+    "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
 }
 
 KNOWN_ISSUES = {

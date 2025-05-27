@@ -59,9 +59,11 @@ def exec_test(
 
     pprint(f"Running {relative} ... ", inc=True, end="", flush=True)
     if str(relative) in SKIPPED_TESTS:
-        reason = SKIPPED_TESTS[str(relative)]
-        print(f"{GRAY}{BOLD}Skipped{RESET} {YELLOW}✦{RESET} {BOLD}{reason}{RESET}")
-        return ("Skipped", f"{GRAY}{BOLD}", reason)
+        (msg, clr, reason) = SKIPPED_TESTS[str(relative)]
+        print(
+            f"{clr}{msg}{RESET} {YELLOW}✦{RESET} {GRAY}{BOLD}Skipped{RESET}: {BOLD}{reason}{RESET}"
+        )
+        return (msg, clr, "Skipped")
 
     log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
 
@@ -80,13 +82,15 @@ def exec_test(
 
     outcome = categorise_rusteria(full_log, expect_failure=expect_failure)
     (msg, clr, reason) = outcome = outcome[0] if isinstance(outcome, list) else outcome
+
+    txt = f"{clr}{msg}{RESET} in {elapsed:.3f}s"
+    if elapsed > 1:
+        txt += " 🐌"
     if str(relative) in KNOWN_ISSUES:
         issue = KNOWN_ISSUES[str(relative)]
-        print(
-            f"{clr}{msg}{RESET} in {elapsed:.3f}s {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
-        )
-    else:
-        print(f"{clr}{msg}{RESET} in {elapsed:.3f}s")
+        txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
+    print(txt)
+
     return outcome
 
 

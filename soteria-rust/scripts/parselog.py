@@ -136,6 +136,9 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if "Fatal: Execution vanished" in test:
         return ("Vanished", RED, None)
 
+    if "unknown option" in test:
+        return ("Unknown CLI option", RED, None)
+
     return (f"Unknown (Fatal error)", RED, None)
 
 
