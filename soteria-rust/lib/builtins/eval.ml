@@ -169,6 +169,10 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::fmaf32", MulAdd);
       ("core::intrinsics::fmaf64", MulAdd);
       ("core::intrinsics::fmaf128", MulAdd);
+      ("core::intrinsics::fmul_fast", FloatFast Mul);
+      ("core::intrinsics::fsub_fast", FloatFast Sub);
+      ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
+      ("core::intrinsics::likely", Likely);
       ("core::intrinsics::maxnumf16", FloatMinMax { min = false });
       ("core::intrinsics::maxnumf32", FloatMinMax { min = false });
       ("core::intrinsics::maxnumf64", FloatMinMax { min = false });
@@ -177,12 +181,9 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::minnumf32", FloatMinMax { min = true });
       ("core::intrinsics::minnumf64", FloatMinMax { min = true });
       ("core::intrinsics::minnumf128", FloatMinMax { min = true });
-      ("core::intrinsics::fmul_fast", FloatFast Mul);
-      ("core::intrinsics::fsub_fast", FloatFast Sub);
-      ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
-      ("core::intrinsics::likely", Likely);
       ("core::intrinsics::min_align_of", MinAlignOf GenArg);
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
+      ("core::intrinsics::mul_with_overflow", Checked Mul);
       ("core::intrinsics::offset", PtrOp Add);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
       ("core::intrinsics::ptr_guaranteed_cmp", PtrGuaranteedCmp);
@@ -192,6 +193,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::raw_eq", RawEq);
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
+      ("core::intrinsics::sub_with_overflow", Checked Sub);
       ("core::intrinsics::transmute", Transmute);
       ("core::intrinsics::type_id", TypeId);
       ("core::intrinsics::type_name", TypeName);

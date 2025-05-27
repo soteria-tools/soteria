@@ -77,14 +77,14 @@ module M (Heap : Heap_intf.S) = struct
       match fun_sig.inputs with
       | TLiteral ty :: _ -> return ty
       | tys ->
-          Fmt.kstr not_impl "wrapping_op invalid type: %a"
+          Fmt.kstr not_impl "checked_op invalid type: %a"
             Fmt.(list Types.pp_ty)
             tys
     in
     let* left, right =
       match args with
       | [ Base left; Base right ] -> return (left, right)
-      | _ -> not_impl "wrapping_op with not two arguments"
+      | _ -> not_impl "checked_op with not two arguments"
     in
     let++ res = Core.eval_checked_lit_binop op ty left right state in
     (res, state)
