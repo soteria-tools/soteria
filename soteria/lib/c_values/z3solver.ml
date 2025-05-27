@@ -373,10 +373,6 @@ let fresh_var solver ty =
   ack_command solver.z3_solver c;
   v_id
 
-let fresh solver ty =
-  let v_id = fresh_var solver ty in
-  Typed.mk_var v_id ty
-
 let rec simplify' solver (v : Svalue.t) : Svalue.t =
   match v.node.kind with
   | Int _ | Bool _ -> v
