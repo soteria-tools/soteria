@@ -68,7 +68,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ Base left; Base right ] -> return (left, right)
       | _ -> not_impl "wrapping_op with not two arguments"
     in
-    let** res = Core.safe_binop op left right state in
+    let** res = Core.safe_binop op (TInteger ity) left right state in
     let* res = Core.wrap_value ity res in
     Result.ok (Base res, state)
 
@@ -301,7 +301,7 @@ module M (Heap : Heap_intf.S) = struct
     let box_ptr = List.hd args in
     Result.ok (box_ptr, state)
 
-  let ptr_offset_from (funsig : GAst.fun_sig) ~args ~state =
+  let ptr_offset_from unsigned (funsig : GAst.fun_sig) ~args ~state =
     let ptr1, ptr2 =
       match args with
       | [ Ptr (ptr1, _); Ptr (ptr2, _) ] -> (ptr1, ptr2)
@@ -316,7 +316,14 @@ module M (Heap : Heap_intf.S) = struct
     if%sat Sptr.is_same_loc ptr1 ptr2 &&@ (size >@ 0s) then
       let size = Typed.cast size in
       let off = Sptr.distance ptr1 ptr2 in
-      if%sat off %@ size ==@ 0s then Result.ok (Base (off /@ size), state)
+      if%sat off %@ size ==@ 0s then
+        if not unsigned then Result.ok (Base (off /@ size), state)
+        else
+          if%sat off >=@ 0s then Result.ok (Base (off /@ size), state)
+          else
+            Heap.error
+              (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
+              state
       else Heap.error `UBPointerComparison state
     else Heap.error `UBPointerComparison state
 
@@ -724,4 +731,12 @@ module M (Heap : Heap_intf.S) = struct
         in
         (v', state)
     | _ -> not_impl "invalid arguments in byte_swap"
+
+  let ptr_guaranteed_cmp ~args ~state =
+    match args with
+    | [ Base l; Base r ] -> Result.ok (Base (Typed.int_of_bool (l ==@ r)), state)
+    | [ l; r ] ->
+        let++ res = Core.eval_ptr_binop Eq l r state in
+        (Base res, state)
+    | _ -> not_impl "invalid arguments in ptr_guaranteed_cmp"
 end

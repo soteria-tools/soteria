@@ -453,7 +453,7 @@ module Make (Heap : Heap_intf.S) = struct
                 let++ res = Core.equality_check v1 v2 state in
                 let res = if op = Eq then res else Typed.not_int_bool res in
                 (Base (res :> T.cval Typed.t), state)
-            | Add | Sub | Mul | Div | Rem ->
+            | Add | Sub | Mul | Div | Rem | Shl | Shr ->
                 let* ty =
                   match type_of_operand e1 with
                   | TLiteral ty -> return ty
@@ -473,8 +473,8 @@ module Make (Heap : Heap_intf.S) = struct
                 (res, state)
             | WrappingAdd | WrappingSub | WrappingMul -> (
                 match type_of_operand e1 with
-                | TLiteral (TInteger ty) ->
-                    let** v = Core.safe_binop op v1 v2 state in
+                | TLiteral (TInteger ty as litty) ->
+                    let** v = Core.safe_binop op litty v1 v2 state in
                     let+ res = Core.wrap_value ty v in
                     Soteria_symex.Compo_res.Ok (Base res, state)
                 | TLiteral ty ->
@@ -525,26 +525,7 @@ module Make (Heap : Heap_intf.S) = struct
                   | BitXor -> Typed.bit_xor
                   | _ -> assert false
                 in
-                Result.ok (Base (op ~size ~signed v1 v2), state)
-            | Shl | Shr ->
-                let* ity =
-                  match type_of_operand e1 with
-                  | TLiteral (TInteger ity) -> return ity
-                  | TLiteral TBool -> return Values.U8
-                  | TLiteral TChar -> return Values.U32
-                  | ty ->
-                      Fmt.kstr not_impl
-                        "Unsupported type for bitwise operation: %a" pp_ty ty
-                in
-                let size = 8 * Layout.size_of_int_ty ity in
-                let signed = Layout.is_signed ity in
-                let* v1 = cast_checked ~ty:Typed.t_int v1 in
-                let* v2 = cast_checked ~ty:Typed.t_int v2 in
-                if%sat v2 <@ 0s ||@ (v2 >=@ Typed.int size) then
-                  Heap.error `UBArithShift state
-                else
-                  let op = if op = Shl then Typed.bit_shl else Typed.bit_shr in
-                  Result.ok (Base (op ~size ~signed v1 v2), state))
+                Result.ok (Base (op ~size ~signed v1 v2), state))
         | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2) -> (
             match op with
             | Offset ->

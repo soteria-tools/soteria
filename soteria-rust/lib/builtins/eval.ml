@@ -38,7 +38,7 @@ module M (Heap : Heap_intf.S) = struct
     | FloatFast of Expressions.binop
     | FloatIs of fpclass
     | FloatIsFinite
-    | FloatIsSign of bool
+    | FloatIsSign of bool (* true for positive, false for negative *)
     | Index
     | IsValStaticallyKnown
     | Likely
@@ -47,8 +47,9 @@ module M (Heap : Heap_intf.S) = struct
     | Nop
     | PanicSimple
     | PtrByteOp of Expressions.binop
+    | PtrGuaranteedCmp
     | PtrOp of Expressions.binop
-    | PtrOffsetFrom
+    | PtrOffsetFrom of bool (* unsigned? *)
     | SizeOf
     | SizeOfVal
     | Transmute
@@ -134,6 +135,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
       ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
       (* Intrinsics *)
+      ("core::intrinsics::abort", PanicSimple);
       ("core::intrinsics::add_with_overflow", Checked Add);
       ("core::intrinsics::arith_offset", PtrOp Add);
       ("core::intrinsics::assert_inhabited", AssertInhabited);
@@ -165,7 +167,9 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
       ("core::intrinsics::offset", PtrOp Add);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
-      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom);
+      ("core::intrinsics::ptr_guaranteed_cmp", PtrGuaranteedCmp);
+      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom false);
+      ("core::intrinsics::ptr_offset_from_unsigned", PtrOffsetFrom true);
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
       ("core::intrinsics::transmute", Transmute);
@@ -174,6 +178,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::unchecked_div", Unchecked Div);
       ("core::intrinsics::unchecked_mul", Unchecked Mul);
       ("core::intrinsics::unchecked_rem", Unchecked Rem);
+      ("core::intrinsics::unchecked_shl", Unchecked Shl);
+      ("core::intrinsics::unchecked_shr", Unchecked Shr);
       ("core::intrinsics::unchecked_sub", Unchecked Sub);
       ("core::intrinsics::unlikely", Likely);
       ("core::intrinsics::variant_count", VariantCount);
@@ -238,8 +244,9 @@ module M (Heap : Heap_intf.S) = struct
          | Nop -> nop
          | PanicSimple -> std_panic
          | PtrByteOp op -> ptr_op ~byte:true op f.signature
+         | PtrGuaranteedCmp -> ptr_guaranteed_cmp
          | PtrOp op -> ptr_op op f.signature
-         | PtrOffsetFrom -> ptr_offset_from f.signature
+         | PtrOffsetFrom unsigned -> ptr_offset_from unsigned f.signature
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
          | Transmute -> transmute f.signature
