@@ -125,7 +125,7 @@ let rec free_syms_expr acc expr =
       let res = List.fold_left free_syms_stmt acc stmts in
       Sym_set.diff res exclude
   | AilEbuiltin _ | AilEstr _ | AilEconst _ | AilEsizeof _ | AilEalignof _
-  | AilEreg_load _ | AilEoffsetof _ ->
+  | AilEreg_load _ | AilEoffsetof _ | AilEinvalid _ ->
       acc
 
 and free_syms_stmt acc stmt =
@@ -178,7 +178,6 @@ let merge_globs (globs_1 : 'a sigma_object_definition list)
             (free_syms_object_definition (Sym_set.of_list acc) glob) ))
       globs
   in
-  (* init_set is the list of symbol with no dependencies *)
   (* We order the symbols in topological order! *)
   let ordered_syms =
     match Tsort.sort dep_map with
@@ -190,11 +189,17 @@ let merge_globs (globs_1 : 'a sigma_object_definition list)
     List.fold_left (fun acc (s, g) -> Sym_map.add s g acc) Sym_map.empty globs
   in
   let ordered_gs =
-    List.map
+    List.filter_map
       (fun k ->
-        match Sym_map.find_opt k gs_map with
-        | None -> raise (LinkError "linking: merge_globs")
-        | Some g -> (k, g))
+        (* TODO: should the None case be allowed to happen? *)
+        Option.map (fun g -> (k, g)) (Sym_map.find_opt k gs_map)
+        (* match Sym_map.find_opt k gs_map with
+        | None ->
+            None
+            (* Fmt.kstr
+              (fun s -> raise (LinkError s))
+              "merge_globs: %a not found" Fmt_ail.pp_sym k *)
+        | Some g -> Some (k, g) *))
       ordered_syms
   in
   (* We have now ordered the globs *)

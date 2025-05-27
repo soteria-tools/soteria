@@ -1,10 +1,10 @@
 int *malloc(__cerbty_size_t);
-int __nondet__();
+
 int __assert__(int);
 
 int main()
 {
-  int y = __nondet__();
+  int y = __soteria_nondet__();
   if (y)
   {
     __assert__(0);

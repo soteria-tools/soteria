@@ -1,5 +1,3 @@
-int __nondet__();
-
 int simple(int x)
 {
   if (x >= 5)
@@ -18,6 +16,6 @@ int simple(int x)
 
 int main()
 {
-  int x = __nondet__();
+  int x = __soteria_nondet__();
   return simple(x);
 }

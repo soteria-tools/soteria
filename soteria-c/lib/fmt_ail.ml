@@ -27,6 +27,12 @@ let pp_binop = pp_to_fmt pp_binaryOperator
 let pp_unop = pp_to_fmt pp_unaryOperator
 let pp_constant = pp_to_fmt pp_constant
 
+let pp_invalid_reason ft (reason : ail_invalid_reason) =
+  match reason with
+  | AilInvalid_desugaring_init_failed msg ->
+      Fmt.pf ft "desugaring init failed: %s" msg
+  | AilInvalid_other msg -> Fmt.pf ft "other: %s" msg
+
 let pp_expr : Format.formatter -> expr -> unit =
   pp_to_fmt (fun e -> pp_expression e)
 

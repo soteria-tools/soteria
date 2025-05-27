@@ -1,43 +1,50 @@
   $ soteria-c show-ail file1.c file2.c -I .
   Extern idmap:
-    __assert__ -> (__assert___486, decl);
-    exposed -> (exposed_496, def);
-    glob -> (glob_494, def);
-    main -> (main_491, def);
-    ref -> (ref_495, def);
-    test -> (test_487, def);
-    update -> (update_489, def)
+    __assert__ -> (__assert___487, decl);
+    __soteria_nondet__ -> (__soteria_nondet___495, decl);
+    exposed -> (exposed_498, def);
+    glob -> (glob_496, def);
+    main -> (main_492, def);
+    ref -> (ref_497, def);
+    test -> (test_488, def);
+    update -> (update_490, def)
   
   Declarations:
-    glob_483 -> object;
-    exposed_484 -> function;
-    __assert___486 -> function;
-    test_487 -> function;
-    update_489 -> function;
-    main_491 -> function;
-    glob_494 -> object;
-    ref_495 -> object;
-    exposed_496 -> function
+    __soteria_nondet___483 -> function;
+    glob_484 -> object;
+    exposed_485 -> function;
+    __assert___487 -> function;
+    test_488 -> function;
+    update_490 -> function;
+    main_492 -> function;
+    __soteria_nondet___495 -> function;
+    glob_496 -> object;
+    ref_497 -> object;
+    exposed_498 -> function
   
   Object definitions:
-    (ref_495, &glob)
-    (glob_494, 42)
+    (ref_497, &glob)
+    (glob_496, 42)
   
   Function definitions:
-    test_487
-    update_489
-    main_491
-    exposed_496
+    test_488
+    update_490
+    main_492
+    exposed_498
   
    Symmap:
-    glob_483 -> glob_494;
-    exposed_484 -> exposed_496;
-    test_487 -> test_487;
-    update_489 -> update_489;
-    main_491 -> main_491;
-    glob_494 -> glob_494;
-    ref_495 -> ref_495;
-    exposed_496 -> exposed_496
+    __soteria_nondet___483 -> __soteria_nondet___495;
+    glob_484 -> glob_496;
+    exposed_485 -> exposed_498;
+    test_488 -> test_488;
+    update_490 -> update_490;
+    main_492 -> main_492;
+    glob_496 -> glob_496;
+    ref_497 -> ref_497;
+    exposed_498 -> exposed_498
+  
+  // declare __soteria_nondet__ WITH PROTO as function () returning signed int
+  signed int __soteria_nondet__();
   
   // declare glob as signed int
   signed int glob;
@@ -69,6 +76,9 @@
     return 0;
   }
   
+  // declare __soteria_nondet__ WITH PROTO as function () returning signed int
+  signed int __soteria_nondet__();
+  
   // declare glob as signed int
   signed int glob = 42;
   
@@ -87,5 +97,5 @@
           { heap =
             [(V|0|, [TypedVal {offset = 0; ty = signed int*; v = &(V|1|, 0)}]);
              (V|1|, [TypedVal {offset = 0; ty = signed int; v = 1024}])];
-            globs = [(glob_494, V|1|); (ref_495, V|0|)] })]
+            globs = [(glob_496, V|1|); (ref_497, V|0|)] })]
   Executed 15 statements

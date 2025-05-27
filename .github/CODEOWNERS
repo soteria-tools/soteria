@@ -3,3 +3,5 @@
 
 # Opale has control over `soteria-rust`
 soteria-rust/ @N1ark
+soteria-rust.opam @N1ark
+soteria-rust.opam.template @N1ark

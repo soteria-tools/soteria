@@ -303,7 +303,7 @@ Checking that code cannot branch infinitely
   Symex terminated with the following outcomes:
     [Ok: (1,
           { heap = [(V|0|, [TypedVal {offset = 0; ty = signed int; v = 1}])];
-            globs = [(x_483, V|0|)] })]
+            globs = [(x_484, V|0|)] })]
   Executed 5 statements
   $ soteria-c exec-main global_alias.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
@@ -311,7 +311,7 @@ Checking that code cannot branch infinitely
           { heap =
             [(V|0|, [TypedVal {offset = 0; ty = signed int; v = 0}]);
              (V|1|, [TypedVal {offset = 0; ty = signed int; v = 0}])];
-            globs = [(x_585, V|0|); (y_586, V|1|)] })]
+            globs = [(x_586, V|0|); (y_587, V|1|)] })]
   Executed 3 statements
 
   $ soteria-c exec-main structs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
@@ -320,3 +320,15 @@ Checking that code cannot branch infinitely
           { heap = [(V|0|, Freed); (V|1|, Freed); (V|2|, Freed)]; globs = [] });
      Ok: (1, { heap = [(V|0|, Freed); (V|1|, Freed)]; globs = [] })]
   Executed 16 statements
+
+  $ soteria-c exec-main short_circuit.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (0,
+          { heap = [(V|0|, Freed); (V|1|, Freed); (V|2|, Freed)]; globs = [] })]
+  Executed 7 statements
+Should return a single branch!
+  $ soteria-c exec-main short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (b2i(((0 != V|3|) && (0 != V|1|))),
+          { heap = [(V|0|, Freed); (V|2|, Freed)]; globs = [] })]
+  Executed 4 statements

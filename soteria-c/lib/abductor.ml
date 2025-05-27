@@ -37,6 +37,7 @@ let generate_summaries_for ~prog (fundef : fundef) =
     let@ () = with_section "Running symbolic execution" in
     Csymex.run process
   in
+  let@ () = with_section "Building summary" in
   let pre, post = Bi_state.to_spec bi_state in
   Summary.make ~args ~ret ~pre ~post ~pc ()
 
