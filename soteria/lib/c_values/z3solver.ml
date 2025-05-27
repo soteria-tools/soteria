@@ -355,7 +355,9 @@ let rec encode_value (v : Svalue.t) =
       | BitOr -> bv_or v1 v2
       | BitXor -> bv_xor v1 v2
       | BitShl -> bv_shl v1 v2
-      | BitShr -> bv_ashr v1 v2)
+      | BitShr -> bv_lshr v1 v2
+      | BvPlus -> bv_add v1 v2
+      | BvMinus -> bv_sub v1 v2)
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in
       distinct vs

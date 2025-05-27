@@ -111,7 +111,9 @@ module Binop = struct
     | FTimes
     | FDiv
     | FRem
-    (* Bitwise Binary operators (size * signed) *)
+    (* Bitwise Binary operators *)
+    | BvPlus
+    | BvMinus
     | BitAnd
     | BitOr
     | BitXor
@@ -139,6 +141,8 @@ module Binop = struct
     | FTimes -> Fmt.string ft "*."
     | FDiv -> Fmt.string ft "/."
     | FRem -> Fmt.string ft "rem."
+    | BvPlus -> Fmt.string ft "+b"
+    | BvMinus -> Fmt.string ft "-b"
     | BitAnd -> Fmt.string ft "&"
     | BitOr -> Fmt.string ft "|"
     | BitXor -> Fmt.string ft "^"
@@ -312,15 +316,15 @@ let v_true = Bool true <| TBool
 let v_false = Bool false <| TBool
 
 (** {2 Arithmetics} *)
-let int_z z = Int z <| TInt
 
+let int_z z = Int z <| TInt
 let int i = int_z (Z.of_int i)
 let zero = int_z Z.zero
 let one = int_z Z.one
 
 (** {2 Floats} *)
-let float fp f = Float f <| t_f fp
 
+let float fp f = Float f <| t_f fp
 let float_f fp f = Float (Float.to_string f) <| t_f fp
 let float_like v f = Float (Float.to_string f) <| v.node.ty
 
@@ -505,16 +509,28 @@ let bv_of_float v =
   | _ -> failwith "Expected a float value in bv_of_float"
 
 let rec bv_of_int n v =
+  let bv_of_int = bv_of_int n in
   let is_2pow z = Z.(z > one && popcount z = 1) in
   match v.node.kind with
-  | Unop (IntOfBv _, v) -> v
+  | Unop (IntOfBv _, v) ->
+      if size_of_bv v.node.ty = n then v
+      else if size_of_bv v.node.ty > n then bv_extract 0 (n - 1) v
+      else failwith "?"
   | Int z ->
       let z = if Z.geq z Z.zero then z else Z.neg z in
       BitVec z <| t_bv n
   | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
-      raw_bit_and n (bv_of_int n v) (BitVec (Z.pred mask) <| t_bv n)
+      raw_bit_and n (bv_of_int v) (BitVec (Z.pred mask) <| t_bv n)
   | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
-      raw_bit_and n (bv_of_int n v) (BitVec (Z.pred mask) <| t_bv n)
+      raw_bit_and n (bv_of_int v) (BitVec (Z.pred mask) <| t_bv n)
+  | Binop (Times, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
+      let fac = BitVec (Z.of_int (Z.log2 mask)) <| t_bv n in
+      Binop (BitShl, bv_of_int v, fac) <| t_bv n
+  | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
+      let fac = BitVec (Z.of_int (Z.log2 mask)) <| t_bv n in
+      Binop (BitShr, bv_of_int v, fac) <| t_bv n
+  | Binop (Plus, l, r) -> Binop (BvPlus, bv_of_int l, bv_of_int r) <| t_bv n
+  | Binop (Minus, l, r) -> Binop (BvMinus, bv_of_int l, bv_of_int r) <| t_bv n
   | _ -> Unop (BvOfInt, v) <| t_bv n
 
 let rec int_of_bv signed v =
@@ -712,6 +728,7 @@ let bit_xor ~size ~signed v1 v2 =
 let bit_shl ~size ~signed v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> int_z (Z.( lsl ) i1 (Z.to_int i2))
+  | _, Int i2 -> times v1 (int_z (Z.( lsl ) Z.one (Z.to_int i2)))
   | _ ->
       let v1_bv = bv_of_int size v1 in
       let v2_bv = bv_of_int size v2 in
