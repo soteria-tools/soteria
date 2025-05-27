@@ -1,132 +1,139 @@
   $ soteria-c show-ail file1.c file2.c -I .
   Extern idmap:
-    __assert__ -> (__assert___493, decl);
-    __stderr -> (__stderr_503, decl);
-    __stdin -> (__stdin_504, decl);
-    __stdout -> (__stdout_502, decl);
-    add -> (add_487, def);
-    clearerr -> (clearerr_629, decl);
-    fclose -> (fclose_514, decl);
-    fdopen -> (fdopen_636, decl);
-    feof -> (feof_631, decl);
-    ferror -> (ferror_633, decl);
-    fflush -> (fflush_516, decl);
-    fgetc -> (fgetc_580, decl);
-    fgetpos -> (fgetpos_616, decl);
-    fgets -> (fgets_584, decl);
-    fileno -> (fileno_637, decl);
-    fopen -> (fopen_519, decl);
-    fprintf -> (fprintf_534, decl);
-    fputc -> (fputc_587, decl);
-    fputs -> (fputs_590, decl);
-    fread -> (fread_608, decl);
-    freopen -> (freopen_523, decl);
-    fscanf -> (fscanf_537, decl);
-    fseek -> (fseek_620, decl);
-    fsetpos -> (fsetpos_623, decl);
-    ftell -> (ftell_625, decl);
-    fwrite -> (fwrite_613, decl);
-    getc -> (getc_592, decl);
-    getchar -> (getchar_593, decl);
-    main -> (main_647, def);
-    operate -> (operate_642, def);
-    perror -> (perror_635, decl);
-    printf -> (printf_539, decl);
-    putc -> (putc_596, decl);
-    putchar -> (putchar_598, decl);
-    puts -> (puts_600, decl);
-    remove -> (remove_506, decl);
-    rename -> (rename_509, decl);
-    rewind -> (rewind_627, decl);
-    scanf -> (scanf_541, decl);
-    setbuf -> (setbuf_526, decl);
-    setvbuf -> (setvbuf_531, decl);
-    snprintf -> (snprintf_545, decl);
-    sprintf -> (sprintf_548, decl);
-    sscanf -> (sscanf_551, decl);
-    tmpfile -> (tmpfile_510, decl);
-    tmpnam -> (tmpnam_512, decl);
-    ungetc -> (ungetc_603, decl);
-    vfprintf -> (vfprintf_555, decl);
-    vfscanf -> (vfscanf_559, decl);
-    vprintf -> (vprintf_562, decl);
-    vscanf -> (vscanf_565, decl);
-    vsnprintf -> (vsnprintf_570, decl);
-    vsprintf -> (vsprintf_574, decl);
-    vsscanf -> (vsscanf_578, decl)
+    __assert__ -> (__assert___495, decl);
+    __soteria_nondet__ -> (__soteria_nondet___493, decl);
+    __stderr -> (__stderr_505, decl);
+    __stdin -> (__stdin_506, decl);
+    __stdout -> (__stdout_504, decl);
+    add -> (add_488, def);
+    clearerr -> (clearerr_631, decl);
+    fclose -> (fclose_516, decl);
+    fdopen -> (fdopen_638, decl);
+    feof -> (feof_633, decl);
+    ferror -> (ferror_635, decl);
+    fflush -> (fflush_518, decl);
+    fgetc -> (fgetc_582, decl);
+    fgetpos -> (fgetpos_618, decl);
+    fgets -> (fgets_586, decl);
+    fileno -> (fileno_639, decl);
+    fopen -> (fopen_521, decl);
+    fprintf -> (fprintf_536, decl);
+    fputc -> (fputc_589, decl);
+    fputs -> (fputs_592, decl);
+    fread -> (fread_610, decl);
+    freopen -> (freopen_525, decl);
+    fscanf -> (fscanf_539, decl);
+    fseek -> (fseek_622, decl);
+    fsetpos -> (fsetpos_625, decl);
+    ftell -> (ftell_627, decl);
+    fwrite -> (fwrite_615, decl);
+    getc -> (getc_594, decl);
+    getchar -> (getchar_595, decl);
+    main -> (main_649, def);
+    operate -> (operate_644, def);
+    perror -> (perror_637, decl);
+    printf -> (printf_541, decl);
+    putc -> (putc_598, decl);
+    putchar -> (putchar_600, decl);
+    puts -> (puts_602, decl);
+    remove -> (remove_508, decl);
+    rename -> (rename_511, decl);
+    rewind -> (rewind_629, decl);
+    scanf -> (scanf_543, decl);
+    setbuf -> (setbuf_528, decl);
+    setvbuf -> (setvbuf_533, decl);
+    snprintf -> (snprintf_547, decl);
+    sprintf -> (sprintf_550, decl);
+    sscanf -> (sscanf_553, decl);
+    tmpfile -> (tmpfile_512, decl);
+    tmpnam -> (tmpnam_514, decl);
+    ungetc -> (ungetc_605, decl);
+    vfprintf -> (vfprintf_557, decl);
+    vfscanf -> (vfscanf_561, decl);
+    vprintf -> (vprintf_564, decl);
+    vscanf -> (vscanf_567, decl);
+    vsnprintf -> (vsnprintf_572, decl);
+    vsprintf -> (vsprintf_576, decl);
+    vsscanf -> (vsscanf_580, decl)
   
   Declarations:
-    __assert___484 -> function;
-    add_487 -> function;
-    __assert___493 -> function;
-    add_496 -> function;
-    __stdout_502 -> object;
-    __stderr_503 -> object;
-    __stdin_504 -> object;
-    remove_506 -> function;
-    rename_509 -> function;
-    tmpfile_510 -> function;
-    tmpnam_512 -> function;
-    fclose_514 -> function;
-    fflush_516 -> function;
-    fopen_519 -> function;
-    freopen_523 -> function;
-    setbuf_526 -> function;
-    setvbuf_531 -> function;
-    fprintf_534 -> function;
-    fscanf_537 -> function;
-    printf_539 -> function;
-    scanf_541 -> function;
-    snprintf_545 -> function;
-    sprintf_548 -> function;
-    sscanf_551 -> function;
-    vfprintf_555 -> function;
-    vfscanf_559 -> function;
-    vprintf_562 -> function;
-    vscanf_565 -> function;
-    vsnprintf_570 -> function;
-    vsprintf_574 -> function;
-    vsscanf_578 -> function;
-    fgetc_580 -> function;
-    fgets_584 -> function;
-    fputc_587 -> function;
-    fputs_590 -> function;
-    getc_592 -> function;
-    getchar_593 -> function;
-    putc_596 -> function;
-    putchar_598 -> function;
-    puts_600 -> function;
-    ungetc_603 -> function;
-    fread_608 -> function;
-    fwrite_613 -> function;
-    fgetpos_616 -> function;
-    fseek_620 -> function;
-    fsetpos_623 -> function;
-    ftell_625 -> function;
-    rewind_627 -> function;
-    clearerr_629 -> function;
-    feof_631 -> function;
-    ferror_633 -> function;
-    perror_635 -> function;
-    fdopen_636 -> function;
-    fileno_637 -> function;
-    operate_642 -> function;
-    main_647 -> function
+    __soteria_nondet___483 -> function;
+    __assert___485 -> function;
+    add_488 -> function;
+    __soteria_nondet___493 -> function;
+    __assert___495 -> function;
+    add_498 -> function;
+    __stdout_504 -> object;
+    __stderr_505 -> object;
+    __stdin_506 -> object;
+    remove_508 -> function;
+    rename_511 -> function;
+    tmpfile_512 -> function;
+    tmpnam_514 -> function;
+    fclose_516 -> function;
+    fflush_518 -> function;
+    fopen_521 -> function;
+    freopen_525 -> function;
+    setbuf_528 -> function;
+    setvbuf_533 -> function;
+    fprintf_536 -> function;
+    fscanf_539 -> function;
+    printf_541 -> function;
+    scanf_543 -> function;
+    snprintf_547 -> function;
+    sprintf_550 -> function;
+    sscanf_553 -> function;
+    vfprintf_557 -> function;
+    vfscanf_561 -> function;
+    vprintf_564 -> function;
+    vscanf_567 -> function;
+    vsnprintf_572 -> function;
+    vsprintf_576 -> function;
+    vsscanf_580 -> function;
+    fgetc_582 -> function;
+    fgets_586 -> function;
+    fputc_589 -> function;
+    fputs_592 -> function;
+    getc_594 -> function;
+    getchar_595 -> function;
+    putc_598 -> function;
+    putchar_600 -> function;
+    puts_602 -> function;
+    ungetc_605 -> function;
+    fread_610 -> function;
+    fwrite_615 -> function;
+    fgetpos_618 -> function;
+    fseek_622 -> function;
+    fsetpos_625 -> function;
+    ftell_627 -> function;
+    rewind_629 -> function;
+    clearerr_631 -> function;
+    feof_633 -> function;
+    ferror_635 -> function;
+    perror_637 -> function;
+    fdopen_638 -> function;
+    fileno_639 -> function;
+    operate_644 -> function;
+    main_649 -> function
   
   Object definitions:
     
   
   Function definitions:
-    add_487
-    operate_642
-    main_647
+    add_488
+    operate_644
+    main_649
   
    Symmap:
-    add_496 -> add_487;
-    operate_642 -> operate_642;
-    main_647 -> main_647;
-    __assert___484 -> __assert___493;
-    add_487 -> add_487
+    add_498 -> add_488;
+    operate_644 -> operate_644;
+    main_649 -> main_649;
+    __soteria_nondet___483 -> __soteria_nondet___493;
+    __assert___485 -> __assert___495;
+    add_488 -> add_488
+  
+  // declare __soteria_nondet__ WITH PROTO as function () returning signed int
+  signed int __soteria_nondet__();
   
   // declare __assert__ WITH PROTO as function (signed int) returning signed int
   signed int __assert__(signed int);
@@ -136,6 +143,9 @@
   {
     return rvalue(x) + rvalue(y);
   }
+  
+  // declare __soteria_nondet__ WITH PROTO as function () returning signed int
+  signed int __soteria_nondet__();
   
   // declare __assert__ WITH PROTO as function (signed int) returning signed int
   signed int __assert__(signed int);

@@ -1,5 +1,5 @@
   $ soteria-c gen-summaries file1.c file2.c -I .
-  Summaries for test_485:
+  Summaries for test_486:
     { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
       ret = (Ok 0); memory_leak = false }
       manifest bugs: []

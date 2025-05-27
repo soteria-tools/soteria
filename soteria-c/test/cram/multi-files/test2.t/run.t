@@ -1,30 +1,37 @@
   $ soteria-c show-ail file1.c file2.c -I .
   Extern idmap:
-    __assert__ -> (__assert___491, decl);
-    compute -> (compute_485, def);
-    main -> (main_493, def)
+    __assert__ -> (__assert___493, decl);
+    __soteria_nondet__ -> (__soteria_nondet___491, decl);
+    compute -> (compute_486, def);
+    main -> (main_495, def)
   
   Declarations:
-    __assert___484 -> function;
-    compute_485 -> function;
-    helper_486 -> function;
-    __assert___491 -> function;
-    compute_492 -> function;
-    main_493 -> function
+    __soteria_nondet___483 -> function;
+    __assert___485 -> function;
+    compute_486 -> function;
+    helper_487 -> function;
+    __soteria_nondet___491 -> function;
+    __assert___493 -> function;
+    compute_494 -> function;
+    main_495 -> function
   
   Object definitions:
     
   
   Function definitions:
-    compute_485
-    helper_486
-    main_493
+    compute_486
+    helper_487
+    main_495
   
    Symmap:
-    compute_492 -> compute_485;
-    main_493 -> main_493;
-    __assert___484 -> __assert___491;
-    compute_485 -> compute_485
+    compute_494 -> compute_486;
+    main_495 -> main_495;
+    __soteria_nondet___483 -> __soteria_nondet___491;
+    __assert___485 -> __assert___493;
+    compute_486 -> compute_486
+  
+  // declare __soteria_nondet__ WITH PROTO as function () returning signed int
+  signed int __soteria_nondet__();
   
   // declare __assert__ WITH PROTO as function (signed int) returning signed int
   signed int __assert__(signed int);
@@ -40,6 +47,9 @@
   {
     return 7;
   }
+  
+  // declare __soteria_nondet__ WITH PROTO as function () returning signed int
+  signed int __soteria_nondet__();
   
   // declare __assert__ WITH PROTO as function (signed int) returning signed int
   signed int __assert__(signed int);
