@@ -15,7 +15,7 @@ module M (Heap : Heap_intf.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
-  let assert_ ~crate:_ ~(args : rust_val list) ~state =
+  let assert_ ~(args : rust_val list) ~state =
     let open Typed.Infix in
     let* to_assert =
       match args with
@@ -25,7 +25,7 @@ module M (Heap : Heap_intf.S) = struct
     if%sat to_assert ==@ 0s then Heap.error (`FailedAssert None) state
     else Result.ok (Charon_util.unit_, state)
 
-  let assume ~crate:_ ~args ~state =
+  let assume ~args ~state =
     let* to_assume =
       match args with
       | [ Base t ] -> cast_checked t ~ty:Typed.t_int
@@ -35,12 +35,12 @@ module M (Heap : Heap_intf.S) = struct
     let* () = assume [ Typed.bool_of_int to_assume ] in
     Result.ok (Charon_util.unit_, state)
 
-  let kani_nondet (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let kani_nondet (fun_sig : UllbcAst.fun_sig) ~args:_ ~state =
     let ty = fun_sig.output in
     let* value = Layout.nondet ty in
     Result.ok (value, state)
 
-  let unchecked_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+  let unchecked_op op (fun_sig : UllbcAst.fun_sig) ~args ~state =
     let* ty =
       match fun_sig.inputs with
       | TLiteral ty :: _ -> return ty
@@ -54,7 +54,7 @@ module M (Heap : Heap_intf.S) = struct
     let++ res = Core.eval_lit_binop op ty left right state in
     (Base res, state)
 
-  let wrapping_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+  let wrapping_op op (fun_sig : UllbcAst.fun_sig) ~args ~state =
     let* ity =
       match fun_sig.inputs with
       | TLiteral (TInteger ity) :: _ -> return ity
@@ -72,7 +72,7 @@ module M (Heap : Heap_intf.S) = struct
     let* res = Core.wrap_value ity res in
     Result.ok (Base res, state)
 
-  let checked_op op (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args ~state =
+  let checked_op op (fun_sig : UllbcAst.fun_sig) ~args ~state =
     let* ty =
       match fun_sig.inputs with
       | TLiteral ty :: _ -> return ty
@@ -89,12 +89,12 @@ module M (Heap : Heap_intf.S) = struct
     let++ res = Core.eval_checked_lit_binop op ty left right state in
     (res, state)
 
-  let zeroed (fun_sig : UllbcAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let zeroed (fun_sig : UllbcAst.fun_sig) ~args:_ ~state =
     match Layout.zeroed ~null_ptr:Sptr.null_ptr fun_sig.output with
     | Some v -> Result.ok (v, state)
     | None -> Heap.error (`StdErr "Non-zeroable type") state
 
-  let array_repeat (gen_args : Types.generic_args) ~crate:_ ~args ~state =
+  let array_repeat (gen_args : Types.generic_args) ~args ~state =
     let rust_val, size =
       match (args, gen_args.const_generics) with
       | [ rust_val ], [ size ] ->
@@ -110,7 +110,7 @@ module M (Heap : Heap_intf.S) = struct
     Result.ok (Array (List.init size (fun _ -> rust_val)), state)
 
   let array_index (idx_op : Expressions.builtin_index_op)
-      (gen_args : Types.generic_args) ~crate:_ ~args ~state =
+      (gen_args : Types.generic_args) ~args ~state =
     let ptr, size =
       match (idx_op.is_array, List.hd args, gen_args.const_generics) with
       (* Array with static size *)
@@ -143,7 +143,7 @@ module M (Heap : Heap_intf.S) = struct
 
   (* Some array accesses are ran on functions, so we handle those here and redirect them.
      Eventually, it would be good to maybe make a Charon pass that gets rid of these before. *)
-  let array_index_fn (fun_sig : UllbcAst.fun_sig) ~crate ~args ~state =
+  let array_index_fn (fun_sig : UllbcAst.fun_sig) ~args ~state =
     let mode, gargs, range_ty_id =
       match fun_sig.inputs with
       (* Unfortunate, but right now i don't have a better way to handle this... *)
@@ -154,9 +154,7 @@ module M (Heap : Heap_intf.S) = struct
           (mode, gargs, range_ty_id)
       | _ -> failwith "Unexpected input type"
     in
-    let range_adt =
-      Types.TypeDeclId.Map.find range_ty_id UllbcAst.(crate.type_decls)
-    in
+    let range_adt = Crate.get_adt range_ty_id in
     let range_name =
       match List.last_opt range_adt.item_meta.name with
       | Some (PeIdent (name, _)) -> name
@@ -186,9 +184,9 @@ module M (Heap : Heap_intf.S) = struct
     let idx_op : Expressions.builtin_index_op =
       { is_array = mode = TArray; mutability = RShared; is_range = true }
     in
-    array_index idx_op gargs ~crate ~args:[ ptr; idx_from; idx_to ] ~state
+    array_index idx_op gargs ~args:[ ptr; idx_from; idx_to ] ~state
 
-  let array_slice ~mut:_ (gen_args : Types.generic_args) ~crate:_ ~args ~state =
+  let array_slice ~mut:_ (gen_args : Types.generic_args) ~args ~state =
     let size =
       match gen_args.const_generics with
       | [ size ] -> Charon_util.int_of_const_generic size
@@ -198,7 +196,7 @@ module M (Heap : Heap_intf.S) = struct
     | [ Ptr (ptr, None) ] -> Result.ok (Ptr (ptr, Some (Typed.int size)), state)
     | _ -> failwith "array_index: unexpected arguments"
 
-  let discriminant_value (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let discriminant_value (funsig : GAst.fun_sig) ~args ~state =
     let value_ptr =
       match args with
       | [ Ptr value_ptr ] -> value_ptr
@@ -214,7 +212,7 @@ module M (Heap : Heap_intf.S) = struct
     | Enum (discr, _) -> (Base discr, state)
     | _ -> failwith "discriminant_value: unexpected value"
 
-  let assert_zero_is_valid (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let assert_zero_is_valid (fun_sig : GAst.fun_sig) ~args:_ ~state =
     let ty =
       List.hd
         (List.hd fun_sig.generics.trait_clauses).trait.binder_value
@@ -226,7 +224,7 @@ module M (Heap : Heap_intf.S) = struct
         Heap.error (`Panic (Some "core::intrinsics::assert_zero_valid")) state
     | _ -> Result.ok (Tuple [], state)
 
-  let size_of (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let size_of (fun_sig : GAst.fun_sig) ~args:_ ~state =
     let ty =
       (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
         .types
@@ -235,7 +233,7 @@ module M (Heap : Heap_intf.S) = struct
     let+ size = Layout.size_of_s ty in
     Ok (Base size, state)
 
-  let size_of_val (fun_sig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let size_of_val (fun_sig : GAst.fun_sig) ~args ~state =
     let ty =
       match fun_sig.inputs with
       | [ TRawPtr (ty, _) ] -> ty
@@ -257,7 +255,7 @@ module M (Heap : Heap_intf.S) = struct
         let+ size = Layout.size_of_s ty in
         Ok (Base size, state)
 
-  let min_align_of ~in_input (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let min_align_of ~in_input (fun_sig : GAst.fun_sig) ~args:_ ~state =
     let ty =
       if in_input then
         match fun_sig.inputs with
@@ -272,7 +270,7 @@ module M (Heap : Heap_intf.S) = struct
     let* align = Layout.align_of_s ty in
     Result.ok (Base align, state)
 
-  let box_new (gen_args : Types.generic_args) ~crate:_ ~args ~state =
+  let box_new (gen_args : Types.generic_args) ~args ~state =
     let ty, v =
       match (gen_args, args) with
       | { types = [ ty ]; _ }, [ v ] -> (ty, v)
@@ -282,7 +280,7 @@ module M (Heap : Heap_intf.S) = struct
     let++ (), state = Heap.store ptr ty v state in
     (Ptr ptr, state)
 
-  let ptr_op ?(byte = false) op (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let ptr_op ?(byte = false) op (funsig : GAst.fun_sig) ~args ~state =
     let** ptr, meta, v =
       match args with
       | [ Ptr (ptr, meta); Base v ] -> Result.ok (ptr, meta, v)
@@ -302,12 +300,12 @@ module M (Heap : Heap_intf.S) = struct
     if%sat Sptr.constraints ptr' then Result.ok (Ptr (ptr', meta), state)
     else Heap.error `Overflow state
 
-  let box_into_raw ~crate:_ ~args ~state =
+  let box_into_raw ~args ~state =
     (* internally a box is exactly a pointer so nothing to do *)
     let box_ptr = List.hd args in
     Result.ok (box_ptr, state)
 
-  let ptr_offset_from (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let ptr_offset_from (funsig : GAst.fun_sig) ~args ~state =
     let ptr1, ptr2 =
       match args with
       | [ Ptr (ptr1, _); Ptr (ptr2, _) ] -> (ptr1, ptr2)
@@ -326,12 +324,12 @@ module M (Heap : Heap_intf.S) = struct
       else Heap.error `UBPointerComparison state
     else Heap.error `UBPointerComparison state
 
-  let black_box ~crate:_ ~args ~state =
+  let black_box ~args ~state =
     match args with
     | [ v ] -> Result.ok (v, state)
     | _ -> failwith "black_box: invalid arguments"
 
-  let transmute (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let transmute (funsig : GAst.fun_sig) ~args ~state =
     let from_ty = List.hd funsig.inputs in
     let to_ty = funsig.output in
     let v = List.hd args in
@@ -342,7 +340,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     (v, state)
 
-  let copy_nonoverlapping (ty : Types.ty) ~crate:_ ~args ~state =
+  let copy_nonoverlapping (ty : Types.ty) ~args ~state =
     let (from_ptr, _), (to_ptr, _), len =
       match args with
       | [ Ptr from_ptr; Ptr to_ptr; Base len ] ->
@@ -382,7 +380,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     copy_nonoverlapping ty
 
-  let mul_add ~crate:_ ~args ~state =
+  let mul_add ~args ~state =
     match args with
     | [ Base a; Base b; Base c ] ->
         let a : Typed.T.sfloat Typed.t = Typed.cast a in
@@ -391,13 +389,13 @@ module M (Heap : Heap_intf.S) = struct
         Result.ok (Base ((a *.@ b) +.@ c), state)
     | _ -> failwith "mul_add expects three arguments"
 
-  let abs ~crate:_ ~args ~state =
+  let abs ~args ~state =
     match args with
     | [ Base v ] ->
         Result.ok (Base (Typed.cast @@ Typed.abs_f @@ Typed.cast v), state)
     | _ -> failwith "abs expects one argument"
 
-  let write_bytes (fun_sig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let write_bytes (fun_sig : GAst.fun_sig) ~args ~state =
     let ptr, dst, v, count =
       match args with
       | [ Ptr ((ptr, _) as dst); Base v; Base count ] -> (ptr, dst, v, count)
@@ -429,7 +427,7 @@ module M (Heap : Heap_intf.S) = struct
           (Tuple [], state)
       | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
 
-  let assert_inhabited (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let assert_inhabited (fun_sig : GAst.fun_sig) ~args:_ ~state =
     let ty =
       (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
         .types
@@ -438,7 +436,7 @@ module M (Heap : Heap_intf.S) = struct
     if Layout.is_inhabited ty then Result.ok (Tuple [], state)
     else Heap.error (`Panic (Some "core::intrinsics::assert_inhabited")) state
 
-  let from_raw_parts ~crate:_ ~args ~state =
+  let from_raw_parts ~args ~state =
     match args with
     | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
     | [ Base v; Base meta ] ->
@@ -450,14 +448,14 @@ module M (Heap : Heap_intf.S) = struct
           Fmt.(list ~sep:comma pp_rust_val)
           args
 
-  let nop ~crate:_ ~args:_ ~state = Result.ok (Tuple [], state)
+  let nop ~args:_ ~state = Result.ok (Tuple [], state)
 
-  let is_val_statically_known ~crate:_ ~args:_ ~state =
+  let is_val_statically_known ~args:_ ~state =
     (* see: https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
     let* b = Rustsymex.nondet Typed.t_bool in
     Result.ok (Base (Typed.int_of_bool b), state)
 
-  let std_assume ~crate:_ ~args ~state =
+  let std_assume ~args ~state =
     match args with
     | [ Base cond ] ->
         let* cond = cast_checked ~ty:Typed.t_int cond in
@@ -465,7 +463,7 @@ module M (Heap : Heap_intf.S) = struct
         else Heap.error (`Panic (Some "core::intrinsics::assume")) state
     | _ -> failwith "std_assume: invalid arguments"
 
-  let exact_div (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let exact_div (funsig : GAst.fun_sig) ~args ~state =
     match (funsig.inputs, args) with
     | TLiteral lit :: _, [ Base l; Base r ] ->
         let* l, r, ty = cast_checked2 l r in
@@ -478,7 +476,7 @@ module M (Heap : Heap_intf.S) = struct
           else Heap.error (`Panic (Some "core::intrinsics::exact_div")) state
     | _ -> failwith "exact_div: invalid arguments"
 
-  let ctpop (funsig : GAst.fun_sig) ~crate:_ ~args ~state =
+  let ctpop (funsig : GAst.fun_sig) ~args ~state =
     match args with
     | [ Base v ] -> (
         let ty =
@@ -520,7 +518,7 @@ module M (Heap : Heap_intf.S) = struct
             Result.ok (Base (res :> Typed.T.cval Typed.t), state))
     | _ -> failwith "ctpop: invalid arguments"
 
-  let compare_bytes ~crate:_ ~args ~state =
+  let compare_bytes ~args ~state =
     let l, r, len =
       match args with
       | [ Ptr (l, _); Ptr (r, _); Base len ] -> (l, r, len)
@@ -545,12 +543,12 @@ module M (Heap : Heap_intf.S) = struct
     in
     aux l r len state
 
-  let likely ~crate:_ ~args ~state =
+  let likely ~args ~state =
     match args with
     | [ (Base _ as res) ] -> Result.ok (res, state)
     | _ -> failwith "likely: invalid arguments"
 
-  let copy_sign ~crate:_ ~args ~state =
+  let copy_sign ~args ~state =
     let l, r =
       match args with
       | [ Base l; Base r ] -> (l, r)
@@ -567,18 +565,18 @@ module M (Heap : Heap_intf.S) = struct
         Result.ok (Base (Typed.cast l'), state)
     else not_impl "Expected floats in copy_sign"
 
-  let variant_count (fun_sig : GAst.fun_sig) ~crate:_ ~args:_ ~state =
+  let variant_count (fun_sig : GAst.fun_sig) ~args:_ ~state =
     let ty =
       (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
         .types
       |> List.hd
     in
     match ty with
-    | Types.TAdt (TAdtId id, _) when Layout.Session.is_enum id ->
-        let variants = Layout.Session.as_enum id in
+    | Types.TAdt (TAdtId id, _) when Crate.is_enum id ->
+        let variants = Crate.as_enum id in
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
     | _ -> Heap.error (`Panic (Some "core::intrinsics::variant_count")) state
 
-  let std_panic ~crate:_ ~args:_ ~state = Heap.error (`Panic None) state
+  let std_panic ~args:_ ~state = Heap.error (`Panic None) state
 end

@@ -26,88 +26,10 @@ let pp_layout fmt { size; align; members_ofs } =
     members_ofs
 
 module Session = struct
-  let current_crate : UllbcAst.crate ref =
-    ref
-      UllbcAst.
-        {
-          name = "";
-          options =
-            {
-              ullbc = true;
-              lib = false;
-              bin = None;
-              mir_promoted = false;
-              mir_optimized = false;
-              input_file = None;
-              read_llbc = None;
-              dest_dir = None;
-              dest_file = None;
-              use_polonius = false;
-              no_code_duplication = false;
-              extract_opaque_bodies = false;
-              translate_all_methods = false;
-              included = [];
-              opaque = [];
-              exclude = [];
-              remove_associated_types = [];
-              hide_marker_traits = false;
-              no_cargo = false;
-              rustc_args = [];
-              cargo_args = [];
-              monomorphize = true;
-              skip_borrowck = true;
-              abort_on_error = false;
-              error_on_warnings = false;
-              no_serialize = false;
-              print_original_ullbc = false;
-              print_ullbc = false;
-              print_built_llbc = false;
-              print_llbc = false;
-              no_merge_goto_chains = false;
-              start_from = [];
-              mir = None;
-              preset = None;
-              no_ops_to_function_calls = false;
-            };
-          declarations = [];
-          type_decls = Types.TypeDeclId.Map.empty;
-          fun_decls = FunDeclId.Map.empty;
-          global_decls = GlobalDeclId.Map.empty;
-          trait_decls = TraitDeclId.Map.empty;
-          trait_impls = TraitImplId.Map.empty;
-        }
-
+  (* TODO: allow different caches for different crates *)
   (** Cache of (type or variant) -> layout *)
   let layout_cache : ((Types.ty, Types.variant) Either.t, layout) Hashtbl.t =
     Hashtbl.create 128
-
-  let set_crate c = current_crate := c
-  let get_crate () = !current_crate
-
-  let get_adt adt_id =
-    let crate = get_crate () in
-    Types.TypeDeclId.Map.find adt_id crate.type_decls
-
-  let is_enum adt_id =
-    match (get_adt adt_id).kind with Enum _ -> true | _ -> false
-
-  let is_struct adt_id =
-    match (get_adt adt_id).kind with Struct _ -> true | _ -> false
-
-  let as_enum adt_id =
-    match (get_adt adt_id).kind with
-    | Enum variants -> variants
-    | _ -> assert false
-
-  let as_struct adt_id =
-    match (get_adt adt_id).kind with
-    | Struct fields -> fields
-    | _ -> assert false
-
-  let as_union adt_id =
-    match (get_adt adt_id).kind with
-    | Union fields -> fields
-    | _ -> assert false
 
   let get_or_compute_cached_layout ty f =
     match Hashtbl.find_opt layout_cache ty with
@@ -122,8 +44,6 @@ module Session = struct
 
   let get_or_compute_cached_layout_var var =
     get_or_compute_cached_layout (Right var)
-
-  let pp_name ft name = Fmt.pf ft "%s" (name_str (get_crate ()) name)
 end
 
 let is_int : Types.ty -> bool = function
@@ -155,8 +75,8 @@ let empty_generics = TypesUtils.empty_generic_args
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let rec is_dst : Types.ty -> bool = function
   | TAdt (TBuiltin TSlice, _) | TAdt (TBuiltin TStr, _) -> true
-  | TAdt (TAdtId id, _) when Session.is_struct id -> (
-      match List.last_opt (Session.as_struct id) with
+  | TAdt (TAdtId id, _) when Crate.is_struct id -> (
+      match List.last_opt (Crate.as_struct id) with
       | None -> false
       | Some last -> is_dst Types.(last.field_ty))
   | _ -> false
@@ -208,7 +128,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TAdt (TTuple, { types; _ }) -> layout_of_members types
   (* Custom ADTs (struct, enum, etc.) *)
   | TAdt (TAdtId id, _) -> (
-      let adt = Session.get_adt id in
+      let adt = Crate.get_adt id in
       match adt.kind with
       | Struct fields -> layout_of_members @@ field_tys fields
       | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
@@ -221,7 +141,7 @@ let rec layout_of (ty : Types.ty) : layout =
             (fun acc l -> if l.size > acc.size then l else acc)
             (List.hd layouts) (List.tl layouts)
       | Opaque ->
-          let msg = Fmt.str "Opaque %a " Session.pp_name adt.item_meta.name in
+          let msg = Fmt.str "Opaque %a " Crate.pp_name adt.item_meta.name in
           raise (CantComputeLayout (msg, ty))
       | Union fs ->
           let layouts = List.map layout_of @@ Charon_util.field_tys fs in
@@ -290,18 +210,14 @@ and of_variant (variant : Types.variant) =
   layout_of_members members
 
 and of_enum_variant adt_id variant =
-  let adt = Session.get_adt adt_id in
-  let variants =
-    match adt.kind with Enum variants -> variants | _ -> assert false
-  in
+  let variants = Crate.as_enum adt_id in
   let variant = Types.VariantId.nth variants variant in
   of_variant variant
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.trait_id with
   | TraitImpl (impl, _) ->
-      let crate = Session.get_crate () in
-      let impl = Types.TraitImplId.Map.find impl crate.trait_impls in
+      let impl = Crate.get_trait_impl impl in
       let _, ty = List.find (fun (n, _) -> ty_name = n) impl.types in
       ty
   | _ ->
@@ -441,7 +357,7 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       let+ fields = nondets @@ List.init size (fun _ -> ty) in
       Array fields
   | TAdt (TAdtId t_id, _) -> (
-      let type_decl = Session.get_adt t_id in
+      let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
           let disc_ty = (List.hd variants).discriminant.int_ty in
@@ -490,7 +406,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
       zeroed ~null_ptr ty
       |> Option.map (fun v -> Array (List.init len (fun _ -> v)))
   | TAdt (TAdtId t_id, _) -> (
-      let adt = Session.get_adt t_id in
+      let adt = Crate.get_adt t_id in
       match adt.kind with
       | Struct fields ->
           fields
@@ -529,7 +445,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
 let rec is_inhabited : Types.ty -> bool = function
   | TNever -> false
   | TAdt (TAdtId id, _) -> (
-      let adt = Session.get_adt id in
+      let adt = Crate.get_adt id in
       match adt.kind with
       | Struct fs -> List.for_all is_inhabited @@ Charon_util.field_tys fs
       | Union fs -> List.exists is_inhabited @@ Charon_util.field_tys fs
@@ -554,7 +470,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
     when int_of_const_generic len = 0 ->
       Some (Array [])
   | TAdt (TAdtId id, _) -> (
-      let adt = Session.get_adt id in
+      let adt = Crate.get_adt id in
       match adt.kind with
       | Struct fs ->
           as_zsts @@ Charon_util.field_tys fs
@@ -594,7 +510,7 @@ let apply_attributes v attributes =
 
 let rec is_unsafe_cell : Types.ty -> bool = function
   | TAdt (TAdtId adt_id, _) -> (
-      let adt = Session.get_adt adt_id in
+      let adt = Crate.get_adt adt_id in
       if adt.item_meta.lang_item = Some "unsafe_cell" then true
       else
         match adt.kind with
@@ -619,7 +535,7 @@ let rec ptr_tys_in (v : 'a rust_val) (ty : Types.ty) :
       [ (ptr, get_pointee ty) ]
   | Base _, _ -> []
   | Struct vs, TAdt (TAdtId adt_id, _) ->
-      let fields = Session.as_struct adt_id in
+      let fields = Crate.as_struct adt_id in
       List.concat_map2 ptr_tys_in vs (field_tys fields)
   | Array vs, TAdt (TBuiltin (TArray | TSlice), { types = [ ty ]; _ }) ->
       List.concat_map (fun v -> ptr_tys_in v ty) vs
@@ -628,7 +544,7 @@ let rec ptr_tys_in (v : 'a rust_val) (ty : Types.ty) :
   | Enum (d, vs), TAdt (TAdtId adt_id, _) -> (
       match Typed.kind d with
       | Int d -> (
-          let variants = Session.as_enum adt_id in
+          let variants = Crate.as_enum adt_id in
           let v =
             List.find_opt
               (fun (v : Types.variant) -> Z.equal d v.discriminant.value)
@@ -640,7 +556,7 @@ let rec ptr_tys_in (v : 'a rust_val) (ty : Types.ty) :
           | None -> [])
       | _ -> [])
   | Union (fid, v), TAdt (TAdtId adt_id, _) ->
-      let fields = Session.as_union adt_id in
+      let fields = Crate.as_union adt_id in
       let field = Types.FieldId.nth fields fid in
       ptr_tys_in v field.field_ty
   | _ -> []
