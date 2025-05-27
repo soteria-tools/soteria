@@ -51,20 +51,14 @@ module Make (Sptr : Sptr.S) = struct
     let bind (m : ('a, 'state, 'err, 'fix) t)
         (f : 'a -> ('b, 'state, 'err, 'fix) t) : ('b, 'state, 'err, 'fix) t =
      fun handler state ->
-      let* res = m handler state in
-      match res with
-      | Compo_res.Ok (x, new_state) -> f x handler new_state
-      | Compo_res.Error e -> Result.error e
-      | Compo_res.Missing f -> Result.miss f
+      let** x, new_state = m handler state in
+      f x handler new_state
 
     let map (m : ('a, 'state, 'err, 'fix) t) (f : 'a -> 'b) :
         ('b, 'state, 'err, 'fix) t =
      fun handler state ->
-      let+ res = m handler state in
-      match res with
-      | Compo_res.Ok (x, new_state) -> Compo_res.Ok (f x, new_state)
-      | Compo_res.Error e -> Compo_res.Error e
-      | Compo_res.Missing f -> Compo_res.Missing f
+      let++ x, new_state = m handler state in
+      (f x, new_state)
 
     let query (q : query) : ('a, 'state, 'err, 'fix) t =
      fun handler state -> handler q state
@@ -77,11 +71,8 @@ module Make (Sptr : Sptr.S) = struct
     let lift_rsymex_result (m : ('a, 'err, 'fix) Rustsymex.Result.t) :
         ('a, 'state, 'err, 'fix) t =
      fun _handler state ->
-      let* m in
-      match m with
-      | Compo_res.Ok x -> Result.ok (x, state)
-      | Compo_res.Error e -> Result.error e
-      | Compo_res.Missing f -> Result.miss f
+      let++ m in
+      (m, state)
 
     module Syntax = struct
       let ( let*** ) x f = bind x f
@@ -95,7 +86,7 @@ module Make (Sptr : Sptr.S) = struct
     let first fn xs =
       let rec aux es = function
         | [] -> error (List.last es)
-        | x :: xs -> bind2 (fn x) (fun x -> ok x) (fun e -> aux (e :: es) xs)
+        | x :: xs -> bind2 (fn x) ok (fun e -> aux (e :: es) xs)
       in
       aux [] xs
   end
