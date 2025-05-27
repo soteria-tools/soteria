@@ -30,7 +30,7 @@ module M (Heap : Heap_intf.S) = struct
     | BoxIntoRaw
     | Checked of Expressions.binop
     | CompareBytes
-    | CopyNonOverlapping
+    | Copy of { nonoverlapping : bool }
     | CopySign
     | Ctpop
     | DiscriminantValue
@@ -52,6 +52,7 @@ module M (Heap : Heap_intf.S) = struct
     | PtrOp of Expressions.binop
     | PtrOffsetFrom of { unsigned : bool }
     | RawEq
+    | Saturating of Expressions.binop
     | SizeOf
     | SizeOfVal
     | Transmute
@@ -151,7 +152,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::bswap", ByteSwap);
       ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::compare_bytes", CompareBytes);
-      ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
+      ("core::intrinsics::copy", Copy { nonoverlapping = false });
+      ("core::intrinsics::copy_nonoverlapping", Copy { nonoverlapping = true });
       ("core::intrinsics::copysignf16", CopySign);
       ("core::intrinsics::copysignf32", CopySign);
       ("core::intrinsics::copysignf64", CopySign);
@@ -191,6 +193,8 @@ module M (Heap : Heap_intf.S) = struct
       ( "core::intrinsics::ptr_offset_from_unsigned",
         PtrOffsetFrom { unsigned = true } );
       ("core::intrinsics::raw_eq", RawEq);
+      ("core::intrinsics::saturating_add", Saturating Add);
+      ("core::intrinsics::saturating_sub", Saturating Sub);
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
       ("core::intrinsics::sub_with_overflow", Checked Sub);
@@ -251,7 +255,7 @@ module M (Heap : Heap_intf.S) = struct
          | BoxIntoRaw -> box_into_raw
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes
-         | CopyNonOverlapping -> copy_nonoverlapping_fn f.signature
+         | Copy { nonoverlapping } -> copy_fn nonoverlapping f.signature
          | CopySign -> copy_sign
          | Ctpop -> ctpop f.signature
          | DiscriminantValue -> discriminant_value f.signature
@@ -273,6 +277,7 @@ module M (Heap : Heap_intf.S) = struct
          | PtrOp op -> ptr_op op f.signature
          | PtrOffsetFrom { unsigned } -> ptr_offset_from unsigned f.signature
          | RawEq -> raw_eq f.signature
+         | Saturating op -> saturating op f.signature
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
          | Transmute -> transmute f.signature

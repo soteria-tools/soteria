@@ -343,12 +343,12 @@ module M (Heap : Heap_intf.S) = struct
     in
     (v, state)
 
-  let copy_nonoverlapping (ty : Types.ty) ~args ~state =
+  let copy nonoverlapping (ty : Types.ty) ~args ~state =
     let (from_ptr, _), (to_ptr, _), len =
       match args with
       | [ Ptr from_ptr; Ptr to_ptr; Base len ] ->
           (from_ptr, to_ptr, Typed.cast len)
-      | _ -> failwith "copy_nonoverlapping: invalid arguments"
+      | _ -> failwith "copy[_nonoverlapping]: invalid arguments"
     in
     let** () = Heap.check_ptr_align from_ptr ty in
     let** () = Heap.check_ptr_align to_ptr ty in
@@ -357,7 +357,10 @@ module M (Heap : Heap_intf.S) = struct
     let** () =
       if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then
         Heap.error `NullDereference state
-      else
+        (* Here we can cheat a little: for copy_nonoverlapping we need to check for overlap,
+           but otherwise the copy is the exact same; since the Heap makes a copy of the src tree
+           before storing into dst, the semantics are that of copy. *)
+      else if nonoverlapping then
         (* check for overlap *)
         let from_ptr_end = Sptr.offset from_ptr size in
         let to_ptr_end = Sptr.offset to_ptr size in
@@ -368,6 +371,7 @@ module M (Heap : Heap_intf.S) = struct
               &&@ (Sptr.distance to_ptr from_ptr_end <@ 0s))
         then Heap.error (`StdErr "copy_nonoverlapping overlapped") state
         else Result.ok ()
+      else Result.ok ()
     in
     let++ (), state =
       Heap.copy_nonoverlapping ~dst:(to_ptr, None) ~src:(from_ptr, None) ~size
@@ -375,10 +379,10 @@ module M (Heap : Heap_intf.S) = struct
     in
     (Tuple [], state)
 
-  let copy_nonoverlapping_fn (funsig : GAst.fun_sig) =
+  let copy_fn nonoverlapping (funsig : GAst.fun_sig) =
     match funsig.inputs with
-    | TRawPtr (ty, _) :: _ -> copy_nonoverlapping ty
-    | _ -> failwith "copy_nonoverlapping: invalid arguments"
+    | TRawPtr (ty, _) :: _ -> copy nonoverlapping ty
+    | _ -> failwith "copy[_nonoverlapping]: invalid arguments"
 
   let mul_add ~args ~state =
     match args with
@@ -813,4 +817,18 @@ module M (Heap : Heap_intf.S) = struct
     in
     let++ res = aux byte_pairs in
     (Base (Typed.int_of_bool res), state)
+
+  let saturating op (fun_sig : UllbcAst.fun_sig) ~args ~state =
+    let* l, r, intty, litty =
+      match (args, fun_sig.inputs) with
+      | [ Base l; Base r ], TLiteral (TInteger intty as litty) :: _ ->
+          return (l, r, intty, litty)
+      | _ -> not_impl "Unexpected arguments to saturating_op"
+    in
+    let max = Layout.max_value intty in
+    let min = Layout.min_value intty in
+    let** res = Core.safe_binop op litty l r state in
+    let* res = cast_checked ~ty:Typed.t_int res in
+    let res = Typed.ite (res >@ max) max (Typed.ite (res <@ min) min res) in
+    Result.ok (Base (res :> Typed.T.cval Typed.t), state)
 end

@@ -728,7 +728,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** args, state =
           eval_operand_list ~store state [ src; dst; count ]
         in
-        let++ _, state = Std_funs.Std.copy_nonoverlapping ty ~args ~state in
+        let++ _, state = Std_funs.Std.copy true ty ~args ~state in
         (store, state)
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
