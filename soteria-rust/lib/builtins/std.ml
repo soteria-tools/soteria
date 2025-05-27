@@ -831,4 +831,15 @@ module M (Heap : Heap_intf.S) = struct
     let* res = cast_checked ~ty:Typed.t_int res in
     let res = Typed.ite (res >@ max) max (Typed.ite (res <@ min) min res) in
     Result.ok (Base (res :> Typed.T.cval Typed.t), state)
+
+  let float_rounding rm ~args ~state =
+    match args with
+    | [ Base v ] ->
+        let* v =
+          of_opt_not_impl ~msg:"float rounding expected float"
+          @@ Typed.cast_float v
+        in
+        let res = Typed.float_round rm v in
+        Result.ok (Base res, state)
+    | _ -> not_impl "Unexpected arguments to saturating_op"
 end

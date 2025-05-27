@@ -40,6 +40,7 @@ module M (Heap : Heap_intf.S) = struct
     | FloatIsFinite
     | FloatIsSign of { positive : bool }
     | FloatMinMax of { min : bool }
+    | FloatRounding of Svalue.FloatRoundingMode.t
     | Index
     | IsValStaticallyKnown
     | Likely
@@ -150,6 +151,10 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::assume", Assume);
       ("core::intrinsics::black_box", BlackBox);
       ("core::intrinsics::bswap", ByteSwap);
+      ("core::intrinsics::ceilf16", FloatRounding Ceil);
+      ("core::intrinsics::ceilf32", FloatRounding Ceil);
+      ("core::intrinsics::ceilf64", FloatRounding Ceil);
+      ("core::intrinsics::ceilf128", FloatRounding Ceil);
       ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::compare_bytes", CompareBytes);
       ("core::intrinsics::copy", Copy { nonoverlapping = false });
@@ -167,6 +172,10 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::fabsf128", Abs);
       ("core::intrinsics::fadd_fast", FloatFast Add);
       ("core::intrinsics::fdiv_fast", FloatFast Div);
+      ("core::intrinsics::floorf16", FloatRounding Floor);
+      ("core::intrinsics::floorf32", FloatRounding Floor);
+      ("core::intrinsics::floorf64", FloatRounding Floor);
+      ("core::intrinsics::floorf128", FloatRounding Floor);
       ("core::intrinsics::fmaf16", MulAdd);
       ("core::intrinsics::fmaf32", MulAdd);
       ("core::intrinsics::fmaf64", MulAdd);
@@ -193,12 +202,24 @@ module M (Heap : Heap_intf.S) = struct
       ( "core::intrinsics::ptr_offset_from_unsigned",
         PtrOffsetFrom { unsigned = true } );
       ("core::intrinsics::raw_eq", RawEq);
+      ("core::intrinsics::round_ties_even_f16", FloatRounding NearestTiesToEven);
+      ("core::intrinsics::round_ties_even_f32", FloatRounding NearestTiesToEven);
+      ("core::intrinsics::round_ties_even_f64", FloatRounding NearestTiesToEven);
+      ("core::intrinsics::round_ties_even_f128", FloatRounding NearestTiesToEven);
+      ("core::intrinsics::roundf16", FloatRounding NearestTiesToAway);
+      ("core::intrinsics::roundf32", FloatRounding NearestTiesToAway);
+      ("core::intrinsics::roundf64", FloatRounding NearestTiesToAway);
+      ("core::intrinsics::roundf128", FloatRounding NearestTiesToAway);
       ("core::intrinsics::saturating_add", Saturating Add);
       ("core::intrinsics::saturating_sub", Saturating Sub);
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
       ("core::intrinsics::sub_with_overflow", Checked Sub);
       ("core::intrinsics::transmute", Transmute);
+      ("core::intrinsics::truncf16", FloatRounding Truncate);
+      ("core::intrinsics::truncf32", FloatRounding Truncate);
+      ("core::intrinsics::truncf64", FloatRounding Truncate);
+      ("core::intrinsics::truncf128", FloatRounding Truncate);
       ("core::intrinsics::type_id", TypeId);
       ("core::intrinsics::type_name", TypeName);
       ("core::intrinsics::typed_swap_nonoverlapping", TypedSwapNonOverlapping);
@@ -265,6 +286,7 @@ module M (Heap : Heap_intf.S) = struct
          | FloatIsFinite -> float_is_finite
          | FloatIsSign { positive } -> float_is_sign positive
          | FloatMinMax { min } -> float_minmax min
+         | FloatRounding rm -> float_rounding rm
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
          | Likely -> likely
