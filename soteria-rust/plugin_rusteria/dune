@@ -1,8 +1,0 @@
-(install
- (section
-  (site
-   (soteria-rust plugin_rusteria)))
- (files
-  (glob_files_rec *.rs)
-  (glob_files_rec *.toml))
- (package soteria-rust))

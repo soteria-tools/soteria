@@ -87,7 +87,6 @@ let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
 
 let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
     (crate : Charon.UllbcAst.crate) =
-  Layout.Session.set_crate crate;
   let entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
     |> List.filter_map plugin.get_entry_point
@@ -95,16 +94,14 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
   if List.is_empty entry_points then
     raise (ExecutionError "No entry points found");
   let exec_fun =
-    Wpst_interp.exec_fun ~ignore_leaks ~crate ~args:[] ~state:Heap.empty
+    Wpst_interp.exec_fun ~ignore_leaks ~args:[] ~state:Heap.empty
   in
   let outcomes =
     entry_points
     |> List.map @@ fun (entry : Plugin.entry_point) ->
-       let@ () =
-         L.entry_point_section
-           (Charon_util.name_str crate entry.fun_decl.item_meta.name)
-       in
        let branches =
+         let@ () = Crate.with_crate crate in
+         let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
          try Rustsymex.run @@ exec_fun entry.fun_decl with
          | Layout.InvalidLayout ->
              [ (Error (`InvalidLayout, Call_trace.empty), []) ]
