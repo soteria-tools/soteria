@@ -15,6 +15,23 @@ module FloatPrecision = struct
     | _ -> failwith "Invalid float size"
 end
 
+module FloatClass = struct
+  type t = Normal | Subnormal | Zero | Infinite | NaN
+  [@@deriving eq, show { with_path = false }, ord]
+
+  let as_fpclass = function
+    | Normal -> FP_normal
+    | Subnormal -> FP_subnormal
+    | Zero -> FP_zero
+    | Infinite -> FP_infinite
+    | NaN -> FP_nan
+end
+
+module FloatRoundingMode = struct
+  type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
+  [@@deriving eq, show { with_path = false }, ord]
+end
+
 type ty =
   | TBool
   | TInt
@@ -64,7 +81,8 @@ module Unop = struct
     | FloatOfBv
     | IntOfBv of bool (* signed *)
     | BvExtract of int * int (* from * to *)
-    | FIs of fpclass
+    | FIs of FloatClass.t
+    | FRound of FloatRoundingMode.t
   [@@deriving eq, ord]
 
   let pp ft = function
@@ -78,11 +96,8 @@ module Unop = struct
     | FloatOfBv -> Fmt.string ft "bv2f"
     | IntOfBv _ -> Fmt.string ft "bv2i"
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
-    | FIs FP_normal -> Fmt.string ft "fis_normal"
-    | FIs FP_subnormal -> Fmt.string ft "fis_subnormal"
-    | FIs FP_zero -> Fmt.string ft "fis_zero"
-    | FIs FP_infinite -> Fmt.string ft "fis_inf"
-    | FIs FP_nan -> Fmt.string ft "fis_nan"
+    | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
+    | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
 end
 
 module Binop = struct
@@ -817,14 +832,16 @@ and abs_f v =
 let is_floatclass fc =
  fun sv ->
   match sv.node.kind with
-  | Float f -> bool (fc = classify_float (float_of_string f))
+  | Float f ->
+      bool (FloatClass.as_fpclass fc = classify_float (float_of_string f))
   | _ -> Unop (FIs fc, sv) <| TBool
 
-let is_normal = is_floatclass FP_normal
-let is_subnormal = is_floatclass FP_subnormal
-let is_infinite = is_floatclass FP_infinite
-let is_nan = is_floatclass FP_nan
-let is_zero = is_floatclass FP_zero
+let is_normal = is_floatclass Normal
+let is_subnormal = is_floatclass Subnormal
+let is_infinite = is_floatclass Infinite
+let is_nan = is_floatclass NaN
+let is_zero = is_floatclass Zero
+let float_round rm sv = Unop (FRound rm, sv) <| sv.node.ty
 
 (** {2 Pointers} *)
 

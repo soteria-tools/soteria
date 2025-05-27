@@ -57,13 +57,21 @@ let fp_mul f1 f2 = app_ "fp.mul" [ rm; f1; f2 ]
 let fp_div f1 f2 = app_ "fp.div" [ rm; f1; f2 ]
 let fp_rem f1 f2 = app_ "fp.rem" [ f1; f2 ]
 
-let fp_is fc f =
+let fp_is (fc : Svalue.FloatClass.t) f =
   match fc with
-  | FP_normal -> app_ "fp.isNormal" [ f ]
-  | FP_subnormal -> app_ "fp.isSubnormal" [ f ]
-  | FP_zero -> app_ "fp.isZero" [ f ]
-  | FP_infinite -> app_ "fp.isInfinite" [ f ]
-  | FP_nan -> app_ "fp.isNaN" [ f ]
+  | Normal -> app_ "fp.isNormal" [ f ]
+  | Subnormal -> app_ "fp.isSubnormal" [ f ]
+  | Zero -> app_ "fp.isZero" [ f ]
+  | Infinite -> app_ "fp.isInfinite" [ f ]
+  | NaN -> app_ "fp.isNaN" [ f ]
+
+let fp_round (rm : Svalue.FloatRoundingMode.t) f =
+  match rm with
+  | NearestTiesToEven -> app_ "fp.roundToIntegral" [ atom "RNE"; f ]
+  | NearestTiesToAway -> app_ "fp.roundToIntegral" [ atom "RNA"; f ]
+  | Ceil -> app_ "fp.roundToIntegral" [ atom "RTP"; f ]
+  | Floor -> app_ "fp.roundToIntegral" [ atom "RTN"; f ]
+  | Truncate -> app_ "fp.roundToIntegral" [ atom "RTZ"; f ]
 
 (* Float{Of,To}Bv *)
 

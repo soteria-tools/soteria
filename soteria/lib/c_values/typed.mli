@@ -154,6 +154,7 @@ val is_subnormal : [< sfloat ] t -> [> sbool ] t
 val is_zero : [< sfloat ] t -> [> sbool ] t
 val is_infinite : [< sfloat ] t -> [> sbool ] t
 val is_nan : [< sfloat ] t -> [> sbool ] t
+val float_round : Svalue.FloatRoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
 
 module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t
