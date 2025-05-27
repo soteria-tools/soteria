@@ -147,8 +147,17 @@ module Solver_state = struct
   let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
   let to_value_list (t : t) = Iter.to_rev_list (iter t)
 
-  let mem (t : t) v =
-    Dynarray.exists (fun d -> Dynarray.exists (Typed.equal v) d) t
+  let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
+    let neg_v = Typed.not v in
+    Dynarray.find_map
+      (fun d ->
+        Dynarray.find_map
+          (fun value ->
+            if Typed.equal value v then Some true
+            else if Typed.equal value neg_v then Some false
+            else None)
+          d)
+      t
 end
 
 type t = {
@@ -375,22 +384,27 @@ let fresh_var solver ty =
 
 let rec simplify' solver (v : Svalue.t) : Svalue.t =
   match v.node.kind with
-  | Int _ | Bool _ -> v
-  | _ when Solver_state.mem solver.state (Typed.type_ v) -> Svalue.v_true
-  | Unop (Not, e) ->
-      let e' = simplify' solver e in
-      if Svalue.equal e e' then v else Svalue.not e'
-  | Binop (Eq, e1, e2) ->
-      if Svalue.equal e1 e2 && (not @@ Svalue.is_float e1.node.ty) then
-        Svalue.v_true
-      else if Svalue.sure_neq e1 e2 then Svalue.v_false
-      else v
-  | Binop (Or, e1, e2) ->
-      let se1 = simplify' solver e1 in
-      let se2 = simplify' solver e2 in
-      if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-      else Svalue.or_ se1 se2
-  | _ -> v
+  | Int _ | Bool _ | BitVec _ | Float _ -> v
+  | _ -> (
+      match Solver_state.trivial_truthiness_of solver.state (Typed.type_ v) with
+      | Some true -> Svalue.v_true
+      | Some false -> Svalue.v_false
+      | None -> (
+          match v.node.kind with
+          | Unop (Not, e) ->
+              let e' = simplify' solver e in
+              if Svalue.equal e e' then v else Svalue.not e'
+          | Binop (Eq, e1, e2) ->
+              if Svalue.equal e1 e2 && (not @@ Svalue.is_float e1.node.ty) then
+                Svalue.v_true
+              else if Svalue.sure_neq e1 e2 then Svalue.v_false
+              else v
+          | Binop (Or, e1, e2) ->
+              let se1 = simplify' solver e1 in
+              let se2 = simplify' solver e2 in
+              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
+              else Svalue.or_ se1 se2
+          | _ -> v))
 
 and simplify solver (v : 'a Typed.t) : 'a Typed.t =
   v |> Typed.untyped |> simplify' solver |> Typed.type_
