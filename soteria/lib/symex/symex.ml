@@ -27,7 +27,6 @@ module type Base = sig
   val assert_ox : sbool v -> bool MONAD.t
   val nondet : ?constrs:('a v -> sbool v list) -> 'a vt -> 'a v MONAD.t
   val fresh_var : 'a vt -> Var.t MONAD.t
-  val batched : (unit -> 'a MONAD.t) -> 'a MONAD.t
 
   val branch_on :
     ?left_branch_name:string ->
@@ -374,10 +373,6 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
   let run s =
     Symex_state.reset ();
     run s
-
-  let batched s =
-    MONAD.bind (s ()) @@ fun x ->
-    if is_sat (Solver.sat ()) then MONAD.return x else vanish ()
 end)
 
 module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
@@ -532,11 +527,6 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
         if not !left_sat then (
           Solver.add_constraints [ Value.(not guard) ];
           else_ () f)
-
-  let batched s =
-    Iter.flat_map
-      (fun x -> if is_sat (Solver.sat ()) then Iter.return x else Iter.empty)
-      (s ())
 
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
