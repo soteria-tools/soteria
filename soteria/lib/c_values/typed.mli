@@ -88,6 +88,7 @@ val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val not : sbool t -> sbool t
 val not_int_bool : [< sint ] t -> [> sint ] t
 val distinct : 'a t list -> [> sbool ] t
+val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
 val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t
 val nonzero_z : Z.t -> [> nonzero ] t
@@ -179,19 +180,19 @@ module Infix : sig
   val ( >=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( <@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( <=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( &&@ ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
-  val ( ||@ ) : [< sbool ] t -> [< sbool ] t -> [< sbool ] t
+  val ( &&@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+  val ( ||@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
   val ( +@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( -@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( ~- ) : [< sint ] t -> [> sint ] t
   val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( /@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
   val ( %@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
-  val ( ==.@ ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
-  val ( >.@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( >=.@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( <.@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( <=.@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( ==.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val ( >.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val ( >=.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val ( <.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val ( <=.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
   val ( +.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( -.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( *.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t

@@ -26,7 +26,7 @@ module M (Heap : Heap_intf.S) = struct
     | TPointer, TInt ->
         let v2 : T.sint Typed.t = Typed.cast v2 in
         if%sat Typed.(v2 ==@ zero) then
-          Result.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool)
+          Result.ok (Typed.cast v1 ==@ Typed.Ptr.null |> Typed.int_of_bool)
         else Heap.error `UBPointerComparison st
     | TInt, TPointer -> equality_check v2 v1 st
     | _ ->

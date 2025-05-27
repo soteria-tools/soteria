@@ -39,6 +39,7 @@ module M (Heap : Heap_intf.S) = struct
     | FloatIs of fpclass
     | FloatIsFinite
     | FloatIsSign of bool (* true for positive, false for negative *)
+    | FloatMinMax of bool (* true for min, false for max *)
     | Index
     | IsValStaticallyKnown
     | Likely
@@ -53,6 +54,8 @@ module M (Heap : Heap_intf.S) = struct
     | SizeOf
     | SizeOfVal
     | Transmute
+    | TypeId
+    | TypeName
     | TypedSwapNonOverlapping
     | Unchecked of Expressions.binop
     | VariantCount
@@ -148,17 +151,31 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::compare_bytes", CompareBytes);
       ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
+      ("core::intrinsics::copysignf16", CopySign);
       ("core::intrinsics::copysignf32", CopySign);
       ("core::intrinsics::copysignf64", CopySign);
+      ("core::intrinsics::copysignf128", CopySign);
       ("core::intrinsics::ctpop", Ctpop);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::exact_div", ExactDiv);
-      ("core::intrinsics::fabsf64", Abs);
+      ("core::intrinsics::fabsf16", Abs);
       ("core::intrinsics::fabsf32", Abs);
+      ("core::intrinsics::fabsf64", Abs);
+      ("core::intrinsics::fabsf128", Abs);
       ("core::intrinsics::fadd_fast", FloatFast Add);
       ("core::intrinsics::fdiv_fast", FloatFast Div);
-      ("core::intrinsics::fmaf64", MulAdd);
+      ("core::intrinsics::fmaf16", MulAdd);
       ("core::intrinsics::fmaf32", MulAdd);
+      ("core::intrinsics::fmaf64", MulAdd);
+      ("core::intrinsics::fmaf128", MulAdd);
+      ("core::intrinsics::maxnumf16", FloatMinMax false);
+      ("core::intrinsics::maxnumf32", FloatMinMax false);
+      ("core::intrinsics::maxnumf64", FloatMinMax false);
+      ("core::intrinsics::maxnumf128", FloatMinMax false);
+      ("core::intrinsics::minnumf16", FloatMinMax true);
+      ("core::intrinsics::minnumf32", FloatMinMax true);
+      ("core::intrinsics::minnumf64", FloatMinMax true);
+      ("core::intrinsics::minnumf128", FloatMinMax true);
       ("core::intrinsics::fmul_fast", FloatFast Mul);
       ("core::intrinsics::fsub_fast", FloatFast Sub);
       ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
@@ -173,6 +190,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
       ("core::intrinsics::transmute", Transmute);
+      ("core::intrinsics::type_id", TypeId);
+      ("core::intrinsics::type_name", TypeName);
       ("core::intrinsics::typed_swap_nonoverlapping", TypedSwapNonOverlapping);
       ("core::intrinsics::unchecked_add", Unchecked Add);
       ("core::intrinsics::unchecked_div", Unchecked Div);
@@ -232,10 +251,11 @@ module M (Heap : Heap_intf.S) = struct
          | Ctpop -> ctpop f.signature
          | DiscriminantValue -> discriminant_value f.signature
          | ExactDiv -> exact_div f.signature
+         | FloatFast bop -> float_fast bop
          | FloatIs fc -> float_is fc
          | FloatIsFinite -> float_is_finite
          | FloatIsSign b -> float_is_sign b
-         | FloatFast bop -> float_fast bop
+         | FloatMinMax is_min -> float_minmax is_min
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
          | Likely -> likely
@@ -250,6 +270,8 @@ module M (Heap : Heap_intf.S) = struct
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
          | Transmute -> transmute f.signature
+         | TypeId -> type_id f.signature
+         | TypeName -> type_name f.signature
          | TypedSwapNonOverlapping -> typed_swap_nonoverlapping f.signature
          | Unchecked op -> unchecked_op op f.signature
          | VariantCount -> variant_count f.signature

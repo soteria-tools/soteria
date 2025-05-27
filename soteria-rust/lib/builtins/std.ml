@@ -738,4 +738,55 @@ module M (Heap : Heap_intf.S) = struct
         let++ res = Core.eval_ptr_binop Eq l r state in
         (Base res, state)
     | _ -> not_impl "invalid arguments in ptr_guaranteed_cmp"
+
+  let float_minmax is_min ~args ~state =
+    let l, r =
+      match args with
+      | [ Base l; Base r ] -> (l, r)
+      | _ -> failwith "invalid arguments in {max,min}numf"
+    in
+    let* l =
+      of_opt_not_impl ~msg:"arguments of {max,min}numf must be floats"
+      @@ Typed.cast_float l
+    in
+    let* r =
+      of_opt_not_impl ~msg:"arguments of {max,min}numf must be floats"
+      @@ Typed.cast_float r
+    in
+    let++ res =
+      if%sat Typed.is_nan l then Result.ok r
+      else
+        if%sat Typed.is_nan r then Result.ok l
+        else
+          let op = if is_min then ( <.@ ) else ( >.@ ) in
+          Result.ok (Typed.ite (op l r) l r)
+    in
+    (Base (res :> Typed.T.cval Typed.t), state)
+
+  let type_id (fun_sig : UllbcAst.fun_sig) ~args:_ ~state =
+    let ty = fst (List.hd fun_sig.generics.types_outlive).binder_value in
+    (* lazy but works *)
+    let hash = Hashtbl.hash ty in
+    Result.ok (Base (Typed.int hash), state)
+
+  let type_name (fun_sig : UllbcAst.fun_sig) ~args:_ ~state =
+    let ty = fst (List.hd fun_sig.generics.types_outlive).binder_value in
+    let str = Fmt.str "%a" pp_ty ty in
+    let** ptr_res, state = Heap.load_str_global str state in
+    match ptr_res with
+    | Some ptr -> Result.ok (Ptr ptr, state)
+    | None ->
+        let len = String.length str in
+        let chars =
+          String.to_bytes str
+          |> Bytes.fold_left (fun l c -> Base (Typed.int (Char.code c)) :: l) []
+          |> List.rev
+        in
+        let char_arr = Array chars in
+        let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
+        let** (ptr, _), state = Heap.alloc_ty str_ty state in
+        let ptr = (ptr, Some (Typed.int len)) in
+        let** (), state = Heap.store ptr str_ty char_arr state in
+        let++ (), state = Heap.store_str_global str ptr state in
+        (Ptr ptr, state)
 end
