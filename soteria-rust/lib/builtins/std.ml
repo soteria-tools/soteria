@@ -385,14 +385,16 @@ module M (Heap : Heap_intf.S) = struct
   let mul_add ~crate:_ ~args ~state =
     match args with
     | [ Base a; Base b; Base c ] ->
-        let a, b, c = (Typed.cast a, Typed.cast b, Typed.cast c) in
-        Result.ok (Base ((a *@ b) +@ c), state)
+        let a : Typed.T.sfloat Typed.t = Typed.cast a in
+        let b : Typed.T.sfloat Typed.t = Typed.cast b in
+        let c : Typed.T.sfloat Typed.t = Typed.cast c in
+        Result.ok (Base ((a *.@ b) +.@ c), state)
     | _ -> failwith "mul_add expects three arguments"
 
   let abs ~crate:_ ~args ~state =
     match args with
     | [ Base v ] ->
-        Result.ok (Base (Typed.cast @@ Typed.abs @@ Typed.cast v), state)
+        Result.ok (Base (Typed.cast @@ Typed.abs_f @@ Typed.cast v), state)
     | _ -> failwith "abs expects one argument"
 
   let write_bytes (fun_sig : GAst.fun_sig) ~crate:_ ~args ~state =
@@ -557,12 +559,11 @@ module M (Heap : Heap_intf.S) = struct
     let* l, r, ty = cast_checked2 l r in
     if Typed.is_float ty then
       let zero = Typed.float_like r 0.0 in
-      if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] Typed.lt r zero
-      then
-        let l' = Typed.neg (Typed.abs l) in
+      if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] r <.@ zero then
+        let l' = Typed.neg (Typed.abs_f l) in
         Result.ok (Base (Typed.cast l'), state)
       else
-        let l' = Typed.abs l in
+        let l' = Typed.abs_f l in
         Result.ok (Base (Typed.cast l'), state)
     else not_impl "Expected floats in copy_sign"
 

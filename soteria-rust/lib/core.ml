@@ -20,12 +20,13 @@ module M (Heap : Heap_intf.S) = struct
   let rec equality_check (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) st =
     match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt | TPointer, TPointer | TFloat _, TFloat _ ->
+    | TInt, TInt | TPointer, TPointer ->
         Result.ok (v1 ==@ v2 |> Typed.int_of_bool)
+    | TFloat _, TFloat _ -> Result.ok (v1 ==.@ v2 |> Typed.int_of_bool)
     | TPointer, TInt ->
         let v2 : T.sint Typed.t = Typed.cast v2 in
         if%sat Typed.(v2 ==@ zero) then
-          Result.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool)
+          Result.ok (Typed.cast v1 ==@ Typed.Ptr.null |> Typed.int_of_bool)
         else Heap.error `UBPointerComparison st
     | TInt, TPointer -> equality_check v2 v1 st
     | _ ->
@@ -63,7 +64,7 @@ module M (Heap : Heap_intf.S) = struct
           | Mul | CheckedMul | WrappingMul -> Result.ok (l *.@ r)
           (* no such thing as division by 0 for floats -- goes to infinity *)
           | Div -> Result.ok (l /.@ cast r)
-          | Rem -> Result.ok (rem l (cast r))
+          | Rem -> Result.ok (rem_f l (cast r))
           | _ -> not_impl "Invalid binop in eval_lit_binop"
         in
         Result.ok (res :> T.cval Typed.t)

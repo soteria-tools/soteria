@@ -57,6 +57,14 @@ let fp_mul f1 f2 = app_ "fp.mul" [ rm; f1; f2 ]
 let fp_div f1 f2 = app_ "fp.div" [ rm; f1; f2 ]
 let fp_rem f1 f2 = app_ "fp.rem" [ f1; f2 ]
 
+let fp_is fc f =
+  match fc with
+  | FP_normal -> app_ "fp.isNormal" [ f ]
+  | FP_subnormal -> app_ "fp.isSubnormal" [ f ]
+  | FP_zero -> app_ "fp.isZero" [ f ]
+  | FP_infinite -> app_ "fp.isInfinite" [ f ]
+  | FP_nan -> app_ "fp.isNaN" [ f ]
+
 (* Float{Of,To}Bv *)
 
 let f16_of_bv bv = app (ifam "to_fp" [ 5; 11 ]) [ bv ]
