@@ -1,3 +1,4 @@
+module Compo_res = Soteria_symex.Compo_res
 open Charon
 open Typed
 open Typed.Syntax
@@ -12,69 +13,82 @@ module Make (Sptr : Sptr.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
-  (** Basically, a parser is just a sort of monad, so we can have the usual
-      operations on it. We must allow errors to be passed to the callback when
-      parsing, as a parser may chose to ignore the error and still return
-      something (e.g. unions). *)
   module ParserMonad = struct
-    type ('a, 'e) t =
-      | Done of 'a
-      | Error of 'e
-      | More of
-          (Types.ty * T.sint Typed.t) list
-          * ((rust_val list, 'e) result -> ('a, 'e) t Rustsymex.t)
+    type query = Types.ty * T.sint Typed.t
 
-    let[@inline] ok v = Done v
-    let[@inline] error e = Error e
-    let is_done = function Done _ -> true | _ -> false
-    let is_more = function More _ -> true | _ -> false
+    (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t
+         where StateResult = StateT (Result), but I need StateT1of3 urgh. *)
+    type ('state, 'err, 'fix) handler =
+      query -> 'state -> (rust_val * 'state, 'err, 'fix) Result.t
 
-    let rec bind2 x f fe =
-      match x with
-      | More (blocks, callback) ->
-          let callback v = Rustsymex.map (callback v) (fun y -> bind2 y f fe) in
-          More (blocks, callback)
-      | Done v -> f v
-      | Error e -> fe e
+    (* A parser monad is an object such that, given a query handler with state ['state],
+      returns a state monad-ish for that state which may fail or branch *)
+    type ('res, 'state, 'err, 'fix) t =
+      ('state, 'err, 'fix) handler ->
+      'state ->
+      ('res * 'state, 'err, 'fix) Result.t
 
-    let bind x f = bind2 x f error
-    let map x f = bind2 x (fun x -> ok (f x)) error
+    let parse ~(init : 'state) ~(handler : ('state, 'err, 'fix) handler)
+        scheduler : (rust_val * 'state, 'err, 'fix) Result.t =
+      scheduler handler init
 
-    let[@inline] more blocks callback =
-      More
-        (blocks, function Ok xs -> callback xs | Error e -> return (Error e))
+    let ok (x : 'a) : ('a, 'state, 'err, 'fix) t =
+     fun _handler state -> Result.ok (x, state)
+
+    let error (e : 'err) : ('a, 'state, 'err, 'fix) t =
+     fun _handler _state -> Result.error e
+
+    let bind2 (m : ('a, 'state, 'err, 'fix) t)
+        (f : 'a -> ('b, 'state, 'err, 'fix) t)
+        (fe : 'err -> ('b, 'state, 'err, 'fix) t) : ('b, 'state, 'err, 'fix) t =
+     fun handler state ->
+      let* res = m handler state in
+      match res with
+      | Compo_res.Ok (x, new_state) -> f x handler new_state
+      | Compo_res.Error e -> fe e handler state
+      | Compo_res.Missing f -> Result.miss f
+
+    let bind (m : ('a, 'state, 'err, 'fix) t)
+        (f : 'a -> ('b, 'state, 'err, 'fix) t) : ('b, 'state, 'err, 'fix) t =
+     fun handler state ->
+      let** x, new_state = m handler state in
+      f x handler new_state
+
+    let map (m : ('a, 'state, 'err, 'fix) t) (f : 'a -> 'b) :
+        ('b, 'state, 'err, 'fix) t =
+     fun handler state ->
+      let++ x, new_state = m handler state in
+      (f x, new_state)
+
+    let query (q : query) : ('a, 'state, 'err, 'fix) t =
+     fun handler state -> handler q state
+
+    let lift_rsymex (m : 'a Rustsymex.t) : ('a, 'state, 'err, 'fix) t =
+     fun _handler state ->
+      let+ m in
+      Compo_res.Ok (m, state)
+
+    let lift_rsymex_result (m : ('a, 'err, 'fix) Rustsymex.Result.t) :
+        ('a, 'state, 'err, 'fix) t =
+     fun _handler state ->
+      let++ m in
+      (m, state)
+
+    module Syntax = struct
+      let ( let*** ) x f = bind x f
+      let ( let++* ) x f = bind x (fun v -> lift_rsymex @@ f v)
+      let ( let+** ) x f = bind x (fun v -> lift_rsymex_result @@ f v)
+      let ( let+++ ) x f = map x f
+    end
 
     (** Returns the first element that parsed, if one parses succesfully, and
         else returns the first error that occurred. *)
     let first fn xs =
       let rec aux es = function
         | [] -> error (List.last es)
-        | x :: xs -> bind2 (fn x) (fun x -> ok x) (fun e -> aux (e :: es) xs)
+        | x :: xs -> bind2 (fn x) ok (fun e -> aux (e :: es) xs)
       in
       aux [] xs
-
-    let parse ~(init : 'i)
-        ~(f :
-           (Types.ty * T.sint Typed.t) list ->
-           'i ->
-           (rust_val list * 'i, 'e, 'f) Result.t) (p : ('a, 'e) t) :
-        ('a * 'i, 'e, 'f) Result.t =
-      let rec aux st = function
-        | Done v -> return (Done (v, st))
-        | Error e -> return (Error e)
-        | More (blocks, callback) -> (
-            let* res = f blocks st in
-            match res with
-            | Ok (vs, st) -> Rustsymex.bind (callback (Ok vs)) (aux st)
-            | Error e -> Rustsymex.bind (callback (Error e)) (aux st)
-            | Missing _ ->
-                not_impl "We don't handle misses in Parser.parse yet.")
-      in
-      let* res = aux init p in
-      match res with
-      | Done (v, st) -> Result.ok (v, st)
-      | Error e -> Result.error e
-      | More _ -> assert false
   end
 
   type cval_info = {
@@ -205,73 +219,66 @@ module Make (Sptr : Sptr.S) = struct
               Types.pp_ty ty);
         failwith "Unhandled rust_value and Charon.ty"
 
-  type 'e parser = (rust_val, 'e) ParserMonad.t
+  type ('e, 'fix, 'state) parser = (rust_val, 'state, 'e, 'fix) ParserMonad.t
 
   (** Converts a Rust type into a list of types to read, along with their
       offset; once these are read, symbolically decides whether we must keep
       reading. [offset] is the initial offset to read from, [meta] is the
       optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?offset ?meta ty : 'e parser =
+  let rust_of_cvals ?offset ?meta ty : ('e, 'fix, 'state) parser =
     let open ParserMonad in
+    let open ParserMonad.Syntax in
     let module T = Typed.T in
     (* Base case, parses all types. *)
-    let rec aux offset : Types.ty -> 'e parser = function
-      | TLiteral _ as ty ->
-          more
-            [ (ty, offset) ]
-            (function
-              | [ (Base _ as v) ] -> Rustsymex.return (ok v)
-              | [ Ptr (ptr, None) ] ->
-                  let+ ptr_v = Sptr.decay ptr in
-                  ok (Base (ptr_v :> T.cval Typed.t))
-              | _ -> not_impl "Expected a base or a thin pointer")
+    let rec aux offset : Types.ty -> ('e, 'fix, 'state) parser = function
+      | TLiteral _ as ty -> (
+          let+** q_res = query (ty, offset) in
+          match q_res with
+          | Base _ as v -> Result.ok v
+          | Ptr (ptr, None) ->
+              let+ ptr_v = Sptr.decay ptr in
+              Compo_res.ok (Base (ptr_v :> T.cval Typed.t))
+          | _ -> not_impl "Expected a base or a thin pointer")
       | ( TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
         | TRef (_, sub_ty, _)
         | TRawPtr (sub_ty, _) ) as ty
-        when is_dst sub_ty ->
-          let callback = function
-            | [ ((Base _ | Ptr (_, None)) as ptr); Base meta ] -> (
-                let* ptr =
-                  match ptr with
-                  | Ptr (ptr_v, None) -> return ptr_v
-                  | Base ptr_v ->
-                      let+ ptr_v = cast_checked ~ty:Typed.t_int ptr_v in
-                      Sptr.offset Sptr.null_ptr ptr_v
-                  | _ -> assert false
-                in
-                let ptr = Ptr (ptr, Some (meta :> T.cval Typed.t)) in
-                (* The check for the validity of the metadata is only required for references,
-                   not raw pointers. *)
-                match ty with
-                | TRawPtr _ -> return (ok ptr)
-                | _ ->
-                    let* meta = cast_checked ~ty:Typed.t_int meta in
-                    (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
-                    if%sat meta <@ 0s then return (error `UBTransmute)
-                    else return (ok ptr))
-            | vs ->
-                Fmt.kstr not_impl "Expected a pointer and base, got %a"
-                  Fmt.(list ~sep:comma pp_rust_val)
-                  vs
-          in
+        when is_dst sub_ty -> (
           let ptr_size = Typed.int Archi.word_size in
           let isize : Types.ty = TLiteral (TInteger Isize) in
-          more [ (isize, offset); (isize, offset +@ ptr_size) ] callback
-      (* Raw pointers can be both a valid pointer or a number, whereas a reference must
-         always be a valid pointer. *)
-      | TRawPtr _ ->
-          more
-            [ (TLiteral (TInteger Isize), offset) ]
-            (function
-              | [ ((Ptr _ | Base _) as ptr) ] -> return (ok ptr)
-              | _ -> not_impl "Expected a pointer or base")
-      | TAdt (TBuiltin TBox, _) | TRef _ ->
-          more
-            [ (TLiteral (TInteger Isize), offset) ]
-            (function
-              | [ (Ptr _ as ptr) ] -> return (ok ptr)
-              | [ Base _ ] -> return (error `UBTransmute)
-              | _ -> not_impl "Expected a pointer or base")
+          let*** ptr_compo = query (isize, offset) in
+          let+** meta_compo = query (isize, offset +@ ptr_size) in
+          match (ptr_compo, meta_compo) with
+          | ((Base _ | Ptr (_, None)) as ptr), Base meta -> (
+              let* ptr =
+                match ptr with
+                | Ptr (ptr_v, None) -> Rustsymex.return ptr_v
+                | Base ptr_v ->
+                    let+ ptr_v = cast_checked ~ty:Typed.t_int ptr_v in
+                    Sptr.offset Sptr.null_ptr ptr_v
+                | _ -> failwith "Expected a pointer or base"
+              in
+              let ptr = Ptr (ptr, Some (meta :> T.cval Typed.t)) in
+              match ty with
+              | TRawPtr _ -> Result.ok ptr
+              | _ ->
+                  let* meta = cast_checked ~ty:Typed.t_int meta in
+                  (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
+                  if%sat meta <@ 0s then Rustsymex.Result.error `UBTransmute
+                  else Rustsymex.Result.ok ptr)
+          | base, meta ->
+              Fmt.kstr not_impl "Expected a pointer and base, got %a and %a"
+                pp_rust_val base pp_rust_val meta)
+      | TRawPtr _ -> (
+          let+** raw_ptr = query (TLiteral (TInteger Isize), offset) in
+          match raw_ptr with
+          | (Ptr _ | Base _) as ptr -> Result.ok ptr
+          | _ -> not_impl "Expected a pointer or base")
+      | TAdt (TBuiltin TBox, _) | TRef _ -> (
+          let+** boxed = query (TLiteral (TInteger Isize), offset) in
+          match boxed with
+          | Ptr _ as ptr -> Result.ok ptr
+          | Base _ -> Result.error `UBTransmute
+          | _ -> not_impl "Expected a pointer or base")
       | TAdt (TTuple, { types; _ }) as ty ->
           let layout = layout_of ty in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
@@ -283,7 +290,7 @@ module Make (Sptr : Sptr.S) = struct
               fields
               |> field_tys
               |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
-          | Enum [] -> more [] (fun _ -> return (error `RefToUninhabited))
+          | Enum [] -> error `RefToUninhabited
           | Enum [ { fields = []; discriminant; _ } ] ->
               ok (Enum (value_of_scalar discriminant, []))
           | Enum variants -> aux_enum offset variants
@@ -318,12 +325,12 @@ module Make (Sptr : Sptr.S) = struct
               let layout = layout_of arr_ty in
               let fields = List.init len (fun _ -> sub_ty) in
               aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
-      | TNever -> more [] (fun _ -> return (error `RefToUninhabited))
+      | TNever -> error `RefToUninhabited
       | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a list of fields (for structs and tuples) *)
-    and aux_fields ~f ~layout offset fields : 'e parser =
+    and aux_fields ~f ~layout offset fields : ('e, 'fix, 'state) parser =
       let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
-      let rec mk_callback to_parse parsed : 'e parser =
+      let rec mk_callback to_parse parsed : ('e, 'fix, 'state) parser =
         match to_parse with
         | [] -> ok (f (List.rev parsed))
         | (offset, ty) :: rest ->
@@ -335,34 +342,34 @@ module Make (Sptr : Sptr.S) = struct
       in
       mk_callback fields []
     (* Parses what enum variant we're handling *)
-    and aux_enum offset (variants : Types.variant list) : 'e parser =
+    and aux_enum offset (variants : Types.variant list) :
+        ('e, 'fix, 'state) parser =
       let disc = (List.hd variants).discriminant in
       let disc_ty = Values.TInteger disc.int_ty in
       let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
       let offset = offset +@ (offset %@ disc_align) in
-      let callback cval =
-        let cval = Charon_util.as_base_of ~ty:Typed.t_int @@ List.hd cval in
-        let+ res =
-          match_on variants ~constr:(fun (v : Types.variant) ->
-              cval ==@ value_of_scalar v.discriminant)
-        in
-        match res with
-        | Some var ->
-            (* skip discriminant *)
-            let discr = value_of_scalar var.discriminant in
-            let ({ members_ofs = mems; _ } as layout) = of_variant var in
-            let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
-            let layout = { layout with members_ofs } in
-            var.fields
-            |> field_tys
-            |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
-        | None ->
-            L.error (fun m ->
-                m "Unmatched discriminant in rust_of_cvals: %a" Typed.ppa cval);
-            error `UBTransmute
+      let*** cval = query (TLiteral disc_ty, offset) in
+      let cval = Charon_util.as_base_of ~ty:Typed.t_int cval in
+      let*** res =
+        lift_rsymex
+        @@ match_on variants ~constr:(fun (v : Types.variant) ->
+               cval ==@ value_of_scalar v.discriminant)
       in
-      more [ (TLiteral disc_ty, offset) ] callback
-    and aux_union offset fs : 'e parser =
+      match res with
+      | Some var ->
+          (* skip discriminant *)
+          let discr = value_of_scalar var.discriminant in
+          let ({ members_ofs = mems; _ } as layout) = of_variant var in
+          let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
+          let layout = { layout with members_ofs } in
+          var.fields
+          |> field_tys
+          |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
+      | None ->
+          L.error (fun m ->
+              m "Unmatched discriminant in rust_of_cvals: %a" Typed.ppa cval);
+          error `UBTransmute
+    and aux_union offset fs : ('e, 'fix, 'state) parser =
       let parse_field (i, ty) = map (aux offset ty) (fun v -> Union (i, v)) in
       (* We try parsing all of fields of the enum, sorted by decreasing layout size.
          The first that succeeds gets returned, and otherwise we return the first error.
@@ -569,13 +576,12 @@ module Make (Sptr : Sptr.S) = struct
         Fmt.(list ~sep:comma pp_triple)
         vs
     in
-    let parse_fn blocks () =
-      Result.fold_list blocks ~init:([], ()) ~f:(fun (acc, ()) block ->
-          let++ block = extract_block block in
-          (block :: acc, ()))
+    let parse_fn query () =
+      let++ r = extract_block query in
+      (r, ())
     in
     let++ res, () =
-      ParserMonad.parse ~init:() ~f:parse_fn @@ rust_of_cvals to_ty
+      ParserMonad.parse ~init:() ~handler:parse_fn @@ rust_of_cvals to_ty
     in
     res
 

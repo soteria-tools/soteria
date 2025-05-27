@@ -161,25 +161,13 @@ let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
         Sptr.pp ptr
         Fmt.(option ~none:(any "None") Tree_block.pp)
         block);
-  let parse blocks block =
+  let handler (ty, ofs) block =
     L.debug (fun f ->
-        let pp_block ft (ty, ofs) =
-          Fmt.pf ft "%a:%a" Typed.ppa ofs Charon_util.pp_ty ty
-        in
-        f "Loading blocks [%a]" Fmt.(list ~sep:(any ", ") pp_block) blocks);
-    let++ values, block =
-      Result.fold_list blocks ~init:([], block)
-        ~f:(fun (vals, block) (ty, ofs) ->
-          let++ value, block =
-            Tree_block.load ~is_move ~ignore_borrow ofs ty ptr.tag tb block
-          in
-          (value :: vals, block))
-    in
-    let values = List.rev values in
-    (values, block)
+        f "Loading blocks %a:%a" Typed.ppa ofs Charon_util.pp_ty ty);
+    Tree_block.load ~is_move ~ignore_borrow ofs ty ptr.tag tb block
   in
   let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
-  let++ value, block = Encoder.ParserMonad.parse ~init:block ~f:parse parser in
+  let++ value, block = Encoder.ParserMonad.parse ~init:block ~handler parser in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Charon_util.pp_rust_val Sptr.pp) value);
   (value, block)
