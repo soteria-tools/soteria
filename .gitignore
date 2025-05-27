@@ -224,6 +224,10 @@ target/
 ### Zed ###
 .zed
 
+### Python ###
+*.pyc
+__pycache__/
+
 ### Produced by Soteria ###
 json_dump/
 
