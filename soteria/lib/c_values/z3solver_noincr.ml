@@ -545,39 +545,50 @@ let add_constraints solver ?(simplified = false) vs =
 
 let as_bool = Typed.as_bool
 
+let memo_sat_check_tbl : Simple_smt.result Hashtbl.Hint.t =
+  Hashtbl.Hint.create 1023
+
+let check_sat_raw solver relevant_vars to_check =
+  (* TODO: we shouldn't wait for ack for each command individually... *)
+  ack_command solver.z3_solver (Simple_smt.pop 1);
+  ack_command solver.z3_solver (Simple_smt.push 1);
+  (* Declare all relevant variables *)
+  Var.Hashset.iter
+    (fun v ->
+      let ty = Declared_vars.get_ty solver.vars v in
+      ack_command solver.z3_solver (declare_v v ty))
+    relevant_vars;
+  (* Declare the constraint *)
+  let expr = encode_value_memo to_check in
+  ack_command solver.z3_solver (Simple_smt.assume expr);
+  (* Actually check sat *)
+  try check solver.z3_solver
+  with Simple_smt.UnexpectedSolverResponse s ->
+    L.error (fun m ->
+        m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
+    Unknown
+
+let check_sat_raw_memo solver relevant_vars to_check =
+  let to_check = Typed.untyped to_check in
+  match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hashcons.tag with
+  | Some result -> result
+  | None ->
+      let result = check_sat_raw solver relevant_vars to_check in
+      Hashtbl.Hint.add memo_sat_check_tbl to_check.Hashcons.tag result;
+      result
+
 (* TODO: Add query caching! *)
 let sat solver =
   match Solver_state.trivial_truthiness solver.state with
   | Some true -> Soteria_symex.Solver.Sat
   | Some false -> Unsat
   | None -> (
-      let to_encode, relevant_vars =
+      let to_check, relevant_vars =
         Solver_state.unchecked_constraints solver.state
       in
-      (* TODO: we shouldn't wait for ack for each command individually... *)
-      ack_command solver.z3_solver (Simple_smt.pop 1);
-      ack_command solver.z3_solver (Simple_smt.push 1);
-      (* Declare all relevant variables *)
-      Var.Hashset.iter
-        (fun v ->
-          let ty = Declared_vars.get_ty solver.vars v in
-          ack_command solver.z3_solver (declare_v v ty))
-        relevant_vars;
-      (* Declare all relevant constraints *)
-      Dynarray.iter
-        (fun v ->
-          let expr = encode_value_memo (Typed.untyped v) in
-          let cmd = Simple_smt.assume expr in
-          ack_command solver.z3_solver cmd)
-        to_encode;
-      (* Actually check sat *)
-      let answer =
-        try check solver.z3_solver
-        with Simple_smt.UnexpectedSolverResponse s ->
-          L.error (fun m ->
-              m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
-          Unknown
-      in
+      (* This will put the check in a somewhat-normal form, to increase cache hits. *)
+      let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
+      let answer = check_sat_raw_memo solver relevant_vars to_check in
       match answer with
       | Sat ->
           Solver_state.mark_checked solver.state;
