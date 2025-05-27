@@ -60,7 +60,7 @@ let rec expr_callees d (e : Ail_tys.expr) =
   | AilEcompound (_, _, expr) -> expr_callees expr
   | AilEgcc_statement (_, stmt) -> List.iter (stmt_callees d) stmt
   | AilEbuiltin _ | AilEstr _ | AilEconst _ | AilEident _ | AilEoffsetof _
-  | AilEsizeof _ | AilEalignof _ | AilEreg_load _ ->
+  | AilEsizeof _ | AilEalignof _ | AilEreg_load _ | AilEinvalid _ ->
       ()
 
 and stmt_callees d stmt =
