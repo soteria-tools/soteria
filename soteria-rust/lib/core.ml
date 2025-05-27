@@ -36,10 +36,11 @@ module M (Heap : Heap_intf.S) = struct
   (** Evaluates a binary operator on values of the given type; this operation
       checks for division by zero, but doesn't check for overflow (to allow
       wrapping behaviour.) *)
-  let safe_binop (bop : Expressions.binop) (l : [< T.cval ] Typed.t)
-      (r : [< T.cval ] Typed.t) st : ([> T.cval ] Typed.t, 'e, 'm) Result.t =
-    let* l, r, ty = cast_checked2 l r in
-    match untype_type ty with
+  let safe_binop (bop : Expressions.binop) (ty : Types.literal_type)
+      (l : [< T.cval ] Typed.t) (r : [< T.cval ] Typed.t) st :
+      ([> T.cval ] Typed.t, 'e, 'm) Result.t =
+    let* l, r, ty_ = cast_checked2 l r in
+    match untype_type ty_ with
     | TInt ->
         let** res =
           match bop with
@@ -52,6 +53,18 @@ module M (Heap : Heap_intf.S) = struct
           | Rem ->
               if%sat r ==@ 0s then Heap.error `DivisionByZero st
               else Result.ok (rem l (cast r))
+          | Shl | Shr ->
+              let ity =
+                match ty with
+                | TInteger ity -> ity
+                | TBool -> U8
+                | TChar -> U32
+                | _ -> failwith "Invalid shl/shr type"
+              in
+              let size = 8 * Layout.size_of_int_ty ity in
+              let signed = Layout.is_signed ity in
+              let op = if bop = Shl then Typed.bit_shl else Typed.bit_shr in
+              Result.ok (op ~size ~signed l r)
           | _ -> not_impl "Invalid binop in eval_lit_binop"
         in
         Result.ok (res :> T.cval Typed.t)
@@ -74,16 +87,30 @@ module M (Heap : Heap_intf.S) = struct
   (** Evaluates a binary operator of {+,-,/,*,rem}, and ensures the result is within the type's
       constraints, else errors *)
   let eval_lit_binop bop lit_ty l r st =
-    let** res = safe_binop bop l r st in
+    let** res = safe_binop bop lit_ty l r st in
     let** () =
-      if bop <> Rem then Result.ok ()
-      else
-        match lit_ty with
-        | Values.TInteger inty ->
-            let min = Layout.min_value inty in
-            if%sat l ==@ min &&@ (r ==@ -1s) then Heap.error `Overflow st
-            else Result.ok ()
-        | _ -> Result.ok ()
+      match bop with
+      | Rem -> (
+          match lit_ty with
+          | Values.TInteger inty ->
+              let min = Layout.min_value inty in
+              if%sat l ==@ min &&@ (r ==@ -1s) then Heap.error `Overflow st
+              else Result.ok ()
+          | _ -> Result.ok ())
+      | Shl | Shr ->
+          let ity =
+            match lit_ty with
+            | TInteger ity -> ity
+            | TBool -> U8
+            | TChar -> U32
+            | _ -> failwith "Invalid shl/shr type"
+          in
+          let size = 8 * Layout.size_of_int_ty ity in
+          let r = Typed.cast r in
+          if%sat r <@ 0s ||@ (r >=@ Typed.int size) then
+            Heap.error `UBArithShift st
+          else Result.ok ()
+      | _ -> Result.ok ()
     in
     let constrs = Layout.constraints lit_ty in
     if%sat conj (constrs res) then Result.ok (res :> T.cval Typed.t)
@@ -110,7 +137,7 @@ module M (Heap : Heap_intf.S) = struct
       | Values.TInteger ity -> ity
       | _ -> failwith "Non-integer in checked binary operation"
     in
-    let** v = safe_binop op l r st in
+    let** v = safe_binop op lit_ty l r st in
     let* wrapped = wrap_value ty v in
     let overflowed = Typed.(int_of_bool (not (v ==@ wrapped))) in
     Result.ok (Tuple [ Base wrapped; Base overflowed ])

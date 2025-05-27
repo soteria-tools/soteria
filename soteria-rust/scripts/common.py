@@ -60,6 +60,7 @@ KNOWN_ISSUES = {
     "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter?? Kani crashes too",
     "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter?? Kani crashes too",
     "Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
+    "Intrinsics/ConstEval/pref_align_of.rs": "Requires support for custom target architectures",
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
     "Uninit/access-padding-enum-multiple-variants.rs": "Kani assumes discriminants are i32, but Charon gives isize",
