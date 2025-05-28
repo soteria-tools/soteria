@@ -109,9 +109,9 @@ module Solver_state = struct
     let add_vars_raw vars = Var.Hashset.add_iter var_set vars in
     let add_vars vars =
       vars @@ fun v ->
-      if not (Var.Hashset.mem var_set v) then (
-        changed := true;
-        Var.Hashset.add var_set v)
+      let prev_size = Var.Hashset.cardinal var_set in
+      Var.Hashset.add var_set v;
+      if Var.Hashset.cardinal var_set <> prev_size then changed := true
     in
     let relevant vars = Iter.exists (Var.Hashset.mem var_set) vars in
     (* We need to reach some kind of fixpoint *)
