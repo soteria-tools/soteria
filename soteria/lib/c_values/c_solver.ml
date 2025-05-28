@@ -78,7 +78,7 @@ module Solver_state = struct
 
   let mem (t : t) v =
     Dynarray.exists
-      (fun d -> Dynarray.exists (fun { value; _ } -> Typed.equal v value) d)
+      (Dynarray.exists (fun { value; _ } -> Typed.equal v value))
       t
 
   (** If we have checked sat and obtaied SAT, we can mark all elements of the
