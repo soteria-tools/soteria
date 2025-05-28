@@ -121,6 +121,14 @@ module Make (State : State_intf.S) = struct
     | ConstantInteger (IConstant (z, _basis, _suff)) ->
         Csymex.return (Typed.int_z z)
     | ConstantNull -> Csymex.return Typed.Ptr.null
+    | ConstantCharacter (pref, char) ->
+        if Option.is_some pref then Csymex.not_impl "prefixed char"
+        else
+          let+ char =
+            Constants.string_to_char char
+            |> of_opt_not_impl ~msg:(Fmt.str "char constant %s" char)
+          in
+          Typed.int char
     | _ ->
         Fmt.kstr Csymex.not_impl "value of constant? %a" Fmt_ail.pp_constant c
 
