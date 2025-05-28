@@ -436,8 +436,7 @@ let rec sem_eq v1 v2 =
     | Int y, Binop (Times, v1, { node = { kind = Int x; _ }; _ })
     | Binop (Times, v1, { node = { kind = Int x; _ }; _ }), Int y
     | Binop (Times, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-        if Z.equal Z.zero x then
-          if Z.equal Z.zero y then v_true else sem_eq v1 zero
+        if Z.equal Z.zero x then bool (Z.equal Z.zero y)
         else if Z.(equal zero (rem y x)) then sem_eq v1 (int_z Z.(y / x))
         else v_false
     | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
@@ -532,15 +531,27 @@ let rec lt v1 v2 =
   | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
       lt v1 (int_z @@ Z.sub y x)
-  | Binop (Minus, v1, { node = { kind = Int x; _ }; _ }), Int y
-  | Binop (Minus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-      lt v1 (int_z @@ Z.add y x)
   | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
   | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
       lt (int_z @@ Z.sub y x) v1
-  | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ })
-  | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
+  | Binop (Minus, v1, { node = { kind = Int x; _ }; _ }), Int y ->
+      lt v1 (int_z @@ Z.add y x)
+  | Binop (Minus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
+      lt (int_z @@ Z.sub x y) v1
+  | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ }) ->
       lt (int_z @@ Z.add y x) v1
+  | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
+      lt v1 (int_z @@ Z.sub x y)
+  | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
+  | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
+      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      else if Z.(equal zero (rem y x)) then lt (int_z Z.(y / x)) v1'
+      else Binop (Lt, v1, v2) <| TBool
+  | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
+  | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
+      if Z.equal Z.zero x then bool (Z.lt Z.zero y)
+      else if Z.(equal zero (rem y x)) then lt v1' (int_z Z.(y / x))
+      else Binop (Lt, v1, v2) <| TBool
   | _ -> Binop (Lt, v1, v2) <| TBool
 
 let rec leq v1 v2 =
@@ -566,6 +577,16 @@ let rec leq v1 v2 =
       leq (int_z @@ Z.add y x) v1
   | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
       leq v1 (int_z @@ Z.sub x y)
+  | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
+  | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
+      if Z.equal Z.zero x then bool (Z.leq y Z.zero)
+      else if Z.(equal zero (rem y x)) then leq (int_z Z.(y / x)) v1'
+      else Binop (Leq, v1, v2) <| TBool
+  | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
+  | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
+      if Z.equal Z.zero x then bool (Z.leq Z.zero y)
+      else if Z.(equal zero (rem y x)) then leq v1' (int_z Z.(y / x))
+      else Binop (Leq, v1, v2) <| TBool
   | _ -> Binop (Leq, v1, v2) <| TBool
 
 let geq v1 v2 = leq v2 v1
@@ -804,7 +825,7 @@ let bit_shr ~size ~signed v1 v2 =
 
 (** {2 Floating point ops} *)
 
-let eq_f v1 v2 = Binop (FEq, v1, v2) <| TBool
+let eq_f v1 v2 = mk_commut_binop FEq v1 v2 <| TBool
 
 let lt_f v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -816,12 +837,12 @@ let leq_f v1 v2 =
   | Float f1, Float f2 -> bool (f1 <= f2)
   | _ -> Binop (FLeq, v1, v2) <| TBool
 
-let gt_f v1 v2 = Binop (FLt, v2, v1) <| TBool
-let geq_f v1 v2 = Binop (FLeq, v2, v1) <| TBool
-let plus_f v1 v2 = Binop (FPlus, v1, v2) <| v1.node.ty
+let gt_f v1 v2 = lt_f v2 v1
+let geq_f v1 v2 = leq_f v2 v1
+let plus_f v1 v2 = mk_commut_binop FPlus v1 v2 <| v1.node.ty
 let minus_f v1 v2 = Binop (FMinus, v1, v2) <| v1.node.ty
 let div_f v1 v2 = Binop (FDiv, v1, v2) <| v1.node.ty
-let times_f v1 v2 = Binop (FTimes, v1, v2) <| v1.node.ty
+let times_f v1 v2 = mk_commut_binop FTimes v1 v2 <| v1.node.ty
 let rem_f v1 v2 = Binop (FRem, v1, v2) <| v1.node.ty
 
 let abs_f v =
