@@ -108,7 +108,6 @@ module Solver_state = struct
       The function returns the list to encode, as well the set of all variables
       required. *)
   let unchecked_constraints t =
-    L.smt (fun m -> m "Solver_state.unchecked_constraint:@\n%a" pp t);
     let changed = ref false in
     let var_set = Var.Hashset.with_capacity 8 in
     let vars value = Value.iter_vars value |> Iter.map fst in
@@ -120,30 +119,22 @@ module Solver_state = struct
         changed := true;
         Var.Hashset.add var_set v)
     in
-    let relevant vars =
-      L.smt (fun m -> m "Current relevant vars: %a" Var.Hashset.pp var_set);
-      Iter.exists (Var.Hashset.mem var_set) vars
-    in
+    let relevant vars = Iter.exists (Var.Hashset.mem var_set) vars in
     (* We need to reach some kind of fixpoint *)
     let rec aux_checked others seq =
       match seq () with
       | Seq.Nil ->
-          L.smt (fun m -> m "Reached the end of the sequence");
           if !changed then (
-            L.smt (fun m -> m "Set has changed, re-iterating");
             changed := false;
             aux_checked Seq.empty others)
           else ()
       | Seq.Cons (({ value; _ } as slot), rest) ->
-          L.smt (fun m -> m "Checking checked slot: %a" Typed.ppa value);
           let vars = vars value in
           if relevant vars then (
-            L.smt (fun m -> m "It's relevant!");
             add_vars vars;
             Dynarray.add_last to_encode value;
             aux_checked others rest)
           else
-            let () = L.smt (fun m -> m "It's not relevant, skipping") in
             let others = fun () -> Seq.Cons (slot, others) in
             aux_checked others rest
     in
@@ -151,7 +142,6 @@ module Solver_state = struct
       match seq () with
       | Seq.Nil -> ()
       | Cons ({ value; checked = false }, rest) ->
-          L.smt (fun m -> m "unchecked: %a" Typed.ppa value);
           Dynarray.add_last to_encode value;
           add_vars_raw (vars value);
           aux rest
