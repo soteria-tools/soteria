@@ -72,7 +72,7 @@ module Solver_state = struct
       t
 
   let iter (t : t) f =
-    Dynarray.iter (fun t -> Dynarray.iter (fun { value; _ } -> f value) t) t
+    Dynarray.iter (Dynarray.iter (fun { value; _ } -> f value)) t
 
   let to_value_list (t : t) = Iter.to_rev_list (iter t)
 
