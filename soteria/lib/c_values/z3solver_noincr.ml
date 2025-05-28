@@ -331,6 +331,7 @@ let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
 let is_constr constr = list [ atom "_"; atom "is"; atom constr ]
 let ack_command solver sexp = ack_command solver sexp
+let check solver = check solver
 let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts
