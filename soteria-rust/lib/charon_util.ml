@@ -46,10 +46,12 @@ let type_of_operand : Expressions.operand -> Types.ty = function
 let lit_to_string = PrintValues.literal_type_to_string
 
 let rec pp_ty fmt : Types.ty -> unit = function
-  | TAdt (TAdtId id, _) -> Fmt.pf fmt "Adt(%a)" Types.pp_type_decl_id id
+  | TAdt (TAdtId id, _) ->
+      let adt = Crate.get_adt id in
+      Fmt.pf fmt "%a" Crate.pp_name adt.item_meta.name
   | TAdt (TTuple, { types = tys; _ }) ->
       Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_ty) tys
-  | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) -> Fmt.pf fmt "Box(%a)" pp_ty ty
+  | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) -> Fmt.pf fmt "Box<%a>" pp_ty ty
   | TAdt
       ( TBuiltin TArray,
         { types = [ ty ]; const_generics = [ CgValue (VScalar len) ]; _ } ) ->

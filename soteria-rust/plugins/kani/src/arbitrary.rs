@@ -156,7 +156,7 @@ arbitrary_tuple!(A, B, C, D, E, F, G, H, I, J);
 arbitrary_tuple!(A, B, C, D, E, F, G, H, I, J, K);
 arbitrary_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 
-mod range_structures {
+pub mod range_structures {
     use crate::kani::Arbitrary;
     use std::ops::{Bound, Range, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
 
@@ -216,5 +216,25 @@ mod range_structures {
         fn any() -> Self {
             ..=T::any()
         }
+    }
+}
+
+pub mod slice {
+    pub fn any_slice_of_array<T, const LENGTH: usize>(arr: &[T; LENGTH]) -> &[T] {
+        let (from, to) = any_range::<LENGTH>();
+        &arr[from..to]
+    }
+
+    pub fn any_slice_of_array_mut<T, const LENGTH: usize>(arr: &mut [T; LENGTH]) -> &mut [T] {
+        let (from, to) = any_range::<LENGTH>();
+        &mut arr[from..to]
+    }
+
+    fn any_range<const LENGTH: usize>() -> (usize, usize) {
+        let from: usize = kani::any();
+        let to: usize = kani::any();
+        kani::assume(to <= LENGTH);
+        kani::assume(from <= to);
+        (from, to)
     }
 }
