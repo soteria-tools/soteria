@@ -28,7 +28,7 @@ module type S = sig
   module Syntax : Syntax with type 'a t := 'a t
 end
 
-module Extend (Base : Base) : S with type 'a t = 'a Base.t = struct
+module Extend (Base : Base) = struct
   include Base
 
   let all fn xs =

@@ -1,7 +1,7 @@
 (install
  (section
   (site
-   (soteria-rust plugin_miri)))
+   (soteria-rust plugins)))
  (files
   (glob_files_rec *.rs)
   (glob_files_rec *.toml))
