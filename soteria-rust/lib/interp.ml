@@ -205,7 +205,7 @@ module Make (Heap : Heap_intf.S) = struct
         in
         let** idx, state = eval_operand ~store state idx in
         let idx = as_base_of ~ty:Typed.t_int idx in
-        let idx = if from_end then len -@ 1s -@ idx else idx in
+        let idx = if from_end then len -@ idx else idx in
         if%sat 0s <=@ idx &&@ (idx <@ len) then (
           let ptr' = Sptr.offset ~ty ptr idx in
           L.debug (fun f ->
@@ -232,8 +232,7 @@ module Make (Heap : Heap_intf.S) = struct
         let from = as_base_of ~ty:Typed.t_int from in
         let to_ = as_base_of ~ty:Typed.t_int to_ in
         let to_ = if from_end then len -@ to_ else to_ in
-        if%sat 0s <=@ from &&@ (from <@ len) &&@ (from <=@ to_) &&@ (to_ <=@ len)
-        then (
+        if%sat 0s <=@ from &&@ (from <=@ to_) &&@ (to_ <=@ len) then (
           let ptr' = Sptr.offset ~ty ptr from in
           let slice_len = to_ -@ from in
           L.debug (fun f ->
@@ -454,7 +453,7 @@ module Make (Heap : Heap_intf.S) = struct
                 let++ res = Core.equality_check v1 v2 state in
                 let res = if op = Eq then res else Typed.not_int_bool res in
                 (Base (res :> T.cval Typed.t), state)
-            | Add | Sub | Mul | Div | Rem ->
+            | Add | Sub | Mul | Div | Rem | Shl | Shr ->
                 let* ty =
                   match type_of_operand e1 with
                   | TLiteral ty -> return ty
@@ -474,8 +473,8 @@ module Make (Heap : Heap_intf.S) = struct
                 (res, state)
             | WrappingAdd | WrappingSub | WrappingMul -> (
                 match type_of_operand e1 with
-                | TLiteral (TInteger ty) ->
-                    let** v = Core.safe_binop op v1 v2 state in
+                | TLiteral (TInteger ty as litty) ->
+                    let** v = Core.safe_binop op litty v1 v2 state in
                     let+ res = Core.wrap_value ty v in
                     Soteria_symex.Compo_res.Ok (Base res, state)
                 | TLiteral ty ->
@@ -526,26 +525,7 @@ module Make (Heap : Heap_intf.S) = struct
                   | BitXor -> Typed.bit_xor
                   | _ -> assert false
                 in
-                Result.ok (Base (op ~size ~signed v1 v2), state)
-            | Shl | Shr ->
-                let* ity =
-                  match type_of_operand e1 with
-                  | TLiteral (TInteger ity) -> return ity
-                  | TLiteral TBool -> return Values.U8
-                  | TLiteral TChar -> return Values.U32
-                  | ty ->
-                      Fmt.kstr not_impl
-                        "Unsupported type for bitwise operation: %a" pp_ty ty
-                in
-                let size = 8 * Layout.size_of_int_ty ity in
-                let signed = Layout.is_signed ity in
-                let* v1 = cast_checked ~ty:Typed.t_int v1 in
-                let* v2 = cast_checked ~ty:Typed.t_int v2 in
-                if%sat v2 <@ 0s ||@ (v2 >=@ Typed.int size) then
-                  Heap.error `UBArithShift state
-                else
-                  let op = if op = Shl then Typed.bit_shl else Typed.bit_shr in
-                  Result.ok (Base (op ~size ~signed v1 v2), state))
+                Result.ok (Base (op ~size ~signed v1 v2), state))
         | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2) -> (
             match op with
             | Offset ->
@@ -748,7 +728,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** args, state =
           eval_operand_list ~store state [ src; dst; count ]
         in
-        let++ _, state = Std_funs.Std.copy_nonoverlapping ty ~args ~state in
+        let++ _, state = Std_funs.Std.copy true ty ~args ~state in
         (store, state)
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
@@ -770,7 +750,7 @@ module Make (Heap : Heap_intf.S) = struct
         let** args, state = eval_operand_list ~store state args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
-              Fmt.(list ~sep:comma pp_rust_val)
+              Fmt.(list ~sep:(any ", ") pp_rust_val)
               args);
         let** v, state =
           let+- err = exec_fun ~args ~state in
@@ -809,10 +789,13 @@ module Make (Heap : Heap_intf.S) = struct
               (* if a base value, compare with 0 -- if a pointer, check for null *)
               match discr with
               | Base discr ->
-                  if%sat discr ==@ 0s then return else_block
+                  if%sat [@lname "else case"] [@rname "if case"] discr ==@ 0s
+                  then return else_block
                   else return if_block
               | Ptr (ptr, _) ->
-                  if%sat Sptr.is_at_null_loc ptr then return else_block
+                  if%sat [@lname "else case"] [@rname "if case"]
+                    Sptr.is_at_null_loc ptr
+                  then return else_block
                   else return if_block
               | _ ->
                   Fmt.kstr not_impl

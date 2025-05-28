@@ -10,7 +10,6 @@ module M (Heap : Heap_intf.S) = struct
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-  type std_bool = Id | Neg
   type type_loc = GenArg | Input
 
   type std_fun =
@@ -26,15 +25,22 @@ module M (Heap : Heap_intf.S) = struct
     | AssertZeroValid
     | AssertInhabited
     | Assume
+    | ByteSwap
     | BlackBox
     | BoxIntoRaw
     | Checked of Expressions.binop
     | CompareBytes
-    | CopyNonOverlapping
+    | Copy of { nonoverlapping : bool }
     | CopySign
     | Ctpop
     | DiscriminantValue
     | ExactDiv
+    | FloatFast of Expressions.binop
+    | FloatIs of fpclass
+    | FloatIsFinite
+    | FloatIsSign of { positive : bool }
+    | FloatMinMax of { min : bool }
+    | FloatRounding of Svalue.FloatRoundingMode.t
     | Index
     | IsValStaticallyKnown
     | Likely
@@ -43,11 +49,17 @@ module M (Heap : Heap_intf.S) = struct
     | Nop
     | PanicSimple
     | PtrByteOp of Expressions.binop
+    | PtrGuaranteedCmp
     | PtrOp of Expressions.binop
-    | PtrOffsetFrom
+    | PtrOffsetFrom of { unsigned : bool }
+    | RawEq
+    | Saturating of Expressions.binop
     | SizeOf
     | SizeOfVal
     | Transmute
+    | TypeId
+    | TypeName
+    | TypedSwapNonOverlapping
     | Unchecked of Expressions.binop
     | VariantCount
     | Wrapping of Expressions.binop
@@ -77,9 +89,41 @@ module M (Heap : Heap_intf.S) = struct
       ("core::array::{core::ops::index::Index}::index", Index);
       ("core::array::{core::ops::index::IndexMut}::index_mut", Index);
       ("core::slice::index::{core::ops::index::Index}::index", Index);
+      ("core::slice::index::{core::ops::index::IndexMut}::index_mut", Index);
       ("core::cell::panic_already_mutably_borrowed", PanicSimple);
       ("core::hint::black_box", BlackBox);
       ("core::mem::zeroed", Zeroed);
+      (* all float operations could be removed, but we lack bit precision when getting the
+         const floats from Rust, meaning these don't really work. Either way, performance wise
+         it is much preferable to override these and use SMTLib builtins. *)
+      ("core::f16::{f16}::is_finite", FloatIsFinite);
+      ("core::f16::{f16}::is_infinite", FloatIs FP_infinite);
+      ("core::f16::{f16}::is_nan", FloatIs FP_nan);
+      ("core::f16::{f16}::is_normal", FloatIs FP_normal);
+      ("core::f16::{f16}::is_sign_negative", FloatIsSign { positive = false });
+      ("core::f16::{f16}::is_sign_positive", FloatIsSign { positive = true });
+      ("core::f16::{f16}::is_subnormal", FloatIs FP_subnormal);
+      ("core::f32::{f32}::is_finite", FloatIsFinite);
+      ("core::f32::{f32}::is_infinite", FloatIs FP_infinite);
+      ("core::f32::{f32}::is_nan", FloatIs FP_nan);
+      ("core::f32::{f32}::is_normal", FloatIs FP_normal);
+      ("core::f32::{f32}::is_sign_negative", FloatIsSign { positive = false });
+      ("core::f32::{f32}::is_sign_positive", FloatIsSign { positive = true });
+      ("core::f32::{f32}::is_subnormal", FloatIs FP_subnormal);
+      ("core::f64::{f64}::is_finite", FloatIsFinite);
+      ("core::f64::{f64}::is_infinite", FloatIs FP_infinite);
+      ("core::f64::{f64}::is_nan", FloatIs FP_nan);
+      ("core::f64::{f64}::is_normal", FloatIs FP_normal);
+      ("core::f64::{f64}::is_sign_negative", FloatIsSign { positive = false });
+      ("core::f64::{f64}::is_sign_positive", FloatIsSign { positive = true });
+      ("core::f64::{f64}::is_subnormal", FloatIs FP_subnormal);
+      ("core::f128::{f128}::is_finite", FloatIsFinite);
+      ("core::f128::{f128}::is_infinite", FloatIs FP_infinite);
+      ("core::f128::{f128}::is_nan", FloatIs FP_nan);
+      ("core::f128::{f128}::is_normal", FloatIs FP_normal);
+      ("core::f128::{f128}::is_sign_negative", FloatIsSign { positive = false });
+      ("core::f128::{f128}::is_sign_positive", FloatIsSign { positive = true });
+      ("core::f128::{f128}::is_subnormal", FloatIs FP_subnormal);
       (* FIXME: all core::ptr operations could be removed, however because we must enable
          ub_checks at runtime due to unchecked_op, this means ub checks also happen in
          the impl of core::ptr::..., and these checks are *SLOW* -- they do binary operations
@@ -97,6 +141,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
       ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
       (* Intrinsics *)
+      ("core::intrinsics::abort", PanicSimple);
       ("core::intrinsics::add_with_overflow", Checked Add);
       ("core::intrinsics::arith_offset", PtrOp Add);
       ("core::intrinsics::assert_inhabited", AssertInhabited);
@@ -105,31 +150,85 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::assume", Assume);
       ("core::intrinsics::black_box", BlackBox);
+      ("core::intrinsics::bswap", ByteSwap);
+      ("core::intrinsics::ceilf16", FloatRounding Ceil);
+      ("core::intrinsics::ceilf32", FloatRounding Ceil);
+      ("core::intrinsics::ceilf64", FloatRounding Ceil);
+      ("core::intrinsics::ceilf128", FloatRounding Ceil);
       ("core::intrinsics::cold_path", Nop);
       ("core::intrinsics::compare_bytes", CompareBytes);
-      ("core::intrinsics::copy_nonoverlapping", CopyNonOverlapping);
+      ("core::intrinsics::copy", Copy { nonoverlapping = false });
+      ("core::intrinsics::copy_nonoverlapping", Copy { nonoverlapping = true });
+      ("core::intrinsics::copysignf16", CopySign);
       ("core::intrinsics::copysignf32", CopySign);
       ("core::intrinsics::copysignf64", CopySign);
+      ("core::intrinsics::copysignf128", CopySign);
       ("core::intrinsics::ctpop", Ctpop);
       ("core::intrinsics::discriminant_value", DiscriminantValue);
       ("core::intrinsics::exact_div", ExactDiv);
-      ("core::intrinsics::fabsf64", Abs);
+      ("core::intrinsics::fabsf16", Abs);
       ("core::intrinsics::fabsf32", Abs);
-      ("core::intrinsics::fmaf64", MulAdd);
+      ("core::intrinsics::fabsf64", Abs);
+      ("core::intrinsics::fabsf128", Abs);
+      ("core::intrinsics::fadd_fast", FloatFast Add);
+      ("core::intrinsics::fdiv_fast", FloatFast Div);
+      ("core::intrinsics::floorf16", FloatRounding Floor);
+      ("core::intrinsics::floorf32", FloatRounding Floor);
+      ("core::intrinsics::floorf64", FloatRounding Floor);
+      ("core::intrinsics::floorf128", FloatRounding Floor);
+      ("core::intrinsics::fmaf16", MulAdd);
       ("core::intrinsics::fmaf32", MulAdd);
+      ("core::intrinsics::fmaf64", MulAdd);
+      ("core::intrinsics::fmaf128", MulAdd);
+      ("core::intrinsics::fmul_fast", FloatFast Mul);
+      ("core::intrinsics::fsub_fast", FloatFast Sub);
       ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
       ("core::intrinsics::likely", Likely);
+      ("core::intrinsics::maxnumf16", FloatMinMax { min = false });
+      ("core::intrinsics::maxnumf32", FloatMinMax { min = false });
+      ("core::intrinsics::maxnumf64", FloatMinMax { min = false });
+      ("core::intrinsics::maxnumf128", FloatMinMax { min = false });
+      ("core::intrinsics::minnumf16", FloatMinMax { min = true });
+      ("core::intrinsics::minnumf32", FloatMinMax { min = true });
+      ("core::intrinsics::minnumf64", FloatMinMax { min = true });
+      ("core::intrinsics::minnumf128", FloatMinMax { min = true });
       ("core::intrinsics::min_align_of", MinAlignOf GenArg);
       ("core::intrinsics::min_align_of_val", MinAlignOf Input);
+      ("core::intrinsics::mul_with_overflow", Checked Mul);
+      ("core::intrinsics::offset", PtrOp Add);
       ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
-      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom);
+      ("core::intrinsics::ptr_guaranteed_cmp", PtrGuaranteedCmp);
+      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom { unsigned = false });
+      ( "core::intrinsics::ptr_offset_from_unsigned",
+        PtrOffsetFrom { unsigned = true } );
+      ("core::intrinsics::raw_eq", RawEq);
+      ("core::intrinsics::round_ties_even_f16", FloatRounding NearestTiesToEven);
+      ("core::intrinsics::round_ties_even_f32", FloatRounding NearestTiesToEven);
+      ("core::intrinsics::round_ties_even_f64", FloatRounding NearestTiesToEven);
+      ("core::intrinsics::round_ties_even_f128", FloatRounding NearestTiesToEven);
+      ("core::intrinsics::roundf16", FloatRounding NearestTiesToAway);
+      ("core::intrinsics::roundf32", FloatRounding NearestTiesToAway);
+      ("core::intrinsics::roundf64", FloatRounding NearestTiesToAway);
+      ("core::intrinsics::roundf128", FloatRounding NearestTiesToAway);
+      ("core::intrinsics::saturating_add", Saturating Add);
+      ("core::intrinsics::saturating_sub", Saturating Sub);
       ("core::intrinsics::size_of", SizeOf);
       ("core::intrinsics::size_of_val", SizeOfVal);
+      ("core::intrinsics::sub_with_overflow", Checked Sub);
       ("core::intrinsics::transmute", Transmute);
+      ("core::intrinsics::truncf16", FloatRounding Truncate);
+      ("core::intrinsics::truncf32", FloatRounding Truncate);
+      ("core::intrinsics::truncf64", FloatRounding Truncate);
+      ("core::intrinsics::truncf128", FloatRounding Truncate);
+      ("core::intrinsics::type_id", TypeId);
+      ("core::intrinsics::type_name", TypeName);
+      ("core::intrinsics::typed_swap_nonoverlapping", TypedSwapNonOverlapping);
       ("core::intrinsics::unchecked_add", Unchecked Add);
       ("core::intrinsics::unchecked_div", Unchecked Div);
       ("core::intrinsics::unchecked_mul", Unchecked Mul);
       ("core::intrinsics::unchecked_rem", Unchecked Rem);
+      ("core::intrinsics::unchecked_shl", Unchecked Shl);
+      ("core::intrinsics::unchecked_shr", Unchecked Shr);
       ("core::intrinsics::unchecked_sub", Unchecked Sub);
       ("core::intrinsics::unlikely", Likely);
       ("core::intrinsics::variant_count", VariantCount);
@@ -172,15 +271,22 @@ module M (Heap : Heap_intf.S) = struct
          | AssertZeroValid -> assert_zero_is_valid f.signature
          | AssertInhabited -> assert_inhabited f.signature
          | Assume -> std_assume
+         | ByteSwap -> byte_swap f.signature
          | BlackBox -> black_box
          | BoxIntoRaw -> box_into_raw
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes
-         | CopyNonOverlapping -> copy_nonoverlapping_fn f.signature
+         | Copy { nonoverlapping } -> copy_fn nonoverlapping f.signature
          | CopySign -> copy_sign
          | Ctpop -> ctpop f.signature
          | DiscriminantValue -> discriminant_value f.signature
          | ExactDiv -> exact_div f.signature
+         | FloatFast bop -> float_fast bop
+         | FloatIs fc -> float_is fc
+         | FloatIsFinite -> float_is_finite
+         | FloatIsSign { positive } -> float_is_sign positive
+         | FloatMinMax { min } -> float_minmax min
+         | FloatRounding rm -> float_rounding rm
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
          | Likely -> likely
@@ -189,11 +295,17 @@ module M (Heap : Heap_intf.S) = struct
          | Nop -> nop
          | PanicSimple -> std_panic
          | PtrByteOp op -> ptr_op ~byte:true op f.signature
+         | PtrGuaranteedCmp -> ptr_guaranteed_cmp
          | PtrOp op -> ptr_op op f.signature
-         | PtrOffsetFrom -> ptr_offset_from f.signature
+         | PtrOffsetFrom { unsigned } -> ptr_offset_from unsigned f.signature
+         | RawEq -> raw_eq f.signature
+         | Saturating op -> saturating op f.signature
          | SizeOf -> size_of f.signature
          | SizeOfVal -> size_of_val f.signature
          | Transmute -> transmute f.signature
+         | TypeId -> type_id f.signature
+         | TypeName -> type_name f.signature
+         | TypedSwapNonOverlapping -> typed_swap_nonoverlapping f.signature
          | Unchecked op -> unchecked_op op f.signature
          | VariantCount -> variant_count f.signature
          | Wrapping op -> wrapping_op op f.signature

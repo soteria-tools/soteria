@@ -482,8 +482,11 @@ module Tree = struct
 
   let put_raw tree t =
     let replace_node t =
-      let@ _ = as_owned t in
-      Result.ok tree
+      let@ _, tb_st = as_owned t in
+      match tree.node with
+      (* we need to keep our tree borrows! *)
+      | Owned { v; _ } -> Result.ok { tree with node = Owned { tb = tb_st; v } }
+      | _ -> failwith "put_raw: invalid tree"
     in
     let rebuild_parent = of_children in
     let++ _, new_tree =
