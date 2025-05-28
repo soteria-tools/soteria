@@ -3,7 +3,7 @@ module SYMEX =
     (struct
       let fuel : Soteria_symex.Fuel_gauge.t = { steps = 1000; branching = 4 }
     end)
-    (C_solver_incr)
+    (C_solver)
 
 include SYMEX
 include Syntaxes.FunctionWrap

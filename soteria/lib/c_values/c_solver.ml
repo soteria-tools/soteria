@@ -1,9 +1,6 @@
 module Value = Typed
 module Var = Svalue.Var
 module L = Soteria_logs.Logs.L
-
-let debug_str ~prefix s = L.smt (fun m -> m "%s: %s" prefix s)
-
 open Simple_smt
 
 module Solver_state = struct
@@ -241,11 +238,23 @@ let rec simplify' solver (v : Svalue.t) : Svalue.t =
                 Svalue.v_true
               else if Svalue.sure_neq e1 e2 then Svalue.v_false
               else v
+          | Binop (And, e1, e2) ->
+              let se1 = simplify' solver e1 in
+              let se2 = simplify' solver e2 in
+              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
+              else Svalue.and_ se1 se2
           | Binop (Or, e1, e2) ->
               let se1 = simplify' solver e1 in
               let se2 = simplify' solver e2 in
               if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
               else Svalue.or_ se1 se2
+          | Ite (g, e1, e2) ->
+              let sg = simplify' solver g in
+              let se1 = simplify' solver e1 in
+              let se2 = simplify' solver e2 in
+              if Svalue.equal sg g && Svalue.equal se1 e1 && Svalue.equal se2 e2
+              then v
+              else Svalue.ite sg se1 se2
           | _ -> v))
 
 and simplify solver (v : 'a Typed.t) : 'a Typed.t =
