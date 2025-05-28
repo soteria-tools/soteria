@@ -4,4 +4,6 @@
  (libraries soteria_symex simple_smt soteria_std hashcons fmt cmdliner)
  (flags -open Soteria_std)
  (preprocess
-  (pps ppx_deriving.std)))
+  (pps ppx_deriving.std))
+ (instrumentation
+  (backend landmarks --auto)))
