@@ -1,61 +1,15 @@
 #!/usr/bin/env python3
 
+from common import *
+
 from os import error, truncate
 import sys
 import re
 from typing import Iterable, Optional
 
-PURPLE = "\033[0;35m"
-RED = "\033[0;31m"
-ORANGE = "\033[38;5;208m"
-YELLOW = "\033[38;5;220m"
-GREEN = "\033[0;32m"
-CYAN = "\033[0;36m"
-BLUE = "\033[0;34m"
-GRAY = "\033[0;90m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
-
-# if piping output, remove colors:
-NO_COLOR = not sys.stdout.isatty()
-if NO_COLOR:
-    PURPLE = RED = ORANGE = YELLOW = GREEN = CYAN = BLUE = GRAY = BOLD = RESET = ""
-
-
-def rainbow(i):
-    if NO_COLOR:
-        return ""
-
-    i = i % 7
-    return [
-        "\033[38;5;197m",
-        "\033[38;5;208m",
-        "\033[38;5;220m",
-        "\033[38;5;70m",
-        "\033[38;5;74m",
-        "\033[38;5;33m",
-        "\033[38;5;127m",
-    ][i]
-
-
-known_issue = {
-    "tests/kani/ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "tests/kani/ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "tests/kani/ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "kani/Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
-    "tests/kani/LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
-    "kani/Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
-    "kani/Uninit/access-padding-enum-multiple-variants.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "kani/Uninit/access-padding-enum-single-field.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "kani/Uninit/access-padding-enum-single-variant.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "kani/ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
-    "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
-    "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
-}
-
 
 def file_str(file_name: str):
-    issue = known_issue.get(file_name, None)
+    issue = KNOWN_ISSUES.get(file_name, None)
     if issue:
         return f"{GRAY}{file_name} {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
     return file_name
@@ -170,17 +124,20 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if "Fatal: Exn: Failure" in test:
         cause = re.search(r"Fatal: Exn: Failure\(\"(.+)\"\)", test)
         if not cause:
-            exit(f"No cause found for fatal exn in {test}")
+            return ("Raised exception", RED, None)
         return ("Raised exception", RED, cause.group(1))
 
     if "Fatal: Exn" in test:
         cause = re.search(r"Fatal: Exn: (.+)", test)
         if not cause:
-            exit(f"No cause found for fatal exn in {test}")
+            return ("Raised exception", RED, None)
         return ("Raised exception", RED, cause.group(1))
 
     if "Fatal: Execution vanished" in test:
         return ("Vanished", RED, None)
+
+    if "unknown option" in test:
+        return ("Unknown CLI option", RED, None)
 
     return (f"Unknown (Fatal error)", RED, None)
 
@@ -229,11 +186,11 @@ def analyse(file: str) -> LogInfo:
         content = open(file, "r").read()
     except FileNotFoundError:
         exit(f"File not found: {file}")
-    tests = content.split("\nRunning /")
+    tests = content.split("[TEST] Running ")[1:]
     print(f"• Found {len(tests)} tests in {file}")
     tests[0] = tests[0].replace("Running ", "")
     for test in tests:
-        file_path = re.search(r"(.+)\n", test)
+        file_path = re.search(r"(.+) - .*\n", test)
         if not file_path:
             exit(f"No file found in {test}")
         file_path = file_path.group(1)
@@ -256,6 +213,8 @@ def analyse(file: str) -> LogInfo:
 
         tests_idx = file_path.split("/").index("tests") + 1
         file_name = "/".join(file_path.split("/")[tests_idx:])
+        if file_name.startswith("kani/"):
+            file_name = file_name[len("kani/") :]
 
         # test run through kani
         if "Kani Rust Verifier" in test:
@@ -340,14 +299,13 @@ def main(files: list[str]):
     stats: LogInfo = merge(stats_all)
     items: LogInfoList = as_items(filtered(stats))
 
-    i = 0
     verbosity = sum(1 for flag in sys.argv if flag == "-v")
 
     print(f"{BOLD}Summary:{RESET}")
     for cause, color, num, tests in items:
-        print(f"{rainbow(i)}|{RESET} {color}{num:3d}{RESET} {cause}")
+        pprint(f"{BOLD}{num:3d}{RESET} {color}{cause}{RESET}")
         if verbosity >= 1:
-            dot = f"{rainbow(i)}•{RESET}"
+            dot = f"{rainbow()}•{RESET}"
             if all(test[1] is None for test in tests):
                 # print tests one by one
                 tests = [file for file, _ in tests]
@@ -374,7 +332,7 @@ def main(files: list[str]):
                         files.sort()
                         files_str = "\n      ".join([file_str(f) for f in files])
                         print(f"      {files_str}")
-        i += 1
+        inc_rainbow()
 
     print(
         f"{BOLD}Total:{RESET} {len(set(t[0] for tests in stats.values() for t in tests))}"
@@ -444,18 +402,18 @@ def diff(f1: str, f2: str):
             msg = f"{GRAY}{len_before}{RESET}"
         else:
             msg = f"{len_before} -> {len_after}"
-        print(f"{rainbow(i)}|{RESET} {color}{cause}{RESET}: {msg}")
-        i = i + 1
+        pprint(f"{color}{cause}{RESET}: {msg}")
+        inc_rainbow()
     if verbosity < 1:
         return
     print()
     print(f"{BOLD}Diffs:{RESET} ({len(diffs)})")
     for test, diff in diffs.items():
-        i = i + 1
+        inc_rainbow()
         if isinstance(diff, str):
-            print(f"{rainbow(i)}|{RESET} {test}{RESET} {diff}")
+            pprint(f"{test}{RESET} {diff}")
         else:
-            print(f"{rainbow(i)}|{RESET} {test}{RESET}")
+            pprint(f"{test}{RESET}")
             if verbosity < 2:
                 continue
             only_before, only_after = diff
