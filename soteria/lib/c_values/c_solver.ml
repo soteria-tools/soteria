@@ -65,23 +65,20 @@ module Solver_state = struct
   let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
     let neg_v = Typed.not v in
     Dynarray.find_map
-      (fun d ->
-        Dynarray.find_map
-          (fun { value; _ } ->
-            if Typed.equal value v then Some true
-            else if Typed.equal value neg_v then Some false
-            else None)
-          d)
+      (Dynarray.find_map (fun { value; _ } ->
+           if Typed.equal value v then Some true
+           else if Typed.equal value neg_v then Some false
+           else None))
       t
 
   let iter (t : t) f =
-    Dynarray.iter (fun t -> Dynarray.iter (fun { value; _ } -> f value) t) t
+    Dynarray.iter (Dynarray.iter (fun { value; _ } -> f value)) t
 
   let to_value_list (t : t) = Iter.to_rev_list (iter t)
 
   let mem (t : t) v =
     Dynarray.exists
-      (fun d -> Dynarray.exists (fun { value; _ } -> Typed.equal v value) d)
+      (Dynarray.exists (fun { value; _ } -> Typed.equal v value))
       t
 
   (** If we have checked sat and obtaied SAT, we can mark all elements of the

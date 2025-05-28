@@ -49,13 +49,10 @@ module Solver_state = struct
   let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
     let neg_v = Typed.not v in
     Dynarray.find_map
-      (fun d ->
-        Dynarray.find_map
-          (fun value ->
-            if Typed.equal value v then Some true
-            else if Typed.equal value neg_v then Some false
-            else None)
-          d)
+      (Dynarray.find_map (fun value ->
+           if Typed.equal value v then Some true
+           else if Typed.equal value neg_v then Some false
+           else None))
       t
 end
 
