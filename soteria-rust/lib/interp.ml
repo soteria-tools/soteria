@@ -421,21 +421,34 @@ module Make (Heap : Heap_intf.S) = struct
         match (v1, v2) with
         | Base v1, Base v2 -> (
             match op with
-            | Ge | Gt | Lt | Le ->
-                let op =
-                  match op with
-                  | Ge -> Typed.geq
-                  | Gt -> Typed.gt
-                  | Lt -> Typed.lt
-                  | Le -> Typed.leq
-                  | _ -> assert false
-                in
+            | Ge | Gt | Lt | Le -> (
                 let* v1, v2, ty = cast_checked2 v1 v2 in
-                if Typed.equal_ty ty Typed.t_ptr then
-                  Heap.error `UBPointerComparison state
-                else
-                  let v = op v1 v2 |> Typed.int_of_bool in
-                  Result.ok (Base v, state)
+                match Typed.untype_type ty with
+                | Svalue.TInt ->
+                    let op =
+                      match op with
+                      | Ge -> Typed.geq
+                      | Gt -> Typed.gt
+                      | Lt -> Typed.lt
+                      | Le -> Typed.leq
+                      | _ -> assert false
+                    in
+                    let v = op v1 v2 |> Typed.int_of_bool in
+                    Result.ok (Base v, state)
+                | TFloat _ ->
+                    let op =
+                      match op with
+                      | Ge -> Typed.geq_f
+                      | Gt -> Typed.gt_f
+                      | Lt -> Typed.lt_f
+                      | Le -> Typed.leq_f
+                      | _ -> assert false
+                    in
+                    let v1, v2 = (Typed.cast v1, Typed.cast v2) in
+                    let v = op v1 v2 |> Typed.int_of_bool in
+                    Result.ok (Base v, state)
+                | TPointer -> Heap.error `UBPointerComparison state
+                | _ -> assert false)
             | Eq | Ne ->
                 let* v1, v2, _ = cast_checked2 v1 v2 in
                 let++ res = Core.equality_check v1 v2 state in
