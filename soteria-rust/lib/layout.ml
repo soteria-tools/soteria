@@ -166,8 +166,6 @@ let rec layout_of (ty : Types.ty) : layout =
       let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
       { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
   | TAdt (TBuiltin TArray, _) -> failwith "Invalid TArray shape"
-  (* Closures *)
-  | TClosure (_, _, state, _) -> layout_of_members state
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
   (* Arrows -- we don't support these, but need to compute a size for them, because some code

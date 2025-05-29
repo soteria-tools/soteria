@@ -641,9 +641,6 @@ module Make (Heap : Heap_intf.S) = struct
             Fmt.kstr not_impl "AggregatedRawPtr: invalid arguments %a"
               Fmt.(list ~sep:comma pp_rust_val)
               values)
-    (* Closure state construction *)
-    | Aggregate (AggregatedClosure _, _) ->
-        not_impl "Unsupported rvalue: aggregated closure"
     (* Array repetition *)
     | Repeat (value, _, len) ->
         let++ value, state = eval_operand state value in
@@ -720,6 +717,7 @@ module Make (Heap : Heap_intf.S) = struct
         else
           match on_failure with
           | UndefinedBehavior -> Heap.error `UBAbort state
+          | UnwindTerminate -> Heap.error `UnwindTerminate state
           | Panic name ->
               let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
               Heap.error (`Panic name) state)
@@ -745,7 +743,7 @@ module Make (Heap : Heap_intf.S) = struct
     let { span = loc; content = term; _ } : UllbcAst.terminator = terminator in
     let@ () = with_loc ~loc in
     match term with
-    | Call ({ func; args; dest = { ty; _ } as place }, target) ->
+    | Call ({ func; args; dest = { ty; _ } as place }, target, _on_unwind) ->
         let* exec_fun = resolve_function func in
         let** args, state = eval_operand_list ~store state args in
         L.info (fun g ->
@@ -838,9 +836,11 @@ module Make (Heap : Heap_intf.S) = struct
     | Abort kind -> (
         match kind with
         | UndefinedBehavior -> Heap.error `UBAbort state
+        | UnwindTerminate -> Heap.error `UnwindTerminate state
         | Panic name ->
             let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
             Heap.error (`Panic name) state)
+    | UnwindResume -> failwith ""
 
   and exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
