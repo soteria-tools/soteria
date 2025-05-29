@@ -3,6 +3,7 @@ type 'a t
 val with_capacity : int -> 'a t
 val singleton : 'a -> 'a t
 val add : 'a t -> 'a -> unit
+val add_iter : 'a t -> 'a Iter.t -> unit
 val mem : 'a t -> 'a -> bool
 val remove : 'a t -> 'a -> unit
 val iter : ('a -> unit) -> 'a t -> unit
@@ -21,6 +22,7 @@ module type S = sig
   val with_capacity : int -> t
   val singleton : elt -> t
   val add : t -> elt -> unit
+  val add_iter : t -> elt Iter.t -> unit
   val mem : t -> elt -> bool
   val remove : t -> elt -> unit
   val iter : (elt -> unit) -> t -> unit

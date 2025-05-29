@@ -1,5 +1,5 @@
 (executables
- (names batch run_twice)
+ (names run_twice)
  (libraries soteria_c_values soteria_c_lib)
  (flags -open Soteria_c_values)
  (preprocess

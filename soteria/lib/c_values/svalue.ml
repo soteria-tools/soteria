@@ -390,6 +390,7 @@ let bool b =
 
 let and_ v1 v2 =
   match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v1 v2 -> v1
   | Bool false, _ | _, Bool false -> v_false
   | Bool true, _ -> v2
   | _, Bool true -> v1
@@ -545,16 +546,20 @@ let rec lt v1 v2 =
   | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
   | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
       if Z.equal Z.zero x then bool (Z.lt y Z.zero)
-      else if Z.(equal zero (rem y x)) then lt (int_z Z.(y / x)) v1'
-      else Binop (Lt, v1, v2) <| TBool
+      else
+        let op = if Z.divisible y x || Z.(y > zero) then lt else leq in
+        if Z.(zero < x) then op (int_z Z.(y / x)) v1'
+        else op v1' (int_z Z.(y / x))
   | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
       if Z.equal Z.zero x then bool (Z.lt Z.zero y)
-      else if Z.(equal zero (rem y x)) then lt v1' (int_z Z.(y / x))
-      else Binop (Lt, v1, v2) <| TBool
+      else
+        let op = if Z.divisible y x || Z.(y < zero) then lt else leq in
+        if Z.(zero < x) then op v1' (int_z Z.(y / x))
+        else op (int_z Z.(y / x)) v1'
   | _ -> Binop (Lt, v1, v2) <| TBool
 
-let rec leq v1 v2 =
+and leq v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> bool (Z.leq i1 i2)
   | _, _ when equal v1 v2 -> v_true
@@ -579,14 +584,18 @@ let rec leq v1 v2 =
       leq v1 (int_z @@ Z.sub x y)
   | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
   | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
-      if Z.equal Z.zero x then bool (Z.leq y Z.zero)
-      else if Z.(equal zero (rem y x)) then leq (int_z Z.(y / x)) v1'
-      else Binop (Leq, v1, v2) <| TBool
+      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      else
+        let op = if Z.divisible y x || Z.(y < zero) then leq else lt in
+        if Z.(zero < x) then op (int_z Z.(y / x)) v1'
+        else op v1' (int_z Z.(y / x))
   | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
-      if Z.equal Z.zero x then bool (Z.leq Z.zero y)
-      else if Z.(equal zero (rem y x)) then leq v1' (int_z Z.(y / x))
-      else Binop (Leq, v1, v2) <| TBool
+      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      else
+        let op = if Z.divisible y x || Z.(y > zero) then leq else lt in
+        if Z.(zero < x) then op v1' (int_z Z.(y / x))
+        else op (int_z Z.(y / x)) v1'
   | _ -> Binop (Leq, v1, v2) <| TBool
 
 let geq v1 v2 = leq v2 v1
@@ -611,9 +620,9 @@ let rec minus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.sub i1 i2)
-  | Binop (Minus, { node = { kind = Int i2 }; _ }, v1), Int i1 ->
+  | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
       minus (int_z (Z.sub i2 i1)) v1
-  | Binop (Minus, v1, { node = { kind = Int i2 }; _ }), Int i1 ->
+  | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
       minus v1 (int_z (Z.sub i2 i1))
   | _ -> Binop (Minus, v1, v2) <| TInt
 
@@ -667,7 +676,7 @@ let neg v =
 
 (** {2 Bit vectors} *)
 
-let rec raw_bit_and n v1 v2 =
+let raw_bit_and n v1 v2 =
   let covers_bitwidth z =
     Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = n)
   in

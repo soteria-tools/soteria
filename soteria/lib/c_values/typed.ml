@@ -9,14 +9,12 @@ module T = struct
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
-  type cnum = [ sint | sfloat ]
   type cval = [ sint | sptr | sfloat ]
 
   type any =
     [ `Bool | `Ptr | `Loc | `List of any | `NonZero | `MaybeZero | `Float ]
 
   let pp_sint _ _ = ()
-  let pp_sfloat _ _ = ()
   let pp_nonzero _ _ = ()
   let pp_sbool _ _ = ()
   let pp_sptr _ _ = ()
