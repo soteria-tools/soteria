@@ -1,8 +1,9 @@
 import sys
 import os
 import subprocess
+import re
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, Optional
 
 PURPLE = "\033[0;35m"
 RED = "\033[0;31m"
@@ -52,6 +53,21 @@ def pprint(*args, inc: bool = False, **kwargs):
     print(*args, **kwargs)
     if inc:
         inc_rainbow()
+
+
+# displays a list of rows -- each cell is text and an optional color
+def pptable(rows: list[list[tuple[str, Optional[str]]]]):
+    cols = len(rows[0])
+    col_len = [max(len(row[i][0]) for row in rows) for i in range(cols)]
+    pad = "  "
+    for row in rows:
+        pprint(
+            pad.join(
+                (clr or "") + cell + RESET + " " * (col_len[i] - len(cell))
+                for i, (cell, clr) in enumerate(row)
+            ),
+            inc=True,
+        )
 
 
 pass_ = lambda x: ("Success", GREEN, x)
@@ -139,25 +155,35 @@ class Flags(TypedDict):
     cmd_flags: list[str]
     filters: list[str]
     exclusions: list[str]
+    iterations: Optional[int]
+    tag: Optional[str]
 
 
-def parse_flags() -> Flags:
-    i = 2  # ignore idx 0 (executable name) and idx 1 (command)
+def parse_flags(argv: list[str]) -> Flags:
+    i = 0
     flags: Flags = {
         "cmd_flags": [],
         "filters": [],
         "exclusions": [],
+        "iterations": None,
+        "tag": None,
     }
-    while i < len(sys.argv):
-        arg = sys.argv[i]
+    while i < len(argv):
+        arg = argv[i]
         if arg == "--":
-            flags["cmd_flags"] += sys.argv[i + 1 :]
+            flags["cmd_flags"] += argv[i + 1 :]
             break
         elif arg == "-f":
-            flags["filters"].append(sys.argv[i + 1])
+            flags["filters"].append(argv[i + 1])
             i += 1
         elif arg == "-e":
-            flags["exclusions"].append(sys.argv[i + 1])
+            flags["exclusions"].append(argv[i + 1])
+            i += 1
+        elif arg == "-i":
+            flags["iterations"] = int(argv[i + 1])
+            i += 1
+        elif arg == "--tag":
+            flags["tag"] = argv[i + 1]
             i += 1
         else:
             print(f"{RED}Unknown flag: {arg}")
