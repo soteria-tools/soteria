@@ -230,6 +230,7 @@ __pycache__/
 
 ### Produced by Soteria ###
 json_dump/
+soteria-rust/scripts/*.csv
 
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
 # and modified by hand afterwards
