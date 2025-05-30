@@ -256,8 +256,40 @@ module M (Heap : Heap_intf.S) = struct
           Fmt.failwith "Expected %a to have been monomorphised" Crate.pp_name
             f.item_meta.name
     in
+    let is_intrinsic = Charon_util.decl_has_attr f "rustc_intrinsic" in
+    (* Rust allows defining functions and marking them as intrinsics within a module,
+       and the compiler will treat them as the intrinsic of the same name; e.g.
+       mod Foo {
+        #[rustc_intrinsic]
+        unsafe fn copy_nonoverlapping<T>(src: *const T, dst: *mut T, count: usize);
+       }
+       This means their path doesn't match the one we expect for the patterns; we normalise
+       this here. Another solution could be to match intrinsics on their name only and not their
+       path (possibly in a separate function?), but that's maybe overkill for the very rare
+       cases were people actually re-define the intrinsics. *)
+    let name =
+      match f.item_meta.name with
+      | _ when not is_intrinsic -> f.item_meta.name
+      | PeIdent ("core", _) :: _ -> f.item_meta.name
+      | _ -> (
+          match List.rev f.item_meta.name with
+          | (PeIdent _ as name) :: _ ->
+              [
+                PeIdent ("core", Types.Disambiguator.zero);
+                PeIdent ("intrinsics", Types.Disambiguator.zero);
+                name;
+              ]
+          | (PeMonomorphized _ as mono) :: (PeIdent _ as name) :: _ ->
+              [
+                PeIdent ("core", Types.Disambiguator.zero);
+                PeIdent ("intrinsics", Types.Disambiguator.zero);
+                name;
+                mono;
+              ]
+          | _ -> failwith "Unexpected intrinsic shape")
+    in
     let ctx = Crate.as_namematcher_ctx () in
-    NameMatcherMap.find_opt ctx match_config f.item_meta.name std_fun_map
+    NameMatcherMap.find_opt ctx match_config name std_fun_map
     |> ( Option.map @@ function
          | RusteriaAssert -> assert_
          | RusteriaAssume -> assume
@@ -309,10 +341,9 @@ module M (Heap : Heap_intf.S) = struct
          | WriteBytes -> write_bytes (mono ())
          | Zeroed -> zeroed f.signature )
     |> opt_bind @@ fun () ->
-       if Charon_util.decl_has_attr f "rustc_intrinsic" then
+       if is_intrinsic then
          Option.some @@ fun ~args:_ ~state:_ ->
-         Fmt.kstr not_impl "Unsupported intrinsic: %a" Crate.pp_name
-           f.item_meta.name
+         Fmt.kstr not_impl "Unsupported intrinsic: %a" Crate.pp_name name
        else None
 
   let builtin_fun_eval (f : Expressions.builtin_fun_id) generics =

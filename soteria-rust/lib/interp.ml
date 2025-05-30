@@ -535,8 +535,9 @@ module Make (Heap : Heap_intf.S) = struct
                       return (p, meta, v)
                   | _ -> not_impl "Invalid operands in offset"
                 in
+                let ty = Charon_util.get_pointee (type_of_operand e1) in
                 let* v = cast_checked ~ty:Typed.t_int v in
-                let p' = Sptr.offset p v in
+                let p' = Sptr.offset ~ty p v in
                 Result.ok (Ptr (p', meta), state)
             | _ ->
                 let++ res = Core.eval_ptr_binop op p1 p2 state in
