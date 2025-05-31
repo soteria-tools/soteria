@@ -97,12 +97,7 @@ let rec encode_value (v : Svalue.t) =
           let size = Svalue.size_of_bv v.node.ty in
           bv_of_int size v1
       | IntOfBv signed -> int_of_bv signed v1
-      | BvOfFloat -> (
-          match Svalue.precision_of_f v1_.node.ty with
-          | F16 -> bv_of_f16 v1
-          | F32 -> bv_of_f32 v1
-          | F64 -> bv_of_f64 v1
-          | F128 -> bv_of_f128 v1)
+      | BvOfFloat n -> bv_of_float n v1
       | FloatOfBv -> (
           match Svalue.precision_of_f v.node.ty with
           | F16 -> f16_of_bv v1

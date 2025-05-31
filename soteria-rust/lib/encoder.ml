@@ -384,12 +384,13 @@ module Make (Sptr : Sptr.S) = struct
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
-      | TLiteral (TFloat _), TLiteral (TInteger _), Base sv ->
+      | TLiteral (TFloat _), TLiteral (TInteger ity), Base sv ->
           let+ sv =
             of_opt_not_impl ~msg:"Unsupported: non-float in float-to-int"
             @@ Typed.cast_float sv
           in
-          let sv' = Typed.int_of_float sv in
+          let size = 8 * Layout.size_of_int_ty ity in
+          let sv' = Typed.int_of_float size sv in
           Ok (Base sv')
       | TLiteral (TInteger _), TLiteral (TFloat fp), Base sv ->
           let+ sv = cast_checked sv ~ty:Typed.t_int in
