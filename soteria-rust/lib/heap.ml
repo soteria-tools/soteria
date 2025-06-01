@@ -411,5 +411,5 @@ let add_error e ({ errors; _ } as st) =
 
 let pop_error ({ errors; _ } as st) =
   match errors with
-  | e :: _ -> Result.error (e, st)
+  | e :: rest -> Result.error (e, { st with errors = rest })
   | _ -> failwith "pop_error with no errors?"
