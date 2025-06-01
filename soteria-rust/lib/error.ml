@@ -1,33 +1,40 @@
 type t =
-  [ `DeadVariable
-  | `DivisionByZero
-  | `DoubleFree
-  | `FailedAssert of string option
+  [ (* Memory safety *)
+    `DoubleFree
   | `InvalidFree
-  | `InvalidLayout
   | `MemoryLeak
-  | `MetaExpectedError
   | `MisalignedPointer
   | `NullDereference
   | `OutOfBounds
+  | `UninitializedMemoryAccess
+  | `UseAfterFree
+  | (* Arithmetic *)
+    `DivisionByZero
+  | `InvalidShift
   | `Overflow
-  | `Panic of string option
-  | `ParsingError of string
-  | `RefToUninhabited
+  | (* Undefined behaviour *)
+    `RefToUninhabited
   | `StdErr of string
   | `UBAbort
-  | `UBArithShift
   | `UBPointerArithmetic
   | `UBPointerComparison
   | `UBTransmute
-  | `UBTreeBorrow
-  | `UninitializedMemoryAccess
+  | (* Tree borrows *)
+    `AliasingError
+  | (* Explicit errors *)
+    `FailedAssert of string option
+  | `Panic of string option
   | `UnwindTerminate
-  | `UseAfterFree ]
+  | (* Local was not initialised (impossible without `mir!`) *)
+    `DeadVariable
+  | (* Meta errors *)
+    `MetaExpectedError
+    (* Type is too large for memory *)
+  | `InvalidLayout ]
 
 let is_unwindable : [< t ] -> bool = function
   | `NullDereference | `OutOfBounds | `DivisionByZero | `FailedAssert _
-  | `Panic _ ->
+  | `Panic _ | `Overflow ->
       true
   | _ -> false
 
@@ -35,33 +42,32 @@ let pp_err ft ((err : [< t ]), call_trace) =
   Format.open_vbox 0;
   let () =
     match err with
-    | `NullDereference -> Fmt.string ft "NullDereference"
-    | `OutOfBounds -> Fmt.string ft "OutOfBounds"
-    | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
-    | `UseAfterFree -> Fmt.string ft "UseAfterFree"
-    | `DivisionByZero -> Fmt.string ft "DivisionByZero"
-    | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
-    | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
-    | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
-    | `UBAbort -> Fmt.string ft "UBAbort"
-    | `UBArithShift -> Fmt.string ft "UBArithShift"
-    | `UBTransmute -> Fmt.string ft "UBTransmute"
-    | `UBTreeBorrow -> Fmt.string ft "UBTreeBorrow"
-    | `DeadVariable -> Fmt.string ft "DeadVariable"
-    | `DoubleFree -> Fmt.string ft "DoubleFree"
-    | `InvalidFree -> Fmt.string ft "InvalidFree"
-    | `MisalignedPointer -> Fmt.string ft "MisalignedPointer"
-    | `RefToUninhabited -> Fmt.string ft "RefToUninhabited"
-    | `InvalidLayout -> Fmt.string ft "InvalidLayout"
-    | `MemoryLeak -> Fmt.string ft "Memory leak"
+    | `AliasingError -> Fmt.string ft "Aliasing error"
+    | `DeadVariable -> Fmt.string ft "Dead variable accessed"
+    | `DivisionByZero -> Fmt.string ft "Division by zero"
+    | `DoubleFree -> Fmt.string ft "Double free"
     | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
     | `FailedAssert None -> Fmt.string ft "Failed assertion"
+    | `InvalidFree -> Fmt.string ft "Invalid free"
+    | `InvalidLayout -> Fmt.string ft "Invalid layout"
+    | `InvalidShift -> Fmt.string ft "Invalid binary shift"
+    | `MemoryLeak -> Fmt.string ft "Memory leak"
+    | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
+    | `MisalignedPointer -> Fmt.string ft "Misaligned pointer"
+    | `NullDereference -> Fmt.string ft "Null dereference"
+    | `OutOfBounds -> Fmt.string ft "Out of bounds"
     | `Overflow -> Fmt.string ft "Overflow"
-    | `StdErr msg -> Fmt.pf ft "Std error: %s" msg
     | `Panic (Some msg) -> Fmt.pf ft "Panic: %s" msg
     | `Panic None -> Fmt.pf ft "Panic"
-    | `UnwindTerminate -> Fmt.string ft "UnwindTerminate"
-    | `MetaExpectedError -> Fmt.string ft "MetaExpectedError"
+    | `RefToUninhabited -> Fmt.string ft "Ref to uninhabited type"
+    | `StdErr msg -> Fmt.pf ft "UB in std: %s" msg
+    | `UninitializedMemoryAccess -> Fmt.string ft "Uninitialized memory access"
+    | `UBAbort -> Fmt.string ft "UB: undefined behaviour trap reached"
+    | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
+    | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
+    | `UBTransmute -> Fmt.string ft "UB: Transmute"
+    | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
+    | `UseAfterFree -> Fmt.string ft "Use after free"
   in
   Fmt.pf ft "@,Trace:@,%a" Call_trace.pp call_trace;
   Format.close_box ()

@@ -34,7 +34,7 @@ module type S = sig
       | `UninitializedMemoryAccess
       | `UseAfterFree
       | `UBTransmute
-      | `UBTreeBorrow
+      | `AliasingError
       | `MisalignedPointer
       | `RefToUninhabited ]
       err
@@ -50,7 +50,7 @@ module type S = sig
       [> `NullDereference
       | `OutOfBounds
       | `UseAfterFree
-      | `UBTreeBorrow
+      | `AliasingError
       | `MisalignedPointer ]
       err
       * t,
@@ -65,7 +65,7 @@ module type S = sig
     ( unit * t,
       [> `NullDereference
       | `OutOfBounds
-      | `UBTreeBorrow
+      | `AliasingError
       | `UseAfterFree
       | `MisalignedPointer ]
       err
@@ -168,7 +168,7 @@ module type S = sig
     Charon.Types.ref_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree | `OutOfBounds | `UBTreeBorrow ] err
+      [> `NullDereference | `UseAfterFree | `OutOfBounds | `AliasingError ] err
       * t,
       serialized list )
     Result.t

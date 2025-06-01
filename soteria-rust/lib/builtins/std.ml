@@ -15,16 +15,6 @@ module M (Heap : Heap_intf.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
-  let assert_ ~(args : rust_val list) ~state =
-    let open Typed.Infix in
-    let* to_assert =
-      match args with
-      | [ Base t ] -> cast_checked t ~ty:Typed.t_int
-      | _ -> not_impl "to_assert with non-one arguments"
-    in
-    if%sat to_assert ==@ 0s then Heap.error (`FailedAssert None) state
-    else Result.ok (Charon_util.unit_, state)
-
   let assume ~args ~state =
     let* to_assume =
       match args with
