@@ -48,6 +48,17 @@ let compile_lib path =
     let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
     raise (PluginError msg)
 
+(* List of patterns that currently cause generic errors (and thus crashes in monomorphisation).
+   We tell Charon to not translate these, to avoid the crash, and we just hope the item is not
+   encountered at runtime. *)
+let known_generic_errors =
+  [
+    "std::path::_::from";
+    "alloc::raw_vec::_::try_allocate_in";
+    "alloc::string::_::from";
+    "alloc::raw_vec::finish_grow";
+  ]
+
 type plugin = {
   mk_cmd : unit -> Cmd.charon_cmd;
   get_entry_point : fun_decl -> entry_point option;
@@ -57,16 +68,18 @@ let default =
   let mk_cmd () =
     let std_lib = lib_path "std" in
     let target = get_host () in
+    let opaques = List.map (( ^ ) "--opaque ") known_generic_errors in
     compile_lib std_lib;
     mk_cmd
       ~charon:
-        [
-          "--ullbc";
-          "--translate-all-methods";
-          "--extract-opaque-bodies";
-          "--monomorphize";
-          "--mir promoted";
-        ]
+        ([
+           "--ullbc";
+           "--translate-all-methods";
+           "--extract-opaque-bodies";
+           "--monomorphize";
+           "--mir promoted";
+         ]
+        @ opaques)
       ~rustc:
         [
           (* i.e. not always a binary! *)
