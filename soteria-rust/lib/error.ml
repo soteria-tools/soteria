@@ -1,4 +1,37 @@
-let pp_err ft (err, call_trace) =
+type t =
+  [ `DeadVariable
+  | `DivisionByZero
+  | `DoubleFree
+  | `FailedAssert of string option
+  | `InvalidFree
+  | `InvalidLayout
+  | `MemoryLeak
+  | `MetaExpectedError
+  | `MisalignedPointer
+  | `NullDereference
+  | `OutOfBounds
+  | `Overflow
+  | `Panic of string option
+  | `ParsingError of string
+  | `RefToUninhabited
+  | `StdErr of string
+  | `UBAbort
+  | `UBArithShift
+  | `UBPointerArithmetic
+  | `UBPointerComparison
+  | `UBTransmute
+  | `UBTreeBorrow
+  | `UninitializedMemoryAccess
+  | `UnwindTerminate
+  | `UseAfterFree ]
+
+let is_unwindable : [< t ] -> bool = function
+  | `NullDereference | `OutOfBounds | `DivisionByZero | `FailedAssert _
+  | `Panic _ ->
+      true
+  | _ -> false
+
+let pp_err ft ((err : [< t ]), call_trace) =
   Format.open_vbox 0;
   let () =
     match err with

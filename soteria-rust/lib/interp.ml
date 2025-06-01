@@ -171,8 +171,8 @@ module Make (Heap : Heap_intf.S) = struct
                 f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
                   pp_full_ptr v);
             let pointee = Charon_util.get_pointee base.ty in
-            let** () = Heap.check_ptr_align (fst v) pointee in
-            Result.ok (v, state)
+            let++ () = Heap.check_ptr_align (fst v) pointee state in
+            (v, state)
         | Base off ->
             let* off = cast_checked ~ty:Typed.t_int off in
             let ptr = Sptr.null_ptr in
@@ -744,24 +744,32 @@ module Make (Heap : Heap_intf.S) = struct
     let { span = loc; content = term; _ } : UllbcAst.terminator = terminator in
     let@ () = with_loc ~loc in
     match term with
-    | Call ({ func; args; dest = { ty; _ } as place }, target, _on_unwind) ->
+    | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
         let* exec_fun = resolve_function func in
         let** args, state = eval_operand_list ~store state args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:(any ", ") pp_rust_val)
               args);
-        let** v, state =
-          let+- err = exec_fun ~args ~state in
-          Heap.add_to_call_trace err
-            (Call_trace.make_element ~loc ~msg:"Call trace" ())
-        in
-        let** ptr, state = resolve_place ~store state place in
-        L.info (fun m ->
-            m "Returned %a from %a" pp_rust_val v Crate.pp_fn_operand func);
-        let** (), state = Heap.store ptr ty v state in
-        let block = UllbcAst.BlockId.nth body.body target in
-        exec_block ~body store state block
+        Result.bind_2 (exec_fun ~args ~state)
+          ~f:(fun (v, state) ->
+            let** ptr, state = resolve_place ~store state place in
+            L.info (fun m ->
+                m "Returned %a from %a" pp_rust_val v Crate.pp_fn_operand func);
+            let** (), state = Heap.store ptr ty v state in
+            let block = UllbcAst.BlockId.nth body.body target in
+            exec_block ~body store state block)
+          ~fe:(fun (err, state) ->
+            let err' =
+              Heap.add_to_call_trace err
+                (Call_trace.make_element ~loc ~msg:"Call trace" ())
+            in
+            let err_ty = Heap.raw_err err' in
+            if Error.is_unwindable err_ty then
+              let** (), state' = Heap.add_error err' state in
+              let block = UllbcAst.BlockId.nth body.body on_unwind in
+              exec_block ~body store state' block
+            else Result.error (err', state))
     | Goto b ->
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~body store state block
@@ -841,7 +849,7 @@ module Make (Heap : Heap_intf.S) = struct
         | Panic name ->
             let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
             Heap.error (`Panic name) state)
-    | UnwindResume -> failwith ""
+    | UnwindResume -> Heap.pop_error state
 
   and exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     (* Put arguments in store *)
@@ -869,16 +877,14 @@ module Make (Heap : Heap_intf.S) = struct
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ?(ignore_leaks = false) ~args ~state fundef =
-    let** value, state =
-      let+- err = exec_fun ~args ~state fundef in
-      Heap.add_to_call_trace err
-        (Call_trace.make_element ~loc:fundef.item_meta.span ~msg:"Call trace" ())
-    in
-    let++ (), state =
-      if ignore_leaks then Result.ok ((), state)
+    let+- err, _ =
+      let** value, state = exec_fun ~args ~state fundef in
+      if ignore_leaks then Result.ok (value, state)
       else
         let@ () = with_loc ~loc:fundef.item_meta.span in
-        Heap.leak_check state
+        let++ (), state = Heap.leak_check state in
+        (value, state)
     in
-    (value, state)
+    Heap.add_to_call_trace err
+      (Call_trace.make_element ~loc:fundef.item_meta.span ~msg:"Call trace" ())
 end

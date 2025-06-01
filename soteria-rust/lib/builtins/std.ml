@@ -331,8 +331,8 @@ module M (Heap : Heap_intf.S) = struct
           (from_ptr, to_ptr, Typed.cast len)
       | _ -> failwith "copy[_nonoverlapping]: invalid arguments"
     in
-    let** () = Heap.check_ptr_align from_ptr ty in
-    let** () = Heap.check_ptr_align to_ptr ty in
+    let** () = Heap.check_ptr_align from_ptr ty state in
+    let** () = Heap.check_ptr_align to_ptr ty state in
     let* ty_size = Layout.size_of_s ty in
     let size = ty_size *@ len in
     let** () =
@@ -387,7 +387,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     let* count = cast_checked count ~ty:Typed.t_int in
     let ty = List.hd mono.types in
-    let** () = Heap.check_ptr_align ptr ty in
+    let** () = Heap.check_ptr_align ptr ty state in
     let* size = Layout.size_of_s ty in
     let size = size *@ count in
     (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
@@ -650,8 +650,8 @@ module M (Heap : Heap_intf.S) = struct
       | [ Ptr from_ptr; Ptr to_ptr ] -> (from_ptr, to_ptr)
       | _ -> failwith "copy_nonoverlapping: invalid arguments"
     in
-    let** () = Heap.check_ptr_align from_ptr ty in
-    let** () = Heap.check_ptr_align to_ptr ty in
+    let** () = Heap.check_ptr_align from_ptr ty state in
+    let** () = Heap.check_ptr_align to_ptr ty state in
     let* size = Layout.size_of_s ty in
     let** () =
       if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then

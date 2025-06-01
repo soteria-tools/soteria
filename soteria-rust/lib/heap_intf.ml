@@ -37,7 +37,8 @@ module type S = sig
       | `UBTreeBorrow
       | `MisalignedPointer
       | `RefToUninhabited ]
-      err,
+      err
+      * t,
       serialized list )
     Result.t
 
@@ -51,7 +52,8 @@ module type S = sig
       | `UseAfterFree
       | `UBTreeBorrow
       | `MisalignedPointer ]
-      err,
+      err
+      * t,
       serialized list )
     Result.t
 
@@ -66,29 +68,34 @@ module type S = sig
       | `UBTreeBorrow
       | `UseAfterFree
       | `MisalignedPointer ]
-      err,
+      err
+      * t,
       serialized list )
     Result.t
 
   val alloc_ty :
-    Types.ty -> t -> (full_ptr * t, [> ] err, serialized list) Result.t
+    Types.ty -> t -> (full_ptr * t, [> ] err * t, serialized list) Result.t
 
   val alloc_tys :
     Types.ty list ->
     t ->
-    (full_ptr list * t, [> ] err, serialized list) Result.t
+    (full_ptr list * t, [> ] err * t, serialized list) Result.t
 
   val free :
     full_ptr ->
     t ->
-    (unit * t, [> `InvalidFree | `UseAfterFree ] err, serialized list) Result.t
+    ( unit * t,
+      [> `InvalidFree | `UseAfterFree ] err * t,
+      serialized list )
+    Result.t
 
   val is_valid_ptr : t -> full_ptr -> Types.ty -> bool Rustsymex.t
 
   val check_ptr_align :
     Sptr.t ->
     Types.ty ->
-    (unit, [> `MisalignedPointer ] err, serialized list) Result.t
+    t ->
+    (unit, [> `MisalignedPointer ] err * t, serialized list) Result.t
 
   val copy_nonoverlapping :
     dst:full_ptr ->
@@ -96,7 +103,7 @@ module type S = sig
     size:sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err * t,
       serialized list )
     Result.t
 
@@ -105,7 +112,7 @@ module type S = sig
     Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err * t,
       serialized list )
     Result.t
 
@@ -114,29 +121,36 @@ module type S = sig
     sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err * t,
       serialized list )
     Result.t
 
-  val error : 'a -> t -> ('ok, 'a err, serialized list) Result.t
-  val lift_err : t -> ('ok, 'err, 'f) Result.t -> ('ok, 'err err, 'f) Result.t
+  val error : 'a -> t -> ('ok, 'a err * t, serialized list) Result.t
+
+  val lift_err :
+    t -> ('ok, 'err, 'f) Result.t -> ('ok, 'err err * t, 'f) Result.t
+
+  val raw_err : 'a err -> 'a
 
   val store_str_global :
-    string -> full_ptr -> t -> (unit * t, [> ] err, serialized list) Result.t
+    string ->
+    full_ptr ->
+    t ->
+    (unit * t, [> ] err * t, serialized list) Result.t
 
   val store_global :
     Types.global_decl_id ->
     full_ptr ->
     t ->
-    (unit * t, [> ] err, serialized list) Result.t
+    (unit * t, [> ] err * t, serialized list) Result.t
 
   val load_str_global :
-    string -> t -> (full_ptr option * t, [> ] err, serialized list) Result.t
+    string -> t -> (full_ptr option * t, [> ] err * t, serialized list) Result.t
 
   val load_global :
     Types.global_decl_id ->
     t ->
-    (full_ptr option * t, [> ] err, serialized list) Result.t
+    (full_ptr option * t, [> ] err * t, serialized list) Result.t
 
   val borrow :
     full_ptr ->
@@ -144,7 +158,7 @@ module type S = sig
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree ] err,
+      [> `NullDereference | `UseAfterFree ] err * t,
       serialized list )
     Result.t
 
@@ -154,7 +168,8 @@ module type S = sig
     Charon.Types.ref_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree | `OutOfBounds | `UBTreeBorrow ] err,
+      [> `NullDereference | `UseAfterFree | `OutOfBounds | `UBTreeBorrow ] err
+      * t,
       serialized list )
     Result.t
 
@@ -163,10 +178,15 @@ module type S = sig
     Charon.Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `UseAfterFree | `OutOfBounds ] err,
+      [> `NullDereference | `UseAfterFree | `OutOfBounds ] err * t,
       serialized list )
     Result.t
 
   val leak_check :
-    t -> (unit * t, [> `MemoryLeak ] err, serialized list) Result.t
+    t -> (unit * t, [> `MemoryLeak ] err * t, serialized list) Result.t
+
+  val add_error :
+    [< Error.t ] err -> t -> (unit * t, [> ] err * t, serialized list) Result.t
+
+  val pop_error : t -> ('a, Error.t err * t, serialized list) Result.t
 end
