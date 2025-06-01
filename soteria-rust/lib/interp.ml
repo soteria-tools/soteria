@@ -760,16 +760,12 @@ module Make (Heap : Heap_intf.S) = struct
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body store state block)
           ~fe:(fun (err, state) ->
-            let err' =
-              Heap.add_to_call_trace err
-                (Call_trace.make_element ~loc ~msg:"Call trace" ())
-            in
-            let err_ty = Heap.raw_err err' in
+            let err_ty = Heap.raw_err err in
             if Error.is_unwindable err_ty then
-              let** (), state' = Heap.add_error err' state in
+              let** (), state' = Heap.add_error err state in
               let block = UllbcAst.BlockId.nth body.body on_unwind in
               exec_block ~body store state' block
-            else Result.error (err', state))
+            else Result.error (err, state))
     | Goto b ->
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~body store state block
@@ -866,14 +862,25 @@ module Make (Heap : Heap_intf.S) = struct
           args);
     let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in
-    let** value, store, state = exec_block ~body store state starting_block in
-    let protected_address =
-      match (fundef.signature.output, value) with
-      | TRef (RStatic, _, RShared), Ptr (addr, _) -> Some addr
-      | _ -> None
-    in
-    let++ (), state = dealloc_store ?protected_address store protected state in
-    (value, state)
+    let exec_block = exec_block ~body store state starting_block in
+    Result.bind_2 exec_block
+      ~f:(fun (value, store, state) ->
+        let protected_address =
+          match (fundef.signature.output, value) with
+          | TRef (RStatic, _, RShared), Ptr (addr, _) -> Some addr
+          | _ -> None
+        in
+        let++ (), state =
+          dealloc_store ?protected_address store protected state
+        in
+        (value, state))
+      ~fe:(fun (err, state) ->
+        let err' =
+          Heap.add_to_call_trace err
+            (Call_trace.make_element ~loc ~msg:"Call trace" ())
+        in
+        let** (), state = dealloc_store store protected state in
+        Result.error (err', state))
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ?(ignore_leaks = false) ~args ~state fundef =
@@ -885,6 +892,5 @@ module Make (Heap : Heap_intf.S) = struct
         let++ (), state = Heap.leak_check state in
         (value, state)
     in
-    Heap.add_to_call_trace err
-      (Call_trace.make_element ~loc:fundef.item_meta.span ~msg:"Call trace" ())
+    err
 end
