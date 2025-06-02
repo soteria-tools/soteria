@@ -842,4 +842,29 @@ module M (Heap : Heap_intf.S) = struct
         let res = Typed.float_round rm v in
         Result.ok (Base res, state)
     | _ -> not_impl "Unexpected arguments to saturating_op"
+
+  let float_to_int (funsig : GAst.fun_sig) ~args ~state =
+    match (args, funsig.output) with
+    | [ Base f ], TLiteral (TInteger ity) ->
+        let* f =
+          of_opt_not_impl ~msg:"float_to_int_unchecked expected float"
+          @@ Typed.cast_float f
+        in
+        if%sat Typed.is_nan f ||@ Typed.is_infinite f then
+          Heap.error
+            (`StdErr "float_to_int_unchecked with NaN or infinite value") state
+        else
+          let n = 8 * Layout.size_of_int_ty ity in
+          let max = Z.succ @@ Layout.max_value_z ity in
+          let min = Z.pred @@ Layout.min_value_z ity in
+          let max = Typed.float_like f @@ Z.to_float max in
+          let min = Typed.float_like f @@ Z.to_float min in
+          (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
+             issues in cases of float precision loss (I think?) *)
+          if%sat min <.@ f &&@ (f <.@ max) then
+            let v = Typed.int_of_float n f in
+            Result.ok (Base v, state)
+          else
+            Heap.error (`StdErr "float_to_int_unchecked out of int range") state
+    | _ -> not_impl "Unexpected arguments for float_to_int_unchecked"
 end
