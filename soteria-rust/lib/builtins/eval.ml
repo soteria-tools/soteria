@@ -244,7 +244,7 @@ module M (Heap : Heap_intf.S) = struct
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
 
-  let std_fun_eval (f : UllbcAst.fun_decl) =
+  let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
     let open Std in
     let open Rusteria in
     let open Miri in

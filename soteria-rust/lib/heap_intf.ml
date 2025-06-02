@@ -189,4 +189,17 @@ module type S = sig
     [< Error.t ] err -> t -> (unit * t, [> ] err * t, serialized list) Result.t
 
   val pop_error : t -> ('a, Error.t err * t, serialized list) Result.t
+
+  val declare_fn :
+    Charon.Expressions.fn_ptr ->
+    t ->
+    (full_ptr * t, [> ] err * t, serialized list) Result.t
+
+  val lookup_fn :
+    full_ptr ->
+    t ->
+    ( Charon.Expressions.fn_ptr * t,
+      [> `MisalignedFnPointer ] err * t,
+      serialized list )
+    SYMEX.Result.t
 end

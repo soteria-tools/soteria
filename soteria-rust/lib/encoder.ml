@@ -143,6 +143,9 @@ module Make (Sptr : Sptr.S) = struct
             { value = Base meta; ty; offset = offset +@ size };
           ]
         else [ { value; ty; offset } ]
+    (* Function pointer *)
+    | Ptr (_, None), TArrow _ ->
+        [ { value; ty = TLiteral (TInteger Isize); offset } ]
     (* References / Pointers obtained from casting *)
     | Base _, TAdt (TBuiltin TBox, _) | Base _, TRef _ | Base _, TRawPtr _ ->
         [ { value; ty = TLiteral (TInteger Isize); offset } ]
@@ -261,6 +264,11 @@ module Make (Sptr : Sptr.S) = struct
           match boxed with
           | Ptr _ as ptr -> Result.ok ptr
           | Base _ -> Result.error `UBTransmute
+          | _ -> not_impl "Expected a pointer or base")
+      | TArrow _ -> (
+          let+** boxed = query (TLiteral (TInteger Isize), offset) in
+          match boxed with
+          | (Ptr _ | Base _) as ptr -> Result.ok ptr
           | _ -> not_impl "Expected a pointer or base")
       | TAdt (TTuple, { types; _ }) as ty ->
           let layout = layout_of ty in

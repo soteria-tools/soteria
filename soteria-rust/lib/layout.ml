@@ -168,9 +168,9 @@ let rec layout_of (ty : Types.ty) : layout =
   | TAdt (TBuiltin TArray, _) -> failwith "Invalid TArray shape"
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
-  (* Arrows -- we don't support these, but need to compute a size for them, because some code
-     (notably core::fmt::rt::ArgumentType) has them, despite not being initialised.
-     An arrow is a pointer to a function, I believe. *)
+  (* Function definitions -- zero sized type *)
+  | TFnDef _ -> { size = 0; align = 1; members_ofs = [||] }
+  (* Function pointers (can point to a function or a state-less closure). *)
   | TArrow _ ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   (* Others (unhandled for now) *)
@@ -481,6 +481,13 @@ let rec as_zst : Types.ty -> 'a rust_val option =
       | _ -> None)
   | TAdt (TTuple, { types; _ }) ->
       as_zsts types |> Option.map (fun fs -> Tuple fs)
+  | TFnDef (id, _) ->
+      Some
+        (ConstFn
+           {
+             func = FunId (FRegular id);
+             generics = TypesUtils.empty_generic_args;
+           })
   | _ -> None
 
 (** Apply the compiler-attribute to the given value *)
@@ -523,22 +530,22 @@ let rec is_unsafe_cell : Types.ty -> bool = function
   | TAdt (TTuple, { types; _ }) -> List.exists is_unsafe_cell types
   | _ -> false
 
-(** Traveses the given type and rust value, and returns all findable pointers
-    with their type. This is needed e.g. when needing to get the pointers along
-    with the size of their pointee, in particular in nested cases. *)
-let rec ptr_tys_in (v : 'a rust_val) (ty : Types.ty) :
+(** Traverses the given type and rust value, and returns all findable references
+    with their type (ignores pointers). This is needed e.g. when needing to get
+    the pointers along with the size of their pointee, in particular in nested
+    cases. *)
+let rec ref_tys_in (v : 'a rust_val) (ty : Types.ty) :
     ('a full_ptr * Types.ty) list =
   match (v, ty) with
-  | Ptr ptr, (TAdt (TBuiltin TBox, _) | TRawPtr _ | TRef _) ->
-      [ (ptr, get_pointee ty) ]
+  | Ptr ptr, (TAdt (TBuiltin TBox, _) | TRef _) -> [ (ptr, get_pointee ty) ]
   | Base _, _ -> []
   | Struct vs, TAdt (TAdtId adt_id, _) ->
       let fields = Crate.as_struct adt_id in
-      List.concat_map2 ptr_tys_in vs (field_tys fields)
+      List.concat_map2 ref_tys_in vs (field_tys fields)
   | Array vs, TAdt (TBuiltin (TArray | TSlice), { types = [ ty ]; _ }) ->
-      List.concat_map (fun v -> ptr_tys_in v ty) vs
+      List.concat_map (fun v -> ref_tys_in v ty) vs
   | Tuple vs, TAdt (TTuple, { types; _ }) ->
-      List.concat_map2 ptr_tys_in vs types
+      List.concat_map2 ref_tys_in vs types
   | Enum (d, vs), TAdt (TAdtId adt_id, _) -> (
       match Typed.kind d with
       | Int d -> (
@@ -550,11 +557,11 @@ let rec ptr_tys_in (v : 'a rust_val) (ty : Types.ty) :
           in
           match v with
           | Some v ->
-              List.concat_map2 ptr_tys_in vs (field_tys Types.(v.fields))
+              List.concat_map2 ref_tys_in vs (field_tys Types.(v.fields))
           | None -> [])
       | _ -> [])
   | Union (fid, v), TAdt (TAdtId adt_id, _) ->
       let fields = Crate.as_union adt_id in
       let field = Types.FieldId.nth fields fid in
-      ptr_tys_in v field.field_ty
+      ref_tys_in v field.field_ty
   | _ -> []

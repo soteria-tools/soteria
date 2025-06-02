@@ -16,7 +16,7 @@ let with_error_loc_as_call_trace st f =
   let+- err, loc = f () in
   ((err, Call_trace.singleton ~loc ~msg:"Triggering memory operation" ()), st)
 
-module SPmap = Pmap_direct_access (struct
+module HeapKey = struct
   include Typed
   module Symex = Rustsymex.SYMEX
   (* FIXME: Rustsymex.SYMEX instead of just Rustsymex because Rustsymex overrides the L module right now. *)
@@ -41,7 +41,9 @@ module SPmap = Pmap_direct_access (struct
         let+ () = Rustsymex.assume (constrs loc) in
         loc
     | None -> return loc
-end)
+end
+
+module SPmap = Pmap_direct_access (HeapKey)
 
 type global = String of string | Global of Charon.Types.global_decl_id
 [@@deriving show { with_path = false }, ord]
@@ -58,10 +60,43 @@ module GlobMap = struct
     Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) m
 end
 
+module FunBiMap = struct
+  module LocMap = Map.Make (struct
+    type t = T.sloc Typed.t
+
+    let compare = Typed.compare
+  end)
+
+  module FunMap = Map.Make (struct
+    type t = Charon.Expressions.fn_ptr
+
+    let compare = Charon.Expressions.compare_fn_ptr
+  end)
+
+  type t = Charon.Expressions.fn_ptr LocMap.t * T.sloc Typed.t FunMap.t
+
+  let empty = (LocMap.empty, FunMap.empty)
+
+  let add loc fn_ptr (lmap, fmap) =
+    let lmap' = LocMap.add loc fn_ptr lmap in
+    let fmap' = FunMap.add fn_ptr loc fmap in
+    (lmap', fmap')
+
+  let get_fn loc (lmap, _) = LocMap.find_opt loc lmap
+  let get_loc fn (_, fmap) = FunMap.find_opt fn fmap
+
+  let pp fmt (lmap, _) =
+    let pp_pair =
+      Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Expressions.pp_fn_ptr
+    in
+    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) lmap
+end
+
 type sub = Tree_block.t * Tree_borrow.t
 
 and t = {
   heap : sub Freeable.t SPmap.t option;
+  functions : FunBiMap.t;
   globals : Sptr.t Charon_util.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err]
 }
@@ -82,7 +117,13 @@ let pp_pretty ~ignore_freed ft { heap; _ } =
         (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
         ft st
 
-let empty = { heap = None; globals = GlobMap.empty; errors = [] }
+let empty =
+  {
+    heap = None;
+    functions = FunBiMap.empty;
+    globals = GlobMap.empty;
+    errors = [];
+  }
 
 let log action ptr st =
   L.trace (fun m ->
@@ -413,3 +454,30 @@ let pop_error ({ errors; _ } as st) =
   match errors with
   | e :: rest -> Result.error (e, { st with errors = rest })
   | _ -> failwith "pop_error with no errors?"
+
+let declare_fn fn_ptr ({ functions; _ } as st) =
+  match FunBiMap.get_loc fn_ptr functions with
+  | Some loc ->
+      let ptr = Typed.Ptr.mk loc 0s in
+      (* FIXME: what is the size and align of a fn pointer? *)
+      let ptr : Sptr.t = { ptr; tag = Tree_borrow.zero; align = 1; size = 1 } in
+      Result.ok ((ptr, None), st)
+  | None ->
+      (* FIXME: once we stop having concrete locations, we'll need to add a distinct
+       constraint here. *)
+      let* loc = HeapKey.fresh () in
+      let ptr = Typed.Ptr.mk loc 0s in
+      (* FIXME: what is the size and align of a fn pointer? *)
+      let ptr : Sptr.t = { ptr; tag = Tree_borrow.zero; align = 1; size = 1 } in
+      let functions = FunBiMap.add loc fn_ptr functions in
+      Result.ok ((ptr, None), { st with functions })
+
+let lookup_fn (({ ptr; _ } : Sptr.t), _) ({ functions; _ } as st) =
+  let@ () = with_error_loc_as_call_trace st in
+  let@ () = with_loc_err () in
+  if%sat Typed.Ptr.ofs ptr ==@ 0s then
+    let loc = Typed.Ptr.loc ptr in
+    let fn = FunBiMap.get_fn loc functions in
+    let* fn = of_opt_not_impl ~msg:"Could not resolve function" fn in
+    Result.ok (fn, st)
+  else Result.error `MisalignedFnPointer
