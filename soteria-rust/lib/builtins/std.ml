@@ -262,10 +262,15 @@ module M (Heap : Heap_intf.S) = struct
         | TRawPtr (ty, _) :: _ -> ty
         | _ -> failwith "ptr_offset_from: invalid arguments"
     in
-    let v = if op = Expressions.Add then v else ~-v in
-    let ptr' = Sptr.offset ~ty ptr v in
-    if%sat Sptr.constraints ptr' then Result.ok (Ptr (ptr', meta), state)
-    else Heap.error `Overflow state
+    let* size = Layout.size_of_s ty in
+    let v = v *@ size in
+    if%sat Typed.not (v ==@ 0s) &&@ Sptr.is_at_null_loc ptr then
+      Heap.error (`StdErr "ptr_op dangling pointer") state
+    else
+      let v = if op = Expressions.Add then v else ~-v in
+      let ptr' = Sptr.offset ptr v in
+      if%sat Sptr.constraints ptr' then Result.ok (Ptr (ptr', meta), state)
+      else Heap.error `Overflow state
 
   let box_into_raw ~args ~state =
     (* internally a box is exactly a pointer so nothing to do *)
