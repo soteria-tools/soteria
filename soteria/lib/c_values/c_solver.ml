@@ -282,9 +282,7 @@ let trivial_model_works to_check =
         Some (Svalue.int i)
     | _ -> None
   in
-  Fmt.epr "Evaluating trivial model for %a\n" Svalue.pp to_check;
   let res = Eval.eval ~eval_var to_check in
-  Fmt.epr "Result: %a\n" (Fmt.option Svalue.pp) res;
   match res with Some v -> Svalue.equal v Svalue.v_true | _ -> false
 
 let check_sat_raw solver relevant_vars to_check =
