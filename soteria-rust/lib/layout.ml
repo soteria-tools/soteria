@@ -173,11 +173,12 @@ let rec layout_of (ty : Types.ty) : layout =
   (* Function pointers (can point to a function or a state-less closure). *)
   | TArrow _ ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
+  (* FIXME: this is wrong but at least some more code runs... *)
+  | TDynTrait _ -> { size = 0; align = 1; members_ofs = [||] }
   (* Others (unhandled for now) *)
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
   | TError _ -> raise (CantComputeLayout ("Error", ty))
   | TTraitType (tref, ty_name) -> layout_of @@ resolve_trait_ty tref ty_name
-  | TDynTrait _ -> raise (CantComputeLayout ("dyn trait", ty))
 
 and layout_of_members members =
   let rec aux members_ofs (layout : layout) = function

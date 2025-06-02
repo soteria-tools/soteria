@@ -21,8 +21,12 @@ Splitting and merging, via a union
   Done. - Ran 1 branches
   PC: empty
 
-Test unwinding, and catching that unwind -- for now, this doesn't work.
-  $ soteria-rust exec-main unwind.rs --clean
-  MISSING FEATURE, VANISHING: TODO: resolve const FnPtr
-  Fatal: TODO: resolve const FnPtr
-  [2]
+Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
+  $ soteria-rust exec-main unwind.rs --clean --ignore-leaks
+  Done. - Ran 2 branches
+  PC: 
+    (0 == V|0|) /\ (V|0| <= 1) /\ (0 <= V|0|)
+  
+  PC: 
+    (0 <= V|1|) /\ (V|1| <= 0x7ffffffffffffffe) /\ (0 < V|1|) /\ (0 != V|0|) /\
+    (V|0| <= 1) /\ (0 <= V|0|)
