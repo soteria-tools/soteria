@@ -819,18 +819,15 @@ module M (Heap : Heap_intf.S) = struct
     let** try_fn, state = get_fn try_fn_ptr state in
     let** catch_fn, state = get_fn catch_fn_ptr state in
     let try_fn_ret = exec_fun ~args:[ Ptr data_ptr ] ~state try_fn in
-    Result.bind_2 try_fn_ret
+    Heap.unwind_with try_fn_ret
       ~f:(fun (_, state) -> Result.ok (Base 0s, state))
-      ~fe:(fun (err, state) ->
-        let raw_err = Heap.raw_err err in
-        if Error.is_unwindable raw_err then
-          let args = [ Ptr data_ptr; Ptr (Sptr.null_ptr, None) ] in
-          let catch_fn_ret = exec_fun ~args ~state catch_fn in
-          Result.bind_2 catch_fn_ret
-            ~f:(fun (_, state) -> Result.ok (Base 1s, state))
-            ~fe:(fun (_, state) ->
-              Heap.error (`StdErr "catch_unwind unwinded in catch") state)
-        else Result.error (err, state))
+      ~fe:(fun (_, state) ->
+        let args = [ Ptr data_ptr; Ptr (Sptr.null_ptr, None) ] in
+        let catch_fn_ret = exec_fun ~args ~state catch_fn in
+        Heap.unwind_with catch_fn_ret
+          ~f:(fun (_, state) -> Result.ok (Base 1s, state))
+          ~fe:(fun (_, state) ->
+            Heap.error (`StdErr "catch_unwind unwinded in catch") state))
 
   let fixme_try_cleanup ~args:_ ~state =
     (* FIXME: this is extremely wrong !! we need Charon to stop translating boxes

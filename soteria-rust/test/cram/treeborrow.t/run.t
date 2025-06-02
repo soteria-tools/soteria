@@ -8,7 +8,6 @@ Simple tree borrow violation
   Error in 1 branch (out of 1):
   - Aliasing error
     Trace:
-    • Call trace: ../cram/treeborrow.t/simple-fail.rs:3:0-10:1
     • Triggering memory operation: ../cram/treeborrow.t/simple-fail.rs:8:4-11
   [1]
 
