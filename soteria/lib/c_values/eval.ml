@@ -43,10 +43,7 @@ let rec eval (x : t) : t =
       | Plus -> plus v1 v2
       | Minus -> minus v1 v2
       | Times -> times v1 v2
-      | Div -> (
-          match x.node.kind with
-          | Int z when Z.equal z Z.zero -> v1 (* Returning anything is fine *)
-          | _ -> div v1 v2)
+      | Div -> div v1 v2
       | Rem -> rem v1 v2
       | Mod -> mod_ v1 v2
       | FEq -> eq_f v1 v2
@@ -91,6 +88,9 @@ let rec eval (x : t) : t =
       Svalue.SSeq.mk ~seq_ty:x.node.ty l
 
 let eval ~(eval_var : Var.t -> Svalue.ty -> t option) (x : t) : t option =
-  try Some (eval x)
-  with effect Eval_var (v, ty), k -> (
-    match eval_var v ty with Some v -> Effect.Deep.continue k v | None -> None)
+  try Some (eval x) with
+  | Division_by_zero -> None
+  | effect Eval_var (v, ty), k -> (
+      match eval_var v ty with
+      | Some v -> Effect.Deep.continue k v
+      | None -> None)
