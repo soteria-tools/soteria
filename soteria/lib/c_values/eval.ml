@@ -5,6 +5,7 @@ type _ Effect.t += Eval_var : Var.t * Svalue.ty -> t Effect.t
 let eval_var (v : Var.t) (ty : Svalue.ty) : t =
   Effect.perform (Eval_var (v, ty))
 
+(* TODO: add equality checks when reforming values to avoid re-hashconsing if not required. *)
 let rec eval (x : t) : t =
   match x.node.kind with
   | Var v -> eval_var v x.node.ty
