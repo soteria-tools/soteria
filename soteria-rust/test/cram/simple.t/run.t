@@ -1,6 +1,6 @@
 Test memory leaks
   $ soteria-rust exec-main leak.rs --clean
-  Error in 1 branch:
+  Error in 1 branch (out of 1):
   - Memory leak
     Trace:
     • Triggering memory operation: ../cram/simple.t/leak.rs:1:0-3:1
