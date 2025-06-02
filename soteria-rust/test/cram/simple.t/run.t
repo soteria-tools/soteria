@@ -20,3 +20,9 @@ Splitting and merging, via a union
   $ soteria-rust exec-main split_merges.rs --clean
   Done. - Ran 1 branches
   PC: empty
+
+Test unwinding, and catching that unwind -- for now, this doesn't work.
+  $ soteria-rust exec-main unwind.rs --clean
+  MISSING FEATURE, VANISHING: TODO: resolve const FnPtr
+  Fatal: TODO: resolve const FnPtr
+  [2]

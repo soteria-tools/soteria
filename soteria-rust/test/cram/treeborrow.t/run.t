@@ -6,9 +6,8 @@ Basic code, reference gets invalidated
 Simple tree borrow violation
   $ soteria-rust exec-main simple-fail.rs --clean
   Error in 1 branch:
-  - UBTreeBorrow
+  - Aliasing error
     Trace:
-    • Call trace: ../cram/treeborrow.t/simple-fail.rs:3:0-10:1
     • Triggering memory operation: ../cram/treeborrow.t/simple-fail.rs:8:4-11
   [1]
 

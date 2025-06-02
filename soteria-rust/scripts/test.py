@@ -33,6 +33,7 @@ KANI_EXCLUSIONS = [
     "/VolatileIntrinsics/",
     "/Volatile/",
     "/DynTrait/",
+    "/AsyncAwait/",
 ]
 
 MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()

@@ -14,40 +14,6 @@ module Cleaner = struct
   let init ~clean () = if clean then at_exit cleanup
 end
 
-let pp_err ft (err, call_trace) =
-  Format.open_vbox 0;
-  let () =
-    match err with
-    | `NullDereference -> Fmt.string ft "NullDereference"
-    | `OutOfBounds -> Fmt.string ft "OutOfBounds"
-    | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
-    | `UseAfterFree -> Fmt.string ft "UseAfterFree"
-    | `DivisionByZero -> Fmt.string ft "DivisionByZero"
-    | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
-    | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
-    | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
-    | `UBAbort -> Fmt.string ft "UBAbort"
-    | `UBArithShift -> Fmt.string ft "UBArithShift"
-    | `UBTransmute -> Fmt.string ft "UBTransmute"
-    | `UBTreeBorrow -> Fmt.string ft "UBTreeBorrow"
-    | `DeadVariable -> Fmt.string ft "DeadVariable"
-    | `DoubleFree -> Fmt.string ft "DoubleFree"
-    | `InvalidFree -> Fmt.string ft "InvalidFree"
-    | `MisalignedPointer -> Fmt.string ft "MisalignedPointer"
-    | `RefToUninhabited -> Fmt.string ft "RefToUninhabited"
-    | `InvalidLayout -> Fmt.string ft "InvalidLayout"
-    | `MemoryLeak -> Fmt.string ft "Memory leak"
-    | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
-    | `FailedAssert None -> Fmt.string ft "Failed assertion"
-    | `Overflow -> Fmt.string ft "Overflow"
-    | `StdErr msg -> Fmt.pf ft "Std error: %s" msg
-    | `Panic (Some msg) -> Fmt.pf ft "Panic: %s" msg
-    | `Panic None -> Fmt.pf ft "Panic"
-    | `MetaExpectedError -> Fmt.string ft "MetaExpectedError"
-  in
-  Fmt.pf ft "@,Trace:@,%a" Call_trace.pp call_trace;
-  Format.close_box ()
-
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
   let file_name =
@@ -178,7 +144,7 @@ let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
         exit 0
     | Error res ->
         let open Fmt in
-        let pp_err ft e = pf ft "- %a" pp_err e in
+        let pp_err ft e = pf ft "- %a" Error.pp_err e in
         let n = List.length res in
         Fmt.pr "Error in %i branch%s:@\n%a\n" n
           (if n = 1 then "" else "es")
