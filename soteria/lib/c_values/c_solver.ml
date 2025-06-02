@@ -287,18 +287,9 @@ let trivial_model_works to_check =
   Fmt.epr "Result: %a\n" (Fmt.option Svalue.pp) res;
   match res with Some v -> Svalue.equal v Svalue.v_true | _ -> false
 
-let trivial_model_hits = ref 0
-
-let () =
-  at_exit (fun () ->
-      Printf.eprintf "\n\nTrivial model hits: %d\n" !trivial_model_hits;
-      flush stdout)
-
 let check_sat_raw solver relevant_vars to_check =
   (* TODO: we shouldn't wait for ack for each command individually... *)
-  if trivial_model_works to_check then (
-    incr trivial_model_hits;
-    Sat)
+  if trivial_model_works to_check then Sat
   else (
     ack_command solver.solver_exe (Simple_smt.pop 1);
     ack_command solver.solver_exe (Simple_smt.push 1);
