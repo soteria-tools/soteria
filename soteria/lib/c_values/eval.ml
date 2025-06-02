@@ -23,7 +23,7 @@ let rec eval (x : t) : t =
         | GetPtrLoc -> Ptr.loc nv
         | GetPtrOfs -> Ptr.ofs nv
         | IntOfBool -> int_of_bool nv
-        | BvOfFloat -> bv_of_float nv
+        | BvOfFloat n -> bv_of_float n nv
         | BvOfInt ->
             let n = size_of_bv x.node.ty in
             bv_of_int n nv
