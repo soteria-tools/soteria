@@ -79,10 +79,7 @@ let f16_of_bv bv = app (ifam "to_fp" [ 5; 11 ]) [ bv ]
 let f32_of_bv bv = app (ifam "to_fp" [ 8; 24 ]) [ bv ]
 let f64_of_bv bv = app (ifam "to_fp" [ 11; 53 ]) [ bv ]
 let f128_of_bv bv = app (ifam "to_fp" [ 15; 113 ]) [ bv ]
-let bv_of_f16 f = app (ifam "fp.to_sbv" [ 16 ]) [ rm; f ]
-let bv_of_f32 f = app (ifam "fp.to_sbv" [ 32 ]) [ rm; f ]
-let bv_of_f64 f = app (ifam "fp.to_sbv" [ 64 ]) [ rm; f ]
-let bv_of_f128 f = app (ifam "fp.to_sbv" [ 128 ]) [ rm; f ]
+let bv_of_float n f = app (ifam "fp.to_sbv" [ n ]) [ rm; f ]
 
 (* Int{Of,To}Bv *)
 
