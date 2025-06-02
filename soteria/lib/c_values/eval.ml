@@ -43,7 +43,10 @@ let rec eval (x : t) : t =
       | Plus -> plus v1 v2
       | Minus -> minus v1 v2
       | Times -> times v1 v2
-      | Div -> div v1 v2
+      | Div -> (
+          match x.node.kind with
+          | Int z when Z.equal z Z.zero -> v1 (* Returning anything is fine *)
+          | _ -> div v1 v2)
       | Rem -> rem v1 v2
       | Mod -> mod_ v1 v2
       | FEq -> eq_f v1 v2
