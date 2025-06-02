@@ -1,44 +1,44 @@
   $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for f_485:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 == V|0|)];
+    { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(load.c:3:10-12 (cursor: 3:10),
                                           Triggering memory operation)]);
       memory_leak = false }
       manifest bugs: []
-    { args = [&(V|0|, V|1|)];
+    { args = [&(V|1|, V|2|)];
       pre =
-      [{ heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
+      [{ heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
          globs = [] }
         ];
-      pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|0|)];
+      pc = [(V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|1|)];
       post =
-      { heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
+      { heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
         globs = [] };
-      ret = (Ok V|3|); memory_leak = false }
+      ret = (Ok V|4|); memory_leak = false }
       manifest bugs: []
   
 
   $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for load_487:
-    { args = [&(V|0|, V|1|)]; pre = []; pc = [(0 == V|0|)];
+    { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(manifest.c:6:10-12 (cursor: 6:10),
                                           Triggering memory operation)]);
       memory_leak = false }
       manifest bugs: []
-    { args = [&(V|0|, V|1|)];
+    { args = [&(V|1|, V|2|)];
       pre =
-      [{ heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
+      [{ heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
          globs = [] }
         ];
-      pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|0|)];
+      pc = [(V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|1|)];
       post =
-      { heap = [(V|0|, [TypedVal {offset = V|1|; ty = signed int; v = V|3|}])];
+      { heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
         globs = [] };
-      ret = (Ok V|3|); memory_leak = false }
+      ret = (Ok V|4|); memory_leak = false }
       manifest bugs: []
   
   Summaries for test_leak_495:
@@ -113,30 +113,30 @@ The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Summaries for test_486:
-    { args = [V|0|; &(V|1|, V|2|)]; pre = [];
+    { args = [V|1|; &(V|2|, V|3|)]; pre = [];
       pc =
-      [(0 == V|1|); (0 < V|0|); (V|0| <= 0x7fffffff); (-0x80000000 <= V|0|)];
+      [(0 == V|2|); (0 < V|1|); (V|1| <= 0x7fffffff); (-0x80000000 <= V|1|)];
       post = { heap = []; globs = [] };
       ret =
       (Error NullDereference with trace [(if_sat_one_ok.c:6:12-14 (cursor: 6:12),
                                           Triggering memory operation)]);
       memory_leak = false }
       manifest bugs: []
-    { args = [V|0|; &(V|1|, V|2|)];
+    { args = [V|1|; &(V|2|, V|3|)];
       pre =
-      [{ heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|5|}])];
+      [{ heap = [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|6|}])];
          globs = [] }
         ];
       pc =
-      [(V|5| <= 0x7fffffff); (-0x80000000 <= V|5|); (0 != V|1|); (0 < V|0|);
-        (V|0| <= 0x7fffffff); (-0x80000000 <= V|0|)];
+      [(V|6| <= 0x7fffffff); (-0x80000000 <= V|6|); (0 != V|2|); (0 < V|1|);
+        (V|1| <= 0x7fffffff); (-0x80000000 <= V|1|)];
       post =
-      { heap = [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|5|}])];
+      { heap = [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|6|}])];
         globs = [] };
-      ret = (Ok V|5|); memory_leak = false }
+      ret = (Ok V|6|); memory_leak = false }
       manifest bugs: []
-    { args = [V|0|; &(V|1|, V|2|)]; pre = [];
-      pc = [(V|0| <= 0); (V|0| <= 0x7fffffff); (-0x80000000 <= V|0|)];
+    { args = [V|1|; &(V|2|, V|3|)]; pre = [];
+      pc = [(V|1| <= 0); (V|1| <= 0x7fffffff); (-0x80000000 <= V|1|)];
       post = { heap = []; globs = [] }; ret = (Ok 0); memory_leak = false }
       manifest bugs: []
   

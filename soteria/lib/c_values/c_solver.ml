@@ -3,6 +3,10 @@ module Var = Svalue.Var
 module L = Soteria_logs.Logs.L
 open Simple_smt
 
+module Var_counter = Var.Incr_counter_mut (struct
+  let start_at = 1
+end)
+
 module Solver_state = struct
   (** Each slot holds a symbolic boolean, as well a boolean indicating if it was
       checked to be satisfiable. The boolean is mutable and can be mutated even
@@ -146,8 +150,15 @@ module Solver_state = struct
 end
 
 module Declared_vars = struct
+  module Var_counter = Var.Incr_counter_mut (struct
+    let start_at = 1
+  end)
+
+  (* Since we start addresses at one to improve trivial model hits, we need to offset to obtain an index. *)
+  let var_to_index v = Var.to_int v - 1
+
   type t = {
-    counter : Var.Incr_counter_mut.t;
+    counter : Var_counter.t;
     types : Svalue.ty Dynarray.t;
         (** The var_counter is keeping track of how many variables we actually
             have in the context. We don't need to separate each bit of that
@@ -155,16 +166,14 @@ module Declared_vars = struct
             and override when we change branch. *)
   }
 
-  let init () =
-    { counter = Var.Incr_counter_mut.init (); types = Dynarray.create () }
-
-  let save t = Var.Incr_counter_mut.save t.counter
-  let backtrack_n t n = Var.Incr_counter_mut.backtrack_n t.counter n
-  let reset t = Var.Incr_counter_mut.reset t.counter
+  let init () = { counter = Var_counter.init (); types = Dynarray.create () }
+  let save t = Var_counter.save t.counter
+  let backtrack_n t n = Var_counter.backtrack_n t.counter n
+  let reset t = Var_counter.reset t.counter
 
   let fresh t ty =
-    let next = Var.Incr_counter_mut.get_next t.counter in
-    let next_i = Var.to_int next in
+    let next = Var_counter.get_next t.counter in
+    let next_i = var_to_index next in
     let () =
       if Dynarray.length t.types == next_i then Dynarray.add_last t.types ty
       else if Dynarray.length t.types > next_i then
@@ -173,7 +182,7 @@ module Declared_vars = struct
     in
     next
 
-  let get_ty t var = Dynarray.get t.types (Var.to_int var)
+  let get_ty t var = Dynarray.get t.types (var_to_index var)
 end
 
 type t = {
@@ -271,25 +280,41 @@ let as_bool = Typed.as_bool
 let memo_sat_check_tbl : Simple_smt.result Hashtbl.Hint.t =
   Hashtbl.Hint.create 1023
 
+let trivial_model_works to_check =
+  (* We try a trivial model where replacing each variable with name
+    [|n|] with the corresponding integer [n].
+    If the constraint evaluates to true, then it is satisfiable. *)
+  let eval_var v ty =
+    match ty with
+    | Svalue.TInt | Svalue.TLoc ->
+        let i = Var.to_int v in
+        Some (Svalue.int i)
+    | _ -> None
+  in
+  let res = Eval.eval ~eval_var to_check in
+  match res with Some v -> Svalue.equal v Svalue.v_true | _ -> false
+
 let check_sat_raw solver relevant_vars to_check =
   (* TODO: we shouldn't wait for ack for each command individually... *)
-  ack_command solver.solver_exe (Simple_smt.pop 1);
-  ack_command solver.solver_exe (Simple_smt.push 1);
-  (* Declare all relevant variables *)
-  Var.Hashset.iter
-    (fun v ->
-      let ty = Declared_vars.get_ty solver.vars v in
-      ack_command solver.solver_exe (declare_v v ty))
-    relevant_vars;
-  (* Declare the constraint *)
-  let expr = Smtlib_encoding.encode_value to_check in
-  ack_command solver.solver_exe (Simple_smt.assume expr);
-  (* Actually check sat *)
-  try check solver.solver_exe
-  with Simple_smt.UnexpectedSolverResponse s ->
-    L.error (fun m ->
-        m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
-    Unknown
+  if trivial_model_works to_check then Sat
+  else (
+    ack_command solver.solver_exe (Simple_smt.pop 1);
+    ack_command solver.solver_exe (Simple_smt.push 1);
+    (* Declare all relevant variables *)
+    Var.Hashset.iter
+      (fun v ->
+        let ty = Declared_vars.get_ty solver.vars v in
+        ack_command solver.solver_exe (declare_v v ty))
+      relevant_vars;
+    (* Declare the constraint *)
+    let expr = Smtlib_encoding.encode_value to_check in
+    ack_command solver.solver_exe (Simple_smt.assume expr);
+    (* Actually check sat *)
+    try check solver.solver_exe
+    with Simple_smt.UnexpectedSolverResponse s ->
+      L.error (fun m ->
+          m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
+      Unknown)
 
 let check_sat_raw_memo solver relevant_vars to_check =
   let to_check = Typed.untyped to_check in
@@ -300,7 +325,6 @@ let check_sat_raw_memo solver relevant_vars to_check =
       Hashtbl.Hint.add memo_sat_check_tbl to_check.Hashcons.tag result;
       result
 
-(* TODO: Add query caching! *)
 let sat solver =
   match Solver_state.trivial_truthiness solver.state with
   | Some true -> Soteria_symex.Solver.Sat

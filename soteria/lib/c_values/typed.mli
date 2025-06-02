@@ -171,7 +171,7 @@ module Ptr : sig
 end
 
 module SSeq : sig
-  val mk : inner_ty:([< any ] as 'a) ty -> 'a t list -> [> 'a sseq ] t
+  val mk : seq_ty:'a sseq ty -> 'a t list -> [> 'a sseq ] t
 end
 
 module Infix : sig

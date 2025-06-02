@@ -58,6 +58,18 @@ let[@tail_mod_cons] rec map2i i f l1 l2 =
 
 let map2i f l1 l2 = map2i 0 f l1 l2
 
+let map_changed f l =
+  let changed = ref false in
+  let res =
+    map
+      (fun x ->
+        let r = f x in
+        if r != x then changed := true;
+        r)
+      l
+  in
+  (res, !changed)
+
 let rec last l =
   match l with [] -> invalid_arg "List.last" | [ x ] -> x | _ :: l -> last l
 

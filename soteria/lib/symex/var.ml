@@ -18,14 +18,22 @@ module Hashset = Hashset.Make (struct
   let pp = pp
 end)
 
-module Counter = struct
+module Counter (Start_at : sig
+  val start_at : int
+end) =
+struct
   type nonrec t = t
 
-  let default = 0
+  let default = Start_at.start_at
   let[@inline] next i = (i, i + 1)
 end
 
-module Incr_counter_mut = struct
+module Incr_counter_mut (Start_at : sig
+  val start_at : int
+end) =
+struct
+  module Counter = Counter (Start_at)
+
   type var = int
 
   include Reversible.Make_mutable (Counter)
