@@ -23,7 +23,10 @@ val pp : Format.formatter -> t -> unit
 val equal : t -> t -> bool
 val compare : t -> t -> int
 
-module Incr_counter_mut : sig
+module Incr_counter_mut : (_ : sig
+                             val start_at : int
+                           end)
+  -> sig
   type var = t
   type t
 

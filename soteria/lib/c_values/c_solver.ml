@@ -3,6 +3,10 @@ module Var = Svalue.Var
 module L = Soteria_logs.Logs.L
 open Simple_smt
 
+module Var_counter = Var.Incr_counter_mut (struct
+  let start_at = 1
+end)
+
 module Solver_state = struct
   (** Each slot holds a symbolic boolean, as well a boolean indicating if it was
       checked to be satisfiable. The boolean is mutable and can be mutated even
@@ -146,8 +150,15 @@ module Solver_state = struct
 end
 
 module Declared_vars = struct
+  module Var_counter = Var.Incr_counter_mut (struct
+    let start_at = 1
+  end)
+
+  (* Since we start addresses at one to improve trivial model hits, we need to offset to obtain an index. *)
+  let var_to_index v = Var.to_int v - 1
+
   type t = {
-    counter : Var.Incr_counter_mut.t;
+    counter : Var_counter.t;
     types : Svalue.ty Dynarray.t;
         (** The var_counter is keeping track of how many variables we actually
             have in the context. We don't need to separate each bit of that
@@ -155,16 +166,14 @@ module Declared_vars = struct
             and override when we change branch. *)
   }
 
-  let init () =
-    { counter = Var.Incr_counter_mut.init (); types = Dynarray.create () }
-
-  let save t = Var.Incr_counter_mut.save t.counter
-  let backtrack_n t n = Var.Incr_counter_mut.backtrack_n t.counter n
-  let reset t = Var.Incr_counter_mut.reset t.counter
+  let init () = { counter = Var_counter.init (); types = Dynarray.create () }
+  let save t = Var_counter.save t.counter
+  let backtrack_n t n = Var_counter.backtrack_n t.counter n
+  let reset t = Var_counter.reset t.counter
 
   let fresh t ty =
-    let next = Var.Incr_counter_mut.get_next t.counter in
-    let next_i = Var.to_int next in
+    let next = Var_counter.get_next t.counter in
+    let next_i = var_to_index next in
     let () =
       if Dynarray.length t.types == next_i then Dynarray.add_last t.types ty
       else if Dynarray.length t.types > next_i then
@@ -173,7 +182,7 @@ module Declared_vars = struct
     in
     next
 
-  let get_ty t var = Dynarray.get t.types (Var.to_int var)
+  let get_ty t var = Dynarray.get t.types (var_to_index var)
 end
 
 type t = {

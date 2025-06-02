@@ -3,6 +3,10 @@ module Var = Svalue.Var
 module L = Soteria_logs.Logs.L
 open Simple_smt
 
+module Var_counter = Var.Incr_counter_mut (struct
+  let start_at = 0
+end)
+
 module Solver_state = struct
   type t = Typed.sbool Typed.t Dynarray.t Dynarray.t
 
@@ -59,7 +63,7 @@ end
 type t = {
   solver_exe : Solver_exe.t;
   save_counter : Save_counter.t;
-  var_counter : Var.Incr_counter_mut.t;
+  var_counter : Var_counter.t;
   state : Solver_state.t;
 }
 
@@ -70,18 +74,18 @@ let init () =
   {
     solver_exe;
     save_counter = Save_counter.init ();
-    var_counter = Var.Incr_counter_mut.init ();
+    var_counter = Var_counter.init ();
     state = Solver_state.init ();
   }
 
 let save solver =
-  Var.Incr_counter_mut.save solver.var_counter;
+  Var_counter.save solver.var_counter;
   Save_counter.save solver.save_counter;
   Solver_state.save solver.state;
   ack_command solver.solver_exe (Simple_smt.push 1)
 
 let backtrack_n solver n =
-  Var.Incr_counter_mut.backtrack_n solver.var_counter n;
+  Var_counter.backtrack_n solver.var_counter n;
   Solver_state.backtrack_n solver.state n;
   Save_counter.backtrack_n solver.save_counter n;
   ack_command solver.solver_exe (Simple_smt.pop n)
@@ -93,7 +97,7 @@ let reset solver =
   let save_counter = !(solver.save_counter) in
   if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
   Save_counter.reset solver.save_counter;
-  Var.Incr_counter_mut.reset solver.var_counter;
+  Var_counter.reset solver.var_counter;
   Solver_state.reset solver.state;
   ack_command solver.solver_exe (Simple_smt.pop (save_counter + 1));
   (* Make sure the basic definitions are saved again *)
@@ -104,7 +108,7 @@ let declare_v v_id ty =
   declare v (Smtlib_encoding.sort_of_ty (Typed.untype_type ty))
 
 let fresh_var solver ty =
-  let v_id = Var.Incr_counter_mut.get_next solver.var_counter in
+  let v_id = Var_counter.get_next solver.var_counter in
   let c = declare_v v_id ty in
   ack_command solver.solver_exe c;
   v_id
