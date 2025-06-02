@@ -32,7 +32,7 @@ type t =
     (* Type is too large for memory *)
   | `InvalidLayout ]
 
-let is_unwindable : [< t ] -> bool = function
+let is_unwindable : [> t ] -> bool = function
   | `NullDereference | `OutOfBounds | `DivisionByZero | `FailedAssert _
   | `Panic _ | `Overflow ->
       true

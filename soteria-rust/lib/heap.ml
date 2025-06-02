@@ -300,8 +300,6 @@ let lift_err st (symex : ('a, 'e, 'f) Result.t) =
   | Ok ok -> Result.ok ok
   | Missing fix -> Result.miss fix
 
-let raw_err (e, _) = e
-
 let store_str_global str ptr ({ globals; _ } as st) =
   let globals = GlobMap.add (String str) ptr globals in
   Result.ok ((), { st with globals })
@@ -413,3 +411,8 @@ let pop_error ({ errors; _ } as st) =
   match errors with
   | e :: rest -> Result.error (e, { st with errors = rest })
   | _ -> failwith "pop_error with no errors?"
+
+let unwind_with ~f ~fe symex =
+  Result.bind_2 symex ~f ~fe:(fun (((err_ty, _) as err), state) ->
+      if Error.is_unwindable err_ty then fe (err, state)
+      else Result.error (err, state))

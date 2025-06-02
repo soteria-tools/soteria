@@ -130,8 +130,6 @@ module type S = sig
   val lift_err :
     t -> ('ok, 'err, 'f) Result.t -> ('ok, 'err err * t, 'f) Result.t
 
-  val raw_err : 'a err -> 'a
-
   val store_str_global :
     string ->
     full_ptr ->
@@ -189,4 +187,10 @@ module type S = sig
     [< Error.t ] err -> t -> (unit * t, [> ] err * t, serialized list) Result.t
 
   val pop_error : t -> ('a, Error.t err * t, serialized list) Result.t
+
+  val unwind_with :
+    f:('a -> ('b, ([> Error.t ] as 'e) err * t, serialized list) Result.t) ->
+    fe:('e err * t -> ('b, 'e err * t, serialized list) Result.t) ->
+    ('a, 'e err * t, serialized list) Result.t ->
+    ('b, 'e err * t, serialized list) Result.t
 end

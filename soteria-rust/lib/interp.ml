@@ -751,7 +751,7 @@ module Make (Heap : Heap_intf.S) = struct
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:(any ", ") pp_rust_val)
               args);
-        Result.bind_2 (exec_fun ~args ~state)
+        Heap.unwind_with (exec_fun ~args ~state)
           ~f:(fun (v, state) ->
             let** ptr, state = resolve_place ~store state place in
             L.info (fun m ->
@@ -760,12 +760,9 @@ module Make (Heap : Heap_intf.S) = struct
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body store state block)
           ~fe:(fun (err, state) ->
-            let err_ty = Heap.raw_err err in
-            if Error.is_unwindable err_ty then
-              let** (), state' = Heap.add_error err state in
-              let block = UllbcAst.BlockId.nth body.body on_unwind in
-              exec_block ~body store state' block
-            else Result.error (err, state))
+            let** (), state' = Heap.add_error err state in
+            let block = UllbcAst.BlockId.nth body.body on_unwind in
+            exec_block ~body store state' block)
     | Goto b ->
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~body store state block
@@ -863,7 +860,7 @@ module Make (Heap : Heap_intf.S) = struct
     let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in
     let exec_block = exec_block ~body store state starting_block in
-    Result.bind_2 exec_block
+    Heap.unwind_with exec_block
       ~f:(fun (value, store, state) ->
         let protected_address =
           match (fundef.signature.output, value) with
