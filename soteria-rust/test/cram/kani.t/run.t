@@ -37,25 +37,21 @@ Test kani::assert
   - Failed assertion: Expected true!
     Trace:
     • Call trace: ../cram/kani.t/assert.rs:2:0-5:1
-    • Call trace: ../cram/kani.t/assert.rs:4:4-37
     • Triggering memory operation: ../cram/kani.t/assert.rs:4:4-37
   
   - Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴
     Trace:
     • Call trace: ../cram/kani.t/assert.rs:8:0-11:1
-    • Call trace: ../cram/kani.t/assert.rs:10:4-42
     • Triggering memory operation: ../cram/kani.t/assert.rs:10:4-42
   
   - Failed assertion: I used "assert!"
     Trace:
     • Call trace: ../cram/kani.t/assert.rs:14:0-17:1
-    • Call trace: ../std/src/lib.rs:23:8-64
     • Triggering memory operation: ../std/src/lib.rs:23:8-64
   
   - Failed assertion: I used "assert_eq!"
     Trace:
     • Call trace: ../cram/kani.t/assert.rs:20:0-24:1
-    • Call trace: ../std/src/lib.rs:23:8-64
     • Triggering memory operation: ../std/src/lib.rs:23:8-64
   [1]
 
