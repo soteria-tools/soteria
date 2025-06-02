@@ -271,25 +271,52 @@ let as_bool = Typed.as_bool
 let memo_sat_check_tbl : Simple_smt.result Hashtbl.Hint.t =
   Hashtbl.Hint.create 1023
 
+let trivial_model_works to_check =
+  (* We try a trivial model where replacing each variable with name
+    [|n|] with the corresponding integer [n].
+    If the constraint evaluates to true, then it is satisfiable. *)
+  let eval_var v ty =
+    match ty with
+    | Svalue.TInt | Svalue.TLoc ->
+        let i = Var.to_int v in
+        Some (Svalue.int i)
+    | _ -> None
+  in
+  Fmt.epr "Evaluating trivial model for %a\n" Svalue.pp to_check;
+  let res = Eval.eval ~eval_var to_check in
+  Fmt.epr "Result: %a\n" (Fmt.option Svalue.pp) res;
+  match res with Some v -> Svalue.equal v Svalue.v_true | _ -> false
+
+let trivial_model_hits = ref 0
+
+let () =
+  at_exit (fun () ->
+      Printf.eprintf "\n\nTrivial model hits: %d\n" !trivial_model_hits;
+      flush stdout)
+
 let check_sat_raw solver relevant_vars to_check =
   (* TODO: we shouldn't wait for ack for each command individually... *)
-  ack_command solver.solver_exe (Simple_smt.pop 1);
-  ack_command solver.solver_exe (Simple_smt.push 1);
-  (* Declare all relevant variables *)
-  Var.Hashset.iter
-    (fun v ->
-      let ty = Declared_vars.get_ty solver.vars v in
-      ack_command solver.solver_exe (declare_v v ty))
-    relevant_vars;
-  (* Declare the constraint *)
-  let expr = Smtlib_encoding.encode_value to_check in
-  ack_command solver.solver_exe (Simple_smt.assume expr);
-  (* Actually check sat *)
-  try check solver.solver_exe
-  with Simple_smt.UnexpectedSolverResponse s ->
-    L.error (fun m ->
-        m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
-    Unknown
+  if trivial_model_works to_check then (
+    incr trivial_model_hits;
+    Sat)
+  else (
+    ack_command solver.solver_exe (Simple_smt.pop 1);
+    ack_command solver.solver_exe (Simple_smt.push 1);
+    (* Declare all relevant variables *)
+    Var.Hashset.iter
+      (fun v ->
+        let ty = Declared_vars.get_ty solver.vars v in
+        ack_command solver.solver_exe (declare_v v ty))
+      relevant_vars;
+    (* Declare the constraint *)
+    let expr = Smtlib_encoding.encode_value to_check in
+    ack_command solver.solver_exe (Simple_smt.assume expr);
+    (* Actually check sat *)
+    try check solver.solver_exe
+    with Simple_smt.UnexpectedSolverResponse s ->
+      L.error (fun m ->
+          m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
+      Unknown)
 
 let check_sat_raw_memo solver relevant_vars to_check =
   let to_check = Typed.untyped to_check in
@@ -300,7 +327,6 @@ let check_sat_raw_memo solver relevant_vars to_check =
       Hashtbl.Hint.add memo_sat_check_tbl to_check.Hashcons.tag result;
       result
 
-(* TODO: Add query caching! *)
 let sat solver =
   match Solver_state.trivial_truthiness solver.state with
   | Some true -> Soteria_symex.Solver.Sat

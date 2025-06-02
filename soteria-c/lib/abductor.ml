@@ -26,6 +26,9 @@ let generate_summaries_for ~prog (fundef : fundef) =
   in
   let process =
     let open Csymex.Syntax in
+    (* We create a useless variable with name |0| so that it's never used.
+      FIXME: Bit of a hack, fix later. *)
+    let* _ = Csymex.fresh_var Typed.t_loc in
     let* args = Csymex.all Layout.nondet_c_ty arg_tys in
     let* result = Bi_interp.exec_fun ~prog ~args ~state:Bi_state.empty fundef in
     match result with

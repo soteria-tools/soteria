@@ -250,7 +250,7 @@ let rec sure_neq a b =
   (not (equal_ty a.node.ty b.node.ty))
   ||
   match (a.node.kind, b.node.kind) with
-  | Int a, Int b -> not (Z.equal a b)
+  | Int a, Int b | BitVec a, BitVec b -> not (Z.equal a b)
   | Bool a, Bool b -> a <> b
   | Ptr (la, oa), Ptr (lb, ob) -> sure_neq la lb || sure_neq oa ob
   | _ -> false
@@ -488,8 +488,13 @@ let rec split_ands (sv : t) (f : t -> unit) : unit =
 let distinct l =
   (* [Distinct l] when l is empty or of size 1 is always true *)
   match l with
-  | [] | _ :: [] -> v_true
-  | l -> Nop (Distinct, l) <| TBool
+  | [] | [ _ ] -> v_true
+  | l ->
+      let cross_product = List.to_seq l |> Seq.self_cross_product in
+      let sure_distinct =
+        Seq.for_all (fun (a, b) -> sure_neq a b) cross_product
+      in
+      if sure_distinct then v_true else Nop (Distinct, l) <| TBool
 
 let ite guard if_ else_ =
   match guard.node.kind with
@@ -905,7 +910,10 @@ end
 (** {2 Sequences} *)
 
 module SSeq = struct
-  let mk ~inner_ty l = Seq l <| TSeq inner_ty
+  let mk ~seq_ty l = Seq l <| seq_ty
+
+  let inner_ty ty =
+    match ty with TSeq ty -> ty | _ -> failwith "Expected a sequence type"
 end
 
 (** {2 Infix operators} *)
