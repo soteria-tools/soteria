@@ -15,16 +15,6 @@ module M (Heap : Heap_intf.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
-  let assert_ ~(args : rust_val list) ~state =
-    let open Typed.Infix in
-    let* to_assert =
-      match args with
-      | [ Base t ] -> cast_checked t ~ty:Typed.t_int
-      | _ -> not_impl "to_assert with non-one arguments"
-    in
-    if%sat to_assert ==@ 0s then Heap.error (`FailedAssert None) state
-    else Result.ok (Charon_util.unit_, state)
-
   let assume ~args ~state =
     let* to_assume =
       match args with
@@ -208,24 +198,15 @@ module M (Heap : Heap_intf.S) = struct
     | Enum (discr, _) -> (Base discr, state)
     | _ -> failwith "discriminant_value: unexpected value"
 
-  let assert_zero_is_valid (fun_sig : GAst.fun_sig) ~args:_ ~state =
-    let ty =
-      List.hd
-        (List.hd fun_sig.generics.trait_clauses).trait.binder_value
-          .decl_generics
-          .types
-    in
+  let assert_zero_is_valid (mono : Types.generic_args) ~args:_ ~state =
+    let ty = List.hd mono.types in
     match Layout.zeroed ~null_ptr:Sptr.null_ptr ty with
     | None ->
         Heap.error (`Panic (Some "core::intrinsics::assert_zero_valid")) state
     | _ -> Result.ok (Tuple [], state)
 
-  let size_of (fun_sig : GAst.fun_sig) ~args:_ ~state =
-    let ty =
-      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
-        .types
-      |> List.hd
-    in
+  let size_of (mono : Types.generic_args) ~args:_ ~state =
+    let ty = List.hd mono.types in
     let+ size = Layout.size_of_s ty in
     Ok (Base size, state)
 
@@ -251,18 +232,8 @@ module M (Heap : Heap_intf.S) = struct
         let+ size = Layout.size_of_s ty in
         Ok (Base size, state)
 
-  let min_align_of ~in_input (fun_sig : GAst.fun_sig) ~args:_ ~state =
-    let ty =
-      if in_input then
-        match fun_sig.inputs with
-        | [ TRawPtr (ty, _) ] -> ty
-        | _ -> failwith "min_align_of: invalid input type"
-      else
-        (List.hd fun_sig.generics.trait_clauses).trait.binder_value
-          .decl_generics
-          .types
-        |> List.hd
-    in
+  let min_align_of (mono : Types.generic_args) ~args:_ ~state =
+    let ty = List.hd mono.types in
     let* align = Layout.align_of_s ty in
     Result.ok (Base align, state)
 
@@ -350,8 +321,8 @@ module M (Heap : Heap_intf.S) = struct
           (from_ptr, to_ptr, Typed.cast len)
       | _ -> failwith "copy[_nonoverlapping]: invalid arguments"
     in
-    let** () = Heap.check_ptr_align from_ptr ty in
-    let** () = Heap.check_ptr_align to_ptr ty in
+    let** () = Heap.check_ptr_align from_ptr ty state in
+    let** () = Heap.check_ptr_align to_ptr ty state in
     let* ty_size = Layout.size_of_s ty in
     let size = ty_size *@ len in
     let** () =
@@ -398,19 +369,15 @@ module M (Heap : Heap_intf.S) = struct
     | [ Base v ] -> Result.ok (Base (Typed.abs_f @@ Typed.cast v), state)
     | _ -> failwith "abs expects one argument"
 
-  let write_bytes (fun_sig : GAst.fun_sig) ~args ~state =
+  let write_bytes (mono : Types.generic_args) ~args ~state =
     let ptr, dst, v, count =
       match args with
       | [ Ptr ((ptr, _) as dst); Base v; Base count ] -> (ptr, dst, v, count)
       | _ -> failwith "unexpected write_bytes arguments"
     in
     let* count = cast_checked count ~ty:Typed.t_int in
-    let ty =
-      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
-        .types
-      |> List.hd
-    in
-    let** () = Heap.check_ptr_align ptr ty in
+    let ty = List.hd mono.types in
+    let** () = Heap.check_ptr_align ptr ty state in
     let* size = Layout.size_of_s ty in
     let size = size *@ count in
     (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
@@ -430,12 +397,8 @@ module M (Heap : Heap_intf.S) = struct
           (Tuple [], state)
       | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
 
-  let assert_inhabited (fun_sig : GAst.fun_sig) ~args:_ ~state =
-    let ty =
-      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
-        .types
-      |> List.hd
-    in
+  let assert_inhabited (mono : Types.generic_args) ~args:_ ~state =
+    let ty = List.hd mono.types in
     if Layout.is_inhabited ty then Result.ok (Tuple [], state)
     else Heap.error (`Panic (Some "core::intrinsics::assert_inhabited")) state
 
@@ -570,12 +533,8 @@ module M (Heap : Heap_intf.S) = struct
         Result.ok (Base (Typed.cast l'), state)
     else not_impl "Expected floats in copy_sign"
 
-  let variant_count (fun_sig : GAst.fun_sig) ~args:_ ~state =
-    let ty =
-      (List.hd fun_sig.generics.trait_clauses).trait.binder_value.decl_generics
-        .types
-      |> List.hd
-    in
+  let variant_count (mono : Types.generic_args) ~args:_ ~state =
+    let ty = List.hd mono.types in
     match ty with
     | Types.TAdt (TAdtId id, _) when Crate.is_enum id ->
         let variants = Crate.as_enum id in
@@ -681,8 +640,8 @@ module M (Heap : Heap_intf.S) = struct
       | [ Ptr from_ptr; Ptr to_ptr ] -> (from_ptr, to_ptr)
       | _ -> failwith "copy_nonoverlapping: invalid arguments"
     in
-    let** () = Heap.check_ptr_align from_ptr ty in
-    let** () = Heap.check_ptr_align to_ptr ty in
+    let** () = Heap.check_ptr_align from_ptr ty state in
+    let** () = Heap.check_ptr_align to_ptr ty state in
     let* size = Layout.size_of_s ty in
     let** () =
       if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then
@@ -765,14 +724,14 @@ module M (Heap : Heap_intf.S) = struct
     in
     (Base (res :> Typed.T.cval Typed.t), state)
 
-  let type_id (fun_sig : UllbcAst.fun_sig) ~args:_ ~state =
-    let ty = fst (List.hd fun_sig.generics.types_outlive).binder_value in
+  let type_id (mono : Types.generic_args) ~args:_ ~state =
+    let ty = List.hd mono.types in
     (* lazy but works *)
     let hash = Hashtbl.hash ty in
     Result.ok (Base (Typed.int hash), state)
 
-  let type_name (fun_sig : UllbcAst.fun_sig) ~args:_ ~state =
-    let ty = fst (List.hd fun_sig.generics.types_outlive).binder_value in
+  let type_name (mono : Types.generic_args) ~args:_ ~state =
+    let ty = List.hd mono.types in
     let str = Fmt.str "%a" pp_ty ty in
     let** ptr_res, state = Heap.load_str_global str state in
     match ptr_res with

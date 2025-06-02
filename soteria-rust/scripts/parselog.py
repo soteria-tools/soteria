@@ -406,17 +406,36 @@ def diff(f1: str, f2: str):
         inc_rainbow()
     if verbosity < 1:
         return
+
+    def sort_items(item: tuple[str, str | tuple[TestInfo, TestInfo]]):
+        _, info = item
+        if isinstance(info, str):
+            return info
+        only_before, only_after = info
+        return list(only_after)[0][0]
+
+    diffs_items = list(diffs.items())
+    diffs_items.sort(key=sort_items)
     print()
     print(f"{BOLD}Diffs:{RESET} ({len(diffs)})")
-    for test, diff in diffs.items():
+    for test, diff in diffs_items:
         inc_rainbow()
         if isinstance(diff, str):
             pprint(f"{test}{RESET} {diff}")
         else:
-            pprint(f"{test}{RESET}")
+
+            def mk_str(outcomes):
+                return ", ".join(
+                    f"{color}{cause}{RESET}"
+                    for cause, color in set(
+                        ((cause, color) for cause, color, _ in outcomes)
+                    )
+                )
+
+            only_before, only_after = diff
+            pprint(f"{test}{RESET} {mk_str(only_before)} → {mk_str(only_after)}")
             if verbosity < 2:
                 continue
-            only_before, only_after = diff
             for cause, color, reason in only_before:
                 if reason is not None:
                     print(f"  {minus} {color}{cause}{RESET} ({reason})")

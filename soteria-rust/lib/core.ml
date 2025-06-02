@@ -108,7 +108,7 @@ module M (Heap : Heap_intf.S) = struct
           let size = 8 * Layout.size_of_int_ty ity in
           let r = Typed.cast r in
           if%sat r <@ 0s ||@ (r >=@ Typed.int size) then
-            Heap.error `UBArithShift st
+            Heap.error `InvalidShift st
           else Result.ok ()
       | _ -> Result.ok ()
     in

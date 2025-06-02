@@ -188,6 +188,6 @@ let access (root : t) accessed e st =
         (protected, st'))
       st
   in
-  if !ub_happened then Result.error `UBTreeBorrow else Result.ok st'
+  if !ub_happened then Result.error `AliasingError else Result.ok st'
 
 let merge = TagMap.merge @@ fun _ -> Option.merge meet'

@@ -251,18 +251,47 @@ module M (Heap : Heap_intf.S) = struct
     let open Rusteria in
     let open Miri in
     let opt_bind f opt = match opt with None -> f () | x -> x in
-    let ctx = Crate.as_namematcher_ctx () in
-    let real_name =
-      if Charon_util.decl_has_attr f "rustc_intrinsic" then
-        Types.
-          [
-            PeIdent ("core", Disambiguator.zero);
-            PeIdent ("intrinsics", Disambiguator.zero);
-            List.last f.item_meta.name;
-          ]
-      else f.item_meta.name
+    let mono () =
+      match List.last f.item_meta.name with
+      | PeMonomorphized mono -> mono
+      | _ ->
+          Fmt.failwith "Expected %a to have been monomorphised" Crate.pp_name
+            f.item_meta.name
     in
-    NameMatcherMap.find_opt ctx match_config real_name std_fun_map
+    let is_intrinsic = Charon_util.decl_has_attr f "rustc_intrinsic" in
+    (* Rust allows defining functions and marking them as intrinsics within a module,
+       and the compiler will treat them as the intrinsic of the same name; e.g.
+       mod Foo {
+        #[rustc_intrinsic]
+        unsafe fn copy_nonoverlapping<T>(src: *const T, dst: *mut T, count: usize);
+       }
+       This means their path doesn't match the one we expect for the patterns; we normalise
+       this here. Another solution could be to match intrinsics on their name only and not their
+       path (possibly in a separate function?), but that's maybe overkill for the very rare
+       cases were people actually re-define the intrinsics. *)
+    let name =
+      match f.item_meta.name with
+      | _ when not is_intrinsic -> f.item_meta.name
+      | PeIdent ("core", _) :: _ -> f.item_meta.name
+      | _ -> (
+          match List.rev f.item_meta.name with
+          | (PeIdent _ as name) :: _ ->
+              [
+                PeIdent ("core", Types.Disambiguator.zero);
+                PeIdent ("intrinsics", Types.Disambiguator.zero);
+                name;
+              ]
+          | (PeMonomorphized _ as mono) :: (PeIdent _ as name) :: _ ->
+              [
+                PeIdent ("core", Types.Disambiguator.zero);
+                PeIdent ("intrinsics", Types.Disambiguator.zero);
+                name;
+                mono;
+              ]
+          | _ -> failwith "Unexpected intrinsic shape")
+    in
+    let ctx = Crate.as_namematcher_ctx () in
+    NameMatcherMap.find_opt ctx match_config name std_fun_map
     |> ( Option.map @@ function
          | RusteriaAssert -> assert_
          | RusteriaAssume -> assume
@@ -270,8 +299,8 @@ module M (Heap : Heap_intf.S) = struct
          | RusteriaPanic -> panic
          | MiriAllocId -> alloc_id
          | Abs -> abs
-         | AssertZeroValid -> assert_zero_is_valid f.signature
-         | AssertInhabited -> assert_inhabited f.signature
+         | AssertZeroValid -> assert_zero_is_valid (mono ())
+         | AssertInhabited -> assert_inhabited (mono ())
          | Assume -> std_assume
          | ByteSwap -> byte_swap f.signature
          | BlackBox -> black_box
@@ -293,7 +322,7 @@ module M (Heap : Heap_intf.S) = struct
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
          | Likely -> likely
-         | MinAlignOf t -> min_align_of ~in_input:(t = Input) f.signature
+         | MinAlignOf _ -> min_align_of (mono ())
          | MulAdd -> mul_add
          | Nop -> nop
          | PanicSimple -> std_panic
@@ -303,27 +332,21 @@ module M (Heap : Heap_intf.S) = struct
          | PtrOffsetFrom { unsigned } -> ptr_offset_from unsigned f.signature
          | RawEq -> raw_eq f.signature
          | Saturating op -> saturating op f.signature
-         | SizeOf -> size_of f.signature
+         | SizeOf -> size_of (mono ())
          | SizeOfVal -> size_of_val f.signature
          | Transmute -> transmute f.signature
-         | TypeId -> type_id f.signature
-         | TypeName -> type_name f.signature
+         | TypeId -> type_id (mono ())
+         | TypeName -> type_name (mono ())
          | TypedSwapNonOverlapping -> typed_swap_nonoverlapping f.signature
          | Unchecked op -> unchecked_op op f.signature
-         | VariantCount -> variant_count f.signature
+         | VariantCount -> variant_count (mono ())
          | Wrapping op -> wrapping_op op f.signature
-         | WriteBytes -> write_bytes f.signature
+         | WriteBytes -> write_bytes (mono ())
          | Zeroed -> zeroed f.signature )
     |> opt_bind @@ fun () ->
-       let is_intrinsic =
-         match real_name with
-         | PeIdent (("core" | "std"), _) :: PeIdent ("intrinsics", _) :: _ ->
-             true
-         | _ -> false
-       in
        if is_intrinsic then
          Option.some @@ fun ~args:_ ~state:_ ->
-         Fmt.kstr not_impl "Unsupported intrinsic: %a" Crate.pp_name real_name
+         Fmt.kstr not_impl "Unsupported intrinsic: %a" Crate.pp_name name
        else None
 
   let builtin_fun_eval (f : Expressions.builtin_fun_id) generics =

@@ -81,8 +81,11 @@ module type S = sig
 
     val map : ('ok, 'err, 'fix) t -> ('ok -> 'a) -> ('a, 'err, 'fix) t
 
-    val bind_error :
-      ('ok, 'err, 'fix) t -> ('err -> ('ok, 'a, 'fix) t) -> ('ok, 'a, 'fix) t
+    val bind_2 :
+      ('ok, 'err, 'fix) t ->
+      f:('ok -> ('a, 'b, 'fix) t) ->
+      fe:('err -> ('a, 'b, 'fix) t) ->
+      ('a, 'b, 'fix) t
 
     val map_error : ('ok, 'err, 'fix) t -> ('err -> 'a) -> ('ok, 'a, 'fix) t
 
