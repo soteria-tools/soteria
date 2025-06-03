@@ -321,7 +321,7 @@
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
-            [(V|0|, Freed); (V|1|, Freed); (V|2|, Freed); (V|3|, Freed);
-             (V|4|, Freed); (V|5|, Freed)];
+            [(V|1|, Freed); (V|2|, Freed); (V|3|, Freed); (V|4|, Freed);
+             (V|5|, Freed); (V|6|, Freed)];
             globs = [] })]
   Executed 8 statements

@@ -71,8 +71,8 @@
   Symex terminated with the following outcomes:
     [Ok: (25,
           { heap =
-            [(V|0|, [TypedVal {offset = 0; ty = signed int; v = 13}]);
-             (V|1|, [TypedVal {offset = 0; ty = signed int; v = 12}]);
-             (V|2|, Freed)];
-            globs = [(x_485, V|1|); (x_492, V|0|)] })]
+            [(V|1|, [TypedVal {offset = 0; ty = signed int; v = 13}]);
+             (V|2|, [TypedVal {offset = 0; ty = signed int; v = 12}]);
+             (V|3|, Freed)];
+            globs = [(x_485, V|2|); (x_492, V|1|)] })]
   Executed 7 statements

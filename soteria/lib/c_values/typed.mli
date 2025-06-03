@@ -96,7 +96,7 @@ val nonzero : int -> [> nonzero ] t
 val float : Svalue.FloatPrecision.t -> string -> [> sfloat ] t
 val int_of_bool : [< sbool ] t -> [> sint ] t
 val bool_of_int : [< sint ] t -> [> sbool ] t
-val int_of_float : [< sfloat ] t -> [> sint ] t
+val int_of_float : int -> [< sfloat ] t -> [> sint ] t
 val float_of_int : Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
@@ -171,7 +171,7 @@ module Ptr : sig
 end
 
 module SSeq : sig
-  val mk : inner_ty:([< any ] as 'a) ty -> 'a t list -> [> 'a sseq ] t
+  val mk : seq_ty:'a sseq ty -> 'a t list -> [> 'a sseq ] t
 end
 
 module Infix : sig

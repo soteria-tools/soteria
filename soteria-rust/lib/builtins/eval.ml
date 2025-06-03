@@ -43,6 +43,7 @@ module M (Heap : Heap_intf.S) = struct
     | FloatIsSign of { positive : bool }
     | FloatMinMax of { min : bool }
     | FloatRounding of Svalue.FloatRoundingMode.t
+    | FloatToInt
     | Index
     | IsValStaticallyKnown
     | Likely
@@ -177,6 +178,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::fabsf128", Abs);
       ("core::intrinsics::fadd_fast", FloatFast Add);
       ("core::intrinsics::fdiv_fast", FloatFast Div);
+      ("core::intrinsics::float_to_int_unchecked", FloatToInt);
       ("core::intrinsics::floorf16", FloatRounding Floor);
       ("core::intrinsics::floorf32", FloatRounding Floor);
       ("core::intrinsics::floorf64", FloatRounding Floor);
@@ -323,6 +325,7 @@ module M (Heap : Heap_intf.S) = struct
          | FloatIsSign { positive } -> float_is_sign positive
          | FloatMinMax { min } -> float_minmax min
          | FloatRounding rm -> float_rounding rm
+         | FloatToInt -> float_to_int f.signature
          | Index -> array_index_fn f.signature
          | IsValStaticallyKnown -> is_val_statically_known
          | Likely -> likely

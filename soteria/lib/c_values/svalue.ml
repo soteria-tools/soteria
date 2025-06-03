@@ -80,7 +80,7 @@ module Unop = struct
     | GetPtrLoc
     | GetPtrOfs
     | IntOfBool
-    | BvOfFloat
+    | BvOfFloat of int (* target bitvec size *)
     | BvOfInt
     | FloatOfBv
     | IntOfBv of bool (* signed *)
@@ -95,7 +95,7 @@ module Unop = struct
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
     | IntOfBool -> Fmt.string ft "b2i"
-    | BvOfFloat -> Fmt.string ft "f2bv"
+    | BvOfFloat n -> Fmt.pf ft "f2bv(%d)" n
     | BvOfInt -> Fmt.string ft "i2bv"
     | FloatOfBv -> Fmt.string ft "bv2f"
     | IntOfBv _ -> Fmt.string ft "bv2i"
@@ -250,7 +250,7 @@ let rec sure_neq a b =
   (not (equal_ty a.node.ty b.node.ty))
   ||
   match (a.node.kind, b.node.kind) with
-  | Int a, Int b -> not (Z.equal a b)
+  | Int a, Int b | BitVec a, BitVec b -> not (Z.equal a b)
   | Bool a, Bool b -> a <> b
   | Ptr (la, oa), Ptr (lb, ob) -> sure_neq la lb || sure_neq oa ob
   | _ -> false
@@ -488,8 +488,13 @@ let rec split_ands (sv : t) (f : t -> unit) : unit =
 let distinct l =
   (* [Distinct l] when l is empty or of size 1 is always true *)
   match l with
-  | [] | _ :: [] -> v_true
-  | l -> Nop (Distinct, l) <| TBool
+  | [] | [ _ ] -> v_true
+  | l ->
+      let cross_product = List.to_seq l |> Seq.self_cross_product in
+      let sure_distinct =
+        Seq.for_all (fun (a, b) -> sure_neq a b) cross_product
+      in
+      if sure_distinct then v_true else Nop (Distinct, l) <| TBool
 
 let ite guard if_ else_ =
   match guard.node.kind with
@@ -694,17 +699,16 @@ let raw_bit_shr n v1 v2 = Binop (BitShr, v1, v2) <| t_bv n
 let raw_bv_plus n v1 v2 = mk_commut_binop BvPlus v1 v2 <| t_bv n
 let raw_bv_minus n v1 v2 = Binop (BvMinus, v1, v2) <| t_bv n
 
-let bv_of_float v =
-  match (v.node.ty, v.node.kind) with
-  | TFloat _, Unop (FloatOfBv, v) -> v
-  | TFloat F32, Float f ->
+let bv_of_float n v =
+  match (v.node.ty, v.node.kind, n) with
+  | TFloat _, Unop (FloatOfBv, v), _ -> v
+  | TFloat F32, Float f, 32 ->
       let z = Z.of_int32 (Int32.bits_of_float (Float.of_string f)) in
-      bitvec 32 z
-  | TFloat F64, Float f ->
+      bitvec n z
+  | TFloat F64, Float f, 64 ->
       let z = Z.of_int64 (Int64.bits_of_float (Float.of_string f)) in
-      bitvec 64 z
-  | TFloat fp, _ -> Unop (BvOfFloat, v) <| t_bv (FloatPrecision.size fp)
-  | _ -> failwith "Expected a float value in bv_of_float"
+      bitvec n z
+  | _, _, _ -> Unop (BvOfFloat n, v) <| t_bv n
 
 let rec bv_of_int n v =
   let bv_of_int = bv_of_int n in
@@ -766,22 +770,22 @@ let rec int_of_bv signed v =
 
 let float_of_bv v =
   match (v.node.ty, v.node.kind) with
-  | _, Unop (BvOfFloat, v) -> v
+  | _, Unop (BvOfFloat _, v) -> v
   | TBitVector n, _ -> Unop (FloatOfBv, v) <| t_f (FloatPrecision.of_size n)
-  | _ -> failwith "Expected a float value in float_of_bv"
+  | _ -> failwith "Expected a bitvector value in float_of_bv"
 
 let float_of_int fp v =
-  match v.node.kind with
-  | Int i -> float fp (Z.to_string i)
+  match (v.node.kind, fp) with
+  (* We force the integer to a float, to account for precision loss.
+     Ideally we should do this for every float precision, but we would need support for
+     f16, f32 and f128 in OCaml.  *)
+  | Int i, FloatPrecision.F64 -> float fp (string_of_float (Z.to_float i))
   | _ -> float_of_bv (bv_of_int (FloatPrecision.size fp) v)
 
-let int_of_float v =
-  match (v.node.ty, v.node.kind) with
-  | TFloat F32, Float f ->
-      int_z (Z.of_int32 (Int32.bits_of_float (Float.of_string f)))
-  | TFloat F64, Float f ->
-      int_z (Z.of_int64 (Int64.bits_of_float (Float.of_string f)))
-  | _ -> int_of_bv true (bv_of_float v)
+let int_of_float n v =
+  match v.node.kind with
+  | Float f -> int_z (Z.of_float (Float.of_string f))
+  | _ -> int_of_bv true (bv_of_float n v)
 
 let bit_and ~size ~signed v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -838,12 +842,12 @@ let eq_f v1 v2 = mk_commut_binop FEq v1 v2 <| TBool
 
 let lt_f v1 v2 =
   match (v1.node.kind, v2.node.kind) with
-  | Float f1, Float f2 -> bool (f1 < f2)
+  | Float f1, Float f2 -> bool (float_of_string f1 < float_of_string f2)
   | _ -> Binop (FLt, v1, v2) <| TBool
 
 let leq_f v1 v2 =
   match (v1.node.kind, v2.node.kind) with
-  | Float f1, Float f2 -> bool (f1 <= f2)
+  | Float f1, Float f2 -> bool (float_of_string f1 <= float_of_string f2)
   | _ -> Binop (FLeq, v1, v2) <| TBool
 
 let gt_f v1 v2 = lt_f v2 v1
@@ -905,7 +909,10 @@ end
 (** {2 Sequences} *)
 
 module SSeq = struct
-  let mk ~inner_ty l = Seq l <| TSeq inner_ty
+  let mk ~seq_ty l = Seq l <| seq_ty
+
+  let inner_ty ty =
+    match ty with TSeq ty -> ty | _ -> failwith "Expected a sequence type"
 end
 
 (** {2 Infix operators} *)
