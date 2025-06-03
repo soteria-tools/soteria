@@ -47,3 +47,7 @@ let channel =
 
 let console_trace : t = { level = Some Trace; kind = Stderr }
 let html_trace : t = { level = Some Trace; kind = Html }
+
+type interject = (unit -> unit) -> unit
+
+let interject : interject ref = ref (fun f -> f ())

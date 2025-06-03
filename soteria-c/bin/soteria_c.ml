@@ -48,10 +48,26 @@ module Config = struct
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_PARSE_ONLY" in
     Arg.(value & flag & info [ "parse-only" ] ~env ~doc)
 
+  let dump_summaries_file_arg =
+    let doc = "Dump the generated summaries to a file" in
+    let docv = "FILE" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_DUMP_SUMMARIES_FILE" in
+    Arg.(
+      value
+      & opt (some string) None
+      & info [ "dump-summaries"; "dump-summaries-to" ] ~env ~doc ~docv)
+
+  let no_progress_bar_arg =
+    let doc = "Do not show the progress bar" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_NO_PROGRESS_BAR" in
+    Arg.(value & flag & info [ "no-progress-bar"; "no-progress" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_unsupported_file
-      no_ignore_parse_failures no_ignore_duplicate_symbols parse_only =
+      no_ignore_parse_failures no_ignore_duplicate_symbols parse_only
+      dump_summaries_file no_progress_bar =
     make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
-      ~no_ignore_duplicate_symbols ~parse_only ()
+      ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file
+      ~no_progress_bar ()
 
   let term =
     Cmdliner.Term.(
@@ -60,7 +76,9 @@ module Config = struct
       $ dump_unsupported_arg
       $ no_ignore_parse_failures_arg
       $ no_ignore_duplicate_symbols_arg
-      $ parse_only_arg)
+      $ parse_only_arg
+      $ dump_summaries_file_arg
+      $ no_progress_bar_arg)
 end
 
 let files_arg =

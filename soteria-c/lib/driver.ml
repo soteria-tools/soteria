@@ -288,24 +288,31 @@ let exec_main_and_print log_config solver_config config includes file_names =
       result
       (Stats.get_executed_statements ())
 
+let dump_summaries ~prog results =
+  match !Config.current.dump_summaries_file with
+  | None -> ()
+  | Some file ->
+      let pp_summary ~fid ft summary =
+        Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
+          summary (Fmt.Dump.list pp_err)
+          (Summary.analyse_summary ~prog ~fid summary)
+      in
+      let@ oc = Channels.with_out_file file in
+      let ft = Format.formatter_of_out_channel oc in
+      List.iter
+        (fun (fid, summaries) ->
+          Fmt.pf ft "@[<v 2>Summaries for %a:@ %a@]@ @." Fmt_ail.pp_sym fid
+            (Fmt.list ~sep:Fmt.sp (pp_summary ~fid))
+            summaries)
+        results
+
 let generate_summaries ~functions_to_analyse prog =
   let results =
     let@ () = with_function_context prog in
     Abductor.generate_all_summaries ~functions_to_analyse prog
   in
   Csymex.dump_unsupported ();
-
-  let pp_summary ~fid ft summary =
-    Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
-      summary (Fmt.Dump.list pp_err)
-      (Summary.analyse_summary ~prog ~fid summary)
-  in
-  List.iter
-    (fun (fid, summaries) ->
-      Fmt.pr "@[<v 2>Summaries for %a:@ %a@]@ @." Fmt_ail.pp_sym fid
-        (Fmt.list ~sep:Fmt.sp (pp_summary ~fid))
-        summaries)
-    results
+  dump_summaries ~prog results
 
 (* Entry point function *)
 let lsp config () =

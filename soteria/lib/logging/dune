@@ -1,7 +1,7 @@
 (library
  (name soteria_logs)
  (public_name soteria.logs)
- (libraries soteria_std htmlit cmdliner unix)
+ (libraries soteria_std htmlit cmdliner unix progress)
  (flags
   (:standard -open Soteria_std))
  (synopsis "Logging library for symbolic execution")

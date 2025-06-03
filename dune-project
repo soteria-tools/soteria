@@ -62,6 +62,7 @@
    (>= 5.3.0))
   (shexp :build)
   eio_main
+  progress
   soteria
   cerberus-lib
   zarith

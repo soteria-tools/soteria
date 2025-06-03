@@ -1,4 +1,4 @@
-  $ soteria-c capture-db compilation_database.json
+  $ soteria-c capture-db compilation_database.json --no-progress-bar --dump-summaries "out.summaries" && cat out.summaries
   Summaries for test2_494:
     { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
       ret = (Ok 0); memory_leak = false }
