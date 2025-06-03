@@ -27,6 +27,22 @@
   
 
   $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --no-progress-bar --dump-summaries "out.summaries" && cat out.summaries
+  Function test_leak_495 has the following bugs:
+    Memory leak with trace [(manifest.c:26:1-34:2 (cursor: 26:5 - 26:14), )]
+  Function test_np_uninit_489 has the following bugs:
+    NullDereference with trace [(manifest.c:12:3-10, Call trace);
+                                (manifest.c:6:10-12 (cursor: 6:10),
+                                 Triggering memory operation)]
+    UninitializedMemoryAccess with trace [(manifest.c:12:3-10, Call trace);
+                                          (manifest.c:6:10-12 (cursor: 6:10),
+                                           Triggering memory operation)]
+  Function test_uninit_492 has the following bugs:
+    UninitializedMemoryAccess with trace [(manifest.c:21:3-10, Call trace);
+                                          (manifest.c:6:10-12 (cursor: 6:10),
+                                           Triggering memory operation)]
+  Function test_np_501 has the following bugs:
+    NullDereference with trace [(manifest.c:51:3-10 (cursor: 51:6),
+                                 Triggering memory operation)]
   Summaries for load_487:
     Analysed {
       raw =

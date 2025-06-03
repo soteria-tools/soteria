@@ -45,7 +45,7 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ hashFiles('*.opam') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-opam-
-
+      - run: opam update
       # OCaml build
       - name: setup dependencies
         run: make ocaml-deps
