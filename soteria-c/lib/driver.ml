@@ -175,27 +175,24 @@ let is_main (def : Cabs.function_definition) =
       String.equal name "main"
   | _ -> false
 
-let pp_err ft (err, call_trace) =
-  Format.open_hbox ();
-  let () =
-    match err with
-    | `NullDereference -> Fmt.string ft "NullDereference"
-    | `OutOfBounds -> Fmt.string ft "OutOfBounds"
-    | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
-    | `UseAfterFree -> Fmt.string ft "UseAfterFree"
-    | `DivisionByZero -> Fmt.string ft "DivisionByZero"
-    | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
-    | `LinkError s -> Fmt.pf ft "LinkError: %s" s
-    | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
-    | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
-    | `InvalidFunctionPtr -> Fmt.string ft "InvalidFunctionPtr"
-    | `DoubleFree -> Fmt.string ft "DoubleFree"
-    | `InvalidFree -> Fmt.string ft "InvalidFree"
-    | `Memory_leak -> Fmt.string ft "Memory leak"
-    | `FailedAssert -> Fmt.string ft "Failed assertion"
-  in
-  Fmt.pf ft " with trace %a" Call_trace.pp call_trace;
-  Format.close_box ()
+let pp_err ft = function
+  | `NullDereference -> Fmt.string ft "NullDereference"
+  | `OutOfBounds -> Fmt.string ft "OutOfBounds"
+  | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
+  | `UseAfterFree -> Fmt.string ft "UseAfterFree"
+  | `DivisionByZero -> Fmt.string ft "DivisionByZero"
+  | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
+  | `LinkError s -> Fmt.pf ft "LinkError: %s" s
+  | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
+  | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
+  | `InvalidFunctionPtr -> Fmt.string ft "InvalidFunctionPtr"
+  | `DoubleFree -> Fmt.string ft "DoubleFree"
+  | `InvalidFree -> Fmt.string ft "InvalidFree"
+  | `Memory_leak -> Fmt.string ft "Memory leak"
+  | `FailedAssert -> Fmt.string ft "Failed assertion"
+
+let pp_err_and_call_trace ft (err, call_trace) =
+  Fmt.pf ft "@[<h 2>%a with trace %a@]" pp_err err Call_trace.pp call_trace
 
 let resolve_entry_point (linked : Ail_tys.linked_program) =
   let open Syntaxes.Result in
@@ -256,7 +253,7 @@ let generate_errors content =
               Soteria_logs.Logs.with_section
                 ("Anaysing summaries for function" ^ Symbol.show_symbol fid)
             in
-            List.concat_map (Summary.analyse_summary ~prog ~fid) summaries)
+            List.concat_map (Summary.manifest_bugs ~prog ~fid) summaries)
           summaries
       in
       List.sort_uniq Stdlib.compare results
@@ -282,7 +279,8 @@ let exec_main_and_print log_config solver_config config includes file_names =
        Executed %d statements"
       Fmt.Dump.(
         list @@ fun ft (r, _) ->
-        (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state) ~err:pp_err
+        (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state)
+           ~err:pp_err_and_call_trace
            ~miss:(Fmt.Dump.list SState.pp_serialized))
           ft r)
       result
@@ -293,9 +291,8 @@ let dump_summaries ~prog results =
   | None -> ()
   | Some file ->
       let pp_summary ~fid ft summary =
-        Fmt.pf ft "@[<v 2>%a@ manifest bugs: @[<h>%a@]@]" (Summary.pp pp_err)
-          summary (Fmt.Dump.list pp_err)
-          (Summary.analyse_summary ~prog ~fid summary)
+        Fmt.pf ft "@[<v 2>%a@]" (Summary.pp pp_err)
+          (Summary.analyse ~prog ~fid summary)
       in
       let@ oc = Channels.with_out_file file in
       let ft = Format.formatter_of_out_channel oc in
@@ -306,13 +303,41 @@ let dump_summaries ~prog results =
             summaries)
         results
 
+let analyse_summaries ~prog results =
+  let total =
+    Iter.of_list results
+    |> Iter.map (fun (_, l) -> List.length l)
+    |> Iter.fold ( + ) 0
+  in
+  let open Syntaxes.List in
+  let@ () = My_progress.run ~msg:"Analysing summaries" ~total in
+  let+ fid, summaries = results in
+  let results =
+    let+ summary = summaries in
+    let res = Summary.analyse ~prog ~fid summary in
+    My_progress.signal_progress 1;
+    res
+  in
+  (fid, results)
+
 let generate_summaries ~functions_to_analyse prog =
   let results =
     let@ () = with_function_context prog in
     Abductor.generate_all_summaries ~functions_to_analyse prog
   in
   Csymex.dump_unsupported ();
-  dump_summaries ~prog results
+  let results = analyse_summaries ~prog results in
+  dump_summaries ~prog results;
+  results
+  |> List.iter (fun (fid, summaries) ->
+         let bugs =
+           List.concat_map (Summary.manifest_bugs ~prog ~fid) summaries
+         in
+         if not (List.is_empty bugs) then
+           Fmt.pr "@[<v 2>Function %a has the following bugs:@ %a@]@\n"
+             Fmt_ail.pp_sym fid
+             (Fmt.list ~sep:Fmt.sp pp_err_and_call_trace)
+             (List.sort_uniq Stdlib.compare bugs))
 
 (* Entry point function *)
 let lsp config () =
@@ -359,7 +384,7 @@ let show_ail logs_config (includes : string list) (files : string list) =
         symmap;
 
       Fmt.pr "@[<v>%a@]" Fmt_ail.pp_program (entry_point, sigma)
-  | Error err -> Fmt.pr "%a@." pp_err err
+  | Error err -> Fmt.pr "%a@." pp_err_and_call_trace err
 
 (* Entry point function *)
 let generate_all_summaries log_config solver_config config includes
@@ -371,7 +396,7 @@ let generate_all_summaries log_config solver_config config includes
     let@ () = Soteria_logs.Logs.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
     |> Result.get_or ~err:(fun e ->
-           Fmt.epr "%a@\n@?" pp_err e;
+           Fmt.epr "%a@\n@?" pp_err_and_call_trace e;
            failwith "Failed to parse AIL")
   in
   if not !Config.current.parse_only then
