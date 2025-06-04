@@ -35,50 +35,41 @@ let supports_utf8_from_env () =
 type profile = { color : bool; utf8 : bool }
 
 let profile () =
-  if not (Unix.isatty Unix.stderr) then None
-  else
-    let utf8 = supports_utf8_from_env () in
-    let color = color_from_env () in
-    Some { color; utf8 }
+  let utf8 = supports_utf8_from_env () in
+  let color = color_from_env () in
+  { color; utf8 }
 
 let profile = lazy (profile ())
-let no_bar () = Option.is_none (Lazy.force profile)
 
-let bar_style () =
+let bar_style ~color:user_color () =
   let open Progress.Line in
-  match Lazy.force profile with
-  | None -> None
-  | Some { color; utf8 } ->
-      let base = if utf8 then Bar_style.utf8 else Bar_style.ascii in
-      let colored =
-        if color then Bar_style.with_color (Progress.Color.ansi `cyan) base
-        else base
-      in
-      Some (`Custom colored)
+  let { color; utf8 } = Lazy.force profile in
+  let base = if utf8 then Bar_style.utf8 else Bar_style.ascii in
+  let colored =
+    if color then Bar_style.with_color (Progress.Color.ansi user_color) base
+    else base
+  in
+  Some (`Custom colored)
 
-let bar_style = lazy (bar_style ())
-let bar_style () = Lazy.force bar_style
-
-let bar ~msg ~total =
+let bar ~color ~msg ~total =
   let open Progress.Line in
-  let style = bar_style () in
+  let style = bar_style ~color () in
   list [ spinner (); const msg; bar ?style total; count_to total ]
 
 type _ Effect.t += Progress : int -> unit Effect.t
 
 let signal_progress n = Effect.perform (Progress n)
 
-let run ~msg ~total k =
-  if no_bar () then
-    try k () with effect Progress _, k -> Effect.Deep.continue k ()
-  else
-    Progress.with_reporter (bar ~msg ~total) (fun f ->
-        Soteria_logs.Config.interject := Progress.interject_with;
-        let res =
-          try k ()
-          with effect Progress n, k ->
-            f n;
-            Effect.Deep.continue k ()
-        in
-        let () = Soteria_logs.Config.interject := fun f -> f () in
-        res)
+let run ?(color = `cyan) ~msg ~total () k =
+  let config = Progress.Config.v () in
+  (* This config will hide the bar by default stderr isn't a tty *)
+  Progress.with_reporter ~config (bar ~color ~msg ~total) (fun f ->
+      Soteria_logs.Config.interject := Progress.interject_with;
+      let res =
+        try k ()
+        with effect Progress n, k ->
+          f n;
+          Effect.Deep.continue k ()
+      in
+      let () = Soteria_logs.Config.interject := fun f -> f () in
+      res)

@@ -60,7 +60,7 @@ let generate_all_summaries ~functions_to_analyse prog =
          true))
       order
   in
-  let@ () = My_progress.run ~msg:"Generating summaries" ~total:!count in
+  let@ () = My_progress.run ~msg:"Generating summaries" ~total:!count () in
   ListLabels.filter_map to_analyse ~f:(fun fid ->
       let open Syntaxes.Option in
       let res =
