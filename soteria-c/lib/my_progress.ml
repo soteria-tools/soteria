@@ -15,10 +15,8 @@ let color_from_env () =
   let is_ansi = is_term "ansi" in
 
   match (term, color_term) with
-  | _, Some "true"
-  | _, Some "truecolor"
-  | Some ("xterm-kitty" | "wezterm"), _
-  | Some "linux", _ ->
+  | _, Some ("true" | "truecolor")
+  | Some ("xterm-kitty" | "wezterm" | "linux"), _ ->
       true
   | Some _, _ when is_256color || is_color || is_ansi -> true
   | _ -> false
