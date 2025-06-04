@@ -34,6 +34,6 @@ UnsafeCell allow foreign writes followed by local writes
 Nested UnsafeCells work too
   $ soteria-rust exec-main nested.rs --clean
   Done. - Ran 1 branches
-  PC:
+  PC: 
     (0 != V|1|) /\ ((i2bv(V|1|) & 0x3) == 0x0) /\
     (V|1| <= 0x7ffffffffffffffb) /\ (0 < V|1|) /\ (0 == (V|1| mod 4))

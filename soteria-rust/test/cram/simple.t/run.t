@@ -25,8 +25,8 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   $ soteria-rust exec-main unwind.rs --clean --ignore-leaks
   Done. - Ran 2 branches
   PC: 
-    (0 == V|0|) /\ (V|0| <= 1) /\ (0 <= V|0|)
+    (0 == V|1|) /\ (V|1| <= 1) /\ (0 <= V|1|)
   
   PC: 
-    (0 <= V|1|) /\ (V|1| <= 0x7ffffffffffffffe) /\ (0 < V|1|) /\ (0 != V|0|) /\
-    (V|0| <= 1) /\ (0 <= V|0|)
+    (0 <= V|2|) /\ (V|2| <= 0x7ffffffffffffffe) /\ (0 < V|2|) /\ (0 != V|1|) /\
+    (V|1| <= 1) /\ (0 <= V|1|)
