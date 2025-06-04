@@ -96,8 +96,7 @@
       manifest_bugs =
       [(UninitializedMemoryAccess,
         [(manifest.c:12:3-10, Call trace);
-         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])
-        ]}
+         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -110,8 +109,7 @@
       manifest_bugs =
       [(NullDereference,
         [(manifest.c:12:3-10, Call trace);
-         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])
-        ]}
+         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
   
   Summaries for test_ok_498:
     Analysed {
@@ -138,8 +136,7 @@
       manifest_bugs =
       [(UninitializedMemoryAccess,
         [(manifest.c:21:3-10, Call trace);
-         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])
-        ]}
+         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };

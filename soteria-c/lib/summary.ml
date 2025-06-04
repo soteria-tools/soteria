@@ -2,6 +2,10 @@ open Syntaxes.FunctionWrap
 module T = Typed.T
 module Var = Soteria_symex.Var
 
+type after_exec = |
+type pruned = |
+type analysed = |
+
 type 'err raw = {
   args : T.cval Typed.t list;
       (** List of arguments values, corresponding to the formal arguments in
@@ -11,21 +15,40 @@ type 'err raw = {
       (** Path condition. Whether it is in the post or in the pre, it doesn't
           matter for UX. *)
   post : State.serialized;  (** Post condition as a serialized heap *)
-  ret : (T.cval Typed.t, 'err) result;
+  ret : (T.cval Typed.t, 'err * Call_trace.t) result;
       (** Return value. If `ok` then it is the C value that the function
           returned, if `err` then it is a description of the bug exhibitied by
           the code *)
 }
 [@@deriving show { with_path = false }]
 
-type 'err t =
-  | After_exec of ('err * Call_trace.t) raw
-  | Pruned of { raw : ('err * Call_trace.t) raw; memory_leak : bool }
-  | Analysed of {
-      raw : ('err * Call_trace.t) raw;
+type (_, 'err) t =
+  | After_exec : 'err raw -> (after_exec, 'err) t
+  | Pruned : { raw : 'err raw; memory_leak : bool } -> (pruned, 'err) t
+  | Analysed : {
+      raw : 'err raw;
       manifest_bugs : ('err * Call_trace.t) list;
     }
-[@@deriving show { with_path = false }]
+      -> (analysed, 'err) t
+(* [@@deriving show { with_path = false }] *)
+
+let pp : type a.
+    (Format.formatter -> 'err -> unit) ->
+    Format.formatter ->
+    (a, 'err) t ->
+    unit =
+ fun pp_err ft summary ->
+  match summary with
+  | After_exec raw ->
+      Fmt.pf ft "@[<2>After_exec@ %a@]" (Fmt.parens (pp_raw pp_err)) raw
+  | Pruned { raw; memory_leak } ->
+      Fmt.pf ft "@[<v 2>Pruned {@ @[raw =@ %a@];@ @[memory_leak =@ %a@]}@]"
+        (pp_raw pp_err) raw Fmt.bool memory_leak
+  | Analysed { raw; manifest_bugs } ->
+      Fmt.pf ft "@[<v 2>Analysed {@ @[raw =@ %a@];@ @[manifest_bugs =@ %a@]}@]"
+        (pp_raw pp_err) raw
+        (Fmt.Dump.list (Fmt.Dump.pair pp_err Call_trace.pp))
+        manifest_bugs
 
 module Var_graph = Graph.Make_in_place (Var)
 module Var_hashset = Var_graph.Node_set
@@ -76,6 +99,8 @@ let init_reachable_vars summary =
   in
   init_reachable
 
+let make ~args ~pre ~pc ~post ~ret () = After_exec { args; pre; pc; post; ret }
+
 (* TODO: for below: do we only need to compute reachability of variables of type Loc, since
    they are the only one that cannot be created out of the blue, and need provenance? e*)
 
@@ -83,12 +108,8 @@ let init_reachable_vars summary =
     from the arguments or the return value. It returns the updated summary, as
     well as a boolean capturing whether a memory leak was detected. A memory
     leak is detected if there was an unreachable block that was not freed. *)
-let prune summary =
-  let summary =
-    match summary with
-    | After_exec raw -> raw
-    | _ -> failwith "Summary.pruned: Already pruned or analysed summary"
-  in
+let prune (summary : (after_exec, 'err) t) : (pruned, 'err) t =
+  let (After_exec summary) = summary in
   L.trace (fun m -> m "Pruning summary %a" (pp_raw (Fmt.any "error")) summary);
   let module Var_graph = Graph.Make_in_place (Var) in
   let graph = Var_graph.with_node_capacity 0 in
@@ -129,11 +150,14 @@ let prune summary =
         Result.is_ok summary.ret && memory_leak;
     }
 
-let make ~args ~pre ~pc ~post ~ret () = After_exec { args; pre; pc; post; ret }
-
 (** Current criterion: a bug is manifest if its path condition is a consequence
     of the heap's and function arguments well-formedness conditions *)
-let rec analyse ~prog ~fid summary =
+let rec analyse : type a.
+    prog:Ail_tys.linked_program ->
+    fid:Ail_tys.sym ->
+    (a, 'err) t ->
+    (analysed, 'err) t =
+ fun ~prog ~fid summary ->
   match summary with
   | After_exec _ -> analyse ~prog ~fid (prune summary)
   | Analysed _ -> summary
@@ -205,7 +229,6 @@ let rec analyse ~prog ~fid summary =
           let manifest_bugs = if is_manifest then [ error ] else [] in
           Analysed { raw = summary; manifest_bugs })
 
-let manifest_bugs ~prog ~fid summary =
-  match analyse ~prog ~fid summary with
-  | Analysed { manifest_bugs; _ } -> manifest_bugs
-  | _ -> failwith "unreachable"
+let manifest_bugs (type a) ~prog ~fid (summary : (a, 'err) t) =
+  let (Analysed { manifest_bugs; _ }) = analyse ~prog ~fid summary in
+  manifest_bugs
