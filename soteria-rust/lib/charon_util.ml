@@ -13,6 +13,7 @@ type 'ptr rust_val =
   | Tuple of 'ptr rust_val list
   | Array of 'ptr rust_val list
   | Union of Types.field_id * 'ptr rust_val  (** field and value of union *)
+  | ConstFn of Expressions.fn_ptr
 
 let rec pp_rust_val pp_ptr fmt =
   let pp_rust_val = pp_rust_val pp_ptr in
@@ -32,6 +33,7 @@ let rec pp_rust_val pp_ptr fmt =
       Fmt.pf fmt "[%a]" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
   | Union (field_id, v) ->
       Fmt.pf fmt "Union(%a: %a)" Types.pp_field_id field_id pp_rust_val v
+  | ConstFn fn_ptr -> Fmt.pf fmt "FnPtr(%a)" Expressions.pp_fn_ptr fn_ptr
 
 let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv
 let unit_ = Tuple []
@@ -64,6 +66,8 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TRef (_, ty, RShared) -> Fmt.pf fmt "&%a" pp_ty ty
   | TRawPtr (ty, RMut) -> Fmt.pf fmt "*mut %a" pp_ty ty
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
+  | TArrow { binder_value = ins, out; _ } ->
+      Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
   | ty -> Fmt.pf fmt "%a" Types.pp_ty ty
 
 let as_ptr = function

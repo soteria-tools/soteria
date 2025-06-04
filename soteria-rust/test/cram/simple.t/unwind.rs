@@ -1,5 +1,5 @@
 fn main() {
-    let cond: bool = 1 + 1 == 2;
+    let cond: bool = rusteria::nondet();
     let result = std::panic::catch_unwind(|| if cond { 11 } else { panic!("oh no!") });
 
     if cond {

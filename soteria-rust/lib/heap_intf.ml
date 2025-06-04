@@ -193,4 +193,17 @@ module type S = sig
     fe:('e err * t -> ('b, 'e err * t, serialized list) Result.t) ->
     ('a, 'e err * t, serialized list) Result.t ->
     ('b, 'e err * t, serialized list) Result.t
+
+  val declare_fn :
+    Charon.Expressions.fn_ptr ->
+    t ->
+    (full_ptr * t, [> ] err * t, serialized list) Result.t
+
+  val lookup_fn :
+    full_ptr ->
+    t ->
+    ( Charon.Expressions.fn_ptr * t,
+      [> `MisalignedFnPointer ] err * t,
+      serialized list )
+    SYMEX.Result.t
 end

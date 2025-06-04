@@ -661,7 +661,11 @@ module Tree = struct
     match res with Ok (_, tree) -> return tree | _ -> vanish ()
 end
 
-type t = { root : Tree.t; bound : T.sint Typed.t option }
+type t = {
+  root : Tree.t;
+  bound : T.sint Typed.t option;
+      [@printer Fmt.(option ~none:(any "⊥") Typed.ppa)]
+}
 [@@deriving show { with_path = false }]
 
 let is_empty t = Option.is_none t.bound && Tree.is_empty t.root

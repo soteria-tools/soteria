@@ -8,6 +8,7 @@ type t =
   | `OutOfBounds
   | `UninitializedMemoryAccess
   | `UseAfterFree
+  | `MisalignedFnPointer
   | (* Arithmetic *)
     `DivisionByZero
   | `InvalidShift
@@ -53,6 +54,7 @@ let pp_err ft ((err : [< t ]), call_trace) =
     | `InvalidShift -> Fmt.string ft "Invalid binary shift"
     | `MemoryLeak -> Fmt.string ft "Memory leak"
     | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
+    | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
     | `MisalignedPointer -> Fmt.string ft "Misaligned pointer"
     | `NullDereference -> Fmt.string ft "Null dereference"
     | `OutOfBounds -> Fmt.string ft "Out of bounds"

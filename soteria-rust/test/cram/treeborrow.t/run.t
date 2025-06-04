@@ -5,7 +5,7 @@ Basic code, reference gets invalidated
 
 Simple tree borrow violation
   $ soteria-rust exec-main simple-fail.rs --clean
-  Error in 1 branch:
+  Error in 1 branch (out of 1):
   - Aliasing error
     Trace:
     • Triggering memory operation: ../cram/treeborrow.t/simple-fail.rs:8:4-11

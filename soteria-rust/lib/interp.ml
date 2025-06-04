@@ -76,14 +76,14 @@ module Make (Heap : Heap_intf.S) = struct
           (* Passed references must be protected! *)
           let** value, protected', st =
             match (value, ty) with
-            | Ptr ptr, (TRawPtr (subty, mut) | TRef (_, subty, mut)) ->
+            | Ptr ptr, TRef (_, subty, mut) ->
                 let++ ptr', st = Heap.protect ptr subty mut st in
                 (Ptr ptr', (ptr', subty) :: protected, st)
             | _ -> Result.ok (value, protected, st)
           in
           let** (), st = Heap.store ptr ty value st in
           (* Ensure all passed references are valid, even nested ones! *)
-          let ptr_tys = Layout.ptr_tys_in value ty in
+          let ptr_tys = Layout.ref_tys_in value ty in
           let++ (), st =
             Result.fold_list ptr_tys ~init:((), st)
               ~f:(fun ((), st) (ptr, ty) -> Heap.tb_load ptr ty st)
@@ -143,9 +143,9 @@ module Make (Heap : Heap_intf.S) = struct
             let** (), state = Heap.store ptr str_ty char_arr state in
             let++ (), state = Heap.store_str_global str ptr state in
             (Ptr ptr, state))
+    | CFnPtr fn_ptr -> Result.ok (ConstFn fn_ptr, state)
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     | CTraitConst _ -> not_impl "TODO: resolve const TraitConst"
-    | CFnPtr _ -> not_impl "TODO: resolve const FnPtr"
     | CRawMemory _ -> not_impl "TODO: resolve const RawMemory"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
@@ -163,7 +163,7 @@ module Make (Heap : Heap_intf.S) = struct
     | PlaceProjection (base, Deref) -> (
         let** ptr, state = resolve_place ~store state base in
         L.debug (fun f ->
-            f "Dereferencing ptr %a of %a" pp_full_ptr ptr Types.pp_ty base.ty);
+            f "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty);
         let** v, state = Heap.load ptr base.ty state in
         match v with
         | Ptr v ->
@@ -243,22 +243,29 @@ module Make (Heap : Heap_intf.S) = struct
           Result.ok ((ptr', Some slice_len), state))
         else Heap.error `OutOfBounds state
 
-  and resolve_function (fnop : GAst.fn_operand) :
-      ('err, 'fixes) fun_exec Rustsymex.t =
+  and resolve_function ~store (fnop : GAst.fn_operand) state :
+      (('err, 'fixes) fun_exec * state, 'err, 'fixes) Result.t =
     match fnop with
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
         let fundef = Crate.get_fun fid in
         L.info (fun g ->
             g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
-        match Std_funs.std_fun_eval fundef with
-        | Some fn -> Rustsymex.return fn
-        | None -> Rustsymex.return (exec_fun fundef))
+        match Std_funs.std_fun_eval fundef exec_fun with
+        | Some fn -> Result.ok (fn, state)
+        | None -> Result.ok (exec_fun fundef, state))
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
-        Rustsymex.return @@ Std_funs.builtin_fun_eval fn generics
-    | FnOpMove _ ->
-        Fmt.kstr not_impl "Move function call is not supported: %a"
-          GAst.pp_fn_operand fnop
+        let fn = Std_funs.builtin_fun_eval fn generics in
+        Result.ok (fn, state)
+    | FnOpMove place ->
+        let** fn_ptr_ptr, state = resolve_place ~store state place in
+        let** fn_ptr, state =
+          Heap.load ~is_move:true fn_ptr_ptr place.ty state
+        in
+        let fn_ptr = as_ptr fn_ptr in
+        let** fn, state = Heap.lookup_fn fn_ptr state in
+        let fnop : GAst.fn_operand = FnOpRegular fn in
+        resolve_function ~store fnop state
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
   and resolve_global (g : Types.global_decl_id) state =
@@ -273,7 +280,7 @@ module Make (Heap : Heap_intf.S) = struct
             g "Resolved global init call to %a" Crate.pp_name
               fundef.item_meta.name);
         let global_fn =
-          match Std_funs.std_fun_eval fundef with
+          match Std_funs.std_fun_eval fundef exec_fun with
           | Some fn -> fn
           | None -> exec_fun fundef
         in
@@ -411,9 +418,14 @@ module Make (Heap : Heap_intf.S) = struct
             let ptr, _ = as_ptr v in
             let size = Typed.int @@ int_of_const_generic size in
             Result.ok (Ptr (ptr, Some size), state)
-        | Cast (CastFnPtr _ as kind) ->
-            Fmt.kstr not_impl "Unsupported cast kind: %a"
-              Expressions.pp_cast_kind kind)
+        | Cast (CastFnPtr (_from, _to)) ->
+            let* fn_ptr =
+              match v with
+              | ConstFn fn_ptr -> return fn_ptr
+              | _ -> not_impl "Invalid argument to CastFnPtr"
+            in
+            let++ ptr, state = Heap.declare_fn fn_ptr state in
+            (Ptr ptr, state))
     | BinaryOp (op, e1, e2) -> (
         let** v1, state = eval_operand state e1 in
         let** v2, state = eval_operand state e2 in
@@ -745,7 +757,7 @@ module Make (Heap : Heap_intf.S) = struct
     let@ () = with_loc ~loc in
     match term with
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
-        let* exec_fun = resolve_function func in
+        let** exec_fun, state = resolve_function ~store func state in
         let** args, state = eval_operand_list ~store state args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
@@ -772,7 +784,7 @@ module Make (Heap : Heap_intf.S) = struct
           of_opt_not_impl ~msg:"Return value unset, but returned" ptr
         in
         let** value, state = Heap.load ptr ty state in
-        let ptr_tys = Layout.ptr_tys_in value ty in
+        let ptr_tys = Layout.ref_tys_in value ty in
         let++ (), state =
           Result.fold_list ptr_tys ~init:((), state)
             ~f:(fun ((), st) (ptr, ty) -> Heap.tb_load ptr ty st)
