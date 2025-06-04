@@ -24,6 +24,7 @@
   printbox-text
   tsort
   progress
+  grace
   dune-site)
  (flags :standard -open Soteria_std -open Soteria_c_values)
  (preprocess
