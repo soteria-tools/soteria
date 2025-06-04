@@ -826,4 +826,36 @@ module M (Heap : Heap_intf.S) = struct
           else
             Heap.error (`StdErr "float_to_int_unchecked out of int range") state
     | _ -> not_impl "Unexpected arguments for float_to_int_unchecked"
+
+  let catch_unwind exec_fun ~args ~state =
+    let[@inline] get_fn ptr state =
+      let++ fn_ptr, state = Heap.lookup_fn ptr state in
+      match fn_ptr.func with
+      | FunId (FRegular fid) -> (Crate.get_fun fid, state)
+      | TraitMethod (_, _, fid) -> (Crate.get_fun fid, state)
+      | FunId (FBuiltin _) -> failwith "Can't have function pointer to builtin"
+    in
+    let try_fn_ptr, data_ptr, catch_fn_ptr =
+      match args with
+      | [ Ptr try_fn_ptr; Ptr data_ptr; Ptr catch_fn_ptr ] ->
+          (try_fn_ptr, data_ptr, catch_fn_ptr)
+      | _ -> failwith "Unexpected arguments to catch_unwind"
+    in
+    let** try_fn, state = get_fn try_fn_ptr state in
+    let** catch_fn, state = get_fn catch_fn_ptr state in
+    let try_fn_ret = exec_fun ~args:[ Ptr data_ptr ] ~state try_fn in
+    Heap.unwind_with try_fn_ret
+      ~f:(fun (_, state) -> Result.ok (Base 0s, state))
+      ~fe:(fun (_, state) ->
+        let args = [ Ptr data_ptr; Ptr (Sptr.null_ptr, None) ] in
+        let catch_fn_ret = exec_fun ~args ~state catch_fn in
+        Heap.unwind_with catch_fn_ret
+          ~f:(fun (_, state) -> Result.ok (Base 1s, state))
+          ~fe:(fun (_, state) ->
+            Heap.error (`StdErr "catch_unwind unwinded in catch") state))
+
+  let fixme_try_cleanup ~args:_ ~state =
+    (* FIXME: this is extremely wrong !! we need Charon to stop translating boxes
+       weirdly and this should go away, for now this at least means catch_unwind works. *)
+    Result.ok (Ptr (Sptr.null_ptr, None), state)
 end

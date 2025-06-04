@@ -33,7 +33,7 @@ Test #[kani::should_panic]
 
 Test kani::assert
   $ soteria-rust exec-main assert.rs --clean --kani
-  Error in 4 branches:
+  Error in 4 branches (out of 8):
   - Failed assertion: Expected true!
     Trace:
     • Call trace: ../cram/kani.t/assert.rs:2:0-5:1

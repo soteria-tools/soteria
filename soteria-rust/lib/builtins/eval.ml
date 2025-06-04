@@ -28,6 +28,7 @@ module M (Heap : Heap_intf.S) = struct
     | ByteSwap
     | BlackBox
     | BoxIntoRaw
+    | CatchUnwind
     | Checked of Expressions.binop
     | CompareBytes
     | Copy of { nonoverlapping : bool }
@@ -35,6 +36,7 @@ module M (Heap : Heap_intf.S) = struct
     | Ctpop
     | DiscriminantValue
     | ExactDiv
+    | FixmeTryCleanup
     | FloatFast of Expressions.binop
     | FloatIs of fpclass
     | FloatIsFinite
@@ -141,6 +143,8 @@ module M (Heap : Heap_intf.S) = struct
       ("core::ptr::mut_ptr::{@T}::byte_sub", PtrByteOp Sub);
       ("core::ptr::mut_ptr::{@T}::offset", PtrOp Add);
       ("core::ptr::mut_ptr::{@T}::sub", PtrOp Sub);
+      (* This is super super wrong but Charon has broken Boxes :/ *)
+      ("std::panicking::try::cleanup", FixmeTryCleanup);
       (* Intrinsics *)
       ("core::intrinsics::abort", PanicSimple);
       ("core::intrinsics::add_with_overflow", Checked Add);
@@ -152,6 +156,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::assume", Assume);
       ("core::intrinsics::black_box", BlackBox);
       ("core::intrinsics::bswap", ByteSwap);
+      ("core::intrinsics::catch_unwind", CatchUnwind);
       ("core::intrinsics::ceilf16", FloatRounding Ceil);
       ("core::intrinsics::ceilf32", FloatRounding Ceil);
       ("core::intrinsics::ceilf64", FloatRounding Ceil);
@@ -246,7 +251,7 @@ module M (Heap : Heap_intf.S) = struct
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
 
-  let std_fun_eval (f : UllbcAst.fun_decl) =
+  let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
     let open Std in
     let open Rusteria in
     let open Miri in
@@ -305,6 +310,7 @@ module M (Heap : Heap_intf.S) = struct
          | ByteSwap -> byte_swap f.signature
          | BlackBox -> black_box
          | BoxIntoRaw -> box_into_raw
+         | CatchUnwind -> catch_unwind fun_exec
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes
          | Copy { nonoverlapping } -> copy_fn nonoverlapping f.signature
@@ -312,6 +318,7 @@ module M (Heap : Heap_intf.S) = struct
          | Ctpop -> ctpop f.signature
          | DiscriminantValue -> discriminant_value f.signature
          | ExactDiv -> exact_div f.signature
+         | FixmeTryCleanup -> fixme_try_cleanup
          | FloatFast bop -> float_fast bop
          | FloatIs fc -> float_is fc
          | FloatIsFinite -> float_is_finite
