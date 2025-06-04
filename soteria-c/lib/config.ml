@@ -10,8 +10,6 @@ type t = {
   no_ignore_duplicate_symbols : bool; [@default false]
   parse_only : bool; [@default false]
   dump_summaries_file : string option; [@default None]
-  no_progress_bar : bool; [@default false]
-      (* TODO: Is there a way to detect this automatically? I know Fmt_tty does something about setup_colors... *)
 }
 [@@deriving make]
 

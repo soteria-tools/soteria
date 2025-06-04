@@ -310,7 +310,7 @@ let analyse_summaries ~prog results =
     |> Iter.fold ( + ) 0
   in
   let open Syntaxes.List in
-  let@ () = My_progress.run ~msg:"Analysing summaries" ~total in
+  let@ () = My_progress.run ~msg:"Analysing summaries " ~total in
   let+ fid, summaries = results in
   let results =
     let+ summary = summaries in

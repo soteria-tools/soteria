@@ -1,4 +1,4 @@
-  $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --no-progress-bar --dump-summaries "out.summaries" && cat out.summaries
+  $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   Summaries for f_485:
     Analysed {
       raw =
@@ -26,7 +26,7 @@
       manifest_bugs = []}
   
 
-  $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --no-progress-bar --dump-summaries "out.summaries" && cat out.summaries
+  $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   Function test_leak_495 has the following bugs:
     Memory leak with trace [(manifest.c:26:1-34:2 (cursor: 26:5 - 26:14), )]
   Function test_np_uninit_489 has the following bugs:
@@ -163,7 +163,7 @@
   
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
-  $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --no-progress-bar --dump-summaries "out.summaries" && cat out.summaries
+  $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   Summaries for test_486:
     Analysed {
       raw =
