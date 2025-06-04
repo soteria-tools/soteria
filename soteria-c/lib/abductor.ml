@@ -49,10 +49,24 @@ let generate_all_summaries ~functions_to_analyse prog =
     | None -> fun _ -> true
     | Some l -> fun fid -> List.exists (Ail_helpers.sym_is_id fid) l
   in
-  ListLabels.filter_map order ~f:(fun fid ->
+  let count = ref 0 in
+  let to_analyse =
+    List.filter
+      (fun f ->
+        should_analyse f
+        &&
+        (* Count how many function we should analyse *)
+        (incr count;
+         true))
+      order
+  in
+  let@ () = My_progress.run ~msg:"Generating summaries" ~total:!count in
+  ListLabels.filter_map to_analyse ~f:(fun fid ->
       let open Syntaxes.Option in
-      if should_analyse fid then
+      let res =
         let+ fundef = Ail_helpers.find_fun_def ~prog fid in
         let summaries = generate_summaries_for ~prog fundef in
         (fid, summaries)
-      else None)
+      in
+      My_progress.signal_progress 1;
+      res)

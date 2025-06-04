@@ -34,9 +34,16 @@ let[@inline] logger () = Lazy.force logger
 
 let write_string str =
   let logger = logger () in
-  Out_channel.output_string logger.oc str;
-  Out_channel.output_char logger.oc '\n';
-  Out_channel.flush logger.oc
+  let do_ () =
+    Out_channel.output_string logger.oc str;
+    Out_channel.output_char logger.oc '\n';
+    Out_channel.flush logger.oc
+  in
+  (* We could avoid the below by defining loggers à la Logs,
+     so that interject would be part of a given logger. *)
+  match (Config.get ()).kind with
+  | Html -> do_ ()
+  | Stderr -> !Config.interject do_
 
 let incr_depth_counter () =
   let logger = logger () in

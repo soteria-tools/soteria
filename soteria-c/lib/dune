@@ -23,6 +23,7 @@
   yojson
   printbox-text
   tsort
+  progress
   dune-site)
  (flags :standard -open Soteria_std -open Soteria_c_values)
  (preprocess

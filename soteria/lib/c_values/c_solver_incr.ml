@@ -170,7 +170,7 @@ let sat solver =
       | Sat -> Sat
       | Unsat -> Unsat
       | Unknown ->
-          L.warn (fun m -> m "Solver returned unknown");
+          L.info (fun m -> m "Solver returned unknown");
           Unknown)
 
 let as_values solver = Solver_state.to_value_list solver.state

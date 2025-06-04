@@ -2,7 +2,11 @@ open Syntaxes.FunctionWrap
 module T = Typed.T
 module Var = Soteria_symex.Var
 
-type 'err t = {
+type after_exec = |
+type pruned = |
+type analysed = |
+
+type 'err raw = {
   args : T.cval Typed.t list;
       (** List of arguments values, corresponding to the formal arguments in
           order. Really a form of [(x == a0) * (y == a1)] *)
@@ -11,13 +15,40 @@ type 'err t = {
       (** Path condition. Whether it is in the post or in the pre, it doesn't
           matter for UX. *)
   post : State.serialized;  (** Post condition as a serialized heap *)
-  ret : (T.cval Typed.t, 'err) result;
+  ret : (T.cval Typed.t, 'err * Call_trace.t) result;
       (** Return value. If `ok` then it is the C value that the function
           returned, if `err` then it is a description of the bug exhibitied by
           the code *)
-  memory_leak : bool;
 }
 [@@deriving show { with_path = false }]
+
+type (_, 'err) t =
+  | After_exec : 'err raw -> (after_exec, 'err) t
+  | Pruned : { raw : 'err raw; memory_leak : bool } -> (pruned, 'err) t
+  | Analysed : {
+      raw : 'err raw;
+      manifest_bugs : ('err * Call_trace.t) list;
+    }
+      -> (analysed, 'err) t
+(* [@@deriving show { with_path = false }] *)
+
+let pp : type a.
+    (Format.formatter -> 'err -> unit) ->
+    Format.formatter ->
+    (a, 'err) t ->
+    unit =
+ fun pp_err ft summary ->
+  match summary with
+  | After_exec raw ->
+      Fmt.pf ft "@[<2>After_exec@ %a@]" (Fmt.parens (pp_raw pp_err)) raw
+  | Pruned { raw; memory_leak } ->
+      Fmt.pf ft "@[<v 2>Pruned {@ @[raw =@ %a@];@ @[memory_leak =@ %a@]}@]"
+        (pp_raw pp_err) raw Fmt.bool memory_leak
+  | Analysed { raw; manifest_bugs } ->
+      Fmt.pf ft "@[<v 2>Analysed {@ @[raw =@ %a@];@ @[manifest_bugs =@ %a@]}@]"
+        (pp_raw pp_err) raw
+        (Fmt.Dump.list (Fmt.Dump.pair pp_err Call_trace.pp))
+        manifest_bugs
 
 module Var_graph = Graph.Make_in_place (Var)
 module Var_hashset = Var_graph.Node_set
@@ -68,6 +99,8 @@ let init_reachable_vars summary =
   in
   init_reachable
 
+let make ~args ~pre ~pc ~post ~ret () = After_exec { args; pre; pc; post; ret }
+
 (* TODO: for below: do we only need to compute reachability of variables of type Loc, since
    they are the only one that cannot be created out of the blue, and need provenance? e*)
 
@@ -75,8 +108,9 @@ let init_reachable_vars summary =
     from the arguments or the return value. It returns the updated summary, as
     well as a boolean capturing whether a memory leak was detected. A memory
     leak is detected if there was an unreachable block that was not freed. *)
-let pruned summary =
-  L.trace (fun m -> m "Pruning summary %a" (pp (Fmt.any "error")) summary);
+let prune (summary : (after_exec, 'err) t) : (pruned, 'err) t =
+  let (After_exec summary) = summary in
+  L.trace (fun m -> m "Pruning summary %a" (pp_raw (Fmt.any "error")) summary);
   let module Var_graph = Graph.Make_in_place (Var) in
   let graph = Var_graph.with_node_capacity 0 in
   let init_reachable = init_reachable_vars summary in
@@ -108,86 +142,93 @@ let pruned summary =
   (* We can now filter the summary to keep only the reachable values *)
   let new_pc = filter_pc reachable summary.pc in
   let new_post, memory_leak = filter_serialized_state reachable summary.post in
-  {
-    summary with
-    pc = new_pc;
-    post = new_post;
-    memory_leak =
-      (* Memory leaks only make sense for functions that terminate successfully *)
-      Result.is_ok summary.ret && (summary.memory_leak || memory_leak);
-  }
-
-let make ~args ~pre ~pc ~post ~ret () =
-  pruned { args; pre; pc; post; ret; memory_leak = false }
+  Pruned
+    {
+      raw = { summary with pc = new_pc; post = new_post };
+      memory_leak =
+        (* Memory leaks only make sense for functions that terminate successfully *)
+        Result.is_ok summary.ret && memory_leak;
+    }
 
 (** Current criterion: a bug is manifest if its path condition is a consequence
     of the heap's and function arguments well-formedness conditions *)
-let manifest_bug ~arg_tys summary =
-  match summary.ret with
-  | Ok _ -> None
-  | Error error ->
-      let module Subst = Soteria_symex.Substs.Subst in
-      let module From_iter = Subst.From_iter (Csymex) in
-      let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
-      let iter_post = State.iter_vars_serialized summary.post in
-      let iter_args f =
-        List.iter (fun cval -> Typed.iter_vars cval f) summary.args
+let rec analyse : type a.
+    prog:Ail_tys.linked_program ->
+    fid:Ail_tys.sym ->
+    (a, 'err) t ->
+    (analysed, 'err) t =
+ fun ~prog ~fid summary ->
+  match summary with
+  | After_exec _ -> analyse ~prog ~fid (prune summary)
+  | Analysed _ -> summary
+  | Pruned { raw = summary; memory_leak } -> (
+      let@ () =
+        Soteria_logs.Logs.with_section
+          ("Analysing a summary for " ^ Cerb_frontend.Symbol.show_symbol fid)
       in
-      let process =
-        let open Csymex.Syntax in
-        let* subst =
-          From_iter.from_iter
-            (Iter.append iter_pc (Iter.append iter_post iter_args))
-        in
-        let subst = Subst.to_fn subst in
-        let args = List.map (Typed.subst subst) summary.args in
-        let constrs =
-          List.map2
-            (fun arg ty ->
-              let constr = Option.get (Layout.constraints ty) in
-              constr arg)
-            args arg_tys
-        in
-        let constrs = List.concat constrs in
-        let* () = Csymex.assume constrs in
-        let serialized_heap = State.subst_serialized subst summary.post in
-        (* We don't need the produced heap, just its wf condition *)
-        (* We might want to use another symex monad, à grisette,
+      L.debug (fun m ->
+          m "Analysing a summary for %s@\n%a"
+            (Cerb_frontend.Symbol.show_symbol fid)
+            (pp_raw (Fmt.any "error"))
+            summary);
+      let arg_tys = Option.get (Ail_helpers.get_param_tys ~prog fid) in
+      let loc =
+        Ail_helpers.find_fun_loc ~prog fid
+        |> Option.value ~default:Cerb_location.unknown
+      in
+      let manifest_leak =
+        if memory_leak then [ (`Memory_leak, Call_trace.singleton ~loc ()) ]
+        else []
+      in
+      match summary.ret with
+      | Ok _ -> Analysed { raw = summary; manifest_bugs = manifest_leak }
+      | Error error ->
+          let module Subst = Soteria_symex.Substs.Subst in
+          let module From_iter = Subst.From_iter (Csymex) in
+          let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
+          let iter_post = State.iter_vars_serialized summary.post in
+          let iter_args f =
+            List.iter (fun cval -> Typed.iter_vars cval f) summary.args
+          in
+          let process =
+            let open Csymex.Syntax in
+            let* subst =
+              From_iter.from_iter
+                (Iter.append iter_pc (Iter.append iter_post iter_args))
+            in
+            let subst = Subst.to_fn subst in
+            let args = List.map (Typed.subst subst) summary.args in
+            let constrs =
+              List.map2
+                (fun arg ty ->
+                  let constr = Option.get (Layout.constraints ty) in
+                  constr arg)
+                args arg_tys
+            in
+            let constrs = List.concat constrs in
+            let* () = Csymex.assume constrs in
+            let serialized_heap = State.subst_serialized subst summary.post in
+            (* We don't need the produced heap, just its wf condition *)
+            (* We might want to use another symex monad, à grisette,
            that produces the condition as a writer monad in an \/ or something *)
-        let* _heap = State.produce serialized_heap State.empty in
-        let pc = List.map (Typed.subst subst) summary.pc in
-        L.trace (fun m ->
-            m
-              "Produced heap, about to check if path condition holds in every \
-               branch");
-        Csymex.assert_ox (Typed.conj pc)
-      in
-      let result = Csymex.run process in
-      L.trace (fun m ->
-          m "Results: %a" (Fmt.Dump.list (Fmt.pair Fmt.bool Fmt.nop)) result);
-      (* The bug is manifest if the assert passed in every branch. *)
-      let is_manifest =
-        List.for_all (function true, _ -> true | _ -> false) result
-      in
-      if is_manifest then Some error else None
+            let* _heap = State.produce serialized_heap State.empty in
+            let pc = List.map (Typed.subst subst) summary.pc in
+            L.trace (fun m ->
+                m
+                  "Produced heap, about to check if path condition holds in \
+                   every branch");
+            Csymex.assert_ox (Typed.conj pc)
+          in
+          let result = Csymex.run process in
+          L.trace (fun m ->
+              m "Results: %a" (Fmt.Dump.list (Fmt.pair Fmt.bool Fmt.nop)) result);
+          (* The bug is manifest if the assert passed in every branch. *)
+          let is_manifest =
+            List.for_all (function true, _ -> true | _ -> false) result
+          in
+          let manifest_bugs = if is_manifest then [ error ] else [] in
+          Analysed { raw = summary; manifest_bugs })
 
-let analyse_summary ~prog ~fid (summary : 'err t) =
-  let@ () =
-    Soteria_logs.Logs.with_section
-      ("Analysing a summary for " ^ Cerb_frontend.Symbol.show_symbol fid)
-  in
-  L.debug (fun m ->
-      m "Analysing a summary for %s@\n%a"
-        (Cerb_frontend.Symbol.show_symbol fid)
-        (pp (Fmt.any "error"))
-        summary);
-  let arg_tys = Option.get (Ail_helpers.get_param_tys ~prog fid) in
-  let manifest_bugs =
-    match manifest_bug ~arg_tys summary with None -> [] | Some bug -> [ bug ]
-  in
-  if summary.memory_leak then
-    let loc = Ail_helpers.find_fun_loc ~prog fid in
-    let loc = Option.value ~default:Cerb_location.unknown loc in
-    (`Memory_leak, Call_trace.singleton ~loc ())
-    :: manifest_bugs
-  else manifest_bugs
+let manifest_bugs (type a) ~prog ~fid (summary : (a, 'err) t) =
+  let (Analysed { manifest_bugs; _ }) = analyse ~prog ~fid summary in
+  manifest_bugs

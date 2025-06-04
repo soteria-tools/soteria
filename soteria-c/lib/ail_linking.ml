@@ -222,7 +222,7 @@ let link_main opt_m1 opt_m2 =
       if !Config.current.no_ignore_duplicate_symbols then
         Error "linking: multiple main functions"
       else (
-        L.warn (fun m -> m "Detecting several main functions. ");
+        L.info (fun m -> m "Detecting several main functions. ");
         Ok m1)
   | (Some _ as m), None | None, (Some _ as m) -> Ok m
   | None, None -> Ok None
