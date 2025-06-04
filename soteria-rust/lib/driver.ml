@@ -78,6 +78,7 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
              in
              raise (ExecutionError msg)
        in
+       let nbranches = List.length branches in
        let branches =
          if not entry.expect_error then branches
          else
@@ -110,12 +111,17 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
            |> List.filter_map (function
                 | Compo_res.Ok _, pcs -> Some pcs
                 | _ -> None)
-           |> Result.ok
-         else Result.error errors
+           |> fun brs -> (Ok brs, nbranches)
+         else (Result.error errors, nbranches)
   in
-  List.join_results outcomes
-  |> Result.map List.flatten
-  |> Result.map_error List.flatten
+  let outcomes, nbranches = List.split outcomes in
+  let outcomes =
+    List.join_results outcomes
+    |> Result.map List.flatten
+    |> Result.map_error List.flatten
+  in
+  let nbranches = List.fold_left ( + ) 0 nbranches in
+  (outcomes, nbranches)
 
 let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
     kani miri file_name =
@@ -128,7 +134,7 @@ let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
         [ (true, Plugin.default); (kani, Plugin.kani); (miri, Plugin.miri) ]
     in
     let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
-    let res = exec_main ~ignore_leaks ~plugin crate in
+    let res, ntotal = exec_main ~ignore_leaks ~plugin crate in
     match res with
     | Ok res ->
         let open Fmt in
@@ -146,8 +152,9 @@ let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
         let open Fmt in
         let pp_err ft e = pf ft "- %a" Error.pp_err e in
         let n = List.length res in
-        Fmt.pr "Error in %i branch%s:@\n%a\n" n
+        Fmt.pr "Error in %i branch%s (out of %d):@\n%a\n" n
           (if n = 1 then "" else "es")
+          ntotal
           (list ~sep:(any "@\n@\n") pp_err)
           res;
         exit 1
