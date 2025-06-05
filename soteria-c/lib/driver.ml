@@ -325,10 +325,6 @@ let generate_summaries ~functions_to_analyse prog =
                let diag = Error.Grace.to_diagnostic ~fid ~call_trace err in
                Fmt.pr "%a@\n@?" (Grace_ansi_renderer.pp_diagnostic ()) diag)
              (List.sort_uniq Stdlib.compare bugs))
-(* Fmt.pr "@[<v 2>Function %a has the following bugs:@ %a@]@\n"
-             Fmt_ail.pp_sym fid
-             (Fmt.list ~sep:Fmt.sp pp_err_and_call_trace)
-             (List.sort_uniq Stdlib.compare bugs)) *)
 
 (* Entry point function *)
 let lsp config () =
