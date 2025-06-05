@@ -27,7 +27,6 @@
       manifest_bugs = []}
   
 
-<<<<<<< HEAD
   $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   warning: Memory leak in test_leak
