@@ -323,7 +323,7 @@ let generate_summaries ~functions_to_analyse prog =
            List.iter
              (fun (err, call_trace) ->
                let diag = Error.Grace.to_diagnostic ~fid ~call_trace err in
-               Fmt.pr "%a@\n@?" (Grace_ansi_renderer.pp_diagnostic ()) diag)
+               Fmt.pr "%a@\n@\n@?" (Grace_ansi_renderer.pp_diagnostic ()) diag)
              (List.sort_uniq Stdlib.compare bugs))
 
 (* Entry point function *)

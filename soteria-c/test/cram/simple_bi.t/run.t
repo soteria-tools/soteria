@@ -43,6 +43,7 @@
    34 │ │  }
       │ ╰──^ 
    35 │    
+  
   error: NullDereference in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -54,6 +55,7 @@
    11 │    int *x = (int *)malloc(sizeof(int));
    12 │    load(x);
       │    ------- Called from here
+  
   error: UninitializedMemoryAccess in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -65,6 +67,7 @@
    11 │    int *x = (int *)malloc(sizeof(int));
    12 │    load(x);
       │    ------- Called from here
+  
   error: UninitializedMemoryAccess in test_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -85,10 +88,12 @@
    20 │      return 1;
    21 │    load(x);
       │    ------- Called from here
+  
   error: NullDereference in test_np
       ┌─ manifest.c:51:3
    51 │    *x = 12;
       │    ^^^^^^^ Triggering memory operation
+  
   Summaries for load_487:
     Analysed {
       raw =
