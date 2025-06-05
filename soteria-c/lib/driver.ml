@@ -176,7 +176,7 @@ let is_main (def : Cabs.function_definition) =
   | _ -> false
 
 let pp_err_and_call_trace ft (err, call_trace) =
-  Fmt.pf ft "@[<h 2>%a with trace %a@]" Error.pp err Call_trace.pp call_trace
+  Fmt.pf ft "@[%a with trace@ %a@]" Error.pp err Call_trace.pp call_trace
 
 let resolve_entry_point (linked : Ail_tys.linked_program) =
   let open Syntaxes.Result in

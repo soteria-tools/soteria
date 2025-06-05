@@ -17,18 +17,19 @@ type t =
 type severity = Error | Warning
 
 let pp ft = function
-  | `NullDereference -> Fmt.string ft "NullDereference"
-  | `OutOfBounds -> Fmt.string ft "OutOfBounds"
-  | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
-  | `UseAfterFree -> Fmt.string ft "UseAfterFree"
-  | `DivisionByZero -> Fmt.string ft "DivisionByZero"
-  | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
-  | `LinkError s -> Fmt.pf ft "LinkError: %s" s
-  | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
-  | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
-  | `InvalidFunctionPtr -> Fmt.string ft "InvalidFunctionPtr"
-  | `DoubleFree -> Fmt.string ft "DoubleFree"
-  | `InvalidFree -> Fmt.string ft "InvalidFree"
+  | `NullDereference -> Fmt.string ft "Null pointer dereference"
+  | `OutOfBounds -> Fmt.string ft "Buffer overflow or underflow"
+  | `UninitializedMemoryAccess -> Fmt.string ft "Accessing uninitialized memory"
+  | `UseAfterFree -> Fmt.string ft "Use after free"
+  | `DivisionByZero -> Fmt.string ft "Division by zero"
+  | `ParsingError s -> Fmt.pf ft "Parsing Error: %s" s
+  | `LinkError s -> Fmt.pf ft "Linker Error: %s" s
+  | `UBPointerComparison -> Fmt.string ft "Invalid pointer comparison (UB)"
+  | `UBPointerArithmetic -> Fmt.string ft "Invalid pointer arithmetic (UB)"
+  | `InvalidFunctionPtr -> Fmt.string ft "Using invalid function pointer"
+  | `DoubleFree -> Fmt.string ft "Freeing a pointer twice (double free)"
+  | `InvalidFree ->
+      Fmt.string ft "Freeing a pointer that was not obtained from malloc"
   | `Memory_leak -> Fmt.string ft "Memory leak"
   | `FailedAssert -> Fmt.string ft "Failed assertion"
 

@@ -9,7 +9,7 @@
   
 We avoid printing the backtrace in the test output to reduce flakiness of the test
   $ OCAMLRUNPARAM="b=0" soteria-c gen-summaries file1.c file2.c -I . --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
-  LinkError: Duplicate external name duplicate_sym with trace []
+  Linker Error: Duplicate external name duplicate_sym with trace []
   soteria-c: internal error, uncaught exception:
              Failure("Failed to parse AIL")
              
