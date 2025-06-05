@@ -75,7 +75,9 @@ module Grace = struct
     | Loc_region (pos1, pos2, _) ->
         let file = Cerb_position.file pos1 in
         (* Could be optimised if indexes are in the same file,
-           but I don't think printing errors is what's going to take time. *)
+           but I don't think printing errors is what's going to take time.
+           Also, it shouldn't be required anyway, see https://github.com/johnyob/grace/issues/46
+        *)
         let idx1 = real_index file pos1 in
         let idx2 = real_index file pos2 in
         [ create ~source:(`File file) (bi idx1) (bi idx2) ]
@@ -83,8 +85,6 @@ module Grace = struct
         List.map
           (fun (pos1, pos2) ->
             let file = Cerb_position.file pos1 in
-            (* Could be optimised if indexes are in the same file,
-           but I don't think printing errors is what's going to take time. *)
             let idx1 = real_index file pos1 in
             let idx2 = real_index file pos2 in
             create ~source:(`File file) (bi idx1) (bi idx2))
