@@ -1,4 +1,5 @@
   $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  
   Summaries for f_485:
     Analysed {
       raw =
@@ -26,23 +27,69 @@
       manifest_bugs = []}
   
 
+<<<<<<< HEAD
   $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
-  Function test_leak_495 has the following bugs:
-    Memory leak with trace [(manifest.c:26:1-34:2 (cursor: 26:5 - 26:14), )]
-  Function test_np_uninit_489 has the following bugs:
-    NullDereference with trace [(manifest.c:12:3-10, Call trace);
-                                (manifest.c:6:10-12 (cursor: 6:10),
-                                 Triggering memory operation)]
-    UninitializedMemoryAccess with trace [(manifest.c:12:3-10, Call trace);
-                                          (manifest.c:6:10-12 (cursor: 6:10),
-                                           Triggering memory operation)]
-  Function test_uninit_492 has the following bugs:
-    UninitializedMemoryAccess with trace [(manifest.c:21:3-10, Call trace);
-                                          (manifest.c:6:10-12 (cursor: 6:10),
-                                           Triggering memory operation)]
-  Function test_np_501 has the following bugs:
-    NullDereference with trace [(manifest.c:51:3-10 (cursor: 51:6),
-                                 Triggering memory operation)]
+  
+  warning: Memory leak in test_leak
+      ┌─ manifest.c:26:1
+   25 │    
+   26 │ ╭  int test_leak()
+   27 │ │  {
+   28 │ │    int *x = (int *)malloc(sizeof(int));
+   29 │ │    if (!x)
+   30 │ │      return 1;
+   31 │ │    *x = 12;
+   32 │ │    load(x);
+   33 │ │    return 0;
+   34 │ │  }
+      │ ╰──^ 
+   35 │    
+  error: NullDereference in test_np_uninit
+      ┌─ manifest.c:6:10
+    6 │    return *x;
+      │           ^^ Triggering memory operation
+    7 │  }
+    8 │  
+    9 │  int test_np_uninit()
+   10 │  {
+   11 │    int *x = (int *)malloc(sizeof(int));
+   12 │    load(x);
+      │    ------- Called from here
+  error: UninitializedMemoryAccess in test_np_uninit
+      ┌─ manifest.c:6:10
+    6 │    return *x;
+      │           ^^ Triggering memory operation
+    7 │  }
+    8 │  
+    9 │  int test_np_uninit()
+   10 │  {
+   11 │    int *x = (int *)malloc(sizeof(int));
+   12 │    load(x);
+      │    ------- Called from here
+  error: UninitializedMemoryAccess in test_uninit
+      ┌─ manifest.c:6:10
+    6 │    return *x;
+      │           ^^ Triggering memory operation
+    7 │  }
+    8 │  
+    9 │  int test_np_uninit()
+   10 │  {
+   11 │    int *x = (int *)malloc(sizeof(int));
+   12 │    load(x);
+   13 │    return 0;
+   14 │  }
+   15 │  
+   16 │  int test_uninit()
+   17 │  {
+   18 │    int *x = (int *)malloc(sizeof(int));
+   19 │    if (!x)
+   20 │      return 1;
+   21 │    load(x);
+      │    ------- Called from here
+  error: NullDereference in test_np
+      ┌─ manifest.c:51:3
+   51 │    *x = 12;
+      │    ^^^^^^^ Triggering memory operation
   Summaries for load_487:
     Analysed {
       raw =
@@ -89,26 +136,26 @@
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (UninitializedMemoryAccess,
-                [(manifest.c:12:3-10, Call trace);
+                [(manifest.c:12:3-10, Called from here);
                  (manifest.c:6:10-12 (cursor: 6:10),
                   Triggering memory operation)]))
         };
       manifest_bugs =
       [(UninitializedMemoryAccess,
-        [(manifest.c:12:3-10, Call trace);
+        [(manifest.c:12:3-10, Called from here);
          (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (NullDereference,
-                [(manifest.c:12:3-10, Call trace);
+                [(manifest.c:12:3-10, Called from here);
                  (manifest.c:6:10-12 (cursor: 6:10),
                   Triggering memory operation)]))
         };
       manifest_bugs =
       [(NullDereference,
-        [(manifest.c:12:3-10, Call trace);
+        [(manifest.c:12:3-10, Called from here);
          (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
   
   Summaries for test_ok_498:
@@ -129,13 +176,13 @@
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (UninitializedMemoryAccess,
-                [(manifest.c:21:3-10, Call trace);
+                [(manifest.c:21:3-10, Called from here);
                  (manifest.c:6:10-12 (cursor: 6:10),
                   Triggering memory operation)]))
         };
       manifest_bugs =
       [(UninitializedMemoryAccess,
-        [(manifest.c:21:3-10, Call trace);
+        [(manifest.c:21:3-10, Called from here);
          (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
     Analysed {
       raw =
@@ -164,6 +211,7 @@
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  
   Summaries for test_486:
     Analysed {
       raw =

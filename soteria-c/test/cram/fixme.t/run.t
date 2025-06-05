@@ -1,4 +1,5 @@
   $ soteria-c gen-summaries global_local_eq.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  
   Summaries for main_487:
     Analysed {
       raw =
@@ -8,7 +9,7 @@
           globs = [(x_484, V|2|)] };
         ret =
         (Error (Failed assertion,
-                [(global_local_eq.c:8:3-23, Call trace);
+                [(global_local_eq.c:8:3-23, Called from here);
                  (global_local_eq.c:8:3-23, Triggering memory operation)]))
         };
       manifest_bugs = []}

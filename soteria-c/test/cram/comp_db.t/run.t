@@ -1,4 +1,5 @@
   $ soteria-c capture-db compilation_database.json --dump-summaries "out.summaries" && cat out.summaries
+  
   Summaries for test2_494:
     Analysed {
       raw =

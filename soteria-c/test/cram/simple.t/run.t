@@ -73,7 +73,8 @@ Checking that memcpy works correctly
 Checking that fuel gets exhausted properly
   $ soteria-c exec-main while_true.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
-    [Error: Failed assertion with trace [(while_true.c:10:5-18, Call trace);
+    [Error: Failed assertion with trace [(while_true.c:10:5-18,
+                                          Called from here);
                                          (while_true.c:10:5-18,
                                           Triggering memory operation)]]
   Executed 152 statements
