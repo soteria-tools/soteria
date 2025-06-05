@@ -175,24 +175,8 @@ let is_main (def : Cabs.function_definition) =
       String.equal name "main"
   | _ -> false
 
-let pp_err ft = function
-  | `NullDereference -> Fmt.string ft "NullDereference"
-  | `OutOfBounds -> Fmt.string ft "OutOfBounds"
-  | `UninitializedMemoryAccess -> Fmt.string ft "UninitializedMemoryAccess"
-  | `UseAfterFree -> Fmt.string ft "UseAfterFree"
-  | `DivisionByZero -> Fmt.string ft "DivisionByZero"
-  | `ParsingError s -> Fmt.pf ft "ParsingError: %s" s
-  | `LinkError s -> Fmt.pf ft "LinkError: %s" s
-  | `UBPointerComparison -> Fmt.string ft "UBPointerComparison"
-  | `UBPointerArithmetic -> Fmt.string ft "UBPointerArithmetic"
-  | `InvalidFunctionPtr -> Fmt.string ft "InvalidFunctionPtr"
-  | `DoubleFree -> Fmt.string ft "DoubleFree"
-  | `InvalidFree -> Fmt.string ft "InvalidFree"
-  | `Memory_leak -> Fmt.string ft "Memory leak"
-  | `FailedAssert -> Fmt.string ft "Failed assertion"
-
 let pp_err_and_call_trace ft (err, call_trace) =
-  Fmt.pf ft "@[<h 2>%a with trace %a@]" pp_err err Call_trace.pp call_trace
+  Fmt.pf ft "@[%a with trace@ %a@]" Error.pp err Call_trace.pp call_trace
 
 let resolve_entry_point (linked : Ail_tys.linked_program) =
   let open Syntaxes.Result in
@@ -291,8 +275,7 @@ let dump_summaries ~prog results =
   | None -> ()
   | Some file ->
       let pp_summary ~fid ft summary =
-        Fmt.pf ft "@[<v 2>%a@]" (Summary.pp pp_err)
-          (Summary.analyse ~prog ~fid summary)
+        Fmt.pf ft "@[<v 2>%a@]" Summary.pp (Summary.analyse ~prog ~fid summary)
       in
       let@ oc = Channels.with_out_file file in
       let ft = Format.formatter_of_out_channel oc in
@@ -330,15 +313,17 @@ let generate_summaries ~functions_to_analyse prog =
   Csymex.dump_unsupported ();
   let results = analyse_summaries ~prog results in
   dump_summaries ~prog results;
+  Fmt.pr "@\n@?";
   results
   |> List.iter (fun (fid, summaries) ->
          let bugs =
            List.concat_map (Summary.manifest_bugs ~prog ~fid) summaries
          in
          if not (List.is_empty bugs) then
-           Fmt.pr "@[<v 2>Function %a has the following bugs:@ %a@]@\n"
-             Fmt_ail.pp_sym fid
-             (Fmt.list ~sep:Fmt.sp pp_err_and_call_trace)
+           List.iter
+             (fun (err, call_trace) ->
+               let diag = Error.Grace.to_diagnostic ~fid ~call_trace err in
+               Fmt.pr "%a@\n@\n@?" (Grace_ansi_renderer.pp_diagnostic ()) diag)
              (List.sort_uniq Stdlib.compare bugs))
 
 (* Entry point function *)

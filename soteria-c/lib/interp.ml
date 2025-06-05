@@ -372,7 +372,7 @@ module Make (State : State_intf.S) = struct
         let++ v, state =
           let+- err = exec_fun ~prog ~args ~state in
           State.add_to_call_trace err
-            (Call_trace.make_element ~loc ~msg:"Call trace" ())
+            (Call_trace.make_element ~loc ~msg:"Called from here" ())
         in
         L.debug (fun m -> m "returned %a from %a" Typed.ppa v Fmt_ail.pp_expr f);
         (v, state)

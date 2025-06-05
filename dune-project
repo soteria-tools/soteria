@@ -63,6 +63,7 @@
   (shexp :build)
   eio_main
   progress
+  grace
   soteria
   cerberus-lib
   zarith

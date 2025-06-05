@@ -31,9 +31,9 @@
                Uninit {offset = 80; len = 48}; (Bound 128)]);
              (V|33|, Freed); (V|34|, Freed)];
             globs = [] });
-     Error: OutOfBounds with trace [(array_add.c:127:7-31, Call trace);
-                                    (array_add.c:79:3-33 (cursor: 79:24),
-                                     Triggering memory operation)];
+     Error: Buffer overflow or underflow with trace
+            [(array_add.c:127:7-31, Called from here);
+             (array_add.c:79:3-33 (cursor: 79:24), Triggering memory operation)];
      Ok: (1,
           { heap =
             [(V|1|, Freed);

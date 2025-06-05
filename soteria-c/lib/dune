@@ -24,6 +24,8 @@
   printbox-text
   tsort
   progress
+  grace
+  grace.ansi_renderer
   dune-site)
  (flags :standard -open Soteria_std -open Soteria_c_values)
  (preprocess

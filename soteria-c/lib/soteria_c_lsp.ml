@@ -19,28 +19,13 @@ let get_abort_diagnostics () =
   Lsp.Types.Diagnostic.create ~message:(`String msg) ~severity:Information
     ~range ~source:"soteria" ()
 
+let lift_severity (sev : Error.severity) : Lsp.Types.DiagnosticSeverity.t =
+  match sev with Error -> Error | Warning -> Warning
+
 let error_to_diagnostic_opt ~uri (err, call_trace) =
   let open Lsp.Types in
-  let open DiagnosticSeverity in
-  let severity, message =
-    (* When we hide non-bug things, some patterns will return None *)
-    match err with
-    | `NullDereference -> (Error, "Null Dereference")
-    | `OutOfBounds -> (Error, "Out of Bounds")
-    | `UninitializedMemoryAccess -> (Error, "Uninitialized Memory Access")
-    | `ParsingError s -> (Error, s)
-    | `UseAfterFree -> (Error, "Use After Free")
-    | `DivisionByZero -> (Error, "Division By Zero")
-    | `UBPointerComparison ->
-        (Error, "Undefined Behavior for Pointer Comparison")
-    | `UBPointerArithmetic ->
-        (Error, "Undefined Behavior for Pointer Arithmetic")
-    | `InvalidFree -> (Error, "Invalid Pointer passed to free")
-    | `Memory_leak -> (Warning, "Memory leak")
-    | `LinkError s -> (Error, Fmt.str "Link Error: %s" s)
-    | `FailedAssert -> (Error, "FailedAssert")
-    | `InvalidFunctionPtr -> (Error, "InvalidFunctionPtr")
-  in
+  let severity = lift_severity (Error.severity err) in
+  let message = (Fmt.to_to_string Error.pp) err in
   let parens_if_non_empty = function "" -> "" | s -> " (" ^ s ^ ")" in
   let range, relatedInformation, msg_addendum =
     match (call_trace : Call_trace.t) with

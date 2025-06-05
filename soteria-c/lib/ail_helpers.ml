@@ -15,6 +15,11 @@ let sym_is_id sym id =
   let open Cerb_frontend.Symbol in
   match sym with Symbol (_digest, _i, SD_Id id') -> id = id' | _ -> false
 
+let pp_sym_hum ft sym =
+  match sym with
+  | Cerb_frontend.Symbol.Symbol (_digest, _i, SD_Id id) -> Fmt.string ft id
+  | _ -> Symbol_std.pp ft sym
+
 let rec resolve_sym ~(prog : Ail_tys.linked_program) sym =
   match Pmap.lookup sym prog.symmap with
   | None -> sym
