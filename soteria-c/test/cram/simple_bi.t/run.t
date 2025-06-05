@@ -26,8 +26,8 @@
         ret = (Ok V|4|) };
       manifest_bugs = []}
   
-
-  $ soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+NO_COLOR=true is necessary to avoid test output changing in CI. For some reason, Grace doesn't prints a final caret at the end with color, and not without color.
+  $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   warning: Memory leak in test_leak
       ┌─ manifest.c:26:1
@@ -41,7 +41,7 @@
    32 │ │    load(x);
    33 │ │    return 0;
    34 │ │  }
-      │ ╰──^ 
+      │ ╰──
    35 │    
   
   error: Null pointer dereference in test_np_uninit
