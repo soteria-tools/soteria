@@ -1,4 +1,4 @@
-type solver_result = Sat | Unsat | Unknown
+type result = Sat | Unsat | Unknown
 
 module type Mutable_incremental = sig
   (** This module represents a solver state, it is fully imperative! *)
@@ -11,7 +11,7 @@ module type Mutable_incremental = sig
   (** simplified indicates if constraits were already simplified *)
   val add_constraints : t -> ?simplified:bool -> sbool_v list -> unit
 
-  val sat : t -> solver_result
+  val sat : t -> result
 
   (** Like [sat] but may return true for now even though the constraint isn't
       actually sat. Therefore batching the sat checks *)

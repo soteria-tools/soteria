@@ -3,10 +3,10 @@ open Syntaxes.FunctionWrap
 module L = Logs.L
 module List = ListLabels
 
-let is_sat (result : Solver.solver_result) =
+let is_sat (result : Solver.result) =
   match result with Sat -> true | Unsat | Unknown -> false
 
-let is_unsat (result : Solver.solver_result) =
+let is_unsat (result : Solver.result) =
   match result with Unsat -> true | Sat | Unknown -> false
 
 module type Config = sig
