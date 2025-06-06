@@ -1,7 +1,6 @@
 module Value = Typed
 module Var = Svalue.Var
 module L = Soteria_logs.Logs.L
-open Simple_smt
 
 module Var_counter = Var.Incr_counter_mut (struct
   let start_at = 0
@@ -69,7 +68,7 @@ type t = {
 
 let init () =
   let z3_exe = Z3_exe.init () in
-  ack_command z3_exe (Simple_smt.push 1);
+  Z3_exe.push z3_exe 1;
   {
     z3_exe;
     save_counter = Save_counter.init ();
@@ -81,13 +80,13 @@ let save solver =
   Var_counter.save solver.var_counter;
   Save_counter.save solver.save_counter;
   Solver_state.save solver.state;
-  ack_command solver.z3_exe (Simple_smt.push 1)
+  Z3_exe.push solver.z3_exe 1
 
 let backtrack_n solver n =
   Var_counter.backtrack_n solver.var_counter n;
   Solver_state.backtrack_n solver.state n;
   Save_counter.backtrack_n solver.save_counter n;
-  ack_command solver.z3_exe (Simple_smt.pop n)
+  Z3_exe.pop solver.z3_exe n
 
 (* Initialise and reset *)
 
@@ -98,18 +97,14 @@ let reset solver =
   Save_counter.reset solver.save_counter;
   Var_counter.reset solver.var_counter;
   Solver_state.reset solver.state;
-  ack_command solver.z3_exe (Simple_smt.pop (save_counter + 1));
+  (* We need to pop the initial push, so we go back to the state before the first push *)
+  Z3_exe.pop solver.z3_exe (save_counter + 1);
   (* Make sure the basic definitions are saved again *)
-  ack_command solver.z3_exe (Simple_smt.push 1)
-
-let declare_v v_id ty =
-  let v = Svalue.Var.to_string v_id in
-  declare v (Smtlib_encoding.sort_of_ty (Typed.untype_type ty))
+  Z3_exe.pop solver.z3_exe 1
 
 let fresh_var solver ty =
   let v_id = Var_counter.get_next solver.var_counter in
-  let c = declare_v v_id ty in
-  ack_command solver.z3_exe c;
+  Z3_exe.declare_var solver.z3_exe v_id ty;
   v_id
 
 (* We should factor simplifications out also... *)
@@ -145,10 +140,7 @@ let add_constraints solver ?(simplified = false) vs =
   iter @@ fun v ->
   let v = if simplified then v else simplify solver v in
   Solver_state.add_constraint solver.state v;
-  ack_command solver.z3_exe
-  @@ assume
-  @@ Smtlib_encoding.encode_value
-  @@ Typed.untyped v
+  Z3_exe.add_constraint solver.z3_exe (Typed.untyped v)
 
 let as_bool = Typed.as_bool
 
@@ -158,13 +150,7 @@ let sat solver =
   | Some true -> Soteria_symex.Solver.Sat
   | Some false -> Unsat
   | None -> (
-      let answer =
-        try check solver.z3_exe
-        with Simple_smt.UnexpectedSolverResponse s ->
-          L.error (fun m ->
-              m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
-          Unknown
-      in
+      let answer = Z3_exe.check_sat solver.z3_exe in
       match answer with
       | Sat -> Sat
       | Unsat -> Unsat

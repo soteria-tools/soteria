@@ -1,7 +1,6 @@
 module Value = Typed
 module Var = Svalue.Var
 module L = Soteria_logs.Logs.L
-open Simple_smt
 
 module Var_counter = Var.Incr_counter_mut (struct
   let start_at = 1
@@ -195,7 +194,7 @@ type t = {
 let init () =
   let z3_exe = Z3_exe.init () in
   (* Before every check-sat we pop then push again. *)
-  ack_command z3_exe (Simple_smt.push 2);
+  Z3_exe.push z3_exe 2;
   {
     z3_exe;
     save_counter = Save_counter.init ();
@@ -222,10 +221,6 @@ let reset solver =
   Save_counter.reset solver.save_counter;
   Declared_vars.reset solver.vars;
   Solver_state.reset solver.state
-
-let declare_v v_id ty =
-  let v = Svalue.Var.to_string v_id in
-  declare v (Smtlib_encoding.sort_of_ty ty)
 
 let fresh_var solver ty = Declared_vars.fresh solver.vars (Typed.untype_type ty)
 
@@ -276,7 +271,7 @@ let add_constraints solver ?(simplified = false) vs =
 
 let as_bool = Typed.as_bool
 
-let memo_sat_check_tbl : Simple_smt.result Hashtbl.Hint.t =
+let memo_sat_check_tbl : Soteria_symex.Solver.result Hashtbl.Hint.t =
   Hashtbl.Hint.create 1023
 
 let trivial_model_works to_check =
@@ -295,25 +290,21 @@ let trivial_model_works to_check =
 
 let check_sat_raw solver relevant_vars to_check =
   (* TODO: we shouldn't wait for ack for each command individually... *)
-  if trivial_model_works to_check then Sat
+  if trivial_model_works to_check then Soteria_symex.Solver.Sat
   else (
-    ack_command solver.z3_exe (Simple_smt.pop 1);
-    ack_command solver.z3_exe (Simple_smt.push 1);
+    Z3_exe.pop solver.z3_exe 1;
+    (* We need to reset the state, so we can push the new constraints *)
+    Z3_exe.push solver.z3_exe 1;
     (* Declare all relevant variables *)
     Var.Hashset.iter
       (fun v ->
         let ty = Declared_vars.get_ty solver.vars v in
-        ack_command solver.z3_exe (declare_v v ty))
+        Z3_exe.declare_var solver.z3_exe v ty)
       relevant_vars;
     (* Declare the constraint *)
-    let expr = Smtlib_encoding.encode_value to_check in
-    ack_command solver.z3_exe (Simple_smt.assume expr);
+    Z3_exe.add_constraint solver.z3_exe to_check;
     (* Actually check sat *)
-    try check solver.z3_exe
-    with Simple_smt.UnexpectedSolverResponse s ->
-      L.error (fun m ->
-          m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
-      Unknown)
+    Z3_exe.check_sat solver.z3_exe)
 
 let check_sat_raw_memo solver relevant_vars to_check =
   let to_check = Typed.untyped to_check in
@@ -328,20 +319,18 @@ let sat solver =
   match Solver_state.trivial_truthiness solver.state with
   | Some true -> Soteria_symex.Solver.Sat
   | Some false -> Unsat
-  | None -> (
+  | None ->
       let to_check, relevant_vars =
         Solver_state.unchecked_constraints solver.state
       in
       (* This will put the check in a somewhat-normal form, to increase cache hits. *)
       let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
       let answer = check_sat_raw_memo solver relevant_vars to_check in
-      match answer with
-      | Sat ->
-          Solver_state.mark_checked solver.state;
-          Sat
-      | Unsat -> Unsat
-      | Unknown ->
-          L.info (fun m -> m "Solver returned unknown");
-          Unknown)
+      let () =
+        match answer with
+        | Sat -> Solver_state.mark_checked solver.state
+        | _ -> ()
+      in
+      answer
 
 let as_values solver = Solver_state.to_value_list solver.state
