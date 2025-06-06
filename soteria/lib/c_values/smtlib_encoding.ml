@@ -17,7 +17,7 @@ let t_ptr, mk_ptr, get_loc, get_ofs =
     Simple_smt.(
       declare_datatype ptr [] [ (mk_ptr, [ (loc, t_int); (ofs, t_int) ]) ])
   in
-  Solver_exe.register_solver_init (fun solver -> ack_command solver cmd);
+  Z3_exe.register_solver_init (fun solver -> ack_command solver cmd);
   ( atom ptr,
     (fun l o -> atom mk_ptr $$ [ l; o ]),
     (fun p -> atom loc $$ [ p ]),
@@ -33,7 +33,7 @@ let t_opt, mk_some, opt_unwrap, none, is_some, is_none =
       declare_datatype opt [ "P" ]
         [ (mk_some, [ (opt_unwrap, atom "P") ]); (none, []) ])
   in
-  Solver_exe.register_solver_init (fun solver -> ack_command solver cmd);
+  Z3_exe.register_solver_init (fun solver -> ack_command solver cmd);
   ( atom opt,
     (fun v -> atom mk_some $ v),
     (fun v -> atom opt_unwrap $ v),

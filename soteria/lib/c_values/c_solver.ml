@@ -186,19 +186,18 @@ module Declared_vars = struct
 end
 
 type t = {
-  solver_exe : Solver_exe.t;
+  z3_exe : Z3_exe.t;
   vars : Declared_vars.t;
   save_counter : Save_counter.t;
   state : Solver_state.t;
 }
 
 let init () =
-  let solver_exe = Solver_exe.create () in
-  Solver_exe.execute_init solver_exe;
+  let z3_exe = Z3_exe.init () in
   (* Before every check-sat we pop then push again. *)
-  ack_command solver_exe (Simple_smt.push 2);
+  ack_command z3_exe (Simple_smt.push 2);
   {
-    solver_exe;
+    z3_exe;
     save_counter = Save_counter.init ();
     vars = Declared_vars.init ();
     state = Solver_state.init ();
@@ -298,19 +297,19 @@ let check_sat_raw solver relevant_vars to_check =
   (* TODO: we shouldn't wait for ack for each command individually... *)
   if trivial_model_works to_check then Sat
   else (
-    ack_command solver.solver_exe (Simple_smt.pop 1);
-    ack_command solver.solver_exe (Simple_smt.push 1);
+    ack_command solver.z3_exe (Simple_smt.pop 1);
+    ack_command solver.z3_exe (Simple_smt.push 1);
     (* Declare all relevant variables *)
     Var.Hashset.iter
       (fun v ->
         let ty = Declared_vars.get_ty solver.vars v in
-        ack_command solver.solver_exe (declare_v v ty))
+        ack_command solver.z3_exe (declare_v v ty))
       relevant_vars;
     (* Declare the constraint *)
     let expr = Smtlib_encoding.encode_value to_check in
-    ack_command solver.solver_exe (Simple_smt.assume expr);
+    ack_command solver.z3_exe (Simple_smt.assume expr);
     (* Actually check sat *)
-    try check solver.solver_exe
+    try check solver.z3_exe
     with Simple_smt.UnexpectedSolverResponse s ->
       L.error (fun m ->
           m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));

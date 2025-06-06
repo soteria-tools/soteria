@@ -66,18 +66,6 @@ type t = Simple_smt.solver
 let solver_config () =
   { z3 with log = solver_log; exe = !Solver_config.current.z3_path }
 
-let create () =
-  let solver = new_solver (solver_config ()) in
-  let command sexp =
-    Dump.log_sexp sexp;
-    let now = Unix.gettimeofday () in
-    let res = solver.command sexp in
-    let elapsed = Int.of_float ((Unix.gettimeofday () -. now) *. 1000.) in
-    Dump.log_response res elapsed;
-    res
-  in
-  { solver with command }
-
 let initialize_solver : (Simple_smt.solver -> unit) ref = ref (fun _ -> ())
 
 let register_solver_init f =
@@ -95,4 +83,16 @@ let () =
       | Some timeout ->
           ack_command solver (set_option ":timeout" (string_of_int timeout)))
 
-let execute_init exe = !initialize_solver exe
+let init () =
+  let solver = new_solver (solver_config ()) in
+  let command sexp =
+    Dump.log_sexp sexp;
+    let now = Unix.gettimeofday () in
+    let res = solver.command sexp in
+    let elapsed = Int.of_float ((Unix.gettimeofday () -. now) *. 1000.) in
+    Dump.log_response res elapsed;
+    res
+  in
+  let solver = { solver with command } in
+  !initialize_solver solver;
+  solver

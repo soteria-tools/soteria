@@ -61,18 +61,17 @@ module Solver_state = struct
 end
 
 type t = {
-  solver_exe : Solver_exe.t;
+  z3_exe : Z3_exe.t;
   save_counter : Save_counter.t;
   var_counter : Var_counter.t;
   state : Solver_state.t;
 }
 
 let init () =
-  let solver_exe = Solver_exe.create () in
-  Solver_exe.execute_init solver_exe;
-  ack_command solver_exe (Simple_smt.push 1);
+  let z3_exe = Z3_exe.init () in
+  ack_command z3_exe (Simple_smt.push 1);
   {
-    solver_exe;
+    z3_exe;
     save_counter = Save_counter.init ();
     var_counter = Var_counter.init ();
     state = Solver_state.init ();
@@ -82,13 +81,13 @@ let save solver =
   Var_counter.save solver.var_counter;
   Save_counter.save solver.save_counter;
   Solver_state.save solver.state;
-  ack_command solver.solver_exe (Simple_smt.push 1)
+  ack_command solver.z3_exe (Simple_smt.push 1)
 
 let backtrack_n solver n =
   Var_counter.backtrack_n solver.var_counter n;
   Solver_state.backtrack_n solver.state n;
   Save_counter.backtrack_n solver.save_counter n;
-  ack_command solver.solver_exe (Simple_smt.pop n)
+  ack_command solver.z3_exe (Simple_smt.pop n)
 
 (* Initialise and reset *)
 
@@ -99,9 +98,9 @@ let reset solver =
   Save_counter.reset solver.save_counter;
   Var_counter.reset solver.var_counter;
   Solver_state.reset solver.state;
-  ack_command solver.solver_exe (Simple_smt.pop (save_counter + 1));
+  ack_command solver.z3_exe (Simple_smt.pop (save_counter + 1));
   (* Make sure the basic definitions are saved again *)
-  ack_command solver.solver_exe (Simple_smt.push 1)
+  ack_command solver.z3_exe (Simple_smt.push 1)
 
 let declare_v v_id ty =
   let v = Svalue.Var.to_string v_id in
@@ -110,7 +109,7 @@ let declare_v v_id ty =
 let fresh_var solver ty =
   let v_id = Var_counter.get_next solver.var_counter in
   let c = declare_v v_id ty in
-  ack_command solver.solver_exe c;
+  ack_command solver.z3_exe c;
   v_id
 
 (* We should factor simplifications out also... *)
@@ -146,7 +145,7 @@ let add_constraints solver ?(simplified = false) vs =
   iter @@ fun v ->
   let v = if simplified then v else simplify solver v in
   Solver_state.add_constraint solver.state v;
-  ack_command solver.solver_exe
+  ack_command solver.z3_exe
   @@ assume
   @@ Smtlib_encoding.encode_value
   @@ Typed.untyped v
@@ -160,7 +159,7 @@ let sat solver =
   | Some false -> Unsat
   | None -> (
       let answer =
-        try check solver.solver_exe
+        try check solver.z3_exe
         with Simple_smt.UnexpectedSolverResponse s ->
           L.error (fun m ->
               m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
