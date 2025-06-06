@@ -62,15 +62,15 @@ module Make_incremental (Intf : Solver_interface.S) = struct
   end
 
   type t = {
-    z3_exe : Z3_exe.t;
+    z3_exe : Intf.t;
     save_counter : Save_counter.t;
     var_counter : Var_counter.t;
     state : Solver_state.t;
   }
 
   let init () =
-    let z3_exe = Z3_exe.init () in
-    Z3_exe.push z3_exe 1;
+    let z3_exe = Intf.init () in
+    Intf.push z3_exe 1;
     {
       z3_exe;
       save_counter = Save_counter.init ();
@@ -82,13 +82,13 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     Var_counter.save solver.var_counter;
     Save_counter.save solver.save_counter;
     Solver_state.save solver.state;
-    Z3_exe.push solver.z3_exe 1
+    Intf.push solver.z3_exe 1
 
   let backtrack_n solver n =
     Var_counter.backtrack_n solver.var_counter n;
     Solver_state.backtrack_n solver.state n;
     Save_counter.backtrack_n solver.save_counter n;
-    Z3_exe.pop solver.z3_exe n
+    Intf.pop solver.z3_exe n
 
   (* Initialise and reset *)
 
@@ -100,13 +100,13 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     Var_counter.reset solver.var_counter;
     Solver_state.reset solver.state;
     (* We need to pop the initial push, so we go back to the state before the first push *)
-    Z3_exe.pop solver.z3_exe (save_counter + 1);
+    Intf.pop solver.z3_exe (save_counter + 1);
     (* Make sure the basic definitions are saved again *)
-    Z3_exe.pop solver.z3_exe 1
+    Intf.pop solver.z3_exe 1
 
   let fresh_var solver ty =
     let v_id = Var_counter.get_next solver.var_counter in
-    Z3_exe.declare_var solver.z3_exe v_id (Typed.untype_type ty);
+    Intf.declare_var solver.z3_exe v_id (Typed.untype_type ty);
     v_id
 
   (* We should factor simplifications out also... *)
@@ -144,7 +144,7 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
     Solver_state.add_constraint solver.state v;
-    Z3_exe.add_constraint solver.z3_exe (Typed.untyped v)
+    Intf.add_constraint solver.z3_exe (Typed.untyped v)
 
   (* Incremental doesn't allow for caching queries... *)
   let sat solver =
@@ -152,7 +152,7 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     | Some true -> Soteria_symex.Solver.Sat
     | Some false -> Unsat
     | None -> (
-        let answer = Z3_exe.check_sat solver.z3_exe in
+        let answer = Intf.check_sat solver.z3_exe in
         match answer with
         | Sat -> Sat
         | Unsat -> Unsat
@@ -163,7 +163,7 @@ module Make_incremental (Intf : Solver_interface.S) = struct
   let as_values solver = Solver_state.to_value_list solver.state
 end
 
-module Make (Solver_intf : Solver_interface.S) = struct
+module Make (Intf : Solver_interface.S) = struct
   module Value = Typed
 
   module Var_counter = Var.Incr_counter_mut (struct
@@ -344,16 +344,16 @@ module Make (Solver_intf : Solver_interface.S) = struct
   end
 
   type t = {
-    z3_exe : Z3_exe.t;
+    z3_exe : Intf.t;
     vars : Declared_vars.t;
     save_counter : Save_counter.t;
     state : Solver_state.t;
   }
 
   let init () =
-    let z3_exe = Z3_exe.init () in
+    let z3_exe = Intf.init () in
     (* Before every check-sat we pop then push again. *)
-    Z3_exe.push z3_exe 2;
+    Intf.push z3_exe 2;
     {
       z3_exe;
       save_counter = Save_counter.init ();
@@ -455,19 +455,19 @@ module Make (Solver_intf : Solver_interface.S) = struct
     (* TODO: we shouldn't wait for ack for each command individually... *)
     if trivial_model_works to_check then Soteria_symex.Solver.Sat
     else (
-      Z3_exe.pop solver.z3_exe 1;
+      Intf.pop solver.z3_exe 1;
       (* We need to reset the state, so we can push the new constraints *)
-      Z3_exe.push solver.z3_exe 1;
+      Intf.push solver.z3_exe 1;
       (* Declare all relevant variables *)
       Var.Hashset.iter
         (fun v ->
           let ty = Declared_vars.get_ty solver.vars v in
-          Z3_exe.declare_var solver.z3_exe v ty)
+          Intf.declare_var solver.z3_exe v ty)
         relevant_vars;
       (* Declare the constraint *)
-      Z3_exe.add_constraint solver.z3_exe to_check;
+      Intf.add_constraint solver.z3_exe to_check;
       (* Actually check sat *)
-      Z3_exe.check_sat solver.z3_exe)
+      Intf.check_sat solver.z3_exe)
 
   let check_sat_raw_memo solver relevant_vars to_check =
     let to_check = Typed.untyped to_check in
