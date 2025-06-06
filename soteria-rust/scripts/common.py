@@ -135,8 +135,6 @@ def build_rusteria():
         name, value = line.split("=", 1)
         os.environ[name] = value
     os.environ["RUSTERIA_PLUGINS"] = str(PWD / ".." / "plugins")
-    os.environ["TERM"] = ""
-    os.environ["COLORTERM"] = ""
     try:
         subprocess.check_call("dune build", shell=True)
     except subprocess.CalledProcessError:

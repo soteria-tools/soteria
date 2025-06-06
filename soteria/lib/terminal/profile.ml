@@ -32,14 +32,16 @@ let supports_utf8_from_env () =
 
 type t = { color : bool; utf8 : bool }
 
-let profile () =
+let mk_profile () =
   let utf8 = supports_utf8_from_env () in
   let color = color_from_env () in
   { color; utf8 }
 
-let profile = lazy (profile ())
+let profile = ref { color = false; utf8 = false }
 
 let init ?(no_color = false) () =
-  let profile = Lazy.force profile in
+  let p = mk_profile () in
+  let p = if no_color then { p with color = false } else p in
+  profile := p;
   Fmt.set_style_renderer Format.std_formatter
-    (if (not no_color) && profile.color then `Ansi_tty else `None)
+    (if p.color then `Ansi_tty else `None)

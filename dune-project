@@ -38,6 +38,8 @@
   ppx_deriving
   fmt
   htmlit
+  progress
+  grace
   (odoc :with-doc)
   (dune
    (and
@@ -62,8 +64,6 @@
    (>= 5.3.0))
   (shexp :build)
   eio_main
-  progress
-  grace
   soteria
   cerberus-lib
   zarith
@@ -133,7 +133,6 @@
   ppx_deriving
   hashcons
   cmdliner
-  grace
   fmt
   printbox-text
   unionFind

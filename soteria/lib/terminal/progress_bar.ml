@@ -1,6 +1,6 @@
 let bar_style ~color:user_color () =
   let open Progress.Line in
-  let { color; utf8 } : Profile.t = Lazy.force Profile.profile in
+  let { color; utf8 } : Profile.t = !Profile.profile in
   let base = if utf8 then Bar_style.utf8 else Bar_style.ascii in
   let colored =
     if color then Bar_style.with_color (Color.to_progress user_color) base

@@ -31,19 +31,15 @@ let pp ft = function
   | `Memory_leak -> Fmt.string ft "Memory leak"
   | `FailedAssert -> Fmt.string ft "Failed assertion"
 
-open Soteria_terminal.Diagnostic
+let severity : t -> Soteria_terminal.Diagnostic.severity = function
+  | `Memory_leak -> Warning
+  | _ -> Error
 
-let severity : t -> severity = function `Memory_leak -> Warning | _ -> Error
-
-module Diagnostic = Make (struct
-  type nonrec t = t
-  type loc = Cerb_location.t
-
-  let pp = pp
-  let severity = severity
+module Diagnostic = struct
   let to_loc pos = (Cerb_position.line pos - 1, Cerb_position.column pos - 1)
 
-  let loc_to_ranges (cerb_loc : Cerb_location.t) =
+  let as_ranges (cerb_loc : Cerb_location.t) =
+    let mk_range_file = Soteria_terminal.Diagnostic.mk_range_file in
     match cerb_loc with
     | Loc_unknown | Loc_other _ -> []
     | Loc_point position ->
@@ -63,4 +59,10 @@ module Diagnostic = Make (struct
             let loc2 = to_loc pos2 in
             mk_range_file file loc1 loc2)
           l
-end)
+
+  let mk_diagnostic ~fid ~call_trace ~error =
+    Soteria_terminal.Diagnostic.mk_diagnostic ~call_trace ~as_ranges
+      ~error:(Fmt.to_to_string pp error)
+      ~severity:(severity error)
+      ~fname:(Fmt.to_to_string Ail_helpers.pp_sym_hum fid)
+end

@@ -70,55 +70,42 @@ let mk_range_file ?filename file from_ to_ =
   in
   create ~source (bi idx1) (bi idx2)
 
-module Make (S : sig
-  type t
-  type loc
+let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =
+  let open Grace.Diagnostic in
+  let rec aux i acc (call_trace : 'a Call_trace.t) =
+    match call_trace with
+    | [] -> acc
+    | [ { loc; msg } ] ->
+        let this =
+          as_ranges loc
+          |> List.map @@ fun range ->
+             Label.primary ~range (Message.of_string msg)
+        in
+        this @ acc
+    | { loc; msg } :: rest ->
+        let msg = Fmt.str "%i: %s" i msg in
+        let sec =
+          as_ranges loc
+          |> List.map @@ fun range ->
+             Label.secondary ~range (Message.of_string msg)
+        in
+        aux (i + 1) (sec @ acc) rest
+  in
+  aux 1 [] call_trace
 
-  val severity : t -> severity
-  val pp : Format.formatter -> t -> unit
-  val loc_to_ranges : loc -> range list
-end) =
-struct
-  let call_trace_to_labels (call_trace : 'a Call_trace.t) =
-    let open Grace.Diagnostic in
-    let rec aux i acc (call_trace : 'a Call_trace.t) =
-      match call_trace with
-      | [] -> acc
-      | [ { loc; msg } ] ->
-          let this =
-            S.loc_to_ranges loc
-            |> List.map @@ fun range ->
-               Label.primary ~range (Message.of_string msg)
-          in
-          this @ acc
-      | { loc; msg } :: rest ->
-          let msg = Fmt.str "%i: %s" i msg in
-          let sec =
-            S.loc_to_ranges loc
-            |> List.map @@ fun range ->
-               Label.secondary ~range (Message.of_string msg)
-          in
-          aux (i + 1) (sec @ acc) rest
-    in
-    aux 1 [] call_trace
+let mk_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
+  let labels = call_trace_to_labels ~as_ranges call_trace in
+  Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
 
-  let mk_diagnostic ~fname ~call_trace ~error =
-    let labels = call_trace_to_labels call_trace in
-    let severity = S.severity error in
-    Grace.Diagnostic.createf ~labels severity "%a in %s" S.pp error fname
-
-  let pp ft diag =
-    let module GConfig = Grace_ansi_renderer.Config in
-    let profile = Lazy.force Profile.profile in
-    let styles, use_ansi =
-      if Config.no_color () then (GConfig.Style_sheet.(no_color default), false)
-      else (GConfig.Style_sheet.default, true)
-    in
-    let chars =
-      if profile.utf8 then GConfig.Chars.unicode else GConfig.Chars.ascii
-    in
-    let config = GConfig.{ chars; styles; use_ansi } in
-    if Config.compact () then
-      Grace_ansi_renderer.pp_compact_diagnostic ~config () ft diag
-    else Grace_ansi_renderer.pp_diagnostic ~config () ft diag
-end
+let pp ft diag =
+  let module GConfig = Grace_ansi_renderer.Config in
+  let { color; utf8 } : Profile.t = !Profile.profile in
+  let styles, use_ansi =
+    if color then (GConfig.Style_sheet.default, true)
+    else (GConfig.Style_sheet.(no_color default), false)
+  in
+  let chars = if utf8 then GConfig.Chars.unicode else GConfig.Chars.ascii in
+  let config = GConfig.{ chars; styles; use_ansi } in
+  if Config.compact () then
+    Grace_ansi_renderer.pp_compact_diagnostic ~config () ft diag
+  else Grace_ansi_renderer.pp_diagnostic ~config () ft diag

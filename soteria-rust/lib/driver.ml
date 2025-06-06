@@ -168,7 +168,7 @@ let exec_main_and_print log_config term_config solver_config no_compile clean
                  Error.Diagnostic.mk_diagnostic ~fname:entry_name ~call_trace
                    ~error
                in
-               Fmt.pr "%a@\n@?" Error.Diagnostic.pp diag)
+               Fmt.pr "%a@\n@?" Soteria_terminal.Diagnostic.pp diag)
              (List.sort_uniq Stdlib.compare errs));
         exit 1
   with

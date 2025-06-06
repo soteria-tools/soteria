@@ -328,11 +328,10 @@ let generate_summaries ~functions_to_analyse prog =
          if not (List.is_empty bugs) then
            List.iter
              (fun (error, call_trace) ->
-               let fname = Fmt.to_to_string Ail_helpers.pp_sym_hum fid in
                let diag =
-                 Error.Diagnostic.mk_diagnostic ~fname ~call_trace ~error
+                 Error.Diagnostic.mk_diagnostic ~fid ~call_trace ~error
                in
-               Fmt.pr "%a@\n@\n@?" Error.Diagnostic.pp diag)
+               Fmt.pr "%a@\n@\n@?" Soteria_terminal.Diagnostic.pp diag)
              (List.sort_uniq Stdlib.compare bugs))
 
 (* Entry point function *)

@@ -78,17 +78,10 @@ let severity : t -> Soteria_terminal.Diagnostic.severity = function
   | e when is_unwindable e -> Error
   | _ -> Bug
 
-module Diagnostic = Soteria_terminal.Diagnostic.Make (struct
-  open Soteria_terminal.Diagnostic
-
-  type nonrec t = t
-  type loc = Charon.Meta.span
-
-  let pp = pp
-  let severity = severity
+module Diagnostic = struct
   let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col)
 
-  let loc_to_ranges (loc : loc) =
+  let as_ranges (loc : Charon.Meta.span) =
     let span = Option.value ~default:loc.span loc.generated_from_span in
     match span.file.name with
     | Local file when String.starts_with ~prefix:"/rustc/" file -> []
@@ -103,8 +96,13 @@ module Diagnostic = Soteria_terminal.Diagnostic.Make (struct
           else None
         in
         [
-          mk_range_file ?filename file (to_loc span.beg_loc)
-            (to_loc span.end_loc);
+          Soteria_terminal.Diagnostic.mk_range_file ?filename file
+            (to_loc span.beg_loc) (to_loc span.end_loc);
         ]
     | Virtual _ -> []
-end)
+
+  let mk_diagnostic ~fname ~call_trace ~error =
+    Soteria_terminal.Diagnostic.mk_diagnostic ~call_trace ~as_ranges
+      ~error:(Fmt.to_to_string pp error)
+      ~severity:(severity error) ~fname
+end
