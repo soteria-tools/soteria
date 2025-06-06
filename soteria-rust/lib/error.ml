@@ -121,9 +121,27 @@ module Grace = struct
     let span = Option.value ~default:loc.span loc.generated_from_span in
     match span.file.name with
     | Local file ->
+        let source : Grace.Source.t =
+          if String.starts_with ~prefix:Plugin.lib_root file then
+            let ic = open_in file in
+            let rec loop acc =
+              match input_line ic with
+              | s -> loop (s :: acc)
+              | exception End_of_file ->
+                  close_in ic;
+                  List.rev acc |> String.concat "\n"
+            in
+            let content = loop [] in
+            let root_l = String.length Plugin.lib_root in
+            let name =
+              "$RUSTERIA" ^ String.sub file root_l (String.length file - root_l)
+            in
+            `String { name = Some name; content }
+          else `File file
+        in
         let idx1 = real_index file span.beg_loc in
         let idx2 = real_index file span.end_loc in
-        [ create ~source:(`File file) (bi idx1) (bi idx2) ]
+        [ create ~source (bi idx1) (bi idx2) ]
     | Virtual _ -> []
 
   let severity_to_grace : severity -> Grace.Diagnostic.Severity.t = function

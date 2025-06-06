@@ -26,13 +26,12 @@ let get_host =
             host_
         | None -> raise (PluginError "Couldn't find target host"))
 
-let lib_path name =
-  let root =
-    match Sys.getenv_opt "RUSTERIA_PLUGINS" with
-    | Some root -> root
-    | None -> List.hd Runtime_sites.Sites.plugins
-  in
-  root ^ "/" ^ name
+let lib_root =
+  match Sys.getenv_opt "RUSTERIA_PLUGINS" with
+  | Some root -> root
+  | None -> List.hd Runtime_sites.Sites.plugins
+
+let lib_path name = lib_root ^ "/" ^ name
 
 let compile_lib path =
   let target = get_host () in

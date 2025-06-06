@@ -124,7 +124,7 @@ let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
   Solver_config.set solver_config;
   Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
-  let _x = Spectrum.prepare_ppf Format.std_formatter in
+  let _end_spectrum = Spectrum.prepare_ppf Format.std_formatter in
   try
     let plugin =
       Plugin.merge_ifs
