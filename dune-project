@@ -134,7 +134,6 @@
   hashcons
   cmdliner
   grace
-  spectrum
   fmt
   printbox-text
   unionFind

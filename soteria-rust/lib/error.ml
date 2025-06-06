@@ -120,6 +120,7 @@ module Grace = struct
     let bi = Grace.Byte_index.of_int in
     let span = Option.value ~default:loc.span loc.generated_from_span in
     match span.file.name with
+    | Local file when String.starts_with ~prefix:"/rustc/" file -> []
     | Local file ->
         let source : Grace.Source.t =
           if String.starts_with ~prefix:Plugin.lib_root file then

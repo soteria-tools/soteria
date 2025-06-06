@@ -16,7 +16,6 @@
   hashcons
   grace
   grace.ansi_renderer
-  spectrum
   simple_smt
   printbox-text
   charon

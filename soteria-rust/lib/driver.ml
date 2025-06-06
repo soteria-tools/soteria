@@ -119,12 +119,18 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
   in
   List.join_results outcomes
 
+let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
+let pp_bold = Fmt.styled `Bold Fmt.string
+let pp_err = Fmt.styled (`Fg `Red) pp_bold
+let pp_ok = Fmt.styled (`Fg `Green) pp_bold
+let pp_fatal = Fmt.styled (`Fg (`Hi `Red)) pp_bold
+
 let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
     kani miri file_name =
   Solver_config.set solver_config;
   Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
-  let _end_spectrum = Spectrum.prepare_ppf Format.std_formatter in
+  Fmt.set_style_renderer Format.std_formatter `Ansi_tty;
   try
     let plugin =
       Plugin.merge_ifs
@@ -132,32 +138,30 @@ let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
     in
     let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
     let res = exec_main ~ignore_leaks ~plugin crate in
-    let pp_branches ft n =
-      Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
-    in
+
     match res with
     | Ok res ->
-        Fmt.pr "@{<green,bold>Done, no errors found@}@\n";
+        Fmt.pr "%a@\n" pp_ok "Done, no errors found";
         (res
         |> List.iter @@ fun (pcs, entry_name, ntotal) ->
            let open Fmt in
            let pp_info ft pc =
-             if List.is_empty pc then pf ft "@{<bold>PC@}: empty"
+             if List.is_empty pc then pf ft "%a: empty" pp_bold "PC"
              else
-               pf ft "@{<bold>PC@}: @.  @[<-1>%a@]"
+               pf ft "%a: @.  @[<-1>%a@]" pp_bold "PC"
                  (list ~sep:(any " /\\@, ") Typed.ppa)
                  pc
            in
-           Fmt.pr "@{<bold>%s@}: ran %a@\n%a@\n" entry_name pp_branches ntotal
+           Fmt.pr "%a: ran %a@\n%a@\n" pp_bold entry_name pp_branches ntotal
              (list ~sep:(any "@\n@\n") pp_info)
              pcs);
         exit 0
     | Error res ->
-        Fmt.pr "@{<red,bold>Found issues@}@\n";
+        Fmt.pr "%a@\n" pp_err "Found issues";
         (res
         |> List.iter @@ fun (errs, entry_name, ntotal) ->
            let n = List.length res in
-           Fmt.pr "@\n@{<bold>%s@}: error in %a (out of %d):@\n@?" entry_name
+           Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" pp_bold entry_name
              pp_branches n ntotal;
            List.iter
              (fun (err, call_trace) ->
@@ -169,11 +173,11 @@ let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
         exit 1
   with
   | Plugin.PluginError e ->
-      Fmt.pr "@{<maroon,bold>@}Fatal (Plugin): %s" e;
+      Fmt.pr "%a: %s" pp_fatal "Fatal (Plugin)" e;
       exit 2
   | ExecutionError e ->
-      Fmt.pr "@{<maroon,bold>@}Fatal: %s" e;
+      Fmt.pr "%a: %s" pp_fatal "Fatal" e;
       exit 2
   | CharonError e ->
-      Fmt.pr "@{<maroon,bold>@}Fatal (Charon): %s" e;
+      Fmt.pr "%a: %s" pp_fatal "Fatal (Charon)" e;
       exit 3
