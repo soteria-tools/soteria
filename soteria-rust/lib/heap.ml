@@ -11,10 +11,10 @@ type 'a err = 'a * Call_trace.t
 let add_to_call_trace (err, trace_elem) trace_elem' =
   (err, trace_elem' :: trace_elem)
 
-let with_error_loc_as_call_trace st f =
+let with_error_loc_as_call_trace ?(msg = "Triggering memory operation") st f =
   let open Rustsymex.Syntax in
   let+- err, loc = f () in
-  ((err, Call_trace.singleton ~loc ~msg:"Triggering memory operation" ()), st)
+  ((err, Call_trace.singleton ~loc ~msg ()), st)
 
 module HeapKey = struct
   include Typed
@@ -98,7 +98,7 @@ and t = {
   heap : sub Freeable.t SPmap.t option;
   functions : FunBiMap.t;
   globals : Sptr.t Charon_util.full_ptr GlobMap.t;
-  errors : Error.t err list; [@printer Fmt.list Error.pp_err]
+  errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
 }
 [@@deriving show { with_path = false }]
 
@@ -429,6 +429,8 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   ((), block')
 
 let leak_check st =
+  let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" st in
+  let@ () = with_loc_err () in
   let global_addresses =
     GlobMap.bindings st.globals
     |> List.map (fun (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr)
@@ -443,7 +445,7 @@ let leak_check st =
         else Result.ok leaks)
       [] heap
   in
-  if List.is_empty leaks then Result.ok ((), heap) else error `MemoryLeak st
+  if List.is_empty leaks then Result.ok ((), heap) else Result.error `MemoryLeak
 
 let add_error e ({ errors; _ } as st) =
   Result.ok ((), { st with errors = (e :> Error.t err) :: errors })

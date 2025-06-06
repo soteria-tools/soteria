@@ -732,7 +732,7 @@ module Make (Heap : Heap_intf.S) = struct
           | UndefinedBehavior -> Heap.error `UBAbort state
           | UnwindTerminate -> Heap.error `UnwindTerminate state
           | Panic name ->
-              let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
+              let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
               Heap.error (`Panic name) state)
     | CopyNonOverlapping { src; dst; count } ->
         let ty = get_pointee (type_of_operand src) in
@@ -852,7 +852,7 @@ module Make (Heap : Heap_intf.S) = struct
         | UndefinedBehavior -> Heap.error `UBAbort state
         | UnwindTerminate -> Heap.error `UnwindTerminate state
         | Panic name ->
-            let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
+            let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
             Heap.error (`Panic name) state)
     | UnwindResume -> Heap.pop_error state
 
@@ -871,7 +871,12 @@ module Make (Heap : Heap_intf.S) = struct
           args);
     let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in
-    let exec_block = exec_block ~body store state starting_block in
+    let exec_block =
+      let+- e, state = exec_block ~body store state starting_block in
+      ( Heap.add_to_call_trace e
+          (Call_trace.make_element ~loc ~msg:"Call trace" ()),
+        state )
+    in
     Heap.unwind_with exec_block
       ~f:(fun (value, store, state) ->
         let protected_address =
@@ -884,12 +889,8 @@ module Make (Heap : Heap_intf.S) = struct
         in
         (value, state))
       ~fe:(fun (err, state) ->
-        let err' =
-          Heap.add_to_call_trace err
-            (Call_trace.make_element ~loc ~msg:"Call trace" ())
-        in
         let** (), state = dealloc_store store protected state in
-        Result.error (err', state))
+        Result.error (err, state))
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ?(ignore_leaks = false) ~args ~state fundef =
