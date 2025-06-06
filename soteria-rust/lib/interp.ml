@@ -763,7 +763,13 @@ module Make (Heap : Heap_intf.S) = struct
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:(any ", ") pp_rust_val)
               args);
-        Heap.unwind_with (exec_fun ~args ~state)
+        let fun_exec =
+          let+- e, state = exec_fun ~args ~state in
+          ( Heap.add_to_call_trace e
+              (Call_trace.make_element ~loc ~msg:"Call trace" ()),
+            state )
+        in
+        Heap.unwind_with fun_exec
           ~f:(fun (v, state) ->
             let** ptr, state = resolve_place ~store state place in
             L.info (fun m ->
@@ -871,12 +877,7 @@ module Make (Heap : Heap_intf.S) = struct
           args);
     let** store, protected, state = alloc_stack body.locals args state in
     let starting_block = List.hd body.body in
-    let exec_block =
-      let+- e, state = exec_block ~body store state starting_block in
-      ( Heap.add_to_call_trace e
-          (Call_trace.make_element ~loc ~msg:"Call trace" ()),
-        state )
-    in
+    let exec_block = exec_block ~body store state starting_block in
     Heap.unwind_with exec_block
       ~f:(fun (value, store, state) ->
         let protected_address =
@@ -902,5 +903,6 @@ module Make (Heap : Heap_intf.S) = struct
         let++ (), state = Heap.leak_check state in
         (value, state)
     in
-    err
+    Heap.add_to_call_trace err
+      (Call_trace.make_element ~loc:fundef.item_meta.span ~msg:"Entry point" ())
 end

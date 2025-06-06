@@ -5,11 +5,14 @@ Test memory leaks
   leak::main: error in 1 branch (out of 1):
   warning: Memory leak in leak::main
       ┌─ $TESTCASE_ROOT/leak.rs:1:1
-    1 │ ╭  fn main() {
-    2 │ │      std::mem::forget(Box::new(11));
-    3 │ │  }
-      │ ╰──^ Leaking function
-    4 │    
+    1 │      fn main() {
+      │ ╭────'
+      │ │ ╭──^
+    2 │ │ │      std::mem::forget(Box::new(11));
+    3 │ │ │  }
+      │ ╰─│  ' Entry point
+      │   ╰──^ Leaking function
+    4 │      
   [1]
 
 Test reading the max and min chars (used to crash Charon-ML)

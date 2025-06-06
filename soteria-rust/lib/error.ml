@@ -151,7 +151,7 @@ module Grace = struct
 
   let call_trace_to_labels (call_trace : Call_trace.t) =
     let open Grace.Diagnostic in
-    let rec aux acc (call_trace : Call_trace.t) =
+    let rec aux i acc (call_trace : Call_trace.t) =
       match call_trace with
       | [] -> acc
       | [ { loc; msg } ] ->
@@ -162,14 +162,15 @@ module Grace = struct
           in
           this @ acc
       | { loc; msg } :: rest ->
+          let msg = Fmt.str "%i: %s" i msg in
           let sec =
             to_grace_ranges loc
             |> List.map @@ fun range ->
                Label.secondary ~range (Message.of_string msg)
           in
-          aux (sec @ acc) rest
+          aux (i + 1) (sec @ acc) rest
     in
-    aux [] call_trace
+    aux 1 [] call_trace
 
   let to_diagnostic ~fn ~call_trace error =
     let open Grace.Diagnostic in

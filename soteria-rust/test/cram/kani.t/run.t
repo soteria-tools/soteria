@@ -45,9 +45,12 @@ Test kani::assert
     2 │ ╭  fn assert_false() {
     3 │ │      let b: bool = kani::any();
     4 │ │      kani::assert(b, "Expected true!");
-      │ │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering memory operation
+      │ │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │ │      │
+      │ │      Triggering memory operation
+      │ │      Call trace
     5 │ │  }
-      │ ╰──' Call trace
+      │ ╰──' Entry point
     6 │    
   
   assert::fancy_assert_false: error in 4 branches (out of 2):
@@ -57,27 +60,39 @@ Test kani::assert
     8 │ ╭  fn fancy_assert_false() {
     9 │ │      let b: bool = kani::any();
    10 │ │      kani::assert(b, "👻 unicode is 𝒮𝒞𝒜ℛ𝒴");
-      │ │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering memory operation
+      │ │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │ │      │
+      │ │      Triggering memory operation
+      │ │      Call trace
    11 │ │  }
-      │ ╰──' Call trace
+      │ ╰──' Entry point
    12 │    
   
   assert::override_assert_macro: error in 4 branches (out of 2):
   error: Failed assertion: I used "assert!" in assert::override_assert_macro
+      ┌─ $RUSTERIA/std/src/lib.rs:23:9
+   23 │            rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
+      │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │            │
+      │            Triggering memory operation
+      │            Call trace
       ┌─ $TESTCASE_ROOT/assert.rs:14:1
    13 │    #[kani::proof]
    14 │ ╭  fn override_assert_macro() {
    15 │ │      let b: bool = kani::any();
    16 │ │      assert!(b, "I used \"assert!\"");
    17 │ │  }
-      │ ╰──' Call trace
+      │ ╰──' Entry point
    18 │    
-      ┌─ /Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/plugins/std/src/lib.rs:23:9
-   23 │            rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
-      │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering memory operation
   
   assert::override_asserteq_macro: error in 4 branches (out of 2):
   error: Failed assertion: I used "assert_eq!" in assert::override_asserteq_macro
+      ┌─ $RUSTERIA/std/src/lib.rs:23:9
+   23 │            rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
+      │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │            │
+      │            Triggering memory operation
+      │            Call trace
       ┌─ $TESTCASE_ROOT/assert.rs:20:1
    19 │    #[kani::proof]
    20 │ ╭  fn override_asserteq_macro() {
@@ -85,11 +100,8 @@ Test kani::assert
    22 │ │      let b: u32 = kani::any();
    23 │ │      assert_eq!(a, b, "I used \"assert_eq!\"");
    24 │ │  }
-      │ ╰──' Call trace
+      │ ╰──' Entry point
    25 │    
-      ┌─ /Users/opale/Documents/GitHub/soteria/_build/install/default/share/soteria-rust/plugins/std/src/lib.rs:23:9
-   23 │            rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
-      │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering memory operation
   [1]
 
 Test kani::slice::any_slice_of_array
