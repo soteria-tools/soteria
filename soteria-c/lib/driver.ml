@@ -1,3 +1,4 @@
+module Call_trace = Soteria_terminal.Call_trace
 module SState = State (* Clashes with Cerb_frontend.State *)
 open Cerb_frontend
 open Syntaxes.FunctionWrap
@@ -176,7 +177,9 @@ let is_main (def : Cabs.function_definition) =
   | _ -> false
 
 let pp_err_and_call_trace ft (err, call_trace) =
-  Fmt.pf ft "@[%a with trace@ %a@]" Error.pp err Call_trace.pp call_trace
+  Fmt.pf ft "@[%a with trace@ %a@]" Error.pp err
+    (Call_trace.pp Fmt_ail.pp_loc)
+    call_trace
 
 let resolve_entry_point (linked : Ail_tys.linked_program) =
   let open Syntaxes.Result in
@@ -245,16 +248,18 @@ let generate_errors content =
 (** {2 Entry points} *)
 
 (* Helper for all main entry points *)
-let initialise log_config solver_config config =
-  Soteria_logs.Config.(check_set_and_lock log_config);
+let initialise log_config term_config solver_config config =
+  Soteria_logs.Config.check_set_and_lock log_config;
+  Soteria_terminal.Config.set_and_lock term_config;
   Solver_config.set solver_config;
   Config.set config;
   Initialize_analysis.init_once ()
 
 (* Entry point function *)
-let exec_main_and_print log_config solver_config config includes file_names =
+let exec_main_and_print log_config term_config solver_config config includes
+    file_names =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
-  initialise log_config solver_config config;
+  initialise log_config term_config solver_config config;
   let result = exec_main ~includes file_names in
   if not !Config.current.parse_only then
     let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
@@ -294,13 +299,14 @@ let analyse_summaries ~prog results =
   in
   let open Syntaxes.List in
   let@ () =
-    My_progress.run ~color:`magenta ~msg:"Analysing summaries " ~total ()
+    Soteria_terminal.Progress_bar.run ~color:`Magenta
+      ~msg:"Analysing summaries " ~total ()
   in
   let+ fid, summaries = results in
   let results =
     let+ summary = summaries in
     let res = Summary.analyse ~prog ~fid summary in
-    My_progress.signal_progress 1;
+    Soteria_terminal.Progress_bar.signal_progress 1;
     res
   in
   (fid, results)
@@ -321,9 +327,12 @@ let generate_summaries ~functions_to_analyse prog =
          in
          if not (List.is_empty bugs) then
            List.iter
-             (fun (err, call_trace) ->
-               let diag = Error.Grace.to_diagnostic ~fid ~call_trace err in
-               Fmt.pr "%a@\n@\n@?" (Grace_ansi_renderer.pp_diagnostic ()) diag)
+             (fun (error, call_trace) ->
+               let fname = Fmt.to_to_string Ail_helpers.pp_sym_hum fid in
+               let diag =
+                 Error.Diagnostic.mk_diagnostic ~fname ~call_trace ~error
+               in
+               Fmt.pr "%a@\n@\n@?" Error.Diagnostic.pp diag)
              (List.sort_uniq Stdlib.compare bugs))
 
 (* Entry point function *)
@@ -333,8 +342,10 @@ let lsp config () =
   Soteria_c_lsp.run ~generate_errors ()
 
 (* Entry point function *)
-let show_ail logs_config (includes : string list) (files : string list) =
-  Soteria_logs.Config.(check_set_and_lock logs_config);
+let show_ail logs_config term_config (includes : string list)
+    (files : string list) =
+  Soteria_logs.Config.check_set_and_lock logs_config;
+  Soteria_terminal.Config.set_and_lock term_config;
   Initialize_analysis.init_once ();
   match parse_and_link_ail ~includes files with
   | Ok { symmap; sigma; entry_point } ->
@@ -374,11 +385,11 @@ let show_ail logs_config (includes : string list) (files : string list) =
   | Error err -> Fmt.pr "%a@." pp_err_and_call_trace err
 
 (* Entry point function *)
-let generate_all_summaries log_config solver_config config includes
+let generate_all_summaries log_config term_config solver_config config includes
     functions_to_analyse file_names =
   (* TODO: generate a compilation database directly, to simplify the interface in this file. *)
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  initialise log_config solver_config config;
+  initialise log_config term_config solver_config config;
   let prog =
     let@ () = Soteria_logs.Logs.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
@@ -390,10 +401,11 @@ let generate_all_summaries log_config solver_config config includes
     generate_summaries ~functions_to_analyse prog
 
 (* Entry point function *)
-let capture_db log_config solver_config config json_file functions_to_analyse =
+let capture_db log_config term_config solver_config config json_file
+    functions_to_analyse =
   let open Syntaxes.Result in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  initialise log_config solver_config config;
+  initialise log_config term_config solver_config config;
   let linked_prog =
     let@ () =
       Soteria_logs.Logs.with_section "Parsing and Linking from database"

@@ -1,3 +1,4 @@
+open Soteria_terminal.Color
 module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Soteria_symex.Compo_res
 open Syntaxes.FunctionWrap
@@ -70,7 +71,7 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
          let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
          try Rustsymex.run @@ exec_fun entry.fun_decl with
          | Layout.InvalidLayout ->
-             [ (Error (`InvalidLayout, Call_trace.empty), []) ]
+             [ (Error (`InvalidLayout, Soteria_terminal.Call_trace.empty), []) ]
          | exn ->
              let msg =
                Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
@@ -84,7 +85,8 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
          else
            let open Compo_res in
            let trace =
-             Call_trace.singleton ~loc:entry.fun_decl.item_meta.span ()
+             Soteria_terminal.Call_trace.singleton
+               ~loc:entry.fun_decl.item_meta.span ()
            in
            let oks, errors =
              branches
@@ -120,17 +122,13 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
   List.join_results outcomes
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
-let pp_bold = Fmt.styled `Bold Fmt.string
-let pp_err = Fmt.styled (`Fg `Red) pp_bold
-let pp_ok = Fmt.styled (`Fg `Green) pp_bold
-let pp_fatal = Fmt.styled (`Fg (`Hi `Red)) pp_bold
 
-let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
-    kani miri file_name =
+let exec_main_and_print log_config term_config solver_config no_compile clean
+    ignore_leaks kani miri file_name =
   Solver_config.set solver_config;
-  Soteria_logs.Config.check_set_and_lock log_level;
+  Soteria_logs.Config.check_set_and_lock log_config;
+  Soteria_terminal.Config.set_and_lock term_config;
   Cleaner.init ~clean ();
-  Fmt.set_style_renderer Format.std_formatter `Ansi_tty;
   try
     let plugin =
       Plugin.merge_ifs
@@ -146,13 +144,14 @@ let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
         |> List.iter @@ fun (pcs, entry_name, ntotal) ->
            let open Fmt in
            let pp_info ft pc =
-             if List.is_empty pc then pf ft "%a: empty" pp_bold "PC"
+             if List.is_empty pc then pf ft "%a: empty" (pp_style `Bold) "PC"
              else
-               pf ft "%a: @.  @[<-1>%a@]" pp_bold "PC"
+               pf ft "%a: @.  @[<-1>%a@]" (pp_style `Bold) "PC"
                  (list ~sep:(any " /\\@, ") Typed.ppa)
                  pc
            in
-           Fmt.pr "%a: ran %a@\n%a@\n" pp_bold entry_name pp_branches ntotal
+           Fmt.pr "%a: ran %a@\n%a@\n" (pp_style `Bold) entry_name pp_branches
+             ntotal
              (list ~sep:(any "@\n@\n") pp_info)
              pcs);
         exit 0
@@ -161,14 +160,15 @@ let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
         (res
         |> List.iter @@ fun (errs, entry_name, ntotal) ->
            let n = List.length res in
-           Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" pp_bold entry_name
-             pp_branches n ntotal;
+           Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" (pp_style `Bold)
+             entry_name pp_branches n ntotal;
            List.iter
-             (fun (err, call_trace) ->
+             (fun (error, call_trace) ->
                let diag =
-                 Error.Grace.to_diagnostic ~fn:entry_name ~call_trace err
+                 Error.Diagnostic.mk_diagnostic ~fname:entry_name ~call_trace
+                   ~error
                in
-               Fmt.pr "%a@\n@?" (Grace_ansi_renderer.pp_diagnostic ()) diag)
+               Fmt.pr "%a@\n@?" Error.Diagnostic.pp diag)
              (List.sort_uniq Stdlib.compare errs));
         exit 1
   with

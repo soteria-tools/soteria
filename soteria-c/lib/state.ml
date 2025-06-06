@@ -1,3 +1,4 @@
+module Call_trace = Soteria_terminal.Call_trace
 open Csymex.Syntax
 open Typed.Infix
 open Typed.Syntax
@@ -5,7 +6,7 @@ module T = Typed.T
 open Csymex
 open State_intf.Template
 
-type 'a err = 'a * Call_trace.t
+type 'a err = 'a * Cerb_location.t Call_trace.t
 
 let add_to_call_trace (err, trace_elem) trace_elem' =
   (err, trace_elem' :: trace_elem)

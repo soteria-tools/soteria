@@ -9,8 +9,8 @@
           globs = [(x_484, V|2|)] };
         ret =
         (Error (Failed assertion,
-                [(global_local_eq.c:8:3-23, Called from here);
-                 (global_local_eq.c:8:3-23, Triggering memory operation)]))
+                [• Called from here: global_local_eq.c:8:3-23;
+                 • Triggering memory operation: global_local_eq.c:8:3-23]))
         };
       manifest_bugs = []}
     Analysed {

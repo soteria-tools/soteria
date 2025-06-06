@@ -1,3 +1,4 @@
+open Soteria_terminal
 open Syntaxes.FunctionWrap
 module T = Typed.T
 module Var = Soteria_symex.Var
@@ -15,7 +16,10 @@ type raw = {
       (** Path condition. Whether it is in the post or in the pre, it doesn't
           matter for UX. *)
   post : State.serialized;  (** Post condition as a serialized heap *)
-  ret : (T.cval Typed.t, Error.t * Call_trace.t) result;
+  ret :
+    ( T.cval Typed.t,
+      Error.t * (Cerb_location.t[@printer Fmt_ail.pp_loc]) Call_trace.t )
+    result;
       (** Return value. If `ok` then it is the C value that the function
           returned, if `err` then it is a description of the bug exhibitied by
           the code *)
@@ -27,7 +31,7 @@ type _ t =
   | Pruned : { raw : raw; memory_leak : bool } -> pruned t
   | Analysed : {
       raw : raw;
-      manifest_bugs : (Error.t * Call_trace.t) list;
+      manifest_bugs : (Error.t * Cerb_location.t Call_trace.t) list;
     }
       -> analysed t
 (* [@@deriving show { with_path = false }] *)
@@ -42,7 +46,7 @@ let pp : type a. Format.formatter -> a t -> unit =
   | Analysed { raw; manifest_bugs } ->
       Fmt.pf ft "@[<v 2>Analysed {@ @[raw =@ %a@];@ @[manifest_bugs =@ %a@]}@]"
         pp_raw raw
-        (Fmt.Dump.list (Fmt.Dump.pair Error.pp Call_trace.pp))
+        (Fmt.Dump.list (Fmt.Dump.pair Error.pp (Call_trace.pp Fmt_ail.pp_loc)))
         manifest_bugs
 
 module Var_graph = Graph.Make_in_place (Var)

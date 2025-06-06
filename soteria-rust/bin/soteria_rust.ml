@@ -29,6 +29,7 @@ module Exec_main = struct
     Term.(
       const Soteria_rust_lib.Driver.exec_main_and_print
       $ Soteria_logs.Cli.term
+      $ Soteria_terminal.Cli.term
       $ Soteria_c_values.Solver_config.Cli.term
       $ no_compile_flag
       $ cleanup_flag

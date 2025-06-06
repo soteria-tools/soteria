@@ -766,7 +766,7 @@ module Make (Heap : Heap_intf.S) = struct
         let fun_exec =
           let+- e, state = exec_fun ~args ~state in
           ( Heap.add_to_call_trace e
-              (Call_trace.make_element ~loc ~msg:"Call trace" ()),
+              (Soteria_terminal.Call_trace.mk_element ~loc ~msg:"Call trace" ()),
             state )
         in
         Heap.unwind_with fun_exec
@@ -904,5 +904,6 @@ module Make (Heap : Heap_intf.S) = struct
         (value, state)
     in
     Heap.add_to_call_trace err
-      (Call_trace.make_element ~loc:fundef.item_meta.span ~msg:"Entry point" ())
+      (Soteria_terminal.Call_trace.mk_element ~loc:fundef.item_meta.span
+         ~msg:"Entry point" ())
 end

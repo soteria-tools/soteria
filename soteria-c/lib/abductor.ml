@@ -1,5 +1,6 @@
 open Syntaxes.FunctionWrap
 open Soteria_logs.Logs
+open Soteria_terminal
 module Bi_interp = Interp.Make (Bi_state)
 open Ail_tys
 
@@ -60,7 +61,7 @@ let generate_all_summaries ~functions_to_analyse prog =
          true))
       order
   in
-  let@ () = My_progress.run ~msg:"Generating summaries" ~total:!count () in
+  let@ () = Progress_bar.run ~msg:"Generating summaries" ~total:!count () in
   ListLabels.filter_map to_analyse ~f:(fun fid ->
       let open Syntaxes.Option in
       let res =
@@ -68,5 +69,5 @@ let generate_all_summaries ~functions_to_analyse prog =
         let summaries = generate_summaries_for ~prog fundef in
         (fid, summaries)
       in
-      My_progress.signal_progress 1;
+      Progress_bar.signal_progress 1;
       res)

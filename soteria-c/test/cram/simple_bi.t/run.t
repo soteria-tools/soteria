@@ -7,7 +7,7 @@
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [(load.c:3:10-12 (cursor: 3:10), Triggering memory operation)]))
+                [• Triggering memory operation: load.c:3:10-12 (cursor: 3:10)]))
         };
       manifest_bugs = []}
     Analysed {
@@ -54,7 +54,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    10 │  {
    11 │    int *x = (int *)malloc(sizeof(int));
    12 │    load(x);
-      │    ------- Called from here
+      │    ------- 1: Called from here
   
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
@@ -66,7 +66,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    10 │  {
    11 │    int *x = (int *)malloc(sizeof(int));
    12 │    load(x);
-      │    ------- Called from here
+      │    ------- 1: Called from here
   
   error: Accessing uninitialized memory in test_uninit
       ┌─ manifest.c:6:10
@@ -87,7 +87,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    19 │    if (!x)
    20 │      return 1;
    21 │    load(x);
-      │    ------- Called from here
+      │    ------- 1: Called from here
   
   error: Null pointer dereference in test_np
       ┌─ manifest.c:51:3
@@ -101,8 +101,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [(manifest.c:6:10-12 (cursor: 6:10),
-                  Triggering memory operation)]))
+                [• Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs = []}
     Analysed {
@@ -127,7 +126,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret = (Ok 0) };
       manifest_bugs =
-      [(Memory leak, [(manifest.c:26:1-34:2 (cursor: 26:5 - 26:14), )])]}
+      [(Memory leak, [• manifest.c:26:1-34:2 (cursor: 26:5 - 26:14)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -140,27 +139,25 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (Accessing uninitialized memory,
-                [(manifest.c:12:3-10, Called from here);
-                 (manifest.c:6:10-12 (cursor: 6:10),
-                  Triggering memory operation)]))
+                [• Called from here: manifest.c:12:3-10;
+                 • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs =
       [(Accessing uninitialized memory,
-        [(manifest.c:12:3-10, Called from here);
-         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
+        [• Called from here: manifest.c:12:3-10;
+         • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [(manifest.c:12:3-10, Called from here);
-                 (manifest.c:6:10-12 (cursor: 6:10),
-                  Triggering memory operation)]))
+                [• Called from here: manifest.c:12:3-10;
+                 • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs =
       [(Null pointer dereference,
-        [(manifest.c:12:3-10, Called from here);
-         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
+        [• Called from here: manifest.c:12:3-10;
+         • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)])]}
   
   Summaries for test_ok_498:
     Analysed {
@@ -180,14 +177,13 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (Accessing uninitialized memory,
-                [(manifest.c:21:3-10, Called from here);
-                 (manifest.c:6:10-12 (cursor: 6:10),
-                  Triggering memory operation)]))
+                [• Called from here: manifest.c:21:3-10;
+                 • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs =
       [(Accessing uninitialized memory,
-        [(manifest.c:21:3-10, Called from here);
-         (manifest.c:6:10-12 (cursor: 6:10), Triggering memory operation)])]}
+        [• Called from here: manifest.c:21:3-10;
+         • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -205,12 +201,11 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [(manifest.c:51:3-10 (cursor: 51:6),
-                  Triggering memory operation)]))
+                [• Triggering memory operation: manifest.c:51:3-10 (cursor: 51:6)]))
         };
       manifest_bugs =
       [(Null pointer dereference,
-        [(manifest.c:51:3-10 (cursor: 51:6), Triggering memory operation)])]}
+        [• Triggering memory operation: manifest.c:51:3-10 (cursor: 51:6)])]}
   
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
@@ -225,8 +220,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [(if_sat_one_ok.c:6:12-14 (cursor: 6:12),
-                  Triggering memory operation)]))
+                [• Triggering memory operation: if_sat_one_ok.c:6:12-14 (cursor: 6:12)]))
         };
       manifest_bugs = []}
     Analysed {

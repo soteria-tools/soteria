@@ -8,6 +8,7 @@
   soteria.symex
   soteria.logs
   soteria.c_values
+  soteria.terminal
   cmdliner
   fmt
   iter

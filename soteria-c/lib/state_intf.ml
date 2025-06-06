@@ -16,7 +16,9 @@ module type S = sig
 
   type 'a err
 
-  val add_to_call_trace : 'a err -> Call_trace.element -> 'a err
+  val add_to_call_trace :
+    'a err -> Cerb_location.t Soteria_terminal.Call_trace.element -> 'a err
+
   val pp : Format.formatter -> t -> unit
 
   (** Prettier but expensive printing. *)
