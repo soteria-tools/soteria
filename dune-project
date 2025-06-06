@@ -133,6 +133,7 @@
   ppx_deriving
   hashcons
   cmdliner
+  grace
   fmt
   printbox-text
   unionFind

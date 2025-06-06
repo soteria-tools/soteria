@@ -62,11 +62,11 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
   let exec_fun =
     Wpst_interp.exec_fun ~ignore_leaks ~args:[] ~state:Heap.empty
   in
+  let@ () = Crate.with_crate crate in
   let outcomes =
     entry_points
     |> List.map @@ fun (entry : Plugin.entry_point) ->
        let branches =
-         let@ () = Crate.with_crate crate in
          let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
          try Rustsymex.run @@ exec_fun entry.fun_decl with
          | Layout.InvalidLayout ->
@@ -105,66 +105,79 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
        else if List.exists Compo_res.is_missing outcomes then
          raise (ExecutionError "Miss encountered in WPST")
        else
+         let entry_name =
+           Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
+         in
          let errors = Compo_res.only_errors outcomes in
          if List.is_empty errors then
            branches
            |> List.filter_map (function
                 | Compo_res.Ok _, pcs -> Some pcs
                 | _ -> None)
-           |> fun brs -> (Ok brs, nbranches)
-         else (Result.error errors, nbranches)
+           |> fun brs -> Ok (brs, entry_name, nbranches)
+         else Result.error (errors, entry_name, nbranches)
   in
-  let outcomes, nbranches = List.split outcomes in
-  let outcomes =
-    List.join_results outcomes
-    |> Result.map List.flatten
-    |> Result.map_error List.flatten
-  in
-  let nbranches = List.fold_left ( + ) 0 nbranches in
-  (outcomes, nbranches)
+  List.join_results outcomes
+
+let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
+let pp_bold = Fmt.styled `Bold Fmt.string
+let pp_err = Fmt.styled (`Fg `Red) pp_bold
+let pp_ok = Fmt.styled (`Fg `Green) pp_bold
+let pp_fatal = Fmt.styled (`Fg (`Hi `Red)) pp_bold
 
 let exec_main_and_print log_level solver_config no_compile clean ignore_leaks
     kani miri file_name =
   Solver_config.set solver_config;
   Soteria_logs.Config.check_set_and_lock log_level;
   Cleaner.init ~clean ();
+  Fmt.set_style_renderer Format.std_formatter `Ansi_tty;
   try
     let plugin =
       Plugin.merge_ifs
         [ (true, Plugin.default); (kani, Plugin.kani); (miri, Plugin.miri) ]
     in
     let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
-    let res, ntotal = exec_main ~ignore_leaks ~plugin crate in
+    let res = exec_main ~ignore_leaks ~plugin crate in
+
     match res with
     | Ok res ->
-        let open Fmt in
-        let n = List.length res in
-        let pp_pc ft pc = pf ft "%a" (list ~sep:(any " /\\@, ") Typed.ppa) pc in
-        let pp_info ft pc =
-          if List.is_empty pc then pf ft "PC: empty"
-          else pf ft "PC: @.  @[<-1>%a@]" pp_pc pc
-        in
-        Fmt.pr "Done. - Ran %i branches\n%a\n" n
-          (list ~sep:(any "@\n@\n") pp_info)
-          res;
+        Fmt.pr "%a@\n" pp_ok "Done, no errors found";
+        (res
+        |> List.iter @@ fun (pcs, entry_name, ntotal) ->
+           let open Fmt in
+           let pp_info ft pc =
+             if List.is_empty pc then pf ft "%a: empty" pp_bold "PC"
+             else
+               pf ft "%a: @.  @[<-1>%a@]" pp_bold "PC"
+                 (list ~sep:(any " /\\@, ") Typed.ppa)
+                 pc
+           in
+           Fmt.pr "%a: ran %a@\n%a@\n" pp_bold entry_name pp_branches ntotal
+             (list ~sep:(any "@\n@\n") pp_info)
+             pcs);
         exit 0
     | Error res ->
-        let open Fmt in
-        let pp_err ft e = pf ft "- %a" Error.pp_err e in
-        let n = List.length res in
-        Fmt.pr "Error in %i branch%s (out of %d):@\n%a\n" n
-          (if n = 1 then "" else "es")
-          ntotal
-          (list ~sep:(any "@\n@\n") pp_err)
-          res;
+        Fmt.pr "%a@\n" pp_err "Found issues";
+        (res
+        |> List.iter @@ fun (errs, entry_name, ntotal) ->
+           let n = List.length res in
+           Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" pp_bold entry_name
+             pp_branches n ntotal;
+           List.iter
+             (fun (err, call_trace) ->
+               let diag =
+                 Error.Grace.to_diagnostic ~fn:entry_name ~call_trace err
+               in
+               Fmt.pr "%a@\n@?" (Grace_ansi_renderer.pp_diagnostic ()) diag)
+             (List.sort_uniq Stdlib.compare errs));
         exit 1
   with
   | Plugin.PluginError e ->
-      Fmt.pr "Fatal (Plugin): %s" e;
+      Fmt.pr "%a: %s" pp_fatal "Fatal (Plugin)" e;
       exit 2
   | ExecutionError e ->
-      Fmt.pr "Fatal: %s" e;
+      Fmt.pr "%a: %s" pp_fatal "Fatal" e;
       exit 2
   | CharonError e ->
-      Fmt.pr "Fatal (Charon): %s" e;
+      Fmt.pr "%a: %s" pp_fatal "Fatal (Charon)" e;
       exit 3

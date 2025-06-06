@@ -683,7 +683,7 @@ let pp_pretty ft t =
   let () =
     Tree.iter_leaves_rev t.root (fun leaf ->
         let range_str = (Fmt.to_to_string Range.pp) leaf.range in
-        let node_str = Fmt.kstr text "%a" Node.pp leaf.node in
+        let node_str = Fmt.to_to_string Node.pp leaf.node |> text in
         r := (range_str, node_str) :: !r)
   in
   PrintBox_text.pp ft (frame @@ record !r)

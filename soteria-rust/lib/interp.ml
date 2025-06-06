@@ -732,7 +732,7 @@ module Make (Heap : Heap_intf.S) = struct
           | UndefinedBehavior -> Heap.error `UBAbort state
           | UnwindTerminate -> Heap.error `UnwindTerminate state
           | Panic name ->
-              let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
+              let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
               Heap.error (`Panic name) state)
     | CopyNonOverlapping { src; dst; count } ->
         let ty = get_pointee (type_of_operand src) in
@@ -763,7 +763,13 @@ module Make (Heap : Heap_intf.S) = struct
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:(any ", ") pp_rust_val)
               args);
-        Heap.unwind_with (exec_fun ~args ~state)
+        let fun_exec =
+          let+- e, state = exec_fun ~args ~state in
+          ( Heap.add_to_call_trace e
+              (Call_trace.make_element ~loc ~msg:"Call trace" ()),
+            state )
+        in
+        Heap.unwind_with fun_exec
           ~f:(fun (v, state) ->
             let** ptr, state = resolve_place ~store state place in
             L.info (fun m ->
@@ -852,7 +858,7 @@ module Make (Heap : Heap_intf.S) = struct
         | UndefinedBehavior -> Heap.error `UBAbort state
         | UnwindTerminate -> Heap.error `UnwindTerminate state
         | Panic name ->
-            let name = Option.map (Fmt.str "%a" Crate.pp_name) name in
+            let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
             Heap.error (`Panic name) state)
     | UnwindResume -> Heap.pop_error state
 
@@ -884,12 +890,8 @@ module Make (Heap : Heap_intf.S) = struct
         in
         (value, state))
       ~fe:(fun (err, state) ->
-        let err' =
-          Heap.add_to_call_trace err
-            (Call_trace.make_element ~loc ~msg:"Call trace" ())
-        in
         let** (), state = dealloc_store store protected state in
-        Result.error (err', state))
+        Result.error (err, state))
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ?(ignore_leaks = false) ~args ~state fundef =
@@ -901,5 +903,6 @@ module Make (Heap : Heap_intf.S) = struct
         let++ (), state = Heap.leak_check state in
         (value, state)
     in
-    err
+    Heap.add_to_call_trace err
+      (Call_trace.make_element ~loc:fundef.item_meta.span ~msg:"Entry point" ())
 end

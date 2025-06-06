@@ -732,7 +732,7 @@ module M (Heap : Heap_intf.S) = struct
 
   let type_name (mono : Types.generic_args) ~args:_ ~state =
     let ty = List.hd mono.types in
-    let str = Fmt.str "%a" pp_ty ty in
+    let str = Fmt.to_to_string pp_ty ty in
     let** ptr_res, state = Heap.load_str_global str state in
     match ptr_res with
     | Some ptr -> Result.ok (Ptr ptr, state)
