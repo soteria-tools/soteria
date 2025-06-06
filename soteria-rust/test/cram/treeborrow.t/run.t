@@ -21,7 +21,7 @@ Simple tree borrow violation
       │ │      ^^^^^^^ Triggering memory operation
     9 │ │      let val = *x;
    10 │ │  }
-      │ ╰──' Entry point
+      │ ╰──' 1: Entry point
    11 │    
   [1]
 

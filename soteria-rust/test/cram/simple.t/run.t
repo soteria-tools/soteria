@@ -10,7 +10,7 @@ Test memory leaks
       │ │ ╭──^
     2 │ │ │      std::mem::forget(Box::new(11));
     3 │ │ │  }
-      │ ╰─│  ' Entry point
+      │ ╰─│  ' 1: Entry point
       │   ╰──^ Leaking function
     4 │      
   [1]

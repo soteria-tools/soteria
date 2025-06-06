@@ -48,9 +48,9 @@ Test kani::assert
       │ │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │ │      │
       │ │      Triggering memory operation
-      │ │      Call trace
+      │ │      2: Call trace
     5 │ │  }
-      │ ╰──' Entry point
+      │ ╰──' 1: Entry point
     6 │    
   
   assert::fancy_assert_false: error in 4 branches (out of 2):
@@ -63,9 +63,9 @@ Test kani::assert
       │ │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │ │      │
       │ │      Triggering memory operation
-      │ │      Call trace
+      │ │      2: Call trace
    11 │ │  }
-      │ ╰──' Entry point
+      │ ╰──' 1: Entry point
    12 │    
   
   assert::override_assert_macro: error in 4 branches (out of 2):
@@ -75,14 +75,14 @@ Test kani::assert
       │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │            │
       │            Triggering memory operation
-      │            Call trace
+      │            2: Call trace
       ┌─ $TESTCASE_ROOT/assert.rs:14:1
    13 │    #[kani::proof]
    14 │ ╭  fn override_assert_macro() {
    15 │ │      let b: bool = kani::any();
    16 │ │      assert!(b, "I used \"assert!\"");
    17 │ │  }
-      │ ╰──' Entry point
+      │ ╰──' 1: Entry point
    18 │    
   
   assert::override_asserteq_macro: error in 4 branches (out of 2):
@@ -92,7 +92,7 @@ Test kani::assert
       │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │            │
       │            Triggering memory operation
-      │            Call trace
+      │            2: Call trace
       ┌─ $TESTCASE_ROOT/assert.rs:20:1
    19 │    #[kani::proof]
    20 │ ╭  fn override_asserteq_macro() {
@@ -100,7 +100,7 @@ Test kani::assert
    22 │ │      let b: u32 = kani::any();
    23 │ │      assert_eq!(a, b, "I used \"assert_eq!\"");
    24 │ │  }
-      │ ╰──' Entry point
+      │ ╰──' 1: Entry point
    25 │    
   [1]
 
