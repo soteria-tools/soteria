@@ -15,3 +15,10 @@ type linked_program = {
   entry_point : Symbol.sym option;
   symmap : extern_symmap;
 }
+
+let empty_linked_program =
+  {
+    sigma = empty_sigma;
+    entry_point = None;
+    symmap = Pmap.empty Symbol.compare_sym;
+  }
