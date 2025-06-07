@@ -577,34 +577,24 @@ module Make (Heap : Heap_intf.S) = struct
               Expressions.pp_nullop op)
     | Discriminant (place, kind) -> (
         let** (loc, _), state = resolve_place ~store state place in
-        let enum = Crate.get_adt kind in
-        match enum.kind with
+        let variants = Crate.as_enum kind in
+        match variants with
         (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
-        | Enum [ { fields = []; discriminant; _ } ] ->
+        | [ { fields = []; discriminant; _ } ] ->
             let discr = Typed.int_z discriminant.value in
             Result.ok (Base discr, state)
-        | Enum (var :: _) ->
+        | var :: _ ->
             let int_ty = var.discriminant.int_ty in
             let layout = Layout.of_variant var in
             let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
             let discr_ty = Types.TLiteral (TInteger int_ty) in
             let** loc = Sptr.offset loc discr_ofs |> Heap.lift_err state in
             Heap.load (loc, None) discr_ty state
-        | Enum [] ->
-            Fmt.kstr not_impl "Unsupported discriminant for empty enums"
-        | k ->
-            Fmt.failwith "Expected an enum for discriminant, got %a"
-              Types.pp_type_decl_kind k)
+        | [] -> Fmt.kstr not_impl "Unsupported discriminant for empty enums")
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
-        let type_decl = Crate.get_adt t_id in
-        let variant =
-          match (type_decl : Types.type_decl) with
-          | { kind = Enum variants; _ } -> Types.VariantId.nth variants v_id
-          | _ ->
-              Fmt.failwith "Unexpected type declaration in enum aggregate: %a"
-                Types.pp_type_decl type_decl
-        in
+        let variants = Crate.as_enum t_id in
+        let variant = Types.VariantId.nth variants v_id in
         let discr = value_of_scalar variant.discriminant in
         let++ vals, state = eval_operand_list ~store state vals in
         (Enum (discr, vals), state)
