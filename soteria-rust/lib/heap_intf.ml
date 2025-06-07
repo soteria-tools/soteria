@@ -14,7 +14,9 @@ module type S = sig
   type serialized
   type 'a err
 
-  val add_to_call_trace : 'a err -> Call_trace.element -> 'a err
+  val add_to_call_trace :
+    'a err -> Meta.span Soteria_terminal.Call_trace.element -> 'a err
+
   val pp : t Fmt.t
 
   (** Prettier but expensive printing. *)

@@ -1,4 +1,6 @@
-include State_intf.S with type 'a err = 'a * Call_trace.t
+include
+  State_intf.S
+    with type 'a err = 'a * Cerb_location.t Soteria_terminal.Call_trace.t
 
 val serialize : t -> serialized
 val pp_serialized : Format.formatter -> serialized -> unit

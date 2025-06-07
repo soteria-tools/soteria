@@ -108,14 +108,13 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
 
         return (cause, color, reason)
 
-    if "Done." in test:
+    if "Done, no errors found" in test:
         if not expect_failure:
             return ("Success", GREEN, "Expected success, got success")
         else:
             return ("Failure", RED, "Expected failure, got success")
 
-    err_re = re.compile(r"Error in (\d+) branch")
-    if err_re.search(test):
+    if "Found issues" in test:
         if expect_failure:
             return ("Success", GREEN, "Expected failure, got failure")
         else:
@@ -133,13 +132,16 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             return ("Raised exception", RED, None)
         return ("Raised exception", RED, cause.group(1))
 
+    if "internal error, uncaught exception" in test:
+        return ("Raised exception", RED, None)
+
     if "Fatal: Execution vanished" in test:
         return ("Vanished", RED, None)
 
     if "unknown option" in test:
         return ("Unknown CLI option", RED, None)
 
-    return (f"Unknown (Fatal error)", RED, None)
+    return (f"Unknown", MAGENTA, None)
 
 
 def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:

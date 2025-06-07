@@ -28,7 +28,7 @@ Symbolic execution of a simple program with symbolic values that fails because o
                Uninit {offset = 4; len = 1020}; (Bound 1024)])];
             globs = [] });
      Error: Null pointer dereference with trace
-            [(err.c:6:3-10 (cursor: 6:6), Triggering memory operation)]]
+            [• Triggering memory operation: err.c:6:3-10 (cursor: 6:6)]]
   Executed 5 statements
 
 Symbolic execution of a simple program with a horrible pointer indirection *&*x
@@ -74,8 +74,8 @@ Checking that fuel gets exhausted properly
   $ soteria-c exec-main while_true.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Error: Failed assertion with trace
-            [(while_true.c:10:5-18, Called from here);
-             (while_true.c:10:5-18, Triggering memory operation)]]
+            [• Called from here: while_true.c:10:5-18;
+             • Triggering memory operation: while_true.c:10:5-18]]
   Executed 152 statements
 Checking that code cannot branch infinitely
   $ soteria-c exec-main max_branching.c --no-ignore-parse-failures --no-ignore-duplicate-symbols

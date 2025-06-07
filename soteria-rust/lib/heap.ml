@@ -6,7 +6,7 @@ open Rustsymex
 module Sptr = Sptr.ArithPtr
 module Encoder = Encoder.Make (Sptr)
 
-type 'a err = 'a * Call_trace.t
+type 'a err = 'a * Charon.Meta.span Soteria_terminal.Call_trace.t
 
 let add_to_call_trace (err, trace_elem) trace_elem' =
   (err, trace_elem' :: trace_elem)
@@ -14,7 +14,7 @@ let add_to_call_trace (err, trace_elem) trace_elem' =
 let with_error_loc_as_call_trace ?(msg = "Triggering memory operation") st f =
   let open Rustsymex.Syntax in
   let+- err, loc = f () in
-  ((err, Call_trace.singleton ~loc ~msg ()), st)
+  ((err, Soteria_terminal.Call_trace.singleton ~loc ~msg ()), st)
 
 module HeapKey = struct
   include Typed
@@ -128,7 +128,7 @@ let empty =
 let log action ptr st =
   L.trace (fun m ->
       m "About to execute action: %s at %a (%a)@\n@[<2>HEAP:@ %a@]" action
-        Sptr.pp ptr Call_trace.pp_span (get_loc ())
+        Sptr.pp ptr Charon.Meta.pp_span (get_loc ())
         (pp_pretty ~ignore_freed:true)
         st)
 

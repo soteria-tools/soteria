@@ -19,8 +19,14 @@ let get_abort_diagnostics () =
   Lsp.Types.Diagnostic.create ~message:(`String msg) ~severity:Information
     ~range ~source:"soteria" ()
 
-let lift_severity (sev : Error.severity) : Lsp.Types.DiagnosticSeverity.t =
-  match sev with Error -> Error | Warning -> Warning
+let lift_severity :
+    Soteria_terminal.Diagnostic.severity -> Lsp.Types.DiagnosticSeverity.t =
+  function
+  | Error -> Error
+  | Bug -> Error
+  | Warning -> Warning
+  | Note -> Information
+  | Help -> Hint
 
 let error_to_diagnostic_opt ~uri (err, call_trace) =
   let open Lsp.Types in
@@ -28,13 +34,13 @@ let error_to_diagnostic_opt ~uri (err, call_trace) =
   let message = (Fmt.to_to_string Error.pp) err in
   let parens_if_non_empty = function "" -> "" | s -> " (" ^ s ^ ")" in
   let range, relatedInformation, msg_addendum =
-    match (call_trace : Call_trace.t) with
+    match (call_trace : Cerb_location.t Soteria_terminal.Call_trace.t) with
     | [] -> (cerb_loc_to_range Cerb_location.unknown, None, "")
     | [ { loc; msg } ] -> (cerb_loc_to_range loc, None, parens_if_non_empty msg)
     | { loc; msg } :: locs ->
         let related_info =
           List.map
-            (fun Call_trace.{ loc; msg } ->
+            (fun Soteria_terminal.Call_trace.{ loc; msg } ->
               let location =
                 Location.create ~range:(cerb_loc_to_range loc) ~uri
               in

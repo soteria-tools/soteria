@@ -91,6 +91,7 @@ module Exec_main = struct
     Term.(
       const Soteria_c_lib.Driver.exec_main_and_print
       $ Soteria_logs.Cli.term
+      $ Soteria_terminal.Cli.term
       $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ includes_arg
@@ -113,6 +114,7 @@ module Show_ail = struct
     Term.(
       const Soteria_c_lib.Driver.show_ail
       $ Soteria_logs.Cli.term
+      $ Soteria_terminal.Cli.term
       $ includes_arg
       $ files_arg)
 
@@ -124,6 +126,7 @@ module Generate_summaries = struct
     Term.(
       const Soteria_c_lib.Driver.generate_all_summaries
       $ Soteria_logs.Cli.term
+      $ Soteria_terminal.Cli.term
       $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ includes_arg
@@ -143,6 +146,7 @@ module Capture_db = struct
     Term.(
       const Soteria_c_lib.Driver.capture_db
       $ Soteria_logs.Cli.term
+      $ Soteria_terminal.Cli.term
       $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ compilation_db_arg

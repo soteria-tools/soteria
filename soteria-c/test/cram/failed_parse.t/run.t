@@ -18,7 +18,7 @@ We do not want to print the backtrace in the test output to reduce flakiness of 
   parsing "conditional_expression": seen "logical_OR_expression QUESTION", expecting "expression COLON conditional_expression"
   }
   ^  with trace
-  [(file1.c:4:1-2, )]
+  [• file1.c:4:1-2]
   soteria-c: internal error, uncaught exception:
              Failure("Failed to parse AIL")
              
