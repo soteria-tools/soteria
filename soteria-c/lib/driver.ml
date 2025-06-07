@@ -48,6 +48,16 @@ let io : Cerb_backend.Pipeline.io_helpers =
   { pass_message; set_progress; run_pp; print_endline; print_debug; warn }
 
 module Frontend = struct
+  let lift_parsing_result res =
+    match res with
+    | Exception.Result (_, (_, ast)) -> Ok ast
+    | Exception (loc, err) ->
+        let msg =
+          Printf.sprintf "Failed to parse AIL: %s"
+            (Pp_errors.to_string (loc, err))
+        in
+        Error (`ParsingError msg, Call_trace.singleton ~loc ())
+
   let frontend = ref (fun ~cpp_cmd:_ _ -> failwith "Frontend not set")
 
   let include_libc () =
@@ -108,10 +118,19 @@ module Frontend = struct
 
   let frontend ?cwd ~cpp_cmd filename =
     L.debug (fun m -> m "Parsing %s" filename);
-    match cwd with
-    | None -> !frontend ~cpp_cmd filename
-    | Some dir ->
-        Sys.with_working_dir dir @@ fun () -> !frontend ~cpp_cmd filename
+    try
+      let cerb_res =
+        match cwd with
+        | None -> !frontend ~cpp_cmd filename
+        | Some dir ->
+            Sys.with_working_dir dir @@ fun () -> !frontend ~cpp_cmd filename
+      in
+      lift_parsing_result cerb_res
+    with Sys_error err ->
+      let pos = Cerb_position.(set_source (filename, 0) dummy) in
+      let loc = Cerb_location.point pos in
+
+      Error (`ParsingError err, Call_trace.singleton ~loc ())
 
   let simple_frontend ~includes filename =
     let cmd = "cc" :: List.map (fun s -> "-I" ^ s) includes in
@@ -120,18 +139,8 @@ module Frontend = struct
     frontend ~cpp_cmd filename
 end
 
-let lift_parsing_result res =
-  match res with
-  | Exception.Result (_, (_, ast)) -> Ok ast
-  | Exception (loc, err) ->
-      let msg =
-        Printf.sprintf "Failed to parse AIL: %s"
-          (Pp_errors.to_string (loc, err))
-      in
-      Error (`ParsingError msg, Call_trace.singleton ~loc ())
-
 let parse_ail_raw_default ~includes file =
-  Frontend.simple_frontend ~includes file |> lift_parsing_result
+  Frontend.simple_frontend ~includes file
 
 let parse_and_link_ail ~includes files =
   let open Syntaxes.Result in
@@ -167,7 +176,6 @@ let parse_compilation_item (item : Compilation_database.cmd) =
   Frontend.frontend ~cwd:item.directory
     ~cpp_cmd:(String.concat " " item.command)
     item.file
-  |> lift_parsing_result
 
 let is_main (def : Cabs.function_definition) =
   let decl = match def with FunDef (_, _, _, decl, _) -> decl in
@@ -320,19 +328,23 @@ let generate_summaries ~functions_to_analyse prog =
   let results = analyse_summaries ~prog results in
   dump_summaries ~prog results;
   Fmt.pr "@\n@?";
+  let found_bugs = ref false in
   results
   |> List.iter (fun (fid, summaries) ->
          let bugs =
            List.concat_map (Summary.manifest_bugs ~prog ~fid) summaries
          in
-         if not (List.is_empty bugs) then
+         if not (List.is_empty bugs) then (
+           found_bugs := true;
            List.iter
              (fun (error, call_trace) ->
                let diag =
                  Error.Diagnostic.mk_diagnostic ~fid ~call_trace ~error
                in
                Fmt.pr "%a@\n@\n@?" Soteria_terminal.Diagnostic.pp diag)
-             (List.sort_uniq Stdlib.compare bugs))
+             (List.sort_uniq Stdlib.compare bugs)));
+  if not !found_bugs then
+    Fmt.pr "%a@.@?" Soteria_terminal.Color.pp_ok "No bugs found"
 
 (* Entry point function *)
 let lsp config () =
@@ -431,8 +443,10 @@ let capture_db log_config term_config solver_config config json_file
           let total = List.length db in
           if parsed < total then
             L.warn (fun m ->
-                m "Some files failed to parse, successfully %d out of %d" parsed
-                  total)
+                m
+                  "Some files failed to parse, successfully parsed %d out of \
+                   %d files"
+                  parsed total)
         in
         Ok ails
     in
@@ -445,8 +459,15 @@ let capture_db log_config term_config solver_config config json_file
             Fmt.epr "%s@\n@?" msg;
             failwith "Failed to parse AIL"
         | `LinkError msg, _ ->
-            Fmt.epr "%s@\n@?" msg;
-            failwith "Failed to link AIL")
+            let msg =
+              if !Config.current.no_ignore_parse_failures then
+                "All files failed to parse, no analysis will be performed"
+              else msg
+            in
+            Fmt.pr "Error: %a@\n@?" Soteria_terminal.Color.pp_err msg;
+            if !Config.current.no_ignore_parse_failures then
+              failwith "Failed to link AIL"
+            else Ail_tys.empty_linked_program)
       linked_prog
   in
   if not !Config.current.parse_only then
