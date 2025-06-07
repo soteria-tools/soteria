@@ -5,7 +5,7 @@ let set, get, lock =
   let locked = ref false in
   let lock () = locked := true in
   let set_config config =
-    if !locked then failwith "Logging configuration cannot be changed anymore";
+    if !locked then failwith "Terminal configuration cannot be changed anymore";
     current_config := config
   in
   let current_config () = !current_config in
