@@ -144,17 +144,26 @@ let parse_ail_raw_default ~includes file =
 
 let parse_and_link_ail ~includes files =
   let open Syntaxes.Result in
+  let parse_and_signal file =
+    let res = parse_ail_raw_default ~includes file in
+    Soteria_terminal.Progress_bar.signal_progress 1;
+    res
+  in
+  let@ () =
+    Soteria_terminal.Progress_bar.run ~color:`Yellow ~msg:"Parsing files"
+      ~total:(List.length files) ()
+  in
   match files with
   | [] -> Error (`ParsingError "No files to parse?", Call_trace.empty)
   | files ->
       let* parsed =
         if !Config.current.no_ignore_parse_failures then
-          Monad.ResultM.all (parse_ail_raw_default ~includes) files
+          Monad.ResultM.all parse_and_signal files
         else
           let parsed =
             List.filter_map
               (fun file ->
-                match parse_ail_raw_default ~includes file with
+                match parse_and_signal file with
                 | Ok ast -> Some ast
                 | Error (msg, _loc) ->
                     let msg =
@@ -422,14 +431,24 @@ let capture_db log_config term_config solver_config config json_file
       Soteria_logs.Logs.with_section "Parsing and Linking from database"
     in
     let db = Compilation_database.from_file json_file in
+    let parse_and_signal item =
+      let res = parse_compilation_item item in
+      Soteria_terminal.Progress_bar.signal_progress 1;
+      res
+    in
+    let db_size = List.length db in
+    let@ () =
+      Soteria_terminal.Progress_bar.run ~color:`Yellow
+        ~msg:"Parsing files       " ~total:db_size ()
+    in
     let* ails =
       if !Config.current.no_ignore_parse_failures then
-        Monad.ResultM.all parse_compilation_item db
+        Monad.ResultM.all parse_and_signal db
       else
         let ails =
           List.filter_map
             (fun item ->
-              match parse_compilation_item item with
+              match parse_and_signal item with
               | Ok ail -> Some ail
               | Error (`ParsingError msg, _loc) ->
                   L.debug (fun m ->
@@ -440,13 +459,12 @@ let capture_db log_config term_config solver_config config json_file
         in
         let () =
           let parsed = List.length ails in
-          let total = List.length db in
-          if parsed < total then
+          if parsed < db_size then
             L.warn (fun m ->
                 m
                   "Some files failed to parse, successfully parsed %d out of \
                    %d files"
-                  parsed total)
+                  parsed db_size)
         in
         Ok ails
     in
