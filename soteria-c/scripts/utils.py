@@ -69,6 +69,7 @@ def merge_dicts(into: dict[str, int], from_: dict[str, int]) -> dict[str, int]:
 
 
 def ask_and_remove(path: Path):
-    response = input(f"Are you sure you want to remove '{path}'? (y/N): ")
-    if response.lower() in ["y", "yes"]:
-        os.system(f"rm -rf {str(path)}")
+    if path.exists():
+        response = input(f"Are you sure you want to remove '{path}'? (y/N): ")
+        if response.lower() in ["y", "yes"]:
+            os.system(f"rm -rf {str(path)}")

@@ -18,7 +18,7 @@ default_solver_timeout = 25  # ms
 default_experiments_to_run: Optional[list[str]] = None
 
 # Later modified by the script to include available experiments
-available_experiments = []
+available_experiments: list[str] = []
 
 
 parser = argparse.ArgumentParser(
@@ -54,6 +54,21 @@ parser.add_argument(
     help="Remove existing results folder before running experiments",
 )
 
+parser.add_argument(
+    "--cleanup-builds-first",
+    action="store_true",
+    help="Remove existing build folders before running experiments",
+)
+
+parser.add_argument(
+    "--cleanup-first",
+    action="store_true",
+    help=(
+        "Remove existing results and build folders before running experiments "
+        "(equivalent to --cleanup-results-first and --cleanup-builds-first)"
+    ),
+)
+
 
 def validate_args(args):
     if args.experiments is None:
@@ -71,12 +86,15 @@ class GlobalConfig:
     experiment_folder: Path
     solver_timeout: int
     experiments_to_run: Optional[list[str]]
+    cleanup_results_first: bool
+    cleanup_builds_first: bool
 
     def __init__(self):
         self.experiment_folder = default_experiment_folder.resolve()
         self.solver_timeout = default_solver_timeout
         self.experiments_to_run = default_experiments_to_run
         self.cleanup_results_first = False
+        self.cleanup_builds_first = False
 
     def result_folder(self) -> Path:
         return self.experiment_folder / "results"
@@ -85,7 +103,8 @@ class GlobalConfig:
         self.experiment_folder = args.experiment_folder.resolve()
         self.solver_timeout = args.solver_timeout
         self.experiments_to_run = args.experiments
-        self.cleanup_results_first = args.cleanup_results_first
+        self.cleanup_results_first = args.cleanup_results_first or args.cleanup_first
+        self.cleanup_builds_first = args.cleanup_builds_first or args.cleanup_first
 
     def to_dict(self):
         return {
@@ -167,12 +186,14 @@ class Experiment(PrintersMixin):
         os.system(cmd)
 
     def make_compile_commands(self):
+        new_dir = global_config.experiment_folder / self.config.path
+        if global_config.cleanup_builds_first:
+            ask_and_remove((new_dir / self.config.cmake_build_path).resolve())
         if self.compile_commands.exists():
             self.print_info(
                 f"compile_commands.json already exists, skipping generation."
             )
             return
-        new_dir = global_config.experiment_folder / self.config.path
 
         with contextlib.chdir(new_dir):
             cmd = (
