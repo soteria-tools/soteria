@@ -119,6 +119,22 @@ KNOWN_ISSUES = {
     "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
+    "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
+    "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
+    **{
+        test: "Failure caused by a Box leak (drops not supported yet)"
+        for test in [
+            "pass/closure-field-ty.rs",
+            "pass/dst-struct.rs",
+            "pass/issues/issue-36278-prefix-nesting.rs",
+            "pass/issues/issue-miri-3473.rs",
+            "pass/move-arg-3-unique.rs",
+            "pass/panic/nested_panic_caught.rs",
+            "pass/rfc1623.rs",
+            "pass/underscore_pattern.rs",
+            "pass/zst_box.rs",
+        ]
+    },
 }
 
 PWD = Path(os.path.dirname(os.path.abspath(__file__)))
