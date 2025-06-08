@@ -56,10 +56,14 @@ let is_struct adt_id =
 let as_enum adt_id =
   match (get_adt adt_id).kind with
   | Enum variants -> variants
-  | _ -> assert false
+  | _ -> failwith "as_struct expected an enum"
 
 let as_struct adt_id =
-  match (get_adt adt_id).kind with Struct fields -> fields | _ -> assert false
+  match (get_adt adt_id).kind with
+  | Struct fields -> fields
+  | _ -> failwith "as_struct expected a struct"
 
 let as_union adt_id =
-  match (get_adt adt_id).kind with Union fields -> fields | _ -> assert false
+  match (get_adt adt_id).kind with
+  | Union fields -> fields
+  | _ -> failwith "as_union expected a union"

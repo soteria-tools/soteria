@@ -17,6 +17,7 @@ type t =
     `RefToUninhabited
   | `StdErr of string
   | `UBAbort
+  | `UBDanglingPointer
   | `UBPointerArithmetic
   | `UBPointerComparison
   | `UBTransmute
@@ -28,6 +29,8 @@ type t =
   | `UnwindTerminate
   | (* Local was not initialised (impossible without `mir!`) *)
     `DeadVariable
+  | (* Breakpoint intrinsic *)
+    `Breakpoint
   | (* Meta errors *)
     `MetaExpectedError
     (* Type is too large for memory *)
@@ -41,6 +44,7 @@ let is_unwindable : [> t ] -> bool = function
 
 let pp ft = function
   | `AliasingError -> Fmt.string ft "Aliasing error"
+  | `Breakpoint -> Fmt.string ft "Breakpoint hit"
   | `DeadVariable -> Fmt.string ft "Dead variable accessed"
   | `DivisionByZero -> Fmt.string ft "Division by zero"
   | `DoubleFree -> Fmt.string ft "Double free"
@@ -62,6 +66,7 @@ let pp ft = function
   | `StdErr msg -> Fmt.pf ft "UB in std: %s" msg
   | `UninitializedMemoryAccess -> Fmt.string ft "Uninitialized memory access"
   | `UBAbort -> Fmt.string ft "UB: undefined behaviour trap reached"
+  | `UBDanglingPointer -> Fmt.string ft "UB: dangling pointer"
   | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
   | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
   | `UBTransmute -> Fmt.string ft "UB: Transmute"
@@ -101,8 +106,8 @@ module Diagnostic = struct
         ]
     | Virtual _ -> []
 
-  let mk_diagnostic ~fname ~call_trace ~error =
-    Soteria_terminal.Diagnostic.mk_diagnostic ~call_trace ~as_ranges
+  let print_diagnostic ~fname ~call_trace ~error =
+    Soteria_terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
       ~error:(Fmt.to_to_string pp error)
       ~severity:(severity error) ~fname
 end

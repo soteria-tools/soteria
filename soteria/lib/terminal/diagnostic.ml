@@ -93,9 +93,10 @@ let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =
   in
   aux 1 [] call_trace
 
-let mk_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
-  let labels = call_trace_to_labels ~as_ranges call_trace in
-  Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
+let with_unaltered_geo f =
+  let geo = Format.get_geometry () in
+  f ();
+  Format.set_geometry ~max_indent:geo.max_indent ~margin:geo.margin
 
 let pp ft diag =
   let module GConfig = Grace_ansi_renderer.Config in
@@ -109,3 +110,14 @@ let pp ft diag =
   if Config.compact () then
     Grace_ansi_renderer.pp_compact_diagnostic ~config () ft diag
   else Grace_ansi_renderer.pp_diagnostic ~config () ft diag
+
+let print_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
+  with_unaltered_geo @@ fun () ->
+  let labels = call_trace_to_labels ~as_ranges call_trace in
+  Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
+  |> Fmt.pr "%a@\n@?" pp
+
+let print_diagnostic_simple ~severity msg =
+  with_unaltered_geo @@ fun () ->
+  let msg = Grace.Diagnostic.Message.create msg in
+  Grace.Diagnostic.create severity msg |> Fmt.pr "%a@\n@?" pp

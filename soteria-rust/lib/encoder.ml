@@ -198,11 +198,14 @@ module Make (Sptr : Sptr.S) = struct
         let field = Types.FieldId.nth fields f in
         rust_to_cvals ~offset v field.field_ty
     | Union _, _ -> illegal_pair ()
+    (* Static Functions (ZSTs) *)
+    | ConstFn _, TFnDef _ -> []
+    | ConstFn _, _ | _, TFnDef _ -> illegal_pair ()
     (* Rest *)
     | _ ->
         L.error (fun m ->
             m "Unhandled rust_value and Charon.ty: %a / %a" ppa_rust_val value
-              Types.pp_ty ty);
+              pp_ty ty);
         failwith "Unhandled rust_value and Charon.ty"
 
   type ('e, 'fix, 'state) parser = (rust_val, 'state, 'e, 'fix) ParserMonad.t
@@ -240,7 +243,7 @@ module Make (Sptr : Sptr.S) = struct
                 | Ptr (ptr_v, None) -> Rustsymex.return ptr_v
                 | Base ptr_v ->
                     let+ ptr_v = cast_checked ~ty:Typed.t_int ptr_v in
-                    Sptr.offset Sptr.null_ptr ptr_v
+                    Sptr.null_ptr_of ptr_v
                 | _ -> failwith "Expected a pointer or base"
               in
               let ptr = Ptr (ptr, Some (meta :> T.cval Typed.t)) in
@@ -411,14 +414,16 @@ module Make (Sptr : Sptr.S) = struct
           Result.ok v
       | TLiteral (TInteger from_ty), TLiteral (TInteger to_ty), Base sv ->
           let* v = cast_checked ~ty:Typed.t_int sv in
+          let from_bits = 8 * Layout.size_of_int_ty from_ty in
           let bits = 8 * Layout.size_of_int_ty to_ty in
+          let from_max = Typed.nonzero_z (Z.shift_left Z.one from_bits) in
           let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
           let maxsigned = Typed.nonzero_z (Z.shift_left Z.one (bits - 1)) in
           let* v =
             if Layout.is_signed from_ty then
               if%sat v <@ 0s then return (((v %@ max) +@ max) %@ max)
               else return (v %@ max)
-            else return (v %@ max)
+            else if%sat from_max >@ max then return (v %@ max) else return v
           in
           let* v =
             if Layout.is_signed to_ty then
@@ -444,7 +449,7 @@ module Make (Sptr : Sptr.S) = struct
       (* A raw pointer can be whatever *)
       | _, TRawPtr _, Base off ->
           let* off = cast_checked ~ty:Typed.t_int off in
-          let ptr = Sptr.offset Sptr.null_ptr off in
+          let ptr = Sptr.null_ptr_of off in
           ok (Ptr (ptr, None))
       | _, TRawPtr _, Ptr _ -> ok v
       | _, TLiteral (TInteger (Isize | Usize | I64 | U64)), Ptr (ptr, None) ->

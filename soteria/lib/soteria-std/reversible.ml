@@ -14,15 +14,20 @@ module Make_mutable (M : sig
 end) : sig
   include Mutable with type t = M.t Dynarray.t
 
+  val set_default : M.t -> unit
   val wrap : (M.t -> 'a * M.t) -> t -> 'a
   val wrap_read : (M.t -> 'a) -> t -> 'a
 end = struct
   type t = M.t Dynarray.t
 
+  let default = ref M.default
+
   let init () =
     let d = Dynarray.create () in
-    Dynarray.add_last d M.default;
+    Dynarray.add_last d !default;
     d
+
+  let set_default v = default := v
 
   let backtrack_n d n =
     let len = Dynarray.length d in
@@ -32,7 +37,7 @@ end = struct
 
   let reset d =
     Dynarray.clear d;
-    Dynarray.add_last d M.default
+    Dynarray.add_last d !default
 
   let wrap (f : M.t -> 'a * M.t) d =
     let e = Dynarray.pop_last d in
@@ -68,6 +73,7 @@ struct
   module Mutable = Make_mutable (M)
   include Mutable_to_in_place (Mutable)
 
+  let set_default = Mutable.set_default
   let wrap_read f () = wrap (Mutable.wrap_read f) ()
   let wrap f () = wrap (Mutable.wrap f) ()
 end

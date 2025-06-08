@@ -64,6 +64,3 @@ let to_fmt_style : style -> Fmt.style = function
 let pp_clr c = Fmt.styled (to_fmt c) Fmt.string
 let pp_style s = Fmt.styled (to_fmt_style s) Fmt.string
 let pp_clr2 c s = Fmt.styled (to_fmt c) (Fmt.styled (to_fmt_style s) Fmt.string)
-let pp_ok = pp_clr2 `Green `Bold
-let pp_err = pp_clr2 `Red `Bold
-let pp_fatal = pp_clr2 `Maroon `Bold
