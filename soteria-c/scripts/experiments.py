@@ -246,6 +246,7 @@ configs = [
     simple_config("libtommath"),
     simple_config("c-ares"),
     simple_config("zlib-ng"),
+    simple_config("aws-c-common"),
 ]
 
 

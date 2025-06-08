@@ -478,7 +478,7 @@ let capture_db log_config term_config solver_config config json_file
             failwith "Failed to parse AIL"
         | `LinkError msg, _ ->
             let msg =
-              if !Config.current.no_ignore_parse_failures then
+              if not !Config.current.no_ignore_parse_failures then
                 "All files failed to parse, no analysis will be performed"
               else msg
             in

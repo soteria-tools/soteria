@@ -227,6 +227,7 @@ target/
 ### Python ###
 *.pyc
 __pycache__/
+.venv
 
 ### Produced by Soteria ###
 json_dump/
