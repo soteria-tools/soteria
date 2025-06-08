@@ -53,6 +53,7 @@ module type Base = sig
   (** {2 Fuel} *)
 
   val consume_fuel_steps : int -> unit MONAD.t
+  val set_default_fuel : Fuel_gauge.t -> unit
 
   (** [run] p actually performs symbolic execution and returns a list of
       obtained branches which capture the outcome together with a path condition
@@ -223,6 +224,8 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
     match Fuel.consume_fuel_steps n () with
     | Exhausted -> Seq.Nil
     | Not_exhausted -> Seq.Cons ((), Seq.empty)
+
+  let set_default_fuel = Fuel.set_default
 
   let assume learned () =
     let rec aux acc learned =
@@ -415,6 +418,8 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
     match Fuel.consume_fuel_steps n () with
     | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted -> f ()
+
+  let set_default_fuel = Fuel.set_default
 
   let assume learned f =
     let rec aux acc learned =

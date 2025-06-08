@@ -138,6 +138,12 @@ let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
     (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)
     decl.item_meta.attr_info.attributes
 
+let decl_get_attr (decl : 'a GAst.gfun_decl) attr =
+  List.find_map
+    (function
+      | Meta.AttrUnknown { path; args } when path = attr -> args | _ -> None)
+    decl.item_meta.attr_info.attributes
+
 let get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
   | TRawPtr (ty, _)

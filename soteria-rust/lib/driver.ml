@@ -69,6 +69,7 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
     |> List.map @@ fun (entry : Plugin.entry_point) ->
        let branches =
          let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
+         Option.iter Rustsymex.set_default_fuel entry.fuel;
          try Rustsymex.run @@ exec_fun entry.fun_decl with
          | Layout.InvalidLayout ->
              [ (Error (`InvalidLayout, Soteria_terminal.Call_trace.empty), []) ]
