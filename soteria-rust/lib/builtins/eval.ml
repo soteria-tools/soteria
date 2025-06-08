@@ -86,7 +86,8 @@ module M (Heap : Heap_intf.S) = struct
       (* Core *)
       (* FIXME: get rid of these, as Charon improves *)
       ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
-      ("alloc::boxed::{@T}::from_raw", BoxIntoRaw);
+      ("alloc::boxed::{alloc::boxed::Box}::from_raw", BoxIntoRaw);
+      ("alloc::boxed::{alloc::boxed::Box}::leak", BoxIntoRaw);
       (* FIXME: the below indexes fail because the code doesn't get monomorphised properly, and
          returns a thin pointer rather than a fat one. *)
       ("core::array::{core::ops::index::Index}::index", Index);
