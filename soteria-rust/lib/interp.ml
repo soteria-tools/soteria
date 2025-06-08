@@ -774,6 +774,7 @@ module Make (Heap : Heap_intf.S) = struct
             exec_block ~body store state block)
           ~fe:(fun (err, state) ->
             let** (), state' = Heap.add_error err state in
+            L.info (fun m -> m "Unwinding from %a" Crate.pp_fn_operand func);
             let block = UllbcAst.BlockId.nth body.body on_unwind in
             exec_block ~body store state' block)
     | Goto b ->

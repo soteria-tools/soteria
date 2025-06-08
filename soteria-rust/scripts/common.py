@@ -109,6 +109,7 @@ KNOWN_ISSUES = {
     "Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
     "Intrinsics/ConstEval/pref_align_of.rs": "Requires support for custom target architectures",
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
+    "PointerComparison/ptr_comparison.rs": "Error when monomorphising a fn meants ptr meta is lost",
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
     "Uninit/access-padding-enum-multiple-variants.rs": "Kani assumes discriminants are i32, but Charon gives isize",
     "Uninit/access-padding-enum-single-field.rs": "Kani assumes discriminants are i32, but Charon gives isize",
