@@ -103,8 +103,8 @@ module Diagnostic = struct
         ]
     | Virtual _ -> []
 
-  let mk_diagnostic ~fname ~call_trace ~error =
-    Soteria_terminal.Diagnostic.mk_diagnostic ~call_trace ~as_ranges
+  let print_diagnostic ~fname ~call_trace ~error =
+    Soteria_terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
       ~error:(Fmt.to_to_string pp error)
       ~severity:(severity error) ~fname
 end

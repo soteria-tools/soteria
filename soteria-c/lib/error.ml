@@ -60,8 +60,8 @@ module Diagnostic = struct
             mk_range_file file loc1 loc2)
           l
 
-  let mk_diagnostic ~fid ~call_trace ~error =
-    Soteria_terminal.Diagnostic.mk_diagnostic ~call_trace ~as_ranges
+  let print_diagnostic ~fid ~call_trace ~error =
+    Soteria_terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
       ~error:(Fmt.to_to_string pp error)
       ~severity:(severity error)
       ~fname:(Fmt.to_to_string Ail_helpers.pp_sym_hum fid)
