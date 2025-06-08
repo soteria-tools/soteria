@@ -288,19 +288,24 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> failwith "ptr_offset_from: invalid arguments"
     in
     let* size = Layout.size_of_s ty in
-    if%sat Sptr.is_same_loc ptr1 ptr2 &&@ (size >@ 0s) then
-      let size = Typed.cast size in
-      let off = Sptr.distance ptr1 ptr2 in
-      if%sat off %@ size ==@ 0s then
-        if not unsigned then Result.ok (Base (off /@ size), state)
-        else
-          if%sat off >=@ 0s then Result.ok (Base (off /@ size), state)
+    if%sat size >@ 0s then
+      if%sat Sptr.constraints ptr1 &&@ Sptr.constraints ptr2 then
+        let size = Typed.cast size in
+        let off = Sptr.distance ptr1 ptr2 in
+        if%sat
+          Sptr.is_same_loc ptr1 ptr2 &&@ (size >@ 0s) &&@ (off %@ size ==@ 0s)
+        then
+          if not unsigned then Result.ok (Base (off /@ size), state)
           else
-            Heap.error
-              (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
-              state
-      else Heap.error `UBPointerComparison state
-    else Heap.error `UBPointerComparison state
+            if%sat off >=@ 0s then Result.ok (Base (off /@ size), state)
+            else
+              Heap.error
+                (`StdErr
+                   "core::intrinsics::offset_from_unsigned negative offset")
+                state
+        else Heap.error `UBPointerComparison state
+      else Heap.error `UBDanglingPointer state
+    else Heap.error (`Panic (Some "ptr_offset_from with ZST")) state
 
   let black_box ~args ~state =
     match args with
@@ -592,6 +597,15 @@ module M (Heap : Heap_intf.S) = struct
       | Some l, Some r -> (l, r)
       | _ -> failwith "fast_float: invalid arguments"
     in
+    let name =
+      lazy
+        (match bop with
+        | Add -> "core::intrinsics::fadd_fast"
+        | Sub -> "core::intrinsics::fsub_fast"
+        | Mul -> "core::intrinsics::fmul_fast"
+        | Div -> "core::intrinsics::fdiv_fast"
+        | _ -> assert false)
+    in
     let is_finite f = Typed.((not (is_nan f)) &&@ not (is_infinite f)) in
     if%sat is_finite l &&@ is_finite r then
       let bop =
@@ -602,20 +616,12 @@ module M (Heap : Heap_intf.S) = struct
         | Div -> ( /.@ )
         | _ -> failwith "fast_float: invalid binop"
       in
-      Result.ok (Base (bop l r), state)
+      let res = bop l r in
+      if%sat is_finite res then Result.ok (Base res, state)
+      else
+        Heap.error (`StdErr (Lazy.force name ^ ": result must be finite")) state
     else
-      let name =
-        match bop with
-        | Add -> "add"
-        | Sub -> "sub"
-        | Mul -> "mul"
-        | Div -> "div"
-        | _ -> assert false
-      in
-      let msg =
-        Fmt.str "core::intrinsics::f%s_fast: operands must be finite" name
-      in
-      Heap.error (`StdErr msg) state
+      Heap.error (`StdErr (Lazy.force name ^ ": result must be finite")) state
 
   let float_is_sign pos ~args ~state =
     let v =
@@ -862,4 +868,6 @@ module M (Heap : Heap_intf.S) = struct
     (* FIXME: this is extremely wrong !! we need Charon to stop translating boxes
        weirdly and this should go away, for now this at least means catch_unwind works. *)
     Result.ok (Ptr (Sptr.null_ptr, None), state)
+
+  let breakpoint ~args:_ ~state = Heap.error `Breakpoint state
 end

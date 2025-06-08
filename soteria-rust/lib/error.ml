@@ -29,6 +29,8 @@ type t =
   | `UnwindTerminate
   | (* Local was not initialised (impossible without `mir!`) *)
     `DeadVariable
+  | (* Breakpoint intrinsic *)
+    `Breakpoint
   | (* Meta errors *)
     `MetaExpectedError
     (* Type is too large for memory *)
@@ -42,6 +44,7 @@ let is_unwindable : [> t ] -> bool = function
 
 let pp ft = function
   | `AliasingError -> Fmt.string ft "Aliasing error"
+  | `Breakpoint -> Fmt.string ft "Breakpoint hit"
   | `DeadVariable -> Fmt.string ft "Dead variable accessed"
   | `DivisionByZero -> Fmt.string ft "Division by zero"
   | `DoubleFree -> Fmt.string ft "Double free"

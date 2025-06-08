@@ -420,12 +420,12 @@ module Make (Heap : Heap_intf.S) = struct
             let size = Typed.int @@ int_of_const_generic size in
             Result.ok (Ptr (ptr, Some size), state)
         | Cast (CastFnPtr (_from, _to)) ->
-            let* fn_ptr =
+            let++ ptr, state =
               match v with
-              | ConstFn fn_ptr -> return fn_ptr
+              | ConstFn fn_ptr -> Heap.declare_fn fn_ptr state
+              | Ptr ptr -> Result.ok (ptr, state)
               | _ -> not_impl "Invalid argument to CastFnPtr"
             in
-            let++ ptr, state = Heap.declare_fn fn_ptr state in
             (Ptr ptr, state))
     | BinaryOp (op, e1, e2) -> (
         let** v1, state = eval_operand state e1 in

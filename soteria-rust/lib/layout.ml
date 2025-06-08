@@ -86,7 +86,7 @@ let size_to_fit ~size ~align =
   if size % align = 0 then size else size + align - (size % align)
 
 let max_array_len sub_size =
-  let isize_bits = Archi.word_size * 8 in
+  let isize_bits = (Archi.word_size * 8) - 1 in
   if sub_size = 0 then Z.of_int isize_bits
   else Z.((one lsl isize_bits) / of_int sub_size)
 

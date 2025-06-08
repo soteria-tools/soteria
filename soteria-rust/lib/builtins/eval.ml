@@ -28,6 +28,7 @@ module M (Heap : Heap_intf.S) = struct
     | ByteSwap
     | BlackBox
     | BoxIntoRaw
+    | Breakpoint
     | CatchUnwind
     | Checked of Expressions.binop
     | CompareBytes
@@ -156,6 +157,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::intrinsics::assert_zero_valid", AssertZeroValid);
       ("core::intrinsics::assume", Assume);
       ("core::intrinsics::black_box", BlackBox);
+      ("core::intrinsics::breakpoint", Breakpoint);
       ("core::intrinsics::bswap", ByteSwap);
       ("core::intrinsics::catch_unwind", CatchUnwind);
       ("core::intrinsics::ceilf16", FloatRounding Ceil);
@@ -308,9 +310,10 @@ module M (Heap : Heap_intf.S) = struct
          | AssertZeroValid -> assert_zero_is_valid (mono ())
          | AssertInhabited -> assert_inhabited (mono ())
          | Assume -> std_assume
-         | ByteSwap -> byte_swap f.signature
          | BlackBox -> black_box
          | BoxIntoRaw -> box_into_raw
+         | Breakpoint -> breakpoint
+         | ByteSwap -> byte_swap f.signature
          | CatchUnwind -> catch_unwind fun_exec
          | Checked op -> checked_op op f.signature
          | CompareBytes -> compare_bytes

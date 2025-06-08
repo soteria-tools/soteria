@@ -97,7 +97,6 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
-    "pass/btreemap.rs": unkn_("Monomorphisation hangs"),
     "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
     "pass/tag-align-dyn-u64.rs": unkn_("Slow due to symbolic checks on the pointer"),
 }
@@ -116,6 +115,8 @@ KNOWN_ISSUES = {
     "Uninit/access-padding-enum-single-variant.rs": "Kani assumes discriminants are i32, but Charon gives isize",
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
     # Miri
+    "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",
+    "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
 }
