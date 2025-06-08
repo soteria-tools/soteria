@@ -166,13 +166,16 @@ module Make (Heap : Heap_intf.S) = struct
             f "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty);
         let** v, state = Heap.load ptr base.ty state in
         match v with
-        | Ptr v ->
+        | Ptr v -> (
             L.debug (fun f ->
                 f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
                   pp_full_ptr v);
             let pointee = Charon_util.get_pointee base.ty in
-            let++ () = Heap.check_ptr_align (fst v) pointee state in
-            (v, state)
+            match base.ty with
+            | TRef _ | TAdt (TBuiltin TBox, _) ->
+                let++ () = Heap.check_ptr_align (fst v) pointee state in
+                (v, state)
+            | _ -> Result.ok (v, state))
         | Base off ->
             let* off = cast_checked ~ty:Typed.t_int off in
             let ptr = Sptr.null_ptr_of off in
@@ -180,6 +183,7 @@ module Make (Heap : Heap_intf.S) = struct
         | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
         let** (ptr, meta), state = resolve_place ~store state base in
+        let** () = Heap.check_ptr_align ptr base.ty state in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);

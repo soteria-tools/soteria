@@ -240,6 +240,7 @@ let store (ptr, _) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
+    let** () = check_ptr_align ptr ty st in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     L.debug (fun f ->
