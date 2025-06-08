@@ -117,7 +117,7 @@ class GlobalConfig:
 global_config = GlobalConfig()
 
 
-######### Normalsing current folder to project root #########
+######### Normalising current folder to project root #########
 
 
 def current_folder_is_root():
