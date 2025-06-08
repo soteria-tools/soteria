@@ -1,4 +1,8 @@
-# Soteria
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/LOGO-SOTERIA-FULL-WHITE.png">
+  <source media="(prefers-color-scheme: light)" srcset="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
+  <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
+</picture>
 
 Soteria is a library for writing efficient symbolic interpreters directly in OCaml.
 The core library is just a small toolbox that we use for writing a set of analyses, currently for C and Rust.

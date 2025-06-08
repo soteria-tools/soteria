@@ -347,10 +347,8 @@ let generate_summaries ~functions_to_analyse prog =
            found_bugs := true;
            List.iter
              (fun (error, call_trace) ->
-               let diag =
-                 Error.Diagnostic.mk_diagnostic ~fid ~call_trace ~error
-               in
-               Fmt.pr "%a@\n@\n@?" Soteria_terminal.Diagnostic.pp diag)
+               Error.Diagnostic.print_diagnostic ~fid ~call_trace ~error;
+               Fmt.pr "@\n@?")
              (List.sort_uniq Stdlib.compare bugs)));
   if not !found_bugs then
     Fmt.pr "%a@.@?" Soteria_terminal.Color.pp_ok "No bugs found"

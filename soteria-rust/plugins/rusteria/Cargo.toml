@@ -2,3 +2,6 @@
 name = "rusteria"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+rusteria_macros = { path = "../rusteria_macros" }

@@ -97,7 +97,6 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
-    "pass/btreemap.rs": unkn_("Monomorphisation hangs"),
     "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
     "pass/tag-align-dyn-u64.rs": unkn_("Slow due to symbolic checks on the pointer"),
 }
@@ -110,14 +109,33 @@ KNOWN_ISSUES = {
     "Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
     "Intrinsics/ConstEval/pref_align_of.rs": "Requires support for custom target architectures",
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
+    "PointerComparison/ptr_comparison.rs": "Error when monomorphising a fn meants ptr meta is lost",
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
     "Uninit/access-padding-enum-multiple-variants.rs": "Kani assumes discriminants are i32, but Charon gives isize",
     "Uninit/access-padding-enum-single-field.rs": "Kani assumes discriminants are i32, but Charon gives isize",
     "Uninit/access-padding-enum-single-variant.rs": "Kani assumes discriminants are i32, but Charon gives isize",
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
     # Miri
+    "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",
+    "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
+    "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
+    "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
+    **{
+        test: "Failure caused by a Box leak (drops not supported yet)"
+        for test in [
+            "pass/closure-field-ty.rs",
+            "pass/dst-struct.rs",
+            "pass/issues/issue-36278-prefix-nesting.rs",
+            "pass/issues/issue-miri-3473.rs",
+            "pass/move-arg-3-unique.rs",
+            "pass/panic/nested_panic_caught.rs",
+            "pass/rfc1623.rs",
+            "pass/underscore_pattern.rs",
+            "pass/zst_box.rs",
+        ]
+    },
 }
 
 PWD = Path(os.path.dirname(os.path.abspath(__file__)))

@@ -69,6 +69,7 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
     |> List.map @@ fun (entry : Plugin.entry_point) ->
        let branches =
          let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
+         Option.iter Rustsymex.set_default_fuel entry.fuel;
          try Rustsymex.run @@ exec_fun entry.fun_decl with
          | Layout.InvalidLayout ->
              [ (Error (`InvalidLayout, Soteria_terminal.Call_trace.empty), []) ]
@@ -129,55 +130,61 @@ let exec_main_and_print log_config term_config solver_config no_compile clean
   Soteria_logs.Config.check_set_and_lock log_config;
   Soteria_terminal.Config.set_and_lock term_config;
   Cleaner.init ~clean ();
-  try
+
+  match
     let plugin =
       Plugin.merge_ifs
         [ (true, Plugin.default); (kani, Plugin.kani); (miri, Plugin.miri) ]
     in
     let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
-    let res = exec_main ~ignore_leaks ~plugin crate in
-
-    match res with
-    | Ok res ->
-        Fmt.pr "%a@\n" pp_ok "Done, no errors found";
-        (res
-        |> List.iter @@ fun (pcs, entry_name, ntotal) ->
-           let open Fmt in
-           let pp_info ft pc =
-             if List.is_empty pc then pf ft "%a: empty" (pp_style `Bold) "PC"
-             else
-               pf ft "%a: @.  @[<-1>%a@]" (pp_style `Bold) "PC"
-                 (list ~sep:(any " /\\@, ") Typed.ppa)
-                 pc
-           in
-           Fmt.pr "%a: ran %a@\n%a@\n" (pp_style `Bold) entry_name pp_branches
-             ntotal
-             (list ~sep:(any "@\n@\n") pp_info)
-             pcs);
-        exit 0
-    | Error res ->
-        Fmt.pr "%a@\n" pp_err "Found issues";
-        (res
-        |> List.iter @@ fun (errs, entry_name, ntotal) ->
-           let n = List.length res in
-           Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" (pp_style `Bold)
-             entry_name pp_branches n ntotal;
-           List.iter
-             (fun (error, call_trace) ->
-               let diag =
-                 Error.Diagnostic.mk_diagnostic ~fname:entry_name ~call_trace
-                   ~error
-               in
-               Fmt.pr "%a@\n@?" Soteria_terminal.Diagnostic.pp diag)
-             (List.sort_uniq Stdlib.compare errs));
-        exit 1
+    exec_main ~ignore_leaks ~plugin crate
   with
-  | Plugin.PluginError e ->
-      Fmt.pr "%a: %s" pp_fatal "Fatal (Plugin)" e;
+  | Ok res ->
+      Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Note
+        "Done, no errors found";
+      (res
+      |> List.iter @@ fun (pcs, entry_name, ntotal) ->
+         let open Fmt in
+         let pcs = List.mapi (fun i pc -> (pc, i + 1)) pcs in
+         let pp_info ft (pc, i) =
+           let name = "PC " ^ string_of_int i ^ ":" in
+           if List.is_empty pc then pf ft "%a empty" (pp_style `Bold) name
+           else
+             pf ft "%a @[<-1>%a@]" (pp_style `Bold) name
+               (list ~sep:(any " /\\@, ") Typed.ppa)
+               pc
+         in
+         Fmt.pr "@\n%a: ran %a@\n%a@\n" (pp_style `Bold) entry_name pp_branches
+           ntotal
+           (list ~sep:(any "@\n") pp_info)
+           pcs);
+      exit 0
+  | Error res ->
+      Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error
+        "Found issues";
+      (res
+      |> List.iter @@ fun (errs, entry_name, ntotal) ->
+         let n = List.length res in
+         Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" (pp_style `Bold)
+           entry_name pp_branches n ntotal;
+         List.iter
+           (fun (error, call_trace) ->
+             Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace
+               ~error)
+           (List.sort_uniq Stdlib.compare errs));
+      exit 1
+  | exception Plugin.PluginError e ->
+      Fmt.kstr
+        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
+        "Fatal (Plugin): %s" e;
       exit 2
-  | ExecutionError e ->
-      Fmt.pr "%a: %s" pp_fatal "Fatal" e;
+  | exception ExecutionError e ->
+      Fmt.kstr
+        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
+        "Fatal: %s" e;
       exit 2
-  | CharonError e ->
-      Fmt.pr "%a: %s" pp_fatal "Fatal (Charon)" e;
+  | exception CharonError e ->
+      Fmt.kstr
+        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
+        "Fatal (Charon): %s" e;
       exit 3

@@ -4,10 +4,15 @@ open Cmd
 exception PluginError of string
 
 type fun_decl = UllbcAst.fun_decl
-type entry_point = { fun_decl : fun_decl; expect_error : bool }
 
-let mk_entry_point ?(expect_error = false) fun_decl =
-  Some { fun_decl; expect_error }
+type entry_point = {
+  fun_decl : fun_decl;
+  expect_error : bool;
+  fuel : Soteria_symex.Fuel_gauge.t option;
+}
+
+let mk_entry_point ?(expect_error = false) ?fuel fun_decl =
+  Some { fun_decl; expect_error; fuel }
 
 let cargo =
   "RUSTC=$(charon toolchain-path)/bin/rustc $(charon toolchain-path)/bin/cargo"
@@ -52,10 +57,16 @@ let compile_lib path =
    encountered at runtime. *)
 let known_generic_errors =
   [
-    "std::path::_::from";
+    "alloc::borrow::ToOwned::to_owned";
+    "alloc::boxed::_::from_raw";
+    "alloc::boxed::_::into_raw";
     "alloc::raw_vec::_::try_allocate_in";
     "alloc::string::_::from";
     "alloc::raw_vec::finish_grow";
+    "core::fmt::Display::fmt";
+    "core::ptr::null_mut";
+    "core::ptr::metadata::Thin";
+    "std::path::_::from";
   ]
 
 type plugin = {
@@ -87,6 +98,8 @@ let default =
           (* No warning *)
           "-Awarnings";
           (* include our std and rusteria crates *)
+          "-Zcrate-attr=feature\\(register_tool\\)";
+          "-Zcrate-attr=register_tool\\(rusteriatool\\)";
           "--extern=rusteria";
           Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
           Fmt.str "-L%s/target/debug/deps" std_lib;
@@ -98,6 +111,8 @@ let default =
   let get_entry_point (decl : fun_decl) =
     match List.last_opt decl.item_meta.name with
     | Some (PeIdent ("main", _)) -> mk_entry_point decl
+    | _ when Charon_util.decl_has_attr decl "rusteriatool::test" ->
+        mk_entry_point decl
     | _ -> None
   in
   { mk_cmd; get_entry_point }
@@ -110,7 +125,6 @@ let kani =
     mk_cmd
       ~rustc:
         [
-          "-Zcrate-attr=feature\\(register_tool\\)";
           "-Zcrate-attr=register_tool\\(kanitool\\)";
           "--cfg=kani";
           "--extern=kani";
@@ -168,9 +182,20 @@ let merge_ifs (plugins : (bool * plugin) list) =
     List.map (fun (p : plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left concat_cmd init
   in
-  let get_entry_point decl =
+  let get_entry_point (decl : fun_decl) =
     let rec aux acc rest =
       match (acc, rest) with
+      | Some ep, _ ->
+          let fuel : Soteria_symex.Fuel_gauge.t =
+            let get_or name none =
+              Charon_util.decl_get_attr decl name
+              |> Option.fold ~none ~some:int_of_string
+            in
+            let steps = get_or "rusteriatool::step_fuel" 1000 in
+            let branching = get_or "rusteriatool::branch_fuel" 4 in
+            { steps; branching }
+          in
+          Some { ep with fuel = Some fuel }
       | None, (p : plugin) :: rest -> aux (p.get_entry_point decl) rest
       | _ -> acc
     in
