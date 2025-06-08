@@ -185,10 +185,12 @@ class Experiment(PrintersMixin):
         self.print_message(f"{MAGENTA}Running:\n{cmd}{RESET}")
         os.system(cmd)
 
+    def cleanup_build(self):
+        new_dir = global_config.experiment_folder / self.config.path
+        ask_and_remove((new_dir / self.config.cmake_build_path).resolve())
+
     def make_compile_commands(self):
         new_dir = global_config.experiment_folder / self.config.path
-        if global_config.cleanup_builds_first:
-            ask_and_remove((new_dir / self.config.cmake_build_path).resolve())
         if self.compile_commands.exists():
             self.print_info(
                 f"compile_commands.json already exists, skipping generation."
@@ -250,19 +252,22 @@ configs = [
 ]
 
 
-def run_all_experiments():
-    configs_to_run = (
-        [c for c in configs if c.name in global_config.experiments_to_run]
-        if global_config.experiments_to_run
-        else configs
-    )
-    for experiment_config in configs_to_run:
-        experiment = Experiment(experiment_config)
+def run_experiments(experiments: list[Experiment]):
+    for experiment in experiments:
         try:
             experiment.run()
         except ExperimentException as e:
             experiment.print_error(f"Experiment Failed")
         print("\n")
+
+
+def selected_experiments():
+    experiments_to_run = (
+        global_config.experiments_to_run
+        if global_config.experiments_to_run
+        else available_experiments
+    )
+    return [Experiment(c) for c in configs if c.name in experiments_to_run]
 
 
 def at_start():
@@ -309,5 +314,9 @@ def aggregate_results():
 
 if __name__ == "__main__":
     at_start()
-    run_all_experiments()
+    experiments = selected_experiments()
+    if global_config.cleanup_builds_first:
+        for experiment in experiments:
+            experiment.cleanup_build()
+    run_experiments(experiments)
     aggregate_results()
