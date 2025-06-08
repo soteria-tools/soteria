@@ -1,7 +1,7 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/d9351dcf-f008-40f8-a667-5f23fd13741a">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/68071d32-eb40-4fe2-9ca0-d46f41c95271">
-  <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="[https://user-images.githubusercontent.com/25423296/163456779-a8556205-d0a5-45e2-ac17-42d089e3c3f8.png](https://github.com/user-attachments/assets/68071d32-eb40-4fe2-9ca0-d46f41c95271)">
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/LOGO-SOTERIA-FULL-WHITE.png">
+  <source media="(prefers-color-scheme: light)" srcset="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
+  <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
 </picture>
 
 Soteria is a library for writing efficient symbolic interpreters directly in OCaml.
