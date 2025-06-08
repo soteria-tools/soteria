@@ -198,6 +198,9 @@ module Make (Sptr : Sptr.S) = struct
         let field = Types.FieldId.nth fields f in
         rust_to_cvals ~offset v field.field_ty
     | Union _, _ -> illegal_pair ()
+    (* Static Functions (ZSTs) *)
+    | ConstFn _, TFnDef _ -> []
+    | ConstFn _, _ | _, TFnDef _ -> illegal_pair ()
     (* Rest *)
     | _ ->
         L.error (fun m ->
