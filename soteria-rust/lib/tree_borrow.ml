@@ -1,5 +1,10 @@
 open Rustsymex
 
+let is_disabled, set_enabled =
+  let enabled = ref true in
+  let set_enabled b = enabled := b in
+  ((fun () -> not !enabled), set_enabled)
+
 type tag = int
 and access = Read | Write
 and locality = Local | Foreign

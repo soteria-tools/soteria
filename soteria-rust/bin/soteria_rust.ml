@@ -16,6 +16,10 @@ let ignore_leaks_flag =
   let doc = "Ignore memory leaks" in
   Arg.(value & flag & info [ "ignore-leaks" ] ~doc)
 
+let ignore_aliasing_flag =
+  let doc = "Ignore pointer aliasing rules (tree borrows)" in
+  Arg.(value & flag & info [ "ignore-aliasing" ] ~doc)
+
 let with_kani_flag =
   let doc = "Use the Kani library" in
   Arg.(value & flag & info [ "kani" ] ~doc)
@@ -34,6 +38,7 @@ module Exec_main = struct
       $ no_compile_flag
       $ cleanup_flag
       $ ignore_leaks_flag
+      $ ignore_aliasing_flag
       $ with_kani_flag
       $ with_miri_flag
       $ file_arg)

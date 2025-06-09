@@ -1,5 +1,8 @@
 open Rustsymex
 
+val is_disabled : unit -> bool
+val set_enabled : bool -> unit
+
 type tag
 and access = Read | Write
 and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
