@@ -56,3 +56,10 @@ UnsafeCell allow foreign writes followed by local writes
 
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
   $ true || soteria-rust exec-main nested.rs --clean
+
+Test --ignore-aliasing flag
+  $ soteria-rust exec-main simple-fail.rs --clean --ignore-aliasing
+  note: Done, no errors found
+  
+  simple_fail::main: ran 1 branch
+  PC 1: empty
