@@ -1,0 +1,5 @@
+(executable
+ (name soteria_py)
+ (package soteria-py)
+ (public_name soteria-py)
+ (libraries soteria_py_lib))

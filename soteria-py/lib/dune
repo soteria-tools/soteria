@@ -1,0 +1,13 @@
+(library
+ (package soteria-py)
+ (name soteria_py_lib)
+ (libraries
+  soteria.std
+  soteria.symex
+  soteria.logs
+  soteria.terminal
+  cmdliner
+  fmt
+  iter
+  pyre-ast)
+ (flags :standard -open Soteria_std))

@@ -149,3 +149,13 @@
     :with-dev-detup
     (= 0.27.0)))
   (ocaml-lsp-server :with-dev-setup)))
+
+(package
+ (name soteria-py)
+ (synopsis "Python symbolic execution tool based on Soteria")
+ (description "Python symbolic execution tool based on Soteria")
+ (depends
+  (ocaml
+   (>= 5.3.0))
+  soteria
+  pyre-ast))
