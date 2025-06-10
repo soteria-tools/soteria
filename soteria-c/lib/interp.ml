@@ -67,25 +67,30 @@ module Make (State : State_intf.S) = struct
     let ptys = Ail_helpers.get_param_tys ~prog name in
     Csymex.of_opt_not_impl ~msg:"Couldn't find function prototype" ptys
 
-  let attach_bindings store (bindings : AilSyntax.bindings) =
-    ListLabels.fold_left bindings ~init:store
-      ~f:(fun
-          store (pname, ((loc, duration, _is_register), align, _quals, ty)) ->
-        let@ () = with_loc_immediate ~loc in
+  let fold_bindings (bindings : AilSyntax.bindings) ~init ~f =
+    ListLabels.fold_left bindings ~init
+      ~f:(fun acc (pname, ((loc, duration, _is_register), align, _quals, ty)) ->
         (match duration with
-        | AilSyntax.Static | Thread ->
-            raise (Unsupported ("static/tread", get_loc ()))
+        | AilSyntax.Static | Thread -> raise (Unsupported ("static/tread", loc))
         | _ -> ());
-        if Option.is_some align then raise (Unsupported ("align", get_loc ()));
-        Store.reserve pname ty store)
+        if Option.is_some align then raise (Unsupported ("align", loc));
+        f acc (pname, ty))
 
-  let attach_bindings store bindings =
-    try
-      let store = attach_bindings store bindings in
-      Csymex.return store
+  let try_with_unsupported f =
+    try Csymex.return (f ())
     with Unsupported (msg, loc) ->
       let@ () = with_loc ~loc in
       Csymex.not_impl msg
+
+  let attach_bindings store (bindings : AilSyntax.bindings) =
+    try_with_unsupported @@ fun () ->
+    fold_bindings bindings ~init:store ~f:(fun store (pname, ty) ->
+        Store.reserve pname ty store)
+
+  let remove_bindings store (bindings : AilSyntax.bindings) =
+    try_with_unsupported @@ fun () ->
+    fold_bindings bindings ~init:store ~f:(fun store (pname, _) ->
+        Store.remove pname store)
 
   (* We're assuming all bindings declared, and they have already been removed from the store. *)
   let free_bindings store state (bindings : AilSyntax.bindings) =
@@ -676,7 +681,6 @@ module Make (State : State_intf.S) = struct
         Result.ok (Some v, store, state)
     | AilSreturnVoid -> Result.ok (Some 0s, store, state)
     | AilSblock (bindings, stmtl) ->
-        let previous_store = store in
         let* store = attach_bindings store bindings in
         (* Second result, corresponding to the block-scoped store, is discarded *)
         let** res, store, state =
@@ -686,8 +690,13 @@ module Make (State : State_intf.S) = struct
               | Some _ -> Csymex.Result.ok (res, store, state)
               | None -> exec_stmt ~prog store state stmt)
         in
-        let++ state = free_bindings store state bindings in
-        (res, previous_store, state)
+        (* Cerberus is nice here, symbols inside the block have different names than
+           the ones outside the block if there is shadowing going on.
+           I.e. int x = 12; { int x = 13; }, the two `x`s have different symbols.
+           So we can just remove the bindings of the inner block from the store entirely. *)
+        let** state = free_bindings store state bindings in
+        let+ store = remove_bindings store bindings in
+        Ok (res, store, state)
     | AilSexpr e ->
         let** _, store, state = eval_expr ~prog store state e in
         Result.ok (None, store, state)

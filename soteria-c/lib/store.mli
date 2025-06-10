@@ -17,6 +17,7 @@ val add_stackptr :
   Ail_tys.sym -> Typed.T.sptr Typed.t -> Ail_tys.ctype -> t -> t
 
 val reserve : Ail_tys.sym -> Ail_tys.ctype -> t -> t
+val remove : Ail_tys.sym -> t -> t
 val bindings : t -> (Ail_tys.sym * binding) list
 val is_empty : t -> bool
 val mem : Ail_tys.sym -> t -> bool
