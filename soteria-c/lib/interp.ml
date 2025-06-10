@@ -77,7 +77,7 @@ module Make (State : State_intf.S) = struct
             raise (Unsupported ("static/tread", get_loc ()))
         | _ -> ());
         if Option.is_some align then raise (Unsupported ("align", get_loc ()));
-        Store.add pname (None, ty) store)
+        Store.reserve pname ty store)
 
   let attach_bindings store bindings =
     try
@@ -92,29 +92,72 @@ module Make (State : State_intf.S) = struct
     Result.fold_list bindings ~init:state
       ~f:(fun state (pname, ((loc, _, _), _, _, _)) ->
         let@ () = with_loc_immediate ~loc in
-        match Store.find_value pname store with
-        | Some ptr ->
+        match Store.find_opt pname store with
+        | Some { kind = Some (Stackptr ptr); _ } ->
             let++ (), state = State.free ptr state in
             state
-        | None -> Result.ok state)
+        | _ -> Result.ok state)
 
-  let alloc_params params st =
-    Csymex.Result.fold_list params ~init:(Store.empty, st)
-      ~f:(fun (store, st) (pname, ty, value) ->
-        L.trace (fun m -> m "Allocating variable %a" Fmt_ail.pp_sym pname);
-        let** ptr, st = State.alloc_ty ty st in
-        let store = Store.add pname (Some ptr, ty) store in
-        let++ (), st = State.store ptr ty value st in
-        (store, st))
+  let mk_store params =
+    ListLabels.fold_left params ~init:Store.empty
+      ~f:(fun store (pname, ty, value) ->
+        L.trace (fun m ->
+            m "Putting variable to the store: %a" Fmt_ail.pp_sym pname);
+
+        Store.add_value pname value ty store)
 
   let dealloc_store store st =
-    Csymex.Result.fold_list (Store.bindings store) ~init:st
-      ~f:(fun st (_, (ptr, _)) ->
-        match ptr with
-        | None -> Result.ok st
-        | Some ptr ->
+    Result.fold_list (Store.bindings store) ~init:st
+      ~f:(fun st (_, { kind; _ }) ->
+        match kind with
+        | Some (Stackptr ptr) ->
             let++ (), st = State.free ptr st in
-            st)
+            st
+        | _ -> Result.ok st)
+
+  let get_stack_address (store : Store.t) (st : State.t) (sym : Ail_tys.sym) =
+    match Store.find_opt sym store with
+    | Some { kind = None; _ } | None -> Csymex.return (None, store, st)
+    | Some { kind = Some (Stackptr ptr); _ } ->
+        Csymex.return (Some ptr, store, st)
+    | Some { kind = Some other; ty } -> (
+        let+ res =
+          let** ptr, st = State.alloc_ty ty st in
+          let++ (), st =
+            match other with
+            | Value v -> State.store ptr ty v st
+            | _ -> Result.ok ((), st)
+          in
+          (ptr, Store.add_stackptr sym ptr ty store, st)
+        in
+        match res with
+        | Ok (ptr, store, st) -> (Some ptr, store, st)
+        | Error _ | Missing _ ->
+            failwith "BUG(unreachable): failed to allocate stack address")
+
+  let try_immediate_load ~prog (store : Store.t) state e =
+    let (AilSyntax.AnnotatedExpression (_, _, _, e)) = e in
+    match e with
+    | AilEident id -> (
+        let id = Ail_helpers.resolve_sym ~prog id in
+        match Store.find_opt id store with
+        | Some { kind = Some (Value v); _ } -> Result.ok (Some v)
+        | Some { kind = Some Uninit; _ } ->
+            State.error `UninitializedMemoryAccess state
+        | _ -> Result.ok None)
+    | _ -> Result.ok None
+
+  let try_immediate_store ~prog (store : Store.t) lvalue rval =
+    let (AilSyntax.AnnotatedExpression (_, _, _, lvalue)) = lvalue in
+    match lvalue with
+    | AilEident id -> (
+        let id = Ail_helpers.resolve_sym ~prog id in
+        match Store.find_opt id store with
+        | Some { kind = Some (Value _ | Uninit); ty } ->
+            let store = Store.add_value id rval ty store in
+            Some store
+        | _ -> None)
+    | _ -> None
 
   let value_of_constant (c : constant) : T.cval Typed.t Csymex.t =
     match c with
@@ -314,18 +357,18 @@ module Make (State : State_intf.S) = struct
         else State.error `UBPointerComparison state
     | _ -> State.error `UBPointerComparison state
 
-  let rec resolve_function ~(prog : linked_program) ~store state fexpr =
-    let** (loc, fname), state =
+  let rec resolve_function ~(prog : linked_program) store state fexpr =
+    let** (loc, fname), store, state =
       let (AilSyntax.AnnotatedExpression (_, _, loc, inner_expr)) = fexpr in
       match inner_expr with
       (* Special case when we can immediately resolve the function name *)
       | AilEfunction_decay (AnnotatedExpression (_, _, _, AilEident fname)) ->
-          Csymex.Result.ok ((loc, fname), state)
+          Result.ok ((loc, fname), store, state)
       | _ ->
           (* Some function pointer *)
           L.trace (fun m ->
               m "Resolving function pointer: %a" Fmt_ail.pp_expr fexpr);
-          let** fptr, state = eval_expr ~prog ~store state fexpr in
+          let** fptr, store, state = eval_expr ~prog store state fexpr in
           L.trace (fun m -> m "Function pointer is value: %a" Typed.ppa fptr);
           let fptr = cast_to_ptr fptr in
           if%sat
@@ -334,41 +377,43 @@ module Make (State : State_intf.S) = struct
           then State.error `InvalidFunctionPtr state
           else
             let fctx = get_fun_ctx () in
-            let* sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
-            Csymex.Result.ok ((loc, sym), state)
+            let+ sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
+            Soteria_symex.Compo_res.Ok ((loc, sym), store, state)
     in
     let@ () = with_loc ~loc in
     let fundef_opt = Ail_helpers.find_fun_def ~prog fname in
     match fundef_opt with
-    | Some fundef -> Csymex.Result.ok (exec_fun fundef, state)
+    | Some fundef -> Csymex.Result.ok (exec_fun fundef, store, state)
     | None -> (
         match find_stub ~prog fname with
-        | Some stub -> Csymex.Result.ok (stub, state)
+        | Some stub -> Csymex.Result.ok (stub, store, state)
         | None ->
             Fmt.kstr not_impl "Cannot call external function: %a" Fmt_ail.pp_sym
               fname)
 
-  and eval_expr_list ~(prog : linked_program) ~(store : Store.t) (state : state)
+  and eval_expr_list ~(prog : linked_program) (store : Store.t) (state : state)
       (el : expr list) =
-    let++ vs, state =
-      Csymex.Result.fold_list el ~init:([], state) ~f:(fun (acc, state) e ->
-          let++ new_res, state = eval_expr ~prog ~store state e in
-          (new_res :: acc, state))
+    let++ vs, store, state =
+      Csymex.Result.fold_list el ~init:([], store, state)
+        ~f:(fun (acc, store, state) e ->
+          let++ new_res, store, state = eval_expr ~prog store state e in
+          (new_res :: acc, store, state))
     in
-    (List.rev vs, state)
+    (List.rev vs, store, state)
 
-  and eval_expr ~(prog : linked_program) ~(store : Store.t) (state : state)
-      (aexpr : expr) =
-    let eval_expr = eval_expr ~prog ~store in
+  and eval_expr ~(prog : linked_program) (store : Store.t) (state : state)
+      (aexpr : expr) :
+      ([> T.cval ] Typed.t * Store.t * State.t, 'err, 'fix) Result.t =
+    let eval_expr = eval_expr ~prog in
     let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
     let@ () = with_loc ~loc in
     match expr with
     | AilEconst c ->
         let+ v = value_of_constant c in
-        Ok (v, state)
+        Ok (v, store, state)
     | AilEcall (f, args) ->
-        let** exec_fun, state = resolve_function ~prog ~store state f in
-        let** args, state = eval_expr_list ~prog ~store state args in
+        let** exec_fun, store, state = resolve_function ~prog store state f in
+        let** args, store, state = eval_expr_list ~prog store state args in
         let++ v, state =
           let+- err = exec_fun ~prog ~args ~state in
           State.add_to_call_trace err
@@ -376,19 +421,20 @@ module Make (State : State_intf.S) = struct
                ())
         in
         L.debug (fun m -> m "returned %a from %a" Typed.ppa v Fmt_ail.pp_expr f);
-        (v, state)
+        (v, store, state)
     | AilEunary (Address, e) -> (
         match unwrap_expr e with
-        | AilEunary (Indirection, e) -> (* &*e <=> e *) eval_expr state e
+        | AilEunary (Indirection, e) -> (* &*e <=> e *) eval_expr store state e
         | AilEident id -> (
             let id = Ail_helpers.resolve_sym ~prog id in
-            match Store.find_value id store with
-            | Some ptr -> Result.ok ((ptr :> T.cval Typed.t), state)
+            let* ptr_opt, store, state = get_stack_address store state id in
+            match ptr_opt with
+            | Some ptr -> Result.ok ((ptr :> T.cval Typed.t), store, state)
             | None ->
                 let+ ptr, state = State.get_global id state in
-                Ok (ptr, state))
+                Ok (ptr, store, state))
         | AilEmemberofptr (ptr, member) ->
-            let** ptr_v, state = eval_expr state ptr in
+            let** ptr_v, store, state = eval_expr store state ptr in
             let* ty_pointee =
               type_of ptr
               |> Cerb_frontend.AilTypesAux.referenced_type
@@ -396,10 +442,11 @@ module Make (State : State_intf.S) = struct
                    ~msg:"Member of Pointer that isn't of type pointer"
             in
             let* mem_ofs = Layout.member_ofs member ty_pointee in
-            arith_add ~state ptr_v mem_ofs
+            let++ v, state = arith_add ~state ptr_v mem_ofs in
+            (v, store, state)
         | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
     | AilEunary (op, e) -> (
-        let** v, state = eval_expr state e in
+        let** v, store, state = eval_expr store state e in
         match op with
         | PostfixIncr ->
             let ptr = cast_to_ptr v in
@@ -411,7 +458,7 @@ module Make (State : State_intf.S) = struct
             in
             let** v_incr, state = arith_add ~state v incr_operand in
             let++ (), state = State.store ptr (type_of e) v_incr state in
-            (v, state)
+            (v, store, state)
         | PostfixDecr ->
             let ptr = cast_to_ptr v in
             let** v, state = State.load ptr (type_of e) state in
@@ -422,12 +469,13 @@ module Make (State : State_intf.S) = struct
             in
             let** v_decr, state = arith_sub ~state v incr_operand in
             let++ (), state = State.store ptr (type_of e) v_decr state in
-            (v, state)
-        | Indirection -> Result.ok (v, state)
+            (v, store, state)
+        | Indirection -> Result.ok (v, store, state)
         | Address -> failwith "unreachable: address_of already handled"
         | Minus ->
             let* v = cast_to_int v in
-            arith_sub ~state Typed.zero v
+            let++ v, state = arith_sub ~state Typed.zero v in
+            (v, store, state)
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op
         )
@@ -436,90 +484,124 @@ module Make (State : State_intf.S) = struct
            not doing this properly might lead to unsoundnesses.
            We still optimize by returning a disjunction of the two
            expressions if the RHS is side-effect free. *)
-        let** v1, state = eval_expr state e1 in
+        let** v1, store, state = eval_expr store state e1 in
         if Ail_helpers.sure_side_effect_free e2 then
-          let** v2, state = eval_expr state e2 in
+          let** v2, store, state = eval_expr store state e2 in
           let b_res = cast_to_bool v1 ||@ cast_to_bool v2 in
-          Result.ok (Typed.int_of_bool b_res, state)
+          Result.ok (Typed.int_of_bool b_res, store, state)
         else
-          if%sat cast_to_bool v1 then Result.ok (Typed.one, state)
+          if%sat cast_to_bool v1 then Result.ok (Typed.one, store, state)
           else
-            let** v2, state = eval_expr state e2 in
+            let** v2, store, state = eval_expr store state e2 in
             let b_res = cast_to_bool v2 in
-            Result.ok (Typed.int_of_bool b_res, state)
+            Result.ok (Typed.int_of_bool b_res, store, state)
     | AilEbinary (e1, And, e2) ->
         (* Same as Or, we need to short-circuit *)
-        let** v1, state = eval_expr state e1 in
+        let** v1, store, state = eval_expr store state e1 in
         if Ail_helpers.sure_side_effect_free e2 then
-          let** v2, state = eval_expr state e2 in
+          let** v2, store, state = eval_expr store state e2 in
           let b_res = cast_to_bool v1 &&@ cast_to_bool v2 in
-          Result.ok (Typed.int_of_bool b_res, state)
+          Result.ok (Typed.int_of_bool b_res, store, state)
         else
           if%sat cast_to_bool v1 then
-            let** v2, state = eval_expr state e2 in
+            let** v2, store, state = eval_expr store state e2 in
             let b_res = cast_to_bool v2 in
-            Result.ok (Typed.int_of_bool b_res, state)
-          else Result.ok (Typed.zero, state)
-    | AilEbinary (e1, op, e2) -> (
-        let** v1, state = eval_expr state e1 in
-        let** v2, state = eval_expr state e2 in
-        match op with
-        | Ge -> ineq_comparison ~state ~cmp_op:( >=@ ) v1 v2
-        | Gt -> ineq_comparison ~state ~cmp_op:( >@ ) v1 v2
-        | Lt -> ineq_comparison ~state ~cmp_op:( <@ ) v1 v2
-        | Le -> ineq_comparison ~state ~cmp_op:( <=@ ) v1 v2
-        | Eq -> equality_check ~state v1 v2
-        | Ne ->
-            (* TODO: Semantics of Ne might be different from semantics of not eq? *)
-            let++ res, state = equality_check ~state v1 v2 in
-            (Typed.not_int_bool res, state)
-        | Or | And -> failwith "Unreachable, handled earlier."
-        | Arithmetic a_op -> arith ~state (v1, type_of e1) a_op (v2, type_of e2)
-        | Comma -> Result.ok (v2, state))
-    | AilErvalue e ->
-        let** lvalue, state = eval_expr state e in
-        let ty = type_of e in
-        (* At this point, lvalue must be a pointer (including to the stack) *)
-        let lvalue = cast_to_ptr lvalue in
-        State.load lvalue ty state
+            Result.ok (Typed.int_of_bool b_res, store, state)
+          else Result.ok (Typed.zero, store, state)
+    | AilEbinary (e1, op, e2) ->
+        let** v1, store, state = eval_expr store state e1 in
+        let** v2, store, state = eval_expr store state e2 in
+        let++ v, state =
+          match op with
+          | Ge -> ineq_comparison ~state ~cmp_op:( >=@ ) v1 v2
+          | Gt -> ineq_comparison ~state ~cmp_op:( >@ ) v1 v2
+          | Lt -> ineq_comparison ~state ~cmp_op:( <@ ) v1 v2
+          | Le -> ineq_comparison ~state ~cmp_op:( <=@ ) v1 v2
+          | Eq -> equality_check ~state v1 v2
+          | Ne ->
+              (* TODO: Semantics of Ne might be different from semantics of not eq? *)
+              let++ res, state = equality_check ~state v1 v2 in
+              (Typed.not_int_bool res, state)
+          | Or | And -> failwith "Unreachable, handled earlier."
+          | Arithmetic a_op ->
+              arith ~state (v1, type_of e1) a_op (v2, type_of e2)
+          | Comma -> Result.ok (v2, state)
+        in
+        (v, store, state)
+    | AilErvalue e -> (
+        (* Optimisation: If the expression to load is a variable that is
+           immediately in the store (without heap indirection),
+           we can just access it without heap shenanigans. *)
+        let** v_opt = try_immediate_load ~prog store state e in
+        match v_opt with
+        | Some v -> Result.ok (v, store, state)
+        | None ->
+            (* The value is not an immediate store load *)
+            let** lvalue, store, state = eval_expr store state e in
+            let ty = type_of e in
+            (* At this point, lvalue must be a pointer (including to the stack) *)
+            let lvalue = cast_to_ptr lvalue in
+            let++ v, state = State.load lvalue ty state in
+            (v, store, state))
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym ~prog id in
-        match Store.find_value id store with
+        let* ptr_opt, store, state = get_stack_address store state id in
+        match ptr_opt with
         | Some v ->
             (* A pointer is a value *)
             let v = (v :> T.cval Typed.t) in
-            Result.ok (v, state)
+            Result.ok (v, store, state)
         | None ->
             (* If the variable isn't in the store, it must be a global variable. *)
             let+ ptr, state = State.get_global id state in
-            Ok (ptr, state))
-    | AilEassign (lvalue, rvalue) ->
+            Ok (ptr, store, state))
+    | AilEassign (lvalue, rvalue) -> (
         (* Evaluate rvalue first *)
-        let** rval, state = eval_expr state rvalue in
-        let** ptr, state = eval_expr state lvalue in
-        (* [ptr] is a necessarily a pointer, and [rval] is a memory value.
+        let** rval, store, state = eval_expr store state rvalue in
+        (* Optimisation: if the lvalue is a variable to which we assign directly,
+           we don't need to do anything with the heap, we can simply immediately assign,
+           obtaining a new store.  *)
+        let store_opt = try_immediate_store ~prog store lvalue rval in
+        match store_opt with
+        | Some store -> Result.ok (rval, store, state)
+        | None ->
+            let** ptr, store, state = eval_expr store state lvalue in
+            (* [ptr] is a necessarily a pointer, and [rval] is a memory value.
          I don't support pointer fragments for now, so let's say it's an *)
-        let ptr = cast_to_ptr ptr in
-        let ty = type_of lvalue in
-        let++ (), state = State.store ptr ty rval state in
-        (rval, state)
-    | AilEcompoundAssign (lvalue, op, rvalue) ->
-        let** rval, state = eval_expr state rvalue in
-        let** ptr, state = eval_expr state lvalue in
+            let ptr = cast_to_ptr ptr in
+            let ty = type_of lvalue in
+            let++ (), state = State.store ptr ty rval state in
+            (rval, store, state))
+    | AilEcompoundAssign (lvalue, op, rvalue) -> (
+        let** rval, store, state = eval_expr store state rvalue in
         let lty = type_of lvalue in
-        (* At this point, lvalue must be a pointer (including to the stack) *)
-        let ptr = cast_to_ptr ptr in
-        let** operand, state = State.load ptr lty state in
-        let** res, state =
-          arith ~state (operand, lty) op (rval, type_of rvalue)
-        in
-        let++ (), state = State.store ptr lty res state in
-        (res, state)
+        let rty = type_of rvalue in
+        let** v_opt = try_immediate_load ~prog store state lvalue in
+        (* Optimisation *)
+        match v_opt with
+        | Some v ->
+            (* If the value is in direct access, we can just increment it and immediately update it in the store.
+             The writing cannot fail. *)
+            let++ res, state = arith ~state (v, lty) op (rval, rty) in
+            let store =
+              try_immediate_store ~prog store lvalue res
+              |> Option.get ~msg:"Immediate store failed after immediate load?"
+            in
+            (res, store, state)
+        | None ->
+            (* Otherwise we proceed as normal *)
+            let** ptr, store, state = eval_expr store state lvalue in
+            (* At this point, lvalue must be a pointer (including to the stack) *)
+            let ptr = cast_to_ptr ptr in
+            let** operand, state = State.load ptr lty state in
+            let** res, state = arith ~state (operand, lty) op (rval, rty) in
+            let++ (), state = State.store ptr lty res state in
+            (res, store, state))
     | AilEsizeof (_quals, ty) ->
         let+ res = Layout.size_of_s ty in
-        Ok (res, state)
+        Ok (res, store, state)
     | AilEmemberofptr (ptr, member) ->
-        let** ptr_v, state = eval_expr state ptr in
+        let** ptr_v, store, state = eval_expr store state ptr in
         let* ty_pointee =
           type_of ptr
           |> Cerb_frontend.AilTypesAux.referenced_type
@@ -527,17 +609,19 @@ module Make (State : State_intf.S) = struct
                ~msg:"Member of Pointer that isn't of type pointer"
         in
         let* mem_ofs = Layout.member_ofs member ty_pointee in
-        arith_add ~state ptr_v mem_ofs
+        let++ v, state = arith_add ~state ptr_v mem_ofs in
+        (v, store, state)
     | AilEmemberof (obj, member) ->
-        let** ptr_v, state = eval_expr state obj in
+        let** ptr_v, store, state = eval_expr store state obj in
         let ty_obj = type_of obj in
         let* mem_ofs = Layout.member_ofs member ty_obj in
-        arith_add ~state ptr_v mem_ofs
+        let++ v, state = arith_add ~state ptr_v mem_ofs in
+        (v, store, state)
     | AilEcast (_quals, new_ty, expr) ->
         let old_ty = type_of expr in
-        let** v, state = eval_expr state expr in
+        let** v, store, state = eval_expr store state expr in
         let+ new_v = cast ~old_ty ~new_ty v in
-        Ok (new_v, state)
+        Ok (new_v, store, state)
     | AilEfunction_decay (AnnotatedExpression (_, _, _, fexpr) as outer_fexpr)
       -> (
         match fexpr with
@@ -545,7 +629,7 @@ module Make (State : State_intf.S) = struct
             let id = Ail_helpers.resolve_sym ~prog id in
             let ctx = get_fun_ctx () in
             let+ floc = Fun_ctx.decay_fn_sym id ctx in
-            Soteria_symex.Compo_res.Ok (Typed.Ptr.mk floc 0s, state)
+            Soteria_symex.Compo_res.Ok (Typed.Ptr.mk floc 0s, store, state)
         | _ ->
             Fmt.kstr not_impl "Unsupported function decay: %a" Fmt_ail.pp_expr
               outer_fexpr)
@@ -587,7 +671,7 @@ module Make (State : State_intf.S) = struct
     match stmt with
     | AilSskip -> Result.ok (None, store, state)
     | AilSreturn e ->
-        let** v, state = eval_expr ~prog ~store state e in
+        let** v, store, state = eval_expr ~prog store state e in
         L.debug (fun m -> m "Returning: %a" Typed.ppa v);
         Result.ok (Some v, store, state)
     | AilSreturnVoid -> Result.ok (Some 0s, store, state)
@@ -605,17 +689,17 @@ module Make (State : State_intf.S) = struct
         let++ state = free_bindings store state bindings in
         (res, previous_store, state)
     | AilSexpr e ->
-        let** _, state = eval_expr ~prog ~store state e in
+        let** _, store, state = eval_expr ~prog store state e in
         Result.ok (None, store, state)
     | AilSif (cond, then_stmt, else_stmt) ->
-        let** v, state = eval_expr ~prog ~store state cond in
+        let** v, store, state = eval_expr ~prog store state cond in
         (* [v] must be an integer! (TODO: or NULL possibly...) *)
         let v = cast_to_bool v in
         if%sat v then exec_stmt ~prog store state then_stmt [@name "if branch"]
         else exec_stmt ~prog store state else_stmt [@name "else branch"]
     | AilSwhile (cond, stmt, _loopid) ->
         let rec loop store state =
-          let** cond_v, state = eval_expr ~prog ~store state cond in
+          let** cond_v, store, state = eval_expr ~prog store state cond in
           if%sat cast_to_bool cond_v then
             let** res, store, state = exec_stmt ~prog store state stmt in
             match res with
@@ -630,7 +714,7 @@ module Make (State : State_intf.S) = struct
           match res with
           | Some _ -> Result.ok (res, store, state)
           | None ->
-              let** cond_v, state = eval_expr ~prog ~store state cond in
+              let** cond_v, store, state = eval_expr ~prog store state cond in
               if%sat cast_to_bool cond_v then loop store state
               else Result.ok (None, store, state)
         in
@@ -642,20 +726,14 @@ module Make (State : State_intf.S) = struct
         let++ store, st =
           Csymex.Result.fold_list decls ~init:(store, state)
             ~f:(fun (store, state) (pname, expr) ->
-              let* ty =
-                Store.find_type pname store
-                |> Csymex.of_opt_not_impl ~msg:"Missing binding??"
-              in
-              let** ptr, state = State.alloc_ty ty state in
-              let++ (), state =
-                match expr with
-                | None -> Result.ok ((), state)
-                | Some expr ->
-                    let** v, state = eval_expr ~prog ~store state expr in
-                    State.store ptr ty v state
-              in
-              let store = Store.add pname (Some ptr, ty) store in
-              (store, state))
+              match expr with
+              | None ->
+                  let store = Store.declare_uninit pname store in
+                  Result.ok (store, state)
+              | Some expr ->
+                  let++ v, store, state = eval_expr ~prog store state expr in
+                  let store = Store.declare_value pname v store in
+                  (store, state))
         in
         (None, store, st)
     | _ -> Fmt.kstr not_impl "Unsupported statement: %a" Fmt_ail.pp_stmt astmt
@@ -671,7 +749,7 @@ module Make (State : State_intf.S) = struct
     let ps = List.combine3 params ptys args in
     (* TODO: Introduce a with_stack_allocation.
            That would require some kind of continutation passing for executing a bunch of statements. *)
-    let** store, state = alloc_params ps state in
+    let store = mk_store ps in
     (* TODO: local optimisation to put values in store directly when no address is taken. *)
     let** val_opt, _, state = exec_stmt ~prog store state stmt in
     let++ state = dealloc_store store state in
@@ -699,7 +777,7 @@ module Make (State : State_intf.S) = struct
       let offset = Typed.Ptr.ofs ptr in
       (* I somehow have to support global initialisation urgh.
        I might be able to extract some of that into interp *)
-      let** v, state = eval_expr ~prog ~store:Store.empty state expr in
+      let** v, _, state = eval_expr ~prog Store.empty state expr in
       let serialized : State.serialized =
         {
           heap =

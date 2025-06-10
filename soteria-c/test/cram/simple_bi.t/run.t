@@ -16,15 +16,15 @@
       { args = [&(V|1|, V|2|)];
         pre =
         [{ heap =
-           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
            globs = [] }
           ];
-        pc = [(V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|1|)];
+        pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|1|)];
         post =
         { heap =
-          [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+          [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
           globs = [] };
-        ret = (Ok V|4|) };
+        ret = (Ok V|3|) };
       manifest_bugs = []}
   
 NO_COLOR=true is necessary to avoid test output changing in CI. For some reason, Grace doesn't prints a final caret at the end with color, and not without color.
@@ -110,15 +110,15 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = [&(V|1|, V|2|)];
         pre =
         [{ heap =
-           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
            globs = [] }
           ];
-        pc = [(V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|1|)];
+        pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|1|)];
         post =
         { heap =
-          [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+          [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
           globs = [] };
-        ret = (Ok V|4|) };
+        ret = (Ok V|3|) };
       manifest_bugs = []}
   
   Summaries for test_leak_495:
@@ -230,17 +230,17 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       { args = [V|1|; &(V|2|, V|3|)];
         pre =
         [{ heap =
-           [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|6|}])];
+           [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|4|}])];
            globs = [] }
           ];
         pc =
-        [(V|6| <= 0x7fffffff); (-0x80000000 <= V|6|); (0 != V|2|); (0 < V|1|);
+        [(V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|2|); (0 < V|1|);
           (V|1| <= 0x7fffffff); (-0x80000000 <= V|1|)];
         post =
         { heap =
-          [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|6|}])];
+          [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|4|}])];
           globs = [] };
-        ret = (Ok V|6|) };
+        ret = (Ok V|4|) };
       manifest_bugs = []}
     Analysed {
       raw =

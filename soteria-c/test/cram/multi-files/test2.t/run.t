@@ -67,5 +67,5 @@
 
   $ soteria-c exec-main file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
-    [Ok: (0, { heap = [(V|1|, Freed)]; globs = [] })]
+    [Ok: (0, { heap = []; globs = [] })]
   Executed 8 statements
