@@ -168,6 +168,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
 
     oks = 0
     errs = 0
+    charon = 0
     before = time.time()
     with log.open("a") as logfile:
         for path in tests:
@@ -199,9 +200,11 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
                 oks += 1
             elif msg == "Failure":
                 errs += 1
+            elif "Charon" in msg:
+                charon += 1
     elapsed = time.time() - before
     pprint(
-        f"{BOLD}Finished in {elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)}"
+        f"{BOLD}Finished in {elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{charon}{RESET})"
     )
 
 
