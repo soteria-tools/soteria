@@ -7,9 +7,9 @@
              (V|3|,
               [TypedVal {offset = 0; ty = size_t; v = 10};
                TypedVal {offset = 8; ty = size_t; v = 16};
-               TypedVal {offset = 16; ty = void**; v = &(V|6|, 0)}; (Bound 24)]);
-             (V|4|, Freed); (V|5|, Freed);
-             (V|6|,
+               TypedVal {offset = 16; ty = void**; v = &(V|5|, 0)}; (Bound 24)]);
+             (V|4|, Freed);
+             (V|5|,
               [TypedVal {offset = 0; ty = void*; v = &(0, 0)};
                TypedVal {offset = 8; ty = void*; v = &(0, 0)};
                TypedVal {offset = 16; ty = void*; v = &(0, 0)};

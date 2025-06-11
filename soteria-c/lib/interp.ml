@@ -345,6 +345,21 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
           Fmt_ail.pp_arithop a_op
 
+  let try_immediate_postfix_op ~prog ~apply_op store state lvalue =
+    let** v_opt = try_immediate_load ~prog store state lvalue in
+    match v_opt with
+    | Some v ->
+        (* Optimisation *)
+        (* If the value is in direct access, we can just increment it and
+          immediately update it in the store. The writing cannot fail. *)
+        let++ res, state = apply_op ~state v in
+        let store =
+          try_immediate_store ~prog store lvalue res
+          |> Option.get ~msg:"Immediate store failed after immediate load?"
+        in
+        Some (res, store, state)
+    | None -> Result.ok None
+
   (* We do this in the untyped world *)
   let ineq_comparison ~state ~cmp_op left right =
     let cmp_op left right = cmp_op left right |> Typed.int_of_bool in
@@ -450,20 +465,33 @@ module Make (State : State_intf.S) = struct
             let++ v, state = arith_add ~state ptr_v mem_ofs in
             (v, store, state)
         | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
+    | AilEunary (((PostfixIncr | PostfixDecr) as op), e) -> (
+        let apply_op ~state v =
+          let* operand =
+            match pointer_inner (type_of e) with
+            | Some ty -> Layout.size_of_s ty
+            | None -> return 1s
+          in
+          match op with
+          | PostfixIncr -> arith_add ~state v operand
+          | PostfixDecr -> arith_sub ~state v operand
+          | _ -> failwith "unreachable: postfix is not postifx??"
+        in
+        let** res_opt =
+          try_immediate_postfix_op ~prog ~apply_op store state e
+        in
+        match res_opt with
+        | Some res_triple -> Result.ok res_triple
+        | None ->
+            let** v, store, state = eval_expr store state e in
+            let ptr = cast_to_ptr v in
+            let** v, state = State.load ptr (type_of e) state in
+            let** v_incr, state = apply_op ~state v in
+            let++ (), state = State.store ptr (type_of e) v_incr state in
+            (v, store, state))
     | AilEunary (op, e) -> (
         let** v, store, state = eval_expr store state e in
         match op with
-        | PostfixIncr ->
-            let ptr = cast_to_ptr v in
-            let** v, state = State.load ptr (type_of e) state in
-            let* incr_operand =
-              match type_of e |> pointer_inner with
-              | Some ty -> Layout.size_of_s ty
-              | None -> return 1s
-            in
-            let** v_incr, state = arith_add ~state v incr_operand in
-            let++ (), state = State.store ptr (type_of e) v_incr state in
-            (v, store, state)
         | PostfixDecr ->
             let ptr = cast_to_ptr v in
             let** v, state = State.load ptr (type_of e) state in
@@ -579,27 +607,21 @@ module Make (State : State_intf.S) = struct
             (rval, store, state))
     | AilEcompoundAssign (lvalue, op, rvalue) -> (
         let** rval, store, state = eval_expr store state rvalue in
-        let lty = type_of lvalue in
         let rty = type_of rvalue in
-        let** v_opt = try_immediate_load ~prog store state lvalue in
-        (* Optimisation *)
-        match v_opt with
-        | Some v ->
-            (* If the value is in direct access, we can just increment it and immediately update it in the store.
-             The writing cannot fail. *)
-            let++ res, state = arith ~state (v, lty) op (rval, rty) in
-            let store =
-              try_immediate_store ~prog store lvalue res
-              |> Option.get ~msg:"Immediate store failed after immediate load?"
-            in
-            (res, store, state)
+        let lty = type_of lvalue in
+        let apply_op ~state v = arith ~state (v, lty) op (rval, rty) in
+        let** immediate_result =
+          try_immediate_postfix_op ~prog ~apply_op store state lvalue
+        in
+        match immediate_result with
+        | Some res_triple -> Result.ok res_triple
         | None ->
             (* Otherwise we proceed as normal *)
             let** ptr, store, state = eval_expr store state lvalue in
             (* At this point, lvalue must be a pointer (including to the stack) *)
             let ptr = cast_to_ptr ptr in
             let** operand, state = State.load ptr lty state in
-            let** res, state = arith ~state (operand, lty) op (rval, rty) in
+            let** res, state = apply_op ~state operand in
             let++ (), state = State.store ptr lty res state in
             (res, store, state))
     | AilEsizeof (_quals, ty) ->
