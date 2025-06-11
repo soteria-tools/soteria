@@ -756,11 +756,8 @@ module Make (State : State_intf.S) = struct
         m "Was given arguments: %a" (Fmt.Dump.list Typed.ppa) args);
     let* ptys = get_param_tys ~prog name in
     let ps = List.combine3 params ptys args in
-    (* TODO: Introduce a with_stack_allocation.
-           That would require some kind of continutation passing for executing a bunch of statements. *)
     let store = mk_store ps in
-    (* TODO: local optimisation to put values in store directly when no address is taken. *)
-    let** val_opt, _, state = exec_stmt ~prog store state stmt in
+    let** val_opt, store, state = exec_stmt ~prog store state stmt in
     let++ state = dealloc_store store state in
     (* We model void as zero, it should never be used anyway *)
     let value = Option.value ~default:0s val_opt in
