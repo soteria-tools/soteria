@@ -237,11 +237,11 @@ module Make (State : State_intf.S) = struct
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TInt, TInt | TPointer, TPointer ->
-        Result.ok (v1 ==@ v2 |> Typed.int_of_bool, state)
+        Result.ok (v1 ==@ v2 |> Typed.int_of_bool)
     | TPointer, TInt ->
         let v2 : T.sint Typed.t = Typed.cast v2 in
         if%sat Typed.(v2 ==@ zero) then
-          Result.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool, state)
+          Result.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool)
         else State.error `UBPointerComparison state
     | TInt, TPointer -> equality_check ~state v2 v1
     | _ ->
@@ -254,13 +254,13 @@ module Make (State : State_intf.S) = struct
     | TInt, TInt ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        Result.ok (v1 +@ v2, state)
+        Result.ok (v1 +@ v2)
     | TPointer, TInt ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
         let loc = Typed.Ptr.loc v1 in
         let ofs = Typed.Ptr.ofs v1 +@ v2 in
-        Result.ok (Typed.Ptr.mk loc ofs, state)
+        Result.ok (Typed.Ptr.mk loc ofs)
     | TInt, TPointer -> arith_add ~state v2 v1
     | TPointer, TPointer -> State.error `UBPointerArithmetic state
     | _ ->
@@ -273,18 +273,18 @@ module Make (State : State_intf.S) = struct
     | TInt, TInt ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        Result.ok (v1 -@ v2, state)
+        Result.ok (v1 -@ v2)
     | TPointer, TInt ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
         let loc = Typed.Ptr.loc v1 in
         let ofs = Typed.Ptr.ofs v1 -@ v2 in
-        Result.ok (Typed.Ptr.mk loc ofs, state)
+        Result.ok (Typed.Ptr.mk loc ofs)
     | TPointer, TPointer ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sptr Typed.t = Typed.cast v2 in
         if%sat Typed.Ptr.loc v1 ==@ Typed.Ptr.loc v2 then
-          Result.ok (Typed.Ptr.ofs v1 -@ Typed.Ptr.ofs v2, state)
+          Result.ok (Typed.Ptr.ofs v1 -@ Typed.Ptr.ofs v2)
         else State.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
@@ -296,7 +296,7 @@ module Make (State : State_intf.S) = struct
     | TInt, TInt ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        Result.ok (v1 *@ v2, state)
+        Result.ok (v1 *@ v2)
     | TPointer, _ | _, TPointer -> State.error `UBPointerArithmetic state
     | _ ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
@@ -309,7 +309,7 @@ module Make (State : State_intf.S) = struct
         let* v2 = cast_to_int v2 in
         let* v2 = Csymex.check_nonzero v2 in
         match v2 with
-        | Ok v2 -> Csymex.Result.ok (v1 /@ v2, state)
+        | Ok v2 -> Csymex.Result.ok (v1 /@ v2)
         | Error `NonZeroIsZero -> State.error `DivisionByZero state
         | Missing e -> (* Unreachable but still *) Csymex.Result.miss e)
     | Mul -> arith_mul ~state v1 v2
@@ -318,18 +318,18 @@ module Make (State : State_intf.S) = struct
         | Some _, Some _ -> State.error `UBPointerArithmetic state
         | Some ty, None ->
             let* factor = Layout.size_of_s ty in
-            let** v2, state = arith_mul ~state v2 factor in
+            let** v2 = arith_mul ~state v2 factor in
             arith_add ~state v1 v2
         | None, Some ty ->
             let* factor = Layout.size_of_s ty in
-            let** v1, state = arith_mul ~state v1 factor in
+            let** v1 = arith_mul ~state v1 factor in
             arith_add ~state v2 v1
         | None, None -> arith_add ~state v1 v2)
     | Sub -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some ty, None ->
             let* factor = Layout.size_of_s ty in
-            let** v2, state = arith_mul ~state v2 factor in
+            let** v2 = arith_mul ~state v2 factor in
             arith_sub ~state v1 v2
         | None, Some _ -> State.error `UBPointerArithmetic state
         | Some _, Some _ | None, None -> arith_sub ~state v1 v2)
@@ -340,7 +340,7 @@ module Make (State : State_intf.S) = struct
         in
         let* v1 = cast_to_int v1 in
         let* v2 = cast_to_int v2 in
-        Result.ok (Typed.bit_and ~size:bv_size ~signed v1 v2, state)
+        Result.ok (Typed.bit_and ~size:bv_size ~signed v1 v2)
     | _ ->
         Fmt.kstr not_impl "Unsupported arithmetic operator: %a"
           Fmt_ail.pp_arithop a_op
@@ -352,7 +352,7 @@ module Make (State : State_intf.S) = struct
         (* Optimisation *)
         (* If the value is in direct access, we can just increment it and
           immediately update it in the store. The writing cannot fail. *)
-        let++ res, state = apply_op ~state v in
+        let++ res = apply_op ~state v in
         let store =
           try_immediate_store ~prog store lvalue res
           |> Option.get ~msg:"Immediate store failed after immediate load?"
@@ -367,13 +367,12 @@ module Make (State : State_intf.S) = struct
     | TInt, TInt ->
         let left = Typed.cast left in
         let right = Typed.cast right in
-        Result.ok (cmp_op left right, state)
+        Result.ok (cmp_op left right)
     | TPointer, TPointer ->
         let left = Typed.cast left in
         let right = Typed.cast right in
         if%sat Typed.Ptr.loc left ==@ Typed.Ptr.loc right then
-          Csymex.Result.ok
-            (cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right), state)
+          Csymex.Result.ok (cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right))
         else State.error `UBPointerComparison state
     | _ -> State.error `UBPointerComparison state
 
@@ -462,7 +461,7 @@ module Make (State : State_intf.S) = struct
                    ~msg:"Member of Pointer that isn't of type pointer"
             in
             let* mem_ofs = Layout.member_ofs member ty_pointee in
-            let++ v, state = arith_add ~state ptr_v mem_ofs in
+            let++ v = arith_add ~state ptr_v mem_ofs in
             (v, store, state)
         | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
     | AilEunary (((PostfixIncr | PostfixDecr) as op), e) -> (
@@ -486,7 +485,7 @@ module Make (State : State_intf.S) = struct
             let** v, store, state = eval_expr store state e in
             let ptr = cast_to_ptr v in
             let** v, state = State.load ptr (type_of e) state in
-            let** v_incr, state = apply_op ~state v in
+            let** v_incr = apply_op ~state v in
             let++ (), state = State.store ptr (type_of e) v_incr state in
             (v, store, state))
     | AilEunary (op, e) -> (
@@ -500,14 +499,14 @@ module Make (State : State_intf.S) = struct
               | Some ty -> Layout.size_of_s ty
               | None -> return 1s
             in
-            let** v_decr, state = arith_sub ~state v incr_operand in
+            let** v_decr = arith_sub ~state v incr_operand in
             let++ (), state = State.store ptr (type_of e) v_decr state in
             (v, store, state)
         | Indirection -> Result.ok (v, store, state)
         | Address -> failwith "unreachable: address_of already handled"
         | Minus ->
             let* v = cast_to_int v in
-            let++ v, state = arith_sub ~state Typed.zero v in
+            let++ v = arith_sub ~state Typed.zero v in
             (v, store, state)
         | _ ->
             Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op
@@ -544,7 +543,7 @@ module Make (State : State_intf.S) = struct
     | AilEbinary (e1, op, e2) ->
         let** v1, store, state = eval_expr store state e1 in
         let** v2, store, state = eval_expr store state e2 in
-        let++ v, state =
+        let++ v =
           match op with
           | Ge -> ineq_comparison ~state ~cmp_op:( >=@ ) v1 v2
           | Gt -> ineq_comparison ~state ~cmp_op:( >@ ) v1 v2
@@ -553,12 +552,12 @@ module Make (State : State_intf.S) = struct
           | Eq -> equality_check ~state v1 v2
           | Ne ->
               (* TODO: Semantics of Ne might be different from semantics of not eq? *)
-              let++ res, state = equality_check ~state v1 v2 in
-              (Typed.not_int_bool res, state)
+              let++ res = equality_check ~state v1 v2 in
+              Typed.not_int_bool res
           | Or | And -> failwith "Unreachable, handled earlier."
           | Arithmetic a_op ->
               arith ~state (v1, type_of e1) a_op (v2, type_of e2)
-          | Comma -> Result.ok (v2, state)
+          | Comma -> Result.ok v2
         in
         (v, store, state)
     | AilErvalue e -> (
@@ -621,7 +620,7 @@ module Make (State : State_intf.S) = struct
             (* At this point, lvalue must be a pointer (including to the stack) *)
             let ptr = cast_to_ptr ptr in
             let** operand, state = State.load ptr lty state in
-            let** res, state = apply_op ~state operand in
+            let** res = apply_op ~state operand in
             let++ (), state = State.store ptr lty res state in
             (res, store, state))
     | AilEsizeof (_quals, ty) ->
@@ -636,13 +635,13 @@ module Make (State : State_intf.S) = struct
                ~msg:"Member of Pointer that isn't of type pointer"
         in
         let* mem_ofs = Layout.member_ofs member ty_pointee in
-        let++ v, state = arith_add ~state ptr_v mem_ofs in
+        let++ v = arith_add ~state ptr_v mem_ofs in
         (v, store, state)
     | AilEmemberof (obj, member) ->
         let** ptr_v, store, state = eval_expr store state obj in
         let ty_obj = type_of obj in
         let* mem_ofs = Layout.member_ofs member ty_obj in
-        let++ v, state = arith_add ~state ptr_v mem_ofs in
+        let++ v = arith_add ~state ptr_v mem_ofs in
         (v, store, state)
     | AilEcast (_quals, new_ty, expr) ->
         let old_ty = type_of expr in
