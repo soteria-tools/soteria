@@ -5,6 +5,7 @@
   }
   ^ 
   
+  No bugs found
   Summaries for test_484:
     Analysed {
       raw =

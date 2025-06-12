@@ -1,5 +1,6 @@
   $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
+  No bugs found
   Summaries for f_485:
     Analysed {
       raw =
@@ -211,6 +212,7 @@ The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
+  No bugs found
   Summaries for test_486:
     Analysed {
       raw =
