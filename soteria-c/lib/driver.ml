@@ -14,9 +14,10 @@ let impl_name =
 
 let set_cerb_conf () =
   let open Cerb_global in
-  set_cerb_conf ~backend_name:"soteria-c" ~exec:false Random ~concurrency:false
+  let lexicon = { with_c23= true; with_gnu= true; without_cerb= false } in
+  set_cerb_conf ~lexicon ~backend_name:"soteria-c" ~exec:false Random ~concurrency:false
     Basic ~defacto:false ~permissive:false ~agnostic:false
-    ~ignore_bitfields:false
+    ~ignore_bitfields:true
 
 let io : Cerb_backend.Pipeline.io_helpers =
   let open Cerb_backend.Pipeline in
@@ -99,9 +100,8 @@ module Frontend = struct
         (fun ~cpp_cmd filename ->
           let cpp_cmd =
             cpp_cmd
-            ^ " -E -C -Werror -nostdinc "
+            ^ " -E -C "
             ^ include_soteria_c_h
-            ^ include_libc ()
           in
           c_frontend (conf cpp_cmd, io) (stdlib, impl) ~filename)
     in
