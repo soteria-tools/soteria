@@ -19,7 +19,7 @@ let store ptr ty v = bi_wrap (State.store ptr ty v)
 let free ptr = bi_wrap (State.free ptr)
 let alloc ?zeroed size = bi_wrap (State.alloc ?zeroed size)
 let alloc_ty ty = bi_wrap (State.alloc_ty ty)
-let error e = bi_wrap (State.error e)
+let error e = Bi.wrap_error (State.error e)
 let get_global sym st = Bi.wrap_no_fail (State.get_global sym) st
 
 let copy_nonoverlapping ~dst ~src ~size =

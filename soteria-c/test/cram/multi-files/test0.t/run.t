@@ -72,7 +72,6 @@
     [Ok: (25,
           { heap =
             [(V|1|, [TypedVal {offset = 0; ty = signed int; v = 13}]);
-             (V|2|, [TypedVal {offset = 0; ty = signed int; v = 12}]);
-             (V|3|, Freed)];
+             (V|2|, [TypedVal {offset = 0; ty = signed int; v = 12}])];
             globs = [(x_485, V|2|); (x_492, V|1|)] })]
   Executed 7 statements

@@ -3,6 +3,7 @@ open AilSyntax
 
 type sym = Symbol.sym
 type nonrec constant = constant
+type ctype = Ctype.ctype
 type expr = GenTypes.genTypeCategory expression
 type stmt = GenTypes.genTypeCategory statement
 type fundef = GenTypes.genTypeCategory sigma_function_definition
