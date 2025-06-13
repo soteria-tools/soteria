@@ -81,7 +81,7 @@ module type S = sig
       serialized list )
     Csymex.Result.t
 
-  val error : 'a -> t -> ('ok * t, 'a err, serialized list) Csymex.Result.t
+  val error : 'a -> t -> ('ok, 'a err, serialized list) Csymex.Result.t
   val produce : serialized -> t -> t Csymex.t
 
   val consume :

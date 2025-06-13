@@ -36,6 +36,14 @@ module Make (Symex : Symex.S) = struct
     in
     with_fuel fuel bi_st
 
+  let wrap_error (f : 'a -> ('ok, 'err, 'fix list) Symex.Result.t)
+      (bi_st : ('a, 'fix) t) : ('ok, 'err * ('a, 'fix) t, 'fix list) Result.t =
+    let st, _ = bi_st in
+    let* res = f st in
+    match res with
+    | Error e -> Result.error (e, bi_st)
+    | _ -> failwith "Bi_abd.wrap_error: expected error result"
+
   let wrap_no_fail f bi_st =
     let st, fixes = bi_st in
     let+ v, st = f st in
