@@ -14,9 +14,9 @@ let impl_name =
 
 let set_cerb_conf () =
   let open Cerb_global in
-  let lexicon = { with_c23= true; with_gnu= true; without_cerb= false } in
-  set_cerb_conf ~lexicon ~backend_name:"soteria-c" ~exec:false Random ~concurrency:false
-    Basic ~defacto:false ~permissive:false ~agnostic:false
+  let lexicon = { with_c23 = true; with_gnu = true; without_cerb = false } in
+  set_cerb_conf ~lexicon ~backend_name:"soteria-c" ~exec:false Random
+    ~concurrency:false Basic ~defacto:false ~permissive:false ~agnostic:false
     ~ignore_bitfields:true
 
 let io : Cerb_backend.Pipeline.io_helpers =
@@ -39,11 +39,12 @@ let io : Cerb_backend.Pipeline.io_helpers =
     return ()
   in
   let print_debug n mk_str =
-    Cerb_debug.print_debug n [] mk_str;
+    (* Cerb_debug.print_debug n [] mk_str; *)
+    if n == 0 then L.debug (fun m -> m "%s" (mk_str ()));
     return ()
   in
-  let warn ?(always = false) mk_str =
-    Cerb_debug.warn ~always [] mk_str;
+  let warn ?always:_ mk_str =
+    L.warn (fun m -> m "%s" (mk_str ()));
     return ()
   in
   { pass_message; set_progress; run_pp; print_endline; print_debug; warn }
@@ -98,11 +99,7 @@ module Frontend = struct
       let* impl = load_core_impl stdlib impl_name in
       Exception.Result
         (fun ~cpp_cmd filename ->
-          let cpp_cmd =
-            cpp_cmd
-            ^ " -E -C "
-            ^ include_soteria_c_h
-          in
+          let cpp_cmd = cpp_cmd ^ " -E -C " ^ include_soteria_c_h in
           c_frontend (conf cpp_cmd, io) (stdlib, impl) ~filename)
     in
     let () = Cerb_colour.do_colour := false in
