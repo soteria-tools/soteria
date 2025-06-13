@@ -125,11 +125,12 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
 let exec_main_and_print log_config term_config solver_config no_compile clean
-    ignore_leaks kani miri file_name =
+    ignore_leaks ignore_aliasing kani miri file_name =
   Solver_config.set solver_config;
   Soteria_logs.Config.check_set_and_lock log_config;
   Soteria_terminal.Config.set_and_lock term_config;
   Cleaner.init ~clean ();
+  Tree_borrow.set_enabled (not ignore_aliasing);
 
   match
     let plugin =

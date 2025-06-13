@@ -98,6 +98,7 @@ let default =
           (* No warning *)
           "-Awarnings";
           (* include our std and rusteria crates *)
+          "--cfg=rusteria";
           "-Zcrate-attr=feature\\(register_tool\\)";
           "-Zcrate-attr=register_tool\\(rusteriatool\\)";
           "--extern=rusteria";
