@@ -361,7 +361,7 @@ let load_global g ({ globals; _ } as st) =
 let borrow (ptr, meta) (ty : Charon.Types.ty)
     (kind : Charon.Expressions.borrow_kind) st =
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
-  if (kind = BShared && Layout.is_unsafe_cell ty) || Tree_borrow.is_disabled ()
+  if Tree_borrow.is_disabled () || (kind = BShared && Layout.is_unsafe_cell ty)
   then Result.ok ((ptr, meta), st)
   else
     let@ () = with_error_loc_as_call_trace st in
@@ -389,7 +389,7 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
 
 let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     =
-  if Layout.is_unsafe_cell ty || Tree_borrow.is_disabled () then
+  if Tree_borrow.is_disabled () || Layout.is_unsafe_cell ty then
     Result.ok ((ptr, meta), st)
   else
     let@ () = with_error_loc_as_call_trace st in
