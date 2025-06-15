@@ -202,8 +202,8 @@ fn main() {
 
 #[kani::proof]
 #[kani::unwind(11)]
-#[rusteria::step_fuel(5000)]
-#[rusteria::branch_fuel(10)]
+#[cfg_attr(rusteria, rusteria::step_fuel(5000))]
+#[cfg_attr(rusteria, rusteria::branch_fuel(10))]
 fn do_rotation() {
     let n: u8 = kani::any();
     kani::assume(1 <= n && n <= 10);
