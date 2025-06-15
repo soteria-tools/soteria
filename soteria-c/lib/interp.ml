@@ -688,8 +688,6 @@ module Make (State : State_intf.S) = struct
         | `Success -> InterpM.ok rval
         | `NotImmediate ->
             let* ptr = eval_expr lvalue in
-            (* [ptr] is a necessarily a pointer, and [rval] is a memory value.
-               I don't support pointer fragments for now, so let's say it's an *)
             let ptr = cast_to_ptr ptr in
             let ty = type_of lvalue in
             let+ () = InterpM.State.store ptr ty rval in
