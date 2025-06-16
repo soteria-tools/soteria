@@ -1,4 +1,4 @@
-include Stdlib.Map.Make (Ail_helpers.Symbol_std)
+include Symbol_std.Map
 
 type ctype = Cerb_frontend.Ctype.ctype
 

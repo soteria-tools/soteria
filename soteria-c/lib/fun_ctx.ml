@@ -1,8 +1,8 @@
 module Bidirectional_map = struct
-  module SMap = Map.Make (Ail_helpers.Symbol_std)
+  module SMap = Symbol_std.Map
   module IMap = Map.Make (Z)
 
-  type t = { s_to_i : Z.t SMap.t; i_to_s : Ail_helpers.Symbol_std.t IMap.t }
+  type t = { s_to_i : Z.t SMap.t; i_to_s : Symbol_std.t IMap.t }
 
   let empty = { s_to_i = SMap.empty; i_to_s = IMap.empty }
   let has_sym s map = SMap.mem s map.s_to_i
