@@ -356,7 +356,7 @@ module M (Heap : Heap_intf.S) = struct
          | Zeroed -> zeroed f.signature )
     |> opt_bind @@ fun () ->
        if is_intrinsic then
-         Option.some @@ fun ~args:_ ~state:_ ->
+         Option.some @@ fun ~args:_ _ ->
          Fmt.kstr not_impl "Unsupported intrinsic: %a" Crate.pp_name name
        else None
 

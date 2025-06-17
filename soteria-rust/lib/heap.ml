@@ -165,7 +165,7 @@ let check_ptr_align (ptr : Sptr.t) ty st =
         Charon_util.pp_ty ty);
   if%sat
     ofs %@ expected_align ==@ 0s &&@ (Typed.int align %@ expected_align ==@ 0s)
-  then Result.ok ()
+  then Result.ok ((), st)
   else error `MisalignedPointer
 
 let with_ptr (ptr : Sptr.t) (st : t)
@@ -192,7 +192,7 @@ let uninit (ptr, _) ty st =
   Tree_block.uninit_range ofs size block
 
 let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
-  let** () = check_ptr_align ptr ty st in
+  let** (), st = check_ptr_align ptr ty st in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   log "load" ptr st;
@@ -240,7 +240,7 @@ let store (ptr, _) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
-    let** () = check_ptr_align ptr ty st in
+    let** (), st = check_ptr_align ptr ty st in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     L.debug (fun f ->

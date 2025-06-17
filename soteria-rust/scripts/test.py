@@ -319,7 +319,7 @@ def diff_evaluation(path1: Path, path2: Path):
     total_time2 = sum(csv2.values())
     delta_total = (total_time2 - total_time1) / total_time1 * 100
     diff_clr = RED if total_time1 < total_time2 else GREEN
-    pprint(f"Diff of {path1} and {path2}", inc=True)
+    pprint(f"Diff of {path1} → {path2}", inc=True)
     pprint(
         f"Went from {total_time1:.3f}s to {total_time2:.3f}s ({diff_clr}{delta_total:.1f}%{RESET})"
     )
