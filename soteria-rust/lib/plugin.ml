@@ -88,6 +88,7 @@ let default =
            "--extract-opaque-bodies";
            "--monomorphize";
            "--mir elaborated";
+           "--raw-boxes";
          ]
         @ opaques)
       ~rustc:
