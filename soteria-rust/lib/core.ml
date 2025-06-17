@@ -18,7 +18,7 @@ module M (Heap : Heap_intf.S) = struct
     else if%sat v ==@ 0s then return 0s else return 1s
 
   let rec equality_check (v1 : [< Typed.T.cval ] Typed.t)
-      (v2 : [< Typed.T.cval ] Typed.t) st =
+      (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TInt, TInt | TPointer, TPointer ->
         Result.ok (v1 ==@ v2 |> Typed.int_of_bool)
@@ -26,9 +26,10 @@ module M (Heap : Heap_intf.S) = struct
     | TPointer, TInt ->
         let v2 : T.sint Typed.t = Typed.cast v2 in
         if%sat Typed.(v2 ==@ zero) then
-          Result.ok (Typed.cast v1 ==@ Typed.Ptr.null |> Typed.int_of_bool)
-        else Heap.error `UBPointerComparison st
-    | TInt, TPointer -> equality_check v2 v1 st
+          let res = Typed.cast v1 ==@ Typed.Ptr.null |> Typed.int_of_bool in
+          Result.ok res
+        else Result.error `UBPointerComparison
+    | TInt, TPointer -> equality_check v2 v1
     | _ ->
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
           Typed.ppa v1 Typed.ppa v2
@@ -37,7 +38,7 @@ module M (Heap : Heap_intf.S) = struct
       checks for division by zero, but doesn't check for overflow (to allow
       wrapping behaviour.) *)
   let safe_binop (bop : Expressions.binop) (ty : Types.literal_type)
-      (l : [< T.cval ] Typed.t) (r : [< T.cval ] Typed.t) st :
+      (l : [< T.cval ] Typed.t) (r : [< T.cval ] Typed.t) :
       ([> T.cval ] Typed.t, 'e, 'm) Result.t =
     let* l, r, ty_ = cast_checked2 l r in
     match untype_type ty_ with
@@ -48,10 +49,10 @@ module M (Heap : Heap_intf.S) = struct
           | Sub | CheckedSub | WrappingSub -> Result.ok (l -@ r)
           | Mul | CheckedMul | WrappingMul -> Result.ok (l *@ r)
           | Div ->
-              if%sat r ==@ 0s then Heap.error `DivisionByZero st
+              if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (l /@ cast r)
           | Rem ->
-              if%sat r ==@ 0s then Heap.error `DivisionByZero st
+              if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (rem l (cast r))
           | Shl | Shr ->
               let ity =
@@ -81,20 +82,20 @@ module M (Heap : Heap_intf.S) = struct
           | _ -> not_impl "Invalid binop in eval_lit_binop"
         in
         Result.ok (res :> T.cval Typed.t)
-    | TPointer -> Heap.error `UBPointerArithmetic st
+    | TPointer -> Result.error `UBPointerArithmetic
     | _ -> not_impl "Unexpected type in eval_lit_binop"
 
   (** Evaluates a binary operator of {+,-,/,*,rem}, and ensures the result is within the type's
       constraints, else errors *)
-  let eval_lit_binop bop lit_ty l r st =
-    let** res = safe_binop bop lit_ty l r st in
+  let eval_lit_binop bop lit_ty l r =
+    let** res = safe_binop bop lit_ty l r in
     let** () =
       match bop with
       | Rem -> (
           match lit_ty with
           | Values.TInteger inty ->
               let min = Layout.min_value inty in
-              if%sat l ==@ min &&@ (r ==@ -1s) then Heap.error `Overflow st
+              if%sat l ==@ min &&@ (r ==@ -1s) then Result.error `Overflow
               else Result.ok ()
           | _ -> Result.ok ())
       | Shl | Shr ->
@@ -108,13 +109,13 @@ module M (Heap : Heap_intf.S) = struct
           let size = 8 * Layout.size_of_int_ty ity in
           let r = Typed.cast r in
           if%sat r <@ 0s ||@ (r >=@ Typed.int size) then
-            Heap.error `InvalidShift st
+            Result.error `InvalidShift
           else Result.ok ()
       | _ -> Result.ok ()
     in
     let constrs = Layout.constraints lit_ty in
     if%sat conj (constrs res) then Result.ok (res :> T.cval Typed.t)
-    else Heap.error `Overflow st
+    else Result.error `Overflow
 
   (** Wraps a given value to make it fit within the constraints of the given
       type *)
@@ -131,22 +132,22 @@ module M (Heap : Heap_intf.S) = struct
     else if%sat res <=@ max then return res else return (res -@ unsigned_max)
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
-  let eval_checked_lit_binop op lit_ty l r st =
+  let eval_checked_lit_binop op lit_ty l r =
     let ty =
       match lit_ty with
       | Values.TInteger ity -> ity
       | _ -> failwith "Non-integer in checked binary operation"
     in
-    let** v = safe_binop op lit_ty l r st in
+    let** v = safe_binop op lit_ty l r in
     let* wrapped = wrap_value ty v in
     let overflowed = Typed.(int_of_bool (not (v ==@ wrapped))) in
     Result.ok (Tuple [ Base wrapped; Base overflowed ])
 
-  let rec eval_ptr_binop (bop : Expressions.binop) l r st :
+  let rec eval_ptr_binop (bop : Expressions.binop) l r :
       ([> T.cval ] Typed.t, 'e, 'm) Result.t =
     match (bop, l, r) with
     | Ne, _, _ ->
-        let++ res = eval_ptr_binop Eq l r st in
+        let++ res = eval_ptr_binop Eq l r in
         not_int_bool (cast res)
     | Eq, Ptr (l, None), Ptr (r, None) ->
         Result.ok (int_of_bool (Sptr.sem_eq l r))
@@ -185,13 +186,13 @@ module M (Heap : Heap_intf.S) = struct
           (* is this correct? *)
           | Some _, None | None, Some _ -> Result.ok (int_of_bool v)
           | None, None -> Result.ok (int_of_bool v)
-        else Heap.error `UBPointerComparison st
+        else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         if%sat Sptr.is_same_loc l r then
           let v = Sptr.distance l r in
           let* cmp = cmp_of_int v in
           Result.ok cmp
-        else Heap.error `UBPointerComparison st
+        else Result.error `UBPointerComparison
     | Cmp, Ptr (p, _), Base v | Cmp, Base v, Ptr (p, _) ->
         if%sat v ==@ 0s then
           if%sat Sptr.is_at_null_loc p then Result.ok 0s

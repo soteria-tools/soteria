@@ -97,7 +97,7 @@ module type S = sig
     Sptr.t ->
     Types.ty ->
     t ->
-    (unit, [> `MisalignedPointer ] err * t, serialized list) Result.t
+    (unit * t, [> `MisalignedPointer ] err * t, serialized list) Result.t
 
   val copy_nonoverlapping :
     dst:full_ptr ->
