@@ -588,9 +588,8 @@ module Make (Heap : Heap_intf.S) = struct
             let discr = Typed.int_z discriminant.value in
             Result.ok (Base discr, state)
         | var :: _ ->
-            (* FIXME: this type is wrong *)
             let int_ty = var.discriminant.int_ty in
-            let layout = Layout.of_enum_discr kind var.discriminant.value in
+            let layout = Layout.of_variant var in
             let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
             let discr_ty = Types.TLiteral (TInteger int_ty) in
             let** loc = Sptr.offset loc discr_ofs |> Heap.lift_err state in
