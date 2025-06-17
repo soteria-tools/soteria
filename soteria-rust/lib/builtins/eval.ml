@@ -27,7 +27,6 @@ module M (Heap : Heap_intf.S) = struct
     | Assume
     | ByteSwap
     | BlackBox
-    | BoxIntoRaw
     | Breakpoint
     | CatchUnwind
     | Checked of Expressions.binop
@@ -85,10 +84,6 @@ module M (Heap : Heap_intf.S) = struct
       ("miristd::miri_pointer_name", Nop);
       ("miristd::miri_print_borrow_state", Nop);
       (* Core *)
-      (* FIXME: get rid of these, as Charon improves *)
-      ("alloc::boxed::{alloc::boxed::Box}::into_raw", BoxIntoRaw);
-      ("alloc::boxed::{alloc::boxed::Box}::from_raw", BoxIntoRaw);
-      ("alloc::boxed::{alloc::boxed::Box}::leak", BoxIntoRaw);
       (* FIXME: the below indexes fail because the code doesn't get monomorphised properly, and
          returns a thin pointer rather than a fat one. *)
       ("core::array::{core::ops::index::Index}::index", Index);
@@ -311,7 +306,6 @@ module M (Heap : Heap_intf.S) = struct
          | AssertInhabited -> assert_inhabited (mono ())
          | Assume -> std_assume
          | BlackBox -> black_box
-         | BoxIntoRaw -> box_into_raw
          | Breakpoint -> breakpoint
          | ByteSwap -> byte_swap f.signature
          | CatchUnwind -> catch_unwind fun_exec

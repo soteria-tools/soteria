@@ -275,11 +275,6 @@ module M (Heap : Heap_intf.S) = struct
       let++ ptr' = Sptr.offset ~check ptr v |> Heap.lift_err state in
       (Ptr (ptr', meta), state)
 
-  let box_into_raw ~args state =
-    (* internally a box is exactly a pointer so nothing to do *)
-    let box_ptr = List.hd args in
-    Result.ok (box_ptr, state)
-
   let ptr_offset_from unsigned (funsig : GAst.fun_sig) ~args state =
     let ptr1, ptr2 =
       match args with
