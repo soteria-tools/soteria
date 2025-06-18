@@ -58,14 +58,11 @@ let compile_lib path =
 let known_generic_errors =
   [
     "alloc::borrow::ToOwned::to_owned";
-    "alloc::boxed::_::from_raw";
-    "alloc::boxed::_::into_raw";
     "alloc::raw_vec::_::try_allocate_in";
     "alloc::string::_::from";
     "alloc::raw_vec::finish_grow";
     "core::fmt::Display::fmt";
     "core::ptr::null_mut";
-    "core::ptr::metadata::Thin";
     "std::path::_::from";
   ]
 

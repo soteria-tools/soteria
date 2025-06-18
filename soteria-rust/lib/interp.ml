@@ -525,6 +525,9 @@ module Make (Heap : Heap_intf.S) = struct
             Heap.lift_err
             @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
+        | Cast (CastUnsize (_, TRef (_, TDynTrait _, _)))
+        | Cast (CastUnsize (_, TRawPtr (TDynTrait _, _))) ->
+            not_impl "Unsupported: dyn"
         | Cast (CastUnsize (from_ty, _)) ->
             let rec get_size = function
               | Types.TRawPtr (ty, _)

@@ -864,9 +864,15 @@ module M (Heap : Heap_intf.S) = struct
             Heap.error (`StdErr "catch_unwind unwinded in catch") state))
 
   let fixme_try_cleanup ~args:_ state =
-    (* FIXME: this is extremely wrong !! we need Charon to stop translating boxes
-       weirdly and this should go away, for now this at least means catch_unwind works. *)
-    Result.ok (Ptr (Sptr.null_ptr, None), state)
+    (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
+              we return a Box to a null pointer, hoping the client code doesn't access it. *)
+    let ptr = Ptr (Sptr.null_ptr, None) in
+    let non_null = Struct [ ptr ] in
+    let phantom_data = Struct [] in
+    let unique = Struct [ non_null; phantom_data ] in
+    let allocator = Struct [] in
+    let box = Struct [ unique; allocator ] in
+    Result.ok (box, state)
 
   let breakpoint ~args:_ state = Heap.error `Breakpoint state
 end
