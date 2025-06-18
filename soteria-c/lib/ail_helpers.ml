@@ -10,11 +10,7 @@ let get_label_target fundef label =
   Effect.perform (Get_label_target (fundef, label))
 
 let run_with_prog (prog : Ail_tys.linked_program) f =
-  try f () with
-  | effect Get_prog, k -> Effect.Deep.continue k prog
-  | effect Get_label_target (fundef, label), k ->
-      let res = Label_cache.find_target prog.label_cache fundef label in
-      Effect.Deep.continue k res
+  try f () with effect Get_prog, k -> Effect.Deep.continue k prog
 
 let sym_is_id sym id =
   let open Cerb_frontend.Symbol in

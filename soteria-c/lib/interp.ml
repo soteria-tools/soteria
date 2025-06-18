@@ -774,7 +774,7 @@ module Make (State : State_intf.S) = struct
     | AilEgcc_statement (_, _) ->
         Fmt.kstr InterpM.not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
-  and exec_body ~fundef (body : stmt) : Stmt_exec_result.t InterpM.t =
+  and exec_body (body : stmt) : Stmt_exec_result.t InterpM.t =
     let open Stmt_exec_result in
     let rec aux res =
       L.trace (fun m -> m "Body execution result: %a" Stmt_exec_result.pp res);
@@ -786,29 +786,28 @@ module Make (State : State_intf.S) = struct
       | Goto label ->
           L.trace (fun m ->
               m "Body terminated with Goto %a" Fmt_ail.pp_sym label);
-          let* res = exec_goto ~fundef label body in
+          let* res = exec_goto label body in
           aux res
       | Break | Continue ->
           failwith "Unreachable: terminated function body with Continue/Break"
     in
-    let* res = exec_stmt ~fundef body in
+    let* res = exec_stmt body in
     (* We execute until we stop getting a goto. *)
     aux res
 
-  and exec_stmt_list ~fundef (init : Stmt_exec_result.t) (stmtl : stmt list) :
+  and exec_stmt_list (init : Stmt_exec_result.t) (stmtl : stmt list) :
       Stmt_exec_result.t InterpM.t =
     let open Stmt_exec_result in
     InterpM.fold_list stmtl ~init ~f:(fun res stmt ->
         match res with
-        | Normal -> exec_stmt ~fundef stmt
-        | Goto label -> exec_goto ~fundef label stmt
+        | Normal -> exec_stmt stmt
+        | Goto label -> exec_goto label stmt
         | Break | Continue | Returned _ -> InterpM.ok res)
 
   (** Executing a goto statement, i.e. jumping to a label, returns the result of
       executing the label's target statement. *)
 
-  and exec_goto ~fundef (label : sym) (astmt : stmt) :
-      Stmt_exec_result.t InterpM.t =
+  and exec_goto (label : sym) (astmt : stmt) : Stmt_exec_result.t InterpM.t =
     let open Stmt_exec_result in
     L.trace (fun m ->
         m "Trying to find label %a, currently at %a" Fmt_ail.pp_sym label
@@ -816,40 +815,39 @@ module Make (State : State_intf.S) = struct
     let AilSyntax.{ node = stmt; _ } = astmt in
     match stmt with
     | AilSlabel (label', stmt, _annot) when Symbol_std.equal label label' ->
-        exec_stmt ~fundef stmt
+        exec_stmt stmt
     | AilSblock (bindings, stmtl) ->
         let* () = attach_bindings bindings in
-        let* res = exec_stmt_list ~fundef (Goto label) stmtl in
+        let* res = exec_stmt_list (Goto label) stmtl in
         let+ () = remove_and_free_bindings bindings in
         res
     | AilSif (_, then_stmt, else_stmt) -> (
-        let* then_res = exec_goto ~fundef label then_stmt in
+        let* then_res = exec_goto label then_stmt in
         match then_res with
-        | Goto l -> exec_goto ~fundef l else_stmt
+        | Goto l -> exec_goto l else_stmt
         | Normal | Break | Continue | Returned _ -> InterpM.ok then_res)
     | AilSwhile (_, body, _) -> (
-        let* res = exec_goto ~fundef label body in
+        let* res = exec_goto label body in
         match res with
         | Goto _ | Break | Returned _ -> InterpM.ok res
-        | Normal | Continue -> exec_stmt ~fundef astmt)
+        | Normal | Continue -> exec_stmt astmt)
     | AilSdo (body, e, _) -> (
-        let* res = exec_goto ~fundef label body in
+        let* res = exec_goto label body in
         match res with
         | Goto _ | Break | Returned _ -> InterpM.ok res
         | Normal | Continue ->
             let* guard = eval_expr e in
             let guard_bool = cast_to_bool guard in
-            if%sat guard_bool then exec_stmt ~fundef astmt
-            else InterpM.ok Normal)
-    | AilSswitch (_, body) -> exec_goto ~fundef label body
-    | AilSmarker (_, stmt) -> exec_goto ~fundef label stmt
+            if%sat guard_bool then exec_stmt astmt else InterpM.ok Normal)
+    | AilSswitch (_, body) -> exec_goto label body
+    | AilSmarker (_, stmt) -> exec_goto label stmt
     | _ -> InterpM.ok (Goto label)
 
   (** Executing a statement returns an optional value outcome (if a return
       statement was hit), or *)
-  and exec_stmt ~fundef (astmt : stmt) : Stmt_exec_result.t InterpM.t =
+  and exec_stmt (astmt : stmt) : Stmt_exec_result.t InterpM.t =
     let open Stmt_exec_result in
-    let exec_stmt = exec_stmt ~fundef in
+    let exec_stmt = exec_stmt in
     let^ () = Csymex.consume_fuel_steps 1 in
     L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
     let* () =
@@ -869,7 +867,7 @@ module Make (State : State_intf.S) = struct
     | AilSblock (bindings, stmtl) ->
         let* () = attach_bindings bindings in
         (* Second result, corresponding to the block-scoped store, is discarded *)
-        let* res = exec_stmt_list ~fundef Normal stmtl in
+        let* res = exec_stmt_list Normal stmtl in
         (* Cerberus is nice here, symbols inside the block have different names than
            the ones outside the block if there is shadowing going on.
            I.e. int x = 12; { int x = 13; }, the two `x`s have different symbols.
@@ -944,7 +942,7 @@ module Make (State : State_intf.S) = struct
     let* ptys = get_param_tys name in
     let ps = List.combine3 params ptys args in
     let store = mk_store ps in
-    let** res, store, state = exec_body ~fundef stmt store state in
+    let** res, store, state = exec_body stmt store state in
     let++ state = dealloc_store store state in
     (* We model void as zero, it should never be used anyway *)
     let value = match res with Returned v -> v | _ -> 0s in

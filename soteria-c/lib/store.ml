@@ -33,6 +33,5 @@ let declare_value sym value t =
       | None -> failwith "Store: Assigning unknown symbol?"
       | Some { kind = _; ty } -> Some { kind = Value value; ty })
     t
-(* declare sym (Value value) t *)
 
 let pp : t Fmt.t = Fmt.Dump.iter_bindings iter Fmt.nop Fmt_ail.pp_sym pp_binding
