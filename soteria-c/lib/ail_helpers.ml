@@ -1,13 +1,6 @@
-type _ Effect.t +=
-  | Get_prog : Ail_tys.linked_program Effect.t
-  | Get_label_target :
-      (Ail_tys.fundef * Ail_tys.sym)
-      -> Ail_tys.stmt option Effect.t
+type _ Effect.t += Get_prog : Ail_tys.linked_program Effect.t
 
 let get_prog () = Effect.perform Get_prog
-
-let get_label_target fundef label =
-  Effect.perform (Get_label_target (fundef, label))
 
 let run_with_prog (prog : Ail_tys.linked_program) f =
   try f () with effect Get_prog, k -> Effect.Deep.continue k prog
