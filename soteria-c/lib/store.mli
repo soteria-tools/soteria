@@ -4,9 +4,7 @@ type binding_kind =
   | Uninit
 [@@deriving show]
 
-type binding = { kind : binding_kind option; ty : Ail_tys.ctype }
-[@@deriving show]
-
+type binding = { kind : binding_kind; ty : Ail_tys.ctype } [@@deriving show]
 type t
 
 val pp : t Fmt.t
@@ -23,4 +21,3 @@ val is_empty : t -> bool
 val mem : Ail_tys.sym -> t -> bool
 val find_opt : Ail_tys.sym -> t -> binding option
 val declare_value : Ail_tys.sym -> Typed.T.cval Typed.t -> t -> t
-val declare_uninit : Ail_tys.sym -> t -> t

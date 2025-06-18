@@ -15,6 +15,6 @@ int main()
       break;
     }
   }
-  // Should return 5, because j = 3 and i = 8
-  return j - i;
+  // Should return 4, because j = 4 and i = 8
+  return i - j;
 }

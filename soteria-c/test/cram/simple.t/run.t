@@ -265,3 +265,14 @@ Should return a single branch!
   Symex terminated with the following outcomes:
     [Ok: (b2i(((0 != V|2|) && (0 != V|1|))), { heap = []; globs = [] })]
   Executed 4 statements
+
+  $ soteria-c exec-main loop.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (4, { heap = []; globs = [] })]
+  Executed 72 statements
+
+  $ soteria-c exec-main gotos.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (1042, { heap = []; globs = [] });
+     Ok: (1043, { heap = []; globs = [] })]
+  Executed 23 statements

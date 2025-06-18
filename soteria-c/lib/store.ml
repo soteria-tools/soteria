@@ -10,35 +10,29 @@ type binding_kind =
   | Uninit
 [@@deriving show { with_path = false }]
 
-type binding = { kind : binding_kind option; ty : ctype }
+type binding = { kind : binding_kind; ty : ctype }
 [@@deriving show { with_path = false }]
 
 type nonrec t = binding t
 
 let reserve sym ty =
-  let binding = { kind = None; ty } in
+  let binding = { kind = Uninit; ty } in
   add sym binding
 
 let add_value sym value ty t =
-  let kind = Some (Value value) in
-  let binding = { kind; ty } in
+  let binding = { kind = Value value; ty } in
   add sym binding t
 
 let add_stackptr sym sptr ty t =
-  let kind = Some (Stackptr sptr) in
-  let binding = { kind; ty } in
+  let binding = { kind = Stackptr sptr; ty } in
   add sym binding t
 
-let declare sym kind t =
+let declare_value sym value t =
   update sym
     (function
       | None -> failwith "Store: Assigning unknown symbol?"
-      | Some { kind = Some _; _ } -> failwith "Store: Redefining symbol?"
-      | Some { kind = None; ty } ->
-          let kind = Some kind in
-          Some { kind; ty })
+      | Some { kind = _; ty } -> Some { kind = Value value; ty })
     t
+(* declare sym (Value value) t *)
 
-let declare_value sym value t = declare sym (Value value) t
-let declare_uninit sym t = declare sym Uninit t
 let pp : t Fmt.t = Fmt.Dump.iter_bindings iter Fmt.nop Fmt_ail.pp_sym pp_binding
