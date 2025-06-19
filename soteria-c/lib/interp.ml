@@ -462,10 +462,16 @@ module Make (State : State_intf.S) = struct
         in
         let^ v1 = cast_to_int v1 in
         let^ v2 = cast_to_int v2 in
-        InterpM.ok (Typed.bit_and ~size:bv_size ~signed v1 v2)
-    | _ ->
-        Fmt.kstr InterpM.not_impl "Unsupported arithmetic operator: %a"
-          Fmt_ail.pp_arithop a_op
+        let op =
+          match a_op with
+          | Band -> Typed.bit_and
+          | Bxor -> Typed.bit_xor
+          | Bor -> Typed.bit_or
+          | Shl -> Typed.bit_shl
+          | Shr -> Typed.bit_shr
+          | _ -> failwith "unreachable: bit operator is not bit operator?"
+        in
+        InterpM.ok (op ~size:bv_size ~signed v1 v2)
 
   let try_immediate_postfix_op ~apply_op lvalue =
     let* v_opt = try_immediate_load lvalue in
