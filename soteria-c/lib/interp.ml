@@ -344,6 +344,7 @@ module Make (State : State_intf.S) = struct
         | _, _ ->
             Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
               ity_left Fmt_ail.pp_int_ty ity_right)
+    | _, Ctype.Void -> return 0s
     | _ ->
         Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
           Fmt_ail.pp_ty_ new_ty
@@ -734,6 +735,9 @@ module Make (State : State_intf.S) = struct
     | AilEsizeof (_quals, ty) ->
         let^ res = Layout.size_of_s ty in
         InterpM.ok res
+    | AilEalignof (_quals, ty) ->
+        let^ res = Layout.align_of_s ty in
+        InterpM.ok res
     | AilEmemberofptr (ptr, member) ->
         let* ptr_v = eval_expr ptr in
         let^ ty_pointee =
@@ -768,6 +772,7 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr InterpM.not_impl
           "Cerberus could not parse an expression because %a"
           Fmt_ail.pp_invalid_reason reason
+    | AilEarray_decay _ -> InterpM.not_impl "Array decay"
     | AilEcond (_, _, _)
     | AilEassert _
     | AilEoffsetof (_, _)
@@ -777,13 +782,12 @@ module Make (State : State_intf.S) = struct
     | AilEunion (_, _, _)
     | AilEcompound (_, _, _)
     | AilEbuiltin _ | AilEstr _ | AilEsizeof_expr _
-    | AilEalignof (_, _)
     | AilEannot (_, _)
     | AilEva_start (_, _)
     | AilEva_arg (_, _)
     | AilEva_copy (_, _)
     | AilEva_end _ | AilEprint_type _ | AilEbmc_assume _ | AilEreg_load _
-    | AilEarray_decay _ | AilEatomic _
+    | AilEatomic _
     | AilEgcc_statement (_, _) ->
         Fmt.kstr InterpM.not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
