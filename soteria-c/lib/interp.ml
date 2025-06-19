@@ -774,15 +774,15 @@ module Make (State : State_intf.S) = struct
     | AilEgcc_statement (_, _) ->
         Fmt.kstr InterpM.not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
-  and exec_body (body : stmt) : Stmt_exec_result.t InterpM.t =
+  and exec_body (body : stmt) : T.cval Typed.t InterpM.t =
     let open Stmt_exec_result in
     let rec aux res =
       L.trace (fun m -> m "Body execution result: %a" Stmt_exec_result.pp res);
       match res with
-      | Returned _ -> InterpM.ok res
+      | Returned v -> InterpM.ok v
       | Normal ->
-          (* Didn't return: returning void (0) *)
-          InterpM.ok (Returned 0s)
+          (* Function didn't return, we return void (encoded as 0) *)
+          InterpM.ok 0s
       | Goto label ->
           L.trace (fun m ->
               m "Body terminated with Goto %a" Fmt_ail.pp_sym label);
@@ -791,9 +791,9 @@ module Make (State : State_intf.S) = struct
       | Break | Continue ->
           failwith "Unreachable: terminated function body with Continue/Break"
     in
-    let* res = exec_stmt body in
+    let* first_exec = exec_stmt body in
     (* We execute until we stop getting a goto. *)
-    aux res
+    aux first_exec
 
   and exec_stmt_list (init : Stmt_exec_result.t) (stmtl : stmt list) :
       Stmt_exec_result.t InterpM.t =
@@ -945,8 +945,7 @@ module Make (State : State_intf.S) = struct
     let** res, store, state = exec_body stmt store state in
     let++ state = dealloc_store store state in
     (* We model void as zero, it should never be used anyway *)
-    let value = match res with Returned v -> v | _ -> 0s in
-    (value, state)
+    (res, state)
 
   let init_prog_state (prog : Ail_tys.linked_program) =
     let open Csymex.Syntax in
