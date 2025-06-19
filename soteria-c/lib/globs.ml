@@ -2,7 +2,7 @@
     immutable total map from identifier to address *)
 
 open Csymex
-module Sym_map = Concrete_map (Ail_helpers.Symbol_std)
+module Sym_map = Concrete_map (Symbol_std)
 
 module Loc :
   Soteria_symex.Pure_fun.Codom
