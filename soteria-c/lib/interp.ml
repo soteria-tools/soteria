@@ -455,8 +455,7 @@ module Make (State : State_intf.S) = struct
         | Ok v2 -> InterpM.ok (Typed.rem v1 v2)
         | Error `NonZeroIsZero -> InterpM.error `DivisionByZero
         | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
-    | Band ->
-        (* TODO: is it guaranteed that both have the same type? *)
+    | (Band | Shl | Shr | Bxor | Bor) as a_op ->
         let* { bv_size; signed } =
           Layout.bv_info t1 |> InterpM.of_opt_not_impl ~msg:"bv_info"
         in
@@ -960,15 +959,16 @@ module Make (State : State_intf.S) = struct
     | AilSwhile (cond, stmt, _loopid) ->
         let rec loop () =
           let* cond_v = eval_expr cond in
-          if%sat cast_to_bool cond_v then
-            let () = L.trace (fun m -> m "Condition is valid!") in
+          let neg_cond = cast_to_bool cond_v |> Typed.not in
+          if%sat neg_cond then InterpM.ok Normal
+          else
+            let () = L.trace (fun m -> m "Condition is SAT!") in
             let* res = exec_stmt stmt in
             match res with
             | Returned _ | Goto _ -> InterpM.ok res
             | Break -> InterpM.ok Normal
             | Normal | Continue -> loop ()
             | Case _ -> failwith "SOTERIA BUG: Case in while body"
-          else InterpM.ok Normal
         in
         loop ()
     | AilSdo (stmt, cond, _loop_id) ->
@@ -979,7 +979,8 @@ module Make (State : State_intf.S) = struct
           | Break -> InterpM.ok Normal
           | Normal | Continue ->
               let* cond_v = eval_expr cond in
-              if%sat cast_to_bool cond_v then loop () else InterpM.ok Normal
+              if%sat Typed.not (cast_to_bool cond_v) then InterpM.ok Normal
+              else loop ()
           | Case _ -> failwith "SOTERIA BUG: Case in do body"
         in
         loop ()
