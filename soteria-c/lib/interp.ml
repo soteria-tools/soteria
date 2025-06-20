@@ -772,8 +772,11 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr InterpM.not_impl
           "Cerberus could not parse an expression because %a"
           Fmt_ail.pp_invalid_reason reason
+    | AilEcond (guard, Some t, e) ->
+        let* guard = eval_expr guard in
+        if%sat cast_to_bool guard then eval_expr t else eval_expr e
+    | AilEcond (_, None, _) -> InterpM.not_impl "GNU ?:"
     | AilEarray_decay _ -> InterpM.not_impl "Array decay"
-    | AilEcond (_, _, _)
     | AilEassert _
     | AilEoffsetof (_, _)
     | AilEgeneric (_, _)
