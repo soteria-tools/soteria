@@ -47,21 +47,18 @@ Checking that memcpy works correctly
           { heap =
             [(V|1|,
               [TypedVal {offset = 0; ty = signed int; v = 0};
-               TypedVal {offset = 4; ty = signed int; v = 1};
-               Uninit {offset = 8; len = 4}; (Bound 12)]);
+               TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)]);
              (V|2|,
               [TypedVal {offset = 0; ty = signed int; v = 0};
-               TypedVal {offset = 4; ty = signed int; v = 1};
-               Uninit {offset = 8; len = 4}; (Bound 12)])];
+               TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)])];
             globs = [] });
-     Ok: (3,
+     Ok: (0,
           { heap =
             [(V|1|,
               [TypedVal {offset = 0; ty = signed int; v = 0};
-               TypedVal {offset = 4; ty = signed int; v = 1};
-               Uninit {offset = 8; len = 4}; (Bound 12)])];
+               TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)])];
             globs = [] });
-     Ok: (2, { heap = []; globs = [] })]
+     Ok: (0, { heap = []; globs = [] })]
   Executed 15 statements
 Checking that fuel gets exhausted properly
   $ soteria-c exec-main while_true.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
@@ -260,6 +257,7 @@ Checking that code cannot branch infinitely
   Symex terminated with the following outcomes:
     [Ok: (0, { heap = []; globs = [] })]
   Executed 7 statements
+
 Should return a single branch!
   $ soteria-c exec-main short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
@@ -276,3 +274,18 @@ Should return a single branch!
     [Ok: (1042, { heap = []; globs = [] });
      Ok: (1043, { heap = []; globs = [] })]
   Executed 23 statements
+
+  $ soteria-c exec-main duffs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (42, { heap = []; globs = [] })]
+  Executed 101 statements
+
+  $ soteria-c exec-main switch.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (42, { heap = []; globs = [] })]
+  Executed 33 statements
+
+  $ soteria-c exec-main switch_no_match.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (42, { heap = []; globs = [] })]
+  Executed 4 statements

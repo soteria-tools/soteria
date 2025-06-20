@@ -448,6 +448,13 @@ module Make (State : State_intf.S) = struct
             arith_sub v1 v2
         | None, Some _ -> InterpM.error `UBPointerArithmetic
         | Some _, Some _ | None, None -> arith_sub v1 v2)
+    | Mod -> (
+        let^ v1 = cast_to_int v1 in
+        let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
+        match v2 with
+        | Ok v2 -> InterpM.ok (Typed.rem v1 v2)
+        | Error `NonZeroIsZero -> InterpM.error `DivisionByZero
+        | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
     | Band ->
         (* TODO: is it guaranteed that both have the same type? *)
         let* { bv_size; signed } =
@@ -497,6 +504,7 @@ module Make (State : State_intf.S) = struct
       | Continue
       | Break
       | Goto of Symbol_std.t
+      | Case of T.sint Typed.t
       | Returned of T.cval Typed.t
     [@@deriving show { with_path = false }]
   end
@@ -788,8 +796,9 @@ module Make (State : State_intf.S) = struct
               m "Body terminated with Goto %a" Fmt_ail.pp_sym label);
           let* res = exec_goto label body in
           aux res
-      | Break | Continue ->
-          failwith "Unreachable: terminated function body with Continue/Break"
+      | Break | Continue | Case _ ->
+          failwith
+            "Unreachable: terminated function body with Continue/Break/Case"
     in
     let* first_exec = exec_stmt body in
     (* We execute until we stop getting a goto. *)
@@ -802,6 +811,7 @@ module Make (State : State_intf.S) = struct
         match res with
         | Normal -> exec_stmt stmt
         | Goto label -> exec_goto label stmt
+        | Case guard -> exec_case guard stmt
         | Break | Continue | Returned _ -> InterpM.ok res)
 
   (** Executing a goto statement, i.e. jumping to a label, returns the result of
@@ -825,12 +835,14 @@ module Make (State : State_intf.S) = struct
         let* then_res = exec_goto label then_stmt in
         match then_res with
         | Goto l -> exec_goto l else_stmt
-        | Normal | Break | Continue | Returned _ -> InterpM.ok then_res)
+        | Normal | Break | Continue | Returned _ -> InterpM.ok then_res
+        | Case _ -> failwith "SOTERIA BUG: Case in if branch")
     | AilSwhile (_, body, _) -> (
         let* res = exec_goto label body in
         match res with
         | Goto _ | Break | Returned _ -> InterpM.ok res
-        | Normal | Continue -> exec_stmt astmt)
+        | Normal | Continue -> exec_stmt astmt
+        | Case _ -> failwith "SOTERIA BUG: Case in while body")
     | AilSdo (body, e, _) -> (
         let* res = exec_goto label body in
         match res with
@@ -838,10 +850,67 @@ module Make (State : State_intf.S) = struct
         | Normal | Continue ->
             let* guard = eval_expr e in
             let guard_bool = cast_to_bool guard in
-            if%sat guard_bool then exec_stmt astmt else InterpM.ok Normal)
+            if%sat guard_bool then exec_stmt astmt else InterpM.ok Normal
+        | Case _ -> failwith "SOTERIA BUG: Case in do body")
     | AilSswitch (_, body) -> exec_goto label body
     | AilSmarker (_, stmt) -> exec_goto label stmt
     | _ -> InterpM.ok (Goto label)
+
+  and exec_case (guard : T.sint Typed.t) (astmt : stmt) :
+      Stmt_exec_result.t InterpM.t =
+    let fail_if_different_case guard' =
+      if guard != guard' then failwith "Returned a different case?"
+    in
+    let open Stmt_exec_result in
+    L.trace (fun m ->
+        m "Trying to find case corresponding to guard %a, currently at %a"
+          Typed.ppa guard Fmt_ail.pp_stmt astmt);
+    let AilSyntax.{ node = stmt; _ } = astmt in
+    match stmt with
+    | AilScase (case, stmt) ->
+        if%sat guard ==@ Typed.int_z case then exec_stmt stmt
+        else exec_case guard stmt
+    | AilSdefault stmt -> exec_stmt stmt
+    | AilSlabel (_, stmt, _) -> exec_case guard stmt
+    | AilSblock (bindings, stmtl) ->
+        let* () = attach_bindings bindings in
+        let* res = exec_stmt_list (Case guard) stmtl in
+        let+ () = remove_and_free_bindings bindings in
+        res
+    | AilSif (_, then_stmt, else_stmt) -> (
+        let* then_res = exec_case guard then_stmt in
+        match then_res with
+        | Case guard' ->
+            fail_if_different_case guard';
+            exec_case guard else_stmt
+        | Normal | Break | Continue | Returned _ | Goto _ -> InterpM.ok then_res
+        )
+    | AilSwhile (_, body, _) -> (
+        let* res = exec_case guard body in
+        match res with
+        | Goto _ | Break | Returned _ -> InterpM.ok res
+        | Case guard' ->
+            fail_if_different_case guard';
+            InterpM.ok res
+        | Normal | Continue -> exec_stmt astmt)
+    | AilSdo (body, e, _) -> (
+        let* res = exec_case guard body in
+        match res with
+        | Goto _ | Break | Returned _ -> InterpM.ok res
+        | Case guard' ->
+            fail_if_different_case guard';
+            InterpM.ok res
+        | Normal | Continue ->
+            let* guard = eval_expr e in
+            let guard_bool = cast_to_bool guard in
+            if%sat guard_bool then exec_stmt astmt else InterpM.ok Normal)
+    | AilSmarker (_, stmt) -> exec_case guard stmt
+    | AilSswitch (_, _stmt) ->
+        (* We make this case explicitly separate for clarity:
+           If one has a nested switch, we don't look for the case
+           in the nested switch, as the cases in there are for the nested switch's guard. *)
+        InterpM.ok (Case guard)
+    | _ -> InterpM.ok (Case guard)
 
   (** Executing a statement returns an optional value outcome (if a return
       statement was hit), or *)
@@ -892,6 +961,7 @@ module Make (State : State_intf.S) = struct
             | Returned _ | Goto _ -> InterpM.ok res
             | Break -> InterpM.ok Normal
             | Normal | Continue -> loop ()
+            | Case _ -> failwith "SOTERIA BUG: Case in while body"
           else InterpM.ok Normal
         in
         loop ()
@@ -904,11 +974,10 @@ module Make (State : State_intf.S) = struct
           | Normal | Continue ->
               let* cond_v = eval_expr cond in
               if%sat cast_to_bool cond_v then loop () else InterpM.ok Normal
+          | Case _ -> failwith "SOTERIA BUG: Case in do body"
         in
         loop ()
-    | AilSlabel (_label, stmt, _annot) ->
-        (* TODO: keep track of labels in a record or something!! *)
-        exec_stmt stmt
+    | AilSlabel (_, stmt, _) | AilScase (_, stmt) -> exec_stmt stmt
     | AilSdeclaration decls ->
         let+ () =
           InterpM.fold_list decls ~init:() ~f:(fun () (pname, expr) ->
@@ -922,8 +991,16 @@ module Make (State : State_intf.S) = struct
     | AilSbreak -> InterpM.ok Break
     | AilScontinue -> InterpM.ok Continue
     | AilSgoto label -> InterpM.ok (Goto label)
-    | AilSswitch (_, _)
-    | AilScase (_, _)
+    | AilSswitch (guard, stmt) -> (
+        let* guard_v = eval_expr guard in
+        let^ guard_v = cast_to_int guard_v in
+        let* res = exec_case guard_v stmt in
+        match res with
+        | Continue | Returned _ | Normal | Goto _ -> InterpM.ok res
+        | Break -> InterpM.ok Normal
+        | Case _ ->
+            (* Case statement finished without finding a match: continue without executing anything *)
+            InterpM.ok Normal)
     | AilScase_rangeGNU (_, _, _)
     | AilSdefault _ | AilSpar _
     | AilSreg_store (_, _)
