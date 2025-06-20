@@ -32,7 +32,7 @@ struct
 
   let no_fix = []
 
-  let[@online] lift_fix ~ofs fixes =
+  let[@inline] lift_fix ~ofs fixes =
     List.map (fun fix -> ([ (ofs, fix) ], None)) fixes
 
   let of_opt = function None -> (M.empty, None) | Some l -> l

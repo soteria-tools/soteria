@@ -141,13 +141,6 @@ struct
     in
     to_opt st
 
-  let wrap_read_only (f : 'a option -> ('b, 'err, 'fix list) Symex.Result.t)
-      (key : Key.t) (st : 'a t option) :
-      ('b, 'err, 'fix serialized list) Symex.Result.t =
-    let st = of_opt st in
-    let* _, codom = Find_opt_sym.f key st in
-    f codom |> lift_fix_s ~key
-
   let fold
       (f :
         'acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized list) Symex.Result.t)
