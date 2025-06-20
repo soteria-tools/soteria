@@ -289,3 +289,8 @@ Should return a single branch!
   Symex terminated with the following outcomes:
     [Ok: (42, { heap = []; globs = [] })]
   Executed 4 statements
+
+  $ soteria-c exec-main sizeof.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (0, { heap = []; globs = [] })]
+  Executed 7 statements

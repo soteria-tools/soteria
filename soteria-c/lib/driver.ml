@@ -256,7 +256,7 @@ let generate_errors content =
               Soteria_logs.Logs.with_section
                 ("Anaysing summaries for function" ^ Symbol.show_symbol fid)
             in
-            List.concat_map (Summary.manifest_bugs ~prog ~fid) summaries)
+            List.concat_map (Summary.manifest_bugs ~fid) summaries)
           summaries
       in
       List.sort_uniq Stdlib.compare results
@@ -290,12 +290,12 @@ let exec_main_and_print log_config term_config solver_config config includes
       result
       (Stats.get_executed_statements ())
 
-let dump_summaries ~prog results =
+let dump_summaries results =
   match !Config.current.dump_summaries_file with
   | None -> ()
   | Some file ->
       let pp_summary ~fid ft summary =
-        Fmt.pf ft "@[<v 2>%a@]" Summary.pp (Summary.analyse ~prog ~fid summary)
+        Fmt.pf ft "@[<v 2>%a@]" Summary.pp (Summary.analyse ~fid summary)
       in
       let@ oc = Channels.with_out_file file in
       let ft = Format.formatter_of_out_channel oc in
@@ -306,7 +306,7 @@ let dump_summaries ~prog results =
             summaries)
         results
 
-let analyse_summaries ~prog results =
+let analyse_summaries results =
   let total =
     Iter.of_list results
     |> Iter.map (fun (_, l) -> List.length l)
@@ -320,7 +320,7 @@ let analyse_summaries ~prog results =
   let+ fid, summaries = results in
   let results =
     let+ summary = summaries in
-    let res = Summary.analyse ~prog ~fid summary in
+    let res = Summary.analyse ~fid summary in
     Soteria_terminal.Progress_bar.signal_progress 1;
     res
   in
@@ -330,15 +330,13 @@ let generate_summaries ~functions_to_analyse prog =
   let@ () = with_function_context prog in
   let results = Abductor.generate_all_summaries ~functions_to_analyse prog in
   Csymex.dump_unsupported ();
-  let results = analyse_summaries ~prog results in
-  dump_summaries ~prog results;
+  let results = analyse_summaries results in
+  dump_summaries results;
   Fmt.pr "@\n@?";
   let found_bugs = ref false in
   results
   |> List.iter (fun (fid, summaries) ->
-         let bugs =
-           List.concat_map (Summary.manifest_bugs ~prog ~fid) summaries
-         in
+         let bugs = List.concat_map (Summary.manifest_bugs ~fid) summaries in
          if not (List.is_empty bugs) then (
            found_bugs := true;
            List.iter

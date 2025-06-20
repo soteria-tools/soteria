@@ -344,6 +344,7 @@ module Make (State : State_intf.S) = struct
         | _, _ ->
             Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
               ity_left Fmt_ail.pp_int_ty ity_right)
+    | _, Ctype.Void -> return 0s
     | _ ->
         Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
           Fmt_ail.pp_ty_ new_ty
@@ -455,17 +456,22 @@ module Make (State : State_intf.S) = struct
         | Ok v2 -> InterpM.ok (Typed.rem v1 v2)
         | Error `NonZeroIsZero -> InterpM.error `DivisionByZero
         | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
-    | Band ->
-        (* TODO: is it guaranteed that both have the same type? *)
+    | (Band | Shl | Shr | Bxor | Bor) as a_op ->
         let* { bv_size; signed } =
           Layout.bv_info t1 |> InterpM.of_opt_not_impl ~msg:"bv_info"
         in
         let^ v1 = cast_to_int v1 in
         let^ v2 = cast_to_int v2 in
-        InterpM.ok (Typed.bit_and ~size:bv_size ~signed v1 v2)
-    | _ ->
-        Fmt.kstr InterpM.not_impl "Unsupported arithmetic operator: %a"
-          Fmt_ail.pp_arithop a_op
+        let op =
+          match a_op with
+          | Band -> Typed.bit_and
+          | Bxor -> Typed.bit_xor
+          | Bor -> Typed.bit_or
+          | Shl -> Typed.bit_shl
+          | Shr -> Typed.bit_shr
+          | _ -> failwith "unreachable: bit operator is not bit operator?"
+        in
+        InterpM.ok (op ~size:bv_size ~signed v1 v2)
 
   let try_immediate_postfix_op ~apply_op lvalue =
     let* v_opt = try_immediate_load lvalue in
@@ -729,6 +735,9 @@ module Make (State : State_intf.S) = struct
     | AilEsizeof (_quals, ty) ->
         let^ res = Layout.size_of_s ty in
         InterpM.ok res
+    | AilEalignof (_quals, ty) ->
+        let^ res = Layout.align_of_s ty in
+        InterpM.ok res
     | AilEmemberofptr (ptr, member) ->
         let* ptr_v = eval_expr ptr in
         let^ ty_pointee =
@@ -763,7 +772,11 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr InterpM.not_impl
           "Cerberus could not parse an expression because %a"
           Fmt_ail.pp_invalid_reason reason
-    | AilEcond (_, _, _)
+    | AilEcond (guard, Some t, e) ->
+        let* guard = eval_expr guard in
+        if%sat cast_to_bool guard then eval_expr t else eval_expr e
+    | AilEcond (_, None, _) -> InterpM.not_impl "GNU ?:"
+    | AilEarray_decay _ -> InterpM.not_impl "Array decay"
     | AilEassert _
     | AilEoffsetof (_, _)
     | AilEgeneric (_, _)
@@ -772,13 +785,12 @@ module Make (State : State_intf.S) = struct
     | AilEunion (_, _, _)
     | AilEcompound (_, _, _)
     | AilEbuiltin _ | AilEstr _ | AilEsizeof_expr _
-    | AilEalignof (_, _)
     | AilEannot (_, _)
     | AilEva_start (_, _)
     | AilEva_arg (_, _)
     | AilEva_copy (_, _)
     | AilEva_end _ | AilEprint_type _ | AilEbmc_assume _ | AilEreg_load _
-    | AilEarray_decay _ | AilEatomic _
+    | AilEatomic _
     | AilEgcc_statement (_, _) ->
         Fmt.kstr InterpM.not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
@@ -954,15 +966,16 @@ module Make (State : State_intf.S) = struct
     | AilSwhile (cond, stmt, _loopid) ->
         let rec loop () =
           let* cond_v = eval_expr cond in
-          if%sat cast_to_bool cond_v then
-            let () = L.trace (fun m -> m "Condition is valid!") in
+          let neg_cond = cast_to_bool cond_v |> Typed.not in
+          if%sat neg_cond then InterpM.ok Normal
+          else
+            let () = L.trace (fun m -> m "Condition is SAT!") in
             let* res = exec_stmt stmt in
             match res with
             | Returned _ | Goto _ -> InterpM.ok res
             | Break -> InterpM.ok Normal
             | Normal | Continue -> loop ()
             | Case _ -> failwith "SOTERIA BUG: Case in while body"
-          else InterpM.ok Normal
         in
         loop ()
     | AilSdo (stmt, cond, _loop_id) ->
@@ -973,7 +986,8 @@ module Make (State : State_intf.S) = struct
           | Break -> InterpM.ok Normal
           | Normal | Continue ->
               let* cond_v = eval_expr cond in
-              if%sat cast_to_bool cond_v then loop () else InterpM.ok Normal
+              if%sat Typed.not (cast_to_bool cond_v) then InterpM.ok Normal
+              else loop ()
           | Case _ -> failwith "SOTERIA BUG: Case in do body"
         in
         loop ()

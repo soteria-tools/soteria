@@ -198,8 +198,8 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
       let default = C.fuel
     end)
 
-    let consume_branching n = wrap (Fuel_gauge.consume_branching n)
-    let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n)
+    let consume_branching n = wrap (Fuel_gauge.consume_branching n) ()
+    let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n) ()
     let branching_left = wrap_read Fuel_gauge.branching_left
   end
 
@@ -221,7 +221,7 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
   end
 
   let consume_fuel_steps n () =
-    match Fuel.consume_fuel_steps n () with
+    match Fuel.consume_fuel_steps n with
     | Exhausted -> Seq.Nil
     | Not_exhausted -> Seq.Cons ((), Seq.empty)
 
@@ -303,7 +303,7 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
               (* Right must be sat since left was not! We didn't branch so we don't consume the counter. *)
               else_ () ()
             else
-              match Fuel.consume_branching 1 () with
+              match Fuel.consume_branching 1 with
               | Exhausted -> Seq.Nil
               | Not_exhausted ->
                   if is_sat (Solver.sat ()) then else_ () () else Seq.Nil)
@@ -336,7 +336,7 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
       Soteria_std.List.take_count (Fuel.branching_left () + 1) brs
     in
     let () =
-      match Fuel.consume_branching (max (count - 1) 0) () with
+      match Fuel.consume_branching (max (count - 1) 0) with
       | Not_exhausted -> ()
       | Exhausted -> failwith "Exhausted fuel? Unreachable"
     in
@@ -392,8 +392,8 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
       let default = C.fuel
     end)
 
-    let consume_branching n = wrap (Fuel_gauge.consume_branching n)
-    let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n)
+    let consume_branching n = wrap (Fuel_gauge.consume_branching n) ()
+    let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n) ()
     let branching_left = wrap_read Fuel_gauge.branching_left
   end
 
@@ -415,7 +415,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
   end
 
   let consume_fuel_steps n f =
-    match Fuel.consume_fuel_steps n () with
+    match Fuel.consume_fuel_steps n with
     | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted -> f ()
 
@@ -511,7 +511,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
               (* Right must be sat since left was not! We didn't branch so we don't consume the counter *)
               else_ () f
             else
-              match Fuel.consume_branching 1 () with
+              match Fuel.consume_branching 1 with
               | Exhausted ->
                   L.debug (fun m ->
                       m "Exhausted branching fuel, not continuing")
@@ -542,7 +542,7 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
       Soteria_std.List.take_count (Fuel.branching_left () + 1) brs
     in
     let () =
-      match Fuel.consume_branching (max (count - 1) 0) () with
+      match Fuel.consume_branching (max (count - 1) 0) with
       | Not_exhausted -> ()
       | Exhausted -> failwith "Exhausted fuel? Unreachable"
     in

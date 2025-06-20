@@ -71,8 +71,6 @@ let size_of_float_ty (fty : floatingType) =
 let align_of_float_ty (fty : floatingType) =
   CF.Ocaml_implementation.DefaultImpl.impl.alignof_fty fty
 
-(* TODO: unsupported things need to be signaled a bit better here. *)
-
 let rec layout_of ty =
   let open Syntaxes.Option in
   (* Get cache, if not found, compute and update cache. *)
@@ -104,10 +102,47 @@ let rec layout_of ty =
           None)
         else Some ()
       in
-      layout_of_members members
+      struct_layout_of_members members
+  | Union tag ->
+      let* _loc, def = Tag_defs.find_opt tag in
+      let* members =
+        match def with
+        | UnionDef members -> Some members
+        | StructDef _ ->
+            L.debug (fun m -> m "Don't have definition of union");
+            None
+      in
+      union_layout_of_members members
   | _ ->
       L.debug (fun m -> m "Cannot compute layout of %a" Fmt_ail.pp_ty_ ty);
       None
+
+and union_layout_of_members members =
+  let open Syntaxes.Option in
+  let+ size, align, members_ofs =
+    List.fold_left
+      (fun acc (id, (_attrs, align, _quals, ty)) ->
+        let* acc_size, acc_align, members_ofs = acc in
+        let* l = layout_of ty in
+        let+ align =
+          match align with
+          | None -> Some l.align
+          | Some (AlignInteger z) -> Some (Z.to_int z)
+          | Some (AlignType ty) ->
+              let+ ty_l = layout_of ty in
+              ty_l.align
+        in
+        let members_ofs = (id, 0) :: members_ofs in
+        (max acc_size l.size, max acc_align align, members_ofs))
+      (Some (0, 0, []))
+      members
+  in
+  let size =
+    let m = size mod align in
+    if m = 0 then size else size + align - m
+  in
+
+  { align; size; members_ofs = Array.of_list members_ofs }
 
 (** From:
     https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Structure-Layout.html
@@ -122,7 +157,7 @@ let rec layout_of ty =
     alignment of any of the fields in it. Then the structure’s size is rounded
     up to a multiple of its alignment. That may require leaving a gap at the end
     of the structure. *)
-and layout_of_members members =
+and struct_layout_of_members members =
   let open Syntaxes.Option in
   let rec aux members_ofs (layout : layout) = function
     | [] -> Some (List.rev members_ofs, layout)
@@ -142,17 +177,26 @@ and layout_of_members members =
   let+ members_ofs, { size; align; members_ofs = _ } =
     aux [] { size = 0; align = 1; members_ofs = [||] } members
   in
-  {
-    size = size + (size mod align);
-    align;
-    members_ofs = Array.of_list members_ofs;
-  }
+  (* Round of size to align *)
+  let size =
+    let m = size mod align in
+
+    if m = 0 then size else size + align - m
+  in
+  { size; align; members_ofs = Array.of_list members_ofs }
 
 let size_of_s ty =
   match layout_of ty with
   | Some { size; _ } -> Csymex.return (Typed.int size)
   | None ->
       Fmt.kstr Csymex.not_impl "Cannot yet compute size of type %a"
+        Fmt_ail.pp_ty ty
+
+let align_of_s ty =
+  match layout_of ty with
+  | Some { align; _ } -> Csymex.return (Typed.int align)
+  | None ->
+      Fmt.kstr Csymex.not_impl "Canot yet compute alignment of type %a"
         Fmt_ail.pp_ty ty
 
 let member_ofs id ty =

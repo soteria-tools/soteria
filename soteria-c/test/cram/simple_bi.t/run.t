@@ -249,3 +249,94 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post = { heap = []; globs = [] }; ret = (Ok 0) };
       manifest_bugs = []}
   
+  $ soteria-c gen-summaries array_iter.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  
+  No bugs found
+  Summaries for test_486:
+    Analysed {
+      raw =
+      { args = [&(V|1|, V|2|); V|3|]; pre = [];
+        pc = [(V|3| <= 0); (V|3| <= 0x7fffffff); (-0x80000000 <= V|3|)];
+        post = { heap = []; globs = [] }; ret = (Ok 0) };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = [&(V|1|, V|2|); V|3|]; pre = [];
+        pc =
+        [(0 == V|1|); (0 < V|3|); (V|3| <= 0x7fffffff); (-0x80000000 <= V|3|)];
+        post = { heap = []; globs = [] };
+        ret =
+        (Error (Null pointer dereference,
+                [• Triggering memory operation: array_iter.c:6:12-16]))
+        };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = [&(V|1|, V|2|); V|3|];
+        pre =
+        [{ heap =
+           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+           globs = [] }
+          ];
+        pc =
+        [(V|3| <= 1); (V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|1|);
+          (0 < V|3|); (V|3| <= 0x7fffffff); (-0x80000000 <= V|3|)];
+        post =
+        { heap =
+          [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+          globs = [] };
+        ret = (Ok V|4|) };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = [&(V|1|, V|2|); V|3|];
+        pre =
+        [{ heap =
+           [(V|1|, [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}])];
+           globs = [] };
+          { heap =
+            [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+            globs = [] }
+          ];
+        pc =
+        [(V|3| <= 2); (V|5| <= 0x7fffffff); (-0x80000000 <= V|5|); (1 < V|3|);
+          (V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|1|); (0 < V|3|);
+          (V|3| <= 0x7fffffff); (-0x80000000 <= V|3|)];
+        post =
+        { heap =
+          [(V|1|,
+            [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
+             TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}])];
+          globs = [] };
+        ret = (Ok (V|4| + V|5|)) };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = [&(V|1|, V|2|); V|3|];
+        pre =
+        [{ heap =
+           [(V|1|, [TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}])];
+           globs = [] };
+          { heap =
+            [(V|1|,
+              [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}])];
+            globs = [] };
+          { heap =
+            [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+            globs = [] }
+          ];
+        pc =
+        [(V|3| <= 3); (V|6| <= 0x7fffffff); (-0x80000000 <= V|6|); (2 < V|3|);
+          (V|5| <= 0x7fffffff); (-0x80000000 <= V|5|); (1 < V|3|);
+          (V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|1|); (0 < V|3|);
+          (V|3| <= 0x7fffffff); (-0x80000000 <= V|3|)];
+        post =
+        { heap =
+          [(V|1|,
+            [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
+             TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|};
+             TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}])];
+          globs = [] };
+        ret = (Ok ((V|4| + V|5|) + V|6|)) };
+      manifest_bugs = []}
+  
