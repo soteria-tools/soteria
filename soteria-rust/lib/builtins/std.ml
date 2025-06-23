@@ -557,7 +557,7 @@ module M (Heap : Heap_intf.S) = struct
 
   let std_panic ~args:_ state = Heap.error (`Panic None) state
 
-  let float_is (fp : fpclass) ~args state =
+  let float_is (fp : Svalue.FloatClass.t) ~args state =
     let v =
       match args with
       | [ Base f ] -> f
@@ -568,11 +568,11 @@ module M (Heap : Heap_intf.S) = struct
     in
     let res =
       match fp with
-      | FP_nan -> Typed.is_nan v
-      | FP_normal -> Typed.is_normal v
-      | FP_infinite -> Typed.is_infinite v
-      | FP_zero -> Typed.is_zero v
-      | FP_subnormal -> Typed.is_subnormal v
+      | NaN -> Typed.is_nan v
+      | Normal -> Typed.is_normal v
+      | Infinite -> Typed.is_infinite v
+      | Zero -> Typed.is_zero v
+      | Subnormal -> Typed.is_subnormal v
     in
     Result.ok (Base (Typed.int_of_bool res), state)
 
@@ -866,16 +866,26 @@ module M (Heap : Heap_intf.S) = struct
           ~fe:(fun (_, state) ->
             Heap.error (`StdErr "catch_unwind unwinded in catch") state))
 
-  let fixme_try_cleanup ~args:_ state =
-    (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
-              we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    let ptr = Ptr (Sptr.null_ptr, None) in
-    let non_null = Struct [ ptr ] in
+  let _mk_box ptr =
+    let non_null = Struct [ Ptr ptr ] in
     let phantom_data = Struct [] in
     let unique = Struct [ non_null; phantom_data ] in
     let allocator = Struct [] in
-    let box = Struct [ unique; allocator ] in
+    Struct [ unique; allocator ]
+
+  let fixme_try_cleanup ~args:_ state =
+    (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
+              we return a Box to a null pointer, hoping the client code doesn't access it. *)
+    let box = _mk_box (Sptr.null_ptr, None) in
     Result.ok (box, state)
 
   let breakpoint ~args:_ state = Heap.error `Breakpoint state
+
+  let fixme_box_new (fun_sig : UllbcAst.fun_sig) ~args state =
+    let ty = List.hd fun_sig.inputs in
+    let value = List.hd args in
+    let** ptr, state = Heap.alloc_ty ty state in
+    let++ (), state = Heap.store ptr ty value state in
+    let box = _mk_box ptr in
+    (box, state)
 end

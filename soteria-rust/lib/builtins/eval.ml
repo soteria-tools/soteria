@@ -12,14 +12,24 @@ module M (Heap : Heap_intf.S) = struct
 
   type type_loc = GenArg | Input
 
+  (* Functions that we shouldn't stub, but need to (e.g. because of Charon) *)
+  type fixme_funs = BoxNew | Index | Nop | Panic | TryCleanup
+
+  (* Functions we could not stub, but we do for performance *)
+  type optim_funs =
+    | FloatIs of Svalue.FloatClass.t
+    | FloatIsFinite
+    | FloatIsSign of { positive : bool }
+    | Zeroed
+
+  (* Rusteria builtin functions *)
+  type rusteria_fun = Assert | Assume | Nondet | Panic
+
+  (* Miri builtin functions *)
+  type miri_fun = AllocId | Nop
+
+  (* Standard library functions *)
   type std_fun =
-    (* Rusteria builtins *)
-    | RusteriaAssert
-    | RusteriaAssume
-    | RusteriaNondet
-    | RusteriaPanic
-    (* Miri builtins *)
-    | MiriAllocId
     (* Std *)
     | Abs
     | AssertZeroValid
@@ -36,11 +46,7 @@ module M (Heap : Heap_intf.S) = struct
     | Ctpop
     | DiscriminantValue
     | ExactDiv
-    | FixmeTryCleanup
     | FloatFast of Expressions.binop
-    | FloatIs of fpclass
-    | FloatIsFinite
-    | FloatIsSign of { positive : bool }
     | FloatMinMax of { min : bool }
     | FloatRounding of Svalue.FloatRoundingMode.t
     | FloatToInt
@@ -67,169 +73,193 @@ module M (Heap : Heap_intf.S) = struct
     | VariantCount
     | Wrapping of Expressions.binop
     | WriteBytes
-    | Zeroed
+
+  type fn =
+    | Rusteria of rusteria_fun
+    | Miri of miri_fun
+    | Std of std_fun
+    | Fixme of fixme_funs
+    | Optim of optim_funs
 
   let std_fun_map =
     [
       (* Rusteria builtins *)
-      ("rusteria::assert", RusteriaAssert);
-      ("rusteria::assume", RusteriaAssume);
-      ("rusteria::nondet", RusteriaNondet);
-      ("rusteria::panic", RusteriaPanic);
+      ("rusteria::assert", Rusteria Assert);
+      ("rusteria::assume", Rusteria Assume);
+      ("rusteria::nondet", Rusteria Nondet);
+      ("rusteria::panic", Rusteria Panic);
       (* Kani builtins -- we re-define these for nicer call traces *)
-      ("kani::assert", RusteriaAssert);
-      ("kani::panic", RusteriaPanic);
+      ("kani::assert", Rusteria Assert);
+      ("kani::panic", Rusteria Panic);
       (* Miri builtins *)
-      ("miristd::miri_get_alloc_id", MiriAllocId);
-      ("miristd::miri_pointer_name", Nop);
-      ("miristd::miri_print_borrow_state", Nop);
+      ("miristd::miri_get_alloc_id", Miri AllocId);
+      ("miristd::miri_pointer_name", Miri Nop);
+      ("miristd::miri_print_borrow_state", Miri Nop);
       (* Core *)
+      (* This fails because of a silly thing with NonZero in monomorphisation, which we won't
+         fix for now as it requires monomorphising trait impls.  *)
+      ("alloc::boxed::{@T}::new", Fixme BoxNew);
       (* FIXME: the below indexes fail because the code doesn't get monomorphised properly, and
          returns a thin pointer rather than a fat one. *)
-      ("core::array::{core::ops::index::Index}::index", Index);
-      ("core::array::{core::ops::index::IndexMut}::index_mut", Index);
-      ("core::slice::index::{core::ops::index::Index}::index", Index);
-      ("core::slice::index::{core::ops::index::IndexMut}::index_mut", Index);
-      ("core::cell::panic_already_mutably_borrowed", PanicSimple);
-      ("core::hint::black_box", BlackBox);
-      ("core::mem::zeroed", Zeroed);
+      ("core::array::{core::ops::index::Index}::index", Fixme Index);
+      ("core::array::{core::ops::index::IndexMut}::index_mut", Fixme Index);
+      ("core::slice::index::{core::ops::index::Index}::index", Fixme Index);
+      ( "core::slice::index::{core::ops::index::IndexMut}::index_mut",
+        Fixme Index );
+      ("core::cell::panic_already_mutably_borrowed", Fixme Panic);
+      ("core::mem::zeroed", Optim Zeroed);
       (* all float operations could be removed, but we lack bit precision when getting the
          const floats from Rust, meaning these don't really work. Either way, performance wise
          it is much preferable to override these and use SMTLib builtins. *)
-      ("core::f16::{f16}::is_finite", FloatIsFinite);
-      ("core::f16::{f16}::is_infinite", FloatIs FP_infinite);
-      ("core::f16::{f16}::is_nan", FloatIs FP_nan);
-      ("core::f16::{f16}::is_normal", FloatIs FP_normal);
-      ("core::f16::{f16}::is_sign_negative", FloatIsSign { positive = false });
-      ("core::f16::{f16}::is_sign_positive", FloatIsSign { positive = true });
-      ("core::f16::{f16}::is_subnormal", FloatIs FP_subnormal);
-      ("core::f32::{f32}::is_finite", FloatIsFinite);
-      ("core::f32::{f32}::is_infinite", FloatIs FP_infinite);
-      ("core::f32::{f32}::is_nan", FloatIs FP_nan);
-      ("core::f32::{f32}::is_normal", FloatIs FP_normal);
-      ("core::f32::{f32}::is_sign_negative", FloatIsSign { positive = false });
-      ("core::f32::{f32}::is_sign_positive", FloatIsSign { positive = true });
-      ("core::f32::{f32}::is_subnormal", FloatIs FP_subnormal);
-      ("core::f64::{f64}::is_finite", FloatIsFinite);
-      ("core::f64::{f64}::is_infinite", FloatIs FP_infinite);
-      ("core::f64::{f64}::is_nan", FloatIs FP_nan);
-      ("core::f64::{f64}::is_normal", FloatIs FP_normal);
-      ("core::f64::{f64}::is_sign_negative", FloatIsSign { positive = false });
-      ("core::f64::{f64}::is_sign_positive", FloatIsSign { positive = true });
-      ("core::f64::{f64}::is_subnormal", FloatIs FP_subnormal);
-      ("core::f128::{f128}::is_finite", FloatIsFinite);
-      ("core::f128::{f128}::is_infinite", FloatIs FP_infinite);
-      ("core::f128::{f128}::is_nan", FloatIs FP_nan);
-      ("core::f128::{f128}::is_normal", FloatIs FP_normal);
-      ("core::f128::{f128}::is_sign_negative", FloatIsSign { positive = false });
-      ("core::f128::{f128}::is_sign_positive", FloatIsSign { positive = true });
-      ("core::f128::{f128}::is_subnormal", FloatIs FP_subnormal);
+      ("core::f16::{f16}::is_finite", Optim FloatIsFinite);
+      ("core::f16::{f16}::is_infinite", Optim (FloatIs Infinite));
+      ("core::f16::{f16}::is_nan", Optim (FloatIs NaN));
+      ("core::f16::{f16}::is_normal", Optim (FloatIs Normal));
+      ( "core::f16::{f16}::is_sign_negative",
+        Optim (FloatIsSign { positive = false }) );
+      ( "core::f16::{f16}::is_sign_positive",
+        Optim (FloatIsSign { positive = true }) );
+      ("core::f16::{f16}::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f32::{f32}::is_finite", Optim FloatIsFinite);
+      ("core::f32::{f32}::is_infinite", Optim (FloatIs Infinite));
+      ("core::f32::{f32}::is_nan", Optim (FloatIs NaN));
+      ("core::f32::{f32}::is_normal", Optim (FloatIs Normal));
+      ( "core::f32::{f32}::is_sign_negative",
+        Optim (FloatIsSign { positive = false }) );
+      ( "core::f32::{f32}::is_sign_positive",
+        Optim (FloatIsSign { positive = true }) );
+      ("core::f32::{f32}::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f64::{f64}::is_finite", Optim FloatIsFinite);
+      ("core::f64::{f64}::is_infinite", Optim (FloatIs Infinite));
+      ("core::f64::{f64}::is_nan", Optim (FloatIs NaN));
+      ("core::f64::{f64}::is_normal", Optim (FloatIs Normal));
+      ( "core::f64::{f64}::is_sign_negative",
+        Optim (FloatIsSign { positive = false }) );
+      ( "core::f64::{f64}::is_sign_positive",
+        Optim (FloatIsSign { positive = true }) );
+      ("core::f64::{f64}::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f128::{f128}::is_finite", Optim FloatIsFinite);
+      ("core::f128::{f128}::is_infinite", Optim (FloatIs Infinite));
+      ("core::f128::{f128}::is_nan", Optim (FloatIs NaN));
+      ("core::f128::{f128}::is_normal", Optim (FloatIs Normal));
+      ( "core::f128::{f128}::is_sign_negative",
+        Optim (FloatIsSign { positive = false }) );
+      ( "core::f128::{f128}::is_sign_positive",
+        Optim (FloatIsSign { positive = true }) );
+      ("core::f128::{f128}::is_subnormal", Optim (FloatIs Subnormal));
       (* These don't compile, for some reason? *)
-      ("std::panicking::try::cleanup", FixmeTryCleanup);
-      ("std::panicking::catch_unwind::cleanup", FixmeTryCleanup);
+      ("std::panicking::try::cleanup", Fixme TryCleanup);
+      ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);
       (* Intrinsics *)
-      ("core::intrinsics::abort", PanicSimple);
-      ("core::intrinsics::add_with_overflow", Checked Add);
-      ("core::intrinsics::arith_offset", PtrOp { op = Add; check = false });
-      ("core::intrinsics::assert_inhabited", AssertInhabited);
+      ("core::intrinsics::abort", Std PanicSimple);
+      ("core::intrinsics::add_with_overflow", Std (Checked Add));
+      ("core::intrinsics::arith_offset", Std (PtrOp { op = Add; check = false }));
+      ("core::intrinsics::assert_inhabited", Std AssertInhabited);
       (* TODO: is the following correct? *)
-      ("core::intrinsics::assert_mem_uninitialized_valid", Nop);
-      ("core::intrinsics::assert_zero_valid", AssertZeroValid);
-      ("core::intrinsics::assume", Assume);
-      ("core::intrinsics::black_box", BlackBox);
-      ("core::intrinsics::breakpoint", Breakpoint);
-      ("core::intrinsics::bswap", ByteSwap);
-      ("core::intrinsics::catch_unwind", CatchUnwind);
-      ("core::intrinsics::ceilf16", FloatRounding Ceil);
-      ("core::intrinsics::ceilf32", FloatRounding Ceil);
-      ("core::intrinsics::ceilf64", FloatRounding Ceil);
-      ("core::intrinsics::ceilf128", FloatRounding Ceil);
-      ("core::intrinsics::cold_path", Nop);
-      ("core::intrinsics::compare_bytes", CompareBytes);
-      ("core::intrinsics::copy", Copy { nonoverlapping = false });
-      ("core::intrinsics::copy_nonoverlapping", Copy { nonoverlapping = true });
-      ("core::intrinsics::copysignf16", CopySign);
-      ("core::intrinsics::copysignf32", CopySign);
-      ("core::intrinsics::copysignf64", CopySign);
-      ("core::intrinsics::copysignf128", CopySign);
-      ("core::intrinsics::ctpop", Ctpop);
-      ("core::intrinsics::discriminant_value", DiscriminantValue);
-      ("core::intrinsics::exact_div", ExactDiv);
-      ("core::intrinsics::fabsf16", Abs);
-      ("core::intrinsics::fabsf32", Abs);
-      ("core::intrinsics::fabsf64", Abs);
-      ("core::intrinsics::fabsf128", Abs);
-      ("core::intrinsics::fadd_fast", FloatFast Add);
-      ("core::intrinsics::fdiv_fast", FloatFast Div);
-      ("core::intrinsics::float_to_int_unchecked", FloatToInt);
-      ("core::intrinsics::floorf16", FloatRounding Floor);
-      ("core::intrinsics::floorf32", FloatRounding Floor);
-      ("core::intrinsics::floorf64", FloatRounding Floor);
-      ("core::intrinsics::floorf128", FloatRounding Floor);
-      ("core::intrinsics::fmaf16", MulAdd);
-      ("core::intrinsics::fmaf32", MulAdd);
-      ("core::intrinsics::fmaf64", MulAdd);
-      ("core::intrinsics::fmaf128", MulAdd);
-      ("core::intrinsics::fmul_fast", FloatFast Mul);
-      ("core::intrinsics::fsub_fast", FloatFast Sub);
-      ("core::intrinsics::is_val_statically_known", IsValStaticallyKnown);
-      ("core::intrinsics::likely", Likely);
-      ("core::intrinsics::maxnumf16", FloatMinMax { min = false });
-      ("core::intrinsics::maxnumf32", FloatMinMax { min = false });
-      ("core::intrinsics::maxnumf64", FloatMinMax { min = false });
-      ("core::intrinsics::maxnumf128", FloatMinMax { min = false });
-      ("core::intrinsics::minnumf16", FloatMinMax { min = true });
-      ("core::intrinsics::minnumf32", FloatMinMax { min = true });
-      ("core::intrinsics::minnumf64", FloatMinMax { min = true });
-      ("core::intrinsics::minnumf128", FloatMinMax { min = true });
-      ("core::intrinsics::min_align_of", MinAlignOf GenArg);
-      ("core::intrinsics::min_align_of_val", MinAlignOf Input);
-      ("core::intrinsics::mul_with_overflow", Checked Mul);
-      ("core::intrinsics::offset", PtrOp { op = Add; check = true });
-      ("core::intrinsics::pref_align_of", MinAlignOf GenArg);
-      ("core::intrinsics::ptr_guaranteed_cmp", PtrGuaranteedCmp);
-      ("core::intrinsics::ptr_offset_from", PtrOffsetFrom { unsigned = false });
+      ("core::intrinsics::assert_mem_uninitialized_valid", Std Nop);
+      ("core::intrinsics::assert_zero_valid", Std AssertZeroValid);
+      ("core::intrinsics::assume", Std Assume);
+      ("core::intrinsics::black_box", Std BlackBox);
+      ("core::intrinsics::breakpoint", Std Breakpoint);
+      ("core::intrinsics::bswap", Std ByteSwap);
+      ("core::intrinsics::catch_unwind", Std CatchUnwind);
+      ("core::intrinsics::ceilf16", Std (FloatRounding Ceil));
+      ("core::intrinsics::ceilf32", Std (FloatRounding Ceil));
+      ("core::intrinsics::ceilf64", Std (FloatRounding Ceil));
+      ("core::intrinsics::ceilf128", Std (FloatRounding Ceil));
+      ("core::intrinsics::cold_path", Std Nop);
+      ("core::intrinsics::compare_bytes", Std CompareBytes);
+      ("core::intrinsics::copy", Std (Copy { nonoverlapping = false }));
+      ( "core::intrinsics::copy_nonoverlapping",
+        Std (Copy { nonoverlapping = true }) );
+      ("core::intrinsics::copysignf16", Std CopySign);
+      ("core::intrinsics::copysignf32", Std CopySign);
+      ("core::intrinsics::copysignf64", Std CopySign);
+      ("core::intrinsics::copysignf128", Std CopySign);
+      ("core::intrinsics::ctpop", Std Ctpop);
+      ("core::intrinsics::discriminant_value", Std DiscriminantValue);
+      ("core::intrinsics::exact_div", Std ExactDiv);
+      ("core::intrinsics::fabsf16", Std Abs);
+      ("core::intrinsics::fabsf32", Std Abs);
+      ("core::intrinsics::fabsf64", Std Abs);
+      ("core::intrinsics::fabsf128", Std Abs);
+      ("core::intrinsics::fadd_fast", Std (FloatFast Add));
+      ("core::intrinsics::fdiv_fast", Std (FloatFast Div));
+      ("core::intrinsics::float_to_int_unchecked", Std FloatToInt);
+      ("core::intrinsics::floorf16", Std (FloatRounding Floor));
+      ("core::intrinsics::floorf32", Std (FloatRounding Floor));
+      ("core::intrinsics::floorf64", Std (FloatRounding Floor));
+      ("core::intrinsics::floorf128", Std (FloatRounding Floor));
+      ("core::intrinsics::fmaf16", Std MulAdd);
+      ("core::intrinsics::fmaf32", Std MulAdd);
+      ("core::intrinsics::fmaf64", Std MulAdd);
+      ("core::intrinsics::fmaf128", Std MulAdd);
+      ("core::intrinsics::fmul_fast", Std (FloatFast Mul));
+      ("core::intrinsics::fsub_fast", Std (FloatFast Sub));
+      ("core::intrinsics::is_val_statically_known", Std IsValStaticallyKnown);
+      ("core::intrinsics::likely", Std Likely);
+      ("core::intrinsics::maxnumf16", Std (FloatMinMax { min = false }));
+      ("core::intrinsics::maxnumf32", Std (FloatMinMax { min = false }));
+      ("core::intrinsics::maxnumf64", Std (FloatMinMax { min = false }));
+      ("core::intrinsics::maxnumf128", Std (FloatMinMax { min = false }));
+      ("core::intrinsics::minnumf16", Std (FloatMinMax { min = true }));
+      ("core::intrinsics::minnumf32", Std (FloatMinMax { min = true }));
+      ("core::intrinsics::minnumf64", Std (FloatMinMax { min = true }));
+      ("core::intrinsics::minnumf128", Std (FloatMinMax { min = true }));
+      ("core::intrinsics::min_align_of", Std (MinAlignOf GenArg));
+      ("core::intrinsics::min_align_of_val", Std (MinAlignOf Input));
+      ("core::intrinsics::mul_with_overflow", Std (Checked Mul));
+      ("core::intrinsics::offset", Std (PtrOp { op = Add; check = true }));
+      ("core::intrinsics::pref_align_of", Std (MinAlignOf GenArg));
+      ("core::intrinsics::ptr_guaranteed_cmp", Std PtrGuaranteedCmp);
+      ( "core::intrinsics::ptr_offset_from",
+        Std (PtrOffsetFrom { unsigned = false }) );
       ( "core::intrinsics::ptr_offset_from_unsigned",
-        PtrOffsetFrom { unsigned = true } );
-      ("core::intrinsics::raw_eq", RawEq);
-      ("core::intrinsics::round_ties_even_f16", FloatRounding NearestTiesToEven);
-      ("core::intrinsics::round_ties_even_f32", FloatRounding NearestTiesToEven);
-      ("core::intrinsics::round_ties_even_f64", FloatRounding NearestTiesToEven);
-      ("core::intrinsics::round_ties_even_f128", FloatRounding NearestTiesToEven);
-      ("core::intrinsics::roundf16", FloatRounding NearestTiesToAway);
-      ("core::intrinsics::roundf32", FloatRounding NearestTiesToAway);
-      ("core::intrinsics::roundf64", FloatRounding NearestTiesToAway);
-      ("core::intrinsics::roundf128", FloatRounding NearestTiesToAway);
-      ("core::intrinsics::saturating_add", Saturating Add);
-      ("core::intrinsics::saturating_sub", Saturating Sub);
-      ("core::intrinsics::size_of", SizeOf);
-      ("core::intrinsics::size_of_val", SizeOfVal);
-      ("core::intrinsics::sub_with_overflow", Checked Sub);
-      ("core::intrinsics::transmute", Transmute);
-      ("core::intrinsics::truncf16", FloatRounding Truncate);
-      ("core::intrinsics::truncf32", FloatRounding Truncate);
-      ("core::intrinsics::truncf64", FloatRounding Truncate);
-      ("core::intrinsics::truncf128", FloatRounding Truncate);
-      ("core::intrinsics::type_id", TypeId);
-      ("core::intrinsics::type_name", TypeName);
-      ("core::intrinsics::typed_swap_nonoverlapping", TypedSwapNonOverlapping);
-      ("core::intrinsics::unchecked_add", Unchecked Add);
-      ("core::intrinsics::unchecked_div", Unchecked Div);
-      ("core::intrinsics::unchecked_mul", Unchecked Mul);
-      ("core::intrinsics::unchecked_rem", Unchecked Rem);
-      ("core::intrinsics::unchecked_shl", Unchecked Shl);
-      ("core::intrinsics::unchecked_shr", Unchecked Shr);
-      ("core::intrinsics::unchecked_sub", Unchecked Sub);
-      ("core::intrinsics::unlikely", Likely);
-      ("core::intrinsics::variant_count", VariantCount);
-      ("core::intrinsics::wrapping_add", Wrapping Add);
-      ("core::intrinsics::wrapping_div", Wrapping Div);
-      ("core::intrinsics::wrapping_mul", Wrapping Mul);
-      ("core::intrinsics::wrapping_rem", Wrapping Rem);
-      ("core::intrinsics::wrapping_sub", Wrapping Sub);
-      ("core::intrinsics::write_bytes", WriteBytes);
-      ("core::intrinsics::write_bytes::write_bytes", WriteBytes);
-      ("core::intrinsics::write_bytes::precondition_check", Nop);
+        Std (PtrOffsetFrom { unsigned = true }) );
+      ("core::intrinsics::raw_eq", Std RawEq);
+      ( "core::intrinsics::round_ties_even_f16",
+        Std (FloatRounding NearestTiesToEven) );
+      ( "core::intrinsics::round_ties_even_f32",
+        Std (FloatRounding NearestTiesToEven) );
+      ( "core::intrinsics::round_ties_even_f64",
+        Std (FloatRounding NearestTiesToEven) );
+      ( "core::intrinsics::round_ties_even_f128",
+        Std (FloatRounding NearestTiesToEven) );
+      ("core::intrinsics::roundf16", Std (FloatRounding NearestTiesToAway));
+      ("core::intrinsics::roundf32", Std (FloatRounding NearestTiesToAway));
+      ("core::intrinsics::roundf64", Std (FloatRounding NearestTiesToAway));
+      ("core::intrinsics::roundf128", Std (FloatRounding NearestTiesToAway));
+      ("core::intrinsics::saturating_add", Std (Saturating Add));
+      ("core::intrinsics::saturating_sub", Std (Saturating Sub));
+      ("core::intrinsics::size_of", Std SizeOf);
+      ("core::intrinsics::size_of_val", Std SizeOfVal);
+      ("core::intrinsics::sub_with_overflow", Std (Checked Sub));
+      ("core::intrinsics::transmute", Std Transmute);
+      ("core::intrinsics::truncf16", Std (FloatRounding Truncate));
+      ("core::intrinsics::truncf32", Std (FloatRounding Truncate));
+      ("core::intrinsics::truncf64", Std (FloatRounding Truncate));
+      ("core::intrinsics::truncf128", Std (FloatRounding Truncate));
+      ("core::intrinsics::type_id", Std TypeId);
+      ("core::intrinsics::type_name", Std TypeName);
+      ( "core::intrinsics::typed_swap_nonoverlapping",
+        Std TypedSwapNonOverlapping );
+      ("core::intrinsics::unchecked_add", Std (Unchecked Add));
+      ("core::intrinsics::unchecked_div", Std (Unchecked Div));
+      ("core::intrinsics::unchecked_mul", Std (Unchecked Mul));
+      ("core::intrinsics::unchecked_rem", Std (Unchecked Rem));
+      ("core::intrinsics::unchecked_shl", Std (Unchecked Shl));
+      ("core::intrinsics::unchecked_shr", Std (Unchecked Shr));
+      ("core::intrinsics::unchecked_sub", Std (Unchecked Sub));
+      ("core::intrinsics::unlikely", Std Likely);
+      ("core::intrinsics::variant_count", Std VariantCount);
+      ("core::intrinsics::wrapping_add", Std (Wrapping Add));
+      ("core::intrinsics::wrapping_div", Std (Wrapping Div));
+      ("core::intrinsics::wrapping_mul", Std (Wrapping Mul));
+      ("core::intrinsics::wrapping_rem", Std (Wrapping Rem));
+      ("core::intrinsics::wrapping_sub", Std (Wrapping Sub));
+      ("core::intrinsics::write_bytes", Std WriteBytes);
+      ("core::intrinsics::write_bytes::write_bytes", Std WriteBytes);
+      ("core::intrinsics::write_bytes::precondition_check", Std Nop);
     ]
     |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
     |> NameMatcherMap.of_list
@@ -281,58 +311,64 @@ module M (Heap : Heap_intf.S) = struct
     let ctx = Crate.as_namematcher_ctx () in
     NameMatcherMap.find_opt ctx match_config name std_fun_map
     |> ( Option.map @@ function
-         | RusteriaAssert -> assert_
-         | RusteriaAssume -> assume
-         | RusteriaNondet -> nondet f.signature
-         | RusteriaPanic -> panic
-         | MiriAllocId -> alloc_id
-         | Abs -> abs
-         | AssertZeroValid -> assert_zero_is_valid (mono ())
-         | AssertInhabited -> assert_inhabited (mono ())
-         | Assume -> std_assume
-         | BlackBox -> black_box
-         | Breakpoint -> breakpoint
-         | ByteSwap -> byte_swap f.signature
-         | CatchUnwind -> catch_unwind fun_exec
-         | Checked op -> checked_op op f.signature
-         | CompareBytes -> compare_bytes
-         | Copy { nonoverlapping } -> copy_fn nonoverlapping f.signature
-         | CopySign -> copy_sign
-         | Ctpop -> ctpop f.signature
-         | DiscriminantValue -> discriminant_value f.signature
-         | ExactDiv -> exact_div f.signature
-         | FixmeTryCleanup -> fixme_try_cleanup
-         | FloatFast bop -> float_fast bop
-         | FloatIs fc -> float_is fc
-         | FloatIsFinite -> float_is_finite
-         | FloatIsSign { positive } -> float_is_sign positive
-         | FloatMinMax { min } -> float_minmax min
-         | FloatRounding rm -> float_rounding rm
-         | FloatToInt -> float_to_int f.signature
-         | Index -> array_index_fn f.signature
-         | IsValStaticallyKnown -> is_val_statically_known
-         | Likely -> likely
-         | MinAlignOf _ -> min_align_of (mono ())
-         | MulAdd -> mul_add
-         | Nop -> nop
-         | PanicSimple -> std_panic
-         | PtrByteOp op -> ptr_op ~byte:true op f.signature
-         | PtrGuaranteedCmp -> ptr_guaranteed_cmp
-         | PtrOp { op; check } -> ptr_op ~check op f.signature
-         | PtrOffsetFrom { unsigned } -> ptr_offset_from unsigned f.signature
-         | RawEq -> raw_eq f.signature
-         | Saturating op -> saturating op f.signature
-         | SizeOf -> size_of (mono ())
-         | SizeOfVal -> size_of_val f.signature
-         | Transmute -> transmute f.signature
-         | TypeId -> type_id (mono ())
-         | TypeName -> type_name (mono ())
-         | TypedSwapNonOverlapping -> typed_swap_nonoverlapping f.signature
-         | Unchecked op -> unchecked_op op f.signature
-         | VariantCount -> variant_count (mono ())
-         | Wrapping op -> wrapping_op op f.signature
-         | WriteBytes -> write_bytes (mono ())
-         | Zeroed -> zeroed f.signature )
+         | Rusteria Assert -> assert_
+         | Rusteria Assume -> assume
+         | Rusteria Nondet -> nondet f.signature
+         | Rusteria Panic -> panic
+         | Miri AllocId -> alloc_id
+         | Miri Nop -> nop
+         | Fixme BoxNew -> fixme_box_new f.signature
+         | Fixme Index -> array_index_fn f.signature
+         | Fixme Panic -> panic
+         | Fixme Nop -> nop
+         | Fixme TryCleanup -> fixme_try_cleanup
+         | Optim (FloatIs fc) -> float_is fc
+         | Optim FloatIsFinite -> float_is_finite
+         | Optim (FloatIsSign { positive }) -> float_is_sign positive
+         | Optim Zeroed -> zeroed f.signature
+         | Std Abs -> abs
+         | Std AssertZeroValid -> assert_zero_is_valid (mono ())
+         | Std AssertInhabited -> assert_inhabited (mono ())
+         | Std Assume -> std_assume
+         | Std BlackBox -> black_box
+         | Std Breakpoint -> breakpoint
+         | Std ByteSwap -> byte_swap f.signature
+         | Std CatchUnwind -> catch_unwind fun_exec
+         | Std (Checked op) -> checked_op op f.signature
+         | Std CompareBytes -> compare_bytes
+         | Std (Copy { nonoverlapping }) -> copy_fn nonoverlapping f.signature
+         | Std CopySign -> copy_sign
+         | Std Ctpop -> ctpop f.signature
+         | Std DiscriminantValue -> discriminant_value f.signature
+         | Std ExactDiv -> exact_div f.signature
+         | Std (FloatFast bop) -> float_fast bop
+         | Std (FloatMinMax { min }) -> float_minmax min
+         | Std (FloatRounding rm) -> float_rounding rm
+         | Std FloatToInt -> float_to_int f.signature
+         | Std Index -> array_index_fn f.signature
+         | Std IsValStaticallyKnown -> is_val_statically_known
+         | Std Likely -> likely
+         | Std (MinAlignOf _) -> min_align_of (mono ())
+         | Std MulAdd -> mul_add
+         | Std Nop -> nop
+         | Std PanicSimple -> std_panic
+         | Std (PtrByteOp op) -> ptr_op ~byte:true op f.signature
+         | Std PtrGuaranteedCmp -> ptr_guaranteed_cmp
+         | Std (PtrOp { op; check }) -> ptr_op ~check op f.signature
+         | Std (PtrOffsetFrom { unsigned }) ->
+             ptr_offset_from unsigned f.signature
+         | Std RawEq -> raw_eq f.signature
+         | Std (Saturating op) -> saturating op f.signature
+         | Std SizeOf -> size_of (mono ())
+         | Std SizeOfVal -> size_of_val f.signature
+         | Std Transmute -> transmute f.signature
+         | Std TypeId -> type_id (mono ())
+         | Std TypeName -> type_name (mono ())
+         | Std TypedSwapNonOverlapping -> typed_swap_nonoverlapping f.signature
+         | Std (Unchecked op) -> unchecked_op op f.signature
+         | Std VariantCount -> variant_count (mono ())
+         | Std (Wrapping op) -> wrapping_op op f.signature
+         | Std WriteBytes -> write_bytes (mono ()) )
     |> opt_bind @@ fun () ->
        if is_intrinsic then
          Option.some @@ fun ~args:_ _ ->
