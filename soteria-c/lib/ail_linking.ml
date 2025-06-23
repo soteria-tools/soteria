@@ -1,7 +1,7 @@
 open Cerb_frontend
 open AilSyntax
-module Sym_set = Set.Make (Ail_helpers.Symbol_std)
-module Sym_map = Map.Make (Ail_helpers.Symbol_std)
+module Sym_set = Symbol_std.Set
+module Sym_map = Symbol_std.Map
 
 type extern_idmap = (Symbol.identifier, sigma_extern_id) Pmap.map
 type redundant_globs = (Symbol.sym * Symbol.sym) list

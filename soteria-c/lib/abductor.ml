@@ -5,7 +5,7 @@ module Bi_interp = Interp.Make (Bi_state)
 open Ail_tys
 
 module Summaries = struct
-  module H = Hashtbl.Make (Ail_helpers.Symbol_std)
+  module H = Hashtbl.Make (Symbol_std)
 end
 
 let generate_summaries_for (fundef : fundef) =

@@ -205,7 +205,7 @@ module Make (State : State_intf.S) = struct
         ~f:(fun state (pname, ((loc, _, _), _, _, _)) ->
           let@ () = with_loc_immediate ~loc in
           match Store.find_opt pname store with
-          | Some { kind = Some (Stackptr ptr); _ } ->
+          | Some { kind = Stackptr ptr; _ } ->
               let++ (), state = State.free ptr state in
               state
           | _ -> Result.ok state)
@@ -231,7 +231,7 @@ module Make (State : State_intf.S) = struct
     Result.fold_list (Store.bindings store) ~init:state
       ~f:(fun state (_, { kind; _ }) ->
         match kind with
-        | Some (Stackptr ptr) ->
+        | Stackptr ptr ->
             let++ (), st = State.free ptr state in
             st
         | _ -> Result.ok state)
@@ -239,9 +239,9 @@ module Make (State : State_intf.S) = struct
   let get_stack_address (sym : Ail_tys.sym) : T.sptr Typed.t option InterpM.t =
     let* binding = InterpM.Store.find_opt sym in
     match binding with
-    | Some { kind = None; _ } | None -> InterpM.ok None
-    | Some { kind = Some (Stackptr ptr); _ } -> InterpM.ok (Some ptr)
-    | Some { kind = Some other; ty } ->
+    | None -> InterpM.ok None
+    | Some { kind = Stackptr ptr; _ } -> InterpM.ok (Some ptr)
+    | Some { kind = other; ty } ->
         let* ptr = InterpM.State.alloc_ty ty in
         let* () =
           match other with
@@ -257,8 +257,10 @@ module Make (State : State_intf.S) = struct
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym id in
         match Store.find_opt id store with
-        | Some { kind = Some (Value v); _ } -> Result.ok (Some v, store, state)
-        | Some { kind = Some Uninit; _ } ->
+        | Some { kind = Value v; _ } ->
+            L.trace (fun m -> m "Immediate load: %a" Typed.ppa v);
+            Result.ok (Some v, store, state)
+        | Some { kind = Uninit; _ } ->
             State.error `UninitializedMemoryAccess state
         | _ -> Result.ok (None, store, state))
     | _ -> Result.ok (None, store, state)
@@ -268,8 +270,9 @@ module Make (State : State_intf.S) = struct
     match lvalue with
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym id in
+        L.trace (fun m -> m "Trying immediate store at %a" Fmt_ail.pp_sym id);
         match Store.find_opt id store with
-        | Some { kind = Some (Value _ | Uninit); ty } ->
+        | Some { kind = Value _ | Uninit; ty } ->
             let store = Store.add_value id rval ty store in
             Result.ok (`Success, store, state)
         | _ -> Result.ok (`NotImmediate, store, state))
@@ -445,6 +448,13 @@ module Make (State : State_intf.S) = struct
             arith_sub v1 v2
         | None, Some _ -> InterpM.error `UBPointerArithmetic
         | Some _, Some _ | None, None -> arith_sub v1 v2)
+    | Mod -> (
+        let^ v1 = cast_to_int v1 in
+        let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
+        match v2 with
+        | Ok v2 -> InterpM.ok (Typed.rem v1 v2)
+        | Error `NonZeroIsZero -> InterpM.error `DivisionByZero
+        | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
     | Band ->
         (* TODO: is it guaranteed that both have the same type? *)
         let* { bv_size; signed } =
@@ -487,6 +497,17 @@ module Make (State : State_intf.S) = struct
           InterpM.ok (cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right))
         else InterpM.error `UBPointerComparison
     | _ -> InterpM.error `UBPointerComparison
+
+  module Stmt_exec_result = struct
+    type t =
+      | Normal
+      | Continue
+      | Break
+      | Goto of Symbol_std.t
+      | Case of T.sint Typed.t
+      | Returned of T.cval Typed.t
+    [@@deriving show { with_path = false }]
+  end
 
   let rec resolve_function fexpr : Error.t State.err fun_exec InterpM.t =
     let* loc, fname =
@@ -761,9 +782,141 @@ module Make (State : State_intf.S) = struct
     | AilEgcc_statement (_, _) ->
         Fmt.kstr InterpM.not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
+  and exec_body (body : stmt) : T.cval Typed.t InterpM.t =
+    let open Stmt_exec_result in
+    let rec aux res =
+      L.trace (fun m -> m "Body execution result: %a" Stmt_exec_result.pp res);
+      match res with
+      | Returned v -> InterpM.ok v
+      | Normal ->
+          (* Function didn't return, we return void (encoded as 0) *)
+          InterpM.ok 0s
+      | Goto label ->
+          L.trace (fun m ->
+              m "Body terminated with Goto %a" Fmt_ail.pp_sym label);
+          let* res = exec_goto label body in
+          aux res
+      | Break | Continue | Case _ ->
+          failwith
+            "Unreachable: terminated function body with Continue/Break/Case"
+    in
+    let* first_exec = exec_stmt body in
+    (* We execute until we stop getting a goto. *)
+    aux first_exec
+
+  and exec_stmt_list (init : Stmt_exec_result.t) (stmtl : stmt list) :
+      Stmt_exec_result.t InterpM.t =
+    let open Stmt_exec_result in
+    InterpM.fold_list stmtl ~init ~f:(fun res stmt ->
+        match res with
+        | Normal -> exec_stmt stmt
+        | Goto label -> exec_goto label stmt
+        | Case guard -> exec_case guard stmt
+        | Break | Continue | Returned _ -> InterpM.ok res)
+
+  (** Executing a goto statement, i.e. jumping to a label, returns the result of
+      executing the label's target statement. *)
+
+  and exec_goto (label : sym) (astmt : stmt) : Stmt_exec_result.t InterpM.t =
+    let open Stmt_exec_result in
+    L.trace (fun m ->
+        m "Trying to find label %a, currently at %a" Fmt_ail.pp_sym label
+          Fmt_ail.pp_stmt astmt);
+    let AilSyntax.{ node = stmt; _ } = astmt in
+    match stmt with
+    | AilSlabel (label', stmt, _annot) when Symbol_std.equal label label' ->
+        exec_stmt stmt
+    | AilSblock (bindings, stmtl) ->
+        let* () = attach_bindings bindings in
+        let* res = exec_stmt_list (Goto label) stmtl in
+        let+ () = remove_and_free_bindings bindings in
+        res
+    | AilSif (_, then_stmt, else_stmt) -> (
+        let* then_res = exec_goto label then_stmt in
+        match then_res with
+        | Goto l -> exec_goto l else_stmt
+        | Normal | Break | Continue | Returned _ -> InterpM.ok then_res
+        | Case _ -> failwith "SOTERIA BUG: Case in if branch")
+    | AilSwhile (_, body, _) -> (
+        let* res = exec_goto label body in
+        match res with
+        | Goto _ | Break | Returned _ -> InterpM.ok res
+        | Normal | Continue -> exec_stmt astmt
+        | Case _ -> failwith "SOTERIA BUG: Case in while body")
+    | AilSdo (body, e, _) -> (
+        let* res = exec_goto label body in
+        match res with
+        | Goto _ | Break | Returned _ -> InterpM.ok res
+        | Normal | Continue ->
+            let* guard = eval_expr e in
+            let guard_bool = cast_to_bool guard in
+            if%sat guard_bool then exec_stmt astmt else InterpM.ok Normal
+        | Case _ -> failwith "SOTERIA BUG: Case in do body")
+    | AilSswitch (_, body) -> exec_goto label body
+    | AilSmarker (_, stmt) -> exec_goto label stmt
+    | _ -> InterpM.ok (Goto label)
+
+  and exec_case (guard : T.sint Typed.t) (astmt : stmt) :
+      Stmt_exec_result.t InterpM.t =
+    let fail_if_different_case guard' =
+      if guard != guard' then failwith "Returned a different case?"
+    in
+    let open Stmt_exec_result in
+    L.trace (fun m ->
+        m "Trying to find case corresponding to guard %a, currently at %a"
+          Typed.ppa guard Fmt_ail.pp_stmt astmt);
+    let AilSyntax.{ node = stmt; _ } = astmt in
+    match stmt with
+    | AilScase (case, stmt) ->
+        if%sat guard ==@ Typed.int_z case then exec_stmt stmt
+        else exec_case guard stmt
+    | AilSdefault stmt -> exec_stmt stmt
+    | AilSlabel (_, stmt, _) -> exec_case guard stmt
+    | AilSblock (bindings, stmtl) ->
+        let* () = attach_bindings bindings in
+        let* res = exec_stmt_list (Case guard) stmtl in
+        let+ () = remove_and_free_bindings bindings in
+        res
+    | AilSif (_, then_stmt, else_stmt) -> (
+        let* then_res = exec_case guard then_stmt in
+        match then_res with
+        | Case guard' ->
+            fail_if_different_case guard';
+            exec_case guard else_stmt
+        | Normal | Break | Continue | Returned _ | Goto _ -> InterpM.ok then_res
+        )
+    | AilSwhile (_, body, _) -> (
+        let* res = exec_case guard body in
+        match res with
+        | Goto _ | Break | Returned _ -> InterpM.ok res
+        | Case guard' ->
+            fail_if_different_case guard';
+            InterpM.ok res
+        | Normal | Continue -> exec_stmt astmt)
+    | AilSdo (body, e, _) -> (
+        let* res = exec_case guard body in
+        match res with
+        | Goto _ | Break | Returned _ -> InterpM.ok res
+        | Case guard' ->
+            fail_if_different_case guard';
+            InterpM.ok res
+        | Normal | Continue ->
+            let* guard = eval_expr e in
+            let guard_bool = cast_to_bool guard in
+            if%sat guard_bool then exec_stmt astmt else InterpM.ok Normal)
+    | AilSmarker (_, stmt) -> exec_case guard stmt
+    | AilSswitch (_, _stmt) ->
+        (* We make this case explicitly separate for clarity:
+           If one has a nested switch, we don't look for the case
+           in the nested switch, as the cases in there are for the nested switch's guard. *)
+        InterpM.ok (Case guard)
+    | _ -> InterpM.ok (Case guard)
+
   (** Executing a statement returns an optional value outcome (if a return
       statement was hit), or *)
-  and exec_stmt (astmt : stmt) : T.cval Typed.t option InterpM.t =
+  and exec_stmt (astmt : stmt) : Stmt_exec_result.t InterpM.t =
+    let open Stmt_exec_result in
+    let exec_stmt = exec_stmt in
     let^ () = Csymex.consume_fuel_steps 1 in
     L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
     let* () =
@@ -774,20 +927,16 @@ module Make (State : State_intf.S) = struct
     let AilSyntax.{ loc; node = stmt; _ } = astmt in
     let@ () = InterpM.with_loc ~loc in
     match stmt with
-    | AilSskip -> InterpM.ok None
+    | AilSskip -> InterpM.ok Normal
     | AilSreturn e ->
         let+ v = eval_expr e in
         L.debug (fun m -> m "Returning: %a" Typed.ppa v);
-        Some v
-    | AilSreturnVoid -> InterpM.ok (Some 0s)
+        Returned v
+    | AilSreturnVoid -> InterpM.ok (Returned 0s)
     | AilSblock (bindings, stmtl) ->
         let* () = attach_bindings bindings in
         (* Second result, corresponding to the block-scoped store, is discarded *)
-        let* res =
-          InterpM.fold_list stmtl ~init:None ~f:(fun res stmt ->
-              match res with Some _ -> InterpM.ok res | None -> exec_stmt stmt)
-        in
-
+        let* res = exec_stmt_list Normal stmtl in
         (* Cerberus is nice here, symbols inside the block have different names than
            the ones outside the block if there is shadowing going on.
            I.e. int x = 12; { int x = 13; }, the two `x`s have different symbols.
@@ -796,10 +945,9 @@ module Make (State : State_intf.S) = struct
         res
     | AilSexpr e ->
         let+ _ = eval_expr e in
-        None
+        Normal
     | AilSif (cond, then_stmt, else_stmt) ->
         let* v = eval_expr cond in
-        (* [v] must be an integer! (TODO: or NULL possibly...) *)
         let v = cast_to_bool v in
         if%sat v then exec_stmt then_stmt [@name "if branch"]
         else exec_stmt else_stmt [@name "else branch"]
@@ -807,35 +955,56 @@ module Make (State : State_intf.S) = struct
         let rec loop () =
           let* cond_v = eval_expr cond in
           if%sat cast_to_bool cond_v then
+            let () = L.trace (fun m -> m "Condition is valid!") in
             let* res = exec_stmt stmt in
-            match res with Some _ -> InterpM.ok res | None -> loop ()
-          else InterpM.ok None
+            match res with
+            | Returned _ | Goto _ -> InterpM.ok res
+            | Break -> InterpM.ok Normal
+            | Normal | Continue -> loop ()
+            | Case _ -> failwith "SOTERIA BUG: Case in while body"
+          else InterpM.ok Normal
         in
         loop ()
     | AilSdo (stmt, cond, _loop_id) ->
         let rec loop () =
           let* res = exec_stmt stmt in
           match res with
-          | Some _ -> InterpM.ok res
-          | None ->
+          | Returned _ | Goto _ -> InterpM.ok res
+          | Break -> InterpM.ok Normal
+          | Normal | Continue ->
               let* cond_v = eval_expr cond in
-              if%sat cast_to_bool cond_v then loop () else InterpM.ok None
+              if%sat cast_to_bool cond_v then loop () else InterpM.ok Normal
+          | Case _ -> failwith "SOTERIA BUG: Case in do body"
         in
         loop ()
-    | AilSlabel (_label, stmt, _annot) ->
-        (* TODO: keep track of labels in a record or something!! *)
-        exec_stmt stmt
+    | AilSlabel (_, stmt, _) | AilScase (_, stmt) -> exec_stmt stmt
     | AilSdeclaration decls ->
         let+ () =
           InterpM.fold_list decls ~init:() ~f:(fun () (pname, expr) ->
               match expr with
-              | None -> InterpM.map_store (Store.declare_uninit pname)
+              | None -> (* The thing is already declared *) InterpM.ok ()
               | Some expr ->
                   let* v = eval_expr expr in
                   InterpM.map_store (Store.declare_value pname v))
         in
-        None
-    | _ ->
+        Normal
+    | AilSbreak -> InterpM.ok Break
+    | AilScontinue -> InterpM.ok Continue
+    | AilSgoto label -> InterpM.ok (Goto label)
+    | AilSswitch (guard, stmt) -> (
+        let* guard_v = eval_expr guard in
+        let^ guard_v = cast_to_int guard_v in
+        let* res = exec_case guard_v stmt in
+        match res with
+        | Continue | Returned _ | Normal | Goto _ -> InterpM.ok res
+        | Break -> InterpM.ok Normal
+        | Case _ ->
+            (* Case statement finished without finding a match: continue without executing anything *)
+            InterpM.ok Normal)
+    | AilScase_rangeGNU (_, _, _)
+    | AilSdefault _ | AilSpar _
+    | AilSreg_store (_, _)
+    | AilSmarker (_, _) ->
         Fmt.kstr InterpM.not_impl "Unsupported statement: %a" Fmt_ail.pp_stmt
           astmt
 
@@ -850,11 +1019,10 @@ module Make (State : State_intf.S) = struct
     let* ptys = get_param_tys name in
     let ps = List.combine3 params ptys args in
     let store = mk_store ps in
-    let** val_opt, store, state = exec_stmt stmt store state in
+    let** res, store, state = exec_body stmt store state in
     let++ state = dealloc_store store state in
     (* We model void as zero, it should never be used anyway *)
-    let value = Option.value ~default:0s val_opt in
-    (value, state)
+    (res, state)
 
   let init_prog_state (prog : Ail_tys.linked_program) =
     let open Csymex.Syntax in

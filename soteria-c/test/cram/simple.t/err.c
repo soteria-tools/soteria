@@ -1,4 +1,4 @@
-void *malloc(int);
+#include <stdlib.h>
 
 int main()
 {
