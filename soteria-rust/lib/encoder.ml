@@ -125,13 +125,15 @@ module Make (Sptr : Sptr.S) = struct
     | Ptr _, TLiteral (TInteger (Isize | Usize)) -> [ { value; ty; offset } ]
     | _, TLiteral _ -> illegal_pair ()
     (* References / Pointers *)
-    | Ptr (_, None), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+    | ( Ptr (_, None),
+        TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
     | Ptr (_, None), TRef (_, sub_ty, _)
     | Ptr (_, None), TRawPtr (sub_ty, _) ->
         let ty : Types.ty = TLiteral (TInteger Isize) in
         if is_dst sub_ty then failwith "Expected a fat pointer"
         else [ { value; ty; offset } ]
-    | Ptr (ptr, Some meta), TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+    | ( Ptr (ptr, Some meta),
+        TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
     | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
     | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
         let ty : Types.ty = TLiteral (TInteger Isize) in
@@ -144,23 +146,26 @@ module Make (Sptr : Sptr.S) = struct
           ]
         else [ { value; ty; offset } ]
     (* Function pointer *)
-    | Ptr (_, None), TArrow _ ->
+    | Ptr (_, None), TFnPtr _ ->
         [ { value; ty = TLiteral (TInteger Isize); offset } ]
     (* References / Pointers obtained from casting *)
-    | Base _, TAdt (TBuiltin TBox, _) | Base _, TRef _ | Base _, TRawPtr _ ->
+    | Base _, TAdt { id = TBuiltin TBox; _ }
+    | Base _, TRef _
+    | Base _, TRawPtr _ ->
         [ { value; ty = TLiteral (TInteger Isize); offset } ]
-    | _, TAdt (TBuiltin TBox, _) | _, TRawPtr _ | _, TRef _ -> illegal_pair ()
+    | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
+        illegal_pair ()
     (* Tuples *)
-    | Tuple vs, TAdt (TTuple, { types; _ }) ->
+    | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
         chain_cvals (layout_of ty) vs types
-    | Tuple _, _ | _, TAdt (TTuple, _) -> illegal_pair ()
+    | Tuple _, _ | _, TAdt { id = TTuple; _ } -> illegal_pair ()
     (* Structs *)
-    | Struct vals, TAdt (TAdtId t_id, _) ->
+    | Struct vals, TAdt { id = TAdtId t_id; _ } ->
         let fields = field_tys @@ Crate.as_struct t_id in
         chain_cvals (layout_of ty) vals fields
     | Struct _, _ -> illegal_pair ()
     (* Enums *)
-    | Enum (disc, vals), TAdt (TAdtId t_id, _) -> (
+    | Enum (disc, vals), TAdt { id = TAdtId t_id; _ } -> (
         let variants = Crate.as_enum t_id in
         match (variants, Typed.kind disc) with
         (* fieldless enums with one option are zero-sized *)
@@ -177,7 +182,7 @@ module Make (Sptr : Sptr.S) = struct
             chain_cvals (of_variant variant) (Base disc :: vals)
               (disc_ty :: field_tys variant.fields)
         | _ -> Fmt.failwith "Unexpected discriminant for enum: %a" pp_ty ty)
-    | Base value, TAdt (TAdtId t_id, _) when Crate.is_enum t_id ->
+    | Base value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
         let variants = Crate.as_enum t_id in
         (* FIXME: this is not correct, this doesn't represent the actual discriminant type. *)
         let disc_ty = (List.hd variants).discriminant.int_ty in
@@ -186,14 +191,15 @@ module Make (Sptr : Sptr.S) = struct
         ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
-    | Array vals, TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) ->
+    | ( Array vals,
+        TAdt { id = TBuiltin TArray; generics = { types = [ sub_ty ]; _ } } ) ->
         let layout = layout_of ty in
         let size = Array.length layout.members_ofs in
         if List.length vals <> size then failwith "Array length mismatch"
         else chain_cvals layout vals (List.init size (fun _ -> sub_ty))
-    | Array _, _ | _, TAdt (TBuiltin TArray, _) -> illegal_pair ()
+    | Array _, _ | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
     (* Unions *)
-    | Union (f, v), TAdt (TAdtId id, _) ->
+    | Union (f, v), TAdt { id = TAdtId id; _ } ->
         let fields = Crate.as_union id in
         let field = Types.FieldId.nth fields f in
         rust_to_cvals ~offset v field.field_ty
@@ -228,7 +234,7 @@ module Make (Sptr : Sptr.S) = struct
               let+ ptr_v = Sptr.decay ptr in
               Compo_res.ok (Base (ptr_v :> T.cval Typed.t))
           | _ -> not_impl "Expected a base or a thin pointer")
-      | ( TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+      | ( TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } }
         | TRef (_, sub_ty, _)
         | TRawPtr (sub_ty, _) ) as ty
         when is_dst sub_ty -> (
@@ -262,21 +268,21 @@ module Make (Sptr : Sptr.S) = struct
           match raw_ptr with
           | (Ptr _ | Base _) as ptr -> Result.ok ptr
           | _ -> not_impl "Expected a pointer or base")
-      | TAdt (TBuiltin TBox, _) | TRef _ -> (
+      | TAdt { id = TBuiltin TBox; _ } | TRef _ -> (
           let+** boxed = query (TLiteral (TInteger Isize), offset) in
           match boxed with
           | Ptr _ as ptr -> Result.ok ptr
           | Base _ -> Result.error `UBTransmute
           | _ -> not_impl "Expected a pointer or base")
-      | TArrow _ -> (
+      | TFnPtr _ -> (
           let+** boxed = query (TLiteral (TInteger Isize), offset) in
           match boxed with
           | (Ptr _ | Base _) as ptr -> Result.ok ptr
           | _ -> not_impl "Expected a pointer or base")
-      | TAdt (TTuple, { types; _ }) as ty ->
+      | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
-      | TAdt (TAdtId t_id, _) as ty -> (
+      | TAdt { id = TAdtId t_id; _ } as ty -> (
           let type_decl = Crate.get_adt t_id in
           match type_decl.kind with
           | Struct fields ->
@@ -292,13 +298,14 @@ module Make (Sptr : Sptr.S) = struct
           | _ ->
               Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
-      | TAdt (TBuiltin TArray, { types = [ sub_ty ]; _ }) as ty ->
+      | TAdt { id = TBuiltin TArray; generics = { types = [ sub_ty ]; _ } } as
+        ty ->
           let layout = layout_of ty in
           let len = Array.length layout.members_ofs in
           let fields = List.init len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
-      | TAdt (TBuiltin (TStr as ty), generics)
-      | TAdt (TBuiltin (TSlice as ty), generics) -> (
+      | TAdt { id = TBuiltin (TStr as ty); generics }
+      | TAdt { id = TBuiltin (TSlice as ty); generics } -> (
           (* We can only read a slice if we have the metadata of its length, in which case
            we interpret it as an array of that length. *)
           match meta with
@@ -435,11 +442,13 @@ module Make (Sptr : Sptr.S) = struct
           let constrs = Layout.constraints to_ty in
           if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
       (* A ref cannot be an invalid pointer *)
-      | _, (TRef _ | TAdt (TBuiltin TBox, _)), Base _ -> error `UBTransmute
+      | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
+          error `UBTransmute
       (* A ref must point to a readable location *)
       | ( _,
           ( TRef (_, inner_ty, _)
-          | TAdt (TBuiltin TBox, { types = [ inner_ty ]; _ }) ),
+          | TAdt { id = TBuiltin TBox; generics = { types = [ inner_ty ]; _ } }
+            ),
           Ptr ptr ) -> (
           match verify_ptr with
           | None -> Result.ok v

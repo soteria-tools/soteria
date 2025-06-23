@@ -310,7 +310,7 @@ module Make (Heap : Heap_intf.S) = struct
                   pp_full_ptr v);
             let pointee = Charon_util.get_pointee base.ty in
             match base.ty with
-            | TRef _ | TAdt (TBuiltin TBox, _) ->
+            | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
                 let+ () = Heap.check_ptr_align (fst v) pointee in
                 v
             | _ -> ok v)
@@ -339,9 +339,14 @@ module Make (Heap : Heap_intf.S) = struct
         let len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | None, TAdt (TBuiltin TArray, { const_generics = [ len ]; _ }) ->
+          | ( None,
+              TAdt
+                {
+                  id = TBuiltin TArray;
+                  generics = { const_generics = [ len ]; _ };
+                } ) ->
               Typed.int @@ Charon_util.int_of_const_generic len
-          | Some len, TAdt (TBuiltin TSlice, _) -> Typed.cast len
+          | Some len, TAdt { id = TBuiltin TSlice; _ } -> Typed.cast len
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
@@ -361,10 +366,14 @@ module Make (Heap : Heap_intf.S) = struct
           (* Array with static size *)
           | ( None,
               TAdt
-                ( TBuiltin TArray,
-                  { const_generics = [ len ]; types = [ ty ]; _ } ) ) ->
+                {
+                  id = TBuiltin TArray;
+                  generics = { const_generics = [ len ]; types = [ ty ]; _ };
+                } ) ->
               (ty, Typed.int @@ Charon_util.int_of_const_generic len)
-          | Some len, TAdt (TBuiltin TSlice, { types = [ ty ]; _ }) ->
+          | ( Some len,
+              TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } )
+            ->
               (ty, Typed.cast len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
@@ -465,14 +474,14 @@ module Make (Heap : Heap_intf.S) = struct
         let* ptr = resolve_place place in
         let+ ptr' = Heap.borrow ptr place.ty borrow in
         Ptr ptr'
-    | Global { global_id; _ } ->
-        let* ptr = resolve_global global_id in
-        let decl = Crate.get_global global_id in
+    | Global { id; _ } ->
+        let* ptr = resolve_global id in
+        let decl = Crate.get_global id in
         Heap.load ptr decl.ty
-    | GlobalRef ({ global_id; _ }, mut) ->
+    | GlobalRef ({ id; _ }, mut) ->
         (* TODO: handle mutability *)
-        let global = Crate.get_global global_id in
-        let* ptr = resolve_global global_id in
+        let global = Crate.get_global id in
+        let* ptr = resolve_global id in
         let borrow : Expressions.borrow_kind =
           match mut with RMut -> BMut | RShared -> BShared
         in
@@ -529,18 +538,22 @@ module Make (Heap : Heap_intf.S) = struct
         | Cast (CastUnsize (_, TRawPtr (TDynTrait _, _))) ->
             not_impl "Unsupported: dyn"
         | Cast (CastUnsize (from_ty, _)) ->
-            let rec get_size = function
+            let rec get_size : Types.ty -> Types.const_generic t = function
               | Types.TRawPtr (ty, _)
               | TRef (_, ty, _)
-              | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) ->
+              | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
                   get_size ty
-              | TAdt (TAdtId id, _) -> (
+              | TAdt { id = TAdtId id; _ } -> (
                   let type_decl = Crate.get_adt id in
                   match type_decl.kind with
                   | Struct (_ :: _ as fields) ->
                       get_size (List.last fields).field_ty
                   | _ -> not_impl "Couldn't get size in CastUnsize")
-              | TAdt (TBuiltin TArray, { const_generics = [ size ]; _ }) ->
+              | TAdt
+                  {
+                    id = TBuiltin TArray;
+                    generics = { const_generics = [ size ]; _ };
+                  } ->
                   ok size
               | _ -> not_impl "Couldn't get size in CastUnsize"
             in
@@ -609,7 +622,8 @@ module Make (Heap : Heap_intf.S) = struct
                   | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
                 in
                 Heap.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
-            | WrappingAdd | WrappingSub | WrappingMul -> (
+            | WrappingAdd | WrappingSub | WrappingMul | WrappingShl
+            | WrappingShr -> (
                 match type_of_operand e1 with
                 | TLiteral (TInteger ty as litty) ->
                     let^^ v = Core.safe_binop op litty v1 v2 in
@@ -719,14 +733,15 @@ module Make (Heap : Heap_intf.S) = struct
             Heap.load (loc, None) discr_ty
         | [] -> Fmt.kstr not_impl "Unsupported discriminant for empty enums")
     (* Enum aggregate *)
-    | Aggregate (AggregatedAdt (TAdtId t_id, Some v_id, None, _), vals) ->
+    | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
+      ->
         let variants = Crate.as_enum t_id in
         let variant = Types.VariantId.nth variants v_id in
         let discr = value_of_scalar variant.discriminant in
         let+ vals = eval_operand_list vals in
         Enum (discr, vals)
     (* Union aggregate *)
-    | Aggregate (AggregatedAdt (_, None, Some field, _), ops) ->
+    | Aggregate (AggregatedAdt (_, None, Some field), ops) ->
         let op =
           match ops with
           | [ op ] -> op
@@ -736,11 +751,12 @@ module Make (Heap : Heap_intf.S) = struct
         let+ value = eval_operand op in
         Union (field, value)
     (* Tuple aggregate *)
-    | Aggregate (AggregatedAdt (TTuple, None, None, _), operands) ->
+    | Aggregate (AggregatedAdt ({ id = TTuple; _ }, None, None), operands) ->
         let+ values = eval_operand_list operands in
         Tuple values
     (* Struct aggregate *)
-    | Aggregate (AggregatedAdt (TAdtId t_id, None, None, _), operands) ->
+    | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, None, None), operands)
+      ->
         let type_decl = Crate.get_adt t_id in
         let* values = eval_operand_list operands in
         let+ () =

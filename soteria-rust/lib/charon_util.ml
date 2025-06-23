@@ -48,25 +48,30 @@ let type_of_operand : Expressions.operand -> Types.ty = function
 let lit_to_string = PrintValues.literal_type_to_string
 
 let rec pp_ty fmt : Types.ty -> unit = function
-  | TAdt (TAdtId id, _) ->
+  | TAdt { id = TAdtId id; _ } ->
       let adt = Crate.get_adt id in
       Fmt.pf fmt "%a" Crate.pp_name adt.item_meta.name
-  | TAdt (TTuple, { types = tys; _ }) ->
+  | TAdt { id = TTuple; generics = { types = tys; _ } } ->
       Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_ty) tys
-  | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) -> Fmt.pf fmt "Box<%a>" pp_ty ty
+  | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
+      Fmt.pf fmt "Box<%a>" pp_ty ty
   | TAdt
-      ( TBuiltin TArray,
-        { types = [ ty ]; const_generics = [ CgValue (VScalar len) ]; _ } ) ->
+      {
+        id = TBuiltin TArray;
+        generics =
+          { types = [ ty ]; const_generics = [ CgValue (VScalar len) ]; _ };
+      } ->
       Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print len.value
-  | TAdt (TBuiltin TSlice, { types = [ ty ]; _ }) -> Fmt.pf fmt "[%a]" pp_ty ty
-  | TAdt (TBuiltin TStr, _) -> Fmt.string fmt "str"
+  | TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } ->
+      Fmt.pf fmt "[%a]" pp_ty ty
+  | TAdt { id = TBuiltin TStr; _ } -> Fmt.string fmt "str"
   | TLiteral lit -> Fmt.string fmt @@ PrintValues.literal_type_to_string lit
   | TNever -> Fmt.string fmt "!"
   | TRef (_, ty, RMut) -> Fmt.pf fmt "&mut %a" pp_ty ty
   | TRef (_, ty, RShared) -> Fmt.pf fmt "&%a" pp_ty ty
   | TRawPtr (ty, RMut) -> Fmt.pf fmt "*mut %a" pp_ty ty
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
-  | TArrow { binder_value = ins, out; _ } ->
+  | TFnPtr { binder_value = ins, out; _ } ->
       Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
   | ty -> Fmt.pf fmt "%a" Types.pp_ty ty
 
@@ -107,7 +112,7 @@ let empty_span : Meta.span =
       {
         beg_loc = { line = 0; col = 0 };
         end_loc = { line = 0; col = 0 };
-        file = { name = Virtual ""; contents = None };
+        file = { name = Virtual ""; contents = None; crate_name = "" };
       };
     generated_from_span = None;
   }
@@ -124,14 +129,17 @@ let fields_of_tys : Types.ty list -> Types.field list =
 
 let mk_array_ty ty len : Types.ty =
   TAdt
-    ( TBuiltin TArray,
-      {
-        types = [ ty ];
-        const_generics =
-          [ CgValue (VScalar { value = Z.of_int len; int_ty = Isize }) ];
-        regions = [];
-        trait_refs = [];
-      } )
+    {
+      id = TBuiltin TArray;
+      generics =
+        {
+          types = [ ty ];
+          const_generics =
+            [ CgValue (VScalar { value = Z.of_int len; int_ty = Isize }) ];
+          regions = [];
+          trait_refs = [];
+        };
+    }
 
 let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
   List.exists
@@ -147,7 +155,7 @@ let decl_get_attr (decl : 'a GAst.gfun_decl) attr =
 let get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
   | TRawPtr (ty, _)
-  | TAdt (TBuiltin TBox, { types = [ ty ]; _ }) ->
+  | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
       ty
   | _ -> failwith "Non-pointer type given to get_pointee"
 

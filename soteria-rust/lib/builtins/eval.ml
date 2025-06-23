@@ -142,6 +142,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::ptr::mut_ptr::{@T}::sub", PtrOp { op = Add; check = true });
       (* This is super super wrong but Charon has broken Boxes :/ *)
       ("std::panicking::try::cleanup", FixmeTryCleanup);
+      ("std::panicking::catch_unwind::cleanup", FixmeTryCleanup);
       (* Intrinsics *)
       ("core::intrinsics::abort", PanicSimple);
       ("core::intrinsics::add_with_overflow", Checked Add);

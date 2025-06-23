@@ -141,10 +141,13 @@ module M (Heap : Heap_intf.S) = struct
       (* Unfortunate, but right now i don't have a better way to handle this... *)
       | ( [ ptr; Struct range ],
           [
-            TRef (_, TAdt (TBuiltin ((TArray | TSlice) as mode), gargs), _);
-            TAdt (TAdtId range_id, _);
+            TRef
+              ( _,
+                TAdt { id = TBuiltin ((TArray | TSlice) as mode); generics },
+                _ );
+            TAdt { id = TAdtId range_id; _ };
           ] ) ->
-          (ptr, range, mode, gargs, range_id)
+          (ptr, range, mode, generics, range_id)
       | _ -> failwith "Unexpected input type"
     in
     let range_item =
@@ -221,13 +224,13 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> failwith "size_of_val: Invalid input type"
     in
     match (ty, args) with
-    | TAdt (TBuiltin TSlice, { types = [ sub_ty ]; _ }), [ Ptr (_, Some meta) ]
-      ->
+    | ( TAdt { id = TBuiltin TSlice; generics = { types = [ sub_ty ]; _ } },
+        [ Ptr (_, Some meta) ] ) ->
         let* len = cast_checked meta ~ty:Typed.t_int in
         let+ size = Layout.size_of_s sub_ty in
         let size = size *@ len in
         Ok (Base size, state)
-    | TAdt (TBuiltin TStr, _), [ Ptr (_, Some meta) ] ->
+    | TAdt { id = TBuiltin TStr; _ }, [ Ptr (_, Some meta) ] ->
         let+ len = cast_checked meta ~ty:Typed.t_int in
         let size = Layout.size_of_int_ty U8 in
         let size = Typed.int size *@ len in
@@ -544,7 +547,7 @@ module M (Heap : Heap_intf.S) = struct
   let variant_count (mono : Types.generic_args) ~args:_ state =
     let ty = List.hd mono.types in
     match ty with
-    | Types.TAdt (TAdtId id, _) when Crate.is_enum id ->
+    | TAdt { id = TAdtId id; _ } when Crate.is_enum id ->
         let variants = Crate.as_enum id in
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)

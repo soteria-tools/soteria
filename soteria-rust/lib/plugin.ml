@@ -81,7 +81,6 @@ let default =
       ~charon:
         ([
            "--ullbc";
-           "--translate-all-methods";
            "--extract-opaque-bodies";
            "--monomorphize";
            "--mir elaborated";
