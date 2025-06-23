@@ -124,23 +124,7 @@ module M (Heap : Heap_intf.S) = struct
       ("core::f128::{f128}::is_sign_negative", FloatIsSign { positive = false });
       ("core::f128::{f128}::is_sign_positive", FloatIsSign { positive = true });
       ("core::f128::{f128}::is_subnormal", FloatIs FP_subnormal);
-      (* FIXME: all core::ptr operations could be removed, however because we must enable
-         ub_checks at runtime due to unchecked_op, this means ub checks also happen in
-         the impl of core::ptr::..., and these checks are *SLOW* -- they do binary operations
-         on the integer value of the pointer to ensure it is well aligned etc. *)
-      ("core::ptr::const_ptr::{@T}::add", PtrOp { op = Add; check = true });
-      ("core::ptr::const_ptr::{@T}::byte_add", PtrByteOp Add);
-      ("core::ptr::const_ptr::{@T}::byte_offset", PtrByteOp Add);
-      ("core::ptr::const_ptr::{@T}::byte_sub", PtrByteOp Sub);
-      ("core::ptr::const_ptr::{@T}::offset", PtrOp { op = Add; check = true });
-      ("core::ptr::const_ptr::{@T}::sub", PtrOp { op = Sub; check = true });
-      ("core::ptr::mut_ptr::{@T}::add", PtrOp { op = Add; check = true });
-      ("core::ptr::mut_ptr::{@T}::byte_add", PtrByteOp Add);
-      ("core::ptr::mut_ptr::{@T}::byte_offset", PtrByteOp Add);
-      ("core::ptr::mut_ptr::{@T}::byte_sub", PtrByteOp Sub);
-      ("core::ptr::mut_ptr::{@T}::offset", PtrOp { op = Add; check = true });
-      ("core::ptr::mut_ptr::{@T}::sub", PtrOp { op = Add; check = true });
-      (* This is super super wrong but Charon has broken Boxes :/ *)
+      (* These don't compile, for some reason? *)
       ("std::panicking::try::cleanup", FixmeTryCleanup);
       ("std::panicking::catch_unwind::cleanup", FixmeTryCleanup);
       (* Intrinsics *)

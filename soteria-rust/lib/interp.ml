@@ -644,17 +644,10 @@ module Make (Heap : Heap_intf.S) = struct
                   let^+ cmp = Core.cmp_of_int v in
                   Base cmp
             | Offset ->
-                (* if offset is done on integers, we just add the (size(T) * rhs) *)
-                let^ v1, v2, ty = cast_checked2 v1 v2 in
-                if Typed.equal_ty ty Typed.t_ptr then
-                  Fmt.kstr not_impl
-                    "Offset cannot be used on non-int values: %a / %a" Typed.ppa
-                    v1 Typed.ppa v2
-                else
-                  let pointee = Charon_util.get_pointee (type_of_operand e1) in
-                  let^+ size = Layout.size_of_s pointee in
-                  let res = v1 +@ (v2 *@ size) in
-                  Base res
+                (* non-zero offset on integer pointer is not permitted, as these are always
+                   dangling *)
+                let^ v2 = cast_checked ~ty:Typed.t_int v2 in
+                if%sat v2 ==@ 0s then ok (Base v1) else error `UBDanglingPointer
             | BitOr | BitAnd | BitXor ->
                 let^ ity =
                   match type_of_operand e1 with
@@ -701,12 +694,9 @@ module Make (Heap : Heap_intf.S) = struct
         match op with
         | UbChecks ->
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
-               From what I understand: our execution already checks for UB, so we should return
-               false, to say we don't want to do UB checks at runtime.
-               Unfortunately, core::num::unchecked_op uses a non-UB operation, and checks for
-               overflow if UbChecks is true, so we must enable them for now (though really we
-               should just override these few functions). *)
-            ok (Base (Typed.int_of_bool Typed.v_true))
+               Our execution already checks for UB, so we should return
+               false, to indicate runtime UB checks aren't needed. *)
+            ok (Base (Typed.int_of_bool Typed.v_false))
         | SizeOf ->
             let^+ size = Layout.size_of_s ty in
             Base size
