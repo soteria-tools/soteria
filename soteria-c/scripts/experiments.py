@@ -41,7 +41,7 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--experiments",
+    "--experiment",
     type=str,
     nargs="*",
     default=default_experiments_to_run,
@@ -71,10 +71,10 @@ parser.add_argument(
 
 
 def validate_args(args):
-    if args.experiments is None:
+    if args.experiment is None:
         return args
 
-    for experiment_name in args.experiments:
+    for experiment_name in args.experiment:
         if experiment_name not in available_experiments:
             parser.error(
                 f"Experiment '{experiment_name}' not found. Available experiments are: {', '.join(available_experiments)}"
@@ -102,7 +102,7 @@ class GlobalConfig:
     def set_from_args(self, args):
         self.experiment_folder = args.experiment_folder.resolve()
         self.solver_timeout = args.solver_timeout
-        self.experiments_to_run = args.experiments
+        self.experiments_to_run = args.experiment
         self.cleanup_results_first = args.cleanup_results_first or args.cleanup_first
         self.cleanup_builds_first = args.cleanup_builds_first or args.cleanup_first
 
