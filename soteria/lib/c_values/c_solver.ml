@@ -348,6 +348,7 @@ module Make (Intf : Solver_interface.S) = struct
     vars : Declared_vars.t;
     save_counter : Save_counter.t;
     state : Solver_state.t;
+    intervals : Analyses.Interval.t;
   }
 
   let init () =
@@ -359,17 +360,20 @@ module Make (Intf : Solver_interface.S) = struct
       save_counter = Save_counter.init ();
       vars = Declared_vars.init ();
       state = Solver_state.init ();
+      intervals = Analyses.Interval.init ();
     }
 
   let save solver =
     Declared_vars.save solver.vars;
     Save_counter.save solver.save_counter;
-    Solver_state.save solver.state
+    Solver_state.save solver.state;
+    Analyses.Interval.save solver.intervals
 
   let backtrack_n solver n =
     Declared_vars.backtrack_n solver.vars n;
     Solver_state.backtrack_n solver.state n;
-    Save_counter.backtrack_n solver.save_counter n
+    Save_counter.backtrack_n solver.save_counter n;
+    Analyses.Interval.backtrack_n solver.intervals n
 
   (* Initialise and reset *)
 
@@ -379,10 +383,13 @@ module Make (Intf : Solver_interface.S) = struct
     if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
     Save_counter.reset solver.save_counter;
     Declared_vars.reset solver.vars;
-    Solver_state.reset solver.state
+    Solver_state.reset solver.state;
+    Analyses.Interval.reset solver.intervals
 
   let fresh_var solver ty =
     Declared_vars.fresh solver.vars (Typed.untype_type ty)
+
+  let[@inline] as_untyped f v = v |> Typed.untyped |> f |> Typed.type_
 
   let rec simplify' solver (v : Svalue.t) : Svalue.t =
     match v.node.kind with
@@ -425,13 +432,13 @@ module Make (Intf : Solver_interface.S) = struct
                 else Svalue.ite sg se1 se2
             | _ -> v))
 
-  and simplify solver (v : 'a Typed.t) : 'a Typed.t =
-    v |> Typed.untyped |> simplify' solver |> Typed.type_
+  and simplify solver : 'a Typed.t -> 'a Typed.t = as_untyped (simplify' solver)
 
   let add_constraints solver ?(simplified = false) vs =
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
+    (* let v = as_untyped (Analyses.Interval.add_constraint solver.intervals) v in *)
     Solver_state.add_constraint solver.state v
 
   let memo_sat_check_tbl : Soteria_symex.Solver.result Hashtbl.Hint.t =
@@ -489,11 +496,7 @@ module Make (Intf : Solver_interface.S) = struct
         (* This will put the check in a somewhat-normal form, to increase cache hits. *)
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let answer = check_sat_raw_memo solver relevant_vars to_check in
-        let () =
-          match answer with
-          | Sat -> Solver_state.mark_checked solver.state
-          | _ -> ()
-        in
+        if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
   let as_values solver = Solver_state.to_value_list solver.state

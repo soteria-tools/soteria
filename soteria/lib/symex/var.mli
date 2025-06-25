@@ -37,3 +37,4 @@ end
 
 module Hashset : Hashset.S with type elt = t
 module Set : Set.S with type elt = t
+module Map : Map.S with type key = t

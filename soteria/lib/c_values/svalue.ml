@@ -421,6 +421,7 @@ let rec not sv =
     | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
     | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
     | Binop (Or, v1, v2) -> mk_commut_binop And (not v1) (not v2) <| TBool
+    | Binop (And, v1, v2) -> mk_commut_binop Or (not v1) (not v2) <| TBool
     | _ -> Unop (Not, sv) <| TBool
 
 let rec sem_eq v1 v2 =

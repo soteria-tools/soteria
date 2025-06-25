@@ -358,31 +358,37 @@ def diff_evaluation(path1: Path, path2: Path):
     pptable(rows)
 
 
+class ArgError(Exception):
+    def __init__(self, msg: str):
+        super().__init__(msg)
+        self.msg = msg
+
+    def __str__(self):
+        return self.msg
+
+
 if __name__ == "__main__":
     try:
         if len(sys.argv) <= 1:
-            raise RuntimeError
+            raise ArgError("missing command")
         if sys.argv[1] in ["kani", "miri"]:
             tests, config = TEST_SUITES[sys.argv[1]]()
             log = PWD / f"{sys.argv[1]}.log"
             exec_tests(tests, config, log)
         elif sys.argv[1] == "eval":
             if len(sys.argv) <= 2:
-                raise RuntimeError
+                raise ArgError("missing test suite name: kani or miri")
             if sys.argv[2] not in ["kani", "miri"]:
-                raise RuntimeError
+                raise ArgError("invalid test suite name, expected kani or miri")
             tests, config = TEST_SUITES[sys.argv[2]]()
             evaluate_perf(tests, config)
         elif sys.argv[1] == "eval-diff":
             if len(sys.argv) <= 3:
-                raise RuntimeError
+                raise ArgError("missing paths to two evaluation CSV files")
             diff_evaluation(Path(sys.argv[2]), Path(sys.argv[3]))
         else:
-            raise RuntimeError
-    except RuntimeError:
-        print(
-            f"{RED}Invalid command -- specify {YELLOW}kani{RED} or "
-            f"{YELLOW}miri{RED} as a first argument."
-        )
+            raise ArgError("Unknown command, expected kani, miri, eval or eval-diff")
+    except ArgError as e:
+        print(f"{RED}Error: {YELLOW}{e}")
     except KeyboardInterrupt:
         exit(1)

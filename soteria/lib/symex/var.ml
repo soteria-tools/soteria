@@ -18,6 +18,8 @@ module Hashset = Hashset.Make (struct
   let pp = pp
 end)
 
+module Map = Map.Make (Int)
+
 module Counter (Start_at : sig
   val start_at : int
 end) =
