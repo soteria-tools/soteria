@@ -42,5 +42,5 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   
   unwind::main: ran 2 branches
   PC 1: (0 == V|1|) /\ (V|1| <= 1) /\ (0 <= V|1|)
-  PC 2: (0 <= V|2|) /\ (V|2| <= 0x7ffffffffffffffe) /\ (0 < V|2|) /\
-        (0 != V|1|) /\ (V|1| <= 1) /\ (0 <= V|1|)
+  PC 2: (0 != V|1|) /\ (V|2| <= 0x7ffffffffffffffe) /\ (0 < V|2|) /\
+        (1 == V|1|) /\ (V|1| <= 1) /\ (0 <= V|1|)

@@ -438,7 +438,7 @@ module Make (Intf : Solver_interface.S) = struct
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
-    (* let v = as_untyped (Analyses.Interval.add_constraint solver.intervals) v in *)
+    let v = as_untyped (Analyses.Interval.add_constraint solver.intervals) v in
     Solver_state.add_constraint solver.state v
 
   let memo_sat_check_tbl : Soteria_symex.Solver.result Hashtbl.Hint.t =

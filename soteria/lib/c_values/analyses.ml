@@ -94,7 +94,10 @@ module Interval = struct
           match new_range with
           (* We narrowed the range to one value! *)
           | Some m, Some n when Z.equal m n ->
-              (Svalue.int_z m ==@ Svalue.mk_var var TInt, st')
+              let eq = Svalue.int_z m ==@ Svalue.mk_var var TInt in
+              (* this is hacky; we found the exact value, but we can't return the equality
+                 if we're negating, since that equality will otherwise be negated. *)
+              ((if neg then Svalue.not eq else eq), st')
           (* The range is empty, so this cannot be true *)
           | _ when is_empty new_range -> (Svalue.v_false, st')
           (* We got a range we can't deduce anything from *)
@@ -145,13 +148,13 @@ module Interval = struct
 
   let add_constraint v st =
     let v', st' = add_constraint v st in
-    (if st <> st' || v <> v' then
-       let list_diff l1 l2 = List.filter (fun x -> not (List.mem x l1)) l2 in
-       let diff = list_diff (Var.Map.bindings st) (Var.Map.bindings st') in
-       log (fun m ->
-           m "Int: %a -> %a with diff (%a)" Svalue.pp v Svalue.pp v'
-             Fmt.(list ~sep:(any ", ") pp_binding)
-             diff));
+    log (fun m ->
+        if st <> st' || v <> v' then
+          let list_diff l1 l2 = List.filter (fun x -> not (List.mem x l1)) l2 in
+          let diff = list_diff (Var.Map.bindings st) (Var.Map.bindings st') in
+          m "Int: %a -> %a with diff (%a)" Svalue.pp v Svalue.pp v'
+            Fmt.(list ~sep:(any ", ") pp_binding)
+            diff);
     (v', st')
 
   (** Adds a constraint to the current interval analysis, updating the currently
