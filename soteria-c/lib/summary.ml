@@ -151,11 +151,10 @@ let prune (summary : after_exec t) : pruned t =
 
 (** Current criterion: a bug is manifest if its path condition is a consequence
     of the heap's and function arguments well-formedness conditions *)
-let rec analyse : type a.
-    prog:Ail_tys.linked_program -> fid:Ail_tys.sym -> a t -> analysed t =
- fun ~prog ~fid summary ->
+let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
+ fun ~fid summary ->
   match summary with
-  | After_exec _ -> analyse ~prog ~fid (prune summary)
+  | After_exec _ -> analyse ~fid (prune summary)
   | Analysed _ -> summary
   | Pruned { raw = summary; memory_leak } -> (
       let@ () =
@@ -224,6 +223,6 @@ let rec analyse : type a.
           let manifest_bugs = if is_manifest then [ error ] else [] in
           Analysed { raw = summary; manifest_bugs })
 
-let manifest_bugs (type a) ~prog ~fid (summary : a t) =
-  let (Analysed { manifest_bugs; _ }) = analyse ~prog ~fid summary in
+let manifest_bugs (type a) ~fid (summary : a t) =
+  let (Analysed { manifest_bugs; _ }) = analyse ~fid summary in
   manifest_bugs
