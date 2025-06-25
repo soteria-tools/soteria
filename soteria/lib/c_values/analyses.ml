@@ -1,5 +1,6 @@
 open Soteria_std
 open Soteria_symex
+open Svalue.Infix
 
 (* let log = Soteria_logs.Logs.L.warn *)
 let log _ = ()
@@ -66,10 +67,16 @@ module Interval = struct
         Some (m1, Some (Z.pred n1))
     | _ -> None
 
+  (** Intersection of two interval mappings, doing the intersection of the
+      intervals *)
+  let st_intersect = Var.Map.merge (fun _ -> Option.map2 intersect)
+
+  (** Union of two interval mappings, doing the union of the intervals *)
+  let st_union = Var.Map.merge (fun _ -> Option.map2 union)
+
   let get v st = Var.Map.find_opt v st |> Option.value ~default:(None, None)
 
   let rec add_constraint ?(neg = false) (v : Svalue.t) st =
-    let open Svalue.Infix in
     let update var range' =
       let range = get var st in
       let new_range =
@@ -144,6 +151,32 @@ module Interval = struct
             m "%a || %a => %a || %a" Svalue.pp v1 Svalue.pp v2 Svalue.pp v1'
               Svalue.pp v2');
         (v1' ||@ v2', st_union st1 st2)
+    (* We can try computing ranges of expressions and guessing truthiness *)
+    | Binop (((Eq | Lt | Leq) as bop), l, r) ->
+        let rec to_range (v : Svalue.t) : range =
+          match v.node.kind with
+          | Var v -> get v st
+          | Int i -> (Some i, Some i)
+          | Binop (Plus, l, r) ->
+              let ml, nl = to_range l in
+              let mr, nr = to_range r in
+              (Option.map2 Z.add ml mr, Option.map2 Z.add nl nr)
+          | Binop (Minus, l, r) ->
+              let ml, nl = to_range l in
+              let mr, nr = to_range r in
+              (Option.map2 Z.sub ml nr, Option.map2 Z.sub nl mr)
+          | _ -> (None, None)
+        in
+        let lr = to_range l in
+        let rr = to_range r in
+        let res =
+          match (bop, lr, rr) with
+          | Eq, _, _ when is_empty (intersect lr rr) -> Some false
+          | Lt, (Some ml, _), (_, Some nr) when Z.geq ml nr -> Some false
+          | Leq, (Some ml, _), (_, Some nr) when Z.gt ml nr -> Some false
+          | _ -> None
+        in
+        (Option.fold res ~some:Svalue.bool ~none:v, st)
     | _ -> (v, st)
 
   let add_constraint v st =
