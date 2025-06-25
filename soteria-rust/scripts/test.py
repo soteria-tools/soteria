@@ -313,8 +313,8 @@ def diff_evaluation(path1: Path, path2: Path):
     csv2 = parse(path2)
     files = set(csv1.keys())
     files = files.union(csv2.keys())
-    csv1 = {f: t for f, t in csv1.items() if f in files}
-    csv2 = {f: t for f, t in csv2.items() if f in files}
+    csv1 = {f: t for f, t in csv1.items()}
+    csv2 = {f: t for f, t in csv2.items()}
     total_time1 = sum(csv1.values())
     total_time2 = sum(csv2.values())
     delta_total = (total_time2 - total_time1) / total_time1 * 100

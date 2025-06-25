@@ -446,13 +446,28 @@ module Make (Intf : Solver_interface.S) = struct
 
   let trivial_model_works to_check =
     (* We try a trivial model where replacing each variable with name
-    [|n|] with the corresponding integer [n].
+    [|n|] with the corresponding integer [n]; except if an assertion
+    [|n| == v] exists, in which case we replace it with the value [v].
     If the constraint evaluates to true, then it is satisfiable. *)
+    let v_eqs = Var.Hashtbl.create 8 in
+    Svalue.split_ands to_check (fun v ->
+        match v.node.kind with
+        | Binop
+            ( Eq,
+              { node = { kind = Var n; _ }; _ },
+              ({ node = { kind = Int _; _ }; _ } as x) )
+        | Binop
+            ( Eq,
+              ({ node = { kind = Int _; _ }; _ } as x),
+              { node = { kind = Var n; _ }; _ } ) ->
+            Var.Hashtbl.add v_eqs n x
+        | _ -> ());
     let eval_var v ty =
       match ty with
-      | Svalue.TInt | Svalue.TLoc ->
+      | Svalue.TInt | Svalue.TLoc -> (
           let i = Var.to_int v in
-          Some (Svalue.int i)
+          try Some (Var.Hashtbl.find v_eqs v)
+          with Not_found -> Some (Svalue.int i))
       | _ -> None
     in
     let res = Eval.eval ~eval_var to_check in
