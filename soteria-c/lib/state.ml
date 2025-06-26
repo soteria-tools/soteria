@@ -11,11 +11,6 @@ type 'a err = 'a * Cerb_location.t Call_trace.t
 let add_to_call_trace (err, trace_elem) trace_elem' =
   (err, trace_elem' :: trace_elem)
 
-let with_error_loc_as_call_trace () f =
-  let open Csymex.Syntax in
-  let+- err, loc = f () in
-  (err, Call_trace.singleton ~loc ~msg:"Triggering memory operation" ())
-
 module SPmap = Pmap_direct_access (struct
   include Typed
   module Symex = Csymex
@@ -107,21 +102,18 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
   (SPmap.wrap (With_origin.wrap (Freeable.wrap (f ~ofs)))) loc heap
 
 let load ptr ty st =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_error_loc_as_call_trace ~msg:"Triggering read" () in
   log "load" ptr st;
   with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
 let store ptr ty sval st =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_error_loc_as_call_trace ~msg:"Triggering write" () in
   log "store" ptr st;
   with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
 
 let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
   let open Typed.Infix in
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_error_loc_as_call_trace ~msg:"Triggering copy" () in
   if%sat [@rname "Both pointers are non-null"]
     Typed.Ptr.is_at_null_loc dst ||@ Typed.Ptr.is_at_null_loc src
   then Result.error `NullDereference [@name "One of the pointers is null"]
@@ -133,12 +125,10 @@ let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
     with_ptr dst st (fun ~ofs block ->
         Tree_block.put_raw_tree ofs tree_to_write block)
 
-let alloc ?loc ?(zeroed = false) size st =
-  (* Commenting this out as alloc cannot fail *)
-  (* let@ () = with_loc_err () in*)
-  let@ () = with_error_loc_as_call_trace () in
+let alloc ?(zeroed = false) size st =
+  let loc = Csymex.get_loc () in
   let@ heap = with_heap st in
-  let block = Block.alloc ?loc ~zeroed size in
+  let block = Block.alloc ~loc ~zeroed size in
   let** loc, st = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
@@ -153,19 +143,18 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) :
     (unit * t, 'err, serialized list) Result.t =
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
-    let@ () = with_loc_err () in
     let@ heap = with_heap st in
     (SPmap.wrap
        (With_origin.wrap
           (Freeable.free
              ~assert_exclusively_owned:Tree_block.assert_exclusively_owned)))
       (Typed.Ptr.loc ptr) heap
-  else error `InvalidFree
+  else Result.error `InvalidFree
 
 let error err _st =
   L.trace (fun m -> m "Using state to error!");
   let@ () = with_error_loc_as_call_trace () in
-  error err
+  Result.error err
 
 let produce (serialized : serialized) (st : t) : t Csymex.t =
   L.debug (fun m -> m "Producing: %a" pp_serialized serialized);

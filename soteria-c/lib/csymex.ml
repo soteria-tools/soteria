@@ -74,11 +74,12 @@ let not_impl msg =
   push_give_up (msg, get_loc ());
   vanish ()
 
-let[@inline] with_loc_err () f =
+let[@inline] with_error_loc_as_call_trace ?(msg = "Triggering operation") () f =
   let loc = get_loc () in
-  Result.map_error (f ()) (fun e -> (e, loc))
+  Result.map_error (f ()) (fun e ->
+      let call_trace = Soteria_terminal.Call_trace.singleton ~loc ~msg () in
+      (e, call_trace))
 
-let error e = Result.error (e, get_loc ())
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 

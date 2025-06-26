@@ -50,7 +50,6 @@ module type S = sig
     Csymex.Result.t
 
   val alloc :
-    ?loc:Cerb_location.t ->
     ?zeroed:bool ->
     sint Typed.t ->
     t ->
