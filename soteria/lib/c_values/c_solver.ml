@@ -177,7 +177,7 @@ module Make (Intf : Solver_interface.S) = struct
         is not directly in the PC. *)
     type slot_content =
       | Asrt of Typed.sbool Typed.t [@printer Typed.ppa]
-      | Dirty of Var.t [@printer Var.pp]
+      | Dirty of Var.Set.t [@printer Fmt.(iter ~sep:comma) Var.Set.iter Var.pp]
     [@@deriving show]
 
     (** Each slot holds a symbolic boolean, as well a boolean indicating if it
@@ -324,8 +324,8 @@ module Make (Intf : Solver_interface.S) = struct
             Dynarray.add_last to_encode value;
             add_vars_raw (vars value);
             aux rest
-        | Cons ({ value = Dirty var; checked = false }, rest) ->
-            add_vars_raw (Iter.singleton var);
+        | Cons ({ value = Dirty vars; checked = false }, rest) ->
+            add_vars_raw (fun f -> Var.Set.iter f vars);
             aux rest
         | Cons ({ checked = true; _ }, _) -> aux_checked Seq.empty seq
       in
@@ -468,7 +468,8 @@ module Make (Intf : Solver_interface.S) = struct
       Analyses.Interval.add_constraint solver.intervals (Typed.untyped v)
     in
     Solver_state.add_constraint solver.state (Typed.type_ v);
-    List.iter (Solver_state.dirty_variable solver.state) vars
+    if not (Var.Set.is_empty vars) then
+      Solver_state.dirty_variable solver.state vars
 
   let memo_sat_check_tbl : Soteria_symex.Solver.result Hashtbl.Hint.t =
     Hashtbl.Hint.create 1023
