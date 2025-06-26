@@ -343,15 +343,12 @@ let generate_summaries ~functions_to_analyse prog =
       List.filter (fun b -> not (List.mem b !already_signaled)) manifest_bugs
     in
     already_signaled := remaining_to_signal @ !already_signaled;
-    if not (List.is_empty remaining_to_signal) then (
-      found_bugs := true;
-      List.iter
-        (fun (error, call_trace) ->
-          Error.Diagnostic.print_diagnostic ~fid ~call_trace ~error;
-          if !Config.current.show_manifest_summaries then
-            Fmt.pr "@\n@[Corresponding summary:@ %a@]" Summary.pp_raw raw;
-          Fmt.pr "@\n@?")
-        remaining_to_signal)
+    let@ error, call_trace = list_iter remaining_to_signal in
+    found_bugs := true;
+    Error.Diagnostic.print_diagnostic ~fid ~call_trace ~error;
+    if !Config.current.show_manifest_summaries then
+      Fmt.pr "@\n@[Corresponding summary:@ %a@]" Summary.pp_raw raw;
+    Fmt.pr "@\n@?"
   in
   if not !found_bugs then
     Fmt.pr "%a@.@?" Soteria_terminal.Color.pp_ok "No bugs found"

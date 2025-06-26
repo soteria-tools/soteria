@@ -221,8 +221,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
              We need to somehow be able to run production and assert in OX mode.
              Right now, if production vanishes in one case but not all, we get a false positive. *)
           let is_manifest =
-            (not (List.is_empty result))
-            && List.for_all (function true, _ -> true | _ -> false) result
+            (not (List.is_empty result)) && List.for_all fst result
           in
           let manifest_bugs = if is_manifest then [ error ] else [] in
           Analysed { raw = summary; manifest_bugs })
