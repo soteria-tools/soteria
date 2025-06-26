@@ -81,7 +81,13 @@ module Interval = struct
 
   let get v st = Var.Map.find_opt v st |> Option.value ~default:(None, None)
 
-  let rec add_constraint ?(neg = false) ?(absorb = true) (v : Svalue.t) st =
+  (** [add_constraint ?neg ?absorb v st] Adds a constraint [v] to the state
+      [st]. [absorb=false] indicates that we cannot return [true] to indicate
+      the assertion now lives in the analysis. [neg=false] indicates we are
+      adding a negated constraint, so rather than doing set intersection, we
+      need to do set difference. *)
+  let rec add_constraint ?(neg = false) ?(absorb = true) (v : Svalue.t) st :
+      Svalue.t * Var.t list * range Var.Map.t =
     let update var range' =
       let range = get var st in
       let new_range =
@@ -89,14 +95,14 @@ module Interval = struct
       in
       match new_range with
       (* We couldn't compute anything from this update *)
-      | None -> (v, st)
+      | None -> (v, [], st)
       (* We found an inequality, but we learnt nothing from it; we can discard it *)
       | Some new_range when range = new_range ->
           log (fun m ->
               m "Useless range  %a: %a %s %a = %a" Var.pp var pp_range range
                 (if neg then "/" else "∩")
                 pp_range range' pp_range new_range);
-          (Svalue.bool (not (is_empty range)), st)
+          (Svalue.bool (not (is_empty range)), [], st)
       | Some new_range -> (
           let st' = Var.Map.add var new_range st in
           log (fun m ->
@@ -109,16 +115,18 @@ module Interval = struct
               let eq = Svalue.int_z m ==@ mk_var var in
               (* this is hacky; we found the exact value, but we can't return the equality
                  if we're negating, since that equality will otherwise be negated. *)
-              ((if neg then Svalue.not eq else eq), st')
+              ((if neg then Svalue.not eq else eq), [], st')
           (* The range is empty, so this cannot be true *)
-          | _ when is_empty new_range -> (Svalue.v_false, st')
+          | _ when is_empty new_range -> (Svalue.v_false, [], st')
           (* We got a new range, but this is a negation, meaning we can' be sure we didn't lose
              some information; to be safe, we let the PC keep the value.
              Also take this case if we do not absorb this information (e.g. in a disjunction),
              as in that case the PC must keep track of the assertion.  *)
-          | _ when neg || not absorb -> (v, st')
-          (* We could cleanly absorb the range, so the PC doesn't need to store it *)
-          | _ -> (Svalue.v_true, st'))
+          | _ when neg || not absorb -> (v, [], st')
+          (* We could cleanly absorb the range, so the PC doesn't need to store it -- however
+             we must mark this variable as dirty, as maybe the modified range still renders
+             the branch infeasible, e.g. because of some additional PC assertions. *)
+          | _ -> (Svalue.v_true, [ var ], st'))
     in
     match v.node.kind with
     | Binop
@@ -144,23 +152,24 @@ module Interval = struct
         update var (Some x, Some x)
     (* We conservatively explore negations; we're only interested in simple (in)equalities *)
     | Unop (Not, nv) ->
-        let nv', st' = add_constraint ~absorb ~neg:(not neg) nv st in
-        (Svalue.not nv', st')
+        let nv', vars, st' = add_constraint ~absorb ~neg:(not neg) nv st in
+        (Svalue.not nv', vars, st')
     (* We don't explore && and || within negations, because that becomes messy. *)
     | Binop (And, v1, v2) when not neg ->
-        let v1', st' = add_constraint ~absorb v1 st in
-        let v2', st'' = add_constraint ~absorb v2 st' in
+        let v1', vars1, st' = add_constraint ~absorb v1 st in
+        let v2', vars2, st'' = add_constraint ~absorb v2 st' in
         log (fun m ->
             m "%a && %a => %a && %a" Svalue.pp v1 Svalue.pp v2 Svalue.pp v1'
               Svalue.pp v2');
-        if v1' == v && v2' == v then (v, st) else (v1' &&@ v2', st'')
+        if v1' == v && v2' == v then (v, [], st)
+        else (v1' &&@ v2', vars1 @ vars2, st'')
     | Binop (Or, v1, v2) when not neg ->
-        let v1', st1 = add_constraint ~absorb:false v1 st in
-        let v2', st2 = add_constraint ~absorb:false v2 st in
+        let v1', vars1, st1 = add_constraint ~absorb:false v1 st in
+        let v2', vars2, st2 = add_constraint ~absorb:false v2 st in
         log (fun m ->
             m "%a || %a => %a || %a" Svalue.pp v1 Svalue.pp v2 Svalue.pp v1'
               Svalue.pp v2');
-        (v1' ||@ v2', st_union st1 st2)
+        (v1' ||@ v2', vars1 @ vars2, st_union st1 st2)
     (* We can try computing ranges of expressions and guessing truthiness *)
     | Binop (((Eq | Lt | Leq) as bop), l, r) ->
         let rec to_range (v : Svalue.t) : range =
@@ -186,23 +195,17 @@ module Interval = struct
           | Leq, (Some ml, _), (_, Some nr) when Z.gt ml nr -> Some false
           | _ -> None
         in
-        (Option.fold res ~some:Svalue.bool ~none:v, st)
-    | _ -> (v, st)
-
-  let add_constraint v st =
-    let v', st' = add_constraint v st in
-    log (fun m ->
-        if st <> st' || v <> v' then
-          let list_diff l1 l2 = List.filter (fun x -> not (List.mem x l1)) l2 in
-          let diff = list_diff (Var.Map.bindings st) (Var.Map.bindings st') in
-          m "Int: %a -> %a with diff (%a)" Svalue.pp v Svalue.pp v'
-            Fmt.(list ~sep:(any ", ") pp_binding)
-            diff);
-    (v', st')
+        (Option.fold res ~some:Svalue.bool ~none:v, [], st)
+    | _ -> (v, [], st)
 
   (** Adds a constraint to the current interval analysis, updating the currently
       tracked intervals. *)
-  let add_constraint st v = wrap (add_constraint v) st
+  let add_constraint st v =
+    wrap
+      (fun st ->
+        let v', vars, st' = add_constraint v st in
+        ((v', vars), st'))
+      st
 
   (** Encode all the information relevant to the given variables and conjuncts
       them with the given accumulator. *)

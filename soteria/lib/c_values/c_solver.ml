@@ -171,14 +171,20 @@ module Make (Intf : Solver_interface.S) = struct
   end)
 
   module Solver_state = struct
+    (** Inside a slot, we either have an assertion, or a marker indicating that
+        all assertions relating to a variable may need to be rechecked -- for
+        instance because an auxiliary analysis has new information about it that
+        is not directly in the PC. *)
+    type slot_content =
+      | Asrt of Typed.sbool Typed.t [@printer Typed.ppa]
+      | Dirty of Var.t [@printer Var.pp]
+    [@@deriving show]
+
     (** Each slot holds a symbolic boolean, as well a boolean indicating if it
         was checked to be satisfiable. The boolean is mutable and can be mutated
         even by future branches! If a branch downstream is satisfiable, then so
         is any element on the path condition. *)
-    type slot = {
-      value : Typed.sbool Typed.t; [@printer Typed.ppa]
-      mutable checked : bool;
-    }
+    type slot = { value : slot_content; mutable checked : bool }
     [@@deriving show]
 
     (* Invariants: the PC only has checked things, and then only unchecked things. *)
@@ -206,8 +212,14 @@ module Make (Intf : Solver_interface.S) = struct
             if Typed.equal v Typed.v_false then (
               Dynarray.clear last;
               (* We mark false as unchecked to make sure trivial_truthiness doesn't infer the wrong thing. *)
-              Dynarray.add_last last { value = Typed.v_false; checked = false })
-            else Dynarray.add_last last { value = v; checked = false }
+              Dynarray.add_last last
+                { value = Asrt Typed.v_false; checked = false })
+            else Dynarray.add_last last { value = Asrt v; checked = false }
+
+    let dirty_variable (t : t) v =
+      match Dynarray.find_last t with
+      | None -> failwith "dirty_variable: empty array"
+      | Some last -> Dynarray.add_last last { value = Dirty v; checked = false }
 
     let to_seq_rev (t : t) =
       Seq.concat_map Dynarray.to_seq_rev (Dynarray.to_seq_rev t)
@@ -222,21 +234,29 @@ module Make (Intf : Solver_interface.S) = struct
       | Nil -> Some true (* The empty constraint is satisfiable *)
       | Cons ({ checked = true; _ }, _) ->
           Some true (* All constraints have been checked to be sat *)
-      | Cons ({ value; _ }, _) when Typed.(equal value v_false) -> Some false
+      | Cons ({ value = Asrt value; _ }, _) when Typed.(equal value v_false) ->
+          Some false
       | _ -> None
 
     (* We check if the thing contains the value itself, or its negation. *)
     let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
       let neg_v = Typed.not v in
       Dynarray.find_map
-        (Dynarray.find_map (fun { value; _ } ->
-             if Typed.equal value v then Some true
-             else if Typed.equal value neg_v then Some false
-             else None))
+        (Dynarray.find_map (function
+          | { value = Asrt value; _ } ->
+              if Typed.equal value v then Some true
+              else if Typed.equal value neg_v then Some false
+              else None
+          | _ -> None))
         t
 
+    (** Iterate over the assertions in the PC. *)
     let iter (t : t) f =
-      Dynarray.iter (Dynarray.iter (fun { value; _ } -> f value)) t
+      Dynarray.iter
+        (Dynarray.iter (function
+          | { value = Asrt value; _ } -> f value
+          | { value = Dirty _; _ } -> ()))
+        t
 
     let to_value_list (t : t) = Iter.to_rev_list (iter t)
 
@@ -275,7 +295,7 @@ module Make (Intf : Solver_interface.S) = struct
         Var.Hashset.add var_set v;
         if Var.Hashset.cardinal var_set <> prev_size then changed := true
       in
-      let relevant vars = Iter.exists (Var.Hashset.mem var_set) vars in
+      let relevant = Iter.exists (Var.Hashset.mem var_set) in
       (* We need to reach some kind of fixpoint *)
       let rec aux_checked others seq =
         match seq () with
@@ -284,7 +304,7 @@ module Make (Intf : Solver_interface.S) = struct
               changed := false;
               aux_checked Seq.empty others)
             else ()
-        | Seq.Cons (({ value; _ } as slot), rest) ->
+        | Seq.Cons (({ value = Asrt value; _ } as slot), rest) ->
             let vars = vars value in
             if relevant vars then (
               add_vars vars;
@@ -293,13 +313,19 @@ module Make (Intf : Solver_interface.S) = struct
             else
               let others = fun () -> Seq.Cons (slot, others) in
               aux_checked others rest
+        | Seq.Cons ({ value = Dirty _; _ }, rest) ->
+            (* A dirty checked variable can be ignored *)
+            aux_checked others rest
       in
       let rec aux seq =
         match seq () with
         | Seq.Nil -> ()
-        | Cons ({ value; checked = false }, rest) ->
+        | Cons ({ value = Asrt value; checked = false }, rest) ->
             Dynarray.add_last to_encode value;
             add_vars_raw (vars value);
+            aux rest
+        | Cons ({ value = Dirty var; checked = false }, rest) ->
+            add_vars_raw (Iter.singleton var);
             aux rest
         | Cons ({ checked = true; _ }, _) -> aux_checked Seq.empty seq
       in
@@ -438,8 +464,11 @@ module Make (Intf : Solver_interface.S) = struct
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
-    let v = as_untyped (Analyses.Interval.add_constraint solver.intervals) v in
-    Solver_state.add_constraint solver.state v
+    let v, vars =
+      Analyses.Interval.add_constraint solver.intervals (Typed.untyped v)
+    in
+    Solver_state.add_constraint solver.state (Typed.type_ v);
+    List.iter (Solver_state.dirty_variable solver.state) vars
 
   let memo_sat_check_tbl : Soteria_symex.Solver.result Hashtbl.Hint.t =
     Hashtbl.Hint.create 1023
