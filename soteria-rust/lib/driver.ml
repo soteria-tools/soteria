@@ -15,8 +15,15 @@ module Cleaner = struct
   let init ~clean () = if clean then at_exit cleanup
 end
 
+let config_set log_config term_config solver_config config =
+  Solver_config.set solver_config;
+  Soteria_logs.Config.check_set_and_lock log_config;
+  Soteria_terminal.Config.set_and_lock term_config;
+  Config.set config;
+  Cleaner.init ~clean:config.cleanup ()
+
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
+let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
   let file_name =
     if Filename.is_relative file_name then
       Filename.concat (Sys.getcwd ()) file_name
@@ -24,7 +31,7 @@ let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
   in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
-  (if not no_compile then
+  (if not !Config.current.no_compile then
      (* TODO: make these flags! *)
      let cmd = plugin.mk_cmd ~input:file_name ~output () in
      let res = exec_cmd @@ "cd " ^ parent_folder ^ " && " ^ build_cmd cmd in
@@ -41,7 +48,7 @@ let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
   in
   match crate with
   | Ok crate ->
-      if not no_compile then (
+      if not !Config.current.no_compile then (
         (* save crate to local file *)
         let crate_file = Printf.sprintf "%s.crate" file_name in
         let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
@@ -52,17 +59,14 @@ let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
       crate
   | Error err -> raise (CharonError err)
 
-let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
-    (crate : Charon.UllbcAst.crate) =
+let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
     |> List.filter_map plugin.get_entry_point
   in
   if List.is_empty entry_points then
     raise (ExecutionError "No entry points found");
-  let exec_fun =
-    Wpst_interp.exec_fun ~ignore_leaks ~args:[] ~state:State.empty
-  in
+  let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
   let@ () = Crate.with_crate crate in
   let outcomes =
     entry_points
@@ -125,21 +129,12 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
-let exec_main_and_print log_config term_config solver_config no_compile clean
-    ignore_leaks ignore_aliasing kani miri file_name =
-  Solver_config.set solver_config;
-  Soteria_logs.Config.check_set_and_lock log_config;
-  Soteria_terminal.Config.set_and_lock term_config;
-  Cleaner.init ~clean ();
-  Tree_borrow.set_enabled (not ignore_aliasing);
-
+let exec_main_and_print log_config term_config solver_config config file_name =
+  config_set log_config term_config solver_config config;
   match
-    let plugin =
-      Plugin.merge_ifs
-        [ (true, Plugin.default); (kani, Plugin.kani); (miri, Plugin.miri) ]
-    in
-    let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
-    exec_main ~ignore_leaks ~plugin crate
+    let plugin = Plugin.create () in
+    let crate = parse_ullbc_of_file ~plugin file_name in
+    exec_main ~plugin crate
   with
   | Ok res ->
       Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Note

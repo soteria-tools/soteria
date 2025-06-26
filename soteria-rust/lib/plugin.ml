@@ -200,3 +200,11 @@ let merge_ifs (plugins : (bool * plugin) list) =
     aux None plugins
   in
   { mk_cmd; get_entry_point }
+
+let create () =
+  merge_ifs
+    [
+      (true, default);
+      (!Config.current.with_kani, kani);
+      (!Config.current.with_miri, miri);
+    ]

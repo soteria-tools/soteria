@@ -1000,11 +1000,11 @@ module Make (State : State_intf.S) = struct
         error_raw err)
 
   (* re-define this for the export, nowhere else: *)
-  let exec_fun ?(ignore_leaks = false) ~args ~state fundef =
+  let exec_fun ~args ~state fundef =
     let open Rustsymex.Syntax in
     let+- err, _ =
       let** value, state = exec_fun ~args fundef state in
-      if ignore_leaks then Result.ok (value, state)
+      if !Config.current.ignore_leaks then Result.ok (value, state)
       else
         let@ () = Rustsymex.with_loc ~loc:fundef.item_meta.span in
         let++ (), state = State.leak_check state in
