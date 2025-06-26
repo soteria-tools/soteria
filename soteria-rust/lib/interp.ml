@@ -74,49 +74,44 @@ module InterpM (State : State_intf.S) = struct
     (res, state)
 
   module State = struct
-    let[@inline] load ?is_move ptr ty =
-      lift_state_op (State.load ?is_move ptr ty)
+    include State
 
-    let[@inline] store ptr ty v = lift_state_op (State.store ptr ty v)
-    let[@inline] alloc_ty ty = lift_state_op (State.alloc_ty ty)
-    let[@inline] alloc_tys tys = lift_state_op (State.alloc_tys tys)
-    let[@inline] uninit ptr ty = lift_state_op (State.uninit ptr ty)
-    let[@inline] free ptr = lift_state_op (State.free ptr)
-
-    let[@inline] check_ptr_align ptr ty =
-      lift_state_op (State.check_ptr_align ptr ty)
-
-    let[@inline] borrow ptr ty mut = lift_state_op (State.borrow ptr ty mut)
-    let[@inline] protect ptr ty mut = lift_state_op (State.protect ptr ty mut)
-    let[@inline] unprotect ptr ty = lift_state_op (State.unprotect ptr ty)
-    let[@inline] tb_load ptr ty = lift_state_op (State.tb_load ptr ty)
-    let[@inline] load_global g = lift_state_op (State.load_global g)
-    let[@inline] store_global g ptr = lift_state_op (State.store_global g ptr)
-    let[@inline] load_str_global str = lift_state_op (State.load_str_global str)
+    let[@inline] load ?is_move ptr ty = lift_state_op (load ?is_move ptr ty)
+    let[@inline] store ptr ty v = lift_state_op (store ptr ty v)
+    let[@inline] alloc_ty ty = lift_state_op (alloc_ty ty)
+    let[@inline] alloc_tys tys = lift_state_op (alloc_tys tys)
+    let[@inline] uninit ptr ty = lift_state_op (uninit ptr ty)
+    let[@inline] free ptr = lift_state_op (free ptr)
+    let[@inline] check_ptr_align ptr ty = lift_state_op (check_ptr_align ptr ty)
+    let[@inline] borrow ptr ty mut = lift_state_op (borrow ptr ty mut)
+    let[@inline] protect ptr ty mut = lift_state_op (protect ptr ty mut)
+    let[@inline] unprotect ptr ty = lift_state_op (unprotect ptr ty)
+    let[@inline] tb_load ptr ty = lift_state_op (tb_load ptr ty)
+    let[@inline] load_global g = lift_state_op (load_global g)
+    let[@inline] store_global g ptr = lift_state_op (store_global g ptr)
+    let[@inline] load_str_global str = lift_state_op (load_str_global str)
 
     let[@inline] store_str_global str ptr =
-      lift_state_op (State.store_str_global str ptr)
+      lift_state_op (store_str_global str ptr)
 
-    let[@inline] declare_fn fn = lift_state_op (State.declare_fn fn)
-    let[@inline] lookup_fn fn = lift_state_op (State.lookup_fn fn)
-    let[@inline] add_error e = lift_state_op (State.add_error e)
-    let[@inline] pop_error () = lift_state_op State.pop_error
+    let[@inline] declare_fn fn = lift_state_op (declare_fn fn)
+    let[@inline] lookup_fn fn = lift_state_op (lookup_fn fn)
+    let[@inline] add_error e = lift_state_op (add_error e)
+    let[@inline] pop_error () = lift_state_op pop_error
 
-    let[@inline] unwind_with ~(f : 'a -> 'b t) ~(fe : Error.t State.err -> 'b t)
-        (x : 'a t) : 'b t =
+    let[@inline] unwind_with ~f ~fe x =
      fun store state ->
-      State.unwind_with
+      unwind_with
         ~f:(fun (x, store, state) -> f x store state)
         ~fe:(fun (e, state) -> fe e store state)
         (x store state)
 
     let[@inline] is_valid_ptr =
-     fun store state -> Result.ok (State.is_valid_ptr state, store, state)
+     fun store state -> Result.ok (is_valid_ptr state, store, state)
 
-    let[@inline] lift_err (sym : ('a, Error.t, State.serialized list) Result.t)
-        : 'a t =
+    let[@inline] lift_err sym =
      fun store state ->
-      let++ res = State.lift_err state sym in
+      let++ res = lift_err state sym in
       (res, store, state)
   end
 
@@ -139,7 +134,6 @@ module InterpM (State : State_intf.S) = struct
 end
 
 module Make (State : State_intf.S) = struct
-  module H = State
   module InterpM = InterpM (State)
   module Core = Core.M (State)
   module Std_funs = Builtins.Eval.M (State)
@@ -162,7 +156,7 @@ module Make (State : State_intf.S) = struct
   type 'err fun_exec =
     args:Sptr.t rust_val list ->
     state ->
-    (Sptr.t rust_val * state, 'err, H.serialized list) Result.t
+    (Sptr.t rust_val * state, 'err, State.serialized list) Result.t
 
   let get_variable var_id =
     let* store = get_store () in
@@ -973,7 +967,7 @@ module Make (State : State_intf.S) = struct
     | UnwindResume -> State.pop_error ()
 
   and exec_fun ~args (fundef : UllbcAst.fun_decl) state :
-      (Sptr.t rust_val * H.t, 'e, 'f) Result.t =
+      (Sptr.t rust_val * State.t, 'e, 'f) Result.t =
     let open Rustsymex.Syntax in
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
@@ -1015,10 +1009,10 @@ module Make (State : State_intf.S) = struct
       if ignore_leaks then Result.ok (value, state)
       else
         let@ () = Rustsymex.with_loc ~loc:fundef.item_meta.span in
-        let++ (), state = H.leak_check state in
+        let++ (), state = State.leak_check state in
         (value, state)
     in
-    H.add_to_call_trace err
+    State.add_to_call_trace err
       (Soteria_terminal.Call_trace.mk_element ~loc:fundef.item_meta.span
          ~msg:"Entry point" ())
 end
