@@ -204,15 +204,6 @@ module Interval = struct
       tracked intervals. *)
   let add_constraint st v = wrap (add_constraint v) st
 
-  let save st =
-    log (fun m -> m "Save: %a" (Dynarray.pp pp_map) st);
-    save st
-
-  let backtrack_n st n =
-    log (fun m -> m "Backtrack %d; before: %a" n (Dynarray.pp pp_map) st);
-    backtrack_n st n;
-    log (fun m -> m "After: %a" (Dynarray.pp pp_map) st)
-
   (** Encode all the information relevant to the given variables and conjuncts
       them with the given accumulator. *)
   let encode ?vars (acc : Typed.sbool Typed.t) st : Typed.sbool Typed.t =
