@@ -3,9 +3,9 @@ open Syntaxes.FunctionWrap
 module T = Typed.T
 module Var = Soteria_symex.Var
 
-type after_exec = |
-type pruned = |
-type analysed = |
+type after_exec = [ `After_exec ]
+type pruned = [ `Pruned ]
+type analysed = [ `Analysed ]
 
 type raw = {
   args : T.cval Typed.t list;
@@ -217,8 +217,12 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           L.trace (fun m ->
               m "Results: %a" (Fmt.Dump.list (Fmt.pair Fmt.bool Fmt.nop)) result);
           (* The bug is manifest if the assert passed in every branch. *)
+          (* FIXME: the non-empty check is a bit of a hack.
+             We need to somehow be able to run production and assert in OX mode.
+             Right now, if production vanishes in one case but not all, we get a false positive. *)
           let is_manifest =
-            List.for_all (function true, _ -> true | _ -> false) result
+            (not (List.is_empty result))
+            && List.for_all (function true, _ -> true | _ -> false) result
           in
           let manifest_bugs = if is_manifest then [ error ] else [] in
           Analysed { raw = summary; manifest_bugs })

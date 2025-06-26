@@ -334,16 +334,25 @@ let generate_summaries ~functions_to_analyse prog =
   dump_summaries results;
   Fmt.pr "@\n@?";
   let found_bugs = ref false in
-  results
-  |> List.iter (fun (fid, summaries) ->
-         let bugs = List.concat_map (Summary.manifest_bugs ~fid) summaries in
-         if not (List.is_empty bugs) then (
-           found_bugs := true;
-           List.iter
-             (fun (error, call_trace) ->
-               Error.Diagnostic.print_diagnostic ~fid ~call_trace ~error;
-               Fmt.pr "@\n@?")
-             (List.sort_uniq Stdlib.compare bugs)));
+  let list_iter r f = List.iter f r in
+  let () =
+    let@ fid, summaries = list_iter results in
+    let already_signaled = ref [] in
+    let@ (Summary.Analysed { raw; manifest_bugs }) = list_iter summaries in
+    let remaining_to_signal =
+      List.filter (fun b -> not (List.mem b !already_signaled)) manifest_bugs
+    in
+    already_signaled := remaining_to_signal @ !already_signaled;
+    if not (List.is_empty remaining_to_signal) then (
+      found_bugs := true;
+      List.iter
+        (fun (error, call_trace) ->
+          Error.Diagnostic.print_diagnostic ~fid ~call_trace ~error;
+          if !Config.current.show_manifest_summaries then
+            Fmt.pr "@\n@[Corresponding summary:@ %a@]" Summary.pp_raw raw;
+          Fmt.pr "@\n@?")
+        remaining_to_signal)
+  in
   if not !found_bugs then
     Fmt.pr "%a@.@?" Soteria_terminal.Color.pp_ok "No bugs found"
 

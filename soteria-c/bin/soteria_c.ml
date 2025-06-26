@@ -57,11 +57,22 @@ module Config = struct
       & opt (some string) None
       & info [ "dump-summaries"; "dump-summaries-to" ] ~env ~doc ~docv)
 
+  let show_manifest_summaries_arg =
+    let doc =
+      "Print a corresponding manifest summary after the bug report if a bug is \
+       found"
+    in
+    let env =
+      Cmdliner.Cmd.Env.info ~doc "SOTERIA_SHOW_MANIFEST_BUG_SUMMARIES"
+    in
+    Arg.(value & flag & info [ "show-manifest-summaries" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_unsupported_file
       no_ignore_parse_failures no_ignore_duplicate_symbols parse_only
-      dump_summaries_file =
+      dump_summaries_file show_manifest_summaries =
     make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
-      ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file ()
+      ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file
+      ~show_manifest_summaries ()
 
   let term =
     Cmdliner.Term.(
@@ -71,7 +82,8 @@ module Config = struct
       $ no_ignore_parse_failures_arg
       $ no_ignore_duplicate_symbols_arg
       $ parse_only_arg
-      $ dump_summaries_file_arg)
+      $ dump_summaries_file_arg
+      $ show_manifest_summaries_arg)
 end
 
 let files_arg =
