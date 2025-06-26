@@ -510,19 +510,11 @@ module Make (Intf : Solver_interface.S) = struct
         in
         (* This will put the check in a somewhat-normal form, to increase cache hits. *)
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
-        let to_check =
-          Analyses.Interval.encode ~vars:relevant_vars to_check solver.intervals
-        in
         let answer = check_sat_raw_memo solver relevant_vars to_check in
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_values solver =
-    let pc = Solver_state.to_value_list solver.state in
-    let intervals = Analyses.Interval.encode Typed.v_true solver.intervals in
-    Iter.union ~eq:Typed.equal ~hash:Typed.hash (Iter.of_list pc)
-      (Typed.split_ands intervals)
-    |> Iter.to_list
+  let as_values solver = Solver_state.to_value_list solver.state
 end
 
 module Z3_incremental_solver = Make_incremental (Z3_exe)

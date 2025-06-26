@@ -19,7 +19,7 @@
            [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
            globs = [] }
           ];
-        pc = [(-0x80000000 <= V|3|); (V|3| <= 0x7fffffff); (0 != V|1|)];
+        pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|1|)];
         post =
         { heap =
           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
@@ -113,7 +113,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
            [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
            globs = [] }
           ];
-        pc = [(-0x80000000 <= V|3|); (V|3| <= 0x7fffffff); (0 != V|1|)];
+        pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|1|)];
         post =
         { heap =
           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
@@ -217,7 +217,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
     Analysed {
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
-        pc = [(0 == V|2|); (1 <= V|1|); (V|1| <= 0x7fffffff)];
+        pc =
+        [(0 == V|2|); (0 < V|1|); (V|1| <= 0x7fffffff); (-0x80000000 <= V|1|)];
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
@@ -233,8 +234,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
            globs = [] }
           ];
         pc =
-        [(-0x80000000 <= V|4|); (1 <= V|1|); (V|1| <= 0x7fffffff); (0 != V|2|);
-          (V|4| <= 0x7fffffff)];
+        [(V|4| <= 0x7fffffff); (-0x80000000 <= V|4|); (0 != V|2|); (0 < V|1|);
+          (V|1| <= 0x7fffffff); (-0x80000000 <= V|1|)];
         post =
         { heap =
           [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|4|}])];
@@ -244,7 +245,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
     Analysed {
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
-        pc = [(V|1| <= 0); (-0x80000000 <= V|1|)];
+        pc = [(V|1| <= 0); (V|1| <= 0x7fffffff); (-0x80000000 <= V|1|)];
         post = { heap = []; globs = [] }; ret = (Ok 0) };
       manifest_bugs = []}
   

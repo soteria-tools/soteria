@@ -4,7 +4,7 @@
   Summaries for main_487:
     Analysed {
       raw =
-      { args = []; pre = []; pc = [(V|1| == V|2|); (0 != V|1|); (0 != V|2|)];
+      { args = []; pre = []; pc = [(V|1| == V|2|); (0 != V|2|); (0 != V|1|)];
         post =
         { heap = [(V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
           globs = [(x_484, V|1|)] };

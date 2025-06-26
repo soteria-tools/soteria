@@ -93,7 +93,7 @@ module ArithPtr : S with type t = arithptr_t = struct
     Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
 
   let constraints =
-    let offset_constrs = Layout.int_constraints Isize in
+    let offset_constrs = Layout.int_constraints Values.Isize in
     fun { ptr; size; _ } ->
       let ofs = Typed.Ptr.ofs ptr in
       Typed.conj ((ofs <=@ Typed.int size) :: offset_constrs ofs)
@@ -105,9 +105,7 @@ module ArithPtr : S with type t = arithptr_t = struct
     let ptr = Typed.Ptr.add_ofs ptr off in
     let ptr = { fptr with ptr } in
     if check then
-      if%sat [@lname "Ptr ok"] [@rname "Ptr dangling"]
-        off ==@ 0s ||@ constraints ptr
-      then Result.ok ptr
+      if%sat off ==@ 0s ||@ constraints ptr then Result.ok ptr
       else Result.error `UBDanglingPointer
     else Result.ok ptr
 
