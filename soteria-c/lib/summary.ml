@@ -70,13 +70,11 @@ let filter_serialized_state relevant_vars (state : State.serialized) =
             (Typed.iter_vars loc)
         in
         if relevant then true
-        else
-          let () =
-            match b with Csymex.Freeable.Freed -> () | Alive _ -> leak := true
-          in
+        else (
+          if not (Block.is_freed b) then leak := true;
           L.trace (fun m ->
-              m "Filtering out unreable location: %a" Typed.ppa loc);
-          false)
+              m "Filtering out unreachable location: %a" Typed.ppa loc);
+          false))
   in
   (* Globals are not filtered: if they are in the spec, they were bi-abduced and necessary *)
   let resulting_state = { state with heap = resulting_heap } in
@@ -126,13 +124,10 @@ let prune (summary : after_exec t) : pruned t =
   (* For each block $l -> B in the pre and post state, we add a single-sided arrow
      from all variables in $l to all variables contained in B. *)
   ListLabels.iter
-    (List.concat (List.map (fun x -> x.State_intf.Template.heap) summary.pre)
+    (List.concat (List.map (fun (x : State.serialized) -> x.heap) summary.pre)
     @ summary.post.heap)
     ~f:(fun (l, b) ->
-      let b_iter =
-        Csymex.Freeable.iter_vars_serialized Tree_block.iter_vars_serialized b
-      in
-
+      let b_iter = Block.iter_vars_serialized b in
       Iter.product (Typed.iter_vars l) (Iter.persistent_lazy b_iter)
         (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));
   (* [init_reachable] is the set of initially-reachable variables, and we have a reachability [graph].

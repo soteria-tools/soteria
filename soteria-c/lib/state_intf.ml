@@ -10,7 +10,7 @@ module type S = sig
   type t
 
   type serialized =
-    ( (sloc Typed.t * Tree_block.serialized Csymex.Freeable.serialized) list,
+    ( (sloc Typed.t * Block.serialized) list,
       (Cerb_frontend.Symbol.sym * sloc Typed.t) list )
     Template.t
 
@@ -50,6 +50,7 @@ module type S = sig
     Csymex.Result.t
 
   val alloc :
+    ?loc:Cerb_location.t ->
     ?zeroed:bool ->
     sint Typed.t ->
     t ->

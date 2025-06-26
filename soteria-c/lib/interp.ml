@@ -1045,11 +1045,15 @@ module Make (State : State_intf.S) = struct
       let loc = Typed.Ptr.loc ptr in
       let offset = Typed.Ptr.ofs ptr in
       let* len = Layout.size_of_s ty in
+      let block =
+        With_origin.
+          {
+            node = Freeable.Alive [ Tree_block.Zeros { offset; len } ];
+            info = None;
+          }
+      in
       let serialized : State.serialized =
-        {
-          heap = [ (loc, Freeable.Alive [ Tree_block.Zeros { offset; len } ]) ];
-          globs = [];
-        }
+        { heap = [ (loc, block) ]; globs = [] }
       in
       let+ state = State.produce serialized state in
       Ok state
@@ -1060,12 +1064,15 @@ module Make (State : State_intf.S) = struct
       (* I somehow have to support global initialisation urgh.
        I might be able to extract some of that into interp *)
       let** v, _, state = eval_expr expr Store.empty state in
+      let block =
+        With_origin.
+          {
+            node = Freeable.Alive [ Tree_block.TypedVal { offset; ty; v } ];
+            info = None;
+          }
+      in
       let serialized : State.serialized =
-        {
-          heap =
-            [ (loc, Freeable.Alive [ Tree_block.TypedVal { offset; ty; v } ]) ];
-          globs = [];
-        }
+        { heap = [ (loc, block) ]; globs = [] }
       in
       let+ state = State.produce serialized state in
       Ok state
