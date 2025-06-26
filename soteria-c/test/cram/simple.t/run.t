@@ -22,11 +22,13 @@ Symbolic execution of a simple program with symbolic values that fails because o
     [Ok: (0,
           { heap =
             [(V|1|,
-              [TypedVal {offset = 0; ty = signed int; v = 12};
-               Uninit {offset = 4; len = 1020}; (Bound 1024)])];
+              { node =
+                [TypedVal {offset = 0; ty = signed int; v = 12};
+                 Uninit {offset = 4; len = 1020}; (Bound 1024)];
+                info = (Some err.c:5:12-24) })];
             globs = [] });
      Error: Null pointer dereference with trace
-            [• Triggering memory operation: err.c:6:3-10 (cursor: 6:6)]]
+            [• Triggering write: err.c:6:3-10 (cursor: 6:6)]]
   Executed 5 statements
 
 Symbolic execution of a simple program with a horrible pointer indirection *&*x
@@ -35,7 +37,9 @@ Symbolic execution of a simple program with a horrible pointer indirection *&*x
     [Ok: (0,
           { heap =
             [(V|1|,
-              [TypedVal {offset = 0; ty = signed int; v = 12}; (Bound 4)])];
+              { node =
+                [TypedVal {offset = 0; ty = signed int; v = 12}; (Bound 4)];
+                info = (Some indirections.c:4:12-31) })];
             globs = [] });
      Ok: (1, { heap = []; globs = [] })]
   Executed 9 statements
@@ -46,17 +50,23 @@ Checking that memcpy works correctly
     [Ok: (1,
           { heap =
             [(V|1|,
-              [TypedVal {offset = 0; ty = signed int; v = 0};
-               TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)]);
+              { node =
+                [TypedVal {offset = 0; ty = signed int; v = 0};
+                 TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)];
+                info = (Some cpy.c:7:12-35) });
              (V|2|,
-              [TypedVal {offset = 0; ty = signed int; v = 0};
-               TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)])];
+              { node =
+                [TypedVal {offset = 0; ty = signed int; v = 0};
+                 TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)];
+                info = (Some cpy.c:12:12-35) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              [TypedVal {offset = 0; ty = signed int; v = 0};
-               TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)])];
+              { node =
+                [TypedVal {offset = 0; ty = signed int; v = 0};
+                 TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)];
+                info = (Some cpy.c:7:12-35) })];
             globs = [] });
      Ok: (0, { heap = []; globs = [] })]
   Executed 15 statements
@@ -65,192 +75,429 @@ Checking that fuel gets exhausted properly
   Symex terminated with the following outcomes:
     [Error: Failed assertion with trace
             [• Called from here: while_true.c:10:5-18;
-             • Triggering memory operation: while_true.c:10:5-18]]
+             • Triggering operation: while_true.c:10:5-18]]
   Executed 152 statements
 Checking that code cannot branch infinitely
   $ soteria-c exec-main max_branching.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|9|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:5:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:6:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:7:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:8:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|8|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|9|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:5:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:6:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:7:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|8|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:5:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:6:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:8:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|8|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:5:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:6:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:5:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:7:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:8:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|8|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:5:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:7:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:5:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:8:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:5:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|8|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:6:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:7:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:8:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|8|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:6:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:7:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:6:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:8:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:6:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|7|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:7:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:8:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|7|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:7:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|6|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:8:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|6|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
-            [(V|1|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|2|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|3|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|4|, [Uninit {offset = 0; len = 4}; (Bound 4)]);
-             (V|5|, [Uninit {offset = 0; len = 4}; (Bound 4)])];
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:9:12-31) });
+             (V|2|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:10:12-31) });
+             (V|3|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:11:12-31) });
+             (V|4|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:12:12-31) });
+             (V|5|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some max_branching.c:13:12-31) })];
             globs = [] })]
   Executed 112 statements
 
   $ soteria-c exec-main global.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (1,
-          { heap = [(V|1|, [TypedVal {offset = 0; ty = signed int; v = 1}])];
+          { heap =
+            [(V|1|,
+              { node = [TypedVal {offset = 0; ty = signed int; v = 1}];
+                info = None })];
             globs = [(x_484, V|1|)] })]
   Executed 5 statements
   $ soteria-c exec-main global_alias.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
-            [(V|1|, [TypedVal {offset = 0; ty = signed int; v = 0}]);
-             (V|2|, [TypedVal {offset = 0; ty = signed int; v = 0}])];
+            [(V|1|,
+              { node = [TypedVal {offset = 0; ty = signed int; v = 0}];
+                info = None });
+             (V|2|,
+              { node = [TypedVal {offset = 0; ty = signed int; v = 0}];
+                info = None })];
             globs = [(x_586, V|1|); (y_587, V|2|)] })]
   Executed 3 statements
 
   $ soteria-c exec-main structs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
-    [Ok: (0, { heap = [(V|1|, Freed); (V|2|, Freed)]; globs = [] });
-     Ok: (1, { heap = [(V|1|, Freed)]; globs = [] })]
+    [Ok: (0,
+          { heap =
+            [(V|1|, { node = Freed; info = (Some structs.c:14:3-4) });
+             (V|2|, { node = Freed; info = (Some structs.c:18:21-48) })];
+            globs = [] });
+     Ok: (1,
+          { heap = [(V|1|, { node = Freed; info = (Some structs.c:14:3-4) })];
+            globs = [] })]
   Executed 16 statements
 
   $ soteria-c exec-main short_circuit.c --no-ignore-parse-failures --no-ignore-duplicate-symbols

@@ -8,7 +8,7 @@
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [• Triggering memory operation: load.c:3:10-12 (cursor: 3:10)]))
+                [• Triggering read: load.c:3:10-12 (cursor: 3:10)]))
         };
       manifest_bugs = []}
     Analysed {
@@ -16,13 +16,17 @@
       { args = [&(V|1|, V|2|)];
         pre =
         [{ heap =
-           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
+           [(V|1|,
+             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+               info = None })];
            globs = [] }
           ];
         pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|1|)];
         post =
         { heap =
-          [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
+          [(V|1|,
+            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+              info = None })];
           globs = [] };
         ret = (Ok V|3|) };
       manifest_bugs = []}
@@ -48,7 +52,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
-      │           ^^ Triggering memory operation
+      │           ^^ Triggering read
     7 │  }
     8 │  
     9 │  int test_np_uninit()
@@ -60,7 +64,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
   error: Null pointer dereference in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
-      │           ^^ Triggering memory operation
+      │           ^^ Triggering read
     7 │  }
     8 │  
     9 │  int test_np_uninit()
@@ -72,7 +76,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
   error: Accessing uninitialized memory in test_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
-      │           ^^ Triggering memory operation
+      │           ^^ Triggering read
     7 │  }
     8 │  
     9 │  int test_np_uninit()
@@ -93,7 +97,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
   error: Null pointer dereference in test_np
       ┌─ manifest.c:51:3
    51 │    *x = 12;
-      │    ^^^^^^^ Triggering memory operation
+      │    ^^^^^^^ Triggering write
   
   Summaries for load_487:
     Analysed {
@@ -102,7 +106,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [• Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)]))
+                [• Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs = []}
     Analysed {
@@ -110,13 +114,17 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = [&(V|1|, V|2|)];
         pre =
         [{ heap =
-           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
+           [(V|1|,
+             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+               info = None })];
            globs = [] }
           ];
         pc = [(V|3| <= 0x7fffffff); (-0x80000000 <= V|3|); (0 != V|1|)];
         post =
         { heap =
-          [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|3|}])];
+          [(V|1|,
+            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+              info = None })];
           globs = [] };
         ret = (Ok V|3|) };
       manifest_bugs = []}
@@ -141,24 +149,24 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret =
         (Error (Accessing uninitialized memory,
                 [• Called from here: manifest.c:12:3-10;
-                 • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)]))
+                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs =
       [(Accessing uninitialized memory,
         [• Called from here: manifest.c:12:3-10;
-         • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)])]}
+         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
                 [• Called from here: manifest.c:12:3-10;
-                 • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)]))
+                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs =
       [(Null pointer dereference,
         [• Called from here: manifest.c:12:3-10;
-         • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)])]}
+         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
   
   Summaries for test_ok_498:
     Analysed {
@@ -179,12 +187,12 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret =
         (Error (Accessing uninitialized memory,
                 [• Called from here: manifest.c:21:3-10;
-                 • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)]))
+                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs =
       [(Accessing uninitialized memory,
         [• Called from here: manifest.c:21:3-10;
-         • Triggering memory operation: manifest.c:6:10-12 (cursor: 6:10)])]}
+         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -202,11 +210,11 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [• Triggering memory operation: manifest.c:51:3-10 (cursor: 51:6)]))
+                [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)]))
         };
       manifest_bugs =
       [(Null pointer dereference,
-        [• Triggering memory operation: manifest.c:51:3-10 (cursor: 51:6)])]}
+        [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)])]}
   
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
@@ -222,7 +230,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [• Triggering memory operation: if_sat_one_ok.c:6:12-14 (cursor: 6:12)]))
+                [• Triggering read: if_sat_one_ok.c:6:12-14 (cursor: 6:12)]))
         };
       manifest_bugs = []}
     Analysed {
@@ -230,7 +238,9 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       { args = [V|1|; &(V|2|, V|3|)];
         pre =
         [{ heap =
-           [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|4|}])];
+           [(V|2|,
+             { node = [TypedVal {offset = V|3|; ty = signed int; v = V|4|}];
+               info = None })];
            globs = [] }
           ];
         pc =
@@ -238,7 +248,9 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
           (V|1| <= 0x7fffffff); (-0x80000000 <= V|1|)];
         post =
         { heap =
-          [(V|2|, [TypedVal {offset = V|3|; ty = signed int; v = V|4|}])];
+          [(V|2|,
+            { node = [TypedVal {offset = V|3|; ty = signed int; v = V|4|}];
+              info = None })];
           globs = [] };
         ret = (Ok V|4|) };
       manifest_bugs = []}
@@ -267,7 +279,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [• Triggering memory operation: array_iter.c:6:12-16]))
+                [• Triggering read: array_iter.c:6:12-16]))
         };
       manifest_bugs = []}
     Analysed {
@@ -275,7 +287,9 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       { args = [&(V|1|, V|2|); V|3|];
         pre =
         [{ heap =
-           [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+           [(V|1|,
+             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+               info = None })];
            globs = [] }
           ];
         pc =
@@ -283,7 +297,9 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
           (0 < V|3|); (V|3| <= 0x7fffffff); (-0x80000000 <= V|3|)];
         post =
         { heap =
-          [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+          [(V|1|,
+            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+              info = None })];
           globs = [] };
         ret = (Ok V|4|) };
       manifest_bugs = []}
@@ -292,10 +308,15 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       { args = [&(V|1|, V|2|); V|3|];
         pre =
         [{ heap =
-           [(V|1|, [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}])];
+           [(V|1|,
+             { node =
+               [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+               info = None })];
            globs = [] };
           { heap =
-            [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+            [(V|1|,
+              { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+                info = None })];
             globs = [] }
           ];
         pc =
@@ -305,8 +326,10 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post =
         { heap =
           [(V|1|,
-            [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
-             TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}])];
+            { node =
+              [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
+               TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+              info = None })];
           globs = [] };
         ret = (Ok (V|4| + V|5|)) };
       manifest_bugs = []}
@@ -315,14 +338,21 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       { args = [&(V|1|, V|2|); V|3|];
         pre =
         [{ heap =
-           [(V|1|, [TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}])];
+           [(V|1|,
+             { node =
+               [TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}];
+               info = None })];
            globs = [] };
           { heap =
             [(V|1|,
-              [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}])];
+              { node =
+                [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+                info = None })];
             globs = [] };
           { heap =
-            [(V|1|, [TypedVal {offset = V|2|; ty = signed int; v = V|4|}])];
+            [(V|1|,
+              { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+                info = None })];
             globs = [] }
           ];
         pc =
@@ -333,9 +363,11 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post =
         { heap =
           [(V|1|,
-            [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
-             TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|};
-             TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}])];
+            { node =
+              [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
+               TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|};
+               TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}];
+              info = None })];
           globs = [] };
         ret = (Ok ((V|4| + V|5|) + V|6|)) };
       manifest_bugs = []}
