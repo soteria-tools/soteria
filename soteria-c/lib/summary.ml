@@ -7,6 +7,15 @@ type after_exec = [ `After_exec ]
 type pruned = [ `Pruned ]
 type analysed = [ `Analysed ]
 
+let leaks_to_error ~(loc : Cerb_location.t) leaks =
+  let elements =
+    List.map
+      (fun loc -> Call_trace.mk_element ~loc ~msg:"This allocation leaked" ())
+      leaks
+  in
+  let leak_msg = Call_trace.singleton ~loc () in
+  (`Memory_leak, elements @ leak_msg)
+
 type raw = {
   args : T.cval Typed.t list;
       (** List of arguments values, corresponding to the formal arguments in
@@ -28,7 +37,17 @@ type raw = {
 
 type _ t =
   | After_exec : raw -> after_exec t
-  | Pruned : { raw : raw; memory_leak : bool } -> pruned t
+  | Pruned : {
+      raw : raw;
+      memory_leaks : Cerb_location.t list option;
+          (** If [None], no memory leak was detected. If [Some l], then some
+              memory leak was detected and, in addition, we return a list of all
+              *known* code location where something that leaked was allocated.
+              It is possible for this field to be [Some []], which means that
+              there was a leak, but we did not track any allocation site for it.
+          *)
+    }
+      -> pruned t
   | Analysed : {
       raw : raw;
       manifest_bugs : (Error.t * Cerb_location.t Call_trace.t) list;
@@ -40,9 +59,11 @@ let pp : type a. Format.formatter -> a t -> unit =
  fun ft summary ->
   match summary with
   | After_exec raw -> Fmt.pf ft "@[<2>After_exec@ %a@]" (Fmt.parens pp_raw) raw
-  | Pruned { raw; memory_leak } ->
+  | Pruned { raw; memory_leaks } ->
       Fmt.pf ft "@[<v 2>Pruned {@ @[raw =@ %a@];@ @[memory_leak =@ %a@]}@]"
-        pp_raw raw Fmt.bool memory_leak
+        pp_raw raw
+        (Fmt.Dump.option @@ Fmt.Dump.list Fmt_ail.pp_loc)
+        memory_leaks
   | Analysed { raw; manifest_bugs } ->
       Fmt.pf ft "@[<v 2>Analysed {@ @[raw =@ %a@];@ @[manifest_bugs =@ %a@]}@]"
         pp_raw raw
@@ -61,7 +82,9 @@ let filter_pc relevant_vars pc =
 (** Removes any bit of the state that does not any "relevant variables". i.e.,
     bits that are not reachable from the precondition. *)
 let filter_serialized_state relevant_vars (state : State.serialized) =
-  let leak = ref false in
+  (* leak_origins tracks the source code location of allocation for each heap location that was detected to leak.
+     If empty, no leak is detected. *)
+  let leak_origins = ref [] in
   let resulting_heap =
     ListLabels.filter state.heap ~f:(fun (loc, b) ->
         let relevant =
@@ -71,14 +94,15 @@ let filter_serialized_state relevant_vars (state : State.serialized) =
         in
         if relevant then true
         else (
-          if not (Block.is_freed b) then leak := true;
+          (* If the block is not freed, we record where the object was allocated *)
+          if not (Block.is_freed b) then leak_origins := b.info :: !leak_origins;
           L.trace (fun m ->
-              m "Filtering out unreachable location: %a" Typed.ppa loc);
+              m "Filtering out unreachable location: %a." Typed.ppa loc);
           false))
   in
   (* Globals are not filtered: if they are in the spec, they were bi-abduced and necessary *)
   let resulting_state = { state with heap = resulting_heap } in
-  (resulting_state, !leak)
+  (resulting_state, !leak_origins)
 
 let init_reachable_vars summary =
   let init_reachable = Var_hashset.with_capacity 0 in
@@ -135,14 +159,14 @@ let prune (summary : after_exec t) : pruned t =
   let reachable = Var_graph.reachable_from graph init_reachable in
   (* We can now filter the summary to keep only the reachable values *)
   let new_pc = filter_pc reachable summary.pc in
-  let new_post, memory_leak = filter_serialized_state reachable summary.post in
-  Pruned
-    {
-      raw = { summary with pc = new_pc; post = new_post };
-      memory_leak =
-        (* Memory leaks only make sense for functions that terminate successfully *)
-        Result.is_ok summary.ret && memory_leak;
-    }
+  let new_post, memory_leaks = filter_serialized_state reachable summary.post in
+  let memory_leaks =
+    (* Memory leaks only make sense for functions that terminate successfully *)
+    match (summary.ret, memory_leaks) with
+    | Ok _, (_ :: _ as l) -> Some (List.filter_map Fun.id l)
+    | _ -> None
+  in
+  Pruned { raw = { summary with pc = new_pc; post = new_post }; memory_leaks }
 
 (** Current criterion: a bug is manifest if its path condition is a consequence
     of the heap's and function arguments well-formedness conditions *)
@@ -151,7 +175,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
   match summary with
   | After_exec _ -> analyse ~fid (prune summary)
   | Analysed _ -> summary
-  | Pruned { raw = summary; memory_leak } -> (
+  | Pruned { raw = summary; memory_leaks } -> (
       let@ () =
         Soteria_logs.Logs.with_section
           ("Analysing a summary for " ^ Cerb_frontend.Symbol.show_symbol fid)
@@ -161,16 +185,16 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
             (Cerb_frontend.Symbol.show_symbol fid)
             pp_raw summary);
       let arg_tys = Option.get (Ail_helpers.get_param_tys fid) in
-      let loc =
-        Ail_helpers.find_fun_loc fid
-        |> Option.value ~default:Cerb_location.unknown
-      in
-      let manifest_leak =
-        if memory_leak then [ (`Memory_leak, Call_trace.singleton ~loc ()) ]
-        else []
-      in
       match summary.ret with
-      | Ok _ -> Analysed { raw = summary; manifest_bugs = manifest_leak }
+      | Ok _ ->
+          let loc =
+            Ail_helpers.find_fun_loc fid
+            |> Option.value ~default:Cerb_location.unknown
+          in
+          let manifest_leak =
+            Option.map (leaks_to_error ~loc) memory_leaks |> Option.to_list
+          in
+          Analysed { raw = summary; manifest_bugs = manifest_leak }
       | Error error ->
           let module Subst = Soteria_symex.Substs.Subst in
           let module From_iter = Subst.From_iter (Csymex) in
