@@ -45,7 +45,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       │ ╰──
    35 │    
   
-  error: Null pointer dereference in test_np_uninit
+  error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
       │           ^^ Triggering memory operation
@@ -57,7 +57,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    12 │    load(x);
       │    ------- 1: Called from here
   
-  error: Accessing uninitialized memory in test_np_uninit
+  error: Null pointer dereference in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
       │           ^^ Triggering memory operation

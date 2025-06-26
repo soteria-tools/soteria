@@ -10,6 +10,7 @@ type t = {
   no_ignore_duplicate_symbols : bool; [@default false]
   parse_only : bool; [@default false]
   dump_summaries_file : string option; [@default None]
+  show_manifest_summaries : bool; [@default false]
 }
 [@@deriving make]
 
