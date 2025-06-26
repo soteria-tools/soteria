@@ -884,7 +884,7 @@ module M (State : State_intf.S) = struct
   let fixme_try_cleanup ~args:_ state =
     (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
               we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    let box = _mk_box (Sptr.null_ptr, None) in
+    let box = _mk_box (Sptr.null_ptr, Some 0s) in
     Result.ok (box, state)
 
   let breakpoint ~args:_ state = State.error `Breakpoint state

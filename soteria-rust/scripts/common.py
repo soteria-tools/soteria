@@ -115,9 +115,6 @@ KNOWN_ISSUES = {
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
     "PointerComparison/ptr_comparison.rs": "Error when monomorphising a fn meants ptr meta is lost",
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
-    "Uninit/access-padding-enum-multiple-variants.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "Uninit/access-padding-enum-single-field.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "Uninit/access-padding-enum-single-variant.rs": "Kani assumes discriminants are i32, but Charon gives isize",
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
     # Miri
     "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",

@@ -699,19 +699,18 @@ module Make (State : State_intf.S) = struct
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
-    | Discriminant (place, kind) -> (
+    | Discriminant (place, enum) -> (
         let* loc, _ = resolve_place place in
-        let variants = Crate.as_enum kind in
+        let variants = Crate.as_enum enum in
         match variants with
         (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
         | [ { fields = []; discriminant; _ } ] ->
             let discr = Typed.int_z discriminant.value in
             ok (Base discr)
         | var :: _ ->
-            let int_ty = var.discriminant.int_ty in
-            let layout = Layout.of_variant var in
+            let layout = Layout.of_variant enum var in
             let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
-            let discr_ty = Types.TLiteral (TInteger int_ty) in
+            let discr_ty = Layout.enum_discr_ty enum in
             let^^ loc = Sptr.offset loc discr_ofs in
             State.load (loc, None) discr_ty
         | [] -> Fmt.kstr not_impl "Unsupported discriminant for empty enums")

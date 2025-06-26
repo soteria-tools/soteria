@@ -74,7 +74,7 @@ let empty_generics = TypesUtils.empty_generic_args
 
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let rec is_dst : Types.ty -> bool = function
-  | TAdt { id = TBuiltin TSlice; _ } | TAdt { id = TBuiltin TStr; _ } -> true
+  | TAdt { id = TBuiltin (TSlice | TStr); _ } | TDynTrait _ -> true
   | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
       | None -> false
@@ -89,6 +89,13 @@ let max_array_len sub_size =
   let isize_bits = (Archi.word_size * 8) - 1 in
   if sub_size = 0 then Z.of_int isize_bits
   else Z.((one lsl isize_bits) / of_int sub_size)
+
+let enum_discr_ty adt_id : Types.ty =
+  let adt = Crate.get_adt adt_id in
+  match adt.layout with
+  | Some { discriminant_layout = Some { tag_ty; _ }; _ } ->
+      TLiteral (TInteger tag_ty)
+  | _ -> TLiteral (TInteger Usize)
 
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
@@ -136,7 +143,7 @@ let rec layout_of (ty : Types.ty) : layout =
       | Enum [ { fields = []; _ } ] ->
           { size = 0; align = 1; members_ofs = [||] }
       | Enum variants ->
-          let layouts = List.map of_variant variants in
+          let layouts = List.map (of_variant id) variants in
           List.fold_left
             (fun acc l -> if l.size > acc.size then l else acc)
             (List.hd layouts) (List.tl layouts)
@@ -206,16 +213,16 @@ and layout_of_members members =
     members_ofs = Array.of_list members_ofs;
   }
 
-and of_variant (variant : Types.variant) =
+and of_variant adt_id (variant : Types.variant) =
   Session.get_or_compute_cached_layout_var variant @@ fun () ->
-  let discr_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
+  let discr_ty = enum_discr_ty adt_id in
   let members = discr_ty :: field_tys variant.fields in
   layout_of_members members
 
 and of_enum_variant adt_id variant =
   let variants = Crate.as_enum adt_id in
   let variant = Types.VariantId.nth variants variant in
-  of_variant variant
+  of_variant adt_id variant
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.trait_id with
@@ -367,8 +374,8 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
-          let disc_ty = (List.hd variants).discriminant.int_ty in
-          let* disc_val = nondet_literal_ty (Values.TInteger disc_ty) in
+          let disc_ty = TypesUtils.ty_as_literal @@ enum_discr_ty t_id in
+          let* disc_val = nondet_literal_ty disc_ty in
           let* res =
             match_on variants ~constr:(fun (v : Types.variant) ->
                 disc_val ==@ value_of_scalar v.discriminant)
