@@ -54,7 +54,7 @@ module M (Heap : Heap_intf.S) = struct
           | Rem ->
               if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (rem l (cast r))
-          | Shl | Shr ->
+          | Shl | Shr | WrappingShl | WrappingShr ->
               let ity =
                 match ty with
                 | TInteger ity -> ity
@@ -64,7 +64,11 @@ module M (Heap : Heap_intf.S) = struct
               in
               let size = 8 * Layout.size_of_int_ty ity in
               let signed = Layout.is_signed ity in
-              let op = if bop = Shl then Typed.bit_shl else Typed.bit_shr in
+              let op =
+                match bop with
+                | Shl | WrappingShl -> Typed.bit_shl
+                | _ -> Typed.bit_shr
+              in
               Result.ok (op ~size ~signed l r)
           | _ -> not_impl "Invalid binop in eval_lit_binop"
         in

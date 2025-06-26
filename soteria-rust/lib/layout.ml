@@ -74,8 +74,8 @@ let empty_generics = TypesUtils.empty_generic_args
 
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let rec is_dst : Types.ty -> bool = function
-  | TAdt (TBuiltin TSlice, _) | TAdt (TBuiltin TStr, _) -> true
-  | TAdt (TAdtId id, _) when Crate.is_struct id -> (
+  | TAdt { id = TBuiltin TSlice; _ } | TAdt { id = TBuiltin TStr; _ } -> true
+  | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
       | None -> false
       | Some last -> is_dst Types.(last.field_ty))
@@ -99,7 +99,7 @@ let rec layout_of (ty : Types.ty) : layout =
       let align = align_of_literal_ty ty in
       { size; align; members_ofs = [||] }
   (* Fat pointers *)
-  | TAdt (TBuiltin TBox, { types = [ sub_ty ]; _ })
+  | TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } }
   | TRef (_, sub_ty, _)
   | TRawPtr (sub_ty, _)
     when is_dst sub_ty ->
@@ -109,7 +109,7 @@ let rec layout_of (ty : Types.ty) : layout =
         members_ofs = [||];
       }
   (* Refs, pointers, boxes *)
-  | TAdt (TBuiltin TBox, _) | TRef (_, _, _) | TRawPtr (_, _) ->
+  | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   (* Dynamically sized types -- we assume they have a size of 0. In truth, these types should
      simply never be allocated directly, and instead can only be obtained hidden behind
@@ -117,17 +117,17 @@ let rec layout_of (ty : Types.ty) : layout =
      the tail in a DST struct.
      FIXME: Maybe we should mark the layout as a DST, and ensure a DST layout's size is never
      used for an allocation. *)
-  | TAdt (TBuiltin (TStr as ty), generics)
-  | TAdt (TBuiltin (TSlice as ty), generics) ->
+  | TAdt { id = TBuiltin (TStr as ty); generics }
+  | TAdt { id = TBuiltin (TSlice as ty); generics } ->
       let sub_ty =
         if ty = TSlice then List.hd generics.types else TLiteral (TInteger U8)
       in
       let sub_layout = layout_of sub_ty in
       { size = 0; align = sub_layout.align; members_ofs = [||] }
   (* Tuples *)
-  | TAdt (TTuple, { types; _ }) -> layout_of_members types
+  | TAdt { id = TTuple; generics = { types; _ } } -> layout_of_members types
   (* Custom ADTs (struct, enum, etc.) *)
-  | TAdt (TAdtId id, _) -> (
+  | TAdt { id = TAdtId id; _ } -> (
       let adt = Crate.get_adt id in
       match adt.kind with
       | Struct fields -> layout_of_members @@ field_tys fields
@@ -159,19 +159,23 @@ let rec layout_of (ty : Types.ty) : layout =
       | TDeclError _ -> raise (CantComputeLayout ("DeclError", ty))
       | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
   (* Arrays *)
-  | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ size ]; _ }) ->
+  | TAdt
+      {
+        id = TBuiltin TArray;
+        generics = { types = [ ty ]; const_generics = [ size ]; _ };
+      } ->
       let len = Charon_util.int_of_const_generic size in
       let sub_layout = layout_of ty in
       if Z.(of_int len > max_array_len sub_layout.size) then raise InvalidLayout;
       let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
       { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
-  | TAdt (TBuiltin TArray, _) -> failwith "Invalid TArray shape"
+  | TAdt { id = TBuiltin TArray; _ } -> failwith "Invalid TArray shape"
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> { size = 0; align = 1; members_ofs = [||] }
   (* Function pointers (can point to a function or a state-less closure). *)
-  | TArrow _ ->
+  | TFnPtr _ ->
       { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
   (* FIXME: this is wrong but at least some more code runs... *)
   | TDynTrait _ -> { size = 0; align = 1; members_ofs = [||] }
@@ -215,8 +219,8 @@ and of_enum_variant adt_id variant =
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.trait_id with
-  | TraitImpl (impl, _) ->
-      let impl = Crate.get_trait_impl impl in
+  | TraitImpl { id; _ } ->
+      let impl = Crate.get_trait_impl id in
       let _, ty = List.find (fun (n, _) -> ty_name = n) impl.types in
       ty
   | _ ->
@@ -348,14 +352,18 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
   | Types.TLiteral lit ->
       let+ cval = nondet_literal_ty lit in
       Base cval
-  | TAdt (TTuple, { types; _ }) ->
+  | TAdt { id = TTuple; generics = { types; _ } } ->
       let+ fields = nondets types in
       Tuple fields
-  | TAdt (TBuiltin TArray, { const_generics = [ len ]; types = [ ty ]; _ }) ->
+  | TAdt
+      {
+        id = TBuiltin TArray;
+        generics = { const_generics = [ len ]; types = [ ty ]; _ };
+      } ->
       let size = Charon_util.int_of_const_generic len in
       let+ fields = nondets @@ List.init size (fun _ -> ty) in
       Array fields
-  | TAdt (TAdtId t_id, _) -> (
+  | TAdt { id = TAdtId t_id; _ } -> (
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
@@ -398,13 +406,17 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   | TLiteral lit_ty -> ( try Some (Base (zeroed_lit lit_ty)) with _ -> None)
   | TRawPtr _ -> Some (Ptr (null_ptr, None))
   | TRef _ -> None
-  | TAdt (TTuple, { types; _ }) ->
+  | TAdt { id = TTuple; generics = { types; _ } } ->
       zeroeds types |> Option.map (fun fields -> Tuple fields)
-  | TAdt (TBuiltin TArray, { types = [ ty ]; const_generics = [ len ]; _ }) ->
+  | TAdt
+      {
+        id = TBuiltin TArray;
+        generics = { types = [ ty ]; const_generics = [ len ]; _ };
+      } ->
       let len = int_of_const_generic len in
       zeroed ~null_ptr ty
       |> Option.map (fun v -> Array (List.init len (fun _ -> v)))
-  | TAdt (TAdtId t_id, _) -> (
+  | TAdt { id = TAdtId t_id; _ } -> (
       let adt = Crate.get_adt t_id in
       match adt.kind with
       | Struct fields ->
@@ -443,7 +455,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
 
 let rec is_inhabited : Types.ty -> bool = function
   | TNever -> false
-  | TAdt (TAdtId id, _) -> (
+  | TAdt { id = TAdtId id; _ } -> (
       let adt = Crate.get_adt id in
       match adt.kind with
       | Struct fs -> List.for_all is_inhabited @@ Charon_util.field_tys fs
@@ -455,7 +467,8 @@ let rec is_inhabited : Types.ty -> bool = function
               List.for_all is_inhabited @@ Charon_util.field_tys v.fields)
             vars
       | _ -> true)
-  | TAdt (TTuple, { types; _ }) -> List.for_all is_inhabited types
+  | TAdt { id = TTuple; generics = { types; _ } } ->
+      List.for_all is_inhabited types
   | _ -> true
 
 (** Returns the given type as it's unique representant if it's a ZST; otherwise
@@ -465,10 +478,10 @@ let rec as_zst : Types.ty -> 'a rust_val option =
   let as_zsts tys = Monad.OptionM.all as_zst tys in
   function
   | TNever -> Some (Tuple [])
-  | TAdt (TBuiltin TArray, { const_generics = [ len ]; _ })
+  | TAdt { id = TBuiltin TArray; generics = { const_generics = [ len ]; _ } }
     when int_of_const_generic len = 0 ->
       Some (Array [])
-  | TAdt (TAdtId id, _) -> (
+  | TAdt { id = TAdtId id; _ } -> (
       let adt = Crate.get_adt id in
       match adt.kind with
       | Struct fs ->
@@ -480,13 +493,11 @@ let rec as_zst : Types.ty -> 'a rust_val option =
           Some (Enum (Typed.int_z discriminant.value, []))
       | Enum _ -> None
       | _ -> None)
-  | TAdt (TTuple, { types; _ }) ->
+  | TAdt { id = TTuple; generics = { types; _ } } ->
       as_zsts types |> Option.map (fun fs -> Tuple fs)
   | TFnDef binder ->
-      let { fun_id; fun_generics = generics } : Types.fun_decl_ref =
-        binder.binder_value
-      in
-      Some (ConstFn { func = FunId (FRegular fun_id); generics })
+      let { id; generics } : Types.fun_decl_ref = binder.binder_value in
+      Some (ConstFn { func = FunId (FRegular id); generics })
   | _ -> None
 
 (** Apply the compiler-attribute to the given value *)
@@ -513,7 +524,7 @@ let apply_attributes v attributes =
   Result.fold_list attributes ~f:(fun () -> apply_attribute v) ~init:()
 
 let rec is_unsafe_cell : Types.ty -> bool = function
-  | TAdt (TAdtId adt_id, _) -> (
+  | TAdt { id = TAdtId adt_id; _ } -> (
       let adt = Crate.get_adt adt_id in
       if adt.item_meta.lang_item = Some "unsafe_cell" then true
       else
@@ -524,9 +535,11 @@ let rec is_unsafe_cell : Types.ty -> bool = function
             @@ Iter.flat_map_l (fun (v : Types.variant) -> field_tys v.fields)
             @@ Iter.of_list vs
         | _ -> false)
-  | TAdt (TBuiltin (TArray | TSlice), { types = [ ty ]; _ }) ->
+  | TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
+    ->
       is_unsafe_cell ty
-  | TAdt (TTuple, { types; _ }) -> List.exists is_unsafe_cell types
+  | TAdt { id = TTuple; generics = { types; _ } } ->
+      List.exists is_unsafe_cell types
   | _ -> false
 
 (** Traverses the given type and rust value, and returns all findable references
@@ -536,16 +549,19 @@ let rec is_unsafe_cell : Types.ty -> bool = function
 let rec ref_tys_in (v : 'a rust_val) (ty : Types.ty) :
     ('a full_ptr * Types.ty) list =
   match (v, ty) with
-  | Ptr ptr, (TAdt (TBuiltin TBox, _) | TRef _) -> [ (ptr, get_pointee ty) ]
+  | Ptr ptr, (TAdt { id = TBuiltin TBox; _ } | TRef _) ->
+      [ (ptr, get_pointee ty) ]
   | Base _, _ -> []
-  | Struct vs, TAdt (TAdtId adt_id, _) ->
+  | Struct vs, TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_struct adt_id in
       List.concat_map2 ref_tys_in vs (field_tys fields)
-  | Array vs, TAdt (TBuiltin (TArray | TSlice), { types = [ ty ]; _ }) ->
+  | ( Array vs,
+      TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
+    ) ->
       List.concat_map (fun v -> ref_tys_in v ty) vs
-  | Tuple vs, TAdt (TTuple, { types; _ }) ->
+  | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
       List.concat_map2 ref_tys_in vs types
-  | Enum (d, vs), TAdt (TAdtId adt_id, _) -> (
+  | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
       match Typed.kind d with
       | Int d -> (
           let variants = Crate.as_enum adt_id in
@@ -559,7 +575,7 @@ let rec ref_tys_in (v : 'a rust_val) (ty : Types.ty) :
               List.concat_map2 ref_tys_in vs (field_tys Types.(v.fields))
           | None -> [])
       | _ -> [])
-  | Union (fid, v), TAdt (TAdtId adt_id, _) ->
+  | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_union adt_id in
       let field = Types.FieldId.nth fields fid in
       ref_tys_in v field.field_ty

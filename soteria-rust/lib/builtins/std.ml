@@ -141,10 +141,13 @@ module M (Heap : Heap_intf.S) = struct
       (* Unfortunate, but right now i don't have a better way to handle this... *)
       | ( [ ptr; Struct range ],
           [
-            TRef (_, TAdt (TBuiltin ((TArray | TSlice) as mode), gargs), _);
-            TAdt (TAdtId range_id, _);
+            TRef
+              ( _,
+                TAdt { id = TBuiltin ((TArray | TSlice) as mode); generics },
+                _ );
+            TAdt { id = TAdtId range_id; _ };
           ] ) ->
-          (ptr, range, mode, gargs, range_id)
+          (ptr, range, mode, generics, range_id)
       | _ -> failwith "Unexpected input type"
     in
     let range_item =
@@ -221,13 +224,13 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> failwith "size_of_val: Invalid input type"
     in
     match (ty, args) with
-    | TAdt (TBuiltin TSlice, { types = [ sub_ty ]; _ }), [ Ptr (_, Some meta) ]
-      ->
+    | ( TAdt { id = TBuiltin TSlice; generics = { types = [ sub_ty ]; _ } },
+        [ Ptr (_, Some meta) ] ) ->
         let* len = cast_checked meta ~ty:Typed.t_int in
         let+ size = Layout.size_of_s sub_ty in
         let size = size *@ len in
         Ok (Base size, state)
-    | TAdt (TBuiltin TStr, _), [ Ptr (_, Some meta) ] ->
+    | TAdt { id = TBuiltin TStr; _ }, [ Ptr (_, Some meta) ] ->
         let+ len = cast_checked meta ~ty:Typed.t_int in
         let size = Layout.size_of_int_ty U8 in
         let size = Typed.int size *@ len in
@@ -274,11 +277,6 @@ module M (Heap : Heap_intf.S) = struct
       let v = if op = Expressions.Add then v else ~-v in
       let++ ptr' = Sptr.offset ~check ptr v |> Heap.lift_err state in
       (Ptr (ptr', meta), state)
-
-  let box_into_raw ~args state =
-    (* internally a box is exactly a pointer so nothing to do *)
-    let box_ptr = List.hd args in
-    Result.ok (box_ptr, state)
 
   let ptr_offset_from unsigned (funsig : GAst.fun_sig) ~args state =
     let ptr1, ptr2 =
@@ -549,7 +547,7 @@ module M (Heap : Heap_intf.S) = struct
   let variant_count (mono : Types.generic_args) ~args:_ state =
     let ty = List.hd mono.types in
     match ty with
-    | Types.TAdt (TAdtId id, _) when Crate.is_enum id ->
+    | TAdt { id = TAdtId id; _ } when Crate.is_enum id ->
         let variants = Crate.as_enum id in
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
@@ -559,7 +557,7 @@ module M (Heap : Heap_intf.S) = struct
 
   let std_panic ~args:_ state = Heap.error (`Panic None) state
 
-  let float_is (fp : fpclass) ~args state =
+  let float_is (fp : Svalue.FloatClass.t) ~args state =
     let v =
       match args with
       | [ Base f ] -> f
@@ -570,11 +568,11 @@ module M (Heap : Heap_intf.S) = struct
     in
     let res =
       match fp with
-      | FP_nan -> Typed.is_nan v
-      | FP_normal -> Typed.is_normal v
-      | FP_infinite -> Typed.is_infinite v
-      | FP_zero -> Typed.is_zero v
-      | FP_subnormal -> Typed.is_subnormal v
+      | NaN -> Typed.is_nan v
+      | Normal -> Typed.is_normal v
+      | Infinite -> Typed.is_infinite v
+      | Zero -> Typed.is_zero v
+      | Subnormal -> Typed.is_subnormal v
     in
     Result.ok (Base (Typed.int_of_bool res), state)
 
@@ -868,10 +866,26 @@ module M (Heap : Heap_intf.S) = struct
           ~fe:(fun (_, state) ->
             Heap.error (`StdErr "catch_unwind unwinded in catch") state))
 
+  let _mk_box ptr =
+    let non_null = Struct [ Ptr ptr ] in
+    let phantom_data = Struct [] in
+    let unique = Struct [ non_null; phantom_data ] in
+    let allocator = Struct [] in
+    Struct [ unique; allocator ]
+
   let fixme_try_cleanup ~args:_ state =
-    (* FIXME: this is extremely wrong !! we need Charon to stop translating boxes
-       weirdly and this should go away, for now this at least means catch_unwind works. *)
-    Result.ok (Ptr (Sptr.null_ptr, None), state)
+    (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
+              we return a Box to a null pointer, hoping the client code doesn't access it. *)
+    let box = _mk_box (Sptr.null_ptr, None) in
+    Result.ok (box, state)
 
   let breakpoint ~args:_ state = Heap.error `Breakpoint state
+
+  let fixme_box_new (fun_sig : UllbcAst.fun_sig) ~args state =
+    let ty = List.hd fun_sig.inputs in
+    let value = List.hd args in
+    let** ptr, state = Heap.alloc_ty ty state in
+    let++ (), state = Heap.store ptr ty value state in
+    let box = _mk_box ptr in
+    (box, state)
 end
