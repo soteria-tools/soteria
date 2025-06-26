@@ -43,22 +43,47 @@ module Config = struct
       $ with_miri_flag)
 end
 
+module Global_config = struct
+  open Soteria_rust_lib.Config
+
+  let make_from_args logs terminal solver rusteria =
+    make_global ~logs ~terminal ~solver ~rusteria
+
+  let term =
+    Cmdliner.Term.(
+      const make_from_args
+      $ Soteria_logs.Cli.term
+      $ Soteria_terminal.Cli.term
+      $ Soteria_c_values.Solver_config.Cli.term
+      $ Config.term)
+end
+
+let exits =
+  [
+    Cmd.Exit.info ~doc:"on success" 0;
+    Cmd.Exit.info ~doc:"on failure (bug or error found)" 1;
+    Cmd.Exit.info ~doc:"on crash caused by Rusteria" 2;
+    Cmd.Exit.info ~doc:"on crash caused by Charon" 3;
+  ]
+
 let file_arg =
   let doc = "FILE" in
   Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
 
-module Exec_main = struct
+module Exec_rustc = struct
   let term =
     Term.(
-      const Soteria_rust_lib.Driver.exec_main_and_print
-      $ Soteria_logs.Cli.term
-      $ Soteria_terminal.Cli.term
-      $ Soteria_c_values.Solver_config.Cli.term
-      $ Config.term
-      $ file_arg)
+      const Soteria_rust_lib.Driver.exec_rustc $ Global_config.term $ file_arg)
 
-  let cmd = Cmd.v (Cmd.info "exec-main") term
+  let cmd =
+    Cmd.v
+      (Cmd.info ~exits
+         ~doc:
+           "Run Rusteria on the specified file; this will use Rustc to compile \
+            that file only (not the crate), and look for all entrypoints."
+         "rustc")
+      term
 end
 
-let cmd = Cmd.group (Cmd.info "soteria-rust") [ Exec_main.cmd ]
+let cmd = Cmd.group (Cmd.info ~exits "soteria-rust") [ Exec_rustc.cmd ]
 let () = exit @@ Cmd.eval cmd

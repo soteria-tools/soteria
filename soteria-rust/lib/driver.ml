@@ -12,15 +12,14 @@ module Cleaner = struct
   let files = ref []
   let touched file = files := file :: !files
   let cleanup () = List.iter Sys.remove !files
-  let init ~clean () = if clean then at_exit cleanup
+  let () = at_exit (fun () -> if !Config.current.cleanup then cleanup ())
 end
 
-let config_set log_config term_config solver_config config =
-  Solver_config.set solver_config;
-  Soteria_logs.Config.check_set_and_lock log_config;
-  Soteria_terminal.Config.set_and_lock term_config;
-  Config.set config;
-  Cleaner.init ~clean:config.cleanup ()
+let config_set (config : Config.global) =
+  Solver_config.set config.solver;
+  Soteria_logs.Config.check_set_and_lock config.logs;
+  Soteria_terminal.Config.set_and_lock config.terminal;
+  Config.set config.rusteria
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
@@ -129,8 +128,8 @@ let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
-let exec_main_and_print log_config term_config solver_config config file_name =
-  config_set log_config term_config solver_config config;
+let exec_rustc config file_name =
+  config_set config;
   match
     let plugin = Plugin.create () in
     let crate = parse_ullbc_of_file ~plugin file_name in

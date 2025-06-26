@@ -1,5 +1,5 @@
 Test kani::any
-  $ soteria-rust exec-main any.rs --clean --kani
+  $ soteria-rust rustc any.rs --clean --kani
   note: Done, no errors found
   
   any::any_bool: ran 2 branches
@@ -12,7 +12,7 @@ Test kani::any
   PC 3: (0 == V|1|)
 
 Test kani::assume
-  $ soteria-rust exec-main assume.rs --clean --kani
+  $ soteria-rust rustc assume.rs --clean --kani
   note: Done, no errors found
   
   assume::assume_bool: ran 1 branch
@@ -24,14 +24,14 @@ Test kani::assume
         (-0x80000000 <= V|1|)
 
 Test #[kani::should_panic]
-  $ soteria-rust exec-main should_panic.rs --clean --kani
+  $ soteria-rust rustc should_panic.rs --clean --kani
   note: Done, no errors found
   
   should_panic::when_at_the_disco: ran 1 branch
   PC 1: true
 
 Test kani::assert
-  $ soteria-rust exec-main assert.rs --clean --kani
+  $ soteria-rust rustc assert.rs --clean --kani
   error: Found issues
   
   assert::assert_false: error in 4 branches (out of 2):
@@ -101,7 +101,7 @@ Test kani::assert
   [1]
 
 Test kani::slice::any_slice_of_array
-  $ soteria-rust exec-main any_slice.rs --clean --kani
+  $ soteria-rust rustc any_slice.rs --clean --kani
   note: Done, no errors found
   
   any_slice::main: ran 7 branches
