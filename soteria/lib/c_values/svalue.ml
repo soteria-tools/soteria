@@ -247,6 +247,7 @@ let rec pp ft t =
       | None -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l)
 
 let[@inline] equal a b = Int.equal a.tag b.tag
+let[@inline] compare a b = Int.compare a.tag b.tag
 
 let rec sure_neq a b =
   (not (equal_ty a.node.ty b.node.ty))
