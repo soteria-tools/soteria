@@ -3,8 +3,8 @@ open Rustsymex.Syntax
 open Typed.Syntax
 open Charon_util
 
-module M (Heap : Heap_intf.S) = struct
-  module Sptr = Heap.Sptr
+module M (State : State_intf.S) = struct
+  module Sptr = State.Sptr
 
   type nonrec rust_val = Sptr.t rust_val
 
@@ -13,7 +13,7 @@ module M (Heap : Heap_intf.S) = struct
       TAdt
         { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
-    let++ str_data, _ = Heap.load ptr str_ty state in
+    let++ str_data, _ = State.load ptr str_ty state in
     let map_opt f l = Option.bind l (Monad.OptionM.all f) in
     match str_data with
     | Array bytes ->
@@ -44,7 +44,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     if%sat to_assert ==@ 0s then
       let** str = parse_string msg state in
-      Heap.error (`FailedAssert str) state
+      State.error (`FailedAssert str) state
     else Result.ok (Charon_util.unit_, state)
 
   let assume ~args state =
@@ -69,5 +69,5 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> not_impl "panic with non-one arguments"
     in
     let** msg = parse_string msg state in
-    Heap.error (`Panic msg) state
+    State.error (`Panic msg) state
 end
