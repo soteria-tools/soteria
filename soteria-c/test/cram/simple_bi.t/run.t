@@ -35,11 +35,13 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
   $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   warning: Memory leak in test_leak
-      ┌─ manifest.c:26:1
+      ┌─ manifest.c:26:2
    25 │    
-   26 │ ╭  int test_leak()
+   26 │    int test_leak()
+      │ ╭───^
    27 │ │  {
    28 │ │    int *x = (int *)malloc(sizeof(int));
+      │ │                    ------------------- 1: This allocation leaked
    29 │ │    if (!x)
    30 │ │      return 1;
    31 │ │    *x = 12;
@@ -135,7 +137,9 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret = (Ok 0) };
       manifest_bugs =
-      [(Memory leak, [• manifest.c:26:1-34:2 (cursor: 26:5 - 26:14)])]}
+      [(Memory leak,
+        [• This allocation leaked: manifest.c:28:19-38;
+         • manifest.c:26:1-34:2 (cursor: 26:5 - 26:14)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
