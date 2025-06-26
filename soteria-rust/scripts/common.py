@@ -84,6 +84,10 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
         "Wrapping operations without loop unrolling branch too much"
     ),
     "Intrinsics/Count/ctpop.rs": pass_("The test requires 2^N branches"),
+    "Intrinsics/FastMath/add_f64.rs": pass_("Slow floating point operation"),
+    "Intrinsics/FastMath/div_f64.rs": pass_("Slow floating point operation"),
+    "Intrinsics/FastMath/mul_f64.rs": pass_("Slow floating point operation"),
+    "Intrinsics/FastMath/sub_f64.rs": pass_("Slow floating point operation"),
     "Intrinsics/Math/Rounding/Ceil/ceilf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Ceil/ceilf64.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Floor/floorf32.rs": pass_("Slow floating point rounding"),

@@ -9,8 +9,9 @@ module M (Heap : Heap_intf.S) = struct
   type nonrec rust_val = Sptr.t rust_val
 
   let parse_string ptr state =
-    let str_ty =
-      Charon.Types.TAdt (TBuiltin TStr, Charon.TypesUtils.empty_generic_args)
+    let str_ty : Charon.Types.ty =
+      TAdt
+        { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
     let++ str_data, _ = Heap.load ptr str_ty state in
     let map_opt f l = Option.bind l (Monad.OptionM.all f) in
