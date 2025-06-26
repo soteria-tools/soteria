@@ -93,12 +93,16 @@ let filter_serialized_state relevant_vars (state : State.serialized) =
             (Typed.iter_vars loc)
         in
         if relevant then true
-        else (
+        else
           (* If the block is not freed, we record where the object was allocated *)
-          if not (Block.is_freed b) then leak_origins := b.info :: !leak_origins;
+          let leaked = not (Block.is_freed b) in
+          if leaked then leak_origins := b.info :: !leak_origins;
           L.trace (fun m ->
-              m "Filtering out unreachable location: %a." Typed.ppa loc);
-          false))
+              m "Filtering out unreachable location: %a which %a." Typed.ppa loc
+                (fun ft b ->
+                  if b then Fmt.pf ft "leaked" else Fmt.pf ft "did not leak")
+                leaked);
+          false)
   in
   (* Globals are not filtered: if they are in the spec, they were bi-abduced and necessary *)
   let resulting_state = { state with heap = resulting_heap } in

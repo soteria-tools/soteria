@@ -843,7 +843,7 @@ let serialize t =
   in
   let rec serialize_tree (tree : Tree.t) =
     match tree.node with
-    | Node.NotOwned _ -> Seq.empty
+    | Node.NotOwned Totally -> Seq.empty
     | Owned { v = Zeros; _ } ->
         Seq.return
           (Zeros { offset = fst tree.range; len = Range.size tree.range })
@@ -855,7 +855,7 @@ let serialize t =
     | Owned { v = Any; _ } ->
         Seq.return
           (Any { offset = fst tree.range; len = Range.size tree.range })
-    | Owned { v = Lazy | Uninit Partially; _ } ->
+    | Owned { v = Lazy | Uninit Partially; _ } | NotOwned Partially ->
         let children = Option.get tree.children in
         Seq.append
           (serialize_tree (fst children))

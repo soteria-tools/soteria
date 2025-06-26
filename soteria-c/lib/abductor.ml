@@ -39,8 +39,13 @@ let generate_summaries_for (fundef : fundef) =
     Csymex.run process
   in
   let@ () = with_section "Building summary" in
+  L.trace (fun m ->
+      m "Building summary for %a using bistate: %a" Fmt_ail.pp_sym fid
+        Bi_state.pp bi_state);
   let pre, post = Bi_state.to_spec bi_state in
-  Summary.make ~args ~ret ~pre ~post ~pc ()
+  let ret = Summary.make ~args ~ret ~pre ~post ~pc () in
+  L.trace (fun m -> m "Obtained summary: %a" Summary.pp ret);
+  ret
 
 let generate_all_summaries ~functions_to_analyse prog =
   let order = Call_graph.weak_topological_order (Call_graph.of_prog prog) in
