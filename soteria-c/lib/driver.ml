@@ -60,11 +60,6 @@ module Frontend = struct
         in
         Error (`ParsingError msg, Call_trace.singleton ~loc ())
 
-  let include_libc () =
-    let root_includes = Cerb_runtime.in_runtime "libc/include" in
-    let posix = Filename.concat root_includes "posix" in
-    "-I" ^ root_includes ^ " -I" ^ posix
-
   let init () =
     let result =
       let open Cerb_backend.Pipeline in
