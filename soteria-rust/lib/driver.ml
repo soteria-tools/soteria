@@ -2,7 +2,6 @@ open Soteria_terminal.Color
 module Wpst_interp = Interp.Make (State)
 module Compo_res = Soteria_symex.Compo_res
 open Syntaxes.FunctionWrap
-open Cmd
 open Charon
 
 exception ExecutionError of string
@@ -33,7 +32,7 @@ let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
   (if not !Config.current.no_compile then
      (* TODO: make these flags! *)
      let cmd = plugin.mk_cmd ~input:file_name ~output () in
-     let res = exec_cmd @@ "cd " ^ parent_folder ^ " && " ^ build_cmd cmd in
+     let res = Plugin.Cmd.exec_in parent_folder cmd in
      if res = 0 then Cleaner.touched output
      else
        let msg = Fmt.str "Failed compilation to ULLBC: code %d" res in
@@ -128,13 +127,8 @@ let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
-let exec_rustc config file_name =
-  config_set config;
-  match
-    let plugin = Plugin.create () in
-    let crate = parse_ullbc_of_file ~plugin file_name in
-    exec_main ~plugin crate
-  with
+let exec_and_output_crate ~plugin crate =
+  match exec_main ~plugin crate with
   | Ok res ->
       Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Note
         "Done, no errors found";
@@ -184,3 +178,16 @@ let exec_rustc config file_name =
         (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
         "Fatal (Charon): %s" e;
       exit 3
+
+let exec_rustc config file_name =
+  config_set config;
+  let plugin = Plugin.create () in
+  let crate = parse_ullbc_of_file ~plugin file_name in
+  exec_and_output_crate ~plugin crate
+
+let exec_cargo config _crate_dir =
+  config_set config;
+  Fmt.kstr
+    (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
+    "Fatal: soteria-rust cargo is not yet supported.";
+  exit 2
