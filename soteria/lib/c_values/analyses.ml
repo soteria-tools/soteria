@@ -52,13 +52,15 @@ module Interval = struct
 
   let to_sval v (m, n) : Svalue.t =
     let var = mk_var v in
-    let low =
-      if m == Range.min then Svalue.v_true else Svalue.int_z m <=@ var
-    in
-    let high =
-      if n == Range.max then Svalue.v_true else var <=@ Svalue.int_z n
-    in
-    low &&@ high
+    if Z.equal m n then Svalue.int_z m ==@ var
+    else
+      let low =
+        if m == Range.min then Svalue.v_true else Svalue.int_z m <=@ var
+      in
+      let high =
+        if n == Range.max then Svalue.v_true else var <=@ Svalue.int_z n
+      in
+      low &&@ high
 
   (** Intersection of two interval mappings, doing the intersection of the
       intervals *)
