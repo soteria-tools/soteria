@@ -2,10 +2,10 @@ open Charon
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 open Rustsymex
 
-module M (Heap : Heap_intf.S) = struct
-  module Std = Std.M (Heap)
-  module Rusteria = Rusteria.M (Heap)
-  module Miri = Miri.M (Heap)
+module M (State : State_intf.S) = struct
+  module Std = Std.M (State)
+  module Rusteria = Rusteria.M (State)
+  module Miri = Miri.M (State)
 
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }

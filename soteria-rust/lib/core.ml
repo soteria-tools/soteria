@@ -6,8 +6,8 @@ open Typed.Syntax
 open Rustsymex
 open Rustsymex.Syntax
 
-module M (Heap : Heap_intf.S) = struct
-  module Sptr = Heap.Sptr
+module M (State : State_intf.S) = struct
+  module Sptr = State.Sptr
 
   type nonrec rust_val = Sptr.t rust_val
 
