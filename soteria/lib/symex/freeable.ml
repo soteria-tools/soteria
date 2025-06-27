@@ -97,12 +97,4 @@ module Make (Symex : Symex.S) = struct
             let+ st' = prod ser (Some st) in
             Option.map (fun s -> Alive s) st'
         | Some Freed -> Symex.vanish ())
-
-  (* [f] does not modify the state *)
-  let wrap_read_only (f : 'a option -> ('b, 'err, 'fix list) Symex.Result.t)
-      (st : 'a t option) =
-    match st with
-    | Some (Alive st) -> f (Some st) |> lift_fix_s
-    | None -> f None |> lift_fix_s
-    | Some Freed -> Symex.Result.error `UseAfterFree
 end

@@ -36,7 +36,14 @@ let severity : t -> Soteria_terminal.Diagnostic.severity = function
   | _ -> Error
 
 module Diagnostic = struct
-  let to_loc pos = (Cerb_position.line pos - 1, Cerb_position.column pos - 1)
+  let to_loc pos =
+    let col = Cerb_position.column pos in
+    let col =
+      (* FIXME: This is a hack to overcome https://github.com/johnyob/grace/issues/49...
+         We just need to avoid having column 0, which will crash grace. *)
+      if col <= 1 then col else col - 1
+    in
+    (Cerb_position.line pos - 1, col)
 
   let as_ranges (cerb_loc : Cerb_location.t) =
     let mk_range_file = Soteria_terminal.Diagnostic.mk_range_file in
