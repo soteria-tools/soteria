@@ -488,12 +488,11 @@ module Make (State : State_intf.S) = struct
             let v = as_base_of ~ty:Typed.t_int v in
             match type_of_operand e with
             | TLiteral TBool -> ok (Base (Typed.not_int_bool v))
-            | TLiteral (TInteger ((Usize | U8 | U16 | U32 | U64 | U128) as ty))
-              ->
-                let max = Layout.max_value ty in
-                ok (Base (max -@ v))
-            | TLiteral (TInteger (Isize | I8 | I16 | I32 | I64 | I128)) ->
-                ok (Base (~-v -@ 1s))
+            | TLiteral (TInteger i_ty) ->
+                let size = Layout.size_of_int_ty i_ty in
+                let signed = Layout.is_signed i_ty in
+                let v = Typed.bit_not ~size ~signed v in
+                ok (Base v)
             | ty ->
                 Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty)
         | Neg -> (
