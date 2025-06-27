@@ -16,7 +16,10 @@ VSCODE_DIST=dist
 ##### Normal ocaml stuff #####
 .PHONY: ocaml
 ocaml:
-	 $(DUNE) build
+	$(DUNE) build
+	 
+ocaml-format-check:
+	$(DUNE) build @fmt
 
 .PHONY: ocaml-test
 ocaml-test:
