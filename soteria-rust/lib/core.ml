@@ -89,8 +89,8 @@ module M (State : State_intf.S) = struct
     | TPointer -> Result.error `UBPointerArithmetic
     | _ -> not_impl "Unexpected type in eval_lit_binop"
 
-  (** Evaluates a binary operator of {+,-,/,*,rem}, and ensures the result is within the type's
-      constraints, else errors *)
+  (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
+      within the type's constraints, else errors *)
   let eval_lit_binop bop lit_ty l r =
     let** res = safe_binop bop lit_ty l r in
     let** () =
