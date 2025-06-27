@@ -861,6 +861,12 @@ let bit_shr ~size ~signed v1 v2 =
       let bv = raw_bit_shr size v1_bv v2_bv in
       int_of_bv signed bv
 
+let bit_not ~size:s ~signed v =
+  if Stdlib.not signed then
+    let max = Z.(pred (one lsl s)) in
+    minus (int_z max) v
+  else minus (neg v) one
+
 (** {2 Floating point ops} *)
 
 let eq_f v1 v2 = mk_commut_binop FEq v1 v2 <| TBool

@@ -6,9 +6,9 @@ open Typed.Syntax
 open Typed.Infix
 open Charon_util
 
-module M (Heap : Heap_intf.S) = struct
-  module Sptr = Heap.Sptr
-  module Core = Core.M (Heap)
+module M (State : State_intf.S) = struct
+  module Sptr = State.Sptr
+  module Core = Core.M (State)
   module Encoder = Encoder.Make (Sptr)
 
   type nonrec rust_val = Sptr.t rust_val
@@ -41,7 +41,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ Base left; Base right ] -> return (left, right)
       | _ -> not_impl "unchecked_op with not two arguments"
     in
-    let++ res = Heap.lift_err state @@ Core.eval_lit_binop op ty left right in
+    let++ res = State.lift_err state @@ Core.eval_lit_binop op ty left right in
     (Base res, state)
 
   let wrapping_op op (fun_sig : UllbcAst.fun_sig) ~args state =
@@ -59,7 +59,7 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> not_impl "wrapping_op with not two arguments"
     in
     let** res =
-      Heap.lift_err state @@ Core.safe_binop op (TInteger ity) left right
+      State.lift_err state @@ Core.safe_binop op (TInteger ity) left right
     in
     let* res = Core.wrap_value ity res in
     Result.ok (Base res, state)
@@ -79,14 +79,14 @@ module M (Heap : Heap_intf.S) = struct
       | _ -> not_impl "checked_op with not two arguments"
     in
     let++ res =
-      Heap.lift_err state @@ Core.eval_checked_lit_binop op ty left right
+      State.lift_err state @@ Core.eval_checked_lit_binop op ty left right
     in
     (res, state)
 
   let zeroed (fun_sig : UllbcAst.fun_sig) ~args:_ state =
     match Layout.zeroed ~null_ptr:Sptr.null_ptr fun_sig.output with
     | Some v -> Result.ok (v, state)
-    | None -> Heap.error (`StdErr "Non-zeroable type") state
+    | None -> State.error (`StdErr "Non-zeroable type") state
 
   let array_repeat (gen_args : Types.generic_args) ~args state =
     let rust_val, size =
@@ -121,17 +121,17 @@ module M (Heap : Heap_intf.S) = struct
     (* TODO: take into account idx.mutability *)
     let idx = as_base_of ~ty:Typed.t_int (List.nth args 1) in
     let ty = List.hd gen_args.types in
-    let** ptr' = Sptr.offset ~ty ptr idx |> Heap.lift_err state in
+    let** ptr' = Sptr.offset ~ty ptr idx |> State.lift_err state in
     if not idx_op.is_range then
       if%sat 0s <=@ idx &&@ (idx <@ size) then
         Result.ok (Ptr (ptr', None), state)
-      else Heap.error `OutOfBounds state
+      else State.error `OutOfBounds state
     else
       let range_end = as_base_of ~ty:Typed.t_int (List.nth args 2) in
       if%sat 0s <=@ idx &&@ (idx <=@ range_end) &&@ (range_end <=@ size) then
         let size = range_end -@ idx in
         Result.ok (Ptr (ptr', Some size), state)
-      else Heap.error `OutOfBounds state
+      else State.error `OutOfBounds state
 
   (* Some array accesses are ran on functions, so we handle those here and redirect them.
      Eventually, it would be good to maybe make a Charon pass that gets rid of these before. *)
@@ -200,7 +200,7 @@ module M (Heap : Heap_intf.S) = struct
       | [ TRef (_, value_ty, _) ] -> value_ty
       | _ -> failwith "discriminant_value: unexpected arguments"
     in
-    let++ value, state = Heap.load value_ptr value_ty state in
+    let++ value, state = State.load value_ptr value_ty state in
     match value with
     | Enum (discr, _) -> (Base discr, state)
     | _ -> failwith "discriminant_value: unexpected value"
@@ -209,7 +209,7 @@ module M (Heap : Heap_intf.S) = struct
     let ty = List.hd mono.types in
     match Layout.zeroed ~null_ptr:Sptr.null_ptr ty with
     | None ->
-        Heap.error (`Panic (Some "core::intrinsics::assert_zero_valid")) state
+        State.error (`Panic (Some "core::intrinsics::assert_zero_valid")) state
     | _ -> Result.ok (Tuple [], state)
 
   let size_of (mono : Types.generic_args) ~args:_ state =
@@ -250,8 +250,8 @@ module M (Heap : Heap_intf.S) = struct
       | { types = [ ty ]; _ }, [ v ] -> (ty, v)
       | _ -> failwith "box new: invalid arguments"
     in
-    let** ptr, state = Heap.alloc_ty ty state in
-    let++ (), state = Heap.store ptr ty v state in
+    let** ptr, state = State.alloc_ty ty state in
+    let++ (), state = State.store ptr ty v state in
     (Ptr ptr, state)
 
   let ptr_op ?(check = true) ?(byte = false) op (funsig : GAst.fun_sig) ~args
@@ -259,7 +259,7 @@ module M (Heap : Heap_intf.S) = struct
     let** ptr, meta, v =
       match args with
       | [ Ptr (ptr, meta); Base v ] -> Result.ok (ptr, meta, v)
-      | [ Base _; Base _ ] -> Heap.error `UBPointerArithmetic state
+      | [ Base _; Base _ ] -> State.error `UBPointerArithmetic state
       | _ -> not_impl "ptr_add: invalid arguments"
     in
     let* v = cast_checked v ~ty:Typed.t_int in
@@ -275,7 +275,7 @@ module M (Heap : Heap_intf.S) = struct
     if%sat v ==@ 0s then Result.ok (Ptr (ptr, meta), state)
     else
       let v = if op = Expressions.Add then v else ~-v in
-      let++ ptr' = Sptr.offset ~check ptr v |> Heap.lift_err state in
+      let++ ptr' = Sptr.offset ~check ptr v |> State.lift_err state in
       (Ptr (ptr', meta), state)
 
   let ptr_offset_from unsigned (funsig : GAst.fun_sig) ~args state =
@@ -301,13 +301,13 @@ module M (Heap : Heap_intf.S) = struct
           else
             if%sat off >=@ 0s then Result.ok (Base (off /@ size), state)
             else
-              Heap.error
+              State.error
                 (`StdErr
                    "core::intrinsics::offset_from_unsigned negative offset")
                 state
-        else Heap.error `UBPointerComparison state
-      else Heap.error `UBDanglingPointer state
-    else Heap.error (`Panic (Some "ptr_offset_from with ZST")) state
+        else State.error `UBPointerComparison state
+      else State.error `UBDanglingPointer state
+    else State.error (`Panic (Some "ptr_offset_from with ZST")) state
 
   let black_box ~args state =
     match args with
@@ -319,9 +319,9 @@ module M (Heap : Heap_intf.S) = struct
     let to_ty = funsig.output in
     let v = List.hd args in
     let++ v =
-      Heap.lift_err state
-      @@ Encoder.transmute ~verify_ptr:(Heap.is_valid_ptr state) ~from_ty ~to_ty
-           v
+      State.lift_err state
+      @@ Encoder.transmute ~verify_ptr:(State.is_valid_ptr state) ~from_ty
+           ~to_ty v
     in
     (v, state)
 
@@ -332,31 +332,33 @@ module M (Heap : Heap_intf.S) = struct
           (from_ptr, to_ptr, Typed.cast len)
       | _ -> failwith "copy[_nonoverlapping]: invalid arguments"
     in
-    let** (), state = Heap.check_ptr_align from_ptr ty state in
-    let** (), state = Heap.check_ptr_align to_ptr ty state in
+    let** (), state = State.check_ptr_align from_ptr ty state in
+    let** (), state = State.check_ptr_align to_ptr ty state in
     let* ty_size = Layout.size_of_s ty in
     let size = ty_size *@ len in
     let** () =
       if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then
-        Heap.error `NullDereference state
+        State.error `NullDereference state
         (* Here we can cheat a little: for copy_nonoverlapping we need to check for overlap,
-           but otherwise the copy is the exact same; since the Heap makes a copy of the src tree
+           but otherwise the copy is the exact same; since the State makes a copy of the src tree
            before storing into dst, the semantics are that of copy. *)
       else if nonoverlapping then
         (* check for overlap *)
-        let** from_ptr_end = Sptr.offset from_ptr size |> Heap.lift_err state in
-        let** to_ptr_end = Sptr.offset to_ptr size |> Heap.lift_err state in
+        let** from_ptr_end =
+          Sptr.offset from_ptr size |> State.lift_err state
+        in
+        let** to_ptr_end = Sptr.offset to_ptr size |> State.lift_err state in
         if%sat
           Sptr.is_same_loc from_ptr to_ptr
           &&@ (Sptr.distance from_ptr to_ptr_end
               <@ 0s
               &&@ (Sptr.distance to_ptr from_ptr_end <@ 0s))
-        then Heap.error (`StdErr "copy_nonoverlapping overlapped") state
+        then State.error (`StdErr "copy_nonoverlapping overlapped") state
         else Result.ok ()
       else Result.ok ()
     in
     let++ (), state =
-      Heap.copy_nonoverlapping ~dst:(to_ptr, None) ~src:(from_ptr, None) ~size
+      State.copy_nonoverlapping ~dst:(to_ptr, None) ~src:(from_ptr, None) ~size
         state
     in
     (Tuple [], state)
@@ -388,12 +390,12 @@ module M (Heap : Heap_intf.S) = struct
     in
     let* count = cast_checked count ~ty:Typed.t_int in
     let ty = List.hd mono.types in
-    let** (), state = Heap.check_ptr_align ptr ty state in
+    let** (), state = State.check_ptr_align ptr ty state in
     let* size = Layout.size_of_s ty in
     let size = size *@ count in
     (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
     if%sat v ==@ 0s then
-      let++ (), state = Heap.zeros dst size state in
+      let++ (), state = State.zeros dst size state in
       (Tuple [], state)
     else
       match Typed.kind size with
@@ -402,9 +404,9 @@ module M (Heap : Heap_intf.S) = struct
           let++ (), state =
             Result.fold_list list ~init:((), state) ~f:(fun ((), state) i ->
                 let** ptr =
-                  Sptr.offset ptr @@ Typed.int i |> Heap.lift_err state
+                  Sptr.offset ptr @@ Typed.int i |> State.lift_err state
                 in
-                Heap.store (ptr, None) (TLiteral (TInteger U8)) (Base v) state)
+                State.store (ptr, None) (TLiteral (TInteger U8)) (Base v) state)
           in
           (Tuple [], state)
       | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
@@ -412,14 +414,14 @@ module M (Heap : Heap_intf.S) = struct
   let assert_inhabited (mono : Types.generic_args) ~args:_ state =
     let ty = List.hd mono.types in
     if Layout.is_inhabited ty then Result.ok (Tuple [], state)
-    else Heap.error (`Panic (Some "core::intrinsics::assert_inhabited")) state
+    else State.error (`Panic (Some "core::intrinsics::assert_inhabited")) state
 
   let from_raw_parts ~args state =
     match args with
     | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
     | [ Base v; Base meta ] ->
         let* v = cast_checked ~ty:Typed.t_int v in
-        let++ ptr = Sptr.offset Sptr.null_ptr v |> Heap.lift_err state in
+        let++ ptr = Sptr.offset Sptr.null_ptr v |> State.lift_err state in
         (Ptr (ptr, Some meta), state)
     | _ ->
         Fmt.failwith "from_raw_parts: invalid arguments %a"
@@ -438,7 +440,7 @@ module M (Heap : Heap_intf.S) = struct
     | [ Base cond ] ->
         let* cond = cast_checked ~ty:Typed.t_int cond in
         if%sat Typed.bool_of_int cond then Result.ok (Tuple [], state)
-        else Heap.error (`StdErr "core::intrinsics::assume with false") state
+        else State.error (`StdErr "core::intrinsics::assume with false") state
     | _ -> failwith "std_assume: invalid arguments"
 
   let exact_div (funsig : GAst.fun_sig) ~args state =
@@ -446,13 +448,13 @@ module M (Heap : Heap_intf.S) = struct
     | TLiteral lit :: _, [ Base l; Base r ] ->
         let* l, r, ty = cast_checked2 l r in
         let open Typed in
-        let** res = Heap.lift_err state @@ Core.eval_lit_binop Div lit l r in
+        let** res = State.lift_err state @@ Core.eval_lit_binop Div lit l r in
         if is_float ty then Result.ok (Base res, state)
         else
           if%sat (not (r ==@ 0s)) &&@ (l %@ cast r ==@ 0s) then
             Result.ok (Base res, state)
           else
-            Heap.error (`StdErr "core::intrinsics::exact_div on non divisible")
+            State.error (`StdErr "core::intrinsics::exact_div on non divisible")
               state
     | _ -> failwith "exact_div: invalid arguments"
 
@@ -509,11 +511,11 @@ module M (Heap : Heap_intf.S) = struct
     let rec aux ?(inc = 1s) l r len state =
       if%sat len ==@ 0s then Result.ok (Base 0s, state)
       else
-        let** l = Sptr.offset l inc |> Heap.lift_err state in
-        let** r = Sptr.offset r inc |> Heap.lift_err state in
-        let** bl, state = Heap.load (l, None) byte state in
+        let** l = Sptr.offset l inc |> State.lift_err state in
+        let** r = Sptr.offset r inc |> State.lift_err state in
+        let** bl, state = State.load (l, None) byte state in
         let bl = as_base_of ~ty:Typed.t_int bl in
-        let** br, state = Heap.load (r, None) byte state in
+        let** br, state = State.load (r, None) byte state in
         let br = as_base_of ~ty:Typed.t_int br in
         if%sat bl ==@ br then aux l r (len -@ 1s) state
         else
@@ -552,10 +554,10 @@ module M (Heap : Heap_intf.S) = struct
         let n = Typed.int @@ List.length variants in
         Result.ok (Base n, state)
     | _ ->
-        Heap.error
+        State.error
           (`StdErr "core::intrinsics::variant_count used with non-enum") state
 
-  let std_panic ~args:_ state = Heap.error (`Panic None) state
+  let std_panic ~args:_ state = State.error (`Panic None) state
 
   let float_is (fp : Svalue.FloatClass.t) ~args state =
     let v =
@@ -621,9 +623,11 @@ module M (Heap : Heap_intf.S) = struct
       let res = bop l r in
       if%sat is_finite res then Result.ok (Base res, state)
       else
-        Heap.error (`StdErr (Lazy.force name ^ ": result must be finite")) state
+        State.error
+          (`StdErr (Lazy.force name ^ ": result must be finite"))
+          state
     else
-      Heap.error (`StdErr (Lazy.force name ^ ": result must be finite")) state
+      State.error (`StdErr (Lazy.force name ^ ": result must be finite")) state
 
   let float_is_sign pos ~args state =
     let v =
@@ -652,28 +656,30 @@ module M (Heap : Heap_intf.S) = struct
       | [ Ptr from_ptr; Ptr to_ptr ] -> (from_ptr, to_ptr)
       | _ -> failwith "typed_swap_nonoverlapping: invalid arguments"
     in
-    let** (), state = Heap.check_ptr_align from_ptr ty state in
-    let** (), state = Heap.check_ptr_align to_ptr ty state in
+    let** (), state = State.check_ptr_align from_ptr ty state in
+    let** (), state = State.check_ptr_align to_ptr ty state in
     let* size = Layout.size_of_s ty in
     let** () =
       if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then
-        Heap.error `NullDereference state
+        State.error `NullDereference state
       else
         (* check for overlap *)
-        let** from_ptr_end = Sptr.offset from_ptr size |> Heap.lift_err state in
-        let** to_ptr_end = Sptr.offset to_ptr size |> Heap.lift_err state in
+        let** from_ptr_end =
+          Sptr.offset from_ptr size |> State.lift_err state
+        in
+        let** to_ptr_end = Sptr.offset to_ptr size |> State.lift_err state in
         if%sat
           Sptr.is_same_loc from_ptr to_ptr
           &&@ (Sptr.distance from_ptr to_ptr_end
               <@ 0s
               &&@ (Sptr.distance to_ptr from_ptr_end <@ 0s))
-        then Heap.error (`StdErr "typed_swap_nonoverlapping overlapped") state
+        then State.error (`StdErr "typed_swap_nonoverlapping overlapped") state
         else Result.ok ()
     in
-    let** v_l, state = Heap.load from ty state in
-    let** v_r, state = Heap.load to_ ty state in
-    let** (), state = Heap.store from ty v_r state in
-    let++ (), state = Heap.store to_ ty v_l state in
+    let** v_l, state = State.load from ty state in
+    let** v_r, state = State.load to_ ty state in
+    let** (), state = State.store from ty v_r state in
+    let++ (), state = State.store to_ ty v_l state in
     (Tuple [], state)
 
   let byte_swap (funsig : UllbcAst.fun_sig) ~args state =
@@ -682,7 +688,8 @@ module M (Heap : Heap_intf.S) = struct
         let unsigned = Layout.lit_to_unsigned lit in
         let nbytes = Layout.size_of_int_ty ity in
         let** v =
-          Heap.lift_err state @@ Encoder.transmute ~from_ty:ty ~to_ty:unsigned v
+          State.lift_err state
+          @@ Encoder.transmute ~from_ty:ty ~to_ty:unsigned v
         in
         let v = as_base_of ~ty:Typed.t_int v in
         let bytes =
@@ -698,7 +705,7 @@ module M (Heap : Heap_intf.S) = struct
         in
         let v' = Base (v' :> Typed.T.cval Typed.t) in
         let++ v' =
-          Heap.lift_err state
+          State.lift_err state
           @@ Encoder.transmute ~from_ty:unsigned ~to_ty:ty v'
         in
         (v', state)
@@ -708,7 +715,7 @@ module M (Heap : Heap_intf.S) = struct
     match args with
     | [ Base l; Base r ] -> Result.ok (Base (Typed.int_of_bool (l ==@ r)), state)
     | [ l; r ] ->
-        let++ res = Heap.lift_err state @@ Core.eval_ptr_binop Eq l r in
+        let++ res = State.lift_err state @@ Core.eval_ptr_binop Eq l r in
         (Base res, state)
     | _ -> not_impl "invalid arguments in ptr_guaranteed_cmp"
 
@@ -745,7 +752,7 @@ module M (Heap : Heap_intf.S) = struct
   let type_name (mono : Types.generic_args) ~args:_ state =
     let ty = List.hd mono.types in
     let str = Fmt.to_to_string pp_ty ty in
-    let** ptr_res, state = Heap.load_str_global str state in
+    let** ptr_res, state = State.load_str_global str state in
     match ptr_res with
     | Some ptr -> Result.ok (Ptr ptr, state)
     | None ->
@@ -757,10 +764,10 @@ module M (Heap : Heap_intf.S) = struct
         in
         let char_arr = Array chars in
         let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
-        let** (ptr, _), state = Heap.alloc_ty str_ty state in
+        let** (ptr, _), state = State.alloc_ty str_ty state in
         let ptr = (ptr, Some (Typed.int len)) in
-        let** (), state = Heap.store ptr str_ty char_arr state in
-        let++ (), state = Heap.store_str_global str ptr state in
+        let** (), state = State.store ptr str_ty char_arr state in
+        let++ (), state = State.store_str_global str ptr state in
         (Ptr ptr, state)
 
   let raw_eq (fun_sig : UllbcAst.fun_sig) ~args state =
@@ -773,8 +780,8 @@ module M (Heap : Heap_intf.S) = struct
     let bytes = mk_array_ty (TLiteral (TInteger U8)) layout.size in
     (* this is hacky, but we do not keep the state post-load, as it will have its tree blocks
        split up per byte, which is suboptimal *)
-    let** l, _ = Heap.load l bytes state in
-    let** r, _ = Heap.load r bytes state in
+    let** l, _ = State.load l bytes state in
+    let** r, _ = State.load r bytes state in
     let byte_pairs =
       match (l, r) with
       | Array l, Array r -> List.combine l r
@@ -798,7 +805,7 @@ module M (Heap : Heap_intf.S) = struct
     in
     let max = Layout.max_value intty in
     let min = Layout.min_value intty in
-    let** res = Heap.lift_err state @@ Core.safe_binop op litty l r in
+    let** res = State.lift_err state @@ Core.safe_binop op litty l r in
     let* res = cast_checked ~ty:Typed.t_int res in
     let res = Typed.ite (res >@ max) max (Typed.ite (res <@ min) min res) in
     Result.ok (Base (res :> Typed.T.cval Typed.t), state)
@@ -822,7 +829,7 @@ module M (Heap : Heap_intf.S) = struct
           @@ Typed.cast_float f
         in
         if%sat Typed.is_nan f ||@ Typed.is_infinite f then
-          Heap.error
+          State.error
             (`StdErr "float_to_int_unchecked with NaN or infinite value") state
         else
           let n = 8 * Layout.size_of_int_ty ity in
@@ -836,12 +843,13 @@ module M (Heap : Heap_intf.S) = struct
             let v = Typed.int_of_float n f in
             Result.ok (Base v, state)
           else
-            Heap.error (`StdErr "float_to_int_unchecked out of int range") state
+            State.error (`StdErr "float_to_int_unchecked out of int range")
+              state
     | _ -> not_impl "Unexpected arguments for float_to_int_unchecked"
 
   let catch_unwind exec_fun ~args state =
     let[@inline] get_fn ptr state =
-      let++ fn_ptr, state = Heap.lookup_fn ptr state in
+      let++ fn_ptr, state = State.lookup_fn ptr state in
       match fn_ptr.func with
       | FunId (FRegular fid) -> (Crate.get_fun fid, state)
       | TraitMethod (_, _, fid) -> (Crate.get_fun fid, state)
@@ -856,15 +864,15 @@ module M (Heap : Heap_intf.S) = struct
     let** try_fn, state = get_fn try_fn_ptr state in
     let** catch_fn, state = get_fn catch_fn_ptr state in
     let try_fn_ret = exec_fun ~args:[ Ptr data_ptr ] try_fn state in
-    Heap.unwind_with try_fn_ret
+    State.unwind_with try_fn_ret
       ~f:(fun (_, state) -> Result.ok (Base 0s, state))
       ~fe:(fun (_, state) ->
         let args = [ Ptr data_ptr; Ptr (Sptr.null_ptr, None) ] in
         let catch_fn_ret = exec_fun ~args catch_fn state in
-        Heap.unwind_with catch_fn_ret
+        State.unwind_with catch_fn_ret
           ~f:(fun (_, state) -> Result.ok (Base 1s, state))
           ~fe:(fun (_, state) ->
-            Heap.error (`StdErr "catch_unwind unwinded in catch") state))
+            State.error (`StdErr "catch_unwind unwinded in catch") state))
 
   let _mk_box ptr =
     let non_null = Struct [ Ptr ptr ] in
@@ -879,13 +887,13 @@ module M (Heap : Heap_intf.S) = struct
     let box = _mk_box (Sptr.null_ptr, None) in
     Result.ok (box, state)
 
-  let breakpoint ~args:_ state = Heap.error `Breakpoint state
+  let breakpoint ~args:_ state = State.error `Breakpoint state
 
   let fixme_box_new (fun_sig : UllbcAst.fun_sig) ~args state =
     let ty = List.hd fun_sig.inputs in
     let value = List.hd args in
-    let** ptr, state = Heap.alloc_ty ty state in
-    let++ (), state = Heap.store ptr ty value state in
+    let** ptr, state = State.alloc_ty ty state in
+    let++ (), state = State.store ptr ty value state in
     let box = _mk_box ptr in
     (box, state)
 end

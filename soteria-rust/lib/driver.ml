@@ -1,5 +1,5 @@
 open Soteria_terminal.Color
-module Wpst_interp = Interp.Make (Heap)
+module Wpst_interp = Interp.Make (State)
 module Compo_res = Soteria_symex.Compo_res
 open Syntaxes.FunctionWrap
 open Cmd
@@ -61,7 +61,7 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
   if List.is_empty entry_points then
     raise (ExecutionError "No entry points found");
   let exec_fun =
-    Wpst_interp.exec_fun ~ignore_leaks ~args:[] ~state:Heap.empty
+    Wpst_interp.exec_fun ~ignore_leaks ~args:[] ~state:State.empty
   in
   let@ () = Crate.with_crate crate in
   let outcomes =
@@ -93,7 +93,8 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
              branches
              |> List.partition_map @@ function
                 | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
-                | Error _, pcs -> Right (Ok (Charon_util.unit_, Heap.empty), pcs)
+                | Error _, pcs ->
+                    Right (Ok (Charon_util.unit_, State.empty), pcs)
                 | v -> Left v
            in
            if List.is_empty errors then oks else errors

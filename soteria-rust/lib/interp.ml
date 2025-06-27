@@ -7,20 +7,20 @@ open Charon
 open Charon_util
 module T = Typed.T
 
-module InterpM (Heap : Heap_intf.S) = struct
-  type full_ptr = Heap.Sptr.t Charon_util.full_ptr
+module InterpM (State : State_intf.S) = struct
+  type full_ptr = State.Sptr.t Charon_util.full_ptr
   type store = (full_ptr option * Types.ty) Store.t
 
   type 'a t =
     store ->
-    Heap.t ->
-    ( 'a * store * Heap.t,
-      Error.t Heap.err * Heap.t,
-      Heap.serialized list )
+    State.t ->
+    ( 'a * store * State.t,
+      Error.t State.err * State.t,
+      State.serialized list )
     Result.t
 
   let ok x : 'a t = fun store state -> Result.ok (x, store, state)
-  let error err : 'a t = fun _store state -> Heap.error err state
+  let error err : 'a t = fun _store state -> State.error err state
   let error_raw err : 'a t = fun _store state -> Result.error (err, state)
   let not_impl str : 'a t = fun _store _state -> Rustsymex.not_impl str
   let get_store () = fun store state -> Result.ok (store, store, state)
@@ -66,57 +66,52 @@ module InterpM (Heap : Heap_intf.S) = struct
     | Ok triple -> Ok triple
     | Error (e, st) ->
         let elem = Soteria_terminal.Call_trace.mk_element ~loc ~msg () in
-        Error (Heap.add_to_call_trace e elem, st)
+        Error (State.add_to_call_trace e elem, st)
     | Missing f -> Missing f
 
-  let run ~store ~state (f : unit -> 'a t) : ('a * Heap.t, 'e, 'f) Result.t =
+  let run ~store ~state (f : unit -> 'a t) : ('a * State.t, 'e, 'f) Result.t =
     let++ res, _, state = f () store state in
     (res, state)
 
-  module Heap = struct
-    let[@inline] load ?is_move ptr ty =
-      lift_state_op (Heap.load ?is_move ptr ty)
+  module State = struct
+    include State
 
-    let[@inline] store ptr ty v = lift_state_op (Heap.store ptr ty v)
-    let[@inline] alloc_ty ty = lift_state_op (Heap.alloc_ty ty)
-    let[@inline] alloc_tys tys = lift_state_op (Heap.alloc_tys tys)
-    let[@inline] uninit ptr ty = lift_state_op (Heap.uninit ptr ty)
-    let[@inline] free ptr = lift_state_op (Heap.free ptr)
-
-    let[@inline] check_ptr_align ptr ty =
-      lift_state_op (Heap.check_ptr_align ptr ty)
-
-    let[@inline] borrow ptr ty mut = lift_state_op (Heap.borrow ptr ty mut)
-    let[@inline] protect ptr ty mut = lift_state_op (Heap.protect ptr ty mut)
-    let[@inline] unprotect ptr ty = lift_state_op (Heap.unprotect ptr ty)
-    let[@inline] tb_load ptr ty = lift_state_op (Heap.tb_load ptr ty)
-    let[@inline] load_global g = lift_state_op (Heap.load_global g)
-    let[@inline] store_global g ptr = lift_state_op (Heap.store_global g ptr)
-    let[@inline] load_str_global str = lift_state_op (Heap.load_str_global str)
+    let[@inline] load ?is_move ptr ty = lift_state_op (load ?is_move ptr ty)
+    let[@inline] store ptr ty v = lift_state_op (store ptr ty v)
+    let[@inline] alloc_ty ty = lift_state_op (alloc_ty ty)
+    let[@inline] alloc_tys tys = lift_state_op (alloc_tys tys)
+    let[@inline] uninit ptr ty = lift_state_op (uninit ptr ty)
+    let[@inline] free ptr = lift_state_op (free ptr)
+    let[@inline] check_ptr_align ptr ty = lift_state_op (check_ptr_align ptr ty)
+    let[@inline] borrow ptr ty mut = lift_state_op (borrow ptr ty mut)
+    let[@inline] protect ptr ty mut = lift_state_op (protect ptr ty mut)
+    let[@inline] unprotect ptr ty = lift_state_op (unprotect ptr ty)
+    let[@inline] tb_load ptr ty = lift_state_op (tb_load ptr ty)
+    let[@inline] load_global g = lift_state_op (load_global g)
+    let[@inline] store_global g ptr = lift_state_op (store_global g ptr)
+    let[@inline] load_str_global str = lift_state_op (load_str_global str)
 
     let[@inline] store_str_global str ptr =
-      lift_state_op (Heap.store_str_global str ptr)
+      lift_state_op (store_str_global str ptr)
 
-    let[@inline] declare_fn fn = lift_state_op (Heap.declare_fn fn)
-    let[@inline] lookup_fn fn = lift_state_op (Heap.lookup_fn fn)
-    let[@inline] add_error e = lift_state_op (Heap.add_error e)
-    let[@inline] pop_error () = lift_state_op Heap.pop_error
+    let[@inline] declare_fn fn = lift_state_op (declare_fn fn)
+    let[@inline] lookup_fn fn = lift_state_op (lookup_fn fn)
+    let[@inline] add_error e = lift_state_op (add_error e)
+    let[@inline] pop_error () = lift_state_op pop_error
 
-    let[@inline] unwind_with ~(f : 'a -> 'b t) ~(fe : Error.t Heap.err -> 'b t)
-        (x : 'a t) : 'b t =
+    let[@inline] unwind_with ~f ~fe x =
      fun store state ->
-      Heap.unwind_with
+      unwind_with
         ~f:(fun (x, store, state) -> f x store state)
         ~fe:(fun (e, state) -> fe e store state)
         (x store state)
 
     let[@inline] is_valid_ptr =
-     fun store state -> Result.ok (Heap.is_valid_ptr state, store, state)
+     fun store state -> Result.ok (is_valid_ptr state, store, state)
 
-    let[@inline] lift_err (sym : ('a, Error.t, Heap.serialized list) Result.t) :
-        'a t =
+    let[@inline] lift_err sym =
      fun store state ->
-      let++ res = Heap.lift_err state sym in
+      let++ res = lift_err state sym in
       (res, store, state)
   end
 
@@ -125,8 +120,8 @@ module InterpM (Heap : Heap_intf.S) = struct
     let ( let+ ) = map
     let ( let^ ) x f = bind (lift_symex x) f
     let ( let^+ ) x f = map (lift_symex x) f
-    let ( let^^ ) x f = bind (Heap.lift_err x) f
-    let ( let^^+ ) x f = map (Heap.lift_err x) f
+    let ( let^^ ) x f = bind (State.lift_err x) f
+    let ( let^^+ ) x f = map (State.lift_err x) f
 
     module Symex_syntax = struct
       let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
@@ -138,12 +133,11 @@ module InterpM (Heap : Heap_intf.S) = struct
   end
 end
 
-module Make (Heap : Heap_intf.S) = struct
-  module H = Heap
-  module InterpM = InterpM (Heap)
-  module Core = Core.M (Heap)
-  module Std_funs = Builtins.Eval.M (Heap)
-  module Sptr = Heap.Sptr
+module Make (State : State_intf.S) = struct
+  module InterpM = InterpM (State)
+  module Core = Core.M (State)
+  module Std_funs = Builtins.Eval.M (State)
+  module Sptr = State.Sptr
   module Encoder = Encoder.Make (Sptr)
 
   let pp_rust_val = pp_rust_val Sptr.pp
@@ -151,7 +145,7 @@ module Make (Heap : Heap_intf.S) = struct
   exception Unsupported of (string * Meta.span)
 
   type full_ptr = Sptr.t Charon_util.full_ptr
-  type state = Heap.t
+  type state = State.t
   type store = (full_ptr option * Types.ty) Store.t
 
   open InterpM
@@ -162,7 +156,7 @@ module Make (Heap : Heap_intf.S) = struct
   type 'err fun_exec =
     args:Sptr.t rust_val list ->
     state ->
-    (Sptr.t rust_val * state, 'err, H.serialized list) Result.t
+    (Sptr.t rust_val * state, 'err, State.serialized list) Result.t
 
   let get_variable var_id =
     let* store = get_store () in
@@ -198,7 +192,7 @@ module Make (Heap : Heap_intf.S) = struct
     let tys =
       List.map (fun ({ var_ty; _ } : GAst.local) -> var_ty) alloc_locs
     in
-    let* ptrs = Heap.alloc_tys tys in
+    let* ptrs = State.alloc_tys tys in
     let tys_ptrs = List.combine alloc_locs ptrs in
     let* () =
       map_store @@ fun store ->
@@ -218,16 +212,16 @@ module Make (Heap : Heap_intf.S) = struct
           let* value, protected' =
             match (value, ty) with
             | Ptr ptr, TRef (_, subty, mut) ->
-                let+ ptr' = Heap.protect ptr subty mut in
+                let+ ptr' = State.protect ptr subty mut in
                 (Ptr ptr', (ptr', subty) :: protected)
             | _ -> ok (value, protected)
           in
-          let* () = Heap.store ptr ty value in
+          let* () = State.store ptr ty value in
           (* Ensure all passed references are valid, even nested ones! *)
           let ptr_tys = Layout.ref_tys_in value ty in
           let+ () =
             fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
-                Heap.tb_load ptr ty)
+                State.tb_load ptr ty)
           in
           protected')
     in
@@ -242,15 +236,15 @@ module Make (Heap : Heap_intf.S) = struct
   let dealloc_store ?protected_address protected =
     let* () =
       fold_list protected ~init:() ~f:(fun () (ptr, ty) ->
-          InterpM.Heap.unprotect ptr ty)
+          InterpM.State.unprotect ptr ty)
     in
     let* store = InterpM.get_store () in
     fold_list (Store.bindings store) ~init:() ~f:(fun () (_, (ptr, _)) ->
         match (ptr, protected_address) with
         | None, _ -> ok ()
-        | Some ptr, None -> Heap.free ptr
+        | Some ptr, None -> State.free ptr
         | Some ((ptr, _) as fptr), Some protect ->
-            if%sat Sptr.sem_eq ptr protect then ok () else Heap.free fptr)
+            if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
   let resolve_constant (const : Expressions.constant_expr) =
     match const.value with
@@ -261,7 +255,7 @@ module Make (Heap : Heap_intf.S) = struct
         let fp = float_precision float_ty in
         ok (Base (Typed.float fp float_value))
     | CLiteral (VStr str) -> (
-        let* ptr_opt = InterpM.Heap.load_str_global str in
+        let* ptr_opt = InterpM.State.load_str_global str in
         match ptr_opt with
         | Some v -> ok (Ptr v)
         | None ->
@@ -276,10 +270,10 @@ module Make (Heap : Heap_intf.S) = struct
             in
             let char_arr = Array chars in
             let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
-            let* ptr, _ = InterpM.Heap.alloc_ty str_ty in
+            let* ptr, _ = InterpM.State.alloc_ty str_ty in
             let ptr = (ptr, Some (Typed.int len)) in
-            let* () = InterpM.Heap.store ptr str_ty char_arr in
-            let+ () = InterpM.Heap.store_str_global str ptr in
+            let* () = InterpM.State.store ptr str_ty char_arr in
+            let+ () = InterpM.State.store_str_global str ptr in
             Ptr ptr)
     | CFnPtr fn_ptr -> ok (ConstFn fn_ptr)
     | CLiteral (VByteStr _) -> InterpM.not_impl "TODO: resolve const ByteStr"
@@ -302,7 +296,7 @@ module Make (Heap : Heap_intf.S) = struct
         let* ptr = resolve_place base in
         L.debug (fun f ->
             f "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty);
-        let* v = Heap.load ptr base.ty in
+        let* v = State.load ptr base.ty in
         match v with
         | Ptr v -> (
             L.debug (fun f ->
@@ -311,7 +305,7 @@ module Make (Heap : Heap_intf.S) = struct
             let pointee = Charon_util.get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
-                let+ () = Heap.check_ptr_align (fst v) pointee in
+                let+ () = State.check_ptr_align (fst v) pointee in
                 v
             | _ -> ok v)
         | Base off ->
@@ -321,7 +315,7 @@ module Make (Heap : Heap_intf.S) = struct
         | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
         let* ptr, meta = resolve_place base in
-        let* () = Heap.check_ptr_align ptr base.ty in
+        let* () = State.check_ptr_align ptr base.ty in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
@@ -407,16 +401,16 @@ module Make (Heap : Heap_intf.S) = struct
         ok (Std_funs.builtin_fun_eval fn generics)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
-        let* fn_ptr = Heap.load ~is_move:true fn_ptr_ptr place.ty in
+        let* fn_ptr = State.load ~is_move:true fn_ptr_ptr place.ty in
         let fn_ptr = as_ptr fn_ptr in
-        let* fn = Heap.lookup_fn fn_ptr in
+        let* fn = State.lookup_fn fn_ptr in
         let fnop : GAst.fn_operand = FnOpRegular fn in
         resolve_function fnop
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
   and resolve_global (g : Types.global_decl_id) =
     let decl = Crate.get_global g in
-    let* v_opt = Heap.load_global g in
+    let* v_opt = State.load_global g in
     match v_opt with
     | Some v -> ok v
     | None ->
@@ -430,12 +424,12 @@ module Make (Heap : Heap_intf.S) = struct
           | Some fn -> fn
           | None -> exec_fun fundef
         in
-        (* First we allocate the global and store it in the heap  *)
-        let* ptr = Heap.alloc_ty decl.ty in
-        let* () = Heap.store_global g ptr in
+        (* First we allocate the global and store it in the State  *)
+        let* ptr = State.alloc_ty decl.ty in
+        let* () = State.store_global g ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = lift_state_op @@ global_fn ~args:[] in
-        let+ () = Heap.store ptr decl.ty v in
+        let+ () = State.store ptr decl.ty v in
         ptr
 
   and eval_operand (op : Expressions.operand) =
@@ -457,7 +451,7 @@ module Make (Heap : Heap_intf.S) = struct
               | Move _, _ -> true
               | _ -> false
             in
-            Heap.load ~is_move ptr ty)
+            State.load ~is_move ptr ty)
 
   and eval_operand_list ops =
     let+ vs =
@@ -472,12 +466,12 @@ module Make (Heap : Heap_intf.S) = struct
     | Use op -> eval_operand op
     | RvRef (place, borrow) ->
         let* ptr = resolve_place place in
-        let+ ptr' = Heap.borrow ptr place.ty borrow in
+        let+ ptr' = State.borrow ptr place.ty borrow in
         Ptr ptr'
     | Global { id; _ } ->
         let* ptr = resolve_global id in
         let decl = Crate.get_global id in
-        Heap.load ptr decl.ty
+        State.load ptr decl.ty
     | GlobalRef ({ id; _ }, mut) ->
         (* TODO: handle mutability *)
         let global = Crate.get_global id in
@@ -485,7 +479,7 @@ module Make (Heap : Heap_intf.S) = struct
         let borrow : Expressions.borrow_kind =
           match mut with RMut -> BMut | RShared -> BShared
         in
-        let+ ptr = Heap.borrow ptr global.ty borrow in
+        let+ ptr = State.borrow ptr global.ty borrow in
         Ptr ptr
     | UnaryOp (op, e) -> (
         let* v = eval_operand e in
@@ -494,12 +488,11 @@ module Make (Heap : Heap_intf.S) = struct
             let v = as_base_of ~ty:Typed.t_int v in
             match type_of_operand e with
             | TLiteral TBool -> ok (Base (Typed.not_int_bool v))
-            | TLiteral (TInteger ((Usize | U8 | U16 | U32 | U64 | U128) as ty))
-              ->
-                let max = Layout.max_value ty in
-                ok (Base (max -@ v))
-            | TLiteral (TInteger (Isize | I8 | I16 | I32 | I64 | I128)) ->
-                ok (Base (~-v -@ 1s))
+            | TLiteral (TInteger i_ty) ->
+                let size = Layout.size_of_int_ty i_ty in
+                let signed = Layout.is_signed i_ty in
+                let v = Typed.bit_not ~size ~signed v in
+                ok (Base v)
             | ty ->
                 Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty)
         | Neg -> (
@@ -527,11 +520,11 @@ module Make (Heap : Heap_intf.S) = struct
             | _ -> not_impl "Invalid value for ArrayToSlice")
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
-            let* verify_ptr = Heap.is_valid_ptr in
-            Heap.lift_err @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
+            let* verify_ptr = State.is_valid_ptr in
+            State.lift_err @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            let* verify_ptr = Heap.is_valid_ptr in
-            Heap.lift_err
+            let* verify_ptr = State.is_valid_ptr in
+            State.lift_err
             @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
         | Cast (CastUnsize (_, TRef (_, TDynTrait _, _)))
@@ -564,7 +557,7 @@ module Make (Heap : Heap_intf.S) = struct
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
-                let+ ptr = Heap.declare_fn fn_ptr in
+                let+ ptr = State.declare_fn fn_ptr in
                 Ptr ptr
             | Ptr _ as ptr -> ok ptr
             | _ -> not_impl "Invalid argument to CastFnPtr"))
@@ -621,7 +614,7 @@ module Make (Heap : Heap_intf.S) = struct
                   | TLiteral ty -> ty
                   | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
                 in
-                Heap.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
+                State.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
             | WrappingAdd | WrappingSub | WrappingMul | WrappingShl
             | WrappingShr -> (
                 match type_of_operand e1 with
@@ -720,7 +713,7 @@ module Make (Heap : Heap_intf.S) = struct
             let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
             let discr_ty = Types.TLiteral (TInteger int_ty) in
             let^^ loc = Sptr.offset loc discr_ofs in
-            Heap.load (loc, None) discr_ty
+            State.load (loc, None) discr_ty
         | [] -> Fmt.kstr not_impl "Unsupported discriminant for empty enums")
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
@@ -753,7 +746,7 @@ module Make (Heap : Heap_intf.S) = struct
           match values with
           | [ v ] ->
               let attribs = type_decl.item_meta.attr_info.attributes in
-              Heap.lift_err @@ Layout.apply_attributes v attribs
+              State.lift_err @@ Layout.apply_attributes v attribs
           | _ -> ok ()
         in
         Struct values
@@ -813,23 +806,23 @@ module Make (Heap : Heap_intf.S) = struct
         let* ptr = resolve_place place in
         let* v = eval_rvalue rval in
         L.info (fun m -> m "Assigning %a <- %a" pp_full_ptr ptr pp_rust_val v);
-        Heap.store ptr ty v
+        State.store ptr ty v
     | StorageLive local ->
         let* ptr, ty = get_variable_and_ty local in
-        let* () = match ptr with None -> ok () | Some ptr -> Heap.free ptr in
-        let* ptr = Heap.alloc_ty ty in
+        let* () = match ptr with None -> ok () | Some ptr -> State.free ptr in
+        let* ptr = State.alloc_ty ty in
         map_store (Store.add local (Some ptr, ty))
     | StorageDead local -> (
         let* ptr, ty = get_variable_and_ty local in
         match ptr with
         | Some ptr ->
-            let* () = Heap.free ptr in
+            let* () = State.free ptr in
             map_store (Store.add local (None, ty))
         | None -> ok ())
     | Drop place ->
         (* TODO: this is probably super wrong, drop glue etc. *)
         let* place_ptr = resolve_place place in
-        Heap.uninit place_ptr place.ty
+        State.uninit place_ptr place.ty
     | Assert { cond; expected; on_failure } -> (
         let* cond = eval_operand cond in
         let^ cond_int =
@@ -878,16 +871,16 @@ module Make (Heap : Heap_intf.S) = struct
           @@ lift_state_op
           @@ exec_fun ~args
         in
-        Heap.unwind_with fun_exec
+        State.unwind_with fun_exec
           ~f:(fun v ->
             let* ptr = resolve_place place in
             L.info (fun m ->
                 m "Returned %a from %a" pp_rust_val v Crate.pp_fn_operand func);
-            let* () = Heap.store ptr ty v in
+            let* () = State.store ptr ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
-            let* () = Heap.add_error err in
+            let* () = State.add_error err in
             L.info (fun m -> m "Unwinding from %a" Crate.pp_fn_operand func);
             let block = UllbcAst.BlockId.nth body.body on_unwind in
             exec_block ~body block)
@@ -899,11 +892,11 @@ module Make (Heap : Heap_intf.S) = struct
         let* ptr =
           of_opt_not_impl ~msg:"Return value unset, but returned" ptr
         in
-        let* value = Heap.load ptr ty in
+        let* value = State.load ptr ty in
         let ptr_tys = Layout.ref_tys_in value ty in
         let+ () =
           fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
-              Heap.tb_load ptr ty)
+              State.tb_load ptr ty)
         in
         value
     | Switch (discr, switch) -> (
@@ -970,10 +963,10 @@ module Make (Heap : Heap_intf.S) = struct
         | Panic name ->
             let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
             error (`Panic name))
-    | UnwindResume -> Heap.pop_error ()
+    | UnwindResume -> State.pop_error ()
 
   and exec_fun ~args (fundef : UllbcAst.fun_decl) state :
-      (Sptr.t rust_val * H.t, 'e, 'f) Result.t =
+      (Sptr.t rust_val * State.t, 'e, 'f) Result.t =
     let open Rustsymex.Syntax in
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
@@ -994,7 +987,7 @@ module Make (Heap : Heap_intf.S) = struct
     let* protected = alloc_stack body.locals args in
     let starting_block = List.hd body.body in
     let exec_block = exec_block ~body starting_block in
-    Heap.unwind_with exec_block
+    State.unwind_with exec_block
       ~f:(fun value ->
         let protected_address =
           match (fundef.signature.output, value) with
@@ -1015,10 +1008,10 @@ module Make (Heap : Heap_intf.S) = struct
       if ignore_leaks then Result.ok (value, state)
       else
         let@ () = Rustsymex.with_loc ~loc:fundef.item_meta.span in
-        let++ (), state = H.leak_check state in
+        let++ (), state = State.leak_check state in
         (value, state)
     in
-    H.add_to_call_trace err
+    State.add_to_call_trace err
       (Soteria_terminal.Call_trace.mk_element ~loc:fundef.item_meta.span
          ~msg:"Entry point" ())
 end

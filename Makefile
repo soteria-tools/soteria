@@ -16,7 +16,10 @@ VSCODE_DIST=dist
 ##### Normal ocaml stuff #####
 .PHONY: ocaml
 ocaml:
-	 $(DUNE) build
+	$(DUNE) build
+	 
+ocaml-format-check:
+	$(DUNE) build @fmt
 
 .PHONY: ocaml-test
 ocaml-test:
@@ -54,6 +57,7 @@ switch:
 .PHONY: ocaml-deps
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc
+	$(OPAM) install ocamlformat.0.27.0
 
 ##### JavaScript stuff #####
 

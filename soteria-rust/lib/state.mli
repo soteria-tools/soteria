@@ -1,3 +1,3 @@
 include
-  Heap_intf.S
+  State_intf.S
     with type 'a err = 'a * Charon.Meta.span Soteria_terminal.Call_trace.t
