@@ -41,3 +41,11 @@ let is_freed t = match t.node with Freeable.Freed -> true | _ -> false
 let alloc ?loc ~zeroed size =
   With_origin.
     { node = Freeable.Alive (Tree_block.alloc ~zeroed size); info = loc }
+
+let free h =
+  let k =
+    With_origin.wrap
+      (Freeable.free
+         ~assert_exclusively_owned:Tree_block.assert_exclusively_owned)
+  in
+  k h

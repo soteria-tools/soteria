@@ -144,11 +144,7 @@ let free (ptr : [< T.sptr ] Typed.t) (st : t) :
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ heap = with_heap st in
-    (SPmap.wrap
-       (With_origin.wrap
-          (Freeable.free
-             ~assert_exclusively_owned:Tree_block.assert_exclusively_owned)))
-      (Typed.Ptr.loc ptr) heap
+    (SPmap.wrap Block.free) (Typed.Ptr.loc ptr) heap
   else Result.error `InvalidFree
 
 let error err _st =
