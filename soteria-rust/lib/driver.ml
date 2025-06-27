@@ -127,8 +127,11 @@ let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
-let exec_and_output_crate ~plugin crate =
-  match exec_main ~plugin crate with
+let exec_and_output_crate ~plugin compile_fn =
+  match
+    let crate = compile_fn () in
+    exec_main ~plugin crate
+  with
   | Ok res ->
       Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Note
         "Done, no errors found";
@@ -182,8 +185,8 @@ let exec_and_output_crate ~plugin crate =
 let exec_rustc config file_name =
   config_set config;
   let plugin = Plugin.create () in
-  let crate = parse_ullbc_of_file ~plugin file_name in
-  exec_and_output_crate ~plugin crate
+  let compile () = parse_ullbc_of_file ~plugin file_name in
+  exec_and_output_crate ~plugin compile
 
 let exec_cargo config _crate_dir =
   config_set config;
