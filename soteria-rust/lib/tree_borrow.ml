@@ -136,7 +136,8 @@ module TagMap = Map.Make (struct
   let compare = compare
 end)
 
-(** { tag -> (protected * state) }, we store whether the tag is protected outside the tree borrow because *)
+(** [tag -> (protected * state)], we store whether the tag is protected outside
+    the tree borrow because *)
 type tb_state = (bool * state) TagMap.t
 
 let empty_state = TagMap.empty

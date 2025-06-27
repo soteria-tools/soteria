@@ -1,12 +1,7 @@
 (library
  (name soteria_terminal)
  (public_name soteria.terminal)
- (libraries
-    soteria_std
-    soteria.logs
-    progress
-    grace
-    grace.ansi_renderer)
-  (flags
-    (:standard -open Soteria_std))
+ (libraries soteria_std soteria.logs progress grace grace.ansi_renderer)
+ (flags
+  (:standard -open Soteria_std))
  (synopsis "Terminal pretty printing library for symbolic execution"))
