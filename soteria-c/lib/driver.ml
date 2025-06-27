@@ -16,7 +16,7 @@ let set_cerb_conf () =
   let open Cerb_global in
   let lexicon = { with_c23 = true; with_gnu = true; without_cerb = false } in
   set_cerb_conf ~lexicon ~backend_name:"soteria-c" ~exec:false Random
-    ~concurrency:false Basic ~defacto:false ~permissive:false ~agnostic:false
+    ~concurrency:false Basic ~defacto:false ~permissive:true ~agnostic:false
     ~ignore_bitfields:true
 
 let io : Cerb_backend.Pipeline.io_helpers =
@@ -35,7 +35,7 @@ let io : Cerb_backend.Pipeline.io_helpers =
     return ()
   in
   let print_endline str =
-    print_endline str;
+    L.debug (fun m -> m "%s" str);
     return ()
   in
   let print_debug n mk_str =

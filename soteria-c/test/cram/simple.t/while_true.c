@@ -1,20 +1,18 @@
-int *malloc(__cerbty_size_t);
-
-int __assert__(int);
+#include <stdlib.h>
 
 int main()
 {
-  int y = __soteria_nondet__();
+  int y = __soteria___nondet_int();
   if (y)
   {
-    __assert__(0);
+    __soteria___assert(0);
   }
   while (1)
   {
   }
   if (y + 1)
   {
-    __assert__(0);
+    __soteria___assert(0);
   }
   return 0;
 }

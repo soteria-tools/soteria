@@ -13,6 +13,6 @@ int operate(operation op, int a, int b)
 int main()
 {
     int ret = operate(add, 5, 3);
-    __assert__(ret == 8);
+    __soteria___assert(ret == 8);
     return 0;
 }

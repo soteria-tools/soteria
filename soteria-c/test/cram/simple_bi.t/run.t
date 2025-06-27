@@ -1,7 +1,7 @@
   $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for f_485:
+  Summaries for f_545:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
@@ -75,6 +75,11 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    12 │    load(x);
       │    ------- 1: Called from here
   
+  error: Null pointer dereference in test_np
+      ┌─ manifest.c:51:3
+   51 │    *x = 12;
+      │    ^^^^^^^ Triggering write
+  
   error: Accessing uninitialized memory in test_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -96,12 +101,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    21 │    load(x);
       │    ------- 1: Called from here
   
-  error: Null pointer dereference in test_np
-      ┌─ manifest.c:51:3
-   51 │    *x = 12;
-      │    ^^^^^^^ Triggering write
-  
-  Summaries for load_487:
+  Summaries for load_547:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
@@ -131,7 +131,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok V|3|) };
       manifest_bugs = []}
   
-  Summaries for test_leak_495:
+  Summaries for test_leak_555:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -146,7 +146,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok 1) };
       manifest_bugs = []}
   
-  Summaries for test_np_uninit_489:
+  Summaries for test_np_uninit_549:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -172,7 +172,24 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         [• Called from here: manifest.c:12:3-10;
          • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
   
-  Summaries for test_ok_498:
+  Summaries for test_np_561:
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 0) };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret =
+        (Error (Null pointer dereference,
+                [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)]))
+        };
+      manifest_bugs =
+      [(Null pointer dereference,
+        [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)])]}
+  
+  Summaries for test_ok_558:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -184,7 +201,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok 1) };
       manifest_bugs = []}
   
-  Summaries for test_uninit_492:
+  Summaries for test_uninit_552:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -203,29 +220,12 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok 1) };
       manifest_bugs = []}
   
-  Summaries for test_np_501:
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
-      manifest_bugs = []}
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret =
-        (Error (Null pointer dereference,
-                [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)]))
-        };
-      manifest_bugs =
-      [(Null pointer dereference,
-        [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)])]}
-  
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for test_486:
+  Summaries for test_546:
     Analysed {
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
@@ -268,7 +268,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries array_iter.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for test_486:
+  Summaries for test_546:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|); V|3|]; pre = [];
