@@ -33,6 +33,7 @@ package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(PACKAGE_DIST)/lib
 	$(PACKAGING_BIN) copy-files packaging/bin-locations.txt $(PACKAGE_DIST)/bin
 	mkdir -p $(PACKAGE_DIST)/lib
+	$(PACKAGING_BIN) copy-cerb-runtime $(PACKAGE_DIST)/lib
 	$(PACKAGING_BIN) copy-soteria-c-auto-includes $(PACKAGE_DIST)/lib/
 	
 
