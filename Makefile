@@ -57,6 +57,7 @@ switch:
 .PHONY: ocaml-deps
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc
+	$(OPAM) install ocamlformat.0.27.0
 
 ##### JavaScript stuff #####
 
