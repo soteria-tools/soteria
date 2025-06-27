@@ -130,7 +130,7 @@ jobs:
         run: |
           chmod +x ./bin/soteria-c
           chmod +x ./bin/z3
-      - run: DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c capture-db build/compile_commands.json
+      - run: CERB_INSTALL_PREFIX=$(pwd) DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c capture-db build/compile_commands.json
         env:
           SOTERIA_Z3_PATH: ./bin/z3
           SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
