@@ -576,6 +576,12 @@ let rec lt v1 v2 =
         let op = if Z.divisible y x || Z.(y < zero) then lt else leq in
         if Z.(zero < x) then op v1' (int_z Z.(y / x))
         else op (int_z Z.(y / x)) v1'
+  | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
+    when Z.leq x y ->
+      v_true
+  | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
+    when Z.lt y (Z.neg (Z.abs x)) ->
+      v_true
   | _ -> Binop (Lt, v1, v2) <| TBool
 
 and leq v1 v2 =
@@ -616,6 +622,12 @@ and leq v1 v2 =
         let op = if Z.divisible y x || Z.(y > zero) then leq else lt in
         if Z.(zero < x) then op v1' (int_z Z.(y / x))
         else op (int_z Z.(y / x)) v1'
+  | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
+    when Z.leq x y ->
+      v_true
+  | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
+    when Z.lt y (Z.neg (Z.abs x)) ->
+      v_true
   | _ -> Binop (Leq, v1, v2) <| TBool
 
 let geq v1 v2 = leq v2 v1
