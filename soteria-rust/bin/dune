@@ -2,8 +2,4 @@
  (package soteria-rust)
  (public_name soteria-rust)
  (name soteria_rust)
- (libraries soteria_rust_lib soteria.logs
-
-
- grace
- grace.ansi_renderer))
+ (libraries soteria_rust_lib soteria.logs grace grace.ansi_renderer))

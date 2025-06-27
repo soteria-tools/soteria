@@ -136,6 +136,8 @@ val bit_shl :
 val bit_shr :
   size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
+val bit_not : size:int -> signed:bool -> [< sint ] t -> [> sint ] t
+
 (** Floating point operations *)
 
 val eq_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t

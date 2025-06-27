@@ -641,7 +641,15 @@ module Make (State : State_intf.S) = struct
         | Minus ->
             let^ v = cast_to_int v in
             arith_sub Typed.zero v
-        | _ ->
+        | AilSyntax.Bnot ->
+            let^ v = cast_to_int v in
+
+            let* { bv_size; signed } =
+              Layout.bv_info (type_of e)
+              |> InterpM.of_opt_not_impl ~msg:"bv_info"
+            in
+            InterpM.ok (Typed.bit_not ~size:bv_size ~signed v)
+        | AilSyntax.Plus | AilSyntax.PostfixIncr | AilSyntax.PostfixDecr ->
             Fmt.kstr InterpM.not_impl "Unsupported unary operator %a"
               Fmt_ail.pp_unop op)
     | AilEbinary (e1, Or, e2) ->

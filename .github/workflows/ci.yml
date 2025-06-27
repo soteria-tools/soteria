@@ -51,6 +51,8 @@ jobs:
         run: make ocaml-deps
       - name: Build OCaml stuff
         run: make ocaml
+      - name: Check formatting
+        run: make ocaml-format-check
 
       # Install Rust and Charon
       - name: Get Charon's commit hash
