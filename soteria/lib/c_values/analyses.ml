@@ -6,19 +6,36 @@ open Svalue.Infix
 let log _ = ()
 
 module Interval = struct
-  (** A range \[m, n\]; both sides are inclusive. A [None] in the range
-      represents ±∞. *)
-  type range = Z.t option * Z.t option
+  module Range = struct
+    (** A range \[m, n\]; both sides are inclusive. A [None] in the range
+        represents ±∞. *)
+    type t = Z.t * Z.t [@@deriving eq]
 
-  let pp_range fmt (m, n) =
-    Fmt.pf fmt "[%a; %a]"
-      Fmt.(option ~none:(any "∞") Z.pp_print)
-      m
-      Fmt.(option ~none:(any "∞") Z.pp_print)
-      n
+    (** Some value that is definitely bigger than any valid C/Rust int *)
+    let max = Z.(one lsl 128)
+
+    let min = Z.neg max
+    let default : t = (min, max)
+    let pp fmt (m, n) = Fmt.pf fmt "[%a; %a]" Z.pp_print m Z.pp_print n
+    let is_empty (m, n) = Z.gt m n
+    let intersect (m1, n1) (m2, n2) = (Z.max m1 m2, Z.min n1 n2)
+    let union (m1, n1) (m2, n2) = (Z.min m1 m2, Z.max n1 n2)
+
+    (** The difference [r1 / r2] of two ranges; this is tricky: if [r2] is
+        somewhere inside the [r1] without touching its edges (e.g.
+        [[0, 5] / [2, 3]]), we cannot compute an appropriate range and must
+        overapproximate to [r1].
+
+        This is ok here, as long as we don't simplify the assertion, as the
+        solver will still have all information. FIXME: is the above true? *)
+    let diff ((a1, b1) as r1 : t) ((a2, b2) : t) : t option =
+      if Z.lt b1 a2 || Z.lt b2 a1 then Some r1
+      else if Z.lt a1 a2 then if Z.lt b2 b1 then None else Some (a1, Z.pred a2)
+      else Some (Z.succ b2, b1)
+  end
 
   let pp_binding fmt (var, range) =
-    Fmt.pf fmt "%a: %a" Var.pp var pp_range range
+    Fmt.pf fmt "%a: %a" Var.pp var Range.pp range
 
   let pp_map ft m =
     Fmt.pf ft "{ %a }"
@@ -26,60 +43,31 @@ module Interval = struct
       m
 
   include Reversible.Make_mutable (struct
-    type t = range Var.Map.t
+    type t = Range.t Var.Map.t
 
     let default : t = Var.Map.empty
   end)
 
-  let is_empty : range -> bool = function
-    | Some m, Some n -> Z.gt m n
-    | _ -> false
-
   let mk_var v : Svalue.t = Svalue.mk_var v TInt
 
-  let to_sval v r : Svalue.t =
-    match r with
-    | Some m, Some n when Z.equal m n -> mk_var v ==@ Svalue.int_z m
-    | Some m, Some n ->
-        let var = mk_var v in
-        Svalue.int_z m <=@ var &&@ (var <=@ Svalue.int_z n)
-    | Some m, None -> Svalue.int_z m <=@ mk_var v
-    | None, Some n -> mk_var v <=@ Svalue.int_z n
-    | None, None -> Svalue.v_true
-
-  (** The intersection of two ranges; always representable *)
-  let intersect ((m1, n1) : range) ((m2, n2) : range) : range =
-    (Option.merge Z.max m1 m2, Option.merge Z.min n1 n2)
-
-  (** The union of two ranges; representable but OX *)
-  let union ((m1, n1) : range) ((m2, n2) : range) : range =
-    (Option.map2 Z.min m1 m2, Option.map2 Z.max n1 n2)
-
-  (** The difference [r1 / r2] of two ranges; this is tricky: if [r2] is
-      somewhere inside the [r1] without touching its edges (e.g.
-      [[0, 5] / [2, 3]]), we cannot compute an appropriate range and must
-      overapproximate to [r1].
-
-      This is ok here, as long as we don't simplify the assertion, as the solver
-      will still have all information. FIXME: is the above true? *)
-  let diff (r1 : range) (r2 : range) : range option =
-    match (r1, r2) with
-    (* [m, n] \ {m} = [m+1, n] *)
-    | (Some m1, n1), (Some m2, Some n2) when Z.equal m2 n2 && Z.equal m1 m2 ->
-        Some (Some (Z.succ m1), n1)
-    (* [m, n] \ {n} = [m, n-1] *)
-    | (m1, Some n1), (Some m2, Some n2) when Z.equal m2 n2 && Z.equal n1 m2 ->
-        Some (m1, Some (Z.pred n1))
-    | _ -> None
+  let to_sval v (m, n) : Svalue.t =
+    let var = mk_var v in
+    let low =
+      if m == Range.min then Svalue.v_true else Svalue.int_z m <=@ var
+    in
+    let high =
+      if n == Range.max then Svalue.v_true else var <=@ Svalue.int_z n
+    in
+    low &&@ high
 
   (** Intersection of two interval mappings, doing the intersection of the
       intervals *)
-  let st_intersect = Var.Map.merge (fun _ -> Option.map2 intersect)
+  let st_intersect = Var.Map.merge (fun _ -> Option.map2 Range.intersect)
 
   (** Union of two interval mappings, doing the union of the intervals *)
-  let st_union = Var.Map.merge (fun _ -> Option.map2 union)
+  let st_union = Var.Map.merge (fun _ -> Option.map2 Range.union)
 
-  let get v st = Var.Map.find_opt v st |> Option.value ~default:(None, None)
+  let get v st = Var.Map.find_opt v st |> Option.value ~default:Range.default
 
   (** [add_constraint ?neg ?absorb v st] Adds a constraint [v] to the state
       [st]. [absorb=false] indicates that we cannot return [true] to indicate
@@ -87,46 +75,49 @@ module Interval = struct
       adding a negated constraint, so rather than doing set intersection, we
       need to do set difference. *)
   let rec add_constraint ?(neg = false) ?(absorb = true) (v : Svalue.t) st :
-      (Svalue.t * Var.Set.t) * range Var.Map.t =
+      (Svalue.t * Var.Set.t) * Range.t Var.Map.t =
     let update var range' =
       let range = get var st in
       let new_range =
-        if neg then diff range range' else Some (intersect range range')
+        if neg then Range.diff range range'
+        else Some (Range.intersect range range')
       in
       match new_range with
       (* We couldn't compute anything from this update *)
       | None -> ((v, Var.Set.empty), st)
       (* We found an inequality, but we learnt nothing from it; we can discard it *)
-      | Some new_range when range = new_range ->
+      | Some new_range when Range.equal range new_range ->
           log (fun m ->
-              m "Useless range  %a: %a %s %a = %a" Var.pp var pp_range range
+              m "Useless range  %a: %a %s %a = %a" Var.pp var Range.pp range
                 (if neg then "/" else "∩")
-                pp_range range' pp_range new_range);
-          ((Svalue.bool (not (is_empty range)), Var.Set.empty), st)
-      | Some new_range -> (
+                Range.pp range' Range.pp new_range);
+          ((Svalue.bool (not (Range.is_empty range)), Var.Set.empty), st)
+      | Some ((m, n) as new_range) ->
           let st' = Var.Map.add var new_range st in
           log (fun m ->
-              m "New range %a: %a %s %a = %a" Var.pp var pp_range range
+              m "New range %a: %a %s %a = %a" Var.pp var Range.pp range
                 (if neg then "/" else "∩")
-                pp_range range' pp_range new_range);
-          match new_range with
-          (* We narrowed the range to one value! *)
-          | Some m, Some n when Z.equal m n ->
-              let eq = Svalue.int_z m ==@ mk_var var in
-              (* this is hacky; we found the exact value, but we can't return the equality
+                Range.pp range' Range.pp new_range);
+          if Z.equal m n then
+            (* We narrowed the range to one value! *)
+            let eq = Svalue.int_z m ==@ mk_var var in
+            (* this is hacky; we found the exact value, but we can't return the equality
                  if we're negating, since that equality will otherwise be negated. *)
-              (((if neg then Svalue.not eq else eq), Var.Set.empty), st')
-          (* The range is empty, so this cannot be true *)
-          | _ when is_empty new_range -> ((Svalue.v_false, Var.Set.empty), st')
-          (* We got a new range, but this is a negation, meaning we can' be sure we didn't lose
+            (((if neg then Svalue.not eq else eq), Var.Set.empty), st')
+          else if Range.is_empty new_range then
+            (* The range is empty, so this cannot be true *)
+            ((Svalue.v_false, Var.Set.empty), st')
+          else if neg || not absorb then
+            (* We got a new range, but this is a negation, meaning we can' be sure we didn't lose
              some information; to be safe, we let the PC keep the value.
              Also take this case if we do not absorb this information (e.g. in a disjunction),
              as in that case the PC must keep track of the assertion.  *)
-          | _ when neg || not absorb -> ((v, Var.Set.empty), st')
-          (* We could cleanly absorb the range, so the PC doesn't need to store it -- however
+            ((v, Var.Set.empty), st')
+          else
+            (* We could cleanly absorb the range, so the PC doesn't need to store it -- however
              we must mark this variable as dirty, as maybe the modified range still renders
              the branch infeasible, e.g. because of some additional PC assertions. *)
-          | _ -> ((Svalue.v_true, Var.Set.singleton var), st'))
+            ((Svalue.v_true, Var.Set.singleton var), st')
     in
     match v.node.kind with
     | Binop
@@ -134,13 +125,13 @@ module Interval = struct
           { node = { kind = Var v; _ }; _ },
           { node = { kind = Int max; _ }; _ } ) ->
         let max = if bop = Lt then Z.pred max else max in
-        update v (None, Some max)
+        update v (Range.min, max)
     | Binop
         ( ((Lt | Leq) as bop),
           { node = { kind = Int min; _ }; _ },
           { node = { kind = Var v; _ }; _ } ) ->
         let min = if bop = Lt then Z.succ min else min in
-        update v (Some min, None)
+        update v (min, Range.max)
     | Binop
         ( Eq,
           { node = { kind = Int x; _ }; _ },
@@ -149,7 +140,7 @@ module Interval = struct
         ( Eq,
           { node = { kind = Var var; _ }; _ },
           { node = { kind = Int x; _ }; _ } ) ->
-        update var (Some x, Some x)
+        update var (x, x)
     (* We conservatively explore negations; we're only interested in simple (in)equalities *)
     | Unop (Not, nv) ->
         let (nv', vars), st' = add_constraint ~absorb ~neg:(not neg) nv st in
@@ -172,27 +163,27 @@ module Interval = struct
         ((v1' ||@ v2', Var.Set.union vars1 vars2), st_union st1 st2)
     (* We can try computing ranges of expressions and guessing truthiness *)
     | Binop (((Eq | Lt | Leq) as bop), l, r) ->
-        let rec to_range (v : Svalue.t) : range =
+        let rec to_range (v : Svalue.t) : Range.t =
           match v.node.kind with
           | Var v -> get v st
-          | Int i -> (Some i, Some i)
+          | Int i -> (i, i)
           | Binop (Plus, l, r) ->
               let ml, nl = to_range l in
               let mr, nr = to_range r in
-              (Option.map2 Z.add ml mr, Option.map2 Z.add nl nr)
+              (Z.add ml mr, Z.add nl nr)
           | Binop (Minus, l, r) ->
               let ml, nl = to_range l in
               let mr, nr = to_range r in
-              (Option.map2 Z.sub ml nr, Option.map2 Z.sub nl mr)
-          | _ -> (None, None)
+              (Z.sub ml nr, Z.sub nl mr)
+          | _ -> Range.default
         in
         let lr = to_range l in
         let rr = to_range r in
         let res =
           match (bop, lr, rr) with
-          | Eq, _, _ when is_empty (intersect lr rr) -> Some false
-          | Lt, (Some ml, _), (_, Some nr) when Z.geq ml nr -> Some false
-          | Leq, (Some ml, _), (_, Some nr) when Z.gt ml nr -> Some false
+          | Eq, _, _ when Range.is_empty (Range.intersect lr rr) -> Some false
+          | Lt, (ml, _), (_, nr) when Z.geq ml nr -> Some false
+          | Leq, (ml, _), (_, nr) when Z.gt ml nr -> Some false
           | _ -> None
         in
         ((Option.fold res ~some:Svalue.bool ~none:v, Var.Set.empty), st)
