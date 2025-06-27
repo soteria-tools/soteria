@@ -94,7 +94,9 @@ module Frontend = struct
       let* impl = load_core_impl stdlib impl_name in
       Exception.Result
         (fun ~cpp_cmd filename ->
-          let cpp_cmd = cpp_cmd ^ " -E -C " ^ include_soteria_c_h in
+          let cpp_cmd =
+            cpp_cmd ^ " -E -CC -fno-blocks -std=c11 " ^ include_soteria_c_h
+          in
           c_frontend (conf cpp_cmd, io) (stdlib, impl) ~filename)
     in
     let () = Cerb_colour.do_colour := false in

@@ -3,6 +3,7 @@ void __soteria___assert(int x);
 void __soteria___debug_show();
 
 #define __attribute__(X)
+#define restrict
 
 // Dealing with Apple extensions
 // Uncomment this or pass "-fno-blocks" to clang's cpp
@@ -60,3 +61,10 @@ __cerbty_size_t __builtin_object_size(const void *ptr, int type);
 
 __cerbty_uint32_t __builtin_bswap32(__cerbty_uint32_t x);
 __cerbty_uint64_t __builtin_bswap64(__cerbty_uint64_t x);
+
+void __atomic_store_n(volatile int *ptr, int val, int memorder);
+int __atomic_load_n(volatile int *ptr, int memorder);
+int __atomic_add_fetch(volatile int *ptr, int val, int memorder);
+int __atomic_sub_fetch(volatile int *ptr, int val, int memorder);
+bool __atomic_compare_exchange(volatile int *ptr, int *expected, int *desired, bool weak, int success_memorder, int failure_memorder);
+void __atomic_exchange(volatile int *ptr, int *val, int *ret, int memorder);
