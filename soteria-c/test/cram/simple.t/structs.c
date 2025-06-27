@@ -1,4 +1,5 @@
-#include <stdlib.h>
+void *malloc(__cerbty_size_t size);
+void free(void *ptr);
 
 struct test
 {

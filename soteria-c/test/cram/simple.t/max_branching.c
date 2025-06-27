@@ -1,4 +1,4 @@
-int *malloc(__cerbty_size_t);
+void *malloc(__cerbty_size_t size);
 
 int main()
 {

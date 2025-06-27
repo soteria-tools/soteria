@@ -1,5 +1,4 @@
 #include "test3.h"
-#include <stdio.h>
 
 typedef int (*operation)(int, int);
 int operate(operation op, int a, int b);

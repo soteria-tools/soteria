@@ -39,7 +39,7 @@ Symbolic execution of a simple program with a horrible pointer indirection *&*x
             [(V|1|,
               { node =
                 [TypedVal {offset = 0; ty = signed int; v = 12}; (Bound 4)];
-                info = (Some indirections.c:4:12-31) })];
+                info = (Some indirections.c:5:12-31) })];
             globs = [] });
      Ok: (1, { heap = []; globs = [] })]
   Executed 9 statements
@@ -74,8 +74,8 @@ Checking that fuel gets exhausted properly
   $ soteria-c exec-main while_true.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Error: Failed assertion with trace
-            [• Called from here: while_true.c:8:5-26;
-             • Triggering operation: while_true.c:8:5-26]]
+            [• Called from here: while_true.c:6:5-26;
+             • Triggering operation: while_true.c:6:5-26]]
   Executed 152 statements
 Checking that code cannot branch infinitely
   $ soteria-c exec-main max_branching.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
@@ -485,18 +485,18 @@ Checking that code cannot branch infinitely
              (V|2|,
               { node = [TypedVal {offset = 0; ty = signed int; v = 0}];
                 info = None })];
-            globs = [(x_1115, V|1|); (y_1116, V|2|)] })]
+            globs = [(x_544, V|1|); (y_545, V|2|)] })]
   Executed 3 statements
 
   $ soteria-c exec-main structs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
-            [(V|1|, { node = Freed; info = (Some structs.c:12:3-4) });
-             (V|2|, { node = Freed; info = (Some structs.c:16:21-48) })];
+            [(V|1|, { node = Freed; info = (Some structs.c:13:3-4) });
+             (V|2|, { node = Freed; info = (Some structs.c:17:21-48) })];
             globs = [] });
      Ok: (1,
-          { heap = [(V|1|, { node = Freed; info = (Some structs.c:12:3-4) })];
+          { heap = [(V|1|, { node = Freed; info = (Some structs.c:13:3-4) })];
             globs = [] })]
   Executed 16 statements
 

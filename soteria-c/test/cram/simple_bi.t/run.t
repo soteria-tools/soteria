@@ -34,6 +34,11 @@
 NO_COLOR=true is necessary to avoid test output changing in CI. For some reason, Grace doesn't prints a final caret at the end with color, and not without color.
   $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
+  error: Null pointer dereference in test_np
+      ┌─ manifest.c:51:3
+   51 │    *x = 12;
+      │    ^^^^^^^ Triggering write
+  
   warning: Memory leak in test_leak
       ┌─ manifest.c:26:2
    25 │    
@@ -50,6 +55,27 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    34 │ │  }
       │ ╰──
    35 │    
+  
+  error: Accessing uninitialized memory in test_uninit
+      ┌─ manifest.c:6:10
+    6 │    return *x;
+      │           ^^ Triggering read
+    7 │  }
+    8 │  
+    9 │  int test_np_uninit()
+   10 │  {
+   11 │    int *x = (int *)malloc(sizeof(int));
+   12 │    load(x);
+   13 │    return 0;
+   14 │  }
+   15 │  
+   16 │  int test_uninit()
+   17 │  {
+   18 │    int *x = (int *)malloc(sizeof(int));
+   19 │    if (!x)
+   20 │      return 1;
+   21 │    load(x);
+      │    ------- 1: Called from here
   
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
@@ -75,33 +101,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    12 │    load(x);
       │    ------- 1: Called from here
   
-  error: Null pointer dereference in test_np
-      ┌─ manifest.c:51:3
-   51 │    *x = 12;
-      │    ^^^^^^^ Triggering write
-  
-  error: Accessing uninitialized memory in test_uninit
-      ┌─ manifest.c:6:10
-    6 │    return *x;
-      │           ^^ Triggering read
-    7 │  }
-    8 │  
-    9 │  int test_np_uninit()
-   10 │  {
-   11 │    int *x = (int *)malloc(sizeof(int));
-   12 │    load(x);
-   13 │    return 0;
-   14 │  }
-   15 │  
-   16 │  int test_uninit()
-   17 │  {
-   18 │    int *x = (int *)malloc(sizeof(int));
-   19 │    if (!x)
-   20 │      return 1;
-   21 │    load(x);
-      │    ------- 1: Called from here
-  
-  Summaries for load_547:
+  Summaries for load_548:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
@@ -131,48 +131,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok V|3|) };
       manifest_bugs = []}
   
-  Summaries for test_leak_555:
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
-      manifest_bugs =
-      [(Memory leak,
-        [• This allocation leaked: manifest.c:28:19-38;
-         • manifest.c:26:1-34:2 (cursor: 26:5 - 26:14)])]}
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 1) };
-      manifest_bugs = []}
-  
-  Summaries for test_np_uninit_549:
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret =
-        (Error (Accessing uninitialized memory,
-                [• Called from here: manifest.c:12:3-10;
-                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
-        };
-      manifest_bugs =
-      [(Accessing uninitialized memory,
-        [• Called from here: manifest.c:12:3-10;
-         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret =
-        (Error (Null pointer dereference,
-                [• Called from here: manifest.c:12:3-10;
-                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
-        };
-      manifest_bugs =
-      [(Null pointer dereference,
-        [• Called from here: manifest.c:12:3-10;
-         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
-  
-  Summaries for test_np_561:
+  Summaries for test_np_562:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -189,7 +148,22 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       [(Null pointer dereference,
         [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)])]}
   
-  Summaries for test_ok_558:
+  Summaries for test_leak_556:
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 0) };
+      manifest_bugs =
+      [(Memory leak,
+        [• This allocation leaked: manifest.c:28:19-38;
+         • manifest.c:26:1-34:2 (cursor: 26:5 - 26:14)])]}
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 1) };
+      manifest_bugs = []}
+  
+  Summaries for test_ok_559:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -201,7 +175,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok 1) };
       manifest_bugs = []}
   
-  Summaries for test_uninit_552:
+  Summaries for test_uninit_553:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -219,6 +193,32 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret = (Ok 1) };
       manifest_bugs = []}
+  
+  Summaries for test_np_uninit_550:
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret =
+        (Error (Accessing uninitialized memory,
+                [• Called from here: manifest.c:12:3-10;
+                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
+        };
+      manifest_bugs =
+      [(Accessing uninitialized memory,
+        [• Called from here: manifest.c:12:3-10;
+         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret =
+        (Error (Null pointer dereference,
+                [• Called from here: manifest.c:12:3-10;
+                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
+        };
+      manifest_bugs =
+      [(Null pointer dereference,
+        [• Called from here: manifest.c:12:3-10;
+         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
   
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.

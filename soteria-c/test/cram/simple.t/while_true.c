@@ -1,5 +1,3 @@
-#include <stdlib.h>
-
 int main()
 {
   int y = __soteria___nondet_int();
