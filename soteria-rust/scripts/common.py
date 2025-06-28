@@ -83,6 +83,7 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "BitwiseShiftOperators/shift_neg_vals.rs": unkn_(
         "Wrapping operations without loop unrolling branch too much"
     ),
+    "Intrinsics/bswap.rs": unkn_("Hard to reduce binary operations"),
     "Intrinsics/Count/ctpop.rs": pass_("The test requires 2^N branches"),
     "Intrinsics/FastMath/add_f64.rs": pass_("Slow floating point operation"),
     "Intrinsics/FastMath/div_f64.rs": pass_("Slow floating point operation"),
@@ -98,6 +99,12 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "Intrinsics/Math/Rounding/RInt/rintf64.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Round/roundf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Round/roundf64.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f32.rs": pass_(
+        "Slow floating point rounding"
+    ),
+    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": pass_(
+        "Slow floating point rounding"
+    ),
     "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
