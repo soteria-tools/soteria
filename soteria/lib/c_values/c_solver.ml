@@ -1,7 +1,8 @@
 module Var = Svalue.Var
 module L = Soteria_logs.Logs.L
 
-module Make_incremental (Intf : Solver_interface.S) = struct
+module Make_incremental (Analysis : Analyses.S) (Intf : Solver_interface.S) =
+struct
   module Value = Typed
 
   module Var_counter = Var.Incr_counter_mut (struct
@@ -66,6 +67,7 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     save_counter : Save_counter.t;
     var_counter : Var_counter.t;
     state : Solver_state.t;
+    analysis : Analysis.t;
   }
 
   let init () =
@@ -76,18 +78,21 @@ module Make_incremental (Intf : Solver_interface.S) = struct
       save_counter = Save_counter.init ();
       var_counter = Var_counter.init ();
       state = Solver_state.init ();
+      analysis = Analysis.init ();
     }
 
   let save solver =
     Var_counter.save solver.var_counter;
     Save_counter.save solver.save_counter;
     Solver_state.save solver.state;
+    Analysis.save solver.analysis;
     Intf.push solver.z3_exe 1
 
   let backtrack_n solver n =
     Var_counter.backtrack_n solver.var_counter n;
     Solver_state.backtrack_n solver.state n;
     Save_counter.backtrack_n solver.save_counter n;
+    Analysis.backtrack_n solver.analysis n;
     Intf.pop solver.z3_exe n
 
   (* Initialise and reset *)
@@ -99,6 +104,7 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     Save_counter.reset solver.save_counter;
     Var_counter.reset solver.var_counter;
     Solver_state.reset solver.state;
+    Analysis.reset solver.analysis;
     (* We need to pop the initial push, so we go back to the state before the first push *)
     Intf.pop solver.z3_exe (save_counter + 1);
     (* Make sure the basic definitions are saved again *)
@@ -143,8 +149,10 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
-    Solver_state.add_constraint solver.state v;
-    Intf.add_constraint solver.z3_exe (Typed.untyped v)
+    (* the incremental solver doesn't need to dirty variables *)
+    let v, _ = Analysis.add_constraint solver.analysis (Typed.untyped v) in
+    Solver_state.add_constraint solver.state (Typed.type_ v);
+    Intf.add_constraint solver.z3_exe v
 
   (* Incremental doesn't allow for caching queries... *)
   let sat solver =
@@ -160,10 +168,15 @@ module Make_incremental (Intf : Solver_interface.S) = struct
             L.info (fun m -> m "Solver returned unknown");
             Unknown)
 
-  let as_values solver = Solver_state.to_value_list solver.state
+  let as_values solver =
+    let pc = Solver_state.to_value_list solver.state in
+    let intervals = Analysis.encode Typed.v_true solver.analysis in
+    Iter.union ~eq:Typed.equal ~hash:Typed.hash (Iter.of_list pc)
+      (Typed.split_ands intervals)
+    |> Iter.to_list
 end
 
-module Make (Intf : Solver_interface.S) = struct
+module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
   module Value = Typed
 
   module Var_counter = Var.Incr_counter_mut (struct
@@ -374,7 +387,7 @@ module Make (Intf : Solver_interface.S) = struct
     vars : Declared_vars.t;
     save_counter : Save_counter.t;
     state : Solver_state.t;
-    intervals : Analyses.Interval.t;
+    analysis : Analysis.t;
   }
 
   let init () =
@@ -386,20 +399,20 @@ module Make (Intf : Solver_interface.S) = struct
       save_counter = Save_counter.init ();
       vars = Declared_vars.init ();
       state = Solver_state.init ();
-      intervals = Analyses.Interval.init ();
+      analysis = Analysis.init ();
     }
 
   let save solver =
     Declared_vars.save solver.vars;
     Save_counter.save solver.save_counter;
     Solver_state.save solver.state;
-    Analyses.Interval.save solver.intervals
+    Analysis.save solver.analysis
 
   let backtrack_n solver n =
     Declared_vars.backtrack_n solver.vars n;
     Solver_state.backtrack_n solver.state n;
     Save_counter.backtrack_n solver.save_counter n;
-    Analyses.Interval.backtrack_n solver.intervals n
+    Analysis.backtrack_n solver.analysis n
 
   (* Initialise and reset *)
 
@@ -410,7 +423,7 @@ module Make (Intf : Solver_interface.S) = struct
     Save_counter.reset solver.save_counter;
     Declared_vars.reset solver.vars;
     Solver_state.reset solver.state;
-    Analyses.Interval.reset solver.intervals
+    Analysis.reset solver.analysis
 
   let fresh_var solver ty =
     Declared_vars.fresh solver.vars (Typed.untype_type ty)
@@ -464,9 +477,7 @@ module Make (Intf : Solver_interface.S) = struct
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
-    let v, vars =
-      Analyses.Interval.add_constraint solver.intervals (Typed.untyped v)
-    in
+    let v, vars = Analysis.add_constraint solver.analysis (Typed.untyped v) in
     Solver_state.add_constraint solver.state (Typed.type_ v);
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
@@ -541,7 +552,7 @@ module Make (Intf : Solver_interface.S) = struct
         (* This will put the check in a somewhat-normal form, to increase cache hits. *)
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let to_check =
-          Analyses.Interval.encode ~vars:relevant_vars to_check solver.intervals
+          Analysis.encode ~vars:relevant_vars to_check solver.analysis
         in
         let answer = check_sat_raw_memo solver relevant_vars to_check in
         if answer = Sat then Solver_state.mark_checked solver.state;
@@ -549,11 +560,11 @@ module Make (Intf : Solver_interface.S) = struct
 
   let as_values solver =
     let pc = Solver_state.to_value_list solver.state in
-    let intervals = Analyses.Interval.encode Typed.v_true solver.intervals in
+    let analysis = Analysis.encode Typed.v_true solver.analysis in
     Iter.union ~eq:Typed.equal ~hash:Typed.hash (Iter.of_list pc)
-      (Typed.split_ands intervals)
+      (Typed.split_ands analysis)
     |> Iter.to_list
 end
 
-module Z3_incremental_solver = Make_incremental (Z3_exe)
-module Z3_solver = Make (Z3_exe)
+module Z3_incremental_solver = Make_incremental (Analyses.Interval) (Z3_exe)
+module Z3_solver = Make (Analyses.Interval) (Z3_exe)

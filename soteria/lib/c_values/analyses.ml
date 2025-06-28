@@ -5,7 +5,27 @@ open Svalue.Infix
 (* let log = Soteria_logs.Logs.L.warn *)
 let log _ = ()
 
-module Interval = struct
+module type S = sig
+  include Soteria_std.Reversible.Mutable
+
+  val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
+
+  val encode :
+    ?vars:Var.Hashset.t -> Typed.sbool Typed.t -> t -> Typed.sbool Typed.t
+end
+
+module None : S = struct
+  type t = unit
+
+  let init () = ()
+  let backtrack_n () _ = ()
+  let save () = ()
+  let reset () = ()
+  let add_constraint () v = (v, Var.Set.empty)
+  let encode ?vars:_ acc () = acc
+end
+
+module Interval : S = struct
   let mk_var v : Svalue.t = Svalue.mk_var v TInt
 
   module Range = struct
@@ -60,23 +80,11 @@ module Interval = struct
       | _ -> None
   end
 
-  let pp_binding fmt (var, range) =
-    Fmt.pf fmt "%a: %a" Var.pp var Range.pp range
-
-  let pp_map ft m =
-    Fmt.pf ft "{ %a }"
-      Fmt.(iter_bindings ~sep:(any ", ") Var.Map.iter pp_binding)
-      m
-
   include Reversible.Make_mutable (struct
     type t = Range.t Var.Map.t
 
     let default : t = Var.Map.empty
   end)
-
-  (** Intersection of two interval mappings, doing the intersection of the
-      intervals *)
-  let st_intersect = Var.Map.merge (fun _ -> Option.map2 Range.intersect)
 
   (** Union of two interval mappings, doing the union of the intervals *)
   let st_union = Var.Map.merge (fun _ -> Option.map2 Range.union)
