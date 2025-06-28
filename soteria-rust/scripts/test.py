@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 
 
-from ast import expr
 from io import TextIOWrapper
 from pathlib import Path
-from posixpath import pardir
 import time
 import datetime
-from types import FunctionType
 from typing import Callable
 import math
 
@@ -56,7 +53,6 @@ MIRI_EXCLUSIONS = [
 
 def kani() -> tuple[list[Path], TestConfig]:
     root = Path(KANI_PATH)
-    log = PWD / "kani.log"
     tests = [
         path
         for path in root.rglob("*.rs")
@@ -105,7 +101,6 @@ TEST_SUITES = {
 def exec_test(
     file: Path,
     *,
-    root: Path,
     log: Optional[TextIOWrapper] = None,
     args: list[str] = [],
     dyn_flags: Optional[Callable[[Path], list[str]]] = None,
@@ -183,7 +178,6 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
             else:
                 (msg, clr, reason), elapsed = exec_test(
                     path,
-                    root=test_conf["root"],
                     log=logfile,
                     args=args,
                     dyn_flags=test_conf["dyn_flags"],
@@ -237,7 +231,6 @@ def evaluate_perf(tests: list[Path], test_conf: TestConfig):
             pprint(f"{txt} {i+1}/{iters}", end="\r")
             (msg, clr, _), t = exec_test(
                 path,
-                root=test_conf["root"],
                 args=args,
                 dyn_flags=test_conf["dyn_flags"],
             )
@@ -256,7 +249,6 @@ def evaluate_perf(tests: list[Path], test_conf: TestConfig):
     total_average = (
         sum((t for v in test_times_items for t in v[1])) / len(test_times_items) / iters
     )
-    longest_path = max(len(str(item[0])) for item in test_times_items)
 
     pprint(
         f"{BOLD}Finished in {elapsed:.3f}s total, {total_average:.3f}s/iter{RESET}",
