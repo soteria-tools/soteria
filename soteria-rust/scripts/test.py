@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 
 
-from ast import expr
 from io import TextIOWrapper
 from pathlib import Path
-from posixpath import pardir
 import time
 import datetime
-from types import FunctionType
 from typing import Callable
 import math
 
@@ -56,7 +53,6 @@ MIRI_EXCLUSIONS = [
 
 def kani() -> tuple[list[Path], TestConfig]:
     root = Path(KANI_PATH)
-    log = PWD / "kani.log"
     tests = [
         path
         for path in root.rglob("*.rs")
@@ -105,7 +101,6 @@ TEST_SUITES = {
 def exec_test(
     file: Path,
     *,
-    root: Path,
     log: Optional[TextIOWrapper] = None,
     args: list[str] = [],
     dyn_flags: Optional[Callable[[Path], list[str]]] = None,
@@ -183,7 +178,6 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
             else:
                 (msg, clr, reason), elapsed = exec_test(
                     path,
-                    root=test_conf["root"],
                     log=logfile,
                     args=args,
                     dyn_flags=test_conf["dyn_flags"],
@@ -237,7 +231,6 @@ def evaluate_perf(tests: list[Path], test_conf: TestConfig):
             pprint(f"{txt} {i+1}/{iters}", end="\r")
             (msg, clr, _), t = exec_test(
                 path,
-                root=test_conf["root"],
                 args=args,
                 dyn_flags=test_conf["dyn_flags"],
             )
@@ -256,7 +249,6 @@ def evaluate_perf(tests: list[Path], test_conf: TestConfig):
     total_average = (
         sum((t for v in test_times_items for t in v[1])) / len(test_times_items) / iters
     )
-    longest_path = max(len(str(item[0])) for item in test_times_items)
 
     pprint(
         f"{BOLD}Finished in {elapsed:.3f}s total, {total_average:.3f}s/iter{RESET}",
@@ -313,8 +305,8 @@ def diff_evaluation(path1: Path, path2: Path):
     csv2 = parse(path2)
     files = set(csv1.keys())
     files = files.union(csv2.keys())
-    csv1 = {f: t for f, t in csv1.items() if f in files}
-    csv2 = {f: t for f, t in csv2.items() if f in files}
+    csv1 = {f: t for f, t in csv1.items()}
+    csv2 = {f: t for f, t in csv2.items()}
     total_time1 = sum(csv1.values())
     total_time2 = sum(csv2.values())
     delta_total = (total_time2 - total_time1) / total_time1 * 100
@@ -358,31 +350,37 @@ def diff_evaluation(path1: Path, path2: Path):
     pptable(rows)
 
 
+class ArgError(Exception):
+    def __init__(self, msg: str):
+        super().__init__(msg)
+        self.msg = msg
+
+    def __str__(self):
+        return self.msg
+
+
 if __name__ == "__main__":
     try:
         if len(sys.argv) <= 1:
-            raise RuntimeError
+            raise ArgError("missing command")
         if sys.argv[1] in ["kani", "miri"]:
             tests, config = TEST_SUITES[sys.argv[1]]()
             log = PWD / f"{sys.argv[1]}.log"
             exec_tests(tests, config, log)
         elif sys.argv[1] == "eval":
             if len(sys.argv) <= 2:
-                raise RuntimeError
+                raise ArgError("missing test suite name: kani or miri")
             if sys.argv[2] not in ["kani", "miri"]:
-                raise RuntimeError
+                raise ArgError("invalid test suite name, expected kani or miri")
             tests, config = TEST_SUITES[sys.argv[2]]()
             evaluate_perf(tests, config)
         elif sys.argv[1] == "eval-diff":
             if len(sys.argv) <= 3:
-                raise RuntimeError
+                raise ArgError("missing paths to two evaluation CSV files")
             diff_evaluation(Path(sys.argv[2]), Path(sys.argv[3]))
         else:
-            raise RuntimeError
-    except RuntimeError:
-        print(
-            f"{RED}Invalid command -- specify {YELLOW}kani{RED} or "
-            f"{YELLOW}miri{RED} as a first argument."
-        )
+            raise ArgError("Unknown command, expected kani, miri, eval or eval-diff")
+    except ArgError as e:
+        print(f"{RED}Error: {YELLOW}{e}")
     except KeyboardInterrupt:
         exit(1)

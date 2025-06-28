@@ -3,7 +3,7 @@ Basic code, reference gets invalidated
   note: Done, no errors found
   
   raw_ptrs::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Simple tree borrow violation
   $ soteria-rust exec-main simple-fail.rs --clean
@@ -31,28 +31,28 @@ Raw pointers don't get new tags
   note: Done, no errors found
   
   raw_ptrs::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Raw pointers can access outside the parent's range, with offsets
   $ soteria-rust exec-main offsets.rs --clean
   note: Done, no errors found
   
   offsets::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Can have two mutable protected refs to the same allocation, if they don't overlap
   $ soteria-rust exec-main two-mut-protected.rs --clean
   note: Done, no errors found
   
   two_mut_protected::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 UnsafeCell allow foreign writes followed by local writes
   $ soteria-rust exec-main cell.rs --clean
   note: Done, no errors found
   
   cell::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
   $ true || soteria-rust exec-main nested.rs --clean
@@ -62,4 +62,4 @@ Test --ignore-aliasing flag
   note: Done, no errors found
   
   simple_fail::main: ran 1 branch
-  PC 1: empty
+  PC 1: true

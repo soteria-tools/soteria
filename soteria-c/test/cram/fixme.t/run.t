@@ -4,7 +4,7 @@
   Summaries for main_487:
     Analysed {
       raw =
-      { args = []; pre = []; pc = [(V|1| == V|2|); (0 != V|2|); (0 != V|1|)];
+      { args = []; pre = []; pc = [(V|1| == V|2|); (0 != V|1|); (0 != V|2|)];
         post =
         { heap =
           [(V|2|,

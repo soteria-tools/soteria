@@ -606,7 +606,8 @@ module Make (Sptr : Sptr.S) = struct
     let* at =
       match Typed.kind at with
       | Int size -> return (Z.to_int size)
-      | _ -> not_impl "Don't know how to read this size"
+      | _ ->
+          Fmt.kstr not_impl "Don't know how to read this size: %a" Typed.ppa at
     in
     match (v, ty) with
     | Ptr (ptr, None), _ ->

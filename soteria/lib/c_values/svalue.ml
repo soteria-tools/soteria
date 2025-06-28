@@ -247,6 +247,7 @@ let rec pp ft t =
       | None -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l)
 
 let[@inline] equal a b = Int.equal a.tag b.tag
+let[@inline] compare a b = Int.compare a.tag b.tag
 
 let rec sure_neq a b =
   (not (equal_ty a.node.ty b.node.ty))
@@ -421,6 +422,7 @@ let rec not sv =
     | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
     | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
     | Binop (Or, v1, v2) -> mk_commut_binop And (not v1) (not v2) <| TBool
+    | Binop (And, v1, v2) -> mk_commut_binop Or (not v1) (not v2) <| TBool
     | _ -> Unop (Not, sv) <| TBool
 
 let rec sem_eq v1 v2 =
@@ -670,7 +672,7 @@ let rec is_mod v n =
 
 let rec rem v1 v2 =
   match (v1.node.kind, v2.node.kind) with
-  | _, Int i2 when is_mod v1 i2 -> int_z Z.zero
+  | _, Int i2 when is_mod v1 i2 -> zero
   | Int i1, Int i2 -> int_z (Z.rem i1 i2)
   | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
       times n (rem v1 v2)
@@ -681,7 +683,7 @@ let rec rem v1 v2 =
 let mod_ v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> zero
-  | _, Int i2 when is_mod v1 i2 -> int_z Z.zero
+  | _, Int i2 when is_mod v1 i2 -> zero
   | Int i1, Int i2 ->
       (* OCaml's mod computes the remainer... *)
       let rem = Z.( mod ) i1 i2 in
