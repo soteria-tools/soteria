@@ -14,6 +14,33 @@ module type S = sig
     ?vars:Var.Hashset.t -> Typed.sbool Typed.t -> t -> Typed.sbool Typed.t
 end
 
+module Merge (A1 : S) (A2 : S) : S = struct
+  type t = A1.t * A2.t
+
+  let init () = (A1.init (), A2.init ())
+
+  let backtrack_n (a1, a2) n =
+    A1.backtrack_n a1 n;
+    A2.backtrack_n a2 n
+
+  let save (a1, a2) =
+    A1.save a1;
+    A2.save a2
+
+  let reset (a1, a2) =
+    A1.reset a1;
+    A2.reset a2
+
+  let add_constraint (a1, a2) v =
+    let v', vars1 = A1.add_constraint a1 v in
+    let v'', vars2 = A2.add_constraint a2 v' in
+    (v'', Var.Set.union vars1 vars2)
+
+  let encode ?vars (acc : Typed.sbool Typed.t) (a1, a2) : Typed.sbool Typed.t =
+    let acc' = A1.encode ?vars acc a1 in
+    A2.encode ?vars acc' a2
+end
+
 module None : S = struct
   type t = unit
 
