@@ -303,18 +303,31 @@ module Make (State : State_intf.S) = struct
 
   let unwrap_expr (AnnotatedExpression (_, _, _, e) : expr) = e
 
-  let find_stub (fname : Cerb_frontend.Symbol.sym) : 'err fun_exec option =
+  (** HACK: Some internal functions such as __builtin___memcpy_chk are not
+      needed in our tool, since we perform all checks. For this function, we
+      return the real implementation (here, memcpy), with a filter saying that
+      the last argument should be elided. See:
+      https://gcc.gnu.org/onlinedocs/gcc-4.3.0/gcc/Object-Size-Checking.html *)
+  type arg_filter = NoFilter | Filter of (int -> expr -> bool)
+
+  let apply_arg_filter (filter : arg_filter) (args : expr list) =
+    match filter with NoFilter -> args | Filter f -> List.filteri f args
+
+  let find_stub (fname : Cerb_frontend.Symbol.sym) :
+      ('err fun_exec * arg_filter) option =
     let (Symbol (_, _, descr)) = fname in
     match descr with
     | Cerb_frontend.Symbol.SD_Id name -> (
         match name with
-        | "__soteria_nondet__" -> Some C_std.nondet_int_fun
-        | "malloc" -> Some C_std.malloc
-        | "calloc" -> Some C_std.calloc
-        | "free" -> Some C_std.free
-        | "memcpy" -> Some C_std.memcpy
-        | "__assert__" -> Some C_std.assert_
-        | "__soteria_debug_show" -> Some debug_show
+        | "malloc" -> Some (C_std.malloc, NoFilter)
+        | "calloc" -> Some (C_std.calloc, NoFilter)
+        | "free" -> Some (C_std.free, NoFilter)
+        | "memcpy" -> Some (C_std.memcpy, NoFilter)
+        | "__soteria___nondet_int" -> Some (C_std.nondet_int_fun, NoFilter)
+        | "__soteria___assert" -> Some (C_std.assert_, NoFilter)
+        | "__soteria___debug_show" -> Some (debug_show, NoFilter)
+        | "__builtin___memcpy_chk" ->
+            Some (C_std.memcpy, Filter (fun i _ -> i <> 3))
         | _ -> None)
     | _ -> None
 
@@ -515,7 +528,8 @@ module Make (State : State_intf.S) = struct
     [@@deriving show { with_path = false }]
   end
 
-  let rec resolve_function fexpr : Error.t State.err fun_exec InterpM.t =
+  let rec resolve_function fexpr :
+      (Error.t State.err fun_exec * arg_filter) InterpM.t =
     let* loc, fname =
       let (AilSyntax.AnnotatedExpression (_, _, loc, inner_expr)) = fexpr in
       match inner_expr with
@@ -542,10 +556,10 @@ module Make (State : State_intf.S) = struct
 
     let fundef_opt = Ail_helpers.find_fun_def fname in
     match fundef_opt with
-    | Some fundef -> InterpM.ok (exec_fun fundef)
+    | Some fundef -> InterpM.ok (exec_fun fundef, NoFilter)
     | None -> (
         match find_stub fname with
-        | Some stub -> InterpM.ok stub
+        | Some (stub, filter) -> InterpM.ok (stub, filter)
         | None ->
             Fmt.kstr InterpM.not_impl "Cannot call external function: %a"
               Fmt_ail.pp_sym fname)
@@ -566,8 +580,8 @@ module Make (State : State_intf.S) = struct
         let^ v = value_of_constant c in
         InterpM.ok v
     | AilEcall (f, args) ->
-        let* exec_fun = resolve_function f in
-        let* args = eval_expr_list args in
+        let* exec_fun, filter = resolve_function f in
+        let* args = eval_expr_list (apply_arg_filter filter args) in
         let+ v =
           InterpM.with_extra_call_trace ~loc ~msg:"Called from here"
           @@ InterpM.lift_state_op

@@ -3,6 +3,6 @@
 int main()
 {
   int ret = fnA() + fnB();
-  __assert__(ret == 28);
+  __soteria___assert(ret == 28);
   return 0;
 }

@@ -3,6 +3,6 @@
 int main()
 {
   int ret = compute();
-  __assert__(ret == 12);
+  __soteria___assert(ret == 12);
   return 0;
 }

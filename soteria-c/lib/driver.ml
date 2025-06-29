@@ -14,9 +14,10 @@ let impl_name =
 
 let set_cerb_conf () =
   let open Cerb_global in
-  set_cerb_conf ~backend_name:"soteria-c" ~exec:false Random ~concurrency:false
-    Basic ~defacto:false ~permissive:false ~agnostic:false
-    ~ignore_bitfields:false
+  let lexicon = { with_c23 = true; with_gnu = true; without_cerb = false } in
+  set_cerb_conf ~lexicon ~backend_name:"soteria-c" ~exec:false Random
+    ~concurrency:false Basic ~defacto:false ~permissive:true ~agnostic:false
+    ~ignore_bitfields:true
 
 let io : Cerb_backend.Pipeline.io_helpers =
   let open Cerb_backend.Pipeline in
@@ -34,15 +35,16 @@ let io : Cerb_backend.Pipeline.io_helpers =
     return ()
   in
   let print_endline str =
-    print_endline str;
+    L.debug (fun m -> m "%s" str);
     return ()
   in
   let print_debug n mk_str =
-    Cerb_debug.print_debug n [] mk_str;
+    (* Cerb_debug.print_debug n [] mk_str; *)
+    if n == 0 then L.debug (fun m -> m "%s" (mk_str ()));
     return ()
   in
-  let warn ?(always = false) mk_str =
-    Cerb_debug.warn ~always [] mk_str;
+  let warn ?always:_ mk_str =
+    L.warn (fun m -> m "%s" (mk_str ()));
     return ()
   in
   { pass_message; set_progress; run_pp; print_endline; print_debug; warn }
@@ -57,11 +59,6 @@ module Frontend = struct
             (Pp_errors.to_string (loc, err))
         in
         Error (`ParsingError msg, Call_trace.singleton ~loc ())
-
-  let include_libc () =
-    let root_includes = Cerb_runtime.in_runtime "libc/include" in
-    let posix = Filename.concat root_includes "posix" in
-    "-I" ^ root_includes ^ " -I" ^ posix
 
   let init () =
     let result =
@@ -98,10 +95,7 @@ module Frontend = struct
       Exception.Result
         (fun ~cpp_cmd filename ->
           let cpp_cmd =
-            cpp_cmd
-            ^ " -E -C -Werror -nostdinc "
-            ^ include_soteria_c_h
-            ^ include_libc ()
+            cpp_cmd ^ " -E -CC -fno-blocks -std=c11 " ^ include_soteria_c_h
           in
           c_frontend (conf cpp_cmd, io) (stdlib, impl) ~filename)
     in
