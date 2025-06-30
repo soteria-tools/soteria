@@ -1,0 +1,1 @@
+  $ soteria-py exec assert_true.py

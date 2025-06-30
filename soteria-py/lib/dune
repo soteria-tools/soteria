@@ -9,5 +9,8 @@
   cmdliner
   fmt
   iter
-  pyre-ast)
- (flags :standard -open Soteria_std))
+  pyre-ast
+  hashcons)
+ (flags :standard -open Soteria_std)
+ (preprocess
+  (pps ppx_deriving.std)))
