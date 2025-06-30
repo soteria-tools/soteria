@@ -10,7 +10,7 @@
   fmt
   iter
   pyre-ast
-  hashcons)
+  hc)
  (flags :standard -open Soteria_std)
  (preprocess
   (pps ppx_deriving.std)))

@@ -1,4 +1,4 @@
-open Hashcons
+open Hc
 module Var = Soteria_symex.Var
 
 type ty = TBool [@@deriving eq]
@@ -11,7 +11,7 @@ and t = t_node hash_consed
 
 let kind t = t.node.kind
 
-module Hcons = Hashcons.Make (struct
+module Hcons = Hc.Make (struct
   type t = t_node
 
   let equal = equal_t_node
@@ -21,12 +21,9 @@ module Hcons = Hashcons.Make (struct
     match kind with Var _ | Bool _ -> Hashtbl.hash (kind, hty)
 end)
 
-let table = Hcons.create 1023
-let hashcons = Hcons.hashcons table
-
 let ( <| ) kind ty =
   let node = { kind; ty } in
-  hashcons node
+  Hcons.hashcons node
 
 let iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
   match kind sv with Var v -> f (v, sv.node.ty) | Bool _ -> ()
