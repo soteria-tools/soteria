@@ -20,7 +20,6 @@ depends: [
   "dune-site"
   "zarith"
   "ppx_deriving"
-  "hashcons"
   "cmdliner"
   "fmt"
   "printbox-text"

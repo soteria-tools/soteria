@@ -1,4 +1,4 @@
-open Hashcons
+open Hc
 include Svalue
 
 module T = struct

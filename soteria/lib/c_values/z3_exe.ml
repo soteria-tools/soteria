@@ -137,11 +137,11 @@ module Encoding = struct
         distinct vs
 
   and encode_value_memo v =
-    match Hashtbl.Hint.find_opt memo_encode_value_tbl v.Hashcons.tag with
+    match Hashtbl.Hint.find_opt memo_encode_value_tbl v.Hc.tag with
     | Some k -> k
     | None ->
         let k = encode_value v in
-        Hashtbl.Hint.add memo_encode_value_tbl v.Hashcons.tag k;
+        Hashtbl.Hint.add memo_encode_value_tbl v.Hc.tag k;
         k
 
   let encode_value v = encode_value_memo v

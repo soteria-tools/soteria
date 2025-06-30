@@ -534,11 +534,11 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
 
   let check_sat_raw_memo solver relevant_vars to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hashcons.tag with
+    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver relevant_vars to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hashcons.tag result;
+        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
         result
 
   let sat solver =

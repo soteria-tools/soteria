@@ -1,4 +1,4 @@
-open Hashcons
+open Hc
 module Var = Soteria_symex.Var
 
 module FloatPrecision = struct
@@ -191,7 +191,7 @@ type t_kind =
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
-let hash t = t.hkey
+let hash t = t.tag
 let kind t = t.node.kind
 
 let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
@@ -258,7 +258,7 @@ let rec sure_neq a b =
   | Ptr (la, oa), Ptr (lb, ob) -> sure_neq la lb || sure_neq oa ob
   | _ -> false
 
-module Hcons = Hashcons.Make (struct
+module Hcons = Hc.Make (struct
   type t = t_node
 
   let equal = equal_t_node
@@ -269,17 +269,15 @@ module Hcons = Hashcons.Make (struct
     let hty = Hashtbl.hash ty in
     match kind with
     | Var _ | Bool _ | Int _ | Float _ | BitVec _ -> Hashtbl.hash (kind, hty)
-    | Ptr (l, r) -> Hashtbl.hash (l.hkey, r.hkey, hty)
-    | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.hkey) l, hty)
-    | Unop (op, v) -> Hashtbl.hash (op, v.hkey, hty)
-    | Binop (op, l, r) -> Hashtbl.hash (op, l.hkey, r.hkey, hty)
-    | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.hkey) l, hty)
-    | Ite (c, t, e) -> Hashtbl.hash (c.hkey, t.hkey, e.hkey, hty)
+    | Ptr (l, r) -> Hashtbl.hash (l.tag, r.tag, hty)
+    | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.tag) l, hty)
+    | Unop (op, v) -> Hashtbl.hash (op, v.tag, hty)
+    | Binop (op, l, r) -> Hashtbl.hash (op, l.tag, r.tag, hty)
+    | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
+    | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
 end)
 
-let table = Hcons.create 1023
-let hashcons = Hcons.hashcons table
-let ( <| ) kind ty : t = hashcons { kind; ty }
+let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
 let mk_var v ty = Var v <| ty
 
 (** We put commutative binary operators in some sort of normal form where
