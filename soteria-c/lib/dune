@@ -16,7 +16,6 @@
   cerberus-lib.mem.concrete
   cerberus-lib.backend_common
   zarith
-  hashcons
   simple_smt
   linol
   linol-eio

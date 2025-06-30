@@ -14,7 +14,6 @@
   fmt.tty
   iter
   zarith
-  hashcons
   grace
   grace.ansi_renderer
   simple_smt
