@@ -6,9 +6,12 @@ let filename =
   let docv = "FILE" in
   Arg.(required & pos 0 (some string) None & info [] ~docv ~doc)
 
-let cmd =
-  let doc = "Process a file" in
-  let info = Cmd.info "soteria-py" ~doc in
-  Cmd.v info Term.(const Driver.parse_py $ filename)
+module Exec = struct
+  let cmd =
+    let doc = "Symbolically execute a python file" in
+    let info = Cmd.info "exec" ~doc in
+    Cmd.v info Term.(const Driver.exec_module_and_print $ filename)
+end
 
+let cmd = Cmd.group (Cmd.info "soteria-py") [ Exec.cmd ]
 let () = exit @@ Cmd.eval cmd

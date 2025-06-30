@@ -13,4 +13,4 @@
   soteria.c_values)
  (flags :standard -open Soteria_std -open Soteria_c_values)
  (preprocess
-  (pps ppx_deriving.std)))
+  (pps ppx_deriving.std soteria.ppx)))
