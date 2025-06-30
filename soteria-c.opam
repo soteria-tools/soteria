@@ -21,7 +21,6 @@ depends: [
   "cerberus-lib"
   "zarith"
   "ppx_deriving"
-  "hashcons"
   "cmdliner"
   "fmt"
   "printbox-text"

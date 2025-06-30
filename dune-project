@@ -46,6 +46,8 @@
     :build
     (>= 3.14.0)))
   ppxlib
+  (hc
+   (>= 0.5))
   (ppx_inline_test :with-test)
   (ocamlformat
    (and
@@ -68,7 +70,6 @@
   cerberus-lib
   zarith
   ppx_deriving
-  hashcons
   cmdliner
   fmt
   printbox-text
@@ -131,7 +132,6 @@
   dune-site
   zarith
   ppx_deriving
-  hashcons
   cmdliner
   fmt
   printbox-text
