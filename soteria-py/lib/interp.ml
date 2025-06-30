@@ -3,8 +3,8 @@ open PyreAst.Concrete
 
 let value_of_constant (c : Constant.t) =
   match c with
-  | True -> Svalue.v_true
-  | False -> Svalue.v_false
+  | True -> Typed.v_true
+  | False -> Typed.v_false
   | None | Ellipsis | Integer _ | BigInteger _ | Float _ | Complex _ | String _
   | ByteString _ ->
       failwith "Unsupported constant type"

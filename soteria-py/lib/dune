@@ -10,7 +10,7 @@
   fmt
   iter
   pyre-ast
-  hc)
- (flags :standard -open Soteria_std)
+  soteria.c_values)
+ (flags :standard -open Soteria_std -open Soteria_c_values)
  (preprocess
   (pps ppx_deriving.std)))
