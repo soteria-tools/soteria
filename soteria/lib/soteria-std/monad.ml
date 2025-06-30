@@ -1,3 +1,7 @@
+(** {1 A small monad library for our use in OCaml}*)
+
+(** {2 Monads with one type argument} *)
+
 module type Base = sig
   type 'a t
 
@@ -45,6 +49,8 @@ module Extend (Base : Base) = struct
   end
 end
 
+(** {2 Monads with two type arguments} *)
+
 module type Base2 = sig
   type ('a, 'b) t
 
@@ -59,18 +65,6 @@ end
 module FoldM2 (M : Base2) (F : Foldable.S) = struct
   type ('elem, 'a, 'b) folder =
     'elem F.t -> init:'a -> f:('a -> 'elem -> ('a, 'b) M.t) -> ('a, 'b) M.t
-end
-
-module type Ty3 = sig
-  type ('a, 'b, 'c) t
-end
-
-module FoldM3 (M : Ty3) (F : Foldable.S) = struct
-  type ('elem, 'a, 'b, 'c) folder =
-    'elem F.t ->
-    init:'a ->
-    f:('a -> 'elem -> ('a, 'b, 'c) M.t) ->
-    ('a, 'b, 'c) M.t
 end
 
 module type Syntax2 = sig
@@ -109,6 +103,54 @@ struct
     let ( let- ) = Base.map_error
   end
 end
+
+(** {2 Monads with 3 type arguments}*)
+
+module type Ty3 = sig
+  type ('a, 'b, 'c) t
+end
+
+module type Base3 = sig
+  include Ty3
+
+  val ok : 'a -> ('a, 'b, 'c) t
+  val error : 'b -> ('a, 'b, 'c) t
+  val miss : 'c -> ('a, 'b, 'c) t
+  val bind : ('a, 'b, 'c) t -> ('a -> ('d, 'b, 'c) t) -> ('d, 'b, 'c) t
+  val map : ('a, 'b, 'c) t -> ('a -> 'd) -> ('d, 'b, 'c) t
+  val bind_error : ('a, 'b, 'c) t -> ('b -> ('a, 'd, 'c) t) -> ('a, 'd, 'c) t
+  val map_error : ('a, 'b, 'c) t -> ('b -> 'd) -> ('a, 'd, 'c) t
+  val bind_miss : ('a, 'b, 'c) t -> ('c -> ('a, 'b, 'd) t) -> ('a, 'b, 'd) t
+  val map_miss : ('a, 'b, 'c) t -> ('c -> 'd) -> ('a, 'b, 'd) t
+end
+
+module type S3 = sig
+  include Base3
+
+  val all : ('a -> ('b, 'c, 'd) t) -> 'a list -> ('b list, 'c, 'd) t
+end
+
+module Extend3 (Base : Base3) :
+  S3 with type ('a, 'b, 'c) t = ('a, 'b, 'c) Base.t = struct
+  include Base
+
+  let all f xs =
+    let rec aux vs = function
+      | [] -> ok (List.rev vs)
+      | x :: xs -> bind (f x) (fun x -> aux (x :: vs) xs)
+    in
+    aux [] xs
+end
+
+module FoldM3 (M : Ty3) (F : Foldable.S) = struct
+  type ('elem, 'a, 'b, 'c) folder =
+    'elem F.t ->
+    init:'a ->
+    f:('a -> 'elem -> ('a, 'b, 'c) M.t) ->
+    ('a, 'b, 'c) M.t
+end
+
+(** {2 Usual monads and monad transformers}*)
 
 module Id = Extend (struct
   type 'a t = 'a

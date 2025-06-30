@@ -38,13 +38,13 @@ let map_error x f =
   | Error e -> Error (f e)
   | Missing fix -> Missing fix
 
-let map_missing x f =
+let map_miss x f =
   match x with
   | Ok x -> Ok x
   | Error e -> Error e
   | Missing fix -> Missing (f fix)
 
-let bind_missing x f =
+let bind_miss x f =
   match x with Ok x -> Ok x | Error e -> Error e | Missing fix -> f fix
 
 module Syntax = struct
@@ -52,8 +52,8 @@ module Syntax = struct
   let ( let+ ) = map
   let ( let/ ) = bind_error
   let ( let- ) = map_error
-  let ( let*? ) = bind_missing
-  let ( let+? ) = map_missing
+  let ( let*? ) = bind_miss
+  let ( let+? ) = map_miss
 end
 
 module T (M : Monad.Base) = struct
@@ -75,7 +75,7 @@ module T (M : Monad.Base) = struct
       | Error z -> fe z
       | Missing fix -> M.return (Missing fix))
 
-  let bind_missing x f =
+  let bind_miss x f =
     M.bind x (function
       | Ok x -> M.return (Ok x)
       | Error z -> M.return (Error z)
@@ -83,5 +83,5 @@ module T (M : Monad.Base) = struct
 
   let map x f = M.map x (fun x -> map x f)
   let map_error x f = M.map x (fun x -> map_error x f)
-  let map_missing x f = M.map x (fun x -> map_missing x f)
+  let map_miss x f = M.map x (fun x -> map_miss x f)
 end

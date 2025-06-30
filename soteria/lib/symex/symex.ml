@@ -90,10 +90,10 @@ module type S = sig
 
     val map_error : ('ok, 'err, 'fix) t -> ('err -> 'a) -> ('ok, 'a, 'fix) t
 
-    val bind_missing :
+    val bind_miss :
       ('ok, 'err, 'fix) t -> ('fix -> ('ok, 'err, 'a) t) -> ('ok, 'err, 'a) t
 
-    val map_missing : ('ok, 'err, 'fix) t -> ('fix -> 'a) -> ('ok, 'err, 'a) t
+    val map_miss : ('ok, 'err, 'fix) t -> ('fix -> 'a) -> ('ok, 'err, 'a) t
 
     val fold_list :
       ('elem, 'a, 'b, 'c) Monad.FoldM3(Result)(Foldable.List).folder
@@ -177,8 +177,8 @@ module Extend (Base : Base) = struct
     let ( let** ) = Result.bind
     let ( let++ ) = Result.map
     let ( let+- ) = Result.map_error
-    let ( let*? ) = Result.bind_missing
-    let ( let+? ) = Result.map_missing
+    let ( let*? ) = Result.bind_miss
+    let ( let+? ) = Result.map_miss
 
     module Symex_syntax = struct
       let branch_on = branch_on
