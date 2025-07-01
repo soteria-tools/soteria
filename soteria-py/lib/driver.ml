@@ -11,7 +11,9 @@ let exec_module filename =
   let symex = Interp.exec_module ast () in
   Pysymex.run symex
 
-let exec_module_and_print filename =
+(* Entry point function *)
+let exec_module_and_print log_config filename =
+  Soteria_logs.Config.check_set_and_lock log_config;
   let results = exec_module filename in
   Fmt.pr "@[<v 2>Symex terminated with the following outcomes: %a@]@?"
     Fmt.(
@@ -22,3 +24,8 @@ let exec_module_and_print filename =
         ~miss:(Dump.list (any "()"))
         ft r)
     results
+
+(* Entry point function *)
+let print_module filename =
+  let ast = parse_py filename in
+  Fmt.pr "%a@\n@?" Fmt_ast.pp_module ast

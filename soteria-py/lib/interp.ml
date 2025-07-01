@@ -4,8 +4,6 @@ open Soteria_symex.Compo_res
 module T = Typed.T
 open Pysymex.Syntax
 
-type pyval = T.sbool Typed.t
-
 module InterpM = struct
   (* There are no real errors in python, everything is successful module exceptions. *)
   type error = |
@@ -51,16 +49,27 @@ end
 
 open InterpM.Syntax
 
-let value_of_constant (c : Constant.t) : pyval Pysymex.t =
+(* let truthiness (v : Pyval.t) : T.sbool InterpM.t =
+  match v with
+  |  *)
+
+let value_of_constant (c : Constant.t) : Pyval.t Pysymex.t =
   match c with
-  | True -> Pysymex.return Typed.v_true
-  | False -> Pysymex.return Typed.v_false
-  | None | Ellipsis | Integer _ | BigInteger _ | Float _ | Complex _ | String _
-  | ByteString _ ->
+  | True -> Pysymex.return Pyval.v_true
+  | False -> Pysymex.return Pyval.v_false
+  | Integer i -> Pysymex.return (Pyval.int i)
+  | BigInteger z_str ->
+      let z = Z.of_string z_str in
+      Pysymex.return (Pyval.int_z z)
+  | None -> Pysymex.return Pyval.none
+  (* | NotImplemented -> Pysymex.return Pyval.not_implemented *)
+  | Ellipsis -> Pysymex.return Pyval.ellipsis
+  | Float f -> Pysymex.return (Pyval.float f) (* | Complex (re, im) -> *)
+  | Complex _ | String _ | ByteString _ ->
       Fmt.kstr Pysymex.not_impl "Unsupported constant type: %a"
         Fmt_ast.pp_constant c
 
-let eval_expr (expr : Expression.t) : pyval InterpM.t =
+let eval_expr (expr : Expression.t) : Pyval.t InterpM.t =
   match expr with
   | Constant { location = _; kind = _; value = c } ->
       InterpM.lift_symex (value_of_constant c)
@@ -75,8 +84,8 @@ let eval_expr (expr : Expression.t) : pyval InterpM.t =
 let exec_stmt (stmt : Statement.t) : unit InterpM.t =
   match stmt with
   | Assert { location = _; test; msg = _ } ->
-      let* v = eval_expr test in
-      if%sat v then InterpM.ok () else InterpM.not_impl "Exceptions..."
+      let* _v = eval_expr test in
+      failwith "aaa"
   | _ ->
       Fmt.kstr InterpM.not_impl "Unsupported statement: %a" Fmt_ast.pp_stmt stmt
 
