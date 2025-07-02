@@ -49,7 +49,7 @@ end
 
 open InterpM.Syntax
 
-(* let truthiness (v : Pyval.t) : T.sbool InterpM.t =
+(* let to_bool (v : Pyval.t) : T.sbool InterpM.t =
   match v with
   |  *)
 
