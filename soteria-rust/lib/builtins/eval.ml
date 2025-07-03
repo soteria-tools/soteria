@@ -11,7 +11,7 @@ module M (State : State_intf.S) = struct
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
   (* Functions that we shouldn't stub, but need to (e.g. because of Charon) *)
-  type fixme_funs = BoxNew | Index | Nop | Panic | TryCleanup
+  type fixme_funs = BoxNew | Index | Nop | Panic | TryCleanup | Dealloc
 
   (* Functions we could not stub, but we do for performance *)
   type optim_funs =
@@ -317,6 +317,7 @@ module M (State : State_intf.S) = struct
          | Miri AllocId -> alloc_id
          | Miri Nop -> nop
          | Fixme BoxNew -> fixme_box_new f.signature
+         | Fixme Dealloc -> dealloc
          | Fixme Index -> array_index_fn f.signature
          | Fixme Panic -> panic
          | Fixme Nop -> nop
