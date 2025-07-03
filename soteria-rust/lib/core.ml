@@ -45,16 +45,16 @@ module M (State : State_intf.S) = struct
     | TInt ->
         let** res =
           match bop with
-          | Add | CheckedAdd | WrappingAdd -> Result.ok (l +@ r)
-          | Sub | CheckedSub | WrappingSub -> Result.ok (l -@ r)
-          | Mul | CheckedMul | WrappingMul -> Result.ok (l *@ r)
-          | Div ->
+          | Add _ | AddChecked -> Result.ok (l +@ r)
+          | Sub _ | SubChecked -> Result.ok (l -@ r)
+          | Mul _ | MulChecked -> Result.ok (l *@ r)
+          | Div _ ->
               if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (l /@ cast r)
-          | Rem ->
+          | Rem _ ->
               if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (rem l (cast r))
-          | Shl | Shr | WrappingShl | WrappingShr ->
+          | Shl _ | Shr _ ->
               let ity =
                 match ty with
                 | TInteger ity -> ity
@@ -65,9 +65,7 @@ module M (State : State_intf.S) = struct
               let size = 8 * Layout.size_of_int_ty ity in
               let signed = Layout.is_signed ity in
               let op =
-                match bop with
-                | Shl | WrappingShl -> Typed.bit_shl
-                | _ -> Typed.bit_shr
+                match bop with Shl _ -> Typed.bit_shl | _ -> Typed.bit_shr
               in
               Result.ok (op ~size ~signed l r)
           | _ -> not_impl "Invalid binop in eval_lit_binop"
@@ -77,13 +75,13 @@ module M (State : State_intf.S) = struct
         let l, r = (cast l, cast r) in
         let** res =
           match bop with
-          | Add | CheckedAdd | WrappingAdd -> Result.ok (l +.@ r)
-          | Sub | CheckedSub | WrappingSub -> Result.ok (l -.@ r)
-          | Mul | CheckedMul | WrappingMul -> Result.ok (l *.@ r)
+          | Add _ -> Result.ok (l +.@ r)
+          | Sub _ -> Result.ok (l -.@ r)
+          | Mul _ -> Result.ok (l *.@ r)
           (* no such thing as division by 0 for floats -- goes to infinity *)
-          | Div -> Result.ok (l /.@ cast r)
-          | Rem -> Result.ok (rem_f l (cast r))
-          | _ -> not_impl "Invalid binop in eval_lit_binop"
+          | Div _ -> Result.ok (l /.@ cast r)
+          | Rem _ -> Result.ok (rem_f l (cast r))
+          | _ -> not_impl "Invalid binop for float in eval_lit_binop"
         in
         Result.ok (res :> T.cval Typed.t)
     | TPointer -> Result.error `UBPointerArithmetic
@@ -95,14 +93,14 @@ module M (State : State_intf.S) = struct
     let** res = safe_binop bop lit_ty l r in
     let** () =
       match bop with
-      | Rem -> (
+      | Rem (OUB | OPanic) -> (
           match lit_ty with
           | Values.TInteger inty ->
               let min = Layout.min_value inty in
               if%sat l ==@ min &&@ (r ==@ -1s) then Result.error `Overflow
               else Result.ok ()
           | _ -> Result.ok ())
-      | Shl | Shr ->
+      | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
           let ity =
             match lit_ty with
             | TInteger ity -> ity

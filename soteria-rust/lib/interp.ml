@@ -495,7 +495,7 @@ module Make (State : State_intf.S) = struct
                 ok (Base v)
             | ty ->
                 Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty)
-        | Neg -> (
+        | Neg _ -> (
             match type_of_operand e with
             | TLiteral (TInteger _) ->
                 let v = as_base_of ~ty:Typed.t_int v in
@@ -600,35 +600,23 @@ module Make (State : State_intf.S) = struct
                 let^^+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else Typed.not_int_bool res in
                 Base (res :> T.cval Typed.t)
-            | Add | Sub | Mul | Div | Rem | Shl | Shr ->
-                let ty =
-                  match type_of_operand e1 with
-                  | TLiteral ty -> ty
-                  | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
-                in
-                let^^+ res = Core.eval_lit_binop op ty v1 v2 in
-                Base res
-            | CheckedAdd | CheckedSub | CheckedMul ->
+            | Add om | Sub om | Mul om | Div om | Rem om | Shl om | Shr om -> (
+                match (om, type_of_operand e1) with
+                | OWrap, TLiteral (TInteger ty as litty) ->
+                    let^^ v = Core.safe_binop op litty v1 v2 in
+                    let^+ res = Core.wrap_value ty v in
+                    Base res
+                | _, TLiteral ty ->
+                    let^^+ res = Core.eval_lit_binop op ty v1 v2 in
+                    Base res
+                | _, _ -> not_impl "Unexpected type in binop")
+            | AddChecked | SubChecked | MulChecked ->
                 let ty =
                   match type_of_operand e1 with
                   | TLiteral ty -> ty
                   | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
                 in
                 State.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
-            | WrappingAdd | WrappingSub | WrappingMul | WrappingShl
-            | WrappingShr -> (
-                match type_of_operand e1 with
-                | TLiteral (TInteger ty as litty) ->
-                    let^^ v = Core.safe_binop op litty v1 v2 in
-                    let^+ res = Core.wrap_value ty v in
-                    Base res
-                | TLiteral ty ->
-                    (* Wrapping operations can apply to floating points too, but in that case
-                       it is equivalent to the regular operation. *)
-                    let^^+ res = Core.eval_lit_binop op ty v1 v2 in
-                    Base res
-                | ty ->
-                    Fmt.kstr not_impl "Unexpected type in binop: %a" pp_ty ty)
             | Cmp ->
                 let^ v1, v2, ty = cast_checked2 v1 v2 in
                 if Typed.equal_ty ty Typed.t_ptr then error `UBPointerComparison

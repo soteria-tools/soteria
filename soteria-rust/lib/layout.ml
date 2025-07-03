@@ -412,6 +412,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   function
   | TLiteral lit_ty -> ( try Some (Base (zeroed_lit lit_ty)) with _ -> None)
   | TRawPtr _ -> Some (Ptr (null_ptr, None))
+  | TFnPtr _ -> None
   | TRef _ -> None
   | TAdt { id = TTuple; generics = { types; _ } } ->
       zeroeds types |> Option.map (fun fields -> Tuple fields)

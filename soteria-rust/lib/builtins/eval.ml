@@ -10,8 +10,6 @@ module M (State : State_intf.S) = struct
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-  type type_loc = GenArg | Input
-
   (* Functions that we shouldn't stub, but need to (e.g. because of Charon) *)
   type fixme_funs = BoxNew | Index | Nop | Panic | TryCleanup
 
@@ -53,7 +51,7 @@ module M (State : State_intf.S) = struct
     | Index
     | IsValStaticallyKnown
     | Likely
-    | MinAlignOf of type_loc
+    | AlignOf of { of_val : bool }
     | MulAdd
     | Nop
     | PanicSimple
@@ -96,6 +94,7 @@ module M (State : State_intf.S) = struct
       ("miristd::miri_pointer_name", Miri Nop);
       ("miristd::miri_print_borrow_state", Miri Nop);
       (* Core *)
+      ("alloc::alloc::__rust_dealloc", Fixme Dealloc);
       (* This fails because of a silly thing with NonZero in monomorphisation, which we won't
          fix for now as it requires monomorphising trait impls.  *)
       ("alloc::boxed::{@T}::new", Fixme BoxNew);
@@ -152,8 +151,9 @@ module M (State : State_intf.S) = struct
       ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);
       (* Intrinsics *)
       ("core::intrinsics::abort", Std PanicSimple);
-      ("core::intrinsics::add_with_overflow", Std (Checked Add));
-      ("core::intrinsics::arith_offset", Std (PtrOp { op = Add; check = false }));
+      ("core::intrinsics::add_with_overflow", Std (Checked (Add OUB)));
+      ( "core::intrinsics::arith_offset",
+        Std (PtrOp { op = Add OUB; check = false }) );
       ("core::intrinsics::assert_inhabited", Std AssertInhabited);
       (* TODO: is the following correct? *)
       ("core::intrinsics::assert_mem_uninitialized_valid", Std Nop);
@@ -183,8 +183,8 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::fabsf32", Std Abs);
       ("core::intrinsics::fabsf64", Std Abs);
       ("core::intrinsics::fabsf128", Std Abs);
-      ("core::intrinsics::fadd_fast", Std (FloatFast Add));
-      ("core::intrinsics::fdiv_fast", Std (FloatFast Div));
+      ("core::intrinsics::fadd_fast", Std (FloatFast (Add OUB)));
+      ("core::intrinsics::fdiv_fast", Std (FloatFast (Div OUB)));
       ("core::intrinsics::float_to_int_unchecked", Std FloatToInt);
       ("core::intrinsics::floorf16", Std (FloatRounding Floor));
       ("core::intrinsics::floorf32", Std (FloatRounding Floor));
@@ -194,8 +194,8 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::fmaf32", Std MulAdd);
       ("core::intrinsics::fmaf64", Std MulAdd);
       ("core::intrinsics::fmaf128", Std MulAdd);
-      ("core::intrinsics::fmul_fast", Std (FloatFast Mul));
-      ("core::intrinsics::fsub_fast", Std (FloatFast Sub));
+      ("core::intrinsics::fmul_fast", Std (FloatFast (Mul OUB)));
+      ("core::intrinsics::fsub_fast", Std (FloatFast (Sub OUB)));
       ("core::intrinsics::is_val_statically_known", Std IsValStaticallyKnown);
       ("core::intrinsics::likely", Std Likely);
       ("core::intrinsics::maxnumf16", Std (FloatMinMax { min = false }));
@@ -206,11 +206,10 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::minnumf32", Std (FloatMinMax { min = true }));
       ("core::intrinsics::minnumf64", Std (FloatMinMax { min = true }));
       ("core::intrinsics::minnumf128", Std (FloatMinMax { min = true }));
-      ("core::intrinsics::min_align_of", Std (MinAlignOf GenArg));
-      ("core::intrinsics::min_align_of_val", Std (MinAlignOf Input));
-      ("core::intrinsics::mul_with_overflow", Std (Checked Mul));
-      ("core::intrinsics::offset", Std (PtrOp { op = Add; check = true }));
-      ("core::intrinsics::pref_align_of", Std (MinAlignOf GenArg));
+      ("core::intrinsics::align_of", Std (AlignOf { of_val = false }));
+      ("core::intrinsics::align_of_val", Std (AlignOf { of_val = true }));
+      ("core::intrinsics::mul_with_overflow", Std (Checked (Mul OUB)));
+      ("core::intrinsics::offset", Std (PtrOp { op = Add OUB; check = true }));
       ("core::intrinsics::ptr_guaranteed_cmp", Std PtrGuaranteedCmp);
       ( "core::intrinsics::ptr_offset_from",
         Std (PtrOffsetFrom { unsigned = false }) );
@@ -229,11 +228,11 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::roundf32", Std (FloatRounding NearestTiesToAway));
       ("core::intrinsics::roundf64", Std (FloatRounding NearestTiesToAway));
       ("core::intrinsics::roundf128", Std (FloatRounding NearestTiesToAway));
-      ("core::intrinsics::saturating_add", Std (Saturating Add));
-      ("core::intrinsics::saturating_sub", Std (Saturating Sub));
+      ("core::intrinsics::saturating_add", Std (Saturating (Add OUB)));
+      ("core::intrinsics::saturating_sub", Std (Saturating (Sub OUB)));
       ("core::intrinsics::size_of", Std SizeOf);
       ("core::intrinsics::size_of_val", Std SizeOfVal);
-      ("core::intrinsics::sub_with_overflow", Std (Checked Sub));
+      ("core::intrinsics::sub_with_overflow", Std (Checked (Sub OUB)));
       ("core::intrinsics::transmute", Std Transmute);
       ("core::intrinsics::truncf16", Std (FloatRounding Truncate));
       ("core::intrinsics::truncf32", Std (FloatRounding Truncate));
@@ -243,20 +242,20 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::type_name", Std TypeName);
       ( "core::intrinsics::typed_swap_nonoverlapping",
         Std TypedSwapNonOverlapping );
-      ("core::intrinsics::unchecked_add", Std (Unchecked Add));
-      ("core::intrinsics::unchecked_div", Std (Unchecked Div));
-      ("core::intrinsics::unchecked_mul", Std (Unchecked Mul));
-      ("core::intrinsics::unchecked_rem", Std (Unchecked Rem));
-      ("core::intrinsics::unchecked_shl", Std (Unchecked Shl));
-      ("core::intrinsics::unchecked_shr", Std (Unchecked Shr));
-      ("core::intrinsics::unchecked_sub", Std (Unchecked Sub));
+      ("core::intrinsics::unchecked_add", Std (Unchecked (Add OUB)));
+      ("core::intrinsics::unchecked_div", Std (Unchecked (Div OUB)));
+      ("core::intrinsics::unchecked_mul", Std (Unchecked (Mul OUB)));
+      ("core::intrinsics::unchecked_rem", Std (Unchecked (Rem OUB)));
+      ("core::intrinsics::unchecked_shl", Std (Unchecked (Shl OUB)));
+      ("core::intrinsics::unchecked_shr", Std (Unchecked (Shr OUB)));
+      ("core::intrinsics::unchecked_sub", Std (Unchecked (Sub OUB)));
       ("core::intrinsics::unlikely", Std Likely);
       ("core::intrinsics::variant_count", Std VariantCount);
-      ("core::intrinsics::wrapping_add", Std (Wrapping Add));
-      ("core::intrinsics::wrapping_div", Std (Wrapping Div));
-      ("core::intrinsics::wrapping_mul", Std (Wrapping Mul));
-      ("core::intrinsics::wrapping_rem", Std (Wrapping Rem));
-      ("core::intrinsics::wrapping_sub", Std (Wrapping Sub));
+      ("core::intrinsics::wrapping_add", Std (Wrapping (Add OWrap)));
+      ("core::intrinsics::wrapping_div", Std (Wrapping (Div OWrap)));
+      ("core::intrinsics::wrapping_mul", Std (Wrapping (Mul OWrap)));
+      ("core::intrinsics::wrapping_rem", Std (Wrapping (Rem OWrap)));
+      ("core::intrinsics::wrapping_sub", Std (Wrapping (Sub OWrap)));
       ("core::intrinsics::write_bytes", Std WriteBytes);
       ("core::intrinsics::write_bytes::write_bytes", Std WriteBytes);
       ("core::intrinsics::write_bytes::precondition_check", Std Nop);
@@ -327,6 +326,7 @@ module M (State : State_intf.S) = struct
          | Optim (FloatIsSign { positive }) -> float_is_sign positive
          | Optim Zeroed -> zeroed f.signature
          | Std Abs -> abs
+         | Std (AlignOf _) -> min_align_of (mono ())
          | Std AssertZeroValid -> assert_zero_is_valid (mono ())
          | Std AssertInhabited -> assert_inhabited (mono ())
          | Std Assume -> std_assume
@@ -348,7 +348,6 @@ module M (State : State_intf.S) = struct
          | Std Index -> array_index_fn f.signature
          | Std IsValStaticallyKnown -> is_val_statically_known
          | Std Likely -> likely
-         | Std (MinAlignOf _) -> min_align_of (mono ())
          | Std MulAdd -> mul_add
          | Std Nop -> nop
          | Std PanicSimple -> std_panic
