@@ -182,6 +182,18 @@ let with_ptr (ptr : Sptr.t) (st : t)
     in
     (v, state)
 
+(** This is used as a stopgap for cases where a function pointer is cast to a
+    regular pointer and is used on the state; the location won't exist in tree
+    block, and we don't want to add it there (I think), but we don't want to
+    crash, so we just ignore the action.
+
+    For instance, if a function pointer hiding as a pointer is passed to a
+    function, protecting it should do nothing, and should be allowed. *)
+let with_opt_or (x : 'a option) (otherwise : 'b)
+    (f : 'a -> ('b * 'a option, 'err, 'f) Result.t) :
+    ('b * 'a option, 'err, 'f) Result.t =
+  match x with Some v -> f v | None -> Result.ok (otherwise, None)
+
 let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
@@ -378,7 +390,7 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
             Charon.Expressions.pp_borrow_kind kind
     in
     let node = Tree_borrow.init ~state:tag_st () in
-    let block, tb = Option.get block in
+    let@ block, tb = with_opt_or block (ptr, meta) in
     let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
     let block = Some (block, tb') in
     let ptr' = { ptr with tag = node.tag } in
@@ -395,7 +407,7 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     let@ ofs, block = with_ptr ptr st in
-    let block, tb = Option.get block in
+    let@ block, tb = with_opt_or block (ptr, meta) in
     let tag_st =
       match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
     in
@@ -419,7 +431,7 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   let@ () = with_loc_err () in
   let@ ofs, block = with_ptr ptr st in
   let* size = Layout.size_of_s ty in
-  let block, tb = Option.get block in
+  let@ block, tb = with_opt_or block () in
   let tb' =
     Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
   in
