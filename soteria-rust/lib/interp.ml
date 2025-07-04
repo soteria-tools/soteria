@@ -532,7 +532,7 @@ module Make (State : State_intf.S) = struct
             not_impl "Unsupported: dyn"
         | Cast (CastUnsize (from_ty, _)) ->
             let rec get_size : Types.ty -> Types.const_generic t = function
-              | Types.TRawPtr (ty, _)
+              | TRawPtr (ty, _)
               | TRef (_, ty, _)
               | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
                   get_size ty
@@ -550,10 +550,27 @@ module Make (State : State_intf.S) = struct
                   ok size
               | _ -> not_impl "Couldn't get size in CastUnsize"
             in
-            let+ size = get_size from_ty in
-            let ptr, _ = as_ptr v in
+            let rec with_ptr_meta meta : Sptr.t rust_val -> Sptr.t rust_val t =
+              function
+              | Ptr (v, _) -> ok (Ptr (v, Some meta))
+              | ( Struct (_ :: _ as fs)
+                | Array (_ :: _ as fs)
+                | Tuple (_ :: _ as fs) ) as v -> (
+                  match List.rev fs with
+                  | last :: rest -> (
+                      let+ last = with_ptr_meta meta last in
+                      let fs = List.rev (last :: rest) in
+                      match v with
+                      | Struct _ -> Struct fs
+                      | Array _ -> Array fs
+                      | Tuple _ -> Tuple fs
+                      | _ -> assert false)
+                  | [] -> assert false)
+              | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
+            in
+            let* size = get_size from_ty in
             let size = Typed.int @@ int_of_const_generic size in
-            Ptr (ptr, Some size)
+            with_ptr_meta size v
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
