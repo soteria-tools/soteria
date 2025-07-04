@@ -174,8 +174,7 @@ module Make (State : State_intf.S) = struct
     | Some ptr_and_ty -> ok ptr_and_ty
     | None -> error `DeadVariable
 
-  let alloc_stack (locals : GAst.locals) args :
-      (full_ptr * Types.ty) list InterpM.t =
+  let alloc_stack (locals : GAst.locals) args : (full_ptr * Types.ty) list t =
     if List.compare_length_with args locals.arg_count <> 0 then
       Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
         (List.length args);
@@ -236,9 +235,9 @@ module Make (State : State_intf.S) = struct
   let dealloc_store ?protected_address protected =
     let* () =
       fold_list protected ~init:() ~f:(fun () (ptr, ty) ->
-          InterpM.State.unprotect ptr ty)
+          State.unprotect ptr ty)
     in
-    let* store = InterpM.get_store () in
+    let* store = get_store () in
     fold_list (Store.bindings store) ~init:() ~f:(fun () (_, (ptr, _)) ->
         match (ptr, protected_address) with
         | None, _ -> ok ()
@@ -255,7 +254,7 @@ module Make (State : State_intf.S) = struct
         let fp = float_precision float_ty in
         ok (Base (Typed.float fp float_value))
     | CLiteral (VStr str) -> (
-        let* ptr_opt = InterpM.State.load_str_global str in
+        let* ptr_opt = State.load_str_global str in
         match ptr_opt with
         | Some v -> ok (Ptr v)
         | None ->
@@ -270,24 +269,23 @@ module Make (State : State_intf.S) = struct
             in
             let char_arr = Array chars in
             let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
-            let* ptr, _ = InterpM.State.alloc_ty str_ty in
+            let* ptr, _ = State.alloc_ty str_ty in
             let ptr = (ptr, Some (Typed.int len)) in
-            let* () = InterpM.State.store ptr str_ty char_arr in
-            let+ () = InterpM.State.store_str_global str ptr in
+            let* () = State.store ptr str_ty char_arr in
+            let+ () = State.store_str_global str ptr in
             Ptr ptr)
     | CFnPtr fn_ptr -> ok (ConstFn fn_ptr)
-    | CLiteral (VByteStr _) -> InterpM.not_impl "TODO: resolve const ByteStr"
-    | CTraitConst _ -> InterpM.not_impl "TODO: resolve const TraitConst"
-    | CRawMemory _ -> InterpM.not_impl "TODO: resolve const RawMemory"
-    | COpaque msg -> Fmt.kstr InterpM.not_impl "Opaque constant: %s" msg
-    | CVar _ -> InterpM.not_impl "TODO: resolve const Var (mono error)"
+    | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
+    | CTraitConst _ -> not_impl "TODO: resolve const TraitConst"
+    | CRawMemory _ -> not_impl "TODO: resolve const RawMemory"
+    | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
+    | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
   (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ({ kind; ty } : Expressions.place) : full_ptr InterpM.t
-      =
+  let rec resolve_place ({ kind; ty } : Expressions.place) : full_ptr t =
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v
@@ -387,7 +385,7 @@ module Make (State : State_intf.S) = struct
           (ptr', Some slice_len))
         else error `OutOfBounds
 
-  and resolve_function (fnop : GAst.fn_operand) : 'err fun_exec InterpM.t =
+  and resolve_function (fnop : GAst.fn_operand) : 'err fun_exec t =
     match fnop with
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
@@ -798,7 +796,7 @@ module Make (State : State_intf.S) = struct
         in
         Base len
 
-  and exec_stmt stmt : unit InterpM.t =
+  and exec_stmt stmt : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
     L.trace (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content);
