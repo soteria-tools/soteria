@@ -9,6 +9,7 @@ type t =
   | `UninitializedMemoryAccess
   | `UseAfterFree
   | `MisalignedFnPointer
+  | `InvalidFnArgCount
   | (* Arithmetic *)
     `DivisionByZero
   | `InvalidShift
@@ -50,6 +51,8 @@ let pp ft = function
   | `DoubleFree -> Fmt.string ft "Double free"
   | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
   | `FailedAssert None -> Fmt.string ft "Failed assertion"
+  | `InvalidFnArgCount ->
+      Fmt.string ft "Wrong number of arguments in function call"
   | `InvalidFree -> Fmt.string ft "Invalid free"
   | `InvalidLayout -> Fmt.string ft "Invalid layout"
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"

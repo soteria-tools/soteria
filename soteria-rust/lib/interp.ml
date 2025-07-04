@@ -175,9 +175,11 @@ module Make (State : State_intf.S) = struct
     | None -> error `DeadVariable
 
   let alloc_stack (locals : GAst.locals) args : (full_ptr * Types.ty) list t =
-    if List.compare_length_with args locals.arg_count <> 0 then
-      Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
-        (List.length args);
+    let* () =
+      if List.compare_length_with args locals.arg_count <> 0 then
+        error `InvalidFnArgCount
+      else ok ()
+    in
     (* create a store with all types *)
     let* () =
       map_store @@ fun store ->
