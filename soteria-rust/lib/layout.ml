@@ -86,7 +86,8 @@ let size_to_fit ~size ~align =
   if size % align = 0 then size else size + align - (size % align)
 
 let max_array_len sub_size =
-  let isize_bits = (Archi.word_size * 8) - 1 in
+  (* We calculate the max array size for a 32bit architecture, like Miri does. *)
+  let isize_bits = 32 - 1 in
   if sub_size = 0 then Z.of_int isize_bits
   else Z.((one lsl isize_bits) / of_int sub_size)
 
@@ -171,9 +172,10 @@ let rec layout_of (ty : Types.ty) : layout =
         id = TBuiltin TArray;
         generics = { types = [ ty ]; const_generics = [ size ]; _ };
       } ->
-      let len = Charon_util.int_of_const_generic size in
+      let len = Charon_util.zint_of_const_generic size in
       let sub_layout = layout_of ty in
-      if Z.(of_int len > max_array_len sub_layout.size) then raise InvalidLayout;
+      if len > max_array_len sub_layout.size then raise InvalidLayout;
+      let len = Z.to_int len in
       let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
       { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
   | TAdt { id = TBuiltin TArray; _ } -> failwith "Invalid TArray shape"

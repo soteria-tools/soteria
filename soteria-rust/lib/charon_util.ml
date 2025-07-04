@@ -98,11 +98,14 @@ let as_base_of ~ty = function
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         ppa_rust_val v
 
-let int_of_const_generic : Types.const_generic -> int = function
-  | CgValue (VScalar v) -> Z.to_int v.value
+let zint_of_const_generic : Types.const_generic -> Z.t = function
+  | CgValue (VScalar v) -> v.value
   | cg ->
       Fmt.failwith "int_of_const_generic: unhandled const: %a"
         Types.pp_const_generic cg
+
+let int_of_const_generic (c : Types.const_generic) : int =
+  Z.to_int (zint_of_const_generic c)
 
 let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
 
