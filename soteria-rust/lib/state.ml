@@ -282,13 +282,14 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ block, _ = with_tbs block in
   Tree_block.put_raw_tree ofs tree_to_write block
 
-let alloc size align st =
+let alloc ?zeroed size align st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
   let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
   let tb = Tree_borrow.init ~state:Unique () in
-  let block = Freeable.Alive (Tree_block.alloc size, tb) in
+  let block = Tree_block.alloc ?zeroed size in
+  let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
   let ptr : Sptr.t Charon_util.full_ptr =
@@ -298,7 +299,7 @@ let alloc size align st =
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
   Soteria_symex.Compo_res.ok (ptr, state)
 
-let alloc_untyped ~size ~align st = alloc size align st
+let alloc_untyped ?zeroed ~size ~align st = alloc ?zeroed size align st
 
 let alloc_ty ty st =
   let* layout = Layout.layout_of_s ty in

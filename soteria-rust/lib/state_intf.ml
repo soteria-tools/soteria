@@ -76,6 +76,7 @@ module type S = sig
     Result.t
 
   val alloc_untyped :
+    ?zeroed:bool ->
     size:sint Typed.t ->
     align:nonzero Typed.t ->
     t ->

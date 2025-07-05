@@ -29,10 +29,9 @@ module M (State : State_intf.S) = struct
 
   (* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
   type alloc_fn =
-    | Alloc
+    | Alloc of { zeroed : bool }
     | Dealloc
     | Realloc
-    | AllocZeroed
     | NoAllocShimIsUnstable
 
   (* Standard library functions *)
@@ -159,8 +158,8 @@ module M (State : State_intf.S) = struct
       ("std::panicking::try::cleanup", Fixme TryCleanup);
       ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);
       (* Allocator *)
-      ("__rust_alloc", Alloc Alloc);
-      ("__rust_alloc_zeroed", Alloc AllocZeroed);
+      ("__rust_alloc", Alloc (Alloc { zeroed = false }));
+      ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
       ("__rust_dealloc", Alloc Dealloc);
       ("__rust_no_alloc_shim_is_unstable_v2", Alloc NoAllocShimIsUnstable);
       ("__rust_realloc", Alloc Realloc);
@@ -346,8 +345,7 @@ module M (State : State_intf.S) = struct
          | Optim FloatIsFinite -> float_is_finite
          | Optim (FloatIsSign { positive }) -> float_is_sign positive
          | Optim Zeroed -> zeroed f.signature
-         | Alloc Alloc -> alloc
-         | Alloc AllocZeroed -> alloc_zeroed
+         | Alloc (Alloc { zeroed }) -> alloc ~zeroed
          | Alloc Dealloc -> dealloc
          | Alloc NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
          | Alloc Realloc -> realloc
