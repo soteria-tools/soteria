@@ -6,10 +6,13 @@ module Cmd = struct
     charon : string list; [@default []]
     (* Features to enable for compilation (as in --cfg) *)
     features : string list; [@default []]
-    (* DEPRECATED: rustc flags. We need to handle these in a way that also works for cargo. *)
+    (* DEPRECATED: rustc flags. For Cargo we use RUSTFLAGS, but when possible it would be
+       nicer to use the Cargo-specific command (as with features) *)
     rustc : string list; [@default []]
   }
   [@@deriving make]
+
+  type mode = Cargo | Rustc
 
   let empty_cmd = make ()
 
@@ -20,13 +23,30 @@ module Cmd = struct
       rustc = c1.rustc @ c2.rustc;
     }
 
-  let build_cmd { charon; features; rustc } =
-    "charon rustc "
-    ^ String.concat " " charon
-    ^ " -- "
-    ^ String.concat " " (List.map (fun f -> "--cfg " ^ f) features)
-    ^ " "
-    ^ String.concat " " rustc
+  let build_cmd ~mode { charon; features; rustc } =
+    let spaced = String.concat " " in
+    match mode with
+    | Rustc ->
+        let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
+        let features = List.map (fun f -> "--cfg " ^ f) features in
+        "charon rustc "
+        ^ spaced charon
+        ^ " -- "
+        ^ spaced features
+        ^ " "
+        ^ escape (spaced rustc)
+    | Cargo ->
+        let env =
+          if not (List.is_empty rustc) then
+            "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
+          else ""
+        in
+        let features =
+          if not (List.is_empty features) then
+            "--features " ^ String.concat "," features ^ " "
+          else ""
+        in
+        env ^ "charon cargo " ^ spaced charon ^ " -- " ^ features
 
   let exec_cmd cmd =
     L.debug (fun g -> g "Running command: %s" cmd);
@@ -39,7 +59,8 @@ module Cmd = struct
     In_channel.close inp;
     r
 
-  let exec_in folder cmd = exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd cmd
+  let exec_in ~mode folder cmd =
+    exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd ~mode cmd
 end
 
 exception PluginError of string
@@ -137,8 +158,8 @@ let default =
           (* No warning *)
           "-Awarnings";
           (* include our std and rusteria crates *)
-          "-Zcrate-attr=feature\\(register_tool\\)";
-          "-Zcrate-attr=register_tool\\(rusteriatool\\)";
+          "-Zcrate-attr=feature(register_tool)";
+          "-Zcrate-attr=register_tool(rusteriatool)";
           "--extern=rusteria";
           Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
           Fmt.str "-L%s/target/debug/deps" std_lib;
@@ -164,7 +185,7 @@ let kani =
     Cmd.make ~features:[ "kani " ]
       ~rustc:
         [
-          "-Zcrate-attr=register_tool\\(kanitool\\)";
+          "-Zcrate-attr=register_tool(kanitool)";
           "--extern=kani";
           Fmt.str "-L%s/target/%s/debug/deps" lib target;
           Fmt.str "-L%s/target/debug/deps" lib;

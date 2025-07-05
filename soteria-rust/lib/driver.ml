@@ -21,18 +21,11 @@ let config_set (config : Config.global) =
   Config.set config.rusteria
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
-  let file_name =
-    if Filename.is_relative file_name then
-      Filename.concat (Sys.getcwd ()) file_name
-    else file_name
-  in
-  let parent_folder = Filename.dirname file_name in
-  let output = Printf.sprintf "%s.llbc.json" file_name in
+let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   (if not !Config.current.no_compile then
      (* TODO: make these flags! *)
-     let cmd = plugin.mk_cmd ~input:file_name ~output () in
-     let res = Plugin.Cmd.exec_in parent_folder cmd in
+     let cmd = plugin.mk_cmd ~input ~output () in
+     let res = Plugin.Cmd.exec_in ~mode pwd cmd in
      if res = 0 then Cleaner.touched output
      else
        let msg = Fmt.str "Failed compilation to ULLBC: code %d" res in
@@ -47,8 +40,8 @@ let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
   match crate with
   | Ok crate ->
       if not !Config.current.no_compile then (
-        (* save crate to local file *)
-        let crate_file = Printf.sprintf "%s.crate" file_name in
+        (* save pretty-printed crate to local file *)
+        let crate_file = Printf.sprintf "%s.crate" output in
         let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
         let oc = open_out_bin crate_file in
         output_string oc str;
@@ -56,6 +49,26 @@ let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
         Cleaner.touched crate_file);
       crate
   | Error err -> raise (CharonError err)
+
+(** Given a Rust file, parse it into LLBC, using Charon. *)
+let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
+  let file_name =
+    if Filename.is_relative file_name then
+      Filename.concat (Sys.getcwd ()) file_name
+    else file_name
+  in
+  let parent_folder = Filename.dirname file_name in
+  let output = Printf.sprintf "%s.llbc.json" file_name in
+  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
+
+(** Given a Rust file, parse it into LLBC, using Charon. *)
+let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
+  let crate_dir =
+    if Filename.is_relative crate then Filename.concat (Sys.getcwd ()) crate
+    else crate
+  in
+  let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
+  parse_ullbc ~mode:Cargo ~plugin ~input:"" ~output ~pwd:crate_dir
 
 let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let entry_points =
@@ -188,9 +201,8 @@ let exec_rustc config file_name =
   let compile () = parse_ullbc_of_file ~plugin file_name in
   exec_and_output_crate ~plugin compile
 
-let exec_cargo config _crate_dir =
+let exec_cargo config crate_dir =
   config_set config;
-  Fmt.kstr
-    (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
-    "Fatal: soteria-rust cargo is not yet supported.";
-  exit 2
+  let plugin = Plugin.create () in
+  let compile () = parse_ullbc_of_crate ~plugin crate_dir in
+  exec_and_output_crate ~plugin compile
