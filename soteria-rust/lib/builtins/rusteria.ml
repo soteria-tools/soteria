@@ -63,11 +63,10 @@ module M (State : State_intf.S) = struct
     Result.ok (value, state)
 
   let panic ~args state =
-    let* msg =
+    let** msg =
       match args with
-      | [ Ptr msg ] -> return msg
-      | _ -> not_impl "panic with non-one arguments"
+      | [ Ptr msg ] -> parse_string msg state
+      | _ -> Result.ok None
     in
-    let** msg = parse_string msg state in
     State.error (`Panic msg) state
 end

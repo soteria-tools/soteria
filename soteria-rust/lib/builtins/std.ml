@@ -898,4 +898,6 @@ module M (State : State_intf.S) = struct
     let++ (), state = State.store ptr ty value state in
     let box = _mk_box ptr in
     (box, state)
+
+  let fixme_null_ptr ~args:_ state = Result.ok (Ptr (Sptr.null_ptr, None), state)
 end

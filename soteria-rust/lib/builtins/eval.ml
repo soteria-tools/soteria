@@ -12,7 +12,7 @@ module M (State : State_intf.S) = struct
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
   (* Functions that we shouldn't stub, but need to (e.g. because of Charon) *)
-  type fixme_fn = BoxNew | Index | Nop | Panic | TryCleanup
+  type fixme_fn = BoxNew | Index | Nop | Panic | TryCleanup | NullPtr
 
   (* Functions we could not stub, but we do for performance *)
   type optim_fn =
@@ -114,6 +114,9 @@ module M (State : State_intf.S) = struct
       ( "core::slice::index::{core::ops::index::IndexMut}::index_mut",
         Fixme Index );
       ("core::cell::panic_already_mutably_borrowed", Fixme Panic);
+      ("alloc::alloc::handle_alloc_error::ct_error", Fixme Panic);
+      (* hax fails to construct a null pointer from a constant *)
+      ("core::ptr::null_mut", Fixme NullPtr);
       ("core::mem::zeroed", Optim Zeroed);
       (* all float operations could be removed, but we lack bit precision when getting the
          const floats from Rust, meaning these don't really work. Either way, performance wise
@@ -340,6 +343,7 @@ module M (State : State_intf.S) = struct
          | Fixme Index -> array_index_fn f.signature
          | Fixme Panic -> panic
          | Fixme Nop -> nop
+         | Fixme NullPtr -> fixme_null_ptr
          | Fixme TryCleanup -> fixme_try_cleanup
          | Optim (FloatIs fc) -> float_is fc
          | Optim FloatIsFinite -> float_is_finite
