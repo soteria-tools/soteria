@@ -172,7 +172,11 @@ let kani =
       ()
   in
   let get_entry_point (decl : fun_decl) =
-    if Charon_util.decl_has_attr decl "kanitool::proof" then
+    if
+      Charon_util.decl_has_attr decl "kanitool::proof"
+      (* TODO: maybe we can raise an error or a warning here *)
+      && List.is_empty decl.signature.inputs
+    then
       let expect_error =
         Charon_util.decl_has_attr decl "kanitool::should_panic"
       in
