@@ -90,10 +90,9 @@ module M (State : State_intf.S) = struct
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
   let eval_lit_binop bop lit_ty l r =
-    let** res = safe_binop bop lit_ty l r in
     let** () =
       match bop with
-      | Rem (OUB | OPanic) -> (
+      | Expressions.Rem (OUB | OPanic) -> (
           match lit_ty with
           | Values.TInteger inty ->
               let min = Layout.min_value inty in
@@ -115,6 +114,7 @@ module M (State : State_intf.S) = struct
           else Result.ok ()
       | _ -> Result.ok ()
     in
+    let** res = safe_binop bop lit_ty l r in
     let constrs = Layout.constraints lit_ty in
     if%sat conj (constrs res) then Result.ok (res :> T.cval Typed.t)
     else Result.error `Overflow
