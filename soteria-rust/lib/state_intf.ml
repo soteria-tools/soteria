@@ -75,6 +75,12 @@ module type S = sig
       serialized list )
     Result.t
 
+  val alloc_untyped :
+    size:sint Typed.t ->
+    align:nonzero Typed.t ->
+    t ->
+    (full_ptr * t, [> ] err * t, serialized list) Result.t
+
   val alloc_ty :
     Types.ty -> t -> (full_ptr * t, [> ] err * t, serialized list) Result.t
 

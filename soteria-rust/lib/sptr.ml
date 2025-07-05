@@ -59,8 +59,8 @@ end
 type arithptr_t = {
   ptr : T.sptr Typed.t;
   tag : Tree_borrow.tag;
-  align : int;
-  size : int;
+  align : T.nonzero Typed.t;
+  size : T.sint Typed.t;
 }
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
@@ -69,19 +69,24 @@ module ArithPtr : S with type t = arithptr_t = struct
   type t = arithptr_t = {
     ptr : T.sptr Typed.t;
     tag : Tree_borrow.tag;
-    align : int;
-    size : int;
+    align : T.nonzero Typed.t;
+    size : T.sint Typed.t;
   }
 
   let pp fmt { ptr; tag; _ } =
     Fmt.pf fmt "%a[%a]" Typed.ppa ptr Tree_borrow.pp_tag tag
 
   let null_ptr =
-    { ptr = Typed.Ptr.null; tag = Tree_borrow.zero; align = 1; size = 0 }
+    {
+      ptr = Typed.Ptr.null;
+      tag = Tree_borrow.zero;
+      align = Typed.cast 1s;
+      size = 0s;
+    }
 
   let null_ptr_of ofs =
     let ptr = Typed.Ptr.add_ofs Typed.Ptr.null ofs in
-    { ptr; tag = Tree_borrow.zero; align = 1; size = 0 }
+    { null_ptr with ptr }
 
   let sem_eq { ptr = ptr1; _ } { ptr = ptr2; _ } = ptr1 ==@ ptr2
   let is_at_null_loc { ptr; _ } = Typed.Ptr.is_at_null_loc ptr
@@ -96,7 +101,7 @@ module ArithPtr : S with type t = arithptr_t = struct
     let offset_constrs = Layout.int_constraints Isize in
     fun { ptr; size; _ } ->
       let ofs = Typed.Ptr.ofs ptr in
-      Typed.conj ((ofs <=@ Typed.int size) :: offset_constrs ofs)
+      Typed.conj ((ofs <=@ size) :: offset_constrs ofs)
 
   let offset ?(check = true) ?(ty = Types.TLiteral (TInteger U8))
       ({ ptr; _ } as fptr) off =
@@ -144,11 +149,7 @@ module ArithPtr : S with type t = arithptr_t = struct
         let+ loc_int =
           nondet Typed.t_int ~constrs:(fun x ->
               let isize_max = Layout.max_value Values.Isize in
-              [
-                x %@ Typed.nonzero align ==@ 0s;
-                0s <@ x;
-                x +@ Typed.int size <=@ isize_max;
-              ])
+              [ x %@ align ==@ 0s; 0s <@ x; x +@ size <=@ isize_max ])
         in
         decayed_vars := ValMap.add loc loc_int !decayed_vars;
         loc_int +@ ofs

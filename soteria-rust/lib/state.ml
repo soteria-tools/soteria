@@ -160,12 +160,11 @@ let check_ptr_align (ptr : Sptr.t) ty st =
   let ofs = Typed.Ptr.ofs ptr.ptr in
   let align = ptr.align in
   L.debug (fun m ->
-      m "Checking pointer alignment of %a: ofs %a mod %d / expect %a for %a"
-        Sptr.pp ptr Typed.ppa ofs align Typed.ppa expected_align
+      m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
+        Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa expected_align
         Charon_util.pp_ty ty);
-  if%sat
-    ofs %@ expected_align ==@ 0s &&@ (Typed.int align %@ expected_align ==@ 0s)
-  then Result.ok ((), st)
+  if%sat ofs %@ expected_align ==@ 0s &&@ (align %@ expected_align ==@ 0s) then
+    Result.ok ((), st)
   else error `MisalignedPointer
 
 let with_ptr (ptr : Sptr.t) (st : t)
@@ -289,7 +288,7 @@ let alloc size align st =
   let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
   let tb = Tree_borrow.init ~state:Unique () in
-  let block = Freeable.Alive (Tree_block.alloc (Typed.int size), tb) in
+  let block = Freeable.Alive (Tree_block.alloc size, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
   let ptr : Sptr.t Charon_util.full_ptr =
@@ -299,9 +298,11 @@ let alloc size align st =
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
   Soteria_symex.Compo_res.ok (ptr, state)
 
+let alloc_untyped ~size ~align st = alloc size align st
+
 let alloc_ty ty st =
   let* layout = Layout.layout_of_s ty in
-  alloc layout.size layout.align st
+  alloc (Typed.int layout.size) (Typed.nonzero layout.align) st
 
 let alloc_tys tys st =
   let@ state = with_state st in
@@ -316,7 +317,12 @@ let alloc_tys tys st =
       let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
       let ptr = Typed.Ptr.mk loc 0s in
       let ptr : Sptr.t =
-        { ptr; tag = tb.tag; align = layout.align; size = layout.size }
+        {
+          ptr;
+          tag = tb.tag;
+          align = Typed.nonzero layout.align;
+          size = Typed.int layout.size;
+        }
       in
       (block, (ptr, None)))
 
@@ -477,21 +483,23 @@ let unwind_with ~f ~fe symex =
       else Result.error (err, state))
 
 let declare_fn fn_ptr ({ functions; _ } as st) =
-  match FunBiMap.get_loc fn_ptr functions with
-  | Some loc ->
-      let ptr = Typed.Ptr.mk loc 0s in
-      (* FIXME: what is the size and align of a fn pointer? *)
-      let ptr : Sptr.t = { ptr; tag = Tree_borrow.zero; align = 1; size = 1 } in
-      Result.ok ((ptr, None), st)
-  | None ->
-      (* FIXME: once we stop having concrete locations, we'll need to add a distinct
+  let+ loc, st =
+    match FunBiMap.get_loc fn_ptr functions with
+    | Some loc -> return (loc, st)
+    | None ->
+        (* FIXME: once we stop having concrete locations, we'll need to add a distinct
        constraint here. *)
-      let* loc = StateKey.fresh () in
-      let ptr = Typed.Ptr.mk loc 0s in
-      (* FIXME: what is the size and align of a fn pointer? *)
-      let ptr : Sptr.t = { ptr; tag = Tree_borrow.zero; align = 1; size = 1 } in
-      let functions = FunBiMap.add loc fn_ptr functions in
-      Result.ok ((ptr, None), { st with functions })
+        let+ loc = StateKey.fresh () in
+        let functions = FunBiMap.add loc fn_ptr functions in
+        (loc, { st with functions })
+  in
+  (* FIXME: what is the size and align of a fn pointer?
+     See https://github.com/rust-lang/rust/issues/82232 *)
+  let ptr = Typed.Ptr.mk loc 0s in
+  let ptr : Sptr.t =
+    { ptr; tag = Tree_borrow.zero; align = Typed.cast 1s; size = 1s }
+  in
+  Soteria_symex.Compo_res.Ok ((ptr, None), st)
 
 let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
