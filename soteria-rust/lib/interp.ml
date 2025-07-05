@@ -517,7 +517,7 @@ module Make (State : State_intf.S) = struct
             match type_of_operand e with
             | TLiteral TBool -> ok (Base (Typed.not_int_bool v))
             | TLiteral (TInteger i_ty) ->
-                let size = Layout.size_of_int_ty i_ty in
+                let size = Layout.size_of_int_ty i_ty * 8 in
                 let signed = Layout.is_signed i_ty in
                 let v = Typed.bit_not ~size ~signed v in
                 ok (Base v)
