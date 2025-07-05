@@ -305,8 +305,8 @@ module M (State : State_intf.S) = struct
     let name =
       match f.item_meta.name with
       | _ when not is_intrinsic -> (
-          match List.rev f.item_meta.name with
-          | (PeIdent (name, _) as ident) :: _
+          match List.last f.item_meta.name with
+          | PeIdent (name, _) as ident
             when String.starts_with ~prefix:"__rust" name ->
               [ ident ]
           | _ -> f.item_meta.name)

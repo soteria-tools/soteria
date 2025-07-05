@@ -54,6 +54,9 @@ module type S = sig
 
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> sint Typed.t
+
+  (** Get the allocation info for this pointer: its size and alignment *)
+  val allocation_info : t -> T.sint Typed.t * T.nonzero Typed.t
 end
 
 type arithptr_t = {
@@ -155,4 +158,5 @@ module ArithPtr : S with type t = arithptr_t = struct
         loc_int +@ ofs
 
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
+  let allocation_info { size; align; _ } = (size, align)
 end

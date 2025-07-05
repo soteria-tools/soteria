@@ -29,7 +29,28 @@ module M (State : State_intf.S) = struct
     let++ (), state = State.free ptr state in
     (Tuple [], state)
 
-  let realloc ~args:_ _ = not_impl "Not impl: alloc::realloc"
+  let realloc ~args state =
+    let ptr, old_size, size, align =
+      match args with
+      | [ Ptr ptr; Base old_size; Base size; Base align ] ->
+          (ptr, old_size, size, align)
+      | _ -> failwith "realloc: invalid arguments"
+    in
+    let ptr_in, _ = ptr in
+    let prev_size, prev_align = State.Sptr.allocation_info ptr_in in
+    if%sat prev_align ==?@ align &&@ (prev_size ==?@ old_size) then
+      let align = Typed.cast align in
+      let* size = cast_checked ~ty:Typed.t_int size in
+      let** new_ptr, state = State.alloc_untyped ~size ~align state in
+      let** (), state =
+        if%sat size >=@ size then
+          State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size:prev_size state
+        else not_impl "Can't realloc to smaller size"
+      in
+      let++ (), state = State.free ptr state in
+      (Ptr new_ptr, state)
+    else State.error `InvalidLayout state
+
   let alloc_zeroed ~args:_ _ = not_impl "Not impl: alloc::alloc_zeroed"
   let no_alloc_shim_is_unstable ~args:_ state = Result.ok (Tuple [], state)
 end
