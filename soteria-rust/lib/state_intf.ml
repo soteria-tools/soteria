@@ -205,7 +205,12 @@ module type S = sig
     full_ptr ->
     t ->
     ( Charon.Expressions.fn_ptr * t,
-      [> `MisalignedFnPointer ] err * t,
+      [> `MisalignedFnPointer
+      | `NotAFnPointer
+      | `NullDereference
+      | `UseAfterFree ]
+      err
+      * t,
       serialized list )
     SYMEX.Result.t
 end

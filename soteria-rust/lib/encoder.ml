@@ -151,7 +151,8 @@ module Make (Sptr : Sptr.S) = struct
     (* References / Pointers obtained from casting *)
     | Base _, TAdt { id = TBuiltin TBox; _ }
     | Base _, TRef _
-    | Base _, TRawPtr _ ->
+    | Base _, TRawPtr _
+    | Base _, TFnPtr _ ->
         [ { value; ty = TLiteral (TInteger Isize); offset } ]
     | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
         illegal_pair ()

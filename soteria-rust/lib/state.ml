@@ -493,12 +493,17 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
       let functions = FunBiMap.add loc fn_ptr functions in
       Result.ok ((ptr, None), { st with functions })
 
-let lookup_fn (({ ptr; _ } : Sptr.t), _) ({ functions; _ } as st) =
+let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let loc = Typed.Ptr.loc ptr in
-    let fn = FunBiMap.get_fn loc functions in
-    let* fn = of_opt_not_impl ~msg:"Could not resolve function" fn in
-    Result.ok (fn, st)
+    match FunBiMap.get_fn loc functions with
+    | Some fn -> Result.ok (fn, st)
+    | None -> (
+        let@ _, block = with_ptr fptr st in
+        (* If a block exists, we can be sure that this isn't a function pointer *)
+        match block with
+        | Some _ -> Result.error `NotAFnPointer
+        | None -> Result.miss [])
   else Result.error `MisalignedFnPointer

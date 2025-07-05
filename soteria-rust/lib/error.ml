@@ -9,6 +9,7 @@ type t =
   | `UninitializedMemoryAccess
   | `UseAfterFree
   | `MisalignedFnPointer
+  | `NotAFnPointer
   | `InvalidFnArgCount
   | (* Arithmetic *)
     `DivisionByZero
@@ -60,6 +61,7 @@ let pp ft = function
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
   | `MisalignedPointer -> Fmt.string ft "Misaligned pointer"
+  | `NotAFnPointer -> Fmt.string ft "Not a function pointer"
   | `NullDereference -> Fmt.string ft "Null dereference"
   | `OutOfBounds -> Fmt.string ft "Out of bounds"
   | `Overflow -> Fmt.string ft "Overflow"
