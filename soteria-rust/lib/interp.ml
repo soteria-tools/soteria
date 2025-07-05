@@ -175,11 +175,9 @@ module Make (State : State_intf.S) = struct
     | None -> error `DeadVariable
 
   let alloc_stack (locals : GAst.locals) args : (full_ptr * Types.ty) list t =
-    let* () =
-      if List.compare_length_with args locals.arg_count <> 0 then
-        error `InvalidFnArgCount
-      else ok ()
-    in
+    if List.compare_length_with args locals.arg_count <> 0 then
+      failwith
+        "Function called with wrong arg count, should have been caught before";
     (* create a store with all types *)
     let* () =
       map_store @@ fun store ->
@@ -387,8 +385,15 @@ module Make (State : State_intf.S) = struct
           (ptr', Some slice_len))
         else error `OutOfBounds
 
-  and resolve_function (fnop : GAst.fn_operand) : 'err fun_exec t =
-    match fnop with
+  (** Resolve a function operand, returning a callable symbolic function to
+      execute it.
+
+      This function also handles validating the call; given the input types it
+      will be called with and the output type expected, it will make sure these
+      are the right types and in the right amount. *)
+  and resolve_function ~in_tys ~out_ty : GAst.fn_operand -> 'err fun_exec t =
+    function
+    (* For static calls we don't need to check types, that's what the type checker does. *)
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
         let fundef = Crate.get_fun fid in
@@ -399,13 +404,36 @@ module Make (State : State_intf.S) = struct
         | None -> ok (exec_fun fundef))
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics)
+    (* Here we need to check the type of the actualy function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
         let* fn_ptr = State.load ~is_move:true fn_ptr_ptr place.ty in
-        let fn_ptr = as_ptr fn_ptr in
+        let* fn_ptr =
+          match fn_ptr with Ptr ptr -> ok ptr | _ -> error `UBDanglingPointer
+        in
         let* fn = State.lookup_fn fn_ptr in
+        let* () =
+          match fn.func with
+          | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
+              (* We are strict and decide types must be the same to be used interchangeably.
+                 This is not necessarily true but is somewhat correct for non-primitives:
+                 for instance, [u8; 2] and struct { u8, u8 } may use different passing
+                 styles (see https://github.com/rust-lang/miri/blob/d9afd0faa4a5e503baf6e2c1e2a81b4946bfc674/tests/fail/function_pointers/abi_mismatch_array_vs_struct.rs) *)
+              let fn = Crate.get_fun fid in
+              let rec check_tys l r =
+                match (l, r) with
+                | [], [] -> ok ()
+                | ty1 :: l, ty2 :: r ->
+                    if not (Types.equal_ty ty1 ty2) then error `InvalidFnArgTys
+                    else check_tys l r
+                | _ -> error `InvalidFnArgCount
+              in
+              check_tys (out_ty :: in_tys)
+                (fn.signature.output :: fn.signature.inputs)
+          | FunId (FBuiltin _) -> ok ()
+        in
         let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function fnop
+        resolve_function ~in_tys ~out_ty fnop
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
   and resolve_global (g : Types.global_decl_id) =
@@ -864,7 +892,9 @@ module Make (State : State_intf.S) = struct
     let@ () = with_loc ~loc in
     match term with
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
-        let* exec_fun = resolve_function func in
+        let in_tys = List.map type_of_operand args in
+        let out_ty = ty in
+        let* exec_fun = resolve_function ~in_tys ~out_ty func in
         let* args = eval_operand_list args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"

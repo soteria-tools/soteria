@@ -8,9 +8,11 @@ type t =
   | `OutOfBounds
   | `UninitializedMemoryAccess
   | `UseAfterFree
-  | `MisalignedFnPointer
+  | (* Functions, function pointers *)
+    `MisalignedFnPointer
   | `NotAFnPointer
   | `InvalidFnArgCount
+  | `InvalidFnArgTys
   | (* Arithmetic *)
     `DivisionByZero
   | `InvalidShift
@@ -54,6 +56,7 @@ let pp ft = function
   | `FailedAssert None -> Fmt.string ft "Failed assertion"
   | `InvalidFnArgCount ->
       Fmt.string ft "Wrong number of arguments in function call"
+  | `InvalidFnArgTys -> Fmt.string ft "Mismatch in types expected of function"
   | `InvalidFree -> Fmt.string ft "Invalid free"
   | `InvalidLayout -> Fmt.string ft "Invalid layout"
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
