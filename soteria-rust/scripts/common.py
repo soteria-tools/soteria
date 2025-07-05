@@ -114,9 +114,12 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
 
 KNOWN_ISSUES = {
     # Kani
-    "ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter?? Kani crashes too",
+    "ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "Cleanup/unwind_fixme.rs": "The main function takes a paramter? Kani crashes too",
+    "FunctionCall/Variadic/fixme_main.rs": "We don't handle functions with spread arguments (not in Charon)",
+    "FunctionCall/Variadic/main.rs": "We don't handle functions with spread arguments (not in Charon)",
     "Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
     "Intrinsics/ConstEval/pref_align_of.rs": "Requires support for custom target architectures",
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
@@ -128,6 +131,7 @@ KNOWN_ISSUES = {
     "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
+    "pass/enum_discriminant_ptr_value.rs": "We don't handle the niche for Option<&T>",
     "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
     "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
     **{
