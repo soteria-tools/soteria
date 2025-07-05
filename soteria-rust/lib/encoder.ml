@@ -271,7 +271,8 @@ module Make (Sptr : Sptr.S) = struct
       | TFnPtr _ -> (
           let+** boxed = query (TLiteral (TInteger Isize), offset) in
           match boxed with
-          | (Ptr _ | Base _) as ptr -> Result.ok ptr
+          | Ptr _ as ptr -> Result.ok ptr
+          | Base _ -> Result.error `UBTransmute
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
