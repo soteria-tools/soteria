@@ -396,12 +396,15 @@ module Make (State : State_intf.S) = struct
     (* For static calls we don't need to check types, that's what the type checker does. *)
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
-        let fundef = Crate.get_fun fid in
-        L.info (fun g ->
-            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
-        match Std_funs.std_fun_eval fundef exec_fun with
-        | Some fn -> ok fn
-        | None -> ok (exec_fun fundef))
+        try
+          let fundef = Crate.get_fun fid in
+          L.info (fun g ->
+              g "Resolved function call to %a" Crate.pp_name
+                fundef.item_meta.name);
+          match Std_funs.std_fun_eval fundef exec_fun with
+          | Some fn -> ok fn
+          | None -> ok (exec_fun fundef)
+        with Crate.MissingDecl _ -> not_impl "Missing function declaration")
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics)
     (* Here we need to check the type of the actualy function, as it could have been cast. *)

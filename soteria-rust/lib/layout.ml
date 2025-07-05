@@ -149,7 +149,7 @@ let rec layout_of (ty : Types.ty) : layout =
             (fun acc l -> if l.size > acc.size then l else acc)
             (List.hd layouts) (List.tl layouts)
       | Opaque ->
-          let msg = Fmt.str "Opaque %a " Crate.pp_name adt.item_meta.name in
+          let msg = Fmt.str "opaque (%a)" Crate.pp_name adt.item_meta.name in
           raise (CantComputeLayout (msg, ty))
       | Union fs ->
           let layouts = List.map layout_of @@ Charon_util.field_tys fs in
@@ -164,21 +164,18 @@ let rec layout_of (ty : Types.ty) : layout =
           (* All fields in the union start at 0 and overlap *)
           let members_ofs = Array.init (List.length fs) (fun _ -> 0) in
           { size; align; members_ofs }
-      | TDeclError _ -> raise (CantComputeLayout ("DeclError", ty))
-      | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
+      | TDeclError _ -> raise (CantComputeLayout ("decl error", ty))
+      | Alias _ -> raise (CantComputeLayout ("alias", ty)))
   (* Arrays *)
-  | TAdt
-      {
-        id = TBuiltin TArray;
-        generics = { types = [ ty ]; const_generics = [ size ]; _ };
-      } ->
+  | TAdt { id = TBuiltin TArray; generics } ->
+      let size = List.hd generics.const_generics in
+      let ty = List.hd generics.types in
       let len = Charon_util.zint_of_const_generic size in
       let sub_layout = layout_of ty in
       if len > max_array_len sub_layout.size then raise InvalidLayout;
       let len = Z.to_int len in
       let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
       { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
-  | TAdt { id = TBuiltin TArray; _ } -> failwith "Invalid TArray shape"
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
   (* Function definitions -- zero sized type *)
@@ -190,7 +187,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TDynTrait _ -> { size = 0; align = 1; members_ofs = [||] }
   (* Others (unhandled for now) *)
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
-  | TError _ -> raise (CantComputeLayout ("Error", ty))
+  | TError _ -> raise (CantComputeLayout ("error type", ty))
   | TTraitType (tref, ty_name) -> layout_of @@ resolve_trait_ty tref ty_name
 
 and layout_of_members members =
@@ -228,23 +225,33 @@ and of_enum_variant adt_id variant =
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.trait_id with
-  | TraitImpl { id; _ } ->
+  | TraitImpl { id; _ } -> (
       let impl = Crate.get_trait_impl id in
-      let _, ty = List.find (fun (n, _) -> ty_name = n) impl.types in
-      ty
-  | _ ->
-      raise (CantComputeLayout ("Trait type", Types.TTraitType (tref, ty_name)))
+      match List.find_opt (fun (n, _) -> ty_name = n) impl.types with
+      | Some (_, ty) -> ty
+      | None ->
+          let msg =
+            Fmt.str "missing type '%s' in impl %a" ty_name Crate.pp_name
+              impl.item_meta.name
+          in
+          raise (CantComputeLayout (msg, TTraitType (tref, ty_name))))
+  | _ -> raise (CantComputeLayout ("trait type", TTraitType (tref, ty_name)))
 
 let offset_in_array ty idx =
   let sub_layout = layout_of ty in
   idx * sub_layout.size
 
 let layout_of_s ty =
-  try return @@ layout_of ty
-  with CantComputeLayout (msg, ty') ->
-    Fmt.kstr Rustsymex.not_impl
-      "Cannot yet compute size of %s:@.%a@.Occurred when computing:@.%a" msg
-      pp_ty ty' pp_ty ty
+  try return @@ layout_of ty with
+  | CantComputeLayout (msg, ty') ->
+      Fmt.kstr Rustsymex.not_impl
+        "Cannot compute layout: %s@.%a@.Occurred when computing:@.%a" msg pp_ty
+        ty' pp_ty ty
+  | Crate.MissingDecl decl_ty ->
+      Fmt.kstr Rustsymex.not_impl
+        "Cannot compute layout: missing %s declaration@.Occured when computing \
+         %a"
+        decl_ty pp_ty ty
 
 let size_of_s ty =
   let open Rustsymex.Syntax in
