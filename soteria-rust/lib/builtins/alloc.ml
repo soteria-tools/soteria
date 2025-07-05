@@ -21,13 +21,16 @@ module M (State : State_intf.S) = struct
     else State.error `InvalidLayout state
 
   let dealloc ~args state =
-    let ptr =
+    let ((ptr_in, _) as ptr), size, align =
       match args with
-      | Ptr ptr :: _ -> ptr
+      | [ Ptr ptr; Base size; Base align ] -> (ptr, size, align)
       | _ -> failwith "dealloc: invalid arguments"
     in
-    let++ (), state = State.free ptr state in
-    (Tuple [], state)
+    let alloc_size, alloc_align = State.Sptr.allocation_info ptr_in in
+    if%sat alloc_align ==?@ align &&@ (alloc_size ==?@ size) then
+      let++ (), state = State.free ptr state in
+      (Tuple [], state)
+    else State.error `InvalidFree state
 
   let realloc ~args state =
     let ptr, old_size, size, align =
