@@ -1,9 +1,6 @@
 open Rustsymex
 
-let is_disabled, set_enabled =
-  let enabled = ref true in
-  let set_enabled b = enabled := b in
-  ((fun () -> not !enabled), set_enabled)
+let[@inline] is_disabled () = !Config.current.ignore_aliasing
 
 type tag = int
 and access = Read | Write

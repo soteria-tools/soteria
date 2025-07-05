@@ -174,11 +174,10 @@ module Make (State : State_intf.S) = struct
     | Some ptr_and_ty -> ok ptr_and_ty
     | None -> error `DeadVariable
 
-  let alloc_stack (locals : GAst.locals) args :
-      (full_ptr * Types.ty) list InterpM.t =
+  let alloc_stack (locals : GAst.locals) args : (full_ptr * Types.ty) list t =
     if List.compare_length_with args locals.arg_count <> 0 then
-      Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
-        (List.length args);
+      failwith
+        "Function called with wrong arg count, should have been caught before";
     (* create a store with all types *)
     let* () =
       map_store @@ fun store ->
@@ -236,9 +235,9 @@ module Make (State : State_intf.S) = struct
   let dealloc_store ?protected_address protected =
     let* () =
       fold_list protected ~init:() ~f:(fun () (ptr, ty) ->
-          InterpM.State.unprotect ptr ty)
+          State.unprotect ptr ty)
     in
-    let* store = InterpM.get_store () in
+    let* store = get_store () in
     fold_list (Store.bindings store) ~init:() ~f:(fun () (_, (ptr, _)) ->
         match (ptr, protected_address) with
         | None, _ -> ok ()
@@ -255,7 +254,7 @@ module Make (State : State_intf.S) = struct
         let fp = float_precision float_ty in
         ok (Base (Typed.float fp float_value))
     | CLiteral (VStr str) -> (
-        let* ptr_opt = InterpM.State.load_str_global str in
+        let* ptr_opt = State.load_str_global str in
         match ptr_opt with
         | Some v -> ok (Ptr v)
         | None ->
@@ -270,24 +269,23 @@ module Make (State : State_intf.S) = struct
             in
             let char_arr = Array chars in
             let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
-            let* ptr, _ = InterpM.State.alloc_ty str_ty in
+            let* ptr, _ = State.alloc_ty str_ty in
             let ptr = (ptr, Some (Typed.int len)) in
-            let* () = InterpM.State.store ptr str_ty char_arr in
-            let+ () = InterpM.State.store_str_global str ptr in
+            let* () = State.store ptr str_ty char_arr in
+            let+ () = State.store_str_global str ptr in
             Ptr ptr)
     | CFnPtr fn_ptr -> ok (ConstFn fn_ptr)
-    | CLiteral (VByteStr _) -> InterpM.not_impl "TODO: resolve const ByteStr"
-    | CTraitConst _ -> InterpM.not_impl "TODO: resolve const TraitConst"
-    | CRawMemory _ -> InterpM.not_impl "TODO: resolve const RawMemory"
-    | COpaque msg -> Fmt.kstr InterpM.not_impl "Opaque constant: %s" msg
-    | CVar _ -> InterpM.not_impl "TODO: resolve const Var (mono error)"
+    | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
+    | CTraitConst _ -> not_impl "TODO: resolve const TraitConst"
+    | CRawMemory _ -> not_impl "TODO: resolve const RawMemory"
+    | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
+    | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
   (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ({ kind; ty } : Expressions.place) : full_ptr InterpM.t
-      =
+  let rec resolve_place ({ kind; ty } : Expressions.place) : full_ptr t =
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v
@@ -387,25 +385,58 @@ module Make (State : State_intf.S) = struct
           (ptr', Some slice_len))
         else error `OutOfBounds
 
-  and resolve_function (fnop : GAst.fn_operand) : 'err fun_exec InterpM.t =
-    match fnop with
+  (** Resolve a function operand, returning a callable symbolic function to
+      execute it.
+
+      This function also handles validating the call; given the input types it
+      will be called with and the output type expected, it will make sure these
+      are the right types and in the right amount. *)
+  and resolve_function ~in_tys ~out_ty : GAst.fn_operand -> 'err fun_exec t =
+    function
+    (* For static calls we don't need to check types, that's what the type checker does. *)
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
-        let fundef = Crate.get_fun fid in
-        L.info (fun g ->
-            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
-        match Std_funs.std_fun_eval fundef exec_fun with
-        | Some fn -> ok fn
-        | None -> ok (exec_fun fundef))
+        try
+          let fundef = Crate.get_fun fid in
+          L.info (fun g ->
+              g "Resolved function call to %a" Crate.pp_name
+                fundef.item_meta.name);
+          match Std_funs.std_fun_eval fundef exec_fun with
+          | Some fn -> ok fn
+          | None -> ok (exec_fun fundef)
+        with Crate.MissingDecl _ -> not_impl "Missing function declaration")
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics)
+    (* Here we need to check the type of the actualy function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
         let* fn_ptr = State.load ~is_move:true fn_ptr_ptr place.ty in
-        let fn_ptr = as_ptr fn_ptr in
+        let* fn_ptr =
+          match fn_ptr with Ptr ptr -> ok ptr | _ -> error `UBDanglingPointer
+        in
         let* fn = State.lookup_fn fn_ptr in
+        let* () =
+          match fn.func with
+          | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
+              (* We are strict and decide types must be the same to be used interchangeably.
+                 This is not necessarily true but is somewhat correct for non-primitives:
+                 for instance, [u8; 2] and struct { u8, u8 } may use different passing
+                 styles (see https://github.com/rust-lang/miri/blob/d9afd0faa4a5e503baf6e2c1e2a81b4946bfc674/tests/fail/function_pointers/abi_mismatch_array_vs_struct.rs) *)
+              let fn = Crate.get_fun fid in
+              let rec check_tys l r =
+                match (l, r) with
+                | [], [] -> ok ()
+                | ty1 :: l, ty2 :: r ->
+                    if not (Types.equal_ty ty1 ty2) then error `InvalidFnArgTys
+                    else check_tys l r
+                | _ -> error `InvalidFnArgCount
+              in
+              check_tys (out_ty :: in_tys)
+                (fn.signature.output :: fn.signature.inputs)
+          | FunId (FBuiltin _) -> ok ()
+        in
         let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function fnop
+        resolve_function ~in_tys ~out_ty fnop
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
   and resolve_global (g : Types.global_decl_id) =
@@ -489,13 +520,13 @@ module Make (State : State_intf.S) = struct
             match type_of_operand e with
             | TLiteral TBool -> ok (Base (Typed.not_int_bool v))
             | TLiteral (TInteger i_ty) ->
-                let size = Layout.size_of_int_ty i_ty in
+                let size = Layout.size_of_int_ty i_ty * 8 in
                 let signed = Layout.is_signed i_ty in
                 let v = Typed.bit_not ~size ~signed v in
                 ok (Base v)
             | ty ->
                 Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty)
-        | Neg -> (
+        | Neg _ -> (
             match type_of_operand e with
             | TLiteral (TInteger _) ->
                 let v = as_base_of ~ty:Typed.t_int v in
@@ -532,7 +563,7 @@ module Make (State : State_intf.S) = struct
             not_impl "Unsupported: dyn"
         | Cast (CastUnsize (from_ty, _)) ->
             let rec get_size : Types.ty -> Types.const_generic t = function
-              | Types.TRawPtr (ty, _)
+              | TRawPtr (ty, _)
               | TRef (_, ty, _)
               | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
                   get_size ty
@@ -550,10 +581,27 @@ module Make (State : State_intf.S) = struct
                   ok size
               | _ -> not_impl "Couldn't get size in CastUnsize"
             in
-            let+ size = get_size from_ty in
-            let ptr, _ = as_ptr v in
+            let rec with_ptr_meta meta : Sptr.t rust_val -> Sptr.t rust_val t =
+              function
+              | Ptr (v, _) -> ok (Ptr (v, Some meta))
+              | ( Struct (_ :: _ as fs)
+                | Array (_ :: _ as fs)
+                | Tuple (_ :: _ as fs) ) as v -> (
+                  match List.rev fs with
+                  | last :: rest -> (
+                      let+ last = with_ptr_meta meta last in
+                      let fs = List.rev (last :: rest) in
+                      match v with
+                      | Struct _ -> Struct fs
+                      | Array _ -> Array fs
+                      | Tuple _ -> Tuple fs
+                      | _ -> assert false)
+                  | [] -> assert false)
+              | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
+            in
+            let* size = get_size from_ty in
             let size = Typed.int @@ int_of_const_generic size in
-            Ptr (ptr, Some size)
+            with_ptr_meta size v
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
@@ -600,35 +648,23 @@ module Make (State : State_intf.S) = struct
                 let^^+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else Typed.not_int_bool res in
                 Base (res :> T.cval Typed.t)
-            | Add | Sub | Mul | Div | Rem | Shl | Shr ->
-                let ty =
-                  match type_of_operand e1 with
-                  | TLiteral ty -> ty
-                  | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
-                in
-                let^^+ res = Core.eval_lit_binop op ty v1 v2 in
-                Base res
-            | CheckedAdd | CheckedSub | CheckedMul ->
+            | Add om | Sub om | Mul om | Div om | Rem om | Shl om | Shr om -> (
+                match (om, type_of_operand e1) with
+                | OWrap, TLiteral (TInteger ty as litty) ->
+                    let^^ v = Core.safe_binop op litty v1 v2 in
+                    let^+ res = Core.wrap_value ty v in
+                    Base res
+                | _, TLiteral ty ->
+                    let^^+ res = Core.eval_lit_binop op ty v1 v2 in
+                    Base res
+                | _, _ -> not_impl "Unexpected type in binop")
+            | AddChecked | SubChecked | MulChecked ->
                 let ty =
                   match type_of_operand e1 with
                   | TLiteral ty -> ty
                   | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
                 in
                 State.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
-            | WrappingAdd | WrappingSub | WrappingMul | WrappingShl
-            | WrappingShr -> (
-                match type_of_operand e1 with
-                | TLiteral (TInteger ty as litty) ->
-                    let^^ v = Core.safe_binop op litty v1 v2 in
-                    let^+ res = Core.wrap_value ty v in
-                    Base res
-                | TLiteral ty ->
-                    (* Wrapping operations can apply to floating points too, but in that case
-                       it is equivalent to the regular operation. *)
-                    let^^+ res = Core.eval_lit_binop op ty v1 v2 in
-                    Base res
-                | ty ->
-                    Fmt.kstr not_impl "Unexpected type in binop: %a" pp_ty ty)
             | Cmp ->
                 let^ v1, v2, ty = cast_checked2 v1 v2 in
                 if Typed.equal_ty ty Typed.t_ptr then error `UBPointerComparison
@@ -699,19 +735,18 @@ module Make (State : State_intf.S) = struct
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
-    | Discriminant (place, kind) -> (
+    | Discriminant (place, enum) -> (
         let* loc, _ = resolve_place place in
-        let variants = Crate.as_enum kind in
+        let variants = Crate.as_enum enum in
         match variants with
         (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
         | [ { fields = []; discriminant; _ } ] ->
             let discr = Typed.int_z discriminant.value in
             ok (Base discr)
         | var :: _ ->
-            let int_ty = var.discriminant.int_ty in
-            let layout = Layout.of_variant var in
+            let layout = Layout.of_variant enum var in
             let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
-            let discr_ty = Types.TLiteral (TInteger int_ty) in
+            let discr_ty = Layout.enum_discr_ty enum in
             let^^ loc = Sptr.offset loc discr_ofs in
             State.load (loc, None) discr_ty
         | [] -> Fmt.kstr not_impl "Unsupported discriminant for empty enums")
@@ -794,7 +829,7 @@ module Make (State : State_intf.S) = struct
         in
         Base len
 
-  and exec_stmt stmt : unit InterpM.t =
+  and exec_stmt stmt : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
     L.trace (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content);
@@ -860,7 +895,9 @@ module Make (State : State_intf.S) = struct
     let@ () = with_loc ~loc in
     match term with
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
-        let* exec_fun = resolve_function func in
+        let in_tys = List.map type_of_operand args in
+        let out_ty = ty in
+        let* exec_fun = resolve_function ~in_tys ~out_ty func in
         let* args = eval_operand_list args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
@@ -1001,11 +1038,11 @@ module Make (State : State_intf.S) = struct
         error_raw err)
 
   (* re-define this for the export, nowhere else: *)
-  let exec_fun ?(ignore_leaks = false) ~args ~state fundef =
+  let exec_fun ~args ~state fundef =
     let open Rustsymex.Syntax in
     let+- err, _ =
       let** value, state = exec_fun ~args fundef state in
-      if ignore_leaks then Result.ok (value, state)
+      if !Config.current.ignore_leaks then Result.ok (value, state)
       else
         let@ () = Rustsymex.with_loc ~loc:fundef.item_meta.span in
         let++ (), state = State.leak_check state in

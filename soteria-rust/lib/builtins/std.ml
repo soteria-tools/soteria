@@ -274,7 +274,7 @@ module M (State : State_intf.S) = struct
     let v = v *@ size in
     if%sat v ==@ 0s then Result.ok (Ptr (ptr, meta), state)
     else
-      let v = if op = Expressions.Add then v else ~-v in
+      let v = match op with Expressions.Add _ -> v | _ -> ~-v in
       let++ ptr' = Sptr.offset ~check ptr v |> State.lift_err state in
       (Ptr (ptr', meta), state)
 
@@ -448,7 +448,9 @@ module M (State : State_intf.S) = struct
     | TLiteral lit :: _, [ Base l; Base r ] ->
         let* l, r, ty = cast_checked2 l r in
         let open Typed in
-        let** res = State.lift_err state @@ Core.eval_lit_binop Div lit l r in
+        let** res =
+          State.lift_err state @@ Core.eval_lit_binop (Div OUB) lit l r
+        in
         if is_float ty then Result.ok (Base res, state)
         else
           if%sat (not (r ==@ 0s)) &&@ (l %@ cast r ==@ 0s) then
@@ -604,20 +606,20 @@ module M (State : State_intf.S) = struct
     let name =
       lazy
         (match bop with
-        | Add -> "core::intrinsics::fadd_fast"
-        | Sub -> "core::intrinsics::fsub_fast"
-        | Mul -> "core::intrinsics::fmul_fast"
-        | Div -> "core::intrinsics::fdiv_fast"
+        | Add _ -> "core::intrinsics::fadd_fast"
+        | Sub _ -> "core::intrinsics::fsub_fast"
+        | Mul _ -> "core::intrinsics::fmul_fast"
+        | Div _ -> "core::intrinsics::fdiv_fast"
         | _ -> assert false)
     in
     let is_finite f = Typed.((not (is_nan f)) &&@ not (is_infinite f)) in
     if%sat is_finite l &&@ is_finite r then
       let bop =
         match bop with
-        | Add -> ( +.@ )
-        | Sub -> ( -.@ )
-        | Mul -> ( *.@ )
-        | Div -> ( /.@ )
+        | Add _ -> ( +.@ )
+        | Sub _ -> ( -.@ )
+        | Mul _ -> ( *.@ )
+        | Div _ -> ( /.@ )
         | _ -> failwith "fast_float: invalid binop"
       in
       let res = bop l r in
@@ -884,7 +886,7 @@ module M (State : State_intf.S) = struct
   let fixme_try_cleanup ~args:_ state =
     (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
               we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    let box = _mk_box (Sptr.null_ptr, None) in
+    let box = _mk_box (Sptr.null_ptr, Some 0s) in
     Result.ok (box, state)
 
   let breakpoint ~args:_ state = State.error `Breakpoint state
@@ -896,4 +898,6 @@ module M (State : State_intf.S) = struct
     let++ (), state = State.store ptr ty value state in
     let box = _mk_box ptr in
     (box, state)
+
+  let fixme_null_ptr ~args:_ state = Result.ok (Ptr (Sptr.null_ptr, None), state)
 end

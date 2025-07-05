@@ -74,7 +74,7 @@ let empty_generics = TypesUtils.empty_generic_args
 
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let rec is_dst : Types.ty -> bool = function
-  | TAdt { id = TBuiltin TSlice; _ } | TAdt { id = TBuiltin TStr; _ } -> true
+  | TAdt { id = TBuiltin (TSlice | TStr); _ } | TDynTrait _ -> true
   | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
       | None -> false
@@ -86,9 +86,17 @@ let size_to_fit ~size ~align =
   if size % align = 0 then size else size + align - (size % align)
 
 let max_array_len sub_size =
-  let isize_bits = (Archi.word_size * 8) - 1 in
+  (* We calculate the max array size for a 32bit architecture, like Miri does. *)
+  let isize_bits = 32 - 1 in
   if sub_size = 0 then Z.of_int isize_bits
   else Z.((one lsl isize_bits) / of_int sub_size)
+
+let enum_discr_ty adt_id : Types.ty =
+  let adt = Crate.get_adt adt_id in
+  match adt.layout with
+  | Some { discriminant_layout = Some { tag_ty; _ }; _ } ->
+      TLiteral (TInteger tag_ty)
+  | _ -> TLiteral (TInteger Usize)
 
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
@@ -136,12 +144,12 @@ let rec layout_of (ty : Types.ty) : layout =
       | Enum [ { fields = []; _ } ] ->
           { size = 0; align = 1; members_ofs = [||] }
       | Enum variants ->
-          let layouts = List.map of_variant variants in
+          let layouts = List.map (of_variant id) variants in
           List.fold_left
             (fun acc l -> if l.size > acc.size then l else acc)
             (List.hd layouts) (List.tl layouts)
       | Opaque ->
-          let msg = Fmt.str "Opaque %a " Crate.pp_name adt.item_meta.name in
+          let msg = Fmt.str "opaque (%a)" Crate.pp_name adt.item_meta.name in
           raise (CantComputeLayout (msg, ty))
       | Union fs ->
           let layouts = List.map layout_of @@ Charon_util.field_tys fs in
@@ -156,20 +164,18 @@ let rec layout_of (ty : Types.ty) : layout =
           (* All fields in the union start at 0 and overlap *)
           let members_ofs = Array.init (List.length fs) (fun _ -> 0) in
           { size; align; members_ofs }
-      | TDeclError _ -> raise (CantComputeLayout ("DeclError", ty))
-      | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
+      | TDeclError _ -> raise (CantComputeLayout ("decl error", ty))
+      | Alias _ -> raise (CantComputeLayout ("alias", ty)))
   (* Arrays *)
-  | TAdt
-      {
-        id = TBuiltin TArray;
-        generics = { types = [ ty ]; const_generics = [ size ]; _ };
-      } ->
-      let len = Charon_util.int_of_const_generic size in
+  | TAdt { id = TBuiltin TArray; generics } ->
+      let size = List.hd generics.const_generics in
+      let ty = List.hd generics.types in
+      let len = Charon_util.zint_of_const_generic size in
       let sub_layout = layout_of ty in
-      if Z.(of_int len > max_array_len sub_layout.size) then raise InvalidLayout;
+      if len > max_array_len sub_layout.size then raise InvalidLayout;
+      let len = Z.to_int len in
       let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
       { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
-  | TAdt { id = TBuiltin TArray; _ } -> failwith "Invalid TArray shape"
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
   (* Function definitions -- zero sized type *)
@@ -181,7 +187,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TDynTrait _ -> { size = 0; align = 1; members_ofs = [||] }
   (* Others (unhandled for now) *)
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
-  | TError _ -> raise (CantComputeLayout ("Error", ty))
+  | TError _ -> raise (CantComputeLayout ("error type", ty))
   | TTraitType (tref, ty_name) -> layout_of @@ resolve_trait_ty tref ty_name
 
 and layout_of_members members =
@@ -206,36 +212,46 @@ and layout_of_members members =
     members_ofs = Array.of_list members_ofs;
   }
 
-and of_variant (variant : Types.variant) =
+and of_variant adt_id (variant : Types.variant) =
   Session.get_or_compute_cached_layout_var variant @@ fun () ->
-  let discr_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
+  let discr_ty = enum_discr_ty adt_id in
   let members = discr_ty :: field_tys variant.fields in
   layout_of_members members
 
 and of_enum_variant adt_id variant =
   let variants = Crate.as_enum adt_id in
   let variant = Types.VariantId.nth variants variant in
-  of_variant variant
+  of_variant adt_id variant
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.trait_id with
-  | TraitImpl { id; _ } ->
+  | TraitImpl { id; _ } -> (
       let impl = Crate.get_trait_impl id in
-      let _, ty = List.find (fun (n, _) -> ty_name = n) impl.types in
-      ty
-  | _ ->
-      raise (CantComputeLayout ("Trait type", Types.TTraitType (tref, ty_name)))
+      match List.find_opt (fun (n, _) -> ty_name = n) impl.types with
+      | Some (_, ty) -> ty
+      | None ->
+          let msg =
+            Fmt.str "missing type '%s' in impl %a" ty_name Crate.pp_name
+              impl.item_meta.name
+          in
+          raise (CantComputeLayout (msg, TTraitType (tref, ty_name))))
+  | _ -> raise (CantComputeLayout ("trait type", TTraitType (tref, ty_name)))
 
 let offset_in_array ty idx =
   let sub_layout = layout_of ty in
   idx * sub_layout.size
 
 let layout_of_s ty =
-  try return @@ layout_of ty
-  with CantComputeLayout (msg, ty') ->
-    Fmt.kstr Rustsymex.not_impl
-      "Cannot yet compute size of %s:@.%a@.Occurred when computing:@.%a" msg
-      pp_ty ty' pp_ty ty
+  try return @@ layout_of ty with
+  | CantComputeLayout (msg, ty') ->
+      Fmt.kstr Rustsymex.not_impl
+        "Cannot compute layout: %s@.%a@.Occurred when computing:@.%a" msg pp_ty
+        ty' pp_ty ty
+  | Crate.MissingDecl decl_ty ->
+      Fmt.kstr Rustsymex.not_impl
+        "Cannot compute layout: missing %s declaration@.Occured when computing \
+         %a"
+        decl_ty pp_ty ty
 
 let size_of_s ty =
   let open Rustsymex.Syntax in
@@ -367,8 +383,8 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
-          let disc_ty = (List.hd variants).discriminant.int_ty in
-          let* disc_val = nondet_literal_ty (Values.TInteger disc_ty) in
+          let disc_ty = TypesUtils.ty_as_literal @@ enum_discr_ty t_id in
+          let* disc_val = nondet_literal_ty disc_ty in
           let* res =
             match_on variants ~constr:(fun (v : Types.variant) ->
                 disc_val ==@ value_of_scalar v.discriminant)
@@ -405,6 +421,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   function
   | TLiteral lit_ty -> ( try Some (Base (zeroed_lit lit_ty)) with _ -> None)
   | TRawPtr _ -> Some (Ptr (null_ptr, None))
+  | TFnPtr _ -> None
   | TRef _ -> None
   | TAdt { id = TTuple; generics = { types; _ } } ->
       zeroeds types |> Option.map (fun fields -> Tuple fields)

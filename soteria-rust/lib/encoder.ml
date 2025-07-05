@@ -151,7 +151,8 @@ module Make (Sptr : Sptr.S) = struct
     (* References / Pointers obtained from casting *)
     | Base _, TAdt { id = TBuiltin TBox; _ }
     | Base _, TRef _
-    | Base _, TRawPtr _ ->
+    | Base _, TRawPtr _
+    | Base _, TFnPtr _ ->
         [ { value; ty = TLiteral (TInteger Isize); offset } ]
     | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
         illegal_pair ()
@@ -176,19 +177,12 @@ module Make (Sptr : Sptr.S) = struct
                 (fun v -> Z.equal disc_z Types.(v.discriminant.value))
                 variants
             in
-            let disc_ty =
-              Types.TLiteral (TInteger variant.discriminant.int_ty)
-            in
-            chain_cvals (of_variant variant) (Base disc :: vals)
+            let disc_ty = Layout.enum_discr_ty t_id in
+            chain_cvals (of_variant t_id variant) (Base disc :: vals)
               (disc_ty :: field_tys variant.fields)
         | _ -> Fmt.failwith "Unexpected discriminant for enum: %a" pp_ty ty)
     | Base value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
-        let variants = Crate.as_enum t_id in
-        (* FIXME: this is not correct, this doesn't represent the actual discriminant type. *)
-        let disc_ty = (List.hd variants).discriminant.int_ty in
-        [
-          { value = Enum (value, []); ty = TLiteral (TInteger disc_ty); offset };
-        ]
+        [ { value = Enum (value, []); ty = Layout.enum_discr_ty t_id; offset } ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
     | ( Array vals,
@@ -277,7 +271,8 @@ module Make (Sptr : Sptr.S) = struct
       | TFnPtr _ -> (
           let+** boxed = query (TLiteral (TInteger Isize), offset) in
           match boxed with
-          | (Ptr _ | Base _) as ptr -> Result.ok ptr
+          | Ptr _ as ptr -> Result.ok ptr
+          | Base _ -> Result.error `UBTransmute
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
@@ -293,7 +288,7 @@ module Make (Sptr : Sptr.S) = struct
           | Enum [] -> error `RefToUninhabited
           | Enum [ { fields = []; discriminant; _ } ] ->
               ok (Enum (value_of_scalar discriminant, []))
-          | Enum variants -> aux_enum offset variants
+          | Enum variants -> aux_enum offset t_id variants
           | Union fs -> aux_union offset fs
           | _ ->
               Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
@@ -343,13 +338,12 @@ module Make (Sptr : Sptr.S) = struct
       in
       mk_callback fields []
     (* Parses what enum variant we're handling *)
-    and aux_enum offset (variants : Types.variant list) :
+    and aux_enum offset adt_id (variants : Types.variant list) :
         ('e, 'fix, 'state) parser =
-      let disc = (List.hd variants).discriminant in
-      let disc_ty = Values.TInteger disc.int_ty in
-      let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
+      let disc_ty = Layout.enum_discr_ty adt_id in
+      let disc_align = Typed.nonzero (layout_of disc_ty).align in
       let offset = offset +@ (offset %@ disc_align) in
-      let*** cval = query (TLiteral disc_ty, offset) in
+      let*** cval = query (disc_ty, offset) in
       let cval = Charon_util.as_base_of ~ty:Typed.t_int cval in
       let*** res =
         lift_rsymex
@@ -360,7 +354,7 @@ module Make (Sptr : Sptr.S) = struct
       | Some var ->
           (* skip discriminant *)
           let discr = value_of_scalar var.discriminant in
-          let ({ members_ofs = mems; _ } as layout) = of_variant var in
+          let ({ members_ofs = mems; _ } as layout) = of_variant adt_id var in
           let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
           let layout = { layout with members_ofs } in
           var.fields

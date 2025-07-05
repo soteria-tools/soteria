@@ -179,7 +179,7 @@ end
 
 module Infix : sig
   val ( ==@ ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
-  val ( ==?@ ) : 'a t -> 'a t -> [> sbool ] t
+  val ( ==?@ ) : 'a t -> 'b t -> [> sbool ] t
   val ( >@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( >=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( <@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t

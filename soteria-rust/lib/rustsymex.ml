@@ -8,13 +8,6 @@ module SYMEX =
 include SYMEX
 include Syntaxes.FunctionWrap
 
-let check_nonzero (t : Typed.T.sint Typed.t) :
-    (Typed.T.nonzero Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
-  let open Syntax in
-  let open Typed.Infix in
-  if%sat t ==@ Typed.zero then Result.error `NonZeroIsZero
-  else Result.ok (Typed.cast t)
-
 let match_on ~(constr : 'a -> Typed.sbool Typed.t) (elements : 'a list) :
     'a option t =
   let open Syntax in

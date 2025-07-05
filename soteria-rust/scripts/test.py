@@ -113,7 +113,7 @@ def exec_test(
         log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
 
     before = time.time()
-    cmd = ["soteria-rust", "exec-main", str(file)] + args + ["--compact", "--no-color"]
+    cmd = ["soteria-rust", "rustc", str(file)] + args + ["--compact", "--no-color"]
     data = subprocess.run(
         cmd,
         capture_output=True,

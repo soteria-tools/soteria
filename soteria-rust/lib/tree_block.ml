@@ -778,8 +778,13 @@ let put_raw_tree ofs (tree : Tree.t) t :
   let tree = Tree.offset ~by:ofs tree in
   Tree.put_raw tree t
 
-let alloc size =
-  { root = Tree.uninit Tree_borrow.empty_state (0s, size); bound = Some size }
+let alloc ?(zeroed = false) size =
+  {
+    root =
+      (if zeroed then Tree.zeros else Tree.uninit)
+        Tree_borrow.empty_state (0s, size);
+    bound = Some size;
+  }
 
 let uninit_range ofs size t =
   with_bound_and_owned_check t (ofs +@ size) @@ Tree.uninit_range ofs size

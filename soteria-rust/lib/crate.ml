@@ -1,5 +1,7 @@
 open Charon
 
+exception MissingDecl of string
+
 type t = UllbcAst.crate
 type _ Effect.t += Get_crate : t Effect.t
 
@@ -33,19 +35,23 @@ let pp_fn_operand ft op =
 
 let get_adt id =
   let crate = get_crate () in
-  Types.TypeDeclId.Map.find id crate.type_decls
+  try Types.TypeDeclId.Map.find id crate.type_decls
+  with Not_found -> raise (MissingDecl "Type")
 
 let get_fun id =
   let crate = get_crate () in
-  UllbcAst.FunDeclId.Map.find id crate.fun_decls
+  try UllbcAst.FunDeclId.Map.find id crate.fun_decls
+  with Not_found -> raise (MissingDecl "Fun")
 
 let get_global id =
   let crate = get_crate () in
-  UllbcAst.GlobalDeclId.Map.find id crate.global_decls
+  try UllbcAst.GlobalDeclId.Map.find id crate.global_decls
+  with Not_found -> raise (MissingDecl "Global")
 
 let get_trait_impl id =
   let crate = get_crate () in
-  UllbcAst.TraitImplId.Map.find id crate.trait_impls
+  try UllbcAst.TraitImplId.Map.find id crate.trait_impls
+  with Not_found -> raise (MissingDecl "TraitImpl")
 
 let is_enum adt_id =
   match (get_adt adt_id).kind with Enum _ -> true | _ -> false

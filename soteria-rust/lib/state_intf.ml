@@ -75,6 +75,13 @@ module type S = sig
       serialized list )
     Result.t
 
+  val alloc_untyped :
+    ?zeroed:bool ->
+    size:sint Typed.t ->
+    align:nonzero Typed.t ->
+    t ->
+    (full_ptr * t, [> ] err * t, serialized list) Result.t
+
   val alloc_ty :
     Types.ty -> t -> (full_ptr * t, [> ] err * t, serialized list) Result.t
 
@@ -205,7 +212,12 @@ module type S = sig
     full_ptr ->
     t ->
     ( Charon.Expressions.fn_ptr * t,
-      [> `MisalignedFnPointer ] err * t,
+      [> `MisalignedFnPointer
+      | `NotAFnPointer
+      | `NullDereference
+      | `UseAfterFree ]
+      err
+      * t,
       serialized list )
     SYMEX.Result.t
 end

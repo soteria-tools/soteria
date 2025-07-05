@@ -83,6 +83,7 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "BitwiseShiftOperators/shift_neg_vals.rs": unkn_(
         "Wrapping operations without loop unrolling branch too much"
     ),
+    "Intrinsics/bswap.rs": unkn_("Hard to reduce binary operations"),
     "Intrinsics/Count/ctpop.rs": pass_("The test requires 2^N branches"),
     "Intrinsics/FastMath/add_f64.rs": pass_("Slow floating point operation"),
     "Intrinsics/FastMath/div_f64.rs": pass_("Slow floating point operation"),
@@ -98,6 +99,12 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "Intrinsics/Math/Rounding/RInt/rintf64.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Round/roundf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Round/roundf64.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f32.rs": pass_(
+        "Slow floating point rounding"
+    ),
+    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": pass_(
+        "Slow floating point rounding"
+    ),
     "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
@@ -107,23 +114,24 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
 
 KNOWN_ISSUES = {
     # Kani
-    "ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter?? Kani crashes too",
+    "ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "Cleanup/unwind_fixme.rs": "The main function takes a paramter? Kani crashes too",
+    "FunctionCall/Variadic/fixme_main.rs": "We don't handle functions with spread arguments (not in Charon)",
+    "FunctionCall/Variadic/main.rs": "We don't handle functions with spread arguments (not in Charon)",
     "Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
     "Intrinsics/ConstEval/pref_align_of.rs": "Requires support for custom target architectures",
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
     "PointerComparison/ptr_comparison.rs": "Error when monomorphising a fn meants ptr meta is lost",
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
-    "Uninit/access-padding-enum-multiple-variants.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "Uninit/access-padding-enum-single-field.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "Uninit/access-padding-enum-single-variant.rs": "Kani assumes discriminants are i32, but Charon gives isize",
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
     # Miri
     "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",
     "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
+    "pass/enum_discriminant_ptr_value.rs": "We don't handle the niche for Option<&T>",
     "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
     "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
     **{

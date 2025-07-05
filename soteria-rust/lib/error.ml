@@ -8,7 +8,11 @@ type t =
   | `OutOfBounds
   | `UninitializedMemoryAccess
   | `UseAfterFree
-  | `MisalignedFnPointer
+  | (* Functions, function pointers *)
+    `MisalignedFnPointer
+  | `NotAFnPointer
+  | `InvalidFnArgCount
+  | `InvalidFnArgTys
   | (* Arithmetic *)
     `DivisionByZero
   | `InvalidShift
@@ -33,7 +37,7 @@ type t =
     `Breakpoint
   | (* Meta errors *)
     `MetaExpectedError
-    (* Type is too large for memory *)
+    (* Type is too large for memory, or wrong size/align *)
   | `InvalidLayout ]
 
 let is_unwindable : [> t ] -> bool = function
@@ -50,6 +54,9 @@ let pp ft = function
   | `DoubleFree -> Fmt.string ft "Double free"
   | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
   | `FailedAssert None -> Fmt.string ft "Failed assertion"
+  | `InvalidFnArgCount ->
+      Fmt.string ft "Wrong number of arguments in function call"
+  | `InvalidFnArgTys -> Fmt.string ft "Mismatch in types expected of function"
   | `InvalidFree -> Fmt.string ft "Invalid free"
   | `InvalidLayout -> Fmt.string ft "Invalid layout"
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
@@ -57,6 +64,7 @@ let pp ft = function
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
   | `MisalignedPointer -> Fmt.string ft "Misaligned pointer"
+  | `NotAFnPointer -> Fmt.string ft "Not a function pointer"
   | `NullDereference -> Fmt.string ft "Null dereference"
   | `OutOfBounds -> Fmt.string ft "Out of bounds"
   | `Overflow -> Fmt.string ft "Overflow"
