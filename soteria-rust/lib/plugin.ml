@@ -46,7 +46,7 @@ module Cmd = struct
             "--features " ^ String.concat "," features ^ " "
           else ""
         in
-        env ^ "charon cargo " ^ spaced charon ^ " -- " ^ features
+        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet " ^ features
 
   let exec_cmd cmd =
     L.debug (fun g -> g "Running command: %s" cmd);
