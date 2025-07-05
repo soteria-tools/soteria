@@ -4,6 +4,7 @@ open Rustsymex
 
 module M (State : State_intf.S) = struct
   module Std = Std.M (State)
+  module Alloc = Alloc.M (State)
   module Rusteria = Rusteria.M (State)
   module Miri = Miri.M (State)
 
@@ -11,23 +12,31 @@ module M (State : State_intf.S) = struct
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
   (* Functions that we shouldn't stub, but need to (e.g. because of Charon) *)
-  type fixme_funs = BoxNew | Index | Nop | Panic | TryCleanup | Dealloc
+  type fixme_fn = BoxNew | Index | Nop | Panic | TryCleanup
 
   (* Functions we could not stub, but we do for performance *)
-  type optim_funs =
+  type optim_fn =
     | FloatIs of Svalue.FloatClass.t
     | FloatIsFinite
     | FloatIsSign of { positive : bool }
     | Zeroed
 
   (* Rusteria builtin functions *)
-  type rusteria_fun = Assert | Assume | Nondet | Panic
+  type rusteria_fn = Assert | Assume | Nondet | Panic
 
   (* Miri builtin functions *)
-  type miri_fun = AllocId | Nop
+  type miri_fn = AllocId | Nop
+
+  (* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
+  type alloc_fn =
+    | Alloc
+    | Dealloc
+    | Realloc
+    | AllocZeroed
+    | NoAllocShimIsUnstable
 
   (* Standard library functions *)
-  type std_fun =
+  type std_fn =
     (* Std *)
     | Abs
     | AssertZeroValid
@@ -73,11 +82,12 @@ module M (State : State_intf.S) = struct
     | WriteBytes
 
   type fn =
-    | Rusteria of rusteria_fun
-    | Miri of miri_fun
-    | Std of std_fun
-    | Fixme of fixme_funs
-    | Optim of optim_funs
+    | Rusteria of rusteria_fn
+    | Miri of miri_fn
+    | Alloc of alloc_fn
+    | Std of std_fn
+    | Fixme of fixme_fn
+    | Optim of optim_fn
 
   let std_fun_map =
     [
@@ -94,7 +104,6 @@ module M (State : State_intf.S) = struct
       ("miristd::miri_pointer_name", Miri Nop);
       ("miristd::miri_print_borrow_state", Miri Nop);
       (* Core *)
-      ("alloc::alloc::__rust_dealloc", Fixme Dealloc);
       (* This fails because of a silly thing with NonZero in monomorphisation, which we won't
          fix for now as it requires monomorphising trait impls.  *)
       ("alloc::boxed::{@T}::new", Fixme BoxNew);
@@ -149,6 +158,12 @@ module M (State : State_intf.S) = struct
       (* These don't compile, for some reason? *)
       ("std::panicking::try::cleanup", Fixme TryCleanup);
       ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);
+      (* Allocator *)
+      ("__rust_alloc", Alloc Alloc);
+      ("__rust_alloc_zeroed", Alloc AllocZeroed);
+      ("__rust_dealloc", Alloc Dealloc);
+      ("__rust_no_alloc_shim_is_unstable_v2", Alloc NoAllocShimIsUnstable);
+      ("__rust_realloc", Alloc Realloc);
       (* Intrinsics *)
       ("core::intrinsics::abort", Std PanicSimple);
       ("core::intrinsics::add_with_overflow", Std (Checked (Add OUB)));
@@ -265,6 +280,7 @@ module M (State : State_intf.S) = struct
 
   let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
     let open Std in
+    let open Alloc in
     let open Rusteria in
     let open Miri in
     let opt_bind f opt = match opt with None -> f () | x -> x in
@@ -288,7 +304,12 @@ module M (State : State_intf.S) = struct
        cases were people actually re-define the intrinsics. *)
     let name =
       match f.item_meta.name with
-      | _ when not is_intrinsic -> f.item_meta.name
+      | _ when not is_intrinsic -> (
+          match List.rev f.item_meta.name with
+          | (PeIdent (name, _) as ident) :: _
+            when String.starts_with ~prefix:"__rust" name ->
+              [ ident ]
+          | _ -> f.item_meta.name)
       | PeIdent ("core", _) :: _ -> f.item_meta.name
       | _ -> (
           match List.rev f.item_meta.name with
@@ -317,7 +338,6 @@ module M (State : State_intf.S) = struct
          | Miri AllocId -> alloc_id
          | Miri Nop -> nop
          | Fixme BoxNew -> fixme_box_new f.signature
-         | Fixme Dealloc -> dealloc
          | Fixme Index -> array_index_fn f.signature
          | Fixme Panic -> panic
          | Fixme Nop -> nop
@@ -326,6 +346,11 @@ module M (State : State_intf.S) = struct
          | Optim FloatIsFinite -> float_is_finite
          | Optim (FloatIsSign { positive }) -> float_is_sign positive
          | Optim Zeroed -> zeroed f.signature
+         | Alloc Alloc -> alloc
+         | Alloc AllocZeroed -> alloc_zeroed
+         | Alloc Dealloc -> dealloc
+         | Alloc NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
+         | Alloc Realloc -> realloc
          | Std Abs -> abs
          | Std (AlignOf _) -> min_align_of (mono ())
          | Std AssertZeroValid -> assert_zero_is_valid (mono ())

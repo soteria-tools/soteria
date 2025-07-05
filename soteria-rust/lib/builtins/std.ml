@@ -898,13 +898,4 @@ module M (State : State_intf.S) = struct
     let++ (), state = State.store ptr ty value state in
     let box = _mk_box ptr in
     (box, state)
-
-  let dealloc ~args state =
-    let ptr =
-      match args with
-      | Ptr ptr :: _ -> ptr
-      | _ -> failwith "dealloc: invalid arguments"
-    in
-    let++ (), state = State.free ptr state in
-    (Tuple [], state)
 end

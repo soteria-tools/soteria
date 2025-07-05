@@ -37,7 +37,7 @@ type t =
     `Breakpoint
   | (* Meta errors *)
     `MetaExpectedError
-    (* Type is too large for memory *)
+    (* Type is too large for memory, or wrong size/align *)
   | `InvalidLayout ]
 
 let is_unwindable : [> t ] -> bool = function
