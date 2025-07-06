@@ -367,6 +367,12 @@ if __name__ == "__main__":
             tests, config = TEST_SUITES[sys.argv[1]]()
             log = PWD / f"{sys.argv[1]}.log"
             exec_tests(tests, config, log)
+        elif sys.argv[1] == "all":
+            for name, callback in TEST_SUITES.items():
+                tests, config = callback()
+                log = PWD / f"{name}.log"
+                pprint(f"Running {BOLD}{name}{RESET} tests", inc=True)
+                exec_tests(tests, config, log)
         elif sys.argv[1] == "eval":
             if len(sys.argv) <= 2:
                 raise ArgError("missing test suite name: kani or miri")
