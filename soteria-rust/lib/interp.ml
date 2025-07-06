@@ -854,8 +854,9 @@ module Make (State : State_intf.S) = struct
             let* () = State.free ptr in
             map_store (Store.add local (None, ty))
         | None -> ok ())
-    | Drop place ->
-        (* TODO: this is probably super wrong, drop glue etc. *)
+    | Drop (place, _trait) ->
+        (* TODO: We now have the trait to get the Drop implementation, however we currently
+           don't monomorphise trait implementations, so this is useless. *)
         let* place_ptr = resolve_place place in
         State.uninit place_ptr place.ty
     | Assert { cond; expected; on_failure } -> (

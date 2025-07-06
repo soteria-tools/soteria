@@ -45,7 +45,7 @@ build: [
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
 pin-depends: [
-  ["vscode.~dev" "git+https://github.com/giltho/vscode-ocaml-platform#6e83e72c7ea71fbecbabaaf36056d20bbbdcfff4"]
-  ["vscode-node.~dev" "git+https://github.com/giltho/vscode-ocaml-platform#6e83e72c7ea71fbecbabaaf36056d20bbbdcfff4"]
-  ["vscode-interop.~dev" "git+https://github.com/giltho/vscode-ocaml-platform#6e83e72c7ea71fbecbabaaf36056d20bbbdcfff4"]
+  ["vscode.~dev" "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c"]
+  ["vscode-node.~dev" "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c"]
+  ["vscode-interop.~dev" "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c"]
 ]
