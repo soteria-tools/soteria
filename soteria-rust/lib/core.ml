@@ -122,16 +122,15 @@ module M (State : State_intf.S) = struct
   (** Wraps a given value to make it fit within the constraints of the given
       type *)
   let wrap_value ty v =
-    let* v = cast_checked ~ty:Typed.t_int v in
+    let+ v = cast_checked ~ty:Typed.t_int v in
     let size = Layout.size_of_int_ty ty in
     let unsigned_max = nonzero_z (Z.shift_left Z.one (8 * size)) in
     let max = Layout.max_value ty in
     let signed = Layout.is_signed ty in
     let res = v %@ unsigned_max in
     if Stdlib.not signed then
-      if%sat res <@ 0s then return ((res +@ unsigned_max) %@ unsigned_max)
-      else return res
-    else if%sat res <=@ max then return res else return (res -@ unsigned_max)
+      Typed.ite (res <@ 0s) ((res +@ unsigned_max) %@ unsigned_max) res
+    else Typed.ite (res <=@ max) res (res -@ unsigned_max)
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop op lit_ty l r =
