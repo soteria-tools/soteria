@@ -109,6 +109,8 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
     "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
+    "pass/issues/issue-20575.rs": unkn_("Very slow compilation"),
+    "pass/issues/issue-29746.rs": unkn_("Very slow compilation"),
     "pass/tag-align-dyn-u64.rs": unkn_("Slow due to symbolic checks on the pointer"),
 }
 
@@ -134,20 +136,6 @@ KNOWN_ISSUES = {
     "pass/enum_discriminant_ptr_value.rs": "We don't handle the niche for Option<&T>",
     "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
     "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
-    **{
-        test: "Failure caused by a Box leak (drops not supported yet)"
-        for test in [
-            "pass/closure-field-ty.rs",
-            "pass/dst-struct.rs",
-            "pass/issues/issue-36278-prefix-nesting.rs",
-            "pass/issues/issue-miri-3473.rs",
-            "pass/move-arg-3-unique.rs",
-            "pass/panic/nested_panic_caught.rs",
-            "pass/rfc1623.rs",
-            "pass/underscore_pattern.rs",
-            "pass/zst_box.rs",
-        ]
-    },
 }
 
 PWD = Path(os.path.dirname(os.path.abspath(__file__)))
