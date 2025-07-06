@@ -259,6 +259,10 @@ module M (State : State_intf.S) = struct
     let** ptr, meta, v =
       match args with
       | [ Ptr (ptr, meta); Base v ] -> Result.ok (ptr, meta, v)
+      | [ Base base; Base v ] when not check ->
+          let* base = cast_checked base ~ty:Typed.t_int in
+          let ptr = Sptr.null_ptr_of base in
+          Result.ok (ptr, None, v)
       | [ Base _; Base _ ] -> State.error `UBPointerArithmetic state
       | _ -> not_impl "ptr_add: invalid arguments"
     in

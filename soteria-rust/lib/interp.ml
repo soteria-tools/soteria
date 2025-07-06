@@ -536,7 +536,7 @@ module Make (State : State_intf.S) = struct
             | _ -> not_impl "Invalid type for Neg")
         | PtrMetadata -> (
             match v with
-            | Ptr (_, None) -> ok (Tuple [])
+            | Ptr (_, None) | Base _ -> ok (Tuple [])
             | Ptr (_, Some v) -> ok (Base v)
             | _ -> not_impl "Invalid value for PtrMetadata")
         | ArrayToSlice (_, _, len) -> (
