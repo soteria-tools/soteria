@@ -614,6 +614,7 @@ module M (State : State_intf.S) = struct
         | Sub _ -> "core::intrinsics::fsub_fast"
         | Mul _ -> "core::intrinsics::fmul_fast"
         | Div _ -> "core::intrinsics::fdiv_fast"
+        | Rem _ -> "core::intrinsics::frem_fast"
         | _ -> assert false)
     in
     let is_finite f = Typed.((not (is_nan f)) &&@ not (is_infinite f)) in
@@ -624,6 +625,7 @@ module M (State : State_intf.S) = struct
         | Sub _ -> ( -.@ )
         | Mul _ -> ( *.@ )
         | Div _ -> ( /.@ )
+        | Rem _ -> Typed.rem_f
         | _ -> failwith "fast_float: invalid binop"
       in
       let res = bop l r in

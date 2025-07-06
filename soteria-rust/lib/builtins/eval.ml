@@ -212,6 +212,7 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::fmaf64", Std MulAdd);
       ("core::intrinsics::fmaf128", Std MulAdd);
       ("core::intrinsics::fmul_fast", Std (FloatFast (Mul OUB)));
+      ("core::intrinsics::frem_fast", Std (FloatFast (Rem OUB)));
       ("core::intrinsics::fsub_fast", Std (FloatFast (Sub OUB)));
       ("core::intrinsics::is_val_statically_known", Std IsValStaticallyKnown);
       ("core::intrinsics::likely", Std Likely);
