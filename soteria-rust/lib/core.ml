@@ -164,7 +164,7 @@ module M (State : State_intf.S) = struct
             Typed.ppa v
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then
-          let dist = Sptr.distance l r in
+          let* dist = Sptr.distance l r in
           let bop =
             match bop with
             | Lt -> ( <@ )
@@ -191,7 +191,7 @@ module M (State : State_intf.S) = struct
         else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         if%sat Sptr.is_same_loc l r then
-          let v = Sptr.distance l r in
+          let* v = Sptr.distance l r in
           let* cmp = cmp_of_int v in
           Result.ok cmp
         else Result.error `UBPointerComparison

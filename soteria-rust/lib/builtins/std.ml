@@ -284,18 +284,18 @@ module M (State : State_intf.S) = struct
       | [ Ptr (ptr1, _); Ptr (ptr2, _) ] -> (ptr1, ptr2)
       | _ -> failwith "ptr_offset_from: invalid arguments"
     in
-    let ty =
-      match funsig.inputs with
-      | TRawPtr (ty, _) :: _ -> ty
-      | _ -> failwith "ptr_offset_from: invalid arguments"
-    in
+    let ty = get_pointee @@ List.hd funsig.inputs in
     let* size = Layout.size_of_s ty in
     if%sat size >@ 0s then
-      if%sat Sptr.constraints ptr1 &&@ Sptr.constraints ptr2 then
-        let size = Typed.cast size in
-        let off = Sptr.distance ptr1 ptr2 in
-        if%sat
-          Sptr.is_same_loc ptr1 ptr2 &&@ (size >@ 0s) &&@ (off %@ size ==@ 0s)
+      let size = Typed.cast size in
+      let* off = Sptr.distance ptr1 ptr2 in
+      (* If the pointers are not equal, they mustn't be dangling *)
+      if%sat off ==@ 0s ||@ (Sptr.constraints ptr1 &&@ Sptr.constraints ptr2)
+      then
+        (* UB conditions:
+           1. must be at the same address, OR derived from the same allocation
+           2. the distance must be a multiple of sizeof(T) *)
+        if%sat off ==@ 0s ||@ Sptr.is_same_loc ptr1 ptr2 &&@ (off %@ size ==@ 0s)
         then
           if not unsigned then Result.ok (Base (off /@ size), state)
           else
@@ -335,33 +335,34 @@ module M (State : State_intf.S) = struct
     let** (), state = State.check_ptr_align from_ptr ty state in
     let** (), state = State.check_ptr_align to_ptr ty state in
     let* ty_size = Layout.size_of_s ty in
-    let size = ty_size *@ len in
-    let** () =
-      if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then
-        State.error `NullDereference state
-        (* Here we can cheat a little: for copy_nonoverlapping we need to check for overlap,
+    if%sat ty_size ==@ 0s then Result.ok (Tuple [], state)
+    else
+      let size = ty_size *@ len in
+      let** () =
+        if%sat Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr then
+          State.error `NullDereference state
+          (* Here we can cheat a little: for copy_nonoverlapping we need to check for overlap,
            but otherwise the copy is the exact same; since the State makes a copy of the src tree
            before storing into dst, the semantics are that of copy. *)
-      else if nonoverlapping then
-        (* check for overlap *)
-        let** from_ptr_end =
-          Sptr.offset from_ptr size |> State.lift_err state
-        in
-        let** to_ptr_end = Sptr.offset to_ptr size |> State.lift_err state in
-        if%sat
-          Sptr.is_same_loc from_ptr to_ptr
-          &&@ (Sptr.distance from_ptr to_ptr_end
-              <@ 0s
-              &&@ (Sptr.distance to_ptr from_ptr_end <@ 0s))
-        then State.error (`StdErr "copy_nonoverlapping overlapped") state
+        else if nonoverlapping then
+          (* check for overlap *)
+          let** from_ptr_end =
+            Sptr.offset from_ptr size |> State.lift_err state
+          in
+          let** to_ptr_end = Sptr.offset to_ptr size |> State.lift_err state in
+          let* dist1 = Sptr.distance from_ptr to_ptr_end in
+          let* dist2 = Sptr.distance to_ptr from_ptr_end in
+          if%sat
+            Sptr.is_same_loc from_ptr to_ptr &&@ (dist1 <@ 0s &&@ (dist2 <@ 0s))
+          then State.error (`StdErr "copy_nonoverlapping overlapped") state
+          else Result.ok ()
         else Result.ok ()
-      else Result.ok ()
-    in
-    let++ (), state =
-      State.copy_nonoverlapping ~dst:(to_ptr, None) ~src:(from_ptr, None) ~size
-        state
-    in
-    (Tuple [], state)
+      in
+      let++ (), state =
+        State.copy_nonoverlapping ~dst:(to_ptr, None) ~src:(from_ptr, None)
+          ~size state
+      in
+      (Tuple [], state)
 
   let copy_fn nonoverlapping (funsig : GAst.fun_sig) =
     match funsig.inputs with
@@ -393,23 +394,26 @@ module M (State : State_intf.S) = struct
     let** (), state = State.check_ptr_align ptr ty state in
     let* size = Layout.size_of_s ty in
     let size = size *@ count in
-    (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
-    if%sat v ==@ 0s then
-      let++ (), state = State.zeros dst size state in
-      (Tuple [], state)
+    if%sat size ==@ 0s then Result.ok (Tuple [], state)
     else
-      match Typed.kind size with
-      | Int bytes ->
-          let list = List.init (Z.to_int bytes) Fun.id in
-          let++ (), state =
-            Result.fold_list list ~init:((), state) ~f:(fun ((), state) i ->
-                let** ptr =
-                  Sptr.offset ptr @@ Typed.int i |> State.lift_err state
-                in
-                State.store (ptr, None) (TLiteral (TInteger U8)) (Base v) state)
-          in
-          (Tuple [], state)
-      | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
+      (* TODO: if v == 0, then we can replace this mess by initialising a Zeros subtree *)
+      if%sat v ==@ 0s then
+        let++ (), state = State.zeros dst size state in
+        (Tuple [], state)
+      else
+        match Typed.kind size with
+        | Int bytes ->
+            let list = List.init (Z.to_int bytes) Fun.id in
+            let++ (), state =
+              Result.fold_list list ~init:((), state) ~f:(fun ((), state) i ->
+                  let** ptr =
+                    Sptr.offset ptr @@ Typed.int i |> State.lift_err state
+                  in
+                  State.store (ptr, None) (TLiteral (TInteger U8)) (Base v)
+                    state)
+            in
+            (Tuple [], state)
+        | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
 
   let assert_inhabited (mono : Types.generic_args) ~args:_ state =
     let ty = List.hd mono.types in
@@ -670,11 +674,10 @@ module M (State : State_intf.S) = struct
           Sptr.offset from_ptr size |> State.lift_err state
         in
         let** to_ptr_end = Sptr.offset to_ptr size |> State.lift_err state in
+        let* dist1 = Sptr.distance from_ptr to_ptr_end in
+        let* dist2 = Sptr.distance to_ptr from_ptr_end in
         if%sat
-          Sptr.is_same_loc from_ptr to_ptr
-          &&@ (Sptr.distance from_ptr to_ptr_end
-              <@ 0s
-              &&@ (Sptr.distance to_ptr from_ptr_end <@ 0s))
+          Sptr.is_same_loc from_ptr to_ptr &&@ (dist1 <@ 0s &&@ (dist2 <@ 0s))
         then State.error (`StdErr "typed_swap_nonoverlapping overlapped") state
         else Result.ok ()
     in

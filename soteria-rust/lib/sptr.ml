@@ -23,9 +23,9 @@ module type S = sig
   (** If these two pointers are at the same location (ie. same allocation) *)
   val is_same_loc : t -> t -> sbool Typed.t
 
-  (** The distance, in bytes, between two pointers -- assumes they are at the
-      same location. *)
-  val distance : t -> t -> sint Typed.t
+  (** The distance, in bytes, between two pointers; if they point to different
+      allocations, they are decayed and substracted. *)
+  val distance : t -> t -> sint Typed.t Rustsymex.t
 
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
@@ -97,9 +97,6 @@ module ArithPtr : S with type t = arithptr_t = struct
   let is_same_loc { ptr = ptr1; _ } { ptr = ptr2; _ } =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
 
-  let distance { ptr = ptr1; _ } { ptr = ptr2; _ } =
-    Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2
-
   let constraints =
     let offset_constrs = Layout.int_constraints Isize in
     fun { ptr; size; _ } ->
@@ -137,7 +134,8 @@ module ArithPtr : S with type t = arithptr_t = struct
     let compare = Typed.compare
   end)
 
-  let decayed_vars = ref ValMap.empty
+  (* Create a map with the null-ptr preset to 0 *)
+  let decayed_vars = ref (ValMap.add Typed.Ptr.null_loc 0s ValMap.empty)
 
   let decay { ptr; align; size; _ } =
     let open Rustsymex in
@@ -151,11 +149,19 @@ module ArithPtr : S with type t = arithptr_t = struct
     | None ->
         let+ loc_int =
           nondet Typed.t_int ~constrs:(fun x ->
-              let isize_max = Layout.max_value Values.Isize in
+              let isize_max = Layout.max_value Isize in
               [ x %@ align ==@ 0s; 0s <@ x; x +@ size <=@ isize_max ])
         in
         decayed_vars := ValMap.add loc loc_int !decayed_vars;
         loc_int +@ ofs
+
+  let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
+    if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
+      return (Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2)
+    else
+      let* ptr1 = decay p1 in
+      let+ ptr2 = decay p2 in
+      ptr1 -@ ptr2
 
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
   let allocation_info { size; align; _ } = (size, align)
