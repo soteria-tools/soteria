@@ -911,9 +911,11 @@ module Make (State : State_intf.S) = struct
         let* args = eval_operand_list [ src; dst; count ] in
         let+ _ = lift_state_op @@ Std_funs.Std.copy true ty ~args in
         ()
+    | Deinit place ->
+        let* place_ptr = resolve_place place in
+        State.uninit place_ptr place.ty
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
-    | Deinit _ -> not_impl "Unsupported statement: Deinit"
 
   and exec_block ~(body : UllbcAst.expr_body)
       ({ statements; terminator } : UllbcAst.block) =
