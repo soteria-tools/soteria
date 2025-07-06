@@ -453,9 +453,25 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
 let leak_check st =
   let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" st in
   let@ () = with_loc_err () in
-  let global_addresses =
-    GlobMap.bindings st.globals
-    |> List.map (fun (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr)
+  let** global_addresses, st =
+    Result.fold_list (GlobMap.bindings st.globals) ~init:([], st)
+      ~f:(fun (acc, st) (g, ((ptr : Sptr.t), _)) ->
+        let loc = Typed.Ptr.loc ptr.ptr in
+        match g with
+        | String _ -> Result.ok (loc :: acc, st)
+        | Global g -> (
+            let glob = Crate.get_global g in
+            let* res = load ~ignore_borrow:true (ptr, None) glob.ty st in
+            match res with
+            | Ok (v, st) ->
+                let ptrs = Layout.ref_tys_in ~include_ptrs:true v glob.ty in
+                let ptrs =
+                  List.map
+                    (fun (((p : Sptr.t), _), _) -> Typed.Ptr.loc p.ptr)
+                    ptrs
+                in
+                Result.ok (loc :: (ptrs @ acc), st)
+            | _ -> Result.ok (acc, st)))
   in
   let@ state = with_state st in
   let** leaks =
@@ -468,7 +484,10 @@ let leak_check st =
       [] state
   in
   if List.is_empty leaks then Result.ok ((), state)
-  else Result.error `MemoryLeak
+  else (
+    L.info (fun m ->
+        m "Found leaks: %a" Fmt.(list ~sep:(any ", ") Typed.ppa) leaks);
+    Result.error `MemoryLeak)
 
 let add_error e ({ errors; _ } as st) =
   Result.ok ((), { st with errors = (e :> Error.t err) :: errors })

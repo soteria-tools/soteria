@@ -566,14 +566,15 @@ let rec is_unsafe_cell : Types.ty -> bool = function
   | _ -> false
 
 (** Traverses the given type and rust value, and returns all findable references
-    with their type (ignores pointers). This is needed e.g. when needing to get
-    the pointers along with the size of their pointee, in particular in nested
-    cases. *)
-let rec ref_tys_in (v : 'a rust_val) (ty : Types.ty) :
+    with their type (ignores pointers, except if [include_ptrs] is true). This
+    is needed e.g. when needing to get the pointers along with the size of their
+    pointee, in particular in nested cases. *)
+let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
     ('a full_ptr * Types.ty) list =
   match (v, ty) with
   | Ptr ptr, (TAdt { id = TBuiltin TBox; _ } | TRef _) ->
       [ (ptr, get_pointee ty) ]
+  | Ptr ptr, TRawPtr _ when include_ptrs -> [ (ptr, get_pointee ty) ]
   | Base _, _ -> []
   | Struct vs, TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_struct adt_id in
