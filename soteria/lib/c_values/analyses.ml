@@ -223,6 +223,20 @@ module Interval : S = struct
               let ml, nl = to_range l in
               let mr, nr = to_range r in
               (Option.map2 Z.sub ml nr, Option.map2 Z.sub nl mr)
+          | Binop (Mod, _, r) ->
+              (* assuming the rhs is not zero; *)
+              let nl, nr = to_range r in
+              let max =
+                Option.map2 (fun x y -> Z.(pred @@ max (abs x) (abs y))) nl nr
+              in
+              (Some Z.zero, max)
+          | Binop (Rem, _, r) ->
+              (* assuming the rhs is not zero; *)
+              let nl, nr = to_range r in
+              let max =
+                Option.map2 (fun x y -> Z.(pred @@ max (abs x) (abs y))) nl nr
+              in
+              (Option.map Z.neg max, max)
           | _ -> (None, None)
         in
         let lr = to_range l in
