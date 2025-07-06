@@ -351,7 +351,7 @@ let zeros (ptr, _) size st =
 
 let error err st =
   let@ () = with_error_loc_as_call_trace st in
-  L.info (fun m -> m "state errored !");
+  L.info (fun m -> m "State errored: %a" Error.pp err);
   error err
 
 let lift_err st (symex : ('a, 'e, 'f) Result.t) =

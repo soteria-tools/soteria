@@ -134,10 +134,13 @@ module type S = sig
       serialized list )
     Result.t
 
-  val error : 'a -> t -> ('ok, 'a err * t, serialized list) Result.t
+  val error :
+    ([< Error.t ] as 'a) -> t -> ('ok, 'a err * t, serialized list) Result.t
 
   val lift_err :
-    t -> ('ok, 'err, 'f) Result.t -> ('ok, 'err err * t, 'f) Result.t
+    t ->
+    ('ok, ([< Error.t ] as 'err), 'f) Result.t ->
+    ('ok, 'err err * t, 'f) Result.t
 
   val store_str_global :
     string ->
