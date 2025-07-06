@@ -794,18 +794,32 @@ module Make (State : State_intf.S) = struct
         let+ values = eval_operand_list operands in
         Array values
     (* Raw pointer construction *)
-    | Aggregate (AggregatedRawPtr (_, _), operands) -> (
+    | Aggregate (AggregatedRawPtr (_, _), operands) ->
         let* values = eval_operand_list operands in
-        match values with
-        | [ Ptr (ptr, _); Base meta ] -> ok (Ptr (ptr, Some meta))
-        | [ Base v; Base meta ] ->
-            let^+ v = cast_checked ~ty:Typed.t_int v in
-            let ptr = Sptr.null_ptr_of v in
-            Ptr (ptr, Some meta)
-        | _ ->
-            Fmt.kstr not_impl "AggregatedRawPtr: invalid arguments %a"
-              Fmt.(list ~sep:comma pp_rust_val)
-              values)
+        let ptr, meta =
+          match values with
+          | [ ptr; meta ] -> (ptr, meta)
+          | _ -> failwith "Non-2 arguments in AggregatedRawPtr?"
+        in
+        let* ptr =
+          match ptr with
+          | Ptr (ptr, _) -> ok ptr
+          | Base v ->
+              let^+ v = cast_checked ~ty:Typed.t_int v in
+              Sptr.null_ptr_of v
+          | _ ->
+              Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
+                pp_rust_val ptr
+        in
+        let+ meta =
+          match meta with
+          | Tuple [] -> ok None
+          | Base meta -> ok (Some meta)
+          | _ ->
+              Fmt.kstr not_impl "Unexpected meta in AggregatedRawPtr: %a"
+                pp_rust_val meta
+        in
+        Ptr (ptr, meta)
     (* Array repetition *)
     | Repeat (value, _, len) ->
         let+ value = eval_operand value in

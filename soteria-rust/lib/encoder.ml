@@ -120,6 +120,10 @@ module Make (Sptr : Sptr.S) = struct
     in
 
     match (value, ty) with
+    (* Trait types: we resolve them early *)
+    | _, TTraitType (tref, name) ->
+        let ty = Layout.resolve_trait_ty tref name in
+        rust_to_cvals ~offset value ty
     (* Literals *)
     | Base _, TLiteral _ -> [ { value; ty; offset } ]
     | Ptr _, TLiteral (TInteger (Isize | Usize)) -> [ { value; ty; offset } ]
@@ -322,6 +326,9 @@ module Make (Sptr : Sptr.S) = struct
               let fields = List.init len (fun _ -> sub_ty) in
               aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
       | TNever -> error `RefToUninhabited
+      | TTraitType (tref, name) ->
+          let ty = Layout.resolve_trait_ty tref name in
+          aux offset ty
       | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a list of fields (for structs and tuples) *)
     and aux_fields ~f ~layout offset fields : ('e, 'fix, 'state) parser =

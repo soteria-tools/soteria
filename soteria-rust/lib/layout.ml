@@ -235,7 +235,14 @@ and resolve_trait_ty (tref : Types.trait_ref) ty_name =
               impl.item_meta.name
           in
           raise (CantComputeLayout (msg, TTraitType (tref, ty_name))))
-  | _ -> raise (CantComputeLayout ("trait type", TTraitType (tref, ty_name)))
+  | BuiltinOrAuto (trait, _, _) when ty_name = "Metadata" ->
+      (* We need to special-case the metadata type *)
+      let ty = List.hd trait.binder_value.generics.types in
+      if is_dst ty then TLiteral (TInteger Isize)
+      else TAdt { id = TTuple; generics = TypesUtils.empty_generic_args }
+  | _ ->
+      let msg = Fmt.str "trait type (%s)" ty_name in
+      raise (CantComputeLayout (msg, TTraitType (tref, ty_name)))
 
 let offset_in_array ty idx =
   let sub_layout = layout_of ty in
