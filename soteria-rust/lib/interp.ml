@@ -503,14 +503,10 @@ module Make (State : State_intf.S) = struct
         let* ptr = resolve_global id in
         let decl = Crate.get_global id in
         State.load ptr decl.ty
-    | GlobalRef ({ id; _ }, mut) ->
-        (* TODO: handle mutability *)
-        let global = Crate.get_global id in
-        let* ptr = resolve_global id in
-        let borrow : Expressions.borrow_kind =
-          match mut with RMut -> BMut | RShared -> BShared
-        in
-        let+ ptr = State.borrow ptr global.ty borrow in
+    | GlobalRef ({ id; _ }, _) ->
+        (* References to globals don't reborrow; otherwise this test fails:
+          https://github.com/rust-lang/miri/blob/9d77dd818c01240647004361c1201c66ec061c08/tests/pass/static_mut.rs *)
+        let+ ptr = resolve_global id in
         Ptr ptr
     | UnaryOp (op, e) -> (
         let* v = eval_operand e in
