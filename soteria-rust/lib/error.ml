@@ -27,6 +27,7 @@ type t =
   | `UBTransmute
   | (* Tree borrows *)
     `AliasingError
+  | `RefInvalidatedEarly
   | (* Explicit errors *)
     `FailedAssert of string option
   | `Panic of string option
@@ -70,6 +71,8 @@ let pp ft = function
   | `Overflow -> Fmt.string ft "Overflow"
   | `Panic (Some msg) -> Fmt.pf ft "Panic: %s" msg
   | `Panic None -> Fmt.pf ft "Panic"
+  | `RefInvalidatedEarly ->
+      Fmt.string ft "Protected ref invalidated before function ended"
   | `RefToUninhabited -> Fmt.string ft "Ref to uninhabited type"
   | `StdErr msg -> Fmt.pf ft "UB in std: %s" msg
   | `UninitializedMemoryAccess -> Fmt.string ft "Uninitialized memory access"

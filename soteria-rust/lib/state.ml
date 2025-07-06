@@ -434,8 +434,18 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     ((ptr', meta), block)
 
 let unprotect (ptr, _) (ty : Charon.Types.ty) st =
+  let lift_freed_err () f =
+    let open Soteria_symex.Compo_res in
+    let+ res = f () in
+    match res with
+    | Ok v -> Ok v
+    | Missing fixes -> Missing fixes
+    | Error `UseAfterFree -> Error `RefInvalidatedEarly
+    | Error ((`AliasingError | `NullDereference | `OutOfBounds) as e) -> Error e
+  in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
+  let@ () = lift_freed_err () in
   let@ ofs, block = with_ptr ptr st in
   let* size = Layout.size_of_s ty in
   let@ block, tb = with_opt_or block () in

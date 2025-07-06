@@ -188,7 +188,12 @@ module type S = sig
     Charon.Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `UseAfterFree | `OutOfBounds ] err * t,
+      [> `NullDereference
+      | `RefInvalidatedEarly
+      | `OutOfBounds
+      | `AliasingError ]
+      err
+      * t,
       serialized list )
     Result.t
 

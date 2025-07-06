@@ -571,6 +571,7 @@ let rec is_unsafe_cell : Types.ty -> bool = function
     pointee, in particular in nested cases. *)
 let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
     ('a full_ptr * Types.ty) list =
+  let f = ref_tys_in ~include_ptrs in
   match (v, ty) with
   | Ptr ptr, (TAdt { id = TBuiltin TBox; _ } | TRef _) ->
       [ (ptr, get_pointee ty) ]
@@ -578,13 +579,13 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
   | Base _, _ -> []
   | Struct vs, TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_struct adt_id in
-      List.concat_map2 ref_tys_in vs (field_tys fields)
+      List.concat_map2 f vs (field_tys fields)
   | ( Array vs,
       TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
     ) ->
-      List.concat_map (fun v -> ref_tys_in v ty) vs
+      List.concat_map (fun v -> f v ty) vs
   | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
-      List.concat_map2 ref_tys_in vs types
+      List.concat_map2 f vs types
   | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
       match Typed.kind d with
       | Int d -> (
@@ -595,12 +596,72 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
               variants
           in
           match v with
-          | Some v ->
-              List.concat_map2 ref_tys_in vs (field_tys Types.(v.fields))
+          | Some v -> List.concat_map2 f vs (field_tys Types.(v.fields))
           | None -> [])
       | _ -> [])
   | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_union adt_id in
       let field = Types.FieldId.nth fields fid in
-      ref_tys_in v field.field_ty
+      f v field.field_ty
   | _ -> []
+
+let rec update_ref_tys_in
+    (fn :
+      'acc ->
+      'a full_ptr ->
+      Types.ty ->
+      Types.ref_kind ->
+      ('a full_ptr * 'acc, 'e, 'f) Result.t) (init : 'acc) (v : 'a rust_val)
+    (ty : Types.ty) : ('a rust_val * 'acc, 'e, 'f) Result.t =
+  let open Rustsymex.Syntax in
+  let f = update_ref_tys_in fn in
+  let fs acc vs ty =
+    let++ vs, acc =
+      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) v ->
+          let++ v, acc = f acc v ty in
+          (v :: vs, acc))
+    in
+    (List.rev vs, acc)
+  in
+  let fs2 acc vs tys =
+    let vs = List.combine vs tys in
+    let++ vs, acc =
+      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
+          let++ v, acc = f acc v ty in
+          (v :: vs, acc))
+    in
+    (List.rev vs, acc)
+  in
+  match (v, ty) with
+  | Ptr ptr, TRef (_, _, rk) ->
+      let++ ptr, acc = fn init ptr (get_pointee ty) rk in
+      (Ptr ptr, acc)
+  | Struct vs, TAdt { id = TAdtId adt_id; _ } ->
+      let fields = Crate.as_struct adt_id in
+      let++ vs, acc = fs2 init vs (field_tys fields) in
+      (Struct vs, acc)
+  | ( Array vs,
+      TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
+    ) ->
+      let++ vs, acc = fs init vs ty in
+      (Array vs, acc)
+  | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
+      let++ vs, acc = fs2 init vs types in
+      (Tuple vs, acc)
+  | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
+      let variants = Crate.as_enum adt_id in
+      let* var =
+        match_on variants ~constr:(fun (v : Types.variant) ->
+            Typed.int_z v.discriminant.value ==?@ d)
+      in
+      match var with
+      | Some var ->
+          let++ vs, acc = fs2 init vs (field_tys Types.(var.fields)) in
+          (Enum (d, vs), acc)
+      | None -> Result.ok (v, init))
+  | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
+      let fields = Crate.as_union adt_id in
+      let field = Types.FieldId.nth fields fid in
+      let++ v, acc = f init v field.field_ty in
+      (Union (fid, v), acc)
+  | v, _ -> Result.ok (v, init)

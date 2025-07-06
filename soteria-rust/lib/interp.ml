@@ -73,6 +73,23 @@ module InterpM (State : State_intf.S) = struct
     let++ res, _, state = f () store state in
     (res, state)
 
+  (** We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
+      without having to define it here. *)
+  let update_ref_tys_in
+      ~(f :
+         'acc -> full_ptr -> Types.ty -> Types.ref_kind -> (full_ptr * 'acc) t)
+      ~(init : 'acc) (v : 'a rust_val) (ty : Types.ty) :
+      (State.Sptr.t rust_val * 'acc) t =
+   fun store state ->
+    let f (acc, store, state) ptr ty rk =
+      let++ (res, acc), store, state = f acc ptr ty rk store state in
+      (res, (acc, store, state))
+    in
+    let++ res, (acc, store, state) =
+      Layout.update_ref_tys_in f (init, store, state) v ty
+    in
+    ((res, acc), store, state)
+
   module State = struct
     include State
 
@@ -207,21 +224,14 @@ module Make (State : State_intf.S) = struct
         ~f:(fun protected ({ index; var_ty = ty; _ }, ptr) ->
           let index = Expressions.LocalId.to_int index in
           let value = List.nth args (index - 1) in
-          (* Passed references must be protected! *)
+          (* Passed (nested) references must be protected and be valid. *)
           let* value, protected' =
-            match (value, ty) with
-            | Ptr ptr, TRef (_, subty, mut) ->
+            update_ref_tys_in value ty ~init:protected
+              ~f:(fun acc ptr subty mut ->
                 let+ ptr' = State.protect ptr subty mut in
-                (Ptr ptr', (ptr', subty) :: protected)
-            | _ -> ok (value, protected)
+                (ptr', (ptr', subty) :: acc))
           in
-          let* () = State.store ptr ty value in
-          (* Ensure all passed references are valid, even nested ones! *)
-          let ptr_tys = Layout.ref_tys_in value ty in
-          let+ () =
-            fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
-                State.tb_load ptr ty)
-          in
+          let+ () = State.store ptr ty value in
           protected')
     in
     protected
@@ -841,8 +851,8 @@ module Make (State : State_intf.S) = struct
 
   and exec_stmt stmt : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
-    L.trace (fun m ->
-        m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content);
+    (* L.trace (fun m ->
+        m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content); *)
     let { span = loc; content = stmt; _ } : UllbcAst.statement = stmt in
     let@ () = with_loc ~loc in
     match stmt with
