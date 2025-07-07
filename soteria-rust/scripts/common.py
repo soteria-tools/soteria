@@ -181,9 +181,10 @@ class Flags(TypedDict):
     exclusions: list[str]
     iterations: Optional[int]
     tag: Optional[str]
+    test_folder: Optional[Path]
 
 
-def parse_flags(argv: list[str]) -> Flags:
+def parse_flags() -> Flags:
     i = 0
     flags: Flags = {
         "cmd_flags": [],
@@ -191,24 +192,34 @@ def parse_flags(argv: list[str]) -> Flags:
         "exclusions": [],
         "iterations": None,
         "tag": None,
+        "test_folder": None,
     }
-    while i < len(argv):
-        arg = argv[i]
+    while i < len(sys.argv):
+        arg = sys.argv[i]
         if arg == "--":
-            flags["cmd_flags"] += argv[i + 1 :]
+            flags["cmd_flags"] += sys.argv[i + 1 :]
             break
         elif arg == "-f":
-            flags["filters"].append(argv[i + 1])
+            flags["filters"].append(sys.argv[i + 1])
             i += 1
         elif arg == "-e":
-            flags["exclusions"].append(argv[i + 1])
+            flags["exclusions"].append(sys.argv[i + 1])
             i += 1
         elif arg == "-i":
-            flags["iterations"] = int(argv[i + 1])
+            flags["iterations"] = int(sys.argv[i + 1])
             i += 1
         elif arg == "--tag":
-            flags["tag"] = argv[i + 1]
+            flags["tag"] = sys.argv[i + 1]
             i += 1
+        elif arg == "--folder":
+            flags["test_folder"] = Path(sys.argv[i + 1]).resolve()
+            if not flags["test_folder"].is_dir():
+                print(
+                    f"{RED}The folder {flags['test_folder']} does not exist or is not a directory."
+                )
+                exit(1)
+            i += 1
+
         else:
             print(f"{RED}Unknown flag: {arg}")
             exit(1)

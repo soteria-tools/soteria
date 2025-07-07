@@ -91,10 +91,20 @@ def miri() -> tuple[list[Path], TestConfig]:
     }
 
 
-TEST_SUITES = {
-    "kani": kani,
-    "miri": miri,
-}
+def custom() -> tuple[list[Path], TestConfig]:
+    flags = parse_flags()
+    if flags["test_folder"] is None:
+        raise ArgError("No test folder specified, use --folder <path>")
+    root = flags["test_folder"]
+    tests = [path for path in root.rglob("*.rs")]
+    return tests, {
+        "root": root,
+        "args": [],
+        "dyn_flags": lambda _: [],
+    }
+
+
+TEST_SUITES = {"kani": kani, "miri": miri, "custom": custom}
 
 
 # Execute a test, return the categorisation and the elapsed time
@@ -152,7 +162,7 @@ def filter_tests(tests: list[Path], flags: Flags):
 
 def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
     build()
-    flags = parse_flags(sys.argv[2:])
+    flags = parse_flags()
 
     args = test_conf["args"] + flags["cmd_flags"]
 
@@ -204,7 +214,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
 
 def evaluate_perf(tests: list[Path], test_conf: TestConfig):
     build()
-    flags = parse_flags(sys.argv[3:])
+    flags = parse_flags()
 
     iters = flags["iterations"] or 5
     args = test_conf["args"] + flags["cmd_flags"]
@@ -361,31 +371,40 @@ class ArgError(Exception):
 
 if __name__ == "__main__":
     try:
-        if len(sys.argv) <= 1:
+        sys.argv.pop(0)  # remove script name
+        if len(sys.argv) == 0:
             raise ArgError("missing command")
-        if sys.argv[1] in ["kani", "miri"]:
-            tests, config = TEST_SUITES[sys.argv[1]]()
-            log = PWD / f"{sys.argv[1]}.log"
+        arg = sys.argv.pop(0)
+        if arg in TEST_SUITES:
+            tests, config = TEST_SUITES[arg]()
+            log = PWD / f"{arg}.log"
             exec_tests(tests, config, log)
-        elif sys.argv[1] == "all":
+        elif arg == "all":
             for name, callback in TEST_SUITES.items():
+                if name == "custom":
+                    continue
                 tests, config = callback()
                 log = PWD / f"{name}.log"
                 pprint(f"Running {BOLD}{name}{RESET} tests", inc=True)
                 exec_tests(tests, config, log)
-        elif sys.argv[1] == "eval":
-            if len(sys.argv) <= 2:
+        elif arg == "eval":
+            if len(sys.argv) == 0:
                 raise ArgError("missing test suite name: kani or miri")
-            if sys.argv[2] not in ["kani", "miri"]:
+            suite = sys.argv.pop(0)
+            if suite not in TEST_SUITES:
                 raise ArgError("invalid test suite name, expected kani or miri")
-            tests, config = TEST_SUITES[sys.argv[2]]()
+            tests, config = TEST_SUITES[suite]()
             evaluate_perf(tests, config)
-        elif sys.argv[1] == "eval-diff":
-            if len(sys.argv) <= 3:
+        elif arg == "eval-diff":
+            if len(sys.argv) < 2:
                 raise ArgError("missing paths to two evaluation CSV files")
-            diff_evaluation(Path(sys.argv[2]), Path(sys.argv[3]))
+            file1 = Path(sys.argv.pop(0))
+            file2 = Path(sys.argv.pop(0))
+            diff_evaluation(file1, file2)
         else:
-            raise ArgError("Unknown command, expected kani, miri, eval or eval-diff")
+            raise ArgError(
+                f"Unknown command, expected {', '.join(TEST_SUITES)}, eval or eval-diff"
+            )
     except ArgError as e:
         print(f"{RED}Error: {YELLOW}{e}")
     except KeyboardInterrupt:
