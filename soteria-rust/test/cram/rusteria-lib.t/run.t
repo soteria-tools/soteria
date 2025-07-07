@@ -3,7 +3,7 @@ Test base functions
   note: Done, no errors found
   
   lib_fns::main: ran 1 branch
-  PC 1: (0 != V|1|) /\ (1 == V|1|)
+  PC 1: (1 == V|1|)
 
 Test #[soteria::*] annotations
   $ soteria-rust rustc annots.rs --clean
