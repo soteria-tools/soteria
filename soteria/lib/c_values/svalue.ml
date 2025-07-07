@@ -652,6 +652,7 @@ let rec minus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.sub i1 i2)
+  | Var v1, Var v2 when Var.equal v1 v2 -> zero
   | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
       minus (int_z (Z.sub i2 i1)) v1
   | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
@@ -690,7 +691,7 @@ let rec rem v1 v2 =
       times n (rem v1 v2)
   | _ -> Binop (Rem, v1, v2) <| v1.node.ty
 
-let mod_ v1 v2 =
+let rec mod_ v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> zero
   | _, Int i2 when is_mod v1 i2 -> zero
@@ -698,6 +699,9 @@ let mod_ v1 v2 =
       (* OCaml's mod computes the remainer... *)
       let rem = Z.( mod ) i1 i2 in
       if Z.lt rem Z.zero then int_z (Z.add rem i2) else int_z rem
+  | Binop (Mod, x, { node = { kind = Int i1; _ }; _ }), Int i2
+    when Z.geq i1 i2 && Z.divisible i1 i2 ->
+      mod_ x v2
   | _ -> Binop (Mod, v1, v2) <| TInt
 
 let neg v =

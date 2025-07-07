@@ -136,6 +136,8 @@ KNOWN_ISSUES = {
     "pass/enum_discriminant_ptr_value.rs": "We don't handle the niche for Option<&T>",
     "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
     "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
+    "pass/provenance.rs": "It is unclear how to properly do ptr-int-ptr conversions",
+    "pass/ptr_int_from_exposed.rs": "It is unclear how to properly do ptr-int-ptr conversions",
 }
 
 PWD = Path(os.path.dirname(os.path.abspath(__file__)))
