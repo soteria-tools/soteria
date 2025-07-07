@@ -403,7 +403,7 @@ module M (State : State_intf.S) = struct
          Fmt.kstr not_impl "Unsupported intrinsic: %a" Crate.pp_name name
        else None
 
-  let builtin_fun_eval (f : Expressions.builtin_fun_id) generics =
+  let builtin_fun_eval (f : Types.builtin_fun_id) generics =
     let open Std in
     match f with
     | ArrayRepeat -> array_repeat generics

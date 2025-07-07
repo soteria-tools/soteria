@@ -68,12 +68,12 @@ module FunBiMap = struct
   end)
 
   module FunMap = Map.Make (struct
-    type t = Charon.Expressions.fn_ptr
+    type t = Charon.Types.fn_ptr
 
-    let compare = Charon.Expressions.compare_fn_ptr
+    let compare = Charon.Types.compare_fn_ptr
   end)
 
-  type t = Charon.Expressions.fn_ptr LocMap.t * T.sloc Typed.t FunMap.t
+  type t = Charon.Types.fn_ptr LocMap.t * T.sloc Typed.t FunMap.t
 
   let empty = (LocMap.empty, FunMap.empty)
 
@@ -87,7 +87,7 @@ module FunBiMap = struct
 
   let pp fmt (lmap, _) =
     let pp_pair =
-      Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Expressions.pp_fn_ptr
+      Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Types.pp_fn_ptr
     in
     Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) lmap
 end

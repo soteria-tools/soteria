@@ -103,7 +103,7 @@ module M (State : State_intf.S) = struct
     in
     Result.ok (Array (List.init size (fun _ -> rust_val)), state)
 
-  let array_index (idx_op : Expressions.builtin_index_op)
+  let array_index (idx_op : Types.builtin_index_op)
       (gen_args : Types.generic_args) ~args state =
     let ptr, size =
       match (idx_op.is_array, List.hd args, gen_args.const_generics) with
@@ -174,7 +174,7 @@ module M (State : State_intf.S) = struct
           (Base 0s, Base (Typed.cast to_ +@ 1s))
       | _ -> Fmt.failwith "array_index (fn): unexpected range %s" range_item
     in
-    let idx_op : Expressions.builtin_index_op =
+    let idx_op : Types.builtin_index_op =
       { is_array = mode = TArray; mutability = RShared; is_range = true }
     in
     array_index idx_op gargs ~args:[ ptr; idx_from; idx_to ] state

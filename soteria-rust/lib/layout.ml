@@ -518,9 +518,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
       | _ -> None)
   | TAdt { id = TTuple; generics = { types; _ } } ->
       as_zsts types |> Option.map (fun fs -> Tuple fs)
-  | TFnDef binder ->
-      let { id; generics } : Types.fun_decl_ref = binder.binder_value in
-      Some (ConstFn { func = FunId (FRegular id); generics })
+  | TFnDef binder -> Some (ConstFn binder.binder_value)
   | _ -> None
 
 (** Apply the compiler-attribute to the given value *)
