@@ -501,6 +501,19 @@ module Make (Sptr : Sptr.S) = struct
     let extract_block (ty, off) =
       let off = int_of_val off in
       let vs = List.map (fun (v, ty, o) -> (v, ty, o - off)) vs in
+      (* 0. make sure the entire range exists; otherwise it would mean there's an uninit access *)
+      let- () =
+        let size = (layout_of ty).size in
+        let bytes = Array.init size (fun _ -> false) in
+        List.iter
+          (fun (_, ty, o) ->
+            let s = (layout_of ty).size in
+            Iter.(o -- (o + s - 1)) (fun i ->
+                if 0 <= i && i < size then bytes.(i) <- true))
+          vs;
+        if Array.for_all (fun b -> b) bytes then None
+        else Some (Result.error `UninitializedMemoryAccess)
+      in
       (* 1. ideal case, we find a block with the same size and offset *)
       let- () =
         List.find_map
@@ -578,8 +591,8 @@ module Make (Sptr : Sptr.S) = struct
         | _ -> None
       in
       (* X. give up *)
-      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %d from %a" pp_ty ty
-        off
+      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %d from [%a]" pp_ty
+        ty off
         Fmt.(list ~sep:comma pp_triple)
         vs
     in
