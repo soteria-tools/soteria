@@ -129,6 +129,9 @@ KNOWN_ISSUES = {
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
     # Miri
+    "fail/dangling_pointers/dangling_pointer_project_underscore_let.rs": "let _ = ... assignments get optimized out",
+    "fail/dangling_pointers/dangling_pointer_project_underscore_let_type_annotation.rs": "let _ = ... assignments get optimized out",
+    "fail/dangling_pointers/dangling_pointer_project_underscore_match.rs": "let _ = ... assignments get optimized out",
     "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",
     "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
