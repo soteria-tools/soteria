@@ -197,12 +197,12 @@ let exec_and_output_crate ~plugin compile_fn =
 
 let exec_rustc config file_name =
   config_set config;
-  let plugin = Plugin.create () in
+  let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_file ~plugin file_name in
   exec_and_output_crate ~plugin compile
 
 let exec_cargo config crate_dir =
   config_set config;
-  let plugin = Plugin.create () in
+  let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_crate ~plugin crate_dir in
   exec_and_output_crate ~plugin compile

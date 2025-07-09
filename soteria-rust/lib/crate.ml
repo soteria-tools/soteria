@@ -39,23 +39,27 @@ let pp_fn_operand ft op =
 
 let get_adt id =
   let crate = get_crate () in
-  try Types.TypeDeclId.Map.find id crate.type_decls
-  with Not_found -> raise (MissingDecl "Type")
+  match Types.TypeDeclId.Map.find_opt id crate.type_decls with
+  | Some adt -> adt
+  | None -> raise (MissingDecl "Type")
 
 let get_fun id =
   let crate = get_crate () in
-  try UllbcAst.FunDeclId.Map.find id crate.fun_decls
-  with Not_found -> raise (MissingDecl "Fun")
+  match UllbcAst.FunDeclId.Map.find_opt id crate.fun_decls with
+  | Some fn -> fn
+  | None -> raise (MissingDecl "Fun")
 
 let get_global id =
   let crate = get_crate () in
-  try UllbcAst.GlobalDeclId.Map.find id crate.global_decls
-  with Not_found -> raise (MissingDecl "Global")
+  match UllbcAst.GlobalDeclId.Map.find_opt id crate.global_decls with
+  | Some global -> global
+  | None -> raise (MissingDecl "Global")
 
 let get_trait_impl id =
   let crate = get_crate () in
-  try UllbcAst.TraitImplId.Map.find id crate.trait_impls
-  with Not_found -> raise (MissingDecl "TraitImpl")
+  match UllbcAst.TraitImplId.Map.find_opt id crate.trait_impls with
+  | Some impl -> impl
+  | None -> raise (MissingDecl "TraitImpl")
 
 let is_enum adt_id =
   match (get_adt adt_id).kind with Enum _ -> true | _ -> false

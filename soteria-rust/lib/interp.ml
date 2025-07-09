@@ -430,7 +430,7 @@ module Make (State : State_intf.S) = struct
         with Crate.MissingDecl _ -> not_impl "Missing function declaration")
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics)
-    (* Here we need to check the type of the actualy function, as it could have been cast. *)
+    (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
         let* fn_ptr = State.load ~is_move:true fn_ptr_ptr place.ty in
@@ -444,7 +444,11 @@ module Make (State : State_intf.S) = struct
               (* We are strict and decide types must be the same to be used interchangeably.
                  This is not necessarily true but is somewhat correct for non-primitives:
                  for instance, [u8; 2] and struct { u8, u8 } may use different passing
-                 styles (see https://github.com/rust-lang/miri/blob/d9afd0faa4a5e503baf6e2c1e2a81b4946bfc674/tests/fail/function_pointers/abi_mismatch_array_vs_struct.rs) *)
+                 styles (see https://github.com/rust-lang/miri/blob/d9afd0faa4a5e503baf6e2c1e2a81b4946bfc674/tests/fail/function_pointers/abi_mismatch_array_vs_struct.rs)
+
+                 TODO: The full rules are described here -- we can implement this in Layout.
+                 https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility
+                 *)
               let fn = Crate.get_fun fid in
               let rec check_tys l r =
                 match (l, r) with

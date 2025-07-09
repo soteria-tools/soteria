@@ -164,7 +164,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TAdt { id = TBuiltin TArray; generics } ->
       let size = List.hd generics.const_generics in
       let ty = List.hd generics.types in
-      let len = Charon_util.zint_of_const_generic size in
+      let len = Charon_util.z_of_const_generic size in
       let sub_layout = layout_of ty in
       if len > max_array_len sub_layout.size then raise InvalidLayout;
       let len = Z.to_int len in

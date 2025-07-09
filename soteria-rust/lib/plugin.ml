@@ -267,7 +267,7 @@ let merge_ifs (plugins : (bool * plugin) list) =
   in
   { mk_cmd; get_entry_point }
 
-let create () =
+let create_using_current_config () =
   merge_ifs
     [
       (true, default);
