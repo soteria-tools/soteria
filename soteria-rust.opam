@@ -51,6 +51,6 @@ build: [
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
 pin-depends: [
   ["simple_smt.~dev" "git+https://github.com/NatKarmios/simple-smt-ocaml#9db7ef0bb61a76010de255af3cbe4066dd8dd622"]
-  ["name_matcher_parser.~dev" "git+https://github.com/AeneasVerif/charon#69ed332d4861879bde6553e1ddb7051e7e1d4130"]
-  ["charon.~dev" "git+https://github.com/AeneasVerif/charon#69ed332d4861879bde6553e1ddb7051e7e1d4130"]
+  ["name_matcher_parser.~dev" "git+https://github.com/AeneasVerif/charon#7ba9b7c4c973fe162bff8fdb0b27bb1c421002d5"]
+  ["charon.~dev" "git+https://github.com/AeneasVerif/charon#7ba9b7c4c973fe162bff8fdb0b27bb1c421002d5"]
 ]
