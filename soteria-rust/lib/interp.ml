@@ -286,7 +286,20 @@ module Make (State : State_intf.S) = struct
             Ptr ptr)
     | CFnPtr fn_ptr -> ok (ConstFn fn_ptr)
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
-    | CTraitConst _ -> not_impl "TODO: resolve const TraitConst"
+    (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
+    | CTraitConst (tref, "IS_ZST") ->
+        let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
+        let^+ size = Layout.size_of_s ty in
+        Base (Typed.int_of_bool (size ==@ 0s))
+    | CTraitConst (tref, "LAYOUT") ->
+        let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
+        let^ size = Layout.size_of_s ty in
+        let^+ align = Layout.align_of_s ty in
+        (* The alignment is a struct storing a value of the enum AlignmentEnum, where the
+           discriminant's value for variant N is 1 << N. *)
+        Struct [ Base size; Struct [ Enum (align, []) ] ]
+    | CTraitConst (_, name) ->
+        Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
     | CRawMemory _ -> not_impl "TODO: resolve const RawMemory"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
