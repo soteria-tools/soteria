@@ -218,7 +218,7 @@ module Make (Sptr : Sptr.S) = struct
       offset; once these are read, symbolically decides whether we must keep
       reading. [offset] is the initial offset to read from, [meta] is the
       optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?offset ?meta ty : ('e, 'fix, 'state) parser =
+  let rust_of_cvals ?offset ?meta : Types.ty -> ('e, 'fix, 'state) parser =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let module T = Typed.T in
@@ -297,8 +297,8 @@ module Make (Sptr : Sptr.S) = struct
           | _ ->
               Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
-      | TAdt { id = TBuiltin TArray; generics = { types = [ sub_ty ]; _ } } as
-        ty ->
+      | TAdt { id = TBuiltin TArray; generics = { types; _ } } as ty ->
+          let sub_ty = List.hd types in
           let layout = layout_of ty in
           let len = Array.length layout.members_ofs in
           let fields = List.init len (fun _ -> sub_ty) in
@@ -329,7 +329,9 @@ module Make (Sptr : Sptr.S) = struct
       | TTraitType (tref, name) ->
           let ty = Layout.resolve_trait_ty tref name in
           aux offset ty
-      | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
+      | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
+      | (TVar _ | TDynTrait _ | TError _) as ty ->
+          Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a list of fields (for structs and tuples) *)
     and aux_fields ~f ~layout offset fields : ('e, 'fix, 'state) parser =
       let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
@@ -387,7 +389,7 @@ module Make (Sptr : Sptr.S) = struct
       |> first parse_field
     in
     let off = Option.value ~default:0s offset in
-    aux off ty
+    aux off
 
   (** Transmute a value of the given type into the other type.
 
