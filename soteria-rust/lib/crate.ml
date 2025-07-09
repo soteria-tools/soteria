@@ -11,6 +11,10 @@ let with_crate (crate : t) f =
   let open Effect.Deep in
   try f () with effect Get_crate, k -> continue k crate
 
+let pointer_size () =
+  let crate = get_crate () in
+  crate.target_information.target_pointer_size
+
 let as_namematcher_ctx () = NameMatcher.ctx_from_crate (get_crate ())
 
 let as_fmt_env () =

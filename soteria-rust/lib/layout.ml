@@ -8,10 +8,6 @@ open Charon_util
 exception CantComputeLayout of string * Types.ty
 exception InvalidLayout
 
-module Archi = struct
-  let word_size = 8
-end
-
 type layout = {
   size : int;
   align : int;
@@ -56,7 +52,7 @@ let size_of_int_ty : Types.integer_type -> int = function
   | I32 | U32 -> 4
   | I16 | U16 -> 2
   | I8 | U8 -> 1
-  | Isize | Usize -> Archi.word_size
+  | Isize | Usize -> Crate.pointer_size ()
 
 let size_of_literal_ty : Types.literal_type -> int = function
   | TInteger int_ty -> size_of_int_ty int_ty
@@ -111,14 +107,12 @@ let rec layout_of (ty : Types.ty) : layout =
   | TRef (_, sub_ty, _)
   | TRawPtr (sub_ty, _)
     when is_dst sub_ty ->
-      {
-        size = Archi.word_size * 2;
-        align = Archi.word_size;
-        members_ofs = [||];
-      }
+      let ptr_size = Crate.pointer_size () in
+      { size = ptr_size * 2; align = ptr_size; members_ofs = [||] }
   (* Refs, pointers, boxes *)
   | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) ->
-      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
+      let ptr_size = Crate.pointer_size () in
+      { size = ptr_size; align = ptr_size; members_ofs = [||] }
   (* Dynamically sized types -- we assume they have a size of 0. In truth, these types should
      simply never be allocated directly, and instead can only be obtained hidden behind
      references; however we must be able to compute their layout, to get e.g. the offset of
@@ -182,7 +176,8 @@ let rec layout_of (ty : Types.ty) : layout =
   | TFnDef _ -> { size = 0; align = 1; members_ofs = [||] }
   (* Function pointers (can point to a function or a state-less closure). *)
   | TFnPtr _ ->
-      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
+      let ptr_size = Crate.pointer_size () in
+      { size = ptr_size; align = ptr_size; members_ofs = [||] }
   (* FIXME: this is wrong but at least some more code runs... *)
   | TDynTrait _ -> { size = 0; align = 1; members_ofs = [||] }
   (* Others (unhandled for now) *)
@@ -276,7 +271,7 @@ let is_signed : Types.integer_type -> bool = function
 
 let min_value_z : Types.integer_type -> Z.t = function
   | U128 | U64 | U32 | U16 | U8 | Usize -> Z.zero
-  | Isize -> Z.neg (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
+  | Isize -> Z.neg (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
   | I128 -> Z.neg (Z.shift_left Z.one 127)
   | I64 -> Z.neg (Z.shift_left Z.one 63)
   | I32 -> Z.neg (Z.shift_left Z.one 31)
@@ -291,13 +286,13 @@ let max_value_z : Types.integer_type -> Z.t = function
   | U32 -> Z.pred (Z.shift_left Z.one 32)
   | U16 -> Z.pred (Z.shift_left Z.one 16)
   | U8 -> Z.pred (Z.shift_left Z.one 8)
-  | Usize -> Z.pred (Z.shift_left Z.one (8 * Archi.word_size))
+  | Usize -> Z.pred (Z.shift_left Z.one (8 * Crate.pointer_size ()))
   | I128 -> Z.pred (Z.shift_left Z.one 127)
   | I64 -> Z.pred (Z.shift_left Z.one 63)
   | I32 -> Z.pred (Z.shift_left Z.one 31)
   | I16 -> Z.pred (Z.shift_left Z.one 15)
   | I8 -> Z.pred (Z.shift_left Z.one 7)
-  | Isize -> Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
+  | Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
 
 let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
 

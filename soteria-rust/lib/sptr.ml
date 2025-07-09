@@ -97,11 +97,10 @@ module ArithPtr : S with type t = arithptr_t = struct
   let is_same_loc { ptr = ptr1; _ } { ptr = ptr2; _ } =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
 
-  let constraints =
+  let constraints { ptr; size; _ } =
     let offset_constrs = Layout.int_constraints Isize in
-    fun { ptr; size; _ } ->
-      let ofs = Typed.Ptr.ofs ptr in
-      Typed.conj ((ofs <=@ size) :: offset_constrs ofs)
+    let ofs = Typed.Ptr.ofs ptr in
+    Typed.conj ((ofs <=@ size) :: offset_constrs ofs)
 
   let offset ?(check = true) ?(ty = Types.TLiteral (TInteger U8))
       ({ ptr; _ } as fptr) off =

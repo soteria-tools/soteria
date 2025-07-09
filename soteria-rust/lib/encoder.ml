@@ -143,7 +143,7 @@ module Make (Sptr : Sptr.S) = struct
         let ty : Types.ty = TLiteral (TInteger Isize) in
         let value = Ptr (ptr, None) in
         if is_dst sub_ty then
-          let size = Typed.int Archi.word_size in
+          let size = Typed.int @@ Layout.size_of_int_ty Isize in
           [
             { value; ty; offset };
             { value = Base meta; ty; offset = offset +@ size };
@@ -236,7 +236,7 @@ module Make (Sptr : Sptr.S) = struct
         | TRef (_, sub_ty, _)
         | TRawPtr (sub_ty, _) ) as ty
         when is_dst sub_ty -> (
-          let ptr_size = Typed.int Archi.word_size in
+          let ptr_size = Typed.int @@ Layout.size_of_int_ty Isize in
           let isize : Types.ty = TLiteral (TInteger Isize) in
           let*** ptr_compo = query (isize, offset) in
           let+** meta_compo = query (isize, offset +@ ptr_size) in
