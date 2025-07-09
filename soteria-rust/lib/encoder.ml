@@ -120,6 +120,10 @@ module Make (Sptr : Sptr.S) = struct
     in
 
     match (value, ty) with
+    (* Trait types: we resolve them early *)
+    | _, TTraitType (tref, name) ->
+        let ty = Layout.resolve_trait_ty tref name in
+        rust_to_cvals ~offset value ty
     (* Literals *)
     | Base _, TLiteral _ -> [ { value; ty; offset } ]
     | Ptr _, TLiteral (TInteger (Isize | Usize)) -> [ { value; ty; offset } ]
@@ -139,7 +143,7 @@ module Make (Sptr : Sptr.S) = struct
         let ty : Types.ty = TLiteral (TInteger Isize) in
         let value = Ptr (ptr, None) in
         if is_dst sub_ty then
-          let size = Typed.int Archi.word_size in
+          let size = Typed.int @@ Layout.size_of_int_ty Isize in
           [
             { value; ty; offset };
             { value = Base meta; ty; offset = offset +@ size };
@@ -151,7 +155,8 @@ module Make (Sptr : Sptr.S) = struct
     (* References / Pointers obtained from casting *)
     | Base _, TAdt { id = TBuiltin TBox; _ }
     | Base _, TRef _
-    | Base _, TRawPtr _ ->
+    | Base _, TRawPtr _
+    | Base _, TFnPtr _ ->
         [ { value; ty = TLiteral (TInteger Isize); offset } ]
     | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
         illegal_pair ()
@@ -176,19 +181,12 @@ module Make (Sptr : Sptr.S) = struct
                 (fun v -> Z.equal disc_z Types.(v.discriminant.value))
                 variants
             in
-            let disc_ty =
-              Types.TLiteral (TInteger variant.discriminant.int_ty)
-            in
-            chain_cvals (of_variant variant) (Base disc :: vals)
+            let disc_ty = Layout.enum_discr_ty t_id in
+            chain_cvals (of_variant t_id variant) (Base disc :: vals)
               (disc_ty :: field_tys variant.fields)
         | _ -> Fmt.failwith "Unexpected discriminant for enum: %a" pp_ty ty)
     | Base value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
-        let variants = Crate.as_enum t_id in
-        (* FIXME: this is not correct, this doesn't represent the actual discriminant type. *)
-        let disc_ty = (List.hd variants).discriminant.int_ty in
-        [
-          { value = Enum (value, []); ty = TLiteral (TInteger disc_ty); offset };
-        ]
+        [ { value = Enum (value, []); ty = Layout.enum_discr_ty t_id; offset } ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
     | ( Array vals,
@@ -220,7 +218,7 @@ module Make (Sptr : Sptr.S) = struct
       offset; once these are read, symbolically decides whether we must keep
       reading. [offset] is the initial offset to read from, [meta] is the
       optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?offset ?meta ty : ('e, 'fix, 'state) parser =
+  let rust_of_cvals ?offset ?meta : Types.ty -> ('e, 'fix, 'state) parser =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let module T = Typed.T in
@@ -238,7 +236,7 @@ module Make (Sptr : Sptr.S) = struct
         | TRef (_, sub_ty, _)
         | TRawPtr (sub_ty, _) ) as ty
         when is_dst sub_ty -> (
-          let ptr_size = Typed.int Archi.word_size in
+          let ptr_size = Typed.int @@ Layout.size_of_int_ty Isize in
           let isize : Types.ty = TLiteral (TInteger Isize) in
           let*** ptr_compo = query (isize, offset) in
           let+** meta_compo = query (isize, offset +@ ptr_size) in
@@ -277,7 +275,8 @@ module Make (Sptr : Sptr.S) = struct
       | TFnPtr _ -> (
           let+** boxed = query (TLiteral (TInteger Isize), offset) in
           match boxed with
-          | (Ptr _ | Base _) as ptr -> Result.ok ptr
+          | Ptr _ as ptr -> Result.ok ptr
+          | Base _ -> Result.error `UBTransmute
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
@@ -293,13 +292,13 @@ module Make (Sptr : Sptr.S) = struct
           | Enum [] -> error `RefToUninhabited
           | Enum [ { fields = []; discriminant; _ } ] ->
               ok (Enum (value_of_scalar discriminant, []))
-          | Enum variants -> aux_enum offset variants
+          | Enum variants -> aux_enum offset t_id variants
           | Union fs -> aux_union offset fs
           | _ ->
               Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
-      | TAdt { id = TBuiltin TArray; generics = { types = [ sub_ty ]; _ } } as
-        ty ->
+      | TAdt { id = TBuiltin TArray; generics = { types; _ } } as ty ->
+          let sub_ty = List.hd types in
           let layout = layout_of ty in
           let len = Array.length layout.members_ofs in
           let fields = List.init len (fun _ -> sub_ty) in
@@ -327,7 +326,12 @@ module Make (Sptr : Sptr.S) = struct
               let fields = List.init len (fun _ -> sub_ty) in
               aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
       | TNever -> error `RefToUninhabited
-      | ty -> Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
+      | TTraitType (tref, name) ->
+          let ty = Layout.resolve_trait_ty tref name in
+          aux offset ty
+      | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
+      | (TVar _ | TDynTrait _ | TError _) as ty ->
+          Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a list of fields (for structs and tuples) *)
     and aux_fields ~f ~layout offset fields : ('e, 'fix, 'state) parser =
       let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
@@ -343,13 +347,12 @@ module Make (Sptr : Sptr.S) = struct
       in
       mk_callback fields []
     (* Parses what enum variant we're handling *)
-    and aux_enum offset (variants : Types.variant list) :
+    and aux_enum offset adt_id (variants : Types.variant list) :
         ('e, 'fix, 'state) parser =
-      let disc = (List.hd variants).discriminant in
-      let disc_ty = Values.TInteger disc.int_ty in
-      let disc_align = Typed.nonzero (align_of_literal_ty disc_ty) in
+      let disc_ty = Layout.enum_discr_ty adt_id in
+      let disc_align = Typed.nonzero (layout_of disc_ty).align in
       let offset = offset +@ (offset %@ disc_align) in
-      let*** cval = query (TLiteral disc_ty, offset) in
+      let*** cval = query (disc_ty, offset) in
       let cval = Charon_util.as_base_of ~ty:Typed.t_int cval in
       let*** res =
         lift_rsymex
@@ -360,7 +363,7 @@ module Make (Sptr : Sptr.S) = struct
       | Some var ->
           (* skip discriminant *)
           let discr = value_of_scalar var.discriminant in
-          let ({ members_ofs = mems; _ } as layout) = of_variant var in
+          let ({ members_ofs = mems; _ } as layout) = of_variant adt_id var in
           let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
           let layout = { layout with members_ofs } in
           var.fields
@@ -386,7 +389,7 @@ module Make (Sptr : Sptr.S) = struct
       |> first parse_field
     in
     let off = Option.value ~default:0s offset in
-    aux off ty
+    aux off
 
   (** Transmute a value of the given type into the other type.
 
@@ -500,6 +503,19 @@ module Make (Sptr : Sptr.S) = struct
     let extract_block (ty, off) =
       let off = int_of_val off in
       let vs = List.map (fun (v, ty, o) -> (v, ty, o - off)) vs in
+      (* 0. make sure the entire range exists; otherwise it would mean there's an uninit access *)
+      let- () =
+        let size = (layout_of ty).size in
+        let bytes = Array.init size (fun _ -> false) in
+        List.iter
+          (fun (_, ty, o) ->
+            let s = (layout_of ty).size in
+            Iter.(o -- (o + s - 1)) (fun i ->
+                if 0 <= i && i < size then bytes.(i) <- true))
+          vs;
+        if Array.for_all (fun b -> b) bytes then None
+        else Some (Result.error `UninitializedMemoryAccess)
+      in
       (* 1. ideal case, we find a block with the same size and offset *)
       let- () =
         List.find_map
@@ -577,8 +593,8 @@ module Make (Sptr : Sptr.S) = struct
         | _ -> None
       in
       (* X. give up *)
-      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %d from %a" pp_ty ty
-        off
+      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %d from [%a]" pp_ty
+        ty off
         Fmt.(list ~sep:comma pp_triple)
         vs
     in

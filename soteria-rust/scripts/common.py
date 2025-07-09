@@ -83,6 +83,7 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "BitwiseShiftOperators/shift_neg_vals.rs": unkn_(
         "Wrapping operations without loop unrolling branch too much"
     ),
+    "Intrinsics/bswap.rs": unkn_("Hard to reduce binary operations"),
     "Intrinsics/Count/ctpop.rs": pass_("The test requires 2^N branches"),
     "Intrinsics/FastMath/add_f64.rs": pass_("Slow floating point operation"),
     "Intrinsics/FastMath/div_f64.rs": pass_("Slow floating point operation"),
@@ -98,48 +99,48 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "Intrinsics/Math/Rounding/RInt/rintf64.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Round/roundf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Round/roundf64.rs": pass_("Slow floating point rounding"),
+    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f32.rs": pass_(
+        "Slow floating point rounding"
+    ),
+    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": pass_(
+        "Slow floating point rounding"
+    ),
     "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
     "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
+    "pass/issues/issue-20575.rs": unkn_("Very slow compilation"),
+    "pass/issues/issue-29746.rs": unkn_("Very slow compilation"),
     "pass/tag-align-dyn-u64.rs": unkn_("Slow due to symbolic checks on the pointer"),
 }
 
 KNOWN_ISSUES = {
     # Kani
-    "ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter?? Kani crashes too",
-    "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter?? Kani crashes too",
+    "ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter? Kani crashes too",
+    "Cleanup/unwind_fixme.rs": "The main function takes a paramter? Kani crashes too",
+    "FunctionCall/Variadic/fixme_main.rs": "We don't handle functions with spread arguments (not in Charon)",
+    "FunctionCall/Variadic/main.rs": "We don't handle functions with spread arguments (not in Charon)",
     "Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
     "Intrinsics/ConstEval/pref_align_of.rs": "Requires support for custom target architectures",
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
     "PointerComparison/ptr_comparison.rs": "Error when monomorphising a fn meants ptr meta is lost",
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
-    "Uninit/access-padding-enum-multiple-variants.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "Uninit/access-padding-enum-single-field.rs": "Kani assumes discriminants are i32, but Charon gives isize",
-    "Uninit/access-padding-enum-single-variant.rs": "Kani assumes discriminants are i32, but Charon gives isize",
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
     # Miri
+    "fail/dangling_pointers/dangling_pointer_project_underscore_let.rs": "let _ = ... assignments get optimized out",
+    "fail/dangling_pointers/dangling_pointer_project_underscore_let_type_annotation.rs": "let _ = ... assignments get optimized out",
+    "fail/dangling_pointers/dangling_pointer_project_underscore_match.rs": "let _ = ... assignments get optimized out",
     "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",
     "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
+    "pass/enum_discriminant_ptr_value.rs": "We don't handle the niche for Option<&T>",
     "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
     "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
-    **{
-        test: "Failure caused by a Box leak (drops not supported yet)"
-        for test in [
-            "pass/closure-field-ty.rs",
-            "pass/dst-struct.rs",
-            "pass/issues/issue-36278-prefix-nesting.rs",
-            "pass/issues/issue-miri-3473.rs",
-            "pass/move-arg-3-unique.rs",
-            "pass/panic/nested_panic_caught.rs",
-            "pass/rfc1623.rs",
-            "pass/underscore_pattern.rs",
-            "pass/zst_box.rs",
-        ]
-    },
+    "pass/provenance.rs": "It is unclear how to properly do ptr-int-ptr conversions",
+    "pass/ptr_int_from_exposed.rs": "It is unclear how to properly do ptr-int-ptr conversions",
 }
 
 PWD = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -183,9 +184,10 @@ class Flags(TypedDict):
     exclusions: list[str]
     iterations: Optional[int]
     tag: Optional[str]
+    test_folder: Optional[Path]
 
 
-def parse_flags(argv: list[str]) -> Flags:
+def parse_flags() -> Flags:
     i = 0
     flags: Flags = {
         "cmd_flags": [],
@@ -193,24 +195,34 @@ def parse_flags(argv: list[str]) -> Flags:
         "exclusions": [],
         "iterations": None,
         "tag": None,
+        "test_folder": None,
     }
-    while i < len(argv):
-        arg = argv[i]
+    while i < len(sys.argv):
+        arg = sys.argv[i]
         if arg == "--":
-            flags["cmd_flags"] += argv[i + 1 :]
+            flags["cmd_flags"] += sys.argv[i + 1 :]
             break
         elif arg == "-f":
-            flags["filters"].append(argv[i + 1])
+            flags["filters"].append(sys.argv[i + 1])
             i += 1
         elif arg == "-e":
-            flags["exclusions"].append(argv[i + 1])
+            flags["exclusions"].append(sys.argv[i + 1])
             i += 1
         elif arg == "-i":
-            flags["iterations"] = int(argv[i + 1])
+            flags["iterations"] = int(sys.argv[i + 1])
             i += 1
         elif arg == "--tag":
-            flags["tag"] = argv[i + 1]
+            flags["tag"] = sys.argv[i + 1]
             i += 1
+        elif arg == "--folder":
+            flags["test_folder"] = Path(sys.argv[i + 1]).resolve()
+            if not flags["test_folder"].is_dir():
+                print(
+                    f"{RED}The folder {flags['test_folder']} does not exist or is not a directory."
+                )
+                exit(1)
+            i += 1
+
         else:
             print(f"{RED}Unknown flag: {arg}")
             exit(1)

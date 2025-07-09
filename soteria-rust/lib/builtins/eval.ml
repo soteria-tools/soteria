@@ -4,32 +4,38 @@ open Rustsymex
 
 module M (State : State_intf.S) = struct
   module Std = Std.M (State)
+  module Alloc = Alloc.M (State)
   module Rusteria = Rusteria.M (State)
   module Miri = Miri.M (State)
 
   let match_config =
     NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-  type type_loc = GenArg | Input
-
   (* Functions that we shouldn't stub, but need to (e.g. because of Charon) *)
-  type fixme_funs = BoxNew | Index | Nop | Panic | TryCleanup
+  type fixme_fn = BoxNew | Index | Nop | Panic | TryCleanup | NullPtr
 
   (* Functions we could not stub, but we do for performance *)
-  type optim_funs =
+  type optim_fn =
     | FloatIs of Svalue.FloatClass.t
     | FloatIsFinite
     | FloatIsSign of { positive : bool }
     | Zeroed
 
   (* Rusteria builtin functions *)
-  type rusteria_fun = Assert | Assume | Nondet | Panic
+  type rusteria_fn = Assert | Assume | Nondet | Panic
 
   (* Miri builtin functions *)
-  type miri_fun = AllocId | Nop
+  type miri_fn = AllocId | Nop
+
+  (* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
+  type alloc_fn =
+    | Alloc of { zeroed : bool }
+    | Dealloc
+    | Realloc
+    | NoAllocShimIsUnstable
 
   (* Standard library functions *)
-  type std_fun =
+  type std_fn =
     (* Std *)
     | Abs
     | AssertZeroValid
@@ -53,7 +59,7 @@ module M (State : State_intf.S) = struct
     | Index
     | IsValStaticallyKnown
     | Likely
-    | MinAlignOf of type_loc
+    | AlignOf of { of_val : bool }
     | MulAdd
     | Nop
     | PanicSimple
@@ -75,11 +81,12 @@ module M (State : State_intf.S) = struct
     | WriteBytes
 
   type fn =
-    | Rusteria of rusteria_fun
-    | Miri of miri_fun
-    | Std of std_fun
-    | Fixme of fixme_funs
-    | Optim of optim_funs
+    | Rusteria of rusteria_fn
+    | Miri of miri_fn
+    | Alloc of alloc_fn
+    | Std of std_fn
+    | Fixme of fixme_fn
+    | Optim of optim_fn
 
   let std_fun_map =
     [
@@ -107,6 +114,9 @@ module M (State : State_intf.S) = struct
       ( "core::slice::index::{core::ops::index::IndexMut}::index_mut",
         Fixme Index );
       ("core::cell::panic_already_mutably_borrowed", Fixme Panic);
+      ("alloc::alloc::handle_alloc_error::ct_error", Fixme Panic);
+      (* hax fails to construct a null pointer from a constant *)
+      ("core::ptr::null_mut", Fixme NullPtr);
       ("core::mem::zeroed", Optim Zeroed);
       (* all float operations could be removed, but we lack bit precision when getting the
          const floats from Rust, meaning these don't really work. Either way, performance wise
@@ -150,10 +160,17 @@ module M (State : State_intf.S) = struct
       (* These don't compile, for some reason? *)
       ("std::panicking::try::cleanup", Fixme TryCleanup);
       ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);
+      (* Allocator *)
+      ("__rust_alloc", Alloc (Alloc { zeroed = false }));
+      ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
+      ("__rust_dealloc", Alloc Dealloc);
+      ("__rust_no_alloc_shim_is_unstable_v2", Alloc NoAllocShimIsUnstable);
+      ("__rust_realloc", Alloc Realloc);
       (* Intrinsics *)
       ("core::intrinsics::abort", Std PanicSimple);
-      ("core::intrinsics::add_with_overflow", Std (Checked Add));
-      ("core::intrinsics::arith_offset", Std (PtrOp { op = Add; check = false }));
+      ("core::intrinsics::add_with_overflow", Std (Checked (Add OUB)));
+      ( "core::intrinsics::arith_offset",
+        Std (PtrOp { op = Add OUB; check = false }) );
       ("core::intrinsics::assert_inhabited", Std AssertInhabited);
       (* TODO: is the following correct? *)
       ("core::intrinsics::assert_mem_uninitialized_valid", Std Nop);
@@ -183,8 +200,8 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::fabsf32", Std Abs);
       ("core::intrinsics::fabsf64", Std Abs);
       ("core::intrinsics::fabsf128", Std Abs);
-      ("core::intrinsics::fadd_fast", Std (FloatFast Add));
-      ("core::intrinsics::fdiv_fast", Std (FloatFast Div));
+      ("core::intrinsics::fadd_fast", Std (FloatFast (Add OUB)));
+      ("core::intrinsics::fdiv_fast", Std (FloatFast (Div OUB)));
       ("core::intrinsics::float_to_int_unchecked", Std FloatToInt);
       ("core::intrinsics::floorf16", Std (FloatRounding Floor));
       ("core::intrinsics::floorf32", Std (FloatRounding Floor));
@@ -194,8 +211,9 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::fmaf32", Std MulAdd);
       ("core::intrinsics::fmaf64", Std MulAdd);
       ("core::intrinsics::fmaf128", Std MulAdd);
-      ("core::intrinsics::fmul_fast", Std (FloatFast Mul));
-      ("core::intrinsics::fsub_fast", Std (FloatFast Sub));
+      ("core::intrinsics::fmul_fast", Std (FloatFast (Mul OUB)));
+      ("core::intrinsics::frem_fast", Std (FloatFast (Rem OUB)));
+      ("core::intrinsics::fsub_fast", Std (FloatFast (Sub OUB)));
       ("core::intrinsics::is_val_statically_known", Std IsValStaticallyKnown);
       ("core::intrinsics::likely", Std Likely);
       ("core::intrinsics::maxnumf16", Std (FloatMinMax { min = false }));
@@ -206,11 +224,10 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::minnumf32", Std (FloatMinMax { min = true }));
       ("core::intrinsics::minnumf64", Std (FloatMinMax { min = true }));
       ("core::intrinsics::minnumf128", Std (FloatMinMax { min = true }));
-      ("core::intrinsics::min_align_of", Std (MinAlignOf GenArg));
-      ("core::intrinsics::min_align_of_val", Std (MinAlignOf Input));
-      ("core::intrinsics::mul_with_overflow", Std (Checked Mul));
-      ("core::intrinsics::offset", Std (PtrOp { op = Add; check = true }));
-      ("core::intrinsics::pref_align_of", Std (MinAlignOf GenArg));
+      ("core::intrinsics::align_of", Std (AlignOf { of_val = false }));
+      ("core::intrinsics::align_of_val", Std (AlignOf { of_val = true }));
+      ("core::intrinsics::mul_with_overflow", Std (Checked (Mul OUB)));
+      ("core::intrinsics::offset", Std (PtrOp { op = Add OUB; check = true }));
       ("core::intrinsics::ptr_guaranteed_cmp", Std PtrGuaranteedCmp);
       ( "core::intrinsics::ptr_offset_from",
         Std (PtrOffsetFrom { unsigned = false }) );
@@ -229,11 +246,11 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::roundf32", Std (FloatRounding NearestTiesToAway));
       ("core::intrinsics::roundf64", Std (FloatRounding NearestTiesToAway));
       ("core::intrinsics::roundf128", Std (FloatRounding NearestTiesToAway));
-      ("core::intrinsics::saturating_add", Std (Saturating Add));
-      ("core::intrinsics::saturating_sub", Std (Saturating Sub));
+      ("core::intrinsics::saturating_add", Std (Saturating (Add OUB)));
+      ("core::intrinsics::saturating_sub", Std (Saturating (Sub OUB)));
       ("core::intrinsics::size_of", Std SizeOf);
       ("core::intrinsics::size_of_val", Std SizeOfVal);
-      ("core::intrinsics::sub_with_overflow", Std (Checked Sub));
+      ("core::intrinsics::sub_with_overflow", Std (Checked (Sub OUB)));
       ("core::intrinsics::transmute", Std Transmute);
       ("core::intrinsics::truncf16", Std (FloatRounding Truncate));
       ("core::intrinsics::truncf32", Std (FloatRounding Truncate));
@@ -243,20 +260,20 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::type_name", Std TypeName);
       ( "core::intrinsics::typed_swap_nonoverlapping",
         Std TypedSwapNonOverlapping );
-      ("core::intrinsics::unchecked_add", Std (Unchecked Add));
-      ("core::intrinsics::unchecked_div", Std (Unchecked Div));
-      ("core::intrinsics::unchecked_mul", Std (Unchecked Mul));
-      ("core::intrinsics::unchecked_rem", Std (Unchecked Rem));
-      ("core::intrinsics::unchecked_shl", Std (Unchecked Shl));
-      ("core::intrinsics::unchecked_shr", Std (Unchecked Shr));
-      ("core::intrinsics::unchecked_sub", Std (Unchecked Sub));
+      ("core::intrinsics::unchecked_add", Std (Unchecked (Add OUB)));
+      ("core::intrinsics::unchecked_div", Std (Unchecked (Div OUB)));
+      ("core::intrinsics::unchecked_mul", Std (Unchecked (Mul OUB)));
+      ("core::intrinsics::unchecked_rem", Std (Unchecked (Rem OUB)));
+      ("core::intrinsics::unchecked_shl", Std (Unchecked (Shl OUB)));
+      ("core::intrinsics::unchecked_shr", Std (Unchecked (Shr OUB)));
+      ("core::intrinsics::unchecked_sub", Std (Unchecked (Sub OUB)));
       ("core::intrinsics::unlikely", Std Likely);
       ("core::intrinsics::variant_count", Std VariantCount);
-      ("core::intrinsics::wrapping_add", Std (Wrapping Add));
-      ("core::intrinsics::wrapping_div", Std (Wrapping Div));
-      ("core::intrinsics::wrapping_mul", Std (Wrapping Mul));
-      ("core::intrinsics::wrapping_rem", Std (Wrapping Rem));
-      ("core::intrinsics::wrapping_sub", Std (Wrapping Sub));
+      ("core::intrinsics::wrapping_add", Std (Wrapping (Add OWrap)));
+      ("core::intrinsics::wrapping_div", Std (Wrapping (Div OWrap)));
+      ("core::intrinsics::wrapping_mul", Std (Wrapping (Mul OWrap)));
+      ("core::intrinsics::wrapping_rem", Std (Wrapping (Rem OWrap)));
+      ("core::intrinsics::wrapping_sub", Std (Wrapping (Sub OWrap)));
       ("core::intrinsics::write_bytes", Std WriteBytes);
       ("core::intrinsics::write_bytes::write_bytes", Std WriteBytes);
       ("core::intrinsics::write_bytes::precondition_check", Std Nop);
@@ -266,6 +283,7 @@ module M (State : State_intf.S) = struct
 
   let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
     let open Std in
+    let open Alloc in
     let open Rusteria in
     let open Miri in
     let opt_bind f opt = match opt with None -> f () | x -> x in
@@ -289,7 +307,12 @@ module M (State : State_intf.S) = struct
        cases were people actually re-define the intrinsics. *)
     let name =
       match f.item_meta.name with
-      | _ when not is_intrinsic -> f.item_meta.name
+      | _ when not is_intrinsic -> (
+          match List.last f.item_meta.name with
+          | PeIdent (name, _) as ident
+            when String.starts_with ~prefix:"__rust" name ->
+              [ ident ]
+          | _ -> f.item_meta.name)
       | PeIdent ("core", _) :: _ -> f.item_meta.name
       | _ -> (
           match List.rev f.item_meta.name with
@@ -321,12 +344,18 @@ module M (State : State_intf.S) = struct
          | Fixme Index -> array_index_fn f.signature
          | Fixme Panic -> panic
          | Fixme Nop -> nop
+         | Fixme NullPtr -> fixme_null_ptr
          | Fixme TryCleanup -> fixme_try_cleanup
          | Optim (FloatIs fc) -> float_is fc
          | Optim FloatIsFinite -> float_is_finite
          | Optim (FloatIsSign { positive }) -> float_is_sign positive
          | Optim Zeroed -> zeroed f.signature
+         | Alloc (Alloc { zeroed }) -> alloc ~zeroed
+         | Alloc Dealloc -> dealloc
+         | Alloc NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
+         | Alloc Realloc -> realloc
          | Std Abs -> abs
+         | Std (AlignOf _) -> min_align_of (mono ())
          | Std AssertZeroValid -> assert_zero_is_valid (mono ())
          | Std AssertInhabited -> assert_inhabited (mono ())
          | Std Assume -> std_assume
@@ -348,7 +377,6 @@ module M (State : State_intf.S) = struct
          | Std Index -> array_index_fn f.signature
          | Std IsValStaticallyKnown -> is_val_statically_known
          | Std Likely -> likely
-         | Std (MinAlignOf _) -> min_align_of (mono ())
          | Std MulAdd -> mul_add
          | Std Nop -> nop
          | Std PanicSimple -> std_panic
@@ -375,7 +403,7 @@ module M (State : State_intf.S) = struct
          Fmt.kstr not_impl "Unsupported intrinsic: %a" Crate.pp_name name
        else None
 
-  let builtin_fun_eval (f : Expressions.builtin_fun_id) generics =
+  let builtin_fun_eval (f : Types.builtin_fun_id) generics =
     let open Std in
     match f with
     | ArrayRepeat -> array_repeat generics

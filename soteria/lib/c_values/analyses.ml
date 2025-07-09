@@ -104,6 +104,8 @@ module Interval : S = struct
       (* [m, n] \ {n} = [m, n-1] *)
       | (m1, Some n1), (Some m2, Some n2) when Z.equal m2 n2 && Z.equal n1 m2 ->
           Some (m1, Some (Z.pred n1))
+      | (Some m1, n1), (_, Some n2) when Z.gt m1 n2 -> Some (Some m1, n1)
+      | (m1, Some n1), (Some m2, _) when Z.lt n1 m2 -> Some (m1, Some n1)
       | _ -> None
   end
 
@@ -140,7 +142,8 @@ module Interval : S = struct
               m "Useless range  %a: %a %s %a = %a" Var.pp var Range.pp range
                 (if neg then "/" else "∩")
                 Range.pp range' Range.pp new_range);
-          ((Svalue.bool (not (Range.is_empty range)), Var.Set.empty), st)
+          let is_ok = not (Range.is_empty range) in
+          ((Svalue.bool (is_ok <> neg), Var.Set.empty), st)
       | Some new_range -> (
           let st' = Var.Map.add var new_range st in
           log (fun m ->
@@ -161,11 +164,11 @@ module Interval : S = struct
              some information; to be safe, we let the PC keep the value.
              Also take this case if we do not absorb this information (e.g. in a disjunction),
              as in that case the PC must keep track of the assertion.  *)
-          | _ when neg || not absorb -> ((v, Var.Set.empty), st')
+          | _ when not absorb -> ((v, Var.Set.empty), st')
           (* We could cleanly absorb the range, so the PC doesn't need to store it -- however
              we must mark this variable as dirty, as maybe the modified range still renders
              the branch infeasible, e.g. because of some additional PC assertions. *)
-          | _ -> ((Svalue.v_true, Var.Set.singleton var), st'))
+          | _ -> ((Svalue.bool (not neg), Var.Set.singleton var), st'))
     in
     match v.node.kind with
     | Binop
@@ -223,6 +226,20 @@ module Interval : S = struct
               let ml, nl = to_range l in
               let mr, nr = to_range r in
               (Option.map2 Z.sub ml nr, Option.map2 Z.sub nl mr)
+          | Binop (Mod, _, r) ->
+              (* assuming the rhs is not zero; *)
+              let nl, nr = to_range r in
+              let max =
+                Option.map2 (fun x y -> Z.(pred @@ max (abs x) (abs y))) nl nr
+              in
+              (Some Z.zero, max)
+          | Binop (Rem, _, r) ->
+              (* assuming the rhs is not zero; *)
+              let nl, nr = to_range r in
+              let max =
+                Option.map2 (fun x y -> Z.(pred @@ max (abs x) (abs y))) nl nr
+              in
+              (Option.map Z.neg max, max)
           | _ -> (None, None)
         in
         let lr = to_range l in

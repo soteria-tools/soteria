@@ -1,5 +1,67 @@
 open Charon
-open Cmd
+
+module Cmd = struct
+  type t = {
+    (* Arguments passed to Charon *)
+    charon : string list; [@default []]
+    (* Features to enable for compilation (as in --cfg) *)
+    features : string list; [@default []]
+    (* DEPRECATED: rustc flags. For Cargo we use RUSTFLAGS, but when possible it would be
+       nicer to use the Cargo-specific command (as with features) *)
+    rustc : string list; [@default []]
+  }
+  [@@deriving make]
+
+  type mode = Cargo | Rustc
+
+  let empty_cmd = make ()
+
+  let concat_cmd c1 c2 =
+    {
+      charon = c1.charon @ c2.charon;
+      features = c1.features @ c2.features;
+      rustc = c1.rustc @ c2.rustc;
+    }
+
+  let build_cmd ~mode { charon; features; rustc } =
+    let spaced = String.concat " " in
+    match mode with
+    | Rustc ->
+        let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
+        let features = List.map (fun f -> "--cfg " ^ f) features in
+        "charon rustc "
+        ^ spaced charon
+        ^ " -- "
+        ^ spaced features
+        ^ " "
+        ^ escape (spaced rustc)
+    | Cargo ->
+        let env =
+          if not (List.is_empty rustc) then
+            "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
+          else ""
+        in
+        let features =
+          if not (List.is_empty features) then
+            "--features " ^ String.concat "," features ^ " "
+          else ""
+        in
+        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet " ^ features
+
+  let exec_cmd cmd =
+    L.debug (fun g -> g "Running command: %s" cmd);
+    Sys.command cmd
+
+  let exec_and_read cmd =
+    L.debug (fun g -> g "Running command: %s" cmd);
+    let inp = Unix.open_process_in cmd in
+    let r = In_channel.input_lines inp in
+    In_channel.close inp;
+    r
+
+  let exec_in ~mode folder cmd =
+    exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd ~mode cmd
+end
 
 exception PluginError of string
 
@@ -23,7 +85,7 @@ let get_host =
     match !host with
     | Some h -> h
     | None -> (
-        let info = Fmt.kstr exec_and_read "%s -vV" cargo in
+        let info = Fmt.kstr Cmd.exec_and_read "%s -vV" cargo in
         match List.find_opt (String.starts_with ~prefix:"host") info with
         | Some s ->
             let host_ = String.sub s 6 (String.length s - 6) in
@@ -45,8 +107,8 @@ let compile_lib path =
     else "> /dev/null 2>/dev/null"
   in
   let res =
-    Fmt.kstr exec_cmd "cd %s && %s build --lib --target %s %s" path cargo target
-      verbosity
+    Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path cargo
+      target verbosity
   in
   if res <> 0 && res <> 255 then
     let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
@@ -67,7 +129,7 @@ let known_generic_errors =
   ]
 
 type plugin = {
-  mk_cmd : unit -> Cmd.charon_cmd;
+  mk_cmd : unit -> Cmd.t;
   get_entry_point : fun_decl -> entry_point option;
 }
 
@@ -77,7 +139,7 @@ let default =
     let target = get_host () in
     let opaques = List.map (( ^ ) "--opaque ") known_generic_errors in
     compile_lib std_lib;
-    mk_cmd
+    Cmd.make
       ~charon:
         ([
            "--ullbc";
@@ -87,6 +149,7 @@ let default =
            "--raw-boxes";
          ]
         @ opaques)
+      ~features:[ "rusteria" ]
       ~rustc:
         [
           (* i.e. not always a binary! *)
@@ -95,9 +158,8 @@ let default =
           (* No warning *)
           "-Awarnings";
           (* include our std and rusteria crates *)
-          "--cfg=rusteria";
-          "-Zcrate-attr=feature\\(register_tool\\)";
-          "-Zcrate-attr=register_tool\\(rusteriatool\\)";
+          "-Zcrate-attr=feature(register_tool)";
+          "-Zcrate-attr=register_tool(rusteriatool)";
           "--extern=rusteria";
           Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
           Fmt.str "-L%s/target/debug/deps" std_lib;
@@ -120,11 +182,10 @@ let kani =
     let lib = lib_path "kani" in
     let target = get_host () in
     compile_lib lib;
-    mk_cmd
+    Cmd.make ~features:[ "kani " ]
       ~rustc:
         [
-          "-Zcrate-attr=register_tool\\(kanitool\\)";
-          "--cfg=kani";
+          "-Zcrate-attr=register_tool(kanitool)";
           "--extern=kani";
           Fmt.str "-L%s/target/%s/debug/deps" lib target;
           Fmt.str "-L%s/target/debug/deps" lib;
@@ -132,7 +193,11 @@ let kani =
       ()
   in
   let get_entry_point (decl : fun_decl) =
-    if Charon_util.decl_has_attr decl "kanitool::proof" then
+    if
+      Charon_util.decl_has_attr decl "kanitool::proof"
+      (* TODO: maybe we can raise an error or a warning here *)
+      && List.is_empty decl.signature.inputs
+    then
       let expect_error =
         Charon_util.decl_has_attr decl "kanitool::should_panic"
       in
@@ -146,10 +211,9 @@ let miri =
     let lib = lib_path "miri" in
     let target = get_host () in
     compile_lib lib;
-    mk_cmd
+    Cmd.make ~features:[ "miri" ]
       ~rustc:
         [
-          "--cfg=miri";
           "--extern=miristd";
           Fmt.str "-L%s/target/%s/debug/deps" lib target;
           Fmt.str "-L%s/target/debug/deps" lib;
@@ -164,7 +228,7 @@ let miri =
   { mk_cmd; get_entry_point }
 
 type root_plugin = {
-  mk_cmd : input:string -> output:string -> unit -> Cmd.charon_cmd;
+  mk_cmd : input:string -> output:string -> unit -> Cmd.t;
   get_entry_point : fun_decl -> entry_point option;
 }
 
@@ -176,9 +240,11 @@ let merge_ifs (plugins : (bool * plugin) list) =
   in
 
   let mk_cmd ~input ~output () =
-    let init = mk_cmd ~charon:[ "--dest-file " ^ output ] ~rustc:[ input ] () in
+    let init =
+      Cmd.make ~charon:[ "--dest-file " ^ output ] ~rustc:[ input ] ()
+    in
     List.map (fun (p : plugin) -> p.mk_cmd ()) plugins
-    |> List.fold_left concat_cmd init
+    |> List.fold_left Cmd.concat_cmd init
   in
   let get_entry_point (decl : fun_decl) =
     let rec aux acc rest =
@@ -200,3 +266,11 @@ let merge_ifs (plugins : (bool * plugin) list) =
     aux None plugins
   in
   { mk_cmd; get_entry_point }
+
+let create_using_current_config () =
+  merge_ifs
+    [
+      (true, default);
+      (!Config.current.with_kani, kani);
+      (!Config.current.with_miri, miri);
+    ]

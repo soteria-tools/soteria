@@ -1,12 +1,12 @@
 Test base functions
-  $ soteria-rust exec-main lib-fns.rs --clean
+  $ soteria-rust rustc lib-fns.rs --clean
   note: Done, no errors found
   
   lib_fns::main: ran 1 branch
-  PC 1: (0 != V|1|) /\ (1 == V|1|)
+  PC 1: (1 == V|1|)
 
 Test #[soteria::*] annotations
-  $ soteria-rust exec-main annots.rs --clean
+  $ soteria-rust rustc annots.rs --clean
   note: Done, no errors found
   
   annots::test1: ran 1 branch

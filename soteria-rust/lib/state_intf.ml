@@ -75,6 +75,13 @@ module type S = sig
       serialized list )
     Result.t
 
+  val alloc_untyped :
+    ?zeroed:bool ->
+    size:sint Typed.t ->
+    align:nonzero Typed.t ->
+    t ->
+    (full_ptr * t, [> ] err * t, serialized list) Result.t
+
   val alloc_ty :
     Types.ty -> t -> (full_ptr * t, [> ] err * t, serialized list) Result.t
 
@@ -127,10 +134,13 @@ module type S = sig
       serialized list )
     Result.t
 
-  val error : 'a -> t -> ('ok, 'a err * t, serialized list) Result.t
+  val error :
+    ([< Error.t ] as 'a) -> t -> ('ok, 'a err * t, serialized list) Result.t
 
   val lift_err :
-    t -> ('ok, 'err, 'f) Result.t -> ('ok, 'err err * t, 'f) Result.t
+    t ->
+    ('ok, ([< Error.t ] as 'err), 'f) Result.t ->
+    ('ok, 'err err * t, 'f) Result.t
 
   val store_str_global :
     string ->
@@ -178,7 +188,12 @@ module type S = sig
     Charon.Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `UseAfterFree | `OutOfBounds ] err * t,
+      [> `NullDereference
+      | `RefInvalidatedEarly
+      | `OutOfBounds
+      | `AliasingError ]
+      err
+      * t,
       serialized list )
     Result.t
 
@@ -197,15 +212,20 @@ module type S = sig
     ('b, 'e err * t, serialized list) Result.t
 
   val declare_fn :
-    Charon.Expressions.fn_ptr ->
+    Charon.Types.fn_ptr ->
     t ->
     (full_ptr * t, [> ] err * t, serialized list) Result.t
 
   val lookup_fn :
     full_ptr ->
     t ->
-    ( Charon.Expressions.fn_ptr * t,
-      [> `MisalignedFnPointer ] err * t,
+    ( Charon.Types.fn_ptr * t,
+      [> `MisalignedFnPointer
+      | `NotAFnPointer
+      | `NullDereference
+      | `UseAfterFree ]
+      err
+      * t,
       serialized list )
     SYMEX.Result.t
 end

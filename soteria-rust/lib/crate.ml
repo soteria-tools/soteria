@@ -1,5 +1,7 @@
 open Charon
 
+exception MissingDecl of string
+
 type t = UllbcAst.crate
 type _ Effect.t += Get_crate : t Effect.t
 
@@ -8,6 +10,10 @@ let get_crate () = Effect.perform Get_crate
 let with_crate (crate : t) f =
   let open Effect.Deep in
   try f () with effect Get_crate, k -> continue k crate
+
+let pointer_size () =
+  let crate = get_crate () in
+  crate.target_information.target_pointer_size
 
 let as_namematcher_ctx () = NameMatcher.ctx_from_crate (get_crate ())
 
@@ -33,19 +39,27 @@ let pp_fn_operand ft op =
 
 let get_adt id =
   let crate = get_crate () in
-  Types.TypeDeclId.Map.find id crate.type_decls
+  match Types.TypeDeclId.Map.find_opt id crate.type_decls with
+  | Some adt -> adt
+  | None -> raise (MissingDecl "Type")
 
 let get_fun id =
   let crate = get_crate () in
-  UllbcAst.FunDeclId.Map.find id crate.fun_decls
+  match UllbcAst.FunDeclId.Map.find_opt id crate.fun_decls with
+  | Some fn -> fn
+  | None -> raise (MissingDecl "Fun")
 
 let get_global id =
   let crate = get_crate () in
-  UllbcAst.GlobalDeclId.Map.find id crate.global_decls
+  match UllbcAst.GlobalDeclId.Map.find_opt id crate.global_decls with
+  | Some global -> global
+  | None -> raise (MissingDecl "Global")
 
 let get_trait_impl id =
   let crate = get_crate () in
-  UllbcAst.TraitImplId.Map.find id crate.trait_impls
+  match UllbcAst.TraitImplId.Map.find_opt id crate.trait_impls with
+  | Some impl -> impl
+  | None -> raise (MissingDecl "TraitImpl")
 
 let is_enum adt_id =
   match (get_adt adt_id).kind with Enum _ -> true | _ -> false
