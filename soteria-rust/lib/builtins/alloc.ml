@@ -33,10 +33,10 @@ module M (State : State_intf.S) = struct
     else State.error `InvalidFree state
 
   let realloc ~args state =
-    let ptr, old_size, size, align =
+    let ptr, old_size, align, size =
       match args with
-      | [ Ptr ptr; Base old_size; Base size; Base align ] ->
-          (ptr, old_size, size, align)
+      | [ Ptr ptr; Base old_size; Base align; Base size ] ->
+          (ptr, old_size, align, size)
       | _ -> failwith "realloc: invalid arguments"
     in
     let ptr_in, _ = ptr in
