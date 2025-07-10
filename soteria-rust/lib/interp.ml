@@ -871,8 +871,8 @@ module Make (State : State_intf.S) = struct
 
   and exec_stmt stmt : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
-    (* L.trace (fun m ->
-        m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content); *)
+    L.trace (fun m ->
+        m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content);
     let { span = loc; content = stmt; _ } : UllbcAst.statement = stmt in
     let@ () = with_loc ~loc in
     match stmt with
