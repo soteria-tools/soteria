@@ -499,7 +499,9 @@ module Make (State : State_intf.S) = struct
         let ty = loc.ty in
         let* ptr = resolve_place loc in
         match Layout.as_zst ty with
-        | Some zst -> ok zst
+        | Some zst ->
+            let+ () = State.check_ptr_align (fst ptr) ty in
+            zst
         | None ->
             let is_move =
               (* TODO: properly detect if ty has the Copy trait, in which case is_move is

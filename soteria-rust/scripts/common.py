@@ -155,7 +155,6 @@ KNOWN_ISSUES = {
     "fail/read_from_trivial_switch.rs": "let _ = ... assignments get optimized out",
     "fail/unaligned_pointers/field_requires_parent_struct_alignment2.rs": "We don't handle repr(packed/align)",
     "fail/unaligned_pointers/reference_to_packed.rs": "We don't handle repr(packed/align)",
-    "fail/unaligned_pointers/unaligned_ptr_zst.rs": "We don't check alignment of ZST pointers",
     "fail/unaligned_pointers/unaligned_ref_addr_of.rs": "We don't check alignment on reborrows",
     "fail/uninit/uninit_alloc_diagnostic.rs": "We don't detected an uninit access that.. doesn't seem to exist?",
     "fail/validity/nonzero.rs": "The valid_range_start attribute isn't parsed by Charon?",
