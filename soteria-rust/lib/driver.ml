@@ -170,7 +170,7 @@ let exec_and_output_crate ~plugin compile_fn =
         "Found issues";
       (res
       |> List.iter @@ fun (errs, entry_name, ntotal) ->
-         let n = List.length res in
+         let n = List.length errs in
          Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" (pp_style `Bold)
            entry_name pp_branches n ntotal;
          List.iter

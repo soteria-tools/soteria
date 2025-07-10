@@ -499,7 +499,9 @@ module Make (State : State_intf.S) = struct
         let ty = loc.ty in
         let* ptr = resolve_place loc in
         match Layout.as_zst ty with
-        | Some zst -> ok zst
+        | Some zst ->
+            let+ () = State.check_ptr_align (fst ptr) ty in
+            zst
         | None ->
             let is_move =
               (* TODO: properly detect if ty has the Copy trait, in which case is_move is
@@ -523,7 +525,8 @@ module Make (State : State_intf.S) = struct
     match expr with
     | Use op -> eval_operand op
     | RvRef (place, borrow) ->
-        let* ptr = resolve_place place in
+        let* ((rptr, _) as ptr) = resolve_place place in
+        let* () = State.check_ptr_align rptr place.ty in
         let+ ptr' = State.borrow ptr place.ty borrow in
         Ptr ptr'
     | Global { id; _ } ->
@@ -868,8 +871,8 @@ module Make (State : State_intf.S) = struct
 
   and exec_stmt stmt : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
-    (* L.trace (fun m ->
-        m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content); *)
+    L.trace (fun m ->
+        m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content);
     let { span = loc; content = stmt; _ } : UllbcAst.statement = stmt in
     let@ () = with_loc ~loc in
     match stmt with

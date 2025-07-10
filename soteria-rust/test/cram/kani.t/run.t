@@ -34,7 +34,7 @@ Test kani::assert
   $ soteria-rust rustc assert.rs --clean --kani
   error: Found issues
   
-  assert::assert_false: error in 4 branches (out of 2):
+  assert::assert_false: error in 1 branch (out of 2):
   error: Failed assertion: Expected true! in assert::assert_false
       ┌─ $TESTCASE_ROOT/assert.rs:4:5
     1 │    #[kani::proof]
@@ -49,7 +49,7 @@ Test kani::assert
       │ ╰──' 1: Entry point
     6 │    
   
-  assert::fancy_assert_false: error in 4 branches (out of 2):
+  assert::fancy_assert_false: error in 1 branch (out of 2):
   error: Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 in assert::fancy_assert_false
       ┌─ $TESTCASE_ROOT/assert.rs:10:5
     7 │    #[kani::proof]
@@ -64,7 +64,7 @@ Test kani::assert
       │ ╰──' 1: Entry point
    12 │    
   
-  assert::override_assert_macro: error in 4 branches (out of 2):
+  assert::override_assert_macro: error in 1 branch (out of 2):
   error: Failed assertion: I used "assert!" in assert::override_assert_macro
       ┌─ $RUSTERIA/std/src/lib.rs:23:9
    23 │            rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
@@ -81,7 +81,7 @@ Test kani::assert
       │ ╰──' 1: Entry point
    18 │    
   
-  assert::override_asserteq_macro: error in 4 branches (out of 2):
+  assert::override_asserteq_macro: error in 1 branch (out of 2):
   error: Failed assertion: I used "assert_eq!" in assert::override_asserteq_macro
       ┌─ $RUSTERIA/std/src/lib.rs:23:9
    23 │            rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
