@@ -525,7 +525,8 @@ module Make (State : State_intf.S) = struct
     match expr with
     | Use op -> eval_operand op
     | RvRef (place, borrow) ->
-        let* ptr = resolve_place place in
+        let* ((rptr, _) as ptr) = resolve_place place in
+        let* () = State.check_ptr_align rptr place.ty in
         let+ ptr' = State.borrow ptr place.ty borrow in
         Ptr ptr'
     | Global { id; _ } ->
