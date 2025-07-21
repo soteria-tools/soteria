@@ -57,12 +57,12 @@ module M (State : State_intf.S) = struct
           | Shl _ | Shr _ ->
               let ity =
                 match ty with
-                | TInteger ity -> ity
-                | TBool -> U8
-                | TChar -> U32
+                | TInt _ | TUInt _ -> ty
+                | TBool -> TUInt U8
+                | TChar -> TUInt U32
                 | _ -> failwith "Invalid shl/shr type"
               in
-              let size = 8 * Layout.size_of_int_ty ity in
+              let size = 8 * Layout.size_of_literal_ty ity in
               let signed = Layout.is_signed ity in
               let op =
                 match bop with Shl _ -> Typed.bit_shl | _ -> Typed.bit_shr
@@ -92,22 +92,12 @@ module M (State : State_intf.S) = struct
   let eval_lit_binop bop lit_ty l r =
     let** () =
       match bop with
-      | Expressions.Rem (OUB | OPanic) -> (
-          match lit_ty with
-          | Values.TInteger inty ->
-              let min = Layout.min_value inty in
-              if%sat l ==@ min &&@ (r ==@ -1s) then Result.error `Overflow
-              else Result.ok ()
-          | _ -> Result.ok ())
+      | Expressions.Rem (OUB | OPanic) ->
+          let min = Layout.min_value lit_ty in
+          if%sat l ==@ min &&@ (r ==@ -1s) then Result.error `Overflow
+          else Result.ok ()
       | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
-          let ity =
-            match lit_ty with
-            | TInteger ity -> ity
-            | TBool -> U8
-            | TChar -> U32
-            | _ -> failwith "Invalid shl/shr type"
-          in
-          let size = 8 * Layout.size_of_int_ty ity in
+          let size = 8 * Layout.size_of_literal_ty lit_ty in
           let r = Typed.cast r in
           if%sat r <@ 0s ||@ (r >=@ Typed.int size) then
             Result.error `InvalidShift
@@ -123,7 +113,7 @@ module M (State : State_intf.S) = struct
       type *)
   let wrap_value ty v =
     let+ v = cast_checked ~ty:Typed.t_int v in
-    let size = Layout.size_of_int_ty ty in
+    let size = Layout.size_of_literal_ty ty in
     let unsigned_max = nonzero_z (Z.shift_left Z.one (8 * size)) in
     let max = Layout.max_value ty in
     let signed = Layout.is_signed ty in
@@ -134,13 +124,8 @@ module M (State : State_intf.S) = struct
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop op lit_ty l r =
-    let ty =
-      match lit_ty with
-      | Values.TInteger ity -> ity
-      | _ -> failwith "Non-integer in checked binary operation"
-    in
     let** v = safe_binop op lit_ty l r in
-    let* wrapped = wrap_value ty v in
+    let* wrapped = wrap_value lit_ty v in
     let overflowed = Typed.(int_of_bool (not (v ==@ wrapped))) in
     Result.ok (Tuple [ Base wrapped; Base overflowed ])
 

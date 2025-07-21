@@ -43,19 +43,28 @@ module Session = struct
 end
 
 let is_int : Types.ty -> bool = function
-  | TLiteral (TInteger _) -> true
+  | TLiteral (TInt _ | TUInt _) -> true
   | _ -> false
 
-let size_of_int_ty : Types.integer_type -> int = function
-  | I128 | U128 -> 16
-  | I64 | U64 -> 8
-  | I32 | U32 -> 4
-  | I16 | U16 -> 2
-  | I8 | U8 -> 1
-  | Isize | Usize -> Crate.pointer_size ()
+let size_of_int_ty : Values.int_ty -> int = function
+  | I128 -> 16
+  | I64 -> 8
+  | I32 -> 4
+  | I16 -> 2
+  | I8 -> 1
+  | Isize -> Crate.pointer_size ()
+
+let size_of_uint_ty : Values.u_int_ty -> int = function
+  | U128 -> 16
+  | U64 -> 8
+  | U32 -> 4
+  | U16 -> 2
+  | U8 -> 1
+  | Usize -> Crate.pointer_size ()
 
 let size_of_literal_ty : Types.literal_type -> int = function
-  | TInteger int_ty -> size_of_int_ty int_ty
+  | TInt int_ty -> size_of_int_ty int_ty
+  | TUInt uint_ty -> size_of_uint_ty uint_ty
   | TBool -> 1
   | TChar -> 4
   | TFloat F16 -> 2
@@ -90,9 +99,11 @@ let max_array_len sub_size =
 let enum_discr_ty adt_id : Types.ty =
   let adt = Crate.get_adt adt_id in
   match adt.layout with
-  | Some { discriminant_layout = Some { tag_ty; _ }; _ } ->
-      TLiteral (TInteger tag_ty)
-  | _ -> TLiteral (TInteger Usize)
+  | Some { discriminant_layout = Some { tag_ty = Signed ty; _ }; _ } ->
+      TLiteral (TInt ty)
+  | Some { discriminant_layout = Some { tag_ty = Unsigned ty; _ }; _ } ->
+      TLiteral (TUInt ty)
+  | _ -> TLiteral (TUInt Usize)
 
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
@@ -122,7 +133,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TAdt { id = TBuiltin (TStr as ty); generics }
   | TAdt { id = TBuiltin (TSlice as ty); generics } ->
       let sub_ty =
-        if ty = TSlice then List.hd generics.types else TLiteral (TInteger U8)
+        if ty = TSlice then List.hd generics.types else TLiteral (TUInt U8)
       in
       let sub_layout = layout_of sub_ty in
       { size = 0; align = sub_layout.align; members_ofs = [||] }
@@ -233,7 +244,7 @@ and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   | BuiltinOrAuto (trait, _, _) when ty_name = "Metadata" ->
       (* We need to special-case the metadata type *)
       let ty = List.hd trait.binder_value.generics.types in
-      if is_dst ty then TLiteral (TInteger Isize)
+      if is_dst ty then TLiteral (TInt Isize)
       else TAdt { id = TTuple; generics = TypesUtils.empty_generic_args }
   | _ ->
       let msg = Fmt.str "trait type (%s)" ty_name in
@@ -265,43 +276,46 @@ let align_of_s ty =
   let+ { align; _ } = layout_of_s ty in
   Typed.nonzero align
 
-let is_signed : Types.integer_type -> bool = function
-  | I128 | I64 | I32 | I16 | I8 | Isize -> true
-  | U128 | U64 | U32 | U16 | U8 | Usize -> false
+(** Assumes the input is a literal type of either TInt or TUInt *)
+let[@inline] is_signed : Types.literal_type -> bool = function
+  | TInt _ -> true
+  | _ -> false
 
-let min_value_z : Types.integer_type -> Z.t = function
-  | U128 | U64 | U32 | U16 | U8 | Usize -> Z.zero
-  | Isize -> Z.neg (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
-  | I128 -> Z.neg (Z.shift_left Z.one 127)
-  | I64 -> Z.neg (Z.shift_left Z.one 63)
-  | I32 -> Z.neg (Z.shift_left Z.one 31)
-  | I16 -> Z.neg (Z.shift_left Z.one 15)
-  | I8 -> Z.neg (Z.shift_left Z.one 7)
+let min_value_z : Types.literal_type -> Z.t = function
+  | TUInt _ -> Z.zero
+  | TInt Isize -> Z.neg (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
+  | TInt I128 -> Z.neg (Z.shift_left Z.one 127)
+  | TInt I64 -> Z.neg (Z.shift_left Z.one 63)
+  | TInt I32 -> Z.neg (Z.shift_left Z.one 31)
+  | TInt I16 -> Z.neg (Z.shift_left Z.one 15)
+  | TInt I8 -> Z.neg (Z.shift_left Z.one 7)
+  | _ -> failwith "Invalid integer type for min_value_z"
 
 let min_value int_ty = Typed.int_z (min_value_z int_ty)
 
-let max_value_z : Types.integer_type -> Z.t = function
-  | U128 -> Z.pred (Z.shift_left Z.one 128)
-  | U64 -> Z.pred (Z.shift_left Z.one 64)
-  | U32 -> Z.pred (Z.shift_left Z.one 32)
-  | U16 -> Z.pred (Z.shift_left Z.one 16)
-  | U8 -> Z.pred (Z.shift_left Z.one 8)
-  | Usize -> Z.pred (Z.shift_left Z.one (8 * Crate.pointer_size ()))
-  | I128 -> Z.pred (Z.shift_left Z.one 127)
-  | I64 -> Z.pred (Z.shift_left Z.one 63)
-  | I32 -> Z.pred (Z.shift_left Z.one 31)
-  | I16 -> Z.pred (Z.shift_left Z.one 15)
-  | I8 -> Z.pred (Z.shift_left Z.one 7)
-  | Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
+let max_value_z : Types.literal_type -> Z.t = function
+  | TUInt U128 -> Z.pred (Z.shift_left Z.one 128)
+  | TUInt U64 -> Z.pred (Z.shift_left Z.one 64)
+  | TUInt U32 -> Z.pred (Z.shift_left Z.one 32)
+  | TUInt U16 -> Z.pred (Z.shift_left Z.one 16)
+  | TUInt U8 -> Z.pred (Z.shift_left Z.one 8)
+  | TUInt Usize -> Z.pred (Z.shift_left Z.one (8 * Crate.pointer_size ()))
+  | TInt I128 -> Z.pred (Z.shift_left Z.one 127)
+  | TInt I64 -> Z.pred (Z.shift_left Z.one 63)
+  | TInt I32 -> Z.pred (Z.shift_left Z.one 31)
+  | TInt I16 -> Z.pred (Z.shift_left Z.one 15)
+  | TInt I8 -> Z.pred (Z.shift_left Z.one 7)
+  | TInt Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
+  | _ -> failwith "Invalid integer type for max_value_z"
 
 let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
 
 let size_to_uint : int -> Types.ty = function
-  | 1 -> TLiteral (TInteger U8)
-  | 2 -> TLiteral (TInteger U16)
-  | 4 -> TLiteral (TInteger U32)
-  | 8 -> TLiteral (TInteger U64)
-  | 16 -> TLiteral (TInteger U128)
+  | 1 -> TLiteral (TUInt U8)
+  | 2 -> TLiteral (TUInt U16)
+  | 4 -> TLiteral (TUInt U32)
+  | 8 -> TLiteral (TUInt U64)
+  | 16 -> TLiteral (TUInt U128)
   | _ -> failwith "Invalid integer size"
 
 let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
@@ -313,7 +327,7 @@ let int_constraints ty =
 
 let constraints :
     Types.literal_type -> [< T.cval ] Typed.t -> T.sbool Typed.t list = function
-  | TInteger ity -> (
+  | (TInt _ | TUInt _) as ity -> (
       let constrs = int_constraints ity in
       fun x ->
         match Typed.cast_checked x Typed.t_int with
@@ -350,7 +364,7 @@ let constraints :
 let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
   let rty =
     match ty with
-    | TInteger _ | TBool | TChar -> Typed.t_int
+    | TInt _ | TUInt _ | TBool | TChar -> Typed.t_int
     | TFloat F16 -> Typed.t_f16
     | TFloat F32 -> Typed.t_f32
     | TFloat F64 -> Typed.t_f64
@@ -412,7 +426,7 @@ and nondets tys =
       f :: fields)
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
-  | TInteger _ | TBool | TChar -> 0s
+  | TInt _ | TUInt _ | TBool | TChar -> 0s
   | TFloat F16 -> Typed.f16 0.0
   | TFloat F32 -> Typed.f32 0.0
   | TFloat F64 -> Typed.f64 0.0
@@ -446,7 +460,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
       | Enum vars ->
           (vars
           |> List.find_opt (fun (v : Types.variant) ->
-                 Z.equal Z.zero v.discriminant.value)
+                 Z.equal Z.zero (z_of_scalar v.discriminant))
           |> Option.bind)
           @@ fun (v : Types.variant) ->
           v.fields
@@ -508,7 +522,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
       | Union _ -> None
       | Enum [] -> Some (Enum (0s, []))
       | Enum [ { fields = []; discriminant; _ } ] ->
-          Some (Enum (Typed.int_z discriminant.value, []))
+          Some (Enum (value_of_scalar discriminant, []))
       | Enum _ -> None
       | _ -> None)
   | TAdt { id = TTuple; generics = { types; _ } } ->
@@ -585,7 +599,8 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
           let variants = Crate.as_enum adt_id in
           let v =
             List.find_opt
-              (fun (v : Types.variant) -> Z.equal d v.discriminant.value)
+              (fun (v : Types.variant) ->
+                Z.equal d (z_of_scalar v.discriminant))
               variants
           in
           match v with
@@ -645,7 +660,7 @@ let rec update_ref_tys_in
       let variants = Crate.as_enum adt_id in
       let* var =
         match_on variants ~constr:(fun (v : Types.variant) ->
-            Typed.int_z v.discriminant.value ==?@ d)
+            value_of_scalar v.discriminant ==?@ d)
       in
       match var with
       | Some var ->
