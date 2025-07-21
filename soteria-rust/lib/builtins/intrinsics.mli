@@ -3,7 +3,21 @@ open Rustsymex
 
 module M : (State : State_intf.S) -> sig
   type rust_val := State.Sptr.t Charon_util.rust_val
-  type ret := (rust_val * State.t, Error.t, State.serialized list) Result.t
+
+  type ret :=
+    ( rust_val * State.t,
+      Error.t State.err * State.t,
+      State.serialized list )
+    Result.t
+
+  type fun_exec :=
+    UllbcAst.fun_decl ->
+    args:rust_val list ->
+    State.t ->
+    ( rust_val * State.t,
+      Error.t State.err * State.t,
+      State.serialized list )
+    Result.t
 
   (** Aborts the execution of the process.
 
@@ -201,7 +215,12 @@ module M : (State : State_intf.S) -> sig
       documentation for the stable version of this intrinsic,
       [std::panic::catch_unwind]. *)
   val catch_unwind :
-    _try_fn:rust_val -> _data:rust_val -> _catch_fn:rust_val -> State.t -> ret
+    fun_exec ->
+    _try_fn:rust_val ->
+    _data:rust_val ->
+    _catch_fn:rust_val ->
+    State.t ->
+    ret
 
   (** Returns the smallest integer greater than or equal to an [f128].
 
@@ -2212,5 +2231,10 @@ slice::from_raw_parts_mut(ptr.add(mid), len - mid))
   val fun_map : (string * string) list
 
   val eval_fun :
-    string -> Types.generic_args -> args:rust_val list -> State.t -> ret
+    string ->
+    fun_exec ->
+    Types.generic_args ->
+    args:rust_val list ->
+    State.t ->
+    ret
 end
