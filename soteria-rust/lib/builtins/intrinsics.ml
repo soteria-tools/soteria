@@ -37,7 +37,7 @@ module M (State : State_intf.S) = struct
       ~carry:_ _ =
     not_impl "Unsupported intrinsic: carrying_mul_add"
 
-  let catch_unwind ~_try_fn:_ ~_data:_ ~_catch_fn:_ _ =
+  let catch_unwind _ ~_try_fn:_ ~_data:_ ~_catch_fn:_ _ =
     not_impl "Unsupported intrinsic: catch_unwind"
 
   let ceilf128 ~x:_ _ = not_impl "Unsupported intrinsic: ceilf128"
@@ -583,7 +583,7 @@ module M (State : State_intf.S) = struct
       ("core::intrinsics::write_via_move", "write_via_move");
     ]
 
-  let eval_fun name (generics : Charon.Types.generic_args) ~args =
+  let eval_fun name fun_exec (generics : Charon.Types.generic_args) ~args =
     match (name, generics.types, args) with
     | "abort", [], [] -> abort
     | "add_with_overflow", [ t ], [ x; y ] -> add_with_overflow ~t ~x ~y
@@ -606,7 +606,7 @@ module M (State : State_intf.S) = struct
       ->
         carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry
     | "catch_unwind", [], [ _try_fn; _data; _catch_fn ] ->
-        catch_unwind ~_try_fn ~_data ~_catch_fn
+        catch_unwind fun_exec ~_try_fn ~_data ~_catch_fn
     | "ceilf128", [], [ x ] -> ceilf128 ~x
     | "ceilf16", [], [ x ] -> ceilf16 ~x
     | "ceilf32", [], [ x ] -> ceilf32 ~x

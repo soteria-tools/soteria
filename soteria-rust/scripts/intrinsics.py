@@ -2,7 +2,7 @@
 
 import subprocess
 import json
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Sequence, TypeVar
 from common import *
 
 
@@ -189,7 +189,14 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
 
         module M: (State: State_intf.S) -> sig
             type rust_val := State.Sptr.t Charon_util.rust_val
-            type ret := (rust_val * State.t, Error.t, State.serialized list) Result.t
+            type ret := (rust_val * State.t, Error.t State.err * State.t, State.serialized list) Result.t
+            type fun_exec := (
+                UllbcAst.fun_decl ->
+                args:rust_val list ->
+                State.t -> (
+                    rust_val * State.t,
+                    Error.t State.err * State.t,
+                    State.serialized list) Result.t)
     """
 
     stubs_str = """
@@ -200,30 +207,36 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
 
     for info in intrinsics_info:
         nl = "\n"
-        args = (
-            [f"{type}:Types.ty" for type in info["types"]]
-            + [f"{arg}:rust_val" for arg in info["args"]]
-            + ["State.t", "ret"]
+        args_and_tys: Sequence[tuple[Optional[str], str]] = []
+
+        # special-case catch_unwind; it needs to also received the function-execution function
+        if info["name"] == "catch_unwind":
+            args_and_tys += [(None, "fun_exec")]
+
+        args_and_tys += (
+            [(type, "Types.ty") for type in info["types"]]
+            + [(arg, "rust_val") for arg in info["args"]]
+            + [(None, "State.t")]
         )
         interface_str += f"""
             (** {nl.join(info["doc"])} *)
-            val {info["name"]} : {' -> '.join(args)}
+            val {info["name"]} : {' -> '.join([
+                f"{arg}:{ty}" if arg is not None else ty
+                for (arg, ty) in args_and_tys
+            ] + ["ret"])}
         """
 
-        args = (
-            [f"~{type}:_" for type in info["types"]]
-            + [f"~{arg}:_" for arg in info["args"]]
-            + ["_"]
-        )
         stubs_str += f"""
-            let {info['name']} {' '.join(args)} =
+            let {info['name']} {' '.join(
+                f"~{arg}:_" if arg else "_"
+                for (arg, _) in args_and_tys)} =
                 not_impl "Unsupported intrinsic: {info['name']}"
         """
 
     interface_str += """
 
             val fun_map : (string * string) list
-            val eval_fun : string -> Types.generic_args -> args:rust_val list -> State.t -> ret
+            val eval_fun : string -> fun_exec -> Types.generic_args -> args:rust_val list -> State.t -> ret
         end
     """
 
@@ -234,17 +247,21 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
                 {'; '.join(f'("{info["path"]}", "{info["name"]}")' for info in intrinsics_info)}
             ]
 
-            let eval_fun name (generics: Charon.Types.generic_args) ~args =
+            let eval_fun name fun_exec (generics: Charon.Types.generic_args) ~args =
                 match name, generics.types, args with
     """
 
     for info in intrinsics_info:
         types = "; ".join(info["types"])
         args = "; ".join(a if a != info["name"] else f"{a}_" for a in info["args"])
+
         call_args = [
             f"~{arg}" if arg != info["name"] else f"~{arg}:{arg}_"
             for arg in info["types"] + info["args"]
         ]
+        if info["name"] == "catch_unwind":
+            call_args.insert(0, "fun_exec")
+
         stubs_str += f"""
                     | "{info['name']}", [{types}], [{args}] ->
                         {info['name']} {' '.join(call_args)}
