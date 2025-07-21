@@ -12,7 +12,7 @@ module Cmd = struct
   }
   [@@deriving make]
 
-  type mode = Cargo | Rustc
+  type mode = Cargo | Rustc | Obol
 
   let empty_cmd = make ()
 
@@ -31,6 +31,21 @@ module Cmd = struct
         let features = List.map (fun f -> "--cfg " ^ f) features in
         "charon rustc "
         ^ spaced charon
+        ^ " -- "
+        ^ spaced features
+        ^ " "
+        ^ escape (spaced rustc)
+    | Obol ->
+        (* almost the same as charon rustc *)
+        let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
+        let features = List.map (fun f -> "--cfg=" ^ f) features in
+        let obol_flags =
+          List.filter (String.starts_with ~prefix:"--dest-file") charon
+        in
+        (* Obol currently doesn't support lib crates/files *)
+        let rustc = List.filter (( <> ) "--crate-type=lib") rustc in
+        "DYLD_LIBRARY_PATH=$(charon toolchain-path)/lib/ obol "
+        ^ spaced obol_flags
         ^ " -- "
         ^ spaced features
         ^ " "

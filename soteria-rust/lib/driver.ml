@@ -51,7 +51,8 @@ let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   | Error err -> raise (CharonError err)
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
+let parse_ullbc_of_file ?(with_obol = false) ~(plugin : Plugin.root_plugin)
+    file_name =
   let file_name =
     if Filename.is_relative file_name then
       Filename.concat (Sys.getcwd ()) file_name
@@ -59,7 +60,8 @@ let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
   in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
-  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
+  let mode : Plugin.Cmd.mode = if with_obol then Obol else Rustc in
+  parse_ullbc ~mode ~plugin ~input:file_name ~output ~pwd:parent_folder
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
@@ -168,16 +170,15 @@ let exec_and_output_crate ~plugin compile_fn =
   | Error res ->
       Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error
         "Found issues";
-      (res
-      |> List.iter @@ fun (errs, entry_name, ntotal) ->
-         let n = List.length errs in
-         Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" (pp_style `Bold)
-           entry_name pp_branches n ntotal;
-         List.iter
-           (fun (error, call_trace) ->
-             Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace
-               ~error)
-           (List.sort_uniq Stdlib.compare errs));
+      let ( let@@ ) f x = List.iter x f in
+      let () =
+        let@@ errs, entry_name, ntotal = res in
+        let n = List.length errs in
+        Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" (pp_style `Bold)
+          entry_name pp_branches n ntotal;
+        let@@ error, call_trace = List.sort_uniq Stdlib.compare errs in
+        Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error
+      in
       exit 1
   | exception Plugin.PluginError e ->
       Fmt.kstr
@@ -205,4 +206,10 @@ let exec_cargo config crate_dir =
   config_set config;
   let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_crate ~plugin crate_dir in
+  exec_and_output_crate ~plugin compile
+
+let exec_obol config file_name =
+  config_set config;
+  let plugin = Plugin.create_using_current_config () in
+  let compile () = parse_ullbc_of_file ~with_obol:true ~plugin file_name in
   exec_and_output_crate ~plugin compile
