@@ -38,8 +38,11 @@ let rec pp_rust_val pp_ptr fmt =
 let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv
 let unit_ = Tuple []
 
-let value_of_scalar : Values.scalar_value -> T.cval Typed.t = function
-  | { value = v; _ } -> int_z v
+let z_of_scalar : Values.scalar_value -> Z.t = function
+  | UnsignedScalar (_, v) | SignedScalar (_, v) -> v
+
+let value_of_scalar (s : Values.scalar_value) : T.cval Typed.t =
+  int_z @@ z_of_scalar s
 
 let type_of_operand : Expressions.operand -> Types.ty = function
   | Constant c -> c.ty
@@ -61,7 +64,7 @@ let rec pp_ty fmt : Types.ty -> unit = function
         generics =
           { types = [ ty ]; const_generics = [ CgValue (VScalar len) ]; _ };
       } ->
-      Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print len.value
+      Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print (z_of_scalar len)
   | TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } ->
       Fmt.pf fmt "[%a]" pp_ty ty
   | TAdt { id = TBuiltin TStr; _ } -> Fmt.string fmt "str"
@@ -99,7 +102,7 @@ let as_base_of ~ty = function
         ppa_rust_val v
 
 let z_of_const_generic : Types.const_generic -> Z.t = function
-  | CgValue (VScalar v) -> v.value
+  | CgValue (VScalar s) -> z_of_scalar s
   | cg ->
       Fmt.failwith "int_of_const_generic: unhandled const: %a"
         Types.pp_const_generic cg
@@ -138,7 +141,7 @@ let mk_array_ty ty len : Types.ty =
         {
           types = [ ty ];
           const_generics =
-            [ CgValue (VScalar { value = Z.of_int len; int_ty = Isize }) ];
+            [ CgValue (VScalar (UnsignedScalar (Usize, Z.of_int len))) ];
           regions = [];
           trait_refs = [];
         };

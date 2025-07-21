@@ -13,7 +13,7 @@ module M (State : State_intf.S) = struct
     in
     let* align = cast_checked ~ty:Typed.t_int align in
     let* size = cast_checked ~ty:Typed.t_int size in
-    let max_size = Layout.max_value Isize in
+    let max_size = Layout.max_value (TInt Isize) in
     if%sat align >=@ 1s &&@ (size <@ max_size) then
       let align = Typed.cast align in
       let++ ptr, state = State.alloc_untyped ~zeroed ~size ~align state in

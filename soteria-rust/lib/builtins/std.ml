@@ -47,7 +47,7 @@ module M (State : State_intf.S) = struct
   let wrapping_op op (fun_sig : UllbcAst.fun_sig) ~args state =
     let* ity =
       match fun_sig.inputs with
-      | TLiteral (TInteger ity) :: _ -> return ity
+      | TLiteral ((TInt _ | TUInt _) as ity) :: _ -> return ity
       | tys ->
           Fmt.kstr not_impl "wrapping_op invalid type: %a"
             Fmt.(list Types.pp_ty)
@@ -58,9 +58,7 @@ module M (State : State_intf.S) = struct
       | [ Base left; Base right ] -> return (left, right)
       | _ -> not_impl "wrapping_op with not two arguments"
     in
-    let** res =
-      State.lift_err state @@ Core.safe_binop op (TInteger ity) left right
-    in
+    let** res = State.lift_err state @@ Core.safe_binop op ity left right in
     let* res = Core.wrap_value ity res in
     Result.ok (Base res, state)
 
@@ -232,7 +230,7 @@ module M (State : State_intf.S) = struct
         Ok (Base size, state)
     | TAdt { id = TBuiltin TStr; _ }, [ Ptr (_, Some meta) ] ->
         let+ len = cast_checked meta ~ty:Typed.t_int in
-        let size = Layout.size_of_int_ty U8 in
+        let size = Layout.size_of_uint_ty U8 in
         let size = Typed.int size *@ len in
         Ok (Base size, state)
     | ty, _ ->
@@ -268,7 +266,7 @@ module M (State : State_intf.S) = struct
     in
     let* v = cast_checked v ~ty:Typed.t_int in
     let ty =
-      if byte then Types.TLiteral (TInteger U8)
+      if byte then Types.TLiteral (TUInt U8)
       else
         match funsig.inputs with
         | TRawPtr (ty, _) :: _ -> ty
@@ -413,8 +411,7 @@ module M (State : State_intf.S) = struct
                   let** ptr =
                     Sptr.offset ptr @@ Typed.int i |> State.lift_err state
                   in
-                  State.store (ptr, None) (TLiteral (TInteger U8)) (Base v)
-                    state)
+                  State.store (ptr, None) (TLiteral (TUInt U8)) (Base v) state)
             in
             (Tuple [], state)
         | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
@@ -473,10 +470,10 @@ module M (State : State_intf.S) = struct
     | [ Base v ] -> (
         let ty =
           match funsig.inputs with
-          | [ TLiteral (TInteger ty) ] -> ty
+          | [ TLiteral ((TInt _ | TUInt _) as ty) ] -> ty
           | _ -> failwith "ctpop: invalid arguments"
         in
-        let bits = 8 * Layout.size_of_int_ty ty in
+        let bits = 8 * Layout.size_of_literal_ty ty in
         let* v = cast_checked ~ty:Typed.t_int v in
         match Typed.kind v with
         | Int v ->
@@ -517,7 +514,7 @@ module M (State : State_intf.S) = struct
       | _ -> failwith "compare_bytes: invalid arguments"
     in
     let* len = cast_checked ~ty:Typed.t_int len in
-    let byte = Types.TLiteral (TInteger U8) in
+    let byte = Types.TLiteral (TUInt U8) in
     let rec aux ?(inc = 1s) l r len state =
       if%sat len ==@ 0s then Result.ok (Base 0s, state)
       else
@@ -695,9 +692,9 @@ module M (State : State_intf.S) = struct
 
   let byte_swap (funsig : UllbcAst.fun_sig) ~args state =
     match (funsig.inputs, args) with
-    | [ (TLiteral (TInteger ity as lit) as ty) ], [ v ] ->
+    | [ (TLiteral ((TInt _ | TUInt _) as lit) as ty) ], [ v ] ->
         let unsigned = Layout.lit_to_unsigned lit in
-        let nbytes = Layout.size_of_int_ty ity in
+        let nbytes = Layout.size_of_literal_ty lit in
         let** v =
           State.lift_err state
           @@ Encoder.transmute ~from_ty:ty ~to_ty:unsigned v
@@ -774,7 +771,7 @@ module M (State : State_intf.S) = struct
           |> List.rev
         in
         let char_arr = Array chars in
-        let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
+        let str_ty : Types.ty = mk_array_ty (TLiteral (TUInt U8)) len in
         let** (ptr, _), state = State.alloc_ty str_ty state in
         let ptr = (ptr, Some (Typed.int len)) in
         let** (), state = State.store ptr str_ty char_arr state in
@@ -788,7 +785,7 @@ module M (State : State_intf.S) = struct
       | _ -> failwith "raw_eq expects two arguments"
     in
     let layout = Layout.layout_of ty in
-    let bytes = mk_array_ty (TLiteral (TInteger U8)) layout.size in
+    let bytes = mk_array_ty (TLiteral (TUInt U8)) layout.size in
     (* this is hacky, but we do not keep the state post-load, as it will have its tree blocks
        split up per byte, which is suboptimal *)
     let** l, _ = State.load l bytes state in
@@ -808,14 +805,14 @@ module M (State : State_intf.S) = struct
     (Base (Typed.int_of_bool res), state)
 
   let saturating op (fun_sig : UllbcAst.fun_sig) ~args state =
-    let* l, r, intty, litty =
+    let* l, r, litty =
       match (args, fun_sig.inputs) with
-      | [ Base l; Base r ], TLiteral (TInteger intty as litty) :: _ ->
-          return (l, r, intty, litty)
+      | [ Base l; Base r ], TLiteral ((TInt _ | TUInt _) as litty) :: _ ->
+          return (l, r, litty)
       | _ -> not_impl "Unexpected arguments to saturating_op"
     in
-    let max = Layout.max_value intty in
-    let min = Layout.min_value intty in
+    let max = Layout.max_value litty in
+    let min = Layout.min_value litty in
     let** res = State.lift_err state @@ Core.safe_binop op litty l r in
     let* res = cast_checked ~ty:Typed.t_int res in
     let res = Typed.ite (res >@ max) max (Typed.ite (res <@ min) min res) in
@@ -834,7 +831,7 @@ module M (State : State_intf.S) = struct
 
   let float_to_int (funsig : GAst.fun_sig) ~args state =
     match (args, funsig.output) with
-    | [ Base f ], TLiteral (TInteger ity) ->
+    | [ Base f ], TLiteral ((TInt _ | TUInt _) as ity) ->
         let* f =
           of_opt_not_impl ~msg:"float_to_int_unchecked expected float"
           @@ Typed.cast_float f
@@ -843,7 +840,7 @@ module M (State : State_intf.S) = struct
           State.error
             (`StdErr "float_to_int_unchecked with NaN or infinite value") state
         else
-          let n = 8 * Layout.size_of_int_ty ity in
+          let n = 8 * Layout.size_of_literal_ty ity in
           let max = Z.succ @@ Layout.max_value_z ity in
           let min = Z.pred @@ Layout.min_value_z ity in
           let max = Typed.float_like f @@ Z.to_float max in

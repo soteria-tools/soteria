@@ -98,11 +98,11 @@ module ArithPtr : S with type t = arithptr_t = struct
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
 
   let constraints { ptr; size; _ } =
-    let offset_constrs = Layout.int_constraints Isize in
+    let offset_constrs = Layout.int_constraints (TInt Isize) in
     let ofs = Typed.Ptr.ofs ptr in
     Typed.conj ((ofs <=@ size) :: offset_constrs ofs)
 
-  let offset ?(check = true) ?(ty = Types.TLiteral (TInteger U8))
+  let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8))
       ({ ptr; _ } as fptr) off =
     let* size = Layout.size_of_s ty in
     let off = size *@ off in
@@ -148,7 +148,7 @@ module ArithPtr : S with type t = arithptr_t = struct
     | None ->
         let+ loc_int =
           nondet Typed.t_int ~constrs:(fun x ->
-              let isize_max = Layout.max_value Isize in
+              let isize_max = Layout.max_value (TInt Isize) in
               [ x %@ align ==@ 0s; 0s <@ x; x +@ size <=@ isize_max ])
         in
         decayed_vars := ValMap.add loc loc_int !decayed_vars;

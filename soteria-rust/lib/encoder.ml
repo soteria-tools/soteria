@@ -126,21 +126,21 @@ module Make (Sptr : Sptr.S) = struct
         rust_to_cvals ~offset value ty
     (* Literals *)
     | Base _, TLiteral _ -> [ { value; ty; offset } ]
-    | Ptr _, TLiteral (TInteger (Isize | Usize)) -> [ { value; ty; offset } ]
+    | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> [ { value; ty; offset } ]
     | _, TLiteral _ -> illegal_pair ()
     (* References / Pointers *)
     | ( Ptr (_, None),
         TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
     | Ptr (_, None), TRef (_, sub_ty, _)
     | Ptr (_, None), TRawPtr (sub_ty, _) ->
-        let ty : Types.ty = TLiteral (TInteger Isize) in
+        let ty : Types.ty = TLiteral (TInt Isize) in
         if is_dst sub_ty then failwith "Expected a fat pointer"
         else [ { value; ty; offset } ]
     | ( Ptr (ptr, Some meta),
         TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
     | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
     | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
-        let ty : Types.ty = TLiteral (TInteger Isize) in
+        let ty : Types.ty = TLiteral (TInt Isize) in
         let value = Ptr (ptr, None) in
         if is_dst sub_ty then
           let size = Typed.int @@ Layout.size_of_int_ty Isize in
@@ -151,13 +151,13 @@ module Make (Sptr : Sptr.S) = struct
         else [ { value; ty; offset } ]
     (* Function pointer *)
     | Ptr (_, None), TFnPtr _ ->
-        [ { value; ty = TLiteral (TInteger Isize); offset } ]
+        [ { value; ty = TLiteral (TInt Isize); offset } ]
     (* References / Pointers obtained from casting *)
     | Base _, TAdt { id = TBuiltin TBox; _ }
     | Base _, TRef _
     | Base _, TRawPtr _
     | Base _, TFnPtr _ ->
-        [ { value; ty = TLiteral (TInteger Isize); offset } ]
+        [ { value; ty = TLiteral (TInt Isize); offset } ]
     | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
         illegal_pair ()
     (* Tuples *)
@@ -178,7 +178,7 @@ module Make (Sptr : Sptr.S) = struct
         | variants, Int disc_z ->
             let variant =
               List.find
-                (fun v -> Z.equal disc_z Types.(v.discriminant.value))
+                (fun v -> Z.equal disc_z (z_of_scalar Types.(v.discriminant)))
                 variants
             in
             let disc_ty = Layout.enum_discr_ty t_id in
@@ -237,7 +237,7 @@ module Make (Sptr : Sptr.S) = struct
         | TRawPtr (sub_ty, _) ) as ty
         when is_dst sub_ty -> (
           let ptr_size = Typed.int @@ Layout.size_of_int_ty Isize in
-          let isize : Types.ty = TLiteral (TInteger Isize) in
+          let isize : Types.ty = TLiteral (TInt Isize) in
           let*** ptr_compo = query (isize, offset) in
           let+** meta_compo = query (isize, offset +@ ptr_size) in
           match (ptr_compo, meta_compo) with
@@ -262,18 +262,18 @@ module Make (Sptr : Sptr.S) = struct
               Fmt.kstr not_impl "Expected a pointer and base, got %a and %a"
                 pp_rust_val base pp_rust_val meta)
       | TRawPtr _ -> (
-          let+** raw_ptr = query (TLiteral (TInteger Isize), offset) in
+          let+** raw_ptr = query (TLiteral (TInt Isize), offset) in
           match raw_ptr with
           | (Ptr _ | Base _) as ptr -> Result.ok ptr
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TBuiltin TBox; _ } | TRef _ -> (
-          let+** boxed = query (TLiteral (TInteger Isize), offset) in
+          let+** boxed = query (TLiteral (TInt Isize), offset) in
           match boxed with
           | Ptr _ as ptr -> Result.ok ptr
           | Base _ -> Result.error `UBTransmute
           | _ -> not_impl "Expected a pointer or base")
       | TFnPtr _ -> (
-          let+** boxed = query (TLiteral (TInteger Isize), offset) in
+          let+** boxed = query (TLiteral (TInt Isize), offset) in
           match boxed with
           | Ptr _ as ptr -> Result.ok ptr
           | Base _ -> Result.error `UBTransmute
@@ -317,7 +317,7 @@ module Make (Sptr : Sptr.S) = struct
               in
               let sub_ty =
                 if ty = TSlice then List.hd generics.types
-                else TLiteral (TInteger U8)
+                else TLiteral (TUInt U8)
               in
               (* FIXME: This is a bit hacky, and not performant -- instead we should try to
                  group the reads together, at least for primitive types. *)
@@ -405,27 +405,29 @@ module Make (Sptr : Sptr.S) = struct
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
-      | TLiteral (TFloat _), TLiteral (TInteger ity), Base sv ->
+      | TLiteral (TFloat _), TLiteral ((TInt _ | TUInt _) as ity), Base sv ->
           let+ sv =
             of_opt_not_impl ~msg:"Unsupported: non-float in float-to-int"
             @@ Typed.cast_float sv
           in
-          let size = 8 * Layout.size_of_int_ty ity in
+          let size = 8 * Layout.size_of_literal_ty ity in
           let sv' = Typed.int_of_float size sv in
           Ok (Base sv')
-      | TLiteral (TInteger _), TLiteral (TFloat fp), Base sv ->
+      | TLiteral (TInt _ | TUInt _), TLiteral (TFloat fp), Base sv ->
           let+ sv = cast_checked sv ~ty:Typed.t_int in
           let fp = float_precision fp in
           let sv' = Typed.float_of_int fp sv in
           Ok (Base sv')
-      | TLiteral (TInteger U8), TLiteral TChar, v
-      | TLiteral TBool, TLiteral (TInteger (U8 | U16 | U32 | U64 | U128)), v
-      | TLiteral TChar, TLiteral (TInteger (U32 | U64 | U128)), v ->
+      | TLiteral (TUInt U8), TLiteral TChar, v
+      | TLiteral TBool, TLiteral (TUInt _), v
+      | TLiteral TChar, TLiteral (TUInt (U32 | U64 | U128)), v ->
           Result.ok v
-      | TLiteral (TInteger from_ty), TLiteral (TInteger to_ty), Base sv ->
+      | ( TLiteral ((TInt _ | TUInt _) as from_ty),
+          TLiteral ((TInt _ | TUInt _) as to_ty),
+          Base sv ) ->
           let* v = cast_checked ~ty:Typed.t_int sv in
-          let from_bits = 8 * Layout.size_of_int_ty from_ty in
-          let bits = 8 * Layout.size_of_int_ty to_ty in
+          let from_bits = 8 * Layout.size_of_literal_ty from_ty in
+          let bits = 8 * Layout.size_of_literal_ty to_ty in
           let from_max = Typed.nonzero_z (Z.shift_left Z.one from_bits) in
           let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
           let maxsigned = Typed.nonzero_z (Z.shift_left Z.one (bits - 1)) in
@@ -464,7 +466,8 @@ module Make (Sptr : Sptr.S) = struct
           let ptr = Sptr.null_ptr_of off in
           ok (Ptr (ptr, None))
       | _, TRawPtr _, Ptr _ -> ok v
-      | _, TLiteral (TInteger (Isize | Usize | I64 | U64)), Ptr (ptr, None) ->
+      | _, TLiteral ((TInt _ | TUInt _) as litty), Ptr (ptr, None)
+        when size_of_literal_ty litty = size_of_literal_ty (TInt Isize) ->
           let* ptr_v = Sptr.decay ptr in
           ok (Base (ptr_v :> Typed.T.cval Typed.t))
       | _ when try_splitting ->
@@ -528,8 +531,8 @@ module Make (Sptr : Sptr.S) = struct
       (* 2. only one block, so we convert that if we expect an integer *)
       let- () =
         match (vs, ty) with
-        | ( [ (v, (TLiteral (TInteger _) as from_ty), 0) ],
-            (TLiteral (TInteger _) as to_ty) ) ->
+        | ( [ (v, (TLiteral (TInt _ | TUInt _) as from_ty), 0) ],
+            (TLiteral (TInt _ | TUInt _) as to_ty) ) ->
             Some (transmute ~from_ty ~to_ty v)
         | _ -> None
       in
@@ -629,7 +632,7 @@ module Make (Sptr : Sptr.S) = struct
     | Ptr (ptr, None), _ ->
         let* v = Sptr.decay ptr in
         split (Base (v :> T.cval Typed.t)) ty (Typed.int at)
-    | Base _, TLiteral ((TInteger _ | TChar) as lit_ty) ->
+    | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
         (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
            of size 2^n *)
         let rec aux v sz =
