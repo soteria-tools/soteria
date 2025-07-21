@@ -45,13 +45,13 @@ def rainbow():
     ][rainbow_ % 7]
 
 
-def pprint(*args, inc: bool = False, **kwargs):
+def pprint(*args, inc: bool = False, end="\n", **kwargs):
     if NO_COLOR:
         print("| ", end="")
     else:
         clr = rainbow()
         print(f"{clr}|{RESET} ", end="")
-    print(*args, **kwargs)
+    print(*args, **kwargs, end=end + RESET)
     if inc:
         inc_rainbow()
 
@@ -204,7 +204,7 @@ def build_rusteria():
             continue
         name, value = line.split("=", 1)
         os.environ[name] = value
-    os.environ["RUSTERIA_PLUGINS"] = str(PWD / ".." / "plugins")
+    os.environ["RUSTERIA_PLUGINS"] = str((PWD / ".." / "plugins").resolve())
     try:
         subprocess.check_call("dune build", shell=True)
     except subprocess.CalledProcessError:
@@ -232,6 +232,7 @@ class Flags(TypedDict):
     iterations: Optional[int]
     tag: Optional[str]
     test_folder: Optional[Path]
+    with_obol: bool
 
 
 def parse_flags() -> Flags:
@@ -243,6 +244,7 @@ def parse_flags() -> Flags:
         "iterations": None,
         "tag": None,
         "test_folder": None,
+        "with_obol": False,
     }
     while i < len(sys.argv):
         arg = sys.argv[i]
@@ -269,6 +271,8 @@ def parse_flags() -> Flags:
                 )
                 exit(1)
             i += 1
+        elif arg == "--obol":
+            flags["with_obol"] = True
 
         else:
             print(f"{RED}Unknown flag: {arg}")
