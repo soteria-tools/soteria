@@ -909,8 +909,13 @@ module Make (State : State_intf.S) = struct
               error (`Panic name))
     | CopyNonOverlapping { src; dst; count } ->
         let ty = get_pointee (type_of_operand src) in
-        let* args = eval_operand_list [ src; dst; count ] in
-        let+ _ = lift_state_op @@ Std_funs.Std.copy true ty ~args in
+        let* src = eval_operand src in
+        let* dst = eval_operand dst in
+        let* count = eval_operand count in
+        let+ _ =
+          lift_state_op
+          @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
+        in
         ()
     | Deinit place ->
         let* place_ptr = resolve_place place in

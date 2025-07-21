@@ -146,6 +146,7 @@ module M (State : State_intf.S) = struct
         else
           Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p
             Typed.ppa v
+    | Eq, Base v1, Base v2 -> Result.ok (int_of_bool (v1 ==@ v2))
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then
           let* dist = Sptr.distance l r in
