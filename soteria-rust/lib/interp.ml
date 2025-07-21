@@ -1035,7 +1035,7 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun ~args (fundef : UllbcAst.fun_decl) state :
+  and exec_fun (fundef : UllbcAst.fun_decl) ~args state :
       (Sptr.t rust_val * State.t, 'e, 'f) Result.t =
     let open Rustsymex.Syntax in
     (* Put arguments in store *)
