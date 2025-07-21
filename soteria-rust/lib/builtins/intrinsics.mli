@@ -2228,8 +2228,6 @@ slice::from_raw_parts_mut(ptr.add(mid), len - mid))
   val write_via_move :
     t:Types.ty -> ptr:rust_val -> value:rust_val -> State.t -> ret
 
-  val fun_map : (string * string) list
-
   val eval_fun :
     string ->
     fun_exec ->

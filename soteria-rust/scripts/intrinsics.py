@@ -235,17 +235,12 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
 
     interface_str += """
 
-            val fun_map : (string * string) list
             val eval_fun : string -> fun_exec -> Types.generic_args -> args:rust_val list -> State.t -> ret
         end
     """
 
     stubs_str += f"""
             include Intrinsics_impl.M (State)
-
-            let fun_map = [
-                {'; '.join(f'("{info["path"]}", "{info["name"]}")' for info in intrinsics_info)}
-            ]
 
             let eval_fun name fun_exec (generics: Charon.Types.generic_args) ~args =
                 match name, generics.types, args with
