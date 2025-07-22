@@ -75,7 +75,11 @@ module Cmd = struct
     r
 
   let exec_in ~mode folder cmd =
-    exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd ~mode cmd
+    let verbosity =
+      if Soteria_logs.(Config.should_log Level.Info) then ""
+      else "> /dev/null 2>/dev/null"
+    in
+    exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd ~mode cmd ^ verbosity
 end
 
 exception PluginError of string
