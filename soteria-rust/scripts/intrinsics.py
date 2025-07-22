@@ -184,6 +184,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
     intrinsics_info.sort(key=lambda x: x["name"])
 
     interface_str = """
+        (** This file was generated with [scripts/intrinsics.py] -- do not edit it manually,
+            instead modify the script and re-run it. *)
+
         open Charon
         open Rustsymex
 
@@ -200,6 +203,11 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
     """
 
     stubs_str = """
+        (** This file was generated with [scripts/intrinsics.py] -- do not edit it manually,
+            instead modify the script and re-run it. *)
+
+        [@@@warning "-unused-value-declaration"]
+
         open Rustsymex
 
         module M (State: State_intf.S) = struct
@@ -264,7 +272,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
     stubs_str += """
                 | name, _, _ -> fun _ ->
                     Fmt.kstr not_impl "Intrinsic %s not found, or not called with the right arguments" name
-        end[@warning "-32"]
+        end
     """
 
     return interface_str, stubs_str

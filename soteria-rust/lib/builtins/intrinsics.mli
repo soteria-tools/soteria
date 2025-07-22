@@ -1,3 +1,6 @@
+(** This file was generated with [scripts/intrinsics.py] -- do not edit it
+    manually, instead modify the script and re-run it. *)
+
 open Charon
 open Rustsymex
 

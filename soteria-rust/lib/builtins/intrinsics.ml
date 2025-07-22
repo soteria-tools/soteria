@@ -1,3 +1,8 @@
+(** This file was generated with [scripts/intrinsics.py] -- do not edit it
+    manually, instead modify the script and re-run it. *)
+
+[@@@warning "-unused-value-declaration"]
+
 open Rustsymex
 
 module M (State : State_intf.S) = struct
@@ -615,4 +620,4 @@ module M (State : State_intf.S) = struct
           Fmt.kstr not_impl
             "Intrinsic %s not found, or not called with the right arguments"
             name
-end [@warning "-32"]
+end
