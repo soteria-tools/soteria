@@ -1,4 +1,3 @@
 pin-depends: [
-  ["simple_smt.~dev" "git+https://github.com/NatKarmios/simple-smt-ocaml#9db7ef0bb61a76010de255af3cbe4066dd8dd622"]
   ["cerberus-lib.~dev" "git+https://github.com/rems-project/cerberus#4aebc2a6e553e439f60ce4948e26ed5a3d1849db"]
 ]
