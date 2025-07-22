@@ -233,5 +233,8 @@ __pycache__/
 json_dump/
 soteria-rust/scripts/*.csv
 
+### Misc ###
+*.temp
+
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
 # and modified by hand afterwards

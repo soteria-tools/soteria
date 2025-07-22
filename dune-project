@@ -48,6 +48,7 @@
   ppxlib
   (hc
    (>= 0.5))
+  (yojson (< 3.0))
   (ppx_inline_test :with-test)
   (ocamlformat
    (and
@@ -83,6 +84,7 @@
    (and
     :build
     (>= 0.9.0)))
+  (yojson (< 3.0))
   (dune
    (and
     :build
@@ -140,6 +142,7 @@
   charon
   (odoc :with-doc)
   (alcotest :with-test)
+  (yojson (< 3.0))
   (dune
    (and
     :build

@@ -111,6 +111,7 @@ TEST_SUITES = {"kani": kani, "miri": miri, "custom": custom}
 def exec_test(
     file: Path,
     *,
+    subcmd: str = "rustc",
     log: Optional[TextIOWrapper] = None,
     args: list[str] = [],
     dyn_flags: Optional[Callable[[Path], list[str]]] = None,
@@ -123,7 +124,7 @@ def exec_test(
         log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
 
     before = time.time()
-    cmd = ["soteria-rust", "rustc", str(file)] + args + ["--compact", "--no-color"]
+    cmd = ["soteria-rust", subcmd, str(file)] + args + ["--compact", "--no-color"]
     data = subprocess.run(
         cmd,
         capture_output=True,
@@ -165,6 +166,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
     flags = parse_flags()
 
     args = test_conf["args"] + flags["cmd_flags"]
+    subcmd = "obol" if flags["with_obol"] else "rustc"
 
     tests = filter_tests(tests, flags)
     log.touch()
@@ -188,6 +190,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
             else:
                 (msg, clr, reason), elapsed = exec_test(
                     path,
+                    subcmd=subcmd,
                     log=logfile,
                     args=args,
                     dyn_flags=test_conf["dyn_flags"],

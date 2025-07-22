@@ -278,7 +278,7 @@ module Make (State : State_intf.S) = struct
               |> List.rev
             in
             let char_arr = Array chars in
-            let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
+            let str_ty : Types.ty = mk_array_ty (TLiteral (TUInt U8)) len in
             let* ptr, _ = State.alloc_ty str_ty in
             let ptr = (ptr, Some (Typed.int len)) in
             let* () = State.store ptr str_ty char_arr in
@@ -300,7 +300,15 @@ module Make (State : State_intf.S) = struct
         Struct [ Base size; Struct [ Enum (align, []) ] ]
     | CTraitConst (_, name) ->
         Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
-    | CRawMemory _ -> not_impl "TODO: resolve const RawMemory"
+    | CRawMemory bytes ->
+        let value, _ =
+          List.fold_left
+            (fun (acc, i) x ->
+              let x = Z.shift_left (Z.of_int x) (8 * i) in
+              (Z.add acc x, i + 1))
+            (Z.zero, 0) bytes
+        in
+        ok (Base (Typed.int_z value))
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
@@ -441,21 +449,13 @@ module Make (State : State_intf.S) = struct
         let* () =
           match fn.func with
           | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
-              (* We are strict and decide types must be the same to be used interchangeably.
-                 This is not necessarily true but is somewhat correct for non-primitives:
-                 for instance, [u8; 2] and struct { u8, u8 } may use different passing
-                 styles (see https://github.com/rust-lang/miri/blob/d9afd0faa4a5e503baf6e2c1e2a81b4946bfc674/tests/fail/function_pointers/abi_mismatch_array_vs_struct.rs)
-
-                 TODO: The full rules are described here -- we can implement this in Layout.
-                 https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility
-                 *)
               let fn = Crate.get_fun fid in
               let rec check_tys l r =
                 match (l, r) with
                 | [], [] -> ok ()
                 | ty1 :: l, ty2 :: r ->
-                    if not (Types.equal_ty ty1 ty2) then error `InvalidFnArgTys
-                    else check_tys l r
+                    if Layout.is_abi_compatible ty1 ty2 then check_tys l r
+                    else error `InvalidFnArgTys
                 | _ -> error `InvalidFnArgCount
               in
               check_tys (out_ty :: in_tys)
@@ -545,8 +545,8 @@ module Make (State : State_intf.S) = struct
             let v = as_base_of ~ty:Typed.t_int v in
             match type_of_operand e with
             | TLiteral TBool -> ok (Base (Typed.not_int_bool v))
-            | TLiteral (TInteger i_ty) ->
-                let size = Layout.size_of_int_ty i_ty * 8 in
+            | TLiteral ((TInt _ | TUInt _) as i_ty) ->
+                let size = Layout.size_of_literal_ty i_ty * 8 in
                 let signed = Layout.is_signed i_ty in
                 let v = Typed.bit_not ~size ~signed v in
                 ok (Base v)
@@ -554,7 +554,7 @@ module Make (State : State_intf.S) = struct
                 Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty)
         | Neg _ -> (
             match type_of_operand e with
-            | TLiteral (TInteger _) ->
+            | TLiteral (TInt _ | TUInt _) ->
                 let v = as_base_of ~ty:Typed.t_int v in
                 ok (Base ~-v)
             | TLiteral (TFloat _) ->
@@ -569,12 +569,6 @@ module Make (State : State_intf.S) = struct
             | Ptr (_, None) | Base _ -> ok (Tuple [])
             | Ptr (_, Some v) -> ok (Base v)
             | _ -> not_impl "Invalid value for PtrMetadata")
-        | ArrayToSlice (_, _, len) -> (
-            match v with
-            | Ptr (ptr, None) ->
-                let len = Typed.int @@ int_of_const_generic len in
-                ok (Ptr (ptr, Some len))
-            | _ -> not_impl "Invalid value for ArrayToSlice")
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr in
@@ -584,29 +578,11 @@ module Make (State : State_intf.S) = struct
             State.lift_err
             @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
-        | Cast (CastUnsize (_, TRef (_, TDynTrait _, _)))
-        | Cast (CastUnsize (_, TRawPtr (TDynTrait _, _))) ->
+        | Cast (CastUnsize (_, _, MetaVTablePtr _)) ->
             not_impl "Unsupported: dyn"
-        | Cast (CastUnsize (from_ty, _)) ->
-            let rec get_size : Types.ty -> Types.const_generic t = function
-              | TRawPtr (ty, _)
-              | TRef (_, ty, _)
-              | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
-                  get_size ty
-              | TAdt { id = TAdtId id; _ } -> (
-                  let type_decl = Crate.get_adt id in
-                  match type_decl.kind with
-                  | Struct (_ :: _ as fields) ->
-                      get_size (List.last fields).field_ty
-                  | _ -> not_impl "Couldn't get size in CastUnsize")
-              | TAdt
-                  {
-                    id = TBuiltin TArray;
-                    generics = { const_generics = [ size ]; _ };
-                  } ->
-                  ok size
-              | _ -> not_impl "Couldn't get size in CastUnsize"
-            in
+        | Cast (CastUnsize (_, _, MetaUnknown)) ->
+            not_impl "Unknown unsize kind"
+        | Cast (CastUnsize (_, _, MetaLength length)) ->
             let rec with_ptr_meta meta : Sptr.t rust_val -> Sptr.t rust_val t =
               function
               | Ptr (v, _) -> ok (Ptr (v, Some meta))
@@ -622,11 +598,10 @@ module Make (State : State_intf.S) = struct
                       | Array _ -> Array fs
                       | Tuple _ -> Tuple fs
                       | _ -> assert false)
-                  | [] -> assert false)
+                  | [] -> not_impl "Couldn't set pointer meta in CastUnsize")
               | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
             in
-            let* size = get_size from_ty in
-            let size = Typed.int @@ int_of_const_generic size in
+            let size = Typed.int_z @@ z_of_const_generic length in
             with_ptr_meta size v
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
@@ -644,7 +619,7 @@ module Make (State : State_intf.S) = struct
             | Ge | Gt | Lt | Le -> (
                 let^ v1, v2, ty = cast_checked2 v1 v2 in
                 match Typed.untype_type ty with
-                | Svalue.TInt ->
+                | TInt ->
                     let op =
                       match op with
                       | Ge -> Typed.geq
@@ -676,8 +651,8 @@ module Make (State : State_intf.S) = struct
                 Base (res :> T.cval Typed.t)
             | Add om | Sub om | Mul om | Div om | Rem om | Shl om | Shr om -> (
                 match (om, type_of_operand e1) with
-                | OWrap, TLiteral (TInteger ty as litty) ->
-                    let^^ v = Core.safe_binop op litty v1 v2 in
+                | OWrap, TLiteral ((TInt _ | TUInt _) as ty) ->
+                    let^^ v = Core.safe_binop op ty v1 v2 in
                     let^+ res = Core.wrap_value ty v in
                     Base res
                 | _, TLiteral ty ->
@@ -706,14 +681,14 @@ module Make (State : State_intf.S) = struct
             | BitOr | BitAnd | BitXor ->
                 let^ ity =
                   match type_of_operand e1 with
-                  | TLiteral (TInteger ity) -> return ity
-                  | TLiteral TBool -> return Values.U8
-                  | TLiteral TChar -> return Values.U32
+                  | TLiteral ((TInt _ | TUInt _) as ity) -> return ity
+                  | TLiteral TBool -> return (Values.TUInt U8)
+                  | TLiteral TChar -> return (Values.TUInt U32)
                   | ty ->
                       Fmt.kstr Rustsymex.not_impl
                         "Unsupported type for bitwise operation: %a" pp_ty ty
                 in
-                let size = 8 * Layout.size_of_int_ty ity in
+                let size = 8 * Layout.size_of_literal_ty ity in
                 let signed = Layout.is_signed ity in
                 let^ v1 = cast_checked ~ty:Typed.t_int v1 in
                 let^+ v2 = cast_checked ~ty:Typed.t_int v2 in
@@ -761,14 +736,14 @@ module Make (State : State_intf.S) = struct
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
-    | Discriminant (place, enum) -> (
+    | Discriminant place -> (
         let* loc, _ = resolve_place place in
+        let enum, _ = TypesUtils.ty_as_custom_adt place.ty in
         let variants = Crate.as_enum enum in
         match variants with
         (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
         | [ { fields = []; discriminant; _ } ] ->
-            let discr = Typed.int_z discriminant.value in
-            ok (Base discr)
+            ok (Base (value_of_scalar discriminant))
         | var :: _ ->
             let layout = Layout.of_variant enum var in
             let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
@@ -1036,7 +1011,8 @@ module Make (State : State_intf.S) = struct
               | Base discr -> fun (v, _) -> discr ==@ value_of_scalar v
               | Ptr (ptr, _) ->
                   fun (v, _) ->
-                    if Z.equal Z.zero v.value then Sptr.is_at_null_loc ptr
+                    if Z.equal Z.zero (z_of_scalar v) then
+                      Sptr.is_at_null_loc ptr
                     else failwith "Can't compare pointer with non-0 scalar"
               | _ ->
                   fun (v, _) ->
