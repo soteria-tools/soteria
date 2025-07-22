@@ -145,6 +145,7 @@ let known_generic_errors =
     "core::fmt::Display::fmt";
     "core::ptr::null_mut";
     "std::path::_::from";
+    "core::iter::traits::iterator::Iterator::flatten";
   ]
 
 type plugin = {
