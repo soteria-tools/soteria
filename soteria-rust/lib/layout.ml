@@ -673,3 +673,33 @@ let rec update_ref_tys_in
       let++ v, acc = f init v field.field_ty in
       (Union (fid, v), acc)
   | v, _ -> Result.ok (v, init)
+
+(** [is_abi_compatible ty1 ty2] is true if a function expecting an argument of
+    type [ty1] can be called with an argument of type [ty2].
+
+    The full specification is available at:
+    https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility *)
+let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
+  match (ty1, ty2) with
+  (* Refs and raw pointers are ABI-compatible if they have the same metadata type
+    FIXME: we only handle slices/strings, so we can just check if they're both DSTs;
+           once we handle [dyn] we need to actually check the metadata type *)
+  | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
+    ->
+      is_dst ty1 = is_dst ty2
+  | TLiteral (TUInt uint1), TLiteral (TUInt uint2) ->
+      size_of_uint_ty uint1 = size_of_uint_ty uint2
+  | TLiteral (TInt int1), TLiteral (TInt int2) ->
+      size_of_int_ty int1 = size_of_int_ty int2
+  | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
+    ->
+      true
+  (* FIXME: Function pointers are compatible if they have the same ABI-string (unsupported) *)
+  | TFnPtr _, TFnPtr _ -> true
+  | _ ->
+      let[@inline] is_zst ty =
+        let layout = layout_of ty in
+        layout.size = 0 && layout.align = 1
+      in
+      (* ZSTs with align 1 are compatible *)
+      if is_zst ty1 && is_zst ty2 then true else Types.equal_ty ty1 ty2

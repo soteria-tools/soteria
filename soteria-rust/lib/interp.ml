@@ -449,21 +449,13 @@ module Make (State : State_intf.S) = struct
         let* () =
           match fn.func with
           | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
-              (* We are strict and decide types must be the same to be used interchangeably.
-                 This is not necessarily true but is somewhat correct for non-primitives:
-                 for instance, [u8; 2] and struct { u8, u8 } may use different passing
-                 styles (see https://github.com/rust-lang/miri/blob/d9afd0faa4a5e503baf6e2c1e2a81b4946bfc674/tests/fail/function_pointers/abi_mismatch_array_vs_struct.rs)
-
-                 TODO: The full rules are described here -- we can implement this in Layout.
-                 https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility
-                 *)
               let fn = Crate.get_fun fid in
               let rec check_tys l r =
                 match (l, r) with
                 | [], [] -> ok ()
                 | ty1 :: l, ty2 :: r ->
-                    if not (Types.equal_ty ty1 ty2) then error `InvalidFnArgTys
-                    else check_tys l r
+                    if Layout.is_abi_compatible ty1 ty2 then check_tys l r
+                    else error `InvalidFnArgTys
                 | _ -> error `InvalidFnArgCount
               in
               check_tys (out_ty :: in_tys)
