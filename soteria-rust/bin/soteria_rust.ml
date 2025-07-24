@@ -27,10 +27,14 @@ module Config = struct
     let doc = "Use the Miri library" in
     Arg.(value & flag & info [ "miri" ] ~doc)
 
+  let log_compilation_flag =
+    let doc = "Log the compilation process" in
+    Arg.(value & flag & info [ "log-compilation" ] ~doc)
+
   let make_from_args no_compile cleanup ignore_leaks ignore_aliasing with_kani
-      with_miri =
+      with_miri log_compilation =
     make ~no_compile ~cleanup ~ignore_leaks ~ignore_aliasing ~with_kani
-      ~with_miri ()
+      ~with_miri ~log_compilation ()
 
   let term =
     Cmdliner.Term.(
@@ -40,7 +44,8 @@ module Config = struct
       $ ignore_leaks_flag
       $ ignore_aliasing_flag
       $ with_kani_flag
-      $ with_miri_flag)
+      $ with_miri_flag
+      $ log_compilation_flag)
 end
 
 module Global_config = struct

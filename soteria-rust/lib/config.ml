@@ -5,6 +5,7 @@ type t = {
   ignore_aliasing : bool; [@default false]
   with_kani : bool; [@default false]
   with_miri : bool; [@default false]
+  log_compilation : bool; [@default false]
 }
 [@@deriving make]
 
