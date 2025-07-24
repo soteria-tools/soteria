@@ -827,8 +827,10 @@ module Make (State : State_intf.S) = struct
         let len = int_of_const_generic len in
         let els = List.init len (fun _ -> value) in
         Array els
-    (* Shallow init box -- just casts a ptr into a box *)
-    | ShallowInitBox (ptr, _) -> eval_operand ptr
+    (* Shallow init box -- get the pointer and transmute it to a box *)
+    | ShallowInitBox (ptr, _) ->
+        let+ ptr = eval_operand ptr in
+        Std_funs.Std._mk_box ptr
     (* Raw pointer *)
     | RawPtr (place, _kind) ->
         let+ ptr = resolve_place place in
