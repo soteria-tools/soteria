@@ -1,7 +1,7 @@
 open Charon
 open Charon_util
 open Generated_Types
-module Sptr = State.Sptr
+module Sptr = Heap.Sptr
 module TyMap = Types.TypeDeclId.Map
 open Rustsymex.Syntax
 
@@ -9,7 +9,7 @@ type var = Typed.T.cval Typed.t * literal_type
 
 type t = {
   ret : (var list * Sptr.t rust_val) Rustsymex.t;
-  state : State.serialized;
+  state : Heap.serialized;
 }
 
 type ctx = t list TyMap.t
@@ -18,7 +18,7 @@ let empty_ctx = TyMap.empty
 
 let ctx_update ty summ ctx =
   match ty with
-  | TAdt (TAdtId id, _) ->
+  | TAdt { id = TAdtId id; _ } ->
       let opt_cons = function
         | None -> Some [ summ ]
         (* PEDRO: Check if summ is already in summs *)
@@ -29,14 +29,14 @@ let ctx_update ty summ ctx =
 
 let ctx_get ty ctx =
   match ty with
-  | TAdt (TAdtId id, _) -> (
+  | TAdt { id = TAdtId id; _ } -> (
       match TyMap.find_opt id ctx with None -> [] | Some summs -> summs)
   | TLiteral lit ->
       let ret =
         let+ cval = Layout.nondet_literal_ty lit in
         ([ (cval, lit) ], Base cval)
       in
-      [ { ret; state = State.serialize State.empty } ]
+      [ { ret; state = Heap.serialize Heap.empty } ]
   | _ -> []
 
 let ctx_update_res f tys ctx =
@@ -61,7 +61,7 @@ let rec subst_val prev next rv =
   let subst_vals vs = List.map subst_val vs in
   match rv with
   | Base v -> Base (subst prev next v)
-  | Ptr _ -> rv
+  | Ptr _ | ConstFn _ -> rv
   | Enum (disc, vals) -> Enum (disc, subst_vals vals)
   | Struct fields -> Struct (subst_vals fields)
   | Tuple vals -> Tuple (subst_vals vals)
