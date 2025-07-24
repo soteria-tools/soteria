@@ -6,17 +6,17 @@ open Rustsymex
 module Sptr = Sptr.ArithPtr
 module Encoder = Encoder.Make (Sptr)
 
-type 'a err = 'a * Call_trace.t
+type 'a err = 'a * Charon.Meta.span Soteria_terminal.Call_trace.t
 
 let add_to_call_trace (err, trace_elem) trace_elem' =
   (err, trace_elem' :: trace_elem)
 
-let with_error_loc_as_call_trace st f =
+let with_error_loc_as_call_trace ?(msg = "Triggering memory operation") st f =
   let open Rustsymex.Syntax in
   let+- err, loc = f () in
-  ((err, Call_trace.singleton ~loc ~msg:"Triggering memory operation" ()), st)
+  ((err, Soteria_terminal.Call_trace.singleton ~loc ~msg ()), st)
 
-module SPmap = Pmap_direct_access (struct
+module StateKey = struct
   include Typed
   module Symex = Rustsymex.SYMEX
   (* FIXME: Rustsymex.SYMEX instead of just Rustsymex because Rustsymex overrides the L module right now. *)
@@ -41,7 +41,9 @@ module SPmap = Pmap_direct_access (struct
         let+ () = Rustsymex.assume (constrs loc) in
         loc
     | None -> return loc
-end)
+end
+
+module SPmap = Pmap_direct_access (StateKey)
 
 type global = String of string | Global of Charon.Types.global_decl_id
 [@@deriving show { with_path = false }, ord]
@@ -58,21 +60,61 @@ module GlobMap = struct
     Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) m
 end
 
+module FunBiMap = struct
+  module LocMap = Map.Make (struct
+    type t = T.sloc Typed.t
+
+    let compare = Typed.compare
+  end)
+
+  module FunMap = Map.Make (struct
+    type t = Charon.Types.fn_ptr
+
+    let compare = Charon.Types.compare_fn_ptr
+  end)
+
+  type t = Charon.Types.fn_ptr LocMap.t * T.sloc Typed.t FunMap.t
+
+  let empty = (LocMap.empty, FunMap.empty)
+
+  let add loc fn_ptr (lmap, fmap) =
+    let lmap' = LocMap.add loc fn_ptr lmap in
+    let fmap' = FunMap.add fn_ptr loc fmap in
+    (lmap', fmap')
+
+  let get_fn loc (lmap, _) = LocMap.find_opt loc lmap
+  let get_loc fn (_, fmap) = FunMap.find_opt fn fmap
+
+  let pp fmt (lmap, _) =
+    let pp_pair =
+      Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Types.pp_fn_ptr
+    in
+    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) lmap
+end
+
 type t = {
-  heap : Tree_block.t Freeable.t SPmap.t option;
+  state : Tree_block.t Freeable.t SPmap.t option;
+  functions : FunBiMap.t;
   globals : Sptr.t Charon_util.full_ptr GlobMap.t;
-  errors : Error.t err list; [@printer Fmt.list Error.pp_err]
+  errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
 }
 [@@deriving show { with_path = false }]
 
 type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
 [@@deriving show { with_path = false }]
 
-(* PEDRO: By ignoring the globals, we are getting memory leaks in RUXt *)
-let serialize { heap; _ } =
-  match heap with
+let serialize st =
+  match st.state with
   | None -> []
-  | Some heap -> SPmap.serialize (Freeable.serialize Tree_block.serialize) heap
+  | Some state ->
+      let state =
+        let global_addresses =
+          GlobMap.bindings st.globals
+          |> List.map (fun (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr)
+        in
+        SPmap.M.filter (fun k _ -> not (List.mem k global_addresses)) state
+      in
+      SPmap.serialize (Freeable.serialize Tree_block.serialize) state
 
 let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
     (serialized : serialized) : serialized =
@@ -86,32 +128,38 @@ let iter_vars_serialized (s : serialized) :
     (Freeable.iter_vars_serialized Tree_block.iter_vars_serialized)
     s
 
-let pp_pretty ~ignore_freed ft { heap; _ } =
+let pp_pretty ~ignore_freed ft { state; _ } =
   let ignore =
     if ignore_freed then function _, Freeable.Freed -> true | _ -> false
     else fun _ -> false
   in
-  match heap with
-  | None -> Fmt.pf ft "Empty Heap"
+  match state with
+  | None -> Fmt.pf ft "Empty state"
   | Some st ->
       SPmap.pp ~ignore
         (Freeable.pp (fun fmt tb -> Tree_block.pp_pretty fmt tb))
         ft st
 
-let empty = { heap = None; globals = GlobMap.empty; errors = [] }
+let empty =
+  {
+    state = None;
+    functions = FunBiMap.empty;
+    globals = GlobMap.empty;
+    errors = [];
+  }
 
 let log action ptr st =
   L.debug (fun m ->
-      m "About to execute action: %s at %a (%a)@\n@[<2>HEAP:@ %a@]" action
-        Sptr.pp ptr Call_trace.pp_span (get_loc ())
+      m "About to execute action: %s at %a (%a)@\n@[<2>state:@ %a@]" action
+        Sptr.pp ptr Charon_util.pp_span (get_loc ())
         (pp_pretty ~ignore_freed:true)
         st)
 
-let with_heap st f =
-  let+ res = f st.heap in
+let with_state st f =
+  let open Soteria_symex.Compo_res in
+  let+ res = f st.state in
   match res with
-  | Soteria_symex.Compo_res.Ok (v, h) ->
-      Soteria_symex.Compo_res.Ok (v, { st with heap = h })
+  | Ok (v, h) -> Ok (v, { st with state = h })
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
@@ -129,12 +177,12 @@ let check_ptr_align (ptr : Sptr.t) ty st =
   let ofs = Typed.Ptr.ofs ptr.ptr in
   let align = ptr.align in
   L.debug (fun m ->
-      m "Checking pointer alignment of %a: ofs %a mod %d / expect %a for %a"
-        Sptr.pp ptr Typed.ppa ofs align Typed.ppa expected_align
+      m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
+        Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa expected_align
         Charon_util.pp_ty ty);
-  if%sat
-    ofs %@ expected_align ==@ 0s &&@ (Typed.int align %@ expected_align ==@ 0s)
-  then Result.ok ()
+
+  if%sat ofs %@ expected_align ==@ 0s &&@ (align %@ expected_align ==@ 0s) then
+    Result.ok ((), st)
   else error `MisalignedPointer
 
 let with_ptr (ptr : Sptr.t) (st : t)
@@ -145,11 +193,11 @@ let with_ptr (ptr : Sptr.t) (st : t)
   if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
   else
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-    let@ heap = with_heap st in
-    let++ v, heap =
-      (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc heap
+    let@ state = with_state st in
+    let++ v, state =
+      (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state
     in
-    (v, heap)
+    (v, state)
 
 let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -161,7 +209,7 @@ let uninit (ptr, _) ty st =
   Tree_block.uninit_range ofs size block
 
 let load ?(is_move = false) ?(ignore_borrow = true) (ptr, meta) ty st =
-  let** () = check_ptr_align ptr ty st in
+  let** (), st = check_ptr_align ptr ty st in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   log "load" ptr st;
@@ -239,30 +287,32 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ block, _ = with_tbs block in
   Tree_block.put_raw_tree ofs tree_to_write block
 
-let alloc size align st =
+let alloc ?zeroed size align st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
-  let@ heap = with_heap st in
+  let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
   let tb = Tree_borrow.init ~state:Unique () in
-  let block = Freeable.Alive (Tree_block.alloc (Typed.int size)) in
-  let** loc, heap = SPmap.alloc ~new_codom:block heap in
+  let block = Freeable.Alive (Tree_block.alloc ?zeroed size) in
+  let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
   let ptr : Sptr.t Charon_util.full_ptr =
     ({ ptr; tag = tb.tag; align; size }, None)
   in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
-  Soteria_symex.Compo_res.ok (ptr, heap)
+  Soteria_symex.Compo_res.ok (ptr, state)
+
+let alloc_untyped ?zeroed ~size ~align st = alloc ?zeroed size align st
 
 let alloc_ty ty st =
   let* layout = Layout.layout_of_s ty in
-  alloc layout.size layout.align st
+  alloc (Typed.int layout.size) (Typed.nonzero layout.align) st
 
 let alloc_tys tys st =
-  let@ heap = with_heap st in
+  let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
-  SPmap.allocs heap ~els:tys ~fn:(fun ty loc ->
+  SPmap.allocs state ~els:tys ~fn:(fun ty loc ->
       (* make treeblock *)
       let* layout = Layout.layout_of_s ty in
       let size = Typed.int layout.size in
@@ -272,22 +322,27 @@ let alloc_tys tys st =
       let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
       let ptr = Typed.Ptr.mk loc 0s in
       let ptr : Sptr.t =
-        { ptr; tag = tb.tag; align = layout.align; size = layout.size }
+        {
+          ptr;
+          tag = tb.tag;
+          align = Typed.nonzero layout.align;
+          size = Typed.int layout.size;
+        }
       in
       (block, (ptr, None)))
 
-let free (({ ptr; _ } : Sptr.t), _) ({ heap; _ } as st : t) :
+let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st : t) :
     (unit * t, 'err, serialized list) Result.t =
   let@ () = with_error_loc_as_call_trace st in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ () = with_loc_err () in
-    let++ (), heap =
+    let++ (), state =
       (SPmap.wrap
          (Freeable.free
             ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
-        (Typed.Ptr.loc ptr) heap
+        (Typed.Ptr.loc ptr) state
     in
-    ((), { st with heap })
+    ((), { st with state })
   else error `InvalidFree
 
 let zeros (ptr, _) size st =
@@ -300,7 +355,7 @@ let zeros (ptr, _) size st =
 
 let error err _st =
   let@ () = with_error_loc_as_call_trace _st in
-  L.info (fun m -> m "Heap errored !");
+  L.info (fun m -> m "state errored !");
   error err
 
 let lift_err st (symex : ('a, 'e, 'f) Result.t) =
@@ -353,7 +408,8 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
 
 let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     =
-  if Layout.is_unsafe_cell ty then Result.ok ((ptr, meta), st)
+  if Tree_borrow.is_disabled () || Layout.is_unsafe_cell ty then
+    Result.ok ((ptr, meta), st)
   else
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
@@ -377,8 +433,18 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     ((ptr', meta), block)
 
 let unprotect (ptr, _) (ty : Charon.Types.ty) st =
+  let lift_freed_err () f =
+    let open Soteria_symex.Compo_res in
+    let+ res = f () in
+    match res with
+    | Ok v -> Ok v
+    | Missing fixes -> Missing fixes
+    | Error `UseAfterFree -> Error `RefInvalidatedEarly
+    | Error ((`AliasingError | `NullDereference | `OutOfBounds) as e) -> Error e
+  in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
+  let@ () = lift_freed_err () in
   let@ ofs, block = with_ptr ptr st in
   let* size = Layout.size_of_s ty in
   let tb = Tree_borrow.init ~state:Unique () in
@@ -393,11 +459,29 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   ((), block)
 
 let leak_check st =
-  let global_addresses =
-    GlobMap.bindings st.globals
-    |> List.map (fun (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr)
+  let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" st in
+  let@ () = with_loc_err () in
+  let** global_addresses, st =
+    Result.fold_list (GlobMap.bindings st.globals) ~init:([], st)
+      ~f:(fun (acc, st) (g, ((ptr : Sptr.t), _)) ->
+        let loc = Typed.Ptr.loc ptr.ptr in
+        match g with
+        | String _ -> Result.ok (loc :: acc, st)
+        | Global g -> (
+            let glob = Crate.get_global g in
+            let* res = load ~ignore_borrow:true (ptr, None) glob.ty st in
+            match res with
+            | Ok (v, st) ->
+                let ptrs = Layout.ref_tys_in ~include_ptrs:true v glob.ty in
+                let ptrs =
+                  List.map
+                    (fun (((p : Sptr.t), _), _) -> Typed.Ptr.loc p.ptr)
+                    ptrs
+                in
+                Result.ok (loc :: (ptrs @ acc), st)
+            | _ -> Result.ok (acc, st)))
   in
-  let@ heap = with_heap st in
+  let@ state = with_state st in
   let** leaks =
     SPmap.fold
       (fun leaks (k, v) ->
@@ -405,9 +489,13 @@ let leak_check st =
         if Freeable.Freed <> v && not (List.mem k global_addresses) then
           Result.ok (k :: leaks)
         else Result.ok leaks)
-      [] heap
+      [] state
   in
-  if List.is_empty leaks then Result.ok ((), heap) else error `MemoryLeak st
+  if List.is_empty leaks then Result.ok ((), state)
+  else (
+    L.info (fun m ->
+        m "Found leaks: %a" Fmt.(list ~sep:(any ", ") Typed.ppa) leaks);
+    Result.error `MemoryLeak)
 
 let add_error e ({ errors; _ } as st) =
   Result.ok ((), { st with errors = (e :> Error.t err) :: errors })
@@ -422,19 +510,53 @@ let unwind_with ~f ~fe symex =
       if Error.is_unwindable err_ty then fe (err, state)
       else Result.error (err, state))
 
-let produce (serialized : serialized) ({ heap; _ } as st : t) : t Rustsymex.t =
+let declare_fn fn_ptr ({ functions; _ } as st) =
+  let+ loc, st =
+    match FunBiMap.get_loc fn_ptr functions with
+    | Some loc -> return (loc, st)
+    | None ->
+        (* FIXME: once we stop having concrete locations, we'll need to add a distinct
+       constraint here. *)
+        let+ loc = StateKey.fresh () in
+        let functions = FunBiMap.add loc fn_ptr functions in
+        (loc, { st with functions })
+  in
+  (* FIXME: what is the size and align of a fn pointer?
+     See https://github.com/rust-lang/rust/issues/82232 *)
+  let ptr = Typed.Ptr.mk loc 0s in
+  let ptr : Sptr.t =
+    { ptr; tag = Tree_borrow.zero; align = Typed.cast 1s; size = 1s }
+  in
+  Soteria_symex.Compo_res.Ok ((ptr, None), st)
+
+let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
+  let@ () = with_error_loc_as_call_trace st in
+  let@ () = with_loc_err () in
+  if%sat Typed.Ptr.ofs ptr ==@ 0s then
+    let loc = Typed.Ptr.loc ptr in
+    match FunBiMap.get_fn loc functions with
+    | Some fn -> Result.ok (fn, st)
+    | None -> (
+        let@ _, block = with_ptr fptr st in
+        (* If a block exists, we can be sure that this isn't a function pointer *)
+        match block with
+        | Some _ -> Result.error `NotAFnPointer
+        | None -> Result.miss [])
+  else Result.error `MisalignedFnPointer
+
+let produce (serialized : serialized) ({ state; _ } as st : t) : t Rustsymex.t =
   let non_null_locs =
     List.map (fun (loc, _) -> Typed.not (Typed.Ptr.null_loc ==@ loc)) serialized
   in
   let* () = Rustsymex.assume non_null_locs in
-  let+ heap =
-    SPmap.produce (Freeable.produce Tree_block.produce) serialized heap
+  let+ state =
+    SPmap.produce (Freeable.produce Tree_block.produce) serialized state
   in
-  { st with heap }
+  { st with state }
 
-let consume (serialized : serialized) ({ heap; _ } as st : t) :
+let consume (serialized : serialized) ({ state; _ } as st : t) :
     (t, 'err, serialized list) Rustsymex.Result.t =
-  let++ heap =
-    SPmap.consume (Freeable.consume Tree_block.consume) serialized heap
+  let++ state =
+    SPmap.consume (Freeable.consume Tree_block.consume) serialized state
   in
-  { st with heap }
+  { st with state }

@@ -1,16 +1,16 @@
-struct Even {
+pub struct Even {
     value: i32,
 }
 
-fn zero() -> Even {
+pub fn zero() -> Even {
     Even { value: 0 }
 }
 
-fn new(n: i32) -> Even {
+pub fn new(n: i32) -> Even {
     Even { value: n - n % 2 }
 }
 
-fn succ(x: Even) -> Even {
+pub fn succ(x: Even) -> Even {
     if x.value < i32::MAX - 1 {
         Even { value: x.value + 1 }
     } else {
@@ -18,11 +18,11 @@ fn succ(x: Even) -> Even {
     }
 }
 
-fn next(x: Even) -> Even {
+pub fn next(x: Even) -> Even {
     succ(succ(x))
 }
 
-fn noop(x: Even) -> () {
+pub fn noop(x: Even) -> () {
     if x.value % 2 != 0 {
         unsafe { *(0 as *mut i32) = 1 }
     }
