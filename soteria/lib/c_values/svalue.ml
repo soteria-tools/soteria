@@ -819,9 +819,12 @@ let int_of_float n v =
   | _ -> int_of_bv true (bv_of_float n v)
 
 let bit_and ~size ~signed v1 v2 =
+  (* test v is of the form 0*1+ *)
   match (v1.node.kind, v2.node.kind) with
   | Int i1, Int i2 -> int_z (Z.( land ) i1 i2)
   | Bool b1, Bool b2 -> bool (b1 && b2)
+  | Unop (IntOfBool, _), Int i when Z.equal i Z.one -> v1
+  | Int i, Unop (IntOfBool, _) when Z.equal i Z.one -> v2
   | _ ->
       let v1_bv = bv_of_int size v1 in
       let v2_bv = bv_of_int size v2 in

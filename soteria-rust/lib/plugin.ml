@@ -48,7 +48,7 @@ module Cmd = struct
         ^ spaced obol_flags
         ^ " -- "
         ^ spaced features
-        ^ " "
+        ^ " -Zmir-enable-passes=-CheckAlignment "
         ^ escape (spaced rustc)
     | Cargo ->
         let env =
