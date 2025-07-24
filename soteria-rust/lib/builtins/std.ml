@@ -192,7 +192,7 @@ module M (State : State_intf.S) = struct
     Result.ok (Base (Typed.int_of_bool res), state)
 
   let _mk_box ptr =
-    let non_null = Struct [ Ptr ptr ] in
+    let non_null = Struct [ ptr ] in
     let phantom_data = Struct [] in
     let unique = Struct [ non_null; phantom_data ] in
     let allocator = Struct [] in
@@ -201,7 +201,7 @@ module M (State : State_intf.S) = struct
   let fixme_try_cleanup ~args:_ state =
     (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
               we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    let box = _mk_box (Sptr.null_ptr, Some 0s) in
+    let box = _mk_box (Ptr (Sptr.null_ptr, Some 0s)) in
     Result.ok (box, state)
 
   let fixme_box_new (fun_sig : UllbcAst.fun_sig) ~args state =
@@ -209,7 +209,7 @@ module M (State : State_intf.S) = struct
     let value = List.hd args in
     let** ptr, state = State.alloc_ty ty state in
     let++ (), state = State.store ptr ty value state in
-    let box = _mk_box ptr in
+    let box = _mk_box (Ptr ptr) in
     (box, state)
 
   let fixme_null_ptr ~args:_ state = Result.ok (Ptr (Sptr.null_ptr, None), state)
