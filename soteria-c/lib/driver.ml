@@ -94,9 +94,7 @@ module Frontend = struct
       let* impl = load_core_impl stdlib impl_name in
       Exception.Result
         (fun ~cpp_cmd filename ->
-          let cpp_cmd =
-            cpp_cmd ^ " -E -CC -fno-blocks -std=c11 " ^ include_soteria_c_h
-          in
+          let cpp_cmd = cpp_cmd ^ " -E -CC " ^ include_soteria_c_h in
           c_frontend (conf cpp_cmd, io) (stdlib, impl) ~filename)
     in
     let () = Cerb_colour.do_colour := false in
@@ -432,31 +430,28 @@ let capture_db log_config term_config solver_config config json_file
         ~msg:"Parsing files       " ~total:db_size ()
     in
     let* ails =
-      if !Config.current.no_ignore_parse_failures then
-        Monad.ResultM.all parse_and_signal db
-      else
-        let ails =
-          List.filter_map
-            (fun item ->
-              match parse_and_signal item with
-              | Ok ail -> Some ail
-              | Error (`ParsingError msg, _loc) ->
-                  L.debug (fun m ->
-                      m "Ignoring file that did not parse correctly: %s@\n%s"
-                        item.file msg);
-                  None)
-            db
-        in
-        let () =
-          let parsed = List.length ails in
-          if parsed < db_size then
-            L.warn (fun m ->
-                m
-                  "Some files failed to parse, successfully parsed %d out of \
-                   %d files"
-                  parsed db_size)
-        in
-        Ok ails
+      let ails =
+        List.filter_map
+          (fun item ->
+            match parse_and_signal item with
+            | Ok ail -> Some ail
+            | Error (`ParsingError msg, _loc) ->
+                L.debug (fun m ->
+                    m "Ignoring file that did not parse correctly: %s@\n%s"
+                      item.file msg);
+                None)
+          db
+      in
+      let () =
+        let parsed = List.length ails in
+        if parsed < db_size then
+          L.warn (fun m ->
+              m
+                "Some files failed to parse, successfully parsed %d out of %d \
+                 files"
+                parsed db_size)
+      in
+      Ok ails
     in
     Ail_linking.link ails
   in
