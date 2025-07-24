@@ -320,6 +320,8 @@ module Make (State : State_intf.S) = struct
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v
+    (* Just a global *)
+    | PlaceGlobal g -> resolve_global g.id
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         let* ptr = resolve_place base in
@@ -529,15 +531,6 @@ module Make (State : State_intf.S) = struct
         let* () = State.check_ptr_align rptr place.ty in
         let+ ptr' = State.borrow ptr place.ty borrow in
         Ptr ptr'
-    | Global { id; _ } ->
-        let* ptr = resolve_global id in
-        let decl = Crate.get_global id in
-        State.load ptr decl.ty
-    | GlobalRef ({ id; _ }, _) ->
-        (* References to globals don't reborrow; otherwise this test fails:
-          https://github.com/rust-lang/miri/blob/9d77dd818c01240647004361c1201c66ec061c08/tests/pass/static_mut.rs *)
-        let+ ptr = resolve_global id in
-        Ptr ptr
     | UnaryOp (op, e) -> (
         let* v = eval_operand e in
         match op with
