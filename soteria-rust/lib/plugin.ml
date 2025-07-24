@@ -76,8 +76,7 @@ module Cmd = struct
 
   let exec_in ~mode folder cmd =
     let verbosity =
-      if Soteria_logs.(Config.should_log Level.Info) then ""
-      else "> /dev/null 2>/dev/null"
+      if !Config.current.log_compilation then "" else "> /dev/null 2>/dev/null"
     in
     exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd ~mode cmd ^ verbosity
 end
@@ -122,7 +121,7 @@ let lib_path name = lib_root ^ "/" ^ name
 let compile_lib path =
   let target = get_host () in
   let verbosity =
-    if Soteria_logs.(Config.should_log Level.Trace) then "--verbose"
+    if !Config.current.log_compilation then "--verbose"
     else "> /dev/null 2>/dev/null"
   in
   let res =
