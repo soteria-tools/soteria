@@ -1,4 +1,4 @@
-module Wpst_interp = Interp.Make (State)
+module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Soteria_symex.Compo_res
 open Charon
 
@@ -6,17 +6,17 @@ let try_refute summ_ctx summs (fundef : UllbcAst.fun_decl) =
   (* Construct precondition state and symbolically execute function *)
   let process =
     let open Rustsymex.Syntax in
-    let empty_pre = Rustsymex.return ([], [], State.empty) in
+    let empty_pre = Rustsymex.return ([], [], Heap.empty) in
     let extend_pre pre (summ : Summary.t) =
       let* vars, args, state = pre in
       let* arg_vars, arg = summ.ret in
-      let+ state = State.produce summ.state state in
+      let+ state = Heap.produce summ.state state in
       (arg_vars @ vars, arg :: args, state)
     in
     let* vars, args, state = List.fold_left extend_pre empty_pre summs in
     let++ rv, state =
       (* PEDRO: Leaks are being ignored for now due to handling of globals in state.ml *)
-      Wpst_interp.exec_fun ~ignore_leaks:true ~args ~state fundef
+      Wpst_interp.exec_fun ~args ~state fundef
     in
     (vars, rv, state)
   in
@@ -28,7 +28,7 @@ let try_refute summ_ctx summs (fundef : UllbcAst.fun_decl) =
     (* Successful termination: update the summary context *)
     | Compo_res.Ok (vars, rv, state), pcs ->
         let ty = fundef.signature.output in
-        let state = State.serialize state in
+        let state = Heap.serialize state in
         let ret = Summary.subst_ret vars rv pcs in
         let summ = Summary.{ ret; state } in
         Result.ok @@ Summary.ctx_update ty summ ctx
@@ -38,12 +38,12 @@ let try_refute summ_ctx summs (fundef : UllbcAst.fun_decl) =
   Rustsymex.run process |> List.fold_left extend_ctx (Result.ok summ_ctx)
 
 let find_unsoundness ?(fuel = 5) (crate : UllbcAst.crate) =
-  (* Filter out all unsafe functions *)
+  (* Filter out unwanted functions *)
   let safe_decls =
-    let is_safe _ (fundef : UllbcAst.fun_decl) =
-      not fundef.signature.is_unsafe
+    let can_infer _ (fundef : UllbcAst.fun_decl) =
+      fundef.item_meta.attr_info.public && not fundef.signature.is_unsafe
     in
-    Types.FunDeclId.Map.filter is_safe crate.fun_decls
+    Types.FunDeclId.Map.filter can_infer crate.fun_decls
   in
   (* The try_refute procedure is called for each function *)
   let try_refute _ (entry_point : UllbcAst.fun_decl) acc =
@@ -74,18 +74,12 @@ let find_unsoundness ?(fuel = 5) (crate : UllbcAst.crate) =
   (* Run the algorithm starting from an empty summary context *)
   meta_loop Summary.empty_ctx fuel
 
-let find_unsoundness_and_print log_level solver_config no_compile clean
-    file_name =
+let exec_ruxt config file_name =
   let open Driver in
-  Solver_config.set solver_config;
-  Soteria_logs.Config.check_set_and_lock log_level;
-  Cleaner.init ~clean ();
+  config_set config;
+  let plugin = Plugin.create_using_current_config () in
   try
-    let plugin =
-      Plugin.merge_ifs
-        [ (true, Plugin.default); (true, Plugin.kani); (true, Plugin.miri) ]
-    in
-    let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
+    let crate = parse_ullbc_of_file ~plugin file_name in
     let open Syntaxes.FunctionWrap in
     let@ () = Crate.with_crate crate in
     let ret, msg =
@@ -95,9 +89,18 @@ let find_unsoundness_and_print log_level solver_config no_compile clean
     Fmt.pr "%s" msg;
     exit ret
   with
+  | Plugin.PluginError e ->
+      Fmt.kstr
+        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
+        "Fatal (Plugin): %s" e;
+      exit 2
   | ExecutionError e ->
-      Fmt.pr "Fatal: %s" e;
+      Fmt.kstr
+        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
+        "Fatal: %s" e;
       exit 2
   | CharonError e ->
-      Fmt.pr "Fatal (Charon): %s" e;
+      Fmt.kstr
+        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
+        "Fatal (Charon): %s" e;
       exit 3

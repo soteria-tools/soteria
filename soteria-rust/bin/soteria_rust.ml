@@ -119,22 +119,19 @@ module Exec_obol = struct
       term
 end
 
-module RUXt = struct
+module Exec_ruxt = struct
   let term =
     Term.(
-      const Soteria_rust_lib.Ruxt.Refute.find_unsoundness_and_print
-      $ Soteria_logs.Cli.term
-      $ Soteria_c_values.Solver_config.Cli.term
-      $ no_compile_flag
-      $ cleanup_flag
+      const Soteria_rust_lib.Ruxt.Refute.exec_ruxt
+      $ Global_config.term
       $ file_arg)
 
-  let cmd = Cmd.v (Cmd.info "ruxt") term
+  let cmd = Cmd.v (Cmd.info ~exits "ruxt") term
 end
 
 let cmd =
   Cmd.group
     (Cmd.info ~exits "soteria-rust")
-    [ Exec_rustc.cmd; Exec_cargo.cmd; Exec_obol.cmd; RUXt.cmd ]
+    [ Exec_rustc.cmd; Exec_cargo.cmd; Exec_obol.cmd; Exec_ruxt.cmd ]
 
 let () = exit @@ Cmd.eval cmd

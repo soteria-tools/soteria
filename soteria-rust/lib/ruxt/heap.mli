@@ -1,6 +1,6 @@
 include
-  Heap_intf.S
-    with type 'a err = 'a * Call_trace.t
+  State_intf.S
+    with type 'a err = 'a * Charon.Meta.span Soteria_terminal.Call_trace.t
      and type serialized =
       (Typed.T.sloc Typed.t
       * Tree_block.serialized Rustsymex.Freeable.serialized)
