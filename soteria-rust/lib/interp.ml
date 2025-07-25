@@ -301,14 +301,11 @@ module Make (State : State_intf.S) = struct
     | CTraitConst (_, name) ->
         Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
     | CRawMemory bytes ->
-        let value, _ =
-          List.fold_left
-            (fun (acc, i) x ->
-              let x = Z.shift_left (Z.of_int x) (8 * i) in
-              (Z.add acc x, i + 1))
-            (Z.zero, 0) bytes
-        in
-        ok (Base (Typed.int_z value))
+        let value = List.map (fun x -> Base (Typed.int x)) bytes in
+        let value = Array value in
+        let from_ty = mk_array_ty (TLiteral (TUInt U8)) (List.length bytes) in
+        let^^+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
+        value
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
