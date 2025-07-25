@@ -146,19 +146,6 @@ let rec layout_of (ty : Types.ty) : layout =
       | Struct fields -> layout_of_members @@ field_tys fields
       | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
       (* fieldless enums with one variant are zero-sized *)
-      | Enum [ { fields; _ } ]
-        when List.for_all
-               (fun (field : Types.field) ->
-                 (layout_of field.field_ty).size = 0)
-               fields ->
-          let align =
-            List.fold_left
-              (fun acc (f : Types.field) ->
-                max acc (layout_of f.field_ty).align)
-              1 fields
-          in
-          let members_ofs = Array.init (List.length fields) (fun _ -> 0) in
-          { size = 0; align; members_ofs }
       | Enum variants ->
           let layouts = List.map (of_variant id) variants in
           List.fold_left
@@ -231,9 +218,24 @@ and layout_of_members members =
 
 and of_variant adt_id (variant : Types.variant) =
   Session.get_or_compute_cached_layout_var variant @@ fun () ->
-  let discr_ty = enum_discr_ty adt_id in
-  let members = discr_ty :: field_tys variant.fields in
-  layout_of_members members
+  let variants = Crate.as_enum adt_id in
+  if
+    List.compare_length_with variants 1 = 0
+    && (List.for_all (fun ty -> (layout_of ty).size = 0)
+       @@ field_tys variant.fields)
+  then
+    let align =
+      List.fold_left (fun acc ty -> max acc (layout_of ty).align) 1
+      @@ field_tys variant.fields
+    in
+    let members_ofs =
+      Array.init (List.length variant.fields + 1) (fun _ -> 0)
+    in
+    { size = 0; align; members_ofs }
+  else
+    let discr_ty = enum_discr_ty adt_id in
+    let members = discr_ty :: field_tys variant.fields in
+    layout_of_members members
 
 and of_enum_variant adt_id variant =
   let variants = Crate.as_enum adt_id in
