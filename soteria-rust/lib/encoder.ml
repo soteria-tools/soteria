@@ -174,7 +174,7 @@ module Make (Sptr : Sptr.S) = struct
         let variants = Crate.as_enum t_id in
         match (variants, Typed.kind disc) with
         (* fieldless enums with one option are zero-sized *)
-        | [ { fields = []; _ } ], _ -> []
+        | [ _ ], _ when Option.is_some @@ Layout.as_zst ty -> []
         | variants, Int disc_z ->
             let variant =
               List.find
@@ -231,7 +231,9 @@ module Make (Sptr : Sptr.S) = struct
           | Ptr (ptr, None) ->
               let+ ptr_v = Sptr.decay ptr in
               Compo_res.ok (Base (ptr_v :> T.cval Typed.t))
-          | _ -> not_impl "Expected a base or a thin pointer")
+          | _ ->
+              Fmt.kstr not_impl "Expected a base or a thin pointer, got %a"
+                pp_rust_val q_res)
       | ( TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } }
         | TRef (_, sub_ty, _)
         | TRawPtr (sub_ty, _) ) as ty
@@ -290,8 +292,8 @@ module Make (Sptr : Sptr.S) = struct
               |> field_tys
               |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
           | Enum [] -> error `RefToUninhabited
-          | Enum [ { fields = []; discriminant; _ } ] ->
-              ok (Enum (value_of_scalar discriminant, []))
+          | Enum [ _ ] when Option.is_some @@ Layout.as_zst ty ->
+              ok (Option.get @@ Layout.as_zst ty)
           | Enum variants -> aux_enum offset t_id variants
           | Union fs -> aux_union offset fs
           | _ ->

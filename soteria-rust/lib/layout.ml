@@ -146,8 +146,6 @@ let rec layout_of (ty : Types.ty) : layout =
       | Struct fields -> layout_of_members @@ field_tys fields
       | Enum [] -> { size = 0; align = 1; members_ofs = [||] }
       (* fieldless enums with one variant are zero-sized *)
-      | Enum [ { fields = []; _ } ] ->
-          { size = 0; align = 1; members_ofs = [||] }
       | Enum variants ->
           let layouts = List.map (of_variant id) variants in
           List.fold_left
@@ -220,9 +218,24 @@ and layout_of_members members =
 
 and of_variant adt_id (variant : Types.variant) =
   Session.get_or_compute_cached_layout_var variant @@ fun () ->
-  let discr_ty = enum_discr_ty adt_id in
-  let members = discr_ty :: field_tys variant.fields in
-  layout_of_members members
+  let variants = Crate.as_enum adt_id in
+  if
+    List.compare_length_with variants 1 = 0
+    && (List.for_all (fun ty -> (layout_of ty).size = 0)
+       @@ field_tys variant.fields)
+  then
+    let align =
+      List.fold_left (fun acc ty -> max acc (layout_of ty).align) 1
+      @@ field_tys variant.fields
+    in
+    let members_ofs =
+      Array.init (List.length variant.fields + 1) (fun _ -> 0)
+    in
+    { size = 0; align; members_ofs }
+  else
+    let discr_ty = enum_discr_ty adt_id in
+    let members = discr_ty :: field_tys variant.fields in
+    layout_of_members members
 
 and of_enum_variant adt_id variant =
   let variants = Crate.as_enum adt_id in
@@ -505,7 +518,9 @@ let rec is_inhabited : Types.ty -> bool = function
   | _ -> true
 
 (** Returns the given type as it's unique representant if it's a ZST; otherwise
-    [None]. FIXME: giltho: this plays awfully with polymorphism. *)
+    [None].
+
+    FIXME: giltho: this plays awfully with polymorphism. *)
 let rec as_zst : Types.ty -> 'a rust_val option =
   let as_zsts tys = Monad.OptionM.all as_zst tys in
   function
@@ -521,8 +536,9 @@ let rec as_zst : Types.ty -> 'a rust_val option =
           |> Option.map (fun fs -> Struct fs)
       | Union _ -> None
       | Enum [] -> Some (Enum (0s, []))
-      | Enum [ { fields = []; discriminant; _ } ] ->
-          Some (Enum (value_of_scalar discriminant, []))
+      | Enum [ { fields; discriminant; _ } ] ->
+          as_zsts @@ Charon_util.field_tys fields
+          |> Option.map (fun fs -> Enum (value_of_scalar discriminant, fs))
       | Enum _ -> None
       | _ -> None)
   | TAdt { id = TTuple; generics = { types; _ } } ->
