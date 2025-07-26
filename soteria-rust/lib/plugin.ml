@@ -28,7 +28,7 @@ module Cmd = struct
     match mode with
     | Rustc ->
         let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-        let features = List.map (fun f -> "--cfg " ^ f) features in
+        let features = List.map (( ^ ) "--cfg ") features in
         "charon rustc "
         ^ spaced charon
         ^ " -- "
@@ -38,7 +38,7 @@ module Cmd = struct
     | Obol ->
         (* almost the same as charon rustc *)
         let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-        let features = List.map (fun f -> "--cfg=" ^ f) features in
+        let features = List.map (( ^ ) "--cfg=") features in
         let obol_flags =
           List.filter (String.starts_with ~prefix:"--dest-file") charon
         in
@@ -51,17 +51,20 @@ module Cmd = struct
         ^ " "
         ^ escape (spaced rustc)
     | Cargo ->
+        (* Cargo already specifies the edition *)
+        let rustc =
+          List.filter
+            (fun a -> not (String.starts_with ~prefix:"--edition" a))
+            rustc
+        in
+        let features = List.map (( ^ ) "--cfg ") features in
+        let rustc = rustc @ features in
         let env =
           if not (List.is_empty rustc) then
             "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
           else ""
         in
-        let features =
-          if not (List.is_empty features) then
-            "--features " ^ String.concat "," features ^ " "
-          else ""
-        in
-        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet " ^ features
+        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet"
 
   let exec_cmd cmd =
     L.debug (fun g -> g "Running command: %s" cmd);
@@ -143,7 +146,6 @@ let known_generic_errors =
     "alloc::string::_::from";
     "alloc::raw_vec::finish_grow";
     "core::fmt::Display::fmt";
-    "core::ptr::null_mut";
     "std::path::_::from";
     "core::iter::traits::iterator::Iterator::flatten";
   ]
@@ -164,7 +166,7 @@ let default =
         ([
            "--ullbc";
            "--extract-opaque-bodies";
-           "--monomorphize";
+           "--monomorphize-conservative";
            "--mir elaborated";
            "--raw-boxes";
          ]
@@ -181,6 +183,7 @@ let default =
           "-Zcrate-attr=feature(register_tool)";
           "-Zcrate-attr=register_tool(rusteriatool)";
           "--extern=rusteria";
+          "--edition=2024";
           Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
           Fmt.str "-L%s/target/debug/deps" std_lib;
           Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"

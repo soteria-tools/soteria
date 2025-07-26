@@ -1,4 +1,4 @@
-#[cfg(feature = "rusteria")]
+#[cfg(rusteria)]
 mod tests {
     use crate::MyOpt;
 
