@@ -163,7 +163,7 @@ let default =
         ([
            "--ullbc";
            "--extract-opaque-bodies";
-           "--monomorphize";
+           "--monomorphize-conservative";
            "--mir elaborated";
            "--raw-boxes";
          ]
