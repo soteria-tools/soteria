@@ -583,16 +583,24 @@ module Make (State : State_intf.S) = struct
               | ( Struct (_ :: _ as fs)
                 | Array (_ :: _ as fs)
                 | Tuple (_ :: _ as fs) ) as v -> (
-                  match List.rev fs with
-                  | last :: rest -> (
-                      let+ last = with_ptr_meta meta last in
-                      let fs = List.rev (last :: rest) in
+                  let rec split_at_non_empty fs left =
+                    match fs with
+                    | [] -> None
+                    | f :: rest when Rust_val.is_empty f ->
+                        split_at_non_empty rest (f :: left)
+                    | f :: rest -> Some (List.rev left, f, rest)
+                  in
+                  let opt_nonempty = split_at_non_empty (List.rev fs) [] in
+                  match opt_nonempty with
+                  | Some (left, nonempty, right) -> (
+                      let+ nonempty = with_ptr_meta meta nonempty in
+                      let fs = List.rev (left @ [ nonempty ] @ right) in
                       match v with
                       | Struct _ -> Struct fs
                       | Array _ -> Array fs
                       | Tuple _ -> Tuple fs
                       | _ -> assert false)
-                  | [] -> not_impl "Couldn't set pointer meta in CastUnsize")
+                  | None -> not_impl "Couldn't set pointer meta in CastUnsize")
               | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
             in
             let size = Typed.int_z @@ z_of_const_generic length in
