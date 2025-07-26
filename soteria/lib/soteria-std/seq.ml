@@ -17,3 +17,13 @@ let rec init_aux_z f i j () =
 
 let init_z n f =
   if Z.lt n Z.zero then invalid_arg "Seq.init_z" else init_aux_z f Z.zero n
+
+let rec map2i_aux f i xs ys () =
+  match xs () with
+  | Nil -> Nil
+  | Cons (x, xs) -> (
+      match ys () with
+      | Nil -> Nil
+      | Cons (y, ys) -> Cons (f i x y, map2i_aux f (i + 1) xs ys))
+
+let map2i f xs ys = map2i_aux f 0 xs ys

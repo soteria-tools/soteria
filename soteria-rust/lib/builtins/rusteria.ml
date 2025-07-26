@@ -17,7 +17,7 @@ module M (State : State_intf.S) = struct
     let map_opt f l = Option.bind l (Monad.OptionM.all f) in
     match str_data with
     | Array bytes ->
-        Some bytes
+        Some (array_flatten bytes)
         |> map_opt (function Base b -> Some (Typed.kind b) | _ -> None)
         |> map_opt (function
              | Svalue.Int b -> Some (Char.chr (Z.to_int b))

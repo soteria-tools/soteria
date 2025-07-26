@@ -20,19 +20,12 @@ module M (State : State_intf.S) = struct
     | None -> State.error (`StdErr "Non-zeroable type") state
 
   let array_repeat (gen_args : Types.generic_args) ~args state =
-    let rust_val, size =
-      match (args, gen_args.const_generics) with
-      | [ rust_val ], [ size ] ->
-          (rust_val, Charon_util.int_of_const_generic size)
-      | args, cgens ->
-          Fmt.failwith
-            "array_repeat: unexpected params / generic constants: %a / %a"
-            Fmt.(list pp_rust_val)
-            args
-            Fmt.(list Types.pp_const_generic)
-            cgens
-    in
-    Result.ok (Array (List.init size (fun _ -> rust_val)), state)
+    match (args, gen_args.const_generics) with
+    | [ rust_val ], [ len ] ->
+        let len = Charon_util.z_of_const_generic len in
+        let v = array_repeat rust_val len in
+        Result.ok (v, state)
+    | _ -> failwith "array_repeat: unexpected params"
 
   let array_index (idx_op : Types.builtin_index_op)
       (gen_args : Types.generic_args) ~args state =

@@ -44,6 +44,12 @@ let rec combine3 l1 l2 l3 =
 let combine3_opt l1 l2 l3 =
   try Some (combine3 l1 l2 l3) with Invalid_argument _ -> None
 
+let rec split3 = function
+  | [] -> ([], [], [])
+  | (x, y, z) :: l ->
+      let rx, ry, rz = split3 l in
+      (x :: rx, y :: ry, z :: rz)
+
 let[@tail_mod_cons] rec map2i i f l1 l2 =
   match (l1, l2) with
   | [], [] -> []

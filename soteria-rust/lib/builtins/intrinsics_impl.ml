@@ -452,7 +452,7 @@ module M (State : State_intf.S) = struct
     let** r, _ = State.load r bytes state in
     let byte_pairs =
       match (l, r) with
-      | Array l, Array r -> List.combine l r
+      | Array l, Array r -> List.combine (array_flatten l) (array_flatten r)
       | _ -> failwith "Unexpected read array"
     in
     let rec aux = function
@@ -523,7 +523,7 @@ module M (State : State_intf.S) = struct
           |> Bytes.fold_left (fun l c -> Base (Typed.int (Char.code c)) :: l) []
           |> List.rev
         in
-        let char_arr = Array chars in
+        let char_arr = Rust_val.array chars in
         let str_ty : Types.ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in

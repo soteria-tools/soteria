@@ -410,7 +410,7 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       } ->
       let size = Charon_util.int_of_const_generic len in
       let+ fields = nondets @@ List.init size (fun _ -> ty) in
-      Array fields
+      array fields
   | TAdt { id = TAdtId t_id; _ } -> (
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
@@ -462,9 +462,8 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
         id = TBuiltin TArray;
         generics = { types = [ ty ]; const_generics = [ len ]; _ };
       } ->
-      let len = int_of_const_generic len in
-      zeroed ~null_ptr ty
-      |> Option.map (fun v -> Array (List.init len (fun _ -> v)))
+      let len = z_of_const_generic len in
+      zeroed ~null_ptr ty |> Option.map (fun v -> array_repeat v len)
   | TAdt { id = TAdtId t_id; _ } -> (
       let adt = Crate.get_adt t_id in
       match adt.kind with
@@ -530,7 +529,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
   | TNever -> Some (Tuple [])
   | TAdt { id = TBuiltin TArray; generics = { const_generics = [ len ]; _ } }
     when int_of_const_generic len = 0 ->
-      Some (Array [])
+      Some (array [])
   | TAdt { id = TAdtId id; _ } -> (
       let adt = Crate.get_adt id in
       match adt.kind with
@@ -609,7 +608,7 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
   | ( Array vs,
       TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
     ) ->
-      List.concat_map (fun v -> f v ty) vs
+      List.concat @@ array_map (fun v -> f v ty) vs
   | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
       List.concat_map2 f vs types
   | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
@@ -642,14 +641,6 @@ let rec update_ref_tys_in
     (ty : Types.ty) : ('a rust_val * 'acc, 'e, 'f) Result.t =
   let open Rustsymex.Syntax in
   let f = update_ref_tys_in fn in
-  let fs acc vs ty =
-    let++ vs, acc =
-      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) v ->
-          let++ v, acc = f acc v ty in
-          (v :: vs, acc))
-    in
-    (List.rev vs, acc)
-  in
   let fs2 acc vs tys =
     let vs = List.combine vs tys in
     let++ vs, acc =
@@ -670,7 +661,16 @@ let rec update_ref_tys_in
   | ( Array vs,
       TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
     ) ->
-      let++ vs, acc = fs init vs ty in
+      let rec map_arr_fs vs acc = function
+        | [] -> Result.ok (List.rev vs, acc)
+        | Rust_val.One v :: rest ->
+            let** v, acc = f acc v ty in
+            map_arr_fs (One v :: vs) acc rest
+        | Repeat (v, n) :: rest ->
+            let** v, acc = f acc v ty in
+            map_arr_fs (Repeat (v, n) :: vs) acc rest
+      in
+      let++ vs, acc = map_arr_fs [] init vs in
       (Array vs, acc)
   | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
       let++ vs, acc = fs2 init vs types in

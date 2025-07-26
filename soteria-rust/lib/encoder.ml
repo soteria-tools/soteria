@@ -190,16 +190,40 @@ module Make (Sptr : Sptr.S) = struct
         [ { value = Enum (value, []); ty = Layout.enum_discr_ty t_id; offset } ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
+    (* To ensure nice performance for arrays with repeated elements, we trick the
+       encoding; we split down arrays until either we reach single elements, or we reach
+       repetitions. Singles are encoded normally, while repetitions are encoded as a block,
+       rather than being decomposed. *)
     | ( Array vals,
         TAdt
           {
             id = TBuiltin TArray;
             generics = { types = [ sub_ty ]; const_generics = [ len ]; _ };
           } ) ->
+        let len = z_of_const_generic len in
+        if not (Z.equal len (array_length vals)) then
+          failwith "Array length mismatch";
         let layout = layout_of ty in
-        let len = int_of_const_generic len in
-        if List.length vals <> len then failwith "Array length mismatch"
-        else chain_cvals layout vals (List.init len (fun _ -> sub_ty))
+        let stride =
+          match layout.fields with
+          | Array stride -> Typed.int stride
+          | _ -> failwith "Expected an array layout"
+        in
+        let vals, _ =
+          List.fold_left
+            (fun (acc, offset) v ->
+              match v with
+              | One v ->
+                  let vals = rust_to_cvals ~offset v sub_ty in
+                  (vals @ acc, offset +@ stride)
+              | Repeat (_, n) as content ->
+                  let ty = mk_array_ty sub_ty n in
+                  let off' = offset +@ (stride *@ Typed.int_z n) in
+                  let cval = { value = Array [ content ]; ty; offset } in
+                  (cval :: acc, off'))
+            ([], offset) vals
+        in
+        vals
     | Array _, _ | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
     (* Unions *)
     | Union (f, v), TAdt { id = TAdtId id; _ } ->
@@ -228,7 +252,9 @@ module Make (Sptr : Sptr.S) = struct
     let open ParserMonad.Syntax in
     let module T = Typed.T in
     (* Base case, parses all types. *)
-    let rec aux offset : Types.ty -> ('e, 'fix, 'state) parser = function
+    let rec aux offset ty : ('e, 'fix, 'state) parser =
+      match Layout.as_zst ty with Some zst -> ok zst | None -> aux' offset ty
+    and aux' offset : Types.ty -> ('e, 'fix, 'state) parser = function
       | TLiteral _ as ty -> (
           let+** q_res = query (ty, offset) in
           match q_res with
@@ -306,13 +332,16 @@ module Make (Sptr : Sptr.S) = struct
           | _ ->
               Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
-      | TAdt { id = TBuiltin TArray; generics = { types; const_generics; _ } }
-        as ty ->
-          let sub_ty = List.hd types in
+      | TAdt { id = TBuiltin TArray; _ } as ty -> (
+          (* let sub_ty = List.hd types in
           let len = z_of_const_generic @@ List.hd const_generics in
-          let layout = layout_of ty in
+           let layout = layout_of ty in
           let fields = Seq.init_z len (fun _ -> sub_ty) in
-          aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
+          aux_fields ~f:Rust_val.array ~layout offset fields *)
+          let+** boxed = query (ty, offset) in
+          match boxed with
+          | Array _ as a -> Result.ok a
+          | _ -> not_impl "Expected an array")
       | TAdt { id = TBuiltin (TStr as ty); generics }
       | TAdt { id = TBuiltin (TSlice as ty); generics } -> (
           (* We can only read a slice if we have the metadata of its length, in which case
@@ -334,7 +363,7 @@ module Make (Sptr : Sptr.S) = struct
               let arr_ty = mk_array_ty sub_ty len in
               let layout = layout_of arr_ty in
               let fields = Seq.init_z len (fun _ -> sub_ty) in
-              aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
+              aux_fields ~f:Rust_val.array ~layout offset fields)
       | TNever -> error `RefToUninhabited
       | TTraitType (tref, name) ->
           let ty = Layout.resolve_trait_ty tref name in
@@ -521,11 +550,11 @@ module Make (Sptr : Sptr.S) = struct
         m "Transmute many: %a <- [%a]" pp_ty to_ty
           Fmt.(list ~sep:comma pp_triple)
           vs);
-    let extract_block (ty, off) =
+    let rec extract_block (ty, off) =
       let off = int_of_val off in
       let vs = List.map (fun (v, ty, o) -> (v, ty, o - off)) vs in
       (* 0. make sure the entire range exists; otherwise it would mean there's an uninit access *)
-      let- () =
+      let/ () =
         let size = (layout_of ty).size in
         let bytes = Array.make size false in
         List.iter
@@ -538,7 +567,7 @@ module Make (Sptr : Sptr.S) = struct
         else Some (Result.error `UninitializedMemoryAccess)
       in
       (* 1. ideal case, we find a block with the same size and offset *)
-      let- () =
+      let/ () =
         List.find_map
           (fun (v, ty', o) ->
             if o = 0 && size_of ty = size_of ty' then
@@ -547,7 +576,7 @@ module Make (Sptr : Sptr.S) = struct
           vs
       in
       (* 2. only one block, so we convert that if we expect an integer *)
-      let- () =
+      let/ () =
         match (vs, ty) with
         | ( [ (v, (TLiteral (TInt _ | TUInt _) as from_ty), 0) ],
             (TLiteral (TInt _ | TUInt _) as to_ty) ) ->
@@ -555,7 +584,7 @@ module Make (Sptr : Sptr.S) = struct
         | _ -> None
       in
       (* 3. Several integers that can be merged together without splitting. *)
-      let- () =
+      let/ () =
         match ty with
         | TLiteral lit_ty ->
             let size = size_of_literal_ty lit_ty in
@@ -590,7 +619,7 @@ module Make (Sptr : Sptr.S) = struct
         | _ -> None
       in
       (* 4. If there's an integer block that contains what we're looking for, we split it *)
-      let- () =
+      let/ () =
         match ty with
         | TLiteral lit_ty as target_ty ->
             let size = size_of_literal_ty lit_ty in
@@ -613,15 +642,102 @@ module Make (Sptr : Sptr.S) = struct
                  (Base v)
         | _ -> None
       in
+      (* 5. try merging into an array *)
+      let/ () =
+        match ty with
+        | TAdt
+            {
+              id = TBuiltin TArray;
+              generics = { const_generics = [ len ]; types = [ subty ]; _ };
+            } ->
+            let layout = Layout.layout_of ty in
+            let stride =
+              match layout.fields with
+              | Array stride -> Z.of_int stride
+              | _ -> failwith "Expected an array layout"
+            in
+            let len = z_of_const_generic len in
+            let res =
+              List.fold_left
+                (fun acc (v, ty, o) ->
+                  match acc with
+                  | None -> None
+                  | Some (_, last) when not Z.(equal (of_int o) (last * stride))
+                    ->
+                      None
+                  | Some (content, last) -> (
+                      if Types.equal_ty ty subty then
+                        Some (Rust_val.One v :: content, Z.succ last)
+                      else
+                        match (v, TypesUtils.ty_as_opt_array ty) with
+                        | Array vs, Some (ty, len) when Types.equal_ty ty subty
+                          ->
+                            let len' = z_of_const_generic len in
+                            Some (vs @ content, Z.add last len')
+                        | _ -> None))
+                (Some ([], Z.zero))
+                vs
+            in
+            Option.bind res @@ fun (contents, last) ->
+            if Z.equal last len then
+              Some (Result.ok (Array (List.rev contents)))
+            else None
+        | _ -> None
+      in
+      (* 6. if we have array, parse individually *)
+      let/ () =
+        match ty with
+        | TAdt
+            {
+              id = TBuiltin TArray;
+              generics = { const_generics = [ len ]; types = [ subty ]; _ };
+            } ->
+            let layout = Layout.layout_of ty in
+            let stride =
+              match layout.fields with
+              | Array stride -> Z.of_int stride
+              | _ -> failwith "Expected an array layout"
+            in
+            let len = z_of_const_generic len in
+            let rec aux acc n =
+              match acc with
+              | Some vs when Z.equal n len ->
+                  let rec eval vs = function
+                    | [] -> Result.ok (Rust_val.array vs)
+                    | v :: rest ->
+                        let** v = v in
+                        eval (v :: vs) rest
+                  in
+                  Some (eval [] vs)
+              | None -> None
+              | Some vvs ->
+                  let offset =
+                    Typed.int_z Z.(add (of_int off) (mul n stride))
+                  in
+                  L.warn (fun m ->
+                      m "Repeat: extract %a at %a with %a" pp_ty subty Typed.ppa
+                        offset
+                        Fmt.(list ~sep:comma pp_triple)
+                        vs);
+                  let res = extract_block (subty, offset) in
+                  Option.bind res @@ fun v -> aux (Some (v :: vvs)) (Z.succ n)
+            in
+            aux (Some []) Z.zero
+        | _ -> None
+      in
       (* X. give up *)
-      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %d from [%a]" pp_ty
-        ty off
-        Fmt.(list ~sep:comma pp_triple)
-        vs
+      None
     in
     let parse_fn query () =
-      let++ r = extract_block query in
-      (r, ())
+      match extract_block query with
+      | Some r ->
+          let++ r = r in
+          (r, ())
+      | None ->
+          Fmt.kstr not_impl "Transmute: Couldn't extract %a at %a from [%a]"
+            pp_ty (fst query) Typed.ppa (snd query)
+            Fmt.(list ~sep:comma pp_triple)
+            vs
     in
     let++ res, () =
       ParserMonad.parse ~init:() ~handler:parse_fn @@ rust_of_cvals to_ty

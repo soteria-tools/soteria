@@ -277,7 +277,7 @@ module Make (State : State_intf.S) = struct
                    []
               |> List.rev
             in
-            let char_arr = Array chars in
+            let char_arr = Rust_val.array chars in
             let str_ty : Types.ty =
               mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
             in
@@ -304,7 +304,7 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
     | CRawMemory bytes ->
         let value = List.map (fun x -> Base (Typed.int x)) bytes in
-        let value = Array value in
+        let value = Rust_val.array value in
         let from_ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
         in
@@ -580,9 +580,7 @@ module Make (State : State_intf.S) = struct
             let rec with_ptr_meta meta : Sptr.t rust_val -> Sptr.t rust_val t =
               function
               | Ptr (v, _) -> ok (Ptr (v, Some meta))
-              | ( Struct (_ :: _ as fs)
-                | Array (_ :: _ as fs)
-                | Tuple (_ :: _ as fs) ) as v -> (
+              | (Struct fs | Tuple fs) as v -> (
                   let rec split_at_non_empty fs left =
                     match fs with
                     | [] -> None
@@ -597,7 +595,6 @@ module Make (State : State_intf.S) = struct
                       let fs = List.rev (left @ [ nonempty ] @ right) in
                       match v with
                       | Struct _ -> Struct fs
-                      | Array _ -> Array fs
                       | Tuple _ -> Tuple fs
                       | _ -> assert false)
                   | None -> not_impl "Couldn't set pointer meta in CastUnsize")
@@ -797,7 +794,7 @@ module Make (State : State_intf.S) = struct
     (* Array aggregate *)
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
         let+ values = eval_operand_list operands in
-        Array values
+        Rust_val.array values
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) ->
         let* values = eval_operand_list operands in
@@ -828,9 +825,8 @@ module Make (State : State_intf.S) = struct
     (* Array repetition *)
     | Repeat (value, _, len) ->
         let+ value = eval_operand value in
-        let len = int_of_const_generic len in
-        let els = List.init len (fun _ -> value) in
-        Array els
+        let len = z_of_const_generic len in
+        Rust_val.array_repeat value len
     (* Shallow init box -- get the pointer and transmute it to a box *)
     | ShallowInitBox (ptr, _) ->
         let+ ptr = eval_operand ptr in
