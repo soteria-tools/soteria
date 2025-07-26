@@ -1,8 +1,8 @@
-open Charon_util
 open Typed
 open T
 open Rustsymex
 open Charon
+open Rust_val
 
 module type S = sig
   module Sptr : Sptr.S

@@ -1,8 +1,8 @@
 open Charon
-open Typed
 open Typed.Infix
 open Typed.Syntax
 open Rustsymex
+open Rust_val
 open Charon_util
 
 exception CantComputeLayout of string * Types.ty

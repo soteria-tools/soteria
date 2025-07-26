@@ -3,7 +3,7 @@ open Rustsymex
 open Rustsymex.Syntax
 open Typed.Syntax
 open Typed.Infix
-open Charon_util
+open Rust_val
 
 module M (State : State_intf.S) = struct
   module Sptr = State.Sptr

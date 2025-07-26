@@ -97,7 +97,7 @@ type sub = Tree_block.t * Tree_borrow.t
 and t = {
   state : sub Freeable.t SPmap.t option;
   functions : FunBiMap.t;
-  globals : Sptr.t Charon_util.full_ptr GlobMap.t;
+  globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
 }
 [@@deriving show { with_path = false }]
@@ -222,7 +222,7 @@ let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
   let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
   let++ value, block = Encoder.ParserMonad.parse ~init:block ~handler parser in
   L.debug (fun f ->
-      f "Finished reading rust value %a" (Charon_util.pp_rust_val Sptr.pp) value);
+      f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   (value, block)
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
@@ -292,7 +292,7 @@ let alloc ?zeroed size align st =
   let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
-  let ptr : Sptr.t Charon_util.full_ptr =
+  let ptr : Sptr.t Rust_val.full_ptr =
     ({ ptr; tag = tb.tag; align; size }, None)
   in
   (* The pointer is necessarily not null *)

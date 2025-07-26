@@ -5,10 +5,10 @@ open Typed.Infix
 open Typed.Syntax
 open Charon
 open Charon_util
-module T = Typed.T
+open Rust_val
 
 module InterpM (State : State_intf.S) = struct
-  type full_ptr = State.Sptr.t Charon_util.full_ptr
+  type full_ptr = State.Sptr.t Rust_val.full_ptr
   type store = (full_ptr option * Types.ty) Store.t
 
   type 'a t =
@@ -161,14 +161,14 @@ module Make (State : State_intf.S) = struct
 
   exception Unsupported of (string * Meta.span)
 
-  type full_ptr = Sptr.t Charon_util.full_ptr
+  type full_ptr = Sptr.t Rust_val.full_ptr
   type state = State.t
   type store = (full_ptr option * Types.ty) Store.t
 
   open InterpM
   open InterpM.Syntax
 
-  let pp_full_ptr = Charon_util.pp_full_ptr Sptr.pp
+  let pp_full_ptr = Rust_val.pp_full_ptr Sptr.pp
 
   type 'err fun_exec =
     args:Sptr.t rust_val list ->
