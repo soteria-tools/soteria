@@ -278,7 +278,9 @@ module Make (State : State_intf.S) = struct
               |> List.rev
             in
             let char_arr = Array chars in
-            let str_ty : Types.ty = mk_array_ty (TLiteral (TUInt U8)) len in
+            let str_ty : Types.ty =
+              mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
+            in
             let* ptr, _ = State.alloc_ty str_ty in
             let ptr = (ptr, Some (Typed.int len)) in
             let* () = State.store ptr str_ty char_arr in
@@ -303,7 +305,9 @@ module Make (State : State_intf.S) = struct
     | CRawMemory bytes ->
         let value = List.map (fun x -> Base (Typed.int x)) bytes in
         let value = Array value in
-        let from_ty = mk_array_ty (TLiteral (TUInt U8)) (List.length bytes) in
+        let from_ty =
+          mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
+        in
         let^^+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
         value
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
@@ -736,7 +740,9 @@ module Make (State : State_intf.S) = struct
             ok (Base (value_of_scalar discriminant))
         | var :: _ ->
             let layout = Layout.of_variant enum var in
-            let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
+            let discr_ofs =
+              Typed.int @@ Layout.Fields_shape.offset_of 0 layout.fields
+            in
             let discr_ty = Layout.enum_discr_ty enum in
             let^^ loc = Sptr.offset loc discr_ofs in
             State.load (loc, None) discr_ty

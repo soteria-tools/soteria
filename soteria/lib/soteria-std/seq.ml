@@ -11,3 +11,9 @@ let self_cross_product seq =
     | Cons (x, seq) -> append (map (fun y -> (x, y)) seq) (aux seq)
   in
   aux seq
+
+let rec init_aux_z f i j () =
+  if Z.lt i j then Cons (f i, init_aux_z f (Z.succ i) j) else Nil
+
+let init_z n f =
+  if Z.lt n Z.zero then invalid_arg "Seq.init_z" else init_aux_z f Z.zero n

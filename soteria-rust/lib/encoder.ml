@@ -112,7 +112,8 @@ module Make (Sptr : Sptr.S) = struct
       List.map2i
         (fun i value ty ->
           let offset =
-            (Array.get layout.members_ofs i |> Typed.int) +@ offset
+            (Layout.Fields_shape.offset_of i layout.fields |> Typed.int)
+            +@ offset
           in
           rust_to_cvals ~offset value ty)
         vals types
@@ -190,11 +191,15 @@ module Make (Sptr : Sptr.S) = struct
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
     | ( Array vals,
-        TAdt { id = TBuiltin TArray; generics = { types = [ sub_ty ]; _ } } ) ->
+        TAdt
+          {
+            id = TBuiltin TArray;
+            generics = { types = [ sub_ty ]; const_generics = [ len ]; _ };
+          } ) ->
         let layout = layout_of ty in
-        let size = Array.length layout.members_ofs in
-        if List.length vals <> size then failwith "Array length mismatch"
-        else chain_cvals layout vals (List.init size (fun _ -> sub_ty))
+        let len = int_of_const_generic len in
+        if List.length vals <> len then failwith "Array length mismatch"
+        else chain_cvals layout vals (List.init len (fun _ -> sub_ty))
     | Array _, _ | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
     (* Unions *)
     | Union (f, v), TAdt { id = TAdtId id; _ } ->
@@ -282,6 +287,7 @@ module Make (Sptr : Sptr.S) = struct
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
+          let types = List.to_seq types in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
       | TAdt { id = TAdtId t_id; _ } as ty -> (
           let type_decl = Crate.get_adt t_id in
@@ -290,6 +296,7 @@ module Make (Sptr : Sptr.S) = struct
               let layout = layout_of ty in
               fields
               |> field_tys
+              |> List.to_seq
               |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
           | Enum [] -> error `RefToUninhabited
           | Enum [ _ ] when Option.is_some @@ Layout.as_zst ty ->
@@ -299,11 +306,12 @@ module Make (Sptr : Sptr.S) = struct
           | _ ->
               Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
-      | TAdt { id = TBuiltin TArray; generics = { types; _ } } as ty ->
+      | TAdt { id = TBuiltin TArray; generics = { types; const_generics; _ } }
+        as ty ->
           let sub_ty = List.hd types in
+          let len = z_of_const_generic @@ List.hd const_generics in
           let layout = layout_of ty in
-          let len = Array.length layout.members_ofs in
-          let fields = List.init len (fun _ -> sub_ty) in
+          let fields = Seq.init_z len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
       | TAdt { id = TBuiltin (TStr as ty); generics }
       | TAdt { id = TBuiltin (TSlice as ty); generics } -> (
@@ -314,7 +322,7 @@ module Make (Sptr : Sptr.S) = struct
           | Some meta ->
               let len =
                 match Typed.kind meta with
-                | Int len -> Z.to_int len
+                | Int len -> len
                 | _ -> failwith "Can't read a slice of non-concrete size"
               in
               let sub_ty =
@@ -325,7 +333,7 @@ module Make (Sptr : Sptr.S) = struct
                  group the reads together, at least for primitive types. *)
               let arr_ty = mk_array_ty sub_ty len in
               let layout = layout_of arr_ty in
-              let fields = List.init len (fun _ -> sub_ty) in
+              let fields = Seq.init_z len (fun _ -> sub_ty) in
               aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
       | TNever -> error `RefToUninhabited
       | TTraitType (tref, name) ->
@@ -334,20 +342,20 @@ module Make (Sptr : Sptr.S) = struct
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
       | (TVar _ | TDynTrait _ | TError _) as ty ->
           Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
-    (* Parses a list of fields (for structs and tuples) *)
-    and aux_fields ~f ~layout offset fields : ('e, 'fix, 'state) parser =
+    (* Parses a sequence of fields (for structs, tuples, arrays) *)
+    and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
+        ('e, 'fix, 'state) parser =
       let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
-      let rec mk_callback to_parse parsed : ('e, 'fix, 'state) parser =
-        match to_parse with
-        | [] -> ok (f (List.rev parsed))
-        | (offset, ty) :: rest ->
-            let offset = base_offset +@ Typed.int offset in
-            bind (aux offset ty) (fun v -> mk_callback rest (v :: parsed))
+      let rec mk_callback idx to_parse parsed : ('e, 'fix, 'state) parser =
+        match to_parse () with
+        | Seq.Nil -> ok (f (List.rev parsed))
+        | Seq.Cons (ty, rest) ->
+            let field_off = Layout.Fields_shape.offset_of idx layout.fields in
+            let offset = base_offset +@ Typed.int field_off in
+            bind (aux offset ty) (fun v ->
+                mk_callback (succ idx) rest (v :: parsed))
       in
-      let fields =
-        List.mapi (fun i ty -> (Array.get layout.members_ofs i, ty)) fields
-      in
-      mk_callback fields []
+      mk_callback 0 fields []
     (* Parses what enum variant we're handling *)
     and aux_enum offset adt_id (variants : Types.variant list) :
         ('e, 'fix, 'state) parser =
@@ -365,11 +373,19 @@ module Make (Sptr : Sptr.S) = struct
       | Some var ->
           (* skip discriminant *)
           let discr = value_of_scalar var.discriminant in
-          let ({ members_ofs = mems; _ } as layout) = of_variant adt_id var in
-          let members_ofs = Array.sub mems 1 (Array.length mems - 1) in
-          let layout = { layout with members_ofs } in
+          let ({ fields; _ } as layout) = of_variant adt_id var in
+          let fields =
+            match fields with
+            | Arbitrary ofs ->
+                (* remove the discriminant; we already handled it *)
+                let ofs' = Array.sub ofs 1 (Array.length ofs - 1) in
+                Layout.Fields_shape.Arbitrary ofs'
+            | _ -> failwith "Unexected variant layout"
+          in
+          let layout = { layout with fields } in
           var.fields
           |> field_tys
+          |> List.to_seq
           |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
       | None ->
           L.error (fun m ->
@@ -511,7 +527,7 @@ module Make (Sptr : Sptr.S) = struct
       (* 0. make sure the entire range exists; otherwise it would mean there's an uninit access *)
       let- () =
         let size = (layout_of ty).size in
-        let bytes = Array.init size (fun _ -> false) in
+        let bytes = Array.make size false in
         List.iter
           (fun (_, ty, o) ->
             let s = (layout_of ty).size in
@@ -543,7 +559,7 @@ module Make (Sptr : Sptr.S) = struct
         match ty with
         | TLiteral lit_ty ->
             let size = size_of_literal_ty lit_ty in
-            let bytes = Array.init size (fun _ -> false) in
+            let bytes = Array.make size false in
             let relevant =
               List.filter
                 (function

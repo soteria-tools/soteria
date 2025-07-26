@@ -140,8 +140,7 @@ let mk_array_ty ty len : Types.ty =
       generics =
         {
           types = [ ty ];
-          const_generics =
-            [ CgValue (VScalar (UnsignedScalar (Usize, Z.of_int len))) ];
+          const_generics = [ CgValue (VScalar (UnsignedScalar (Usize, len))) ];
           regions = [];
           trait_refs = [];
         };
