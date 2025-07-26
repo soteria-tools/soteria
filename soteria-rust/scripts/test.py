@@ -115,7 +115,7 @@ def exec_test(
     log: Optional[TextIOWrapper] = None,
     args: list[str] = [],
     dyn_flags: Optional[Callable[[Path], list[str]]] = None,
-) -> tuple[LogCategorisation, float]:
+) -> tuple[LogCategorisation_, float]:
     expect_failure = determine_failure_expect(str(file))
     if dyn_flags:
         args = [*args, *dyn_flags(file)]
@@ -170,7 +170,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
     flags = parse_flags()
 
     args = test_conf["args"] + flags["cmd_flags"]
-    subcmd = "obol" if flags["with_obol"] else "rustc"
+    subcmd, tool_name = ("obol", "Obol") if flags["with_obol"] else ("rustc", "Charon")
 
     tests = filter_tests(tests, flags)
     log.touch()
@@ -179,7 +179,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
 
     oks = 0
     errs = 0
-    charon = 0
+    tool_errs = 0
     before = time.time()
     with log.open("a") as logfile:
         for path in tests:
@@ -199,6 +199,8 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
                     args=args,
                     dyn_flags=test_conf["dyn_flags"],
                 )
+                if flags["with_obol"]:
+                    msg = msg.replace("Charon", tool_name)
                 txt = f"{clr}{msg}{RESET} in {elapsed:.3f}s"
                 if elapsed > 1:
                     txt += " 🐌"
@@ -211,11 +213,11 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
                 oks += 1
             elif msg == "Failure":
                 errs += 1
-            elif "Charon" in msg:
-                charon += 1
+            elif tool_name in msg:
+                tool_errs += 1
     elapsed = time.time() - before
     pprint(
-        f"{BOLD}Finished in {elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{charon}{RESET})"
+        f"{BOLD}Finished in {elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{tool_errs}{RESET})"
     )
 
 
