@@ -330,16 +330,16 @@ module Make (State : State_intf.S) = struct
             f "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty);
         let* v = State.load ptr base.ty in
         match v with
-        | Ptr v -> (
+        | Ptr ((ptr_in, _) as fptr) -> (
             L.debug (fun f ->
                 f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
-                  pp_full_ptr v);
+                  pp_full_ptr fptr);
             let pointee = Charon_util.get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
-                let+ () = State.check_ptr_align (fst v) pointee in
-                v
-            | _ -> ok v)
+                let+ () = State.check_ptr_align ptr_in pointee in
+                fptr
+            | _ -> ok fptr)
         | Base off ->
             let+ off = lift_symex @@ cast_checked ~ty:Typed.t_int off in
             let ptr = Sptr.null_ptr_of off in
