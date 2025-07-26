@@ -444,7 +444,7 @@ module M (State : State_intf.S) = struct
   let raw_eq ~t ~a ~b state =
     let* l, r = as_ptr a &&* as_ptr b in
     let layout = Layout.layout_of t in
-    let bytes = mk_array_ty (TLiteral (TUInt U8)) layout.size in
+    let bytes = mk_array_ty (TLiteral (TUInt U8)) (Z.of_int layout.size) in
     (* this is hacky, but we do not keep the state post-load, as it
        will have its tree blocks split up per byte, which is suboptimal *)
     let** l, _ = State.load l bytes state in
@@ -523,7 +523,9 @@ module M (State : State_intf.S) = struct
           |> List.rev
         in
         let char_arr = Array chars in
-        let str_ty : Types.ty = mk_array_ty (TLiteral (TUInt U8)) len in
+        let str_ty : Types.ty =
+          mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
+        in
         let** (ptr, _), state = State.alloc_ty str_ty state in
         let ptr = (ptr, Some (Typed.int len)) in
         let** (), state = State.store ptr str_ty char_arr state in
