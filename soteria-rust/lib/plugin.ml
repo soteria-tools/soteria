@@ -180,6 +180,7 @@ let default =
           "-Zcrate-attr=feature(register_tool)";
           "-Zcrate-attr=register_tool(rusteriatool)";
           "--extern=rusteria";
+          "--edition=2024";
           Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
           Fmt.str "-L%s/target/debug/deps" std_lib;
           Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"
