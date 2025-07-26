@@ -4,6 +4,7 @@ open Rustsymex
 open Rustsymex.Syntax
 open Typed.Infix
 open Typed.Syntax
+open Rust_val
 
 module M (State : State_intf.S) = struct
   module Sptr = State.Sptr

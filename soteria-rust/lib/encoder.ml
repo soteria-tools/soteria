@@ -1,17 +1,17 @@
 module Compo_res = Soteria_symex.Compo_res
 open Charon
-open Typed
 open Typed.Syntax
 open Typed.Infix
 open Charon_util
 open Rustsymex
 open Rustsymex.Syntax
+open Rust_val
 open Layout
 
 module Make (Sptr : Sptr.S) = struct
-  type nonrec rust_val = Sptr.t rust_val
+  type nonrec rust_val = Sptr.t Rust_val.t
 
-  let pp_rust_val = pp_rust_val Sptr.pp
+  let pp_rust_val = Rust_val.pp Sptr.pp
 
   module ParserMonad = struct
     type query = Types.ty * T.sint Typed.t
@@ -104,7 +104,7 @@ module Make (Sptr : Sptr.S) = struct
       cval_info list =
     let illegal_pair () =
       L.error (fun m ->
-          m "Wrong pair of rust_value and Charon.ty: %a / %a" ppa_rust_val value
+          m "Wrong pair of rust_value and Charon.ty: %a / %a" pp_rust_val value
             Types.pp_ty ty);
       failwith "Wrong pair of rust_value and Charon.ty"
     in
@@ -363,7 +363,7 @@ module Make (Sptr : Sptr.S) = struct
       let disc_align = Typed.nonzero (layout_of disc_ty).align in
       let offset = offset +@ (offset %@ disc_align) in
       let*** cval = query (disc_ty, offset) in
-      let cval = Charon_util.as_base_of ~ty:Typed.t_int cval in
+      let cval = as_base_of ~ty:Typed.t_int cval in
       let*** res =
         lift_rsymex
         @@ match_on variants ~constr:(fun (v : Types.variant) ->

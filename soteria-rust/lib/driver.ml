@@ -110,8 +110,7 @@ let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
              branches
              |> List.partition_map @@ function
                 | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
-                | Error _, pcs ->
-                    Right (Ok (Charon_util.unit_, State.empty), pcs)
+                | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
                 | v -> Left v
            in
            if List.is_empty errors then oks else errors
