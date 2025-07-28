@@ -1,0 +1,3 @@
+pin-depends: [
+  ["charon.~dev" "git+https://github.com/AeneasVerif/charon#48e885d13088a169467f00d9011528831d0db65f"]
+]

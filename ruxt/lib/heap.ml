@@ -1,3 +1,4 @@
+open Soteria_rust_lib
 open Rustsymex.Syntax
 open Typed.Infix
 open Typed.Syntax
@@ -100,12 +101,9 @@ type t = {
 }
 [@@deriving show { with_path = false }]
 
-type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
-[@@deriving show { with_path = false }]
-
-let serialize st =
+let clear_globals st =
   match st.state with
-  | None -> []
+  | None -> st
   | Some state ->
       let state =
         let global_addresses =
@@ -114,6 +112,15 @@ let serialize st =
         in
         SPmap.M.filter (fun k _ -> not (List.mem k global_addresses)) state
       in
+      { st with state = Some state }
+
+type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
+[@@deriving show { with_path = false }]
+
+let serialize { state; _ } =
+  match state with
+  | None -> []
+  | Some state ->
       SPmap.serialize (Freeable.serialize Tree_block.serialize) state
 
 let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
@@ -331,15 +338,15 @@ let alloc_tys tys st =
       in
       (block, (ptr, None)))
 
-let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st : t) :
-    (unit * t, 'err, serialized list) Result.t =
+let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ () = with_loc_err () in
+    (* TODO: does the tag not play a role in freeing? *)
     let++ (), state =
-      (SPmap.wrap
-         (Freeable.free
-            ~assert_exclusively_owned:Tree_block.assert_exclusively_owned))
+      SPmap.wrap
+        (Freeable.free
+           ~assert_exclusively_owned:Tree_block.assert_exclusively_owned)
         (Typed.Ptr.loc ptr) state
     in
     ((), { st with state })
@@ -355,7 +362,7 @@ let zeros (ptr, _) size st =
 
 let error err _st =
   let@ () = with_error_loc_as_call_trace _st in
-  L.info (fun m -> m "state errored !");
+  L.info (fun m -> m "State errored: %a" Error.pp err);
   error err
 
 let lift_err st (symex : ('a, 'e, 'f) Result.t) =
@@ -384,7 +391,8 @@ let load_global g ({ globals; _ } as st) =
 let borrow (ptr, meta) (ty : Charon.Types.ty)
     (kind : Charon.Expressions.borrow_kind) st =
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
-  if Layout.is_unsafe_cell ty then Result.ok ((ptr, meta), st)
+  if Tree_borrow.is_disabled () || (kind = BShared && Layout.is_unsafe_cell ty)
+  then Result.ok ((ptr, meta), st)
   else
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
