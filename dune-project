@@ -48,7 +48,8 @@
   ppxlib
   (hc
    (>= 0.5))
-  (yojson (< 3.0))
+  (yojson
+   (< 3.0))
   (ppx_inline_test :with-test)
   (ocamlformat
    (and
@@ -84,7 +85,8 @@
    (and
     :build
     (>= 0.9.0)))
-  (yojson (< 3.0))
+  (yojson
+   (< 3.0))
   (dune
    (and
     :build
@@ -142,7 +144,39 @@
   charon
   (odoc :with-doc)
   (alcotest :with-test)
-  (yojson (< 3.0))
+  (yojson
+   (< 3.0))
+  (dune
+   (and
+    :build
+    (>= 3.14.0)))
+  (ocamlformat
+   (and
+    :with-dev-detup
+    (= 0.27.0)))
+  (ocaml-lsp-server :with-dev-setup)))
+
+(package
+ (name ruxt)
+ (synopsis "Type safety refuter for Rust")
+ (description "Type safety refuter for Rust")
+ (sites
+  (share plugins))
+ (depends
+  (ocaml
+   (>= 5.3.0))
+  soteria-rust
+  dune-site
+  zarith
+  ppx_deriving
+  cmdliner
+  fmt
+  printbox-text
+  charon
+  (odoc :with-doc)
+  (alcotest :with-test)
+  (yojson
+   (< 3.0))
   (dune
    (and
     :build

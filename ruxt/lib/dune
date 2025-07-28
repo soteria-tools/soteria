@@ -1,0 +1,33 @@
+(include_subdirs qualified)
+
+(library
+ (package ruxt)
+ (name ruxt_lib)
+ (libraries
+  soteria.std
+  soteria.symex
+  soteria.logs
+  soteria.c_values
+  soteria.terminal
+  soteria_rust_lib
+  cmdliner
+  fmt
+  fmt.tty
+  iter
+  zarith
+  grace
+  grace.ansi_renderer
+  simple_smt
+  printbox-text
+  charon
+  dune-site
+  str)
+ (flags :standard -open Soteria_std -open Soteria_c_values)
+ (preprocess
+  (pps ppx_deriving.std soteria.ppx))
+ (instrumentation
+  (backend landmarks --auto)))
+
+(generate_sites_module
+ (module runtime_sites)
+ (sites soteria-rust))

@@ -1,3 +1,5 @@
+open Soteria_rust_lib
+
 include
   State_intf.S
     with type 'a err = 'a * Charon.Meta.span Soteria_terminal.Call_trace.t
@@ -6,6 +8,7 @@ include
       * Tree_block.serialized Rustsymex.Freeable.serialized)
       list
 
+val clear_globals : t -> t
 val serialize : t -> serialized
 val pp_serialized : Format.formatter -> serialized -> unit
 
