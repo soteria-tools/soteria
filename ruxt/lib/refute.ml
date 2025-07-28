@@ -1,3 +1,4 @@
+open Soteria_rust_lib
 module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Soteria_symex.Compo_res
 open Charon
@@ -6,19 +7,16 @@ let try_refute summ_ctx summs (fundef : UllbcAst.fun_decl) =
   (* Construct precondition state and symbolically execute function *)
   let process =
     let open Rustsymex.Syntax in
-    let empty_pre = Rustsymex.return ([], [], Heap.empty) in
-    let extend_pre pre (summ : Summary.t) =
-      let* vars, args, state = pre in
-      let* arg_vars, arg = summ.ret in
-      let+ state = Heap.produce summ.state state in
-      (arg_vars @ vars, arg :: args, state)
+    let empty_pre = Rustsymex.return ([], Heap.empty) in
+    let extend_pre pre sym_ret =
+      let* args, state = pre in
+      let* arg, st = sym_ret in
+      let+ state = Heap.produce st state in
+      (arg :: args, state)
     in
-    let* vars, args, state = List.fold_left extend_pre empty_pre summs in
-    let++ rv, state =
-      (* PEDRO: Leaks are being ignored for now due to handling of globals in state.ml *)
-      Wpst_interp.exec_fun ~args ~state fundef
-    in
-    (vars, rv, state)
+    let* args, state = List.fold_left extend_pre empty_pre summs in
+    let++ rv, state = Wpst_interp.exec_fun ~args ~state fundef in
+    (rv, state)
   in
   (* For each successful outcome, the summary context will be updated. *)
   let extend_ctx res_ctx outcome =
@@ -26,12 +24,12 @@ let try_refute summ_ctx summs (fundef : UllbcAst.fun_decl) =
     let** ctx = res_ctx in
     match outcome with
     (* Successful termination: update the summary context *)
-    | Compo_res.Ok (vars, rv, state), pcs ->
+    | Compo_res.Ok (ret, state), pcs ->
         let ty = fundef.signature.output in
-        let state = Heap.serialize state in
-        let ret = Summary.subst_ret vars rv pcs in
-        let summ = Summary.{ ret; state } in
-        Result.ok @@ Summary.ctx_update ty summ ctx
+        (* PEDRO: Check reachability from ret, instead of clearing globals *)
+        let state = Heap.serialize (Heap.clear_globals state) in
+        let summ = Summary.{ ret; pcs; state } in
+        Result.ok @@ Summary.Context.update ty summ ctx
     (* Unsuccessful termination: found a type unsoundness *)
     | _ -> Result.error `TypeUnsound
   in
@@ -51,7 +49,7 @@ let find_unsoundness ?(fuel = 5) (crate : UllbcAst.crate) =
     let** summ_ctx = acc in
     let f summs ctx = try_refute ctx summs entry_point in
     let tys = entry_point.signature.inputs in
-    Summary.ctx_update_res f tys summ_ctx
+    Summary.Context.update_res f tys summ_ctx
   in
   (* The meta-loop iterates over all safe functions *)
   let rec meta_loop summ_ctx fuel =
@@ -72,7 +70,7 @@ let find_unsoundness ?(fuel = 5) (crate : UllbcAst.crate) =
       | Error _ -> true (* Type unsoundness found *)
   in
   (* Run the algorithm starting from an empty summary context *)
-  meta_loop Summary.empty_ctx fuel
+  meta_loop Summary.Context.empty fuel
 
 let exec_ruxt config file_name =
   let open Driver in

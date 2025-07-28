@@ -1,0 +1,5 @@
+(executable
+ (package ruxt)
+ (public_name ruxt)
+ (name ruxt)
+ (libraries ruxt_lib))

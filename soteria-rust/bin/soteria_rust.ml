@@ -76,19 +76,9 @@ module Exec_obol = struct
       term
 end
 
-module Exec_ruxt = struct
-  let term =
-    Term.(
-      const Soteria_rust_lib.Ruxt.Refute.exec_ruxt
-      $ Global_config.term
-      $ file_arg)
-
-  let cmd = Cmd.v (Cmd.info ~exits "ruxt") term
-end
-
 let cmd =
   Cmd.group
     (Cmd.info ~exits "soteria-rust")
-    [ Exec_rustc.cmd; Exec_cargo.cmd; Exec_obol.cmd; Exec_ruxt.cmd ]
+    [ Exec_rustc.cmd; Exec_cargo.cmd; Exec_obol.cmd ]
 
 let () = exit @@ Cmd.eval cmd
