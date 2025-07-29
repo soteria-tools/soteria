@@ -20,8 +20,14 @@ module M (State : State_intf.S) = struct
     Result.t
 
   (* some utils *)
-  let[@inline] as_ptr (v : rust_val) =
-    match v with Ptr ptr -> return ptr | _ -> not_impl "expected pointer"
+  let[@inline] as_ptr ?(null_ok = false) (v : rust_val) =
+    match v with
+    | Ptr ptr -> return ptr
+    | Base v when null_ok ->
+        let+ v = cast_checked ~ty:Typed.t_int v in
+        let ptr = Sptr.null_ptr_of v in
+        (ptr, None)
+    | _ -> not_impl "expected pointer"
 
   let[@inline] as_base ?(ty : 'ty Typed.ty option) (v : rust_val) :
       'ty Typed.t Rustsymex.t =
@@ -413,7 +419,9 @@ module M (State : State_intf.S) = struct
     (Base res, state)
 
   let ptr_offset_from_ ~unsigned ~t ~ptr ~base state : ret =
-    let* (ptr, _), (base, _) = as_ptr ptr &&* as_ptr base in
+    let* (ptr, _), (base, _) =
+      as_ptr ~null_ok:true ptr &&* as_ptr ~null_ok:true base
+    in
     let* size = Layout.size_of_s t in
     if%sat size ==@ 0s then
       State.error (`Panic (Some "ptr_offset_from with ZST")) state
