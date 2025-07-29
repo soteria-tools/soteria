@@ -392,9 +392,8 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
       | (BTwoPhaseMut | BMut) when Layout.is_unsafe_cell ty ->
           return Tree_borrow.ReservedIM
       | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
-      | _ ->
-          Fmt.kstr not_impl "Unhandled borrow kind: %a"
-            Charon.Expressions.pp_borrow_kind kind
+      | BUniqueImmutable -> return @@ Tree_borrow.Reserved false
+      | BShallow -> Fmt.kstr not_impl "Unhandled borrow kind: BShallow"
     in
     let node = Tree_borrow.init ~state:tag_st () in
     let@ block, tb = with_opt_or block (ptr, meta) in
