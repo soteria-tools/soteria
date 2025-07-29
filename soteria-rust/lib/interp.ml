@@ -458,8 +458,11 @@ module Make (State : State_intf.S) = struct
                 | [], [] -> ok ()
                 | ty1 :: l, ty2 :: r ->
                     if Layout.is_abi_compatible ty1 ty2 then check_tys l r
-                    else error `InvalidFnArgTys
-                | _ -> error `InvalidFnArgCount
+                    else error (`InvalidFnArgTys (ty1, ty2))
+                | _ ->
+                    error
+                      (`InvalidFnArgCount
+                         (List.length in_tys, List.length fn.signature.inputs))
               in
               check_tys (out_ty :: in_tys)
                 (fn.signature.output :: fn.signature.inputs)

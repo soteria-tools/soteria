@@ -6,7 +6,7 @@ open Rust_val
 open Charon_util
 
 exception CantComputeLayout of string * Types.ty
-exception InvalidLayout
+exception InvalidLayout of Types.ty
 
 (** We use a custom type for the member offsets for layouts; this allows us to
     use a more efficient representation for arrays [T; N], that doesn't require
@@ -182,11 +182,11 @@ let rec layout_of (ty : Types.ty) : layout =
   (* Arrays *)
   | TAdt { id = TBuiltin TArray; generics } ->
       let size = List.hd generics.const_generics in
-      let ty = List.hd generics.types in
+      let subty = List.hd generics.types in
       let len = Charon_util.z_of_const_generic size in
-      let sub_layout = layout_of ty in
+      let sub_layout = layout_of subty in
       if sub_layout.size <> 0 && Z.gt len (max_array_len sub_layout.size) then
-        raise InvalidLayout;
+        raise (InvalidLayout ty);
       let size = Z.(to_int (len * of_int sub_layout.size)) in
       { size; align = sub_layout.align; fields = Array sub_layout.size }
   (* Never -- zero sized type *)

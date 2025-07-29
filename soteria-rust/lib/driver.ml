@@ -90,8 +90,10 @@ let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
          let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
          let fuel = Option.value entry.fuel ~default:default_fuel in
          try Rustsymex.run ~fuel @@ exec_fun entry.fun_decl with
-         | Layout.InvalidLayout ->
-             [ (Error (`InvalidLayout, Soteria_terminal.Call_trace.empty), []) ]
+         | Layout.InvalidLayout ty ->
+             [
+               (Error (`InvalidLayout ty, Soteria_terminal.Call_trace.empty), []);
+             ]
          | exn ->
              let msg =
                Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
