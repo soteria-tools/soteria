@@ -28,7 +28,7 @@ module Cmd = struct
     match mode with
     | Rustc ->
         let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-        let features = List.map (fun f -> "--cfg " ^ f) features in
+        let features = List.map (( ^ ) "--cfg ") features in
         "charon rustc "
         ^ spaced charon
         ^ " -- "
@@ -38,7 +38,7 @@ module Cmd = struct
     | Obol ->
         (* almost the same as charon rustc *)
         let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-        let features = List.map (fun f -> "--cfg=" ^ f) features in
+        let features = List.map (( ^ ) "--cfg=") features in
         let obol_flags =
           List.filter (String.starts_with ~prefix:"--dest-file") charon
         in
@@ -48,7 +48,7 @@ module Cmd = struct
         ^ spaced obol_flags
         ^ " -- "
         ^ spaced features
-        ^ " -Zmir-enable-passes=-CheckAlignment "
+        ^ " "
         ^ escape (spaced rustc)
     | Cargo ->
         let env =
