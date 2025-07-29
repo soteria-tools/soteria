@@ -671,6 +671,14 @@ let div v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> v1
   | Int i1, Int i2 -> int_z (Z.div i1 i2)
+  | Binop (Times, v, { node = { kind = Int i; _ }; _ }), Int j
+  | Int j, Binop (Times, v, { node = { kind = Int i; _ }; _ })
+    when Z.equal i j ->
+      v
+  | Binop (Times, { node = { kind = Int i; _ }; _ }, v), Int j
+  | Int j, Binop (Times, { node = { kind = Int i; _ }; _ }, v)
+    when Z.equal i j ->
+      v
   | _ -> Binop (Div, v1, v2) <| TInt
 
 let rec is_mod v n =
