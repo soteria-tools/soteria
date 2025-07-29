@@ -18,7 +18,7 @@ module M (State : State_intf.S) = struct
       let align = Typed.cast align in
       let++ ptr, state = State.alloc_untyped ~zeroed ~size ~align state in
       (Ptr ptr, state)
-    else State.error `InvalidLayout state
+    else State.error `InvalidAlloc state
 
   let dealloc ~args state =
     let ((ptr_in, _) as ptr), size, align =
@@ -52,7 +52,7 @@ module M (State : State_intf.S) = struct
       in
       let++ (), state = State.free ptr state in
       (Ptr new_ptr, state)
-    else State.error `InvalidLayout state
+    else State.error `InvalidAlloc state
 
   let no_alloc_shim_is_unstable ~args:_ state = Result.ok (Tuple [], state)
 end
