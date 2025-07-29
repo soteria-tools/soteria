@@ -111,6 +111,7 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
     "pass/issues/issue-20575.rs": unkn_("Very slow compilation"),
     "pass/issues/issue-29746.rs": unkn_("Very slow compilation"),
+    "pass/arrays.rs": unkn_("Makes an array [(), usize::MAX], which we try evaluating"),
     "pass/tag-align-dyn-u64.rs": unkn_("Slow due to symbolic checks on the pointer"),
 }
 
@@ -183,6 +184,7 @@ KNOWN_ISSUES = {
     "pass/partially-uninit.rs": "We don't handle unions properly, and lose data on transmutes",
     "pass/provenance.rs": "It is unclear how to properly do ptr-int-ptr conversions",
     "pass/ptr_int_from_exposed.rs": "It is unclear how to properly do ptr-int-ptr conversions",
+    "pass/ptr_offset.rs": "It is unclear how to properly do ptr-int-ptr conversions",
     "pass/regions-lifetime-nonfree-late-bound.rs": "We don't do drops properly",
     "pass/slices.rs": "We shouldn't dereference pointers to ZSTs...?",
     "pass/u128.rs": "We don't do int-float-int conversions properly",
