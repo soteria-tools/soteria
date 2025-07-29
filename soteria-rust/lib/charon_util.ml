@@ -16,7 +16,12 @@ let lit_to_string = PrintValues.literal_type_to_string
 let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TAdtId id; _ } ->
       let adt = Crate.get_adt id in
-      Fmt.pf fmt "%a" Crate.pp_name adt.item_meta.name
+      let name, generics =
+        match List.rev adt.item_meta.name with
+        | PeMonomorphized generics :: rest -> (List.rev rest, generics)
+        | _ -> (adt.item_meta.name, TypesUtils.empty_generic_args)
+      in
+      Fmt.pf fmt "%a%a" Crate.pp_name name Crate.pp_generic_args generics
   | TAdt { id = TTuple; generics = { types = tys; _ } } ->
       Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_ty) tys
   | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
