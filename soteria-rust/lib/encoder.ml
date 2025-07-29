@@ -248,7 +248,8 @@ module Make (Sptr : Sptr.S) = struct
           let*** ptr_compo = query (isize, offset) in
           let+** meta_compo = query (isize, offset +@ ptr_size) in
           match (ptr_compo, meta_compo) with
-          | ((Base _ | Ptr (_, None)) as ptr), Base meta -> (
+          | ( ((Base _ | Ptr (_, None)) as ptr),
+              ((Base _ | Ptr (_, None)) as meta) ) -> (
               let* ptr =
                 match ptr with
                 | Ptr (ptr_v, None) -> Rustsymex.return ptr_v
@@ -257,7 +258,15 @@ module Make (Sptr : Sptr.S) = struct
                     Sptr.null_ptr_of ptr_v
                 | _ -> failwith "Expected a pointer or base"
               in
-              let ptr = Ptr (ptr, Some (meta :> T.cval Typed.t)) in
+              let* meta =
+                match meta with
+                | Base meta -> Rustsymex.return meta
+                | Ptr (meta_v, None) ->
+                    let+ meta = Sptr.decay meta_v in
+                    (meta :> T.cval Typed.t)
+                | _ -> failwith "Expected a pointer or base"
+              in
+              let ptr = Ptr (ptr, Some meta) in
               match ty with
               | TRawPtr _ -> Result.ok ptr
               | _ ->
