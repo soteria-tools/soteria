@@ -18,7 +18,8 @@ let config_set (config : Config.global) =
   Solver_config.set config.solver;
   Soteria_logs.Config.check_set_and_lock config.logs;
   Soteria_terminal.Config.set_and_lock config.terminal;
-  Config.set config.rusteria
+  Config.set config.rusteria;
+  Config.set_start_time ()
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
@@ -149,8 +150,10 @@ let exec_and_output_crate ~plugin compile_fn =
     exec_main ~plugin crate
   with
   | Ok res ->
-      Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Note
-        "Done, no errors found";
+      Fmt.kstr
+        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Note)
+        "Done in %as, no errors found" (Fmt.float_dfrac 2)
+        (Config.time_since_start ());
       (res
       |> List.iter @@ fun (pcs, entry_name, ntotal) ->
          let open Fmt in
@@ -169,8 +172,10 @@ let exec_and_output_crate ~plugin compile_fn =
            pcs);
       exit 0
   | Error res ->
-      Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error
-        "Found issues";
+      Fmt.kstr
+        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
+        "Found issues in %as" (Fmt.float_dfrac 2)
+        (Config.time_since_start ());
       let ( let@@ ) f x = List.iter x f in
       let () =
         let@@ errs, entry_name, ntotal = res in
