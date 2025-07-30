@@ -108,7 +108,7 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
 
         return (cause, color, reason)
 
-    if "Done, no errors found" in test:
+    if "no errors found" in test:
         if not expect_failure:
             return ("Success", GREEN, "Expected success, got success")
         else:
