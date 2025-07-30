@@ -2,13 +2,16 @@ open Charon
 
 module Cmd = struct
   type t = {
-    (* Arguments passed to Charon *)
     charon : string list; [@default []]
-    (* Features to enable for compilation (as in --cfg) *)
+        (** Arguments passed to Charon (only in [Rustc] and [Cargo] mode) *)
+    obol : string list; [@default []]
+        (** Arguments passed to Obol (only in [Obol] mode) *)
     features : string list; [@default []]
-    (* DEPRECATED: rustc flags. For Cargo we use RUSTFLAGS, but when possible it would be
-       nicer to use the Cargo-specific command (as with features) *)
+        (** Features to enable for compilation (as in --cfg) *)
     rustc : string list; [@default []]
+        (** DEPRECATED: rustc flags. For Cargo we use RUSTFLAGS, but when
+            possible it would be nicer to use the Cargo-specific command (as
+            with features) *)
   }
   [@@deriving make]
 
@@ -19,15 +22,16 @@ module Cmd = struct
   let concat_cmd c1 c2 =
     {
       charon = c1.charon @ c2.charon;
+      obol = c1.obol @ c2.obol;
       features = c1.features @ c2.features;
       rustc = c1.rustc @ c2.rustc;
     }
 
-  let build_cmd ~mode { charon; features; rustc } =
+  let build_cmd ~mode { charon; obol; features; rustc } =
     let spaced = String.concat " " in
+    let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
     match mode with
     | Rustc ->
-        let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
         let features = List.map (( ^ ) "--cfg ") features in
         "charon rustc "
         ^ spaced charon
@@ -36,16 +40,12 @@ module Cmd = struct
         ^ " "
         ^ escape (spaced rustc)
     | Obol ->
-        (* almost the same as charon rustc *)
-        let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
+        (* similar to charon rustc *)
         let features = List.map (( ^ ) "--cfg=") features in
-        let obol_flags =
-          List.filter (String.starts_with ~prefix:"--dest-file") charon
-        in
         (* Obol currently doesn't support lib crates/files *)
-        let rustc = List.filter (( <> ) "--crate-type=lib") rustc in
+        (* let rustc = List.filter (( <> ) "--crate-type=lib") rustc in *)
         "DYLD_LIBRARY_PATH=$(charon toolchain-path)/lib/ obol "
-        ^ spaced obol_flags
+        ^ spaced obol
         ^ " -- "
         ^ spaced features
         ^ " "
@@ -171,6 +171,7 @@ let default =
            "--raw-boxes";
          ]
         @ opaques)
+      ~obol:[ "--entry_names main"; "--entry_attribs rusteriatool::test" ]
       ~features:[ "rusteria" ]
       ~rustc:
         [
@@ -206,6 +207,7 @@ let kani =
     let target = get_host () in
     compile_lib lib;
     Cmd.make ~features:[ "kani " ]
+      ~obol:[ "--entry_attribs kanitool::proof" ]
       ~rustc:
         [
           "-Zcrate-attr=register_tool(kanitool)";
@@ -235,6 +237,7 @@ let miri =
     let target = get_host () in
     compile_lib lib;
     Cmd.make ~features:[ "miri" ]
+      ~obol:[ "--entry_names miri_start" ]
       ~rustc:
         [
           "--extern=miristd";
@@ -264,7 +267,10 @@ let merge_ifs (plugins : (bool * plugin) list) =
 
   let mk_cmd ~input ~output () =
     let init =
-      Cmd.make ~charon:[ "--dest-file " ^ output ] ~rustc:[ input ] ()
+      Cmd.make
+        ~charon:[ "--dest-file " ^ output ]
+        ~obol:[ "--dest-file " ^ output ]
+        ~rustc:[ input ] ()
     in
     List.map (fun (p : plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
