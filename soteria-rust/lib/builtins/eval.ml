@@ -50,6 +50,7 @@ module M (State : State_intf.S) = struct
       ("rusteria::panic", Rusteria Panic);
       (* Kani builtins -- we re-define these for nicer call traces *)
       ("kani::assert", Rusteria Assert);
+      ("kani::assume", Rusteria Assume);
       ("kani::panic", Rusteria Panic);
       (* Miri builtins *)
       ("miristd::miri_get_alloc_id", Miri AllocId);
