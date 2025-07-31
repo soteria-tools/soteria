@@ -3,7 +3,7 @@ import os
 import subprocess
 import re
 from pathlib import Path
-from typing import TypedDict, Optional
+from typing import Literal, TypedDict, Optional
 
 PURPLE = "\033[0;35m"
 RED = "\033[0;31m"
@@ -78,7 +78,7 @@ unkn_ = lambda x: ("Unknown", YELLOW, x)
 SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     # Kani
     "ArithOperators/rem_float_fixme.rs": fail_("Complicated float expression"),
-    "ConstEval/limit.rs": unkn_("Takes ages to compile (const eval loop of 131072)"),
+    "ConstEval/limit.rs": unkn_("Slow because of an array of size 131072"),
     "FloatingPoint/main.rs": pass_("Slow floating operation operations"),
     "BitwiseShiftOperators/shift_neg_vals.rs": unkn_(
         "Wrapping operations without loop unrolling branch too much"
@@ -225,60 +225,3 @@ def determine_failure_expect(filepath: str) -> bool:
     elif "miri" in filepath:
         return "/tests/fail/" in filepath or "/tests/panic/" in filepath
     return False
-
-
-class Flags(TypedDict):
-    cmd_flags: list[str]
-    filters: list[str]
-    exclusions: list[str]
-    iterations: Optional[int]
-    tag: Optional[str]
-    test_folder: Optional[Path]
-    with_obol: bool
-
-
-def parse_flags() -> Flags:
-    i = 0
-    flags: Flags = {
-        "cmd_flags": [],
-        "filters": [],
-        "exclusions": [],
-        "iterations": None,
-        "tag": None,
-        "test_folder": None,
-        "with_obol": False,
-    }
-    while i < len(sys.argv):
-        arg = sys.argv[i]
-        if arg == "--":
-            flags["cmd_flags"] += sys.argv[i + 1 :]
-            break
-        elif arg == "-f":
-            flags["filters"].append(sys.argv[i + 1])
-            i += 1
-        elif arg == "-e":
-            flags["exclusions"].append(sys.argv[i + 1])
-            i += 1
-        elif arg == "-i":
-            flags["iterations"] = int(sys.argv[i + 1])
-            i += 1
-        elif arg == "--tag":
-            flags["tag"] = sys.argv[i + 1]
-            i += 1
-        elif arg == "--folder":
-            flags["test_folder"] = Path(sys.argv[i + 1]).resolve()
-            if not flags["test_folder"].is_dir():
-                print(
-                    f"{RED}The folder {flags['test_folder']} does not exist or is not a directory."
-                )
-                exit(1)
-            i += 1
-        elif arg == "--obol":
-            flags["with_obol"] = True
-
-        else:
-            print(f"{RED}Unknown flag: {arg}")
-            exit(1)
-        i += 1
-
-    return flags

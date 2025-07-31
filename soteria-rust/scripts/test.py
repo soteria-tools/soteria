@@ -5,132 +5,37 @@ from io import TextIOWrapper
 from pathlib import Path
 import time
 import datetime
-from typing import Callable
+from typing import Callable, Literal
 import math
 
 from common import *
-from parselog import *
-
-DynFlagFn = Optional[Callable[[Path], list[str]]]
-
-
-class TestConfig(TypedDict):
-    root: Path
-    args: list[str]
-    dyn_flags: DynFlagFn
-
-
-KANI_PATH = (PWD / ".." / ".." / ".." / "kani" / "tests" / "kani").resolve()
-KANI_EXCLUSIONS = [
-    "/Stubbing/",
-    "/SIMD/",
-    "/Atomic/",
-    "/ForeignItems/",
-    "/Coroutines/",
-    "/VolatileIntrinsics/",
-    "/Volatile/",
-    "/DynTrait/",
-    "/AsyncAwait/",
-]
-
-MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
-MIRI_EXCLUSIONS = [
-    "/ui.rs",
-    "/fail-dep/",
-    "/pass-dep/",
-    "/native-lib/",
-    "/many-seeds/",
-    "/utils/",
-    "/stacked-borrows/",
-    "/stacked_borrows/",
-    "/concurrency/",
-    "/data_race/",
-    "simd",
-    "async",
-    "/shims/",
-]
-
-
-def kani() -> tuple[list[Path], TestConfig]:
-    root = Path(KANI_PATH)
-    tests = [
-        path
-        for path in root.rglob("*.rs")
-        if not any(exclusion in str(path) for exclusion in KANI_EXCLUSIONS)
-    ]
-    return tests, {
-        "root": root,
-        "args": ["--ignore-leaks", "--kani"],
-        "dyn_flags": None,
-    }
-
-
-def miri() -> tuple[list[Path], TestConfig]:
-    dyn_flag_cache: dict[Path, list[str]] = {}
-
-    def dyn_flags(file: Path) -> list[str]:
-        if file in dyn_flag_cache:
-            return dyn_flag_cache[file]
-        flags = []
-        # if file contains "-Zmiri-ignore-leaks", add "--ignore-leaks"
-        if "-Zmiri-ignore-leaks" in file.read_text():
-            flags.append("--ignore-leaks")
-        dyn_flag_cache[file] = flags
-        return flags
-
-    root = Path(MIRI_PATH)
-    tests = [
-        path
-        for path in root.rglob("*.rs")
-        if not any(exclusion in str(path) for exclusion in MIRI_EXCLUSIONS)
-    ]
-    return tests, {
-        "root": root,
-        "args": ["--miri"],
-        "dyn_flags": dyn_flags,
-    }
-
-
-def custom() -> tuple[list[Path], TestConfig]:
-    flags = parse_flags()
-    if flags["test_folder"] is None:
-        raise ArgError("No test folder specified, use --folder <path>")
-    root = flags["test_folder"]
-    tests = [path for path in root.rglob("*.rs")]
-    return tests, {
-        "root": root,
-        "args": [],
-        "dyn_flags": lambda _: [],
-    }
-
-
-TEST_SUITES = {"kani": kani, "miri": miri, "custom": custom}
+from parselog import (
+    TestCategoriser,
+    LogCategorisation_,
+)
+from cliopts import ArgError, CliOpts, parse_flags
+from config import TEST_SUITES, TestConfig
 
 
 # Execute a test, return the categorisation and the elapsed time
 def exec_test(
     file: Path,
     *,
-    subcmd: str = "rustc",
+    cmd: list[str],
+    categoriser: TestCategoriser,
     log: Optional[TextIOWrapper] = None,
-    args: list[str] = [],
     dyn_flags: Optional[Callable[[Path], list[str]]] = None,
 ) -> tuple[LogCategorisation_, float]:
     expect_failure = determine_failure_expect(str(file))
     if dyn_flags:
-        args = [*args, *dyn_flags(file)]
+        cmd = cmd + dyn_flags(file)
 
     if log:
         log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
 
     before = time.time()
-    cmd = (
-        ["soteria-rust", subcmd, str(file)]
-        + args
-        + ["--compact", "--no-color", "--log-compilation"]
-    )
     data = subprocess.run(
-        cmd,
+        cmd + [str(file)],
         capture_output=True,
         text=True,
     )
@@ -140,7 +45,7 @@ def exec_test(
     if log:
         log.write(full_log)
 
-    outcome = categorise_rusteria(full_log, expect_failure=expect_failure)
+    outcome = categoriser(full_log, expect_failure=expect_failure)
     outcome = outcome[0] if isinstance(outcome, list) else outcome
 
     return outcome, elapsed
@@ -154,28 +59,17 @@ def build():
     pprint(f"Took {elapsed:.3f}s to build", inc=True)
 
 
-def filter_tests(tests: list[Path], flags: Flags):
-    tests = [
-        t
-        for t in tests
-        if (not any(e in str(t) for e in flags["exclusions"]))
-        and (flags["filters"] == [] or all(f in str(t) for f in flags["filters"]))
-    ]
-    tests.sort()
-    return tests
-
-
-def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
+def exec_tests(opts: CliOpts, test_conf: TestConfig):
     build()
-    flags = parse_flags()
+    cmd = opts["tool_cmd"] + test_conf["args"]
+    tests = test_conf["tests"]
 
-    args = test_conf["args"] + flags["cmd_flags"]
-    subcmd, tool_name = ("obol", "Obol") if flags["with_obol"] else ("rustc", "Charon")
-
-    tests = filter_tests(tests, flags)
+    log = PWD / f"{test_conf['name'].lower()}.log"
     log.touch()
     log.write_text(f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n")
     pprint(f"{BOLD}Running {len(tests)} tests{RESET}", inc=True)
+
+    interrupts = 0
 
     oks = 0
     errs = 0
@@ -192,15 +86,24 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
                     f"{clr}{msg}{RESET} {YELLOW}✦{RESET} {GRAY}{BOLD}Skipped{RESET}: {BOLD}{reason}{RESET}"
                 )
             else:
-                (msg, clr, reason), elapsed = exec_test(
-                    path,
-                    subcmd=subcmd,
-                    log=logfile,
-                    args=args,
-                    dyn_flags=test_conf["dyn_flags"],
-                )
-                if flags["with_obol"]:
-                    msg = msg.replace("Charon", tool_name)
+                try:
+                    (msg, clr, reason), elapsed = exec_test(
+                        path,
+                        cmd=cmd,
+                        log=logfile,
+                        categoriser=opts["categorise"],
+                        dyn_flags=test_conf["dyn_flags"],
+                    )
+                except KeyboardInterrupt as e:
+                    interrupts += 1
+                    print(
+                        f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
+                    )
+                    if interrupts >= 3:
+                        raise e
+                    continue
+
+                msg = msg.replace("Tool", opts["tool"])
                 txt = f"{clr}{msg}{RESET} in {elapsed:.3f}s"
                 if elapsed > 1:
                     txt += " 🐌"
@@ -213,7 +116,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
                 oks += 1
             elif msg == "Failure":
                 errs += 1
-            elif tool_name in msg:
+            elif opts["tool"] in msg:
                 tool_errs += 1
     elapsed = time.time() - before
     pprint(
@@ -221,16 +124,13 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
     )
 
 
-def evaluate_perf(tests: list[Path], test_conf: TestConfig):
+def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
     build()
-    flags = parse_flags()
 
-    iters = flags["iterations"] or 5
-    args = test_conf["args"] + flags["cmd_flags"]
-    csv_suffix = f"{iters}-{int(time.time())}" if not flags["tag"] else flags["tag"]
+    tests = test_conf["tests"]
+    cmd = opts["tool_cmd"] + test_conf["args"]
+    csv_suffix = opts.get("tag", f"{iters}-{int(time.time())}")
     csv_file = PWD / f"eval-{csv_suffix}.csv"
-
-    tests = filter_tests(tests, flags)
 
     pprint(f"{BOLD}Running {len(tests)} tests, {iters} times{RESET}", inc=True)
 
@@ -250,7 +150,8 @@ def evaluate_perf(tests: list[Path], test_conf: TestConfig):
             pprint(f"{txt} {i+1}/{iters}", end="\r")
             (msg, clr, _), t = exec_test(
                 path,
-                args=args,
+                cmd=cmd,
+                categoriser=opts["categorise"],
                 dyn_flags=test_conf["dyn_flags"],
             )
             if msg not in ["Success", "Failure"]:
@@ -369,52 +270,37 @@ def diff_evaluation(path1: Path, path2: Path):
     pptable(rows)
 
 
-class ArgError(Exception):
-    def __init__(self, msg: str):
-        super().__init__(msg)
-        self.msg = msg
+def main():
+    try:
+        opts = parse_flags()
+    except ArgError as e:
+        print(f"{RED}Error: {YELLOW}{e}")
+        exit(1)
 
-    def __str__(self):
-        return self.msg
+    cmd = opts["cmd"]
+    if cmd[0] == "exec":
+        (suite,) = cmd[1]
+        config = TEST_SUITES[suite](opts)
+        exec_tests(opts, config)
+    elif cmd[0] == "all":
+        for name, callback in TEST_SUITES.items():
+            if name == "custom":
+                continue
+            config = callback(opts)
+            pprint(f"Running {BOLD}{name}{RESET} tests", inc=True)
+            exec_tests(opts, config)
+    elif cmd[0] == "eval":
+        (suite, iterations) = cmd[1]
+        config = TEST_SUITES[suite](opts)
+        evaluate_perf(opts, iterations, config)
+    elif cmd[0] == "eval-diff":
+        (file1, file2) = cmd[1]
+        diff_evaluation(file1, file2)
 
 
 if __name__ == "__main__":
     try:
-        sys.argv.pop(0)  # remove script name
-        if len(sys.argv) == 0:
-            raise ArgError("missing command")
-        arg = sys.argv.pop(0)
-        if arg in TEST_SUITES:
-            tests, config = TEST_SUITES[arg]()
-            log = PWD / f"{arg}.log"
-            exec_tests(tests, config, log)
-        elif arg == "all":
-            for name, callback in TEST_SUITES.items():
-                if name == "custom":
-                    continue
-                tests, config = callback()
-                log = PWD / f"{name}.log"
-                pprint(f"Running {BOLD}{name}{RESET} tests", inc=True)
-                exec_tests(tests, config, log)
-        elif arg == "eval":
-            if len(sys.argv) == 0:
-                raise ArgError("missing test suite name: kani or miri")
-            suite = sys.argv.pop(0)
-            if suite not in TEST_SUITES:
-                raise ArgError("invalid test suite name, expected kani or miri")
-            tests, config = TEST_SUITES[suite]()
-            evaluate_perf(tests, config)
-        elif arg == "eval-diff":
-            if len(sys.argv) < 2:
-                raise ArgError("missing paths to two evaluation CSV files")
-            file1 = Path(sys.argv.pop(0))
-            file2 = Path(sys.argv.pop(0))
-            diff_evaluation(file1, file2)
-        else:
-            raise ArgError(
-                f"Unknown command, expected {', '.join(TEST_SUITES)}, eval or eval-diff"
-            )
-    except ArgError as e:
-        print(f"{RED}Error: {YELLOW}{e}")
+        main()
     except KeyboardInterrupt:
+        pprint(f"{BOLD}User interrupted script -- exiting 👋", inc=True)
         exit(1)
