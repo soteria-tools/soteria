@@ -17,9 +17,10 @@ and tb_state
 
 val fresh_tag : unit -> tag
 val zero : tag
-val pp : t Fmt.t
-val pp_tag : tag Fmt.t
-val pp_state : state Fmt.t
+val pp : Format.formatter -> t -> unit
+val pp_tag : Format.formatter -> tag -> unit
+val pp_state : Format.formatter -> state -> unit
+val pp_tb_state : Format.formatter -> tb_state -> unit
 val init : ?protector:bool -> state:state -> unit -> t
 val equal : t -> t -> bool
 val update : t -> (t -> t) -> tag -> t
