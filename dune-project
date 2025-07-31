@@ -6,6 +6,8 @@
 
 (using dune_site 0.1)
 
+(using mdx 0.4)
+
 (generate_opam_files)
 
 (license BSD-3-Clause)
