@@ -44,7 +44,7 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
   | TFnPtr { binder_value = ins, out; _ } ->
       Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
-  | ty -> Fmt.pf fmt "%a" Types.pp_ty ty
+  | ty -> Types.pp_ty fmt ty
 
 let z_of_const_generic : Types.const_generic -> Z.t = function
   | CgValue (VScalar s) -> z_of_scalar s

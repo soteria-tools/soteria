@@ -35,7 +35,7 @@ let rec is_empty = function
 let rec pp_rust_val pp_ptr fmt =
   let pp_rust_val = pp_rust_val pp_ptr in
   function
-  | Base v -> Fmt.pf fmt "%a" Typed.ppa v
+  | Base v -> Typed.ppa fmt v
   | Ptr (p, None) -> Fmt.pf fmt "Ptr(%a)" pp_ptr p
   | Ptr (p, Some meta) -> Fmt.pf fmt "Ptr(%a, %a)" pp_ptr p Typed.ppa meta
   | Enum (disc, vals) ->

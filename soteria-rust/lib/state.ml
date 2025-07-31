@@ -57,7 +57,7 @@ module GlobMap = struct
 
   let pp pp_v fmt m =
     let pp_pair = Fmt.pair ~sep:(Fmt.any " -> ") pp_global pp_v in
-    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) m
+    (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) fmt m
 end
 
 module FunBiMap = struct
@@ -89,7 +89,7 @@ module FunBiMap = struct
     let pp_pair =
       Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Types.pp_fn_ptr
     in
-    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) lmap
+    (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) fmt lmap
 end
 
 type sub = Tree_block.t * Tree_borrow.t
@@ -280,6 +280,49 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   in
   let@ ofs, block = with_ptr dst st in
   let@ block, _ = with_tbs block in
+  (* We need to be careful about tree borrows; the tree we copy has a tree borrow state inside,
+     but we cannot copy that, since those tags don't belong to this allocation!
+     Instead, we must first get the tree borrow states for the original area of memory,
+     and update the copied tree with them.
+     We only want to update the values in the tree, not the tree borrow state. *)
+  let module Tree = Tree_block.Tree in
+  let** original_tree, _ = Tree_block.get_raw_tree_owned ofs size block in
+  (* Iterator over the tree borrow states in a tree. *)
+  let collect_tb_states f =
+    Tree.iter_leaves_rev original_tree @@ fun leaf ->
+    match leaf.node with
+    | Owned { tb; _ } ->
+        let range = Range.offset leaf.range ~-(fst original_tree.range) in
+        f (tb, range)
+    | NotOwned Totally -> failwith "Impossible: we framed the range"
+    | NotOwned Partially ->
+        failwith "Impossible: iterating over an intermediate node"
+  in
+  (* Update a tree and its children with the given tree borrow state. *)
+  let put_tb tb t =
+    let rec aux tb (t : Tree.t) =
+      match t.node with
+      | NotOwned _ -> failwith "Impossible: checked before"
+      | Owned { v; _ } ->
+          let children =
+            Option.map (fun (l, r) -> (aux tb l, aux tb r)) t.children
+          in
+          { t with children; node = Owned { v; tb } }
+    in
+    try Result.ok (aux tb t) with Failure msg -> not_impl msg
+  in
+  (* Applies all the tree borrow ranges to the tree we're writing, overwriting all
+     previous states. *)
+  let** tree_to_write =
+    Result.fold_iter collect_tb_states ~init:tree_to_write
+      ~f:(fun tree (tb, range) ->
+        let replace_node = put_tb tb in
+        let rebuild_parent = Tree.of_children in
+        let++ _, tree =
+          Tree.frame_range ~rebuild_parent ~replace_node tree range
+        in
+        tree)
+  in
   Tree_block.put_raw_tree ofs tree_to_write block
 
 let alloc ?zeroed size align st =
