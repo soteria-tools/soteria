@@ -44,9 +44,3 @@ let cast_float x = if is_float x.node.ty then Some x else None
 
 let cast_checked2 x y =
   if equal_ty x.node.ty y.node.ty then Some (x, y, x.node.ty) else None
-
-let nonzero_z z =
-  if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z")
-  else Svalue.int_z z
-
-let nonzero x = nonzero_z (Z.of_int x)

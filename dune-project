@@ -6,6 +6,8 @@
 
 (using dune_site 0.1)
 
+(using mdx 0.4)
+
 (generate_opam_files)
 
 (license Apache-2.0)
@@ -41,6 +43,7 @@
   progress
   grace
   (odoc :with-doc)
+  (mdx :build)
   (dune
    (and
     :build
