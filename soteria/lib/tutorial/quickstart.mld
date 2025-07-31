@@ -1,0 +1,46 @@
+{1 Soteria Quick Start}
+
+Welcome to the Soteria tutorial! This tutorial will guide you through the basics of writing a symbolic execution engine.
+
+Today you'll be learning how to:
+- {{!instantiate} Instantiate} the {{!Soteria_symex.Symex.Make_iter}Symex} functor.
+- {{!vanish} Write your first symbolic process}
+
+{2:instantiate Instantiating the Symex functor}
+
+The main utility of the Soteria library is the {!Symex} functor, which provides the necessary infrastructure to define and run a symbolic execution engine. To instantiate it, you need to provide:
+- A {{!Soteria_symex.Symex.Config} Config} module, which defines a set of configuration for the symbolic engine. At the moment, it only defines a fuel gauge, which limits the number of steps and branching points in the symbolic execution.
+- A {{!Soteria_symex.Solver.Mutable_incremental} Solver} module, which defines {e symbolic values} and the solver interface to decide whether a symbolic expression of type {!Symex.Value.sbool} is satisfiable;
+
+We will give detail 
+
+{@ocaml[
+module Symex = Symex.Make_iter
+  (struct
+    let fuel : Soteria_symex.Fuel_gauge.t = { steps = 1000; branching = 4 }
+   end)
+  (C_solver.Z3_solver)
+]}
+
+Here, we use {{!Soteria_symex.Symex.Make_iter} Make_iter} to create a symbolic execution monad where the base monad is {!iter/Iter.t}. The alternative is {{!Soteria_symex.Symex.Make_seq}Make_seq}, which uses {!Stdlib.Seq.t} as the base monad. Soteria offers both monads, though we have not found significant differences in performance.
+
+{2:vanish Your first symbolic process}
+
+Soteria is a library to write {e symbolic processes}. A symbolic process is a value of the type {{!Soteria_symex.  Symex.S.t}Symex.t}, which is effectively a computation of a symbolic execution waiting to be executed.
+
+The simplest such process is the symbolic process that does not do anything symbolic and simply returns a single branch with a given value, say the integer [0].
+
+{@ocaml[
+# Symex.return 0;;
+- : int Symex.t = <abstr>
+]}
+
+
+This process has type [int Symex.t], meaning that it is a symbolic process that terminates with a value of type [int].
+
+A more interesting process is the one which returns 
+
+{@ocaml[
+open Symex
+let r = if%sat 0s then 0s else 0s
+]}
