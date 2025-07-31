@@ -5,7 +5,7 @@ from common import *
 from os import error, truncate
 import sys
 import re
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Protocol
 
 
 def file_str(file_name: str):
@@ -19,6 +19,10 @@ def file_str(file_name: str):
 LogInfo = dict[tuple[str, str], set[tuple[str, Optional[str]]]]
 LogCategorisation_ = tuple[str, str, Optional[str]]
 LogCategorisation = LogCategorisation_ | list[LogCategorisation_]
+
+
+class TestCategoriser(Protocol):
+    def __call__(self, test: str, *, expect_failure: bool) -> LogCategorisation: ...
 
 
 def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation:
@@ -67,14 +71,14 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             sub_errors.append("Parsing ULLBC from JSON")
 
         if len(sub_errors) > 0:
-            return [("Charon", PURPLE, reason) for reason in sub_errors]
-        return ("Charon", PURPLE, None)
+            return [("Tool", PURPLE, reason) for reason in sub_errors]
+        return ("Tool", PURPLE, None)
 
     if "Fatal: No entry points found" in test:
         return ("No entry points found", RED, None)
 
     if "resolve_constant (Generated_Expressions.COpaque" in test:
-        return ("Charon", PURPLE, "Constant resolving")
+        return ("Tool", PURPLE, "Constant resolving")
 
     if "MISSING FEATURE, VANISHING" in test:
         cause = re.search(r"MISSING FEATURE, VANISHING: (.+)\n", test)
@@ -97,11 +101,11 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             cause = "Unhandled transmute"
         if "is opaque" in cause:
             reason = cause.replace("Function ", "").replace(" is opaque", "")
-            cause = "Opaque function - Charon"
+            cause = "Opaque function - Tool"
             color = PURPLE
         if "Opaque constant" in cause:
             reason = cause.replace("Constant constant: ", "")
-            cause = "Opaque constant - Charon"
+            cause = "Opaque constant - Tool"
             color = PURPLE
         if "Splitting " in cause:
             cause = "Splitting value"
