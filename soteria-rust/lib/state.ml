@@ -157,8 +157,9 @@ let with_tbs b f =
 let check_ptr_align (ptr : Sptr.t) ty st =
   let@ () = with_error_loc_as_call_trace st in
   let* expected_align = Layout.align_of_s ty in
-  let ofs = Typed.Ptr.ofs ptr.ptr in
-  let align = ptr.align in
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  (* 0-based pointers are aligned up to their offset *)
+  let align = Typed.ite (loc ==@ Typed.Ptr.null_loc) expected_align ptr.align in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
         Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa expected_align
@@ -172,14 +173,16 @@ let with_ptr (ptr : Sptr.t) (st : t)
       [< T.sint ] Typed.t * sub option ->
       ('a * sub option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
-  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
+  if%sat Sptr.sem_eq ptr Sptr.null_ptr then Result.error `NullDereference
   else
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     let@ state = with_state st in
-    let++ v, state =
-      (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state
-    in
-    (v, state)
+    let* res = (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state in
+    match res with
+    | Missing _ as miss ->
+        if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
+        else return miss
+    | ok_or_err -> return ok_or_err
 
 (** This is used as a stopgap for cases where a function pointer is cast to a
     regular pointer and is used on the state; the location won't exist in tree
@@ -483,7 +486,10 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
     | Ok v -> Ok v
     | Missing fixes -> Missing fixes
     | Error `UseAfterFree -> Error `RefInvalidatedEarly
-    | Error ((`AliasingError | `NullDereference | `OutOfBounds) as e) -> Error e
+    | Error
+        ((`AliasingError | `NullDereference | `OutOfBounds | `UBDanglingPointer)
+         as e) ->
+        Error e
   in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
