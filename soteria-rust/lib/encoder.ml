@@ -286,13 +286,13 @@ module Make (Sptr : Sptr.S) = struct
           let+** boxed = query (TLiteral (TInt Isize), offset) in
           match boxed with
           | Ptr _ as ptr -> Result.ok ptr
-          | Base _ -> Result.error `UBTransmute
+          | Base _ -> Result.error `UBDanglingPointer
           | _ -> not_impl "Expected a pointer or base")
       | TFnPtr _ -> (
           let+** boxed = query (TLiteral (TInt Isize), offset) in
           match boxed with
           | Ptr _ as ptr -> Result.ok ptr
-          | Base _ -> Result.error `UBTransmute
+          | Base _ -> Result.error `UBDanglingPointer
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
@@ -332,7 +332,9 @@ module Make (Sptr : Sptr.S) = struct
               let len =
                 match Typed.kind meta with
                 | Int len -> len
-                | _ -> failwith "Can't read a slice of non-concrete size"
+                | _ ->
+                    Fmt.failwith "Can't read a slice of non-concrete size %a"
+                      Typed.ppa meta
               in
               let sub_ty =
                 if ty = TSlice then List.hd generics.types
@@ -475,7 +477,7 @@ module Make (Sptr : Sptr.S) = struct
           if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
       (* A ref cannot be an invalid pointer *)
       | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
-          error `UBTransmute
+          error `UBDanglingPointer
       (* A ref must point to a readable location *)
       | ( _,
           ( TRef (_, inner_ty, _)
@@ -486,7 +488,7 @@ module Make (Sptr : Sptr.S) = struct
           | None -> Result.ok v
           | Some fn ->
               let* is_valid = fn ptr inner_ty in
-              if is_valid then ok v else error `UBTransmute)
+              if is_valid then ok v else error `UBDanglingPointer)
       (* A raw pointer can be whatever *)
       | _, TRawPtr _, Base off ->
           let* off = cast_checked ~ty:Typed.t_int off in

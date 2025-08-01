@@ -123,8 +123,13 @@ module InterpM (State : State_intf.S) = struct
         ~fe:(fun (e, state) -> fe e store state)
         (x store state)
 
-    let[@inline] is_valid_ptr =
+    let[@inline] is_valid_ptr_fn =
      fun store state -> Result.ok (is_valid_ptr state, store, state)
+
+    let[@inline] is_valid_ptr ptr ty =
+     fun store state ->
+      let+ is_valid = is_valid_ptr state ptr ty in
+      Ok (is_valid, store, state)
 
     let[@inline] lift_err sym =
      fun store state ->
@@ -530,11 +535,16 @@ module Make (State : State_intf.S) = struct
   and eval_rvalue (expr : Expressions.rvalue) =
     match expr with
     | Use op -> eval_operand op
+    (* Reference *)
     | RvRef (place, borrow) ->
-        let* ((rptr, _) as ptr) = resolve_place place in
-        let* () = State.check_ptr_align rptr place.ty in
-        let+ ptr' = State.borrow ptr place.ty borrow in
-        Ptr ptr'
+        let* ptr = resolve_place place in
+        let* ptr' = State.borrow ptr place.ty borrow in
+        let* is_valid = State.is_valid_ptr ptr' place.ty in
+        if is_valid then ok (Ptr ptr') else error `UBDanglingPointer
+    (* Raw pointer *)
+    | RawPtr (place, _kind) ->
+        let+ ptr = resolve_place place in
+        Ptr ptr
     | UnaryOp (op, e) -> (
         let* v = eval_operand e in
         match op with
@@ -568,10 +578,10 @@ module Make (State : State_intf.S) = struct
             | _ -> not_impl "Invalid value for PtrMetadata")
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
-            let* verify_ptr = State.is_valid_ptr in
+            let* verify_ptr = State.is_valid_ptr_fn in
             State.lift_err @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            let* verify_ptr = State.is_valid_ptr in
+            let* verify_ptr = State.is_valid_ptr_fn in
             State.lift_err
             @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
@@ -838,10 +848,6 @@ module Make (State : State_intf.S) = struct
     | ShallowInitBox (ptr, _) ->
         let+ ptr = eval_operand ptr in
         Std_funs.Std._mk_box ptr
-    (* Raw pointer *)
-    | RawPtr (place, _kind) ->
-        let+ ptr = resolve_place place in
-        Ptr ptr
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) ->
         let* _, meta = resolve_place place in
