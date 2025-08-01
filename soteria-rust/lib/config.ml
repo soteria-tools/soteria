@@ -1,5 +1,6 @@
 type t = {
   no_compile : bool; [@default false]
+  no_timing : bool; [@default false]
   cleanup : bool; [@default false]
   ignore_leaks : bool; [@default false]
   ignore_aliasing : bool; [@default false]
@@ -20,6 +21,3 @@ type global = {
 let default = make ()
 let current : t ref = ref default
 let set (config : t) = current := config
-let start_time : float ref = ref 0.0
-let set_start_time () = start_time := Unix.gettimeofday ()
-let time_since_start () = Unix.gettimeofday () -. !start_time

@@ -26,8 +26,8 @@ class TestCategoriser(Protocol):
 
 
 def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation:
-    if "Fatal (Charon)" in test:
-        # this isn't Charon's fault, really
+    if "Fatal (Frontend)" in test:
+        # this isn't frontend's fault, really
         unresolved = re.findall(
             r"failed to resolve: could not find `(.+)` in `(.+)`", test
         )
@@ -112,17 +112,20 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
 
         return (cause, color, reason)
 
-    if "no errors found" in test:
-        if not expect_failure:
-            return ("Success", GREEN, "Expected success, got success")
-        else:
-            return ("Failure", RED, "Expected failure, got success")
-
-    if "Found issues" in test:
+    # check errors first; one error overrides any success
+    err_regex = r"^error: (.+): found issues in"
+    if re.search(err_regex, test, re.MULTILINE):
         if expect_failure:
             return ("Success", GREEN, "Expected failure, got failure")
         else:
             return ("Failure", RED, "Expected success, got failure")
+
+    ok_regex = r"^note: .*: done in"
+    if re.search(ok_regex, test, re.MULTILINE):
+        if not expect_failure:
+            return ("Success", GREEN, "Expected success, got success")
+        else:
+            return ("Failure", RED, "Expected failure, got success")
 
     if "Fatal: Exn: Failure" in test:
         cause = re.search(r"Fatal: Exn: Failure\(\"(.+)\"\)", test)
@@ -158,7 +161,7 @@ def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
         "A Rust construct that is not currently supported by Kani was found to be reachable"
         in test
     ):
-        return ("Unsupported", ORANGE, None)
+        return ("Unsupported - Tool", PURPLE, None)
 
     if "VERIFICATION:- SUCCESSFUL" in test:
         if not expect_failure:
