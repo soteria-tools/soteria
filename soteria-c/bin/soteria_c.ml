@@ -99,17 +99,26 @@ let includes_arg =
   Arg.(value & opt_all dir [] & info [ "I" ] ~doc ~docv:"DIR")
 
 module Exec_main = struct
+  let entry_point_arg =
+    let doc = "Entry point of the program to execute" in
+    let docv = "ENTRYPOINT" in
+    Arg.(
+      value
+      & opt string "main"
+      & info [ "entry"; "entry-point"; "harness" ] ~doc ~docv)
+
   let term =
     Term.(
-      const Soteria_c_lib.Driver.exec_main_and_print
+      const Soteria_c_lib.Driver.exec_and_print
       $ Soteria_logs.Cli.term
       $ Soteria_terminal.Cli.term
       $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ includes_arg
-      $ files_arg)
+      $ files_arg
+      $ entry_point_arg)
 
-  let cmd = Cmd.v (Cmd.info "exec-main") term
+  let cmd = Cmd.v (Cmd.info "exec") term
 end
 
 module Lsp = struct
