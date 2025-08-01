@@ -267,7 +267,7 @@
     return rvalue(ret) + rvalue(x);
   }
 
-  $ soteria-c exec-main file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (25,
           { heap =

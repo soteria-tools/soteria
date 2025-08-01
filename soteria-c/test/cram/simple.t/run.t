@@ -1,23 +1,23 @@
 Just reading an empty file
-  $ soteria-c exec-main empty.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec empty.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0, { heap = []; globs = [] })]
   Executed 2 statements
 
 Symbolic execution of a simple program with concrete values only
-  $ soteria-c exec-main conc.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec conc.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (2, { heap = []; globs = [] })]
   Executed 6 statements
 
 Symbolic execution of a simple program with symbolic values
-  $ soteria-c exec-main sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (1, { heap = []; globs = [] }); Ok: (2, { heap = []; globs = [] })]
   Executed 11 statements
 
 Symbolic execution of a simple program with symbolic values that fails because of an allocation error
-  $ soteria-c exec-main err.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec err.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
@@ -32,7 +32,7 @@ Symbolic execution of a simple program with symbolic values that fails because o
   Executed 5 statements
 
 Symbolic execution of a simple program with a horrible pointer indirection *&*x
-  $ soteria-c exec-main indirections.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec indirections.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
@@ -45,7 +45,7 @@ Symbolic execution of a simple program with a horrible pointer indirection *&*x
   Executed 9 statements
 
 Checking that memcpy works correctly
-  $ soteria-c exec-main cpy.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec cpy.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (1,
           { heap =
@@ -71,14 +71,14 @@ Checking that memcpy works correctly
      Ok: (0, { heap = []; globs = [] })]
   Executed 15 statements
 Checking that fuel gets exhausted properly
-  $ soteria-c exec-main while_true.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec while_true.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Error: Failed assertion with trace
             [• Called from here: while_true.c:6:5-26;
              • Triggering operation: while_true.c:6:5-26]]
   Executed 152 statements
 Checking that code cannot branch infinitely
-  $ soteria-c exec-main max_branching.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec max_branching.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
@@ -466,7 +466,7 @@ Checking that code cannot branch infinitely
             globs = [] })]
   Executed 112 statements
 
-  $ soteria-c exec-main global.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec global.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (1,
           { heap =
@@ -475,7 +475,7 @@ Checking that code cannot branch infinitely
                 info = None })];
             globs = [(x_560, V|1|)] })]
   Executed 5 statements
-  $ soteria-c exec-main global_alias.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec global_alias.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
@@ -488,7 +488,7 @@ Checking that code cannot branch infinitely
             globs = [(x_560, V|1|); (y_561, V|2|)] })]
   Executed 3 statements
 
-  $ soteria-c exec-main structs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec structs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0,
           { heap =
@@ -500,44 +500,55 @@ Checking that code cannot branch infinitely
             globs = [] })]
   Executed 16 statements
 
-  $ soteria-c exec-main short_circuit.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec short_circuit.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0, { heap = []; globs = [] })]
   Executed 7 statements
 
 Should return a single branch!
-  $ soteria-c exec-main short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (b2i(((0 != V|2|) && (0 != V|1|))), { heap = []; globs = [] })]
   Executed 4 statements
 
-  $ soteria-c exec-main loop.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec loop.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (4, { heap = []; globs = [] })]
   Executed 72 statements
 
-  $ soteria-c exec-main gotos.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec gotos.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (1042, { heap = []; globs = [] });
      Ok: (1043, { heap = []; globs = [] })]
   Executed 23 statements
 
-  $ soteria-c exec-main duffs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec duffs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (42, { heap = []; globs = [] })]
   Executed 101 statements
 
-  $ soteria-c exec-main switch.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec switch.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (42, { heap = []; globs = [] })]
   Executed 33 statements
 
-  $ soteria-c exec-main switch_no_match.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec switch_no_match.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (42, { heap = []; globs = [] })]
   Executed 4 statements
 
-  $ soteria-c exec-main sizeof.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec sizeof.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0, { heap = []; globs = [] })]
   Executed 7 statements
+
+Expected to fail because no main function is defined
+  $ soteria-c exec harness.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Error: Parsing Error: Entry point "main" not found with trace []]
+  Executed 0 statements
+Expected to correctly find the harness function
+  $ soteria-c exec harness.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --harness harness
+  Symex terminated with the following outcomes:
+    [Ok: (0, { heap = []; globs = [] })]
+  Executed 2 statements

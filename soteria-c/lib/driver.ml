@@ -191,16 +191,12 @@ let pp_err_and_call_trace ft (err, call_trace) =
     (Call_trace.pp Fmt_ail.pp_loc)
     call_trace
 
-let resolve_entry_point (linked : Ail_tys.linked_program) =
-  let open Syntaxes.Result in
-  let* entry_point =
-    Result.of_opt
-      ~err:(`ParsingError "No entry point function", Call_trace.empty)
-      linked.entry_point
-  in
-  linked.sigma.function_definitions
-  |> List.find_opt (fun (id, _) -> Symbol.equal_sym id entry_point)
-  |> Result.of_opt ~err:(`ParsingError "Entry point not found", Call_trace.empty)
+let resolve_function (linked : Ail_tys.linked_program) entry_point =
+  Ail_helpers.find_fun_name ~prog:linked entry_point
+  |> Result.of_opt
+       ~err:
+         ( `ParsingError (Fmt.str "Entry point \"%s\" not found" entry_point),
+           Call_trace.empty )
 
 let with_function_context prog f =
   let open Effect.Deep in
@@ -209,13 +205,13 @@ let with_function_context prog f =
   Ail_helpers.run_with_prog prog @@ fun () ->
   try f () with effect Interp.Get_fun_ctx, k -> continue k fctx
 
-let exec_main ~includes file_names =
+let exec_function ~includes file_names function_name =
   let open Syntaxes.Result in
   let result =
     let* linked = parse_and_link_ail ~includes file_names in
     if !Config.current.parse_only then Ok []
     else
-      let* entry_point = resolve_entry_point linked in
+      let* entry_point = resolve_function linked function_name in
       let symex =
         let open Csymex.Syntax in
         let** state = Wpst_interp.init_prog_state linked in
@@ -265,11 +261,11 @@ let initialise log_config term_config solver_config config =
   Config.set config
 
 (* Entry point function *)
-let exec_main_and_print log_config term_config solver_config config includes
-    file_names =
+let exec_and_print log_config term_config solver_config config includes
+    file_names entry_point =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   initialise log_config term_config solver_config config;
-  let result = exec_main ~includes file_names in
+  let result = exec_function ~includes file_names entry_point in
   if not !Config.current.parse_only then
     let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
     Fmt.pr

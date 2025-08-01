@@ -255,7 +255,7 @@
     return 0;
   }
 
-  $ soteria-c exec-main file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
     [Ok: (0, { heap = []; globs = [] })]
   Executed 8 statements
