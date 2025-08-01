@@ -1,5 +1,8 @@
 open Soteria_c_values
-open Soteria_symex
+open Soteria_symex;;
+
+#install_printer Soteria_c_values.Typed.ppa;;
+
 
 module Ast = struct
   module Const = struct
