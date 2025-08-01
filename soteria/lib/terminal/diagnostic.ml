@@ -115,9 +115,9 @@ let print_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
   with_unaltered_geo @@ fun () ->
   let labels = call_trace_to_labels ~as_ranges call_trace in
   Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
-  |> Fmt.pr "%a@\n@?" pp
+  |> Fmt.pr "%a@?" pp
 
 let print_diagnostic_simple ~severity msg =
   with_unaltered_geo @@ fun () ->
   let msg = Grace.Diagnostic.Message.create msg in
-  Grace.Diagnostic.create severity msg |> Fmt.pr "%a@\n@?" pp
+  Grace.Diagnostic.create severity msg |> Fmt.pr "%a@?" pp
