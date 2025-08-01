@@ -71,6 +71,8 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
 
     interrupts = 0
 
+    end_msgs: list[str] = []
+
     oks = 0
     errs = 0
     tool_errs = 0
@@ -110,6 +112,8 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                 if str(relative) in KNOWN_ISSUES:
                     issue = KNOWN_ISSUES[str(relative)]
                     txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
+                    if msg == "Success":
+                        end_msgs.append(f'Fixed {relative}, for "{BOLD}{issue}{RESET}"')
                 print(txt)
 
             if msg == "Success":
@@ -120,8 +124,13 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                 tool_errs += 1
     elapsed = time.time() - before
     pprint(
-        f"{BOLD}Finished in {elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{tool_errs}{RESET})"
+        f"{BOLD}Finished in {elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{tool_errs}{RESET})",
+        inc=True,
     )
+    if len(end_msgs) > 0:
+        pprint(f"{BOLD}Closing remarks:", inc=True)
+    for msg in end_msgs:
+        pprint(f"{ORANGE}✭{RESET} {msg}", inc=True)
 
 
 def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
