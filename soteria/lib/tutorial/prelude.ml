@@ -2,6 +2,7 @@ open Soteria_c_values
 open Soteria_symex;;
 
 #install_printer Soteria_c_values.Typed.ppa;;
+#require "soteria.ppx";;
 
 
 module Ast = struct
