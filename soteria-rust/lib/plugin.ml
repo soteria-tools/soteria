@@ -51,17 +51,14 @@ module Cmd = struct
         ^ " "
         ^ escape (spaced rustc)
     | Cargo ->
+        let features = List.map (( ^ ) "--cfg ") features in
+        let rustc = rustc @ features in
         let env =
           if not (List.is_empty rustc) then
             "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
           else ""
         in
-        let features =
-          if not (List.is_empty features) then
-            "--features " ^ String.concat "," features ^ " "
-          else ""
-        in
-        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet " ^ features
+        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet"
 
   let exec_cmd cmd =
     L.debug (fun g -> g "Running command: %s" cmd);
