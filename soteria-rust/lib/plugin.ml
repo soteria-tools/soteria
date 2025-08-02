@@ -196,7 +196,10 @@ let default =
     match List.last_opt decl.item_meta.name with
     | Some (PeIdent ("main", _)) -> mk_entry_point decl
     | _ when Charon_util.decl_has_attr decl "rusteriatool::test" ->
-        mk_entry_point decl
+        let expect_error =
+          Charon_util.decl_has_attr decl "rusteriatool::expect_fail"
+        in
+        mk_entry_point ~expect_error decl
     | _ -> None
   in
   { mk_cmd; get_entry_point }

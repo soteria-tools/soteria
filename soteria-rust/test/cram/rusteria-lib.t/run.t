@@ -32,3 +32,6 @@ Test #[soteria::*] annotations
   
   annots::test_step_fuel: ran 1 branch
   PC 1: true
+  
+  annots::test_expect_fail: ran 1 branch
+  PC 1: true
