@@ -139,7 +139,6 @@ let known_generic_errors =
     "alloc::string::_::from";
     "alloc::raw_vec::finish_grow";
     "core::fmt::Display::fmt";
-    "core::ptr::null_mut";
     "std::path::_::from";
     "core::iter::traits::iterator::Iterator::flatten";
   ]
