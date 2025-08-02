@@ -287,7 +287,7 @@ module Make (State : State_intf.S) = struct
               mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
             in
             let* ptr, _ = State.alloc_ty str_ty in
-            let ptr = (ptr, Some (Typed.int len)) in
+            let ptr = (ptr, Len (Typed.int len)) in
             let* () = State.store ptr str_ty char_arr in
             let+ () = State.store_str_global str ptr in
             Ptr ptr)
@@ -348,7 +348,7 @@ module Make (State : State_intf.S) = struct
         | Base off ->
             let+ off = lift_symex @@ cast_checked ~ty:Typed.t_int off in
             let ptr = Sptr.null_ptr_of off in
-            (ptr, None)
+            (ptr, Thin)
         | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
         let* ptr, meta = resolve_place base in
@@ -370,14 +370,14 @@ module Make (State : State_intf.S) = struct
         let len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | ( None,
+          | ( Thin,
               TAdt
                 {
                   id = TBuiltin TArray;
                   generics = { const_generics = [ len ]; _ };
                 } ) ->
               Typed.int @@ Charon_util.int_of_const_generic len
-          | Some len, TAdt { id = TBuiltin TSlice; _ } -> Typed.cast len
+          | Len len, TAdt { id = TBuiltin TSlice; _ } -> Typed.cast len
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
@@ -388,21 +388,21 @@ module Make (State : State_intf.S) = struct
           L.debug (fun f ->
               f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa
                 idx Sptr.pp ptr');
-          (ptr', None))
+          (ptr', Thin))
         else error `OutOfBounds
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
         let ty, len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | ( None,
+          | ( Thin,
               TAdt
                 {
                   id = TBuiltin TArray;
                   generics = { const_generics = [ len ]; types = [ ty ]; _ };
                 } ) ->
               (ty, Typed.int @@ Charon_util.int_of_const_generic len)
-          | ( Some len,
+          | ( Len len,
               TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } )
             ->
               (ty, Typed.cast len)
@@ -421,7 +421,7 @@ module Make (State : State_intf.S) = struct
                 ptr Typed.ppa from Typed.ppa to_
                 (if from_end then "(from end)" else "")
                 Sptr.pp ptr' Typed.ppa slice_len);
-          (ptr', Some slice_len))
+          (ptr', Len slice_len))
         else error `OutOfBounds
 
   (** Resolve a function operand, returning a callable symbolic function to
@@ -573,8 +573,9 @@ module Make (State : State_intf.S) = struct
             | _ -> not_impl "Invalid type for Neg")
         | PtrMetadata -> (
             match v with
-            | Ptr (_, None) | Base _ -> ok (Tuple [])
-            | Ptr (_, Some v) -> ok (Base v)
+            | Ptr (_, Thin) | Base _ -> ok (Tuple [])
+            | Ptr (_, Len v) -> ok (Base v)
+            | Ptr (_, VTable ptr) -> ok (Ptr (ptr, Thin))
             | _ -> not_impl "Invalid value for PtrMetadata")
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
@@ -585,14 +586,10 @@ module Make (State : State_intf.S) = struct
             State.lift_err
             @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
-        | Cast (CastUnsize (_, _, MetaVTablePtr _)) ->
-            not_impl "Unsupported: dyn"
-        | Cast (CastUnsize (_, _, MetaUnknown)) ->
-            not_impl "Unknown unsize kind"
-        | Cast (CastUnsize (_, _, MetaLength length)) ->
+        | Cast (CastUnsize (_, _, kind)) ->
             let rec with_ptr_meta meta : Sptr.t rust_val -> Sptr.t rust_val t =
               function
-              | Ptr (v, _) -> ok (Ptr (v, Some meta))
+              | Ptr (v, _) -> ok (Ptr (v, meta))
               | ( Struct (_ :: _ as fs)
                 | Array (_ :: _ as fs)
                 | Tuple (_ :: _ as fs) ) as v -> (
@@ -616,8 +613,15 @@ module Make (State : State_intf.S) = struct
                   | None -> not_impl "Couldn't set pointer meta in CastUnsize")
               | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
             in
-            let size = Typed.int_z @@ z_of_const_generic length in
-            with_ptr_meta size v
+            let* meta =
+              match kind with
+              | MetaLength len ->
+                  let len = Typed.int_z @@ z_of_const_generic len in
+                  ok (Len len)
+              | MetaVTablePtr _ -> not_impl "Unsupported: dyn"
+              | MetaUnknown -> not_impl "Unknown unsize kind"
+            in
+            with_ptr_meta meta v
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
@@ -766,7 +770,7 @@ module Make (State : State_intf.S) = struct
             in
             let discr_ty = Layout.enum_discr_ty enum in
             let^^ loc = Sptr.offset loc discr_ofs in
-            State.load (loc, None) discr_ty
+            State.load (loc, Thin) discr_ty
         | [] -> Fmt.kstr not_impl "Unsupported discriminant for empty enums")
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
@@ -831,8 +835,9 @@ module Make (State : State_intf.S) = struct
         in
         let+ meta =
           match meta with
-          | Tuple [] -> ok None
-          | Base meta -> ok (Some meta)
+          | Tuple [] -> ok Thin
+          | Base meta -> ok (Len meta)
+          | Ptr (ptr, Thin) -> ok (VTable ptr)
           | _ ->
               Fmt.kstr not_impl "Unexpected meta in AggregatedRawPtr: %a"
                 pp_rust_val meta
@@ -853,8 +858,8 @@ module Make (State : State_intf.S) = struct
         let* _, meta = resolve_place place in
         let^+ len =
           match (meta, size_opt) with
-          | _, Some size -> return (Typed.int @@ int_of_const_generic size)
-          | Some len, None -> return len
+          | Thin, Some size -> return (Typed.int_z @@ z_of_const_generic size)
+          | Len len, None -> return len
           | _ -> Rustsymex.not_impl "Unexpected len rvalue"
         in
         Base len

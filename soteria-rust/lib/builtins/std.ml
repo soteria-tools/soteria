@@ -39,9 +39,9 @@ module M (State : State_intf.S) = struct
     let ptr, size =
       match (idx_op.is_array, List.hd args, gen_args.const_generics) with
       (* Array with static size *)
-      | true, Ptr (ptr, None), [ size ] ->
+      | true, Ptr (ptr, Thin), [ size ] ->
           (ptr, Typed.int @@ Charon_util.int_of_const_generic size)
-      | false, Ptr (ptr, Some size), [] -> (ptr, Typed.cast size)
+      | false, Ptr (ptr, Len size), [] -> (ptr, Typed.cast size)
       | _ ->
           Fmt.failwith "array_index: unexpected arguments: %a / %a"
             Fmt.(list pp_rust_val)
@@ -55,13 +55,13 @@ module M (State : State_intf.S) = struct
     let** ptr' = Sptr.offset ~ty ptr idx |> State.lift_err state in
     if not idx_op.is_range then
       if%sat 0s <=@ idx &&@ (idx <@ size) then
-        Result.ok (Ptr (ptr', None), state)
+        Result.ok (Ptr (ptr', Thin), state)
       else State.error `OutOfBounds state
     else
       let range_end = as_base_of ~ty:Typed.t_int (List.nth args 2) in
       if%sat 0s <=@ idx &&@ (idx <=@ range_end) &&@ (range_end <=@ size) then
         let size = range_end -@ idx in
-        Result.ok (Ptr (ptr', Some size), state)
+        Result.ok (Ptr (ptr', Len size), state)
       else State.error `OutOfBounds state
 
   (* Some array accesses are ran on functions, so we handle those here and redirect them.
@@ -90,7 +90,7 @@ module M (State : State_intf.S) = struct
       match (ptr, gargs.const_generics) with
       (* Array with static size *)
       | _, [ size ] -> Typed.int @@ Charon_util.int_of_const_generic size
-      | Ptr (_, Some size), [] -> Typed.cast size
+      | Ptr (_, Len size), [] -> Typed.cast size
       | _ -> failwith "array_index (fn): couldn't calculate size"
     in
     let idx_from, idx_to =
@@ -117,7 +117,7 @@ module M (State : State_intf.S) = struct
       | _ -> failwith "array_slice: unexpected generic constants"
     in
     match args with
-    | [ Ptr (ptr, None) ] -> Result.ok (Ptr (ptr, Some (Typed.int size)), state)
+    | [ Ptr (ptr, Thin) ] -> Result.ok (Ptr (ptr, Len (Typed.int size)), state)
     | _ -> failwith "array_index: unexpected arguments"
 
   let box_new (gen_args : Types.generic_args) ~args state =
@@ -131,16 +131,27 @@ module M (State : State_intf.S) = struct
     (Ptr ptr, state)
 
   let from_raw_parts ~args state =
-    match args with
-    | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
-    | [ Base v; Base meta ] ->
-        let* v = cast_checked ~ty:Typed.t_int v in
-        let++ ptr = Sptr.offset Sptr.null_ptr v |> State.lift_err state in
-        (Ptr (ptr, Some meta), state)
-    | _ ->
-        Fmt.failwith "from_raw_parts: invalid arguments %a"
-          Fmt.(list ~sep:comma pp_rust_val)
-          args
+    let base, meta =
+      match args with
+      | [ base; meta ] -> (base, meta)
+      | _ -> failwith "from_raw_parts: invalid arguments"
+    in
+    let++ base =
+      match base with
+      | Ptr (ptr, Thin) -> Result.ok ptr
+      | Base v ->
+          let* v = cast_checked ~ty:Typed.t_int v in
+          Sptr.offset Sptr.null_ptr v |> State.lift_err state
+      | _ -> failwith "from_raw_parts: expected pointer or base value"
+    in
+    let meta =
+      match meta with
+      | Tuple [] -> Thin
+      | Base v -> Len v
+      | Ptr (ptr, Thin) -> VTable ptr
+      | _ -> failwith "from_raw_parts: expected base or pointer for metadata"
+    in
+    (Ptr (base, meta), state)
 
   let nop ~args:_ state = Result.ok (Tuple [], state)
 
@@ -201,7 +212,7 @@ module M (State : State_intf.S) = struct
   let fixme_try_cleanup ~args:_ state =
     (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
               we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    let box = _mk_box (Ptr (Sptr.null_ptr, Some 0s)) in
+    let box = _mk_box (Ptr (Sptr.null_ptr, Len 0s)) in
     Result.ok (box, state)
 
   let fixme_box_new (fun_sig : UllbcAst.fun_sig) ~args state =
@@ -212,5 +223,5 @@ module M (State : State_intf.S) = struct
     let box = _mk_box (Ptr ptr) in
     (box, state)
 
-  let fixme_null_ptr ~args:_ state = Result.ok (Ptr (Sptr.null_ptr, None), state)
+  let fixme_null_ptr ~args:_ state = Result.ok (Ptr (Sptr.null_ptr, Thin), state)
 end

@@ -1,8 +1,8 @@
 open Charon
 module T = Typed.T
 
-type meta = T.cval Typed.t option
-and 'ptr full_ptr = 'ptr * meta [@@deriving show { with_path = false }]
+type 'ptr meta = Thin | Len of T.cval Typed.t | VTable of 'ptr
+and 'ptr full_ptr = 'ptr * 'ptr meta [@@deriving show { with_path = false }]
 
 type 'ptr t =
   | Base of T.cval Typed.t
@@ -36,8 +36,9 @@ let rec pp_rust_val pp_ptr fmt =
   let pp_rust_val = pp_rust_val pp_ptr in
   function
   | Base v -> Typed.ppa fmt v
-  | Ptr (p, None) -> Fmt.pf fmt "Ptr(%a)" pp_ptr p
-  | Ptr (p, Some meta) -> Fmt.pf fmt "Ptr(%a, %a)" pp_ptr p Typed.ppa meta
+  | Ptr (p, Thin) -> Fmt.pf fmt "Ptr(%a)" pp_ptr p
+  | Ptr (p, Len len) -> Fmt.pf fmt "Ptr(%a, %a)" pp_ptr p Typed.ppa len
+  | Ptr (p, VTable ptr) -> Fmt.pf fmt "Ptr(%a, %a)" pp_ptr p pp_ptr ptr
   | Enum (disc, vals) ->
       Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
         (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val)
@@ -51,6 +52,11 @@ let rec pp_rust_val pp_ptr fmt =
   | Union (field_id, v) ->
       Fmt.pf fmt "Union(%a: %a)" Types.pp_field_id field_id pp_rust_val v
   | ConstFn fn_ptr -> Fmt.pf fmt "FnPtr(%a)" Types.pp_fn_ptr fn_ptr
+
+let pp_meta pp_ptr ft = function
+  | Thin -> Fmt.pf ft "Thin"
+  | Len len -> Fmt.pf ft "Len(%a)" Typed.ppa len
+  | VTable ptr -> Fmt.pf ft "VTable(%a)" pp_ptr ptr
 
 let pp = pp_rust_val
 let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv

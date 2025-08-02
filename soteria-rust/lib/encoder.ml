@@ -130,28 +130,35 @@ module Make (Sptr : Sptr.S) = struct
     | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> [ { value; ty; offset } ]
     | _, TLiteral _ -> illegal_pair ()
     (* References / Pointers *)
-    | ( Ptr (_, None),
+    | ( Ptr (ptr, meta),
         TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
-    | Ptr (_, None), TRef (_, sub_ty, _)
-    | Ptr (_, None), TRawPtr (sub_ty, _) ->
+    | Ptr (ptr, meta), TRef (_, sub_ty, _)
+    | Ptr (ptr, meta), TRawPtr (sub_ty, _) -> (
         let ty : Types.ty = TLiteral (TInt Isize) in
-        if is_dst sub_ty then failwith "Expected a fat pointer"
-        else [ { value; ty; offset } ]
-    | ( Ptr (ptr, Some meta),
-        TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
-    | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
-    | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
-        let ty : Types.ty = TLiteral (TInt Isize) in
-        let value = Ptr (ptr, None) in
-        if is_dst sub_ty then
-          let size = Typed.int @@ Layout.size_of_int_ty Isize in
-          [
-            { value; ty; offset };
-            { value = Base meta; ty; offset = offset +@ size };
-          ]
-        else [ { value; ty; offset } ]
+        let value = Ptr (ptr, Thin) in
+        let size = Typed.int @@ Layout.size_of_int_ty Isize in
+        match (meta_kind sub_ty, meta) with
+        | Thin, _ -> [ { value; ty; offset } ]
+        | _, Thin -> failwith "Expected a fat pointer"
+        | kind, meta ->
+            let meta =
+              match (kind, meta) with
+              | Len, Len l -> Base l
+              | VTable, VTable v -> Ptr (v, Thin)
+              | VTable, Len l -> (
+                  match Typed.cast_checked l Typed.t_int with
+                  | Some l -> Ptr (Sptr.null_ptr_of l, Thin)
+                  | None -> failwith "Invalid meta type")
+              | Len, VTable _ ->
+                  failwith "TODO: vtable meta -> len meta conversion"
+              | _ -> failwith "Thin already filtered out"
+            in
+            [
+              { value; ty; offset };
+              { value = meta; ty; offset = offset +@ size };
+            ])
     (* Function pointer *)
-    | Ptr (_, None), TFnPtr _ ->
+    | Ptr (_, Thin), TFnPtr _ ->
         [ { value; ty = TLiteral (TInt Isize); offset } ]
     (* References / Pointers obtained from casting *)
     | Base _, TAdt { id = TBuiltin TBox; _ }
@@ -223,7 +230,8 @@ module Make (Sptr : Sptr.S) = struct
       offset; once these are read, symbolically decides whether we must keep
       reading. [offset] is the initial offset to read from, [meta] is the
       optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?offset ?meta : Types.ty -> ('e, 'fix, 'state) parser =
+  let rust_of_cvals ?offset ?(meta = Rust_val.Thin) :
+      Types.ty -> ('e, 'fix, 'state) parser =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let module T = Typed.T in
@@ -233,7 +241,7 @@ module Make (Sptr : Sptr.S) = struct
           let+** q_res = query (ty, offset) in
           match q_res with
           | Base _ as v -> Result.ok v
-          | Ptr (ptr, None) ->
+          | Ptr (ptr, Thin) ->
               let+ ptr_v = Sptr.decay ptr in
               Compo_res.ok (Base (ptr_v :> T.cval Typed.t))
           | _ ->
@@ -248,11 +256,11 @@ module Make (Sptr : Sptr.S) = struct
           let*** ptr_compo = query (isize, offset) in
           let+** meta_compo = query (isize, offset +@ ptr_size) in
           match (ptr_compo, meta_compo) with
-          | ( ((Base _ | Ptr (_, None)) as ptr),
-              ((Base _ | Ptr (_, None)) as meta) ) -> (
+          | ( ((Base _ | Ptr (_, Thin)) as ptr),
+              ((Base _ | Ptr (_, Thin)) as meta) ) -> (
               let* ptr =
                 match ptr with
-                | Ptr (ptr_v, None) -> Rustsymex.return ptr_v
+                | Ptr (ptr_v, Thin) -> Rustsymex.return ptr_v
                 | Base ptr_v ->
                     let+ ptr_v = cast_checked ~ty:Typed.t_int ptr_v in
                     Sptr.null_ptr_of ptr_v
@@ -261,12 +269,12 @@ module Make (Sptr : Sptr.S) = struct
               let* meta =
                 match meta with
                 | Base meta -> Rustsymex.return meta
-                | Ptr (meta_v, None) ->
+                | Ptr (meta_v, Thin) ->
                     let+ meta = Sptr.decay meta_v in
                     (meta :> T.cval Typed.t)
                 | _ -> failwith "Expected a pointer or base"
               in
-              let ptr = Ptr (ptr, Some meta) in
+              let ptr = Ptr (ptr, Len meta) in
               match ty with
               | TRawPtr _ -> Result.ok ptr
               | _ ->
@@ -327,14 +335,15 @@ module Make (Sptr : Sptr.S) = struct
           (* We can only read a slice if we have the metadata of its length, in which case
            we interpret it as an array of that length. *)
           match meta with
-          | None -> Fmt.failwith "Tried reading slice without metadata"
-          | Some meta ->
+          | Thin | VTable _ ->
+              Fmt.failwith "Tried reading slice with invalid metadata"
+          | Len len ->
               let len =
-                match Typed.kind meta with
+                match Typed.kind len with
                 | Int len -> len
                 | _ ->
                     Fmt.failwith "Can't read a slice of non-concrete size %a"
-                      Typed.ppa meta
+                      (Rust_val.pp_meta Sptr.pp) meta
               in
               let sub_ty =
                 if ty = TSlice then List.hd generics.types
@@ -493,9 +502,9 @@ module Make (Sptr : Sptr.S) = struct
       | _, TRawPtr _, Base off ->
           let* off = cast_checked ~ty:Typed.t_int off in
           let ptr = Sptr.null_ptr_of off in
-          ok (Ptr (ptr, None))
+          ok (Ptr (ptr, Thin))
       | _, TRawPtr _, Ptr _ -> ok v
-      | _, TLiteral ((TInt _ | TUInt _) as litty), Ptr (ptr, None)
+      | _, TLiteral ((TInt _ | TUInt _) as litty), Ptr (ptr, Thin)
         when size_of_literal_ty litty = size_of_literal_ty (TInt Isize) ->
           let* ptr_v = Sptr.decay ptr in
           ok (Base (ptr_v :> Typed.T.cval Typed.t))
@@ -658,7 +667,7 @@ module Make (Sptr : Sptr.S) = struct
           Fmt.kstr not_impl "Don't know how to read this size: %a" Typed.ppa at
     in
     match (v, ty) with
-    | Ptr (ptr, None), _ ->
+    | Ptr (ptr, Thin), _ ->
         let* v = Sptr.decay ptr in
         split (Base (v :> T.cval Typed.t)) ty (Typed.int at)
     | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->

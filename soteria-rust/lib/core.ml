@@ -135,12 +135,13 @@ module M (State : State_intf.S) = struct
     | Ne, _, _ ->
         let++ res = eval_ptr_binop Eq l r in
         not_int_bool (cast res)
-    | Eq, Ptr (l, None), Ptr (r, None) ->
+    | Eq, Ptr (l, Thin), Ptr (r, Thin) ->
         Result.ok (int_of_bool (Sptr.sem_eq l r))
-    | Eq, Ptr (l, Some ml), Ptr (r, Some mr) ->
+    | Eq, Ptr (l, Len ml), Ptr (r, Len mr) ->
         Result.ok (int_of_bool (Sptr.sem_eq l r &&@ (ml ==@ mr)))
-    | Eq, Ptr (_, Some _), Ptr (_, None) | Eq, Ptr (_, None), Ptr (_, Some _) ->
-        Result.ok (int_of_bool Typed.v_false)
+    | Eq, Ptr (l, VTable ml), Ptr (r, VTable mr) ->
+        Result.ok (int_of_bool (Sptr.sem_eq l r &&@ Sptr.sem_eq ml mr))
+    | Eq, Ptr (_, _), Ptr (_, _) -> Result.ok (int_of_bool Typed.v_false)
     | Eq, Ptr (p, _), Base v | Eq, Base v, Ptr (p, _) ->
         if%sat v ==@ 0s then Result.ok (int_of_bool (Sptr.is_at_null_loc p))
         else
@@ -150,7 +151,7 @@ module M (State : State_intf.S) = struct
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then
           let* dist = Sptr.distance l r in
-          let bop =
+          let bop_fn =
             match bop with
             | Lt -> ( <@ )
             | Le -> ( <=@ )
@@ -158,21 +159,25 @@ module M (State : State_intf.S) = struct
             | Ge -> ( >=@ )
             | _ -> assert false
           in
-          let v = bop dist 0s in
+          let v = bop_fn dist 0s in
           match (ml, mr) with
-          | Some ml, Some mr ->
+          | Len ml, Len mr ->
               if%sat dist ==@ 0s then
                 let* ml, mr, mty = cast_checked2 ml mr in
                 match untype_type mty with
-                | TInt -> Result.ok (int_of_bool (bop ml mr))
+                | TInt -> Result.ok (int_of_bool (bop_fn ml mr))
                 | mty ->
                     Fmt.kstr not_impl
                       "Don't know how to compare metadata of type %a"
                       Svalue.pp_ty mty
               else Result.ok (int_of_bool v)
-          (* is this correct? *)
-          | Some _, None | None, Some _ -> Result.ok (int_of_bool v)
-          | None, None -> Result.ok (int_of_bool v)
+          | VTable ml, VTable mr ->
+              if%sat dist ==@ 0s then
+                eval_ptr_binop bop (Ptr (ml, Thin)) (Ptr (mr, Thin))
+              else Result.ok (int_of_bool v)
+          | Thin, Thin -> Result.ok (int_of_bool v)
+          (* is this correct, for mismatched meta? *)
+          | _ -> Result.ok (int_of_bool v)
         else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         if%sat Sptr.is_same_loc l r then

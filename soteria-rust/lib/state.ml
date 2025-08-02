@@ -222,7 +222,7 @@ let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
         f "Loading blocks %a:%a" Typed.ppa ofs Charon_util.pp_ty ty);
     Tree_block.load ~is_move ~ignore_borrow ofs ty ptr.tag tb block
   in
-  let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
+  let parser = Encoder.rust_of_cvals ~offset:ofs ~meta ty in
   let++ value, block = Encoder.ParserMonad.parse ~init:block ~handler parser in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
@@ -339,7 +339,7 @@ let alloc ?zeroed size align st =
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
   let ptr : Sptr.t Rust_val.full_ptr =
-    ({ ptr; tag = tb.tag; align; size }, None)
+    ({ ptr; tag = tb.tag; align; size }, Thin)
   in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
@@ -371,7 +371,7 @@ let alloc_tys tys st =
           size = Typed.int layout.size;
         }
       in
-      (block, (ptr, None)))
+      (block, (ptr, Rust_val.Thin)))
 
 let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
@@ -519,7 +519,7 @@ let leak_check st =
         | String _ -> Result.ok (loc :: acc, st)
         | Global g -> (
             let glob = Crate.get_global g in
-            let* res = load ~ignore_borrow:true (ptr, None) glob.ty st in
+            let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty st in
             match res with
             | Ok (v, st) ->
                 let ptrs = Layout.ref_tys_in ~include_ptrs:true v glob.ty in
@@ -577,7 +577,7 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
   let ptr : Sptr.t =
     { ptr; tag = Tree_borrow.zero; align = Typed.cast 1s; size = 1s }
   in
-  Soteria_symex.Compo_res.Ok ((ptr, None), st)
+  Soteria_symex.Compo_res.Ok ((ptr, Rust_val.Thin), st)
 
 let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in

@@ -26,7 +26,7 @@ module M (State : State_intf.S) = struct
     | Base v when null_ok ->
         let+ v = cast_checked ~ty:Typed.t_int v in
         let ptr = Sptr.null_ptr_of v in
-        (ptr, None)
+        (ptr, Thin)
     | _ -> not_impl "expected pointer"
 
   let[@inline] as_base ?(ty : 'ty Typed.ty option) (v : rust_val) :
@@ -82,7 +82,7 @@ module M (State : State_intf.S) = struct
       | Base base when not check ->
           let* base = cast_checked base ~ty:Typed.t_int in
           let ptr = Sptr.null_ptr_of base in
-          Result.ok (ptr, None)
+          Result.ok (ptr, Thin)
       | Base _ -> State.error `UBPointerArithmetic state
       | _ -> not_impl "ptr_add: invalid arguments"
     in
@@ -155,7 +155,7 @@ module M (State : State_intf.S) = struct
     State.unwind_with try_fn_ret
       ~f:(fun (_, state) -> Result.ok (Base 0s, state))
       ~fe:(fun (_, state) ->
-        let args = [ data; Ptr (Sptr.null_ptr, None) ] in
+        let args = [ data; Ptr (Sptr.null_ptr, Thin) ] in
         let catch_fn_ret = exec_fun catch_fn ~args state in
         State.unwind_with catch_fn_ret
           ~f:(fun (_, state) -> Result.ok (Base 1s, state))
@@ -199,9 +199,9 @@ module M (State : State_intf.S) = struct
       else
         let** l = Sptr.offset l inc |> State.lift_err state in
         let** r = Sptr.offset r inc |> State.lift_err state in
-        let** bl, state = State.load (l, None) byte state in
+        let** bl, state = State.load (l, Thin) byte state in
         let* bl = as_base ~ty:Typed.t_int bl in
-        let** br, state = State.load (r, None) byte state in
+        let** br, state = State.load (r, Thin) byte state in
         let* br = as_base ~ty:Typed.t_int br in
         if%sat bl ==@ br then aux l r (len -@ 1s) state
         else
@@ -237,7 +237,7 @@ module M (State : State_intf.S) = struct
         else Result.ok ()
       in
       let++ (), state =
-        State.copy_nonoverlapping ~dst:(dst, None) ~src:(src, None) ~size state
+        State.copy_nonoverlapping ~dst:(dst, Thin) ~src:(src, Thin) ~size state
       in
       (Tuple [], state)
 
@@ -492,16 +492,17 @@ module M (State : State_intf.S) = struct
   let size_of_val ~t ~ptr state =
     match (t, ptr) with
     | ( Types.TAdt { id = TBuiltin TSlice; generics = { types = [ sub_ty ]; _ } },
-        Ptr (_, Some meta) ) ->
+        Ptr (_, Len meta) ) ->
         let* len = cast_checked meta ~ty:Typed.t_int in
         let* size = Layout.size_of_s sub_ty in
         let size = size *@ len in
         Result.ok (Base size, state)
-    | TAdt { id = TBuiltin TStr; _ }, Ptr (_, Some meta) ->
+    | TAdt { id = TBuiltin TStr; _ }, Ptr (_, Len meta) ->
         let* len = cast_checked meta ~ty:Typed.t_int in
         let size = Layout.size_of_uint_ty U8 in
         let size = Typed.int size *@ len in
         Result.ok (Base size, state)
+    (* FIXME: handle size from vtable for &dyn *)
     | _ ->
         let* size = Layout.size_of_s t in
         Result.ok (Base size, state)
@@ -536,7 +537,7 @@ module M (State : State_intf.S) = struct
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in
         let** (ptr, _), state = State.alloc_ty str_ty state in
-        let ptr = (ptr, Some (Typed.int len)) in
+        let ptr = (ptr, Len (Typed.int len)) in
         let** (), state = State.store ptr str_ty char_arr state in
         let++ (), state = State.store_str_global str ptr state in
         (Ptr ptr, state)
@@ -626,7 +627,7 @@ module M (State : State_intf.S) = struct
                   let** ptr =
                     Sptr.offset ptr @@ Typed.int i |> State.lift_err state
                   in
-                  State.store (ptr, None) (TLiteral (TUInt U8)) (Base v) state)
+                  State.store (ptr, Thin) (TLiteral (TUInt U8)) (Base v) state)
             in
             (Tuple [], state)
         | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"

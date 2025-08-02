@@ -31,6 +31,9 @@ let pp_layout fmt { size; align; fields } =
   Format.fprintf fmt "{ size = %d; align = %d; fields = %a }" size align
     Fields_shape.pp fields
 
+type ptr_meta_kind = Thin | Len | VTable
+[@@deriving show { with_path = false }]
+
 module Session = struct
   (* TODO: allow different caches for different crates *)
   (** Cache of (type or variant) -> layout *)
@@ -88,13 +91,16 @@ let align_of_literal_ty : Types.literal_type -> int = size_of_literal_ty
 let empty_generics = TypesUtils.empty_generic_args
 
 (** If this is a dynamically sized type (requiring a fat pointer) *)
-let rec is_dst : Types.ty -> bool = function
-  | TAdt { id = TBuiltin (TSlice | TStr); _ } | TDynTrait _ -> true
+let rec meta_kind : Types.ty -> ptr_meta_kind = function
+  | TAdt { id = TBuiltin (TSlice | TStr); _ } -> Len
+  | TDynTrait _ -> VTable
   | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
-      | None -> false
-      | Some last -> is_dst Types.(last.field_ty))
-  | _ -> false
+      | None -> Thin
+      | Some last -> meta_kind Types.(last.field_ty))
+  | _ -> Thin
+
+let[@inline] is_dst ty = meta_kind ty <> Thin
 
 let size_to_fit ~size ~align =
   let ( % ) = Stdlib.( mod ) in
@@ -257,11 +263,13 @@ and resolve_trait_ty (tref : Types.trait_ref) ty_name =
               impl.item_meta.name
           in
           raise (CantComputeLayout (msg, TTraitType (tref, ty_name))))
-  | BuiltinOrAuto (trait, _, _) when ty_name = "Metadata" ->
+  | BuiltinOrAuto (trait, _, _) when ty_name = "Metadata" -> (
       (* We need to special-case the metadata type *)
       let ty = List.hd trait.binder_value.generics.types in
-      if is_dst ty then TLiteral (TInt Isize)
-      else TAdt { id = TTuple; generics = TypesUtils.empty_generic_args }
+      match meta_kind ty with
+      | Len -> TLiteral (TInt Isize)
+      | VTable -> TRawPtr (TLiteral (TUInt U8), RShared)
+      | Thin -> TAdt { id = TTuple; generics = TypesUtils.empty_generic_args })
   | _ ->
       let msg = Fmt.str "trait type (%s)" ty_name in
       raise (CantComputeLayout (msg, TTraitType (tref, ty_name)))
@@ -452,7 +460,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in
   function
   | TLiteral lit_ty -> ( try Some (Base (zeroed_lit lit_ty)) with _ -> None)
-  | TRawPtr _ -> Some (Ptr (null_ptr, None))
+  | TRawPtr _ -> Some (Ptr (null_ptr, Thin))
   | TFnPtr _ -> None
   | TRef _ -> None
   | TAdt { id = TTuple; generics = { types; _ } } ->
