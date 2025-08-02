@@ -5,6 +5,8 @@ type t = {
   ignore_aliasing : bool; [@default false]
   with_kani : bool; [@default false]
   with_miri : bool; [@default false]
+  step_fuel : int; [@default 1000]
+  branch_fuel : int; [@default 4]
 }
 [@@deriving make]
 
