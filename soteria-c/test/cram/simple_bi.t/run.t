@@ -50,7 +50,6 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    34 │ │  }
       │ ╰──
    35 │    
-  
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -62,7 +61,6 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    11 │    int *x = (int *)malloc(sizeof(int));
    12 │    load(x);
       │    ------- 1: Called from here
-  
   error: Null pointer dereference in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -74,7 +72,6 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    11 │    int *x = (int *)malloc(sizeof(int));
    12 │    load(x);
       │    ------- 1: Called from here
-  
   error: Accessing uninitialized memory in test_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -95,12 +92,10 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    20 │      return 1;
    21 │    load(x);
       │    ------- 1: Called from here
-  
   error: Null pointer dereference in test_np
       ┌─ manifest.c:51:3
    51 │    *x = 12;
       │    ^^^^^^^ Triggering write
-  
   Summaries for load_487:
     Analysed {
       raw =

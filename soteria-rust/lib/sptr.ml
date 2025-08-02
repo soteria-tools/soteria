@@ -124,7 +124,7 @@ module ArithPtr : S with type t = arithptr_t = struct
           (Layout.of_enum_variant adt_id variant, field + 1)
       | ProjAdt (_, None) | ProjTuple _ -> (Layout.layout_of ty, field)
     in
-    let off = Array.get layout.members_ofs field in
+    let off = Layout.Fields_shape.offset_of field layout.fields in
     offset ptr (Typed.int off)
 
   module ValMap = Map.Make (struct

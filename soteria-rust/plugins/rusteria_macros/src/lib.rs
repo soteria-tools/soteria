@@ -37,3 +37,4 @@ macro_rules! rusteria_attribute {
 rusteria_attribute!(step_fuel);
 rusteria_attribute!(branch_fuel);
 rusteria_attribute!(test, no_args);
+rusteria_attribute!(expect_fail, no_args);
