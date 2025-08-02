@@ -7,6 +7,8 @@ type t = {
   with_kani : bool; [@default false]
   with_miri : bool; [@default false]
   log_compilation : bool; [@default false]
+  step_fuel : int; [@default 1000]
+  branch_fuel : int; [@default 4]
 }
 [@@deriving make]
 

@@ -281,8 +281,12 @@ let merge_ifs (plugins : (bool * plugin) list) =
               Charon_util.decl_get_attr decl name
               |> Option.fold ~none ~some:int_of_string
             in
-            let steps = get_or "rusteriatool::step_fuel" 1000 in
-            let branching = get_or "rusteriatool::branch_fuel" 4 in
+            let steps =
+              get_or "rusteriatool::step_fuel" !Config.current.step_fuel
+            in
+            let branching =
+              get_or "rusteriatool::branch_fuel" !Config.current.branch_fuel
+            in
             { steps; branching }
           in
           Some { ep with fuel = Some fuel }
