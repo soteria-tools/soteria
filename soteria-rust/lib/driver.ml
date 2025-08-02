@@ -88,12 +88,13 @@ let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
 let pp_time ft t =
   if !Config.current.no_timing then Fmt.pf ft "<time>"
+  else if t < 0.05 then Fmt.pf ft "%ams" (Fmt.float_dfrac 2) (t *. 1000.)
   else Fmt.pf ft "%as" (Fmt.float_dfrac 2) t
 
-let print_outcomes () f =
+let print_outcomes entry_name f =
   let open Fmt in
   match f () with
-  | Ok (pcs, entry_name, ntotal) ->
+  | Ok (pcs, ntotal) ->
       let pcs = List.mapi (fun i pc -> (pc, i + 1)) pcs in
       let pp_info ft (pc, i) =
         let name = "PC " ^ string_of_int i ^ ":" in
@@ -110,7 +111,7 @@ let print_outcomes () f =
       Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
       Fmt.pr "@\n@\n@?";
       true
-  | Error (errs, entry_name, ntotal) ->
+  | Error (errs, ntotal) ->
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
         "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
@@ -126,7 +127,7 @@ let print_outcomes () f =
   | exception ExecutionError e ->
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "Fatal: %s" e;
+        "%s: runtime error in %a: %s" entry_name pp_time (chrono ()) e;
       Fmt.pr "@\n@\n@?";
       false
 
@@ -145,7 +146,10 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   entry_points
   |> fold_and @@ fun (entry : Plugin.entry_point) ->
      (* execute! *)
-     let@ () = print_outcomes () in
+     let entry_name =
+       Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
+     in
+     let@ () = print_outcomes entry_name in
      let branches =
        let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
        Option.iter Rustsymex.set_default_fuel entry.fuel;
@@ -186,14 +190,11 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
      if List.exists Compo_res.is_missing outcomes then
        execution_err "Miss encountered in WPST";
 
-     let entry_name =
-       Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
-     in
      let errors = Compo_res.only_errors outcomes in
      if List.is_empty errors then
        let pcs = List.map snd branches in
-       Ok (pcs, entry_name, nbranches)
-     else Error (errors, entry_name, nbranches)
+       Ok (pcs, nbranches)
+     else Error (errors, nbranches)
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;
