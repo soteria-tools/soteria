@@ -484,7 +484,8 @@ module Make (State : State_intf.S) = struct
         | "calloc" -> Some (C_std.calloc, NoFilter)
         | "free" -> Some (C_std.free, NoFilter)
         | "memcpy" -> Some (C_std.memcpy, NoFilter)
-        | "__soteria___nondet_int" -> Some (C_std.nondet_int_fun, NoFilter)
+        | "__soteria___nondet_int" | "__nondet_int" ->
+            Some (C_std.nondet_int_fun, NoFilter)
         (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
         | "__CPROVER_assert" -> Some (C_std.assert_, Filter (fun i _ -> i == 0))
         | "__soteria___assert" -> Some (C_std.assert_, NoFilter)
