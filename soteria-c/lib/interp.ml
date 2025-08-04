@@ -435,8 +435,7 @@ module Make (State : State_intf.S) = struct
     | ConstantFloating (str, _suff) ->
         let precision : Svalue.FloatPrecision.t =
           match ty with
-          | Ctype.Ctype (_, Basic (Floating (RealFloating f))) -> (
-              match f with Float -> F32 | Double -> F64 | LongDouble -> F128)
+          | Ctype.Ctype (_, Basic (Floating fty)) -> Layout.precision fty
           | _ ->
               Fmt.failwith "float is not of float type: %a of type %a at %a"
                 Fmt_ail.pp_constant c Fmt_ail.pp_ty ty Fmt_ail.pp_loc

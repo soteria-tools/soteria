@@ -54,6 +54,9 @@ end
 let is_int (Ctype (_, ty)) =
   match ty with Basic (Integer _) -> true | _ -> false
 
+let precision (RealFloating f) : Svalue.FloatPrecision.t =
+  match f with Float -> F32 | Double -> F64 | LongDouble -> F128
+
 let normalise_int_ty int_ty =
   Cerb_frontend.Ocaml_implementation.(normalise_integerType DefaultImpl.impl)
     int_ty
