@@ -161,10 +161,29 @@ module Make (State : State_intf.S) = struct
           |> Csymex.of_opt_not_impl ~msg:"Layout of struct"
         in
         let members_ofs = layout.members_ofs in
+        let produce_padding ~offset ~len state =
+          let block =
+            With_origin.
+              {
+                node = Freeable.Alive [ Tree_block.Uninit { offset; len } ];
+                info = None;
+              }
+          in
+          let serialized : State.serialized =
+            { heap = [ (loc, block) ]; globs = [] }
+          in
+          State.produce serialized state
+        in
         let rec produce_members (fields : Aggregate_val.field list) members
-            (mem_idx : int) (prev_ofs : int) state =
+            (mem_idx : int) (prev_end : int) state =
           match (fields, members) with
-          | [], [] -> Csymex.return state
+          | [], [] ->
+              if layout.size > prev_end then
+                produce_padding
+                  ~offset:(Typed.int prev_end +@ offset)
+                  ~len:(Typed.int (layout.size - prev_end))
+                  state
+              else Csymex.return state
           | _ :: _, [] | [], _ :: _ -> Csymex.not_impl "struct field mismatch"
           | { name; value } :: rest_fields, (memid, (_, _, _, ty)) :: rest_mems
             ->
@@ -175,26 +194,11 @@ module Make (State : State_intf.S) = struct
                   && Identifier.equal mname memid)
               then failwith "Struct field mismatch";
               let* state =
-                if mofs > prev_ofs then
-                  let block =
-                    With_origin.
-                      {
-                        node =
-                          Freeable.Alive
-                            [
-                              Tree_block.Uninit
-                                {
-                                  offset = Typed.int prev_ofs +@ offset;
-                                  len = Typed.int (mofs - prev_ofs);
-                                };
-                            ];
-                        info = None;
-                      }
-                  in
-                  let serialized : State.serialized =
-                    { heap = [ (loc, block) ]; globs = [] }
-                  in
-                  State.produce serialized state
+                if mofs > prev_end then
+                  produce_padding
+                    ~offset:(Typed.int prev_end +@ offset)
+                    ~len:(Typed.int (mofs - prev_end))
+                    state
                 else Csymex.return state
               in
               let* state =
@@ -202,9 +206,14 @@ module Make (State : State_intf.S) = struct
                   (Typed.Ptr.mk loc (Typed.int mofs +@ offset))
                   ty value state
               in
-              produce_members rest_fields rest_mems (mem_idx + 1) mofs state
+              let* layout =
+                Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"layout"
+              in
+              produce_members rest_fields rest_mems (mem_idx + 1)
+                (mofs + layout.size) state
         in
         produce_members fields members 0 0 state
+    | Array _ -> Csymex.not_impl "Array not implemented in produce_aggregate"
 
   let store_aggregate (ptr : T.sptr Typed.t) (ty : Ctype.ctype)
       (v : Aggregate_val.t) : unit InterpM.t =
@@ -476,8 +485,11 @@ module Make (State : State_intf.S) = struct
         | "free" -> Some (C_std.free, NoFilter)
         | "memcpy" -> Some (C_std.memcpy, NoFilter)
         | "__soteria___nondet_int" -> Some (C_std.nondet_int_fun, NoFilter)
+        (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
+        | "__CPROVER_assert" -> Some (C_std.assert_, Filter (fun i _ -> i == 0))
         | "__soteria___assert" -> Some (C_std.assert_, NoFilter)
         | "__soteria___debug_show" -> Some (debug_show, NoFilter)
+        (* See definition of this builtin, the last argument is not useful to us. *)
         | "__builtin___memcpy_chk" ->
             Some (C_std.memcpy, Filter (fun i _ -> i <> 3))
         | _ -> None)
@@ -486,45 +498,41 @@ module Make (State : State_intf.S) = struct
   let cast ~old_ty ~new_ty (v : Aggregate_val.t) : Aggregate_val.t Csymex.t =
     let open Csymex.Syntax in
     let open Typed in
-    if Ctype.ctypeEqual old_ty new_ty then return v
-    else
-      let (Ctype.Ctype (_, old_ty)) = old_ty in
-      let (Ctype.Ctype (_, new_ty)) = new_ty in
-      let* v =
-        match v with
-        | Basic v -> return v
-        | Struct _ ->
-            Fmt.kstr not_impl "Cannot cast struct %a" Aggregate_val.pp v
-      in
-      let+ res =
-        match (old_ty, new_ty) with
-        | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
-            match get_ty v with
-            | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
-            | TPointer -> return v
-            | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
-        | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
-        | Ctype.Basic (Integer ity_left), Ctype.Basic (Integer ity_right) -> (
-            let* v = cast_to_int v in
-            let ity_left = Layout.normalise_int_ty ity_left in
-            let ity_right = Layout.normalise_int_ty ity_right in
-            match (ity_left, ity_right) with
-            | Signed _, Unsigned _ ->
-                let+ size_right =
-                  Layout.size_of_int_ty ity_right
-                  |> Csymex.of_opt_not_impl ~msg:"Size of int ty"
-                in
-                let size_right = Typed.nonzero size_right in
-                Typed.mod_ v size_right
-            | _, _ ->
-                Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
-                  ity_left Fmt_ail.pp_int_ty ity_right)
-        | _, Ctype.Void -> return 0s
-        | _ ->
-            Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
-              Fmt_ail.pp_ty_ new_ty
-      in
-      Aggregate_val.Basic res
+    let* v =
+      match v with
+      | Basic v -> return v
+      | Struct _ | Array _ ->
+          Fmt.kstr not_impl "Cannot cast struct or array %a" Aggregate_val.pp v
+    in
+    let+ res =
+      match (old_ty, new_ty) with
+      | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
+          match get_ty v with
+          | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
+          | TPointer -> return v
+          | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
+      | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
+      | Ctype.Basic (Integer ity_left), Ctype.Basic (Integer ity_right) -> (
+          let* v = cast_to_int v in
+          let ity_left = Layout.normalise_int_ty ity_left in
+          let ity_right = Layout.normalise_int_ty ity_right in
+          match (ity_left, ity_right) with
+          | Signed _, Unsigned _ ->
+              let+ size_right =
+                Layout.size_of_int_ty ity_right
+                |> Csymex.of_opt_not_impl ~msg:"Size of int ty"
+              in
+              let size_right = Typed.nonzero size_right in
+              Typed.mod_ v size_right
+          | _, _ ->
+              Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
+                ity_left Fmt_ail.pp_int_ty ity_right)
+      | _, Ctype.Void -> return 0s
+      | _ ->
+          Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
+            Fmt_ail.pp_ty_ new_ty
+    in
+    Aggregate_val.Basic res
 
   let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
@@ -768,9 +776,6 @@ module Make (State : State_intf.S) = struct
     match expr with
     | AilEconst c ->
         let ty = type_of aexpr in
-        L.info (fun m ->
-            m "Evaluating constant %a of type %a at loc %a" Fmt_ail.pp_constant
-              c Fmt_ail.pp_ty ty Fmt_ail.pp_loc loc);
         let^ v = aggregate_of_constant ~ty c in
         InterpM.ok v
     | AilEcall (f, args) ->

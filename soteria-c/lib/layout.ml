@@ -280,6 +280,9 @@ let constraints (ty : ctype) :
               match Typed.cast_checked x Typed.t_int with
               | None -> [ Typed.v_false ]
               | Some x -> constrs x))
+  | Basic (Floating _) ->
+      (* Floating constraints are already included in the floating type itself (bitvectors) *)
+      Some (fun _ -> [])
   | _ ->
       L.info (fun m ->
           m "No constraints implemented for type %a" Fmt_ail.pp_ty ty);

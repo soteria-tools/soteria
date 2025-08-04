@@ -78,7 +78,7 @@ module M (State : State_intf.S) = struct
     let open Typed.Infix in
     let* to_assert =
       match args with
-      | [ Basic t ] ->
+      | [ Basic t ] | [ Basic t; _ ] ->
           Csymex.of_opt_not_impl ~msg:"not an integer"
             (Typed.cast_checked t Typed.t_int)
       | _ -> not_impl "to_assert with non-one arguments"
