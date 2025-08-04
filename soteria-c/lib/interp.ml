@@ -302,7 +302,7 @@ module Make (State : State_intf.S) = struct
         | _ -> Result.ok (`NotImmediate, store, state))
     | _ -> Result.ok (`NotImmediate, store, state)
 
-  let rec aggregate_of_constant_exn (c : constant) : Aggregate_val.t =
+  let rec aggregate_of_constant_exn ~ty (c : constant) : Aggregate_val.t =
     match c with
     | ConstantInteger (IConstant (z, _basis, _suff)) -> Aggregate_val.int_z z
     | ConstantNull -> Aggregate_val.null
@@ -320,17 +320,28 @@ module Make (State : State_intf.S) = struct
               Aggregate_val.
                 {
                   name = Identifier.to_string name;
-                  value = aggregate_of_constant_exn v;
+                  value = aggregate_of_constant_exn ~ty v;
                 })
             fields
         in
         Struct { tag; fields }
-    | _ ->
+    | ConstantFloating (str, _suff) ->
+        let precision : Svalue.FloatPrecision.t =
+          match ty with
+          | Ctype.Ctype (_, Basic (Floating (RealFloating f))) -> (
+              match f with Float -> F32 | Double -> F64 | LongDouble -> F128)
+          | _ -> failwith "float is not of float type"
+        in
+        let f = Typed.float precision str in
+        Aggregate_val.Basic f
+    | ConstantInteger _ | ConstantIndeterminate _ | ConstantPredefined _
+    | ConstantArray (_, _)
+    | ConstantUnion (_, _, _) ->
         let msg = Fmt.str "value of constant? %a" Fmt_ail.pp_constant c in
         raise (Unsupported (msg, get_loc ()))
 
-  let aggregate_of_constant (c : constant) : Aggregate_val.t Csymex.t =
-    try Csymex.return (aggregate_of_constant_exn c)
+  let aggregate_of_constant ~ty (c : constant) : Aggregate_val.t Csymex.t =
+    try Csymex.return (aggregate_of_constant_exn ~ty c)
     with Unsupported (msg, loc) ->
       let@ () = with_loc ~loc in
       Csymex.not_impl msg
@@ -417,6 +428,8 @@ module Make (State : State_intf.S) = struct
   let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TInt, TInt | TPointer, TPointer ->
+        InterpM.ok (v1 ==@ v2 |> Typed.int_of_bool)
+    | TFloat fp1, TFloat fp2 when Svalue.FloatPrecision.equal fp1 fp2 ->
         InterpM.ok (v1 ==@ v2 |> Typed.int_of_bool)
     | TPointer, TInt ->
         let v2 : T.sint Typed.t = Typed.cast v2 in
@@ -558,23 +571,30 @@ module Make (State : State_intf.S) = struct
     | None -> InterpM.ok None
 
   (* We do this in the untyped world *)
-  let ineq_comparison ~cmp_op left right =
+  let ineq_comparison ~int_cmp_op ~float_cmp_op left right =
     let+ res =
       let^ left = Aggregate_val.basic_or_unsupported left in
       let^ right = Aggregate_val.basic_or_unsupported right in
-      let cmp_op left right = cmp_op left right |> Typed.int_of_bool in
+      let int_cmp_op left right = int_cmp_op left right |> Typed.int_of_bool in
       match (Typed.get_ty left, Typed.get_ty right) with
       | TInt, TInt ->
           let left = Typed.cast left in
           let right = Typed.cast right in
-          InterpM.ok (cmp_op left right)
+          InterpM.ok (int_cmp_op left right)
+      | TFloat fp1, TFloat fp2 when Svalue.FloatPrecision.equal fp1 fp2 ->
+          let left = Typed.cast left in
+          let right = Typed.cast right in
+          InterpM.ok (float_cmp_op left right |> Typed.int_of_bool)
       | TPointer, TPointer ->
           let left = Typed.cast left in
           let right = Typed.cast right in
           if%sat Typed.Ptr.loc left ==@ Typed.Ptr.loc right then
-            InterpM.ok (cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right))
+            InterpM.ok (int_cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right))
           else InterpM.error `UBPointerComparison
-      | _ -> InterpM.error `UBPointerComparison
+      | _, TPointer | TPointer, _ -> InterpM.error `UBPointerComparison
+      | _ ->
+          Fmt.kstr InterpM.not_impl "Unsupported comparison: %a and %a"
+            Typed.ppa left Typed.ppa right
     in
     Aggregate_val.Basic res
 
@@ -638,7 +658,8 @@ module Make (State : State_intf.S) = struct
     let@ () = InterpM.with_loc ~loc in
     match expr with
     | AilEconst c ->
-        let^ v = aggregate_of_constant c in
+        let ty = type_of aexpr in
+        let^ v = aggregate_of_constant ~ty c in
         InterpM.ok v
     | AilEcall (f, args) ->
         let* exec_fun, filter = resolve_function f in
@@ -761,10 +782,10 @@ module Make (State : State_intf.S) = struct
         let* v1 = eval_expr e1 in
         let* v2 = eval_expr e2 in
         match op with
-        | Ge -> ineq_comparison ~cmp_op:( >=@ ) v1 v2
-        | Gt -> ineq_comparison ~cmp_op:( >@ ) v1 v2
-        | Lt -> ineq_comparison ~cmp_op:( <@ ) v1 v2
-        | Le -> ineq_comparison ~cmp_op:( <=@ ) v1 v2
+        | Ge -> ineq_comparison ~int_cmp_op:( >=@ ) ~float_cmp_op:( >=.@ ) v1 v2
+        | Gt -> ineq_comparison ~int_cmp_op:( >@ ) ~float_cmp_op:( >.@ ) v1 v2
+        | Lt -> ineq_comparison ~int_cmp_op:( <@ ) ~float_cmp_op:( <.@ ) v1 v2
+        | Le -> ineq_comparison ~int_cmp_op:( <=@ ) ~float_cmp_op:( <=.@ ) v1 v2
         | Eq ->
             let+ res = aggregate_equality_check v1 v2 in
             Aggregate_val.Basic res

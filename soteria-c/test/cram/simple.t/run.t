@@ -547,8 +547,14 @@ Expected to fail because no main function is defined
   Symex terminated with the following outcomes:
     [Error: Parsing Error: Entry point "main" not found with trace []]
   Executed 0 statements
+
 Expected to correctly find the harness function
   $ soteria-c exec harness.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --harness harness
   Symex terminated with the following outcomes:
     [Ok: (0, { heap = []; globs = [] })]
   Executed 2 statements
+
+  $ soteria-c exec float.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (0, { heap = []; globs = [] })]
+  Executed 4 statements
