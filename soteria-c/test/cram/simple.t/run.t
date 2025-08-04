@@ -558,3 +558,26 @@ Expected to correctly find the harness function
   Symex terminated with the following outcomes:
     [Ok: (0, { heap = []; globs = [] })]
   Executed 4 statements
+ 
+Check without the proper flag we obtain two branches  
+  $ soteria-c exec alloc_cannot_fail.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    [Ok: (0,
+          { heap =
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some alloc_cannot_fail.c:5:19-38) })];
+            globs = [] });
+     Ok: (1, { heap = []; globs = [] })]
+  Executed 7 statements
+
+Check with the proper flag we obtain only one branch
+  $ soteria-c exec alloc_cannot_fail.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --alloc-cannot-fail
+  Symex terminated with the following outcomes:
+    [Ok: (0,
+          { heap =
+            [(V|1|,
+              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+                info = (Some alloc_cannot_fail.c:5:19-38) })];
+            globs = [] })]
+  Executed 5 statements

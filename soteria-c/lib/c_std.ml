@@ -9,6 +9,10 @@ open Aggregate_val
 
 let builtin_functions = [ "malloc"; "free"; "memcpy"; "calloc" ]
 
+let failed_alloc_case state =
+  if !Config.current.alloc_cannot_fail then []
+  else [ (fun () -> Result.ok (Basic Typed.Ptr.null, state)) ]
+
 module M (State : State_intf.S) = struct
   let malloc ~(args : Aggregate_val.t list) state =
     let* sz =
@@ -19,12 +23,12 @@ module M (State : State_intf.S) = struct
     match Typed.cast_checked sz Typed.t_int with
     | Some sz ->
         Csymex.branches
-          [
-            (fun () ->
-              let++ ptr, state = State.alloc sz state in
-              (Basic ptr, state));
-            (fun () -> Result.ok (Basic Typed.Ptr.null, state));
-          ]
+          ([
+             (fun () ->
+               let++ ptr, state = State.alloc sz state in
+               (Basic ptr, state));
+           ]
+          @ failed_alloc_case state)
     | None -> not_impl "malloc with non-integer argument"
 
   let calloc ~(args : Aggregate_val.t list) state =
@@ -39,12 +43,12 @@ module M (State : State_intf.S) = struct
       | _ -> not_impl "calloc with non-one arguments"
     in
     Csymex.branches
-      [
-        (fun () ->
-          let++ ptr, state = State.alloc ~zeroed:true sz state in
-          (Basic ptr, state));
-        (fun () -> Result.ok (Basic Typed.Ptr.null, state));
-      ]
+      ([
+         (fun () ->
+           let++ ptr, state = State.alloc ~zeroed:true sz state in
+           (Basic ptr, state));
+       ]
+      @ failed_alloc_case state)
 
   let free ~(args : Aggregate_val.t list) state =
     let* ptr =

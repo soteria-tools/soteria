@@ -11,6 +11,7 @@ type t = {
   parse_only : bool; [@default false]
   dump_summaries_file : string option; [@default None]
   show_manifest_summaries : bool; [@default false]
+  alloc_cannot_fail : bool; [@default false]
 }
 [@@deriving make]
 

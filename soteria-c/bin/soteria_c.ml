@@ -67,12 +67,17 @@ module Config = struct
     in
     Arg.(value & flag & info [ "show-manifest-summaries" ] ~env ~doc)
 
+  let alloc_cannot_fail_arg =
+    let doc = "Assume that all allocations cannot fail" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_ALLOC_CANNOT_FAIL" in
+    Arg.(value & flag & info [ "alloc-cannot-fail" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_unsupported_file
       no_ignore_parse_failures no_ignore_duplicate_symbols parse_only
-      dump_summaries_file show_manifest_summaries =
+      dump_summaries_file show_manifest_summaries alloc_cannot_fail =
     make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
       ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file
-      ~show_manifest_summaries ()
+      ~show_manifest_summaries ~alloc_cannot_fail ()
 
   let term =
     Cmdliner.Term.(
@@ -83,7 +88,8 @@ module Config = struct
       $ no_ignore_duplicate_symbols_arg
       $ parse_only_arg
       $ dump_summaries_file_arg
-      $ show_manifest_summaries_arg)
+      $ show_manifest_summaries_arg
+      $ alloc_cannot_fail_arg)
 end
 
 let files_arg =
