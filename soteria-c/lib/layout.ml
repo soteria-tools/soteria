@@ -288,3 +288,8 @@ let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   | Basic (Floating _) -> Csymex.not_impl "nondet_c_ty: floating"
   | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->
       Csymex.not_impl "nondet_c_ty: unsupported type"
+
+let nondet_c_ty_aggregate (ty : ctype) : Aggregate_val.t Csymex.t =
+  let open Csymex.Syntax in
+  let+ res = nondet_c_ty ty in
+  Aggregate_val.Basic res

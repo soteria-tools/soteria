@@ -273,7 +273,8 @@ let exec_and_print log_config term_config solver_config config includes
        Executed %d statements"
       Fmt.Dump.(
         list @@ fun ft (r, _) ->
-        (Soteria_symex.Compo_res.pp ~ok:(pair Typed.ppa pp_state)
+        (Soteria_symex.Compo_res.pp
+           ~ok:(pair Aggregate_val.pp pp_state)
            ~err:pp_err_and_call_trace
            ~miss:(Fmt.Dump.list SState.pp_serialized))
           ft r)
