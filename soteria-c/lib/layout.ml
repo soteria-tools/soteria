@@ -71,6 +71,13 @@ let size_of_float_ty (fty : floatingType) =
 let align_of_float_ty (fty : floatingType) =
   CF.Ocaml_implementation.DefaultImpl.impl.alignof_fty fty
 
+let get_struct_fields tag =
+  let open Syntaxes.Option in
+  let* _loc, def = Tag_defs.find_opt tag in
+  match def with
+  | StructDef (fs, fam) -> Some (fs, fam)
+  | UnionDef _ -> failwith "Not a structure"
+
 let rec layout_of ty =
   let open Syntaxes.Option in
   (* Get cache, if not found, compute and update cache. *)
@@ -86,23 +93,7 @@ let rec layout_of ty =
       let+ align = align_of_float_ty fty in
       { size; align; members_ofs = [||] }
   | Pointer _ -> layout_of (Ctype ([], Basic (Integer Size_t)))
-  | Struct tag ->
-      let* loc, def = Tag_defs.find_opt tag in
-      let* members, flexible_array_member =
-        match def with
-        | StructDef (m, fam) -> Some (m, fam)
-        | _ ->
-            L.debug (fun m -> m "Don't have a definition of structure");
-            None
-      in
-      let* () =
-        (* TODO: flexible array members *)
-        if Option.is_some flexible_array_member then (
-          Csymex.push_give_up ("Unsupported flexible array member", loc);
-          None)
-        else Some ()
-      in
-      struct_layout_of_members members
+  | Struct tag -> layout_of_struct tag
   | Union tag ->
       let* _loc, def = Tag_defs.find_opt tag in
       let* members =
@@ -144,6 +135,25 @@ and union_layout_of_members members =
 
   { align; size; members_ofs = Array.of_list members_ofs }
 
+and layout_of_struct tag =
+  let open Syntaxes.Option in
+  let* loc, def = Tag_defs.find_opt tag in
+  let* members, flexible_array_member =
+    match def with
+    | StructDef (m, fam) -> Some (m, fam)
+    | _ ->
+        L.debug (fun m -> m "Don't have a definition of structure");
+        None
+  in
+  let* () =
+    (* TODO: flexible array members *)
+    if Option.is_some flexible_array_member then (
+      Csymex.push_give_up ("Unsupported flexible array member", loc);
+      None)
+    else Some ()
+  in
+  struct_layout_of_members members
+
 (** From:
     https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Structure-Layout.html
     The structure’s fields appear in the structure layout in the order they are
@@ -183,7 +193,9 @@ and struct_layout_of_members members =
 
     if m = 0 then size else size + align - m
   in
-  { size; align; members_ofs = Array.of_list members_ofs }
+  let members_ofs = Array.of_list members_ofs in
+  (* Return the layout *)
+  { align; size; members_ofs }
 
 let size_of_s ty =
   match layout_of ty with

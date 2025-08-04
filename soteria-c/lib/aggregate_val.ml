@@ -21,10 +21,11 @@ let int_z z = Basic (Typed.int_z z)
 let int i = Basic (Typed.int i)
 let null = Basic Typed.Ptr.null
 
-let basic_or_unsupported v =
+let basic_or_unsupported ~msg v =
   match v with
   | Basic v -> Csymex.return v
-  | Struct _ -> Fmt.kstr Csymex.not_impl "Struct is not a basic value: %a" pp v
+  | Struct _ ->
+      Fmt.kstr Csymex.not_impl "Struct is not a basic value (%s): %a" msg pp v
 
 let rec iter_vars v f =
   match v with
