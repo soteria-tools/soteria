@@ -1042,7 +1042,7 @@ module Make (State : State_intf.S) = struct
         let^ guard_bool = cast_aggregate_to_bool guard in
         if%sat guard_bool then eval_expr t else eval_expr e
     | AilEcond (_, None, _) -> InterpM.not_impl "GNU ?:"
-    | AilEarray_decay _ -> InterpM.not_impl "Array decay"
+    | AilEarray_decay _ -> InterpM.ok (Aggregate_val.Basic Typed.Ptr.null)
     | AilEassert _
     | AilEoffsetof (_, _)
     | AilEgeneric (_, _)
