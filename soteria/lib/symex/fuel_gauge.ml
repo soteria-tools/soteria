@@ -12,7 +12,8 @@ type t = {
 }
 [@@deriving show { with_path = false }]
 
-let infinite = { steps = max_int; branching = max_int }
+(* Divided by two to avoid overflow in case we add some bits to these values. *)
+let infinite = { steps = max_int / 2; branching = max_int / 2 }
 
 let consume_fuel_steps n gauge =
   if gauge.steps >= n then
