@@ -1,6 +1,6 @@
 int main()
 {
-  int i = __soteria_nondet__();
+  int i = __soteria___nondet_int();
   if (i > 0)
   {
     goto lab1;

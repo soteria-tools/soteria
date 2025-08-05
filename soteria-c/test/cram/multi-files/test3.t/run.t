@@ -1,142 +1,175 @@
   $ soteria-c show-ail file1.c file2.c -I .
   Extern idmap:
-    __assert__ -> (__assert___495, decl);
-    __soteria_nondet__ -> (__soteria_nondet___493, decl);
-    __stderr -> (__stderr_505, decl);
-    __stdin -> (__stdin_506, decl);
-    __stdout -> (__stdout_504, decl);
-    add -> (add_488, def);
-    clearerr -> (clearerr_631, decl);
-    fclose -> (fclose_516, decl);
-    fdopen -> (fdopen_638, decl);
-    feof -> (feof_633, decl);
-    ferror -> (ferror_635, decl);
-    fflush -> (fflush_518, decl);
-    fgetc -> (fgetc_582, decl);
-    fgetpos -> (fgetpos_618, decl);
-    fgets -> (fgets_586, decl);
-    fileno -> (fileno_639, decl);
-    fopen -> (fopen_521, decl);
-    fprintf -> (fprintf_536, decl);
-    fputc -> (fputc_589, decl);
-    fputs -> (fputs_592, decl);
-    fread -> (fread_610, decl);
-    freopen -> (freopen_525, decl);
-    fscanf -> (fscanf_539, decl);
-    fseek -> (fseek_622, decl);
-    fsetpos -> (fsetpos_625, decl);
-    ftell -> (ftell_627, decl);
-    fwrite -> (fwrite_615, decl);
-    getc -> (getc_594, decl);
-    getchar -> (getchar_595, decl);
-    main -> (main_649, def);
-    operate -> (operate_644, def);
-    perror -> (perror_637, decl);
-    printf -> (printf_541, decl);
-    putc -> (putc_598, decl);
-    putchar -> (putchar_600, decl);
-    puts -> (puts_602, decl);
-    remove -> (remove_508, decl);
-    rename -> (rename_511, decl);
-    rewind -> (rewind_629, decl);
-    scanf -> (scanf_543, decl);
-    setbuf -> (setbuf_528, decl);
-    setvbuf -> (setvbuf_533, decl);
-    snprintf -> (snprintf_547, decl);
-    sprintf -> (sprintf_550, decl);
-    sscanf -> (sscanf_553, decl);
-    tmpfile -> (tmpfile_512, decl);
-    tmpnam -> (tmpnam_514, decl);
-    ungetc -> (ungetc_605, decl);
-    vfprintf -> (vfprintf_557, decl);
-    vfscanf -> (vfscanf_561, decl);
-    vprintf -> (vprintf_564, decl);
-    vscanf -> (vscanf_567, decl);
-    vsnprintf -> (vsnprintf_572, decl);
-    vsprintf -> (vsprintf_576, decl);
-    vsscanf -> (vsscanf_580, decl)
+    __atomic_add_fetch -> (__atomic_add_fetch_634, decl);
+    __atomic_exchange -> (__atomic_exchange_643, decl);
+    __atomic_load_n -> (__atomic_load_n_630, decl);
+    __atomic_sub_fetch -> (__atomic_sub_fetch_638, decl);
+    __builtin___memcpy_chk -> (__builtin___memcpy_chk_601, decl);
+    __builtin___memmove_chk -> (__builtin___memmove_chk_606, decl);
+    __builtin___memset_chk -> (__builtin___memset_chk_596, decl);
+    __builtin___snprintf_chk -> (__builtin___snprintf_chk_615, decl);
+    __builtin___strcpy_chk -> (__builtin___strcpy_chk_610, decl);
+    __builtin___strncpy_chk -> (__builtin___strncpy_chk_620, decl);
+    __builtin_bswap32 -> (__builtin_bswap32_625, decl);
+    __builtin_bswap64 -> (__builtin_bswap64_627, decl);
+    __builtin_object_size -> (__builtin_object_size_623, decl);
+    __builtin_sadd_overflow -> (__builtin_sadd_overflow_575, decl);
+    __builtin_ssub_overflow -> (__builtin_ssub_overflow_591, decl);
+    __builtin_uaddl_overflow -> (__builtin_uaddl_overflow_587, decl);
+    __builtin_umul_overflow -> (__builtin_umul_overflow_579, decl);
+    __builtin_umull_overflow -> (__builtin_umull_overflow_583, decl);
+    __soteria___assert -> (__soteria___assert_569, decl);
+    __soteria___debug_show -> (__soteria___debug_show_570, decl);
+    __soteria___nondet_int -> (__soteria___nondet_int_567, decl);
+    add -> (add_562, def);
+    main -> (main_656, def);
+    operate -> (operate_651, def)
   
   Declarations:
-    __soteria_nondet___483 -> function;
-    __assert___485 -> function;
-    add_488 -> function;
-    __soteria_nondet___493 -> function;
-    __assert___495 -> function;
-    add_498 -> function;
-    __stdout_504 -> object;
-    __stderr_505 -> object;
-    __stdin_506 -> object;
-    remove_508 -> function;
-    rename_511 -> function;
-    tmpfile_512 -> function;
-    tmpnam_514 -> function;
-    fclose_516 -> function;
-    fflush_518 -> function;
-    fopen_521 -> function;
-    freopen_525 -> function;
-    setbuf_528 -> function;
-    setvbuf_533 -> function;
-    fprintf_536 -> function;
-    fscanf_539 -> function;
-    printf_541 -> function;
-    scanf_543 -> function;
-    snprintf_547 -> function;
-    sprintf_550 -> function;
-    sscanf_553 -> function;
-    vfprintf_557 -> function;
-    vfscanf_561 -> function;
-    vprintf_564 -> function;
-    vscanf_567 -> function;
-    vsnprintf_572 -> function;
-    vsprintf_576 -> function;
-    vsscanf_580 -> function;
-    fgetc_582 -> function;
-    fgets_586 -> function;
-    fputc_589 -> function;
-    fputs_592 -> function;
-    getc_594 -> function;
-    getchar_595 -> function;
-    putc_598 -> function;
-    putchar_600 -> function;
-    puts_602 -> function;
-    ungetc_605 -> function;
-    fread_610 -> function;
-    fwrite_615 -> function;
-    fgetpos_618 -> function;
-    fseek_622 -> function;
-    fsetpos_625 -> function;
-    ftell_627 -> function;
-    rewind_629 -> function;
-    clearerr_631 -> function;
-    feof_633 -> function;
-    ferror_635 -> function;
-    perror_637 -> function;
-    fdopen_638 -> function;
-    fileno_639 -> function;
-    operate_644 -> function;
-    main_649 -> function
+    __soteria___nondet_int_483 -> function;
+    __soteria___assert_485 -> function;
+    __soteria___debug_show_486 -> function;
+    __builtin_sadd_overflow_491 -> function;
+    __builtin_umul_overflow_495 -> function;
+    __builtin_umull_overflow_499 -> function;
+    __builtin_uaddl_overflow_503 -> function;
+    __builtin_ssub_overflow_507 -> function;
+    __builtin___memset_chk_512 -> function;
+    __builtin___memcpy_chk_517 -> function;
+    __builtin___memmove_chk_522 -> function;
+    __builtin___strcpy_chk_526 -> function;
+    __builtin___snprintf_chk_531 -> function;
+    __builtin___strncpy_chk_536 -> function;
+    __builtin_object_size_539 -> function;
+    __builtin_bswap32_541 -> function;
+    __builtin_bswap64_543 -> function;
+    __atomic_load_n_546 -> function;
+    __atomic_add_fetch_550 -> function;
+    __atomic_sub_fetch_554 -> function;
+    __atomic_exchange_559 -> function;
+    add_562 -> function;
+    __soteria___nondet_int_567 -> function;
+    __soteria___assert_569 -> function;
+    __soteria___debug_show_570 -> function;
+    __builtin_sadd_overflow_575 -> function;
+    __builtin_umul_overflow_579 -> function;
+    __builtin_umull_overflow_583 -> function;
+    __builtin_uaddl_overflow_587 -> function;
+    __builtin_ssub_overflow_591 -> function;
+    __builtin___memset_chk_596 -> function;
+    __builtin___memcpy_chk_601 -> function;
+    __builtin___memmove_chk_606 -> function;
+    __builtin___strcpy_chk_610 -> function;
+    __builtin___snprintf_chk_615 -> function;
+    __builtin___strncpy_chk_620 -> function;
+    __builtin_object_size_623 -> function;
+    __builtin_bswap32_625 -> function;
+    __builtin_bswap64_627 -> function;
+    __atomic_load_n_630 -> function;
+    __atomic_add_fetch_634 -> function;
+    __atomic_sub_fetch_638 -> function;
+    __atomic_exchange_643 -> function;
+    add_646 -> function;
+    operate_651 -> function;
+    main_656 -> function
   
   Object definitions:
     
   
   Function definitions:
-    add_488
-    operate_644
-    main_649
+    add_562
+    operate_651
+    main_656
   
    Symmap:
-    add_498 -> add_488;
-    operate_644 -> operate_644;
-    main_649 -> main_649;
-    __soteria_nondet___483 -> __soteria_nondet___493;
-    __assert___485 -> __assert___495;
-    add_488 -> add_488
+    add_646 -> add_562;
+    operate_651 -> operate_651;
+    main_656 -> main_656;
+    __soteria___nondet_int_483 -> __soteria___nondet_int_567;
+    __soteria___assert_485 -> __soteria___assert_569;
+    __soteria___debug_show_486 -> __soteria___debug_show_570;
+    __builtin_sadd_overflow_491 -> __builtin_sadd_overflow_575;
+    __builtin_umul_overflow_495 -> __builtin_umul_overflow_579;
+    __builtin_umull_overflow_499 -> __builtin_umull_overflow_583;
+    __builtin_uaddl_overflow_503 -> __builtin_uaddl_overflow_587;
+    __builtin_ssub_overflow_507 -> __builtin_ssub_overflow_591;
+    __builtin___memset_chk_512 -> __builtin___memset_chk_596;
+    __builtin___memcpy_chk_517 -> __builtin___memcpy_chk_601;
+    __builtin___memmove_chk_522 -> __builtin___memmove_chk_606;
+    __builtin___strcpy_chk_526 -> __builtin___strcpy_chk_610;
+    __builtin___snprintf_chk_531 -> __builtin___snprintf_chk_615;
+    __builtin___strncpy_chk_536 -> __builtin___strncpy_chk_620;
+    __builtin_object_size_539 -> __builtin_object_size_623;
+    __builtin_bswap32_541 -> __builtin_bswap32_625;
+    __builtin_bswap64_543 -> __builtin_bswap64_627;
+    __atomic_load_n_546 -> __atomic_load_n_630;
+    __atomic_add_fetch_550 -> __atomic_add_fetch_634;
+    __atomic_sub_fetch_554 -> __atomic_sub_fetch_638;
+    __atomic_exchange_559 -> __atomic_exchange_643;
+    add_562 -> add_562
   
-  // declare __soteria_nondet__ WITH PROTO as function () returning signed int
-  signed int __soteria_nondet__();
+  // declare __soteria___nondet_int WITH PROTO as function () returning signed int
+  signed int __soteria___nondet_int();
   
-  // declare __assert__ WITH PROTO as function (signed int) returning signed int
-  signed int __assert__(signed int);
+  // declare __soteria___assert WITH PROTO as function (signed int) returning void
+  void __soteria___assert(signed int);
+  
+  // declare __soteria___debug_show WITH PROTO as function () returning void
+  void __soteria___debug_show();
+  
+  // declare __builtin_sadd_overflow WITH PROTO as function (signed int, signed int, pointer to signed int) returning _Bool
+  _Bool __builtin_sadd_overflow(signed int, signed int, signed int*);
+  
+  // declare __builtin_umul_overflow WITH PROTO as function (unsigned int, unsigned int, pointer to unsigned int) returning _Bool
+  _Bool __builtin_umul_overflow(unsigned int, unsigned int, unsigned int*);
+  
+  // declare __builtin_umull_overflow WITH PROTO as function (unsigned long, unsigned long, pointer to unsigned long) returning _Bool
+  _Bool __builtin_umull_overflow(unsigned long, unsigned long, unsigned long*);
+  
+  // declare __builtin_uaddl_overflow WITH PROTO as function (unsigned long, unsigned long, pointer to unsigned long) returning _Bool
+  _Bool __builtin_uaddl_overflow(unsigned long, unsigned long, unsigned long*);
+  
+  // declare __builtin_ssub_overflow WITH PROTO as function (signed int, signed int, pointer to signed int) returning _Bool
+  _Bool __builtin_ssub_overflow(signed int, signed int, signed int*);
+  
+  // declare __builtin___memset_chk WITH PROTO as function (pointer to void, signed int, size_t, size_t) returning pointer to void
+  void* __builtin___memset_chk(void*, signed int, size_t, size_t);
+  
+  // declare __builtin___memcpy_chk WITH PROTO as function (pointer to void, pointer to {const} void, size_t, size_t) returning pointer to void
+  void* __builtin___memcpy_chk(void*, const void*, size_t, size_t);
+  
+  // declare __builtin___memmove_chk WITH PROTO as function (pointer to void, pointer to {const} void, size_t, size_t) returning pointer to void
+  void* __builtin___memmove_chk(void*, const void*, size_t, size_t);
+  
+  // declare __builtin___strcpy_chk WITH PROTO as function (pointer to char, pointer to {const} char, size_t) returning pointer to char
+  char* __builtin___strcpy_chk(char*, const char*, size_t);
+  
+  // declare __builtin___snprintf_chk WITH PROTO as variadic function (pointer to char, size_t, signed int, size_t) returning signed int
+  signed int __builtin___snprintf_chk(char*, size_t, signed int, size_t, ...);
+  
+  // declare __builtin___strncpy_chk WITH PROTO as function (pointer to char, pointer to {const} char, size_t, size_t) returning pointer to char
+  char* __builtin___strncpy_chk(char*, const char*, size_t, size_t);
+  
+  // declare __builtin_object_size WITH PROTO as function (pointer to {const} void, signed int) returning size_t
+  size_t __builtin_object_size(const void*, signed int);
+  
+  // declare __builtin_bswap32 WITH PROTO as function (uint32_t) returning uint32_t
+  uint32_t __builtin_bswap32(uint32_t);
+  
+  // declare __builtin_bswap64 WITH PROTO as function (uint64_t) returning uint64_t
+  uint64_t __builtin_bswap64(uint64_t);
+  
+  // declare __atomic_load_n WITH PROTO as function (pointer to {volatile} signed int, signed int) returning signed int
+  signed int __atomic_load_n(volatile signed int*, signed int);
+  
+  // declare __atomic_add_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_add_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_sub_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_sub_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_exchange WITH PROTO as function (pointer to {volatile} signed int, pointer to signed int, pointer to signed int, signed int) returning void
+  void __atomic_exchange(volatile signed int*, signed int*, signed int*, signed int);
   
   // declare add WITH PROTO as function (signed int, signed int) returning signed int
   signed int add(signed int x, signed int y)
@@ -144,164 +177,71 @@
     return rvalue(x) + rvalue(y);
   }
   
-  // declare __soteria_nondet__ WITH PROTO as function () returning signed int
-  signed int __soteria_nondet__();
+  // declare __soteria___nondet_int WITH PROTO as function () returning signed int
+  signed int __soteria___nondet_int();
   
-  // declare __assert__ WITH PROTO as function (signed int) returning signed int
-  signed int __assert__(signed int);
+  // declare __soteria___assert WITH PROTO as function (signed int) returning void
+  void __soteria___assert(signed int);
+  
+  // declare __soteria___debug_show WITH PROTO as function () returning void
+  void __soteria___debug_show();
+  
+  // declare __builtin_sadd_overflow WITH PROTO as function (signed int, signed int, pointer to signed int) returning _Bool
+  _Bool __builtin_sadd_overflow(signed int, signed int, signed int*);
+  
+  // declare __builtin_umul_overflow WITH PROTO as function (unsigned int, unsigned int, pointer to unsigned int) returning _Bool
+  _Bool __builtin_umul_overflow(unsigned int, unsigned int, unsigned int*);
+  
+  // declare __builtin_umull_overflow WITH PROTO as function (unsigned long, unsigned long, pointer to unsigned long) returning _Bool
+  _Bool __builtin_umull_overflow(unsigned long, unsigned long, unsigned long*);
+  
+  // declare __builtin_uaddl_overflow WITH PROTO as function (unsigned long, unsigned long, pointer to unsigned long) returning _Bool
+  _Bool __builtin_uaddl_overflow(unsigned long, unsigned long, unsigned long*);
+  
+  // declare __builtin_ssub_overflow WITH PROTO as function (signed int, signed int, pointer to signed int) returning _Bool
+  _Bool __builtin_ssub_overflow(signed int, signed int, signed int*);
+  
+  // declare __builtin___memset_chk WITH PROTO as function (pointer to void, signed int, size_t, size_t) returning pointer to void
+  void* __builtin___memset_chk(void*, signed int, size_t, size_t);
+  
+  // declare __builtin___memcpy_chk WITH PROTO as function (pointer to void, pointer to {const} void, size_t, size_t) returning pointer to void
+  void* __builtin___memcpy_chk(void*, const void*, size_t, size_t);
+  
+  // declare __builtin___memmove_chk WITH PROTO as function (pointer to void, pointer to {const} void, size_t, size_t) returning pointer to void
+  void* __builtin___memmove_chk(void*, const void*, size_t, size_t);
+  
+  // declare __builtin___strcpy_chk WITH PROTO as function (pointer to char, pointer to {const} char, size_t) returning pointer to char
+  char* __builtin___strcpy_chk(char*, const char*, size_t);
+  
+  // declare __builtin___snprintf_chk WITH PROTO as variadic function (pointer to char, size_t, signed int, size_t) returning signed int
+  signed int __builtin___snprintf_chk(char*, size_t, signed int, size_t, ...);
+  
+  // declare __builtin___strncpy_chk WITH PROTO as function (pointer to char, pointer to {const} char, size_t, size_t) returning pointer to char
+  char* __builtin___strncpy_chk(char*, const char*, size_t, size_t);
+  
+  // declare __builtin_object_size WITH PROTO as function (pointer to {const} void, signed int) returning size_t
+  size_t __builtin_object_size(const void*, signed int);
+  
+  // declare __builtin_bswap32 WITH PROTO as function (uint32_t) returning uint32_t
+  uint32_t __builtin_bswap32(uint32_t);
+  
+  // declare __builtin_bswap64 WITH PROTO as function (uint64_t) returning uint64_t
+  uint64_t __builtin_bswap64(uint64_t);
+  
+  // declare __atomic_load_n WITH PROTO as function (pointer to {volatile} signed int, signed int) returning signed int
+  signed int __atomic_load_n(volatile signed int*, signed int);
+  
+  // declare __atomic_add_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_add_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_sub_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_sub_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_exchange WITH PROTO as function (pointer to {volatile} signed int, pointer to signed int, pointer to signed int, signed int) returning void
+  void __atomic_exchange(volatile signed int*, signed int*, signed int*, signed int);
   
   // declare add WITH PROTO as function (signed int, signed int) returning signed int
   signed int add(signed int, signed int);
-  
-  // declare __stdout as {const} pointer to struct _IO_FILE
-  struct _IO_FILE*const  __stdout;
-  
-  // declare __stderr as {const} pointer to struct _IO_FILE
-  struct _IO_FILE*const  __stderr;
-  
-  // declare __stdin as {const} pointer to struct _IO_FILE
-  struct _IO_FILE*const  __stdin;
-  
-  // declare remove WITH PROTO as function (pointer to {const} char) returning signed int
-  signed int remove(const char*);
-  
-  // declare rename WITH PROTO as function (pointer to {const} char, pointer to {const} char) returning signed int
-  signed int rename(const char*, const char*);
-  
-  // declare tmpfile WITH PROTO as function () returning pointer to struct _IO_FILE
-  struct _IO_FILE* tmpfile();
-  
-  // declare tmpnam WITH PROTO as function (pointer to char) returning pointer to char
-  char* tmpnam(char*);
-  
-  // declare fclose WITH PROTO as function (pointer to struct _IO_FILE) returning signed int
-  signed int fclose(struct _IO_FILE*);
-  
-  // declare fflush WITH PROTO as function (pointer to struct _IO_FILE) returning signed int
-  signed int fflush(struct _IO_FILE*);
-  
-  // declare fopen WITH PROTO as function ({restrict} pointer to {const} char, {restrict} pointer to {const} char) returning pointer to struct _IO_FILE
-  struct _IO_FILE* fopen(const char*restrict , const char*restrict );
-  
-  // declare freopen WITH PROTO as function ({restrict} pointer to {const} char, {restrict} pointer to {const} char, {restrict} pointer to struct _IO_FILE) returning pointer to struct _IO_FILE
-  struct _IO_FILE* freopen(const char*restrict , const char*restrict , struct _IO_FILE*restrict );
-  
-  // declare setbuf WITH PROTO as function ({restrict} pointer to struct _IO_FILE, {restrict} pointer to char) returning void
-  void setbuf(struct _IO_FILE*restrict , char*restrict );
-  
-  // declare setvbuf WITH PROTO as function ({restrict} pointer to struct _IO_FILE, {restrict} pointer to char, signed int, size_t) returning signed int
-  signed int setvbuf(struct _IO_FILE*restrict , char*restrict , signed int, size_t);
-  
-  // declare fprintf WITH PROTO as variadic function ({restrict} pointer to struct _IO_FILE, {restrict} pointer to {const} char) returning signed int
-  signed int fprintf(struct _IO_FILE*restrict , const char*restrict , ...);
-  
-  // declare fscanf WITH PROTO as variadic function ({restrict} pointer to struct _IO_FILE, {restrict} pointer to {const} char) returning signed int
-  signed int fscanf(struct _IO_FILE*restrict , const char*restrict , ...);
-  
-  // declare printf WITH PROTO as variadic function ({restrict} pointer to {const} char) returning signed int
-  signed int printf(const char*restrict , ...);
-  
-  // declare scanf WITH PROTO as variadic function ({restrict} pointer to {const} char) returning signed int
-  signed int scanf(const char*restrict , ...);
-  
-  // declare snprintf WITH PROTO as variadic function ({restrict} pointer to char, size_t, {restrict} pointer to {const} char) returning signed int
-  signed int snprintf(char*restrict , size_t, const char*restrict , ...);
-  
-  // declare sprintf WITH PROTO as variadic function ({restrict} pointer to char, {restrict} pointer to {const} char) returning signed int
-  signed int sprintf(char*restrict , const char*restrict , ...);
-  
-  // declare sscanf WITH PROTO as variadic function ({restrict} pointer to {const} char, {restrict} pointer to {const} char) returning signed int
-  signed int sscanf(const char*restrict , const char*restrict , ...);
-  
-  // declare vfprintf WITH PROTO as function ({restrict} pointer to struct _IO_FILE, {restrict} pointer to {const} char, signed int) returning signed int
-  signed int vfprintf(struct _IO_FILE*restrict , const char*restrict , signed int);
-  
-  // declare vfscanf WITH PROTO as function ({restrict} pointer to struct _IO_FILE, {restrict} pointer to {const} char, signed int) returning signed int
-  signed int vfscanf(struct _IO_FILE*restrict , const char*restrict , signed int);
-  
-  // declare vprintf WITH PROTO as function ({restrict} pointer to {const} char, signed int) returning signed int
-  signed int vprintf(const char*restrict , signed int);
-  
-  // declare vscanf WITH PROTO as function ({restrict} pointer to {const} char, signed int) returning signed int
-  signed int vscanf(const char*restrict , signed int);
-  
-  // declare vsnprintf WITH PROTO as function ({restrict} pointer to char, size_t, {restrict} pointer to {const} char, signed int) returning signed int
-  signed int vsnprintf(char*restrict , size_t, const char*restrict , signed int);
-  
-  // declare vsprintf WITH PROTO as function ({restrict} pointer to char, {restrict} pointer to {const} char, signed int) returning signed int
-  signed int vsprintf(char*restrict , const char*restrict , signed int);
-  
-  // declare vsscanf WITH PROTO as function ({restrict} pointer to {const} char, {restrict} pointer to {const} char, signed int) returning signed int
-  signed int vsscanf(const char*restrict , const char*restrict , signed int);
-  
-  // declare fgetc WITH PROTO as function (pointer to struct _IO_FILE) returning signed int
-  signed int fgetc(struct _IO_FILE*);
-  
-  // declare fgets WITH PROTO as function ({restrict} pointer to char, signed int, {restrict} pointer to struct _IO_FILE) returning pointer to char
-  char* fgets(char*restrict , signed int, struct _IO_FILE*restrict );
-  
-  // declare fputc WITH PROTO as function (signed int, pointer to struct _IO_FILE) returning signed int
-  signed int fputc(signed int, struct _IO_FILE*);
-  
-  // declare fputs WITH PROTO as function ({restrict} pointer to {const} char, {restrict} pointer to struct _IO_FILE) returning signed int
-  signed int fputs(const char*restrict , struct _IO_FILE*restrict );
-  
-  // declare getc WITH PROTO as function (pointer to struct _IO_FILE) returning signed int
-  signed int getc(struct _IO_FILE*);
-  
-  // declare getchar WITH PROTO as function () returning signed int
-  signed int getchar();
-  
-  // declare putc WITH PROTO as function (signed int, pointer to struct _IO_FILE) returning signed int
-  signed int putc(signed int, struct _IO_FILE*);
-  
-  // declare putchar WITH PROTO as function (signed int) returning signed int
-  signed int putchar(signed int);
-  
-  // declare puts WITH PROTO as function (pointer to {const} char) returning signed int
-  signed int puts(const char*);
-  
-  // declare ungetc WITH PROTO as function (signed int, pointer to struct _IO_FILE) returning signed int
-  signed int ungetc(signed int, struct _IO_FILE*);
-  
-  // declare fread WITH PROTO as function ({restrict} pointer to void, size_t, size_t, {restrict} pointer to struct _IO_FILE) returning size_t
-  size_t fread(void*restrict , size_t, size_t, struct _IO_FILE*restrict );
-  
-  // declare fwrite WITH PROTO as function ({restrict} pointer to {const} void, size_t, size_t, {restrict} pointer to struct _IO_FILE) returning size_t
-  size_t fwrite(const void*restrict , size_t, size_t, struct _IO_FILE*restrict );
-  
-  // declare fgetpos WITH PROTO as function ({restrict} pointer to struct _IO_FILE, {restrict} pointer to signed long long) returning signed int
-  signed int fgetpos(struct _IO_FILE*restrict , signed long long*restrict );
-  
-  // declare fseek WITH PROTO as function (pointer to struct _IO_FILE, signed long, signed int) returning signed int
-  signed int fseek(struct _IO_FILE*, signed long, signed int);
-  
-  // declare fsetpos WITH PROTO as function (pointer to struct _IO_FILE, pointer to {const} signed long long) returning signed int
-  signed int fsetpos(struct _IO_FILE*, const signed long long*);
-  
-  // declare ftell WITH PROTO as function (pointer to struct _IO_FILE) returning signed long
-  signed long ftell(struct _IO_FILE*);
-  
-  // declare rewind WITH PROTO as function (pointer to struct _IO_FILE) returning void
-  void rewind(struct _IO_FILE*);
-  
-  // declare clearerr WITH PROTO as function (pointer to struct _IO_FILE) returning void
-  void clearerr(struct _IO_FILE*);
-  
-  // declare feof WITH PROTO as function (pointer to struct _IO_FILE) returning signed int
-  signed int feof(struct _IO_FILE*);
-  
-  // declare ferror WITH PROTO as function (pointer to struct _IO_FILE) returning signed int
-  signed int ferror(struct _IO_FILE*);
-  
-  // declare perror WITH PROTO as function (pointer to {const} char) returning void
-  void perror(const char*);
-  
-  // declare fdopen WITH PROTO as function (signed int, pointer to {const} char) returning pointer to struct _IO_FILE
-  struct _IO_FILE* fdopen(signed int, const char*);
-  
-  // declare fileno WITH PROTO as function (pointer to struct _IO_FILE) returning signed int
-  signed int fileno(struct _IO_FILE*);
   
   // declare operate WITH PROTO as function (pointer to function (signed int, signed int) returning signed int, signed int, signed int) returning signed int
   signed int operate(signed int (* op) (signed int, signed int), signed int a, signed int b)
@@ -313,7 +253,7 @@
   signed int main()
   {
     signed int ret = function_decay(operate)(function_decay(add), 5, 3);
-    function_decay(__assert__)((rvalue(ret) == 8));
+    function_decay(__soteria___assert)((rvalue(ret) == 8));
     return 0;
   }
 

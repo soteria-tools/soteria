@@ -16,6 +16,6 @@ int simple(int x)
 
 int main()
 {
-  int x = __soteria_nondet__();
+  int x = __soteria___nondet_int();
   return simple(x);
 }

@@ -1,4 +1,4 @@
-void *malloc(__cerbty_size_t);
+void *malloc(__cerbty_size_t size);
 void free(void *);
 
 int load(int *x)

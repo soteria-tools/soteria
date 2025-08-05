@@ -303,51 +303,67 @@ module Make (State : State_intf.S) = struct
 
   let unwrap_expr (AnnotatedExpression (_, _, _, e) : expr) = e
 
-  let find_stub (fname : Cerb_frontend.Symbol.sym) : 'err fun_exec option =
+  (** HACK: Some internal functions such as __builtin___memcpy_chk are not
+      needed in our tool, since we perform all checks. For this function, we
+      return the real implementation (here, memcpy), with a filter saying that
+      the last argument should be elided. See:
+      https://gcc.gnu.org/onlinedocs/gcc-4.3.0/gcc/Object-Size-Checking.html *)
+  type arg_filter = NoFilter | Filter of (int -> expr -> bool)
+
+  let apply_arg_filter (filter : arg_filter) (args : expr list) =
+    match filter with NoFilter -> args | Filter f -> List.filteri f args
+
+  let find_stub (fname : Cerb_frontend.Symbol.sym) :
+      ('err fun_exec * arg_filter) option =
     let (Symbol (_, _, descr)) = fname in
     match descr with
     | Cerb_frontend.Symbol.SD_Id name -> (
         match name with
-        | "__soteria_nondet__" -> Some C_std.nondet_int_fun
-        | "malloc" -> Some C_std.malloc
-        | "calloc" -> Some C_std.calloc
-        | "free" -> Some C_std.free
-        | "memcpy" -> Some C_std.memcpy
-        | "__assert__" -> Some C_std.assert_
-        | "__soteria_debug_show" -> Some debug_show
+        | "malloc" -> Some (C_std.malloc, NoFilter)
+        | "calloc" -> Some (C_std.calloc, NoFilter)
+        | "free" -> Some (C_std.free, NoFilter)
+        | "memcpy" -> Some (C_std.memcpy, NoFilter)
+        | "__soteria___nondet_int" -> Some (C_std.nondet_int_fun, NoFilter)
+        | "__soteria___assert" -> Some (C_std.assert_, NoFilter)
+        | "__soteria___debug_show" -> Some (debug_show, NoFilter)
+        | "__builtin___memcpy_chk" ->
+            Some (C_std.memcpy, Filter (fun i _ -> i <> 3))
         | _ -> None)
     | _ -> None
 
-  let cast ~old_ty:(Ctype.Ctype (_, old_ty)) ~new_ty:(Ctype.Ctype (_, new_ty))
-      (v : [> T.cval ] Typed.t) =
+  let cast ~old_ty ~new_ty (v : [> T.cval ] Typed.t) =
     let open Csymex.Syntax in
     let open Typed in
-    match (old_ty, new_ty) with
-    | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
-        match get_ty v with
-        | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
-        | TPointer -> return v
-        | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
-    | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
-    | Ctype.Basic (Integer ity_left), Ctype.Basic (Integer ity_right) -> (
-        let* v = cast_to_int v in
-        let ity_left = Layout.normalise_int_ty ity_left in
-        let ity_right = Layout.normalise_int_ty ity_right in
-        match (ity_left, ity_right) with
-        | Signed _, Unsigned _ ->
-            let+ size_right =
-              Layout.size_of_int_ty ity_right
-              |> Csymex.of_opt_not_impl ~msg:"Size of int ty"
-            in
-            let size_right = Typed.nonzero size_right in
-            Typed.mod_ v size_right
-        | _, _ ->
-            Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
-              ity_left Fmt_ail.pp_int_ty ity_right)
-    | _, Ctype.Void -> return 0s
-    | _ ->
-        Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
-          Fmt_ail.pp_ty_ new_ty
+    if Ctype.ctypeEqual old_ty new_ty then return v
+    else
+      let (Ctype.Ctype (_, old_ty)) = old_ty in
+      let (Ctype.Ctype (_, new_ty)) = new_ty in
+      match (old_ty, new_ty) with
+      | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
+          match get_ty v with
+          | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
+          | TPointer -> return v
+          | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
+      | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
+      | Ctype.Basic (Integer ity_left), Ctype.Basic (Integer ity_right) -> (
+          let* v = cast_to_int v in
+          let ity_left = Layout.normalise_int_ty ity_left in
+          let ity_right = Layout.normalise_int_ty ity_right in
+          match (ity_left, ity_right) with
+          | Signed _, Unsigned _ ->
+              let+ size_right =
+                Layout.size_of_int_ty ity_right
+                |> Csymex.of_opt_not_impl ~msg:"Size of int ty"
+              in
+              let size_right = Typed.nonzero size_right in
+              Typed.mod_ v size_right
+          | _, _ ->
+              Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
+                ity_left Fmt_ail.pp_int_ty ity_right)
+      | _, Ctype.Void -> return 0s
+      | _ ->
+          Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
+            Fmt_ail.pp_ty_ new_ty
 
   let rec equality_check (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
@@ -515,7 +531,8 @@ module Make (State : State_intf.S) = struct
     [@@deriving show { with_path = false }]
   end
 
-  let rec resolve_function fexpr : Error.t State.err fun_exec InterpM.t =
+  let rec resolve_function fexpr :
+      (Error.t State.err fun_exec * arg_filter) InterpM.t =
     let* loc, fname =
       let (AilSyntax.AnnotatedExpression (_, _, loc, inner_expr)) = fexpr in
       match inner_expr with
@@ -542,10 +559,10 @@ module Make (State : State_intf.S) = struct
 
     let fundef_opt = Ail_helpers.find_fun_def fname in
     match fundef_opt with
-    | Some fundef -> InterpM.ok (exec_fun fundef)
+    | Some fundef -> InterpM.ok (exec_fun fundef, NoFilter)
     | None -> (
         match find_stub fname with
-        | Some stub -> InterpM.ok stub
+        | Some (stub, filter) -> InterpM.ok (stub, filter)
         | None ->
             Fmt.kstr InterpM.not_impl "Cannot call external function: %a"
               Fmt_ail.pp_sym fname)
@@ -566,8 +583,8 @@ module Make (State : State_intf.S) = struct
         let^ v = value_of_constant c in
         InterpM.ok v
     | AilEcall (f, args) ->
-        let* exec_fun = resolve_function f in
-        let* args = eval_expr_list args in
+        let* exec_fun, filter = resolve_function f in
+        let* args = eval_expr_list (apply_arg_filter filter args) in
         let+ v =
           InterpM.with_extra_call_trace ~loc ~msg:"Called from here"
           @@ InterpM.lift_state_op

@@ -52,5 +52,5 @@ build: [
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
 pin-depends: [
-  ["cerberus-lib.~dev" "git+https://github.com/rems-project/cerberus#4aebc2a6e553e439f60ce4948e26ed5a3d1849db"]
+  ["cerberus-lib.~dev" "git+https://github.com/kmemarian/cerberus#frontend-for-system-libc"]
 ]

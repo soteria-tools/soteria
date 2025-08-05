@@ -1,5 +1,5 @@
-#include <stdlib.h>
-#include <string.h>
+void *malloc(__cerbty_size_t size);
+void *memcpy(void *dest, const void *src, __cerbty_size_t n);
 
 int main()
 {

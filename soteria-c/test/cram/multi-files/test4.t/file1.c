@@ -11,6 +11,6 @@ int funcB(int x)
 
 int main()
 {
-  __assert__(funcA(5) == 1);
+  __soteria___assert(funcA(5) == 1);
   return 0;
 }

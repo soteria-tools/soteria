@@ -1,4 +1,4 @@
-#include <stdlib.h>
+void *malloc(__cerbty_size_t size);
 
 int main()
 {

@@ -1,7 +1,5 @@
 #include "test1.h"
 
-extern void __assert__(int x);
-
 int test()
 {
     return exposed();
@@ -14,8 +12,8 @@ void update()
 
 int main()
 {
-    __assert__(test() == 42);
+    __soteria___assert(test() == 42);
     update();
-    __assert__(test() == 1024);
+    __soteria___assert(test() == 1024);
     return 0;
 }

@@ -1,7 +1,7 @@
   $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for f_485:
+  Summaries for f_561:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
@@ -33,23 +33,6 @@
   
 NO_COLOR=true is necessary to avoid test output changing in CI. For some reason, Grace doesn't prints a final caret at the end with color, and not without color.
   $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
-  
-  warning: Memory leak in test_leak
-      ┌─ manifest.c:26:2
-   25 │    
-   26 │    int test_leak()
-      │ ╭───^
-   27 │ │  {
-   28 │ │    int *x = (int *)malloc(sizeof(int));
-      │ │                    ------------------- 1: This allocation leaked
-   29 │ │    if (!x)
-   30 │ │      return 1;
-   31 │ │    *x = 12;
-   32 │ │    load(x);
-   33 │ │    return 0;
-   34 │ │  }
-      │ ╰──
-   35 │    
   
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
@@ -101,7 +84,24 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    51 │    *x = 12;
       │    ^^^^^^^ Triggering write
   
-  Summaries for load_487:
+  warning: Memory leak in test_leak
+      ┌─ manifest.c:26:2
+   25 │    
+   26 │    int test_leak()
+      │ ╭───^
+   27 │ │  {
+   28 │ │    int *x = (int *)malloc(sizeof(int));
+      │ │                    ------------------- 1: This allocation leaked
+   29 │ │    if (!x)
+   30 │ │      return 1;
+   31 │ │    *x = 12;
+   32 │ │    load(x);
+   33 │ │    return 0;
+   34 │ │  }
+      │ ╰──
+   35 │    
+  
+  Summaries for load_564:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
@@ -131,22 +131,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok V|3|) };
       manifest_bugs = []}
   
-  Summaries for test_leak_495:
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
-      manifest_bugs =
-      [(Memory leak,
-        [• This allocation leaked: manifest.c:28:19-38;
-         • manifest.c:26:1-34:2 (cursor: 26:5 - 26:14)])]}
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 1) };
-      manifest_bugs = []}
-  
-  Summaries for test_np_uninit_489:
+  Summaries for test_np_uninit_566:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -172,19 +157,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         [• Called from here: manifest.c:12:3-10;
          • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
   
-  Summaries for test_ok_498:
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
-      manifest_bugs = []}
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 1) };
-      manifest_bugs = []}
-  
-  Summaries for test_uninit_492:
+  Summaries for test_uninit_569:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -203,7 +176,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok 1) };
       manifest_bugs = []}
   
-  Summaries for test_np_501:
+  Summaries for test_np_578:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -220,12 +193,39 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       [(Null pointer dereference,
         [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)])]}
   
+  Summaries for test_ok_575:
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 0) };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 1) };
+      manifest_bugs = []}
+  
+  Summaries for test_leak_572:
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 0) };
+      manifest_bugs =
+      [(Memory leak,
+        [• This allocation leaked: manifest.c:28:19-38;
+         • manifest.c:26:1-34:2 (cursor: 26:5 - 26:14)])]}
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 1) };
+      manifest_bugs = []}
+  
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for test_486:
+  Summaries for test_562:
     Analysed {
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
@@ -267,7 +267,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries array_iter.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for test_486:
+  Summaries for test_562:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|); V|3|]; pre = [];

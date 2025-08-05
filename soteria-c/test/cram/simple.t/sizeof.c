@@ -1,5 +1,3 @@
-int __assert__(int);
-
 struct S
 {
   int x;
@@ -14,10 +12,10 @@ union U
 
 int main()
 {
-  __assert__(sizeof(int) == 4);
-  __assert__(_Alignof(int) == 4);
-  __assert__(sizeof(struct S) == 8);
-  __assert__(sizeof(union U) == sizeof(int));
-  __assert__(_Alignof(union U) == _Alignof(int));
+  __soteria___assert(sizeof(int) == 4);
+  __soteria___assert(_Alignof(int) == 4);
+  __soteria___assert(sizeof(struct S) == 8);
+  __soteria___assert(sizeof(union U) == sizeof(int));
+  __soteria___assert(_Alignof(union U) == _Alignof(int));
   return 0;
 }
