@@ -86,3 +86,60 @@ module type Immutable = sig
   val save : t -> t
   val reset : t -> t
 end
+
+module Effectful (M : sig
+  type t
+end) =
+struct
+  (** Effectful reversible computation. Note that this module is a functor, so
+      that we can create any amount, we are not limited to a unique reversible
+      effect.
+
+      I.e. one can do
+      {@ocaml[
+        module Rev1 = Effectful (struct
+          type t = int
+        end)
+
+        module Rev2 = Effectful (struct
+          type t = string
+        end)
+
+        let computation () =
+          Rev1.save ();
+          Rev2.save ();
+          Rev1.backtrack ()
+
+        let () = Rev1.run ~init:0 @@ fun () -> Rev2.run ~init:"x" @@ computation
+      ]} *)
+
+  type _ Effect.t +=
+    | Backtrack_n : int -> unit Effect.t
+    | Save : unit Effect.t
+    | Update : 'a. (M.t -> 'a * M.t) -> 'a Effect.t
+
+  let backtrack_n n = Effect.perform (Backtrack_n n)
+  let save () = Effect.perform Save
+  let wrap f () = Effect.perform (Update f)
+
+  let wrap_read f () =
+    let update s = (f s, s) in
+    wrap update ()
+
+  let run ~(init : M.t) f =
+    let state = Dynarray.create () in
+    Dynarray.add_last state init;
+    try f () with
+    | effect Backtrack_n n, k ->
+        let len = Dynarray.length state in
+        Dynarray.truncate state (len - n);
+        Effect.Deep.continue k ()
+    | effect Save, k ->
+        Dynarray.add_last state (Dynarray.get_last state);
+        Effect.Deep.continue k ()
+    | effect Update g, k ->
+        let last = Dynarray.pop_last state in
+        let result, new_st = g last in
+        Dynarray.add_last state new_st;
+        Effect.Deep.continue k result
+end

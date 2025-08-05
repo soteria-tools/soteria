@@ -4,6 +4,8 @@ open Cerb_frontend
 open Syntaxes.FunctionWrap
 module Wpst_interp = Interp.Make (SState)
 
+let default_wpst_fuel = Soteria_symex.Fuel_gauge.{ steps = 150; branching = 4 }
+
 let as_nonempty_list functions_to_analyse =
   match functions_to_analyse with [] -> None | _ -> Some functions_to_analyse
 
@@ -221,7 +223,7 @@ let exec_main ~includes file_names =
         Wpst_interp.exec_fun entry_point ~args:[] state
       in
       let@ () = with_function_context linked in
-      Ok (Csymex.run symex)
+      Ok (Csymex.run ~fuel:default_wpst_fuel symex)
   in
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 

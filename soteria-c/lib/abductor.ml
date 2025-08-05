@@ -8,6 +8,9 @@ module Summaries = struct
   module H = Hashtbl.Make (Symbol_std)
 end
 
+let default_abductor_fuel =
+  Soteria_symex.Fuel_gauge.{ steps = 1000; branching = 4 }
+
 let generate_summaries_for (fundef : fundef) =
   let open Syntaxes.List in
   let fid, (floc, _, _, _, _) = fundef in
@@ -36,7 +39,7 @@ let generate_summaries_for (fundef : fundef) =
   in
   let+ (args, ret, bi_state), pc =
     let@ () = with_section "Running symbolic execution" in
-    Csymex.run process
+    Csymex.run ~fuel:default_abductor_fuel process
   in
   let@ () = with_section "Building summary" in
   L.trace (fun m ->
