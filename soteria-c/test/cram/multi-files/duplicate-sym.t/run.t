@@ -1,7 +1,7 @@
   $ soteria-c gen-summaries file1.c file2.c -I . --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for test_546:
+  Summaries for test_562:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };

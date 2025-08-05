@@ -1,25 +1,29 @@
   $ soteria-c show-ail file1.c file2.c file3.c -I .
   Extern idmap:
-    __builtin___memcpy_chk -> (__builtin___memcpy_chk_645, decl);
-    __builtin___memmove_chk -> (__builtin___memmove_chk_650, decl);
-    __builtin___memset_chk -> (__builtin___memset_chk_640, decl);
-    __builtin___snprintf_chk -> (__builtin___snprintf_chk_659, decl);
-    __builtin___strcpy_chk -> (__builtin___strcpy_chk_654, decl);
-    __builtin___strncpy_chk -> (__builtin___strncpy_chk_664, decl);
-    __builtin_bswap32 -> (__builtin_bswap32_669, decl);
-    __builtin_bswap64 -> (__builtin_bswap64_671, decl);
-    __builtin_object_size -> (__builtin_object_size_667, decl);
-    __builtin_sadd_overflow -> (__builtin_sadd_overflow_619, decl);
-    __builtin_ssub_overflow -> (__builtin_ssub_overflow_635, decl);
-    __builtin_uaddl_overflow -> (__builtin_uaddl_overflow_631, decl);
-    __builtin_umul_overflow -> (__builtin_umul_overflow_623, decl);
-    __builtin_umull_overflow -> (__builtin_umull_overflow_627, decl);
-    __soteria___assert -> (__soteria___assert_613, decl);
-    __soteria___debug_show -> (__soteria___debug_show_614, decl);
-    __soteria___nondet_int -> (__soteria___nondet_int_611, decl);
-    fnA -> (fnA_544, def);
-    fnB -> (fnB_608, def);
-    main -> (main_674, def)
+    __atomic_add_fetch -> (__atomic_add_fetch_710, decl);
+    __atomic_exchange -> (__atomic_exchange_719, decl);
+    __atomic_load_n -> (__atomic_load_n_706, decl);
+    __atomic_sub_fetch -> (__atomic_sub_fetch_714, decl);
+    __builtin___memcpy_chk -> (__builtin___memcpy_chk_677, decl);
+    __builtin___memmove_chk -> (__builtin___memmove_chk_682, decl);
+    __builtin___memset_chk -> (__builtin___memset_chk_672, decl);
+    __builtin___snprintf_chk -> (__builtin___snprintf_chk_691, decl);
+    __builtin___strcpy_chk -> (__builtin___strcpy_chk_686, decl);
+    __builtin___strncpy_chk -> (__builtin___strncpy_chk_696, decl);
+    __builtin_bswap32 -> (__builtin_bswap32_701, decl);
+    __builtin_bswap64 -> (__builtin_bswap64_703, decl);
+    __builtin_object_size -> (__builtin_object_size_699, decl);
+    __builtin_sadd_overflow -> (__builtin_sadd_overflow_651, decl);
+    __builtin_ssub_overflow -> (__builtin_ssub_overflow_667, decl);
+    __builtin_uaddl_overflow -> (__builtin_uaddl_overflow_663, decl);
+    __builtin_umul_overflow -> (__builtin_umul_overflow_655, decl);
+    __builtin_umull_overflow -> (__builtin_umull_overflow_659, decl);
+    __soteria___assert -> (__soteria___assert_645, decl);
+    __soteria___debug_show -> (__soteria___debug_show_646, decl);
+    __soteria___nondet_int -> (__soteria___nondet_int_643, decl);
+    fnA -> (fnA_560, def);
+    fnB -> (fnB_640, def);
+    main -> (main_722, def)
   
   Declarations:
     __soteria___nondet_int_483 -> function;
@@ -39,94 +43,114 @@
     __builtin_object_size_539 -> function;
     __builtin_bswap32_541 -> function;
     __builtin_bswap64_543 -> function;
-    fnA_544 -> function;
-    __soteria___nondet_int_547 -> function;
-    __soteria___assert_549 -> function;
-    __soteria___debug_show_550 -> function;
-    __builtin_sadd_overflow_555 -> function;
-    __builtin_umul_overflow_559 -> function;
-    __builtin_umull_overflow_563 -> function;
-    __builtin_uaddl_overflow_567 -> function;
-    __builtin_ssub_overflow_571 -> function;
-    __builtin___memset_chk_576 -> function;
-    __builtin___memcpy_chk_581 -> function;
-    __builtin___memmove_chk_586 -> function;
-    __builtin___strcpy_chk_590 -> function;
-    __builtin___snprintf_chk_595 -> function;
-    __builtin___strncpy_chk_600 -> function;
-    __builtin_object_size_603 -> function;
-    __builtin_bswap32_605 -> function;
-    __builtin_bswap64_607 -> function;
-    fnB_608 -> function;
-    __soteria___nondet_int_611 -> function;
-    __soteria___assert_613 -> function;
-    __soteria___debug_show_614 -> function;
-    __builtin_sadd_overflow_619 -> function;
-    __builtin_umul_overflow_623 -> function;
-    __builtin_umull_overflow_627 -> function;
-    __builtin_uaddl_overflow_631 -> function;
-    __builtin_ssub_overflow_635 -> function;
-    __builtin___memset_chk_640 -> function;
-    __builtin___memcpy_chk_645 -> function;
-    __builtin___memmove_chk_650 -> function;
-    __builtin___strcpy_chk_654 -> function;
-    __builtin___snprintf_chk_659 -> function;
-    __builtin___strncpy_chk_664 -> function;
-    __builtin_object_size_667 -> function;
-    __builtin_bswap32_669 -> function;
-    __builtin_bswap64_671 -> function;
-    fnA_672 -> function;
-    fnB_673 -> function;
-    main_674 -> function
+    __atomic_load_n_546 -> function;
+    __atomic_add_fetch_550 -> function;
+    __atomic_sub_fetch_554 -> function;
+    __atomic_exchange_559 -> function;
+    fnA_560 -> function;
+    __soteria___nondet_int_563 -> function;
+    __soteria___assert_565 -> function;
+    __soteria___debug_show_566 -> function;
+    __builtin_sadd_overflow_571 -> function;
+    __builtin_umul_overflow_575 -> function;
+    __builtin_umull_overflow_579 -> function;
+    __builtin_uaddl_overflow_583 -> function;
+    __builtin_ssub_overflow_587 -> function;
+    __builtin___memset_chk_592 -> function;
+    __builtin___memcpy_chk_597 -> function;
+    __builtin___memmove_chk_602 -> function;
+    __builtin___strcpy_chk_606 -> function;
+    __builtin___snprintf_chk_611 -> function;
+    __builtin___strncpy_chk_616 -> function;
+    __builtin_object_size_619 -> function;
+    __builtin_bswap32_621 -> function;
+    __builtin_bswap64_623 -> function;
+    __atomic_load_n_626 -> function;
+    __atomic_add_fetch_630 -> function;
+    __atomic_sub_fetch_634 -> function;
+    __atomic_exchange_639 -> function;
+    fnB_640 -> function;
+    __soteria___nondet_int_643 -> function;
+    __soteria___assert_645 -> function;
+    __soteria___debug_show_646 -> function;
+    __builtin_sadd_overflow_651 -> function;
+    __builtin_umul_overflow_655 -> function;
+    __builtin_umull_overflow_659 -> function;
+    __builtin_uaddl_overflow_663 -> function;
+    __builtin_ssub_overflow_667 -> function;
+    __builtin___memset_chk_672 -> function;
+    __builtin___memcpy_chk_677 -> function;
+    __builtin___memmove_chk_682 -> function;
+    __builtin___strcpy_chk_686 -> function;
+    __builtin___snprintf_chk_691 -> function;
+    __builtin___strncpy_chk_696 -> function;
+    __builtin_object_size_699 -> function;
+    __builtin_bswap32_701 -> function;
+    __builtin_bswap64_703 -> function;
+    __atomic_load_n_706 -> function;
+    __atomic_add_fetch_710 -> function;
+    __atomic_sub_fetch_714 -> function;
+    __atomic_exchange_719 -> function;
+    fnA_720 -> function;
+    fnB_721 -> function;
+    main_722 -> function
   
   Object definitions:
     
   
   Function definitions:
-    fnA_544
-    fnB_608
-    main_674
+    fnA_560
+    fnB_640
+    main_722
   
    Symmap:
-    __soteria___nondet_int_547 -> __soteria___nondet_int_611;
-    __soteria___assert_549 -> __soteria___assert_613;
-    __soteria___debug_show_550 -> __soteria___debug_show_614;
-    __builtin_sadd_overflow_555 -> __builtin_sadd_overflow_619;
-    __builtin_umul_overflow_559 -> __builtin_umul_overflow_623;
-    __builtin_umull_overflow_563 -> __builtin_umull_overflow_627;
-    __builtin_uaddl_overflow_567 -> __builtin_uaddl_overflow_631;
-    __builtin_ssub_overflow_571 -> __builtin_ssub_overflow_635;
-    __builtin___memset_chk_576 -> __builtin___memset_chk_640;
-    __builtin___memcpy_chk_581 -> __builtin___memcpy_chk_645;
-    __builtin___memmove_chk_586 -> __builtin___memmove_chk_650;
-    __builtin___strcpy_chk_590 -> __builtin___strcpy_chk_654;
-    __builtin___snprintf_chk_595 -> __builtin___snprintf_chk_659;
-    __builtin___strncpy_chk_600 -> __builtin___strncpy_chk_664;
-    __builtin_object_size_603 -> __builtin_object_size_667;
-    __builtin_bswap32_605 -> __builtin_bswap32_669;
-    __builtin_bswap64_607 -> __builtin_bswap64_671;
-    fnB_608 -> fnB_608;
-    fnA_672 -> fnA_544;
-    fnB_673 -> fnB_608;
-    main_674 -> main_674;
-    __soteria___nondet_int_483 -> __soteria___nondet_int_611;
-    __soteria___assert_485 -> __soteria___assert_613;
-    __soteria___debug_show_486 -> __soteria___debug_show_614;
-    __builtin_sadd_overflow_491 -> __builtin_sadd_overflow_619;
-    __builtin_umul_overflow_495 -> __builtin_umul_overflow_623;
-    __builtin_umull_overflow_499 -> __builtin_umull_overflow_627;
-    __builtin_uaddl_overflow_503 -> __builtin_uaddl_overflow_631;
-    __builtin_ssub_overflow_507 -> __builtin_ssub_overflow_635;
-    __builtin___memset_chk_512 -> __builtin___memset_chk_640;
-    __builtin___memcpy_chk_517 -> __builtin___memcpy_chk_645;
-    __builtin___memmove_chk_522 -> __builtin___memmove_chk_650;
-    __builtin___strcpy_chk_526 -> __builtin___strcpy_chk_654;
-    __builtin___snprintf_chk_531 -> __builtin___snprintf_chk_659;
-    __builtin___strncpy_chk_536 -> __builtin___strncpy_chk_664;
-    __builtin_object_size_539 -> __builtin_object_size_667;
-    __builtin_bswap32_541 -> __builtin_bswap32_669;
-    __builtin_bswap64_543 -> __builtin_bswap64_671;
-    fnA_544 -> fnA_544
+    __soteria___nondet_int_563 -> __soteria___nondet_int_643;
+    __soteria___assert_565 -> __soteria___assert_645;
+    __soteria___debug_show_566 -> __soteria___debug_show_646;
+    __builtin_sadd_overflow_571 -> __builtin_sadd_overflow_651;
+    __builtin_umul_overflow_575 -> __builtin_umul_overflow_655;
+    __builtin_umull_overflow_579 -> __builtin_umull_overflow_659;
+    __builtin_uaddl_overflow_583 -> __builtin_uaddl_overflow_663;
+    __builtin_ssub_overflow_587 -> __builtin_ssub_overflow_667;
+    __builtin___memset_chk_592 -> __builtin___memset_chk_672;
+    __builtin___memcpy_chk_597 -> __builtin___memcpy_chk_677;
+    __builtin___memmove_chk_602 -> __builtin___memmove_chk_682;
+    __builtin___strcpy_chk_606 -> __builtin___strcpy_chk_686;
+    __builtin___snprintf_chk_611 -> __builtin___snprintf_chk_691;
+    __builtin___strncpy_chk_616 -> __builtin___strncpy_chk_696;
+    __builtin_object_size_619 -> __builtin_object_size_699;
+    __builtin_bswap32_621 -> __builtin_bswap32_701;
+    __builtin_bswap64_623 -> __builtin_bswap64_703;
+    __atomic_load_n_626 -> __atomic_load_n_706;
+    __atomic_add_fetch_630 -> __atomic_add_fetch_710;
+    __atomic_sub_fetch_634 -> __atomic_sub_fetch_714;
+    __atomic_exchange_639 -> __atomic_exchange_719;
+    fnB_640 -> fnB_640;
+    fnA_720 -> fnA_560;
+    fnB_721 -> fnB_640;
+    main_722 -> main_722;
+    __soteria___nondet_int_483 -> __soteria___nondet_int_643;
+    __soteria___assert_485 -> __soteria___assert_645;
+    __soteria___debug_show_486 -> __soteria___debug_show_646;
+    __builtin_sadd_overflow_491 -> __builtin_sadd_overflow_651;
+    __builtin_umul_overflow_495 -> __builtin_umul_overflow_655;
+    __builtin_umull_overflow_499 -> __builtin_umull_overflow_659;
+    __builtin_uaddl_overflow_503 -> __builtin_uaddl_overflow_663;
+    __builtin_ssub_overflow_507 -> __builtin_ssub_overflow_667;
+    __builtin___memset_chk_512 -> __builtin___memset_chk_672;
+    __builtin___memcpy_chk_517 -> __builtin___memcpy_chk_677;
+    __builtin___memmove_chk_522 -> __builtin___memmove_chk_682;
+    __builtin___strcpy_chk_526 -> __builtin___strcpy_chk_686;
+    __builtin___snprintf_chk_531 -> __builtin___snprintf_chk_691;
+    __builtin___strncpy_chk_536 -> __builtin___strncpy_chk_696;
+    __builtin_object_size_539 -> __builtin_object_size_699;
+    __builtin_bswap32_541 -> __builtin_bswap32_701;
+    __builtin_bswap64_543 -> __builtin_bswap64_703;
+    __atomic_load_n_546 -> __atomic_load_n_706;
+    __atomic_add_fetch_550 -> __atomic_add_fetch_710;
+    __atomic_sub_fetch_554 -> __atomic_sub_fetch_714;
+    __atomic_exchange_559 -> __atomic_exchange_719;
+    fnA_560 -> fnA_560
   
   // declare __soteria___nondet_int WITH PROTO as function () returning signed int
   signed int __soteria___nondet_int();
@@ -178,6 +202,18 @@
   
   // declare __builtin_bswap64 WITH PROTO as function (uint64_t) returning uint64_t
   uint64_t __builtin_bswap64(uint64_t);
+  
+  // declare __atomic_load_n WITH PROTO as function (pointer to {volatile} signed int, signed int) returning signed int
+  signed int __atomic_load_n(volatile signed int*, signed int);
+  
+  // declare __atomic_add_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_add_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_sub_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_sub_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_exchange WITH PROTO as function (pointer to {volatile} signed int, pointer to signed int, pointer to signed int, signed int) returning void
+  void __atomic_exchange(volatile signed int*, signed int*, signed int*, signed int);
   
   // declare fnA as function () returning signed int
   signed int fnA()
@@ -236,6 +272,18 @@
   // declare __builtin_bswap64 WITH PROTO as function (uint64_t) returning uint64_t
   uint64_t __builtin_bswap64(uint64_t);
   
+  // declare __atomic_load_n WITH PROTO as function (pointer to {volatile} signed int, signed int) returning signed int
+  signed int __atomic_load_n(volatile signed int*, signed int);
+  
+  // declare __atomic_add_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_add_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_sub_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_sub_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_exchange WITH PROTO as function (pointer to {volatile} signed int, pointer to signed int, pointer to signed int, signed int) returning void
+  void __atomic_exchange(volatile signed int*, signed int*, signed int*, signed int);
+  
   // declare fnB as function () returning signed int
   signed int fnB()
   {
@@ -292,6 +340,18 @@
   
   // declare __builtin_bswap64 WITH PROTO as function (uint64_t) returning uint64_t
   uint64_t __builtin_bswap64(uint64_t);
+  
+  // declare __atomic_load_n WITH PROTO as function (pointer to {volatile} signed int, signed int) returning signed int
+  signed int __atomic_load_n(volatile signed int*, signed int);
+  
+  // declare __atomic_add_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_add_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_sub_fetch WITH PROTO as function (pointer to {volatile} signed int, signed int, signed int) returning signed int
+  signed int __atomic_sub_fetch(volatile signed int*, signed int, signed int);
+  
+  // declare __atomic_exchange WITH PROTO as function (pointer to {volatile} signed int, pointer to signed int, pointer to signed int, signed int) returning void
+  void __atomic_exchange(volatile signed int*, signed int*, signed int*, signed int);
   
   // declare fnA WITH PROTO as function () returning signed int
   signed int fnA();

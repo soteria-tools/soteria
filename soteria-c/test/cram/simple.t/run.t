@@ -473,7 +473,7 @@ Checking that code cannot branch infinitely
             [(V|1|,
               { node = [TypedVal {offset = 0; ty = signed int; v = 1}];
                 info = None })];
-            globs = [(x_544, V|1|)] })]
+            globs = [(x_560, V|1|)] })]
   Executed 5 statements
   $ soteria-c exec-main global_alias.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
@@ -485,7 +485,7 @@ Checking that code cannot branch infinitely
              (V|2|,
               { node = [TypedVal {offset = 0; ty = signed int; v = 0}];
                 info = None })];
-            globs = [(x_544, V|1|); (y_545, V|2|)] })]
+            globs = [(x_560, V|1|); (y_561, V|2|)] })]
   Executed 3 statements
 
   $ soteria-c exec-main structs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols

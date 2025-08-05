@@ -6,7 +6,7 @@
   ^ 
   
   No bugs found
-  Summaries for test_544:
+  Summaries for test_560:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
