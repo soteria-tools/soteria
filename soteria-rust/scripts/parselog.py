@@ -88,7 +88,7 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
         color = YELLOW
         reason = None
 
-        if "Unsupported intrinsic" in cause and not "--intrinsics" in sys.argv:
+        if "Unsupported intrinsic" in cause:
             reason = cause.replace("Unsupported intrinsic: ", "")
             cause = "Unsupported intrinsic"
             color = ORANGE
@@ -113,6 +113,13 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
         return (cause, color, reason)
 
     # check errors first; one error overrides any success
+    fatal_regex = r"^error: .*: runtime error in"
+    if re.search(fatal_regex, test, re.MULTILINE):
+        cause = re.search(r"runtime error in .*Exn: Failure\(\"(.+)\"\)", test)
+        if not cause:
+            return ("Raised exception", RED, None)
+        return ("Raised exception", RED, cause.group(1))
+
     err_regex = r"^error: (.+): found issues in"
     if re.search(err_regex, test, re.MULTILINE):
         if expect_failure:
@@ -126,12 +133,6 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             return ("Success", GREEN, "Expected success, got success")
         else:
             return ("Failure", RED, "Expected failure, got success")
-
-    if "Fatal: Exn: Failure" in test:
-        cause = re.search(r"Fatal: Exn: Failure\(\"(.+)\"\)", test)
-        if not cause:
-            return ("Raised exception", RED, None)
-        return ("Raised exception", RED, cause.group(1))
 
     if "Fatal: Exn" in test:
         cause = re.search(r"Fatal: Exn: (.+)", test)
