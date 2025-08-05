@@ -138,7 +138,7 @@ def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
 
     tests = test_conf["tests"]
     cmd = opts["tool_cmd"] + test_conf["args"]
-    csv_suffix = opts.get("tag", f"{iters}-{int(time.time())}")
+    csv_suffix = opts.get("tag") or f"{iters}-{int(time.time())}"
     csv_file = PWD / f"eval-{csv_suffix}.csv"
 
     pprint(f"{BOLD}Running {len(tests)} tests, {iters} times{RESET}", inc=True)
