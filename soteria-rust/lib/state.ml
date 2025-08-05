@@ -68,12 +68,12 @@ module FunBiMap = struct
   end)
 
   module FunMap = Map.Make (struct
-    type t = Charon.Expressions.fn_ptr
+    type t = Charon.Types.fn_ptr
 
-    let compare = Charon.Expressions.compare_fn_ptr
+    let compare = Charon.Types.compare_fn_ptr
   end)
 
-  type t = Charon.Expressions.fn_ptr LocMap.t * T.sloc Typed.t FunMap.t
+  type t = Charon.Types.fn_ptr LocMap.t * T.sloc Typed.t FunMap.t
 
   let empty = (LocMap.empty, FunMap.empty)
 
@@ -87,7 +87,7 @@ module FunBiMap = struct
 
   let pp fmt (lmap, _) =
     let pp_pair =
-      Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Expressions.pp_fn_ptr
+      Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Types.pp_fn_ptr
     in
     Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) lmap
 end
@@ -160,12 +160,11 @@ let check_ptr_align (ptr : Sptr.t) ty st =
   let ofs = Typed.Ptr.ofs ptr.ptr in
   let align = ptr.align in
   L.debug (fun m ->
-      m "Checking pointer alignment of %a: ofs %a mod %d / expect %a for %a"
-        Sptr.pp ptr Typed.ppa ofs align Typed.ppa expected_align
+      m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
+        Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa expected_align
         Charon_util.pp_ty ty);
-  if%sat
-    ofs %@ expected_align ==@ 0s &&@ (Typed.int align %@ expected_align ==@ 0s)
-  then Result.ok ((), st)
+  if%sat ofs %@ expected_align ==@ 0s &&@ (align %@ expected_align ==@ 0s) then
+    Result.ok ((), st)
   else error `MisalignedPointer
 
 let with_ptr (ptr : Sptr.t) (st : t)
@@ -181,6 +180,18 @@ let with_ptr (ptr : Sptr.t) (st : t)
       (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state
     in
     (v, state)
+
+(** This is used as a stopgap for cases where a function pointer is cast to a
+    regular pointer and is used on the state; the location won't exist in tree
+    block, and we don't want to add it there (I think), but we don't want to
+    crash, so we just ignore the action.
+
+    For instance, if a function pointer hiding as a pointer is passed to a
+    function, protecting it should do nothing, and should be allowed. *)
+let with_opt_or (x : 'a option) (otherwise : 'b)
+    (f : 'a -> ('b * 'a option, 'err, 'f) Result.t) :
+    ('b * 'a option, 'err, 'f) Result.t =
+  match x with Some v -> f v | None -> Result.ok (otherwise, None)
 
 let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -271,13 +282,14 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ block, _ = with_tbs block in
   Tree_block.put_raw_tree ofs tree_to_write block
 
-let alloc size align st =
+let alloc ?zeroed size align st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
   let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
   let tb = Tree_borrow.init ~state:Unique () in
-  let block = Freeable.Alive (Tree_block.alloc (Typed.int size), tb) in
+  let block = Tree_block.alloc ?zeroed size in
+  let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
   let ptr : Sptr.t Charon_util.full_ptr =
@@ -287,9 +299,11 @@ let alloc size align st =
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
   Soteria_symex.Compo_res.ok (ptr, state)
 
+let alloc_untyped ?zeroed ~size ~align st = alloc ?zeroed size align st
+
 let alloc_ty ty st =
   let* layout = Layout.layout_of_s ty in
-  alloc layout.size layout.align st
+  alloc (Typed.int layout.size) (Typed.nonzero layout.align) st
 
 let alloc_tys tys st =
   let@ state = with_state st in
@@ -304,7 +318,12 @@ let alloc_tys tys st =
       let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
       let ptr = Typed.Ptr.mk loc 0s in
       let ptr : Sptr.t =
-        { ptr; tag = tb.tag; align = layout.align; size = layout.size }
+        {
+          ptr;
+          tag = tb.tag;
+          align = Typed.nonzero layout.align;
+          size = Typed.int layout.size;
+        }
       in
       (block, (ptr, None)))
 
@@ -332,7 +351,7 @@ let zeros (ptr, _) size st =
 
 let error err st =
   let@ () = with_error_loc_as_call_trace st in
-  L.info (fun m -> m "state errored !");
+  L.info (fun m -> m "State errored: %a" Error.pp err);
   error err
 
 let lift_err st (symex : ('a, 'e, 'f) Result.t) =
@@ -378,7 +397,7 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
             Charon.Expressions.pp_borrow_kind kind
     in
     let node = Tree_borrow.init ~state:tag_st () in
-    let block, tb = Option.get block in
+    let@ block, tb = with_opt_or block (ptr, meta) in
     let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
     let block = Some (block, tb') in
     let ptr' = { ptr with tag = node.tag } in
@@ -395,7 +414,7 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     let@ ofs, block = with_ptr ptr st in
-    let block, tb = Option.get block in
+    let@ block, tb = with_opt_or block (ptr, meta) in
     let tag_st =
       match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
     in
@@ -415,11 +434,21 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     ((ptr', meta), block)
 
 let unprotect (ptr, _) (ty : Charon.Types.ty) st =
+  let lift_freed_err () f =
+    let open Soteria_symex.Compo_res in
+    let+ res = f () in
+    match res with
+    | Ok v -> Ok v
+    | Missing fixes -> Missing fixes
+    | Error `UseAfterFree -> Error `RefInvalidatedEarly
+    | Error ((`AliasingError | `NullDereference | `OutOfBounds) as e) -> Error e
+  in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
+  let@ () = lift_freed_err () in
   let@ ofs, block = with_ptr ptr st in
   let* size = Layout.size_of_s ty in
-  let block, tb = Option.get block in
+  let@ block, tb = with_opt_or block () in
   let tb' =
     Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
   in
@@ -434,9 +463,25 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
 let leak_check st =
   let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" st in
   let@ () = with_loc_err () in
-  let global_addresses =
-    GlobMap.bindings st.globals
-    |> List.map (fun (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr)
+  let** global_addresses, st =
+    Result.fold_list (GlobMap.bindings st.globals) ~init:([], st)
+      ~f:(fun (acc, st) (g, ((ptr : Sptr.t), _)) ->
+        let loc = Typed.Ptr.loc ptr.ptr in
+        match g with
+        | String _ -> Result.ok (loc :: acc, st)
+        | Global g -> (
+            let glob = Crate.get_global g in
+            let* res = load ~ignore_borrow:true (ptr, None) glob.ty st in
+            match res with
+            | Ok (v, st) ->
+                let ptrs = Layout.ref_tys_in ~include_ptrs:true v glob.ty in
+                let ptrs =
+                  List.map
+                    (fun (((p : Sptr.t), _), _) -> Typed.Ptr.loc p.ptr)
+                    ptrs
+                in
+                Result.ok (loc :: (ptrs @ acc), st)
+            | _ -> Result.ok (acc, st)))
   in
   let@ state = with_state st in
   let** leaks =
@@ -449,7 +494,10 @@ let leak_check st =
       [] state
   in
   if List.is_empty leaks then Result.ok ((), state)
-  else Result.error `MemoryLeak
+  else (
+    L.info (fun m ->
+        m "Found leaks: %a" Fmt.(list ~sep:(any ", ") Typed.ppa) leaks);
+    Result.error `MemoryLeak)
 
 let add_error e ({ errors; _ } as st) =
   Result.ok ((), { st with errors = (e :> Error.t err) :: errors })
@@ -465,28 +513,35 @@ let unwind_with ~f ~fe symex =
       else Result.error (err, state))
 
 let declare_fn fn_ptr ({ functions; _ } as st) =
-  match FunBiMap.get_loc fn_ptr functions with
-  | Some loc ->
-      let ptr = Typed.Ptr.mk loc 0s in
-      (* FIXME: what is the size and align of a fn pointer? *)
-      let ptr : Sptr.t = { ptr; tag = Tree_borrow.zero; align = 1; size = 1 } in
-      Result.ok ((ptr, None), st)
-  | None ->
-      (* FIXME: once we stop having concrete locations, we'll need to add a distinct
+  let+ loc, st =
+    match FunBiMap.get_loc fn_ptr functions with
+    | Some loc -> return (loc, st)
+    | None ->
+        (* FIXME: once we stop having concrete locations, we'll need to add a distinct
        constraint here. *)
-      let* loc = StateKey.fresh () in
-      let ptr = Typed.Ptr.mk loc 0s in
-      (* FIXME: what is the size and align of a fn pointer? *)
-      let ptr : Sptr.t = { ptr; tag = Tree_borrow.zero; align = 1; size = 1 } in
-      let functions = FunBiMap.add loc fn_ptr functions in
-      Result.ok ((ptr, None), { st with functions })
+        let+ loc = StateKey.fresh () in
+        let functions = FunBiMap.add loc fn_ptr functions in
+        (loc, { st with functions })
+  in
+  (* FIXME: what is the size and align of a fn pointer?
+     See https://github.com/rust-lang/rust/issues/82232 *)
+  let ptr = Typed.Ptr.mk loc 0s in
+  let ptr : Sptr.t =
+    { ptr; tag = Tree_borrow.zero; align = Typed.cast 1s; size = 1s }
+  in
+  Soteria_symex.Compo_res.Ok ((ptr, None), st)
 
-let lookup_fn (({ ptr; _ } : Sptr.t), _) ({ functions; _ } as st) =
+let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let loc = Typed.Ptr.loc ptr in
-    let fn = FunBiMap.get_fn loc functions in
-    let* fn = of_opt_not_impl ~msg:"Could not resolve function" fn in
-    Result.ok (fn, st)
+    match FunBiMap.get_fn loc functions with
+    | Some fn -> Result.ok (fn, st)
+    | None -> (
+        let@ _, block = with_ptr fptr st in
+        (* If a block exists, we can be sure that this isn't a function pointer *)
+        match block with
+        | Some _ -> Result.error `NotAFnPointer
+        | None -> Result.miss [])
   else Result.error `MisalignedFnPointer

@@ -1,4 +1,4 @@
-open Hashcons
+open Hc
 module Var = Soteria_symex.Var
 
 module FloatPrecision = struct
@@ -191,7 +191,7 @@ type t_kind =
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
-let hash t = t.hkey
+let hash t = t.tag
 let kind t = t.node.kind
 
 let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
@@ -247,6 +247,7 @@ let rec pp ft t =
       | None -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l)
 
 let[@inline] equal a b = Int.equal a.tag b.tag
+let[@inline] compare a b = Int.compare a.tag b.tag
 
 let rec sure_neq a b =
   (not (equal_ty a.node.ty b.node.ty))
@@ -257,7 +258,7 @@ let rec sure_neq a b =
   | Ptr (la, oa), Ptr (lb, ob) -> sure_neq la lb || sure_neq oa ob
   | _ -> false
 
-module Hcons = Hashcons.Make (struct
+module Hcons = Hc.Make (struct
   type t = t_node
 
   let equal = equal_t_node
@@ -268,17 +269,15 @@ module Hcons = Hashcons.Make (struct
     let hty = Hashtbl.hash ty in
     match kind with
     | Var _ | Bool _ | Int _ | Float _ | BitVec _ -> Hashtbl.hash (kind, hty)
-    | Ptr (l, r) -> Hashtbl.hash (l.hkey, r.hkey, hty)
-    | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.hkey) l, hty)
-    | Unop (op, v) -> Hashtbl.hash (op, v.hkey, hty)
-    | Binop (op, l, r) -> Hashtbl.hash (op, l.hkey, r.hkey, hty)
-    | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.hkey) l, hty)
-    | Ite (c, t, e) -> Hashtbl.hash (c.hkey, t.hkey, e.hkey, hty)
+    | Ptr (l, r) -> Hashtbl.hash (l.tag, r.tag, hty)
+    | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.tag) l, hty)
+    | Unop (op, v) -> Hashtbl.hash (op, v.tag, hty)
+    | Binop (op, l, r) -> Hashtbl.hash (op, l.tag, r.tag, hty)
+    | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
+    | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
 end)
 
-let table = Hcons.create 1023
-let hashcons = Hcons.hashcons table
-let ( <| ) kind ty : t = hashcons { kind; ty }
+let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
 let mk_var v ty = Var v <| ty
 
 (** We put commutative binary operators in some sort of normal form where
@@ -421,6 +420,7 @@ let rec not sv =
     | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
     | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
     | Binop (Or, v1, v2) -> mk_commut_binop And (not v1) (not v2) <| TBool
+    | Binop (And, v1, v2) -> mk_commut_binop Or (not v1) (not v2) <| TBool
     | _ -> Unop (Not, sv) <| TBool
 
 let rec sem_eq v1 v2 =
@@ -576,6 +576,12 @@ let rec lt v1 v2 =
         let op = if Z.divisible y x || Z.(y < zero) then lt else leq in
         if Z.(zero < x) then op v1' (int_z Z.(y / x))
         else op (int_z Z.(y / x)) v1'
+  | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
+    when Z.leq x y ->
+      v_true
+  | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
+    when Z.lt y (Z.neg (Z.abs x)) ->
+      v_true
   | _ -> Binop (Lt, v1, v2) <| TBool
 
 and leq v1 v2 =
@@ -616,6 +622,12 @@ and leq v1 v2 =
         let op = if Z.divisible y x || Z.(y > zero) then leq else lt in
         if Z.(zero < x) then op v1' (int_z Z.(y / x))
         else op (int_z Z.(y / x)) v1'
+  | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
+    when Z.leq x y ->
+      v_true
+  | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
+    when Z.lt y (Z.neg (Z.abs x)) ->
+      v_true
   | _ -> Binop (Leq, v1, v2) <| TBool
 
 let geq v1 v2 = leq v2 v1
@@ -640,6 +652,7 @@ let rec minus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.sub i1 i2)
+  | Var v1, Var v2 when Var.equal v1 v2 -> zero
   | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
       minus (int_z (Z.sub i2 i1)) v1
   | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
@@ -670,7 +683,7 @@ let rec is_mod v n =
 
 let rec rem v1 v2 =
   match (v1.node.kind, v2.node.kind) with
-  | _, Int i2 when is_mod v1 i2 -> int_z Z.zero
+  | _, Int i2 when is_mod v1 i2 -> zero
   | Int i1, Int i2 -> int_z (Z.rem i1 i2)
   | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
       times n (rem v1 v2)
@@ -678,14 +691,17 @@ let rec rem v1 v2 =
       times n (rem v1 v2)
   | _ -> Binop (Rem, v1, v2) <| v1.node.ty
 
-let mod_ v1 v2 =
+let rec mod_ v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 one -> zero
-  | _, Int i2 when is_mod v1 i2 -> int_z Z.zero
+  | _, Int i2 when is_mod v1 i2 -> zero
   | Int i1, Int i2 ->
       (* OCaml's mod computes the remainer... *)
       let rem = Z.( mod ) i1 i2 in
       if Z.lt rem Z.zero then int_z (Z.add rem i2) else int_z rem
+  | Binop (Mod, x, { node = { kind = Int i1; _ }; _ }), Int i2
+    when Z.geq i1 i2 && Z.divisible i1 i2 ->
+      mod_ x v2
   | _ -> Binop (Mod, v1, v2) <| TInt
 
 let neg v =

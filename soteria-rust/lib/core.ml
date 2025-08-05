@@ -45,29 +45,27 @@ module M (State : State_intf.S) = struct
     | TInt ->
         let** res =
           match bop with
-          | Add | CheckedAdd | WrappingAdd -> Result.ok (l +@ r)
-          | Sub | CheckedSub | WrappingSub -> Result.ok (l -@ r)
-          | Mul | CheckedMul | WrappingMul -> Result.ok (l *@ r)
-          | Div ->
+          | Add _ | AddChecked -> Result.ok (l +@ r)
+          | Sub _ | SubChecked -> Result.ok (l -@ r)
+          | Mul _ | MulChecked -> Result.ok (l *@ r)
+          | Div _ ->
               if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (l /@ cast r)
-          | Rem ->
+          | Rem _ ->
               if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (rem l (cast r))
-          | Shl | Shr | WrappingShl | WrappingShr ->
+          | Shl _ | Shr _ ->
               let ity =
                 match ty with
-                | TInteger ity -> ity
-                | TBool -> U8
-                | TChar -> U32
+                | TInt _ | TUInt _ -> ty
+                | TBool -> TUInt U8
+                | TChar -> TUInt U32
                 | _ -> failwith "Invalid shl/shr type"
               in
-              let size = 8 * Layout.size_of_int_ty ity in
+              let size = 8 * Layout.size_of_literal_ty ity in
               let signed = Layout.is_signed ity in
               let op =
-                match bop with
-                | Shl | WrappingShl -> Typed.bit_shl
-                | _ -> Typed.bit_shr
+                match bop with Shl _ -> Typed.bit_shl | _ -> Typed.bit_shr
               in
               Result.ok (op ~size ~signed l r)
           | _ -> not_impl "Invalid binop in eval_lit_binop"
@@ -77,13 +75,13 @@ module M (State : State_intf.S) = struct
         let l, r = (cast l, cast r) in
         let** res =
           match bop with
-          | Add | CheckedAdd | WrappingAdd -> Result.ok (l +.@ r)
-          | Sub | CheckedSub | WrappingSub -> Result.ok (l -.@ r)
-          | Mul | CheckedMul | WrappingMul -> Result.ok (l *.@ r)
+          | Add _ -> Result.ok (l +.@ r)
+          | Sub _ -> Result.ok (l -.@ r)
+          | Mul _ -> Result.ok (l *.@ r)
           (* no such thing as division by 0 for floats -- goes to infinity *)
-          | Div -> Result.ok (l /.@ cast r)
-          | Rem -> Result.ok (rem_f l (cast r))
-          | _ -> not_impl "Invalid binop in eval_lit_binop"
+          | Div _ -> Result.ok (l /.@ cast r)
+          | Rem _ -> Result.ok (rem_f l (cast r))
+          | _ -> not_impl "Invalid binop for float in eval_lit_binop"
         in
         Result.ok (res :> T.cval Typed.t)
     | TPointer -> Result.error `UBPointerArithmetic
@@ -92,31 +90,21 @@ module M (State : State_intf.S) = struct
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
   let eval_lit_binop bop lit_ty l r =
-    let** res = safe_binop bop lit_ty l r in
     let** () =
       match bop with
-      | Rem -> (
-          match lit_ty with
-          | Values.TInteger inty ->
-              let min = Layout.min_value inty in
-              if%sat l ==@ min &&@ (r ==@ -1s) then Result.error `Overflow
-              else Result.ok ()
-          | _ -> Result.ok ())
-      | Shl | Shr ->
-          let ity =
-            match lit_ty with
-            | TInteger ity -> ity
-            | TBool -> U8
-            | TChar -> U32
-            | _ -> failwith "Invalid shl/shr type"
-          in
-          let size = 8 * Layout.size_of_int_ty ity in
+      | Expressions.Rem (OUB | OPanic) ->
+          let min = Layout.min_value lit_ty in
+          if%sat l ==@ min &&@ (r ==@ -1s) then Result.error `Overflow
+          else Result.ok ()
+      | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
+          let size = 8 * Layout.size_of_literal_ty lit_ty in
           let r = Typed.cast r in
           if%sat r <@ 0s ||@ (r >=@ Typed.int size) then
             Result.error `InvalidShift
           else Result.ok ()
       | _ -> Result.ok ()
     in
+    let** res = safe_binop bop lit_ty l r in
     let constrs = Layout.constraints lit_ty in
     if%sat conj (constrs res) then Result.ok (res :> T.cval Typed.t)
     else Result.error `Overflow
@@ -124,26 +112,20 @@ module M (State : State_intf.S) = struct
   (** Wraps a given value to make it fit within the constraints of the given
       type *)
   let wrap_value ty v =
-    let* v = cast_checked ~ty:Typed.t_int v in
-    let size = Layout.size_of_int_ty ty in
+    let+ v = cast_checked ~ty:Typed.t_int v in
+    let size = Layout.size_of_literal_ty ty in
     let unsigned_max = nonzero_z (Z.shift_left Z.one (8 * size)) in
     let max = Layout.max_value ty in
     let signed = Layout.is_signed ty in
     let res = v %@ unsigned_max in
     if Stdlib.not signed then
-      if%sat res <@ 0s then return ((res +@ unsigned_max) %@ unsigned_max)
-      else return res
-    else if%sat res <=@ max then return res else return (res -@ unsigned_max)
+      Typed.ite (res <@ 0s) ((res +@ unsigned_max) %@ unsigned_max) res
+    else Typed.ite (res <=@ max) res (res -@ unsigned_max)
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop op lit_ty l r =
-    let ty =
-      match lit_ty with
-      | Values.TInteger ity -> ity
-      | _ -> failwith "Non-integer in checked binary operation"
-    in
     let** v = safe_binop op lit_ty l r in
-    let* wrapped = wrap_value ty v in
+    let* wrapped = wrap_value lit_ty v in
     let overflowed = Typed.(int_of_bool (not (v ==@ wrapped))) in
     Result.ok (Tuple [ Base wrapped; Base overflowed ])
 
@@ -164,9 +146,10 @@ module M (State : State_intf.S) = struct
         else
           Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p
             Typed.ppa v
+    | Eq, Base v1, Base v2 -> Result.ok (int_of_bool (v1 ==@ v2))
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then
-          let dist = Sptr.distance l r in
+          let* dist = Sptr.distance l r in
           let bop =
             match bop with
             | Lt -> ( <@ )
@@ -193,7 +176,7 @@ module M (State : State_intf.S) = struct
         else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         if%sat Sptr.is_same_loc l r then
-          let v = Sptr.distance l r in
+          let* v = Sptr.distance l r in
           let* cmp = cmp_of_int v in
           Result.ok cmp
         else Result.error `UBPointerComparison

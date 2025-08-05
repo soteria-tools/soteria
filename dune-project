@@ -46,6 +46,9 @@
     :build
     (>= 3.14.0)))
   ppxlib
+  (hc
+   (>= 0.5))
+  (yojson (< 3.0))
   (ppx_inline_test :with-test)
   (ocamlformat
    (and
@@ -68,7 +71,6 @@
   cerberus-lib
   zarith
   ppx_deriving
-  hashcons
   cmdliner
   fmt
   printbox-text
@@ -82,6 +84,7 @@
    (and
     :build
     (>= 0.9.0)))
+  (yojson (< 3.0))
   (dune
    (and
     :build
@@ -131,7 +134,6 @@
   dune-site
   zarith
   ppx_deriving
-  hashcons
   cmdliner
   fmt
   printbox-text
@@ -140,6 +142,7 @@
   charon
   (odoc :with-doc)
   (alcotest :with-test)
+  (yojson (< 3.0))
   (dune
    (and
     :build

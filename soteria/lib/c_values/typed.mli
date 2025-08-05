@@ -72,6 +72,7 @@ val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
+val hash : [< any ] t -> int
 
 (** Typed constructors *)
 
@@ -178,7 +179,7 @@ end
 
 module Infix : sig
   val ( ==@ ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
-  val ( ==?@ ) : 'a t -> 'a t -> [> sbool ] t
+  val ( ==?@ ) : 'a t -> 'b t -> [> sbool ] t
   val ( >@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( >=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( <@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t

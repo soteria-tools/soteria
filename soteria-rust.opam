@@ -20,7 +20,6 @@ depends: [
   "dune-site"
   "zarith"
   "ppx_deriving"
-  "hashcons"
   "cmdliner"
   "fmt"
   "printbox-text"
@@ -29,6 +28,7 @@ depends: [
   "charon"
   "odoc" {with-doc}
   "alcotest" {with-test}
+  "yojson" {< "3.0"}
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ocamlformat" {with-dev-detup & = "0.27.0"}
   "ocaml-lsp-server" {with-dev-setup}
@@ -51,7 +51,6 @@ build: [
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
 pin-depends: [
-  ["simple_smt.~dev" "git+https://github.com/NatKarmios/simple-smt-ocaml#9db7ef0bb61a76010de255af3cbe4066dd8dd622"]
-  ["name_matcher_parser.~dev" "git+https://github.com/AeneasVerif/charon#e53defe453aca0bf83543b12c30809f34e700b80"]
-  ["charon.~dev" "git+https://github.com/N1ark/charon#ec9caece772240f20a9061d07873069dc004b1eb"]
+  ["name_matcher_parser.~dev" "git+https://github.com/AeneasVerif/charon#48e885d13088a169467f00d9011528831d0db65f"]
+  ["charon.~dev" "git+https://github.com/AeneasVerif/charon#48e885d13088a169467f00d9011528831d0db65f"]
 ]

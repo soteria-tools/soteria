@@ -417,6 +417,8 @@ def diff(f1: str, f2: str):
         if isinstance(info, str):
             return info
         only_before, only_after = info
+        if len(only_after) == 0:
+            return list(only_before)[0][0]
         return list(only_after)[0][0]
 
     diffs_items = list(diffs.items())

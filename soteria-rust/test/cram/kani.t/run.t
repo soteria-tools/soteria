@@ -1,40 +1,40 @@
 Test kani::any
-  $ soteria-rust exec-main any.rs --clean --kani
+  $ soteria-rust rustc any.rs --clean --kani
   note: Done, no errors found
   
   any::any_bool: ran 2 branches
-  PC 1: (0 == V|1|) /\ (V|1| <= 1) /\ (0 <= V|1|)
-  PC 2: (0 != V|1|) /\ (V|1| <= 1) /\ (0 <= V|1|)
+  PC 1: (0 == V|1|)
+  PC 2: (1 == V|1|)
   
   any::any_i8: ran 3 branches
-  PC 1: (0 < V|1|) /\ (0 <= V|1|) /\ (0 != V|1|) /\ (V|1| <= 127) /\
-        (-128 <= V|1|)
-  PC 2: (V|1| < 0) /\ (0 != V|1|) /\ (V|1| <= 127) /\ (-128 <= V|1|)
-  PC 3: (0 == V|1|) /\ (V|1| <= 127) /\ (-128 <= V|1|)
+  PC 1: (V|1| <= 127) /\ (1 <= V|1|) /\ (0 != V|1|)
+  PC 2: (-128 <= V|1|) /\ (V|1| <= -1) /\ (0 != V|1|)
+  PC 3: (0 == V|1|)
 
 Test kani::assume
-  $ soteria-rust exec-main assume.rs --clean --kani
+  $ soteria-rust rustc assume.rs --clean --kani
   note: Done, no errors found
   
   assume::assume_bool: ran 1 branch
-  PC 1: (0 != V|1|) /\ (V|1| <= 1) /\ (0 <= V|1|)
+  PC 1: (1 == V|1|)
   
   assume::assume_i32: ran 1 branch
-  PC 1: (-0x80000000 <= (11 / V|1|)) /\ ((11 / V|1|) <= 0x7fffffff) /\
-        (0 != V|1|) /\ (V|1| <= 0x7fffffff) /\ (-0x80000000 <= V|1|)
+  PC 1: (0 != V|1|) /\ ((11 / V|1|) <= 0x7fffffff) /\
+        (-0x80000000 <= (11 / V|1|)) /\ (V|1| <= 0x7fffffff) /\
+        (-0x80000000 <= V|1|)
 
 Test #[kani::should_panic]
-  $ soteria-rust exec-main should_panic.rs --clean --kani
+  $ soteria-rust rustc should_panic.rs --clean --kani
   note: Done, no errors found
   
   should_panic::when_at_the_disco: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Test kani::assert
-  $ soteria-rust exec-main assert.rs --clean --kani
+  $ soteria-rust rustc assert.rs --clean --kani
   error: Found issues
   
-  assert::assert_false: error in 4 branches (out of 2):
+  assert::assert_false: error in 1 branch (out of 2):
   error: Failed assertion: Expected true! in assert::assert_false
       ┌─ $TESTCASE_ROOT/assert.rs:4:5
     1 │    #[kani::proof]
@@ -49,7 +49,7 @@ Test kani::assert
       │ ╰──' 1: Entry point
     6 │    
   
-  assert::fancy_assert_false: error in 4 branches (out of 2):
+  assert::fancy_assert_false: error in 1 branch (out of 2):
   error: Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 in assert::fancy_assert_false
       ┌─ $TESTCASE_ROOT/assert.rs:10:5
     7 │    #[kani::proof]
@@ -64,7 +64,7 @@ Test kani::assert
       │ ╰──' 1: Entry point
    12 │    
   
-  assert::override_assert_macro: error in 4 branches (out of 2):
+  assert::override_assert_macro: error in 1 branch (out of 2):
   error: Failed assertion: I used "assert!" in assert::override_assert_macro
       ┌─ $RUSTERIA/std/src/lib.rs:23:9
    23 │            rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
@@ -81,7 +81,7 @@ Test kani::assert
       │ ╰──' 1: Entry point
    18 │    
   
-  assert::override_asserteq_macro: error in 4 branches (out of 2):
+  assert::override_asserteq_macro: error in 1 branch (out of 2):
   error: Failed assertion: I used "assert_eq!" in assert::override_asserteq_macro
       ┌─ $RUSTERIA/std/src/lib.rs:23:9
    23 │            rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
@@ -101,68 +101,50 @@ Test kani::assert
   [1]
 
 Test kani::slice::any_slice_of_array
-  $ soteria-rust exec-main any_slice.rs --clean --kani
+  $ soteria-rust rustc any_slice.rs --clean --kani
   note: Done, no errors found
   
   any_slice::main: ran 7 branches
-  PC 1: ((V|2| - V|1|) <= 0) /\ ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\
-        (((V|1| <= 0x1fffffffffffffff) && ((-0x2000000000000000 <= V|1|) && (V|1| <= 3))) || (0 == V|1|)) /\
-        (V|1| <= V|2|) /\ (V|2| <= 3) /\ (V|2| <= 0xffffffffffffffff) /\
-        (0 <= V|2|) /\ (V|1| <= 0xffffffffffffffff) /\ (0 <= V|1|)
-  PC 2: ((V|2| - V|1|) <= 1) /\ (0 == V|1|) /\ (V|1| <= 0) /\
-        !(((0 < V|1|) && (V|1| < 1))) /\ !(((0 == V|1|) && (2 == V|1|))) /\
-        (V|1| <= 2) /\ (0 < (V|2| - V|1|)) /\ ((V|2| - V|1|) <= 3) /\
-        (0 <= (V|2| - V|1|)) /\
-        (((V|1| <= 0x1fffffffffffffff) && ((-0x2000000000000000 <= V|1|) && (V|1| <= 3))) || (0 == V|1|)) /\
-        (V|1| <= V|2|) /\ (V|2| <= 3) /\ (V|2| <= 0xffffffffffffffff) /\
-        (0 <= V|2|) /\ (V|1| <= 0xffffffffffffffff) /\ (0 <= V|1|)
-  PC 3: ((V|2| - V|1|) <= 2) /\ (1 != V|1|) /\ (-1 < V|1|) /\
-        !(((1 == V|1|) && (V|1| == -1))) /\ (-1 <= V|1|) /\ (V|1| <= 1) /\
-        (-0x2000000000000001 <= V|1|) /\ (V|1| <= 0x1ffffffffffffffe) /\
-        (1 < (V|2| - V|1|)) /\ (0 == V|1|) /\ (V|1| <= 0) /\
-        !(((0 < V|1|) && (V|1| < 1))) /\ !(((0 == V|1|) && (2 == V|1|))) /\
-        (V|1| <= 2) /\ (0 < (V|2| - V|1|)) /\ ((V|2| - V|1|) <= 3) /\
-        (0 <= (V|2| - V|1|)) /\
-        (((V|1| <= 0x1fffffffffffffff) && ((-0x2000000000000000 <= V|1|) && (V|1| <= 3))) || (0 == V|1|)) /\
-        (V|1| <= V|2|) /\ (V|2| <= 3) /\ (V|2| <= 0xffffffffffffffff) /\
-        (0 <= V|2|) /\ (V|1| <= 0xffffffffffffffff) /\ (0 <= V|1|)
-  PC 4: (V|1| != -1) /\ (-2 < V|1|) /\ (V|1| != -2) /\ (-2 <= V|1|) /\
-        (-0x2000000000000002 <= V|1|) /\ (V|1| <= 0x1ffffffffffffffd) /\
-        (2 < (V|2| - V|1|)) /\ (1 != V|1|) /\ (-1 < V|1|) /\
-        !(((1 == V|1|) && (V|1| == -1))) /\ (-1 <= V|1|) /\ (V|1| <= 1) /\
-        (-0x2000000000000001 <= V|1|) /\ (V|1| <= 0x1ffffffffffffffe) /\
-        (1 < (V|2| - V|1|)) /\ (0 == V|1|) /\ (V|1| <= 0) /\
-        !(((0 < V|1|) && (V|1| < 1))) /\ !(((0 == V|1|) && (2 == V|1|))) /\
-        (V|1| <= 2) /\ (0 < (V|2| - V|1|)) /\ ((V|2| - V|1|) <= 3) /\
-        (0 <= (V|2| - V|1|)) /\
-        (((V|1| <= 0x1fffffffffffffff) && ((-0x2000000000000000 <= V|1|) && (V|1| <= 3))) || (0 == V|1|)) /\
-        (V|1| <= V|2|) /\ (V|2| <= 3) /\ (V|2| <= 0xffffffffffffffff) /\
-        (0 <= V|2|) /\ (V|1| <= 0xffffffffffffffff) /\ (0 <= V|1|)
-  PC 5: ((V|2| - V|1|) <= 1) /\ (1 == V|1|) /\ (V|1| <= 1) /\ (1 <= V|1|) /\
-        !(((1 < V|1|) && (V|1| < 2))) /\ !(((2 == V|1|) && (1 == V|1|))) /\
-        (0 < V|1|) /\ !(((0 < V|1|) && (V|1| < 1))) /\
-        !(((0 == V|1|) && (2 == V|1|))) /\ (V|1| <= 2) /\
-        (0 < (V|2| - V|1|)) /\ ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\
-        (((V|1| <= 0x1fffffffffffffff) && ((-0x2000000000000000 <= V|1|) && (V|1| <= 3))) || (0 == V|1|)) /\
-        (V|1| <= V|2|) /\ (V|2| <= 3) /\ (V|2| <= 0xffffffffffffffff) /\
-        (0 <= V|2|) /\ (V|1| <= 0xffffffffffffffff) /\ (0 <= V|1|)
-  PC 6: ((V|2| - V|1|) <= 2) /\ (0 != V|1|) /\ (-1 < V|1|) /\ (V|1| != -1) /\
-        (-1 <= V|1|) /\ (-0x2000000000000001 <= V|1|) /\
-        (V|1| <= 0x1ffffffffffffffe) /\ (1 < (V|2| - V|1|)) /\ (1 == V|1|) /\
-        (V|1| <= 1) /\ (1 <= V|1|) /\ !(((1 < V|1|) && (V|1| < 2))) /\
-        !(((2 == V|1|) && (1 == V|1|))) /\ (0 < V|1|) /\
-        !(((0 < V|1|) && (V|1| < 1))) /\ !(((0 == V|1|) && (2 == V|1|))) /\
-        (V|1| <= 2) /\ (0 < (V|2| - V|1|)) /\ ((V|2| - V|1|) <= 3) /\
-        (0 <= (V|2| - V|1|)) /\
-        (((V|1| <= 0x1fffffffffffffff) && ((-0x2000000000000000 <= V|1|) && (V|1| <= 3))) || (0 == V|1|)) /\
-        (V|1| <= V|2|) /\ (V|2| <= 3) /\ (V|2| <= 0xffffffffffffffff) /\
-        (0 <= V|2|) /\ (V|1| <= 0xffffffffffffffff) /\ (0 <= V|1|)
-  PC 7: ((V|2| - V|1|) <= 1) /\ (2 == V|1|) /\
-        !(((1 <= V|1|) && (V|1| <= 1))) /\ !(((1 < V|1|) && (V|1| < 2))) /\
-        !(((2 == V|1|) && (1 == V|1|))) /\ (0 < V|1|) /\
-        !(((0 < V|1|) && (V|1| < 1))) /\ !(((0 == V|1|) && (2 == V|1|))) /\
-        (V|1| <= 2) /\ (0 < (V|2| - V|1|)) /\ ((V|2| - V|1|) <= 3) /\
-        (0 <= (V|2| - V|1|)) /\
-        (((V|1| <= 0x1fffffffffffffff) && ((-0x2000000000000000 <= V|1|) && (V|1| <= 3))) || (0 == V|1|)) /\
-        (V|1| <= V|2|) /\ (V|2| <= 3) /\ (V|2| <= 0xffffffffffffffff) /\
-        (0 <= V|2|) /\ (V|1| <= 0xffffffffffffffff) /\ (0 <= V|1|)
+  PC 1: ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\ (0 <= V|2|) /\
+        (V|1| <= 3) /\ (V|2| <= 3) /\ (V|1| <= V|2|) /\
+        ((0 == V|1|) || ((V|1| <= 0x1fffffffffffffff) && (V|1| <= 3))) /\
+        ((V|2| - V|1|) <= 0) /\ (0 <= V|1|)
+  PC 2: ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\
+        ((0 == V|1|) || (1 <= V|1|)) /\ (0 <= V|2|) /\ (V|2| <= 3) /\
+        (0 == V|1|) /\ (V|1| <= V|2|) /\
+        ((0 == V|1|) || ((V|1| <= 0x1fffffffffffffff) && (V|1| <= 3))) /\
+        (0 < (V|2| - V|1|)) /\ ((0 != V|1|) || (2 != V|1|)) /\
+        ((V|2| - V|1|) <= 1)
+  PC 3: ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\
+        ((0 == V|1|) || (1 <= V|1|)) /\ (0 <= V|2|) /\ (V|2| <= 3) /\
+        (0 == V|1|) /\ ((V|2| - V|1|) <= 2) /\ (V|1| <= V|2|) /\
+        ((0 == V|1|) || ((V|1| <= 0x1fffffffffffffff) && (V|1| <= 3))) /\
+        (0 < (V|2| - V|1|)) /\ (1 < (V|2| - V|1|)) /\
+        ((0 != V|1|) || (2 != V|1|))
+  PC 4: ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\
+        ((0 == V|1|) || (1 <= V|1|)) /\ (0 <= V|2|) /\ (V|2| <= 3) /\
+        (0 == V|1|) /\ (2 < (V|2| - V|1|)) /\ (V|1| <= V|2|) /\
+        ((0 == V|1|) || ((V|1| <= 0x1fffffffffffffff) && (V|1| <= 3))) /\
+        (0 < (V|2| - V|1|)) /\ (1 < (V|2| - V|1|)) /\
+        ((0 != V|1|) || (2 != V|1|))
+  PC 5: ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\
+        ((0 == V|1|) || (1 <= V|1|)) /\ (0 <= V|2|) /\ (V|2| <= 3) /\
+        (1 == V|1|) /\ (V|1| <= V|2|) /\
+        ((0 == V|1|) || ((V|1| <= 0x1fffffffffffffff) && (V|1| <= 3))) /\
+        ((2 != V|1|) || (1 != V|1|)) /\ (0 < (V|2| - V|1|)) /\
+        ((2 == V|1|) || (V|1| <= 1)) /\ ((0 != V|1|) || (2 != V|1|)) /\
+        (0 < V|1|) /\ ((V|2| - V|1|) <= 1)
+  PC 6: ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\
+        ((0 == V|1|) || (1 <= V|1|)) /\ (0 <= V|2|) /\ (V|2| <= 3) /\
+        (1 == V|1|) /\ ((V|2| - V|1|) <= 2) /\ (V|1| <= V|2|) /\
+        ((0 == V|1|) || ((V|1| <= 0x1fffffffffffffff) && (V|1| <= 3))) /\
+        ((2 != V|1|) || (1 != V|1|)) /\ (0 < (V|2| - V|1|)) /\
+        ((2 == V|1|) || (V|1| <= 1)) /\ (1 < (V|2| - V|1|)) /\
+        ((0 != V|1|) || (2 != V|1|)) /\ (0 < V|1|)
+  PC 7: ((V|2| - V|1|) <= 3) /\ (0 <= (V|2| - V|1|)) /\
+        ((0 == V|1|) || (1 <= V|1|)) /\ (0 <= V|2|) /\ (V|2| <= 3) /\
+        ((0 == V|1|) || (2 == V|1|)) /\ (V|1| <= V|2|) /\
+        ((0 == V|1|) || ((V|1| <= 0x1fffffffffffffff) && (V|1| <= 3))) /\
+        ((2 != V|1|) || (1 != V|1|)) /\ (0 < (V|2| - V|1|)) /\ (2 == V|1|) /\
+        ((2 == V|1|) || (V|1| <= 1)) /\ ((0 != V|1|) || (2 != V|1|)) /\
+        (0 < V|1|) /\ ((V|2| - V|1|) <= 1)

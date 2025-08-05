@@ -1,12 +1,12 @@
 Basic code, reference gets invalidated
-  $ soteria-rust exec-main raw-ptrs.rs --clean
+  $ soteria-rust rustc raw-ptrs.rs --clean
   note: Done, no errors found
   
   raw_ptrs::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Simple tree borrow violation
-  $ soteria-rust exec-main simple-fail.rs --clean
+  $ soteria-rust rustc simple-fail.rs --clean
   error: Found issues
   
   simple_fail::main: error in 1 branch (out of 1):
@@ -27,39 +27,39 @@ Simple tree borrow violation
   [1]
 
 Raw pointers don't get new tags
-  $ soteria-rust exec-main raw-ptrs.rs --clean
+  $ soteria-rust rustc raw-ptrs.rs --clean
   note: Done, no errors found
   
   raw_ptrs::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Raw pointers can access outside the parent's range, with offsets
-  $ soteria-rust exec-main offsets.rs --clean
+  $ soteria-rust rustc offsets.rs --clean
   note: Done, no errors found
   
   offsets::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Can have two mutable protected refs to the same allocation, if they don't overlap
-  $ soteria-rust exec-main two-mut-protected.rs --clean
+  $ soteria-rust rustc two-mut-protected.rs --clean
   note: Done, no errors found
   
   two_mut_protected::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 UnsafeCell allow foreign writes followed by local writes
-  $ soteria-rust exec-main cell.rs --clean
+  $ soteria-rust rustc cell.rs --clean
   note: Done, no errors found
   
   cell::main: ran 1 branch
-  PC 1: empty
+  PC 1: true
 
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
-  $ true || soteria-rust exec-main nested.rs --clean
+  $ true || soteria-rust rustc nested.rs --clean
 
 Test --ignore-aliasing flag
-  $ soteria-rust exec-main simple-fail.rs --clean --ignore-aliasing
+  $ soteria-rust rustc simple-fail.rs --clean --ignore-aliasing
   note: Done, no errors found
   
   simple_fail::main: ran 1 branch
-  PC 1: empty
+  PC 1: true

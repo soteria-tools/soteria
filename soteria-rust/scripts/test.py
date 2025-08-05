@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 
 
-from ast import expr
 from io import TextIOWrapper
 from pathlib import Path
-from posixpath import pardir
 import time
 import datetime
-from types import FunctionType
 from typing import Callable
 import math
 
@@ -56,7 +53,6 @@ MIRI_EXCLUSIONS = [
 
 def kani() -> tuple[list[Path], TestConfig]:
     root = Path(KANI_PATH)
-    log = PWD / "kani.log"
     tests = [
         path
         for path in root.rglob("*.rs")
@@ -95,17 +91,27 @@ def miri() -> tuple[list[Path], TestConfig]:
     }
 
 
-TEST_SUITES = {
-    "kani": kani,
-    "miri": miri,
-}
+def custom() -> tuple[list[Path], TestConfig]:
+    flags = parse_flags()
+    if flags["test_folder"] is None:
+        raise ArgError("No test folder specified, use --folder <path>")
+    root = flags["test_folder"]
+    tests = [path for path in root.rglob("*.rs")]
+    return tests, {
+        "root": root,
+        "args": [],
+        "dyn_flags": lambda _: [],
+    }
+
+
+TEST_SUITES = {"kani": kani, "miri": miri, "custom": custom}
 
 
 # Execute a test, return the categorisation and the elapsed time
 def exec_test(
     file: Path,
     *,
-    root: Path,
+    subcmd: str = "rustc",
     log: Optional[TextIOWrapper] = None,
     args: list[str] = [],
     dyn_flags: Optional[Callable[[Path], list[str]]] = None,
@@ -118,7 +124,7 @@ def exec_test(
         log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
 
     before = time.time()
-    cmd = ["soteria-rust", "exec-main", str(file)] + args + ["--compact", "--no-color"]
+    cmd = ["soteria-rust", subcmd, str(file)] + args + ["--compact", "--no-color"]
     data = subprocess.run(
         cmd,
         capture_output=True,
@@ -157,9 +163,10 @@ def filter_tests(tests: list[Path], flags: Flags):
 
 def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
     build()
-    flags = parse_flags(sys.argv[2:])
+    flags = parse_flags()
 
     args = test_conf["args"] + flags["cmd_flags"]
+    subcmd = "obol" if flags["with_obol"] else "rustc"
 
     tests = filter_tests(tests, flags)
     log.touch()
@@ -183,7 +190,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
             else:
                 (msg, clr, reason), elapsed = exec_test(
                     path,
-                    root=test_conf["root"],
+                    subcmd=subcmd,
                     log=logfile,
                     args=args,
                     dyn_flags=test_conf["dyn_flags"],
@@ -210,7 +217,7 @@ def exec_tests(tests: list[Path], test_conf: TestConfig, log: Path):
 
 def evaluate_perf(tests: list[Path], test_conf: TestConfig):
     build()
-    flags = parse_flags(sys.argv[3:])
+    flags = parse_flags()
 
     iters = flags["iterations"] or 5
     args = test_conf["args"] + flags["cmd_flags"]
@@ -237,7 +244,6 @@ def evaluate_perf(tests: list[Path], test_conf: TestConfig):
             pprint(f"{txt} {i+1}/{iters}", end="\r")
             (msg, clr, _), t = exec_test(
                 path,
-                root=test_conf["root"],
                 args=args,
                 dyn_flags=test_conf["dyn_flags"],
             )
@@ -256,7 +262,6 @@ def evaluate_perf(tests: list[Path], test_conf: TestConfig):
     total_average = (
         sum((t for v in test_times_items for t in v[1])) / len(test_times_items) / iters
     )
-    longest_path = max(len(str(item[0])) for item in test_times_items)
 
     pprint(
         f"{BOLD}Finished in {elapsed:.3f}s total, {total_average:.3f}s/iter{RESET}",
@@ -313,8 +318,8 @@ def diff_evaluation(path1: Path, path2: Path):
     csv2 = parse(path2)
     files = set(csv1.keys())
     files = files.union(csv2.keys())
-    csv1 = {f: t for f, t in csv1.items() if f in files}
-    csv2 = {f: t for f, t in csv2.items() if f in files}
+    csv1 = {f: t for f, t in csv1.items()}
+    csv2 = {f: t for f, t in csv2.items()}
     total_time1 = sum(csv1.values())
     total_time2 = sum(csv2.values())
     delta_total = (total_time2 - total_time1) / total_time1 * 100
@@ -358,31 +363,52 @@ def diff_evaluation(path1: Path, path2: Path):
     pptable(rows)
 
 
+class ArgError(Exception):
+    def __init__(self, msg: str):
+        super().__init__(msg)
+        self.msg = msg
+
+    def __str__(self):
+        return self.msg
+
+
 if __name__ == "__main__":
     try:
-        if len(sys.argv) <= 1:
-            raise RuntimeError
-        if sys.argv[1] in ["kani", "miri"]:
-            tests, config = TEST_SUITES[sys.argv[1]]()
-            log = PWD / f"{sys.argv[1]}.log"
+        sys.argv.pop(0)  # remove script name
+        if len(sys.argv) == 0:
+            raise ArgError("missing command")
+        arg = sys.argv.pop(0)
+        if arg in TEST_SUITES:
+            tests, config = TEST_SUITES[arg]()
+            log = PWD / f"{arg}.log"
             exec_tests(tests, config, log)
-        elif sys.argv[1] == "eval":
-            if len(sys.argv) <= 2:
-                raise RuntimeError
-            if sys.argv[2] not in ["kani", "miri"]:
-                raise RuntimeError
-            tests, config = TEST_SUITES[sys.argv[2]]()
+        elif arg == "all":
+            for name, callback in TEST_SUITES.items():
+                if name == "custom":
+                    continue
+                tests, config = callback()
+                log = PWD / f"{name}.log"
+                pprint(f"Running {BOLD}{name}{RESET} tests", inc=True)
+                exec_tests(tests, config, log)
+        elif arg == "eval":
+            if len(sys.argv) == 0:
+                raise ArgError("missing test suite name: kani or miri")
+            suite = sys.argv.pop(0)
+            if suite not in TEST_SUITES:
+                raise ArgError("invalid test suite name, expected kani or miri")
+            tests, config = TEST_SUITES[suite]()
             evaluate_perf(tests, config)
-        elif sys.argv[1] == "eval-diff":
-            if len(sys.argv) <= 3:
-                raise RuntimeError
-            diff_evaluation(Path(sys.argv[2]), Path(sys.argv[3]))
+        elif arg == "eval-diff":
+            if len(sys.argv) < 2:
+                raise ArgError("missing paths to two evaluation CSV files")
+            file1 = Path(sys.argv.pop(0))
+            file2 = Path(sys.argv.pop(0))
+            diff_evaluation(file1, file2)
         else:
-            raise RuntimeError
-    except RuntimeError:
-        print(
-            f"{RED}Invalid command -- specify {YELLOW}kani{RED} or "
-            f"{YELLOW}miri{RED} as a first argument."
-        )
+            raise ArgError(
+                f"Unknown command, expected {', '.join(TEST_SUITES)}, eval or eval-diff"
+            )
+    except ArgError as e:
+        print(f"{RED}Error: {YELLOW}{e}")
     except KeyboardInterrupt:
         exit(1)

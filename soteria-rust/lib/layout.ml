@@ -8,10 +8,6 @@ open Charon_util
 exception CantComputeLayout of string * Types.ty
 exception InvalidLayout
 
-module Archi = struct
-  let word_size = 8
-end
-
 type layout = {
   size : int;
   align : int;
@@ -47,19 +43,28 @@ module Session = struct
 end
 
 let is_int : Types.ty -> bool = function
-  | TLiteral (TInteger _) -> true
+  | TLiteral (TInt _ | TUInt _) -> true
   | _ -> false
 
-let size_of_int_ty : Types.integer_type -> int = function
-  | I128 | U128 -> 16
-  | I64 | U64 -> 8
-  | I32 | U32 -> 4
-  | I16 | U16 -> 2
-  | I8 | U8 -> 1
-  | Isize | Usize -> Archi.word_size
+let size_of_int_ty : Values.int_ty -> int = function
+  | I128 -> 16
+  | I64 -> 8
+  | I32 -> 4
+  | I16 -> 2
+  | I8 -> 1
+  | Isize -> Crate.pointer_size ()
+
+let size_of_uint_ty : Values.u_int_ty -> int = function
+  | U128 -> 16
+  | U64 -> 8
+  | U32 -> 4
+  | U16 -> 2
+  | U8 -> 1
+  | Usize -> Crate.pointer_size ()
 
 let size_of_literal_ty : Types.literal_type -> int = function
-  | TInteger int_ty -> size_of_int_ty int_ty
+  | TInt int_ty -> size_of_int_ty int_ty
+  | TUInt uint_ty -> size_of_uint_ty uint_ty
   | TBool -> 1
   | TChar -> 4
   | TFloat F16 -> 2
@@ -74,7 +79,7 @@ let empty_generics = TypesUtils.empty_generic_args
 
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let rec is_dst : Types.ty -> bool = function
-  | TAdt { id = TBuiltin TSlice; _ } | TAdt { id = TBuiltin TStr; _ } -> true
+  | TAdt { id = TBuiltin (TSlice | TStr); _ } | TDynTrait _ -> true
   | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
       | None -> false
@@ -86,9 +91,19 @@ let size_to_fit ~size ~align =
   if size % align = 0 then size else size + align - (size % align)
 
 let max_array_len sub_size =
-  let isize_bits = (Archi.word_size * 8) - 1 in
+  (* We calculate the max array size for a 32bit architecture, like Miri does. *)
+  let isize_bits = 32 - 1 in
   if sub_size = 0 then Z.of_int isize_bits
   else Z.((one lsl isize_bits) / of_int sub_size)
+
+let enum_discr_ty adt_id : Types.ty =
+  let adt = Crate.get_adt adt_id in
+  match adt.layout with
+  | Some { discriminant_layout = Some { tag_ty = Signed ty; _ }; _ } ->
+      TLiteral (TInt ty)
+  | Some { discriminant_layout = Some { tag_ty = Unsigned ty; _ }; _ } ->
+      TLiteral (TUInt ty)
+  | _ -> TLiteral (TUInt Usize)
 
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
@@ -103,14 +118,12 @@ let rec layout_of (ty : Types.ty) : layout =
   | TRef (_, sub_ty, _)
   | TRawPtr (sub_ty, _)
     when is_dst sub_ty ->
-      {
-        size = Archi.word_size * 2;
-        align = Archi.word_size;
-        members_ofs = [||];
-      }
+      let ptr_size = Crate.pointer_size () in
+      { size = ptr_size * 2; align = ptr_size; members_ofs = [||] }
   (* Refs, pointers, boxes *)
   | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) ->
-      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
+      let ptr_size = Crate.pointer_size () in
+      { size = ptr_size; align = ptr_size; members_ofs = [||] }
   (* Dynamically sized types -- we assume they have a size of 0. In truth, these types should
      simply never be allocated directly, and instead can only be obtained hidden behind
      references; however we must be able to compute their layout, to get e.g. the offset of
@@ -120,7 +133,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TAdt { id = TBuiltin (TStr as ty); generics }
   | TAdt { id = TBuiltin (TSlice as ty); generics } ->
       let sub_ty =
-        if ty = TSlice then List.hd generics.types else TLiteral (TInteger U8)
+        if ty = TSlice then List.hd generics.types else TLiteral (TUInt U8)
       in
       let sub_layout = layout_of sub_ty in
       { size = 0; align = sub_layout.align; members_ofs = [||] }
@@ -136,12 +149,12 @@ let rec layout_of (ty : Types.ty) : layout =
       | Enum [ { fields = []; _ } ] ->
           { size = 0; align = 1; members_ofs = [||] }
       | Enum variants ->
-          let layouts = List.map of_variant variants in
+          let layouts = List.map (of_variant id) variants in
           List.fold_left
             (fun acc l -> if l.size > acc.size then l else acc)
             (List.hd layouts) (List.tl layouts)
       | Opaque ->
-          let msg = Fmt.str "Opaque %a " Crate.pp_name adt.item_meta.name in
+          let msg = Fmt.str "opaque (%a)" Crate.pp_name adt.item_meta.name in
           raise (CantComputeLayout (msg, ty))
       | Union fs ->
           let layouts = List.map layout_of @@ Charon_util.field_tys fs in
@@ -156,32 +169,31 @@ let rec layout_of (ty : Types.ty) : layout =
           (* All fields in the union start at 0 and overlap *)
           let members_ofs = Array.init (List.length fs) (fun _ -> 0) in
           { size; align; members_ofs }
-      | TDeclError _ -> raise (CantComputeLayout ("DeclError", ty))
-      | Alias _ -> raise (CantComputeLayout ("Alias", ty)))
+      | TDeclError _ -> raise (CantComputeLayout ("decl error", ty))
+      | Alias _ -> raise (CantComputeLayout ("alias", ty)))
   (* Arrays *)
-  | TAdt
-      {
-        id = TBuiltin TArray;
-        generics = { types = [ ty ]; const_generics = [ size ]; _ };
-      } ->
-      let len = Charon_util.int_of_const_generic size in
+  | TAdt { id = TBuiltin TArray; generics } ->
+      let size = List.hd generics.const_generics in
+      let ty = List.hd generics.types in
+      let len = Charon_util.z_of_const_generic size in
       let sub_layout = layout_of ty in
-      if Z.(of_int len > max_array_len sub_layout.size) then raise InvalidLayout;
+      if len > max_array_len sub_layout.size then raise InvalidLayout;
+      let len = Z.to_int len in
       let members_ofs = Array.init len (fun i -> i * sub_layout.size) in
       { size = len * sub_layout.size; align = sub_layout.align; members_ofs }
-  | TAdt { id = TBuiltin TArray; _ } -> failwith "Invalid TArray shape"
   (* Never -- zero sized type *)
   | TNever -> { size = 0; align = 1; members_ofs = [||] }
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> { size = 0; align = 1; members_ofs = [||] }
   (* Function pointers (can point to a function or a state-less closure). *)
   | TFnPtr _ ->
-      { size = Archi.word_size; align = Archi.word_size; members_ofs = [||] }
+      let ptr_size = Crate.pointer_size () in
+      { size = ptr_size; align = ptr_size; members_ofs = [||] }
   (* FIXME: this is wrong but at least some more code runs... *)
   | TDynTrait _ -> { size = 0; align = 1; members_ofs = [||] }
   (* Others (unhandled for now) *)
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
-  | TError _ -> raise (CantComputeLayout ("Error", ty))
+  | TError _ -> raise (CantComputeLayout ("error type", ty))
   | TTraitType (tref, ty_name) -> layout_of @@ resolve_trait_ty tref ty_name
 
 and layout_of_members members =
@@ -206,36 +218,53 @@ and layout_of_members members =
     members_ofs = Array.of_list members_ofs;
   }
 
-and of_variant (variant : Types.variant) =
+and of_variant adt_id (variant : Types.variant) =
   Session.get_or_compute_cached_layout_var variant @@ fun () ->
-  let discr_ty = Types.TLiteral (TInteger variant.discriminant.int_ty) in
+  let discr_ty = enum_discr_ty adt_id in
   let members = discr_ty :: field_tys variant.fields in
   layout_of_members members
 
 and of_enum_variant adt_id variant =
   let variants = Crate.as_enum adt_id in
   let variant = Types.VariantId.nth variants variant in
-  of_variant variant
+  of_variant adt_id variant
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.trait_id with
-  | TraitImpl { id; _ } ->
+  | TraitImpl { id; _ } -> (
       let impl = Crate.get_trait_impl id in
-      let _, ty = List.find (fun (n, _) -> ty_name = n) impl.types in
-      ty
+      match List.find_opt (fun (n, _) -> ty_name = n) impl.types with
+      | Some (_, ty) -> ty
+      | None ->
+          let msg =
+            Fmt.str "missing type '%s' in impl %a" ty_name Crate.pp_name
+              impl.item_meta.name
+          in
+          raise (CantComputeLayout (msg, TTraitType (tref, ty_name))))
+  | BuiltinOrAuto (trait, _, _) when ty_name = "Metadata" ->
+      (* We need to special-case the metadata type *)
+      let ty = List.hd trait.binder_value.generics.types in
+      if is_dst ty then TLiteral (TInt Isize)
+      else TAdt { id = TTuple; generics = TypesUtils.empty_generic_args }
   | _ ->
-      raise (CantComputeLayout ("Trait type", Types.TTraitType (tref, ty_name)))
+      let msg = Fmt.str "trait type (%s)" ty_name in
+      raise (CantComputeLayout (msg, TTraitType (tref, ty_name)))
 
 let offset_in_array ty idx =
   let sub_layout = layout_of ty in
   idx * sub_layout.size
 
 let layout_of_s ty =
-  try return @@ layout_of ty
-  with CantComputeLayout (msg, ty') ->
-    Fmt.kstr Rustsymex.not_impl
-      "Cannot yet compute size of %s:@.%a@.Occurred when computing:@.%a" msg
-      pp_ty ty' pp_ty ty
+  try return @@ layout_of ty with
+  | CantComputeLayout (msg, ty') ->
+      Fmt.kstr Rustsymex.not_impl
+        "Cannot compute layout: %s@.%a@.Occurred when computing:@.%a" msg pp_ty
+        ty' pp_ty ty
+  | Crate.MissingDecl decl_ty ->
+      Fmt.kstr Rustsymex.not_impl
+        "Cannot compute layout: missing %s declaration@.Occured when computing \
+         %a"
+        decl_ty pp_ty ty
 
 let size_of_s ty =
   let open Rustsymex.Syntax in
@@ -247,43 +276,46 @@ let align_of_s ty =
   let+ { align; _ } = layout_of_s ty in
   Typed.nonzero align
 
-let is_signed : Types.integer_type -> bool = function
-  | I128 | I64 | I32 | I16 | I8 | Isize -> true
-  | U128 | U64 | U32 | U16 | U8 | Usize -> false
+(** Assumes the input is a literal type of either TInt or TUInt *)
+let[@inline] is_signed : Types.literal_type -> bool = function
+  | TInt _ -> true
+  | _ -> false
 
-let min_value_z : Types.integer_type -> Z.t = function
-  | U128 | U64 | U32 | U16 | U8 | Usize -> Z.zero
-  | Isize -> Z.neg (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
-  | I128 -> Z.neg (Z.shift_left Z.one 127)
-  | I64 -> Z.neg (Z.shift_left Z.one 63)
-  | I32 -> Z.neg (Z.shift_left Z.one 31)
-  | I16 -> Z.neg (Z.shift_left Z.one 15)
-  | I8 -> Z.neg (Z.shift_left Z.one 7)
+let min_value_z : Types.literal_type -> Z.t = function
+  | TUInt _ -> Z.zero
+  | TInt Isize -> Z.neg (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
+  | TInt I128 -> Z.neg (Z.shift_left Z.one 127)
+  | TInt I64 -> Z.neg (Z.shift_left Z.one 63)
+  | TInt I32 -> Z.neg (Z.shift_left Z.one 31)
+  | TInt I16 -> Z.neg (Z.shift_left Z.one 15)
+  | TInt I8 -> Z.neg (Z.shift_left Z.one 7)
+  | _ -> failwith "Invalid integer type for min_value_z"
 
 let min_value int_ty = Typed.int_z (min_value_z int_ty)
 
-let max_value_z : Types.integer_type -> Z.t = function
-  | U128 -> Z.pred (Z.shift_left Z.one 128)
-  | U64 -> Z.pred (Z.shift_left Z.one 64)
-  | U32 -> Z.pred (Z.shift_left Z.one 32)
-  | U16 -> Z.pred (Z.shift_left Z.one 16)
-  | U8 -> Z.pred (Z.shift_left Z.one 8)
-  | Usize -> Z.pred (Z.shift_left Z.one (8 * Archi.word_size))
-  | I128 -> Z.pred (Z.shift_left Z.one 127)
-  | I64 -> Z.pred (Z.shift_left Z.one 63)
-  | I32 -> Z.pred (Z.shift_left Z.one 31)
-  | I16 -> Z.pred (Z.shift_left Z.one 15)
-  | I8 -> Z.pred (Z.shift_left Z.one 7)
-  | Isize -> Z.pred (Z.shift_left Z.one ((8 * Archi.word_size) - 1))
+let max_value_z : Types.literal_type -> Z.t = function
+  | TUInt U128 -> Z.pred (Z.shift_left Z.one 128)
+  | TUInt U64 -> Z.pred (Z.shift_left Z.one 64)
+  | TUInt U32 -> Z.pred (Z.shift_left Z.one 32)
+  | TUInt U16 -> Z.pred (Z.shift_left Z.one 16)
+  | TUInt U8 -> Z.pred (Z.shift_left Z.one 8)
+  | TUInt Usize -> Z.pred (Z.shift_left Z.one (8 * Crate.pointer_size ()))
+  | TInt I128 -> Z.pred (Z.shift_left Z.one 127)
+  | TInt I64 -> Z.pred (Z.shift_left Z.one 63)
+  | TInt I32 -> Z.pred (Z.shift_left Z.one 31)
+  | TInt I16 -> Z.pred (Z.shift_left Z.one 15)
+  | TInt I8 -> Z.pred (Z.shift_left Z.one 7)
+  | TInt Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
+  | _ -> failwith "Invalid integer type for max_value_z"
 
 let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
 
 let size_to_uint : int -> Types.ty = function
-  | 1 -> TLiteral (TInteger U8)
-  | 2 -> TLiteral (TInteger U16)
-  | 4 -> TLiteral (TInteger U32)
-  | 8 -> TLiteral (TInteger U64)
-  | 16 -> TLiteral (TInteger U128)
+  | 1 -> TLiteral (TUInt U8)
+  | 2 -> TLiteral (TUInt U16)
+  | 4 -> TLiteral (TUInt U32)
+  | 8 -> TLiteral (TUInt U64)
+  | 16 -> TLiteral (TUInt U128)
   | _ -> failwith "Invalid integer size"
 
 let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
@@ -295,7 +327,7 @@ let int_constraints ty =
 
 let constraints :
     Types.literal_type -> [< T.cval ] Typed.t -> T.sbool Typed.t list = function
-  | TInteger ity -> (
+  | (TInt _ | TUInt _) as ity -> (
       let constrs = int_constraints ity in
       fun x ->
         match Typed.cast_checked x Typed.t_int with
@@ -332,7 +364,7 @@ let constraints :
 let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
   let rty =
     match ty with
-    | TInteger _ | TBool | TChar -> Typed.t_int
+    | TInt _ | TUInt _ | TBool | TChar -> Typed.t_int
     | TFloat F16 -> Typed.t_f16
     | TFloat F32 -> Typed.t_f32
     | TFloat F64 -> Typed.t_f64
@@ -367,8 +399,8 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
-          let disc_ty = (List.hd variants).discriminant.int_ty in
-          let* disc_val = nondet_literal_ty (Values.TInteger disc_ty) in
+          let disc_ty = TypesUtils.ty_as_literal @@ enum_discr_ty t_id in
+          let* disc_val = nondet_literal_ty disc_ty in
           let* res =
             match_on variants ~constr:(fun (v : Types.variant) ->
                 disc_val ==@ value_of_scalar v.discriminant)
@@ -394,7 +426,7 @@ and nondets tys =
       f :: fields)
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
-  | TInteger _ | TBool | TChar -> 0s
+  | TInt _ | TUInt _ | TBool | TChar -> 0s
   | TFloat F16 -> Typed.f16 0.0
   | TFloat F32 -> Typed.f32 0.0
   | TFloat F64 -> Typed.f64 0.0
@@ -405,6 +437,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   function
   | TLiteral lit_ty -> ( try Some (Base (zeroed_lit lit_ty)) with _ -> None)
   | TRawPtr _ -> Some (Ptr (null_ptr, None))
+  | TFnPtr _ -> None
   | TRef _ -> None
   | TAdt { id = TTuple; generics = { types; _ } } ->
       zeroeds types |> Option.map (fun fields -> Tuple fields)
@@ -427,7 +460,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
       | Enum vars ->
           (vars
           |> List.find_opt (fun (v : Types.variant) ->
-                 Z.equal Z.zero v.discriminant.value)
+                 Z.equal Z.zero (z_of_scalar v.discriminant))
           |> Option.bind)
           @@ fun (v : Types.variant) ->
           v.fields
@@ -489,14 +522,12 @@ let rec as_zst : Types.ty -> 'a rust_val option =
       | Union _ -> None
       | Enum [] -> Some (Enum (0s, []))
       | Enum [ { fields = []; discriminant; _ } ] ->
-          Some (Enum (Typed.int_z discriminant.value, []))
+          Some (Enum (value_of_scalar discriminant, []))
       | Enum _ -> None
       | _ -> None)
   | TAdt { id = TTuple; generics = { types; _ } } ->
       as_zsts types |> Option.map (fun fs -> Tuple fs)
-  | TFnDef binder ->
-      let { id; generics } : Types.fun_decl_ref = binder.binder_value in
-      Some (ConstFn { func = FunId (FRegular id); generics })
+  | TFnDef binder -> Some (ConstFn binder.binder_value)
   | _ -> None
 
 (** Apply the compiler-attribute to the given value *)
@@ -542,40 +573,133 @@ let rec is_unsafe_cell : Types.ty -> bool = function
   | _ -> false
 
 (** Traverses the given type and rust value, and returns all findable references
-    with their type (ignores pointers). This is needed e.g. when needing to get
-    the pointers along with the size of their pointee, in particular in nested
-    cases. *)
-let rec ref_tys_in (v : 'a rust_val) (ty : Types.ty) :
+    with their type (ignores pointers, except if [include_ptrs] is true). This
+    is needed e.g. when needing to get the pointers along with the size of their
+    pointee, in particular in nested cases. *)
+let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
     ('a full_ptr * Types.ty) list =
+  let f = ref_tys_in ~include_ptrs in
   match (v, ty) with
   | Ptr ptr, (TAdt { id = TBuiltin TBox; _ } | TRef _) ->
       [ (ptr, get_pointee ty) ]
+  | Ptr ptr, TRawPtr _ when include_ptrs -> [ (ptr, get_pointee ty) ]
   | Base _, _ -> []
   | Struct vs, TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_struct adt_id in
-      List.concat_map2 ref_tys_in vs (field_tys fields)
+      List.concat_map2 f vs (field_tys fields)
   | ( Array vs,
       TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
     ) ->
-      List.concat_map (fun v -> ref_tys_in v ty) vs
+      List.concat_map (fun v -> f v ty) vs
   | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
-      List.concat_map2 ref_tys_in vs types
+      List.concat_map2 f vs types
   | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
       match Typed.kind d with
       | Int d -> (
           let variants = Crate.as_enum adt_id in
           let v =
             List.find_opt
-              (fun (v : Types.variant) -> Z.equal d v.discriminant.value)
+              (fun (v : Types.variant) ->
+                Z.equal d (z_of_scalar v.discriminant))
               variants
           in
           match v with
-          | Some v ->
-              List.concat_map2 ref_tys_in vs (field_tys Types.(v.fields))
+          | Some v -> List.concat_map2 f vs (field_tys Types.(v.fields))
           | None -> [])
       | _ -> [])
   | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_union adt_id in
       let field = Types.FieldId.nth fields fid in
-      ref_tys_in v field.field_ty
+      f v field.field_ty
   | _ -> []
+
+let rec update_ref_tys_in
+    (fn :
+      'acc ->
+      'a full_ptr ->
+      Types.ty ->
+      Types.ref_kind ->
+      ('a full_ptr * 'acc, 'e, 'f) Result.t) (init : 'acc) (v : 'a rust_val)
+    (ty : Types.ty) : ('a rust_val * 'acc, 'e, 'f) Result.t =
+  let open Rustsymex.Syntax in
+  let f = update_ref_tys_in fn in
+  let fs acc vs ty =
+    let++ vs, acc =
+      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) v ->
+          let++ v, acc = f acc v ty in
+          (v :: vs, acc))
+    in
+    (List.rev vs, acc)
+  in
+  let fs2 acc vs tys =
+    let vs = List.combine vs tys in
+    let++ vs, acc =
+      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
+          let++ v, acc = f acc v ty in
+          (v :: vs, acc))
+    in
+    (List.rev vs, acc)
+  in
+  match (v, ty) with
+  | Ptr ptr, TRef (_, _, rk) ->
+      let++ ptr, acc = fn init ptr (get_pointee ty) rk in
+      (Ptr ptr, acc)
+  | Struct vs, TAdt { id = TAdtId adt_id; _ } ->
+      let fields = Crate.as_struct adt_id in
+      let++ vs, acc = fs2 init vs (field_tys fields) in
+      (Struct vs, acc)
+  | ( Array vs,
+      TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
+    ) ->
+      let++ vs, acc = fs init vs ty in
+      (Array vs, acc)
+  | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
+      let++ vs, acc = fs2 init vs types in
+      (Tuple vs, acc)
+  | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
+      let variants = Crate.as_enum adt_id in
+      let* var =
+        match_on variants ~constr:(fun (v : Types.variant) ->
+            value_of_scalar v.discriminant ==?@ d)
+      in
+      match var with
+      | Some var ->
+          let++ vs, acc = fs2 init vs (field_tys Types.(var.fields)) in
+          (Enum (d, vs), acc)
+      | None -> Result.ok (v, init))
+  | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
+      let fields = Crate.as_union adt_id in
+      let field = Types.FieldId.nth fields fid in
+      let++ v, acc = f init v field.field_ty in
+      (Union (fid, v), acc)
+  | v, _ -> Result.ok (v, init)
+
+(** [is_abi_compatible ty1 ty2] is true if a function expecting an argument of
+    type [ty1] can be called with an argument of type [ty2].
+
+    The full specification is available at:
+    https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility *)
+let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
+  match (ty1, ty2) with
+  (* Refs and raw pointers are ABI-compatible if they have the same metadata type
+    FIXME: we only handle slices/strings, so we can just check if they're both DSTs;
+           once we handle [dyn] we need to actually check the metadata type *)
+  | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
+    ->
+      is_dst ty1 = is_dst ty2
+  | TLiteral (TUInt uint1), TLiteral (TUInt uint2) ->
+      size_of_uint_ty uint1 = size_of_uint_ty uint2
+  | TLiteral (TInt int1), TLiteral (TInt int2) ->
+      size_of_int_ty int1 = size_of_int_ty int2
+  | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
+    ->
+      true
+  (* FIXME: Function pointers are compatible if they have the same ABI-string (unsupported) *)
+  | TFnPtr _, TFnPtr _ -> true
+  | _ ->
+      let[@inline] is_zst ty =
+        let layout = layout_of ty in
+        layout.size = 0 && layout.align = 1
+      in
+      (* ZSTs with align 1 are compatible *)
+      if is_zst ty1 && is_zst ty2 then true else Types.equal_ty ty1 ty2

@@ -2,7 +2,6 @@ open Soteria_terminal.Color
 module Wpst_interp = Interp.Make (State)
 module Compo_res = Soteria_symex.Compo_res
 open Syntaxes.FunctionWrap
-open Cmd
 open Charon
 
 exception ExecutionError of string
@@ -12,22 +11,21 @@ module Cleaner = struct
   let files = ref []
   let touched file = files := file :: !files
   let cleanup () = List.iter Sys.remove !files
-  let init ~clean () = if clean then at_exit cleanup
+  let () = at_exit (fun () -> if !Config.current.cleanup then cleanup ())
 end
 
+let config_set (config : Config.global) =
+  Solver_config.set config.solver;
+  Soteria_logs.Config.check_set_and_lock config.logs;
+  Soteria_terminal.Config.set_and_lock config.terminal;
+  Config.set config.rusteria
+
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
-  let file_name =
-    if Filename.is_relative file_name then
-      Filename.concat (Sys.getcwd ()) file_name
-    else file_name
-  in
-  let parent_folder = Filename.dirname file_name in
-  let output = Printf.sprintf "%s.llbc.json" file_name in
-  (if not no_compile then
+let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
+  (if not !Config.current.no_compile then
      (* TODO: make these flags! *)
-     let cmd = plugin.mk_cmd ~input:file_name ~output () in
-     let res = exec_cmd @@ "cd " ^ parent_folder ^ " && " ^ build_cmd cmd in
+     let cmd = plugin.mk_cmd ~input ~output () in
+     let res = Plugin.Cmd.exec_in ~mode pwd cmd in
      if res = 0 then Cleaner.touched output
      else
        let msg = Fmt.str "Failed compilation to ULLBC: code %d" res in
@@ -41,9 +39,9 @@ let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
   in
   match crate with
   | Ok crate ->
-      if not no_compile then (
-        (* save crate to local file *)
-        let crate_file = Printf.sprintf "%s.crate" file_name in
+      if not !Config.current.no_compile then (
+        (* save pretty-printed crate to local file *)
+        let crate_file = Printf.sprintf "%s.crate" output in
         let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
         let oc = open_out_bin crate_file in
         output_string oc str;
@@ -52,17 +50,36 @@ let parse_ullbc_of_file ~no_compile ~(plugin : Plugin.root_plugin) file_name =
       crate
   | Error err -> raise (CharonError err)
 
-let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
-    (crate : Charon.UllbcAst.crate) =
+(** Given a Rust file, parse it into LLBC, using Charon. *)
+let parse_ullbc_of_file ?(with_obol = false) ~(plugin : Plugin.root_plugin)
+    file_name =
+  let file_name =
+    if Filename.is_relative file_name then
+      Filename.concat (Sys.getcwd ()) file_name
+    else file_name
+  in
+  let parent_folder = Filename.dirname file_name in
+  let output = Printf.sprintf "%s.llbc.json" file_name in
+  let mode : Plugin.Cmd.mode = if with_obol then Obol else Rustc in
+  parse_ullbc ~mode ~plugin ~input:file_name ~output ~pwd:parent_folder
+
+(** Given a Rust file, parse it into LLBC, using Charon. *)
+let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
+  let crate_dir =
+    if Filename.is_relative crate then Filename.concat (Sys.getcwd ()) crate
+    else crate
+  in
+  let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
+  parse_ullbc ~mode:Cargo ~plugin ~input:"" ~output ~pwd:crate_dir
+
+let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
     |> List.filter_map plugin.get_entry_point
   in
   if List.is_empty entry_points then
     raise (ExecutionError "No entry points found");
-  let exec_fun =
-    Wpst_interp.exec_fun ~ignore_leaks ~args:[] ~state:State.empty
-  in
+  let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
   let@ () = Crate.with_crate crate in
   let outcomes =
     entry_points
@@ -125,21 +142,10 @@ let exec_main ?(ignore_leaks = false) ~(plugin : Plugin.root_plugin)
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
-let exec_main_and_print log_config term_config solver_config no_compile clean
-    ignore_leaks ignore_aliasing kani miri file_name =
-  Solver_config.set solver_config;
-  Soteria_logs.Config.check_set_and_lock log_config;
-  Soteria_terminal.Config.set_and_lock term_config;
-  Cleaner.init ~clean ();
-  Tree_borrow.set_enabled (not ignore_aliasing);
-
+let exec_and_output_crate ~plugin compile_fn =
   match
-    let plugin =
-      Plugin.merge_ifs
-        [ (true, Plugin.default); (kani, Plugin.kani); (miri, Plugin.miri) ]
-    in
-    let crate = parse_ullbc_of_file ~no_compile ~plugin file_name in
-    exec_main ~ignore_leaks ~plugin crate
+    let crate = compile_fn () in
+    exec_main ~plugin crate
   with
   | Ok res ->
       Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Note
@@ -164,16 +170,15 @@ let exec_main_and_print log_config term_config solver_config no_compile clean
   | Error res ->
       Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error
         "Found issues";
-      (res
-      |> List.iter @@ fun (errs, entry_name, ntotal) ->
-         let n = List.length res in
-         Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" (pp_style `Bold)
-           entry_name pp_branches n ntotal;
-         List.iter
-           (fun (error, call_trace) ->
-             Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace
-               ~error)
-           (List.sort_uniq Stdlib.compare errs));
+      let ( let@@ ) f x = List.iter x f in
+      let () =
+        let@@ errs, entry_name, ntotal = res in
+        let n = List.length errs in
+        Fmt.pr "@\n%a: error in %a (out of %d):@\n@?" (pp_style `Bold)
+          entry_name pp_branches n ntotal;
+        let@@ error, call_trace = List.sort_uniq Stdlib.compare errs in
+        Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error
+      in
       exit 1
   | exception Plugin.PluginError e ->
       Fmt.kstr
@@ -190,3 +195,21 @@ let exec_main_and_print log_config term_config solver_config no_compile clean
         (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
         "Fatal (Charon): %s" e;
       exit 3
+
+let exec_rustc config file_name =
+  config_set config;
+  let plugin = Plugin.create_using_current_config () in
+  let compile () = parse_ullbc_of_file ~plugin file_name in
+  exec_and_output_crate ~plugin compile
+
+let exec_cargo config crate_dir =
+  config_set config;
+  let plugin = Plugin.create_using_current_config () in
+  let compile () = parse_ullbc_of_crate ~plugin crate_dir in
+  exec_and_output_crate ~plugin compile
+
+let exec_obol config file_name =
+  config_set config;
+  let plugin = Plugin.create_using_current_config () in
+  let compile () = parse_ullbc_of_file ~with_obol:true ~plugin file_name in
+  exec_and_output_crate ~plugin compile

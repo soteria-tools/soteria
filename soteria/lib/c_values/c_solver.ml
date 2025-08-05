@@ -1,7 +1,8 @@
 module Var = Svalue.Var
 module L = Soteria_logs.Logs.L
 
-module Make_incremental (Intf : Solver_interface.S) = struct
+module Make_incremental (Analysis : Analyses.S) (Intf : Solver_interface.S) =
+struct
   module Value = Typed
 
   module Var_counter = Var.Incr_counter_mut (struct
@@ -66,6 +67,7 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     save_counter : Save_counter.t;
     var_counter : Var_counter.t;
     state : Solver_state.t;
+    analysis : Analysis.t;
   }
 
   let init () =
@@ -76,18 +78,21 @@ module Make_incremental (Intf : Solver_interface.S) = struct
       save_counter = Save_counter.init ();
       var_counter = Var_counter.init ();
       state = Solver_state.init ();
+      analysis = Analysis.init ();
     }
 
   let save solver =
     Var_counter.save solver.var_counter;
     Save_counter.save solver.save_counter;
     Solver_state.save solver.state;
+    Analysis.save solver.analysis;
     Intf.push solver.z3_exe 1
 
   let backtrack_n solver n =
     Var_counter.backtrack_n solver.var_counter n;
     Solver_state.backtrack_n solver.state n;
     Save_counter.backtrack_n solver.save_counter n;
+    Analysis.backtrack_n solver.analysis n;
     Intf.pop solver.z3_exe n
 
   (* Initialise and reset *)
@@ -99,6 +104,7 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     Save_counter.reset solver.save_counter;
     Var_counter.reset solver.var_counter;
     Solver_state.reset solver.state;
+    Analysis.reset solver.analysis;
     (* We need to pop the initial push, so we go back to the state before the first push *)
     Intf.pop solver.z3_exe (save_counter + 1);
     (* Make sure the basic definitions are saved again *)
@@ -143,8 +149,10 @@ module Make_incremental (Intf : Solver_interface.S) = struct
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
-    Solver_state.add_constraint solver.state v;
-    Intf.add_constraint solver.z3_exe (Typed.untyped v)
+    (* the incremental solver doesn't need to dirty variables *)
+    let v, _ = Analysis.add_constraint solver.analysis (Typed.untyped v) in
+    Solver_state.add_constraint solver.state (Typed.type_ v);
+    Intf.add_constraint solver.z3_exe v
 
   (* Incremental doesn't allow for caching queries... *)
   let sat solver =
@@ -160,10 +168,15 @@ module Make_incremental (Intf : Solver_interface.S) = struct
             L.info (fun m -> m "Solver returned unknown");
             Unknown)
 
-  let as_values solver = Solver_state.to_value_list solver.state
+  let as_values solver =
+    let pc = Solver_state.to_value_list solver.state in
+    let intervals = Analysis.encode Typed.v_true solver.analysis in
+    Iter.union ~eq:Typed.equal ~hash:Typed.hash (Iter.of_list pc)
+      (Typed.split_ands intervals)
+    |> Iter.to_list
 end
 
-module Make (Intf : Solver_interface.S) = struct
+module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
   module Value = Typed
 
   module Var_counter = Var.Incr_counter_mut (struct
@@ -171,14 +184,20 @@ module Make (Intf : Solver_interface.S) = struct
   end)
 
   module Solver_state = struct
+    (** Inside a slot, we either have an assertion, or a marker indicating that
+        all assertions relating to a variable may need to be rechecked -- for
+        instance because an auxiliary analysis has new information about it that
+        is not directly in the PC. *)
+    type slot_content =
+      | Asrt of Typed.sbool Typed.t [@printer Typed.ppa]
+      | Dirty of Var.Set.t [@printer Fmt.(iter ~sep:comma) Var.Set.iter Var.pp]
+    [@@deriving show]
+
     (** Each slot holds a symbolic boolean, as well a boolean indicating if it
         was checked to be satisfiable. The boolean is mutable and can be mutated
         even by future branches! If a branch downstream is satisfiable, then so
         is any element on the path condition. *)
-    type slot = {
-      value : Typed.sbool Typed.t; [@printer Typed.ppa]
-      mutable checked : bool;
-    }
+    type slot = { value : slot_content; mutable checked : bool }
     [@@deriving show]
 
     (* Invariants: the PC only has checked things, and then only unchecked things. *)
@@ -206,8 +225,14 @@ module Make (Intf : Solver_interface.S) = struct
             if Typed.equal v Typed.v_false then (
               Dynarray.clear last;
               (* We mark false as unchecked to make sure trivial_truthiness doesn't infer the wrong thing. *)
-              Dynarray.add_last last { value = Typed.v_false; checked = false })
-            else Dynarray.add_last last { value = v; checked = false }
+              Dynarray.add_last last
+                { value = Asrt Typed.v_false; checked = false })
+            else Dynarray.add_last last { value = Asrt v; checked = false }
+
+    let dirty_variable (t : t) v =
+      match Dynarray.find_last t with
+      | None -> failwith "dirty_variable: empty array"
+      | Some last -> Dynarray.add_last last { value = Dirty v; checked = false }
 
     let to_seq_rev (t : t) =
       Seq.concat_map Dynarray.to_seq_rev (Dynarray.to_seq_rev t)
@@ -222,21 +247,29 @@ module Make (Intf : Solver_interface.S) = struct
       | Nil -> Some true (* The empty constraint is satisfiable *)
       | Cons ({ checked = true; _ }, _) ->
           Some true (* All constraints have been checked to be sat *)
-      | Cons ({ value; _ }, _) when Typed.(equal value v_false) -> Some false
+      | Cons ({ value = Asrt value; _ }, _) when Typed.(equal value v_false) ->
+          Some false
       | _ -> None
 
     (* We check if the thing contains the value itself, or its negation. *)
     let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
       let neg_v = Typed.not v in
       Dynarray.find_map
-        (Dynarray.find_map (fun { value; _ } ->
-             if Typed.equal value v then Some true
-             else if Typed.equal value neg_v then Some false
-             else None))
+        (Dynarray.find_map (function
+          | { value = Asrt value; _ } ->
+              if Typed.equal value v then Some true
+              else if Typed.equal value neg_v then Some false
+              else None
+          | _ -> None))
         t
 
+    (** Iterate over the assertions in the PC. *)
     let iter (t : t) f =
-      Dynarray.iter (Dynarray.iter (fun { value; _ } -> f value)) t
+      Dynarray.iter
+        (Dynarray.iter (function
+          | { value = Asrt value; _ } -> f value
+          | { value = Dirty _; _ } -> ()))
+        t
 
     let to_value_list (t : t) = Iter.to_rev_list (iter t)
 
@@ -275,7 +308,7 @@ module Make (Intf : Solver_interface.S) = struct
         Var.Hashset.add var_set v;
         if Var.Hashset.cardinal var_set <> prev_size then changed := true
       in
-      let relevant vars = Iter.exists (Var.Hashset.mem var_set) vars in
+      let relevant = Iter.exists (Var.Hashset.mem var_set) in
       (* We need to reach some kind of fixpoint *)
       let rec aux_checked others seq =
         match seq () with
@@ -284,7 +317,7 @@ module Make (Intf : Solver_interface.S) = struct
               changed := false;
               aux_checked Seq.empty others)
             else ()
-        | Seq.Cons (({ value; _ } as slot), rest) ->
+        | Seq.Cons (({ value = Asrt value; _ } as slot), rest) ->
             let vars = vars value in
             if relevant vars then (
               add_vars vars;
@@ -293,13 +326,19 @@ module Make (Intf : Solver_interface.S) = struct
             else
               let others = fun () -> Seq.Cons (slot, others) in
               aux_checked others rest
+        | Seq.Cons ({ value = Dirty _; _ }, rest) ->
+            (* A dirty checked variable can be ignored *)
+            aux_checked others rest
       in
       let rec aux seq =
         match seq () with
         | Seq.Nil -> ()
-        | Cons ({ value; checked = false }, rest) ->
+        | Cons ({ value = Asrt value; checked = false }, rest) ->
             Dynarray.add_last to_encode value;
             add_vars_raw (vars value);
+            aux rest
+        | Cons ({ value = Dirty vars; checked = false }, rest) ->
+            add_vars_raw (fun f -> Var.Set.iter f vars);
             aux rest
         | Cons ({ checked = true; _ }, _) -> aux_checked Seq.empty seq
       in
@@ -348,6 +387,7 @@ module Make (Intf : Solver_interface.S) = struct
     vars : Declared_vars.t;
     save_counter : Save_counter.t;
     state : Solver_state.t;
+    analysis : Analysis.t;
   }
 
   let init () =
@@ -359,17 +399,20 @@ module Make (Intf : Solver_interface.S) = struct
       save_counter = Save_counter.init ();
       vars = Declared_vars.init ();
       state = Solver_state.init ();
+      analysis = Analysis.init ();
     }
 
   let save solver =
     Declared_vars.save solver.vars;
     Save_counter.save solver.save_counter;
-    Solver_state.save solver.state
+    Solver_state.save solver.state;
+    Analysis.save solver.analysis
 
   let backtrack_n solver n =
     Declared_vars.backtrack_n solver.vars n;
     Solver_state.backtrack_n solver.state n;
-    Save_counter.backtrack_n solver.save_counter n
+    Save_counter.backtrack_n solver.save_counter n;
+    Analysis.backtrack_n solver.analysis n
 
   (* Initialise and reset *)
 
@@ -379,10 +422,13 @@ module Make (Intf : Solver_interface.S) = struct
     if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
     Save_counter.reset solver.save_counter;
     Declared_vars.reset solver.vars;
-    Solver_state.reset solver.state
+    Solver_state.reset solver.state;
+    Analysis.reset solver.analysis
 
   let fresh_var solver ty =
     Declared_vars.fresh solver.vars (Typed.untype_type ty)
+
+  let[@inline] as_untyped f v = v |> Typed.untyped |> f |> Typed.type_
 
   let rec simplify' solver (v : Svalue.t) : Svalue.t =
     match v.node.kind with
@@ -425,27 +471,44 @@ module Make (Intf : Solver_interface.S) = struct
                 else Svalue.ite sg se1 se2
             | _ -> v))
 
-  and simplify solver (v : 'a Typed.t) : 'a Typed.t =
-    v |> Typed.untyped |> simplify' solver |> Typed.type_
+  and simplify solver : 'a Typed.t -> 'a Typed.t = as_untyped (simplify' solver)
 
   let add_constraints solver ?(simplified = false) vs =
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
-    Solver_state.add_constraint solver.state v
+    let v, vars = Analysis.add_constraint solver.analysis (Typed.untyped v) in
+    Solver_state.add_constraint solver.state (Typed.type_ v);
+    if not (Var.Set.is_empty vars) then
+      Solver_state.dirty_variable solver.state vars
 
   let memo_sat_check_tbl : Soteria_symex.Solver.result Hashtbl.Hint.t =
     Hashtbl.Hint.create 1023
 
   let trivial_model_works to_check =
     (* We try a trivial model where replacing each variable with name
-    [|n|] with the corresponding integer [n].
+    [|n|] with the corresponding integer [n]; except if an assertion
+    [|n| == v] exists, in which case we replace it with the value [v].
     If the constraint evaluates to true, then it is satisfiable. *)
+    let v_eqs = Var.Hashtbl.create 8 in
+    Svalue.split_ands to_check (fun v ->
+        match v.node.kind with
+        | Binop
+            ( Eq,
+              { node = { kind = Var n; _ }; _ },
+              ({ node = { kind = Int _; _ }; _ } as x) )
+        | Binop
+            ( Eq,
+              ({ node = { kind = Int _; _ }; _ } as x),
+              { node = { kind = Var n; _ }; _ } ) ->
+            Var.Hashtbl.add v_eqs n x
+        | _ -> ());
     let eval_var v ty =
       match ty with
-      | Svalue.TInt | Svalue.TLoc ->
+      | Svalue.TInt | Svalue.TLoc -> (
           let i = Var.to_int v in
-          Some (Svalue.int i)
+          try Some (Var.Hashtbl.find v_eqs v)
+          with Not_found -> Some (Svalue.int i))
       | _ -> None
     in
     let res = Eval.eval ~eval_var to_check in
@@ -471,11 +534,11 @@ module Make (Intf : Solver_interface.S) = struct
 
   let check_sat_raw_memo solver relevant_vars to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hashcons.tag with
+    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver relevant_vars to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hashcons.tag result;
+        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
         result
 
   let sat solver =
@@ -488,16 +551,20 @@ module Make (Intf : Solver_interface.S) = struct
         in
         (* This will put the check in a somewhat-normal form, to increase cache hits. *)
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
-        let answer = check_sat_raw_memo solver relevant_vars to_check in
-        let () =
-          match answer with
-          | Sat -> Solver_state.mark_checked solver.state
-          | _ -> ()
+        let to_check =
+          Analysis.encode ~vars:relevant_vars to_check solver.analysis
         in
+        let answer = check_sat_raw_memo solver relevant_vars to_check in
+        if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_values solver = Solver_state.to_value_list solver.state
+  let as_values solver =
+    let pc = Solver_state.to_value_list solver.state in
+    let analysis = Analysis.encode Typed.v_true solver.analysis in
+    Iter.union ~eq:Typed.equal ~hash:Typed.hash (Iter.of_list pc)
+      (Typed.split_ands analysis)
+    |> Iter.to_list
 end
 
-module Z3_incremental_solver = Make_incremental (Z3_exe)
-module Z3_solver = Make (Z3_exe)
+module Z3_incremental_solver = Make_incremental (Analyses.Interval) (Z3_exe)
+module Z3_solver = Make (Analyses.Interval) (Z3_exe)

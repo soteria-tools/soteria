@@ -14,13 +14,13 @@
   fmt.tty
   iter
   zarith
-  hashcons
   grace
   grace.ansi_renderer
   simple_smt
   printbox-text
   charon
-  dune-site)
+  dune-site
+  str)
  (flags :standard -open Soteria_std -open Soteria_c_values)
  (preprocess
   (pps ppx_deriving.std soteria.ppx))

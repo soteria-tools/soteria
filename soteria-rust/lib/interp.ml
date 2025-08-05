@@ -73,6 +73,23 @@ module InterpM (State : State_intf.S) = struct
     let++ res, _, state = f () store state in
     (res, state)
 
+  (** We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
+      without having to define it here. *)
+  let update_ref_tys_in
+      ~(f :
+         'acc -> full_ptr -> Types.ty -> Types.ref_kind -> (full_ptr * 'acc) t)
+      ~(init : 'acc) (v : 'a rust_val) (ty : Types.ty) :
+      (State.Sptr.t rust_val * 'acc) t =
+   fun store state ->
+    let f (acc, store, state) ptr ty rk =
+      let++ (res, acc), store, state = f acc ptr ty rk store state in
+      (res, (acc, store, state))
+    in
+    let++ res, (acc, store, state) =
+      Layout.update_ref_tys_in f (init, store, state) v ty
+    in
+    ((res, acc), store, state)
+
   module State = struct
     include State
 
@@ -174,11 +191,10 @@ module Make (State : State_intf.S) = struct
     | Some ptr_and_ty -> ok ptr_and_ty
     | None -> error `DeadVariable
 
-  let alloc_stack (locals : GAst.locals) args :
-      (full_ptr * Types.ty) list InterpM.t =
+  let alloc_stack (locals : GAst.locals) args : (full_ptr * Types.ty) list t =
     if List.compare_length_with args locals.arg_count <> 0 then
-      Fmt.failwith "Function expects %d arguments, but got %d" locals.arg_count
-        (List.length args);
+      failwith
+        "Function called with wrong arg count, should have been caught before";
     (* create a store with all types *)
     let* () =
       map_store @@ fun store ->
@@ -208,21 +224,14 @@ module Make (State : State_intf.S) = struct
         ~f:(fun protected ({ index; var_ty = ty; _ }, ptr) ->
           let index = Expressions.LocalId.to_int index in
           let value = List.nth args (index - 1) in
-          (* Passed references must be protected! *)
+          (* Passed (nested) references must be protected and be valid. *)
           let* value, protected' =
-            match (value, ty) with
-            | Ptr ptr, TRef (_, subty, mut) ->
+            update_ref_tys_in value ty ~init:protected
+              ~f:(fun acc ptr subty mut ->
                 let+ ptr' = State.protect ptr subty mut in
-                (Ptr ptr', (ptr', subty) :: protected)
-            | _ -> ok (value, protected)
+                (ptr', (ptr', subty) :: acc))
           in
-          let* () = State.store ptr ty value in
-          (* Ensure all passed references are valid, even nested ones! *)
-          let ptr_tys = Layout.ref_tys_in value ty in
-          let+ () =
-            fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
-                State.tb_load ptr ty)
-          in
+          let+ () = State.store ptr ty value in
           protected')
     in
     protected
@@ -236,9 +245,9 @@ module Make (State : State_intf.S) = struct
   let dealloc_store ?protected_address protected =
     let* () =
       fold_list protected ~init:() ~f:(fun () (ptr, ty) ->
-          InterpM.State.unprotect ptr ty)
+          State.unprotect ptr ty)
     in
-    let* store = InterpM.get_store () in
+    let* store = get_store () in
     fold_list (Store.bindings store) ~init:() ~f:(fun () (_, (ptr, _)) ->
         match (ptr, protected_address) with
         | None, _ -> ok ()
@@ -255,7 +264,7 @@ module Make (State : State_intf.S) = struct
         let fp = float_precision float_ty in
         ok (Base (Typed.float fp float_value))
     | CLiteral (VStr str) -> (
-        let* ptr_opt = InterpM.State.load_str_global str in
+        let* ptr_opt = State.load_str_global str in
         match ptr_opt with
         | Some v -> ok (Ptr v)
         | None ->
@@ -269,25 +278,45 @@ module Make (State : State_intf.S) = struct
               |> List.rev
             in
             let char_arr = Array chars in
-            let str_ty : Types.ty = mk_array_ty (TLiteral (TInteger U8)) len in
-            let* ptr, _ = InterpM.State.alloc_ty str_ty in
+            let str_ty : Types.ty = mk_array_ty (TLiteral (TUInt U8)) len in
+            let* ptr, _ = State.alloc_ty str_ty in
             let ptr = (ptr, Some (Typed.int len)) in
-            let* () = InterpM.State.store ptr str_ty char_arr in
-            let+ () = InterpM.State.store_str_global str ptr in
+            let* () = State.store ptr str_ty char_arr in
+            let+ () = State.store_str_global str ptr in
             Ptr ptr)
     | CFnPtr fn_ptr -> ok (ConstFn fn_ptr)
-    | CLiteral (VByteStr _) -> InterpM.not_impl "TODO: resolve const ByteStr"
-    | CTraitConst _ -> InterpM.not_impl "TODO: resolve const TraitConst"
-    | CRawMemory _ -> InterpM.not_impl "TODO: resolve const RawMemory"
-    | COpaque msg -> Fmt.kstr InterpM.not_impl "Opaque constant: %s" msg
-    | CVar _ -> InterpM.not_impl "TODO: resolve const Var (mono error)"
+    | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
+    (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
+    | CTraitConst (tref, "IS_ZST") ->
+        let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
+        let^+ size = Layout.size_of_s ty in
+        Base (Typed.int_of_bool (size ==@ 0s))
+    | CTraitConst (tref, "LAYOUT") ->
+        let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
+        let^ size = Layout.size_of_s ty in
+        let^+ align = Layout.align_of_s ty in
+        (* The alignment is a struct storing a value of the enum AlignmentEnum, where the
+           discriminant's value for variant N is 1 << N. *)
+        Struct [ Base size; Struct [ Enum (align, []) ] ]
+    | CTraitConst (_, name) ->
+        Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
+    | CRawMemory bytes ->
+        let value, _ =
+          List.fold_left
+            (fun (acc, i) x ->
+              let x = Z.shift_left (Z.of_int x) (8 * i) in
+              (Z.add acc x, i + 1))
+            (Z.zero, 0) bytes
+        in
+        ok (Base (Typed.int_z value))
+    | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
+    | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
   (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ({ kind; ty } : Expressions.place) : full_ptr InterpM.t
-      =
+  let rec resolve_place ({ kind; ty } : Expressions.place) : full_ptr t =
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v
@@ -387,25 +416,54 @@ module Make (State : State_intf.S) = struct
           (ptr', Some slice_len))
         else error `OutOfBounds
 
-  and resolve_function (fnop : GAst.fn_operand) : 'err fun_exec InterpM.t =
-    match fnop with
+  (** Resolve a function operand, returning a callable symbolic function to
+      execute it.
+
+      This function also handles validating the call; given the input types it
+      will be called with and the output type expected, it will make sure these
+      are the right types and in the right amount. *)
+  and resolve_function ~in_tys ~out_ty : GAst.fn_operand -> 'err fun_exec t =
+    function
+    (* For static calls we don't need to check types, that's what the type checker does. *)
     | FnOpRegular { func = FunId (FRegular fid); _ }
     | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
-        let fundef = Crate.get_fun fid in
-        L.info (fun g ->
-            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
-        match Std_funs.std_fun_eval fundef exec_fun with
-        | Some fn -> ok fn
-        | None -> ok (exec_fun fundef))
+        try
+          let fundef = Crate.get_fun fid in
+          L.info (fun g ->
+              g "Resolved function call to %a" Crate.pp_name
+                fundef.item_meta.name);
+          match Std_funs.std_fun_eval fundef exec_fun with
+          | Some fn -> ok fn
+          | None -> ok (exec_fun fundef)
+        with Crate.MissingDecl _ -> not_impl "Missing function declaration")
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics)
+    (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
         let* fn_ptr = State.load ~is_move:true fn_ptr_ptr place.ty in
-        let fn_ptr = as_ptr fn_ptr in
+        let* fn_ptr =
+          match fn_ptr with Ptr ptr -> ok ptr | _ -> error `UBDanglingPointer
+        in
         let* fn = State.lookup_fn fn_ptr in
+        let* () =
+          match fn.func with
+          | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
+              let fn = Crate.get_fun fid in
+              let rec check_tys l r =
+                match (l, r) with
+                | [], [] -> ok ()
+                | ty1 :: l, ty2 :: r ->
+                    if Layout.is_abi_compatible ty1 ty2 then check_tys l r
+                    else error `InvalidFnArgTys
+                | _ -> error `InvalidFnArgCount
+              in
+              check_tys (out_ty :: in_tys)
+                (fn.signature.output :: fn.signature.inputs)
+          | FunId (FBuiltin _) -> ok ()
+        in
         let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function fnop
+        resolve_function ~in_tys ~out_ty fnop
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
   and resolve_global (g : Types.global_decl_id) =
@@ -441,7 +499,9 @@ module Make (State : State_intf.S) = struct
         let ty = loc.ty in
         let* ptr = resolve_place loc in
         match Layout.as_zst ty with
-        | Some zst -> ok zst
+        | Some zst ->
+            let+ () = State.check_ptr_align (fst ptr) ty in
+            zst
         | None ->
             let is_move =
               (* TODO: properly detect if ty has the Copy trait, in which case is_move is
@@ -465,21 +525,18 @@ module Make (State : State_intf.S) = struct
     match expr with
     | Use op -> eval_operand op
     | RvRef (place, borrow) ->
-        let* ptr = resolve_place place in
+        let* ((rptr, _) as ptr) = resolve_place place in
+        let* () = State.check_ptr_align rptr place.ty in
         let+ ptr' = State.borrow ptr place.ty borrow in
         Ptr ptr'
     | Global { id; _ } ->
         let* ptr = resolve_global id in
         let decl = Crate.get_global id in
         State.load ptr decl.ty
-    | GlobalRef ({ id; _ }, mut) ->
-        (* TODO: handle mutability *)
-        let global = Crate.get_global id in
-        let* ptr = resolve_global id in
-        let borrow : Expressions.borrow_kind =
-          match mut with RMut -> BMut | RShared -> BShared
-        in
-        let+ ptr = State.borrow ptr global.ty borrow in
+    | GlobalRef ({ id; _ }, _) ->
+        (* References to globals don't reborrow; otherwise this test fails:
+          https://github.com/rust-lang/miri/blob/9d77dd818c01240647004361c1201c66ec061c08/tests/pass/static_mut.rs *)
+        let+ ptr = resolve_global id in
         Ptr ptr
     | UnaryOp (op, e) -> (
         let* v = eval_operand e in
@@ -488,16 +545,16 @@ module Make (State : State_intf.S) = struct
             let v = as_base_of ~ty:Typed.t_int v in
             match type_of_operand e with
             | TLiteral TBool -> ok (Base (Typed.not_int_bool v))
-            | TLiteral (TInteger i_ty) ->
-                let size = Layout.size_of_int_ty i_ty in
+            | TLiteral ((TInt _ | TUInt _) as i_ty) ->
+                let size = Layout.size_of_literal_ty i_ty * 8 in
                 let signed = Layout.is_signed i_ty in
                 let v = Typed.bit_not ~size ~signed v in
                 ok (Base v)
             | ty ->
                 Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty)
-        | Neg -> (
+        | Neg _ -> (
             match type_of_operand e with
-            | TLiteral (TInteger _) ->
+            | TLiteral (TInt _ | TUInt _) ->
                 let v = as_base_of ~ty:Typed.t_int v in
                 ok (Base ~-v)
             | TLiteral (TFloat _) ->
@@ -509,15 +566,9 @@ module Make (State : State_intf.S) = struct
             | _ -> not_impl "Invalid type for Neg")
         | PtrMetadata -> (
             match v with
-            | Ptr (_, None) -> ok (Tuple [])
+            | Ptr (_, None) | Base _ -> ok (Tuple [])
             | Ptr (_, Some v) -> ok (Base v)
             | _ -> not_impl "Invalid value for PtrMetadata")
-        | ArrayToSlice (_, _, len) -> (
-            match v with
-            | Ptr (ptr, None) ->
-                let len = Typed.int @@ int_of_const_generic len in
-                ok (Ptr (ptr, Some len))
-            | _ -> not_impl "Invalid value for ArrayToSlice")
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr in
@@ -527,33 +578,31 @@ module Make (State : State_intf.S) = struct
             State.lift_err
             @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
-        | Cast (CastUnsize (_, TRef (_, TDynTrait _, _)))
-        | Cast (CastUnsize (_, TRawPtr (TDynTrait _, _))) ->
+        | Cast (CastUnsize (_, _, MetaVTablePtr _)) ->
             not_impl "Unsupported: dyn"
-        | Cast (CastUnsize (from_ty, _)) ->
-            let rec get_size : Types.ty -> Types.const_generic t = function
-              | Types.TRawPtr (ty, _)
-              | TRef (_, ty, _)
-              | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
-                  get_size ty
-              | TAdt { id = TAdtId id; _ } -> (
-                  let type_decl = Crate.get_adt id in
-                  match type_decl.kind with
-                  | Struct (_ :: _ as fields) ->
-                      get_size (List.last fields).field_ty
-                  | _ -> not_impl "Couldn't get size in CastUnsize")
-              | TAdt
-                  {
-                    id = TBuiltin TArray;
-                    generics = { const_generics = [ size ]; _ };
-                  } ->
-                  ok size
-              | _ -> not_impl "Couldn't get size in CastUnsize"
+        | Cast (CastUnsize (_, _, MetaUnknown)) ->
+            not_impl "Unknown unsize kind"
+        | Cast (CastUnsize (_, _, MetaLength length)) ->
+            let rec with_ptr_meta meta : Sptr.t rust_val -> Sptr.t rust_val t =
+              function
+              | Ptr (v, _) -> ok (Ptr (v, Some meta))
+              | ( Struct (_ :: _ as fs)
+                | Array (_ :: _ as fs)
+                | Tuple (_ :: _ as fs) ) as v -> (
+                  match List.rev fs with
+                  | last :: rest -> (
+                      let+ last = with_ptr_meta meta last in
+                      let fs = List.rev (last :: rest) in
+                      match v with
+                      | Struct _ -> Struct fs
+                      | Array _ -> Array fs
+                      | Tuple _ -> Tuple fs
+                      | _ -> assert false)
+                  | [] -> not_impl "Couldn't set pointer meta in CastUnsize")
+              | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
             in
-            let+ size = get_size from_ty in
-            let ptr, _ = as_ptr v in
-            let size = Typed.int @@ int_of_const_generic size in
-            Ptr (ptr, Some size)
+            let size = Typed.int_z @@ z_of_const_generic length in
+            with_ptr_meta size v
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
@@ -570,7 +619,7 @@ module Make (State : State_intf.S) = struct
             | Ge | Gt | Lt | Le -> (
                 let^ v1, v2, ty = cast_checked2 v1 v2 in
                 match Typed.untype_type ty with
-                | Svalue.TInt ->
+                | TInt ->
                     let op =
                       match op with
                       | Ge -> Typed.geq
@@ -600,35 +649,23 @@ module Make (State : State_intf.S) = struct
                 let^^+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else Typed.not_int_bool res in
                 Base (res :> T.cval Typed.t)
-            | Add | Sub | Mul | Div | Rem | Shl | Shr ->
-                let ty =
-                  match type_of_operand e1 with
-                  | TLiteral ty -> ty
-                  | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
-                in
-                let^^+ res = Core.eval_lit_binop op ty v1 v2 in
-                Base res
-            | CheckedAdd | CheckedSub | CheckedMul ->
+            | Add om | Sub om | Mul om | Div om | Rem om | Shl om | Shr om -> (
+                match (om, type_of_operand e1) with
+                | OWrap, TLiteral ((TInt _ | TUInt _) as ty) ->
+                    let^^ v = Core.safe_binop op ty v1 v2 in
+                    let^+ res = Core.wrap_value ty v in
+                    Base res
+                | _, TLiteral ty ->
+                    let^^+ res = Core.eval_lit_binop op ty v1 v2 in
+                    Base res
+                | _, _ -> not_impl "Unexpected type in binop")
+            | AddChecked | SubChecked | MulChecked ->
                 let ty =
                   match type_of_operand e1 with
                   | TLiteral ty -> ty
                   | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
                 in
                 State.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
-            | WrappingAdd | WrappingSub | WrappingMul | WrappingShl
-            | WrappingShr -> (
-                match type_of_operand e1 with
-                | TLiteral (TInteger ty as litty) ->
-                    let^^ v = Core.safe_binop op litty v1 v2 in
-                    let^+ res = Core.wrap_value ty v in
-                    Base res
-                | TLiteral ty ->
-                    (* Wrapping operations can apply to floating points too, but in that case
-                       it is equivalent to the regular operation. *)
-                    let^^+ res = Core.eval_lit_binop op ty v1 v2 in
-                    Base res
-                | ty ->
-                    Fmt.kstr not_impl "Unexpected type in binop: %a" pp_ty ty)
             | Cmp ->
                 let^ v1, v2, ty = cast_checked2 v1 v2 in
                 if Typed.equal_ty ty Typed.t_ptr then error `UBPointerComparison
@@ -644,14 +681,14 @@ module Make (State : State_intf.S) = struct
             | BitOr | BitAnd | BitXor ->
                 let^ ity =
                   match type_of_operand e1 with
-                  | TLiteral (TInteger ity) -> return ity
-                  | TLiteral TBool -> return Values.U8
-                  | TLiteral TChar -> return Values.U32
+                  | TLiteral ((TInt _ | TUInt _) as ity) -> return ity
+                  | TLiteral TBool -> return (Values.TUInt U8)
+                  | TLiteral TChar -> return (Values.TUInt U32)
                   | ty ->
                       Fmt.kstr Rustsymex.not_impl
                         "Unsupported type for bitwise operation: %a" pp_ty ty
                 in
-                let size = 8 * Layout.size_of_int_ty ity in
+                let size = 8 * Layout.size_of_literal_ty ity in
                 let signed = Layout.is_signed ity in
                 let^ v1 = cast_checked ~ty:Typed.t_int v1 in
                 let^+ v2 = cast_checked ~ty:Typed.t_int v2 in
@@ -699,19 +736,18 @@ module Make (State : State_intf.S) = struct
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
-    | Discriminant (place, kind) -> (
+    | Discriminant place -> (
         let* loc, _ = resolve_place place in
-        let variants = Crate.as_enum kind in
+        let enum, _ = TypesUtils.ty_as_custom_adt place.ty in
+        let variants = Crate.as_enum enum in
         match variants with
         (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
         | [ { fields = []; discriminant; _ } ] ->
-            let discr = Typed.int_z discriminant.value in
-            ok (Base discr)
+            ok (Base (value_of_scalar discriminant))
         | var :: _ ->
-            let int_ty = var.discriminant.int_ty in
-            let layout = Layout.of_variant var in
+            let layout = Layout.of_variant enum var in
             let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
-            let discr_ty = Types.TLiteral (TInteger int_ty) in
+            let discr_ty = Layout.enum_discr_ty enum in
             let^^ loc = Sptr.offset loc discr_ofs in
             State.load (loc, None) discr_ty
         | [] -> Fmt.kstr not_impl "Unsupported discriminant for empty enums")
@@ -759,18 +795,32 @@ module Make (State : State_intf.S) = struct
         let+ values = eval_operand_list operands in
         Array values
     (* Raw pointer construction *)
-    | Aggregate (AggregatedRawPtr (_, _), operands) -> (
+    | Aggregate (AggregatedRawPtr (_, _), operands) ->
         let* values = eval_operand_list operands in
-        match values with
-        | [ Ptr (ptr, _); Base meta ] -> ok (Ptr (ptr, Some meta))
-        | [ Base v; Base meta ] ->
-            let^+ v = cast_checked ~ty:Typed.t_int v in
-            let ptr = Sptr.null_ptr_of v in
-            Ptr (ptr, Some meta)
-        | _ ->
-            Fmt.kstr not_impl "AggregatedRawPtr: invalid arguments %a"
-              Fmt.(list ~sep:comma pp_rust_val)
-              values)
+        let ptr, meta =
+          match values with
+          | [ ptr; meta ] -> (ptr, meta)
+          | _ -> failwith "Non-2 arguments in AggregatedRawPtr?"
+        in
+        let* ptr =
+          match ptr with
+          | Ptr (ptr, _) -> ok ptr
+          | Base v ->
+              let^+ v = cast_checked ~ty:Typed.t_int v in
+              Sptr.null_ptr_of v
+          | _ ->
+              Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
+                pp_rust_val ptr
+        in
+        let+ meta =
+          match meta with
+          | Tuple [] -> ok None
+          | Base meta -> ok (Some meta)
+          | _ ->
+              Fmt.kstr not_impl "Unexpected meta in AggregatedRawPtr: %a"
+                pp_rust_val meta
+        in
+        Ptr (ptr, meta)
     (* Array repetition *)
     | Repeat (value, _, len) ->
         let+ value = eval_operand value in
@@ -794,7 +844,7 @@ module Make (State : State_intf.S) = struct
         in
         Base len
 
-  and exec_stmt stmt : unit InterpM.t =
+  and exec_stmt stmt : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
     L.trace (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content);
@@ -819,9 +869,24 @@ module Make (State : State_intf.S) = struct
             let* () = State.free ptr in
             map_store (Store.add local (None, ty))
         | None -> ok ())
-    | Drop place ->
-        (* TODO: this is probably super wrong, drop glue etc. *)
+    | Drop (place, _trait) ->
+        (* TODO: We now have the trait to get the Drop implementation, however we currently
+           don't monomorphise trait implementations, so this is useless. *)
         let* place_ptr = resolve_place place in
+        let* () =
+          match place.ty with
+          | TAdt { id = TAdtId id; _ } -> (
+              let adt = Crate.get_adt id in
+              match (adt.item_meta.lang_item, List.last adt.item_meta.name) with
+              | Some "owned_box", PeMonomorphized { types = [ _; _ ]; _ } -> (
+                  let* box = State.load place_ptr place.ty in
+                  match box with
+                  | Struct [ Struct [ Struct [ Ptr ptr ]; _ ]; _ ] ->
+                      State.free ptr
+                  | _ -> ok ())
+              | _ -> ok ())
+          | _ -> ok ()
+        in
         State.uninit place_ptr place.ty
     | Assert { cond; expected; on_failure } -> (
         let* cond = eval_operand cond in
@@ -844,12 +909,19 @@ module Make (State : State_intf.S) = struct
               error (`Panic name))
     | CopyNonOverlapping { src; dst; count } ->
         let ty = get_pointee (type_of_operand src) in
-        let* args = eval_operand_list [ src; dst; count ] in
-        let+ _ = lift_state_op @@ Std_funs.Std.copy true ty ~args in
+        let* src = eval_operand src in
+        let* dst = eval_operand dst in
+        let* count = eval_operand count in
+        let+ _ =
+          lift_state_op
+          @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
+        in
         ()
+    | Deinit place ->
+        let* place_ptr = resolve_place place in
+        State.uninit place_ptr place.ty
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
-    | Deinit _ -> not_impl "Unsupported statement: Deinit"
 
   and exec_block ~(body : UllbcAst.expr_body)
       ({ statements; terminator } : UllbcAst.block) =
@@ -860,7 +932,9 @@ module Make (State : State_intf.S) = struct
     let@ () = with_loc ~loc in
     match term with
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
-        let* exec_fun = resolve_function func in
+        let in_tys = List.map type_of_operand args in
+        let out_ty = ty in
+        let* exec_fun = resolve_function ~in_tys ~out_ty func in
         let* args = eval_operand_list args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
@@ -942,7 +1016,8 @@ module Make (State : State_intf.S) = struct
               | Base discr -> fun (v, _) -> discr ==@ value_of_scalar v
               | Ptr (ptr, _) ->
                   fun (v, _) ->
-                    if Z.equal Z.zero v.value then Sptr.is_at_null_loc ptr
+                    if Z.equal Z.zero (z_of_scalar v) then
+                      Sptr.is_at_null_loc ptr
                     else failwith "Can't compare pointer with non-0 scalar"
               | _ ->
                   fun (v, _) ->
@@ -965,7 +1040,7 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun ~args (fundef : UllbcAst.fun_decl) state :
+  and exec_fun (fundef : UllbcAst.fun_decl) ~args state :
       (Sptr.t rust_val * State.t, 'e, 'f) Result.t =
     let open Rustsymex.Syntax in
     (* Put arguments in store *)
@@ -1001,11 +1076,11 @@ module Make (State : State_intf.S) = struct
         error_raw err)
 
   (* re-define this for the export, nowhere else: *)
-  let exec_fun ?(ignore_leaks = false) ~args ~state fundef =
+  let exec_fun ~args ~state fundef =
     let open Rustsymex.Syntax in
     let+- err, _ =
       let** value, state = exec_fun ~args fundef state in
-      if ignore_leaks then Result.ok (value, state)
+      if !Config.current.ignore_leaks then Result.ok (value, state)
       else
         let@ () = Rustsymex.with_loc ~loc:fundef.item_meta.span in
         let++ (), state = State.leak_check state in
