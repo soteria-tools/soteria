@@ -191,7 +191,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         open Rustsymex
 
         module M: (State: State_intf.S) -> sig
-            type rust_val := State.Sptr.t Charon_util.rust_val
+            type rust_val := State.Sptr.t Rust_val.t
             type ret := (rust_val * State.t, Error.t State.err * State.t, State.serialized list) Result.t
             type fun_exec := (
                 UllbcAst.fun_decl ->

@@ -21,21 +21,21 @@ let as_fmt_env () =
   let crate = get_crate () in
   PrintUllbcAst.Crate.crate_to_fmt_env crate
 
-let pp_name ft name =
-  let to_str = PrintTypes.name_to_string (as_fmt_env ()) in
-  Fmt.pf ft "%s" (to_str name)
+let[@inline] mk_pp to_string =
+ fun ft v ->
+  let to_str = to_string (as_fmt_env ()) in
+  Fmt.pf ft "%s" (to_str v)
 
-let pp_statement ft stt =
-  let to_str = PrintUllbcAst.Ast.statement_to_string (as_fmt_env ()) "" in
-  Fmt.pf ft "%s" (to_str stt)
+let[@inline] mk_pp_indent to_string =
+ fun ft v ->
+  let to_str = to_string (as_fmt_env ()) "" in
+  Fmt.pf ft "%s" (to_str v)
 
-let pp_terminator ft term =
-  let to_str = PrintUllbcAst.Ast.terminator_to_string (as_fmt_env ()) "" in
-  Fmt.pf ft "%s" (to_str term)
-
-let pp_fn_operand ft op =
-  let to_str = PrintUllbcAst.Ast.fn_operand_to_string (as_fmt_env ()) in
-  Fmt.pf ft "%s" (to_str op)
+let pp_name = mk_pp PrintTypes.name_to_string
+let pp_statement = mk_pp_indent PrintUllbcAst.Ast.statement_to_string
+let pp_terminator = mk_pp_indent PrintUllbcAst.Ast.terminator_to_string
+let pp_fn_operand = mk_pp PrintUllbcAst.Ast.fn_operand_to_string
+let pp_generic_args = mk_pp PrintTypes.generic_args_to_string
 
 let get_adt id =
   let crate = get_crate () in

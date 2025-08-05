@@ -1,15 +1,14 @@
 Basic code, reference gets invalidated
-  $ soteria-rust rustc raw-ptrs.rs --clean
-  note: Done, no errors found
-  
-  raw_ptrs::main: ran 1 branch
+  $ soteria-rust rustc raw-ptrs.rs --clean --no-timing
+  Compiling... done in <time>
+  note: raw_ptrs::main: done in <time>, ran 1 branch
   PC 1: true
+  
 
 Simple tree borrow violation
-  $ soteria-rust rustc simple-fail.rs --clean
-  error: Found issues
-  
-  simple_fail::main: error in 1 branch (out of 1):
+  $ soteria-rust rustc simple-fail.rs --clean --no-timing
+  Compiling... done in <time>
+  error: simple_fail::main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Aliasing error in simple_fail::main
       ┌─ $TESTCASE_ROOT/simple-fail.rs:8:5
     2 │    // https://perso.crans.org/vanille/treebor/aux/preprint.pdf
@@ -24,42 +23,47 @@ Simple tree borrow violation
    10 │ │  }
       │ ╰──' 1: Entry point
    11 │    
+  
   [1]
 
 Raw pointers don't get new tags
-  $ soteria-rust rustc raw-ptrs.rs --clean
-  note: Done, no errors found
-  
-  raw_ptrs::main: ran 1 branch
+  $ soteria-rust rustc raw-ptrs.rs --clean --no-timing
+  Compiling... done in <time>
+  note: raw_ptrs::main: done in <time>, ran 1 branch
   PC 1: true
+  
 
 Raw pointers can access outside the parent's range, with offsets
-  $ soteria-rust rustc offsets.rs --clean
-  note: Done, no errors found
-  
-  offsets::main: ran 1 branch
+  $ soteria-rust rustc offsets.rs --clean --no-timing
+  Compiling... done in <time>
+  note: offsets::main: done in <time>, ran 1 branch
   PC 1: true
+  
 
 Can have two mutable protected refs to the same allocation, if they don't overlap
-  $ soteria-rust rustc two-mut-protected.rs --clean
-  note: Done, no errors found
-  
-  two_mut_protected::main: ran 1 branch
+  $ soteria-rust rustc two-mut-protected.rs --clean --no-timing
+  Compiling... done in <time>
+  note: two_mut_protected::main: done in <time>, ran 1 branch
   PC 1: true
+  
 
 UnsafeCell allow foreign writes followed by local writes
-  $ soteria-rust rustc cell.rs --clean
-  note: Done, no errors found
-  
-  cell::main: ran 1 branch
+  $ soteria-rust rustc cell.rs --clean --no-timing
+  Compiling... done in <time>
+  note: cell::main: done in <time>, ran 1 branch
   PC 1: true
+  
 
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
-  $ true || soteria-rust rustc nested.rs --clean
+  $ soteria-rust rustc nested.rs --clean --no-timing
+  Compiling... done in <time>
+  note: nested::main: done in <time>, ran 1 branch
+  PC 1: true
+  
 
 Test --ignore-aliasing flag
-  $ soteria-rust rustc simple-fail.rs --clean --ignore-aliasing
-  note: Done, no errors found
-  
-  simple_fail::main: ran 1 branch
+  $ soteria-rust rustc simple-fail.rs --clean --no-timing --ignore-aliasing
+  Compiling... done in <time>
+  note: simple_fail::main: done in <time>, ran 1 branch
   PC 1: true
+  

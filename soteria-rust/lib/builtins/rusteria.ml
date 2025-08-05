@@ -1,7 +1,7 @@
 open Rustsymex
 open Rustsymex.Syntax
 open Typed.Syntax
-open Charon_util
+open Rust_val
 
 module M (State : State_intf.S) = struct
   module Sptr = State.Sptr
@@ -45,7 +45,7 @@ module M (State : State_intf.S) = struct
     if%sat to_assert ==@ 0s then
       let** str = parse_string msg state in
       State.error (`FailedAssert str) state
-    else Result.ok (Charon_util.unit_, state)
+    else Result.ok (unit_, state)
 
   let assume ~args state =
     let* to_assume =
@@ -55,7 +55,7 @@ module M (State : State_intf.S) = struct
     in
     L.debug (fun g -> g "Assuming: %a\n" Typed.ppa to_assume);
     let* () = assume [ Typed.bool_of_int to_assume ] in
-    Result.ok (Charon_util.unit_, state)
+    Result.ok (unit_, state)
 
   let nondet (fun_sig : Charon.UllbcAst.fun_sig) ~args:_ state =
     let ty = fun_sig.output in

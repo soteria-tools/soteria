@@ -1,14 +1,18 @@
 open Charon
+open Syntaxes.FunctionWrap
 
 module Cmd = struct
   type t = {
-    (* Arguments passed to Charon *)
     charon : string list; [@default []]
-    (* Features to enable for compilation (as in --cfg) *)
+        (** Arguments passed to Charon (only in [Rustc] and [Cargo] mode) *)
+    obol : string list; [@default []]
+        (** Arguments passed to Obol (only in [Obol] mode) *)
     features : string list; [@default []]
-    (* DEPRECATED: rustc flags. For Cargo we use RUSTFLAGS, but when possible it would be
-       nicer to use the Cargo-specific command (as with features) *)
+        (** Features to enable for compilation (as in --cfg) *)
     rustc : string list; [@default []]
+        (** DEPRECATED: rustc flags. For Cargo we use RUSTFLAGS, but when
+            possible it would be nicer to use the Cargo-specific command (as
+            with features) *)
   }
   [@@deriving make]
 
@@ -19,16 +23,17 @@ module Cmd = struct
   let concat_cmd c1 c2 =
     {
       charon = c1.charon @ c2.charon;
+      obol = c1.obol @ c2.obol;
       features = c1.features @ c2.features;
       rustc = c1.rustc @ c2.rustc;
     }
 
-  let build_cmd ~mode { charon; features; rustc } =
+  let build_cmd ~mode { charon; obol; features; rustc } =
     let spaced = String.concat " " in
+    let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
     match mode with
     | Rustc ->
-        let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-        let features = List.map (fun f -> "--cfg " ^ f) features in
+        let features = List.map (( ^ ) "--cfg ") features in
         "charon rustc "
         ^ spaced charon
         ^ " -- "
@@ -36,39 +41,34 @@ module Cmd = struct
         ^ " "
         ^ escape (spaced rustc)
     | Obol ->
-        (* almost the same as charon rustc *)
-        let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-        let features = List.map (fun f -> "--cfg=" ^ f) features in
-        let obol_flags =
-          List.filter (String.starts_with ~prefix:"--dest-file") charon
-        in
+        (* similar to charon rustc *)
+        let features = List.map (( ^ ) "--cfg=") features in
         (* Obol currently doesn't support lib crates/files *)
-        let rustc = List.filter (( <> ) "--crate-type=lib") rustc in
+        (* let rustc = List.filter (( <> ) "--crate-type=lib") rustc in *)
         "DYLD_LIBRARY_PATH=$(charon toolchain-path)/lib/ obol "
-        ^ spaced obol_flags
+        ^ spaced obol
         ^ " -- "
         ^ spaced features
         ^ " "
         ^ escape (spaced rustc)
     | Cargo ->
+        let features = List.map (( ^ ) "--cfg ") features in
+        let rustc = rustc @ features in
         let env =
           if not (List.is_empty rustc) then
             "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
           else ""
         in
-        let features =
-          if not (List.is_empty features) then
-            "--features " ^ String.concat "," features ^ " "
-          else ""
-        in
-        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet " ^ features
+        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet"
 
   let exec_cmd cmd =
-    L.debug (fun g -> g "Running command: %s" cmd);
+    if !Config.current.log_compilation then
+      L.app (fun g -> g "Running command: %s" cmd);
     Sys.command cmd
 
   let exec_and_read cmd =
-    L.debug (fun g -> g "Running command: %s" cmd);
+    if !Config.current.log_compilation then
+      L.app (fun g -> g "Running command: %s" cmd);
     let inp = Unix.open_process_in cmd in
     let r = In_channel.input_lines inp in
     In_channel.close inp;
@@ -76,8 +76,7 @@ module Cmd = struct
 
   let exec_in ~mode folder cmd =
     let verbosity =
-      if Soteria_logs.(Config.should_log Level.Info) then ""
-      else "> /dev/null 2>/dev/null"
+      if !Config.current.log_compilation then "" else "> /dev/null 2>/dev/null"
     in
     exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd ~mode cmd ^ verbosity
 end
@@ -119,19 +118,28 @@ let lib_root =
 
 let lib_path name = lib_root ^ "/" ^ name
 
-let compile_lib path =
+let with_compiled_lib name f =
+  let path = lib_path name in
   let target = get_host () in
   let verbosity =
-    if Soteria_logs.(Config.should_log Level.Trace) then "--verbose"
+    if !Config.current.log_compilation then "--verbose"
     else "> /dev/null 2>/dev/null"
   in
   let res =
     Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path cargo
       target verbosity
   in
-  if res <> 0 && res <> 255 then
-    let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
-    raise (PluginError msg)
+  (if res <> 0 && res <> 255 then
+     let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
+     raise (PluginError msg));
+  let config : Cmd.t = f (path, target) in
+  let lib_imports =
+    [
+      Fmt.str "-L%s/target/%s/debug/deps" path target;
+      Fmt.str "-L%s/target/debug/deps" path;
+    ]
+  in
+  { config with rustc = config.rustc @ lib_imports }
 
 (* List of patterns that currently cause generic errors (and thus crashes in monomorphisation).
    We tell Charon to not translate these, to avoid the crash, and we just hope the item is not
@@ -143,7 +151,6 @@ let known_generic_errors =
     "alloc::string::_::from";
     "alloc::raw_vec::finish_grow";
     "core::fmt::Display::fmt";
-    "core::ptr::null_mut";
     "std::path::_::from";
     "core::iter::traits::iterator::Iterator::flatten";
   ]
@@ -155,20 +162,19 @@ type plugin = {
 
 let default =
   let mk_cmd () =
-    let std_lib = lib_path "std" in
-    let target = get_host () in
+    let@ std_lib_path, target = with_compiled_lib "std" in
     let opaques = List.map (( ^ ) "--opaque ") known_generic_errors in
-    compile_lib std_lib;
     Cmd.make
       ~charon:
         ([
            "--ullbc";
            "--extract-opaque-bodies";
-           "--monomorphize";
+           "--monomorphize-conservative";
            "--mir elaborated";
            "--raw-boxes";
          ]
         @ opaques)
+      ~obol:[ "--entry_names main"; "--entry_attribs rusteriatool::test" ]
       ~features:[ "rusteria" ]
       ~rustc:
         [
@@ -181,10 +187,10 @@ let default =
           "-Zcrate-attr=feature(register_tool)";
           "-Zcrate-attr=register_tool(rusteriatool)";
           "--extern=rusteria";
-          Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
-          Fmt.str "-L%s/target/debug/deps" std_lib;
+          "--edition=2024";
+          (* include the std *)
           Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"
-            std_lib target;
+            std_lib_path target;
         ]
       ()
   in
@@ -192,24 +198,20 @@ let default =
     match List.last_opt decl.item_meta.name with
     | Some (PeIdent ("main", _)) -> mk_entry_point decl
     | _ when Charon_util.decl_has_attr decl "rusteriatool::test" ->
-        mk_entry_point decl
+        let expect_error =
+          Charon_util.decl_has_attr decl "rusteriatool::expect_fail"
+        in
+        mk_entry_point ~expect_error decl
     | _ -> None
   in
   { mk_cmd; get_entry_point }
 
 let kani =
   let mk_cmd () =
-    let lib = lib_path "kani" in
-    let target = get_host () in
-    compile_lib lib;
-    Cmd.make ~features:[ "kani " ]
-      ~rustc:
-        [
-          "-Zcrate-attr=register_tool(kanitool)";
-          "--extern=kani";
-          Fmt.str "-L%s/target/%s/debug/deps" lib target;
-          Fmt.str "-L%s/target/debug/deps" lib;
-        ]
+    let@ _ = with_compiled_lib "kani" in
+    Cmd.make ~features:[ "kani" ]
+      ~obol:[ "--entry_attribs kanitool::proof" ]
+      ~rustc:[ "-Zcrate-attr=register_tool(kanitool)"; "--extern=kani" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =
@@ -228,17 +230,10 @@ let kani =
 
 let miri =
   let mk_cmd () =
-    let lib = lib_path "miri" in
-    let target = get_host () in
-    compile_lib lib;
+    let@ _ = with_compiled_lib "miri" in
     Cmd.make ~features:[ "miri" ]
-      ~rustc:
-        [
-          "--extern=miristd";
-          Fmt.str "-L%s/target/%s/debug/deps" lib target;
-          Fmt.str "-L%s/target/debug/deps" lib;
-        ]
-      ()
+      ~obol:[ "--entry_names miri_start" ]
+      ~rustc:[ "--extern=miristd" ] ()
   in
   let get_entry_point (decl : fun_decl) =
     match List.last decl.item_meta.name with
@@ -261,7 +256,10 @@ let merge_ifs (plugins : (bool * plugin) list) =
 
   let mk_cmd ~input ~output () =
     let init =
-      Cmd.make ~charon:[ "--dest-file " ^ output ] ~rustc:[ input ] ()
+      Cmd.make
+        ~charon:[ "--dest-file " ^ output ]
+        ~obol:[ "--dest-file " ^ output ]
+        ~rustc:[ input ] ()
     in
     List.map (fun (p : plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
@@ -275,8 +273,12 @@ let merge_ifs (plugins : (bool * plugin) list) =
               Charon_util.decl_get_attr decl name
               |> Option.fold ~none ~some:int_of_string
             in
-            let steps = get_or "rusteriatool::step_fuel" 1000 in
-            let branching = get_or "rusteriatool::branch_fuel" 4 in
+            let steps =
+              get_or "rusteriatool::step_fuel" !Config.current.step_fuel
+            in
+            let branching =
+              get_or "rusteriatool::branch_fuel" !Config.current.branch_fuel
+            in
             { steps; branching }
           in
           Some { ep with fuel = Some fuel }

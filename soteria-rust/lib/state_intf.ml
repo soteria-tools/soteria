@@ -1,8 +1,8 @@
-open Charon_util
 open Typed
 open T
 open Rustsymex
 open Charon
+open Rust_val
 
 module type S = sig
   module Sptr : Sptr.S
@@ -38,7 +38,8 @@ module type S = sig
       | `UBTransmute
       | `AliasingError
       | `MisalignedPointer
-      | `RefToUninhabited ]
+      | `RefToUninhabited
+      | `UBDanglingPointer ]
       err
       * t,
       serialized list )
@@ -53,7 +54,8 @@ module type S = sig
       | `OutOfBounds
       | `UseAfterFree
       | `AliasingError
-      | `MisalignedPointer ]
+      | `MisalignedPointer
+      | `UBDanglingPointer ]
       err
       * t,
       serialized list )
@@ -69,7 +71,8 @@ module type S = sig
       | `OutOfBounds
       | `AliasingError
       | `UseAfterFree
-      | `MisalignedPointer ]
+      | `MisalignedPointer
+      | `UBDanglingPointer ]
       err
       * t,
       serialized list )
@@ -112,7 +115,9 @@ module type S = sig
     size:sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err * t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      err
+      * t,
       serialized list )
     Result.t
 
@@ -121,7 +126,9 @@ module type S = sig
     Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err * t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      err
+      * t,
       serialized list )
     Result.t
 
@@ -130,7 +137,9 @@ module type S = sig
     sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err * t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      err
+      * t,
       serialized list )
     Result.t
 
@@ -168,7 +177,7 @@ module type S = sig
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree ] err * t,
+      [> `NullDereference | `UseAfterFree | `UBDanglingPointer ] err * t,
       serialized list )
     Result.t
 
@@ -178,7 +187,12 @@ module type S = sig
     Charon.Types.ref_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree | `OutOfBounds | `AliasingError ] err
+      [> `NullDereference
+      | `UseAfterFree
+      | `OutOfBounds
+      | `AliasingError
+      | `UBDanglingPointer ]
+      err
       * t,
       serialized list )
     Result.t
@@ -191,7 +205,8 @@ module type S = sig
       [> `NullDereference
       | `RefInvalidatedEarly
       | `OutOfBounds
-      | `AliasingError ]
+      | `AliasingError
+      | `UBDanglingPointer ]
       err
       * t,
       serialized list )
@@ -223,7 +238,8 @@ module type S = sig
       [> `MisalignedFnPointer
       | `NotAFnPointer
       | `NullDereference
-      | `UseAfterFree ]
+      | `UseAfterFree
+      | `UBDanglingPointer ]
       err
       * t,
       serialized list )

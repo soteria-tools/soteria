@@ -50,11 +50,16 @@ module M (State : State_intf.S) = struct
       ("rusteria::panic", Rusteria Panic);
       (* Kani builtins -- we re-define these for nicer call traces *)
       ("kani::assert", Rusteria Assert);
+      ("kani::assume", Rusteria Assume);
       ("kani::panic", Rusteria Panic);
       (* Miri builtins *)
       ("miristd::miri_get_alloc_id", Miri AllocId);
       ("miristd::miri_pointer_name", Miri Nop);
       ("miristd::miri_print_borrow_state", Miri Nop);
+      (* Obol is quite bad at parsing names so this is how they're called there... *)
+      ("utils::miri_extern::miristd::miri_get_alloc_id", Miri AllocId);
+      ("utils::miri_extern::miristd::miri_pointer_name", Miri Nop);
+      ("utils::miri_extern::miristd::miri_print_borrow_state", Miri Nop);
       (* Core *)
       (* This fails because of a silly thing with NonZero in monomorphisation, which we won't
          fix for now as it requires monomorphising trait impls.  *)
@@ -110,6 +115,12 @@ module M (State : State_intf.S) = struct
       ( "core::f128::{f128}::is_sign_positive",
         Optim (FloatIsSign { positive = true }) );
       ("core::f128::{f128}::is_subnormal", Optim (FloatIs Subnormal));
+      (* These don't compile, maybe because they const-panic? *)
+      ("core::panicking::panic_fmt", Fixme Panic);
+      ("core::slice::index::slice_index_order_fail", Fixme Panic);
+      ("core::slice::index::slice_end_index_len_fail", Fixme Panic);
+      ("core::slice::index::slice_end_index_overflow_fail", Fixme Panic);
+      ("std::alloc::handle_alloc_error", Fixme Panic);
       (* These don't compile, for some reason? *)
       ("std::panicking::try::cleanup", Fixme TryCleanup);
       ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);
