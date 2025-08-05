@@ -72,12 +72,21 @@ module Config = struct
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_ALLOC_CANNOT_FAIL" in
     Arg.(value & flag & info [ "alloc-cannot-fail" ] ~env ~doc)
 
+  let use_cerb_headers_arg =
+    let doc =
+      "Use the Cerberus-provided standard headers instead of the system \
+       headers."
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_USE_CERB_HEADERS" in
+    Arg.(value & flag & info [ "use-cerb-headers" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_unsupported_file
       no_ignore_parse_failures no_ignore_duplicate_symbols parse_only
-      dump_summaries_file show_manifest_summaries alloc_cannot_fail =
+      dump_summaries_file show_manifest_summaries alloc_cannot_fail
+      use_cerb_headers =
     make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
       ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file
-      ~show_manifest_summaries ~alloc_cannot_fail ()
+      ~show_manifest_summaries ~alloc_cannot_fail ~use_cerb_headers ()
 
   let term =
     Cmdliner.Term.(
@@ -89,7 +98,8 @@ module Config = struct
       $ parse_only_arg
       $ dump_summaries_file_arg
       $ show_manifest_summaries_arg
-      $ alloc_cannot_fail_arg)
+      $ alloc_cannot_fail_arg
+      $ use_cerb_headers_arg)
 end
 
 let files_arg =

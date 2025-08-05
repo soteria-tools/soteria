@@ -62,6 +62,13 @@ module Frontend = struct
         in
         Error (`ParsingError msg, Call_trace.singleton ~loc ())
 
+  let use_cerb_libc_if_asked () =
+    if !Config.current.use_cerb_headers then
+      let root_includes = Cerb_runtime.in_runtime "libc/include" in
+      let posix = Filename.concat root_includes "posix" in
+      "-I" ^ root_includes ^ " -I" ^ posix ^ " -nostdinc"
+    else ""
+
   let init () =
     let result =
       let open Cerb_backend.Pipeline in
@@ -96,7 +103,12 @@ module Frontend = struct
       let* impl = load_core_impl stdlib impl_name in
       Exception.Result
         (fun ~cpp_cmd filename ->
-          let cpp_cmd = cpp_cmd ^ " -E -CC " ^ include_soteria_c_h in
+          let cpp_cmd =
+            cpp_cmd
+            ^ " -E -CC "
+            ^ include_soteria_c_h
+            ^ use_cerb_libc_if_asked ()
+          in
           c_frontend (conf cpp_cmd, io) (stdlib, impl) ~filename)
     in
     let () = Cerb_colour.do_colour := false in

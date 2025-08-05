@@ -153,6 +153,7 @@ class ExperimentConfig:
 
     name: str
     path: Path
+    use_cerb_headers: bool = field(default=False)
     """Location relative to the experiment folder where CMake should be run."""
     cmake_build_path: Path = field(default=Path("build"))
 
@@ -226,7 +227,8 @@ class Experiment(PrintersMixin):
             f"{self.compile_commands} "
             f"--solver-timeout {global_config.solver_timeout} "
             "--dump-unsupported "
-            f"{self.result_folder / 'unsupported.json'}"
+            f"{self.result_folder / 'unsupported.json'} "
+            f"{'--use-cerb-headers ' if self.config.use_cerb_headers else ''}"
         )
         self.run_command(cmd)
 
@@ -240,7 +242,9 @@ class Experiment(PrintersMixin):
 
 simple_config = lambda name: ExperimentConfig(name=name, path=Path(name))
 configs = [
-    simple_config("Collections-C"),
+    ExperimentConfig(
+        name="Collections-C", path=Path("Collections-C"), use_cerb_headers=True
+    ),
     simple_config("zlib"),
     simple_config("libgit2"),
     simple_config("nghttp2"),
