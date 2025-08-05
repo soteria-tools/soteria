@@ -7,6 +7,8 @@ open Charon
 exception ExecutionError of string
 exception CharonError of string
 
+let default_fuel = Soteria_symex.Fuel_gauge.{ steps = 1000; branching = 4 }
+
 module Cleaner = struct
   let files = ref []
   let touched file = files := file :: !files
@@ -86,8 +88,8 @@ let exec_main ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
     |> List.map @@ fun (entry : Plugin.entry_point) ->
        let branches =
          let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
-         Option.iter Rustsymex.set_default_fuel entry.fuel;
-         try Rustsymex.run @@ exec_fun entry.fun_decl with
+         let fuel = Option.value entry.fuel ~default:default_fuel in
+         try Rustsymex.run ~fuel @@ exec_fun entry.fun_decl with
          | Layout.InvalidLayout ->
              [ (Error (`InvalidLayout, Soteria_terminal.Call_trace.empty), []) ]
          | exn ->

@@ -9,10 +9,6 @@ let is_sat (result : Solver.result) =
 let is_unsat (result : Solver.result) =
   match result with Unsat -> true | Sat | Unknown -> false
 
-module type Config = sig
-  val fuel : Fuel_gauge.t
-end
-
 module type Base = sig
   module Value : Value.S
   module MONAD : Monad.Base
@@ -53,12 +49,11 @@ module type Base = sig
   (** {2 Fuel} *)
 
   val consume_fuel_steps : int -> unit MONAD.t
-  val set_default_fuel : Fuel_gauge.t -> unit
 
   (** [run] p actually performs symbolic execution and returns a list of
       obtained branches which capture the outcome together with a path condition
       that is a list of boolean symbolic values *)
-  val run : 'a MONAD.t -> ('a * sbool v list) list
+  val run : fuel:Fuel_gauge.t -> 'a MONAD.t -> ('a * sbool v list) list
 end
 
 module type S = sig
@@ -187,16 +182,12 @@ module Extend (Base : Base) = struct
   end
 end
 
-module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
+module Make_seq (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
 
   module Fuel = struct
-    include Reversible.Make_in_place (struct
-      include Fuel_gauge
-
-      let default = C.fuel
-    end)
+    include Reversible.Effectful (Fuel_gauge)
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n) ()
     let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n) ()
@@ -215,17 +206,13 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
       Solver.save ();
       Fuel.save ()
 
-    let reset () =
-      Solver.reset ();
-      Fuel.reset ()
+    let reset () = Solver.reset ()
   end
 
   let consume_fuel_steps n () =
     match Fuel.consume_fuel_steps n with
     | Exhausted -> Seq.Nil
     | Not_exhausted -> Seq.Cons ((), Seq.empty)
-
-  let set_default_fuel = Fuel.set_default
 
   let assume learned () =
     let rec aux acc learned =
@@ -376,21 +363,18 @@ module Make_seq (C : Config) (Sol : Solver.Mutable_incremental) :
             let pc2 = Solver.as_values () in
             (x1, pc1) :: (x2, pc2) :: run seq)
 
-  let run s =
+  let run ~fuel s =
     Symex_state.reset ();
+    let@ () = Fuel.run ~init:fuel in
     run s
 end)
 
-module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
+module Make_iter (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
 
   module Fuel = struct
-    include Reversible.Make_in_place (struct
-      include Fuel_gauge
-
-      let default = C.fuel
-    end)
+    include Reversible.Effectful (Fuel_gauge)
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n) ()
     let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n) ()
@@ -409,17 +393,13 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
       Solver.save ();
       Fuel.save ()
 
-    let reset () =
-      Solver.reset ();
-      Fuel.reset ()
+    let reset () = Solver.reset ()
   end
 
   let consume_fuel_steps n f =
     match Fuel.consume_fuel_steps n with
     | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted -> f ()
-
-  let set_default_fuel = Fuel.set_default
 
   let assume learned f =
     let rec aux acc learned =
@@ -576,8 +556,9 @@ module Make_iter (C : Config) (Sol : Solver.Mutable_incremental) :
         (with_section @@ fun () -> a () f);
         loop r
 
-  let run iter =
+  let run ~fuel iter =
     Symex_state.reset ();
+    let@ () = Fuel.run ~init:fuel in
     let l = ref [] in
     let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
     List.rev !l
