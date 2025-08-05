@@ -231,7 +231,11 @@ let exec_function ~includes file_names function_name =
         Wpst_interp.exec_fun entry_point ~args:[] state
       in
       let@ () = with_function_context linked in
-      Ok (Csymex.run ~fuel:default_wpst_fuel symex)
+      let fuel =
+        if !Config.current.infinite_fuel then Soteria_symex.Fuel_gauge.infinite
+        else default_wpst_fuel
+      in
+      Ok (Csymex.run ~fuel symex)
   in
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 

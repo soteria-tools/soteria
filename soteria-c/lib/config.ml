@@ -13,6 +13,7 @@ type t = {
   show_manifest_summaries : bool; [@default false]
   alloc_cannot_fail : bool; [@default false]
   use_cerb_headers : bool; [@default false]
+  infinite_fuel : bool; [@default false] (* TODO: find a better interface. *)
 }
 [@@deriving make]
 

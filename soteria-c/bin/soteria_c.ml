@@ -80,13 +80,22 @@ module Config = struct
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_USE_CERB_HEADERS" in
     Arg.(value & flag & info [ "use-cerb-headers" ] ~env ~doc)
 
+  let infinite_fuel_arg =
+    let doc =
+      "Infinite fuel for the analysis. If there is an unbounded loop, the \
+       analysis will not stop. (Used only for whole-program analysis)"
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_INFINITE_FUEL" in
+    Arg.(value & flag & info [ "infinite-fuel" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_unsupported_file
       no_ignore_parse_failures no_ignore_duplicate_symbols parse_only
       dump_summaries_file show_manifest_summaries alloc_cannot_fail
-      use_cerb_headers =
+      use_cerb_headers infinite_fuel =
     make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
       ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file
-      ~show_manifest_summaries ~alloc_cannot_fail ~use_cerb_headers ()
+      ~show_manifest_summaries ~alloc_cannot_fail ~use_cerb_headers
+      ~infinite_fuel ()
 
   let term =
     Cmdliner.Term.(
@@ -99,7 +108,8 @@ module Config = struct
       $ dump_summaries_file_arg
       $ show_manifest_summaries_arg
       $ alloc_cannot_fail_arg
-      $ use_cerb_headers_arg)
+      $ use_cerb_headers_arg
+      $ infinite_fuel_arg)
 end
 
 let files_arg =
