@@ -1,4 +1,5 @@
 open Charon
+open Syntaxes.FunctionWrap
 
 module Cmd = struct
   type t = {
@@ -61,11 +62,13 @@ module Cmd = struct
         env ^ "charon cargo " ^ spaced charon ^ " -- --quiet"
 
   let exec_cmd cmd =
-    L.debug (fun g -> g "Running command: %s" cmd);
+    if !Config.current.log_compilation then
+      L.app (fun g -> g "Running command: %s" cmd);
     Sys.command cmd
 
   let exec_and_read cmd =
-    L.debug (fun g -> g "Running command: %s" cmd);
+    if !Config.current.log_compilation then
+      L.app (fun g -> g "Running command: %s" cmd);
     let inp = Unix.open_process_in cmd in
     let r = In_channel.input_lines inp in
     In_channel.close inp;
@@ -115,7 +118,8 @@ let lib_root =
 
 let lib_path name = lib_root ^ "/" ^ name
 
-let compile_lib path =
+let with_compiled_lib name f =
+  let path = lib_path name in
   let target = get_host () in
   let verbosity =
     if !Config.current.log_compilation then "--verbose"
@@ -125,9 +129,17 @@ let compile_lib path =
     Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path cargo
       target verbosity
   in
-  if res <> 0 && res <> 255 then
-    let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
-    raise (PluginError msg)
+  (if res <> 0 && res <> 255 then
+     let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
+     raise (PluginError msg));
+  let config : Cmd.t = f (path, target) in
+  let lib_imports =
+    [
+      Fmt.str "-L%s/target/%s/debug/deps" path target;
+      Fmt.str "-L%s/target/debug/deps" path;
+    ]
+  in
+  { config with rustc = config.rustc @ lib_imports }
 
 (* List of patterns that currently cause generic errors (and thus crashes in monomorphisation).
    We tell Charon to not translate these, to avoid the crash, and we just hope the item is not
@@ -150,10 +162,8 @@ type plugin = {
 
 let default =
   let mk_cmd () =
-    let std_lib = lib_path "std" in
-    let target = get_host () in
+    let@ std_lib_path, target = with_compiled_lib "std" in
     let opaques = List.map (( ^ ) "--opaque ") known_generic_errors in
-    compile_lib std_lib;
     Cmd.make
       ~charon:
         ([
@@ -178,10 +188,9 @@ let default =
           "-Zcrate-attr=register_tool(rusteriatool)";
           "--extern=rusteria";
           "--edition=2024";
-          Fmt.str "-L%s/target/%s/debug/deps" std_lib target;
-          Fmt.str "-L%s/target/debug/deps" std_lib;
+          (* include the std *)
           Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"
-            std_lib target;
+            std_lib_path target;
         ]
       ()
   in
@@ -199,18 +208,10 @@ let default =
 
 let kani =
   let mk_cmd () =
-    let lib = lib_path "kani" in
-    let target = get_host () in
-    compile_lib lib;
-    Cmd.make ~features:[ "kani " ]
+    let@ _ = with_compiled_lib "kani" in
+    Cmd.make ~features:[ "kani" ]
       ~obol:[ "--entry_attribs kanitool::proof" ]
-      ~rustc:
-        [
-          "-Zcrate-attr=register_tool(kanitool)";
-          "--extern=kani";
-          Fmt.str "-L%s/target/%s/debug/deps" lib target;
-          Fmt.str "-L%s/target/debug/deps" lib;
-        ]
+      ~rustc:[ "-Zcrate-attr=register_tool(kanitool)"; "--extern=kani" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =
@@ -229,18 +230,10 @@ let kani =
 
 let miri =
   let mk_cmd () =
-    let lib = lib_path "miri" in
-    let target = get_host () in
-    compile_lib lib;
+    let@ _ = with_compiled_lib "miri" in
     Cmd.make ~features:[ "miri" ]
       ~obol:[ "--entry_names miri_start" ]
-      ~rustc:
-        [
-          "--extern=miristd";
-          Fmt.str "-L%s/target/%s/debug/deps" lib target;
-          Fmt.str "-L%s/target/debug/deps" lib;
-        ]
-      ()
+      ~rustc:[ "--extern=miristd" ] ()
   in
   let get_entry_point (decl : fun_decl) =
     match List.last decl.item_meta.name with
