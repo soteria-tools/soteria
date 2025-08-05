@@ -498,41 +498,46 @@ module Make (State : State_intf.S) = struct
   let cast ~old_ty ~new_ty (v : Aggregate_val.t) : Aggregate_val.t Csymex.t =
     let open Csymex.Syntax in
     let open Typed in
-    let* v =
-      match v with
-      | Basic v -> return v
-      | Struct _ | Array _ ->
-          Fmt.kstr not_impl "Cannot cast struct or array %a" Aggregate_val.pp v
-    in
-    let+ res =
-      match (old_ty, new_ty) with
-      | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
-          match get_ty v with
-          | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
-          | TPointer -> return v
-          | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
-      | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
-      | Ctype.Basic (Integer ity_left), Ctype.Basic (Integer ity_right) -> (
-          let* v = cast_to_int v in
-          let ity_left = Layout.normalise_int_ty ity_left in
-          let ity_right = Layout.normalise_int_ty ity_right in
-          match (ity_left, ity_right) with
-          | Signed _, Unsigned _ ->
-              let+ size_right =
-                Layout.size_of_int_ty ity_right
-                |> Csymex.of_opt_not_impl ~msg:"Size of int ty"
-              in
-              let size_right = Typed.nonzero size_right in
-              Typed.mod_ v size_right
-          | _, _ ->
-              Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
-                ity_left Fmt_ail.pp_int_ty ity_right)
-      | _, Ctype.Void -> return 0s
-      | _ ->
-          Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
-            Fmt_ail.pp_ty_ new_ty
-    in
-    Aggregate_val.Basic res
+    if Ctype.ctypeEqual old_ty new_ty then return v
+    else
+      let (Ctype.Ctype (_, old_ty)) = old_ty in
+      let (Ctype.Ctype (_, new_ty)) = new_ty in
+      let* v =
+        match v with
+        | Basic v -> return v
+        | Struct _ | Array _ ->
+            Fmt.kstr not_impl "Cannot cast struct or array %a" Aggregate_val.pp
+              v
+      in
+      let+ res =
+        match (old_ty, new_ty) with
+        | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
+            match get_ty v with
+            | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
+            | TPointer -> return v
+            | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
+        | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
+        | Ctype.Basic (Integer ity_left), Ctype.Basic (Integer ity_right) -> (
+            let* v = cast_to_int v in
+            let ity_left = Layout.normalise_int_ty ity_left in
+            let ity_right = Layout.normalise_int_ty ity_right in
+            match (ity_left, ity_right) with
+            | Signed _, Unsigned _ ->
+                let+ size_right =
+                  Layout.size_of_int_ty ity_right
+                  |> Csymex.of_opt_not_impl ~msg:"Size of int ty"
+                in
+                let size_right = Typed.nonzero size_right in
+                Typed.mod_ v size_right
+            | _, _ ->
+                Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
+                  ity_left Fmt_ail.pp_int_ty ity_right)
+        | _, Ctype.Void -> return 0s
+        | _ ->
+            Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
+              Fmt_ail.pp_ty_ new_ty
+      in
+      Aggregate_val.Basic res
 
   let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
