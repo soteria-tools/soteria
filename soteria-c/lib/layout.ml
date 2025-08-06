@@ -268,28 +268,44 @@ let int_constraints (int_ty : integerType) =
       L.debug (fun m -> m "No int constraints for %a" Fmt_ail.pp_int_ty int_ty);
       None
 
-let constraints (ty : ctype) :
-    (Typed.T.cval Typed.t -> Typed.T.sbool Typed.t list) option =
+exception Unsupported of string
+
+let constraints_exn ~(ty : ctype) (v : Aggregate_val.t) :
+    Typed.T.sbool Typed.t list =
   let open Typed.Infix in
+  let unsupported msg = raise (Unsupported msg) in
+  let basic_or_unsupported v =
+    match v with
+    | Aggregate_val.Basic v -> v
+    | Aggregate_val.Struct _ | Aggregate_val.Array _ ->
+        Fmt.kstr unsupported "Not a basic value (%a) for type %a"
+          Aggregate_val.pp v Fmt_ail.pp_ty ty
+  in
   match proj_ctype_ ty with
-  | Void -> Some (fun x -> [ x ==@ 0s ])
-  | Pointer _ -> Some (fun _ -> [])
+  | Void ->
+      let v = basic_or_unsupported v in
+      [ v ==@ 0s ]
+  | Pointer _ -> [] (* Pointers should already have their invariants hold *)
   | Basic (Integer ity) -> (
       match int_constraints ity with
-      | None -> None
-      | Some constrs ->
-          Some
-            (fun x ->
-              match Typed.cast_checked x Typed.t_int with
-              | None -> [ Typed.v_false ]
-              | Some x -> constrs x))
+      | None -> unsupported "No int constraints"
+      | Some constrs -> (
+          let v = basic_or_unsupported v in
+          match Typed.cast_checked v Typed.t_int with
+          | None -> [ Typed.v_false ]
+          | Some x -> constrs x))
   | Basic (Floating _) ->
       (* Floating constraints are already included in the floating type itself (bitvectors) *)
-      Some (fun _ -> [])
+      []
   | _ ->
-      L.info (fun m ->
-          m "No constraints implemented for type %a" Fmt_ail.pp_ty ty);
-      None
+      Fmt.kstr unsupported "No constraints implemented for type %a"
+        Fmt_ail.pp_ty ty
+
+let constraints ~ty v =
+  try Some (constraints_exn ~ty v)
+  with Unsupported msg ->
+    L.debug (fun m -> m "Constraints for %a: %s" Fmt_ail.pp_ty ty msg);
+    None
 
 let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   let open Csymex.Syntax in

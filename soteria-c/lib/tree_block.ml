@@ -416,9 +416,9 @@ module Tree = struct
     let* range = Range.of_low_and_type low ty in
     let* constrs =
       Csymex.of_opt_not_impl ~msg:"Produce typed_val constraints"
-        (Layout.constraints ty)
+        (Layout.constraints ~ty (Aggregate_val.Basic value))
     in
-    let* () = Csymex.assume (constrs value) in
+    let* () = Csymex.assume constrs in
     let replace_node _ = sval_leaf ~range ~value ~ty in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in

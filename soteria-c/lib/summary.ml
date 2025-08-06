@@ -217,13 +217,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
             let args = List.map (Aggregate_val.subst subst) summary.args in
             let constrs =
               List.map2
-                (fun arg ty ->
-                  match arg with
-                  (* FIXME: add constraints for arrays and structs. *)
-                  | Aggregate_val.Struct _ | Array _ -> []
-                  | Basic arg ->
-                      let constr = Option.get (Layout.constraints ty) in
-                      constr arg)
+                (fun arg ty -> Option.get (Layout.constraints ~ty arg))
                 args arg_tys
             in
             let constrs = List.concat constrs in
