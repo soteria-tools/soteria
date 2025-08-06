@@ -8,7 +8,7 @@ module M (State : State_intf.S) = struct
   let alloc ?(zeroed = false) ~args state =
     let size, align =
       match args with
-      | [ Base align; Base size ] -> (align, size)
+      | [ Base size; Base align ] -> (size, align)
       | _ -> failwith "alloc: invalid arguments"
     in
     let* align = cast_checked ~ty:Typed.t_int align in
