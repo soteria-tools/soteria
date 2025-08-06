@@ -213,4 +213,32 @@ module M (State : State_intf.S) = struct
     (box, state)
 
   let fixme_null_ptr ~args:_ state = Result.ok (Ptr (Sptr.null_ptr, None), state)
+
+  let alloc_impl ~args state =
+    let module Alloc = Alloc.M (State) in
+    let* size, align, zeroed =
+      match args with
+      | [
+       _alloc; Struct [ Base size; Struct [ Enum (align, []) ] ]; Base zeroed;
+      ] ->
+          let+ zeroed = cast_checked ~ty:Typed.t_int zeroed in
+          (size, align, Typed.bool_of_int zeroed)
+      | _ ->
+          Fmt.kstr not_impl "alloc_impl: invalid arguments: %a"
+            Fmt.(list ~sep:(any ", ") pp_rust_val)
+            args
+    in
+    if%sat size ==@ 0s then
+      Result.ok (Ptr (Sptr.null_ptr_of (Typed.cast align), Some 0s), state)
+    else
+      let* zeroed = if%sat zeroed then return true else return false in
+      (* allocate *)
+      let++ ptr, state =
+        Alloc.alloc ~zeroed ~args:[ Base size; Base align ] state
+      in
+      let ptr =
+        match ptr with Ptr (p, _) -> p | _ -> failwith "Expected Ptr"
+      in
+      (* construct the Result<NonNull<[u8]>> *)
+      (Enum (0s, [ Struct [ Ptr (ptr, Some size) ] ]), state)
 end

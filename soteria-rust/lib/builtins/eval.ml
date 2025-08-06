@@ -20,6 +20,7 @@ module M (State : State_intf.S) = struct
     | FloatIsFinite
     | FloatIsSign of { positive : bool }
     | Zeroed
+    | AllocImpl
 
   (* Rusteria builtin functions *)
   type rusteria_fn = Assert | Assume | Nondet | Panic
@@ -64,6 +65,7 @@ module M (State : State_intf.S) = struct
       (* This fails because of a silly thing with NonZero in monomorphisation, which we won't
          fix for now as it requires monomorphising trait impls.  *)
       ("alloc::boxed::{@T}::new", Fixme BoxNew);
+      ("std::alloc::Global::alloc_impl", Optim AllocImpl);
       (* FIXME: the below indexes fail because the code doesn't get monomorphised properly, and
          returns a thin pointer rather than a fat one. *)
       ("core::array::{core::ops::index::Index}::index", Fixme Index);
@@ -180,6 +182,7 @@ module M (State : State_intf.S) = struct
          | Fixme Nop -> nop
          | Fixme NullPtr -> fixme_null_ptr
          | Fixme TryCleanup -> fixme_try_cleanup
+         | Optim AllocImpl -> alloc_impl
          | Optim (FloatIs fc) -> float_is fc
          | Optim FloatIsFinite -> float_is_finite
          | Optim (FloatIsSign { positive }) -> float_is_sign positive
