@@ -556,8 +556,22 @@ Expected to correctly find the harness function
 
   $ soteria-c exec float.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
-    [Ok: (0, { heap = []; globs = [] })]
-  Executed 4 statements
+    [Ok: (0,
+          { heap =
+            [(V|1|,
+              { node = [TypedVal {offset = 0; ty = float; v = 0.0f}];
+                info = None });
+             (V|2|,
+              { node = [Zeros {offset = 0; len = 8}; (Bound 8)];
+                info = (Some float.c:10:23-47) })];
+            globs = [(f_561, V|1|)] });
+     Ok: (1,
+          { heap =
+            [(V|1|,
+              { node = [TypedVal {offset = 0; ty = float; v = 0.0f}];
+                info = None })];
+            globs = [(f_561, V|1|)] })]
+  Executed 11 statements
  
 Check without the proper flag we obtain two branches  
   $ soteria-c exec alloc_cannot_fail.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
