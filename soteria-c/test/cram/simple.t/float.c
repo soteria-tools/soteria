@@ -1,4 +1,4 @@
-void __assert__(int);
+void __soteria___assert(int);
 void *calloc(__cerbty_size_t, __cerbty_size_t);
 
 float f;
@@ -8,7 +8,11 @@ int main()
   float x = 1.0f;
   float y = 2.0f;
   float *f = (float *)calloc(1, sizeof(float));
+  if (!f)
+  {
+    return 1;
+  }
 
-  __assert__(y > x);
-  __assert__(*f == 0.0f);
+  __soteria___assert(y > x);
+  __soteria___assert(*f == 0.0f);
 }
