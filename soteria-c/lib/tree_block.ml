@@ -126,9 +126,16 @@ module Node = struct
     | Owned (Uninit _) ->
         L.trace (fun m -> m "Uninitialized Memory Access detected!");
         Result.error `UninitializedMemoryAccess
-    | Owned Zeros ->
-        if Layout.is_int ty then Result.ok 0s
-        else Fmt.kstr not_impl "Float zeros"
+    | Owned Zeros -> (
+        match ty with
+        | Ctype.Ctype (_, Basic (Integer _)) -> Result.ok 0s
+        | Ctype (_, Basic (Floating fty)) ->
+            let precision = Layout.precision fty in
+            Result.ok (Typed.float precision "+0.0")
+        | Ctype.Ctype (_, Pointer _) -> Result.ok Typed.Ptr.null
+        | _ ->
+            Fmt.kstr not_impl "Cannot decode Zeros for type %a" Fmt_ail.pp_ty ty
+        )
     | Owned Lazy ->
         Fmt.kstr not_impl "Lazy memory access, cannot decode %a" pp t
     | Owned (Init { value; ty = tyw }) ->
@@ -409,9 +416,9 @@ module Tree = struct
     let* range = Range.of_low_and_type low ty in
     let* constrs =
       Csymex.of_opt_not_impl ~msg:"Produce typed_val constraints"
-        (Layout.constraints ty)
+        (Layout.constraints ~ty (Aggregate_val.Basic value))
     in
-    let* () = Csymex.assume (constrs value) in
+    let* () = Csymex.assume constrs in
     let replace_node _ = sval_leaf ~range ~value ~ty in
     let rebuild_parent = of_children in
     let* framed, tree = frame_range t ~replace_node ~rebuild_parent range in

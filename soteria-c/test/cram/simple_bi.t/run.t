@@ -1,7 +1,7 @@
   $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for f_561:
+  Summaries for f_560:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
@@ -34,6 +34,32 @@
 NO_COLOR=true is necessary to avoid test output changing in CI. For some reason, Grace doesn't prints a final caret at the end with color, and not without color.
   $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
+  error: Null pointer dereference in test_np
+      ┌─ manifest.c:51:3
+   51 │    *x = 12;
+      │    ^^^^^^^ Triggering write
+  
+  error: Accessing uninitialized memory in test_uninit
+      ┌─ manifest.c:6:10
+    6 │    return *x;
+      │           ^^ Triggering read
+    7 │  }
+    8 │  
+    9 │  int test_np_uninit()
+   10 │  {
+   11 │    int *x = (int *)malloc(sizeof(int));
+   12 │    load(x);
+   13 │    return 0;
+   14 │  }
+   15 │  
+   16 │  int test_uninit()
+   17 │  {
+   18 │    int *x = (int *)malloc(sizeof(int));
+   19 │    if (!x)
+   20 │      return 1;
+   21 │    load(x);
+      │    ------- 1: Called from here
+  
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -58,32 +84,6 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    12 │    load(x);
       │    ------- 1: Called from here
   
-  error: Accessing uninitialized memory in test_uninit
-      ┌─ manifest.c:6:10
-    6 │    return *x;
-      │           ^^ Triggering read
-    7 │  }
-    8 │  
-    9 │  int test_np_uninit()
-   10 │  {
-   11 │    int *x = (int *)malloc(sizeof(int));
-   12 │    load(x);
-   13 │    return 0;
-   14 │  }
-   15 │  
-   16 │  int test_uninit()
-   17 │  {
-   18 │    int *x = (int *)malloc(sizeof(int));
-   19 │    if (!x)
-   20 │      return 1;
-   21 │    load(x);
-      │    ------- 1: Called from here
-  
-  error: Null pointer dereference in test_np
-      ┌─ manifest.c:51:3
-   51 │    *x = 12;
-      │    ^^^^^^^ Triggering write
-  
   warning: Memory leak in test_leak
       ┌─ manifest.c:26:2
    25 │    
@@ -101,7 +101,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       │ ╰──
    35 │    
   
-  Summaries for load_564:
+  Summaries for load_563:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
@@ -131,33 +131,36 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok V|3|) };
       manifest_bugs = []}
   
-  Summaries for test_np_uninit_566:
+  Summaries for test_ok_574:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret =
-        (Error (Accessing uninitialized memory,
-                [• Called from here: manifest.c:12:3-10;
-                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
-        };
-      manifest_bugs =
-      [(Accessing uninitialized memory,
-        [• Called from here: manifest.c:12:3-10;
-         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
+        ret = (Ok 0) };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 1) };
+      manifest_bugs = []}
+  
+  Summaries for test_np_577:
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret = (Ok 0) };
+      manifest_bugs = []}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [• Called from here: manifest.c:12:3-10;
-                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
+                [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)]))
         };
       manifest_bugs =
       [(Null pointer dereference,
-        [• Called from here: manifest.c:12:3-10;
-         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
+        [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)])]}
   
-  Summaries for test_uninit_569:
+  Summaries for test_uninit_568:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -176,36 +179,33 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok 1) };
       manifest_bugs = []}
   
-  Summaries for test_np_578:
+  Summaries for test_np_uninit_565:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
-      manifest_bugs = []}
+        ret =
+        (Error (Accessing uninitialized memory,
+                [• Called from here: manifest.c:12:3-10;
+                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
+        };
+      manifest_bugs =
+      [(Accessing uninitialized memory,
+        [• Called from here: manifest.c:12:3-10;
+         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
-                [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)]))
+                [• Called from here: manifest.c:12:3-10;
+                 • Triggering read: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs =
       [(Null pointer dereference,
-        [• Triggering write: manifest.c:51:3-10 (cursor: 51:6)])]}
+        [• Called from here: manifest.c:12:3-10;
+         • Triggering read: manifest.c:6:10-12 (cursor: 6:10)])]}
   
-  Summaries for test_ok_575:
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
-      manifest_bugs = []}
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 1) };
-      manifest_bugs = []}
-  
-  Summaries for test_leak_572:
+  Summaries for test_leak_571:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
@@ -225,7 +225,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for test_562:
+  Summaries for test_561:
     Analysed {
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
@@ -267,7 +267,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries array_iter.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
   
   No bugs found
-  Summaries for test_562:
+  Summaries for test_561:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|); V|3|]; pre = [];

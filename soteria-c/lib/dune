@@ -29,7 +29,7 @@
   dune-site)
  (flags :standard -open Soteria_std -open Soteria_c_values)
  (preprocess
-  (pps ppx_deriving.std soteria.ppx))
+  (pps ppx_deriving.std ppx_subliner soteria.ppx))
  (instrumentation
   (backend landmarks --auto)))
 

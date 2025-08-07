@@ -1,0 +1,12 @@
+(library
+ (name soteria)
+ (public_name soteria)
+ (libraries
+  soteria.symex
+  soteria.logs
+  soteria.c_values
+  soteria.std
+  soteria.terminal))
+
+(documentation
+ (package soteria))
