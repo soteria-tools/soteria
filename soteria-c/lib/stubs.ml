@@ -12,7 +12,7 @@ open Agv
 let builtin_functions = [ "malloc"; "free"; "memcpy"; "calloc" ]
 
 let failed_alloc_case state =
-  if !Config.current.alloc_cannot_fail then []
+  if (Config.current ()).alloc_cannot_fail then []
   else [ (fun () -> Result.ok (Basic Typed.Ptr.null, state)) ]
 
 module M (State : State_intf.S) = struct
@@ -144,7 +144,7 @@ module M (State : State_intf.S) = struct
   let signaled_cbmc = ref false
 
   let with_cbmc_support x =
-    if !Config.current.cbmc_compat then Some x
+    if (Config.current ()).cbmc_compat then Some x
     else
       let () =
         if not !signaled_cbmc then (

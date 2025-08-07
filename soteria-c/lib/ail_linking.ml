@@ -43,7 +43,7 @@ let link_extern (ext_cur : extern_idmap) (ext_oth : extern_idmap)
       | Some (cur_def, IK_definition) -> (
           match in_lk with
           | IK_definition ->
-              if !Config.current.no_ignore_duplicate_symbols then
+              if (Config.current ()).no_ignore_duplicate_symbols then
                 Error (Fmt.str "Duplicate external name %a" Fmt_ail.pp_id k)
               else
                 (* There's no clear semantics for duplicate symbols, since it's not legal in C.
@@ -219,7 +219,7 @@ let merge_globs (globs_1 : 'a sigma_object_definition list)
 let link_main opt_m1 opt_m2 =
   match (opt_m1, opt_m2) with
   | (Some _ as m1), Some _ ->
-      if !Config.current.no_ignore_duplicate_symbols then
+      if (Config.current ()).no_ignore_duplicate_symbols then
         Error "linking: multiple main functions"
       else (
         L.info (fun m -> m "Detecting several main functions. ");
