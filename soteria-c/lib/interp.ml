@@ -726,7 +726,7 @@ module Make (State : State_intf.S) = struct
         match Stubs.find_stub fname with
         | Some (stub, filter) -> InterpM.ok (stub, filter)
         | None ->
-            if !Config.current.havoc_undefined_funs then
+            if (Config.current ()).havoc_undefined_funs then
               let return_ty = Ail_helpers.get_return_ty fname in
               InterpM.ok (Stubs.havoc ~return_ty, None)
             else

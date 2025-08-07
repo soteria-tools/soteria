@@ -70,6 +70,12 @@ type t = {
 }
 [@@deriving make, subliner]
 
+type _ Effect.t += GetConfig : t Effect.t
+
 let default = make ()
-let current : t ref = ref default
-let set (config : t) = current := config
+
+let current () =
+  try Effect.perform GetConfig with Effect.Unhandled GetConfig -> default
+
+let with_config ~(config : t) f =
+  try f () with effect GetConfig, k -> Effect.Deep.continue k config
