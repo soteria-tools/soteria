@@ -22,7 +22,7 @@ let push_give_up, flush_give_up =
   (push_give_up, flush_give_up)
 
 let dump_unsupported () =
-  match !Config.current.dump_unsupported_file with
+  match (Config.current ()).dump_unsupported_file with
   | None -> ()
   | Some file ->
       let reasons = flush_give_up () in

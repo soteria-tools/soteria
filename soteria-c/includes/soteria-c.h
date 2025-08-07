@@ -1,6 +1,5 @@
 int __soteria___nondet_int();
 void __soteria___assert(int x);
-void __soteria___debug_show();
 
 #define __attribute__(X)
 #define restrict

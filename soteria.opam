@@ -31,8 +31,8 @@ depends: [
   "hc" {>= "0.5"}
   "yojson" {< "3.0"}
   "ppx_inline_test" {with-test}
-  "ocamlformat" {with-dev-detup & = "0.27.0"}
-  "ocaml-lsp-server" {with-dev-detup}
+  "ocamlformat" {with-dev-setup & = "0.27.0"}
+  "ocaml-lsp-server" {with-dev-setup}
 ]
 build: [
   ["dune" "subst"] {dev}

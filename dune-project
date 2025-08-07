@@ -48,13 +48,14 @@
   ppxlib
   (hc
    (>= 0.5))
-  (yojson (< 3.0))
+  (yojson
+   (< 3.0))
   (ppx_inline_test :with-test)
   (ocamlformat
    (and
-    :with-dev-detup
+    :with-dev-setup
     (= 0.27.0)))
-  (ocaml-lsp-server :with-dev-detup)))
+  (ocaml-lsp-server :with-dev-setup)))
 
 (package
  (name soteria-c)
@@ -70,28 +71,31 @@
   soteria
   cerberus-lib
   zarith
-  ppx_deriving
   cmdliner
+  ppx_deriving
   fmt
   printbox-text
   (linol
    (>= 0.10))
   (linol-eio
    (>= 0.10))
+  (ppx_subliner
+   (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
   (ppx_blob
    (and
     :build
     (>= 0.9.0)))
-  (yojson (< 3.0))
+  (yojson
+   (< 3.0))
   (dune
    (and
     :build
     (>= 3.14.0)))
   (ocamlformat
    (and
-    :with-dev-detup
+    :with-dev-setup
     (= 0.27.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
@@ -107,10 +111,10 @@
    (and
     :build
     (>= 3.14.0)))
-  (ocaml-lsp-server :with-dev-detup)
+  (ocaml-lsp-server :with-dev-setup)
   (ocamlformat
    (and
-    :with-dev-detup
+    :with-dev-setup
     (= 0.27.0)))
   js_of_ocaml
   js_of_ocaml-ppx
@@ -142,13 +146,14 @@
   charon
   (odoc :with-doc)
   (alcotest :with-test)
-  (yojson (< 3.0))
+  (yojson
+   (< 3.0))
   (dune
    (and
     :build
     (>= 3.14.0)))
   (ocamlformat
    (and
-    :with-dev-detup
+    :with-dev-setup
     (= 0.27.0)))
   (ocaml-lsp-server :with-dev-setup)))
