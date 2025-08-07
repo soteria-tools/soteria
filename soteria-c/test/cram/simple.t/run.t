@@ -473,7 +473,7 @@ Checking that code cannot branch infinitely
             [(V|1|,
               { node = [TypedVal {offset = 0; ty = signed int; v = 1}];
                 info = None })];
-            globs = [(x_560, V|1|)] })]
+            globs = [(x_559, V|1|)] })]
   Executed 5 statements
   $ soteria-c exec global_alias.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
@@ -485,7 +485,7 @@ Checking that code cannot branch infinitely
              (V|2|,
               { node = [TypedVal {offset = 0; ty = signed int; v = 0}];
                 info = None })];
-            globs = [(x_560, V|1|); (y_561, V|2|)] })]
+            globs = [(x_559, V|1|); (y_560, V|2|)] })]
   Executed 3 statements
 
   $ soteria-c exec structs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
@@ -564,13 +564,13 @@ Expected to correctly find the harness function
              (V|2|,
               { node = [Zeros {offset = 0; len = 8}; (Bound 8)];
                 info = (Some float.c:10:23-47) })];
-            globs = [(f_561, V|1|)] });
+            globs = [(f_560, V|1|)] });
      Ok: (1,
           { heap =
             [(V|1|,
               { node = [TypedVal {offset = 0; ty = float; v = 0.0f}];
                 info = None })];
-            globs = [(f_561, V|1|)] })]
+            globs = [(f_560, V|1|)] })]
   Executed 11 statements
  
 Check without the proper flag we obtain two branches  

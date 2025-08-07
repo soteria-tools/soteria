@@ -88,14 +88,19 @@ module Config = struct
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_INFINITE_FUEL" in
     Arg.(value & flag & info [ "infinite-fuel" ] ~env ~doc)
 
+  let cbmc_compat_arg =
+    let doc = "Enable support for a subset of the __CPROVER_ API." in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_CBMC_COMPAT" in
+    Arg.(value & flag & info [ "cbmc"; "cbmc-compat" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_unsupported_file
       no_ignore_parse_failures no_ignore_duplicate_symbols parse_only
       dump_summaries_file show_manifest_summaries alloc_cannot_fail
-      use_cerb_headers infinite_fuel =
+      use_cerb_headers infinite_fuel cbmc_compat =
     make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
       ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file
       ~show_manifest_summaries ~alloc_cannot_fail ~use_cerb_headers
-      ~infinite_fuel ()
+      ~infinite_fuel ~cbmc_compat ()
 
   let term =
     Cmdliner.Term.(
@@ -109,7 +114,8 @@ module Config = struct
       $ show_manifest_summaries_arg
       $ alloc_cannot_fail_arg
       $ use_cerb_headers_arg
-      $ infinite_fuel_arg)
+      $ infinite_fuel_arg
+      $ cbmc_compat_arg)
 end
 
 let files_arg =

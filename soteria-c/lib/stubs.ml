@@ -3,6 +3,7 @@ open Csymex
 open Csymex.Syntax
 open Typed.Syntax
 module T = Typed.T
+open Ail_tys
 open Aggregate_val
 
 (* TODO: Generate skeleton for this file from signatures *)
@@ -14,6 +15,11 @@ let failed_alloc_case state =
   else [ (fun () -> Result.ok (Basic Typed.Ptr.null, state)) ]
 
 module M (State : State_intf.S) = struct
+  type 'err fun_exec =
+    args:Aggregate_val.t list ->
+    State.t ->
+    (Aggregate_val.t * State.t, 'err, State.serialized list) Result.t
+
   let malloc ~(args : Aggregate_val.t list) state =
     let* sz =
       match args with
@@ -95,4 +101,59 @@ module M (State : State_intf.S) = struct
     let* v = Csymex.nondet ~constrs Typed.t_int in
     let v = (v :> T.cval Typed.t) in
     Result.ok (Basic v, state)
+
+  module Arg_filter = struct
+    (** HACK: Some internal functions such as __builtin___memcpy_chk are not
+        needed in our tool, since we perform all checks. For this function, we
+        return the real implementation (here, memcpy), with a filter saying that
+        the last argument should be elided. See:
+        https://gcc.gnu.org/onlinedocs/gcc-4.3.0/gcc/Object-Size-Checking.html
+    *)
+
+    type t = (int -> expr -> bool) option
+
+    let no_filter : t = None
+
+    let apply filter args =
+      match filter with None -> args | Some f -> List.filteri f args
+  end
+
+  (* FIXME: make this more global when concurrency is added.
+     Also, it cannot be made local to the function without heavy type annotation
+    because of non-generalisable type vars. *)
+  let signaled_cbmc = ref false
+
+  let with_cbmc_support x =
+    if !Config.current.cbmc_compat then Some x
+    else
+      let () =
+        if not !signaled_cbmc then (
+          signaled_cbmc := true;
+          L.warn (fun m ->
+              m
+                "CBMC support is not enabled, but detected use of the \
+                 __CPROVER API. Soteria will consider the function as missing \
+                 a body."))
+      in
+      None
+
+  let find_stub (fname : Cerb_frontend.Symbol.sym) :
+      ('err fun_exec * Arg_filter.t) option =
+    let (Symbol (_, _, descr)) = fname in
+    match descr with
+    | Cerb_frontend.Symbol.SD_Id name -> (
+        match name with
+        | "malloc" -> Some (malloc, None)
+        | "calloc" -> Some (calloc, None)
+        | "free" -> Some (free, None)
+        | "memcpy" -> Some (memcpy, None)
+        (* See definition of this builtin, the last argument is not useful to us. *)
+        | "__builtin___memcpy_chk" -> Some (memcpy, Some (fun i _ -> i <> 3))
+        | "__soteria___nondet_int" -> Some (nondet_int_fun, None)
+        | "__soteria___assert" -> Some (assert_, None)
+        | "__CPROVER_assert" ->
+            (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
+            with_cbmc_support (assert_, Some (fun i _ -> i == 0))
+        | _ -> None)
+    | _ -> None
 end
