@@ -79,7 +79,8 @@
    (>= 0.10))
   (linol-eio
    (>= 0.10))
-  ppx_subliner
+  (ppx_subliner
+   (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
   (ppx_blob
