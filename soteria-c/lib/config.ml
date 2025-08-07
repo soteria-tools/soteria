@@ -15,6 +15,7 @@ type t = {
   use_cerb_headers : bool; [@default false]
   infinite_fuel : bool; [@default false] (* TODO: find a better interface. *)
   cbmc_compat : bool; [@default false]
+  havoc_undefined_funs : bool; [@default false]
 }
 [@@deriving make]
 

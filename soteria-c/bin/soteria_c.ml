@@ -93,14 +93,23 @@ module Config = struct
     let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_CBMC_COMPAT" in
     Arg.(value & flag & info [ "cbmc"; "cbmc-compat" ] ~env ~doc)
 
+  let havoc_undefined_funs_arg =
+    let doc =
+      "Assume that all undefined functions can return any value. Warning: this \
+       can lead to unsoundnesses in analyses."
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_HAVOC_UNDEFINED_FUNS" in
+    Arg.(
+      value & flag & info [ "havoc-undefined-funs"; "havoc-undef" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_unsupported_file
       no_ignore_parse_failures no_ignore_duplicate_symbols parse_only
       dump_summaries_file show_manifest_summaries alloc_cannot_fail
-      use_cerb_headers infinite_fuel cbmc_compat =
+      use_cerb_headers infinite_fuel cbmc_compat havoc_undefined_funs =
     make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
       ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file
       ~show_manifest_summaries ~alloc_cannot_fail ~use_cerb_headers
-      ~infinite_fuel ~cbmc_compat ()
+      ~infinite_fuel ~cbmc_compat ~havoc_undefined_funs ()
 
   let term =
     Cmdliner.Term.(
@@ -115,7 +124,8 @@ module Config = struct
       $ alloc_cannot_fail_arg
       $ use_cerb_headers_arg
       $ infinite_fuel_arg
-      $ cbmc_compat_arg)
+      $ cbmc_compat_arg
+      $ havoc_undefined_funs_arg)
 end
 
 let files_arg =

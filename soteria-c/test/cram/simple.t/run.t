@@ -595,3 +595,15 @@ Check with the proper flag we obtain only one branch
                 info = (Some alloc_cannot_fail.c:5:19-38) })];
             globs = [] })]
   Executed 5 statements
+
+Check that, without proper flag, undefined function calls are not-implemented
+  $ soteria-c exec havoc_undef.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  Symex terminated with the following outcomes:
+    []
+  Executed 2 statements
+
+Check that, with proper flag, undefined function calls are havoced. Expecting 2 branches.
+  $ soteria-c exec havoc_undef.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --havoc-undef
+  Symex terminated with the following outcomes:
+    [Ok: (0, { heap = []; globs = [] }); Ok: (1, { heap = []; globs = [] })]
+  Executed 7 statements

@@ -102,6 +102,29 @@ module M (State : State_intf.S) = struct
     let v = (v :> T.cval Typed.t) in
     Result.ok (Basic v, state)
 
+  let havoc ~return_ty ~args state =
+    let rec havoc_aggregate state (v : Aggregate_val.t) =
+      match v with
+      | Basic v ->
+          if Svalue.equal_ty (Typed.get_ty v) Svalue.t_ptr then
+            Csymex.not_impl "Havocking input pointer for undefined function"
+          else Result.ok state
+      | Struct { tag = _; fields } ->
+          Result.fold_list fields ~init:state ~f:(fun state { value; _ } ->
+              havoc_aggregate state value)
+      | Array { elems; _ } ->
+          Result.fold_list elems ~init:state ~f:havoc_aggregate
+    in
+    let** state = Result.fold_list args ~init:state ~f:havoc_aggregate in
+    let* ret =
+      match return_ty with
+      | Some return_ty -> Layout.nondet_c_ty_aggregate return_ty
+      | None ->
+          (* No return type, I guess it returns void? *)
+          Csymex.return (Aggregate_val.int 0)
+    in
+    Result.ok (ret, state)
+
   module Arg_filter = struct
     (** HACK: Some internal functions such as __builtin___memcpy_chk are not
         needed in our tool, since we perform all checks. For this function, we

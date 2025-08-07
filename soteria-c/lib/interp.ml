@@ -726,8 +726,12 @@ module Make (State : State_intf.S) = struct
         match Stubs.find_stub fname with
         | Some (stub, filter) -> InterpM.ok (stub, filter)
         | None ->
-            Fmt.kstr InterpM.not_impl "Cannot call external function: %a"
-              Fmt_ail.pp_sym fname)
+            if !Config.current.havoc_undefined_funs then
+              let return_ty = Ail_helpers.get_return_ty fname in
+              InterpM.ok (Stubs.havoc ~return_ty, None)
+            else
+              Fmt.kstr InterpM.not_impl "Cannot call external function: %a"
+                Fmt_ail.pp_sym fname)
 
   and eval_expr_list (el : expr list) =
     let+ vs =
