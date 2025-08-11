@@ -806,9 +806,9 @@ let tb_access ofs size tag tb t =
 let subst_serialized subst_var (serialized : serialized) =
   let v_subst v = Typed.subst subst_var v in
   let subst_atom = function
-    | TypedVal _ ->
-        failwith "not_impl: subst_serialized TypedVal"
-        (* TypedVal { offset = v_subst offset; ty; v = v_subst v } *)
+    | TypedVal { offset; ty; v } ->
+        let v = Charon_util.subst Sptr.ArithPtr.subst subst_var v in
+        TypedVal { offset = v_subst offset; ty; v }
     | Bound v -> Bound (v_subst v)
     | Uninit { offset; len } ->
         Uninit { offset = v_subst offset; len = v_subst len }
@@ -822,10 +822,9 @@ let iter_vars_serialized serialized (f : Svalue.Var.t * [< T.cval ] ty -> unit)
     =
   List.iter
     (function
-      | TypedVal { offset; _ } ->
+      | TypedVal { offset; v; _ } ->
           Typed.iter_vars offset f;
-          failwith "not_impl: iter_vars_serialized TypedVal"
-          (* Typed.iter_vars v f *)
+          Charon_util.iter_vars Sptr.ArithPtr.iter_vars v f
       | Bound v -> Typed.iter_vars v f
       | Uninit { offset; len } ->
           Typed.iter_vars offset f;

@@ -57,6 +57,9 @@ module type S = sig
 
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> T.sint Typed.t * T.nonzero Typed.t
+
+  val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit
+  val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
 end
 
 type arithptr_t = {
@@ -164,4 +167,17 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
   let allocation_info { size; align; _ } = (size, align)
+
+  (* FIXME: Tree borrows data being ignored *)
+  let iter_vars { ptr; align; size; _ } f =
+    Typed.iter_vars ptr f;
+    Typed.iter_vars align f;
+    Typed.iter_vars size f
+
+  (* FIXME: Tree borrows data being ignored *)
+  let subst subst_var p =
+    let ptr = Typed.subst subst_var p.ptr in
+    let align = Typed.subst subst_var p.align in
+    let size = Typed.subst subst_var p.size in
+    { p with ptr; align; size }
 end

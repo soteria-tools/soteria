@@ -190,3 +190,33 @@ let pp_span ft ({ span = { file; beg_loc; end_loc }; _ } : Meta.span) =
   else
     Fmt.pf ft "%a:%d:%d-%d:%d" pp_filename file beg_loc.line beg_loc.col
       end_loc.line end_loc.col
+
+let rec iter_vars ptr_iter_vars rv f =
+  let iter_vars = iter_vars ptr_iter_vars in
+  match rv with
+  | Base v -> Typed.iter_vars v f
+  | Union (_, v) -> iter_vars v f
+  | Enum (disc, vals) ->
+      Typed.iter_vars disc f;
+      List.iter (fun v -> iter_vars v f) vals
+  | Struct vals | Tuple vals | Array vals ->
+      List.iter (fun v -> iter_vars v f) vals
+  | Ptr (p, meta) ->
+      Option.iter (fun v -> Typed.iter_vars v f) meta;
+      ptr_iter_vars p f
+  | ConstFn _ -> ()
+
+let rec subst ptr_subst subst_var rv =
+  let subst = subst ptr_subst subst_var in
+  let map_subst vals = List.map subst vals in
+  match rv with
+  | Base v -> Base (Typed.subst subst_var v)
+  | Union (field_id, v) -> Union (field_id, subst v)
+  | Enum (disc, vals) -> Enum (Typed.subst subst_var disc, map_subst vals)
+  | Struct vals -> Struct (map_subst vals)
+  | Tuple vals -> Tuple (map_subst vals)
+  | Array vals -> Array (map_subst vals)
+  | Ptr (p, meta) ->
+      let meta = Option.map (Typed.subst subst_var) meta in
+      Ptr (ptr_subst subst_var p, meta)
+  | ConstFn _ -> rv
