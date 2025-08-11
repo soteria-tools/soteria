@@ -108,6 +108,7 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
+    "fail/layout_cycle.rs": fail_("We don't check for cycles in layout"),
     "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
     "pass/issues/issue-20575.rs": unkn_("Very slow compilation"),
     "pass/issues/issue-29746.rs": unkn_("Very slow compilation"),
