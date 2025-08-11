@@ -822,7 +822,7 @@ let iter_vars_serialized serialized (f : Svalue.Var.t * [< T.cval ] ty -> unit)
     =
   List.iter
     (function
-      | TypedVal { offset; v; _ } ->
+      | TypedVal { offset; v; ty = _ } ->
           Typed.iter_vars offset f;
           Charon_util.iter_vars Sptr.ArithPtr.iter_vars v f
       | Bound v -> Typed.iter_vars v f

@@ -168,7 +168,7 @@ module ArithPtr : S with type t = arithptr_t = struct
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
   let allocation_info { size; align; _ } = (size, align)
 
-  let iter_vars { ptr; align; size; _ } f =
+  let iter_vars { ptr; align; size; tag = _ } f =
     Typed.iter_vars ptr f;
     Typed.iter_vars align f;
     Typed.iter_vars size f
