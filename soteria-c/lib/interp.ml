@@ -392,8 +392,11 @@ module Make (State : State_intf.S) = struct
     | TInt, TInt | TPointer, TPointer ->
         InterpM.ok (v1 ==@ v2 |> Typed.int_of_bool)
     | TFloat fp1, TFloat fp2 when Svalue.FloatPrecision.equal fp1 fp2 ->
-        InterpM.ok (v1 ==@ v2 |> Typed.int_of_bool)
+        let v1 = Typed.cast v1 in
+        let v2 = Typed.cast v2 in
+        InterpM.ok (v1 ==.@ v2 |> Typed.int_of_bool)
     | TPointer, TInt ->
+        let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
         if%sat Typed.(v2 ==@ zero) then
           InterpM.ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool)
