@@ -48,7 +48,7 @@ let of_linked_program (prog : Ail_tys.linked_program) =
             | Cerb_frontend.Symbol.Symbol (_, _, SD_Id name) -> name
             | _ -> failwith "Expected a function symbol"
           in
-          let is_a_builtin = List.mem sym_name C_std.builtin_functions in
+          let is_a_builtin = List.mem sym_name Stubs.builtin_functions in
           let is_already_declared = Bidirectional_map.has_sym sym ctx.bmap in
           if (not is_a_builtin) || is_already_declared then ctx
           else declare_fn sym ctx)

@@ -12,7 +12,9 @@ exception FrontendError of string
 
 let execution_err msg = raise (ExecutionError msg)
 let frontend_err msg = raise (FrontendError msg)
-let default_fuel = Soteria_symex.Fuel_gauge.{ steps = 1000; branching = 4 }
+
+let default_fuel =
+  Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 module Cleaner = struct
   let files = ref []

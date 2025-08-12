@@ -67,12 +67,49 @@ module Config = struct
     in
     Arg.(value & flag & info [ "show-manifest-summaries" ] ~env ~doc)
 
+  let alloc_cannot_fail_arg =
+    let doc = "Assume that all allocations cannot fail" in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_ALLOC_CANNOT_FAIL" in
+    Arg.(value & flag & info [ "alloc-cannot-fail" ] ~env ~doc)
+
+  let use_cerb_headers_arg =
+    let doc =
+      "Use the Cerberus-provided standard headers instead of the system \
+       headers."
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_USE_CERB_HEADERS" in
+    Arg.(value & flag & info [ "use-cerb-headers" ] ~env ~doc)
+
+  let infinite_fuel_arg =
+    let doc =
+      "Infinite fuel for the analysis. If there is an unbounded loop, the \
+       analysis will not stop. (Used only for whole-program analysis)"
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_INFINITE_FUEL" in
+    Arg.(value & flag & info [ "infinite-fuel" ] ~env ~doc)
+
+  let cbmc_compat_arg =
+    let doc = "Enable support for a subset of the __CPROVER_ API." in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_CBMC_COMPAT" in
+    Arg.(value & flag & info [ "cbmc"; "cbmc-compat" ] ~env ~doc)
+
+  let havoc_undefined_funs_arg =
+    let doc =
+      "Assume that all undefined functions can return any value. Warning: this \
+       can lead to unsoundnesses in analyses."
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "SOTERIA_HAVOC_UNDEFINED_FUNS" in
+    Arg.(
+      value & flag & info [ "havoc-undefined-funs"; "havoc-undef" ] ~env ~doc)
+
   let make_from_args auto_include_path dump_unsupported_file
       no_ignore_parse_failures no_ignore_duplicate_symbols parse_only
-      dump_summaries_file show_manifest_summaries =
+      dump_summaries_file show_manifest_summaries alloc_cannot_fail
+      use_cerb_headers infinite_fuel cbmc_compat havoc_undefined_funs =
     make ~auto_include_path ~dump_unsupported_file ~no_ignore_parse_failures
       ~no_ignore_duplicate_symbols ~parse_only ~dump_summaries_file
-      ~show_manifest_summaries ()
+      ~show_manifest_summaries ~alloc_cannot_fail ~use_cerb_headers
+      ~infinite_fuel ~cbmc_compat ~havoc_undefined_funs ()
 
   let term =
     Cmdliner.Term.(
@@ -83,7 +120,12 @@ module Config = struct
       $ no_ignore_duplicate_symbols_arg
       $ parse_only_arg
       $ dump_summaries_file_arg
-      $ show_manifest_summaries_arg)
+      $ show_manifest_summaries_arg
+      $ alloc_cannot_fail_arg
+      $ use_cerb_headers_arg
+      $ infinite_fuel_arg
+      $ cbmc_compat_arg
+      $ havoc_undefined_funs_arg)
 end
 
 let files_arg =
@@ -99,17 +141,26 @@ let includes_arg =
   Arg.(value & opt_all dir [] & info [ "I" ] ~doc ~docv:"DIR")
 
 module Exec_main = struct
+  let entry_point_arg =
+    let doc = "Entry point of the program to execute" in
+    let docv = "ENTRYPOINT" in
+    Arg.(
+      value
+      & opt string "main"
+      & info [ "entry"; "entry-point"; "harness" ] ~doc ~docv)
+
   let term =
     Term.(
-      const Soteria_c_lib.Driver.exec_main_and_print
+      const Soteria_c_lib.Driver.exec_and_print
       $ Soteria_logs.Cli.term
       $ Soteria_terminal.Cli.term
       $ Soteria_c_values.Solver_config.Cli.term
       $ Config.term
       $ includes_arg
-      $ files_arg)
+      $ files_arg
+      $ entry_point_arg)
 
-  let cmd = Cmd.v (Cmd.info "exec-main") term
+  let cmd = Cmd.v (Cmd.info "exec") term
 end
 
 module Lsp = struct

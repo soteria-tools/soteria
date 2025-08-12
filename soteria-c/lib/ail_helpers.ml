@@ -20,7 +20,6 @@ let rec resolve_sym ?(prog = get_prog ()) sym =
   | Some sym' ->
       if Symbol_std.equal sym sym' then sym else resolve_sym ~prog sym'
 
-(* TODO: handle qualifiers! *)
 let get_param_tys fid =
   let fid = resolve_sym fid in
   List.find_map
@@ -29,7 +28,23 @@ let get_param_tys fid =
         match decl with
         | Cerb_frontend.AilSyntax.Decl_function
             (_proto, _ret_qual, ptys, _is_variadic, _is_inline, _is_noreturn) ->
+            (* TODO: handle qualifiers! *)
             Some (List.map (fun (_, ty, _) -> ty) ptys)
+        | _ -> None
+      else None)
+    (get_prog ()).sigma.declarations
+
+let get_return_ty fid =
+  let fid = resolve_sym fid in
+  List.find_map
+    (fun (id, (_, _, decl)) ->
+      if Cerb_frontend.Symbol.equal_sym id fid then
+        match decl with
+        | Cerb_frontend.AilSyntax.Decl_function
+            (_proto, (_qual, ty), _ptys, _is_variadic, _is_inline, _is_noreturn)
+          ->
+            (* TODO: handle qualifiers! *)
+            Some ty
         | _ -> None
       else None)
     (get_prog ()).sigma.declarations

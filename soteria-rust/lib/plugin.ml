@@ -285,7 +285,7 @@ let merge_ifs (plugins : (bool * plugin) list) =
             let branching =
               get_or "rusteriatool::branch_fuel" !Config.current.branch_fuel
             in
-            { steps; branching }
+            { steps = Finite steps; branching = Finite branching }
           in
           Some { ep with fuel = Some fuel }
       | None, (p : plugin) :: rest -> aux (p.get_entry_point decl) rest

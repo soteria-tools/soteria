@@ -11,6 +11,11 @@ type t = {
   parse_only : bool; [@default false]
   dump_summaries_file : string option; [@default None]
   show_manifest_summaries : bool; [@default false]
+  alloc_cannot_fail : bool; [@default false]
+  use_cerb_headers : bool; [@default false]
+  infinite_fuel : bool; [@default false] (* TODO: find a better interface. *)
+  cbmc_compat : bool; [@default false]
+  havoc_undefined_funs : bool; [@default false]
 }
 [@@deriving make]
 

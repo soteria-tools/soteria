@@ -6,7 +6,7 @@ let pp_ctype = Fmt_ail.pp_ty
 
 type binding_kind =
   | Stackptr of Typed.T.sptr Typed.t
-  | Value of Typed.T.cval Typed.t
+  | Value of Aggregate_val.t
   | Uninit
 [@@deriving show { with_path = false }]
 

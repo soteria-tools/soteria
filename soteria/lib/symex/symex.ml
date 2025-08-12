@@ -191,7 +191,7 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n) ()
     let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n) ()
-    let branching_left = wrap_read Fuel_gauge.branching_left
+    let take_branches list = wrap (Fuel_gauge.take_branches list) ()
   end
 
   module Value = Solver.Value
@@ -319,14 +319,7 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
 
   let branches (brs : (unit -> 'a Seq.t) list) : 'a Seq.t =
    fun () ->
-    let brs, count =
-      Soteria_std.List.take_count (Fuel.branching_left () + 1) brs
-    in
-    let () =
-      match Fuel.consume_branching (max (count - 1) 0) with
-      | Not_exhausted -> ()
-      | Exhausted -> failwith "Exhausted fuel? Unreachable"
-    in
+    let brs = Fuel.take_branches brs in
     match brs with
     | [] -> Seq.Nil
     | [ a ] -> a () ()
@@ -378,7 +371,7 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n) ()
     let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n) ()
-    let branching_left = wrap_read Fuel_gauge.branching_left
+    let take_branches list = wrap (Fuel_gauge.take_branches list) ()
   end
 
   module Value = Solver.Value
@@ -518,14 +511,7 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
 
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
-    let brs, count =
-      Soteria_std.List.take_count (Fuel.branching_left () + 1) brs
-    in
-    let () =
-      match Fuel.consume_branching (max (count - 1) 0) with
-      | Not_exhausted -> ()
-      | Exhausted -> failwith "Exhausted fuel? Unreachable"
-    in
+    let brs = Fuel.take_branches brs in
     match brs with
     | [] -> ()
     | [ a ] -> a () f

@@ -24,6 +24,7 @@ module type S = sig
   include Base
 
   val all : ('a -> 'b t) -> 'a list -> 'b list t
+  val fold_list : init:'a -> f:('a -> 'elem -> 'a t) -> 'elem list -> 'a t
 
   module Syntax : Syntax with type 'a t := 'a t
 end
@@ -38,6 +39,9 @@ module Extend (Base : Base) = struct
       | x :: xs -> bind (fn x) (fun x -> aux (x :: vs) xs)
     in
     aux [] xs
+
+  let fold_list ~init ~f xs =
+    foldM ~return ~bind ~fold:Foldable.List.fold xs ~init ~f
 
   module Syntax = struct
     let ( let* ) = Base.bind

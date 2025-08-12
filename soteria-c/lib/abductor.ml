@@ -9,7 +9,7 @@ module Summaries = struct
 end
 
 let default_abductor_fuel =
-  Soteria_symex.Fuel_gauge.{ steps = 1000; branching = 4 }
+  Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 let generate_summaries_for (fundef : fundef) =
   let open Syntaxes.List in
@@ -30,7 +30,7 @@ let generate_summaries_for (fundef : fundef) =
   in
   let process =
     let open Csymex.Syntax in
-    let* args = Csymex.all Layout.nondet_c_ty arg_tys in
+    let* args = Csymex.all Layout.nondet_c_ty_aggregate arg_tys in
     let* result = Bi_interp.exec_fun fundef ~args Bi_state.empty in
     match result with
     | Ok (ret, bi_state) -> Csymex.return (args, Ok ret, bi_state)

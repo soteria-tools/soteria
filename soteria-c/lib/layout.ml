@@ -1,13 +1,15 @@
 module CF = Cerb_frontend
 open CF.Ctype
 open Typed.Syntax
+module Agv = Aggregate_val
 
 type bv_info = { bv_size : int; signed : bool }
+type member_kind = Padding of int | Field of Identifier.t
 
 type layout = {
   size : int;
   align : int;
-  members_ofs : (CF.Symbol.identifier * int) Array.t;
+  members_ofs : (member_kind * int) list;
 }
 
 module Tag_defs = struct
@@ -54,6 +56,9 @@ end
 let is_int (Ctype (_, ty)) =
   match ty with Basic (Integer _) -> true | _ -> false
 
+let precision (RealFloating f) : Svalue.FloatPrecision.t =
+  match f with Float -> F32 | Double -> F64 | LongDouble -> F128
+
 let normalise_int_ty int_ty =
   Cerb_frontend.Ocaml_implementation.(normalise_integerType DefaultImpl.impl)
     int_ty
@@ -71,6 +76,18 @@ let size_of_float_ty (fty : floatingType) =
 let align_of_float_ty (fty : floatingType) =
   CF.Ocaml_implementation.DefaultImpl.impl.alignof_fty fty
 
+let get_struct_fields tag =
+  let open Syntaxes.Option in
+  let* _loc, def = Tag_defs.find_opt tag in
+  match def with
+  | StructDef (fs, fam) -> Some (fs, fam)
+  | UnionDef _ -> failwith "Not a structure"
+
+let get_struct_fields_ty ty =
+  match CF.Ctype.proj_ctype_ ty with
+  | Struct tag -> get_struct_fields tag
+  | _ -> failwith "Not a structure"
+
 let rec layout_of ty =
   let open Syntaxes.Option in
   (* Get cache, if not found, compute and update cache. *)
@@ -80,29 +97,13 @@ let rec layout_of ty =
   | Basic (Integer inty) ->
       let* size = size_of_int_ty inty in
       let+ align = align_of_int_ty inty in
-      { size; align; members_ofs = [||] }
+      { size; align; members_ofs = [] }
   | Basic (Floating fty) ->
       let* size = size_of_float_ty fty in
       let+ align = align_of_float_ty fty in
-      { size; align; members_ofs = [||] }
+      { size; align; members_ofs = [] }
   | Pointer _ -> layout_of (Ctype ([], Basic (Integer Size_t)))
-  | Struct tag ->
-      let* loc, def = Tag_defs.find_opt tag in
-      let* members, flexible_array_member =
-        match def with
-        | StructDef (m, fam) -> Some (m, fam)
-        | _ ->
-            L.debug (fun m -> m "Don't have a definition of structure");
-            None
-      in
-      let* () =
-        (* TODO: flexible array members *)
-        if Option.is_some flexible_array_member then (
-          Csymex.push_give_up ("Unsupported flexible array member", loc);
-          None)
-        else Some ()
-      in
-      struct_layout_of_members members
+  | Struct tag -> layout_of_struct tag
   | Union tag ->
       let* _loc, def = Tag_defs.find_opt tag in
       let* members =
@@ -118,6 +119,8 @@ let rec layout_of ty =
       None
 
 and union_layout_of_members members =
+  (* Note that members will not contain end-padding,
+     because it contains depends on the variant.. *)
   let open Syntaxes.Option in
   let+ size, align, members_ofs =
     List.fold_left
@@ -132,7 +135,7 @@ and union_layout_of_members members =
               let+ ty_l = layout_of ty in
               ty_l.align
         in
-        let members_ofs = (id, 0) :: members_ofs in
+        let members_ofs = (Field id, 0) :: members_ofs in
         (max acc_size l.size, max acc_align align, members_ofs))
       (Some (0, 0, []))
       members
@@ -142,7 +145,26 @@ and union_layout_of_members members =
     if m = 0 then size else size + align - m
   in
 
-  { align; size; members_ofs = Array.of_list members_ofs }
+  { align; size; members_ofs }
+
+and layout_of_struct tag =
+  let open Syntaxes.Option in
+  let* loc, def = Tag_defs.find_opt tag in
+  let* members, flexible_array_member =
+    match def with
+    | StructDef (m, fam) -> Some (m, fam)
+    | _ ->
+        L.debug (fun m -> m "Don't have a definition of structure");
+        None
+  in
+  let* () =
+    (* TODO: flexible array members *)
+    if Option.is_some flexible_array_member then (
+      Csymex.push_give_up ("Unsupported flexible array member", loc);
+      None)
+    else Some ()
+  in
+  struct_layout_of_members members
 
 (** From:
     https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Structure-Layout.html
@@ -159,31 +181,41 @@ and union_layout_of_members members =
     of the structure. *)
 and struct_layout_of_members members =
   let open Syntaxes.Option in
-  let rec aux members_ofs (layout : layout) = function
-    | [] -> Some (List.rev members_ofs, layout)
-    | (field_name, (_attrs, _align, _quals, ty)) :: rest ->
-        let { size = curr_size; align = curr_align; members_ofs = _ } =
-          layout
+  let+ { size = size_before_padding; align; members_ofs = rev_members_ofs } =
+    Monad.OptionM.fold_list members
+      ~init:{ size = 0; align = 1; members_ofs = [] }
+      ~f:(fun
+          { size; align; members_ofs }
+          (field_name, (_attrs, _align, _quals, ty))
+        ->
+        let+ { size = field_size; align = field_align; _ } = layout_of ty in
+        let padding_size = size mod field_align in
+        let members_ofs =
+          (* Add padding if any *)
+          if padding_size > 0 then (Padding padding_size, size) :: members_ofs
+          else members_ofs
         in
-        let* { size; align; _ } = layout_of ty in
-        let mem_ofs = curr_size + (curr_size mod align) in
-        let new_size = mem_ofs + size in
-        let new_align = Int.max align curr_align in
-        aux
-          ((field_name, mem_ofs) :: members_ofs)
-          { size = new_size; align = new_align; members_ofs = [||] }
-          rest
+        let mem_ofs = size + padding_size in
+        {
+          size = mem_ofs + field_size;
+          align = Int.max field_align align;
+          members_ofs = (Field field_name, mem_ofs) :: members_ofs;
+        })
   in
-  let+ members_ofs, { size; align; members_ofs = _ } =
-    aux [] { size = 0; align = 1; members_ofs = [||] } members
-  in
-  (* Round of size to align *)
-  let size =
-    let m = size mod align in
-
-    if m = 0 then size else size + align - m
-  in
-  { size; align; members_ofs = Array.of_list members_ofs }
+  let end_padding = size_before_padding mod align in
+  if end_padding > 0 then
+    {
+      members_ofs =
+        List.rev ((Padding end_padding, size_before_padding) :: rev_members_ofs);
+      size = size_before_padding + align - end_padding;
+      align;
+    }
+  else
+    {
+      members_ofs = List.rev rev_members_ofs;
+      size = size_before_padding;
+      align;
+    }
 
 let size_of_s ty =
   match layout_of ty with
@@ -203,7 +235,10 @@ let member_ofs id ty =
   match layout_of ty with
   | Some { members_ofs; _ } -> (
       let res =
-        Array.find_opt (fun (id', _) -> CF.Symbol.idEqual id id') members_ofs
+        List.find_opt
+          (function
+            | Field id', _ -> CF.Symbol.idEqual id id' | Padding _, _ -> false)
+          members_ofs
       in
       match res with
       | Some (_, ofs) -> Csymex.return (Typed.int ofs)
@@ -253,25 +288,43 @@ let int_constraints (int_ty : integerType) =
       L.debug (fun m -> m "No int constraints for %a" Fmt_ail.pp_int_ty int_ty);
       None
 
-let constraints (ty : ctype) :
-    (Typed.T.cval Typed.t -> Typed.T.sbool Typed.t list) option =
+exception Unsupported of string
+
+let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
   let open Typed.Infix in
+  let unsupported msg = raise (Unsupported msg) in
+  let basic_or_unsupported v =
+    match v with
+    | Agv.Basic v -> v
+    | Agv.Struct _ ->
+        Fmt.kstr unsupported "Not a basic value (%a) for type %a" Agv.pp v
+          Fmt_ail.pp_ty ty
+  in
   match proj_ctype_ ty with
-  | Void -> Some (fun x -> [ x ==@ 0s ])
-  | Pointer _ -> Some (fun _ -> [])
+  | Void ->
+      let v = basic_or_unsupported v in
+      [ v ==@ 0s ]
+  | Pointer _ -> [] (* Pointers should already have their invariants hold *)
   | Basic (Integer ity) -> (
       match int_constraints ity with
-      | None -> None
-      | Some constrs ->
-          Some
-            (fun x ->
-              match Typed.cast_checked x Typed.t_int with
-              | None -> [ Typed.v_false ]
-              | Some x -> constrs x))
+      | None -> unsupported "No int constraints"
+      | Some constrs -> (
+          let v = basic_or_unsupported v in
+          match Typed.cast_checked v Typed.t_int with
+          | None -> [ Typed.v_false ]
+          | Some x -> constrs x))
+  | Basic (Floating _) ->
+      (* Floating constraints are already included in the floating type itself (bitvectors) *)
+      []
   | _ ->
-      L.info (fun m ->
-          m "No constraints implemented for type %a" Fmt_ail.pp_ty ty);
-      None
+      Fmt.kstr unsupported "No constraints implemented for type %a"
+        Fmt_ail.pp_ty ty
+
+let constraints ~ty v =
+  try Some (constraints_exn ~ty v)
+  with Unsupported msg ->
+    L.debug (fun m -> m "Constraints for %a: %s" Fmt_ail.pp_ty ty msg);
+    None
 
 let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   let open Csymex.Syntax in
@@ -288,3 +341,8 @@ let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   | Basic (Floating _) -> Csymex.not_impl "nondet_c_ty: floating"
   | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->
       Csymex.not_impl "nondet_c_ty: unsupported type"
+
+let nondet_c_ty_aggregate (ty : ctype) : Agv.t Csymex.t =
+  let open Csymex.Syntax in
+  let+ res = nondet_c_ty ty in
+  Agv.Basic res

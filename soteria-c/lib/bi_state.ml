@@ -15,7 +15,9 @@ let pp_pretty ~ignore_freed =
 let empty = (State.empty, [])
 let bi_wrap f = (Bi.wrap ~produce:State.produce) f
 let load ptr ty = bi_wrap (State.load ptr ty)
+let load_aggregate ptr ty = bi_wrap (State.load_aggregate ptr ty)
 let store ptr ty v = bi_wrap (State.store ptr ty v)
+let store_aggregate ptr ty v = bi_wrap (State.store_aggregate ptr ty v)
 let free ptr = bi_wrap (State.free ptr)
 let alloc ?zeroed size = bi_wrap (State.alloc ?zeroed size)
 let alloc_ty ty = bi_wrap (State.alloc_ty ty)
@@ -26,5 +28,9 @@ let copy_nonoverlapping ~dst ~src ~size =
   bi_wrap (State.copy_nonoverlapping ~dst ~src ~size)
 
 let produce s t = Bi.produce State.produce s t
+
+let produce_aggregate ptr ty v t =
+  Bi.produce (State.produce_aggregate ptr ty) v t
+
 let consume s t = Bi.consume ~produce:State.produce State.consume s t
 let to_spec ((st, pre) : t) = (pre, State.serialize st)
