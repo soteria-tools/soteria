@@ -4,7 +4,8 @@ open Cerb_frontend
 open Syntaxes.FunctionWrap
 module Wpst_interp = Interp.Make (SState)
 
-let default_wpst_fuel = Soteria_symex.Fuel_gauge.{ steps = 150; branching = 4 }
+let default_wpst_fuel =
+  Soteria_symex.Fuel_gauge.{ steps = Finite 150; branching = Finite 4 }
 
 let as_nonempty_list functions_to_analyse =
   match functions_to_analyse with [] -> None | _ -> Some functions_to_analyse

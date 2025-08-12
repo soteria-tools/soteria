@@ -9,7 +9,7 @@ module Summaries = struct
 end
 
 let default_abductor_fuel =
-  Soteria_symex.Fuel_gauge.{ steps = 1000; branching = 4 }
+  Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 let generate_summaries_for (fundef : fundef) =
   let open Syntaxes.List in
