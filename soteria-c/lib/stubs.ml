@@ -113,8 +113,6 @@ module M (State : State_intf.S) = struct
       | Struct { tag = _; fields } ->
           Result.fold_list fields ~init:state ~f:(fun state { value; _ } ->
               havoc_aggregate state value)
-      | Array { elems; _ } ->
-          Result.fold_list elems ~init:state ~f:havoc_aggregate
     in
     let** state = Result.fold_list args ~init:state ~f:havoc_aggregate in
     let* ret =

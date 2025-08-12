@@ -277,7 +277,7 @@ let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
   let basic_or_unsupported v =
     match v with
     | Agv.Basic v -> v
-    | Agv.Struct _ | Agv.Array _ ->
+    | Agv.Struct _ ->
         Fmt.kstr unsupported "Not a basic value (%a) for type %a" Agv.pp v
           Fmt_ail.pp_ty ty
   in

@@ -214,7 +214,6 @@ module Make (State : State_intf.S) = struct
                 (mofs + layout.size) state
         in
         produce_members fields members 0 0 state
-    | Array _ -> Csymex.not_impl "Array not implemented in produce_aggregate"
 
   let store_aggregate (ptr : T.sptr Typed.t) (ty : Ctype.ctype) (v : Agv.t) :
       unit InterpM.t =
@@ -459,8 +458,7 @@ module Make (State : State_intf.S) = struct
       let* v =
         match v with
         | Basic v -> return v
-        | Struct _ | Array _ ->
-            Fmt.kstr not_impl "Cannot cast struct or array %a" Agv.pp v
+        | Struct _ -> Fmt.kstr not_impl "Cannot cast %a" Agv.pp v
       in
       let+ res =
         match (old_ty, new_ty) with
