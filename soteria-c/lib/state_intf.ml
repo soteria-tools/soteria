@@ -1,6 +1,7 @@
 open Typed
 open T
 open Cerb_frontend
+module Agv = Aggregate_val
 
 module Template = struct
   type ('a, 'b) t = { heap : 'a; globs : 'b }
@@ -40,10 +41,33 @@ module type S = sig
       serialized list )
     Csymex.Result.t
 
+  val load_aggregate :
+    [< sptr ] Typed.t ->
+    Tree_block.Ctype.ctype ->
+    t ->
+    ( Agv.t * t,
+      [> `NullDereference
+      | `OutOfBounds
+      | `UninitializedMemoryAccess
+      | `UseAfterFree ]
+      err,
+      serialized list )
+    Csymex.Result.t
+
   val store :
     [< sptr ] Typed.t ->
     Tree_block.Ctype.ctype ->
     cval Typed.t ->
+    t ->
+    ( unit * t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      serialized list )
+    Csymex.Result.t
+
+  val store_aggregate :
+    [< sptr ] Typed.t ->
+    Tree_block.Ctype.ctype ->
+    Agv.t ->
     t ->
     ( unit * t,
       [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,

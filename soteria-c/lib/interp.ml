@@ -80,6 +80,11 @@ module InterpM (State : State_intf.S) = struct
   module State = struct
     let load ptr ty = lift_state_op (State.load ptr ty)
     let store ptr ty v = lift_state_op (State.store ptr ty v)
+    let load_aggregate ptr ty = lift_state_op (State.load_aggregate ptr ty)
+
+    let store_aggregate ptr ty v =
+      lift_state_op (State.store_aggregate ptr ty v)
+
     let alloc ?zeroed size = lift_state_op (State.alloc ?zeroed size)
     let alloc_ty ty = lift_state_op (State.alloc_ty ty)
 
@@ -133,16 +138,6 @@ module Make (State : State_intf.S) = struct
     match ty with Pointer (_, ty) -> Some ty | _ -> None
 
   type state = State.t
-
-  let store_aggregate (ptr : T.sptr Typed.t) (ty : Ctype.ctype) (v : Agv.t) :
-      unit InterpM.t =
-    let^ v = Agv.basic_or_unsupported ~msg:"store aggregate" v in
-    InterpM.State.store ptr ty v
-
-  let load_aggregate (ptr : T.sptr Typed.t) (ty : Ctype.ctype) : Agv.t InterpM.t
-      =
-    let+ v = InterpM.State.load ptr ty in
-    Agv.Basic v
 
   let cast_aggregate_to_ptr (x : Agv.t) : [< T.sptr ] Typed.t Csymex.t =
     let open Csymex.Syntax in
@@ -267,7 +262,7 @@ module Make (State : State_intf.S) = struct
         let* ptr = InterpM.State.alloc_ty ty in
         let* () =
           match other with
-          | Value v -> store_aggregate ptr ty v
+          | Value v -> InterpM.State.store_aggregate ptr ty v
           | _ -> InterpM.ok ()
         in
         let+ () = InterpM.map_store (Store.add_stackptr sym ptr ty) in
@@ -624,6 +619,7 @@ module Make (State : State_intf.S) = struct
     List.rev vs
 
   and eval_expr (aexpr : expr) : Agv.t InterpM.t =
+    let open InterpM.State in
     let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
     let@ () = InterpM.with_loc ~loc in
     match expr with

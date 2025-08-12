@@ -107,10 +107,18 @@ let load ptr ty st =
   log "load" ptr st;
   with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
 
+let load_aggregate (ptr : [< T.sptr ] Typed.t) ty state =
+  let++ v, state = load ptr ty state in
+  (Agv.Basic v, state)
+
 let store ptr ty sval st =
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering write" () in
   log "store" ptr st;
   with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
+
+let store_aggregate (ptr : [< T.sptr ] Typed.t) ty v state =
+  let* v = Agv.basic_or_unsupported ~msg:"store aggregate" v in
+  store ptr ty v state
 
 let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
   let open Typed.Infix in
@@ -228,45 +236,6 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) (state : t)
         | _ -> failwith "Struct field mismatch"
       in
       aux members_ofs members values state
-
-(* let rec produce_members (fields : Agv.field list) members (mem_idx : int)
-          (prev_end : int) state =
-        match (fields, members) with
-        | [], [] ->
-            if layout.size > prev_end then
-              produce_padding
-                ~offset:(Typed.int prev_end +@ offset)
-                ~len:(Typed.int (layout.size - prev_end))
-                state
-            else Csymex.return state
-        | _ :: _, [] | [], _ :: _ -> Csymex.not_impl "struct field mismatch"
-        | { name; value } :: rest_fields, (memid, (_, _, _, ty)) :: rest_mems ->
-            let mname, mofs = members_ofs.(mem_idx) in
-            if
-              not
-                (String.equal (Identifier.to_string mname) name
-                && Identifier.equal mname memid)
-            then failwith "Struct field mismatch";
-            let* state =
-              if mofs > prev_end then
-                produce_padding
-                  ~offset:(Typed.int prev_end +@ offset)
-                  ~len:(Typed.int (mofs - prev_end))
-                  state
-              else Csymex.return state
-            in
-            let* state =
-              produce_aggregate
-                (Typed.Ptr.mk loc (Typed.int mofs +@ offset))
-                ty value state
-            in
-            let* layout =
-              Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"layout"
-            in
-            produce_members rest_fields rest_mems (mem_idx + 1)
-              (mofs + layout.size) state
-      in
-      produce_members fields members 0 0 state *)
 
 let consume (serialized : serialized) (st : t) :
     (t, 'err, serialized list) Csymex.Result.t =
