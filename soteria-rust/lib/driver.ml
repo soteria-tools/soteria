@@ -197,8 +197,9 @@ let wrap_step name f =
     Fmt.pr " done in %a@\n@?" pp_elapsed time;
     res
   with e ->
+    let bt = Printexc.get_raw_backtrace () in
     Fmt.pr " errored@\n@?";
-    raise e
+    Printexc.raise_with_backtrace e bt
 
 let fatal ?name ?(code = 2) err =
   let msg = Option.fold ~none:"Fatal: " ~some:(Fmt.str "Fatal (%s): ") name in
