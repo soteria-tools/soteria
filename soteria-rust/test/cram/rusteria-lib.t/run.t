@@ -1,24 +1,23 @@
 Test base functions
-  $ soteria-rust rustc lib-fns.rs --clean
-  note: Done, no errors found
-  
-  lib_fns::main: ran 1 branch
+  $ soteria-rust rustc lib-fns.rs --clean --no-timing
+  Compiling... done in <time>
+  note: lib_fns::main: done in <time>, ran 1 branch
   PC 1: (1 == V|1|)
+  
 
 Test #[soteria::*] annotations
-  $ soteria-rust rustc annots.rs --clean
-  note: Done, no errors found
-  
-  annots::test1: ran 1 branch
+  $ soteria-rust rustc annots.rs --clean --no-timing
+  Compiling... done in <time>
+  note: annots::test1: done in <time>, ran 1 branch
   PC 1: true
   
-  annots::test2: ran 1 branch
+  note: annots::test2: done in <time>, ran 1 branch
   PC 1: true
   
-  annots::test3: ran 1 branch
+  note: annots::test3: done in <time>, ran 1 branch
   PC 1: true
   
-  annots::test_branch_fuel: ran 10 branches
+  note: annots::test_branch_fuel: done in <time>, ran 10 branches
   PC 1: (0 == V|1|)
   PC 2: (1 == V|1|)
   PC 3: (V|1| == 2)
@@ -30,5 +29,6 @@ Test #[soteria::*] annotations
   PC 9: (V|1| == 8)
   PC 10: (V|1| == 9)
   
-  annots::test_step_fuel: ran 1 branch
+  note: annots::test_step_fuel: done in <time>, ran 1 branch
   PC 1: true
+  
