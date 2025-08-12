@@ -2,6 +2,7 @@ open Soteria_terminal
 open Syntaxes.FunctionWrap
 module T = Typed.T
 module Var = Soteria_symex.Var
+module Agv = Aggregate_val
 
 type after_exec = [ `After_exec ]
 type pruned = [ `Pruned ]
@@ -17,7 +18,7 @@ let leaks_to_error ~(loc : Cerb_location.t) leaks =
   (`Memory_leak, elements @ leak_msg)
 
 type raw = {
-  args : Aggregate_val.t list;
+  args : Agv.t list;
       (** List of arguments values, corresponding to the formal arguments in
           order. Really a form of [(x == a0) * (y == a1)] *)
   pre : State.serialized list;  (** Pre-condition as a list of fixes *)
@@ -26,7 +27,7 @@ type raw = {
           matter for UX. *)
   post : State.serialized;  (** Post condition as a serialized heap *)
   ret :
-    ( Aggregate_val.t,
+    ( Agv.t,
       Error.t * (Cerb_location.t[@printer Fmt_ail.pp_loc]) Call_trace.t )
     result;
       (** Return value. If `ok` then it is the C value that the function
@@ -112,7 +113,7 @@ let init_reachable_vars summary =
   let init_reachable = Var_hashset.with_capacity 0 in
   let mark_reachable x = Var_hashset.add init_reachable x in
   let mark_cval_reachable cval =
-    Aggregate_val.iter_vars cval (fun (x, _) -> mark_reachable x)
+    Agv.iter_vars cval (fun (x, _) -> mark_reachable x)
   in
   (* We mark all variables from the arguments and return value as reachable *)
   let () = List.iter mark_cval_reachable summary.args in
@@ -205,7 +206,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
           let iter_post = State.iter_vars_serialized summary.post in
           let iter_args f =
-            List.iter (fun cval -> Aggregate_val.iter_vars cval f) summary.args
+            List.iter (fun cval -> Agv.iter_vars cval f) summary.args
           in
           let process =
             let open Csymex.Syntax in
@@ -214,7 +215,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
                 (Iter.append iter_pc (Iter.append iter_post iter_args))
             in
             let subst = Subst.to_fn subst in
-            let args = List.map (Aggregate_val.subst subst) summary.args in
+            let args = List.map (Agv.subst subst) summary.args in
             let constrs =
               List.map2
                 (fun arg ty -> Option.get (Layout.constraints ~ty arg))

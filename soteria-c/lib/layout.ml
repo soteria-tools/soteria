@@ -1,6 +1,7 @@
 module CF = Cerb_frontend
 open CF.Ctype
 open Typed.Syntax
+module Agv = Aggregate_val
 
 type bv_info = { bv_size : int; signed : bool }
 
@@ -270,16 +271,15 @@ let int_constraints (int_ty : integerType) =
 
 exception Unsupported of string
 
-let constraints_exn ~(ty : ctype) (v : Aggregate_val.t) :
-    Typed.T.sbool Typed.t list =
+let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
   let open Typed.Infix in
   let unsupported msg = raise (Unsupported msg) in
   let basic_or_unsupported v =
     match v with
-    | Aggregate_val.Basic v -> v
-    | Aggregate_val.Struct _ | Aggregate_val.Array _ ->
-        Fmt.kstr unsupported "Not a basic value (%a) for type %a"
-          Aggregate_val.pp v Fmt_ail.pp_ty ty
+    | Agv.Basic v -> v
+    | Agv.Struct _ | Agv.Array _ ->
+        Fmt.kstr unsupported "Not a basic value (%a) for type %a" Agv.pp v
+          Fmt_ail.pp_ty ty
   in
   match proj_ctype_ ty with
   | Void ->
@@ -323,7 +323,7 @@ let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->
       Csymex.not_impl "nondet_c_ty: unsupported type"
 
-let nondet_c_ty_aggregate (ty : ctype) : Aggregate_val.t Csymex.t =
+let nondet_c_ty_aggregate (ty : ctype) : Agv.t Csymex.t =
   let open Csymex.Syntax in
   let+ res = nondet_c_ty ty in
-  Aggregate_val.Basic res
+  Agv.Basic res

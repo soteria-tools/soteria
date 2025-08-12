@@ -4,7 +4,8 @@ open Csymex.Syntax
 open Typed.Syntax
 module T = Typed.T
 open Ail_tys
-open Aggregate_val
+module Agv = Aggregate_val
+open Agv
 
 (* TODO: Generate skeleton for this file from signatures *)
 
@@ -16,11 +17,11 @@ let failed_alloc_case state =
 
 module M (State : State_intf.S) = struct
   type 'err fun_exec =
-    args:Aggregate_val.t list ->
+    args:Agv.t list ->
     State.t ->
-    (Aggregate_val.t * State.t, 'err, State.serialized list) Result.t
+    (Agv.t * State.t, 'err, State.serialized list) Result.t
 
-  let malloc ~(args : Aggregate_val.t list) state =
+  let malloc ~(args : Agv.t list) state =
     let* sz =
       match args with
       | [ Basic sz ] -> return sz
@@ -37,7 +38,7 @@ module M (State : State_intf.S) = struct
           @ failed_alloc_case state)
     | None -> not_impl "malloc with non-integer argument"
 
-  let calloc ~(args : Aggregate_val.t list) state =
+  let calloc ~(args : Agv.t list) state =
     let* sz =
       match args with
       | [ Basic num; Basic sz ] -> (
@@ -56,7 +57,7 @@ module M (State : State_intf.S) = struct
        ]
       @ failed_alloc_case state)
 
-  let free ~(args : Aggregate_val.t list) state =
+  let free ~(args : Agv.t list) state =
     let* ptr =
       match args with
       | [ Basic ptr ] -> return ptr
@@ -68,11 +69,11 @@ module M (State : State_intf.S) = struct
           if%sat Typed.Ptr.is_null (Typed.cast ptr) then Result.ok ((), state)
           else State.free (Typed.cast ptr) state
         in
-        (Basic 0s, state)
+        (Agv.int 0, state)
     | TInt -> Fmt.kstr not_impl "free with int argument: %a" Typed.ppa ptr
     | _ -> Fmt.kstr not_impl "free with non-pointer argument: %a" Typed.ppa ptr
 
-  let memcpy ~(args : Aggregate_val.t list) state =
+  let memcpy ~(args : Agv.t list) state =
     let* dst, src, size =
       match args with
       | [ Basic dst; Basic src; Basic size ] -> return (dst, src, size)
@@ -84,7 +85,7 @@ module M (State : State_intf.S) = struct
     let++ (), state = State.copy_nonoverlapping ~dst ~src ~size state in
     (Basic dst, state)
 
-  let assert_ ~(args : Aggregate_val.t list) state =
+  let assert_ ~(args : Agv.t list) state =
     let open Typed.Infix in
     let* to_assert =
       match args with
@@ -94,7 +95,7 @@ module M (State : State_intf.S) = struct
       | _ -> not_impl "to_assert with non-one arguments"
     in
     if%sat to_assert ==@ 0s then State.error `FailedAssert state
-    else Result.ok (Basic 0s, state)
+    else Result.ok (Agv.int 0, state)
 
   let nondet_int_fun ~args:_ state =
     let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
@@ -103,7 +104,7 @@ module M (State : State_intf.S) = struct
     Result.ok (Basic v, state)
 
   let havoc ~return_ty ~args state =
-    let rec havoc_aggregate state (v : Aggregate_val.t) =
+    let rec havoc_aggregate state (v : Agv.t) =
       match v with
       | Basic v ->
           if Svalue.equal_ty (Typed.get_ty v) Svalue.t_ptr then
@@ -121,7 +122,7 @@ module M (State : State_intf.S) = struct
       | Some return_ty -> Layout.nondet_c_ty_aggregate return_ty
       | None ->
           (* No return type, I guess it returns void? *)
-          Csymex.return (Aggregate_val.int 0)
+          Csymex.return (Agv.int 0)
     in
     Result.ok (ret, state)
 
