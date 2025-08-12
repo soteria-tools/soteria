@@ -5,7 +5,7 @@ from common import *
 from os import error, truncate
 import sys
 import re
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Protocol
 
 
 def file_str(file_name: str):
@@ -21,9 +21,13 @@ LogCategorisation_ = tuple[str, str, Optional[str]]
 LogCategorisation = LogCategorisation_ | list[LogCategorisation_]
 
 
+class TestCategoriser(Protocol):
+    def __call__(self, test: str, *, expect_failure: bool) -> LogCategorisation: ...
+
+
 def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation:
-    if "Fatal (Charon)" in test:
-        # this isn't Charon's fault, really
+    if "Fatal (Frontend)" in test:
+        # this isn't frontend's fault, really
         unresolved = re.findall(
             r"failed to resolve: could not find `(.+)` in `(.+)`", test
         )
@@ -67,14 +71,14 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             sub_errors.append("Parsing ULLBC from JSON")
 
         if len(sub_errors) > 0:
-            return [("Charon", PURPLE, reason) for reason in sub_errors]
-        return ("Charon", PURPLE, None)
+            return [("Tool", PURPLE, reason) for reason in sub_errors]
+        return ("Tool", PURPLE, None)
 
     if "Fatal: No entry points found" in test:
         return ("No entry points found", RED, None)
 
     if "resolve_constant (Generated_Expressions.COpaque" in test:
-        return ("Charon", PURPLE, "Constant resolving")
+        return ("Tool", PURPLE, "Constant resolving")
 
     if "MISSING FEATURE, VANISHING" in test:
         cause = re.search(r"MISSING FEATURE, VANISHING: (.+)\n", test)
@@ -84,7 +88,7 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
         color = YELLOW
         reason = None
 
-        if "Unsupported intrinsic" in cause and not "--intrinsics" in sys.argv:
+        if "Unsupported intrinsic" in cause:
             reason = cause.replace("Unsupported intrinsic: ", "")
             cause = "Unsupported intrinsic"
             color = ORANGE
@@ -97,49 +101,48 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             cause = "Unhandled transmute"
         if "is opaque" in cause:
             reason = cause.replace("Function ", "").replace(" is opaque", "")
-            cause = "Opaque function - Charon"
+            cause = "Opaque function - Tool"
             color = PURPLE
         if "Opaque constant" in cause:
             reason = cause.replace("Constant constant: ", "")
-            cause = "Opaque constant - Charon"
+            cause = "Opaque constant - Tool"
             color = PURPLE
         if "Splitting " in cause:
             cause = "Splitting value"
 
         return (cause, color, reason)
 
-    if "Done, no errors found" in test:
-        if not expect_failure:
-            return ("Success", GREEN, "Expected success, got success")
-        else:
-            return ("Failure", RED, "Expected failure, got success")
+    if "Execution vanished" in test:
+        return ("Vanished", RED, None)
 
-    if "Found issues" in test:
+    if "Miss encountered in WPST" in test:
+        return ("Miss encountered", RED, None)
+
+    # check errors first; one error overrides any success
+    fatal_regex = r"^error: .*: runtime error in"
+    if re.search(fatal_regex, test, re.MULTILINE):
+        cause = re.search(r"runtime error in .*Exn: Failure\(\"(.+)\"\)", test)
+        cause = cause or re.search(r"runtime error in .*Exn: Failure\(\"(.+)\"\)", test)
+        if not cause:
+            return ("Raised exception", RED, None)
+        return ("Raised exception", RED, cause.group(1))
+
+    err_regex = r"^error: (.+): found issues in"
+    if re.search(err_regex, test, re.MULTILINE):
         if expect_failure:
             return ("Success", GREEN, "Expected failure, got failure")
         else:
             return ("Failure", RED, "Expected success, got failure")
 
-    if "Fatal: Exn: Failure" in test:
-        cause = re.search(r"Fatal: Exn: Failure\(\"(.+)\"\)", test)
-        if not cause:
-            return ("Raised exception", RED, None)
-        return ("Raised exception", RED, cause.group(1))
-
-    if "Fatal: Exn" in test:
-        cause = re.search(r"Fatal: Exn: (.+)", test)
-        if not cause:
-            return ("Raised exception", RED, None)
-        return ("Raised exception", RED, cause.group(1))
+    ok_regex = r"^note: .*: done in"
+    if re.search(ok_regex, test, re.MULTILINE):
+        if not expect_failure:
+            return ("Success", GREEN, "Expected success, got success")
+        else:
+            return ("Failure", RED, "Expected failure, got success")
 
     if "internal error, uncaught exception" in test:
         return ("Raised exception", RED, None)
-
-    if "Fatal: Execution vanished" in test:
-        return ("Vanished", RED, None)
-
-    if "Miss encountered in WPST" in test:
-        return ("Miss encountered", RED, None)
 
     if "unknown option" in test:
         return ("Unknown CLI option", RED, None)
@@ -154,7 +157,7 @@ def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
         "A Rust construct that is not currently supported by Kani was found to be reachable"
         in test
     ):
-        return ("Unsupported", ORANGE, None)
+        return ("Unsupported - Tool", PURPLE, None)
 
     if "VERIFICATION:- SUCCESSFUL" in test:
         if not expect_failure:
