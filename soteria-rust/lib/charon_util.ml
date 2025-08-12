@@ -1,43 +1,6 @@
 open Charon
 open Typed
 
-type meta = T.cval Typed.t option
-and 'ptr full_ptr = 'ptr * meta [@@deriving show { with_path = false }]
-
-type 'ptr rust_val =
-  | Base of T.cval Typed.t
-  | Ptr of 'ptr full_ptr
-      (** pointer, parametric to enable Ruxt, with optional meta *)
-  | Enum of T.cval Typed.t * 'ptr rust_val list  (** discriminant * values *)
-  | Struct of 'ptr rust_val list  (** contains ordered fields *)
-  | Tuple of 'ptr rust_val list
-  | Array of 'ptr rust_val list
-  | Union of Types.field_id * 'ptr rust_val  (** field and value of union *)
-  | ConstFn of Types.fn_ptr
-
-let rec pp_rust_val pp_ptr fmt =
-  let pp_rust_val = pp_rust_val pp_ptr in
-  function
-  | Base v -> Fmt.pf fmt "%a" Typed.ppa v
-  | Ptr (p, None) -> Fmt.pf fmt "Ptr(%a)" pp_ptr p
-  | Ptr (p, Some meta) -> Fmt.pf fmt "Ptr(%a, %a)" pp_ptr p Typed.ppa meta
-  | Enum (disc, vals) ->
-      Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
-        (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val)
-        vals
-  | Struct fields ->
-      Fmt.pf fmt "{%a}" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) fields
-  | Tuple vals ->
-      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
-  | Array vals ->
-      Fmt.pf fmt "[%a]" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
-  | Union (field_id, v) ->
-      Fmt.pf fmt "Union(%a: %a)" Types.pp_field_id field_id pp_rust_val v
-  | ConstFn fn_ptr -> Fmt.pf fmt "FnPtr(%a)" Types.pp_fn_ptr fn_ptr
-
-let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv
-let unit_ = Tuple []
-
 let z_of_scalar : Values.scalar_value -> Z.t = function
   | UnsignedScalar (_, v) | SignedScalar (_, v) -> v
 
@@ -53,7 +16,12 @@ let lit_to_string = PrintValues.literal_type_to_string
 let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TAdtId id; _ } ->
       let adt = Crate.get_adt id in
-      Fmt.pf fmt "%a" Crate.pp_name adt.item_meta.name
+      let name, generics =
+        match List.rev adt.item_meta.name with
+        | PeMonomorphized generics :: rest -> (List.rev rest, generics)
+        | _ -> (adt.item_meta.name, TypesUtils.empty_generic_args)
+      in
+      Fmt.pf fmt "%a%a" Crate.pp_name name Crate.pp_generic_args generics
   | TAdt { id = TTuple; generics = { types = tys; _ } } ->
       Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_ty) tys
   | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
@@ -76,30 +44,7 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
   | TFnPtr { binder_value = ins, out; _ } ->
       Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
-  | ty -> Fmt.pf fmt "%a" Types.pp_ty ty
-
-let as_ptr = function
-  | Ptr ptr -> ptr
-  | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a"
-        ppa_rust_val v
-
-let as_base = function
-  | Enum (v, []) | Base v -> v
-  | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
-        ppa_rust_val v
-
-let as_base_of ~ty = function
-  | Enum (v, []) | Base v -> (
-      match Typed.cast_checked v ty with
-      | Some v -> v
-      | None ->
-          Fmt.failwith "Unexpected rust_val type, expected %a, got %a (%a)"
-            Typed.ppa_ty ty Typed.ppa v Svalue.pp_ty (Typed.get_ty v))
-  | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
-        ppa_rust_val v
+  | ty -> Types.pp_ty fmt ty
 
 let z_of_const_generic : Types.const_generic -> Z.t = function
   | CgValue (VScalar s) -> z_of_scalar s
@@ -140,8 +85,7 @@ let mk_array_ty ty len : Types.ty =
       generics =
         {
           types = [ ty ];
-          const_generics =
-            [ CgValue (VScalar (UnsignedScalar (Usize, Z.of_int len))) ];
+          const_generics = [ CgValue (VScalar (UnsignedScalar (Usize, len))) ];
           regions = [];
           trait_refs = [];
         };
@@ -190,33 +134,3 @@ let pp_span ft ({ span = { file; beg_loc; end_loc }; _ } : Meta.span) =
   else
     Fmt.pf ft "%a:%d:%d-%d:%d" pp_filename file beg_loc.line beg_loc.col
       end_loc.line end_loc.col
-
-let rec iter_vars ptr_iter_vars rv f =
-  let iter_vars = iter_vars ptr_iter_vars in
-  match rv with
-  | Base v -> Typed.iter_vars v f
-  | Union (_, v) -> iter_vars v f
-  | Enum (disc, vals) ->
-      Typed.iter_vars disc f;
-      List.iter (fun v -> iter_vars v f) vals
-  | Struct vals | Tuple vals | Array vals ->
-      List.iter (fun v -> iter_vars v f) vals
-  | Ptr (p, meta) ->
-      Option.iter (fun v -> Typed.iter_vars v f) meta;
-      ptr_iter_vars p f
-  | ConstFn _ -> ()
-
-let rec subst ptr_subst subst_var rv =
-  let subst = subst ptr_subst subst_var in
-  let map_subst vals = List.map subst vals in
-  match rv with
-  | Base v -> Base (Typed.subst subst_var v)
-  | Union (field_id, v) -> Union (field_id, subst v)
-  | Enum (disc, vals) -> Enum (Typed.subst subst_var disc, map_subst vals)
-  | Struct vals -> Struct (map_subst vals)
-  | Tuple vals -> Tuple (map_subst vals)
-  | Array vals -> Array (map_subst vals)
-  | Ptr (p, meta) ->
-      let meta = Option.map (Typed.subst subst_var) meta in
-      Ptr (ptr_subst subst_var p, meta)
-  | ConstFn _ -> rv

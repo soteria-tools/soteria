@@ -11,6 +11,7 @@ Test kani::any
   PC 3: (0 == V|1|)
   
 
+
 Test kani::assume
   $ soteria-rust rustc assume.rs --clean --no-timing --kani
   Compiling... done in <time>
@@ -18,10 +19,10 @@ Test kani::assume
   PC 1: (1 == V|1|)
   
   note: assume::assume_i32: done in <time>, ran 1 branch
-  PC 1: (0 != V|1|) /\ ((11 / V|1|) <= 0x7fffffff) /\
-        (-0x80000000 <= (11 / V|1|)) /\ (V|1| <= 0x7fffffff) /\
-        (-0x80000000 <= V|1|)
+  PC 1: ((11 / V|1|) <= 0x7fffffff) /\ (-0x80000000 <= (11 / V|1|)) /\
+        (V|1| <= 0x7fffffff) /\ (-0x80000000 <= V|1|) /\ (0 != V|1|)
   
+
 
 Test #[kani::should_panic]
   $ soteria-rust rustc should_panic.rs --clean --no-timing --kani
@@ -29,6 +30,7 @@ Test #[kani::should_panic]
   note: should_panic::when_at_the_disco: done in <time>, ran 1 branch
   PC 1: true
   
+
 
 Test kani::assert
   $ soteria-rust rustc assert.rs --clean --no-timing --kani

@@ -133,9 +133,15 @@ module TagMap = Map.Make (struct
   let compare = compare
 end)
 
-(** [tag -> (protected * state)], we store whether the tag is protected outside
-    the tree borrow because *)
+(** [tag -> (protected * state)], [protected] indicating the tag's protector
+    (managed outside [tb_state]) was toggled. *)
 type tb_state = (bool * state) TagMap.t
+
+let pp_tb_state =
+  Fmt.iter_bindings ~sep:(Fmt.any ", ") TagMap.iter
+    (fun ft (tag, (protected, st)) ->
+      Fmt.pf ft "%a -> %a%s" pp_tag tag pp_state st
+        (if protected then " (p)" else ""))
 
 let empty_state = TagMap.empty
 

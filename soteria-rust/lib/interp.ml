@@ -5,10 +5,10 @@ open Typed.Infix
 open Typed.Syntax
 open Charon
 open Charon_util
-module T = Typed.T
+open Rust_val
 
 module InterpM (State : State_intf.S) = struct
-  type full_ptr = State.Sptr.t Charon_util.full_ptr
+  type full_ptr = State.Sptr.t Rust_val.full_ptr
   type store = (full_ptr option * Types.ty) Store.t
 
   type 'a t =
@@ -123,8 +123,13 @@ module InterpM (State : State_intf.S) = struct
         ~fe:(fun (e, state) -> fe e store state)
         (x store state)
 
-    let[@inline] is_valid_ptr =
+    let[@inline] is_valid_ptr_fn =
      fun store state -> Result.ok (is_valid_ptr state, store, state)
+
+    let[@inline] is_valid_ptr ptr ty =
+     fun store state ->
+      let+ is_valid = is_valid_ptr state ptr ty in
+      Ok (is_valid, store, state)
 
     let[@inline] lift_err sym =
      fun store state ->
@@ -161,14 +166,14 @@ module Make (State : State_intf.S) = struct
 
   exception Unsupported of (string * Meta.span)
 
-  type full_ptr = Sptr.t Charon_util.full_ptr
+  type full_ptr = Sptr.t Rust_val.full_ptr
   type state = State.t
   type store = (full_ptr option * Types.ty) Store.t
 
   open InterpM
   open InterpM.Syntax
 
-  let pp_full_ptr = Charon_util.pp_full_ptr Sptr.pp
+  let pp_full_ptr = Rust_val.pp_full_ptr Sptr.pp
 
   type 'err fun_exec =
     args:Sptr.t rust_val list ->
@@ -278,7 +283,9 @@ module Make (State : State_intf.S) = struct
               |> List.rev
             in
             let char_arr = Array chars in
-            let str_ty : Types.ty = mk_array_ty (TLiteral (TUInt U8)) len in
+            let str_ty : Types.ty =
+              mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
+            in
             let* ptr, _ = State.alloc_ty str_ty in
             let ptr = (ptr, Some (Typed.int len)) in
             let* () = State.store ptr str_ty char_arr in
@@ -301,14 +308,13 @@ module Make (State : State_intf.S) = struct
     | CTraitConst (_, name) ->
         Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
     | CRawMemory bytes ->
-        let value, _ =
-          List.fold_left
-            (fun (acc, i) x ->
-              let x = Z.shift_left (Z.of_int x) (8 * i) in
-              (Z.add acc x, i + 1))
-            (Z.zero, 0) bytes
+        let value = List.map (fun x -> Base (Typed.int x)) bytes in
+        let value = Array value in
+        let from_ty =
+          mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
         in
-        ok (Base (Typed.int_z value))
+        let^^+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
+        value
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
@@ -320,6 +326,8 @@ module Make (State : State_intf.S) = struct
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v
+    (* Just a global *)
+    | PlaceGlobal g -> resolve_global g.id
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         let* ptr = resolve_place base in
@@ -327,16 +335,16 @@ module Make (State : State_intf.S) = struct
             f "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty);
         let* v = State.load ptr base.ty in
         match v with
-        | Ptr v -> (
+        | Ptr ((ptr_in, _) as fptr) -> (
             L.debug (fun f ->
                 f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
-                  pp_full_ptr v);
+                  pp_full_ptr fptr);
             let pointee = Charon_util.get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
-                let+ () = State.check_ptr_align (fst v) pointee in
-                v
-            | _ -> ok v)
+                let+ () = State.check_ptr_align ptr_in pointee in
+                fptr
+            | _ -> ok fptr)
         | Base off ->
             let+ off = lift_symex @@ cast_checked ~ty:Typed.t_int off in
             let ptr = Sptr.null_ptr_of off in
@@ -455,8 +463,11 @@ module Make (State : State_intf.S) = struct
                 | [], [] -> ok ()
                 | ty1 :: l, ty2 :: r ->
                     if Layout.is_abi_compatible ty1 ty2 then check_tys l r
-                    else error `InvalidFnArgTys
-                | _ -> error `InvalidFnArgCount
+                    else error (`InvalidFnArgTys (ty1, ty2))
+                | _ ->
+                    error
+                      (`InvalidFnArgCount
+                         (List.length in_tys, List.length fn.signature.inputs))
               in
               check_tys (out_ty :: in_tys)
                 (fn.signature.output :: fn.signature.inputs)
@@ -524,19 +535,15 @@ module Make (State : State_intf.S) = struct
   and eval_rvalue (expr : Expressions.rvalue) =
     match expr with
     | Use op -> eval_operand op
+    (* Reference *)
     | RvRef (place, borrow) ->
-        let* ((rptr, _) as ptr) = resolve_place place in
-        let* () = State.check_ptr_align rptr place.ty in
-        let+ ptr' = State.borrow ptr place.ty borrow in
-        Ptr ptr'
-    | Global { id; _ } ->
-        let* ptr = resolve_global id in
-        let decl = Crate.get_global id in
-        State.load ptr decl.ty
-    | GlobalRef ({ id; _ }, _) ->
-        (* References to globals don't reborrow; otherwise this test fails:
-          https://github.com/rust-lang/miri/blob/9d77dd818c01240647004361c1201c66ec061c08/tests/pass/static_mut.rs *)
-        let+ ptr = resolve_global id in
+        let* ptr = resolve_place place in
+        let* ptr' = State.borrow ptr place.ty borrow in
+        let* is_valid = State.is_valid_ptr ptr' place.ty in
+        if is_valid then ok (Ptr ptr') else error `UBDanglingPointer
+    (* Raw pointer *)
+    | RawPtr (place, _kind) ->
+        let+ ptr = resolve_place place in
         Ptr ptr
     | UnaryOp (op, e) -> (
         let* v = eval_operand e in
@@ -571,10 +578,10 @@ module Make (State : State_intf.S) = struct
             | _ -> not_impl "Invalid value for PtrMetadata")
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
-            let* verify_ptr = State.is_valid_ptr in
+            let* verify_ptr = State.is_valid_ptr_fn in
             State.lift_err @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            let* verify_ptr = State.is_valid_ptr in
+            let* verify_ptr = State.is_valid_ptr_fn in
             State.lift_err
             @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
@@ -589,16 +596,24 @@ module Make (State : State_intf.S) = struct
               | ( Struct (_ :: _ as fs)
                 | Array (_ :: _ as fs)
                 | Tuple (_ :: _ as fs) ) as v -> (
-                  match List.rev fs with
-                  | last :: rest -> (
-                      let+ last = with_ptr_meta meta last in
-                      let fs = List.rev (last :: rest) in
+                  let rec split_at_non_empty fs left =
+                    match fs with
+                    | [] -> None
+                    | f :: rest when Rust_val.is_empty f ->
+                        split_at_non_empty rest (f :: left)
+                    | f :: rest -> Some (List.rev left, f, rest)
+                  in
+                  let opt_nonempty = split_at_non_empty (List.rev fs) [] in
+                  match opt_nonempty with
+                  | Some (left, nonempty, right) -> (
+                      let+ nonempty = with_ptr_meta meta nonempty in
+                      let fs = List.rev (left @ [ nonempty ] @ right) in
                       match v with
                       | Struct _ -> Struct fs
                       | Array _ -> Array fs
                       | Tuple _ -> Tuple fs
                       | _ -> assert false)
-                  | [] -> not_impl "Couldn't set pointer meta in CastUnsize")
+                  | None -> not_impl "Couldn't set pointer meta in CastUnsize")
               | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
             in
             let size = Typed.int_z @@ z_of_const_generic length in
@@ -746,7 +761,9 @@ module Make (State : State_intf.S) = struct
             ok (Base (value_of_scalar discriminant))
         | var :: _ ->
             let layout = Layout.of_variant enum var in
-            let discr_ofs = Typed.int @@ Array.get layout.members_ofs 0 in
+            let discr_ofs =
+              Typed.int @@ Layout.Fields_shape.offset_of 0 layout.fields
+            in
             let discr_ty = Layout.enum_discr_ty enum in
             let^^ loc = Sptr.offset loc discr_ofs in
             State.load (loc, None) discr_ty
@@ -827,12 +844,10 @@ module Make (State : State_intf.S) = struct
         let len = int_of_const_generic len in
         let els = List.init len (fun _ -> value) in
         Array els
-    (* Shallow init box -- just casts a ptr into a box *)
-    | ShallowInitBox (ptr, _) -> eval_operand ptr
-    (* Raw pointer *)
-    | RawPtr (place, _kind) ->
-        let+ ptr = resolve_place place in
-        Ptr ptr
+    (* Shallow init box -- get the pointer and transmute it to a box *)
+    | ShallowInitBox (ptr, _) ->
+        let+ ptr = eval_operand ptr in
+        Std_funs.Std._mk_box ptr
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) ->
         let* _, meta = resolve_place place in

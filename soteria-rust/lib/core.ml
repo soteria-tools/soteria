@@ -1,10 +1,10 @@
-open Charon_util
 open Charon
 open Typed
 open Typed.Infix
 open Typed.Syntax
 open Rustsymex
 open Rustsymex.Syntax
+open Rust_val
 
 module M (State : State_intf.S) = struct
   module Sptr = State.Sptr
