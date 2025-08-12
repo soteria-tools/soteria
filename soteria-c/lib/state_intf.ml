@@ -1,5 +1,6 @@
 open Typed
 open T
+open Cerb_frontend
 
 module Template = struct
   type ('a, 'b) t = { heap : 'a; globs : 'b }
@@ -83,6 +84,9 @@ module type S = sig
 
   val error : 'a -> t -> ('ok, 'a err, serialized list) Csymex.Result.t
   val produce : serialized -> t -> t Csymex.t
+
+  val produce_aggregate :
+    sptr Typed.t -> Ctype.ctype -> Aggregate_val.t -> t -> t Csymex.t
 
   val consume :
     serialized -> t -> (t, [> ] err, serialized list) Csymex.Result.t

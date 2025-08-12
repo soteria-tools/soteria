@@ -1,22 +1,12 @@
-open Cerb_frontend
 module T = Typed.T
 
-type field = { name : string; value : t }
+type t = Basic of T.cval Typed.t | Struct of t list
 
-and t =
-  | Basic of T.cval Typed.t
-  | Struct of { tag : Ctype.struct_tag; fields : field list }
-
-let rec pp_field ft { name; value } = Fmt.pf ft "%s=@ %a" name pp value
-
-and pp ft =
+let rec pp ft =
   let open Fmt in
   function
   | Basic v -> Typed.ppa ft v
-  | Struct { tag; fields } ->
-      pf ft "%a%a" (parens Symbol_std.pp) tag
-        (braces (list ~sep:comma pp_field))
-        fields
+  | Struct fields -> braces (list ~sep:comma pp) ft fields
 
 let int_z z = Basic (Typed.int_z z)
 let int i = Basic (Typed.int i)
@@ -30,14 +20,11 @@ let basic_or_unsupported ~msg v =
 let rec iter_vars v f =
   match v with
   | Basic v -> Typed.iter_vars v f
-  | Struct { fields; _ } ->
-      List.iter (fun { value; _ } -> iter_vars value f) fields
+  | Struct fields -> List.iter (fun value -> iter_vars value f) fields
 
 let rec subst f v =
   match v with
   | Basic v -> Basic (Typed.subst f v)
-  | Struct { tag; fields } ->
-      let fields =
-        List.map (fun { name; value } -> { name; value = subst f value }) fields
-      in
-      Struct { tag; fields }
+  | Struct fields ->
+      let fields = List.map (subst f) fields in
+      Struct fields

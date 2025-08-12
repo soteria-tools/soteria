@@ -134,87 +134,6 @@ module Make (State : State_intf.S) = struct
 
   type state = State.t
 
-  let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) (ty : Ctype.ctype)
-      (v : Agv.t) (state : State.t) =
-    let open Csymex.Syntax in
-    let loc = Typed.Ptr.loc ptr in
-    let offset = Typed.Ptr.ofs ptr in
-    match v with
-    | Basic v ->
-        let block =
-          With_origin.
-            {
-              node = Freeable.Alive [ Tree_block.TypedVal { offset; ty; v } ];
-              info = None;
-            }
-        in
-        let serialized : State.serialized =
-          { heap = [ (loc, block) ]; globs = [] }
-        in
-        State.produce serialized state
-    | Struct { tag; fields } ->
-        let* members, _ =
-          Layout.get_struct_fields tag
-          |> Csymex.of_opt_not_impl ~msg:"Members of struct"
-        in
-        let* layout =
-          Layout.layout_of_struct tag
-          |> Csymex.of_opt_not_impl ~msg:"Layout of struct"
-        in
-        let members_ofs = layout.members_ofs in
-        let produce_padding ~offset ~len state =
-          let block =
-            With_origin.
-              {
-                node = Freeable.Alive [ Tree_block.Uninit { offset; len } ];
-                info = None;
-              }
-          in
-          let serialized : State.serialized =
-            { heap = [ (loc, block) ]; globs = [] }
-          in
-          State.produce serialized state
-        in
-        let rec produce_members (fields : Agv.field list) members
-            (mem_idx : int) (prev_end : int) state =
-          match (fields, members) with
-          | [], [] ->
-              if layout.size > prev_end then
-                produce_padding
-                  ~offset:(Typed.int prev_end +@ offset)
-                  ~len:(Typed.int (layout.size - prev_end))
-                  state
-              else Csymex.return state
-          | _ :: _, [] | [], _ :: _ -> Csymex.not_impl "struct field mismatch"
-          | { name; value } :: rest_fields, (memid, (_, _, _, ty)) :: rest_mems
-            ->
-              let mname, mofs = members_ofs.(mem_idx) in
-              if
-                not
-                  (String.equal (Identifier.to_string mname) name
-                  && Identifier.equal mname memid)
-              then failwith "Struct field mismatch";
-              let* state =
-                if mofs > prev_end then
-                  produce_padding
-                    ~offset:(Typed.int prev_end +@ offset)
-                    ~len:(Typed.int (mofs - prev_end))
-                    state
-                else Csymex.return state
-              in
-              let* state =
-                produce_aggregate
-                  (Typed.Ptr.mk loc (Typed.int mofs +@ offset))
-                  ty value state
-              in
-              let* layout =
-                Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"layout"
-              in
-              produce_members rest_fields rest_mems (mem_idx + 1)
-                (mofs + layout.size) state
-        in
-        produce_members fields members 0 0 state
-
   let store_aggregate (ptr : T.sptr Typed.t) (ty : Ctype.ctype) (v : Agv.t) :
       unit InterpM.t =
     let^ v = Agv.basic_or_unsupported ~msg:"store aggregate" v in
@@ -393,36 +312,19 @@ module Make (State : State_intf.S) = struct
           | Some char -> Agv.int char
           | None -> raise (Unsupported ("char constant: " ^ char, get_loc ())))
     | ConstantStruct (tag, fields) ->
-        let members, fam =
-          match Layout.get_struct_fields tag with
-          | Some (members, fam) -> (members, fam)
-          | None -> raise (Unsupported ("unknown struct tag", get_loc ()))
-        in
-        let () =
-          if Option.is_some fam then
-            raise (Unsupported ("flexible array member", get_loc ()))
-        in
         let members =
-          List.sort
-            (fun (id1, _) (id2, _) -> Identifier.compare id1 id2)
-            members
-        in
-        let fields =
-          List.sort (fun (id1, _) (id2, _) -> Identifier.compare id1 id2) fields
+          match Layout.get_struct_fields tag with
+          | Some (members, None) -> members
+          | Some (_, Some _) ->
+              raise (Unsupported ("flexible array member", get_loc ()))
+          | None -> raise (Unsupported ("unknown struct tag", get_loc ()))
         in
         let fields =
           List.map2
-            (fun (mname, (_, _, _, ty)) (name, v) ->
-              if not (Identifier.equal mname name) then
-                raise (Unsupported ("struct field mismatch", get_loc ()));
-              Agv.
-                {
-                  name = Identifier.to_string name;
-                  value = aggregate_of_constant_exn ~ty v;
-                })
+            (fun (_, (_, _, _, ty)) (_, v) -> aggregate_of_constant_exn ~ty v)
             members fields
         in
-        Struct { tag; fields }
+        Struct fields
     | ConstantFloating (str, _suff) ->
         let precision : Svalue.FloatPrecision.t =
           match ty with
@@ -1263,7 +1165,7 @@ module Make (State : State_intf.S) = struct
     in
     let produce_value (ptr : [< T.sptr ] Typed.t) ty expr (state : State.t) =
       let** v, _, state = eval_expr expr Store.empty state in
-      let+ state = produce_aggregate ptr ty v state in
+      let+ state = State.produce_aggregate ptr ty v state in
       Ok state
     in
     Csymex.Result.fold_list prog.sigma.object_definitions ~init:State.empty

@@ -110,9 +110,7 @@ module M (State : State_intf.S) = struct
           if Svalue.equal_ty (Typed.get_ty v) Svalue.t_ptr then
             Csymex.not_impl "Havocking input pointer for undefined function"
           else Result.ok state
-      | Struct { tag = _; fields } ->
-          Result.fold_list fields ~init:state ~f:(fun state { value; _ } ->
-              havoc_aggregate state value)
+      | Struct fields -> Result.fold_list fields ~init:state ~f:havoc_aggregate
     in
     let** state = Result.fold_list args ~init:state ~f:havoc_aggregate in
     let* ret =

@@ -5,6 +5,7 @@ open Typed.Syntax
 module T = Typed.T
 open Csymex
 open State_intf.Template
+module Agv = Aggregate_val
 
 type 'a err = 'a * Cerb_location.t Call_trace.t
 
@@ -167,6 +168,105 @@ let produce (serialized : serialized) (st : t) : t Csymex.t =
   let* heap = SPmap.produce Block.produce serialized.heap st.heap in
   let+ globs = Globs.produce serialized.globs st.globs in
   { heap; globs }
+
+let produce_basic_val loc offset ty v state =
+  let block =
+    With_origin.
+      {
+        node = Freeable.Alive [ Tree_block.TypedVal { offset; ty; v } ];
+        info = None;
+      }
+  in
+  let serialized : serialized = { heap = [ (loc, block) ]; globs = [] } in
+  produce serialized state
+
+let produce_padding loc ~offset ~len state =
+  let block =
+    With_origin.
+      {
+        node = Freeable.Alive [ Tree_block.Uninit { offset; len } ];
+        info = None;
+      }
+  in
+  let serialized : serialized = { heap = [ (loc, block) ]; globs = [] } in
+  produce serialized state
+
+let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) (state : t)
+    =
+  let open Csymex.Syntax in
+  let loc = Typed.Ptr.loc ptr in
+  let offset = Typed.Ptr.ofs ptr in
+  match (v, ty) with
+  | Basic v, _ -> produce_basic_val loc offset ty v state
+  | Struct values, ty ->
+      let* members, _ =
+        Layout.get_struct_fields_ty ty
+        |> Csymex.of_opt_not_impl ~msg:"Members of struct"
+      in
+      let* layout =
+        Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"Layout"
+      in
+      let members_ofs = layout.members_ofs in
+      let rec aux members_ofs members values state =
+        match (members_ofs, members, values) with
+        | [], [], [] -> Csymex.return state
+        | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
+            let* state =
+              produce_padding loc ~offset:(Typed.int ofs) ~len:(Typed.int size)
+                state
+            in
+            aux rest_ofs members values state
+        | ( (Field _, ofs) :: rest_ofs,
+            (_, (_, _, _, mem_ty)) :: rest_mems,
+            value :: rest_values ) ->
+            let* state =
+              produce_aggregate
+                (Typed.Ptr.mk loc (Typed.int ofs))
+                mem_ty value state
+            in
+            aux rest_ofs rest_mems rest_values state
+        | _ -> failwith "Struct field mismatch"
+      in
+      aux members_ofs members values state
+
+(* let rec produce_members (fields : Agv.field list) members (mem_idx : int)
+          (prev_end : int) state =
+        match (fields, members) with
+        | [], [] ->
+            if layout.size > prev_end then
+              produce_padding
+                ~offset:(Typed.int prev_end +@ offset)
+                ~len:(Typed.int (layout.size - prev_end))
+                state
+            else Csymex.return state
+        | _ :: _, [] | [], _ :: _ -> Csymex.not_impl "struct field mismatch"
+        | { name; value } :: rest_fields, (memid, (_, _, _, ty)) :: rest_mems ->
+            let mname, mofs = members_ofs.(mem_idx) in
+            if
+              not
+                (String.equal (Identifier.to_string mname) name
+                && Identifier.equal mname memid)
+            then failwith "Struct field mismatch";
+            let* state =
+              if mofs > prev_end then
+                produce_padding
+                  ~offset:(Typed.int prev_end +@ offset)
+                  ~len:(Typed.int (mofs - prev_end))
+                  state
+              else Csymex.return state
+            in
+            let* state =
+              produce_aggregate
+                (Typed.Ptr.mk loc (Typed.int mofs +@ offset))
+                ty value state
+            in
+            let* layout =
+              Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"layout"
+            in
+            produce_members rest_fields rest_mems (mem_idx + 1)
+              (mofs + layout.size) state
+      in
+      produce_members fields members 0 0 state *)
 
 let consume (serialized : serialized) (st : t) :
     (t, 'err, serialized list) Csymex.Result.t =

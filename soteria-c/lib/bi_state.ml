@@ -26,5 +26,9 @@ let copy_nonoverlapping ~dst ~src ~size =
   bi_wrap (State.copy_nonoverlapping ~dst ~src ~size)
 
 let produce s t = Bi.produce State.produce s t
+
+let produce_aggregate ptr ty v t =
+  Bi.produce (State.produce_aggregate ptr ty) v t
+
 let consume s t = Bi.consume ~produce:State.produce State.consume s t
 let to_spec ((st, pre) : t) = (pre, State.serialize st)

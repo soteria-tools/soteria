@@ -4,11 +4,12 @@ open Typed.Syntax
 module Agv = Aggregate_val
 
 type bv_info = { bv_size : int; signed : bool }
+type member_kind = Padding of int | Field of Identifier.t
 
 type layout = {
   size : int;
   align : int;
-  members_ofs : (CF.Symbol.identifier * int) Array.t;
+  members_ofs : (member_kind * int) list;
 }
 
 module Tag_defs = struct
@@ -82,6 +83,11 @@ let get_struct_fields tag =
   | StructDef (fs, fam) -> Some (fs, fam)
   | UnionDef _ -> failwith "Not a structure"
 
+let get_struct_fields_ty ty =
+  match CF.Ctype.proj_ctype_ ty with
+  | Struct tag -> get_struct_fields tag
+  | _ -> failwith "Not a structure"
+
 let rec layout_of ty =
   let open Syntaxes.Option in
   (* Get cache, if not found, compute and update cache. *)
@@ -91,11 +97,11 @@ let rec layout_of ty =
   | Basic (Integer inty) ->
       let* size = size_of_int_ty inty in
       let+ align = align_of_int_ty inty in
-      { size; align; members_ofs = [||] }
+      { size; align; members_ofs = [] }
   | Basic (Floating fty) ->
       let* size = size_of_float_ty fty in
       let+ align = align_of_float_ty fty in
-      { size; align; members_ofs = [||] }
+      { size; align; members_ofs = [] }
   | Pointer _ -> layout_of (Ctype ([], Basic (Integer Size_t)))
   | Struct tag -> layout_of_struct tag
   | Union tag ->
@@ -113,6 +119,8 @@ let rec layout_of ty =
       None
 
 and union_layout_of_members members =
+  (* Note that members will not contain end-padding,
+     because it contains depends on the variant.. *)
   let open Syntaxes.Option in
   let+ size, align, members_ofs =
     List.fold_left
@@ -127,7 +135,7 @@ and union_layout_of_members members =
               let+ ty_l = layout_of ty in
               ty_l.align
         in
-        let members_ofs = (id, 0) :: members_ofs in
+        let members_ofs = (Field id, 0) :: members_ofs in
         (max acc_size l.size, max acc_align align, members_ofs))
       (Some (0, 0, []))
       members
@@ -137,7 +145,7 @@ and union_layout_of_members members =
     if m = 0 then size else size + align - m
   in
 
-  { align; size; members_ofs = Array.of_list members_ofs }
+  { align; size; members_ofs }
 
 and layout_of_struct tag =
   let open Syntaxes.Option in
@@ -173,33 +181,41 @@ and layout_of_struct tag =
     of the structure. *)
 and struct_layout_of_members members =
   let open Syntaxes.Option in
-  let rec aux members_ofs (layout : layout) = function
-    | [] -> Some (List.rev members_ofs, layout)
-    | (field_name, (_attrs, _align, _quals, ty)) :: rest ->
-        let { size = curr_size; align = curr_align; members_ofs = _ } =
-          layout
+  let+ { size = size_before_padding; align; members_ofs = rev_members_ofs } =
+    Monad.OptionM.fold_list members
+      ~init:{ size = 0; align = 1; members_ofs = [] }
+      ~f:(fun
+          { size; align; members_ofs }
+          (field_name, (_attrs, _align, _quals, ty))
+        ->
+        let+ { size = field_size; align = field_align; _ } = layout_of ty in
+        let padding_size = size mod field_align in
+        let members_ofs =
+          (* Add padding if any *)
+          if padding_size > 0 then (Padding padding_size, size) :: members_ofs
+          else members_ofs
         in
-        let* { size; align; _ } = layout_of ty in
-        let mem_ofs = curr_size + (curr_size mod align) in
-        let new_size = mem_ofs + size in
-        let new_align = Int.max align curr_align in
-        aux
-          ((field_name, mem_ofs) :: members_ofs)
-          { size = new_size; align = new_align; members_ofs = [||] }
-          rest
+        let mem_ofs = size + padding_size in
+        {
+          size = mem_ofs + field_size;
+          align = Int.max field_align align;
+          members_ofs = (Field field_name, mem_ofs) :: members_ofs;
+        })
   in
-  let+ members_ofs, { size; align; members_ofs = _ } =
-    aux [] { size = 0; align = 1; members_ofs = [||] } members
-  in
-  (* Round of size to align *)
-  let size =
-    let m = size mod align in
-
-    if m = 0 then size else size + align - m
-  in
-  let members_ofs = Array.of_list members_ofs in
-  (* Return the layout *)
-  { align; size; members_ofs }
+  let end_padding = size_before_padding mod align in
+  if end_padding > 0 then
+    {
+      members_ofs =
+        List.rev ((Padding end_padding, size_before_padding) :: rev_members_ofs);
+      size = size_before_padding + align - end_padding;
+      align;
+    }
+  else
+    {
+      members_ofs = List.rev rev_members_ofs;
+      size = size_before_padding;
+      align;
+    }
 
 let size_of_s ty =
   match layout_of ty with
@@ -219,7 +235,10 @@ let member_ofs id ty =
   match layout_of ty with
   | Some { members_ofs; _ } -> (
       let res =
-        Array.find_opt (fun (id', _) -> CF.Symbol.idEqual id id') members_ofs
+        List.find_opt
+          (function
+            | Field id', _ -> CF.Symbol.idEqual id id' | Padding _, _ -> false)
+          members_ofs
       in
       match res with
       | Some (_, ofs) -> Csymex.return (Typed.int ofs)
