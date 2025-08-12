@@ -5,6 +5,7 @@ Test base functions
   PC 1: (1 == V|1|)
   
 
+
 Test #[soteria::*] annotations
   $ soteria-rust rustc annots.rs --clean --no-timing
   Compiling... done in <time>
@@ -30,5 +31,8 @@ Test #[soteria::*] annotations
   PC 10: (V|1| == 9)
   
   note: annots::test_step_fuel: done in <time>, ran 1 branch
+  PC 1: true
+  
+  note: annots::test_expect_fail: done in <time>, ran 1 branch
   PC 1: true
   

@@ -24,3 +24,9 @@ fn test_step_fuel() {
         i += 1;
     }
 }
+
+#[rusteria::test]
+#[rusteria::expect_fail]
+fn test_expect_fail() {
+    panic!("Oh no!");
+}

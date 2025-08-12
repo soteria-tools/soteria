@@ -77,9 +77,7 @@ let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
-let pp_elapsed ft t =
-  let now = Unix.gettimeofday () in
-  let t = now -. t in
+let pp_time ft t =
   if !Config.current.no_timing then Fmt.pf ft "<time>"
   else if t < 0.05 then Fmt.pf ft "%ams" (Fmt.float_dfrac 2) (t *. 1000.)
   else Fmt.pf ft "%as" (Fmt.float_dfrac 2) t
@@ -89,6 +87,7 @@ let print_outcomes entry_name f =
   let time = Unix.gettimeofday () in
   match f () with
   | Ok (pcs, ntotal) ->
+      let time = Unix.gettimeofday () -. time in
       let pcs = List.mapi (fun i pc -> (pc, i + 1)) pcs in
       let pp_info ft (pc, i) =
         let name = "PC " ^ string_of_int i ^ ":" in
@@ -100,14 +99,15 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
-        "%s: done in %a, ran %a" entry_name pp_elapsed time pp_branches ntotal;
+        "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
       Fmt.pr "@\n@\n@?";
       true
   | Error (errs, ntotal) ->
+      let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_elapsed
+        "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
         time pp_branches (List.length errs) ntotal;
       Fmt.pr "@\n@?";
       let ( let@@ ) f x = List.iter x f in
@@ -118,9 +118,10 @@ let print_outcomes entry_name f =
       Fmt.pr "@\n@\n@?";
       false
   | exception ExecutionError e ->
+      let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "%s: runtime error in %a: %s" entry_name pp_elapsed time e;
+        "%s: runtime error in %a: %s" entry_name pp_time time e;
       Fmt.pr "@\n@\n@?";
       false
 
@@ -147,8 +148,10 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
        let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
        let fuel = Option.value ~default:default_fuel entry.fuel in
        try Rustsymex.run ~fuel @@ exec_fun entry.fun_decl with
-       | Layout.InvalidLayout ->
-           [ (Error (`InvalidLayout, Call_trace.empty), []) ]
+       | Layout.InvalidLayout ty ->
+           [
+             (Error (`InvalidLayout ty, Soteria_terminal.Call_trace.empty), []);
+           ]
        | exn ->
            Fmt.kstr execution_err "Exn: %a@\nTrace: %s" Fmt.exn exn
              (Printexc.get_backtrace ())
@@ -167,7 +170,7 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
            branches
            |> List.partition_map @@ function
               | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
-              | Error _, pcs -> Right (Ok (Charon_util.unit_, State.empty), pcs)
+              | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
               | v -> Left v
          in
          if List.is_empty errors then oks else errors
@@ -194,7 +197,8 @@ let wrap_step name f =
   try
     let time = Unix.gettimeofday () in
     let res = f () in
-    Fmt.pr " done in %a@\n@?" pp_elapsed time;
+    let time = Unix.gettimeofday () -. time in
+    Fmt.pr " done in %a@\n@?" pp_time time;
     res
   with e ->
     let bt = Printexc.get_raw_backtrace () in

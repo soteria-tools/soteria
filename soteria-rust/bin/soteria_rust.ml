@@ -36,10 +36,26 @@ module Config = struct
     let doc = "Log the compilation process" in
     Arg.(value & flag & info [ "log-compilation" ] ~doc)
 
+  let step_fuel_flag =
+    let doc =
+      "The default step fuel for each entrypoint -- every control flow jump \
+       counts as one fuel"
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "STEP_FUEL" in
+    Arg.(value & opt int 1000 & info [ "step-fuel" ] ~doc ~env)
+
+  let branch_fuel_flag =
+    let doc =
+      "The default branch fuel for each entrypoint -- every symbolic execution \
+       branching point counts as one fuel"
+    in
+    let env = Cmdliner.Cmd.Env.info ~doc "BRANCH_FUEL" in
+    Arg.(value & opt int 4 & info [ "branch-fuel" ] ~doc ~env)
+
   let make_from_args no_compile no_timing cleanup ignore_leaks ignore_aliasing
-      with_kani with_miri log_compilation =
+      with_kani with_miri log_compilation step_fuel branch_fuel =
     make ~no_compile ~no_timing ~cleanup ~ignore_leaks ~ignore_aliasing
-      ~with_kani ~with_miri ~log_compilation ()
+      ~with_kani ~with_miri ~log_compilation ~step_fuel ~branch_fuel ()
 
   let term =
     Cmdliner.Term.(
@@ -51,7 +67,9 @@ module Config = struct
       $ ignore_aliasing_flag
       $ with_kani_flag
       $ with_miri_flag
-      $ log_compilation_flag)
+      $ log_compilation_flag
+      $ step_fuel_flag
+      $ branch_fuel_flag)
 end
 
 module Global_config = struct

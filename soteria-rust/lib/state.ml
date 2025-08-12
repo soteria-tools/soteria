@@ -57,7 +57,7 @@ module GlobMap = struct
 
   let pp pp_v fmt m =
     let pp_pair = Fmt.pair ~sep:(Fmt.any " -> ") pp_global pp_v in
-    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) m
+    (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) fmt m
 end
 
 module FunBiMap = struct
@@ -89,7 +89,7 @@ module FunBiMap = struct
     let pp_pair =
       Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Types.pp_fn_ptr
     in
-    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) lmap
+    (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) fmt lmap
 end
 
 type sub = Tree_block.t * Tree_borrow.t
@@ -97,7 +97,7 @@ type sub = Tree_block.t * Tree_borrow.t
 and t = {
   state : sub Freeable.t SPmap.t option;
   functions : FunBiMap.t;
-  globals : Sptr.t Charon_util.full_ptr GlobMap.t;
+  globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
 }
 [@@deriving show { with_path = false }]
@@ -157,8 +157,9 @@ let with_tbs b f =
 let check_ptr_align (ptr : Sptr.t) ty st =
   let@ () = with_error_loc_as_call_trace st in
   let* expected_align = Layout.align_of_s ty in
-  let ofs = Typed.Ptr.ofs ptr.ptr in
-  let align = ptr.align in
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  (* 0-based pointers are aligned up to their offset *)
+  let align = Typed.ite (loc ==@ Typed.Ptr.null_loc) expected_align ptr.align in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
         Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa expected_align
@@ -172,14 +173,16 @@ let with_ptr (ptr : Sptr.t) (st : t)
       [< T.sint ] Typed.t * sub option ->
       ('a * sub option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
-  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
+  if%sat Sptr.sem_eq ptr Sptr.null_ptr then Result.error `NullDereference
   else
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     let@ state = with_state st in
-    let++ v, state =
-      (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state
-    in
-    (v, state)
+    let* res = (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state in
+    match res with
+    | Missing _ as miss ->
+        if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
+        else return miss
+    | ok_or_err -> return ok_or_err
 
 (** This is used as a stopgap for cases where a function pointer is cast to a
     regular pointer and is used on the state; the location won't exist in tree
@@ -222,7 +225,7 @@ let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
   let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
   let++ value, block = Encoder.ParserMonad.parse ~init:block ~handler parser in
   L.debug (fun f ->
-      f "Finished reading rust value %a" (Charon_util.pp_rust_val Sptr.pp) value);
+      f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   (value, block)
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
@@ -280,6 +283,49 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   in
   let@ ofs, block = with_ptr dst st in
   let@ block, _ = with_tbs block in
+  (* We need to be careful about tree borrows; the tree we copy has a tree borrow state inside,
+     but we cannot copy that, since those tags don't belong to this allocation!
+     Instead, we must first get the tree borrow states for the original area of memory,
+     and update the copied tree with them.
+     We only want to update the values in the tree, not the tree borrow state. *)
+  let module Tree = Tree_block.Tree in
+  let** original_tree, _ = Tree_block.get_raw_tree_owned ofs size block in
+  (* Iterator over the tree borrow states in a tree. *)
+  let collect_tb_states f =
+    Tree.iter_leaves_rev original_tree @@ fun leaf ->
+    match leaf.node with
+    | Owned { tb; _ } ->
+        let range = Range.offset leaf.range ~-(fst original_tree.range) in
+        f (tb, range)
+    | NotOwned Totally -> failwith "Impossible: we framed the range"
+    | NotOwned Partially ->
+        failwith "Impossible: iterating over an intermediate node"
+  in
+  (* Update a tree and its children with the given tree borrow state. *)
+  let put_tb tb t =
+    let rec aux tb (t : Tree.t) =
+      match t.node with
+      | NotOwned _ -> failwith "Impossible: checked before"
+      | Owned { v; _ } ->
+          let children =
+            Option.map (fun (l, r) -> (aux tb l, aux tb r)) t.children
+          in
+          { t with children; node = Owned { v; tb } }
+    in
+    try Result.ok (aux tb t) with Failure msg -> not_impl msg
+  in
+  (* Applies all the tree borrow ranges to the tree we're writing, overwriting all
+     previous states. *)
+  let** tree_to_write =
+    Result.fold_iter collect_tb_states ~init:tree_to_write
+      ~f:(fun tree (tb, range) ->
+        let replace_node = put_tb tb in
+        let rebuild_parent = Tree.of_children in
+        let++ _, tree =
+          Tree.frame_range ~rebuild_parent ~replace_node tree range
+        in
+        tree)
+  in
   Tree_block.put_raw_tree ofs tree_to_write block
 
 let alloc ?zeroed size align st =
@@ -292,7 +338,7 @@ let alloc ?zeroed size align st =
   let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
-  let ptr : Sptr.t Charon_util.full_ptr =
+  let ptr : Sptr.t Rust_val.full_ptr =
     ({ ptr; tag = tb.tag; align; size }, None)
   in
   (* The pointer is necessarily not null *)
@@ -392,9 +438,8 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
       | (BTwoPhaseMut | BMut) when Layout.is_unsafe_cell ty ->
           return Tree_borrow.ReservedIM
       | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
-      | _ ->
-          Fmt.kstr not_impl "Unhandled borrow kind: %a"
-            Charon.Expressions.pp_borrow_kind kind
+      | BUniqueImmutable -> return @@ Tree_borrow.Reserved false
+      | BShallow -> Fmt.kstr not_impl "Unhandled borrow kind: BShallow"
     in
     let node = Tree_borrow.init ~state:tag_st () in
     let@ block, tb = with_opt_or block (ptr, meta) in
@@ -441,7 +486,10 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
     | Ok v -> Ok v
     | Missing fixes -> Missing fixes
     | Error `UseAfterFree -> Error `RefInvalidatedEarly
-    | Error ((`AliasingError | `NullDereference | `OutOfBounds) as e) -> Error e
+    | Error
+        ((`AliasingError | `NullDereference | `OutOfBounds | `UBDanglingPointer)
+         as e) ->
+        Error e
   in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in

@@ -4,6 +4,7 @@ open Rustsymex
 open Rustsymex.Syntax
 open Typed.Infix
 open Typed.Syntax
+open Rust_val
 
 module M (State : State_intf.S) = struct
   module Sptr = State.Sptr
@@ -19,8 +20,14 @@ module M (State : State_intf.S) = struct
     Result.t
 
   (* some utils *)
-  let[@inline] as_ptr (v : rust_val) =
-    match v with Ptr ptr -> return ptr | _ -> not_impl "expected pointer"
+  let[@inline] as_ptr ?(null_ok = false) (v : rust_val) =
+    match v with
+    | Ptr ptr -> return ptr
+    | Base v when null_ok ->
+        let+ v = cast_checked ~ty:Typed.t_int v in
+        let ptr = Sptr.null_ptr_of v in
+        (ptr, None)
+    | _ -> not_impl "expected pointer"
 
   let[@inline] as_base ?(ty : 'ty Typed.ty option) (v : rust_val) :
       'ty Typed.t Rustsymex.t =
@@ -412,7 +419,9 @@ module M (State : State_intf.S) = struct
     (Base res, state)
 
   let ptr_offset_from_ ~unsigned ~t ~ptr ~base state : ret =
-    let* (ptr, _), (base, _) = as_ptr ptr &&* as_ptr base in
+    let* (ptr, _), (base, _) =
+      as_ptr ~null_ok:true ptr &&* as_ptr ~null_ok:true base
+    in
     let* size = Layout.size_of_s t in
     if%sat size ==@ 0s then
       State.error (`Panic (Some "ptr_offset_from with ZST")) state
@@ -444,7 +453,7 @@ module M (State : State_intf.S) = struct
   let raw_eq ~t ~a ~b state =
     let* l, r = as_ptr a &&* as_ptr b in
     let layout = Layout.layout_of t in
-    let bytes = mk_array_ty (TLiteral (TUInt U8)) layout.size in
+    let bytes = mk_array_ty (TLiteral (TUInt U8)) (Z.of_int layout.size) in
     (* this is hacky, but we do not keep the state post-load, as it
        will have its tree blocks split up per byte, which is suboptimal *)
     let** l, _ = State.load l bytes state in
@@ -523,7 +532,9 @@ module M (State : State_intf.S) = struct
           |> List.rev
         in
         let char_arr = Array chars in
-        let str_ty : Types.ty = mk_array_ty (TLiteral (TUInt U8)) len in
+        let str_ty : Types.ty =
+          mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
+        in
         let** (ptr, _), state = State.alloc_ty str_ty state in
         let ptr = (ptr, Some (Typed.int len)) in
         let** (), state = State.store ptr str_ty char_arr state in

@@ -19,7 +19,7 @@ let miss_no_fix ?msg () = Rustsymex.return (miss_no_fix_immediate ?msg ())
 (* FIXME: here we hardcode the use of ArithPtr, but that's not really needed, it's just to avoid
    the type parameter going everywhere. We may want to make this module a functor on the pointer
    type, or make it work on any ptr *)
-type rust_val = Sptr.ArithPtr.t Charon_util.rust_val
+type rust_val = Sptr.ArithPtr.t Rust_val.t
 
 module Encoder = Encoder.Make (Sptr.ArithPtr)
 
@@ -30,7 +30,7 @@ module MemVal = struct
   let pp ft t =
     let open Fmt in
     pf ft "%a : %a"
-      (Charon_util.pp_rust_val Sptr.ArithPtr.pp)
+      (Rust_val.pp Sptr.ArithPtr.pp)
       t.value Charon_util.pp_ty t.ty
 end
 
@@ -694,7 +694,7 @@ type serialized_atom =
   | TypedVal of {
       offset : T.sint Typed.t;
       ty : Types.ty; [@printer Charon_util.pp_ty]
-      v : rust_val; [@printer Charon_util.pp_rust_val Sptr.ArithPtr.pp]
+      v : rust_val; [@printer Rust_val.pp Sptr.ArithPtr.pp]
     }
   | Bound of T.sint Typed.t
   | Uninit of { offset : T.sint Typed.t; len : T.sint Typed.t }
@@ -807,7 +807,7 @@ let subst_serialized subst_var (serialized : serialized) =
   let v_subst v = Typed.subst subst_var v in
   let subst_atom = function
     | TypedVal { offset; ty; v } ->
-        let v = Charon_util.subst Sptr.ArithPtr.subst subst_var v in
+        let v = Rust_val.subst Sptr.ArithPtr.subst subst_var v in
         TypedVal { offset = v_subst offset; ty; v }
     | Bound v -> Bound (v_subst v)
     | Uninit { offset; len } ->
@@ -824,7 +824,7 @@ let iter_vars_serialized serialized (f : Svalue.Var.t * [< T.cval ] ty -> unit)
     (function
       | TypedVal { offset; v; ty = _ } ->
           Typed.iter_vars offset f;
-          Charon_util.iter_vars Sptr.ArithPtr.iter_vars v f
+          Rust_val.iter_vars Sptr.ArithPtr.iter_vars v f
       | Bound v -> Typed.iter_vars v f
       | Uninit { offset; len } ->
           Typed.iter_vars offset f;
