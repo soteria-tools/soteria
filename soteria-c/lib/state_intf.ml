@@ -65,7 +65,7 @@ module type S = sig
     Csymex.Result.t
 
   val store_aggregate :
-    [< sptr ] Typed.t ->
+    sptr Typed.t ->
     Tree_block.Ctype.ctype ->
     Agv.t ->
     t ->

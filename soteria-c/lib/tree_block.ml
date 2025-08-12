@@ -376,6 +376,22 @@ module Tree = struct
     in
     ((), tree)
 
+  let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t) (t : t) :
+      (unit * t, 'err, 'fix) Result.t =
+    let range = (low, low +@ len) in
+    let replace_node _ = uninit range in
+    let rebuild_parent = of_children in
+    let* node, tree = frame_range t ~replace_node ~rebuild_parent range in
+    let++ () =
+      match node.node with
+      | NotOwned Totally ->
+          let fixes = mk_fix_any ~ofs:low ~len () in
+          Result.miss (log_fixes fixes)
+      | NotOwned Partially -> miss_no_fix ~msg:"partially missing deinit" ()
+      | _ -> Result.ok ()
+    in
+    ((), tree)
+
   let get_raw ofs size t =
     let range = (ofs, ofs +@ size) in
     let replace_node node = node in
@@ -587,6 +603,18 @@ let store ofs ty sval t =
       let++ (), tree =
         let@ () = with_bound_check t (ofs +@ size) in
         Tree.store ofs ty sval t.root
+      in
+      ((), to_opt tree)
+
+let deinit ofs len t =
+  match t with
+  | None ->
+      let fixes = mk_fix_any ~ofs ~len () in
+      Result.miss (log_fixes fixes)
+  | Some t ->
+      let++ (), tree =
+        let@ () = with_bound_check t (ofs +@ len) in
+        Tree.deinit ofs len t.root
       in
       ((), to_opt tree)
 

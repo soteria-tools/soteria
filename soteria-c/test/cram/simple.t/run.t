@@ -607,3 +607,5 @@ Check that, with proper flag, undefined function calls are havoced. Expecting 2 
   Symex terminated with the following outcomes:
     [Ok: (0, { heap = []; globs = [] }); Ok: (1, { heap = []; globs = [] })]
   Executed 7 statements
+  
+  $ soteria-c exec glob_struct.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v

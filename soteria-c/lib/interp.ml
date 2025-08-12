@@ -876,13 +876,22 @@ module Make (State : State_intf.S) = struct
         let* guard = eval_expr guard in
         let^ guard_bool = cast_aggregate_to_bool guard in
         if%sat guard_bool then eval_expr t else eval_expr e
+    | AilEstruct (_tag, fields) ->
+        let+ fields_rev =
+          InterpM.fold_list fields ~init:[] ~f:(fun acc (_, e_opt) ->
+              match e_opt with
+              | None -> InterpM.not_impl "Partial field initialization"
+              | Some e ->
+                  let+ new_res = eval_expr e in
+                  new_res :: acc)
+        in
+        Agv.Struct (List.rev fields_rev)
     | AilEcond (_, None, _) -> InterpM.not_impl "GNU ?:"
     | AilEarray_decay _ -> InterpM.not_impl "Array decay"
     | AilEassert _
     | AilEoffsetof (_, _)
     | AilEgeneric (_, _)
     | AilEarray (_, _, _)
-    | AilEstruct (_, _)
     | AilEunion (_, _, _)
     | AilEcompound (_, _, _)
     | AilEbuiltin _ | AilEstr _ | AilEsizeof_expr _
