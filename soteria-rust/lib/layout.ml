@@ -13,14 +13,14 @@ exception InvalidLayout of Types.ty
     N offsets. *)
 module Fields_shape = struct
   type t =
-    | None  (** No fields present *)
+    | Primitive  (** No fields present *)
     | Arbitrary of int Array.t [@printer Fmt.(array ~sep:comma int)]
         (** Arbitrary field placement (structs, enums...) *)
     | Array of int  (** All fields are equally spaced (arrays, slices) *)
   [@@deriving show { with_path = false }]
 
   let offset_of f = function
-    | None -> failwith "This layout has no fields"
+    | Primitive -> failwith "This layout has no fields"
     | Arbitrary arr -> arr.(f)
     | Array stride -> f * stride
 end
@@ -122,18 +122,18 @@ let rec layout_of (ty : Types.ty) : layout =
   | TLiteral ty ->
       let size = size_of_literal_ty ty in
       let align = align_of_literal_ty ty in
-      { size; align; fields = None }
+      { size; align; fields = Primitive }
   (* Fat pointers *)
   | TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } }
   | TRef (_, sub_ty, _)
   | TRawPtr (sub_ty, _)
     when is_dst sub_ty ->
       let ptr_size = Crate.pointer_size () in
-      { size = ptr_size * 2; align = ptr_size; fields = None }
+      { size = ptr_size * 2; align = ptr_size; fields = Primitive }
   (* Refs, pointers, boxes *)
   | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) ->
       let ptr_size = Crate.pointer_size () in
-      { size = ptr_size; align = ptr_size; fields = None }
+      { size = ptr_size; align = ptr_size; fields = Primitive }
   (* Dynamically sized types -- we assume they have a size of 0. In truth, these types should
      simply never be allocated directly, and instead can only be obtained hidden behind
      references; however we must be able to compute their layout, to get e.g. the offset of
@@ -190,15 +190,15 @@ let rec layout_of (ty : Types.ty) : layout =
       let size = Z.(to_int (len * of_int sub_layout.size)) in
       { size; align = sub_layout.align; fields = Array sub_layout.size }
   (* Never -- zero sized type *)
-  | TNever -> { size = 0; align = 1; fields = None }
+  | TNever -> { size = 0; align = 1; fields = Primitive }
   (* Function definitions -- zero sized type *)
-  | TFnDef _ -> { size = 0; align = 1; fields = None }
+  | TFnDef _ -> { size = 0; align = 1; fields = Primitive }
   (* Function pointers (can point to a function or a state-less closure). *)
   | TFnPtr _ ->
       let ptr_size = Crate.pointer_size () in
-      { size = ptr_size; align = ptr_size; fields = None }
+      { size = ptr_size; align = ptr_size; fields = Primitive }
   (* FIXME: this is wrong but at least some more code runs... *)
-  | TDynTrait _ -> { size = 0; align = 1; fields = None }
+  | TDynTrait _ -> { size = 0; align = 1; fields = Primitive }
   (* Others (unhandled for now) *)
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
   | TError _ -> raise (CantComputeLayout ("error type", ty))
@@ -225,9 +225,11 @@ and of_variant adt_id (variant : Types.variant) =
   Session.get_or_compute_cached_layout_var variant @@ fun () ->
   let variants = Crate.as_enum adt_id in
   if
-    List.compare_length_with variants 1 = 0
-    && (List.for_all (fun ty -> (layout_of ty).size = 0)
-       @@ field_tys variant.fields)
+    match variants with
+    | [ _single ] ->
+        List.for_all (fun ty -> (layout_of ty).size = 0)
+        @@ field_tys variant.fields
+    | _ -> false
   then
     let align =
       List.fold_left (fun acc ty -> max acc (layout_of ty).align) 1

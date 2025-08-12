@@ -193,7 +193,6 @@ let default =
           "-Zcrate-attr=feature(register_tool)";
           "-Zcrate-attr=register_tool(rusteriatool)";
           "--extern=rusteria";
-          "--edition=2024";
           (* include the std *)
           Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"
             std_lib_path target;
@@ -237,7 +236,8 @@ let kani =
 let miri =
   let mk_cmd () =
     let@ _ = with_compiled_lib "miri" in
-    Cmd.make ~features:[ "miri" ] ~rustc:[ "--extern=miristd" ]
+    Cmd.make ~features:[ "miri" ]
+      ~rustc:[ "--extern=miristd"; "--edition=2024" ]
       ~obol:[ "--entry_names miri_start" ]
       ()
   in

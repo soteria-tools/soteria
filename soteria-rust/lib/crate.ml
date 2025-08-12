@@ -22,9 +22,7 @@ let as_fmt_env () =
   PrintUllbcAst.Crate.crate_to_fmt_env crate
 
 let[@inline] mk_pp to_string =
- fun ft v ->
-  let to_str = to_string (as_fmt_env ()) in
-  Fmt.pf ft "%s" (to_str v)
+ fun ft v -> Fmt.of_to_string (to_string (as_fmt_env ())) ft v
 
 let[@inline] mk_pp_indent to_string =
  fun ft v ->

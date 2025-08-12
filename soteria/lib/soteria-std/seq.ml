@@ -12,8 +12,8 @@ let self_cross_product seq =
   in
   aux seq
 
-let rec init_aux_z f i j () =
-  if Z.lt i j then Cons (f i, init_aux_z f (Z.succ i) j) else Nil
-
 let init_z n f =
+  let rec init_aux_z f i j () =
+    if Z.lt i j then Cons (f i, init_aux_z f (Z.succ i) j) else Nil
+  in
   if Z.lt n Z.zero then invalid_arg "Seq.init_z" else init_aux_z f Z.zero n
