@@ -27,16 +27,6 @@ let config_set (config : Config.global) =
   Soteria_terminal.Config.set_and_lock config.terminal;
   Config.set config.rusteria
 
-let chrono_reset, chrono =
-  let time : float ref = ref 0.0 in
-  let chrono_reset () = time := Unix.gettimeofday () in
-  let chrono () =
-    let elapsed = Unix.gettimeofday () -. !time in
-    time := Unix.gettimeofday ();
-    elapsed
-  in
-  (chrono_reset, chrono)
-
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   if not !Config.current.no_compile then (
@@ -87,13 +77,16 @@ let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
-let pp_time ft t =
+let pp_elapsed ft t =
+  let now = Unix.gettimeofday () in
+  let t = now -. t in
   if !Config.current.no_timing then Fmt.pf ft "<time>"
   else if t < 0.05 then Fmt.pf ft "%ams" (Fmt.float_dfrac 2) (t *. 1000.)
   else Fmt.pf ft "%as" (Fmt.float_dfrac 2) t
 
 let print_outcomes entry_name f =
   let open Fmt in
+  let time = Unix.gettimeofday () in
   match f () with
   | Ok (pcs, ntotal) ->
       let pcs = List.mapi (fun i pc -> (pc, i + 1)) pcs in
@@ -107,16 +100,15 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
-        "%s: done in %a, ran %a" entry_name pp_time (chrono ()) pp_branches
-        ntotal;
+        "%s: done in %a, ran %a" entry_name pp_elapsed time pp_branches ntotal;
       Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
       Fmt.pr "@\n@\n@?";
       true
   | Error (errs, ntotal) ->
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
-        (chrono ()) pp_branches (List.length errs) ntotal;
+        "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_elapsed
+        time pp_branches (List.length errs) ntotal;
       Fmt.pr "@\n@?";
       let ( let@@ ) f x = List.iter x f in
       let () =
@@ -128,7 +120,7 @@ let print_outcomes entry_name f =
   | exception ExecutionError e ->
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "%s: runtime error in %a: %s" entry_name pp_time (chrono ()) e;
+        "%s: runtime error in %a: %s" entry_name pp_elapsed time e;
       Fmt.pr "@\n@\n@?";
       false
 
@@ -200,9 +192,9 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;
   try
-    chrono_reset ();
+    let time = Unix.gettimeofday () in
     let res = f () in
-    Fmt.pr " done in %a@\n@?" pp_time (chrono ());
+    Fmt.pr " done in %a@\n@?" pp_elapsed time;
     res
   with e ->
     Fmt.pr " errored@\n@?";
