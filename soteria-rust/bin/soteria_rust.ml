@@ -7,6 +7,11 @@ module Config = struct
     let doc = "Do not compile the Rust code, as it is already compiled" in
     Arg.(value & flag & info [ "no-compile" ] ~doc)
 
+  let no_timing =
+    let doc = "Do not display execution times" in
+    let env = Cmdliner.Cmd.Env.info ~doc "NO_TIMING" in
+    Arg.(value & flag & info [ "no-timing" ] ~doc ~env)
+
   let cleanup_flag =
     let doc = "Clean up compiles files after execution" in
     Arg.(value & flag & info [ "clean" ] ~doc)
@@ -27,20 +32,26 @@ module Config = struct
     let doc = "Use the Miri library" in
     Arg.(value & flag & info [ "miri" ] ~doc)
 
-  let make_from_args no_compile cleanup ignore_leaks ignore_aliasing with_kani
-      with_miri =
-    make ~no_compile ~cleanup ~ignore_leaks ~ignore_aliasing ~with_kani
-      ~with_miri ()
+  let log_compilation_flag =
+    let doc = "Log the compilation process" in
+    Arg.(value & flag & info [ "log-compilation" ] ~doc)
+
+  let make_from_args no_compile no_timing cleanup ignore_leaks ignore_aliasing
+      with_kani with_miri log_compilation =
+    make ~no_compile ~no_timing ~cleanup ~ignore_leaks ~ignore_aliasing
+      ~with_kani ~with_miri ~log_compilation ()
 
   let term =
     Cmdliner.Term.(
       const make_from_args
       $ no_compile_flag
+      $ no_timing
       $ cleanup_flag
       $ ignore_leaks_flag
       $ ignore_aliasing_flag
       $ with_kani_flag
-      $ with_miri_flag)
+      $ with_miri_flag
+      $ log_compilation_flag)
 end
 
 module Global_config = struct

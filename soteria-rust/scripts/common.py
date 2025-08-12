@@ -3,7 +3,7 @@ import os
 import subprocess
 import re
 from pathlib import Path
-from typing import TypedDict, Optional
+from typing import Literal, TypedDict, Optional
 
 PURPLE = "\033[0;35m"
 RED = "\033[0;31m"
@@ -78,7 +78,7 @@ unkn_ = lambda x: ("Unknown", YELLOW, x)
 SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     # Kani
     "ArithOperators/rem_float_fixme.rs": fail_("Complicated float expression"),
-    "ConstEval/limit.rs": unkn_("Takes ages to compile (const eval loop of 131072)"),
+    "ConstEval/limit.rs": unkn_("Slow because of an array of size 131072"),
     "FloatingPoint/main.rs": pass_("Slow floating operation operations"),
     "BitwiseShiftOperators/shift_neg_vals.rs": unkn_(
         "Wrapping operations without loop unrolling branch too much"
@@ -108,9 +108,11 @@ SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
     "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
     "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
     # Miri
+    "fail/layout_cycle.rs": fail_("We don't check for cycles in layout"),
     "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
     "pass/issues/issue-20575.rs": unkn_("Very slow compilation"),
     "pass/issues/issue-29746.rs": unkn_("Very slow compilation"),
+    "pass/arrays.rs": unkn_("Makes an array [(), usize::MAX], which we try evaluating"),
     "pass/tag-align-dyn-u64.rs": unkn_("Slow due to symbolic checks on the pointer"),
 }
 
@@ -120,9 +122,6 @@ KNOWN_ISSUES = {
     "ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter? Kani crashes too",
     "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter? Kani crashes too",
     "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter? Kani crashes too",
-    "Drop/drop_after_mutating_refcell.rs": "We don't do drops properly",
-    "Drop/drop_concrete.rs": "We don't do drops properly",
-    "Drop/drop_enum_only_one_called.rs": "We don't do drops properly",
     "Cleanup/unwind_fixme.rs": "The main function takes a paramter? Kani crashes too",
     "Enum/niche_many_variants.rs": "We don't handle enum niches yet",
     "FunctionCall/Variadic/fixme_main.rs": "We don't handle functions with spread arguments (not in Charon)",
@@ -132,8 +131,6 @@ KNOWN_ISSUES = {
     "Intrinsics/CopySign/copysignf32.rs": "SMT-lib limitations around NaN mean we can't model this",
     "Intrinsics/CopySign/copysignf64.rs": "SMT-lib limitations around NaN mean we can't model this",
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
-    "PointerComparison/ptr_comparison.rs": "Error when monomorphising a fn meants ptr meta is lost",
-    "Realloc/two_reallocs.rs": "copy_non_overlapping doesn't handle tree borrows properly",
     "Static/anon_static.rs": "We don't handle pointers derived from globals properly, freeing referenced values",
     "Str/raw_ptr.rs": "We don't handle #[safety_constraint(...)] yet",
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
@@ -143,7 +140,6 @@ KNOWN_ISSUES = {
     "fail/dangling_pointers/dangling_pointer_project_underscore_let.rs": "let _ = ... assignments get optimized out",
     "fail/dangling_pointers/dangling_pointer_project_underscore_let_type_annotation.rs": "let _ = ... assignments get optimized out",
     "fail/dangling_pointers/dangling_pointer_project_underscore_match.rs": "let _ = ... assignments get optimized out",
-    "fail/dangling_pointers/dyn_size.rs": "We don't check for the validity of references on reborrows",
     "fail/dangling_pointers/deref_dangling_box.rs": "We don't check for dangling pointers for boxes",
     "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",
     "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
@@ -152,7 +148,6 @@ KNOWN_ISSUES = {
     "fail/function_calls/return_pointer_aliasing_write.rs": "We don't check arguments don't alias with the return place",
     "fail/overlapping_assignment.rs": "MIR-only check for assignment overlap (we don't do this atm)",
     "fail/provenance/strict_provenance_cast.rs": "Miri has a strict provenance flag, we don't",
-    "fail/read_from_trivial_switch.rs": "let _ = ... assignments get optimized out",
     "fail/unaligned_pointers/field_requires_parent_struct_alignment2.rs": "We don't handle repr(packed/align)",
     "fail/unaligned_pointers/reference_to_packed.rs": "We don't handle repr(packed/align)",
     "fail/uninit/uninit_alloc_diagnostic.rs": "We don't detected an uninit access that.. doesn't seem to exist?",
@@ -160,11 +155,7 @@ KNOWN_ISSUES = {
     "fail/validity/ref_to_uninhabited1.rs": "We don't check Boxes have an inhabited value",
     "fail/validity/uninit_float.rs": "A uninit mitigation doesn't get compiled away despite flags set?",
     "pass/align.rs": "We don't allow ptr-int-ptr conversions, Miri does (under a flag)",
-    "pass/cast_fn_ptr.rs": "We are too restrictive on fn pointer casts",
-    "pass/closure-drop.rs": "We don't handle drops properly",
     "pass/const-vec-of-fns.rs": "We don't handle pointers derived from globals properly, freeing referenced values",
-    "pass/drop_on_array_elements.rs": "We don't handle drops properly",
-    "pass/drop_on_zst_array_elements.rs": "We don't handle drops properly",
     "pass/drop_type_without_drop_glue.rs": "How is this not a null deref error?",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
@@ -176,17 +167,15 @@ KNOWN_ISSUES = {
     "pass/issues/issue-3200-packed2-field-offset.rs": "We don't handle repr(packed)",
     "pass/issues/issue-5917.rs": "We don't handle pointers derived from globals properly, freeing referenced values",
     "pass/issues/issue-miri-1075.rs": "We don't check the status code on process::exit(N) -- 0 is ok!",
-    "pass/issues/issue-miri-3282-struct-tail-normalize.rs": "We are too restrictive on fn pointer casts",
     "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
     "pass/option_box_transmute_ptr.rs": "We don't handle the null pointer optimization for Option<Box<T>>",
     "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
     "pass/partially-uninit.rs": "We don't handle unions properly, and lose data on transmutes",
     "pass/provenance.rs": "It is unclear how to properly do ptr-int-ptr conversions",
     "pass/ptr_int_from_exposed.rs": "It is unclear how to properly do ptr-int-ptr conversions",
-    "pass/regions-lifetime-nonfree-late-bound.rs": "We don't do drops properly",
+    "pass/ptr_offset.rs": "It is unclear how to properly do ptr-int-ptr conversions",
     "pass/slices.rs": "We shouldn't dereference pointers to ZSTs...?",
     "pass/u128.rs": "We don't do int-float-int conversions properly",
-    "pass/zst_variant_drop.rs": "We don't handle drops properly",
     "panic/mir-validation.rs": "We don't validate the MIR for projections",
 }
 
@@ -223,60 +212,3 @@ def determine_failure_expect(filepath: str) -> bool:
     elif "miri" in filepath:
         return "/tests/fail/" in filepath or "/tests/panic/" in filepath
     return False
-
-
-class Flags(TypedDict):
-    cmd_flags: list[str]
-    filters: list[str]
-    exclusions: list[str]
-    iterations: Optional[int]
-    tag: Optional[str]
-    test_folder: Optional[Path]
-    with_obol: bool
-
-
-def parse_flags() -> Flags:
-    i = 0
-    flags: Flags = {
-        "cmd_flags": [],
-        "filters": [],
-        "exclusions": [],
-        "iterations": None,
-        "tag": None,
-        "test_folder": None,
-        "with_obol": False,
-    }
-    while i < len(sys.argv):
-        arg = sys.argv[i]
-        if arg == "--":
-            flags["cmd_flags"] += sys.argv[i + 1 :]
-            break
-        elif arg == "-f":
-            flags["filters"].append(sys.argv[i + 1])
-            i += 1
-        elif arg == "-e":
-            flags["exclusions"].append(sys.argv[i + 1])
-            i += 1
-        elif arg == "-i":
-            flags["iterations"] = int(sys.argv[i + 1])
-            i += 1
-        elif arg == "--tag":
-            flags["tag"] = sys.argv[i + 1]
-            i += 1
-        elif arg == "--folder":
-            flags["test_folder"] = Path(sys.argv[i + 1]).resolve()
-            if not flags["test_folder"].is_dir():
-                print(
-                    f"{RED}The folder {flags['test_folder']} does not exist or is not a directory."
-                )
-                exit(1)
-            i += 1
-        elif arg == "--obol":
-            flags["with_obol"] = True
-
-        else:
-            print(f"{RED}Unknown flag: {arg}")
-            exit(1)
-        i += 1
-
-    return flags
