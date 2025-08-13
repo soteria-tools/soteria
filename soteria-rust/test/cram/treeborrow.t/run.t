@@ -2,7 +2,7 @@ Basic code, reference gets invalidated
   $ soteria-rust rustc raw-ptrs.rs --clean --no-timing
   Compiling... done in <time>
   note: raw_ptrs::main: done in <time>, ran 1 branch
-  PC 1: true
+  PC 1: empty
   
 
 Simple tree borrow violation
@@ -30,40 +30,40 @@ Raw pointers don't get new tags
   $ soteria-rust rustc raw-ptrs.rs --clean --no-timing
   Compiling... done in <time>
   note: raw_ptrs::main: done in <time>, ran 1 branch
-  PC 1: true
+  PC 1: empty
   
 
 Raw pointers can access outside the parent's range, with offsets
   $ soteria-rust rustc offsets.rs --clean --no-timing
   Compiling... done in <time>
   note: offsets::main: done in <time>, ran 1 branch
-  PC 1: true
+  PC 1: empty
   
 
 Can have two mutable protected refs to the same allocation, if they don't overlap
   $ soteria-rust rustc two-mut-protected.rs --clean --no-timing
   Compiling... done in <time>
   note: two_mut_protected::main: done in <time>, ran 1 branch
-  PC 1: true
+  PC 1: empty
   
 
 UnsafeCell allow foreign writes followed by local writes
   $ soteria-rust rustc cell.rs --clean --no-timing
   Compiling... done in <time>
   note: cell::main: done in <time>, ran 1 branch
-  PC 1: true
+  PC 1: empty
   
 
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
   $ soteria-rust rustc nested.rs --clean --no-timing
   Compiling... done in <time>
   note: nested::main: done in <time>, ran 1 branch
-  PC 1: true
+  PC 1: empty
   
 
 Test --ignore-aliasing flag
   $ soteria-rust rustc simple-fail.rs --clean --no-timing --ignore-aliasing
   Compiling... done in <time>
   note: simple_fail::main: done in <time>, ran 1 branch
-  PC 1: true
+  PC 1: empty
   

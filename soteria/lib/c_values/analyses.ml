@@ -9,9 +9,7 @@ module type S = sig
   include Soteria_std.Reversible.Mutable
 
   val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
-
-  val encode :
-    ?vars:Var.Hashset.t -> Typed.sbool Typed.t -> t -> Typed.sbool Typed.t
+  val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
 end
 
 module Merge (A1 : S) (A2 : S) : S = struct
@@ -36,9 +34,8 @@ module Merge (A1 : S) (A2 : S) : S = struct
     let v'', vars2 = A2.add_constraint a2 v' in
     (v'', Var.Set.union vars1 vars2)
 
-  let encode ?vars (acc : Typed.sbool Typed.t) (a1, a2) : Typed.sbool Typed.t =
-    let acc' = A1.encode ?vars acc a1 in
-    A2.encode ?vars acc' a2
+  let encode ?vars (a1, a2) : Typed.sbool Typed.t Iter.t =
+    Iter.append (A1.encode ?vars a1) (A2.encode ?vars a2)
 end
 
 module None : S = struct
@@ -49,7 +46,7 @@ module None : S = struct
   let save () = ()
   let reset () = ()
   let add_constraint () v = (v, Var.Set.empty)
-  let encode ?vars:_ acc () = acc
+  let encode ?vars:_ () = Iter.empty
 end
 
 module Interval : S = struct
@@ -80,6 +77,8 @@ module Interval : S = struct
       | Some m, None -> Svalue.int_z m <=@ mk_var v
       | None, Some n -> mk_var v <=@ Svalue.int_z n
       | None, None -> Svalue.v_true
+
+    let is_uninformative = function None, None -> true | _ -> false
 
     (** The intersection of two ranges; always representable *)
     let intersect ((m1, n1) : t) ((m2, n2) : t) : t =
@@ -260,15 +259,21 @@ module Interval : S = struct
 
   (** Encode all the information relevant to the given variables and conjuncts
       them with the given accumulator. *)
-  let encode ?vars (acc : Typed.sbool Typed.t) st : Typed.sbool Typed.t =
+  let encode ?vars st : Typed.sbool Typed.t Iter.t =
     let to_check =
       Option.fold ~none:(fun _ -> true) ~some:Var.Hashset.mem vars
     in
     wrap_read
       (fun m ->
-        Var.Map.fold
+        fun f ->
+         Var.Map.iter
+           (fun v r ->
+             if to_check v && not (Range.is_uninformative r) then
+               let sv = Typed.type_ (Range.to_sval v r) in
+               Typed.split_ands sv f)
+           m
+        (* Var.Map.fold
           (fun v r acc -> if to_check v then acc &&@ Range.to_sval v r else acc)
-          m (Typed.untyped acc))
+          m (Typed.untyped acc) *))
       st
-    |> Typed.type_
 end

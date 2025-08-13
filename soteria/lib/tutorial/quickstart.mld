@@ -48,7 +48,7 @@ For instance, let's execute the symbolic process we just created, providing an i
 
 {@ocaml[
 # Symex.return 0 |> Symex.run ~fuel:Fuel_gauge.infinite;;
-- : (int * Symex.Value.sbool Typed.t list) list = [(0, [true])]
+- : (int * Symex.Value.sbool Typed.t list) list = [(0, [])]
 ]}
 
 As expected the result of the symbolic process is a single branch with the value [0] and an empty path condition [[]], which means that there is no condition for taking this branch, i.e., it is always taken.
@@ -93,8 +93,8 @@ Here, [process] is the symbolic process itself, and is yet to be executed. To ex
 {@ocaml[
 # Symex.run ~fuel:Fuel_gauge.infinite process;;
 - : (string * Symex.Value.sbool Typed.t list) list =
-[("V|1| is even", [true; (0 == (V|1| mod 2))]);
- ("V|1| is odd", [true; (0 != (V|1| mod 2))])]
+[("V|1| is even", [(0 == (V|1| mod 2))]);
+ ("V|1| is odd", [(0 != (V|1| mod 2))])]
 ]}
 
 As expected, the symbolic process returns two branches, one for the case where the symbolic integer is even, and one for the case where it is odd. In each case, the path condition is a symbolic expression that describes the corresponding condition on the symbolic variable created (called [V|1|] here).
