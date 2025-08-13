@@ -22,7 +22,6 @@ depends: [
   "ppx_deriving"
   "cmdliner"
   "fmt"
-  "printbox-text"
   "unionFind"
   "name_matcher_parser"
   "charon"
