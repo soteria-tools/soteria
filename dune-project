@@ -71,14 +71,16 @@
   soteria
   cerberus-lib
   zarith
-  ppx_deriving
   cmdliner
+  ppx_deriving
   fmt
   printbox-text
   (linol
    (>= 0.10))
   (linol-eio
    (>= 0.10))
+  (ppx_subliner
+   (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
   (ppx_blob

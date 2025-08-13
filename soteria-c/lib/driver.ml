@@ -64,7 +64,7 @@ module Frontend = struct
         Error (`ParsingError msg, Call_trace.singleton ~loc ())
 
   let use_cerb_libc_if_asked () =
-    if !Config.current.use_cerb_headers then
+    if (Config.current ()).use_cerb_headers then
       let root_includes = Cerb_runtime.in_runtime "libc/include" in
       let posix = Filename.concat root_includes "posix" in
       "-I" ^ root_includes ^ " -I" ^ posix ^ " -nostdinc"
@@ -75,7 +75,7 @@ module Frontend = struct
       let open Cerb_backend.Pipeline in
       let include_soteria_c_h =
         let filename =
-          Filename.concat !Config.current.auto_include_path "soteria-c.h"
+          Filename.concat (Config.current ()).auto_include_path "soteria-c.h"
         in
         if Sys.file_exists filename then "-include " ^ filename ^ " "
         else (
@@ -163,7 +163,7 @@ let parse_and_link_ail ~includes files =
   | [] -> Error (`ParsingError "No files to parse?", Call_trace.empty)
   | files ->
       let* parsed =
-        if !Config.current.no_ignore_parse_failures then
+        if (Config.current ()).no_ignore_parse_failures then
           Monad.ResultM.all parse_and_signal files
         else
           let parsed =
@@ -222,7 +222,7 @@ let exec_function ~includes file_names function_name =
   let open Syntaxes.Result in
   let result =
     let* linked = parse_and_link_ail ~includes file_names in
-    if !Config.current.parse_only then Ok []
+    if (Config.current ()).parse_only then Ok []
     else
       let* entry_point = resolve_function linked function_name in
       let symex =
@@ -233,7 +233,8 @@ let exec_function ~includes file_names function_name =
       in
       let@ () = with_function_context linked in
       let fuel =
-        if !Config.current.infinite_fuel then Soteria_symex.Fuel_gauge.infinite
+        if (Config.current ()).infinite_fuel then
+          Soteria_symex.Fuel_gauge.infinite
         else default_wpst_fuel
       in
       Ok (Csymex.run ~fuel symex)
@@ -271,19 +272,19 @@ let generate_errors content =
 (** {2 Entry points} *)
 
 (* Helper for all main entry points *)
-let initialise log_config term_config solver_config config =
+let initialise log_config term_config solver_config config f =
   Soteria_logs.Config.check_set_and_lock log_config;
   Soteria_terminal.Config.set_and_lock term_config;
   Solver_config.set solver_config;
-  Config.set config
+  Config.with_config ~config f
 
 (* Entry point function *)
 let exec_and_print log_config term_config solver_config config includes
     file_names entry_point =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
-  initialise log_config term_config solver_config config;
+  let@ () = initialise log_config term_config solver_config config in
   let result = exec_function ~includes file_names entry_point in
-  if not !Config.current.parse_only then
+  if not (Config.current ()).parse_only then
     let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
     Fmt.pr
       "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
@@ -299,7 +300,7 @@ let exec_and_print log_config term_config solver_config config includes
       (Stats.get_executed_statements ())
 
 let dump_summaries results =
-  match !Config.current.dump_summaries_file with
+  match (Config.current ()).dump_summaries_file with
   | None -> ()
   | Some file ->
       let pp_summary ~fid ft summary =
@@ -354,7 +355,7 @@ let generate_summaries ~functions_to_analyse prog =
     let@ error, call_trace = list_iter remaining_to_signal in
     found_bugs := true;
     Error.Diagnostic.print_diagnostic ~fid ~call_trace ~error;
-    if !Config.current.show_manifest_summaries then
+    if (Config.current ()).show_manifest_summaries then
       Fmt.pr "@\n@[Corresponding summary:@ %a@]" Summary.pp_raw raw;
     Fmt.pr "@\n@?"
   in
@@ -363,8 +364,7 @@ let generate_summaries ~functions_to_analyse prog =
 
 (* Entry point function *)
 let lsp config () =
-  Config.set config;
-  Soteria_c_lsp.run ~generate_errors ()
+  Config.with_config ~config @@ Soteria_c_lsp.run ~generate_errors
 
 (* Entry point function *)
 let show_ail logs_config term_config (includes : string list)
@@ -413,7 +413,7 @@ let generate_all_summaries log_config term_config solver_config config includes
     functions_to_analyse file_names =
   (* TODO: generate a compilation database directly, to simplify the interface in this file. *)
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  initialise log_config term_config solver_config config;
+  let@ () = initialise log_config term_config solver_config config in
   let prog =
     let@ () = Soteria_logs.Logs.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
@@ -421,7 +421,7 @@ let generate_all_summaries log_config term_config solver_config config includes
            Fmt.epr "%a@\n@?" pp_err_and_call_trace e;
            failwith "Failed to parse AIL")
   in
-  if not !Config.current.parse_only then
+  if not (Config.current ()).parse_only then
     generate_summaries ~functions_to_analyse prog
 
 (* Entry point function *)
@@ -429,7 +429,7 @@ let capture_db log_config term_config solver_config config json_file
     functions_to_analyse =
   let open Syntaxes.Result in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  initialise log_config term_config solver_config config;
+  let@ () = initialise log_config term_config solver_config config in
   let linked_prog =
     let@ () =
       Soteria_logs.Logs.with_section "Parsing and Linking from database"
@@ -479,15 +479,15 @@ let capture_db log_config term_config solver_config config json_file
             failwith "Failed to parse AIL"
         | `LinkError msg, _ ->
             let msg =
-              if not !Config.current.no_ignore_parse_failures then
+              if not (Config.current ()).no_ignore_parse_failures then
                 "All files failed to parse, no analysis will be performed"
               else msg
             in
             Fmt.pr "Error: %a@\n@?" Soteria_terminal.Color.pp_err msg;
-            if !Config.current.no_ignore_parse_failures then
+            if (Config.current ()).no_ignore_parse_failures then
               failwith "Failed to link AIL"
             else Ail_tys.empty_linked_program)
       linked_prog
   in
-  if not !Config.current.parse_only then
+  if not (Config.current ()).parse_only then
     generate_summaries ~functions_to_analyse linked_prog
