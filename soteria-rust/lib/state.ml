@@ -44,6 +44,7 @@ module StateKey = struct
 end
 
 module SPmap = Pmap_direct_access (StateKey)
+module TreeBlock = Rtree_block.Make (Sptr)
 
 type global = String of string | Global of Charon.Types.global_decl_id
 [@@deriving show { with_path = false }, ord]
@@ -92,7 +93,7 @@ module FunBiMap = struct
     (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) fmt lmap
 end
 
-type sub = Tree_block.t * Tree_borrow.t
+type sub = TreeBlock.t * Tree_borrow.t
 
 and t = {
   state : sub Freeable.t SPmap.t option;
@@ -102,7 +103,7 @@ and t = {
 }
 [@@deriving show { with_path = false }]
 
-type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
+type serialized = TreeBlock.serialized Freeable.serialized SPmap.serialized
 [@@deriving show { with_path = false }]
 
 let pp_pretty ~ignore_freed ft { state; _ } =
@@ -114,7 +115,7 @@ let pp_pretty ~ignore_freed ft { state; _ } =
   | None -> Fmt.pf ft "Empty State"
   | Some st ->
       SPmap.pp ~ignore
-        (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
+        (Freeable.pp (fun fmt (tb, _) -> TreeBlock.pp_pretty fmt tb))
         ft st
 
 let empty =
@@ -203,7 +204,7 @@ let uninit (ptr, _) ty st =
   let* size = Layout.size_of_s ty in
   let@ ofs, block = with_ptr ptr st in
   let@ block, _ = with_tbs block in
-  Tree_block.uninit_range ofs size block
+  TreeBlock.uninit_range ofs size block
 
 let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
   let** (), st = check_ptr_align ptr ty st in
@@ -215,12 +216,12 @@ let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
   L.debug (fun f ->
       f "Recursively reading %a from block tree at %a:@.%a" Charon_util.pp_ty ty
         Sptr.pp ptr
-        Fmt.(option ~none:(any "None") Tree_block.pp)
+        Fmt.(option ~none:(any "None") TreeBlock.pp)
         block);
   let handler (ty, ofs) block =
     L.debug (fun f ->
         f "Loading blocks %a:%a" Typed.ppa ofs Charon_util.pp_ty ty);
-    Tree_block.load ~is_move ~ignore_borrow ofs ty ptr.tag tb block
+    TreeBlock.load ~is_move ~ignore_borrow ofs ty ptr.tag tb block
   in
   let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
   let++ value, block = Encoder.ParserMonad.parse ~init:block ~handler parser in
@@ -240,7 +241,7 @@ let tb_load (ptr, _) ty st =
     log "tb_load" ptr st;
     let@ ofs, block = with_ptr ptr st in
     let@ block, tb = with_tbs block in
-    Tree_block.tb_access ofs size ptr.tag tb block
+    TreeBlock.tb_access ofs size ptr.tag tb block
 
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns true if the value was read successfully,
@@ -267,10 +268,10 @@ let store (ptr, _) ty sval st =
     let* size = Layout.size_of_s ty in
     (* We uninitialise the whole range before writing, to ensure padding bytes are copied if
            there are any. *)
-    let** (), block = Tree_block.uninit_range ofs size block in
+    let** (), block = TreeBlock.uninit_range ofs size block in
     Result.fold_list parts ~init:((), block)
       ~f:(fun ((), block) { value; ty; offset } ->
-        Tree_block.store (offset +@ ofs) ty value ptr.tag tb block)
+        TreeBlock.store (offset +@ ofs) ty value ptr.tag tb block)
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace st in
@@ -278,7 +279,7 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let** tree_to_write, st =
     let@ ofs, block = with_ptr src st in
     let@ block, _ = with_tbs block in
-    let++ tree, _ = Tree_block.get_raw_tree_owned ofs size block in
+    let++ tree, _ = TreeBlock.get_raw_tree_owned ofs size block in
     (tree, block)
   in
   let@ ofs, block = with_ptr dst st in
@@ -288,14 +289,16 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
      Instead, we must first get the tree borrow states for the original area of memory,
      and update the copied tree with them.
      We only want to update the values in the tree, not the tree borrow state. *)
-  let module Tree = Tree_block.Tree in
-  let** original_tree, _ = Tree_block.get_raw_tree_owned ofs size block in
+  let module Tree = TreeBlock.Tree in
+  let** original_tree, _ = TreeBlock.get_raw_tree_owned ofs size block in
   (* Iterator over the tree borrow states in a tree. *)
   let collect_tb_states f =
     Tree.iter_leaves_rev original_tree @@ fun leaf ->
     match leaf.node with
-    | Owned { tb; _ } ->
-        let range = Range.offset leaf.range ~-(fst original_tree.range) in
+    | Owned (_, tb) ->
+        let range =
+          TreeBlock.Range.offset leaf.range ~-(fst original_tree.range)
+        in
         f (tb, range)
     | NotOwned Totally -> failwith "Impossible: we framed the range"
     | NotOwned Partially ->
@@ -306,11 +309,11 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
     let rec aux tb (t : Tree.t) =
       match t.node with
       | NotOwned _ -> failwith "Impossible: checked before"
-      | Owned { v; _ } ->
+      | Owned (v, _) ->
           let children =
             Option.map (fun (l, r) -> (aux tb l, aux tb r)) t.children
           in
-          { t with children; node = Owned { v; tb } }
+          { t with children; node = Owned (v, tb) }
     in
     try Result.ok (aux tb t) with Failure msg -> not_impl msg
   in
@@ -326,7 +329,7 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
         in
         tree)
   in
-  Tree_block.put_raw_tree ofs tree_to_write block
+  TreeBlock.put_raw_tree ofs tree_to_write block
 
 let alloc ?zeroed size align st =
   (* Commenting this out as alloc cannot fail *)
@@ -334,7 +337,7 @@ let alloc ?zeroed size align st =
   let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
   let tb = Tree_borrow.init ~state:Unique () in
-  let block = Tree_block.alloc ?zeroed size in
+  let block = TreeBlock.alloc ?zeroed size in
   let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
@@ -359,7 +362,7 @@ let alloc_tys tys st =
       let* layout = Layout.layout_of_s ty in
       let size = Typed.int layout.size in
       let tb = Tree_borrow.init ~state:Unique () in
-      let block = Freeable.Alive (Tree_block.alloc size, tb) in
+      let block = Freeable.Alive (TreeBlock.alloc size, tb) in
       (* create pointer *)
       let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
       let ptr = Typed.Ptr.mk loc 0s in
@@ -381,7 +384,7 @@ let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
     let++ (), state =
       SPmap.wrap
         (Freeable.free ~assert_exclusively_owned:(fun t ->
-             Tree_block.assert_exclusively_owned @@ Option.map fst t))
+             TreeBlock.assert_exclusively_owned @@ Option.map fst t))
         (Typed.Ptr.loc ptr) state
     in
     ((), { st with state })
@@ -393,7 +396,7 @@ let zeros (ptr, _) size st =
   log "zeroes" ptr st;
   let@ ofs, block = with_ptr ptr st in
   let@ block, _ = with_tbs block in
-  Tree_block.zero_range ofs size block
+  TreeBlock.zero_range ofs size block
 
 let error err st =
   let@ () = with_error_loc_as_call_trace st in
@@ -473,7 +476,7 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     let++ (), block' =
       (* nothing to protect *)
       if%sat size ==@ 0s then Result.ok ((), Some block)
-      else Tree_block.protect ofs size node.tag tb' (Some block)
+      else TreeBlock.protect ofs size node.tag tb' (Some block)
     in
     let block = Option.map (fun b' -> (b', tb')) block' in
     ((ptr', meta), block)
@@ -502,7 +505,7 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   in
   let++ (), block' =
     if%sat size ==@ 0s then Result.ok ((), Some block)
-    else Tree_block.unprotect ofs size ptr.tag tb' (Some block)
+    else TreeBlock.unprotect ofs size ptr.tag tb' (Some block)
   in
   let block' = Option.map (fun b' -> (b', tb')) block' in
   L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
