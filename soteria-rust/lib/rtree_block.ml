@@ -20,13 +20,11 @@ module Make (Sptr : Sptr.S) = struct
     module Symex = Rustsymex
 
     module SInt = struct
-      include Rustsymex.Value
+      include Typed
       include Typed.Infix
 
       type sint = T.sint
       type sbool = T.sbool
-
-      let zero = Typed.zero
     end
 
     let pp_init ft (v, ty) =
@@ -54,9 +52,6 @@ module Make (Sptr : Sptr.S) = struct
       | Any -> pf ft "Any"
 
     let pp ft (v, _) = pp_value ft v
-
-    let merge_qty l r =
-      match (l, r) with Totally, Totally -> Totally | _ -> Partially
 
     let merge ~left:(v1, tb1) ~right:(v2, tb2) =
       let tb = Tree_borrow.merge tb1 tb2 in

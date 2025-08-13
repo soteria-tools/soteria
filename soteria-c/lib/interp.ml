@@ -1156,7 +1156,8 @@ module Make (State : State_intf.S) = struct
       let block =
         With_origin.
           {
-            node = Freeable.Alive [ Tree_block.Zeros { offset; len } ];
+            node =
+              Freeable.Alive [ Ctree_block.MemVal { offset; len; v = SZeros } ];
             info = None;
           }
       in

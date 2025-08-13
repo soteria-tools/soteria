@@ -476,6 +476,14 @@ struct
   let iter_values_serialized serialized f =
     List.iter (function MemVal { v; _ } -> f v | _ -> ()) serialized
 
+  let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
+    | None ->
+        let+ fixes = mk_fixes () in
+        Missing fixes
+    | Some t -> Result.ok t
+
+  let to_opt t = if is_empty t then None else Some t
+
   let with_bound_check (t : t) (ofs : sint) f =
     let** () =
       match t.bound with
@@ -484,20 +492,11 @@ struct
           if%sat bound <@ ofs then Result.error `OutOfBounds else Result.ok ()
     in
     let++ res, root = f t.root in
-    (res, { t with root })
-
-  let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
-    | None ->
-        let+ fixes = mk_fixes () in
-        Missing fixes
-    | Some t -> Result.ok t
+    (res, to_opt { t with root })
 
   let with_bound_and_owned_check ?mk_fixes t ofs f =
     let** t = of_opt ?mk_fixes t in
-    let++ res, root = with_bound_check t ofs f in
-    (res, Some root)
-
-  let to_opt t = if is_empty t then None else Some t
+    with_bound_check t ofs f
 
   let assert_exclusively_owned t =
     let** t = of_opt t in
@@ -642,7 +641,11 @@ struct
     | Bound bound -> consume_bound bound t
     | MemVal { offset; len; v } ->
         let ((_, bound) as range) = Range.of_low_and_size offset len in
-        abstract_cons bound (Tree.consume v range) t
+        let consume t =
+          let+? fixes = Tree.consume v range t in
+          List.map (fun v -> [ MemVal { v; offset; len } ]) fixes
+        in
+        abstract_cons bound consume t
 
   let produce_atom atom t =
     match atom with
