@@ -144,6 +144,8 @@
   unionFind
   name_matcher_parser
   charon
+  (ppx_subliner
+    (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
   (yojson
