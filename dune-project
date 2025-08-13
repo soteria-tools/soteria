@@ -41,6 +41,10 @@
   progress
   grace
   (odoc :with-doc)
+  (ppx_subliner
+   (and
+    :build
+    (>= 0.2.1)))
   (dune
    (and
     :build
@@ -79,10 +83,12 @@
    (>= 0.10))
   (linol-eio
    (>= 0.10))
-  (ppx_subliner
-   (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
+  (ppx_subliner
+   (and
+    :build
+    (>= 0.2.1)))
   (ppx_blob
    (and
     :build
@@ -145,7 +151,9 @@
   name_matcher_parser
   charon
   (ppx_subliner
-    (>= 0.2.1))
+   (and
+    :build
+    (>= 0.2.1)))
   (odoc :with-doc)
   (alcotest :with-test)
   (yojson

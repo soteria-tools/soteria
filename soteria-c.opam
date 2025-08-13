@@ -26,9 +26,9 @@ depends: [
   "printbox-text"
   "linol" {>= "0.10"}
   "linol-eio" {>= "0.10"}
-  "ppx_subliner" {>= "0.2.1"}
   "odoc" {with-doc}
   "alcotest" {with-test}
+  "ppx_subliner" {build & >= "0.2.1"}
   "ppx_blob" {build & >= "0.9.0"}
   "yojson" {< "3.0"}
   "dune" {>= "3.14" & build & >= "3.14.0"}
