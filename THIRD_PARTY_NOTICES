@@ -1,0 +1,13 @@
+Third-party notices
+
+- Kani plugins (directories: soteria-rust/plugins/kani, soteria-rust/plugins/kani_macros)
+  Copyright Kani Contributors
+  License: Apache-2.0 OR MIT
+  Upstream: https://github.com/model-checking/kani
+
+- Collections-C snippet used in tests (directory: soteria-c/test/cram/cc.t)
+  Copyright (C) 2013-2014 Srđan Panić <srdja.panic@gmail.com>
+  License: LGPL-3.0-or-later
+  Upstream: https://github.com/srdja/Collections-C
+
+This file provides attribution only. See LICENSES/ for full license texts.
