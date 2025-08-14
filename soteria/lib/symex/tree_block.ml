@@ -19,6 +19,23 @@ and 'a node = NotOwned of node_qty | Owned of 'a
 and node_qty = Partially | Totally
 [@@deriving show { with_path = false }, make]
 
+(** The input module of [Tree_block]. A memory value [t] represents an owned
+    part of the tree block, with the property that it can be split or merged as
+    needed.
+
+    The merge doesn't need to preserve all information. For instance consider
+    the memory values [Value | Uninit | PartlyUninit]; merging nodes [Value] and
+    [Uninit] may yield a [PartlyUninit] node, and that node will contain both
+    children, ensuring no information is lost.
+
+    Furthermore, to enable bi-abduction, a memory value can potentially be
+    serialized into one or more predicates (named [serialized]). Consuming
+    should extract that predicate from the given tree; producing adds it onto
+    it.
+
+    [serialized] mustn't store information about the offset or length it applies
+    to, as [Tree_block] wraps it into a structure containing this information.
+*)
 module type MemVal = sig
   module Symex : Symex.S
 
@@ -70,11 +87,26 @@ module type MemVal = sig
       to signal the children must instead be serialized. *)
   val serialize : t -> serialized Seq.t option
 
+  (** Extract the given [serialized] predicate from the tree; this may result in
+      an empty ([NotOwned Totally]) tree, or may only modify part of the tree if
+      the predicate only represents part of this tree's state. A [Missing] may
+      be raised if part of the state is missing for the consumption to succeed.
+
+      The input tree corresponds to the subtree relevant to the predicate's
+      offset and length, meaning [t.node] is the node covering the whole
+      predicate's range. *)
   val consume :
     serialized ->
     (t, sint) tree ->
     ((t, sint) tree, 'err, serialized list) Symex.Result.t
 
+  (** Add the given [serialized] predicate onto the given tree; the input tree
+      is not necessarily empty ([NotOwned Totally]), and if the predicate
+      overlaps the production may [vanish].
+
+      The input tree corresponds to the subtree relevant to the predicate's
+      offset and length, meaning [t.node] is the node covering the whole
+      predicate's range. *)
   val produce : serialized -> (t, sint) tree -> (t, sint) tree Symex.t
 end
 
