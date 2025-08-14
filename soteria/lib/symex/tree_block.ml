@@ -68,12 +68,14 @@ module type MemVal = sig
 
   (** Serialize this memory value; either returns [Some serialized], or [None]
       to signal the children must instead be serialized. *)
-  val serialize : t -> serialized option
+  val serialize : t -> serialized Seq.t option
 
   val consume :
-    serialized -> (t, sint) tree -> (unit, 'err, serialized list) Symex.Result.t
+    serialized ->
+    (t, sint) tree ->
+    ((t, sint) tree, 'err, serialized list) Symex.Result.t
 
-  val produce : serialized -> t Symex.t
+  val produce : serialized -> (t, sint) tree -> (t, sint) tree Symex.t
 end
 
 module Make
@@ -414,20 +416,16 @@ struct
 
     let consume (serialized : MemVal.serialized) (range : Range.t) (st : t) :
         (t, 'err, MemVal.serialized list) Symex.Result.t =
-      let replace_node _ = Result.ok @@ not_owned range in
+      let replace_node = MemVal.consume serialized in
       let rebuild_parent = of_children in
-      let** framed, tree = frame_range st ~replace_node ~rebuild_parent range in
-      let++ () = MemVal.consume serialized framed in
+      let++ _, tree = frame_range st ~replace_node ~rebuild_parent range in
       tree
 
     let produce (serialized : MemVal.serialized) (range : Range.t) (st : t) :
         t Symex.t =
       let replace_node t =
-        match t.node with
-        | NotOwned Totally ->
-            let+ node = MemVal.produce serialized in
-            Ok { node = Owned node; range; children = None }
-        | _ -> vanish ()
+        let+ t = MemVal.produce serialized t in
+        Ok t
       in
       let rebuild_parent = of_children in
       let* res = frame_range st ~replace_node ~rebuild_parent range in
@@ -575,7 +573,7 @@ struct
           | None ->
               let left, right = Option.get tree.children in
               Seq.append (serialize_tree left) (serialize_tree right)
-          | Some v -> Seq.return (MemVal { offset; len; v }))
+          | Some seq -> Seq.map (fun v -> MemVal { offset; len; v }) seq)
       | NotOwned Partially ->
           let left, right = Option.get tree.children in
           Seq.append (serialize_tree left) (serialize_tree right)

@@ -94,35 +94,45 @@ module Make (Sptr : Sptr.S) = struct
       | _ -> ()
 
     (* TODO: serialize tree borrow information! *)
-    let serialize ((t, _) : t) : serialized option =
+    let serialize ((t, _) : t) : serialized Seq.t option =
       match t with
-      | Init v -> Some (SInit v)
-      | Uninit Totally -> Some SUninit
-      | Zeros -> Some SZeros
-      | Any -> Some SAny
+      | Init v -> Some (Seq.return (SInit v))
+      | Uninit Totally -> Some (Seq.return SUninit)
+      | Zeros -> Some (Seq.return SZeros)
+      | Any -> Some (Seq.return SAny)
       | Lazy | Uninit Partially -> None
 
-    let consume (s : serialized) (t : (t, T.sint Typed.t) TB.tree) =
-      match s with
-      | SInit _ -> not_impl "Consume typed value on rust_val equality."
-      | SAny -> ( match t.node with NotOwned _ -> miss [] | Owned _ -> ok ())
-      | SUninit -> (
-          match t.node with
-          | NotOwned _ -> miss []
-          | Owned (Uninit Totally, _) -> ok ()
-          | _ -> vanish ())
-      | SZeros -> (
-          match t.node with
-          | NotOwned _ -> miss []
-          | Owned (Zeros, _) -> ok ()
-          | Owned (Init _, _) -> not_impl "Assume rust_val == 0s"
-          | _ -> vanish ())
+    type tree = (t, T.sint Typed.t) TB.tree
 
-    let produce : serialized -> t Rustsymex.t = function
-      | SInit v -> return (Init v, Tree_borrow.empty_state)
-      | SZeros -> return (Zeros, Tree_borrow.empty_state)
-      | SUninit -> return (Uninit Totally, Tree_borrow.empty_state)
-      | SAny -> return (Any, Tree_borrow.empty_state)
+    let not_owned (t : tree) : tree =
+      { t with node = NotOwned Totally; children = None }
+
+    let owned (t : tree) (v : t) : tree =
+      { t with node = Owned v; children = None }
+
+    let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
+      match (s, t.node) with
+      | _, NotOwned _ -> miss []
+      (* init *)
+      | SInit _, _ -> not_impl "Consume typed value on rust_val equality."
+      (* any *)
+      | SAny, Owned _ -> ok (not_owned t)
+      (* uninit *)
+      | SUninit, Owned (Uninit Totally, _) -> ok (not_owned t)
+      | SUninit, _ -> vanish ()
+      (* zeros *)
+      | SZeros, Owned (Zeros, _) -> ok (not_owned t)
+      | SZeros, Owned (Init _, _) -> not_impl "Assume rust_val == 0s"
+      | SZeros, _ -> vanish ()
+
+    let produce (s : serialized) (t : tree) : tree Rustsymex.t =
+      let tb_init = Tree_borrow.empty_state in
+      match (s, t.node) with
+      | _, (Owned _ | NotOwned Partially) -> vanish ()
+      | SInit v, NotOwned Totally -> return (owned t (Init v, tb_init))
+      | SZeros, NotOwned Totally -> return (owned t (Zeros, tb_init))
+      | SUninit, NotOwned Totally -> return (owned t (Uninit Totally, tb_init))
+      | SAny, NotOwned Totally -> return (owned t (Any, tb_init))
   end
 
   open MemVal

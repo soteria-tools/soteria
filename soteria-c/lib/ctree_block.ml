@@ -112,12 +112,12 @@ module MemVal = struct
     match v with SInit (v, _) -> Typed.iter_vars v f | _ -> ()
 
   (* TODO: serialize tree borrow information! *)
-  let serialize (t : t) : serialized option =
+  let serialize (t : t) : serialized Seq.t option =
     match t with
-    | Init v -> Some (SInit v)
-    | Uninit Totally -> Some SUninit
-    | Zeros -> Some SZeros
-    | Any -> Some SAny
+    | Init v -> Some (Seq.return (SInit v))
+    | Uninit Totally -> Some (Seq.return SUninit)
+    | Zeros -> Some (Seq.return SZeros)
+    | Any -> Some (Seq.return SAny)
     | Lazy | Uninit Partially -> None
 
   let mk_fix_typed ty () =
@@ -126,48 +126,54 @@ module MemVal = struct
 
   let mk_fix_any () = [ Any ]
 
-  let consume (s : serialized) (t : (t, T.sint Typed.t) TB.tree) =
-    match s with
-    | SInit (v, ty) -> (
-        match t.node with
-        | NotOwned _ ->
-            let+ fixes = mk_fix_typed ty () in
-            Missing fixes
-        | Owned node -> (
-            let* sval_res = decode ~ty node in
-            match sval_res with
-            | Ok sv ->
-                let+ () = assume [ sv ==?@ v ] in
-                Ok ()
-            | Missing f -> miss f
-            | Error `UninitializedMemoryAccess -> Csymex.vanish ()))
-    | SAny -> (
-        match t.node with
-        | NotOwned _ -> miss_no_fix ~msg:"consume_any" ()
-        | Owned _ -> ok ())
-    | SUninit -> (
-        match t.node with
-        | NotOwned _ -> miss_no_fix ~msg:"consume_uninit" ()
-        | Owned (Uninit Totally) -> ok ()
-        | _ ->
-            L.info (fun m -> m "Consuming uninit but no uninit, vanishing");
-            Csymex.vanish ())
-    | SZeros -> (
-        match t.node with
-        | NotOwned _ -> miss_no_fix ~msg:"consume_zeros" ()
-        | Owned Zeros -> ok ()
-        | Owned (Init (v, _)) ->
-            let+ () = Csymex.assume [ v ==?@ 0s ] in
-            Ok ()
-        | _ ->
-            L.info (fun m -> m "Consuming zero but not zero, vanishing");
-            Csymex.vanish ())
+  type tree = (t, T.sint Typed.t) TB.tree
 
-  let produce : serialized -> t Csymex.t = function
-    | SInit v -> return (Init v)
-    | SZeros -> return Zeros
-    | SUninit -> return (Uninit Totally)
-    | SAny -> return Any
+  let not_owned (t : tree) : tree =
+    { t with node = NotOwned Totally; children = None }
+
+  let owned (t : tree) (v : t) : tree =
+    { t with node = Owned v; children = None }
+
+  let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
+    match (s, t.node) with
+    (* init *)
+    | SInit (_, ty), NotOwned _ ->
+        let+ fixes = mk_fix_typed ty () in
+        Missing fixes
+    | SInit (v, ty), Owned node -> (
+        let* sval_res = decode ~ty node in
+        match sval_res with
+        | Ok sv ->
+            let+ () = assume [ sv ==?@ v ] in
+            Ok (not_owned t)
+        | Missing f -> miss f
+        | Error `UninitializedMemoryAccess -> vanish ())
+    (* any *)
+    | SAny, NotOwned _ -> miss_no_fix ~msg:"consume_any" ()
+    | SAny, Owned _ -> ok (not_owned t)
+    (* uninit *)
+    | SUninit, NotOwned _ -> miss_no_fix ~msg:"consume_uninit" ()
+    | SUninit, Owned (Uninit Totally) -> ok (not_owned t)
+    | SUninit, _ ->
+        L.info (fun m -> m "Consuming uninit but no uninit, vanishing");
+        vanish ()
+    (* zeros *)
+    | SZeros, NotOwned _ -> miss_no_fix ~msg:"consume_zeros" ()
+    | SZeros, Owned Zeros -> ok (not_owned t)
+    | SZeros, Owned (Init (v, _)) ->
+        let+ () = Csymex.assume [ v ==?@ 0s ] in
+        Ok (not_owned t)
+    | SZeros, _ ->
+        L.info (fun m -> m "Consuming zero but not zero, vanishing");
+        vanish ()
+
+  let produce (s : serialized) (t : tree) : tree Csymex.t =
+    match (s, t.node) with
+    | _, (Owned _ | NotOwned Partially) -> vanish ()
+    | SInit v, NotOwned Totally -> return (owned t (Init v))
+    | SZeros, NotOwned Totally -> return (owned t Zeros)
+    | SUninit, NotOwned Totally -> return (owned t (Uninit Totally))
+    | SAny, NotOwned Totally -> return (owned t Any)
 end
 
 open MemVal
