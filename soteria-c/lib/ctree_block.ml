@@ -98,7 +98,7 @@ module MemVal = struct
 
   type serialized =
     | SInit of (T.cval Typed.t * Ctype.ctype)
-        [@printer Fmt.(pair ~sep:comma Typed.ppa Fmt_ail.pp_ty)]
+        [@printer Fmt.(pair ~sep:(Fmt.any " : ") Typed.ppa Fmt_ail.pp_ty)]
     | SUninit
     | SZeros
     | SAny

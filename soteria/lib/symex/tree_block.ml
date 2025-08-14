@@ -466,7 +466,7 @@ struct
         len : sint; [@printer Symex.Value.ppa]
         v : MemVal.serialized;
       }
-    | Bound of sint [@printer Symex.Value.ppa]
+    | Bound of sint [@printer fun f v -> Fmt.pf f "Bound(%a)" Symex.Value.ppa v]
   [@@deriving show { with_path = false }]
 
   type serialized = serialized_atom list
