@@ -1,5 +1,3 @@
-(* This could be parametric on an integer type and Node type. But is there realy a reason ? *)
-
 open Soteria_symex.Compo_res
 open Rustsymex.Syntax
 open Typed
