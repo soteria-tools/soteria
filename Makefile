@@ -96,3 +96,11 @@ clean:
 	rm -rf $(VSCODE_DIST)
 	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	rm -f soteria-vscode.vsix
+	
+license:
+	reuse annotate --copyright "Soteria Team" -y 2025 --recursive . --skip-unrecognised --license Apache2.0
+	
+license-check:
+	reuse lint	
+	
+.PHONY: license license-lint

@@ -1,0 +1,94 @@
+# SPDX-FileCopyrightText: 2025 Soteria Team
+# SPDX-License-Identifier: Apache-2.0
+
+version = 1
+
+# Default annotations for source files in this repository.
+# Precedence "aggregate" means existing headers (if any) are kept and these
+# defaults are added when generating metadata.
+[[annotations]]
+path = [
+  "**/*.ml",
+  "**/*.mli",
+  "**/*.mll",
+  "**/*.mly",           # OCaml
+  "**/*.py",            # Python
+  "**/*.rs",            # Rust
+  "**/*.c",
+  "**/*.h",
+  "**/*.cc",
+  "**/*.cpp",           # C/C++
+  "**/*.js",
+  "**/*.ts",
+  "**/*.jsx",
+  "**/*.tsx",           # JS/TS
+  "**/*.css",           # CSS
+  "**/*.sh",
+  "**/*.bash",          # Shell
+  "**/*.smt2",
+  "**/*.sexp",          # SMT / S-expr
+  "**/*.dune",
+  "**/dune",
+  "**/dune-project",    # Dune files
+  "**/*.opam",
+  "**/*.opam.template", # OPAM
+  "**/Makefile",        # Makefiles
+  "**/*.md",
+  "**/*.txt",           # Docs
+  "**/*.t",             # Cram tests
+  "**/*.toml",
+  "**/*.json",
+  "**/*.yaml",
+  "**/*.yml",           # Config
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Assets (images, vectors) — licensed under Apache-2.0 with the rest of the repo.
+[[annotations]]
+path = ["assets/*.png"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "LicenseRef-Soteria-Logo"
+
+# Optional: treat common generated/build outputs as out of scope by not matching
+# their extensions. If you later want to explicitly override these, add another
+# [[annotations]] section for those paths.
+
+# Explicit annotations for special files without typical extensions
+[[annotations]]
+path = ".github/CODEOWNERS"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ".gitignore"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ".ocamlformat"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ".ocamlformat-ignore"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "yarn.lock"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "NOTICE"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "Apache-2.0"
