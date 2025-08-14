@@ -8,7 +8,7 @@
         post =
         { heap =
           [(V|2|,
-            { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+            { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
               info = (Some global_local_eq.c:6:28-30 (cursor: 6:28)) })];
           globs = [(x_559, V|1|)] };
         ret =

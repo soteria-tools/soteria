@@ -23,8 +23,8 @@ Symbolic execution of a simple program with symbolic values that fails because o
           { heap =
             [(V|1|,
               { node =
-                [TypedVal {offset = 0; ty = signed int; v = 12};
-                 Uninit {offset = 4; len = 1020}; (Bound 1024)];
+                [MemVal {offset = 0; len = 4; v = 12 : signed int};
+                 MemVal {offset = 4; len = 1020; v = SUninit}; Bound(1024)];
                 info = (Some err.c:5:12-24) })];
             globs = [] });
      Error: Null pointer dereference with trace
@@ -38,7 +38,7 @@ Symbolic execution of a simple program with a horrible pointer indirection *&*x
           { heap =
             [(V|1|,
               { node =
-                [TypedVal {offset = 0; ty = signed int; v = 12}; (Bound 4)];
+                [MemVal {offset = 0; len = 4; v = 12 : signed int}; Bound(4)];
                 info = (Some indirections.c:5:12-31) })];
             globs = [] });
      Ok: (1, { heap = []; globs = [] })]
@@ -51,21 +51,21 @@ Checking that memcpy works correctly
           { heap =
             [(V|1|,
               { node =
-                [TypedVal {offset = 0; ty = signed int; v = 0};
-                 TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)];
+                [MemVal {offset = 0; len = 4; v = 0 : signed int};
+                 MemVal {offset = 4; len = 4; v = 1 : signed int}; Bound(8)];
                 info = (Some cpy.c:7:12-35) });
              (V|2|,
               { node =
-                [TypedVal {offset = 0; ty = signed int; v = 0};
-                 TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)];
+                [MemVal {offset = 0; len = 4; v = 0 : signed int};
+                 MemVal {offset = 4; len = 4; v = 1 : signed int}; Bound(8)];
                 info = (Some cpy.c:12:12-35) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
               { node =
-                [TypedVal {offset = 0; ty = signed int; v = 0};
-                 TypedVal {offset = 4; ty = signed int; v = 1}; (Bound 8)];
+                [MemVal {offset = 0; len = 4; v = 0 : signed int};
+                 MemVal {offset = 4; len = 4; v = 1 : signed int}; Bound(8)];
                 info = (Some cpy.c:7:12-35) })];
             globs = [] });
      Ok: (0, { heap = []; globs = [] })]
@@ -83,385 +83,385 @@ Checking that code cannot branch infinitely
     [Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:5:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:6:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:7:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:8:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|8|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|9|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:5:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:6:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:7:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|8|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:5:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:6:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:8:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|8|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:5:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:6:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:5:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:7:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:8:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|8|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:5:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:7:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:5:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:8:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:5:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:6:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:7:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:8:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|8|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:6:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:7:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:6:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:8:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:6:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:7:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:8:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|7|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:7:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:8:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|6|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] });
      Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:9:12-31) });
              (V|2|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:10:12-31) });
              (V|3|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:11:12-31) });
              (V|4|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:12:12-31) });
              (V|5|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some max_branching.c:13:12-31) })];
             globs = [] })]
   Executed 112 statements
@@ -471,7 +471,7 @@ Checking that code cannot branch infinitely
     [Ok: (1,
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = 0; ty = signed int; v = 1}];
+              { node = [MemVal {offset = 0; len = 4; v = 1 : signed int}];
                 info = None })];
             globs = [(x_559, V|1|)] })]
   Executed 5 statements
@@ -480,10 +480,10 @@ Checking that code cannot branch infinitely
     [Ok: (0,
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = 0; ty = signed int; v = 0}];
+              { node = [MemVal {offset = 0; len = 4; v = 0 : signed int}];
                 info = None });
              (V|2|,
-              { node = [TypedVal {offset = 0; ty = signed int; v = 0}];
+              { node = [MemVal {offset = 0; len = 4; v = 0 : signed int}];
                 info = None })];
             globs = [(x_559, V|1|); (y_560, V|2|)] })]
   Executed 3 statements
@@ -559,16 +559,16 @@ Expected to correctly find the harness function
     [Ok: (0,
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = 0; ty = float; v = 0.0f}];
+              { node = [MemVal {offset = 0; len = 8; v = 0.0f : float}];
                 info = None });
              (V|2|,
-              { node = [Zeros {offset = 0; len = 8}; (Bound 8)];
+              { node = [MemVal {offset = 0; len = 8; v = SZeros}; Bound(8)];
                 info = (Some float.c:10:23-47) })];
             globs = [(f_560, V|1|)] });
      Ok: (1,
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = 0; ty = float; v = 0.0f}];
+              { node = [MemVal {offset = 0; len = 8; v = 0.0f : float}];
                 info = None })];
             globs = [(f_560, V|1|)] })]
   Executed 11 statements
@@ -579,7 +579,7 @@ Check without the proper flag we obtain two branches
     [Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some alloc_cannot_fail.c:5:19-38) })];
             globs = [] });
      Ok: (1, { heap = []; globs = [] })]
@@ -591,7 +591,7 @@ Check with the proper flag we obtain only one branch
     [Ok: (0,
           { heap =
             [(V|1|,
-              { node = [Uninit {offset = 0; len = 4}; (Bound 4)];
+              { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
                 info = (Some alloc_cannot_fail.c:5:19-38) })];
             globs = [] })]
   Executed 5 statements
@@ -614,9 +614,9 @@ Check that, with proper flag, undefined function calls are havoced. Expecting 2 
           { heap =
             [(V|1|,
               { node =
-                [TypedVal {offset = 0; ty = signed int; v = 0};
-                 Uninit {offset = 4; len = 4};
-                 TypedVal {offset = 8; ty = signed long; v = 0}];
+                [MemVal {offset = 0; len = 4; v = 0 : signed int};
+                 MemVal {offset = 4; len = 4; v = SUninit};
+                 MemVal {offset = 8; len = 8; v = 0 : signed long}];
                 info = None });
              (V|2|, { node = Freed; info = (Some glob_struct.c:16:22-23) })];
             globs = [(x_561, V|1|)] })]
