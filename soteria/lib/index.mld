@@ -4,13 +4,13 @@
 
 {2 Manual contents}
 
-- The {{!page-quickstart}quick start} walks you through writing your first symbolic execution engine with Soteria.
+- The {{!page-core_symex}symbolic execution tutorial} walks you through the basics of doing symbolic execution with Soteria.
 
 {2 Library}
 
 {!modules: Soteria}
 {!modules:
-  Soteria.Soteria_symex
-  Soteria.Soteria_logs
+  Soteria.Symex
+  Soteria.Logs
   Soteria.Soteria_std
-  Soteria_c_values}
+  Soteria.C_values}
