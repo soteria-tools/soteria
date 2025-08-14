@@ -98,7 +98,7 @@ clean:
 	rm -f soteria-vscode.vsix
 	
 license:
-	reuse annotate --copyright "Soteria Team" -y 2025 --recursive . --skip-unrecognised --license Apache2.0
+	reuse annotate --copyright "Soteria Team" -y 2025 --recursive . --skip-unrecognised --license Apache-2.0
 	
 license-check:
 	reuse lint	
