@@ -1,0 +1,25 @@
+name: License Check
+
+permissions: read-all
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+# Cancel previous versions of this job that are still running.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Setup steps: checkout, z3, node, ocaml and opam
+      - uses: actions/checkout@v4
+      - name: install reuse
+        run: pip install reuse
+      - name: check licenses
+        run: make license-check
