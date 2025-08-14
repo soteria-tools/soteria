@@ -9,39 +9,23 @@ version = 1
 # defaults are added when generating metadata.
 [[annotations]]
 path = [
-  "**/*.ml",
-  "**/*.mli",
-  "**/*.mll",
-  "**/*.mly",            # OCaml
-  "**/*.py",             # Python
-  "**/*.rs",             # Rust
-  "**/*.c",
-  "**/*.h",
-  "**/*.cc",
-  "**/*.cpp",            # C/C++
-  "**/*.js",
-  "**/*.ts",
-  "**/*.jsx",
-  "**/*.tsx",            # JS/TS
-  "**/*.css",            # CSS
-  "**/*.sh",
-  "**/*.bash",           # Shell
-  "**/*.smt2",
-  "**/*.sexp",           # SMT / S-expr
-  "**/*.dune",
-  "**/dune",
-  "**/dune-project",     # Dune files
-  "**/*.opam",
-  "**/*.opam.template",  # OPAM
-  "**/Makefile",         # Makefiles
-  "**/*.md",
-  "**/*.txt",            # Docs
-  "**/*.t",              # Cram tests
-  "**/*.toml",
-  "**/*.json",
-  "**/*.yaml",
-  "**/*.yml",            # Config
-  ".github/CODEOWNERS",
+  "soteria/**",
+  "soteria-rust/**",
+  "soteria-c/**",
+  "ppx/**",
+  "vscode/**",
+  "packaging/**",
+  "demo/**",
+  "*.opam",
+  "*.opam.template",
+  "dune-project",
+  "dune",
+  "package.json",
+  "README.md",
+  "Makefile",
+  "odoc-config.sexp",
+  ".github/**",
+  ".vscode/**",
   ".gitignore",
   ".ocamlformat",
   ".ocamlformat-ignore",
@@ -49,7 +33,7 @@ path = [
   "NOTICE",              # Other files
   "THIRD_PARTY_NOTICES",
 ]
-precedence = "aggregate"
+precedence = "override"
 SPDX-FileCopyrightText = "2025 Soteria Team"
 SPDX-License-Identifier = "Apache-2.0"
 
