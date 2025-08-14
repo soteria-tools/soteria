@@ -237,9 +237,8 @@ struct
       let ol, oh = old_span in
       let nl, nh = range in
       if%sat ol ==@ nl then
-        let at = nh in
-        let* left_node, right_node = Node.split ~at:(at -@ ol) t.node in
-        let left_span, right_span = Range.split_at old_span at in
+        let* left_node, right_node = Node.split ~at:(nh -@ ol) t.node in
+        let left_span, right_span = Range.split_at old_span nh in
         let* left = tree_of_rec_node left_span left_node in
         let+ right = tree_of_rec_node right_span right_node in
         (left.node, left, right)
@@ -256,18 +255,20 @@ struct
           let left_span, right_span = Range.split_at old_span nl in
           let* left = tree_of_rec_node left_span left_node in
           let* full_right = tree_of_rec_node right_span right_node in
+          (* we need to first extract the relevant part of the right subtree; as
+             constructing it may have yielded a complex tree *)
           let* sub_right, right_extra = extract full_right range in
           let* node, right_left, right_right = split ~range sub_right in
           let* right =
             with_children sub_right ~left:right_left ~right:right_right
           in
-          match right_extra with
-          | None -> return (node, left, right)
-          | Some right_extra ->
-              let+ right =
+          let+ right =
+            match right_extra with
+            | None -> return right
+            | Some right_extra ->
                 with_children full_right ~left:right ~right:right_extra
-              in
-              (node, left, right)
+          in
+          (node, left, right)
 
     and extract (t : t) (range : Range.t) : (t * t option) Symex.t =
       (* First result is the extracted tree, second is the remain *)
@@ -580,44 +581,6 @@ struct
     in
     Seq.append (serialize_tree t.root) bound |> List.of_seq
 
-  let assume_bound_check_res (t : t) (ofs : sint) f =
-    let* () =
-      match t.bound with
-      | None -> Symex.return ()
-      | Some bound -> Symex.assume [ ofs <=@ bound ]
-    in
-    let++ root = f () in
-    { t with root }
-
-  let assume_bound_check (t : t) (ofs : sint) f =
-    let* () =
-      match t.bound with
-      | None -> Symex.return ()
-      | Some bound -> Symex.assume [ ofs <=@ bound ]
-    in
-    let+ root = f () in
-    { t with root }
-
-  let abstract_cons bound cons_tree t =
-    let** t = of_opt t in
-    let++ tree =
-      let@ () = assume_bound_check_res t bound in
-      cons_tree t.root
-    in
-    to_opt tree
-
-  let abstract_prod bound prod_tree t =
-    let t =
-      match t with
-      | Some t -> t
-      | None -> { bound = None; root = Tree.not_owned (zero, bound) }
-    in
-    let+ tree =
-      let@ () = assume_bound_check t bound in
-      prod_tree t.root
-    in
-    to_opt tree
-
   let consume_bound bound t =
     match t with
     | None | Some { bound = None; _ } -> miss_no_fix ~msg:"consume_bound" ()
@@ -634,27 +597,46 @@ struct
         Symex.return (Some { bound = Some bound; root })
     | Some { bound = Some _; _ } -> Symex.vanish ()
 
-  let consume_atom atom t =
-    match atom with
-    | Bound bound -> consume_bound bound t
-    | MemVal { offset; len; v } ->
-        let ((_, bound) as range) = Range.of_low_and_size offset len in
-        let consume t =
-          let+? fixes = Tree.consume v range t in
-          List.map (fun v -> [ MemVal { v; offset; len } ]) fixes
-        in
-        abstract_cons bound consume t
+  let produce_mem_val offset len v t =
+    let ((_, high) as range) = Range.of_low_and_size offset len in
+    let t =
+      match t with
+      | Some t -> t
+      | None -> { bound = None; root = Tree.not_owned range }
+    in
+    let* () =
+      match t.bound with
+      | None -> return ()
+      | Some bound -> Symex.assume [ high <=@ bound ]
+    in
+    let+ root = Tree.produce v range t.root in
+    to_opt { t with root }
 
-  let produce_atom atom t =
-    match atom with
-    | Bound bound -> produce_bound bound t
-    | MemVal { offset; len; v } ->
-        let ((_, bound) as range) = Range.of_low_and_size offset len in
-        abstract_prod bound (Tree.produce v range) t
+  let consume_mem_val offset len v t =
+    let ((_, high) as range) = Range.of_low_and_size offset len in
+    let** t = of_opt t in
+    let* () =
+      match t.bound with
+      | None -> Symex.return ()
+      | Some bound -> Symex.assume [ high <=@ bound ]
+    in
+    let++ root =
+      let+? fixes = Tree.consume v range t.root in
+      List.map (fun v -> [ MemVal { v; offset; len } ]) fixes
+    in
+    to_opt { t with root }
 
   let consume (list : serialized) (t : t option) =
-    Symex.Result.fold_list ~f:(fun acc st -> consume_atom st acc) ~init:t list
+    Symex.Result.fold_list
+      ~f:(fun acc -> function
+        | Bound bound -> consume_bound bound acc
+        | MemVal { offset; len; v } -> consume_mem_val offset len v acc)
+      ~init:t list
 
   let produce (list : serialized) (t : t option) =
-    Symex.fold_list ~f:(fun acc st -> produce_atom st acc) ~init:t list
+    Symex.fold_list
+      ~f:(fun acc -> function
+        | Bound bound -> produce_bound bound acc
+        | MemVal { offset; len; v } -> produce_mem_val offset len v acc)
+      ~init:t list
 end
