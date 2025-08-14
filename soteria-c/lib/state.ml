@@ -19,7 +19,7 @@ module SPmap = Pmap_direct_access (struct
   type t = T.sloc Typed.t
 
   let pp = ppa
-  let fresh ?constrs () = Csymex.nondet ?constrs Typed.t_loc
+  let fresh () = Csymex.nondet Typed.t_loc
 end)
 
 type t = (Block.t SPmap.t option, Globs.t) State_intf.Template.t

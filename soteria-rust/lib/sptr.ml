@@ -149,10 +149,15 @@ module ArithPtr : S with type t = arithptr_t = struct
     match ValMap.find_opt loc !decayed_vars with
     | Some loc_int -> return (loc_int +@ ofs)
     | None ->
-        let+ loc_int =
-          nondet Typed.t_int ~constrs:(fun x ->
-              let isize_max = Layout.max_value (TInt Isize) in
-              [ x %@ align ==@ 0s; 0s <@ x; x +@ size <=@ isize_max ])
+        let* loc_int = nondet Typed.t_int in
+        let+ () =
+          let isize_max = Layout.max_value (TInt Isize) in
+          Rustsymex.assume
+            [
+              loc_int %@ align ==@ 0s;
+              0s <@ loc_int;
+              loc_int +@ size <=@ isize_max;
+            ]
         in
         decayed_vars := ValMap.add loc loc_int !decayed_vars;
         loc_int +@ ofs
