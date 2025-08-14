@@ -14,11 +14,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  check-license:
     runs-on: ubuntu-latest
     steps:
       # Setup steps: checkout, z3, node, ocaml and opam
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: install reuse
         run: pip install reuse
       - name: check licenses
