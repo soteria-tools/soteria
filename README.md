@@ -42,3 +42,9 @@ soteria-rust exec-main <file>
 To test Rusteria on the Kani test suite, clone [Kani](https://github.com/model-checking/kani) next to `soteria`, and run `soteria-rust/scripts/kani.sh`. Run `soteria-rust/scripts/kani.sh --help` to see all available arguments.
 
 You can also test Rusteria on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `soteria` and run `soteria-rust/scripts/miri.sh`.
+
+# License
+
+Soteria and derived tools in this repository are under Apache-2.0 license, copyright Soteria Team 2025.
+
+The Soteria logo is a trademark of the Soteria Team.

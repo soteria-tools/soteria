@@ -8,7 +8,7 @@
 
 (generate_opam_files)
 
-(license BSD-3-Clause)
+(license Apache-2.0)
 
 (authors
  "Sacha-Élie Ayoun <s.ayoun17@imperial.ac.uk>"
@@ -145,7 +145,7 @@
   name_matcher_parser
   charon
   (ppx_subliner
-    (>= 0.2.1))
+   (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
   (yojson

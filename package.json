@@ -2,7 +2,7 @@
   "name": "soteria-vscode",
   "description": "VSCode extension for Soteria",
   "author": "Sacha-Élie Ayoun",
-  "license": "BSD-3-Clause",
+  "license": "Apache-2.0",
   "version": "0.0.1",
   "publisher": "giltho",
   "repository": {

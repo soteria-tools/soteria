@@ -96,3 +96,8 @@ clean:
 	rm -rf $(VSCODE_DIST)
 	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	rm -f soteria-vscode.vsix
+	
+license-check:
+	reuse lint	
+	
+.PHONY: license license-lint
