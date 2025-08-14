@@ -107,8 +107,13 @@ module Make (Sptr : Sptr.S) = struct
     let not_owned (t : tree) : tree =
       { t with node = NotOwned Totally; children = None }
 
-    let owned (t : tree) (v : t) : tree =
-      { t with node = Owned v; children = None }
+    let owned (t : tree) (v : value) : tree =
+      let tb =
+        match t.node with
+        | NotOwned _ -> Tree_borrow.empty_state
+        | Owned (_, tb) -> tb
+      in
+      { t with node = Owned (v, tb); children = None }
 
     let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
       match (s, t.node) with
@@ -126,13 +131,12 @@ module Make (Sptr : Sptr.S) = struct
       | SZeros, _ -> vanish ()
 
     let produce (s : serialized) (t : tree) : tree Rustsymex.t =
-      let tb_init = Tree_borrow.empty_state in
       match (s, t.node) with
       | _, (Owned _ | NotOwned Partially) -> vanish ()
-      | SInit v, NotOwned Totally -> return (owned t (Init v, tb_init))
-      | SZeros, NotOwned Totally -> return (owned t (Zeros, tb_init))
-      | SUninit, NotOwned Totally -> return (owned t (Uninit Totally, tb_init))
-      | SAny, NotOwned Totally -> return (owned t (Any, tb_init))
+      | SInit v, NotOwned Totally -> return (owned t (Init v))
+      | SZeros, NotOwned Totally -> return (owned t Zeros)
+      | SUninit, NotOwned Totally -> return (owned t (Uninit Totally))
+      | SAny, NotOwned Totally -> return (owned t Any)
   end
 
   open MemVal
