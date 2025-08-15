@@ -161,11 +161,6 @@ struct
     let merge_qty left right =
       match (left, right) with Totally, Totally -> Totally | _, _ -> Partially
 
-    (* Later we could add arbitrary annotations to the mem_val variant.
-       For example, we can keep track of read-only or tainted bytes.
-       i.e. MemVal { v: mem_val; annot: 'a }.
-       Quite probably, the Node module can be parametrized by a module
-       capturing the annotations behavior in analysis. *)
     type t = MemVal.t node
 
     let pp ft = function
