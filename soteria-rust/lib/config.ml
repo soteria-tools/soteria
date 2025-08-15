@@ -9,7 +9,7 @@ type t = {
       (** Ignore memory leaks *)
   ignore_aliasing : bool; [@make.default false] [@names [ "ignore-aliasing" ]]
       (** Ignore pointer aliasing rules (tree borrows) *)
-  monomorphize : bool;
+  monomorphize_experimental : bool;
       [@make.default false] [@names [ "monomorphize-experimental" ]]
       (** Use Charon's new monomorphization, which may cause unexpected results
           but resolves drops. *)
