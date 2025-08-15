@@ -9,6 +9,10 @@ type t = {
       (** Ignore memory leaks *)
   ignore_aliasing : bool; [@make.default false] [@names [ "ignore-aliasing" ]]
       (** Ignore pointer aliasing rules (tree borrows) *)
+  monomorphize_experimental : bool;
+      [@make.default false] [@names [ "monomorphize-experimental" ]]
+      (** Use Charon's new monomorphization, which may cause unexpected results
+          but resolves drops. *)
   with_kani : bool; [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
