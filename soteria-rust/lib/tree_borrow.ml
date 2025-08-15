@@ -158,45 +158,47 @@ let set_protector ~protected root tag st =
     for the tree rooted at [root] with an event [e], that happened at
     [accessed]. *)
 let access (root : t) accessed e st =
-  let ub_happened = ref false in
-  let st =
-    Iter.fold
-      (fun st node ->
-        TagMap.update node.tag
-          (function
-            | None -> Some (false, node.initial_state) | Some _ as st -> st)
-          st)
-      st
-    @@ iter root
-  in
-  L.trace (fun m ->
-      let pp_binding fmt (tag, (protected, st)) =
-        Fmt.pf fmt "%a -> %a%s" pp_tag tag pp_state st
-          (if protected then " (p)" else "")
-      in
-      m "TB: %a at %a, for tree %a, state@[<hov 2> %a@]" pp_access e pp_tag
-        accessed pp root
-        Fmt.(iter_bindings ~sep:(Fmt.any ", ") TagMap.iter pp_binding)
-        st);
-  let st' =
-    TagMap.mapi
-      (fun tag (protected, st) ->
-        let node = find root tag in
-        let rel = is_derived node accessed in
-        (* if the tag has a protector and is accessed, this toggles the protector! *)
-        let protected = node.protector && (tag = accessed || protected) in
-        let st' = transition ~protected st (rel, e) in
-        if st' = UB then (
-          ub_happened := true;
-          L.debug (fun m ->
-              m
-                "TB: Undefined behavior encountered for %a, %a %a (protected? \
-                 %b): %a->%a"
-                pp_tag tag pp_locality rel pp_access e protected pp_state st
-                pp_state st'));
-        (protected, st'))
-      st
-  in
-  if !ub_happened then Result.error `AliasingError else Result.ok st'
+  if is_disabled () then Result.ok st
+  else
+    let ub_happened = ref false in
+    let st =
+      Iter.fold
+        (fun st node ->
+          TagMap.update node.tag
+            (function
+              | None -> Some (false, node.initial_state) | Some _ as st -> st)
+            st)
+        st
+      @@ iter root
+    in
+    L.trace (fun m ->
+        let pp_binding fmt (tag, (protected, st)) =
+          Fmt.pf fmt "%a -> %a%s" pp_tag tag pp_state st
+            (if protected then " (p)" else "")
+        in
+        m "TB: %a at %a, for tree %a, state@[<hov 2> %a@]" pp_access e pp_tag
+          accessed pp root
+          Fmt.(iter_bindings ~sep:(Fmt.any ", ") TagMap.iter pp_binding)
+          st);
+    let st' =
+      TagMap.mapi
+        (fun tag (protected, st) ->
+          let node = find root tag in
+          let rel = is_derived node accessed in
+          (* if the tag has a protector and is accessed, this toggles the protector! *)
+          let protected = node.protector && (tag = accessed || protected) in
+          let st' = transition ~protected st (rel, e) in
+          if st' = UB then (
+            ub_happened := true;
+            L.debug (fun m ->
+                m
+                  "TB: Undefined behavior encountered for %a, %a %a \
+                   (protected? %b): %a->%a"
+                  pp_tag tag pp_locality rel pp_access e protected pp_state st
+                  pp_state st'));
+          (protected, st'))
+        st
+    in
+    if !ub_happened then Result.error `AliasingError else Result.ok st'
 
 let merge = TagMap.merge @@ fun _ -> Option.merge meet'

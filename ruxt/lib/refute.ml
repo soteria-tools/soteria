@@ -1,55 +1,55 @@
 open Soteria_rust_lib
+open Charon
+open Rustsymex.Syntax
 module Wpst_interp = Interp.Make (Heap)
 module Compo_res = Soteria_symex.Compo_res
-open Charon
 
-let try_refute summ_ctx summs (fundef : UllbcAst.fun_decl) =
+let target_decls (crate : UllbcAst.crate) =
+  let can_infer _ (fundef : UllbcAst.fun_decl) =
+    fundef.item_meta.attr_info.public
+    && fundef.item_meta.is_local
+    && not fundef.signature.is_unsafe
+  in
+  Types.FunDeclId.Map.filter can_infer crate.fun_decls
+
+let leak_check leaks : (unit, [> `MemoryLeak ]) Result.t =
+  match leaks with [] -> Result.ok () | _ -> Result.error `MemoryLeak
+
+let try_refute (fundef : UllbcAst.fun_decl) summs summ_ctx =
   (* Construct precondition state and symbolically execute function *)
   let process =
-    let open Rustsymex.Syntax in
-    let empty_pre = Rustsymex.return ([], Heap.empty) in
-    let extend_pre pre sym_ret =
-      let* args, state = pre in
-      let* arg, st = sym_ret in
-      let+ state = Heap.produce st state in
-      (arg :: args, state)
-    in
-    let* args, state = List.fold_left extend_pre empty_pre summs in
-    let++ rv, state = Wpst_interp.exec_fun ~args ~state fundef in
-    (rv, state)
+    let* args, state = Summary.Symex.flatten summs in
+    Wpst_interp.exec_fun ~args ~state fundef
   in
   (* For each successful outcome, the summary context will be updated. *)
-  let extend_ctx res_ctx outcome =
+  let extend_ctx res_ctx (outcome, pcs) =
     let ( let** ) = Result.bind in
     let** ctx = res_ctx in
     match outcome with
     (* Successful termination: update the summary context *)
-    | Compo_res.Ok (ret, state), pcs ->
+    | Compo_res.Ok (ret, state) ->
         let ty = fundef.signature.output in
-        (* PEDRO: Check reachability from ret, instead of clearing globals *)
-        let state = Heap.serialize (Heap.clear_globals state) in
-        let summ = Summary.{ ret; pcs; state } in
-        Result.ok @@ Summary.Context.update ty summ ctx
+        let summ, leaks = Summary.make ret pcs state in
+        let update_ctx () = Summary.Context.update ty summ ctx in
+        Result.map update_ctx (leak_check leaks)
     (* Unsuccessful termination: found a type unsoundness *)
     | _ -> Result.error `TypeUnsound
   in
-  Rustsymex.run process |> List.fold_left extend_ctx (Result.ok summ_ctx)
+  let fuel =
+    Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
+  in
+  Rustsymex.run ~fuel process |> List.fold_left extend_ctx (Result.ok summ_ctx)
 
 let find_unsoundness ?(fuel = 5) (crate : UllbcAst.crate) =
-  (* Filter out unwanted functions *)
-  let safe_decls =
-    let can_infer _ (fundef : UllbcAst.fun_decl) =
-      fundef.item_meta.attr_info.public && not fundef.signature.is_unsafe
-    in
-    Types.FunDeclId.Map.filter can_infer crate.fun_decls
-  in
+  let safe_decls = target_decls crate in
   (* The try_refute procedure is called for each function *)
   let try_refute _ (entry_point : UllbcAst.fun_decl) acc =
     let ( let** ) = Result.bind in
     let** summ_ctx = acc in
-    let f summs ctx = try_refute ctx summs entry_point in
     let tys = entry_point.signature.inputs in
-    Summary.Context.update_res f tys summ_ctx
+    let f ctx summs = Result.bind ctx (try_refute entry_point summs) in
+    let iter_summs = Summary.Context.iter_summs tys summ_ctx in
+    Iter.fold f (Result.ok summ_ctx) iter_summs
   in
   (* The meta-loop iterates over all safe functions *)
   let rec meta_loop summ_ctx fuel =
@@ -73,11 +73,10 @@ let find_unsoundness ?(fuel = 5) (crate : UllbcAst.crate) =
   meta_loop Summary.Context.empty fuel
 
 let exec_ruxt config file_name =
-  let open Driver in
-  config_set config;
+  Driver.config_set config;
   let plugin = Plugin.create_using_current_config () in
   try
-    let crate = parse_ullbc_of_file ~plugin file_name in
+    let crate = Driver.parse_ullbc_of_file ~plugin file_name in
     let open Syntaxes.FunctionWrap in
     let@ () = Crate.with_crate crate in
     let ret, msg =
@@ -87,18 +86,6 @@ let exec_ruxt config file_name =
     Fmt.pr "%s" msg;
     exit ret
   with
-  | Plugin.PluginError e ->
-      Fmt.kstr
-        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
-        "Fatal (Plugin): %s" e;
-      exit 2
-  | ExecutionError e ->
-      Fmt.kstr
-        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
-        "Fatal: %s" e;
-      exit 2
-  | CharonError e ->
-      Fmt.kstr
-        (Soteria_terminal.Diagnostic.print_diagnostic_simple ~severity:Error)
-        "Fatal (Charon): %s" e;
-      exit 3
+  | Plugin.PluginError e -> Driver.fatal ~name:"Plugin" e
+  | Driver.ExecutionError e -> Driver.fatal e
+  | Driver.FrontendError e -> Driver.fatal ~name:"Frontend" ~code:3 e
