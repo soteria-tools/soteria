@@ -51,6 +51,7 @@ end
 
 module Interval : S = struct
   let mk_var v : Svalue.t = Svalue.mk_var v TInt
+  let mk_var_ty v : Typed.T.sint Typed.t = Typed.mk_var v Typed.t_int
 
   module Range = struct
     (** A range \[m, n\]; both sides are inclusive. A [None] in the range
@@ -68,17 +69,20 @@ module Interval : S = struct
       | Some m, Some n -> Z.gt m n
       | _ -> false
 
-    let to_sval v r : Svalue.t =
-      match r with
-      | Some m, Some n when Z.equal m n -> mk_var v ==@ Svalue.int_z m
-      | Some m, Some n ->
-          let var = mk_var v in
-          Svalue.int_z m <=@ var &&@ (var <=@ Svalue.int_z n)
-      | Some m, None -> Svalue.int_z m <=@ mk_var v
-      | None, Some n -> mk_var v <=@ Svalue.int_z n
-      | None, None -> Svalue.v_true
-
-    let is_uninformative = function None, None -> true | _ -> false
+    (** [iter_sval_equivalent v r] returns an iterator over the set of symbolic
+        values that are represented by [v] spanning over the range [r] *)
+    let iter_sval_equivalent v r =
+      let open Typed.Infix in
+      fun f ->
+        match r with
+        | Some m, Some n when Z.equal m n -> f (mk_var_ty v ==@ Typed.int_z m)
+        | Some m, Some n ->
+            let var = mk_var_ty v in
+            f (Typed.int_z m <=@ var);
+            f (var <=@ Typed.int_z n)
+        | Some m, None -> f (Typed.int_z m <=@ mk_var_ty v)
+        | None, Some n -> f (mk_var_ty v <=@ Typed.int_z n)
+        | None, None -> ()
 
     (** The intersection of two ranges; always representable *)
     let intersect ((m1, n1) : t) ((m2, n2) : t) : t =
@@ -267,13 +271,7 @@ module Interval : S = struct
       (fun m ->
         fun f ->
          Var.Map.iter
-           (fun v r ->
-             if to_check v && not (Range.is_uninformative r) then
-               let sv = Typed.type_ (Range.to_sval v r) in
-               Typed.split_ands sv f)
-           m
-        (* Var.Map.fold
-          (fun v r acc -> if to_check v then acc &&@ Range.to_sval v r else acc)
-          m (Typed.untyped acc) *))
+           (fun v r -> if to_check v then Range.iter_sval_equivalent v r f)
+           m)
       st
 end
