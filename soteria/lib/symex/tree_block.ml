@@ -7,6 +7,7 @@ module Split_tree = struct
   type ('a, 'sint) t =
     | Leaf of 'a
     | Node of ('a, 'sint) t * 'sint * ('a, 'sint) t
+  [@@deriving show]
 
   let rec map f = function
     | Leaf x -> Leaf (f x)
@@ -249,6 +250,9 @@ struct
       in
       make ~node:tree.node ~range ?children ()
 
+    (** Converts a [Split_tree] of [Node]s (ie. a tree with no base) into a
+        [Tree], reconstructing each node's range and constructing intermediary
+        nodes. *)
     let rec of_split_tree range = function
       | Split_tree.Leaf node -> return @@ make ~node ~range ()
       | Node (left, at, right) ->
@@ -256,6 +260,19 @@ struct
           let* left = of_split_tree left_span left in
           let* right = of_split_tree right_span right in
           of_children_s ~left ~right
+
+    (** Converts the given [Tree] into a [Split_tree], ignoring intermediary
+        nodes and erasing offset information. *)
+    let rec to_split_tree t : (Node.t, sint) Split_tree.t =
+      let low, _ = t.range in
+      let aux t : (Node.t, sint) Split_tree.t =
+        match t.children with
+        | None -> Leaf t.node
+        | Some (left, right) ->
+            let _, split = left.range in
+            Node (to_split_tree left, split -@ low, to_split_tree right)
+      in
+      aux t
 
     (** [split ~range t] isolates [range] from [t]. Precondition: [range] is a
         strict subrange of [t.range] (neither empty nor equal to [t.range]).
