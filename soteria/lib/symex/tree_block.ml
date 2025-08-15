@@ -75,11 +75,6 @@ module type MemVal = sig
   val split :
     at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
 
-  (** If this memory value is exclusively owned, ie no additional state can be
-      composed with it; in other words, calling [produce] on a tree with this
-      node must always vanish. *)
-  val is_exclusively_owned : t -> Symex.Value.sbool Symex.Value.t
-
   type serialized
 
   val pp_serialized : Format.formatter -> serialized -> unit
@@ -113,6 +108,13 @@ module type MemVal = sig
       offset and length, meaning [t.node] is the node covering the whole
       predicate's range. *)
   val produce : serialized -> (t, sint) tree -> (t, sint) tree Symex.t
+
+  (** Returns [ok] if this memory value is exclusively owned, ie no additional
+      state can be composed with it; in other words, calling [produce] on a tree
+      with this node must always vanish. Otherwise this should raise a [miss]
+      with the fixes needed for this to become exclusively owned. *)
+  val assert_exclusively_owned :
+    t -> (unit, 'err, serialized list) Symex.Result.t
 end
 
 module Make
@@ -177,9 +179,10 @@ struct
     let is_empty = function NotOwned Totally -> true | _ -> false
     let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
 
-    let is_exclusively_owned = function
-      | NotOwned _ -> v_false
-      | Owned n -> MemVal.is_exclusively_owned n
+    let assert_exclusively_owned = function
+      | NotOwned _ ->
+          miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
+      | Owned n -> MemVal.assert_exclusively_owned n
 
     let merge ~left ~right =
       match (left, right) with
@@ -543,6 +546,10 @@ struct
 
   type serialized = serialized_atom list
 
+  let lift_miss ~offset ~len symex =
+    let+? fixes = symex in
+    List.map (fun v -> [ MemVal { v; offset; len } ]) fixes
+
   let iter_values_serialized serialized f =
     List.iter (function MemVal { v; _ } -> f v | _ -> ()) serialized
 
@@ -574,13 +581,12 @@ struct
     | None -> miss_no_fix ~msg:"assert_exclusively_owned - no bound" ()
     | Some bound ->
         let { range = low, high; node; _ } = t.root in
-        if%sat Node.is_exclusively_owned node then
-          if%sat low ==@ zero &&@ (high ==@ bound) then Result.ok ()
-          else
-            miss_no_fix
-              ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
+        if%sat low ==@ zero &&@ (high ==@ bound) then
+          lift_miss ~offset:zero ~len:bound
+          @@ Node.assert_exclusively_owned node
         else
-          miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
+          miss_no_fix
+            ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
 
   let get_raw_tree_owned ofs size t =
     let@ t = with_bound_and_owned_check t (ofs +@ size) in
@@ -691,10 +697,7 @@ struct
       | None -> Symex.return ()
       | Some bound -> Symex.assume [ high <=@ bound ]
     in
-    let++ root =
-      let+? fixes = Tree.consume v range t.root in
-      List.map (fun v -> [ MemVal { v; offset; len } ]) fixes
-    in
+    let++ root = lift_miss ~offset ~len @@ Tree.consume v range t.root in
     to_opt { t with root }
 
   let consume (list : serialized) (t : t option) =

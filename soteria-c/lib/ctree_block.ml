@@ -68,8 +68,6 @@ module MemVal = struct
     | Uninit Partially | Lazy ->
         failwith "Should never split an intermediate node"
 
-  let is_exclusively_owned _ = Typed.v_true
-
   let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
     match t with
     | Uninit _ ->
@@ -175,6 +173,8 @@ module MemVal = struct
     | SZeros, NotOwned Totally -> return (owned t Zeros)
     | SUninit, NotOwned Totally -> return (owned t (Uninit Totally))
     | SAny, NotOwned Totally -> return (owned t Any)
+
+  let assert_exclusively_owned _ = Result.ok ()
 end
 
 open MemVal

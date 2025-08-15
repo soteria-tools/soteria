@@ -74,8 +74,6 @@ module Make (Sptr : Sptr.S) = struct
       | Lazy | Uninit Partially ->
           failwith "Should never split an intermediate node"
 
-    let is_exclusively_owned _ = Typed.v_true
-
     type serialized =
       | SInit of (rust_val * Types.ty)
           [@printer Fmt.(pair ~sep:comma pp_rust_val Charon_util.pp_ty)]
@@ -137,6 +135,8 @@ module Make (Sptr : Sptr.S) = struct
       | SZeros, NotOwned Totally -> return (owned t Zeros)
       | SUninit, NotOwned Totally -> return (owned t (Uninit Totally))
       | SAny, NotOwned Totally -> return (owned t Any)
+
+    let assert_exclusively_owned _ = Result.ok ()
   end
 
   open MemVal
