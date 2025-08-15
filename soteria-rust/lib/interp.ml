@@ -909,14 +909,16 @@ module Make (State : State_intf.S) = struct
           | TraitImpl impl_ref ->
               let impl = Crate.get_trait_impl impl_ref.id in
               (* The Drop trait will only have the drop function *)
-              let drop_ref = snd (List.hd impl.methods) in
+              let _, drop_ref = List.hd impl.methods in
               let drop = Crate.get_fun drop_ref.binder_value.id in
-              let exec_drop store state =
-                (* The return value is ignored, as drop returns () *)
-                let++ _, state = exec_fun drop ~args:[ Ptr place_ptr ] state in
-                ((), store, state)
+              let fun_exec =
+                with_extra_call_trace ~loc ~msg:"Drop"
+                @@ lift_state_op
+                @@ exec_fun drop ~args:[ Ptr place_ptr ]
               in
-              exec_drop
+              State.unwind_with fun_exec
+                ~f:(fun _ -> ok ())
+                ~fe:(fun err -> error_raw err)
           | _ -> State.uninit place_ptr place.ty)
     | Assert { cond; expected; on_failure } -> (
         let* cond = eval_operand cond in
