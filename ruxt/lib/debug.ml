@@ -1,12 +1,11 @@
 open Soteria_rust_lib
 open Charon
 
-let print_ret ret =
-  Fmt.pr "Ret: %a\n" (Charon_util.pp_rust_val Heap.Sptr.pp) ret
+let print_ret ret = Fmt.pr "Ret: %a\n" (Rust_val.pp Heap.Sptr.pp) ret
 
 let print_args args =
   Fmt.pr "ARGS:\n";
-  List.iter (Fmt.pr "%a\n" (Charon_util.pp_rust_val Heap.Sptr.pp)) args
+  List.iter (Fmt.pr "%a\n" (Rust_val.pp Heap.Sptr.pp)) args
 
 let print_pcs pcs =
   Fmt.pr "PCS:\n";

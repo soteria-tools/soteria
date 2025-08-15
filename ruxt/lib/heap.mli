@@ -5,10 +5,9 @@ include
     with type 'a err = 'a * Charon.Meta.span Soteria_terminal.Call_trace.t
      and type serialized =
       (Typed.T.sloc Typed.t
-      * Tree_block.serialized Rustsymex.Freeable.serialized)
+      * (Tree_block.serialized Rustsymex.Freeable.serialized * bool))
       list
 
-val clear_globals : t -> t
 val serialize : t -> serialized
 val pp_serialized : Format.formatter -> serialized -> unit
 

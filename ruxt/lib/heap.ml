@@ -25,23 +25,7 @@ module StateKey = struct
   type t = T.sloc Typed.t
 
   let pp = ppa
-
-  (* let fresh ?constrs () = Rustsymex.nondet ?constrs Typed.t_loc *)
-  let indices = ref 0
-
-  (* We know all keys are distinct, so we avoid the extra assertion *)
-  let distinct _ = Typed.v_true
-
-  (* This *only* works in WPST!!! *)
-  let fresh ?constrs () =
-    incr indices;
-    let idx = !indices in
-    let loc = Ptr.loc_of_int idx in
-    match constrs with
-    | Some constrs ->
-        let+ () = Rustsymex.assume (constrs loc) in
-        loc
-    | None -> return loc
+  let fresh () = Rustsymex.nondet Typed.t_loc
 end
 
 module SPmap = Pmap_direct_access (StateKey)
@@ -58,7 +42,7 @@ module GlobMap = struct
 
   let pp pp_v fmt m =
     let pp_pair = Fmt.pair ~sep:(Fmt.any " -> ") pp_global pp_v in
-    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) m
+    (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) fmt m
 end
 
 module FunBiMap = struct
@@ -90,50 +74,54 @@ module FunBiMap = struct
     let pp_pair =
       Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Types.pp_fn_ptr
     in
-    Fmt.pf fmt "%a" (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) lmap
+    (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) fmt lmap
 end
 
 type t = {
   state : Tree_block.t Freeable.t SPmap.t option;
   functions : FunBiMap.t;
-  globals : Sptr.t Charon_util.full_ptr GlobMap.t;
+  globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
 }
 [@@deriving show { with_path = false }]
 
-let clear_globals st =
-  match st.state with
-  | None -> st
-  | Some state ->
-      let state =
-        let global_addresses =
-          GlobMap.bindings st.globals
-          |> List.map (fun (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr)
-        in
-        SPmap.M.filter (fun k _ -> not (List.mem k global_addresses)) state
-      in
-      { st with state = Some state }
-
-type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
+type serialized =
+  (Tree_block.serialized Freeable.serialized * bool) SPmap.serialized
 [@@deriving show { with_path = false }]
 
-let serialize { state; _ } =
-  match state with
+let mark_globals globals serialized : serialized =
+  let globals =
+    ListLabels.fold_left (GlobMap.bindings globals) ~init:[]
+      ~f:(fun acc (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr :: acc)
+  in
+  List.map (fun (l, b) -> (l, (b, List.mem l globals))) serialized
+
+let map_missing_globals globals res =
+  let+? serialized = res in
+  List.map (mark_globals globals) serialized
+
+let serialize st : serialized =
+  match st.state with
   | None -> []
   | Some state ->
-      SPmap.serialize (Freeable.serialize Tree_block.serialize) state
+      let serialized =
+        SPmap.serialize (Freeable.serialize Tree_block.serialize) state
+      in
+      mark_globals st.globals serialized
 
-let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
-    (serialized : serialized) : serialized =
-  SPmap.subst_serialized
-    (Freeable.subst_serialized Tree_block.subst_serialized)
-    subst_var serialized
+let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t) (s : serialized)
+    : serialized =
+  let subst subst_var (f, b) =
+    (Freeable.subst_serialized Tree_block.subst_serialized subst_var f, b)
+  in
+  SPmap.subst_serialized subst subst_var s
 
 let iter_vars_serialized (s : serialized) :
     (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit =
-  SPmap.iter_vars_serialized
-    (Freeable.iter_vars_serialized Tree_block.iter_vars_serialized)
-    s
+  let iter (f, _) =
+    Freeable.iter_vars_serialized Tree_block.iter_vars_serialized f
+  in
+  SPmap.iter_vars_serialized iter s
 
 let pp_pretty ~ignore_freed ft { state; _ } =
   let ignore =
@@ -156,8 +144,8 @@ let empty =
   }
 
 let log action ptr st =
-  L.debug (fun m ->
-      m "About to execute action: %s at %a (%a)@\n@[<2>state:@ %a@]" action
+  L.trace (fun m ->
+      m "About to execute action: %s at %a (%a)@\n@[<2>STATE:@ %a@]" action
         Sptr.pp ptr Charon_util.pp_span (get_loc ())
         (pp_pretty ~ignore_freed:true)
         st)
@@ -181,13 +169,13 @@ let with_tbs b f =
 let check_ptr_align (ptr : Sptr.t) ty st =
   let@ () = with_error_loc_as_call_trace st in
   let* expected_align = Layout.align_of_s ty in
-  let ofs = Typed.Ptr.ofs ptr.ptr in
-  let align = ptr.align in
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  (* 0-based pointers are aligned up to their offset *)
+  let align = Typed.ite (loc ==@ Typed.Ptr.null_loc) expected_align ptr.align in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
         Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa expected_align
         Charon_util.pp_ty ty);
-
   if%sat ofs %@ expected_align ==@ 0s &&@ (align %@ expected_align ==@ 0s) then
     Result.ok ((), st)
   else error `MisalignedPointer
@@ -197,14 +185,32 @@ let with_ptr (ptr : Sptr.t) (st : t)
       [< T.sint ] Typed.t * Tree_block.t option ->
       ('a * Tree_block.t option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
-  if%sat Sptr.is_at_null_loc ptr then Result.error `NullDereference
+  if%sat Sptr.sem_eq ptr Sptr.null_ptr then Result.error `NullDereference
   else
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     let@ state = with_state st in
-    let++ v, state =
+    let* res =
       (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state
+      |> map_missing_globals st.globals
     in
-    (v, state)
+    match res with
+    | Missing _ as miss ->
+        if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
+        else return miss
+    | ok_or_err -> return ok_or_err
+
+(** This is used as a stopgap for cases where a function pointer is cast to a
+    regular pointer and is used on the state; the location won't exist in tree
+    block, and we don't want to add it there (I think), but we don't want to
+    crash, so we just ignore the action.
+
+    For instance, if a function pointer hiding as a pointer is passed to a
+    function, protecting it should do nothing, and should be allowed. *)
+let with_opt_or (x : 'a option) (otherwise : 'b)
+    (f : 'a * Tree_borrow.t -> ('b * 'a option, 'err, 'f) Result.t) :
+    ('b * 'a option, 'err, 'f) Result.t =
+  let tb = Tree_borrow.init ~state:Unique () in
+  match x with Some v -> f (v, tb) | None -> Result.ok (otherwise, None)
 
 let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -235,7 +241,7 @@ let load ?(is_move = false) ?(ignore_borrow = true) (ptr, meta) ty st =
   let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
   let++ value, block = Encoder.ParserMonad.parse ~init:block ~handler parser in
   L.debug (fun f ->
-      f "Finished reading rust value %a" (Charon_util.pp_rust_val Sptr.pp) value);
+      f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   (value, block)
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
@@ -264,6 +270,7 @@ let store (ptr, _) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
+    let** (), st = check_ptr_align ptr ty st in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     L.debug (fun f ->
@@ -292,6 +299,49 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   in
   let@ ofs, block = with_ptr dst st in
   let@ block, _ = with_tbs block in
+  (* We need to be careful about tree borrows; the tree we copy has a tree borrow state inside,
+     but we cannot copy that, since those tags don't belong to this allocation!
+     Instead, we must first get the tree borrow states for the original area of memory,
+     and update the copied tree with them.
+     We only want to update the values in the tree, not the tree borrow state. *)
+  let module Tree = Tree_block.Tree in
+  let** original_tree, _ = Tree_block.get_raw_tree_owned ofs size block in
+  (* Iterator over the tree borrow states in a tree. *)
+  let collect_tb_states f =
+    Tree.iter_leaves_rev original_tree @@ fun leaf ->
+    match leaf.node with
+    | Owned { tb; _ } ->
+        let range = Range.offset leaf.range ~-(fst original_tree.range) in
+        f (tb, range)
+    | NotOwned Totally -> failwith "Impossible: we framed the range"
+    | NotOwned Partially ->
+        failwith "Impossible: iterating over an intermediate node"
+  in
+  (* Update a tree and its children with the given tree borrow state. *)
+  let put_tb tb t =
+    let rec aux tb (t : Tree.t) =
+      match t.node with
+      | NotOwned _ -> failwith "Impossible: checked before"
+      | Owned { v; _ } ->
+          let children =
+            Option.map (fun (l, r) -> (aux tb l, aux tb r)) t.children
+          in
+          { t with children; node = Owned { v; tb } }
+    in
+    try Result.ok (aux tb t) with Failure msg -> not_impl msg
+  in
+  (* Applies all the tree borrow ranges to the tree we're writing, overwriting all
+     previous states. *)
+  let** tree_to_write =
+    Result.fold_iter collect_tb_states ~init:tree_to_write
+      ~f:(fun tree (tb, range) ->
+        let replace_node = put_tb tb in
+        let rebuild_parent = Tree.of_children in
+        let++ _, tree =
+          Tree.frame_range ~rebuild_parent ~replace_node tree range
+        in
+        tree)
+  in
   Tree_block.put_raw_tree ofs tree_to_write block
 
 let alloc ?zeroed size align st =
@@ -303,7 +353,7 @@ let alloc ?zeroed size align st =
   let block = Freeable.Alive (Tree_block.alloc ?zeroed size) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
-  let ptr : Sptr.t Charon_util.full_ptr =
+  let ptr : Sptr.t Rust_val.full_ptr =
     ({ ptr; tag = tb.tag; align; size }, None)
   in
   (* The pointer is necessarily not null *)
@@ -348,6 +398,7 @@ let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
         (Freeable.free
            ~assert_exclusively_owned:Tree_block.assert_exclusively_owned)
         (Typed.Ptr.loc ptr) state
+      |> map_missing_globals st.globals
     in
     ((), { st with state })
   else error `InvalidFree
@@ -403,16 +454,16 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
       | (BTwoPhaseMut | BMut) when Layout.is_unsafe_cell ty ->
           return Tree_borrow.ReservedIM
       | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
-      | _ ->
-          Fmt.kstr not_impl "Unhandled borrow kind: %a"
-            Charon.Expressions.pp_borrow_kind kind
+      | BUniqueImmutable -> return @@ Tree_borrow.Reserved false
+      | BShallow -> Fmt.kstr not_impl "Unhandled borrow kind: BShallow"
     in
     let node = Tree_borrow.init ~state:tag_st () in
+    let@ block, _ = with_opt_or block (ptr, meta) in
     let ptr' = { ptr with tag = node.tag } in
     L.debug (fun m ->
         m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
           Tree_borrow.pp_state tag_st);
-    Result.ok ((ptr', meta), block)
+    Result.ok ((ptr', meta), Some block)
 
 let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     =
@@ -422,11 +473,11 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     let@ ofs, block = with_ptr ptr st in
+    let@ block, tb = with_opt_or block (ptr, meta) in
     let tag_st =
       match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
     in
     let node = Tree_borrow.init ~state:tag_st ~protector:true () in
-    let tb = Tree_borrow.init ~state:Unique () in
     let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
     let ptr' = { ptr with tag = node.tag } in
     let* size = Layout.size_of_s ty in
@@ -435,8 +486,8 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
           Typed.ppa ofs Typed.ppa size);
     let++ (), block =
       (* nothing to protect *)
-      if%sat size ==@ 0s then Result.ok ((), block)
-      else Tree_block.protect ofs size node.tag tb' block
+      if%sat size ==@ 0s then Result.ok ((), Some block)
+      else Tree_block.protect ofs size node.tag tb' (Some block)
     in
     ((ptr', meta), block)
 
@@ -448,23 +499,28 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
     | Ok v -> Ok v
     | Missing fixes -> Missing fixes
     | Error `UseAfterFree -> Error `RefInvalidatedEarly
-    | Error ((`AliasingError | `NullDereference | `OutOfBounds) as e) -> Error e
+    | Error
+        ((`AliasingError | `NullDereference | `OutOfBounds | `UBDanglingPointer)
+         as e) ->
+        Error e
   in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   let@ () = lift_freed_err () in
   let@ ofs, block = with_ptr ptr st in
-  let* size = Layout.size_of_s ty in
-  let tb = Tree_borrow.init ~state:Unique () in
-  let tb' =
-    Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
-  in
-  let++ (), block =
-    if%sat size ==@ 0s then Result.ok ((), block)
-    else Tree_block.unprotect ofs size ptr.tag tb' block
-  in
-  L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
-  ((), block)
+  if Tree_borrow.is_disabled () then Result.ok ((), block)
+  else
+    let* size = Layout.size_of_s ty in
+    let@ block, tb = with_opt_or block () in
+    let tb' =
+      Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
+    in
+    let++ (), block =
+      if%sat size ==@ 0s then Result.ok ((), Some block)
+      else Tree_block.unprotect ofs size ptr.tag tb' (Some block)
+    in
+    L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
+    ((), block)
 
 let leak_check st =
   let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" st in
@@ -557,6 +613,7 @@ let produce (serialized : serialized) ({ state; _ } as st : t) : t Rustsymex.t =
     List.map (fun (loc, _) -> Typed.not (Typed.Ptr.null_loc ==@ loc)) serialized
   in
   let* () = Rustsymex.assume non_null_locs in
+  let serialized = List.map (fun (l, (f, _)) -> (l, f)) serialized in
   let+ state =
     SPmap.produce (Freeable.produce Tree_block.produce) serialized state
   in
@@ -564,7 +621,9 @@ let produce (serialized : serialized) ({ state; _ } as st : t) : t Rustsymex.t =
 
 let consume (serialized : serialized) ({ state; _ } as st : t) :
     (t, 'err, serialized list) Rustsymex.Result.t =
+  let serialized = List.map (fun (l, (f, _)) -> (l, f)) serialized in
   let++ state =
     SPmap.consume (Freeable.consume Tree_block.consume) serialized state
+    |> map_missing_globals st.globals
   in
   { st with state }

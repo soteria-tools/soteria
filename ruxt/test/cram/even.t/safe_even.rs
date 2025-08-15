@@ -1,18 +1,21 @@
 pub struct Even {
-    value: i32,
+    value: Box<i32>,
 }
 
 pub fn zero() -> Even {
-    Even { value: 0 }
+    let value = Box::new(0);
+    Even { value }
 }
 
 pub fn new(n: i32) -> Even {
-    Even { value: n - n % 2 }
+    let value = Box::new(n - n % 2);
+    Even { value }
 }
 
-unsafe fn succ(x: Even) -> Even {
-    if x.value < i32::MAX - 1 {
-        Even { value: x.value + 1 }
+pub unsafe fn succ(x: Even) -> Even {
+    if *(x.value) < i32::MAX - 1 {
+        let value = Box::new(*(x.value) + 1);
+        Even { value }
     } else {
         x
     }
@@ -23,7 +26,7 @@ pub fn next(x: Even) -> Even {
 }
 
 pub fn noop(x: Even) -> () {
-    if x.value % 2 != 0 {
+    if *(x.value) % 2 != 0 {
         unsafe { *(0 as *mut i32) = 1 }
     }
 }
