@@ -146,11 +146,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         name = fun["item_meta"]["name"][-1]["Ident"][0]
         path = "::".join(i["Ident"][0] for i in fun["item_meta"]["name"])
         doc = "\n".join(
-            [
-                attrib["DocComment"]
-                for attrib in fun["item_meta"]["attr_info"]["attributes"]
-                if "DocComment" in attrib
-            ]
+            attrib["DocComment"]
+            for attrib in fun["item_meta"]["attr_info"]["attributes"]
+            if "DocComment" in attrib
         )
         doc = sanitize_comment(doc)
         arg_count = len(fun["signature"]["inputs"])
