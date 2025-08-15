@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Literal, Optional, Protocol, TypedDict, cast
+from typing import Literal, Optional, TypedDict, cast
 
 from common import *
 from parselog import TestCategoriser, categorise_kani, categorise_rusteria
@@ -45,13 +45,7 @@ def parse_flags():
     opts: CliOpts = {
         "cmd": cast(Cmd, None),
         "tool": "Charon",
-        "tool_cmd": [
-            "soteria-rust",
-            "rustc",
-            "--compact",
-            "--no-color",
-            "--log-compilation",
-        ],
+        "tool_cmd": [],
         "filters": [],
         "exclusions": [],
         "tag": None,
@@ -129,29 +123,61 @@ def parse_flags():
         else:
             raise ArgError(f"{RED}Unknown flag: {arg}")
 
-    if with_obol and with_kani:
+    if with_obol + with_kani > 1:
         raise ArgError(f"{RED}Can't use both Kani and Obol!")
 
     if with_kani:
-        opts["tool"] = "Kani"
-        opts["tool_cmd"] = [
-            "kani",
-            "--harness-timeout=3s",
-            "-Z=unstable-options",
-            "-Z=uninit-checks",
-            "-Z=valid-value-checks",
-        ]
-        opts["categorise"] = categorise_kani
+        opts = opts_for_kani(opts)
 
     elif with_obol:
-        opts["tool"] = "Obol"
-        opts["tool_cmd"] = [
+        opts = opts_for_obol(opts)
+
+    else:
+        opts = opts_for_charon(opts)
+
+    opts["tool_cmd"] += cmd_flags
+    return opts
+
+
+def opts_for_charon(opts: CliOpts) -> CliOpts:
+    return {
+        **opts,
+        "tool": "Charon",
+        "tool_cmd": [
+            "soteria-rust",
+            "rustc",
+            "--compact",
+            "--no-color",
+            "--log-compilation",
+        ],
+        "categorise": categorise_rusteria,
+    }
+
+
+def opts_for_obol(opts: CliOpts) -> CliOpts:
+    return {
+        **opts,
+        "tool": "Obol",
+        "tool_cmd": [
             "soteria-rust",
             "obol",
             "--compact",
             "--no-color",
             "--log-compilation",
-        ]
+            "--solver-timeout=3000",
+        ],
+        "categorise": categorise_rusteria,
+    }
 
-    opts["tool_cmd"] += cmd_flags
-    return opts
+
+def opts_for_kani(opts: CliOpts) -> CliOpts:
+    return {
+        **opts,
+        "tool": "Kani",
+        "tool_cmd": [
+            "kani",
+            "-Z=unstable-options",
+            "--harness-timeout=3s",
+        ],
+        "categorise": categorise_kani,
+    }
