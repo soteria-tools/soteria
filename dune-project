@@ -39,6 +39,7 @@
    (>= 0.17.0))
   ppx_deriving
   fmt
+  printbox-text
   htmlit
   progress
   grace
@@ -77,7 +78,6 @@
   cmdliner
   ppx_deriving
   fmt
-  printbox-text
   (linol
    (>= 0.10))
   (linol-eio
@@ -143,7 +143,6 @@
   ppx_deriving
   cmdliner
   fmt
-  printbox-text
   unionFind
   name_matcher_parser
   charon

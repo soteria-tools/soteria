@@ -89,5 +89,6 @@ module With_origin =
 module Freeable = Soteria_symex.Freeable.Make (SYMEX)
 module Pmap_direct_access = Soteria_symex.Pmap.Direct_access (SYMEX)
 module Pmap = Soteria_symex.Pmap.Make (SYMEX)
+module Tree_block = Soteria_symex.Tree_block.Make (SYMEX)
 module Concrete_map = Soteria_symex.Pmap.Concrete (SYMEX)
 module Bi = Soteria_symex.Bi_abd.Make (SYMEX)

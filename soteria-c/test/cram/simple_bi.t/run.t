@@ -17,7 +17,7 @@
         pre =
         [{ heap =
            [(V|1|,
-             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+             { node = [MemVal {offset = V|2|; len = 4; v = V|3| : signed int}];
                info = None })];
            globs = [] }
           ];
@@ -25,7 +25,7 @@
         post =
         { heap =
           [(V|1|,
-            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+            { node = [MemVal {offset = V|2|; len = 4; v = V|3| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok V|3|) };
@@ -112,7 +112,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         pre =
         [{ heap =
            [(V|1|,
-             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+             { node = [MemVal {offset = V|2|; len = 4; v = V|3| : signed int}];
                info = None })];
            globs = [] }
           ];
@@ -120,7 +120,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         post =
         { heap =
           [(V|1|,
-            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+            { node = [MemVal {offset = V|2|; len = 4; v = V|3| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok V|3|) };
@@ -237,7 +237,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         pre =
         [{ heap =
            [(V|2|,
-             { node = [TypedVal {offset = V|3|; ty = signed int; v = V|4|}];
+             { node = [MemVal {offset = V|3|; len = 4; v = V|4| : signed int}];
                info = None })];
            globs = [] }
           ];
@@ -247,7 +247,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post =
         { heap =
           [(V|2|,
-            { node = [TypedVal {offset = V|3|; ty = signed int; v = V|4|}];
+            { node = [MemVal {offset = V|3|; len = 4; v = V|4| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok V|4|) };
@@ -285,7 +285,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         pre =
         [{ heap =
            [(V|1|,
-             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+             { node = [MemVal {offset = V|2|; len = 4; v = V|4| : signed int}];
                info = None })];
            globs = [] }
           ];
@@ -295,7 +295,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post =
         { heap =
           [(V|1|,
-            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+            { node = [MemVal {offset = V|2|; len = 4; v = V|4| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok V|4|) };
@@ -307,12 +307,12 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         [{ heap =
            [(V|1|,
              { node =
-               [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+               [MemVal {offset = (V|2| + 4); len = 4; v = V|5| : signed int}];
                info = None })];
            globs = [] };
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+              { node = [MemVal {offset = V|2|; len = 4; v = V|4| : signed int}];
                 info = None })];
             globs = [] }
           ];
@@ -323,8 +323,9 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         { heap =
           [(V|1|,
             { node =
-              [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
-               TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+              [MemVal {offset = V|2|; len = 4; v = V|4| : signed int};
+               MemVal {offset = (V|2| + 4); len = ((V|2| + 8) - (V|2| + 4));
+                 v = V|5| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok (V|4| + V|5|)) };
@@ -336,18 +337,18 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         [{ heap =
            [(V|1|,
              { node =
-               [TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}];
+               [MemVal {offset = (V|2| + 8); len = 4; v = V|6| : signed int}];
                info = None })];
            globs = [] };
           { heap =
             [(V|1|,
               { node =
-                [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+                [MemVal {offset = (V|2| + 4); len = 4; v = V|5| : signed int}];
                 info = None })];
             globs = [] };
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+              { node = [MemVal {offset = V|2|; len = 4; v = V|4| : signed int}];
                 info = None })];
             globs = [] }
           ];
@@ -359,9 +360,11 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         { heap =
           [(V|1|,
             { node =
-              [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
-               TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|};
-               TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}];
+              [MemVal {offset = V|2|; len = 4; v = V|4| : signed int};
+               MemVal {offset = (V|2| + 4); len = ((V|2| + 8) - (V|2| + 4));
+                 v = V|5| : signed int};
+               MemVal {offset = (V|2| + 8); len = ((V|2| + 12) - (V|2| + 8));
+                 v = V|6| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok ((V|4| + V|5|) + V|6|)) };
