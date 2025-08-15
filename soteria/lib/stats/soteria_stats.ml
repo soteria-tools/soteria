@@ -1,4 +1,5 @@
 module Hstring = Hashtbl.Hstring
+module Config = Config
 
 type t = {
   mutable exec_time : float;
