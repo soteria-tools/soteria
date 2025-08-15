@@ -41,6 +41,6 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   Compiling... done in <time>
   note: unwind::main: done in <time>, ran 2 branches
   PC 1: (0 == V|1|) /\ (0 == V|1|)
-  PC 2: (1 == V|1|) /\ (1 == V|1|) /\ (V|2| <= 0x7ffffffffffffffe) /\
-        (1 <= V|2|)
+  PC 2: (1 == V|1|) /\ (1 == V|1|) /\ (1 <= V|2|) /\
+        (V|2| <= 0x7ffffffffffffffe)
   

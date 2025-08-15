@@ -6,7 +6,7 @@ Test kani::any
   PC 2: (1 == V|1|) /\ (1 == V|1|)
   
   note: any::any_i8: done in <time>, ran 3 branches
-  PC 1: (0 != V|1|) /\ (V|1| <= 127) /\ (1 <= V|1|)
+  PC 1: (0 != V|1|) /\ (1 <= V|1|) /\ (V|1| <= 127)
   PC 2: (0 != V|1|) /\ (-128 <= V|1|) /\ (V|1| <= -1)
   PC 3: (0 == V|1|) /\ (0 == V|1|)
   
@@ -20,8 +20,8 @@ Test kani::assume
   
   note: assume::assume_i32: done in <time>, ran 1 branch
   PC 1: (0 != V|1|) /\ ((11 / V|1|) <= 0x7fffffff) /\
-        (-0x80000000 <= (11 / V|1|)) /\ (V|1| <= 0x7fffffff) /\
-        (-0x80000000 <= V|1|)
+        (-0x80000000 <= (11 / V|1|)) /\ (-0x80000000 <= V|1|) /\
+        (V|1| <= 0x7fffffff)
   
 
 
