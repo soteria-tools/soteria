@@ -30,7 +30,7 @@ module type S = sig
 
   val load :
     [< sptr ] Typed.t ->
-    Tree_block.Ctype.ctype ->
+    Ctree_block.Ctype.ctype ->
     t ->
     ( cval Typed.t * t,
       [> `NullDereference
@@ -43,7 +43,7 @@ module type S = sig
 
   val load_aggregate :
     [< sptr ] Typed.t ->
-    Tree_block.Ctype.ctype ->
+    Ctree_block.Ctype.ctype ->
     t ->
     ( Agv.t * t,
       [> `NullDereference
@@ -56,7 +56,7 @@ module type S = sig
 
   val store :
     [< sptr ] Typed.t ->
-    Tree_block.Ctype.ctype ->
+    Ctree_block.Ctype.ctype ->
     cval Typed.t ->
     t ->
     ( unit * t,
@@ -66,7 +66,7 @@ module type S = sig
 
   val store_aggregate :
     sptr Typed.t ->
-    Tree_block.Ctype.ctype ->
+    Ctree_block.Ctype.ctype ->
     Agv.t ->
     t ->
     ( unit * t,
@@ -81,7 +81,7 @@ module type S = sig
     ([> sptr ] Typed.t * t, [> ] err, serialized list) Csymex.Result.t
 
   val alloc_ty :
-    Tree_block.Ctype.ctype ->
+    Ctree_block.Ctype.ctype ->
     t ->
     ([> sptr ] Typed.t * t, [> ] err, serialized list) Csymex.Result.t
 

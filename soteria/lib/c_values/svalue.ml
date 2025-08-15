@@ -662,6 +662,10 @@ let rec minus v1 v2 =
       minus (int_z (Z.sub i2 i1)) v1
   | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
       minus v1 (int_z (Z.sub i2 i1))
+  | Binop (Plus, x, y), _ when equal x v2 -> y
+  | Binop (Plus, x, y), _ when equal y v2 -> x
+  | _, Binop (Plus, x, y) when equal x v1 -> y
+  | _, Binop (Plus, x, y) when equal x v1 -> y
   | _ -> Binop (Minus, v1, v2) <| TInt
 
 let times v1 v2 =
