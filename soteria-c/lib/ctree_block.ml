@@ -61,7 +61,7 @@ module MemVal = struct
     | _, _ -> (Lazy, `KeepChildren)
 
   let split ~at:_ node =
-    let open TB in
+    let open TB.Split_tree in
     match node with
     | (Uninit Totally | Zeros | Any) as v -> return (Leaf v, Leaf v)
     | Init i -> Fmt.kstr not_impl "Splitting %a" pp_init i

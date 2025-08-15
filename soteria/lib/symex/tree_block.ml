@@ -1,12 +1,17 @@
 open Syntaxes.FunctionWrap
 
-type ('a, 'sint) split_tree =
-  | Leaf of 'a
-  | Node of ('a, 'sint) split_tree * 'sint * ('a, 'sint) split_tree
+(** A [Split_tree] is a simplified representation of a tree, that has no offset.
+    It however indicates, on [Node]s, at what offset the split occurs, relative
+    to that node's start. *)
+module Split_tree = struct
+  type ('a, 'sint) t =
+    | Leaf of 'a
+    | Node of ('a, 'sint) t * 'sint * ('a, 'sint) t
 
-let rec map_tree f = function
-  | Leaf x -> Leaf (f x)
-  | Node (l, at, r) -> Node (map_tree f l, at, map_tree f r)
+  let rec map f = function
+    | Leaf x -> Leaf (f x)
+    | Node (l, at, r) -> Node (map f l, at, map f r)
+end
 
 type ('a, 'sint) tree = {
   node : 'a node;
@@ -73,7 +78,7 @@ module type MemVal = sig
       node. Returns the left and right split trees, which themselves may contain
       further splits. *)
   val split :
-    at:sint -> t -> ((t, sint) split_tree * (t, sint) split_tree) Symex.t
+    at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
 
   type serialized
 
@@ -145,6 +150,8 @@ struct
     let of_low_and_size low size = (low, low +@ size)
   end
 
+  module Split_tree = Split_tree
+
   let miss_no_fix_immediate ?(msg = "") () =
     Soteria_logs.Logs.L.info (fun m -> m "MISSING WITH NO FIX %s" msg);
     Missing []
@@ -181,11 +188,13 @@ struct
     let split ~at node =
       match node with
       | Owned v ->
-          let lift = map_tree (fun v -> Owned v) in
+          let lift = Split_tree.map (fun v -> Owned v) in
           let+ left, right = MemVal.split ~at v in
           (lift left, lift right)
       | NotOwned Totally ->
-          return (Leaf (NotOwned Totally), Leaf (NotOwned Totally))
+          return
+            ( Split_tree.Leaf (NotOwned Totally),
+              Split_tree.Leaf (NotOwned Totally) )
       | NotOwned Partially -> failwith "Should never split an intermediate node"
   end
 
@@ -249,12 +258,12 @@ struct
       in
       make ~node:tree.node ~range ?children ()
 
-    let rec tree_of_rec_node range = function
-      | Leaf node -> return @@ make ~node ~range ()
+    let rec of_split_tree range = function
+      | Split_tree.Leaf node -> return @@ make ~node ~range ()
       | Node (left, at, right) ->
           let left_span, right_span = Range.split_at range (fst range +@ at) in
-          let* left = tree_of_rec_node left_span left in
-          let* right = tree_of_rec_node right_span right in
+          let* left = of_split_tree left_span left in
+          let* right = of_split_tree right_span right in
           of_children_s ~left ~right
 
     (** [split ~range t] isolates [range] from [t]. Precondition: [range] is a
@@ -276,22 +285,22 @@ struct
       if%sat ol ==@ nl then
         let* left_node, right_node = Node.split ~at:(nh -@ ol) t.node in
         let left_span, right_span = Range.split_at old_span nh in
-        let* left = tree_of_rec_node left_span left_node in
-        let+ right = tree_of_rec_node right_span right_node in
+        let* left = of_split_tree left_span left_node in
+        let+ right = of_split_tree right_span right_node in
         (left.node, left, right)
       else
         if%sat oh ==@ nh then
           let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
           let left_span, right_span = Range.split_at old_span nl in
-          let* left = tree_of_rec_node left_span left_node in
-          let+ right = tree_of_rec_node right_span right_node in
+          let* left = of_split_tree left_span left_node in
+          let+ right = of_split_tree right_span right_node in
           (right.node, left, right)
         else
           (* We're first splitting on the left then splitting again on the right *)
           let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
           let left_span, right_span = Range.split_at old_span nl in
-          let* left = tree_of_rec_node left_span left_node in
-          let* full_right = tree_of_rec_node right_span right_node in
+          let* left = of_split_tree left_span left_node in
+          let* full_right = of_split_tree right_span right_node in
           (* we need to first extract the relevant part of the right subtree; as
              constructing it may have yielded a complex tree *)
           let* sub_right, right_extra = extract full_right range in

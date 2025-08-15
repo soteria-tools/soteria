@@ -60,7 +60,7 @@ module Make (Sptr : Sptr.S) = struct
       | _, _ -> ((Lazy, tb), `KeepChildren)
 
     let split ~(at : T.sint Typed.t) (node, tb) =
-      let open TB in
+      let open TB.Split_tree in
       match node with
       | (Uninit Totally | Zeros | Any) as v ->
           return (Leaf (v, tb), Leaf (v, tb))
