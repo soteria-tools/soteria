@@ -77,6 +77,9 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if "Fatal: No entry points found" in test:
         return ("No entry points found", RED, None)
 
+    if "Execution timed out" in test:
+        return ("Time out", ORANGE, None)
+
     if "resolve_constant (Generated_Expressions.COpaque" in test:
         return ("Tool", PURPLE, "Constant resolving")
 
