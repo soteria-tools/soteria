@@ -55,10 +55,10 @@ module MemVal = struct
 
   let merge ~left ~right =
     match (left, right) with
-    | Zeros, Zeros -> (Zeros, `Complete)
-    | Uninit Totally, Uninit Totally -> (Uninit Totally, `Complete)
-    | Uninit _, Uninit _ -> (Uninit Partially, `KeepChildren)
-    | _, _ -> (Lazy, `KeepChildren)
+    | Zeros, Zeros -> Zeros
+    | Uninit Totally, Uninit Totally -> Uninit Totally
+    | Uninit _, Uninit _ -> Uninit Partially
+    | _, _ -> Lazy
 
   let split ~at:_ node =
     let open TB.Split_tree in

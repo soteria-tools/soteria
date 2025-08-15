@@ -63,16 +63,9 @@ module type MemVal = sig
 
   val pp : Format.formatter -> t -> unit
 
-  (** Merges two children node into a single node; returns the merged node,
-      along with a flag indicating whether the children must be preserved
-      ([`KeepChildren]), or if they can be discarded because the merged node
-      contains all the required information ([`Complete]).
-
-      For instance, two totally undefined nodes can be merged into a single
-      totally undefined node, and the children can be discarded. However, an
-      owned node and an unowned node are merged into a partly owned node where
-      children must be preserved. *)
-  val merge : left:t -> right:t -> t * [ `KeepChildren | `Complete ]
+  (** Merges two children node into a single node; returns the merged node. Note
+      children of the node are always preserved too, for further accesses. *)
+  val merge : left:t -> right:t -> t
 
   (** Splits the given node at [at], which is the relative offset within the
       node. Returns the left and right split trees, which themselves may contain
@@ -179,11 +172,11 @@ struct
 
     let merge ~left ~right =
       match (left, right) with
-      | NotOwned Totally, NotOwned Totally -> (NotOwned Totally, `Complete)
-      | NotOwned _, _ | _, NotOwned _ -> (NotOwned Partially, `KeepChildren)
+      | NotOwned Totally, NotOwned Totally -> (NotOwned Totally, false)
+      | NotOwned _, _ | _, NotOwned _ -> (NotOwned Partially, true)
       | Owned left, Owned right ->
-          let v, children = MemVal.merge ~left ~right in
-          (Owned v, children)
+          let v = MemVal.merge ~left ~right in
+          (Owned v, true)
 
     let split ~at node =
       match node with
@@ -227,22 +220,10 @@ struct
           iter_leaves_rev r f;
           iter_leaves_rev l f
 
-    let iter_leaves_offsets t =
-      Iter.map
-        (fun leaf ->
-          let offset, _ = leaf.range in
-          let offset = offset -@ fst t.range in
-          (leaf.node, offset))
-        (iter_leaves_rev t)
-
     let of_children_s ~left ~right =
       let range = (fst left.range, snd right.range) in
-      let node, children = Node.merge ~left:left.node ~right:right.node in
-      let children =
-        match children with
-        | `Complete -> None
-        | `KeepChildren -> Some (left, right)
-      in
+      let node, keep_children = Node.merge ~left:left.node ~right:right.node in
+      let children = if keep_children then Some (left, right) else None in
       return { range; children; node }
 
     let of_children _ ~left ~right = of_children_s ~left ~right

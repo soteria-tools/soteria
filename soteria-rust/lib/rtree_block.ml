@@ -54,10 +54,10 @@ module Make (Sptr : Sptr.S) = struct
     let merge ~left:(v1, tb1) ~right:(v2, tb2) =
       let tb = Tree_borrow.merge tb1 tb2 in
       match (v1, v2) with
-      | Zeros, Zeros -> ((Zeros, tb), `Complete)
-      | Uninit Totally, Uninit Totally -> ((Uninit Totally, tb), `Complete)
-      | Uninit _, Uninit _ -> ((Uninit Partially, tb), `KeepChildren)
-      | _, _ -> ((Lazy, tb), `KeepChildren)
+      | Zeros, Zeros -> (Zeros, tb)
+      | Uninit Totally, Uninit Totally -> (Uninit Totally, tb)
+      | Uninit _, Uninit _ -> (Uninit Partially, tb)
+      | _, _ -> (Lazy, tb)
 
     let split ~(at : T.sint Typed.t) (node, tb) =
       let open TB.Split_tree in
