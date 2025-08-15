@@ -8,11 +8,10 @@ module type Mutable_incremental = sig
 
   type sbool_v := Value.sbool Value.t
 
-  (** Adds constraints to the solver state. By default, the [simplified] flag
-      indicates if {!simplify} was already applied to the constraints, and is
-      [false] by default. When it is [false], the solver may simplify
-      constraints before adding them to the state, depending on its
-      implementation. *)
+  (** Adds constraints to the solver state. The [simplified] flag indicates if
+      {!simplify} was already applied to the constraints, and is [false] by
+      default. When it is [false], the solver may simplify constraints before
+      adding them to the state, depending on its implementation. *)
   val add_constraints : t -> ?simplified:bool -> sbool_v list -> unit
 
   val sat : t -> result
