@@ -1,8 +1,12 @@
-open Soteria_rust_lib
-open Charon
-open Rustsymex.Syntax
-module Wpst_interp = Interp.Make (Heap)
+module Rustsymex = Soteria_rust_lib.Rustsymex
+module Wpst_interp = Soteria_rust_lib.Interp.Make (Heap)
 module Compo_res = Soteria_symex.Compo_res
+open Rustsymex.Syntax
+open Charon
+
+exception ExecutionError of string
+
+let execution_err msg = raise (ExecutionError msg)
 
 let target_decls (crate : UllbcAst.crate) =
   let can_infer _ (fundef : UllbcAst.fun_decl) =
@@ -15,7 +19,7 @@ let target_decls (crate : UllbcAst.crate) =
 let leak_check leaks : (unit, [> `MemoryLeak ]) Result.t =
   match leaks with [] -> Result.ok () | _ -> Result.error `MemoryLeak
 
-let try_refute (fundef : UllbcAst.fun_decl) summs summ_ctx =
+let try_refute fuel (fundef : UllbcAst.fun_decl) summs summ_ctx =
   (* Construct precondition state and symbolically execute function *)
   let process =
     let* args, state = Summary.Symex.flatten summs in
@@ -35,19 +39,23 @@ let try_refute (fundef : UllbcAst.fun_decl) summs summ_ctx =
     (* Unsuccessful termination: found a type unsoundness *)
     | _ -> Result.error `TypeUnsound
   in
-  let fuel =
-    Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
-  in
   Rustsymex.run ~fuel process |> List.fold_left extend_ctx (Result.ok summ_ctx)
 
-let find_unsoundness ?(fuel = 5) (crate : UllbcAst.crate) =
-  let safe_decls = target_decls crate in
+let find_unsoundness (crate : UllbcAst.crate) =
+  let decls = target_decls crate in
+  let fuel =
+    Soteria_symex.Fuel_gauge.
+      {
+        steps = Finite !Soteria_rust_lib.Config.current.step_fuel;
+        branching = Finite !Soteria_rust_lib.Config.current.branch_fuel;
+      }
+  in
   (* The try_refute procedure is called for each function *)
-  let try_refute _ (entry_point : UllbcAst.fun_decl) acc =
+  let try_refute _ (fundef : UllbcAst.fun_decl) acc =
     let ( let** ) = Result.bind in
     let** summ_ctx = acc in
-    let tys = entry_point.signature.inputs in
-    let f ctx summs = Result.bind ctx (try_refute entry_point summs) in
+    let tys = fundef.signature.inputs in
+    let f ctx summs = Result.bind ctx (try_refute fuel fundef summs) in
     let iter_summs = Summary.Context.iter_summs tys summ_ctx in
     Iter.fold f (Result.ok summ_ctx) iter_summs
   in
@@ -57,23 +65,48 @@ let find_unsoundness ?(fuel = 5) (crate : UllbcAst.crate) =
     else
       let res =
         (* Call try_refute on all functions and accumulate the results *)
-        try Types.FunDeclId.Map.fold try_refute safe_decls (Result.ok summ_ctx)
+        try Types.FunDeclId.Map.fold try_refute decls (Result.ok summ_ctx)
         with exn ->
           let msg =
             Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
               (Printexc.get_backtrace ())
           in
-          raise (Driver.ExecutionError msg)
+          raise (Soteria_rust_lib.Driver.ExecutionError msg)
       in
       match res with
       | Ok summ_ctx -> meta_loop summ_ctx (fuel - 1)
       | Error _ -> true (* Type unsoundness found *)
   in
   (* Run the algorithm starting from an empty summary context *)
-  meta_loop Summary.Context.empty fuel
+  meta_loop Summary.Context.empty !Config.current.pass_fuel
+
+let config_set (config : Config.global) =
+  let (config : Soteria_rust_lib.Config.global) =
+    {
+      logs = config.logs;
+      terminal = config.terminal;
+      solver = config.solver;
+      rusteria =
+        {
+          no_compile = config.ruxt.no_compile;
+          no_timing = config.ruxt.no_timing;
+          cleanup = config.ruxt.cleanup;
+          ignore_leaks = true;
+          ignore_aliasing = true;
+          monomorphize_experimental = true;
+          with_kani = config.ruxt.with_kani;
+          with_miri = config.ruxt.with_miri;
+          log_compilation = config.ruxt.log_compilation;
+          step_fuel = config.ruxt.step_fuel;
+          branch_fuel = config.ruxt.branch_fuel;
+        };
+    }
+  in
+  Soteria_rust_lib.Driver.config_set config
 
 let exec_ruxt config file_name =
-  Driver.config_set config;
+  let open Soteria_rust_lib in
+  config_set config;
   let plugin = Plugin.create_using_current_config () in
   try
     let crate = Driver.parse_ullbc_of_file ~plugin file_name in
@@ -86,6 +119,7 @@ let exec_ruxt config file_name =
     Fmt.pr "%s" msg;
     exit ret
   with
-  | Plugin.PluginError e -> Driver.fatal ~name:"Plugin" e
-  | Driver.ExecutionError e -> Driver.fatal e
-  | Driver.FrontendError e -> Driver.fatal ~name:"Frontend" ~code:3 e
+  | ExecutionError e -> Driver.fatal e
+  | Plugin.PluginError e -> Driver.fatal ~name:"Plugin" ~code:3 e
+  | Driver.ExecutionError e -> Driver.fatal ~name:"Rusteria" ~code:3 e
+  | Driver.FrontendError e -> Driver.fatal ~name:"Charon" ~code:4 e
