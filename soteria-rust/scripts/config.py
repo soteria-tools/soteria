@@ -24,6 +24,8 @@ KANI_EXCLUSIONS = [
     "/Volatile/",
     "/DynTrait/",
     "/AsyncAwait/",
+    "/Quantifiers/",
+    "/FunctionContracts/",
 ]
 
 MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
@@ -56,7 +58,35 @@ def filter_tests(opts: CliOpts, tests: Iterable[Path]) -> list[Path]:
     return tests
 
 
+def with_cache(fn: DynFlagFn) -> DynFlagFn:
+    if fn is None:
+        return None
+    cache: dict[Path, list[str]] = {}
+
+    def cached_fn(file: Path) -> list[str]:
+        if file in cache:
+            return cache[file]
+        flags = fn(file)
+        cache[file] = flags
+        return flags
+
+
 def kani(opts: CliOpts) -> TestConfig:
+
+    @with_cache
+    def kani_dyn_flags(file: Path) -> list[str]:
+        def get_config_line():
+            with open(file, "r") as f:
+                for line in f:
+                    if line.startswith("// kani-flags:"):
+                        return line.rstrip("\n").split("// kani-flags:")[1].strip()
+            return None
+
+        config = get_config_line()
+        if config:
+            return config.split()
+        return []
+
     root = Path(KANI_PATH)
     tests = filter_tests(
         opts,
@@ -71,22 +101,18 @@ def kani(opts: CliOpts) -> TestConfig:
         "name": "Kani",
         "root": root,
         "args": args,
-        "dyn_flags": None,
+        "dyn_flags": kani_dyn_flags if opts["tool"] == "Kani" else None,
         "tests": tests,
     }
 
 
 def miri(opts: CliOpts) -> TestConfig:
-    dyn_flag_cache: dict[Path, list[str]] = {}
-
+    @with_cache
     def dyn_flags(file: Path) -> list[str]:
-        if file in dyn_flag_cache:
-            return dyn_flag_cache[file]
         flags = []
         # if file contains "-Zmiri-ignore-leaks", add "--ignore-leaks"
         if "-Zmiri-ignore-leaks" in file.read_text():
             flags.append("--ignore-leaks")
-        dyn_flag_cache[file] = flags
         return flags
 
     root = Path(MIRI_PATH)
@@ -98,7 +124,11 @@ def miri(opts: CliOpts) -> TestConfig:
             if not any(exclusion in str(path) for exclusion in MIRI_EXCLUSIONS)
         ),
     )
-    args = [] if opts["tool"] == "Kani" else ["--miri"]
+    args = (
+        ["-Z=uninit-checks", "-Z=valid-value-checks"]
+        if opts["tool"] == "Kani"
+        else ["--miri"]
+    )
     return {
         "name": "Miri",
         "root": root,
