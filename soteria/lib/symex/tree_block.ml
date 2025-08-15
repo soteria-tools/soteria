@@ -49,6 +49,7 @@ module type MemVal = sig
     type sbool
     type sint
 
+    val v_false : sbool t
     val zero : sint t
     val ( +@ ) : sint t -> sint t -> sint t
     val ( -@ ) : sint t -> sint t -> sint t
@@ -72,6 +73,11 @@ module type MemVal = sig
       further splits. *)
   val split :
     at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
+
+  (** If this memory value is exclusively owned, ie no additional state can be
+      composed with it; in other words, calling [produce] on a tree with this
+      node must always vanish. *)
+  val is_exclusively_owned : t -> Symex.Value.sbool Symex.Value.t
 
   type serialized
 
@@ -169,6 +175,10 @@ struct
 
     let is_empty = function NotOwned Totally -> true | _ -> false
     let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
+
+    let is_exclusively_owned = function
+      | NotOwned _ -> v_false
+      | Owned n -> MemVal.is_exclusively_owned n
 
     let merge ~left ~right =
       match (left, right) with
@@ -547,7 +557,7 @@ struct
     | None -> miss_no_fix ~msg:"assert_exclusively_owned - no bound" ()
     | Some bound ->
         let { range = low, high; node; _ } = t.root in
-        if Node.is_fully_owned node then
+        if%sat Node.is_exclusively_owned node then
           if%sat low ==@ zero &&@ (high ==@ bound) then Result.ok ()
           else
             miss_no_fix
