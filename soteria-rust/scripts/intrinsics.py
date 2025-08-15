@@ -133,10 +133,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
     pprint(f"Generating OCaml interface and stubs...", inc=True)
 
     def sanitize_comment(comment: str) -> str:
-        comment = comment.replace("(*", "( *").strip()
-        comment = re.sub(r"\[`([^`]*)`\]", r"[\1]", comment)
-        comment = re.sub(r"`([^`]*)`", r"[\1]", comment)
-        return comment
+        return "{@markdown[\n" + comment.replace("(*", "( *").strip() + "\n]}"
 
     def sanitize_var_name(name: str) -> str:
         ocaml_names = ["val"]
@@ -148,11 +145,14 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
     for fun in intrinsics.values():
         name = fun["item_meta"]["name"][-1]["Ident"][0]
         path = "::".join(i["Ident"][0] for i in fun["item_meta"]["name"])
-        doc = [
-            sanitize_comment(attrib["DocComment"])
-            for attrib in fun["item_meta"]["attr_info"]["attributes"]
-            if "DocComment" in attrib
-        ]
+        doc = "\n".join(
+            [
+                attrib["DocComment"]
+                for attrib in fun["item_meta"]["attr_info"]["attributes"]
+                if "DocComment" in attrib
+            ]
+        )
+        doc = sanitize_comment(doc)
         arg_count = len(fun["signature"]["inputs"])
         args = (
             [
@@ -227,7 +227,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
             + [(None, "State.t")]
         )
         interface_str += f"""
-            (** {nl.join(info["doc"])} *)
+            (** {info["doc"]} *)
             val {info["name"]} : {' -> '.join([
                 f"{arg}:{ty}" if arg is not None else ty
                 for (arg, ty) in args_and_tys
