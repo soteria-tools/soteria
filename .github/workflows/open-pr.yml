@@ -1,0 +1,23 @@
+name: Open PR
+
+permissions:
+  issues: write
+  pull-requests: write
+  
+on:
+  pull_request:
+    branches: ["main"]
+    types: [opened]
+  
+jobs:
+  message-with-doc-link:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post message with documentation link
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            Thank you for your contribution!
+            If CI passes, API documentation will be generated and available at:
+            https://soteria-tools.github.io/soteria/api/pr-${{ github.event.pull_request.number }}

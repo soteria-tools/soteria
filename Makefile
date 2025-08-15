@@ -25,6 +25,8 @@ ocaml-format-check:
 ocaml-test:
 	$(DUNE) test
 	
+doc:
+	$(DUNE) build @doc
 	
 ##### Packaging soteria-c #####
 
