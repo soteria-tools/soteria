@@ -884,25 +884,23 @@ module Make (State : State_intf.S) = struct
             let* () = State.free ptr in
             map_store (Store.add local (None, ty))
         | None -> ok ())
-    | Drop (place, _trait) ->
-        (* TODO: We now have the trait to get the Drop implementation, however we currently
-           don't monomorphise trait implementations, so this is useless. *)
+    | Drop (place, trait_ref) -> (
         let* place_ptr = resolve_place place in
-        let* () =
-          match place.ty with
-          | TAdt { id = TAdtId id; _ } -> (
-              let adt = Crate.get_adt id in
-              match (adt.item_meta.lang_item, List.last adt.item_meta.name) with
-              | Some "owned_box", PeMonomorphized { types = [ _; _ ]; _ } -> (
-                  let* box = State.load place_ptr place.ty in
-                  match box with
-                  | Struct [ Struct [ Struct [ Ptr ptr ]; _ ]; _ ] ->
-                      State.free ptr
-                  | _ -> ok ())
-              | _ -> ok ())
-          | _ -> ok ()
-        in
-        State.uninit place_ptr place.ty
+        if not !Config.current.monomorphize then State.uninit place_ptr place.ty
+        else
+          match trait_ref.trait_id with
+          | TraitImpl impl_ref ->
+              let impl = Crate.get_trait_impl impl_ref.id in
+              (* The Drop trait will only have the drop function *)
+              let drop_ref = snd (List.hd impl.methods) in
+              let drop = Crate.get_fun drop_ref.binder_value.id in
+              let exec_drop store state =
+                (* The return value is ignored, as drop returns () *)
+                let++ _, state = exec_fun drop ~args:[ Ptr place_ptr ] state in
+                ((), store, state)
+              in
+              exec_drop
+          | _ -> State.uninit place_ptr place.ty)
     | Assert { cond; expected; on_failure } -> (
         let* cond = eval_operand cond in
         let^ cond_int =
