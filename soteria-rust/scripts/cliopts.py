@@ -11,7 +11,8 @@ CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
-Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff
+CmdBenchmark = tuple[Literal["benchmark"], tuple]
+Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark
 
 SUITE_NAMES: list[SuiteName] = ["miri", "kani", "custom"]
 
@@ -74,6 +75,8 @@ def parse_flags():
         file1 = Path(sys.argv.pop(0))
         file2 = Path(sys.argv.pop(0))
         opts["cmd"] = ("eval-diff", (file1, file2))
+    elif arg == "benchmark":
+        opts["cmd"] = ("benchmark", ())
     else:
         raise ArgError(
             f"Unknown command, expected {', '.join(SUITE_NAMES)}, all, eval or eval-diff"

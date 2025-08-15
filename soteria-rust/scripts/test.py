@@ -5,7 +5,7 @@ from io import TextIOWrapper
 from pathlib import Path
 import time
 import datetime
-from typing import Callable, Literal
+from typing import Callable, Literal, assert_never
 import math
 
 from common import *
@@ -13,7 +13,14 @@ from parselog import (
     TestCategoriser,
     LogCategorisation_,
 )
-from cliopts import ArgError, CliOpts, parse_flags
+from cliopts import (
+    ArgError,
+    CliOpts,
+    SuiteName,
+    opts_for_kani,
+    opts_for_obol,
+    parse_flags,
+)
 from config import TEST_SUITES, TestConfig
 
 
@@ -129,8 +136,8 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
     )
     if len(end_msgs) > 0:
         pprint(f"{BOLD}Closing remarks:", inc=True)
-    for msg in end_msgs:
-        pprint(f"{ORANGE}✭{RESET} {msg}", inc=True)
+        for msg in end_msgs:
+            pprint(f"{ORANGE}✭{RESET} {msg}", inc=True)
 
 
 def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
@@ -279,6 +286,153 @@ def diff_evaluation(path1: Path, path2: Path):
     pptable(rows)
 
 
+BenchmarkResult = Literal["pass", "fail", "crash", "timeout", "unsupported"]
+
+
+class Benchmark(TypedDict):
+    rusteria: Optional[BenchmarkResult]
+    miri: Optional[BenchmarkResult]
+    kani: Optional[BenchmarkResult]
+
+
+def benchmark(opts: CliOpts):
+    build()
+
+    log = PWD / f"benchmark.log"
+    log.touch()
+    log.write_text(f"Running benchmark - {datetime.datetime.now()}:\n\n")
+
+    log = log.open("a")
+
+    results: dict[tuple[Path, SuiteName], Benchmark] = {}
+    end_msgs: set[str] = set()
+    interrupts = 0
+
+    def re_categorise(msg: str) -> Optional[BenchmarkResult]:
+        if msg == "Success":
+            return "pass"
+        if msg == "Failure":
+            return "fail"
+        if (
+            msg == "Crashed"
+            or "Opaque function" in msg
+            or msg == "Raised exception"
+            or msg == "Missing function declaration"
+            or msg == "Unknown unsize kind"
+            or msg == "No entry points found"
+            or msg == "Tool"
+            or msg == "Vanished"
+        ):
+            return "crash"
+        if (
+            msg.startswith("Unsupported")
+            or msg == "Missing dependency"
+            or msg == "Compilation error"
+        ):
+            return "unsupported"
+        if msg == "Time out":
+            return "timeout"
+        end_msgs.add(f"Unhandled benchmark result: {msg}")
+        return "crash"
+
+    colors: dict[Optional[BenchmarkResult], str] = {
+        "pass": GREEN,
+        "fail": RED,
+        "crash": PURPLE,
+        "timeout": ORANGE,
+        "unsupported": YELLOW,
+        None: MAGENTA,
+    }
+
+    def run_benchmark(key: Literal["rusteria", "miri", "kani"], opts: CliOpts):
+        for name, callback in TEST_SUITES.items():
+            if name == "custom":
+                continue
+            test_conf = callback(opts)
+            cmd = opts["tool_cmd"] + test_conf["args"]
+            pprint(
+                f"{CYAN}{BOLD}==>{RESET} Running benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{key}",
+                inc=True,
+            )
+            log.write(f"Running benchmark {test_conf['name']} with {key}\n\n")
+
+            before = time.time()
+            for path in test_conf["tests"]:
+                relative = path.relative_to(test_conf["root"])
+                pprint(f"Running {relative} ... ", inc=True, end="", flush=True)
+                try:
+                    (msg, _, _), elapsed = exec_test(
+                        path,
+                        cmd=cmd,
+                        log=log,
+                        categoriser=opts["categorise"],
+                        dyn_flags=test_conf["dyn_flags"],
+                    )
+                except KeyboardInterrupt as e:
+                    nonlocal interrupts
+                    interrupts += 1
+                    print(
+                        f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
+                    )
+                    if interrupts >= 3:
+                        return
+                    continue
+
+                msg = re_categorise(msg)
+                print(f"{colors[msg]}{msg}{RESET} in {elapsed:.3f}s")
+
+                test_key = (relative, name)
+                res = results.get(
+                    test_key, {"rusteria": None, "miri": None, "kani": None}
+                )
+                res[key] = msg
+                results[test_key] = res
+
+            elapsed = time.time() - before
+            pprint(
+                f"{BOLD}Finished in {elapsed:.3f}s{RESET}",
+                inc=True,
+            )
+
+    pprint(f"{BOLD}Running benchmark{RESET}", inc=True)
+    run_benchmark("rusteria", opts_for_obol(opts))
+    run_benchmark("kani", opts_for_kani(opts))
+
+    rows: list[list[tuple[str, Optional[str]]]] = [
+        [
+            ("Suite", BOLD),
+            ("File", BOLD),
+            ("Rusteria", BOLD),
+            ("Kani", BOLD),
+            ("Miri", BOLD),
+        ]
+    ]
+    for (path, suite), res in results.items():
+        rusteria = res["rusteria"]
+        miri = res["miri"]
+        kani = res["kani"]
+        rows.append(
+            [
+                (suite, BOLD),
+                (str(path), BOLD),
+                (f"{rusteria or '-'}", colors[rusteria]),
+                (f"{kani or '-'}", colors[kani]),
+                (f"{miri or '-'}", colors[miri]),
+            ]
+        )
+
+    csv_file = PWD / f"benchmark.csv"
+    csv_file.touch()
+    with csv_file.open("w") as csv_io:
+        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in rows)
+    pptable(rows)
+
+    if len(end_msgs) > 0:
+        pprint(f"{BOLD}Closing remarks:", inc=True)
+        for msg in end_msgs:
+            pprint(f"{ORANGE}✭{RESET} {msg}", inc=True)
+
+
 def main():
     try:
         opts = parse_flags()
@@ -305,6 +459,10 @@ def main():
     elif cmd[0] == "eval-diff":
         (file1, file2) = cmd[1]
         diff_evaluation(file1, file2)
+    elif cmd[0] == "benchmark":
+        benchmark(opts)
+    else:
+        assert_never(cmd)
 
 
 if __name__ == "__main__":
