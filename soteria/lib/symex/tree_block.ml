@@ -262,9 +262,19 @@ struct
           let* right = tree_of_rec_node right_span right in
           of_children_s ~left ~right
 
+    (** [split ~range t] isolates [range] from [t]. Precondition: [range] is a
+        strict subrange of [t.range] (neither empty nor equal to [t.range]).
+        Returns [(node, left, right)] where:
+        - [node] is the node covering exactly [range]
+        - [left] and [right] can be safely set as [t]'s children, and [range]
+          lies within either [left] or [right].
+
+        If [range] touches the left or right edge of [t], a single split
+        suffices. Otherwise, we first split at [fst range] to peel off the left
+        part, then carve [range] out of the resulting right part. This makes the
+        procedure right-biased (it prefers introducing structure on the right)
+    *)
     let rec split ~range t : (Node.t * t * t) Symex.t =
-      (* this function splits a tree and returns the node in the given range *)
-      (* We're assuming that range is inside old_span *)
       let old_span = t.range in
       let ol, oh = old_span in
       let nl, nh = range in
