@@ -1,7 +1,7 @@
 (library
  (name soteria_stats)
  (public_name soteria.stats)
- (libraries soteria_std cmdliner)
+ (libraries soteria_std cmdliner unix)
  (flags
   (:standard -open Soteria_std))
  (preprocess
