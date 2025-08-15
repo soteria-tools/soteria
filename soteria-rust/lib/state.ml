@@ -32,15 +32,10 @@ module StateKey = struct
   let distinct _ = Typed.v_true
 
   (* This *only* works in WPST!!! *)
-  let fresh ?constrs () =
+  let fresh () =
     incr indices;
     let idx = !indices in
-    let loc = Ptr.loc_of_int idx in
-    match constrs with
-    | Some constrs ->
-        let+ () = Rustsymex.assume (constrs loc) in
-        loc
-    | None -> return loc
+    Rustsymex.return (Ptr.loc_of_int idx)
 end
 
 module SPmap = Pmap_direct_access (StateKey)

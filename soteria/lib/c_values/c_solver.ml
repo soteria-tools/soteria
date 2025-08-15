@@ -50,7 +50,6 @@ struct
           | _ -> None)
 
     let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
-    let to_value_list (t : t) = Iter.to_rev_list (iter t)
 
     let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
       let neg_v = Typed.not v in
@@ -169,10 +168,9 @@ struct
             Unknown)
 
   let as_values solver =
-    let pc = Solver_state.to_value_list solver.state in
-    let intervals = Analysis.encode Typed.v_true solver.analysis in
-    Iter.union ~eq:Typed.equal ~hash:Typed.hash (Iter.of_list pc)
-      (Typed.split_ands intervals)
+    Iter.append
+      (Solver_state.iter solver.state)
+      (Analysis.encode solver.analysis)
     |> Iter.to_list
 end
 
@@ -270,8 +268,6 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
           | { value = Asrt value; _ } -> f value
           | { value = Dirty _; _ } -> ()))
         t
-
-    let to_value_list (t : t) = Iter.to_rev_list (iter t)
 
     (** If we have checked sat and obtaied SAT, we can mark all elements of the
         list as checked! *)
@@ -552,17 +548,17 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
         (* This will put the check in a somewhat-normal form, to increase cache hits. *)
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let to_check =
-          Analysis.encode ~vars:relevant_vars to_check solver.analysis
+          Iter.fold Typed.and_ to_check
+            (Analysis.encode ~vars:relevant_vars solver.analysis)
         in
         let answer = check_sat_raw_memo solver relevant_vars to_check in
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
   let as_values solver =
-    let pc = Solver_state.to_value_list solver.state in
-    let analysis = Analysis.encode Typed.v_true solver.analysis in
-    Iter.union ~eq:Typed.equal ~hash:Typed.hash (Iter.of_list pc)
-      (Typed.split_ands analysis)
+    Iter.append
+      (Solver_state.iter solver.state)
+      (Analysis.encode solver.analysis)
     |> Iter.to_list
 end
 

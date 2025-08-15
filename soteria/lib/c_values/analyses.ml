@@ -9,9 +9,7 @@ module type S = sig
   include Soteria_std.Reversible.Mutable
 
   val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
-
-  val encode :
-    ?vars:Var.Hashset.t -> Typed.sbool Typed.t -> t -> Typed.sbool Typed.t
+  val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
 end
 
 module Merge (A1 : S) (A2 : S) : S = struct
@@ -36,9 +34,8 @@ module Merge (A1 : S) (A2 : S) : S = struct
     let v'', vars2 = A2.add_constraint a2 v' in
     (v'', Var.Set.union vars1 vars2)
 
-  let encode ?vars (acc : Typed.sbool Typed.t) (a1, a2) : Typed.sbool Typed.t =
-    let acc' = A1.encode ?vars acc a1 in
-    A2.encode ?vars acc' a2
+  let encode ?vars (a1, a2) : Typed.sbool Typed.t Iter.t =
+    Iter.append (A1.encode ?vars a1) (A2.encode ?vars a2)
 end
 
 module None : S = struct
@@ -49,11 +46,12 @@ module None : S = struct
   let save () = ()
   let reset () = ()
   let add_constraint () v = (v, Var.Set.empty)
-  let encode ?vars:_ acc () = acc
+  let encode ?vars:_ () = Iter.empty
 end
 
 module Interval : S = struct
   let mk_var v : Svalue.t = Svalue.mk_var v TInt
+  let mk_var_ty v : Typed.T.sint Typed.t = Typed.mk_var v Typed.t_int
 
   module Range = struct
     (** A range \[m, n\]; both sides are inclusive. A [None] in the range
@@ -71,15 +69,20 @@ module Interval : S = struct
       | Some m, Some n -> Z.gt m n
       | _ -> false
 
-    let to_sval v r : Svalue.t =
-      match r with
-      | Some m, Some n when Z.equal m n -> mk_var v ==@ Svalue.int_z m
-      | Some m, Some n ->
-          let var = mk_var v in
-          Svalue.int_z m <=@ var &&@ (var <=@ Svalue.int_z n)
-      | Some m, None -> Svalue.int_z m <=@ mk_var v
-      | None, Some n -> mk_var v <=@ Svalue.int_z n
-      | None, None -> Svalue.v_true
+    (** [iter_sval_equivalent v r] returns an iterator over the set of symbolic
+        values that are represented by [v] spanning over the range [r] *)
+    let iter_sval_equivalent v r =
+      let open Typed.Infix in
+      fun f ->
+        match r with
+        | Some m, Some n when Z.equal m n -> f (mk_var_ty v ==@ Typed.int_z m)
+        | Some m, Some n ->
+            let var = mk_var_ty v in
+            f (Typed.int_z m <=@ var);
+            f (var <=@ Typed.int_z n)
+        | Some m, None -> f (Typed.int_z m <=@ mk_var_ty v)
+        | None, Some n -> f (mk_var_ty v <=@ Typed.int_z n)
+        | None, None -> ()
 
     (** The intersection of two ranges; always representable *)
     let intersect ((m1, n1) : t) ((m2, n2) : t) : t =
@@ -260,15 +263,15 @@ module Interval : S = struct
 
   (** Encode all the information relevant to the given variables and conjuncts
       them with the given accumulator. *)
-  let encode ?vars (acc : Typed.sbool Typed.t) st : Typed.sbool Typed.t =
+  let encode ?vars st : Typed.sbool Typed.t Iter.t =
     let to_check =
       Option.fold ~none:(fun _ -> true) ~some:Var.Hashset.mem vars
     in
     wrap_read
       (fun m ->
-        Var.Map.fold
-          (fun v r acc -> if to_check v then acc &&@ Range.to_sval v r else acc)
-          m (Typed.untyped acc))
+        fun f ->
+         Var.Map.iter
+           (fun v r -> if to_check v then Range.iter_sval_equivalent v r f)
+           m)
       st
-    |> Typed.type_
 end

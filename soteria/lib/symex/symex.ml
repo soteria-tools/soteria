@@ -21,7 +21,7 @@ module type Base = sig
   val vanish : unit -> 'a MONAD.t
   val assert_ : sbool v -> bool MONAD.t
   val assert_ox : sbool v -> bool MONAD.t
-  val nondet : ?constrs:('a v -> sbool v list) -> 'a vt -> 'a v MONAD.t
+  val nondet : 'a vt -> 'a v MONAD.t
   val fresh_var : 'a vt -> Var.t MONAD.t
 
   val branch_on :
@@ -256,14 +256,9 @@ module Make_seq (Sol : Solver.Mutable_incremental) :
         Symex_state.backtrack_n 1;
         Seq.Cons (unsat, Seq.empty)
 
-  let nondet ?constrs ty () =
+  let nondet ty () =
     let v = Solver.fresh_var ty in
     let v = Value.mk_var v ty in
-    let () =
-      match constrs with
-      | Some constrs -> Solver.add_constraints (constrs v)
-      | None -> ()
-    in
     Seq.Cons (v, Seq.empty)
 
   let fresh_var ty = Seq.return (Solver.fresh_var ty)
@@ -450,10 +445,9 @@ module Make_iter (Sol : Solver.Mutable_incremental) :
         in
         f result
 
-  let nondet ?(constrs = fun _ -> []) ty f =
+  let nondet ty f =
     let v = Solver.fresh_var ty in
     let v = Value.mk_var v ty in
-    Solver.add_constraints (constrs v);
     f v
 
   let fresh_var ty f = f (Solver.fresh_var ty)

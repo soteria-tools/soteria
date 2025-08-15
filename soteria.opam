@@ -10,7 +10,7 @@ authors: [
   "Sacha-Élie Ayoun <s.ayoun17@imperial.ac.uk>"
   "Opale Sjöstedt <opale.sjostedt23@imperial.ac.uk>"
 ]
-license: "BSD-3-Clause"
+license: "Apache-2.0"
 homepage: "https://github.com/soteria-tools/soteria"
 bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
@@ -27,6 +27,7 @@ depends: [
   "progress"
   "grace"
   "odoc" {with-doc}
+  "mdx" {build}
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ppxlib"
   "hc" {>= "0.5"}

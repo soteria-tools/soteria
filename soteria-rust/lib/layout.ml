@@ -380,6 +380,7 @@ let constraints :
   | TFloat (F16 | F32 | F64 | F128) -> fun _ -> []
 
 let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
+  let open Rustsymex.Syntax in
   let rty =
     match ty with
     | TInt _ | TUInt _ | TBool | TChar -> Typed.t_int
@@ -389,7 +390,9 @@ let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
     | TFloat F128 -> Typed.t_f128
   in
   let constrs = constraints ty in
-  Rustsymex.nondet ~constrs rty
+  let* v = Rustsymex.nondet rty in
+  let+ () = Rustsymex.assume (constrs v) in
+  v
 
 (** [nondet ~extern ~init ty] returns a nondeterministic value for [ty], along
     with some "state". It receives a function [extern] to get an optional

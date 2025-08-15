@@ -98,8 +98,9 @@ module M (State : State_intf.S) = struct
     else Result.ok (Agv.int 0, state)
 
   let nondet_int_fun ~args:_ state =
+    let* v = Csymex.nondet Typed.t_int in
     let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
-    let* v = Csymex.nondet ~constrs Typed.t_int in
+    let* () = Csymex.assume (constrs v) in
     let v = (v :> T.cval Typed.t) in
     Result.ok (Basic v, state)
 

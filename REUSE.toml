@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: 2025 Soteria Team
+# SPDX-License-Identifier: Apache-2.0
+
+version = 1
+
+
+# Default annotations for source files in this repository.
+# Precedence "aggregate" means existing headers (if any) are kept and these
+# defaults are added when generating metadata.
+[[annotations]]
+path = [
+  "soteria/**",
+  "soteria-rust/**",
+  "soteria-c/**",
+  "ppx/**",
+  "vscode/**",
+  "packaging/**",
+  "demo/**",
+  "*.opam",
+  "*.opam.template",
+  "dune-project",
+  "dune",
+  "package.json",
+  "README.md",
+  "Makefile",
+  "odoc-config.sexp",
+  ".github/**",
+  ".vscode/**",
+  ".gitignore",
+  ".ocamlformat",
+  ".ocamlformat-ignore",
+  "yarn.lock",
+  "NOTICE",              # Other files
+  "THIRD_PARTY_NOTICES",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "soteria-rust/plugins/kani/**/*.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "Kani Contributors"
+SPDX-License-Identifier = "Apache-2.0 OR MIT"
+
+[[annotations]]
+path = "soteria-rust/plugins/kani_macros/**/*.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "Kani Contributors"
+SPDX-License-Identifier = "Apache-2.0 OR MIT"
+
+[[annotations]]
+path = "soteria-c/test/cram/cc.t/**/*.c"
+precedence = "override"
+SPDX-FileCopyrightText = "2013-2014 Srđan Panić <srdja.panic@gmail.com>"
+SPDX-License-Identifier = "LGPL-3.0-or-later"
+
+# Assets (images, vectors) — licensed under Apache-2.0 with the rest of the repo.
+[[annotations]]
+path = ["assets/*.png"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-License-Identifier = "LicenseRef-Soteria-Logo"
