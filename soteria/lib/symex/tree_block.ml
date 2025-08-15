@@ -365,6 +365,23 @@ struct
           let* new_left = add_to_the_left left addition in
           of_children_s ~left:new_left ~right
 
+    (** [frame_range t ~replace_node ~rebuild_parent range] Extracts from [t]
+        the subtree that exactly spans [range]. The [range] must be non-empty.
+        If [t] does not already cover [range], it is first extended with
+        [NotOwned] nodes so that it does.
+
+        Once the target subtree is found, [replace_node] is applied to it and
+        must return the replacement subtree.
+
+        The path back to the root is then rebuilt by calling [rebuild_parent]
+        with the (possibly modified) children at each step. Use [of_children_s]
+        for [rebuild_parent] when the parent node needs to be recomputed from
+        its children. Use [with_children] when only the tree structure changed
+        (e.g. after a load) and no recomputation of the parent’s semantic
+        content is required. In doubt, [of_children_s] is usually a safe bet.
+
+        [frame_range] returns a pair of the extracted subtree (before
+        modification with [replace_node]) and the new root of the whole tree. *)
     let frame_range (t : t) ~(replace_node : t -> (t, 'e, 'm) Result.t)
         ~rebuild_parent (range : Range.t) : (t * t, 'e, 'm) Result.t =
       let rec frame_inside ~(replace_node : t -> (t, 'e, 'm) Result.t)
