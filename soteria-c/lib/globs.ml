@@ -2,6 +2,7 @@
     immutable total map from identifier to address *)
 
 open Csymex
+open Csymex.Syntax
 module Sym_map = Concrete_map (Symbol_std)
 
 module Loc :
@@ -16,9 +17,9 @@ module Loc :
 
   let fresh () =
     let open Typed.Infix in
-    Csymex.nondet
-      ~constrs:(fun x -> [ Typed.not (x ==@ Typed.Ptr.null_loc) ])
-      Typed.t_loc
+    let* loc = Csymex.nondet Typed.t_loc in
+    let+ () = Symex.assume [ Typed.not (loc ==@ Typed.Ptr.null_loc) ] in
+    loc
 
   let sem_eq = Typed.sem_eq
   let subst = Typed.subst

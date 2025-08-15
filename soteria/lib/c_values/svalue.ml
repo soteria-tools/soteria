@@ -339,6 +339,11 @@ let v_false = Bool false <| TBool
 
 let int_z z = Int z <| TInt
 let int i = int_z (Z.of_int i)
+
+let nonzero_z z =
+  if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z") else int_z z
+
+let nonzero x = if x = 0 then raise (Invalid_argument "nonzero") else int x
 let zero = int_z Z.zero
 let one = int_z Z.one
 
@@ -1004,7 +1009,7 @@ end
 
 module Syntax = struct
   module Sym_int_syntax = struct
-    let mk_int = int
+    let mk_nonzero = nonzero
     let zero = zero
     let one = one
   end
