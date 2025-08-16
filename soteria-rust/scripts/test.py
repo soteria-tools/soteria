@@ -313,25 +313,36 @@ def benchmark(opts: CliOpts):
             return "pass"
         if msg == "Failure":
             return "fail"
-        if (
-            msg == "Crashed"
-            or "Opaque function" in msg
-            or msg == "Raised exception"
-            or msg == "Missing function declaration"
-            or msg == "Unknown unsize kind"
-            or msg == "No entry points found"
-            or msg == "Tool"
-            or msg == "Vanished"
-        ):
-            return "crash"
+
         if (
             msg.startswith("Unsupported")
+            or msg == "Unsupported - Tool"
             or msg == "Missing dependency"
             or msg == "Compilation error"
         ):
             return "unsupported"
+
+        crash_msg = [
+            "Crashed",
+            "Raised exception",
+            "Missing function declaration",
+            "Unknown unsize kind",
+            "No entry points found",
+            "Tool",
+            "Vanished",
+            "Miss encountered",
+            "Unhandled transmute",
+            "expected pointer",
+            "Opaque function",
+            "Don't know how to eval",
+            "not called with the right arguments",
+        ]
+        if any(c in msg for c in crash_msg):
+            return "crash"
+
         if msg == "Time out":
             return "timeout"
+
         end_msgs.add(f"Unhandled benchmark result: {msg}")
         return "crash"
 
