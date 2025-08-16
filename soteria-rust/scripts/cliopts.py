@@ -167,7 +167,6 @@ def opts_for_obol(opts: CliOpts) -> CliOpts:
             "--compact",
             "--no-color",
             "--log-compilation",
-            "--solver-timeout=3000",
         ],
         "categorise": categorise_rusteria,
     }
@@ -180,7 +179,7 @@ def opts_for_kani(opts: CliOpts) -> CliOpts:
         "tool_cmd": [
             "kani",
             "-Z=unstable-options",
-            "--harness-timeout=3s",
+            "--harness-timeout=5s",
         ],
         "categorise": categorise_kani,
     }

@@ -3,7 +3,7 @@ import os
 import subprocess
 import re
 from pathlib import Path
-from typing import Literal, TypedDict, Optional
+from typing import Optional, cast
 
 PURPLE = "\033[0;35m"
 RED = "\033[0;31m"
@@ -212,3 +212,53 @@ def determine_failure_expect(filepath: str) -> bool:
     elif "miri" in filepath:
         return "/tests/fail/" in filepath or "/tests/panic/" in filepath
     return False
+
+
+def subprocess_run(
+    *popenargs, input=None, capture_output=False, timeout=None, check=False, **kwargs
+):
+    """
+    Patched version of subprocess.run, that uses a SIGTERM rather than a SIGKILL
+    to terminate on timeout.
+    """
+    from subprocess import (
+        PIPE,
+        Popen,
+        TimeoutExpired,
+        CalledProcessError,
+        CompletedProcess,
+    )
+
+    if input is not None:
+        if kwargs.get("stdin") is not None:
+            raise ValueError("stdin and input arguments may not both be used.")
+        kwargs["stdin"] = PIPE
+
+    if capture_output:
+        if kwargs.get("stdout") is not None or kwargs.get("stderr") is not None:
+            raise ValueError(
+                "stdout and stderr arguments may not be used " "with capture_output."
+            )
+        kwargs["stdout"] = PIPE
+        kwargs["stderr"] = PIPE
+
+    with Popen(*popenargs, **kwargs) as process:
+        try:
+            stdout, stderr = process.communicate(input, timeout=timeout)
+        except TimeoutExpired as exc:
+            process.terminate()
+            # NOTE!!! HERE WE WINDOWS SHOULD BE HANDLED DIFFERENTLY
+            # POSIX _communicate already populated the output so
+            # far into the TimeoutExpired exception.
+            process.wait()
+            raise
+        except:  # Including KeyboardInterrupt, communicate handled that.
+            process.terminate()
+            # We don't call process.wait() as .__exit__ does that for us.
+            raise
+        retcode = cast(int, process.poll())
+        if check and retcode:
+            raise CalledProcessError(
+                retcode, process.args, output=stdout, stderr=stderr
+            )
+    return CompletedProcess(process.args, retcode, stdout, stderr)

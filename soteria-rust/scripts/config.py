@@ -1,4 +1,4 @@
-from typing import Callable, Iterable
+from typing import Callable, Iterable, TypedDict
 from common import *
 from cliopts import ArgError, CliOpts, SuiteName
 

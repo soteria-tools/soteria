@@ -5,7 +5,7 @@ from io import TextIOWrapper
 from pathlib import Path
 import time
 import datetime
-from typing import Callable, Literal, assert_never
+from typing import Callable, Literal, TypedDict, assert_never
 import math
 
 from common import *
@@ -41,11 +41,19 @@ def exec_test(
         log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
 
     before = time.time()
-    data = subprocess.run(
-        cmd + [str(file)],
-        capture_output=True,
-        text=True,
-    )
+
+    try:
+        data = subprocess_run(
+            cmd + [str(file)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        if log:
+            log.write("Forced timeout")
+        return (("Time out", ORANGE, None), 5)
+
     elapsed = time.time() - before
 
     full_log = f"{data.stderr}\n{data.stdout}\n\n"

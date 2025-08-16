@@ -2,7 +2,6 @@
 
 from common import *
 
-from os import error, truncate
 import sys
 import re
 from typing import Iterable, Optional, Protocol
@@ -77,7 +76,7 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if "Fatal: No entry points found" in test:
         return ("No entry points found", RED, None)
 
-    if "Execution timed out" in test:
+    if "Execution timed out" in test or "Forced timeout" in test:
         return ("Time out", ORANGE, None)
 
     if "resolve_constant (Generated_Expressions.COpaque" in test:
@@ -154,8 +153,9 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
 
 
 def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
-    if "CBMC timed out" in test:
+    if "CBMC timed out" in test or "Forced timeout" in test:
         return ("Time out", ORANGE, None)
+
     if (
         "A Rust construct that is not currently supported by Kani was found to be reachable"
         in test
@@ -174,10 +174,13 @@ def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
         else:
             return ("Failure", RED, "Expected success, got failure")
 
-    if "exited with status exit status" in test:
+    if "exited with status exit status" in test or "fatal runtime error" in test:
         return ("Crashed", PURPLE, None)
 
-    return (f"Unknown", PURPLE, None)
+    if "No proof harnesses" in test:
+        return ("No entry points found", RED, None)
+
+    return (f"Unknown", MAGENTA, None)
 
 
 def analyse(file: str) -> LogInfo:
