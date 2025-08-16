@@ -62,7 +62,9 @@ let pp_pretty ~ignore_freed ft st =
   match st.heap with
   | None -> Fmt.pf ft "Empty Heap"
   | Some st ->
-      SPmap.pp ~ignore (With_origin.pp (Freeable.pp Tree_block.pp_pretty)) ft st
+      SPmap.pp ~ignore
+        (With_origin.pp (Freeable.pp Ctree_block.pp_pretty))
+        ft st
 
 let empty = { heap = None; globs = Globs.empty }
 
@@ -93,8 +95,8 @@ let[@inline] check_non_null loc =
 let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
     (f :
       ofs:[< T.sint ] Typed.t ->
-      Tree_block.t option ->
-      ('a * Tree_block.t option, 'err, 'fix list) Result.t) :
+      Ctree_block.t option ->
+      ('a * Ctree_block.t option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
@@ -105,7 +107,7 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
 let load ptr ty st =
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering read" () in
   log "load" ptr st;
-  with_ptr ptr st (fun ~ofs block -> Tree_block.load ofs ty block)
+  with_ptr ptr st (fun ~ofs block -> Ctree_block.load ofs ty block)
 
 let load_aggregate (ptr : [< T.sptr ] Typed.t) ty state =
   let++ v, state = load ptr ty state in
@@ -114,12 +116,12 @@ let load_aggregate (ptr : [< T.sptr ] Typed.t) ty state =
 let store ptr ty sval st =
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering write" () in
   log "store" ptr st;
-  with_ptr ptr st (fun ~ofs block -> Tree_block.store ofs ty sval block)
+  with_ptr ptr st (fun ~ofs block -> Ctree_block.store ofs ty sval block)
 
 let deinit ptr len st =
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering deinit" () in
   log "deinit" ptr st;
-  with_ptr ptr st (fun ~ofs block -> Tree_block.deinit ofs len block)
+  with_ptr ptr st (fun ~ofs block -> Ctree_block.deinit ofs len block)
 
 let rec store_aggregate (ptr : [< T.sptr ] Typed.t) ty v state =
   match v with
@@ -158,10 +160,10 @@ let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
   else
     let** tree_to_write, st =
       with_ptr src st (fun ~ofs block ->
-          Tree_block.get_raw_tree_owned ofs size block)
+          Ctree_block.get_raw_tree_owned ofs size block)
     in
     with_ptr dst st (fun ~ofs block ->
-        Tree_block.put_raw_tree ofs tree_to_write block)
+        Ctree_block.put_raw_tree ofs tree_to_write block)
 
 let alloc ?(zeroed = false) size st =
   let loc = Csymex.get_loc () in
@@ -207,23 +209,16 @@ let produce (serialized : serialized) (st : t) : t Csymex.t =
   { heap; globs }
 
 let produce_basic_val loc offset ty v state =
-  let block =
-    With_origin.
-      {
-        node = Freeable.Alive [ Tree_block.TypedVal { offset; ty; v } ];
-        info = None;
-      }
+  let* len = Layout.size_of_s ty in
+  let block : Block.serialized =
+    { node = Alive [ MemVal { offset; len; v = SInit (v, ty) } ]; info = None }
   in
   let serialized : serialized = { heap = [ (loc, block) ]; globs = [] } in
   produce serialized state
 
 let produce_padding loc ~offset ~len state =
-  let block =
-    With_origin.
-      {
-        node = Freeable.Alive [ Tree_block.Uninit { offset; len } ];
-        info = None;
-      }
+  let block : Block.serialized =
+    { node = Alive [ MemVal { offset; len; v = SUninit } ]; info = None }
   in
   let serialized : serialized = { heap = [ (loc, block) ]; globs = [] } in
   produce serialized state

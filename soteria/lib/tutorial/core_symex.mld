@@ -3,22 +3,21 @@
 Welcome to the Soteria tutorial! This tutorial will guide you through the basics of writing a symbolic execution engine.
 
 Today you'll be learning how to:
-- {{!instantiate}Instantiate} the {{!Soteria_symex.Symex.Make_iter}Symex} functor
+- {{!instantiate}Instantiate} the {{!Soteria_symex.Symex.Make}Symex} functor
 - {!return}
 - {!nondet}
 - {!bind}
 - {!branching}
 
-{2:instantiate Instantiating the Symex functor}
+{2:instantiate Instantiating the [Symex.Make] functor}
 
-The main utility of the Soteria library is the [Symex] functor, which provides the necessary infrastructure to define and run a symbolic execution engine.
+The main utility of the Soteria library is the {{!Soteria_symex.Symex.Make} Symex.Make} functor, which provides the necessary infrastructure to define and run a symbolic execution engine.
 To instantiate it, you need to provide a {{!Soteria_symex.Solver.Mutable_incremental} Solver} module, which defines {e symbolic values} and the solver interface to decide whether a symbolic expression of type {{!Soteria_symex.Value.S.sbool}Value.sbool} is satisfiable.
 
 {@ocaml[
-module Symex = Symex.Make_iter (C_solver.Z3_solver)
+module Symex = Symex.Make (C_solver.Z3_solver)
 ]}
 
-Here, we use {{!Soteria_symex.Symex.Make_iter} Make_iter} to create a symbolic execution monad where the base monad is {{:https://ocaml.org/p/iter/latest/doc/iter/Iter/index.html#type-t}Iter.t}. The alternative is {{!Soteria_symex.Symex.Make_seq}Make_seq}, which uses {{:https://ocaml.org/manual/latest/api/Stdlib.Seq.html}Seq.t} as the base monad. Soteria offers both monads, though we have not found significant differences in performance.
 
 {2:return Write your first symbolic process}
 

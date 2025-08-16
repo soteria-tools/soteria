@@ -124,7 +124,7 @@ struct
       (cons :
         'inner_serialized ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_serializedlist) Symex.Result.t)
+        ('inner_st option, 'err, 'inner_serialized list) Symex.Result.t)
       (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
       ( 'inner_st t option,
         'err,
