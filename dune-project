@@ -44,7 +44,7 @@
   progress
   grace
   (odoc :with-doc)
-  (mdx :build)
+  (mdx :with-test)
   (dune
    (and
     :build
