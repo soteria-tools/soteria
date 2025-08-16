@@ -137,28 +137,6 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 
   (* prepare executing the entry points *)
   let fold_and f l = List.fold_left (fun acc x -> f x && acc) true l in
-  let with_timeout t f =
-    (* Save the old signal handler so we can restore it later *)
-    let old_handler =
-      Sys.signal Sys.sigalrm
-        (Sys.Signal_handle (fun _ -> execution_err "Execution timed out"))
-    in
-    (* Set the alarm timer *)
-    let old_timer =
-      Unix.setitimer Unix.ITIMER_REAL { Unix.it_interval = 0.0; it_value = t }
-    in
-    try
-      let result = f () in
-      (* Cancel the timer and restore old state *)
-      ignore (Unix.setitimer Unix.ITIMER_REAL old_timer);
-      ignore (Sys.signal Sys.sigalrm old_handler);
-      result
-    with exn ->
-      (* Cancel timer and restore state before re-raising *)
-      ignore (Unix.setitimer Unix.ITIMER_REAL old_timer);
-      ignore (Sys.signal Sys.sigalrm old_handler);
-      raise exn
-  in
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
   let@ () = Crate.with_crate crate in
   entry_points
@@ -170,7 +148,6 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
      let@ () = print_outcomes entry_name in
      let branches =
        let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
-       let@ () = with_timeout 3. in
        let fuel = Option.value ~default:default_fuel entry.fuel in
        try Rustsymex.run ~fuel @@ exec_fun entry.fun_decl with
        | Layout.InvalidLayout ty ->
