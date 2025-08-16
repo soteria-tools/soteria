@@ -1,5 +1,15 @@
 open Soteria_rust_lib
 
+module Tree_block : sig
+  type serialized
+
+  val iter_vars_serialized :
+    serialized -> (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit
+
+  val subst_serialized :
+    (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
+end
+
 include
   State_intf.S
     with type 'a err = 'a * Charon.Meta.span Soteria_terminal.Call_trace.t

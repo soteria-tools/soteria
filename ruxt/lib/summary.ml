@@ -42,7 +42,7 @@ let make ret pcs state =
       let b_iter =
         Iter.persistent_lazy
         @@ Rustsymex.Freeable.iter_vars_serialized
-             Tree_block.iter_vars_serialized b
+             Heap.Tree_block.iter_vars_serialized b
       in
       let product = Iter.product (Typed.iter_vars l) b_iter in
       product (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));

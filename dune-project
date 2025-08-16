@@ -178,7 +178,6 @@
   ppx_deriving
   cmdliner
   fmt
-  printbox-text
   charon
   (ppx_subliner
    (>= 0.2.1))

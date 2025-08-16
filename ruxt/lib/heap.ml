@@ -29,6 +29,7 @@ module StateKey = struct
 end
 
 module SPmap = Pmap_direct_access (StateKey)
+module Tree_block = Rtree_block.Make (Sptr)
 
 type global = String of string | Global of Charon.Types.global_decl_id
 [@@deriving show { with_path = false }, ord]
@@ -77,8 +78,10 @@ module FunBiMap = struct
     (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) fmt lmap
 end
 
-type t = {
-  state : Tree_block.t Freeable.t SPmap.t option;
+type sub = Tree_block.t * Tree_borrow.t
+
+and t = {
+  state : sub Freeable.t SPmap.t option;
   functions : FunBiMap.t;
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
@@ -104,8 +107,9 @@ let serialize st : serialized =
   match st.state with
   | None -> []
   | Some state ->
+      let serialize_freeable (b, _) = Tree_block.serialize b in
       let serialized =
-        SPmap.serialize (Freeable.serialize Tree_block.serialize) state
+        SPmap.serialize (Freeable.serialize serialize_freeable) state
       in
       mark_globals st.globals serialized
 
@@ -129,10 +133,10 @@ let pp_pretty ~ignore_freed ft { state; _ } =
     else fun _ -> false
   in
   match state with
-  | None -> Fmt.pf ft "Empty state"
+  | None -> Fmt.pf ft "Empty State"
   | Some st ->
       SPmap.pp ~ignore
-        (Freeable.pp (fun fmt tb -> Tree_block.pp_pretty fmt tb))
+        (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
         ft st
 
 let empty =
@@ -162,9 +166,15 @@ let with_tbs b f =
   let block, tree_borrow =
     match b with
     | None -> (None, Tree_borrow.init ~state:UB ())
-    | Some block -> (Some block, Tree_borrow.init ~state:Unique ())
+    | Some (block, tb) -> (Some block, tb)
   in
-  f (block, tree_borrow)
+  let+ res = f (block, tree_borrow) in
+  match res with
+  | Soteria_symex.Compo_res.Ok (v, block) ->
+      let block = Option.map (fun b -> (b, tree_borrow)) block in
+      Soteria_symex.Compo_res.Ok (v, block)
+  | Missing fixes -> Missing fixes
+  | Error e -> Error e
 
 let check_ptr_align (ptr : Sptr.t) ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -182,8 +192,8 @@ let check_ptr_align (ptr : Sptr.t) ty st =
 
 let with_ptr (ptr : Sptr.t) (st : t)
     (f :
-      [< T.sint ] Typed.t * Tree_block.t option ->
-      ('a * Tree_block.t option, 'err, 'fix list) Result.t) :
+      [< T.sint ] Typed.t * sub option ->
+      ('a * sub option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized list) Result.t =
   if%sat Sptr.sem_eq ptr Sptr.null_ptr then Result.error `NullDereference
   else
@@ -207,10 +217,9 @@ let with_ptr (ptr : Sptr.t) (st : t)
     For instance, if a function pointer hiding as a pointer is passed to a
     function, protecting it should do nothing, and should be allowed. *)
 let with_opt_or (x : 'a option) (otherwise : 'b)
-    (f : 'a * Tree_borrow.t -> ('b * 'a option, 'err, 'f) Result.t) :
+    (f : 'a -> ('b * 'a option, 'err, 'f) Result.t) :
     ('b * 'a option, 'err, 'f) Result.t =
-  let tb = Tree_borrow.init ~state:Unique () in
-  match x with Some v -> f (v, tb) | None -> Result.ok (otherwise, None)
+  match x with Some v -> f v | None -> Result.ok (otherwise, None)
 
 let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -221,7 +230,7 @@ let uninit (ptr, _) ty st =
   let@ block, _ = with_tbs block in
   Tree_block.uninit_range ofs size block
 
-let load ?(is_move = false) ?(ignore_borrow = true) (ptr, meta) ty st =
+let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
   let** (), st = check_ptr_align ptr ty st in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
@@ -310,8 +319,10 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let collect_tb_states f =
     Tree.iter_leaves_rev original_tree @@ fun leaf ->
     match leaf.node with
-    | Owned { tb; _ } ->
-        let range = Range.offset leaf.range ~-(fst original_tree.range) in
+    | Owned (_, tb) ->
+        let range =
+          Tree_block.Range.offset leaf.range ~-(fst original_tree.range)
+        in
         f (tb, range)
     | NotOwned Totally -> failwith "Impossible: we framed the range"
     | NotOwned Partially ->
@@ -322,11 +333,11 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
     let rec aux tb (t : Tree.t) =
       match t.node with
       | NotOwned _ -> failwith "Impossible: checked before"
-      | Owned { v; _ } ->
+      | Owned (v, _) ->
           let children =
             Option.map (fun (l, r) -> (aux tb l, aux tb r)) t.children
           in
-          { t with children; node = Owned { v; tb } }
+          { t with children; node = Owned (v, tb) }
     in
     try Result.ok (aux tb t) with Failure msg -> not_impl msg
   in
@@ -350,7 +361,8 @@ let alloc ?zeroed size align st =
   let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
   let tb = Tree_borrow.init ~state:Unique () in
-  let block = Freeable.Alive (Tree_block.alloc ?zeroed size) in
+  let block = Tree_block.alloc ?zeroed size in
+  let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc 0s in
   let ptr : Sptr.t Rust_val.full_ptr =
@@ -370,11 +382,11 @@ let alloc_tys tys st =
   let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
   SPmap.allocs state ~els:tys ~fn:(fun ty loc ->
-      (* make treeblock *)
+      (* make Tree_block *)
       let* layout = Layout.layout_of_s ty in
       let size = Typed.int layout.size in
       let tb = Tree_borrow.init ~state:Unique () in
-      let block = Freeable.Alive (Tree_block.alloc size) in
+      let block = Freeable.Alive (Tree_block.alloc size, tb) in
       (* create pointer *)
       let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
       let ptr = Typed.Ptr.mk loc 0s in
@@ -395,8 +407,8 @@ let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
     (* TODO: does the tag not play a role in freeing? *)
     let++ (), state =
       SPmap.wrap
-        (Freeable.free
-           ~assert_exclusively_owned:Tree_block.assert_exclusively_owned)
+        (Freeable.free ~assert_exclusively_owned:(fun t ->
+             Tree_block.assert_exclusively_owned @@ Option.map fst t))
         (Typed.Ptr.loc ptr) state
       |> map_missing_globals st.globals
     in
@@ -411,8 +423,8 @@ let zeros (ptr, _) size st =
   let@ block, _ = with_tbs block in
   Tree_block.zero_range ofs size block
 
-let error err _st =
-  let@ () = with_error_loc_as_call_trace _st in
+let error err st =
+  let@ () = with_error_loc_as_call_trace st in
   L.info (fun m -> m "State errored: %a" Error.pp err);
   error err
 
@@ -458,12 +470,14 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
       | BShallow -> Fmt.kstr not_impl "Unhandled borrow kind: BShallow"
     in
     let node = Tree_borrow.init ~state:tag_st () in
-    let@ block, _ = with_opt_or block (ptr, meta) in
+    let@ block, tb = with_opt_or block (ptr, meta) in
+    let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
+    let block = Some (block, tb') in
     let ptr' = { ptr with tag = node.tag } in
     L.debug (fun m ->
         m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
           Tree_borrow.pp_state tag_st);
-    Result.ok ((ptr', meta), Some block)
+    Result.ok ((ptr', meta), block)
 
 let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     =
@@ -484,11 +498,12 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     L.debug (fun m ->
         m "Protecting pointer %a -> %a, on [%a;%a]" Sptr.pp ptr Sptr.pp ptr'
           Typed.ppa ofs Typed.ppa size);
-    let++ (), block =
+    let++ (), block' =
       (* nothing to protect *)
       if%sat size ==@ 0s then Result.ok ((), Some block)
       else Tree_block.protect ofs size node.tag tb' (Some block)
     in
+    let block = Option.map (fun b' -> (b', tb')) block' in
     ((ptr', meta), block)
 
 let unprotect (ptr, _) (ty : Charon.Types.ty) st =
@@ -515,12 +530,13 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
     let tb' =
       Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
     in
-    let++ (), block =
+    let++ (), block' =
       if%sat size ==@ 0s then Result.ok ((), Some block)
       else Tree_block.unprotect ofs size ptr.tag tb' (Some block)
     in
+    let block' = Option.map (fun b' -> (b', tb')) block' in
     L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
-    ((), block)
+    ((), block')
 
 let leak_check st =
   let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" st in
@@ -614,16 +630,28 @@ let produce (serialized : serialized) ({ state; _ } as st : t) : t Rustsymex.t =
   in
   let* () = Rustsymex.assume non_null_locs in
   let serialized = List.map (fun (l, (f, _)) -> (l, f)) serialized in
+  let tree_block_produce serialized o =
+    let default = Tree_borrow.init ~state:Unique () in
+    let tb = o |> Option.map snd |> Option.value ~default in
+    let+ o = o |> Option.map fst |> Tree_block.produce serialized in
+    o |> Option.map (fun block -> (block, tb))
+  in
   let+ state =
-    SPmap.produce (Freeable.produce Tree_block.produce) serialized state
+    SPmap.produce (Freeable.produce tree_block_produce) serialized state
   in
   { st with state }
 
 let consume (serialized : serialized) ({ state; _ } as st : t) :
     (t, 'err, serialized list) Rustsymex.Result.t =
   let serialized = List.map (fun (l, (f, _)) -> (l, f)) serialized in
+  let tree_block_consume serialized o =
+    let default = Tree_borrow.init ~state:Unique () in
+    let tb = o |> Option.map snd |> Option.value ~default in
+    let++ o = o |> Option.map fst |> Tree_block.consume serialized in
+    o |> Option.map (fun block -> (block, tb))
+  in
   let++ state =
-    SPmap.consume (Freeable.consume Tree_block.consume) serialized state
+    SPmap.consume (Freeable.consume tree_block_consume) serialized state
     |> map_missing_globals st.globals
   in
   { st with state }

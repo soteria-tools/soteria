@@ -18,7 +18,6 @@
   grace
   grace.ansi_renderer
   simple_smt
-  printbox-text
   charon
   dune-site
   str)
