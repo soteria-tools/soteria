@@ -152,6 +152,7 @@ def opts_for_charon(opts: CliOpts) -> CliOpts:
             "--compact",
             "--no-color",
             "--log-compilation",
+            "--solver-timeout=5000",
         ],
         "categorise": categorise_rusteria,
     }
@@ -167,6 +168,7 @@ def opts_for_obol(opts: CliOpts) -> CliOpts:
             "--compact",
             "--no-color",
             "--log-compilation",
+            "--solver-timeout=5000",
         ],
         "categorise": categorise_rusteria,
     }
