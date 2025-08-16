@@ -32,9 +32,7 @@ module MakeYojsonable (Key : HashedAndStringEncodable) = struct
                 let+ v = value_of_yojson v in
                 (k, v)
               in
-              let k, v =
-                Result.get_or_raise (fun s -> Yojson.Json_error s) res
-              in
+              let k, v = Result.get_or ~err:Yojson.json_error res in
               add tbl k v)
             kvs;
           Ok tbl
