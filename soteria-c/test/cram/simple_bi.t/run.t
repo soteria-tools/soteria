@@ -4,7 +4,7 @@
   Summaries for f_560:
     Analysed {
       raw =
-      { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
+      { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|); (0 == V|1|)];
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
@@ -17,15 +17,15 @@
         pre =
         [{ heap =
            [(V|1|,
-             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+             { node = [MemVal {offset = V|2|; len = 4; v = V|3| : signed int}];
                info = None })];
            globs = [] }
           ];
-        pc = [(0 != V|1|); (V|3| <= 0x7fffffff); (-0x80000000 <= V|3|)];
+        pc = [(0 != V|1|); (-0x80000000 <= V|3|); (V|3| <= 0x7fffffff)];
         post =
         { heap =
           [(V|1|,
-            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+            { node = [MemVal {offset = V|2|; len = 4; v = V|3| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok V|3|) };
@@ -99,7 +99,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
   Summaries for load_563:
     Analysed {
       raw =
-      { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|)];
+      { args = [&(V|1|, V|2|)]; pre = []; pc = [(0 == V|1|); (0 == V|1|)];
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
@@ -112,15 +112,15 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         pre =
         [{ heap =
            [(V|1|,
-             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+             { node = [MemVal {offset = V|2|; len = 4; v = V|3| : signed int}];
                info = None })];
            globs = [] }
           ];
-        pc = [(0 != V|1|); (V|3| <= 0x7fffffff); (-0x80000000 <= V|3|)];
+        pc = [(0 != V|1|); (-0x80000000 <= V|3|); (V|3| <= 0x7fffffff)];
         post =
         { heap =
           [(V|1|,
-            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|3|}];
+            { node = [MemVal {offset = V|2|; len = 4; v = V|3| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok V|3|) };
@@ -224,7 +224,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
     Analysed {
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
-        pc = [(V|1| <= 0x7fffffff); (1 <= V|1|); (0 == V|2|)];
+        pc = [(0 == V|2|); (1 <= V|1|); (V|1| <= 0x7fffffff); (0 == V|2|)];
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
@@ -237,17 +237,17 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         pre =
         [{ heap =
            [(V|2|,
-             { node = [TypedVal {offset = V|3|; ty = signed int; v = V|4|}];
+             { node = [MemVal {offset = V|3|; len = 4; v = V|4| : signed int}];
                info = None })];
            globs = [] }
           ];
         pc =
-        [(V|1| <= 0x7fffffff); (1 <= V|1|); (0 != V|2|); (V|4| <= 0x7fffffff);
-          (-0x80000000 <= V|4|)];
+        [(0 != V|2|); (1 <= V|1|); (V|1| <= 0x7fffffff); (-0x80000000 <= V|4|);
+          (V|4| <= 0x7fffffff)];
         post =
         { heap =
           [(V|2|,
-            { node = [TypedVal {offset = V|3|; ty = signed int; v = V|4|}];
+            { node = [MemVal {offset = V|3|; len = 4; v = V|4| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok V|4|) };
@@ -272,7 +272,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
     Analysed {
       raw =
       { args = [&(V|1|, V|2|); V|3|]; pre = [];
-        pc = [(V|3| <= 0x7fffffff); (1 <= V|3|); (0 == V|1|)];
+        pc = [(0 == V|1|); (0 == V|1|); (1 <= V|3|); (V|3| <= 0x7fffffff)];
         post = { heap = []; globs = [] };
         ret =
         (Error (Null pointer dereference,
@@ -285,16 +285,17 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         pre =
         [{ heap =
            [(V|1|,
-             { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+             { node = [MemVal {offset = V|2|; len = 4; v = V|4| : signed int}];
                info = None })];
            globs = [] }
           ];
         pc =
-        [(1 == V|3|); (0 != V|1|); (V|4| <= 0x7fffffff); (-0x80000000 <= V|4|)];
+        [(0 != V|1|); (1 == V|3|); (1 == V|3|); (-0x80000000 <= V|4|);
+          (V|4| <= 0x7fffffff)];
         post =
         { heap =
           [(V|1|,
-            { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+            { node = [MemVal {offset = V|2|; len = 4; v = V|4| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok V|4|) };
@@ -306,24 +307,25 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         [{ heap =
            [(V|1|,
              { node =
-               [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+               [MemVal {offset = (V|2| + 4); len = 4; v = V|5| : signed int}];
                info = None })];
            globs = [] };
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+              { node = [MemVal {offset = V|2|; len = 4; v = V|4| : signed int}];
                 info = None })];
             globs = [] }
           ];
         pc =
-        [(V|5| <= 0x7fffffff); (-0x80000000 <= V|5|); (V|3| == 2); (0 != V|1|);
-          (V|4| <= 0x7fffffff); (-0x80000000 <= V|4|)];
+        [(0 != V|1|); (V|3| == 2); (V|3| == 2); (-0x80000000 <= V|4|);
+          (V|4| <= 0x7fffffff); (-0x80000000 <= V|5|); (V|5| <= 0x7fffffff)];
         post =
         { heap =
           [(V|1|,
             { node =
-              [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
-               TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+              [MemVal {offset = V|2|; len = 4; v = V|4| : signed int};
+               MemVal {offset = (V|2| + 4); len = ((V|2| + 8) - (V|2| + 4));
+                 v = V|5| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok (V|4| + V|5|)) };
@@ -335,32 +337,34 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         [{ heap =
            [(V|1|,
              { node =
-               [TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}];
+               [MemVal {offset = (V|2| + 8); len = 4; v = V|6| : signed int}];
                info = None })];
            globs = [] };
           { heap =
             [(V|1|,
               { node =
-                [TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|}];
+                [MemVal {offset = (V|2| + 4); len = 4; v = V|5| : signed int}];
                 info = None })];
             globs = [] };
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = V|2|; ty = signed int; v = V|4|}];
+              { node = [MemVal {offset = V|2|; len = 4; v = V|4| : signed int}];
                 info = None })];
             globs = [] }
           ];
         pc =
-        [(V|6| <= 0x7fffffff); (-0x80000000 <= V|6|); (V|3| == 3);
-          (V|5| <= 0x7fffffff); (-0x80000000 <= V|5|); (0 != V|1|);
-          (V|4| <= 0x7fffffff); (-0x80000000 <= V|4|)];
+        [(0 != V|1|); (V|3| == 3); (V|3| == 3); (-0x80000000 <= V|4|);
+          (V|4| <= 0x7fffffff); (-0x80000000 <= V|5|); (V|5| <= 0x7fffffff);
+          (-0x80000000 <= V|6|); (V|6| <= 0x7fffffff)];
         post =
         { heap =
           [(V|1|,
             { node =
-              [TypedVal {offset = V|2|; ty = signed int; v = V|4|};
-               TypedVal {offset = (V|2| + 4); ty = signed int; v = V|5|};
-               TypedVal {offset = (V|2| + 8); ty = signed int; v = V|6|}];
+              [MemVal {offset = V|2|; len = 4; v = V|4| : signed int};
+               MemVal {offset = (V|2| + 4); len = ((V|2| + 8) - (V|2| + 4));
+                 v = V|5| : signed int};
+               MemVal {offset = (V|2| + 8); len = ((V|2| + 12) - (V|2| + 8));
+                 v = V|6| : signed int}];
               info = None })];
           globs = [] };
         ret = (Ok ((V|4| + V|5|) + V|6|)) };

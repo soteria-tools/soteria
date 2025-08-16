@@ -6,6 +6,8 @@
 
 (using dune_site 0.1)
 
+(using mdx 0.4)
+
 (generate_opam_files)
 
 (license Apache-2.0)
@@ -37,10 +39,12 @@
    (>= 0.17.0))
   ppx_deriving
   fmt
+  printbox-text
   htmlit
   progress
   grace
   (odoc :with-doc)
+  (mdx :with-test)
   (dune
    (and
     :build
@@ -74,7 +78,6 @@
   cmdliner
   ppx_deriving
   fmt
-  printbox-text
   (linol
    (>= 0.10))
   (linol-eio
@@ -140,7 +143,6 @@
   ppx_deriving
   cmdliner
   fmt
-  printbox-text
   unionFind
   name_matcher_parser
   charon

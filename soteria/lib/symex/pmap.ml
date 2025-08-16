@@ -8,7 +8,7 @@ module type KeyS = sig
 
   val pp : Format.formatter -> t -> unit
   val sem_eq : t -> t -> sbool_v
-  val fresh : ?constrs:(t -> sbool_v list) -> unit -> t Symex.t
+  val fresh : unit -> t Symex.t
   val distinct : t list -> sbool_v
   val subst : (Var.t -> Var.t) -> t -> t
   val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
@@ -20,7 +20,7 @@ module Mk_concrete_key (Symex : Symex.S) (Key : Soteria_std.Ordered_type.S) :
   include Key
 
   let sem_eq x y = Symex.Value.bool (Key.compare x y = 0)
-  let fresh ?constrs:_ () = failwith "Fresh not implemented for concrete keys"
+  let fresh () = failwith "Fresh not implemented for concrete keys"
   let distinct _ = Symex.Value.bool true
   let subst _ x = x
   let iter_vars _ = fun _ -> ()
@@ -79,11 +79,9 @@ struct
   let alloc (type a) ~(new_codom : a) (st : a t option) :
       (Key.t * a t option, 'err, 'fix list) Result.t =
     let st = of_opt st in
-    let* key =
-      Key.fresh
-        ~constrs:(fun key ->
-          [ Key.distinct (key :: (M.bindings st |> List.map fst)) ])
-        ()
+    let* key = Key.fresh () in
+    let* () =
+      Symex.assume [ Key.distinct (key :: (M.bindings st |> List.map fst)) ]
     in
     Result.ok (key, to_opt (M.add key new_codom st))
 
@@ -126,7 +124,7 @@ struct
       (cons :
         'inner_serialized ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_serializedlist) Symex.Result.t)
+        ('inner_st option, 'err, 'inner_serialized list) Symex.Result.t)
       (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
       ( 'inner_st t option,
         'err,

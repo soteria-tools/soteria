@@ -205,7 +205,7 @@ end
 
 module Syntax : sig
   module Sym_int_syntax : sig
-    val mk_int : int -> [> sint ] t
+    val mk_nonzero : int -> [> nonzero ] t
     val zero : [> sint ] t
     val one : [> sint ] t
   end

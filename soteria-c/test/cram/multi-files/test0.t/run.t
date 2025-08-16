@@ -262,10 +262,10 @@
     [Ok: (25,
           { heap =
             [(V|1|,
-              { node = [TypedVal {offset = 0; ty = signed int; v = 13}];
+              { node = [MemVal {offset = 0; len = 4; v = 13 : signed int}];
                 info = None });
              (V|2|,
-              { node = [TypedVal {offset = 0; ty = signed int; v = 12}];
+              { node = [MemVal {offset = 0; len = 4; v = 12 : signed int}];
                 info = None })];
             globs = [(x_560, V|2|); (x_642, V|1|)] })]
   Executed 7 statements

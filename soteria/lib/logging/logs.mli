@@ -1,3 +1,6 @@
+(** Main entry to the {!Soteria_logs}, usually opened wherever logging is
+    needed. *)
+
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
 
 val start_section : ?is_branch:bool -> string -> unit

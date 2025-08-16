@@ -339,6 +339,11 @@ let v_false = Bool false <| TBool
 
 let int_z z = Int z <| TInt
 let int i = int_z (Z.of_int i)
+
+let nonzero_z z =
+  if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z") else int_z z
+
+let nonzero x = if x = 0 then raise (Invalid_argument "nonzero") else int x
 let zero = int_z Z.zero
 let one = int_z Z.one
 
@@ -657,6 +662,10 @@ let rec minus v1 v2 =
       minus (int_z (Z.sub i2 i1)) v1
   | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
       minus v1 (int_z (Z.sub i2 i1))
+  | Binop (Plus, x, y), _ when equal x v2 -> y
+  | Binop (Plus, x, y), _ when equal y v2 -> x
+  | _, Binop (Plus, x, y) when equal x v1 -> y
+  | _, Binop (Plus, x, y) when equal x v1 -> y
   | _ -> Binop (Minus, v1, v2) <| TInt
 
 let times v1 v2 =
@@ -1004,7 +1013,7 @@ end
 
 module Syntax = struct
   module Sym_int_syntax = struct
-    let mk_int = int
+    let mk_nonzero = nonzero
     let zero = zero
     let one = one
   end

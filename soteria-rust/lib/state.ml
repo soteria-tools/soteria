@@ -32,18 +32,14 @@ module StateKey = struct
   let distinct _ = Typed.v_true
 
   (* This *only* works in WPST!!! *)
-  let fresh ?constrs () =
+  let fresh () =
     incr indices;
     let idx = !indices in
-    let loc = Ptr.loc_of_int idx in
-    match constrs with
-    | Some constrs ->
-        let+ () = Rustsymex.assume (constrs loc) in
-        loc
-    | None -> return loc
+    Rustsymex.return (Ptr.loc_of_int idx)
 end
 
 module SPmap = Pmap_direct_access (StateKey)
+module Tree_block = Rtree_block.Make (Sptr)
 
 type global = String of string | Global of Charon.Types.global_decl_id
 [@@deriving show { with_path = false }, ord]
@@ -294,8 +290,10 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let collect_tb_states f =
     Tree.iter_leaves_rev original_tree @@ fun leaf ->
     match leaf.node with
-    | Owned { tb; _ } ->
-        let range = Range.offset leaf.range ~-(fst original_tree.range) in
+    | Owned (_, tb) ->
+        let range =
+          Tree_block.Range.offset leaf.range ~-(fst original_tree.range)
+        in
         f (tb, range)
     | NotOwned Totally -> failwith "Impossible: we framed the range"
     | NotOwned Partially ->
@@ -306,11 +304,11 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
     let rec aux tb (t : Tree.t) =
       match t.node with
       | NotOwned _ -> failwith "Impossible: checked before"
-      | Owned { v; _ } ->
+      | Owned (v, _) ->
           let children =
             Option.map (fun (l, r) -> (aux tb l, aux tb r)) t.children
           in
-          { t with children; node = Owned { v; tb } }
+          { t with children; node = Owned (v, tb) }
     in
     try Result.ok (aux tb t) with Failure msg -> not_impl msg
   in
@@ -355,7 +353,7 @@ let alloc_tys tys st =
   let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
   SPmap.allocs state ~els:tys ~fn:(fun ty loc ->
-      (* make treeblock *)
+      (* make Tree_block *)
       let* layout = Layout.layout_of_s ty in
       let size = Typed.int layout.size in
       let tb = Tree_borrow.init ~state:Unique () in

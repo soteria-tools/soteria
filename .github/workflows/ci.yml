@@ -1,6 +1,10 @@
 name: CI
 
-permissions: read-all
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  
 on:
   push:
     branches: ["main"]
@@ -20,7 +24,7 @@ jobs:
   build:
     strategy:
       matrix:
-        operating-system: [macos-latest, macos-13]
+        operating-system: [macos-latest] # TODO: add other operating systems
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3, node, ocaml and opam
@@ -87,7 +91,7 @@ jobs:
 
       # Run tests
       - name: Test
-        run: Make ocaml-test
+        run: make ocaml-test
 
       # Building js stuff
       - name: Install JS dependencies
@@ -104,13 +108,26 @@ jobs:
           name: ${{ matrix.operating-system }}-package
           path: package
           if-no-files-found: error
+          
+      - name: Build API documentation
+        run: make doc
+        
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: odoc
+          path: _build/default/_doc/_html
+          if-no-files-found: error
+        # No need to upload artifact twice
+        if: ${{ matrix.operating-system == 'macos-latest' }}
+        
       - name: Opam Cleanup
         run: opam clean -a -r
 
   test-package:
     strategy:
       matrix:
-        operating-system: [macos-latest, macos-13]
+        operating-system: [macos-latest]
     runs-on: ${{ matrix.operating-system }}
     needs: build
     steps:
@@ -137,3 +154,33 @@ jobs:
           SOTERIA_Z3_PATH: ./bin/z3
           SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
           SOTERIA_SOLVER_TIMEOUT: 100
+          SOTERIA_USE_CERB_HEADERS: true
+          
+  publish-doc:
+    name: Publish documentation
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Get current branch name
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "ENTRY_PATH=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          else
+            echo "ENTRY_PATH=${GITHUB_REF##*/}" >> $GITHUB_ENV
+          fi
+
+      - name: retrieve documentation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: odoc
+          path: site
+      
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          destination_dir: ./api/${{ env.ENTRY_PATH }}
+      
+      - run: echo "Successfully published documentation to ${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/${{ env.ENTRY_PATH }}"
+        
