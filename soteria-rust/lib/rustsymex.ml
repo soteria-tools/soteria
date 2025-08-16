@@ -1,4 +1,4 @@
-module SYMEX = Soteria_symex.Symex.Make_iter (C_solver.Z3_solver)
+module SYMEX = Soteria_symex.Symex.Make (C_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
 
@@ -73,4 +73,5 @@ let cast_checked2 x y =
 module Freeable = Soteria_symex.Freeable.Make (SYMEX)
 module Pmap_direct_access = Soteria_symex.Pmap.Direct_access (SYMEX)
 module Pmap = Soteria_symex.Pmap.Make (SYMEX)
+module Tree_block = Soteria_symex.Tree_block.Make (SYMEX)
 module Bi = Soteria_symex.Bi_abd.Make (SYMEX)
