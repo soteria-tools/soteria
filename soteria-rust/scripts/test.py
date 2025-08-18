@@ -56,7 +56,7 @@ def exec_test(
 
     elapsed = time.time() - before
 
-    full_log = f"{data.stderr}\n{data.stdout}\n\n"
+    full_log = f"{data.stderr}\n{data.stdout}\nCODE: {data.returncode}\n\n"
     if log:
         log.write(full_log)
 
@@ -416,6 +416,7 @@ def benchmark(opts: CliOpts):
     pprint(f"{BOLD}Running benchmark{RESET}", inc=True)
     run_benchmark("rusteria", opts_for_obol(opts))
     run_benchmark("kani", opts_for_kani(opts))
+    run_benchmark("miri", opts_for_miri(opts))
 
     rows: list[list[tuple[str, Optional[str]]]] = [
         [

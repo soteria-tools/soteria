@@ -183,6 +183,68 @@ def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
     return (f"Unknown", MAGENTA, None)
 
 
+def categorise_miri(test: str, *, expect_failure: bool) -> LogCategorisation:
+    if "Forced timeout" in test:
+        return ("Time out", ORANGE, None)
+
+    if (
+        "use of unresolved module or unlinked crate `kani`" in test
+        or "can't find crate for `kani`" in test
+    ):
+        return ("Unsupported - Tool", PURPLE, None)
+
+    if (
+        "functions used as tests can not have any arguments" in test
+        or "error: Miri can only run programs that have a main function." in test
+    ):
+        return ("No entry points found", RED, None)
+
+    if "test result: ok." in test or "CODE: 0" in test:
+        if not expect_failure:
+            return ("Success", GREEN, "Expected success, got success")
+        else:
+            return ("Failure", RED, "Expected failure, got success")
+
+    # we're quite fine-grained here to not misattribute compilation errors
+    error_signs = [
+        "error: Undefined Behavior",
+        "error: memory leaked",
+        "error: abnormal termination",
+        "error: unsupported operation",
+        "error: multiple definitions of symbol",
+        "error: post-monomorphization error",
+        "error[E0308]: mismatched types",
+        "accessing memory based on pointer with alignment",
+        "symbol definition that clashes with a built-in shim",
+        "panicked at",
+        "test result: FAILED.",
+    ]
+    if any(sign in test for sign in error_signs):
+        if expect_failure:
+            return ("Success", GREEN, "Expected failure, got failure")
+        else:
+            return ("Failure", RED, "Expected success, got failure")
+
+    if "error" in test:
+        if expect_failure:
+            return ("Success", GREEN, "Expected failure, got failure")
+        else:
+            return ("Failure", RED, "Expected success, got failure")
+
+    # if (
+    #     "error[E0599]: no method named" in test
+    #     or "error[E0432]: unresolved import" in test
+    #     or "error[E0433]: failed to resolve" in test
+    #     or "error[E0423]: expected function" in test
+    #     or "error: cannot find macro" in test
+    #     or "error: This macro cannot be used" in test
+    #     or "error: format argument must be" in test
+    # ):
+    #     return ("Compilation error", ORANGE, None)
+
+    return (f"Unknown", MAGENTA, None)
+
+
 def analyse(file: str) -> LogInfo:
     file_filters = [arg[3:] for arg in sys.argv if arg.startswith("-f=")]
 

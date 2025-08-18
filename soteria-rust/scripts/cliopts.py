@@ -2,10 +2,15 @@ from pathlib import Path
 from typing import Literal, Optional, TypedDict, cast
 
 from common import *
-from parselog import TestCategoriser, categorise_kani, categorise_rusteria
+from parselog import (
+    TestCategoriser,
+    categorise_kani,
+    categorise_miri,
+    categorise_rusteria,
+)
 
 
-ToolName = Literal["Charon", "Obol", "Kani"]
+ToolName = Literal["Charon", "Obol", "Kani", "Miri"]
 SuiteName = Literal["kani", "miri", "custom"]
 CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
@@ -184,4 +189,17 @@ def opts_for_kani(opts: CliOpts) -> CliOpts:
             "--harness-timeout=5s",
         ],
         "categorise": categorise_kani,
+    }
+
+
+def opts_for_miri(opts: CliOpts) -> CliOpts:
+    return {
+        **opts,
+        "tool": "Miri",
+        "tool_cmd": [
+            str((PWD / ".." / ".." / ".." / "miri" / "miri").resolve()),
+            "run",
+            "-Awarnings",
+        ],
+        "categorise": categorise_miri,
     }
