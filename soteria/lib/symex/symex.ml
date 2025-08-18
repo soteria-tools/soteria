@@ -160,6 +160,12 @@ module Extend (Base : Base) = struct
     in
     aux [] xs
 
+  let give_up ~loc reason =
+    (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
+    bind (return ()) @@ fun () ->
+    Stats.As_ctx.push_give_up_reason ~loc reason;
+    vanish ()
+
   let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
   let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
   let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
@@ -220,6 +226,7 @@ module Make (Sol : Solver.Mutable_incremental) :
   end
 
   let consume_fuel_steps n f =
+    Stats.As_ctx.add_steps n;
     match Fuel.consume_fuel_steps n with
     | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted -> f ()
@@ -318,6 +325,7 @@ module Make (Sol : Solver.Mutable_incremental) :
                   L.debug (fun m ->
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->
+                  Stats.As_ctx.add_branches 1;
                   if is_sat (Solver.sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible"))
 
@@ -341,6 +349,9 @@ module Make (Sol : Solver.Mutable_incremental) :
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
     let brs = Fuel.take_branches brs in
+    (* If there are 0 or 1 branches, we don't do anything,
+       else we add how many *new* branches we take. *)
+    Stats.As_ctx.add_branches (max (List.length brs - 1) 0);
     match brs with
     | [] -> ()
     | [ a ] -> a () f

@@ -9,8 +9,6 @@ let check_nonzero (t : Typed.T.sint Typed.t) :
   if%sat t ==@ Typed.zero then Result.error `NonZeroIsZero
   else Result.ok (Typed.cast t)
 
-(* sint t -> ([> nonzero ] t, [> `NonZeroIsZero ], 'fix) Csymex.Result.t *)
-
 let push_give_up, flush_give_up =
   let give_up_reasons = Dynarray.create () in
   let push_give_up r = Dynarray.add_last give_up_reasons r in
