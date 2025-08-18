@@ -13,7 +13,7 @@ module InterpM (State : State_intf.S) = struct
   type 'a t =
     Store.t ->
     State.t ->
-    ('a * Store.t * State.t, Error.t State.err, State.serialized list) Result.t
+    ('a * Store.t * State.t, Error.t State.err, State.serialized) Result.t
 
   let ok x : 'a t = fun store state -> Result.ok (x, store, state)
   let error err : 'a t = fun _store state -> State.error err state
@@ -45,8 +45,8 @@ module InterpM (State : State_intf.S) = struct
     let+ s = s in
     Ok (s, store, state)
 
-  let lift_symex_res
-      (s : ('a, Error.t State.err, State.serialized list) Result.t) : 'a t =
+  let lift_symex_res (s : ('a, Error.t State.err, State.serialized) Result.t) :
+      'a t =
    fun store state ->
     let++ s = s in
     (s, store, state)
@@ -182,9 +182,7 @@ module Make (State : State_intf.S) = struct
     cast_to_bool x
 
   type 'err fun_exec =
-    args:Agv.t list ->
-    state ->
-    (Agv.t * state, 'err, State.serialized list) Result.t
+    args:Agv.t list -> state -> (Agv.t * state, 'err, State.serialized) Result.t
 
   let get_param_tys name =
     let ptys = Ail_helpers.get_param_tys name in

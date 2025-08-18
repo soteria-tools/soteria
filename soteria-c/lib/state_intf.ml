@@ -38,7 +38,7 @@ module type S = sig
       | `UninitializedMemoryAccess
       | `UseAfterFree ]
       err,
-      serialized list )
+      serialized )
     Csymex.Result.t
 
   val load_aggregate :
@@ -51,7 +51,7 @@ module type S = sig
       | `UninitializedMemoryAccess
       | `UseAfterFree ]
       err,
-      serialized list )
+      serialized )
     Csymex.Result.t
 
   val store :
@@ -61,7 +61,7 @@ module type S = sig
     t ->
     ( unit * t,
       [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
-      serialized list )
+      serialized )
     Csymex.Result.t
 
   val store_aggregate :
@@ -71,26 +71,26 @@ module type S = sig
     t ->
     ( unit * t,
       [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
-      serialized list )
+      serialized )
     Csymex.Result.t
 
   val alloc :
     ?zeroed:bool ->
     sint Typed.t ->
     t ->
-    ([> sptr ] Typed.t * t, [> ] err, serialized list) Csymex.Result.t
+    ([> sptr ] Typed.t * t, [> ] err, serialized) Csymex.Result.t
 
   val alloc_ty :
     Ctree_block.Ctype.ctype ->
     t ->
-    ([> sptr ] Typed.t * t, [> ] err, serialized list) Csymex.Result.t
+    ([> sptr ] Typed.t * t, [> ] err, serialized) Csymex.Result.t
 
   val free :
     [< sptr ] Typed.t ->
     t ->
     ( unit * t,
       [> `InvalidFree | `UseAfterFree ] err,
-      serialized list )
+      serialized )
     Csymex.Result.t
 
   val get_global :
@@ -103,15 +103,14 @@ module type S = sig
     t ->
     ( unit * t,
       [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
-      serialized list )
+      serialized )
     Csymex.Result.t
 
-  val error : 'a -> t -> ('ok, 'a err, serialized list) Csymex.Result.t
+  val error : 'a -> t -> ('ok, 'a err, serialized) Csymex.Result.t
   val produce : serialized -> t -> t Csymex.t
 
   val produce_aggregate :
     sptr Typed.t -> Ctype.ctype -> Aggregate_val.t -> t -> t Csymex.t
 
-  val consume :
-    serialized -> t -> (t, [> ] err, serialized list) Csymex.Result.t
+  val consume : serialized -> t -> (t, [> ] err, serialized) Csymex.Result.t
 end

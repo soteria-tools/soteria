@@ -14,10 +14,7 @@ module M (State : State_intf.S) = struct
   type nonrec rust_val = Sptr.t rust_val
 
   type ret =
-    ( rust_val * State.t,
-      Error.t State.err * State.t,
-      State.serialized list )
-    Result.t
+    (rust_val * State.t, Error.t State.err * State.t, State.serialized) Result.t
 
   (* some utils *)
   let[@inline] as_ptr ?(null_ok = false) (v : rust_val) =

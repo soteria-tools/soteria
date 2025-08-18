@@ -168,7 +168,7 @@ let with_ptr (ptr : Sptr.t) (st : t)
     (f :
       [< T.sint ] Typed.t * sub option ->
       ('a * sub option, 'err, 'fix list) Result.t) :
-    ('a * t, 'err, serialized list) Result.t =
+    ('a * t, 'err, serialized) Result.t =
   if%sat Sptr.sem_eq ptr Sptr.null_ptr then Result.error `NullDereference
   else
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in

@@ -7,14 +7,6 @@ open Csymex
 open Csymex.Result
 module Ctype = Cerb_frontend.Ctype
 
-let miss_no_fix_immediate ?(msg = "") () =
-  let msg = "MISSING WITH NO FIX " ^ msg in
-  L.info (fun m -> m "%s" msg);
-  Csymex.push_give_up (msg, get_loc ());
-  Missing []
-
-let miss_no_fix ?msg () = Csymex.return (miss_no_fix_immediate ?msg ())
-
 module MemVal = struct
   module TB = Soteria_symex.Tree_block
   module Symex = Csymex
@@ -148,16 +140,16 @@ module MemVal = struct
         | Missing f -> miss f
         | Error `UninitializedMemoryAccess -> vanish ())
     (* any *)
-    | SAny, NotOwned _ -> miss_no_fix ~msg:"consume_any" ()
+    | SAny, NotOwned _ -> miss_no_fix ~reason:"consume_any" ()
     | SAny, Owned _ -> ok (not_owned t)
     (* uninit *)
-    | SUninit, NotOwned _ -> miss_no_fix ~msg:"consume_uninit" ()
+    | SUninit, NotOwned _ -> miss_no_fix ~reason:"consume_uninit" ()
     | SUninit, Owned (Uninit Totally) -> ok (not_owned t)
     | SUninit, _ ->
         L.info (fun m -> m "Consuming uninit but no uninit, vanishing");
         vanish ()
     (* zeros *)
-    | SZeros, NotOwned _ -> miss_no_fix ~msg:"consume_zeros" ()
+    | SZeros, NotOwned _ -> miss_no_fix ~reason:"consume_zeros" ()
     | SZeros, Owned Zeros -> ok (not_owned t)
     | SZeros, Owned (Init (v, _)) ->
         let+ () = Csymex.assume [ v ==?@ 0s ] in
@@ -239,7 +231,7 @@ let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
             let* len = Layout.size_of_s ty in
             let fixes = mk_fix_any low len () in
             Result.miss (log_fixes fixes)
-        | NotOwned Partially -> miss_no_fix ~msg:"partially missing store" ()
+        | NotOwned Partially -> miss_no_fix ~reason:"partially missing store" ()
         | _ -> Result.ok ()
       in
       ((), tree)
@@ -263,7 +255,8 @@ let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
         | NotOwned Totally ->
             let fixes = mk_fix_any low len () in
             Result.miss (log_fixes fixes)
-        | NotOwned Partially -> miss_no_fix ~msg:"partially missing deinit" ()
+        | NotOwned Partially ->
+            miss_no_fix ~reason:"partially missing deinit" ()
         | _ -> Result.ok ()
       in
       ((), tree)

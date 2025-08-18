@@ -1,4 +1,4 @@
-type ('ok, 'err, 'fix) t = Ok of 'ok | Error of 'err | Missing of 'fix
+type ('ok, 'err, 'fix) t = Ok of 'ok | Error of 'err | Missing of 'fix list
 
 let pp ~ok ~err ~miss fmt = function
   | Ok x -> Format.fprintf fmt "Ok: %a" ok x
@@ -42,17 +42,13 @@ let map_missing x f =
   match x with
   | Ok x -> Ok x
   | Error e -> Error e
-  | Missing fix -> Missing (f fix)
-
-let bind_missing x f =
-  match x with Ok x -> Ok x | Error e -> Error e | Missing fix -> f fix
+  | Missing fixes -> Missing (List.map f fixes)
 
 module Syntax = struct
   let ( let* ) = bind
   let ( let+ ) = map
   let ( let/ ) = bind_error
   let ( let- ) = map_error
-  let ( let*? ) = bind_missing
   let ( let+? ) = map_missing
 end
 
@@ -74,12 +70,6 @@ module T (M : Monad.Base) = struct
       | Ok x -> f x
       | Error z -> fe z
       | Missing fix -> M.return (Missing fix))
-
-  let bind_missing x f =
-    M.bind x (function
-      | Ok x -> M.return (Ok x)
-      | Error z -> M.return (Error z)
-      | Missing fix -> f fix)
 
   let map x f = M.map x (fun x -> map x f)
   let map_error x f = M.map x (fun x -> map_error x f)
