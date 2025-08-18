@@ -4,19 +4,19 @@ open Syntaxes.FunctionWrap
 module Cmd = struct
   type t = {
     charon : string list; [@default []]
-        (** Arguments passed to Charon (only in [Rustc] and [Cargo] mode) *)
+        (** Arguments passed to Charon (only when not in [Obol] mode) *)
     obol : string list; [@default []]
         (** Arguments passed to Obol (only in [Obol] mode) *)
     features : string list; [@default []]
         (** Features to enable for compilation (as in --cfg) *)
     rustc : string list; [@default []]
-        (** DEPRECATED: rustc flags. For Cargo we use RUSTFLAGS, but when
+        (** DEPRECATED?: rustc flags. For Cargo we use RUSTFLAGS, but when
             possible it would be nicer to use the Cargo-specific command (as
-            with features) *)
+            with features)? *)
   }
   [@@deriving make]
 
-  type mode = Cargo | Rustc | Obol
+  type mode = Cargo | Rustc
 
   let empty_cmd = make ()
 
@@ -31,26 +31,15 @@ module Cmd = struct
   let build_cmd ~mode { charon; obol; features; rustc } =
     let spaced = String.concat " " in
     let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
+    let with_obol = !Config.current.with_obol in
     match mode with
     | Rustc ->
         let features = List.map (( ^ ) "--cfg ") features in
-        "charon rustc "
-        ^ spaced charon
-        ^ " -- "
-        ^ spaced features
-        ^ " "
-        ^ escape (spaced rustc)
-    | Obol ->
-        (* similar to charon rustc *)
-        let features = List.map (( ^ ) "--cfg=") features in
-        (* Obol currently doesn't support lib crates/files *)
-        (* let rustc = List.filter (( <> ) "--crate-type=lib") rustc in *)
-        "DYLD_LIBRARY_PATH=$(charon toolchain-path)/lib/ obol "
-        ^ spaced obol
-        ^ " -- "
-        ^ spaced features
-        ^ " "
-        ^ escape (spaced rustc)
+        let compiler =
+          if not with_obol then "charon rustc " ^ spaced charon
+          else "obol " ^ spaced obol
+        in
+        compiler ^ " -- " ^ spaced features ^ " " ^ escape (spaced rustc)
     | Cargo ->
         (* Cargo already specifies the edition *)
         let rustc =
@@ -65,7 +54,11 @@ module Cmd = struct
             "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
           else ""
         in
-        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet"
+        let compiler =
+          if not with_obol then "charon cargo " ^ spaced charon
+          else "obol --cargo " ^ spaced obol
+        in
+        env ^ compiler ^ " -- --quiet"
 
   let exec_cmd cmd =
     if !Config.current.log_compilation then
@@ -184,7 +177,7 @@ let default =
            "--raw-boxes";
          ]
         @ opaques)
-      ~obol:[ "--entry_names main"; "--entry_attribs rusteriatool::test" ]
+      ~obol:[ "--entry-names main"; "--entry-attribs rusteriatool::test" ]
       ~features:[ "rusteria" ]
       ~rustc:
         [
@@ -219,7 +212,7 @@ let kani =
   let mk_cmd () =
     let@ _ = with_compiled_lib "kani" in
     Cmd.make ~features:[ "kani" ]
-      ~obol:[ "--entry_attribs kanitool::proof" ]
+      ~obol:[ "--entry-attribs kanitool::proof" ]
       ~rustc:[ "-Zcrate-attr=register_tool(kanitool)"; "--extern=kani" ]
       ()
   in
@@ -242,7 +235,7 @@ let miri =
     let@ _ = with_compiled_lib "miri" in
     Cmd.make ~features:[ "miri" ]
       ~rustc:[ "--extern=miristd"; "--edition=2024" ]
-      ~obol:[ "--entry_names miri_start" ]
+      ~obol:[ "--entry-names miri_start" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =

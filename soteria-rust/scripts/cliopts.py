@@ -10,7 +10,7 @@ from parselog import (
 )
 
 
-ToolName = Literal["Charon", "Obol", "Kani", "Miri"]
+ToolName = Literal["Rusteria", "Kani", "Miri"]
 SuiteName = Literal["kani", "miri", "custom"]
 CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
@@ -50,7 +50,7 @@ class FakeCliOpts:
 def parse_flags():
     opts: CliOpts = {
         "cmd": cast(Cmd, None),
-        "tool": "Charon",
+        "tool": "Rusteria",
         "tool_cmd": [],
         "filters": [],
         "exclusions": [],
@@ -97,7 +97,7 @@ def parse_flags():
         prev = args[0]
         return args.pop(0)
 
-    with_obol = False
+    with_miri = False
     with_kani = False
     cmd_flags: list[str] = []
     while len(args) > 0:
@@ -123,34 +123,34 @@ def parse_flags():
                     f"{RED}The folder {folder} does not exist or is not a directory."
                 )
             opts["test_folder"] = folder
-        elif arg == "--obol":
-            with_obol = True
+        elif arg == "--miri":
+            with_miri = True
         elif arg == "--kani":
             with_kani = True
 
         else:
             raise ArgError(f"{RED}Unknown flag: {arg}")
 
-    if with_obol + with_kani > 1:
-        raise ArgError(f"{RED}Can't use both Kani and Obol!")
+    if with_miri + with_kani > 1:
+        raise ArgError(f"{RED}Can't use both Kani and Miri!")
 
     if with_kani:
         opts = opts_for_kani(opts)
 
-    elif with_obol:
-        opts = opts_for_obol(opts)
+    elif with_miri:
+        opts = opts_for_miri(opts)
 
     else:
-        opts = opts_for_charon(opts)
+        opts = opts_for_rusteria(opts)
 
     opts["tool_cmd"] += cmd_flags
     return opts
 
 
-def opts_for_charon(opts: CliOpts) -> CliOpts:
-    return {
+def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
+    opts = {
         **opts,
-        "tool": "Charon",
+        "tool": "Rusteria",
         "tool_cmd": [
             "soteria-rust",
             "rustc",
@@ -161,22 +161,9 @@ def opts_for_charon(opts: CliOpts) -> CliOpts:
         ],
         "categorise": categorise_rusteria,
     }
-
-
-def opts_for_obol(opts: CliOpts) -> CliOpts:
-    return {
-        **opts,
-        "tool": "Obol",
-        "tool_cmd": [
-            "soteria-rust",
-            "obol",
-            "--compact",
-            "--no-color",
-            "--log-compilation",
-            "--solver-timeout=5000",
-        ],
-        "categorise": categorise_rusteria,
-    }
+    if force_obol:
+        opts["tool_cmd"].append("--obol")
+    return opts
 
 
 def opts_for_kani(opts: CliOpts) -> CliOpts:

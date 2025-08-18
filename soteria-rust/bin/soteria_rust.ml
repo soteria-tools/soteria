@@ -61,24 +61,7 @@ module Exec_cargo = struct
       term
 end
 
-module Exec_obol = struct
-  let term =
-    Term.(
-      const Soteria_rust_lib.Driver.exec_obol $ Global_config.term $ file_arg)
-
-  let cmd =
-    Cmd.v
-      (Cmd.info ~exits
-         ~doc:
-           "Run Rusteria on the specified file; this will use Obol to compile \
-            that file only (not the crate), and look for all entrypoints."
-         "obol")
-      term
-end
-
 let cmd =
-  Cmd.group
-    (Cmd.info ~exits "soteria-rust")
-    [ Exec_rustc.cmd; Exec_cargo.cmd; Exec_obol.cmd ]
+  Cmd.group (Cmd.info ~exits "soteria-rust") [ Exec_rustc.cmd; Exec_cargo.cmd ]
 
 let () = exit @@ Cmd.eval cmd

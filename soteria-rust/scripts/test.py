@@ -18,7 +18,8 @@ from cliopts import (
     CliOpts,
     SuiteName,
     opts_for_kani,
-    opts_for_obol,
+    opts_for_miri,
+    opts_for_rusteria,
     parse_flags,
 )
 from config import TEST_SUITES, TestConfig
@@ -414,7 +415,7 @@ def benchmark(opts: CliOpts):
             )
 
     pprint(f"{BOLD}Running benchmark{RESET}", inc=True)
-    run_benchmark("rusteria", opts_for_obol(opts))
+    run_benchmark("rusteria", opts_for_rusteria(opts, force_obol=True))
     run_benchmark("kani", opts_for_kani(opts))
     run_benchmark("miri", opts_for_miri(opts))
 

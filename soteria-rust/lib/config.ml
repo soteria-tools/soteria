@@ -17,6 +17,8 @@ type t = {
       (** Use the Kani library *)
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
       (** Use the Miri library *)
+  with_obol : bool; [@make.default false] [@names [ "obol" ]]
+      (** Compile the code using Obol, rather than Charon *)
   log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
       (** Log the compilation process *)
   step_fuel : int; [@default 1000] [@names [ "step-fuel" ]] [@env "STEP_FUEL"]

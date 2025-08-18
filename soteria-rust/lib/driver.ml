@@ -56,8 +56,7 @@ let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   crate
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ?(with_obol = false) ~(plugin : Plugin.root_plugin)
-    file_name =
+let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
   let file_name =
     if Filename.is_relative file_name then
       Filename.concat (Sys.getcwd ()) file_name
@@ -65,8 +64,7 @@ let parse_ullbc_of_file ?(with_obol = false) ~(plugin : Plugin.root_plugin)
   in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
-  let mode : Plugin.Cmd.mode = if with_obol then Obol else Rustc in
-  parse_ullbc ~mode ~plugin ~input:file_name ~output ~pwd:parent_folder
+  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
@@ -229,10 +227,4 @@ let exec_cargo config crate_dir =
   config_set config;
   let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_crate ~plugin crate_dir in
-  exec_and_output_crate ~plugin compile
-
-let exec_obol config file_name =
-  config_set config;
-  let plugin = Plugin.create_using_current_config () in
-  let compile () = parse_ullbc_of_file ~with_obol:true ~plugin file_name in
   exec_and_output_crate ~plugin compile

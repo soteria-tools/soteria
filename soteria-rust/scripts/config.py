@@ -105,7 +105,7 @@ def kani(opts: CliOpts) -> TestConfig:
         args = ["-Zmiri-ignore-leaks"]
     elif opts["tool"] == "Miri":
         args = ["--test"]
-    elif opts["tool"] == "Obol" or opts["tool"] == "Charon":
+    elif opts["tool"] == "Rusteria":
         args = ["--ignore-leaks", "--kani"]
     else:
         assert_never(opts["tool"])
@@ -151,7 +151,7 @@ def miri(opts: CliOpts) -> TestConfig:
     elif opts["tool"] == "Miri":
         args = []
         dyn_flags = miri_dyn_flags
-    elif opts["tool"] == "Obol" or opts["tool"] == "Charon":
+    elif opts["tool"] == "Rusteria":
         args = ["--miri"]
         dyn_flags = rusteria_dyn_flags
     else:
