@@ -149,7 +149,7 @@ and union_layout_of_members members =
 
 and layout_of_struct tag =
   let open Syntaxes.Option in
-  let* loc, def = Tag_defs.find_opt tag in
+  let* _loc, def = Tag_defs.find_opt tag in
   let* members, flexible_array_member =
     match def with
     | StructDef (m, fam) -> Some (m, fam)
@@ -159,10 +159,7 @@ and layout_of_struct tag =
   in
   let* () =
     (* TODO: flexible array members *)
-    if Option.is_some flexible_array_member then (
-      Csymex.push_give_up ("Unsupported flexible array member", loc);
-      None)
-    else Some ()
+    if Option.is_some flexible_array_member then None else Some ()
   in
   struct_layout_of_members members
 

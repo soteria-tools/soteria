@@ -1041,7 +1041,6 @@ module Make (State : State_intf.S) = struct
       let+ store = get_store () in
       L.debug (fun m -> m "@[<v 2>STORE:@ %a@]" Store.pp store)
     in
-    Stats.incr_executed_statements ();
     let AilSyntax.{ loc; node = stmt; _ } = astmt in
     let@ () = with_loc ~loc in
     match stmt with

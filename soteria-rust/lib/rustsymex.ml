@@ -1,4 +1,6 @@
-module SYMEX = Soteria_symex.Symex.Make (C_solver.Z3_solver)
+module SYMEX =
+  Soteria_symex.Symex.Make (Soteria_symex.Symex.Meta.Dummy) (C_solver.Z3_solver)
+
 include SYMEX
 include Syntaxes.FunctionWrap
 
