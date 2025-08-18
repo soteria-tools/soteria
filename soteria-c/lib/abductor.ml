@@ -39,7 +39,8 @@ let generate_summaries_for (fundef : fundef) =
   in
   let+ (args, ret, bi_state), pc =
     let@ () = with_section "Running symbolic execution" in
-    Csymex.run ~fuel:default_abductor_fuel process
+    let res = Csymex.run ~fuel:default_abductor_fuel process in
+    res.results
   in
   let@ () = with_section "Building summary" in
   L.trace (fun m ->

@@ -2,6 +2,7 @@ open Soteria_logs
 open Syntaxes.FunctionWrap
 module L = Logs.L
 module List = ListLabels
+module Stats = Soteria_stats
 
 let is_sat (result : Solver.result) =
   match result with Sat -> true | Unsat | Unknown -> false
@@ -19,6 +20,9 @@ module type Base = sig
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
   type sbool := Value.sbool
+
+  (** Results of running a complete symbolic execution. *)
+  type 'a run_result = { stats : Stats.t; results : ('a * sbool v list) list }
 
   val assume : sbool v list -> unit t
   val vanish : unit -> 'a t
@@ -56,7 +60,7 @@ module type Base = sig
   (** [run] p actually performs symbolic execution and returns a list of
       obtained branches which capture the outcome together with a path condition
       that is a list of boolean symbolic values *)
-  val run : fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
+  val run : fuel:Fuel_gauge.t -> 'a t -> 'a run_result
 end
 
 module type S = sig
@@ -367,12 +371,21 @@ module Make (Sol : Solver.Mutable_incremental) :
         (with_section @@ fun () -> a () f);
         loop r
 
+  type 'a run_result = {
+    stats : Stats.t;
+    results : ('a * Value.sbool Value.t list) list;
+  }
+
   let run ~fuel iter =
-    Symex_state.reset ();
-    let@ () = Fuel.run ~init:fuel in
-    let l = ref [] in
-    let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
-    List.rev !l
+    let results, stats =
+      let@ () = Soteria_stats.As_ctx.with_stats in
+      Symex_state.reset ();
+      let@ () = Fuel.run ~init:fuel in
+      let l = ref [] in
+      let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
+      List.rev !l
+    in
+    { results; stats }
 
   let vanish () _f = ()
 end)

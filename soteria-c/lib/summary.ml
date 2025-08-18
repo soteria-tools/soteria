@@ -238,6 +238,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           let result =
             Csymex.run ~fuel:Soteria_symex.Fuel_gauge.infinite process
           in
+          let result = result.results in
           L.trace (fun m ->
               m "Results: %a" (Fmt.Dump.list (Fmt.pair Fmt.bool Fmt.nop)) result);
           (* The bug is manifest if the assert passed in every branch. *)

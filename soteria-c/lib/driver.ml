@@ -237,7 +237,7 @@ let exec_function ~includes file_names function_name =
           Soteria_symex.Fuel_gauge.infinite
         else default_wpst_fuel
       in
-      Ok (Csymex.run ~fuel symex)
+      Ok (Csymex.run ~fuel symex).results
   in
   match result with Ok v -> v | Error e -> [ (Error e, []) ]
 
