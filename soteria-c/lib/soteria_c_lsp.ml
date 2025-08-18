@@ -11,10 +11,16 @@ let cerb_loc_to_range loc =
       end_ = { character = end_c; line = end_l };
     }
 
-(* This gathers all the reasons why the analysis gave up. *)
-let get_abort_diagnostics () =
+let get_abort_diagnostics (stats : Csymex.Stats.t) =
   let open Syntaxes.List in
-  let+ msg, loc = Csymex.flush_give_up () in
+  let list_reasons =
+    stats.give_up_reasons
+    |> Hashtbl.Hstring.to_seq
+    |> Seq.concat_map (fun (reason, locs) ->
+           Seq.map (fun loc -> (reason, loc)) (Dynarray.to_seq locs))
+    |> List.of_seq
+  in
+  let+ msg, loc = list_reasons in
   let range = cerb_loc_to_range loc in
   Lsp.Types.Diagnostic.create ~message:(`String msg) ~severity:Information
     ~range ~source:"soteria" ()
@@ -69,10 +75,10 @@ class soteria_lsp_server generate_errors =
     *)
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
         (uri : Lsp.Types.DocumentUri.t) (contents : string) =
-      let errors = generate_errors contents in
+      let errors, stats = generate_errors contents in
       let diags = List.map (error_to_diagnostic_opt ~uri) errors in
       let diags =
-        if debug_mode then get_abort_diagnostics () @ diags else diags
+        if debug_mode then get_abort_diagnostics stats @ diags else diags
       in
       notify_back#send_diagnostic diags
 
