@@ -39,6 +39,9 @@ module type S = sig
   (** Returns true if the stats record contains any give up reasons *)
   val did_give_up : t -> bool
 
+  (** Adds the given execution time to the stats record. *)
+  val add_exec_time : float -> t -> unit
+
   (** Dumps the stats record to a file in JSON format *)
   val dump : t -> string -> unit
 
@@ -48,8 +51,15 @@ module type S = sig
         happen only inside a function wrapped with {!with_stats}, ensuring that
         the statistics are properly passed around. *)
 
-    (** *)
-    val with_stats : ?stats:t -> (unit -> 'a) -> 'a * t
+    val with_stats : unit -> (unit -> 'a) -> 'a * t
+
+    (** Adds the given execution time to the stats record. Should be handled by
+        Soteria itself. *)
+    val add_exec_time : float -> unit
+
+    (** Measures time taken by the given function and adds it to the statistics
+        in the environment. *)
+    val add_time_of : (unit -> 'a) -> 'a
 
     (** Adds branches to the count of statistics. Should be handled by Soteria
         itself *)
@@ -131,6 +141,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
     Dynarray.add_last t.missing_without_fixes reason
 
   let did_give_up t = Hstring.length t.give_up_reasons > 0
+  let add_exec_time time t = t.exec_time <- t.exec_time +. time
 
   let dump t file =
     let oc = open_out file in
@@ -150,11 +161,21 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
     let push_give_up_reason ~loc reason = wrap (push_give_up_reason ~loc reason)
     let push_missing_without_fix reason = wrap (push_missing_without_fix reason)
 
-    let with_stats ?(stats = create ()) f =
-      let time = Unix.gettimeofday () in
+    let with_stats () f =
+      let stats = create () in
       let res = try f () with effect Get, k -> Effect.Deep.continue k stats in
-      stats.exec_time <- stats.exec_time +. (Unix.gettimeofday () -. time);
       (res, stats)
+
+    let add_exec_time time = wrap (add_exec_time time)
+
+    let add_time_of f =
+      let start = Unix.gettimeofday () in
+      let res = f () in
+      add_exec_time (Unix.gettimeofday () -. start);
+      res
+
+    (** Adds branches to the count of statistics. Should be handled by Soteria
+        itself *)
 
     let add_branches n =
       wrap (fun stats -> stats.branch_number <- stats.branch_number + n)

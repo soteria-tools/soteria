@@ -79,16 +79,22 @@ module type Base = sig
 
   val consume_fuel_steps : int -> unit t
 
-  (** [run ~fuel ?stats p] actually performs symbolic execution of the symbolic
+  (** [run ~fuel  p] actually performs symbolic execution of the symbolic
       process [p] and returns:
       - a list of obtained branches which capture the outcome together with a
         path condition that is a list of boolean symbolic values.
       - statistics correponding to the execution.
 
       [fuel] corresponds to the {{!Fuel_gauge.t}fuel gauge} used for execution.
-      [stats] corresponds to the initial statistics aggregator; if none is
-      given, a fresh statistics record is created. *)
-  val run : fuel:Fuel_gauge.t -> ?stats:Stats.t -> 'a t -> 'a run_result
+  *)
+  val run : fuel:Fuel_gauge.t -> 'a t -> 'a run_result
+
+  (** Same as {!run} but has to be run within {!Stats.with_stats} or will throw
+      an exception.
+
+      Only returns the list of results since the stats will be aggregated by
+      {{!Stats.with_stats}with_stats}. *)
+  val run_needs_stats : fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
 end
 
 module type S = sig
@@ -439,14 +445,19 @@ Extend (struct
     results : ('a * Value.sbool Value.t list) list;
   }
 
-  let run ~fuel ?stats iter =
+  let run_needs_stats ~fuel iter =
+    let@ () = Stats.As_ctx.add_time_of in
+    Symex_state.reset ();
+    let@ () = Fuel.run ~init:fuel in
+    let l = ref [] in
+    let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
+
+    List.rev !l
+
+  let run ~fuel iter =
     let results, stats =
-      let@ () = Stats.As_ctx.with_stats ?stats in
-      Symex_state.reset ();
-      let@ () = Fuel.run ~init:fuel in
-      let l = ref [] in
-      let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
-      List.rev !l
+      let@ () = Stats.As_ctx.with_stats () in
+      run_needs_stats ~fuel iter
     in
     { results; stats }
 
