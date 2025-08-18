@@ -11,13 +11,7 @@ let equal = Int.equal
 let compare = Int.compare
 
 module Set = Set.Make (Int)
-
-module Hashset = Hashset.Make (struct
-  include Int
-
-  let pp = pp
-end)
-
+module Hashset = Hashset.Hint
 module Map = Map.Make (Int)
 module Hashtbl = Hashtbl.Make (Int)
 

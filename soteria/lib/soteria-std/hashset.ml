@@ -83,3 +83,15 @@ module Make (Elt : PrintableHashedType) : S with type elt = Elt.t = struct
   let equal lset rset = cardinal lset = cardinal rset && subseteq lset rset
   let pp = Fmt.braces @@ Fmt.iter ~sep:Fmt.comma iter Elt.pp
 end
+
+module Hstring = Make (struct
+  include String
+
+  let pp = Fmt.string
+end)
+
+module Hint = Make (struct
+  include Int
+
+  let pp = Fmt.int
+end)
