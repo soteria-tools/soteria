@@ -85,16 +85,16 @@ module type Base = sig
         path condition that is a list of boolean symbolic values.
       - statistics correponding to the execution.
 
-      [fuel] corresponds to the {{!Fuel_gauge.t}fuel gauge} used for execution.
-  *)
-  val run : fuel:Fuel_gauge.t -> 'a t -> 'a run_result
+      Users may optionally pass a {{!Fuel_gauge.t}fuel gauge} to limit execution
+      depth and breadth. *)
+  val run : ?fuel:Fuel_gauge.t -> 'a t -> 'a run_result
 
   (** Same as {!run} but has to be run within {!Stats.with_stats} or will throw
       an exception.
 
       Only returns the list of results since the stats will be aggregated by
       {{!Stats.with_stats}with_stats}. *)
-  val run_needs_stats : fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
+  val run_needs_stats : ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
 end
 
 module type S = sig
@@ -445,7 +445,7 @@ Extend (struct
     results : ('a * Value.sbool Value.t list) list;
   }
 
-  let run_needs_stats ~fuel iter =
+  let run_needs_stats ?(fuel = Fuel_gauge.infinite) iter =
     let@ () = Stats.As_ctx.add_time_of in
     Symex_state.reset ();
     let@ () = Fuel.run ~init:fuel in
@@ -454,10 +454,10 @@ Extend (struct
 
     List.rev !l
 
-  let run ~fuel iter =
+  let run ?fuel iter =
     let results, stats =
       let@ () = Stats.As_ctx.with_stats () in
-      run_needs_stats ~fuel iter
+      run_needs_stats ?fuel iter
     in
     { results; stats }
 
