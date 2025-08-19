@@ -13,7 +13,7 @@ Today you'll be learning how to:
 
 The main utility of the Soteria library is the {{!Soteria_symex.Symex.Make} Symex.Make} functor, which provides the necessary infrastructure to define and run a symbolic execution engine.
 To instantiate it, you need to provide a {{!Soteria_symex.Solver.Mutable_incremental} Solver} module, which defines {e symbolic values} and the solver interface to decide whether a symbolic expression of type {{!Soteria_symex.Value.S.sbool}Value.sbool} is satisfiable.
-You also need to provide a {{!Soteria_symex.Symex.Meta.S}Meta} module which describes types useful to bookkeeping, but can be set to {{!Soteria_symex.Symex.Meta.Dummy}Dummy} if they are not necessary.
+You also need to provide a {{!Soteria_symex.Symex.Meta.S}Meta} module which describes types useful for statistics bookkeeping (see {!Soteria_stats}), but can be set to {{!Soteria_symex.Symex.Meta.Dummy}Dummy} if they are not necessary.
 
 {@ocaml[
 module Symex = Symex.Make (Symex.Meta.Dummy) (C_solver.Z3_solver)
@@ -35,7 +35,9 @@ This process has type [int Symex.t], that is, a symbolic process that returns a 
 Executing a symbolic process is done using the {{!Soteria_symex.Symex.S.run}run} function:
 {@ocaml[
 # Symex.run
-- : ?fuel:Fuel_gauge.t -> 'a Symex.t -> 'a Symex.run_result = <fun>
+- : ?fuel:Fuel_gauge.t ->
+    'a Symex.t -> ('a * Symex.Value.sbool Typed.t list) list
+= <fun>
 ]}
 
 The function receives a symbolic process to execute, and an optional {{!Soteria_symex.Fuel_gauge.t}fuel gauge} should the user desire to limit the breadth or depth of execution. It returns a list of branches, where each branch is a pair of the value returned by the symbolic process and the path condition that leads to this branch (in the form of a list of symbolic booleans).
@@ -44,7 +46,7 @@ For instance, let's execute the symbolic process we just created, providing an i
 
 {@ocaml[
 # Symex.return 0 |> Symex.run;;
-- : int Symex.run_result = {Symex.stats = ...; results = [(0, [])]}
+- : (int * Symex.Value.sbool Typed.t list) list = [(0, [])]]}
 ]}
 
 As expected the result of the symbolic process is a single branch with the value [0] and an empty path condition [[]], which means that there is no condition for taking this branch, i.e., it is always taken.
@@ -64,8 +66,8 @@ Let's run this process:
 
 {@ocaml[
 # Symex.nondet Typed.t_int |> Symex.run ~fuel:Fuel_gauge.infinite;;
-- : [> Typed.T.sint ] Typed.t Symex.run_result =
-{Symex.stats = ...; results = [(V|1|, [])]}
+- : ([> Typed.T.sint ] Typed.t * Symex.Value.sbool Typed.t list) list =
+[(V|1|, [])]
 ]}
 
 We obtain a single branch with the fresh symbolic integer denoted [V|1|], which is a pretty-printing for the symbolic variable named "1". Again, the path condition is empty, meaning that this branch is always taken.
@@ -105,8 +107,9 @@ Running this symbolic process yields a single branch with no path condition:
 
 {@ocaml[
 # Symex.run ~fuel:Fuel_gauge.infinite process;;
-- : ([> Typed.T.sint ] as '_weak1) Typed.t Symex.run_result =
-{Symex.stats = ...; results = [((V|1| + 2), [])]}
+- : (([> Typed.T.sint ] as '_weak1) Typed.t * Symex.Value.sbool Typed.t list)
+    list
+= [((V|1| + 2), [])]
 ]}
 
 We can now build more complex symbolic processes, and make use of other basic operations such as {{!Soteria_symex.Symex.S.assume}assume} and {{!Soteria_symex.Symex.S.assert_}assert_}.
@@ -120,7 +123,7 @@ For instance, we can create a symbolic process that introduces a nondeterministi
 val process : bool Symex.t = <abstr>
 
 # Symex.run ~fuel:Fuel_gauge.infinite process;;
-- : bool Symex.run_result = {Symex.stats = ...; results = [(false, [])]}
+- : (bool * Symex.Value.sbool Typed.t list) list = [(false, [])]
 ]}
 
 This process returns a single branch with the value [false], as it is not *always* guaranteed that the symbolic integer [x] is positive. Now, if we add an assumption that, say, [x] is greater than 10, we get a different result:
@@ -133,8 +136,7 @@ This process returns a single branch with the value [false], as it is not *alway
 val process : bool Symex.t = <abstr>
 
 # Symex.run ~fuel:Fuel_gauge.infinite process;;
-- : bool Symex.run_result =
-{Symex.stats = ...; results = [(true, [(11 <= V|1|)])]}
+- : (bool * Symex.Value.sbool Typed.t list) list = [(true, [(11 <= V|1|)])]
 ]} 
 
 This time, the assertion is satisfied, and the symbolic process returns a single branch with value [true], and a path condition that corresponds to the assumption we made, i.e. that [V|1|] (the symbolic integer) is greater than or equal to 11 (which is equivalent to the assumption we wrote).
@@ -153,11 +155,9 @@ A more interesting symbolic process is one that introduces conditional branching
 val process : string Symex.t = <abstr>
 
 # Symex.run ~fuel:Fuel_gauge.infinite process;;
-- : string Symex.run_result =
-{Symex.stats = ...;
- results =
-  [("V|1| is even", [(0 == (V|1| mod 2))]);
-   ("V|1| is odd", [(0 != (V|1| mod 2))])]}
+- : (string * Symex.Value.sbool Typed.t list) list =
+[("V|1| is even", [(0 == (V|1| mod 2))]);
+ ("V|1| is odd", [(0 != (V|1| mod 2))])]
 ]}
 
 
