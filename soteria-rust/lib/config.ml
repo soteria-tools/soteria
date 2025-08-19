@@ -31,6 +31,10 @@ type t = {
   rustc_flags : string list;
       [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
+  filter : string list; [@default []] [@names [ "filter" ]]
+      (** Filter the entrypoints to run, by name. If empty, all entrypoints are
+          run. Multiple filters can be provided; tests matching any will be
+          selected. The filters are treated as regexes. *)
 }
 [@@deriving make, subliner]
 

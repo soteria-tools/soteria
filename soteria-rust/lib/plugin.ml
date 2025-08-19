@@ -290,7 +290,23 @@ let merge_ifs (plugins : (bool * Soteria_symex.Fuel_gauge.t option plugin) list)
       | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest
       | None, [] -> None
     in
-    aux None plugins
+    let filters = !Config.current.filter in
+    let filter_ok =
+      match filters with
+      | [] -> true
+      | _ ->
+          let name =
+            match List.last_opt decl.item_meta.name with
+            | Some (PeIdent (name, _)) -> name
+            | _ -> ""
+          in
+          List.exists
+            (fun f ->
+              try Str.search_forward (Str.regexp f) name 0 >= 0
+              with Not_found -> false)
+            filters
+    in
+    if not filter_ok then None else aux None plugins
   in
   { mk_cmd; get_entry_point }
 
