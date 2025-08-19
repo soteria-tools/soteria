@@ -14,6 +14,21 @@ type 'range stats = {
 }
 [@@deriving yojson]
 
+type ('a, 'range) with_stats = { res : 'a; stats : 'range stats }
+
+let map_with_stats f { res; stats } = { res = f res; stats }
+
+let create () =
+  {
+    exec_time = 0.0;
+    give_up_reasons = Hstring.create 0;
+    missing_without_fixes = Dynarray.create ();
+    branch_number = 1;
+    steps_number = 0;
+  }
+
+let with_empty_stats res = { res; stats = create () }
+
 module type CodeRange = sig
   type t [@@deriving yojson]
 end
@@ -22,6 +37,7 @@ module type S = sig
   module Range : CodeRange
 
   type t = Range.t stats [@@deriving yojson]
+  type nonrec 'a with_stats = ('a, Range.t) with_stats
 
   (** Merges two stats records. Does not modify either. *)
   val merge : t -> t -> t
@@ -51,7 +67,17 @@ module type S = sig
         happen only inside a function wrapped with {!with_stats}, ensuring that
         the statistics are properly passed around. *)
 
-    val with_stats : unit -> (unit -> 'a) -> 'a * t
+    (** [with_stats () f] runs function [f] and handles effects raised by the
+        functions of this module such as {!add_exec_time}, and returns a record
+        containing the result of executing [f] together with the obtained
+        statistics. *)
+    val with_stats : unit -> (unit -> 'a) -> 'a with_stats
+
+    (** [with_stats_ignored () f] runs function [f] and handles effects raised
+        by the functions of this module, but ignores their effect. This is to be
+        used when the user does not wish to pay the (minor) performance cost of
+        stats bookkeeping. *)
+    val with_stats_ignored : unit -> (unit -> 'a) -> 'a
 
     (** Adds the given execution time to the stats record. Should be handled by
         Soteria itself. *)
@@ -85,6 +111,9 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
   module Range = Range
 
   type t = Range.t stats [@@deriving yojson]
+  type nonrec 'a with_stats = ('a, Range.t) with_stats
+
+  let create () = create ()
 
   let merge t1 t2 =
     let merge_hstrings h1 h2 =
@@ -120,15 +149,6 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
       steps_number = t1.steps_number + t2.steps_number;
     }
 
-  let create () =
-    {
-      exec_time = 0.0;
-      give_up_reasons = Hstring.create 0;
-      missing_without_fixes = Dynarray.create ();
-      branch_number = 1;
-      steps_number = 0;
-    }
-
   let push_give_up_reason ~loc reason t =
     match Hstring.find_opt t.give_up_reasons reason with
     | Some arr -> Dynarray.add_last arr loc
@@ -150,23 +170,30 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
     close_out oc
 
   module As_ctx = struct
-    type _ Effect.t += Get : t Effect.t
-
-    let get () = Effect.perform Get
-
-    let wrap f =
-      let stats = get () in
-      f stats
-
-    let push_give_up_reason ~loc reason = wrap (push_give_up_reason ~loc reason)
-    let push_missing_without_fix reason = wrap (push_missing_without_fix reason)
+    type _ Effect.t += Apply : (t -> unit) -> unit Effect.t
 
     let with_stats () f =
       let stats = create () in
-      let res = try f () with effect Get, k -> Effect.Deep.continue k stats in
-      (res, stats)
+      let res =
+        try f ()
+        with effect Apply f, k ->
+          f stats;
+          Effect.Deep.continue k ()
+      in
+      { res; stats }
 
-    let add_exec_time time = wrap (add_exec_time time)
+    let with_stats_ignored () f =
+      try f () with effect Apply _, k -> Effect.Deep.continue k ()
+
+    let[@inline] apply f = Effect.perform (Apply f)
+
+    let push_give_up_reason ~loc reason =
+      apply (push_give_up_reason ~loc reason)
+
+    let push_missing_without_fix reason =
+      apply (push_missing_without_fix reason)
+
+    let add_exec_time time = apply (add_exec_time time)
 
     let add_time_of f =
       let start = Unix.gettimeofday () in
@@ -174,13 +201,10 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
       add_exec_time (Unix.gettimeofday () -. start);
       res
 
-    (** Adds branches to the count of statistics. Should be handled by Soteria
-        itself *)
-
     let add_branches n =
-      wrap (fun stats -> stats.branch_number <- stats.branch_number + n)
+      apply (fun stats -> stats.branch_number <- stats.branch_number + n)
 
     let add_steps n =
-      wrap (fun stats -> stats.steps_number <- stats.steps_number + n)
+      apply (fun stats -> stats.steps_number <- stats.steps_number + n)
   end
 end

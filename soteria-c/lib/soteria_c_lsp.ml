@@ -75,7 +75,7 @@ class soteria_lsp_server generate_errors =
     *)
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
         (uri : Lsp.Types.DocumentUri.t) (contents : string) =
-      let errors, stats = generate_errors contents in
+      let { Soteria_stats.res = errors; stats } = generate_errors contents in
       let diags = List.map (error_to_diagnostic_opt ~uri) errors in
       let diags =
         if debug_mode then get_abort_diagnostics stats @ diags else diags

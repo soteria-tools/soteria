@@ -43,9 +43,6 @@ module type Base = sig
   type 'a vt := 'a Value.ty
   type sbool := Value.sbool
 
-  (** Results of running a complete symbolic execution. *)
-  type 'a run_result = { stats : Stats.t; results : ('a * sbool v list) list }
-
   val assume : sbool v list -> unit t
   val vanish : unit -> 'a t
   val assert_ : sbool v -> bool t
@@ -80,20 +77,23 @@ module type Base = sig
   val consume_fuel_steps : int -> unit t
 
   (** [run ~fuel  p] actually performs symbolic execution of the symbolic
-      process [p] and returns:
-      - a list of obtained branches which capture the outcome together with a
-        path condition that is a list of boolean symbolic values.
+      process [p] and returns a list of obtained branches which capture the
+      outcome together with a path condition that is a list of boolean symbolic
+      values.
       - statistics correponding to the execution.
 
       Users may optionally pass a {{!Fuel_gauge.t}fuel gauge} to limit execution
       depth and breadth. *)
-  val run : ?fuel:Fuel_gauge.t -> 'a t -> 'a run_result
+  val run : ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
+
+  (** Same as {!run}, but returns additional information about execution, see
+      {!Soteria_stats}. *)
+  val run_with_stats :
+    ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list Stats.with_stats
 
   (** Same as {!run} but has to be run within {!Stats.with_stats} or will throw
-      an exception.
-
-      Only returns the list of results since the stats will be aggregated by
-      {{!Stats.with_stats}with_stats}. *)
+      an exception. This function is exposed should users wish to run several
+      symbolic execution processes using a single [stats] record. *)
   val run_needs_stats : ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
 end
 
@@ -440,26 +440,21 @@ Extend (struct
         (with_section @@ fun () -> a () f);
         loop r
 
-  type 'a run_result = {
-    stats : Stats.t;
-    results : ('a * Value.sbool Value.t list) list;
-  }
-
   let run_needs_stats ?(fuel = Fuel_gauge.infinite) iter =
     let@ () = Stats.As_ctx.add_time_of in
     Symex_state.reset ();
     let@ () = Fuel.run ~init:fuel in
     let l = ref [] in
     let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
-
     List.rev !l
 
   let run ?fuel iter =
-    let results, stats =
-      let@ () = Stats.As_ctx.with_stats () in
-      run_needs_stats ?fuel iter
-    in
-    { results; stats }
+    let@ () = Stats.As_ctx.with_stats_ignored () in
+    run_needs_stats ?fuel iter
+
+  let run_with_stats ?fuel iter =
+    let@ () = Stats.As_ctx.with_stats () in
+    run_needs_stats ?fuel iter
 
   let vanish () _f = ()
 end)
