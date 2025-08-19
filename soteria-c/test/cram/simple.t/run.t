@@ -76,7 +76,7 @@ Checking that fuel gets exhausted properly
     [Error: Failed assertion with trace
             [• Called from here: while_true.c:6:5-26;
              • Triggering operation: while_true.c:6:5-26]]
-  Executed 153 statements
+  Executed 152 statements
 Checking that code cannot branch infinitely
   $ soteria-c exec max_branching.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   Symex terminated with the following outcomes:
