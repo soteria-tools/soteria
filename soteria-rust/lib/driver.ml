@@ -13,6 +13,25 @@ exception FrontendError of string
 let execution_err msg = raise (ExecutionError msg)
 let frontend_err msg = raise (FrontendError msg)
 
+module Outcome = struct
+  type t = Ok | Error | Fatal
+
+  let merge o1 o2 =
+    match (o1, o2) with
+    | Fatal, _ | _, Fatal -> Fatal
+    | Error, _ | _, Error -> Error
+    | Ok, Ok -> Ok
+
+  let merge_list = List.fold_left (fun o1 (_, o2) -> merge o1 o2) Ok
+  let as_status_code = function Ok -> 0 | Error -> 1 | Fatal -> 2
+  let exit o = exit (as_status_code o)
+
+  let pp ft = function
+    | Ok -> Color.pp_clr `Green ft "ok"
+    | Error -> Color.pp_clr `Red ft "error"
+    | Fatal -> Color.pp_clr `Maroon ft "unknown"
+end
+
 let default_fuel =
   Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
@@ -102,7 +121,7 @@ let print_outcomes entry_name f =
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
       Fmt.pr "@\n@\n@?";
-      true
+      (entry_name, Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
@@ -116,14 +135,21 @@ let print_outcomes entry_name f =
         Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error
       in
       Fmt.pr "@\n@\n@?";
-      false
+      (entry_name, Outcome.Error)
   | exception ExecutionError e ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
         "%s: runtime error in %a: %s" entry_name pp_time time e;
       Fmt.pr "@\n@\n@?";
-      false
+      (entry_name, Outcome.Fatal)
+
+let print_outcomes_summary outcomes =
+  let open Fmt in
+  let pp_outcome ft (name, res) = Fmt.pf ft "• %s: %a" name Outcome.pp res in
+  pr "%a:@\n%a@\n" (pp_style `Bold) "Summary"
+    (list ~sep:(any "@\n") pp_outcome)
+    outcomes
 
 let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   (* get entry points to the crte *)
@@ -134,63 +160,58 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   if List.is_empty entry_points then execution_err "No entry points found";
 
   (* prepare executing the entry points *)
-  let fold_and f l = List.fold_left (fun acc x -> f x && acc) true l in
+  let map_with l f = List.map f l in
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
   let@ () = Crate.with_crate crate in
-  entry_points
-  |> fold_and @@ fun (entry : Plugin.entry_point) ->
-     (* execute! *)
-     let entry_name =
-       Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
-     in
-     let@ () = print_outcomes entry_name in
-     let branches =
-       let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
-       let fuel = Option.value ~default:default_fuel entry.fuel in
-       try Rustsymex.run ~fuel @@ exec_fun entry.fun_decl with
-       | Layout.InvalidLayout ty ->
-           [
-             (Error (`InvalidLayout ty, Soteria_terminal.Call_trace.empty), []);
-           ]
-       | exn ->
-           Fmt.kstr execution_err "Exn: %a@\nTrace: %s" Fmt.exn exn
-             (Printexc.get_backtrace ())
-     in
+  let@ entry : Plugin.entry_point = map_with entry_points in
+  (* execute! *)
+  let entry_name =
+    Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
+  in
+  let@ () = print_outcomes entry_name in
+  let branches =
+    let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
+    let fuel = Option.value ~default:default_fuel entry.fuel in
+    try Rustsymex.run ~fuel @@ exec_fun entry.fun_decl with
+    | Layout.InvalidLayout ty ->
+        [ (Error (`InvalidLayout ty, Soteria_terminal.Call_trace.empty), []) ]
+    | exn ->
+        Fmt.kstr execution_err "Exn: %a@\nTrace: %s" Fmt.exn exn
+          (Printexc.get_backtrace ())
+  in
 
-     (* inverse ok and errors if we expect a failure *)
-     let nbranches = List.length branches in
-     let branches =
-       if not entry.expect_error then branches
-       else
-         let open Compo_res in
-         let trace =
-           Call_trace.singleton ~loc:entry.fun_decl.item_meta.span ()
-         in
-         let oks, errors =
-           branches
-           |> List.partition_map @@ function
-              | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
-              | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
-              | v -> Left v
-         in
-         if List.is_empty errors then oks else errors
-     in
+  (* inverse ok and errors if we expect a failure *)
+  let nbranches = List.length branches in
+  let branches =
+    if not entry.expect_error then branches
+    else
+      let open Compo_res in
+      let trace = Call_trace.singleton ~loc:entry.fun_decl.item_meta.span () in
+      let oks, errors =
+        branches
+        |> List.partition_map @@ function
+           | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
+           | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
+           | v -> Left v
+      in
+      if List.is_empty errors then oks else errors
+  in
 
-     (* check for uncaught failure conditions *)
-     let outcomes = List.map fst branches in
-     (if Option.is_some !Rustsymex.not_impl_happened then
-        let msg = Option.get !Rustsymex.not_impl_happened in
-        let () = Rustsymex.not_impl_happened := None in
-        execution_err msg);
-     if List.is_empty branches then execution_err "Execution vanished";
-     if List.exists Compo_res.is_missing outcomes then
-       execution_err "Miss encountered in WPST";
+  (* check for uncaught failure conditions *)
+  let outcomes = List.map fst branches in
+  (if Option.is_some !Rustsymex.not_impl_happened then
+     let msg = Option.get !Rustsymex.not_impl_happened in
+     let () = Rustsymex.not_impl_happened := None in
+     execution_err msg);
+  if List.is_empty branches then execution_err "Execution vanished";
+  if List.exists Compo_res.is_missing outcomes then
+    execution_err "Miss encountered in WPST";
 
-     let errors = Compo_res.only_errors outcomes in
-     if List.is_empty errors then
-       let pcs = List.map snd branches in
-       Ok (pcs, nbranches)
-     else Error (errors, nbranches)
+  let errors = Compo_res.only_errors outcomes in
+  if List.is_empty errors then
+    let pcs = List.map snd branches in
+    Ok (pcs, nbranches)
+  else Error (errors, nbranches)
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;
@@ -212,7 +233,10 @@ let fatal ?name ?(code = 2) err =
 
 let exec_and_output_crate ~plugin compile_fn =
   match wrap_step "Compiling" compile_fn |> exec_crate ~plugin with
-  | ok -> exit (if ok then 0 else 1)
+  | outcomes ->
+      let () = print_outcomes_summary outcomes in
+      let outcome = Outcome.merge_list outcomes in
+      Outcome.exit outcome
   | exception Plugin.PluginError e -> fatal ~name:"Plugin" e
   | exception ExecutionError e -> fatal e
   | exception FrontendError e -> fatal ~name:"Frontend" ~code:3 e
