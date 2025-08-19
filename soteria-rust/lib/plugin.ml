@@ -59,7 +59,7 @@ module Cmd = struct
           if not with_obol then "charon cargo " ^ spaced charon
           else "obol --cargo " ^ spaced obol
         in
-        env ^ compiler ^ " -- --quiet"
+        env ^ compiler
 
   let exec_cmd cmd =
     if !Config.current.log_compilation then
