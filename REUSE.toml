@@ -32,6 +32,7 @@ path = [
   "yarn.lock",
   "NOTICE",              # Other files
   "THIRD_PARTY_NOTICES",
+  "CONTRIBUTING.md",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = "2025 Soteria Team"

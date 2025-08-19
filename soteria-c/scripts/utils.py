@@ -1,3 +1,5 @@
+from dataclasses import dataclass, asdict
+
 """Utility functions for Soteria-C scripts."""
 
 import sys
@@ -58,14 +60,51 @@ class GlobalPrinter(PrintersMixin):
 global_printer = GlobalPrinter()
 
 
-def merge_dicts(into: dict[str, int], from_: dict[str, int]) -> dict[str, int]:
-    """Merge two TypedDicts."""
-    for key, value in from_.items():
-        if key in into:
-            into[key] += value
-        else:
-            into[key] = value
-    return into
+@dataclass
+class Stats:
+    branch_number: int
+    steps_number: int
+    exec_time: float
+    give_up_reasons: dict[str, int]
+    missing_without_fixes: list[str]
+
+    def as_dict(self):
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        if "give_up_reasons" in data:
+            # map each field to its length
+            data["give_up_reasons"] = {
+                k: len(v) if isinstance(v, list) else v
+                for k, v in data["give_up_reasons"].items()
+            }
+        return cls(**data)
+
+    @classmethod
+    def empty(cls):
+        return cls(
+            branch_number=0,
+            steps_number=0,
+            exec_time=0.0,
+            give_up_reasons={},
+            missing_without_fixes=[],
+        )
+
+
+def merge_stats(a: Stats, b: Stats) -> Stats:
+    return Stats(
+        branch_number=a.branch_number + b.branch_number,
+        steps_number=a.steps_number + b.steps_number,
+        exec_time=a.exec_time + b.exec_time,
+        give_up_reasons={
+            k: a.give_up_reasons.get(k, 0) + b.give_up_reasons.get(k, 0)
+            for k in set(a.give_up_reasons) | set(b.give_up_reasons)
+        },
+        missing_without_fixes=list(
+            set(a.missing_without_fixes + b.missing_without_fixes)
+        ),
+    )
 
 
 def ask_and_remove(path: Path):

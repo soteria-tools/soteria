@@ -16,7 +16,7 @@ module InterpM (State : State_intf.S) = struct
     State.t ->
     ( 'a * store * State.t,
       Error.t State.err * State.t,
-      State.serialized list )
+      State.serialized )
     Result.t
 
   let ok x : 'a t = fun store state -> Result.ok (x, store, state)
@@ -178,7 +178,7 @@ module Make (State : State_intf.S) = struct
   type 'err fun_exec =
     args:Sptr.t rust_val list ->
     state ->
-    (Sptr.t rust_val * state, 'err, State.serialized list) Result.t
+    (Sptr.t rust_val * state, 'err, State.serialized) Result.t
 
   let get_variable var_id =
     let* store = get_store () in

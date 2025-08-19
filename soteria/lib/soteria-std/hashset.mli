@@ -42,3 +42,5 @@ module type PrintableHashedType = sig
 end
 
 module Make (Elt : PrintableHashedType) : S with type elt = Elt.t
+module Hstring : S with type elt = string
+module Hint : S with type elt = int

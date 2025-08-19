@@ -13,10 +13,7 @@ module Make (Symex : Symex.S) = struct
   type 'a serialized = 'a t
 
   let lift_fix fix = Alive fix
-
-  let lift_fix_s r =
-    let+? fixes = r in
-    List.map lift_fix fixes
+  let lift_fix_s r = Symex.Result.map_missing r lift_fix
 
   let serialize serialize_inner = function
     | Freed -> Freed
@@ -43,9 +40,9 @@ module Make (Symex : Symex.S) = struct
     ((), Some Freed)
 
   (* [f] must be a "symex state monad" *)
-  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix list) Symex.Result.t)
+  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
       (st : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized list) Symex.Result.t =
+      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
     match st with
     | None ->
         let++ res, st' = f None |> lift_fix_s in
@@ -60,9 +57,9 @@ module Make (Symex : Symex.S) = struct
       (cons :
         'inner_ser ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_ser list) Symex.Result.t)
+        ('inner_st option, 'err, 'inner_ser) Symex.Result.t)
       (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
-      ('inner_st t option, 'err, 'inner_ser serialized list) Symex.Result.t =
+      ('inner_st t option, 'err, 'inner_ser serialized) Symex.Result.t =
     match serialized with
     | Freed -> (
         match st with

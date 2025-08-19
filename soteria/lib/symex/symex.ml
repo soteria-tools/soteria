@@ -9,8 +9,31 @@ let is_sat (result : Solver.result) =
 let is_unsat (result : Solver.result) =
   match result with Unsat -> true | Sat | Unknown -> false
 
+module Meta = struct
+  (** Management of meta-information about the execution. *)
+
+  module type S = sig
+    (** Management of meta-information about the execution. *)
+
+    (** Used for various bookkeeping utilities. *)
+    module Range : Soteria_stats.CodeRange
+  end
+
+  module Dummy : S with type Range.t = unit = struct
+    (** Can be used by users as a default *)
+
+    module Range = struct
+      type t = unit
+
+      let to_yojson () = `Null
+      let of_yojson _ = Ok ()
+    end
+  end
+end
+
 module type Base = sig
   module Value : Value.S
+  module Stats : Soteria_stats.S
 
   type 'a t
 
@@ -53,15 +76,44 @@ module type Base = sig
 
   val consume_fuel_steps : int -> unit t
 
-  (** [run] p actually performs symbolic execution and returns a list of
-      obtained branches which capture the outcome together with a path condition
-      that is a list of boolean symbolic values *)
-  val run : fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
+  (** [run ~fuel  p] actually performs symbolic execution of the symbolic
+      process [p] and returns a list of obtained branches which capture the
+      outcome together with a path condition that is a list of boolean symbolic
+      values.
+      - statistics correponding to the execution.
+
+      Users may optionally pass a {{!Fuel_gauge.t}fuel gauge} to limit execution
+      depth and breadth. *)
+  val run : ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
+
+  (** Same as {!run}, but returns additional information about execution, see
+      {!Soteria_stats}. *)
+  val run_with_stats :
+    ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list Stats.with_stats
+
+  (** Same as {!run} but has to be run within {!Stats.with_stats} or will throw
+      an exception. This function is exposed should users wish to run several
+      symbolic execution processes using a single [stats] record. *)
+  val run_needs_stats : ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
 end
 
 module type S = sig
   include Base
   include Monad.Base with type 'a t := 'a t
+
+  (** Gives up on this path of execution for incompleteness reason. For
+      instance, if a give feature is unsupported.
+
+      Logs the result, and adds the reason to the execution statistics. *)
+  val give_up : loc:Stats.Range.t -> string -> 'a t
+
+  (** If the given option is None, gives up execution, otherwise continues,
+      unwrapping the option. *)
+  val some_or_give_up : loc:Stats.Range.t -> string -> 'a option -> 'a t
+
+  (** If the given result is Error, gives up execution, otherwise continues,
+      unwrapping the result. *)
+  val ok_or_give_up : ('a, string * Stats.Range.t) result -> 'a t
 
   val all : ('a -> 'b t) -> 'a list -> 'b list t
   val fold_list : 'a list -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
@@ -73,7 +125,11 @@ module type S = sig
 
     val ok : 'ok -> ('ok, 'err, 'fix) t
     val error : 'err -> ('ok, 'err, 'fix) t
-    val miss : 'fix -> ('ok, 'err, 'fix) t
+    val miss : 'fix list -> ('ok, 'err, 'fix) t
+
+    (** Missing without any fix. Will add to the statistics and log that
+        information. *)
+    val miss_no_fix : reason:string -> unit -> ('ok, 'err, 'fix) t
 
     val bind :
       ('ok, 'err, 'fix) t -> ('ok -> ('a, 'err, 'fix) t) -> ('a, 'err, 'fix) t
@@ -87,10 +143,6 @@ module type S = sig
       ('a, 'b, 'fix) t
 
     val map_error : ('ok, 'err, 'fix) t -> ('err -> 'a) -> ('ok, 'a, 'fix) t
-
-    val bind_missing :
-      ('ok, 'err, 'fix) t -> ('fix -> ('ok, 'err, 'a) t) -> ('ok, 'err, 'a) t
-
     val map_missing : ('ok, 'err, 'fix) t -> ('fix -> 'a) -> ('ok, 'err, 'a) t
 
     val fold_list :
@@ -114,12 +166,6 @@ module type S = sig
 
     val ( let++ ) : ('a, 'c, 'd) Result.t -> ('a -> 'b) -> ('b, 'c, 'd) Result.t
     val ( let+- ) : ('a, 'b, 'd) Result.t -> ('b -> 'c) -> ('a, 'c, 'd) Result.t
-
-    val ( let*? ) :
-      ('a, 'b, 'c) Result.t ->
-      ('c -> ('a, 'b, 'd) Result.t) ->
-      ('a, 'b, 'd) Result.t
-
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax : sig
@@ -156,6 +202,21 @@ module Extend (Base : Base) = struct
     in
     aux [] xs
 
+  let give_up ~loc reason =
+    (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
+    bind (return ()) @@ fun () ->
+    L.info (fun m -> m "%s" reason);
+    Stats.As_ctx.push_give_up_reason ~loc reason;
+    vanish ()
+
+  let some_or_give_up ~loc reason = function
+    | Some x -> return x
+    | None -> give_up ~loc reason
+
+  let ok_or_give_up = function
+    | Ok x -> return x
+    | Error (msg, loc) -> give_up ~loc msg
+
   let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
   let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
   let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
@@ -163,6 +224,12 @@ module Extend (Base : Base) = struct
 
   module Result = struct
     include Compo_res.T (MONAD)
+
+    let miss_no_fix ~reason () =
+      bind (ok ()) @@ fun () ->
+      Stats.As_ctx.push_missing_without_fix reason;
+      L.debug (fun m -> m "Missing without fix: %s" reason);
+      miss []
 
     let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
     let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
@@ -176,7 +243,6 @@ module Extend (Base : Base) = struct
     let ( let** ) = Result.bind
     let ( let++ ) = Result.map
     let ( let+- ) = Result.map_error
-    let ( let*? ) = Result.bind_missing
     let ( let+? ) = Result.map_missing
 
     module Symex_syntax = struct
@@ -186,9 +252,11 @@ module Extend (Base : Base) = struct
   end
 end
 
-module Make (Sol : Solver.Mutable_incremental) :
-  S with module Value = Sol.Value = Extend (struct
+module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
+  S with module Value = Sol.Value and module Stats.Range = Meta.Range =
+Extend (struct
   module Solver = Solver.Mutable_to_in_place (Sol)
+  module Stats = Soteria_stats.Make (Meta.Range)
 
   module Fuel = struct
     include Reversible.Effectful (Fuel_gauge)
@@ -218,7 +286,9 @@ module Make (Sol : Solver.Mutable_incremental) :
   let consume_fuel_steps n f =
     match Fuel.consume_fuel_steps n with
     | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
-    | Not_exhausted -> f ()
+    | Not_exhausted ->
+        Stats.As_ctx.add_steps n;
+        f ()
 
   let assume learned f =
     let rec aux acc learned =
@@ -314,6 +384,7 @@ module Make (Sol : Solver.Mutable_incremental) :
                   L.debug (fun m ->
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->
+                  Stats.As_ctx.add_branches 1;
                   if is_sat (Solver.sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible"))
 
@@ -337,6 +408,9 @@ module Make (Sol : Solver.Mutable_incremental) :
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
     let brs = Fuel.take_branches brs in
+    (* If there are 0 or 1 branches, we don't do anything,
+       else we add how many *new* branches we take. *)
+    Stats.As_ctx.add_branches (max (List.length brs - 1) 0);
     match brs with
     | [] -> ()
     | [ a ] -> a () f
@@ -367,12 +441,21 @@ module Make (Sol : Solver.Mutable_incremental) :
         (with_section @@ fun () -> a () f);
         loop r
 
-  let run ~fuel iter =
+  let run_needs_stats ?(fuel = Fuel_gauge.infinite) iter =
+    let@ () = Stats.As_ctx.add_time_of in
     Symex_state.reset ();
     let@ () = Fuel.run ~init:fuel in
     let l = ref [] in
     let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
     List.rev !l
+
+  let run ?fuel iter =
+    let@ () = Stats.As_ctx.with_stats_ignored () in
+    run_needs_stats ?fuel iter
+
+  let run_with_stats ?fuel iter =
+    let@ () = Stats.As_ctx.with_stats () in
+    run_needs_stats ?fuel iter
 
   let vanish () _f = ()
 end)

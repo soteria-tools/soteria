@@ -1,0 +1,9 @@
+(library
+ (name soteria_stats)
+ (public_name soteria.stats)
+ (libraries soteria_std soteria_terminal cmdliner unix)
+ (flags
+  (:standard -open Soteria_std))
+ (preprocess
+  (pps ppx_deriving_yojson ppx_subliner))
+ (synopsis "Statistics library for symbolic execution"))

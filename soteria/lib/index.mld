@@ -13,4 +13,6 @@
   Soteria.Symex
   Soteria.Logs
   Soteria.Soteria_std
-  Soteria.C_values}
+  Soteria.C_values
+  Soteria.Terminal
+  Soteria.Stats}

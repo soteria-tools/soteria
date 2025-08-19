@@ -11,6 +11,8 @@ end
 let default_abductor_fuel =
   Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
+(** Generates summaries for a function given a function definitions. Has to be
+    run within {{!Csymex.Stats.As_ctx.with_stats}with_stats} *)
 let generate_summaries_for (fundef : fundef) =
   let open Syntaxes.List in
   let fid, (floc, _, _, _, _) = fundef in
@@ -37,10 +39,11 @@ let generate_summaries_for (fundef : fundef) =
     | Error (err, bi_state) -> Csymex.return (args, Error err, bi_state)
     | Missing _ -> Csymex.vanish ()
   in
-  let+ (args, ret, bi_state), pc =
+  let res =
     let@ () = with_section "Running symbolic execution" in
-    Csymex.run ~fuel:default_abductor_fuel process
+    Csymex.run_needs_stats ~fuel:default_abductor_fuel process
   in
+  let+ (args, ret, bi_state), pc = res in
   let@ () = with_section "Building summary" in
   L.trace (fun m ->
       m "Building summary for %a using bistate: %a" Fmt_ail.pp_sym fid
@@ -69,6 +72,8 @@ let generate_all_summaries ~functions_to_analyse prog =
       order
   in
   let@ () = Progress_bar.run ~msg:"Generating summaries" ~total:!count () in
+
+  let@ () = Csymex.Stats.As_ctx.with_stats () in
   ListLabels.filter_map to_analyse ~f:(fun fid ->
       let open Syntaxes.Option in
       let res =

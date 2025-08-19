@@ -1,4 +1,13 @@
-module SYMEX = Soteria_symex.Symex.Make (C_solver.Z3_solver)
+module Meta = struct
+  module Range = struct
+    type t = Cerb_location.t
+
+    let to_yojson _ = `Null
+    let of_yojson _ = Ok Cerb_location.unknown
+  end
+end
+
+module SYMEX = Soteria_symex.Symex.Make (Meta) (C_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
 
@@ -8,39 +17,6 @@ let check_nonzero (t : Typed.T.sint Typed.t) :
   let open Typed.Infix in
   if%sat t ==@ Typed.zero then Result.error `NonZeroIsZero
   else Result.ok (Typed.cast t)
-
-(* sint t -> ([> nonzero ] t, [> `NonZeroIsZero ], 'fix) Csymex.Result.t *)
-
-let push_give_up, flush_give_up =
-  let give_up_reasons = Dynarray.create () in
-  let push_give_up r = Dynarray.add_last give_up_reasons r in
-  let flush_give_up () =
-    let reasons = Dynarray.to_list give_up_reasons in
-    Dynarray.clear give_up_reasons;
-    reasons
-  in
-  (push_give_up, flush_give_up)
-
-let dump_unsupported () =
-  match (Config.current ()).dump_unsupported_file with
-  | None -> ()
-  | Some file ->
-      let reasons = flush_give_up () in
-      let module M = Map.Make (String) in
-      let map =
-        List.fold_left
-          (fun map (reason, _loc) ->
-            M.update reason
-              (function None -> Some 1 | Some k -> Some (k + 1))
-              map)
-          M.empty reasons
-      in
-      let oc = open_out file in
-      let json : Yojson.Safe.t =
-        `Assoc (List.map (fun (k, v) -> (k, `Int v)) (M.bindings map))
-      in
-      Yojson.Safe.to_channel oc json;
-      close_out oc
 
 let current_loc = ref Cerb_location.unknown
 let get_loc () = !current_loc
@@ -64,9 +40,7 @@ let with_loc_immediate ~loc f =
 
 let not_impl msg =
   let msg = "MISSING FEATURE, VANISHING: " ^ msg in
-  L.info (fun m -> m "%s" msg);
-  push_give_up (msg, get_loc ());
-  vanish ()
+  give_up ~loc:(get_loc ()) msg
 
 let[@inline] with_error_loc_as_call_trace ?(msg = "Triggering operation") () f =
   let loc = get_loc () in

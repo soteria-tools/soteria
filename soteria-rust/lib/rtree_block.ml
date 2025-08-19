@@ -169,7 +169,7 @@ module Make (Sptr : Sptr.S) = struct
         let offset, _ = leaf.range in
         let offset = offset -@ fst t.range in
         match leaf.node with
-        | NotOwned Totally -> miss_no_fix ~msg:"decode" ()
+        | NotOwned Totally -> miss_no_fix ~reason:"decode" ()
         | Owned (Uninit Totally, _) -> Result.error `UninitializedMemoryAccess
         | Owned (Zeros, _) ->
             let* ty =
@@ -206,7 +206,7 @@ module Make (Sptr : Sptr.S) = struct
 
   let as_owned t f =
     match t.node with
-    | NotOwned _ -> miss_no_fix ~msg:"as_owned" ()
+    | NotOwned _ -> miss_no_fix ~reason:"as_owned" ()
     | Owned (v, tb) -> f (v, tb)
 
   let load ~(is_move : bool) ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t)
@@ -250,7 +250,7 @@ module Make (Sptr : Sptr.S) = struct
     let** node, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
     let++ () =
       match node.node with
-      | NotOwned _ -> miss_no_fix ~msg:"store" ()
+      | NotOwned _ -> miss_no_fix ~reason:"store" ()
       | _ -> Result.ok ()
     in
     ((), tree)

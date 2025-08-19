@@ -41,8 +41,8 @@ struct
   type 'a serialized = (Key.t * 'a) list
 
   let lift_fix_s ~key res =
-    let+? fixes = res in
-    List.map (fun fix -> [ (key, fix) ]) fixes
+    let+? fix = res in
+    [ (key, fix) ]
 
   let pp_serialized pp_inner : Format.formatter -> 'a serialized -> unit =
     Fmt.brackets
@@ -99,9 +99,9 @@ struct
     let+ () = Symex.assume [ Key.distinct @@ List.map fst @@ M.bindings st ] in
     Compo_res.Ok (out_keys, to_opt st)
 
-  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix list) Symex.Result.t)
+  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
       (key : Key.t) (st : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized list) Symex.Result.t =
+      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
     let st = of_opt st in
     let* key, codom = Find_opt_sym.f key st in
     let++ res, codom = f codom |> lift_fix_s ~key in
@@ -124,12 +124,9 @@ struct
       (cons :
         'inner_serialized ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_serialized list) Symex.Result.t)
+        ('inner_st option, 'err, 'inner_serialized) Symex.Result.t)
       (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-      ( 'inner_st t option,
-        'err,
-        'inner_serialized serialized list )
-      Symex.Result.t =
+      ('inner_st t option, 'err, 'inner_serialized serialized) Symex.Result.t =
     let st = of_opt st in
     let++ st =
       Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
@@ -140,10 +137,9 @@ struct
     to_opt st
 
   let fold
-      (f :
-        'acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized list) Symex.Result.t)
+      (f : 'acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t)
       (init : 'acc) (st : 'a t option) :
-      ('acc, 'err, 'fix serialized list) Symex.Result.t =
+      ('acc, 'err, 'fix serialized) Symex.Result.t =
     let st = of_opt st in
     Result.fold_seq (M.to_seq st) ~init ~f
 end

@@ -97,7 +97,7 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
       ofs:[< T.sint ] Typed.t ->
       Ctree_block.t option ->
       ('a * Ctree_block.t option, 'err, 'fix list) Result.t) :
-    ('a * t, 'err, serialized list) Result.t =
+    ('a * t, 'err, serialized) Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   let** () = check_non_null loc in
@@ -180,7 +180,7 @@ let alloc_ty ty st =
   alloc size st
 
 let free (ptr : [< T.sptr ] Typed.t) (st : t) :
-    (unit * t, 'err, serialized list) Result.t =
+    (unit * t, 'err, serialized) Result.t =
   let@ () = with_error_loc_as_call_trace () in
   if%sat Typed.Ptr.ofs ptr ==@ 0s then
     let@ heap = with_heap st in
@@ -261,7 +261,7 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) (state : t)
       aux layout.members_ofs members values state
 
 let consume (serialized : serialized) (st : t) :
-    (t, 'err, serialized list) Csymex.Result.t =
+    (t, 'err, serialized) Csymex.Result.t =
   L.debug (fun m -> m "Consuming state from %a" pp_serialized serialized);
   let** globs =
     let+ res = Globs.consume serialized.globs st.globs in
