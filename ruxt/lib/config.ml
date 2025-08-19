@@ -5,6 +5,8 @@ type t = {
       (** Do not display execution times *)
   cleanup : bool; [@make.default false] [@names [ "clean" ]]
       (** Clean up compiles files after execution *)
+  ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
+      (** Ignore memory leaks *)
   with_kani : bool; [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)
   with_miri : bool; [@make.default false] [@names [ "miri" ]]

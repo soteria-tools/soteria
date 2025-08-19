@@ -8,7 +8,7 @@ exception ExecutionError of string
 
 let execution_err msg = raise (ExecutionError msg)
 
-let target_decls (crate : UllbcAst.crate) =
+let get_funs (crate : UllbcAst.crate) =
   let can_infer _ (fundef : UllbcAst.fun_decl) =
     fundef.item_meta.attr_info.public
     && fundef.item_meta.is_local
@@ -17,7 +17,7 @@ let target_decls (crate : UllbcAst.crate) =
   Types.FunDeclId.Map.filter can_infer crate.fun_decls
 
 let leak_check leaks : (unit, [> `MemoryLeak ]) Result.t =
-  match leaks with [] -> Result.ok () | _ -> Result.error `MemoryLeak
+  if leaks = [] then Result.ok () else Result.error `MemoryLeak
 
 let try_refute fuel (fundef : UllbcAst.fun_decl) summs summ_ctx =
   (* Construct precondition state and symbolically execute function *)
@@ -42,7 +42,7 @@ let try_refute fuel (fundef : UllbcAst.fun_decl) summs summ_ctx =
   Rustsymex.run ~fuel process |> List.fold_left extend_ctx (Result.ok summ_ctx)
 
 let find_unsoundness (crate : UllbcAst.crate) =
-  let decls = target_decls crate in
+  let fun_decls = get_funs crate in
   let fuel =
     Soteria_symex.Fuel_gauge.
       {
@@ -65,7 +65,7 @@ let find_unsoundness (crate : UllbcAst.crate) =
     else
       let res =
         (* Call try_refute on all functions and accumulate the results *)
-        try Types.FunDeclId.Map.fold try_refute decls (Result.ok summ_ctx)
+        try Types.FunDeclId.Map.fold try_refute fun_decls (Result.ok summ_ctx)
         with exn ->
           let msg =
             Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn

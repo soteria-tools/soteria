@@ -62,13 +62,11 @@ let make ret pcs state =
     List.partition (fun (loc, _) -> is_relevant loc) state
   in
   let leaks =
-    let is_leak (l, (f, g)) =
+    if !Config.current.ignore_leaks then []
+    else
       (* A leak occurs when the pointer is alive and is not global *)
-      match f with
-      | Rustsymex.Freeable.Freed -> None
-      | Alive b -> if not g then Some (l, b) else None
-    in
-    List.filter_map is_leak unreachable
+      ListLabels.filter unreachable ~f:(fun (_, (f, g)) ->
+          f <> Rustsymex.Freeable.Freed && not g)
   in
   ({ ret; pcs; state }, leaks)
 
