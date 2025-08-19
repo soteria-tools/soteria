@@ -284,10 +284,11 @@ Extend (struct
   end
 
   let consume_fuel_steps n f =
-    Stats.As_ctx.add_steps n;
     match Fuel.consume_fuel_steps n with
     | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
-    | Not_exhausted -> f ()
+    | Not_exhausted ->
+        Stats.As_ctx.add_steps n;
+        f ()
 
   let assume learned f =
     let rec aux acc learned =

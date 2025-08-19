@@ -11,8 +11,8 @@ end
 let default_abductor_fuel =
   Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
-(** Generates summaries for function a given function definitions. Has to be run
-    within {{!Csymex.Stats.As_ctx.with_stats}with_stats} *)
+(** Generates summaries for a function given a function definitions. Has to be
+    run within {{!Csymex.Stats.As_ctx.with_stats}with_stats} *)
 let generate_summaries_for (fundef : fundef) =
   let open Syntaxes.List in
   let fid, (floc, _, _, _, _) = fundef in

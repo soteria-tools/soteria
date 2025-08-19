@@ -42,7 +42,7 @@ Executing a symbolic process is done using the {{!Soteria_symex.Symex.S.run}run}
 
 The function receives a symbolic process to execute, and an optional {{!Soteria_symex.Fuel_gauge.t}fuel gauge} should the user desire to limit the breadth or depth of execution. It returns a list of branches, where each branch is a pair of the value returned by the symbolic process and the path condition that leads to this branch (in the form of a list of symbolic booleans).
 
-For instance, let's execute the symbolic process we just created, providing an infinite fuel gauge (which means that the symbolic execution will not be limited by the number of steps or branches, which is irrelevant here anyway).
+For instance, let's execute the symbolic process we just created, without providing any fuel limitation (which means that the symbolic execution will not be limited by the number of steps or branches, which is irrelevant here anyway).
 
 {@ocaml[
 # Symex.return 0 |> Symex.run;;
@@ -65,7 +65,7 @@ A core necessity of symbolic execution is the ability to introduce fresh symboli
 Let's run this process:
 
 {@ocaml[
-# Symex.nondet Typed.t_int |> Symex.run ~fuel:Fuel_gauge.infinite;;
+# Symex.nondet Typed.t_int |> Symex.run;;
 - : ([> Typed.T.sint ] Typed.t * Symex.Value.sbool Typed.t list) list =
 [(V|1|, [])]
 ]}
@@ -106,7 +106,7 @@ Note how familiar the syntax is: effectively, this just looks like regular OCaml
 Running this symbolic process yields a single branch with no path condition:
 
 {@ocaml[
-# Symex.run ~fuel:Fuel_gauge.infinite process;;
+# Symex.run process;;
 - : (([> Typed.T.sint ] as '_weak1) Typed.t * Symex.Value.sbool Typed.t list)
     list
 = [((V|1| + 2), [])]
@@ -122,7 +122,7 @@ For instance, we can create a symbolic process that introduces a nondeterministi
   Symex.assert_ (x >@ 0s);;
 val process : bool Symex.t = <abstr>
 
-# Symex.run ~fuel:Fuel_gauge.infinite process;;
+# Symex.run process;;
 - : (bool * Symex.Value.sbool Typed.t list) list = [(false, [])]
 ]}
 
@@ -135,7 +135,7 @@ This process returns a single branch with the value [false], as it is not *alway
   Symex.assert_ (x >@ 0s);;
 val process : bool Symex.t = <abstr>
 
-# Symex.run ~fuel:Fuel_gauge.infinite process;;
+# Symex.run process;;
 - : (bool * Symex.Value.sbool Typed.t list) list = [(true, [(11 <= V|1|)])]
 ]} 
 
@@ -154,7 +154,7 @@ A more interesting symbolic process is one that introduces conditional branching
       Symex.return (Fmt.str "%a is odd" Typed.ppa x)
 val process : string Symex.t = <abstr>
 
-# Symex.run ~fuel:Fuel_gauge.infinite process;;
+# Symex.run process;;
 - : (string * Symex.Value.sbool Typed.t list) list =
 [("V|1| is even", [(0 == (V|1| mod 2))]);
  ("V|1| is odd", [(0 != (V|1| mod 2))])]

@@ -9,7 +9,10 @@ type 'range stats = {
   missing_without_fixes : string Dynarray.t;
       (** A list of reasons why we couldn't get a fix for a given Missing error
       *)
-  mutable branch_number : int;  (** Number of explored branches *)
+  mutable branch_number : int;
+      (** Number of explored branches. Note that this includes the number of
+          attempted branches that ended up vanishing: it may be greated than the
+          length of the list obtained at the end of execution. *)
   mutable steps_number : int;  (** Number of steps taken *)
 }
 [@@deriving yojson]
