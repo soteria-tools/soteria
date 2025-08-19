@@ -163,7 +163,7 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let map_with l f = List.map f l in
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
   let@ () = Crate.with_crate crate in
-  let@ entry : Plugin.entry_point = map_with entry_points in
+  let@ entry : 'a Plugin.entry_point = map_with entry_points in
   (* execute! *)
   let entry_name =
     Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
@@ -171,8 +171,7 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let@ () = print_outcomes entry_name in
   let branches =
     let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
-    let fuel = Option.value ~default:default_fuel entry.fuel in
-    try Rustsymex.run ~fuel @@ exec_fun entry.fun_decl with
+    try Rustsymex.run ~fuel:entry.fuel @@ exec_fun entry.fun_decl with
     | Layout.InvalidLayout ty ->
         [ (Error (`InvalidLayout ty, Soteria_terminal.Call_trace.empty), []) ]
     | exn ->

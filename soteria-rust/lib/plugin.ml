@@ -85,10 +85,10 @@ exception PluginError of string
 
 type fun_decl = UllbcAst.fun_decl
 
-type entry_point = {
+type 'fuel entry_point = {
   fun_decl : fun_decl;
   expect_error : bool;
-  fuel : Soteria_symex.Fuel_gauge.t option;
+  fuel : 'fuel;
 }
 
 let mk_entry_point ?(expect_error = false) ?fuel fun_decl =
@@ -155,9 +155,9 @@ let known_generic_errors =
     "core::iter::traits::iterator::Iterator::flatten";
   ]
 
-type plugin = {
+type 'fuel plugin = {
   mk_cmd : unit -> Cmd.t;
-  get_entry_point : fun_decl -> entry_point option;
+  get_entry_point : fun_decl -> 'fuel entry_point option;
 }
 
 let default =
@@ -248,10 +248,11 @@ let miri =
 
 type root_plugin = {
   mk_cmd : input:string -> output:string -> unit -> Cmd.t;
-  get_entry_point : fun_decl -> entry_point option;
+  get_entry_point : fun_decl -> Soteria_symex.Fuel_gauge.t entry_point option;
 }
 
-let merge_ifs (plugins : (bool * plugin) list) =
+let merge_ifs (plugins : (bool * Soteria_symex.Fuel_gauge.t option plugin) list)
+    =
   let plugins =
     List.filter_map
       (fun (enabled, plugin) -> if enabled then Some plugin else None)
@@ -265,7 +266,7 @@ let merge_ifs (plugins : (bool * plugin) list) =
         ~obol:[ "--dest-file " ^ output ]
         ~rustc:[ input ] ()
     in
-    List.map (fun (p : plugin) -> p.mk_cmd ()) plugins
+    List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
   in
   let get_entry_point (decl : fun_decl) =
@@ -285,9 +286,9 @@ let merge_ifs (plugins : (bool * plugin) list) =
             in
             { steps = Finite steps; branching = Finite branching }
           in
-          Some { ep with fuel = Some fuel }
-      | None, (p : plugin) :: rest -> aux (p.get_entry_point decl) rest
-      | _ -> acc
+          Some { ep with fuel }
+      | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest
+      | None, [] -> None
     in
     aux None plugins
   in
