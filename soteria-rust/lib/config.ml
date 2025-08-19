@@ -24,9 +24,13 @@ type t = {
   step_fuel : int; [@default 1000] [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
       (** The default step fuel for each entrypoint -- every control flow jump
           counts as one fuel *)
-  branch_fuel : int; [@default 4] [@names [ "branch-fuel" ]] [@env "BRANCH_FUEL"]
+  branch_fuel : int;
+      [@default 4] [@names [ "branch-fuel" ]] [@env "BRANCH_FUEL"]
       (** The default branch fuel for each entrypoint -- every symbolic
           execution branching point counts as one fuel *)
+  rustc_flags : string list;
+      [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
+      (** Additional flags to pass to the Rustc compiler *)
 }
 [@@deriving make, subliner]
 

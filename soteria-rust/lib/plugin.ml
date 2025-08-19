@@ -32,9 +32,10 @@ module Cmd = struct
     let spaced = String.concat " " in
     let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
     let with_obol = !Config.current.with_obol in
+    let rustc = rustc @ !Config.current.rustc_flags in
     match mode with
     | Rustc ->
-        let features = List.map (( ^ ) "--cfg ") features in
+        let features = List.map (( ^ ) "--cfg=") features in
         let compiler =
           if not with_obol then "charon rustc " ^ spaced charon
           else "obol " ^ spaced obol
