@@ -1,6 +1,4 @@
-OPAM=opam
-OPAMX=$(OPAM) exec --
-DUNE=$(OPAMX) dune
+DUNE=dune
 WHICHX=$(DUNE) exec -- which 
 
 YARN=yarn
