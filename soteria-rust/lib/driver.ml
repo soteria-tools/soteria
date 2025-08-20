@@ -202,7 +202,6 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
      let msg = Option.get !Rustsymex.not_impl_happened in
      let () = Rustsymex.not_impl_happened := None in
      execution_err msg);
-  if List.is_empty branches then execution_err "Execution vanished";
   if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 
