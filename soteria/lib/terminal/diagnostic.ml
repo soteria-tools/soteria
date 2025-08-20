@@ -10,7 +10,8 @@ type severity = Grace.Diagnostic.Severity.t =
   | Error
   | Bug
 
-let read_file ic =
+let read_file file =
+  let ic = open_in file in
   let rec loop acc =
     match input_line ic with
     | s -> loop (s :: acc)
@@ -30,7 +31,9 @@ let utf8_to_byte_offset str idx =
   done;
   !ofs
 
-let real_index (ic : in_channel) ((line, col) : pos) =
+let real_index (file : string) ((line, col) : pos) =
+  let open Syntaxes.FunctionWrap in
+  let@ ic = Channels.with_in_file file in
   let current_index = ref 0 in
   let current_line = ref 0 in
   while !current_line <= line do
@@ -50,29 +53,19 @@ let real_index (ic : in_channel) ((line, col) : pos) =
   done;
   !current_index
 
-let try_range file_name f =
-  try Channels.with_in_file file_name f
-  with Sys_error _ ->
-    let source : Grace.Source.t =
-      `String { name = Some file_name; content = "" }
-    in
-    Grace.Range.create ~source Grace.Byte_index.initial Grace.Byte_index.initial
-
 let mk_range_file ?filename file from_ to_ =
-  let open Syntaxes.FunctionWrap in
   let open Grace.Range in
   let bi = Grace.Byte_index.of_int in
   (* Could be optimised if indexes are in the same file,
    but I don't think printing errors is what's going to take time.
    Also, it shouldn't be required anyway, see https://github.com/johnyob/grace/issues/46
 *)
-  let@ ic = try_range file in
-  let idx1 = real_index ic from_ in
-  let idx2 = real_index ic to_ in
+  let idx1 = real_index file from_ in
+  let idx2 = real_index file to_ in
   let source : Grace.Source.t =
     match filename with
     | None -> `File file
-    | Some name -> `String { name = Some name; content = read_file ic }
+    | Some name -> `String { name = Some name; content = read_file file }
   in
   create ~source (bi idx1) (bi idx2)
 
