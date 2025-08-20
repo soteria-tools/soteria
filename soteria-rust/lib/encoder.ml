@@ -436,7 +436,7 @@ module Make (Sptr : Sptr.S) = struct
       match (from_ty, to_ty, v) with
       | TLiteral (TFloat _), TLiteral ((TInt _ | TUInt _) as ity), Base sv ->
           let+ sv =
-            of_opt_not_impl ~msg:"Unsupported: non-float in float-to-int"
+            of_opt_not_impl "Unsupported: non-float in float-to-int"
             @@ Typed.cast_float sv
           in
           let size = 8 * Layout.size_of_literal_ty ity in

@@ -1,3 +1,4 @@
+module Stats = Soteria_stats
 module Config_ = Config
 open Soteria_terminal
 module Config = Config_
@@ -164,17 +165,23 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   (* prepare executing the entry points *)
   let map_with l f = List.map f l in
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
-  let@ entry : 'a Plugin.entry_point = map_with entry_points in
+
+  let@ entry : 'fuel Plugin.entry_point = map_with entry_points in
   (* execute! *)
   let entry_name =
     Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
   in
   let@ () = print_outcomes entry_name in
-  let branches =
+  let { res = branches; stats } : ('res, 'range) Stats.with_stats =
     let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
-    try Rustsymex.run ~fuel:entry.fuel @@ exec_fun entry.fun_decl with
+    try
+      Rustsymex.run_with_stats ~fuel:entry.fuel @@ exec_fun entry.fun_decl
+    with
     | Layout.InvalidLayout ty ->
-        [ (Error (`InvalidLayout ty, Soteria_terminal.Call_trace.empty), []) ]
+        {
+          res = [ (Error (`InvalidLayout ty, Call_trace.empty), []) ];
+          stats = Rustsymex.Stats.create ();
+        }
     | exn ->
         Fmt.kstr execution_err "Exn: %a@\nTrace: %s" Fmt.exn exn
           (Printexc.get_backtrace ())
@@ -199,9 +206,9 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 
   (* check for uncaught failure conditions *)
   let outcomes = List.map fst branches in
-  if Option.is_some !Rustsymex.not_impl_happened then
-    let msg = Option.get !Rustsymex.not_impl_happened in
-    let () = Rustsymex.not_impl_happened := None in
+  if Stats.Hstring.length stats.give_up_reasons <> 0 then
+    let reasons = Stats.Hstring.to_seq_keys stats.give_up_reasons in
+    let msg = String.concat ", " (List.of_seq reasons) in
     execution_err msg
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";

@@ -285,7 +285,9 @@ Extend (struct
 
   let consume_fuel_steps n f =
     match Fuel.consume_fuel_steps n with
-    | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
+    | Exhausted ->
+        Stats.As_ctx.add_unexplored_branches 1;
+        L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted ->
         Stats.As_ctx.add_steps n;
         f ()
@@ -381,6 +383,7 @@ Extend (struct
             else
               match Fuel.consume_branching 1 with
               | Exhausted ->
+                  Stats.As_ctx.add_unexplored_branches 1;
                   L.debug (fun m ->
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->
