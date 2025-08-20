@@ -226,8 +226,8 @@ class Experiment(PrintersMixin):
             "dune exec -- soteria-c capture-db "
             f"{self.compile_commands} "
             f"--solver-timeout {global_config.solver_timeout} "
-            "--dump-unsupported "
-            f"{self.result_folder / 'unsupported.json'} "
+            "--dump-stats "
+            f"{self.result_folder / 'stats.json'} "
             f"{' '.join(self.config.soteria_args)}"
         )
         self.run_command(cmd)
@@ -291,30 +291,28 @@ def aggregate_results():
         print(f"{RED}No results folder found: {result_folder}{RESET}")
         return
 
-    all_unsupported = {}
+    all_stats = Stats.empty()
     for subfolder in result_folder.iterdir():
-        file = subfolder / "unsupported.json"
+        file = subfolder / "stats.json"
         if not subfolder.is_dir() or not file.exists():
             continue
         with open(file, "r") as f:
             try:
-                j = json.load(f)
+                j = Stats.from_dict(json.load(f))
             except:
                 global_printer.print_error(f"Failed to read json from {file}")
                 continue
-            if not isinstance(j, dict):
-                global_printer.print_error(f"Invalid json format in {file}")
-                continue
-            all_unsupported = merge_dicts(all_unsupported, j)
-    sorted_items = sorted(all_unsupported.items(), key=lambda x: x[1], reverse=True)
-    sorted_dict = dict(sorted_items)
+            all_stats = merge_stats(all_stats, j)
     to_remove = "MISSING FEATURE, VANISHING: Could not resolve function"
-    if to_remove in sorted_dict:
-        del sorted_dict[to_remove]
-    with open(result_folder / "all_unsupported.json", "w") as f:
-        json.dump(sorted_dict, f, indent=2)
+    if to_remove in all_stats.give_up_reasons:
+        del all_stats.give_up_reasons[to_remove]
+    all_stats.give_up_reasons = dict(
+        sorted(all_stats.give_up_reasons.items(), key=lambda kv: kv[1], reverse=True)
+    )
+    with open(result_folder / "all_stats.json", "w") as f:
+        json.dump(all_stats.as_dict(), f, indent=2)
         global_printer.print_success(
-            f"Aggregated unsupported features written to {result_folder / 'all_unsupported.json'}"
+            f"Aggregated unsupported features written to {result_folder / 'all_stats.json'}"
         )
 
 

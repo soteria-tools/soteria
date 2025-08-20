@@ -1,4 +1,6 @@
-module SYMEX = Soteria_symex.Symex.Make (C_solver.Z3_solver)
+module SYMEX =
+  Soteria_symex.Symex.Make (Soteria_symex.Symex.Meta.Dummy) (C_solver.Z3_solver)
+
 include SYMEX
 include Syntaxes.FunctionWrap
 
@@ -10,16 +12,6 @@ let match_on ~(constr : 'a -> Typed.sbool Typed.t) (elements : 'a list) :
     | [] -> return None
   in
   aux elements
-
-let push_give_up, flush_give_up =
-  let give_up_reasons = Dynarray.create () in
-  let push_give_up r = Dynarray.add_last give_up_reasons r in
-  let flush_give_up () =
-    let reasons = Dynarray.to_list give_up_reasons in
-    Dynarray.clear give_up_reasons;
-    reasons
-  in
-  (push_give_up, flush_give_up)
 
 let current_loc = ref Charon_util.empty_span
 let get_loc () = !current_loc
@@ -46,7 +38,6 @@ let not_impl msg =
   let msg = "MISSING FEATURE, VANISHING: " ^ msg in
   L.info (fun m -> m "%s" msg);
   print_endline msg;
-  push_give_up (msg, get_loc ());
   vanish ()
 
 let[@inline] with_loc_err () f =

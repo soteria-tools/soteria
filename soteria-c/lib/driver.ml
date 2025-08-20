@@ -4,6 +4,11 @@ open Cerb_frontend
 open Syntaxes.FunctionWrap
 module Wpst_interp = Interp.Make (SState)
 
+let dump_stats stats =
+  match (Config.current ()).dump_stats_file with
+  | None -> ()
+  | Some file -> Csymex.Stats.dump stats file
+
 let default_wpst_fuel =
   Soteria_symex.Fuel_gauge.{ steps = Finite 150; branching = Finite 4 }
 
@@ -222,7 +227,8 @@ let exec_function ~includes file_names function_name =
   let open Syntaxes.Result in
   let result =
     let* linked = parse_and_link_ail ~includes file_names in
-    if (Config.current ()).parse_only then Ok []
+    if (Config.current ()).parse_only then
+      Ok (Soteria_stats.with_empty_stats [])
     else
       let* entry_point = resolve_function linked function_name in
       let symex =
@@ -237,9 +243,12 @@ let exec_function ~includes file_names function_name =
           Soteria_symex.Fuel_gauge.infinite
         else default_wpst_fuel
       in
-      Ok (Csymex.run ~fuel symex)
+      Ok (Csymex.run_with_stats ~fuel symex)
   in
-  match result with Ok v -> v | Error e -> [ (Error e, []) ]
+  match result with
+  | Ok v -> v
+  | Error e ->
+      Soteria_stats.with_empty_stats [ (Soteria_symex.Compo_res.Error e, []) ]
 
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
@@ -251,23 +260,23 @@ let generate_errors content =
     close_out oc
   in
   match parse_and_link_ail ~includes:[] [ file_name ] with
-  | Error e -> [ e ]
+  | Error e -> Soteria_stats.with_empty_stats [ e ]
   | Ok prog ->
       let@ () = with_function_context prog in
-      let summaries =
-        Abductor.generate_all_summaries ~functions_to_analyse:None prog
-      in
-      let results =
-        List.concat_map
-          (fun (fid, summaries) ->
-            let@ () =
-              Soteria_logs.Logs.with_section
-                ("Anaysing summaries for function" ^ Symbol.show_symbol fid)
-            in
-            List.concat_map (Summary.manifest_bugs ~fid) summaries)
-          summaries
-      in
-      List.sort_uniq Stdlib.compare results
+      Abductor.generate_all_summaries ~functions_to_analyse:None prog
+      |> Soteria_stats.map_with_stats (fun summaries ->
+             let results =
+               List.concat_map
+                 (fun (fid, summaries) ->
+                   let@ () =
+                     Soteria_logs.Logs.with_section
+                       ("Anaysing summaries for function"
+                       ^ Symbol.show_symbol fid)
+                   in
+                   List.concat_map (Summary.manifest_bugs ~fid) summaries)
+                 summaries
+             in
+             List.sort_uniq Stdlib.compare results)
 
 (** {2 Entry points} *)
 
@@ -296,8 +305,7 @@ let exec_and_print log_config term_config solver_config config includes
            ~err:pp_err_and_call_trace
            ~miss:(Fmt.Dump.list SState.pp_serialized))
           ft r)
-      result
-      (Stats.get_executed_statements ())
+      result.res result.stats.steps_number
 
 let dump_summaries results =
   match (Config.current ()).dump_summaries_file with
@@ -337,9 +345,11 @@ let analyse_summaries results =
 
 let generate_summaries ~functions_to_analyse prog =
   let@ () = with_function_context prog in
-  let results = Abductor.generate_all_summaries ~functions_to_analyse prog in
-  Csymex.dump_unsupported ();
-  let results = analyse_summaries results in
+  let { Soteria_stats.res; stats } =
+    Abductor.generate_all_summaries ~functions_to_analyse prog
+  in
+  dump_stats stats;
+  let results = analyse_summaries res in
   dump_summaries results;
   Fmt.pr "@\n@?";
   let found_bugs = ref false in

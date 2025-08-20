@@ -31,10 +31,8 @@ struct
   type 'a serialized = (SInt.t * 'a) list * SInt.t option
 
   let no_fix = []
-
-  let[@inline] lift_fix ~ofs fixes =
-    List.map (fun fix -> ([ (ofs, fix) ], None)) fixes
-
+  let[@inline] lift_fix ~ofs fix = ([ (ofs, fix) ], None)
+  let[@inline] lift_fixes ~ofs fixes = List.map (lift_fix ~ofs) fixes
   let of_opt = function None -> (M.empty, None) | Some l -> l
   let[@inline] add_opt k v m = M.update k (fun _ -> v) m
 
@@ -96,9 +94,9 @@ struct
         if%sat SInt.sem_eq b (SInt.of_int (M.cardinal m)) then Result.ok ()
         else err
 
-  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix list) Symex.Result.t)
+  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
       (ofs : SInt.t) (t_opt : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized list) Symex.Result.t =
+      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
     let m, b = of_opt t_opt in
     let** () = assert_in_bounds ofs b in
     let* ofs, sst = find_opt_sym ofs m in
@@ -106,18 +104,15 @@ struct
     match res with
     | Ok (v, sst') -> Ok (v, to_opt (add_opt ofs sst' m, b))
     | Error e -> Error e
-    | Missing fix -> Missing (lift_fix ~ofs fix)
+    | Missing fixes -> Missing (lift_fixes ~ofs fixes)
 
   let consume
       (cons :
         'inner_serialized ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_serialized list) Symex.Result.t)
+        ('inner_st option, 'err, 'inner_serialized) Symex.Result.t)
       (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-      ( 'inner_st t option,
-        'err,
-        'inner_serialized serialized list )
-      Symex.Result.t =
+      ('inner_st t option, 'err, 'inner_serialized serialized) Symex.Result.t =
     let m, b = of_opt st in
     let l, b_ser = serialized in
     let* new_b =

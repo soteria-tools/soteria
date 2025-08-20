@@ -42,7 +42,7 @@ module type S = sig
       | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     Result.t
 
   val tb_load :
@@ -58,7 +58,7 @@ module type S = sig
       | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     Result.t
 
   val store :
@@ -75,7 +75,7 @@ module type S = sig
       | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     Result.t
 
   val alloc_untyped :
@@ -83,23 +83,18 @@ module type S = sig
     size:sint Typed.t ->
     align:nonzero Typed.t ->
     t ->
-    (full_ptr * t, [> ] err * t, serialized list) Result.t
+    (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_ty :
-    Types.ty -> t -> (full_ptr * t, [> ] err * t, serialized list) Result.t
+    Types.ty -> t -> (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_tys :
-    Types.ty list ->
-    t ->
-    (full_ptr list * t, [> ] err * t, serialized list) Result.t
+    Types.ty list -> t -> (full_ptr list * t, [> ] err * t, serialized) Result.t
 
   val free :
     full_ptr ->
     t ->
-    ( unit * t,
-      [> `InvalidFree | `UseAfterFree ] err * t,
-      serialized list )
-    Result.t
+    (unit * t, [> `InvalidFree | `UseAfterFree ] err * t, serialized) Result.t
 
   val is_valid_ptr : t -> full_ptr -> Types.ty -> bool Rustsymex.t
 
@@ -107,7 +102,7 @@ module type S = sig
     Sptr.t ->
     Types.ty ->
     t ->
-    (unit * t, [> `MisalignedPointer ] err * t, serialized list) Result.t
+    (unit * t, [> `MisalignedPointer ] err * t, serialized) Result.t
 
   val copy_nonoverlapping :
     dst:full_ptr ->
@@ -118,7 +113,7 @@ module type S = sig
       [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     Result.t
 
   val uninit :
@@ -129,7 +124,7 @@ module type S = sig
       [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     Result.t
 
   val zeros :
@@ -140,11 +135,11 @@ module type S = sig
       [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     Result.t
 
   val error :
-    ([< Error.t ] as 'a) -> t -> ('ok, 'a err * t, serialized list) Result.t
+    ([< Error.t ] as 'a) -> t -> ('ok, 'a err * t, serialized) Result.t
 
   val lift_err :
     t ->
@@ -152,24 +147,21 @@ module type S = sig
     ('ok, 'err err * t, 'f) Result.t
 
   val store_str_global :
-    string ->
-    full_ptr ->
-    t ->
-    (unit * t, [> ] err * t, serialized list) Result.t
+    string -> full_ptr -> t -> (unit * t, [> ] err * t, serialized) Result.t
 
   val store_global :
     Types.global_decl_id ->
     full_ptr ->
     t ->
-    (unit * t, [> ] err * t, serialized list) Result.t
+    (unit * t, [> ] err * t, serialized) Result.t
 
   val load_str_global :
-    string -> t -> (full_ptr option * t, [> ] err * t, serialized list) Result.t
+    string -> t -> (full_ptr option * t, [> ] err * t, serialized) Result.t
 
   val load_global :
     Types.global_decl_id ->
     t ->
-    (full_ptr option * t, [> ] err * t, serialized list) Result.t
+    (full_ptr option * t, [> ] err * t, serialized) Result.t
 
   val borrow :
     full_ptr ->
@@ -178,7 +170,7 @@ module type S = sig
     t ->
     ( full_ptr * t,
       [> `NullDereference | `UseAfterFree | `UBDanglingPointer ] err * t,
-      serialized list )
+      serialized )
     Result.t
 
   val protect :
@@ -194,7 +186,7 @@ module type S = sig
       | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     Result.t
 
   val unprotect :
@@ -209,27 +201,27 @@ module type S = sig
       | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     Result.t
 
   val leak_check :
-    t -> (unit * t, [> `MemoryLeak ] err * t, serialized list) Result.t
+    t -> (unit * t, [> `MemoryLeak ] err * t, serialized) Result.t
 
   val add_error :
-    [< Error.t ] err -> t -> (unit * t, [> ] err * t, serialized list) Result.t
+    [< Error.t ] err -> t -> (unit * t, [> ] err * t, serialized) Result.t
 
-  val pop_error : t -> ('a, Error.t err * t, serialized list) Result.t
+  val pop_error : t -> ('a, Error.t err * t, serialized) Result.t
 
   val unwind_with :
-    f:('a -> ('b, ([> Error.t ] as 'e) err * t, serialized list) Result.t) ->
-    fe:('e err * t -> ('b, 'e err * t, serialized list) Result.t) ->
-    ('a, 'e err * t, serialized list) Result.t ->
-    ('b, 'e err * t, serialized list) Result.t
+    f:('a -> ('b, ([> Error.t ] as 'e) err * t, serialized) Result.t) ->
+    fe:('e err * t -> ('b, 'e err * t, serialized) Result.t) ->
+    ('a, 'e err * t, serialized) Result.t ->
+    ('b, 'e err * t, serialized) Result.t
 
   val declare_fn :
     Charon.Types.fn_ptr ->
     t ->
-    (full_ptr * t, [> ] err * t, serialized list) Result.t
+    (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val lookup_fn :
     full_ptr ->
@@ -242,6 +234,6 @@ module type S = sig
       | `UBDanglingPointer ]
       err
       * t,
-      serialized list )
+      serialized )
     SYMEX.Result.t
 end

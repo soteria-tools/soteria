@@ -2,7 +2,6 @@
 type pos = int * int
 
 type 'a diag = 'a Grace.Diagnostic.t
-type range = Grace.Range.t
 
 type severity = Grace.Diagnostic.Severity.t =
   | Help

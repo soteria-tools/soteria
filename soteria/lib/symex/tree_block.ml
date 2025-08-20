@@ -98,7 +98,7 @@ module type MemVal = sig
   val consume :
     serialized ->
     (t, sint) tree ->
-    ((t, sint) tree, 'err, serialized list) Symex.Result.t
+    ((t, sint) tree, 'err, serialized) Symex.Result.t
 
   (** Add the given [serialized] predicate onto the given tree; the input tree
       is not necessarily empty ([NotOwned Totally]), and if the predicate
@@ -113,8 +113,7 @@ module type MemVal = sig
       state can be composed with it; in other words, calling [produce] on a tree
       with this node must always vanish. Otherwise this should raise a [miss]
       with the fixes needed for this to become exclusively owned. *)
-  val assert_exclusively_owned :
-    t -> (unit, 'err, serialized list) Symex.Result.t
+  val assert_exclusively_owned : t -> (unit, 'err, serialized) Symex.Result.t
 end
 
 module Make
@@ -154,12 +153,6 @@ struct
 
   module Split_tree = Split_tree
 
-  let miss_no_fix_immediate ?(msg = "") () =
-    Soteria_logs.Logs.L.info (fun m -> m "MISSING WITH NO FIX %s" msg);
-    Missing []
-
-  let miss_no_fix ?msg () = return (miss_no_fix_immediate ?msg ())
-
   module Node = struct
     type qty = node_qty = Partially | Totally
 
@@ -181,7 +174,8 @@ struct
 
     let assert_exclusively_owned = function
       | NotOwned _ ->
-          miss_no_fix ~msg:"assert_exclusively_owned - tree not fully owned" ()
+          Result.miss_no_fix
+            ~reason:"assert_exclusively_owned - tree not fully owned" ()
       | Owned n -> MemVal.assert_exclusively_owned n
 
     let merge ~left ~right =
@@ -490,7 +484,7 @@ struct
     (** Cons/prod *)
 
     let consume (serialized : MemVal.serialized) (range : Range.t) (st : t) :
-        (t, 'err, MemVal.serialized list) Symex.Result.t =
+        (t, 'err, MemVal.serialized) Symex.Result.t =
       let replace_node = MemVal.consume serialized in
       let rebuild_parent = of_children in
       let++ _, tree = frame_range st ~replace_node ~rebuild_parent range in
@@ -547,8 +541,8 @@ struct
   type serialized = serialized_atom list
 
   let lift_miss ~offset ~len symex =
-    let+? fixes = symex in
-    List.map (fun v -> [ MemVal { v; offset; len } ]) fixes
+    let+? fix = symex in
+    [ MemVal { v = fix; offset; len } ]
 
   let iter_values_serialized serialized f =
     List.iter (function MemVal { v; _ } -> f v | _ -> ()) serialized
@@ -578,15 +572,17 @@ struct
   let assert_exclusively_owned t =
     let** t = of_opt t in
     match t.bound with
-    | None -> miss_no_fix ~msg:"assert_exclusively_owned - no bound" ()
+    | None ->
+        Result.miss_no_fix ~reason:"assert_exclusively_owned - no bound" ()
     | Some bound ->
         let { range = low, high; node; _ } = t.root in
         if%sat low ==@ zero &&@ (high ==@ bound) then
           lift_miss ~offset:zero ~len:bound
           @@ Node.assert_exclusively_owned node
         else
-          miss_no_fix
-            ~msg:"assert_exclusively_owned - tree does not span [0; bound[" ()
+          Result.miss_no_fix
+            ~reason:"assert_exclusively_owned - tree does not span [0; bound["
+            ()
 
   let get_raw_tree_owned ofs size t =
     let@ t = with_bound_and_owned_check t (ofs +@ size) in
@@ -594,7 +590,7 @@ struct
     if Node.is_fully_owned tree.node then
       let tree = Tree.offset ~by:(zero -@ ofs) tree in
       Result.ok (tree, t)
-    else miss_no_fix ~msg:"get_raw_tree_owned" ()
+    else Result.miss_no_fix ~reason:"get_raw_tree_owned" ()
 
   (* This is used for copy_nonoverapping.
    It is an action on the destination block, and assumes the received tree is at offset 0 *)
@@ -660,7 +656,8 @@ struct
 
   let consume_bound bound t =
     match t with
-    | None | Some { bound = None; _ } -> miss_no_fix ~msg:"consume_bound" ()
+    | None | Some { bound = None; _ } ->
+        Result.miss_no_fix ~reason:"consume_bound" ()
     | Some { bound = Some v; root } ->
         let+ () = Symex.assume [ v ==@ bound ] in
         Ok (to_opt { bound = None; root })

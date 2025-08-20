@@ -1,6 +1,11 @@
 open Soteria_c_values
 open Soteria_symex;;
 
+let pp_stats _pp_inner ft (_t: 'a Soteria_stats.stats) =
+  Fmt.pf ft "...";;
+
+#install_printer pp_stats;;
+#install_printer pp_run_results;;
 #install_printer Soteria_c_values.Typed.ppa;;
 #require "soteria.ppx";;
 

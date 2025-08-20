@@ -29,7 +29,7 @@ module Make (C : Codom) = struct
   let pp = C.pp
   let pp_serialized = pp
 
-  let load (st : t option) : ('a * t option, 'err, 'fix list) Symex.Result.t =
+  let load (st : t option) : ('a * t option, 'err, 'fix) Symex.Result.t =
     match st with
     | Some x -> Symex.Result.ok (x, st)
     | None ->

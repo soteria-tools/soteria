@@ -5,10 +5,7 @@ open Csymex
 open Csymex.Syntax
 module Sym_map = Concrete_map (Symbol_std)
 
-module Loc :
-  Soteria_symex.Pure_fun.Codom
-    with type t = Typed.T.sloc Typed.t
-     and module Symex = Csymex = struct
+module Loc = struct
   module Symex = Csymex
 
   type t = Typed.T.sloc Typed.t

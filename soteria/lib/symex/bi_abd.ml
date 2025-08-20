@@ -13,9 +13,8 @@ module Make (Symex : Symex.S) = struct
       (Fmt.Dump.list pp_fix) fixes
 
   let wrap ?(fuel = 1) ~(produce : 'fix -> 'a -> 'a Symex.t)
-      (f : 'a -> ('v * 'a, 'err, 'fix list) Symex.Result.t)
-      (bi_st : ('a, 'fix) t) :
-      ('v * ('a, 'fix) t, 'err * ('a, 'fix) t, 'fix list) Result.t =
+      (f : 'a -> ('v * 'a, 'err, 'fix) Symex.Result.t) (bi_st : ('a, 'fix) t) :
+      ('v * ('a, 'fix) t, 'err * ('a, 'fix) t, 'fix) Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
     let rec with_fuel fuel bi_st =
       let st, fixes = bi_st in
@@ -36,8 +35,8 @@ module Make (Symex : Symex.S) = struct
     in
     with_fuel fuel bi_st
 
-  let wrap_error (f : 'a -> ('ok, 'err, 'fix list) Symex.Result.t)
-      (bi_st : ('a, 'fix) t) : ('ok, 'err * ('a, 'fix) t, 'fix list) Result.t =
+  let wrap_error (f : 'a -> ('ok, 'err, 'fix) Symex.Result.t)
+      (bi_st : ('a, 'fix) t) : ('ok, 'err * ('a, 'fix) t, 'fix) Result.t =
     let st, _ = bi_st in
     let* res = f st in
     match res with
@@ -55,9 +54,9 @@ module Make (Symex : Symex.S) = struct
     (st, fixes)
 
   let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)
-      (cons : 'ser -> 't -> ('t, 'err, 'ser list) Symex.Result.t)
-      (inner_ser : 'ser) (bi_st : ('t, 'ser) t) :
-      (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser list) Symex.Result.t =
+      (cons : 'ser -> 't -> ('t, 'err, 'ser) Symex.Result.t) (inner_ser : 'ser)
+      (bi_st : ('t, 'ser) t) :
+      (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser) Symex.Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
     let rec with_fuel fuel bi_st =
       let st, fixes = bi_st in

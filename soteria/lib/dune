@@ -6,7 +6,8 @@
   soteria.logs
   soteria.c_values
   soteria.std
-  soteria.terminal))
+  soteria.terminal
+  soteria.stats))
 
 (documentation
  (package soteria))

@@ -1,6 +1,12 @@
 (mdx
  (preludes prelude.ml)
- (libraries soteria.c_values soteria.symex zarith fmt soteria.ppx))
+ (libraries
+  soteria.c_values
+  soteria.symex
+  soteria.stats
+  zarith
+  fmt
+  soteria.ppx))
 
 (documentation
  (package soteria))

@@ -19,7 +19,7 @@ module M (State : State_intf.S) = struct
   type 'err fun_exec =
     args:Agv.t list ->
     State.t ->
-    (Agv.t * State.t, 'err, State.serialized list) Result.t
+    (Agv.t * State.t, 'err, State.serialized) Result.t
 
   let malloc ~(args : Agv.t list) state =
     let* sz =
