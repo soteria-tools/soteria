@@ -32,9 +32,13 @@ let pp_layout fmt { size; align; fields } =
     Fields_shape.pp fields
 
 module Session = struct
+  type ty_key = Types.ty
+  type variant_key = Types.type_decl_id * Types.variant
+
   (* TODO: allow different caches for different crates *)
+
   (** Cache of (type or variant) -> layout *)
-  let layout_cache : ((Types.ty, Types.variant) Either.t, layout) Hashtbl.t =
+  let layout_cache : ((ty_key, variant_key) Either.t, layout) Hashtbl.t =
     Hashtbl.create 128
 
   let get_or_compute_cached_layout ty f =
@@ -48,8 +52,8 @@ module Session = struct
   let get_or_compute_cached_layout_ty ty =
     get_or_compute_cached_layout (Left ty)
 
-  let get_or_compute_cached_layout_var var =
-    get_or_compute_cached_layout (Right var)
+  let get_or_compute_cached_layout_var adt var =
+    get_or_compute_cached_layout (Right (adt, var))
 end
 
 let is_int : Types.ty -> bool = function
@@ -113,7 +117,7 @@ let enum_discr_ty adt_id : Types.ty =
       TLiteral (TInt ty)
   | Some { discriminant_layout = Some { tag_ty = Unsigned ty; _ }; _ } ->
       TLiteral (TUInt ty)
-  | _ -> TLiteral (TUInt Usize)
+  | None | Some { discriminant_layout = None; _ } -> TLiteral (TUInt Usize)
 
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
@@ -222,7 +226,7 @@ and layout_of_members members =
   }
 
 and of_variant adt_id (variant : Types.variant) =
-  Session.get_or_compute_cached_layout_var variant @@ fun () ->
+  Session.get_or_compute_cached_layout_var adt_id variant @@ fun () ->
   let variants = Crate.as_enum adt_id in
   if
     match variants with
