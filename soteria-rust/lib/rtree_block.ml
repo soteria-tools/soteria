@@ -29,7 +29,7 @@ module Make (Sptr : Sptr.S) = struct
       let open Fmt in
       pf ft "%a : %a" pp_rust_val v Charon_util.pp_ty ty
 
-    type qty = Totally | Partially [@@deriving show]
+    type qty = Totally | Partially [@@deriving show { with_path = false }]
 
     type value =
       | Init of (rust_val * Types.ty) [@printer pp_init]
