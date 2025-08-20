@@ -1,3 +1,1 @@
-pin-depends: [
-  ["cerberus-lib.~dev" "git+https://github.com/kmemarian/cerberus#frontend-for-system-libc"]
-]
+
