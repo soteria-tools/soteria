@@ -39,7 +39,7 @@ jobs:
           cache: "yarn"
       - name: Setup OCaml
         uses: ocaml-dune/setup-dune@v0
-      - run: dune pkg lock --update
+      - run: dune pkg lock
       # OCaml build
       - name: Build OCaml stuff
         run: make ocaml
