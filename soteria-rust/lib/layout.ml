@@ -36,6 +36,7 @@ module Session = struct
   type variant_key = Types.type_decl_id * Types.variant
 
   (* TODO: allow different caches for different crates *)
+  (* FIXME: inter-test mutability *)
 
   (** Cache of (type or variant) -> layout *)
   let layout_cache : ((ty_key, variant_key) Either.t, layout) Hashtbl.t =
