@@ -1,5 +1,1 @@
-pin-depends: [
-  ["vscode.~dev" "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c"]
-  ["vscode-node.~dev" "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c"]
-  ["vscode-interop.~dev" "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c"]
-]
+
