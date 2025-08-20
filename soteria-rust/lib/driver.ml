@@ -152,7 +152,9 @@ let print_outcomes_summary outcomes =
     outcomes
 
 let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
-  (* get entry points to the crte *)
+  let@ () = Crate.with_crate crate in
+
+  (* get entry points to the crate *)
   let entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
     |> List.filter_map plugin.get_entry_point
@@ -162,7 +164,6 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   (* prepare executing the entry points *)
   let map_with l f = List.map f l in
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
-  let@ () = Crate.with_crate crate in
   let@ entry : 'a Plugin.entry_point = map_with entry_points in
   (* execute! *)
   let entry_name =
@@ -198,11 +199,11 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 
   (* check for uncaught failure conditions *)
   let outcomes = List.map fst branches in
-  (if Option.is_some !Rustsymex.not_impl_happened then
-     let msg = Option.get !Rustsymex.not_impl_happened in
-     let () = Rustsymex.not_impl_happened := None in
-     execution_err msg);
-  if List.exists Compo_res.is_missing outcomes then
+  if Option.is_some !Rustsymex.not_impl_happened then
+    let msg = Option.get !Rustsymex.not_impl_happened in
+    let () = Rustsymex.not_impl_happened := None in
+    execution_err msg
+  else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 
   let errors = Compo_res.only_errors outcomes in

@@ -295,11 +295,7 @@ let merge_ifs (plugins : (bool * Soteria_symex.Fuel_gauge.t option plugin) list)
       match filters with
       | [] -> true
       | _ ->
-          let name =
-            match List.last_opt decl.item_meta.name with
-            | Some (PeIdent (name, _)) -> name
-            | _ -> ""
-          in
+          let name = Fmt.to_to_string Crate.pp_name decl.item_meta.name in
           List.exists
             (fun f ->
               try Str.search_forward (Str.regexp f) name 0 >= 0
