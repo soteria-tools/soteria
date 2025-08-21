@@ -25,7 +25,7 @@ module Meta = struct
   end
 end
 
-module type Base = sig
+module type S = sig
   module Value : Value.S
   module Stats : Soteria_stats.S
 
@@ -38,8 +38,6 @@ module type Base = sig
       potential typos such as [`LFail] which will take precious time to debug...
       trust me. *)
   type lfail = [ `Lfail of Value.sbool Value.t ]
-
-  module MONAD : Monad.Base with type 'a t = 'a t
 
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
@@ -129,16 +127,11 @@ module type Base = sig
       symbolic execution processes using a single [stats] record. *)
   val run_needs_stats :
     ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
-end
 
-module type S = sig
-  include Base
   include Monad.Base with type 'a t := 'a t
 
   (** Gives up on this path of execution for incompleteness reason. For
-      instance, if a give feature is unsupported. In {!Approx.UX} mode, this
-      will drop the branch, while in {!Approx.OX} mode, this interupt the entire
-      symbolic execution run and return a [`Give_up] error.
+      instance, if a give feature is unsupported.
 
       This function also logs, and adds the reason for giving up to the
       execution statistics. *)
@@ -147,10 +140,6 @@ module type S = sig
   (** If the given option is None, gives up execution, otherwise continues,
       unwrapping the option. *)
   val some_or_give_up : loc:Stats.Range.t -> string -> 'a option -> 'a t
-
-  (** If the given result is Error, gives up execution, otherwise continues,
-      unwrapping the result. *)
-  val ok_or_give_up : ('a, string * Stats.Range.t) result -> 'a t
 
   val all : ('a -> 'b t) -> 'a list -> 'b list t
   val fold_list : 'a list -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
@@ -227,71 +216,8 @@ module type S = sig
   end
 end
 
-module Extend (Base : Base) = struct
-  include Base
-  include MONAD
-
-  let all fn xs =
-    let rec aux acc rs =
-      match rs with
-      | [] -> return (List.rev acc)
-      | r :: rs -> bind (fn r) @@ fun x -> aux (x :: acc) rs
-    in
-    aux [] xs
-
-  let give_up ~loc reason =
-    (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
-    bind (return ()) @@ fun () ->
-    L.info (fun m -> m "%s" reason);
-    Stats.As_ctx.push_give_up_reason ~loc reason;
-    vanish ()
-
-  let some_or_give_up ~loc reason = function
-    | Some x -> return x
-    | None -> give_up ~loc reason
-
-  let ok_or_give_up = function
-    | Ok x -> return x
-    | Error (msg, loc) -> give_up ~loc msg
-
-  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
-  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
-  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
-  let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
-
-  module Result = struct
-    include Compo_res.T (MONAD)
-
-    let miss_no_fix ~reason () =
-      bind (ok ()) @@ fun () ->
-      Stats.As_ctx.push_missing_without_fix reason;
-      L.debug (fun m -> m "Missing without fix: %s" reason);
-      miss []
-
-    let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
-    let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
-    let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
-    let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
-  end
-
-  module Syntax = struct
-    let ( let* ) = bind
-    let ( let+ ) = map
-    let ( let** ) = Result.bind
-    let ( let++ ) = Result.map
-    let ( let+- ) = Result.map_error
-    let ( let+? ) = Result.map_missing
-
-    module Symex_syntax = struct
-      let branch_on = branch_on
-      let branch_on_take_one = branch_on_take_one
-    end
-  end
-end
-
 module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
-  S with module Value = Sol.Value and module Stats.Range = Meta.Range =
-Extend (struct
+  S with module Value = Sol.Value and module Stats.Range = Meta.Range = struct
   module Solver = Solver.Mutable_to_in_place (Sol)
   module Stats = Soteria_stats.Make (Meta.Range)
 
@@ -305,6 +231,7 @@ Extend (struct
 
   module Value = Solver.Value
   module MONAD = Monad.IterM
+  include MONAD
 
   type 'a t = 'a Iter.t
   type lfail = [ `Lfail of Value.sbool Value.t ]
@@ -501,4 +428,57 @@ Extend (struct
     run_needs_stats ?fuel ~mode iter
 
   let vanish () _f = ()
-end)
+
+  let all fn xs =
+    let rec aux acc rs =
+      match rs with
+      | [] -> return (List.rev acc)
+      | r :: rs -> bind (fn r) @@ fun x -> aux (x :: acc) rs
+    in
+    aux [] xs
+
+  let give_up ~loc reason =
+    (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
+    bind (return ()) @@ fun () ->
+    L.info (fun m -> m "%s" reason);
+    Stats.As_ctx.push_give_up_reason ~loc reason;
+    vanish ()
+
+  let some_or_give_up ~loc reason = function
+    | Some x -> return x
+    | None -> give_up ~loc reason
+
+  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
+  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
+  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
+  let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+
+  module Result = struct
+    include Compo_res.T (MONAD)
+
+    let miss_no_fix ~reason () =
+      bind (ok ()) @@ fun () ->
+      Stats.As_ctx.push_missing_without_fix reason;
+      L.debug (fun m -> m "Missing without fix: %s" reason);
+      miss []
+
+    let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
+    let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
+    let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
+    let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+  end
+
+  module Syntax = struct
+    let ( let* ) = bind
+    let ( let+ ) = map
+    let ( let** ) = Result.bind
+    let ( let++ ) = Result.map
+    let ( let+- ) = Result.map_error
+    let ( let+? ) = Result.map_missing
+
+    module Symex_syntax = struct
+      let branch_on = branch_on
+      let branch_on_take_one = branch_on_take_one
+    end
+  end
+end
