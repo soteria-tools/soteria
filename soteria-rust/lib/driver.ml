@@ -234,7 +234,7 @@ let fatal ?name ?(code = 2) err =
 let exec_and_output_crate ~plugin compile_fn =
   match wrap_step "Compiling" compile_fn |> exec_crate ~plugin with
   | outcomes ->
-      let () = print_outcomes_summary outcomes in
+      if !Config.current.print_summary then print_outcomes_summary outcomes;
       let outcome = Outcome.merge_list outcomes in
       Outcome.exit outcome
   | exception Plugin.PluginError e -> fatal ~name:"Plugin" e
