@@ -74,10 +74,10 @@ module type Base = sig
     else_:(unit -> 'a t) ->
     'a t
 
-  (** Branches on value, and takes at most one branch, starting with the [then]
-      branch. This means that if the [then_] branch is SAT, it is taken and the
-      [else_] branch is ignored, otherwise the [else_] branch is taken. This is,
-      of course, UX-sound, but not OX-sound. *)
+  (** Branches on value, and ({b in UX only}) takes at most one branch, starting
+      with the [then] branch. This means that if the [then_] branch is SAT, it
+      is taken and the [else_] branch is ignored, otherwise the [else_] branch
+      is taken. In OX mode, this behaves exactly as [branch_on]. *)
   val branch_on_take_one :
     ?left_branch_name:string ->
     ?right_branch_name:string ->
@@ -402,8 +402,8 @@ Extend (struct
                   if Solver_result.is_sat (Solver.sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible"))
 
-  let branch_on_take_one ?left_branch_name:_ ?right_branch_name:_ guard ~then_
-      ~else_ : 'a Iter.t =
+  let branch_on_take_one_ux ?left_branch_name:_ ?right_branch_name:_ guard
+      ~then_ ~else_ : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
     match Value.as_bool guard with
@@ -419,6 +419,13 @@ Extend (struct
         if not !left_sat then (
           Solver.add_constraints [ Value.(not guard) ];
           else_ () f)
+
+  let branch_on_take_one ?left_branch_name ?right_branch_name guard ~then_
+      ~else_ f =
+    if Approx.As_ctx.is_ux () then
+      branch_on_take_one_ux ?left_branch_name ?right_branch_name guard ~then_
+        ~else_ f
+    else branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ f
 
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
