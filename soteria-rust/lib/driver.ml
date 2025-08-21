@@ -43,12 +43,6 @@ module Cleaner = struct
   let () = at_exit (fun () -> if !Config.current.cleanup then cleanup ())
 end
 
-let config_set (config : Config.global) =
-  Solver_config.set config.solver;
-  Soteria_logs.Config.check_set_and_lock config.logs;
-  Soteria_terminal.Config.set_and_lock config.terminal;
-  Config.set config.rusteria
-
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   if not !Config.current.no_compile then (
@@ -248,13 +242,13 @@ let exec_and_output_crate ~plugin compile_fn =
   | exception FrontendError e -> fatal ~name:"Frontend" ~code:3 e
 
 let exec_rustc config file_name =
-  config_set config;
+  Config.set config;
   let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_file ~plugin file_name in
   exec_and_output_crate ~plugin compile
 
 let exec_cargo config crate_dir =
-  config_set config;
+  Config.set config;
   let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_crate ~plugin crate_dir in
   exec_and_output_crate ~plugin compile

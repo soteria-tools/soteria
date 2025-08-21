@@ -38,14 +38,23 @@ type t = {
 }
 [@@deriving make, subliner]
 
-type global = {
-  logs : (Soteria_logs.Config.t, string) result;
-  terminal : Soteria_terminal.Config.t;
-  solver : Soteria_c_values.Solver_config.t;
-  rusteria : t;
-}
-[@@deriving make]
+let term = cmdliner_term ()
 
+type global = {
+  logs : (Soteria_logs.Config.t, string) result; [@term Soteria_logs.Cli.term]
+  terminal : Soteria_terminal.Config.t; [@term Soteria_terminal.Cli.term]
+  solver : Soteria_c_values.Solver_config.t;
+      [@term Soteria_c_values.Solver_config.Cli.term]
+  rusteria : t; [@term term]
+}
+[@@deriving make, subliner]
+
+let global_term = global_cmdliner_term ()
 let default = make ()
 let current : t ref = ref default
-let set (config : t) = current := config
+
+let set (config : global) =
+  Solver_config.set config.solver;
+  Soteria_logs.Config.check_set_and_lock config.logs;
+  Soteria_terminal.Config.set_and_lock config.terminal;
+  current := config.rusteria
