@@ -1,7 +1,7 @@
 type t = {
   no_color : bool;
       [@names [ "no-color"; "no-colour" ]]
-      [@env "SOTERIA_NO_COLOR"]
+      [@env "NO_COLOR"]
       [@make.default false]
       (** Disables coloured output *)
   compact : bool;
