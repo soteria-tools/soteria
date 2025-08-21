@@ -21,19 +21,18 @@ let complex_process =
 
 let give_up_in_ux =
   let results = Csymex.run ~mode:UX complex_process in
-  Fmt.pr "In UX with Csymex.run: %a@\n@\n"
+  Fmt.pr "@[<v 2>Csymex.run ~mode:UX complex_process:@ %a@]@\n@\n"
     (Fmt.Dump.list (pp_branch Fmt.string))
     results
 
 let give_up_in_ux_res =
   let results = Csymex.Result.run ~mode:UX complex_process in
-  Fmt.pr "In UX with Csymex.Result.run: %a@\n@\n"
+  Fmt.pr "@[<v 2>Csymex.Result.run ~mode:UX complex_process:@ %a@]@\n@\n"
     (Fmt.Dump.list (pp_branch (Soteria_symex.Symex.Or_gave_up.pp Fmt.string)))
     results
 
 let give_up_in_ox_exn =
-  Fmt.pr
-    "Trying to run in OX with Csymex.run, expecting to catch an exception -- ";
+  Fmt.pr "Csymex.run ~mode:OX complex_process;; EXPECTING EXCEPTION -- ";
   try
     let results = Csymex.run ~mode:OX complex_process in
     Fmt.pr "In OX with Csymex.run: %a@\n"
@@ -44,6 +43,6 @@ let give_up_in_ox_exn =
 
 let give_up_in_ox_res =
   let results = Csymex.Result.run ~mode:OX complex_process in
-  Fmt.pr "In UX with Csymex.Result.run: %a@\n@\n"
+  Fmt.pr "@[<v 2>Csymex.Result.run ~mode:OX complex_process:@ %a@]@\n@\n"
     (Fmt.Dump.list (pp_branch (Soteria_symex.Symex.Or_gave_up.pp Fmt.string)))
     results
