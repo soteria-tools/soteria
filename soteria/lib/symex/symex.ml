@@ -3,12 +3,6 @@ open Syntaxes.FunctionWrap
 module L = Logs.L
 module List = ListLabels
 
-let is_sat (result : Solver.result) =
-  match result with Sat -> true | Unsat | Unknown -> false
-
-let is_unsat (result : Solver.result) =
-  match result with Unsat -> true | Sat | Unknown -> false
-
 module Meta = struct
   (** Management of meta-information about the execution. *)
 
@@ -321,7 +315,7 @@ Extend (struct
           in
           Symex_state.save ();
           Solver.add_constraints [ Value.(not value) ];
-          let sat = is_sat (Solver.sat ()) in
+          let sat = Solver_result.is_sat (Solver.sat ()) in
           Symex_state.backtrack_n 1;
           not sat
         in
@@ -340,7 +334,7 @@ Extend (struct
           in
           Symex_state.save ();
           Solver.add_constraints [ Value.(not value) ];
-          let unsat = is_unsat (Solver.sat ()) in
+          let unsat = Solver_result.is_unsat (Solver.sat ()) in
           Symex_state.backtrack_n 1;
           unsat
         in
@@ -369,8 +363,8 @@ Extend (struct
         Logs.with_section ~is_branch:true left_branch_name (fun () ->
             Solver.add_constraints ~simplified:true [ guard ];
             let sat_res = Solver.sat () in
-            left_unsat := is_unsat sat_res;
-            if is_sat sat_res then then_ () f
+            left_unsat := Solver_result.is_unsat sat_res;
+            if Solver_result.is_sat sat_res then then_ () f
             else L.trace (fun m -> m "Branch is not feasible"));
         Symex_state.backtrack_n 1;
         Logs.with_section ~is_branch:true right_branch_name (fun () ->
@@ -385,7 +379,7 @@ Extend (struct
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->
                   Stats.As_ctx.add_branches 1;
-                  if is_sat (Solver.sat ()) then else_ () f
+                  if Solver_result.is_sat (Solver.sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible"))
 
   let branch_on_take_one ?left_branch_name:_ ?right_branch_name:_ guard ~then_
@@ -399,7 +393,8 @@ Extend (struct
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         let left_sat = ref true in
-        if is_sat (Solver.sat ()) then then_ () f else left_sat := false;
+        if Solver_result.is_sat (Solver.sat ()) then then_ () f
+        else left_sat := false;
         Symex_state.backtrack_n 1;
         if not !left_sat then (
           Solver.add_constraints [ Value.(not guard) ];

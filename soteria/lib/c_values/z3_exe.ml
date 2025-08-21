@@ -237,7 +237,7 @@ let add_constraint solver v =
   let sexp = Simple_smt.assume v in
   ack_command solver sexp
 
-let check_sat solver : Soteria_symex.Solver.result =
+let check_sat solver : Soteria_symex.Solver_result.t =
   let smt_res =
     try check solver
     with Simple_smt.UnexpectedSolverResponse s ->

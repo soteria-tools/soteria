@@ -1,5 +1,3 @@
-type result = Sat | Unsat | Unknown
-
 module type Mutable_incremental = sig
   (** This module represents a solver state, it is fully imperative! *)
 
@@ -14,7 +12,7 @@ module type Mutable_incremental = sig
       adding them to the state, depending on its implementation. *)
   val add_constraints : t -> ?simplified:bool -> sbool_v list -> unit
 
-  val sat : t -> result
+  val sat : t -> Solver_result.t
   val simplify : t -> 'a Value.t -> 'a Value.t
   val fresh_var : t -> 'a Value.ty -> Var.t
   val as_values : t -> sbool_v list
