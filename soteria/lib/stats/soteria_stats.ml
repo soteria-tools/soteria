@@ -67,8 +67,8 @@ module type S = sig
   module As_ctx : sig
     (** Module for manipulating statistics as a context using algebraic effects
         (that are hidden). All calls to any function in this module should
-        happen only inside a function wrapped with {!with_stats}, ensuring that
-        the statistics are properly passed around. *)
+        happen only inside a function wrapped with {!val-with_stats}, ensuring
+        that the statistics are properly passed around. *)
 
     (** [with_stats () f] runs function [f] and handles effects raised by the
         functions of this module such as {!add_exec_time}, and returns a record
@@ -99,8 +99,7 @@ module type S = sig
     val add_steps : int -> unit
 
     (** Push a reason for not being able to fix a Missing error. Handled by
-        Soteria when users call {!Soteria_symex.Symex.S.Result.miss_without_fix}
-    *)
+        Soteria when users call {!Soteria_symex.Symex.S.Result.miss_no_fix} *)
     val push_missing_without_fix : string -> unit
 
     (** Push a reason for giving up symex, with the location at which it was
