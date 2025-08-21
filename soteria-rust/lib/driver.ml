@@ -10,9 +10,11 @@ open Charon
 
 exception ExecutionError of string
 exception FrontendError of string
+exception UnsupportedFeatures of string list
 
 let execution_err msg = raise (ExecutionError msg)
 let frontend_err msg = raise (FrontendError msg)
+let unsupported_features features = raise (UnsupportedFeatures features)
 
 module Outcome = struct
   type t = Ok | Error | Fatal
@@ -138,6 +140,16 @@ let print_outcomes entry_name f =
         "%s: runtime error in %a: %s" entry_name pp_time time e;
       Fmt.pr "@\n@\n@?";
       (entry_name, Outcome.Fatal)
+  | exception UnsupportedFeatures fs ->
+      let time = Unix.gettimeofday () -. time in
+      Fmt.kstr
+        (Diagnostic.print_diagnostic_simple ~severity:Warning)
+        "%s: unknown outcome in %a, due to unsupported features: @\n%a"
+        entry_name pp_time time
+        Fmt.(list ~sep:cut (fun ft r -> Fmt.pf ft "• %s" r))
+        fs;
+      Fmt.pr "@\n@\n@?";
+      (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
   let open Fmt in
@@ -202,8 +214,7 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let outcomes = List.map fst branches in
   if Stats.Hstring.length stats.give_up_reasons <> 0 then
     let reasons = Stats.Hstring.to_seq_keys stats.give_up_reasons in
-    let msg = String.concat ", " (List.of_seq reasons) in
-    execution_err msg
+    unsupported_features @@ List.of_seq reasons
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 

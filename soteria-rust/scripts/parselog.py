@@ -82,40 +82,12 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if "resolve_constant (Generated_Expressions.COpaque" in test:
         return ("Tool", PURPLE, "Constant resolving")
 
-    if "MISSING FEATURE, VANISHING" in test:
-        cause = re.search(r"MISSING FEATURE, VANISHING: (.+)\n", test)
-        if not cause:
-            exit(f"No cause found for vanish in {test}")
-        cause = cause.group(1)
-        color = YELLOW
-        reason = None
-
-        if "Unsupported intrinsic" in cause:
-            reason = cause.replace("Unsupported intrinsic: ", "")
-            cause = "Unsupported intrinsic"
-            color = ORANGE
-
-        if "not found in store" in cause:
-            cause = "Variable not found in store"
-        if "Unsupported cast kind" in cause:
-            cause = "Unsupported cast kind"
-        if "Unhandled transmute" in cause:
-            cause = "Unhandled transmute"
-        if "is opaque" in cause:
-            reason = cause.replace("Function ", "").replace(" is opaque", "")
-            cause = "Opaque function - Tool"
-            color = PURPLE
-        if "Opaque constant" in cause:
-            reason = cause.replace("Constant constant: ", "")
-            cause = "Opaque constant - Tool"
-            color = PURPLE
-        if "Splitting " in cause:
-            cause = "Splitting value"
-
-        return (cause, color, reason)
-
-    if "Execution vanished" in test:
-        return ("Vanished", RED, None)
+    unsup_regex = r"^warning: .*: unknown outcome in"
+    if re.search(unsup_regex, test, re.MULTILINE):
+        reasons = re.findall(r"\n• (.*)", test)
+        if reasons:
+            return [("Unsupported", YELLOW, reason) for reason in reasons]
+        return ("Unsupported", YELLOW, None)
 
     if "Miss encountered in WPST" in test:
         return ("Miss encountered", RED, None)
