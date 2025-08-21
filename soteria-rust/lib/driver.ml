@@ -149,7 +149,7 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
      let branches =
        let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
        let fuel = Option.value ~default:default_fuel entry.fuel in
-       try Rustsymex.run ~fuel ~mode:OX @@ exec_fun entry.fun_decl with
+       try Rustsymex.run ~fuel ~mode:UX @@ exec_fun entry.fun_decl with
        | Layout.InvalidLayout ty ->
            [
              (Error (`InvalidLayout ty, Soteria_terminal.Call_trace.empty), []);
