@@ -308,6 +308,11 @@ Extend (struct
     in
     aux [] learned
 
+  let solver_sat () =
+    let res = Solver.sat () in
+    if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
+    res
+
   (** Assert is [if%sat (not value) then error else ok]. In UX, assert only
       returns false if (not value) is *really* satisfiable. *)
   let assert_ value f =
@@ -323,7 +328,7 @@ Extend (struct
           in
           Symex_state.save ();
           Solver.add_constraints [ Value.(not value) ];
-          let sat = is_sat (Solver.sat ()) in
+          let sat = is_sat (solver_sat ()) in
           Symex_state.backtrack_n 1;
           not sat
         in
@@ -342,7 +347,7 @@ Extend (struct
           in
           Symex_state.save ();
           Solver.add_constraints [ Value.(not value) ];
-          let unsat = is_unsat (Solver.sat ()) in
+          let unsat = is_unsat (solver_sat ()) in
           Symex_state.backtrack_n 1;
           unsat
         in
@@ -370,7 +375,7 @@ Extend (struct
         Symex_state.save ();
         Logs.with_section ~is_branch:true left_branch_name (fun () ->
             Solver.add_constraints ~simplified:true [ guard ];
-            let sat_res = Solver.sat () in
+            let sat_res = solver_sat () in
             left_unsat := is_unsat sat_res;
             if is_sat sat_res then then_ () f
             else L.trace (fun m -> m "Branch is not feasible"));
@@ -388,7 +393,7 @@ Extend (struct
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->
                   Stats.As_ctx.add_branches 1;
-                  if is_sat (Solver.sat ()) then else_ () f
+                  if is_sat (solver_sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible"))
 
   let branch_on_take_one ?left_branch_name:_ ?right_branch_name:_ guard ~then_
@@ -402,7 +407,7 @@ Extend (struct
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         let left_sat = ref true in
-        if is_sat (Solver.sat ()) then then_ () f else left_sat := false;
+        if is_sat (solver_sat ()) then then_ () f else left_sat := false;
         Symex_state.backtrack_n 1;
         if not !left_sat then (
           Solver.add_constraints [ Value.(not guard) ];

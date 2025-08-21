@@ -18,6 +18,8 @@ type 'range stats = {
       (** Number of branches that were not explored because of fuel exhaustion.
           This includes branches not taking due to missing branch fuel, and
           branches that were cut due to step fuel. *)
+  mutable sat_unknowns : int;
+      (** Number of times the SAT solver returned [unknown] *)
 }
 [@@deriving yojson]
 
@@ -33,6 +35,7 @@ let create () =
     branch_number = 1;
     steps_number = 0;
     unexplored_branch_number = 0;
+    sat_unknowns = 0;
   }
 
 let with_empty_stats res = { res; stats = create () }
@@ -108,6 +111,10 @@ module type S = sig
         {!Soteria_symex.Symex.S.consume_fuel_steps} or when branching *)
     val add_unexplored_branches : int -> unit
 
+    (** Adds the number of times the SAT solver returned unknowns to the count
+        of statistics. Handled by Soteria. *)
+    val add_sat_unknowns : int -> unit
+
     (** Push a reason for not being able to fix a Missing error. Handled by
         Soteria when users call {!Soteria_symex.Symex.S.Result.miss_without_fix}
     *)
@@ -162,6 +169,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
       steps_number = t1.steps_number + t2.steps_number;
       unexplored_branch_number =
         t1.unexplored_branch_number + t2.unexplored_branch_number;
+      sat_unknowns = t1.sat_unknowns + t2.sat_unknowns;
     }
 
   let push_give_up_reason ~loc reason t =
@@ -225,5 +233,8 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
     let add_unexplored_branches n =
       apply (fun stats ->
           stats.unexplored_branch_number <- stats.unexplored_branch_number + n)
+
+    let add_sat_unknowns n =
+      apply (fun stats -> stats.sat_unknowns <- stats.sat_unknowns + n)
   end
 end
