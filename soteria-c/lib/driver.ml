@@ -243,12 +243,16 @@ let exec_function ~includes file_names function_name =
           Soteria_symex.Fuel_gauge.infinite
         else default_wpst_fuel
       in
-      Ok (Csymex.run_with_stats ~mode:OX ~fuel symex)
+      Ok (Csymex.Result.run_with_stats ~mode:OX ~fuel symex)
   in
   match result with
   | Ok v -> v
   | Error e ->
-      Soteria_stats.with_empty_stats [ (Soteria_symex.Compo_res.Error e, []) ]
+      Soteria_stats.with_empty_stats
+        [
+          ( Soteria_symex.Compo_res.Error (Soteria_symex.Symex.Or_gave_up.E e),
+            [] );
+        ]
 
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
@@ -302,7 +306,7 @@ let exec_and_print log_config term_config solver_config config includes
         list @@ fun ft (r, _) ->
         (Soteria_symex.Compo_res.pp
            ~ok:(pair Aggregate_val.pp pp_state)
-           ~err:pp_err_and_call_trace
+           ~err:(Soteria_symex.Symex.Or_gave_up.pp pp_err_and_call_trace)
            ~miss:(Fmt.Dump.list SState.pp_serialized))
           ft r)
       result.res result.stats.steps_number

@@ -1,6 +1,6 @@
 (executables
- (names run_twice)
+ (names run_twice deep_give_up)
  (libraries soteria_c_values soteria_c_lib)
- (flags -open Soteria_c_values)
+ (flags -open Soteria_c_values -open Soteria_c_lib)
  (preprocess
   (pps soteria.ppx)))

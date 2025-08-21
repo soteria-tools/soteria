@@ -3,6 +3,16 @@ open Syntaxes.FunctionWrap
 module L = Logs.L
 module List = ListLabels
 
+exception Gave_up of string
+
+module Or_gave_up = struct
+  type 'err t = E of 'err | Gave_up of string
+
+  let pp pp_err fmt = function
+    | E e -> pp_err fmt e
+    | Gave_up reason -> Format.fprintf fmt "Gave up: %s" reason
+end
+
 module Meta = struct
   (** Management of meta-information about the execution. *)
 
@@ -110,7 +120,11 @@ module type S = sig
       The [mode] parameter is used to specify the whether execution should be
       done in an under-approximate ({!Approx.UX}) or an over-approximate
       ({!Approx.OX}) manner. Users may optionally pass a
-      {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth. *)
+      {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth.
+
+      @raise {!Gave_up}
+        if the symbolic process calls [give_up] and the mode is {!Approx.UX}.
+        Prefer using {!Result.run} when possible. *)
   val run :
     ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
 
@@ -146,8 +160,34 @@ module type S = sig
   val fold_iter : 'a Iter.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
   val fold_seq : 'a Seq.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
 
-  module rec Result : sig
+  module Result : sig
     type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
+
+    (** Same as {{!Soteria_symex.Symex.S.run}run}, but receives a symbolic
+        process that returns a {!Compo_res.t} and maps the result to an
+        {!Or_gave_up.t}, potentially adding any path that gave up to the list.
+    *)
+    val run :
+      ?fuel:Fuel_gauge.t ->
+      mode:Approx.t ->
+      ('ok, 'err, 'fix) t ->
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      list
+
+    val run_with_stats :
+      ?fuel:Fuel_gauge.t ->
+      mode:Approx.t ->
+      ('ok, 'err, 'fix) t ->
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      list
+      Stats.with_stats
+
+    val run_needs_stats :
+      ?fuel:Fuel_gauge.t ->
+      mode:Approx.t ->
+      ('ok, 'err, 'fix) t ->
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      list
 
     val ok : 'ok -> ('ok, 'err, 'fix) t
     val error : 'err -> ('ok, 'err, 'fix) t
@@ -232,6 +272,18 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   module Value = Solver.Value
   module MONAD = Monad.IterM
   include MONAD
+
+  module Give_up = struct
+    type _ Effect.t += Gave_up_eff : string -> unit Effect.t
+
+    let perform reason = Effect.perform (Gave_up_eff reason)
+
+    let with_give_up_raising f =
+      try f ()
+      with effect Gave_up_eff reason, k ->
+        let backtrace = Printexc.get_raw_backtrace () in
+        Effect.Deep.discontinue_with_backtrace k (Gave_up reason) backtrace
+  end
 
   type 'a t = 'a Iter.t
   type lfail = [ `Lfail of Value.sbool Value.t ]
@@ -326,6 +378,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | Some false -> else_ () f
     | None ->
         let left_unsat = ref false in
+
         Symex_state.save ();
         Logs.with_section ~is_branch:true left_branch_name (fun () ->
             Solver.add_constraints ~simplified:true [ guard ];
@@ -415,6 +468,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     Symex_state.reset ();
     let@ () = Fuel.run ~init:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
+    let@ () = Give_up.with_give_up_raising in
     let l = ref [] in
     let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
     List.rev !l
@@ -437,12 +491,11 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     in
     aux [] xs
 
-  let give_up ~loc reason =
+  let give_up ~loc reason _f =
     (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
-    bind (return ()) @@ fun () ->
     L.info (fun m -> m "%s" reason);
     Stats.As_ctx.push_give_up_reason ~loc reason;
-    vanish ()
+    if Approx.As_ctx.is_ox () then Give_up.perform reason
 
   let some_or_give_up ~loc reason = function
     | Some x -> return x
@@ -455,6 +508,31 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
   module Result = struct
     include Compo_res.T (MONAD)
+
+    let run_needs_stats ?(fuel = Fuel_gauge.infinite) ~mode iter =
+      let@ () = Stats.As_ctx.add_time_of in
+      Symex_state.reset ();
+      let@ () = Fuel.run ~init:fuel in
+      let@ () = Approx.As_ctx.with_mode mode in
+      let l = ref [] in
+      let () =
+        try
+          iter @@ fun x ->
+          let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
+          l := (x, Solver.as_values ()) :: !l
+        with effect Give_up.Gave_up_eff reason, k ->
+          l := (Compo_res.Error (Gave_up reason), Solver.as_values ()) :: !l;
+          Effect.Deep.continue k ()
+      in
+      List.rev !l
+
+    let run ?fuel ~mode iter =
+      let@ () = Stats.As_ctx.with_stats_ignored () in
+      run_needs_stats ?fuel ~mode iter
+
+    let run_with_stats ?fuel ~mode iter =
+      let@ () = Stats.As_ctx.with_stats () in
+      run_needs_stats ?fuel ~mode iter
 
     let miss_no_fix ~reason () =
       bind (ok ()) @@ fun () ->

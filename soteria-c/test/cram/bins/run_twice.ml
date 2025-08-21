@@ -1,5 +1,3 @@
-open Soteria_c_values
-open Soteria_c_lib
 open Csymex
 open Syntax
 
