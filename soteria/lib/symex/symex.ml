@@ -31,6 +31,14 @@ module type Base = sig
 
   type 'a t
 
+  (** Type of error that corresponds to a logical failure (i.e. a logical
+      mismatch during consumption).
+
+      Use this instead of [`Lfail] directly in type signatures to avoid
+      potential typos such as [`LFail] which will take precious time to debug...
+      trust me. *)
+  type lfail = [ `Lfail of Value.sbool Value.t ]
+
   module MONAD : Monad.Base with type 'a t = 'a t
 
   type 'a v := 'a Value.t
@@ -58,7 +66,11 @@ module type Base = sig
       - In OX, the error case is enough to know the proof cannot be concluded,
         and the ok branch is discarded. Therefore, in OX, it is equivalent to
         [assert_]. *)
-  val consume_pure : sbool v -> (unit, [> `Lfail of sbool v ], 'a) Compo_res.t t
+  val consume_pure : sbool v -> (unit, [> lfail ], 'a) Compo_res.t t
+
+  (** [consume_false] is [consume_pure (Value.bool false)], but with a signature
+      that is easier to manipulate. *)
+  val consume_false : unit -> ('a, [> lfail ], 'b) Compo_res.t t
 
   (** [nondet ty f] creates a fresh variable of type [ty] and passes it to the
       function [f]. The variable is not constrained in any way. *)
@@ -124,9 +136,12 @@ module type S = sig
   include Monad.Base with type 'a t := 'a t
 
   (** Gives up on this path of execution for incompleteness reason. For
-      instance, if a give feature is unsupported.
+      instance, if a give feature is unsupported. In {!Approx.UX} mode, this
+      will drop the branch, while in {!Approx.OX} mode, this interupt the entire
+      symbolic execution run and return a [`Give_up] error.
 
-      Logs the result, and adds the reason to the execution statistics. *)
+      This function also logs, and adds the reason for giving up to the
+      execution statistics. *)
   val give_up : loc:Stats.Range.t -> string -> 'a t
 
   (** If the given option is None, gives up execution, otherwise continues,
@@ -292,6 +307,7 @@ Extend (struct
   module MONAD = Monad.IterM
 
   type 'a t = 'a Iter.t
+  type lfail = [ `Lfail of Value.sbool Value.t ]
 
   module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
@@ -359,6 +375,10 @@ Extend (struct
     else
       let assert_passed = assert_raw value in
       if assert_passed then f (Ok ()) else f (Error (`Lfail value))
+
+  let consume_false () f =
+    if Approx.As_ctx.is_ux () then ()
+    else f (Compo_res.Error (`Lfail (Value.bool false)))
 
   let nondet ty f =
     let v = Solver.fresh_var ty in

@@ -57,15 +57,18 @@ module Make (Symex : Symex.S) = struct
       (cons :
         'inner_ser ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_ser) Symex.Result.t)
+        ('inner_st option, [> Symex.lfail ], 'inner_ser) Symex.Result.t)
       (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
-      ('inner_st t option, 'err, 'inner_ser serialized) Symex.Result.t =
+      ( 'inner_st t option,
+        [> Symex.lfail ],
+        'inner_ser serialized )
+      Symex.Result.t =
     match serialized with
     | Freed -> (
         match st with
         | None -> Symex.Result.miss [ Freed ]
         | Some Freed -> Symex.Result.ok None
-        | Some (Alive _) -> Symex.vanish ())
+        | Some (Alive _) -> Symex.consume_false ())
     | Alive ser -> (
         match st with
         | None ->

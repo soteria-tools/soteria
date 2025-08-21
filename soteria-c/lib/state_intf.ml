@@ -112,5 +112,6 @@ module type S = sig
   val produce_aggregate :
     sptr Typed.t -> Ctype.ctype -> Aggregate_val.t -> t -> t Csymex.t
 
-  val consume : serialized -> t -> (t, [> ] err, serialized) Csymex.Result.t
+  val consume :
+    serialized -> t -> (t, [> Csymex.lfail ] err, serialized) Csymex.Result.t
 end
