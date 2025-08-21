@@ -39,8 +39,31 @@ module type Base = sig
 
   val assume : sbool v list -> unit t
   val vanish : unit -> 'a t
+
+  (** Assert is a symbolic process that does not branch but tests for the
+      feasibility of the input symbolic value.
+
+      - In UX, [assert_] returns [false] if and only if [not value] is
+        {b satisfiable}.
+      - In OX, [assert_] returns [true] if and only if [not value] is
+        {b unsatisfiable}. *)
   val assert_ : sbool v -> bool t
+
+  (** [consume_pure v] is somewhat equivalent to
+      [if%sat v then ok () else error (`Lfail v)]. The difference is that it
+      does not branch:
+      - In UX, analysis gives up in case of [`Lfail], and the error branch is
+        discarded. Because of that, doing two sat checks is not required, and
+        [consume_pure] is just an [assume].
+      - In OX, the error case is enough to know the proof cannot be concluded,
+        and the ok branch is discarded. Therefore, in OX, it is equivalent to
+        [assert_]. *)
+  val consume_pure : sbool v -> (unit, [> `Lfail of sbool v ], 'a) Compo_res.t t
+
+  (** [nondet ty f] creates a fresh variable of type [ty] and passes it to the
+      function [f]. The variable is not constrained in any way. *)
   val nondet : 'a vt -> 'a v t
+
   val fresh_var : 'a vt -> Var.t t
 
   val branch_on :
@@ -305,28 +328,37 @@ Extend (struct
     in
     aux [] learned
 
-  (** Assert is [if%sat (not value) then error else ok]. In UX, assert only
-      returns false if (not value) is {b satisfiable}. In OX, assert only
-      returns [true] if (not value) is {b unsatisfiable}. *)
-  let assert_ value f =
+  (** Same as assert_, but not captured within the monad. Not to be exposed to
+      the user, because without proper care, this could have unwanted
+      side-effects at the wrong time. *)
+  let assert_raw value : bool =
     let value = Solver.simplify value in
     match Value.as_bool value with
-    | Some true -> f true
-    | Some false -> f false
+    | Some true -> true
+    | Some false -> false
     | None ->
-        let result =
-          let@ () =
-            Logs.with_section
-              (Fmt.str "Checking entailment for %a" Value.ppa value)
-          in
-          Symex_state.save ();
-          Solver.add_constraints [ Value.(not value) ];
-          let sat_result = Solver.sat () in
-          Symex_state.backtrack_n 1;
-          if Approx.As_ctx.is_ux () then Solver_result.is_sat sat_result
-          else Solver_result.is_unsat sat_result
+        let@ () =
+          Logs.with_section
+            (Fmt.str "Checking entailment for %a" Value.ppa value)
         in
-        f result
+        Symex_state.save ();
+        Solver.add_constraints [ Value.(not value) ];
+        let sat_result = Solver.sat () in
+        Symex_state.backtrack_n 1;
+        if Approx.As_ctx.is_ux () then not (Solver_result.is_sat sat_result)
+        else Solver_result.is_unsat sat_result
+
+  (** Assert is [if%sat (not value) then error else ok]. In UX, assert only
+      returns [false] if (not value) is {b satisfiable}. In OX, assert only
+      returns [true] if (not value) is {b unsatisfiable}. *)
+  let assert_ value f = f (assert_raw value)
+
+  let consume_pure value f =
+    if Approx.As_ctx.is_ux () then
+      assume [ value ] (fun () -> f (Compo_res.Ok ()))
+    else
+      let assert_passed = assert_raw value in
+      if assert_passed then f (Ok ()) else f (Error (`Lfail value))
 
   let nondet ty f =
     let v = Solver.fresh_var ty in
