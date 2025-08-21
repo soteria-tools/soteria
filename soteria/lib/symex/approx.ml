@@ -6,7 +6,7 @@ let is_ox = function OX -> true | UX -> false
 module As_ctx = struct
   type _ Effect.t += Apply : (t -> 'a) -> 'a Effect.t
 
-  let with_mode ~mode f =
+  let with_mode mode f =
     try f ()
     with effect Apply g, k ->
       let result = g mode in

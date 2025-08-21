@@ -233,9 +233,9 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
                 m
                   "Produced heap, about to check if path condition holds in \
                    every branch");
-            Csymex.assert_ox (Typed.conj pc)
+            Csymex.assert_ (Typed.conj pc)
           in
-          let result = Csymex.run process in
+          let result = Csymex.run ~mode:OX process in
           L.trace (fun m ->
               m "Results: %a" (Fmt.Dump.list (Fmt.pair Fmt.bool Fmt.nop)) result);
           (* The bug is manifest if the assert passed in every branch. *)

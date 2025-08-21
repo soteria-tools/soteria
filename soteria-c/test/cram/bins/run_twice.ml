@@ -6,7 +6,7 @@ open Syntax
 let process_one = assume [ Typed.v_false ]
 let process_two = assume [ Typed.v_true ]
 let fuel = Soteria_symex.Fuel_gauge.infinite
-let count_outcomes process = run ~fuel process |> List.length
+let count_outcomes process = run ~fuel ~mode:UX process |> List.length
 
 let () =
   Printf.printf "Number of outcomes for process_one: %d\n"
@@ -26,9 +26,9 @@ let do_test () =
     let open Fmt in
     list ~sep:semi (braces (pair ~sep:comma bool (Dump.list Typed.ppa)))
   in
-  let b = run ~fuel (fn ()) in
+  let b = run ~fuel ~mode:OX (fn ()) in
   Fmt.pr "Branches: %a@\n" pp b;
-  let b = run ~fuel (fn ()) in
+  let b = run ~fuel ~mode:OX (fn ()) in
   Fmt.pr "Branches: %a@\n" pp b
 
 let () = do_test ()

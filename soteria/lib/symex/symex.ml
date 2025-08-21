@@ -40,7 +40,6 @@ module type Base = sig
   val assume : sbool v list -> unit t
   val vanish : unit -> 'a t
   val assert_ : sbool v -> bool t
-  val assert_ox : sbool v -> bool t
   val nondet : 'a vt -> 'a v t
   val fresh_var : 'a vt -> Var.t t
 
@@ -74,21 +73,27 @@ module type Base = sig
       process [p] and returns a list of obtained branches which capture the
       outcome together with a path condition that is a list of boolean symbolic
       values.
-      - statistics correponding to the execution.
 
-      Users may optionally pass a {{!Fuel_gauge.t}fuel gauge} to limit execution
-      depth and breadth. *)
-  val run : ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
+      The [mode] parameter is used to specify the whether execution should be
+      done in an under-approximate ({!Approx.UX}) or an over-approximate
+      ({!Approx.OX}) manner. Users may optionally pass a
+      {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth. *)
+  val run :
+    ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
 
   (** Same as {!run}, but returns additional information about execution, see
       {!Soteria_stats}. *)
   val run_with_stats :
-    ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list Stats.with_stats
+    ?fuel:Fuel_gauge.t ->
+    mode:Approx.t ->
+    'a t ->
+    ('a * sbool v list) list Stats.with_stats
 
   (** Same as {!run} but has to be run within {!Stats.with_stats} or will throw
       an exception. This function is exposed should users wish to run several
       symbolic execution processes using a single [stats] record. *)
-  val run_needs_stats : ?fuel:Fuel_gauge.t -> 'a t -> ('a * sbool v list) list
+  val run_needs_stats :
+    ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
 end
 
 module type S = sig
@@ -301,7 +306,8 @@ Extend (struct
     aux [] learned
 
   (** Assert is [if%sat (not value) then error else ok]. In UX, assert only
-      returns false if (not value) is *really* satisfiable. *)
+      returns false if (not value) is {b satisfiable}. In OX, assert only
+      returns [true] if (not value) is {b unsatisfiable}. *)
   let assert_ value f =
     let value = Solver.simplify value in
     match Value.as_bool value with
@@ -315,28 +321,10 @@ Extend (struct
           in
           Symex_state.save ();
           Solver.add_constraints [ Value.(not value) ];
-          let sat = Solver_result.is_sat (Solver.sat ()) in
+          let sat_result = Solver.sat () in
           Symex_state.backtrack_n 1;
-          not sat
-        in
-        f result
-
-  let assert_ox value f =
-    let value = Solver.simplify value in
-    match Value.as_bool value with
-    | Some true -> f true
-    | Some false -> f false
-    | None ->
-        let result =
-          let@ () =
-            Logs.with_section
-              (Fmt.str "Checking entailment for %a" Value.ppa value)
-          in
-          Symex_state.save ();
-          Solver.add_constraints [ Value.(not value) ];
-          let unsat = Solver_result.is_unsat (Solver.sat ()) in
-          Symex_state.backtrack_n 1;
-          unsat
+          if Approx.As_ctx.is_ux () then Solver_result.is_sat sat_result
+          else Solver_result.is_unsat sat_result
         in
         f result
 
@@ -436,21 +424,22 @@ Extend (struct
         (with_section @@ fun () -> a () f);
         loop r
 
-  let run_needs_stats ?(fuel = Fuel_gauge.infinite) iter =
+  let run_needs_stats ?(fuel = Fuel_gauge.infinite) ~mode iter =
     let@ () = Stats.As_ctx.add_time_of in
     Symex_state.reset ();
     let@ () = Fuel.run ~init:fuel in
+    let@ () = Approx.As_ctx.with_mode mode in
     let l = ref [] in
     let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
     List.rev !l
 
-  let run ?fuel iter =
+  let run ?fuel ~mode iter =
     let@ () = Stats.As_ctx.with_stats_ignored () in
-    run_needs_stats ?fuel iter
+    run_needs_stats ?fuel ~mode iter
 
-  let run_with_stats ?fuel iter =
+  let run_with_stats ?fuel ~mode iter =
     let@ () = Stats.As_ctx.with_stats () in
-    run_needs_stats ?fuel iter
+    run_needs_stats ?fuel ~mode iter
 
   let vanish () _f = ()
 end)
