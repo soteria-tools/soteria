@@ -10,7 +10,7 @@ module Global_config = struct
     Cmdliner.Term.(
       const make_from_args
       $ Soteria_logs.Cli.term
-      $ Soteria_terminal.Cli.term
+      $ Soteria_terminal.Config.cmdliner_term ()
       $ Soteria_c_values.Solver_config.Cli.term
       $ Soteria_rust_lib.Config.cmdliner_term ())
 end
