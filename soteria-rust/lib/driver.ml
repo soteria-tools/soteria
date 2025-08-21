@@ -215,6 +215,10 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   if Stats.Hstring.length stats.give_up_reasons <> 0 then
     let reasons = Stats.Hstring.to_seq_keys stats.give_up_reasons in
     unsupported_features @@ List.of_seq reasons
+  else if stats.unexplored_branch_number > 0 then
+    Fmt.kstr execution_err "Missed %d branches" stats.unexplored_branch_number
+  else if stats.sat_unknowns > 0 then
+    Fmt.kstr execution_err "SAT solver returned %d unknowns" stats.sat_unknowns
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 
