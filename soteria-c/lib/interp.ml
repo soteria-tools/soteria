@@ -327,7 +327,7 @@ module Make (State : State_intf.S) = struct
                 Fmt_ail.pp_constant c Fmt_ail.pp_ty ty Fmt_ail.pp_loc
                 (get_loc ())
         in
-        let f = Typed.float precision str in
+        let f = Typed.Float.mk precision str in
         Agv.Basic f
     | ConstantInteger _ | ConstantIndeterminate _ | ConstantPredefined _
     | ConstantArray (_, _)
@@ -509,11 +509,11 @@ module Make (State : State_intf.S) = struct
         let^ v2 = cast_to_int v2 in
         let op =
           match a_op with
-          | Band -> Typed.bit_and
-          | Bxor -> Typed.bit_xor
-          | Bor -> Typed.bit_or
-          | Shl -> Typed.bit_shl
-          | Shr -> Typed.bit_shr
+          | Band -> Typed.BitVec.and_
+          | Bxor -> Typed.BitVec.xor
+          | Bor -> Typed.BitVec.or_
+          | Shl -> Typed.BitVec.shl
+          | Shr -> Typed.BitVec.shr
           | _ -> failwith "unreachable: bit operator is not bit operator?"
         in
         ok (op ~size:bv_size ~signed v1 v2)
@@ -702,7 +702,7 @@ module Make (State : State_intf.S) = struct
             let* { bv_size; signed } =
               Layout.bv_info (type_of e) |> of_opt_not_impl ~msg:"bv_info"
             in
-            let res = Typed.bit_not ~size:bv_size ~signed v in
+            let res = Typed.BitVec.not ~size:bv_size ~signed v in
             ok (Agv.Basic res)
         | AilSyntax.Plus | AilSyntax.PostfixIncr | AilSyntax.PostfixDecr ->
             Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op

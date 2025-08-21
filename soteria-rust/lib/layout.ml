@@ -453,10 +453,10 @@ and nondets tys =
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
   | TInt _ | TUInt _ | TBool | TChar -> 0s
-  | TFloat F16 -> Typed.f16 0.0
-  | TFloat F32 -> Typed.f32 0.0
-  | TFloat F64 -> Typed.f64 0.0
-  | TFloat F128 -> Typed.f128 0.0
+  | TFloat F16 -> Typed.Float.f16 0.0
+  | TFloat F32 -> Typed.Float.f32 0.0
+  | TFloat F64 -> Typed.Float.f64 0.0
+  | TFloat F128 -> Typed.Float.f128 0.0
 
 let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in

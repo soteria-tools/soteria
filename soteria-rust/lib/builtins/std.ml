@@ -153,11 +153,11 @@ module M (State : State_intf.S) = struct
     let* v = of_opt_not_impl "float_is expects float" @@ Typed.cast_float v in
     let res =
       match fp with
-      | NaN -> Typed.is_nan v
-      | Normal -> Typed.is_normal v
-      | Infinite -> Typed.is_infinite v
-      | Zero -> Typed.is_zero v
-      | Subnormal -> Typed.is_subnormal v
+      | NaN -> Typed.Float.is_nan v
+      | Normal -> Typed.Float.is_normal v
+      | Infinite -> Typed.Float.is_infinite v
+      | Zero -> Typed.Float.is_zero v
+      | Subnormal -> Typed.Float.is_subnormal v
     in
     Result.ok (Base (Typed.int_of_bool res), state)
 
@@ -170,7 +170,7 @@ module M (State : State_intf.S) = struct
     let* v =
       of_opt_not_impl "float_is_finite expects float" @@ Typed.cast_float v
     in
-    let res = Typed.((not (is_nan v)) &&@ not (is_infinite v)) in
+    let res = Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v)) in
     Result.ok (Base (Typed.int_of_bool res), state)
 
   let float_is_sign pos ~args state =
@@ -183,10 +183,10 @@ module M (State : State_intf.S) = struct
       of_opt_not_impl "float_is_sign expects float" @@ Typed.cast_float v
     in
     let res =
-      if pos then Typed.(leq_f (float_like v 0.) v)
-      else Typed.(leq_f v (float_like v (-0.)))
+      if pos then Typed.Float.(leq (like v 0.) v)
+      else Typed.Float.(leq v (like v (-0.)))
     in
-    let res = res ||@ Typed.is_nan v in
+    let res = res ||@ Typed.Float.is_nan v in
     Result.ok (Base (Typed.int_of_bool res), state)
 
   let _mk_box ptr =
