@@ -135,12 +135,19 @@ module Binop = struct
     (* Bitwise Binary operators *)
     | BvPlus
     | BvMinus
+    | BvTimes
+    | BvDiv of bool (* signed *)
+    | BvRem of bool (* signed *)
+    | BvLt of bool (* signed *)
+    | BvLeq of bool (* signed *)
     | BitAnd
     | BitOr
     | BitXor
     | BitShl
     | BitShr
   [@@deriving eq, show { with_path = false }, ord]
+
+  let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
 
   let pp ft = function
     | And -> Fmt.string ft "&&"
@@ -164,6 +171,11 @@ module Binop = struct
     | FRem -> Fmt.string ft "rem."
     | BvPlus -> Fmt.string ft "+b"
     | BvMinus -> Fmt.string ft "-b"
+    | BvTimes -> Fmt.string ft "*b"
+    | BvDiv s -> Fmt.pf ft "/%ab" pp_signed s
+    | BvRem s -> Fmt.pf ft "rem%ab" pp_signed s
+    | BvLt s -> Fmt.pf ft "<%ab" pp_signed s
+    | BvLeq s -> Fmt.pf ft "<=%ab" pp_signed s
     | BitAnd -> Fmt.string ft "&"
     | BitOr -> Fmt.string ft "|"
     | BitXor -> Fmt.string ft "^"
@@ -719,7 +731,8 @@ module BitVec = struct
       these, so as to provide properly typed values. Prefer using [BitVec]
       directly when possible, as it may also provide more reductions. *)
   module Raw = struct
-    let and_ n v1 v2 =
+    let and_ v1 v2 =
+      let n = size_of_bv v1.node.ty in
       let covers_bitwidth z =
         Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = n)
       in
@@ -730,12 +743,19 @@ module BitVec = struct
       | _, BitVec mask when covers_bitwidth mask -> v1
       | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv n
 
-    let or_ n v1 v2 = mk_commut_binop BitOr v1 v2 <| t_bv n
-    let xor n v1 v2 = mk_commut_binop BitXor v1 v2 <| t_bv n
-    let shl n v1 v2 = Binop (BitShl, v1, v2) <| t_bv n
-    let shr n v1 v2 = Binop (BitShr, v1, v2) <| t_bv n
-    let plus n v1 v2 = mk_commut_binop BvPlus v1 v2 <| t_bv n
-    let minus n v1 v2 = Binop (BvMinus, v1, v2) <| t_bv n
+    let or_ v1 v2 = mk_commut_binop BitOr v1 v2 <| v1.node.ty
+    let xor v1 v2 = mk_commut_binop BitXor v1 v2 <| v1.node.ty
+    let shl v1 v2 = Binop (BitShl, v1, v2) <| v1.node.ty
+    let shr v1 v2 = Binop (BitShr, v1, v2) <| v1.node.ty
+    let plus v1 v2 = mk_commut_binop BvPlus v1 v2 <| v1.node.ty
+    let minus v1 v2 = Binop (BvMinus, v1, v2) <| v1.node.ty
+    let times v1 v2 = mk_commut_binop BvTimes v1 v2 <| v1.node.ty
+    let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
+    let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
+    let lt signed v1 v2 = Binop (BvLt signed, v1, v2) <| TBool
+    let leq signed v1 v2 = Binop (BvLeq signed, v1, v2) <| TBool
+    let gt signed v1 v2 = lt signed v2 v1
+    let geq signed v1 v2 = leq signed v2 v1
   end
 
   let mk = bitvec
@@ -766,18 +786,23 @@ module BitVec = struct
         let z = Z.(z land mask) in
         bitvec n z
     | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
-        Raw.and_ n (of_int v) (bitvec n (Z.pred mask))
+        Raw.and_ (of_int v) (bitvec n (Z.pred mask))
     | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
-        Raw.and_ n (of_int v) (bitvec n (Z.pred mask))
+        Raw.and_ (of_int v) (bitvec n (Z.pred mask))
     | Binop (Times, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask
       ->
         let fac = bitvec n (Z.of_int (Z.log2 mask)) in
-        Raw.shl n (of_int v) fac
+        Raw.shl (of_int v) fac
     | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
         let fac = bitvec n (Z.of_int (Z.log2 mask)) in
-        Raw.shr n (of_int v) fac
-    | Binop (Plus, l, r) -> Raw.plus n (of_int l) (of_int r)
-    | Binop (Minus, l, r) -> Raw.minus n (of_int l) (of_int r)
+        Raw.shr (of_int v) fac
+    | Binop (Plus, l, r) -> Raw.plus (of_int l) (of_int r)
+    | Binop (Minus, l, r) -> Raw.minus (of_int l) (of_int r)
+    | Binop (Times, l, r) -> Raw.times (of_int l) (of_int r)
+    (*
+    we can't simplify these two, because we don't know if it's signed or not
+    | Binop (Div, l, r) -> Raw.div true (of_int l) (of_int r)
+    | Binop (Rem, l, r) -> Raw.rem true (of_int l) (of_int r) *)
     | _ -> Unop (BvOfInt, v) <| t_bv n
 
   let rec to_int signed v =
@@ -826,7 +851,7 @@ module BitVec = struct
     | _ ->
         let v1_bv = of_int size v1 in
         let v2_bv = of_int size v2 in
-        let bv = Raw.and_ size v1_bv v2_bv in
+        let bv = Raw.and_ v1_bv v2_bv in
         to_int signed bv
 
   let or_ ~size ~signed v1 v2 =
@@ -836,7 +861,7 @@ module BitVec = struct
     | _ ->
         let v1_bv = of_int size v1 in
         let v2_bv = of_int size v2 in
-        let bv = Raw.or_ size v1_bv v2_bv in
+        let bv = Raw.or_ v1_bv v2_bv in
         to_int signed bv
 
   let xor ~size ~signed v1 v2 =
@@ -846,7 +871,7 @@ module BitVec = struct
     | _ ->
         let v1_bv = of_int size v1 in
         let v2_bv = of_int size v2 in
-        let bv = Raw.xor size v1_bv v2_bv in
+        let bv = Raw.xor v1_bv v2_bv in
         to_int signed bv
 
   let shl ~size ~signed v1 v2 =
@@ -863,7 +888,7 @@ module BitVec = struct
     | _ ->
         let v1_bv = of_int size v1 in
         let v2_bv = of_int size v2 in
-        let bv = Raw.shl size v1_bv v2_bv in
+        let bv = Raw.shl v1_bv v2_bv in
         to_int signed bv
 
   let shr ~size ~signed v1 v2 =
@@ -875,7 +900,7 @@ module BitVec = struct
     | _ ->
         let v1_bv = of_int size v1 in
         let v2_bv = of_int size v2 in
-        let bv = Raw.shr size v1_bv v2_bv in
+        let bv = Raw.shr v1_bv v2_bv in
         to_int signed bv
 
   let not ~size:s ~signed v =
