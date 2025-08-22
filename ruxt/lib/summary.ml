@@ -79,15 +79,10 @@ module Symex = struct
     let+ () = Rustsymex.assume pcs in
     (ret, state)
 
-  let flatten (summs : t list) =
-    let empty = Rustsymex.return ([], Heap.empty) in
-    let extend flattened summ =
-      let* args, state = flattened in
-      let* arg, serialized = summ in
-      let+ state = Heap.produce serialized state in
-      (arg :: args, state)
-    in
-    List.fold_left extend empty summs
+  let produce (summ : t) state =
+    let* arg, serialized = summ in
+    let+ state = Heap.produce serialized state in
+    (arg, state)
 end
 
 module Context = struct

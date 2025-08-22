@@ -69,14 +69,13 @@ module Drop = struct
 end
 
 let wrap_call (fundef : Charon.UllbcAst.fun_decl) summs =
-  (* Produce the initial state with reference-free inputs *)
-  let* args, state = Summary.Symex.flatten summs in
   (* Check reference arguments and allocate values on heap *)
   let* args, state, arg_ptrs =
-    ListLabels.fold_left2 args fundef.signature.inputs
-      ~init:(Rustsymex.return ([], state, []))
-      ~f:(fun acc arg ty ->
+    ListLabels.fold_left2 summs fundef.signature.inputs
+      ~init:(Rustsymex.return ([], Heap.empty, []))
+      ~f:(fun acc summ ty ->
         let* args, state, arg_ptrs = acc in
+        let* arg, state = Summary.Symex.produce summ state in
         match ty with
         | TRef (_, ty, _) ->
             let+ ptr, state = Symok.alloc ty arg state in
@@ -88,7 +87,32 @@ let wrap_call (fundef : Charon.UllbcAst.fun_decl) summs =
   let++ ret, state = Wpst_interp.exec_fun fundef ~args ~state in
   (fundef.signature.output, ret, state, arg_ptrs)
 
-let wrap_return drop_ctx process =
+let wrap_return summ_ctx process =
+  (* Obtain the result from the executing the function call *)
+  let** ty, ret, state, arg_ptrs = process in
+  let* state =
+    match ty with
+    | TRef (_, ty, kind) -> (
+        (* The return value must be a pointer *)
+        let ptr = Rust_val.as_ptr ret in
+        match kind with
+        | RShared ->
+            (* For shared references, we simply read the return pointer *)
+            let+ _, state = Symok.load ptr ty state in
+            state
+        | RMut ->
+            (* For mutable references, we write to the pointer with safe values*)
+            let summs = Summary.Context.get ty summ_ctx in
+            ListLabels.map summs ~f:(fun summ () ->
+                let* ret, state = Summary.Symex.produce summ state in
+                Symok.store ptr ty ret state)
+            |> Rustsymex.branches)
+    | _ -> Rustsymex.return state
+  in
+  (* Return the same result with the updated state *)
+  Rustsymex.Result.ok (ty, ret, state, arg_ptrs)
+
+let drop_and_return drop_ctx process =
   (* Obtain the result from the executing the function call *)
   let** ty, ret, state, arg_ptrs = process in
   (* Drop the return value *)
@@ -125,21 +149,26 @@ let leak_check = function
       Fmt.pr "GOT LEAK\n";
       Result.error `MemoryLeak
 
-let try_refute fuel process summ_ctx =
-  let ( let** ) = Result.bind in
+let try_refute fuel drop_ctx fundef summs summ_ctx =
   (* Symbolically execute the function call *)
-  Rustsymex.run ~fuel process
+  let outcomes =
+    wrap_call fundef summs
+    |> wrap_return summ_ctx
+    |> drop_and_return drop_ctx
+    |> Rustsymex.run ~fuel
+  in
   (* For each successful outcome, the summary context will be updated. *)
-  |> ListLabels.fold_left ~init:(Result.ok summ_ctx) ~f:(fun acc -> function
-       (* Successful termination: update the summary context *)
-       | Compo_res.Ok rets, pcs ->
-           ListLabels.fold_left rets ~init:acc ~f:(fun acc (ty, ret, state) ->
-               let** ctx = acc in
-               let summ, leaks = Summary.make ret pcs state in
-               let update_ctx () = Summary.Context.update ty summ ctx in
-               leak_check leaks |> Result.map update_ctx)
-       (* Unsuccessful termination: found a type unsoundness *)
-       | _ -> Result.error `TypeUnsound)
+  ListLabels.fold_left outcomes ~init:(Result.ok summ_ctx)
+    ~f:(fun acc -> function
+    (* Successful termination: update the summary context *)
+    | Compo_res.Ok rets, pcs ->
+        ListLabels.fold_left rets ~init:acc ~f:(fun acc (ty, ret, state) ->
+            Result.bind acc @@ fun ctx ->
+            let summ, leaks = Summary.make ret pcs state in
+            let update_ctx () = Summary.Context.update ty summ ctx in
+            leak_check leaks |> Result.map update_ctx)
+    (* Unsuccessful termination: found a type unsoundness *)
+    | _ -> Result.error `TypeUnsound)
 
 let get_funs () =
   let crate = Soteria_rust_lib.Crate.get_crate () in
@@ -154,7 +183,7 @@ let get_funs () =
 let find_unsoundness () =
   let fun_decls = get_funs () in
   let drop_ctx = Drop.create_ctx () in
-  let fuel =
+  let soteria_fuel =
     Soteria_symex.Fuel_gauge.
       {
         steps = Finite !Config.current.step_fuel;
@@ -163,19 +192,16 @@ let find_unsoundness () =
   in
   (* The try_refute procedure is called for each function *)
   let try_refute _ (fundef : Charon.UllbcAst.fun_decl) acc =
-    let ( let** ) = Result.bind in
-    let** summ_ctx = acc in
+    Result.bind acc @@ fun summ_ctx ->
     let tys =
       List.map
         (function TRef (_, ty, _) -> ty | ty -> ty)
         fundef.signature.inputs
     in
-    let iter_summs = Summary.Context.iter_summs tys summ_ctx in
     let try_refute ctx summs =
-      let process = wrap_call fundef summs |> wrap_return drop_ctx in
-      Result.bind ctx (try_refute fuel process)
+      Result.bind ctx @@ try_refute soteria_fuel drop_ctx fundef summs
     in
-    Iter.fold try_refute (Result.ok summ_ctx) iter_summs
+    Iter.fold try_refute acc (Summary.Context.iter_summs tys summ_ctx)
   in
   let handle_exn exn err =
     Fmt.kstr err "Exn: %a@\nTrace: %s" Fmt.exn exn (Printexc.get_backtrace ())
