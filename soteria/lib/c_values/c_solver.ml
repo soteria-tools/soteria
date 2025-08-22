@@ -517,14 +517,33 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
       Intf.pop solver.z3_exe 1;
       (* We need to reset the state, so we can push the new constraints *)
       Intf.push solver.z3_exe 1;
-      (* Declare all relevant variables *)
-      Var.Hashset.iter
-        (fun v ->
-          let ty = Declared_vars.get_ty solver.vars v in
-          Intf.declare_var solver.z3_exe v ty)
-        relevant_vars;
-      (* Declare the constraint *)
-      Intf.add_constraint solver.z3_exe to_check;
+
+      if Bv_lower.should_lower to_check then (
+        (* Lower the expression *)
+        let new_to_check, bv_vars = Bv_lower.lower to_check in
+        (* Declare all relevant variables *)
+        Var.Hashset.iter
+          (fun v ->
+            match Var.Map.find_opt v bv_vars with
+            | Some size ->
+                let ty = Svalue.TBitVector (false, size) in
+                Intf.declare_var solver.z3_exe v ty
+            | None ->
+                let ty = Declared_vars.get_ty solver.vars v in
+                Intf.declare_var solver.z3_exe v ty)
+          relevant_vars;
+        (* Declare the constraint *)
+        Intf.add_constraint solver.z3_exe new_to_check)
+      else (
+        (* Declare all relevant variables *)
+        Var.Hashset.iter
+          (fun v ->
+            let ty = Declared_vars.get_ty solver.vars v in
+            Intf.declare_var solver.z3_exe v ty)
+          relevant_vars;
+        (* Declare the constraint *)
+        Intf.add_constraint solver.z3_exe to_check);
+
       (* Actually check sat *)
       Intf.check_sat solver.z3_exe)
 
