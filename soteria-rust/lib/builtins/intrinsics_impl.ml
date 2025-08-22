@@ -288,14 +288,14 @@ module M (State : State_intf.S) = struct
 
   let ctpop =
     let concrete _bits x = Typed.int @@ Z.popcount x in
-    let symbolic bits x =
-      let two = Typed.nonzero 2 in
+    let symbolic size x =
       Iter.fold
         (fun acc off ->
-          let pow = Typed.nonzero_z (Z.shift_left Z.one off) in
-          acc +@ (x /@ pow %@ two))
+          let x = Typed.bit_shl ~size ~signed:false x (Typed.int off) in
+          let x = Typed.bit_and ~size ~signed:false x Typed.one in
+          acc +@ x)
         0s
-        Iter.(0 -- bits)
+        Iter.(0 -- size)
     in
     binary_int_operation ~concrete ~symbolic
 
