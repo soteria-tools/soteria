@@ -35,7 +35,7 @@ type t = {
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided; tests matching any will be
           selected. The filters are treated as regexes. *)
-  print_summary : bool; [@default false] [@names [ "summary" ]]
+  print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
 }
