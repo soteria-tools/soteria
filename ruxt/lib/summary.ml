@@ -118,9 +118,9 @@ module Context = struct
     | _ -> []
 
   let iter_summs tys (ctx : t) f =
-    let rec aux acc = function
+    let rec aux ?(acc = []) = function
       | [] -> f acc
-      | summs :: rest -> List.iter (fun s -> aux (s :: acc) rest) summs
+      | summs :: rest -> List.iter (fun s -> aux ~acc:(s :: acc) rest) summs
     in
-    aux [] (List.rev_map (fun ty -> get ty ctx) tys)
+    aux (List.rev_map (fun ty -> get ty ctx) tys)
 end

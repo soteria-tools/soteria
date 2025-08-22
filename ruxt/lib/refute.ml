@@ -125,23 +125,35 @@ let drop_and_return drop_ctx process =
     Drop.find_and_exec ty drop_ctx ~none:(Symok.free ptr state)
       ~some:(Rustsymex.return (ptr, state))
   in
-  let rec get_rets ?(acc = []) state = function
-    | [] -> Rustsymex.Result.ok ((ty, ret, state) :: acc)
-    | (ty, ptr) :: arg_ptrs ->
-        (* Case 1: we infer nothing from this pointer, so it must be dropped *)
-        let* dropped_state = drop_ptr ty ptr state in
-        (* Case 2: we will infer something from this pointer and drop the rest *)
-        let* ret, state = Symok.load ptr ty state in
-        let* state = Symok.free ptr state in
-        let* state =
-          ListLabels.fold_left arg_ptrs ~init:(drop_ret state)
-            ~f:(fun st (ty, ptr) -> Rustsymex.bind st (drop_ptr ty ptr))
+  let rec get_branches ?(acc = []) symex = function
+    | [] ->
+        (* Case 0: we learn from the return value, the rest has been dropped *)
+        let branch () =
+          let* state = symex in
+          Rustsymex.Result.ok (ty, ret, state)
         in
-        (* We store case 2 in the result and proceed with the state from case 1 *)
-        let acc = (ty, ret, state) :: acc in
-        get_rets ~acc dropped_state arg_ptrs
+        branch :: acc
+    | (ty, ptr) :: arg_ptrs ->
+        (* Case 1: we learn from this reference and drop the rest *)
+        let branch () =
+          let* state = symex in
+          let* ret, state = Symok.load ptr ty state in
+          let* state = Symok.free ptr state in
+          let* state =
+            ListLabels.fold_left arg_ptrs ~init:(drop_ret state)
+              ~f:(fun st (ty, ptr) -> Rustsymex.bind st (drop_ptr ty ptr))
+          in
+          Rustsymex.Result.ok (ty, ret, state)
+        in
+        (* Case 2: we learn nothing from this reference, so we drop it *)
+        let symex =
+          let* state = symex in
+          drop_ptr ty ptr state
+        in
+        (* We keep case 1 in the result and proceed with the state from case 2 *)
+        get_branches ~acc:(branch :: acc) symex arg_ptrs
   in
-  get_rets state arg_ptrs
+  get_branches (Rustsymex.return state) arg_ptrs |> Rustsymex.branches
 
 let leak_check = function
   | [] -> Result.ok ()
@@ -161,12 +173,11 @@ let try_refute fuel drop_ctx fundef summs summ_ctx =
   ListLabels.fold_left outcomes ~init:(Result.ok summ_ctx)
     ~f:(fun acc -> function
     (* Successful termination: update the summary context *)
-    | Compo_res.Ok rets, pcs ->
-        ListLabels.fold_left rets ~init:acc ~f:(fun acc (ty, ret, state) ->
-            Result.bind acc @@ fun ctx ->
-            let summ, leaks = Summary.make ret pcs state in
-            let update_ctx () = Summary.Context.update ty summ ctx in
-            leak_check leaks |> Result.map update_ctx)
+    | Compo_res.Ok (ty, ret, state), pcs ->
+        Result.bind acc @@ fun ctx ->
+        let summ, leaks = Summary.make ret pcs state in
+        let update_ctx () = Summary.Context.update ty summ ctx in
+        leak_check leaks |> Result.map update_ctx
     (* Unsuccessful termination: found a type unsoundness *)
     | _ -> Result.error `TypeUnsound)
 
