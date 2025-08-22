@@ -145,9 +145,9 @@ let get_funs () =
   let crate = Soteria_rust_lib.Crate.get_crate () in
   let can_infer _ (fundef : Charon.UllbcAst.fun_decl) =
     fundef.item_meta.is_local
-    && fundef.item_meta.attr_info.public
     && (not fundef.signature.is_unsafe)
     && (not @@ Drop.is_impl fundef)
+    && (fundef.item_meta.attr_info.public || not !Config.current.only_public)
   in
   FunDeclId.Map.filter can_infer crate.fun_decls
 

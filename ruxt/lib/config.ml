@@ -7,6 +7,8 @@ type t = {
       (** Clean up compiles files after execution *)
   ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
       (** Ignore memory leaks *)
+  only_public : bool; [@make.default false] [@names [ "only-public" ]]
+      (** Only include public functions in the analysis *)
   with_kani : bool; [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
