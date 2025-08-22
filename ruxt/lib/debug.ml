@@ -15,11 +15,19 @@ let print_vars vars =
   Fmt.pr "VARS:\n";
   List.iter (Fmt.pr "%a\n" (Typed.pp Typed.T.pp_cval)) (List.map fst vars)
 
+let print_tys tys =
+  Fmt.pr "TYPES:\n";
+  List.iter (Fmt.pr "%a\n" Types.pp_ty) tys
+
 let print_state state =
   Fmt.pr "Heap: %a\n" (Heap.pp_pretty ~ignore_freed:false) state
 
 let name_str crate =
   PrintTypes.name_to_string @@ PrintUllbcAst.Crate.crate_to_fmt_env crate
 
-let print_fundef crate (fundef : UllbcAst.fun_decl) =
+let print_fundef (fundef : UllbcAst.fun_decl) =
+  let crate = Soteria_rust_lib.Crate.get_crate () in
   Fmt.pr "\nFunction: %s\n" (name_str crate fundef.item_meta.name)
+
+let print_error e =
+  Fmt.epr "%a@\n@?" Soteria_rust_lib.Error.pp_err_and_call_trace e

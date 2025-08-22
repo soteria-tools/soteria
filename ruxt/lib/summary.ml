@@ -1,5 +1,5 @@
-open Soteria_rust_lib
-open Charon.Generated_Types
+module Rustsymex = Soteria_rust_lib.Rustsymex
+module Rust_val = Soteria_rust_lib.Rust_val
 open Rustsymex.Syntax
 
 type t = {
@@ -91,7 +91,8 @@ module Symex = struct
 end
 
 module Context = struct
-  module M = Charon.Types.TypeDeclId.Map
+  open Charon.Types
+  module M = TypeDeclId.Map
 
   type nonrec t = t list M.t
 
@@ -116,7 +117,7 @@ module Context = struct
         | Some summs -> List.map Symex.make summs)
     | TLiteral lit ->
         [
-          (let+ cval = Layout.nondet_literal_ty lit in
+          (let+ cval = Soteria_rust_lib.Layout.nondet_literal_ty lit in
            (Rust_val.Base cval, Heap.serialize Heap.empty));
         ]
     | _ -> []

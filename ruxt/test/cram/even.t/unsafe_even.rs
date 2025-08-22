@@ -10,20 +10,22 @@ pub fn new(n: i32) -> Even {
     Even { value: n - n % 2 }
 }
 
-pub fn succ(x: Even) -> Even {
-    if x.value < i32::MAX - 1 {
-        Even { value: x.value + 1 }
-    } else {
-        x
+pub fn succ(x: &mut Even) {
+    if (*x).value < i32::MAX - 1 {
+        (*x).value += 1
     }
 }
 
-pub fn next(x: Even) -> Even {
-    succ(succ(x))
+pub fn next(x: &mut Even) {
+    unsafe {
+        succ(x);
+        succ(x);
+    }
 }
 
 pub fn noop(x: Even) -> () {
-    if x.value % 2 != 0 {
-        unsafe { *(0 as *mut i32) = 1 }
-    }
+    let mut value = x.value;
+    let ofs = (value % 2) as isize;
+    let p = &raw mut value;
+    unsafe { *p.offset(ofs) = value }
 }
