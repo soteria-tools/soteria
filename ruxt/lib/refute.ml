@@ -177,19 +177,18 @@ let find_unsoundness () =
     in
     Iter.fold try_refute (Result.ok summ_ctx) iter_summs
   in
+  let handle_exn exn err =
+    Fmt.kstr err "Exn: %a@\nTrace: %s" Fmt.exn exn (Printexc.get_backtrace ())
+  in
   (* The meta-loop iterates over all safe functions *)
   let rec meta_loop summ_ctx fuel =
     if fuel <= 0 then false (* Fuel exhausted *)
     else
       let res =
         (* Call try_refute on all functions and accumulate the results *)
-        try FunDeclId.Map.fold try_refute fun_decls (Result.ok summ_ctx)
-        with exn ->
-          let msg =
-            Fmt.str "Exn: %a@\nTrace: %s" Fmt.exn exn
-              (Printexc.get_backtrace ())
-          in
-          raise (Soteria_rust_lib.Driver.ExecutionError msg)
+        try FunDeclId.Map.fold try_refute fun_decls (Result.ok summ_ctx) with
+        | ExecutionError _ as exn -> handle_exn exn execution_err
+        | exn -> handle_exn exn Soteria_rust_lib.Driver.execution_err
       in
       match res with
       | Ok summ_ctx -> meta_loop summ_ctx (fuel - 1)
