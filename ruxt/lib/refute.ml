@@ -199,6 +199,7 @@ let find_unsoundness () =
   meta_loop Summary.Context.empty !Config.current.pass_fuel
 
 let config_set (config : Config.global) =
+  Config.set config.ruxt;
   let (config : Soteria_rust_lib.Config.global) =
     {
       logs = config.logs;
