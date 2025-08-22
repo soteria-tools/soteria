@@ -635,21 +635,67 @@ module BitVec = struct
         Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = n)
       in
       match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk sign n Z.(logand l r)
       | BitVec mask, _ when Z.(equal mask zero) -> v1
       | _, BitVec mask when Z.(equal mask zero) -> v2
       | BitVec mask, _ when covers_bitwidth mask -> v2
       | _, BitVec mask when covers_bitwidth mask -> v1
       | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv sign n
 
-    let or_ v1 v2 = mk_commut_binop BitOr v1 v2 <| v1.node.ty
-    let xor v1 v2 = mk_commut_binop BitXor v1 v2 <| v1.node.ty
-    let plus v1 v2 = mk_commut_binop BvPlus v1 v2 <| v1.node.ty
-    let minus v1 v2 = Binop (BvMinus, v1, v2) <| v1.node.ty
-    let times v1 v2 = mk_commut_binop BvTimes v1 v2 <| v1.node.ty
+    let or_ v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          let sign, n = shape_of_bv v1.node.ty in
+          mk sign n Z.(logor l r)
+      | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
+
+    let xor v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          let sign, n = shape_of_bv v1.node.ty in
+          mk sign n Z.(logxor l r)
+      | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
+
+    let plus v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          let signed, n = shape_of_bv v1.node.ty in
+          let mask = max_for (signed, n) in
+          mk signed n Z.(logand (add l r) mask)
+      | _ -> mk_commut_binop BvPlus v1 v2 <| v1.node.ty
+
+    let minus v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          let signed, n = shape_of_bv v1.node.ty in
+          let mask = max_for (signed, n) in
+          mk signed n Z.(logand (sub l r) mask)
+      | _ -> Binop (BvMinus, v1, v2) <| v1.node.ty
+
+    let times v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          let signed, n = shape_of_bv v1.node.ty in
+          let mask = max_for (signed, n) in
+          mk signed n Z.(logand (mul l r) mask)
+      | _ -> mk_commut_binop BvTimes v1 v2 <| v1.node.ty
+
     let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
     let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
-    let shl v1 v2 = Binop (BitShl, v1, v2) <| v1.node.ty
-    let shr v1 v2 = Binop (BitShr, v1, v2) <| v1.node.ty
+
+    let shl v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          let signed, n = shape_of_bv v1.node.ty in
+          mk signed n Z.(l lsl to_int r)
+      | _ -> Binop (BitShl, v1, v2) <| v1.node.ty
+
+    let shr v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          let signed, n = shape_of_bv v1.node.ty in
+          mk signed n Z.(l asr to_int r)
+      | _ -> Binop (BitShr, v1, v2) <| v1.node.ty
 
     let lt signed v1 v2 =
       match (v1.node.kind, v2.node.kind) with
@@ -679,7 +725,18 @@ module BitVec = struct
       | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) ->
           let v1 = extract from_ to_ v1 in
           let v2 = extract from_ to_ v2 in
-          mk_commut_binop bop v1 v2 <| t_bv signed size
+          let bop =
+            match bop with
+            | BitAnd -> and_
+            | BitOr -> or_
+            | BitXor -> xor
+            | _ -> failwith "unreachable binop"
+          in
+          bop v1 v2
+      | Binop (BitShr, v1, { node = { kind = BitVec x; _ }; _ })
+      | Binop (BitShr, { node = { kind = BitVec x; _ }; _ }, v1) ->
+          let shift = Z.to_int x in
+          extract (from_ + shift) (to_ + shift) v1
       | Unop (BvOfInt, v) when from_ = 0 ->
           Unop (BvOfInt, v) <| t_bv signed size
       | _ -> Unop (BvExtract (from_, to_), v) <| t_bv signed size
@@ -970,13 +1027,13 @@ let rec sem_eq v1 v2 =
         let current_size = size_of_bv v1.node.ty in
         let msb = Option.map2 max (msb_of v1) (msb_of v2) in
         match msb with
-        | Some msb when msb <> current_size - 1 ->
-            let v1 = BitVec.Raw.extract 0 msb v1 in
-            let v2 = BitVec.Raw.extract 0 msb v2 in
+        | Some msb when msb < current_size - 1 ->
+            let v1 = BitVec.Raw.extract 0 (msb - 1) v1 in
+            let v2 = BitVec.Raw.extract 0 (msb - 1) v2 in
             sem_eq v1 v2
         | _ ->
             (* regular sem_eq *)
-            if equal v1 v2 then v_true else mk_commut_binop Eq v1 v2 <| TBool)
+            mk_commut_binop Eq v1 v2 <| TBool)
     | Unop (IntOfBv _, bv1), Unop (IntOfBv _, bv2) -> sem_eq bv1 bv2
     | Unop (IntOfBv _, bv), Int n | Int n, Unop (IntOfBv _, bv) ->
         let sign, size = shape_of_bv bv.node.ty in
