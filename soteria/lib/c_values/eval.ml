@@ -25,8 +25,8 @@ let rec eval (x : t) : t =
         | IntOfBool -> int_of_bool nv
         | BvOfFloat n -> BitVec.of_float n nv
         | BvOfInt ->
-            let n = size_of_bv x.node.ty in
-            BitVec.of_int n nv
+            let signed, size = shape_of_bv x.node.ty in
+            BitVec.of_int signed size nv
         | IntOfBv signed -> BitVec.to_int signed nv
         | FloatOfBv -> BitVec.to_float nv
         | BvExtract (from, to_) -> bv_extract from to_ nv

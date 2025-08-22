@@ -52,7 +52,7 @@ module Encoding = struct
     | TFloat F128 -> t_f128
     | TSeq ty -> t_seq $ sort_of_ty ty
     | TPointer -> t_ptr
-    | TBitVector n -> t_bits n
+    | TBitVector (_, n) -> t_bits n
 
   let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 
