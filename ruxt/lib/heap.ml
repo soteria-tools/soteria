@@ -100,8 +100,7 @@ let mark_globals globals serialized : serialized =
   List.map (fun (l, b) -> (l, (b, List.mem l globals))) serialized
 
 let map_missing_globals globals res =
-  let+? serialized = res in
-  List.map (mark_globals globals) serialized
+  Rustsymex.Result.map_missing res @@ mark_globals globals
 
 let serialize st : serialized =
   match st.state with
@@ -194,7 +193,7 @@ let with_ptr (ptr : Sptr.t) (st : t)
     (f :
       [< T.sint ] Typed.t * sub option ->
       ('a * sub option, 'err, 'fix list) Result.t) :
-    ('a * t, 'err, serialized list) Result.t =
+    ('a * t, 'err, serialized) Result.t =
   if%sat Sptr.sem_eq ptr Sptr.null_ptr then Result.error `NullDereference
   else
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
@@ -642,7 +641,7 @@ let produce (serialized : serialized) ({ state; _ } as st : t) : t Rustsymex.t =
   { st with state }
 
 let consume (serialized : serialized) ({ state; _ } as st : t) :
-    (t, 'err, serialized list) Rustsymex.Result.t =
+    (t, 'err, serialized) Rustsymex.Result.t =
   let serialized = List.map (fun (l, (f, _)) -> (l, f)) serialized in
   let tree_block_consume serialized o =
     let default = Tree_borrow.init ~state:Unique () in
