@@ -5,7 +5,7 @@ type _ Effect.t += Eval_var : Var.t * Svalue.ty -> t Effect.t
 let eval_var (v : Var.t) (ty : Svalue.ty) : t =
   Effect.perform (Eval_var (v, ty))
 
-let rec eval (x : t) : t =
+let rec eval ?(force = false) (x : t) : t =
   match x.node.kind with
   | Var v -> eval_var v x.node.ty
   | Bool _ | Int _ | Float _ | BitVec _ -> x
@@ -15,7 +15,7 @@ let rec eval (x : t) : t =
       if l == nl && o == no then x else Ptr.mk (eval l) (eval o)
   | Unop (unop, v) -> (
       let nv = eval v in
-      if v == nv then x
+      if v == nv && Stdlib.not force then x
       else
         match unop with
         | Unop.Not -> not nv
@@ -41,7 +41,7 @@ let rec eval (x : t) : t =
       of either side evaluates properly to e.g. true/false *)
       let nv1 = eval v1 in
       let nv2 = eval v2 in
-      if v1 == nv1 && v2 == nv2 then x
+      if v1 == nv1 && v2 == nv2 && Stdlib.not force then x
       else
         match binop with
         | Binop.And -> and_ nv1 nv2
@@ -77,7 +77,8 @@ let rec eval (x : t) : t =
         | BitShr -> BitVec.Raw.shr nv1 nv2)
   | Nop (nop, l) -> (
       let l, changed = List.map_changed eval l in
-      if Stdlib.not changed then x else match nop with Distinct -> distinct l)
+      if Stdlib.not changed && Stdlib.not force then x
+      else match nop with Distinct -> distinct l)
   | Ite (guard, then_, else_) ->
       let guard = eval guard in
       if equal guard v_true then eval then_
@@ -87,8 +88,9 @@ let rec eval (x : t) : t =
       let l, changed = List.map_changed eval l in
       if Stdlib.not changed then x else Svalue.SSeq.mk ~seq_ty:x.node.ty l
 
-let eval ~(eval_var : Var.t -> Svalue.ty -> t option) (x : t) : t option =
-  try Some (eval x) with
+let eval ?force ~(eval_var : Var.t -> Svalue.ty -> t option) (x : t) : t option
+    =
+  try Some (eval ?force x) with
   | Division_by_zero -> None
   | effect Eval_var (v, ty), k -> (
       match eval_var v ty with
