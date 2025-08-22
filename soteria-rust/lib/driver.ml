@@ -169,10 +169,9 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   if List.is_empty entry_points then execution_err "No entry points found";
 
   (* prepare executing the entry points *)
-  let map_with l f = List.map f l in
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
 
-  let@ entry : 'fuel Plugin.entry_point = map_with entry_points in
+  let@ entry : 'fuel Plugin.entry_point = (Fun.flip List.map) entry_points in
   (* execute! *)
   let entry_name =
     Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name

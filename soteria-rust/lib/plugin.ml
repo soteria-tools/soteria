@@ -45,7 +45,7 @@ module Cmd = struct
         (* Cargo already specifies the edition *)
         let rustc =
           List.filter
-            (fun a -> not (String.starts_with ~prefix:"--edition" a))
+            (Fun.negate (String.starts_with ~prefix:"--edition"))
             rustc
         in
         let features = List.map (( ^ ) "--cfg ") features in
