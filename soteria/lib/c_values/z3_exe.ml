@@ -135,6 +135,7 @@ module Encoding = struct
         | BvTimes -> bv_mul v1 v2
         | BvDiv signed -> (if signed then bv_sdiv else bv_udiv) v1 v2
         | BvRem signed -> (if signed then bv_srem else bv_urem) v1 v2
+        | BvMod signed -> (if signed then bv_smod else bv_urem) v1 v2
         | BvLt signed -> (if signed then bv_slt else bv_ult) v1 v2
         | BvLeq signed -> (if signed then bv_sleq else bv_uleq) v1 v2)
     | Nop (Distinct, vs) ->

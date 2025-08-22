@@ -142,6 +142,7 @@ module Binop = struct
     | BvTimes
     | BvDiv of bool (* signed *)
     | BvRem of bool (* signed *)
+    | BvMod of bool (* signed *)
     | BvLt of bool (* signed *)
     | BvLeq of bool (* signed *)
     | BitAnd
@@ -178,6 +179,7 @@ module Binop = struct
     | BvTimes -> Fmt.string ft "*b"
     | BvDiv s -> Fmt.pf ft "/%ab" pp_signed s
     | BvRem s -> Fmt.pf ft "rem%ab" pp_signed s
+    | BvMod s -> Fmt.pf ft "mod%ab" pp_signed s
     | BvLt s -> Fmt.pf ft "<%ab" pp_signed s
     | BvLeq s -> Fmt.pf ft "<=%ab" pp_signed s
     | BitAnd -> Fmt.string ft "&"
@@ -647,6 +649,8 @@ module BitVec = struct
       | BitVec l, BitVec r ->
           let sign, n = shape_of_bv v1.node.ty in
           mk sign n Z.(logor l r)
+      | BitVec z, _ when Z.equal z Z.zero -> v2
+      | _, BitVec z when Z.equal z Z.zero -> v1
       | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
 
     let xor v1 v2 =
@@ -654,6 +658,8 @@ module BitVec = struct
       | BitVec l, BitVec r ->
           let sign, n = shape_of_bv v1.node.ty in
           mk sign n Z.(logxor l r)
+      | BitVec z, _ when Z.equal z Z.zero -> v2
+      | _, BitVec z when Z.equal z Z.zero -> v1
       | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
 
     let plus v1 v2 =
@@ -682,6 +688,7 @@ module BitVec = struct
 
     let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
     let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
+    let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
 
     let shl v1 v2 =
       match (v1.node.kind, v2.node.kind) with
@@ -799,6 +806,7 @@ module BitVec = struct
     | Binop (Times, l, r) -> Raw.times (of_int l) (of_int r)
     | Binop (Div, l, r) -> Raw.div s (of_int l) (of_int r)
     | Binop (Rem, l, r) -> Raw.rem s (of_int l) (of_int r)
+    | Binop (Mod, l, r) -> Raw.mod_ s (of_int l) (of_int r)
     | _ -> Unop (BvOfInt, v) <| t_bv s n
 
   let rec to_int signed v =
@@ -818,6 +826,10 @@ module BitVec = struct
     | Unop (BvOfInt, v) -> v
     | Binop (BvPlus, l, r) -> plus (to_int signed l) (to_int signed r)
     | Binop (BvMinus, l, r) -> minus (to_int signed l) (to_int signed r)
+    | Binop (BvTimes, l, r) -> times (to_int signed l) (to_int signed r)
+    | Binop (BvDiv _, l, r) -> div (to_int signed l) (to_int signed r)
+    | Binop (BvRem _, l, r) -> rem (to_int signed l) (to_int signed r)
+    | Binop (BvMod _, l, r) -> mod_ (to_int signed l) (to_int signed r)
     | Binop (BitShl, l, { node = { kind = Int n; _ }; _ }) ->
         let pow = int_z @@ Z.shift_left Z.one (Z.to_int n) in
         times l pow

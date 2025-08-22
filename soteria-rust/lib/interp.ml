@@ -870,7 +870,7 @@ module Make (State : State_intf.S) = struct
     | Assign (({ ty; _ } as place), rval) ->
         let* ptr = resolve_place place in
         let* v = eval_rvalue rval in
-        L.info (fun m -> m "Assigning %a <- %a" pp_full_ptr ptr pp_rust_val v);
+        (* L.info (fun m -> m "Assigning %a <- %a" pp_full_ptr ptr pp_rust_val v); *)
         State.store ptr ty v
     | StorageLive local ->
         let* ptr, ty = get_variable_and_ty local in

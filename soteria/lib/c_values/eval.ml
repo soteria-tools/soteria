@@ -68,6 +68,7 @@ let rec eval ?(force = false) (x : t) : t =
         | BvTimes -> BitVec.Raw.times nv1 nv2
         | BvDiv s -> BitVec.Raw.div s nv1 nv2
         | BvRem s -> BitVec.Raw.rem s nv1 nv2
+        | BvMod s -> BitVec.Raw.mod_ s nv1 nv2
         | BvLt s -> BitVec.Raw.lt s nv1 nv2
         | BvLeq s -> BitVec.Raw.leq s nv1 nv2
         | BitAnd -> BitVec.Raw.and_ nv1 nv2
