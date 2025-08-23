@@ -274,17 +274,20 @@ let merge_ifs (plugins : (bool * Soteria_symex.Fuel_gauge.t option plugin) list)
       match (acc, rest) with
       | Some ep, _ ->
           let fuel : Soteria_symex.Fuel_gauge.t =
-            let get_or name none =
+            let get_or name (none : Soteria_symex.Fuel_gauge.Fuel_value.t) =
               Charon_util.decl_get_attr decl name
-              |> Option.fold ~none ~some:int_of_string
+              |> Option.fold ~none ~some:(fun x -> Finite (int_of_string x))
             in
-            let steps =
-              get_or "rusteriatool::step_fuel" !Config.current.step_fuel
-            in
-            let branching =
-              get_or "rusteriatool::branch_fuel" !Config.current.branch_fuel
-            in
-            { steps = Finite steps; branching = Finite branching }
+            {
+              steps =
+                get_or "rusteriatool::step_fuel"
+                  (if !Config.current.no_fuel then Infinite
+                   else Finite !Config.current.step_fuel);
+              branching =
+                get_or "rusteriatool::branch_fuel"
+                  (if !Config.current.no_fuel then Infinite
+                   else Finite !Config.current.branch_fuel);
+            }
           in
           Some { ep with fuel }
       | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest

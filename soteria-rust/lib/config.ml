@@ -28,6 +28,8 @@ type t = {
       [@default 4] [@names [ "branch-fuel" ]] [@env "BRANCH_FUEL"]
       (** The default branch fuel for each entrypoint -- every symbolic
           execution branching point counts as one fuel *)
+  no_fuel : bool; [@make.default false] [@names [ "no-fuel" ]]
+      (** Disable fuel, for unbounded symbolic execution *)
   rustc_flags : string list;
       [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
@@ -35,7 +37,7 @@ type t = {
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided; tests matching any will be
           selected. The filters are treated as regexes. *)
-  print_summary : bool; [@default false] [@names [ "summary" ]]
+  print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
 }
