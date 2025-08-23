@@ -28,6 +28,8 @@ type t = {
       [@default 4] [@names [ "branch-fuel" ]] [@env "BRANCH_FUEL"]
       (** The default branch fuel for each entrypoint -- every symbolic
           execution branching point counts as one fuel *)
+  no_fuel : bool; [@make.default false] [@names [ "no-fuel" ]]
+      (** Disable fuel, for unbounded symbolic execution *)
   rustc_flags : string list;
       [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
