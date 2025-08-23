@@ -29,10 +29,12 @@ let rec eval ?(force = false) (x : t) : t =
             BitVec.of_int signed size nv
         | IntOfBv signed -> BitVec.to_int signed nv
         | FloatOfBv -> BitVec.to_float nv
-        | BvExtract (from, to_) -> BitVec.Raw.extract from to_ nv
-        | BvExtend by ->
-            let n = size_of_bv x.node.ty in
-            BitVec.Raw.extend (n + by) x
+        | BvExtract (from, to_) ->
+            let signed, _ = shape_of_bv x.node.ty in
+            BitVec.Raw.extract signed from to_ nv
+        | BvExtend _ ->
+            let signed, to_size = shape_of_bv x.node.ty in
+            BitVec.Raw.extend signed to_size nv
         | FIs fc -> Float.is_floatclass fc nv
         | FRound rm -> Float.round rm nv)
   | Binop (binop, v1, v2) -> (

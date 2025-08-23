@@ -252,6 +252,9 @@ module Interval : S = struct
           | Eq, _, _ when Range.is_empty (Range.intersect lr rr) -> Some false
           | Lt, (Some ml, _), (_, Some nr) when Z.geq ml nr -> Some false
           | Leq, (Some ml, _), (_, Some nr) when Z.gt ml nr -> Some false
+          | Leq, (Some ml, Some mr), (Some nr, _)
+            when Z.equal ml mr && Z.leq mr nr ->
+              Some true
           | _ -> None
         in
         ((Option.fold res ~some:Svalue.bool ~none:v, Var.Set.empty), st)

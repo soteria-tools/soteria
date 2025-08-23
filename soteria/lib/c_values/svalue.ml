@@ -520,8 +520,16 @@ and leq v1 v2 =
   | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
     when Z.leq x y ->
       v_true
-  | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
-    when Z.lt y (Z.neg (Z.abs x)) ->
+  | Int y, Binop (Rem, _, { node = { kind = Int x; _ }; _ })
+    when Z.leq y (Z.neg (Z.abs x)) ->
+      v_true
+  | Int y, Binop (Mod, _, _) when Z.leq y Z.zero -> v_true
+  | Int z, Unop (IntOfBv false, _) when Z.leq Z.zero z -> v_true
+  | Unop (IntOfBv signed, bv), Int z
+    when let bits = size_of_bv bv.node.ty in
+         let bits = if signed then bits - 1 else bits in
+         let max = Z.(pred (one lsl bits)) in
+         Z.geq z max ->
       v_true
   | _ -> Binop (Leq, v1, v2) <| TBool
 
@@ -721,17 +729,16 @@ module BitVec = struct
     let gt signed v1 v2 = lt signed v2 v1
     let geq signed v1 v2 = leq signed v2 v1
 
-    let rec extract from_ to_ v =
+    let rec extract signed from_ to_ v =
       let size = to_ - from_ + 1 in
-      let signed, _ = shape_of_bv v.node.ty in
       match v.node.kind with
       | BitVec bv ->
           let to_ = to_ + 1 in
           let bv = Z.((bv asr from_) land pred (one lsl to_)) in
           mk signed size bv
       | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) ->
-          let v1 = extract from_ to_ v1 in
-          let v2 = extract from_ to_ v2 in
+          let v1 = extract signed from_ to_ v1 in
+          let v2 = extract signed from_ to_ v2 in
           let bop =
             match bop with
             | BitAnd -> and_
@@ -743,13 +750,13 @@ module BitVec = struct
       | Binop (BitShr, v1, { node = { kind = BitVec x; _ }; _ })
       | Binop (BitShr, { node = { kind = BitVec x; _ }; _ }, v1) ->
           let shift = Z.to_int x in
-          extract (from_ + shift) (to_ + shift) v1
+          extract signed (from_ + shift) (to_ + shift) v1
       | Unop (BvOfInt, v) when from_ = 0 ->
           Unop (BvOfInt, v) <| t_bv signed size
       | _ -> Unop (BvExtract (from_, to_), v) <| t_bv signed size
 
-    let extend to_ v =
-      let signed, size = shape_of_bv v.node.ty in
+    let extend signed to_ v =
+      let size = size_of_bv v.node.ty in
       let extend_by = to_ - size in
       match v.node.kind with
       | BitVec bv ->
@@ -781,9 +788,10 @@ module BitVec = struct
     let is_2pow z = Z.(z > one && popcount z = 1) in
     match v.node.kind with
     | Unop (IntOfBv _, v) ->
-        if size_of_bv v.node.ty = n then v
-        else if size_of_bv v.node.ty > n then Raw.extract 0 (n - 1) v
-        else Raw.extend n v
+        let size = size_of_bv v.node.ty in
+        if size = n then v
+        else if size > n then Raw.extract s 0 (n - 1) v
+        else Raw.extend s n v
     | Int z ->
         let z = if Z.geq z Z.zero then z else Z.neg z in
         (* need to mask otherwise we'll encode a value bigger than the bitwidth *)
@@ -889,11 +897,11 @@ module BitVec = struct
         let shifted = Z.( lsl ) i1 (Z.to_int i2) in
         let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
         int_z masked
-    | _, Int i2 ->
+    (* | _, Int i2 ->
         let max = Z.( lsl ) Z.one size in
         let shifted = times v1 (int_z (Z.( lsl ) Z.one (Z.to_int i2))) in
         let masked = mod_ shifted (int_z max) in
-        masked
+        masked *)
     | _ ->
         let v1_bv = of_int signed size v1 in
         let v2_bv = of_int signed size v2 in
@@ -1036,12 +1044,12 @@ let rec sem_eq v1 v2 =
               Option.merge min (msb_of bv1) (msb_of bv2)
           | _ -> None
         in
-        let current_size = size_of_bv v1.node.ty in
+        let signed, current_size = shape_of_bv v1.node.ty in
         let msb = Option.map2 max (msb_of v1) (msb_of v2) in
         match msb with
         | Some msb when msb < current_size - 1 ->
-            let v1 = BitVec.Raw.extract 0 (msb - 1) v1 in
-            let v2 = BitVec.Raw.extract 0 (msb - 1) v2 in
+            let v1 = BitVec.Raw.extract signed 0 (msb - 1) v1 in
+            let v2 = BitVec.Raw.extract signed 0 (msb - 1) v2 in
             sem_eq v1 v2
         | _ ->
             (* regular sem_eq *)
