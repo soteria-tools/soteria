@@ -833,6 +833,13 @@ module BitVec = struct
           Z.(Z.equal (z land mask) zero)
     in
     match v.node.kind with
+    | BitVec z ->
+        if signed then
+          let bits = size_of_bv v.node.ty in
+          let bits_m_1 = bits - 1 in
+          let max = Z.(pred (one lsl bits_m_1)) in
+          if Z.leq z max then int_z z else int_z Z.(z - (one lsl bits))
+        else int_z z
     | Unop (BvOfInt, v) -> v
     | Binop (BvPlus, l, r) -> plus (to_int signed l) (to_int signed r)
     | Binop (BvMinus, l, r) -> minus (to_int signed l) (to_int signed r)
@@ -1040,6 +1047,7 @@ let rec sem_eq v1 v2 =
         | _ ->
             (* regular sem_eq *)
             mk_commut_binop Eq v1 v2 <| TBool)
+    | Unop (BvOfInt, bv1), Unop (BvOfInt, bv2) -> sem_eq bv1 bv2
     | Unop (IntOfBv _, bv1), Unop (IntOfBv _, bv2) -> sem_eq bv1 bv2
     | Unop (IntOfBv _, bv), Int n | Int n, Unop (IntOfBv _, bv) ->
         let sign, size = shape_of_bv bv.node.ty in
