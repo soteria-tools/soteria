@@ -7,4 +7,5 @@ module type S = sig
   val declare_var : t -> Soteria_symex.Var.t -> Svalue.ty -> unit
   val push : t -> int -> unit
   val pop : t -> int -> unit
+  val reset : t -> unit
 end

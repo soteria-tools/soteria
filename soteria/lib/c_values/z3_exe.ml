@@ -260,3 +260,7 @@ let check_sat solver : Soteria_symex.Solver.result =
 
 let push solver n = ack_command solver (Simple_smt.push n)
 let pop solver n = ack_command solver (Simple_smt.pop n)
+
+let reset solver =
+  ack_command solver (Simple_smt.simple_command [ "reset" ]);
+  !initialize_solver solver
