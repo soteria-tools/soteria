@@ -272,8 +272,9 @@ module Make (Sptr : Sptr.S) = struct
               | _ ->
                   let* meta = cast_checked ~ty:Typed.t_int meta in
                   (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
-                  if%sat meta <@ 0s then Rustsymex.Result.error `UBTransmute
-                  else Rustsymex.Result.ok ptr)
+                  if%sat meta <@ 0s then
+                    Result.error (`UBTransmute "Negative slice length")
+                  else Result.ok ptr)
           | base, meta ->
               Fmt.kstr not_impl "Expected a pointer and base, got %a and %a"
                 pp_rust_val base pp_rust_val meta)
@@ -401,7 +402,7 @@ module Make (Sptr : Sptr.S) = struct
       | None ->
           L.error (fun m ->
               m "Unmatched discriminant in rust_of_cvals: %a" Typed.ppa cval);
-          error `UBTransmute
+          error (`UBTransmute "Unmatched enum discriminant")
     and aux_union offset fs : ('e, 'fix, 'state) parser =
       let parse_field (i, ty) = map (aux offset ty) (fun v -> Union (i, v)) in
       (* We try parsing all of fields of the enum, sorted by decreasing layout size.
@@ -474,7 +475,13 @@ module Make (Sptr : Sptr.S) = struct
           ok (Base (v :> Typed.T.cval Typed.t))
       | TLiteral _, TLiteral to_ty, Base sv ->
           let constrs = Layout.constraints to_ty in
-          if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
+          if%sat Typed.conj (constrs sv) then ok v
+          else
+            let msg =
+              Fmt.str "Constraints of %a unsatisfied for %a" pp_ty
+                (TLiteral to_ty) Typed.ppa sv
+            in
+            error (`UBTransmute msg)
       (* A ref cannot be an invalid pointer *)
       | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
           error `UBDanglingPointer
