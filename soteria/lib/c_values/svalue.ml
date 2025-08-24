@@ -530,6 +530,7 @@ module BitVec = struct
       directly when possible, as it may also provide more reductions. *)
   module Raw = struct
     let mk s n bv = BitVec bv <| t_bv s n
+    let mk_like other bv = BitVec bv <| other.node.ty
 
     (** [max_for (signed, n)] is the inclusive maximum for a bitvector of size
         [n] when it is [signed] *)
@@ -572,22 +573,28 @@ module BitVec = struct
       | _, BitVec mask when Z.(equal mask zero) -> v2
       | BitVec mask, _ when covers_bitwidth n mask -> v2
       | _, BitVec mask when covers_bitwidth n mask -> v1
+      (* For (x >> s) & m, the mask is irrelevant if it entirely covers [bitsize - s] *)
+      | ( (Binop (BitShr, _, { node = { kind = BitVec shift; _ }; _ }) as base),
+          BitVec mask )
+      | ( BitVec mask,
+          (Binop (BitShr, _, { node = { kind = BitVec shift; _ }; _ }) as base)
+        )
+        when let bitwidth = n - Z.to_int shift in
+             let low_mask = Z.(pred (one lsl bitwidth)) in
+             Z.(equal (mask land low_mask) low_mask) ->
+          base <| t_bv sign n
       | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv sign n
 
     let or_ v1 v2 =
       match (v1.node.kind, v2.node.kind) with
-      | BitVec l, BitVec r ->
-          let sign, n = shape_of_bv v1.node.ty in
-          mk sign n Z.(l lor r)
+      | BitVec l, BitVec r -> mk_like v1 Z.(l lor r)
       | BitVec z, _ when Z.equal z Z.zero -> v2
       | _, BitVec z when Z.equal z Z.zero -> v1
       | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
 
     let xor v1 v2 =
       match (v1.node.kind, v2.node.kind) with
-      | BitVec l, BitVec r ->
-          let sign, n = shape_of_bv v1.node.ty in
-          mk sign n Z.(l lxor r)
+      | BitVec l, BitVec r -> mk_like v1 Z.(l lxor r)
       | BitVec z, _ when Z.equal z Z.zero -> v2
       | _, BitVec z when Z.equal z Z.zero -> v1
       | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
@@ -620,20 +627,30 @@ module BitVec = struct
     let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
     let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
 
-    let shl v1 v2 =
+    let rec shl v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
           let signed, n = shape_of_bv v1.node.ty in
           let mask = max_for (signed, n) in
           mk signed n Z.((l lsl to_int r) land mask)
+      | _, BitVec s when Z.equal s Z.zero -> v1
+      | _, BitVec s when Z.geq s (Z.of_int (size_of_bv v1.node.ty)) ->
+          mk_like v1 Z.zero
+      | Binop (BitShl, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
+          shl v (mk_like v1 Z.(s1 + s2))
       | _ -> Binop (BitShl, v1, v2) <| v1.node.ty
 
-    let shr v1 v2 =
+    let rec shr v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
           let signed, n = shape_of_bv v1.node.ty in
           let mask = max_for (signed, n) in
           mk signed n Z.((l asr to_int r) land mask)
+      | _, BitVec s when Z.equal s Z.zero -> v1
+      | _, BitVec s when Z.geq s (Z.of_int (size_of_bv v1.node.ty)) ->
+          mk_like v1 Z.zero
+      | Binop (BitShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
+          shr v (mk_like v1 Z.(s1 + s2))
       | _ -> Binop (BitShr, v1, v2) <| v1.node.ty
 
     let lt signed v1 v2 =
