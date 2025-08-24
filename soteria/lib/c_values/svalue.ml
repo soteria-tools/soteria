@@ -701,7 +701,11 @@ module BitVec = struct
     let exception Found of bool * int in
     let rec aux v =
       match (v.node.ty, v.node.kind) with
+      (* Found! *)
       | TBitVector (s, n), _ -> raise (Found (s, n))
+      (* These cases "kill" the search, as converting them to BVs has no advantage *)
+      | _, Unop (IntOfBool, _) -> ()
+      (* Iterate *)
       | _, (BitVec _ | Var _ | Bool _ | Int _ | Float _) -> ()
       | _, (Ptr (x, y) | Binop (_, x, y)) ->
           aux x;
