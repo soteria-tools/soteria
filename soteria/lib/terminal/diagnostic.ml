@@ -60,14 +60,19 @@ let mk_range_file ?filename file from_ to_ =
    but I don't think printing errors is what's going to take time.
    Also, it shouldn't be required anyway, see https://github.com/johnyob/grace/issues/46
 *)
-  let idx1 = real_index file from_ in
-  let idx2 = real_index file to_ in
-  let source : Grace.Source.t =
-    match filename with
-    | None -> `File file
-    | Some name -> `String { name = Some name; content = read_file file }
-  in
-  create ~source (bi idx1) (bi idx2)
+  try
+    let idx1 = real_index file from_ in
+    let idx2 = real_index file to_ in
+    let source : Grace.Source.t =
+      match filename with
+      | None -> `File file
+      | Some name -> `String { name = Some name; content = read_file file }
+    in
+    create ~source (bi idx1) (bi idx2)
+  with Sys_error _ ->
+    create
+      ~source:(`String { name = Some file; content = "File not found" })
+      (bi 0) (bi 14)
 
 let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =
   let open Grace.Diagnostic in
