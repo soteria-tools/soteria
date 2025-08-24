@@ -656,7 +656,7 @@ module BitVec = struct
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
           let sign, n = shape_of_bv v1.node.ty in
-          mk sign n Z.(logor l r)
+          mk sign n Z.(l lor r)
       | BitVec z, _ when Z.equal z Z.zero -> v2
       | _, BitVec z when Z.equal z Z.zero -> v1
       | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
@@ -665,7 +665,7 @@ module BitVec = struct
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
           let sign, n = shape_of_bv v1.node.ty in
-          mk sign n Z.(logxor l r)
+          mk sign n Z.(l lxor r)
       | BitVec z, _ when Z.equal z Z.zero -> v2
       | _, BitVec z when Z.equal z Z.zero -> v1
       | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
@@ -675,7 +675,7 @@ module BitVec = struct
       | BitVec l, BitVec r ->
           let signed, n = shape_of_bv v1.node.ty in
           let mask = max_for (signed, n) in
-          mk signed n Z.(logand (add l r) mask)
+          mk signed n Z.((l + r) land mask)
       | _ -> mk_commut_binop BvPlus v1 v2 <| v1.node.ty
 
     let minus v1 v2 =
@@ -683,7 +683,7 @@ module BitVec = struct
       | BitVec l, BitVec r ->
           let signed, n = shape_of_bv v1.node.ty in
           let mask = max_for (signed, n) in
-          mk signed n Z.(logand (sub l r) mask)
+          mk signed n Z.((l - r) land mask)
       | _ -> Binop (BvMinus, v1, v2) <| v1.node.ty
 
     let times v1 v2 =
@@ -691,7 +691,7 @@ module BitVec = struct
       | BitVec l, BitVec r ->
           let signed, n = shape_of_bv v1.node.ty in
           let mask = max_for (signed, n) in
-          mk signed n Z.(logand (mul l r) mask)
+          mk signed n Z.(l * r land mask)
       | _ -> mk_commut_binop BvTimes v1 v2 <| v1.node.ty
 
     let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
@@ -702,14 +702,16 @@ module BitVec = struct
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
           let signed, n = shape_of_bv v1.node.ty in
-          mk signed n Z.(l lsl to_int r)
+          let mask = max_for (signed, n) in
+          mk signed n Z.((l lsl to_int r) land mask)
       | _ -> Binop (BitShl, v1, v2) <| v1.node.ty
 
     let shr v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
           let signed, n = shape_of_bv v1.node.ty in
-          mk signed n Z.(l asr to_int r)
+          let mask = max_for (signed, n) in
+          mk signed n Z.((l asr to_int r) land mask)
       | _ -> Binop (BitShr, v1, v2) <| v1.node.ty
 
     let lt signed v1 v2 =
@@ -760,8 +762,8 @@ module BitVec = struct
       let extend_by = to_ - size in
       match v.node.kind with
       | BitVec bv ->
-          let to_ = to_ + 1 in
-          let bv = Z.(bv land pred (one lsl to_)) in
+          let to_' = to_ + 1 in
+          let bv = Z.(bv land pred (one lsl to_')) in
           mk signed to_ bv
       (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
          as that will require a more expensive bit-blasting. *)
