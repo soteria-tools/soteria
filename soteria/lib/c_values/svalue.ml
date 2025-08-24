@@ -529,8 +529,13 @@ module BitVec = struct
       these, so as to provide properly typed values. Prefer using [BitVec]
       directly when possible, as it may also provide more reductions. *)
   module Raw = struct
-    let mk s n bv = BitVec bv <| t_bv s n
-    let mk_like other bv = BitVec bv <| other.node.ty
+    let mk s n bv =
+      assert (Z.(leq bv (one lsl n)));
+      BitVec bv <| t_bv s n
+
+    let mk_like other bv =
+      assert (Z.(leq bv (one lsl size_of_bv other.node.ty)));
+      BitVec bv <| other.node.ty
 
     (** [max_for (signed, n)] is the inclusive maximum for a bitvector of size
         [n] when it is [signed] *)
@@ -543,17 +548,13 @@ module BitVec = struct
     let min_for (signed, n) =
       if signed then Z.(neg (one lsl Stdlib.( - ) n 1)) else Z.zero
 
-    (** [covers_bitwidth bits z] is true if [z] is of the form [1+] and covers
-        the whole bitwidth of size [bits]. *)
-    let covers_bitwidth bits z =
-      Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = bits)
-
     (** [is_2pow z] is [true] if [z] is a power of 2 {b greater than one}. The
         [> 1] check is done to ensure the mask for that number (ie. [z - 1]) is
         nonzero. *)
     let is_2pow z = Z.(z > one && popcount z = 1)
 
-    (** [is_left_mask bits z] is true if [z] is of the form [1+0+] *)
+    (** [is_left_mask bits z] is true if [z] is of the form [1+0+] and its
+        length is [bits] *)
     let is_left_mask bits z =
       if Z.(z <= one) then false
       else
@@ -565,14 +566,49 @@ module BitVec = struct
           let mask = Z.pred @@ Z.shift_left Z.one zeroes in
           Z.(equal (z land mask) zero)
 
+    (** [is_right_mask z] is true if [z] is of the form [0*1+] *)
+    let is_right_mask z = Z.(z > one && popcount (succ z) = 1)
+
+    (** [right_mask_size z] is, for a [z] of the form [0*1{n}], [n]. If [z] is
+        not of the form [0*1{n}], the result is undefined, so use
+        [is_right_mask] before. *)
+    let right_mask_size z = Z.(log2 (succ z))
+
+    (** [covers_bitwidth bits z] is true if [z] is of the form [1+] and covers
+        the whole bitwidth of size [bits]. *)
+    let covers_bitwidth bits z = is_right_mask z && right_mask_size z = bits
+
+    let extend signed to_ v =
+      let size = size_of_bv v.node.ty in
+      let extend_by = to_ - size in
+      assert (to_ > size);
+      match v.node.kind with
+      | BitVec bv ->
+          let to_' = to_ + 1 in
+          let bv = Z.(bv land pred (one lsl to_')) in
+          mk signed to_ bv
+      (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
+         as that will require a more expensive bit-blasting. *)
+      (* We also note the following reduction is *not valid*, as some upper bits may be set;
+         e.g. given i2bv[3](8) = 0b000, extend[1](i2bv[3](8)) = 0b0000, whereas
+              i2bv[4](8) = 0b1000
+      | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv signed to_ *)
+      | _ -> Unop (BvExtend extend_by, v) <| t_bv signed to_
+
     let and_ v1 v2 =
       let sign, n = shape_of_bv v1.node.ty in
+      assert (n == size_of_bv v2.node.ty);
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r -> mk sign n Z.(logand l r)
       | BitVec mask, _ when Z.(equal mask zero) -> v1
       | _, BitVec mask when Z.(equal mask zero) -> v2
       | BitVec mask, _ when covers_bitwidth n mask -> v2
       | _, BitVec mask when covers_bitwidth n mask -> v1
+      (* i2bv[N](x) & 0x0*1{M} can become extend[N](i2bv[M](x)) *)
+      | Unop (BvOfInt, v1), BitVec mask when is_right_mask mask ->
+          let mask_size = right_mask_size mask in
+          let bv_of_int = Unop (BvOfInt, v1) <| t_bv sign mask_size in
+          extend sign n bv_of_int
       (* For (x >> s) & m, the mask is irrelevant if it entirely covers [bitsize - s] *)
       | ( (Binop (BitShr, _, { node = { kind = BitVec shift; _ }; _ }) as base),
           BitVec mask )
@@ -679,17 +715,14 @@ module BitVec = struct
           let to_ = to_ + 1 in
           let bv = Z.((bv asr from_) land pred (one lsl to_)) in
           mk signed size bv
-      | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) ->
+      | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) -> (
           let v1 = extract signed from_ to_ v1 in
           let v2 = extract signed from_ to_ v2 in
-          let bop =
-            match bop with
-            | BitAnd -> and_
-            | BitOr -> or_
-            | BitXor -> xor
-            | _ -> failwith "unreachable binop"
-          in
-          bop v1 v2
+          match bop with
+          | BitAnd -> and_ v1 v2
+          | BitOr -> or_ v1 v2
+          | BitXor -> xor v1 v2
+          | _ -> failwith "unreachable binop")
       | Binop (BitShr, v1, { node = { kind = BitVec x; _ }; _ })
       | Binop (BitShr, { node = { kind = BitVec x; _ }; _ }, v1) ->
           let shift = Z.to_int x in
@@ -697,19 +730,6 @@ module BitVec = struct
       | Unop (BvOfInt, v) when from_ = 0 ->
           Unop (BvOfInt, v) <| t_bv signed size
       | _ -> Unop (BvExtract (from_, to_), v) <| t_bv signed size
-
-    let extend signed to_ v =
-      let size = size_of_bv v.node.ty in
-      let extend_by = to_ - size in
-      match v.node.kind with
-      | BitVec bv ->
-          let to_' = to_ + 1 in
-          let bv = Z.(bv land pred (one lsl to_')) in
-          mk signed to_ bv
-      (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
-         as that will require a more expensive bit-blasting. *)
-      | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv signed to_
-      | _ -> Unop (BvExtend extend_by, v) <| t_bv signed to_
   end
 
   (** [Some (signed, size)] if the given value contains somewhere some bitvector
@@ -719,7 +739,7 @@ module BitVec = struct
     let rec aux v =
       match (v.node.ty, v.node.kind) with
       (* Found! *)
-      | TBitVector (s, n), _ -> raise (Found (s, n))
+      | TBitVector (s, n), _ -> raise_notrace (Found (s, n))
       (* These cases "kill" the search, as converting them to BVs has no advantage *)
       | _, Unop (IntOfBool, _) -> ()
       (* Iterate *)
@@ -770,10 +790,10 @@ module BitVec = struct
         let mask = Z.pred @@ Z.shift_left Z.one n in
         let z = Z.(z land mask) in
         Raw.mk s n z
+    | Binop (Mod, v, { node = { kind = Int mask; _ }; _ })
+      when Z.gt mask (Raw.max_for (s, n)) ->
+        of_int v
     | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when Raw.is_2pow mask
-      ->
-        Raw.and_ (of_int v) (Raw.mk s n (Z.pred mask))
-    | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when Raw.is_2pow mask
       ->
         Raw.and_ (of_int v) (Raw.mk s n (Z.pred mask))
     | Binop (Times, { node = { kind = Int mask; _ }; _ }, v)
@@ -1024,6 +1044,10 @@ let rec lt v1 v2 =
   | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
     when Z.lt y (Z.neg (Z.abs x)) ->
       v_true
+  | Int z, Unop (IntOfBool, b) -> (
+      match Z.(compare z zero) with 0 -> b | 1 -> v_false | _ -> v_true)
+  | Unop (IntOfBool, b), Int z -> (
+      match Z.(compare z one) with 0 -> not b | 1 -> v_true | _ -> v_false)
   | _ -> (
       match BitVec.contains_bvs_2 v1 v2 with
       | Some (signed, n) -> BitVec.lt_as_bv signed n v1 v2
