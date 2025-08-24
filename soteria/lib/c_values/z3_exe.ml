@@ -87,9 +87,7 @@ module Encoding = struct
         | GetPtrLoc -> get_loc v1
         | GetPtrOfs -> get_ofs v1
         | IntOfBool -> ite v1 (int_k 1) (int_k 0)
-        | BvOfInt ->
-            let size = Svalue.size_of_bv v.node.ty in
-            bv_of_int size v1
+        | BvOfInt (_, size) -> bv_of_int size v1
         | IntOfBv signed -> int_of_bv signed v1
         | BvOfFloat n -> bv_of_float n v1
         | FloatOfBv -> (
