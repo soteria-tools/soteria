@@ -109,9 +109,11 @@ let print_outcomes entry_name f =
         let name = "PC " ^ string_of_int i ^ ":" in
         if List.is_empty pc then pf ft "%a empty" (pp_style `Bold) name
         else
-          pf ft "%a @[<-1>%a@]" (pp_style `Bold) name
-            (list ~sep:(any " /\\@, ") Typed.ppa)
-            pc
+          let pp_pc =
+            if Soteria_terminal.Config.compact () then Fmt.any "<compact>"
+            else list ~sep:(any " /\\@, ") Typed.ppa
+          in
+          pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
