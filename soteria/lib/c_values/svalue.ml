@@ -431,111 +431,6 @@ let ite guard if_ else_ =
 
 (** {2 Integers} *)
 
-let rec lt v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.lt i1 i2)
-  | _, _ when equal v1 v2 -> v_false
-  | _, Binop (Plus, v2, v3) when equal v1 v2 -> lt zero v3
-  | _, Binop (Plus, v2, v3) when equal v1 v3 -> lt zero v2
-  | Binop (Plus, v1, v3), _ when equal v1 v2 -> lt v3 zero
-  | Binop (Plus, v1, v3), _ when equal v3 v2 -> lt v1 zero
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> lt v2 v4
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 -> lt v1 v4
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 -> lt v2 v3
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 -> lt v1 v3
-  | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
-  | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-      lt v1 (int_z @@ Z.sub y x)
-  | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
-  | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
-      lt (int_z @@ Z.sub y x) v1
-  | Binop (Minus, v1, { node = { kind = Int x; _ }; _ }), Int y ->
-      lt v1 (int_z @@ Z.add y x)
-  | Binop (Minus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-      lt (int_z @@ Z.sub x y) v1
-  | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ }) ->
-      lt (int_z @@ Z.add y x) v1
-  | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
-      lt v1 (int_z @@ Z.sub x y)
-  | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
-  | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
-      else
-        let op = if Z.divisible y x || Z.(y > zero) then lt else leq in
-        if Z.(zero < x) then op (int_z Z.(y / x)) v1'
-        else op v1' (int_z Z.(y / x))
-  | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
-  | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
-      if Z.equal Z.zero x then bool (Z.lt Z.zero y)
-      else
-        let op = if Z.divisible y x || Z.(y < zero) then lt else leq in
-        if Z.(zero < x) then op v1' (int_z Z.(y / x))
-        else op (int_z Z.(y / x)) v1'
-  | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
-    when Z.leq x y ->
-      v_true
-  | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
-    when Z.lt y (Z.neg (Z.abs x)) ->
-      v_true
-  | _ -> Binop (Lt, v1, v2) <| TBool
-
-and leq v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.leq i1 i2)
-  | _, _ when equal v1 v2 -> v_true
-  | _, Binop (Plus, v2, v3) when equal v1 v2 -> leq zero v3
-  | _, Binop (Plus, v2, v3) when equal v1 v3 -> leq zero v2
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> leq v2 v4
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 -> leq v1 v4
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 -> leq v2 v3
-  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 -> leq v1 v3
-  | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
-  | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-      leq v1 (int_z @@ Z.sub y x)
-  | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
-  | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
-      leq (int_z @@ Z.sub y x) v1
-  | Binop (Minus, v1, { node = { kind = Int x; _ }; _ }), Int y ->
-      leq v1 (int_z @@ Z.add y x)
-  | Binop (Minus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-      leq (int_z @@ Z.sub x y) v1
-  | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ }) ->
-      leq (int_z @@ Z.add y x) v1
-  | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
-      leq v1 (int_z @@ Z.sub x y)
-  | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
-  | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
-      else
-        let op = if Z.divisible y x || Z.(y < zero) then leq else lt in
-        if Z.(zero < x) then op (int_z Z.(y / x)) v1'
-        else op v1' (int_z Z.(y / x))
-  | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
-  | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
-      else
-        let op = if Z.divisible y x || Z.(y > zero) then leq else lt in
-        if Z.(zero < x) then op v1' (int_z Z.(y / x))
-        else op (int_z Z.(y / x)) v1'
-  | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
-    when Z.leq x y ->
-      v_true
-  | Int y, Binop (Rem, _, { node = { kind = Int x; _ }; _ })
-    when Z.leq y (Z.neg (Z.abs x)) ->
-      v_true
-  | Int y, Binop (Mod, _, _) when Z.leq y Z.zero -> v_true
-  | Int z, Unop (IntOfBv false, _) when Z.leq Z.zero z -> v_true
-  | Unop (IntOfBv signed, bv), Int z
-    when let bits = size_of_bv bv.node.ty in
-         let bits = if signed then bits - 1 else bits in
-         let max = Z.(pred (one lsl bits)) in
-         Z.geq z max ->
-      v_true
-  | _ -> Binop (Leq, v1, v2) <| TBool
-
-let geq v1 v2 = leq v2 v1
-let gt v1 v2 = lt v2 v1
-
 let rec plus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v1 zero -> v2
@@ -993,7 +888,112 @@ module Float = struct
     | _ -> BitVec.to_int false (BitVec.of_float n v)
 end
 
-(* {2 Equality, int-bool conversions} *)
+(* {2 Equality, comparison, int-bool conversions} *)
+
+let rec lt v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> bool (Z.lt i1 i2)
+  | _, _ when equal v1 v2 -> v_false
+  | _, Binop (Plus, v2, v3) when equal v1 v2 -> lt zero v3
+  | _, Binop (Plus, v2, v3) when equal v1 v3 -> lt zero v2
+  | Binop (Plus, v1, v3), _ when equal v1 v2 -> lt v3 zero
+  | Binop (Plus, v1, v3), _ when equal v3 v2 -> lt v1 zero
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> lt v2 v4
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 -> lt v1 v4
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 -> lt v2 v3
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 -> lt v1 v3
+  | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
+  | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
+      lt v1 (int_z @@ Z.sub y x)
+  | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
+  | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
+      lt (int_z @@ Z.sub y x) v1
+  | Binop (Minus, v1, { node = { kind = Int x; _ }; _ }), Int y ->
+      lt v1 (int_z @@ Z.add y x)
+  | Binop (Minus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
+      lt (int_z @@ Z.sub x y) v1
+  | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ }) ->
+      lt (int_z @@ Z.add y x) v1
+  | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
+      lt v1 (int_z @@ Z.sub x y)
+  | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
+  | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
+      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      else
+        let op = if Z.divisible y x || Z.(y > zero) then lt else leq in
+        if Z.(zero < x) then op (int_z Z.(y / x)) v1'
+        else op v1' (int_z Z.(y / x))
+  | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
+  | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
+      if Z.equal Z.zero x then bool (Z.lt Z.zero y)
+      else
+        let op = if Z.divisible y x || Z.(y < zero) then lt else leq in
+        if Z.(zero < x) then op v1' (int_z Z.(y / x))
+        else op (int_z Z.(y / x)) v1'
+  | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
+    when Z.leq x y ->
+      v_true
+  | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
+    when Z.lt y (Z.neg (Z.abs x)) ->
+      v_true
+  | _ -> Binop (Lt, v1, v2) <| TBool
+
+and leq v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Int i1, Int i2 -> bool (Z.leq i1 i2)
+  | _, _ when equal v1 v2 -> v_true
+  | _, Binop (Plus, v2, v3) when equal v1 v2 -> leq zero v3
+  | _, Binop (Plus, v2, v3) when equal v1 v3 -> leq zero v2
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 -> leq v2 v4
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 -> leq v1 v4
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 -> leq v2 v3
+  | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 -> leq v1 v3
+  | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
+  | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
+      leq v1 (int_z @@ Z.sub y x)
+  | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
+  | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
+      leq (int_z @@ Z.sub y x) v1
+  | Binop (Minus, v1, { node = { kind = Int x; _ }; _ }), Int y ->
+      leq v1 (int_z @@ Z.add y x)
+  | Binop (Minus, { node = { kind = Int x; _ }; _ }, v1), Int y ->
+      leq (int_z @@ Z.sub x y) v1
+  | Int y, Binop (Minus, v1, { node = { kind = Int x; _ }; _ }) ->
+      leq (int_z @@ Z.add y x) v1
+  | Int y, Binop (Minus, { node = { kind = Int x; _ }; _ }, v1) ->
+      leq v1 (int_z @@ Z.sub x y)
+  | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
+  | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
+      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      else
+        let op = if Z.divisible y x || Z.(y < zero) then leq else lt in
+        if Z.(zero < x) then op (int_z Z.(y / x)) v1'
+        else op v1' (int_z Z.(y / x))
+  | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
+  | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
+      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      else
+        let op = if Z.divisible y x || Z.(y > zero) then leq else lt in
+        if Z.(zero < x) then op v1' (int_z Z.(y / x))
+        else op (int_z Z.(y / x)) v1'
+  | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
+    when Z.leq x y ->
+      v_true
+  | Int y, Binop (Rem, _, { node = { kind = Int x; _ }; _ })
+    when Z.leq y (Z.neg (Z.abs x)) ->
+      v_true
+  | Int y, Binop (Mod, _, _) when Z.leq y Z.zero -> v_true
+  | Int z, Unop (IntOfBv false, _) when Z.leq Z.zero z -> v_true
+  | Unop (IntOfBv signed, bv), Int z
+    when let bits = size_of_bv bv.node.ty in
+         let bits = if signed then bits - 1 else bits in
+         let max = Z.(pred (one lsl bits)) in
+         Z.geq z max ->
+      v_true
+  | _ -> Binop (Leq, v1, v2) <| TBool
+
+let geq v1 v2 = leq v2 v1
+let gt v1 v2 = lt v2 v1
 
 let rec sem_eq v1 v2 =
   if equal v1 v2 && Stdlib.not (is_float v1.node.ty) then v_true
