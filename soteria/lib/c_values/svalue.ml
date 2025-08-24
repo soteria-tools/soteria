@@ -493,6 +493,7 @@ let rec is_mod v n =
 
 let rec rem v1 v2 =
   match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v2 one -> zero
   | _, Int i2 when is_mod v1 i2 -> zero
   | Int i1, Int i2 -> int_z (Z.rem i1 i2)
   | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
