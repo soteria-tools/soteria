@@ -839,6 +839,28 @@ module BitVec = struct
   let wrap_plus = wrap_binop Raw.plus
   let wrap_minus = wrap_binop Raw.minus
   let wrap_times = wrap_binop Raw.times
+
+  (** Converts an integer [<] into a bitvector [<]. If the comparison is
+      detected to be an overflow check, converts it to the appropriate overflow
+      check expression. *)
+  let lt_as_bv signed n v1 v2 =
+    (* Fmt.pr "lt_as_bv %a < %a@." pp v1 pp v2; *)
+    match (v1, v2) with
+    | _, _ ->
+        let v1 = of_int signed n v1 in
+        let v2 = of_int signed n v2 in
+        Raw.lt signed v1 v2
+
+  (** Converts an integer [<] into a bitvector [<=]. If the comparison is
+      detected to be an overflow check, converts it to the appropriate overflow
+      check expression. *)
+  let leq_as_bv signed n v1 v2 =
+    (* Fmt.pr "leq_as_bv %a <= %a@." pp v1 pp v2; *)
+    match (v1, v2) with
+    | _, _ ->
+        let v1 = of_int signed n v1 in
+        let v2 = of_int signed n v2 in
+        Raw.leq signed v1 v2
 end
 
 (** {2 Floating point} *)
@@ -964,10 +986,7 @@ let rec lt v1 v2 =
       v_true
   | _ -> (
       match BitVec.contains_bvs_2 v1 v2 with
-      | Some (signed, n) ->
-          let v1 = BitVec.of_int signed n v1 in
-          let v2 = BitVec.of_int signed n v2 in
-          BitVec.Raw.lt signed v1 v2
+      | Some (signed, n) -> BitVec.lt_as_bv signed n v1 v2
       | None -> Binop (Lt, v1, v2) <| TBool)
 
 and leq v1 v2 =
@@ -1024,10 +1043,7 @@ and leq v1 v2 =
       v_true
   | _ -> (
       match BitVec.contains_bvs_2 v1 v2 with
-      | Some (signed, n) ->
-          let v1 = BitVec.of_int signed n v1 in
-          let v2 = BitVec.of_int signed n v2 in
-          BitVec.Raw.leq signed v1 v2
+      | Some (signed, n) -> BitVec.leq_as_bv signed n v1 v2
       | None -> Binop (Leq, v1, v2) <| TBool)
 
 let geq v1 v2 = leq v2 v1
