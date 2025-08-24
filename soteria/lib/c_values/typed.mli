@@ -124,6 +124,15 @@ module BitVec : sig
   val shl : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
   val shr : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
   val not : size:int -> signed:bool -> [< sint ] t -> [> sint ] t
+
+  val wrap_plus :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val wrap_minus :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val wrap_times :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 end
 
 (** Floating point operations *)

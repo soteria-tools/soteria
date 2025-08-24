@@ -891,40 +891,24 @@ module BitVec = struct
         let bv = Raw.xor v1_bv v2_bv in
         to_int signed bv
 
-  let shl ~size ~signed v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
-    | Int i1, Int i2 ->
-        let shifted = Z.( lsl ) i1 (Z.to_int i2) in
-        let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
-        int_z masked
-    (* | _, Int i2 ->
-        let max = Z.( lsl ) Z.one size in
-        let shifted = times v1 (int_z (Z.( lsl ) Z.one (Z.to_int i2))) in
-        let masked = mod_ shifted (int_z max) in
-        masked *)
-    | _ ->
-        let v1_bv = of_int signed size v1 in
-        let v2_bv = of_int signed size v2 in
-        let bv = Raw.shl v1_bv v2_bv in
-        to_int signed bv
-
-  let shr ~size ~signed v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
-    | Int i1, Int i2 ->
-        let shifted = Z.( asr ) i1 (Z.to_int i2) in
-        let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
-        int_z masked
-    | _ ->
-        let v1_bv = of_int signed size v1 in
-        let v2_bv = of_int signed size v2 in
-        let bv = Raw.shr v1_bv v2_bv in
-        to_int signed bv
-
   let not ~size:s ~signed v =
     if Stdlib.not signed then
       let max = Z.(pred (one lsl s)) in
       minus (int_z max) v
     else minus (neg v) one
+
+  let[@inline] wrap_binop f =
+   fun ~size ~signed v1 v2 ->
+    let v1 = of_int signed size v1 in
+    let v2 = of_int signed size v2 in
+    let r = f v1 v2 in
+    to_int signed r
+
+  let shl = wrap_binop Raw.shl
+  let shr = wrap_binop Raw.shr
+  let wrap_plus = wrap_binop Raw.plus
+  let wrap_minus = wrap_binop Raw.minus
+  let wrap_times = wrap_binop Raw.times
 end
 
 (** {2 Floating point} *)

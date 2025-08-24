@@ -629,8 +629,7 @@ module M (State : State_intf.S) = struct
   let wrapping_op op ~t ~a ~b state : ret =
     let ity = TypesUtils.ty_as_literal t in
     let* a, b = as_base a &&* as_base b in
-    let** res = State.lift_err state @@ Core.safe_binop op ity a b in
-    let* res = Core.wrap_value ity res in
+    let* res = Core.wrapping_binop op ity a b in
     Result.ok (Base res, state)
 
   let wrapping_add = wrapping_op (Add OUB)

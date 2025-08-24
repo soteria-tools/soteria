@@ -667,8 +667,7 @@ module Make (State : State_intf.S) = struct
             | Add om | Sub om | Mul om | Div om | Rem om | Shl om | Shr om -> (
                 match (om, type_of_operand e1) with
                 | OWrap, TLiteral ((TInt _ | TUInt _) as ty) ->
-                    let^^ v = Core.safe_binop op ty v1 v2 in
-                    let^+ res = Core.wrap_value ty v in
+                    let^+ res = Core.wrapping_binop op ty v1 v2 in
                     Base res
                 | _, TLiteral ty ->
                     let^^+ res = Core.eval_lit_binop op ty v1 v2 in

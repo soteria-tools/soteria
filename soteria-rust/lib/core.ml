@@ -54,7 +54,7 @@ module M (State : State_intf.S) = struct
           | Rem _ ->
               if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (rem l (cast r))
-          | Shl _ | Shr _ ->
+          | Shl _ | Shr _ -> (
               let ity =
                 match ty with
                 | TInt _ | TUInt _ -> ty
@@ -64,12 +64,10 @@ module M (State : State_intf.S) = struct
               in
               let size = 8 * Layout.size_of_literal_ty ity in
               let signed = Layout.is_signed ity in
-              let op =
-                match bop with
-                | Shl _ -> Typed.BitVec.shl
-                | _ -> Typed.BitVec.shr
-              in
-              Result.ok (op ~size ~signed l r)
+              match bop with
+              | Shl _ -> Result.ok @@ Typed.BitVec.shl ~size ~signed l r
+              | Shr _ -> Result.ok @@ Typed.BitVec.shr ~size ~signed l r
+              | _ -> failwith "Impossible")
           | _ -> not_impl "Invalid binop in eval_lit_binop"
         in
         Result.ok (res :> T.cval Typed.t)
@@ -113,22 +111,34 @@ module M (State : State_intf.S) = struct
 
   (** Wraps a given value to make it fit within the constraints of the given
       type *)
-  let wrap_value ty v =
-    let+ v = cast_checked ~ty:Typed.t_int v in
-    let size = Layout.size_of_literal_ty ty in
-    let unsigned_max = nonzero_z (Z.shift_left Z.one (8 * size)) in
-    let max = Layout.max_value ty in
+  let wrapping_binop (bop : Expressions.binop) ty l r =
+    let* l = cast_checked ~ty:Typed.t_int l in
+    let+ r = cast_checked ~ty:Typed.t_int r in
+    let size = 8 * Layout.size_of_literal_ty ty in
     let signed = Layout.is_signed ty in
-    let res = v %@ unsigned_max in
-    if Stdlib.not signed then
-      Typed.ite (res <@ 0s) ((res +@ unsigned_max) %@ unsigned_max) res
-    else Typed.ite (res <=@ max) res (res -@ unsigned_max)
+    match bop with
+    | Add _ | AddChecked -> Typed.BitVec.wrap_plus ~size ~signed l r
+    | Sub _ | SubChecked -> Typed.BitVec.wrap_minus ~size ~signed l r
+    | Mul _ | MulChecked -> Typed.BitVec.wrap_times ~size ~signed l r
+    | Shl _ -> Typed.BitVec.shl ~size ~signed l r
+    | Shr _ -> Typed.BitVec.shr ~size ~signed l r
+    | _ -> Fmt.failwith "Invalid wrapping binop: %a" Expressions.pp_binop bop
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop op lit_ty l r =
-    let** v = safe_binop op lit_ty l r in
-    let* wrapped = wrap_value lit_ty v in
-    let overflowed = Typed.(int_of_bool (not (v ==@ wrapped))) in
+    let* l = cast_checked ~ty:Typed.t_int l in
+    let* r = cast_checked ~ty:Typed.t_int r in
+    let* wrapped = wrapping_binop op lit_ty l r in
+    let base_op =
+      match op with
+      | AddChecked -> ( +@ )
+      | SubChecked -> ( -@ )
+      | MulChecked -> ( *@ )
+      | _ -> failwith "Invalid checked op"
+    in
+    let constrs = Layout.constraints lit_ty in
+    let unwrapped_res = base_op l r in
+    let overflowed = int_of_bool (not (conj (constrs unwrapped_res))) in
     Result.ok (Tuple [ Base wrapped; Base overflowed ])
 
   let rec eval_ptr_binop (bop : Expressions.binop) l r :
