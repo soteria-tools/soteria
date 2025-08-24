@@ -666,6 +666,32 @@ module BitVec = struct
       | _ -> Unop (BvExtend extend_by, v) <| t_bv signed to_
   end
 
+  (** [Some (signed, size)] if the given value contains somewhere some bitvector
+      operations; [None] otherwise. *)
+  let contains_bvs v =
+    let exception Found of bool * int in
+    let rec aux v =
+      match (v.node.ty, v.node.kind) with
+      | TBitVector (s, n), _ -> raise (Found (s, n))
+      | _, (BitVec _ | Var _ | Bool _ | Int _ | Float _) -> ()
+      | _, (Ptr (x, y) | Binop (_, x, y)) ->
+          aux x;
+          aux y
+      | _, Unop (_, x) -> aux x
+      | _, (Nop (_, xs) | Seq xs) -> List.iter aux xs
+      | _, Ite (x, y, z) ->
+          aux x;
+          aux y;
+          aux z
+    in
+    try
+      aux v;
+      None
+    with Found (s, n) -> Some (s, n)
+
+  let contains_bvs_2 v1 v2 =
+    match contains_bvs v1 with Some _ as res -> res | None -> contains_bvs v2
+
   let of_float n v =
     match (v.node.ty, v.node.kind, n) with
     | TFloat _, Unop (FloatOfBv, v), _ -> v
@@ -936,7 +962,13 @@ let rec lt v1 v2 =
   | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
     when Z.lt y (Z.neg (Z.abs x)) ->
       v_true
-  | _ -> Binop (Lt, v1, v2) <| TBool
+  | _ -> (
+      match BitVec.contains_bvs_2 v1 v2 with
+      | Some (signed, n) ->
+          let v1 = BitVec.of_int signed n v1 in
+          let v2 = BitVec.of_int signed n v2 in
+          BitVec.Raw.lt signed v1 v2
+      | None -> Binop (Lt, v1, v2) <| TBool)
 
 and leq v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -990,7 +1022,13 @@ and leq v1 v2 =
          let max = Z.(pred (one lsl bits)) in
          Z.geq z max ->
       v_true
-  | _ -> Binop (Leq, v1, v2) <| TBool
+  | _ -> (
+      match BitVec.contains_bvs_2 v1 v2 with
+      | Some (signed, n) ->
+          let v1 = BitVec.of_int signed n v1 in
+          let v2 = BitVec.of_int signed n v2 in
+          BitVec.Raw.leq signed v1 v2
+      | None -> Binop (Leq, v1, v2) <| TBool)
 
 let geq v1 v2 = leq v2 v1
 let gt v1 v2 = lt v2 v1
@@ -1053,7 +1091,18 @@ let rec sem_eq v1 v2 =
         let sign, size = shape_of_bv bv.node.ty in
         let n = if Z.geq n Z.zero then n else Z.neg n in
         sem_eq bv (BitVec.Raw.mk sign size n)
-    | _ -> mk_commut_binop Eq v1 v2 <| TBool
+    | _ -> (
+        let bit_vec =
+          match (v1.node.ty, v2.node.ty) with
+          | TInt, TInt -> BitVec.contains_bvs_2 v1 v2
+          | _ -> None
+        in
+        match bit_vec with
+        | Some (signed, n) ->
+            let v1 = BitVec.of_int signed n v1 in
+            let v2 = BitVec.of_int signed n v2 in
+            sem_eq v1 v2
+        | None -> mk_commut_binop Eq v1 v2 <| TBool)
 
 let sem_eq_untyped v1 v2 =
   if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
