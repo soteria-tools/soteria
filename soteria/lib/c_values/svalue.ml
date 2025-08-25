@@ -655,11 +655,12 @@ module BitVec = struct
     let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
     let bool_and = and_
 
-    let not v =
+    let rec not v =
       match v.node.kind with
       | BitVec bv ->
           let n = size_of_bv v.node.ty in
           mk_masked n Z.(lognot bv)
+      | Ite (b, l, r) -> ite b (not l) (not r)
       | _ -> Unop (BvNot, v) <| v.node.ty
 
     let rec and_ v1 v2 =
@@ -726,6 +727,21 @@ module BitVec = struct
       | BitVec l, BitVec r -> mk_like v1 Z.(l lxor r)
       | BitVec z, _ when Z.equal z Z.zero -> v2
       | _, BitVec z when Z.equal z Z.zero -> v1
+      | ( Ite
+            ( b1,
+              { node = { kind = BitVec l1; _ }; _ },
+              { node = { kind = BitVec r1; _ }; _ } ),
+          Ite
+            ( b2,
+              { node = { kind = BitVec l2; _ }; _ },
+              { node = { kind = BitVec r2; _ }; _ } ) )
+        when Z.(equal l1 one)
+             && Z.(equal l2 one)
+             && Z.(equal r1 zero)
+             && Z.(equal r2 zero) ->
+          ite
+            (mk_commut_binop Eq b1 b2 <| TBool)
+            (mk_like v1 Z.one) (mk_like v1 Z.zero)
       | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
 
     and extract from_ to_ v =
@@ -1188,6 +1204,8 @@ let rec lt v1 v2 =
       match Z.(compare z zero) with 0 -> b | 1 -> v_false | _ -> v_true)
   | Unop (IntOfBool, b), Int z -> (
       match Z.(compare z one) with 0 -> not b | 1 -> v_true | _ -> v_false)
+  | Int _, Ite (b, t, e) -> ite b (lt v1 t) (lt v1 e)
+  | Ite (b, t, e), Int _ -> ite b (lt t v2) (lt e v2)
   | _ -> (
       match BitVec.contains_bvs_2 v1 v2 with
       | Some (signed, n) -> BitVec.lt_as_bv signed n v1 v2
@@ -1249,6 +1267,8 @@ and leq v1 v2 =
       match Z.(compare z one) with 0 -> b | 1 -> v_false | _ -> v_true)
   | Unop (IntOfBool, b), Int z -> (
       match Z.(compare z zero) with 0 -> not b | 1 -> v_true | _ -> v_false)
+  | Int _, Ite (b, t, e) -> ite b (leq v1 t) (leq v1 e)
+  | Ite (b, t, e), Int _ -> ite b (leq t v2) (leq e v2)
   | _ -> (
       match BitVec.contains_bvs_2 v1 v2 with
       | Some (signed, n) -> BitVec.leq_as_bv signed n v1 v2
@@ -1264,6 +1284,7 @@ let rec sem_eq v1 v2 =
     | Int z1, Int z2 -> bool (Z.equal z1 z2)
     | Bool b1, Bool b2 -> bool (b1 = b2)
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
+    | BitVec b1, BitVec b2 -> bool (Z.equal b1 b2)
     | _, Binop (Plus, v2, v3) when equal v1 v2 -> sem_eq v3 zero
     | _, Binop (Plus, v2, v3) when equal v1 v3 -> sem_eq v2 zero
     | Binop (Plus, v1, v3), _ when equal v1 v2 -> sem_eq v3 zero
@@ -1322,10 +1343,11 @@ let rec sem_eq v1 v2 =
     | Int _, Unop (IntOfBv sign, bv) ->
         let size = size_of_bv bv.node.ty in
         sem_eq bv (BitVec.of_int sign size v1)
-    (* | Ite (b, l, _), _ when equal l v2 -> b
-    | Ite (b, _, r), _ when equal r v2 -> not b
-    | _, Ite (b, l, _) when equal v1 l -> b
-    | _, Ite (b, _, r) when equal v1 r -> not b *)
+    (* Only apply this for atoms *)
+    | Ite (b, l, t), (BitVec _ | Int _ | Bool _) ->
+        ite b (sem_eq l v2) (sem_eq t v2)
+    | (BitVec _ | Int _ | Bool _), Ite (b, l, t) ->
+        ite b (sem_eq v1 l) (sem_eq v1 t)
     | _ -> (
         let bit_vec =
           match (v1.node.ty, v2.node.ty) with
