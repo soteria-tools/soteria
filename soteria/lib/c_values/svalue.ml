@@ -594,7 +594,7 @@ module BitVec = struct
           Z.(equal (z land mask) zero)
 
     (** [is_right_mask z] is true if [z] is of the form [0*1+] *)
-    let is_right_mask z = Z.(z > one && popcount (succ z) = 1)
+    let is_right_mask z = Z.(z > zero && popcount (succ z) = 1)
 
     (** [right_mask_size z] is, for a [z] of the form [0*1{n}], [n]. If [z] is
         not of the form [0*1{n}], the result is undefined, so use
@@ -655,7 +655,7 @@ module BitVec = struct
     let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
     let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
 
-    let and_ v1 v2 =
+    let rec and_ v1 v2 =
       let n = size_of_bv v1.node.ty in
       assert (n == size_of_bv v2.node.ty);
       match (v1.node.kind, v2.node.kind) with
@@ -679,6 +679,13 @@ module BitVec = struct
              let low_mask = Z.(pred (one lsl bitwidth)) in
              Z.(equal (mask land low_mask) low_mask) ->
           base <| t_bv n
+      | BitVec _, Ite (b, l, r) -> ite b (and_ v1 l) (and_ v1 r)
+      | Ite (b, l, r), BitVec _ -> ite b (and_ l v2) (and_ r v2)
+      (* if it's a right mask, it's usually beneficial to propagate it *)
+      | (BitVec mask, Binop (BitAnd, l, r) | Binop (BitAnd, l, r), BitVec mask)
+        when is_right_mask mask ->
+          let mask = mk_like v1 mask in
+          and_ (and_ mask l) (and_ mask r)
       | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv n
 
     let or_ v1 v2 =
