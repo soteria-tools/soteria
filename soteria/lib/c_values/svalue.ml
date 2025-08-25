@@ -87,10 +87,12 @@ module Unop = struct
     | FloatOfBv
     | IntOfBv of bool (* signed *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
-    | BvExtend of int (* by N bits *)
+    | BvExtend of bool * int (* signed * by N bits *)
     | FIs of FloatClass.t
     | FRound of FloatRoundingMode.t
   [@@deriving eq, ord]
+
+  let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
 
   let pp ft = function
     | Not -> Fmt.string ft "!"
@@ -103,7 +105,7 @@ module Unop = struct
     | FloatOfBv -> Fmt.string ft "bv2f"
     | IntOfBv _ -> Fmt.string ft "bv2i"
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
-    | BvExtend by -> Fmt.pf ft "extend[%d]" by
+    | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
     | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
 end
@@ -605,7 +607,7 @@ module BitVec = struct
         the whole bitwidth of size [bits]. *)
     let covers_bitwidth bits z = is_right_mask z && right_mask_size z = bits
 
-    let extend extend_by v =
+    let extend signed extend_by v =
       let size = size_of_bv v.node.ty in
       let to_ = size + extend_by in
       assert (extend_by > 0);
@@ -620,7 +622,7 @@ module BitVec = struct
          e.g. given i2bv[3](8) = 0b000, extend[1](i2bv[3](8)) = 0b0000, whereas
               i2bv[4](8) = 0b1000
       | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv signed to_ *)
-      | _ -> Unop (BvExtend extend_by, v) <| t_bv to_
+      | _ -> Unop (BvExtend (signed, extend_by), v) <| t_bv to_
 
     let rec plus v1 v2 =
       match (v1.node.kind, v2.node.kind) with
@@ -664,11 +666,11 @@ module BitVec = struct
       | _, BitVec mask when Z.(equal mask zero) -> v2
       | BitVec mask, _ when covers_bitwidth n mask -> v2
       | _, BitVec mask when covers_bitwidth n mask -> v1
-      (* i2bv[N](x) & 0x0*1{M} can become extend[N](i2bv[M](x)) *)
+      (* i2bv[N](x) & 0x0*1{M} can become extend[unsigned, N](i2bv[M](x)) *)
       | Unop (BvOfInt (s, _), v1), BitVec mask when is_right_mask mask ->
           let mask_size = right_mask_size mask in
           let bv_of_int = Unop (BvOfInt (s, mask_size), v1) <| t_bv mask_size in
-          extend (n - mask_size) bv_of_int
+          extend false (n - mask_size) bv_of_int
       (* For (x >> s) & m, the mask is irrelevant if it entirely covers [bitsize - s] *)
       | ( (Binop (BitShr, _, { node = { kind = BitVec shift; _ }; _ }) as base),
           BitVec mask )
@@ -835,7 +837,7 @@ module BitVec = struct
         let size = size_of_bv v.node.ty in
         if size = n then v
         else if size > n then Raw.extract 0 (n - 1) v
-        else Raw.extend (n - size) v
+        else Raw.extend s (n - size) v
     | Int z ->
         let z = if Z.geq z Z.zero then z else Z.neg z in
         (* need to mask otherwise we'll encode a value bigger than the bitwidth *)
