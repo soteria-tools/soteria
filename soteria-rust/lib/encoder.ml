@@ -457,22 +457,22 @@ module Make (Sptr : Sptr.S) = struct
           Base sv ) ->
           let* v = cast_checked ~ty:Typed.t_int sv in
           let from_bits = 8 * Layout.size_of_literal_ty from_ty in
-          let bits = 8 * Layout.size_of_literal_ty to_ty in
-          let from_max = Typed.nonzero_z (Z.shift_left Z.one from_bits) in
-          let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
-          let maxsigned = Typed.nonzero_z (Z.shift_left Z.one (bits - 1)) in
-          let* v =
-            if Layout.is_signed from_ty then
-              if%sat v <@ 0s then return (((v %@ max) +@ max) %@ max)
-              else return (v %@ max)
-            else if%sat from_max >@ max then return (v %@ max) else return v
+          let from_signed = Layout.is_signed from_ty in
+          let to_bits = 8 * Layout.size_of_literal_ty to_ty in
+          let to_signed = Layout.is_signed to_ty in
+          (* FIXME: make this nicer in Typed *)
+          let bv_from =
+            Svalue.BitVec.of_int from_signed from_bits (Typed.untyped v)
           in
-          let* v =
-            if Layout.is_signed to_ty then
-              if%sat v >=@ maxsigned then return (v -@ max) else return v
-            else return v
+          let bv_from_sized =
+            if from_bits = to_bits then bv_from
+            else if from_bits < to_bits then
+              Svalue.BitVec.Raw.extend to_signed (to_bits - from_bits) bv_from
+            else Svalue.BitVec.Raw.extract 0 (to_bits - 1) bv_from
           in
-          ok (Base (v :> Typed.T.cval Typed.t))
+          let bv_to = Svalue.BitVec.to_int to_signed bv_from_sized in
+          let res = Typed.type_ bv_to in
+          ok (Base res)
       | TLiteral _, TLiteral to_ty, Base sv ->
           let constrs = Layout.constraints to_ty in
           if%sat Typed.conj (constrs sv) then ok v
