@@ -125,18 +125,20 @@ let drop_and_return drop_ctx process =
     Drop.find_and_exec ty drop_ctx ~none:(Symok.free ptr state)
       ~some:(Rustsymex.return (ptr, state))
   in
-  let rec get_branches ?(acc = []) symex = function
+  (* For each reference, we create an execution branch that returns the
+     stored value and drops everything else, including the return value *)
+  let rec get_branches ?(acc = []) ?(st = Rustsymex.return state) = function
     | [] ->
         (* Case 0: we learn from the return value, the rest has been dropped *)
         let branch () =
-          let* state = symex in
+          let* state = st in
           Rustsymex.Result.ok (ty, ret, state)
         in
         branch :: acc
     | (ty, ptr) :: arg_ptrs ->
         (* Case 1: we learn from this reference and drop the rest *)
         let branch () =
-          let* state = symex in
+          let* state = st in
           let* ret, state = Symok.load ptr ty state in
           let* state = Symok.free ptr state in
           let* state =
@@ -146,14 +148,14 @@ let drop_and_return drop_ctx process =
           Rustsymex.Result.ok (ty, ret, state)
         in
         (* Case 2: we learn nothing from this reference, so we drop it *)
-        let symex =
-          let* state = symex in
+        let st =
+          let* state = st in
           drop_ptr ty ptr state
         in
         (* We keep case 1 in the result and proceed with the state from case 2 *)
-        get_branches ~acc:(branch :: acc) symex arg_ptrs
+        get_branches arg_ptrs ~acc:(branch :: acc) ~st
   in
-  get_branches (Rustsymex.return state) arg_ptrs |> Rustsymex.branches
+  get_branches arg_ptrs |> Rustsymex.branches
 
 let leak_check = function
   | [] -> Result.ok ()
