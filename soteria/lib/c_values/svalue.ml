@@ -88,6 +88,7 @@ module Unop = struct
     | IntOfBv of bool (* signed *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
+    | BvNot
     | FIs of FloatClass.t
     | FRound of FloatRoundingMode.t
   [@@deriving eq, ord]
@@ -106,6 +107,7 @@ module Unop = struct
     | IntOfBv _ -> Fmt.string ft "bv2i"
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
+    | BvNot -> Fmt.string ft "!bv"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
     | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
 end
@@ -656,6 +658,14 @@ module BitVec = struct
     let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
     let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
     let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
+    let bool_and = and_
+
+    let not v =
+      match v.node.kind with
+      | BitVec bv ->
+          let n = size_of_bv v.node.ty in
+          mk_masked n Z.(lognot bv)
+      | _ -> Unop (BvNot, v) <| v.node.ty
 
     let rec and_ v1 v2 =
       let n = size_of_bv v1.node.ty in
@@ -932,11 +942,7 @@ module BitVec = struct
         let bv = Raw.xor v1_bv v2_bv in
         to_int signed bv
 
-  let not ~size:s ~signed v =
-    if Stdlib.not signed then
-      let max = Z.(pred (one lsl s)) in
-      minus (int_z max) v
-    else minus (neg v) one
+  let not ~size ~signed v = of_int signed size v |> Raw.not |> to_int signed
 
   let[@inline] wrap_binop f =
    fun ~size ~signed v1 v2 ->
@@ -1211,6 +1217,8 @@ let rec sem_eq v1 v2 =
           | BitVec v when Z.(equal v zero) -> Some 0
           | Binop (BitAnd, bv1, bv2) ->
               Option.merge min (msb_of bv1) (msb_of bv2)
+          | Unop (BvNot, bv) -> msb_of bv
+          | Ite (_, l, r) -> Option.map2 max (msb_of l) (msb_of r)
           | _ -> None
         in
         let current_size = size_of_bv v1.node.ty in
@@ -1250,11 +1258,6 @@ let rec sem_eq v1 v2 =
 
 let sem_eq_untyped v1 v2 =
   if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
-
-let int_of_bool b =
-  if equal v_true b then one
-  else if equal v_false b then zero
-  else Unop (IntOfBool, b) <| TInt
 
 (* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
 let not_int_bool sv =
