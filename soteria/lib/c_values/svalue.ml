@@ -519,6 +519,17 @@ let rec mod_ v1 v2 =
   | Binop (Mod, x, { node = { kind = Int i1; _ }; _ }), Int i2
     when Z.geq i1 i2 && Z.divisible i1 i2 ->
       mod_ x v2
+  | ( Binop
+        ( Plus,
+          x,
+          {
+            node =
+              { kind = Binop (Mod, l, { node = { kind = Int m1; _ }; _ }); _ };
+            _;
+          } ),
+      Int m2 )
+    when Z.geq m1 m2 && Z.divisible m1 m2 ->
+      mod_ (plus x l) v2
   | _ -> Binop (Mod, v1, v2) <| TInt
 
 let neg v =
