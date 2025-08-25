@@ -676,13 +676,20 @@ module BitVec = struct
           ite b (plus l x) (plus r x)
       | _ -> mk_commut_binop BvPlus v1 v2 <| v1.node.ty
 
-    let minus v1 v2 =
+    let rec minus v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
           let signed, n = shape_of_bv v1.node.ty in
           let mask = max_for (signed, n) in
           mk signed n Z.((l - r) land mask)
       | _, BitVec z when Z.equal z Z.zero -> v1
+      (* only propagate down ites if we know it's concrete *)
+      | Ite (b, l, r), BitVec x ->
+          let x = mk_like v1 x in
+          ite b (minus l x) (minus r x)
+      | BitVec x, Ite (b, l, r) ->
+          let x = mk_like v1 x in
+          ite b (minus x l) (minus x r)
       | _ -> Binop (BvMinus, v1, v2) <| v1.node.ty
 
     let times v1 v2 =
@@ -749,7 +756,8 @@ module BitVec = struct
     let geq signed v1 v2 = leq signed v2 v1
 
     let rec extract from_ to_ v =
-      let signed, _ = shape_of_bv v.node.ty in
+      let signed, prev_size = shape_of_bv v.node.ty in
+      assert (0 <= from_ && from_ <= to_ && to_ < prev_size);
       let size = to_ - from_ + 1 in
       match v.node.kind with
       | BitVec bv ->
@@ -764,12 +772,24 @@ module BitVec = struct
           | BitOr -> or_ v1 v2
           | BitXor -> xor v1 v2
           | _ -> failwith "unreachable binop")
-      | Binop (BitShr, v1, { node = { kind = BitVec x; _ }; _ })
-      | Binop (BitShr, { node = { kind = BitVec x; _ }; _ }, v1) ->
+      | Binop (BitShr, v1, { node = { kind = BitVec x; _ }; _ }) ->
+          (* we have to be careful to not extract bits that are out of bounds *)
           let shift = Z.to_int x in
-          extract (from_ + shift) (to_ + shift) v1
+          if to_ + shift < prev_size then
+            (* 1. we can just shift the extraction *)
+            extract (from_ + shift) (to_ + shift) v1
+          else if from_ + shift >= prev_size then
+            (* 2. the full shift is out of bounds! so 0 *)
+            mk signed size Z.zero
+          else
+            (* 3. it's an in between - for now, we don't do anything *)
+            Unop (BvExtract (from_, to_), v) <| t_bv signed size
       | Unop (BvOfInt _, v) when from_ = 0 ->
           Unop (BvOfInt (signed, size), v) <| t_bv signed size
+      | Ite (b, l, r) ->
+          let l = extract from_ to_ l in
+          let r = extract from_ to_ r in
+          ite b l r
       | _ -> Unop (BvExtract (from_, to_), v) <| t_bv signed size
   end
 
@@ -1201,7 +1221,7 @@ let rec sem_eq v1 v2 =
         let current_size = size_of_bv v1.node.ty in
         let msb = Option.map2 max (msb_of v1) (msb_of v2) in
         match msb with
-        | Some msb when msb < current_size - 1 ->
+        | Some msb when 0 < msb && msb < current_size - 1 ->
             let v1 = BitVec.Raw.extract 0 (msb - 1) v1 in
             let v2 = BitVec.Raw.extract 0 (msb - 1) v2 in
             sem_eq v1 v2
@@ -1210,10 +1230,12 @@ let rec sem_eq v1 v2 =
             mk_commut_binop Eq v1 v2 <| TBool)
     | Unop (BvOfInt _, bv1), Unop (BvOfInt _, bv2) -> sem_eq bv1 bv2
     | Unop (IntOfBv _, bv1), Unop (IntOfBv _, bv2) -> sem_eq bv1 bv2
-    | Unop (IntOfBv _, bv), Int n | Int n, Unop (IntOfBv _, bv) ->
+    | Unop (IntOfBv _, bv), Int _ ->
         let sign, size = shape_of_bv bv.node.ty in
-        let n = if Z.geq n Z.zero then n else Z.neg n in
-        sem_eq bv (BitVec.Raw.mk sign size n)
+        sem_eq bv (BitVec.of_int sign size v2)
+    | Int _, Unop (IntOfBv _, bv) ->
+        let sign, size = shape_of_bv bv.node.ty in
+        sem_eq bv (BitVec.of_int sign size v1)
     | Ite (b, l, _), _ when equal l v2 -> b
     | Ite (b, _, r), _ when equal r v2 -> not b
     | _, Ite (b, l, _) when equal v1 l -> b
