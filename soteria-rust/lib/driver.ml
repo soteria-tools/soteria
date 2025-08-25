@@ -131,16 +131,17 @@ let print_outcomes entry_name f =
       let ( let@@ ) f x = List.iter x f in
       let () =
         let@@ error, call_trace = List.sort_uniq Stdlib.compare errs in
-        Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error
+        Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error;
+        Fmt.pr "@.@."
       in
-      Fmt.pr "@\n@\n@?";
+      Fmt.pr "@.@.";
       (entry_name, Outcome.Error)
   | exception ExecutionError e ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
         "%s: runtime error in %a: %s" entry_name pp_time time e;
-      Fmt.pr "@\n@\n@?";
+      Fmt.pr "@.@.";
       (entry_name, Outcome.Fatal)
   | exception UnsupportedFeatures fs ->
       let time = Unix.gettimeofday () -. time in
@@ -150,7 +151,7 @@ let print_outcomes entry_name f =
         entry_name pp_time time
         Fmt.(list ~sep:cut (fun ft r -> Fmt.pf ft "• %s" r))
         fs;
-      Fmt.pr "@\n@\n@?";
+      Fmt.pr "@.@.";
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
