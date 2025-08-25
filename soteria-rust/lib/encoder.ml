@@ -598,8 +598,9 @@ module Make (Sptr : Sptr.S) = struct
                        in
                        let++ v = transmute ~from_ty:ty ~to_ty v in
                        let v = Typed.cast @@ as_base v in
-                       let pow = Z.shift_left Z.one (o * 8) in
-                       acc +@ (v *@ Typed.int_z pow))
+                       Typed.BitVec.or_ ~size:(size * 8) ~signed:false acc
+                         (Typed.BitVec.shl ~size:(size * 8) ~signed:false v
+                            (Typed.int (o * 8))))
                  in
                  let v = Base (v :> T.cval Typed.t) in
                  (* we may need extra checks, e.g. for char *)
@@ -673,21 +674,26 @@ module Make (Sptr : Sptr.S) = struct
            of size 2^n *)
         let rec aux v sz =
           (* we're a power of two, so we're done *)
-          if Z.popcount sz = 1 then
-            let ty = size_to_uint (Z.to_int sz) in
+          if Z.(popcount (of_int sz)) = 1 then
+            let ty = size_to_uint sz in
             `Leaf (Base (v :> T.cval Typed.t), ty)
           else
             (* Split at the most significant bit; e.g. for size 7 (0b111), will split at 0b100,
                resulting in a leaf of size 3 (0b11) and a right leaf of size 4 (0b100) *)
-            let at = Z.(one lsl log2 sz) in
+            let at = 1 lsl Z.(log2 (of_int sz)) in
             let leaf_l, leaf_r = split v sz at in
-            `Node (Typed.int_z at, leaf_l, leaf_r)
+            `Node (Typed.int at, leaf_l, leaf_r)
         and split v sz at =
           let size_l = at in
-          let size_r = Z.(sz - at) in
-          let pow = Z.shift_left Z.one (Z.to_int size_l * 8) in
-          let left = v %@ Typed.nonzero_z pow in
-          let right = v /@ Typed.nonzero_z pow in
+          let size_r = sz - at in
+          let mask_l = Z.pred @@ Z.shift_left Z.one (size_l * 8) in
+          let mask_r = Z.pred @@ Z.shift_left Z.one (size_r * 8) in
+          let open Typed.BitVec in
+          let left = and_ ~size:size_l ~signed:false (Typed.int_z mask_l) v in
+          let right =
+            and_ ~size:size_r ~signed:false (Typed.int_z mask_r)
+              (shr ~size:sz ~signed:false v (Typed.int (size_l * 8)))
+          in
           let leaf_l = aux left size_l in
           let leaf_r = aux right size_r in
           (leaf_l, leaf_r)
@@ -700,7 +706,7 @@ module Make (Sptr : Sptr.S) = struct
           transmute ~from_ty:ty ~to_ty:(lit_to_unsigned lit_ty) v
         in
         let v = Typed.cast @@ as_base as_uint in
-        split v (Z.of_int size) (Z.of_int at)
+        split v size at
     | _ ->
         Fmt.kstr not_impl "Split unsupported: %a: %a at %d" pp_rust_val v pp_ty
           ty at
