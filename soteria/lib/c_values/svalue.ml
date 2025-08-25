@@ -622,6 +622,39 @@ module BitVec = struct
       | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv signed to_ *)
       | _ -> Unop (BvExtend extend_by, v) <| t_bv to_
 
+    let rec plus v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l + r)
+      | _, BitVec z when Z.equal z Z.zero -> v1
+      | BitVec z, _ when Z.equal z Z.zero -> v2
+      (* only propagate down ites if we know it's concrete *)
+      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+          let x = mk_like v1 x in
+          ite b (plus l x) (plus r x)
+      | _ -> mk_commut_binop BvPlus v1 v2 <| v1.node.ty
+
+    let rec minus v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l - r)
+      | _, BitVec z when Z.equal z Z.zero -> v1
+      (* only propagate down ites if we know it's concrete *)
+      | Ite (b, l, r), BitVec x ->
+          let x = mk_like v1 x in
+          ite b (minus l x) (minus r x)
+      | BitVec x, Ite (b, l, r) ->
+          let x = mk_like v1 x in
+          ite b (minus x l) (minus x r)
+      | _ -> Binop (BvMinus, v1, v2) <| v1.node.ty
+
+    let times v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l * r)
+      | _ -> mk_commut_binop BvTimes v1 v2 <| v1.node.ty
+
+    let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
+    let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
+    let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
+
     let and_ v1 v2 =
       let n = size_of_bv v1.node.ty in
       assert (n == size_of_bv v2.node.ty);
@@ -661,39 +694,6 @@ module BitVec = struct
       | BitVec z, _ when Z.equal z Z.zero -> v2
       | _, BitVec z when Z.equal z Z.zero -> v1
       | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
-
-    let rec plus v1 v2 =
-      match (v1.node.kind, v2.node.kind) with
-      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l + r)
-      | _, BitVec z when Z.equal z Z.zero -> v1
-      | BitVec z, _ when Z.equal z Z.zero -> v2
-      (* only propagate down ites if we know it's concrete *)
-      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
-          let x = mk_like v1 x in
-          ite b (plus l x) (plus r x)
-      | _ -> mk_commut_binop BvPlus v1 v2 <| v1.node.ty
-
-    let rec minus v1 v2 =
-      match (v1.node.kind, v2.node.kind) with
-      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l - r)
-      | _, BitVec z when Z.equal z Z.zero -> v1
-      (* only propagate down ites if we know it's concrete *)
-      | Ite (b, l, r), BitVec x ->
-          let x = mk_like v1 x in
-          ite b (minus l x) (minus r x)
-      | BitVec x, Ite (b, l, r) ->
-          let x = mk_like v1 x in
-          ite b (minus x l) (minus x r)
-      | _ -> Binop (BvMinus, v1, v2) <| v1.node.ty
-
-    let times v1 v2 =
-      match (v1.node.kind, v2.node.kind) with
-      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l * r)
-      | _ -> mk_commut_binop BvTimes v1 v2 <| v1.node.ty
-
-    let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
-    let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
-    let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
 
     let rec shl v1 v2 =
       match (v1.node.kind, v2.node.kind) with
