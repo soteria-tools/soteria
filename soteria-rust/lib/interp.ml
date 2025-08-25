@@ -980,7 +980,8 @@ module Make (State : State_intf.S) = struct
           ~f:(fun v ->
             let* ptr = resolve_place place in
             L.info (fun m ->
-                m "Returned %a from %a" pp_rust_val v Crate.pp_fn_operand func);
+                m "Returned %a <- %a from %a" Crate.pp_place place pp_rust_val v
+                  Crate.pp_fn_operand func);
             let* () = State.store ptr ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
