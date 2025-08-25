@@ -104,7 +104,7 @@ module Unop = struct
     | BvOfFloat n -> Fmt.pf ft "f2bv(%d)" n
     | BvOfInt _ -> Fmt.string ft "i2bv"
     | FloatOfBv -> Fmt.string ft "bv2f"
-    | IntOfBv _ -> Fmt.string ft "bv2i"
+    | IntOfBv s -> Fmt.pf ft "%abv2i" pp_signed s
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
@@ -147,6 +147,7 @@ module Binop = struct
     | BvMod of bool (* signed *)
     | BvLt of bool (* signed *)
     | BvLeq of bool (* signed *)
+    | BvConcat
     | BitAnd
     | BitOr
     | BitXor
@@ -184,6 +185,7 @@ module Binop = struct
     | BvMod s -> Fmt.pf ft "mod%ab" pp_signed s
     | BvLt s -> Fmt.pf ft "<%ab" pp_signed s
     | BvLeq s -> Fmt.pf ft "<=%ab" pp_signed s
+    | BvConcat -> Fmt.string ft "++"
     | BitAnd -> Fmt.string ft "&"
     | BitOr -> Fmt.string ft "|"
     | BitXor -> Fmt.string ft "^"
@@ -239,7 +241,9 @@ let rec pp ft t =
       pf ft "%s" (Z.format "%#x" z)
   | Int z -> pf ft "%a" Z.pp_print z
   | Float f -> pf ft "%sf" f
-  | BitVec bv -> pf ft "%s" (Z.format "%#x" bv)
+  | BitVec bv ->
+      let size = size_of_bv t.node.ty in
+      pf ft "0x%s" (Z.format ("0" ^ string_of_int (size / 4) ^ "x") bv)
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
   | Ite (c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
@@ -617,23 +621,6 @@ module BitVec = struct
         the whole bitwidth of size [bits]. *)
     let covers_bitwidth bits z = is_right_mask z && right_mask_size z = bits
 
-    let extend signed extend_by v =
-      let size = size_of_bv v.node.ty in
-      let to_ = size + extend_by in
-      assert (extend_by > 0);
-      match v.node.kind with
-      | BitVec bv ->
-          let to_' = to_ + 1 in
-          let bv = Z.(bv land pred (one lsl to_')) in
-          mk to_ bv
-      (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
-         as that will require a more expensive bit-blasting. *)
-      (* We also note the following reduction is *not valid*, as some upper bits may be set;
-         e.g. given i2bv[3](8) = 0b000, extend[1](i2bv[3](8)) = 0b0000, whereas
-              i2bv[4](8) = 0b1000
-      | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv signed to_ *)
-      | _ -> Unop (BvExtend (signed, extend_by), v) <| t_bv to_
-
     let rec plus v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l + r)
@@ -650,17 +637,17 @@ module BitVec = struct
       | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l - r)
       | _, BitVec z when Z.equal z Z.zero -> v1
       (* only propagate down ites if we know it's concrete *)
-      | Ite (b, l, r), BitVec x ->
-          let x = mk_like v1 x in
-          ite b (minus l x) (minus r x)
-      | BitVec x, Ite (b, l, r) ->
-          let x = mk_like v1 x in
-          ite b (minus x l) (minus x r)
+      | Ite (b, l, r), BitVec _ -> ite b (minus l v2) (minus r v2)
+      | BitVec _, Ite (b, l, r) -> ite b (minus v1 l) (minus v1 r)
       | _ -> Binop (BvMinus, v1, v2) <| v1.node.ty
 
-    let times v1 v2 =
+    let rec times v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l * r)
+      (* only propagate down ites if we know it's concrete *)
+      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+          let x = mk_like v1 x in
+          ite b (times l x) (times r x)
       | _ -> mk_commut_binop BvTimes v1 v2 <| v1.node.ty
 
     let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
@@ -712,19 +699,121 @@ module BitVec = struct
           ite (bool_and b1 b2) (and_ l1 l2) (mk_like v1 Z.zero)
       | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv n
 
-    let or_ v1 v2 =
+    and or_ v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r -> mk_like v1 Z.(l lor r)
       | BitVec z, _ when Z.equal z Z.zero -> v2
       | _, BitVec z when Z.equal z Z.zero -> v1
+      (* 0x0..0X..X | (0x0..0Y..Y << N) when N = |X..X| ==> 0x0..0Y..YX..X  *)
+      | ( Unop (BvExtend (false, nx), base),
+          Binop
+            ( BitShl,
+              { node = { kind = Unop (BvExtend (false, _), tail); _ }; _ },
+              { node = { kind = BitVec shift; _ }; _ } ) )
+        when Z.to_int shift = size_of_bv base.node.ty ->
+          let tail_size = size_of_bv tail.node.ty in
+          if nx = tail_size then concat tail base
+          else if nx > tail_size then
+            let new_base = concat tail base in
+            extend false (nx - tail_size) new_base
+          else
+            let new_tail = extract 0 (nx - 1) tail in
+            concat new_tail base
       | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
 
-    let xor v1 v2 =
+    and xor v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r -> mk_like v1 Z.(l lxor r)
       | BitVec z, _ when Z.equal z Z.zero -> v2
       | _, BitVec z when Z.equal z Z.zero -> v1
       | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
+
+    and extract from_ to_ v =
+      let prev_size = size_of_bv v.node.ty in
+      assert (0 <= from_ && from_ <= to_ && to_ < prev_size);
+      let size = to_ - from_ + 1 in
+      match v.node.kind with
+      | BitVec bv -> mk_masked size Z.(bv asr from_)
+      | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) -> (
+          let v1 = extract from_ to_ v1 in
+          let v2 = extract from_ to_ v2 in
+          match bop with
+          | BitAnd -> and_ v1 v2
+          | BitOr -> or_ v1 v2
+          | BitXor -> xor v1 v2
+          | _ -> failwith "unreachable binop")
+      | Binop (BitShr, v1, { node = { kind = BitVec x; _ }; _ }) ->
+          (* we have to be careful to not extract bits that are out of bounds *)
+          let shift = Z.to_int x in
+          if to_ + shift < prev_size then
+            (* 1. we can just shift the extraction *)
+            extract (from_ + shift) (to_ + shift) v1
+          else if from_ + shift >= prev_size then
+            (* 2. the full shift is out of bounds! so 0 *)
+            mk size Z.zero
+          else
+            (* 3. it's an in between - for now, we don't do anything *)
+            Unop (BvExtract (from_, to_), v) <| t_bv size
+      | Unop (BvOfInt (signed, _), v) when from_ = 0 ->
+          Unop (BvOfInt (signed, size), v) <| t_bv size
+      | Ite (b, l, r) ->
+          let l = extract from_ to_ l in
+          let r = extract from_ to_ r in
+          ite b l r
+      | Unop (BvExtend (false, by), _) when from_ >= prev_size - by ->
+          (* zero extension, and we're extracting only the extended bits *)
+          mk size Z.zero
+      | Unop (BvExtend (_, by), v) when from_ = 0 && to_ = prev_size - by - 1 ->
+          (* extracting exactly the original bits *)
+          v
+      | Unop (BvExtend (_, by), v) when to_ <= prev_size - by - 1 ->
+          (* extracting from original bits *)
+          extract from_ to_ v
+      | Unop (BvExtract (prev_from_, _), v) ->
+          Unop (BvExtract (prev_from_ + from_, prev_from_ + to_), v)
+          <| t_bv size
+      | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
+
+    and extend signed extend_by v =
+      let size = size_of_bv v.node.ty in
+      let to_ = size + extend_by in
+      assert (extend_by > 0);
+      match v.node.kind with
+      | BitVec bv ->
+          let to_' = to_ + 1 in
+          let bv = Z.(bv land pred (one lsl to_')) in
+          mk to_ bv
+      | Ite (b, l, r) ->
+          let l = extend signed extend_by l in
+          let r = extend signed extend_by r in
+          ite b l r
+      (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
+         as that will require a more expensive bit-blasting. *)
+      (* We also note the following reduction is *not valid*, as some upper bits may be set;
+         e.g. given i2bv[3](8) = 0b000, extend[1](i2bv[3](8)) = 0b0000, whereas
+              i2bv[4](8) = 0b1000
+      | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv signed to_ *)
+      | _ -> Unop (BvExtend (signed, extend_by), v) <| t_bv to_
+
+    (** [concat v1 v2] for [v1] of size [n] and [v2] of size [m] is a bitvector
+        of size [n + m] where the first [n] bits are [v1] and the following [m]
+        are [v2] *)
+    and concat v1 v2 =
+      let n1 = size_of_bv v1.node.ty in
+      let n2 = size_of_bv v2.node.ty in
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_masked (n1 + n2) Z.(l + shift_left r n2)
+      | Unop (BvExtract (from1, to1), v1), Unop (BvExtract (from2, to2), v2)
+        when to1 + 1 = from2 && equal v1 v2 ->
+          extract from1 to2 v1
+      (* We order (extract A ++ (X ++ extract )) *)
+      | ( Unop (BvExtract (_, _), _),
+          Binop
+            ( BvConcat,
+              ({ node = { kind = Unop (BvExtract _, _); _ }; _ } as left),
+              right ) ) ->
+          concat (concat v1 left) right
+      | _, _ -> Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
 
     let rec shl v1 v2 =
       match (v1.node.kind, v2.node.kind) with
@@ -781,49 +870,6 @@ module BitVec = struct
 
     let gt signed v1 v2 = lt signed v2 v1
     let geq signed v1 v2 = leq signed v2 v1
-
-    let rec extract from_ to_ v =
-      let prev_size = size_of_bv v.node.ty in
-      assert (0 <= from_ && from_ <= to_ && to_ < prev_size);
-      let size = to_ - from_ + 1 in
-      match v.node.kind with
-      | BitVec bv -> mk_masked size Z.(bv asr from_)
-      | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) -> (
-          let v1 = extract from_ to_ v1 in
-          let v2 = extract from_ to_ v2 in
-          match bop with
-          | BitAnd -> and_ v1 v2
-          | BitOr -> or_ v1 v2
-          | BitXor -> xor v1 v2
-          | _ -> failwith "unreachable binop")
-      | Binop (BitShr, v1, { node = { kind = BitVec x; _ }; _ }) ->
-          (* we have to be careful to not extract bits that are out of bounds *)
-          let shift = Z.to_int x in
-          if to_ + shift < prev_size then
-            (* 1. we can just shift the extraction *)
-            extract (from_ + shift) (to_ + shift) v1
-          else if from_ + shift >= prev_size then
-            (* 2. the full shift is out of bounds! so 0 *)
-            mk size Z.zero
-          else
-            (* 3. it's an in between - for now, we don't do anything *)
-            Unop (BvExtract (from_, to_), v) <| t_bv size
-      | Unop (BvOfInt (signed, _), v) when from_ = 0 ->
-          Unop (BvOfInt (signed, size), v) <| t_bv size
-      | Ite (b, l, r) ->
-          let l = extract from_ to_ l in
-          let r = extract from_ to_ r in
-          ite b l r
-      | Unop (BvExtend (false, by), _) when from_ >= prev_size - by ->
-          (* zero extension, and we're extracting only the extended bits *)
-          mk size Z.zero
-      | Unop (BvExtend (_, by), v) when from_ = 0 && to_ = prev_size - by - 1 ->
-          (* extracting exactly the original bits *)
-          v
-      | Unop (BvExtract (prev_from_, _), v) ->
-          Unop (BvExtract (prev_from_ + from_, prev_from_ + to_), v)
-          <| t_bv size
-      | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
   end
 
   (** [Some (signed, size)] if the given value contains somewhere some bitvector
@@ -941,6 +987,7 @@ module BitVec = struct
           { node = { kind = BitVec r; _ }; _ } )
       when Z.equal l Z.zero && Z.equal r Z.one ->
         int_of_bool (not b)
+    | Ite (b, t, e) -> ite b (to_int signed t) (to_int signed e)
     | _ -> Unop (IntOfBv signed, v) <| t_int
 
   let to_float v =
@@ -999,7 +1046,6 @@ module BitVec = struct
       detected to be an overflow check, converts it to the appropriate overflow
       check expression. *)
   let lt_as_bv signed n v1 v2 =
-    (* Fmt.pr "lt_as_bv %a < %a@." pp v1 pp v2; *)
     match (v1, v2) with
     | _, _ ->
         let v1 = of_int signed n v1 in
@@ -1010,7 +1056,6 @@ module BitVec = struct
       detected to be an overflow check, converts it to the appropriate overflow
       check expression. *)
   let leq_as_bv signed n v1 v2 =
-    (* Fmt.pr "leq_as_bv %a <= %a@." pp v1 pp v2; *)
     match (v1, v2) with
     | _, _ ->
         let v1 = of_int signed n v1 in

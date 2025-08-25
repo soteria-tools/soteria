@@ -33,6 +33,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | BvMod s -> BitVec.Raw.mod_ s
   | BvLt s -> BitVec.Raw.lt s
   | BvLeq s -> BitVec.Raw.leq s
+  | BvConcat -> BitVec.Raw.concat
   | BitAnd -> BitVec.Raw.and_
   | BitOr -> BitVec.Raw.or_
   | BitXor -> BitVec.Raw.xor

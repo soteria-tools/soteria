@@ -137,7 +137,8 @@ module Encoding = struct
         | BvRem signed -> (if signed then bv_srem else bv_urem) v1 v2
         | BvMod signed -> (if signed then bv_smod else bv_urem) v1 v2
         | BvLt signed -> (if signed then bv_slt else bv_ult) v1 v2
-        | BvLeq signed -> (if signed then bv_sleq else bv_uleq) v1 v2)
+        | BvLeq signed -> (if signed then bv_sleq else bv_uleq) v1 v2
+        | BvConcat -> bv_concat v2 v1)
     | Nop (Distinct, vs) ->
         let vs = List.map encode_value_memo vs in
         distinct vs
