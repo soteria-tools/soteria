@@ -5,10 +5,10 @@
 
     The mode (passed to the {!Symex.S.run} function) determines the behavior of
     certain operations. For instance, in {!UX} mode, sat checks that return
-    [unknown] are the corresponding branch is discarded: since analysis cannot
-    conclude, we avoid reporting false positives in that case. Conversly, in
+    [unknown] have the corresponding branch discarded: since analysis cannot
+    conclude, we avoid reporting false positives in that case. Conversely, in
     {!OX} mode, a sat check that returns [unknown] is more or less equivalent to
-    returning [SAT]; that is, the branch is explored as to not ignored a
+    returning [SAT]; that is, the branch is explored as to not ignore a
     potentially feasible branch. *)
 type t = UX | OX
 
