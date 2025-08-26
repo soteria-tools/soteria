@@ -38,7 +38,8 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | BitOr -> BitVec.Raw.or_
   | BitXor -> BitVec.Raw.xor
   | BitShl -> BitVec.Raw.shl
-  | BitShr -> BitVec.Raw.shr
+  | BitLShr -> BitVec.Raw.lshr
+  | BitAShr -> BitVec.Raw.ashr
 
 let eval_unop : Unop.t -> t -> t = function
   | Unop.Not -> not

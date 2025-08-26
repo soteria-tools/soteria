@@ -692,7 +692,7 @@ module Make (Sptr : Sptr.S) = struct
           let left = and_ ~size:size_l ~signed:false (Typed.int_z mask_l) v in
           let right =
             and_ ~size:size_r ~signed:false (Typed.int_z mask_r)
-              (shr ~size:sz ~signed:false v (Typed.int (size_l * 8)))
+              (lshr ~size:sz ~signed:false v (Typed.int (size_l * 8)))
           in
           let leaf_l = aux left size_l in
           let leaf_r = aux right size_r in

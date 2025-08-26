@@ -55,18 +55,12 @@ module M (State : State_intf.S) = struct
               if%sat r ==@ 0s then Result.error `DivisionByZero
               else Result.ok (rem l (cast r))
           | Shl _ | Shr _ -> (
-              let ity =
-                match ty with
-                | TInt _ | TUInt _ -> ty
-                | TBool -> TUInt U8
-                | TChar -> TUInt U32
-                | _ -> failwith "Invalid shl/shr type"
-              in
-              let size = 8 * Layout.size_of_literal_ty ity in
-              let signed = Layout.is_signed ity in
-              match bop with
-              | Shl _ -> Result.ok @@ Typed.BitVec.shl ~size ~signed l r
-              | Shr _ -> Result.ok @@ Typed.BitVec.shr ~size ~signed l r
+              let size = 8 * Layout.size_of_literal_ty ty in
+              let signed = Layout.is_signed ty in
+              match (bop, signed) with
+              | Shl _, _ -> Result.ok @@ Typed.BitVec.shl ~size ~signed l r
+              | Shr _, true -> Result.ok @@ Typed.BitVec.ashr ~size ~signed l r
+              | Shr _, false -> Result.ok @@ Typed.BitVec.lshr ~size ~signed l r
               | _ -> failwith "Impossible")
           | _ -> not_impl "Invalid binop in eval_lit_binop"
         in
@@ -121,7 +115,8 @@ module M (State : State_intf.S) = struct
     | Sub _ | SubChecked -> Typed.BitVec.wrap_minus ~size ~signed l r
     | Mul _ | MulChecked -> Typed.BitVec.wrap_times ~size ~signed l r
     | Shl _ -> Typed.BitVec.shl ~size ~signed l r
-    | Shr _ -> Typed.BitVec.shr ~size ~signed l r
+    | Shr _ when signed -> Typed.BitVec.ashr ~size ~signed l r
+    | Shr _ when Stdlib.not signed -> Typed.BitVec.lshr ~size ~signed l r
     | _ -> Fmt.failwith "Invalid wrapping binop: %a" Expressions.pp_binop bop
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)

@@ -129,7 +129,8 @@ module Encoding = struct
         | BitOr -> bv_or v1 v2
         | BitXor -> bv_xor v1 v2
         | BitShl -> bv_shl v1 v2
-        | BitShr -> bv_lshr v1 v2
+        | BitLShr -> bv_lshr v1 v2
+        | BitAShr -> bv_ashr v1 v2
         | BvPlus -> bv_add v1 v2
         | BvMinus -> bv_sub v1 v2
         | BvTimes -> bv_mul v1 v2
