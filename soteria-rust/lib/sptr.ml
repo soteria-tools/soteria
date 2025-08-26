@@ -136,6 +136,7 @@ module ArithPtr : S with type t = arithptr_t = struct
     let compare = Typed.compare
   end)
 
+  (* FIXME: inter-test mutability *)
   (* Create a map with the null-ptr preset to 0 *)
   let decayed_vars = ref (ValMap.add Typed.Ptr.null_loc 0s ValMap.empty)
 

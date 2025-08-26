@@ -150,9 +150,7 @@ module M (State : State_intf.S) = struct
       | [ Base f ] -> f
       | _ -> failwith "float_is: invalid argument"
     in
-    let* v =
-      of_opt_not_impl ~msg:"float_is expects float" @@ Typed.cast_float v
-    in
+    let* v = of_opt_not_impl "float_is expects float" @@ Typed.cast_float v in
     let res =
       match fp with
       | NaN -> Typed.is_nan v
@@ -170,7 +168,7 @@ module M (State : State_intf.S) = struct
       | _ -> failwith "float_is_finite: invalid argument"
     in
     let* v =
-      of_opt_not_impl ~msg:"float_is_finite expects float" @@ Typed.cast_float v
+      of_opt_not_impl "float_is_finite expects float" @@ Typed.cast_float v
     in
     let res = Typed.((not (is_nan v)) &&@ not (is_infinite v)) in
     Result.ok (Base (Typed.int_of_bool res), state)
@@ -182,7 +180,7 @@ module M (State : State_intf.S) = struct
       | _ -> failwith "float_is_sign: invalid argument"
     in
     let* v =
-      of_opt_not_impl ~msg:"float_is_sign expects float" @@ Typed.cast_float v
+      of_opt_not_impl "float_is_sign expects float" @@ Typed.cast_float v
     in
     let res =
       if pos then Typed.(leq_f (float_like v 0.) v)

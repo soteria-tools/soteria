@@ -1,17 +1,23 @@
 from pathlib import Path
-from typing import Literal, Optional, Protocol, TypedDict, cast
+from typing import Literal, Optional, TypedDict, cast
 
 from common import *
-from parselog import TestCategoriser, categorise_kani, categorise_rusteria
+from parselog import (
+    TestCategoriser,
+    categorise_kani,
+    categorise_miri,
+    categorise_rusteria,
+)
 
 
-ToolName = Literal["Charon", "Obol", "Kani"]
+ToolName = Literal["Rusteria", "Kani", "Miri"]
 SuiteName = Literal["kani", "miri", "custom"]
 CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
-Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff
+CmdBenchmark = tuple[Literal["benchmark"], tuple]
+Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark
 
 SUITE_NAMES: list[SuiteName] = ["miri", "kani", "custom"]
 
@@ -44,14 +50,8 @@ class FakeCliOpts:
 def parse_flags():
     opts: CliOpts = {
         "cmd": cast(Cmd, None),
-        "tool": "Charon",
-        "tool_cmd": [
-            "soteria-rust",
-            "rustc",
-            "--compact",
-            "--no-color",
-            "--log-compilation",
-        ],
+        "tool": "Rusteria",
+        "tool_cmd": [],
         "filters": [],
         "exclusions": [],
         "tag": None,
@@ -80,6 +80,8 @@ def parse_flags():
         file1 = Path(sys.argv.pop(0))
         file2 = Path(sys.argv.pop(0))
         opts["cmd"] = ("eval-diff", (file1, file2))
+    elif arg == "benchmark":
+        opts["cmd"] = ("benchmark", ())
     else:
         raise ArgError(
             f"Unknown command, expected {', '.join(SUITE_NAMES)}, all, eval or eval-diff"
@@ -95,8 +97,9 @@ def parse_flags():
         prev = args[0]
         return args.pop(0)
 
-    with_obol = False
+    with_miri = False
     with_kani = False
+    with_obol = False
     cmd_flags: list[str] = []
     while len(args) > 0:
         arg = pop()
@@ -121,37 +124,72 @@ def parse_flags():
                     f"{RED}The folder {folder} does not exist or is not a directory."
                 )
             opts["test_folder"] = folder
-        elif arg == "--obol":
-            with_obol = True
+        elif arg == "--miri":
+            with_miri = True
         elif arg == "--kani":
             with_kani = True
+        elif arg == "--obol":
+            with_obol = True
 
         else:
             raise ArgError(f"{RED}Unknown flag: {arg}")
 
-    if with_obol and with_kani:
-        raise ArgError(f"{RED}Can't use both Kani and Obol!")
+    if with_miri + with_kani + with_obol > 1:
+        raise ArgError(f"{RED}Can't use both Kani, Miri or Obol!")
 
     if with_kani:
-        opts["tool"] = "Kani"
-        opts["tool_cmd"] = [
-            "kani",
-            "--harness-timeout=3s",
-            "-Z=unstable-options",
-            "-Z=uninit-checks",
-            "-Z=valid-value-checks",
-        ]
-        opts["categorise"] = categorise_kani
+        opts = opts_for_kani(opts)
 
-    elif with_obol:
-        opts["tool"] = "Obol"
-        opts["tool_cmd"] = [
-            "soteria-rust",
-            "obol",
-            "--compact",
-            "--no-color",
-            "--log-compilation",
-        ]
+    elif with_miri:
+        opts = opts_for_miri(opts)
+
+    else:
+        opts = opts_for_rusteria(opts, force_obol=with_obol)
 
     opts["tool_cmd"] += cmd_flags
     return opts
+
+
+def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
+    opts = {
+        **opts,
+        "tool": "Rusteria",
+        "tool_cmd": [
+            "soteria-rust",
+            "rustc",
+            "--compact",
+            "--no-color",
+            "--log-compilation",
+            "--solver-timeout=5000",
+        ],
+        "categorise": categorise_rusteria,
+    }
+    if force_obol:
+        opts["tool_cmd"].append("--obol")
+    return opts
+
+
+def opts_for_kani(opts: CliOpts) -> CliOpts:
+    return {
+        **opts,
+        "tool": "Kani",
+        "tool_cmd": [
+            "kani",
+            "-Z=unstable-options",
+            "--harness-timeout=5s",
+        ],
+        "categorise": categorise_kani,
+    }
+
+
+def opts_for_miri(opts: CliOpts) -> CliOpts:
+    return {
+        **opts,
+        "tool": "Miri",
+        "tool_cmd": [
+            str((PWD / ".." / ".." / ".." / "miri" / "miri").resolve()),
+            "run",
+            "-Awarnings",
+        ],
+        "categorise": categorise_miri,
+    }

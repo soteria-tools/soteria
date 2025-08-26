@@ -1,3 +1,4 @@
+module Stats = Soteria_stats
 module Config_ = Config
 open Soteria_terminal
 module Config = Config_
@@ -9,9 +10,30 @@ open Charon
 
 exception ExecutionError of string
 exception FrontendError of string
+exception UnsupportedFeatures of string list
 
 let execution_err msg = raise (ExecutionError msg)
 let frontend_err msg = raise (FrontendError msg)
+let unsupported_features features = raise (UnsupportedFeatures features)
+
+module Outcome = struct
+  type t = Ok | Error | Fatal
+
+  let merge o1 o2 =
+    match (o1, o2) with
+    | Fatal, _ | _, Fatal -> Fatal
+    | Error, _ | _, Error -> Error
+    | Ok, Ok -> Ok
+
+  let merge_list = List.fold_left (fun o1 (_, o2) -> merge o1 o2) Ok
+  let as_status_code = function Ok -> 0 | Error -> 1 | Fatal -> 2
+  let exit o = exit (as_status_code o)
+
+  let pp ft = function
+    | Ok -> Color.pp_clr `Green ft "ok"
+    | Error -> Color.pp_clr `Red ft "error"
+    | Fatal -> Color.pp_clr `Maroon ft "unknown"
+end
 
 let default_fuel =
   Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
@@ -22,12 +44,6 @@ module Cleaner = struct
   let cleanup () = List.iter Sys.remove !files
   let () = at_exit (fun () -> if !Config.current.cleanup then cleanup ())
 end
-
-let config_set (config : Config.global) =
-  Solver_config.set config.solver;
-  Soteria_logs.Config.check_set_and_lock config.logs;
-  Soteria_terminal.Config.set_and_lock config.terminal;
-  Config.set config.rusteria
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
@@ -56,8 +72,7 @@ let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   crate
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ?(with_obol = false) ~(plugin : Plugin.root_plugin)
-    file_name =
+let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
   let file_name =
     if Filename.is_relative file_name then
       Filename.concat (Sys.getcwd ()) file_name
@@ -65,8 +80,7 @@ let parse_ullbc_of_file ?(with_obol = false) ~(plugin : Plugin.root_plugin)
   in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
-  let mode : Plugin.Cmd.mode = if with_obol then Obol else Rustc in
-  parse_ullbc ~mode ~plugin ~input:file_name ~output ~pwd:parent_folder
+  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
@@ -104,7 +118,7 @@ let print_outcomes entry_name f =
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
       Fmt.pr "@\n@\n@?";
-      true
+      (entry_name, Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
@@ -118,17 +132,36 @@ let print_outcomes entry_name f =
         Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error
       in
       Fmt.pr "@\n@\n@?";
-      false
+      (entry_name, Outcome.Error)
   | exception ExecutionError e ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
         "%s: runtime error in %a: %s" entry_name pp_time time e;
       Fmt.pr "@\n@\n@?";
-      false
+      (entry_name, Outcome.Fatal)
+  | exception UnsupportedFeatures fs ->
+      let time = Unix.gettimeofday () -. time in
+      Fmt.kstr
+        (Diagnostic.print_diagnostic_simple ~severity:Warning)
+        "%s: unknown outcome in %a, due to unsupported features: @\n%a"
+        entry_name pp_time time
+        Fmt.(list ~sep:cut (fun ft r -> Fmt.pf ft "• %s" r))
+        fs;
+      Fmt.pr "@\n@\n@?";
+      (entry_name, Outcome.Fatal)
+
+let print_outcomes_summary outcomes =
+  let open Fmt in
+  let pp_outcome ft (name, res) = Fmt.pf ft "• %s: %a" name Outcome.pp res in
+  pr "%a:@\n%a@\n" (pp_style `Bold) "Summary"
+    (list ~sep:(any "@\n") pp_outcome)
+    outcomes
 
 let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
-  (* get entry points to the crte *)
+  let@ () = Crate.with_crate crate in
+
+  (* get entry points to the crate *)
   let entry_points =
     Types.FunDeclId.Map.values crate.fun_decls
     |> List.filter_map plugin.get_entry_point
@@ -136,63 +169,63 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   if List.is_empty entry_points then execution_err "No entry points found";
 
   (* prepare executing the entry points *)
-  let fold_and f l = List.fold_left (fun acc x -> f x && acc) true l in
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
-  let@ () = Crate.with_crate crate in
-  entry_points
-  |> fold_and @@ fun (entry : Plugin.entry_point) ->
-     (* execute! *)
-     let entry_name =
-       Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
-     in
-     let@ () = print_outcomes entry_name in
-     let branches =
-       let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
-       let fuel = Option.value ~default:default_fuel entry.fuel in
-       try Rustsymex.run ~fuel @@ exec_fun entry.fun_decl with
-       | Layout.InvalidLayout ty ->
-           [
-             (Error (`InvalidLayout ty, Soteria_terminal.Call_trace.empty), []);
-           ]
-       | exn ->
-           Fmt.kstr execution_err "Exn: %a@\nTrace: %s" Fmt.exn exn
-             (Printexc.get_backtrace ())
-     in
 
-     (* inverse ok and errors if we expect a failure *)
-     let nbranches = List.length branches in
-     let branches =
-       if not entry.expect_error then branches
-       else
-         let open Compo_res in
-         let trace =
-           Call_trace.singleton ~loc:entry.fun_decl.item_meta.span ()
-         in
-         let oks, errors =
-           branches
-           |> List.partition_map @@ function
-              | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
-              | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
-              | v -> Left v
-         in
-         if List.is_empty errors then oks else errors
-     in
+  let@ entry : 'fuel Plugin.entry_point = (Fun.flip List.map) entry_points in
+  (* execute! *)
+  let entry_name =
+    Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
+  in
+  let@ () = print_outcomes entry_name in
+  let { res = branches; stats } : ('res, 'range) Stats.with_stats =
+    let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
+    try
+      Rustsymex.run_with_stats ~fuel:entry.fuel @@ exec_fun entry.fun_decl
+    with
+    | Layout.InvalidLayout ty ->
+        {
+          res = [ (Error (`InvalidLayout ty, Call_trace.empty), []) ];
+          stats = Rustsymex.Stats.create ();
+        }
+    | exn ->
+        Fmt.kstr execution_err "Exn: %a@\nTrace: %s" Fmt.exn exn
+          (Printexc.get_backtrace ())
+  in
 
-     (* check for uncaught failure conditions *)
-     let outcomes = List.map fst branches in
-     (if Option.is_some !Rustsymex.not_impl_happened then
-        let msg = Option.get !Rustsymex.not_impl_happened in
-        let () = Rustsymex.not_impl_happened := None in
-        execution_err msg);
-     if List.is_empty branches then execution_err "Execution vanished";
-     if List.exists Compo_res.is_missing outcomes then
-       execution_err "Miss encountered in WPST";
+  (* inverse ok and errors if we expect a failure *)
+  let nbranches = List.length branches in
+  let branches =
+    if not entry.expect_error then branches
+    else
+      let open Compo_res in
+      let trace = Call_trace.singleton ~loc:entry.fun_decl.item_meta.span () in
+      let oks, errors =
+        branches
+        |> List.partition_map @@ function
+           | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
+           | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
+           | v -> Left v
+      in
+      if List.is_empty errors then oks else errors
+  in
 
-     let errors = Compo_res.only_errors outcomes in
-     if List.is_empty errors then
-       let pcs = List.map snd branches in
-       Ok (pcs, nbranches)
-     else Error (errors, nbranches)
+  (* check for uncaught failure conditions *)
+  let outcomes = List.map fst branches in
+  if Stats.Hstring.length stats.give_up_reasons <> 0 then
+    let reasons = Stats.Hstring.to_seq_keys stats.give_up_reasons in
+    unsupported_features @@ List.of_seq reasons
+  else if stats.unexplored_branch_number > 0 then
+    Fmt.kstr execution_err "Missed %d branches" stats.unexplored_branch_number
+  else if stats.sat_unknowns > 0 then
+    Fmt.kstr execution_err "SAT solver returned %d unknowns" stats.sat_unknowns
+  else if List.exists Compo_res.is_missing outcomes then
+    execution_err "Miss encountered in WPST";
+
+  let errors = Compo_res.only_errors outcomes in
+  if List.is_empty errors then
+    let pcs = List.map snd branches in
+    Ok (pcs, nbranches)
+  else Error (errors, nbranches)
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;
@@ -214,25 +247,22 @@ let fatal ?name ?(code = 2) err =
 
 let exec_and_output_crate ~plugin compile_fn =
   match wrap_step "Compiling" compile_fn |> exec_crate ~plugin with
-  | ok -> exit (if ok then 0 else 1)
+  | outcomes ->
+      if !Config.current.print_summary then print_outcomes_summary outcomes;
+      let outcome = Outcome.merge_list outcomes in
+      Outcome.exit outcome
   | exception Plugin.PluginError e -> fatal ~name:"Plugin" e
   | exception ExecutionError e -> fatal e
   | exception FrontendError e -> fatal ~name:"Frontend" ~code:3 e
 
 let exec_rustc config file_name =
-  config_set config;
+  Config.set config;
   let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_file ~plugin file_name in
   exec_and_output_crate ~plugin compile
 
 let exec_cargo config crate_dir =
-  config_set config;
+  Config.set config;
   let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_crate ~plugin crate_dir in
-  exec_and_output_crate ~plugin compile
-
-let exec_obol config file_name =
-  config_set config;
-  let plugin = Plugin.create_using_current_config () in
-  let compile () = parse_ullbc_of_file ~with_obol:true ~plugin file_name in
   exec_and_output_crate ~plugin compile

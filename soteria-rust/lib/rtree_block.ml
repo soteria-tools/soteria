@@ -29,7 +29,7 @@ module Make (Sptr : Sptr.S) = struct
       let open Fmt in
       pf ft "%a : %a" pp_rust_val v Charon_util.pp_ty ty
 
-    type qty = Totally | Partially [@@deriving show]
+    type qty = Totally | Partially [@@deriving show { with_path = false }]
 
     type value =
       | Init of (rust_val * Types.ty) [@printer pp_init]
@@ -146,7 +146,7 @@ module Make (Sptr : Sptr.S) = struct
     | Uninit _ -> Result.error `UninitializedMemoryAccess
     | Zeros ->
         let+ v =
-          of_opt_not_impl ~msg:"Don't know how to zero this type"
+          of_opt_not_impl "Don't know how to zero this type"
           @@ Layout.zeroed ~null_ptr:Sptr.null_ptr ty
         in
         Ok v
@@ -178,7 +178,7 @@ module Make (Sptr : Sptr.S) = struct
               | _ -> not_impl "Don't know how to read this size"
             in
             let+ value =
-              of_opt_not_impl ~msg:"Don't know how to zero this type"
+              of_opt_not_impl "Don't know how to zero this type"
               @@ Layout.zeroed ~null_ptr:Sptr.null_ptr ty
             in
             Ok (Encoder.{ value; ty; offset } :: vs)

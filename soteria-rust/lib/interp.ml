@@ -50,7 +50,7 @@ module InterpM (State : State_intf.S) = struct
     let+ s = s in
     Ok (s, store, state)
 
-  let of_opt_not_impl ~msg x = lift_symex (of_opt_not_impl ~msg x)
+  let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
 
   let with_loc ~loc f =
     let old_loc = !Rustsymex.current_loc in
@@ -566,7 +566,7 @@ module Make (State : State_intf.S) = struct
                 ok (Base ~-v)
             | TLiteral (TFloat _) ->
                 let+ v =
-                  of_opt_not_impl ~msg:"Expected a float type"
+                  of_opt_not_impl "Expected a float type"
                   @@ Typed.cast_float (as_base v)
                 in
                 Base (Typed.float_like v 0.0 -.@ v)
@@ -995,9 +995,7 @@ module Make (State : State_intf.S) = struct
         exec_block ~body block
     | Return ->
         let* ptr, ty = get_variable_and_ty Expressions.LocalId.zero in
-        let* ptr =
-          of_opt_not_impl ~msg:"Return value unset, but returned" ptr
-        in
+        let* ptr = of_opt_not_impl "Return value unset, but returned" ptr in
         let* value = State.load ptr ty in
         let ptr_tys = Layout.ref_tys_in value ty in
         let+ () =

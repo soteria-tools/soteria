@@ -768,6 +768,9 @@ let rec bv_of_int n v =
       else bv_extend n v
   | Int z ->
       let z = if Z.geq z Z.zero then z else Z.neg z in
+      (* need to mask otherwise we'll encode a value bigger than the bitwidth *)
+      let mask = Z.pred @@ Z.shift_left Z.one n in
+      let z = Z.(z land mask) in
       bitvec n z
   | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
       raw_bit_and n (bv_of_int v) (bitvec n (Z.pred mask))

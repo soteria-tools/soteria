@@ -1,20 +1,5 @@
 open Cmdliner
 
-module Global_config = struct
-  open Soteria_rust_lib.Config
-
-  let make_from_args logs terminal solver rusteria =
-    make_global ~logs ~terminal ~solver ~rusteria
-
-  let term =
-    Cmdliner.Term.(
-      const make_from_args
-      $ Soteria_logs.Cli.term
-      $ Soteria_terminal.Config.cmdliner_term ()
-      $ Soteria_c_values.Solver_config.Cli.term
-      $ Soteria_rust_lib.Config.cmdliner_term ())
-end
-
 let exits =
   [
     Cmd.Exit.info ~doc:"on success" 0;
@@ -34,7 +19,9 @@ let dir_arg =
 module Exec_rustc = struct
   let term =
     Term.(
-      const Soteria_rust_lib.Driver.exec_rustc $ Global_config.term $ file_arg)
+      const Soteria_rust_lib.Driver.exec_rustc
+      $ Soteria_rust_lib.Config.global_term
+      $ file_arg)
 
   let cmd =
     Cmd.v
@@ -49,7 +36,9 @@ end
 module Exec_cargo = struct
   let term =
     Term.(
-      const Soteria_rust_lib.Driver.exec_cargo $ Global_config.term $ dir_arg)
+      const Soteria_rust_lib.Driver.exec_cargo
+      $ Soteria_rust_lib.Config.global_term
+      $ dir_arg)
 
   let cmd =
     Cmd.v
@@ -61,24 +50,7 @@ module Exec_cargo = struct
       term
 end
 
-module Exec_obol = struct
-  let term =
-    Term.(
-      const Soteria_rust_lib.Driver.exec_obol $ Global_config.term $ file_arg)
-
-  let cmd =
-    Cmd.v
-      (Cmd.info ~exits
-         ~doc:
-           "Run Rusteria on the specified file; this will use Obol to compile \
-            that file only (not the crate), and look for all entrypoints."
-         "obol")
-      term
-end
-
 let cmd =
-  Cmd.group
-    (Cmd.info ~exits "soteria-rust")
-    [ Exec_rustc.cmd; Exec_cargo.cmd; Exec_obol.cmd ]
+  Cmd.group (Cmd.info ~exits "soteria-rust") [ Exec_rustc.cmd; Exec_cargo.cmd ]
 
 let () = exit @@ Cmd.eval cmd
