@@ -116,13 +116,13 @@ module type S = sig
       outcome together with a path condition that is a list of boolean symbolic
       values.
 
-      The [mode] parameter is used to specify the whether execution should be
-      done in an under-approximate ({!Approx.UX}) or an over-approximate
+      The [mode] parameter is used to specify whether execution should be done
+      in an under-approximate ({!Approx.UX}) or an over-approximate
       ({!Approx.OX}) manner. Users may optionally pass a
       {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth.
 
-      @raise {!Gave_up}
-        if the symbolic process calls [give_up] and the mode is {!Approx.UX}.
+      @raise Soteria_symex.Symex.Gave_up
+        if the symbolic process calls [give_up] and the mode is {!Approx.OX}.
         Prefer using {!Result.run} when possible. *)
   val run :
     ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
@@ -164,8 +164,8 @@ module type S = sig
 
     (** Same as {{!Soteria_symex.Symex.S.run}run}, but receives a symbolic
         process that returns a {!Compo_res.t} and maps the result to an
-        {!Or_gave_up.t}, potentially adding any path that gave up to the list.
-    *)
+        {!Soteria_symex.Symex.Or_gave_up.t}, potentially adding any path that
+        gave up to the list. *)
     val run :
       ?fuel:Fuel_gauge.t ->
       mode:Approx.t ->
@@ -332,8 +332,8 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     in
     aux [] learned
 
-  (** Same as assert_, but not captured within the monad. Not to be exposed to
-      the user, because without proper care, this could have unwanted
+  (** Same as {!assert_}, but not captured within the monad. Not to be exposed
+      to the user, because without proper care, this could have unwanted
       side-effects at the wrong time. *)
   let assert_raw value : bool =
     let value = Solver.simplify value in

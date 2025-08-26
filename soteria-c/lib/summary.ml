@@ -238,15 +238,8 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           let is_manifest =
             try
               let result = Csymex.run ~mode:OX process in
-              L.trace (fun m ->
-                  m "Results: %a"
-                    (Fmt.Dump.list (Fmt.pair Fmt.bool Fmt.nop))
-                    result);
-              (* The bug is manifest if the assert passed in every branch. *)
-              (* FIXME: the non-empty check is a bit of a hack.
-              We need to somehow be able to run production and assert in OX mode.
-              Right now, if production vanishes in one case but not all, we get a false positive. *)
-              (not (List.is_empty result)) && List.for_all fst result
+              (* The bug is manifest if the test passed in every branch. *)
+              List.for_all fst result
             with Soteria_symex.Symex.Gave_up _ -> false
           in
           let manifest_bugs = if is_manifest then [ error ] else [] in
