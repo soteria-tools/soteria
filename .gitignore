@@ -236,5 +236,12 @@ soteria-rust/scripts/*.csv
 ### Misc ###
 *.temp
 
+### Kani ###
+*.out
+*.pretty_name_map.json
+*.type_map.json
+*.kani-metadata.json
+*.rlib
+
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
 # and modified by hand afterwards

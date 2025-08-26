@@ -256,24 +256,25 @@ module M (State : State_intf.S) = struct
   let copysignf32 = copy_sign
   let copysignf16 = copy_sign
 
-  let ctpop ~t ~x state =
+  (** Converts the input value to its unsigned representation, and either calls
+      [concrete] or [symbolic] with it accordingly. *)
+  let binary_int_operation ~concrete ~symbolic ~t ~x state : ret =
     let t = TypesUtils.ty_as_literal t in
     let bits = 8 * Layout.size_of_literal_ty t in
     let* x = as_base ~ty:Typed.t_int x in
     match Typed.kind x with
     | Int x ->
         (* convert to unsigned *)
-        let v =
+        let x =
           if Layout.is_signed t then
             let maxv = Z.shift_left Z.one bits in
             if Z.(x < zero) then Z.(((x mod maxv) + maxv) mod maxv) else x
           else x
         in
-        let v = Typed.int @@ Z.popcount v in
-        Result.ok (Base v, state)
+        Result.ok (Base (concrete bits x :> T.cval Typed.t), state)
     | _ ->
         (* convert to unsigned *)
-        let** x : Typed.T.sint Typed.t =
+        let++ x : Typed.T.sint Typed.t =
           if Layout.is_signed t then
             let to_ty = Layout.lit_to_unsigned t in
             let++ x =
@@ -283,16 +284,49 @@ module M (State : State_intf.S) = struct
             as_base_of ~ty:Typed.t_int x
           else Result.ok (Typed.cast x)
         in
-        let two = Typed.nonzero 2 in
-        let res =
-          List.init bits (fun i -> i)
-          |> List.fold_left
-               (fun acc off ->
-                 let pow = Typed.nonzero_z (Z.shift_left Z.one off) in
-                 acc +@ (x /@ pow %@ two))
-               0s
-        in
-        Result.ok (Base (res :> Typed.T.cval Typed.t), state)
+        (Base (symbolic bits x :> T.cval Typed.t), state)
+
+  let ctpop =
+    let concrete _bits x = Typed.int @@ Z.popcount x in
+    let symbolic size x =
+      Iter.fold
+        (fun acc off ->
+          let x = Typed.bit_shl ~size ~signed:false x (Typed.int off) in
+          let x = Typed.bit_and ~size ~signed:false x Typed.one in
+          acc +@ x)
+        0s
+        Iter.(0 -- size)
+    in
+    binary_int_operation ~concrete ~symbolic
+
+  let cttz =
+    let concrete bits x =
+      Typed.int @@ if Z.equal x Z.zero then bits else Z.trailing_zeros x
+    in
+    let symbolic bits x =
+      (* ite(x == 0, bits,
+          ite(x / 1 % 2 == 1, 0,
+            ite(x / 2 % 2 == 1, 1,
+              ...ite(x / 2^(bits-2) % 2 == 1, bits-2, bits-1)))) *)
+      let two = Typed.nonzero 2 in
+      let res =
+        Iter.fold
+          (fun acc off ->
+            let off = bits - 2 - off in
+            let pow = Typed.nonzero_z (Z.shift_left Z.one off) in
+            Typed.ite (x /@ pow %@ two ==@ 1s) (Typed.int off) acc)
+          (Typed.int (bits - 1))
+          Iter.(0 -- (bits - 2))
+      in
+      Typed.ite (x ==@ 0s) (Typed.int bits) res
+    in
+    binary_int_operation ~concrete ~symbolic
+
+  let cttz_nonzero ~t ~x state =
+    let* x_int = as_base ~ty:Typed.t_int x in
+    if%sat x_int ==@ 0s then
+      State.error (`StdErr "core::intrinsics::cttz_nonzero on zero") state
+    else cttz ~t ~x state
 
   let discriminant_value ~t ~v state =
     let* ptr = as_ptr v in

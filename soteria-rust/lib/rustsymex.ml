@@ -1,5 +1,14 @@
 module SYMEX =
-  Soteria_symex.Symex.Make (Soteria_symex.Symex.Meta.Dummy) (C_solver.Z3_solver)
+  Soteria_symex.Symex.Make
+    (struct
+      module Range = struct
+        type t = Charon.Meta.span
+
+        let to_yojson _ = `Null
+        let of_yojson _ = Ok Charon_util.empty_span
+      end
+    end)
+    (C_solver.Z3_solver)
 
 include SYMEX
 include Syntaxes.FunctionWrap
@@ -31,22 +40,13 @@ let with_loc_immediate ~loc f =
   current_loc := old_loc;
   res
 
-let not_impl_happened = ref None
-
-let not_impl msg =
-  if !not_impl_happened = None then not_impl_happened := Some msg;
-  let msg = "MISSING FEATURE, VANISHING: " ^ msg in
-  L.info (fun m -> m "%s" msg);
-  print_endline msg;
-  vanish ()
-
 let[@inline] with_loc_err () f =
   let loc = get_loc () in
   Result.map_error (f ()) (fun e -> (e, loc))
 
 let error e = Result.error (e, get_loc ())
-let of_opt = function Some x -> return x | None -> vanish ()
-let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
+let not_impl msg = give_up ~loc:(get_loc ()) msg
+let of_opt_not_impl msg = some_or_give_up ~loc:(get_loc ()) msg
 
 let cast_checked ~ty x =
   match Typed.cast_checked x ty with

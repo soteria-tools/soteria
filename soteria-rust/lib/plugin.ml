@@ -4,19 +4,19 @@ open Syntaxes.FunctionWrap
 module Cmd = struct
   type t = {
     charon : string list; [@default []]
-        (** Arguments passed to Charon (only in [Rustc] and [Cargo] mode) *)
+        (** Arguments passed to Charon (only when not in [Obol] mode) *)
     obol : string list; [@default []]
         (** Arguments passed to Obol (only in [Obol] mode) *)
     features : string list; [@default []]
         (** Features to enable for compilation (as in --cfg) *)
     rustc : string list; [@default []]
-        (** DEPRECATED: rustc flags. For Cargo we use RUSTFLAGS, but when
+        (** DEPRECATED?: rustc flags. For Cargo we use RUSTFLAGS, but when
             possible it would be nicer to use the Cargo-specific command (as
-            with features) *)
+            with features)? *)
   }
   [@@deriving make]
 
-  type mode = Cargo | Rustc | Obol
+  type mode = Cargo | Rustc
 
   let empty_cmd = make ()
 
@@ -31,31 +31,21 @@ module Cmd = struct
   let build_cmd ~mode { charon; obol; features; rustc } =
     let spaced = String.concat " " in
     let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
+    let with_obol = !Config.current.with_obol in
+    let rustc = rustc @ !Config.current.rustc_flags in
     match mode with
     | Rustc ->
-        let features = List.map (( ^ ) "--cfg ") features in
-        "charon rustc "
-        ^ spaced charon
-        ^ " -- "
-        ^ spaced features
-        ^ " "
-        ^ escape (spaced rustc)
-    | Obol ->
-        (* similar to charon rustc *)
         let features = List.map (( ^ ) "--cfg=") features in
-        (* Obol currently doesn't support lib crates/files *)
-        (* let rustc = List.filter (( <> ) "--crate-type=lib") rustc in *)
-        "DYLD_LIBRARY_PATH=$(charon toolchain-path)/lib/ obol "
-        ^ spaced obol
-        ^ " -- "
-        ^ spaced features
-        ^ " "
-        ^ escape (spaced rustc)
+        let compiler =
+          if not with_obol then "charon rustc " ^ spaced charon
+          else "obol " ^ spaced obol
+        in
+        compiler ^ " -- " ^ spaced features ^ " " ^ escape (spaced rustc)
     | Cargo ->
         (* Cargo already specifies the edition *)
         let rustc =
           List.filter
-            (fun a -> not (String.starts_with ~prefix:"--edition" a))
+            (Fun.negate (String.starts_with ~prefix:"--edition"))
             rustc
         in
         let features = List.map (( ^ ) "--cfg ") features in
@@ -65,7 +55,11 @@ module Cmd = struct
             "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
           else ""
         in
-        env ^ "charon cargo " ^ spaced charon ^ " -- --quiet"
+        let compiler =
+          if not with_obol then "charon cargo " ^ spaced charon
+          else "obol --cargo " ^ spaced obol
+        in
+        env ^ compiler
 
   let exec_cmd cmd =
     if !Config.current.log_compilation then
@@ -91,10 +85,10 @@ exception PluginError of string
 
 type fun_decl = UllbcAst.fun_decl
 
-type entry_point = {
+type 'fuel entry_point = {
   fun_decl : fun_decl;
   expect_error : bool;
-  fuel : Soteria_symex.Fuel_gauge.t option;
+  fuel : 'fuel;
 }
 
 let mk_entry_point ?(expect_error = false) ?fuel fun_decl =
@@ -161,9 +155,9 @@ let known_generic_errors =
     "core::iter::traits::iterator::Iterator::flatten";
   ]
 
-type plugin = {
+type 'fuel plugin = {
   mk_cmd : unit -> Cmd.t;
-  get_entry_point : fun_decl -> entry_point option;
+  get_entry_point : fun_decl -> 'fuel entry_point option;
 }
 
 let default =
@@ -184,7 +178,7 @@ let default =
            "--raw-boxes";
          ]
         @ opaques)
-      ~obol:[ "--entry_names main"; "--entry_attribs rusteriatool::test" ]
+      ~obol:[ "--entry-names main"; "--entry-attribs rusteriatool::test" ]
       ~features:[ "rusteria" ]
       ~rustc:
         [
@@ -219,7 +213,7 @@ let kani =
   let mk_cmd () =
     let@ _ = with_compiled_lib "kani" in
     Cmd.make ~features:[ "kani" ]
-      ~obol:[ "--entry_attribs kanitool::proof" ]
+      ~obol:[ "--entry-attribs kanitool::proof" ]
       ~rustc:[ "-Zcrate-attr=register_tool(kanitool)"; "--extern=kani" ]
       ()
   in
@@ -242,7 +236,7 @@ let miri =
     let@ _ = with_compiled_lib "miri" in
     Cmd.make ~features:[ "miri" ]
       ~rustc:[ "--extern=miristd"; "--edition=2024" ]
-      ~obol:[ "--entry_names miri_start" ]
+      ~obol:[ "--entry-names miri_start" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =
@@ -254,10 +248,11 @@ let miri =
 
 type root_plugin = {
   mk_cmd : input:string -> output:string -> unit -> Cmd.t;
-  get_entry_point : fun_decl -> entry_point option;
+  get_entry_point : fun_decl -> Soteria_symex.Fuel_gauge.t entry_point option;
 }
 
-let merge_ifs (plugins : (bool * plugin) list) =
+let merge_ifs (plugins : (bool * Soteria_symex.Fuel_gauge.t option plugin) list)
+    =
   let plugins =
     List.filter_map
       (fun (enabled, plugin) -> if enabled then Some plugin else None)
@@ -271,7 +266,7 @@ let merge_ifs (plugins : (bool * plugin) list) =
         ~obol:[ "--dest-file " ^ output ]
         ~rustc:[ input ] ()
     in
-    List.map (fun (p : plugin) -> p.mk_cmd ()) plugins
+    List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
   in
   let get_entry_point (decl : fun_decl) =
@@ -279,23 +274,38 @@ let merge_ifs (plugins : (bool * plugin) list) =
       match (acc, rest) with
       | Some ep, _ ->
           let fuel : Soteria_symex.Fuel_gauge.t =
-            let get_or name none =
+            let get_or name (none : Soteria_symex.Fuel_gauge.Fuel_value.t) =
               Charon_util.decl_get_attr decl name
-              |> Option.fold ~none ~some:int_of_string
+              |> Option.fold ~none ~some:(fun x -> Finite (int_of_string x))
             in
-            let steps =
-              get_or "rusteriatool::step_fuel" !Config.current.step_fuel
-            in
-            let branching =
-              get_or "rusteriatool::branch_fuel" !Config.current.branch_fuel
-            in
-            { steps = Finite steps; branching = Finite branching }
+            {
+              steps =
+                get_or "rusteriatool::step_fuel"
+                  (if !Config.current.no_fuel then Infinite
+                   else Finite !Config.current.step_fuel);
+              branching =
+                get_or "rusteriatool::branch_fuel"
+                  (if !Config.current.no_fuel then Infinite
+                   else Finite !Config.current.branch_fuel);
+            }
           in
-          Some { ep with fuel = Some fuel }
-      | None, (p : plugin) :: rest -> aux (p.get_entry_point decl) rest
-      | _ -> acc
+          Some { ep with fuel }
+      | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest
+      | None, [] -> None
     in
-    aux None plugins
+    let filters = !Config.current.filter in
+    let filter_ok =
+      match filters with
+      | [] -> true
+      | _ ->
+          let name = Fmt.to_to_string Crate.pp_name decl.item_meta.name in
+          List.exists
+            (fun f ->
+              try Str.search_forward (Str.regexp f) name 0 >= 0
+              with Not_found -> false)
+            filters
+    in
+    if not filter_ok then None else aux None plugins
   in
   { mk_cmd; get_entry_point }
 

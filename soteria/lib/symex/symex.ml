@@ -258,8 +258,16 @@ end
 
 module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value and module Stats.Range = Meta.Range = struct
-  module Solver = Solver.Mutable_to_in_place (Sol)
   module Stats = Soteria_stats.Make (Meta.Range)
+
+  module Solver = struct
+    include Solver.Mutable_to_in_place (Sol)
+
+    let sat () =
+      let res = sat () in
+      if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
+      res
+  end
 
   module Fuel = struct
     include Reversible.Effectful (Fuel_gauge)
@@ -302,7 +310,9 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
   let consume_fuel_steps n f =
     match Fuel.consume_fuel_steps n with
-    | Exhausted -> L.debug (fun m -> m "Exhausted step fuel")
+    | Exhausted ->
+        Stats.As_ctx.add_unexplored_branches 1;
+        L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted ->
         Stats.As_ctx.add_steps n;
         f ()
@@ -395,6 +405,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
             else
               match Fuel.consume_branching 1 with
               | Exhausted ->
+                  Stats.As_ctx.add_unexplored_branches 1;
                   L.debug (fun m ->
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->

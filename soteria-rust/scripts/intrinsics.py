@@ -2,7 +2,7 @@
 
 import subprocess
 import json
-from typing import Any, Generic, Sequence, TypeVar
+from typing import Any, Generic, Sequence, TypeVar, TypedDict
 from common import *
 
 

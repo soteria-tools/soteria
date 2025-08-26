@@ -2,7 +2,6 @@
 
 from common import *
 
-from os import error, truncate
 import sys
 import re
 from typing import Iterable, Optional, Protocol
@@ -77,43 +76,18 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if "Fatal: No entry points found" in test:
         return ("No entry points found", RED, None)
 
+    if "Execution timed out" in test or "Forced timeout" in test:
+        return ("Time out", ORANGE, None)
+
     if "resolve_constant (Generated_Expressions.COpaque" in test:
         return ("Tool", PURPLE, "Constant resolving")
 
-    if "MISSING FEATURE, VANISHING" in test:
-        cause = re.search(r"MISSING FEATURE, VANISHING: (.+)\n", test)
-        if not cause:
-            exit(f"No cause found for vanish in {test}")
-        cause = cause.group(1)
-        color = YELLOW
-        reason = None
-
-        if "Unsupported intrinsic" in cause:
-            reason = cause.replace("Unsupported intrinsic: ", "")
-            cause = "Unsupported intrinsic"
-            color = ORANGE
-
-        if "not found in store" in cause:
-            cause = "Variable not found in store"
-        if "Unsupported cast kind" in cause:
-            cause = "Unsupported cast kind"
-        if "Unhandled transmute" in cause:
-            cause = "Unhandled transmute"
-        if "is opaque" in cause:
-            reason = cause.replace("Function ", "").replace(" is opaque", "")
-            cause = "Opaque function - Tool"
-            color = PURPLE
-        if "Opaque constant" in cause:
-            reason = cause.replace("Constant constant: ", "")
-            cause = "Opaque constant - Tool"
-            color = PURPLE
-        if "Splitting " in cause:
-            cause = "Splitting value"
-
-        return (cause, color, reason)
-
-    if "Execution vanished" in test:
-        return ("Vanished", RED, None)
+    unsup_regex = r"^warning: .*: unknown outcome in"
+    if re.search(unsup_regex, test, re.MULTILINE):
+        reasons = re.findall(r"\n• (.*)", test)
+        if reasons:
+            return [("Unsupported", YELLOW, reason) for reason in reasons]
+        return ("Unsupported", YELLOW, None)
 
     if "Miss encountered in WPST" in test:
         return ("Miss encountered", RED, None)
@@ -151,8 +125,9 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
 
 
 def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
-    if "CBMC timed out" in test:
+    if "CBMC timed out" in test or "Forced timeout" in test:
         return ("Time out", ORANGE, None)
+
     if (
         "A Rust construct that is not currently supported by Kani was found to be reachable"
         in test
@@ -171,10 +146,75 @@ def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
         else:
             return ("Failure", RED, "Expected success, got failure")
 
-    if "exited with status exit status" in test:
+    if "exited with status exit status" in test or "fatal runtime error" in test:
         return ("Crashed", PURPLE, None)
 
-    return (f"Unknown", PURPLE, None)
+    if "No proof harnesses" in test:
+        return ("No entry points found", RED, None)
+
+    return (f"Unknown", MAGENTA, None)
+
+
+def categorise_miri(test: str, *, expect_failure: bool) -> LogCategorisation:
+    if "Forced timeout" in test:
+        return ("Time out", ORANGE, None)
+
+    if (
+        "use of unresolved module or unlinked crate `kani`" in test
+        or "can't find crate for `kani`" in test
+    ):
+        return ("Unsupported - Tool", PURPLE, None)
+
+    if (
+        "functions used as tests can not have any arguments" in test
+        or "error: Miri can only run programs that have a main function." in test
+    ):
+        return ("No entry points found", RED, None)
+
+    if "test result: ok." in test or "CODE: 0" in test:
+        if not expect_failure:
+            return ("Success", GREEN, "Expected success, got success")
+        else:
+            return ("Failure", RED, "Expected failure, got success")
+
+    # we're quite fine-grained here to not misattribute compilation errors
+    error_signs = [
+        "error: Undefined Behavior",
+        "error: memory leaked",
+        "error: abnormal termination",
+        "error: unsupported operation",
+        "error: multiple definitions of symbol",
+        "error: post-monomorphization error",
+        "error[E0308]: mismatched types",
+        "accessing memory based on pointer with alignment",
+        "symbol definition that clashes with a built-in shim",
+        "panicked at",
+        "test result: FAILED.",
+    ]
+    if any(sign in test for sign in error_signs):
+        if expect_failure:
+            return ("Success", GREEN, "Expected failure, got failure")
+        else:
+            return ("Failure", RED, "Expected success, got failure")
+
+    if "error" in test:
+        if expect_failure:
+            return ("Success", GREEN, "Expected failure, got failure")
+        else:
+            return ("Failure", RED, "Expected success, got failure")
+
+    # if (
+    #     "error[E0599]: no method named" in test
+    #     or "error[E0432]: unresolved import" in test
+    #     or "error[E0433]: failed to resolve" in test
+    #     or "error[E0423]: expected function" in test
+    #     or "error: cannot find macro" in test
+    #     or "error: This macro cannot be used" in test
+    #     or "error: format argument must be" in test
+    # ):
+    #     return ("Compilation error", ORANGE, None)
+
+    return (f"Unknown", MAGENTA, None)
 
 
 def analyse(file: str) -> LogInfo:
