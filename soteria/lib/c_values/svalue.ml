@@ -470,15 +470,15 @@ let rec minus v1 v2 =
   | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
       minus (int_z (Z.sub i2 i1)) v1
   | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
-      minus v1 (int_z (Z.sub i2 i1))
+      minus v1 (int_z (Z.add i2 i1))
   | Int i1, Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1) ->
       plus (int_z (Z.sub i1 i2)) v1
   | Int i1, Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }) ->
-      minus (plus (int_z (Z.add i1 i2)) v1) v1
+      minus (int_z (Z.add i1 i2)) v1
   | Binop (Plus, x, y), _ when equal x v2 -> y
   | Binop (Plus, x, y), _ when equal y v2 -> x
-  | _, Binop (Plus, x, y) when equal x v1 -> y
-  | _, Binop (Plus, x, y) when equal x v1 -> y
+  | _, Binop (Plus, x, y) when equal x v1 -> minus zero y
+  | _, Binop (Plus, x, y) when equal y v1 -> minus zero x
   | _ -> Binop (Minus, v1, v2) <| TInt
 
 let times v1 v2 =
