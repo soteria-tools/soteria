@@ -467,7 +467,7 @@ module Make (Sptr : Sptr.S) = struct
           let bv_from_sized =
             if from_bits = to_bits then bv_from
             else if from_bits < to_bits then
-              Svalue.BitVec.Raw.extend to_signed (to_bits - from_bits) bv_from
+              Svalue.BitVec.Raw.extend from_signed (to_bits - from_bits) bv_from
             else Svalue.BitVec.Raw.extract 0 (to_bits - 1) bv_from
           in
           let bv_to = Svalue.BitVec.to_int to_signed bv_from_sized in
