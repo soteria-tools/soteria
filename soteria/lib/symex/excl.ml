@@ -24,12 +24,12 @@ module Make (Symex : Symex.S) = struct
   let subst_serialized subst_inner subst_var x = subst_inner subst_var x
 
   let consume ~sem_eq (serialized : 'a serialized) (t : 'a t option) :
-      ('a t option, 'err, 'a serialized) Symex.Result.t =
+      ('a t option, [> Symex.lfail ], 'a serialized) Symex.Result.t =
     let open Symex.Syntax in
     match t with
     | Some x ->
-        let+ () = Symex.assume [ sem_eq x serialized ] in
-        Compo_res.Ok None
+        let++ () = Symex.consume_pure (sem_eq x serialized) in
+        None
     | None -> Symex.Result.miss [ serialized ]
 
   let produce (serialized : 'a serialized) (t : 'a t option) =

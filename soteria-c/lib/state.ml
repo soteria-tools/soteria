@@ -261,7 +261,8 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) (state : t)
       aux layout.members_ofs members values state
 
 let consume (serialized : serialized) (st : t) :
-    (t, 'err, serialized) Csymex.Result.t =
+    (t, [> Csymex.lfail ] err, serialized) Csymex.Result.t =
+  let@ () = with_error_loc_as_call_trace () in
   L.debug (fun m -> m "Consuming state from %a" pp_serialized serialized);
   let** globs =
     let+ res = Globs.consume serialized.globs st.globs in

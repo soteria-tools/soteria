@@ -36,20 +36,21 @@ module Make (C : Codom) = struct
         let* x = fresh () in
         Symex.Result.ok (x, Some x)
 
-  let aux (serialized : serialized) (t : t option) : t Symex.t =
+  let produce (serialized : serialized) (t : t option) =
     match t with
     | Some x ->
         let+ () = Symex.assume [ sem_eq x serialized ] in
-        x
+        t
     | None ->
         let+ x = fresh () in
-        x
-
-  let produce (serialized : serialized) (t : t option) =
-    let+ new_x = aux serialized t in
-    Some new_x
+        Some x
 
   let consume (serialized : serialized) (t : t option) =
-    let+ st = produce serialized t in
-    Compo_res.Ok st
+    match t with
+    | Some x ->
+        let++ () = Symex.consume_pure (sem_eq x serialized) in
+        t
+    | None ->
+        let* x = fresh () in
+        Symex.Result.ok (Some x)
 end

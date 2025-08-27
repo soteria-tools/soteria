@@ -180,7 +180,8 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let { res = branches; stats } : ('res, 'range) Stats.with_stats =
     let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
     try
-      Rustsymex.run_with_stats ~fuel:entry.fuel @@ exec_fun entry.fun_decl
+      Rustsymex.run_with_stats ~mode:UX ~fuel:entry.fuel
+      @@ exec_fun entry.fun_decl
     with
     | Layout.InvalidLayout ty ->
         {

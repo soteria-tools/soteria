@@ -110,16 +110,19 @@ struct
       (cons :
         'inner_serialized ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_serialized) Symex.Result.t)
+        ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
       (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-      ('inner_st t option, 'err, 'inner_serialized serialized) Symex.Result.t =
+      ( 'inner_st t option,
+        [> Symex.lfail ],
+        'inner_serialized serialized )
+      Symex.Result.t =
     let m, b = of_opt st in
     let l, b_ser = serialized in
-    let* new_b =
+    let** new_b =
       match (b, b_ser) with
-      | None, None -> Symex.return None
-      | (Some _ as x), None | None, (Some _ as x) -> Symex.return x
-      | Some _, Some _ -> Symex.vanish ()
+      | None, None -> Result.ok None
+      | (Some _ as x), None | None, (Some _ as x) -> Result.ok x
+      | Some _, Some _ -> Symex.consume_false ()
     in
     let in_bounds_opt x =
       match new_b with
@@ -128,7 +131,7 @@ struct
     in
     let++ m =
       Symex.Result.fold_list l ~init:m ~f:(fun m (ofs, inner_ser) ->
-          let* () = Symex.assume [ in_bounds_opt ofs ] in
+          let** () = Symex.consume_pure (in_bounds_opt ofs) in
           let* ofs, codom = find_opt_sym ofs m in
           let++ codom =
             let+? fix = cons inner_ser codom in

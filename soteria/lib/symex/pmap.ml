@@ -124,9 +124,12 @@ struct
       (cons :
         'inner_serialized ->
         'inner_st option ->
-        ('inner_st option, 'err, 'inner_serialized) Symex.Result.t)
+        ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
       (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-      ('inner_st t option, 'err, 'inner_serialized serialized) Symex.Result.t =
+      ( 'inner_st t option,
+        [> Symex.lfail ],
+        'inner_serialized serialized )
+      Symex.Result.t =
     let st = of_opt st in
     let++ st =
       Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
