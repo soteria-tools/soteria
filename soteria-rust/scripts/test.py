@@ -33,6 +33,7 @@ def exec_test(
     categoriser: TestCategoriser,
     log: Optional[TextIOWrapper] = None,
     dyn_flags: Optional[Callable[[Path], list[str]]] = None,
+    timeout: Optional[int] = None,
 ) -> tuple[LogCategorisation_, float]:
     expect_failure = determine_failure_expect(str(file))
     if dyn_flags:
@@ -48,12 +49,12 @@ def exec_test(
             cmd + [str(file)],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         if log:
             log.write("Forced timeout")
-        return (("Time out", ORANGE, None), 5)
+        return (("Time out", ORANGE, None), timeout or 0)
 
     elapsed = time.time() - before
 
@@ -125,6 +126,8 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                 txt = f"{clr}{msg}{RESET} in {elapsed:.3f}s"
                 if elapsed > 1:
                     txt += " 🐌"
+                if msg not in ["Success", "Failure"] and reason:
+                    txt += f" ({GRAY}{reason}{RESET})"
                 if str(relative) in KNOWN_ISSUES:
                     issue = KNOWN_ISSUES[str(relative)]
                     txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
@@ -387,6 +390,7 @@ def benchmark(opts: CliOpts):
                         log=log,
                         categoriser=opts["categorise"],
                         dyn_flags=test_conf["dyn_flags"],
+                        timeout=5,
                     )
                 except KeyboardInterrupt as e:
                     nonlocal interrupts
