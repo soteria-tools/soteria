@@ -50,7 +50,7 @@ let eval_unop : Unop.t -> t -> t = function
   | BvOfFloat n -> BitVec.of_float n
   | BvOfInt (s, n) -> BitVec.of_int s n
   | IntOfBv signed -> BitVec.to_int signed
-  | FloatOfBv -> BitVec.to_float
+  | FloatOfBv _ -> BitVec.to_float
   | BvExtract (from, to_) -> BitVec.Raw.extract from to_
   | BvExtend (signed, by) -> BitVec.Raw.extend signed by
   | BvNot -> BitVec.Raw.not

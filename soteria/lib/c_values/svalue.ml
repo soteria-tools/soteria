@@ -84,7 +84,7 @@ module Unop = struct
     | IntOfBool
     | BvOfFloat of int (* target bitvec size *)
     | BvOfInt of bool * int (* signed * target bitvec size; needed for Eval *)
-    | FloatOfBv
+    | FloatOfBv of FloatPrecision.t
     | IntOfBv of bool (* signed *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
@@ -102,8 +102,8 @@ module Unop = struct
     | GetPtrOfs -> Fmt.string ft "ofs"
     | IntOfBool -> Fmt.string ft "b2i"
     | BvOfFloat n -> Fmt.pf ft "f2bv(%d)" n
-    | BvOfInt _ -> Fmt.string ft "i2bv"
-    | FloatOfBv -> Fmt.string ft "bv2f"
+    | BvOfInt (signed, n) -> Fmt.pf ft "i2bv[%a%d]" pp_signed signed n
+    | FloatOfBv p -> Fmt.pf ft "bv2f[%a]" FloatPrecision.pp p
     | IntOfBv s -> Fmt.pf ft "%abv2i" pp_signed s
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
@@ -138,7 +138,7 @@ module Binop = struct
     | FTimes
     | FDiv
     | FRem
-    (* Bitwise Binary operators *)
+    (* BitVector operators *)
     | BvPlus
     | BvMinus
     | BvTimes
@@ -817,16 +817,16 @@ module BitVec = struct
       | _ -> Unop (BvExtend (signed, extend_by), v) <| t_bv to_
 
     (** [concat v1 v2] for [v1] of size [n] and [v2] of size [m] is a bitvector
-        of size [n + m] where the first [n] bits are [v1] and the following [m]
-        are [v2] *)
+        of size [n + m] where the first [m] bits are [v2] and the following [n]
+        are [v1] *)
     and concat v1 v2 =
       let n1 = size_of_bv v1.node.ty in
       let n2 = size_of_bv v2.node.ty in
       match (v1.node.kind, v2.node.kind) with
-      | BitVec l, BitVec r -> mk_masked (n1 + n2) Z.(l + shift_left r n2)
+      | BitVec l, BitVec r -> mk_masked (n1 + n2) Z.(r + shift_left l n2)
       | Unop (BvExtract (from1, to1), v1), Unop (BvExtract (from2, to2), v2)
-        when to1 + 1 = from2 && equal v1 v2 ->
-          extract from1 to2 v1
+        when to2 + 1 = from1 && equal v1 v2 ->
+          extract from2 to1 v1
       (* We order (extract A ++ (X ++ extract )) *)
       | ( Unop (BvExtract (_, _), _),
           Binop
@@ -932,7 +932,8 @@ module BitVec = struct
 
   let of_float n v =
     match (v.node.ty, v.node.kind, n) with
-    | TFloat _, Unop (FloatOfBv, v), _ -> v
+    | TFloat _, Unop (FloatOfBv prev, v), _ when FloatPrecision.size prev = n ->
+        v
     | TFloat F32, Float f, 32 ->
         Raw.mk n @@ Z.of_int32 (Int32.bits_of_float (Float.of_string f))
     | TFloat F64, Float f, 64 ->
@@ -1028,7 +1029,8 @@ module BitVec = struct
     | Unop (BvOfFloat _, v) -> v
     | _ ->
         let size = size_of_bv v.node.ty in
-        Unop (FloatOfBv, v) <| t_f (FloatPrecision.of_size size)
+        let fp = FloatPrecision.of_size size in
+        Unop (FloatOfBv fp, v) <| t_f fp
 
   let and_ ~size ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
