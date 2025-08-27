@@ -951,7 +951,6 @@ module BitVec = struct
         else if size > n then Raw.extract 0 (n - 1) v
         else Raw.extend s (n - size) v
     | Int z ->
-        let z = if Z.geq z Z.zero then z else Z.neg z in
         (* need to mask otherwise we'll encode a value bigger than the bitwidth *)
         let mask = Z.pred @@ Z.shift_left Z.one n in
         let z = Z.(z land mask) in
