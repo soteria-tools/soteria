@@ -80,7 +80,7 @@ module type S = sig
       that is easier to manipulate. *)
   val consume_false : unit -> ('a, [> lfail ], 'b) Compo_res.t t
 
-  (** [nondet ty f] creates a fresh variable of type [ty]. *)
+  (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
 
   val fresh_var : 'a vt -> Var.t t
