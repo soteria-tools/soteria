@@ -50,8 +50,7 @@ type global = {
       [@term Soteria.Logging.Cli.term]
   terminal : Soteria.Terminal.Config.t;
       [@term Soteria.Terminal.Config.cmdliner_term ()]
-  solver : Soteria.C_values.Solver_config.t;
-      [@term Soteria.C_values.Solver_config.cmdliner_term ()]
+  solver : Solver_config.t; [@term Solver_config.cmdliner_term ()]
   rusteria : t; [@term term]
 }
 [@@deriving make, subliner]
