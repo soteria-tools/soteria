@@ -1,8 +1,6 @@
 open Soteria_std
-open Logging
+open Logging.Logs
 open Syntaxes.FunctionWrap
-module L = Logs.L
-module List = ListLabels
 
 exception Gave_up of string
 
@@ -345,8 +343,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | Some false -> false
     | None ->
         let@ () =
-          Logs.with_section
-            (Fmt.str "Checking entailment for %a" Value.ppa value)
+          with_section (Fmt.str "Checking entailment for %a" Value.ppa value)
         in
         Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
@@ -392,14 +389,14 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         let left_unsat = ref false in
 
         Symex_state.save ();
-        Logs.with_section ~is_branch:true left_branch_name (fun () ->
+        with_section ~is_branch:true left_branch_name (fun () ->
             Solver.add_constraints ~simplified:true [ guard ];
             let sat_res = Solver.sat () in
             left_unsat := Solver_result.is_unsat sat_res;
             if Solver_result.is_sat sat_res then then_ () f
             else L.trace (fun m -> m "Branch is not feasible"));
         Symex_state.backtrack_n 1;
-        Logs.with_section ~is_branch:true right_branch_name (fun () ->
+        with_section ~is_branch:true right_branch_name (fun () ->
             Solver.add_constraints [ Value.(not guard) ];
             if !left_unsat then
               (* Right must be sat since left was not! We didn't branch so we don't consume the counter *)
@@ -454,10 +451,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         let with_section =
           let branch_counter = ref 0 in
           fun k ->
-            Logs.start_section ~is_branch:true
+            start_section ~is_branch:true
               ("Branch number " ^ string_of_int !branch_counter);
             k ();
-            Logs.end_section ();
+            end_section ();
             incr branch_counter
         in
         let rec loop brs =
