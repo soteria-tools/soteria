@@ -29,9 +29,9 @@ module Exec_main = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.exec_and_print
-      $ Soteria_logs.Cli.term
-      $ Soteria_terminal.Config.cmdliner_term ()
-      $ Soteria_c_values.Solver_config.Cli.term
+      $ Soteria.Logging.Cli.term
+      $ Soteria.Terminal.Config.cmdliner_term ()
+      $ Soteria.C_values.Solver_config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
       $ includes_arg
       $ files_arg
@@ -55,8 +55,8 @@ module Show_ail = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.show_ail
-      $ Soteria_logs.Cli.term
-      $ Soteria_terminal.Config.cmdliner_term ()
+      $ Soteria.Logging.Cli.term
+      $ Soteria.Terminal.Config.cmdliner_term ()
       $ includes_arg
       $ files_arg)
 
@@ -67,9 +67,9 @@ module Generate_summaries = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.generate_all_summaries
-      $ Soteria_logs.Cli.term
-      $ Soteria_terminal.Config.cmdliner_term ()
-      $ Soteria_c_values.Solver_config.Cli.term
+      $ Soteria.Logging.Cli.term
+      $ Soteria.Terminal.Config.cmdliner_term ()
+      $ Soteria.C_values.Solver_config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
       $ includes_arg
       $ functions_arg
@@ -87,9 +87,9 @@ module Capture_db = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.capture_db
-      $ Soteria_logs.Cli.term
-      $ Soteria_terminal.Config.cmdliner_term ()
-      $ Soteria_c_values.Solver_config.Cli.term
+      $ Soteria.Logging.Cli.term
+      $ Soteria.Terminal.Config.cmdliner_term ()
+      $ Soteria.C_values.Solver_config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
       $ compilation_db_arg
       $ functions_arg)

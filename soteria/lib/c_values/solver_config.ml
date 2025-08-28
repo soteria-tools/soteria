@@ -1,16 +1,18 @@
 type t = {
-  solver_timeout : int option; [@default None]
-  dump_smt_file : string option; [@default None]
+  solver_timeout : int option;
+      [@names [ "solver-timeout" ]] [@env "SOTERIA_SOLVER_TIMEOUT"]
+      (** Set the solver timeout in miliseconds*)
+  dump_smt_file : string option;
   z3_path : string; [@default "z3"]
-  hide_response_times : bool; [@default false]
+  hide_response_times : bool; [@make.default false]
 }
-[@@deriving make]
+[@@deriving make, subliner]
 
 let default = make ()
 let current : t ref = ref default
 let set (config : t) = current := config
 
-module Cli = struct
+(* module Cli = struct
   open Cmdliner
   open Soteria_std.Cmdliner_helpers
 
@@ -55,4 +57,4 @@ module Cli = struct
       $ solver_timeout_arg
       $ dump_smt_arg
       $ hide_response_times_arg)
-end
+end *)

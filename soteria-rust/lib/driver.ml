@@ -1,10 +1,10 @@
-module Stats = Soteria_stats
+module Stats = Soteria.Stats
 module Config_ = Config
-open Soteria_terminal
+open Soteria.Terminal
 module Config = Config_
 open Color
 module Wpst_interp = Interp.Make (State)
-module Compo_res = Soteria_symex.Compo_res
+module Compo_res = Soteria.Soteria_symex.Compo_res
 open Syntaxes.FunctionWrap
 open Charon
 
@@ -36,7 +36,7 @@ module Outcome = struct
 end
 
 let default_fuel =
-  Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
+  Soteria.Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 module Cleaner = struct
   let files = ref []
@@ -177,7 +177,7 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
     Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
   in
   let@ () = print_outcomes entry_name in
-  let { res = branches; stats } : ('res, 'range) Stats.with_stats =
+  let { res = branches; stats } : ('res, 'range) Soteria.Stats.with_stats =
     let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
     try
       Rustsymex.run_with_stats ~mode:UX ~fuel:entry.fuel
@@ -212,8 +212,8 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 
   (* check for uncaught failure conditions *)
   let outcomes = List.map fst branches in
-  if Stats.Hstring.length stats.give_up_reasons <> 0 then
-    let reasons = Stats.Hstring.to_seq_keys stats.give_up_reasons in
+  if Soteria.Stats.Hstring.length stats.give_up_reasons <> 0 then
+    let reasons = Soteria.Stats.Hstring.to_seq_keys stats.give_up_reasons in
     unsupported_features @@ List.of_seq reasons
   else if stats.unexplored_branch_number > 0 then
     Fmt.kstr execution_err "Missed %d branches" stats.unexplored_branch_number

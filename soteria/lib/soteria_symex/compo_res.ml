@@ -1,3 +1,5 @@
+open Soteria_std
+
 type ('ok, 'err, 'fix) t = Ok of 'ok | Error of 'err | Missing of 'fix list
 
 let pp ~ok ~err ~miss fmt = function

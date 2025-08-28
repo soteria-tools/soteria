@@ -1,4 +1,4 @@
-module Compo_res = Soteria_symex.Compo_res
+module Compo_res = Soteria.Soteria_symex.Compo_res
 open Charon
 open Typed.Syntax
 open Typed.Infix
@@ -427,7 +427,7 @@ module Make (Sptr : Sptr.S) = struct
       is a *ghost read*, and should not have side-effects. *)
   let rec transmute ?verify_ptr ?(try_splitting = true) ~(from_ty : Types.ty)
       ~(to_ty : Types.ty) v =
-    let open Soteria_symex.Compo_res in
+    let open Soteria.Soteria_symex.Compo_res in
     let open Result in
     L.debug (fun m ->
         m "Transmuting %a: %a -> %a" pp_rust_val v pp_ty from_ty pp_ty to_ty);

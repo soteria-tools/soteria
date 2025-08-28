@@ -1,4 +1,4 @@
-open Soteria_symex.Compo_res
+open Soteria.Soteria_symex.Compo_res
 open Csymex.Syntax
 open Typed
 open Typed.Infix
@@ -8,7 +8,7 @@ open Csymex.Result
 module Ctype = Cerb_frontend.Ctype
 
 module MemVal = struct
-  module TB = Soteria_symex.Tree_block
+  module TB = Soteria.Soteria_symex.Tree_block
   module Symex = Csymex
 
   module SInt = struct
@@ -198,7 +198,7 @@ let decode ~ty ~ofs node =
   | TB.Owned node -> MemVal.decode ~ty node
   | TB.NotOwned _ ->
       let+ fixes = mk_fix_typed ofs ty () in
-      Soteria_symex.Compo_res.miss (log_fixes fixes)
+      Soteria.Soteria_symex.Compo_res.miss (log_fixes fixes)
 
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t option) :
     (T.cval Typed.t * t option, 'err, 'fix) Result.t =

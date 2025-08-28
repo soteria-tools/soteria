@@ -1,3 +1,5 @@
+open Soteria_std
+
 module type Mutable_incremental = sig
   (** This module represents a solver state, it is fully imperative! *)
 

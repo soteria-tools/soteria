@@ -1,4 +1,4 @@
-open Soteria_symex.Compo_res
+open Soteria.Soteria_symex.Compo_res
 open Csymex
 open Csymex.Syntax
 open Typed.Infix
@@ -66,7 +66,7 @@ module InterpM (State : State_intf.S) = struct
     match res with
     | Ok triple -> Ok triple
     | Error e ->
-        let elem = Soteria_terminal.Call_trace.mk_element ~loc ~msg () in
+        let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
         Error (State.add_to_call_trace e elem)
     | Missing f -> Missing f
 

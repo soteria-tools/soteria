@@ -26,7 +26,7 @@ let get_abort_diagnostics (stats : Csymex.Stats.t) =
     ~range ~source:"soteria" ()
 
 let lift_severity :
-    Soteria_terminal.Diagnostic.severity -> Lsp.Types.DiagnosticSeverity.t =
+    Soteria.Terminal.Diagnostic.severity -> Lsp.Types.DiagnosticSeverity.t =
   function
   | Error -> Error
   | Bug -> Error
@@ -40,13 +40,13 @@ let error_to_diagnostic_opt ~uri (err, call_trace) =
   let message = (Fmt.to_to_string Error.pp) err in
   let parens_if_non_empty = function "" -> "" | s -> " (" ^ s ^ ")" in
   let range, relatedInformation, msg_addendum =
-    match (call_trace : Cerb_location.t Soteria_terminal.Call_trace.t) with
+    match (call_trace : Cerb_location.t Soteria.Terminal.Call_trace.t) with
     | [] -> (cerb_loc_to_range Cerb_location.unknown, None, "")
     | [ { loc; msg } ] -> (cerb_loc_to_range loc, None, parens_if_non_empty msg)
     | { loc; msg } :: locs ->
         let related_info =
           List.map
-            (fun Soteria_terminal.Call_trace.{ loc; msg } ->
+            (fun Soteria.Terminal.Call_trace.{ loc; msg } ->
               let location =
                 Location.create ~range:(cerb_loc_to_range loc) ~uri
               in
@@ -75,7 +75,7 @@ class soteria_lsp_server generate_errors =
     *)
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
         (uri : Lsp.Types.DocumentUri.t) (contents : string) =
-      let { Soteria_stats.res = errors; stats } = generate_errors contents in
+      let { Soteria.Stats.res = errors; stats } = generate_errors contents in
       let diags = List.map (error_to_diagnostic_opt ~uri) errors in
       let diags =
         if debug_mode then get_abort_diagnostics stats @ diags else diags

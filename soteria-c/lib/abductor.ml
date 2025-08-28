@@ -1,6 +1,6 @@
 open Syntaxes.FunctionWrap
-open Soteria_logs.Logs
-open Soteria_terminal
+open Soteria.Logging.Logs
+open Soteria.Terminal
 module Bi_interp = Interp.Make (Bi_state)
 open Ail_tys
 
@@ -9,7 +9,7 @@ module Summaries = struct
 end
 
 let default_abductor_fuel =
-  Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
+  Soteria.Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 (** Generates summaries for a function given a function definitions. Has to be
     run within {{!Soteria_c_lib.Csymex.Stats.As_ctx.with_stats}with_stats} *)

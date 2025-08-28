@@ -1,9 +1,0 @@
-(library
- (name soteria_terminal)
- (public_name soteria.terminal)
- (libraries soteria_std soteria.logs progress grace grace.ansi_renderer)
- (flags
-  (:standard -open Soteria_std))
- (preprocess
-  (pps ppx_subliner ppx_deriving.std))
- (synopsis "Terminal pretty printing library for symbolic execution"))

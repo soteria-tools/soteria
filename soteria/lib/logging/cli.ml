@@ -1,3 +1,4 @@
+open Soteria_std
 open Level
 
 let log_kind_conv =

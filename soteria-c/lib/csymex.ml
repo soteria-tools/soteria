@@ -7,7 +7,7 @@ module Meta = struct
   end
 end
 
-module SYMEX = Soteria_symex.Symex.Make (Meta) (C_solver.Z3_solver)
+module SYMEX = Soteria.Soteria_symex.Symex.Make (Meta) (C_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
 
@@ -45,14 +45,14 @@ let not_impl msg =
 let[@inline] with_error_loc_as_call_trace ?(msg = "Triggering operation") () f =
   let loc = get_loc () in
   Result.map_error (f ()) (fun e ->
-      let call_trace = Soteria_terminal.Call_trace.singleton ~loc ~msg () in
+      let call_trace = Soteria.Terminal.Call_trace.singleton ~loc ~msg () in
       (e, call_trace))
 
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 
 module With_origin =
-  Soteria_symex.With_info.Make
+  Soteria.Soteria_symex.With_info.Make
     (SYMEX)
     (struct
       type t = Cerb_location.t
@@ -60,9 +60,9 @@ module With_origin =
       let pp = Fmt_ail.pp_loc
     end)
 
-module Freeable = Soteria_symex.Freeable.Make (SYMEX)
-module Pmap_direct_access = Soteria_symex.Pmap.Direct_access (SYMEX)
-module Pmap = Soteria_symex.Pmap.Make (SYMEX)
-module Tree_block = Soteria_symex.Tree_block.Make (SYMEX)
-module Concrete_map = Soteria_symex.Pmap.Concrete (SYMEX)
-module Bi = Soteria_symex.Bi_abd.Make (SYMEX)
+module Freeable = Soteria.Soteria_symex.Freeable.Make (SYMEX)
+module Pmap_direct_access = Soteria.Soteria_symex.Pmap.Direct_access (SYMEX)
+module Pmap = Soteria.Soteria_symex.Pmap.Make (SYMEX)
+module Tree_block = Soteria.Soteria_symex.Tree_block.Make (SYMEX)
+module Concrete_map = Soteria.Soteria_symex.Pmap.Concrete (SYMEX)
+module Bi = Soteria.Soteria_symex.Bi_abd.Make (SYMEX)

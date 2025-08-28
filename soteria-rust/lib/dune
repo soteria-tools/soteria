@@ -4,11 +4,7 @@
  (package soteria-rust)
  (name soteria_rust_lib)
  (libraries
-  soteria.std
-  soteria.symex
-  soteria.logs
-  soteria.c_values
-  soteria.terminal
+  soteria
   cmdliner
   fmt
   fmt.tty
@@ -20,7 +16,7 @@
   charon
   dune-site
   str)
- (flags :standard -open Soteria_std -open Soteria_c_values)
+ (flags :standard -open Soteria.Soteria_std -open Soteria.C_values)
  (preprocess
   (pps ppx_deriving.std ppx_subliner soteria.ppx))
  (instrumentation

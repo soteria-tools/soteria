@@ -1,6 +1,7 @@
 (library
- (name ppx_symex_expander)
- (public_name soteria.ppx.expander)
+ (name ppx_symex)
+ (public_name soteria.ppx)
+ (kind ppx_rewriter)
  (libraries ppxlib)
  (preprocess
   (pps ppxlib.metaquot)))

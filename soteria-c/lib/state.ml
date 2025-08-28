@@ -1,4 +1,4 @@
-module Call_trace = Soteria_terminal.Call_trace
+module Call_trace = Soteria.Terminal.Call_trace
 open Csymex.Syntax
 open Typed.Infix
 open Typed.Syntax
@@ -78,8 +78,8 @@ let log action ptr st =
 let with_heap st f =
   let+ res = f st.heap in
   match res with
-  | Soteria_symex.Compo_res.Ok (v, h) ->
-      Soteria_symex.Compo_res.Ok (v, { st with heap = h })
+  | Soteria.Soteria_symex.Compo_res.Ok (v, h) ->
+      Soteria.Soteria_symex.Compo_res.Ok (v, { st with heap = h })
   | Missing fixes ->
       let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
       Missing fixes
@@ -173,7 +173,7 @@ let alloc ?(zeroed = false) size st =
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
   let+ () = Typed.(assume [ not (loc ==@ Ptr.null_loc) ]) in
-  Soteria_symex.Compo_res.ok (ptr, st)
+  Soteria.Soteria_symex.Compo_res.ok (ptr, st)
 
 let alloc_ty ty st =
   let* size = Layout.size_of_s ty in
@@ -267,7 +267,7 @@ let consume (serialized : serialized) (st : t) :
   let** globs =
     let+ res = Globs.consume serialized.globs st.globs in
     match res with
-    | Ok globs -> Soteria_symex.Compo_res.Ok globs
+    | Ok globs -> Soteria.Soteria_symex.Compo_res.Ok globs
     | Error e -> Error e
     | Missing fixes ->
         let fixes = List.map (fun fix -> { heap = []; globs = fix }) fixes in
@@ -275,7 +275,7 @@ let consume (serialized : serialized) (st : t) :
   in
   let+ res = SPmap.consume Block.consume serialized.heap st.heap in
   match res with
-  | Ok heap -> Soteria_symex.Compo_res.Ok { heap; globs }
+  | Ok heap -> Soteria.Soteria_symex.Compo_res.Ok { heap; globs }
   | Error e -> Error e
   | Missing fixes ->
       let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in

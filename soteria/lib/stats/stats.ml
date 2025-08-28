@@ -1,3 +1,4 @@
+open Soteria_std
 module Hstring = Hashtbl.Hstring
 module Hsset = Hashset.Hstring
 

@@ -248,11 +248,12 @@ let miri =
 
 type root_plugin = {
   mk_cmd : input:string -> output:string -> unit -> Cmd.t;
-  get_entry_point : fun_decl -> Soteria_symex.Fuel_gauge.t entry_point option;
+  get_entry_point :
+    fun_decl -> Soteria.Soteria_symex.Fuel_gauge.t entry_point option;
 }
 
-let merge_ifs (plugins : (bool * Soteria_symex.Fuel_gauge.t option plugin) list)
-    =
+let merge_ifs
+    (plugins : (bool * Soteria.Soteria_symex.Fuel_gauge.t option plugin) list) =
   let plugins =
     List.filter_map
       (fun (enabled, plugin) -> if enabled then Some plugin else None)
@@ -273,8 +274,9 @@ let merge_ifs (plugins : (bool * Soteria_symex.Fuel_gauge.t option plugin) list)
     let rec aux acc rest =
       match (acc, rest) with
       | Some ep, _ ->
-          let fuel : Soteria_symex.Fuel_gauge.t =
-            let get_or name (none : Soteria_symex.Fuel_gauge.Fuel_value.t) =
+          let fuel : Soteria.Soteria_symex.Fuel_gauge.t =
+            let get_or name
+                (none : Soteria.Soteria_symex.Fuel_gauge.Fuel_value.t) =
               Charon_util.decl_get_attr decl name
               |> Option.fold ~none ~some:(fun x -> Finite (int_of_string x))
             in
