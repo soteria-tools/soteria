@@ -16,14 +16,6 @@ let take_count n l =
   let result = aux n l in
   (result, !taken)
 
-let%test "take_count" =
-  let l = [ 1; 2; 3; 4; 5 ] in
-  take_count 3 l = ([ 1; 2; 3 ], 3)
-  && take_count 0 l = ([], 0)
-  && take_count 5 l = (l, 5)
-  && take_count 6 l = (l, 5)
-  && take_count 10 l = (l, 5)
-
 let combine_opt l1 l2 =
   try Some (combine l1 l2) with Invalid_argument _ -> None
 
@@ -86,3 +78,16 @@ and[@tail_mod_cons] prepend_concat_map2 zs f xs ys =
   match zs with
   | [] -> concat_map2 f xs ys
   | z :: zs -> z :: prepend_concat_map2 zs f xs ys
+
+(* Tests *)
+
+let%test_module "List_tests" =
+  (module struct
+    let%test "take_count" =
+      let l = [ 1; 2; 3; 4; 5 ] in
+      take_count 3 l = ([ 1; 2; 3 ], 3)
+      && take_count 0 l = ([], 0)
+      && take_count 5 l = (l, 5)
+      && take_count 6 l = (l, 5)
+      && take_count 10 l = (l, 5)
+  end)
