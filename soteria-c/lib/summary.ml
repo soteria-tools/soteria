@@ -1,7 +1,7 @@
-open Soteria_terminal
+open Soteria.Terminal
 open Syntaxes.FunctionWrap
 module T = Typed.T
-module Var = Soteria_symex.Var
+module Var = Soteria.Soteria_symex.Var
 module Agv = Aggregate_val
 
 type after_exec = [ `After_exec ]
@@ -182,7 +182,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
   | Analysed _ -> summary
   | Pruned { raw = summary; memory_leaks } -> (
       let@ () =
-        Soteria_logs.Logs.with_section
+        Soteria.Logging.Logs.with_section
           ("Analysing a summary for " ^ Cerb_frontend.Symbol.show_symbol fid)
       in
       L.debug (fun m ->
@@ -201,7 +201,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           in
           Analysed { raw = summary; manifest_bugs = manifest_leak }
       | Error error ->
-          let module Subst = Soteria_symex.Substs.Subst in
+          let module Subst = Soteria.Soteria_symex.Substs.Subst in
           let module From_iter = Subst.From_iter (Csymex) in
           let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
           let iter_post = State.iter_vars_serialized summary.post in
@@ -240,7 +240,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
               let result = Csymex.run ~mode:OX process in
               (* The bug is manifest if the test passed in every branch. *)
               List.for_all fst result
-            with Soteria_symex.Symex.Gave_up _ -> false
+            with Soteria.Soteria_symex.Symex.Gave_up _ -> false
           in
           let manifest_bugs = if is_manifest then [ error ] else [] in
           Analysed { raw = summary; manifest_bugs })

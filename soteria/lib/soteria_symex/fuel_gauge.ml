@@ -1,3 +1,5 @@
+open Soteria_std
+
 type exhaust = Exhausted | Not_exhausted
 
 module Fuel_value = struct

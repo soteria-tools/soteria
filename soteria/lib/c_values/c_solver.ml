@@ -1,5 +1,6 @@
+open Soteria_std
 module Var = Svalue.Var
-module L = Soteria_logs.Logs.L
+module L = Logging.Logs.L
 
 module Make_incremental (Analysis : Analyses.S) (Intf : Solver_interface.S) =
 struct

@@ -66,8 +66,7 @@ module Make (Symex : Symex.S) = struct
       match res with
       | Ok st -> Result.ok (st, fixes)
       | Error _e ->
-          Soteria_logs.Logs.L.info (fun m ->
-              m "Bi_abd.consume: vanishing an error");
+          Logging.Logs.L.info (fun m -> m "Bi_abd.consume: vanishing an error");
           Symex.vanish ()
       | Missing fix_choices ->
           if fuel <= 0 then Symex.vanish ()

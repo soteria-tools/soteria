@@ -1,3 +1,5 @@
+open Soteria_std
+
 (** Variable names are integers under the hood *)
 type t
 

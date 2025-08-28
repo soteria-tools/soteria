@@ -1,4 +1,4 @@
-module Call_trace = Soteria_terminal.Call_trace
+module Call_trace = Soteria.Terminal.Call_trace
 module SState = State (* Clashes with Cerb_frontend.State *)
 open Cerb_frontend
 open Syntaxes.FunctionWrap
@@ -10,7 +10,7 @@ let dump_stats stats =
   | Some file -> Csymex.Stats.dump stats file
 
 let default_wpst_fuel =
-  Soteria_symex.Fuel_gauge.{ steps = Finite 150; branching = Finite 4 }
+  Soteria.Soteria_symex.Fuel_gauge.{ steps = Finite 150; branching = Finite 4 }
 
 let as_nonempty_list functions_to_analyse =
   match functions_to_analyse with [] -> None | _ -> Some functions_to_analyse
@@ -157,11 +157,11 @@ let parse_and_link_ail ~includes files =
   let open Syntaxes.Result in
   let parse_and_signal file =
     let res = parse_ail_raw_default ~includes file in
-    Soteria_terminal.Progress_bar.signal_progress 1;
+    Soteria.Terminal.Progress_bar.signal_progress 1;
     res
   in
   let@ () =
-    Soteria_terminal.Progress_bar.run ~color:`Yellow ~msg:"Parsing files"
+    Soteria.Terminal.Progress_bar.run ~color:`Yellow ~msg:"Parsing files"
       ~total:(List.length files) ()
   in
   match files with
@@ -228,7 +228,7 @@ let exec_function ~includes file_names function_name =
   let result =
     let* linked = parse_and_link_ail ~includes file_names in
     if (Config.current ()).parse_only then
-      Ok (Soteria_stats.with_empty_stats [])
+      Ok (Soteria.Stats.with_empty_stats [])
     else
       let* entry_point = resolve_function linked function_name in
       let symex =
@@ -240,7 +240,7 @@ let exec_function ~includes file_names function_name =
       let@ () = with_function_context linked in
       let fuel =
         if (Config.current ()).infinite_fuel then
-          Soteria_symex.Fuel_gauge.infinite
+          Soteria.Soteria_symex.Fuel_gauge.infinite
         else default_wpst_fuel
       in
       Ok (Csymex.Result.run_with_stats ~mode:OX ~fuel symex)
@@ -248,9 +248,10 @@ let exec_function ~includes file_names function_name =
   match result with
   | Ok v -> v
   | Error e ->
-      Soteria_stats.with_empty_stats
+      Soteria.Stats.with_empty_stats
         [
-          ( Soteria_symex.Compo_res.Error (Soteria_symex.Symex.Or_gave_up.E e),
+          ( Soteria.Soteria_symex.Compo_res.Error
+              (Soteria.Soteria_symex.Symex.Or_gave_up.E e),
             [] );
         ]
 
@@ -264,16 +265,16 @@ let generate_errors content =
     close_out oc
   in
   match parse_and_link_ail ~includes:[] [ file_name ] with
-  | Error e -> Soteria_stats.with_empty_stats [ e ]
+  | Error e -> Soteria.Stats.with_empty_stats [ e ]
   | Ok prog ->
       let@ () = with_function_context prog in
       Abductor.generate_all_summaries ~functions_to_analyse:None prog
-      |> Soteria_stats.map_with_stats (fun summaries ->
+      |> Soteria.Stats.map_with_stats (fun summaries ->
              let results =
                List.concat_map
                  (fun (fid, summaries) ->
                    let@ () =
-                     Soteria_logs.Logs.with_section
+                     Soteria.Logging.Logs.with_section
                        ("Anaysing summaries for function"
                        ^ Symbol.show_symbol fid)
                    in
@@ -286,8 +287,8 @@ let generate_errors content =
 
 (* Helper for all main entry points *)
 let initialise log_config term_config solver_config config f =
-  Soteria_logs.Config.check_set_and_lock log_config;
-  Soteria_terminal.Config.set_and_lock term_config;
+  Soteria.Logging.Config.check_set_and_lock log_config;
+  Soteria.Terminal.Config.set_and_lock term_config;
   Solver_config.set solver_config;
   Config.with_config ~config f
 
@@ -304,9 +305,10 @@ let exec_and_print log_config term_config solver_config config includes
        Executed %d statements"
       Fmt.Dump.(
         list @@ fun ft (r, _) ->
-        (Soteria_symex.Compo_res.pp
+        (Soteria.Soteria_symex.Compo_res.pp
            ~ok:(pair Aggregate_val.pp pp_state)
-           ~err:(Soteria_symex.Symex.Or_gave_up.pp pp_err_and_call_trace)
+           ~err:
+             (Soteria.Soteria_symex.Symex.Or_gave_up.pp pp_err_and_call_trace)
            ~miss:(Fmt.Dump.list SState.pp_serialized))
           ft r)
       result.res result.stats.steps_number
@@ -335,21 +337,21 @@ let analyse_summaries results =
   in
   let open Syntaxes.List in
   let@ () =
-    Soteria_terminal.Progress_bar.run ~color:`Magenta
+    Soteria.Terminal.Progress_bar.run ~color:`Magenta
       ~msg:"Analysing summaries " ~total ()
   in
   let+ fid, summaries = results in
   let results =
     let+ summary = summaries in
     let res = Summary.analyse ~fid summary in
-    Soteria_terminal.Progress_bar.signal_progress 1;
+    Soteria.Terminal.Progress_bar.signal_progress 1;
     res
   in
   (fid, results)
 
 let generate_summaries ~functions_to_analyse prog =
   let@ () = with_function_context prog in
-  let { Soteria_stats.res; stats } =
+  let { Soteria.Stats.res; stats } =
     Abductor.generate_all_summaries ~functions_to_analyse prog
   in
   dump_stats stats;
@@ -374,7 +376,7 @@ let generate_summaries ~functions_to_analyse prog =
     Fmt.pr "@\n@?"
   in
   if not !found_bugs then
-    Fmt.pr "%a@.@?" Soteria_terminal.Color.pp_ok "No bugs found"
+    Fmt.pr "%a@.@?" Soteria.Terminal.Color.pp_ok "No bugs found"
 
 (* Entry point function *)
 let lsp config () =
@@ -383,8 +385,8 @@ let lsp config () =
 (* Entry point function *)
 let show_ail logs_config term_config (includes : string list)
     (files : string list) =
-  Soteria_logs.Config.check_set_and_lock logs_config;
-  Soteria_terminal.Config.set_and_lock term_config;
+  Soteria.Logging.Config.check_set_and_lock logs_config;
+  Soteria.Terminal.Config.set_and_lock term_config;
   match parse_and_link_ail ~includes files with
   | Ok { symmap; sigma; entry_point } ->
       Fmt.pr "@[<v 2>Extern idmap:@ %a@]@\n@\n"
@@ -429,7 +431,7 @@ let generate_all_summaries log_config term_config solver_config config includes
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
   let@ () = initialise log_config term_config solver_config config in
   let prog =
-    let@ () = Soteria_logs.Logs.with_section "Parsing and Linking" in
+    let@ () = Soteria.Logging.Logs.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
     |> Result.get_or ~err:(fun e ->
            Fmt.epr "%a@\n@?" pp_err_and_call_trace e;
@@ -446,17 +448,17 @@ let capture_db log_config term_config solver_config config json_file
   let@ () = initialise log_config term_config solver_config config in
   let linked_prog =
     let@ () =
-      Soteria_logs.Logs.with_section "Parsing and Linking from database"
+      Soteria.Logging.Logs.with_section "Parsing and Linking from database"
     in
     let db = Compilation_database.from_file json_file in
     let parse_and_signal item =
       let res = parse_compilation_item item in
-      Soteria_terminal.Progress_bar.signal_progress 1;
+      Soteria.Terminal.Progress_bar.signal_progress 1;
       res
     in
     let db_size = List.length db in
     let@ () =
-      Soteria_terminal.Progress_bar.run ~color:`Yellow
+      Soteria.Terminal.Progress_bar.run ~color:`Yellow
         ~msg:"Parsing files       " ~total:db_size ()
     in
     let* ails =
@@ -497,7 +499,7 @@ let capture_db log_config term_config solver_config config json_file
                 "All files failed to parse, no analysis will be performed"
               else msg
             in
-            Fmt.pr "Error: %a@\n@?" Soteria_terminal.Color.pp_err msg;
+            Fmt.pr "Error: %a@\n@?" Soteria.Terminal.Color.pp_err msg;
             if (Config.current ()).no_ignore_parse_failures then
               failwith "Failed to link AIL"
             else Ail_tys.empty_linked_program)

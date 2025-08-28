@@ -4,11 +4,7 @@
  (package soteria-c)
  (name soteria_c_lib)
  (libraries
-  soteria.std
-  soteria.symex
-  soteria.logs
-  soteria.c_values
-  soteria.terminal
+  soteria
   cmdliner
   fmt
   iter
@@ -21,13 +17,12 @@
   linol-eio
   eio_main
   yojson
-  printbox-text
   tsort
   progress
   grace
   grace.ansi_renderer
   dune-site)
- (flags :standard -open Soteria_std -open Soteria_c_values)
+ (flags :standard -open Soteria.Soteria_std -open Soteria.C_values)
  (preprocess
   (pps ppx_deriving.std ppx_subliner soteria.ppx))
  (instrumentation

@@ -6,7 +6,7 @@ open Rustsymex
 module Sptr = Sptr.ArithPtr
 module Encoder = Encoder.Make (Sptr)
 
-type 'a err = 'a * Charon.Meta.span Soteria_terminal.Call_trace.t
+type 'a err = 'a * Charon.Meta.span Soteria.Terminal.Call_trace.t
 
 let add_to_call_trace (err, trace_elem) trace_elem' =
   (err, trace_elem' :: trace_elem)
@@ -14,7 +14,7 @@ let add_to_call_trace (err, trace_elem) trace_elem' =
 let with_error_loc_as_call_trace ?(msg = "Triggering memory operation") st f =
   let open Rustsymex.Syntax in
   let+- err, loc = f () in
-  ((err, Soteria_terminal.Call_trace.singleton ~loc ~msg ()), st)
+  ((err, Soteria.Terminal.Call_trace.singleton ~loc ~msg ()), st)
 
 module StateKey = struct
   include Typed
@@ -129,7 +129,7 @@ let log action ptr st =
         st)
 
 let with_state st f =
-  let open Soteria_symex.Compo_res in
+  let open Soteria.Soteria_symex.Compo_res in
   let+ res = f st.state in
   match res with
   | Ok (v, h) -> Ok (v, { st with state = h })
@@ -144,9 +144,9 @@ let with_tbs b f =
   in
   let+ res = f (block, tree_borrow) in
   match res with
-  | Soteria_symex.Compo_res.Ok (v, block) ->
+  | Soteria.Soteria_symex.Compo_res.Ok (v, block) ->
       let block = Option.map (fun b -> (b, tree_borrow)) block in
-      Soteria_symex.Compo_res.Ok (v, block)
+      Soteria.Soteria_symex.Compo_res.Ok (v, block)
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
@@ -341,7 +341,7 @@ let alloc ?zeroed size align st =
   in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (loc ==@ Ptr.null_loc)) ] in
-  Soteria_symex.Compo_res.ok (ptr, state)
+  Soteria.Soteria_symex.Compo_res.ok (ptr, state)
 
 let alloc_untyped ?zeroed ~size ~align st = alloc ?zeroed size align st
 
@@ -478,7 +478,7 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
 
 let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   let lift_freed_err () f =
-    let open Soteria_symex.Compo_res in
+    let open Soteria.Soteria_symex.Compo_res in
     let+ res = f () in
     match res with
     | Ok v -> Ok v
@@ -575,7 +575,7 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
   let ptr : Sptr.t =
     { ptr; tag = Tree_borrow.zero; align = Typed.cast 1s; size = 1s }
   in
-  Soteria_symex.Compo_res.Ok ((ptr, None), st)
+  Soteria.Soteria_symex.Compo_res.Ok ((ptr, None), st)
 
 let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in

@@ -1,5 +1,6 @@
+open Soteria_std
 open Simple_smt
-module L = Soteria_logs.Logs.L
+module L = Logging.Logs.L
 
 let initialize_solver : (Simple_smt.solver -> unit) ref = ref (fun _ -> ())
 

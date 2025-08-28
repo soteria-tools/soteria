@@ -1,4 +1,5 @@
-open Soteria_logs
+open Soteria_std
+open Logging
 open Syntaxes.FunctionWrap
 module L = Logs.L
 module List = ListLabels
@@ -20,7 +21,7 @@ module Meta = struct
     (** Management of meta-information about the execution. *)
 
     (** Used for various bookkeeping utilities. *)
-    module Range : Soteria_stats.CodeRange
+    module Range : Stats.CodeRange
   end
 
   module Dummy : S with type Range.t = unit = struct
@@ -37,8 +38,10 @@ end
 
 module type S = sig
   module Value : Value.S
-  module Stats : Soteria_stats.S
+  module Stats : Stats.S
 
+  (** Represents a yet-to-be-executed symbolic process which terminates with a
+      value of type ['a]. *)
   type 'a t
 
   (** Type of error that corresponds to a logical failure (i.e. a logical
@@ -128,7 +131,7 @@ module type S = sig
     ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
 
   (** Same as {!run}, but returns additional information about execution, see
-      {!Soteria_stats}. *)
+      {!Soteria.Stats}. *)
   val run_with_stats :
     ?fuel:Fuel_gauge.t ->
     mode:Approx.t ->
@@ -257,7 +260,7 @@ end
 
 module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value and module Stats.Range = Meta.Range = struct
-  module Stats = Soteria_stats.Make (Meta.Range)
+  module Stats = Stats.Make (Meta.Range)
 
   module Solver = struct
     include Solver.Mutable_to_in_place (Sol)

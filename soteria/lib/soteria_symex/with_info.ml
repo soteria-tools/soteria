@@ -1,3 +1,5 @@
+open Soteria_std
+
 module Make
     (Symex : Symex.S)
     (Info : sig

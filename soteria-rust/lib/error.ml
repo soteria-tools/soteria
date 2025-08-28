@@ -103,10 +103,10 @@ let pp ft : [< t ] -> unit = function
 
 let pp_err_and_call_trace ft (err, call_trace) =
   Fmt.pf ft "@[%a with trace@ %a@]" pp err
-    (Soteria_terminal.Call_trace.pp Charon.Meta.pp_span)
+    (Soteria.Terminal.Call_trace.pp Charon.Meta.pp_span)
     call_trace
 
-let severity : t -> Soteria_terminal.Diagnostic.severity = function
+let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `MemoryLeak -> Warning
   | e when is_unwindable e -> Error
   | _ -> Bug
@@ -129,13 +129,13 @@ module Diagnostic = struct
           else None
         in
         [
-          Soteria_terminal.Diagnostic.mk_range_file ?filename file
+          Soteria.Terminal.Diagnostic.mk_range_file ?filename file
             (to_loc span.beg_loc) (to_loc span.end_loc);
         ]
     | Virtual _ -> []
 
   let print_diagnostic ~fname ~call_trace ~error =
-    Soteria_terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
+    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
       ~error:(Fmt.to_to_string pp error)
       ~severity:(severity error) ~fname
 end

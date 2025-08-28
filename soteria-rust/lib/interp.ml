@@ -1,4 +1,4 @@
-open Soteria_symex.Compo_res
+open Soteria.Soteria_symex.Compo_res
 open Rustsymex
 open Rustsymex.Syntax
 open Typed.Infix
@@ -65,7 +65,7 @@ module InterpM (State : State_intf.S) = struct
     match res with
     | Ok triple -> Ok triple
     | Error (e, st) ->
-        let elem = Soteria_terminal.Call_trace.mk_element ~loc ~msg () in
+        let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
         Error (State.add_to_call_trace e elem, st)
     | Missing f -> Missing f
 
@@ -1117,6 +1117,6 @@ module Make (State : State_intf.S) = struct
         (value, state)
     in
     State.add_to_call_trace err
-      (Soteria_terminal.Call_trace.mk_element ~loc:fundef.item_meta.span
+      (Soteria.Terminal.Call_trace.mk_element ~loc:fundef.item_meta.span
          ~msg:"Entry point" ())
 end
