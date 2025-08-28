@@ -139,6 +139,15 @@ module BitVec : sig
 
   val wrap_times :
     size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val plus_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val minus_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val times_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
 end
 
 (** Floating point operations *)

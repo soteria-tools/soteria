@@ -124,16 +124,16 @@ module M (State : State_intf.S) = struct
     let* l = cast_checked ~ty:Typed.t_int l in
     let* r = cast_checked ~ty:Typed.t_int r in
     let* wrapped = wrapping_binop op lit_ty l r in
-    let base_op =
+    let overflows_fn =
       match op with
-      | AddChecked -> ( +@ )
-      | SubChecked -> ( -@ )
-      | MulChecked -> ( *@ )
+      | AddChecked -> Typed.BitVec.plus_overflows
+      | SubChecked -> Typed.BitVec.minus_overflows
+      | MulChecked -> Typed.BitVec.times_overflows
       | _ -> failwith "Invalid checked op"
     in
-    let constrs = Layout.constraints lit_ty in
-    let unwrapped_res = base_op l r in
-    let overflowed = int_of_bool (not (conj (constrs unwrapped_res))) in
+    let size = 8 * Layout.size_of_literal_ty lit_ty in
+    let signed = Layout.is_signed lit_ty in
+    let overflowed = Typed.int_of_bool @@ overflows_fn ~size ~signed l r in
     Result.ok (Tuple [ Base wrapped; Base overflowed ])
 
   let rec eval_ptr_binop (bop : Expressions.binop) l r :

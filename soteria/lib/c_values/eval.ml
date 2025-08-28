@@ -31,6 +31,8 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | BvDiv s -> BitVec.Raw.div s
   | BvRem s -> BitVec.Raw.rem s
   | BvMod s -> BitVec.Raw.mod_ s
+  | BvPlusOvf s -> BitVec.Raw.plus_overflows s
+  | BvTimesOvf s -> BitVec.Raw.times_overflows s
   | BvLt s -> BitVec.Raw.lt s
   | BvLeq s -> BitVec.Raw.leq s
   | BvConcat -> BitVec.Raw.concat
@@ -42,7 +44,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | BitAShr -> BitVec.Raw.ashr
 
 let eval_unop : Unop.t -> t -> t = function
-  | Unop.Not -> not
+  | Not -> not
   | FAbs -> Float.abs
   | GetPtrLoc -> Ptr.loc
   | GetPtrOfs -> Ptr.ofs
@@ -54,6 +56,7 @@ let eval_unop : Unop.t -> t -> t = function
   | BvExtract (from, to_) -> BitVec.Raw.extract from to_
   | BvExtend (signed, by) -> BitVec.Raw.extend signed by
   | BvNot -> BitVec.Raw.not
+  | BvNegOvf -> BitVec.Raw.neg_overflows
   | FIs fc -> Float.is_floatclass fc
   | FRound rm -> Float.round rm
 

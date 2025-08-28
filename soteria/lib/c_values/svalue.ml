@@ -89,6 +89,7 @@ module Unop = struct
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
+    | BvNegOvf
     | FIs of FloatClass.t
     | FRound of FloatRoundingMode.t
   [@@deriving eq, ord]
@@ -108,6 +109,7 @@ module Unop = struct
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
+    | BvNegOvf -> Fmt.string ft "-bv_ovf"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
     | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
 end
@@ -145,6 +147,8 @@ module Binop = struct
     | BvDiv of bool (* signed *)
     | BvRem of bool (* signed *)
     | BvMod of bool (* signed *)
+    | BvPlusOvf of bool (* signed *)
+    | BvTimesOvf of bool (* signed *)
     | BvLt of bool (* signed *)
     | BvLeq of bool (* signed *)
     | BvConcat
@@ -184,6 +188,8 @@ module Binop = struct
     | BvDiv s -> Fmt.pf ft "/%ab" pp_signed s
     | BvRem s -> Fmt.pf ft "rem%ab" pp_signed s
     | BvMod s -> Fmt.pf ft "mod%ab" pp_signed s
+    | BvPlusOvf s -> Fmt.pf ft "+%ab_ovf" pp_signed s
+    | BvTimesOvf s -> Fmt.pf ft "*%ab_ovf" pp_signed s
     | BvLt s -> Fmt.pf ft "<%ab" pp_signed s
     | BvLeq s -> Fmt.pf ft "<=%ab" pp_signed s
     | BvConcat -> Fmt.string ft "++"
@@ -439,12 +445,14 @@ let int_of_bool b =
   else Unop (IntOfBool, b) <| TInt
 
 let ite guard if_ else_ =
-  match guard.node.kind with
-  | Bool true -> if_
-  | Bool false -> else_
+  match (guard.node.kind, if_.node.kind, else_.node.kind) with
+  | Bool true, _, _ -> if_
+  | Bool false, _, _ -> else_
+  | _, Bool true, Bool false -> guard
+  | _, Bool false, Bool true -> not guard
+  | _, Int o, Int z when Z.equal o Z.one && Z.equal z Z.zero ->
+      int_of_bool guard
   | _ when equal if_ else_ -> if_
-  | _ when equal if_ v_true && equal else_ v_false -> guard
-  | _ when equal if_ v_false && equal else_ v_true -> not guard
   | _ -> Ite (guard, if_, else_) <| if_.node.ty
 
 (** {2 Integers} *)
@@ -558,6 +566,9 @@ let neg v =
     to be seamlessly used on [TInt], without worrying about the underlying
     representation.*)
 module BitVec = struct
+  let bool_or = or_
+  let bool_and = and_
+
   (** Raw operations for values of type [TBitVector]; be careful when using
       these, so as to provide properly typed values. Prefer using [BitVec]
       directly when possible, as it may also provide more reductions. *)
@@ -655,7 +666,6 @@ module BitVec = struct
     let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
     let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
     let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
-    let bool_and = and_
 
     let rec not v =
       match v.node.kind with
@@ -725,6 +735,19 @@ module BitVec = struct
           else
             let new_tail = extract 0 (nx - 1) tail in
             concat new_tail base
+      | ( Ite
+            ( b1,
+              { node = { kind = BitVec l1; _ }; _ },
+              { node = { kind = BitVec r1; _ }; _ } ),
+          Ite
+            ( b2,
+              { node = { kind = BitVec l2; _ }; _ },
+              { node = { kind = BitVec r2; _ }; _ } ) )
+        when Z.(equal l1 one)
+             && Z.(equal l2 one)
+             && Z.(equal r1 zero)
+             && Z.(equal r2 zero) ->
+          ite (bool_or b1 b2) (mk_like v1 Z.one) (mk_like v1 Z.zero)
       | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
 
     and xor v1 v2 =
@@ -900,6 +923,11 @@ module BitVec = struct
 
     let gt signed v1 v2 = lt signed v2 v1
     let geq signed v1 v2 = leq signed v2 v1
+    let plus_overflows signed v1 v2 = Binop (BvPlusOvf signed, v1, v2) <| TBool
+    let neg_overflows v = Unop (BvNegOvf, v) <| TBool
+
+    let times_overflows signed v1 v2 =
+      Binop (BvTimesOvf signed, v1, v2) <| TBool
   end
 
   (** [Some (signed, size)] if the given value contains somewhere some bitvector
@@ -1077,6 +1105,24 @@ module BitVec = struct
   let wrap_plus = wrap_binop Raw.plus
   let wrap_minus = wrap_binop Raw.minus
   let wrap_times = wrap_binop Raw.times
+
+  let plus_overflows ~size ~signed v1 v2 =
+    let v1 = of_int signed size v1 in
+    let v2 = of_int signed size v2 in
+    Raw.plus_overflows signed v1 v2
+
+  let minus_overflows ~size ~signed v1 v2 =
+    let v1 = of_int signed size v1 in
+    let v2 = of_int signed size v2 in
+    let neg_overflows = Raw.neg_overflows v2 in
+    let v2_neg = Raw.minus (Raw.mk size Z.zero) v2 in
+    let add_overflows = Raw.plus_overflows signed v1 v2_neg in
+    bool_or neg_overflows add_overflows
+
+  let times_overflows ~size ~signed v1 v2 =
+    let v1 = of_int signed size v1 in
+    let v2 = of_int signed size v2 in
+    Raw.times_overflows signed v1 v2
 
   (** Converts an integer [<] into a bitvector [<]. If the comparison is
       detected to be an overflow check, converts it to the appropriate overflow
@@ -1333,6 +1379,7 @@ let rec sem_eq v1 v2 =
         else if Z.(equal zero (rem y x)) then sem_eq v1 (int_z Z.(y / x))
         else v_false
     | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
+    | Unop (IntOfBool, b1), Unop (IntOfBool, b2) -> sem_eq b1 b2
     (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
     | Binop (BitAnd, _, _), _ | _, Binop (BitAnd, _, _) -> (
         let rec msb_of v =

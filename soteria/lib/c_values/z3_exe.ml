@@ -73,6 +73,7 @@ module Encoding = struct
     | BvExtend (true, by) -> bv_sign_extend by
     | BvExtend (false, by) -> bv_zero_extend by
     | BvNot -> bv_not
+    | BvNegOvf -> bv_nego
     | FIs fc -> fp_is fc
     | FRound rm -> fp_round rm
 
@@ -111,6 +112,10 @@ module Encoding = struct
     | BvRem false -> bv_urem
     | BvMod true -> bv_smod
     | BvMod false -> bv_urem
+    | BvPlusOvf true -> bv_saddo
+    | BvPlusOvf false -> bv_uaddo
+    | BvTimesOvf true -> bv_smulo
+    | BvTimesOvf false -> bv_umulo
     | BvLt true -> bv_slt
     | BvLt false -> bv_ult
     | BvLeq true -> bv_sleq
