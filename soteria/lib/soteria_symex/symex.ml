@@ -40,6 +40,8 @@ module type S = sig
   module Value : Value.S
   module Stats : Stats.S
 
+  (** Represents a yet-to-be-executed symbolic process which terminates with a
+      value of type ['a]. *)
   type 'a t
 
   (** Type of error that corresponds to a logical failure (i.e. a logical

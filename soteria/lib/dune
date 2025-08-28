@@ -29,6 +29,3 @@
  (preprocessor_deps
   (file "logging/assets/soteria_logs.js")
   (file "logging/assets/soteria_logs.css")))
-
-(documentation
- (package soteria))

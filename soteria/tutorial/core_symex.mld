@@ -3,7 +3,7 @@
 Welcome to the Soteria tutorial! This tutorial will guide you through the basics of writing a symbolic execution engine.
 
 Today you'll be learning how to:
-- {{!instantiate}Instantiate} the {{!Soteria_symex.Symex.Make}Symex} functor
+- {{!instantiate}Instantiate} the {{!Soteria.Soteria_symex.Symex.Make}Symex} functor
 - {!return}
 - {!nondet}
 - {!bind}
@@ -11,9 +11,9 @@ Today you'll be learning how to:
 
 {2:instantiate Instantiating the [Symex.Make] functor}
 
-The main utility of the Soteria library is the {{!Soteria_symex.Symex.Make} Symex.Make} functor, which provides the necessary infrastructure to define and run a symbolic execution engine.
-To instantiate it, you need to provide a {{!Soteria_symex.Solver.Mutable_incremental} Solver} module, which defines {e symbolic values} and the solver interface to decide whether a symbolic expression of type {{!Soteria_symex.Value.S.sbool}Value.sbool} is satisfiable.
-You also need to provide a {{!Soteria_symex.Symex.Meta.S}Meta} module which describes types useful for statistics bookkeeping (see {!Soteria_stats}), but can be set to {{!Soteria_symex.Symex.Meta.Dummy}Dummy} if they are not necessary.
+The main utility of the Soteria library is the {{!Soteria.Soteria_symex.Symex.Make} Symex.Make} functor, which provides the necessary infrastructure to define and run a symbolic execution engine.
+To instantiate it, you need to provide a {{!Soteria.Soteria_symex.Solver.Mutable_incremental} Solver} module, which defines {e symbolic values} and the solver interface to decide whether a symbolic expression of type {{!Soteria.Soteria_symex.Value.S.sbool}Value.sbool} is satisfiable.
+You also need to provide a {{!Soteria.Soteria_symex.Symex.Meta.S}Meta} module which describes types useful for statistics bookkeeping (see {!Soteria.Stats}), but can be set to {{!Soteria.Soteria_symex.Symex.Meta.Dummy}Dummy} if they are not necessary.
 
 {@ocaml[
 module Symex = Symex.Make (Symex.Meta.Dummy) (C_solver.Z3_solver)
@@ -22,7 +22,7 @@ module Symex = Symex.Make (Symex.Meta.Dummy) (C_solver.Z3_solver)
 
 {2:return Write your first symbolic process}
 
-Soteria is a library made for writing {e symbolic processes}. A symbolic process is a value of the type {{!Soteria_symex.Symex.S.t}Symex.t}, which is effectively a symbolic computation waiting to be executed. It is an execution that may depend on {e symbolic variables}, and therefore may branch into multiple paths depending on the values of these variables.
+Soteria is a library made for writing {e symbolic processes}. A symbolic process is a value of the type {{!Soteria.Soteria_symex.Symex.S.t}Symex.t}, which is effectively a symbolic computation waiting to be executed. It is an execution that may depend on {e symbolic variables}, and therefore may branch into multiple paths depending on the values of these variables.
 
 The simplest such process is the symbolic process just returns a single branch with a given value, say the integer [0].
 
@@ -32,7 +32,7 @@ The simplest such process is the symbolic process just returns a single branch w
 ]}
 
 This process has type [int Symex.t], that is, a symbolic process that returns a value of type [int]. Again, this is a symbolic process, so it is {e not yet executed}.
-Executing a symbolic process is done using the {{!Soteria_symex.Symex.S.run}run} function:
+Executing a symbolic process is done using the {{!Soteria.Soteria_symex.Symex.S.run}run} function:
 {@ocaml[
 # Symex.run
 - : ?fuel:Fuel_gauge.t ->
@@ -40,9 +40,9 @@ Executing a symbolic process is done using the {{!Soteria_symex.Symex.S.run}run}
 = <fun>
 ]}
 
-The function receives a symbolic process to execute, an {{!Soteria_symex.Approx.t}approximation mode}, and an optional {{!Soteria_symex.Fuel_gauge.t}fuel gauge} should the user desire to limit the breadth or depth of execution. It returns a list of branches, where each branch is a pair of the value returned by the symbolic process and the path condition that leads to this branch (in the form of a list of symbolic booleans).
+The function receives a symbolic process to execute, an {{!Soteria.Soteria_symex.Approx.t}approximation mode}, and an optional {{!Soteria.Soteria_symex.Fuel_gauge.t}fuel gauge} should the user desire to limit the breadth or depth of execution. It returns a list of branches, where each branch is a pair of the value returned by the symbolic process and the path condition that leads to this branch (in the form of a list of symbolic booleans).
 
-For instance, let's execute the symbolic process we just created, using the {{!Soteria_symex.Approx.OX}over-approximation} mode, and without providing any fuel limitation. Both fuel and approximation mode are irrelevant for the simple processes we will be writing in this tutorial, and become interesting when analyzing real-world programs.
+For instance, let's execute the symbolic process we just created, using the {{!Soteria.Soteria_symex.Approx.OX}over-approximation} mode, and without providing any fuel limitation. Both fuel and approximation mode are irrelevant for the simple processes we will be writing in this tutorial, and become interesting when analyzing real-world programs.
 
 {@ocaml[
 # Symex.return 0 |> Symex.run ~mode:OX;;
@@ -53,14 +53,14 @@ As expected the result of the symbolic process is a single branch with the value
 
 {2:nondet Introducing fresh symbolic values}
 
-A core necessity of symbolic execution is the ability to introduce fresh symbolic values. Soteria provides a convenient way to do this using the {{!Soteria_symex.Symex.S.nondet}nondet} function, which creates a fresh symbolic value of a given type. It is called {e nondet} because it "abstracts over" a nondeterministic choice of any value of that given type:
+A core necessity of symbolic execution is the ability to introduce fresh symbolic values. Soteria provides a convenient way to do this using the {{!Soteria.Soteria_symex.Symex.S.nondet}nondet} function, which creates a fresh symbolic value of a given type. It is called {e nondet} because it "abstracts over" a nondeterministic choice of any value of that given type:
 
 {@ocaml[
 # Symex.nondet;;
 - : 'a Typed.ty -> 'a Typed.t Symex.t = <fun>
 ]}
 
-{{!Soteria_symex.Symex.S.nondet}[nondet]} receives a type [ty] and returns a symbolic process that produces a fresh symbolic value of that type.
+{{!Soteria.Soteria_symex.Symex.S.nondet}[nondet]} receives a type [ty] and returns a symbolic process that produces a fresh symbolic value of that type.
 
 Let's run this process:
 
@@ -112,7 +112,7 @@ Running this symbolic process yields a single branch with no path condition:
 = [((V|1| + 2), [])]
 ]}
 
-We can now build more complex symbolic processes, and make use of other basic operations such as {{!Soteria_symex.Symex.S.assume}assume} and {{!Soteria_symex.Symex.S.assert_}assert_}.
+We can now build more complex symbolic processes, and make use of other basic operations such as {{!Soteria.Soteria_symex.Symex.S.assume}assume} and {{!Soteria.Soteria_symex.Symex.S.assert_}assert_}.
 
 For instance, we can create a symbolic process that introduces a nondeterministic integer, and then asserts that this integer is positive:
 
@@ -143,7 +143,7 @@ This time, the assertion is satisfied, and the symbolic process returns a single
 
 {2:branching Introduce branching in symbolic processes}
 
-A more interesting symbolic process is one that introduces conditional branching. For instance, the following process introduces a nondeterministic integer, and then branches on whether this integer is even or odd. Soteria provides convenient syntactic sugar (accessed when we opened {{!Soteria_symex.Symex.S.Syntax}Symex.Syntax}), which overrides the standard OCaml [if] statement to work with symbolic values:
+A more interesting symbolic process is one that introduces conditional branching. For instance, the following process introduces a nondeterministic integer, and then branches on whether this integer is even or odd. Soteria provides convenient syntactic sugar (accessed when we opened {{!Soteria.Soteria_symex.Symex.S.Syntax}Symex.Syntax}), which overrides the standard OCaml [if] statement to work with symbolic values:
 
 {@ocaml[
 # let process =
