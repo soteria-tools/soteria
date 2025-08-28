@@ -253,8 +253,10 @@ let declare_var solver name ty =
   ack_command solver sexp
 
 let add_constraint solver v =
-  let v = Encoding.encode_value v in
-  let sexp = Simple_smt.assume v in
+  let vs =
+    Iter.to_list @@ Iter.map Encoding.encode_value @@ Svalue.split_ands v
+  in
+  let sexp = Simple_smt.assume (Simple_smt.bool_ands vs) in
   ack_command solver sexp
 
 let check_sat solver : Soteria_symex.Solver.result =
