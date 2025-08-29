@@ -104,12 +104,12 @@ module type S = sig
     val add_branches : int -> unit
 
     (** Adds steps to the count of statistics. Handled by Soteria when users
-        call {!Soteria_symex.Symex.S.consume_fuel_steps} *)
+        call {!Symex.S.consume_fuel_steps} *)
     val add_steps : int -> unit
 
     (** Adds unexplored branches due to fuel exhaustion to the count of
         statistics. Handled by Soteria when users call
-        {!Soteria_symex.Symex.S.consume_fuel_steps} or when branching *)
+        {!Symex.S.consume_fuel_steps} or when branching *)
     val add_unexplored_branches : int -> unit
 
     (** Adds the number of times the SAT solver returned unknowns to the count
@@ -117,12 +117,12 @@ module type S = sig
     val add_sat_unknowns : int -> unit
 
     (** Push a reason for not being able to fix a Missing error. Handled by
-        Soteria when users call {!Soteria_symex.Symex.S.Result.miss_no_fix} *)
+        Soteria when users call {!Soteria.Symex.S.Result.miss_no_fix} *)
     val push_missing_without_fix : string -> unit
 
     (** Push a reason for giving up symex, with the location at which it was
-        reached. Handled by Soteria when users call
-        {!Soteria_symex.Symex.S.give_up} *)
+        reached. Handled by Soteria when users call {!Soteria.Symex.S.give_up}
+    *)
     val push_give_up_reason : loc:Range.t -> string -> unit
   end
 end

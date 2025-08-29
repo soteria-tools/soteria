@@ -1,4 +1,5 @@
 open Soteria_std
+open Symex
 
 module Make
     (Symex : Symex.S)

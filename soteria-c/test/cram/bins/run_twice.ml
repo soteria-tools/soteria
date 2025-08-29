@@ -3,7 +3,7 @@ open Syntax
 
 let process_one = assume [ Typed.v_false ]
 let process_two = assume [ Typed.v_true ]
-let fuel = Soteria.Soteria_symex.Fuel_gauge.infinite
+let fuel = Soteria.Symex.Fuel_gauge.infinite
 let count_outcomes process = run ~fuel ~mode:UX process |> List.length
 
 let () =

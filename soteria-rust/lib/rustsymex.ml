@@ -1,5 +1,5 @@
 module SYMEX =
-  Soteria.Soteria_symex.Symex.Make
+  Soteria.Symex.Make
     (struct
       module Range = struct
         type t = Charon.Meta.span
@@ -61,8 +61,8 @@ let cast_checked2 x y =
       Fmt.kstr not_impl "Values %a and %a have mismatched types" Typed.ppa x
         Typed.ppa y
 
-module Freeable = Soteria.Soteria_symex.Freeable.Make (SYMEX)
-module Pmap_direct_access = Soteria.Soteria_symex.Pmap.Direct_access (SYMEX)
-module Pmap = Soteria.Soteria_symex.Pmap.Make (SYMEX)
-module Tree_block = Soteria.Soteria_symex.Tree_block.Make (SYMEX)
-module Bi = Soteria.Soteria_symex.Bi_abd.Make (SYMEX)
+module Freeable = Soteria.Sym_states.Freeable.Make (SYMEX)
+module Pmap_direct_access = Soteria.Sym_states.Pmap.Direct_access (SYMEX)
+module Pmap = Soteria.Sym_states.Pmap.Make (SYMEX)
+module Tree_block = Soteria.Sym_states.Tree_block.Make (SYMEX)
+module Bi = Soteria.Sym_states.Bi_abd.Make (SYMEX)

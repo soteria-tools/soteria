@@ -4,7 +4,7 @@ open Soteria.Terminal
 module Config = Config_
 open Color
 module Wpst_interp = Interp.Make (State)
-module Compo_res = Soteria.Soteria_symex.Compo_res
+module Compo_res = Soteria.Symex.Compo_res
 open Syntaxes.FunctionWrap
 open Charon
 
@@ -36,7 +36,7 @@ module Outcome = struct
 end
 
 let default_fuel =
-  Soteria.Soteria_symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
+  Soteria.Symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 module Cleaner = struct
   let files = ref []

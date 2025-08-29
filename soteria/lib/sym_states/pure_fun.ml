@@ -4,6 +4,8 @@
     exists a value, and if we don't know it, we instantiate it on
     read/consumption. *)
 
+open Symex
+
 module type Codom = sig
   module Symex : Symex.S
 

@@ -1,5 +1,5 @@
 open Soteria_std
-open Soteria_symex
+open Symex
 open Svalue.Infix
 
 (* let log = Soteria_logs.Logs.L.warn *)

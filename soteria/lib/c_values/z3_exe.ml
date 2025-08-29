@@ -228,7 +228,7 @@ let init () =
   solver
 
 let declare_var solver name ty =
-  let name = Soteria_symex.Var.to_string name in
+  let name = Symex.Var.to_string name in
   let ty = Encoding.sort_of_ty ty in
   let sexp = declare name ty in
   ack_command solver sexp
@@ -238,7 +238,7 @@ let add_constraint solver v =
   let sexp = Simple_smt.assume v in
   ack_command solver sexp
 
-let check_sat solver : Soteria_symex.Solver_result.t =
+let check_sat solver : Symex.Solver_result.t =
   let smt_res =
     try check solver
     with Simple_smt.UnexpectedSolverResponse s ->

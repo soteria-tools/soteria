@@ -1,3 +1,5 @@
+open Symex
+
 module type KeyS = sig
   type t
 

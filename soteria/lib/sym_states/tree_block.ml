@@ -1,3 +1,4 @@
+open Symex
 open Soteria_std.Syntaxes.FunctionWrap
 
 (** A [Split_tree] is a simplified representation of a tree, that has no offset.
