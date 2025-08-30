@@ -7,7 +7,7 @@
   soteria.std
   soteria.symex
   soteria.logs
-  soteria.c_values
+  soteria.bv_values
   soteria.terminal
   cmdliner
   fmt
@@ -20,7 +20,7 @@
   charon
   dune-site
   str)
- (flags :standard -open Soteria_std -open Soteria_c_values)
+ (flags :standard -open Soteria_std -open Soteria_bv_values)
  (preprocess
   (pps ppx_deriving.std ppx_subliner soteria.ppx))
  (instrumentation

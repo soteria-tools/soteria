@@ -85,8 +85,7 @@ module Encoding = struct
     | BvDiv false -> bv_udiv
     | BvRem true -> bv_srem
     | BvRem false -> bv_urem
-    | BvMod true -> bv_smod
-    | BvMod false -> bv_urem
+    | BvMod -> bv_smod
     | BvPlusOvf true -> bv_saddo
     | BvPlusOvf false -> bv_uaddo
     | BvTimesOvf true -> bv_smulo
@@ -108,7 +107,7 @@ module Encoding = struct
         | F128 -> f128_k @@ Float.of_string f)
     | Bool b -> bool_k b
     | BitVec z ->
-        let n = Svalue.size_of_bv v.node.ty in
+        let n = Svalue.size_of v.node.ty in
         bv_k n z
     | Ptr _ -> failwith "Pointers are unsupported for SMT-lib"
     | Seq vs -> (

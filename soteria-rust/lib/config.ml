@@ -48,8 +48,7 @@ let term = cmdliner_term ()
 type global = {
   logs : (Soteria_logs.Config.t, string) result; [@term Soteria_logs.Cli.term]
   terminal : Soteria_terminal.Config.t; [@term Soteria_terminal.Cli.term]
-  solver : Soteria_c_values.Solver_config.t;
-      [@term Soteria_c_values.Solver_config.Cli.term]
+  solver : Solver_config.t; [@term Solver_config.Cli.term]
   rusteria : t; [@term term]
 }
 [@@deriving make, subliner]

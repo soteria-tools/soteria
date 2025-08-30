@@ -61,6 +61,11 @@ let cast_checked2 x y =
       Fmt.kstr not_impl "Values %a and %a have mismatched types" Typed.ppa x
         Typed.ppa y
 
+let cast_int x =
+  match Typed.cast_int x with
+  | Some x -> return x
+  | None -> not_impl "Expected an integer"
+
 module Freeable = Soteria_symex.Freeable.Make (SYMEX)
 module Pmap_direct_access = Soteria_symex.Pmap.Direct_access (SYMEX)
 module Pmap = Soteria_symex.Pmap.Make (SYMEX)

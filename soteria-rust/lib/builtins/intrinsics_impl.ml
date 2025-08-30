@@ -3,7 +3,6 @@ open Charon_util
 open Rustsymex
 open Rustsymex.Syntax
 open Typed.Infix
-open Typed.Syntax
 open Rust_val
 
 module M (State : State_intf.S) = struct
@@ -21,7 +20,8 @@ module M (State : State_intf.S) = struct
     match v with
     | Ptr ptr -> return ptr
     | Base v when null_ok ->
-        let+ v = cast_checked ~ty:Typed.t_int v in
+        let ptr_size = Crate.pointer_bits () in
+        let+ v = cast_checked ~ty:(Typed.t_int ptr_size) v in
         let ptr = Sptr.null_ptr_of v in
         (ptr, None)
     | _ -> not_impl "expected pointer"
@@ -72,18 +72,20 @@ module M (State : State_intf.S) = struct
     Result.ok (Base align, state)
 
   let ptr_add ~check ~t ~dst ~offset state : ret =
-    let* v = as_base ~ty:Typed.t_int offset in
+    let ptr_size = Crate.pointer_bits () in
+    let* v = as_base ~ty:(Typed.t_int ptr_size) offset in
     let** ptr, meta =
       match dst with
       | Ptr ptr -> Result.ok ptr
       | Base base when not check ->
-          let* base = cast_checked base ~ty:Typed.t_int in
+          let* base = cast_checked base ~ty:(Typed.t_int ptr_size) in
           let ptr = Sptr.null_ptr_of base in
           Result.ok (ptr, None)
       | Base _ -> State.error `UBPointerArithmetic state
       | _ -> not_impl "ptr_add: invalid arguments"
     in
-    if%sat v ==@ 0s then Result.ok (Ptr (ptr, meta), state)
+    if%sat v ==@ Typed.BitVec.zero ptr_size then
+      Result.ok (Ptr (ptr, meta), state)
     else
       let++ ptr' = Sptr.offset ~check ~ty:t ptr v |> State.lift_err state in
       (Ptr (ptr', meta), state)
@@ -104,8 +106,8 @@ module M (State : State_intf.S) = struct
     | _ -> Result.ok (Tuple [], state)
 
   let assume ~b state =
-    let* cond = as_base ~ty:Typed.t_int b in
-    if%sat Typed.bool_of_int cond then Result.ok (Tuple [], state)
+    let* cond = as_base ~ty:(Typed.t_int 8) b in
+    if%sat Typed.BitVec.to_bool cond then Result.ok (Tuple [], state)
     else State.error (`StdErr "core::intrinsics::assume with false") state
 
   let black_box ~t:_ ~dummy state = Result.ok (dummy, state)
@@ -113,28 +115,19 @@ module M (State : State_intf.S) = struct
 
   let bswap ~t ~x state =
     let lit = TypesUtils.ty_as_literal t in
-    let unsigned = Layout.lit_to_unsigned lit in
     let nbytes = Layout.size_of_literal_ty lit in
-    let** v =
-      State.lift_err state @@ Encoder.transmute ~from_ty:t ~to_ty:unsigned x
-    in
-    let* v = as_base ~ty:Typed.t_int v in
+    let* v = as_base ~ty:(Typed.t_int (nbytes * 8)) x in
     let bytes =
       List.init nbytes (fun i ->
-          v /@ Typed.nonzero_z Z.(pow (of_int 256) i) %@ Typed.nonzero 256)
+          Typed.BitVec.extract (i * 8) (((i + 1) * 8) - 1) v)
     in
-    let bytes = List.rev bytes in
-    let _, v' =
-      List.fold_left
-        (fun (i, acc) byte ->
-          (i + 1, acc +@ (byte *@ Typed.int_z Z.(pow (of_int 256) i))))
-        (0, 0s) bytes
+    let rec aux = function
+      | [] -> failwith "impossible: no bytes"
+      | [ last ] -> last
+      | hd :: tl -> Typed.BitVec.concat hd (aux tl)
     in
-    let v' = Base (v' :> Typed.T.cval Typed.t) in
-    let++ v' =
-      State.lift_err state @@ Encoder.transmute ~from_ty:unsigned ~to_ty:t v'
-    in
-    (v', state)
+    let v' = aux bytes in
+    Result.ok (Base (v' :> Typed.T.cval Typed.t), state)
 
   let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
       ~_catch_fn:catch_fn_ptr state =
@@ -150,12 +143,12 @@ module M (State : State_intf.S) = struct
     let** catch_fn, state = get_fn catch_fn_ptr state in
     let try_fn_ret = exec_fun try_fn ~args:[ data ] state in
     State.unwind_with try_fn_ret
-      ~f:(fun (_, state) -> Result.ok (Base 0s, state))
+      ~f:(fun (_, state) -> Result.ok (Base (Typed.BitVec.zero 32), state))
       ~fe:(fun (_, state) ->
-        let args = [ data; Ptr (Sptr.null_ptr, None) ] in
+        let args = [ data; Ptr (Sptr.null_ptr (), None) ] in
         let catch_fn_ret = exec_fun catch_fn ~args state in
         State.unwind_with catch_fn_ret
-          ~f:(fun (_, state) -> Result.ok (Base 1s, state))
+          ~f:(fun (_, state) -> Result.ok (Base (Typed.BitVec.one 32), state))
           ~fe:(fun (_, state) ->
             State.error (`StdErr "catch_unwind unwinded in catch") state))
 
@@ -187,33 +180,38 @@ module M (State : State_intf.S) = struct
   let cold_path state = Result.ok (Tuple [], state)
 
   let compare_bytes ~left ~right ~bytes state =
+    let ptr_size = Crate.pointer_bits () in
+    let zero = Typed.BitVec.zero ptr_size in
+    let one = Typed.BitVec.one ptr_size in
     let* l, _ = as_ptr left in
     let* r, _ = as_ptr right in
-    let* len = as_base ~ty:Typed.t_int bytes in
+    let* len = as_base ~ty:(Typed.t_int ptr_size) bytes in
     let byte = Types.TLiteral (TUInt U8) in
-    let rec aux ?(inc = 1s) l r len state =
-      if%sat len ==@ 0s then Result.ok (Base 0s, state)
+    let rec aux ?(inc = one) l r len state =
+      if%sat len ==@ zero then Result.ok (Base (Typed.BitVec.zero 32), state)
       else
         let** l = Sptr.offset l inc |> State.lift_err state in
         let** r = Sptr.offset r inc |> State.lift_err state in
         let** bl, state = State.load (l, None) byte state in
-        let* bl = as_base ~ty:Typed.t_int bl in
+        let* bl = as_base ~ty:(Typed.t_int 8) bl in
         let** br, state = State.load (r, None) byte state in
-        let* br = as_base ~ty:Typed.t_int br in
-        if%sat bl ==@ br then aux l r (len -@ 1s) state
+        let* br = as_base ~ty:(Typed.t_int 8) br in
+        if%sat bl ==@ br then aux l r (len -@ one) state
         else
-          if%sat bl <@ br then Result.ok (Base (-1s), state)
-          else Result.ok (Base 1s, state)
+          if%sat bl <@ br then Result.ok (Base (Typed.BitVec.mki 32 (-1)), state)
+          else Result.ok (Base (Typed.BitVec.one 32), state)
     in
-    aux ~inc:0s l r len state
+    aux ~inc:zero l r len state
 
   let copy_ nonoverlapping ~t ~src ~dst ~count state : ret =
+    let ptr_size = Crate.pointer_bits () in
+    let zero = Typed.BitVec.zero ptr_size in
     let* (src, _), (dst, _) = as_ptr src &&* as_ptr dst in
-    let* count = as_base ~ty:Typed.t_int count in
+    let* count = as_base ~ty:(Typed.t_int ptr_size) count in
     let** (), state = State.check_ptr_align src t state in
     let** (), state = State.check_ptr_align dst t state in
     let* ty_size = Layout.size_of_s t in
-    if%sat ty_size ==@ 0s then Result.ok (Tuple [], state)
+    if%sat ty_size ==@ zero then Result.ok (Tuple [], state)
     else
       let size = ty_size *@ count in
       let** () =
@@ -228,7 +226,8 @@ module M (State : State_intf.S) = struct
           let** dst_end = Sptr.offset dst size |> State.lift_err state in
           let* dist1 = Sptr.distance src dst_end in
           let* dist2 = Sptr.distance dst src_end in
-          if%sat Sptr.is_same_loc src dst &&@ (dist1 <@ 0s &&@ (dist2 <@ 0s))
+          if%sat
+            Sptr.is_same_loc src dst &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero))
           then State.error (`StdErr "copy_nonoverlapping overlapped") state
           else Result.ok ()
         else Result.ok ()
@@ -256,84 +255,69 @@ module M (State : State_intf.S) = struct
   let copysignf32 = copy_sign
   let copysignf16 = copy_sign
 
-  (** Converts the input value to its unsigned representation, and either calls
-      [concrete] or [symbolic] with it accordingly. *)
+  (** Applies either [concrete] or [symbolic] to a bitvector. *)
   let binary_int_operation ~concrete ~symbolic ~t ~x state : ret =
     let t = TypesUtils.ty_as_literal t in
     let bits = 8 * Layout.size_of_literal_ty t in
-    let* x = as_base ~ty:Typed.t_int x in
-    match Typed.kind x with
-    | Int x ->
-        (* convert to unsigned *)
-        let x =
-          if Layout.is_signed t then
-            let maxv = Z.shift_left Z.one bits in
-            if Z.(x < zero) then Z.(((x mod maxv) + maxv) mod maxv) else x
-          else x
-        in
-        Result.ok (Base (concrete bits x :> T.cval Typed.t), state)
-    | _ ->
-        (* convert to unsigned *)
-        let++ x : Typed.T.sint Typed.t =
-          if Layout.is_signed t then
-            let to_ty = Layout.lit_to_unsigned t in
-            let++ x =
-              State.lift_err state
-              @@ Encoder.transmute ~from_ty:(TLiteral t) ~to_ty (Base x)
-            in
-            as_base_of ~ty:Typed.t_int x
-          else Result.ok (Typed.cast x)
-        in
-        (Base (symbolic bits x :> T.cval Typed.t), state)
+    let* x = as_base ~ty:(Typed.t_int bits) x in
+    let res =
+      match Typed.kind x with
+      | BitVec x -> concrete bits x
+      | _ -> symbolic bits x
+    in
+    Result.ok (Base (res :> T.cval Typed.t), state)
 
   let ctpop =
-    let concrete _bits x = Typed.int @@ Z.popcount x in
+    let concrete _bits x = Typed.BitVec.mki 32 @@ Z.popcount x in
     let symbolic bits x =
-      let two = Typed.nonzero 2 in
       Iter.fold
         (fun acc off ->
-          let pow = Typed.nonzero_z (Z.shift_left Z.one off) in
-          acc +@ (x /@ pow %@ two))
-        0s
+          let bit = Typed.BitVec.extract off off x in
+          let bit32 = Typed.BitVec.extend ~signed:false 31 bit in
+          acc +@ bit32)
+        (Typed.BitVec.zero 0)
         Iter.(0 -- bits)
     in
     binary_int_operation ~concrete ~symbolic
 
   let cttz =
     let concrete bits x =
-      Typed.int @@ if Z.equal x Z.zero then bits else Z.trailing_zeros x
+      Typed.BitVec.mki 32
+      @@ if Z.equal x Z.zero then bits else Z.trailing_zeros x
     in
     let symbolic bits x =
-      (* ite(x == 0, bits,
-          ite(x / 1 % 2 == 1, 0,
-            ite(x / 2 % 2 == 1, 1,
-              ...ite(x / 2^(bits-2) % 2 == 1, bits-2, bits-1)))) *)
-      let two = Typed.nonzero 2 in
-      let res =
-        Iter.fold
-          (fun acc off ->
-            let off = bits - 2 - off in
-            let pow = Typed.nonzero_z (Z.shift_left Z.one off) in
-            Typed.ite (x /@ pow %@ two ==@ 1s) (Typed.int off) acc)
-          (Typed.int (bits - 1))
-          Iter.(0 -- (bits - 2))
-      in
-      Typed.ite (x ==@ 0s) (Typed.int bits) res
+      (* we construct the following, from inside out:
+        ite(x[0] == 1 ? 0 :
+           ite(x[1] == 1 ? 1 :
+             ...
+              ite(x[bits-1] == 1 ? bits-1 : bits))) *)
+      Iter.fold
+        (fun acc off ->
+          let off = bits - 1 - off in
+          let bit = Typed.BitVec.extract off off x in
+          Typed.ite (bit ==@ Typed.BitVec.one 1) (Typed.BitVec.mki 32 off) acc)
+        (Typed.BitVec.mki 32 bits)
+        Iter.(0 -- (bits - 1))
     in
     binary_int_operation ~concrete ~symbolic
 
   let cttz_nonzero ~t ~x state =
-    let* x_int = as_base ~ty:Typed.t_int x in
-    if%sat x_int ==@ 0s then
+    let tlit = TypesUtils.ty_as_literal t in
+    let bits = 8 * Layout.size_of_literal_ty tlit in
+    let* x_int = as_base ~ty:(Typed.t_int bits) x in
+    if%sat x_int ==@ Typed.BitVec.zero bits then
       State.error (`StdErr "core::intrinsics::cttz_nonzero on zero") state
     else cttz ~t ~x state
 
   let discriminant_value ~t ~v state =
+    (* FIXME: this won't work with niches! *)
     let* ptr = as_ptr v in
     let++ value, state = State.load ptr t state in
     match value with
     | Enum (discr, _) -> (Base discr, state)
-    | _ -> (Base 0s, state)
+    | _ ->
+        (* FIXME: this size is probably wrong *)
+        (Base (Typed.BitVec.zero 32), state)
 
   let exact_div ~t ~x ~y state =
     let lit = TypesUtils.ty_as_literal t in
@@ -343,7 +327,9 @@ module M (State : State_intf.S) = struct
     let** res = State.lift_err state @@ Core.eval_lit_binop (Div OUB) lit x y in
     if is_float ty then Result.ok (Base res, state)
     else
-      if%sat (not (y ==@ 0s)) &&@ (x %@ cast y ==@ 0s) then
+      let bits = 8 * Layout.size_of_literal_ty lit in
+      let zero = Typed.BitVec.zero bits in
+      if%sat (not (y ==@ zero)) &&@ (x %@ cast y ==@ zero) then
         Result.ok (Base res, state)
       else
         State.error (`StdErr "core::intrinsics::exact_div on non divisible")
@@ -390,7 +376,6 @@ module M (State : State_intf.S) = struct
       State.error (`StdErr "float_to_int_unchecked with NaN or infinite value")
         state
     else
-      let n = 8 * Layout.size_of_literal_ty ity in
       let max = Z.succ @@ Layout.max_value_z ity in
       let min = Z.pred @@ Layout.min_value_z ity in
       let max = Typed.Float.like f @@ Z.to_float max in
@@ -398,8 +383,7 @@ module M (State : State_intf.S) = struct
       (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
              issues in cases of float precision loss (I think?) *)
       if%sat min <.@ f &&@ (f <.@ max) then
-        let v = Typed.Float.to_int n f in
-        Result.ok (Base v, state)
+        Result.ok (Base (Typed.BitVec.of_float f), state)
       else State.error (`StdErr "float_to_int_unchecked out of int range") state
 
   let fmul_add ~a ~b ~c state =
@@ -421,7 +405,7 @@ module M (State : State_intf.S) = struct
   let is_val_statically_known ~t:_ ~_arg:_ state =
     (* see: https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
     let* b = Rustsymex.nondet Typed.t_bool in
-    Result.ok (Base (Typed.int_of_bool b), state)
+    Result.ok (Base (Typed.BitVec.of_bool 8 b), state)
 
   let likely ~b state = Result.ok (b, state)
   let unlikely ~b state = Result.ok (b, state)
@@ -455,23 +439,26 @@ module M (State : State_intf.S) = struct
     let* (ptr, _), (base, _) =
       as_ptr ~null_ok:true ptr &&* as_ptr ~null_ok:true base
     in
+    let ptr_size = Crate.pointer_bits () in
+    let zero = Typed.BitVec.zero ptr_size in
     let* size = Layout.size_of_s t in
-    if%sat size ==@ 0s then
+    if%sat size ==@ zero then
       State.error (`Panic (Some "ptr_offset_from with ZST")) state
     else
       let size = Typed.cast size in
       let* off = Sptr.distance ptr base in
       (* If the pointers are not equal, they mustn't be dangling *)
-      if%sat off ==@ 0s ||@ (Sptr.constraints ptr &&@ Sptr.constraints base)
+      if%sat off ==@ zero ||@ (Sptr.constraints ptr &&@ Sptr.constraints base)
       then
         (* UB conditions:
            1. must be at the same address, OR derived from the same allocation
            2. the distance must be a multiple of sizeof(T) *)
-        if%sat off ==@ 0s ||@ Sptr.is_same_loc ptr base &&@ (off %@ size ==@ 0s)
+        if%sat
+          off ==@ zero ||@ Sptr.is_same_loc ptr base &&@ (off %$@ size ==@ zero)
         then
-          if not unsigned then Result.ok (Base (off /@ size), state)
+          if not unsigned then Result.ok (Base (off /$@ size), state)
           else
-            if%sat off >=@ 0s then Result.ok (Base (off /@ size), state)
+            if%sat off >=$@ zero then Result.ok (Base (off /$@ size), state)
             else
               State.error
                 (`StdErr
@@ -503,16 +490,33 @@ module M (State : State_intf.S) = struct
       | _ :: _ -> failwith "Unexpected read array"
     in
     let++ res = aux byte_pairs in
-    (Base (Typed.int_of_bool res), state)
+    (Base (Typed.BitVec.of_bool 8 res), state)
 
-  let saturating op ~t ~a ~b state : ret =
-    let litty = TypesUtils.ty_as_literal t in
+  let saturating (op : Expressions.binop) ~t ~a ~b state : ret =
+    let t = TypesUtils.ty_as_literal t in
+    let size = 8 * Layout.size_of_literal_ty t in
+    let signed = Layout.is_signed t in
     let* a, b = as_base a &&* as_base b in
-    let max = Layout.max_value litty in
-    let min = Layout.min_value litty in
-    let** res = State.lift_err state @@ Core.safe_binop op litty a b in
-    let* res = cast_checked ~ty:Typed.t_int res in
-    let res = Typed.ite (res >@ max) max (Typed.ite (res <@ min) min res) in
+    let max = Typed.BitVec.mk size @@ Layout.max_value_z t in
+    let min = Typed.BitVec.mk size @@ Layout.min_value_z t in
+    let res =
+      match op with
+      | Add _ ->
+          let ovf = Typed.BitVec.plus_overflows ~signed a b in
+          let if_ovf =
+            if not signed then max
+            else Typed.ite (Typed.BitVec.zero size <$@ a) max min
+          in
+          Typed.ite ovf if_ovf (a +@ b)
+      | Sub _ ->
+          let ovf = Typed.BitVec.minus_overflows ~signed a b in
+          let if_ovf =
+            if not signed then min
+            else Typed.ite (Typed.BitVec.zero size <$@ a) max min
+          in
+          Typed.ite ovf if_ovf (a -@ b)
+      | _ -> failwith "Unreachable: not add or sub?"
+    in
     Result.ok (Base (res :> Typed.T.cval Typed.t), state)
 
   let saturating_add = saturating (Add OUB)
@@ -523,17 +527,16 @@ module M (State : State_intf.S) = struct
     Result.ok (Base size, state)
 
   let size_of_val ~t ~ptr state =
+    let ptr_size = Crate.pointer_bits () in
     match (t, ptr) with
-    | ( Types.TAdt { id = TBuiltin TSlice; generics = { types = [ sub_ty ]; _ } },
+    | ( Types.TAdt { id = TBuiltin ((TSlice | TStr) as id); generics },
         Ptr (_, Some meta) ) ->
-        let* len = cast_checked meta ~ty:Typed.t_int in
+        let sub_ty =
+          if id = TSlice then List.hd generics.types else TLiteral (TUInt U8)
+        in
+        let* len = cast_checked meta ~ty:(Typed.t_int ptr_size) in
         let* size = Layout.size_of_s sub_ty in
         let size = size *@ len in
-        Result.ok (Base size, state)
-    | TAdt { id = TBuiltin TStr; _ }, Ptr (_, Some meta) ->
-        let* len = cast_checked meta ~ty:Typed.t_int in
-        let size = Layout.size_of_uint_ty U8 in
-        let size = Typed.int size *@ len in
         Result.ok (Base size, state)
     | _ ->
         let* size = Layout.size_of_s t in
@@ -550,7 +553,7 @@ module M (State : State_intf.S) = struct
   let type_id ~t state =
     (* lazy but works *)
     let hash = Hashtbl.hash t in
-    Result.ok (Base (Typed.int hash), state)
+    Result.ok (Base (Typed.BitVec.mki 128 hash), state)
 
   let type_name ~t state =
     let str = Fmt.to_to_string pp_ty t in
@@ -561,15 +564,18 @@ module M (State : State_intf.S) = struct
         let len = String.length str in
         let chars =
           String.to_bytes str
-          |> Bytes.fold_left (fun l c -> Base (Typed.int (Char.code c)) :: l) []
+          |> Bytes.fold_left
+               (fun l c -> Base (Typed.BitVec.mki 8 (Char.code c)) :: l)
+               []
           |> List.rev
         in
         let char_arr = Array chars in
         let str_ty : Types.ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in
+        let ptr_size = Crate.pointer_bits () in
         let** (ptr, _), state = State.alloc_ty str_ty state in
-        let ptr = (ptr, Some (Typed.int len)) in
+        let ptr = (ptr, Some (Typed.BitVec.mki ptr_size len)) in
         let** (), state = State.store ptr str_ty char_arr state in
         let++ (), state = State.store_str_global str ptr state in
         (Ptr ptr, state)
@@ -592,8 +598,11 @@ module M (State : State_intf.S) = struct
         let** to_ptr_end = Sptr.offset to_ptr size |> State.lift_err state in
         let* dist1 = Sptr.distance from_ptr to_ptr_end in
         let* dist2 = Sptr.distance to_ptr from_ptr_end in
+        let ptr_size = Crate.pointer_bits () in
+        let zero = Typed.BitVec.zero ptr_size in
         if%sat
-          Sptr.is_same_loc from_ptr to_ptr &&@ (dist1 <@ 0s &&@ (dist2 <@ 0s))
+          Sptr.is_same_loc from_ptr to_ptr
+          &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero))
         then State.error (`StdErr "typed_swap_nonoverlapping overlapped") state
         else Result.ok ()
     in
@@ -620,8 +629,10 @@ module M (State : State_intf.S) = struct
   let variant_count ~t state =
     match t with
     | Types.TAdt { id = TAdtId id; _ } when Crate.is_enum id ->
+        let ptr_size = Crate.pointer_bits () in
         let variants = Crate.as_enum id in
-        Result.ok (Base (Typed.int (List.length variants)), state)
+        let res = Typed.BitVec.mki ptr_size (List.length variants) in
+        Result.ok (Base res, state)
     | _ ->
         State.error
           (`StdErr "core::intrinsics::variant_count used with non-enum") state
@@ -639,26 +650,28 @@ module M (State : State_intf.S) = struct
   let write_bytes ~t ~dst ~val_ ~count state =
     let* ((ptr, _) as dst) = as_ptr dst in
     let* v, count = as_base val_ &&* as_base count in
-    let* count = cast_checked count ~ty:Typed.t_int in
+    let ptr_size = Crate.pointer_bits () in
+    let zero = Typed.BitVec.zero ptr_size in
+    let* count = cast_checked count ~ty:(Typed.t_int ptr_size) in
     let** (), state = State.check_ptr_align ptr t state in
     let* size = Layout.size_of_s t in
     let size = size *@ count in
-    if%sat size ==@ 0s then Result.ok (Tuple [], state)
+    if%sat size ==@ zero then Result.ok (Tuple [], state)
     else
       (* if v == 0, then we can replace this mess by initialising a Zeros subtree *)
-      if%sat v ==@ 0s then
+      if%sat v ==@ zero then
         let++ (), state = State.zeros dst size state in
         (Tuple [], state)
       else
         match Typed.kind size with
-        | Int bytes ->
-            let list = List.init (Z.to_int bytes) Fun.id in
+        | BitVec bytes ->
             let++ (), state =
-              Result.fold_list list ~init:((), state) ~f:(fun ((), state) i ->
-                  let** ptr =
-                    Sptr.offset ptr @@ Typed.int i |> State.lift_err state
-                  in
+              Result.fold_iter ~init:((), state)
+                ~f:(fun ((), state) i ->
+                  let off = Typed.BitVec.mki ptr_size i in
+                  let** ptr = Sptr.offset ptr off |> State.lift_err state in
                   State.store (ptr, None) (TLiteral (TUInt U8)) (Base v) state)
+                Iter.(0 -- (Z.to_int bytes - 1))
             in
             (Tuple [], state)
         | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"

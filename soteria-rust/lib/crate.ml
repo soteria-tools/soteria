@@ -15,6 +15,7 @@ let pointer_size () =
   let crate = get_crate () in
   crate.target_information.target_pointer_size
 
+let pointer_bits () = pointer_size () * 8
 let as_namematcher_ctx () = NameMatcher.ctx_from_crate (get_crate ())
 
 let as_fmt_env () =

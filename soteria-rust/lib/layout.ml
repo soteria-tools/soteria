@@ -1,6 +1,5 @@
 open Charon
 open Typed.Infix
-open Typed.Syntax
 open Rustsymex
 open Rust_val
 open Charon_util
@@ -111,14 +110,13 @@ let max_array_len sub_size =
   if sub_size = 0 then Z.of_int isize_bits
   else Z.((one lsl isize_bits) / of_int sub_size)
 
-let enum_discr_ty adt_id : Types.ty =
+let enum_discr_ty adt_id : Types.literal_type =
   let adt = Crate.get_adt adt_id in
   match adt.layout with
-  | Some { discriminant_layout = Some { tag_ty = Signed ty; _ }; _ } ->
-      TLiteral (TInt ty)
+  | Some { discriminant_layout = Some { tag_ty = Signed ty; _ }; _ } -> TInt ty
   | Some { discriminant_layout = Some { tag_ty = Unsigned ty; _ }; _ } ->
-      TLiteral (TUInt ty)
-  | None | Some { discriminant_layout = None; _ } -> TLiteral (TUInt Usize)
+      TUInt ty
+  | None | Some { discriminant_layout = None; _ } -> TUInt Usize
 
 let rec layout_of (ty : Types.ty) : layout =
   Session.get_or_compute_cached_layout_ty ty @@ fun () ->
@@ -243,7 +241,7 @@ and of_variant adt_id (variant : Types.variant) =
     let fields = Array.make (List.length variant.fields + 1) 0 in
     { size = 0; align; fields = Arbitrary fields }
   else
-    let discr_ty = enum_discr_ty adt_id in
+    let discr_ty = Types.TLiteral (enum_discr_ty adt_id) in
     let members = discr_ty :: field_tys variant.fields in
     layout_of_members members
 
@@ -292,12 +290,12 @@ let layout_of_s ty =
 let size_of_s ty =
   let open Rustsymex.Syntax in
   let+ { size; _ } = layout_of_s ty in
-  Typed.int size
+  Typed.BitVec.mki (Crate.pointer_bits ()) size
 
 let align_of_s ty =
   let open Rustsymex.Syntax in
   let+ { align; _ } = layout_of_s ty in
-  Typed.nonzero align
+  Typed.BitVec.mki_nz (Crate.pointer_bits ()) align
 
 (** Assumes the input is a literal type of either TInt or TUInt *)
 let[@inline] is_signed : Types.literal_type -> bool = function
@@ -314,8 +312,6 @@ let min_value_z : Types.literal_type -> Z.t = function
   | TInt I8 -> Z.neg (Z.shift_left Z.one 7)
   | _ -> failwith "Invalid integer type for min_value_z"
 
-let min_value int_ty = Typed.int_z (min_value_z int_ty)
-
 let max_value_z : Types.literal_type -> Z.t = function
   | TUInt U128 -> Z.pred (Z.shift_left Z.one 128)
   | TUInt U64 -> Z.pred (Z.shift_left Z.one 64)
@@ -331,8 +327,6 @@ let max_value_z : Types.literal_type -> Z.t = function
   | TInt Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
   | _ -> failwith "Invalid integer type for max_value_z"
 
-let max_value int_ty = Typed.nonzero_z (max_value_z int_ty)
-
 let size_to_uint : int -> Types.ty = function
   | 1 -> TLiteral (TUInt U8)
   | 2 -> TLiteral (TUInt U16)
@@ -343,38 +337,41 @@ let size_to_uint : int -> Types.ty = function
 
 let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
 
-let int_constraints ty =
+(* when using BitVector values, there are no constraints as they're encoded in the BV size
+  let int_constraints ty =
   let min = min_value ty in
   let max = max_value ty in
-  fun x -> [ min <=@ x; x <=@ max ]
+  fun x -> [ min <=@ x; x <=@ max ] *)
 
 let constraints :
     Types.literal_type -> [< T.cval ] Typed.t -> T.sbool Typed.t list = function
   | (TInt _ | TUInt _) as ity -> (
-      let constrs = int_constraints ity in
+      let bits = size_of_literal_ty ity * 8 in
       fun x ->
-        match Typed.cast_checked x Typed.t_int with
+        match Typed.cast_checked x (Typed.t_int bits) with
         | None -> [ Typed.v_false ]
-        | Some x -> constrs x)
+        | Some _ -> [])
   | TBool -> (
+      let bits = size_of_literal_ty TBool * 8 in
       fun x ->
-        match Typed.cast_checked x Typed.t_int with
+        match Typed.cast_checked x (Typed.t_int bits) with
         | None -> [ Typed.v_false ]
         (* Maybe worth checking which of these is better (if it matters at all)
           | Some x -> [ x ==@ 0s ||@ (x ==@ 1s) ]) *)
-        | Some x -> [ 0s <=@ x; x <=@ 1s ])
+        | Some x -> [ Typed.BitVec.mki 8 0 <=@ x; x <=@ Typed.BitVec.mki 8 1 ])
   | TChar -> (
       (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’ other than
        a surrogate code point. This has a fixed numerical definition: code points are in
        the range 0 to 0x10FFFF, inclusive. Surrogate code points, used by UTF-16, are in
        the range 0xD800 to 0xDFFF.
        https://doc.rust-lang.org/std/primitive.char.html *)
-      let codepoint_min = Typed.zero in
-      let codepoint_max = Typed.int 0x10FFFF in
-      let surrogate_min = Typed.int 0xD800 in
-      let surrogate_max = Typed.int 0xDFFF in
+      let char_size = size_of_literal_ty TChar * 8 in
+      let codepoint_min = Typed.BitVec.mki char_size 0 in
+      let codepoint_max = Typed.BitVec.mki char_size 0x10FFFF in
+      let surrogate_min = Typed.BitVec.mki char_size 0xD800 in
+      let surrogate_max = Typed.BitVec.mki char_size 0xDFFF in
       fun x ->
-        match Typed.cast_checked x Typed.t_int with
+        match Typed.cast_checked x (Typed.t_int char_size) with
         | None -> [ Typed.v_false ]
         | Some x ->
             [
@@ -388,7 +385,7 @@ let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
   let open Rustsymex.Syntax in
   let rty =
     match ty with
-    | TInt _ | TUInt _ | TBool | TChar -> Typed.t_int
+    | TInt _ | TUInt _ | TBool | TChar -> Typed.t_int (size_of_literal_ty ty * 8)
     | TFloat F16 -> Typed.t_f16
     | TFloat F32 -> Typed.t_f32
     | TFloat F64 -> Typed.t_f64
@@ -425,7 +422,7 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
-          let disc_ty = TypesUtils.ty_as_literal @@ enum_discr_ty t_id in
+          let disc_ty = enum_discr_ty t_id in
           let* disc_val = nondet_literal_ty disc_ty in
           let* res =
             match_on variants ~constr:(fun (v : Types.variant) ->
@@ -452,7 +449,8 @@ and nondets tys =
       f :: fields)
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
-  | TInt _ | TUInt _ | TBool | TChar -> 0s
+  | (TInt _ | TUInt _ | TBool | TChar) as ty ->
+      Typed.BitVec.mki (size_of_literal_ty ty * 8) 0
   | TFloat F16 -> Typed.Float.f16 0.0
   | TFloat F32 -> Typed.Float.f32 0.0
   | TFloat F64 -> Typed.Float.f64 0.0
@@ -548,7 +546,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
           as_zsts @@ Charon_util.field_tys fs
           |> Option.map (fun fs -> Struct fs)
       | Union _ -> None
-      | Enum [] -> Some (Enum (0s, []))
+      | Enum [] -> None (* an empty enum is uninhabited *)
       | Enum [ { fields; discriminant; _ } ] ->
           as_zsts @@ Charon_util.field_tys fields
           |> Option.map (fun fs -> Enum (value_of_scalar discriminant, fs))
@@ -566,16 +564,18 @@ let apply_attribute v attr =
   | ( Base v,
       Meta.AttrUnknown
         { path = "rustc_layout_scalar_valid_range_start"; args = Some min } ) ->
-      let min = int_of_string min in
-      let* v = cast_checked ~ty:Typed.t_int v in
-      if%sat v >=@ Typed.int min then Result.ok ()
+      let min = Z.of_string min in
+      let* v = cast_int v in
+      let bits = Typed.size_of_int v in
+      if%sat v >=@ Typed.BitVec.mk bits min then Result.ok ()
       else Result.error (`StdErr "rustc_layout_scalar_valid_range_start")
   | ( Base v,
       AttrUnknown
         { path = "rustc_layout_scalar_valid_range_end"; args = Some max_s } ) ->
       let max = Z.of_string max_s in
-      let* v = cast_checked ~ty:Typed.t_int v in
-      if%sat v <=@ Typed.int_z max then Result.ok ()
+      let* v = cast_int v in
+      let bits = Typed.size_of_int v in
+      if%sat v <=@ Typed.BitVec.mk bits max then Result.ok ()
       else Result.error (`StdErr "rustc_layout_scalar_valid_range_end")
   | _ -> Result.ok ()
 
@@ -624,7 +624,11 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
       List.concat_map2 f vs types
   | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
       match Typed.kind d with
-      | Int d -> (
+      | BitVec d -> (
+          let discr_ty = enum_discr_ty adt_id in
+          let signed = is_signed discr_ty in
+          let size = size_of_literal_ty discr_ty * 8 in
+          let d = Typed.BitVec.bv_to_z signed size d in
           let variants = Crate.as_enum adt_id in
           let v =
             List.find_opt

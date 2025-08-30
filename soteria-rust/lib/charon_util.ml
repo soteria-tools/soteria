@@ -4,8 +4,14 @@ open Typed
 let z_of_scalar : Values.scalar_value -> Z.t = function
   | UnsignedScalar (_, v) | SignedScalar (_, v) -> v
 
-let value_of_scalar (s : Values.scalar_value) : T.cval Typed.t =
-  int_z @@ z_of_scalar s
+let value_of_scalar : Values.scalar_value -> T.cval Typed.t = function
+  | UnsignedScalar (Usize, v) | SignedScalar (Isize, v) ->
+      BitVec.mk_masked (Crate.pointer_bits ()) v
+  | UnsignedScalar (U8, v) | SignedScalar (I8, v) -> BitVec.mk_masked 8 v
+  | UnsignedScalar (U16, v) | SignedScalar (I16, v) -> BitVec.mk_masked 16 v
+  | UnsignedScalar (U32, v) | SignedScalar (I32, v) -> BitVec.mk_masked 32 v
+  | UnsignedScalar (U64, v) | SignedScalar (I64, v) -> BitVec.mk_masked 64 v
+  | UnsignedScalar (U128, v) | SignedScalar (I128, v) -> BitVec.mk_masked 128 v
 
 let type_of_operand : Expressions.operand -> Types.ty = function
   | Constant c -> c.ty

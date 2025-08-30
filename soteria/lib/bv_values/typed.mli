@@ -65,7 +65,9 @@ val cast : 'a t -> 'b t
 val cast_checked : 'a t -> 'b ty -> 'b t option
 val cast_checked2 : 'a t -> 'b t -> ('c t * 'c t * 'c ty) option
 val cast_float : 'a t -> [> sfloat ] t option
+val cast_int : 'a t -> [> sint ] t option
 val is_float : 'a ty -> bool
+val size_of_int : [< sint ] t -> int
 val untyped : 'a t -> Svalue.t
 val untyped_list : 'a t list -> Svalue.t list
 val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
@@ -95,8 +97,14 @@ val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
 module BitVec : sig
   (* constructor *)
   val mk : int -> Z.t -> [> sint ] t
+  val mk_masked : int -> Z.t -> [> sint ] t
+  val mki : int -> int -> [> sint ] t
+  val mki_masked : int -> int -> [> sint ] t
+  val mk_nz : int -> Z.t -> [> nonzero ] t
+  val mki_nz : int -> int -> [> nonzero ] t
   val zero : int -> [> sint ] t
-  val one : int -> [> sint ] t
+  val one : int -> [> nonzero ] t
+  val bv_to_z : bool -> int -> Z.t -> Z.t
 
   (* arithmetic *)
   val plus : [< sint ] t -> [< sint ] t -> [> sint ] t
@@ -104,13 +112,19 @@ module BitVec : sig
   val times : [< sint ] t -> [< sint ] t -> [> sint ] t
   val div : signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
   val rem : signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
-  val mod_ : signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+  val mod_ : [< sint ] t -> [< sint ] t -> [> sint ] t
   val neg : [< sint ] t -> [> sint ] t
 
   (* overflow checks *)
-  val plus_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
-  val times_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
-  val neg_overflows : [< sint ] t -> [> sint ] t
+  val plus_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val minus_overflows :
+    signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val times_overflows :
+    signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val neg_overflows : [< sint ] t -> [> sbool ] t
 
   (* inequalities *)
   val lt : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
@@ -134,6 +148,8 @@ module BitVec : sig
 
   (* bool-bv conversions *)
   val of_bool : int -> [< sbool ] t -> [> sint ] t
+  val to_bool : [< sint ] t -> [> sbool ] t
+  val not_bool : [< sint ] t -> [> sint ] t
 
   (* float-bv conversions *)
   val of_float : [< sfloat ] t -> [> sint ] t
@@ -171,7 +187,7 @@ module Float : sig
 end
 
 module Ptr : sig
-  val mk : int -> [< sloc ] t -> [< sint ] t -> [> sptr ] t
+  val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t
   val loc : [< sptr ] t -> [> sloc ] t
   val ofs : [< sptr ] t -> [> sint ] t
   val decompose : [< sptr ] t -> [> sloc ] t * [> sint ] t
@@ -192,12 +208,12 @@ module Infix : sig
   val ( ==@ ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
   val ( ==?@ ) : 'a t -> 'b t -> [> sbool ] t
   val ( >@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( >=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( <@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
-  val ( <=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( >$@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( >=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( >=$@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( <@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( <$@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+  val ( <=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( <=$@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( &&@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
   val ( ||@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
@@ -206,9 +222,15 @@ module Infix : sig
   val ( ~- ) : [< sint ] t -> [> sint ] t
   val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( /@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
-  val ( %@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
   val ( /$@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+  val ( %@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
   val ( %$@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+  val ( <<@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( >>@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( >>>@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( ^@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( &@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( |@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( ==.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
   val ( >.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
   val ( >=.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t

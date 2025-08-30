@@ -119,7 +119,7 @@ let print_outcomes entry_name f =
         (Diagnostic.print_diagnostic_simple ~severity:Note)
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
-      Fmt.pr "@\n@\n@?";
+      Fmt.pr "@\n@.";
       (entry_name, Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
@@ -127,7 +127,7 @@ let print_outcomes entry_name f =
         (Diagnostic.print_diagnostic_simple ~severity:Error)
         "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
         time pp_branches (List.length errs) ntotal;
-      Fmt.pr "@\n@?";
+      Fmt.pr "@.";
       let ( let@@ ) f x = List.iter x f in
       let () =
         let@@ error, call_trace = List.sort_uniq Stdlib.compare errs in
@@ -197,7 +197,6 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   in
 
   (* inverse ok and errors if we expect a failure *)
-  let nbranches = List.length branches in
   let branches =
     if not entry.expect_error then branches
     else
@@ -225,6 +224,7 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 
+  let nbranches = List.length branches in
   let errors = Compo_res.only_errors outcomes in
   if List.is_empty errors then
     let pcs = List.map snd branches in
@@ -237,11 +237,11 @@ let wrap_step name f =
     let time = Unix.gettimeofday () in
     let res = f () in
     let time = Unix.gettimeofday () -. time in
-    Fmt.pr " done in %a@\n@?" pp_time time;
+    Fmt.pr " done in %a@." pp_time time;
     res
   with e ->
     let bt = Printexc.get_raw_backtrace () in
-    Fmt.pr " errored@\n@?";
+    Fmt.pr " errored@.";
     Printexc.raise_with_backtrace e bt
 
 let fatal ?name ?(code = 2) err =

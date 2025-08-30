@@ -1,7 +1,6 @@
 open Rust_val
 open Rustsymex
 open Rustsymex.Syntax
-open Typed.Syntax
 open Typed.Infix
 
 module M (State : State_intf.S) = struct
@@ -11,10 +10,13 @@ module M (State : State_intf.S) = struct
       | [ Base size; Base align ] -> (size, align)
       | _ -> failwith "alloc: invalid arguments"
     in
-    let* align = cast_checked ~ty:Typed.t_int align in
-    let* size = cast_checked ~ty:Typed.t_int size in
-    let max_size = Layout.max_value (TInt Isize) in
-    if%sat align >=@ 1s &&@ (size <@ max_size) then
+    let bit_size = Crate.pointer_bits () in
+    let* align = cast_checked ~ty:(Typed.t_int bit_size) align in
+    let* size = cast_checked ~ty:(Typed.t_int bit_size) size in
+    let max_size = Layout.max_value_z (TInt Isize) in
+    let max_size = Typed.BitVec.mk bit_size max_size in
+    let min_align = Typed.BitVec.one bit_size in
+    if%sat align >=@ min_align &&@ (size <@ max_size) then
       let align = Typed.cast align in
       let++ ptr, state = State.alloc_untyped ~zeroed ~size ~align state in
       (Ptr ptr, state)
@@ -42,11 +44,12 @@ module M (State : State_intf.S) = struct
     let ptr_in, _ = ptr in
     let prev_size, prev_align = State.Sptr.allocation_info ptr_in in
     if%sat prev_align ==?@ align &&@ (prev_size ==?@ old_size) then
+      let bit_size = Crate.pointer_bits () in
       let align = Typed.cast align in
-      let* size = cast_checked ~ty:Typed.t_int size in
+      let* size = cast_checked ~ty:(Typed.t_int bit_size) size in
       let** new_ptr, state = State.alloc_untyped ~size ~align state in
       let** (), state =
-        if%sat size >=@ size then
+        if%sat size >=@ prev_size then
           State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size:prev_size state
         else not_impl "Can't realloc to smaller size"
       in

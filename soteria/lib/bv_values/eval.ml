@@ -22,7 +22,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | BvTimes -> BitVec.times
   | BvDiv signed -> BitVec.div ~signed
   | BvRem signed -> BitVec.rem ~signed
-  | BvMod signed -> BitVec.mod_ ~signed
+  | BvMod -> BitVec.mod_
   | BvPlusOvf signed -> BitVec.plus_overflows ~signed
   | BvTimesOvf signed -> BitVec.times_overflows ~signed
   | BvLt signed -> BitVec.lt ~signed
@@ -57,10 +57,7 @@ let rec eval ?(force = false) (x : t) : t =
   | Ptr (l, o) ->
       let nl = eval l in
       let no = eval o in
-      if l == nl && o == no then x
-      else
-        let size = size_of_ptr x.node.ty in
-        Ptr.mk size (eval l) (eval o)
+      if l == nl && o == no then x else Ptr.mk (eval l) (eval o)
   | Unop (unop, v) ->
       let nv = eval v in
       if v == nv && Stdlib.not force then x else eval_unop unop nv
