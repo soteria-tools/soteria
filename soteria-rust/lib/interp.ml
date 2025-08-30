@@ -574,7 +574,7 @@ module Make (State : State_intf.S) = struct
         | Neg _ -> (
             match type_of_operand e with
             | TLiteral ((TInt _ | TUInt _) as ty) ->
-                let size = Layout.size_of_literal_ty ty in
+                let size = 8 * Layout.size_of_literal_ty ty in
                 let v = as_base_of ~ty:(Typed.t_int size) v in
                 ok (Base ~-v)
             | TLiteral (TFloat _) ->

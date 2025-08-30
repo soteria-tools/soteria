@@ -361,7 +361,10 @@ module M (State : State_intf.S) = struct
     let res = bop l r in
     if%sat is_finite l &&@ is_finite r &&@ is_finite (bop l r) then
       Result.ok (Base res, state)
-    else State.error (`StdErr (name ^ ": result must be finite")) state
+    else
+      State.error
+        (`StdErr (name ^ ": operands and result must be finite"))
+        state
 
   let fadd_fast = float_fast (Add OUB)
   let fdiv_fast = float_fast (Div OUB)

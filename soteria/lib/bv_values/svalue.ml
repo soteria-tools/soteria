@@ -618,6 +618,10 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l + r)
     | _, BitVec z when Z.equal z Z.zero -> v1
     | BitVec z, _ when Z.equal z Z.zero -> v2
+    | Binop (BvPlus, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
+    | Binop (BvPlus, r, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
+      ->
+        plus (plus c1 v2) r
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
         let n = size_of v1.node.ty in
@@ -629,6 +633,12 @@ and BitVec : BitVec = struct
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l - r)
     | _, BitVec z when Z.equal z Z.zero -> v1
+    | Binop (BvMinus, ({ node = { kind = BitVec _; _ }; _ } as c1), s), BitVec _
+      ->
+        minus (minus c1 v2) s
+    | Binop (BvMinus, s, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
+      ->
+        minus s (plus c1 v2)
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec _ -> Bool.ite b (minus l v2) (minus r v2)
     | BitVec _, Ite (b, l, r) -> Bool.ite b (minus v1 l) (minus v1 r)
@@ -648,7 +658,7 @@ and BitVec : BitVec = struct
 
   (** [rem ~signed v1 v2] is the remainder of [v1 / v2], which takes the sign of
       the dividend [v1] if [signed]. *)
-  let rem ~signed v1 v2 =
+  let rec rem ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
         let size = size_of v1.node.ty in
@@ -660,6 +670,12 @@ and BitVec : BitVec = struct
           mk_masked size res
     | _, BitVec r when Stdlib.not signed && Z.(equal r one) ->
         zero (size_of v1.node.ty)
+    | Binop (BvPlus, { node = { kind = BitVec l; _ }; _ }, r), BitVec d
+      when Stdlib.not signed && Z.(equal l d) ->
+        rem ~signed r v2
+    | Binop (BvPlus, r, { node = { kind = BitVec l; _ }; _ }), BitVec d
+      when Stdlib.not signed && Z.(equal l d) ->
+        rem ~signed r v2
     | _ -> Binop (BvRem signed, v1, v2) <| v1.node.ty
 
   (** [mod_ v1 v2] is the signed remainder of [v1 / v2], which takes the sign of
@@ -686,9 +702,7 @@ and BitVec : BitVec = struct
     let n = size_of v.node.ty in
     match v.node.kind with
     | BitVec bv -> mk_masked n Z.(neg bv)
-    | _ ->
-        let max = Z.(pred (one lsl n)) in
-        Binop (BvMinus, mk n max, v) <| v.node.ty
+    | _ -> minus (zero n) v
 
   let rec not v =
     match v.node.kind with
@@ -959,15 +973,16 @@ and BitVec : BitVec = struct
       Bool.or_ neg_ovf add_ovf
 
   let of_float v =
-    let n = size_of v.node.ty in
-    match (v.node.ty, v.node.kind, n) with
-    | TFloat _, Unop (FloatOfBv prev, v), _ when FloatPrecision.size prev = n ->
-        v
-    | TFloat F32, Float f, 32 ->
-        mk n @@ Z.of_int32 (Int32.bits_of_float (Stdlib.Float.of_string f))
-    | TFloat F64, Float f, 64 ->
-        mk n @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
-    | _, _, _ -> Unop (BvOfFloat n, v) <| t_bv n
+    let p = precision_of_f v.node.ty in
+    match (v.node.ty, v.node.kind, p) with
+    | TFloat _, Unop (FloatOfBv prev, v), _ when prev = p -> v
+    | TFloat F32, Float f, F32 ->
+        mk 32 @@ Z.of_int32 (Int32.bits_of_float (Stdlib.Float.of_string f))
+    | TFloat F64, Float f, F64 ->
+        mk 64 @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
+    | _, _, _ ->
+        let n = FloatPrecision.size p in
+        Unop (BvOfFloat n, v) <| t_bv n
 
   let to_float v =
     match v.node.kind with

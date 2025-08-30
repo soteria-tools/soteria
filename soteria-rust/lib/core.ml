@@ -15,7 +15,7 @@ module M (State : State_intf.S) = struct
   let cmp_of_int v =
     let size = size_of_int v in
     let zero = BitVec.zero size in
-    if%sat v <$@ zero then return (BitVec.mki size (-1))
+    if%sat v <$@ zero then return (BitVec.mki_masked size (-1))
     else if%sat v ==@ zero then return zero else return (BitVec.one size)
 
   let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =

@@ -121,7 +121,6 @@ module Make (Sptr : Sptr.S) = struct
         vals types
       |> List.flatten
     in
-
     match (value, ty) with
     (* Trait types: we resolve them early *)
     | _, TTraitType (tref, name) ->
@@ -180,9 +179,6 @@ module Make (Sptr : Sptr.S) = struct
         | [ _ ], _ when Option.is_some @@ Layout.as_zst ty -> []
         | variants, BitVec disc_z ->
             let disc_ty = Layout.enum_discr_ty t_id in
-            let signed = Layout.is_signed disc_ty in
-            let size = Layout.size_of_literal_ty disc_ty in
-            let disc_z = Typed.BitVec.bv_to_z signed size disc_z in
             let variant =
               List.find
                 (fun v -> Z.equal disc_z (z_of_scalar Types.(v.discriminant)))
@@ -384,10 +380,11 @@ module Make (Sptr : Sptr.S) = struct
     (* Parses what enum variant we're handling *)
     and aux_enum offset adt_id (variants : Types.variant list) :
         ('e, 'fix, 'state) parser =
-      let disc_ty = Types.TLiteral (Layout.enum_discr_ty adt_id) in
-      let disc_align = Typed.BitVec.mki_nz ptr_bits (layout_of disc_ty).align in
+      let disc_ty = Layout.enum_discr_ty adt_id in
+      let align = align_of_literal_ty disc_ty in
+      let disc_align = Typed.BitVec.mki_nz ptr_bits align in
       let offset = offset +@ (offset %@ disc_align) in
-      let*** cval = query (disc_ty, offset) in
+      let*** cval = query (TLiteral disc_ty, offset) in
       let cval = as_base_of ~ty:(Typed.t_int ptr_bits) cval in
       let*** res =
         lift_rsymex
@@ -460,10 +457,18 @@ module Make (Sptr : Sptr.S) = struct
           let+ sv = cast_checked sv ~ty:(Typed.t_int size) in
           let sv' = Typed.BitVec.to_float sv in
           Ok (Base sv')
-      | TLiteral (TUInt U8), TLiteral TChar, v
-      | TLiteral TBool, TLiteral (TUInt _), v
-      | TLiteral TChar, TLiteral (TUInt (U32 | U64 | U128)), v ->
-          Result.ok v
+      | TLiteral (TUInt U8 as from_ty), TLiteral (TChar as to_ty), Base v
+      | TLiteral (TBool as from_ty), TLiteral (TUInt _ as to_ty), Base v
+      | ( TLiteral (TChar as from_ty),
+          TLiteral (TUInt (U32 | U64 | U128) as to_ty),
+          Base v ) ->
+          let from_bits = 8 * Layout.size_of_literal_ty from_ty in
+          let to_bits = 8 * Layout.size_of_literal_ty to_ty in
+          if to_bits > from_bits then
+            let* v = cast_checked ~ty:(Typed.t_int from_bits) v in
+            let v = Typed.BitVec.extend ~signed:false (to_bits - from_bits) v in
+            ok (Base v)
+          else ok (Base v)
       | ( TLiteral ((TInt _ | TUInt _) as from_ty),
           TLiteral ((TInt _ | TUInt _) as to_ty),
           Base sv ) ->

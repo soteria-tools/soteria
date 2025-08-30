@@ -9,6 +9,9 @@ let merge f x y =
   | Some x, None | None, Some x -> Some x
   | None, None -> None
 
-let get ?(msg = "Option.get None") = function
+let get ?msg = function
   | Some x -> x
-  | None -> raise (Invalid_argument ("Option.get None:" ^ msg))
+  | None -> (
+      match msg with
+      | None -> raise (Invalid_argument "Option.get None")
+      | Some msg -> raise (Invalid_argument ("Option.get None: " ^ msg)))
