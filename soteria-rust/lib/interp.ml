@@ -708,7 +708,9 @@ module Make (State : State_intf.S) = struct
                 if Typed.equal_ty ty (Typed.t_ptr ptr_size) then
                   error `UBPointerComparison
                 else
-                  let^+ cmp = Core.cmp_of_int (v1 -@ v2) in
+                  let ty = type_of_operand e1 in
+                  let ty = TypesUtils.ty_as_literal ty in
+                  let^+ cmp = Core.cmp ~signed:(Layout.is_signed ty) v1 v2 in
                   Base cmp
             | Offset ->
                 (* non-zero offset on integer pointer is not permitted, as these are always

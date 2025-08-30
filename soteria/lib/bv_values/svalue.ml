@@ -647,6 +647,10 @@ and BitVec : BitVec = struct
   let rec times v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l * r)
+    | _, BitVec z when Z.equal z Z.one -> v1
+    | BitVec z, _ when Z.equal z Z.one -> v2
+    | _, BitVec z when Z.equal z Z.zero -> zero (size_of v1.node.ty)
+    | BitVec z, _ when Z.equal z Z.zero -> zero (size_of v1.node.ty)
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
         let n = size_of v1.node.ty in
@@ -654,7 +658,16 @@ and BitVec : BitVec = struct
         Bool.ite b (times l x) (times r x)
     | _ -> mk_commut_binop BvTimes v1 v2 <| v1.node.ty
 
-  let div ~signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
+  let div ~signed v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | BitVec l, BitVec r ->
+        let size = size_of v1.node.ty in
+        let l = bv_to_z signed size l in
+        let r = bv_to_z signed size r in
+        let res = Z.(l / r) in
+        mk_masked size res
+    | _, BitVec r when Z.equal r Z.one -> v1
+    | _ -> Binop (BvDiv signed, v1, v2) <| v1.node.ty
 
   (** [rem ~signed v1 v2] is the remainder of [v1 / v2], which takes the sign of
       the dividend [v1] if [signed]. *)
@@ -950,11 +963,15 @@ and BitVec : BitVec = struct
   let plus_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( + )
+    | BitVec z, _ when Z.equal z Z.zero -> Bool.v_false
+    | _, BitVec z when Z.equal z Z.zero -> Bool.v_false
     | _ -> Binop (BvPlusOvf signed, v1, v2) <| TBool
 
   let times_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( * )
+    | BitVec z, _ when Z.equal z Z.zero || Z.equal z Z.one -> Bool.v_false
+    | _, BitVec z when Z.equal z Z.zero || Z.equal z Z.one -> Bool.v_false
     | _ -> Binop (BvTimesOvf signed, v1, v2) <| TBool
 
   let neg_overflows v =

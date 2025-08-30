@@ -12,11 +12,16 @@ module M (State : State_intf.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
+  let cmp ~signed l r =
+    let ( < ) = if signed then ( <$@ ) else ( <@ ) in
+    if%sat l < r then return (BitVec.mki_masked 8 (-1))
+    else if%sat l ==@ r then return (BitVec.zero 8) else return (BitVec.one 8)
+
   let cmp_of_int v =
-    let size = size_of_int v in
-    let zero = BitVec.zero size in
-    if%sat v <$@ zero then return (BitVec.mki_masked size (-1))
-    else if%sat v ==@ zero then return zero else return (BitVec.one size)
+    let zero = BitVec.zero (size_of_int v) in
+    if%sat v <$@ zero then return (BitVec.mki_masked 8 (-1))
+    else
+      if%sat v ==@ zero then return (BitVec.zero 8) else return (BitVec.one 8)
 
   let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =
     match (get_ty v1, get_ty v2) with
@@ -45,9 +50,24 @@ module M (State : State_intf.S) = struct
     | Shr _ -> if signed then BitVec.ashr else BitVec.lshr
     | _ -> failwith "Invalid binop in binop_fn"
 
+  let normalise_shift_r (bop : Expressions.binop) l r =
+    match bop with
+    | Shl _ | Shr _ ->
+        let l, r = (cast l, cast r) in
+        let l_size = Typed.size_of_int l in
+        let r_size = Typed.size_of_int r in
+        if l_size > r_size then
+          Typed.BitVec.extend ~signed:false (l_size - r_size) r
+        else r
+    | _ -> r
+
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
   let eval_lit_binop (bop : Expressions.binop) ty l r =
+    (* normalise both sides to be the same side; this is usually always the case,
+       except for shift operations, so we do it manually *)
+    let r = normalise_shift_r bop l r in
+
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
     let* l, r, ty_ = cast_checked2 l r in
@@ -104,9 +124,9 @@ module M (State : State_intf.S) = struct
   (** Wraps a given value to make it fit within the constraints of the given
       type *)
   let wrapping_binop (bop : Expressions.binop) ty l r =
-    let size = 8 * Layout.size_of_literal_ty ty in
-    let* l = cast_checked ~ty:(t_int size) l in
-    let+ r = cast_checked ~ty:(t_int size) r in
+    let r = normalise_shift_r bop l r in
+    let* l = cast_int l in
+    let+ r = cast_int r in
     let signed = Layout.is_signed ty in
     let op = binop_fn bop signed in
     op l r

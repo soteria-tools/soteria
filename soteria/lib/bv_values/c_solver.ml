@@ -501,7 +501,7 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
       | TBitVector n | TLoc n -> (
           let i = Var.to_int v in
           try Some (Var.Hashtbl.find v_eqs v)
-          with Not_found -> Some (Svalue.BitVec.mk n (Z.of_int i)))
+          with Not_found -> Some (Svalue.BitVec.mk_masked n (Z.of_int i)))
       | _ -> None
     in
     let res = Eval.eval ~eval_var to_check in

@@ -396,12 +396,7 @@ let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
 
 let constraints :
     Types.literal_type -> [< T.cval ] Typed.t -> T.sbool Typed.t list = function
-  | (TInt _ | TUInt _) as ity -> (
-      let bits = size_of_literal_ty ity * 8 in
-      fun x ->
-        match Typed.cast_checked x (Typed.t_int bits) with
-        | None -> [ Typed.v_false ]
-        | Some _ -> [])
+  | TInt _ | TUInt _ | TFloat (F16 | F32 | F64 | F128) -> fun _ -> []
   | TBool -> (
       let bits = size_of_literal_ty TBool * 8 in
       fun x ->
@@ -430,7 +425,6 @@ let constraints :
               x <=@ codepoint_max;
               Typed.not (surrogate_min <=@ x &&@ (x <=@ surrogate_max));
             ])
-  | TFloat (F16 | F32 | F64 | F128) -> fun _ -> []
 
 let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
   let open Rustsymex.Syntax in

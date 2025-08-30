@@ -497,7 +497,9 @@ module Make (Sptr : Sptr.S) = struct
           let sv' = Typed.BitVec.to_float sv in
           Ok (Base sv')
       | TLiteral (TUInt U8 as from_ty), TLiteral (TChar as to_ty), Base v
-      | TLiteral (TBool as from_ty), TLiteral (TUInt _ as to_ty), Base v
+      | ( TLiteral (TBool as from_ty),
+          TLiteral ((TUInt _ | TInt _) as to_ty),
+          Base v )
       | ( TLiteral (TChar as from_ty),
           TLiteral (TUInt (U32 | U64 | U128) as to_ty),
           Base v ) ->
