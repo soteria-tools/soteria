@@ -177,9 +177,18 @@ module Make (Sptr : Sptr.S) = struct
         match (variants, Typed.kind disc) with
         (* fieldless enums with one option are zero-sized *)
         | [ _ ], _ when Option.is_some @@ Layout.as_zst ty -> []
-        | variants, BitVec disc_z ->
+        | variants, BitVec disc_bv ->
+            let layout = Layout.layout_of ty in
+            let tag_layout, var_fields =
+              match layout.fields with
+              | Enum (tag_layout, var_fields) -> (tag_layout, var_fields)
+              | _ -> failwith "Unexptected enum layout"
+            in
+            let tag_size = 8 * Layout.size_of_literal_ty tag_layout.ty in
+            let signed = Layout.is_signed tag_layout.ty in
+            let disc_z = Typed.BitVec.bv_to_z signed tag_size disc_bv in
             let variant_id, variant =
-              Option.get
+              Option.get ~msg:"No matching variant?"
               @@ List.find_mapi
                    (fun i v ->
                      if Z.equal disc_z (z_of_scalar Types.(v.discriminant)) then
@@ -187,18 +196,11 @@ module Make (Sptr : Sptr.S) = struct
                      else None)
                    variants
             in
-            let layout = Layout.layout_of ty in
-            let tag_layout, var_fields =
-              match layout.fields with
-              | Enum (tag_layout, var_fields) ->
-                  (tag_layout, var_fields.(variant_id))
-              | _ -> failwith "Unexptected enum layout"
-            in
+            let var_fields = var_fields.(variant_id) in
             let discriminant =
               match tag_layout.tags.(variant_id) with
               | None -> []
               | Some tag ->
-                  let tag_size = 8 * Layout.size_of_literal_ty tag_layout.ty in
                   let v = Typed.BitVec.mk_masked tag_size tag in
                   let offset =
                     Typed.BitVec.mki_masked ptr_bits tag_layout.offset +@ offset
