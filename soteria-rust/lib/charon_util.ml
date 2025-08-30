@@ -52,6 +52,14 @@ let rec pp_ty fmt : Types.ty -> unit = function
       Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
   | ty -> Types.pp_ty fmt ty
 
+let lit_of_int_ty : Types.integer_type -> Types.literal_type = function
+  | Signed ity -> TInt ity
+  | Unsigned uty -> TUInt uty
+
+let lit_of_scalar : Values.scalar_value -> Types.literal_type = function
+  | SignedScalar (ity, _) -> TInt ity
+  | UnsignedScalar (uty, _) -> TUInt uty
+
 let z_of_const_generic : Types.const_generic -> Z.t = function
   | CgValue (VScalar s) -> z_of_scalar s
   | cg ->

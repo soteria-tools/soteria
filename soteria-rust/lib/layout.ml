@@ -7,6 +7,27 @@ open Charon_util
 exception CantComputeLayout of string * Types.ty
 exception InvalidLayout of Types.ty
 
+(** Layout of enum tags in memory. Note tags are distinct from discriminants: a
+    discriminant is user specified and is what [Rvalue.Discriminant] returns,
+    whereas a tag is specific to variant layouts, and may be of smaller size
+    than the discriminant, or not be encoded at all if it is the untagged
+    variant of a niche-optimised enum. *)
+module Tag_layout = struct
+  type encoding = Direct | Niche of Types.variant_id
+
+  and t = {
+    offset : int;
+    ty : Types.literal_type;
+    encoding : encoding;
+    tags : Z.t option Array.t;
+        [@printer Fmt.(array ~sep:comma (option ~none:(any "none") Z.pp_print))]
+        (** The tag associated to each variant, indexed by variant ID. If
+            [None], the variant is either uninhabited or the untagged variant.
+        *)
+  }
+  [@@deriving show { with_path = false }]
+end
+
 (** We use a custom type for the member offsets for layouts; this allows us to
     use a more efficient representation for arrays [T; N], that doesn't require
     N offsets. *)
@@ -14,14 +35,25 @@ module Fields_shape = struct
   type t =
     | Primitive  (** No fields present *)
     | Arbitrary of int Array.t [@printer Fmt.(array ~sep:comma int)]
-        (** Arbitrary field placement (structs, enums...) *)
+        (** Arbitrary field placement (structs, unions...). *)
+    | Enum of Tag_layout.t * t Array.t
+        [@printer Fmt.(pair ~sep:comma Tag_layout.pp (array ~sep:comma pp))]
+        (** Enum fields: encodes a tag, and an array of field shapes for each
+            variant (indexed by variant ID). Using [offset_of] on this isn't
+            valid; one must first retrieve the fields shape of the corresponding
+            variant. *)
     | Array of int  (** All fields are equally spaced (arrays, slices) *)
   [@@deriving show { with_path = false }]
 
   let offset_of f = function
     | Primitive -> failwith "This layout has no fields"
+    | Enum _ -> failwith "Can't get fields of enum; use `shape_for_variant`"
     | Arbitrary arr -> arr.(f)
     | Array stride -> f * stride
+
+  let shape_for_variant v = function
+    | Enum (_, shapes) -> shapes.(Types.VariantId.to_int v)
+    | s -> Fmt.failwith "Shape %a is not an enum" pp s
 end
 
 type layout = { size : int; align : int; fields : Fields_shape.t }
@@ -31,15 +63,11 @@ let pp_layout fmt { size; align; fields } =
     Fields_shape.pp fields
 
 module Session = struct
-  type ty_key = Types.ty
-  type variant_key = Types.type_decl_id * Types.variant
-
   (* TODO: allow different caches for different crates *)
   (* FIXME: inter-test mutability *)
 
   (** Cache of (type or variant) -> layout *)
-  let layout_cache : ((ty_key, variant_key) Either.t, layout) Hashtbl.t =
-    Hashtbl.create 128
+  let layout_cache : (Types.ty, layout) Hashtbl.t = Hashtbl.create 128
 
   let get_or_compute_cached_layout ty f =
     match Hashtbl.find_opt layout_cache ty with
@@ -48,12 +76,6 @@ module Session = struct
         let layout = f () in
         Hashtbl.add layout_cache ty layout;
         layout
-
-  let get_or_compute_cached_layout_ty ty =
-    get_or_compute_cached_layout (Left ty)
-
-  let get_or_compute_cached_layout_var adt var =
-    get_or_compute_cached_layout (Right (adt, var))
 end
 
 let is_int : Types.ty -> bool = function
@@ -119,7 +141,7 @@ let enum_discr_ty adt_id : Types.literal_type =
   | None | Some { discriminant_layout = None; _ } -> TUInt Usize
 
 let rec layout_of (ty : Types.ty) : layout =
-  Session.get_or_compute_cached_layout_ty ty @@ fun () ->
+  Session.get_or_compute_cached_layout ty @@ fun () ->
   match ty with
   (* Literals *)
   | TLiteral ty ->
@@ -157,13 +179,7 @@ let rec layout_of (ty : Types.ty) : layout =
       let adt = Crate.get_adt id in
       match adt.kind with
       | Struct fields -> layout_of_members @@ field_tys fields
-      | Enum [] -> { size = 0; align = 1; fields = Arbitrary [||] }
-      (* fieldless enums with one variant are zero-sized *)
-      | Enum variants ->
-          let layouts = List.map (of_variant id) variants in
-          List.fold_left
-            (fun acc l -> if l.size > acc.size then l else acc)
-            (List.hd layouts) (List.tl layouts)
+      | Enum variants -> layout_of_enum adt variants
       | Union fs ->
           let layouts = List.map layout_of @@ Charon_util.field_tys fs in
           let hd = List.hd layouts in
@@ -207,7 +223,7 @@ let rec layout_of (ty : Types.ty) : layout =
   | TError _ -> raise (CantComputeLayout ("error type", ty))
   | TTraitType (tref, ty_name) -> layout_of @@ resolve_trait_ty tref ty_name
 
-and layout_of_members members =
+and layout_of_members ?(fst_size = 0) ?(fst_align = 1) members =
   let rec aux offsets curr_size curr_align = function
     | [] -> (List.rev offsets, curr_size, curr_align)
     | ty :: rest ->
@@ -217,38 +233,73 @@ and layout_of_members members =
         let new_align = max align curr_align in
         aux (offset :: offsets) new_size new_align rest
   in
-  let offsets, size, align = aux [] 0 1 members in
+  let offsets, size, align = aux [] fst_size fst_align members in
   {
     size = size_to_fit ~size ~align;
     align;
     fields = Arbitrary (Array.of_list offsets);
   }
 
-and of_variant adt_id (variant : Types.variant) =
-  Session.get_or_compute_cached_layout_var adt_id variant @@ fun () ->
-  let variants = Crate.as_enum adt_id in
-  if
-    match variants with
-    | [ _single ] ->
-        List.for_all (fun ty -> (layout_of ty).size = 0)
-        @@ field_tys variant.fields
-    | _ -> false
-  then
-    let align =
-      List.fold_left (fun acc ty -> max acc (layout_of ty).align) 1
-      @@ field_tys variant.fields
-    in
-    let fields = Array.make (List.length variant.fields + 1) 0 in
-    { size = 0; align; fields = Arbitrary fields }
-  else
-    let discr_ty = Types.TLiteral (enum_discr_ty adt_id) in
-    let members = discr_ty :: field_tys variant.fields in
-    layout_of_members members
-
-and of_enum_variant adt_id variant =
-  let variants = Crate.as_enum adt_id in
-  let variant = Types.VariantId.nth variants variant in
-  of_variant adt_id variant
+and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
+  let tags =
+    match adt.layout with
+    | Some { variant_layouts; _ } ->
+        List.map
+          (fun (v : Types.variant_layout) -> Option.map z_of_scalar v.tag)
+          variant_layouts
+    | None ->
+        List.map
+          (fun (v : Types.variant) -> Some (z_of_scalar v.discriminant))
+          variants
+  in
+  let tag_layout : Tag_layout.t =
+    match adt.layout with
+    | Some { discriminant_layout = Some discr_layout; _ } ->
+        let ty = lit_of_int_ty discr_layout.tag_ty in
+        let offset = discr_layout.offset in
+        let encoding : Tag_layout.encoding =
+          match discr_layout.encoding with
+          | Niche v -> Niche v
+          | Direct -> Direct
+        in
+        { offset; ty; tags = Array.of_list tags; encoding }
+    | None | Some { discriminant_layout = None; _ } ->
+        let ty : Types.literal_type =
+          match variants with
+          | [] -> TInt I32 (* Shouldn't matter *)
+          | v :: _ -> lit_of_scalar v.discriminant
+        in
+        { offset = 0; ty; tags = Array.of_list tags; encoding = Direct }
+  in
+  let layout_fn =
+    match tag_layout.encoding with
+    | Direct ->
+        let discr_layout = layout_of (TLiteral tag_layout.ty) in
+        layout_of_members ~fst_size:discr_layout.size
+          ~fst_align:discr_layout.align
+    | Niche _ -> layout_of_members ?fst_size:None ?fst_align:None
+  in
+  let variant_layouts =
+    List.map
+      (fun (v : Types.variant) -> layout_fn (field_tys v.fields))
+      variants
+  in
+  match variant_layouts with
+  (* no variants: uninhabited ZST *)
+  | [] -> { size = 0; align = 1; fields = Enum (tag_layout, [||]) }
+  (* one ZST variant: inhabited ZST *)
+  | [ { size = 0; align; fields } ] ->
+      { size = 0; align; fields = Enum (tag_layout, [| fields |]) }
+  (* N variants: realign variants with prepended discriminant (if not niche),
+     use biggest and most aligned *)
+  | _ ->
+      let size, align =
+        List.fold_left
+          (fun (size, align) l -> (max size l.size, max align l.align))
+          (0, 1) variant_layouts
+      in
+      let fields = List.map (fun v -> v.fields) variant_layouts in
+      { size; align; fields = Enum (tag_layout, Array.of_list fields) }
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.trait_id with
