@@ -12,8 +12,12 @@ type severity = Grace.Diagnostic.Severity.t =
 
 let read_file file =
   let ic = open_in file in
-  let iter () f =
-    match input_line ic with s -> f s | exception End_of_file -> close_in ic
+  let rec iter () f =
+    match input_line ic with
+    | s ->
+        f s;
+        iter () f
+    | exception End_of_file -> close_in ic
   in
   iter () |> Iter.intersperse "\n" |> Iter.concat_str
 
