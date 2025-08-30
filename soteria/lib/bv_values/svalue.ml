@@ -797,7 +797,7 @@ and BitVec : BitVec = struct
     | BitVec z, _ when Z.equal z Z.zero -> v2
     | _, BitVec z when Z.equal z Z.zero -> v1
     | Unop (BvOfBool n, b1), Unop (BvOfBool _, b2) ->
-        of_bool n (Bool.sem_eq b1 b2)
+        of_bool n (Bool.not (Bool.sem_eq b1 b2))
     | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
 
   (** [extract from_ to_ v] returns a bitvector covering bits from index
