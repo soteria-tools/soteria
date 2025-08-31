@@ -200,19 +200,26 @@ and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 let hash t = t.tag
 let kind t = t.node.kind
 
-let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
-  match sv.node.kind with
-  | Var v -> f (v, sv.node.ty)
-  | Bool _ | Float _ | BitVec _ -> ()
-  | Ptr (l, r) | Binop (_, l, r) ->
-      iter_vars l f;
-      iter_vars r f
-  | Unop (_, sv) -> iter_vars sv f
-  | Nop (_, l) | Seq l -> List.iter (fun sv -> iter_vars sv f) l
-  | Ite (c, t, e) ->
-      iter_vars c f;
-      iter_vars t f;
-      iter_vars e f
+let iter =
+  let rec aux (f : t -> unit) (sv : t) : unit =
+    f sv;
+    match sv.node.kind with
+    | Var _ | Bool _ | Float _ | BitVec _ -> ()
+    | Ptr (l, r) | Binop (_, l, r) ->
+        aux f l;
+        aux f r
+    | Unop (_, sv) -> aux f sv
+    | Nop (_, l) | Seq l -> List.iter (aux f) l
+    | Ite (c, t, e) ->
+        aux f c;
+        aux f t;
+        aux f e
+  in
+  Fun.flip aux
+
+let iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
+  iter sv @@ fun sv ->
+  match sv.node.kind with Var v -> f (v, sv.node.ty) | _ -> ()
 
 let pp_full ft t = pp_t_node ft t.node
 
