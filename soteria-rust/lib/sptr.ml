@@ -83,10 +83,10 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let null_ptr () =
     {
-      ptr = Typed.Ptr.null (Crate.pointer_bits ());
+      ptr = Typed.Ptr.null ();
       tag = Tree_borrow.zero;
-      align = Typed.BitVec.mki_nz (Crate.pointer_bits ()) 1;
-      size = Typed.BitVec.zero (Crate.pointer_bits ());
+      align = Typed.BitVec.usizei_nz 1;
+      size = Typed.BitVec.usizei 0;
     }
 
   let null_ptr_of ofs =
@@ -102,7 +102,7 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let constraints { ptr; size; _ } =
     let ofs = Typed.Ptr.ofs ptr in
-    let zero = Typed.BitVec.zero (Crate.pointer_bits ()) in
+    let zero = Typed.BitVec.usizei 0 in
     Typed.conj [ zero <=$@ ofs; ofs <=$@ size ]
 
   let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8))
@@ -112,9 +112,8 @@ module ArithPtr : S with type t = arithptr_t = struct
     let ptr = Typed.Ptr.add_ofs ptr off in
     let ptr = { fptr with ptr } in
     if check then
-      let zero = Typed.BitVec.zero (Crate.pointer_bits ()) in
       if%sat [@lname "Ptr ok"] [@rname "Ptr dangling"]
-        off ==@ zero ||@ constraints ptr
+        off ==@ Typed.BitVec.usizei 0 ||@ constraints ptr
       then Result.ok ptr
       else Result.error `UBDanglingPointer
     else Result.ok ptr
@@ -129,7 +128,7 @@ module ArithPtr : S with type t = arithptr_t = struct
       | ProjAdt (_, None) | ProjTuple _ -> layout.fields
     in
     let off = Layout.Fields_shape.offset_of field fields in
-    offset ptr (Typed.BitVec.mki (Crate.pointer_bits ()) off)
+    offset ptr (Typed.BitVec.usizei off)
 
   module ValMap = Map.Make (struct
     type t = T.sloc Typed.t
@@ -150,11 +149,10 @@ module ArithPtr : S with type t = arithptr_t = struct
     match ValMap.find_opt loc !decayed_vars with
     | Some loc_int -> return (loc_int +@ ofs)
     | None ->
-        let bits = Crate.pointer_bits () in
-        let zero = Typed.BitVec.zero bits in
+        let zero = Typed.BitVec.usizei 0 in
         let* loc_int =
           if%sat Typed.Ptr.is_null_loc loc then return zero
-          else nondet (Typed.t_int bits)
+          else nondet (Typed.t_usize ())
         in
         let+ () =
           let isize_max = Layout.max_value_z (TInt Isize) in
@@ -162,7 +160,7 @@ module ArithPtr : S with type t = arithptr_t = struct
             [
               loc_int %@ align ==@ zero;
               zero <@ loc_int;
-              loc_int +@ size <=@ Typed.BitVec.mk_nz bits isize_max;
+              loc_int +@ size <=@ Typed.BitVec.usize isize_max;
             ]
         in
         decayed_vars := ValMap.add loc loc_int !decayed_vars;

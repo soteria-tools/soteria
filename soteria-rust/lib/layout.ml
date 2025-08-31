@@ -78,35 +78,11 @@ module Session = struct
         layout
 end
 
+include Layout_common
+
 let is_int : Types.ty -> bool = function
   | TLiteral (TInt _ | TUInt _) -> true
   | _ -> false
-
-let size_of_int_ty : Values.int_ty -> int = function
-  | I128 -> 16
-  | I64 -> 8
-  | I32 -> 4
-  | I16 -> 2
-  | I8 -> 1
-  | Isize -> Crate.pointer_size ()
-
-let size_of_uint_ty : Values.u_int_ty -> int = function
-  | U128 -> 16
-  | U64 -> 8
-  | U32 -> 4
-  | U16 -> 2
-  | U8 -> 1
-  | Usize -> Crate.pointer_size ()
-
-let size_of_literal_ty : Types.literal_type -> int = function
-  | TInt int_ty -> size_of_int_ty int_ty
-  | TUInt uint_ty -> size_of_uint_ty uint_ty
-  | TBool -> 1
-  | TChar -> 4
-  | TFloat F16 -> 2
-  | TFloat F32 -> 4
-  | TFloat F64 -> 8
-  | TFloat F128 -> 16
 
 (* TODO: this is not really accurate, but good enough for now.
    See https://doc.rust-lang.org/reference/type-layout.html#r-layout.primitive.align *)
@@ -341,17 +317,12 @@ let layout_of_s ty =
 let size_of_s ty =
   let open Rustsymex.Syntax in
   let+ { size; _ } = layout_of_s ty in
-  Typed.BitVec.mki (Crate.pointer_bits ()) size
+  Typed.BitVec.usizei size
 
 let align_of_s ty =
   let open Rustsymex.Syntax in
   let+ { align; _ } = layout_of_s ty in
-  Typed.BitVec.mki_nz (Crate.pointer_bits ()) align
-
-(** Assumes the input is a literal type of either TInt or TUInt *)
-let[@inline] is_signed : Types.literal_type -> bool = function
-  | TInt _ -> true
-  | _ -> false
+  Typed.BitVec.usizei_nz align
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
@@ -397,34 +368,29 @@ let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
 let constraints :
     Types.literal_type -> [< T.cval ] Typed.t -> T.sbool Typed.t list = function
   | TInt _ | TUInt _ | TFloat (F16 | F32 | F64 | F128) -> fun _ -> []
-  | TBool -> (
-      let bits = size_of_literal_ty TBool * 8 in
+  | TBool ->
       fun x ->
-        match Typed.cast_checked x (Typed.t_int bits) with
-        | None -> [ Typed.v_false ]
         (* Maybe worth checking which of these is better (if it matters at all)
-          | Some x -> [ x ==@ 0s ||@ (x ==@ 1s) ]) *)
-        | Some x -> [ Typed.BitVec.mki 8 0 <=@ x; x <=@ Typed.BitVec.mki 8 1 ])
-  | TChar -> (
+           [ x ==@ 0s ||@ (x ==@ 1s) ]) *)
+        let x = Typed.cast_lit TBool x in
+        [ Typed.BitVec.u8i 0 <=@ x; x <=@ Typed.BitVec.u8i 1 ]
+  | TChar ->
       (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’ other than
        a surrogate code point. This has a fixed numerical definition: code points are in
        the range 0 to 0x10FFFF, inclusive. Surrogate code points, used by UTF-16, are in
        the range 0xD800 to 0xDFFF.
        https://doc.rust-lang.org/std/primitive.char.html *)
-      let char_size = size_of_literal_ty TChar * 8 in
-      let codepoint_min = Typed.BitVec.mki char_size 0 in
-      let codepoint_max = Typed.BitVec.mki char_size 0x10FFFF in
-      let surrogate_min = Typed.BitVec.mki char_size 0xD800 in
-      let surrogate_max = Typed.BitVec.mki char_size 0xDFFF in
+      let codepoint_min = Typed.BitVec.u32i 0 in
+      let codepoint_max = Typed.BitVec.u32i 0x10FFFF in
+      let surrogate_min = Typed.BitVec.u32i 0xD800 in
+      let surrogate_max = Typed.BitVec.u32i 0xDFFF in
       fun x ->
-        match Typed.cast_checked x (Typed.t_int char_size) with
-        | None -> [ Typed.v_false ]
-        | Some x ->
-            [
-              codepoint_min <=@ x;
-              x <=@ codepoint_max;
-              Typed.not (surrogate_min <=@ x &&@ (x <=@ surrogate_max));
-            ])
+        let x = Typed.cast_lit TChar x in
+        [
+          codepoint_min <=@ x;
+          x <=@ codepoint_max;
+          Typed.not (surrogate_min <=@ x &&@ (x <=@ surrogate_max));
+        ]
 
 let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
   let open Rustsymex.Syntax in
@@ -471,12 +437,12 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
           let* disc_val = nondet_literal_ty disc_ty in
           let* res =
             match_on variants ~constr:(fun (v : Types.variant) ->
-                disc_val ==@ value_of_scalar v.discriminant)
+                disc_val ==@ Typed.BitVec.of_scalar v.discriminant)
           in
           match res with
           | None -> vanish ()
           | Some variant ->
-              let discr = value_of_scalar variant.discriminant in
+              let discr = Typed.BitVec.of_scalar variant.discriminant in
               let+ fields = nondets @@ Charon_util.field_tys variant.fields in
               Enum (discr, fields))
       | Struct fields ->
@@ -494,17 +460,13 @@ and nondets tys =
       f :: fields)
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
-  | (TInt _ | TUInt _ | TBool | TChar) as ty ->
-      Typed.BitVec.mki (size_of_literal_ty ty * 8) 0
-  | TFloat F16 -> Typed.Float.f16 0.0
-  | TFloat F32 -> Typed.Float.f32 0.0
-  | TFloat F64 -> Typed.Float.f64 0.0
-  | TFloat F128 -> Typed.Float.f128 0.0
+  | TFloat fty -> Typed.Float.mk fty "0.0"
+  | (TInt _ | TUInt _ | TBool | TChar) as ty -> Typed.BitVec.mki_lit ty 0
 
 let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in
   function
-  | TLiteral lit_ty -> ( try Some (Base (zeroed_lit lit_ty)) with _ -> None)
+  | TLiteral lit_ty -> Some (Base (zeroed_lit lit_ty))
   | TRawPtr _ -> Some (Ptr (null_ptr, None))
   | TFnPtr _ -> None
   | TRef _ -> None
@@ -535,7 +497,8 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
           v.fields
           |> Charon_util.field_tys
           |> zeroeds
-          |> Option.map (fun fs -> Enum (value_of_scalar v.discriminant, fs))
+          |> Option.map (fun fs ->
+                 Enum (Typed.BitVec.of_scalar v.discriminant, fs))
       | Union fs ->
           let layouts =
             List.mapi
@@ -594,7 +557,8 @@ let rec as_zst : Types.ty -> 'a rust_val option =
       | Enum [] -> None (* an empty enum is uninhabited *)
       | Enum [ { fields; discriminant; _ } ] ->
           as_zsts @@ Charon_util.field_tys fields
-          |> Option.map (fun fs -> Enum (value_of_scalar discriminant, fs))
+          |> Option.map (fun fs ->
+                 Enum (Typed.BitVec.of_scalar discriminant, fs))
       | Enum _ -> None
       | _ -> None)
   | TAdt { id = TTuple; generics = { types; _ } } ->
@@ -610,16 +574,14 @@ let apply_attribute v attr =
       Meta.AttrUnknown
         { path = "rustc_layout_scalar_valid_range_start"; args = Some min } ) ->
       let min = Z.of_string min in
-      let* v = cast_int v in
-      let bits = Typed.size_of_int v in
+      let v, bits = Typed.cast_int v in
       if%sat v >=@ Typed.BitVec.mk bits min then Result.ok ()
       else Result.error (`StdErr "rustc_layout_scalar_valid_range_start")
   | ( Base v,
       AttrUnknown
         { path = "rustc_layout_scalar_valid_range_end"; args = Some max_s } ) ->
       let max = Z.of_string max_s in
-      let* v = cast_int v in
-      let bits = Typed.size_of_int v in
+      let v, bits = Typed.cast_int v in
       if%sat v <=@ Typed.BitVec.mk bits max then Result.ok ()
       else Result.error (`StdErr "rustc_layout_scalar_valid_range_end")
   | _ -> Result.ok ()
@@ -671,9 +633,7 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
       match Typed.kind d with
       | BitVec d -> (
           let discr_ty = enum_discr_ty adt_id in
-          let signed = is_signed discr_ty in
-          let size = size_of_literal_ty discr_ty * 8 in
-          let d = Typed.BitVec.bv_to_z signed size d in
+          let d = Typed.BitVec.bv_to_z discr_ty d in
           let variants = Crate.as_enum adt_id in
           let v =
             List.find_opt
@@ -738,7 +698,7 @@ let rec update_ref_tys_in
       let variants = Crate.as_enum adt_id in
       let* var =
         match_on variants ~constr:(fun (v : Types.variant) ->
-            value_of_scalar v.discriminant ==?@ d)
+            Typed.BitVec.of_scalar v.discriminant ==?@ d)
       in
       match var with
       | Some var ->

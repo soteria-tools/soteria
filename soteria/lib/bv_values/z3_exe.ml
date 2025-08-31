@@ -369,9 +369,7 @@ let declare_var solver name ty =
   ack_command solver sexp
 
 let add_constraint solver (v : Svalue.t) =
-  let v, bindings =
-    LetBinder.let_binds_for ~min_binds:2 ~min_occurrences:15 v
-  in
+  let v, bindings = LetBinder.let_binds_for ~min_binds:1 ~min_occurrences:5 v in
   let sexp =
     match v.node.kind with
     | Binop (And, _, _) ->

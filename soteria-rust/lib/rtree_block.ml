@@ -24,7 +24,7 @@ module Make (Sptr : Sptr.S) = struct
       type sint = T.sint
       type sbool = T.sbool
 
-      let zero () = Typed.BitVec.zero (Crate.pointer_bits ())
+      let zero () = Typed.BitVec.usize Z.zero
       let ( <@ ) = Typed.Infix.( <$@ )
       let ( <=@ ) = Typed.Infix.( <=$@ )
     end

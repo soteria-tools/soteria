@@ -45,6 +45,7 @@ val t_f16 : [> sfloat ] ty
 val t_f32 : [> sfloat ] ty
 val t_f64 : [> sfloat ] ty
 val t_f128 : [> sfloat ] ty
+val t_f : Svalue.FloatPrecision.t -> [> sfloat ] ty
 
 (** {2 Typed svalues} *)
 
@@ -54,6 +55,7 @@ type sbool = T.sbool
 (** Basic value operations *)
 
 val get_ty : 'a t -> Svalue.ty
+val type_type : Svalue.ty -> 'a ty
 val untype_type : 'a ty -> Svalue.ty
 val kind : 'a t -> Svalue.t_kind
 val mk_var : Svalue.Var.t -> 'a ty -> 'a t

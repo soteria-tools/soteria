@@ -33,6 +33,7 @@ let t_int = t_bv
 include Bool
 
 let[@inline] get_ty x = x.node.ty
+let[@inline] type_type x = x
 let[@inline] untype_type x = x
 let ppa = pp
 let pp _ = pp

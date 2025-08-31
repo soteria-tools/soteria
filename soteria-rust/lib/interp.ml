@@ -265,12 +265,11 @@ module Make (State : State_intf.S) = struct
 
   let resolve_constant (const : Expressions.constant_expr) =
     match const.value with
-    | CLiteral (VScalar scalar) -> ok (Base (value_of_scalar scalar))
-    | CLiteral (VBool b) -> ok (Base (Typed.BitVec.of_bool 8 (Typed.bool b)))
-    | CLiteral (VChar c) -> ok (Base (Typed.BitVec.mki 32 (Uchar.to_int c)))
+    | CLiteral (VScalar scalar) -> ok (Base (Typed.BitVec.of_scalar scalar))
+    | CLiteral (VBool b) -> ok (Base (Typed.BitVec.of_bool (Typed.bool b)))
+    | CLiteral (VChar c) -> ok (Base (Typed.BitVec.u32i (Uchar.to_int c)))
     | CLiteral (VFloat { float_value; float_ty }) ->
-        let fp = float_precision float_ty in
-        ok (Base (Typed.Float.mk fp float_value))
+        ok (Base (Typed.Float.mk float_ty float_value))
     | CLiteral (VStr str) -> (
         let* ptr_opt = State.load_str_global str in
         match ptr_opt with
@@ -281,7 +280,7 @@ module Make (State : State_intf.S) = struct
             let chars =
               String.to_bytes str
               |> Bytes.fold_left
-                   (fun l c -> Base (Typed.BitVec.mki 8 (Char.code c)) :: l)
+                   (fun l c -> Base (Typed.BitVec.u8i (Char.code c)) :: l)
                    []
               |> List.rev
             in
@@ -289,9 +288,8 @@ module Make (State : State_intf.S) = struct
             let str_ty : Types.ty =
               mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
             in
-            let ptr_size = Crate.pointer_bits () in
             let* ptr, _ = State.alloc_ty str_ty in
-            let ptr = (ptr, Some (Typed.BitVec.mki ptr_size len)) in
+            let ptr = (ptr, Some (Typed.BitVec.usizei len)) in
             let* () = State.store ptr str_ty char_arr in
             let+ () = State.store_str_global str ptr in
             Ptr ptr)
@@ -301,8 +299,7 @@ module Make (State : State_intf.S) = struct
     | CTraitConst (tref, "IS_ZST") ->
         let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
         let^+ size = Layout.size_of_s ty in
-        let ptr_size = Crate.pointer_bits () in
-        Base (Typed.BitVec.of_bool 8 (size ==@ Typed.BitVec.zero ptr_size))
+        Base (Typed.BitVec.of_bool (size ==@ Typed.BitVec.usizei 0))
     | CTraitConst (tref, "LAYOUT") ->
         let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
         let^ size = Layout.size_of_s ty in
@@ -313,7 +310,7 @@ module Make (State : State_intf.S) = struct
     | CTraitConst (_, name) ->
         Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
     | CRawMemory bytes ->
-        let value = List.map (fun x -> Base (Typed.BitVec.mki 8 x)) bytes in
+        let value = List.map (fun x -> Base (Typed.BitVec.u8i x)) bytes in
         let value = Array value in
         let from_ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
@@ -351,10 +348,9 @@ module Make (State : State_intf.S) = struct
                 fptr
             | _ -> ok fptr)
         | Base off ->
-            let ptr_size = Crate.pointer_bits () in
-            let^+ off = cast_checked ~ty:(Typed.t_int ptr_size) off in
+            let off = Typed.cast_i Usize off in
             let ptr = Sptr.null_ptr_of off in
-            (ptr, None)
+            ok (ptr, None)
         | _ -> not_impl "Unexpected value when dereferencing place")
     | PlaceProjection (base, Field (kind, field)) ->
         let* ptr, meta = resolve_place base in
@@ -373,7 +369,6 @@ module Make (State : State_intf.S) = struct
         else ok (ptr', meta)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let ptr_size = Crate.pointer_bits () in
         let len =
           match (meta, base.ty) with
           (* Array with static size *)
@@ -383,14 +378,14 @@ module Make (State : State_intf.S) = struct
                   id = TBuiltin TArray;
                   generics = { const_generics = [ len ]; _ };
                 } ) ->
-              Typed.BitVec.mk ptr_size @@ Charon_util.z_of_const_generic len
+              Typed.BitVec.usize (Charon_util.z_of_const_generic len)
           | Some len, TAdt { id = TBuiltin TSlice; _ } -> Typed.cast len
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
-        let idx = as_base_of ~ty:(Typed.t_int ptr_size) idx in
+        let idx = as_base_i Usize idx in
         let idx = if from_end then len -@ idx else idx in
-        if%sat Typed.BitVec.zero ptr_size <=$@ idx &&@ (idx <$@ len) then (
+        if%sat Typed.BitVec.usizei 0 <=$@ idx &&@ (idx <$@ len) then (
           let^^+ ptr' = Sptr.offset ~ty ptr idx in
           L.debug (fun f ->
               f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa
@@ -399,7 +394,6 @@ module Make (State : State_intf.S) = struct
         else error `OutOfBounds
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let ptr_size = Crate.pointer_bits () in
         let ty, len =
           match (meta, base.ty) with
           (* Array with static size *)
@@ -409,10 +403,7 @@ module Make (State : State_intf.S) = struct
                   id = TBuiltin TArray;
                   generics = { const_generics = [ len ]; types = [ ty ]; _ };
                 } ) ->
-              let len =
-                Typed.BitVec.mk ptr_size @@ Charon_util.z_of_const_generic len
-              in
-              (ty, len)
+              (ty, Typed.BitVec.usize (Charon_util.z_of_const_generic len))
           | ( Some len,
               TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } )
             ->
@@ -421,14 +412,11 @@ module Make (State : State_intf.S) = struct
         in
         let* from = eval_operand from in
         let* to_ = eval_operand to_ in
-        let from = as_base_of ~ty:(Typed.t_int ptr_size) from in
-        let to_ = as_base_of ~ty:(Typed.t_int ptr_size) to_ in
+        let from = as_base_i Usize from in
+        let to_ = as_base_i Usize to_ in
         let to_ = if from_end then len -@ to_ else to_ in
         if%sat
-          Typed.BitVec.zero ptr_size
-          <=$@ from
-          &&@ (from <=$@ to_)
-          &&@ (to_ <=$@ len)
+          Typed.BitVec.usizei 0 <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len)
         then (
           let^^+ ptr' = Sptr.offset ~ty ptr from in
           let slice_len = to_ -@ from in
@@ -567,8 +555,7 @@ module Make (State : State_intf.S) = struct
         match op with
         | Not -> (
             let ty = TypesUtils.ty_as_literal ty in
-            let size = Layout.size_of_literal_ty ty in
-            let v = as_base_of ~ty:(Typed.t_int (size * 8)) v in
+            let v = as_base ty v in
             match ty with
             | TBool -> ok (Base (Typed.BitVec.not_bool v))
             | TInt _ | TUInt _ -> ok (Base (Typed.BitVec.not v))
@@ -578,15 +565,11 @@ module Make (State : State_intf.S) = struct
         | Neg _ -> (
             match type_of_operand e with
             | TLiteral ((TInt _ | TUInt _) as ty) ->
-                let size = 8 * Layout.size_of_literal_ty ty in
-                let v = as_base_of ~ty:(Typed.t_int size) v in
+                let v = as_base ty v in
                 ok (Base ~-v)
-            | TLiteral (TFloat _) ->
-                let+ v =
-                  of_opt_not_impl "Expected a float type"
-                  @@ Typed.cast_float (as_base v)
-                in
-                Base (Typed.Float.like v 0.0 -.@ v)
+            | TLiteral (TFloat fty) ->
+                let v = as_base_f fty v in
+                ok (Base (Typed.Float.neg v))
             | _ -> not_impl "Invalid type for Neg")
         | PtrMetadata -> (
             match v with
@@ -633,8 +616,7 @@ module Make (State : State_intf.S) = struct
                   | None -> not_impl "Couldn't set pointer meta in CastUnsize")
               | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
             in
-            let ptr_size = Crate.pointer_bits () in
-            let size = Typed.BitVec.mk ptr_size @@ z_of_const_generic length in
+            let size = Typed.BitVec.usize (z_of_const_generic length) in
             with_ptr_meta size v
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
@@ -650,7 +632,7 @@ module Make (State : State_intf.S) = struct
         | Base v1, Base v2 -> (
             match op with
             | Ge | Gt | Lt | Le -> (
-                let^ v1, v2, ty = cast_checked2 v1 v2 in
+                let v1, v2, ty = Typed.cast_checked2 v1 v2 in
                 match Typed.untype_type ty with
                 | TBitVector _ ->
                     let lit_ty =
@@ -665,7 +647,7 @@ module Make (State : State_intf.S) = struct
                       | Le -> Typed.BitVec.leq
                       | _ -> assert false
                     in
-                    let v = op ~signed v1 v2 |> Typed.BitVec.of_bool 8 in
+                    let v = op ~signed v1 v2 |> Typed.BitVec.of_bool in
                     ok (Base v)
                 | TFloat _ ->
                     let op =
@@ -677,20 +659,20 @@ module Make (State : State_intf.S) = struct
                       | _ -> assert false
                     in
                     let v1, v2 = (Typed.cast v1, Typed.cast v2) in
-                    let v = op v1 v2 |> Typed.BitVec.of_bool 8 in
+                    let v = op v1 v2 |> Typed.BitVec.of_bool in
                     ok (Base v)
                 | TPointer _ -> error `UBPointerComparison
                 | _ -> assert false)
             | Eq | Ne ->
-                let^ v1, v2, _ = cast_checked2 v1 v2 in
+                let v1, v2, _ = Typed.cast_checked2 v1 v2 in
                 let^^+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else Typed.BitVec.not_bool res in
                 Base (res :> T.cval Typed.t)
             | Add om | Sub om | Mul om | Div om | Rem om | Shl om | Shr om -> (
                 match (om, type_of_operand e1) with
                 | OWrap, TLiteral ((TInt _ | TUInt _) as ty) ->
-                    let^+ res = Core.wrapping_binop op ty v1 v2 in
-                    Base res
+                    let res = Core.wrapping_binop op ty v1 v2 in
+                    ok (Base res)
                 | _, TLiteral ty ->
                     let^^+ res = Core.eval_lit_binop op ty v1 v2 in
                     Base res
@@ -703,9 +685,8 @@ module Make (State : State_intf.S) = struct
                 in
                 State.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
             | Cmp ->
-                let^ v1, v2, ty = cast_checked2 v1 v2 in
-                let ptr_size = Crate.pointer_bits () in
-                if Typed.equal_ty ty (Typed.t_ptr ptr_size) then
+                let v1, v2, ty = Typed.cast_checked2 v1 v2 in
+                if Typed.equal_ty ty (Typed.t_ptr ()) then
                   error `UBPointerComparison
                 else
                   let ty = type_of_operand e1 in
@@ -715,19 +696,17 @@ module Make (State : State_intf.S) = struct
             | Offset ->
                 (* non-zero offset on integer pointer is not permitted, as these are always
                    dangling *)
-                let ptr_size = Crate.pointer_bits () in
-                let^ v2 = cast_checked ~ty:(Typed.t_int ptr_size) v2 in
-                if%sat v2 ==@ Typed.BitVec.zero ptr_size then ok (Base v1)
+                let v2 = Typed.cast_i Usize v2 in
+                if%sat v2 ==@ Typed.BitVec.usizei 0 then ok (Base v1)
                 else error `UBDanglingPointer
             | BitOr | BitAnd | BitXor -> (
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
-                let size = 8 * Layout.size_of_literal_ty ty in
-                let^ v1 = cast_checked ~ty:(Typed.t_int size) v1 in
-                let^+ v2 = cast_checked ~ty:(Typed.t_int size) v2 in
+                let v1 = Typed.cast_lit ty v1 in
+                let v2 = Typed.cast_lit ty v2 in
                 match op with
-                | BitOr -> Base (v1 |@ v2)
-                | BitAnd -> Base (v1 &@ v2)
-                | BitXor -> Base (v1 ^@ v2)
+                | BitOr -> ok (Base (v1 |@ v2))
+                | BitAnd -> ok (Base (v1 &@ v2))
+                | BitXor -> ok (Base (v1 ^@ v2))
                 | _ -> assert false))
         | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2) -> (
             match op with
@@ -737,9 +716,8 @@ module Make (State : State_intf.S) = struct
                   | Ptr (p, meta), Base v -> return (p, meta, v)
                   | _ -> Rustsymex.not_impl "Invalid operands in offset"
                 in
-                let ptr_size = Crate.pointer_bits () in
                 let ty = Charon_util.get_pointee (type_of_operand e1) in
-                let^ v = cast_checked ~ty:(Typed.t_int ptr_size) v in
+                let v = Typed.cast_i Usize v in
                 let^^+ p' = Sptr.offset ~ty p v in
                 Ptr (p', meta)
             | _ ->
@@ -755,7 +733,7 @@ module Make (State : State_intf.S) = struct
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
                Our execution already checks for UB, so we should return
                false, to indicate runtime UB checks aren't needed. *)
-            ok (Base (Typed.BitVec.of_bool 8 Typed.v_false))
+            ok (Base (Typed.BitVec.of_bool Typed.v_false))
         | SizeOf ->
             let^+ size = Layout.size_of_s ty in
             Base size
@@ -771,13 +749,13 @@ module Make (State : State_intf.S) = struct
         let variants = Crate.as_enum enum in
         let+ variant_id = State.load_discriminant loc place.ty in
         let variant = Types.VariantId.nth variants variant_id in
-        Base (value_of_scalar variant.discriminant)
+        Base (Typed.BitVec.of_scalar variant.discriminant)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
       ->
         let variants = Crate.as_enum t_id in
         let variant = Types.VariantId.nth variants v_id in
-        let discr = value_of_scalar variant.discriminant in
+        let discr = Typed.BitVec.of_scalar variant.discriminant in
         let+ vals = eval_operand_list vals in
         Enum (discr, vals)
     (* Union aggregate *)
@@ -827,9 +805,8 @@ module Make (State : State_intf.S) = struct
           match ptr with
           | Ptr (ptr, _) -> ok ptr
           | Base v ->
-              let ptr_size = Crate.pointer_bits () in
-              let^+ v = cast_checked ~ty:(Typed.t_int ptr_size) v in
-              Sptr.null_ptr_of v
+              let v = Typed.cast_i Usize v in
+              ok (Sptr.null_ptr_of v)
           | _ ->
               Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
                 pp_rust_val ptr
@@ -847,6 +824,7 @@ module Make (State : State_intf.S) = struct
     | Repeat (value, _, len) ->
         let+ value = eval_operand value in
         let len = int_of_const_generic len in
+        (* FIXME: this is horrible for large arrays! *)
         let els = List.init len (fun _ -> value) in
         Array els
     (* Shallow init box -- get the pointer and transmute it to a box *)
@@ -854,17 +832,13 @@ module Make (State : State_intf.S) = struct
         let+ ptr = eval_operand ptr in
         Std_funs.Std._mk_box ptr
     (* Length of a &[T;N] or &[T] *)
-    | Len (place, _, size_opt) ->
+    | Len (place, _, size_opt) -> (
         let* _, meta = resolve_place place in
-        let^+ len =
-          match (meta, size_opt) with
-          | _, Some size ->
-              let ptr_size = Crate.pointer_bits () in
-              return @@ Typed.BitVec.mk ptr_size (z_of_const_generic size)
-          | Some len, None -> return len
-          | _ -> Rustsymex.not_impl "Unexpected len rvalue"
-        in
-        Base len
+        match (meta, size_opt) with
+        | _, Some size ->
+            ok (Base (Typed.BitVec.usize (z_of_const_generic size)))
+        | Some len, None -> ok (Base len)
+        | _ -> not_impl "Unexpected len rvalue")
 
   and exec_stmt stmt : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
@@ -929,11 +903,7 @@ module Make (State : State_intf.S) = struct
           | _ -> State.uninit place_ptr place.ty)
     | Assert { cond; expected; on_failure } -> (
         let* cond = eval_operand cond in
-        let^ cond_int =
-          match cond with
-          | Base cond -> cast_checked cond ~ty:(Typed.t_int 8)
-          | _ -> Rustsymex.not_impl "Expected a base Rust value in assert"
-        in
+        let cond_int = as_base TBool cond in
         let cond_bool = Typed.BitVec.to_bool cond_int in
         let cond_bool =
           if expected = true then cond_bool else Typed.not cond_bool
@@ -1022,7 +992,7 @@ module Make (State : State_intf.S) = struct
               (* if a base value, compare with 0 -- if a pointer, check for null *)
               match discr with
               | Base discr ->
-                  let^ discr = cast_int discr in
+                  let discr, _ = Typed.cast_int discr in
                   if%sat [@lname "else case"] [@rname "if case"]
                     Typed.BitVec.to_bool discr
                   then ok if_block
@@ -1053,7 +1023,7 @@ module Make (State : State_intf.S) = struct
                   options UllbcAst.pp_block_id default pp_rust_val discr);
             let compare_discr =
               match discr with
-              | Base discr -> fun (v, _) -> discr ==@ value_of_scalar v
+              | Base discr -> fun (v, _) -> discr ==@ Typed.BitVec.of_scalar v
               | Ptr (ptr, _) ->
                   fun (v, _) ->
                     if Z.equal Z.zero (z_of_scalar v) then

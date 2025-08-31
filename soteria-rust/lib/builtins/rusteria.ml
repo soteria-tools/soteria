@@ -36,8 +36,8 @@ module M (State : State_intf.S) = struct
     let* to_assert, msg =
       match args with
       | [ Base t; Ptr msg ] ->
-          let+ t = cast_checked t ~ty:(Typed.t_int 8) in
-          (t, msg)
+          let t = Typed.cast_lit TBool t in
+          return (t, msg)
       | _ -> not_impl "to_assert with non-one arguments"
     in
     if%sat Typed.not (Typed.BitVec.to_bool to_assert) then
@@ -48,7 +48,7 @@ module M (State : State_intf.S) = struct
   let assume ~args state =
     let* to_assume =
       match args with
-      | [ Base t ] -> cast_checked t ~ty:(Typed.t_int 8)
+      | [ Base t ] -> return (Typed.cast_lit TBool t)
       | _ -> not_impl "assume with non-one arguments"
     in
     L.debug (fun g -> g "Assuming: %a\n" Typed.ppa to_assume);

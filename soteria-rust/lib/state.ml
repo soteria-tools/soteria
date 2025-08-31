@@ -33,9 +33,7 @@ module StateKey = struct
   (* This *only* works in WPST!!! *)
   let fresh () =
     incr indices;
-    let idx = !indices in
-    let ptr_size = Crate.pointer_bits () in
-    Rustsymex.return (Ptr.loc_of_int ptr_size idx)
+    Rustsymex.return (Ptr.loc_of_int !indices)
 end
 
 module SPmap = Pmap_direct_access (StateKey)
@@ -156,7 +154,7 @@ let check_ptr_align (ptr : Sptr.t) ty st =
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   (* 0-based pointers are aligned up to their offset *)
   let align = Typed.ite (Typed.Ptr.is_null_loc loc) expected_align ptr.align in
-  let zero = Typed.BitVec.zero (Crate.pointer_bits ()) in
+  let zero = Typed.BitVec.usizei 0 in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
         Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa expected_align
@@ -234,8 +232,7 @@ let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
     accesses; all of these are ignored. *)
 let tb_load (ptr, _) ty st =
   let* size = Layout.size_of_s ty in
-  if%sat size ==@ Typed.BitVec.zero (Crate.pointer_bits ()) then
-    Result.ok ((), st)
+  if%sat size ==@ Typed.BitVec.usizei 0 then Result.ok ((), st)
   else
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
@@ -341,8 +338,7 @@ let alloc ?zeroed size align st =
   let block = Tree_block.alloc ?zeroed size in
   let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
-  let ptr_size = Crate.pointer_bits () in
-  let ptr = Typed.Ptr.mk loc (Typed.BitVec.zero ptr_size) in
+  let ptr = Typed.Ptr.mk loc (Typed.BitVec.usizei 0) in
   let ptr : Sptr.t Rust_val.full_ptr =
     ({ ptr; tag = tb.tag; align; size }, None)
   in
@@ -354,10 +350,9 @@ let alloc_untyped ?zeroed ~size ~align st = alloc ?zeroed size align st
 
 let alloc_ty ty st =
   let* layout = Layout.layout_of_s ty in
-  let ptr_size = Crate.pointer_bits () in
   alloc
-    (Typed.BitVec.mki ptr_size layout.size)
-    (Typed.BitVec.mki_nz ptr_size layout.align)
+    (Typed.BitVec.usizei layout.size)
+    (Typed.BitVec.usizei_nz layout.align)
     st
 
 let alloc_tys tys st =
@@ -366,27 +361,25 @@ let alloc_tys tys st =
   SPmap.allocs state ~els:tys ~fn:(fun ty loc ->
       (* make Tree_block *)
       let* layout = Layout.layout_of_s ty in
-      let ptr_size = Crate.pointer_bits () in
-      let size = Typed.BitVec.mki ptr_size layout.size in
+      let size = Typed.BitVec.usizei layout.size in
       let tb = Tree_borrow.init ~state:Unique () in
       let block = Freeable.Alive (Tree_block.alloc size, tb) in
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-      let ptr = Typed.Ptr.mk loc (Typed.BitVec.zero ptr_size) in
+      let ptr = Typed.Ptr.mk loc (Typed.BitVec.usizei 0) in
       let ptr : Sptr.t =
         {
           ptr;
           tag = tb.tag;
-          align = Typed.BitVec.mki_nz ptr_size layout.align;
-          size = Typed.BitVec.mki ptr_size layout.size;
+          align = Typed.BitVec.usizei_nz layout.align;
+          size = Typed.BitVec.usizei layout.size;
         }
       in
       (block, (ptr, None)))
 
 let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
-  let ptr_bits = Crate.pointer_bits () in
-  if%sat Typed.Ptr.ofs ptr ==@ Typed.BitVec.zero ptr_bits then
+  if%sat Typed.Ptr.ofs ptr ==@ Typed.BitVec.usizei 0 then
     let@ () = with_loc_err () in
     (* TODO: does the tag not play a role in freeing? *)
     let++ (), state =
@@ -478,13 +471,12 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
     let ptr' = { ptr with tag = node.tag } in
     let* size = Layout.size_of_s ty in
-    let ptr_bits = Crate.pointer_bits () in
     L.debug (fun m ->
         m "Protecting pointer %a -> %a, on [%a;%a]" Sptr.pp ptr Sptr.pp ptr'
           Typed.ppa ofs Typed.ppa size);
     let++ (), block' =
       (* nothing to protect *)
-      if%sat size ==@ Typed.BitVec.zero ptr_bits then Result.ok ((), Some block)
+      if%sat size ==@ Typed.BitVec.usizei 0 then Result.ok ((), Some block)
       else Tree_block.protect ofs size node.tag tb' (Some block)
     in
     let block = Option.map (fun b' -> (b', tb')) block' in
@@ -512,9 +504,8 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   let tb' =
     Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
   in
-  let ptr_bits = Crate.pointer_bits () in
   let++ (), block' =
-    if%sat size ==@ Typed.BitVec.zero ptr_bits then Result.ok ((), Some block)
+    if%sat size ==@ Typed.BitVec.usizei 0 then Result.ok ((), Some block)
     else Tree_block.unprotect ofs size ptr.tag tb' (Some block)
   in
   let block' = Option.map (fun b' -> (b', tb')) block' in
@@ -584,16 +575,15 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
         let functions = FunBiMap.add loc fn_ptr functions in
         (loc, { st with functions })
   in
-  let ptr_size = Crate.pointer_bits () in
   (* FIXME: what is the size and align of a fn pointer?
      See https://github.com/rust-lang/rust/issues/82232 *)
-  let ptr = Typed.Ptr.mk loc (Typed.BitVec.zero ptr_size) in
+  let ptr = Typed.Ptr.mk loc (Typed.BitVec.usizei 0) in
   let ptr : Sptr.t =
     {
       ptr;
       tag = Tree_borrow.zero;
-      align = Typed.BitVec.one ptr_size;
-      size = Typed.BitVec.zero ptr_size;
+      align = Typed.BitVec.usizei_nz 1;
+      size = Typed.BitVec.usizei 0;
     }
   in
   Soteria_symex.Compo_res.Ok ((ptr, None), st)
@@ -601,8 +591,7 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
 let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
-  let ptr_size = Crate.pointer_bits () in
-  if%sat Typed.Ptr.ofs ptr ==@ Typed.BitVec.zero ptr_size then
+  if%sat Typed.Ptr.ofs ptr ==@ Typed.BitVec.usizei 0 then
     let loc = Typed.Ptr.loc ptr in
     match FunBiMap.get_fn loc functions with
     | Some fn -> Result.ok (fn, st)

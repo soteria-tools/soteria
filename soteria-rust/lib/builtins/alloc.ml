@@ -10,12 +10,11 @@ module M (State : State_intf.S) = struct
       | [ Base size; Base align ] -> (size, align)
       | _ -> failwith "alloc: invalid arguments"
     in
-    let bit_size = Crate.pointer_bits () in
-    let* align = cast_checked ~ty:(Typed.t_int bit_size) align in
-    let* size = cast_checked ~ty:(Typed.t_int bit_size) size in
+    let align = Typed.cast_i Usize align in
+    let size = Typed.cast_i Usize size in
     let max_size = Layout.max_value_z (TInt Isize) in
-    let max_size = Typed.BitVec.mk bit_size max_size in
-    let min_align = Typed.BitVec.one bit_size in
+    let max_size = Typed.BitVec.usize max_size in
+    let min_align = Typed.BitVec.usizei 1 in
     if%sat align >=@ min_align &&@ (size <@ max_size) then
       let align = Typed.cast align in
       let++ ptr, state = State.alloc_untyped ~zeroed ~size ~align state in
@@ -44,9 +43,8 @@ module M (State : State_intf.S) = struct
     let ptr_in, _ = ptr in
     let prev_size, prev_align = State.Sptr.allocation_info ptr_in in
     if%sat prev_align ==?@ align &&@ (prev_size ==?@ old_size) then
-      let bit_size = Crate.pointer_bits () in
       let align = Typed.cast align in
-      let* size = cast_checked ~ty:(Typed.t_int bit_size) size in
+      let size = Typed.cast_i Usize size in
       let** new_ptr, state = State.alloc_untyped ~size ~align state in
       let** (), state =
         if%sat size >=@ prev_size then

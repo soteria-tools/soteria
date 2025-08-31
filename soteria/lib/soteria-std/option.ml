@@ -15,3 +15,5 @@ let get ?msg = function
       match msg with
       | None -> raise (Invalid_argument "Option.get None")
       | Some msg -> raise (Invalid_argument ("Option.get None: " ^ msg)))
+
+let get_or_raise ex = function Some v -> v | None -> raise ex
