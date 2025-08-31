@@ -1,10 +1,5 @@
 open Svalue
 
-type _ Effect.t += Eval_var : Var.t * Svalue.ty -> t Effect.t
-
-let eval_var (v : Var.t) (ty : Svalue.ty) : t =
-  Effect.perform (Eval_var (v, ty))
-
 let eval_binop : Binop.t -> t -> t -> t = function
   | And -> Bool.and_
   | Or -> Bool.or_
@@ -50,7 +45,9 @@ let eval_unop : Unop.t -> t -> t = function
   | FIs fc -> Float.is_floatclass fc
   | FRound rm -> Float.round rm
 
-let rec eval ?(force = false) (x : t) : t =
+let rec eval ?(force = false) ~eval_var ~eval_bool (x : t) : t =
+  let eval = eval ~force ~eval_var ~eval_bool in
+  let x = if x.node.ty = TBool then eval_bool x else x in
   match x.node.kind with
   | Var v -> eval_var v x.node.ty
   | Bool _ | Float _ | BitVec _ -> x
@@ -82,11 +79,11 @@ let rec eval ?(force = false) (x : t) : t =
       let l, changed = List.map_changed eval l in
       if Stdlib.not changed then x else Svalue.SSeq.mk ~seq_ty:x.node.ty l
 
-let eval ?force ~(eval_var : Var.t -> Svalue.ty -> t option) (x : t) : t option
-    =
-  try Some (eval ?force x) with
-  | Division_by_zero -> None
-  | effect Eval_var (v, ty), k -> (
-      match eval_var v ty with
-      | Some v -> Effect.Deep.continue k v
-      | None -> None)
+(** Evaluates an expression; will call [eval_var] on each [Var] encountered, and
+    will call [eval_bool] on every node of type [TBool] encountered. [force]
+    indicates that expressions should be re-evaluated even if their components
+    hasn't changed. If evaluation errors (e.g. from a division by zero), gives
+    up and returns the original expression. *)
+let eval ?force ?(eval_var : Var.t -> Svalue.ty -> t = Svalue.mk_var)
+    ?(eval_bool : t -> t = Fun.id) (x : t) : t =
+  try eval ~eval_var ~eval_bool ?force x with Division_by_zero -> x

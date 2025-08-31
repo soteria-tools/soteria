@@ -500,12 +500,12 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
       match ty with
       | TBitVector n | TLoc n -> (
           let i = Var.to_int v in
-          try Some (Var.Hashtbl.find v_eqs v)
-          with Not_found -> Some (Svalue.BitVec.mk_masked n (Z.of_int i)))
-      | _ -> None
+          try Var.Hashtbl.find v_eqs v
+          with Not_found -> Svalue.BitVec.mk_masked n (Z.of_int i))
+      | _ -> Svalue.mk_var v ty
     in
     let res = Eval.eval ~eval_var to_check in
-    match res with Some v -> Svalue.equal v Svalue.Bool.v_true | _ -> false
+    Svalue.equal res Svalue.Bool.v_true
 
   let check_sat_raw solver relevant_vars to_check =
     (* TODO: we shouldn't wait for ack for each command individually... *)
