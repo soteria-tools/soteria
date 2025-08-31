@@ -83,6 +83,7 @@ module Unop = struct
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
+    | BvNeg
     | BvNegOvf
     | FIs of FloatClass.t
     | FRound of FloatRoundingMode.t
@@ -101,6 +102,7 @@ module Unop = struct
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
+    | BvNeg -> Fmt.string ft "-bv"
     | BvNegOvf -> Fmt.string ft "-bv_ovf"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
     | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
@@ -524,6 +526,8 @@ module rec Bool : Bool = struct
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
     | BitVec b1, BitVec b2 -> bool (Z.equal b1 b2)
     (* Arithmetics *)
+    | BitVec _, Unop (BvNeg, v2) -> sem_eq (BitVec.neg v1) v2
+    | Unop (BvNeg, v1), BitVec _ -> sem_eq v1 (BitVec.neg v2)
     | BitVec _, Binop (BvPlus, ({ node = { kind = BitVec _; _ }; _ } as l), r)
     | BitVec _, Binop (BvPlus, r, ({ node = { kind = BitVec _; _ }; _ } as l))
       ->
@@ -674,8 +678,13 @@ and BitVec : BitVec = struct
   let rec plus v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l + r)
+    | Unop (BvNeg, v1), _ -> minus v2 v1
+    | _, Unop (BvNeg, v2) -> minus v1 v2
     | _, BitVec z when Z.equal z Z.zero -> v1
     | BitVec z, _ when Z.equal z Z.zero -> v2
+    | (BitVec z, Unop (BvNot, v) | Unop (BvNot, v), BitVec z)
+      when Z.equal z Z.one ->
+        neg v
     | Binop (BvPlus, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
     | Binop (BvPlus, r, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
       ->
@@ -687,10 +696,13 @@ and BitVec : BitVec = struct
         Bool.ite b (plus l x) (plus r x)
     | _ -> mk_commut_binop BvPlus v1 v2 <| v1.node.ty
 
-  let rec minus v1 v2 =
+  and minus v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l - r)
     | _, BitVec z when Z.equal z Z.zero -> v1
+    | BitVec z, _ when Z.equal z Z.zero -> neg v2
+    (* BAD PERF:!!!! *)
+    | _, Unop (BvNeg, v2) -> plus v1 v2
     | Binop (BvMinus, ({ node = { kind = BitVec _; _ }; _ } as c1), s), BitVec _
       ->
         minus (minus c1 v2) s
@@ -700,10 +712,22 @@ and BitVec : BitVec = struct
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec _ -> Bool.ite b (minus l v2) (minus r v2)
     | BitVec _, Ite (b, l, r) -> Bool.ite b (minus v1 l) (minus v1 r)
-    | Unop (BvOfBool n, b), BitVec _ ->
-        Bool.ite b (minus (one n) v2) (minus (zero n) v2)
+    | Unop (BvOfBool n, b), BitVec _ -> Bool.ite b (minus (one n) v2) (neg v2)
     | BitVec _, Unop (BvOfBool n, b) -> Bool.ite b (minus v1 (one n)) v1
     | _ -> Binop (BvMinus, v1, v2) <| v1.node.ty
+
+  and neg v =
+    (* let n = size_of v.node.ty in
+    match v.node.kind with
+    | BitVec bv -> mk_masked n Z.(neg bv)
+    | _ -> minus (zero n) v *)
+    let n = size_of v.node.ty in
+    match v.node.kind with
+    | BitVec bv -> mk_masked n Z.(neg bv)
+    | Unop (BvNeg, v) -> v
+    | Ite (b, l, r) -> Bool.ite b (neg l) (neg r)
+    | Unop (BvOfBool n, b) -> Bool.ite b (neg (one n)) (zero n)
+    | _ -> Unop (BvNeg, v) <| v.node.ty
 
   let rec times v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -771,12 +795,6 @@ and BitVec : BitVec = struct
           in
           mk_masked size res
     | _ -> Binop (BvMod, v1, v2) <| v1.node.ty
-
-  let neg v =
-    let n = size_of v.node.ty in
-    match v.node.kind with
-    | BitVec bv -> mk_masked n Z.(neg bv)
-    | _ -> minus (zero n) v
 
   let rec not v =
     match v.node.kind with

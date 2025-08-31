@@ -41,6 +41,7 @@ let eval_unop : Unop.t -> t -> t = function
   | BvExtract (from, to_) -> BitVec.extract from to_
   | BvExtend (signed, by) -> BitVec.extend ~signed by
   | BvNot -> BitVec.not
+  | BvNeg -> BitVec.neg
   | BvNegOvf -> BitVec.neg_overflows
   | FIs fc -> Float.is_floatclass fc
   | FRound rm -> Float.round rm
