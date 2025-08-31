@@ -99,7 +99,7 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
             relative = path.relative_to(test_conf["root"])
             pprint(f"Running {relative} ... ", inc=True, end="", flush=True)
 
-            if str(relative) in SKIPPED_TESTS:
+            if str(relative) in SKIPPED_TESTS and not opts["no_skips"]:
                 (msg, clr, reason) = SKIPPED_TESTS[str(relative)]
                 print(
                     f"{clr}{msg}{RESET} {YELLOW}✦{RESET} {GRAY}{BOLD}Skipped{RESET}: {BOLD}{reason}{RESET}"
@@ -167,7 +167,7 @@ def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
     for path in tests:
         relative = path.relative_to(test_conf["root"])
         txt = f"Running {relative} ..."
-        if str(relative) in SKIPPED_TESTS:
+        if str(relative) in SKIPPED_TESTS and not opts["no_skips"]:
             pprint(f"{txt} {GRAY}{BOLD}skipped", inc=True)
             continue
 

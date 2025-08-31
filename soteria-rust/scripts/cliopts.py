@@ -29,6 +29,7 @@ class CliOpts(TypedDict):
     filters: list[str]
     exclusions: list[str]
     tag: Optional[str]
+    no_skips: bool
     test_folder: Optional[Path]
     categorise: TestCategoriser
 
@@ -55,6 +56,7 @@ def parse_flags():
         "filters": [],
         "exclusions": [],
         "tag": None,
+        "no_skips": False,
         "test_folder": None,
         "categorise": categorise_rusteria,
     }
@@ -124,6 +126,8 @@ def parse_flags():
                     f"{RED}The folder {folder} does not exist or is not a directory."
                 )
             opts["test_folder"] = folder
+        elif arg == "--no-skip":
+            opts["no_skips"] = True
         elif arg == "--miri":
             with_miri = True
         elif arg == "--kani":
