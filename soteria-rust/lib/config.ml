@@ -50,7 +50,8 @@ type global = {
       [@term Soteria.Logging.Cli.term]
   terminal : Soteria.Terminal.Config.t;
       [@term Soteria.Terminal.Config.cmdliner_term ()]
-  solver : Solver_config.t; [@term Solver_config.cmdliner_term ()]
+  solver : Soteria.Solvers.Config.t;
+      [@term Soteria.Solvers.Config.cmdliner_term ()]
   rusteria : t; [@term term]
 }
 [@@deriving make, subliner]
@@ -60,7 +61,7 @@ let default = make ()
 let current : t ref = ref default
 
 let set (config : global) =
-  Solver_config.set config.solver;
+  Soteria.Solvers.Config.set config.solver;
   Soteria.Logging.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
   current := config.rusteria

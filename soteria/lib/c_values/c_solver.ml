@@ -2,7 +2,12 @@ open Soteria_std
 module Var = Svalue.Var
 module L = Logging.Logs.L
 
-module Make_incremental (Analysis : Analyses.S) (Intf : Solver_interface.S) =
+module Make_incremental
+    (Analysis : Analyses.S)
+    (Intf :
+      Solvers.Solver_interface.S
+        with type value = Svalue.t
+         and type ty = Svalue.ty) =
 struct
   module Value = Typed
 
@@ -175,7 +180,13 @@ struct
     |> Iter.to_list
 end
 
-module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
+module Make
+    (Analysis : Analyses.S)
+    (Intf :
+      Solvers.Solver_interface.S
+        with type value = Svalue.t
+         and type ty = Svalue.ty) =
+struct
   module Value = Typed
 
   module Var_counter = Var.Incr_counter_mut (struct
@@ -563,5 +574,6 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
     |> Iter.to_list
 end
 
-module Z3_incremental_solver = Make_incremental (Analyses.Interval) (Z3_exe)
-module Z3_solver = Make (Analyses.Interval) (Z3_exe)
+module Z3 = Solvers.Z3.Make (Encoding)
+module Z3_incremental_solver = Make_incremental (Analyses.Interval) (Z3)
+module Z3_solver = Make (Analyses.Interval) (Z3)
