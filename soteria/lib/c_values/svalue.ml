@@ -86,7 +86,7 @@ module Unop = struct
     | FloatOfBv of FloatPrecision.t
     | IntOfBv of bool (* signed *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
-    | BvExtend of int (* by N bits *)
+    | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
     | BvNegOvf
     | FIs of FloatClass.t
@@ -106,7 +106,7 @@ module Unop = struct
     | FloatOfBv p -> Fmt.pf ft "bv2f[%a]" FloatPrecision.pp p
     | IntOfBv _ -> Fmt.string ft "bv2i"
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
-    | BvExtend by -> Fmt.pf ft "extend[%d]" by
+    | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
     | BvNegOvf -> Fmt.string ft "-bv_ovf"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
@@ -580,17 +580,21 @@ module BitVec = struct
           Unop (BvOfInt (s, size), v) <| t_bv size
       | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
 
-    let extend to_ v =
-      let extend_by = to_ - size_of_bv v.node.ty in
+    let extend signed extend_by v =
+      let size = size_of_bv v.node.ty in
+      let to_ = size + extend_by in
       match v.node.kind with
       | BitVec bv ->
-          let to_ = to_ + 1 in
-          let bv = Z.(bv land pred (one lsl to_)) in
+          let to_' = to_ + 1 in
+          let bv = Z.(bv land pred (one lsl to_')) in
           mk to_ bv
       (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
          as that will require a more expensive bit-blasting. *)
-      | Unop (BvOfInt (s, _), v) -> Unop (BvOfInt (s, to_), v) <| t_bv to_
-      | _ -> Unop (BvExtend extend_by, v) <| t_bv to_
+      (* We also note the following reduction is *not valid*, as some upper bits may be set;
+         e.g. given i2bv[3](8) = 0b000, extend[1](i2bv[3](8)) = 0b0000, whereas
+              i2bv[4](8) = 0b1000
+      | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv signed to_ *)
+      | _ -> Unop (BvExtend (signed, extend_by), v) <| t_bv to_
 
     let concat v1 v2 =
       let n1 = size_of_bv v1.node.ty in
@@ -641,9 +645,10 @@ module BitVec = struct
     let is_2pow z = Z.(z > one && popcount z = 1) in
     match v.node.kind with
     | Unop (IntOfBv _, v) ->
-        if size_of_bv v.node.ty = n then v
-        else if size_of_bv v.node.ty > n then Raw.extract 0 (n - 1) v
-        else Raw.extend n v
+        let size = size_of_bv v.node.ty in
+        if size = n then v
+        else if size > n then Raw.extract 0 (n - 1) v
+        else Raw.extend s (n - size) v
     | Int z ->
         let z = if Z.geq z Z.zero then z else Z.neg z in
         (* need to mask otherwise we'll encode a value bigger than the bitwidth *)

@@ -71,7 +71,8 @@ module Encoding = struct
     | FloatOfBv F64 -> f64_of_bv
     | FloatOfBv F128 -> f128_of_bv
     | BvExtract (from_, to_) -> bv_extract to_ from_
-    | BvExtend by -> bv_zero_extend by
+    | BvExtend (true, by) -> bv_sign_extend by
+    | BvExtend (false, by) -> bv_zero_extend by
     | BvNot -> bv_not
     | BvNegOvf -> bv_nego
     | FIs fc -> fp_is fc
