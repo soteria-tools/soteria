@@ -57,6 +57,52 @@ module Encoding = struct
 
   let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 
+  let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
+    | Not -> bool_not
+    | FAbs -> fp_abs
+    | GetPtrLoc -> get_loc
+    | GetPtrOfs -> get_ofs
+    | IntOfBool -> fun b -> ite b (int_k 1) (int_k 0)
+    | BvOfInt (_, size) -> bv_of_int size
+    | IntOfBv signed -> int_of_bv signed
+    | BvOfFloat n -> bv_of_float n
+    | FloatOfBv F16 -> f16_of_bv
+    | FloatOfBv F32 -> f32_of_bv
+    | FloatOfBv F64 -> f64_of_bv
+    | FloatOfBv F128 -> f128_of_bv
+    | BvExtract (from_, to_) -> bv_extract to_ from_
+    | BvExtend by -> bv_zero_extend by
+    | FIs fc -> fp_is fc
+    | FRound rm -> fp_round rm
+
+  let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
+    | Eq -> eq
+    | Leq -> num_leq
+    | Lt -> num_lt
+    | And -> bool_and
+    | Or -> bool_or
+    | Plus -> num_add
+    | Minus -> num_sub
+    | Times -> num_mul
+    | Div -> num_div
+    | Rem -> num_rem
+    | Mod -> num_mod
+    | FEq -> fp_eq
+    | FLeq -> fp_leq
+    | FLt -> fp_lt
+    | FPlus -> fp_add
+    | FMinus -> fp_sub
+    | FTimes -> fp_mul
+    | FDiv -> fp_div
+    | FRem -> fp_rem
+    | BitAnd -> bv_and
+    | BitOr -> bv_or
+    | BitXor -> bv_xor
+    | BitShl -> bv_shl
+    | BitShr -> bv_lshr
+    | BvPlus -> bv_add
+    | BvMinus -> bv_sub
+
   let rec encode_value (v : Svalue.t) =
     match v.node.kind with
     | Var v -> atom (Svalue.Var.to_string v)
@@ -80,59 +126,13 @@ module Encoding = struct
         )
     | Ite (c, t, e) ->
         ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
-    | Unop (unop, v1_) -> (
-        let v1 = encode_value_memo v1_ in
-        match unop with
-        | Not -> bool_not v1
-        | FAbs -> fp_abs v1
-        | GetPtrLoc -> get_loc v1
-        | GetPtrOfs -> get_ofs v1
-        | IntOfBool -> ite v1 (int_k 1) (int_k 0)
-        | BvOfInt ->
-            let size = Svalue.size_of_bv v.node.ty in
-            bv_of_int size v1
-        | IntOfBv signed -> int_of_bv signed v1
-        | BvOfFloat n -> bv_of_float n v1
-        | FloatOfBv -> (
-            match Svalue.precision_of_f v.node.ty with
-            | F16 -> f16_of_bv v1
-            | F32 -> f32_of_bv v1
-            | F64 -> f64_of_bv v1
-            | F128 -> f128_of_bv v1)
-        | BvExtract (from_, to_) -> bv_extract to_ from_ v1
-        | BvExtend by -> bv_zero_extend by v1
-        | FIs fc -> fp_is fc v1
-        | FRound rm -> fp_round rm v1)
-    | Binop (binop, v1, v2) -> (
+    | Unop (unop, v1) ->
+        let v1 = encode_value_memo v1 in
+        smt_of_unop unop v1
+    | Binop (binop, v1, v2) ->
         let v1 = encode_value_memo v1 in
         let v2 = encode_value_memo v2 in
-        match binop with
-        | Eq -> eq v1 v2
-        | Leq -> num_leq v1 v2
-        | Lt -> num_lt v1 v2
-        | And -> bool_and v1 v2
-        | Or -> bool_or v1 v2
-        | Plus -> num_add v1 v2
-        | Minus -> num_sub v1 v2
-        | Times -> num_mul v1 v2
-        | Div -> num_div v1 v2
-        | Rem -> num_rem v1 v2
-        | Mod -> num_mod v1 v2
-        | FEq -> fp_eq v1 v2
-        | FLeq -> fp_leq v1 v2
-        | FLt -> fp_lt v1 v2
-        | FPlus -> fp_add v1 v2
-        | FMinus -> fp_sub v1 v2
-        | FTimes -> fp_mul v1 v2
-        | FDiv -> fp_div v1 v2
-        | FRem -> fp_rem v1 v2
-        | BitAnd -> bv_and v1 v2
-        | BitOr -> bv_or v1 v2
-        | BitXor -> bv_xor v1 v2
-        | BitShl -> bv_shl v1 v2
-        | BitShr -> bv_lshr v1 v2
-        | BvPlus -> bv_add v1 v2
-        | BvMinus -> bv_sub v1 v2)
+        smt_of_binop binop v1 v2
     | Nop (Distinct, vs) ->
         let vs = List.map encode_value_memo vs in
         distinct vs

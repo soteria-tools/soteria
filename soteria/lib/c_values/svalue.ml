@@ -82,14 +82,16 @@ module Unop = struct
     | GetPtrOfs
     | IntOfBool
     | BvOfFloat of int (* target bitvec size *)
-    | BvOfInt
-    | FloatOfBv
+    | BvOfInt of bool * int (* signed * target bitvec size *)
+    | FloatOfBv of FloatPrecision.t
     | IntOfBv of bool (* signed *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of int (* by N bits *)
     | FIs of FloatClass.t
     | FRound of FloatRoundingMode.t
   [@@deriving eq, ord]
+
+  let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
 
   let pp ft = function
     | Not -> Fmt.string ft "!"
@@ -98,8 +100,8 @@ module Unop = struct
     | GetPtrOfs -> Fmt.string ft "ofs"
     | IntOfBool -> Fmt.string ft "b2i"
     | BvOfFloat n -> Fmt.pf ft "f2bv(%d)" n
-    | BvOfInt -> Fmt.string ft "i2bv"
-    | FloatOfBv -> Fmt.string ft "bv2f"
+    | BvOfInt (signed, n) -> Fmt.pf ft "i2bv[%a%d]" pp_signed signed n
+    | FloatOfBv p -> Fmt.pf ft "bv2f[%a]" FloatPrecision.pp p
     | IntOfBv _ -> Fmt.string ft "bv2i"
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend by -> Fmt.pf ft "extend[%d]" by
@@ -530,7 +532,8 @@ module BitVec = struct
           let v1 = extract from_ to_ v1 in
           let v2 = extract from_ to_ v2 in
           mk_commut_binop bop v1 v2 <| t_bv size
-      | Unop (BvOfInt, v) when from_ = 0 -> Unop (BvOfInt, v) <| t_bv size
+      | Unop (BvOfInt (s, _), v) when from_ = 0 ->
+          Unop (BvOfInt (s, size), v) <| t_bv size
       | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
 
     let extend to_ v =
@@ -542,10 +545,11 @@ module BitVec = struct
           mk to_ bv
       (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
          as that will require a more expensive bit-blasting. *)
-      | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv to_
+      | Unop (BvOfInt (s, _), v) -> Unop (BvOfInt (s, to_), v) <| t_bv to_
       | _ -> Unop (BvExtend extend_by, v) <| t_bv to_
 
-    let and_ n v1 v2 =
+    let and_ v1 v2 =
+      let n = size_of_bv v1.node.ty in
       let covers_bitwidth z =
         Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = n)
       in
@@ -554,19 +558,19 @@ module BitVec = struct
       | _, BitVec mask when Z.(equal mask zero) -> v2
       | BitVec mask, _ when covers_bitwidth mask -> v2
       | _, BitVec mask when covers_bitwidth mask -> v1
-      | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv n
+      | _, _ -> mk_commut_binop BitAnd v1 v2 <| v1.node.ty
 
-    let or_ n v1 v2 = mk_commut_binop BitOr v1 v2 <| t_bv n
-    let xor n v1 v2 = mk_commut_binop BitXor v1 v2 <| t_bv n
-    let shl n v1 v2 = Binop (BitShl, v1, v2) <| t_bv n
-    let shr n v1 v2 = Binop (BitShr, v1, v2) <| t_bv n
-    let plus n v1 v2 = mk_commut_binop BvPlus v1 v2 <| t_bv n
-    let minus n v1 v2 = Binop (BvMinus, v1, v2) <| t_bv n
+    let or_ v1 v2 = mk_commut_binop BitOr v1 v2 <| v1.node.ty
+    let xor v1 v2 = mk_commut_binop BitXor v1 v2 <| v1.node.ty
+    let shl v1 v2 = Binop (BitShl, v1, v2) <| v1.node.ty
+    let shr v1 v2 = Binop (BitShr, v1, v2) <| v1.node.ty
+    let plus v1 v2 = mk_commut_binop BvPlus v1 v2 <| v1.node.ty
+    let minus v1 v2 = Binop (BvMinus, v1, v2) <| v1.node.ty
   end
 
   let of_float n v =
     match (v.node.ty, v.node.kind, n) with
-    | TFloat _, Unop (FloatOfBv, v), _ -> v
+    | TFloat _, Unop (FloatOfBv p, v), _ when FloatPrecision.size p = n -> v
     | TFloat F32, Float f, 32 ->
         let z = Z.of_int32 (Int32.bits_of_float (Float.of_string f)) in
         Raw.mk n z
@@ -575,8 +579,8 @@ module BitVec = struct
         Raw.mk n z
     | _, _, _ -> Unop (BvOfFloat n, v) <| t_bv n
 
-  let rec of_int n v =
-    let bv_of_int = of_int n in
+  let rec of_int s n v =
+    let bv_of_int = of_int s n in
     let is_2pow z = Z.(z > one && popcount z = 1) in
     match v.node.kind with
     | Unop (IntOfBv _, v) ->
@@ -590,19 +594,19 @@ module BitVec = struct
         let z = Z.(z land mask) in
         Raw.mk n z
     | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
-        Raw.and_ n (bv_of_int v) (Raw.mk n (Z.pred mask))
+        Raw.and_ (bv_of_int v) (Raw.mk n (Z.pred mask))
     | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
-        Raw.and_ n (bv_of_int v) (Raw.mk n (Z.pred mask))
+        Raw.and_ (bv_of_int v) (Raw.mk n (Z.pred mask))
     | Binop (Times, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask
       ->
         let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
-        Raw.shl n (bv_of_int v) fac
+        Raw.shl (bv_of_int v) fac
     | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
         let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
-        Raw.shr n (bv_of_int v) fac
-    | Binop (Plus, l, r) -> Raw.plus n (bv_of_int l) (bv_of_int r)
-    | Binop (Minus, l, r) -> Raw.minus n (bv_of_int l) (bv_of_int r)
-    | _ -> Unop (BvOfInt, v) <| t_bv n
+        Raw.shr (bv_of_int v) fac
+    | Binop (Plus, l, r) -> Raw.plus (bv_of_int l) (bv_of_int r)
+    | Binop (Minus, l, r) -> Raw.minus (bv_of_int l) (bv_of_int r)
+    | _ -> Unop (BvOfInt (s, n), v) <| t_bv n
 
   let rec to_int signed v =
     (* Tests if z is of the form 1+0+ *)
@@ -618,7 +622,7 @@ module BitVec = struct
           Z.(Z.equal (z land mask) zero)
     in
     match v.node.kind with
-    | Unop (BvOfInt, v) -> v
+    | Unop (BvOfInt _, v) -> v
     | Binop (BvPlus, l, r) -> plus (to_int signed l) (to_int signed r)
     | Binop (BvMinus, l, r) -> minus (to_int signed l) (to_int signed r)
     | Binop (BitShl, l, { node = { kind = Int n; _ }; _ }) ->
@@ -638,19 +642,20 @@ module BitVec = struct
     | _ -> Unop (IntOfBv signed, v) <| t_int
 
   let to_float v =
-    match (v.node.ty, v.node.kind) with
-    | _, Unop (BvOfFloat _, v) -> v
-    | TBitVector n, _ -> Unop (FloatOfBv, v) <| t_f (FloatPrecision.of_size n)
-    | _ -> failwith "Expected a bitvector value in float_of_bv"
+    let n = size_of_bv v.node.ty in
+    let fp = FloatPrecision.of_size n in
+    match v.node.kind with
+    | Unop (BvOfFloat _, v) -> v
+    | _ -> Unop (FloatOfBv fp, v) <| t_f fp
 
   let and_ ~size ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | Int i1, Int i2 -> int_z (Z.( land ) i1 i2)
     | Bool b1, Bool b2 -> bool (b1 && b2)
     | _ ->
-        let v1_bv = of_int size v1 in
-        let v2_bv = of_int size v2 in
-        let bv = Raw.and_ size v1_bv v2_bv in
+        let v1_bv = of_int signed size v1 in
+        let v2_bv = of_int signed size v2 in
+        let bv = Raw.and_ v1_bv v2_bv in
         to_int signed bv
 
   let or_ ~size ~signed v1 v2 =
@@ -658,9 +663,9 @@ module BitVec = struct
     | Int i1, Int i2 -> int_z (Z.( lor ) i1 i2)
     | Bool b1, Bool b2 -> bool (b1 || b2)
     | _ ->
-        let v1_bv = of_int size v1 in
-        let v2_bv = of_int size v2 in
-        let bv = Raw.or_ size v1_bv v2_bv in
+        let v1_bv = of_int signed size v1 in
+        let v2_bv = of_int signed size v2 in
+        let bv = Raw.or_ v1_bv v2_bv in
         to_int signed bv
 
   let xor ~size ~signed v1 v2 =
@@ -668,9 +673,9 @@ module BitVec = struct
     | Int i1, Int i2 -> int_z (Z.( lxor ) i1 i2)
     | Bool b1, Bool b2 -> bool (b1 <> b2)
     | _ ->
-        let v1_bv = of_int size v1 in
-        let v2_bv = of_int size v2 in
-        let bv = Raw.xor size v1_bv v2_bv in
+        let v1_bv = of_int signed size v1 in
+        let v2_bv = of_int signed size v2 in
+        let bv = Raw.xor v1_bv v2_bv in
         to_int signed bv
 
   let shl ~size ~signed v1 v2 =
@@ -685,9 +690,9 @@ module BitVec = struct
         let masked = mod_ shifted (int_z max) in
         masked
     | _ ->
-        let v1_bv = of_int size v1 in
-        let v2_bv = of_int size v2 in
-        let bv = Raw.shl size v1_bv v2_bv in
+        let v1_bv = of_int signed size v1 in
+        let v2_bv = of_int signed size v2 in
+        let bv = Raw.shl v1_bv v2_bv in
         to_int signed bv
 
   let shr ~size ~signed v1 v2 =
@@ -697,9 +702,9 @@ module BitVec = struct
         let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
         int_z masked
     | _ ->
-        let v1_bv = of_int size v1 in
-        let v2_bv = of_int size v2 in
-        let bv = Raw.shr size v1_bv v2_bv in
+        let v1_bv = of_int signed size v1 in
+        let v2_bv = of_int signed size v2 in
+        let bv = Raw.shr v1_bv v2_bv in
         to_int signed bv
 
   let not ~size:s ~signed v =
@@ -774,7 +779,7 @@ module Float = struct
      Ideally we should do this for every float precision, but we would need support for
      f16, f32 and f128 in OCaml.  *)
     | Int i, FloatPrecision.F64 -> mk fp (string_of_float (Z.to_float i))
-    | _ -> BitVec.to_float (BitVec.of_int (FloatPrecision.size fp) v)
+    | _ -> BitVec.to_float (BitVec.of_int true (FloatPrecision.size fp) v)
 
   let to_int n v =
     match v.node.kind with
