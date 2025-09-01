@@ -540,6 +540,7 @@ let neg v =
 module BitVec = struct
   let bool_or = or_
   let bool_and = and_
+  let bool_not = not
 
   (** Raw operations for values of type [TBitVector]; be careful when using
       these, so as to provide properly typed values. Prefer using [BitVec]
@@ -647,41 +648,162 @@ module BitVec = struct
       | Ite (b, l, r) -> ite b (not l) (not r)
       | _ -> Unop (BvNot, v) <| v.node.ty
 
-    let and_ v1 v2 =
+    let rec and_ v1 v2 =
       let n = size_of_bv v1.node.ty in
+      assert (n == size_of_bv v2.node.ty);
       match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk n Z.(logand l r)
       | BitVec mask, _ when Z.(equal mask zero) -> v1
       | _, BitVec mask when Z.(equal mask zero) -> v2
       | BitVec mask, _ when covers_bitwidth n mask -> v2
       | _, BitVec mask when covers_bitwidth n mask -> v1
-      | _, _ -> mk_commut_binop BitAnd v1 v2 <| v1.node.ty
+      (* i2bv[N](x) & 0x0*1{M} can become extend[unsigned, N](i2bv[M](x)) *)
+      | Unop (BvOfInt (s, _), v1), BitVec mask when is_right_mask mask ->
+          let mask_size = right_mask_size mask in
+          let bv_of_int = Unop (BvOfInt (s, mask_size), v1) <| t_bv mask_size in
+          extend false (n - mask_size) bv_of_int
+      (* For (x >> s) & m, the mask is irrelevant if it entirely covers [bitsize - s] *)
+      | ( (Binop
+             ((BitLShr | BitAShr), _, { node = { kind = BitVec shift; _ }; _ })
+           as base),
+          BitVec mask )
+      | ( BitVec mask,
+          (Binop
+             ((BitLShr | BitAShr), _, { node = { kind = BitVec shift; _ }; _ })
+           as base) )
+        when let bitwidth = n - Z.to_int shift in
+             let low_mask = Z.(pred (one lsl bitwidth)) in
+             Z.(equal (mask land low_mask) low_mask) ->
+          base <| t_bv n
+      | BitVec _, Ite (b, l, r) -> ite b (and_ v1 l) (and_ v1 r)
+      | Ite (b, l, r), BitVec _ -> ite b (and_ l v2) (and_ r v2)
+      (* if it's a right mask, it's usually beneficial to propagate it *)
+      | (BitVec mask, Binop (BitAnd, l, r) | Binop (BitAnd, l, r), BitVec mask)
+        when is_right_mask mask ->
+          let mask = mk_like v1 mask in
+          and_ (and_ mask l) (and_ mask r)
+      | ( Ite (b1, l1, { node = { kind = BitVec r1; _ }; _ }),
+          Ite (b2, l2, { node = { kind = BitVec r2; _ }; _ }) )
+        when Z.(equal r1 zero) && Z.(equal r2 zero) ->
+          ite (bool_and b1 b2) (and_ l1 l2) (mk_like v1 Z.zero)
+      | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv n
 
-    let or_ v1 v2 = mk_commut_binop BitOr v1 v2 <| v1.node.ty
-    let xor v1 v2 = mk_commut_binop BitXor v1 v2 <| v1.node.ty
+    and or_ v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_like v1 Z.(l lor r)
+      | BitVec z, _ when Z.equal z Z.zero -> v2
+      | _, BitVec z when Z.equal z Z.zero -> v1
+      (* 0x0..0X..X | (0x0..0Y..Y << N) when N = |X..X| ==> 0x0..0Y..YX..X  *)
+      | ( Unop (BvExtend (false, nx), base),
+          Binop
+            ( BitShl,
+              { node = { kind = Unop (BvExtend (false, _), tail); _ }; _ },
+              { node = { kind = BitVec shift; _ }; _ } ) )
+        when Z.to_int shift = size_of_bv base.node.ty ->
+          let tail_size = size_of_bv tail.node.ty in
+          if nx = tail_size then concat tail base
+          else if nx > tail_size then
+            let new_base = concat tail base in
+            extend false (nx - tail_size) new_base
+          else
+            let new_tail = extract 0 (nx - 1) tail in
+            concat new_tail base
+      | ( Ite
+            ( b1,
+              { node = { kind = BitVec l1; _ }; _ },
+              { node = { kind = BitVec r1; _ }; _ } ),
+          Ite
+            ( b2,
+              { node = { kind = BitVec l2; _ }; _ },
+              { node = { kind = BitVec r2; _ }; _ } ) )
+        when Z.(equal l1 one)
+             && Z.(equal l2 one)
+             && Z.(equal r1 zero)
+             && Z.(equal r2 zero) ->
+          ite (bool_or b1 b2) (mk_like v1 Z.one) (mk_like v1 Z.zero)
+      | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
 
-    let rec extract from_ to_ v =
+    and xor v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_like v1 Z.(l lxor r)
+      | BitVec z, _ when Z.equal z Z.zero -> v2
+      | _, BitVec z when Z.equal z Z.zero -> v1
+      | ( Ite
+            ( b1,
+              { node = { kind = BitVec l1; _ }; _ },
+              { node = { kind = BitVec r1; _ }; _ } ),
+          Ite
+            ( b2,
+              { node = { kind = BitVec l2; _ }; _ },
+              { node = { kind = BitVec r2; _ }; _ } ) )
+        when Z.(equal l1 one)
+             && Z.(equal l2 one)
+             && Z.(equal r1 zero)
+             && Z.(equal r2 zero) ->
+          ite
+            (bool_not (mk_commut_binop Eq b1 b2 <| TBool))
+            (mk_like v1 Z.one) (mk_like v1 Z.zero)
+      | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
+
+    and extract from_ to_ v =
+      let prev_size = size_of_bv v.node.ty in
+      assert (0 <= from_ && from_ <= to_ && to_ < prev_size);
       let size = to_ - from_ + 1 in
       match v.node.kind with
-      | BitVec bv ->
-          let to_ = to_ + 1 in
-          let bv = Z.((bv asr from_) land pred (one lsl to_)) in
-          mk size bv
-      | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) ->
+      | BitVec bv -> mk_masked size Z.(bv asr from_)
+      | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) -> (
           let v1 = extract from_ to_ v1 in
           let v2 = extract from_ to_ v2 in
-          mk_commut_binop bop v1 v2 <| t_bv size
-      | Unop (BvOfInt (s, _), v) when from_ = 0 ->
-          Unop (BvOfInt (s, size), v) <| t_bv size
+          match bop with
+          | BitAnd -> and_ v1 v2
+          | BitOr -> or_ v1 v2
+          | BitXor -> xor v1 v2
+          | _ -> failwith "unreachable binop")
+      | Binop (BitLShr, v1, { node = { kind = BitVec x; _ }; _ }) ->
+          (* we have to be careful to not extract bits that are out of bounds *)
+          let shift = Z.to_int x in
+          if to_ + shift < prev_size then
+            (* 1. we can just shift the extraction *)
+            extract (from_ + shift) (to_ + shift) v1
+          else if from_ + shift >= prev_size then
+            (* 2. the full shift is out of bounds! so 0 *)
+            mk size Z.zero
+          else
+            (* 3. it's an in between - for now, we don't do anything *)
+            Unop (BvExtract (from_, to_), v) <| t_bv size
+      | Unop (BvOfInt (signed, _), v) when from_ = 0 ->
+          Unop (BvOfInt (signed, size), v) <| t_bv size
+      | Ite (b, l, r) ->
+          let l = extract from_ to_ l in
+          let r = extract from_ to_ r in
+          ite b l r
+      | Unop (BvExtend (false, by), _) when from_ >= prev_size - by ->
+          (* zero extension, and we're extracting only the extended bits *)
+          mk size Z.zero
+      | Unop (BvExtend (_, by), v) when from_ = 0 && to_ = prev_size - by - 1 ->
+          (* extracting exactly the original bits *)
+          v
+      | Unop (BvExtend (_, by), v) when to_ <= prev_size - by - 1 ->
+          (* extracting from original bits *)
+          extract from_ to_ v
+      | Unop (BvExtract (prev_from_, _), v) ->
+          Unop (BvExtract (prev_from_ + from_, prev_from_ + to_), v)
+          <| t_bv size
       | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
 
-    let extend signed extend_by v =
+    and extend signed extend_by v =
       let size = size_of_bv v.node.ty in
       let to_ = size + extend_by in
+      assert (extend_by > 0);
       match v.node.kind with
       | BitVec bv ->
           let to_' = to_ + 1 in
           let bv = Z.(bv land pred (one lsl to_')) in
           mk to_ bv
+      | Ite (b, l, r) ->
+          let l = extend signed extend_by l in
+          let r = extend signed extend_by r in
+          ite b l r
       (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
          as that will require a more expensive bit-blasting. *)
       (* We also note the following reduction is *not valid*, as some upper bits may be set;
@@ -690,10 +812,25 @@ module BitVec = struct
       | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv signed to_ *)
       | _ -> Unop (BvExtend (signed, extend_by), v) <| t_bv to_
 
-    let concat v1 v2 =
+    (** [concat v1 v2] for [v1] of size [n] and [v2] of size [m] is a bitvector
+        of size [n + m] where the first [m] bits are [v2] and the following [n]
+        are [v1] *)
+    and concat v1 v2 =
       let n1 = size_of_bv v1.node.ty in
       let n2 = size_of_bv v2.node.ty in
-      Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_masked (n1 + n2) Z.(r + shift_left l n2)
+      | Unop (BvExtract (from1, to1), v1), Unop (BvExtract (from2, to2), v2)
+        when to2 + 1 = from1 && equal v1 v2 ->
+          extract from2 to1 v1
+      (* We order (extract A ++ (X ++ extract )) *)
+      | ( Unop (BvExtract (_, _), _),
+          Binop
+            ( BvConcat,
+              ({ node = { kind = Unop (BvExtract _, _); _ }; _ } as left),
+              right ) ) ->
+          concat (concat v1 left) right
+      | _, _ -> Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
 
     let shl v1 v2 = Binop (BitShl, v1, v2) <| v1.node.ty
     let lshr v1 v2 = Binop (BitLShr, v1, v2) <| v1.node.ty
