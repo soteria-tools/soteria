@@ -513,7 +513,7 @@ module Make (State : State_intf.S) = struct
           | Bxor -> Typed.BitVec.xor
           | Bor -> Typed.BitVec.or_
           | Shl -> Typed.BitVec.shl
-          | Shr -> Typed.BitVec.shr
+          | Shr -> if signed then Typed.BitVec.ashr else Typed.BitVec.lshr
           | _ -> failwith "unreachable: bit operator is not bit operator?"
         in
         ok (op ~size:bv_size ~signed v1 v2)

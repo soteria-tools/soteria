@@ -65,9 +65,11 @@ module M (State : State_intf.S) = struct
               let size = 8 * Layout.size_of_literal_ty ity in
               let signed = Layout.is_signed ity in
               let op =
-                match bop with
-                | Shl _ -> Typed.BitVec.shl
-                | _ -> Typed.BitVec.shr
+                match (bop, signed) with
+                | Shl _, _ -> Typed.BitVec.shl
+                | Shr _, true -> Typed.BitVec.ashr
+                | Shr _, false -> Typed.BitVec.lshr
+                | _ -> failwith "Invalid bop in shl/shr"
               in
               Result.ok (op ~size ~signed l r)
           | _ -> not_impl "Invalid binop in eval_lit_binop"

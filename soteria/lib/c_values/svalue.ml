@@ -87,6 +87,8 @@ module Unop = struct
     | IntOfBv of bool (* signed *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of int (* by N bits *)
+    | BvNot
+    | BvNegOvf
     | FIs of FloatClass.t
     | FRound of FloatRoundingMode.t
   [@@deriving eq, ord]
@@ -105,6 +107,8 @@ module Unop = struct
     | IntOfBv _ -> Fmt.string ft "bv2i"
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend by -> Fmt.pf ft "extend[%d]" by
+    | BvNot -> Fmt.string ft "!bv"
+    | BvNegOvf -> Fmt.string ft "-bv_ovf"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
     | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
 end
@@ -135,15 +139,27 @@ module Binop = struct
     | FTimes
     | FDiv
     | FRem
-    (* Bitwise Binary operators *)
+    (* BitVector operators *)
     | BvPlus
     | BvMinus
+    | BvTimes
+    | BvDiv of bool (* signed *)
+    | BvRem of bool (* signed *)
+    | BvMod of bool (* signed *)
+    | BvPlusOvf of bool (* signed *)
+    | BvTimesOvf of bool (* signed *)
+    | BvLt of bool (* signed *)
+    | BvLeq of bool (* signed *)
+    | BvConcat
     | BitAnd
     | BitOr
     | BitXor
     | BitShl
-    | BitShr
+    | BitLShr
+    | BitAShr
   [@@deriving eq, show { with_path = false }, ord]
+
+  let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
 
   let pp ft = function
     | And -> Fmt.string ft "&&"
@@ -167,11 +183,21 @@ module Binop = struct
     | FRem -> Fmt.string ft "rem."
     | BvPlus -> Fmt.string ft "+b"
     | BvMinus -> Fmt.string ft "-b"
+    | BvTimes -> Fmt.string ft "*b"
+    | BvDiv s -> Fmt.pf ft "/%ab" pp_signed s
+    | BvRem s -> Fmt.pf ft "rem%ab" pp_signed s
+    | BvMod s -> Fmt.pf ft "mod%ab" pp_signed s
+    | BvPlusOvf s -> Fmt.pf ft "+%ab_ovf" pp_signed s
+    | BvTimesOvf s -> Fmt.pf ft "*%ab_ovf" pp_signed s
+    | BvLt s -> Fmt.pf ft "<%ab" pp_signed s
+    | BvLeq s -> Fmt.pf ft "<=%ab" pp_signed s
+    | BvConcat -> Fmt.string ft "++"
     | BitAnd -> Fmt.string ft "&"
     | BitOr -> Fmt.string ft "|"
     | BitXor -> Fmt.string ft "^"
     | BitShl -> Fmt.string ft "<<"
-    | BitShr -> Fmt.string ft ">>"
+    | BitLShr -> Fmt.string ft "l>>"
+    | BitAShr -> Fmt.string ft "a>>"
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -519,7 +545,25 @@ module BitVec = struct
       these, so as to provide properly typed values. Prefer using [BitVec]
       directly when possible, as it may also provide more reductions. *)
   module Raw = struct
-    let mk n bv = BitVec bv <| t_bv n
+    let mk n bv =
+      assert (Z.(leq bv (one lsl n)));
+      BitVec bv <| t_bv n
+
+    let mk_masked n bv = mk n Z.(bv land pred (one lsl n))
+    let plus v1 v2 = mk_commut_binop BvPlus v1 v2 <| v1.node.ty
+    let minus v1 v2 = Binop (BvMinus, v1, v2) <| v1.node.ty
+    let times v1 v2 = Binop (BvTimes, v1, v2) <| v1.node.ty
+    let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
+    let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
+    let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
+
+    let rec not v =
+      match v.node.kind with
+      | BitVec bv ->
+          let n = size_of_bv v.node.ty in
+          mk_masked n Z.(lognot bv)
+      | Ite (b, l, r) -> ite b (not l) (not r)
+      | _ -> Unop (BvNot, v) <| v.node.ty
 
     let rec extract from_ to_ v =
       let size = to_ - from_ + 1 in
@@ -548,6 +592,11 @@ module BitVec = struct
       | Unop (BvOfInt (s, _), v) -> Unop (BvOfInt (s, to_), v) <| t_bv to_
       | _ -> Unop (BvExtend extend_by, v) <| t_bv to_
 
+    let concat v1 v2 =
+      let n1 = size_of_bv v1.node.ty in
+      let n2 = size_of_bv v2.node.ty in
+      Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
+
     let and_ v1 v2 =
       let n = size_of_bv v1.node.ty in
       let covers_bitwidth z =
@@ -563,9 +612,17 @@ module BitVec = struct
     let or_ v1 v2 = mk_commut_binop BitOr v1 v2 <| v1.node.ty
     let xor v1 v2 = mk_commut_binop BitXor v1 v2 <| v1.node.ty
     let shl v1 v2 = Binop (BitShl, v1, v2) <| v1.node.ty
-    let shr v1 v2 = Binop (BitShr, v1, v2) <| v1.node.ty
-    let plus v1 v2 = mk_commut_binop BvPlus v1 v2 <| v1.node.ty
-    let minus v1 v2 = Binop (BvMinus, v1, v2) <| v1.node.ty
+    let lshr v1 v2 = Binop (BitLShr, v1, v2) <| v1.node.ty
+    let ashr v1 v2 = Binop (BitAShr, v1, v2) <| v1.node.ty
+    let lt signed v1 v2 = Binop (BvLt signed, v1, v2) <| TBool
+    let leq signed v1 v2 = Binop (BvLeq signed, v1, v2) <| TBool
+    let gt signed v1 v2 = lt signed v2 v1
+    let geq signed v1 v2 = leq signed v2 v1
+    let plus_overflows signed v1 v2 = Binop (BvPlusOvf signed, v1, v2) <| TBool
+    let neg_overflows v = Unop (BvNegOvf, v) <| TBool
+
+    let times_overflows signed v1 v2 =
+      Binop (BvTimesOvf signed, v1, v2) <| TBool
   end
 
   let of_float n v =
@@ -603,7 +660,7 @@ module BitVec = struct
         Raw.shl (bv_of_int v) fac
     | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
         let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
-        Raw.shr (bv_of_int v) fac
+        (if s then Raw.ashr else Raw.lshr) (bv_of_int v) fac
     | Binop (Plus, l, r) -> Raw.plus (bv_of_int l) (bv_of_int r)
     | Binop (Minus, l, r) -> Raw.minus (bv_of_int l) (bv_of_int r)
     | _ -> Unop (BvOfInt (s, n), v) <| t_bv n
@@ -628,7 +685,11 @@ module BitVec = struct
     | Binop (BitShl, l, { node = { kind = Int n; _ }; _ }) ->
         let pow = int_z @@ Z.shift_left Z.one (Z.to_int n) in
         times l pow
-    | Binop (BitShr, l, { node = { kind = Int n; _ }; _ }) ->
+    | Binop (BitAShr, l, { node = { kind = Int n; _ }; _ }) ->
+        let pow = int_z @@ Z.shift_right Z.one (Z.to_int n) in
+        div l pow
+    | Binop (BitLShr, l, { node = { kind = Int n; _ }; _ })
+      when Stdlib.not signed ->
         let pow = int_z @@ Z.shift_right Z.one (Z.to_int n) in
         div l pow
     | Binop (BitAnd, v, { node = { kind = BitVec mask; _ }; _ })
@@ -695,7 +756,7 @@ module BitVec = struct
         let bv = Raw.shl v1_bv v2_bv in
         to_int signed bv
 
-  let shr ~size ~signed v1 v2 =
+  let lshr ~size ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | Int i1, Int i2 ->
         let shifted = Z.( asr ) i1 (Z.to_int i2) in
@@ -704,8 +765,14 @@ module BitVec = struct
     | _ ->
         let v1_bv = of_int signed size v1 in
         let v2_bv = of_int signed size v2 in
-        let bv = Raw.shr v1_bv v2_bv in
+        let bv = Raw.lshr v1_bv v2_bv in
         to_int signed bv
+
+  let ashr ~size ~signed v1 v2 =
+    let v1_bv = of_int signed size v1 in
+    let v2_bv = of_int signed size v2 in
+    let bv = Raw.ashr v1_bv v2_bv in
+    to_int signed bv
 
   let not ~size:s ~signed v =
     if Stdlib.not signed then

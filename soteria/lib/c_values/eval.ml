@@ -28,11 +28,21 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | FRem -> Float.rem
   | BvPlus -> BitVec.Raw.plus
   | BvMinus -> BitVec.Raw.minus
+  | BvTimes -> BitVec.Raw.times
+  | BvDiv s -> BitVec.Raw.div s
+  | BvRem s -> BitVec.Raw.rem s
+  | BvMod s -> BitVec.Raw.mod_ s
+  | BvPlusOvf s -> BitVec.Raw.plus_overflows s
+  | BvTimesOvf s -> BitVec.Raw.times_overflows s
+  | BvLt s -> BitVec.Raw.lt s
+  | BvLeq s -> BitVec.Raw.leq s
+  | BvConcat -> BitVec.Raw.concat
   | BitAnd -> BitVec.Raw.and_
   | BitOr -> BitVec.Raw.or_
   | BitXor -> BitVec.Raw.xor
   | BitShl -> BitVec.Raw.shl
-  | BitShr -> BitVec.Raw.shr
+  | BitLShr -> BitVec.Raw.lshr
+  | BitAShr -> BitVec.Raw.ashr
 
 let eval_unop : Unop.t -> t -> t = function
   | Not -> not
@@ -46,6 +56,8 @@ let eval_unop : Unop.t -> t -> t = function
   | FloatOfBv _ -> BitVec.to_float
   | BvExtract (from, to_) -> BitVec.Raw.extract from to_
   | BvExtend by -> BitVec.Raw.extend by
+  | BvNot -> BitVec.Raw.not
+  | BvNegOvf -> BitVec.Raw.neg_overflows
   | FIs fc -> Float.is_floatclass fc
   | FRound rm -> Float.round rm
 

@@ -72,6 +72,8 @@ module Encoding = struct
     | FloatOfBv F128 -> f128_of_bv
     | BvExtract (from_, to_) -> bv_extract to_ from_
     | BvExtend by -> bv_zero_extend by
+    | BvNot -> bv_not
+    | BvNegOvf -> bv_nego
     | FIs fc -> fp_is fc
     | FRound rm -> fp_round rm
 
@@ -99,9 +101,26 @@ module Encoding = struct
     | BitOr -> bv_or
     | BitXor -> bv_xor
     | BitShl -> bv_shl
-    | BitShr -> bv_lshr
+    | BitLShr -> bv_lshr
+    | BitAShr -> bv_ashr
     | BvPlus -> bv_add
     | BvMinus -> bv_sub
+    | BvTimes -> bv_mul
+    | BvDiv true -> bv_sdiv
+    | BvDiv false -> bv_udiv
+    | BvRem true -> bv_srem
+    | BvRem false -> bv_urem
+    | BvMod true -> bv_smod
+    | BvMod false -> bv_urem
+    | BvPlusOvf true -> bv_saddo
+    | BvPlusOvf false -> bv_uaddo
+    | BvTimesOvf true -> bv_smulo
+    | BvTimesOvf false -> bv_umulo
+    | BvLt true -> bv_slt
+    | BvLt false -> bv_ult
+    | BvLeq true -> bv_sleq
+    | BvLeq false -> bv_uleq
+    | BvConcat -> bv_concat
 
   let rec encode_value (v : Svalue.t) =
     match v.node.kind with

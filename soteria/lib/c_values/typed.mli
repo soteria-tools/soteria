@@ -121,7 +121,13 @@ module BitVec : sig
   val or_ : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
   val xor : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
   val shl : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
-  val shr : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val ashr :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val lshr :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
   val not : size:int -> signed:bool -> [< sint ] t -> [> sint ] t
 end
 
