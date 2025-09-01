@@ -145,7 +145,7 @@ struct
                 let se2 = simplify' solver e2 in
                 if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
                 else Svalue.or_ se1 se2
-            | _ -> v))
+            | _ -> Analysis.simplify solver.analysis v))
 
   and simplify solver (v : 'a Typed.t) : 'a Typed.t =
     v |> Typed.untyped |> simplify' solver |> Typed.type_
@@ -477,7 +477,7 @@ struct
                   && Svalue.equal se2 e2
                 then v
                 else Svalue.ite sg se1 se2
-            | _ -> v))
+            | _ -> Analysis.simplify solver.analysis v))
 
   and simplify solver : 'a Typed.t -> 'a Typed.t = as_untyped (simplify' solver)
 
