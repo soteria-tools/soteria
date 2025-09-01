@@ -48,11 +48,10 @@ let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
   | IntOfBool -> fun b -> ite b (int_k 1) (int_k 0)
   | BvOfInt (_, size) -> bv_of_int size
   | IntOfBv signed -> int_of_bv signed
-  | BvOfFloat n -> bv_of_float n
-  | FloatOfBv F16 -> f16_of_bv
-  | FloatOfBv F32 -> f32_of_bv
-  | FloatOfBv F64 -> f64_of_bv
-  | FloatOfBv F128 -> f128_of_bv
+  | BvOfFloat (true, n) -> sbv_of_float n
+  | BvOfFloat (false, n) -> ubv_of_float n
+  | FloatOfBv (true, fp) -> float_of_sbv (Svalue.FloatPrecision.size fp)
+  | FloatOfBv (false, fp) -> float_of_ubv (Svalue.FloatPrecision.size fp)
   | BvExtract (from_, to_) -> bv_extract to_ from_
   | BvExtend (true, by) -> bv_sign_extend by
   | BvExtend (false, by) -> bv_zero_extend by

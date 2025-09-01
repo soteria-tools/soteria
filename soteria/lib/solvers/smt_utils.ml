@@ -8,6 +8,13 @@ module FloatRoundingMode = struct
   [@@deriving eq, show { with_path = false }, ord]
 end
 
+let float_shape = function
+  | 16 -> [ 5; 11 ]
+  | 32 -> [ 8; 24 ]
+  | 64 -> [ 11; 53 ]
+  | 128 -> [ 15; 113 ]
+  | n -> Fmt.failwith "Unsupported float size: %d" n
+
 let rm = atom "RNA" (* equivalent to roundNearestTiesToAway; default mode *)
 let t_f16 = atom "Float16"
 let t_f32 = atom "Float32"
@@ -40,7 +47,7 @@ let f128_k f =
   (* a Float128 has 15 exponent bits, 112 explicit mantissa bits *)
   (* we let Z3 handle the conversion *)
   let f64 = f64_k f in
-  let fam = ifam "to_fp" [ 15; 113 ] in
+  let fam = ifam "to_fp" (float_shape 128) in
   app fam [ rm; f64 ]
 
 let f16_k f =
@@ -80,11 +87,12 @@ let fp_round (rm : FloatRoundingMode.t) f =
 
 (* Float{Of,To}Bv *)
 
-let f16_of_bv bv = app (ifam "to_fp" [ 5; 11 ]) [ bv ]
-let f32_of_bv bv = app (ifam "to_fp" [ 8; 24 ]) [ bv ]
-let f64_of_bv bv = app (ifam "to_fp" [ 11; 53 ]) [ bv ]
-let f128_of_bv bv = app (ifam "to_fp" [ 15; 113 ]) [ bv ]
-let bv_of_float n f = app (ifam "fp.to_sbv" [ n ]) [ rm; f ]
+let float_of_ubv size bv =
+  app (ifam "to_fp_unsigned" (float_shape size)) [ rm; bv ]
+
+let float_of_sbv size bv = app (ifam "to_fp" (float_shape size)) [ rm; bv ]
+let ubv_of_float n f = app (ifam "fp.to_ubv" [ n ]) [ rm; f ]
+let sbv_of_float n f = app (ifam "fp.to_sbv" [ n ]) [ rm; f ]
 
 (* Int{Of,To}Bv *)
 
