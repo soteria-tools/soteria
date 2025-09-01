@@ -325,4 +325,4 @@ let link progs =
   match link progs with
   | Ok linked_prog ->
       Ok { linked_prog with symmap = compress_union_find linked_prog.symmap }
-  | Error s -> Error (`LinkError s, Soteria_terminal.Call_trace.empty)
+  | Error s -> Error (`LinkError s, Soteria.Terminal.Call_trace.empty)

@@ -19,7 +19,7 @@ module type S = sig
   type 'a err
 
   val add_to_call_trace :
-    'a err -> Cerb_location.t Soteria_terminal.Call_trace.element -> 'a err
+    'a err -> Cerb_location.t Soteria.Terminal.Call_trace.element -> 'a err
 
   val pp : Format.formatter -> t -> unit
 
@@ -112,5 +112,6 @@ module type S = sig
   val produce_aggregate :
     sptr Typed.t -> Ctype.ctype -> Aggregate_val.t -> t -> t Csymex.t
 
-  val consume : serialized -> t -> (t, [> ] err, serialized) Csymex.Result.t
+  val consume :
+    serialized -> t -> (t, [> Csymex.lfail ] err, serialized) Csymex.Result.t
 end

@@ -1,13 +1,31 @@
+(include_subdirs qualified)
+
 (library
  (name soteria)
  (public_name soteria)
  (libraries
-  soteria.symex
-  soteria.logs
-  soteria.c_values
-  soteria.std
-  soteria.terminal
-  soteria.stats))
-
-(documentation
- (package soteria))
+  cmdliner
+  fmt
+  grace
+  grace.ansi_renderer
+  hc
+  htmlit
+  iter
+  printbox-text
+  progress
+  simple_smt
+  tsort
+  unix
+  yojson
+  zarith)
+ (preprocess
+  (pps
+   ppx_blob
+   ppx_symex
+   ppx_deriving.std
+   ppx_deriving_yojson
+   ppx_subliner
+   ppx_inline_test))
+ (preprocessor_deps
+  (file "logging/assets/soteria_logs.js")
+  (file "logging/assets/soteria_logs.css")))

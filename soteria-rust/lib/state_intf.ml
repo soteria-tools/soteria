@@ -15,7 +15,7 @@ module type S = sig
   type 'a err
 
   val add_to_call_trace :
-    'a err -> Meta.span Soteria_terminal.Call_trace.element -> 'a err
+    'a err -> Meta.span Soteria.Terminal.Call_trace.element -> 'a err
 
   val pp : t Fmt.t
 

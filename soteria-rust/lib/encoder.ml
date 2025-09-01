@@ -1,4 +1,4 @@
-module Compo_res = Soteria_symex.Compo_res
+module Compo_res = Soteria.Soteria_symex.Compo_res
 open Charon
 open Typed.Infix
 open Charon_util

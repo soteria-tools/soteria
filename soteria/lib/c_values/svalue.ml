@@ -1,3 +1,4 @@
+open Soteria_std
 open Hc
 module Var = Soteria_symex.Var
 

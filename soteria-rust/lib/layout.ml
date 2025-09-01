@@ -63,6 +63,9 @@ let pp_layout fmt { size; align; fields } =
     Fields_shape.pp fields
 
 module Session = struct
+  type ty_key = Types.ty
+  type variant_key = Types.type_decl_id * Types.variant
+
   (* TODO: allow different caches for different crates *)
   (* FIXME: inter-test mutability *)
 

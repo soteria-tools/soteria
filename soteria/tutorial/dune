@@ -1,0 +1,6 @@
+(mdx
+ (preludes prelude.ml)
+ (libraries soteria zarith fmt soteria.ppx))
+
+(documentation
+ (package soteria))

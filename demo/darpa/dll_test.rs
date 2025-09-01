@@ -3,7 +3,7 @@
 #![feature(allocator_api)]
 
 // Kani: RUSTFLAGS="--edition 2024" kani ./demo/darpa/dll_test.rs --unwind 30 --no-unwinding-checks  --harness "test"
-// Rusteria: dune exec -- soteria-rust rustc demo/darpa/dll_test.rs --kani --step-fuel 10000 --obol --rustc="--edition=2024"
+// Rusteria: dune exec -- soteria-rust rustc demo/darpa/dll_test.rs --kani --step-fuel 10000 --obol --rustc="--edition=2024" --summary
 
 // Some tests taken from Rust's test suite, to test doubly linked list
 

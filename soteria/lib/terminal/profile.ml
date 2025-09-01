@@ -1,3 +1,5 @@
+open Soteria_std
+
 let rec string_contains ~sub_str = function
   | "" -> sub_str = "" (* the empty string contains itself *)
   | s ->

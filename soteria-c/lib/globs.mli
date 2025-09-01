@@ -13,5 +13,8 @@ val iter_vars_serialized :
 
 val get : Symbol.sym -> t -> (Typed.T.sloc Typed.t * t) Csymex.t
 val produce : serialized -> t -> t Csymex.t
-val consume : serialized -> t -> (t, 'a, serialized) Csymex.Result.t
+
+val consume :
+  serialized -> t -> (t, [> Csymex.lfail ], serialized) Csymex.Result.t
+
 val empty : t

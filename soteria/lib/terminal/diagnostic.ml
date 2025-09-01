@@ -1,3 +1,5 @@
+open Soteria_std
+
 (** line * col, in characters -- we handle UTF-8 *)
 type pos = int * int
 

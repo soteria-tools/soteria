@@ -23,7 +23,7 @@ module Loc = struct
   let iter_vars = Typed.iter_vars
 end
 
-module GlobFn = Soteria_symex.Pure_fun.Make (Loc)
+module GlobFn = Soteria.Soteria_symex.Pure_fun.Make (Loc)
 
 type t = GlobFn.t Sym_map.t option [@@deriving show { with_path = false }]
 
@@ -47,7 +47,7 @@ let get sym st =
   let open Csymex.Syntax in
   let existed = Option.fold ~none:false ~some:(Sym_map.M.mem sym) st in
   let* res = (Sym_map.wrap GlobFn.load) sym st in
-  let loc, st = Soteria_symex.Compo_res.get_ok res in
+  let loc, st = Soteria.Soteria_symex.Compo_res.get_ok res in
   let+ () =
     if existed then (* We haven't created a new location *) return ()
     else

@@ -1,6 +1,6 @@
 open Cerb_frontend
 open AilSyntax
-open Soteria_std
+open Soteria.Soteria_std
 include Graph.Make_in_place (Symbol_std)
 
 (** A callgraph is just a hashtbl mapping caller to the list of their callees *)

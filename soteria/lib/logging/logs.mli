@@ -1,4 +1,4 @@
-(** Main entry to the {!Soteria_logs}, usually opened wherever logging is
+(** Main entry to the {!Soteria.Logging}, usually opened wherever logging is
     needed. *)
 
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b

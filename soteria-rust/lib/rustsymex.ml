@@ -47,8 +47,8 @@ let error e = Result.error (e, get_loc ())
 let not_impl msg = give_up ~loc:(get_loc ()) msg
 let of_opt_not_impl msg = some_or_give_up ~loc:(get_loc ()) msg
 
-module Freeable = Soteria_symex.Freeable.Make (SYMEX)
-module Pmap_direct_access = Soteria_symex.Pmap.Direct_access (SYMEX)
-module Pmap = Soteria_symex.Pmap.Make (SYMEX)
-module Tree_block = Soteria_symex.Tree_block.Make (SYMEX)
-module Bi = Soteria_symex.Bi_abd.Make (SYMEX)
+module Freeable = Soteria.Soteria_symex.Freeable.Make (SYMEX)
+module Pmap_direct_access = Soteria.Soteria_symex.Pmap.Direct_access (SYMEX)
+module Pmap = Soteria.Soteria_symex.Pmap.Make (SYMEX)
+module Tree_block = Soteria.Soteria_symex.Tree_block.Make (SYMEX)
+module Bi = Soteria.Soteria_symex.Bi_abd.Make (SYMEX)

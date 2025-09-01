@@ -1,7 +1,21 @@
-type t = { no_color : bool; compact : bool }
+type t = {
+  no_color : bool;
+      [@names [ "no-color"; "no-colour" ]]
+      [@env "NO_COLOR"]
+      [@make.default false]
+      (** Disables coloured output *)
+  compact : bool;
+      [@name [ "compact" ]]
+      [@env "SOTERIA_COMPACT_DIAGNOSTICS"]
+      [@make.default false]
+      (** Make diagnostic outputs compact.*)
+}
+[@@deriving subliner, make]
+
+let default = make ()
 
 let set, get, lock =
-  let current_config = ref { no_color = false; compact = false } in
+  let current_config = ref default in
   let locked = ref false in
   let lock () = locked := true in
   let set_config config =

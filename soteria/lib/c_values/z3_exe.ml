@@ -1,5 +1,6 @@
+open Soteria_std
 open Simple_smt
-module L = Soteria_logs.Logs.L
+module L = Logging.Logs.L
 
 let initialize_solver : (Simple_smt.solver -> unit) ref = ref (fun _ -> ())
 
@@ -259,7 +260,7 @@ let add_constraint solver v =
   let sexp = Simple_smt.assume (Simple_smt.bool_ands vs) in
   ack_command solver sexp
 
-let check_sat solver : Soteria_symex.Solver.result =
+let check_sat solver : Soteria_symex.Solver_result.t =
   let smt_res =
     try check solver
     with Simple_smt.UnexpectedSolverResponse s ->

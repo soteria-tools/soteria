@@ -1,1 +1,1 @@
-include Soteria_logs.Logs.L
+include Soteria.Logging.Logs.L

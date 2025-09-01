@@ -56,6 +56,24 @@ precedence = "override"
 SPDX-FileCopyrightText = "2013-2014 Srđan Panić <srdja.panic@gmail.com>"
 SPDX-License-Identifier = "LGPL-3.0-or-later"
 
+[[annotations]]
+path = "demo/darpa/aliasing.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "2025 Neven Villani, Johannes Hostert, Derek Dreyer, and Ralf Jung"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
+path = "demo/darpa/dll_test.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "The Rust Project Developers (see https://thanks.rust-lang.org)"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+[[annotations]]
+path = "demo/darpa/sll.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "The Rust Project Developers (see https://thanks.rust-lang.org)"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
 # Assets (images, vectors) — licensed under Apache-2.0 with the rest of the repo.
 [[annotations]]
 path = ["assets/*.png"]

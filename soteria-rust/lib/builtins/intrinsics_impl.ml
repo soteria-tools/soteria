@@ -270,12 +270,12 @@ module M (State : State_intf.S) = struct
     let concrete bits x =
       Typed.BitVec.u32i @@ if Z.equal x Z.zero then bits else Z.trailing_zeros x
     in
+    (* we construct the following, from inside out:
+      ite(x[0] == 1 ? 0 :
+        ite(x[1] == 1 ? 1 :
+          ...
+          ite(x[bits-1] == 1 ? bits-1 : bits))) *)
     let symbolic bits x =
-      (* we construct the following, from inside out:
-        ite(x[0] == 1 ? 0 :
-           ite(x[1] == 1 ? 1 :
-             ...
-              ite(x[bits-1] == 1 ? bits-1 : bits))) *)
       Iter.fold
         (fun acc off ->
           let off = bits - 1 - off in

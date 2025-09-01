@@ -1,4 +1,4 @@
-open Soteria_symex.Compo_res
+open Soteria.Soteria_symex.Compo_res
 open Rustsymex.Syntax
 open Typed
 open Typed.Infix
@@ -14,7 +14,7 @@ module Make (Sptr : Sptr.S) = struct
   let pp_rust_val = Rust_val.pp Sptr.pp
 
   module MemVal = struct
-    module TB = Soteria_symex.Tree_block
+    module TB = Soteria.Soteria_symex.Tree_block
     module Symex = Rustsymex
 
     module SInt = struct
