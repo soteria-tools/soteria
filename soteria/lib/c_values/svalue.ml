@@ -606,9 +606,35 @@ module BitVec = struct
         the whole bitwidth of size [bits]. *)
     let covers_bitwidth bits z = is_right_mask z && right_mask_size z = bits
 
-    let plus v1 v2 = mk_commut_binop BvPlus v1 v2 <| v1.node.ty
-    let minus v1 v2 = Binop (BvMinus, v1, v2) <| v1.node.ty
-    let times v1 v2 = Binop (BvTimes, v1, v2) <| v1.node.ty
+    let rec plus v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l + r)
+      | _, BitVec z when Z.equal z Z.zero -> v1
+      | BitVec z, _ when Z.equal z Z.zero -> v2
+      (* only propagate down ites if we know it's concrete *)
+      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+          let x = mk_like v1 x in
+          ite b (plus l x) (plus r x)
+      | _ -> mk_commut_binop BvPlus v1 v2 <| v1.node.ty
+
+    let rec minus v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l - r)
+      | _, BitVec z when Z.equal z Z.zero -> v1
+      (* only propagate down ites if we know it's concrete *)
+      | Ite (b, l, r), BitVec _ -> ite b (minus l v2) (minus r v2)
+      | BitVec _, Ite (b, l, r) -> ite b (minus v1 l) (minus v1 r)
+      | _ -> Binop (BvMinus, v1, v2) <| v1.node.ty
+
+    let rec times v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r -> mk_masked (size_of_bv v1.node.ty) Z.(l * r)
+      (* only propagate down ites if we know it's concrete *)
+      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+          let x = mk_like v1 x in
+          ite b (times l x) (times r x)
+      | _ -> mk_commut_binop BvTimes v1 v2 <| v1.node.ty
+
     let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
     let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
     let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
