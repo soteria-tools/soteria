@@ -550,6 +550,62 @@ module BitVec = struct
       BitVec bv <| t_bv n
 
     let mk_masked n bv = mk n Z.(bv land pred (one lsl n))
+
+    let mk_like other bv =
+      assert (Z.(leq bv (one lsl size_of_bv other.node.ty)));
+      BitVec bv <| other.node.ty
+
+    (** [bv_to_z signed bits z] parses a BitVector [z], for a given bitwidth
+        [bits], with [signed], into an integer. *)
+    let bv_to_z signed bits z =
+      let z = Z.(z land pred (one lsl bits)) in
+      if signed then
+        let bits_m_1 = bits - 1 in
+        let max = Z.(pred (one lsl bits_m_1)) in
+        if Z.leq z max then z else Z.(z - (one lsl bits))
+      else z
+
+    (** [max_for signed n] is the inclusive maximum for a bitvector of size [n]
+        when it is [signed] *)
+    let max_for signed n =
+      let n = if signed then n - 1 else n in
+      Z.(pred (one lsl n))
+
+    (** [min_for signed n] is the inclusive minimum for a bitvector of size [n]
+        when it is [signed] *)
+    let min_for signed n =
+      if signed then Z.(neg (one lsl Stdlib.( - ) n 1)) else Z.zero
+
+    (** [is_2pow z] is [true] if [z] is a power of 2 {b greater than one}. The
+        [> 1] check is done to ensure the mask for that number (ie. [z - 1]) is
+        nonzero. *)
+    let is_2pow z = Z.(z > one && popcount z = 1)
+
+    (** [is_left_mask bits z] is true if [z] is of the form [1+0+] and its
+        length is [bits] *)
+    let is_left_mask bits z =
+      if Z.(z <= one) then false
+      else
+        let size = Z.log2up z in
+        let zeroes = size - Z.popcount z in
+        if zeroes = 0 then false
+        else if size <> bits then false
+        else
+          let mask = Z.pred @@ Z.shift_left Z.one zeroes in
+          Z.(equal (z land mask) zero)
+
+    (** [is_right_mask z] is true if [z] is of the form [0*1+] *)
+    let is_right_mask z = Z.(z > zero && popcount (succ z) = 1)
+
+    (** [right_mask_size z] is, for a [z] of the form [0*1{n}], [n]. If [z] is
+        not of the form [0*1{n}], the result is undefined, so use
+        [is_right_mask] before. *)
+    let right_mask_size z = Z.(log2 (succ z))
+
+    (** [covers_bitwidth bits z] is true if [z] is of the form [1+] and covers
+        the whole bitwidth of size [bits]. *)
+    let covers_bitwidth bits z = is_right_mask z && right_mask_size z = bits
+
     let plus v1 v2 = mk_commut_binop BvPlus v1 v2 <| v1.node.ty
     let minus v1 v2 = Binop (BvMinus, v1, v2) <| v1.node.ty
     let times v1 v2 = Binop (BvTimes, v1, v2) <| v1.node.ty
@@ -603,14 +659,11 @@ module BitVec = struct
 
     let and_ v1 v2 =
       let n = size_of_bv v1.node.ty in
-      let covers_bitwidth z =
-        Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = n)
-      in
       match (v1.node.kind, v2.node.kind) with
       | BitVec mask, _ when Z.(equal mask zero) -> v1
       | _, BitVec mask when Z.(equal mask zero) -> v2
-      | BitVec mask, _ when covers_bitwidth mask -> v2
-      | _, BitVec mask when covers_bitwidth mask -> v1
+      | BitVec mask, _ when covers_bitwidth n mask -> v2
+      | _, BitVec mask when covers_bitwidth n mask -> v1
       | _, _ -> mk_commut_binop BitAnd v1 v2 <| v1.node.ty
 
     let or_ v1 v2 = mk_commut_binop BitOr v1 v2 <| v1.node.ty
@@ -642,7 +695,6 @@ module BitVec = struct
 
   let rec of_int s n v =
     let bv_of_int = of_int s n in
-    let is_2pow z = Z.(z > one && popcount z = 1) in
     match v.node.kind with
     | Unop (IntOfBv _, v) ->
         let size = size_of_bv v.node.ty in
@@ -655,15 +707,18 @@ module BitVec = struct
         let mask = Z.pred @@ Z.shift_left Z.one n in
         let z = Z.(z land mask) in
         Raw.mk n z
-    | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
-        Raw.and_ (bv_of_int v) (Raw.mk n (Z.pred mask))
-    | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
-        Raw.and_ (bv_of_int v) (Raw.mk n (Z.pred mask))
-    | Binop (Times, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask
+    | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when Raw.is_2pow mask
       ->
+        Raw.and_ (bv_of_int v) (Raw.mk n (Z.pred mask))
+    | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when Raw.is_2pow mask
+      ->
+        Raw.and_ (bv_of_int v) (Raw.mk n (Z.pred mask))
+    | Binop (Times, { node = { kind = Int mask; _ }; _ }, v)
+      when Raw.is_2pow mask ->
         let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
         Raw.shl (bv_of_int v) fac
-    | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
+    | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when Raw.is_2pow mask
+      ->
         let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
         (if s then Raw.ashr else Raw.lshr) (bv_of_int v) fac
     | Binop (Plus, l, r) -> Raw.plus (bv_of_int l) (bv_of_int r)
