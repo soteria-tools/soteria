@@ -647,6 +647,18 @@ module BitVec = struct
       | Ite (b, l, r) -> ite b (not l) (not r)
       | _ -> Unop (BvNot, v) <| v.node.ty
 
+    let and_ v1 v2 =
+      let n = size_of_bv v1.node.ty in
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec mask, _ when Z.(equal mask zero) -> v1
+      | _, BitVec mask when Z.(equal mask zero) -> v2
+      | BitVec mask, _ when covers_bitwidth n mask -> v2
+      | _, BitVec mask when covers_bitwidth n mask -> v1
+      | _, _ -> mk_commut_binop BitAnd v1 v2 <| v1.node.ty
+
+    let or_ v1 v2 = mk_commut_binop BitOr v1 v2 <| v1.node.ty
+    let xor v1 v2 = mk_commut_binop BitXor v1 v2 <| v1.node.ty
+
     let rec extract from_ to_ v =
       let size = to_ - from_ + 1 in
       match v.node.kind with
@@ -683,17 +695,6 @@ module BitVec = struct
       let n2 = size_of_bv v2.node.ty in
       Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
 
-    let and_ v1 v2 =
-      let n = size_of_bv v1.node.ty in
-      match (v1.node.kind, v2.node.kind) with
-      | BitVec mask, _ when Z.(equal mask zero) -> v1
-      | _, BitVec mask when Z.(equal mask zero) -> v2
-      | BitVec mask, _ when covers_bitwidth n mask -> v2
-      | _, BitVec mask when covers_bitwidth n mask -> v1
-      | _, _ -> mk_commut_binop BitAnd v1 v2 <| v1.node.ty
-
-    let or_ v1 v2 = mk_commut_binop BitOr v1 v2 <| v1.node.ty
-    let xor v1 v2 = mk_commut_binop BitXor v1 v2 <| v1.node.ty
     let shl v1 v2 = Binop (BitShl, v1, v2) <| v1.node.ty
     let lshr v1 v2 = Binop (BitLShr, v1, v2) <| v1.node.ty
     let ashr v1 v2 = Binop (BitAShr, v1, v2) <| v1.node.ty
