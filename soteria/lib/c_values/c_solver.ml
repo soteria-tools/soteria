@@ -401,7 +401,6 @@ struct
   let init () =
     let z3_exe = Intf.init () in
     (* Before every check-sat we pop then push again. *)
-    Intf.push z3_exe 2;
     {
       z3_exe;
       save_counter = Save_counter.init ();
@@ -526,9 +525,9 @@ struct
     (* TODO: we shouldn't wait for ack for each command individually... *)
     if trivial_model_works to_check then Symex.Solver_result.Sat
     else (
-      Intf.pop solver.z3_exe 1;
       (* We need to reset the state, so we can push the new constraints *)
-      Intf.push solver.z3_exe 1;
+      Intf.reset solver.z3_exe;
+
       (* Declare all relevant variables *)
       Var.Hashset.iter
         (fun v ->
