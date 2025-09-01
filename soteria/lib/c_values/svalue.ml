@@ -832,9 +832,37 @@ module BitVec = struct
           concat (concat v1 left) right
       | _, _ -> Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
 
-    let shl v1 v2 = Binop (BitShl, v1, v2) <| v1.node.ty
-    let lshr v1 v2 = Binop (BitLShr, v1, v2) <| v1.node.ty
-    let ashr v1 v2 = Binop (BitAShr, v1, v2) <| v1.node.ty
+    let rec shl v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          mk_masked (size_of_bv v1.node.ty) Z.(l lsl to_int r)
+      | _, BitVec s when Z.equal s Z.zero -> v1
+      | _, BitVec s when Z.geq s (Z.of_int (size_of_bv v1.node.ty)) ->
+          mk_like v1 Z.zero
+      | Binop (BitShl, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
+          shl v (mk_like v1 Z.(s1 + s2))
+      | _ -> Binop (BitShl, v1, v2) <| v1.node.ty
+
+    let rec lshr v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          mk_masked (size_of_bv v1.node.ty) Z.(l asr to_int r)
+      | _, BitVec s when Z.equal s Z.zero -> v1
+      | _, BitVec s when Z.geq s (Z.of_int (size_of_bv v1.node.ty)) ->
+          mk_like v1 Z.zero
+      | Binop (BitLShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
+          lshr v (mk_like v1 Z.(s1 + s2))
+      | _ -> Binop (BitLShr, v1, v2) <| v1.node.ty
+
+    let ashr v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          mk_masked (size_of_bv v1.node.ty) Z.(l asr to_int r)
+      | _, BitVec s when Z.equal s Z.zero -> v1
+      | Binop (BitAShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
+          lshr v (mk_like v1 Z.(s1 + s2))
+      | _ -> Binop (BitAShr, v1, v2) <| v1.node.ty
+
     let lt signed v1 v2 = Binop (BvLt signed, v1, v2) <| TBool
     let leq signed v1 v2 = Binop (BvLeq signed, v1, v2) <| TBool
     let gt signed v1 v2 = lt signed v2 v1
