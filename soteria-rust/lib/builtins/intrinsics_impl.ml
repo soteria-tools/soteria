@@ -398,7 +398,8 @@ module M (State : State_intf.S) = struct
       (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
              issues in cases of float precision loss (I think?) *)
       if%sat min <.@ f &&@ (f <.@ max) then
-        let v = Typed.Float.to_int n f in
+        let signed = Layout.is_signed ity in
+        let v = Typed.Float.to_int signed n f in
         Result.ok (Base v, state)
       else State.error (`StdErr "float_to_int_unchecked out of int range") state
 

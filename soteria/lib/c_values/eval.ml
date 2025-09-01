@@ -50,10 +50,10 @@ let eval_unop : Unop.t -> t -> t = function
   | GetPtrLoc -> Ptr.loc
   | GetPtrOfs -> Ptr.ofs
   | IntOfBool -> int_of_bool
-  | BvOfFloat n -> BitVec.of_float n
-  | BvOfInt (s, n) -> BitVec.of_int s n
+  | BvOfFloat (signed, n) -> BitVec.of_float signed n
+  | BvOfInt (signed, n) -> BitVec.of_int signed n
   | IntOfBv signed -> BitVec.to_int signed
-  | FloatOfBv _ -> BitVec.to_float
+  | FloatOfBv (signed, _) -> BitVec.to_float signed
   | BvExtract (from, to_) -> BitVec.Raw.extract from to_
   | BvExtend (signed, by) -> BitVec.Raw.extend signed by
   | BvNot -> BitVec.Raw.not

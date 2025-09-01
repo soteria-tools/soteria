@@ -440,12 +440,14 @@ module Make (Sptr : Sptr.S) = struct
             @@ Typed.cast_float sv
           in
           let size = 8 * Layout.size_of_literal_ty ity in
-          let sv' = Typed.Float.to_int size sv in
+          let signed = Layout.is_signed ity in
+          let sv' = Typed.Float.to_int signed size sv in
           Ok (Base sv')
-      | TLiteral (TInt _ | TUInt _), TLiteral (TFloat fp), Base sv ->
+      | TLiteral ((TInt _ | TUInt _) as ity), TLiteral (TFloat fp), Base sv ->
           let+ sv = cast_checked sv ~ty:Typed.t_int in
           let fp = float_precision fp in
-          let sv' = Typed.Float.of_int fp sv in
+          let signed = Layout.is_signed ity in
+          let sv' = Typed.Float.of_int signed fp sv in
           Ok (Base sv')
       | TLiteral (TUInt U8), TLiteral TChar, v
       | TLiteral TBool, TLiteral (TUInt _), v
