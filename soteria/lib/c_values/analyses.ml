@@ -8,6 +8,7 @@ let log _ = ()
 module type S = sig
   include Soteria_std.Reversible.Mutable
 
+  val simplify : t -> Svalue.t -> Svalue.t
   val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
   val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
 end
@@ -29,6 +30,8 @@ module Merge (A1 : S) (A2 : S) : S = struct
     A1.reset a1;
     A2.reset a2
 
+  let simplify (a1, a2) v = v |> A1.simplify a1 |> A2.simplify a2
+
   let add_constraint (a1, a2) v =
     let v', vars1 = A1.add_constraint a1 v in
     let v'', vars2 = A2.add_constraint a2 v' in
@@ -45,6 +48,7 @@ module None : S = struct
   let backtrack_n () _ = ()
   let save () = ()
   let reset () = ()
+  let simplify () v = v
   let add_constraint () v = (v, Var.Set.empty)
   let encode ?vars:_ () = Iter.empty
 end
@@ -273,8 +277,11 @@ module Interval : S = struct
             m "%a || %a => %a || %a" Svalue.pp v1 Svalue.pp v2 Svalue.pp v1'
               Svalue.pp v2');
         ((v1' ||@ v2', Var.Set.union vars1 vars2), st_union st1 st2)
-    (* We can try computing ranges of expressions and guessing truthiness *)
-    | _ -> ((simplify v st, Var.Set.empty), st)
+    | _ -> ((v, Var.Set.empty), st)
+
+  (** Simplifies a constraints using the current knowledge base, without
+      updating it. *)
+  let simplify st v = wrap_read (simplify v) st
 
   (** Adds a constraint to the current interval analysis, updating the currently
       tracked intervals. *)
