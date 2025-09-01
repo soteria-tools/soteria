@@ -914,8 +914,11 @@ module BitVec = struct
         Raw.mk n z
     | _, _, _ -> Unop (BvOfFloat n, v) <| t_bv n
 
+  (** [of_int signed size v] converts the value [v] of type [TInt] into an
+      equivalent value of type [TBitVector size], assuming the representation is
+      [signed]. *)
   let rec of_int s n v =
-    let bv_of_int = of_int s n in
+    let of_int = of_int s n in
     match v.node.kind with
     | Unop (IntOfBv _, v) ->
         let size = size_of_bv v.node.ty in
@@ -923,50 +926,41 @@ module BitVec = struct
         else if size > n then Raw.extract 0 (n - 1) v
         else Raw.extend s (n - size) v
     | Int z ->
-        let z = if Z.geq z Z.zero then z else Z.neg z in
         (* need to mask otherwise we'll encode a value bigger than the bitwidth *)
         let mask = Z.pred @@ Z.shift_left Z.one n in
         let z = Z.(z land mask) in
         Raw.mk n z
+    | Binop (Mod, v, { node = { kind = Int mask; _ }; _ })
+      when Z.gt mask (Raw.max_for s n) ->
+        of_int v
     | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when Raw.is_2pow mask
       ->
-        Raw.and_ (bv_of_int v) (Raw.mk n (Z.pred mask))
-    | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when Raw.is_2pow mask
-      ->
-        Raw.and_ (bv_of_int v) (Raw.mk n (Z.pred mask))
+        Raw.and_ (of_int v) (Raw.mk n (Z.pred mask))
     | Binop (Times, { node = { kind = Int mask; _ }; _ }, v)
       when Raw.is_2pow mask ->
         let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
-        Raw.shl (bv_of_int v) fac
+        Raw.shl (of_int v) fac
     | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when Raw.is_2pow mask
       ->
         let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
-        (if s then Raw.ashr else Raw.lshr) (bv_of_int v) fac
-    | Binop (Plus, l, r) -> Raw.plus (bv_of_int l) (bv_of_int r)
-    | Binop (Minus, l, r) -> Raw.minus (bv_of_int l) (bv_of_int r)
+        if s then Raw.ashr (of_int v) fac else Raw.lshr (of_int v) fac
+    | Binop (Plus, l, r) -> Raw.plus (of_int l) (of_int r)
+    | Binop (Minus, l, r) -> Raw.minus (of_int l) (of_int r)
+    | Binop (Times, l, r) -> Raw.times (of_int l) (of_int r)
+    | Binop (Div, l, r) -> Raw.div s (of_int l) (of_int r)
+    | Binop (Rem, l, r) -> Raw.rem s (of_int l) (of_int r)
+    | Binop (Mod, l, r) -> Raw.mod_ s (of_int l) (of_int r)
+    | Unop (IntOfBool, v) -> Ite (v, Raw.mk n Z.one, Raw.mk n Z.zero) <| t_bv n
+    | Ite (b, t, e) -> Ite (b, of_int t, of_int e) <| t_bv n
     | _ -> Unop (BvOfInt (s, n), v) <| t_bv n
 
   let rec to_int signed v =
-    (* Tests if z is of the form 1+0+ *)
-    let is_left_mask z =
-      if Z.(z <= one) then false
-      else
-        let size = Z.log2up z in
-        let zeroes = size - Z.popcount z in
-        if zeroes = 0 then false
-        else if size <> size_of_bv v.node.ty then false
-        else
-          let mask = Z.pred @@ Z.shift_left Z.one zeroes in
-          Z.(Z.equal (z land mask) zero)
-    in
     match v.node.kind with
-    | Unop (BvOfInt _, v) -> v
-    | Binop (BvPlus, l, r) -> plus (to_int signed l) (to_int signed r)
-    | Binop (BvMinus, l, r) -> minus (to_int signed l) (to_int signed r)
+    | BitVec z -> int_z @@ Raw.bv_to_z signed (size_of_bv v.node.ty) z
     | Binop (BitShl, l, { node = { kind = Int n; _ }; _ }) ->
         let pow = int_z @@ Z.shift_left Z.one (Z.to_int n) in
         times l pow
-    | Binop (BitAShr, l, { node = { kind = Int n; _ }; _ }) ->
+    | Binop (BitAShr, l, { node = { kind = Int n; _ }; _ }) when signed ->
         let pow = int_z @@ Z.shift_right Z.one (Z.to_int n) in
         div l pow
     | Binop (BitLShr, l, { node = { kind = Int n; _ }; _ })
@@ -974,21 +968,35 @@ module BitVec = struct
         let pow = int_z @@ Z.shift_right Z.one (Z.to_int n) in
         div l pow
     | Binop (BitAnd, v, { node = { kind = BitVec mask; _ }; _ })
-      when is_left_mask mask ->
+      when Raw.is_left_mask (size_of_bv v.node.ty) mask ->
         (* left mask, of the form 1+0+. e.g. for 1111 1000, this is equivalent to dividing by 2^3,
          and then re-multiplying, avoiding the bitvector.  *)
         let zeroes = Z.log2 mask - Z.popcount mask in
         let pow = int_z @@ Z.shift_left Z.one zeroes in
         let v = to_int signed v in
         times (div v pow) pow
+    | Ite
+        ( b,
+          { node = { kind = BitVec l; _ }; _ },
+          { node = { kind = BitVec r; _ }; _ } )
+      when Z.equal l Z.one && Z.equal r Z.zero ->
+        int_of_bool b
+    | Ite
+        ( b,
+          { node = { kind = BitVec l; _ }; _ },
+          { node = { kind = BitVec r; _ }; _ } )
+      when Z.equal l Z.zero && Z.equal r Z.one ->
+        int_of_bool (not b)
+    | Ite (b, t, e) -> ite b (to_int signed t) (to_int signed e)
     | _ -> Unop (IntOfBv signed, v) <| t_int
 
   let to_float v =
-    let n = size_of_bv v.node.ty in
-    let fp = FloatPrecision.of_size n in
     match v.node.kind with
     | Unop (BvOfFloat _, v) -> v
-    | _ -> Unop (FloatOfBv fp, v) <| t_f fp
+    | _ ->
+        let size = size_of_bv v.node.ty in
+        let fp = FloatPrecision.of_size size in
+        Unop (FloatOfBv fp, v) <| t_f fp
 
   let and_ ~size ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -1020,46 +1028,40 @@ module BitVec = struct
         let bv = Raw.xor v1_bv v2_bv in
         to_int signed bv
 
-  let shl ~size ~signed v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
-    | Int i1, Int i2 ->
-        let shifted = Z.( lsl ) i1 (Z.to_int i2) in
-        let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
-        int_z masked
-    | _, Int i2 ->
-        let max = Z.( lsl ) Z.one size in
-        let shifted = times v1 (int_z (Z.( lsl ) Z.one (Z.to_int i2))) in
-        let masked = mod_ shifted (int_z max) in
-        masked
-    | _ ->
-        let v1_bv = of_int signed size v1 in
-        let v2_bv = of_int signed size v2 in
-        let bv = Raw.shl v1_bv v2_bv in
-        to_int signed bv
+  let not ~size ~signed v = of_int signed size v |> Raw.not |> to_int signed
 
-  let lshr ~size ~signed v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
-    | Int i1, Int i2 ->
-        let shifted = Z.( asr ) i1 (Z.to_int i2) in
-        let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
-        int_z masked
-    | _ ->
-        let v1_bv = of_int signed size v1 in
-        let v2_bv = of_int signed size v2 in
-        let bv = Raw.lshr v1_bv v2_bv in
-        to_int signed bv
+  let[@inline] wrap_binop f =
+   fun ~size ~signed v1 v2 ->
+    let v1 = of_int signed size v1 in
+    let v2 = of_int signed size v2 in
+    let r = f v1 v2 in
+    to_int signed r
 
-  let ashr ~size ~signed v1 v2 =
-    let v1_bv = of_int signed size v1 in
-    let v2_bv = of_int signed size v2 in
-    let bv = Raw.ashr v1_bv v2_bv in
-    to_int signed bv
+  let shl = wrap_binop Raw.shl
+  let ashr = wrap_binop Raw.ashr
+  let lshr = wrap_binop Raw.lshr
+  let wrap_plus = wrap_binop Raw.plus
+  let wrap_minus = wrap_binop Raw.minus
+  let wrap_times = wrap_binop Raw.times
 
-  let not ~size:s ~signed v =
-    if Stdlib.not signed then
-      let max = Z.(pred (one lsl s)) in
-      minus (int_z max) v
-    else minus (neg v) one
+  let[@inline] apply_binop_signed f =
+   fun ~size ~signed v1 v2 ->
+    let v1 = of_int signed size v1 in
+    let v2 = of_int signed size v2 in
+    f signed v1 v2
+
+  let plus_overflows = apply_binop_signed Raw.plus_overflows
+  let times_overflows = apply_binop_signed Raw.times_overflows
+  let lt_as_bv = apply_binop_signed Raw.lt
+  let leq_as_bv = apply_binop_signed Raw.leq
+
+  let minus_overflows =
+    apply_binop_signed @@ fun signed l r ->
+    let size = size_of_bv l.node.ty in
+    let neg_overflows = Raw.neg_overflows r in
+    let r_neg = Raw.minus (Raw.mk size Z.zero) r in
+    let add_overflows = Raw.plus_overflows signed l r_neg in
+    bool_or neg_overflows add_overflows
 end
 
 (** {2 Floating point} *)
