@@ -129,6 +129,24 @@ module BitVec : sig
     size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
   val not : size:int -> signed:bool -> [< sint ] t -> [> sint ] t
+
+  val wrap_plus :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val wrap_minus :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val wrap_times :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val plus_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val minus_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val times_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
 end
 
 (** Floating point *)
