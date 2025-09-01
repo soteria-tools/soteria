@@ -2,7 +2,7 @@ open Soteria_std
 open Symex
 open Svalue.Infix
 
-(* let log = Soteria_logs.Logs.L.warn *)
+(* let log = Soteria.Logging.Logs.L.warn *)
 let log _ = ()
 
 module type S = sig
@@ -123,6 +123,64 @@ module Interval : S = struct
 
   let get v st = Var.Map.find_opt v st |> Option.value ~default:(None, None)
 
+  (** [simplify st v ] simplifies the constraint [v], without learning anything,
+      using the current knowledge base. *)
+  let rec simplify (v : Svalue.t) st : Svalue.t =
+    let simplify v = simplify v st in
+    match v.node.kind with
+    | Binop (((Eq | Lt | Leq | BvLt false | BvLeq false) as bop), l, r) -> (
+        let rec to_range (v : Svalue.t) : Range.t =
+          match v.node.kind with
+          | Var v -> get v st
+          | Int i -> (Some i, Some i)
+          | Binop (Plus, l, r) ->
+              let ml, nl = to_range l in
+              let mr, nr = to_range r in
+              (Option.map2 Z.add ml mr, Option.map2 Z.add nl nr)
+          | Binop (Minus, l, r) ->
+              let ml, nl = to_range l in
+              let mr, nr = to_range r in
+              (Option.map2 Z.sub ml nr, Option.map2 Z.sub nl mr)
+          | Binop (Mod, _, r) ->
+              (* assuming the rhs is not zero; *)
+              let nl, nr = to_range r in
+              let max =
+                Option.map2 (fun x y -> Z.(pred @@ max (abs x) (abs y))) nl nr
+              in
+              (Some Z.zero, max)
+          | Binop (Rem, _, r) ->
+              (* assuming the rhs is not zero; *)
+              let nl, nr = to_range r in
+              let max =
+                Option.map2 (fun x y -> Z.(pred @@ max (abs x) (abs y))) nl nr
+              in
+              (Option.map Z.neg max, max)
+          | _ -> (None, None)
+        in
+        let l = simplify l in
+        let r = simplify r in
+        let lr = to_range l in
+        let rr = to_range r in
+        match (bop, lr, rr) with
+        | Eq, _, _ when Range.is_empty (Range.intersect lr rr) -> Svalue.v_false
+        | (Lt | BvLt false), (Some ml, _), (_, Some nr) when Z.geq ml nr ->
+            Svalue.v_false
+        | (Leq | BvLeq false), (Some ml, _), (_, Some nr) when Z.gt ml nr ->
+            Svalue.v_false
+        | (Lt | BvLt false), (_, Some nl), (Some mr, _) when Z.lt nl mr ->
+            Svalue.v_true
+        | (Leq | BvLeq false), (_, Some nl), (Some mr, _) when Z.leq nl mr ->
+            Svalue.v_true
+        | Leq, (Some ml, Some mr), (Some nr, _)
+          when Z.equal ml mr && Z.leq mr nr ->
+            Svalue.v_true
+        (* defaults *)
+        | _ -> Eval.eval_binop bop l r)
+    | Binop (op, l, r) -> Eval.eval_binop op (simplify l) (simplify r)
+    | Unop (op, v) -> Eval.eval_unop op (simplify v)
+    | Ite (b, t, e) -> Svalue.ite (simplify b) (simplify t) (simplify e)
+    | _ -> v
+
   (** [add_constraint ?neg ?absorb v st] Adds a constraint [v] to the state
       [st]. [absorb=false] indicates that we cannot return [true] to indicate
       the assertion now lives in the analysis. [neg=false] indicates we are
@@ -216,46 +274,7 @@ module Interval : S = struct
               Svalue.pp v2');
         ((v1' ||@ v2', Var.Set.union vars1 vars2), st_union st1 st2)
     (* We can try computing ranges of expressions and guessing truthiness *)
-    | Binop (((Eq | Lt | Leq) as bop), l, r) ->
-        let rec to_range (v : Svalue.t) : Range.t =
-          match v.node.kind with
-          | Var v -> get v st
-          | Int i -> (Some i, Some i)
-          | Binop (Plus, l, r) ->
-              let ml, nl = to_range l in
-              let mr, nr = to_range r in
-              (Option.map2 Z.add ml mr, Option.map2 Z.add nl nr)
-          | Binop (Minus, l, r) ->
-              let ml, nl = to_range l in
-              let mr, nr = to_range r in
-              (Option.map2 Z.sub ml nr, Option.map2 Z.sub nl mr)
-          | Binop (Mod, _, r) ->
-              (* assuming the rhs is not zero; *)
-              let nl, nr = to_range r in
-              let max =
-                Option.map2 (fun x y -> Z.(pred @@ max (abs x) (abs y))) nl nr
-              in
-              (Some Z.zero, max)
-          | Binop (Rem, _, r) ->
-              (* assuming the rhs is not zero; *)
-              let nl, nr = to_range r in
-              let max =
-                Option.map2 (fun x y -> Z.(pred @@ max (abs x) (abs y))) nl nr
-              in
-              (Option.map Z.neg max, max)
-          | _ -> (None, None)
-        in
-        let lr = to_range l in
-        let rr = to_range r in
-        let res =
-          match (bop, lr, rr) with
-          | Eq, _, _ when Range.is_empty (Range.intersect lr rr) -> Some false
-          | Lt, (Some ml, _), (_, Some nr) when Z.geq ml nr -> Some false
-          | Leq, (Some ml, _), (_, Some nr) when Z.gt ml nr -> Some false
-          | _ -> None
-        in
-        ((Option.fold res ~some:Svalue.bool ~none:v, Var.Set.empty), st)
-    | _ -> ((v, Var.Set.empty), st)
+    | _ -> ((simplify v st, Var.Set.empty), st)
 
   (** Adds a constraint to the current interval analysis, updating the currently
       tracked intervals. *)
