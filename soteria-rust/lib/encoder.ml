@@ -478,13 +478,25 @@ module Make (Sptr : Sptr.S) = struct
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
-      | TLiteral (TFloat fty), TLiteral (TInt _ | TUInt _), Base sv ->
+      | TLiteral (TFloat fty), TLiteral ((TInt _ | TUInt _) as lit_ty), Base sv
+        ->
           let sv = Typed.cast_f fty sv in
-          let sv' = Typed.BitVec.of_float sv in
+          let signed = Layout.is_signed lit_ty in
+          let sv' = Typed.BitVec.of_float ~signed sv in
           Result.ok (Base sv')
-      | TLiteral ((TInt _ | TUInt _) as ity), TLiteral (TFloat _), Base sv ->
+      | ( TLiteral ((TInt _ | TUInt _) as ity),
+          TLiteral (TFloat _ as fty),
+          Base sv ) ->
           let sv = Typed.cast_lit ity sv in
-          let sv' = Typed.BitVec.to_float sv in
+          let from_size = 8 * size_of_literal_ty ity in
+          let to_size = 8 * size_of_literal_ty fty in
+          let signed = Layout.is_signed ity in
+          let sv =
+            if from_size < to_size then
+              Typed.BitVec.extend ~signed (to_size - from_size) sv
+            else sv
+          in
+          let sv' = Typed.BitVec.to_float ~signed sv in
           Result.ok (Base sv')
       | TLiteral (TUInt U8 as from_ty), TLiteral (TChar as to_ty), Base v
       | ( TLiteral (TBool as from_ty),

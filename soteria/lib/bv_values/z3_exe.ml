@@ -47,11 +47,8 @@ module Encoding = struct
     | GetPtrLoc -> failwith "Pointers are unsupported for SMT-lib"
     | GetPtrOfs -> failwith "Pointers are unsupported for SMT-lib"
     | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)
-    | BvOfFloat n -> bv_of_float n
-    | FloatOfBv F16 -> f16_of_bv
-    | FloatOfBv F32 -> f32_of_bv
-    | FloatOfBv F64 -> f64_of_bv
-    | FloatOfBv F128 -> f128_of_bv
+    | BvOfFloat (signed, n) -> bv_of_float signed n
+    | FloatOfBv (signed, fp) -> float_of_bv signed fp
     | BvExtract (from_, to_) -> bv_extract to_ from_
     | BvExtend (true, by) -> bv_sign_extend by
     | BvExtend (false, by) -> bv_zero_extend by

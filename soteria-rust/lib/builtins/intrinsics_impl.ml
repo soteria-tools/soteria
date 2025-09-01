@@ -367,6 +367,7 @@ module M (State : State_intf.S) = struct
       State.error (`StdErr "float_to_int_unchecked with NaN or infinite value")
         state
     else
+      let signed = Layout.is_signed ity in
       let max = Z.succ @@ Layout.max_value_z ity in
       let min = Z.pred @@ Layout.min_value_z ity in
       let max = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float max in
@@ -374,7 +375,7 @@ module M (State : State_intf.S) = struct
       (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
              issues in cases of float precision loss (I think?) *)
       if%sat min <.@ f &&@ (f <.@ max) then
-        Result.ok (Base (Typed.BitVec.of_float f), state)
+        Result.ok (Base (Typed.BitVec.of_float ~signed f), state)
       else State.error (`StdErr "float_to_int_unchecked out of int range") state
 
   let fmul_add fty ~a ~b ~c state : ret =

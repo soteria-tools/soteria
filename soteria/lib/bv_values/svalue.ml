@@ -78,8 +78,8 @@ module Unop = struct
     | GetPtrLoc
     | GetPtrOfs
     | BvOfBool of int (* target bitvec size *)
-    | BvOfFloat of int (* target bitvec size *)
-    | FloatOfBv of FloatPrecision.t
+    | BvOfFloat of bool * int (* signed * target bitvec size *)
+    | FloatOfBv of bool * FloatPrecision.t (* signed * precision *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
@@ -97,8 +97,9 @@ module Unop = struct
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
     | BvOfBool n -> Fmt.pf ft "b2bv[%d]" n
-    | BvOfFloat n -> Fmt.pf ft "f2bv[%d]" n
-    | FloatOfBv p -> Fmt.pf ft "bv2f[%a]" FloatPrecision.pp p
+    | BvOfFloat (signed, n) -> Fmt.pf ft "f2%abv[%d]" pp_signed signed n
+    | FloatOfBv (signed, p) ->
+        Fmt.pf ft "%abv2f[%a]" pp_signed signed FloatPrecision.pp p
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
@@ -410,8 +411,8 @@ module type BitVec = sig
   val not_bool : t -> t
 
   (* float-bv conversions *)
-  val of_float : t -> t
-  val to_float : t -> t
+  val of_float : signed:bool -> t -> t
+  val to_float : signed:bool -> t -> t
 end
 
 module type Float = sig
@@ -1104,25 +1105,21 @@ and BitVec : BitVec = struct
       let add_ovf = plus_overflows ~signed v1 neg_v2 in
       Bool.or_ neg_ovf add_ovf
 
-  let of_float v =
+  let of_float ~signed v =
     let p = precision_of_f v.node.ty in
     match (v.node.ty, v.node.kind, p) with
-    | TFloat _, Unop (FloatOfBv prev, v), _ when prev = p -> v
     | TFloat F32, Float f, F32 ->
         mk 32 @@ Z.of_int32 (Int32.bits_of_float (Stdlib.Float.of_string f))
     | TFloat F64, Float f, F64 ->
         mk 64 @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
     | _, _, _ ->
         let n = FloatPrecision.size p in
-        Unop (BvOfFloat n, v) <| t_bv n
+        Unop (BvOfFloat (signed, n), v) <| t_bv n
 
-  let to_float v =
-    match v.node.kind with
-    | Unop (BvOfFloat _, v) -> v
-    | _ ->
-        let size = size_of v.node.ty in
-        let fp = FloatPrecision.of_size size in
-        Unop (FloatOfBv fp, v) <| t_f fp
+  let to_float ~signed v =
+    let size = size_of v.node.ty in
+    let fp = FloatPrecision.of_size size in
+    Unop (FloatOfBv (signed, fp), v) <| t_f fp
 end
 
 (** {2 Floating point} *)

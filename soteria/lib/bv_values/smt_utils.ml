@@ -75,11 +75,20 @@ let fp_round (rm : Svalue.FloatRoundingMode.t) f =
 
 (* Float{Of,To}Bv *)
 
-let f16_of_bv bv = app (ifam "to_fp" [ 5; 11 ]) [ bv ]
-let f32_of_bv bv = app (ifam "to_fp" [ 8; 24 ]) [ bv ]
-let f64_of_bv bv = app (ifam "to_fp" [ 11; 53 ]) [ bv ]
-let f128_of_bv bv = app (ifam "to_fp" [ 15; 113 ]) [ bv ]
-let bv_of_float n f = app (ifam "fp.to_sbv" [ n ]) [ rm; f ]
+let float_of_bv signed (fp : Svalue.FloatPrecision.t) bv =
+  let fn = if signed then "to_fp" else "to_fp_unsigned" in
+  let fam =
+    match fp with
+    | F16 -> [ 5; 11 ]
+    | F32 -> [ 8; 24 ]
+    | F64 -> [ 11; 53 ]
+    | F128 -> [ 15; 113 ]
+  in
+  app (ifam fn fam) [ rm; bv ]
+
+let bv_of_float signed n f =
+  if signed then app (ifam "fp.to_sbv" [ n ]) [ rm; f ]
+  else app (ifam "fp.to_ubv" [ n ]) [ rm; f ]
 
 (* Int{Of,To}Bv *)
 
