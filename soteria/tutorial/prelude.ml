@@ -1,6 +1,5 @@
 open Soteria;;
-open C_values
-open Soteria_symex;;
+open C_values;;
 
 let pp_stats _pp_inner ft (_t: 'a Soteria.Stats.stats) =
   Fmt.pf ft "...";;
