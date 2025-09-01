@@ -1,5 +1,5 @@
 module SYMEX =
-  Soteria_symex.Symex.Make
+  Soteria.Soteria_symex.Symex.Make
     (struct
       module Range = struct
         type t = Charon.Meta.span

@@ -1,6 +1,6 @@
 open Soteria_symex
 
-(* let log = Soteria_logs.Logs.L.warn *)
+(* let log = Soteria.Logging.Logs.L.warn *)
 let log _ = ()
 
 module type S = sig

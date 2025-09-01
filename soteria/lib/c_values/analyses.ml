@@ -2,7 +2,7 @@ open Soteria_std
 open Soteria_symex
 open Svalue.Infix
 
-(* let log = Soteria_logs.Logs.L.warn *)
+(* let log = Soteria.Logging.Logs.L.warn *)
 let log _ = ()
 
 module type S = sig

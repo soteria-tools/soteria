@@ -1,4 +1,5 @@
 open Svalue
+open Soteria_std
 
 let eval_binop : Binop.t -> t -> t -> t = function
   | And -> Bool.and_

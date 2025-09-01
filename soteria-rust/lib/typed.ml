@@ -1,5 +1,5 @@
 open Charon
-include Soteria_bv_values.Typed
+include Soteria.Bv_values.Typed
 module Lc = Layout_common
 
 (** [CastError (value, expected, got)] *)

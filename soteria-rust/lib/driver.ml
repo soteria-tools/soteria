@@ -115,7 +115,7 @@ let print_outcomes entry_name f =
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
-      if not @@ Soteria_terminal.Config.compact () then
+      if not @@ Soteria.Terminal.Config.compact () then
         Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
       Fmt.pr "@\n@.";
       (entry_name, Outcome.Ok)

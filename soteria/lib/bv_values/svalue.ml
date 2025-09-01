@@ -1,4 +1,5 @@
 open Hc
+open Soteria_std
 module Var = Soteria_symex.Var
 
 module FloatPrecision = struct
