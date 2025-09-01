@@ -336,68 +336,6 @@ let rec subst subst_var sv =
 let v_true = Bool true <| TBool
 let v_false = Bool false <| TBool
 
-(** {2 Integers} *)
-
-let int_z z = Int z <| TInt
-let int i = int_z (Z.of_int i)
-
-let nonzero_z z =
-  if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z") else int_z z
-
-let nonzero x = if x = 0 then raise (Invalid_argument "nonzero") else int x
-let zero = int_z Z.zero
-let one = int_z Z.one
-
-(** {2 Bitvectors} *)
-
-let bitvec n bv = BitVec bv <| t_bv n
-
-(** {2 Floats} *)
-
-let float fp f = Float f <| t_f fp
-let float_f fp f = Float (Float.to_string f) <| t_f fp
-let float_like v f = Float (Float.to_string f) <| v.node.ty
-
-let fp_of v =
-  match v.node.ty with
-  | TFloat fp -> fp
-  | _ -> Fmt.failwith "Unsupported float type"
-
-let f16 f = float_f F16 f
-let f32 f = float_f F32 f
-let f64 f = float_f F64 f
-let f128 f = float_f F128 f
-
-(** {2 Utils} *)
-
-let rec bv_extract from_ to_ v =
-  let size = to_ - from_ + 1 in
-  match v.node.kind with
-  | BitVec bv ->
-      let to_ = to_ + 1 in
-      let bv = Z.((bv asr from_) land pred (one lsl to_)) in
-      bitvec size bv
-  | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) ->
-      let v1 = bv_extract from_ to_ v1 in
-      let v2 = bv_extract from_ to_ v2 in
-      mk_commut_binop bop v1 v2 <| t_bv size
-  | Unop (BvOfInt, v) when from_ = 0 -> Unop (BvOfInt, v) <| t_bv size
-  | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
-
-let bv_extend to_ v =
-  let extend_by = to_ - size_of_bv v.node.ty in
-  match v.node.kind with
-  | BitVec bv ->
-      let to_ = to_ + 1 in
-      let bv = Z.(bv land pred (one lsl to_)) in
-      bitvec to_ bv
-  (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
-     as that will require a more expensive bit-blasting. *)
-  | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv to_
-  | _ -> Unop (BvExtend extend_by, v) <| t_bv to_
-
-(** {2 Booleans} *)
-
 let as_bool t =
   if equal t v_true then Some true
   else if equal t v_false then Some false
@@ -415,6 +353,13 @@ let and_ v1 v2 =
   | _, Bool true -> v1
   | _ -> mk_commut_binop And v1 v2 <| TBool
 
+let or_ v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | Bool true, _ | _, Bool true -> v_true
+  | Bool false, _ -> v2
+  | _, Bool false -> v1
+  | _ -> mk_commut_binop Or v1 v2 <| TBool
+
 let conj l = List.fold_left and_ v_true l
 
 let rec not sv =
@@ -428,75 +373,6 @@ let rec not sv =
     | Binop (Or, v1, v2) -> mk_commut_binop And (not v1) (not v2) <| TBool
     | Binop (And, v1, v2) -> mk_commut_binop Or (not v1) (not v2) <| TBool
     | _ -> Unop (Not, sv) <| TBool
-
-let rec sem_eq v1 v2 =
-  if equal v1 v2 && Stdlib.not (is_float v1.node.ty) then v_true
-  else
-    match (v1.node.kind, v2.node.kind) with
-    | Int z1, Int z2 -> bool (Z.equal z1 z2)
-    | Bool b1, Bool b2 -> bool (b1 = b2)
-    | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
-    | _, Binop (Plus, v2, v3) when equal v1 v2 -> sem_eq v3 zero
-    | _, Binop (Plus, v2, v3) when equal v1 v3 -> sem_eq v2 zero
-    | Binop (Plus, v1, v3), _ when equal v1 v2 -> sem_eq v3 zero
-    | Binop (Plus, v1, v3), _ when equal v3 v2 -> sem_eq v1 zero
-    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 ->
-        sem_eq v2 v4
-    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 ->
-        sem_eq v2 v3
-    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 ->
-        sem_eq v1 v4
-    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 ->
-        sem_eq v1 v3
-    | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
-    | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y
-    | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
-    | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
-        sem_eq v1 (int_z @@ Z.sub y x)
-    | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1)
-    | Int y, Binop (Times, v1, { node = { kind = Int x; _ }; _ })
-    | Binop (Times, v1, { node = { kind = Int x; _ }; _ }), Int y
-    | Binop (Times, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-        if Z.equal Z.zero x then bool (Z.equal Z.zero y)
-        else if Z.(equal zero (rem y x)) then sem_eq v1 (int_z Z.(y / x))
-        else v_false
-    | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
-    (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
-    | Binop (BitAnd, _, _), _ | _, Binop (BitAnd, _, _) -> (
-        let rec msb_of v =
-          match v.node.kind with
-          | BitVec v when Z.(v > zero) -> Some (Z.log2up v)
-          | BitVec v when Z.(equal v zero) -> Some 0
-          | Binop (BitAnd, bv1, bv2) ->
-              Option.merge min (msb_of bv1) (msb_of bv2)
-          | _ -> None
-        in
-        let current_size = size_of_bv v1.node.ty in
-        let msb = Option.map2 max (msb_of v1) (msb_of v2) in
-        match msb with
-        | Some msb when msb <> current_size - 1 ->
-            let v1 = bv_extract 0 msb v1 in
-            let v2 = bv_extract 0 msb v2 in
-            sem_eq v1 v2
-        | _ ->
-            (* regular sem_eq *)
-            if equal v1 v2 then v_true else mk_commut_binop Eq v1 v2 <| TBool)
-    | Unop (IntOfBv _, bv1), Unop (IntOfBv _, bv2) -> sem_eq bv1 bv2
-    | Unop (IntOfBv _, bv), Int n | Int n, Unop (IntOfBv _, bv) ->
-        let size = size_of_bv bv.node.ty in
-        let n = if Z.geq n Z.zero then n else Z.neg n in
-        sem_eq bv (BitVec n <| t_bv size)
-    | _ -> mk_commut_binop Eq v1 v2 <| TBool
-
-let sem_eq_untyped v1 v2 =
-  if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
-
-let or_ v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Bool true, _ | _, Bool true -> v_true
-  | Bool false, _ -> v2
-  | _, Bool false -> v1
-  | _ -> mk_commut_binop Or v1 v2 <| TBool
 
 let rec split_ands (sv : t) (f : t -> unit) : unit =
   match sv.node.kind with
@@ -524,23 +400,389 @@ let ite guard if_ else_ =
 
 (** {2 Integers} *)
 
+let int_z z = Int z <| TInt
+let int i = int_z (Z.of_int i)
+
+let nonzero_z z =
+  if Z.equal Z.zero z then raise (Invalid_argument "nonzero_z") else int_z z
+
+let nonzero x = if x = 0 then raise (Invalid_argument "nonzero") else int x
+let zero = int_z Z.zero
+let one = int_z Z.one
+
 let int_of_bool b =
   if equal v_true b then one
   else if equal v_false b then zero
   else Unop (IntOfBool, b) <| TInt
 
-(* Negates a boolean that is in integer form (i.e. 0 for false, anything else is true) *)
-let not_int_bool sv =
-  match sv.node.kind with
-  | Int z -> if Z.equal z Z.zero then one else zero
-  | Unop (IntOfBool, sv') -> int_of_bool (not sv')
-  | _ -> int_of_bool (sem_eq sv zero)
+let rec plus v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v1 zero -> v2
+  | _, _ when equal v2 zero -> v1
+  | Int i1, Int i2 -> int_z (Z.add i1 i2)
+  | Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }), Int i3 ->
+      plus v1 (int_z (Z.add i2 i3))
+  | Binop (Plus, { node = { kind = Int i1; _ }; _ }, v2), Int i3 ->
+      plus (int_z (Z.add i1 i3)) v2
+  | Int i1, Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }) ->
+      plus (int_z (Z.add i1 i2)) v1
+  | Int i1, Binop (Plus, { node = { kind = Int i2; _ }; _ }, v2) ->
+      plus (int_z (Z.add i1 i2)) v2
+  | _ -> mk_commut_binop Plus v1 v2 <| TInt
 
-let bool_of_int sv =
-  match sv.node.kind with
-  | Int z -> bool (Stdlib.not (Z.equal z Z.zero))
-  | Unop (IntOfBool, sv') -> sv'
-  | _ -> not (sem_eq sv zero)
+let rec minus v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v2 zero -> v1
+  | Int i1, Int i2 -> int_z (Z.sub i1 i2)
+  | Var v1, Var v2 when Var.equal v1 v2 -> zero
+  | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
+      minus (int_z (Z.sub i2 i1)) v1
+  | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
+      minus v1 (int_z (Z.sub i2 i1))
+  | Binop (Plus, x, y), _ when equal x v2 -> y
+  | Binop (Plus, x, y), _ when equal y v2 -> x
+  | _, Binop (Plus, x, y) when equal x v1 -> y
+  | _, Binop (Plus, x, y) when equal x v1 -> y
+  | _ -> Binop (Minus, v1, v2) <| TInt
+
+let times v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v1 zero || equal v2 zero -> zero
+  | _, _ when equal v1 one -> v2
+  | _, _ when equal v2 one -> v1
+  | Int i1, Int i2 -> int_z (Z.mul i1 i2)
+  | _ -> mk_commut_binop Times v1 v2 <| TInt
+
+let div v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v2 one -> v1
+  | Int i1, Int i2 -> int_z (Z.div i1 i2)
+  | Binop (Times, v, { node = { kind = Int i; _ }; _ }), Int j
+  | Int j, Binop (Times, v, { node = { kind = Int i; _ }; _ })
+    when Z.equal i j ->
+      v
+  | Binop (Times, { node = { kind = Int i; _ }; _ }, v), Int j
+  | Int j, Binop (Times, { node = { kind = Int i; _ }; _ }, v)
+    when Z.equal i j ->
+      v
+  | _ -> Binop (Div, v1, v2) <| TInt
+
+let rec is_mod v n =
+  match v.node.kind with
+  | Int i1 -> Z.equal (Z.( mod ) i1 n) Z.zero
+  | Binop (Plus, v2, v3) -> is_mod v2 n && is_mod v3 n
+  | Binop (Minus, v2, v3) -> is_mod v2 n && is_mod v3 n
+  | Binop (Times, v2, v3) -> is_mod v2 n || is_mod v3 n
+  | _ -> false
+
+let rec rem v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, Int i2 when is_mod v1 i2 -> zero
+  | Int i1, Int i2 -> int_z (Z.rem i1 i2)
+  | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
+      times n (rem v1 v2)
+  | Binop (Times, n, v1), Binop (Times, m, v2) when equal n m ->
+      times n (rem v1 v2)
+  | _ -> Binop (Rem, v1, v2) <| v1.node.ty
+
+let rec mod_ v1 v2 =
+  match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v2 one -> zero
+  | _, Int i2 when is_mod v1 i2 -> zero
+  | Int i1, Int i2 ->
+      (* OCaml's mod computes the remainer... *)
+      let rem = Z.( mod ) i1 i2 in
+      if Z.lt rem Z.zero then int_z (Z.add rem i2) else int_z rem
+  | Binop (Mod, x, { node = { kind = Int i1; _ }; _ }), Int i2
+    when Z.geq i1 i2 && Z.divisible i1 i2 ->
+      mod_ x v2
+  | _ -> Binop (Mod, v1, v2) <| TInt
+
+let neg v =
+  match (v.node.ty, v.node.kind) with
+  | TInt, Int i -> int_z (Z.neg i)
+  | _ -> minus zero v
+
+(** {2 Bit vectors}
+
+    Bit vector operations; all these expect values of type [TInt], and apply
+    bit-vector conversions under the hood as needed. This allow bit operations
+    to be seamlessly used on [TInt], without worrying about the underlying
+    representation.*)
+module BitVec = struct
+  let bool_or = or_
+  let bool_and = and_
+
+  (** Raw operations for values of type [TBitVector]; be careful when using
+      these, so as to provide properly typed values. Prefer using [BitVec]
+      directly when possible, as it may also provide more reductions. *)
+  module Raw = struct
+    let mk n bv = BitVec bv <| t_bv n
+
+    let rec extract from_ to_ v =
+      let size = to_ - from_ + 1 in
+      match v.node.kind with
+      | BitVec bv ->
+          let to_ = to_ + 1 in
+          let bv = Z.((bv asr from_) land pred (one lsl to_)) in
+          mk size bv
+      | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) ->
+          let v1 = extract from_ to_ v1 in
+          let v2 = extract from_ to_ v2 in
+          mk_commut_binop bop v1 v2 <| t_bv size
+      | Unop (BvOfInt, v) when from_ = 0 -> Unop (BvOfInt, v) <| t_bv size
+      | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
+
+    let extend to_ v =
+      let extend_by = to_ - size_of_bv v.node.ty in
+      match v.node.kind with
+      | BitVec bv ->
+          let to_ = to_ + 1 in
+          let bv = Z.(bv land pred (one lsl to_)) in
+          mk to_ bv
+      (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
+         as that will require a more expensive bit-blasting. *)
+      | Unop (BvOfInt, v) -> Unop (BvOfInt, v) <| t_bv to_
+      | _ -> Unop (BvExtend extend_by, v) <| t_bv to_
+
+    let and_ n v1 v2 =
+      let covers_bitwidth z =
+        Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = n)
+      in
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec mask, _ when Z.(equal mask zero) -> v1
+      | _, BitVec mask when Z.(equal mask zero) -> v2
+      | BitVec mask, _ when covers_bitwidth mask -> v2
+      | _, BitVec mask when covers_bitwidth mask -> v1
+      | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv n
+
+    let or_ n v1 v2 = mk_commut_binop BitOr v1 v2 <| t_bv n
+    let xor n v1 v2 = mk_commut_binop BitXor v1 v2 <| t_bv n
+    let shl n v1 v2 = Binop (BitShl, v1, v2) <| t_bv n
+    let shr n v1 v2 = Binop (BitShr, v1, v2) <| t_bv n
+    let plus n v1 v2 = mk_commut_binop BvPlus v1 v2 <| t_bv n
+    let minus n v1 v2 = Binop (BvMinus, v1, v2) <| t_bv n
+  end
+
+  let of_float n v =
+    match (v.node.ty, v.node.kind, n) with
+    | TFloat _, Unop (FloatOfBv, v), _ -> v
+    | TFloat F32, Float f, 32 ->
+        let z = Z.of_int32 (Int32.bits_of_float (Float.of_string f)) in
+        Raw.mk n z
+    | TFloat F64, Float f, 64 ->
+        let z = Z.of_int64 (Int64.bits_of_float (Float.of_string f)) in
+        Raw.mk n z
+    | _, _, _ -> Unop (BvOfFloat n, v) <| t_bv n
+
+  let rec of_int n v =
+    let bv_of_int = of_int n in
+    let is_2pow z = Z.(z > one && popcount z = 1) in
+    match v.node.kind with
+    | Unop (IntOfBv _, v) ->
+        if size_of_bv v.node.ty = n then v
+        else if size_of_bv v.node.ty > n then Raw.extract 0 (n - 1) v
+        else Raw.extend n v
+    | Int z ->
+        let z = if Z.geq z Z.zero then z else Z.neg z in
+        (* need to mask otherwise we'll encode a value bigger than the bitwidth *)
+        let mask = Z.pred @@ Z.shift_left Z.one n in
+        let z = Z.(z land mask) in
+        Raw.mk n z
+    | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
+        Raw.and_ n (bv_of_int v) (Raw.mk n (Z.pred mask))
+    | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
+        Raw.and_ n (bv_of_int v) (Raw.mk n (Z.pred mask))
+    | Binop (Times, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask
+      ->
+        let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
+        Raw.shl n (bv_of_int v) fac
+    | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
+        let fac = Raw.mk n (Z.of_int (Z.log2 mask)) in
+        Raw.shr n (bv_of_int v) fac
+    | Binop (Plus, l, r) -> Raw.plus n (bv_of_int l) (bv_of_int r)
+    | Binop (Minus, l, r) -> Raw.minus n (bv_of_int l) (bv_of_int r)
+    | _ -> Unop (BvOfInt, v) <| t_bv n
+
+  let rec to_int signed v =
+    (* Tests if z is of the form 1+0+ *)
+    let is_left_mask z =
+      if Z.(z <= one) then false
+      else
+        let size = Z.log2up z in
+        let zeroes = size - Z.popcount z in
+        if zeroes = 0 then false
+        else if size <> size_of_bv v.node.ty then false
+        else
+          let mask = Z.pred @@ Z.shift_left Z.one zeroes in
+          Z.(Z.equal (z land mask) zero)
+    in
+    match v.node.kind with
+    | Unop (BvOfInt, v) -> v
+    | Binop (BvPlus, l, r) -> plus (to_int signed l) (to_int signed r)
+    | Binop (BvMinus, l, r) -> minus (to_int signed l) (to_int signed r)
+    | Binop (BitShl, l, { node = { kind = Int n; _ }; _ }) ->
+        let pow = int_z @@ Z.shift_left Z.one (Z.to_int n) in
+        times l pow
+    | Binop (BitShr, l, { node = { kind = Int n; _ }; _ }) ->
+        let pow = int_z @@ Z.shift_right Z.one (Z.to_int n) in
+        div l pow
+    | Binop (BitAnd, v, { node = { kind = BitVec mask; _ }; _ })
+      when is_left_mask mask ->
+        (* left mask, of the form 1+0+. e.g. for 1111 1000, this is equivalent to dividing by 2^3,
+         and then re-multiplying, avoiding the bitvector.  *)
+        let zeroes = Z.log2 mask - Z.popcount mask in
+        let pow = int_z @@ Z.shift_left Z.one zeroes in
+        let v = to_int signed v in
+        times (div v pow) pow
+    | _ -> Unop (IntOfBv signed, v) <| t_int
+
+  let to_float v =
+    match (v.node.ty, v.node.kind) with
+    | _, Unop (BvOfFloat _, v) -> v
+    | TBitVector n, _ -> Unop (FloatOfBv, v) <| t_f (FloatPrecision.of_size n)
+    | _ -> failwith "Expected a bitvector value in float_of_bv"
+
+  let and_ ~size ~signed v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Int i1, Int i2 -> int_z (Z.( land ) i1 i2)
+    | Bool b1, Bool b2 -> bool (b1 && b2)
+    | _ ->
+        let v1_bv = of_int size v1 in
+        let v2_bv = of_int size v2 in
+        let bv = Raw.and_ size v1_bv v2_bv in
+        to_int signed bv
+
+  let or_ ~size ~signed v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Int i1, Int i2 -> int_z (Z.( lor ) i1 i2)
+    | Bool b1, Bool b2 -> bool (b1 || b2)
+    | _ ->
+        let v1_bv = of_int size v1 in
+        let v2_bv = of_int size v2 in
+        let bv = Raw.or_ size v1_bv v2_bv in
+        to_int signed bv
+
+  let xor ~size ~signed v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Int i1, Int i2 -> int_z (Z.( lxor ) i1 i2)
+    | Bool b1, Bool b2 -> bool (b1 <> b2)
+    | _ ->
+        let v1_bv = of_int size v1 in
+        let v2_bv = of_int size v2 in
+        let bv = Raw.xor size v1_bv v2_bv in
+        to_int signed bv
+
+  let shl ~size ~signed v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Int i1, Int i2 ->
+        let shifted = Z.( lsl ) i1 (Z.to_int i2) in
+        let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
+        int_z masked
+    | _, Int i2 ->
+        let max = Z.( lsl ) Z.one size in
+        let shifted = times v1 (int_z (Z.( lsl ) Z.one (Z.to_int i2))) in
+        let masked = mod_ shifted (int_z max) in
+        masked
+    | _ ->
+        let v1_bv = of_int size v1 in
+        let v2_bv = of_int size v2 in
+        let bv = Raw.shl size v1_bv v2_bv in
+        to_int signed bv
+
+  let shr ~size ~signed v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Int i1, Int i2 ->
+        let shifted = Z.( asr ) i1 (Z.to_int i2) in
+        let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
+        int_z masked
+    | _ ->
+        let v1_bv = of_int size v1 in
+        let v2_bv = of_int size v2 in
+        let bv = Raw.shr size v1_bv v2_bv in
+        to_int signed bv
+
+  let not ~size:s ~signed v =
+    if Stdlib.not signed then
+      let max = Z.(pred (one lsl s)) in
+      minus (int_z max) v
+    else minus (neg v) one
+end
+
+(** {2 Floating point} *)
+module Float = struct
+  let mk fp f = Float f <| t_f fp
+  let mk_f fp f = Float (Float.to_string f) <| t_f fp
+  let like v f = Float (Float.to_string f) <| v.node.ty
+
+  let fp_of v =
+    match v.node.ty with
+    | TFloat fp -> fp
+    | _ -> Fmt.failwith "Unsupported float type"
+
+  let f16 f = mk_f F16 f
+  let f32 f = mk_f F32 f
+  let f64 f = mk_f F64 f
+  let f128 f = mk_f F128 f
+  let eq v1 v2 = mk_commut_binop FEq v1 v2 <| TBool
+
+  let lt v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Float f1, Float f2 -> bool (float_of_string f1 < float_of_string f2)
+    | _ -> Binop (FLt, v1, v2) <| TBool
+
+  let leq v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Float f1, Float f2 -> bool (float_of_string f1 <= float_of_string f2)
+    | _ -> Binop (FLeq, v1, v2) <| TBool
+
+  let gt v1 v2 = lt v2 v1
+  let geq v1 v2 = leq v2 v1
+  let plus v1 v2 = mk_commut_binop FPlus v1 v2 <| v1.node.ty
+  let minus v1 v2 = Binop (FMinus, v1, v2) <| v1.node.ty
+  let div v1 v2 = Binop (FDiv, v1, v2) <| v1.node.ty
+  let times v1 v2 = mk_commut_binop FTimes v1 v2 <| v1.node.ty
+  let rem v1 v2 = Binop (FRem, v1, v2) <| v1.node.ty
+
+  let abs v =
+    match v.node.kind with
+    | Unop (FAbs, _) -> v
+    | _ -> Unop (FAbs, v) <| v.node.ty
+
+  let neg v =
+    let fp = fp_of v in
+    Binop (FMinus, mk fp "0.0", v) <| v.node.ty
+
+  (* FIXME: all of these reductions are unsound for floats that aren't F64, I think *)
+  let is_floatclass fc =
+   fun sv ->
+    match sv.node.kind with
+    | Float f ->
+        bool (FloatClass.as_fpclass fc = classify_float (float_of_string f))
+    | _ -> Unop (FIs fc, sv) <| TBool
+
+  let is_normal = is_floatclass Normal
+  let is_subnormal = is_floatclass Subnormal
+  let is_infinite = is_floatclass Infinite
+  let is_nan = is_floatclass NaN
+  let is_zero = is_floatclass Zero
+  let round rm sv = Unop (FRound rm, sv) <| sv.node.ty
+
+  let of_int fp v =
+    match (v.node.kind, fp) with
+    (* We force the integer to a float, to account for precision loss.
+     Ideally we should do this for every float precision, but we would need support for
+     f16, f32 and f128 in OCaml.  *)
+    | Int i, FloatPrecision.F64 -> mk fp (string_of_float (Z.to_float i))
+    | _ -> BitVec.to_float (BitVec.of_int (FloatPrecision.size fp) v)
+
+  let to_int n v =
+    match v.node.kind with
+    | Float f -> int_z (Z.of_float (Float.of_string f))
+    | _ -> BitVec.to_int true (BitVec.of_float n v)
+end
+
+(* {2 Equality, comparison, int-bool conversions} *)
 
 let rec lt v1 v2 =
   match (v1.node.kind, v2.node.kind) with
@@ -639,312 +881,81 @@ and leq v1 v2 =
 let geq v1 v2 = leq v2 v1
 let gt v1 v2 = lt v2 v1
 
-let rec plus v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | _, _ when equal v1 zero -> v2
-  | _, _ when equal v2 zero -> v1
-  | Int i1, Int i2 -> int_z (Z.add i1 i2)
-  | Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }), Int i3 ->
-      plus v1 (int_z (Z.add i2 i3))
-  | Binop (Plus, { node = { kind = Int i1; _ }; _ }, v2), Int i3 ->
-      plus (int_z (Z.add i1 i3)) v2
-  | Int i1, Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }) ->
-      plus (int_z (Z.add i1 i2)) v1
-  | Int i1, Binop (Plus, { node = { kind = Int i2; _ }; _ }, v2) ->
-      plus (int_z (Z.add i1 i2)) v2
-  | _ -> mk_commut_binop Plus v1 v2 <| TInt
+let rec sem_eq v1 v2 =
+  if equal v1 v2 && Stdlib.not (is_float v1.node.ty) then v_true
+  else
+    match (v1.node.kind, v2.node.kind) with
+    | Int z1, Int z2 -> bool (Z.equal z1 z2)
+    | Bool b1, Bool b2 -> bool (b1 = b2)
+    | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
+    | _, Binop (Plus, v2, v3) when equal v1 v2 -> sem_eq v3 zero
+    | _, Binop (Plus, v2, v3) when equal v1 v3 -> sem_eq v2 zero
+    | Binop (Plus, v1, v3), _ when equal v1 v2 -> sem_eq v3 zero
+    | Binop (Plus, v1, v3), _ when equal v3 v2 -> sem_eq v1 zero
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v3 ->
+        sem_eq v2 v4
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v1 v4 ->
+        sem_eq v2 v3
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v3 ->
+        sem_eq v1 v4
+    | Binop (Plus, v1, v2), Binop (Plus, v3, v4) when equal v2 v4 ->
+        sem_eq v1 v3
+    | Binop (Plus, v1, { node = { kind = Int x; _ }; _ }), Int y
+    | Binop (Plus, { node = { kind = Int x; _ }; _ }, v1), Int y
+    | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
+    | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
+        sem_eq v1 (int_z @@ Z.sub y x)
+    | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1)
+    | Int y, Binop (Times, v1, { node = { kind = Int x; _ }; _ })
+    | Binop (Times, v1, { node = { kind = Int x; _ }; _ }), Int y
+    | Binop (Times, { node = { kind = Int x; _ }; _ }, v1), Int y ->
+        if Z.equal Z.zero x then bool (Z.equal Z.zero y)
+        else if Z.(equal zero (rem y x)) then sem_eq v1 (int_z Z.(y / x))
+        else v_false
+    | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
+    (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
+    | Binop (BitAnd, _, _), _ | _, Binop (BitAnd, _, _) -> (
+        let rec msb_of v =
+          match v.node.kind with
+          | BitVec v when Z.(v > zero) -> Some (Z.log2up v)
+          | BitVec v when Z.(equal v zero) -> Some 0
+          | Binop (BitAnd, bv1, bv2) ->
+              Option.merge min (msb_of bv1) (msb_of bv2)
+          | _ -> None
+        in
+        let current_size = size_of_bv v1.node.ty in
+        let msb = Option.map2 max (msb_of v1) (msb_of v2) in
+        match msb with
+        | Some msb when msb <> current_size - 1 ->
+            let v1 = BitVec.Raw.extract 0 msb v1 in
+            let v2 = BitVec.Raw.extract 0 msb v2 in
+            sem_eq v1 v2
+        | _ ->
+            (* regular sem_eq *)
+            if equal v1 v2 then v_true else mk_commut_binop Eq v1 v2 <| TBool)
+    | Unop (IntOfBv _, bv1), Unop (IntOfBv _, bv2) -> sem_eq bv1 bv2
+    | Unop (IntOfBv _, bv), Int n | Int n, Unop (IntOfBv _, bv) ->
+        let size = size_of_bv bv.node.ty in
+        let n = if Z.geq n Z.zero then n else Z.neg n in
+        sem_eq bv (BitVec n <| t_bv size)
+    | _ -> mk_commut_binop Eq v1 v2 <| TBool
 
-let rec minus v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | _, _ when equal v2 zero -> v1
-  | Int i1, Int i2 -> int_z (Z.sub i1 i2)
-  | Var v1, Var v2 when Var.equal v1 v2 -> zero
-  | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
-      minus (int_z (Z.sub i2 i1)) v1
-  | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
-      minus v1 (int_z (Z.sub i2 i1))
-  | Binop (Plus, x, y), _ when equal x v2 -> y
-  | Binop (Plus, x, y), _ when equal y v2 -> x
-  | _, Binop (Plus, x, y) when equal x v1 -> y
-  | _, Binop (Plus, x, y) when equal x v1 -> y
-  | _ -> Binop (Minus, v1, v2) <| TInt
+let sem_eq_untyped v1 v2 =
+  if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
 
-let times v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | _, _ when equal v1 zero || equal v2 zero -> zero
-  | _, _ when equal v1 one -> v2
-  | _, _ when equal v2 one -> v1
-  | Int i1, Int i2 -> int_z (Z.mul i1 i2)
-  | _ -> mk_commut_binop Times v1 v2 <| TInt
-
-let div v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | _, _ when equal v2 one -> v1
-  | Int i1, Int i2 -> int_z (Z.div i1 i2)
-  | Binop (Times, v, { node = { kind = Int i; _ }; _ }), Int j
-  | Int j, Binop (Times, v, { node = { kind = Int i; _ }; _ })
-    when Z.equal i j ->
-      v
-  | Binop (Times, { node = { kind = Int i; _ }; _ }, v), Int j
-  | Int j, Binop (Times, { node = { kind = Int i; _ }; _ }, v)
-    when Z.equal i j ->
-      v
-  | _ -> Binop (Div, v1, v2) <| TInt
-
-let rec is_mod v n =
-  match v.node.kind with
-  | Int i1 -> Z.equal (Z.( mod ) i1 n) Z.zero
-  | Binop (Plus, v2, v3) -> is_mod v2 n && is_mod v3 n
-  | Binop (Minus, v2, v3) -> is_mod v2 n && is_mod v3 n
-  | Binop (Times, v2, v3) -> is_mod v2 n || is_mod v3 n
-  | _ -> false
-
-let rec rem v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | _, Int i2 when is_mod v1 i2 -> zero
-  | Int i1, Int i2 -> int_z (Z.rem i1 i2)
-  | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
-      times n (rem v1 v2)
-  | Binop (Times, n, v1), Binop (Times, m, v2) when equal n m ->
-      times n (rem v1 v2)
-  | _ -> Binop (Rem, v1, v2) <| v1.node.ty
-
-let rec mod_ v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | _, _ when equal v2 one -> zero
-  | _, Int i2 when is_mod v1 i2 -> zero
-  | Int i1, Int i2 ->
-      (* OCaml's mod computes the remainer... *)
-      let rem = Z.( mod ) i1 i2 in
-      if Z.lt rem Z.zero then int_z (Z.add rem i2) else int_z rem
-  | Binop (Mod, x, { node = { kind = Int i1; _ }; _ }), Int i2
-    when Z.geq i1 i2 && Z.divisible i1 i2 ->
-      mod_ x v2
-  | _ -> Binop (Mod, v1, v2) <| TInt
-
-let neg v =
-  match (v.node.ty, v.node.kind) with
-  | TInt, Int i -> int_z (Z.neg i)
-  | TFloat fp, _ -> Binop (FMinus, float fp "0.0", v) <| v.node.ty
-  | _ -> minus zero v
-
-(** {2 Bit vectors} *)
-
-let raw_bit_and n v1 v2 =
-  let covers_bitwidth z =
-    Z.(z > one && popcount (succ z) = 1 && log2 (succ z) = n)
-  in
-  match (v1.node.kind, v2.node.kind) with
-  | BitVec mask, _ when Z.(equal mask zero) -> v1
-  | _, BitVec mask when Z.(equal mask zero) -> v2
-  | BitVec mask, _ when covers_bitwidth mask -> v2
-  | _, BitVec mask when covers_bitwidth mask -> v1
-  | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv n
-
-let raw_bit_or n v1 v2 = mk_commut_binop BitOr v1 v2 <| t_bv n
-let raw_bit_xor n v1 v2 = mk_commut_binop BitXor v1 v2 <| t_bv n
-let raw_bit_shl n v1 v2 = Binop (BitShl, v1, v2) <| t_bv n
-let raw_bit_shr n v1 v2 = Binop (BitShr, v1, v2) <| t_bv n
-let raw_bv_plus n v1 v2 = mk_commut_binop BvPlus v1 v2 <| t_bv n
-let raw_bv_minus n v1 v2 = Binop (BvMinus, v1, v2) <| t_bv n
-
-let bv_of_float n v =
-  match (v.node.ty, v.node.kind, n) with
-  | TFloat _, Unop (FloatOfBv, v), _ -> v
-  | TFloat F32, Float f, 32 ->
-      let z = Z.of_int32 (Int32.bits_of_float (Float.of_string f)) in
-      bitvec n z
-  | TFloat F64, Float f, 64 ->
-      let z = Z.of_int64 (Int64.bits_of_float (Float.of_string f)) in
-      bitvec n z
-  | _, _, _ -> Unop (BvOfFloat n, v) <| t_bv n
-
-let rec bv_of_int n v =
-  let bv_of_int = bv_of_int n in
-  let is_2pow z = Z.(z > one && popcount z = 1) in
-  match v.node.kind with
-  | Unop (IntOfBv _, v) ->
-      if size_of_bv v.node.ty = n then v
-      else if size_of_bv v.node.ty > n then bv_extract 0 (n - 1) v
-      else bv_extend n v
-  | Int z ->
-      let z = if Z.geq z Z.zero then z else Z.neg z in
-      (* need to mask otherwise we'll encode a value bigger than the bitwidth *)
-      let mask = Z.pred @@ Z.shift_left Z.one n in
-      let z = Z.(z land mask) in
-      bitvec n z
-  | Binop (Mod, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
-      raw_bit_and n (bv_of_int v) (bitvec n (Z.pred mask))
-  | Binop (Mod, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
-      raw_bit_and n (bv_of_int v) (bitvec n (Z.pred mask))
-  | Binop (Times, { node = { kind = Int mask; _ }; _ }, v) when is_2pow mask ->
-      let fac = bitvec n (Z.of_int (Z.log2 mask)) in
-      raw_bit_shl n (bv_of_int v) fac
-  | Binop (Div, v, { node = { kind = Int mask; _ }; _ }) when is_2pow mask ->
-      let fac = bitvec n (Z.of_int (Z.log2 mask)) in
-      raw_bit_shr n (bv_of_int v) fac
-  | Binop (Plus, l, r) -> raw_bv_plus n (bv_of_int l) (bv_of_int r)
-  | Binop (Minus, l, r) -> raw_bv_minus n (bv_of_int l) (bv_of_int r)
-  | _ -> Unop (BvOfInt, v) <| t_bv n
-
-let rec int_of_bv signed v =
-  (* Tests if z is of the form 1+0+ *)
-  let is_left_mask z =
-    if Z.(z <= one) then false
-    else
-      let size = Z.log2up z in
-      let zeroes = size - Z.popcount z in
-      if zeroes = 0 then false
-      else if size <> size_of_bv v.node.ty then false
-      else
-        let mask = Z.pred @@ Z.shift_left Z.one zeroes in
-        Z.(Z.equal (z land mask) zero)
-  in
-  match v.node.kind with
-  | Unop (BvOfInt, v) -> v
-  | Binop (BvPlus, l, r) -> plus (int_of_bv signed l) (int_of_bv signed r)
-  | Binop (BvMinus, l, r) -> minus (int_of_bv signed l) (int_of_bv signed r)
-  | Binop (BitShl, l, { node = { kind = Int n; _ }; _ }) ->
-      let pow = int_z @@ Z.shift_left Z.one (Z.to_int n) in
-      times l pow
-  | Binop (BitShr, l, { node = { kind = Int n; _ }; _ }) ->
-      let pow = int_z @@ Z.shift_right Z.one (Z.to_int n) in
-      div l pow
-  | Binop (BitAnd, v, { node = { kind = BitVec mask; _ }; _ })
-    when is_left_mask mask ->
-      (* left mask, of the form 1+0+. e.g. for 1111 1000, this is equivalent to dividing by 2^3,
-         and then re-multiplying, avoiding the bitvector.  *)
-      let zeroes = Z.log2 mask - Z.popcount mask in
-      let pow = int_z @@ Z.shift_left Z.one zeroes in
-      let v = int_of_bv signed v in
-      times (div v pow) pow
-  | _ -> Unop (IntOfBv signed, v) <| t_int
-
-let float_of_bv v =
-  match (v.node.ty, v.node.kind) with
-  | _, Unop (BvOfFloat _, v) -> v
-  | TBitVector n, _ -> Unop (FloatOfBv, v) <| t_f (FloatPrecision.of_size n)
-  | _ -> failwith "Expected a bitvector value in float_of_bv"
-
-let float_of_int fp v =
-  match (v.node.kind, fp) with
-  (* We force the integer to a float, to account for precision loss.
-     Ideally we should do this for every float precision, but we would need support for
-     f16, f32 and f128 in OCaml.  *)
-  | Int i, FloatPrecision.F64 -> float fp (string_of_float (Z.to_float i))
-  | _ -> float_of_bv (bv_of_int (FloatPrecision.size fp) v)
-
-let int_of_float n v =
-  match v.node.kind with
-  | Float f -> int_z (Z.of_float (Float.of_string f))
-  | _ -> int_of_bv true (bv_of_float n v)
-
-let bit_and ~size ~signed v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> int_z (Z.( land ) i1 i2)
-  | Bool b1, Bool b2 -> bool (b1 && b2)
-  | _ ->
-      let v1_bv = bv_of_int size v1 in
-      let v2_bv = bv_of_int size v2 in
-      let bv = raw_bit_and size v1_bv v2_bv in
-      int_of_bv signed bv
-
-let bit_or ~size ~signed v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> int_z (Z.( lor ) i1 i2)
-  | Bool b1, Bool b2 -> bool (b1 || b2)
-  | _ ->
-      let v1_bv = bv_of_int size v1 in
-      let v2_bv = bv_of_int size v2 in
-      let bv = raw_bit_or size v1_bv v2_bv in
-      int_of_bv signed bv
-
-let bit_xor ~size ~signed v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> int_z (Z.( lxor ) i1 i2)
-  | Bool b1, Bool b2 -> bool (b1 <> b2)
-  | _ ->
-      let v1_bv = bv_of_int size v1 in
-      let v2_bv = bv_of_int size v2 in
-      let bv = raw_bit_xor size v1_bv v2_bv in
-      int_of_bv signed bv
-
-let bit_shl ~size ~signed v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 ->
-      let shifted = Z.( lsl ) i1 (Z.to_int i2) in
-      let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
-      int_z masked
-  | _, Int i2 ->
-      let max = Z.( lsl ) Z.one size in
-      let shifted = times v1 (int_z (Z.( lsl ) Z.one (Z.to_int i2))) in
-      let masked = mod_ shifted (int_z max) in
-      masked
-  | _ ->
-      let v1_bv = bv_of_int size v1 in
-      let v2_bv = bv_of_int size v2 in
-      let bv = raw_bit_shl size v1_bv v2_bv in
-      int_of_bv signed bv
-
-let bit_shr ~size ~signed v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 ->
-      let shifted = Z.( asr ) i1 (Z.to_int i2) in
-      let masked = Z.( land ) shifted (Z.pred (Z.( lsl ) Z.one size)) in
-      int_z masked
-  | _ ->
-      let v1_bv = bv_of_int size v1 in
-      let v2_bv = bv_of_int size v2 in
-      let bv = raw_bit_shr size v1_bv v2_bv in
-      int_of_bv signed bv
-
-let bit_not ~size:s ~signed v =
-  if Stdlib.not signed then
-    let max = Z.(pred (one lsl s)) in
-    minus (int_z max) v
-  else minus (neg v) one
-
-(** {2 Floating point ops} *)
-
-let eq_f v1 v2 = mk_commut_binop FEq v1 v2 <| TBool
-
-let lt_f v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Float f1, Float f2 -> bool (float_of_string f1 < float_of_string f2)
-  | _ -> Binop (FLt, v1, v2) <| TBool
-
-let leq_f v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Float f1, Float f2 -> bool (float_of_string f1 <= float_of_string f2)
-  | _ -> Binop (FLeq, v1, v2) <| TBool
-
-let gt_f v1 v2 = lt_f v2 v1
-let geq_f v1 v2 = leq_f v2 v1
-let plus_f v1 v2 = mk_commut_binop FPlus v1 v2 <| v1.node.ty
-let minus_f v1 v2 = Binop (FMinus, v1, v2) <| v1.node.ty
-let div_f v1 v2 = Binop (FDiv, v1, v2) <| v1.node.ty
-let times_f v1 v2 = mk_commut_binop FTimes v1 v2 <| v1.node.ty
-let rem_f v1 v2 = Binop (FRem, v1, v2) <| v1.node.ty
-
-let abs_f v =
-  match v.node.kind with
-  | Unop (FAbs, _) -> v
-  | _ -> Unop (FAbs, v) <| v.node.ty
-
-(* FIXME: all of these reductions are unsound for floats that aren't F64, I think *)
-let is_floatclass fc =
- fun sv ->
+(** Negates a boolean that is in integer form (i.e. 0 for false, anything else
+    is true) *)
+let not_int_bool sv =
   match sv.node.kind with
-  | Float f ->
-      bool (FloatClass.as_fpclass fc = classify_float (float_of_string f))
-  | _ -> Unop (FIs fc, sv) <| TBool
+  | Int z -> if Z.equal z Z.zero then one else zero
+  | Unop (IntOfBool, sv') -> int_of_bool (not sv')
+  | _ -> int_of_bool (sem_eq sv zero)
 
-let is_normal = is_floatclass Normal
-let is_subnormal = is_floatclass Subnormal
-let is_infinite = is_floatclass Infinite
-let is_nan = is_floatclass NaN
-let is_zero = is_floatclass Zero
-let float_round rm sv = Unop (FRound rm, sv) <| sv.node.ty
+let bool_of_int sv =
+  match sv.node.kind with
+  | Int z -> bool (Stdlib.not (Z.equal z Z.zero))
+  | Unop (IntOfBool, sv') -> sv'
+  | _ -> not (sem_eq sv zero)
 
 (** {2 Pointers} *)
 
@@ -1004,15 +1015,15 @@ module Infix = struct
   let ( *@ ) = times
   let ( /@ ) = div
   let ( %@ ) = mod_
-  let ( ==.@ ) = eq_f
-  let ( >.@ ) = gt_f
-  let ( >=.@ ) = geq_f
-  let ( <.@ ) = lt_f
-  let ( <=.@ ) = leq_f
-  let ( +.@ ) = plus_f
-  let ( -.@ ) = minus_f
-  let ( *.@ ) = times_f
-  let ( /.@ ) = div_f
+  let ( ==.@ ) = Float.eq
+  let ( >.@ ) = Float.gt
+  let ( >=.@ ) = Float.geq
+  let ( <.@ ) = Float.lt
+  let ( <=.@ ) = Float.leq
+  let ( +.@ ) = Float.plus
+  let ( -.@ ) = Float.minus
+  let ( *.@ ) = Float.times
+  let ( /.@ ) = Float.div
 end
 
 module Syntax = struct

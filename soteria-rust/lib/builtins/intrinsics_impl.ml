@@ -161,7 +161,7 @@ module M (State : State_intf.S) = struct
 
   let float_rounding rm ~x state : ret =
     let* x = as_float x in
-    let res = Typed.float_round rm x in
+    let res = Typed.Float.round rm x in
     Result.ok (Base res, state)
 
   let ceilf16 = float_rounding Ceil
@@ -243,12 +243,12 @@ module M (State : State_intf.S) = struct
 
   let copy_sign ~x ~y state =
     let* x, y = as_float x &&* as_float y in
-    let zero = Typed.float_like y 0.0 in
+    let zero = Typed.Float.like y 0.0 in
     if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] y <.@ zero then
-      let x' = Typed.neg (Typed.abs_f x) in
+      let x' = Typed.Float.neg (Typed.Float.abs x) in
       Result.ok (Base (Typed.cast x'), state)
     else
-      let x' = Typed.abs_f x in
+      let x' = Typed.Float.abs x in
       Result.ok (Base (Typed.cast x'), state)
 
   let copysignf128 = copy_sign
@@ -291,8 +291,8 @@ module M (State : State_intf.S) = struct
     let symbolic size x =
       Iter.fold
         (fun acc off ->
-          let x = Typed.bit_shl ~size ~signed:false x (Typed.int off) in
-          let x = Typed.bit_and ~size ~signed:false x Typed.one in
+          let x = Typed.BitVec.shl ~size ~signed:false x (Typed.int off) in
+          let x = Typed.BitVec.and_ ~size ~signed:false x Typed.one in
           acc +@ x)
         0s
         Iter.(0 -- size)
@@ -351,7 +351,7 @@ module M (State : State_intf.S) = struct
 
   let abs ~x state =
     let* x = as_float x in
-    Result.ok (Base (Typed.abs_f x), state)
+    Result.ok (Base (Typed.Float.abs x), state)
 
   let fabsf16 = abs
   let fabsf32 = abs
@@ -366,10 +366,12 @@ module M (State : State_intf.S) = struct
       | Sub _ -> (( -.@ ), "core::intrinsics::fsub_fast")
       | Mul _ -> (( *.@ ), "core::intrinsics::fmul_fast")
       | Div _ -> (( /.@ ), "core::intrinsics::fdiv_fast")
-      | Rem _ -> (Typed.rem_f, "core::intrinsics::frem_fast")
+      | Rem _ -> (Typed.Float.rem, "core::intrinsics::frem_fast")
       | _ -> failwith "fast_float: invalid binop"
     in
-    let is_finite f = Typed.((not (is_nan f)) &&@ not (is_infinite f)) in
+    let is_finite f =
+      Typed.((not (Float.is_nan f)) &&@ not (Float.is_infinite f))
+    in
     let res = bop l r in
     if%sat is_finite l &&@ is_finite r &&@ is_finite (bop l r) then
       Result.ok (Base res, state)
@@ -384,19 +386,19 @@ module M (State : State_intf.S) = struct
   let float_to_int_unchecked ~float:_ ~int ~value state =
     let ity = TypesUtils.ty_as_literal int in
     let* f = as_float value in
-    if%sat Typed.is_nan f ||@ Typed.is_infinite f then
+    if%sat Typed.Float.is_nan f ||@ Typed.Float.is_infinite f then
       State.error (`StdErr "float_to_int_unchecked with NaN or infinite value")
         state
     else
       let n = 8 * Layout.size_of_literal_ty ity in
       let max = Z.succ @@ Layout.max_value_z ity in
       let min = Z.pred @@ Layout.min_value_z ity in
-      let max = Typed.float_like f @@ Z.to_float max in
-      let min = Typed.float_like f @@ Z.to_float min in
+      let max = Typed.Float.like f @@ Z.to_float max in
+      let min = Typed.Float.like f @@ Z.to_float min in
       (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
              issues in cases of float precision loss (I think?) *)
       if%sat min <.@ f &&@ (f <.@ max) then
-        let v = Typed.int_of_float n f in
+        let v = Typed.Float.to_int n f in
         Result.ok (Base v, state)
       else State.error (`StdErr "float_to_int_unchecked out of int range") state
 
@@ -427,9 +429,9 @@ module M (State : State_intf.S) = struct
   let float_minmax ~is_min ~x ~y state : ret =
     let* x, y = as_float x &&* as_float y in
     let++ res =
-      if%sat Typed.is_nan x then Result.ok y
+      if%sat Typed.Float.is_nan x then Result.ok y
       else
-        if%sat Typed.is_nan y then Result.ok x
+        if%sat Typed.Float.is_nan y then Result.ok x
         else
           let op = if is_min then ( <.@ ) else ( >.@ ) in
           Result.ok (Typed.ite (op x y) x y)

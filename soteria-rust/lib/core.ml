@@ -65,7 +65,9 @@ module M (State : State_intf.S) = struct
               let size = 8 * Layout.size_of_literal_ty ity in
               let signed = Layout.is_signed ity in
               let op =
-                match bop with Shl _ -> Typed.bit_shl | _ -> Typed.bit_shr
+                match bop with
+                | Shl _ -> Typed.BitVec.shl
+                | _ -> Typed.BitVec.shr
               in
               Result.ok (op ~size ~signed l r)
           | _ -> not_impl "Invalid binop in eval_lit_binop"
@@ -80,7 +82,7 @@ module M (State : State_intf.S) = struct
           | Mul _ -> Result.ok (l *.@ r)
           (* no such thing as division by 0 for floats -- goes to infinity *)
           | Div _ -> Result.ok (l /.@ cast r)
-          | Rem _ -> Result.ok (rem_f l (cast r))
+          | Rem _ -> Result.ok (Float.rem l (cast r))
           | _ -> not_impl "Invalid binop for float in eval_lit_binop"
         in
         Result.ok (res :> T.cval Typed.t)

@@ -20,22 +20,22 @@ let rec eval (x : t) : t =
       else
         match unop with
         | Unop.Not -> not nv
-        | FAbs -> abs_f nv
+        | FAbs -> Float.abs nv
         | GetPtrLoc -> Ptr.loc nv
         | GetPtrOfs -> Ptr.ofs nv
         | IntOfBool -> int_of_bool nv
-        | BvOfFloat n -> bv_of_float n nv
+        | BvOfFloat n -> BitVec.of_float n nv
         | BvOfInt ->
             let n = size_of_bv x.node.ty in
-            bv_of_int n nv
-        | IntOfBv signed -> int_of_bv signed nv
-        | FloatOfBv -> float_of_bv nv
-        | BvExtract (from, to_) -> bv_extract from to_ nv
+            BitVec.of_int n nv
+        | IntOfBv signed -> BitVec.to_int signed nv
+        | FloatOfBv -> BitVec.to_float nv
+        | BvExtract (from, to_) -> BitVec.Raw.extract from to_ nv
         | BvExtend by ->
             let n = size_of_bv x.node.ty in
-            bv_extend (n + by) x
-        | FIs fc -> is_floatclass fc nv
-        | FRound rm -> float_round rm nv)
+            BitVec.Raw.extend (n + by) x
+        | FIs fc -> Float.is_floatclass fc nv
+        | FRound rm -> Float.round rm nv)
   | Binop (binop, v1, v2) -> (
       (* TODO: for binops that may short-circuit such as || or &&,
     we could do this without evaluating both sides, and deciding if any
@@ -56,35 +56,35 @@ let rec eval (x : t) : t =
         | Div -> div nv1 nv2
         | Rem -> rem nv1 nv2
         | Mod -> mod_ nv1 nv2
-        | FEq -> eq_f nv1 nv2
-        | FLeq -> leq_f nv1 nv2
-        | FLt -> lt_f nv1 nv2
-        | FPlus -> plus_f nv1 nv2
-        | FMinus -> minus_f nv1 nv2
-        | FTimes -> times_f nv1 nv2
-        | FDiv -> div_f nv1 nv2
-        | FRem -> rem_f nv1 nv2
+        | FEq -> Float.eq nv1 nv2
+        | FLeq -> Float.leq nv1 nv2
+        | FLt -> Float.lt nv1 nv2
+        | FPlus -> Float.plus nv1 nv2
+        | FMinus -> Float.minus nv1 nv2
+        | FTimes -> Float.times nv1 nv2
+        | FDiv -> Float.div nv1 nv2
+        | FRem -> Float.rem nv1 nv2
         | BvPlus ->
             let n = size_of_bv x.node.ty in
-            raw_bv_plus n nv1 nv2
+            BitVec.Raw.plus n nv1 nv2
         | BvMinus ->
             let n = size_of_bv x.node.ty in
-            raw_bv_minus n nv1 nv2
+            BitVec.Raw.minus n nv1 nv2
         | BitAnd ->
             let n = size_of_bv x.node.ty in
-            raw_bit_and n nv1 nv2
+            BitVec.Raw.and_ n nv1 nv2
         | BitOr ->
             let n = size_of_bv x.node.ty in
-            raw_bit_or n nv1 nv2
+            BitVec.Raw.or_ n nv1 nv2
         | BitXor ->
             let n = size_of_bv x.node.ty in
-            raw_bit_xor n nv1 nv2
+            BitVec.Raw.xor n nv1 nv2
         | BitShl ->
             let n = size_of_bv x.node.ty in
-            raw_bit_shl n nv1 nv2
+            BitVec.Raw.shl n nv1 nv2
         | BitShr ->
             let n = size_of_bv x.node.ty in
-            raw_bit_shr n nv1 nv2)
+            BitVec.Raw.shr n nv1 nv2)
   | Nop (nop, l) -> (
       let l, changed = List.map_changed eval l in
       if Stdlib.not changed then x else match nop with Distinct -> distinct l)
