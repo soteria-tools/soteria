@@ -31,7 +31,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | BvTimes -> BitVec.Raw.times
   | BvDiv s -> BitVec.Raw.div s
   | BvRem s -> BitVec.Raw.rem s
-  | BvMod s -> BitVec.Raw.mod_ s
+  | BvMod -> BitVec.Raw.mod_
   | BvPlusOvf s -> BitVec.Raw.plus_overflows s
   | BvTimesOvf s -> BitVec.Raw.times_overflows s
   | BvLt s -> BitVec.Raw.lt s

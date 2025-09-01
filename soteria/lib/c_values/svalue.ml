@@ -145,7 +145,7 @@ module Binop = struct
     | BvTimes
     | BvDiv of bool (* signed *)
     | BvRem of bool (* signed *)
-    | BvMod of bool (* signed *)
+    | BvMod (* only signed; unsigned mod is rem! *)
     | BvPlusOvf of bool (* signed *)
     | BvTimesOvf of bool (* signed *)
     | BvLt of bool (* signed *)
@@ -186,7 +186,7 @@ module Binop = struct
     | BvTimes -> Fmt.string ft "*b"
     | BvDiv s -> Fmt.pf ft "/%ab" pp_signed s
     | BvRem s -> Fmt.pf ft "rem%ab" pp_signed s
-    | BvMod s -> Fmt.pf ft "mod%ab" pp_signed s
+    | BvMod -> Fmt.string ft "modb"
     | BvPlusOvf s -> Fmt.pf ft "+%ab_ovf" pp_signed s
     | BvTimesOvf s -> Fmt.pf ft "*%ab_ovf" pp_signed s
     | BvLt s -> Fmt.pf ft "<%ab" pp_signed s
@@ -662,7 +662,7 @@ module BitVec = struct
 
     let div signed v1 v2 = Binop (BvDiv signed, v1, v2) <| v1.node.ty
     let rem signed v1 v2 = Binop (BvRem signed, v1, v2) <| v1.node.ty
-    let mod_ signed v1 v2 = Binop (BvMod signed, v1, v2) <| v1.node.ty
+    let mod_ v1 v2 = Binop (BvMod, v1, v2) <| v1.node.ty
 
     let rec not v =
       match v.node.kind with
@@ -1001,7 +1001,7 @@ module BitVec = struct
     | Binop (Times, l, r) -> Raw.times (of_int l) (of_int r)
     | Binop (Div, l, r) -> Raw.div s (of_int l) (of_int r)
     | Binop (Rem, l, r) -> Raw.rem s (of_int l) (of_int r)
-    | Binop (Mod, l, r) -> Raw.mod_ s (of_int l) (of_int r)
+    | Binop (Mod, l, r) -> Raw.mod_ (of_int l) (of_int r)
     | Unop (IntOfBool, v) -> Ite (v, Raw.mk n Z.one, Raw.mk n Z.zero) <| t_bv n
     | Ite (b, t, e) -> Ite (b, of_int t, of_int e) <| t_bv n
     | _ -> Unop (BvOfInt (s, n), v) <| t_bv n

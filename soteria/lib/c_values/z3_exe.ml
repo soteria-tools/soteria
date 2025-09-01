@@ -111,8 +111,7 @@ module Encoding = struct
     | BvDiv false -> bv_udiv
     | BvRem true -> bv_srem
     | BvRem false -> bv_urem
-    | BvMod true -> bv_smod
-    | BvMod false -> bv_urem
+    | BvMod -> bv_smod
     | BvPlusOvf true -> bv_saddo
     | BvPlusOvf false -> bv_uaddo
     | BvTimesOvf true -> bv_smulo
