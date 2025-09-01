@@ -104,7 +104,7 @@ module Unop = struct
     | BvOfFloat n -> Fmt.pf ft "f2bv(%d)" n
     | BvOfInt (signed, n) -> Fmt.pf ft "i2bv[%a%d]" pp_signed signed n
     | FloatOfBv p -> Fmt.pf ft "bv2f[%a]" FloatPrecision.pp p
-    | IntOfBv _ -> Fmt.string ft "bv2i"
+    | IntOfBv s -> Fmt.pf ft "%abv2i" pp_signed s
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
@@ -248,7 +248,9 @@ let rec pp ft t =
       pf ft "%s" (Z.format "%#x" z)
   | Int z -> pf ft "%a" Z.pp_print z
   | Float f -> pf ft "%sf" f
-  | BitVec bv -> pf ft "%s" (Z.format "%#x" bv)
+  | BitVec bv ->
+      let size = size_of_bv t.node.ty in
+      pf ft "0x%s" (Z.format ("0" ^ string_of_int (size / 4) ^ "x") bv)
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
   | Ite (c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
@@ -398,6 +400,8 @@ let rec not sv =
     | Unop (Not, sv) -> sv
     | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
     | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
+    | Binop (BvLt s, v1, v2) -> Binop (BvLeq s, v2, v1) <| TBool
+    | Binop (BvLeq s, v1, v2) -> Binop (BvLt s, v2, v1) <| TBool
     | Binop (Or, v1, v2) -> mk_commut_binop And (not v1) (not v2) <| TBool
     | Binop (And, v1, v2) -> mk_commut_binop Or (not v1) (not v2) <| TBool
     | _ -> Unop (Not, sv) <| TBool
@@ -421,9 +425,14 @@ let distinct l =
       if sure_distinct then v_true else Nop (Distinct, l) <| TBool
 
 let ite guard if_ else_ =
-  match guard.node.kind with
-  | Bool true -> if_
-  | Bool false -> else_
+  match (guard.node.kind, if_.node.kind, else_.node.kind) with
+  | Bool true, _, _ -> if_
+  | Bool false, _, _ -> else_
+  | _, Bool true, Bool false -> guard
+  | _, Bool false, Bool true -> not guard
+  | _, Int o, Int z when Z.equal o Z.one && Z.equal z Z.zero ->
+      Unop (IntOfBool, guard) <| TInt
+  | _ when equal if_ else_ -> if_
   | _ -> Ite (guard, if_, else_) <| if_.node.ty
 
 (** {2 Integers} *)
@@ -466,11 +475,15 @@ let rec minus v1 v2 =
   | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
       minus (int_z (Z.sub i2 i1)) v1
   | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
-      minus v1 (int_z (Z.sub i2 i1))
+      minus v1 (int_z (Z.add i2 i1))
+  | Int i1, Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1) ->
+      plus (int_z (Z.sub i1 i2)) v1
+  | Int i1, Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }) ->
+      minus (int_z (Z.add i1 i2)) v1
   | Binop (Plus, x, y), _ when equal x v2 -> y
   | Binop (Plus, x, y), _ when equal y v2 -> x
-  | _, Binop (Plus, x, y) when equal x v1 -> y
-  | _, Binop (Plus, x, y) when equal x v1 -> y
+  | _, Binop (Plus, x, y) when equal x v1 -> minus zero y
+  | _, Binop (Plus, x, y) when equal y v1 -> minus zero x
   | _ -> Binop (Minus, v1, v2) <| TInt
 
 let times v1 v2 =
@@ -505,6 +518,7 @@ let rec is_mod v n =
 
 let rec rem v1 v2 =
   match (v1.node.kind, v2.node.kind) with
+  | _, _ when equal v2 one -> zero
   | _, Int i2 when is_mod v1 i2 -> zero
   | Int i1, Int i2 -> int_z (Z.rem i1 i2)
   | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
@@ -524,12 +538,22 @@ let rec mod_ v1 v2 =
   | Binop (Mod, x, { node = { kind = Int i1; _ }; _ }), Int i2
     when Z.geq i1 i2 && Z.divisible i1 i2 ->
       mod_ x v2
+  (* (x + (y % n)) % m when n | m <=> (x + y) % m *)
+  | ( Binop
+        ( Plus,
+          x,
+          {
+            node =
+              { kind = Binop (Mod, l, { node = { kind = Int m1; _ }; _ }); _ };
+            _;
+          } ),
+      Int m2 )
+    when Z.geq m1 m2 && Z.divisible m1 m2 ->
+      mod_ (plus x l) v2
   | _ -> Binop (Mod, v1, v2) <| TInt
 
 let neg v =
-  match (v.node.ty, v.node.kind) with
-  | TInt, Int i -> int_z (Z.neg i)
-  | _ -> minus zero v
+  match v.node.kind with Int i -> int_z (Z.neg i) | _ -> minus zero v
 
 (** {2 Bit vectors}
 
@@ -1136,8 +1160,7 @@ module Float = struct
     let fp = fp_of v in
     Binop (FMinus, mk fp "0.0", v) <| v.node.ty
 
-  (* FIXME: all of these reductions are unsound for floats that aren't F64, I think *)
-  let is_floatclass fc =
+  let[@inline] is_floatclass fc =
    fun sv ->
     match sv.node.kind with
     | Float f ->
@@ -1154,9 +1177,10 @@ module Float = struct
   let of_int fp v =
     match (v.node.kind, fp) with
     (* We force the integer to a float, to account for precision loss.
-     Ideally we should do this for every float precision, but we would need support for
-     f16, f32 and f128 in OCaml.  *)
-    | Int i, FloatPrecision.F64 -> mk fp (string_of_float (Z.to_float i))
+       Ideally we should do this for every float precision, but we would need support for
+       f16, f32 and f128 in OCaml.  *)
+    | Int i, FloatPrecision.F64 -> mk_f fp (Z.to_float i)
+    (* I'm not actually sure this is correct! *)
     | _ -> BitVec.to_float (BitVec.of_int true (FloatPrecision.size fp) v)
 
   let to_int n v =
@@ -1213,6 +1237,12 @@ let rec lt v1 v2 =
   | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
     when Z.lt y (Z.neg (Z.abs x)) ->
       v_true
+  | Int z, Unop (IntOfBool, b) -> (
+      match Z.(compare z zero) with 0 -> b | 1 -> v_false | _ -> v_true)
+  | Unop (IntOfBool, b), Int z -> (
+      match Z.(compare z one) with 0 -> not b | 1 -> v_true | _ -> v_false)
+  | Int _, Ite (b, t, e) -> ite b (lt v1 t) (lt v1 e)
+  | Ite (b, t, e), Int _ -> ite b (lt t v2) (lt e v2)
   | _ -> (
       match BitVec.contains_bvs_2 v1 v2 with
       | Some (signed, size) -> BitVec.lt_as_bv ~size ~signed v1 v2
@@ -1259,9 +1289,23 @@ and leq v1 v2 =
   | Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ }), Int y
     when Z.leq x y ->
       v_true
-  | Int y, Binop ((Mod | Rem), _, { node = { kind = Int x; _ }; _ })
-    when Z.lt y (Z.neg (Z.abs x)) ->
+  | Int y, Binop (Rem, _, { node = { kind = Int x; _ }; _ })
+    when Z.leq y (Z.neg (Z.abs x)) ->
       v_true
+  | Int y, Binop (Mod, _, _) when Z.leq y Z.zero -> v_true
+  | Int z, Unop (IntOfBv false, _) when Z.leq Z.zero z -> v_true
+  | Unop (IntOfBv signed, bv), Int z
+    when let bits = size_of_bv bv.node.ty in
+         let bits = if signed then bits - 1 else bits in
+         let max = Z.(pred (one lsl bits)) in
+         Z.geq z max ->
+      v_true
+  | Int z, Unop (IntOfBool, b) -> (
+      match Z.(compare z one) with 0 -> b | 1 -> v_false | _ -> v_true)
+  | Unop (IntOfBool, b), Int z -> (
+      match Z.(compare z zero) with 0 -> not b | 1 -> v_true | _ -> v_false)
+  | Int _, Ite (b, t, e) -> ite b (leq v1 t) (leq v1 e)
+  | Ite (b, t, e), Int _ -> ite b (leq t v2) (leq e v2)
   | _ -> (
       match BitVec.contains_bvs_2 v1 v2 with
       | Some (signed, size) -> BitVec.leq_as_bv ~signed ~size v1 v2
@@ -1277,6 +1321,7 @@ let rec sem_eq v1 v2 =
     | Int z1, Int z2 -> bool (Z.equal z1 z2)
     | Bool b1, Bool b2 -> bool (b1 = b2)
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
+    | BitVec b1, BitVec b2 -> bool (Z.equal b1 b2)
     | _, Binop (Plus, v2, v3) when equal v1 v2 -> sem_eq v3 zero
     | _, Binop (Plus, v2, v3) when equal v1 v3 -> sem_eq v2 zero
     | Binop (Plus, v1, v3), _ when equal v1 v2 -> sem_eq v3 zero
@@ -1294,6 +1339,9 @@ let rec sem_eq v1 v2 =
     | Int y, Binop (Plus, v1, { node = { kind = Int x; _ }; _ })
     | Int y, Binop (Plus, { node = { kind = Int x; _ }; _ }, v1) ->
         sem_eq v1 (int_z @@ Z.sub y x)
+    | Binop (Minus, z, { node = { kind = Int x; _ }; _ }), Int y
+    | Int y, Binop (Minus, z, { node = { kind = Int x; _ }; _ }) ->
+        sem_eq z (int_z @@ Z.add y x)
     | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1)
     | Int y, Binop (Times, v1, { node = { kind = Int x; _ }; _ })
     | Binop (Times, v1, { node = { kind = Int x; _ }; _ }), Int y
@@ -1302,6 +1350,7 @@ let rec sem_eq v1 v2 =
         else if Z.(equal zero (rem y x)) then sem_eq v1 (int_z Z.(y / x))
         else v_false
     | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
+    | Unop (IntOfBool, b1), Unop (IntOfBool, b2) -> sem_eq b1 b2
     (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
     | Binop (BitAnd, _, _), _ | _, Binop (BitAnd, _, _) -> (
         let rec msb_of v =
@@ -1310,23 +1359,32 @@ let rec sem_eq v1 v2 =
           | BitVec v when Z.(equal v zero) -> Some 0
           | Binop (BitAnd, bv1, bv2) ->
               Option.merge min (msb_of bv1) (msb_of bv2)
+          | Ite (_, l, r) -> Option.map2 max (msb_of l) (msb_of r)
           | _ -> None
         in
         let current_size = size_of_bv v1.node.ty in
         let msb = Option.map2 max (msb_of v1) (msb_of v2) in
         match msb with
-        | Some msb when msb <> current_size - 1 ->
-            let v1 = BitVec.Raw.extract 0 msb v1 in
-            let v2 = BitVec.Raw.extract 0 msb v2 in
+        | Some msb when 0 < msb && msb < current_size - 1 ->
+            let v1 = BitVec.Raw.extract 0 (msb - 1) v1 in
+            let v2 = BitVec.Raw.extract 0 (msb - 1) v2 in
             sem_eq v1 v2
         | _ ->
             (* regular sem_eq *)
-            if equal v1 v2 then v_true else mk_commut_binop Eq v1 v2 <| TBool)
+            mk_commut_binop Eq v1 v2 <| TBool)
+    | Unop (BvOfInt _, bv1), Unop (BvOfInt _, bv2) -> sem_eq bv1 bv2
     | Unop (IntOfBv _, bv1), Unop (IntOfBv _, bv2) -> sem_eq bv1 bv2
-    | Unop (IntOfBv _, bv), Int n | Int n, Unop (IntOfBv _, bv) ->
+    | Unop (IntOfBv sign, bv), Int _ ->
         let size = size_of_bv bv.node.ty in
-        let n = if Z.geq n Z.zero then n else Z.neg n in
-        sem_eq bv (BitVec n <| t_bv size)
+        sem_eq bv (BitVec.of_int sign size v2)
+    | Int _, Unop (IntOfBv sign, bv) ->
+        let size = size_of_bv bv.node.ty in
+        sem_eq bv (BitVec.of_int sign size v1)
+    (* Only apply this for atoms *)
+    | Ite (b, l, t), (BitVec _ | Int _ | Bool _) ->
+        ite b (sem_eq l v2) (sem_eq t v2)
+    | (BitVec _ | Int _ | Bool _), Ite (b, l, t) ->
+        ite b (sem_eq v1 l) (sem_eq v1 t)
     | _ -> (
         let bit_vec =
           match (v1.node.ty, v2.node.ty) with
