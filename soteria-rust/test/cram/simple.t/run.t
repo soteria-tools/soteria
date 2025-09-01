@@ -44,6 +44,6 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   note: unwind::main: done in <time>, ran 2 branches
   PC 1: (V|1| <=u 0x01) /\ (0x00 != V|1|) /\
         ((0x0000000000000001 + V|2|) <=u 0x7fffffffffffffff) /\
-        (0x0000000000000000 <u V|2|)
+        (0x0000000000000000 != V|2|)
   PC 2: (V|1| <=u 0x01) /\ (0x00 == V|1|)
   

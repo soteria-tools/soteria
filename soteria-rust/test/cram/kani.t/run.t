@@ -7,8 +7,9 @@ Test kani::any
   
   note: any::any_i8: done in <time>, ran 3 branches
   PC 1: (V|1| == 0x00)
-  PC 2: (V|1| != 0x00) /\ (V|1| <s 0x00)
-  PC 3: (V|1| != 0x00) /\ (0x00 <=s V|1|) /\ (0x00 <s V|1|)
+  PC 2: (V|1| != 0x00) /\ (extract[7-7](V|1|) == 0x1)
+  PC 3: (V|1| != 0x00) /\ (extract[7-7](V|1|) != 0x1) /\
+        (extract[7-7](V|1|) == 0x0)
   
 
 
