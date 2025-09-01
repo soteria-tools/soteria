@@ -863,8 +863,37 @@ module BitVec = struct
           lshr v (mk_like v1 Z.(s1 + s2))
       | _ -> Binop (BitAShr, v1, v2) <| v1.node.ty
 
-    let lt signed v1 v2 = Binop (BvLt signed, v1, v2) <| TBool
-    let leq signed v1 v2 = Binop (BvLeq signed, v1, v2) <| TBool
+    let rec lt signed v1 v2 =
+      let bits = size_of_bv v1.node.ty in
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
+      | _, BitVec x when Stdlib.not signed && Z.(equal x one) ->
+          (* unsigned x < 1 is x == 0 *)
+          mk_commut_binop Eq v1 (mk_like v1 Z.zero) <| TBool
+      | BitVec x, _ when Z.equal (bv_to_z signed bits x) (max_for signed bits)
+        ->
+          v_false
+      | _, BitVec x when Z.equal (bv_to_z signed bits x) (min_for signed bits)
+        ->
+          v_false
+      | Ite (b, l, r), _ -> ite b (lt signed l v2) (lt signed r v2)
+      | _, Ite (b, l, r) -> ite b (lt signed v1 l) (lt signed v1 r)
+      | _ -> Binop (BvLt signed, v1, v2) <| TBool
+
+    let leq signed v1 v2 =
+      let bits = size_of_bv v1.node.ty in
+      match (v1.node.kind, v2.node.kind) with
+      | BitVec l, BitVec r ->
+          bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
+      | BitVec x, _ when Z.equal (bv_to_z signed bits x) (min_for signed bits)
+        ->
+          v_true
+      | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits)
+        ->
+          v_true
+      | _ -> Binop (BvLeq signed, v1, v2) <| TBool
+
     let gt signed v1 v2 = lt signed v2 v1
     let geq signed v1 v2 = leq signed v2 v1
     let plus_overflows signed v1 v2 = Binop (BvPlusOvf signed, v1, v2) <| TBool
