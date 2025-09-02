@@ -431,6 +431,10 @@ let ite guard if_ else_ =
   | Bool false, _, _ -> else_
   | _, Bool true, Bool false -> guard
   | _, Bool false, Bool true -> not guard
+  | _, Bool false, _ -> and_ (not guard) else_
+  | _, Bool true, _ -> or_ guard else_
+  | _, _, Bool false -> and_ guard if_
+  | _, _, Bool true -> or_ (not guard) if_
   | _, Int o, Int z when Z.equal o Z.one && Z.equal z Z.zero ->
       Unop (IntOfBool, guard) <| TInt
   | _ when equal if_ else_ -> if_

@@ -498,6 +498,9 @@ module rec Bool : Bool = struct
       | Binop (Leq s, v1, v2) -> Binop (Lt s, v2, v1) <| TBool
       | Binop (Or, v1, v2) -> and_ (not v1) (not v2)
       | Binop (And, v1, v2) -> or_ (not v1) (not v2)
+      | Binop (Eq, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }, v)
+      | Binop (Eq, v, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }) ->
+          mk_commut_binop Eq (BitVec.mk 1 Z.(one - bv)) v <| TBool
       | _ -> Unop (Not, sv) <| TBool
 
   let rec split_ands (sv : t) (f : t -> unit) : unit =
@@ -524,6 +527,10 @@ module rec Bool : Bool = struct
     | Bool false, _, _ -> else_
     | _, Bool true, Bool false -> guard
     | _, Bool false, Bool true -> not guard
+    | _, Bool false, _ -> and_ (not guard) else_
+    | _, Bool true, _ -> or_ guard else_
+    | _, _, Bool false -> and_ guard if_
+    | _, _, Bool true -> or_ (not guard) if_
     | _, BitVec o, BitVec z when Z.(equal o one) && Z.equal z Z.zero ->
         BitVec.of_bool (size_of if_.node.ty) guard
     | _ when equal if_ else_ -> if_
@@ -561,7 +568,6 @@ module rec Bool : Bool = struct
           | BitVec v when Z.(equal v zero) -> Some 0
           | Binop (BitAnd, bv1, bv2) ->
               Option.merge min (msb_of bv1) (msb_of bv2)
-          | Unop (BvNot, bv) -> msb_of bv
           | Ite (_, l, r) -> Option.map2 max (msb_of l) (msb_of r)
           | _ -> None
         in
