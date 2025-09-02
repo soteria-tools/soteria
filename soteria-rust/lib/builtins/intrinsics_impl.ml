@@ -262,7 +262,7 @@ module M (State : State_intf.S) = struct
           let bit32 = Typed.BitVec.extend ~signed:false 31 bit in
           acc +@ bit32)
         (Typed.BitVec.u32i 0)
-        Iter.(0 -- bits)
+        Iter.(0 -- (bits - 1))
     in
     binary_int_operation ~concrete ~symbolic
 
