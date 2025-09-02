@@ -87,3 +87,11 @@ let int_of_bv signed bv =
   if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
 
 let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
+
+(* BitVector overflow operators *)
+
+let bv_nego x = app_ "bvnego" [ x ]
+let bv_uaddo l r = app_ "bvuaddo" [ l; r ]
+let bv_saddo l r = app_ "bvsaddo" [ l; r ]
+let bv_umulo l r = app_ "bvumulo" [ l; r ]
+let bv_smulo l r = app_ "bvsmulo" [ l; r ]

@@ -94,19 +94,10 @@ val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t
 val nonzero_z : Z.t -> [> nonzero ] t
 val nonzero : int -> [> nonzero ] t
-val float : Svalue.FloatPrecision.t -> string -> [> sfloat ] t
 val int_of_bool : [< sbool ] t -> [> sint ] t
 val bool_of_int : [< sint ] t -> [> sbool ] t
-val int_of_float : int -> [< sfloat ] t -> [> sint ] t
-val float_of_int : Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
-val f16 : float -> [> sfloat ] t
-val f32 : float -> [> sfloat ] t
-val f64 : float -> [> sfloat ] t
-val f128 : float -> [> sfloat ] t
-val float_like : [> sfloat ] t -> float -> [> sfloat ] t
-val fp_of : [< sfloat ] t -> Svalue.FloatPrecision.t
 
 (** Integer operations *)
 
@@ -120,44 +111,74 @@ val times : [< sint ] t -> [< sint ] t -> [> sint ] t
 val div : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 val rem : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 val mod_ : [< sint ] t -> nonzero t -> [> sint ] t
-val neg : ([< sint | sfloat ] as 'a) t -> 'a t
+val neg : [< sint ] t -> [> sint ] t
 
-val bit_and :
-  size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+(** BitVector operations *)
+module BitVec : sig
+  val and_ :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
-val bit_or :
-  size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+  val or_ : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+  val xor : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+  val shl : size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
-val bit_xor :
-  size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ashr :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
-val bit_shl :
-  size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+  val lshr :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
-val bit_shr :
-  size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+  val not : size:int -> signed:bool -> [< sint ] t -> [> sint ] t
 
-val bit_not : size:int -> signed:bool -> [< sint ] t -> [> sint ] t
+  val wrap_plus :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
-(** Floating point operations *)
+  val wrap_minus :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
 
-val eq_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
-val geq_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
-val gt_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
-val leq_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
-val lt_f : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
-val plus_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
-val minus_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
-val times_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
-val div_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
-val rem_f : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
-val abs_f : [< sfloat ] t -> [> sfloat ] t
-val is_normal : [< sfloat ] t -> [> sbool ] t
-val is_subnormal : [< sfloat ] t -> [> sbool ] t
-val is_zero : [< sfloat ] t -> [> sbool ] t
-val is_infinite : [< sfloat ] t -> [> sbool ] t
-val is_nan : [< sfloat ] t -> [> sbool ] t
-val float_round : Svalue.FloatRoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
+  val wrap_times :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  val plus_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val minus_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  val times_overflows :
+    size:int -> signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
+end
+
+(** Floating point *)
+module Float : sig
+  val mk : Svalue.FloatPrecision.t -> string -> [> sfloat ] t
+  val f16 : float -> [> sfloat ] t
+  val f32 : float -> [> sfloat ] t
+  val f64 : float -> [> sfloat ] t
+  val f128 : float -> [> sfloat ] t
+  val like : [> sfloat ] t -> float -> [> sfloat ] t
+  val fp_of : [< sfloat ] t -> Svalue.FloatPrecision.t
+  val eq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val geq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val gt : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val leq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val lt : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
+  val plus : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+  val minus : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+  val times : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+  val div : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+  val rem : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+  val abs : [< sfloat ] t -> [> sfloat ] t
+  val neg : [< sfloat ] t -> [> sfloat ] t
+  val is_normal : [< sfloat ] t -> [> sbool ] t
+  val is_subnormal : [< sfloat ] t -> [> sbool ] t
+  val is_zero : [< sfloat ] t -> [> sbool ] t
+  val is_infinite : [< sfloat ] t -> [> sbool ] t
+  val is_nan : [< sfloat ] t -> [> sbool ] t
+  val round : Svalue.FloatRoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
+  val to_int : int -> [< sfloat ] t -> [> sint ] t
+  val of_int : Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
+end
 
 module Ptr : sig
   val mk : [< sloc ] t -> [< sint ] t -> [> sptr ] t

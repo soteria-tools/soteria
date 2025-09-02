@@ -70,7 +70,7 @@ module MemVal = struct
         | Ctype.Ctype (_, Basic (Integer _)) -> Result.ok 0s
         | Ctype (_, Basic (Floating fty)) ->
             let precision = Layout.precision fty in
-            Result.ok (Typed.float precision "+0.0")
+            Result.ok (Typed.Float.mk precision "+0.0")
         | Ctype.Ctype (_, Pointer _) -> Result.ok Typed.Ptr.null
         | _ ->
             Fmt.kstr not_impl "Cannot decode Zeros for type %a" Fmt_ail.pp_ty ty

@@ -267,7 +267,7 @@ module Make (State : State_intf.S) = struct
     | CLiteral (VChar c) -> ok (Base (Typed.int (Uchar.to_int c)))
     | CLiteral (VFloat { float_value; float_ty }) ->
         let fp = float_precision float_ty in
-        ok (Base (Typed.float fp float_value))
+        ok (Base (Typed.Float.mk fp float_value))
     | CLiteral (VStr str) -> (
         let* ptr_opt = State.load_str_global str in
         match ptr_opt with
@@ -555,7 +555,7 @@ module Make (State : State_intf.S) = struct
             | TLiteral ((TInt _ | TUInt _) as i_ty) ->
                 let size = Layout.size_of_literal_ty i_ty * 8 in
                 let signed = Layout.is_signed i_ty in
-                let v = Typed.bit_not ~size ~signed v in
+                let v = Typed.BitVec.not ~size ~signed v in
                 ok (Base v)
             | ty ->
                 Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty ty)
@@ -569,7 +569,7 @@ module Make (State : State_intf.S) = struct
                   of_opt_not_impl "Expected a float type"
                   @@ Typed.cast_float (as_base v)
                 in
-                Base (Typed.float_like v 0.0 -.@ v)
+                Base (Typed.Float.like v 0.0 -.@ v)
             | _ -> not_impl "Invalid type for Neg")
         | PtrMetadata -> (
             match v with
@@ -648,10 +648,10 @@ module Make (State : State_intf.S) = struct
                 | TFloat _ ->
                     let op =
                       match op with
-                      | Ge -> Typed.geq_f
-                      | Gt -> Typed.gt_f
-                      | Lt -> Typed.lt_f
-                      | Le -> Typed.leq_f
+                      | Ge -> Typed.Float.geq
+                      | Gt -> Typed.Float.gt
+                      | Lt -> Typed.Float.lt
+                      | Le -> Typed.Float.leq
                       | _ -> assert false
                     in
                     let v1, v2 = (Typed.cast v1, Typed.cast v2) in
@@ -709,9 +709,9 @@ module Make (State : State_intf.S) = struct
                 let^+ v2 = cast_checked ~ty:Typed.t_int v2 in
                 let op =
                   match op with
-                  | BitOr -> Typed.bit_or
-                  | BitAnd -> Typed.bit_and
-                  | BitXor -> Typed.bit_xor
+                  | BitOr -> Typed.BitVec.or_
+                  | BitAnd -> Typed.BitVec.and_
+                  | BitXor -> Typed.BitVec.xor
                   | _ -> assert false
                 in
                 Base (op ~size ~signed v1 v2))
