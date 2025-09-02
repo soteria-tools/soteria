@@ -1,4 +1,4 @@
-open Soteria.Soteria_symex.Compo_res
+open Soteria.Symex.Compo_res
 open Csymex
 open Csymex.Syntax
 open Typed.Infix

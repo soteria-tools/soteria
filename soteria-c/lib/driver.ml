@@ -10,7 +10,7 @@ let dump_stats stats =
   | Some file -> Csymex.Stats.dump stats file
 
 let default_wpst_fuel =
-  Soteria.Soteria_symex.Fuel_gauge.{ steps = Finite 150; branching = Finite 4 }
+  Soteria.Symex.Fuel_gauge.{ steps = Finite 150; branching = Finite 4 }
 
 let as_nonempty_list functions_to_analyse =
   match functions_to_analyse with [] -> None | _ -> Some functions_to_analyse
@@ -240,7 +240,7 @@ let exec_function ~includes file_names function_name =
       let@ () = with_function_context linked in
       let fuel =
         if (Config.current ()).infinite_fuel then
-          Soteria.Soteria_symex.Fuel_gauge.infinite
+          Soteria.Symex.Fuel_gauge.infinite
         else default_wpst_fuel
       in
       Ok (Csymex.Result.run_with_stats ~mode:OX ~fuel symex)
@@ -249,11 +249,7 @@ let exec_function ~includes file_names function_name =
   | Ok v -> v
   | Error e ->
       Soteria.Stats.with_empty_stats
-        [
-          ( Soteria.Soteria_symex.Compo_res.Error
-              (Soteria.Soteria_symex.Symex.Or_gave_up.E e),
-            [] );
-        ]
+        [ (Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.E e), []) ]
 
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
@@ -305,10 +301,9 @@ let exec_and_print log_config term_config solver_config config includes
        Executed %d statements"
       Fmt.Dump.(
         list @@ fun ft (r, _) ->
-        (Soteria.Soteria_symex.Compo_res.pp
+        (Soteria.Symex.Compo_res.pp
            ~ok:(pair Aggregate_val.pp pp_state)
-           ~err:
-             (Soteria.Soteria_symex.Symex.Or_gave_up.pp pp_err_and_call_trace)
+           ~err:(Soteria.Symex.Or_gave_up.pp pp_err_and_call_trace)
            ~miss:(Fmt.Dump.list SState.pp_serialized))
           ft r)
       result.res result.stats.steps_number
