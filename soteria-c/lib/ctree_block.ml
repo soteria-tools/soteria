@@ -17,6 +17,8 @@ module MemVal = struct
 
     type sint = T.sint
     type sbool = T.sbool
+
+    let[@inline] zero () = zero
   end
 
   let pp_init ft (v, ty) =

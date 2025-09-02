@@ -23,6 +23,8 @@ module Make (Sptr : Sptr.S) = struct
 
       type sint = T.sint
       type sbool = T.sbool
+
+      let zero () = zero
     end
 
     let pp_init ft (v, ty) =
