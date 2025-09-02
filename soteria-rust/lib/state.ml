@@ -222,10 +222,20 @@ let load_discriminant (ptr, _) ty st =
 let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
   let** (), st = check_ptr_align ptr ty st in
   let parser ~offset = Encoder.rust_of_cvals ?meta ~offset ty in
-  let++ value, block = apply_parser ~is_move ~ignore_borrow ptr parser st in
+  let** value, st = apply_parser ~ignore_borrow ptr parser st in
+  let++ (), st =
+    if is_move then
+      let@ () = with_error_loc_as_call_trace st in
+      let@ () = with_loc_err () in
+      let@ ofs, block = with_ptr ptr st in
+      let@ block, _ = with_tbs block in
+      let* size = Layout.size_of_s ty in
+      Tree_block.uninit_range ofs size block
+    else Result.ok ((), st)
+  in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
-  (value, block)
+  (value, st)
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
