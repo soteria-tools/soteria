@@ -35,7 +35,7 @@ type t =
   | `UBPointerArithmetic  (** Arithmetics on two pointers *)
   | `UBPointerComparison
     (** Comparison of pointers with different provenance *)
-  | `UBTransmute
+  | `UBTransmute of string
     (** Invalid transmute, e.g. null reference, wrong enum discriminant *)
   | `AliasingError  (** Tree borrow violation that lead to UB *)
   | `RefInvalidatedEarly
@@ -97,7 +97,7 @@ let pp ft : [< t ] -> unit = function
   | `UBDanglingPointer -> Fmt.string ft "UB: dangling pointer"
   | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
   | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
-  | `UBTransmute -> Fmt.string ft "UB: Transmute"
+  | `UBTransmute msg -> Fmt.pf ft "UB: Transmute: %s" msg
   | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
   | `UseAfterFree -> Fmt.string ft "Use after free"
 

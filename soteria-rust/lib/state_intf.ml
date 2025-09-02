@@ -35,7 +35,7 @@ module type S = sig
       | `OutOfBounds
       | `UninitializedMemoryAccess
       | `UseAfterFree
-      | `UBTransmute
+      | `UBTransmute of string
       | `AliasingError
       | `MisalignedPointer
       | `RefToUninhabited
@@ -70,7 +70,7 @@ module type S = sig
       | `OutOfBounds
       | `UninitializedMemoryAccess
       | `UseAfterFree
-      | `UBTransmute
+      | `UBTransmute of string
       | `AliasingError
       | `MisalignedPointer
       | `RefToUninhabited

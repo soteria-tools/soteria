@@ -280,7 +280,14 @@ module Make (Sptr : Sptr.S) = struct
       in
       match (tag_layout.encoding, res) with
       | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
-      | Direct, None -> error `UBTransmute
+      | Direct, None ->
+          let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
+          let adt = Crate.get_adt adt_id in
+          let msg =
+            Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
+              adt.item_meta.name Typed.ppa cval
+          in
+          error (`UBTransmute msg)
       | Niche untagged, None -> ok untagged
 
   type ('e, 'fix, 'state) parser = (rust_val, 'state, 'e, 'fix) ParserMonad.t
@@ -339,7 +346,7 @@ module Make (Sptr : Sptr.S) = struct
                   let meta = Typed.cast_i Usize meta in
                   (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
                   if%sat meta <$@ Typed.BitVec.usizei 0 then
-                    Result.error `UBTransmute
+                    Result.error (`UBTransmute "Negative slice length")
                   else Result.ok ptr)
           | base, meta ->
               Fmt.kstr not_impl "Expected a pointer and base, got %a and %a"
@@ -528,7 +535,12 @@ module Make (Sptr : Sptr.S) = struct
           ok (Base (res :> Typed.T.cval Typed.t))
       | TLiteral _, TLiteral to_ty, Base sv ->
           let constrs = Layout.constraints to_ty in
-          if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
+          if%sat Typed.conj (constrs sv) then ok v
+          else
+            let msg =
+              Fmt.str "Constraints of %a unsatisfied" pp_ty (TLiteral to_ty)
+            in
+            error (`UBTransmute msg)
       (* A ref cannot be an invalid pointer *)
       | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
           error `UBDanglingPointer
