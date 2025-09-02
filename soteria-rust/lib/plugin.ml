@@ -274,21 +274,18 @@ let merge_ifs
     let rec aux acc rest =
       match (acc, rest) with
       | Some ep, _ ->
-          let fuel : Soteria.Soteria_symex.Fuel_gauge.t =
-            let get_or name
-                (none : Soteria.Soteria_symex.Fuel_gauge.Fuel_value.t) =
-              Charon_util.decl_get_attr decl name
-              |> Option.fold ~none ~some:(fun x -> Finite (int_of_string x))
+          let open Soteria.Soteria_symex in
+          let fuel : Fuel_gauge.t =
+            let get_or name default : Fuel_gauge.Fuel_value.t =
+              match (Charon_util.decl_get_attr decl name, default) with
+              | Some fuel, _ -> Finite (int_of_string fuel)
+              | None, Some fuel -> Finite fuel
+              | None, None -> Infinite
             in
             {
-              steps =
-                get_or "rusteriatool::step_fuel"
-                  (if !Config.current.no_fuel then Infinite
-                   else Finite !Config.current.step_fuel);
+              steps = get_or "rusteriatool::step_fuel" !Config.current.step_fuel;
               branching =
-                get_or "rusteriatool::branch_fuel"
-                  (if !Config.current.no_fuel then Infinite
-                   else Finite !Config.current.branch_fuel);
+                get_or "rusteriatool::branch_fuel" !Config.current.branch_fuel;
             }
           in
           Some { ep with fuel }
