@@ -1,7 +1,6 @@
 open Charon
 open Rustsymex
 open Rustsymex.Syntax
-open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
@@ -15,7 +14,7 @@ module M (State : State_intf.S) = struct
   let pp_rust_val = pp_rust_val Sptr.pp
 
   let zeroed (fun_sig : UllbcAst.fun_sig) ~args:_ state =
-    match Layout.zeroed ~null_ptr:Sptr.null_ptr fun_sig.output with
+    match Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) fun_sig.output with
     | Some v -> Result.ok (v, state)
     | None -> State.error (`StdErr "Non-zeroable type") state
 
@@ -40,8 +39,8 @@ module M (State : State_intf.S) = struct
       match (idx_op.is_array, List.hd args, gen_args.const_generics) with
       (* Array with static size *)
       | true, Ptr (ptr, None), [ size ] ->
-          (ptr, Typed.int @@ Charon_util.int_of_const_generic size)
-      | false, Ptr (ptr, Some size), [] -> (ptr, Typed.cast size)
+          (ptr, Typed.BitVec.usize (Charon_util.z_of_const_generic size))
+      | false, Ptr (ptr, Some size), [] -> (ptr, Typed.cast_i Usize size)
       | _ ->
           Fmt.failwith "array_index: unexpected arguments: %a / %a"
             Fmt.(list pp_rust_val)
@@ -50,16 +49,21 @@ module M (State : State_intf.S) = struct
             gen_args.const_generics
     in
     (* TODO: take into account idx.mutability *)
-    let idx = as_base_of ~ty:Typed.t_int (List.nth args 1) in
+    let idx = as_base_i Usize (List.nth args 1) in
     let ty = List.hd gen_args.types in
     let** ptr' = Sptr.offset ~ty ptr idx |> State.lift_err state in
     if not idx_op.is_range then
-      if%sat 0s <=@ idx &&@ (idx <@ size) then
+      if%sat Typed.BitVec.usizei 0 <=$@ idx &&@ (idx <$@ size) then
         Result.ok (Ptr (ptr', None), state)
       else State.error `OutOfBounds state
     else
-      let range_end = as_base_of ~ty:Typed.t_int (List.nth args 2) in
-      if%sat 0s <=@ idx &&@ (idx <=@ range_end) &&@ (range_end <=@ size) then
+      let range_end = as_base_i Usize (List.nth args 2) in
+      if%sat
+        Typed.BitVec.usizei 0
+        <=$@ idx
+        &&@ (idx <=$@ range_end)
+        &&@ (range_end <=$@ size)
+      then
         let size = range_end -@ idx in
         Result.ok (Ptr (ptr', Some size), state)
       else State.error `OutOfBounds state
@@ -86,23 +90,25 @@ module M (State : State_intf.S) = struct
       | Some item -> item
       | None -> failwith "Unexpected range item"
     in
+    let zero = Typed.BitVec.usizei 0 in
+    let one = Typed.BitVec.usizei 1 in
     let size =
       match (ptr, gargs.const_generics) with
       (* Array with static size *)
-      | _, [ size ] -> Typed.int @@ Charon_util.int_of_const_generic size
+      | _, [ size ] -> Typed.BitVec.usize (Charon_util.z_of_const_generic size)
       | Ptr (_, Some size), [] -> Typed.cast size
       | _ -> failwith "array_index (fn): couldn't calculate size"
     in
     let idx_from, idx_to =
       match (range_item, range) with
-      | "RangeFull", [] -> (Base 0s, Base size)
+      | "RangeFull", [] -> (Base zero, Base size)
       | "RangeFrom", [ from ] -> (from, Base size)
-      | "RangeTo", [ to_ ] -> (Base 0s, to_)
+      | "RangeTo", [ to_ ] -> (Base zero, to_)
       | "Range", [ from; to_ ] -> (from, to_)
       | "RangeInclusive", [ from; Base to_ ] ->
-          (from, Base (Typed.cast to_ +@ 1s))
+          (from, Base (Typed.cast to_ +@ one))
       | "RangeToInclusive", [ Base to_ ] ->
-          (Base 0s, Base (Typed.cast to_ +@ 1s))
+          (Base zero, Base (Typed.cast to_ +@ one))
       | _ -> Fmt.failwith "array_index (fn): unexpected range %s" range_item
     in
     let idx_op : Types.builtin_index_op =
@@ -113,11 +119,13 @@ module M (State : State_intf.S) = struct
   let array_slice ~mut:_ (gen_args : Types.generic_args) ~args state =
     let size =
       match gen_args.const_generics with
-      | [ size ] -> Charon_util.int_of_const_generic size
+      | [ size ] -> Charon_util.z_of_const_generic size
       | _ -> failwith "array_slice: unexpected generic constants"
     in
     match args with
-    | [ Ptr (ptr, None) ] -> Result.ok (Ptr (ptr, Some (Typed.int size)), state)
+    | [ Ptr (ptr, None) ] ->
+        let size = Typed.BitVec.usize size in
+        Result.ok (Ptr (ptr, Some size), state)
     | _ -> failwith "array_index: unexpected arguments"
 
   let box_new (gen_args : Types.generic_args) ~args state =
@@ -134,8 +142,8 @@ module M (State : State_intf.S) = struct
     match args with
     | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
     | [ Base v; Base meta ] ->
-        let* v = cast_checked ~ty:Typed.t_int v in
-        let++ ptr = Sptr.offset Sptr.null_ptr v |> State.lift_err state in
+        let v = Typed.cast_i Usize v in
+        let++ ptr = Sptr.offset (Sptr.null_ptr ()) v |> State.lift_err state in
         (Ptr (ptr, Some meta), state)
     | _ ->
         Fmt.failwith "from_raw_parts: invalid arguments %a"
@@ -150,7 +158,7 @@ module M (State : State_intf.S) = struct
       | [ Base f ] -> f
       | _ -> failwith "float_is: invalid argument"
     in
-    let* v = of_opt_not_impl "float_is expects float" @@ Typed.cast_float v in
+    let v = Typed.cast_float v in
     let res =
       match fp with
       | NaN -> Typed.Float.is_nan v
@@ -159,7 +167,7 @@ module M (State : State_intf.S) = struct
       | Zero -> Typed.Float.is_zero v
       | Subnormal -> Typed.Float.is_subnormal v
     in
-    Result.ok (Base (Typed.int_of_bool res), state)
+    Result.ok (Base (Typed.BitVec.of_bool res), state)
 
   let float_is_finite ~args state =
     let v =
@@ -167,11 +175,9 @@ module M (State : State_intf.S) = struct
       | [ Base f ] -> f
       | _ -> failwith "float_is_finite: invalid argument"
     in
-    let* v =
-      of_opt_not_impl "float_is_finite expects float" @@ Typed.cast_float v
-    in
+    let v = Typed.cast_float v in
     let res = Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v)) in
-    Result.ok (Base (Typed.int_of_bool res), state)
+    Result.ok (Base (Typed.BitVec.of_bool res), state)
 
   let float_is_sign pos ~args state =
     let v =
@@ -179,15 +185,13 @@ module M (State : State_intf.S) = struct
       | [ Base f ] -> f
       | _ -> failwith "float_is_sign: invalid argument"
     in
-    let* v =
-      of_opt_not_impl "float_is_sign expects float" @@ Typed.cast_float v
-    in
+    let v = Typed.cast_float v in
     let res =
       if pos then Typed.Float.(leq (like v 0.) v)
       else Typed.Float.(leq v (like v (-0.)))
     in
     let res = res ||@ Typed.Float.is_nan v in
-    Result.ok (Base (Typed.int_of_bool res), state)
+    Result.ok (Base (Typed.BitVec.of_bool res), state)
 
   let _mk_box ptr =
     let non_null = Struct [ ptr ] in
@@ -199,7 +203,8 @@ module M (State : State_intf.S) = struct
   let fixme_try_cleanup ~args:_ state =
     (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
               we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    let box = _mk_box (Ptr (Sptr.null_ptr, Some 0s)) in
+    let meta = Typed.BitVec.usizei 0 in
+    let box = _mk_box (Ptr (Sptr.null_ptr (), Some meta)) in
     Result.ok (box, state)
 
   let fixme_box_new (fun_sig : UllbcAst.fun_sig) ~args state =
@@ -210,24 +215,27 @@ module M (State : State_intf.S) = struct
     let box = _mk_box (Ptr ptr) in
     (box, state)
 
-  let fixme_null_ptr ~args:_ state = Result.ok (Ptr (Sptr.null_ptr, None), state)
+  let fixme_null_ptr ~args:_ state =
+    Result.ok (Ptr (Sptr.null_ptr (), None), state)
+
+  module Alloc = Alloc.M (State)
 
   let alloc_impl ~args state =
-    let module Alloc = Alloc.M (State) in
-    let* size, align, zeroed =
+    let zero = Typed.BitVec.usizei 0 in
+    let size, align, zeroed =
       match args with
       | [
        _alloc; Struct [ Base size; Struct [ Enum (align, []) ] ]; Base zeroed;
       ] ->
-          let+ zeroed = cast_checked ~ty:Typed.t_int zeroed in
-          (size, align, Typed.bool_of_int zeroed)
+          let zeroed = Typed.cast_i U8 zeroed in
+          (size, align, Typed.BitVec.to_bool zeroed)
       | _ ->
-          Fmt.kstr not_impl "alloc_impl: invalid arguments: %a"
+          Fmt.failwith "alloc_impl: invalid arguments: %a"
             Fmt.(list ~sep:(any ", ") pp_rust_val)
             args
     in
-    if%sat size ==@ 0s then
-      Result.ok (Ptr (Sptr.null_ptr_of (Typed.cast align), Some 0s), state)
+    if%sat size ==@ zero then
+      Result.ok (Ptr (Sptr.null_ptr_of (Typed.cast align), Some zero), state)
     else
       let* zeroed = if%sat zeroed then return true else return false in
       (* allocate *)
@@ -238,5 +246,6 @@ module M (State : State_intf.S) = struct
         match ptr with Ptr (p, _) -> p | _ -> failwith "Expected Ptr"
       in
       (* construct the Result<NonNull<[u8]>> *)
-      (Enum (0s, [ Struct [ Ptr (ptr, Some size) ] ]), state)
+      (* FIXME: the size of this zero is probably wrong *)
+      (Enum (zero, [ Struct [ Ptr (ptr, Some size) ] ]), state)
 end
