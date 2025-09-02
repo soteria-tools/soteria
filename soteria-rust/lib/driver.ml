@@ -35,9 +35,6 @@ module Outcome = struct
     | Fatal -> Color.pp_clr `Maroon ft "unknown"
 end
 
-let default_fuel =
-  Soteria.Symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
-
 module Cleaner = struct
   let files = ref []
   let touched file = files := file :: !files
