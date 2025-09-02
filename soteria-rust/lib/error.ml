@@ -129,8 +129,9 @@ module Diagnostic = struct
           else None
         in
         [
-          Soteria.Terminal.Diagnostic.mk_range_file ?filename file
-            (to_loc span.beg_loc) (to_loc span.end_loc);
+          Soteria.Terminal.Diagnostic.mk_range_file ?filename
+            ?content:span.file.contents file (to_loc span.beg_loc)
+            (to_loc span.end_loc);
         ]
     | Virtual _ -> []
 
