@@ -105,7 +105,7 @@ module Unop = struct
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
     | Neg -> Fmt.string ft "-bv"
-    | NegOvf -> Fmt.string ft "-bv_ovf"
+    | NegOvf -> Fmt.string ft "-_ovf"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
     | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
 end

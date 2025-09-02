@@ -7,11 +7,7 @@ where
 {
     fn any() -> Self;
     fn any_array<const MAX_ARRAY_LENGTH: usize>() -> [Self; MAX_ARRAY_LENGTH] {
-        // FIXME: the real implementation is below, however this is super slow to codegen and
-        // monomorphize, and doesn't even work right now, so we over-approximate. Should be
-        // reverted once we have proper monomorphization.
-        // [(); MAX_ARRAY_LENGTH].map(|_| Self::any())
-        crate::kani::nondet()
+        [(); MAX_ARRAY_LENGTH].map(|_| Self::any())
     }
 }
 
