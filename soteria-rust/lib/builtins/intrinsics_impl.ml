@@ -494,14 +494,13 @@ module M (State : State_intf.S) = struct
           let ovf = Typed.BitVec.add_overflows ~signed a b in
           let if_ovf =
             if not signed then max
-            else Typed.ite (Typed.BitVec.mki_lit t 0 <$@ a) max min
+            else Typed.ite (a <$@ Typed.BitVec.mki_lit t 0) min max
           in
           Typed.ite ovf if_ovf (a +@ b)
       | Sub _ ->
           let ovf = Typed.BitVec.sub_overflows ~signed a b in
           let if_ovf =
-            if not signed then min
-            else Typed.ite (Typed.BitVec.mki_lit t 0 <$@ a) max min
+            if not signed then min else Typed.ite (a <$@ b) min max
           in
           Typed.ite ovf if_ovf (a -@ b)
       | _ -> failwith "Unreachable: not add or sub?"
