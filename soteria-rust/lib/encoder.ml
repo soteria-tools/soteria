@@ -504,38 +504,22 @@ module Make (Sptr : Sptr.S) = struct
           in
           let sv' = Typed.BitVec.to_float ~signed sv in
           Result.ok (Base sv')
-      | TLiteral (TUInt U8 as from_ty), TLiteral (TChar as to_ty), Base v
-      | ( TLiteral (TBool as from_ty),
-          TLiteral ((TUInt _ | TInt _) as to_ty),
-          Base v )
-      | ( TLiteral (TChar as from_ty),
-          TLiteral (TUInt (U32 | U64 | U128) as to_ty),
-          Base v ) ->
-          let from_bits = 8 * Layout.size_of_literal_ty from_ty in
-          let to_bits = 8 * Layout.size_of_literal_ty to_ty in
-          if to_bits > from_bits then
-            let v = Typed.cast_lit from_ty v in
-            let v = Typed.BitVec.extend ~signed:false (to_bits - from_bits) v in
-            ok (Base v)
-          else ok (Base v)
-      | ( TLiteral ((TInt _ | TUInt _) as from_ty),
-          TLiteral ((TInt _ | TUInt _) as to_ty),
-          Base sv ) ->
+      | TLiteral (TFloat _), _, _ | _, TLiteral (TFloat _), _ ->
+          Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_ty from_ty
+            pp_ty to_ty
+      | TLiteral from_ty, TLiteral to_ty, Base sv ->
           let from_bits = 8 * Layout.size_of_literal_ty from_ty in
           let from_signed = Layout.is_signed from_ty in
           let to_bits = 8 * Layout.size_of_literal_ty to_ty in
-          (* FIXME: make this nicer in Typed *)
           let v = Typed.cast_lit from_ty sv in
-          let res =
+          let v =
             if from_bits = to_bits then v
             else if from_bits < to_bits then
               Typed.BitVec.extend ~signed:from_signed (to_bits - from_bits) v
             else Typed.BitVec.extract 0 (to_bits - 1) v
           in
-          ok (Base (res :> Typed.T.cval Typed.t))
-      | TLiteral _, TLiteral to_ty, Base sv ->
           let constrs = Layout.constraints to_ty in
-          if%sat Typed.conj (constrs sv) then ok v
+          if%sat Typed.conj (constrs v) then ok (Base v)
           else
             let msg =
               Fmt.str "Constraints of %a unsatisfied" pp_ty (TLiteral to_ty)
