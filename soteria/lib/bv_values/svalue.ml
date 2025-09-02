@@ -104,8 +104,8 @@ module Unop = struct
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
-    | Neg -> Fmt.string ft "-bv"
-    | NegOvf -> Fmt.string ft "-bv_ovf"
+    | Neg -> Fmt.string ft "-"
+    | NegOvf -> Fmt.string ft "-ovf"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
     | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
 end
