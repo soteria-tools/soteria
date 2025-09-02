@@ -1,6 +1,5 @@
 open Charon
 open Typed.Infix
-open Typed.Syntax
 open Rustsymex
 open Rust_val
 open Charon_util
@@ -57,35 +56,11 @@ module Session = struct
     get_or_compute_cached_layout (Right (adt, var))
 end
 
+include Layout_common
+
 let is_int : Types.ty -> bool = function
   | TLiteral (TInt _ | TUInt _) -> true
   | _ -> false
-
-let size_of_int_ty : Values.int_ty -> int = function
-  | I128 -> 16
-  | I64 -> 8
-  | I32 -> 4
-  | I16 -> 2
-  | I8 -> 1
-  | Isize -> Crate.pointer_size ()
-
-let size_of_uint_ty : Values.u_int_ty -> int = function
-  | U128 -> 16
-  | U64 -> 8
-  | U32 -> 4
-  | U16 -> 2
-  | U8 -> 1
-  | Usize -> Crate.pointer_size ()
-
-let size_of_literal_ty : Types.literal_type -> int = function
-  | TInt int_ty -> size_of_int_ty int_ty
-  | TUInt uint_ty -> size_of_uint_ty uint_ty
-  | TBool -> 1
-  | TChar -> 4
-  | TFloat F16 -> 2
-  | TFloat F32 -> 4
-  | TFloat F64 -> 8
-  | TFloat F128 -> 16
 
 (* TODO: this is not really accurate, but good enough for now.
    See https://doc.rust-lang.org/reference/type-layout.html#r-layout.primitive.align *)
