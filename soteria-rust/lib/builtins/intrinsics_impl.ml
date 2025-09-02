@@ -293,6 +293,38 @@ module M (State : State_intf.S) = struct
       State.error (`StdErr "core::intrinsics::cttz_nonzero on zero") state
     else cttz ~t ~x state
 
+  let ctlz =
+    let concrete bits x =
+      let rec aux n =
+        if Z.testbit x (bits - 1 - n) then n
+        else if n + 1 < bits then aux (n + 1)
+        else bits
+      in
+      Typed.BitVec.u32i @@ aux 0
+    in
+    (* we construct the following, from inside out:
+      ite(x[bits-1] == 1 ? 0 :
+        ite(x[bits-2] == 1 ? 1 :
+          ...
+          ite(x[0] == 1 ? bits-1 : bits))) *)
+    let symbolic bits x =
+      Iter.fold
+        (fun acc off ->
+          let res = bits - 1 - off in
+          let bit = Typed.BitVec.extract off off x in
+          Typed.ite (bit ==@ Typed.BitVec.one 1) (Typed.BitVec.u32i res) acc)
+        (Typed.BitVec.u32i bits)
+        Iter.(0 -- (bits - 1))
+    in
+    binary_int_operation ~concrete ~symbolic
+
+  let ctlz_nonzero ~t ~x state =
+    let tlit = TypesUtils.ty_as_literal t in
+    let x_int = as_base tlit x in
+    if%sat x_int ==@ Typed.BitVec.mki_lit tlit 0 then
+      State.error (`StdErr "core::intrinsics::ctlz_nonzero on zero") state
+    else ctlz ~t ~x state
+
   let discriminant_value ~t ~v state =
     let ptr = as_ptr v in
     let adt_id, _ = TypesUtils.ty_as_custom_adt t in
