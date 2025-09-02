@@ -109,15 +109,15 @@ let print_outcomes entry_name f =
         let name = "PC " ^ string_of_int i ^ ":" in
         if List.is_empty pc then pf ft "%a empty" (pp_style `Bold) name
         else
-          pf ft "%a @[<-1>%a@]" (pp_style `Bold) name
-            (list ~sep:(any " /\\@, ") Typed.ppa)
-            pc
+          let pp_pc = list ~sep:(any " /\\@, ") Typed.ppa in
+          pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
-      Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
-      Fmt.pr "@\n@\n@?";
+      if not @@ Soteria.Terminal.Config.compact () then
+        Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
+      Fmt.pr "@\n@.";
       (entry_name, Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
@@ -125,20 +125,21 @@ let print_outcomes entry_name f =
         (Diagnostic.print_diagnostic_simple ~severity:Error)
         "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
         time pp_branches (List.length errs) ntotal;
-      Fmt.pr "@\n@?";
+      Fmt.pr "@.";
       let ( let@@ ) f x = List.iter x f in
       let () =
         let@@ error, call_trace = List.sort_uniq Stdlib.compare errs in
-        Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error
+        Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error;
+        Fmt.pr "@.@."
       in
-      Fmt.pr "@\n@\n@?";
+      Fmt.pr "@.@.";
       (entry_name, Outcome.Error)
   | exception ExecutionError e ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
         "%s: runtime error in %a: %s" entry_name pp_time time e;
-      Fmt.pr "@\n@\n@?";
+      Fmt.pr "@.@.";
       (entry_name, Outcome.Fatal)
   | exception UnsupportedFeatures fs ->
       let time = Unix.gettimeofday () -. time in
@@ -148,7 +149,7 @@ let print_outcomes entry_name f =
         entry_name pp_time time
         Fmt.(list ~sep:cut (fun ft r -> Fmt.pf ft "• %s" r))
         fs;
-      Fmt.pr "@\n@\n@?";
+      Fmt.pr "@.@.";
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
@@ -234,11 +235,11 @@ let wrap_step name f =
     let time = Unix.gettimeofday () in
     let res = f () in
     let time = Unix.gettimeofday () -. time in
-    Fmt.pr " done in %a@\n@?" pp_time time;
+    Fmt.pr " done in %a@." pp_time time;
     res
   with e ->
     let bt = Printexc.get_raw_backtrace () in
-    Fmt.pr " errored@\n@?";
+    Fmt.pr " errored@.";
     Printexc.raise_with_backtrace e bt
 
 let fatal ?name ?(code = 2) err =
