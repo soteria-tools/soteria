@@ -82,24 +82,24 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if "resolve_constant (Generated_Expressions.COpaque" in test:
         return ("Tool", PURPLE, "Constant resolving")
 
-    unsup_regex = r"^warning: .*: unknown outcome in"
-    if re.search(unsup_regex, test, re.MULTILINE):
-        reasons = re.findall(r"\n• (.*)", test)
-        if reasons:
-            return [("Unsupported", YELLOW, reason) for reason in reasons]
-        return ("Unsupported", YELLOW, None)
-
     if "Miss encountered in WPST" in test:
         return ("Miss encountered", RED, None)
 
-    # check errors first; one error overrides any success
-    fatal_regex = r"^error: .*: runtime error in"
-    if re.search(fatal_regex, test, re.MULTILINE):
-        cause = re.search(r"runtime error in .*Exn: Failure\(\"(.+)\"\)", test)
-        cause = cause or re.search(r"runtime error in .*Exn: Failure\(\"(.+)\"\)", test)
-        if not cause:
-            return ("Raised exception", RED, None)
-        return ("Raised exception", RED, cause.group(1))
+    # check engine errors first; one error overrides any success
+    fatal_regex = r"^warning: .*ms\): (.*)"
+    fatals = re.search(fatal_regex, test, re.MULTILINE)
+    if fatals is not None:
+        err = fatals.group(1)
+        if err.startswith("unsupported feature"):
+            return ("Unsupported", YELLOW, err[len("unsupported feature, ") :])
+
+        if err.startswith("exception, "):
+            err = err[len("exception, ") :]
+
+        if err.startswith('Failure("'):
+            err = err[len('Failure("') : -2]
+
+        return ("Raised exception", RED, err)
 
     err_regex = r"^error: (.+): found issues in"
     if re.search(err_regex, test, re.MULTILINE):
