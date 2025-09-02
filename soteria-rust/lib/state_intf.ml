@@ -61,6 +61,25 @@ module type S = sig
       serialized )
     Result.t
 
+  val load_discriminant :
+    full_ptr ->
+    Types.ty ->
+    t ->
+    ( Types.variant_id * t,
+      [> `NullDereference
+      | `OutOfBounds
+      | `UninitializedMemoryAccess
+      | `UseAfterFree
+      | `UBTransmute
+      | `AliasingError
+      | `MisalignedPointer
+      | `RefToUninhabited
+      | `UBDanglingPointer ]
+      err
+      * t,
+      serialized )
+    Result.t
+
   val store :
     full_ptr ->
     Types.ty ->

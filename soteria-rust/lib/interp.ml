@@ -93,6 +93,10 @@ module InterpM (State : State_intf.S) = struct
     include State
 
     let[@inline] load ?is_move ptr ty = lift_state_op (load ?is_move ptr ty)
+
+    let[@inline] load_discriminant ptr ty =
+      lift_state_op (load_discriminant ptr ty)
+
     let[@inline] store ptr ty v = lift_state_op (store ptr ty v)
     let[@inline] alloc_ty ty = lift_state_op (alloc_ty ty)
     let[@inline] alloc_tys tys = lift_state_op (alloc_tys tys)
@@ -739,24 +743,13 @@ module Make (State : State_intf.S) = struct
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
-    | Discriminant place -> (
-        let* loc, _ = resolve_place place in
+    | Discriminant place ->
+        let* loc = resolve_place place in
         let enum, _ = TypesUtils.ty_as_custom_adt place.ty in
         let variants = Crate.as_enum enum in
-        match variants with
-        (* enums with one fieldless variant are ZSTs, so we can't load their discriminant! *)
-        | [ { fields = []; discriminant; _ } ] ->
-            ok (Base (Typed.BitVec.of_scalar discriminant))
-        | var :: _ ->
-            let layout = Layout.of_variant enum var in
-            let discr_ofs =
-              Typed.BitVec.usizei
-              @@ Layout.Fields_shape.offset_of 0 layout.fields
-            in
-            let discr_ty = Layout.enum_discr_ty enum in
-            let^^ loc = Sptr.offset loc discr_ofs in
-            State.load (loc, None) discr_ty
-        | [] -> Fmt.kstr not_impl "Unsupported discriminant for empty enums")
+        let+ variant_id = State.load_discriminant loc place.ty in
+        let variant = Types.VariantId.nth variants variant_id in
+        Base (Typed.BitVec.of_scalar variant.discriminant)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
       ->

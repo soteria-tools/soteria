@@ -170,25 +170,52 @@ module Make (Sptr : Sptr.S) = struct
         chain_cvals (layout_of ty) vals fields
     | Struct _, _ -> illegal_pair ()
     (* Enums *)
-    | Enum (disc, vals), TAdt { id = TAdtId t_id; _ } -> (
+    | Enum (disc, vals), (TAdt { id = TAdtId t_id; _ } as ty) -> (
         let variants = Crate.as_enum t_id in
         match (variants, Typed.kind disc) with
         (* fieldless enums with one option are zero-sized *)
         | [ _ ], _ when Option.is_some @@ Layout.as_zst ty -> []
         | variants, BitVec disc_bv ->
-            let ty = TypesUtils.ty_as_literal (Layout.enum_discr_ty t_id) in
-            let disc_z = Typed.BitVec.bv_to_z ty disc_bv in
-            let variant =
-              List.find
-                (fun v -> Z.equal disc_z (z_of_scalar Types.(v.discriminant)))
-                variants
+            let layout = Layout.layout_of ty in
+            let tag_layout, var_fields =
+              match layout.fields with
+              | Enum (tag_layout, var_fields) -> (tag_layout, var_fields)
+              | _ -> failwith "Unexptected enum layout"
             in
-            let disc_ty = Layout.enum_discr_ty t_id in
-            chain_cvals (of_variant t_id variant) (Base disc :: vals)
-              (disc_ty :: field_tys variant.fields)
+            let disc_z = Typed.BitVec.bv_to_z tag_layout.ty disc_bv in
+            let variant_id, variant =
+              Option.get ~msg:"No matching variant?"
+              @@ List.find_mapi
+                   (fun i v ->
+                     if Z.equal disc_z (z_of_scalar Types.(v.discriminant)) then
+                       Some (i, v)
+                     else None)
+                   variants
+            in
+            let var_fields = var_fields.(variant_id) in
+            let discriminant =
+              match tag_layout.tags.(variant_id) with
+              | None -> []
+              | Some tag ->
+                  let v = Typed.BitVec.mk_lit tag_layout.ty tag in
+                  let offset =
+                    Typed.BitVec.usizei tag_layout.offset +@ offset
+                  in
+                  [ { value = Base v; ty = TLiteral tag_layout.ty; offset } ]
+            in
+            let var_layout = { layout with fields = var_fields } in
+            discriminant
+            @ chain_cvals var_layout vals (field_tys variant.fields)
         | _ -> Fmt.failwith "Unexpected discriminant for enum: %a" pp_ty ty)
     | Base value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
-        [ { value = Enum (value, []); ty = Layout.enum_discr_ty t_id; offset } ]
+        let layout = Layout.layout_of ty in
+        let tag_ty =
+          match layout.fields with
+          | Enum (tag, _) -> tag.ty
+          | _ -> failwith "Expected enum layout"
+        in
+        let value = Typed.cast_lit tag_ty value in
+        [ { value = Base value; ty = TLiteral tag_ty; offset } ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
     | ( Array vals,
@@ -217,6 +244,44 @@ module Make (Sptr : Sptr.S) = struct
             m "Unhandled rust_value and Charon.ty: %a / %a" ppa_rust_val value
               pp_ty ty);
         failwith "Unhandled rust_value and Charon.ty"
+
+  (** Parses the current variant of the enum at the given offset. This handles
+      cases such as niches, where the discriminant isn't directly encoded as a
+      tag. *)
+  let variant_of_enum ~offset ty :
+      (Types.variant_id, 'state, 'e, 'fix) ParserMonad.t =
+    let open ParserMonad in
+    let open ParserMonad.Syntax in
+    let layout = Layout.layout_of ty in
+    (* if it's a ZST, we assume it's the first variant; I don't think this is
+       always true, e.g. enum { A(!), B }, but it's ok for now. *)
+    if layout.size = 0 then ok (Types.VariantId.of_int 0)
+    else
+      let tag_layout =
+        match layout.fields with
+        | Enum (d, _) -> d
+        | _ -> failwith "Unexpected layout for enum"
+      in
+      let offset = offset +@ Typed.BitVec.usizei tag_layout.offset in
+      let*** cval = query (TLiteral tag_layout.ty, offset) in
+      (* here we need to check and decay if it's a pointer, for niche encoding! *)
+      let*** cval =
+        match cval with
+        | Base cval -> ok (Typed.cast_lit tag_layout.ty cval)
+        | Ptr (p, None) -> lift_rsymex @@ Sptr.decay p
+        | _ -> Fmt.failwith "Unexpected discriminant: %a" pp_rust_val cval
+      in
+      let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
+      let*** res =
+        lift_rsymex
+        @@ match_on tags ~constr:(function
+             | _, None -> Typed.v_false
+             | _, Some tag -> cval ==@ Typed.BitVec.mk_lit tag_layout.ty tag)
+      in
+      match (tag_layout.encoding, res) with
+      | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
+      | Direct, None -> error `UBTransmute
+      | Niche untagged, None -> ok untagged
 
   type ('e, 'fix, 'state) parser = (rust_val, 'state, 'e, 'fix) ParserMonad.t
 
@@ -310,9 +375,7 @@ module Make (Sptr : Sptr.S) = struct
               |> List.to_seq
               |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
           | Enum [] -> error `RefToUninhabited
-          | Enum [ _ ] when Option.is_some @@ Layout.as_zst ty ->
-              ok (Option.get @@ Layout.as_zst ty)
-          | Enum variants -> aux_enum offset t_id variants
+          | Enum variants -> aux_enum offset ty variants
           | Union fs -> aux_union offset fs
           | _ ->
               Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
@@ -372,43 +435,17 @@ module Make (Sptr : Sptr.S) = struct
       in
       mk_callback 0 fields []
     (* Parses what enum variant we're handling *)
-    and aux_enum offset adt_id (variants : Types.variant list) :
-        ('e, 'fix, 'state) parser =
-      let disc_ty = Layout.enum_discr_ty adt_id in
-      let litty = TypesUtils.ty_as_literal disc_ty in
-      let disc_align =
-        Typed.BitVec.mki_lit_nz litty (layout_of disc_ty).align
-      in
-      let offset = offset +@ (offset %@ disc_align) in
-      let*** cval = query (disc_ty, offset) in
-      let cval = as_base litty cval in
-      let*** res =
-        lift_rsymex
-        @@ match_on variants ~constr:(fun (v : Types.variant) ->
-               cval ==@ Typed.BitVec.of_scalar v.discriminant)
-      in
-      match res with
-      | Some var ->
-          (* skip discriminant *)
-          let discr = Typed.BitVec.of_scalar var.discriminant in
-          let ({ fields; _ } as layout) = of_variant adt_id var in
-          let fields =
-            match fields with
-            | Arbitrary ofs ->
-                (* remove the discriminant; we already handled it *)
-                let ofs' = Array.sub ofs 1 (Array.length ofs - 1) in
-                Layout.Fields_shape.Arbitrary ofs'
-            | _ -> failwith "Unexected variant layout"
-          in
-          let layout = { layout with fields } in
-          var.fields
-          |> field_tys
-          |> List.to_seq
-          |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
-      | None ->
-          L.error (fun m ->
-              m "Unmatched discriminant in rust_of_cvals: %a" Typed.ppa cval);
-          error `UBTransmute
+    and aux_enum offset ty variants : ('e, 'fix, 'state) parser =
+      let*** v_id = variant_of_enum ~offset ty in
+      let layout = Layout.layout_of ty in
+      let fields = Layout.Fields_shape.shape_for_variant v_id layout.fields in
+      let variant = Types.VariantId.nth variants v_id in
+      let layout = { layout with fields } in
+      let discr = Typed.BitVec.of_scalar variant.discriminant in
+      variant.fields
+      |> field_tys
+      |> List.to_seq
+      |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
     and aux_union offset fs : ('e, 'fix, 'state) parser =
       let parse_field (i, ty) = map (aux offset ty) (fun v -> Union (i, v)) in
       (* We try parsing all of fields of the enum, sorted by decreasing layout size.
