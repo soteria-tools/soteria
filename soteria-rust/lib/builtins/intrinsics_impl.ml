@@ -295,10 +295,16 @@ module M (State : State_intf.S) = struct
 
   let discriminant_value ~t ~v state =
     let ptr = as_ptr v in
-    let++ value, state = State.load ptr t state in
-    match value with
-    | Enum (discr, _) -> (Base discr, state)
-    | _ -> (Base (Typed.BitVec.u32i 0), state)
+    let adt_id, _ = TypesUtils.ty_as_custom_adt t in
+    let adt = Crate.get_adt adt_id in
+    match adt.kind with
+    | Enum variants ->
+        let++ variant_id, state = State.load_discriminant ptr t state in
+        let variant = Types.VariantId.nth variants variant_id in
+        (Base (Typed.BitVec.of_scalar variant.discriminant), state)
+    | _ ->
+        (* FIXME: this size is probably wrong *)
+        Result.ok (Base (Typed.BitVec.u32i 0), state)
 
   let exact_div ~t ~x ~y state =
     let lit = TypesUtils.ty_as_literal t in

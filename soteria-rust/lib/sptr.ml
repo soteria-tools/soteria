@@ -120,14 +120,14 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let project ty kind field ptr =
     let field = Types.FieldId.to_int field in
-    let layout, field =
+    let layout = Layout.layout_of ty in
+    let fields =
       match kind with
-      | Expressions.ProjAdt (adt_id, Some variant) ->
-          (* Skip discriminator, so field + 1 *)
-          (Layout.of_enum_variant adt_id variant, field + 1)
-      | ProjAdt (_, None) | ProjTuple _ -> (Layout.layout_of ty, field)
+      | Expressions.ProjAdt (_, Some variant) ->
+          Layout.Fields_shape.shape_for_variant variant layout.fields
+      | ProjAdt (_, None) | ProjTuple _ -> layout.fields
     in
-    let off = Layout.Fields_shape.offset_of field layout.fields in
+    let off = Layout.Fields_shape.offset_of field fields in
     offset ptr (Typed.BitVec.usizei off)
 
   module ValMap = Map.Make (struct

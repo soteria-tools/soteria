@@ -200,25 +200,29 @@ let uninit (ptr, _) ty st =
   let@ block, _ = with_tbs block in
   Tree_block.uninit_range ofs size block
 
-let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
-  let** (), st = check_ptr_align ptr ty st in
+let apply_parser ?(is_move = false) ?(ignore_borrow = false) ptr parser st =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   log "load" ptr st;
-  let@ ofs, block = with_ptr ptr st in
+  let@ offset, block = with_ptr ptr st in
   let@ block, tb = with_tbs block in
-  L.debug (fun f ->
-      f "Recursively reading %a from block tree at %a:@.%a" Charon_util.pp_ty ty
-        Sptr.pp ptr
-        Fmt.(option ~none:(any "None") Tree_block.pp)
-        block);
   let handler (ty, ofs) block =
     L.debug (fun f ->
         f "Loading blocks %a:%a" Typed.ppa ofs Charon_util.pp_ty ty);
     Tree_block.load ~is_move ~ignore_borrow ofs ty ptr.tag tb block
   in
-  let parser = Encoder.rust_of_cvals ~offset:ofs ?meta ty in
-  let++ value, block = Encoder.ParserMonad.parse ~init:block ~handler parser in
+  let parser = parser ~offset in
+  Encoder.ParserMonad.parse ~init:block ~handler parser
+
+let load_discriminant (ptr, _) ty st =
+  let** (), st = check_ptr_align ptr ty st in
+  let parser = Encoder.variant_of_enum ty in
+  apply_parser ptr parser st
+
+let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
+  let** (), st = check_ptr_align ptr ty st in
+  let parser ~offset = Encoder.rust_of_cvals ?meta ~offset ty in
+  let++ value, block = apply_parser ~is_move ~ignore_borrow ptr parser st in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   (value, block)

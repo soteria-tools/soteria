@@ -29,7 +29,7 @@ let cast_checked2 v1 v2 =
   | Some (v1, v2, ty) -> (v1, v2, ty)
   | None -> cast_error v1 (type_type @@ get_ty v2)
 
-let cast_lit ty (v : 'a t) : T.sint t =
+let cast_lit ty (v : 'a t) : [> T.sint ] t =
   let size = 8 * Lc.size_of_literal_ty ty in
   cast_checked ~ty:(t_int size) v
 
