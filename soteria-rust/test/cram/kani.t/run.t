@@ -2,13 +2,14 @@ Test kani::any
   $ soteria-rust rustc any.rs --clean --no-timing --kani
   Compiling... done in <time>
   note: any::any_bool: done in <time>, ran 2 branches
-  PC 1: (0 == V|1|) /\ (0 == V|1|)
-  PC 2: (1 == V|1|) /\ (1 == V|1|)
+  PC 1: (V|1| <=u 0x01) /\ (V|1| != 0x00)
+  PC 2: (V|1| <=u 0x01) /\ (V|1| == 0x00)
   
   note: any::any_i8: done in <time>, ran 3 branches
-  PC 1: (0 != V|1|) /\ (1 <= V|1|) /\ (V|1| <= 127)
-  PC 2: (0 != V|1|) /\ (-128 <= V|1|) /\ (V|1| <= -1)
-  PC 3: (0 == V|1|) /\ (0 == V|1|)
+  PC 1: (V|1| == 0x00)
+  PC 2: (V|1| != 0x00) /\ (extract[7-7](V|1|) == 0x1)
+  PC 3: (V|1| != 0x00) /\ (extract[7-7](V|1|) != 0x1) /\
+        (extract[7-7](V|1|) == 0x0)
   
 
 
@@ -16,12 +17,10 @@ Test kani::assume
   $ soteria-rust rustc assume.rs --clean --no-timing --kani
   Compiling... done in <time>
   note: assume::assume_bool: done in <time>, ran 1 branch
-  PC 1: (1 == V|1|) /\ (1 == V|1|)
+  PC 1: (V|1| <=u 0x01) /\ (V|1| != 0x00)
   
   note: assume::assume_i32: done in <time>, ran 1 branch
-  PC 1: (0 != V|1|) /\ ((11 / V|1|) <= 0x7fffffff) /\
-        (-0x80000000 <= (11 / V|1|)) /\ (-0x80000000 <= V|1|) /\
-        (V|1| <= 0x7fffffff)
+  PC 1: (V|1| != 0x00000000)
   
 
 
@@ -51,6 +50,8 @@ Test kani::assert
       │ ╰──' 1: Entry point
     6 │    
   
+  
+  
   error: assert::fancy_assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 in assert::fancy_assert_false
       ┌─ $TESTCASE_ROOT/assert.rs:10:5
@@ -65,6 +66,8 @@ Test kani::assert
    11 │ │  }
       │ ╰──' 1: Entry point
    12 │    
+  
+  
   
   error: assert::override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert!" in assert::override_assert_macro
@@ -83,6 +86,8 @@ Test kani::assert
       │ ╰──' 1: Entry point
    18 │    
   
+  
+  
   error: assert::override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert_eq!" in assert::override_asserteq_macro
       ┌─ $RUSTERIA/std/src/lib.rs:23:9
@@ -100,6 +105,8 @@ Test kani::assert
    24 │ │  }
       │ ╰──' 1: Entry point
    25 │    
+  
+  
   
   [1]
 
