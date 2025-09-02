@@ -1,6 +1,5 @@
 module Compo_res = Soteria.Symex.Compo_res
 open Charon
-open Typed.Syntax
 open Typed.Infix
 open Charon_util
 open Rustsymex
@@ -29,7 +28,7 @@ module Make (Sptr : Sptr.S) = struct
       ('res * 'state, 'err, 'fix) Result.t
 
     let parse ~(init : 'state) ~(handler : ('state, 'err, 'fix) handler)
-        scheduler : (rust_val * 'state, 'err, 'fix) Result.t =
+        scheduler : ('res * 'state, 'err, 'fix) Result.t =
       scheduler handler init
 
     let ok (x : 'a) : ('a, 'state, 'err, 'fix) t =
@@ -100,7 +99,7 @@ module Make (Sptr : Sptr.S) = struct
 
   (** Converts a Rust value of the given type into a list of sub values, along
       with their size and offset, and whether they are interiorly mutable. *)
-  let rec rust_to_cvals ?(offset = 0s) (value : rust_val) (ty : Types.ty) :
+  let rec rust_to_cvals ?offset (value : rust_val) (ty : Types.ty) :
       cval_info list =
     let illegal_pair () =
       L.error (fun m ->
@@ -108,18 +107,18 @@ module Make (Sptr : Sptr.S) = struct
             Types.pp_ty ty);
       failwith "Wrong pair of rust_value and Charon.ty"
     in
+    let offset = Option.value ~default:(Typed.BitVec.usizei 0) offset in
     let chain_cvals layout vals types =
       List.map2i
         (fun i value ty ->
-          let offset =
-            (Layout.Fields_shape.offset_of i layout.fields |> Typed.int)
-            +@ offset
+          let field_offset =
+            Typed.BitVec.usizei (Layout.Fields_shape.offset_of i layout.fields)
           in
+          let offset = field_offset +@ offset in
           rust_to_cvals ~offset value ty)
         vals types
       |> List.flatten
     in
-
     match (value, ty) with
     (* Trait types: we resolve them early *)
     | _, TTraitType (tref, name) ->
@@ -144,7 +143,7 @@ module Make (Sptr : Sptr.S) = struct
         let ty : Types.ty = TLiteral (TInt Isize) in
         let value = Ptr (ptr, None) in
         if is_dst sub_ty then
-          let size = Typed.int @@ Layout.size_of_int_ty Isize in
+          let size = Typed.BitVec.usizei (Layout.size_of_int_ty Isize) in
           [
             { value; ty; offset };
             { value = Base meta; ty; offset = offset +@ size };
@@ -176,7 +175,9 @@ module Make (Sptr : Sptr.S) = struct
         match (variants, Typed.kind disc) with
         (* fieldless enums with one option are zero-sized *)
         | [ _ ], _ when Option.is_some @@ Layout.as_zst ty -> []
-        | variants, Int disc_z ->
+        | variants, BitVec disc_bv ->
+            let ty = TypesUtils.ty_as_literal (Layout.enum_discr_ty t_id) in
+            let disc_z = Typed.BitVec.bv_to_z ty disc_bv in
             let variant =
               List.find
                 (fun v -> Z.equal disc_z (z_of_scalar Types.(v.discriminant)))
@@ -243,7 +244,7 @@ module Make (Sptr : Sptr.S) = struct
         | TRef (_, sub_ty, _)
         | TRawPtr (sub_ty, _) ) as ty
         when is_dst sub_ty -> (
-          let ptr_size = Typed.int @@ Layout.size_of_int_ty Isize in
+          let ptr_size = Typed.BitVec.usizei @@ Layout.size_of_int_ty Isize in
           let isize : Types.ty = TLiteral (TInt Isize) in
           let*** ptr_compo = query (isize, offset) in
           let+** meta_compo = query (isize, offset +@ ptr_size) in
@@ -254,8 +255,8 @@ module Make (Sptr : Sptr.S) = struct
                 match ptr with
                 | Ptr (ptr_v, None) -> Rustsymex.return ptr_v
                 | Base ptr_v ->
-                    let+ ptr_v = cast_checked ~ty:Typed.t_int ptr_v in
-                    Sptr.null_ptr_of ptr_v
+                    let ptr_v = Typed.cast_i Usize ptr_v in
+                    return (Sptr.null_ptr_of ptr_v)
                 | _ -> failwith "Expected a pointer or base"
               in
               let* meta =
@@ -270,10 +271,11 @@ module Make (Sptr : Sptr.S) = struct
               match ty with
               | TRawPtr _ -> Result.ok ptr
               | _ ->
-                  let* meta = cast_checked ~ty:Typed.t_int meta in
+                  let meta = Typed.cast_i Usize meta in
                   (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
-                  if%sat meta <@ 0s then Rustsymex.Result.error `UBTransmute
-                  else Rustsymex.Result.ok ptr)
+                  if%sat meta <$@ Typed.BitVec.usizei 0 then
+                    Result.error `UBTransmute
+                  else Result.ok ptr)
           | base, meta ->
               Fmt.kstr not_impl "Expected a pointer and base, got %a and %a"
                 pp_rust_val base pp_rust_val meta)
@@ -331,7 +333,7 @@ module Make (Sptr : Sptr.S) = struct
           | Some meta ->
               let len =
                 match Typed.kind meta with
-                | Int len -> len
+                | BitVec len -> len
                 | _ ->
                     Fmt.failwith "Can't read a slice of non-concrete size %a"
                       Typed.ppa meta
@@ -356,13 +358,15 @@ module Make (Sptr : Sptr.S) = struct
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
         ('e, 'fix, 'state) parser =
-      let base_offset = offset +@ (offset %@ Typed.nonzero layout.align) in
+      let base_offset =
+        offset +@ (offset %@ Typed.BitVec.usizei_nz layout.align)
+      in
       let rec mk_callback idx to_parse parsed : ('e, 'fix, 'state) parser =
         match to_parse () with
         | Seq.Nil -> ok (f (List.rev parsed))
         | Seq.Cons (ty, rest) ->
             let field_off = Layout.Fields_shape.offset_of idx layout.fields in
-            let offset = base_offset +@ Typed.int field_off in
+            let offset = base_offset +@ Typed.BitVec.usizei field_off in
             bind (aux offset ty) (fun v ->
                 mk_callback (succ idx) rest (v :: parsed))
       in
@@ -371,19 +375,22 @@ module Make (Sptr : Sptr.S) = struct
     and aux_enum offset adt_id (variants : Types.variant list) :
         ('e, 'fix, 'state) parser =
       let disc_ty = Layout.enum_discr_ty adt_id in
-      let disc_align = Typed.nonzero (layout_of disc_ty).align in
+      let litty = TypesUtils.ty_as_literal disc_ty in
+      let disc_align =
+        Typed.BitVec.mki_lit_nz litty (layout_of disc_ty).align
+      in
       let offset = offset +@ (offset %@ disc_align) in
       let*** cval = query (disc_ty, offset) in
-      let cval = as_base_of ~ty:Typed.t_int cval in
+      let cval = as_base litty cval in
       let*** res =
         lift_rsymex
         @@ match_on variants ~constr:(fun (v : Types.variant) ->
-               cval ==@ value_of_scalar v.discriminant)
+               cval ==@ Typed.BitVec.of_scalar v.discriminant)
       in
       match res with
       | Some var ->
           (* skip discriminant *)
-          let discr = value_of_scalar var.discriminant in
+          let discr = Typed.BitVec.of_scalar var.discriminant in
           let ({ fields; _ } as layout) = of_variant adt_id var in
           let fields =
             match fields with
@@ -417,7 +424,7 @@ module Make (Sptr : Sptr.S) = struct
       |> List.map (fun (fid, ty, _) -> (fid, ty))
       |> first parse_field
     in
-    let off = Option.value ~default:0s offset in
+    let off = Option.value ~default:(Typed.BitVec.usizei 0) offset in
     aux off
 
   (** Transmute a value of the given type into the other type.
@@ -427,53 +434,61 @@ module Make (Sptr : Sptr.S) = struct
       is a *ghost read*, and should not have side-effects. *)
   let rec transmute ?verify_ptr ?(try_splitting = true) ~(from_ty : Types.ty)
       ~(to_ty : Types.ty) v =
-    let open Soteria.Symex.Compo_res in
     let open Result in
     L.debug (fun m ->
         m "Transmuting %a: %a -> %a" pp_rust_val v pp_ty from_ty pp_ty to_ty);
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
-      | TLiteral (TFloat _), TLiteral ((TInt _ | TUInt _) as ity), Base sv ->
-          let+ sv =
-            of_opt_not_impl "Unsupported: non-float in float-to-int"
-            @@ Typed.cast_float sv
+      | TLiteral (TFloat fty), TLiteral ((TInt _ | TUInt _) as lit_ty), Base sv
+        ->
+          let sv = Typed.cast_f fty sv in
+          let signed = Layout.is_signed lit_ty in
+          let sv' = Typed.BitVec.of_float ~signed sv in
+          Result.ok (Base sv')
+      | ( TLiteral ((TInt _ | TUInt _) as ity),
+          TLiteral (TFloat _ as fty),
+          Base sv ) ->
+          let sv = Typed.cast_lit ity sv in
+          let from_size = 8 * size_of_literal_ty ity in
+          let to_size = 8 * size_of_literal_ty fty in
+          let signed = Layout.is_signed ity in
+          let sv =
+            if from_size < to_size then
+              Typed.BitVec.extend ~signed (to_size - from_size) sv
+            else sv
           in
-          let size = 8 * Layout.size_of_literal_ty ity in
-          let signed = Layout.is_signed ity in
-          let sv' = Typed.Float.to_int signed size sv in
-          Ok (Base sv')
-      | TLiteral ((TInt _ | TUInt _) as ity), TLiteral (TFloat fp), Base sv ->
-          let+ sv = cast_checked sv ~ty:Typed.t_int in
-          let fp = float_precision fp in
-          let signed = Layout.is_signed ity in
-          let sv' = Typed.Float.of_int signed fp sv in
-          Ok (Base sv')
-      | TLiteral (TUInt U8), TLiteral TChar, v
-      | TLiteral TBool, TLiteral (TUInt _), v
-      | TLiteral TChar, TLiteral (TUInt (U32 | U64 | U128)), v ->
-          Result.ok v
+          let sv' = Typed.BitVec.to_float ~signed sv in
+          Result.ok (Base sv')
+      | TLiteral (TUInt U8 as from_ty), TLiteral (TChar as to_ty), Base v
+      | ( TLiteral (TBool as from_ty),
+          TLiteral ((TUInt _ | TInt _) as to_ty),
+          Base v )
+      | ( TLiteral (TChar as from_ty),
+          TLiteral (TUInt (U32 | U64 | U128) as to_ty),
+          Base v ) ->
+          let from_bits = 8 * Layout.size_of_literal_ty from_ty in
+          let to_bits = 8 * Layout.size_of_literal_ty to_ty in
+          if to_bits > from_bits then
+            let v = Typed.cast_lit from_ty v in
+            let v = Typed.BitVec.extend ~signed:false (to_bits - from_bits) v in
+            ok (Base v)
+          else ok (Base v)
       | ( TLiteral ((TInt _ | TUInt _) as from_ty),
           TLiteral ((TInt _ | TUInt _) as to_ty),
           Base sv ) ->
-          let* v = cast_checked ~ty:Typed.t_int sv in
           let from_bits = 8 * Layout.size_of_literal_ty from_ty in
-          let bits = 8 * Layout.size_of_literal_ty to_ty in
-          let from_max = Typed.nonzero_z (Z.shift_left Z.one from_bits) in
-          let max = Typed.nonzero_z (Z.shift_left Z.one bits) in
-          let maxsigned = Typed.nonzero_z (Z.shift_left Z.one (bits - 1)) in
-          let* v =
-            if Layout.is_signed from_ty then
-              if%sat v <@ 0s then return (((v %@ max) +@ max) %@ max)
-              else return (v %@ max)
-            else if%sat from_max >@ max then return (v %@ max) else return v
+          let from_signed = Layout.is_signed from_ty in
+          let to_bits = 8 * Layout.size_of_literal_ty to_ty in
+          (* FIXME: make this nicer in Typed *)
+          let v = Typed.cast_lit from_ty sv in
+          let res =
+            if from_bits = to_bits then v
+            else if from_bits < to_bits then
+              Typed.BitVec.extend ~signed:from_signed (to_bits - from_bits) v
+            else Typed.BitVec.extract 0 (to_bits - 1) v
           in
-          let* v =
-            if Layout.is_signed to_ty then
-              if%sat v >=@ maxsigned then return (v -@ max) else return v
-            else return v
-          in
-          ok (Base (v :> Typed.T.cval Typed.t))
+          ok (Base (res :> Typed.T.cval Typed.t))
       | TLiteral _, TLiteral to_ty, Base sv ->
           let constrs = Layout.constraints to_ty in
           if%sat Typed.conj (constrs sv) then ok v else error `UBTransmute
@@ -493,7 +508,7 @@ module Make (Sptr : Sptr.S) = struct
               if is_valid then ok v else error `UBDanglingPointer)
       (* A raw pointer can be whatever *)
       | _, TRawPtr _, Base off ->
-          let* off = cast_checked ~ty:Typed.t_int off in
+          let off = Typed.cast_i Usize off in
           let ptr = Sptr.null_ptr_of off in
           ok (Ptr (ptr, None))
       | _, TRawPtr _, Ptr _ -> ok v
@@ -517,7 +532,7 @@ module Make (Sptr : Sptr.S) = struct
     let size_of ty = (Layout.layout_of ty).size in
     let int_of_val v =
       match Typed.kind v with
-      | Int v -> Z.to_int v
+      | BitVec v -> Z.to_int v
       | _ -> failwith "Expected a concrete integer"
     in
     (* to make our life easier, we check for concrete offsets in the layout; this should
@@ -559,14 +574,6 @@ module Make (Sptr : Sptr.S) = struct
             else None)
           vs
       in
-      (* 2. only one block, so we convert that if we expect an integer *)
-      let- () =
-        match (vs, ty) with
-        | ( [ (v, (TLiteral (TInt _ | TUInt _) as from_ty), 0) ],
-            (TLiteral (TInt _ | TUInt _) as to_ty) ) ->
-            Some (transmute ~from_ty ~to_ty v)
-        | _ -> None
-      in
       (* 3. Several integers that can be merged together without splitting. *)
       let- () =
         match ty with
@@ -574,56 +581,43 @@ module Make (Sptr : Sptr.S) = struct
             let size = size_of_literal_ty lit_ty in
             let bytes = Array.make size false in
             let relevant =
-              List.filter
+              List.filter_map
                 (function
-                  | _, Types.TLiteral lit_ty, o
+                  | Base v, Types.TLiteral lit_ty, o
                     when 0 <= o && o + size_of_literal_ty lit_ty <= size ->
                       Iter.(0 -- (size_of_literal_ty lit_ty - 1)) (fun i ->
                           bytes.(o + i) <- true);
-                      true
-                  | _ -> false)
+                      Some (Typed.cast_lit lit_ty v, o)
+                  | _ -> None)
                 vs
             in
             if Array.for_all (fun b -> b) bytes then
-              Some
-                (let** v =
-                   Result.fold_list relevant ~init:0s ~f:(fun acc (v, ty, o) ->
-                       let to_ty =
-                         lit_to_unsigned (TypesUtils.ty_as_literal ty)
-                       in
-                       let++ v = transmute ~from_ty:ty ~to_ty v in
-                       let v = Typed.cast @@ as_base v in
-                       let pow = Z.shift_left Z.one (o * 8) in
-                       acc +@ (v *@ Typed.int_z pow))
-                 in
-                 let v = Base (v :> T.cval Typed.t) in
-                 (* we may need extra checks, e.g. for char *)
-                 transmute ~from_ty:(lit_to_unsigned lit_ty) ~to_ty:ty v)
+              let relevant =
+                List.sort (fun (_, o1) (_, o2) -> o1 - o2) relevant
+              in
+              let rec aux = function
+                | [] -> failwith "impossible: empty list"
+                | [ (last, _) ] -> last
+                | (v, _) :: rest -> Typed.BitVec.concat (aux rest) v
+              in
+              let res = aux relevant in
+              Some (Result.ok (Base (res :> T.cval Typed.t)))
             else None
         | _ -> None
       in
       (* 4. If there's an integer block that contains what we're looking for, we split it *)
       let- () =
         match ty with
-        | TLiteral lit_ty as target_ty ->
+        | TLiteral lit_ty ->
             let size = size_of_literal_ty lit_ty in
             vs
-            |> List.find_opt (function
-                 | _, Types.TLiteral lit_ty, o ->
-                     o <= 0 && size <= o + size_of_literal_ty lit_ty
-                 | _ -> false)
-            |> Option.map @@ fun (v, ty, o) ->
-               let lit_ty = TypesUtils.ty_as_literal ty in
-               let parent_size = size_of_literal_ty lit_ty in
-               let** v =
-                 transmute ~from_ty:ty ~to_ty:(lit_to_unsigned lit_ty) v
-               in
-               let v = Typed.cast @@ as_base v in
-               let shift = o + parent_size - size in
-               let shift = Z.shift_left Z.one (shift * 8) in
-               let v = v /@ Typed.nonzero_z shift in
-               transmute ~from_ty:(lit_to_unsigned lit_ty) ~to_ty:target_ty
-                 (Base v)
+            |> List.find_map (function
+                 | v, Types.TLiteral lit_ty, o
+                   when o <= 0 && size <= o + size_of_literal_ty lit_ty ->
+                     let v = as_base lit_ty v in
+                     let v = Typed.BitVec.extract 0 ((size * 8) - 1) v in
+                     Some (Result.ok (Base v))
+                 | _ -> None)
         | _ -> None
       in
       (* X. give up *)
@@ -647,56 +641,47 @@ module Make (Sptr : Sptr.S) = struct
   let rec split v (ty : Types.ty) at :
       ((rust_val * Types.ty) split_tree * (rust_val * Types.ty) split_tree)
       Rustsymex.t =
-    let transmute ~from_ty ~to_ty v =
-      let* res = transmute ~from_ty ~to_ty v in
-      match res with
-      | Ok v -> return v
-      | _ -> not_impl "Transmute failed in split - vanishing"
-    in
-    let* at =
-      match Typed.kind at with
-      | Int size -> return (Z.to_int size)
-      | _ ->
-          Fmt.kstr not_impl "Don't know how to read this size: %a" Typed.ppa at
-    in
     match (v, ty) with
     | Ptr (ptr, None), _ ->
         let* v = Sptr.decay ptr in
-        split (Base (v :> T.cval Typed.t)) ty (Typed.int at)
+        split (Base (v :> T.cval Typed.t)) ty at
     | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
+        let+ at =
+          match Typed.kind at with
+          | BitVec size -> return (Z.to_int size)
+          | _ ->
+              Fmt.kstr not_impl "Don't know how to read this size: %a" Typed.ppa
+                at
+        in
         (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
            of size 2^n *)
         let rec aux v sz =
           (* we're a power of two, so we're done *)
-          if Z.popcount sz = 1 then
-            let ty = size_to_uint (Z.to_int sz) in
+          if Z.(popcount (of_int sz)) = 1 then
+            let ty = size_to_uint sz in
             `Leaf (Base (v :> T.cval Typed.t), ty)
           else
             (* Split at the most significant bit; e.g. for size 7 (0b111), will split at 0b100,
                resulting in a leaf of size 3 (0b11) and a right leaf of size 4 (0b100) *)
-            let at = Z.(one lsl log2 sz) in
+            let at = 1 lsl Z.(log2 (of_int sz)) in
             let leaf_l, leaf_r = split v sz at in
-            `Node (Typed.int_z at, leaf_l, leaf_r)
+            `Node (Typed.BitVec.usizei at, leaf_l, leaf_r)
         and split v sz at =
           let size_l = at in
-          let size_r = Z.(sz - at) in
-          let pow = Z.shift_left Z.one (Z.to_int size_l * 8) in
-          let left = v %@ Typed.nonzero_z pow in
-          let right = v /@ Typed.nonzero_z pow in
-          let leaf_l = aux left size_l in
-          let leaf_r = aux right size_r in
+          let size_r = sz - at in
+          let mask_l = Typed.BitVec.extract 0 ((at * 8) - 1) v in
+          let mask_r = Typed.BitVec.extract (at * 8) ((sz * 8) - 1) v in
+          let leaf_l = aux mask_l size_l in
+          let leaf_r = aux mask_r size_r in
           (leaf_l, leaf_r)
         in
         (* get our starting size and unsigned integer *)
         let size = size_of_literal_ty lit_ty in
         if at < 1 || at >= size then
           Fmt.failwith "Invalid split: %a at %d" pp_ty ty at;
-        let+ as_uint =
-          transmute ~from_ty:ty ~to_ty:(lit_to_unsigned lit_ty) v
-        in
-        let v = Typed.cast @@ as_base as_uint in
-        split v (Z.of_int size) (Z.of_int at)
+        let v = as_base lit_ty v in
+        split v size at
     | _ ->
-        Fmt.kstr not_impl "Split unsupported: %a: %a at %d" pp_rust_val v pp_ty
-          ty at
+        Fmt.kstr not_impl "Split unsupported: %a: %a at %a" pp_rust_val v pp_ty
+          ty Typed.ppa at
 end
