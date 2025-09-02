@@ -62,22 +62,19 @@ let as_ptr = function
       Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a"
         ppa_rust_val v
 
-let as_base = function
-  | Enum (v, []) | Base v -> v
+let as_base_f ty = function
+  | Base v -> Typed.cast_f ty v
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         ppa_rust_val v
 
-let as_base_of ~ty = function
-  | Enum (v, []) | Base v -> (
-      match Typed.cast_checked v ty with
-      | Some v -> v
-      | None ->
-          Fmt.failwith "Unexpected rust_val type, expected %a, got %a (%a)"
-            Typed.ppa_ty ty Typed.ppa v Svalue.pp_ty (Typed.get_ty v))
+let as_base ty = function
+  | Enum (v, []) | Base v -> Typed.cast_lit ty v
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         ppa_rust_val v
+
+let as_base_i ty = as_base (TUInt ty)
 
 let rec iter_vars ptr_iter_vars rv f =
   let iter_vars = iter_vars ptr_iter_vars in

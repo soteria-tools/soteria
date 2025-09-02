@@ -1,17 +1,17 @@
 open Charon
-open Typed
 
 let z_of_scalar : Values.scalar_value -> Z.t = function
   | UnsignedScalar (_, v) | SignedScalar (_, v) -> v
-
-let value_of_scalar (s : Values.scalar_value) : T.cval Typed.t =
-  int_z @@ z_of_scalar s
 
 let type_of_operand : Expressions.operand -> Types.ty = function
   | Constant c -> c.ty
   | Copy p | Move p -> p.ty
 
 let lit_to_string = PrintValues.literal_type_to_string
+
+let ty_as_float : Types.ty -> Values.float_type = function
+  | TLiteral (TFloat f) -> f
+  | _ -> failwith "ty_as_float: not a float type"
 
 let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TAdtId id; _ } ->
@@ -45,6 +45,14 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TFnPtr { binder_value = ins, out; _ } ->
       Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
   | ty -> Types.pp_ty fmt ty
+
+let lit_of_int_ty : Types.integer_type -> Types.literal_type = function
+  | Signed ity -> TInt ity
+  | Unsigned uty -> TUInt uty
+
+let lit_of_scalar : Values.scalar_value -> Types.literal_type = function
+  | SignedScalar (ity, _) -> TInt ity
+  | UnsignedScalar (uty, _) -> TUInt uty
 
 let z_of_const_generic : Types.const_generic -> Z.t = function
   | CgValue (VScalar s) -> z_of_scalar s
