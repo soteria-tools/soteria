@@ -157,7 +157,7 @@ struct
   (* Incremental doesn't allow for caching queries... *)
   let sat solver =
     match Solver_state.trivial_truthiness solver.state with
-    | Some true -> Soteria_symex.Solver_result.Sat
+    | Some true -> Symex.Solver_result.Sat
     | Some false -> Unsat
     | None -> (
         let answer = Intf.check_sat solver.z3_exe in
@@ -479,7 +479,7 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
-  let memo_sat_check_tbl : Soteria_symex.Solver_result.t Hashtbl.Hint.t =
+  let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
     Hashtbl.Hint.create 1023
 
   let trivial_model_works to_check =
@@ -513,7 +513,7 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
 
   let check_sat_raw solver relevant_vars to_check =
     (* TODO: we shouldn't wait for ack for each command individually... *)
-    if trivial_model_works to_check then Soteria_symex.Solver_result.Sat
+    if trivial_model_works to_check then Symex.Solver_result.Sat
     else (
       Intf.pop solver.z3_exe 1;
       (* We need to reset the state, so we can push the new constraints *)
@@ -538,7 +538,7 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
         Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
         result
 
-  let sat solver : Soteria_symex.Solver_result.t =
+  let sat solver : Symex.Solver_result.t =
     match Solver_state.trivial_truthiness solver.state with
     | Some true -> Sat
     | Some false -> Unsat

@@ -1,4 +1,4 @@
-open Compo_res
+open Symex.Compo_res
 
 module Make (Symex : Symex.S) = struct
   (** This is unsound in {!Approx.OX}-mode, use only in {!Approx.UX}-mode. *)

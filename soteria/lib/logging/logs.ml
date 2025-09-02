@@ -82,8 +82,9 @@ let with_section ?(is_branch = false) str f =
     end_section ();
     x
   with e ->
+    let backtrace = Printexc.get_raw_backtrace () in
     end_section ();
-    raise e
+    Printexc.raise_with_backtrace e backtrace
 
 module L = struct
   let log ~level msgf =

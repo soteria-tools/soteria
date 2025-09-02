@@ -1,3 +1,5 @@
+open Symex
+
 module Make (Symex : Symex.S) = struct
   type 'a t = 'a
   type 'a serialized = 'a

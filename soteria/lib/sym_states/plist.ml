@@ -1,3 +1,4 @@
+open Symex
 open Compo_res
 
 module type SInt_sig = sig

@@ -1,8 +1,15 @@
 open Soteria_std
-open Logging
+open Logging.Logs
 open Syntaxes.FunctionWrap
-module L = Logs.L
-module List = ListLabels
+
+(* Re-export a few definitions, leaving this module as root. *)
+module Approx = Approx
+module Compo_res = Compo_res
+module Fuel_gauge = Fuel_gauge
+module Solver = Solver
+module Solver_result = Solver_result
+module Value = Value
+module Var = Var
 
 exception Gave_up of string
 
@@ -120,13 +127,13 @@ module type S = sig
       values.
 
       The [mode] parameter is used to specify whether execution should be done
-      in an under-approximate ({!Approx.UX}) or an over-approximate
-      ({!Approx.OX}) manner. Users may optionally pass a
+      in an under-approximate ({!Symex.Approx.UX}) or an over-approximate
+      ({!Symex.Approx.OX}) manner. Users may optionally pass a
       {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth.
 
-      @raise Soteria_symex.Symex.Gave_up
-        if the symbolic process calls [give_up] and the mode is {!Approx.OX}.
-        Prefer using {!Result.run} when possible. *)
+      @raise Symex.Gave_up
+        if the symbolic process calls [give_up] and the mode is
+        {!Symex.Approx.OX}. Prefer using {!Result.run} when possible. *)
   val run :
     ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
 
@@ -165,10 +172,10 @@ module type S = sig
   module Result : sig
     type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
 
-    (** Same as {{!Soteria_symex.Symex.S.run}run}, but receives a symbolic
-        process that returns a {!Compo_res.t} and maps the result to an
-        {!Soteria_symex.Symex.Or_gave_up.t}, potentially adding any path that
-        gave up to the list. *)
+    (** Same as {{!Symex.S.run}run}, but receives a symbolic process that
+        returns a {!Symex.Compo_res.t} and maps the result to an
+        {!Symex.Or_gave_up.t}, potentially adding any path that gave up to the
+        list. *)
     val run :
       ?fuel:Fuel_gauge.t ->
       mode:Approx.t ->
@@ -345,8 +352,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | Some false -> false
     | None ->
         let@ () =
-          Logs.with_section
-            (Fmt.str "Checking entailment for %a" Value.ppa value)
+          with_section (Fmt.str "Checking entailment for %a" Value.ppa value)
         in
         Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
@@ -392,14 +398,14 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         let left_unsat = ref false in
 
         Symex_state.save ();
-        Logs.with_section ~is_branch:true left_branch_name (fun () ->
+        with_section ~is_branch:true left_branch_name (fun () ->
             Solver.add_constraints ~simplified:true [ guard ];
             let sat_res = Solver.sat () in
             left_unsat := Solver_result.is_unsat sat_res;
             if Solver_result.is_sat sat_res then then_ () f
             else L.trace (fun m -> m "Branch is not feasible"));
         Symex_state.backtrack_n 1;
-        Logs.with_section ~is_branch:true right_branch_name (fun () ->
+        with_section ~is_branch:true right_branch_name (fun () ->
             Solver.add_constraints [ Value.(not guard) ];
             if !left_unsat then
               (* Right must be sat since left was not! We didn't branch so we don't consume the counter *)
@@ -454,10 +460,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         let with_section =
           let branch_counter = ref 0 in
           fun k ->
-            Logs.start_section ~is_branch:true
+            start_section ~is_branch:true
               ("Branch number " ^ string_of_int !branch_counter);
             k ();
-            Logs.end_section ();
+            end_section ();
             incr branch_counter
         in
         let rec loop brs =
@@ -571,5 +577,145 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       let branch_on = branch_on
       let branch_on_take_one = branch_on_take_one
     end
+  end
+end
+
+module Substs = struct
+  module type From_iter = sig
+    type t
+    type 'a ty
+    type 'a symex
+
+    val from_iter : 'a ty Var.iter_vars -> t symex
+  end
+
+  module Subst = struct
+    include Map.Make (Var)
+
+    let pp = Fmt.Dump.iter_bindings iter Fmt.nop Var.pp Var.pp
+
+    let substitute_extensible ~f ~subst x =
+      let next =
+        ref
+          (match max_binding_opt subst with
+          | None -> 0
+          | Some (x, _) -> Var.to_int x)
+      in
+      let subst = ref subst in
+      let subst_var =
+        match find_opt x !subst with
+        | Some x' -> x'
+        | None ->
+            let x' = Var.of_int !next in
+            incr next;
+            subst := add x x' !subst;
+            x'
+      in
+      let res = f subst_var x in
+      (res, !subst)
+
+    let to_fn subst x = find x subst
+
+    module From_iter (Symex : S) :
+      From_iter
+        with type t := Var.t t
+         and type 'a ty := 'a Symex.Value.ty
+         and type 'a symex := 'a Symex.t = struct
+      let from_iter iter_vars =
+        let open Symex.Syntax in
+        Symex.fold_iter iter_vars ~init:empty ~f:(fun subst (var, ty) ->
+            if mem var subst then Symex.return subst
+            else
+              let+ var' = Symex.fresh_var ty in
+              add var var' subst)
+    end
+  end
+
+  module Subst_mut = struct
+    include Hashtbl.Make (Var)
+
+    let add = replace
+
+    let substitute_extensible ~f ~subst x =
+      let next =
+        ref (to_seq_keys subst |> Seq.map Var.to_int |> Seq.fold_left max 0)
+      in
+      let subst_var =
+        match find_opt subst x with
+        | Some x' -> x'
+        | None ->
+            let x' = Var.of_int !next in
+            incr next;
+            add subst x x';
+            x'
+      in
+      let res = f subst_var x in
+      (res, subst)
+
+    module From_iter (Symex : S) :
+      From_iter
+        with type t := Var.t t
+         and type 'a ty := 'a Symex.Value.ty
+         and type 'a symex := 'a Symex.t = struct
+      let from_iter iter_vars =
+        let open Symex.Syntax in
+        let subst = create 0 in
+        let+ () =
+          Symex.fold_iter iter_vars ~init:() ~f:(fun () (var, ty) ->
+              if mem subst var then Symex.return ()
+              else
+                let+ var' = Symex.fresh_var ty in
+                add subst var var')
+        in
+        subst
+    end
+  end
+
+  module Bi_subst = struct
+    type t = {
+      forward : Var.t Subst.t;
+      backward : Var.t Subst_mut.t;
+      mutable next_backward : int;
+    }
+
+    let empty () =
+      {
+        forward = Subst.empty;
+        backward = Subst_mut.create 0;
+        next_backward = 0;
+      }
+
+    module From_iter (Symex : S) :
+      From_iter
+        with type t := t
+         and type 'a ty := 'a Symex.Value.ty
+         and type 'a symex := 'a Symex.t = struct
+      open Symex.Syntax
+
+      let from_iter iter_vars =
+        Symex.fold_iter iter_vars ~init:(empty ()) ~f:(fun bi_subst (var, ty) ->
+            if Subst.mem var bi_subst.forward then Symex.return bi_subst
+            else
+              let+ var' = Symex.fresh_var ty in
+              let forward = Subst.add var var' bi_subst.forward in
+              Subst_mut.replace bi_subst.backward var' var;
+              let next_backward =
+                max bi_subst.next_backward (Var.to_int var + 1)
+              in
+              { forward; backward = bi_subst.backward; next_backward })
+    end
+
+    let is_empty bi_subst = Subst.is_empty bi_subst.forward
+    let forward bi_subst v_id = Subst.find v_id bi_subst.forward
+
+    let backward bi_subst v_id =
+      match Subst_mut.find_opt bi_subst.backward v_id with
+      | Some v -> v
+      | None ->
+          let v = bi_subst.next_backward in
+          bi_subst.next_backward <- v + 1;
+          let v = Var.of_int v in
+          Subst_mut.add bi_subst.backward v_id v;
+          v
   end
 end

@@ -7,7 +7,7 @@ module Meta = struct
   end
 end
 
-module SYMEX = Soteria.Soteria_symex.Symex.Make (Meta) (C_solver.Z3_solver)
+module SYMEX = Soteria.Symex.Make (Meta) (C_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
 
@@ -52,7 +52,7 @@ let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 
 module With_origin =
-  Soteria.Soteria_symex.With_info.Make
+  Soteria.Sym_states.With_info.Make
     (SYMEX)
     (struct
       type t = Cerb_location.t
@@ -60,9 +60,9 @@ module With_origin =
       let pp = Fmt_ail.pp_loc
     end)
 
-module Freeable = Soteria.Soteria_symex.Freeable.Make (SYMEX)
-module Pmap_direct_access = Soteria.Soteria_symex.Pmap.Direct_access (SYMEX)
-module Pmap = Soteria.Soteria_symex.Pmap.Make (SYMEX)
-module Tree_block = Soteria.Soteria_symex.Tree_block.Make (SYMEX)
-module Concrete_map = Soteria.Soteria_symex.Pmap.Concrete (SYMEX)
-module Bi = Soteria.Soteria_symex.Bi_abd.Make (SYMEX)
+module Freeable = Soteria.Sym_states.Freeable.Make (SYMEX)
+module Pmap_direct_access = Soteria.Sym_states.Pmap.Direct_access (SYMEX)
+module Pmap = Soteria.Sym_states.Pmap.Make (SYMEX)
+module Tree_block = Soteria.Sym_states.Tree_block.Make (SYMEX)
+module Concrete_map = Soteria.Sym_states.Pmap.Concrete (SYMEX)
+module Bi = Soteria.Sym_states.Bi_abd.Make (SYMEX)
