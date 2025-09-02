@@ -569,9 +569,9 @@ module rec Bool : Bool = struct
         let msb = Option.map2 max (msb_of v1) (msb_of v2) in
         match msb with
         | Some msb when 0 < msb && msb < current_size - 1 ->
-            let v1 = BitVec.extract 0 (msb - 1) v1 in
-            let v2 = BitVec.extract 0 (msb - 1) v2 in
-            sem_eq v1 v2
+            let v1' = BitVec.extract 0 msb v1 in
+            let v2' = BitVec.extract 0 msb v2 in
+            sem_eq v1' v2'
         | _ ->
             (* regular sem_eq *)
             mk_commut_binop Eq v1 v2 <| TBool)
