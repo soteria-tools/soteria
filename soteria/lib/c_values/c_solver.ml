@@ -2,7 +2,12 @@ open Soteria_std
 module Var = Svalue.Var
 module L = Logging.Logs.L
 
-module Make_incremental (Analysis : Analyses.S) (Intf : Solver_interface.S) =
+module Make_incremental
+    (Analysis : Analyses.S)
+    (Intf :
+      Solvers.Solver_interface.S
+        with type value = Svalue.t
+         and type ty = Svalue.ty) =
 struct
   module Value = Typed
 
@@ -140,7 +145,7 @@ struct
                 let se2 = simplify' solver e2 in
                 if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
                 else Svalue.or_ se1 se2
-            | _ -> v))
+            | _ -> Analysis.simplify solver.analysis v))
 
   and simplify solver (v : 'a Typed.t) : 'a Typed.t =
     v |> Typed.untyped |> simplify' solver |> Typed.type_
@@ -175,7 +180,13 @@ struct
     |> Iter.to_list
 end
 
-module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
+module Make
+    (Analysis : Analyses.S)
+    (Intf :
+      Solvers.Solver_interface.S
+        with type value = Svalue.t
+         and type ty = Svalue.ty) =
+struct
   module Value = Typed
 
   module Var_counter = Var.Incr_counter_mut (struct
@@ -390,7 +401,6 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
   let init () =
     let z3_exe = Intf.init () in
     (* Before every check-sat we pop then push again. *)
-    Intf.push z3_exe 2;
     {
       z3_exe;
       save_counter = Save_counter.init ();
@@ -466,7 +476,7 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
                   && Svalue.equal se2 e2
                 then v
                 else Svalue.ite sg se1 se2
-            | _ -> v))
+            | _ -> Analysis.simplify solver.analysis v))
 
   and simplify solver : 'a Typed.t -> 'a Typed.t = as_untyped (simplify' solver)
 
@@ -515,9 +525,9 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
     (* TODO: we shouldn't wait for ack for each command individually... *)
     if trivial_model_works to_check then Symex.Solver_result.Sat
     else (
-      Intf.pop solver.z3_exe 1;
       (* We need to reset the state, so we can push the new constraints *)
-      Intf.push solver.z3_exe 1;
+      Intf.reset solver.z3_exe;
+
       (* Declare all relevant variables *)
       Var.Hashset.iter
         (fun v ->
@@ -563,5 +573,6 @@ module Make (Analysis : Analyses.S) (Intf : Solver_interface.S) = struct
     |> Iter.to_list
 end
 
-module Z3_incremental_solver = Make_incremental (Analyses.Interval) (Z3_exe)
-module Z3_solver = Make (Analyses.Interval) (Z3_exe)
+module Z3 = Solvers.Z3.Make (Encoding)
+module Z3_incremental_solver = Make_incremental (Analyses.Interval) (Z3)
+module Z3_solver = Make (Analyses.Interval) (Z3)

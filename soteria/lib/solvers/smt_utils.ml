@@ -3,7 +3,12 @@ open Simple_smt
 (* Float types and constants *)
 (* Helpful: https://smt-lib.org/theories-FloatingPoint.shtml *)
 
-let rm = atom "RNA" (* equivalent to roundNearestTiesToAway *)
+module FloatRoundingMode = struct
+  type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
+  [@@deriving eq, show { with_path = false }, ord]
+end
+
+let rm = atom "RNA" (* equivalent to roundNearestTiesToAway; default mode *)
 let t_f16 = atom "Float16"
 let t_f32 = atom "Float32"
 let t_f64 = atom "Float64"
@@ -57,15 +62,15 @@ let fp_mul f1 f2 = app_ "fp.mul" [ rm; f1; f2 ]
 let fp_div f1 f2 = app_ "fp.div" [ rm; f1; f2 ]
 let fp_rem f1 f2 = app_ "fp.rem" [ f1; f2 ]
 
-let fp_is (fc : Svalue.FloatClass.t) f =
+let fp_is (fc : fpclass) f =
   match fc with
-  | Normal -> app_ "fp.isNormal" [ f ]
-  | Subnormal -> app_ "fp.isSubnormal" [ f ]
-  | Zero -> app_ "fp.isZero" [ f ]
-  | Infinite -> app_ "fp.isInfinite" [ f ]
-  | NaN -> app_ "fp.isNaN" [ f ]
+  | FP_normal -> app_ "fp.isNormal" [ f ]
+  | FP_subnormal -> app_ "fp.isSubnormal" [ f ]
+  | FP_zero -> app_ "fp.isZero" [ f ]
+  | FP_infinite -> app_ "fp.isInfinite" [ f ]
+  | FP_nan -> app_ "fp.isNaN" [ f ]
 
-let fp_round (rm : Svalue.FloatRoundingMode.t) f =
+let fp_round (rm : FloatRoundingMode.t) f =
   match rm with
   | NearestTiesToEven -> app_ "fp.roundToIntegral" [ atom "RNE"; f ]
   | NearestTiesToAway -> app_ "fp.roundToIntegral" [ atom "RNA"; f ]
@@ -95,3 +100,7 @@ let bv_uaddo l r = app_ "bvuaddo" [ l; r ]
 let bv_saddo l r = app_ "bvsaddo" [ l; r ]
 let bv_umulo l r = app_ "bvumulo" [ l; r ]
 let bv_smulo l r = app_ "bvsmulo" [ l; r ]
+
+(* Solver commands *)
+
+let reset = simple_command [ "reset" ]

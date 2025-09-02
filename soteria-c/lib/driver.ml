@@ -285,7 +285,7 @@ let generate_errors content =
 let initialise log_config term_config solver_config config f =
   Soteria.Logging.Config.check_set_and_lock log_config;
   Soteria.Terminal.Config.set_and_lock term_config;
-  Solver_config.set solver_config;
+  Soteria.Solvers.Config.set solver_config;
   Config.with_config ~config f
 
 (* Entry point function *)
