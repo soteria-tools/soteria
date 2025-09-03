@@ -607,7 +607,7 @@ module Make (Sptr : Sptr.S) = struct
             else None)
           vs
       in
-      (* 3. Several integers that can be merged together without splitting. *)
+      (* 2. Several integers that can be merged together without splitting. *)
       let- () =
         match ty with
         | TLiteral lit_ty ->
@@ -638,7 +638,7 @@ module Make (Sptr : Sptr.S) = struct
             else None
         | _ -> None
       in
-      (* 4. If there's an integer block that contains what we're looking for, we split it *)
+      (* 3. If there's an integer block that contains what we're looking for, we split it *)
       let- () =
         match ty with
         | TLiteral lit_ty ->
@@ -648,7 +648,9 @@ module Make (Sptr : Sptr.S) = struct
                  | v, Types.TLiteral lit_ty, o
                    when o <= 0 && size <= o + size_of_literal_ty lit_ty ->
                      let v = as_base lit_ty v in
-                     let v = Typed.BitVec.extract 0 ((size * 8) - 1) v in
+                     let v =
+                       Typed.BitVec.extract (o * -8) (((size - o) * 8) - 1) v
+                     in
                      Some (Result.ok (Base v))
                  | _ -> None)
         | _ -> None

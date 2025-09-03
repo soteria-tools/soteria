@@ -163,6 +163,7 @@ module ArithPtr : S with type t = arithptr_t = struct
               loc_int +@ size <=@ Typed.BitVec.usize isize_max;
             ]
         in
+        L.debug (fun m -> m "Decayed %a to %a" Typed.ppa loc Typed.ppa loc_int);
         decayed_vars := ValMap.add loc loc_int !decayed_vars;
         loc_int +@ ofs
 
