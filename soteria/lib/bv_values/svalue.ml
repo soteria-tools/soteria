@@ -1,6 +1,6 @@
 open Hc
 open Soteria_std
-module Var = Soteria_symex.Var
+module Var = Symex.Var
 
 module FloatPrecision = struct
   type t = F16 | F32 | F64 | F128

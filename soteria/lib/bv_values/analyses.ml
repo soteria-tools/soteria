@@ -1,4 +1,4 @@
-open Soteria_symex
+open Symex
 
 (* let log = Soteria.Logging.Logs.L.warn *)
 let log _ = ()
