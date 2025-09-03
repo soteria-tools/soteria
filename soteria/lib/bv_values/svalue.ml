@@ -897,6 +897,7 @@ and BitVec : BitVec = struct
     let size = to_ - from_ + 1 in
     match v.node.kind with
     | BitVec bv -> mk_masked size Z.(bv asr from_)
+    | _ when from_ = 0 && to_ = prev_size - 1 -> v
     | Binop (((BitAnd | BitOr | BitXor) as bop), v1, v2) -> (
         let v1 = extract from_ to_ v1 in
         let v2 = extract from_ to_ v2 in
