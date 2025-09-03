@@ -215,13 +215,9 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
   let tags =
     match adt.layout with
     | Some { variant_layouts; _ } ->
-        List.map
-          (fun (v : Types.variant_layout) -> Option.map z_of_scalar v.tag)
-          variant_layouts
+        Monad.ListM.map variant_layouts (fun v -> Option.map z_of_scalar v.tag)
     | None ->
-        List.map
-          (fun (v : Types.variant) -> Some (z_of_scalar v.discriminant))
-          variants
+        Monad.ListM.map variants (fun v -> Some (z_of_scalar v.discriminant))
   in
   let tag_layout : Tag_layout.t =
     match adt.layout with
@@ -242,18 +238,8 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
         in
         { offset = 0; ty; tags = Array.of_list tags; encoding = Direct }
   in
-  let layout_fn =
-    match tag_layout.encoding with
-    | Direct ->
-        let discr_layout = layout_of (TLiteral tag_layout.ty) in
-        layout_of_members ~fst_size:discr_layout.size
-          ~fst_align:discr_layout.align
-    | Niche _ -> layout_of_members ?fst_size:None ?fst_align:None
-  in
   let variant_layouts =
-    List.map
-      (fun (v : Types.variant) -> layout_fn (field_tys v.fields))
-      variants
+    Monad.ListM.map variants (fun v -> layout_of_members (field_tys v.fields))
   in
   match variant_layouts with
   (* no variants: uninhabited ZST *)
@@ -261,9 +247,23 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
   (* one ZST variant: inhabited ZST *)
   | [ { size = 0; align; fields } ] ->
       { size = 0; align; fields = Enum (tag_layout, [| fields |]) }
-  (* N variants: realign variants with prepended discriminant (if not niche),
+  (* N variants: realign variants with prepended tag (if not niche),
      use biggest and most aligned *)
   | _ ->
+      let variant_layouts =
+        match tag_layout.encoding with
+        | Direct ->
+            (* if we need to prepend the tag, we recompute the layout to consider its
+               size and alignement (there probably is a smarter way to do this). *)
+            let discr_layout = layout_of (TLiteral tag_layout.ty) in
+            let layout_adjusted =
+              layout_of_members ~fst_size:discr_layout.size
+                ~fst_align:discr_layout.align
+            in
+            Monad.ListM.map variants (fun v ->
+                layout_adjusted (field_tys v.fields))
+        | Niche _ -> variant_layouts
+      in
       let size, align =
         List.fold_left
           (fun (size, align) l -> (max size l.size, max align l.align))
