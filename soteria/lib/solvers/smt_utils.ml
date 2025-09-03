@@ -8,6 +8,12 @@ module FloatRoundingMode = struct
   [@@deriving eq, show { with_path = false }, ord]
 end
 
+(** [float_shape n] is the shape of a IEEE float of a given size in bits.
+    Returns a two element list [[exp, mant]], where [exp] is the number of
+    exponent bits, and [mant] is the number of mantissa/significand bits. [mant]
+    {b includes the hidden bit} which is always [1], as per SMT-lib's
+    expectations. Always holds that [n = mant + exp]. Only implemented for
+    [n = 16, 32, 64, 128]. *)
 let float_shape = function
   | 16 -> [ 5; 11 ]
   | 32 -> [ 8; 24 ]
@@ -54,7 +60,7 @@ let f16_k f =
   (* a Float16 has 5 exponent bits, 10 explicit mantissa bits *)
   (* we let Z3 handle the conversion *)
   let f32 = f32_k f in
-  let fam = ifam "to_fp" [ 5; 11 ] in
+  let fam = ifam "to_fp" (float_shape 16) in
   app fam [ rm; f32 ]
 
 (* Float ops *)
