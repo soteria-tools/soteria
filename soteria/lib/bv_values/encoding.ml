@@ -2,6 +2,9 @@ open Soteria_std
 open Simple_smt
 open Solvers.Smt_utils
 
+let pointers_not_supported () =
+  failwith "Encoding of pointers is not supported in Bv_values"
+
 type t = Svalue.t
 type ty = Svalue.ty
 
@@ -11,31 +14,15 @@ let t_seq = atom "Seq"
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts
 
-let t_ptr, mk_ptr, get_loc, get_ofs, init_commands =
-  let ptr = "Ptr" in
-  let mk_ptr = "mk-ptr" in
-  let loc = "loc" in
-  let ofs = "ofs" in
-  let cmd =
-    declare_datatype ptr [] [ (mk_ptr, [ (loc, t_int); (ofs, t_int) ]) ]
-  in
-
-  ( atom ptr,
-    (fun l o -> atom mk_ptr $$ [ l; o ]),
-    (fun p -> atom loc $$ [ p ]),
-    (fun p -> atom ofs $$ [ p ]),
-    [ cmd ] )
-
-let rec sort_of_ty : ty -> sexp = function
+let rec sort_of_ty : Svalue.ty -> sexp = function
   | TBool -> t_bool
-  | TInt -> t_int
-  | TLoc -> t_int
+  | TLoc n -> t_bits n
   | TFloat F16 -> t_f16
   | TFloat F32 -> t_f32
   | TFloat F64 -> t_f64
   | TFloat F128 -> t_f128
   | TSeq ty -> t_seq $ sort_of_ty ty
-  | TPointer -> t_ptr
+  | TPointer _ -> pointers_not_supported ()
   | TBitVector n -> t_bits n
 
 let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
@@ -43,11 +30,9 @@ let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
   | Not -> bool_not
   | FAbs -> fp_abs
-  | GetPtrLoc -> get_loc
-  | GetPtrOfs -> get_ofs
-  | IntOfBool -> fun b -> ite b (int_k 1) (int_k 0)
-  | BvOfInt (_, size) -> bv_of_int size
-  | IntOfBv signed -> int_of_bv signed
+  | GetPtrLoc -> pointers_not_supported ()
+  | GetPtrOfs -> pointers_not_supported ()
+  | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)
   | BvOfFloat (true, n) -> sbv_of_float n
   | BvOfFloat (false, n) -> ubv_of_float n
   | FloatOfBv (true, fp) -> float_of_sbv (Svalue.FloatPrecision.size fp)
@@ -56,7 +41,8 @@ let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
   | BvExtend (true, by) -> bv_sign_extend by
   | BvExtend (false, by) -> bv_zero_extend by
   | BvNot -> bv_not
-  | BvNegOvf -> bv_nego
+  | Neg -> bv_neg
+  | NegOvf -> bv_nego
   | FIs fc -> fp_is (Svalue.FloatClass.as_fpclass fc)
   | FRound Ceil -> fp_round Ceil
   | FRound Floor -> fp_round Floor
@@ -66,52 +52,43 @@ let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
 
 let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | Eq -> eq
-  | Leq -> num_leq
-  | Lt -> num_lt
   | And -> bool_and
   | Or -> bool_or
-  | Plus -> num_add
-  | Minus -> num_sub
-  | Times -> num_mul
-  | Div -> num_div
-  | Rem -> num_rem
-  | Mod -> num_mod
   | FEq -> fp_eq
   | FLeq -> fp_leq
   | FLt -> fp_lt
-  | FPlus -> fp_add
-  | FMinus -> fp_sub
-  | FTimes -> fp_mul
+  | FAdd -> fp_add
+  | FSub -> fp_sub
+  | FMul -> fp_mul
   | FDiv -> fp_div
   | FRem -> fp_rem
   | BitAnd -> bv_and
   | BitOr -> bv_or
   | BitXor -> bv_xor
-  | BitShl -> bv_shl
-  | BitLShr -> bv_lshr
-  | BitAShr -> bv_ashr
-  | BvPlus -> bv_add
-  | BvMinus -> bv_sub
-  | BvTimes -> bv_mul
-  | BvDiv true -> bv_sdiv
-  | BvDiv false -> bv_udiv
-  | BvRem true -> bv_srem
-  | BvRem false -> bv_urem
-  | BvMod -> bv_smod
-  | BvPlusOvf true -> bv_saddo
-  | BvPlusOvf false -> bv_uaddo
-  | BvTimesOvf true -> bv_smulo
-  | BvTimesOvf false -> bv_umulo
-  | BvLt true -> bv_slt
-  | BvLt false -> bv_ult
-  | BvLeq true -> bv_sleq
-  | BvLeq false -> bv_uleq
+  | Shl -> bv_shl
+  | LShr -> bv_lshr
+  | AShr -> bv_ashr
+  | Add -> bv_add
+  | Sub -> bv_sub
+  | Mul -> bv_mul
+  | Div true -> bv_sdiv
+  | Div false -> bv_udiv
+  | Rem true -> bv_srem
+  | Rem false -> bv_urem
+  | Mod -> bv_smod
+  | AddOvf true -> bv_saddo
+  | AddOvf false -> bv_uaddo
+  | MulOvf true -> bv_smulo
+  | MulOvf false -> bv_umulo
+  | Lt true -> bv_slt
+  | Lt false -> bv_ult
+  | Leq true -> bv_sleq
+  | Leq false -> bv_uleq
   | BvConcat -> bv_concat
 
 let rec encode_value (v : Svalue.t) =
   match v.node.kind with
   | Var v -> atom (Svalue.Var.to_string v)
-  | Int z -> int_zk z
   | Float f -> (
       match Svalue.precision_of_f v.node.ty with
       | F16 -> f16_k @@ Float.of_string f
@@ -120,9 +97,9 @@ let rec encode_value (v : Svalue.t) =
       | F128 -> f128_k @@ Float.of_string f)
   | Bool b -> bool_k b
   | BitVec z ->
-      let n = Svalue.size_of_bv v.node.ty in
+      let n = Svalue.size_of v.node.ty in
       bv_k n z
-  | Ptr (l, o) -> mk_ptr (encode_value_memo l) (encode_value_memo o)
+  | Ptr _ -> pointers_not_supported ()
   | Seq vs -> (
       match vs with
       | [] -> failwith "need type to encode empty lists"
@@ -150,3 +127,4 @@ and encode_value_memo v =
       k
 
 let encode_value v = encode_value_memo v
+let init_commands = []

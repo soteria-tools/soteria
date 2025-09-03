@@ -8,6 +8,19 @@ module FloatRoundingMode = struct
   [@@deriving eq, show { with_path = false }, ord]
 end
 
+(** [float_shape n] is the shape of a IEEE float of a given size in bits.
+    Returns a two element list [[exp, mant]], where [exp] is the number of
+    exponent bits, and [mant] is the number of mantissa/significand bits. [mant]
+    {b includes the hidden bit} which is always [1], as per SMT-lib's
+    expectations. Always holds that [n = mant + exp]. Only implemented for
+    [n = 16, 32, 64, 128]. *)
+let float_shape = function
+  | 16 -> [ 5; 11 ]
+  | 32 -> [ 8; 24 ]
+  | 64 -> [ 11; 53 ]
+  | 128 -> [ 15; 113 ]
+  | n -> Fmt.failwith "Unsupported float size: %d" n
+
 let rm = atom "RNA" (* equivalent to roundNearestTiesToAway; default mode *)
 let t_f16 = atom "Float16"
 let t_f32 = atom "Float32"
@@ -40,14 +53,14 @@ let f128_k f =
   (* a Float128 has 15 exponent bits, 112 explicit mantissa bits *)
   (* we let Z3 handle the conversion *)
   let f64 = f64_k f in
-  let fam = ifam "to_fp" [ 15; 113 ] in
+  let fam = ifam "to_fp" (float_shape 128) in
   app fam [ rm; f64 ]
 
 let f16_k f =
   (* a Float16 has 5 exponent bits, 10 explicit mantissa bits *)
   (* we let Z3 handle the conversion *)
   let f32 = f32_k f in
-  let fam = ifam "to_fp" [ 5; 11 ] in
+  let fam = ifam "to_fp" (float_shape 16) in
   app fam [ rm; f32 ]
 
 (* Float ops *)
@@ -80,11 +93,12 @@ let fp_round (rm : FloatRoundingMode.t) f =
 
 (* Float{Of,To}Bv *)
 
-let f16_of_bv bv = app (ifam "to_fp" [ 5; 11 ]) [ bv ]
-let f32_of_bv bv = app (ifam "to_fp" [ 8; 24 ]) [ bv ]
-let f64_of_bv bv = app (ifam "to_fp" [ 11; 53 ]) [ bv ]
-let f128_of_bv bv = app (ifam "to_fp" [ 15; 113 ]) [ bv ]
-let bv_of_float n f = app (ifam "fp.to_sbv" [ n ]) [ rm; f ]
+let float_of_ubv size bv =
+  app (ifam "to_fp_unsigned" (float_shape size)) [ rm; bv ]
+
+let float_of_sbv size bv = app (ifam "to_fp" (float_shape size)) [ rm; bv ]
+let ubv_of_float n f = app (ifam "fp.to_ubv" [ n ]) [ rm; f ]
+let sbv_of_float n f = app (ifam "fp.to_sbv" [ n ]) [ rm; f ]
 
 (* Int{Of,To}Bv *)
 
