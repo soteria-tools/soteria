@@ -133,8 +133,7 @@ let print_outcomes entry_name f =
       let error, msg =
         match e with
         | ExecutionError msg -> ("runtime error", msg)
-        | Soteria.Soteria_symex.Symex.Gave_up reason ->
-            ("unsupported feature", reason)
+        | Soteria.Symex.Gave_up reason -> ("unsupported feature", reason)
         | e ->
             ( "exception",
               Fmt.str "%a@\nTrace: %s" Fmt.exn e (Printexc.get_backtrace ()) )
