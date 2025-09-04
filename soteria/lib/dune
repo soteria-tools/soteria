@@ -29,4 +29,6 @@
  (preprocessor_deps
   (file "logging/assets/soteria_logs.js")
   (file "logging/assets/soteria_logs.css"))
- (inline_tests))
+ (inline_tests)
+ (instrumentation
+  (backend landmarks --auto)))
