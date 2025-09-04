@@ -14,7 +14,7 @@
   <span class="xref-unresolved">Charon</span>.UllbcAst.crate</span></code></div><div class="spec-doc"><p>Given a Rust file, parse it into LLBC, using Charon.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-pp_branches"><a href="#val-pp_branches" class="anchor"></a><code><span><span class="keyword">val</span> pp_branches : <span><span class="xref-unresolved">Stdlib</span>.Format.formatter <span class="arrow">&#45;&gt;</span></span> <span>int <span class="arrow">&#45;&gt;</span></span> unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-pp_time"><a href="#val-pp_time" class="anchor"></a><code><span><span class="keyword">val</span> pp_time : <span><span class="xref-unresolved">Stdlib</span>.Format.formatter <span class="arrow">&#45;&gt;</span></span> <span>float <span class="arrow">&#45;&gt;</span></span> unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-print_outcomes"><a href="#val-print_outcomes" class="anchor"></a><code><span><span class="keyword">val</span> print_outcomes : 
   <span>string <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span>unit <span class="arrow">&#45;&gt;</span></span>
-    <span><span>(<span><span><span><span class="type-var">'a</span> <a href="../../../soteria/Soteria/C_values/Typed/index.html#type-t">Soteria.C_values.Typed.t</a></span> list</span> list</span> * int,
+    <span><span>(<span><span><span><span class="type-var">'a</span> <a href="../Typed/index.html#type-t">Typed.t</a></span> list</span> list</span> * int,
       <span><span>(<span>[ `DoubleFree
        <span>| `InvalidFree</span>
        <span>| `MemoryLeak</span>
@@ -36,7 +36,7 @@
        <span>| `UBDanglingPointer</span>
        <span>| `UBPointerArithmetic</span>
        <span>| `UBPointerComparison</span>
-       <span>| `UBTransmute</span>
+       <span><span>| `UBTransmute</span> of string</span>
        <span>| `AliasingError</span>
        <span>| `RefInvalidatedEarly</span>
        <span><span>| `FailedAssert</span> of <span>string option</span></span>
