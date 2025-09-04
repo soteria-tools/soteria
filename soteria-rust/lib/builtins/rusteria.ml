@@ -1,6 +1,5 @@
 open Rustsymex
 open Rustsymex.Syntax
-open Typed.Syntax
 open Rust_val
 
 module M (State : State_intf.S) = struct
@@ -20,7 +19,7 @@ module M (State : State_intf.S) = struct
         Some bytes
         |> map_opt (function Base b -> Some (Typed.kind b) | _ -> None)
         |> map_opt (function
-             | Svalue.Int b -> Some (Char.chr (Z.to_int b))
+             | Svalue.BitVec b -> Some (Char.chr (Z.to_int b))
              | _ -> None)
         |> Option.map (fun cs ->
                let str = String.of_seq @@ List.to_seq cs in
@@ -34,15 +33,14 @@ module M (State : State_intf.S) = struct
     | _ -> None
 
   let assert_ ~(args : rust_val list) state =
-    let open Typed.Infix in
     let* to_assert, msg =
       match args with
       | [ Base t; Ptr msg ] ->
-          let+ t = cast_checked t ~ty:Typed.t_int in
-          (t, msg)
+          let t = Typed.cast_lit TBool t in
+          return (t, msg)
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ 0s then
+    if%sat Typed.not (Typed.BitVec.to_bool to_assert) then
       let** str = parse_string msg state in
       State.error (`FailedAssert str) state
     else Result.ok (unit_, state)
@@ -50,11 +48,11 @@ module M (State : State_intf.S) = struct
   let assume ~args state =
     let* to_assume =
       match args with
-      | [ Base t ] -> cast_checked t ~ty:Typed.t_int
+      | [ Base t ] -> return (Typed.cast_lit TBool t)
       | _ -> not_impl "assume with non-one arguments"
     in
     L.debug (fun g -> g "Assuming: %a\n" Typed.ppa to_assume);
-    let* () = assume [ Typed.bool_of_int to_assume ] in
+    let* () = assume [ Typed.BitVec.to_bool to_assume ] in
     Result.ok (unit_, state)
 
   let nondet (fun_sig : Charon.UllbcAst.fun_sig) ~args:_ state =

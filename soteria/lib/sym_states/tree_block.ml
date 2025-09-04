@@ -52,7 +52,7 @@ module type MemVal = sig
     type sint
 
     val v_false : sbool t
-    val zero : sint t
+    val zero : unit -> sint t
     val ( +@ ) : sint t -> sint t -> sint t
     val ( -@ ) : sint t -> sint t -> sint t
     val ( <@ ) : sint t -> sint t -> sbool t
@@ -577,8 +577,8 @@ struct
         Result.miss_no_fix ~reason:"assert_exclusively_owned - no bound" ()
     | Some bound ->
         let { range = low, high; node; _ } = t.root in
-        if%sat low ==@ zero &&@ (high ==@ bound) then
-          lift_miss ~offset:zero ~len:bound
+        if%sat low ==@ zero () &&@ (high ==@ bound) then
+          lift_miss ~offset:(zero ()) ~len:bound
           @@ Node.assert_exclusively_owned node
         else
           Result.miss_no_fix
@@ -589,7 +589,7 @@ struct
     let@ t = with_bound_and_owned_check t (ofs +@ size) in
     let** tree, t = Tree.get_raw ofs size t in
     if Node.is_fully_owned tree.node then
-      let tree = Tree.offset ~by:(zero -@ ofs) tree in
+      let tree = Tree.offset ~by:(zero () -@ ofs) tree in
       Result.ok (tree, t)
     else Result.miss_no_fix ~reason:"get_raw_tree_owned" ()
 
@@ -604,7 +604,7 @@ struct
 
   let alloc v size =
     {
-      root = { node = Owned v; range = (zero, size); children = None };
+      root = { node = Owned v; range = (zero (), size); children = None };
       bound = Some size;
     }
 
@@ -667,7 +667,7 @@ struct
     match t with
     | None ->
         Symex.return
-          (Some { bound = Some bound; root = Tree.not_owned (zero, bound) })
+          (Some { bound = Some bound; root = Tree.not_owned (zero (), bound) })
     | Some { bound = None; root } ->
         Symex.return (Some { bound = Some bound; root })
     | Some { bound = Some _; _ } -> Symex.vanish ()

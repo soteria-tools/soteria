@@ -23,6 +23,10 @@ module Make (Sptr : Sptr.S) = struct
 
       type sint = T.sint
       type sbool = T.sbool
+
+      let zero () = Typed.BitVec.usize Z.zero
+      let ( <@ ) = Typed.Infix.( <$@ )
+      let ( <=@ ) = Typed.Infix.( <=$@ )
     end
 
     let pp_init ft (v, ty) =
@@ -147,7 +151,7 @@ module Make (Sptr : Sptr.S) = struct
     | Zeros ->
         let+ v =
           of_opt_not_impl "Don't know how to zero this type"
-          @@ Layout.zeroed ~null_ptr:Sptr.null_ptr ty
+          @@ Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) ty
         in
         Ok v
     | Lazy -> not_impl "Lazy memory access, cannot decode"
@@ -174,12 +178,12 @@ module Make (Sptr : Sptr.S) = struct
         | Owned (Zeros, _) ->
             let* ty =
               match Typed.kind (Range.size leaf.range) with
-              | Int size -> return (Layout.size_to_uint (Z.to_int size))
+              | BitVec size -> return (Layout.size_to_uint (Z.to_int size))
               | _ -> not_impl "Don't know how to read this size"
             in
             let+ value =
               of_opt_not_impl "Don't know how to zero this type"
-              @@ Layout.zeroed ~null_ptr:Sptr.null_ptr ty
+              @@ Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) ty
             in
             Ok (Encoder.{ value; ty; offset } :: vs)
         | Owned (Init (value, ty), _) ->

@@ -123,6 +123,8 @@ module M (State : State_intf.S) = struct
       ("core::slice::index::slice_end_index_len_fail", Fixme Panic);
       ("core::slice::index::slice_end_index_overflow_fail", Fixme Panic);
       ("std::alloc::handle_alloc_error", Fixme Panic);
+      ("std::option::unwrap_failed", Fixme Panic);
+      ("core::panicking::panic", Fixme Panic);
       (* These don't compile, for some reason? *)
       ("std::panicking::try::cleanup", Fixme TryCleanup);
       ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);

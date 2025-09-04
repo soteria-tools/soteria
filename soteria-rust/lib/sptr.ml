@@ -4,14 +4,13 @@ open Charon
 open Typed
 open T
 open Typed.Infix
-open Typed.Syntax
 
 module type S = sig
   (** pointer type *)
   type t
 
   val pp : t Fmt.t
-  val null_ptr : t
+  val null_ptr : unit -> t
   val null_ptr_of : sint Typed.t -> t
 
   (** Pointer equality *)
@@ -82,16 +81,17 @@ module ArithPtr : S with type t = arithptr_t = struct
   let pp fmt { ptr; tag; _ } =
     Fmt.pf fmt "%a[%a]" Typed.ppa ptr Tree_borrow.pp_tag tag
 
-  let null_ptr =
+  let null_ptr () =
     {
-      ptr = Typed.Ptr.null;
+      ptr = Typed.Ptr.null ();
       tag = Tree_borrow.zero;
-      align = Typed.cast 1s;
-      size = 0s;
+      align = Typed.BitVec.usizei_nz 1;
+      size = Typed.BitVec.usizei 0;
     }
 
   let null_ptr_of ofs =
-    let ptr = Typed.Ptr.add_ofs Typed.Ptr.null ofs in
+    let null_ptr = null_ptr () in
+    let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
     { null_ptr with ptr }
 
   let sem_eq { ptr = ptr1; _ } { ptr = ptr2; _ } = ptr1 ==@ ptr2
@@ -101,9 +101,9 @@ module ArithPtr : S with type t = arithptr_t = struct
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
 
   let constraints { ptr; size; _ } =
-    let offset_constrs = Layout.int_constraints (TInt Isize) in
     let ofs = Typed.Ptr.ofs ptr in
-    Typed.conj ((ofs <=@ size) :: offset_constrs ofs)
+    let zero = Typed.BitVec.usizei 0 in
+    Typed.conj [ zero <=$@ ofs; ofs <=$@ size ]
 
   let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8))
       ({ ptr; _ } as fptr) off =
@@ -113,22 +113,22 @@ module ArithPtr : S with type t = arithptr_t = struct
     let ptr = { fptr with ptr } in
     if check then
       if%sat [@lname "Ptr ok"] [@rname "Ptr dangling"]
-        off ==@ 0s ||@ constraints ptr
+        off ==@ Typed.BitVec.usizei 0 ||@ constraints ptr
       then Result.ok ptr
       else Result.error `UBDanglingPointer
     else Result.ok ptr
 
   let project ty kind field ptr =
     let field = Types.FieldId.to_int field in
-    let layout, field =
+    let layout = Layout.layout_of ty in
+    let fields =
       match kind with
-      | Expressions.ProjAdt (adt_id, Some variant) ->
-          (* Skip discriminator, so field + 1 *)
-          (Layout.of_enum_variant adt_id variant, field + 1)
-      | ProjAdt (_, None) | ProjTuple _ -> (Layout.layout_of ty, field)
+      | Expressions.ProjAdt (_, Some variant) ->
+          Layout.Fields_shape.shape_for_variant variant layout.fields
+      | ProjAdt (_, None) | ProjTuple _ -> layout.fields
     in
-    let off = Layout.Fields_shape.offset_of field layout.fields in
-    offset ptr (Typed.int off)
+    let off = Layout.Fields_shape.offset_of field fields in
+    offset ptr (Typed.BitVec.usizei off)
 
   module ValMap = Map.Make (struct
     type t = T.sloc Typed.t
@@ -138,26 +138,29 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   (* FIXME: inter-test mutability *)
   (* Create a map with the null-ptr preset to 0 *)
-  let decayed_vars = ref (ValMap.add Typed.Ptr.null_loc 0s ValMap.empty)
+  let decayed_vars = ref ValMap.empty
 
   let decay { ptr; align; size; _ } =
     let open Rustsymex in
     let open Rustsymex.Syntax in
-    let open Typed.Syntax in
     (* FIXME: if we want to be less unsound, we would also need to assert that this pointer's
        base is distinct from all other decayed pointers' bases... *)
     let loc, ofs = Typed.Ptr.decompose ptr in
     match ValMap.find_opt loc !decayed_vars with
     | Some loc_int -> return (loc_int +@ ofs)
     | None ->
-        let* loc_int = nondet Typed.t_int in
+        let zero = Typed.BitVec.usizei 0 in
+        let* loc_int =
+          if%sat Typed.Ptr.is_null_loc loc then return zero
+          else nondet (Typed.t_usize ())
+        in
         let+ () =
-          let isize_max = Layout.max_value (TInt Isize) in
+          let isize_max = Layout.max_value_z (TInt Isize) in
           Rustsymex.assume
             [
-              loc_int %@ align ==@ 0s;
-              0s <@ loc_int;
-              loc_int +@ size <=@ isize_max;
+              loc_int %@ align ==@ zero;
+              zero <@ loc_int;
+              loc_int +@ size <=@ Typed.BitVec.usize isize_max;
             ]
         in
         decayed_vars := ValMap.add loc loc_int !decayed_vars;

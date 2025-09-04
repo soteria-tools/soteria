@@ -35,7 +35,7 @@ type t =
   | `UBPointerArithmetic  (** Arithmetics on two pointers *)
   | `UBPointerComparison
     (** Comparison of pointers with different provenance *)
-  | `UBTransmute
+  | `UBTransmute of string
     (** Invalid transmute, e.g. null reference, wrong enum discriminant *)
   | `AliasingError  (** Tree borrow violation that lead to UB *)
   | `RefInvalidatedEarly
@@ -97,7 +97,7 @@ let pp ft : [< t ] -> unit = function
   | `UBDanglingPointer -> Fmt.string ft "UB: dangling pointer"
   | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
   | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
-  | `UBTransmute -> Fmt.string ft "UB: Transmute"
+  | `UBTransmute msg -> Fmt.pf ft "UB: Transmute: %s" msg
   | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
   | `UseAfterFree -> Fmt.string ft "Use after free"
 
@@ -129,8 +129,9 @@ module Diagnostic = struct
           else None
         in
         [
-          Soteria.Terminal.Diagnostic.mk_range_file ?filename file
-            (to_loc span.beg_loc) (to_loc span.end_loc);
+          Soteria.Terminal.Diagnostic.mk_range_file ?filename
+            ?content:span.file.contents file (to_loc span.beg_loc)
+            (to_loc span.end_loc);
         ]
     | Virtual _ -> []
 

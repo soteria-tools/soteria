@@ -14,14 +14,14 @@ type severity = Grace.Diagnostic.Severity.t =
 
 let read_file file =
   let ic = open_in file in
-  let rec loop acc =
+  let rec iter () f =
     match input_line ic with
-    | s -> loop (s :: acc)
-    | exception End_of_file ->
-        close_in ic;
-        List.rev acc |> String.concat "\n"
+    | s ->
+        f s;
+        iter () f
+    | exception End_of_file -> close_in ic
   in
-  loop []
+  iter () |> Iter.intersperse "\n" |> Iter.concat_str
 
 let utf8_to_byte_offset str idx =
   let i = ref 0 in
@@ -55,21 +55,44 @@ let real_index (file : string) ((line, col) : pos) =
   done;
   !current_index
 
-let mk_range_file ?filename file from_ to_ =
+let real_index_str (content : string) ((line, col) : pos) =
+  let lines = String.split_on_char '\n' content in
+  let rec aux current_line acc = function
+    | [] -> acc
+    | str :: rest when current_line < line ->
+        aux (current_line + 1) (acc + String.length str + 1) rest
+    | str :: _ when current_line = line ->
+        let ofs = utf8_to_byte_offset str col in
+        acc + ofs
+    | _ -> acc
+  in
+  aux 0 0 lines
+
+let mk_range_file ?filename ?content file from_ to_ =
   let open Grace.Range in
   let bi = Grace.Byte_index.of_int in
   (* Could be optimised if indexes are in the same file,
    but I don't think printing errors is what's going to take time.
    Also, it shouldn't be required anyway, see https://github.com/johnyob/grace/issues/46
 *)
-  let idx1 = real_index file from_ in
-  let idx2 = real_index file to_ in
-  let source : Grace.Source.t =
-    match filename with
-    | None -> `File file
-    | Some name -> `String { name = Some name; content = read_file file }
-  in
-  create ~source (bi idx1) (bi idx2)
+  try
+    let index_fn =
+      Option.fold ~none:(real_index file) ~some:real_index_str content
+    in
+    let idx1, idx2 = (index_fn from_, index_fn to_) in
+    let source : Grace.Source.t =
+      match (filename, content) with
+      | None, None -> `File file
+      | Some name, None ->
+          `String { name = Some name; content = read_file file }
+      | Some name, Some content -> `String { name = Some name; content }
+      | None, Some content -> `String { name = Some file; content }
+    in
+    create ~source (bi idx1) (bi idx2)
+  with Sys_error _ ->
+    create
+      ~source:(`String { name = Some file; content = "File not found" })
+      (bi 0) (bi 14)
 
 let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =
   let open Grace.Diagnostic in
