@@ -240,10 +240,8 @@ module Make (Sptr : Sptr.S) = struct
     | ConstFn _, _ | _, TFnDef _ -> illegal_pair ()
     (* Rest *)
     | _ ->
-        L.error (fun m ->
-            m "Unhandled rust_value and Charon.ty: %a / %a" ppa_rust_val value
-              pp_ty ty);
-        failwith "Unhandled rust_value and Charon.ty"
+        Fmt.failwith "Unhandled rust_value and Charon.ty: %a / %a" ppa_rust_val
+          value pp_ty ty
 
   (** Parses the current variant of the enum at the given offset. This handles
       cases such as niches, where the discriminant isn't directly encoded as a
