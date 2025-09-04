@@ -1,9 +1,3 @@
-(** Logging facilities for symbolic execution.
-
-    This module (and particularly {!L}) contains logging facilities for users of
-    Soteria. The library knows how to produce text logs to stderr or structured
-    logs in HTML format. *)
-
 module Level = Level
 module Config = Config
 module Cli = Cli

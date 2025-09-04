@@ -1,3 +1,9 @@
+(** Logging facilities for symbolic execution.
+
+    This module (and particularly {!L}) contains logging facilities for users of
+    Soteria. The library knows how to produce text logs to stderr or structured
+    logs in HTML format. *)
+
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
 
 module Level : sig
@@ -83,7 +89,8 @@ module L : sig
   val error : ('a, unit) msgf -> unit
 end
 
-(** Helper module so that one can simply write
+(** Helper module to be opened when using logging.
+
     {[
       open Soteria.Logs.Import
       ...
