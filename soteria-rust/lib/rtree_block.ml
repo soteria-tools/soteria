@@ -213,9 +213,9 @@ module Make (Sptr : Sptr.S) = struct
     | NotOwned _ -> miss_no_fix ~reason:"as_owned" ()
     | Owned (v, tb) -> f (v, tb)
 
-  let load ~(is_move : bool) ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t)
-      (ty : Types.ty) (tag : Tree_borrow.tag) (tb : Tree_borrow.t)
-      (t : t option) : (rust_val * t option, 'err, 'fix) Result.t =
+  let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
+      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t option) :
+      (rust_val * t option, 'err, 'fix) Result.t =
     let* size = Layout.size_of_s ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes () =
@@ -229,8 +229,7 @@ module Make (Sptr : Sptr.S) = struct
         if ignore_borrow then Result.ok tb_st
         else Tree_borrow.access tb tag Read tb_st
       in
-      if is_move then uninit range tb_st
-      else { t with node = Owned (v, tb_st') }
+      { t with node = Owned (v, tb_st') }
     in
     let rebuild_parent = Tree.with_children in
     let** framed, tree =
