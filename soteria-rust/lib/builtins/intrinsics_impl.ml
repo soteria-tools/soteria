@@ -136,7 +136,7 @@ module M (State : State_intf.S) = struct
         let args = [ data; Ptr (Sptr.null_ptr (), None) ] in
         let catch_fn_ret = exec_fun catch_fn ~args state in
         State.unwind_with catch_fn_ret
-          ~f:(fun (_, state) -> Result.ok (Base (Typed.BitVec.one 32), state))
+          ~f:(fun (_, state) -> Result.ok (Base (Typed.BitVec.u32i 1), state))
           ~fe:(fun (_, state) ->
             State.error (`StdErr "catch_unwind unwinded in catch") state))
 
@@ -186,7 +186,7 @@ module M (State : State_intf.S) = struct
         if%sat bl ==@ br then aux l r (len -@ one) state
         else
           if%sat bl <@ br then Result.ok (Base (Typed.BitVec.u32i (-1)), state)
-          else Result.ok (Base (Typed.BitVec.one 32), state)
+          else Result.ok (Base (Typed.BitVec.u32i 1), state)
     in
     aux ~inc:zero l r len state
 
