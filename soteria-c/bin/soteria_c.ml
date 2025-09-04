@@ -29,7 +29,7 @@ module Exec_main = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.exec_and_print
-      $ Soteria.Logging.Cli.term
+      $ Soteria.Logs.Cli.term
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ Soteria.Solvers.Config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
@@ -55,7 +55,7 @@ module Show_ail = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.show_ail
-      $ Soteria.Logging.Cli.term
+      $ Soteria.Logs.Cli.term
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ includes_arg
       $ files_arg)
@@ -67,7 +67,7 @@ module Generate_summaries = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.generate_all_summaries
-      $ Soteria.Logging.Cli.term
+      $ Soteria.Logs.Cli.term
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ Soteria.Solvers.Config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
@@ -87,7 +87,7 @@ module Capture_db = struct
   let term =
     Term.(
       const Soteria_c_lib.Driver.capture_db
-      $ Soteria.Logging.Cli.term
+      $ Soteria.Logs.Cli.term
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ Soteria.Solvers.Config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()

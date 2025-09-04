@@ -1,5 +1,4 @@
 open Syntaxes.FunctionWrap
-open Soteria.Logging.Logs
 open Soteria.Terminal
 module Bi_interp = Interp.Make (Bi_state)
 open Ail_tys
@@ -19,7 +18,7 @@ let generate_summaries_for (fundef : fundef) =
   let section_name =
     "Generate summaries for " ^ Cerb_frontend.Symbol.show_symbol fid
   in
-  let@ () = with_section section_name in
+  let@ () = L.with_section section_name in
   L.info (fun m -> m "%s" section_name);
   let* arg_tys =
     match Ail_helpers.get_param_tys fid with
@@ -40,11 +39,11 @@ let generate_summaries_for (fundef : fundef) =
     | Missing _ -> Csymex.vanish ()
   in
   let res =
-    let@ () = with_section "Running symbolic execution" in
+    let@ () = L.with_section "Running symbolic execution" in
     Csymex.run_needs_stats ~mode:UX ~fuel:default_abductor_fuel process
   in
   let+ (args, ret, bi_state), pc = res in
-  let@ () = with_section "Building summary" in
+  let@ () = L.with_section "Building summary" in
   L.trace (fun m ->
       m "Building summary for %a using bistate: %a" Fmt_ail.pp_sym fid
         Bi_state.pp bi_state);

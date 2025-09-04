@@ -27,6 +27,6 @@
    ppx_subliner
    ppx_inline_test))
  (preprocessor_deps
-  (file "logging/assets/soteria_logs.js")
-  (file "logging/assets/soteria_logs.css"))
+  (file "logs/assets/soteria_logs.js")
+  (file "logs/assets/soteria_logs.css"))
  (inline_tests))

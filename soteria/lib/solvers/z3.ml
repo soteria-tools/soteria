@@ -1,5 +1,5 @@
 open Simple_smt
-module L = Logging.Logs.L
+open Logs.Import
 
 (** The type of values the solver operators on. *)
 module type Value = sig

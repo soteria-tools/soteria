@@ -1,3 +1,9 @@
+(** Logging facilities for symbolic execution.
+
+    This module (and particularly {!L}) contains logging facilities for users of
+    Soteria. The library knows how to produce text logs to stderr or structured
+    logs in HTML format. *)
+
 module Level = Level
 module Config = Config
 module Cli = Cli
@@ -47,7 +53,7 @@ let write_string str =
      so that interject would be part of a given logger. *)
   match (Config.get ()).kind with
   | Html -> do_ ()
-  | Stderr -> !Config.interject do_
+  | Stderr -> !Config.cur_interject do_
 
 let incr_depth_counter () =
   let logger = logger () in
@@ -57,36 +63,29 @@ let decr_depth_counter () =
   let logger = logger () in
   logger.depth_counter <- logger.depth_counter - 1
 
-let start_section ?(is_branch = false) str =
-  if Config.logs_enabled () then (
-    incr_depth_counter ();
-    match (Config.get ()).kind with
-    | Html ->
-        write_string (Html.section_opening ~is_branch);
-        write_string (Html.section_title str)
-    | Stderr ->
-        (* Not writing start/end sections in text format *)
-        ())
-
-let end_section () =
-  if Config.logs_enabled () then (
-    decr_depth_counter ();
-    match (Config.get ()).kind with
-    | Html -> write_string Html.section_closing
-    | Stderr -> ())
-
-let with_section ?(is_branch = false) str f =
-  start_section ~is_branch str;
-  try
-    let x = f () in
-    end_section ();
-    x
-  with e ->
-    let backtrace = Printexc.get_raw_backtrace () in
-    end_section ();
-    Printexc.raise_with_backtrace e backtrace
-
 module L = struct
+  let start_section ?(is_branch = false) str =
+    if Config.logs_enabled () then (
+      incr_depth_counter ();
+      match (Config.get ()).kind with
+      | Html ->
+          write_string (Html.section_opening ~is_branch);
+          write_string (Html.section_title str)
+      | Stderr ->
+          (* Not writing start/end sections in text format *)
+          ())
+
+  let end_section () =
+    if Config.logs_enabled () then (
+      decr_depth_counter ();
+      match (Config.get ()).kind with
+      | Html -> write_string Html.section_closing
+      | Stderr -> ())
+
+  let with_section ?(is_branch = false) str f =
+    start_section ~is_branch str;
+    Fun.protect ~finally:end_section f
+
   let log ~level msgf =
     if Config.should_log level then
       msgf @@ fun fmt ->
@@ -108,4 +107,8 @@ module L = struct
   let app msgf = log ~level:Level.App msgf
   let error msgf = log ~level:Level.Error msgf
   let smt msgf = log ~level:Level.Smt msgf
+end
+
+module Import = struct
+  module L = L
 end

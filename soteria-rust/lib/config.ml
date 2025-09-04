@@ -46,8 +46,7 @@ type t = {
 let term = cmdliner_term ()
 
 type global = {
-  logs : (Soteria.Logging.Config.t, string) result;
-      [@term Soteria.Logging.Cli.term]
+  logs : (Soteria.Logs.Config.t, string) result; [@term Soteria.Logs.Cli.term]
   terminal : Soteria.Terminal.Config.t;
       [@term Soteria.Terminal.Config.cmdliner_term ()]
   solver : Soteria.Solvers.Config.t;
@@ -62,6 +61,6 @@ let current : t ref = ref default
 
 let set (config : global) =
   Soteria.Solvers.Config.set config.solver;
-  Soteria.Logging.Config.check_set_and_lock config.logs;
+  Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
   current := config.rusteria
