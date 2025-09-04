@@ -4,6 +4,7 @@ module Hsset = Hashset.Hstring
 
 type 'range stats = {
   mutable exec_time : float;  (** Execution time for the whole execution *)
+  mutable sat_time : float;  (** Time spent answering [sat] queries *)
   give_up_reasons : 'range Dynarray.t Hstring.t;
       (** For each "give up reason" (a string) we keep track of the list of code
           ranges at which we reached it *)
@@ -31,6 +32,7 @@ let map_with_stats f { res; stats } = { res = f res; stats }
 let create () =
   {
     exec_time = 0.0;
+    sat_time = 0.0;
     give_up_reasons = Hstring.create 0;
     missing_without_fixes = Dynarray.create ();
     branch_number = 1;
@@ -99,6 +101,14 @@ module type S = sig
         in the environment. *)
     val add_time_of : (unit -> 'a) -> 'a
 
+    (** Adds the time taken to answer [sat] to the stats record. Should be
+        handled by Soteria itself. *)
+    val add_sat_time : float -> unit
+
+    (** Measures time taken by the given function and adds it to the SAT time
+        statistics in the environment. *)
+    val add_sat_time_of : (unit -> 'a) -> 'a
+
     (** Adds branches to the count of statistics. Should be handled by Soteria
         itself *)
     val add_branches : int -> unit
@@ -165,6 +175,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
       give_up_reasons;
       missing_without_fixes;
       exec_time = t1.exec_time +. t2.exec_time;
+      sat_time = t1.sat_time +. t2.sat_time;
       branch_number = t1.branch_number + t2.branch_number;
       steps_number = t1.steps_number + t2.steps_number;
       unexplored_branch_number =
@@ -185,6 +196,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
 
   let did_give_up t = Hstring.length t.give_up_reasons > 0
   let add_exec_time time t = t.exec_time <- t.exec_time +. time
+  let add_sat_time time t = t.sat_time <- t.sat_time +. time
 
   let dump t file =
     let oc = open_out file in
@@ -217,12 +229,16 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
       apply (push_missing_without_fix reason)
 
     let add_exec_time time = apply (add_exec_time time)
+    let add_sat_time time = apply (add_sat_time time)
 
-    let add_time_of f =
+    let add_time_of_to ~receiver f =
       let start = Unix.gettimeofday () in
       let res = f () in
-      add_exec_time (Unix.gettimeofday () -. start);
+      receiver (Unix.gettimeofday () -. start);
       res
+
+    let add_time_of f = add_time_of_to ~receiver:add_exec_time f
+    let add_sat_time_of f = add_time_of_to ~receiver:add_sat_time f
 
     let add_branches n =
       apply (fun stats -> stats.branch_number <- stats.branch_number + n)
