@@ -35,7 +35,7 @@ module type S = sig
       | `OutOfBounds
       | `UninitializedMemoryAccess
       | `UseAfterFree
-      | `UBTransmute
+      | `UBTransmute of string
       | `AliasingError
       | `MisalignedPointer
       | `RefToUninhabited
@@ -55,6 +55,25 @@ module type S = sig
       | `UseAfterFree
       | `AliasingError
       | `MisalignedPointer
+      | `UBDanglingPointer ]
+      err
+      * t,
+      serialized )
+    Result.t
+
+  val load_discriminant :
+    full_ptr ->
+    Types.ty ->
+    t ->
+    ( Types.variant_id * t,
+      [> `NullDereference
+      | `OutOfBounds
+      | `UninitializedMemoryAccess
+      | `UseAfterFree
+      | `UBTransmute of string
+      | `AliasingError
+      | `MisalignedPointer
+      | `RefToUninhabited
       | `UBDanglingPointer ]
       err
       * t,

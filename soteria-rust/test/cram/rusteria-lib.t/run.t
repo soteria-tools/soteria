@@ -2,7 +2,7 @@ Test base functions
   $ soteria-rust rustc lib-fns.rs --clean --no-timing
   Compiling... done in <time>
   note: lib_fns::main: done in <time>, ran 1 branch
-  PC 1: (1 == V|1|) /\ (1 == V|1|)
+  PC 1: (V|1| <=u 0x01) /\ (V|1| != 0x00)
   
 
 
@@ -19,16 +19,26 @@ Test #[soteria::*] annotations
   PC 1: empty
   
   note: annots::test_branch_fuel: done in <time>, ran 10 branches
-  PC 1: (0 == V|1|) /\ (0 == V|1|)
-  PC 2: (1 == V|1|) /\ (1 == V|1|)
-  PC 3: (V|1| == 2) /\ (V|1| == 2)
-  PC 4: (V|1| == 3) /\ (V|1| == 3)
-  PC 5: (V|1| == 4) /\ (V|1| == 4)
-  PC 6: (V|1| == 5) /\ (V|1| == 5)
-  PC 7: (V|1| == 6) /\ (V|1| == 6)
-  PC 8: (V|1| == 7) /\ (V|1| == 7)
-  PC 9: (V|1| == 8) /\ (V|1| == 8)
-  PC 10: (V|1| == 9) /\ (V|1| == 9)
+  PC 1: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (0x01 <u V|1|) /\ (0x02 <u V|1|) /\
+        (0x03 <u V|1|) /\ (0x04 <u V|1|) /\ (0x05 <u V|1|) /\ (0x06 <u V|1|) /\
+        (0x07 <u V|1|) /\ (0x08 <u V|1|) /\ (V|1| <=u 0x09)
+  PC 2: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (0x01 <u V|1|) /\ (0x02 <u V|1|) /\
+        (0x03 <u V|1|) /\ (0x04 <u V|1|) /\ (0x05 <u V|1|) /\ (0x06 <u V|1|) /\
+        (0x07 <u V|1|) /\ (V|1| <=u 0x08)
+  PC 3: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (0x01 <u V|1|) /\ (0x02 <u V|1|) /\
+        (0x03 <u V|1|) /\ (0x04 <u V|1|) /\ (0x05 <u V|1|) /\ (0x06 <u V|1|) /\
+        (V|1| <=u 0x07)
+  PC 4: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (0x01 <u V|1|) /\ (0x02 <u V|1|) /\
+        (0x03 <u V|1|) /\ (0x04 <u V|1|) /\ (0x05 <u V|1|) /\ (V|1| <=u 0x06)
+  PC 5: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (0x01 <u V|1|) /\ (0x02 <u V|1|) /\
+        (0x03 <u V|1|) /\ (0x04 <u V|1|) /\ (V|1| <=u 0x05)
+  PC 6: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (0x01 <u V|1|) /\ (0x02 <u V|1|) /\
+        (0x03 <u V|1|) /\ (V|1| <=u 0x04)
+  PC 7: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (0x01 <u V|1|) /\ (0x02 <u V|1|) /\
+        (V|1| <=u 0x03)
+  PC 8: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (0x01 <u V|1|) /\ (V|1| <=u 0x02)
+  PC 9: (V|1| <u 0x0a) /\ (V|1| != 0x00) /\ (V|1| <=u 0x01)
+  PC 10: (V|1| <u 0x0a) /\ (V|1| == 0x00)
   
   note: annots::test_step_fuel: done in <time>, ran 1 branch
   PC 1: empty

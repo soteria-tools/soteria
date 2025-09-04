@@ -8,7 +8,7 @@ module SYMEX =
         let of_yojson _ = Ok Charon_util.empty_span
       end
     end)
-    (C_solver.Z3_solver)
+    (Bv_solver.Z3_solver)
 
 include SYMEX
 include Syntaxes.FunctionWrap
@@ -47,19 +47,6 @@ let[@inline] with_loc_err () f =
 let error e = Result.error (e, get_loc ())
 let not_impl msg = give_up ~loc:(get_loc ()) msg
 let of_opt_not_impl msg = some_or_give_up ~loc:(get_loc ()) msg
-
-let cast_checked ~ty x =
-  match Typed.cast_checked x ty with
-  | Some x -> return x
-  | None ->
-      Fmt.kstr not_impl "Failed to cast %a to %a" Typed.ppa x Typed.ppa_ty ty
-
-let cast_checked2 x y =
-  match Typed.cast_checked2 x y with
-  | Some x -> return x
-  | None ->
-      Fmt.kstr not_impl "Values %a and %a have mismatched types" Typed.ppa x
-        Typed.ppa y
 
 module Freeable = Soteria.Sym_states.Freeable.Make (SYMEX)
 module Pmap_direct_access = Soteria.Sym_states.Pmap.Direct_access (SYMEX)
