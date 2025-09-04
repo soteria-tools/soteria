@@ -49,6 +49,9 @@ module Cli : sig
   val term : (Config.t, string) result Cmdliner.Term.t
 end
 
+(** [L] is the module that contains all the fonctions to actually log stuff. One
+    can access it using [Soteria.Logs.L] or by [open Soteria.Logs.Import] and
+    then using [L] directly. *)
 module L : sig
   (** [with_section ~is_branch name f] runs [f] and aggregates its log messages
       within a collapsible section of the log file (when logs are in HTML mode).
