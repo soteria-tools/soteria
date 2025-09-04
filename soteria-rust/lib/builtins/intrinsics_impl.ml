@@ -647,14 +647,15 @@ module M (State : State_intf.S) = struct
         match Typed.kind size with
         | BitVec bytes ->
             let++ (), state =
-              Result.fold_iter ~init:((), state)
+              Result.fold_iter
+                Iter.(0 -- (Z.to_int bytes - 1))
+                ~init:((), state)
                 ~f:(fun ((), state) i ->
                   let off = Typed.BitVec.usizei i in
                   let** ptr = Sptr.offset ptr off |> State.lift_err state in
                   State.store (ptr, None) (TLiteral (TUInt U8))
                     (Base (v :> T.cval Typed.t))
                     state)
-                Iter.(0 -- (Z.to_int bytes - 1))
             in
             (Tuple [], state)
         | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
