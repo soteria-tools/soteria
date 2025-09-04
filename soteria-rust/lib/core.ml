@@ -1,5 +1,7 @@
 open Charon
 open Typed
+module BV = Typed.BitVec
+open Typed.Syntax
 open Typed.Infix
 open Rustsymex
 open Rustsymex.Syntax
@@ -14,24 +16,24 @@ module M (State : State_intf.S) = struct
 
   let cmp ~signed l r =
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
-    if%sat l < r then return (BitVec.u8i (-1))
-    else if%sat l ==@ r then return (BitVec.u8i 0) else return (BitVec.u8i 1)
+    if%sat l < r then return U8.(-1s)
+    else if%sat l ==@ r then return U8.(0s) else return U8.(1s)
 
   let cmp_of_int v =
-    let zero = BitVec.zero (size_of_int v) in
-    if%sat v <$@ zero then return (BitVec.u8i (-1))
-    else if%sat v ==@ zero then return (BitVec.u8i 0) else return (BitVec.u8i 1)
+    let zero = BV.zero (size_of_int v) in
+    if%sat v <$@ zero then return U8.(-1s)
+    else if%sat v ==@ zero then return U8.(0s) else return U8.(1s)
 
   let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =
     match (get_ty v1, get_ty v2) with
     | TBitVector _, TBitVector _ | TPointer _, TPointer _ ->
-        Result.ok (v1 ==@ v2 |> BitVec.of_bool)
-    | TFloat _, TFloat _ -> Result.ok (v1 ==.@ v2 |> BitVec.of_bool)
+        Result.ok (BV.of_bool (v1 ==@ v2))
+    | TFloat _, TFloat _ -> Result.ok (BV.of_bool (v1 ==.@ v2))
     | TPointer _, TBitVector _ ->
         let v2 : T.sint Typed.t = cast v2 in
-        if%sat v2 ==@ BitVec.usizei 0 then
-          let res = cast v1 ==@ Ptr.null () |> BitVec.of_bool in
-          Result.ok res
+        if%sat v2 ==@ Usize.(0s) then
+          let res = cast v1 ==@ Ptr.null () in
+          Result.ok (BV.of_bool res)
         else Result.error `UBPointerComparison
     | TBitVector _, TPointer _ -> equality_check v2 v1
     | _ ->
@@ -43,10 +45,10 @@ module M (State : State_intf.S) = struct
     | Add _ | AddChecked -> ( +@ )
     | Sub _ | SubChecked -> ( -@ )
     | Mul _ | MulChecked -> ( *@ )
-    | Div _ -> BitVec.div ~signed
-    | Rem _ -> BitVec.rem ~signed
+    | Div _ -> BV.div ~signed
+    | Rem _ -> BV.rem ~signed
     | Shl _ -> ( <<@ )
-    | Shr _ -> if signed then BitVec.ashr else BitVec.lshr
+    | Shr _ -> if signed then BV.ashr else BV.lshr
     | _ -> failwith "Invalid binop in binop_fn"
 
   (** Rust allows shift operations on integers of differents sizes, which isn't
@@ -58,9 +60,8 @@ module M (State : State_intf.S) = struct
         let l, r = (cast l, cast r) in
         let l_size = Typed.size_of_int l in
         let r_size = Typed.size_of_int r in
-        if l_size > r_size then
-          Typed.BitVec.extend ~signed:false (l_size - r_size) r
-        else if l_size < r_size then Typed.BitVec.extract 0 (l_size - 1) r
+        if l_size > r_size then BV.extend ~signed:false (l_size - r_size) r
+        else if l_size < r_size then BV.extract 0 (l_size - 1) r
         else r
     | _ -> r
 
@@ -77,24 +78,24 @@ module M (State : State_intf.S) = struct
       | Add (OUB | OPanic) ->
           let l = cast_lit ty l in
           let r = cast_lit ty r in
-          let overflows = BitVec.add_overflows ~signed l r in
+          let overflows = BV.add_overflows ~signed l r in
           if%sat overflows then Result.error `Overflow else Result.ok ()
       | Sub (OUB | OPanic) ->
           let l = cast_lit ty l in
           let r = cast_lit ty r in
-          let overflows = BitVec.sub_overflows ~signed l r in
+          let overflows = BV.sub_overflows ~signed l r in
           if%sat overflows then Result.error `Overflow else Result.ok ()
       | Mul (OUB | OPanic) ->
           let l = cast_lit ty l in
           let r = cast_lit ty r in
-          let overflows = BitVec.mul_overflows ~signed l r in
+          let overflows = BV.mul_overflows ~signed l r in
           if%sat overflows then Result.error `Overflow else Result.ok ()
       | Div (OUB | OPanic) | Rem (OUB | OPanic) ->
-          if%sat r ==@ BitVec.mki_lit ty 0 then Result.error `DivisionByZero
+          if%sat r ==@ BV.mki_lit ty 0 then Result.error `DivisionByZero
           else if signed then
             let min = Layout.min_value_z ty in
-            let min = BitVec.mk_lit ty min in
-            let m_one = BitVec.mki_lit ty (-1) in
+            let min = BV.mk_lit ty min in
+            let m_one = BV.mki_lit ty (-1) in
             if%sat l ==@ min &&@ (r ==@ m_one) then Result.error `Overflow
             else Result.ok ()
           else Result.ok ()
@@ -103,8 +104,8 @@ module M (State : State_intf.S) = struct
              type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
           let r, size_r = cast_int r in
-          if%sat r <$@ BitVec.mki size_r 0 ||@ (r >=$@ BitVec.mki size_r size)
-          then Result.error `InvalidShift
+          if%sat r <$@ BV.mki size_r 0 ||@ (r >=$@ BV.mki size_r size) then
+            Result.error `InvalidShift
           else Result.ok ()
       | _ -> Result.ok ()
     in
@@ -147,12 +148,12 @@ module M (State : State_intf.S) = struct
     let r = cast_lit ty r in
     let overflows_fn =
       match op with
-      | AddChecked -> BitVec.add_overflows
-      | SubChecked -> BitVec.sub_overflows
-      | MulChecked -> BitVec.mul_overflows
+      | AddChecked -> BV.add_overflows
+      | SubChecked -> BV.sub_overflows
+      | MulChecked -> BV.mul_overflows
       | _ -> failwith "Invalid checked op"
     in
-    let overflowed = BitVec.of_bool @@ overflows_fn ~signed l r in
+    let overflowed = BV.of_bool @@ overflows_fn ~signed l r in
     Result.ok (Tuple [ Base wrapped; Base overflowed ])
 
   let rec eval_ptr_binop (bop : Expressions.binop) l r :
@@ -160,19 +161,19 @@ module M (State : State_intf.S) = struct
     match (bop, l, r) with
     | Ne, _, _ ->
         let++ res = eval_ptr_binop Eq l r in
-        BitVec.not_bool (cast res)
+        BV.not_bool (cast res)
     | Eq, Ptr (l, None), Ptr (r, None) ->
-        Result.ok (BitVec.of_bool (Sptr.sem_eq l r))
+        Result.ok (BV.of_bool (Sptr.sem_eq l r))
     | Eq, Ptr (l, Some ml), Ptr (r, Some mr) ->
-        Result.ok (BitVec.of_bool (Sptr.sem_eq l r &&@ (ml ==@ mr)))
+        Result.ok (BV.of_bool (Sptr.sem_eq l r &&@ (ml ==@ mr)))
     | Eq, Ptr (_, Some _), Ptr (_, None) | Eq, Ptr (_, None), Ptr (_, Some _) ->
-        Result.ok (BitVec.of_bool v_false)
+        Result.ok (BV.of_bool v_false)
     | Eq, Ptr (p, _), Base v | Eq, Base v, Ptr (p, _) ->
         let v = cast_i Usize v in
-        if%sat v ==@ BitVec.usizei 0 then
-          Result.ok (BitVec.of_bool (Sptr.is_at_null_loc p))
+        if%sat v ==@ Usize.(0s) then
+          Result.ok (BV.of_bool (Sptr.is_at_null_loc p))
         else Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p ppa v
-    | Eq, Base v1, Base v2 -> Result.ok (BitVec.of_bool (v1 ==@ v2))
+    | Eq, Base v1, Base v2 -> Result.ok (BV.of_bool (v1 ==@ v2))
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then
           let* dist = Sptr.distance l r in
@@ -184,21 +185,21 @@ module M (State : State_intf.S) = struct
             | Ge -> ( >=$@ )
             | _ -> assert false
           in
-          let v = bop dist (BitVec.usizei 0) in
+          let v = bop dist Usize.(0s) in
           match (ml, mr) with
           | Some ml, Some mr ->
-              if%sat dist ==@ BitVec.usizei 0 then
+              if%sat dist ==@ Usize.(0s) then
                 let ml, mr, mty = cast_checked2 ml mr in
                 match untype_type mty with
-                | TBitVector _ -> Result.ok (BitVec.of_bool (bop ml mr))
+                | TBitVector _ -> Result.ok (BV.of_bool (bop ml mr))
                 | mty ->
                     Fmt.kstr not_impl
                       "Don't know how to compare metadata of type %a"
                       Svalue.pp_ty mty
-              else Result.ok (BitVec.of_bool v)
+              else Result.ok (BV.of_bool v)
           (* is this correct? *)
-          | Some _, None | None, Some _ -> Result.ok (BitVec.of_bool v)
-          | None, None -> Result.ok (BitVec.of_bool v)
+          | Some _, None | None, Some _ -> Result.ok (BV.of_bool v)
+          | None, None -> Result.ok (BV.of_bool v)
         else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         if%sat Sptr.is_same_loc l r then
@@ -207,10 +208,10 @@ module M (State : State_intf.S) = struct
           Result.ok cmp
         else Result.error `UBPointerComparison
     | Cmp, Ptr (p, _), Base v | Cmp, Base v, Ptr (p, _) ->
-        if%sat v ==@ BitVec.usizei (Layout.size_of_uint_ty Usize) then
-          if%sat Sptr.is_at_null_loc p then Result.ok (BitVec.u8i 0)
-          else if l = Base v then Result.ok (BitVec.u8i 1)
-          else Result.ok (BitVec.u8i (-1))
+        if%sat v ==@ BV.usizei (Layout.size_of_uint_ty Usize) then
+          if%sat Sptr.is_at_null_loc p then Result.ok U8.(0s)
+          else if l = Base v then Result.ok U8.(1s)
+          else Result.ok U8.(-1s)
         else
           Fmt.kstr not_impl "Don't know how to eval %a cmp %a" Sptr.pp p ppa v
     | op, l, r ->

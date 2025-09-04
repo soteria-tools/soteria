@@ -58,8 +58,8 @@ module BitVec = struct
   let mk_nz n z =
     if Z.equal z Z.zero then failwith "Zero value in mk_nonzero" else mk n z
 
-  let mki_nz n i =
-    if i = 0 then failwith "Zero value in mki_nonzero" else mki n i
-
   let mki_masked n i = mk_masked n (Z.of_int i)
+
+  let mki_nz n i =
+    if i = 0 then failwith "Zero value in mki_nonzero" else mki_masked n i
 end

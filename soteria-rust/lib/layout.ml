@@ -1,5 +1,6 @@
 open Charon
 open Typed.Infix
+open Typed.Syntax
 open Rustsymex
 open Rust_val
 open Charon_util
@@ -317,7 +318,7 @@ let size_of_s ty =
 let align_of_s ty =
   let open Rustsymex.Syntax in
   let+ { align; _ } = layout_of_s ty in
-  Typed.BitVec.usizei_nz align
+  Typed.BitVec.usizeinz align
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
@@ -368,17 +369,17 @@ let constraints :
         (* Maybe worth checking which of these is better (if it matters at all)
            [ x ==@ 0s ||@ (x ==@ 1s) ]) *)
         let x = Typed.cast_lit TBool x in
-        [ Typed.BitVec.u8i 0 <=@ x; x <=@ Typed.BitVec.u8i 1 ]
+        [ U8.(0s) <=@ x; (x <=@ U8.(1s)) ]
   | TChar ->
       (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’ other than
        a surrogate code point. This has a fixed numerical definition: code points are in
        the range 0 to 0x10FFFF, inclusive. Surrogate code points, used by UTF-16, are in
        the range 0xD800 to 0xDFFF.
        https://doc.rust-lang.org/std/primitive.char.html *)
-      let codepoint_min = Typed.BitVec.u32i 0 in
-      let codepoint_max = Typed.BitVec.u32i 0x10FFFF in
-      let surrogate_min = Typed.BitVec.u32i 0xD800 in
-      let surrogate_max = Typed.BitVec.u32i 0xDFFF in
+      let codepoint_min = U32.(0s) in
+      let codepoint_max = U32.(0x10FFFFs) in
+      let surrogate_min = U32.(0xD800s) in
+      let surrogate_max = U32.(0xDFFFs) in
       fun x ->
         let x = Typed.cast_lit TChar x in
         [

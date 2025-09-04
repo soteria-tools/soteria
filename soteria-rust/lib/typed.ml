@@ -53,21 +53,34 @@ module BitVec = struct
   include BitVec
 
   let mk_lit ty = BitVec.mk_masked (Lc.size_of_literal_ty ty * 8)
+  let mk_lit_nz ty = BitVec.mk_nz (Lc.size_of_literal_ty ty * 8)
   let mki_lit ty = BitVec.mki_masked (Lc.size_of_literal_ty ty * 8)
   let mki_lit_nz ty = BitVec.mki_nz (Lc.size_of_literal_ty ty * 8)
   let u8 = mk_lit (TUInt U8)
-  let u16 = mk_lit (TUInt U16)
-  let u32 = mk_lit (TUInt U32)
-  let u64 = mk_lit (TUInt U64)
-  let u128 = mk_lit (TUInt U128)
-  let usize z = mk_lit (TUInt Usize) z
   let u8i = mki_lit (TUInt U8)
+  let u8nz = mk_lit_nz (TUInt U8)
+  let u8inz = mki_lit_nz (TUInt U8)
+  let u16 = mk_lit (TUInt U16)
   let u16i = mki_lit (TUInt U16)
+  let u16nz = mk_lit_nz (TUInt U16)
+  let u16inz = mki_lit_nz (TUInt U16)
+  let u32 = mk_lit (TUInt U32)
   let u32i = mki_lit (TUInt U32)
+  let u32nz = mk_lit_nz (TUInt U32)
+  let u32inz = mki_lit_nz (TUInt U32)
+  let u64 = mk_lit (TUInt U64)
   let u64i = mki_lit (TUInt U64)
+  let u64nz = mk_lit_nz (TUInt U64)
+  let u64inz = mki_lit_nz (TUInt U64)
+  let u128 = mk_lit (TUInt U128)
   let u128i = mki_lit (TUInt U128)
-  let usizei i = mki_lit (TUInt Usize) i
-  let usizei_nz i = mki_lit_nz (TUInt Usize) i
+  let u128nz = mk_lit_nz (TUInt U128)
+  let u128inz = mki_lit_nz (TUInt U128)
+  let usize z = mk_lit (TUInt Usize) z
+  let usizei z = mki_lit (TUInt Usize) z
+  let usizenz z = mk_lit_nz (TUInt Usize) z
+  let usizeinz z = mki_lit_nz (TUInt Usize) z
+  let usize_of_const_generic cgen = usize (Charon_util.z_of_const_generic cgen)
 
   let of_bool : T.sbool t -> [> T.sint ] t =
     let size = Lc.size_of_literal_ty TBool * 8 in
@@ -98,4 +111,30 @@ module Ptr = struct
 
   let null () = null (8 * Lc.size_of_uint_ty Usize)
   let loc_of_int i = loc_of_int (8 * Lc.size_of_uint_ty Usize) i
+end
+
+module Syntax = struct
+  module U8 = struct
+    module Sym_int_syntax = struct
+      let mk_nonzero = BitVec.u8inz
+      let zero = BitVec.u8 Z.zero
+      let one = BitVec.u8nz Z.one
+    end
+  end
+
+  module U32 = struct
+    module Sym_int_syntax = struct
+      let mk_nonzero = BitVec.u32inz
+      let zero = BitVec.u32 Z.zero
+      let one = BitVec.u32nz Z.one
+    end
+  end
+
+  module Usize = struct
+    module Sym_int_syntax = struct
+      let mk_nonzero = BitVec.usizeinz
+      let zero = BitVec.usize Z.zero
+      let one = BitVec.usizenz Z.one
+    end
+  end
 end
