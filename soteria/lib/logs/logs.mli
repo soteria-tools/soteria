@@ -10,7 +10,7 @@ module Level : sig
   type t =
     | Smt  (** For messages that describe interaction with an SMT solver *)
     | Trace  (** For very detailed trace of execution. *)
-    | Debug  (** Debugging messages, helpful when something goes rwong *)
+    | Debug  (** Debugging messages, helpful when something goes wrong *)
     | Info  (** Information that is not crucial to the execution. *)
     | Warn  (** Warnings *)
     | App  (** User-facing messages *)
