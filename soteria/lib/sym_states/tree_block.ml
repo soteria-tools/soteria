@@ -130,6 +130,10 @@ struct
   open Symex
   open MemVal.SInt
 
+  module Sym_int_syntax = struct
+    let zero = MemVal.SInt.zero
+  end
+
   type nonrec sint = sint Symex.Value.t
 
   (* re-export the types to be able to use them easily *)
@@ -577,9 +581,8 @@ struct
         Result.miss_no_fix ~reason:"assert_exclusively_owned - no bound" ()
     | Some bound ->
         let { range = low, high; node; _ } = t.root in
-        if%sat low ==@ zero () &&@ (high ==@ bound) then
-          lift_miss ~offset:(zero ()) ~len:bound
-          @@ Node.assert_exclusively_owned node
+        if%sat low ==@ 0s &&@ (high ==@ bound) then
+          lift_miss ~offset:0s ~len:bound @@ Node.assert_exclusively_owned node
         else
           Result.miss_no_fix
             ~reason:"assert_exclusively_owned - tree does not span [0; bound["
@@ -589,7 +592,7 @@ struct
     let@ t = with_bound_and_owned_check t (ofs +@ size) in
     let** tree, t = Tree.get_raw ofs size t in
     if Node.is_fully_owned tree.node then
-      let tree = Tree.offset ~by:(zero () -@ ofs) tree in
+      let tree = Tree.offset ~by:(0s -@ ofs) tree in
       Result.ok (tree, t)
     else Result.miss_no_fix ~reason:"get_raw_tree_owned" ()
 
@@ -604,7 +607,7 @@ struct
 
   let alloc v size =
     {
-      root = { node = Owned v; range = (zero (), size); children = None };
+      root = { node = Owned v; range = (0s, size); children = None };
       bound = Some size;
     }
 
@@ -667,7 +670,7 @@ struct
     match t with
     | None ->
         Symex.return
-          (Some { bound = Some bound; root = Tree.not_owned (zero (), bound) })
+          (Some { bound = Some bound; root = Tree.not_owned (0s, bound) })
     | Some { bound = None; root } ->
         Symex.return (Some { bound = Some bound; root })
     | Some { bound = Some _; _ } -> Symex.vanish ()

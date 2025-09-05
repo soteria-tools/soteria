@@ -117,24 +117,24 @@ module Syntax = struct
   module U8 = struct
     module Sym_int_syntax = struct
       let mk_nonzero = BitVec.u8inz
-      let zero = BitVec.u8 Z.zero
-      let one = BitVec.u8nz Z.one
+      let zero () = BitVec.u8 Z.zero
+      let one () = BitVec.u8nz Z.one
     end
   end
 
   module U32 = struct
     module Sym_int_syntax = struct
       let mk_nonzero = BitVec.u32inz
-      let zero = BitVec.u32 Z.zero
-      let one = BitVec.u32nz Z.one
+      let zero () = BitVec.u32 Z.zero
+      let one () = BitVec.u32nz Z.one
     end
   end
 
   module Usize = struct
     module Sym_int_syntax = struct
       let mk_nonzero = BitVec.usizeinz
-      let zero = BitVec.usize Z.zero
-      let one = BitVec.usizenz Z.one
+      let zero () = BitVec.usize Z.zero
+      let one () = BitVec.usizenz Z.one
     end
   end
 end

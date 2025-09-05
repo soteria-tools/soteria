@@ -1498,7 +1498,7 @@ end
 module Syntax = struct
   module Sym_int_syntax = struct
     let mk_nonzero = nonzero
-    let zero = zero
-    let one = one
+    let[@inline] zero () = zero
+    let[@inline] one () = one
   end
 end
