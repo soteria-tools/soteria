@@ -26,6 +26,7 @@ let rec pp_ty fmt : Types.ty -> unit = function
       Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_ty) tys
   | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
       Fmt.pf fmt "Box<%a>" pp_ty ty
+  | TAdt { id = TBuiltin TBox; _ } -> Fmt.string fmt "Box<?>"
   | TAdt
       {
         id = TBuiltin TArray;
@@ -33,8 +34,10 @@ let rec pp_ty fmt : Types.ty -> unit = function
           { types = [ ty ]; const_generics = [ CgValue (VScalar len) ]; _ };
       } ->
       Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print (z_of_scalar len)
+  | TAdt { id = TBuiltin TArray; _ } -> Fmt.string fmt "[?; ?]"
   | TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } ->
       Fmt.pf fmt "[%a]" pp_ty ty
+  | TAdt { id = TBuiltin TSlice; _ } -> Fmt.string fmt "[?]"
   | TAdt { id = TBuiltin TStr; _ } -> Fmt.string fmt "str"
   | TLiteral lit -> Fmt.string fmt @@ PrintValues.literal_type_to_string lit
   | TNever -> Fmt.string fmt "!"
@@ -44,7 +47,14 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
   | TFnPtr { binder_value = ins, out; _ } ->
       Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
-  | ty -> Types.pp_ty fmt ty
+  | TDynTrait _ -> Fmt.string fmt "dyn <trait>"
+  | TTraitType (_, name) -> Fmt.pf fmt "Trait<?>::%s" name
+  | TFnDef { binder_value = { func = FunId (FRegular fid); _ }; _ } ->
+      let f = Crate.get_fun fid in
+      Fmt.pf fmt "fn %a" Crate.pp_name f.item_meta.name
+  | TFnDef _ -> Fmt.string fmt "fn ?"
+  | TVar _ -> Fmt.string fmt "T?"
+  | TError err -> Fmt.pf fmt "Error(%s)" err
 
 let lit_of_int_ty : Types.integer_type -> Types.literal_type = function
   | Signed ity -> TInt ity

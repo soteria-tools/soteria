@@ -10,11 +10,9 @@ open Charon
 
 exception ExecutionError of string
 exception FrontendError of string
-exception UnsupportedFeatures of string list
 
 let execution_err msg = raise (ExecutionError msg)
 let frontend_err msg = raise (FrontendError msg)
-let unsupported_features features = raise (UnsupportedFeatures features)
 
 module Outcome = struct
   type t = Ok | Error | Fatal
@@ -32,11 +30,8 @@ module Outcome = struct
   let pp ft = function
     | Ok -> Color.pp_clr `Green ft "ok"
     | Error -> Color.pp_clr `Red ft "error"
-    | Fatal -> Color.pp_clr `Maroon ft "unknown"
+    | Fatal -> Color.pp_clr `Yellow ft "unknown"
 end
-
-let default_fuel =
-  Soteria.Symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 module Cleaner = struct
   let files = ref []
@@ -132,24 +127,20 @@ let print_outcomes entry_name f =
         Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error;
         Fmt.pr "@.@."
       in
-      Fmt.pr "@.@.";
       (entry_name, Outcome.Error)
-  | exception ExecutionError e ->
+  | exception e ->
       let time = Unix.gettimeofday () -. time in
-      Fmt.kstr
-        (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "%s: runtime error in %a: %s" entry_name pp_time time e;
-      Fmt.pr "@.@.";
-      (entry_name, Outcome.Fatal)
-  | exception UnsupportedFeatures fs ->
-      let time = Unix.gettimeofday () -. time in
+      let error, msg =
+        match e with
+        | ExecutionError msg -> ("runtime error", msg)
+        | Soteria.Symex.Gave_up reason -> ("unsupported feature", reason)
+        | e ->
+            ( "exception",
+              Fmt.str "%a@\nTrace: %s" Fmt.exn e (Printexc.get_backtrace ()) )
+      in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Warning)
-        "%s: unknown outcome in %a, due to unsupported features: @\n%a"
-        entry_name pp_time time
-        Fmt.(list ~sep:cut (fun ft r -> Fmt.pf ft "• %s" r))
-        fs;
-      Fmt.pr "@.@.";
+        "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
@@ -181,17 +172,13 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let { res = branches; stats } : ('res, 'range) Soteria.Stats.with_stats =
     let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
     try
-      Rustsymex.run_with_stats ~mode:UX ~fuel:entry.fuel
+      Rustsymex.run_with_stats ~mode:OX ~fuel:entry.fuel
       @@ exec_fun entry.fun_decl
-    with
-    | Layout.InvalidLayout ty ->
-        {
-          res = [ (Error (`InvalidLayout ty, Call_trace.empty), []) ];
-          stats = Rustsymex.Stats.create ();
-        }
-    | exn ->
-        Fmt.kstr execution_err "Exn: %a@\nTrace: %s" Fmt.exn exn
-          (Printexc.get_backtrace ())
+    with Layout.InvalidLayout ty ->
+      {
+        res = [ (Error (`InvalidLayout ty, Call_trace.empty), []) ];
+        stats = Rustsymex.Stats.create ();
+      }
   in
 
   (* inverse ok and errors if we expect a failure *)
@@ -213,13 +200,8 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
 
   (* check for uncaught failure conditions *)
   let outcomes = List.map fst branches in
-  if Soteria.Stats.Hstring.length stats.give_up_reasons <> 0 then
-    let reasons = Soteria.Stats.Hstring.to_seq_keys stats.give_up_reasons in
-    unsupported_features @@ List.of_seq reasons
-  else if stats.unexplored_branch_number > 0 then
+  if stats.unexplored_branch_number > 0 then
     Fmt.kstr execution_err "Missed %d branches" stats.unexplored_branch_number
-  else if stats.sat_unknowns > 0 then
-    Fmt.kstr execution_err "SAT solver returned %d unknowns" stats.sat_unknowns
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 

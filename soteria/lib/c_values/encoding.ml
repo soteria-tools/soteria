@@ -149,4 +149,5 @@ and encode_value_memo v =
       Hashtbl.Hint.add memo_encode_value_tbl v.Hc.tag k;
       k
 
-let encode_value v = encode_value_memo v
+let encode_value (v : Svalue.t) =
+  Svalue.split_ands v |> Iter.map encode_value_memo |> Iter.to_list |> bool_ands
