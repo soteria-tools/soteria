@@ -1,20 +1,32 @@
 (** {2 Phantom types} *)
 
 module T : sig
-  type sint = [ `NonZero | `MaybeZero ]
-  type sfloat = [ `Float ]
+  (** A symbolic integer; can either be [`NonZero] if it is known to not be 0,
+      [`Zero] if it is 0. *)
+  type sint = [ `NonZero | `Zero ]
+
+  (** Any symbolic integer; it may be the result of an overflowing operation *)
+  type sint_ovf = [ `NonZero | `Zero | `Overflowed ]
+
+  (** A symbolic integer known to be non-zero. *)
   type nonzero = [ `NonZero ]
+
+  (** A symbolic integer known to be zero. *)
+  type zero = [ `Zero ]
+
+  type sfloat = [ `Float ]
   type sbool = [ `Bool ]
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
   type cval = [ sint | sptr | sfloat ]
-
-  type any =
-    [ `Bool | `Ptr | `Loc | `List of any | `NonZero | `MaybeZero | `Float ]
+  type any = [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq ]
 
   val pp_sint : Format.formatter -> sint -> unit
+  val pp_sint_ovf : Format.formatter -> sint_ovf -> unit
   val pp_nonzero : Format.formatter -> nonzero -> unit
+  val pp_zero : Format.formatter -> zero -> unit
+  val pp_sfloat : Format.formatter -> sfloat -> unit
   val pp_sbool : Format.formatter -> sbool -> unit
   val pp_sptr : Format.formatter -> sptr -> unit
   val pp_sloc : Format.formatter -> sloc -> unit
@@ -104,18 +116,18 @@ module BitVec : sig
   val mki_masked : int -> int -> [> sint ] t
   val mk_nz : int -> Z.t -> [> nonzero ] t
   val mki_nz : int -> int -> [> nonzero ] t
-  val zero : int -> [> sint ] t
+  val zero : int -> [> zero ] t
   val one : int -> [> nonzero ] t
   val bv_to_z : bool -> int -> Z.t -> Z.t
 
   (* arithmetic *)
-  val add : [< sint ] t -> [< sint ] t -> [> sint ] t
-  val sub : [< sint ] t -> [< sint ] t -> [> sint ] t
-  val mul : [< sint ] t -> [< sint ] t -> [> sint ] t
-  val div : signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
-  val rem : signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t
-  val mod_ : [< sint ] t -> [< sint ] t -> [> sint ] t
-  val neg : [< sint ] t -> [> sint ] t
+  val add : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val sub : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val mul : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val div : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
+  val rem : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
+  val mod_ : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val neg : [< sint ] t -> [> sint_ovf ] t
 
   (* overflow checks *)
   val add_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
@@ -202,8 +214,11 @@ module SSeq : sig
 end
 
 module Infix : sig
+  (* equality *)
   val ( ==@ ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
   val ( ==?@ ) : 'a t -> 'b t -> [> sbool ] t
+
+  (* inequality -- [$] indicates signed *)
   val ( >@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( >$@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( >=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
@@ -212,22 +227,47 @@ module Infix : sig
   val ( <$@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( <=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
   val ( <=$@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+
+  (* booleans *)
   val ( &&@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
   val ( ||@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
-  val ( +@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
-  val ( -@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
-  val ( ~- ) : [< sint ] t -> [> sint ] t
-  val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  (* arithmetic -- [$] indicates signed
+     unsigned division and remainder cannot overflow so we consider they
+     always result in-bounds (can overflow for signed with [MIN / -1]) *)
+  val ( +@ ) : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val ( -@ ) : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val ( ~- ) : [< sint ] t -> [> sint_ovf ] t
+  val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val ( /@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
   val ( /$@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
   val ( %@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
   val ( %$@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+
+  (* arithmetic operations with overflow ignored *)
+  val ( +!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( -!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( *!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( ~-! ) : [< sint ] t -> [> sint ] t
+
+  (* arithmetic operations for checked operations *)
+  val ( +?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+  val ( +$?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+  val ( -?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+  val ( -$?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+  val ( *?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+  val ( *$?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+  val ( ~-? ) : [< sint ] t -> [> sint ] t * [> sbool ] t
+
+  (* bit operations *)
   val ( <<@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( >>@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( >>>@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( ^@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( &@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( |@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+
+  (* float operations *)
   val ( ==.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
   val ( >.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
   val ( >=.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t

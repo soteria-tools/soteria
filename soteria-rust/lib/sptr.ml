@@ -56,7 +56,7 @@ module type S = sig
   val as_id : t -> sint Typed.t
 
   (** Get the allocation info for this pointer: its size and alignment *)
-  val allocation_info : t -> T.sint Typed.t * T.nonzero Typed.t
+  val allocation_info : t -> sint Typed.t * nonzero Typed.t
 
   val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit
   val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
@@ -106,14 +106,18 @@ module ArithPtr : S with type t = arithptr_t = struct
     Typed.conj [ Usize.(0s) <=$@ ofs; ofs <=$@ size ]
 
   let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8))
-      ({ ptr; _ } as fptr) off =
+      ({ ptr; _ } as fptr) off_by =
     let* size = Layout.size_of_s ty in
-    let off = size *@ off in
-    let ptr = Typed.Ptr.add_ofs ptr off in
+    let loc, off = Typed.Ptr.decompose ptr in
+    let off_by, off_by_ovf = size *$?@ off_by in
+    let off, off_ovf = off +$?@ off_by in
+    let ptr = Typed.Ptr.mk loc off in
     let ptr = { fptr with ptr } in
     if check then
       if%sat [@lname "Ptr ok"] [@rname "Ptr dangling"]
-        off ==@ Usize.(0s) ||@ constraints ptr
+        off
+        ==@ Usize.(0s)
+        ||@ ((not off_by_ovf) &&@ not off_ovf &&@ constraints ptr)
       then Result.ok ptr
       else Result.error `UBDanglingPointer
     else Result.ok ptr
@@ -147,7 +151,7 @@ module ArithPtr : S with type t = arithptr_t = struct
        base is distinct from all other decayed pointers' bases... *)
     let loc, ofs = Typed.Ptr.decompose ptr in
     match ValMap.find_opt loc !decayed_vars with
-    | Some loc_int -> return (loc_int +@ ofs)
+    | Some loc_int -> return (loc_int +!@ ofs)
     | None ->
         let+ loc_int =
           if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
@@ -158,7 +162,7 @@ module ArithPtr : S with type t = arithptr_t = struct
               [
                 (loc_int %@ align ==@ Usize.(0s));
                 Usize.(0s) <@ loc_int;
-                loc_int <@ Typed.BitVec.usize isize_max -@ size;
+                loc_int <@ Typed.BitVec.usize isize_max -!@ size;
               ]
             in
             let+ () = Rustsymex.assume constrs in
@@ -166,15 +170,15 @@ module ArithPtr : S with type t = arithptr_t = struct
         in
         L.debug (fun m -> m "Decayed %a to %a" Typed.ppa loc Typed.ppa loc_int);
         decayed_vars := ValMap.add loc loc_int !decayed_vars;
-        loc_int +@ ofs
+        loc_int +!@ ofs
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
     if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
-      return (Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2)
+      return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
     else
       let* ptr1 = decay p1 in
       let+ ptr2 = decay p2 in
-      ptr1 -@ ptr2
+      ptr1 -!@ ptr2
 
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
   let allocation_info { size; align; _ } = (size, align)

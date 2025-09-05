@@ -116,7 +116,7 @@ module Make (Sptr : Sptr.S) = struct
           let field_offset =
             BV.usizei (Layout.Fields_shape.offset_of i layout.fields)
           in
-          let offset = field_offset +@ offset in
+          let offset = field_offset +!@ offset in
           rust_to_cvals ~offset value ty)
         vals types
       |> List.flatten
@@ -148,7 +148,7 @@ module Make (Sptr : Sptr.S) = struct
           let size = BV.usizei (Layout.size_of_int_ty Isize) in
           [
             { value; ty; offset };
-            { value = Base meta; ty; offset = offset +@ size };
+            { value = Base meta; ty; offset = offset +!@ size };
           ]
         else [ { value; ty; offset } ]
     (* Function pointer *)
@@ -200,7 +200,7 @@ module Make (Sptr : Sptr.S) = struct
               | None -> []
               | Some tag ->
                   let v = BV.mk_lit tag_layout.ty tag in
-                  let offset = BV.usizei tag_layout.offset +@ offset in
+                  let offset = BV.usizei tag_layout.offset +!@ offset in
                   [ { value = Base v; ty = TLiteral tag_layout.ty; offset } ]
             in
             let var_layout = { layout with fields = var_fields } in
@@ -260,7 +260,7 @@ module Make (Sptr : Sptr.S) = struct
         | Enum (d, _) -> d
         | _ -> failwith "Unexpected layout for enum"
       in
-      let offset = offset +@ BV.usizei tag_layout.offset in
+      let offset = offset +!@ BV.usizei tag_layout.offset in
       let*** cval = query (TLiteral tag_layout.ty, offset) in
       (* here we need to check and decay if it's a pointer, for niche encoding! *)
       let*** cval =
@@ -317,7 +317,7 @@ module Make (Sptr : Sptr.S) = struct
           let ptr_size = BV.usizei @@ Layout.size_of_int_ty Isize in
           let isize : Types.ty = TLiteral (TInt Isize) in
           let*** ptr_compo = query (isize, offset) in
-          let+** meta_compo = query (isize, offset +@ ptr_size) in
+          let+** meta_compo = query (isize, offset +!@ ptr_size) in
           match (ptr_compo, meta_compo) with
           | ( ((Base _ | Ptr (_, None)) as ptr),
               ((Base _ | Ptr (_, None)) as meta) ) -> (
@@ -426,13 +426,13 @@ module Make (Sptr : Sptr.S) = struct
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
         ('e, 'fix, 'state) parser =
-      let base_offset = offset +@ (offset %@ BV.usizeinz layout.align) in
+      let base_offset = offset +!@ (offset %@ BV.usizeinz layout.align) in
       let rec mk_callback idx to_parse parsed : ('e, 'fix, 'state) parser =
         match to_parse () with
         | Seq.Nil -> ok (f (List.rev parsed))
         | Seq.Cons (ty, rest) ->
             let field_off = Layout.Fields_shape.offset_of idx layout.fields in
-            let offset = base_offset +@ BV.usizei field_off in
+            let offset = base_offset +!@ BV.usizei field_off in
             bind (aux offset ty) (fun v ->
                 mk_callback (succ idx) rest (v :: parsed))
       in

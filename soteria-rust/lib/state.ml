@@ -279,7 +279,7 @@ let store (ptr, _) ty sval st =
     let** (), block = Tree_block.uninit_range ofs size block in
     Result.fold_list parts ~init:((), block)
       ~f:(fun ((), block) { value; ty; offset } ->
-        Tree_block.store (offset +@ ofs) ty value ptr.tag tb block)
+        Tree_block.store (offset +!@ ofs) ty value ptr.tag tb block)
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace st in
@@ -305,7 +305,7 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
     match leaf.node with
     | Owned (_, tb) ->
         let range =
-          Tree_block.Range.offset leaf.range ~-(fst original_tree.range)
+          Tree_block.Range.offset leaf.range ~-!(fst original_tree.range)
         in
         f (tb, range)
     | NotOwned Totally -> failwith "Impossible: we framed the range"

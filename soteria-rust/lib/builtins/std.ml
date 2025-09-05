@@ -62,7 +62,7 @@ module M (State : State_intf.S) = struct
       if%sat
         Usize.(0s) <=$@ idx &&@ (idx <=$@ range_end) &&@ (range_end <=$@ size)
       then
-        let size = range_end -@ idx in
+        let size = range_end -!@ idx in
         Result.ok (Ptr (ptr', Some size), state)
       else State.error `OutOfBounds state
 
@@ -88,8 +88,6 @@ module M (State : State_intf.S) = struct
       | Some item -> item
       | None -> failwith "Unexpected range item"
     in
-    let zero = Usize.(0s) in
-    let one = Usize.(1s) in
     let size =
       match (ptr, gargs.const_generics) with
       (* Array with static size *)
@@ -99,14 +97,14 @@ module M (State : State_intf.S) = struct
     in
     let idx_from, idx_to =
       match (range_item, range) with
-      | "RangeFull", [] -> (Base zero, Base size)
+      | "RangeFull", [] -> (Base Usize.(0s), Base size)
       | "RangeFrom", [ from ] -> (from, Base size)
-      | "RangeTo", [ to_ ] -> (Base zero, to_)
+      | "RangeTo", [ to_ ] -> (Base Usize.(0s), to_)
       | "Range", [ from; to_ ] -> (from, to_)
       | "RangeInclusive", [ from; Base to_ ] ->
-          (from, Base (Typed.cast to_ +@ one))
+          (from, Base (Typed.cast to_ +!@ Usize.(1s)))
       | "RangeToInclusive", [ Base to_ ] ->
-          (Base zero, Base (Typed.cast to_ +@ one))
+          (Base Usize.(0s), Base (Typed.cast to_ +!@ Usize.(1s)))
       | _ -> Fmt.failwith "array_index (fn): unexpected range %s" range_item
     in
     let idx_op : Types.builtin_index_op =

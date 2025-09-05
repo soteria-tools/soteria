@@ -386,7 +386,7 @@ module Make (State : State_intf.S) = struct
         in
         let* idx = eval_operand idx in
         let idx = as_base_i Usize idx in
-        let idx = if from_end then len -@ idx else idx in
+        let idx = if from_end then len -!@ idx else idx in
         if%sat Usize.(0s) <=$@ idx &&@ (idx <$@ len) then (
           let^^+ ptr' = Sptr.offset ~ty ptr idx in
           L.debug (fun f ->
@@ -416,10 +416,10 @@ module Make (State : State_intf.S) = struct
         let* to_ = eval_operand to_ in
         let from = as_base_i Usize from in
         let to_ = as_base_i Usize to_ in
-        let to_ = if from_end then len -@ to_ else to_ in
+        let to_ = if from_end then len -!@ to_ else to_ in
         if%sat Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len) then (
           let^^+ ptr' = Sptr.offset ~ty ptr from in
-          let slice_len = to_ -@ from in
+          let slice_len = to_ -!@ from in
           L.debug (fun f ->
               f "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp
                 ptr Typed.ppa from Typed.ppa to_
@@ -566,7 +566,8 @@ module Make (State : State_intf.S) = struct
             match type_of_operand e with
             | TLiteral ((TInt _ | TUInt _) as ty) ->
                 let v = as_base ty v in
-                ok (Base ~-v)
+                let res, overflowed = ~-?v in
+                if%sat overflowed then error `Overflow else ok (Base res)
             | TLiteral (TFloat fty) ->
                 let v = as_base_f fty v in
                 ok (Base (Typed.Float.neg v))

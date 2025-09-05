@@ -42,9 +42,9 @@ module M (State : State_intf.S) = struct
 
   let binop_fn (bop : Expressions.binop) signed =
     match bop with
-    | Add _ | AddChecked -> ( +@ )
-    | Sub _ | SubChecked -> ( -@ )
-    | Mul _ | MulChecked -> ( *@ )
+    | Add _ | AddChecked -> ( +!@ )
+    | Sub _ | SubChecked -> ( -!@ )
+    | Mul _ | MulChecked -> ( *!@ )
     | Div _ -> BV.div ~signed
     | Rem _ -> BV.rem ~signed
     | Shl _ -> ( <<@ )
@@ -68,7 +68,7 @@ module M (State : State_intf.S) = struct
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
   let eval_lit_binop (bop : Expressions.binop) ty (l : T.cval Typed.t)
-      (r : T.cval Typed.t) =
+      (r : T.cval Typed.t) : ([> T.sfloat | T.sint ] Typed.t, 'e, 'f) Result.t =
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
     let is_integer = match ty with TUInt _ | TInt _ -> true | _ -> false in
@@ -118,43 +118,40 @@ module M (State : State_intf.S) = struct
         let l = cast_lit ty l in
         let r = cast_lit ty r in
         let op = binop_fn bop signed in
-        Result.ok (op l r)
+        Result.ok (cast (op l (cast r)))
     | TFloat _ -> (
         let l, r = (cast l, cast r) in
         match bop with
         | Add _ -> Result.ok (l +.@ r)
         | Sub _ -> Result.ok (l -.@ r)
         | Mul _ -> Result.ok (l *.@ r)
-        | Div _ -> Result.ok (l /.@ cast r)
+        | Div _ -> Result.ok (l /.@ r)
         | Rem _ -> Result.ok (Float.rem l (cast r))
         | _ -> not_impl "Invalid binop for float in eval_lit_binop")
     | _ -> not_impl "Unexpected type in eval_lit_binop"
 
-  (** Wraps a given value to make it fit within the constraints of the given
-      type *)
-  let wrapping_binop (bop : Expressions.binop) ty l r =
+  (** Applies the given binary operator using wrapping semantics; in other
+      words, any overflow is ignored and unchecked for. *)
+  let wrapping_binop (bop : Expressions.binop) ty l r : [> T.sint ] Typed.t =
     let r = normalise_shift_r bop l r in
     let l = cast_lit ty l in
     let r = cast_lit ty r in
     let signed = Layout.is_signed ty in
     let op = binop_fn bop signed in
-    op l r
+    cast (op l (cast r))
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
-  let eval_checked_lit_binop op ty l r =
-    let wrapped = wrapping_binop op ty l r in
-    let signed = Layout.is_signed ty in
+  let eval_checked_lit_binop (op : Expressions.binop) ty l r =
     let l = cast_lit ty l in
     let r = cast_lit ty r in
-    let overflows_fn =
+    let wrapped, overflowed =
       match op with
-      | AddChecked -> BV.add_overflows
-      | SubChecked -> BV.sub_overflows
-      | MulChecked -> BV.mul_overflows
+      | AddChecked -> l +?@ r
+      | SubChecked -> l -?@ r
+      | MulChecked -> l *?@ r
       | _ -> failwith "Invalid checked op"
     in
-    let overflowed = BV.of_bool @@ overflows_fn ~signed l r in
-    Result.ok (Tuple [ Base wrapped; Base overflowed ])
+    Result.ok (Tuple [ Base wrapped; Base (BV.of_bool overflowed) ])
 
   let rec eval_ptr_binop (bop : Expressions.binop) l r :
       ([> T.cval ] Typed.t, 'e, 'm) Result.t =

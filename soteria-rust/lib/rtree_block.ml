@@ -27,6 +27,8 @@ module Make (Sptr : Sptr.S) = struct
       let zero () = Typed.BitVec.usize Z.zero
       let ( <@ ) = Typed.Infix.( <$@ )
       let ( <=@ ) = Typed.Infix.( <=$@ )
+      let ( +@ ) = Typed.Infix.( +!@ )
+      let ( -@ ) = Typed.Infix.( -!@ )
     end
 
     let pp_init ft (v, ty) =
@@ -171,7 +173,7 @@ module Make (Sptr : Sptr.S) = struct
   let collect_leaves (t : Tree.t) =
     Result.fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
         let offset, _ = leaf.range in
-        let offset = offset -@ fst t.range in
+        let offset = offset -!@ fst t.range in
         match leaf.node with
         | NotOwned Totally -> miss_no_fix ~reason:"decode" ()
         | Owned (Uninit Totally, _) -> Result.error `UninitializedMemoryAccess

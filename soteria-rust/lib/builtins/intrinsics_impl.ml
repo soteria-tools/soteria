@@ -184,7 +184,7 @@ module M (State : State_intf.S) = struct
         let bl = as_base_i U8 bl in
         let** br, state = State.load (r, None) byte state in
         let br = as_base_i U8 br in
-        if%sat bl ==@ br then aux l r (len -@ one) state
+        if%sat bl ==@ br then aux l r (len -!@ one) state
         else
           if%sat bl <@ br then Result.ok (Base U32.(-1s), state)
           else Result.ok (Base U32.(1s), state)
@@ -200,29 +200,32 @@ module M (State : State_intf.S) = struct
     let* ty_size = Layout.size_of_s t in
     if%sat ty_size ==@ zero then Result.ok (Tuple [], state)
     else
-      let size = ty_size *@ count in
-      let** () =
-        if%sat Sptr.is_at_null_loc src ||@ Sptr.is_at_null_loc dst then
-          State.error `NullDereference state
-          (* Here we can cheat a little: for copy_nonoverlapping we need to check for overlap,
+      let size, overflowed = ty_size *?@ count in
+      if%sat overflowed then State.error `Overflow state
+      else
+        let** () =
+          if%sat Sptr.is_at_null_loc src ||@ Sptr.is_at_null_loc dst then
+            State.error `NullDereference state
+            (* Here we can cheat a little: for copy_nonoverlapping we need to check for overlap,
                but otherwise the copy is the exact same; since the State makes a copy of the src tree
                before storing into dst, the semantics are that of copy. *)
-        else if nonoverlapping then
-          (* check for overlap *)
-          let** src_end = Sptr.offset src size |> State.lift_err state in
-          let** dst_end = Sptr.offset dst size |> State.lift_err state in
-          let* dist1 = Sptr.distance src dst_end in
-          let* dist2 = Sptr.distance dst src_end in
-          if%sat
-            Sptr.is_same_loc src dst &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero))
-          then State.error (`StdErr "copy_nonoverlapping overlapped") state
+          else if nonoverlapping then
+            (* check for overlap *)
+            let** src_end = Sptr.offset src size |> State.lift_err state in
+            let** dst_end = Sptr.offset dst size |> State.lift_err state in
+            let* dist1 = Sptr.distance src dst_end in
+            let* dist2 = Sptr.distance dst src_end in
+            if%sat
+              Sptr.is_same_loc src dst &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero))
+            then State.error (`StdErr "copy_nonoverlapping overlapped") state
+            else Result.ok ()
           else Result.ok ()
-        else Result.ok ()
-      in
-      let++ (), state =
-        State.copy_nonoverlapping ~dst:(dst, None) ~src:(src, None) ~size state
-      in
-      (Tuple [], state)
+        in
+        let++ (), state =
+          State.copy_nonoverlapping ~dst:(dst, None) ~src:(src, None) ~size
+            state
+        in
+        (Tuple [], state)
 
   let copy = copy_ false
   let copy_nonoverlapping = copy_ true
@@ -261,7 +264,7 @@ module M (State : State_intf.S) = struct
         (fun acc off ->
           let bit = BV.extract off off x in
           let bit32 = BV.extend ~signed:false 31 bit in
-          acc +@ bit32)
+          acc +!@ bit32)
         U32.(0s)
         Iter.(0 -- (bits - 1))
     in
@@ -528,13 +531,13 @@ module M (State : State_intf.S) = struct
           let if_ovf =
             if not signed then max else Typed.ite (a <$@ BV.mki_lit t 0) min max
           in
-          Typed.ite ovf if_ovf (a +@ b)
+          Typed.ite ovf if_ovf (a +!@ b)
       | Sub _ ->
           let ovf = BV.sub_overflows ~signed a b in
           let if_ovf =
             if not signed then min else Typed.ite (a <$@ b) min max
           in
-          Typed.ite ovf if_ovf (a -@ b)
+          Typed.ite ovf if_ovf (a -!@ b)
       | _ -> failwith "Unreachable: not add or sub?"
     in
     Result.ok (Base (res :> Typed.T.cval Typed.t), state)
@@ -555,8 +558,9 @@ module M (State : State_intf.S) = struct
         in
         let len = Typed.cast_i Usize meta in
         let* size = Layout.size_of_s sub_ty in
-        let size = size *@ len in
-        Result.ok (Base size, state)
+        let size, ovf = size *?@ len in
+        if%sat ovf then State.error `Overflow state
+        else Result.ok (Base size, state)
     | _ ->
         let* size = Layout.size_of_s t in
         Result.ok (Base size, state)
@@ -665,27 +669,29 @@ module M (State : State_intf.S) = struct
     let zero = Usize.(0s) in
     let** (), state = State.check_ptr_align ptr t state in
     let* size = Layout.size_of_s t in
-    let size = size *@ count in
-    if%sat size ==@ zero then Result.ok (Tuple [], state)
+    let size, overflowed = size *?@ count in
+    if%sat overflowed then State.error `Overflow state
     else
-      (* if v == 0, then we can replace this mess by initialising a Zeros subtree *)
-      if%sat v ==@ BV.u8i 0 then
-        let++ (), state = State.zeros dst size state in
-        (Tuple [], state)
+      if%sat size ==@ zero then Result.ok (Tuple [], state)
       else
-        match Typed.kind size with
-        | BitVec bytes ->
-            let++ (), state =
-              Result.fold_iter
-                Iter.(0 -- (Z.to_int bytes - 1))
-                ~init:((), state)
-                ~f:(fun ((), state) i ->
-                  let off = BV.usizei i in
-                  let** ptr = Sptr.offset ptr off |> State.lift_err state in
-                  State.store (ptr, None) (TLiteral (TUInt U8))
-                    (Base (v :> T.cval Typed.t))
-                    state)
-            in
-            (Tuple [], state)
-        | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
+        (* if v == 0, then we can replace this mess by initialising a Zeros subtree *)
+        if%sat v ==@ U8.(0s) then
+          let++ (), state = State.zeros dst size state in
+          (Tuple [], state)
+        else
+          match Typed.kind size with
+          | BitVec bytes ->
+              let++ (), state =
+                Result.fold_iter
+                  Iter.(0 -- (Z.to_int bytes - 1))
+                  ~init:((), state)
+                  ~f:(fun ((), state) i ->
+                    let off = BV.usizei i in
+                    let** ptr = Sptr.offset ptr off |> State.lift_err state in
+                    State.store (ptr, None) (TLiteral (TUInt U8))
+                      (Base (v :> T.cval Typed.t))
+                      state)
+              in
+              (Tuple [], state)
+          | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
 end
