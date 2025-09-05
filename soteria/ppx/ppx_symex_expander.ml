@@ -93,7 +93,7 @@ end
 module Sym_constants = struct
   let rewriter loc s =
     let i = int_of_string s in
-    let ei = Ast_builder.Default.eint ~loc (int_of_string s) in
+    let ei = Ast_builder.Default.eint ~loc i in
     if i = 0 then [%expr Sym_int_syntax.zero]
     else if i = 1 then [%expr Sym_int_syntax.one]
     else [%expr Sym_int_syntax.mk_nonzero [%e ei]]

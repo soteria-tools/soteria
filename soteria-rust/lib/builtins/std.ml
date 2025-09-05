@@ -1,6 +1,8 @@
 open Charon
 open Rustsymex
 open Rustsymex.Syntax
+module BV = Typed.BitVec
+open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
@@ -38,8 +40,7 @@ module M (State : State_intf.S) = struct
     let ptr, size =
       match (idx_op.is_array, List.hd args, gen_args.const_generics) with
       (* Array with static size *)
-      | true, Ptr (ptr, None), [ size ] ->
-          (ptr, Typed.BitVec.usize (Charon_util.z_of_const_generic size))
+      | true, Ptr (ptr, None), [ size ] -> (ptr, BV.usize_of_const_generic size)
       | false, Ptr (ptr, Some size), [] -> (ptr, Typed.cast_i Usize size)
       | _ ->
           Fmt.failwith "array_index: unexpected arguments: %a / %a"
@@ -53,16 +54,13 @@ module M (State : State_intf.S) = struct
     let ty = List.hd gen_args.types in
     let** ptr' = Sptr.offset ~ty ptr idx |> State.lift_err state in
     if not idx_op.is_range then
-      if%sat Typed.BitVec.usizei 0 <=$@ idx &&@ (idx <$@ size) then
+      if%sat Usize.(0s) <=$@ idx &&@ (idx <$@ size) then
         Result.ok (Ptr (ptr', None), state)
       else State.error `OutOfBounds state
     else
       let range_end = as_base_i Usize (List.nth args 2) in
       if%sat
-        Typed.BitVec.usizei 0
-        <=$@ idx
-        &&@ (idx <=$@ range_end)
-        &&@ (range_end <=$@ size)
+        Usize.(0s) <=$@ idx &&@ (idx <=$@ range_end) &&@ (range_end <=$@ size)
       then
         let size = range_end -@ idx in
         Result.ok (Ptr (ptr', Some size), state)
@@ -90,12 +88,12 @@ module M (State : State_intf.S) = struct
       | Some item -> item
       | None -> failwith "Unexpected range item"
     in
-    let zero = Typed.BitVec.usizei 0 in
-    let one = Typed.BitVec.usizei 1 in
+    let zero = Usize.(0s) in
+    let one = Usize.(1s) in
     let size =
       match (ptr, gargs.const_generics) with
       (* Array with static size *)
-      | _, [ size ] -> Typed.BitVec.usize (Charon_util.z_of_const_generic size)
+      | _, [ size ] -> BV.usize_of_const_generic size
       | Ptr (_, Some size), [] -> Typed.cast size
       | _ -> failwith "array_index (fn): couldn't calculate size"
     in
@@ -117,14 +115,9 @@ module M (State : State_intf.S) = struct
     array_index idx_op gargs ~args:[ ptr; idx_from; idx_to ] state
 
   let array_slice ~mut:_ (gen_args : Types.generic_args) ~args state =
-    let size =
-      match gen_args.const_generics with
-      | [ size ] -> Charon_util.z_of_const_generic size
-      | _ -> failwith "array_slice: unexpected generic constants"
-    in
-    match args with
-    | [ Ptr (ptr, None) ] ->
-        let size = Typed.BitVec.usize size in
+    match (gen_args.const_generics, args) with
+    | [ size ], [ Ptr (ptr, None) ] ->
+        let size = BV.usize_of_const_generic size in
         Result.ok (Ptr (ptr, Some size), state)
     | _ -> failwith "array_index: unexpected arguments"
 
@@ -167,7 +160,7 @@ module M (State : State_intf.S) = struct
       | Zero -> Typed.Float.is_zero v
       | Subnormal -> Typed.Float.is_subnormal v
     in
-    Result.ok (Base (Typed.BitVec.of_bool res), state)
+    Result.ok (Base (BV.of_bool res), state)
 
   let float_is_finite ~args state =
     let v =
@@ -177,7 +170,7 @@ module M (State : State_intf.S) = struct
     in
     let v = Typed.cast_float v in
     let res = Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v)) in
-    Result.ok (Base (Typed.BitVec.of_bool res), state)
+    Result.ok (Base (BV.of_bool res), state)
 
   let float_is_sign pos ~args state =
     let v =
@@ -191,7 +184,7 @@ module M (State : State_intf.S) = struct
       else Typed.Float.(leq v (like v (-0.)))
     in
     let res = res ||@ Typed.Float.is_nan v in
-    Result.ok (Base (Typed.BitVec.of_bool res), state)
+    Result.ok (Base (BV.of_bool res), state)
 
   let _mk_box ptr =
     let non_null = Struct [ ptr ] in
@@ -203,7 +196,7 @@ module M (State : State_intf.S) = struct
   let fixme_try_cleanup ~args:_ state =
     (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
               we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    let meta = Typed.BitVec.usizei 0 in
+    let meta = Usize.(0s) in
     let box = _mk_box (Ptr (Sptr.null_ptr (), Some meta)) in
     Result.ok (box, state)
 
@@ -221,14 +214,14 @@ module M (State : State_intf.S) = struct
   module Alloc = Alloc.M (State)
 
   let alloc_impl ~args state =
-    let zero = Typed.BitVec.usizei 0 in
+    let zero = Usize.(0s) in
     let size, align, zeroed =
       match args with
       | [
        _alloc; Struct [ Base size; Struct [ Enum (align, []) ] ]; Base zeroed;
       ] ->
           let zeroed = Typed.cast_i U8 zeroed in
-          (size, align, Typed.BitVec.to_bool zeroed)
+          (size, align, BV.to_bool zeroed)
       | _ ->
           Fmt.failwith "alloc_impl: invalid arguments: %a"
             Fmt.(list ~sep:(any ", ") pp_rust_val)

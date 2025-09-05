@@ -1,5 +1,6 @@
 open Rustsymex.Syntax
 open Typed.Infix
+open Typed.Syntax
 module T = Typed.T
 open Rustsymex
 module Sptr = Sptr.ArithPtr
@@ -150,16 +151,15 @@ let with_tbs b f =
 
 let check_ptr_align (ptr : Sptr.t) ty st =
   let@ () = with_error_loc_as_call_trace st in
-  let* expected_align = Layout.align_of_s ty in
+  let* exp_align = Layout.align_of_s ty in
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   (* 0-based pointers are aligned up to their offset *)
-  let align = Typed.ite (Typed.Ptr.is_null_loc loc) expected_align ptr.align in
-  let zero = Typed.BitVec.usizei 0 in
+  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
-        Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa expected_align
+        Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa exp_align
         Charon_util.pp_ty ty);
-  if%sat ofs %@ expected_align ==@ zero &&@ (align %@ expected_align ==@ zero)
+  if%sat ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
   then Result.ok ((), st)
   else error `MisalignedPointer
 
@@ -242,7 +242,7 @@ let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
     accesses; all of these are ignored. *)
 let tb_load (ptr, _) ty st =
   let* size = Layout.size_of_s ty in
-  if%sat size ==@ Typed.BitVec.usizei 0 then Result.ok ((), st)
+  if%sat size ==@ Usize.(0s) then Result.ok ((), st)
   else
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
@@ -348,7 +348,7 @@ let alloc ?zeroed size align st =
   let block = Tree_block.alloc ?zeroed size in
   let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
-  let ptr = Typed.Ptr.mk loc (Typed.BitVec.usizei 0) in
+  let ptr = Typed.Ptr.mk loc Usize.(0s) in
   let ptr : Sptr.t Rust_val.full_ptr =
     ({ ptr; tag = tb.tag; align; size }, None)
   in
@@ -362,7 +362,7 @@ let alloc_ty ty st =
   let* layout = Layout.layout_of_s ty in
   alloc
     (Typed.BitVec.usizei layout.size)
-    (Typed.BitVec.usizei_nz layout.align)
+    (Typed.BitVec.usizeinz layout.align)
     st
 
 let alloc_tys tys st =
@@ -376,12 +376,12 @@ let alloc_tys tys st =
       let block = Freeable.Alive (Tree_block.alloc size, tb) in
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-      let ptr = Typed.Ptr.mk loc (Typed.BitVec.usizei 0) in
+      let ptr = Typed.Ptr.mk loc Usize.(0s) in
       let ptr : Sptr.t =
         {
           ptr;
           tag = tb.tag;
-          align = Typed.BitVec.usizei_nz layout.align;
+          align = Typed.BitVec.usizeinz layout.align;
           size = Typed.BitVec.usizei layout.size;
         }
       in
@@ -389,7 +389,7 @@ let alloc_tys tys st =
 
 let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
-  if%sat Typed.Ptr.ofs ptr ==@ Typed.BitVec.usizei 0 then
+  if%sat Typed.Ptr.ofs ptr ==@ Usize.(0s) then
     let@ () = with_loc_err () in
     (* TODO: does the tag not play a role in freeing? *)
     let++ (), state =
@@ -486,7 +486,7 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
           Typed.ppa ofs Typed.ppa size);
     let++ (), block' =
       (* nothing to protect *)
-      if%sat size ==@ Typed.BitVec.usizei 0 then Result.ok ((), Some block)
+      if%sat size ==@ Usize.(0s) then Result.ok ((), Some block)
       else Tree_block.protect ofs size node.tag tb' (Some block)
     in
     let block = Option.map (fun b' -> (b', tb')) block' in
@@ -515,7 +515,7 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
     Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
   in
   let++ (), block' =
-    if%sat size ==@ Typed.BitVec.usizei 0 then Result.ok ((), Some block)
+    if%sat size ==@ Usize.(0s) then Result.ok ((), Some block)
     else Tree_block.unprotect ofs size ptr.tag tb' (Some block)
   in
   let block' = Option.map (fun b' -> (b', tb')) block' in
@@ -587,21 +587,16 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
   in
   (* FIXME: what is the size and align of a fn pointer?
      See https://github.com/rust-lang/rust/issues/82232 *)
-  let ptr = Typed.Ptr.mk loc (Typed.BitVec.usizei 0) in
+  let ptr = Typed.Ptr.mk loc Usize.(0s) in
   let ptr : Sptr.t =
-    {
-      ptr;
-      tag = Tree_borrow.zero;
-      align = Typed.BitVec.usizei_nz 1;
-      size = Typed.BitVec.usizei 0;
-    }
+    { ptr; tag = Tree_borrow.zero; align = Usize.(1s); size = Usize.(0s) }
   in
   Soteria.Symex.Compo_res.Ok ((ptr, None), st)
 
 let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
-  if%sat Typed.Ptr.ofs ptr ==@ Typed.BitVec.usizei 0 then
+  if%sat Typed.Ptr.ofs ptr ==@ Usize.(0s) then
     let loc = Typed.Ptr.loc ptr in
     match FunBiMap.get_fn loc functions with
     | Some fn -> Result.ok (fn, st)

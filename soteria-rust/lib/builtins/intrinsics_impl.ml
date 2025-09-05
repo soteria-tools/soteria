@@ -2,6 +2,8 @@ open Charon
 open Charon_util
 open Rustsymex
 open Rustsymex.Syntax
+module BV = Typed.BitVec
+open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
@@ -73,7 +75,7 @@ module M (State : State_intf.S) = struct
       | Base _ -> State.error `UBPointerArithmetic state
       | _ -> not_impl "ptr_add: invalid arguments"
     in
-    if%sat v ==@ Typed.BitVec.usizei 0 then Result.ok (Ptr (ptr, meta), state)
+    if%sat v ==@ Usize.(0s) then Result.ok (Ptr (ptr, meta), state)
     else
       let++ ptr' = Sptr.offset ~check ~ty:t ptr v |> State.lift_err state in
       (Ptr (ptr', meta), state)
@@ -95,7 +97,7 @@ module M (State : State_intf.S) = struct
 
   let assume ~b state =
     let cond = as_base TBool b in
-    if%sat Typed.BitVec.to_bool cond then Result.ok (Tuple [], state)
+    if%sat BV.to_bool cond then Result.ok (Tuple [], state)
     else State.error (`StdErr "core::intrinsics::assume with false") state
 
   let black_box ~t:_ ~dummy state = Result.ok (dummy, state)
@@ -106,13 +108,12 @@ module M (State : State_intf.S) = struct
     let nbytes = Layout.size_of_literal_ty lit in
     let v = as_base lit x in
     let bytes =
-      List.init nbytes (fun i ->
-          Typed.BitVec.extract (i * 8) (((i + 1) * 8) - 1) v)
+      List.init nbytes (fun i -> BV.extract (i * 8) (((i + 1) * 8) - 1) v)
     in
     let rec aux = function
       | [] -> failwith "impossible: no bytes"
       | [ last ] -> last
-      | hd :: tl -> Typed.BitVec.concat hd (aux tl)
+      | hd :: tl -> BV.concat hd (aux tl)
     in
     let v' = aux bytes in
     Result.ok (Base (v' :> Typed.T.cval Typed.t), state)
@@ -131,12 +132,12 @@ module M (State : State_intf.S) = struct
     let** catch_fn, state = get_fn catch_fn_ptr state in
     let try_fn_ret = exec_fun try_fn ~args:[ data ] state in
     State.unwind_with try_fn_ret
-      ~f:(fun (_, state) -> Result.ok (Base (Typed.BitVec.u32i 0), state))
+      ~f:(fun (_, state) -> Result.ok (Base U32.(0s), state))
       ~fe:(fun (_, state) ->
         let args = [ data; Ptr (Sptr.null_ptr (), None) ] in
         let catch_fn_ret = exec_fun catch_fn ~args state in
         State.unwind_with catch_fn_ret
-          ~f:(fun (_, state) -> Result.ok (Base (Typed.BitVec.u32i 1), state))
+          ~f:(fun (_, state) -> Result.ok (Base U32.(1s), state))
           ~fe:(fun (_, state) ->
             State.error (`StdErr "catch_unwind unwinded in catch") state))
 
@@ -168,14 +169,14 @@ module M (State : State_intf.S) = struct
   let cold_path state = Result.ok (Tuple [], state)
 
   let compare_bytes ~left ~right ~bytes state =
-    let zero = Typed.BitVec.usizei 0 in
-    let one = Typed.BitVec.usizei 1 in
+    let zero = Usize.(0s) in
+    let one = Usize.(1s) in
     let l, _ = as_ptr left in
     let r, _ = as_ptr right in
     let len = as_base_i Usize bytes in
     let byte = Types.TLiteral (TUInt U8) in
     let rec aux ?(inc = one) l r len state =
-      if%sat len ==@ zero then Result.ok (Base (Typed.BitVec.u32i 0), state)
+      if%sat len ==@ zero then Result.ok (Base U32.(0s), state)
       else
         let** l = Sptr.offset l inc |> State.lift_err state in
         let** r = Sptr.offset r inc |> State.lift_err state in
@@ -185,13 +186,13 @@ module M (State : State_intf.S) = struct
         let br = as_base_i U8 br in
         if%sat bl ==@ br then aux l r (len -@ one) state
         else
-          if%sat bl <@ br then Result.ok (Base (Typed.BitVec.u32i (-1)), state)
-          else Result.ok (Base (Typed.BitVec.u32i 1), state)
+          if%sat bl <@ br then Result.ok (Base U32.(-1s), state)
+          else Result.ok (Base U32.(1s), state)
     in
     aux ~inc:zero l r len state
 
   let copy_ nonoverlapping ~t ~src ~dst ~count state : ret =
-    let zero = Typed.BitVec.usizei 0 in
+    let zero = Usize.(0s) in
     let (src, _), (dst, _) = (as_ptr src, as_ptr dst) in
     let count = as_base_i Usize count in
     let** (), state = State.check_ptr_align src t state in
@@ -254,21 +255,21 @@ module M (State : State_intf.S) = struct
     Result.ok (Base (res :> T.cval Typed.t), state)
 
   let ctpop =
-    let concrete _bits x = Typed.BitVec.u32i @@ Z.popcount x in
+    let concrete _bits x = BV.u32i @@ Z.popcount x in
     let symbolic bits x =
       Iter.fold
         (fun acc off ->
-          let bit = Typed.BitVec.extract off off x in
-          let bit32 = Typed.BitVec.extend ~signed:false 31 bit in
+          let bit = BV.extract off off x in
+          let bit32 = BV.extend ~signed:false 31 bit in
           acc +@ bit32)
-        (Typed.BitVec.u32i 0)
+        U32.(0s)
         Iter.(0 -- (bits - 1))
     in
     binary_int_operation ~concrete ~symbolic
 
   let cttz =
     let concrete bits x =
-      Typed.BitVec.u32i @@ if Z.equal x Z.zero then bits else Z.trailing_zeros x
+      BV.u32i @@ if Z.equal x Z.zero then bits else Z.trailing_zeros x
     in
     (* we construct the following, from inside out:
       ite(x[0] == 1 ? 0 :
@@ -279,9 +280,9 @@ module M (State : State_intf.S) = struct
       Iter.fold
         (fun acc off ->
           let off = bits - 1 - off in
-          let bit = Typed.BitVec.extract off off x in
-          Typed.ite (bit ==@ Typed.BitVec.one 1) (Typed.BitVec.u32i off) acc)
-        (Typed.BitVec.u32i bits)
+          let bit = BV.extract off off x in
+          Typed.ite (bit ==@ BV.one 1) (BV.u32i off) acc)
+        (BV.u32i bits)
         Iter.(0 -- (bits - 1))
     in
     binary_int_operation ~concrete ~symbolic
@@ -289,7 +290,7 @@ module M (State : State_intf.S) = struct
   let cttz_nonzero ~t ~x state =
     let tlit = TypesUtils.ty_as_literal t in
     let x_int = as_base tlit x in
-    if%sat x_int ==@ Typed.BitVec.mki_lit tlit 0 then
+    if%sat x_int ==@ BV.mki_lit tlit 0 then
       State.error (`StdErr "core::intrinsics::cttz_nonzero on zero") state
     else cttz ~t ~x state
 
@@ -333,10 +334,10 @@ module M (State : State_intf.S) = struct
     | Enum variants ->
         let++ variant_id, state = State.load_discriminant ptr t state in
         let variant = Types.VariantId.nth variants variant_id in
-        (Base (Typed.BitVec.of_scalar variant.discriminant), state)
+        (Base (BV.of_scalar variant.discriminant), state)
     | _ ->
         (* FIXME: this size is probably wrong *)
-        Result.ok (Base (Typed.BitVec.u32i 0), state)
+        Result.ok (Base U32.(0s), state)
 
   let exact_div ~t ~x ~y state =
     let lit = TypesUtils.ty_as_literal t in
@@ -345,7 +346,7 @@ module M (State : State_intf.S) = struct
     let** res = State.lift_err state @@ Core.eval_lit_binop (Div OUB) lit x y in
     if Typed.is_float ty then Result.ok (Base res, state)
     else
-      let zero = Typed.BitVec.mki_lit lit 0 in
+      let zero = BV.mki_lit lit 0 in
       if%sat Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero) then
         Result.ok (Base res, state)
       else
@@ -406,7 +407,7 @@ module M (State : State_intf.S) = struct
       (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
              issues in cases of float precision loss (I think?) *)
       if%sat min <.@ f &&@ (f <.@ max) then
-        Result.ok (Base (Typed.BitVec.of_float ~signed f), state)
+        Result.ok (Base (BV.of_float ~signed f), state)
       else State.error (`StdErr "float_to_int_unchecked out of int range") state
 
   let fmul_add fty ~a ~b ~c state : ret =
@@ -428,7 +429,7 @@ module M (State : State_intf.S) = struct
   let is_val_statically_known ~t:_ ~_arg:_ state =
     (* see: https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
     let* b = Rustsymex.nondet Typed.t_bool in
-    Result.ok (Base (Typed.BitVec.of_bool b), state)
+    Result.ok (Base (BV.of_bool b), state)
 
   let likely ~b state = Result.ok (b, state)
   let unlikely ~b state = Result.ok (b, state)
@@ -462,7 +463,7 @@ module M (State : State_intf.S) = struct
     let (ptr, _), (base, _) =
       (as_ptr ~null_ok:true ptr, as_ptr ~null_ok:true base)
     in
-    let zero = Typed.BitVec.usizei 0 in
+    let zero = Usize.(0s) in
     let* size = Layout.size_of_s t in
     if%sat size ==@ zero then
       State.error (`Panic (Some "ptr_offset_from with ZST")) state
@@ -512,25 +513,24 @@ module M (State : State_intf.S) = struct
       | _ :: _ -> failwith "Unexpected read array"
     in
     let++ res = aux byte_pairs in
-    (Base (Typed.BitVec.of_bool res), state)
+    (Base (BV.of_bool res), state)
 
   let saturating (op : Expressions.binop) ~t ~a ~b state : ret =
     let t = TypesUtils.ty_as_literal t in
     let signed = Layout.is_signed t in
     let a, b = (as_base t a, as_base t b) in
-    let max = Typed.BitVec.mk_lit t @@ Layout.max_value_z t in
-    let min = Typed.BitVec.mk_lit t @@ Layout.min_value_z t in
+    let max = BV.mk_lit t @@ Layout.max_value_z t in
+    let min = BV.mk_lit t @@ Layout.min_value_z t in
     let res =
       match op with
       | Add _ ->
-          let ovf = Typed.BitVec.add_overflows ~signed a b in
+          let ovf = BV.add_overflows ~signed a b in
           let if_ovf =
-            if not signed then max
-            else Typed.ite (a <$@ Typed.BitVec.mki_lit t 0) min max
+            if not signed then max else Typed.ite (a <$@ BV.mki_lit t 0) min max
           in
           Typed.ite ovf if_ovf (a +@ b)
       | Sub _ ->
-          let ovf = Typed.BitVec.sub_overflows ~signed a b in
+          let ovf = BV.sub_overflows ~signed a b in
           let if_ovf =
             if not signed then min else Typed.ite (a <$@ b) min max
           in
@@ -572,7 +572,7 @@ module M (State : State_intf.S) = struct
   let type_id ~t state =
     (* lazy but works *)
     let hash = Hashtbl.hash t in
-    Result.ok (Base (Typed.BitVec.u128i hash), state)
+    Result.ok (Base (BV.u128i hash), state)
 
   let type_name ~t state =
     let str = Fmt.to_to_string pp_ty t in
@@ -583,9 +583,7 @@ module M (State : State_intf.S) = struct
         let len = String.length str in
         let chars =
           String.to_bytes str
-          |> Bytes.fold_left
-               (fun l c -> Base (Typed.BitVec.u8i (Char.code c)) :: l)
-               []
+          |> Bytes.fold_left (fun l c -> Base (BV.u8i (Char.code c)) :: l) []
           |> List.rev
         in
         let char_arr = Array chars in
@@ -593,7 +591,7 @@ module M (State : State_intf.S) = struct
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in
         let** (ptr, _), state = State.alloc_ty str_ty state in
-        let ptr = (ptr, Some (Typed.BitVec.usizei len)) in
+        let ptr = (ptr, Some (BV.usizei len)) in
         let** (), state = State.store ptr str_ty char_arr state in
         let++ (), state = State.store_str_global str ptr state in
         (Ptr ptr, state)
@@ -614,7 +612,7 @@ module M (State : State_intf.S) = struct
         let** to_ptr_end = Sptr.offset to_ptr size |> State.lift_err state in
         let* dist1 = Sptr.distance from_ptr to_ptr_end in
         let* dist2 = Sptr.distance to_ptr from_ptr_end in
-        let zero = Typed.BitVec.usizei 0 in
+        let zero = Usize.(0s) in
         if%sat
           Sptr.is_same_loc from_ptr to_ptr
           &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero))
@@ -645,7 +643,7 @@ module M (State : State_intf.S) = struct
     match t with
     | Types.TAdt { id = TAdtId id; _ } when Crate.is_enum id ->
         let variants = Crate.as_enum id in
-        let res = Typed.BitVec.usizei (List.length variants) in
+        let res = BV.usizei (List.length variants) in
         Result.ok (Base res, state)
     | _ ->
         State.error
@@ -664,14 +662,14 @@ module M (State : State_intf.S) = struct
   let write_bytes ~t ~dst ~val_ ~count state =
     let ((ptr, _) as dst) = as_ptr dst in
     let v, count = (as_base_i U8 val_, as_base_i Usize count) in
-    let zero = Typed.BitVec.usizei 0 in
+    let zero = Usize.(0s) in
     let** (), state = State.check_ptr_align ptr t state in
     let* size = Layout.size_of_s t in
     let size = size *@ count in
     if%sat size ==@ zero then Result.ok (Tuple [], state)
     else
       (* if v == 0, then we can replace this mess by initialising a Zeros subtree *)
-      if%sat v ==@ Typed.BitVec.u8i 0 then
+      if%sat v ==@ BV.u8i 0 then
         let++ (), state = State.zeros dst size state in
         (Tuple [], state)
       else
@@ -682,7 +680,7 @@ module M (State : State_intf.S) = struct
                 Iter.(0 -- (Z.to_int bytes - 1))
                 ~init:((), state)
                 ~f:(fun ((), state) i ->
-                  let off = Typed.BitVec.usizei i in
+                  let off = BV.usizei i in
                   let** ptr = Sptr.offset ptr off |> State.lift_err state in
                   State.store (ptr, None) (TLiteral (TUInt U8))
                     (Base (v :> T.cval Typed.t))

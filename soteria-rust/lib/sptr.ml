@@ -2,8 +2,9 @@ open Rustsymex
 open Rustsymex.Syntax
 open Charon
 open Typed
-open T
+open Typed.Syntax
 open Typed.Infix
+open T
 
 module type S = sig
   (** pointer type *)
@@ -85,8 +86,8 @@ module ArithPtr : S with type t = arithptr_t = struct
     {
       ptr = Typed.Ptr.null ();
       tag = Tree_borrow.zero;
-      align = Typed.BitVec.usizei_nz 1;
-      size = Typed.BitVec.usizei 0;
+      align = Usize.(1s);
+      size = Usize.(0s);
     }
 
   let null_ptr_of ofs =
@@ -102,8 +103,7 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let constraints { ptr; size; _ } =
     let ofs = Typed.Ptr.ofs ptr in
-    let zero = Typed.BitVec.usizei 0 in
-    Typed.conj [ zero <=$@ ofs; ofs <=$@ size ]
+    Typed.conj [ Usize.(0s) <=$@ ofs; ofs <=$@ size ]
 
   let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8))
       ({ ptr; _ } as fptr) off =
@@ -113,7 +113,7 @@ module ArithPtr : S with type t = arithptr_t = struct
     let ptr = { fptr with ptr } in
     if check then
       if%sat [@lname "Ptr ok"] [@rname "Ptr dangling"]
-        off ==@ Typed.BitVec.usizei 0 ||@ constraints ptr
+        off ==@ Usize.(0s) ||@ constraints ptr
       then Result.ok ptr
       else Result.error `UBDanglingPointer
     else Result.ok ptr
@@ -149,16 +149,15 @@ module ArithPtr : S with type t = arithptr_t = struct
     match ValMap.find_opt loc !decayed_vars with
     | Some loc_int -> return (loc_int +@ ofs)
     | None ->
-        let zero = Typed.BitVec.usizei 0 in
         let+ loc_int =
-          if%sat Typed.Ptr.is_null_loc loc then return zero
+          if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
           else
             let* loc_int = nondet (Typed.t_usize ()) in
             let isize_max = Layout.max_value_z (TInt Isize) in
             let constrs =
               [
-                loc_int %@ align ==@ zero;
-                zero <@ loc_int;
+                (loc_int %@ align ==@ Usize.(0s));
+                Usize.(0s) <@ loc_int;
                 loc_int <@ Typed.BitVec.usize isize_max -@ size;
               ]
             in
