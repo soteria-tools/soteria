@@ -182,7 +182,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
   | Analysed _ -> summary
   | Pruned { raw = summary; memory_leaks } -> (
       let@ () =
-        Soteria.Logging.Logs.with_section
+        L.with_section
           ("Analysing a summary for " ^ Cerb_frontend.Symbol.show_symbol fid)
       in
       L.debug (fun m ->

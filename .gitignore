@@ -9,7 +9,6 @@ upload_package.sh
 
 ### Node ###
 # Logs
-logs
 *.log
 soteria_logs.html
 npm-debug.log*

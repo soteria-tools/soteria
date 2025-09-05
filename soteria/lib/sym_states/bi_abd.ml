@@ -1,3 +1,4 @@
+open Logs.Import
 open Symex.Compo_res
 
 module Make (Symex : Symex.S) = struct
@@ -66,7 +67,7 @@ module Make (Symex : Symex.S) = struct
       match res with
       | Ok st -> Result.ok (st, fixes)
       | Error _e ->
-          Logging.Logs.L.info (fun m -> m "Bi_abd.consume: vanishing an error");
+          L.info (fun m -> m "Bi_abd.consume: vanishing an error");
           Symex.vanish ()
       | Missing fix_choices ->
           if fuel <= 0 then Symex.vanish ()
