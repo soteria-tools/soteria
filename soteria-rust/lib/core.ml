@@ -49,6 +49,9 @@ module M (State : State_intf.S) = struct
     | Shr _ -> if signed then BitVec.ashr else BitVec.lshr
     | _ -> failwith "Invalid binop in binop_fn"
 
+  (** Rust allows shift operations on integers of differents sizes, which isn't
+      possible in SMT-Lib, so we normalise the righthand side to match the left
+      hand side. *)
   let normalise_shift_r (bop : Expressions.binop) l r =
     match bop with
     | Shl _ | Shr _ ->
@@ -57,32 +60,33 @@ module M (State : State_intf.S) = struct
         let r_size = Typed.size_of_int r in
         if l_size > r_size then
           Typed.BitVec.extend ~signed:false (l_size - r_size) r
+        else if l_size < r_size then Typed.BitVec.extract 0 (l_size - 1) r
         else r
     | _ -> r
 
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
-  let eval_lit_binop (bop : Expressions.binop) ty l r =
-    (* normalise both sides to be the same side; this is usually always the case,
-       except for shift operations, so we do it manually *)
-    let r = normalise_shift_r bop l r in
-
+  let eval_lit_binop (bop : Expressions.binop) ty (l : T.cval Typed.t)
+      (r : T.cval Typed.t) =
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
-    let l, r, ty_ = cast_checked2 l r in
-    let is_integer =
-      match untype_type ty_ with TBitVector _ -> true | _ -> false
-    in
+    let is_integer = match ty with TUInt _ | TInt _ -> true | _ -> false in
     let** () =
       match bop with
       | _ when Stdlib.not is_integer -> Result.ok ()
       | Add (OUB | OPanic) ->
+          let l = cast_lit ty l in
+          let r = cast_lit ty r in
           let overflows = BitVec.add_overflows ~signed l r in
           if%sat overflows then Result.error `Overflow else Result.ok ()
       | Sub (OUB | OPanic) ->
+          let l = cast_lit ty l in
+          let r = cast_lit ty r in
           let overflows = BitVec.sub_overflows ~signed l r in
           if%sat overflows then Result.error `Overflow else Result.ok ()
       | Mul (OUB | OPanic) ->
+          let l = cast_lit ty l in
+          let r = cast_lit ty r in
           let overflows = BitVec.mul_overflows ~signed l r in
           if%sat overflows then Result.error `Overflow else Result.ok ()
       | Div (OUB | OPanic) | Rem (OUB | OPanic) ->
@@ -95,16 +99,23 @@ module M (State : State_intf.S) = struct
             else Result.ok ()
           else Result.ok ()
       | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
+          (* at this point, the size of the right-hand side might not match the given literal
+             type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
-          let r = cast_lit ty r in
-          if%sat r <$@ BitVec.mki_lit ty 0 ||@ (r >=$@ BitVec.mki_lit ty size)
+          let r, size_r = cast_int r in
+          if%sat r <$@ BitVec.mki size_r 0 ||@ (r >=$@ BitVec.mki size_r size)
           then Result.error `InvalidShift
           else Result.ok ()
       | _ -> Result.ok ()
     in
 
-    match untype_type ty_ with
-    | TBitVector _ ->
+    match ty with
+    | TInt _ | TUInt _ ->
+        (* normalise both sides to be the same size; this is usually always the case,
+           except for shift operations, so we do it manually *)
+        let r = normalise_shift_r bop l r in
+        let l = cast_lit ty l in
+        let r = cast_lit ty r in
         let op = binop_fn bop signed in
         Result.ok (op l r)
     | TFloat _ -> (
@@ -116,7 +127,6 @@ module M (State : State_intf.S) = struct
         | Div _ -> Result.ok (l /.@ cast r)
         | Rem _ -> Result.ok (Float.rem l (cast r))
         | _ -> not_impl "Invalid binop for float in eval_lit_binop")
-    | TPointer _ -> Result.error `UBPointerArithmetic
     | _ -> not_impl "Unexpected type in eval_lit_binop"
 
   (** Wraps a given value to make it fit within the constraints of the given

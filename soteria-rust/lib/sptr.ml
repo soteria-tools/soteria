@@ -150,19 +150,22 @@ module ArithPtr : S with type t = arithptr_t = struct
     | Some loc_int -> return (loc_int +@ ofs)
     | None ->
         let zero = Typed.BitVec.usizei 0 in
-        let* loc_int =
+        let+ loc_int =
           if%sat Typed.Ptr.is_null_loc loc then return zero
-          else nondet (Typed.t_usize ())
+          else
+            let* loc_int = nondet (Typed.t_usize ()) in
+            let isize_max = Layout.max_value_z (TInt Isize) in
+            let constrs =
+              [
+                loc_int %@ align ==@ zero;
+                zero <@ loc_int;
+                loc_int <@ Typed.BitVec.usize isize_max -@ size;
+              ]
+            in
+            let+ () = Rustsymex.assume constrs in
+            loc_int
         in
-        let+ () =
-          let isize_max = Layout.max_value_z (TInt Isize) in
-          Rustsymex.assume
-            [
-              loc_int %@ align ==@ zero;
-              zero <@ loc_int;
-              loc_int +@ size <=@ Typed.BitVec.usize isize_max;
-            ]
-        in
+        L.debug (fun m -> m "Decayed %a to %a" Typed.ppa loc Typed.ppa loc_int);
         decayed_vars := ValMap.add loc loc_int !decayed_vars;
         loc_int +@ ofs
 

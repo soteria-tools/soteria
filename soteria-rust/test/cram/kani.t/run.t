@@ -7,9 +7,8 @@ Test kani::any
   
   note: any::any_i8: done in <time>, ran 3 branches
   PC 1: (V|1| == 0x00)
-  PC 2: (V|1| != 0x00) /\ (extract[7-7](V|1|) == 0x1)
-  PC 3: (V|1| != 0x00) /\ (extract[7-7](V|1|) != 0x1) /\
-        (extract[7-7](V|1|) == 0x0)
+  PC 2: (V|1| != 0x00) /\ (extract[7-7](V|1|) == 0b1)
+  PC 3: (V|1| != 0x00) /\ (extract[7-7](V|1|) == 0b0)
   
 
 
@@ -50,8 +49,6 @@ Test kani::assert
       │ ╰──' 1: Entry point
     6 │    
   
-  
-  
   error: assert::fancy_assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 in assert::fancy_assert_false
       ┌─ $TESTCASE_ROOT/assert.rs:10:5
@@ -66,8 +63,6 @@ Test kani::assert
    11 │ │  }
       │ ╰──' 1: Entry point
    12 │    
-  
-  
   
   error: assert::override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert!" in assert::override_assert_macro
@@ -86,8 +81,6 @@ Test kani::assert
       │ ╰──' 1: Entry point
    18 │    
   
-  
-  
   error: assert::override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert_eq!" in assert::override_asserteq_macro
       ┌─ $RUSTERIA/std/src/lib.rs:23:9
@@ -105,8 +98,6 @@ Test kani::assert
    24 │ │  }
       │ ╰──' 1: Entry point
    25 │    
-  
-  
   
   [1]
 

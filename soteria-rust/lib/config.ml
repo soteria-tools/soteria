@@ -21,15 +21,13 @@ type t = {
       (** Compile the code using Obol, rather than Charon *)
   log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
       (** Log the compilation process *)
-  step_fuel : int; [@default 1000] [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
+  step_fuel : int option; [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
       (** The default step fuel for each entrypoint -- every control flow jump
-          counts as one fuel *)
-  branch_fuel : int;
-      [@default 4] [@names [ "branch-fuel" ]] [@env "BRANCH_FUEL"]
+          counts as one fuel. Defaults to infinite fuel. *)
+  branch_fuel : int option; [@names [ "branch-fuel" ]] [@env "BRANCH_FUEL"]
       (** The default branch fuel for each entrypoint -- every symbolic
-          execution branching point counts as one fuel *)
-  no_fuel : bool; [@make.default false] [@names [ "no-fuel" ]]
-      (** Disable fuel, for unbounded symbolic execution *)
+          execution branching point counts as one fuel. Defaults to infinite
+          fuel. *)
   rustc_flags : string list;
       [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)

@@ -24,8 +24,6 @@ Simple tree borrow violation
       │ ╰──' 1: Entry point
    11 │    
   
-  
-  
   [1]
 
 Raw pointers don't get new tags

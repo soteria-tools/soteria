@@ -273,7 +273,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     include Solver.Mutable_to_in_place (Sol)
 
     let sat () =
-      let res = sat () in
+      let res = Stats.As_ctx.add_sat_time_of sat in
       if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
       res
   end
