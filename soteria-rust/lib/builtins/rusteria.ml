@@ -1,18 +1,15 @@
-open Rustsymex
-open Rustsymex.Syntax
 open Rust_val
 
 module M (State : State_intf.S) = struct
-  module Sptr = State.Sptr
+  open State_monad.Make (State)
+  open Syntax
 
-  type nonrec rust_val = Sptr.t rust_val
-
-  let parse_string ptr state =
+  let parse_string ptr =
     let str_ty : Charon.Types.ty =
       TAdt
         { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
-    let++ str_data, _ = State.load ptr str_ty state in
+    let+ str_data = State.load ptr str_ty in
     let map_opt f l = Option.bind l (Monad.OptionM.all f) in
     match str_data with
     | Array bytes ->
@@ -32,39 +29,35 @@ module M (State : State_intf.S) = struct
                else str)
     | _ -> None
 
-  let assert_ ~(args : rust_val list) state =
-    let* to_assert, msg =
+  let assert_ args =
+    let to_assert, msg =
       match args with
-      | [ Base t; Ptr msg ] ->
-          let t = Typed.cast_lit TBool t in
-          return (t, msg)
-      | _ -> not_impl "to_assert with non-one arguments"
+      | [ Base t; Ptr msg ] -> (Typed.cast_lit TBool t, msg)
+      | _ -> failwith "to_assert with non-one arguments"
     in
     if%sat Typed.not (Typed.BitVec.to_bool to_assert) then
-      let** str = parse_string msg state in
-      State.error (`FailedAssert str) state
-    else Result.ok (unit_, state)
+      let* str = parse_string msg in
+      error (`FailedAssert str)
+    else ok unit_
 
-  let assume ~args state =
-    let* to_assume =
+  let assume args =
+    let to_assume =
       match args with
-      | [ Base t ] -> return (Typed.cast_lit TBool t)
-      | _ -> not_impl "assume with non-one arguments"
+      | [ Base t ] -> Typed.cast_lit TBool t
+      | _ -> failwith "assume with non-one arguments"
     in
     L.debug (fun g -> g "Assuming: %a\n" Typed.ppa to_assume);
-    let* () = assume [ Typed.BitVec.to_bool to_assume ] in
-    Result.ok (unit_, state)
+    let+ () = assume [ Typed.BitVec.to_bool to_assume ] in
+    unit_
 
-  let nondet (fun_sig : Charon.UllbcAst.fun_sig) ~args:_ state =
+  let nondet (fun_sig : Charon.UllbcAst.fun_sig) _ =
     let ty = fun_sig.output in
-    let* value = Layout.nondet ty in
-    Result.ok (value, state)
+    let^+ value = Layout.nondet ty in
+    value
 
-  let panic ~args state =
-    let** msg =
-      match args with
-      | [ Ptr msg ] -> parse_string msg state
-      | _ -> Result.ok None
+  let panic args =
+    let* msg =
+      match args with [ Ptr msg ] -> parse_string msg | _ -> ok None
     in
-    State.error (`Panic msg) state
+    error (`Panic msg)
 end

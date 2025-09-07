@@ -3,10 +3,16 @@ open Rustsymex
 open Rustsymex.Syntax
 module BV = Typed.BitVec
 open Charon
-open Rust_val
 
 module Make (State : State_intf.S) = struct
-  type full_ptr = State.Sptr.t Rust_val.full_ptr
+  (* utilities *)
+  module Sptr = State.Sptr
+
+  type full_ptr = Sptr.t Rust_val.full_ptr
+  type rust_val = Sptr.t Rust_val.t
+
+  let pp_rust_val = Rust_val.pp Sptr.pp
+  let pp_full_ptr = Rust_val.pp_full_ptr Sptr.pp
 
   type ('a, 'env) t =
     'env ->
@@ -22,7 +28,8 @@ module Make (State : State_intf.S) = struct
   let not_impl str : ('a, 'env) t = fun _env _state -> Rustsymex.not_impl str
   let get_env () = fun env state -> Result.ok (env, env, state)
 
-  let bind (x : ('a, 'env) t) (f : 'a -> ('b, 'env) t) : ('b, 'env) t =
+  (* we don't type annotate this to allow for ['env] type changes through [f] *)
+  let bind x f =
    fun env state ->
     let** y, env, state = x env state in
     (f y) env state
@@ -34,6 +41,9 @@ module Make (State : State_intf.S) = struct
 
   let fold_list x ~init ~f =
     Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold x ~init ~f
+
+  let fold_iter x ~init ~f =
+    Monad.foldM ~bind ~return:ok ~fold:Foldable.Iter.fold x ~init ~f
 
   let map_env f = fun env state -> Result.ok ((), f env, state)
 
@@ -48,6 +58,7 @@ module Make (State : State_intf.S) = struct
     Ok (s, env, state)
 
   let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
+  let assume x = lift_symex (assume x)
 
   let with_loc ~loc f =
     let old_loc = !current_loc in
@@ -81,8 +92,8 @@ module Make (State : State_intf.S) = struct
          full_ptr ->
          Types.ty ->
          Types.ref_kind ->
-         (full_ptr * 'acc, 'env) t) ~(init : 'acc) (v : 'a rust_val)
-      (ty : Types.ty) : (State.Sptr.t rust_val * 'acc, 'env) t =
+         (full_ptr * 'acc, 'env) t) ~(init : 'acc) (v : rust_val)
+      (ty : Types.ty) : (rust_val * 'acc, 'env) t =
    fun env state ->
     let f (acc, env, state) ptr ty rk =
       let++ (res, acc), env, state = f acc ptr ty rk env state in
@@ -102,8 +113,16 @@ module Make (State : State_intf.S) = struct
       lift_state_op (load_discriminant ptr ty)
 
     let[@inline] store ptr ty v = lift_state_op (store ptr ty v)
+    let[@inline] zeros ptr size = lift_state_op (zeros ptr size)
     let[@inline] alloc_ty ty = lift_state_op (alloc_ty ty)
     let[@inline] alloc_tys tys = lift_state_op (alloc_tys tys)
+
+    let[@inline] alloc_untyped ~zeroed ~size ~align =
+      lift_state_op (alloc_untyped ~zeroed ~size ~align)
+
+    let[@inline] copy_nonoverlapping ~src ~dst ~size =
+      lift_state_op (copy_nonoverlapping ~src ~dst ~size)
+
     let[@inline] uninit ptr ty = lift_state_op (uninit ptr ty)
     let[@inline] free ptr = lift_state_op (free ptr)
     let[@inline] check_ptr_align ptr ty = lift_state_op (check_ptr_align ptr ty)
@@ -147,6 +166,8 @@ module Make (State : State_intf.S) = struct
      fun env state ->
       let++ () = assert_ guard err state in
       ((), env, state)
+
+    let[@inline] assert_not guard err = assert_ (Typed.not guard) err
   end
 
   module Syntax = struct

@@ -190,10 +190,14 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
 
         module M: (State: State_intf.S) -> sig
             type rust_val := State.Sptr.t Rust_val.t
-            type ret := (rust_val * State.t, Error.t State.err * State.t, State.serialized) Result.t
+            type ret := (
+                unit ->
+                State.t ->
+                (rust_val * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t
+            )
             type fun_exec := (
                 UllbcAst.fun_decl ->
-                args:rust_val list ->
+                rust_val list ->
                 State.t ->
                 (rust_val * State.t,Error.t State.err * State.t, State.serialized) Result.t)
     """
@@ -217,11 +221,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         if info["name"] == "catch_unwind":
             args_and_tys += [(None, "fun_exec")]
 
-        args_and_tys += (
-            [(type, "Types.ty") for type in info["types"]]
-            + [(arg, "rust_val") for arg in info["args"]]
-            + [(None, "State.t")]
-        )
+        args_and_tys += [(type, "Types.ty") for type in info["types"]] + [
+            (arg, "rust_val") for arg in info["args"]
+        ]
         interface_str += f"""
             (** {info["doc"]} *)
             val {info["name"]} : {' -> '.join([
@@ -233,20 +235,20 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         stubs_str += f"""
             let {info['name']} {' '.join(
                 f"~{arg}:_" if arg else "_"
-                for (arg, _) in args_and_tys)} =
+                for (arg, _) in args_and_tys)} () _state =
                 not_impl "Unsupported intrinsic: {info['name']}"
         """
 
     interface_str += """
 
-            val eval_fun : string -> fun_exec -> Types.generic_args -> args:rust_val list -> State.t -> ret
+            val eval_fun : string -> fun_exec -> Types.generic_args -> rust_val list -> ret
         end
     """
 
     stubs_str += f"""
             include Intrinsics_impl.M (State)
 
-            let eval_fun name fun_exec (generics: Charon.Types.generic_args) ~args =
+            let eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
                 match name, generics.types, args with
     """
 
@@ -266,7 +268,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
                         {info['name']} {' '.join(call_args)}
         """
     stubs_str += """
-                | name, _, _ -> fun _ ->
+                | name, _, _ -> fun () _ ->
                     Fmt.kstr not_impl "Intrinsic %s not found, or not called with the right arguments" name
         end
     """

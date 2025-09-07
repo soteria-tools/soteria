@@ -1,26 +1,22 @@
 open Charon
-open Rustsymex
-open Rustsymex.Syntax
 module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
 module M (State : State_intf.S) = struct
-  module Sptr = State.Sptr
   module Core = Core.M (State)
-  module Encoder = Encoder.Make (Sptr)
+  module Alloc = Alloc.M (State)
+  module Encoder = Encoder.Make (State.Sptr)
+  open State_monad.Make (State)
+  open Syntax
 
-  type nonrec rust_val = Sptr.t rust_val
-
-  let pp_rust_val = pp_rust_val Sptr.pp
-
-  let zeroed (fun_sig : UllbcAst.fun_sig) ~args:_ state =
+  let zeroed (fun_sig : UllbcAst.fun_sig) _ =
     match Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) fun_sig.output with
-    | Some v -> Result.ok (v, state)
-    | None -> State.error (`StdErr "Non-zeroable type") state
+    | Some v -> ok v
+    | None -> error (`StdErr "Non-zeroable type")
 
-  let array_repeat (gen_args : Types.generic_args) ~args state =
+  let array_repeat (gen_args : Types.generic_args) args =
     let rust_val, size =
       match (args, gen_args.const_generics) with
       | [ rust_val ], [ size ] ->
@@ -33,10 +29,10 @@ module M (State : State_intf.S) = struct
             Fmt.(list Types.pp_const_generic)
             cgens
     in
-    Result.ok (Array (List.init size (fun _ -> rust_val)), state)
+    ok (Array (List.init size (fun _ -> rust_val)))
 
   let array_index (idx_op : Types.builtin_index_op)
-      (gen_args : Types.generic_args) ~args state =
+      (gen_args : Types.generic_args) args =
     let ptr, size =
       match (idx_op.is_array, List.hd args, gen_args.const_generics) with
       (* Array with static size *)
@@ -52,23 +48,28 @@ module M (State : State_intf.S) = struct
     (* TODO: take into account idx.mutability *)
     let idx = as_base_i Usize (List.nth args 1) in
     let ty = List.hd gen_args.types in
-    let** ptr' = Sptr.offset ~ty ptr idx |> State.lift_err state in
+    let^^ ptr' = Sptr.offset ~ty ptr idx in
     if not idx_op.is_range then
-      if%sat Usize.(0s) <=$@ idx &&@ (idx <$@ size) then
-        Result.ok (Ptr (ptr', None), state)
-      else State.error `OutOfBounds state
+      let+ () =
+        State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ size)) `OutOfBounds
+      in
+      Ptr (ptr', None)
     else
       let range_end = as_base_i Usize (List.nth args 2) in
-      if%sat
-        Usize.(0s) <=$@ idx &&@ (idx <=$@ range_end) &&@ (range_end <=$@ size)
-      then
-        let size = range_end -!@ idx in
-        Result.ok (Ptr (ptr', Some size), state)
-      else State.error `OutOfBounds state
+      let+ () =
+        State.assert_
+          (Usize.(0s)
+          <=$@ idx
+          &&@ (idx <=$@ range_end)
+          &&@ (range_end <=$@ size))
+          `OutOfBounds
+      in
+      let size = range_end -!@ idx in
+      Ptr (ptr', Some size)
 
   (* Some array accesses are ran on functions, so we handle those here and redirect them.
      Eventually, it would be good to maybe make a Charon pass that gets rid of these before. *)
-  let array_index_fn (fun_sig : UllbcAst.fun_sig) ~args state =
+  let array_index_fn (fun_sig : UllbcAst.fun_sig) args =
     let ptr, range, mode, gargs, range_id =
       match (args, fun_sig.inputs) with
       (* Unfortunate, but right now i don't have a better way to handle this... *)
@@ -110,40 +111,40 @@ module M (State : State_intf.S) = struct
     let idx_op : Types.builtin_index_op =
       { is_array = mode = TArray; mutability = RShared; is_range = true }
     in
-    array_index idx_op gargs ~args:[ ptr; idx_from; idx_to ] state
+    array_index idx_op gargs [ ptr; idx_from; idx_to ]
 
-  let array_slice ~mut:_ (gen_args : Types.generic_args) ~args state =
+  let array_slice ~mut:_ (gen_args : Types.generic_args) args =
     match (gen_args.const_generics, args) with
     | [ size ], [ Ptr (ptr, None) ] ->
         let size = BV.usize_of_const_generic size in
-        Result.ok (Ptr (ptr, Some size), state)
+        ok (Ptr (ptr, Some size))
     | _ -> failwith "array_index: unexpected arguments"
 
-  let box_new (gen_args : Types.generic_args) ~args state =
+  let box_new (gen_args : Types.generic_args) args =
     let ty, v =
       match (gen_args, args) with
       | { types = [ ty ]; _ }, [ v ] -> (ty, v)
       | _ -> failwith "box new: invalid arguments"
     in
-    let** ptr, state = State.alloc_ty ty state in
-    let++ (), state = State.store ptr ty v state in
-    (Ptr ptr, state)
+    let* ptr = State.alloc_ty ty in
+    let+ () = State.store ptr ty v in
+    Ptr ptr
 
-  let from_raw_parts ~args state =
+  let from_raw_parts args =
     match args with
-    | [ Ptr (ptr, _); Base meta ] -> Result.ok (Ptr (ptr, Some meta), state)
+    | [ Ptr (ptr, _); Base meta ] -> ok (Ptr (ptr, Some meta))
     | [ Base v; Base meta ] ->
         let v = Typed.cast_i Usize v in
-        let++ ptr = Sptr.offset (Sptr.null_ptr ()) v |> State.lift_err state in
-        (Ptr (ptr, Some meta), state)
+        let^^+ ptr = Sptr.offset (Sptr.null_ptr ()) v in
+        Ptr (ptr, Some meta)
     | _ ->
         Fmt.failwith "from_raw_parts: invalid arguments %a"
           Fmt.(list ~sep:comma pp_rust_val)
           args
 
-  let nop ~args:_ state = Result.ok (Tuple [], state)
+  let nop _ = ok (Tuple [])
 
-  let float_is (fp : Svalue.FloatClass.t) ~args state =
+  let float_is (fp : Svalue.FloatClass.t) args =
     let v =
       match args with
       | [ Base f ] -> f
@@ -158,9 +159,9 @@ module M (State : State_intf.S) = struct
       | Zero -> Typed.Float.is_zero v
       | Subnormal -> Typed.Float.is_subnormal v
     in
-    Result.ok (Base (BV.of_bool res), state)
+    ok (Base (BV.of_bool res))
 
-  let float_is_finite ~args state =
+  let float_is_finite args =
     let v =
       match args with
       | [ Base f ] -> f
@@ -168,9 +169,9 @@ module M (State : State_intf.S) = struct
     in
     let v = Typed.cast_float v in
     let res = Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v)) in
-    Result.ok (Base (BV.of_bool res), state)
+    ok (Base (BV.of_bool res))
 
-  let float_is_sign pos ~args state =
+  let float_is_sign pos args =
     let v =
       match args with
       | [ Base f ] -> f
@@ -182,7 +183,7 @@ module M (State : State_intf.S) = struct
       else Typed.Float.(leq v (like v (-0.)))
     in
     let res = res ||@ Typed.Float.is_nan v in
-    Result.ok (Base (BV.of_bool res), state)
+    ok (Base (BV.of_bool res))
 
   let _mk_box ptr =
     let non_null = Struct [ ptr ] in
@@ -191,27 +192,23 @@ module M (State : State_intf.S) = struct
     let allocator = Struct [] in
     Struct [ unique; allocator ]
 
-  let fixme_try_cleanup ~args:_ state =
+  let fixme_try_cleanup _ =
     (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
               we return a Box to a null pointer, hoping the client code doesn't access it. *)
     let meta = Usize.(0s) in
     let box = _mk_box (Ptr (Sptr.null_ptr (), Some meta)) in
-    Result.ok (box, state)
+    ok box
 
-  let fixme_box_new (fun_sig : UllbcAst.fun_sig) ~args state =
+  let fixme_box_new (fun_sig : UllbcAst.fun_sig) args =
     let ty = List.hd fun_sig.inputs in
     let value = List.hd args in
-    let** ptr, state = State.alloc_ty ty state in
-    let++ (), state = State.store ptr ty value state in
-    let box = _mk_box (Ptr ptr) in
-    (box, state)
+    let* ptr = State.alloc_ty ty in
+    let+ () = State.store ptr ty value in
+    _mk_box (Ptr ptr)
 
-  let fixme_null_ptr ~args:_ state =
-    Result.ok (Ptr (Sptr.null_ptr (), None), state)
+  let fixme_null_ptr _ = ok (Ptr (Sptr.null_ptr (), None))
 
-  module Alloc = Alloc.M (State)
-
-  let alloc_impl ~args state =
+  let alloc_impl args =
     let zero = Usize.(0s) in
     let size, align, zeroed =
       match args with
@@ -226,17 +223,15 @@ module M (State : State_intf.S) = struct
             args
     in
     if%sat size ==@ zero then
-      Result.ok (Ptr (Sptr.null_ptr_of (Typed.cast align), Some zero), state)
+      ok (Ptr (Sptr.null_ptr_of (Typed.cast align), Some zero))
     else
-      let* zeroed = if%sat zeroed then return true else return false in
+      let* zeroed = if%sat zeroed then ok true else ok false in
       (* allocate *)
-      let++ ptr, state =
-        Alloc.alloc ~zeroed ~args:[ Base size; Base align ] state
-      in
+      let+ ptr = Alloc.alloc ~zeroed [ Base size; Base align ] in
       let ptr =
         match ptr with Ptr (p, _) -> p | _ -> failwith "Expected Ptr"
       in
       (* construct the Result<NonNull<[u8]>> *)
       (* FIXME: the size of this zero is probably wrong *)
-      (Enum (zero, [ Struct [ Ptr (ptr, Some size) ] ]), state)
+      Enum (zero, [ Struct [ Ptr (ptr, Some size) ] ])
 end

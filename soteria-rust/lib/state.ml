@@ -356,7 +356,7 @@ let alloc ?zeroed size align st =
   let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
   Soteria.Symex.Compo_res.ok (ptr, state)
 
-let alloc_untyped ?zeroed ~size ~align st = alloc ?zeroed size align st
+let alloc_untyped ~zeroed ~size ~align st = alloc ~zeroed size align st
 
 let alloc_ty ty st =
   let* layout = Layout.layout_of_s ty in

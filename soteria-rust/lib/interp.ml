@@ -17,21 +17,20 @@ module Make (State : State_intf.S) = struct
 
   exception Unsupported of (string * Meta.span)
 
-  type full_ptr = Sptr.t Rust_val.full_ptr
-  type state = State.t
-  type store = (full_ptr option * Types.ty) Store.t
-
   open InterpM
   open InterpM.Syntax
 
+  type state = State.t
+  type store = (full_ptr option * Types.ty) Store.t
   type 'a t = ('a, store) InterpM.t
 
-  let pp_full_ptr = Rust_val.pp_full_ptr Sptr.pp
-
   type 'err fun_exec =
-    args:Sptr.t rust_val list ->
+    rust_val list ->
     state ->
-    (Sptr.t rust_val * state, 'err, State.serialized) Result.t
+    (rust_val * state, 'err, State.serialized) Result.t
+
+  let lift_state_monad_fn (fn : 'a -> ('b, unit) InterpM.t) : 'e fun_exec =
+   fun (arg : 'a) state -> InterpM.run ~env:() ~state (fun () -> fn arg)
 
   let get_variable var_id =
     let* store = get_env () in
@@ -293,11 +292,11 @@ module Make (State : State_intf.S) = struct
               g "Resolved function call to %a" Crate.pp_name
                 fundef.item_meta.name);
           match Std_funs.std_fun_eval fundef exec_fun with
-          | Some fn -> ok fn
+          | Some fn -> ok (lift_state_monad_fn fn)
           | None -> ok (exec_fun fundef)
         with Crate.MissingDecl _ -> not_impl "Missing function declaration")
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
-        ok (Std_funs.builtin_fun_eval fn generics)
+        ok (lift_state_monad_fn @@ Std_funs.builtin_fun_eval fn generics)
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
@@ -342,14 +341,14 @@ module Make (State : State_intf.S) = struct
               fundef.item_meta.name);
         let global_fn =
           match Std_funs.std_fun_eval fundef exec_fun with
-          | Some fn -> fn
+          | Some fn -> lift_state_monad_fn fn
           | None -> exec_fun fundef
         in
         (* First we allocate the global and store it in the State  *)
         let* ptr = State.alloc_ty decl.ty in
         let* () = State.store_global g ptr in
         (* And only after we compute it; this enables recursive globals *)
-        let* v = lift_state_op @@ global_fn ~args:[] in
+        let* v = lift_state_op @@ global_fn [] in
         let+ () = State.store ptr decl.ty v in
         ptr
 
@@ -439,8 +438,7 @@ module Make (State : State_intf.S) = struct
         | Cast (CastUnsize (_, _, MetaUnknown)) ->
             not_impl "Unknown unsize kind"
         | Cast (CastUnsize (_, _, MetaLength length)) ->
-            let rec with_ptr_meta meta : Sptr.t rust_val -> Sptr.t rust_val t =
-              function
+            let rec with_ptr_meta meta : rust_val -> rust_val t = function
               | Ptr (v, _) -> ok (Ptr (v, Some meta))
               | ( Struct (_ :: _ as fs)
                 | Array (_ :: _ as fs)
@@ -743,7 +741,7 @@ module Make (State : State_intf.S) = struct
               let fun_exec =
                 with_extra_call_trace ~loc ~msg:"Drop"
                 @@ lift_state_op
-                @@ exec_fun drop ~args:[ Ptr place_ptr ]
+                @@ exec_fun drop [ Ptr place_ptr ]
               in
               State.unwind_with fun_exec
                 ~f:(fun _ -> ok ())
@@ -769,11 +767,13 @@ module Make (State : State_intf.S) = struct
         let* src = eval_operand src in
         let* dst = eval_operand dst in
         let* count = eval_operand count in
-        let+ _ =
-          lift_state_op
-          @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
+        let* store = get_env () in
+        let* () = map_env (fun _ -> ()) in
+        let* _ =
+          Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
         in
-        ()
+        let* () = map_env (fun _ -> store) in
+        ok ()
     | Deinit place ->
         let* place_ptr = resolve_place place in
         State.uninit place_ptr place.ty
@@ -800,7 +800,7 @@ module Make (State : State_intf.S) = struct
         let fun_exec =
           with_extra_call_trace ~loc ~msg:"Call trace"
           @@ lift_state_op
-          @@ exec_fun ~args
+          @@ exec_fun args
         in
         State.unwind_with fun_exec
           ~f:(fun v ->
@@ -898,8 +898,8 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun (fundef : UllbcAst.fun_decl) ~args state :
-      (Sptr.t rust_val * State.t, 'e, 'f) Result.t =
+  and exec_fun (fundef : UllbcAst.fun_decl) args state :
+      (rust_val * State.t, 'e, 'f) Result.t =
     let open Rustsymex.Syntax in
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
@@ -937,7 +937,7 @@ module Make (State : State_intf.S) = struct
   let exec_fun ~args ~state fundef =
     let open Rustsymex.Syntax in
     let+- err, _ =
-      let** value, state = exec_fun ~args fundef state in
+      let** value, state = exec_fun fundef args state in
       if !Config.current.ignore_leaks then Result.ok (value, state)
       else
         let@ () = Rustsymex.with_loc ~loc:fundef.item_meta.span in

@@ -50,13 +50,13 @@ module type S = sig
     (t, [> `UBDanglingPointer ], 'a) Result.t
 
   (** Decay a pointer into an integer value, losing provenance. *)
-  val decay : t -> sint Typed.t Rustsymex.t
+  val decay : t -> [> sint ] Typed.t Rustsymex.t
 
   (** For Miri: the allocation ID of this location, as a u64 *)
-  val as_id : t -> sint Typed.t
+  val as_id : t -> [> sint ] Typed.t
 
   (** Get the allocation info for this pointer: its size and alignment *)
-  val allocation_info : t -> sint Typed.t * nonzero Typed.t
+  val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
 
   val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit
   val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
@@ -181,7 +181,7 @@ module ArithPtr : S with type t = arithptr_t = struct
       ptr1 -!@ ptr2
 
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
-  let allocation_info { size; align; _ } = (size, align)
+  let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
 
   let iter_vars { ptr; align; size; tag = _ } f =
     Typed.iter_vars ptr f;
