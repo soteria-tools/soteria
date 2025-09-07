@@ -142,6 +142,11 @@ module Make (State : State_intf.S) = struct
      fun env state ->
       let++ res = lift_err state sym in
       (res, env, state)
+
+    let[@inline] assert_ guard err =
+     fun env state ->
+      let++ () = assert_ guard err state in
+      ((), env, state)
   end
 
   module Syntax = struct

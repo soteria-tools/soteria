@@ -421,6 +421,8 @@ let lift_err st (symex : ('a, 'e, 'f) Result.t) =
   | Ok ok -> Result.ok ok
   | Missing fix -> Result.miss fix
 
+let assert_ guard err st = lift_err st (assert_or_error guard err)
+
 let store_str_global str ptr ({ globals; _ } as st) =
   let globals = GlobMap.add (String str) ptr globals in
   Result.ok ((), { st with globals })

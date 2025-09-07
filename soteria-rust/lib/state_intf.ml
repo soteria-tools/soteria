@@ -165,6 +165,12 @@ module type S = sig
     ('ok, ([< Error.t ] as 'err), 'f) Result.t ->
     ('ok, 'err err * t, 'f) Result.t
 
+  val assert_ :
+    sbool Typed.t ->
+    ([< Error.t ] as 'a) ->
+    t ->
+    (unit, 'a err * t, serialized) Result.t
+
   val store_str_global :
     string -> full_ptr -> t -> (unit * t, [> ] err * t, serialized) Result.t
 
