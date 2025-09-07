@@ -160,7 +160,6 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
       | (k, v) :: tl ->
           if%sat Key.sem_eq key k then Symex.return (k, Some v)
           else find_bindings tl
-      (* TODO: Investigate: this is not a tailcall, because if%sat is not an if. *)
     in
     match M'.find_opt key st with
     | Some v -> Symex.return (key, Some v)
