@@ -1,5 +1,6 @@
 open Rust_val
 open Typed.Infix
+open Typed.Syntax
 
 module M (State : State_intf.S) = struct
   open State_monad.Make (State)
@@ -15,9 +16,8 @@ module M (State : State_intf.S) = struct
     let size = Typed.cast_i Usize size in
     let max_size = Layout.max_value_z (TInt Isize) in
     let max_size = Typed.BitVec.usize max_size in
-    let min_align = Typed.BitVec.usizei 1 in
     let* () =
-      State.assert_ (align >=@ min_align &&@ (size <@ max_size)) `InvalidAlloc
+      State.assert_ (Usize.(1s) <=@ align &&@ (size <@ max_size)) `InvalidAlloc
     in
     let align = Typed.cast align in
     let+ ptr = State.alloc_untyped ~zeroed ~size ~align in

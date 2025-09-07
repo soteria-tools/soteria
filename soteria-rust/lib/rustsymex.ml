@@ -13,7 +13,7 @@ module SYMEX =
 include SYMEX
 include Syntaxes.FunctionWrap
 
-let match_on ~(constr : 'a -> Typed.sbool Typed.t) (elements : 'a list) :
+let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
     'a option t =
   let open Syntax in
   let rec aux = function
