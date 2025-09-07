@@ -1,6 +1,4 @@
-open Soteria.Symex.Compo_res
 open Rustsymex
-open Rustsymex.Syntax
 module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
@@ -8,160 +6,8 @@ open Charon
 open Charon_util
 open Rust_val
 
-module InterpM (State : State_intf.S) = struct
-  type full_ptr = State.Sptr.t Rust_val.full_ptr
-  type store = (full_ptr option * Types.ty) Store.t
-
-  type 'a t =
-    store ->
-    State.t ->
-    ( 'a * store * State.t,
-      Error.t State.err * State.t,
-      State.serialized )
-    Result.t
-
-  let ok x : 'a t = fun store state -> Result.ok (x, store, state)
-  let error err : 'a t = fun _store state -> State.error err state
-  let error_raw err : 'a t = fun _store state -> Result.error (err, state)
-  let not_impl str : 'a t = fun _store _state -> Rustsymex.not_impl str
-  let get_store () = fun store state -> Result.ok (store, store, state)
-
-  let bind (x : 'a t) (f : 'a -> 'b t) : 'b t =
-   fun store state ->
-    let** y, store, state = x store state in
-    (f y) store state
-
-  let map (x : 'a t) (f : 'a -> 'b) : 'b t =
-   fun store state ->
-    let++ y, store, state = x store state in
-    (f y, store, state)
-
-  let fold_list x ~init ~f =
-    Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold x ~init ~f
-
-  let map_store f = fun store state -> Result.ok ((), f store, state)
-
-  let[@inline] lift_state_op f =
-   fun store state ->
-    let++ v, state = f state in
-    (v, store, state)
-
-  let[@inline] lift_symex (s : 'a Rustsymex.t) : 'a t =
-   fun store state ->
-    let+ s = s in
-    Ok (s, store, state)
-
-  let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
-
-  let with_loc ~loc f =
-    let old_loc = !Rustsymex.current_loc in
-    Rustsymex.current_loc := loc;
-    map (f ()) @@ fun res ->
-    current_loc := old_loc;
-    res
-
-  let with_extra_call_trace ~loc ~msg (x : 'a t) : 'a t =
-   fun store state ->
-    let+ res = x store state in
-    match res with
-    | Ok triple -> Ok triple
-    | Error (e, st) ->
-        let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
-        Error (State.add_to_call_trace e elem, st)
-    | Missing f -> Missing f
-
-  let run ~store ~state (f : unit -> 'a t) : ('a * State.t, 'e, 'f) Result.t =
-    let++ res, _, state = f () store state in
-    (res, state)
-
-  (** We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
-      without having to define it here. *)
-  let update_ref_tys_in
-      ~(f :
-         'acc -> full_ptr -> Types.ty -> Types.ref_kind -> (full_ptr * 'acc) t)
-      ~(init : 'acc) (v : 'a rust_val) (ty : Types.ty) :
-      (State.Sptr.t rust_val * 'acc) t =
-   fun store state ->
-    let f (acc, store, state) ptr ty rk =
-      let++ (res, acc), store, state = f acc ptr ty rk store state in
-      (res, (acc, store, state))
-    in
-    let++ res, (acc, store, state) =
-      Layout.update_ref_tys_in f (init, store, state) v ty
-    in
-    ((res, acc), store, state)
-
-  module State = struct
-    include State
-
-    let[@inline] load ?is_move ptr ty = lift_state_op (load ?is_move ptr ty)
-
-    let[@inline] load_discriminant ptr ty =
-      lift_state_op (load_discriminant ptr ty)
-
-    let[@inline] store ptr ty v = lift_state_op (store ptr ty v)
-    let[@inline] alloc_ty ty = lift_state_op (alloc_ty ty)
-    let[@inline] alloc_tys tys = lift_state_op (alloc_tys tys)
-    let[@inline] uninit ptr ty = lift_state_op (uninit ptr ty)
-    let[@inline] free ptr = lift_state_op (free ptr)
-    let[@inline] check_ptr_align ptr ty = lift_state_op (check_ptr_align ptr ty)
-    let[@inline] borrow ptr ty mut = lift_state_op (borrow ptr ty mut)
-    let[@inline] protect ptr ty mut = lift_state_op (protect ptr ty mut)
-    let[@inline] unprotect ptr ty = lift_state_op (unprotect ptr ty)
-    let[@inline] tb_load ptr ty = lift_state_op (tb_load ptr ty)
-    let[@inline] load_global g = lift_state_op (load_global g)
-    let[@inline] store_global g ptr = lift_state_op (store_global g ptr)
-    let[@inline] load_str_global str = lift_state_op (load_str_global str)
-
-    let[@inline] store_str_global str ptr =
-      lift_state_op (store_str_global str ptr)
-
-    let[@inline] declare_fn fn = lift_state_op (declare_fn fn)
-    let[@inline] lookup_fn fn = lift_state_op (lookup_fn fn)
-    let[@inline] add_error e = lift_state_op (add_error e)
-    let[@inline] pop_error () = lift_state_op pop_error
-
-    let[@inline] unwind_with ~f ~fe x =
-     fun store state ->
-      unwind_with
-        ~f:(fun (x, store, state) -> f x store state)
-        ~fe:(fun (e, state) -> fe e store state)
-        (x store state)
-
-    let[@inline] is_valid_ptr_fn =
-     fun store state -> Result.ok (is_valid_ptr state, store, state)
-
-    let[@inline] is_valid_ptr ptr ty =
-     fun store state ->
-      let+ is_valid = is_valid_ptr state ptr ty in
-      Ok (is_valid, store, state)
-
-    let[@inline] lift_err sym =
-     fun store state ->
-      let++ res = lift_err state sym in
-      (res, store, state)
-  end
-
-  module Syntax = struct
-    let ( let* ) = bind
-    let ( let+ ) = map
-    let ( let^ ) x f = bind (lift_symex x) f
-    let ( let^+ ) x f = map (lift_symex x) f
-    let ( let^^ ) x f = bind (State.lift_err x) f
-    let ( let^^+ ) x f = map (State.lift_err x) f
-
-    module Symex_syntax = struct
-      let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
-       fun store state ->
-        Rustsymex.branch_on ?left_branch_name ?right_branch_name guard
-          ~then_:(fun () -> then_ () store state)
-          ~else_:(fun () -> else_ () store state)
-    end
-  end
-end
-
 module Make (State : State_intf.S) = struct
-  module InterpM = InterpM (State)
+  module InterpM = State_monad.Make (State)
   module Core = Core.M (State)
   module Std_funs = Builtins.Eval.M (State)
   module Sptr = State.Sptr
@@ -178,6 +24,8 @@ module Make (State : State_intf.S) = struct
   open InterpM
   open InterpM.Syntax
 
+  type 'a t = ('a, store) InterpM.t
+
   let pp_full_ptr = Rust_val.pp_full_ptr Sptr.pp
 
   type 'err fun_exec =
@@ -186,7 +34,7 @@ module Make (State : State_intf.S) = struct
     (Sptr.t rust_val * state, 'err, State.serialized) Result.t
 
   let get_variable var_id =
-    let* store = get_store () in
+    let* store = get_env () in
     match Store.find_value var_id store with
     | Some ptr ->
         L.debug (fun m ->
@@ -196,7 +44,7 @@ module Make (State : State_intf.S) = struct
     | None -> error `DeadVariable
 
   let get_variable_and_ty var_id =
-    let* store = get_store () in
+    let* store = get_env () in
     match Store.find_opt var_id store with
     | Some ptr_and_ty -> ok ptr_and_ty
     | None -> error `DeadVariable
@@ -207,7 +55,7 @@ module Make (State : State_intf.S) = struct
         "Function called with wrong arg count, should have been caught before";
     (* create a store with all types *)
     let* () =
-      map_store @@ fun store ->
+      map_env @@ fun store ->
       List.fold_left
         (fun st (local : GAst.local) ->
           Store.add local.index (None, local.var_ty) st)
@@ -221,7 +69,7 @@ module Make (State : State_intf.S) = struct
     let* ptrs = State.alloc_tys tys in
     let tys_ptrs = List.combine alloc_locs ptrs in
     let* () =
-      map_store @@ fun store ->
+      map_env @@ fun store ->
       List.fold_left
         (fun store ((local : GAst.local), ptr) ->
           Store.add local.index (Some ptr, local.var_ty) store)
@@ -257,7 +105,7 @@ module Make (State : State_intf.S) = struct
       fold_list protected ~init:() ~f:(fun () (ptr, ty) ->
           State.unprotect ptr ty)
     in
-    let* store = get_store () in
+    let* store = get_env () in
     fold_list (Store.bindings store) ~init:() ~f:(fun () (_, (ptr, _)) ->
         match (ptr, protected_address) with
         | None, _ -> ok ()
@@ -857,13 +705,13 @@ module Make (State : State_intf.S) = struct
         let* ptr, ty = get_variable_and_ty local in
         let* () = match ptr with None -> ok () | Some ptr -> State.free ptr in
         let* ptr = State.alloc_ty ty in
-        map_store (Store.add local (Some ptr, ty))
+        map_env (Store.add local (Some ptr, ty))
     | StorageDead local -> (
         let* ptr, ty = get_variable_and_ty local in
         match ptr with
         | Some ptr ->
             let* () = State.free ptr in
-            map_store (Store.add local (None, ty))
+            map_env (Store.add local (None, ty))
         | None -> ok ())
     | Drop (place, trait_ref) -> (
         let* place_ptr = resolve_place place in
@@ -1063,7 +911,7 @@ module Make (State : State_intf.S) = struct
     in
     let open InterpM.Syntax in
     let store = Store.empty in
-    let@ () = run ~store ~state in
+    let@ () = run ~env:store ~state in
     let@ () = with_loc ~loc in
     L.info (fun m ->
         m "Calling %a with %a" Crate.pp_name name
