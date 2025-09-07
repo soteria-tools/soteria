@@ -198,8 +198,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
             type fun_exec := (
                 UllbcAst.fun_decl ->
                 rust_val list ->
+                unit ->
                 State.t ->
-                (rust_val * State.t,Error.t State.err * State.t, State.serialized) Result.t)
+                (rust_val * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t)
     """
 
     stubs_str = """

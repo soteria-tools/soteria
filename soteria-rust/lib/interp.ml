@@ -23,14 +23,7 @@ module Make (State : State_intf.S) = struct
   type state = State.t
   type store = (full_ptr option * Types.ty) Store.t
   type 'a t = ('a, store) InterpM.t
-
-  type 'err fun_exec =
-    rust_val list ->
-    state ->
-    (rust_val * state, 'err, State.serialized) Result.t
-
-  let lift_state_monad_fn (fn : 'a -> ('b, unit) InterpM.t) : 'e fun_exec =
-   fun (arg : 'a) state -> InterpM.run ~env:() ~state (fun () -> fn arg)
+  type 'err fun_exec = rust_val list -> (rust_val, unit) InterpM.t
 
   let get_variable var_id =
     let* store = get_env () in
@@ -292,11 +285,11 @@ module Make (State : State_intf.S) = struct
               g "Resolved function call to %a" Crate.pp_name
                 fundef.item_meta.name);
           match Std_funs.std_fun_eval fundef exec_fun with
-          | Some fn -> ok (lift_state_monad_fn fn)
+          | Some fn -> ok fn
           | None -> ok (exec_fun fundef)
         with Crate.MissingDecl _ -> not_impl "Missing function declaration")
     | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
-        ok (lift_state_monad_fn @@ Std_funs.builtin_fun_eval fn generics)
+        ok (Std_funs.builtin_fun_eval fn generics)
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
@@ -341,14 +334,14 @@ module Make (State : State_intf.S) = struct
               fundef.item_meta.name);
         let global_fn =
           match Std_funs.std_fun_eval fundef exec_fun with
-          | Some fn -> lift_state_monad_fn fn
+          | Some fn -> fn
           | None -> exec_fun fundef
         in
         (* First we allocate the global and store it in the State  *)
         let* ptr = State.alloc_ty decl.ty in
         let* () = State.store_global g ptr in
         (* And only after we compute it; this enables recursive globals *)
-        let* v = lift_state_op @@ global_fn [] in
+        let* v = with_env ~env:() @@ global_fn [] in
         let+ () = State.store ptr decl.ty v in
         ptr
 
@@ -740,7 +733,7 @@ module Make (State : State_intf.S) = struct
               let drop = Crate.get_fun drop_ref.binder_value.id in
               let fun_exec =
                 with_extra_call_trace ~loc ~msg:"Drop"
-                @@ lift_state_op
+                @@ with_env ~env:()
                 @@ exec_fun drop [ Ptr place_ptr ]
               in
               State.unwind_with fun_exec
@@ -799,7 +792,7 @@ module Make (State : State_intf.S) = struct
               args);
         let fun_exec =
           with_extra_call_trace ~loc ~msg:"Call trace"
-          @@ lift_state_op
+          @@ with_env ~env:()
           @@ exec_fun args
         in
         State.unwind_with fun_exec
@@ -898,20 +891,15 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun (fundef : UllbcAst.fun_decl) args state :
-      (rust_val * State.t, 'e, 'f) Result.t =
-    let open Rustsymex.Syntax in
+  and exec_fun (fundef : UllbcAst.fun_decl) args : (rust_val, unit) InterpM.t =
     (* Put arguments in store *)
     let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
     let* body =
       match body with
-      | None ->
-          Fmt.kstr Rustsymex.not_impl "Function %a is opaque" Crate.pp_name name
-      | Some body -> return body
+      | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
+      | Some body -> ok body
     in
-    let open InterpM.Syntax in
-    let store = Store.empty in
-    let@ () = run ~env:store ~state in
+    let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc in
     L.info (fun m ->
         m "Calling %a with %a" Crate.pp_name name
@@ -934,17 +922,15 @@ module Make (State : State_intf.S) = struct
         error_raw err)
 
   (* re-define this for the export, nowhere else: *)
-  let exec_fun ~args ~state fundef =
-    let open Rustsymex.Syntax in
-    let+- err, _ =
-      let** value, state = exec_fun fundef args state in
-      if !Config.current.ignore_leaks then Result.ok (value, state)
-      else
-        let@ () = Rustsymex.with_loc ~loc:fundef.item_meta.span in
-        let++ (), state = State.leak_check state in
-        (value, state)
+  let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
+    let@ () = InterpM.run ~env:() ~state in
+    let@@ () =
+      with_extra_call_trace ~loc:fundef.item_meta.span ~msg:"Entry point"
     in
-    State.add_to_call_trace err
-      (Soteria.Terminal.Call_trace.mk_element ~loc:fundef.item_meta.span
-         ~msg:"Entry point" ())
+    let* value = exec_fun fundef args in
+    if !Config.current.ignore_leaks then ok value
+    else
+      let@ () = with_loc ~loc:fundef.item_meta.span in
+      let+ () = State.leak_check () in
+      value
 end

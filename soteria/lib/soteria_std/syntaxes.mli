@@ -11,4 +11,5 @@ module Result : Monad.Syntax2 with type ('a, 'b) t := ('a, 'b) result
 
 module FunctionWrap : sig
   val ( let@ ) : ('a -> 'b) -> 'a -> 'b
+  val ( let@@ ) : ('a -> 'b) -> (unit -> 'a) -> 'b
 end

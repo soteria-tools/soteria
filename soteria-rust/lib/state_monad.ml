@@ -47,6 +47,11 @@ module Make (State : State_intf.S) = struct
 
   let map_env f = fun env state -> Result.ok ((), f env, state)
 
+  let with_env ~(env : 'env1) (f : ('a, 'env1) t) : ('a, 'env) t =
+   fun old_env state ->
+    let++ res, _, state = f env state in
+    (res, old_env, state)
+
   let[@inline] lift_state_op f =
    fun env state ->
     let++ v, state = f state in
@@ -80,9 +85,12 @@ module Make (State : State_intf.S) = struct
   (** Run the state monad, with the given initial state and environment; the
       environment is discarded at the end of the execution. *)
   let run ~env ~state (f : unit -> ('a, 'env) t) :
-      ('a * State.t, 'e, 'f) Result.t =
-    let++ res, _, state = f () env state in
-    (res, state)
+      ('a * State.t, Error.t State.err, 'f) Result.t =
+    let+ res = f () env state in
+    match res with
+    | Ok (res, _, state) -> Ok (res, state)
+    | Error (e, _) -> Error e
+    | Missing f -> Missing f
 
   (** We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
       without having to re-define. *)
@@ -141,6 +149,7 @@ module Make (State : State_intf.S) = struct
     let[@inline] lookup_fn fn = lift_state_op (lookup_fn fn)
     let[@inline] add_error e = lift_state_op (add_error e)
     let[@inline] pop_error () = lift_state_op pop_error
+    let[@inline] leak_check () = lift_state_op leak_check
 
     let[@inline] unwind_with ~f ~fe x =
      fun env state ->

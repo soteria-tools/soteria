@@ -18,8 +18,12 @@ module M : (State : State_intf.S) -> sig
   type fun_exec :=
     UllbcAst.fun_decl ->
     rust_val list ->
+    unit ->
     State.t ->
-    (rust_val * State.t, Error.t State.err * State.t, State.serialized) Result.t
+    ( rust_val * unit * State.t,
+      Error.t State.err * State.t,
+      State.serialized )
+    Result.t
 
   (** {@markdown[
         Aborts the execution of the process.

@@ -119,7 +119,7 @@ module M (State : State_intf.S) = struct
     in
     let loc = !Rustsymex.current_loc in
     let[@inline] exec_fun msg fn args =
-      with_extra_call_trace ~loc ~msg @@ lift_state_op @@ exec_fun fn args
+      with_extra_call_trace ~loc ~msg @@ exec_fun fn args
     in
     let try_fn_ptr, catch_fn_ptr = (as_ptr try_fn_ptr, as_ptr catch_fn_ptr) in
     let* try_fn = get_fn try_fn_ptr in
