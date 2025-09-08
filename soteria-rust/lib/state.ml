@@ -16,6 +16,19 @@ let with_error_loc_as_call_trace ?(msg = "Triggering memory operation") st f =
   let+- err, loc = f () in
   ((err, Soteria.Terminal.Call_trace.singleton ~loc ~msg ()), st)
 
+let error err st =
+  let@ () = with_error_loc_as_call_trace st in
+  error err
+
+let lift_err st (symex : ('a, 'e, 'f) Result.t) =
+  let* res = symex in
+  match res with
+  | Error e -> error e st
+  | Ok ok -> Result.ok ok
+  | Missing fix -> Result.miss fix
+
+let assert_ guard err st = lift_err st (assert_or_error guard err)
+
 module StateKey = struct
   include Typed
   module Symex = Rustsymex.SYMEX
@@ -150,7 +163,6 @@ let with_tbs b f =
   | Error e -> Error e
 
 let check_ptr_align (ptr : Sptr.t) ty st =
-  let@ () = with_error_loc_as_call_trace st in
   let* exp_align = Layout.align_of_s ty in
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   (* 0-based pointers are aligned up to their offset *)
@@ -159,25 +171,31 @@ let check_ptr_align (ptr : Sptr.t) ty st =
       m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
         Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa exp_align
         Charon_util.pp_ty ty);
-  if%sat ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
-  then Result.ok ((), st)
-  else error `MisalignedPointer
+  let++ () =
+    assert_
+      (ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s)))
+      `MisalignedPointer st
+  in
+  ((), st)
 
 let with_ptr (ptr : Sptr.t) (st : t)
     (f :
       [< T.sint ] Typed.t * sub option ->
       ('a * sub option, 'err, 'fix list) Result.t) :
     ('a * t, 'err, serialized) Result.t =
-  if%sat Sptr.sem_eq ptr (Sptr.null_ptr ()) then Result.error `NullDereference
-  else
-    let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-    let@ state = with_state st in
-    let* res = (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state in
-    match res with
-    | Missing _ as miss ->
-        if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
-        else return miss
-    | ok_or_err -> return ok_or_err
+  let** () =
+    assert_or_error
+      Typed.(not (Sptr.sem_eq ptr (Sptr.null_ptr ())))
+      `NullDereference
+  in
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  let@ state = with_state st in
+  let* res = (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state in
+  match res with
+  | Missing _ as miss ->
+      if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
+      else return miss
+  | ok_or_err -> return ok_or_err
 
 (** This is used as a stopgap for cases where a function pointer is cast to a
     regular pointer and is used on the state; the location won't exist in tree
@@ -388,18 +406,17 @@ let alloc_tys tys st =
       (block, (ptr, None)))
 
 let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
+  let** () = assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree st in
   let@ () = with_error_loc_as_call_trace st in
-  if%sat Typed.Ptr.ofs ptr ==@ Usize.(0s) then
-    let@ () = with_loc_err () in
-    (* TODO: does the tag not play a role in freeing? *)
-    let++ (), state =
-      SPmap.wrap
-        (Freeable.free ~assert_exclusively_owned:(fun t ->
-             Tree_block.assert_exclusively_owned @@ Option.map fst t))
-        (Typed.Ptr.loc ptr) state
-    in
-    ((), { st with state })
-  else error `InvalidFree
+  let@ () = with_loc_err () in
+  (* TODO: does the tag not play a role in freeing? *)
+  let++ (), state =
+    SPmap.wrap
+      (Freeable.free ~assert_exclusively_owned:(fun t ->
+           Tree_block.assert_exclusively_owned @@ Option.map fst t))
+      (Typed.Ptr.loc ptr) state
+  in
+  ((), { st with state })
 
 let zeros (ptr, _) size st =
   let@ () = with_error_loc_as_call_trace st in
@@ -408,20 +425,6 @@ let zeros (ptr, _) size st =
   let@ ofs, block = with_ptr ptr st in
   let@ block, _ = with_tbs block in
   Tree_block.zero_range ofs size block
-
-let error err st =
-  let@ () = with_error_loc_as_call_trace st in
-  L.info (fun m -> m "State errored: %a" Error.pp err);
-  error err
-
-let lift_err st (symex : ('a, 'e, 'f) Result.t) =
-  let* res = symex in
-  match res with
-  | Error e -> error e st
-  | Ok ok -> Result.ok ok
-  | Missing fix -> Result.miss fix
-
-let assert_ guard err st = lift_err st (assert_or_error guard err)
 
 let store_str_global str ptr ({ globals; _ } as st) =
   let globals = GlobMap.add (String str) ptr globals in
@@ -596,16 +599,17 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
   Soteria.Symex.Compo_res.Ok ((ptr, None), st)
 
 let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
+  let** () =
+    assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer st
+  in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
-  if%sat Typed.Ptr.ofs ptr ==@ Usize.(0s) then
-    let loc = Typed.Ptr.loc ptr in
-    match FunBiMap.get_fn loc functions with
-    | Some fn -> Result.ok (fn, st)
-    | None -> (
-        let@ _, block = with_ptr fptr st in
-        (* If a block exists, we can be sure that this isn't a function pointer *)
-        match block with
-        | Some _ -> Result.error `NotAFnPointer
-        | None -> Result.miss [])
-  else Result.error `MisalignedFnPointer
+  let loc = Typed.Ptr.loc ptr in
+  match FunBiMap.get_fn loc functions with
+  | Some fn -> Result.ok (fn, st)
+  | None -> (
+      let@ _, block = with_ptr fptr st in
+      (* If a block exists, we can be sure that this isn't a function pointer *)
+      match block with
+      | Some _ -> Result.error `NotAFnPointer
+      | None -> Result.miss [])

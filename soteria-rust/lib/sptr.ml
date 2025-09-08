@@ -118,12 +118,14 @@ module ArithPtr : S with type t = arithptr_t = struct
     let ptr = Typed.Ptr.mk loc off in
     let ptr = { fptr with ptr } in
     if check then
-      if%sat [@lname "Ptr ok"] [@rname "Ptr dangling"]
-        off
-        ==@ Usize.(0s)
-        ||@ ((not off_by_ovf) &&@ not off_ovf &&@ constraints ptr)
-      then Result.ok ptr
-      else Result.error `UBDanglingPointer
+      let++ () =
+        assert_or_error
+          (off_by
+          ==@ Usize.(0s)
+          ||@ ((not off_by_ovf) &&@ not off_ovf &&@ constraints ptr))
+          `UBDanglingPointer
+      in
+      ptr
     else Result.ok ptr
 
   let project ty kind field ptr =

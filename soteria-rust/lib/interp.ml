@@ -221,19 +221,20 @@ module Make (State : State_intf.S) = struct
                   generics = { const_generics = [ len ]; _ };
                 } ) ->
               BV.usize_of_const_generic len
-          | Some len, TAdt { id = TBuiltin TSlice; _ } -> Typed.cast len
+          | Some len, TAdt { id = TBuiltin TSlice; _ } -> Typed.cast_i Usize len
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
         let idx = as_base_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
-        if%sat Usize.(0s) <=$@ idx &&@ (idx <$@ len) then (
-          let^^+ ptr' = Sptr.offset ~signed:false ~ty ptr idx in
-          L.debug (fun f ->
-              f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa
-                idx Sptr.pp ptr');
-          (ptr', None))
-        else error `OutOfBounds
+        let* () =
+          State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
+        in
+        let^^+ ptr' = Sptr.offset ~signed:false ~ty ptr idx in
+        L.debug (fun f ->
+            f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
+              Sptr.pp ptr');
+        (ptr', None)
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
         let ty, len =
@@ -257,16 +258,19 @@ module Make (State : State_intf.S) = struct
         let from = as_base_i Usize from in
         let to_ = as_base_i Usize to_ in
         let to_ = if from_end then len -!@ to_ else to_ in
-        if%sat Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len) then (
-          let^^+ ptr' = Sptr.offset ~signed:false ~ty ptr from in
-          let slice_len = to_ -!@ from in
-          L.debug (fun f ->
-              f "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp
-                ptr Typed.ppa from Typed.ppa to_
-                (if from_end then "(from end)" else "")
-                Sptr.pp ptr' Typed.ppa slice_len);
-          (ptr', Some slice_len))
-        else error `OutOfBounds
+        let* () =
+          State.assert_
+            (Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len))
+            `OutOfBounds
+        in
+        let^^+ ptr' = Sptr.offset ~signed:false ~ty ptr from in
+        let slice_len = to_ -!@ from in
+        L.debug (fun f ->
+            f "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp ptr
+              Typed.ppa from Typed.ppa to_
+              (if from_end then "(from end)" else "")
+              Sptr.pp ptr' Typed.ppa slice_len);
+        (ptr', Some slice_len)
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it.
@@ -407,7 +411,8 @@ module Make (State : State_intf.S) = struct
             | TLiteral ((TInt _ | TUInt _) as ty) ->
                 let v = as_base ty v in
                 let res, overflowed = ~-?v in
-                if%sat overflowed then error `Overflow else ok (Base res)
+                let+ () = State.assert_not overflowed `Overflow in
+                Base res
             | TLiteral (TFloat fty) ->
                 let v = as_base_f fty v in
                 ok (Base (Typed.Float.neg v))
@@ -537,8 +542,14 @@ module Make (State : State_intf.S) = struct
                 (* non-zero offset on integer pointer is not permitted, as these are always
                    dangling *)
                 let v2 = Typed.cast_i Usize v2 in
-                if%sat v2 ==@ Usize.(0s) then ok (Base v1)
-                else error `UBDanglingPointer
+                let ty = Charon_util.get_pointee (type_of_operand e1) in
+                let^ size = Layout.size_of_s ty in
+                let+ () =
+                  State.assert_
+                    (v2 ==@ Usize.(0s) ||@ (size ==@ Usize.(0s)))
+                    `UBDanglingPointer
+                in
+                Base v1
             | BitOr | BitAnd | BitXor -> (
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let v1 = Typed.cast_lit ty v1 in
@@ -764,8 +775,8 @@ module Make (State : State_intf.S) = struct
         let* src = eval_operand src in
         let* dst = eval_operand dst in
         let* count = eval_operand count in
-        let src = as_ptr src in
-        let dst = as_ptr dst in
+        let src = as_ptr_or ~make:Sptr.null_ptr_of src in
+        let dst = as_ptr_or ~make:Sptr.null_ptr_of dst in
         let count = as_base_i Usize count in
         let* () =
           with_env ~env:()

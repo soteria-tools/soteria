@@ -89,25 +89,25 @@ module M (State : State_intf.S) = struct
           let l = cast_lit ty l in
           let r = cast_lit ty r in
           let overflows = BV.mul_overflows ~signed l r in
-          if%sat overflows then Result.error `Overflow else Result.ok ()
+          assert_or_error (not overflows) `Overflow
       | Div om | Rem om ->
           if%sat r ==@ BV.mki_lit ty 0 then Result.error `DivisionByZero
           else if signed then
             let min = Layout.min_value_z ty in
             let min = BV.mk_lit ty min in
             let m_one = BV.mki_lit ty (-1) in
-            if%sat bool (om <> OWrap) &&@ (l ==@ min) &&@ (r ==@ m_one) then
-              Result.error `Overflow
-            else Result.ok ()
+            assert_or_error
+              (not (bool (om <> OWrap) &&@ (l ==@ min) &&@ (r ==@ m_one)))
+              `Overflow
           else Result.ok ()
       | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
           (* at this point, the size of the right-hand side might not match the given literal
              type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
           let r, size_r = cast_int r in
-          if%sat r <$@ BV.mki size_r 0 ||@ (r >=$@ BV.mki size_r size) then
-            Result.error `InvalidShift
-          else Result.ok ()
+          assert_or_error
+            (BV.mki size_r 0 <=$@ r &&@ (r <$@ BV.mki size_r size))
+            `InvalidShift
       | _ -> Result.ok ()
     in
 
@@ -138,8 +138,7 @@ module M (State : State_intf.S) = struct
     let++ () =
       match bop with
       | Div _ | Rem _ ->
-          if%sat r ==@ BV.mki_lit ty 0 then Result.error `DivisionByZero
-          else Result.ok ()
+          assert_or_error (not (r ==@ BV.mki_lit ty 0)) `DivisionByZero
       | _ -> Result.ok ()
     in
     let r = normalise_shift_r bop l r in
@@ -208,11 +207,12 @@ module M (State : State_intf.S) = struct
           | None, None -> Result.ok (BV.of_bool v)
         else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
-        if%sat Sptr.is_same_loc l r then
-          let* v = Sptr.distance l r in
-          let* cmp = cmp_of_int v in
-          Result.ok cmp
-        else Result.error `UBPointerComparison
+        let** () =
+          assert_or_error (Sptr.is_same_loc l r) `UBPointerComparison
+        in
+        let* v = Sptr.distance l r in
+        let* cmp = cmp_of_int v in
+        Result.ok cmp
     | Cmp, Ptr (p, _), Base v | Cmp, Base v, Ptr (p, _) ->
         if%sat v ==@ BV.usizei (Layout.size_of_uint_ty Usize) then
           if%sat Sptr.is_at_null_loc p then Result.ok U8.(0s)

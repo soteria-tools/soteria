@@ -222,8 +222,11 @@ module M (State : State_intf.S) = struct
             Fmt.(list ~sep:(any ", ") pp_rust_val)
             args
     in
+    (* make Result<NonNull<[u8]>, AllocError> *)
+    let mk_res ptr len = Enum (zero, [ Struct [ Ptr (ptr, Some len) ] ]) in
     if%sat size ==@ zero then
-      ok (Ptr (Sptr.null_ptr_of (Typed.cast align), Some zero))
+      let dangling = Sptr.null_ptr_of (Typed.cast align) in
+      ok (mk_res dangling zero)
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
       (* allocate *)
@@ -231,7 +234,6 @@ module M (State : State_intf.S) = struct
       let ptr =
         match ptr with Ptr (p, _) -> p | _ -> failwith "Expected Ptr"
       in
-      (* construct the Result<NonNull<[u8]>> *)
       (* FIXME: the size of this zero is probably wrong *)
-      Enum (zero, [ Struct [ Ptr (ptr, Some size) ] ])
+      mk_res ptr size
 end
