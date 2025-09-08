@@ -27,6 +27,10 @@ module M (State : State_intf.S) = struct
     let ((ptr_in, _) as ptr), size, align =
       match args with
       | [ Ptr ptr; Base size; Base align ] -> (ptr, size, align)
+      | [ Base ptr; Base size; Base align ] ->
+          let ptr = Typed.cast_i Usize ptr in
+          let ptr = Sptr.null_ptr_of ptr in
+          ((ptr, None), size, align)
       | _ -> failwith "dealloc: invalid arguments"
     in
     let alloc_size, alloc_align = Sptr.allocation_info ptr_in in
