@@ -12,7 +12,7 @@
 {!modules:
   Soteria.Symex
   Soteria.Sym_states
-  Soteria.Logging
+  Soteria.Logs
   Soteria.C_values
   Soteria.Terminal
   Soteria.Stats

@@ -1,5 +1,5 @@
 open Soteria_std
-open Logging.Logs
+open Logs.Import
 open Syntaxes.FunctionWrap
 
 (* Re-export a few definitions, leaving this module as root. *)
@@ -362,7 +362,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | Some false -> false
     | None ->
         let@ () =
-          with_section (Fmt.str "Checking entailment for %a" Value.ppa value)
+          L.with_section (Fmt.str "Checking entailment for %a" Value.ppa value)
         in
         Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
@@ -408,14 +408,14 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         let left_unsat = ref false in
 
         Symex_state.save ();
-        with_section ~is_branch:true left_branch_name (fun () ->
+        L.with_section ~is_branch:true left_branch_name (fun () ->
             Solver.add_constraints ~simplified:true [ guard ];
             let sat_res = Solver.sat () in
             left_unsat := Solver_result.is_unsat sat_res;
             if Solver_result.is_sat sat_res then then_ () f
             else L.trace (fun m -> m "Branch is not feasible"));
         Symex_state.backtrack_n 1;
-        with_section ~is_branch:true right_branch_name (fun () ->
+        L.with_section ~is_branch:true right_branch_name (fun () ->
             Solver.add_constraints [ Value.(not guard) ];
             if !left_unsat then
               (* Right must be sat since left was not! We didn't branch so we don't consume the counter *)
@@ -475,12 +475,12 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         (* First branch should not backtrack and last branch should not save *)
         let with_section =
           let branch_counter = ref 0 in
-          fun k ->
-            start_section ~is_branch:true
-              ("Branch number " ^ string_of_int !branch_counter);
-            k ();
-            end_section ();
-            incr branch_counter
+          fun f ->
+            L.with_section ~is_branch:true
+              ("Branch number " ^ string_of_int !branch_counter)
+              (fun () ->
+                f ();
+                incr branch_counter)
         in
         let rec loop brs =
           match brs with
