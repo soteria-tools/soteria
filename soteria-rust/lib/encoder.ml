@@ -240,7 +240,7 @@ module Make (Sptr : Sptr.S) = struct
     | ConstFn _, _ | _, TFnDef _ -> illegal_pair ()
     (* Rest *)
     | _ ->
-        Fmt.failwith "Unhandled rust_value and Charon.ty: %a / %a" ppa_rust_val
+        Fmt.failwith "Unhandled rust_value and Charon.ty: %a / %a" pp_rust_val
           value pp_ty ty
 
   (** Parses the current variant of the enum at the given offset. This handles
@@ -548,7 +548,7 @@ module Make (Sptr : Sptr.S) = struct
   and transmute_many ~(to_ty : Types.ty) vs =
     let open Syntaxes.Option in
     let pp_triple fmt (v, ty, o) =
-      Fmt.pf fmt "(%a:%a, %d)" ppa_rust_val v pp_ty ty o
+      Fmt.pf fmt "(%a:%a, %d)" pp_rust_val v pp_ty ty o
     in
     let transmute = transmute ~try_splitting:false in
     let size_of ty = (Layout.layout_of ty).size in
@@ -636,9 +636,18 @@ module Make (Sptr : Sptr.S) = struct
             |> List.find_map (function
                  | v, Types.TLiteral lit_ty, o
                    when o <= 0 && size <= o + size_of_literal_ty lit_ty ->
-                     let v = as_base lit_ty v in
-                     let v = BV.extract (o * -8) (((size - o) * 8) - 1) v in
-                     Some (Result.ok (Base v))
+                     Some
+                       (let open Rustsymex.Syntax in
+                        let* v =
+                          match v with
+                          | Base v -> return v
+                          | Ptr (ptr, _) -> Sptr.decay ptr
+                          | _ ->
+                              not_impl "Transmute: don't know hot to split this"
+                        in
+                        let v = Typed.cast_lit lit_ty v in
+                        let v = BV.extract (o * -8) (((size - o) * 8) - 1) v in
+                        Result.ok (Base v))
                  | _ -> None)
         | _ -> None
       in
