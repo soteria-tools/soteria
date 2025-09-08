@@ -585,13 +585,15 @@ module Make (State : State_intf.S) = struct
         | OffsetOf _ ->
             Fmt.kstr not_impl "Unsupported nullary operator: %a"
               Expressions.pp_nullop op)
-    | Discriminant place ->
+    | Discriminant place -> (
         let* loc = resolve_place place in
-        let enum, _ = TypesUtils.ty_as_custom_adt place.ty in
-        let variants = Crate.as_enum enum in
-        let+ variant_id = State.load_discriminant loc place.ty in
-        let variant = Types.VariantId.nth variants variant_id in
-        Base (BV.of_scalar variant.discriminant)
+        match place.ty with
+        | TAdt { id = TAdtId enum; _ } when Crate.is_enum enum ->
+            let variants = Crate.as_enum enum in
+            let+ variant_id = State.load_discriminant loc place.ty in
+            let variant = Types.VariantId.nth variants variant_id in
+            Base (BV.of_scalar variant.discriminant)
+        | _ -> ok (Base U8.(0s)))
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
       ->
