@@ -270,7 +270,7 @@ let generate_errors content =
                List.concat_map
                  (fun (fid, summaries) ->
                    let@ () =
-                     Soteria.Logging.Logs.with_section
+                     L.with_section
                        ("Anaysing summaries for function"
                        ^ Symbol.show_symbol fid)
                    in
@@ -283,7 +283,7 @@ let generate_errors content =
 
 (* Helper for all main entry points *)
 let initialise log_config term_config solver_config config f =
-  Soteria.Logging.Config.check_set_and_lock log_config;
+  Soteria.Logs.Config.check_set_and_lock log_config;
   Soteria.Terminal.Config.set_and_lock term_config;
   Soteria.Solvers.Config.set solver_config;
   Config.with_config ~config f
@@ -380,7 +380,7 @@ let lsp config () =
 (* Entry point function *)
 let show_ail logs_config term_config (includes : string list)
     (files : string list) =
-  Soteria.Logging.Config.check_set_and_lock logs_config;
+  Soteria.Logs.Config.check_set_and_lock logs_config;
   Soteria.Terminal.Config.set_and_lock term_config;
   match parse_and_link_ail ~includes files with
   | Ok { symmap; sigma; entry_point } ->
@@ -426,7 +426,7 @@ let generate_all_summaries log_config term_config solver_config config includes
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
   let@ () = initialise log_config term_config solver_config config in
   let prog =
-    let@ () = Soteria.Logging.Logs.with_section "Parsing and Linking" in
+    let@ () = L.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
     |> Result.get_or ~err:(fun e ->
            Fmt.epr "%a@\n@?" pp_err_and_call_trace e;
@@ -442,9 +442,7 @@ let capture_db log_config term_config solver_config config json_file
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
   let@ () = initialise log_config term_config solver_config config in
   let linked_prog =
-    let@ () =
-      Soteria.Logging.Logs.with_section "Parsing and Linking from database"
-    in
+    let@ () = L.with_section "Parsing and Linking from database" in
     let db = Compilation_database.from_file json_file in
     let parse_and_signal item =
       let res = parse_compilation_item item in

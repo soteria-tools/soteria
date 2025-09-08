@@ -50,4 +50,10 @@ let html_trace : t = { level = Some Trace; kind = Html }
 
 type interject = (unit -> unit) -> unit
 
-let interject : interject ref = ref (fun f -> f ())
+let cur_interject : interject ref = ref (fun f -> f ())
+
+let with_interject : interject:interject -> (unit -> 'a) -> 'a =
+ fun ~interject f ->
+  let old = !cur_interject in
+  cur_interject := interject;
+  Fun.protect ~finally:(fun () -> cur_interject := old) f

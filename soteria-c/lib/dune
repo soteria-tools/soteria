@@ -22,7 +22,14 @@
   grace
   grace.ansi_renderer
   dune-site)
- (flags :standard -open Soteria.Soteria_std -open Soteria.C_values)
+ (flags
+  :standard
+  -open
+  Soteria.Soteria_std
+  -open
+  Soteria.C_values
+  -open
+  Soteria.Logs.Import)
  (preprocess
   (pps ppx_deriving.std ppx_subliner soteria.ppx))
  (instrumentation

@@ -1,4 +1,4 @@
-type t = Trace | Smt | Debug | Info | Warn | App | Error
+type t = Smt | Trace | Debug | Info | Warn | App | Error
 
 let to_string = function
   | Smt -> "SMT"

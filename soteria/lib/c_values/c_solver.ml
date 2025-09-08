@@ -1,6 +1,6 @@
 open Soteria_std
+open Logs.Import
 module Var = Svalue.Var
-module L = Logging.Logs.L
 
 module Make_incremental
     (Analysis : Analyses.S)
