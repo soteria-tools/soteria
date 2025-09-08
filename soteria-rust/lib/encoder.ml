@@ -484,21 +484,14 @@ module Make (Sptr : Sptr.S) = struct
         ->
           let sv = Typed.cast_f fty sv in
           let signed = Layout.is_signed lit_ty in
-          let sv' = BV.of_float ~signed sv in
+          let size = 8 * size_of_literal_ty lit_ty in
+          let sv' = BV.of_float ~signed ~size sv in
           Result.ok (Base sv')
-      | ( TLiteral ((TInt _ | TUInt _) as ity),
-          TLiteral (TFloat _ as fty),
-          Base sv ) ->
+      | TLiteral ((TInt _ | TUInt _) as ity), TLiteral (TFloat fp), Base sv ->
           let sv = Typed.cast_lit ity sv in
-          let from_size = 8 * size_of_literal_ty ity in
-          let to_size = 8 * size_of_literal_ty fty in
+          let fp = Charon_util.float_precision fp in
           let signed = Layout.is_signed ity in
-          let sv =
-            if from_size < to_size then
-              BV.extend ~signed (to_size - from_size) sv
-            else sv
-          in
-          let sv' = BV.to_float ~signed sv in
+          let sv' = BV.to_float ~signed ~fp sv in
           Result.ok (Base sv')
       | TLiteral (TFloat _), _, _ | _, TLiteral (TFloat _), _ ->
           Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_ty from_ty

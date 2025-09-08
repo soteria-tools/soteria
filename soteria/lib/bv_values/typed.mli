@@ -161,8 +161,10 @@ module BitVec : sig
   val not_bool : [< sint ] t -> [> sint ] t
 
   (* float-bv conversions *)
-  val of_float : signed:bool -> [< sfloat ] t -> [> sint ] t
-  val to_float : signed:bool -> [< sint ] t -> [> sfloat ] t
+  val of_float : signed:bool -> size:int -> [< sfloat ] t -> [> sint ] t
+
+  val to_float :
+    signed:bool -> fp:Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
 end
 
 (** Floating point operations *)

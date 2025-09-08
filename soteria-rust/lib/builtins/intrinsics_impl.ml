@@ -388,6 +388,7 @@ module M (State : State_intf.S) = struct
         (`StdErr "float_to_int_unchecked with NaN or infinite value")
     in
     let signed = Layout.is_signed ity in
+    let size = 8 * Layout.size_of_literal_ty ity in
     let max = Z.succ @@ Layout.max_value_z ity in
     let min = Z.pred @@ Layout.min_value_z ity in
     let max = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float max in
@@ -395,11 +396,11 @@ module M (State : State_intf.S) = struct
     (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
        issues in cases of float precision loss (I think?) *)
     let+ () =
-      State.assert_not
+      State.assert_
         (min <.@ f &&@ (f <.@ max))
         (`StdErr "float_to_int_unchecked out of int range")
     in
-    Base (BV.of_float ~signed f)
+    Base (BV.of_float ~signed ~size f)
 
   let fmul_add ~a ~b ~c = ok ((a *.@ b) +.@ c)
   let fmaf16 = fmul_add

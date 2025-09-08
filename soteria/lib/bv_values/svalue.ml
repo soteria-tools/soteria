@@ -415,8 +415,8 @@ module type BitVec = sig
   val not_bool : t -> t
 
   (* float-bv conversions *)
-  val of_float : signed:bool -> t -> t
-  val to_float : signed:bool -> t -> t
+  val of_float : signed:bool -> size:int -> t -> t
+  val to_float : signed:bool -> fp:FloatPrecision.t -> t -> t
 end
 
 module type Float = sig
@@ -1115,21 +1115,16 @@ and BitVec : BitVec = struct
       let add_ovf = add_overflows ~signed v1 neg_v2 in
       Bool.or_ neg_ovf add_ovf
 
-  let of_float ~signed v =
+  let of_float ~signed ~size v =
     let p = precision_of_f v.node.ty in
-    match (v.node.ty, v.node.kind, p) with
-    | TFloat F32, Float f, F32 ->
+    match (p, v.node.kind, size) with
+    | F32, Float f, 32 ->
         mk 32 @@ Z.of_int32 (Int32.bits_of_float (Stdlib.Float.of_string f))
-    | TFloat F64, Float f, F64 ->
+    | F64, Float f, 64 ->
         mk 64 @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
-    | _, _, _ ->
-        let n = FloatPrecision.size p in
-        Unop (BvOfFloat (signed, n), v) <| t_bv n
+    | _, _, _ -> Unop (BvOfFloat (signed, size), v) <| t_bv size
 
-  let to_float ~signed v =
-    let size = size_of v.node.ty in
-    let fp = FloatPrecision.of_size size in
-    Unop (FloatOfBv (signed, fp), v) <| t_f fp
+  let to_float ~signed ~fp v = Unop (FloatOfBv (signed, fp), v) <| t_f fp
 end
 
 (** {2 Floating point} *)
