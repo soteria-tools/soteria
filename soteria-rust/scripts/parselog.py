@@ -86,7 +86,7 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
         return ("Miss encountered", RED, None)
 
     # check engine errors first; one error overrides any success
-    fatal_regex = r"^warning: .*ms\): (.*)"
+    fatal_regex = r"^warning: .*s\): (.*)"
     fatals = re.search(fatal_regex, test, re.MULTILINE)
     if fatals is not None:
         err = fatals.group(1)
