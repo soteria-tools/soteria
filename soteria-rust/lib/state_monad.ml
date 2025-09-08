@@ -173,7 +173,7 @@ module Make (State : State_intf.S) = struct
 
     let[@inline] assert_ guard err =
      fun env state ->
-      let++ () = assert_ guard err state in
+      let++ () = assert_ (guard :> Typed.T.sbool Typed.t) err state in
       ((), env, state)
 
     let[@inline] assert_not guard err = assert_ (Typed.not guard) err

@@ -173,7 +173,7 @@ module Float : sig
   val f32 : float -> [> sfloat ] t
   val f64 : float -> [> sfloat ] t
   val f128 : float -> [> sfloat ] t
-  val like : [> sfloat ] t -> float -> [> sfloat ] t
+  val like : [< sfloat ] t -> float -> [> sfloat ] t
   val fp_of : [< sfloat ] t -> Svalue.FloatPrecision.t
   val eq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
   val geq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
@@ -215,7 +215,7 @@ end
 
 module Infix : sig
   (* equality *)
-  val ( ==@ ) : ([< any ] as 'a) t -> 'a t -> [> sbool ] t
+  val ( ==@ ) : 'a t -> 'a t -> [> sbool ] t
   val ( ==?@ ) : 'a t -> 'b t -> [> sbool ] t
 
   (* inequality -- [$] indicates signed *)

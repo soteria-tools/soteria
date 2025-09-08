@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
+from ast import Add
 import subprocess
 import json
-from typing import Any, Generic, Sequence, TypeVar, TypedDict
+from typing import Any, Generic, Sequence, TypeVar, TypedDict, assert_never, Literal
 from common import *
 
 
@@ -36,9 +37,60 @@ class GenericParams(TypedDict):
     types: list[TypeParam]
 
 
+class AdtId(TypedDict):
+    Adt: int
+
+
+class InnerTypeAdt(TypedDict):
+    id: str | AdtId
+    generics: GenericParams
+
+
+class TypeAdt(TypedDict):
+    Adt: InnerTypeAdt
+
+
+class TypeLiteralUInt(TypedDict):
+    UInt: str
+
+
+class TypeLiteralInt(TypedDict):
+    Int: str
+
+
+class TypeLiteralFloat(TypedDict):
+    Float: str
+
+
+TypeLiteralBool = Literal["Bool"]
+
+
+class TypeLiteral(TypedDict):
+    Literal: TypeLiteralUInt | TypeLiteralInt | TypeLiteralFloat | TypeLiteralBool
+
+
+class TypeTypeVar(TypedDict):
+    TypeVar: Any
+
+
+class TypeRef(TypedDict):
+    Ref: Any
+
+
+class TypePtr(TypedDict):
+    RawPtr: Any
+
+
+TypeNever = Literal["Never"]
+
+
+Type = TypeAdt | TypeLiteral | TypeTypeVar | TypeRef | TypePtr | TypeNever
+
+
 class Signature(TypedDict):
     generics: GenericParams
-    inputs: list[Any]
+    inputs: list[Type]
+    output: Type
 
 
 T = TypeVar("T")
@@ -78,6 +130,88 @@ class FunDecl(TypedDict):
     item_meta: ItemMeta
     signature: Signature
     body: Result[Body]
+
+
+InterpTypeBase = Literal[
+    "unit", "int", "bool", "float", "ptr", "unknown", "fun_exec", "meta_ty"
+]
+InterpTypeMeta = Optional[str]
+InterpType = tuple[InterpTypeBase, InterpTypeMeta]
+
+
+def type_of(ty: Type) -> InterpType:
+    if ty == "Never":
+        return "unit", None
+
+    if "Literal" in ty:
+        if ty["Literal"] == "Bool":
+            return "bool", None
+        if "Int" in ty["Literal"] or "UInt" in ty["Literal"]:
+            return "int", (
+                ty["Literal"]["Int"]
+                if "Int" in ty["Literal"]
+                else ty["Literal"]["UInt"]
+            )
+        if "Float" in ty["Literal"]:
+            return "float", ty["Literal"]["Float"]
+
+    if "RawPtr" in ty or "Ref" in ty:
+        return "ptr", None
+
+    if "Adt" in ty:
+        if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
+            return "unit", None
+
+    return "unknown", None
+
+
+input_type: dict[InterpTypeBase, str] = {
+    "unit": "unit",
+    "int": "[< Typed.T.sint ] Typed.t",
+    "float": "[< Typed.T.sfloat ] Typed.t",
+    "bool": "[< Typed.T.sbool ] Typed.t",
+    "ptr": "full_ptr",
+    "unknown": "rust_val",
+    "fun_exec": "fun_exec",
+    "meta_ty": "Types.ty",
+}
+
+
+output_type: dict[InterpTypeBase, str] = {
+    "unit": "unit",
+    "int": "Typed.T.sint Typed.t",
+    "float": "Typed.T.sfloat Typed.t",
+    "bool": "Typed.T.sbool Typed.t",
+    "ptr": "full_ptr",
+    "unknown": "rust_val",
+    "fun_exec": "fun_exec",
+    "meta_ty": "Types.ty",
+}
+
+
+def input_type_cast(arg: str, ty: InterpType) -> str:
+    if ty[0] == "int":
+        int_ty = cast(str, ty[1]).replace("I", "U")
+        return f"let {arg} = as_base_i {int_ty} {arg} in "
+    if ty[0] == "float":
+        return f"let {arg} = as_base_f {ty[1]} {arg} in "
+    if ty[0] == "ptr":
+        return f"let {arg} = as_ptr {arg} in "
+    if ty[0] == "bool":
+        return f"let {arg} = Typed.BitVec.to_bool (as_base TBool {arg}) in "
+    return ""
+
+
+def output_type_cast(ty: InterpType) -> tuple[str, str]:
+    if ty[0] == "int" or ty[0] == "float":
+        return ("let+ ret = ", " in Base (ret :> Typed.T.cval Typed.t)")
+    if ty[0] == "bool":
+        return "let+ ret = ", " in Base (Typed.BitVec.of_bool ret)"
+    if ty[0] == "ptr":
+        return "let+ ret = ", " in Ptr ret"
+    if ty[0] == "unit":
+        return "let+ () = ", " in Tuple []"
+    return "", ""
 
 
 # Parse the intrinsics via Charon, and return them
@@ -126,9 +260,10 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
     class IntrinsicInfo(TypedDict):
         name: str
         path: str
-        doc: list[str]
-        args: list[str]
+        doc: str
+        args: list[tuple[str, InterpType]]
         types: list[str]
+        ret: InterpType
 
     pprint(f"Generating OCaml interface and stubs...", inc=True)
 
@@ -152,24 +287,30 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         )
         doc = sanitize_comment(doc)
         arg_count = len(fun["signature"]["inputs"])
-        args = (
+        args: list[tuple[str, InterpType]] = (
             [
-                sanitize_var_name(param["name"] or "arg")
+                (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
                 for param in fun["body"]["Ok"]["Unstructured"]["locals"]["locals"][
                     1 : arg_count + 1
                 ]
             ]
             if "Ok" in fun["body"]
-            else [f"arg{i}" for i in range(1, arg_count + 1)]
+            else [
+                (f"arg{i+1}", type_of(ty))
+                for i, ty in enumerate(fun["signature"]["inputs"])
+            ]
         )
+        arg_names = [arg for (arg, _) in args]
         types = [
             (
                 param_l
-                if not (param_l := param["name"].lower()) in args
+                if not (param_l := param["name"].lower()) in arg_names
                 else "t_" + param_l
             )
             for param in fun["signature"]["generics"]["types"]
         ]
+        ret = type_of(fun["signature"]["output"])
+
         intrinsics_info.append(
             {
                 "name": name,
@@ -177,6 +318,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
                 "doc": doc,
                 "args": args,
                 "types": types,
+                "ret": ret,
             }
         )
     intrinsics_info.sort(key=lambda x: x["name"])
@@ -190,10 +332,11 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
 
         module M: (State: State_intf.S) -> sig
             type rust_val := State.Sptr.t Rust_val.t
-            type ret := (
+            type full_ptr := State.Sptr.t Rust_val.full_ptr
+            type 'a ret := (
                 unit ->
                 State.t ->
-                (rust_val * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t
+                ('a * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t
             )
             type fun_exec := (
                 UllbcAst.fun_decl ->
@@ -210,27 +353,48 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         [@@@warning "-unused-value-declaration"]
 
         open Rustsymex
+        open Rust_val
 
         module M (State: State_intf.S) = struct
+
+          type rust_val = State.Sptr.t Rust_val.t
+
+          let ( let+ ) x f () st =
+            let open Rustsymex.Syntax in
+            let++ y, (), st' = x () st in
+            (f y, (), st')
+
+          let[@inline] as_ptr (v : rust_val) =
+            match v with
+            | Ptr ptr -> ptr
+            | Base v ->
+                let v = Typed.cast_i Usize v in
+                let ptr = State.Sptr.null_ptr_of v in
+                (ptr, None)
+            | _ -> failwith "expected pointer"
+
+          let as_base ty (v : rust_val) = Rust_val.as_base ty v
+          let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
+          let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
+
     """
 
     for info in intrinsics_info:
         nl = "\n"
-        args_and_tys: Sequence[tuple[Optional[str], str]] = []
+        args_and_tys: Sequence[tuple[Optional[str], InterpType]] = []
 
         # special-case catch_unwind; it needs to also received the function-execution function
         if info["name"] == "catch_unwind":
-            args_and_tys += [(None, "fun_exec")]
+            args_and_tys.append((None, ("fun_exec", None)))
 
-        args_and_tys += [(type, "Types.ty") for type in info["types"]] + [
-            (arg, "rust_val") for arg in info["args"]
-        ]
+        args_and_tys.extend((type, ("meta_ty", None)) for type in info["types"])
+        args_and_tys.extend(info["args"])
         interface_str += f"""
             (** {info["doc"]} *)
             val {info["name"]} : {' -> '.join([
-                f"{arg}:{ty}" if arg is not None else ty
+                f"{arg}:{input_type[ty[0]]}" if arg is not None else input_type[ty[0]]
                 for (arg, ty) in args_and_tys
-            ] + ["ret"])}
+            ] + [output_type[info["ret"][0]] + " ret"])}
         """
 
         stubs_str += f"""
@@ -242,7 +406,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
 
     interface_str += """
 
-            val eval_fun : string -> fun_exec -> Types.generic_args -> rust_val list -> ret
+            val eval_fun : string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
         end
     """
 
@@ -255,19 +419,29 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
 
     for info in intrinsics_info:
         types = "; ".join(info["types"])
-        args = "; ".join(a if a != info["name"] else f"{a}_" for a in info["args"])
+        args_match = "; ".join(
+            a if a != info["name"] else f"{a}_" for (a, _) in info["args"]
+        )
 
         call_args = [
             f"~{arg}" if arg != info["name"] else f"~{arg}:{arg}_"
-            for arg in info["types"] + info["args"]
+            for arg in info["types"] + [a for (a, _) in info["args"]]
         ]
         if info["name"] == "catch_unwind":
             call_args.insert(0, "fun_exec")
 
         stubs_str += f"""
-                    | "{info['name']}", [{types}], [{args}] ->
-                        {info['name']} {' '.join(call_args)}
+            | "{info['name']}", [{types}], [{args_match}] ->
         """
+
+        for arg, ty in info["args"]:
+            stubs_str += input_type_cast(arg, ty)
+
+        prefix, postfix = output_type_cast(info["ret"])
+        stubs_str += f"""
+            {prefix} {info['name']} {' '.join(call_args)} {postfix}
+        """
+
     stubs_str += """
                 | name, _, _ -> fun () _ ->
                     Fmt.kstr not_impl "Intrinsic %s not found, or not called with the right arguments" name

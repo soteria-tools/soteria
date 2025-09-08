@@ -760,12 +760,13 @@ module Make (State : State_intf.S) = struct
         let* src = eval_operand src in
         let* dst = eval_operand dst in
         let* count = eval_operand count in
-        let* store = get_env () in
-        let* () = map_env (fun _ -> ()) in
-        let* _ =
-          Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
+        let src = as_ptr src in
+        let dst = as_ptr dst in
+        let count = as_base_i Usize count in
+        let* () =
+          with_env ~env:()
+          @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
         in
-        let* () = map_env (fun _ -> store) in
         ok ()
     | Deinit place ->
         let* place_ptr = resolve_place place in

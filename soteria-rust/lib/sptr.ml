@@ -38,7 +38,7 @@ module type S = sig
     ?check:bool ->
     ?ty:Charon.Types.ty ->
     t ->
-    sint Typed.t ->
+    [< sint ] Typed.t ->
     (t, [> `UBDanglingPointer ], 'a) Result.t
 
   (** Project a pointer to a field of the given type. *)
