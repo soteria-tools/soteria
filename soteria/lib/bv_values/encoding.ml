@@ -133,7 +133,7 @@ let encode_value (v : Svalue.t) =
   |> bool_ands
 
 module LetBinder = struct
-  module VarTbl = Hashtbl.Make (struct
+  module ValTbl = Hashtbl.Make (struct
     type t = Svalue.t
 
     let equal = Svalue.equal
@@ -198,11 +198,11 @@ module LetBinder = struct
       (using [var_of_value]), the encoded value (with possible sub-bindings
       replaced), and a set containing the binding dependencies of this value. *)
   let mk_bindings bind_map =
-    VarTbl.fold
+    ValTbl.fold
       (fun v _ acc ->
         let var = var_of_value v in
         let v =
-          replace ~cond:(fun w -> VarTbl.mem bind_map w && w.tag <> v.tag) v
+          replace ~cond:(fun w -> ValTbl.mem bind_map w && w.tag <> v.tag) v
         in
         let sexp = encode_value v in
         let deps = dependencies v in
@@ -243,21 +243,21 @@ module LetBinder = struct
       substituted (but {b not} defined in the AST!) along with the bindings to
       be applied after encoding. *)
   let let_binds_for ?(min_binds = 5) ?(min_occurrences = 20) v =
-    let tag_counts = VarTbl.create 255 in
+    let tag_counts = ValTbl.create 255 in
 
     Svalue.iter v (fun v ->
         match v.node.kind with
         | Var _ | Bool _ | Float _ | BitVec _ -> ()
         | _ ->
             let curr =
-              VarTbl.find_opt tag_counts v |> Option.value ~default:0
+              ValTbl.find_opt tag_counts v |> Option.value ~default:0
             in
-            VarTbl.replace tag_counts v (curr + 1));
-    VarTbl.filter_map_inplace
+            ValTbl.replace tag_counts v (curr + 1));
+    ValTbl.filter_map_inplace
       (fun _ count -> if count >= min_occurrences then Some count else None)
       tag_counts;
 
-    let length = VarTbl.length tag_counts in
+    let length = ValTbl.length tag_counts in
     if length == 0 || length < min_binds then (v, [])
     else
       let bindings = mk_bindings tag_counts in
@@ -265,7 +265,7 @@ module LetBinder = struct
       let known_vars = dependencies v in
       let bindings = order_bindings known_vars bindings in
 
-      let v_subst = replace ~cond:(VarTbl.mem tag_counts) v in
+      let v_subst = replace ~cond:(ValTbl.mem tag_counts) v in
       (v_subst, bindings)
 
   (** [apply_bindings bindings sexp] Applies the given groups of [bindings] to
