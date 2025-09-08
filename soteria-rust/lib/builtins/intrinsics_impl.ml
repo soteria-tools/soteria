@@ -47,14 +47,15 @@ module M (State : State_intf.S) = struct
   let align_of_val ~t ~ptr:_ = lift_symex @@ Layout.align_of_s t
 
   let arith_offset ~t ~dst:(dst, meta) ~offset =
-    let^^+ dst' = Sptr.offset ~check:false ~ty:t dst offset in
+    let^^+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
     (dst', meta)
 
-  let offset ~ptr ~delta:_ ~dst ~offset =
+  let offset ~ptr ~delta ~dst ~offset =
     match dst with
     | Ptr (dst, meta) ->
         let offset = as_base_i Usize offset in
-        let^^+ dst' = Sptr.offset ~ty:ptr dst offset in
+        let signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
+        let^^+ dst' = Sptr.offset ~signed ~ty:ptr dst offset in
         Ptr (dst', meta)
     | Base _ -> error `UBPointerArithmetic
     | _ -> not_impl "ptr_add: invalid arguments"
@@ -147,8 +148,8 @@ module M (State : State_intf.S) = struct
     let rec aux ?(inc = one) l r len =
       if%sat len ==@ zero then ok U32.(0s)
       else
-        let^^ l = Sptr.offset l inc in
-        let^^ r = Sptr.offset r inc in
+        let^^ l = Sptr.offset ~signed:false l inc in
+        let^^ r = Sptr.offset ~signed:false r inc in
         let* bl = State.load (l, None) byte in
         let bl = as_base_i U8 bl in
         let* br = State.load (r, None) byte in
@@ -162,8 +163,8 @@ module M (State : State_intf.S) = struct
       overlap for a range of size [size]; otherwise errors, with
       [`StdErr (name ^ " overlapped")]. *)
   let check_overlap name l r size =
-    let^^ l_end = Sptr.offset l size in
-    let^^ r_end = Sptr.offset r size in
+    let^^ l_end = Sptr.offset ~signed:false l size in
+    let^^ r_end = Sptr.offset ~signed:false r size in
     let^ dist1 = Sptr.distance l r_end in
     let^ dist2 = Sptr.distance r l_end in
     let zero = Usize.(0s) in
@@ -325,7 +326,7 @@ module M (State : State_intf.S) = struct
         Base (BV.of_scalar variant.discriminant)
     | _ ->
         (* FIXME: this size is probably wrong *)
-        ok (Base U32.(0s))
+        ok (Base U8.(0s))
 
   let exact_div ~t ~x ~y =
     let lit = TypesUtils.ty_as_literal t in
@@ -335,6 +336,7 @@ module M (State : State_intf.S) = struct
     if Typed.is_float ty then ok (Base res)
     else
       let zero = BV.mki_lit lit 0 in
+      let ( %@ ) = Typed.BitVec.rem ~signed:(Layout.is_signed lit) in
       let+ () =
         State.assert_
           (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))
@@ -623,7 +625,7 @@ module M (State : State_intf.S) = struct
               ~init:()
               ~f:(fun () i ->
                 let off = BV.usizei i in
-                let^^ ptr = Sptr.offset ptr off in
+                let^^ ptr = Sptr.offset ~signed:false ptr off in
                 State.store (ptr, None) (TLiteral (TUInt U8)) (Base val_))
         | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
 end

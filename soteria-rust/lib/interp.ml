@@ -228,7 +228,7 @@ module Make (State : State_intf.S) = struct
         let idx = as_base_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
         if%sat Usize.(0s) <=$@ idx &&@ (idx <$@ len) then (
-          let^^+ ptr' = Sptr.offset ~ty ptr idx in
+          let^^+ ptr' = Sptr.offset ~signed:false ~ty ptr idx in
           L.debug (fun f ->
               f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa
                 idx Sptr.pp ptr');
@@ -258,7 +258,7 @@ module Make (State : State_intf.S) = struct
         let to_ = as_base_i Usize to_ in
         let to_ = if from_end then len -!@ to_ else to_ in
         if%sat Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len) then (
-          let^^+ ptr' = Sptr.offset ~ty ptr from in
+          let^^+ ptr' = Sptr.offset ~signed:false ~ty ptr from in
           let slice_len = to_ -!@ from in
           L.debug (fun f ->
               f "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp
@@ -558,7 +558,9 @@ module Make (State : State_intf.S) = struct
                 in
                 let ty = Charon_util.get_pointee (type_of_operand e1) in
                 let v = Typed.cast_i Usize v in
-                let^^+ p' = Sptr.offset ~ty p v in
+                let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
+                let signed = Layout.is_signed off_ty in
+                let^^+ p' = Sptr.offset ~signed ~ty p v in
                 Ptr (p', meta)
             | _ ->
                 let^^+ res = Core.eval_ptr_binop op p1 p2 in

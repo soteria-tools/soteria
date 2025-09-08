@@ -30,13 +30,14 @@ module type S = sig
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
 
-  (** [offset ?check ?ty ptr off] Offsets [ptr] by the size of [ty] * [off].
-      [ty] defaults to u8. May result in a dangling pointer error if the pointer
-      goes over the allocation limit. This check can be disabled with
-      [~check:false]. *)
+  (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
+      [off], interpreting [off] as a [signed] integer. [ty] defaults to u8. May
+      result in a dangling pointer error if the pointer goes over the allocation
+      limit. This check can be disabled with [~check:false]. *)
   val offset :
     ?check:bool ->
     ?ty:Charon.Types.ty ->
+    signed:bool ->
     t ->
     [< sint ] Typed.t ->
     (t, [> `UBDanglingPointer ], 'a) Result.t
@@ -105,12 +106,15 @@ module ArithPtr : S with type t = arithptr_t = struct
     let ofs = Typed.Ptr.ofs ptr in
     Typed.conj [ Usize.(0s) <=$@ ofs; ofs <=$@ size ]
 
-  let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8))
+  let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8)) ~signed
       ({ ptr; _ } as fptr) off_by =
     let* size = Layout.size_of_s ty in
     let loc, off = Typed.Ptr.decompose ptr in
-    let off_by, off_by_ovf = size *$?@ off_by in
-    let off, off_ovf = off +$?@ off_by in
+    let ( *? ), ( +? ) =
+      if signed then (( *$?@ ), ( +$?@ )) else (( *?@ ), ( +?@ ))
+    in
+    let off_by, off_by_ovf = size *? off_by in
+    let off, off_ovf = off +? off_by in
     let ptr = Typed.Ptr.mk loc off in
     let ptr = { fptr with ptr } in
     if check then
@@ -132,7 +136,7 @@ module ArithPtr : S with type t = arithptr_t = struct
       | ProjAdt (_, None) | ProjTuple _ -> layout.fields
     in
     let off = Layout.Fields_shape.offset_of field fields in
-    offset ptr (Typed.BitVec.usizei off)
+    offset ~signed:false ptr (Typed.BitVec.usizei off)
 
   module ValMap = Map.Make (struct
     type t = T.sloc Typed.t

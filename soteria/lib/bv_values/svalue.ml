@@ -627,7 +627,7 @@ end
 (** {2 Bit vectors} *)
 and BitVec : BitVec = struct
   let mk n bv =
-    assert (Z.(zero <= bv && bv <= one lsl n));
+    assert (Z.(zero <= bv && bv < one lsl n));
     BitVec bv <| t_bv n
 
   let mk_masked n bv = mk n Z.(bv land pred (one lsl n))
@@ -1255,7 +1255,7 @@ module Infix = struct
   let ( /@ ) = BitVec.div ~signed:false
   let ( /$@ ) = BitVec.div ~signed:true
   let ( %@ ) = BitVec.rem ~signed:false
-  let ( %$@ ) = BitVec.mod_
+  let ( %$@ ) = BitVec.rem ~signed:true
   let ( <<@ ) = BitVec.shl
   let ( >>@ ) = BitVec.lshr
   let ( >>>@ ) = BitVec.ashr

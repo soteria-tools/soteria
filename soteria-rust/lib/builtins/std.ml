@@ -48,7 +48,7 @@ module M (State : State_intf.S) = struct
     (* TODO: take into account idx.mutability *)
     let idx = as_base_i Usize (List.nth args 1) in
     let ty = List.hd gen_args.types in
-    let^^ ptr' = Sptr.offset ~ty ptr idx in
+    let^^ ptr' = Sptr.offset ~signed:false ~ty ptr idx in
     if not idx_op.is_range then
       let+ () =
         State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ size)) `OutOfBounds
@@ -135,8 +135,8 @@ module M (State : State_intf.S) = struct
     | [ Ptr (ptr, _); Base meta ] -> ok (Ptr (ptr, Some meta))
     | [ Base v; Base meta ] ->
         let v = Typed.cast_i Usize v in
-        let^^+ ptr = Sptr.offset (Sptr.null_ptr ()) v in
-        Ptr (ptr, Some meta)
+        let ptr = Sptr.null_ptr_of v in
+        ok (Ptr (ptr, Some meta))
     | _ ->
         Fmt.failwith "from_raw_parts: invalid arguments %a"
           Fmt.(list ~sep:comma pp_rust_val)
