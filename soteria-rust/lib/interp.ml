@@ -513,15 +513,10 @@ module Make (State : State_intf.S) = struct
                 let^^+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else BV.not_bool res in
                 Base (res :> T.cval Typed.t)
-            | Add om | Sub om | Mul om | Div om | Rem om | Shl om | Shr om -> (
-                match (om, type_of_operand e1) with
-                | OWrap, TLiteral ((TInt _ | TUInt _) as ty) ->
-                    let^^+ res = Core.wrapping_binop op ty v1 v2 in
-                    Base res
-                | _, TLiteral ty ->
-                    let^^+ res = Core.eval_lit_binop op ty v1 v2 in
-                    Base res
-                | _, _ -> not_impl "Unexpected type in binop")
+            | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
+                let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
+                let^^+ res = Core.eval_lit_binop op ty v1 v2 in
+                Base res
             | AddChecked | SubChecked | MulChecked ->
                 let ty =
                   match type_of_operand e1 with

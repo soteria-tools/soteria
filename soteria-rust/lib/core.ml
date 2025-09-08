@@ -90,15 +90,14 @@ module M (State : State_intf.S) = struct
           let r = cast_lit ty r in
           let overflows = BV.mul_overflows ~signed l r in
           assert_or_error (not overflows) `Overflow
-      | Div om | Rem om ->
+      | Div _ | Rem _ ->
           if%sat r ==@ BV.mki_lit ty 0 then Result.error `DivisionByZero
           else if signed then
+            (* overflow on rem/div is UB even when wrapping *)
             let min = Layout.min_value_z ty in
             let min = BV.mk_lit ty min in
             let m_one = BV.mki_lit ty (-1) in
-            assert_or_error
-              (not (bool (om <> OWrap) &&@ (l ==@ min) &&@ (r ==@ m_one)))
-              `Overflow
+            assert_or_error (not (l ==@ min &&@ (r ==@ m_one))) `Overflow
           else Result.ok ()
       | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
           (* at this point, the size of the right-hand side might not match the given literal
@@ -130,23 +129,6 @@ module M (State : State_intf.S) = struct
         | Rem _ -> Result.ok (Float.rem l (cast r))
         | _ -> not_impl "Invalid binop for float in eval_lit_binop")
     | _ -> not_impl "Unexpected type in eval_lit_binop"
-
-  (** Applies the given binary operator using wrapping semantics; in other
-      words, any overflow is ignored and unchecked for. *)
-  let wrapping_binop (bop : Expressions.binop) ty l r :
-      ([> T.sint ] Typed.t, 'e, 'f) Result.t =
-    let++ () =
-      match bop with
-      | Div _ | Rem _ ->
-          assert_or_error (not (r ==@ BV.mki_lit ty 0)) `DivisionByZero
-      | _ -> Result.ok ()
-    in
-    let r = normalise_shift_r bop l r in
-    let l = cast_lit ty l in
-    let r = cast_lit ty r in
-    let signed = Layout.is_signed ty in
-    let op = binop_fn bop signed in
-    cast (op l (cast r))
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop (op : Expressions.binop) ty l r =

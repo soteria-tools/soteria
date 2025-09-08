@@ -609,12 +609,12 @@ module M (State : State_intf.S) = struct
   let wrapping_op op ~t ~a ~b : rust_val ret =
     let ity = TypesUtils.ty_as_literal t in
     let a, b = (as_base ity a, as_base ity b) in
-    let^^+ res = Core.wrapping_binop op ity a b in
+    let^^+ res = Core.eval_lit_binop op ity a b in
     Base res
 
-  let wrapping_add = wrapping_op (Add OUB)
-  let wrapping_mul = wrapping_op (Mul OUB)
-  let wrapping_sub = wrapping_op (Sub OUB)
+  let wrapping_add = wrapping_op (Add OWrap)
+  let wrapping_mul = wrapping_op (Mul OWrap)
+  let wrapping_sub = wrapping_op (Sub OWrap)
 
   let write_bytes ~t ~dst:((ptr, _) as dst) ~val_ ~count =
     let zero = Usize.(0s) in
