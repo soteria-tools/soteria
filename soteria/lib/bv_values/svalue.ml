@@ -773,15 +773,13 @@ and BitVec : BitVec = struct
         let size = size_of v1.node.ty in
         let l = bv_to_z true size l in
         let r = bv_to_z true size r in
-        if Z.equal r Z.zero then mk_masked size l
-        else
-          let res = Z.(l mod r) in
-          let res =
-            if Z.(res < zero) && not Z.(r < zero) then Z.(res + r)
-            else if Z.(res >= zero) && Z.(r < zero) then Z.(res + r)
-            else res
-          in
-          mk_masked size res
+        let res = Z.(l mod r) in
+        let res =
+          if Z.(res < zero) && not Z.(r < zero) then Z.(res + r)
+          else if Z.(res >= zero) && Z.(r < zero) then Z.(res + r)
+          else res
+        in
+        mk_masked size res
     | _ -> Binop (Mod, v1, v2) <| v1.node.ty
 
   (** [rem ~signed v1 v2] is the remainder of [v1 / v2], which takes the sign of
@@ -792,10 +790,7 @@ and BitVec : BitVec = struct
         let size = size_of v1.node.ty in
         let l = bv_to_z signed size l in
         let r = bv_to_z signed size r in
-        if Z.equal r Z.zero then mk_masked size l
-        else
-          let res = Z.(l mod r) in
-          mk_masked size res
+        mk_masked size Z.(l mod r)
     | _, BitVec r when Stdlib.not signed && Z.(equal r one) ->
         zero (size_of v1.node.ty)
     | _, BitVec r when Stdlib.not signed && is_pow2 r ->

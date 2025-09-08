@@ -90,13 +90,14 @@ module M (State : State_intf.S) = struct
           let r = cast_lit ty r in
           let overflows = BV.mul_overflows ~signed l r in
           if%sat overflows then Result.error `Overflow else Result.ok ()
-      | Div (OUB | OPanic) | Rem (OUB | OPanic) ->
+      | Div om | Rem om ->
           if%sat r ==@ BV.mki_lit ty 0 then Result.error `DivisionByZero
           else if signed then
             let min = Layout.min_value_z ty in
             let min = BV.mk_lit ty min in
             let m_one = BV.mki_lit ty (-1) in
-            if%sat l ==@ min &&@ (r ==@ m_one) then Result.error `Overflow
+            if%sat bool (om <> OWrap) &&@ (l ==@ min) &&@ (r ==@ m_one) then
+              Result.error `Overflow
             else Result.ok ()
           else Result.ok ()
       | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
@@ -132,7 +133,15 @@ module M (State : State_intf.S) = struct
 
   (** Applies the given binary operator using wrapping semantics; in other
       words, any overflow is ignored and unchecked for. *)
-  let wrapping_binop (bop : Expressions.binop) ty l r : [> T.sint ] Typed.t =
+  let wrapping_binop (bop : Expressions.binop) ty l r :
+      ([> T.sint ] Typed.t, 'e, 'f) Result.t =
+    let++ () =
+      match bop with
+      | Div _ | Rem _ ->
+          if%sat r ==@ BV.mki_lit ty 0 then Result.error `DivisionByZero
+          else Result.ok ()
+      | _ -> Result.ok ()
+    in
     let r = normalise_shift_r bop l r in
     let l = cast_lit ty l in
     let r = cast_lit ty r in
