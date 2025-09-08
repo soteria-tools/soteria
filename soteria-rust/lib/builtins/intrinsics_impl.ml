@@ -328,6 +328,16 @@ module M (State : State_intf.S) = struct
         (* FIXME: this size is probably wrong *)
         ok (Base U8.(0s))
 
+  let disjoint_bitor ~t ~a ~b =
+    let ty = TypesUtils.ty_as_literal t in
+    let a, b = (as_base ty a, as_base ty b) in
+    let+ () =
+      State.assert_
+        (a &@ b ==@ BV.mki_lit ty 0)
+        (`StdErr "core::intrinsics::disjoint_bitor with overlapping bits")
+    in
+    Base (a |@ b)
+
   let exact_div ~t ~x ~y =
     let lit = TypesUtils.ty_as_literal t in
     let x, y = (as_base lit x, as_base lit y) in
