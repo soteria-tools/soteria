@@ -1,3 +1,5 @@
+(** Basic operations of symbolic abstractions *)
+
 open Symex
 
 module type S = sig

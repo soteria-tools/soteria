@@ -1,3 +1,5 @@
+(** Symbolic abstractions that support equality *)
+
 module type S = sig
   (** Defines a type that supports symbolic semantic equality. For performance
       reasons, such a type most also support {e syntactic} equality, such that

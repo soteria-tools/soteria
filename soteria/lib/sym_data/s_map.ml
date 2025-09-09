@@ -1,3 +1,5 @@
+(** Symbolic key-value maps. *)
+
 module Key = struct
   module type S = sig
     include Stdlib.Map.OrderedType
@@ -22,6 +24,8 @@ module Key = struct
 end
 
 module type S = sig
+  (** Defines a type that is a symbolic map from [key] to value. *)
+
   module Symex : Symex.S
 
   type key
