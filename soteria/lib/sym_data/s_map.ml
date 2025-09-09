@@ -34,9 +34,10 @@ module type S = sig
       - [(key, None)] if there is no key in the map that is semantically equal
         to [key]
       - [(key', Some v)] if there is a binding in the map for [(key', v)] and
-        [key'] is semantically equal to [key]. In both cases, the resulting
-        [key'] can be used to insert or update the map directly without needing
-        to search for it again. *)
+        [key'] is semantically equal to [key].
+
+      In both cases, the resulting [key'] can be used to insert or update the
+      map directly without needing to search for it again. *)
   val find_opt : key -> 'a t -> (key * 'a option) Symex.t
 end
 

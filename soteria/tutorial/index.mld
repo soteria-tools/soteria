@@ -11,6 +11,7 @@
 {!modules: Soteria}
 {!modules:
   Soteria.Symex
+  Soteria.Sym_data
   Soteria.Sym_states
   Soteria.Logs
   Soteria.C_values
