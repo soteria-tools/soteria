@@ -65,6 +65,25 @@ module Make (State : State_intf.S) = struct
   let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
   let assume x = lift_symex (assume x)
 
+  let ite guard thn els =
+    let ( let* ) = bind in
+    let ( let+ ) = map in
+    let* guard' = lift_symex @@ simplify guard in
+    L.warn (fun m -> m "? %a" Typed.ppa guard');
+    match Typed.as_bool guard' with
+    | Some true ->
+        L.warn (fun m -> m "true gaurd!");
+        thn
+    | Some false ->
+        L.warn (fun m -> m "false gaurd!");
+        els
+    | None ->
+        let* thn = thn in
+        let+ els = els in
+        Typed.ite guard' thn els
+
+  let ite' guard thn els = ite guard (ok thn) (ok els)
+
   let with_loc ~loc f =
     let old_loc = !current_loc in
     current_loc := loc;

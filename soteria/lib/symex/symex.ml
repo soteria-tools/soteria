@@ -94,6 +94,7 @@ module type S = sig
   val nondet : 'a vt -> 'a v t
 
   val fresh_var : 'a vt -> Var.t t
+  val simplify : 'a v -> 'a v t
 
   val branch_on :
     ?left_branch_name:string ->
@@ -393,6 +394,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     f v
 
   let fresh_var ty f = f (Solver.fresh_var ty)
+  let simplify v f = f (Solver.simplify v)
 
   let branch_on ?(left_branch_name = "Left branch")
       ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a Iter.t)

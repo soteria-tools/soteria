@@ -22,6 +22,14 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
   in
   aux elements
 
+let ite guard thn els =
+  let open Syntax in
+  let+ guard' = simplify guard in
+  match Typed.as_bool guard' with
+  | Some true -> thn
+  | Some false -> els
+  | None -> Typed.ite guard' thn els
+
 let current_loc = ref Charon_util.empty_span
 let get_loc () = !current_loc
 
