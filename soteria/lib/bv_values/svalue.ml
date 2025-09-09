@@ -1112,13 +1112,15 @@ and BitVec : BitVec = struct
   let gt ~signed v1 v2 = lt ~signed v2 v1
   let geq ~signed v1 v2 = leq ~signed v2 v1
 
-  let ovf_check ~signed n l r op =
+  let ovf_check_raw ~signed n l r op =
     let minz = min_for signed n in
     let maxz = max_for signed n in
     let l = bv_to_z signed n l in
     let r = bv_to_z signed n r in
     let res = op l r in
-    Bool.bool Z.Compare.(res < minz || res > maxz)
+    Z.Compare.(res < minz || res > maxz)
+
+  let ovf_check ~signed n l r op = Bool.bool (ovf_check_raw ~signed n l r op)
 
   let add_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -1136,6 +1138,33 @@ and BitVec : BitVec = struct
       when Stdlib.not signed ->
         let max = mk size (max_for false (size_of v1.node.ty)) in
         Bool.and_ b (Bool.sem_eq (other <| v1.node.ty) max)
+    | ( Ite
+          ( b1,
+            { node = { kind = BitVec l1; _ }; _ },
+            { node = { kind = BitVec r1; _ }; _ } ),
+        Ite
+          ( b2,
+            { node = { kind = BitVec l2; _ }; _ },
+            { node = { kind = BitVec r2; _ }; _ } ) ) -> (
+        let check l r =
+          ovf_check_raw ~signed (size_of v1.node.ty) l r Z.( + )
+        in
+        let ovf_t_t = check l1 l2 in
+        let ovf_t_f = check l1 r2 in
+        let ovf_e_t = check r1 l2 in
+        let ovf_e_e = check r1 r2 in
+        match (ovf_t_t, ovf_t_f, ovf_e_t, ovf_e_e) with
+        | true, true, true, true -> Bool.v_true
+        | false, false, false, false -> Bool.v_false
+        | true, false, false, false -> Bool.and_ b1 b2
+        | false, true, false, false -> Bool.and_ b1 (Bool.not b2)
+        | false, false, true, false -> Bool.and_ (Bool.not b1) b2
+        | false, false, false, true -> Bool.and_ (Bool.not b1) (Bool.not b2)
+        | true, true, false, false -> b1
+        | true, false, true, false -> b2
+        | false, false, true, true -> Bool.not b1
+        | false, true, false, true -> Bool.not b2
+        | _ -> Binop (AddOvf signed, v1, v2) <| TBool)
     | _ -> Binop (AddOvf signed, v1, v2) <| TBool
 
   let mul_overflows ~signed v1 v2 =
