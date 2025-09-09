@@ -892,7 +892,7 @@ and BitVec : BitVec = struct
           let new_tail = extract 0 (nx - 1) tail in
           concat new_tail base
     | Unop (BvOfBool n, b1), Unop (BvOfBool _, b2) -> of_bool n (Bool.or_ b1 b2)
-    (* | ( Unop (BvOfBool _, b1),
+    | ( Unop (BvOfBool _, b1),
         Ite
           ( b2,
             { node = { kind = BitVec t; _ }; _ },
@@ -903,7 +903,7 @@ and BitVec : BitVec = struct
             { node = { kind = BitVec e; _ }; _ } ),
         Unop (BvOfBool _, b1) )
       when Z.(equal t zero) && Z.(equal e one) ->
-        of_bool (size_of v1.node.ty) (Bool.or_ b1 (Bool.not b2)) *)
+        of_bool (size_of v1.node.ty) (Bool.or_ b1 (Bool.not b2))
     | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
 
   and xor v1 v2 =
