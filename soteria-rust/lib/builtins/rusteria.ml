@@ -52,8 +52,15 @@ module M (State : State_intf.S) = struct
 
   let nondet (fun_sig : Charon.UllbcAst.fun_sig) _ =
     let ty = fun_sig.output in
-    let^+ value = Layout.nondet ty in
-    value
+    match ty with
+    | TLiteral (TUInt U128 | TInt I128) ->
+        let^ l = Layout.nondet (TLiteral (TUInt U64)) in
+        let^+ r = Layout.nondet (TLiteral (TUInt U64)) in
+        let l, r = (as_base_i U64 l, as_base_i U64 r) in
+        Base (Typed.BitVec.concat l r)
+    | _ ->
+        let^+ value = Layout.nondet ty in
+        value
 
   let panic args =
     let* msg =

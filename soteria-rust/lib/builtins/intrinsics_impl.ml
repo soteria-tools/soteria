@@ -517,23 +517,23 @@ module M (State : State_intf.S) = struct
     let a, b = (as_base t a, as_base t b) in
     let max = BV.mk_lit t @@ Layout.max_value_z t in
     let min = BV.mk_lit t @@ Layout.min_value_z t in
-    let res =
+    let+ res =
       match op with
       | Add _ ->
           let ovf = BV.add_overflows ~signed a b in
-          let if_ovf =
-            if not signed then max else Typed.ite (a <$@ BV.mki_lit t 0) min max
-          in
-          Typed.ite ovf if_ovf (a +!@ b)
+          if%sat ovf then
+            if not signed then ok max
+            else if%sat a <$@ BV.mki_lit t 0 then ok min else ok max
+          else ok (a +!@ b)
       | Sub _ ->
           let ovf = BV.sub_overflows ~signed a b in
-          let if_ovf =
-            if not signed then min else Typed.ite (a <$@ b) min max
-          in
-          Typed.ite ovf if_ovf (a -!@ b)
+          if%sat ovf then
+            if not signed then ok min
+            else if%sat a <$@ b then ok min else ok max
+          else ok (a -!@ b)
       | _ -> failwith "Unreachable: not add or sub?"
     in
-    ok (Base (res :> Typed.T.cval Typed.t))
+    Base (res :> Typed.T.cval Typed.t)
 
   let saturating_add = saturating (Add OUB)
   let saturating_sub = saturating (Sub OUB)
