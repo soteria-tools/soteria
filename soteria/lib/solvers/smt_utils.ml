@@ -115,6 +115,9 @@ let bv_saddo l r = app_ "bvsaddo" [ l; r ]
 let bv_umulo l r = app_ "bvumulo" [ l; r ]
 let bv_smulo l r = app_ "bvsmulo" [ l; r ]
 
+(* Redefine bool_ands, so that bool_ands [ x ] = x *)
+let bool_ands = function [] -> bool_k true | [ p ] -> p | ps -> app_ "and" ps
+
 (* Solver commands *)
 
 let reset = simple_command [ "reset" ]
