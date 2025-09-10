@@ -35,6 +35,7 @@ let t_int = t_bv
 include S_bool
 
 module S_bool = struct
+  type +'a v = 'a t
   type t = T.sbool
 
   include S_bool

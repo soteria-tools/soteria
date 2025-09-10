@@ -76,16 +76,7 @@ val hash : [< any ] t -> int
 
 (** {3 Typed constructors} *)
 
-module S_bool : sig
-  type +'a v := 'a t
-  type t = sbool
-
-  val of_bool : bool -> [> sbool ] v
-  val to_bool : [< sbool ] v -> bool option
-  val and_ : [< sbool ] v -> [< sbool ] v -> [> sbool ] v
-  val or_ : [< sbool ] v -> [< sbool ] v -> [> sbool ] v
-  val not : [< sbool ] v -> [> sbool ] v
-end
+module S_bool : Symex.Value.S_bool.S with type 'a v = 'a t and type t = sbool
 
 val sem_eq : 'a t -> 'a t -> sbool t
 val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
@@ -98,6 +89,7 @@ val distinct : 'a t list -> [> sbool ] t
 val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
 val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t
+val to_z : [< sint ] t -> Z.t option
 val nonzero_z : Z.t -> [> nonzero ] t
 val nonzero : int -> [> nonzero ] t
 val int_of_bool : [< sbool ] t -> [> sint ] t

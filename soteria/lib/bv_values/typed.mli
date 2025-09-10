@@ -63,16 +63,7 @@ val t_f : Svalue.FloatPrecision.t -> [> sfloat ] ty
 
 type +'a t
 
-module S_bool : sig
-  type +'a v := 'a t
-  type t = sbool
-
-  val of_bool : bool -> [> sbool ] v
-  val to_bool : [< sbool ] v -> bool option
-  val and_ : [< sbool ] v -> [< sbool ] v -> [> sbool ] v
-  val or_ : [< sbool ] v -> [< sbool ] v -> [> sbool ] v
-  val not : [< sbool ] v -> [> sbool ] v
-end
+module S_bool : Symex.Value.S_bool.S with type 'a v = 'a t and type t = sbool
 
 type sbool := T.sbool
 

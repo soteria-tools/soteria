@@ -28,10 +28,10 @@ end
 module Make_syntax (S_int : S) = struct
   include S_eq.Make_syntax (S_int)
 
-  let[@inline] ( +@ ) = S_int.add
-  let[@inline] ( -@ ) = S_int.minus
-  let[@inline] ( <@ ) = S_int.lt
-  let[@inline] ( <=@ ) = S_int.leq
+  let ( +@ ) = S_int.add
+  let ( -@ ) = S_int.minus
+  let ( <@ ) = S_int.lt
+  let ( <=@ ) = S_int.leq
 
   module Sym_int_syntax = struct
     let mk_nonzero x = S_int.of_z (Z.of_int x)

@@ -28,6 +28,7 @@ type nonrec +'a t = t
 type nonrec +'a ty = ty
 
 module S_bool = struct
+  type +'a v = 'a t
   type t = T.sbool
 
   include S_bool

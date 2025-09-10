@@ -445,6 +445,7 @@ let ite guard if_ else_ =
 (** {2 Integers} *)
 
 let int_z z = Int z <| TInt
+let to_z v = match v.node.kind with Int z -> Some z | _ -> None
 let int i = int_z (Z.of_int i)
 
 let nonzero_z z =
