@@ -36,6 +36,10 @@ let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
               if Svalue.equal sg g && Svalue.equal se1 e1 && Svalue.equal se2 e2
               then v
               else Svalue.Bool.ite sg se1 se2
+          | IteZ (g, e1, e2) ->
+              let sg = simplify g in
+              if Svalue.equal sg g then v
+              else Svalue.Bool.ite_z sg (Svalue.size_of v.node.ty) e1 e2
           | _ -> fallback v))
 
 module Make_incremental
