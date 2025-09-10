@@ -17,18 +17,22 @@ module Make (Sptr : Sptr.S) = struct
     module TB = Soteria.Sym_states.Tree_block
     module Symex = Rustsymex
 
-    module SInt = struct
+    module S_int = struct
+      module Symex = Rustsymex
       include Typed
       include Typed.Infix
 
-      type sint = T.sint
-      type sbool = T.sbool
+      type t = T.sint Typed.t
 
+      let pp = ppa
       let zero () = Typed.BitVec.usize Z.zero
-      let ( <@ ) = Typed.Infix.( <$@ )
-      let ( <=@ ) = Typed.Infix.( <=$@ )
-      let ( +@ ) = Typed.Infix.( +!@ )
-      let ( -@ ) = Typed.Infix.( -!@ )
+      let one () = Typed.BitVec.usize Z.one
+      let of_z = Typed.BitVec.usize
+      let to_z _ = None (* Can be improved, but sound. *)
+      let add = Typed.BitVec.add
+      let minus = Typed.BitVec.sub
+      let lt = Typed.BitVec.lt ~signed:false
+      let leq = Typed.BitVec.leq ~signed:false
     end
 
     let pp_init ft (v, ty) =

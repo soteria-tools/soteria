@@ -11,14 +11,20 @@ module MemVal = struct
   module TB = Soteria.Sym_states.Tree_block
   module Symex = Csymex
 
-  module SInt = struct
+  module S_int = struct
+    module Symex = Csymex
     include Typed
     include Typed.Infix
 
-    type sint = T.sint
-    type sbool = T.sbool
+    type t = T.sint Typed.t
 
     let[@inline] zero () = zero
+    let[@inline] one () = one
+    let of_z = Typed.int_z
+    let to_z = Typed.to_z
+    let pp = Typed.ppa
+    let add = Typed.plus
+    let sub = Typed.minus
   end
 
   let pp_init ft (v, ty) =
