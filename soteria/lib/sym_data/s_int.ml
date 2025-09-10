@@ -13,8 +13,10 @@ module type S = sig
 
   (** {3 Arithmetic operations} *)
 
+  type sbool_v := Symex.Value.S_bool.t Symex.Value.t
+
   val ( +@ ) : t -> t -> t
   val ( -@ ) : t -> t -> t
-  val ( <@ ) : t -> t -> t
-  val ( <=@ ) : t -> t -> t
+  val ( <@ ) : t -> t -> sbool_v
+  val ( <=@ ) : t -> t -> sbool_v
 end
