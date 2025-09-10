@@ -1,9 +1,6 @@
-module type S = sig
-  type +'a t
-  type +'a ty
-
-  module S_bool : sig
-    type +'a v := 'a t
+module S_bool = struct
+  module type S = sig
+    type +'a v
     type t
 
     val not : t v -> t v
@@ -12,6 +9,19 @@ module type S = sig
     val to_bool : t v -> bool option
     val of_bool : bool -> t v
   end
+
+  module Make_syntax (S_bool : S) = struct
+    let[@inline] ( &&@ ) = S_bool.and_
+    let[@inline] ( ||@ ) = S_bool.or_
+    let[@inline] not = S_bool.not
+  end
+end
+
+module type S = sig
+  type +'a t
+  type +'a ty
+
+  module S_bool : S_bool.S with type +'a v := 'a t
 
   val sem_eq : 'a t -> 'a t -> S_bool.t t
   val ppa : Format.formatter -> 'a t -> unit

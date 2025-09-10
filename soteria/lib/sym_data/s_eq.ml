@@ -22,6 +22,10 @@ module type S = sig
   val distinct : t list -> Symex.Value.S_bool.t Symex.Value.t
 end
 
+module Make_syntax (S : S) = struct
+  let ( ==@ ) = S.sem_eq
+end
+
 module Of_concrete
     (Symex : Symex.S)
     (C : sig
