@@ -2,9 +2,9 @@ open Svalue
 open Soteria_std
 
 let eval_binop : Binop.t -> t -> t -> t = function
-  | And -> Bool.and_
-  | Or -> Bool.or_
-  | Eq -> Bool.sem_eq
+  | And -> S_bool.and_
+  | Or -> S_bool.or_
+  | Eq -> S_bool.sem_eq
   | FEq -> Float.eq
   | FLeq -> Float.leq
   | FLt -> Float.lt
@@ -32,7 +32,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | AShr -> BitVec.ashr
 
 let eval_unop : Unop.t -> t -> t = function
-  | Not -> Bool.not
+  | Not -> S_bool.not
   | FAbs -> Float.abs
   | GetPtrLoc -> Ptr.loc
   | GetPtrOfs -> Ptr.ofs
@@ -69,12 +69,12 @@ let rec eval ~eval_var (x : t) : t =
   | Nop (nop, l) -> (
       let l, changed = List.map_changed eval l in
       if Stdlib.not changed then x
-      else match nop with Distinct -> Bool.distinct l)
+      else match nop with Distinct -> S_bool.distinct l)
   | Ite (guard, then_, else_) ->
       let guard = eval guard in
-      if equal guard Bool.v_true then eval then_
-      else if equal guard Bool.v_false then eval else_
-      else Bool.ite guard (eval then_) (eval else_)
+      if equal guard S_bool.v_true then eval then_
+      else if equal guard S_bool.v_false then eval else_
+      else S_bool.ite guard (eval then_) (eval else_)
   | Seq l ->
       let l, changed = List.map_changed eval l in
       if Stdlib.not changed then x else Svalue.SSeq.mk ~seq_ty:x.node.ty l

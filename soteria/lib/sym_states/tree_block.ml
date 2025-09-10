@@ -123,7 +123,7 @@ module Make
       MemVal
         with module Symex = Symex
          and type 'a SInt.t = 'a Symex.Value.t
-         and type SInt.sbool = Symex.Value.sbool) =
+         and type SInt.sbool = Symex.Value.S_bool.t) =
 struct
   open Compo_res
   open Symex.Syntax

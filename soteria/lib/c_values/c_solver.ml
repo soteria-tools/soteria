@@ -16,7 +16,7 @@ struct
   end)
 
   module Solver_state = struct
-    type t = Typed.sbool Typed.t Dynarray.t Dynarray.t
+    type t = Typed.S_bool.t Typed.t Dynarray.t Dynarray.t
 
     let init () =
       let t = Dynarray.create () in
@@ -57,8 +57,8 @@ struct
 
     let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
 
-    let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
-      let neg_v = Typed.not v in
+    let trivial_truthiness_of (t : t) (v : Typed.S_bool.t Typed.t) =
+      let neg_v = Typed.S_bool.not v in
       Dynarray.find_map
         (Dynarray.find_map (fun value ->
              if Typed.equal value v then Some true
@@ -134,7 +134,7 @@ struct
             match v.node.kind with
             | Unop (Not, e) ->
                 let e' = simplify' solver e in
-                if Svalue.equal e e' then v else Svalue.not e'
+                if Svalue.equal e e' then v else Svalue.S_bool.not e'
             | Binop (Eq, e1, e2) ->
                 if Svalue.equal e1 e2 && (not @@ Svalue.is_float e1.node.ty)
                 then Svalue.v_true
@@ -144,7 +144,7 @@ struct
                 let se1 = simplify' solver e1 in
                 let se2 = simplify' solver e2 in
                 if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-                else Svalue.or_ se1 se2
+                else Svalue.S_bool.or_ se1 se2
             | _ -> Analysis.simplify solver.analysis v))
 
   and simplify solver (v : 'a Typed.t) : 'a Typed.t =
@@ -199,7 +199,7 @@ struct
         instance because an auxiliary analysis has new information about it that
         is not directly in the PC. *)
     type slot_content =
-      | Asrt of Typed.sbool Typed.t [@printer Typed.ppa]
+      | Asrt of Typed.S_bool.t Typed.t [@printer Typed.ppa]
       | Dirty of Var.Set.t [@printer Fmt.(iter ~sep:comma) Var.Set.iter Var.pp]
     [@@deriving show]
 
@@ -262,8 +262,8 @@ struct
       | _ -> None
 
     (* We check if the thing contains the value itself, or its negation. *)
-    let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
-      let neg_v = Typed.not v in
+    let trivial_truthiness_of (t : t) (v : Typed.S_bool.t Typed.t) =
+      let neg_v = Typed.S_bool.not v in
       Dynarray.find_map
         (Dynarray.find_map (function
           | { value = Asrt value; _ } ->
@@ -450,7 +450,7 @@ struct
             match v.node.kind with
             | Unop (Not, e) ->
                 let e' = simplify' solver e in
-                if Svalue.equal e e' then v else Svalue.not e'
+                if Svalue.equal e e' then v else Svalue.S_bool.not e'
             | Binop (Eq, e1, e2) ->
                 if Svalue.equal e1 e2 && (not @@ Svalue.is_float e1.node.ty)
                 then Svalue.v_true
@@ -460,12 +460,12 @@ struct
                 let se1 = simplify' solver e1 in
                 let se2 = simplify' solver e2 in
                 if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-                else Svalue.and_ se1 se2
+                else Svalue.S_bool.and_ se1 se2
             | Binop (Or, e1, e2) ->
                 let se1 = simplify' solver e1 in
                 let se2 = simplify' solver e2 in
                 if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-                else Svalue.or_ se1 se2
+                else Svalue.S_bool.or_ se1 se2
             | Ite (g, e1, e2) ->
                 let sg = simplify' solver g in
                 let se1 = simplify' solver e1 in
@@ -557,9 +557,11 @@ struct
           Solver_state.unchecked_constraints solver.state
         in
         (* This will put the check in a somewhat-normal form, to increase cache hits. *)
-        let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let to_check =
-          Iter.fold Typed.and_ to_check
+          Dynarray.fold_left Typed.S_bool.and_ Typed.v_true to_check
+        in
+        let to_check =
+          Iter.fold Typed.S_bool.and_ to_check
             (Analysis.encode ~vars:relevant_vars solver.analysis)
         in
         let answer = check_sat_raw_memo solver relevant_vars to_check in

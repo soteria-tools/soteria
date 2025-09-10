@@ -62,7 +62,19 @@ val t_f : Svalue.FloatPrecision.t -> [> sfloat ] ty
 (** {2 Typed svalues} *)
 
 type +'a t
-type sbool = T.sbool
+
+module S_bool : sig
+  type +'a v := 'a t
+  type t = sbool
+
+  val of_bool : bool -> [> sbool ] v
+  val to_bool : [< sbool ] v -> bool option
+  val and_ : [< sbool ] v -> [< sbool ] v -> [> sbool ] v
+  val or_ : [< sbool ] v -> [< sbool ] v -> [> sbool ] v
+  val not : [< sbool ] v -> [> sbool ] v
+end
+
+type sbool := T.sbool
 
 (** Basic value operations *)
 
@@ -96,12 +108,8 @@ val sem_eq : 'a t -> 'a t -> sbool t
 val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
-val bool : bool -> [> sbool ] t
-val as_bool : 'a t -> bool option
-val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val conj : [< sbool ] t list -> [> sbool ] t
 val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
-val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val not : sbool t -> sbool t
 val distinct : 'a t list -> [> sbool ] t
 val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t

@@ -49,9 +49,9 @@ val t_f128 : [> sfloat ] ty
 (** {2 Typed svalues} *)
 
 type +'a t
-type sbool = T.sbool
+type sbool := T.sbool
 
-(** Basic value operations *)
+(** {3 Basic value operations} *)
 
 val get_ty : 'a t -> Svalue.ty
 val untype_type : 'a ty -> Svalue.ty
@@ -74,19 +74,25 @@ val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
 val hash : [< any ] t -> int
 
-(** Typed constructors *)
+(** {3 Typed constructors} *)
+
+module S_bool : sig
+  type +'a v := 'a t
+  type t = sbool
+
+  val of_bool : bool -> [> sbool ] v
+  val to_bool : [< sbool ] v -> bool option
+  val and_ : [< sbool ] v -> [< sbool ] v -> [> sbool ] v
+  val or_ : [< sbool ] v -> [< sbool ] v -> [> sbool ] v
+  val not : [< sbool ] v -> [> sbool ] v
+end
 
 val sem_eq : 'a t -> 'a t -> sbool t
 val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
-val bool : bool -> [> sbool ] t
-val as_bool : 'a t -> bool option
-val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val conj : [< sbool ] t list -> [> sbool ] t
 val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
-val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
-val not : sbool t -> sbool t
 val not_int_bool : [< sint ] t -> [> sint ] t
 val distinct : 'a t list -> [> sbool ] t
 val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
@@ -99,7 +105,7 @@ val bool_of_int : [< sint ] t -> [> sbool ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
 
-(** Integer operations *)
+(** {3 Integer operations} *)
 
 val geq : [< sint ] t -> [< sint ] t -> [> sbool ] t
 val gt : [< sint ] t -> [< sint ] t -> [> sbool ] t

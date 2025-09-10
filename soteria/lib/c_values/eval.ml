@@ -7,8 +7,8 @@ let eval_var (v : Var.t) (ty : Svalue.ty) : t =
   Effect.perform (Eval_var (v, ty))
 
 let eval_binop : Binop.t -> t -> t -> t = function
-  | And -> and_
-  | Or -> or_
+  | And -> S_bool.and_
+  | Or -> S_bool.or_
   | Eq -> sem_eq
   | Leq -> leq
   | Lt -> lt
@@ -45,7 +45,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | BitAShr -> BitVec.Raw.ashr
 
 let eval_unop : Unop.t -> t -> t = function
-  | Not -> not
+  | Not -> S_bool.not
   | FAbs -> Float.abs
   | GetPtrLoc -> Ptr.loc
   | GetPtrOfs -> Ptr.ofs

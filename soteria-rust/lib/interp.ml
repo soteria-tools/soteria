@@ -108,7 +108,7 @@ module Make (State : State_intf.S) = struct
   let resolve_constant (const : Expressions.constant_expr) =
     match const.value with
     | CLiteral (VScalar scalar) -> ok (Base (BV.of_scalar scalar))
-    | CLiteral (VBool b) -> ok (Base (BV.of_bool (Typed.bool b)))
+    | CLiteral (VBool b) -> ok (Base (BV.of_bool (Typed.S_bool.of_bool b)))
     | CLiteral (VChar c) -> ok (Base (BV.u32i (Uchar.to_int c)))
     | CLiteral (VFloat { float_value; float_ty }) ->
         ok (Base (Typed.Float.mk float_ty float_value))

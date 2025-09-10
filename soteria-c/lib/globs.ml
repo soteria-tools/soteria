@@ -15,7 +15,7 @@ module Loc = struct
   let fresh () =
     let open Typed.Infix in
     let* loc = Csymex.nondet Typed.t_loc in
-    let+ () = Symex.assume [ Typed.not (loc ==@ Typed.Ptr.null_loc) ] in
+    let+ () = Symex.assume [ Typed.S_bool.not (loc ==@ Typed.Ptr.null_loc) ] in
     loc
 
   let sem_eq = Typed.sem_eq
@@ -58,7 +58,7 @@ let get sym st =
                let open Typed.Infix in
                if Cerb_frontend.Symbol.equal_sym k sym then None
                else
-                 let neq = Typed.not (v ==@ loc) in
+                 let neq = Typed.S_bool.not (v ==@ loc) in
                  Some neq)
         |> List.of_seq
       in
@@ -76,7 +76,7 @@ let produce serialized st =
       |> Seq.self_cross_product
       |> Seq.map (fun ((_, loca), (_, locb)) ->
              let open Typed.Infix in
-             Typed.not (loca ==@ locb))
+             Typed.S_bool.not (loca ==@ locb))
       |> List.of_seq
     in
     assume to_assume

@@ -14,12 +14,12 @@ module type S = sig
   val equal : t -> t -> bool
 
   (** Symbolic semantic equality *)
-  val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
+  val sem_eq : t -> t -> Symex.Value.S_bool.t Symex.Value.t
 
   (** Receives a list of {e syntactically different} values and returns a
       symbolic boolean corresponding to the fact that these values are also
       {e semantically} distinct. *)
-  val distinct : t list -> Symex.Value.sbool Symex.Value.t
+  val distinct : t list -> Symex.Value.S_bool.t Symex.Value.t
 end
 
 module Of_concrete
@@ -32,8 +32,8 @@ module Of_concrete
   module Symex = Symex
   include C
 
-  let sem_eq x y = Symex.Value.bool (C.equal x y)
+  let sem_eq x y = Symex.Value.S_bool.of_bool (C.equal x y)
 
   (* Always returns true as the input list should always be syntactically distinct *)
-  let distinct _ = Symex.Value.bool true
+  let distinct _ = Symex.Value.S_bool.of_bool true
 end

@@ -57,11 +57,11 @@ module type S = sig
       Use this instead of [`Lfail] directly in type signatures to avoid
       potential typos such as [`LFail] which will take precious time to debug...
       trust me. *)
-  type lfail = [ `Lfail of Value.sbool Value.t ]
+  type lfail = [ `Lfail of Value.S_bool.t Value.t ]
 
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
-  type sbool := Value.sbool
+  type sbool := Value.S_bool.t
 
   val assume : sbool v list -> unit t
   val vanish : unit -> 'a t
@@ -205,14 +205,14 @@ module type S = sig
       ?fuel:Fuel_gauge.t ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.S_bool.t Value.t list)
       list
 
     val run_with_stats :
       ?fuel:Fuel_gauge.t ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.S_bool.t Value.t list)
       list
       Stats.with_stats
 
@@ -220,7 +220,7 @@ module type S = sig
       ?fuel:Fuel_gauge.t ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.S_bool.t Value.t list)
       list
 
     val ok : 'ok -> ('ok, 'err, 'fix) t
@@ -269,7 +269,7 @@ module type S = sig
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax : sig
-      type sbool_v := Value.sbool Value.t
+      type sbool_v := Value.S_bool.t Value.t
 
       val branch_on :
         ?left_branch_name:string ->
@@ -336,7 +336,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   end
 
   type 'a t = 'a Iter.t
-  type lfail = [ `Lfail of Value.sbool Value.t ]
+  type lfail = [ `Lfail of Value.S_bool.t Value.t ]
 
   module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
@@ -367,7 +367,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
           f ()
       | l :: ls -> (
           let l = Solver.simplify l in
-          match Value.as_bool l with
+          match Value.S_bool.to_bool l with
           | Some true -> aux acc ls
           | Some false ->
               L.trace (fun m -> m "Assuming false, stopping this branch")
@@ -380,7 +380,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       side-effects at the wrong time. *)
   let assert_raw value : bool =
     let value = Solver.simplify value in
-    match Value.as_bool value with
+    match Value.S_bool.to_bool value with
     | Some true -> true
     | Some false -> false
     | None ->
@@ -388,7 +388,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
           L.with_section (Fmt.str "Checking entailment for %a" Value.ppa value)
         in
         Symex_state.save ();
-        Solver.add_constraints [ Value.(not value) ];
+        Solver.add_constraints [ Value.S_bool.not value ];
         let sat_result = Solver.sat () in
         Symex_state.backtrack_n 1;
         if Approx.As_ctx.is_ux () then not (Solver_result.is_sat sat_result)
@@ -408,7 +408,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
   let consume_false () f =
     if Approx.As_ctx.is_ux () then ()
-    else f (Compo_res.Error (`Lfail (Value.bool false)))
+    else f (Compo_res.Error (`Lfail (Value.S_bool.of_bool false)))
 
   let nondet ty f =
     let v = Solver.fresh_var ty in
@@ -422,7 +422,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.S_bool.to_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
        if we remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
@@ -438,7 +438,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
             else L.trace (fun m -> m "Branch is not feasible"));
         Symex_state.backtrack_n 1;
         L.with_section ~is_branch:true right_branch_name (fun () ->
-            Solver.add_constraints [ Value.(not guard) ];
+            Solver.add_constraints [ Value.S_bool.not guard ];
             if !left_unsat then
               (* Right must be sat since left was not! We didn't branch so we don't consume the counter *)
               else_ () f
@@ -478,7 +478,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       ~then_ ~else_ : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.S_bool.to_bool guard with
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
@@ -488,7 +488,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         if left_sat then then_ () f;
         Symex_state.backtrack_n 1;
         if not left_sat then (
-          Solver.add_constraints [ Value.(not guard) ];
+          Solver.add_constraints [ Value.S_bool.not guard ];
           else_ () f)
 
   let branch_on_take_one ?left_branch_name ?right_branch_name guard ~then_
