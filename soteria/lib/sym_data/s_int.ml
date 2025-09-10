@@ -11,12 +11,15 @@ module type S = sig
       describes exactly a single integer, and [None] otherwise *)
   val to_z : t -> Z.t option
 
+  val zero : t
+  val one : t
+
   (** {3 Arithmetic operations} *)
 
   type sbool_v := Symex.Value.S_bool.t Symex.Value.t
 
-  val ( +@ ) : t -> t -> t
-  val ( -@ ) : t -> t -> t
-  val ( <@ ) : t -> t -> sbool_v
-  val ( <=@ ) : t -> t -> sbool_v
+  val add : t -> t -> t
+  val minus : t -> t -> t
+  val lt : t -> t -> sbool_v
+  val leq : t -> t -> sbool_v
 end

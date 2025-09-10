@@ -19,27 +19,27 @@ module Make (S_int : S_int.S) = struct
     Symex.Value.S_bool.and_ (S_int.sem_eq a1 a2) (S_int.sem_eq b1 b2)
 
   (** [size (a, b)] is [b - a] *)
-  let size (a, b) = b -@ a
+  let size (a, b) = minus b a
 
   (** [split_at (a, b) x] is [(a, x), (x, b)] *)
   let split_at (l, h) x = ((l, x), (x, h))
 
   (** [offset (a, b) x] is [(a + x, b + x)] *)
-  let offset (l, h) x = (l +@ x, h +@ x)
+  let offset (l, h) x = (add l x, add h x)
 
   (** [subseteq r1 r2] is a symbolic boolean characterising whether [r1] is a
       subset of [r2] *)
   let subset_eq (a1, b1) (a2, b2) =
-    Symex.Value.S_bool.and_ (a2 <=@ a1) (b1 <=@ b2)
+    Symex.Value.S_bool.and_ (leq a2 a1) (leq b1 b2)
 
   (** [subset_strict r1 r2] is a symbolic boolean characterising whether [r1] is
       a strict subset of [r2] (i.e. it is equivalent to
       [(subseteq r1 r2) && not (sem_eq r1 r2)]) *)
   let subset_strict (a1, b1) (a2, b2) =
-    Symex.Value.S_bool.and_ (a2 <@ a1) (b1 <@ b2)
+    Symex.Value.S_bool.and_ (lt a2 a1) (lt b1 b2)
 
   (** [of_low_and_size a b] is [(a, a + b)]*)
-  let of_low_and_size low size = (low, low +@ size)
+  let of_low_and_size low size = (low, add low size)
 
   let pp fmt (a, b) = Format.fprintf fmt "[%a, %a[" S_int.pp a S_int.pp b
 end
