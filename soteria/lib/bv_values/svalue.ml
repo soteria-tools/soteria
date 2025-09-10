@@ -363,6 +363,9 @@ module type Bool = sig
   val ite : t -> t -> t -> t
   val sem_eq : t -> t -> t
   val sem_eq_untyped : t -> t -> t
+
+  val case_analysis :
+    f:('a -> 'b -> bool) -> v1:t * 'a * 'a -> v2:t * 'b * 'b -> t
 end
 
 module type BitVec = sig
@@ -420,6 +423,9 @@ module type BitVec = sig
 
   (* utility *)
   val msb_of : t -> int
+
+  val ovf_check :
+    signed:bool -> int -> (Z.t -> Z.t -> Z.t) -> Z.t -> Z.t -> bool
 end
 
 module type Float = sig
@@ -542,7 +548,102 @@ module rec Bool : Bool = struct
     | _ when equal if_ else_ -> if_
     | _ -> Ite (guard, if_, else_) <| if_.node.ty
 
-  let rec sem_eq v1 v2 =
+  (** [case_analysis ~f ~default ~v1:(b1, t1, f1) ~v2:(b2, t2, f2)] Performs a
+      case analysis for the binary function [f], given input pairs [v1] and
+      [v2], such that [b1 => t1], [!b1 => f1], etc.. It will call [f] with
+      combinations of [v1] and [v2] (ie. [t1 t2], [t1 f2], [f1 t2], [f1 f2]),
+      and depending on the result of [f], will simplify the case into a boolean
+      formula when possible, using [b1] and [b2].
+
+      For instance, if the output of [f] is only true for [f t1 _], will
+      simplify to [b1]. If [f] is always true with all combinations, will
+      simplify to [v_true]. *)
+  let rec case_analysis ~f ~v1:(b1, t1, f1) ~v2:(b2, t2, f2) : t =
+    let ovf_t_t = f t1 t2 in
+    let ovf_t_f = f t1 f2 in
+    let ovf_f_t = f f1 t2 in
+    let ovf_f_f = f f1 f2 in
+    match (ovf_t_t, ovf_t_f, ovf_f_t, ovf_f_f) with
+    | true, true, true, true -> v_true
+    | false, false, false, false -> v_false
+    | true, false, false, false -> and_ b1 b2
+    | false, true, false, false -> and_ b1 (not b2)
+    | false, false, true, false -> and_ (not b1) b2
+    | false, false, false, true -> and_ (not b1) (not b2)
+    | true, true, false, false -> b1
+    | true, false, true, false -> b2
+    | false, false, true, true -> not b1
+    | false, true, false, true -> not b2
+    | true, false, false, true -> sem_eq b1 b2
+    | false, true, true, false -> not (sem_eq b1 b2)
+    | true, true, true, false -> or_ b1 b2
+    | true, true, false, true -> or_ b1 (not b2)
+    | true, false, true, true -> or_ (not b1) b2
+    | false, true, true, true -> or_ (not b1) (not b2)
+
+  and case_analysis_3 ~f ~v1:(b1, t1, f1) ~v2:(b2, t2, f2) ~v3:(b3, t3, f3) : t
+      =
+    let ovf_t_t_t = f t1 t2 t3 in
+    let ovf_t_t_f = f t1 t2 f3 in
+    let ovf_t_f_t = f t1 f2 t3 in
+    let ovf_t_f_f = f t1 f2 f3 in
+    let ovf_f_t_t = f f1 t2 t3 in
+    let ovf_f_t_f = f f1 t2 f3 in
+    let ovf_f_f_t = f f1 f2 t3 in
+    let ovf_f_f_f = f f1 f2 f3 in
+    match
+      ( ovf_t_t_t,
+        ovf_t_t_f,
+        ovf_t_f_t,
+        ovf_t_f_f,
+        ovf_f_t_t,
+        ovf_f_t_f,
+        ovf_f_f_t,
+        ovf_f_f_f )
+    with
+    | true, true, true, true, true, true, true, true -> v_true
+    | false, false, false, false, false, false, false, false -> v_false
+    | true, false, false, false, false, false, false, false ->
+        and_ (and_ b1 b2) b3
+    | false, true, false, false, false, false, false, false ->
+        and_ (and_ b1 b2) (not b3)
+    | false, false, true, false, false, false, false, false ->
+        and_ (and_ b1 (not b2)) b3
+    | false, false, false, true, false, false, false, false ->
+        and_ (and_ b1 (not b2)) (not b3)
+    | false, false, false, false, true, false, false, false ->
+        and_ (and_ (not b1) b2) b3
+    | false, false, false, false, false, true, false, false ->
+        and_ (and_ (not b1) b2) (not b3)
+    | false, false, false, false, false, false, true, false ->
+        and_ (and_ (not b1) (not b2)) b3
+    | false, false, false, false, false, false, false, true ->
+        and_ (and_ (not b1) (not b2)) (not b3)
+    | true, true, true, true, false, false, false, false -> and_ b1 b2
+    | true, true, false, false, true, true, false, false -> and_ b1 b3
+    | true, false, true, false, true, false, true, false -> and_ b2 b3
+    | false, false, false, false, true, true, true, true -> not b1
+    | false, false, true, true, false, false, true, true -> not b2
+    | false, true, false, true, false, true, false, true -> not b3
+    | true, true, false, false, false, false, false, false -> b1
+    | true, false, true, false, false, false, false, false -> b2
+    | true, false, false, false, true, false, false, false -> b3
+    | false, false, true, true, true, true, false, false -> not (sem_eq b1 b2)
+    | false, true, false, false, false, true, true, false -> not (sem_eq b1 b3)
+    | false, false, false, true, true, false, false, true -> not (sem_eq b2 b3)
+    | true, false, false, true, false, true, true, false ->
+        not (and_ (sem_eq b1 b2) (sem_eq b1 b3))
+    | _ ->
+        (* For complex cases, fall back to a general approach using nested ite expressions *)
+        let inner_case =
+          case_analysis ~f:(f t1) ~v1:(b2, t2, f2) ~v2:(b3, t3, f3)
+        in
+        let outer_case =
+          case_analysis ~f:(f f1) ~v1:(b2, t2, f2) ~v2:(b3, t3, f3)
+        in
+        ite b1 inner_case outer_case
+
+  and sem_eq v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | _ when equal v1 v2 -> v_true
     | Bool b1, Bool b2 -> bool (b1 = b2)
@@ -604,6 +705,131 @@ module rec Bool : Bool = struct
         if Z.equal z Z.one then b
         else if Z.equal z Z.zero then not b
         else v_false
+    (* case analysis for N = ite(b1, l1, r2) + ite(b2, l2, r2) *)
+    | ( Binop
+          ( ((Add | Sub | Mul | Div _ | Rem _) as op),
+            {
+              node =
+                {
+                  kind =
+                    Ite
+                      ( b1,
+                        { node = { kind = BitVec l1; _ }; _ },
+                        { node = { kind = BitVec t1; _ }; _ } );
+                  ty = TBitVector sz;
+                };
+              _;
+            },
+            {
+              node =
+                {
+                  kind =
+                    Ite
+                      ( b2,
+                        { node = { kind = BitVec l2; _ }; _ },
+                        { node = { kind = BitVec t2; _ }; _ } );
+                  _;
+                };
+              _;
+            } ),
+        BitVec z )
+    | ( BitVec z,
+        Binop
+          ( ((Add | Sub | Mul | Div _ | Rem _) as op),
+            {
+              node =
+                {
+                  kind =
+                    Ite
+                      ( b1,
+                        { node = { kind = BitVec l1; _ }; _ },
+                        { node = { kind = BitVec t1; _ }; _ } );
+                  ty = TBitVector sz;
+                };
+              _;
+            },
+            {
+              node =
+                {
+                  kind =
+                    Ite
+                      ( b2,
+                        { node = { kind = BitVec l2; _ }; _ },
+                        { node = { kind = BitVec t2; _ }; _ } );
+                  _;
+                };
+              _;
+            } ) ) ->
+        let op =
+          match op with
+          | Add -> Z.add
+          | Sub -> Z.sub
+          | Mul -> Z.mul
+          | _ -> assert false
+        in
+        let mask = Z.(pred (one lsl sz)) in
+        let f l r =
+          let res = op l r in
+          let res = Z.(res land mask) in
+          Z.equal res z
+        in
+        case_analysis ~f ~v1:(b1, l1, t1) ~v2:(b2, l2, t2)
+    | ( BitVec z,
+        Binop
+          ( Add,
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      ( Add,
+                        {
+                          node =
+                            {
+                              kind =
+                                Ite
+                                  ( b1,
+                                    { node = { kind = BitVec l1; _ }; _ },
+                                    { node = { kind = BitVec t1; _ }; _ } );
+                              ty = TBitVector sz;
+                            };
+                          _;
+                        },
+                        {
+                          node =
+                            {
+                              kind =
+                                Ite
+                                  ( b2,
+                                    { node = { kind = BitVec l2; _ }; _ },
+                                    { node = { kind = BitVec t2; _ }; _ } );
+                              _;
+                            };
+                          _;
+                        } );
+                  _;
+                };
+              _;
+            },
+            {
+              node =
+                {
+                  kind =
+                    Ite
+                      ( b3,
+                        { node = { kind = BitVec l3; _ }; _ },
+                        { node = { kind = BitVec t3; _ }; _ } );
+                  _;
+                };
+              _;
+            } ) ) ->
+        let mask = Z.(pred (one lsl sz)) in
+        let f a b c =
+          let res = Z.((((a + b) land mask) + c) land mask) in
+          Z.equal res z
+        in
+        assert (false || false);
+        case_analysis_3 ~f ~v1:(b1, l1, t1) ~v2:(b2, l2, t2) ~v3:(b3, l3, t3)
     (* special case: for BVs, check if we can infer the most significant set bits and extract *)
     | _ when is_bv v1.node.ty && is_bv v2.node.ty ->
         let current_size = size_of v1.node.ty in
@@ -619,6 +845,30 @@ module rec Bool : Bool = struct
 
   let sem_eq_untyped v1 v2 =
     if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
+
+  let case_analysis (type a b) ~(f : a -> b -> bool)
+      ~v1:((b1, t1, f1) : t * a * a) ~v2:((b2, t2, f2) : t * b * b) : t =
+    let ovf_t_t = f t1 t2 in
+    let ovf_t_f = f t1 f2 in
+    let ovf_f_t = f f1 t2 in
+    let ovf_f_f = f f1 f2 in
+    match (ovf_t_t, ovf_t_f, ovf_f_t, ovf_f_f) with
+    | true, true, true, true -> v_true
+    | false, false, false, false -> v_false
+    | true, false, false, false -> and_ b1 b2
+    | false, true, false, false -> and_ b1 (not b2)
+    | false, false, true, false -> and_ (not b1) b2
+    | false, false, false, true -> and_ (not b1) (not b2)
+    | true, true, false, false -> b1
+    | true, false, true, false -> b2
+    | false, false, true, true -> not b1
+    | false, true, false, true -> not b2
+    | true, false, false, true -> sem_eq b1 b2
+    | false, true, true, false -> not (sem_eq b1 b2)
+    | true, true, true, false -> or_ b1 b2
+    | true, true, false, true -> or_ b1 (not b2)
+    | true, false, true, true -> or_ (not b1) b2
+    | false, true, true, true -> or_ (not b1) (not b2)
 end
 
 (** {2 Bit vectors} *)
@@ -1123,7 +1373,7 @@ and BitVec : BitVec = struct
   let gt ~signed v1 v2 = lt ~signed v2 v1
   let geq ~signed v1 v2 = leq ~signed v2 v1
 
-  let ovf_check_raw ~signed n l r op =
+  let ovf_check ~signed n op l r =
     let minz = min_for signed n in
     let maxz = max_for signed n in
     let l = bv_to_z signed n l in
@@ -1131,11 +1381,11 @@ and BitVec : BitVec = struct
     let res = op l r in
     Z.Compare.(res < minz || res > maxz)
 
-  let ovf_check ~signed n l r op = Bool.bool (ovf_check_raw ~signed n l r op)
+  let ovf_check_b ~signed n l r op = Bool.bool (ovf_check ~signed n l r op)
 
   let add_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( + )
+    | BitVec l, BitVec r -> ovf_check_b ~signed (size_of v1.node.ty) Z.( + ) l r
     | BitVec z, _ when Z.equal z Z.zero -> Bool.v_false
     | _, BitVec z when Z.equal z Z.zero -> Bool.v_false
     | _ when equal v1 v2 && Stdlib.not signed ->
@@ -1160,31 +1410,15 @@ and BitVec : BitVec = struct
         Ite
           ( b2,
             { node = { kind = BitVec l2; _ }; _ },
-            { node = { kind = BitVec r2; _ }; _ } ) ) -> (
-        let check l r =
-          ovf_check_raw ~signed (size_of v1.node.ty) l r Z.( + )
-        in
-        let ovf_t_t = check l1 l2 in
-        let ovf_t_f = check l1 r2 in
-        let ovf_e_t = check r1 l2 in
-        let ovf_e_e = check r1 r2 in
-        match (ovf_t_t, ovf_t_f, ovf_e_t, ovf_e_e) with
-        | true, true, true, true -> Bool.v_true
-        | false, false, false, false -> Bool.v_false
-        | true, false, false, false -> Bool.and_ b1 b2
-        | false, true, false, false -> Bool.and_ b1 (Bool.not b2)
-        | false, false, true, false -> Bool.and_ (Bool.not b1) b2
-        | false, false, false, true -> Bool.and_ (Bool.not b1) (Bool.not b2)
-        | true, true, false, false -> b1
-        | true, false, true, false -> b2
-        | false, false, true, true -> Bool.not b1
-        | false, true, false, true -> Bool.not b2
-        | _ -> Binop (AddOvf signed, v1, v2) <| TBool)
+            { node = { kind = BitVec r2; _ }; _ } ) ) ->
+        Bool.case_analysis
+          ~f:(ovf_check ~signed (size_of v1.node.ty) Z.( + ))
+          ~v1:(b1, l1, r1) ~v2:(b2, l2, r2)
     | _ -> Binop (AddOvf signed, v1, v2) <| TBool
 
   let mul_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( * )
+    | BitVec l, BitVec r -> ovf_check_b ~signed (size_of v1.node.ty) Z.( * ) l r
     | BitVec z, _ when Z.equal z Z.zero || Z.equal z Z.one -> Bool.v_false
     | _, BitVec z when Z.equal z Z.zero || Z.equal z Z.one -> Bool.v_false
     | _ -> Binop (MulOvf signed, v1, v2) <| TBool
