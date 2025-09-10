@@ -77,7 +77,6 @@ module Unop = struct
     | Not
     | GetPtrLoc
     | GetPtrOfs
-    | BvOfBool of int (* target bitvec size *)
     | BvOfFloat of bool * int (* signed * target bitvec size *)
     | FloatOfBv of bool * FloatPrecision.t (* signed * precision *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
@@ -97,7 +96,6 @@ module Unop = struct
     | FAbs -> Fmt.string ft "abs."
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
-    | BvOfBool n -> Fmt.pf ft "b2bv[%d]" n
     | BvOfFloat (signed, n) -> Fmt.pf ft "f2%abv[%d]" pp_signed signed n
     | FloatOfBv (signed, p) ->
         Fmt.pf ft "%abv2f[%a]" pp_signed signed FloatPrecision.pp p
@@ -196,6 +194,7 @@ type t_kind =
   | Binop of Binop.t * t * t
   | Nop of Nop.t * t list
   | Ite of t * t * t
+  | IteZ of t * (Z.t[@printer Z.pp_print]) * (Z.t[@printer Z.pp_print])
 
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
@@ -217,6 +216,7 @@ let iter =
         aux f c;
         aux f t;
         aux f e
+    | IteZ (c, _, _) -> aux f c
   in
   Fun.flip aux
 
@@ -226,20 +226,24 @@ let iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
 
 let pp_full ft t = pp_t_node ft t.node
 
+let pp_z n ft z =
+  let open Fmt in
+  if n mod 4 <> 0 then pf ft "0b%s" (Z.format ("0" ^ string_of_int n ^ "b") z)
+  else pf ft "0x%s" (Z.format ("0" ^ string_of_int (n / 4) ^ "x") z)
+
 let rec pp ft t =
   let open Fmt in
   match t.node.kind with
   | Var v -> pf ft "V%a" Var.pp v
   | Bool b -> pf ft "%b" b
   | Float f -> pf ft "%sf" f
-  | BitVec bv ->
-      let size = size_of t.node.ty in
-      if size mod 4 <> 0 then
-        pf ft "0b%s" (Z.format ("0" ^ string_of_int size ^ "b") bv)
-      else pf ft "0x%s" (Z.format ("0" ^ string_of_int (size / 4) ^ "x") bv)
+  | BitVec bv -> pf ft "%a" (pp_z (size_of t.node.ty)) bv
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
   | Ite (c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
+  | IteZ (c, t_, e_) ->
+      let n = size_of t.node.ty in
+      pf ft "(%a ? %a : %a)" pp c (pp_z n) t_ (pp_z n) e_
   | Unop (Not, { node = { kind = Binop (Eq, v1, v2); _ }; _ }) ->
       pf ft "(%a != %a)" pp v1 pp v2
   | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
@@ -292,6 +296,7 @@ module Hcons = Hc.Make (struct
     | Binop (op, l, r) -> Hashtbl.hash (op, l.tag, r.tag, hty)
     | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
     | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
+    | IteZ (c, t_, e_) -> Hashtbl.hash (c.tag, Z.hash t_, Z.hash e_, hty)
 end)
 
 let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
@@ -346,6 +351,9 @@ let rec subst subst_var sv =
       let e' = subst subst_var e in
       if equal c c' && equal t t' && equal e e' then sv
       else Ite (c', t', e') <| sv.node.ty
+  | IteZ (c, t_, e_) ->
+      let c' = subst subst_var c in
+      if equal c c' then sv else IteZ (c', t_, e_) <| sv.node.ty
 
 (** {2 Operator declarations} *)
 
@@ -360,6 +368,7 @@ module type Bool = sig
   val not : t -> t
   val split_ands : t -> t Iter.t
   val distinct : t list -> t
+  val ite_z : t -> int -> Z.t -> Z.t -> t
   val ite : t -> t -> t -> t
   val sem_eq : t -> t -> t
   val sem_eq_untyped : t -> t -> t
@@ -532,6 +541,8 @@ module rec Bool : Bool = struct
         in
         if sure_distinct then v_true else Nop (Distinct, l) <| TBool
 
+  let ite_z guard n if_ else_ = IteZ (guard, if_, else_) <| t_bv n
+
   let rec ite guard if_ else_ =
     match (guard.node.kind, if_.node.kind, else_.node.kind) with
     | Bool true, _, _ -> if_
@@ -543,9 +554,8 @@ module rec Bool : Bool = struct
     | _, _, Bool false -> and_ guard if_
     | _, _, Bool true -> or_ (not guard) if_
     | Unop (Not, g), _, _ -> ite g else_ if_
-    | _, BitVec o, BitVec z when Z.(equal o one) && Z.equal z Z.zero ->
-        BitVec.of_bool (size_of if_.node.ty) guard
     | _ when equal if_ else_ -> if_
+    | _, BitVec o, BitVec z -> IteZ (guard, o, z) <| if_.node.ty
     | _ -> Ite (guard, if_, else_) <| if_.node.ty
 
   (** [case_analysis ~f ~default ~v1:(b1, t1, f1) ~v2:(b2, t2, f2)] Performs a
@@ -699,67 +709,25 @@ module rec Bool : Bool = struct
       when size_of l1.node.ty = size_of l2.node.ty ->
         and_ (sem_eq l1 l2) (sem_eq r1 r2)
     (* BvOfBool and If-then-elses *)
-    | Ite (b, l, t), (BitVec _ | Bool _) -> ite b (sem_eq l v2) (sem_eq t v2)
-    | (BitVec _ | Bool _), Ite (b, l, t) -> ite b (sem_eq v1 l) (sem_eq v1 t)
-    | Unop (BvOfBool _, b), BitVec z | BitVec z, Unop (BvOfBool _, b) ->
-        if Z.equal z Z.one then b
-        else if Z.equal z Z.zero then not b
-        else v_false
+    | Ite (b, t, e), (BitVec _ | Bool _) -> ite b (sem_eq t v2) (sem_eq e v2)
+    | (BitVec _ | Bool _), Ite (b, t, e) -> ite b (sem_eq v1 t) (sem_eq v1 e)
+    | IteZ (b, t, e), BitVec z | BitVec z, IteZ (b, t, e) -> (
+        match (Z.equal t z, Z.equal e z) with
+        | true, true -> v_true
+        | false, false -> v_false
+        | true, false -> b
+        | false, true -> not b)
     (* case analysis for N = ite(b1, l1, r2) + ite(b2, l2, r2) *)
     | ( Binop
           ( ((Add | Sub | Mul | Div _ | Rem _) as op),
-            {
-              node =
-                {
-                  kind =
-                    Ite
-                      ( b1,
-                        { node = { kind = BitVec l1; _ }; _ },
-                        { node = { kind = BitVec t1; _ }; _ } );
-                  ty = TBitVector sz;
-                };
-              _;
-            },
-            {
-              node =
-                {
-                  kind =
-                    Ite
-                      ( b2,
-                        { node = { kind = BitVec l2; _ }; _ },
-                        { node = { kind = BitVec t2; _ }; _ } );
-                  _;
-                };
-              _;
-            } ),
+            { node = { kind = IteZ (b1, l1, t1); ty = TBitVector sz }; _ },
+            { node = { kind = IteZ (b2, l2, t2); _ }; _ } ),
         BitVec z )
     | ( BitVec z,
         Binop
           ( ((Add | Sub | Mul | Div _ | Rem _) as op),
-            {
-              node =
-                {
-                  kind =
-                    Ite
-                      ( b1,
-                        { node = { kind = BitVec l1; _ }; _ },
-                        { node = { kind = BitVec t1; _ }; _ } );
-                  ty = TBitVector sz;
-                };
-              _;
-            },
-            {
-              node =
-                {
-                  kind =
-                    Ite
-                      ( b2,
-                        { node = { kind = BitVec l2; _ }; _ },
-                        { node = { kind = BitVec t2; _ }; _ } );
-                  _;
-                };
-              _;
-            } ) ) ->
+            { node = { kind = IteZ (b1, l1, t1); ty = TBitVector sz }; _ },
+            { node = { kind = IteZ (b2, l2, t2); _ }; _ } ) ) ->
         let op =
           match op with
           | Add -> Z.add
@@ -774,6 +742,22 @@ module rec Bool : Bool = struct
           Z.equal res z
         in
         case_analysis ~f ~v1:(b1, l1, t1) ~v2:(b2, l2, t2)
+    | ( Binop
+          ( Add,
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      ( Add,
+                        { node = { kind = IteZ (b1, l1, t1); _ }; _ },
+                        { node = { kind = IteZ (b2, l2, t2); _ }; _ } );
+                  ty = TBitVector sz;
+                };
+              _;
+            },
+            { node = { kind = IteZ (b3, l3, t3); _ }; _ } ),
+        BitVec z )
     | ( BitVec z,
         Binop
           ( Add,
@@ -783,52 +767,18 @@ module rec Bool : Bool = struct
                   kind =
                     Binop
                       ( Add,
-                        {
-                          node =
-                            {
-                              kind =
-                                Ite
-                                  ( b1,
-                                    { node = { kind = BitVec l1; _ }; _ },
-                                    { node = { kind = BitVec t1; _ }; _ } );
-                              ty = TBitVector sz;
-                            };
-                          _;
-                        },
-                        {
-                          node =
-                            {
-                              kind =
-                                Ite
-                                  ( b2,
-                                    { node = { kind = BitVec l2; _ }; _ },
-                                    { node = { kind = BitVec t2; _ }; _ } );
-                              _;
-                            };
-                          _;
-                        } );
-                  _;
+                        { node = { kind = IteZ (b1, l1, t1); _ }; _ },
+                        { node = { kind = IteZ (b2, l2, t2); _ }; _ } );
+                  ty = TBitVector sz;
                 };
               _;
             },
-            {
-              node =
-                {
-                  kind =
-                    Ite
-                      ( b3,
-                        { node = { kind = BitVec l3; _ }; _ },
-                        { node = { kind = BitVec t3; _ }; _ } );
-                  _;
-                };
-              _;
-            } ) ) ->
+            { node = { kind = IteZ (b3, l3, t3); _ }; _ } ) ) ->
         let mask = Z.(pred (one lsl sz)) in
         let f a b c =
           let res = Z.((((a + b) land mask) + c) land mask) in
           Z.equal res z
         in
-        assert (false || false);
         case_analysis_3 ~f ~v1:(b1, l1, t1) ~v2:(b2, l2, t2) ~v3:(b3, l3, t3)
     (* special case: for BVs, check if we can infer the most significant set bits and extract *)
     | _ when is_bv v1.node.ty && is_bv v2.node.ty ->
@@ -932,19 +882,21 @@ and BitVec : BitVec = struct
     | Bool true -> one n
     | Bool false -> zero n
     | Unop (Not, b) -> Bool.ite b (zero n) (one n)
-    | _ -> Unop (BvOfBool n, b) <| TBitVector n
+    | _ -> IteZ (b, Z.one, Z.zero) <| t_bv n
 
   let to_bool v =
     match v.node.kind with
     | BitVec z -> Bool.bool (Stdlib.not (Z.equal z Z.zero))
-    | Unop (BvOfBool _, sv') -> sv'
+    | IteZ (b, o, z) when Z.equal o Z.one && Z.equal z Z.zero -> b
+    | IteZ (b, z, o) when Z.equal o Z.one && Z.equal z Z.zero -> Bool.not b
     | _ -> Bool.not (Bool.sem_eq v (zero (size_of v.node.ty)))
 
   let not_bool v =
     let n = size_of v.node.ty in
     match v.node.kind with
     | BitVec z -> if Z.equal z Z.zero then one n else zero n
-    | Unop (BvOfBool n, g) -> of_bool n (Bool.not g)
+    | IteZ (b, o, z) when Z.equal o Z.one && Z.equal z Z.zero ->
+        IteZ (b, Z.zero, Z.one) <| t_bv n
     | _ -> of_bool n (Bool.sem_eq v (zero n))
 
   let rec add v1 v2 =
@@ -986,8 +938,12 @@ and BitVec : BitVec = struct
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
     | BitVec _, Ite (b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
-    | Unop (BvOfBool n, b), BitVec _ -> Bool.ite b (sub (one n) v2) (neg v2)
-    | BitVec _, Unop (BvOfBool n, b) -> Bool.ite b (sub v1 (one n)) v1
+    | IteZ (b, l, r), BitVec _ ->
+        let n = size_of v1.node.ty in
+        Bool.ite b (sub (mk n l) v2) (sub (mk n r) v2)
+    | BitVec _, IteZ (b, l, r) ->
+        let n = size_of v1.node.ty in
+        Bool.ite b (sub v1 (mk n l)) (sub v1 (mk n r))
     | _ -> Binop (Sub, v1, v2) <| v1.node.ty
 
   and neg v =
@@ -1000,7 +956,8 @@ and BitVec : BitVec = struct
     | BitVec bv -> mk_masked n Z.(neg bv)
     | Unop (Neg, v) -> v
     | Ite (b, l, r) -> Bool.ite b (neg l) (neg r)
-    | Unop (BvOfBool n, b) -> Bool.ite b (neg (one n)) (zero n)
+    | IteZ (b, o, z) ->
+        Bool.ite b (mk_masked n Z.(neg o)) (mk_masked n Z.(neg z))
     | _ -> Unop (Neg, v) <| v.node.ty
 
   let rec mul v1 v2 =
@@ -1076,7 +1033,12 @@ and BitVec : BitVec = struct
         let n = size_of v.node.ty in
         mk_masked n Z.(lognot bv)
     | Ite (b, l, r) -> Bool.ite b (not l) (not r)
-    (* !X = -X - 1, so !(!X + C) = !(-X - 1 + C) = X + 1 - C - 1 = X - C *)
+    | IteZ (b, l, r) ->
+        let n = size_of v.node.ty in
+        let mask = Z.(pred (one lsl n)) in
+        let l = Z.(lognot l land mask) in
+        let r = Z.(lognot r land mask) in
+        Bool.ite_z b n l r
     | Binop (Add, { node = { kind = Unop (BvNot, x); _ }; _ }, r)
     | Binop (Add, r, { node = { kind = Unop (BvNot, x); _ }; _ }) ->
         sub x r
@@ -1110,10 +1072,14 @@ and BitVec : BitVec = struct
         let n = size_of v1.node.ty in
         let mask = mk n mask in
         and_ (and_ mask l) (and_ mask r)
-    | BitVec o, Unop (BvOfBool _, _) when Z.equal o Z.one -> v2
-    | Unop (BvOfBool _, _), BitVec o when Z.equal o Z.one -> v1
-    | Unop (BvOfBool _, b1), Unop (BvOfBool _, b2) ->
-        of_bool n (Bool.and_ b1 b2)
+    | BitVec o, IteZ (_, o2, z2)
+      when Z.equal o Z.one && Z.equal o2 Z.one && Z.equal z2 Z.zero ->
+        v2
+    | IteZ (_, o2, z2), BitVec o
+      when Z.equal o Z.one && Z.equal o2 Z.one && Z.equal z2 Z.zero ->
+        v1
+    | IteZ (b1, t1, f1), IteZ (b2, t2, f2) ->
+        IteZ (Bool.and_ b1 b2, Z.(t1 land t2), Z.(f1 land f2)) <| t_bv n
     | ( Ite (b1, l1, { node = { kind = BitVec r1; _ }; _ }),
         Ite (b2, l2, { node = { kind = BitVec r2; _ }; _ }) )
       when Z.(equal r1 zero) && Z.(equal r2 zero) ->
@@ -1145,19 +1111,9 @@ and BitVec : BitVec = struct
         else
           let new_tail = extract 0 (nx - 1) tail in
           concat new_tail base
-    | Unop (BvOfBool n, b1), Unop (BvOfBool _, b2) -> of_bool n (Bool.or_ b1 b2)
-    | ( Unop (BvOfBool _, b1),
-        Ite
-          ( b2,
-            { node = { kind = BitVec t; _ }; _ },
-            { node = { kind = BitVec e; _ }; _ } ) )
-    | ( Ite
-          ( b2,
-            { node = { kind = BitVec t; _ }; _ },
-            { node = { kind = BitVec e; _ }; _ } ),
-        Unop (BvOfBool _, b1) )
-      when Z.(equal t zero) && Z.(equal e one) ->
-        of_bool (size_of v1.node.ty) (Bool.or_ b1 (Bool.not b2))
+    | IteZ (b1, t1, f1), IteZ (b2, t2, f2) ->
+        let n = size_of v1.node.ty in
+        IteZ (Bool.or_ b1 b2, Z.(t1 lor t2), Z.(f1 lor f2)) <| t_bv n
     | _ -> mk_commut_binop BitOr v1 v2 <| v1.node.ty
 
   and xor v1 v2 =
@@ -1167,8 +1123,10 @@ and BitVec : BitVec = struct
         mk n Z.(l lxor r)
     | BitVec z, _ when Z.equal z Z.zero -> v2
     | _, BitVec z when Z.equal z Z.zero -> v1
-    | Unop (BvOfBool n, b1), Unop (BvOfBool _, b2) ->
-        of_bool n (Bool.not (Bool.sem_eq b1 b2))
+    | IteZ (b1, t1, f1), IteZ (b2, t2, f2) ->
+        let n = size_of v1.node.ty in
+        IteZ (Bool.not (Bool.sem_eq b1 b2), Z.(t1 lxor t2), Z.(f1 lxor f2))
+        <| t_bv n
     | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
 
   (** [extract from_ to_ v] returns a bitvector covering bits from index
@@ -1205,6 +1163,12 @@ and BitVec : BitVec = struct
         let l = extract from_ to_ l in
         let r = extract from_ to_ r in
         Bool.ite b l r
+    | IteZ (b, t, f) ->
+        let sz = size in
+        let mask = Z.(pred (one lsl sz)) in
+        let t = Z.((t asr from_) land mask) in
+        let f = Z.((f asr from_) land mask) in
+        IteZ (b, t, f) <| t_bv size
     | Unop (BvExtend (false, by), _) when from_ >= prev_size - by ->
         (* zero extension, and we're extracting only the extended bits *)
         zero size
@@ -1253,7 +1217,12 @@ and BitVec : BitVec = struct
         let r = extend ~signed extend_by r in
         Bool.ite b l r
     (* can't extend if signed && n == 1, as it should be all 1s *)
-    | Unop (BvOfBool n, b) when Stdlib.not signed || n > 1 -> of_bool to_ b
+    | IteZ (b, t, f)
+      when let size = size_of v.node.ty in
+           let msb_set z = Z.testbit z (size - 1) in
+           Stdlib.not signed
+           || (Stdlib.not (msb_set t) && Stdlib.not (msb_set f)) ->
+        IteZ (b, t, f) <| t_bv to_
     (* unlike with extract, we don't want to propagate extend within the expression for &, |, ^,
          as that will require a more expensive bit-blasting. *)
     (* We also note the following reduction is *not valid*, as some upper bits may be set;
@@ -1353,8 +1322,9 @@ and BitVec : BitVec = struct
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.not (Bool.sem_eq v1 v2)
     (* x < ite(b, 1, 0) => ite(b, x < 1, x < 0) => ite(b, x = 0, false) => b && x = 0 *)
-    | _, Unop (BvOfBool n, b) when Stdlib.not signed ->
-        Bool.and_ b (Bool.sem_eq v1 (zero n))
+    | _, IteZ (b, o, z)
+      when Stdlib.not signed && Z.equal o Z.one && Z.equal z Z.zero ->
+        Bool.and_ b (Bool.sem_eq v1 (zero (size_of v1.node.ty)))
     | Ite (b, l, r), _ -> Bool.ite b (lt ~signed l v2) (lt ~signed r v2)
     | _, Ite (b, l, r) -> Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
     | _ -> Binop (Lt signed, v1, v2) <| TBool
@@ -1399,21 +1369,15 @@ and BitVec : BitVec = struct
         let max = mk size (max_for false (size_of v1.node.ty)) in
         Bool.sem_eq (other <| v1.node.ty) max
     (* x + ite(g, 1, 0) overflows only if x = max && g *)
-    | (Unop (BvOfBool size, b), other | other, Unop (BvOfBool size, b))
-      when Stdlib.not signed ->
-        let max = mk size (max_for false (size_of v1.node.ty)) in
-        Bool.and_ b (Bool.sem_eq (other <| v1.node.ty) max)
-    | ( Ite
-          ( b1,
-            { node = { kind = BitVec l1; _ }; _ },
-            { node = { kind = BitVec r1; _ }; _ } ),
-        Ite
-          ( b2,
-            { node = { kind = BitVec l2; _ }; _ },
-            { node = { kind = BitVec r2; _ }; _ } ) ) ->
+    | IteZ (b1, l1, r1), IteZ (b2, l2, r2) ->
         Bool.case_analysis
           ~f:(ovf_check ~signed (size_of v1.node.ty) Z.( + ))
           ~v1:(b1, l1, r1) ~v2:(b2, l2, r2)
+    | (IteZ (b, o, z), other | other, IteZ (b, o, z))
+      when Stdlib.not signed && Z.equal o Z.one && Z.equal z Z.zero ->
+        let size = size_of v1.node.ty in
+        let max = mk size (max_for false size) in
+        Bool.and_ b (Bool.sem_eq (other <| v1.node.ty) max)
     | _ -> Binop (AddOvf signed, v1, v2) <| TBool
 
   let mul_overflows ~signed v1 v2 =

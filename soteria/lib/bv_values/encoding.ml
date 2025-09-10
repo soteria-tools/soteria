@@ -32,7 +32,6 @@ let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
   | FAbs -> fp_abs
   | GetPtrLoc -> pointers_not_supported ()
   | GetPtrOfs -> pointers_not_supported ()
-  | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)
   | BvOfFloat (true, n) -> sbv_of_float n
   | BvOfFloat (false, n) -> ubv_of_float n
   | FloatOfBv (true, fp) -> float_of_sbv (Svalue.FloatPrecision.size fp)
@@ -107,6 +106,9 @@ let rec encode_value (v : Svalue.t) =
           List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat)
   | Ite (c, t, e) ->
       ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
+  | IteZ (c, t, e) ->
+      let n = Svalue.size_of v.node.ty in
+      ite (encode_value_memo c) (bv_k n t) (bv_k n e)
   | Unop (unop, v1) ->
       let v1 = encode_value_memo v1 in
       smt_of_unop unop v1
@@ -175,6 +177,14 @@ module LetBinder = struct
           let t' = replace t in
           let e' = replace e in
           if c == c' && t == t' && e == e' then v else Svalue.Bool.ite c' t' e'
+      | IteZ (c, t, e) ->
+          let c' = replace c in
+          if c == c' then v
+          else
+            let size = Svalue.size_of v.node.ty in
+            let t = Svalue.BitVec.mk size t in
+            let e = Svalue.BitVec.mk size e in
+            Svalue.Bool.ite c' t e
       | Unop (unop, v1) ->
           let v1' = replace v1 in
           if v1 == v1' then v else Eval.eval_unop unop v1'

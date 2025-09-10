@@ -36,7 +36,6 @@ let eval_unop : Unop.t -> t -> t = function
   | FAbs -> Float.abs
   | GetPtrLoc -> Ptr.loc
   | GetPtrOfs -> Ptr.ofs
-  | BvOfBool n -> BitVec.of_bool n
   | BvOfFloat (signed, size) -> BitVec.of_float ~signed ~size
   | FloatOfBv (signed, fp) -> BitVec.to_float ~signed ~fp
   | BvExtract (from, to_) -> BitVec.extract from to_
@@ -75,6 +74,14 @@ let rec eval ~eval_var (x : t) : t =
       if equal guard Bool.v_true then eval then_
       else if equal guard Bool.v_false then eval else_
       else Bool.ite guard (eval then_) (eval else_)
+  | IteZ (guard, then_, else_) ->
+      let guard = eval guard in
+      let size = Svalue.size_of x.node.ty in
+      let then_ = BitVec.mk size then_ in
+      let else_ = BitVec.mk size else_ in
+      if equal guard Bool.v_true then then_
+      else if equal guard Bool.v_false then else_
+      else Bool.ite guard then_ else_
   | Seq l ->
       let l, changed = List.map_changed eval l in
       if Stdlib.not changed then x else Svalue.SSeq.mk ~seq_ty:x.node.ty l
