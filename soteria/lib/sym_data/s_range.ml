@@ -32,11 +32,8 @@ module Make (S_int : S_int.S) = struct
   let subset_eq (a1, b1) (a2, b2) =
     Symex.Value.S_bool.and_ (leq a2 a1) (leq b1 b2)
 
-  (** [subset_strict r1 r2] is a symbolic boolean characterising whether [r1] is
-      a strict subset of [r2] (i.e. it is equivalent to
-      [(subseteq r1 r2) && not (sem_eq r1 r2)]) *)
-  let subset_strict (a1, b1) (a2, b2) =
-    Symex.Value.S_bool.and_ (lt a2 a1) (lt b1 b2)
+  (** [strictly_inside (a, b) r] is [a < r < b] *)
+  let strictly_inside x (a, b) = Symex.Value.S_bool.and_ (lt a x) (lt x b)
 
   (** [of_low_and_size a b] is [(a, a + b)]*)
   let of_low_and_size low size = (low, add low size)
