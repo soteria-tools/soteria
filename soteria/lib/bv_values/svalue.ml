@@ -417,6 +417,9 @@ module type BitVec = sig
   (* float-bv conversions *)
   val of_float : signed:bool -> size:int -> t -> t
   val to_float : signed:bool -> fp:FloatPrecision.t -> t -> t
+
+  (* utility *)
+  val msb_of : t -> int
 end
 
 module type Float = sig
@@ -603,17 +606,8 @@ module rec Bool : Bool = struct
         else v_false
     (* special case: for BVs, check if we can infer the most significant set bits and extract *)
     | _ when is_bv v1.node.ty && is_bv v2.node.ty ->
-        let rec msb_of v =
-          match v.node.kind with
-          | BitVec v when Z.(v > zero) -> Z.log2 v
-          | BitVec v when Z.(equal v zero) -> 0
-          | Binop (BitAnd, bv1, bv2) -> min (msb_of bv1) (msb_of bv2)
-          | Ite (_, l, r) -> max (msb_of l) (msb_of r)
-          | Unop (BvExtend (false, __), v) -> msb_of v
-          | _ -> size_of v.node.ty - 1
-        in
         let current_size = size_of v1.node.ty in
-        let msb = max (msb_of v1) (msb_of v2) in
+        let msb = max (BitVec.msb_of v1) (BitVec.msb_of v2) in
         if 0 < msb && msb < current_size - 1 then
           let v1' = BitVec.extract 0 msb v1 in
           let v2' = BitVec.extract 0 msb v2 in
@@ -672,6 +666,16 @@ and BitVec : BitVec = struct
   let covers_bitwidth bits z = is_right_mask z && right_mask_size z = bits
 
   let is_pow2 z = Z.(gt z zero && popcount z = 1)
+
+  let rec msb_of v =
+    match v.node.kind with
+    | BitVec v when Z.(v > zero) -> Z.log2 v
+    | BitVec v when Z.(equal v zero) -> 0
+    | Binop (BitAnd, bv1, bv2) -> min (msb_of bv1) (msb_of bv2)
+    | Binop (Rem false, _, bv2) -> msb_of bv2
+    | Ite (_, l, r) -> max (msb_of l) (msb_of r)
+    | Unop (BvExtend (false, __), v) -> msb_of v
+    | _ -> size_of v.node.ty - 1
 
   let of_bool n b =
     match b.node.kind with
@@ -1127,6 +1131,10 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( + )
     | BitVec z, _ when Z.equal z Z.zero -> Bool.v_false
     | _, BitVec z when Z.equal z Z.zero -> Bool.v_false
+    | _ when equal v1 v2 && Stdlib.not signed ->
+        let size = size_of v1.node.ty in
+        let msb = extract (size - 1) (size - 1) v1 in
+        Bool.sem_eq msb (one 1)
     (* x + 1 overflows only if x = max *)
     | (BitVec z, other | other, BitVec z)
       when Stdlib.not signed && Z.equal z Z.one ->

@@ -274,8 +274,8 @@ module LetBinder = struct
     List.fold_left (Fun.flip Simple_smt.let_) sexp bindings
 end
 
-let encode_value v =
+(* let encode_value v =
   let v, bindings = LetBinder.let_binds_for ~min_occurrences:10 v in
-  encode_value v |> LetBinder.apply_bindings bindings
+  encode_value v |> LetBinder.apply_bindings bindings *)
 
 let init_commands = []
