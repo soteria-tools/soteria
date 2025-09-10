@@ -23,3 +23,16 @@ module type S = sig
   val lt : t -> t -> sbool_v
   val leq : t -> t -> sbool_v
 end
+
+module Make_syntax (S_int : S) = struct
+  let ( +@ ) = S_int.add
+  let ( -@ ) = S_int.minus
+  let ( <@ ) = S_int.lt
+  let ( <=@ ) = S_int.leq
+
+  module Sym_int_syntax = struct
+    let mk_nonzero x = S_int.of_z (Z.of_int x)
+    let zero = S_int.zero
+    let one = S_int.one
+  end
+end
