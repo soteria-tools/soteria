@@ -7,6 +7,7 @@ module type S = sig
 
   type t
 
+  include Soteria_std.Printable.S with type t := t
   module Symex : Symex.S
 
   val subst : (Var.t -> Var.t) -> t -> t
