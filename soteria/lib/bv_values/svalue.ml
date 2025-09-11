@@ -514,8 +514,8 @@ module rec Bool : Bool = struct
     else
       match sv.node.kind with
       | Unop (Not, sv) -> sv
-      | Binop (Lt s, v1, v2) -> Binop (Leq s, v2, v1) <| TBool
-      | Binop (Leq s, v1, v2) -> Binop (Lt s, v2, v1) <| TBool
+      | Binop (Lt s, v1, v2) -> BitVec.leq ~signed:s v2 v1
+      | Binop (Leq s, v1, v2) -> BitVec.lt ~signed:s v2 v1
       | Binop (Or, v1, v2) -> and_ (not v1) (not v2)
       | Binop (And, v1, v2) -> or_ (not v1) (not v2)
       | Binop (Eq, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }, v)
@@ -919,6 +919,14 @@ and BitVec : BitVec = struct
         let n = size_of v1.node.ty in
         let x = mk n x in
         Bool.ite b (add l x) (add r x)
+    | IteZ (b, l, r), BitVec x | BitVec x, IteZ (b, l, r) ->
+        let n = size_of v1.node.ty in
+        let x = mk n x in
+        Bool.ite b (add (mk n l) x) (add (mk n r) x)
+    | BitVec x, Binop (Add, l, r) | Binop (Add, l, r), BitVec x ->
+        let n = size_of v1.node.ty in
+        let x = mk n x in
+        add l (add r x)
     (* | Unop (BvOfBool n, b), BitVec x | BitVec x, Unop (BvOfBool n, b) ->
         let x = mk n x in
         Bool.ite b (add (one n) x) x *)
@@ -1032,6 +1040,7 @@ and BitVec : BitVec = struct
     | BitVec bv ->
         let n = size_of v.node.ty in
         mk_masked n Z.(lognot bv)
+    | Unop (BvNot, v) -> v
     | Ite (b, l, r) -> Bool.ite b (not l) (not r)
     | IteZ (b, l, r) ->
         let n = size_of v.node.ty in
@@ -1239,6 +1248,7 @@ and BitVec : BitVec = struct
     let n2 = size_of v2.node.ty in
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> mk_masked (n1 + n2) Z.(r + shift_left l n2)
+    | BitVec z, _ when Z.equal z Z.zero -> extend ~signed:false n1 v2
     | Unop (BvExtract (from1, to1), v1), Unop (BvExtract (from2, to2), v2)
       when to2 + 1 = from1 && equal v1 v2 ->
         extract from2 to1 v1
@@ -1258,6 +1268,11 @@ and BitVec : BitVec = struct
         concat (concat v1 left) right
     | Ite (b1, l1, r1), Ite (b2, l2, r2) when equal b1 b2 ->
         Bool.ite b1 (concat l1 l2) (concat r1 r2)
+    | IteZ (b1, t1, f1), IteZ (b2, t2, f2) when equal b1 b2 ->
+        let n = n1 + n2 in
+        let t_concat = Z.((t1 lsl n2) + t2) in
+        let f_concat = Z.((f1 lsl n2) + f2) in
+        Bool.ite_z b1 n t_concat f_concat
     | _, _ -> Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
 
   let rec shl v1 v2 =
@@ -1338,6 +1353,11 @@ and BitVec : BitVec = struct
         Bool.v_true
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.v_true
+    (* unsigned: 0b100...00 <= y is checking the sign bit of y is set *)
+    | BitVec x, _
+      when Stdlib.not signed && Z.popcount x = 1 && Z.testbit x (bits - 1) ->
+        let sign_bit = extract (bits - 1) (bits - 1) v2 in
+        Bool.sem_eq sign_bit (one 1)
     | _ -> Binop (Leq signed, v1, v2) <| TBool
 
   let gt ~signed v1 v2 = lt ~signed v2 v1
