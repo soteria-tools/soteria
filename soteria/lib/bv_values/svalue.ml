@@ -928,11 +928,18 @@ and BitVec : BitVec = struct
     | Unop (BvExtend (false, by), _) when from_ >= prev_size - by ->
         (* zero extension, and we're extracting only the extended bits *)
         zero size
-    | Unop (BvExtend (signed, by), v) when from_ = 0 ->
-        (* extracting exactly the original bits *)
-        if to_ = prev_size - by - 1 then v
-        (* we can reduce the extend *)
-          else extend ~signed (to_ - prev_size + by + 1) v
+    | Unop (BvExtend (signed, _), v) when from_ = 0 ->
+        (* extracting from the beginning of an extended value *)
+        let orig_size = size_of v.node.ty in
+        if to_ = orig_size - 1 then
+          (* extracting exactly the original bits *)
+          v
+        else if to_ < orig_size then
+          (* extracting subset of original bits *)
+          extract from_ to_ v
+        else
+          (* we can reduce the extend *)
+          extend ~signed (to_ - orig_size + 1) v
     | Unop (BvExtend (_, by), v) when to_ <= prev_size - by - 1 ->
         (* extracting from original bits *)
         extract from_ to_ v
