@@ -636,19 +636,19 @@ module Make (Sptr : Sptr.S) = struct
             |> List.find_map (function
                  | v, Types.TLiteral lit_ty, o
                    when o <= 0 && size <= o + size_of_literal_ty lit_ty ->
-                     Some
-                       (let open Rustsymex.Syntax in
-                        let* v =
-                          match v with
-                          | Base v -> return v
-                          | Ptr (ptr, _) -> Sptr.decay ptr
-                          | _ ->
-                              not_impl "Transmute: don't know hot to split this"
-                        in
-                        let v = Typed.cast_lit lit_ty v in
-                        let v = BV.extract (o * -8) (((size - o) * 8) - 1) v in
-                        Result.ok (Base v))
+                     Some (v, lit_ty, o)
                  | _ -> None)
+            |> Option.map @@ fun (v, lit_ty, o) ->
+               let open Rustsymex.Syntax in
+               let* v =
+                 match v with
+                 | Base v -> return v
+                 | Ptr (ptr, _) -> Sptr.decay ptr
+                 | _ -> not_impl "Transmute: don't know hot to split this"
+               in
+               let v = Typed.cast_lit lit_ty v in
+               let v = BV.extract (o * -8) (((size - o) * 8) - 1) v in
+               Result.ok (Base v)
         | _ -> None
       in
       (* X. give up *)

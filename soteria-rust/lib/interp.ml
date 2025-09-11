@@ -599,6 +599,8 @@ module Make (State : State_intf.S) = struct
             let+ variant_id = State.load_discriminant loc place.ty in
             let variant = Types.VariantId.nth variants variant_id in
             Base (BV.of_scalar variant.discriminant)
+        (* If a type doesn't have variants, return 0.
+           https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
         | _ -> ok (Base U8.(0s)))
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
