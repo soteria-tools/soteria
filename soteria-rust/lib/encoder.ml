@@ -497,7 +497,12 @@ module Make (Sptr : Sptr.S) = struct
           Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_ty from_ty
             pp_ty to_ty
       | TLiteral TBool, TLiteral to_ty, Base sv ->
+          let to_bits = 8 * Layout.size_of_literal_ty to_ty in
           let sv = Typed.cast_lit TBool sv in
+          let guard = BV.to_bool sv in
+          if%sat guard then ok (Base (BV.one to_bits))
+          else ok (Base (BV.zero to_bits))
+          (* let sv = Typed.cast_lit TBool sv in
           let* guard = simplify (BV.to_bool sv) in
           let guard = BV.of_bool guard in
           let from_bits = 8 * Layout.size_of_literal_ty TBool in
@@ -506,7 +511,7 @@ module Make (Sptr : Sptr.S) = struct
             if to_bits = from_bits then guard
             else BV.extend ~signed:false (to_bits - from_bits) guard
           in
-          ok (Base res)
+          ok (Base res) *)
       | TLiteral from_ty, TLiteral to_ty, Base sv ->
           let from_bits = 8 * Layout.size_of_literal_ty from_ty in
           let from_signed = Layout.is_signed from_ty in
