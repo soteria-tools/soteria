@@ -1,5 +1,7 @@
 open Charon
 open Typed.Infix
+open Typed.Syntax
+module BV = Typed.BitVec
 open Rustsymex
 open Rust_val
 open Charon_util
@@ -312,12 +314,12 @@ let layout_of_s ty =
 let size_of_s ty =
   let open Rustsymex.Syntax in
   let+ { size; _ } = layout_of_s ty in
-  Typed.BitVec.usizei size
+  BV.usizei size
 
 let align_of_s ty =
   let open Rustsymex.Syntax in
   let+ { align; _ } = layout_of_s ty in
-  Typed.BitVec.usizei_nz align
+  BV.usizeinz align
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
@@ -368,17 +370,17 @@ let constraints :
         (* Maybe worth checking which of these is better (if it matters at all)
            [ x ==@ 0s ||@ (x ==@ 1s) ]) *)
         let x = Typed.cast_lit TBool x in
-        [ Typed.BitVec.u8i 0 <=@ x; x <=@ Typed.BitVec.u8i 1 ]
+        [ U8.(0s) <=@ x; (x <=@ U8.(1s)) ]
   | TChar ->
       (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’ other than
        a surrogate code point. This has a fixed numerical definition: code points are in
        the range 0 to 0x10FFFF, inclusive. Surrogate code points, used by UTF-16, are in
        the range 0xD800 to 0xDFFF.
        https://doc.rust-lang.org/std/primitive.char.html *)
-      let codepoint_min = Typed.BitVec.u32i 0 in
-      let codepoint_max = Typed.BitVec.u32i 0x10FFFF in
-      let surrogate_min = Typed.BitVec.u32i 0xD800 in
-      let surrogate_max = Typed.BitVec.u32i 0xDFFF in
+      let codepoint_min = U32.(0s) in
+      let codepoint_max = U32.(0x10FFFFs) in
+      let surrogate_min = U32.(0xD800s) in
+      let surrogate_max = U32.(0xDFFFs) in
       fun x ->
         let x = Typed.cast_lit TChar x in
         [
@@ -434,20 +436,20 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
             | Fields_shape.Enum (tag_layout, _) -> tag_layout
             | _ -> failwith "Expected enum layout"
           in
-          let* disc_val = nondet_literal_ty tag_layout.ty in
+          let* d = nondet_literal_ty tag_layout.ty in
           let* res =
-            match_on variants ~constr:(fun (v : Types.variant) ->
-                disc_val ==@ Typed.BitVec.of_scalar v.discriminant)
+            match_on variants ~constr:(fun v ->
+                BV.of_scalar v.discriminant ==@ d)
           in
           match (res, tag_layout.encoding) with
           | Some variant, _ ->
-              let discr = Typed.BitVec.of_scalar variant.discriminant in
+              let discr = BV.of_scalar variant.discriminant in
               let+ fields = nondets @@ Charon_util.field_tys variant.fields in
               Enum (discr, fields)
           | None, Direct -> vanish ()
           | None, Niche untagged ->
               let variant = Types.VariantId.nth variants untagged in
-              let discr = Typed.BitVec.of_scalar variant.discriminant in
+              let discr = BV.of_scalar variant.discriminant in
               let+ fields = nondets @@ Charon_util.field_tys variant.fields in
               Enum (discr, fields))
       | Struct fields ->
@@ -466,7 +468,7 @@ and nondets tys =
 
 let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
   | TFloat fty -> Typed.Float.mk fty "0.0"
-  | (TInt _ | TUInt _ | TBool | TChar) as ty -> Typed.BitVec.mki_lit ty 0
+  | (TInt _ | TUInt _ | TBool | TChar) as ty -> BV.mki_lit ty 0
 
 let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in
@@ -502,8 +504,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
           v.fields
           |> Charon_util.field_tys
           |> zeroeds
-          |> Option.map (fun fs ->
-                 Enum (Typed.BitVec.of_scalar v.discriminant, fs))
+          |> Option.map (fun fs -> Enum (BV.of_scalar v.discriminant, fs))
       | Union fs ->
           let layouts =
             List.mapi
@@ -562,8 +563,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
       | Enum [] -> None (* an empty enum is uninhabited *)
       | Enum [ { fields; discriminant; _ } ] ->
           as_zsts @@ Charon_util.field_tys fields
-          |> Option.map (fun fs ->
-                 Enum (Typed.BitVec.of_scalar discriminant, fs))
+          |> Option.map (fun fs -> Enum (BV.of_scalar discriminant, fs))
       | Enum _ -> None
       | _ -> None)
   | TAdt { id = TTuple; generics = { types; _ } } ->
@@ -580,14 +580,14 @@ let apply_attribute v attr =
         { path = "rustc_layout_scalar_valid_range_start"; args = Some min } ) ->
       let min = Z.of_string min in
       let v, bits = Typed.cast_int v in
-      if%sat v >=@ Typed.BitVec.mk bits min then Result.ok ()
+      if%sat v >=@ BV.mk bits min then Result.ok ()
       else Result.error (`StdErr "rustc_layout_scalar_valid_range_start")
   | ( Base v,
       AttrUnknown
         { path = "rustc_layout_scalar_valid_range_end"; args = Some max_s } ) ->
       let max = Z.of_string max_s in
       let v, bits = Typed.cast_int v in
-      if%sat v <=@ Typed.BitVec.mk bits max then Result.ok ()
+      if%sat v <=@ BV.mk bits max then Result.ok ()
       else Result.error (`StdErr "rustc_layout_scalar_valid_range_end")
   | _ -> Result.ok ()
 
@@ -643,7 +643,7 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
             | Enum (tag, _) -> tag.ty
             | _ -> failwith "Expected enum layout"
           in
-          let d = Typed.BitVec.bv_to_z discr_ty d in
+          let d = BV.bv_to_z discr_ty d in
           let variants = Crate.as_enum adt_id in
           let v =
             List.find_opt
@@ -707,8 +707,7 @@ let rec update_ref_tys_in
   | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
       let variants = Crate.as_enum adt_id in
       let* var =
-        match_on variants ~constr:(fun (v : Types.variant) ->
-            Typed.BitVec.of_scalar v.discriminant ==?@ d)
+        match_on variants ~constr:(fun v -> BV.of_scalar v.discriminant ==@ d)
       in
       match var with
       | Some var ->

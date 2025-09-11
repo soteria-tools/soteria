@@ -115,6 +115,16 @@ module type S = sig
     else_:(unit -> 'a t) ->
     'a t
 
+  (** [assert_or_error guard err] asserts [guard] is true, and otherwise returns
+      [Compo_res.Error err]. Biased towards the assertion being [false] to reduce SAT-checks.
+
+      This is provided as a utility, and is equivalent to {@ocaml[
+        branch_on (not guard)
+          ~then_:(fun () -> return (Compo_res.error err))
+          ~else_:(fun () -> return (Compo_res.ok ()))
+        ]} *)
+  val assert_or_error : sbool v -> 'err -> (unit, 'err, 'f) Compo_res.t t
+
   val branches : (unit -> 'a t) list -> 'a t
 
   (** {2 Fuel} *)
@@ -445,6 +455,12 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       branch_on_take_one_ux ?left_branch_name ?right_branch_name guard ~then_
         ~else_ f
     else branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ f
+
+  let assert_or_error guard err =
+    branch_on
+      Value.(not guard)
+      ~then_:(fun () -> return (Compo_res.Error err))
+      ~else_:(fun () -> return (Compo_res.Ok ()))
 
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->

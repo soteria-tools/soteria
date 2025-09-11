@@ -2,8 +2,9 @@ open Rustsymex
 open Rustsymex.Syntax
 open Charon
 open Typed
-open T
+open Typed.Syntax
 open Typed.Infix
+open T
 
 module type S = sig
   (** pointer type *)
@@ -29,15 +30,16 @@ module type S = sig
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
 
-  (** [offset ?check ?ty ptr off] Offsets [ptr] by the size of [ty] * [off].
-      [ty] defaults to u8. May result in a dangling pointer error if the pointer
-      goes over the allocation limit. This check can be disabled with
-      [~check:false]. *)
+  (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
+      [off], interpreting [off] as a [signed] integer. [ty] defaults to u8. May
+      result in a dangling pointer error if the pointer goes over the allocation
+      limit. This check can be disabled with [~check:false]. *)
   val offset :
     ?check:bool ->
     ?ty:Charon.Types.ty ->
+    signed:bool ->
     t ->
-    sint Typed.t ->
+    [< sint ] Typed.t ->
     (t, [> `UBDanglingPointer ], 'a) Result.t
 
   (** Project a pointer to a field of the given type. *)
@@ -49,13 +51,13 @@ module type S = sig
     (t, [> `UBDanglingPointer ], 'a) Result.t
 
   (** Decay a pointer into an integer value, losing provenance. *)
-  val decay : t -> sint Typed.t Rustsymex.t
+  val decay : t -> [> sint ] Typed.t Rustsymex.t
 
   (** For Miri: the allocation ID of this location, as a u64 *)
-  val as_id : t -> sint Typed.t
+  val as_id : t -> [> sint ] Typed.t
 
   (** Get the allocation info for this pointer: its size and alignment *)
-  val allocation_info : t -> T.sint Typed.t * T.nonzero Typed.t
+  val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
 
   val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit
   val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
@@ -85,8 +87,8 @@ module ArithPtr : S with type t = arithptr_t = struct
     {
       ptr = Typed.Ptr.null ();
       tag = Tree_borrow.zero;
-      align = Typed.BitVec.usizei_nz 1;
-      size = Typed.BitVec.usizei 0;
+      align = Usize.(1s);
+      size = Usize.(0s);
     }
 
   let null_ptr_of ofs =
@@ -102,20 +104,28 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let constraints { ptr; size; _ } =
     let ofs = Typed.Ptr.ofs ptr in
-    let zero = Typed.BitVec.usizei 0 in
-    Typed.conj [ zero <=$@ ofs; ofs <=$@ size ]
+    Typed.conj [ Usize.(0s) <=$@ ofs; ofs <=$@ size ]
 
-  let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8))
-      ({ ptr; _ } as fptr) off =
+  let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8)) ~signed
+      ({ ptr; _ } as fptr) off_by =
     let* size = Layout.size_of_s ty in
-    let off = size *@ off in
-    let ptr = Typed.Ptr.add_ofs ptr off in
+    let loc, off = Typed.Ptr.decompose ptr in
+    let ( *? ), ( +? ) =
+      if signed then (( *$?@ ), ( +$?@ )) else (( *?@ ), ( +?@ ))
+    in
+    let off_by, off_by_ovf = size *? off_by in
+    let off, off_ovf = off +? off_by in
+    let ptr = Typed.Ptr.mk loc off in
     let ptr = { fptr with ptr } in
     if check then
-      if%sat [@lname "Ptr ok"] [@rname "Ptr dangling"]
-        off ==@ Typed.BitVec.usizei 0 ||@ constraints ptr
-      then Result.ok ptr
-      else Result.error `UBDanglingPointer
+      let++ () =
+        assert_or_error
+          (off_by
+          ==@ Usize.(0s)
+          ||@ ((not off_by_ovf) &&@ not off_ovf &&@ constraints ptr))
+          `UBDanglingPointer
+      in
+      ptr
     else Result.ok ptr
 
   let project ty kind field ptr =
@@ -128,7 +138,7 @@ module ArithPtr : S with type t = arithptr_t = struct
       | ProjAdt (_, None) | ProjTuple _ -> layout.fields
     in
     let off = Layout.Fields_shape.offset_of field fields in
-    offset ptr (Typed.BitVec.usizei off)
+    offset ~signed:false ptr (Typed.BitVec.usizei off)
 
   module ValMap = Map.Make (struct
     type t = T.sloc Typed.t
@@ -147,19 +157,18 @@ module ArithPtr : S with type t = arithptr_t = struct
        base is distinct from all other decayed pointers' bases... *)
     let loc, ofs = Typed.Ptr.decompose ptr in
     match ValMap.find_opt loc !decayed_vars with
-    | Some loc_int -> return (loc_int +@ ofs)
+    | Some loc_int -> return (loc_int +!@ ofs)
     | None ->
-        let zero = Typed.BitVec.usizei 0 in
         let+ loc_int =
-          if%sat Typed.Ptr.is_null_loc loc then return zero
+          if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
           else
             let* loc_int = nondet (Typed.t_usize ()) in
             let isize_max = Layout.max_value_z (TInt Isize) in
             let constrs =
               [
-                loc_int %@ align ==@ zero;
-                zero <@ loc_int;
-                loc_int <@ Typed.BitVec.usize isize_max -@ size;
+                (loc_int %@ align ==@ Usize.(0s));
+                Usize.(0s) <@ loc_int;
+                loc_int <@ Typed.BitVec.usize isize_max -!@ size;
               ]
             in
             let+ () = Rustsymex.assume constrs in
@@ -167,18 +176,18 @@ module ArithPtr : S with type t = arithptr_t = struct
         in
         L.debug (fun m -> m "Decayed %a to %a" Typed.ppa loc Typed.ppa loc_int);
         decayed_vars := ValMap.add loc loc_int !decayed_vars;
-        loc_int +@ ofs
+        loc_int +!@ ofs
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
     if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
-      return (Typed.Ptr.ofs ptr1 -@ Typed.Ptr.ofs ptr2)
+      return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
     else
       let* ptr1 = decay p1 in
       let+ ptr2 = decay p2 in
-      ptr1 -@ ptr2
+      ptr1 -!@ ptr2
 
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
-  let allocation_info { size; align; _ } = (size, align)
+  let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
 
   let iter_vars { ptr; align; size; tag = _ } f =
     Typed.iter_vars ptr f;

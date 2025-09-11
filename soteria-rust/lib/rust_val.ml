@@ -62,6 +62,14 @@ let as_ptr = function
       Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a"
         ppa_rust_val v
 
+let as_ptr_or ~make = function
+  | Ptr ptr -> ptr
+  | Base v -> (make @@ Typed.cast_i Usize v, None)
+  | v ->
+      Fmt.failwith
+        "Unexpected rust_val kind, expected a pointer or base, got: %a"
+        ppa_rust_val v
+
 let as_base_f ty = function
   | Base v -> Typed.cast_f ty v
   | v ->

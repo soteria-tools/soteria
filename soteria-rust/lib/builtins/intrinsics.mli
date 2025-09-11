@@ -6,15 +6,25 @@ open Rustsymex
 
 module M : (State : State_intf.S) -> sig
   type rust_val := State.Sptr.t Rust_val.t
+  type full_ptr := State.Sptr.t Rust_val.full_ptr
 
-  type ret :=
-    (rust_val * State.t, Error.t State.err * State.t, State.serialized) Result.t
+  type 'a ret :=
+    unit ->
+    State.t ->
+    ( 'a * unit * State.t,
+      Error.t State.err * State.t,
+      State.serialized )
+    Result.t
 
   type fun_exec :=
     UllbcAst.fun_decl ->
-    args:rust_val list ->
+    rust_val list ->
+    unit ->
     State.t ->
-    (rust_val * State.t, Error.t State.err * State.t, State.serialized) Result.t
+    ( rust_val * unit * State.t,
+      Error.t State.err * State.t,
+      State.serialized )
+    Result.t
 
   (** {@markdown[
         Aborts the execution of the process.
@@ -33,7 +43,7 @@ module M : (State : State_intf.S) -> sig
          process will probably terminate with a signal like `SIGABRT`, `SIGILL`, `SIGTRAP`, `SIGSEGV` or
          `SIGBUS`.  The precise behavior is not guaranteed and not stable.
       ]} *)
-  val abort : State.t -> ret
+  val abort : unit ret
 
   (** {@markdown[
         Performs checked integer addition.
@@ -47,8 +57,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `overflowing_add` method. For example,
          [`u32::overflowing_add`]
       ]} *)
-  val add_with_overflow :
-    t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val add_with_overflow : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Lowers in MIR to `Rvalue::Aggregate` with `AggregateKind::RawPtr`.
@@ -63,8 +72,7 @@ module M : (State : State_intf.S) -> sig
     m:Types.ty ->
     data:rust_val ->
     meta:rust_val ->
-    State.t ->
-    ret
+    rust_val ret
 
   (** {@markdown[
         The minimum alignment of a type.
@@ -76,7 +84,7 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`align_of`].
       ]} *)
-  val align_of : t:Types.ty -> State.t -> ret
+  val align_of : t:Types.ty -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         The required alignment of the referenced value.
@@ -87,7 +95,7 @@ module M : (State : State_intf.S) -> sig
 
          See [`crate::mem::align_of_val_raw`] for safety conditions.
       ]} *)
-  val align_of_val : t:Types.ty -> ptr:rust_val -> State.t -> ret
+  val align_of_val : t:Types.ty -> ptr:full_ptr -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Calculates the offset from a pointer, potentially wrapping.
@@ -105,7 +113,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is [`pointer::wrapping_offset`].
       ]} *)
   val arith_offset :
-    t:Types.ty -> dst:rust_val -> offset:rust_val -> State.t -> ret
+    t:Types.ty ->
+    dst:full_ptr ->
+    offset:[< Typed.T.sint ] Typed.t ->
+    full_ptr ret
 
   (** {@markdown[
         A guard for unsafe functions that cannot ever be executed if `T` is uninhabited:
@@ -114,7 +125,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val assert_inhabited : t:Types.ty -> State.t -> ret
+  val assert_inhabited : t:Types.ty -> unit ret
 
   (** {@markdown[
         A guard for `std::mem::uninitialized`. This will statically either panic, or do nothing. It does
@@ -123,7 +134,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val assert_mem_uninitialized_valid : t:Types.ty -> State.t -> ret
+  val assert_mem_uninitialized_valid : t:Types.ty -> unit ret
 
   (** {@markdown[
         A guard for unsafe functions that cannot ever be executed if `T` does not permit
@@ -133,7 +144,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val assert_zero_valid : t:Types.ty -> State.t -> ret
+  val assert_zero_valid : t:Types.ty -> unit ret
 
   (** {@markdown[
         Informs the optimizer that a condition is always true.
@@ -147,7 +158,7 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`core::hint::assert_unchecked`].
       ]} *)
-  val assume : b:rust_val -> State.t -> ret
+  val assume : b:[< Typed.T.sbool ] Typed.t -> unit ret
 
   (** {@markdown[
         Reverses the bits in an integer type `T`.
@@ -161,21 +172,21 @@ module M : (State : State_intf.S) -> sig
          primitives via the `reverse_bits` method. For example,
          [`u32::reverse_bits`]
       ]} *)
-  val bitreverse : t:Types.ty -> x:rust_val -> State.t -> ret
+  val bitreverse : t:Types.ty -> x:rust_val -> rust_val ret
 
   (** {@markdown[
         See documentation of [`std::hint::black_box`] for details.
 
          [`std::hint::black_box`]: crate::hint::black_box
       ]} *)
-  val black_box : t:Types.ty -> dummy:rust_val -> State.t -> ret
+  val black_box : t:Types.ty -> dummy:rust_val -> rust_val ret
 
   (** {@markdown[
         Executes a breakpoint trap, for inspection by a debugger.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val breakpoint : State.t -> ret
+  val breakpoint : unit ret
 
   (** {@markdown[
         Reverses the bytes in an integer type `T`.
@@ -189,7 +200,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `swap_bytes` method. For example,
          [`u32::swap_bytes`]
       ]} *)
-  val bswap : t:Types.ty -> x:rust_val -> State.t -> ret
+  val bswap : t:Types.ty -> x:rust_val -> rust_val ret
 
   (** {@markdown[
         Gets a reference to a static `Location` indicating where it was called.
@@ -201,7 +212,7 @@ module M : (State : State_intf.S) -> sig
 
          Consider using [`core::panic::Location::caller`] instead.
       ]} *)
-  val caller_location : State.t -> ret
+  val caller_location : full_ptr ret
 
   (** {@markdown[
         Performs full-width multiplication and addition with a carry:
@@ -226,8 +237,7 @@ module M : (State : State_intf.S) -> sig
     multiplicand:rust_val ->
     addend:rust_val ->
     carry:rust_val ->
-    State.t ->
-    ret
+    rust_val ret
 
   (** {@markdown[
         Rust's "try catch" construct for unwinding. Invokes the function pointer `try_fn` with the
@@ -251,10 +261,9 @@ module M : (State : State_intf.S) -> sig
   val catch_unwind :
     fun_exec ->
     _try_fn:rust_val ->
-    _data:rust_val ->
+    _data:full_ptr ->
     _catch_fn:rust_val ->
-    State.t ->
-    ret
+    Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Returns the smallest integer greater than or equal to an `f128`.
@@ -262,7 +271,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::ceil`](../../std/primitive.f128.html#method.ceil)
       ]} *)
-  val ceilf128 : x:rust_val -> State.t -> ret
+  val ceilf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the smallest integer greater than or equal to an `f16`.
@@ -270,7 +279,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::ceil`](../../std/primitive.f16.html#method.ceil)
       ]} *)
-  val ceilf16 : x:rust_val -> State.t -> ret
+  val ceilf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the smallest integer greater than or equal to an `f32`.
@@ -278,7 +287,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::ceil`](../../std/primitive.f32.html#method.ceil)
       ]} *)
-  val ceilf32 : x:rust_val -> State.t -> ret
+  val ceilf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the smallest integer greater than or equal to an `f64`.
@@ -286,7 +295,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::ceil`](../../std/primitive.f64.html#method.ceil)
       ]} *)
-  val ceilf64 : x:rust_val -> State.t -> ret
+  val ceilf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Hints to the compiler that current code path is cold.
@@ -298,7 +307,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val cold_path : State.t -> ret
+  val cold_path : unit ret
 
   (** {@markdown[
         Lexicographically compare `[left, left + bytes)` and `[right, right + bytes)`
@@ -317,7 +326,10 @@ module M : (State : State_intf.S) -> sig
          [valid]: crate::ptr#safety
       ]} *)
   val compare_bytes :
-    left:rust_val -> right:rust_val -> bytes:rust_val -> State.t -> ret
+    left:full_ptr ->
+    right:full_ptr ->
+    bytes:[< Typed.T.sint ] Typed.t ->
+    Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Deallocates a memory which allocated by `intrinsics::const_allocate` at compile time.
@@ -332,7 +344,10 @@ module M : (State : State_intf.S) -> sig
          - If the `ptr` is pointing to a local variable, this intrinsic doesn't deallocate it.
       ]} *)
   val const_deallocate :
-    _ptr:rust_val -> _size:rust_val -> _align:rust_val -> State.t -> ret
+    _ptr:full_ptr ->
+    _size:[< Typed.T.sint ] Typed.t ->
+    _align:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         Selects which function to call depending on the context.
@@ -396,8 +411,7 @@ module M : (State : State_intf.S) -> sig
     _arg:rust_val ->
     _called_in_const:rust_val ->
     _called_at_rt:rust_val ->
-    State.t ->
-    ret
+    rust_val ret
 
   (** {@markdown[
         Check if the post-condition `cond` has been met.
@@ -412,8 +426,7 @@ module M : (State : State_intf.S) -> sig
     t_ret:Types.ty ->
     cond:rust_val ->
     ret:rust_val ->
-    State.t ->
-    ret
+    rust_val ret
 
   (** {@markdown[
         Check if the pre-condition `cond` has been met.
@@ -423,7 +436,7 @@ module M : (State : State_intf.S) -> sig
 
          Note that this function is a no-op during constant evaluation.
       ]} *)
-  val contract_check_requires : c:Types.ty -> arg1:rust_val -> State.t -> ret
+  val contract_check_requires : c:Types.ty -> arg1:rust_val -> unit ret
 
   (** {@markdown[
         Returns whether we should perform contract-checking at runtime.
@@ -433,29 +446,27 @@ module M : (State : State_intf.S) -> sig
          checking is turned on, so that we can specify contracts in libstd
          and let an end user opt into turning them on.
       ]} *)
-  val contract_checks : State.t -> ret
+  val contract_checks : Typed.T.sbool Typed.t ret
 
   (** {@markdown[
         This is an accidentally-stable alias to [`ptr::copy`]; use that instead.
       ]} *)
   val copy :
     t:Types.ty ->
-    src:rust_val ->
-    dst:rust_val ->
-    count:rust_val ->
-    State.t ->
-    ret
+    src:full_ptr ->
+    dst:full_ptr ->
+    count:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         This is an accidentally-stable alias to [`ptr::copy_nonoverlapping`]; use that instead.
       ]} *)
   val copy_nonoverlapping :
     t:Types.ty ->
-    src:rust_val ->
-    dst:rust_val ->
-    count:rust_val ->
-    State.t ->
-    ret
+    src:full_ptr ->
+    dst:full_ptr ->
+    count:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         Copies the sign from `y` to `x` for `f128` values.
@@ -463,7 +474,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::copysign`](../../std/primitive.f128.html#method.copysign)
       ]} *)
-  val copysignf128 : x:rust_val -> y:rust_val -> State.t -> ret
+  val copysignf128 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Copies the sign from `y` to `x` for `f16` values.
@@ -471,7 +485,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::copysign`](../../std/primitive.f16.html#method.copysign)
       ]} *)
-  val copysignf16 : x:rust_val -> y:rust_val -> State.t -> ret
+  val copysignf16 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Copies the sign from `y` to `x` for `f32` values.
@@ -479,7 +496,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::copysign`](../../std/primitive.f32.html#method.copysign)
       ]} *)
-  val copysignf32 : x:rust_val -> y:rust_val -> State.t -> ret
+  val copysignf32 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Copies the sign from `y` to `x` for `f64` values.
@@ -487,7 +507,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::copysign`](../../std/primitive.f64.html#method.copysign)
       ]} *)
-  val copysignf64 : x:rust_val -> y:rust_val -> State.t -> ret
+  val copysignf64 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the cosine of an `f128`.
@@ -495,7 +518,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::cos`](../../std/primitive.f128.html#method.cos)
       ]} *)
-  val cosf128 : x:rust_val -> State.t -> ret
+  val cosf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the cosine of an `f16`.
@@ -503,7 +526,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::cos`](../../std/primitive.f16.html#method.cos)
       ]} *)
-  val cosf16 : x:rust_val -> State.t -> ret
+  val cosf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the cosine of an `f32`.
@@ -511,7 +534,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::cos`](../../std/primitive.f32.html#method.cos)
       ]} *)
-  val cosf32 : x:rust_val -> State.t -> ret
+  val cosf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the cosine of an `f64`.
@@ -519,7 +542,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::cos`](../../std/primitive.f64.html#method.cos)
       ]} *)
-  val cosf64 : x:rust_val -> State.t -> ret
+  val cosf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the number of leading unset bits (zeroes) in an integer type `T`.
@@ -559,7 +582,7 @@ module M : (State : State_intf.S) -> sig
          assert_eq!(num_leading, 16);
          ```
       ]} *)
-  val ctlz : t:Types.ty -> x:rust_val -> State.t -> ret
+  val ctlz : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Like `ctlz`, but extra-unsafe as it returns `undef` when
@@ -580,7 +603,7 @@ module M : (State : State_intf.S) -> sig
          assert_eq!(num_leading, 3);
          ```
       ]} *)
-  val ctlz_nonzero : t:Types.ty -> x:rust_val -> State.t -> ret
+  val ctlz_nonzero : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Returns the number of bits set in an integer type `T`
@@ -594,7 +617,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `count_ones` method. For example,
          [`u32::count_ones`]
       ]} *)
-  val ctpop : t:Types.ty -> x:rust_val -> State.t -> ret
+  val ctpop : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Returns the number of trailing unset bits (zeroes) in an integer type `T`.
@@ -634,7 +657,7 @@ module M : (State : State_intf.S) -> sig
          assert_eq!(num_trailing, 16);
          ```
       ]} *)
-  val cttz : t:Types.ty -> x:rust_val -> State.t -> ret
+  val cttz : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Like `cttz`, but extra-unsafe as it returns `undef` when
@@ -655,7 +678,7 @@ module M : (State : State_intf.S) -> sig
          assert_eq!(num_trailing, 3);
          ```
       ]} *)
-  val cttz_nonzero : t:Types.ty -> x:rust_val -> State.t -> ret
+  val cttz_nonzero : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Returns the value of the discriminant for the variant in 'v';
@@ -668,7 +691,7 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`core::mem::discriminant`].
       ]} *)
-  val discriminant_value : t:Types.ty -> v:rust_val -> State.t -> ret
+  val discriminant_value : t:Types.ty -> v:full_ptr -> rust_val ret
 
   (** {@markdown[
         Combine two values which have no bits in common.
@@ -682,7 +705,7 @@ module M : (State : State_intf.S) -> sig
 
          Otherwise it's immediate UB.
       ]} *)
-  val disjoint_bitor : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val disjoint_bitor : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Performs an exact division, resulting in undefined behavior where
@@ -690,7 +713,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val exact_div : t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val exact_div : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns 2 raised to the power of an `f128`.
@@ -698,7 +721,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::exp2`](../../std/primitive.f128.html#method.exp2)
       ]} *)
-  val exp2f128 : x:rust_val -> State.t -> ret
+  val exp2f128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns 2 raised to the power of an `f16`.
@@ -706,7 +729,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::exp2`](../../std/primitive.f16.html#method.exp2)
       ]} *)
-  val exp2f16 : x:rust_val -> State.t -> ret
+  val exp2f16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns 2 raised to the power of an `f32`.
@@ -714,7 +737,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::exp2`](../../std/primitive.f32.html#method.exp2)
       ]} *)
-  val exp2f32 : x:rust_val -> State.t -> ret
+  val exp2f32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns 2 raised to the power of an `f64`.
@@ -722,7 +745,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::exp2`](../../std/primitive.f64.html#method.exp2)
       ]} *)
-  val exp2f64 : x:rust_val -> State.t -> ret
+  val exp2f64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the exponential of an `f128`.
@@ -730,7 +753,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::exp`](../../std/primitive.f128.html#method.exp)
       ]} *)
-  val expf128 : x:rust_val -> State.t -> ret
+  val expf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the exponential of an `f16`.
@@ -738,7 +761,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::exp`](../../std/primitive.f16.html#method.exp)
       ]} *)
-  val expf16 : x:rust_val -> State.t -> ret
+  val expf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the exponential of an `f32`.
@@ -746,7 +769,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::exp`](../../std/primitive.f32.html#method.exp)
       ]} *)
-  val expf32 : x:rust_val -> State.t -> ret
+  val expf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the exponential of an `f64`.
@@ -754,7 +777,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::exp`](../../std/primitive.f64.html#method.exp)
       ]} *)
-  val expf64 : x:rust_val -> State.t -> ret
+  val expf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the absolute value of an `f128`.
@@ -762,7 +785,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::abs`](../../std/primitive.f128.html#method.abs)
       ]} *)
-  val fabsf128 : x:rust_val -> State.t -> ret
+  val fabsf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the absolute value of an `f16`.
@@ -770,7 +793,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::abs`](../../std/primitive.f16.html#method.abs)
       ]} *)
-  val fabsf16 : x:rust_val -> State.t -> ret
+  val fabsf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the absolute value of an `f32`.
@@ -778,7 +801,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::abs`](../../std/primitive.f32.html#method.abs)
       ]} *)
-  val fabsf32 : x:rust_val -> State.t -> ret
+  val fabsf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the absolute value of an `f64`.
@@ -786,14 +809,14 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::abs`](../../std/primitive.f64.html#method.abs)
       ]} *)
-  val fabsf64 : x:rust_val -> State.t -> ret
+  val fabsf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Float addition that allows optimizations based on algebraic rules.
 
          Stabilized as [`f16::algebraic_add`], [`f32::algebraic_add`], [`f64::algebraic_add`] and [`f128::algebraic_add`].
       ]} *)
-  val fadd_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val fadd_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Float addition that allows optimizations based on algebraic rules.
@@ -801,14 +824,14 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val fadd_fast : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val fadd_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Float division that allows optimizations based on algebraic rules.
 
          Stabilized as [`f16::algebraic_div`], [`f32::algebraic_div`], [`f64::algebraic_div`] and [`f128::algebraic_div`].
       ]} *)
-  val fdiv_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val fdiv_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Float division that allows optimizations based on algebraic rules.
@@ -816,7 +839,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val fdiv_fast : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val fdiv_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Converts with LLVM’s fptoui/fptosi, which may return undef for values out of range
@@ -825,7 +848,7 @@ module M : (State : State_intf.S) -> sig
          Stabilized as [`f32::to_int_unchecked`] and [`f64::to_int_unchecked`].
       ]} *)
   val float_to_int_unchecked :
-    float:Types.ty -> int:Types.ty -> value:rust_val -> State.t -> ret
+    float:Types.ty -> int:Types.ty -> value:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns the largest integer less than or equal to an `f128`.
@@ -833,7 +856,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::floor`](../../std/primitive.f128.html#method.floor)
       ]} *)
-  val floorf128 : x:rust_val -> State.t -> ret
+  val floorf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the largest integer less than or equal to an `f16`.
@@ -841,7 +864,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::floor`](../../std/primitive.f16.html#method.floor)
       ]} *)
-  val floorf16 : x:rust_val -> State.t -> ret
+  val floorf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the largest integer less than or equal to an `f32`.
@@ -849,7 +872,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::floor`](../../std/primitive.f32.html#method.floor)
       ]} *)
-  val floorf32 : x:rust_val -> State.t -> ret
+  val floorf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the largest integer less than or equal to an `f64`.
@@ -857,7 +880,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::floor`](../../std/primitive.f64.html#method.floor)
       ]} *)
-  val floorf64 : x:rust_val -> State.t -> ret
+  val floorf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns `a * b + c` for `f128` values.
@@ -865,7 +888,11 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::mul_add`](../../std/primitive.f128.html#method.mul_add)
       ]} *)
-  val fmaf128 : a:rust_val -> b:rust_val -> c:rust_val -> State.t -> ret
+  val fmaf128 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    b:[< Typed.T.sfloat ] Typed.t ->
+    c:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns `a * b + c` for `f16` values.
@@ -873,7 +900,11 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::mul_add`](../../std/primitive.f16.html#method.mul_add)
       ]} *)
-  val fmaf16 : a:rust_val -> b:rust_val -> c:rust_val -> State.t -> ret
+  val fmaf16 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    b:[< Typed.T.sfloat ] Typed.t ->
+    c:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns `a * b + c` for `f32` values.
@@ -881,7 +912,11 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::mul_add`](../../std/primitive.f32.html#method.mul_add)
       ]} *)
-  val fmaf32 : a:rust_val -> b:rust_val -> c:rust_val -> State.t -> ret
+  val fmaf32 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    b:[< Typed.T.sfloat ] Typed.t ->
+    c:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns `a * b + c` for `f64` values.
@@ -889,14 +924,18 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::mul_add`](../../std/primitive.f64.html#method.mul_add)
       ]} *)
-  val fmaf64 : a:rust_val -> b:rust_val -> c:rust_val -> State.t -> ret
+  val fmaf64 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    b:[< Typed.T.sfloat ] Typed.t ->
+    c:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Float multiplication that allows optimizations based on algebraic rules.
 
          Stabilized as [`f16::algebraic_mul`], [`f32::algebraic_mul`], [`f64::algebraic_mul`] and [`f128::algebraic_mul`].
       ]} *)
-  val fmul_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val fmul_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Float multiplication that allows optimizations based on algebraic rules.
@@ -904,7 +943,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val fmul_fast : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val fmul_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns `a * b + c` for `f128` values, non-deterministically executing
@@ -918,7 +957,11 @@ module M : (State : State_intf.S) -> sig
          is selected, and that may depend on optimization level and context, for
          example.
       ]} *)
-  val fmuladdf128 : a:rust_val -> b:rust_val -> c:rust_val -> State.t -> ret
+  val fmuladdf128 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    b:[< Typed.T.sfloat ] Typed.t ->
+    c:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns `a * b + c` for `f16` values, non-deterministically executing
@@ -932,7 +975,11 @@ module M : (State : State_intf.S) -> sig
          is selected, and that may depend on optimization level and context, for
          example.
       ]} *)
-  val fmuladdf16 : a:rust_val -> b:rust_val -> c:rust_val -> State.t -> ret
+  val fmuladdf16 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    b:[< Typed.T.sfloat ] Typed.t ->
+    c:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns `a * b + c` for `f32` values, non-deterministically executing
@@ -946,7 +993,11 @@ module M : (State : State_intf.S) -> sig
          is selected, and that may depend on optimization level and context, for
          example.
       ]} *)
-  val fmuladdf32 : a:rust_val -> b:rust_val -> c:rust_val -> State.t -> ret
+  val fmuladdf32 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    b:[< Typed.T.sfloat ] Typed.t ->
+    c:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns `a * b + c` for `f64` values, non-deterministically executing
@@ -960,7 +1011,11 @@ module M : (State : State_intf.S) -> sig
          is selected, and that may depend on optimization level and context, for
          example.
       ]} *)
-  val fmuladdf64 : a:rust_val -> b:rust_val -> c:rust_val -> State.t -> ret
+  val fmuladdf64 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    b:[< Typed.T.sfloat ] Typed.t ->
+    c:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Moves a value out of scope without running drop glue.
@@ -973,14 +1028,14 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val forget : t:Types.ty -> arg:rust_val -> State.t -> ret
+  val forget : t:Types.ty -> arg:rust_val -> unit ret
 
   (** {@markdown[
         Float remainder that allows optimizations based on algebraic rules.
 
          Stabilized as [`f16::algebraic_rem`], [`f32::algebraic_rem`], [`f64::algebraic_rem`] and [`f128::algebraic_rem`].
       ]} *)
-  val frem_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val frem_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Float remainder that allows optimizations based on algebraic rules.
@@ -988,14 +1043,14 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val frem_fast : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val frem_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Float subtraction that allows optimizations based on algebraic rules.
 
          Stabilized as [`f16::algebraic_sub`], [`f32::algebraic_sub`], [`f64::algebraic_sub`] and [`f128::algebraic_sub`].
       ]} *)
-  val fsub_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val fsub_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Float subtraction that allows optimizations based on algebraic rules.
@@ -1003,7 +1058,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val fsub_fast : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val fsub_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns whether the argument's value is statically known at
@@ -1081,7 +1136,8 @@ module M : (State : State_intf.S) -> sig
          # _ = bar(&5_i32);
          ```
       ]} *)
-  val is_val_statically_known : t:Types.ty -> _arg:rust_val -> State.t -> ret
+  val is_val_statically_known :
+    t:Types.ty -> _arg:rust_val -> Typed.T.sbool Typed.t ret
 
   (** {@markdown[
         Hints to the compiler that branch condition is likely to be true.
@@ -1096,7 +1152,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val likely : b:rust_val -> State.t -> ret
+  val likely : b:[< Typed.T.sbool ] Typed.t -> Typed.T.sbool Typed.t ret
 
   (** {@markdown[
         Returns the base 10 logarithm of an `f128`.
@@ -1104,7 +1160,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::log10`](../../std/primitive.f128.html#method.log10)
       ]} *)
-  val log10f128 : x:rust_val -> State.t -> ret
+  val log10f128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the base 10 logarithm of an `f16`.
@@ -1112,7 +1168,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::log10`](../../std/primitive.f16.html#method.log10)
       ]} *)
-  val log10f16 : x:rust_val -> State.t -> ret
+  val log10f16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the base 10 logarithm of an `f32`.
@@ -1120,7 +1176,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::log10`](../../std/primitive.f32.html#method.log10)
       ]} *)
-  val log10f32 : x:rust_val -> State.t -> ret
+  val log10f32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the base 10 logarithm of an `f64`.
@@ -1128,7 +1184,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::log10`](../../std/primitive.f64.html#method.log10)
       ]} *)
-  val log10f64 : x:rust_val -> State.t -> ret
+  val log10f64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the base 2 logarithm of an `f128`.
@@ -1136,7 +1192,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::log2`](../../std/primitive.f128.html#method.log2)
       ]} *)
-  val log2f128 : x:rust_val -> State.t -> ret
+  val log2f128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the base 2 logarithm of an `f16`.
@@ -1144,7 +1200,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::log2`](../../std/primitive.f16.html#method.log2)
       ]} *)
-  val log2f16 : x:rust_val -> State.t -> ret
+  val log2f16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the base 2 logarithm of an `f32`.
@@ -1152,7 +1208,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::log2`](../../std/primitive.f32.html#method.log2)
       ]} *)
-  val log2f32 : x:rust_val -> State.t -> ret
+  val log2f32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the base 2 logarithm of an `f64`.
@@ -1160,7 +1216,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::log2`](../../std/primitive.f64.html#method.log2)
       ]} *)
-  val log2f64 : x:rust_val -> State.t -> ret
+  val log2f64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the natural logarithm of an `f128`.
@@ -1168,7 +1224,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::ln`](../../std/primitive.f128.html#method.ln)
       ]} *)
-  val logf128 : x:rust_val -> State.t -> ret
+  val logf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the natural logarithm of an `f16`.
@@ -1176,7 +1232,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::ln`](../../std/primitive.f16.html#method.ln)
       ]} *)
-  val logf16 : x:rust_val -> State.t -> ret
+  val logf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the natural logarithm of an `f32`.
@@ -1184,7 +1240,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::ln`](../../std/primitive.f32.html#method.ln)
       ]} *)
-  val logf32 : x:rust_val -> State.t -> ret
+  val logf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the natural logarithm of an `f64`.
@@ -1192,7 +1248,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::ln`](../../std/primitive.f64.html#method.ln)
       ]} *)
-  val logf64 : x:rust_val -> State.t -> ret
+  val logf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the maximum (IEEE 754-2019 maximum) of two `f128` values.
@@ -1202,7 +1258,10 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val maximumf128 : x:rust_val -> y:rust_val -> State.t -> ret
+  val maximumf128 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the maximum (IEEE 754-2019 maximum) of two `f16` values.
@@ -1212,7 +1271,10 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val maximumf16 : x:rust_val -> y:rust_val -> State.t -> ret
+  val maximumf16 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the maximum (IEEE 754-2019 maximum) of two `f32` values.
@@ -1222,7 +1284,10 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val maximumf32 : x:rust_val -> y:rust_val -> State.t -> ret
+  val maximumf32 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the maximum (IEEE 754-2019 maximum) of two `f64` values.
@@ -1232,7 +1297,10 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val maximumf64 : x:rust_val -> y:rust_val -> State.t -> ret
+  val maximumf64 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the maximum (IEEE 754-2008 maxNum) of two `f128` values.
@@ -1245,7 +1313,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::max`]
       ]} *)
-  val maxnumf128 : x:rust_val -> y:rust_val -> State.t -> ret
+  val maxnumf128 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the maximum (IEEE 754-2008 maxNum) of two `f16` values.
@@ -1258,7 +1329,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::max`]
       ]} *)
-  val maxnumf16 : x:rust_val -> y:rust_val -> State.t -> ret
+  val maxnumf16 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the maximum (IEEE 754-2008 maxNum) of two `f32` values.
@@ -1271,7 +1345,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::max`]
       ]} *)
-  val maxnumf32 : x:rust_val -> y:rust_val -> State.t -> ret
+  val maxnumf32 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the maximum (IEEE 754-2008 maxNum) of two `f64` values.
@@ -1284,7 +1361,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::max`]
       ]} *)
-  val maxnumf64 : x:rust_val -> y:rust_val -> State.t -> ret
+  val maxnumf64 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the minimum (IEEE 754-2019 minimum) of two `f128` values.
@@ -1294,7 +1374,10 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val minimumf128 : x:rust_val -> y:rust_val -> State.t -> ret
+  val minimumf128 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the minimum (IEEE 754-2019 minimum) of two `f16` values.
@@ -1304,7 +1387,10 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val minimumf16 : x:rust_val -> y:rust_val -> State.t -> ret
+  val minimumf16 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the minimum (IEEE 754-2019 minimum) of two `f32` values.
@@ -1314,7 +1400,10 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val minimumf32 : x:rust_val -> y:rust_val -> State.t -> ret
+  val minimumf32 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the minimum (IEEE 754-2019 minimum) of two `f64` values.
@@ -1324,7 +1413,10 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
       ]} *)
-  val minimumf64 : x:rust_val -> y:rust_val -> State.t -> ret
+  val minimumf64 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the minimum (IEEE 754-2008 minNum) of two `f128` values.
@@ -1337,7 +1429,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::min`]
       ]} *)
-  val minnumf128 : x:rust_val -> y:rust_val -> State.t -> ret
+  val minnumf128 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the minimum (IEEE 754-2008 minNum) of two `f16` values.
@@ -1350,7 +1445,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::min`]
       ]} *)
-  val minnumf16 : x:rust_val -> y:rust_val -> State.t -> ret
+  val minnumf16 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the minimum (IEEE 754-2008 minNum) of two `f32` values.
@@ -1363,7 +1461,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::min`]
       ]} *)
-  val minnumf32 : x:rust_val -> y:rust_val -> State.t -> ret
+  val minnumf32 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the minimum (IEEE 754-2008 minNum) of two `f64` values.
@@ -1376,7 +1477,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::min`]
       ]} *)
-  val minnumf64 : x:rust_val -> y:rust_val -> State.t -> ret
+  val minnumf64 :
+    x:[< Typed.T.sfloat ] Typed.t ->
+    y:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Performs checked integer multiplication
@@ -1390,8 +1494,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `overflowing_mul` method. For example,
          [`u32::overflowing_mul`]
       ]} *)
-  val mul_with_overflow :
-    t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val mul_with_overflow : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns `true` if the actual type given as `T` requires drop
@@ -1408,7 +1511,7 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`mem::needs_drop`](crate::mem::needs_drop).
       ]} *)
-  val needs_drop : t:Types.ty -> State.t -> ret
+  val needs_drop : t:Types.ty -> Typed.T.sbool Typed.t ret
 
   (** {@markdown[
         Emits a `nontemporal` store, which gives a hint to the CPU that the data should not be held
@@ -1419,7 +1522,7 @@ module M : (State : State_intf.S) -> sig
          in ways that are not allowed for regular writes).
       ]} *)
   val nontemporal_store :
-    t:Types.ty -> ptr:rust_val -> val_:rust_val -> State.t -> ret
+    t:Types.ty -> ptr:full_ptr -> val_:rust_val -> unit ret
 
   (** {@markdown[
         Calculates the offset from a pointer.
@@ -1444,8 +1547,7 @@ module M : (State : State_intf.S) -> sig
     delta:Types.ty ->
     dst:rust_val ->
     offset:rust_val ->
-    State.t ->
-    ret
+    rust_val ret
 
   (** {@markdown[
         Raises an `f128` to an `f128` power.
@@ -1453,7 +1555,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::powf`](../../std/primitive.f128.html#method.powf)
       ]} *)
-  val powf128 : a:rust_val -> x:rust_val -> State.t -> ret
+  val powf128 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    x:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Raises an `f16` to an `f16` power.
@@ -1461,7 +1566,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::powf`](../../std/primitive.f16.html#method.powf)
       ]} *)
-  val powf16 : a:rust_val -> x:rust_val -> State.t -> ret
+  val powf16 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    x:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Raises an `f32` to an `f32` power.
@@ -1469,7 +1577,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::powf`](../../std/primitive.f32.html#method.powf)
       ]} *)
-  val powf32 : a:rust_val -> x:rust_val -> State.t -> ret
+  val powf32 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    x:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Raises an `f64` to an `f64` power.
@@ -1477,7 +1588,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::powf`](../../std/primitive.f64.html#method.powf)
       ]} *)
-  val powf64 : a:rust_val -> x:rust_val -> State.t -> ret
+  val powf64 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    x:[< Typed.T.sfloat ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Raises an `f128` to an integer power.
@@ -1485,7 +1599,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::powi`](../../std/primitive.f128.html#method.powi)
       ]} *)
-  val powif128 : a:rust_val -> x:rust_val -> State.t -> ret
+  val powif128 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    x:[< Typed.T.sint ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Raises an `f16` to an integer power.
@@ -1493,7 +1610,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::powi`](../../std/primitive.f16.html#method.powi)
       ]} *)
-  val powif16 : a:rust_val -> x:rust_val -> State.t -> ret
+  val powif16 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    x:[< Typed.T.sint ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Raises an `f32` to an integer power.
@@ -1501,7 +1621,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::powi`](../../std/primitive.f32.html#method.powi)
       ]} *)
-  val powif32 : a:rust_val -> x:rust_val -> State.t -> ret
+  val powif32 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    x:[< Typed.T.sint ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Raises an `f64` to an integer power.
@@ -1509,7 +1632,10 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::powi`](../../std/primitive.f64.html#method.powi)
       ]} *)
-  val powif64 : a:rust_val -> x:rust_val -> State.t -> ret
+  val powif64 :
+    a:[< Typed.T.sfloat ] Typed.t ->
+    x:[< Typed.T.sint ] Typed.t ->
+    Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -1523,7 +1649,10 @@ module M : (State : State_intf.S) -> sig
          This intrinsic does not have a stable counterpart.
       ]} *)
   val prefetch_read_data :
-    t:Types.ty -> data:rust_val -> locality:rust_val -> State.t -> ret
+    t:Types.ty ->
+    data:full_ptr ->
+    locality:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -1537,7 +1666,10 @@ module M : (State : State_intf.S) -> sig
          This intrinsic does not have a stable counterpart.
       ]} *)
   val prefetch_read_instruction :
-    t:Types.ty -> data:rust_val -> locality:rust_val -> State.t -> ret
+    t:Types.ty ->
+    data:full_ptr ->
+    locality:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -1551,7 +1683,10 @@ module M : (State : State_intf.S) -> sig
          This intrinsic does not have a stable counterpart.
       ]} *)
   val prefetch_write_data :
-    t:Types.ty -> data:rust_val -> locality:rust_val -> State.t -> ret
+    t:Types.ty ->
+    data:full_ptr ->
+    locality:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -1565,7 +1700,10 @@ module M : (State : State_intf.S) -> sig
          This intrinsic does not have a stable counterpart.
       ]} *)
   val prefetch_write_instruction :
-    t:Types.ty -> data:rust_val -> locality:rust_val -> State.t -> ret
+    t:Types.ty ->
+    data:full_ptr ->
+    locality:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         See documentation of `<*const T>::guaranteed_eq` for details.
@@ -1574,7 +1712,7 @@ module M : (State : State_intf.S) -> sig
          Returns `0` if the pointers are guaranteed inequal.
       ]} *)
   val ptr_guaranteed_cmp :
-    t:Types.ty -> ptr:rust_val -> other:rust_val -> State.t -> ret
+    t:Types.ty -> ptr:full_ptr -> other:full_ptr -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Masks out bits of the pointer according to a mask.
@@ -1586,26 +1724,27 @@ module M : (State : State_intf.S) -> sig
 
          Consider using [`pointer::mask`] instead.
       ]} *)
-  val ptr_mask : t:Types.ty -> ptr:rust_val -> mask:rust_val -> State.t -> ret
+  val ptr_mask :
+    t:Types.ty -> ptr:full_ptr -> mask:[< Typed.T.sint ] Typed.t -> full_ptr ret
 
   (** {@markdown[
         Lowers in MIR to `Rvalue::UnaryOp` with `UnOp::PtrMetadata`.
 
          This is used to implement functions like `ptr::metadata`.
       ]} *)
-  val ptr_metadata : p:Types.ty -> m:Types.ty -> ptr:rust_val -> State.t -> ret
+  val ptr_metadata : p:Types.ty -> m:Types.ty -> ptr:full_ptr -> rust_val ret
 
   (** {@markdown[
         See documentation of `<*const T>::offset_from` for details.
       ]} *)
   val ptr_offset_from :
-    t:Types.ty -> ptr:rust_val -> base:rust_val -> State.t -> ret
+    t:Types.ty -> ptr:full_ptr -> base:full_ptr -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         See documentation of `<*const T>::offset_from_unsigned` for details.
       ]} *)
   val ptr_offset_from_unsigned :
-    t:Types.ty -> ptr:rust_val -> base:rust_val -> State.t -> ret
+    t:Types.ty -> ptr:full_ptr -> base:full_ptr -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Determines whether the raw bytes of the two values are equal.
@@ -1632,7 +1771,8 @@ module M : (State : State_intf.S) -> sig
          (The implementation is allowed to branch on the results of comparisons,
          which is UB if any of their inputs are `undef`.)
       ]} *)
-  val raw_eq : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val raw_eq :
+    t:Types.ty -> a:full_ptr -> b:full_ptr -> Typed.T.sbool Typed.t ret
 
   (** {@markdown[
         This is an implementation detail of [`crate::ptr::read`] and should
@@ -1642,7 +1782,7 @@ module M : (State : State_intf.S) -> sig
          projections (`read_via_copy(ptr)`, not `read_via_copy( *ptr)`) so that it
          trivially obeys runtime-MIR rules about derefs in operands.
       ]} *)
-  val read_via_copy : t:Types.ty -> ptr:rust_val -> State.t -> ret
+  val read_via_copy : t:Types.ty -> ptr:full_ptr -> rust_val ret
 
   (** {@markdown[
         Performs rotate left.
@@ -1656,7 +1796,8 @@ module M : (State : State_intf.S) -> sig
          primitives via the `rotate_left` method. For example,
          [`u32::rotate_left`]
       ]} *)
-  val rotate_left : t:Types.ty -> x:rust_val -> shift:rust_val -> State.t -> ret
+  val rotate_left :
+    t:Types.ty -> x:rust_val -> shift:[< Typed.T.sint ] Typed.t -> rust_val ret
 
   (** {@markdown[
         Performs rotate right.
@@ -1671,7 +1812,7 @@ module M : (State : State_intf.S) -> sig
          [`u32::rotate_right`]
       ]} *)
   val rotate_right :
-    t:Types.ty -> x:rust_val -> shift:rust_val -> State.t -> ret
+    t:Types.ty -> x:rust_val -> shift:[< Typed.T.sint ] Typed.t -> rust_val ret
 
   (** {@markdown[
         Returns the nearest integer to an `f128`. Rounds half-way cases to the number with an even
@@ -1680,7 +1821,8 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::round_ties_even`](../../std/primitive.f128.html#method.round_ties_even)
       ]} *)
-  val round_ties_even_f128 : x:rust_val -> State.t -> ret
+  val round_ties_even_f128 :
+    x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the nearest integer to an `f16`. Rounds half-way cases to the number with an even
@@ -1689,7 +1831,8 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::round_ties_even`](../../std/primitive.f16.html#method.round_ties_even)
       ]} *)
-  val round_ties_even_f16 : x:rust_val -> State.t -> ret
+  val round_ties_even_f16 :
+    x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the nearest integer to an `f32`. Rounds half-way cases to the number with an even
@@ -1698,7 +1841,8 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::round_ties_even`](../../std/primitive.f32.html#method.round_ties_even)
       ]} *)
-  val round_ties_even_f32 : x:rust_val -> State.t -> ret
+  val round_ties_even_f32 :
+    x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the nearest integer to an `f64`. Rounds half-way cases to the number with an even
@@ -1707,7 +1851,8 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::round_ties_even`](../../std/primitive.f64.html#method.round_ties_even)
       ]} *)
-  val round_ties_even_f64 : x:rust_val -> State.t -> ret
+  val round_ties_even_f64 :
+    x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the nearest integer to an `f128`. Rounds half-way cases away from zero.
@@ -1715,7 +1860,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::round`](../../std/primitive.f128.html#method.round)
       ]} *)
-  val roundf128 : x:rust_val -> State.t -> ret
+  val roundf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the nearest integer to an `f16`. Rounds half-way cases away from zero.
@@ -1723,7 +1868,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::round`](../../std/primitive.f16.html#method.round)
       ]} *)
-  val roundf16 : x:rust_val -> State.t -> ret
+  val roundf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the nearest integer to an `f32`. Rounds half-way cases away from zero.
@@ -1731,7 +1876,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::round`](../../std/primitive.f32.html#method.round)
       ]} *)
-  val roundf32 : x:rust_val -> State.t -> ret
+  val roundf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the nearest integer to an `f64`. Rounds half-way cases away from zero.
@@ -1739,7 +1884,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::round`](../../std/primitive.f64.html#method.round)
       ]} *)
-  val roundf64 : x:rust_val -> State.t -> ret
+  val roundf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Magic intrinsic that derives its meaning from attributes
@@ -1752,7 +1897,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic should not be used outside of the compiler.
       ]} *)
-  val rustc_peek : t:Types.ty -> arg:rust_val -> State.t -> ret
+  val rustc_peek : t:Types.ty -> arg:rust_val -> rust_val ret
 
   (** {@markdown[
         Computes `a + b`, saturating at numeric bounds.
@@ -1766,7 +1911,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `saturating_add` method. For example,
          [`u32::saturating_add`]
       ]} *)
-  val saturating_add : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val saturating_add : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Computes `a - b`, saturating at numeric bounds.
@@ -1780,7 +1925,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `saturating_sub` method. For example,
          [`u32::saturating_sub`]
       ]} *)
-  val saturating_sub : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val saturating_sub : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns either `true_val` or `false_val` depending on condition `b` with a
@@ -1800,11 +1945,10 @@ module M : (State : State_intf.S) -> sig
       ]} *)
   val select_unpredictable :
     t:Types.ty ->
-    b:rust_val ->
+    b:[< Typed.T.sbool ] Typed.t ->
     true_val:rust_val ->
     false_val:rust_val ->
-    State.t ->
-    ret
+    rust_val ret
 
   (** {@markdown[
         Returns the sine of an `f128`.
@@ -1812,7 +1956,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::sin`](../../std/primitive.f128.html#method.sin)
       ]} *)
-  val sinf128 : x:rust_val -> State.t -> ret
+  val sinf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the sine of an `f16`.
@@ -1820,7 +1964,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::sin`](../../std/primitive.f16.html#method.sin)
       ]} *)
-  val sinf16 : x:rust_val -> State.t -> ret
+  val sinf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the sine of an `f32`.
@@ -1828,7 +1972,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::sin`](../../std/primitive.f32.html#method.sin)
       ]} *)
-  val sinf32 : x:rust_val -> State.t -> ret
+  val sinf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the sine of an `f64`.
@@ -1836,7 +1980,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::sin`](../../std/primitive.f64.html#method.sin)
       ]} *)
-  val sinf64 : x:rust_val -> State.t -> ret
+  val sinf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         The size of a type in bytes.
@@ -1851,7 +1995,7 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`size_of`].
       ]} *)
-  val size_of : t:Types.ty -> State.t -> ret
+  val size_of : t:Types.ty -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         The size of the referenced value in bytes.
@@ -1862,7 +2006,7 @@ module M : (State : State_intf.S) -> sig
 
          See [`crate::mem::size_of_val_raw`] for safety conditions.
       ]} *)
-  val size_of_val : t:Types.ty -> ptr:rust_val -> State.t -> ret
+  val size_of_val : t:Types.ty -> ptr:full_ptr -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Projects to the `index`-th element of `slice_ptr`, as the same kind of pointer
@@ -1886,9 +2030,8 @@ module M : (State : State_intf.S) -> sig
     sliceptr:Types.ty ->
     t:Types.ty ->
     slice_ptr:rust_val ->
-    index:rust_val ->
-    State.t ->
-    ret
+    index:[< Typed.T.sint ] Typed.t ->
+    rust_val ret
 
   (** {@markdown[
         Returns the square root of an `f128`
@@ -1896,7 +2039,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::sqrt`](../../std/primitive.f128.html#method.sqrt)
       ]} *)
-  val sqrtf128 : x:rust_val -> State.t -> ret
+  val sqrtf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the square root of an `f16`
@@ -1904,7 +2047,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::sqrt`](../../std/primitive.f16.html#method.sqrt)
       ]} *)
-  val sqrtf16 : x:rust_val -> State.t -> ret
+  val sqrtf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the square root of an `f32`
@@ -1912,7 +2055,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::sqrt`](../../std/primitive.f32.html#method.sqrt)
       ]} *)
-  val sqrtf32 : x:rust_val -> State.t -> ret
+  val sqrtf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the square root of an `f64`
@@ -1920,7 +2063,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::sqrt`](../../std/primitive.f64.html#method.sqrt)
       ]} *)
-  val sqrtf64 : x:rust_val -> State.t -> ret
+  val sqrtf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Performs checked integer subtraction
@@ -1934,8 +2077,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `overflowing_sub` method. For example,
          [`u32::overflowing_sub`]
       ]} *)
-  val sub_with_overflow :
-    t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val sub_with_overflow : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Does a three-way comparison between the two arguments,
@@ -1947,7 +2089,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is [`Ord::cmp`].
       ]} *)
   val three_way_compare :
-    t:Types.ty -> lhs:rust_val -> rhss:rust_val -> State.t -> ret
+    t:Types.ty -> lhs:rust_val -> rhss:rust_val -> rust_val ret
 
   (** {@markdown[
         Reinterprets the bits of a value of one type as another type.
@@ -2236,8 +2378,7 @@ module M : (State : State_intf.S) -> sig
          }
          ```
       ]} *)
-  val transmute :
-    t_src:Types.ty -> dst:Types.ty -> src:rust_val -> State.t -> ret
+  val transmute : t_src:Types.ty -> dst:Types.ty -> src:rust_val -> rust_val ret
 
   (** {@markdown[
         Like [`transmute`], but even less checked at compile-time: rather than
@@ -2251,7 +2392,7 @@ module M : (State : State_intf.S) -> sig
          may eventually be exposed through some more-constrained API.
       ]} *)
   val transmute_unchecked :
-    t_src:Types.ty -> dst:Types.ty -> src:rust_val -> State.t -> ret
+    t_src:Types.ty -> dst:Types.ty -> src:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns the integer part of an `f128`.
@@ -2259,7 +2400,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f128::trunc`](../../std/primitive.f128.html#method.trunc)
       ]} *)
-  val truncf128 : x:rust_val -> State.t -> ret
+  val truncf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the integer part of an `f16`.
@@ -2267,7 +2408,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f16::trunc`](../../std/primitive.f16.html#method.trunc)
       ]} *)
-  val truncf16 : x:rust_val -> State.t -> ret
+  val truncf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the integer part of an `f32`.
@@ -2275,7 +2416,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f32::trunc`](../../std/primitive.f32.html#method.trunc)
       ]} *)
-  val truncf32 : x:rust_val -> State.t -> ret
+  val truncf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Returns the integer part of an `f64`.
@@ -2283,7 +2424,7 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is
          [`f64::trunc`](../../std/primitive.f64.html#method.trunc)
       ]} *)
-  val truncf64 : x:rust_val -> State.t -> ret
+  val truncf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
   (** {@markdown[
         Gets an identifier which is globally unique to the specified type. This
@@ -2297,7 +2438,7 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`core::any::TypeId::of`].
       ]} *)
-  val type_id : t:Types.ty -> State.t -> ret
+  val type_id : t:Types.ty -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Gets a static string slice containing the name of a type.
@@ -2309,7 +2450,7 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`core::any::type_name`].
       ]} *)
-  val type_name : t:Types.ty -> State.t -> ret
+  val type_name : t:Types.ty -> full_ptr ret
 
   (** {@markdown[
         Non-overlapping *typed* swap of a single value.
@@ -2334,7 +2475,7 @@ module M : (State : State_intf.S) -> sig
          [valid]: crate::ptr#safety
       ]} *)
   val typed_swap_nonoverlapping :
-    t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+    t:Types.ty -> x:full_ptr -> y:full_ptr -> unit ret
 
   (** {@markdown[
         Returns whether we should perform some UB-checking at runtime. This eventually evaluates to
@@ -2351,7 +2492,7 @@ module M : (State : State_intf.S) -> sig
          user has UB checks disabled, the checks will still get optimized out. This intrinsic is
          primarily used by [`crate::ub_checks::assert_unsafe_precondition`].
       ]} *)
-  val ub_checks : State.t -> ret
+  val ub_checks : Typed.T.sbool Typed.t ret
 
   (** {@markdown[
         Performs a volatile load from the `src` pointer
@@ -2359,7 +2500,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val unaligned_volatile_load : t:Types.ty -> src:rust_val -> State.t -> ret
+  val unaligned_volatile_load : t:Types.ty -> src:full_ptr -> rust_val ret
 
   (** {@markdown[
         Performs a volatile store to the `dst` pointer.
@@ -2368,7 +2509,7 @@ module M : (State : State_intf.S) -> sig
          This intrinsic does not have a stable counterpart.
       ]} *)
   val unaligned_volatile_store :
-    t:Types.ty -> dst:rust_val -> val_:rust_val -> State.t -> ret
+    t:Types.ty -> dst:full_ptr -> val_:rust_val -> unit ret
 
   (** {@markdown[
         Returns the result of an unchecked addition, resulting in
@@ -2377,7 +2518,7 @@ module M : (State : State_intf.S) -> sig
          The stable counterpart of this intrinsic is `unchecked_add` on the various
          integer types, such as [`u16::unchecked_add`] and [`i64::unchecked_add`].
       ]} *)
-  val unchecked_add : t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val unchecked_add : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Performs an unchecked division, resulting in undefined behavior
@@ -2387,7 +2528,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `checked_div` method. For example,
          [`u32::checked_div`]
       ]} *)
-  val unchecked_div : t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val unchecked_div : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns the result of an unchecked multiplication, resulting in
@@ -2396,7 +2537,7 @@ module M : (State : State_intf.S) -> sig
          The stable counterpart of this intrinsic is `unchecked_mul` on the various
          integer types, such as [`u16::unchecked_mul`] and [`i64::unchecked_mul`].
       ]} *)
-  val unchecked_mul : t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val unchecked_mul : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns the remainder of an unchecked division, resulting in
@@ -2406,7 +2547,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `checked_rem` method. For example,
          [`u32::checked_rem`]
       ]} *)
-  val unchecked_rem : t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val unchecked_rem : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Performs an unchecked left shift, resulting in undefined behavior when
@@ -2417,7 +2558,7 @@ module M : (State : State_intf.S) -> sig
          [`u32::checked_shl`]
       ]} *)
   val unchecked_shl :
-    t:Types.ty -> u:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+    t:Types.ty -> u:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Performs an unchecked right shift, resulting in undefined behavior when
@@ -2428,7 +2569,7 @@ module M : (State : State_intf.S) -> sig
          [`u32::checked_shr`]
       ]} *)
   val unchecked_shr :
-    t:Types.ty -> u:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+    t:Types.ty -> u:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns the result of an unchecked subtraction, resulting in
@@ -2437,7 +2578,7 @@ module M : (State : State_intf.S) -> sig
          The stable counterpart of this intrinsic is `unchecked_sub` on the various
          integer types, such as [`u16::unchecked_sub`] and [`i64::unchecked_sub`].
       ]} *)
-  val unchecked_sub : t:Types.ty -> x:rust_val -> y:rust_val -> State.t -> ret
+  val unchecked_sub : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
         Hints to the compiler that branch condition is likely to be false.
@@ -2452,7 +2593,7 @@ module M : (State : State_intf.S) -> sig
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val unlikely : b:rust_val -> State.t -> ret
+  val unlikely : b:[< Typed.T.sbool ] Typed.t -> Typed.T.sbool Typed.t ret
 
   (** {@markdown[
         Informs the optimizer that this point in the code is not reachable,
@@ -2464,7 +2605,7 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`core::hint::unreachable_unchecked`].
       ]} *)
-  val unreachable : State.t -> ret
+  val unreachable : unit ret
 
   (** {@markdown[
         Loads an argument of type `T` from the `va_list` `ap` and increment the
@@ -2472,21 +2613,21 @@ module M : (State : State_intf.S) -> sig
 
          FIXME: document safety requirements
       ]} *)
-  val va_arg : t:Types.ty -> ap:rust_val -> State.t -> ret
+  val va_arg : t:Types.ty -> ap:full_ptr -> rust_val ret
 
   (** {@markdown[
         Copies the current location of arglist `src` to the arglist `dst`.
 
          FIXME: document safety requirements
       ]} *)
-  val va_copy : dest:rust_val -> src:rust_val -> State.t -> ret
+  val va_copy : dest:full_ptr -> src:full_ptr -> unit ret
 
   (** {@markdown[
         Destroy the arglist `ap` after initialization with `va_start` or `va_copy`.
 
          FIXME: document safety requirements
       ]} *)
-  val va_end : ap:rust_val -> State.t -> ret
+  val va_end : ap:full_ptr -> unit ret
 
   (** {@markdown[
         Returns the number of variants of the type `T` cast to a `usize`;
@@ -2499,7 +2640,7 @@ module M : (State : State_intf.S) -> sig
 
          The to-be-stabilized version of this intrinsic is [`crate::mem::variant_count`].
       ]} *)
-  val variant_count : t:Types.ty -> State.t -> ret
+  val variant_count : t:Types.ty -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Equivalent to the appropriate `llvm.memmove.p0i8.0i8.*` intrinsic, with
@@ -2512,11 +2653,10 @@ module M : (State : State_intf.S) -> sig
       ]} *)
   val volatile_copy_memory :
     t:Types.ty ->
-    dst:rust_val ->
-    src:rust_val ->
-    count:rust_val ->
-    State.t ->
-    ret
+    dst:full_ptr ->
+    src:full_ptr ->
+    count:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         Equivalent to the appropriate `llvm.memcpy.p0i8.0i8.*` intrinsic, with
@@ -2533,18 +2673,17 @@ module M : (State : State_intf.S) -> sig
       ]} *)
   val volatile_copy_nonoverlapping_memory :
     t:Types.ty ->
-    dst:rust_val ->
-    src:rust_val ->
-    count:rust_val ->
-    State.t ->
-    ret
+    dst:full_ptr ->
+    src:full_ptr ->
+    count:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         Performs a volatile load from the `src` pointer.
 
          The stabilized version of this intrinsic is [`core::ptr::read_volatile`].
       ]} *)
-  val volatile_load : t:Types.ty -> src:rust_val -> State.t -> ret
+  val volatile_load : t:Types.ty -> src:full_ptr -> rust_val ret
 
   (** {@markdown[
         Equivalent to the appropriate `llvm.memset.p0i8.*` intrinsic, with a
@@ -2560,19 +2699,17 @@ module M : (State : State_intf.S) -> sig
       ]} *)
   val volatile_set_memory :
     t:Types.ty ->
-    dst:rust_val ->
-    val_:rust_val ->
-    count:rust_val ->
-    State.t ->
-    ret
+    dst:full_ptr ->
+    val_:[< Typed.T.sint ] Typed.t ->
+    count:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         Performs a volatile store to the `dst` pointer.
 
          The stabilized version of this intrinsic is [`core::ptr::write_volatile`].
       ]} *)
-  val volatile_store :
-    t:Types.ty -> dst:rust_val -> val_:rust_val -> State.t -> ret
+  val volatile_store : t:Types.ty -> dst:full_ptr -> val_:rust_val -> unit ret
 
   (** {@markdown[
         The intrinsic will return the alignment stored in that vtable.
@@ -2581,7 +2718,7 @@ module M : (State : State_intf.S) -> sig
 
          `ptr` must point to a vtable.
       ]} *)
-  val vtable_align : ptr:rust_val -> State.t -> ret
+  val vtable_align : ptr:full_ptr -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         The intrinsic will return the size stored in that vtable.
@@ -2590,7 +2727,7 @@ module M : (State : State_intf.S) -> sig
 
          `ptr` must point to a vtable.
       ]} *)
-  val vtable_size : ptr:rust_val -> State.t -> ret
+  val vtable_size : ptr:full_ptr -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         Returns (a + b) mod 2<sup>N</sup>, where N is the width of T in bits.
@@ -2604,7 +2741,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `wrapping_add` method. For example,
          [`u32::wrapping_add`]
       ]} *)
-  val wrapping_add : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val wrapping_add : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns (a * b) mod 2<sup>N</sup>, where N is the width of T in bits.
@@ -2618,7 +2755,7 @@ module M : (State : State_intf.S) -> sig
          primitives via the `wrapping_mul` method. For example,
          [`u32::wrapping_mul`]
       ]} *)
-  val wrapping_mul : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val wrapping_mul : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         Returns (a - b) mod 2<sup>N</sup>, where N is the width of T in bits.
@@ -2632,18 +2769,17 @@ module M : (State : State_intf.S) -> sig
          primitives via the `wrapping_sub` method. For example,
          [`u32::wrapping_sub`]
       ]} *)
-  val wrapping_sub : t:Types.ty -> a:rust_val -> b:rust_val -> State.t -> ret
+  val wrapping_sub : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
 
   (** {@markdown[
         This is an accidentally-stable alias to [`ptr::write_bytes`]; use that instead.
       ]} *)
   val write_bytes :
     t:Types.ty ->
-    dst:rust_val ->
-    val_:rust_val ->
-    count:rust_val ->
-    State.t ->
-    ret
+    dst:full_ptr ->
+    val_:[< Typed.T.sint ] Typed.t ->
+    count:[< Typed.T.sint ] Typed.t ->
+    unit ret
 
   (** {@markdown[
         This is an implementation detail of [`crate::ptr::write`] and should
@@ -2653,14 +2789,8 @@ module M : (State : State_intf.S) -> sig
          projections (`write_via_move(ptr, x)`, not `write_via_move( *ptr, x)`) so
          that it trivially obeys runtime-MIR rules about derefs in operands.
       ]} *)
-  val write_via_move :
-    t:Types.ty -> ptr:rust_val -> value:rust_val -> State.t -> ret
+  val write_via_move : t:Types.ty -> ptr:full_ptr -> value:rust_val -> unit ret
 
   val eval_fun :
-    string ->
-    fun_exec ->
-    Types.generic_args ->
-    args:rust_val list ->
-    State.t ->
-    ret
+    string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
 end

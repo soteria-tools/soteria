@@ -415,8 +415,8 @@ module type BitVec = sig
   val not_bool : t -> t
 
   (* float-bv conversions *)
-  val of_float : signed:bool -> t -> t
-  val to_float : signed:bool -> t -> t
+  val of_float : signed:bool -> size:int -> t -> t
+  val to_float : signed:bool -> fp:FloatPrecision.t -> t -> t
 end
 
 module type Float = sig
@@ -627,7 +627,7 @@ end
 (** {2 Bit vectors} *)
 and BitVec : BitVec = struct
   let mk n bv =
-    assert (Z.(zero <= bv && bv <= one lsl n));
+    assert (Z.(zero <= bv && bv < one lsl n));
     BitVec bv <| t_bv n
 
   let mk_masked n bv = mk n Z.(bv land pred (one lsl n))
@@ -773,15 +773,13 @@ and BitVec : BitVec = struct
         let size = size_of v1.node.ty in
         let l = bv_to_z true size l in
         let r = bv_to_z true size r in
-        if Z.equal r Z.zero then mk_masked size l
-        else
-          let res = Z.(l mod r) in
-          let res =
-            if Z.(res < zero) && not Z.(r < zero) then Z.(res + r)
-            else if Z.(res >= zero) && Z.(r < zero) then Z.(res + r)
-            else res
-          in
-          mk_masked size res
+        let res = Z.(l mod r) in
+        let res =
+          if Z.(res < zero) && not Z.(r < zero) then Z.(res + r)
+          else if Z.(res >= zero) && Z.(r < zero) then Z.(res + r)
+          else res
+        in
+        mk_masked size res
     | _ -> Binop (Mod, v1, v2) <| v1.node.ty
 
   (** [rem ~signed v1 v2] is the remainder of [v1 / v2], which takes the sign of
@@ -792,10 +790,7 @@ and BitVec : BitVec = struct
         let size = size_of v1.node.ty in
         let l = bv_to_z signed size l in
         let r = bv_to_z signed size r in
-        if Z.equal r Z.zero then mk_masked size l
-        else
-          let res = Z.(l mod r) in
-          mk_masked size res
+        mk_masked size Z.(l mod r)
     | _, BitVec r when Stdlib.not signed && Z.(equal r one) ->
         zero (size_of v1.node.ty)
     | _, BitVec r when Stdlib.not signed && is_pow2 r ->
@@ -933,11 +928,18 @@ and BitVec : BitVec = struct
     | Unop (BvExtend (false, by), _) when from_ >= prev_size - by ->
         (* zero extension, and we're extracting only the extended bits *)
         zero size
-    | Unop (BvExtend (signed, by), v) when from_ = 0 ->
-        (* extracting exactly the original bits *)
-        if to_ = prev_size - by - 1 then v
-        (* we can reduce the extend *)
-          else extend ~signed (to_ - prev_size + by + 1) v
+    | Unop (BvExtend (signed, _), v) when from_ = 0 ->
+        (* extracting from the beginning of an extended value *)
+        let orig_size = size_of v.node.ty in
+        if to_ = orig_size - 1 then
+          (* extracting exactly the original bits *)
+          v
+        else if to_ < orig_size then
+          (* extracting subset of original bits *)
+          extract from_ to_ v
+        else
+          (* we can reduce the extend *)
+          extend ~signed (to_ - orig_size + 1) v
     | Unop (BvExtend (_, by), v) when to_ <= prev_size - by - 1 ->
         (* extracting from original bits *)
         extract from_ to_ v
@@ -1115,21 +1117,16 @@ and BitVec : BitVec = struct
       let add_ovf = add_overflows ~signed v1 neg_v2 in
       Bool.or_ neg_ovf add_ovf
 
-  let of_float ~signed v =
+  let of_float ~signed ~size v =
     let p = precision_of_f v.node.ty in
-    match (v.node.ty, v.node.kind, p) with
-    | TFloat F32, Float f, F32 ->
+    match (p, v.node.kind, size) with
+    | F32, Float f, 32 ->
         mk 32 @@ Z.of_int32 (Int32.bits_of_float (Stdlib.Float.of_string f))
-    | TFloat F64, Float f, F64 ->
+    | F64, Float f, 64 ->
         mk 64 @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
-    | _, _, _ ->
-        let n = FloatPrecision.size p in
-        Unop (BvOfFloat (signed, n), v) <| t_bv n
+    | _, _, _ -> Unop (BvOfFloat (signed, size), v) <| t_bv size
 
-  let to_float ~signed v =
-    let size = size_of v.node.ty in
-    let fp = FloatPrecision.of_size size in
-    Unop (FloatOfBv (signed, fp), v) <| t_f fp
+  let to_float ~signed ~fp v = Unop (FloatOfBv (signed, fp), v) <| t_f fp
 end
 
 (** {2 Floating point} *)
@@ -1260,7 +1257,7 @@ module Infix = struct
   let ( /@ ) = BitVec.div ~signed:false
   let ( /$@ ) = BitVec.div ~signed:true
   let ( %@ ) = BitVec.rem ~signed:false
-  let ( %$@ ) = BitVec.mod_
+  let ( %$@ ) = BitVec.rem ~signed:true
   let ( <<@ ) = BitVec.shl
   let ( >>@ ) = BitVec.lshr
   let ( >>>@ ) = BitVec.ashr

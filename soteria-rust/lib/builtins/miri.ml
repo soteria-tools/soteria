@@ -1,16 +1,10 @@
-open Rustsymex
 open Rust_val
 
 module M (State : State_intf.S) = struct
-  module Sptr = State.Sptr
+  open State_monad.Make (State)
 
-  type nonrec rust_val = Sptr.t rust_val
-
-  let alloc_id ~args state =
-    let loc =
-      match args with
-      | [ Ptr (ptr, _) ] -> Sptr.as_id ptr
-      | _ -> failwith "alloc_id: invalid arguments"
-    in
-    Result.ok (Base (loc :> T.cval Typed.t), state)
+  let alloc_id args =
+    match args with
+    | [ Ptr (ptr, _) ] -> ok (Base (Sptr.as_id ptr :> T.cval Typed.t))
+    | _ -> failwith "alloc_id: invalid arguments"
 end

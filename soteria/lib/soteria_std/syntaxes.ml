@@ -11,4 +11,5 @@ module Result = Monad.ResultM.Syntax
 
 module FunctionWrap = struct
   let ( let@ ) = Stdlib.( @@ )
+  let ( let@@ ) f x = f (x ())
 end

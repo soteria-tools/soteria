@@ -2,20 +2,23 @@ open Hc
 include Svalue
 
 module T = struct
-  type sint = [ `NonZero | `MaybeZero ]
-  type sfloat = [ `Float ]
+  type sint = [ `NonZero | `Zero ]
+  type sint_ovf = [ `NonZero | `Zero | `Overflowed ]
   type nonzero = [ `NonZero ]
+  type zero = [ `Zero ]
+  type sfloat = [ `Float ]
   type sbool = [ `Bool ]
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
   type cval = [ sint | sptr | sfloat ]
-
-  type any =
-    [ `Bool | `Ptr | `Loc | `List of any | `NonZero | `MaybeZero | `Float ]
+  type any = [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq ]
 
   let pp_sint _ _ = ()
+  let pp_sint_ovf _ _ = ()
   let pp_nonzero _ _ = ()
+  let pp_zero _ _ = ()
+  let pp_sfloat _ _ = ()
   let pp_sbool _ _ = ()
   let pp_sptr _ _ = ()
   let pp_sloc _ _ = ()
@@ -58,8 +61,24 @@ module BitVec = struct
   let mk_nz n z =
     if Z.equal z Z.zero then failwith "Zero value in mk_nonzero" else mk n z
 
-  let mki_nz n i =
-    if i = 0 then failwith "Zero value in mki_nonzero" else mki n i
-
   let mki_masked n i = mk_masked n (Z.of_int i)
+
+  let mki_nz n i =
+    if i = 0 then failwith "Zero value in mki_nonzero" else mki_masked n i
+end
+
+module Infix = struct
+  include Infix
+
+  let ( +!@ ) = ( +@ )
+  let ( -!@ ) = ( -@ )
+  let ( *!@ ) = ( *@ )
+  let ( ~-! ) = ( ~- )
+  let ( +?@ ) l r = (l +@ r, BitVec.add_overflows ~signed:false l r)
+  let ( +$?@ ) l r = (l +@ r, BitVec.add_overflows ~signed:true l r)
+  let ( -?@ ) l r = (l -@ r, BitVec.sub_overflows ~signed:false l r)
+  let ( -$?@ ) l r = (l -@ r, BitVec.sub_overflows ~signed:true l r)
+  let ( *?@ ) l r = (l *@ r, BitVec.mul_overflows ~signed:false l r)
+  let ( *$?@ ) l r = (l *@ r, BitVec.mul_overflows ~signed:true l r)
+  let ( ~-? ) x = (~-x, BitVec.neg_overflows x)
 end
