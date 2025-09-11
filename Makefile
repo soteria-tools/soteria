@@ -60,6 +60,7 @@ switch:
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc
 	$(OPAM) install ocamlformat.0.27.0
+	$(OPAM) install sherlodoc
 
 ##### JavaScript stuff #####
 
