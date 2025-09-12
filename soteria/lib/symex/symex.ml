@@ -103,6 +103,21 @@ module type S = sig
     else_:(unit -> 'a t) ->
     'a t
 
+  (** [if_sure cond ~then_ ~else_] evaluates the [~then_] branch if [cond] is
+      guaranteed to hold in the current context, and otherwise evaluates
+      [~else_].
+
+      This is to be used with caution: the [~then_] branch should {e always}
+      describe a behaviour that is semantically equivalent to that of the
+      [~else_] branch when [cond] holds. *)
+  val if_sure :
+    ?left_branch_name:string ->
+    ?right_branch_name:string ->
+    sbool v ->
+    then_:(unit -> 'a t) ->
+    else_:(unit -> 'a t) ->
+    'a t
+
   (** Branches on value, and ({b in UX only}) takes at most one branch, starting
       with the [then] branch. This means that if the [then_] branch is SAT, it
       is taken and the [else_] branch is ignored, otherwise the [else_] branch
@@ -271,6 +286,14 @@ module type S = sig
         then_:(unit -> 'a t) ->
         else_:(unit -> 'a t) ->
         'a t
+
+      val if_sure :
+        ?left_branch_name:string ->
+        ?right_branch_name:string ->
+        sbool_v ->
+        then_:(unit -> 'a t) ->
+        else_:(unit -> 'a t) ->
+        'a t
     end
   end
 end
@@ -431,6 +454,29 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
                   if Solver_result.is_sat (Solver.sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible"))
 
+  let if_sure ?left_branch_name:_ ?right_branch_name:_ guard
+      ~(then_ : unit -> 'a Iter.t) ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
+   fun f ->
+    let guard = Solver.simplify guard in
+    match Value.as_bool guard with
+    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
+       if we remove the Some true and Some false optimisation. *)
+    | Some true -> then_ () f
+    | Some false -> else_ () f
+    | None ->
+        Symex_state.save ();
+        Solver.add_constraints ~simplified:true [ Value.(not guard) ];
+        let neg_unsat = ref false in
+        if Solver_result.is_unsat (Solver.sat ()) then (
+          neg_unsat := true;
+          else_ () f);
+        Symex_state.backtrack_n 1;
+        if !neg_unsat then (
+          (* Adding this constraint is technically redundant,
+             but it's still worth having it in the PC for simplifications. *)
+          Solver.add_constraints [ guard ];
+          else_ () f)
+
   let branch_on_take_one_ux ?left_branch_name:_ ?right_branch_name:_ guard
       ~then_ ~else_ : 'a Iter.t =
    fun f ->
@@ -441,9 +487,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
-        let left_sat = ref true in
-        if Solver_result.is_sat (Solver.sat ()) then then_ () f
-        else left_sat := false;
+        let left_sat = ref false in
+        if Solver_result.is_sat (Solver.sat ()) then (
+          left_sat := true;
+          then_ () f);
         Symex_state.backtrack_n 1;
         if not !left_sat then (
           Solver.add_constraints [ Value.(not guard) ];
@@ -592,6 +639,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     module Symex_syntax = struct
       let branch_on = branch_on
       let branch_on_take_one = branch_on_take_one
+      let if_sure = if_sure
     end
   end
 end
