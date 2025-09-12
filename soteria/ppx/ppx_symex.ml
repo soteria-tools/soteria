@@ -16,7 +16,7 @@ let () =
       (Extension_name.to_string extension)
       ~extensions:[ ext extension ]
   in
-  List.iter register [ Sat; Sat1 ]
+  List.iter register [ Sat; Sat1; Sure ]
 
 (* Register [0s], [1s] etc. *)
 let () =
