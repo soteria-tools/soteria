@@ -55,7 +55,6 @@
   (yojson
    (< 3.0))
   ppx_deriving_yojson
-  (ppx_inline_test :with-test)
   (ocamlformat
    (and
     :with-dev-setup

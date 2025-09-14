@@ -19,16 +19,9 @@
   yojson
   zarith)
  (preprocess
-  (pps
-   ppx_blob
-   ppx_symex
-   ppx_deriving.std
-   ppx_deriving_yojson
-   ppx_subliner
-   ppx_inline_test))
+  (pps ppx_blob ppx_symex ppx_deriving.std ppx_deriving_yojson ppx_subliner))
  (preprocessor_deps
   (file "logs/assets/soteria_logs.js")
   (file "logs/assets/soteria_logs.css"))
- (inline_tests)
  (instrumentation
   (backend landmarks --auto)))

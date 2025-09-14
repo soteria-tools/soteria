@@ -1,0 +1,4 @@
+(test
+ (name soteria_std_tests)
+ (libraries soteria alcotest)
+ (flags :standard -open Soteria.Soteria_std))
