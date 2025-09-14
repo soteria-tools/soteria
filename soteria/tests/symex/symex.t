@@ -25,4 +25,9 @@
      (Error: Gave up: x == y, [(V|1| <= V|2|); (V|1| == V|2|)]);
      (Error: okkk, [(V|1| <= V|2|); (V|1| != V|2|)])]
   
+This test is considered successful if the out of each process is a single branch containing 42.
   $ ./if_sure.exe
+  if_true: [42]
+  if_false: [42]
+  if_maybe: [42]
+  if_guranteed: [42]

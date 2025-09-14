@@ -1,9 +1,9 @@
 (executables
- (names run_twice deep_give_up)
+ (names run_twice deep_give_up if_sure)
  (libraries soteria soteria_c_lib)
  (flags :standard -open Soteria.C_values)
  (preprocess
   (pps soteria.ppx)))
 
 (cram
- (deps ./run_twice.exe ./deep_give_up.exe))
+ (deps ./run_twice.exe ./deep_give_up.exe ./if_sure.exe))
