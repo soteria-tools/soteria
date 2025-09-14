@@ -469,9 +469,9 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         let neg_unsat = ref false in
         if Solver_result.is_unsat (Solver.sat ()) then (
           neg_unsat := true;
-          else_ () f);
+          then_ () f);
         Symex_state.backtrack_n 1;
-        if !neg_unsat then (
+        if not !neg_unsat then (
           (* Adding this constraint is technically redundant,
              but it's still worth having it in the PC for simplifications. *)
           Solver.add_constraints [ guard ];
