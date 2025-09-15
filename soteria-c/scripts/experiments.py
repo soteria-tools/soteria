@@ -147,20 +147,34 @@ def go_to_dune_root():
 ########## Experiment running ##########
 
 
-@dataclass(frozen=True)
 class ExperimentConfig:
-    """Relative path to the experiment folder."""
 
     name: str
+
+    """Relative path to the experiment folder."""
     path: Path
-    soteria_args: list[str] = field(default_factory=list)
+    soteria_args: list[str]
+
     """Location relative to the experiment folder where CMake should be run."""
-    cmake_build_path: Path = field(default=Path("build"))
+    cmake_build_path: Path
+    cmake_args: list[str]
 
-    cmake_args: list[str] = field(default_factory=list)
-
-    def __post_init__(self):
-        available_experiments.append(self.name)
+    def __init__(
+        self,
+        name,
+        path=None,
+        soteria_args=[],
+        cmake_build_path=Path("build"),
+        cmake_args=[],
+    ):
+        self.name = name
+        if path is None:
+            path = Path(name)
+        self.path = path
+        self.soteria_args = soteria_args
+        self.cmake_build_path = cmake_build_path
+        self.cmake_args = cmake_args
+        available_experiments.append(name)
 
 
 class Experiment(PrintersMixin):
@@ -243,23 +257,20 @@ class Experiment(PrintersMixin):
 simple_config = lambda name: ExperimentConfig(name=name, path=Path(name))
 configs = [
     ExperimentConfig(
-        name="Collections-C",
-        path=Path("Collections-C"),
+        "Collections-C",
         soteria_args=["--use-cerb-headers", "--havoc-undef"],
     ),
-    simple_config("zlib"),
+    ExperimentConfig("zlib"),
     ExperimentConfig(
-        name="libgit2",
-        path=Path("libgit2"),
+        "libgit2",
         cmake_args=["-DUSE_THREADS=OFF"],
-        soteria_args=["-vv"],
     ),
-    simple_config("nghttp2"),
-    simple_config("mbedtls"),
-    simple_config("libtommath"),
-    simple_config("c-ares"),
-    simple_config("zlib-ng"),
-    simple_config("aws-c-common"),
+    ExperimentConfig("nghttp2"),
+    ExperimentConfig("mbedtls"),
+    ExperimentConfig("libtommath"),
+    ExperimentConfig("c-ares"),
+    ExperimentConfig("zlib-ng"),
+    ExperimentConfig("aws-c-common"),
 ]
 
 
