@@ -248,7 +248,12 @@ configs = [
         soteria_args=["--use-cerb-headers", "--havoc-undef"],
     ),
     simple_config("zlib"),
-    simple_config("libgit2"),
+    ExperimentConfig(
+        name="libgit2",
+        path=Path("libgit2"),
+        cmake_args=["-DUSE_THREADS=OFF"],
+        soteria_args=["-vv"],
+    ),
     simple_config("nghttp2"),
     simple_config("mbedtls"),
     simple_config("libtommath"),
@@ -299,8 +304,8 @@ def aggregate_results():
         with open(file, "r") as f:
             try:
                 j = Stats.from_dict(json.load(f))
-            except:
-                global_printer.print_error(f"Failed to read json from {file}")
+            except e:
+                global_printer.print_error(f"Failed to read json from {file}, {e}")
                 continue
             all_stats = merge_stats(all_stats, j)
     to_remove = "MISSING FEATURE, VANISHING: Could not resolve function"
