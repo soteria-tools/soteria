@@ -1,4 +1,4 @@
-(** A collection of symbolic data structures and usefule signatures. *)
+(** A collection of symbolic data structures and useful signatures. *)
 
 module S_elt = S_elt
 module S_eq = S_eq
