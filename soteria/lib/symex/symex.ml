@@ -429,7 +429,6 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | Some false -> else_ () f
     | None ->
         let left_unsat = ref false in
-
         Symex_state.save ();
         L.with_section ~is_branch:true left_branch_name (fun () ->
             Solver.add_constraints ~simplified:true [ guard ];
@@ -466,12 +465,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ Value.(not guard) ];
-        let neg_unsat = ref false in
-        if Solver_result.is_unsat (Solver.sat ()) then (
-          neg_unsat := true;
-          then_ () f);
+        let neg_unsat = Solver_result.is_unsat (Solver.sat ()) in
+        if neg_unsat then then_ () f;
         Symex_state.backtrack_n 1;
-        if not !neg_unsat then (
+        if not neg_unsat then (
           (* Adding this constraint is technically redundant,
              but it's still worth having it in the PC for simplifications. *)
           Solver.add_constraints [ guard ];
@@ -487,12 +484,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
-        let left_sat = ref false in
-        if Solver_result.is_sat (Solver.sat ()) then (
-          left_sat := true;
-          then_ () f);
+        let left_sat = Solver_result.is_sat (Solver.sat ()) in
+        if left_sat then then_ () f;
         Symex_state.backtrack_n 1;
-        if not !left_sat then (
+        if not left_sat then (
           Solver.add_constraints [ Value.(not guard) ];
           else_ () f)
 
