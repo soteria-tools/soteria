@@ -626,7 +626,7 @@ module M (State : State_intf.S) = struct
     else
       (* if v == 0, then we can replace this mess by initialising a Zeros subtree *)
       let val_ : [> T.sint ] Typed.t = Typed.cast val_ in
-      if%sat val_ ==@ U8.(0s) then State.zeros dst size
+      if%sure val_ ==@ U8.(0s) then State.zeros dst size
       else
         match Typed.kind size with
         | BitVec bytes ->

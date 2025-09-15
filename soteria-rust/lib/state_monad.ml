@@ -193,6 +193,19 @@ module Make (State : State_intf.S) = struct
         Rustsymex.branch_on ?left_branch_name ?right_branch_name guard
           ~then_:(fun () -> then_ () env state)
           ~else_:(fun () -> else_ () env state)
+
+      let branch_on_take_one ?left_branch_name ?right_branch_name guard ~then_
+          ~else_ =
+       fun env state ->
+        Rustsymex.branch_on_take_one ?left_branch_name ?right_branch_name guard
+          ~then_:(fun () -> then_ () env state)
+          ~else_:(fun () -> else_ () env state)
+
+      let if_sure ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
+       fun env state ->
+        Rustsymex.if_sure ?left_branch_name ?right_branch_name guard
+          ~then_:(fun () -> then_ () env state)
+          ~else_:(fun () -> else_ () env state)
     end
   end
 end

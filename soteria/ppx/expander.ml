@@ -15,9 +15,9 @@ module If_sat = struct
   end
 
   module Extension_name = struct
-    type t = Sat | Sat1
+    type t = Sat | Sat1 | Sure
 
-    let to_string = function Sat -> "sat" | Sat1 -> "sat1"
+    let to_string = function Sat -> "sat" | Sat1 -> "sat1" | Sure -> "sure"
   end
 
   let get_attr ~name expr =
@@ -44,6 +44,7 @@ module If_sat = struct
   let associated_fn ~loc = function
     | Extension_name.Sat -> [%expr Symex_syntax.branch_on]
     | Sat1 -> [%expr Symex_syntax.branch_on_take_one]
+    | Sure -> [%expr Symex_syntax.if_sure]
 
   let expand_if ~loc ~ext guard then_ else_ =
     let associated_fn = associated_fn ~loc ext in
