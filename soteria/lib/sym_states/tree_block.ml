@@ -114,7 +114,7 @@ struct
   module Range = Sym_data.S_range.Make (MemVal.S_int)
 
   module Sym_int_syntax = struct
-    let zero = MemVal.SInt.zero
+    let zero = MemVal.S_int.zero
   end
 
   type sint = MemVal.S_int.t [@@deriving show { with_path = false }]

@@ -29,8 +29,8 @@ module Make (Sptr : Sptr.S) = struct
       let one () = Typed.BitVec.usize Z.one
       let of_z = Typed.BitVec.usize
       let to_z _ = None (* Can be improved, but sound. *)
-      let add = Typed.BitVec.add
-      let minus = Typed.BitVec.sub
+      let add = Typed.Infix.( +!@ )
+      let minus = Typed.Infix.( -!@ )
       let lt = Typed.BitVec.lt ~signed:false
       let leq = Typed.BitVec.leq ~signed:false
     end

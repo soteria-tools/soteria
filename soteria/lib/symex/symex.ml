@@ -457,14 +457,14 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       ~(then_ : unit -> 'a Iter.t) ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.S_bool.to_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
        if we remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
         Symex_state.save ();
-        Solver.add_constraints ~simplified:true [ Value.(not guard) ];
+        Solver.add_constraints ~simplified:true [ Value.S_bool.not guard ];
         let neg_unsat = Solver_result.is_unsat (Solver.sat ()) in
         if neg_unsat then then_ () f;
         Symex_state.backtrack_n 1;
@@ -499,8 +499,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     else branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ f
 
   let assert_or_error guard err =
-    branch_on
-      Value.(not guard)
+    branch_on (Value.S_bool.not guard)
       ~then_:(fun () -> return (Compo_res.Error err))
       ~else_:(fun () -> return (Compo_res.Ok ()))
 
