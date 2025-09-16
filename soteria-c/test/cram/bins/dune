@@ -1,6 +1,0 @@
-(executables
- (names run_twice deep_give_up)
- (libraries soteria soteria_c_lib)
- (flags :standard -open Soteria.C_values -open Soteria_c_lib)
- (preprocess
-  (pps soteria.ppx)))

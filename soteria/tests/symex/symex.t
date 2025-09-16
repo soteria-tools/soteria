@@ -1,4 +1,4 @@
-  $ ../bins/run_twice.exe
+  $ ./run_twice.exe
   Number of outcomes for process_one: 0
   Number of outcomes for process_two: 1
   
@@ -6,7 +6,7 @@
   Branches: {true, [(0 == V|1|); (0 == V|1|)]}
   Branches: {true, [(0 == V|1|); (0 == V|1|)]}
 
-  $ ../bins/deep_give_up.exe
+  $ ./deep_give_up.exe
   Csymex.run ~mode:UX complex_process:
     [(Ok: (V|1| + V|2|), [(V|2| < V|1|); (1 <= V|1|)]);
      (Ok: (V|1| - V|2|), [(V|2| < V|1|); (V|1| <= 0)]);
@@ -25,3 +25,9 @@
      (Error: Gave up: x == y, [(V|1| <= V|2|); (V|1| == V|2|)]);
      (Error: okkk, [(V|1| <= V|2|); (V|1| != V|2|)])]
   
+This test is considered successful if the out of each process is a single branch containing 42.
+  $ ./if_sure.exe
+  if_true: [42]
+  if_false: [42]
+  if_maybe: [42]
+  if_guranteed: [42]

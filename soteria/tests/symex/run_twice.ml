@@ -1,4 +1,8 @@
-open Csymex
+open
+  Soteria.Symex.Make
+    (Soteria.Symex.Meta.Dummy)
+    (Soteria.C_values.C_solver.Z3_solver)
+
 open Syntax
 
 let process_one = assume [ Typed.v_false ]
