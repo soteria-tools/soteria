@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Typed (soteria-rust.Soteria_rust_lib.Typed)</title><meta charset="utf-8"/><link rel="stylesheet" href="../../../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.1.0"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../../../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../index.html">Index</a> &#x00BB; <a href="../../index.html">soteria-rust</a> &#x00BB; <a href="../index.html">Soteria_rust_lib</a> &#x00BB; Typed</nav><header class="odoc-preamble"><h1>Module <code><span>Soteria_rust_lib.Typed</span></code></h1></header><div class="odoc-content"><div class="odoc-include"><details open="open"><summary class="spec include"><code><span><span class="keyword">include</span> <span class="keyword">module</span> <span class="keyword">type</span> <span class="keyword">of</span> <span class="keyword">struct</span> <span class="keyword">include</span> <a href="../../../soteria/Soteria/Bv_values/Typed/index.html">Soteria.Bv_values.Typed</a> <span class="keyword">end</span></span></code></summary><h3 id="phantom-types"><a href="#phantom-types" class="anchor"></a>Phantom types</h3><div class="odoc-spec"><div class="spec module anchored" id="module-T"><a href="#module-T" class="anchor"></a><code><span><span class="keyword">module</span> T</span><span> = <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html">Soteria.Bv_values.Typed.T</a></span></code></div></div><div class="odoc-spec"><div class="spec type anchored" id="type-ty"><a href="#type-ty" class="anchor"></a><code><span><span class="keyword">type</span> <span>+'a ty</span></span><span> = <span><span class="type-var">'a</span> <a href="../../../soteria/Soteria/Bv_values/Typed/index.html#type-ty">Soteria.Bv_values.Typed.ty</a></span></span></code></div><div class="spec-doc"><p>Types</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-pp_ty"><a href="#val-pp_ty" class="anchor"></a><code><span><span class="keyword">val</span> pp_ty : 
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Typed (soteria-rust.Soteria_rust_lib.Typed)</title><meta charset="utf-8"/><link rel="stylesheet" href="../../../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.1.0"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../../../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script><script>let base_url = '../../../';
+let search_urls = ['../../db.js','../../../sherlodoc.js'];
+</script><script src="../../../odoc.support/odoc_search.js" defer="defer"></script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../index.html">Index</a> &#x00BB; <a href="../../index.html">soteria-rust</a> &#x00BB; <a href="../index.html">Soteria_rust_lib</a> &#x00BB; Typed</nav><div class="odoc-search"><div class="search-inner"><input class="search-bar" placeholder="🔎 Type '/' to search..."/><div class="search-snake"></div><div class="search-result"></div></div></div><header class="odoc-preamble"><h1>Module <code><span>Soteria_rust_lib.Typed</span></code></h1></header><div class="odoc-content"><div class="odoc-include"><details open="open"><summary class="spec include"><code><span><span class="keyword">include</span> <span class="keyword">module</span> <span class="keyword">type</span> <span class="keyword">of</span> <span class="keyword">struct</span> <span class="keyword">include</span> <a href="../../../soteria/Soteria/Bv_values/Typed/index.html">Soteria.Bv_values.Typed</a> <span class="keyword">end</span></span></code></summary><h3 id="phantom-types"><a href="#phantom-types" class="anchor"></a>Phantom types</h3><div class="odoc-spec"><div class="spec module anchored" id="module-T"><a href="#module-T" class="anchor"></a><code><span><span class="keyword">module</span> T</span><span> = <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html">Soteria.Bv_values.Typed.T</a></span></code></div></div><div class="odoc-spec"><div class="spec type anchored" id="type-ty"><a href="#type-ty" class="anchor"></a><code><span><span class="keyword">type</span> <span>+'a ty</span></span><span> = <span><span class="type-var">'a</span> <a href="../../../soteria/Soteria/Bv_values/Typed/index.html#type-ty">Soteria.Bv_values.Typed.ty</a></span></span></code></div><div class="spec-doc"><p>Types</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-pp_ty"><a href="#val-pp_ty" class="anchor"></a><code><span><span class="keyword">val</span> pp_ty : 
   <span><span>(<span><span class="xref-unresolved">Stdlib</span>.Format.formatter <span class="arrow">&#45;&gt;</span></span> <span><span><span class="type-var">'a</span> <a href="#type-ty">ty</a></span> <span class="arrow">&#45;&gt;</span></span> unit)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="xref-unresolved">Stdlib</span>.Format.formatter <span class="arrow">&#45;&gt;</span></span>
   <span><span><span class="type-var">'a</span> <a href="#type-ty">ty</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -12,17 +14,19 @@
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-ty">ty</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span class="type-var">'a</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-t_ptr"><a href="#val-t_ptr" class="anchor"></a><code><span><span class="keyword">val</span> t_ptr : <span>unit <span class="arrow">&#45;&gt;</span></span> <span><span>[&gt; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sptr">T.sptr</a> ]</span> <a href="#type-ty">ty</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-t_usize"><a href="#val-t_usize" class="anchor"></a><code><span><span class="keyword">val</span> t_usize : <span>unit <span class="arrow">&#45;&gt;</span></span> <span><span>[&gt; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">T.sint</a> ]</span> <a href="#type-ty">ty</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-cast_checked"><a href="#val-cast_checked" class="anchor"></a><code><span><span class="keyword">val</span> cast_checked : 
   <span><span class="label">ty</span>:
@@ -30,26 +34,29 @@
      <span>| `Float</span>
      <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
      <span>| `Loc</span>
-     <span>| `MaybeZero</span>
      <span>| `NonZero</span>
-     <span>| `Ptr</span> ]</span> <span class="keyword">as</span> 'a)</span>
+     <span>| `Overflowed</span>
+     <span>| `Ptr</span>
+     <span>| `Zero</span> ]</span> <span class="keyword">as</span> 'a)</span>
       <a href="#type-ty">ty</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="type-var">'a</span> <a href="#type-t">t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-cast_checked2"><a href="#val-cast_checked2" class="anchor"></a><code><span><span class="keyword">val</span> cast_checked2 : 
   <span><span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span class="type-var">'a</span> <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="type-var">'b</span> <a href="#type-t">t</a></span> * <span><span class="type-var">'c</span> <a href="#type-t">t</a></span> * <span><span class="type-var">'d</span> <a href="#type-ty">ty</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-cast_lit"><a href="#val-cast_lit" class="anchor"></a><code><span><span class="keyword">val</span> cast_lit : 
@@ -58,67 +65,75 @@
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> MaybeZero NonZero ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> NonZero Zero ]</span>
     <a href="#type-t">t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-cast_i"><a href="#val-cast_i" class="anchor"></a><code><span><span class="keyword">val</span> cast_i : 
   <span><span class="xref-unresolved">Charon</span>.Values.u_int_ty <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> MaybeZero NonZero ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> NonZero Zero ]</span>
     <a href="#type-t">t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-cast_f"><a href="#val-cast_f" class="anchor"></a><code><span><span class="keyword">val</span> cast_f : 
   <span><span class="xref-unresolved">Charon</span>.Values.float_type <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> Float ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> Float ]</span>
     <a href="#type-t">t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-cast_float"><a href="#val-cast_float" class="anchor"></a><code><span><span class="keyword">val</span> cast_float : 
   <span><span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&gt; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">T.sfloat</a> ]</span> <a href="#type-t">t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-cast_int"><a href="#val-cast_int" class="anchor"></a><code><span><span class="keyword">val</span> cast_int : 
   <span><span><span>[&lt; `Bool
   <span>| `Float</span>
   <span><span>| `List</span> of <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a> &amp; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">T.any</a></span>
   <span>| `Loc</span>
-  <span>| `MaybeZero</span>
   <span>| `NonZero</span>
-  <span>| `Ptr</span> ]</span>
+  <span>| `Overflowed</span>
+  <span>| `Ptr</span>
+  <span>| `Zero</span> ]</span>
     <a href="#type-t">t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>[&gt; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">T.sint</a> ]</span> <a href="#type-t">t</a></span> * int</span></code></div><div class="spec-doc"><p>DEPRECATED: it is unlikely you need this; the interpreter should be well typed</p></div></div><div class="odoc-spec"><div class="spec module anchored" id="module-BitVec"><a href="#module-BitVec" class="anchor"></a><code><span><span class="keyword">module</span> <a href="BitVec/index.html">BitVec</a></span><span> : <span class="keyword">sig</span> ... <span class="keyword">end</span></span></code></div></div><div class="odoc-spec"><div class="spec module anchored" id="module-Float"><a href="#module-Float" class="anchor"></a><code><span><span class="keyword">module</span> <a href="Float/index.html">Float</a></span><span> : <span class="keyword">sig</span> ... <span class="keyword">end</span></span></code></div></div><div class="odoc-spec"><div class="spec module anchored" id="module-Ptr"><a href="#module-Ptr" class="anchor"></a><code><span><span class="keyword">module</span> <a href="Ptr/index.html">Ptr</a></span><span> : <span class="keyword">sig</span> ... <span class="keyword">end</span></span></code></div></div></div></body></html>
+  <span><span>[&gt; <a href="../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">T.sint</a> ]</span> <a href="#type-t">t</a></span> * int</span></code></div><div class="spec-doc"><p>DEPRECATED: it is unlikely you need this; the interpreter should be well typed</p></div></div><div class="odoc-spec"><div class="spec module anchored" id="module-BitVec"><a href="#module-BitVec" class="anchor"></a><code><span><span class="keyword">module</span> <a href="BitVec/index.html">BitVec</a></span><span> : <span class="keyword">sig</span> ... <span class="keyword">end</span></span></code></div></div><div class="odoc-spec"><div class="spec module anchored" id="module-Float"><a href="#module-Float" class="anchor"></a><code><span><span class="keyword">module</span> <a href="Float/index.html">Float</a></span><span> : <span class="keyword">sig</span> ... <span class="keyword">end</span></span></code></div></div><div class="odoc-spec"><div class="spec module anchored" id="module-Ptr"><a href="#module-Ptr" class="anchor"></a><code><span><span class="keyword">module</span> <a href="Ptr/index.html">Ptr</a></span><span> : <span class="keyword">sig</span> ... <span class="keyword">end</span></span></code></div></div><div class="odoc-spec"><div class="spec module anchored" id="module-Syntax"><a href="#module-Syntax" class="anchor"></a><code><span><span class="keyword">module</span> <a href="Syntax/index.html">Syntax</a></span><span> : <span class="keyword">sig</span> ... <span class="keyword">end</span></span></code></div></div></div></body></html>
