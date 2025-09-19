@@ -1,6 +1,6 @@
 open Test_register
 
-let register f = register "List" f
+let register = register "List"
 
 open List
 

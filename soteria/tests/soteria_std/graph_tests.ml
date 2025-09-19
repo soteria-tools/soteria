@@ -1,6 +1,6 @@
 open Test_register
 
-let register f = register "Graph" f
+let register = register "Graph"
 
 open Graph
 
