@@ -315,7 +315,7 @@ let dump_summaries results =
       let pp_summary ~fid ft summary =
         Fmt.pf ft "@[<v 2>%a@]" Summary.pp (Summary.analyse ~fid summary)
       in
-      let@ oc = Channels.with_out_file file in
+      let@ oc = Out_channel.with_open_text file in
       let ft = Format.formatter_of_out_channel oc in
       List.iter
         (fun (fid, summaries) ->

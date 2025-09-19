@@ -173,7 +173,7 @@ module Make (State : State_intf.S) = struct
     let open Typed in
     match get_ty x with
     | TInt -> Csymex.return (bool_of_int (cast x))
-    | TPointer -> Csymex.return (not (Ptr.is_null (cast x)))
+    | TPointer -> Csymex.return (S_bool.not (Ptr.is_null (cast x)))
     | _ -> Csymex.not_impl "Cannot cast to bool"
 
   let cast_aggregate_to_bool (x : Agv.t) : [> T.sbool ] Typed.t Csymex.t =
@@ -588,7 +588,7 @@ module Make (State : State_intf.S) = struct
           L.trace (fun m -> m "Function pointer is value: %a" Agv.pp fptr);
           let^ fptr = cast_aggregate_to_ptr fptr in
           if%sat
-            Typed.not (Typed.Ptr.ofs fptr ==@ 0s)
+            Typed.S_bool.not (Typed.Ptr.ofs fptr ==@ 0s)
             ||@ Typed.Ptr.is_at_null_loc fptr
           then error `InvalidFunctionPtr
           else
@@ -1072,7 +1072,7 @@ module Make (State : State_intf.S) = struct
         let rec loop () =
           let* cond_v = eval_expr cond in
           let^ cond_v = cast_aggregate_to_bool cond_v in
-          let neg_cond = Typed.not cond_v in
+          let neg_cond = Typed.S_bool.not cond_v in
           if%sat neg_cond then ok Normal
           else
             let () = L.trace (fun m -> m "Condition is SAT!") in
@@ -1093,7 +1093,7 @@ module Make (State : State_intf.S) = struct
           | Normal | Continue ->
               let* cond_v = eval_expr cond in
               let^ cond_v = cast_aggregate_to_bool cond_v in
-              if%sat Typed.not cond_v then ok Normal else loop ()
+              if%sat Typed.S_bool.not cond_v then ok Normal else loop ()
           | Case _ -> failwith "SOTERIA BUG: Case in do body"
         in
         loop ()

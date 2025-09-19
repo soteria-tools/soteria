@@ -8,7 +8,7 @@ module type S = sig
 
   val simplify : t -> Svalue.t -> Svalue.t
   val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
-  val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
+  val encode : ?vars:Var.Hashset.t -> t -> Typed.S_bool.t Typed.t Iter.t
 end
 
 module Merge (A1 : S) (A2 : S) : S = struct
@@ -35,7 +35,7 @@ module Merge (A1 : S) (A2 : S) : S = struct
     let v'', vars2 = A2.add_constraint a2 v' in
     (v'', Var.Set.union vars1 vars2)
 
-  let encode ?vars (a1, a2) : Typed.sbool Typed.t Iter.t =
+  let encode ?vars (a1, a2) : Typed.S_bool.t Typed.t Iter.t =
     Iter.append (A1.encode ?vars a1) (A2.encode ?vars a2)
 end
 

@@ -367,45 +367,47 @@ let rec subst subst_var sv =
 let v_true = Bool true <| TBool
 let v_false = Bool false <| TBool
 
-let as_bool t =
-  if equal t v_true then Some true
-  else if equal t v_false then Some false
-  else None
+module S_bool = struct
+  let to_bool t =
+    if equal t v_true then Some true
+    else if equal t v_false then Some false
+    else None
 
-let bool b =
-  (* avoid re-alloc and re-hashconsing *)
-  if b then v_true else v_false
+  let of_bool b =
+    (* avoid re-alloc and re-hashconsing *)
+    if b then v_true else v_false
 
-let and_ v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | _, _ when equal v1 v2 -> v1
-  | Bool false, _ | _, Bool false -> v_false
-  | Bool true, _ -> v2
-  | _, Bool true -> v1
-  | _ -> mk_commut_binop And v1 v2 <| TBool
+  let and_ v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | _, _ when equal v1 v2 -> v1
+    | Bool false, _ | _, Bool false -> v_false
+    | Bool true, _ -> v2
+    | _, Bool true -> v1
+    | _ -> mk_commut_binop And v1 v2 <| TBool
 
-let or_ v1 v2 =
-  match (v1.node.kind, v2.node.kind) with
-  | Bool true, _ | _, Bool true -> v_true
-  | Bool false, _ -> v2
-  | _, Bool false -> v1
-  | _ -> mk_commut_binop Or v1 v2 <| TBool
+  let or_ v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Bool true, _ | _, Bool true -> v_true
+    | Bool false, _ -> v2
+    | _, Bool false -> v1
+    | _ -> mk_commut_binop Or v1 v2 <| TBool
 
-let conj l = List.fold_left and_ v_true l
+  let rec not sv =
+    if equal sv v_true then v_false
+    else if equal sv v_false then v_true
+    else
+      match sv.node.kind with
+      | Unop (Not, sv) -> sv
+      | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
+      | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
+      | Binop (BvLt s, v1, v2) -> Binop (BvLeq s, v2, v1) <| TBool
+      | Binop (BvLeq s, v1, v2) -> Binop (BvLt s, v2, v1) <| TBool
+      | Binop (Or, v1, v2) -> mk_commut_binop And (not v1) (not v2) <| TBool
+      | Binop (And, v1, v2) -> mk_commut_binop Or (not v1) (not v2) <| TBool
+      | _ -> Unop (Not, sv) <| TBool
+end
 
-let rec not sv =
-  if equal sv v_true then v_false
-  else if equal sv v_false then v_true
-  else
-    match sv.node.kind with
-    | Unop (Not, sv) -> sv
-    | Binop (Lt, v1, v2) -> Binop (Leq, v2, v1) <| TBool
-    | Binop (Leq, v1, v2) -> Binop (Lt, v2, v1) <| TBool
-    | Binop (BvLt s, v1, v2) -> Binop (BvLeq s, v2, v1) <| TBool
-    | Binop (BvLeq s, v1, v2) -> Binop (BvLt s, v2, v1) <| TBool
-    | Binop (Or, v1, v2) -> mk_commut_binop And (not v1) (not v2) <| TBool
-    | Binop (And, v1, v2) -> mk_commut_binop Or (not v1) (not v2) <| TBool
-    | _ -> Unop (Not, sv) <| TBool
+let conj l = List.fold_left S_bool.and_ v_true l
 
 let rec split_ands (sv : t) (f : t -> unit) : unit =
   match sv.node.kind with
@@ -430,11 +432,11 @@ let ite guard if_ else_ =
   | Bool true, _, _ -> if_
   | Bool false, _, _ -> else_
   | _, Bool true, Bool false -> guard
-  | _, Bool false, Bool true -> not guard
-  | _, Bool false, _ -> and_ (not guard) else_
-  | _, Bool true, _ -> or_ guard else_
-  | _, _, Bool false -> and_ guard if_
-  | _, _, Bool true -> or_ (not guard) if_
+  | _, Bool false, Bool true -> S_bool.not guard
+  | _, Bool false, _ -> S_bool.and_ (S_bool.not guard) else_
+  | _, Bool true, _ -> S_bool.or_ guard else_
+  | _, _, Bool false -> S_bool.and_ guard if_
+  | _, _, Bool true -> S_bool.or_ (S_bool.not guard) if_
   | _, Int o, Int z when Z.equal o Z.one && Z.equal z Z.zero ->
       Unop (IntOfBool, guard) <| TInt
   | _ when equal if_ else_ -> if_
@@ -443,6 +445,7 @@ let ite guard if_ else_ =
 (** {2 Integers} *)
 
 let int_z z = Int z <| TInt
+let to_z v = match v.node.kind with Int z -> Some z | _ -> None
 let int i = int_z (Z.of_int i)
 
 let nonzero_z z =
@@ -567,9 +570,8 @@ let neg v =
     to be seamlessly used on [TInt], without worrying about the underlying
     representation.*)
 module BitVec = struct
-  let bool_or = or_
-  let bool_and = and_
-  let bool_not = not
+  let bool_or = S_bool.or_
+  let bool_and = S_bool.and_
 
   (** Raw operations for values of type [TBitVector]; be careful when using
       these, so as to provide properly typed values. Prefer using [BitVec]
@@ -770,7 +772,7 @@ module BitVec = struct
              && Z.(equal r1 zero)
              && Z.(equal r2 zero) ->
           ite
-            (bool_not (mk_commut_binop Eq b1 b2 <| TBool))
+            (S_bool.not (mk_commut_binop Eq b1 b2 <| TBool))
             (mk_like v1 Z.one) (mk_like v1 Z.zero)
       | _ -> mk_commut_binop BitXor v1 v2 <| v1.node.ty
 
@@ -896,7 +898,7 @@ module BitVec = struct
       let bits = size_of_bv v1.node.ty in
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
-          bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
+          S_bool.of_bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
       | _, BitVec x when Stdlib.not signed && Z.(equal x one) ->
           (* unsigned x < 1 is x == 0 *)
           mk_commut_binop Eq v1 (mk_like v1 Z.zero) <| TBool
@@ -914,7 +916,8 @@ module BitVec = struct
       let bits = size_of_bv v1.node.ty in
       match (v1.node.kind, v2.node.kind) with
       | BitVec l, BitVec r ->
-          bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
+          S_bool.of_bool
+          @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
       | BitVec x, _ when Z.equal (bv_to_z signed bits x) (min_for signed bits)
         ->
           v_true
@@ -1045,7 +1048,7 @@ module BitVec = struct
           { node = { kind = BitVec l; _ }; _ },
           { node = { kind = BitVec r; _ }; _ } )
       when Z.equal l Z.zero && Z.equal r Z.one ->
-        int_of_bool (not b)
+        int_of_bool (S_bool.not b)
     | Ite (b, t, e) -> ite b (to_int signed t) (to_int signed e)
     | _ -> Unop (IntOfBv signed, v) <| t_int
 
@@ -1060,7 +1063,7 @@ module BitVec = struct
   let and_ ~size ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | Int i1, Int i2 -> int_z (Z.( land ) i1 i2)
-    | Bool b1, Bool b2 -> bool (b1 && b2)
+    | Bool b1, Bool b2 -> S_bool.of_bool (b1 && b2)
     | _ ->
         let v1_bv = of_int signed size v1 in
         let v2_bv = of_int signed size v2 in
@@ -1070,7 +1073,7 @@ module BitVec = struct
   let or_ ~size ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | Int i1, Int i2 -> int_z (Z.( lor ) i1 i2)
-    | Bool b1, Bool b2 -> bool (b1 || b2)
+    | Bool b1, Bool b2 -> S_bool.of_bool (b1 || b2)
     | _ ->
         let v1_bv = of_int signed size v1 in
         let v2_bv = of_int signed size v2 in
@@ -1080,7 +1083,7 @@ module BitVec = struct
   let xor ~size ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | Int i1, Int i2 -> int_z (Z.( lxor ) i1 i2)
-    | Bool b1, Bool b2 -> bool (b1 <> b2)
+    | Bool b1, Bool b2 -> S_bool.of_bool (b1 <> b2)
     | _ ->
         let v1_bv = of_int signed size v1 in
         let v2_bv = of_int signed size v2 in
@@ -1142,12 +1145,14 @@ module Float = struct
 
   let lt v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | Float f1, Float f2 -> bool (float_of_string f1 < float_of_string f2)
+    | Float f1, Float f2 ->
+        S_bool.of_bool (float_of_string f1 < float_of_string f2)
     | _ -> Binop (FLt, v1, v2) <| TBool
 
   let leq v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | Float f1, Float f2 -> bool (float_of_string f1 <= float_of_string f2)
+    | Float f1, Float f2 ->
+        S_bool.of_bool (float_of_string f1 <= float_of_string f2)
     | _ -> Binop (FLeq, v1, v2) <| TBool
 
   let gt v1 v2 = lt v2 v1
@@ -1171,7 +1176,8 @@ module Float = struct
    fun sv ->
     match sv.node.kind with
     | Float f ->
-        bool (FloatClass.as_fpclass fc = classify_float (float_of_string f))
+        S_bool.of_bool
+          (FloatClass.as_fpclass fc = classify_float (float_of_string f))
     | _ -> Unop (FIs fc, sv) <| TBool
 
   let is_normal = is_floatclass Normal
@@ -1204,7 +1210,7 @@ end
 
 let rec lt v1 v2 =
   match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.lt i1 i2)
+  | Int i1, Int i2 -> S_bool.of_bool (Z.lt i1 i2)
   | _, _ when equal v1 v2 -> v_false
   | _, Binop (Plus, v2, v3) when equal v1 v2 -> lt zero v3
   | _, Binop (Plus, v2, v3) when equal v1 v3 -> lt zero v2
@@ -1230,14 +1236,14 @@ let rec lt v1 v2 =
       lt v1 (int_z @@ Z.sub x y)
   | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
   | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      if Z.equal Z.zero x then S_bool.of_bool (Z.lt y Z.zero)
       else
         let op = if Z.divisible y x || Z.(y > zero) then lt else leq in
         if Z.(zero < x) then op (int_z Z.(y / x)) v1'
         else op v1' (int_z Z.(y / x))
   | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
-      if Z.equal Z.zero x then bool (Z.lt Z.zero y)
+      if Z.equal Z.zero x then S_bool.of_bool (Z.lt Z.zero y)
       else
         let op = if Z.divisible y x || Z.(y < zero) then lt else leq in
         if Z.(zero < x) then op v1' (int_z Z.(y / x))
@@ -1251,7 +1257,10 @@ let rec lt v1 v2 =
   | Int z, Unop (IntOfBool, b) -> (
       match Z.(compare z zero) with 0 -> b | 1 -> v_false | _ -> v_true)
   | Unop (IntOfBool, b), Int z -> (
-      match Z.(compare z one) with 0 -> not b | 1 -> v_true | _ -> v_false)
+      match Z.(compare z one) with
+      | 0 -> S_bool.not b
+      | 1 -> v_true
+      | _ -> v_false)
   | Int _, Ite (b, t, e) -> ite b (lt v1 t) (lt v1 e)
   | Ite (b, t, e), Int _ -> ite b (lt t v2) (lt e v2)
   | _ -> (
@@ -1261,7 +1270,7 @@ let rec lt v1 v2 =
 
 and leq v1 v2 =
   match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.leq i1 i2)
+  | Int i1, Int i2 -> S_bool.of_bool (Z.leq i1 i2)
   | _, _ when equal v1 v2 -> v_true
   | _, Binop (Plus, v2, v3) when equal v1 v2 -> leq zero v3
   | _, Binop (Plus, v2, v3) when equal v1 v3 -> leq zero v2
@@ -1285,14 +1294,14 @@ and leq v1 v2 =
       leq v1 (int_z @@ Z.sub x y)
   | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
   | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      if Z.equal Z.zero x then S_bool.of_bool (Z.lt y Z.zero)
       else
         let op = if Z.divisible y x || Z.(y < zero) then leq else lt in
         if Z.(zero < x) then op (int_z Z.(y / x)) v1'
         else op v1' (int_z Z.(y / x))
   | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      if Z.equal Z.zero x then S_bool.of_bool (Z.lt y Z.zero)
       else
         let op = if Z.divisible y x || Z.(y > zero) then leq else lt in
         if Z.(zero < x) then op v1' (int_z Z.(y / x))
@@ -1314,7 +1323,10 @@ and leq v1 v2 =
   | Int z, Unop (IntOfBool, b) -> (
       match Z.(compare z one) with 0 -> b | 1 -> v_false | _ -> v_true)
   | Unop (IntOfBool, b), Int z -> (
-      match Z.(compare z zero) with 0 -> not b | 1 -> v_true | _ -> v_false)
+      match Z.(compare z zero) with
+      | 0 -> S_bool.not b
+      | 1 -> v_true
+      | _ -> v_false)
   | Int _, Ite (b, t, e) -> ite b (leq v1 t) (leq v1 e)
   | Ite (b, t, e), Int _ -> ite b (leq t v2) (leq e v2)
   | _ -> (
@@ -1329,10 +1341,10 @@ let rec sem_eq v1 v2 =
   if equal v1 v2 && Stdlib.not (is_float v1.node.ty) then v_true
   else
     match (v1.node.kind, v2.node.kind) with
-    | Int z1, Int z2 -> bool (Z.equal z1 z2)
-    | Bool b1, Bool b2 -> bool (b1 = b2)
-    | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
-    | BitVec b1, BitVec b2 -> bool (Z.equal b1 b2)
+    | Int z1, Int z2 -> S_bool.of_bool (Z.equal z1 z2)
+    | Bool b1, Bool b2 -> S_bool.of_bool (b1 = b2)
+    | Ptr (l1, o1), Ptr (l2, o2) -> S_bool.and_ (sem_eq l1 l2) (sem_eq o1 o2)
+    | BitVec b1, BitVec b2 -> S_bool.of_bool (Z.equal b1 b2)
     | _, Binop (Plus, v2, v3) when equal v1 v2 -> sem_eq v3 zero
     | _, Binop (Plus, v2, v3) when equal v1 v3 -> sem_eq v2 zero
     | Binop (Plus, v1, v3), _ when equal v1 v2 -> sem_eq v3 zero
@@ -1357,10 +1369,11 @@ let rec sem_eq v1 v2 =
     | Int y, Binop (Times, v1, { node = { kind = Int x; _ }; _ })
     | Binop (Times, v1, { node = { kind = Int x; _ }; _ }), Int y
     | Binop (Times, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-        if Z.equal Z.zero x then bool (Z.equal Z.zero y)
+        if Z.equal Z.zero x then S_bool.of_bool (Z.equal Z.zero y)
         else if Z.(equal zero (rem y x)) then sem_eq v1 (int_z Z.(y / x))
         else v_false
-    | Unop (IntOfBool, v1), Int z -> if Z.equal Z.zero z then not v1 else v1
+    | Unop (IntOfBool, v1), Int z ->
+        if Z.equal Z.zero z then S_bool.not v1 else v1
     | Unop (IntOfBool, b1), Unop (IntOfBool, b2) -> sem_eq b1 b2
     (* Reduce  (X & #x...N) = #x...M to (X & #xN) = #xM *)
     | Binop (BitAnd, _, _), _ | _, Binop (BitAnd, _, _) -> (
@@ -1417,14 +1430,14 @@ let sem_eq_untyped v1 v2 =
 let not_int_bool sv =
   match sv.node.kind with
   | Int z -> if Z.equal z Z.zero then one else zero
-  | Unop (IntOfBool, sv') -> int_of_bool (not sv')
+  | Unop (IntOfBool, sv') -> int_of_bool (S_bool.not sv')
   | _ -> int_of_bool (sem_eq sv zero)
 
 let bool_of_int sv =
   match sv.node.kind with
-  | Int z -> bool (Stdlib.not (Z.equal z Z.zero))
+  | Int z -> S_bool.of_bool (Stdlib.not (Z.equal z Z.zero))
   | Unop (IntOfBool, sv') -> sv'
-  | _ -> not (sem_eq sv zero)
+  | _ -> S_bool.not (sem_eq sv zero)
 
 (** {2 Pointers} *)
 
@@ -1476,8 +1489,8 @@ module Infix = struct
   let ( >=@ ) = geq
   let ( <@ ) = lt
   let ( <=@ ) = leq
-  let ( &&@ ) = and_
-  let ( ||@ ) = or_
+  let ( &&@ ) = S_bool.and_
+  let ( ||@ ) = S_bool.or_
   let ( +@ ) = plus
   let ( -@ ) = minus
   let ( ~- ) = neg

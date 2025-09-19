@@ -8,34 +8,34 @@ let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
   | Bool _ | BitVec _ | Float _ -> v
   | _ -> (
       match trivial_truthiness (Typed.type_ v) with
-      | Some true -> Svalue.Bool.v_true
-      | Some false -> Svalue.Bool.v_false
+      | Some true -> Svalue.S_bool.v_true
+      | Some false -> Svalue.S_bool.v_false
       | None -> (
           match v.node.kind with
           | Unop (Not, e) ->
               let e' = simplify e in
-              if Svalue.equal e e' then v else Svalue.Bool.not e'
+              if Svalue.equal e e' then v else Svalue.S_bool.not e'
           | Binop (Eq, e1, e2) ->
-              if Svalue.equal e1 e2 then Svalue.Bool.v_true
-              else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
+              if Svalue.equal e1 e2 then Svalue.S_bool.v_true
+              else if Svalue.sure_neq e1 e2 then Svalue.S_bool.v_false
               else v
           | Binop (And, e1, e2) ->
               let se1 = simplify e1 in
               let se2 = simplify e2 in
               if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-              else Svalue.Bool.and_ se1 se2
+              else Svalue.S_bool.and_ se1 se2
           | Binop (Or, e1, e2) ->
               let se1 = simplify e1 in
               let se2 = simplify e2 in
               if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-              else Svalue.Bool.or_ se1 se2
+              else Svalue.S_bool.or_ se1 se2
           | Ite (g, e1, e2) ->
               let sg = simplify g in
               let se1 = simplify e1 in
               let se2 = simplify e2 in
               if Svalue.equal sg g && Svalue.equal se1 e1 && Svalue.equal se2 e2
               then v
-              else Svalue.Bool.ite sg se1 se2
+              else Svalue.S_bool.ite sg se1 se2
           | _ -> fallback v))
 
 module Make_incremental
@@ -52,7 +52,7 @@ struct
   end)
 
   module Solver_state = struct
-    type t = Typed.sbool Typed.t Dynarray.t Dynarray.t
+    type t = Typed.S_bool.t Typed.t Dynarray.t Dynarray.t
 
     let init () =
       let t = Dynarray.create () in
@@ -93,7 +93,7 @@ struct
 
     let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
 
-    let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
+    let trivial_truthiness_of (t : t) (v : Typed.S_bool.t Typed.t) =
       let neg_v = Typed.not v in
       Dynarray.find_map
         (Dynarray.find_map (fun value ->
@@ -213,7 +213,7 @@ struct
         instance because an auxiliary analysis has new information about it that
         is not directly in the PC. *)
     type slot_content =
-      | Asrt of Typed.sbool Typed.t [@printer Typed.ppa]
+      | Asrt of Typed.S_bool.t Typed.t [@printer Typed.ppa]
       | Dirty of Var.Set.t [@printer Fmt.(iter ~sep:comma) Var.Set.iter Var.pp]
     [@@deriving show]
 
@@ -276,7 +276,7 @@ struct
       | _ -> None
 
     (* We check if the thing contains the value itself, or its negation. *)
-    let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
+    let trivial_truthiness_of (t : t) (v : Typed.S_bool.t Typed.t) =
       let neg_v = Typed.not v in
       Dynarray.find_map
         (Dynarray.find_map (function
@@ -475,7 +475,7 @@ struct
     [|n| == v] exists, in which case we replace it with the value [v].
     If the constraint evaluates to true, then it is satisfiable. *)
     let v_eqs = Var.Hashtbl.create 8 in
-    Svalue.Bool.split_ands to_check (fun v ->
+    Svalue.S_bool.split_ands to_check (fun v ->
         match v.node.kind with
         | Binop
             ( Eq,
@@ -496,7 +496,7 @@ struct
       | _ -> Svalue.mk_var v ty
     in
     let res = Eval.eval ~eval_var to_check in
-    Svalue.equal res Svalue.Bool.v_true
+    Svalue.equal res Svalue.S_bool.v_true
 
   let check_sat_raw solver relevant_vars to_check =
     (* TODO: we shouldn't wait for ack for each command individually... *)
@@ -534,9 +534,11 @@ struct
           Solver_state.unchecked_constraints solver.state
         in
         (* This will put the check in a somewhat-normal form, to increase cache hits. *)
-        let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let to_check =
-          Iter.fold Typed.and_ to_check
+          Dynarray.fold_left Typed.S_bool.and_ Typed.v_true to_check
+        in
+        let to_check =
+          Iter.fold Typed.S_bool.and_ to_check
             (Analysis.encode ~vars:relevant_vars solver.analysis)
         in
         let answer = check_sat_raw_memo solver relevant_vars to_check in

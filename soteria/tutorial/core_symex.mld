@@ -37,7 +37,7 @@ Executing a symbolic process is done using the {{!Soteria.Symex.S.run}run} funct
 # Symex.run
 - : ?fuel:Symex.Fuel_gauge.t ->
     mode:Symex.Approx.t ->
-    'a Symex.t -> ('a * Symex.Value.sbool Typed.t list) list
+    'a Symex.t -> ('a * Symex.Value.S_bool.t Typed.t list) list
 = <fun>
 ]}
 
@@ -47,7 +47,7 @@ For instance, let's execute the symbolic process we just created, using the {{!S
 
 {@ocaml[
 # Symex.return 0 |> Symex.run ~mode:OX;;
-- : (int * Symex.Value.sbool Typed.t list) list = [(0, [])]]}
+- : (int * Symex.Value.S_bool.t Typed.t list) list = [(0, [])]]}
 ]}
 
 As expected the result of the symbolic process is a single branch with the value [0] and an empty path condition [[]], which means that there is no condition for taking this branch, i.e., it is always taken.
@@ -67,7 +67,7 @@ Let's run this process:
 
 {@ocaml[
 # Symex.nondet Typed.t_int |> Symex.run ~mode:OX;;
-- : ([> Typed.T.sint ] Typed.t * Symex.Value.sbool Typed.t list) list =
+- : ([> Typed.T.sint ] Typed.t * Symex.Value.S_bool.t Typed.t list) list =
 [(V|1|, [])]
 ]}
 
@@ -108,7 +108,8 @@ Running this symbolic process yields a single branch with no path condition:
 
 {@ocaml[
 # Symex.run ~mode:OX process;;
-- : (([> Typed.T.sint ] as '_weak1) Typed.t * Symex.Value.sbool Typed.t list)
+- : (([> Typed.T.sint ] as '_weak1) Typed.t *
+     Symex.Value.S_bool.t Typed.t list)
     list
 = [((V|1| + 2), [])]
 ]}
@@ -124,7 +125,7 @@ For instance, we can create a symbolic process that introduces a nondeterministi
 val process : bool Symex.t = <abstr>
 
 # Symex.run ~mode:OX process;;
-- : (bool * Symex.Value.sbool Typed.t list) list = [(false, [])]
+- : (bool * Symex.Value.S_bool.t Typed.t list) list = [(false, [])]
 ]}
 
 This process returns a single branch with the value [false], as it is not *always* guaranteed that the symbolic integer [x] is positive. Now, if we add an assumption that, say, [x] is greater than 10, we get a different result:
@@ -137,7 +138,8 @@ This process returns a single branch with the value [false], as it is not *alway
 val process : bool Symex.t = <abstr>
 
 # Symex.run ~mode:OX process;;
-- : (bool * Symex.Value.sbool Typed.t list) list = [(true, [(11 <= V|1|)])]
+- : (bool * Symex.Value.S_bool.t Typed.t list) list =
+[(true, [(11 <= V|1|)])]
 ]} 
 
 This time, the assertion is satisfied, and the symbolic process returns a single branch with value [true], and a path condition that corresponds to the assumption we made, i.e. that [V|1|] (the symbolic integer) is greater than or equal to 11 (which is equivalent to the assumption we wrote).
@@ -156,7 +158,7 @@ A more interesting symbolic process is one that introduces conditional branching
 val process : string Symex.t = <abstr>
 
 # Symex.run ~mode:OX process;;
-- : (string * Symex.Value.sbool Typed.t list) list =
+- : (string * Symex.Value.S_bool.t Typed.t list) list =
 [("V|1| is even", [(0 == (V|1| mod 2))]);
  ("V|1| is odd", [(0 != (V|1| mod 2))])]
 ]}

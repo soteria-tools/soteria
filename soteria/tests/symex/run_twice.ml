@@ -21,7 +21,7 @@ let fn () =
   let open Typed.Infix in
   let* v = nondet Typed.t_int in
   let* () = assume [ v ==@ Typed.zero ] in
-  if%sat Typed.not (v ==@ Typed.one) then return true else return false
+  if%sat Typed.S_bool.not (v ==@ Typed.one) then return true else return false
 
 let do_test () =
   let pp =

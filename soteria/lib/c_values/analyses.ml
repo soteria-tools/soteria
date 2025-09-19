@@ -10,7 +10,7 @@ module type S = sig
 
   val simplify : t -> Svalue.t -> Svalue.t
   val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
-  val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
+  val encode : ?vars:Var.Hashset.t -> t -> Typed.S_bool.t Typed.t Iter.t
 end
 
 module Merge (A1 : S) (A2 : S) : S = struct
@@ -37,7 +37,7 @@ module Merge (A1 : S) (A2 : S) : S = struct
     let v'', vars2 = A2.add_constraint a2 v' in
     (v'', Var.Set.union vars1 vars2)
 
-  let encode ?vars (a1, a2) : Typed.sbool Typed.t Iter.t =
+  let encode ?vars (a1, a2) : Typed.S_bool.t Typed.t Iter.t =
     Iter.append (A1.encode ?vars a1) (A2.encode ?vars a2)
 end
 
@@ -208,7 +208,7 @@ module Interval : S = struct
                 (if neg then "/" else "∩")
                 Range.pp range' Range.pp new_range);
           let is_ok = not (Range.is_empty range) in
-          ((Svalue.bool (is_ok <> neg), Var.Set.empty), st)
+          ((Svalue.S_bool.of_bool (is_ok <> neg), Var.Set.empty), st)
       | Some new_range -> (
           let st' = Var.Map.add var new_range st in
           log (fun m ->
@@ -221,7 +221,7 @@ module Interval : S = struct
               let eq = Svalue.int_z m ==@ mk_var var in
               (* this is hacky; we found the exact value, but we can't return the equality
                  if we're negating, since that equality will otherwise be negated. *)
-              (((if neg then Svalue.not eq else eq), Var.Set.empty), st')
+              (((if neg then Svalue.S_bool.not eq else eq), Var.Set.empty), st')
           (* The range is empty, so this cannot be true *)
           | _ when Range.is_empty new_range ->
               ((Svalue.v_false, Var.Set.empty), st')
@@ -233,7 +233,8 @@ module Interval : S = struct
           (* We could cleanly absorb the range, so the PC doesn't need to store it -- however
              we must mark this variable as dirty, as maybe the modified range still renders
              the branch infeasible, e.g. because of some additional PC assertions. *)
-          | _ -> ((Svalue.bool (not neg), Var.Set.singleton var), st'))
+          | _ -> ((Svalue.S_bool.of_bool (not neg), Var.Set.singleton var), st')
+          )
     in
     match v.node.kind with
     | Binop
@@ -260,7 +261,7 @@ module Interval : S = struct
     (* We conservatively explore negations; we're only interested in simple (in)equalities *)
     | Unop (Not, nv) ->
         let (nv', vars), st' = add_constraint ~absorb ~neg:(not neg) nv st in
-        ((Svalue.not nv', vars), st')
+        ((Svalue.S_bool.not nv', vars), st')
     (* We don't explore && and || within negations, because that becomes messy. *)
     | Binop (And, v1, v2) when not neg ->
         let (v1', vars1), st' = add_constraint ~absorb v1 st in
@@ -289,7 +290,7 @@ module Interval : S = struct
 
   (** Encode all the information relevant to the given variables and conjuncts
       them with the given accumulator. *)
-  let encode ?vars st : Typed.sbool Typed.t Iter.t =
+  let encode ?vars st : Typed.S_bool.t Typed.t Iter.t =
     let to_check =
       Option.fold ~none:(fun _ -> true) ~some:Var.Hashset.mem vars
     in

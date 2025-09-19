@@ -6,7 +6,7 @@ module type Mutable_incremental = sig
   include Reversible.Mutable
   module Value : Value.S
 
-  type sbool_v := Value.sbool Value.t
+  type sbool_v := Value.S_bool.t Value.t
 
   (** Adds constraints to the solver state. The [simplified] flag indicates if
       {!simplify} was already applied to the constraints, and is [false] by
@@ -24,8 +24,10 @@ module type In_place_incremental = sig
   include Reversible.In_place
   module Value : Value.S
 
+  type sbool_v := Value.S_bool.t Value.t
+
   (** simplified indicates if constraits were already simplified *)
-  val add_constraints : ?simplified:bool -> Value.sbool Value.t list -> unit
+  val add_constraints : ?simplified:bool -> sbool_v list -> unit
 
   val sat : unit -> bool
 
