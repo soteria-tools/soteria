@@ -157,16 +157,6 @@ module type S = sig
       serialized )
     Result.t
 
-  val with_ptr_decay :
-    (Sptr.decay_st -> ('a * Sptr.decay_st) Rustsymex.t) ->
-    t ->
-    ('a * t) Rustsymex.t
-
-  val with_ptr_decay_res :
-    (Sptr.decay_st -> ('a * Sptr.decay_st, 'b, 'c) Result.t) ->
-    t ->
-    ('a * t, 'b, 'c) Result.t
-
   val error :
     ([< Error.t ] as 'a) -> t -> ('ok, 'a err * t, serialized) Result.t
 

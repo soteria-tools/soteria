@@ -10,11 +10,6 @@ module type S = sig
   (** pointer type *)
   type t
 
-  (** decay state type *)
-  type decay_st
-
-  val pp_decay_st : decay_st Fmt.t
-  val empty_decay_st : decay_st
   val pp : t Fmt.t
   val null_ptr : unit -> t
   val null_ptr_of : sint Typed.t -> t
@@ -30,8 +25,7 @@ module type S = sig
 
   (** The distance, in bytes, between two pointers; if they point to different
       allocations, they are decayed and substracted. *)
-  val distance :
-    t -> t -> decay_st -> ([> sint ] Typed.t * decay_st) Rustsymex.t
+  val distance : t -> t -> sint Typed.t Rustsymex.t
 
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
@@ -57,16 +51,7 @@ module type S = sig
     (t, [> `UBDanglingPointer ], 'a) Result.t
 
   (** Decay a pointer into an integer value, losing provenance. *)
-  val decay : t -> decay_st -> ([> sint ] Typed.t * decay_st) Rustsymex.t
-
-  (** Decay a pointer into an integer value, using an effect handler;
-      {b this could be unsound} but should be ok in most cases. *)
-  val decay_eft : t -> [> sint ] Typed.t Rustsymex.t
-
-  (** To be used before [decay_eft] to wrap a function in a handler for the
-      decay state. {b This could be unsound}, and should be avoided. *)
-  val with_decay :
-    decay_st -> (unit -> 'a Rustsymex.t) -> ('a * decay_st) Rustsymex.t
+  val decay : t -> [> sint ] Typed.t Rustsymex.t
 
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> [> sint ] Typed.t
@@ -88,24 +73,12 @@ type arithptr_t = {
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
 module ArithPtr : S with type t = arithptr_t = struct
-  module LocMap = Map.MakePp (struct
-    type t = T.sloc Typed.t
-
-    let compare = Typed.compare
-    let pp = Typed.ppa
-  end)
-
   type t = arithptr_t = {
     ptr : T.sptr Typed.t;
     tag : Tree_borrow.tag;
     align : T.nonzero Typed.t;
     size : T.sint Typed.t;
   }
-
-  type decay_st = T.sint Typed.t LocMap.t
-
-  let empty_decay_st = LocMap.empty
-  let pp_decay_st = LocMap.pp Typed.ppa
 
   let pp fmt { ptr; tag; _ } =
     Fmt.pf fmt "%a[%a]" Typed.ppa ptr Tree_borrow.pp_tag tag
@@ -167,14 +140,24 @@ module ArithPtr : S with type t = arithptr_t = struct
     let off = Layout.Fields_shape.offset_of field fields in
     offset ~signed:false ptr (Typed.BitVec.usizei off)
 
-  let decay { ptr; align; size; _ } decay_st =
+  module ValMap = Map.Make (struct
+    type t = T.sloc Typed.t
+
+    let compare = Typed.compare
+  end)
+
+  (* FIXME: inter-test mutability *)
+  (* Create a map with the null-ptr preset to 0 *)
+  let decayed_vars = ref ValMap.empty
+
+  let decay { ptr; align; size; _ } =
     let open Rustsymex in
     let open Rustsymex.Syntax in
     (* FIXME: if we want to be less unsound, we would also need to assert that this pointer's
        base is distinct from all other decayed pointers' bases... *)
     let loc, ofs = Typed.Ptr.decompose ptr in
-    match LocMap.find_opt loc decay_st with
-    | Some loc_int -> return (loc_int +!@ ofs, decay_st)
+    match ValMap.find_opt loc !decayed_vars with
+    | Some loc_int -> return (loc_int +!@ ofs)
     | None ->
         let+ loc_int =
           if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
@@ -192,30 +175,16 @@ module ArithPtr : S with type t = arithptr_t = struct
             loc_int
         in
         L.debug (fun m -> m "Decayed %a to %a" Typed.ppa loc Typed.ppa loc_int);
-        let decay_st = LocMap.add loc loc_int decay_st in
-        (loc_int +!@ ofs, decay_st)
+        decayed_vars := ValMap.add loc loc_int !decayed_vars;
+        loc_int +!@ ofs
 
-  type _ Effect.t += Decay : t -> [> T.sint ] Typed.t Rustsymex.t Effect.t
-
-  let with_decay decay_st f =
-    let decay_st = ref decay_st in
-    try
-      let+ res = f () in
-      (res, !decay_st)
-    with effect Decay ptr, k ->
-      let* decayed, decay_st' = decay ptr !decay_st in
-      decay_st := decay_st';
-      Effect.Deep.continue k (return decayed)
-
-  let decay_eft ptr = Effect.perform (Decay ptr)
-
-  let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) decay_st =
+  let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
     if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
-      return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2, decay_st)
+      return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
     else
-      let* ptr1, decay_st = decay p1 decay_st in
-      let+ ptr2, decay_st = decay p2 decay_st in
-      (ptr1 -!@ ptr2, decay_st)
+      let* ptr1 = decay p1 in
+      let+ ptr2 = decay p2 in
+      ptr1 -!@ ptr2
 
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
   let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)

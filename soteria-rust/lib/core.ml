@@ -143,26 +143,27 @@ module M (State : State_intf.S) = struct
     in
     Result.ok (Tuple [ Base wrapped; Base (BV.of_bool overflowed) ])
 
-  let rec eval_ptr_binop (bop : Expressions.binop) l r st =
+  let rec eval_ptr_binop (bop : Expressions.binop) l r :
+      ([> T.cval ] Typed.t, 'e, 'm) Result.t =
     match (bop, l, r) with
     | Ne, _, _ ->
-        let++ res, st = eval_ptr_binop Eq l r st in
-        (BV.not_bool (cast res), st)
+        let++ res = eval_ptr_binop Eq l r in
+        BV.not_bool (cast res)
     | Eq, Ptr (l, None), Ptr (r, None) ->
-        Result.ok (BV.of_bool (Sptr.sem_eq l r), st)
+        Result.ok (BV.of_bool (Sptr.sem_eq l r))
     | Eq, Ptr (l, Some ml), Ptr (r, Some mr) ->
-        Result.ok (BV.of_bool (Sptr.sem_eq l r &&@ (ml ==@ mr)), st)
+        Result.ok (BV.of_bool (Sptr.sem_eq l r &&@ (ml ==@ mr)))
     | Eq, Ptr (_, Some _), Ptr (_, None) | Eq, Ptr (_, None), Ptr (_, Some _) ->
-        Result.ok (BV.of_bool v_false, st)
+        Result.ok (BV.of_bool v_false)
     | Eq, Ptr (p, _), Base v | Eq, Base v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then
-          Result.ok (BV.of_bool (Sptr.is_at_null_loc p), st)
+          Result.ok (BV.of_bool (Sptr.is_at_null_loc p))
         else Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p ppa v
-    | Eq, Base v1, Base v2 -> Result.ok (BV.of_bool (v1 ==@ v2), st)
+    | Eq, Base v1, Base v2 -> Result.ok (BV.of_bool (v1 ==@ v2))
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then
-          let* dist, st = State.with_ptr_decay (Sptr.distance l r) st in
+          let* dist = Sptr.distance l r in
           let bop =
             match bop with
             | Lt -> ( <$@ )
@@ -177,28 +178,28 @@ module M (State : State_intf.S) = struct
               if%sat dist ==@ Usize.(0s) then
                 let ml, mr, mty = cast_checked2 ml mr in
                 match untype_type mty with
-                | TBitVector _ -> Result.ok (BV.of_bool (bop ml mr), st)
+                | TBitVector _ -> Result.ok (BV.of_bool (bop ml mr))
                 | mty ->
                     Fmt.kstr not_impl
                       "Don't know how to compare metadata of type %a"
                       Svalue.pp_ty mty
-              else Result.ok (BV.of_bool v, st)
+              else Result.ok (BV.of_bool v)
           (* is this correct? *)
-          | Some _, None | None, Some _ -> Result.ok (BV.of_bool v, st)
-          | None, None -> Result.ok (BV.of_bool v, st)
-        else State.error `UBPointerComparison st
+          | Some _, None | None, Some _ -> Result.ok (BV.of_bool v)
+          | None, None -> Result.ok (BV.of_bool v)
+        else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         let** () =
-          State.assert_ (Sptr.is_same_loc l r) `UBPointerComparison st
+          assert_or_error (Sptr.is_same_loc l r) `UBPointerComparison
         in
-        let* v, st = State.with_ptr_decay (Sptr.distance l r) st in
+        let* v = Sptr.distance l r in
         let* cmp = cmp_of_int v in
-        Result.ok (cmp, st)
+        Result.ok cmp
     | Cmp, Ptr (p, _), Base v | Cmp, Base v, Ptr (p, _) ->
         if%sat v ==@ BV.usizei (Layout.size_of_uint_ty Usize) then
-          if%sat Sptr.is_at_null_loc p then Result.ok (U8.(0s), st)
-          else if l = Base v then Result.ok (U8.(1s), st)
-          else Result.ok (U8.(-1s), st)
+          if%sat Sptr.is_at_null_loc p then Result.ok U8.(0s)
+          else if l = Base v then Result.ok U8.(1s)
+          else Result.ok U8.(-1s)
         else
           Fmt.kstr not_impl "Don't know how to eval %a cmp %a" Sptr.pp p ppa v
     | op, l, r ->

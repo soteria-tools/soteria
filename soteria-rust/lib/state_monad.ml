@@ -113,8 +113,6 @@ module Make (State : State_intf.S) = struct
     ((res, acc), env, state)
 
   module State = struct
-    type ('a, 'b) monad = ('a, 'b) t
-
     include State
 
     let[@inline] load ?is_move ptr ty = lift_state_op (load ?is_move ptr ty)
@@ -179,12 +177,6 @@ module Make (State : State_intf.S) = struct
       ((), env, state)
 
     let[@inline] assert_not guard err = assert_ (Typed.not guard) err
-    let[@inline] with_ptr_decay_res f = lift_state_op @@ with_ptr_decay_res f
-
-    let[@inline] with_ptr_decay f =
-     fun env state ->
-      let+ v, state = State.with_ptr_decay f state in
-      Ok (v, env, state)
   end
 
   module Syntax = struct
