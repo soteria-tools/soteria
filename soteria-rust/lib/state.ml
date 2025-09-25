@@ -54,50 +54,30 @@ module SPmap = Pmap_direct_access (StateKey)
 module Tree_block = Rtree_block.Make (Sptr)
 
 type global = String of string | Global of Charon.Types.global_decl_id
-[@@deriving show { with_path = false }, ord]
 
-module GlobMap = struct
-  include Map.Make (struct
-    type t = global
-
-    let compare = compare_global
-  end)
-
-  let pp pp_v fmt m =
-    let pp_pair = Fmt.pair ~sep:(Fmt.any " -> ") pp_global pp_v in
-    (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) fmt m
-end
+module GlobMap = Map.MakePp (struct
+  type t = global = String of string | Global of Charon.Types.global_decl_id
+  [@@deriving show { with_path = false }, ord]
+end)
 
 module FunBiMap = struct
-  module LocMap = Map.Make (struct
-    type t = T.sloc Typed.t
+  include
+    Bimap.Make
+      (struct
+        type t = T.sloc Typed.t
 
-    let compare = Typed.compare
-  end)
+        let compare = Typed.compare
+        let pp = Typed.ppa
+      end)
+      (struct
+        type t = Charon.Types.fn_ptr
 
-  module FunMap = Map.Make (struct
-    type t = Charon.Types.fn_ptr
+        let compare = Charon.Types.compare_fn_ptr
+        let pp = Charon.Types.pp_fn_ptr
+      end)
 
-    let compare = Charon.Types.compare_fn_ptr
-  end)
-
-  type t = Charon.Types.fn_ptr LocMap.t * T.sloc Typed.t FunMap.t
-
-  let empty = (LocMap.empty, FunMap.empty)
-
-  let add loc fn_ptr (lmap, fmap) =
-    let lmap' = LocMap.add loc fn_ptr lmap in
-    let fmap' = FunMap.add fn_ptr loc fmap in
-    (lmap', fmap')
-
-  let get_fn loc (lmap, _) = LocMap.find_opt loc lmap
-  let get_loc fn (_, fmap) = FunMap.find_opt fn fmap
-
-  let pp fmt (lmap, _) =
-    let pp_pair =
-      Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Types.pp_fn_ptr
-    in
-    (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) fmt lmap
+  let get_fn = find_l
+  let get_loc = find_r
 end
 
 type sub = Tree_block.t * Tree_borrow.t
