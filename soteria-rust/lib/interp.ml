@@ -569,7 +569,7 @@ module Make (State : State_intf.S) = struct
                 let^^+ p' = Sptr.offset ~signed ~ty p v in
                 Ptr (p', meta)
             | _ ->
-                let^^+ res = Core.eval_ptr_binop op p1 p2 in
+                let+ res = lift_state_op @@ Core.eval_ptr_binop op p1 p2 in
                 Base res)
         | v1, v2 ->
             Fmt.kstr not_impl

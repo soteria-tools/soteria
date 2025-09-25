@@ -87,6 +87,7 @@ and t = {
   functions : FunBiMap.t;
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
+  pointers : Sptr.decay_st;
 }
 [@@deriving show { with_path = false }]
 
@@ -111,6 +112,7 @@ let empty =
     functions = FunBiMap.empty;
     globals = GlobMap.empty;
     errors = [];
+    pointers = Sptr.empty_decay_st;
   }
 
 let log action ptr st =
@@ -127,6 +129,22 @@ let with_state st f =
   | Ok (v, h) -> Ok (v, { st with state = h })
   | Missing fixes -> Missing fixes
   | Error e -> Error e
+
+let with_ptr_decay f ({ pointers; _ } as st) =
+  let+ res, pointers = f pointers in
+  (res, { st with pointers })
+
+let with_ptr_decay_res f ({ pointers; _ } as st) =
+  let++ res, pointers = f pointers in
+  (res, { st with pointers })
+
+let with_ptr_decay_eft ({ pointers; _ } as st) f =
+  let+ res, pointers = Sptr.with_decay pointers f in
+  (res, { st with pointers })
+
+let with_ptr_decay_eft_res ({ pointers; _ } as st) f =
+  let+ res, pointers = Sptr.with_decay pointers f in
+  Soteria.Symex.Compo_res.map res (fun res -> (res, { st with pointers }))
 
 let with_tbs b f =
   let block, tree_borrow =
@@ -209,8 +227,12 @@ let apply_parser ?(ignore_borrow = false) ptr parser st =
         f "Loading blocks %a:%a" Typed.ppa ofs Charon_util.pp_ty ty);
     Tree_block.load ~ignore_borrow ofs ty ptr.tag tb block
   in
+  let decayer ptr block =
+    let+ decayed = Sptr.decay_eft ptr in
+    (decayed, block)
+  in
   let parser = parser ~offset in
-  Encoder.ParserMonad.parse ~init:block ~handler parser
+  Encoder.ParserMonad.parse ~init:block ~handler ~decayer parser
 
 let load_discriminant (ptr, _) ty st =
   let** (), st = check_ptr_align ptr ty st in

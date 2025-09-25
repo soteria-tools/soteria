@@ -165,8 +165,8 @@ module M (State : State_intf.S) = struct
   let check_overlap name l r size =
     let^^ l_end = Sptr.offset ~signed:false l size in
     let^^ r_end = Sptr.offset ~signed:false r size in
-    let^ dist1 = Sptr.distance l r_end in
-    let^ dist2 = Sptr.distance r l_end in
+    let* dist1 = State.with_ptr_decay (Sptr.distance l r_end) in
+    let* dist2 = State.with_ptr_decay (Sptr.distance r l_end) in
     let zero = Usize.(0s) in
     State.assert_not
       (Sptr.is_same_loc l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
@@ -452,7 +452,7 @@ module M (State : State_intf.S) = struct
   let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
 
   let ptr_guaranteed_cmp ~t:_ ~ptr ~other =
-    let^^+ res = Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other) in
+    let+ res = lift_state_op @@ Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other) in
     Typed.cast res
 
   let ptr_offset_from_ ~unsigned ~t ~ptr:((ptr, _) : full_ptr)
@@ -464,7 +464,7 @@ module M (State : State_intf.S) = struct
         (`Panic (Some "ptr_offset_from with ZST"))
     in
     let size = Typed.cast size in
-    let^ off = Sptr.distance ptr base in
+    let* off = State.with_ptr_decay @@ Sptr.distance ptr base in
     (* If the pointers are not equal, they mustn't be dangling *)
     let* () =
       State.assert_
