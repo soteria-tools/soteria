@@ -546,8 +546,11 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     let@ () = Fuel.run ~init:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
+    let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
     let l = ref [] in
-    let () = iter @@ fun x -> l := (x, Solver.as_values ()) :: !l in
+    let () =
+      iter @@ fun x -> if admissible () then l := (x, Solver.as_values ()) :: !l
+    in
     List.rev !l
 
   let run ?fuel ~mode iter =
@@ -572,7 +575,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
     L.info (fun m -> m "%s" reason);
     Stats.As_ctx.push_give_up_reason ~loc reason;
-    if Approx.As_ctx.is_ox () then Give_up.perform reason
+    if
+      Approx.As_ctx.is_ox ()
+      && Solver_result.admissible ~mode:OX (Solver.sat ())
+    then Give_up.perform reason
 
   let some_or_give_up ~loc reason = function
     | Some x -> return x
@@ -591,12 +597,15 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       Symex_state.reset ();
       let@ () = Fuel.run ~init:fuel in
       let@ () = Approx.As_ctx.with_mode mode in
+
       let l = ref [] in
       let () =
         try
           iter @@ fun x ->
-          let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
-          l := (x, Solver.as_values ()) :: !l
+          if Solver_result.admissible ~mode (Solver.sat ()) then
+            (* Make sure to drop branche that have leftover assumes with unsatisfiable PCs. *)
+            let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
+            l := (x, Solver.as_values ()) :: !l
         with effect Give_up.Gave_up_eff reason, k ->
           l := (Compo_res.Error (Gave_up reason), Solver.as_values ()) :: !l;
           Effect.Deep.continue k ()
