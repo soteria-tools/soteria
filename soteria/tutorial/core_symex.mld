@@ -14,9 +14,10 @@ Today you'll be learning how to:
 The main utility of the Soteria library is the {{!Soteria.Symex.Make} Symex.Make} functor, which provides the necessary infrastructure to define and run a symbolic execution engine.
 To instantiate it, you need to provide a {{!Soteria.Symex.Solver.Mutable_incremental} Solver} module, which defines {e symbolic values} and the solver interface to decide whether a symbolic expression of type {{!Soteria.Symex.Value.S.sbool}Value.sbool} is satisfiable.
 You also need to provide a {{!Soteria.Symex.Meta.S}Meta} module which describes types useful for statistics bookkeeping (see {!Soteria.Stats}), but can be set to {{!Soteria.Symex.Meta.Dummy}Dummy} if they are not necessary.
+Another module to provide is a {{!Soterya.Symex.Mut.S}Mut} module, for mutable data you may want to carry during execution. Set it to {{!Soteria.Symex.Mut.Dummy}Dummy} too if it's not needed.
 
 {@ocaml[
-module Symex = Symex.Make (Symex.Meta.Dummy) (C_solver.Z3_solver)
+module Symex = Symex.Make (Symex.Meta.Dummy) (Symex.Mut.Dummy) (C_solver.Z3_solver)
 ]}
 
 
@@ -81,10 +82,10 @@ Without going into details about monads, Soteria provides a {{:https://ocaml.org
 
 {@ocaml[
 (* Puts the let* operator in scope *)
-open Symex.Syntax 
+open Symex.Syntax
 
-(* Puts infix operators for symbolic values in scope. 
-   These operators are postifixed with "@" to avoid
+(* Puts infix operators for symbolic values in scope.
+   These operators are postfixed with "@" to avoid
    conflicts with the standard library. *)
 open Typed.Infix
 
@@ -138,7 +139,7 @@ val process : bool Symex.t = <abstr>
 
 # Symex.run ~mode:OX process;;
 - : (bool * Symex.Value.sbool Typed.t list) list = [(true, [(11 <= V|1|)])]
-]} 
+]}
 
 This time, the assertion is satisfied, and the symbolic process returns a single branch with value [true], and a path condition that corresponds to the assumption we made, i.e. that [V|1|] (the symbolic integer) is greater than or equal to 11 (which is equivalent to the assumption we wrote).
 
