@@ -146,8 +146,8 @@ module ArithPtr : S with type t = arithptr_t = struct
     (* FIXME: if we want to be less unsound, we would also need to assert that this pointer's
        base is distinct from all other decayed pointers' bases... *)
     let loc, ofs = Typed.Ptr.decompose ptr in
-    let* decay_st = get_decay_map () in
-    match LocMap.find_opt loc decay_st with
+    let* decayed = lookup_decay_map loc in
+    match decayed with
     | Some loc_int -> return (loc_int +!@ ofs)
     | None ->
         let* loc_int =
@@ -165,8 +165,7 @@ module ArithPtr : S with type t = arithptr_t = struct
             let+ () = Rustsymex.assume constrs in
             loc_int
         in
-        L.debug (fun m -> m "Decayed %a to %a" Typed.ppa loc Typed.ppa loc_int);
-        let+ () = set_decay_map @@ LocMap.add loc loc_int in
+        let+ () = update_decay_map loc loc_int in
         loc_int +!@ ofs
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =

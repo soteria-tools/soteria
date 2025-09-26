@@ -615,11 +615,15 @@ module Make (Meta : Meta.S) (Mut : Mut.S) (Sol : Solver.Mutable_incremental) :
   let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
   let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
   let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
-  let read_mut () f = MutState.wrap_read f ()
 
-  let wrap_mut mutf f =
+  let read_mut () =
+    let x = ref Mut.init in
+    MutState.wrap_read (( := ) x) ();
+    return !x
+
+  let wrap_mut mutf =
     MutState.wrap (fun x -> ((), mutf x)) ();
-    f ()
+    return ()
 
   module Result = struct
     include Compo_res.T (MONAD)

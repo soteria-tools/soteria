@@ -57,8 +57,13 @@ let[@inline] with_loc_err () f =
 let error e = Result.error (e, get_loc ())
 let not_impl msg = give_up ~loc:(get_loc ()) msg
 let of_opt_not_impl msg = some_or_give_up ~loc:(get_loc ()) msg
-let get_decay_map = read_mut
-let set_decay_map = wrap_mut
+
+let lookup_decay_map loc =
+  let open Syntax in
+  let+ map = read_mut () in
+  LocMap.find_opt loc map
+
+let update_decay_map loc decayed = wrap_mut (LocMap.add loc decayed)
 
 module Freeable = Soteria.Sym_states.Freeable.Make (SYMEX)
 module Pmap_direct_access = Soteria.Sym_states.Pmap.Direct_access (SYMEX)
