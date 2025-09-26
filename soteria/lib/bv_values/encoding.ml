@@ -278,4 +278,15 @@ end
   let v, bindings = LetBinder.let_binds_for ~min_occurrences:10 v in
   encode_value v |> LetBinder.apply_bindings bindings *)
 
-let init_commands = []
+let init_commands =
+  [
+    Simple_smt.set_option ":auto_config" "false";
+    Simple_smt.set_option ":smt.mbqi" "false";
+    Simple_smt.set_option ":smt.case_split" "3";
+    Simple_smt.set_option ":smt.qi.eager_threshold" "100.0";
+    Simple_smt.set_option ":smt.delay_units" "true";
+    Simple_smt.set_option ":smt.arith.solver" "2";
+    Simple_smt.set_option ":smt.arith.nl" "false";
+    Simple_smt.set_option ":pi.enabled" "false";
+    Simple_smt.set_option ":rewriter.sort_disjunctions" "false";
+  ]
