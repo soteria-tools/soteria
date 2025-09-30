@@ -31,3 +31,7 @@ This test is considered successful if the out of each process is a single branch
   if_false: [42]
   if_maybe: [42]
   if_guranteed: [42]
+
+Absolute value in a simple language, should return two cases: positive and strictly negative, both return true.
+  $ ./simple_lang.exe
+  Results: [(Ok: true, [(0 <= V|1|)]); (Ok: true, [(V|1| <= -1)])]
