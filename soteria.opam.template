@@ -1,5 +1,3 @@
 pin-depends: [
   ["simple_smt.~dev" "git+https://github.com/NatKarmios/simple-smt-ocaml#9db7ef0bb61a76010de255af3cbe4066dd8dd622"]
-  ["progress.~dev" "git+https://github.com/craigfe/progress#bbea457043966ede1cb895958fb4798f3b6c09db"]
-  ["terminal.~dev" "git+https://github.com/craigfe/progress#bbea457043966ede1cb895958fb4798f3b6c09db"]
 ]
