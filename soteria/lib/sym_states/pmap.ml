@@ -3,7 +3,7 @@ open Symex
 module type KeyS = sig
   type t
 
-  module Symex : Symex.S
+  module Symex : Symex.Base
   include Stdlib.Map.OrderedType with type t := t
 
   type sbool_v := Symex.Value.sbool Symex.Value.t
@@ -16,7 +16,7 @@ module type KeyS = sig
   val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
 end
 
-module Mk_concrete_key (Symex : Symex.S) (Key : Soteria_std.Ordered_type.S) :
+module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
   KeyS with module Symex = Symex and type t = Key.t = struct
   module Symex = Symex
   include Key
@@ -29,7 +29,7 @@ module Mk_concrete_key (Symex : Symex.S) (Key : Soteria_std.Ordered_type.S) :
 end
 
 module Build_from_find_opt_sym
-    (Symex : Symex.S)
+    (Symex : Symex.Base)
     (Key : KeyS with module Symex = Symex)
     (Find_opt_sym : sig
       val f : Key.t -> 'a Stdlib.Map.Make(Key).t -> (Key.t * 'a option) Symex.t
@@ -149,7 +149,7 @@ struct
     Result.fold_seq (M.to_seq st) ~init ~f
 end
 
-module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
+module Make (Symex : Symex.Base) (Key : KeyS with module Symex = Symex) = struct
   open Symex.Syntax
   module M' = Stdlib.Map.Make (Key)
 
@@ -173,7 +173,7 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
       end)
 end
 
-module Direct_access (Symex : Symex.S) (Key : KeyS with module Symex = Symex) =
+module Direct_access (Symex : Symex.Base) (Key : KeyS with module Symex = Symex) =
 struct
   open Symex.Syntax
   module M' = Stdlib.Map.Make (Key)
@@ -203,7 +203,7 @@ end
 
 (** Only sound to use if the keys of the map are invariant under interpretations
     of the symbolic variables *)
-module Concrete (Symex : Symex.S) (Key : Soteria_std.Ordered_type.S) = struct
+module Concrete (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) = struct
   module Key = Mk_concrete_key (Symex) (Key)
   module M' = Stdlib.Map.Make (Key)
 

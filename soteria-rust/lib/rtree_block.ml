@@ -6,7 +6,7 @@ open Rustsymex
 open Rustsymex.Result
 open Charon
 
-module Make (Sptr : Sptr.S) = struct
+module Make (Symex : Soteria.Symex.S) (Sptr : Sptr.S) = struct
   module Encoder = Encoder.Make (Sptr)
 
   type rust_val = Sptr.t Rust_val.t
@@ -146,7 +146,7 @@ module Make (Sptr : Sptr.S) = struct
   end
 
   open MemVal
-  include Tree_block (MemVal)
+  include Soteria.Sym_states.Tree_block.Make (Symex) (MemVal)
 
   let decode_mem_val ~ty = function
     | Uninit _ -> Result.error `UninitializedMemoryAccess

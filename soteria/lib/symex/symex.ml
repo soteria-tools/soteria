@@ -43,7 +43,7 @@ module Meta = struct
   end
 end
 
-module type S = sig
+module type Base = sig
   module Value : Value.S
   module Stats : Stats.S
 
@@ -146,36 +146,6 @@ module type S = sig
 
   val consume_fuel_steps : int -> unit t
 
-  (** [run ~fuel  p] actually performs symbolic execution of the symbolic
-      process [p] and returns a list of obtained branches which capture the
-      outcome together with a path condition that is a list of boolean symbolic
-      values.
-
-      The [mode] parameter is used to specify whether execution should be done
-      in an under-approximate ({!Symex.Approx.UX}) or an over-approximate
-      ({!Symex.Approx.OX}) manner. Users may optionally pass a
-      {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth.
-
-      @raise Symex.Gave_up
-        if the symbolic process calls [give_up] and the mode is
-        {!Symex.Approx.OX}. Prefer using {!Result.run} when possible. *)
-  val run :
-    ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
-
-  (** Same as {!run}, but returns additional information about execution, see
-      {!Soteria.Stats}. *)
-  val run_with_stats :
-    ?fuel:Fuel_gauge.t ->
-    mode:Approx.t ->
-    'a t ->
-    ('a * sbool v list) list Stats.with_stats
-
-  (** Same as {!run} but has to be run within {!Stats.with_stats} or will throw
-      an exception. This function is exposed should users wish to run several
-      symbolic execution processes using a single [stats] record. *)
-  val run_needs_stats :
-    ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
-
   include Monad.Base with type 'a t := 'a t
 
   (** Gives up on this path of execution for incompleteness reason. For
@@ -196,32 +166,6 @@ module type S = sig
 
   module Result : sig
     type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
-
-    (** Same as {{!Symex.S.run}run}, but receives a symbolic process that
-        returns a {!Symex.Compo_res.t} and maps the result to an
-        {!Symex.Or_gave_up.t}, potentially adding any path that gave up to the
-        list. *)
-    val run :
-      ?fuel:Fuel_gauge.t ->
-      mode:Approx.t ->
-      ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
-      list
-
-    val run_with_stats :
-      ?fuel:Fuel_gauge.t ->
-      mode:Approx.t ->
-      ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
-      list
-      Stats.with_stats
-
-    val run_needs_stats :
-      ?fuel:Fuel_gauge.t ->
-      mode:Approx.t ->
-      ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
-      list
 
     val ok : 'ok -> ('ok, 'err, 'fix) t
     val error : 'err -> ('ok, 'err, 'fix) t
@@ -295,6 +239,73 @@ module type S = sig
         else_:(unit -> 'a t) ->
         'a t
     end
+  end
+end
+
+module type S = sig
+  include Base
+
+  type 'a v := 'a Value.t
+  type sbool := Value.sbool
+
+  (** [run ~fuel  p] actually performs symbolic execution of the symbolic
+      process [p] and returns a list of obtained branches which capture the
+      outcome together with a path condition that is a list of boolean symbolic
+      values.
+
+      The [mode] parameter is used to specify whether execution should be done
+      in an under-approximate ({!Symex.Approx.UX}) or an over-approximate
+      ({!Symex.Approx.OX}) manner. Users may optionally pass a
+      {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth.
+
+      @raise Symex.Gave_up
+        if the symbolic process calls [give_up] and the mode is
+        {!Symex.Approx.OX}. Prefer using {!Result.run} when possible. *)
+  val run :
+    ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
+
+  (** Same as {!run}, but returns additional information about execution, see
+      {!Soteria.Stats}. *)
+  val run_with_stats :
+    ?fuel:Fuel_gauge.t ->
+    mode:Approx.t ->
+    'a t ->
+    ('a * sbool v list) list Stats.with_stats
+
+  (** Same as {!run} but has to be run within {!Stats.with_stats} or will throw
+      an exception. This function is exposed should users wish to run several
+      symbolic execution processes using a single [stats] record. *)
+  val run_needs_stats :
+    ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
+
+  module Result : sig
+    include module type of Result
+
+    (** Same as {{!Symex.S.run}run}, but receives a symbolic process that
+        returns a {!Symex.Compo_res.t} and maps the result to an
+        {!Symex.Or_gave_up.t}, potentially adding any path that gave up to the
+        list. *)
+    val run :
+      ?fuel:Fuel_gauge.t ->
+      mode:Approx.t ->
+      ('ok, 'err, 'fix) t ->
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      list
+
+    val run_with_stats :
+      ?fuel:Fuel_gauge.t ->
+      mode:Approx.t ->
+      ('ok, 'err, 'fix) t ->
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      list
+      Stats.with_stats
+
+    val run_needs_stats :
+      ?fuel:Fuel_gauge.t ->
+      mode:Approx.t ->
+      ('ok, 'err, 'fix) t ->
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
+      list
   end
 end
 

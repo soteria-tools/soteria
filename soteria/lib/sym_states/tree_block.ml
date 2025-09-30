@@ -44,7 +44,7 @@ and node_qty = Partially | Totally
     to, as [Tree_block] wraps it into a structure containing this information.
 *)
 module type MemVal = sig
-  module Symex : Symex.S
+  module Symex : Symex.Base
 
   module SInt : sig
     type +'a t = 'a Symex.Value.t
@@ -118,7 +118,7 @@ module type MemVal = sig
 end
 
 module Make
-    (Symex : Symex.S)
+    (Symex : Symex.Base)
     (MemVal :
       MemVal
         with module Symex = Symex

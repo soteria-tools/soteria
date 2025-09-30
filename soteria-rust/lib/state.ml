@@ -3,6 +3,8 @@ open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
 open Rustsymex
+
+(* State details *)
 module Sptr = Sptr.ArithPtr
 module Encoder = Encoder.Make (Sptr)
 
@@ -31,7 +33,7 @@ let assert_ guard err st = lift_err st (assert_or_error guard err)
 
 module StateKey = struct
   include Typed
-  module Symex = Rustsymex.SYMEX
+  module Symex = Rustsymex
   (* FIXME: Rustsymex.SYMEX instead of just Rustsymex because Rustsymex overrides the L module right now. *)
 
   type t = T.sloc Typed.t
@@ -50,8 +52,12 @@ module StateKey = struct
     Rustsymex.return (Ptr.loc_of_int !indices)
 end
 
-module SPmap = Pmap_direct_access (StateKey)
-module Tree_block = Rtree_block.Make (Sptr)
+(* State combinators *)
+module Freeable = Soteria.Sym_states.Freeable.Make (Rustsymex)
+module SPmap = Soteria.Sym_states.Pmap.Direct_access (Rustsymex) (StateKey)
+module Pmap = Soteria.Sym_states.Pmap.Make (Rustsymex)
+module Bi = Soteria.Sym_states.Bi_abd.Make (Rustsymex)
+module Tree_block = Rtree_block.Make (Rustsymex) (Sptr)
 
 type global = String of string | Global of Charon.Types.global_decl_id
 

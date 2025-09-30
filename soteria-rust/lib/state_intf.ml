@@ -260,5 +260,5 @@ module type S = sig
       err
       * t,
       serialized )
-    SYMEX.Result.t
+    Result.t
 end
