@@ -1,5 +1,6 @@
 open
-  Soteria.Symex.Make (Soteria.Symex.Meta.Dummy) (Soteria.Symex.Mut.Dummy)
+  Soteria.Symex.Make
+    (Soteria.Symex.Meta.Dummy)
     (Soteria.C_values.C_solver.Z3_solver)
 
 open Syntax

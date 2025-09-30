@@ -1,25 +1,15 @@
-module RMeta = struct
-  module Range = struct
-    type t = Charon.Meta.span
+module SYMEX =
+  Soteria.Symex.Make
+    (struct
+      module Range = struct
+        type t = Charon.Meta.span
 
-    let to_yojson _ = `Null
-    let of_yojson _ = Ok Charon_util.empty_span
-  end
-end
+        let to_yojson _ = `Null
+        let of_yojson _ = Ok Charon_util.empty_span
+      end
+    end)
+    (Bv_solver.Z3_solver)
 
-module LocMap = Map.Make (struct
-  type t = Typed.T.sloc Typed.t
-
-  let compare = Typed.compare
-end)
-
-module RMut = struct
-  type t = Typed.T.sint Typed.t LocMap.t
-
-  let init = LocMap.empty
-end
-
-module SYMEX = Soteria.Symex.Make (RMeta) (RMut) (Bv_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
 
@@ -57,13 +47,6 @@ let[@inline] with_loc_err () f =
 let error e = Result.error (e, get_loc ())
 let not_impl msg = give_up ~loc:(get_loc ()) msg
 let of_opt_not_impl msg = some_or_give_up ~loc:(get_loc ()) msg
-
-let lookup_decay_map loc =
-  let open Syntax in
-  let+ map = read_mut () in
-  LocMap.find_opt loc map
-
-let update_decay_map loc decayed = wrap_mut (LocMap.add loc decayed)
 
 module Freeable = Soteria.Sym_states.Freeable.Make (SYMEX)
 module Pmap_direct_access = Soteria.Sym_states.Pmap.Direct_access (SYMEX)

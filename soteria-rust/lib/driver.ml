@@ -160,6 +160,9 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   in
   if List.is_empty entry_points then execution_err "No entry points found";
 
+  (* prepare executing the entry points *)
+  let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
+
   let@ entry : 'fuel Plugin.entry_point = (Fun.flip List.map) entry_points in
   (* execute! *)
   let entry_name =
@@ -170,7 +173,7 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
     let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
     try
       Rustsymex.run_with_stats ~mode:OX ~fuel:entry.fuel
-      @@ Wpst_interp.exec_fun ~args:[] ~state:State.empty entry.fun_decl
+      @@ exec_fun entry.fun_decl
     with Layout.InvalidLayout ty ->
       {
         res = [ (Error (`InvalidLayout ty, Call_trace.empty), []) ];

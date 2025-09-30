@@ -25,7 +25,7 @@ module type S = sig
 
   (** The distance, in bytes, between two pointers; if they point to different
       allocations, they are decayed and substracted. *)
-  val distance : t -> t -> [> sint ] Typed.t Rustsymex.t
+  val distance : t -> t -> sint Typed.t Rustsymex.t
 
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
@@ -140,17 +140,26 @@ module ArithPtr : S with type t = arithptr_t = struct
     let off = Layout.Fields_shape.offset_of field fields in
     offset ~signed:false ptr (Typed.BitVec.usizei off)
 
+  module ValMap = Map.Make (struct
+    type t = T.sloc Typed.t
+
+    let compare = Typed.compare
+  end)
+
+  (* FIXME: inter-test mutability *)
+  (* Create a map with the null-ptr preset to 0 *)
+  let decayed_vars = ref ValMap.empty
+
   let decay { ptr; align; size; _ } =
     let open Rustsymex in
     let open Rustsymex.Syntax in
     (* FIXME: if we want to be less unsound, we would also need to assert that this pointer's
        base is distinct from all other decayed pointers' bases... *)
     let loc, ofs = Typed.Ptr.decompose ptr in
-    let* decayed = lookup_decay_map loc in
-    match decayed with
+    match ValMap.find_opt loc !decayed_vars with
     | Some loc_int -> return (loc_int +!@ ofs)
     | None ->
-        let* loc_int =
+        let+ loc_int =
           if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
           else
             let* loc_int = nondet (Typed.t_usize ()) in
@@ -165,7 +174,8 @@ module ArithPtr : S with type t = arithptr_t = struct
             let+ () = Rustsymex.assume constrs in
             loc_int
         in
-        let+ () = update_decay_map loc loc_int in
+        L.debug (fun m -> m "Decayed %a to %a" Typed.ppa loc Typed.ppa loc_int);
+        decayed_vars := ValMap.add loc loc_int !decayed_vars;
         loc_int +!@ ofs
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =

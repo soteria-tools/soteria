@@ -7,9 +7,7 @@ module Meta = struct
   end
 end
 
-module SYMEX =
-  Soteria.Symex.Make (Meta) (Soteria.Symex.Mut.Dummy) (C_solver.Z3_solver)
-
+module SYMEX = Soteria.Symex.Make (Meta) (C_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
 

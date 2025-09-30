@@ -43,20 +43,6 @@ module Meta = struct
   end
 end
 
-module Mut = struct
-  module type S = sig
-    type t
-
-    val init : t
-  end
-
-  module Dummy = struct
-    type t = unit
-
-    let init = ()
-  end
-end
-
 module type S = sig
   module Value : Value.S
   module Stats : Stats.S
@@ -72,11 +58,6 @@ module type S = sig
       potential typos such as [`LFail] which will take precious time to debug...
       trust me. *)
   type lfail = [ `Lfail of Value.sbool Value.t ]
-
-  (** The type of the mutable data that is kept along execution. This data is
-      preserved along branches, and properly backtracks to previous values when
-      exploring other branches. *)
-  type mut
 
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
@@ -213,12 +194,6 @@ module type S = sig
   val fold_iter : 'a Iter.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
   val fold_seq : 'a Seq.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
 
-  (** Reads the current mutable data *)
-  val read_mut : unit -> mut t
-
-  (** Writes the current mutable data *)
-  val wrap_mut : (mut -> mut) -> unit t
-
   module Result : sig
     type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
 
@@ -323,11 +298,8 @@ module type S = sig
   end
 end
 
-module Make (Meta : Meta.S) (Mut : Mut.S) (Sol : Solver.Mutable_incremental) :
-  S
-    with module Value = Sol.Value
-     and module Stats.Range = Meta.Range
-     and type mut = Mut.t = struct
+module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
+  S with module Value = Sol.Value and module Stats.Range = Meta.Range = struct
   module Stats = Stats.Make (Meta.Range)
 
   module Solver = struct
@@ -347,7 +319,6 @@ module Make (Meta : Meta.S) (Mut : Mut.S) (Sol : Solver.Mutable_incremental) :
     let take_branches list = wrap (Fuel_gauge.take_branches list) ()
   end
 
-  module MutState = Reversible.Effectful (Mut)
   module Value = Solver.Value
   module MONAD = Monad.IterM
   include MONAD
@@ -366,18 +337,15 @@ module Make (Meta : Meta.S) (Mut : Mut.S) (Sol : Solver.Mutable_incremental) :
 
   type 'a t = 'a Iter.t
   type lfail = [ `Lfail of Value.sbool Value.t ]
-  type mut = Mut.t
 
   module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
       Solver.backtrack_n n;
-      Fuel.backtrack_n n;
-      MutState.backtrack_n n
+      Fuel.backtrack_n n
 
     let save () =
       Solver.save ();
-      Fuel.save ();
-      MutState.save ()
+      Fuel.save ()
 
     let reset () = Solver.reset ()
   end
@@ -576,7 +544,6 @@ module Make (Meta : Meta.S) (Mut : Mut.S) (Sol : Solver.Mutable_incremental) :
     let@ () = Stats.As_ctx.add_time_of in
     Symex_state.reset ();
     let@ () = Fuel.run ~init:fuel in
-    let@ () = MutState.run ~init:Mut.init in
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
     let l = ref [] in
@@ -616,15 +583,6 @@ module Make (Meta : Meta.S) (Mut : Mut.S) (Sol : Solver.Mutable_incremental) :
   let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
   let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
 
-  let read_mut () =
-    let x = ref Mut.init in
-    MutState.wrap_read (( := ) x) ();
-    return !x
-
-  let wrap_mut mutf =
-    MutState.wrap (fun x -> ((), mutf x)) ();
-    return ()
-
   module Result = struct
     include Compo_res.T (MONAD)
 
@@ -632,7 +590,6 @@ module Make (Meta : Meta.S) (Mut : Mut.S) (Sol : Solver.Mutable_incremental) :
       let@ () = Stats.As_ctx.add_time_of in
       Symex_state.reset ();
       let@ () = Fuel.run ~init:fuel in
-      let@ () = MutState.run ~init:Mut.init in
       let@ () = Approx.As_ctx.with_mode mode in
       let l = ref [] in
       let () =
