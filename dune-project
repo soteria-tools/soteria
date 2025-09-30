@@ -41,7 +41,8 @@
   fmt
   printbox-text
   htmlit
-  progress
+  (progress
+   (>= 0.5.0))
   grace
   (odoc :with-doc)
   (mdx :with-test)
