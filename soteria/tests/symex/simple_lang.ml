@@ -1,4 +1,5 @@
 open Soteria
+open Soteria.Logs.Import
 
 module Symex =
   Symex.Make (Soteria.Symex.Meta.Dummy) (Soteria.C_values.C_solver.Z3_solver)
@@ -29,18 +30,17 @@ module Ast = struct
       | NondetInt
       | Assert of t
 
-    let rec _pp ft t =
+    let rec pp ft t =
       match t with
       | Var v -> Fmt.pf ft "%s" v
       | Const c -> Const.pp ft c
-      | Let (v, e1, e2) ->
-          Fmt.pf ft "@[<v 2>let %s = %a in@ %a@]" v _pp e1 _pp e2
+      | Let (v, e1, e2) -> Fmt.pf ft "@[<v 2>let %s = %a in@ %a@]" v pp e1 pp e2
       | If (cond, then_branch, else_branch) ->
-          Fmt.pf ft "@[<v 0>if %a@ then %a@ else %a@]" _pp cond _pp then_branch
-            _pp else_branch
+          Fmt.pf ft "@[<v 0>if %a@ then %a@ else %a@]" pp cond pp then_branch pp
+            else_branch
       | NondetInt -> Fmt.pf ft "nondet_int"
-      | Assert e -> Fmt.pf ft "assert %a" _pp e
-      | BinOp (op, e1, e2) -> Fmt.pf ft "(%a %a %a)" _pp e1 Binop.pp op _pp e2
+      | Assert e -> Fmt.pf ft "assert %a" pp e
+      | BinOp (op, e1, e2) -> Fmt.pf ft "(%a %a %a)" pp e1 Binop.pp op pp e2
   end
 end
 
@@ -84,6 +84,7 @@ module Eval = struct
         v1 -@ v2
 
   let rec eval (subst : subst) (e : Expr.t) : (value, error, _) Result.t =
+    L.debug (fun m -> m "Evaluating expression: %a" Expr.pp e);
     match e with
     | Const c -> Result.ok (value_of_const c)
     | Var x -> Result.ok (Subst.find x subst)
