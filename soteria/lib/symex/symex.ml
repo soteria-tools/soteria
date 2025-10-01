@@ -573,14 +573,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     run_needs_stats ?fuel ~mode iter
 
   let vanish () _f = ()
-
-  let all fn xs =
-    let rec aux acc rs =
-      match rs with
-      | [] -> return (List.rev acc)
-      | r :: rs -> bind (fn r) @@ fun x -> aux (x :: acc) rs
-    in
-    aux [] xs
+  let all fn xs = Monad.all ~bind ~return fn xs
 
   let give_up ~loc reason _f =
     (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
