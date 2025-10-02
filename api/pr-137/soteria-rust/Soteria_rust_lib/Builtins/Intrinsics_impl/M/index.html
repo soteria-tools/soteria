@@ -153,7 +153,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="Monad/State/index.html#type-t">Monad.State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>(unit * <span class="type-var">'a</span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
-    <span><a href="../../../Error/index.html#type-t">Error.t</a> <a href="Monad/State/index.html#type-err">Monad.State.err</a></span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <span><span>[&lt; <a href="../../../Error/index.html#type-t">Error.t</a> StdErr UBDanglingPointer ]</span> <a href="Monad/State/index.html#type-err">Monad.State.err</a></span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
     <a href="Monad/State/index.html#type-serialized">Monad.State.serialized</a>)</span>
     <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
     <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div><div class="spec-doc"><p><code>check_overlap name l r size</code> ensures the pointers <code>l</code> and <code>r</code> do not overlap for a range of size <code>size</code>; otherwise errors, with <code>`StdErr (name ^ &quot; overlapped&quot;)</code>.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-copy_"><a href="#val-copy_" class="anchor"></a><code><span><span class="keyword">val</span> copy_ : 
@@ -423,7 +423,13 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">t</span>:<span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">ptr</span>:<span><a href="Core/Sptr/index.html#type-t">Core.Sptr.t</a> <a href="../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">other</span>:<span><a href="Core/Sptr/index.html#type-t">Core.Sptr.t</a> <a href="../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span class="type-var">'b</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span>, <span class="type-var">'c</span>)</span> <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-ptr_offset_from_"><a href="#val-ptr_offset_from_" class="anchor"></a><code><span><span class="keyword">val</span> ptr_offset_from_ : 
+  <span><span class="type-var">'b</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="Monad/State/index.html#type-t">Monad.State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>(<span><span>[&gt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> * <span class="type-var">'b</span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <span><span>[&lt; <a href="../../../Error/index.html#type-t">Error.t</a> UBPointerComparison ]</span> <a href="Monad/State/index.html#type-err">Monad.State.err</a></span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <span class="type-var">'c</span>)</span>
+    <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
+    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-ptr_offset_from_"><a href="#val-ptr_offset_from_" class="anchor"></a><code><span><span class="keyword">val</span> ptr_offset_from_ : 
   <span><span class="label">unsigned</span>:bool <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">ptr</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
