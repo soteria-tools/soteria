@@ -7,7 +7,7 @@
 open Symex
 
 module type Codom = sig
-  module Symex : Symex.S
+  module Symex : Symex.Base
 
   type t
 
