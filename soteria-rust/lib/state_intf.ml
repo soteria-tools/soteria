@@ -3,6 +3,7 @@ open T
 open Rustsymex
 open Charon
 open Rust_val
+open Sptr
 
 module type S = sig
   module Sptr : Sptr.S
@@ -164,6 +165,8 @@ module type S = sig
     t ->
     ('ok, ([< Error.t ] as 'err), 'f) Result.t ->
     ('ok, 'err err * t, 'f) Result.t
+
+  val with_decay_map : 'a DecayMapMonad.t -> t -> ('a * t) Rustsymex.t
 
   val assert_ :
     sbool Typed.t ->
