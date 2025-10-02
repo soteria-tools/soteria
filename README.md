@@ -34,14 +34,48 @@ To do so, open the `Run and Debug` tab of the sidebar, select the "Launch (Local
 
 Soteria-Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
 
-It can run standalone files, symbolically executing the `main` function, or any function with the attribute `#[kani::proof]`. You must have [Charon](https://github.com/AeneasVerif/charon) built and on your path -- to do so, clone Charon and run `make build-dev-charon-rust` and add `charon/bin` to your path. Once this is done, simply run:
+It can run standalone files, symbolically executing the `main` function, or any function with the attribute `#[kani::proof]`, if in Kani mode (`--kani`).
 ```sh
-soteria-rust exec-main <file>
+soteria-rust rustc <file>
 ```
 
-To test Rusteria on the Kani test suite, clone [Kani](https://github.com/model-checking/kani) next to `soteria`, and run `soteria-rust/scripts/kani.sh`. Run `soteria-rust/scripts/kani.sh --help` to see all available arguments.
+It can also run all tests in a crate:
+```sh
+soteria-rust cargo <crate dir>
+```
 
-You can also test Rusteria on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `soteria` and run `soteria-rust/scripts/miri.sh`.
+You may add `--help` to either of these commands to see all available options.
+
+## Frontend
+
+To use Rusteria you must have a frontend installed; we support [Obol](https://github.com/soteria-tools/obol) (recommended) and [Charon](https://github.com/AeneasVerif/charon).
+
+To use [Obol](https://github.com/soteria-tools/obol), **you must add the `--obol` flag to `soteria-rust` commands**, and have the `obol` command on your path. To do so:
+1. clone Obol
+2. run `make build`
+3. add `obol/bin` to your path (e.g. `export PATH=$PATH:/path/to/obol/bin`)
+
+
+To use [Charon](https://github.com/AeneasVerif/charon), you must have the `charon` command on your path. To do so:
+1. clone Charon
+2. run `make build-charon-rust`
+3. add `charon/bin` to your path (e.g. `export PATH=$PATH:/path/to/charon/bin`)
+
+## Testing
+
+To test Rusteria on the Kani test suite, clone [Kani](https://github.com/model-checking/kani) next to `soteria`, and run `soteria-rust/scripts/test.py kani`.
+
+You can also test Rusteria on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `soteria` and run `soteria-rust/scripts/test.py miri`.
+
+## Limitations
+
+Soteria-rust supports a large subset of Rust, but is still in development. Some currently unsupported features include:
+- Concurrency
+- Inline assembly
+- SIMD intrinsics
+- Trait objects (`dyn Trait`)
+
+Currently, and unlike Soteria-C, Soteria-Rust has neither IDE integration or compositionality support (all tests must instead start from an entry point). We are actively working on the latter!
 
 # License
 
