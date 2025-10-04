@@ -172,7 +172,7 @@ let alloc ?(zeroed = false) size st =
   let** loc, st = SPmap.alloc ~new_codom:block heap in
   let ptr = Typed.Ptr.mk loc 0s in
   (* The pointer is necessarily not null *)
-  let+ () = Typed.(assume [ not (loc ==@ Ptr.null_loc) ]) in
+  let+ () = Typed.(assume [ S_bool.not (loc ==@ Ptr.null_loc) ]) in
   Soteria.Symex.Compo_res.ok (ptr, st)
 
 let alloc_ty ty st =
@@ -200,7 +200,7 @@ let produce (serialized : serialized) (st : t) : t Csymex.t =
       let globs_locs = List.to_seq serialized.globs |> Seq.map snd in
       Seq.append heap_locs globs_locs
     in
-    Seq.map (fun loc -> Typed.not (Typed.Ptr.null_loc ==@ loc)) locs
+    Seq.map (fun loc -> Typed.S_bool.not (Typed.Ptr.null_loc ==@ loc)) locs
     |> List.of_seq
   in
   let* () = Csymex.assume non_null_locs in

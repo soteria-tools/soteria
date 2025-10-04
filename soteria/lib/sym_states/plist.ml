@@ -11,7 +11,7 @@ module type SInt_sig = sig
 
   include Stdlib.Map.OrderedType with type t := t
 
-  type sbool_v := Value.sbool Value.t
+  type sbool_v := Value.S_bool.t Value.t
 
   val pp : Format.formatter -> t -> unit
   val sem_eq : t -> t -> sbool_v
@@ -78,7 +78,8 @@ struct
       | None -> SInt.greater_or_equal ofs (SInt.of_int 0)
       | Some b -> SInt.in_range ofs (SInt.of_int 0, b)
     in
-    if%sat Symex.Value.not cond then Result.error `OutOfBounds else Result.ok ()
+    if%sat Symex.Value.S_bool.not cond then Result.error `OutOfBounds
+    else Result.ok ()
 
   let create (size : int) ~(new_codom : 'a) : 'a t =
     if size <= 0 then

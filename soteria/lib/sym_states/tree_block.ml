@@ -1,4 +1,5 @@
 open Symex
+module Make_bool_syntax = Symex.Value.S_bool.Make_syntax
 open Soteria_std.Syntaxes.FunctionWrap
 
 (** A [Split_tree] is a simplified representation of a tree, that has no offset.
@@ -45,24 +46,10 @@ and node_qty = Partially | Totally
 *)
 module type MemVal = sig
   module Symex : Symex.S
-
-  module SInt : sig
-    type +'a t = 'a Symex.Value.t
-    type sbool
-    type sint
-
-    val v_false : sbool t
-    val zero : unit -> sint t
-    val ( +@ ) : sint t -> sint t -> sint t
-    val ( -@ ) : sint t -> sint t -> sint t
-    val ( <@ ) : sint t -> sint t -> sbool t
-    val ( <=@ ) : sint t -> sint t -> sbool t
-    val ( ==@ ) : sint t -> sint t -> sbool t
-    val ( &&@ ) : sbool t -> sbool t -> sbool t
-  end
+  module S_int : Sym_data.S_int.S with module Symex = Symex
 
   type t
-  type sint := SInt.sint SInt.t
+  type sint := S_int.t
 
   val pp : Format.formatter -> t -> unit
 
@@ -117,24 +104,20 @@ module type MemVal = sig
   val assert_exclusively_owned : t -> (unit, 'err, serialized) Symex.Result.t
 end
 
-module Make
-    (Symex : Symex.S)
-    (MemVal :
-      MemVal
-        with module Symex = Symex
-         and type 'a SInt.t = 'a Symex.Value.t
-         and type SInt.sbool = Symex.Value.sbool) =
+module Make (Symex : Symex.S) (MemVal : MemVal with module Symex = Symex) =
 struct
   open Compo_res
   open Symex.Syntax
   open Symex
-  open MemVal.SInt
+  open Sym_data.S_int.Make_syntax (MemVal.S_int)
+  open Make_bool_syntax (Symex.Value.S_bool)
+  module Range = Sym_data.S_range.Make (MemVal.S_int)
 
   module Sym_int_syntax = struct
-    let zero = MemVal.SInt.zero
+    let zero = MemVal.S_int.zero
   end
 
-  type nonrec sint = sint Symex.Value.t
+  type sint = MemVal.S_int.t [@@deriving show { with_path = false }]
 
   (* re-export the types to be able to use them easily *)
   type nonrec ('a, 'sint) tree = ('a, 'sint) tree = {
@@ -142,19 +125,6 @@ struct
     range : 'sint * 'sint;
     children : (('a, 'sint) tree * ('a, 'sint) tree) option;
   }
-
-  module Range = struct
-    type t = sint * sint
-
-    let pp ft (l, u) = Fmt.pf ft "[%a, %a[" Symex.Value.ppa l Symex.Value.ppa u
-    let sem_eq (a, c) (b, d) = a ==@ b &&@ (c ==@ d)
-    let is_inside (l1, u1) (l2, u2) = l2 <=@ l1 &&@ (u1 <=@ u2)
-    let strictly_inside x (l, u) = l <@ x &&@ (x <@ u)
-    let size (l, u) = u -@ l
-    let split_at (l, h) x = ((l, x), (x, h))
-    let offset (l, u) off = (l +@ off, u +@ off)
-    let of_low_and_size low size = (low, low +@ size)
-  end
 
   module Split_tree = Split_tree
 
@@ -332,7 +302,7 @@ struct
       else if Option.is_none t.children then return (t, None)
       else
         let left, right = Option.get t.children in
-        if%sat Range.is_inside range left.range then
+        if%sat Range.subset_eq range left.range then
           let* extracted, new_left = extract left range in
           let+ new_self =
             match new_left with
@@ -449,7 +419,7 @@ struct
                   in
                   frame_inside ~replace_node ~rebuild_parent new_self range
               else
-                if%sat Range.is_inside range left.range then
+                if%sat Range.subset_eq range left.range then
                   let** node, left =
                     frame_inside ~replace_node ~rebuild_parent left range
                   in
@@ -508,7 +478,7 @@ struct
 
   type t = {
     root : Tree.t;
-    bound : sint option; [@printer Fmt.(option ~none:(any "⊥") Symex.Value.ppa)]
+    bound : sint option; [@printer Fmt.(option ~none:(any "⊥") MemVal.S_int.pp)]
   }
   [@@deriving show { with_path = false }]
 
@@ -520,7 +490,7 @@ struct
     let () =
       Option.iter
         (fun b ->
-          let range_str = Fmt.str "[%a; ∞[" Symex.Value.ppa b in
+          let range_str = Fmt.str "[%a; ∞[" MemVal.S_int.pp b in
           r := [ (range_str, text "OOB") ])
         t.bound
     in
@@ -535,12 +505,8 @@ struct
   (** Logic *)
 
   type serialized_atom =
-    | MemVal of {
-        offset : sint; [@printer Symex.Value.ppa]
-        len : sint; [@printer Symex.Value.ppa]
-        v : MemVal.serialized;
-      }
-    | Bound of sint [@printer fun f v -> Fmt.pf f "Bound(%a)" Symex.Value.ppa v]
+    | MemVal of { offset : sint; len : sint; v : MemVal.serialized }
+    | Bound of sint [@printer fun f v -> Fmt.pf f "Bound(%a)" MemVal.S_int.pp v]
   [@@deriving show { with_path = false }]
 
   type serialized = serialized_atom list
@@ -614,7 +580,7 @@ struct
   (** Logic *)
 
   let subst_serialized subst_var (serialized : serialized) =
-    let v_subst v = Symex.Value.subst subst_var v in
+    let v_subst v = MemVal.S_int.subst subst_var v in
     let subst_atom = function
       | MemVal { offset; len; v } ->
           let v = MemVal.subst_serialized subst_var v in
@@ -627,10 +593,10 @@ struct
     List.iter
       (function
         | MemVal { offset; len; v } ->
-            Symex.Value.iter_vars offset f;
-            Symex.Value.iter_vars len f;
+            MemVal.S_int.iter_vars offset f;
+            MemVal.S_int.iter_vars len f;
             MemVal.iter_vars_serialized v f
-        | Bound v -> Symex.Value.iter_vars v f)
+        | Bound v -> MemVal.S_int.iter_vars v f)
       serialized
 
   let pp_serialized = Fmt.Dump.list pp_serialized_atom

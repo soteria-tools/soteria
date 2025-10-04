@@ -62,7 +62,10 @@ val t_f : Svalue.FloatPrecision.t -> [> sfloat ] ty
 (** {2 Typed svalues} *)
 
 type +'a t
-type sbool = T.sbool
+
+module S_bool : Symex.Value.S_bool.S with type 'a v = 'a t and type t = sbool
+
+type sbool := T.sbool
 
 (** Basic value operations *)
 
@@ -96,12 +99,8 @@ val sem_eq : 'a t -> 'a t -> sbool t
 val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
-val bool : bool -> [> sbool ] t
-val as_bool : 'a t -> bool option
-val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val conj : [< sbool ] t list -> [> sbool ] t
 val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
-val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val not : sbool t -> sbool t
 val distinct : 'a t list -> [> sbool ] t
 val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
@@ -134,6 +133,7 @@ module BitVec : sig
   val sub_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
   val mul_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
   val neg_overflows : [< sint ] t -> [> sbool ] t
+  val assume_not_overflowed : [< sint_ovf ] t -> [> sint ] t
 
   (* inequalities *)
   val lt : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t

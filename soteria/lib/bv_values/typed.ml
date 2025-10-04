@@ -29,11 +29,17 @@ end
 
 type nonrec +'a t = t
 type nonrec +'a ty = ty
-type sbool = T.sbool
 
 let t_int = t_bv
 
-include Bool
+include S_bool
+
+module S_bool = struct
+  type +'a v = 'a t
+  type t = T.sbool
+
+  include S_bool
+end
 
 let[@inline] get_ty x = x.node.ty
 let[@inline] type_type x = x
@@ -65,6 +71,8 @@ module BitVec = struct
 
   let mki_nz n i =
     if i = 0 then failwith "Zero value in mki_nonzero" else mki_masked n i
+
+  let assume_not_overflowed v = v
 end
 
 module Infix = struct

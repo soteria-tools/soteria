@@ -127,7 +127,7 @@ and encode_value_memo v =
       k
 
 let encode_value (v : Svalue.t) =
-  Svalue.Bool.split_ands v
+  Svalue.S_bool.split_ands v
   |> Iter.map encode_value_memo
   |> Iter.to_list
   |> bool_ands

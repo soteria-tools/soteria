@@ -6,7 +6,7 @@ module type KeyS = sig
   module Symex : Symex.S
   include Stdlib.Map.OrderedType with type t := t
 
-  type sbool_v := Symex.Value.sbool Symex.Value.t
+  type sbool_v := Symex.Value.S_bool.t Symex.Value.t
 
   val pp : Format.formatter -> t -> unit
   val sem_eq : t -> t -> sbool_v
@@ -21,9 +21,9 @@ module Mk_concrete_key (Symex : Symex.S) (Key : Soteria_std.Ordered_type.S) :
   module Symex = Symex
   include Key
 
-  let sem_eq x y = Symex.Value.bool (Key.compare x y = 0)
+  let sem_eq x y = Symex.Value.S_bool.of_bool (Key.compare x y = 0)
   let fresh () = failwith "Fresh not implemented for concrete keys"
-  let distinct _ = Symex.Value.bool true
+  let distinct _ = Symex.Value.S_bool.of_bool true
   let subst _ x = x
   let iter_vars _ = fun _ -> ()
 end
@@ -160,7 +160,6 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
       | (k, v) :: tl ->
           if%sat Key.sem_eq key k then Symex.return (k, Some v)
           else find_bindings tl
-      (* TODO: Investigate: this is not a tailcall, because if%sat is not an if. *)
     in
     match M'.find_opt key st with
     | Some v -> Symex.return (key, Some v)

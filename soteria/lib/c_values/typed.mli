@@ -49,9 +49,9 @@ val t_f128 : [> sfloat ] ty
 (** {2 Typed svalues} *)
 
 type +'a t
-type sbool = T.sbool
+type sbool := T.sbool
 
-(** Basic value operations *)
+(** {3 Basic value operations} *)
 
 val get_ty : 'a t -> Svalue.ty
 val untype_type : 'a ty -> Svalue.ty
@@ -74,24 +74,22 @@ val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
 val hash : [< any ] t -> int
 
-(** Typed constructors *)
+(** {3 Typed constructors} *)
+
+module S_bool : Symex.Value.S_bool.S with type 'a v = 'a t and type t = sbool
 
 val sem_eq : 'a t -> 'a t -> sbool t
 val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
-val bool : bool -> [> sbool ] t
-val as_bool : 'a t -> bool option
-val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val conj : [< sbool ] t list -> [> sbool ] t
 val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
-val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
-val not : sbool t -> sbool t
 val not_int_bool : [< sint ] t -> [> sint ] t
 val distinct : 'a t list -> [> sbool ] t
 val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
 val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t
+val to_z : [< sint ] t -> Z.t option
 val nonzero_z : Z.t -> [> nonzero ] t
 val nonzero : int -> [> nonzero ] t
 val int_of_bool : [< sbool ] t -> [> sint ] t
@@ -99,7 +97,7 @@ val bool_of_int : [< sint ] t -> [> sbool ] t
 val zero : [> sint ] t
 val one : [> nonzero ] t
 
-(** Integer operations *)
+(** {3 Integer operations} *)
 
 val geq : [< sint ] t -> [< sint ] t -> [> sbool ] t
 val gt : [< sint ] t -> [< sint ] t -> [> sbool ] t
