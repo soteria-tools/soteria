@@ -105,7 +105,7 @@ module Make (State : State_intf.S) = struct
         | Some ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
-  let resolve_constant (const : Expressions.constant_expr) =
+  let rec resolve_constant (const : Expressions.constant_expr) =
     match const.kind with
     | CLiteral (VScalar scalar) -> ok (Base (BV.of_scalar scalar))
     | CLiteral (VBool b) -> ok (Base (BV.of_bool (Typed.bool b)))
@@ -138,19 +138,21 @@ module Make (State : State_intf.S) = struct
     | CFnPtr fn_ptr -> ok (ConstFn fn_ptr)
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
-    | CTraitConst (tref, "IS_ZST") ->
-        let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
-        let^+ size = Layout.size_of_s ty in
-        Base (BV.of_bool (size ==@ Usize.(0s)))
-    | CTraitConst (tref, "LAYOUT") ->
-        let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
-        let^ size = Layout.size_of_s ty in
-        let^+ align = Layout.align_of_s ty in
-        (* The alignment is a struct storing a value of the enum AlignmentEnum, where the
-           discriminant's value for variant N is 1 << N. *)
-        Struct [ Base size; Struct [ Enum (align, []) ] ]
-    | CTraitConst (_, name) ->
-        Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
+    | CTraitConst (tref, name) -> (
+        match tref.kind with
+        | TraitImpl { id; _ } ->
+            let timpl = Crate.get_trait_impl id in
+            let _, global = List.find (fun (n, _) -> n = name) timpl.consts in
+            let* glob_ptr = resolve_global global in
+            let glob = Crate.get_global global.id in
+            State.load glob_ptr glob.ty
+        | Clause _ -> not_impl "TODO: TraitConst(Clause)"
+        | ParentClause _ -> not_impl "TODO: TraitConst(ParentClause)"
+        | ItemClause _ -> not_impl "TODO: TraitConst(ItemClause)"
+        | Self -> not_impl "TODO: TraitConst(Self)"
+        | BuiltinOrAuto _ -> not_impl "TODO: TraitConst(BuiltinOrAuto)"
+        | Dyn -> not_impl "TODO: TraitConst(Dyn)"
+        | UnknownTrait _ -> not_impl "TODO: TraitConst(UnknownTrait)")
     | CRawMemory bytes ->
         let value = List.map (fun x -> Base (BV.u8i x)) bytes in
         let value = Array value in
@@ -166,12 +168,12 @@ module Make (State : State_intf.S) = struct
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ({ kind; ty } : Expressions.place) : full_ptr t =
+  and resolve_place ({ kind; ty } : Expressions.place) : full_ptr t =
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v
     (* Just a global *)
-    | PlaceGlobal g -> resolve_global g.id
+    | PlaceGlobal g -> resolve_global g
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         let* ptr = resolve_place base in
@@ -334,9 +336,9 @@ module Make (State : State_intf.S) = struct
         resolve_function ~in_tys ~out_ty fnop
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
-  and resolve_global (g : Types.global_decl_id) =
-    let decl = Crate.get_global g in
-    let* v_opt = State.load_global g in
+  and resolve_global ({ id; _ } : Types.global_decl_ref) =
+    let decl = Crate.get_global id in
+    let* v_opt = State.load_global id in
     match v_opt with
     | Some v -> ok v
     | None ->
@@ -352,7 +354,7 @@ module Make (State : State_intf.S) = struct
         in
         (* First we allocate the global and store it in the State  *)
         let* ptr = State.alloc_ty decl.ty in
-        let* () = State.store_global g ptr in
+        let* () = State.store_global id ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in
         let+ () = State.store ptr decl.ty v in
