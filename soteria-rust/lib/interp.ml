@@ -758,7 +758,7 @@ module Make (State : State_intf.S) = struct
         | None -> ok ())
     | Drop (place, trait_ref) -> (
         let* place_ptr = resolve_place place in
-        if not !Config.current.monomorphize_experimental then
+        if !Config.current.monomorphize_old then
           let* () =
             match place.ty with
             | TAdt { id = TAdtId id; _ } -> (
