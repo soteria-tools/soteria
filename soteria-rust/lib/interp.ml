@@ -431,10 +431,7 @@ module Make (State : State_intf.S) = struct
             let* verify_ptr = State.is_valid_ptr_fn in
             State.lift_err @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            let* verify_ptr = State.is_valid_ptr_fn in
-            State.lift_err
-            @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
-                 ~to_ty:(TLiteral to_ty) v
+            State.lift_err @@ Encoder.transmute_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (_, _, MetaVTablePtr _)) ->
             not_impl "Unsupported: dyn"
         | Cast (CastUnsize (_, _, MetaUnknown)) ->
