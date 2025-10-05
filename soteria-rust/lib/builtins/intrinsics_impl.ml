@@ -412,7 +412,7 @@ module M (State : State_intf.S) = struct
         (min <.@ f &&@ (f <.@ max))
         (`StdErr "float_to_int_unchecked out of int range")
     in
-    Base (BV.of_float ~signed ~size f)
+    Base (BV.of_float ~rounding:Truncate ~signed ~size f)
 
   let fmul_add ~a ~b ~c = ok ((a *.@ b) +.@ c)
   let fmaf16 = fmul_add

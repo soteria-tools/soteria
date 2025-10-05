@@ -467,6 +467,10 @@ module Make (Sptr : Sptr.S) = struct
     let off = Option.value ~default:Usize.(0s) offset in
     aux off
 
+  (** Transmute between literals; perform validation of the type's constraints.
+      See also:
+      https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
+  *)
   let transmute_literal ~(from_ty : Types.literal_type)
       ~(to_ty : Types.literal_type) v =
     let open Result in
@@ -476,13 +480,13 @@ module Make (Sptr : Sptr.S) = struct
         let sv = as_base_f fty v in
         let signed = Layout.is_signed lit_ty in
         let size = 8 * size_of_literal_ty lit_ty in
-        let sv' = BV.of_float ~signed ~size sv in
+        let sv' = BV.of_float ~rounding:Truncate ~signed ~size sv in
         Result.ok (Base sv')
     | (TInt _ | TUInt _), TFloat fp ->
         let sv = as_base from_ty v in
         let fp = Charon_util.float_precision fp in
         let signed = Layout.is_signed from_ty in
-        let sv' = BV.to_float ~signed ~fp sv in
+        let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
         Result.ok (Base sv')
     | TFloat _, _ | _, TFloat _ ->
         Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_literal_ty
