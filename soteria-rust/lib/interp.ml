@@ -466,6 +466,8 @@ module Make (State : State_intf.S) = struct
             in
             let size = BV.usize_of_const_generic length in
             with_ptr_meta size v
+        | Cast (CastConcretize (_from, _to)) ->
+            not_impl "Unsupported: dyn (concretize)"
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
