@@ -83,8 +83,7 @@ module BitVec = struct
   let usize_of_const_generic cgen = usize (Charon_util.z_of_const_generic cgen)
 
   let of_bool : T.sbool t -> [> T.sint ] t =
-    let size = Lc.size_of_literal_ty TBool * 8 in
-    of_bool size
+    of_bool (Lc.size_of_literal_ty TBool * 8)
 
   let of_scalar : Values.scalar_value -> [> T.sint ] t = function
     | UnsignedScalar (Usize, v) | SignedScalar (Isize, v) -> usize v
@@ -93,6 +92,14 @@ module BitVec = struct
     | UnsignedScalar (U32, v) | SignedScalar (I32, v) -> u32 v
     | UnsignedScalar (U64, v) | SignedScalar (I64, v) -> u64 v
     | UnsignedScalar (U128, v) | SignedScalar (I128, v) -> u128 v
+
+  let of_literal : Values.literal -> [> T.sint ] t = function
+    | VScalar s -> of_scalar s
+    | VChar c -> u32i (Uchar.to_int c)
+    | VBool b -> of_bool (bool b)
+    | l ->
+        Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
+          (PrintValues.literal_to_string l)
 
   let bv_to_z ty z =
     let tag_size = 8 * Lc.size_of_literal_ty ty in

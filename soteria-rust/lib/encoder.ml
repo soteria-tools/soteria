@@ -189,8 +189,8 @@ module Make (Sptr : Sptr.S) = struct
               Option.get ~msg:"No matching variant?"
               @@ List.find_mapi
                    (fun i v ->
-                     if Z.equal disc_z (z_of_scalar Types.(v.discriminant)) then
-                       Some (i, v)
+                     if Z.equal disc_z (z_of_literal Types.(v.discriminant))
+                     then Some (i, v)
                      else None)
                    variants
             in
@@ -421,7 +421,7 @@ module Make (Sptr : Sptr.S) = struct
           let ty = Layout.resolve_trait_ty tref name in
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
-      | (TVar _ | TDynTrait _ | TError _) as ty ->
+      | (TVar _ | TDynTrait _ | TError _ | TPtrMetadata _) as ty ->
           Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
@@ -444,7 +444,7 @@ module Make (Sptr : Sptr.S) = struct
       let fields = Layout.Fields_shape.shape_for_variant v_id layout.fields in
       let variant = Types.VariantId.nth variants v_id in
       let layout = { layout with fields } in
-      let discr = BV.of_scalar variant.discriminant in
+      let discr = BV.of_literal variant.discriminant in
       variant.fields
       |> field_tys
       |> List.to_seq
