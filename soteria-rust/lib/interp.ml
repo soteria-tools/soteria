@@ -589,9 +589,44 @@ module Make (State : State_intf.S) = struct
         | AlignOf ->
             let^+ align = Layout.align_of_s ty in
             Base align
-        | OffsetOf _ ->
-            Fmt.kstr not_impl "Unsupported nullary operator: %a"
-              Expressions.pp_nullop op)
+        | OffsetOf fields ->
+            let+ _, offset =
+              fold_list fields
+                ~init:(ty, Usize.(0s))
+                ~f:(fun (ty, off) (variant, field) ->
+                  let variant = Types.VariantId.of_int variant in
+                  let field = Types.FieldId.to_int field in
+
+                  let layout = Layout.layout_of ty in
+                  let fields =
+                    Layout.Fields_shape.shape_for_variant variant layout.fields
+                  in
+                  let inner_off = Layout.Fields_shape.offset_of field fields in
+                  let off = off +!@ BV.usizei inner_off in
+
+                  let sub_ty =
+                    match ty with
+                    | TAdt { id = TAdtId t_id; _ } -> (
+                        let type_decl = Crate.get_adt t_id in
+                        match type_decl.kind with
+                        | Enum vars ->
+                            let variant = Types.VariantId.nth vars variant in
+                            let field = List.nth variant.fields field in
+                            field.field_ty
+                        | Struct fields | Union fields ->
+                            let field = List.nth fields field in
+                            field.field_ty
+                        | Opaque | Alias _ | TDeclError _ ->
+                            failwith "OffsetOf on opaque/alias")
+                    | TAdt { id = TTuple; generics = { types; _ } } ->
+                        List.nth types field
+                    | _ ->
+                        Fmt.failwith "OffsetOf: unexpected ADT type: %a" pp_ty
+                          ty
+                  in
+                  ok (sub_ty, off))
+            in
+            Base (offset :> T.cval Typed.t))
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with

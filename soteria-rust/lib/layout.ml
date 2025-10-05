@@ -55,7 +55,10 @@ module Fields_shape = struct
 
   let shape_for_variant v = function
     | Enum (_, shapes) -> shapes.(Types.VariantId.to_int v)
-    | s -> Fmt.failwith "Shape %a is not an enum" pp s
+    | Arbitrary _ as fs when Types.VariantId.equal_id v Types.VariantId.zero ->
+        fs
+    | s ->
+        Fmt.failwith "Shape %a has no variant %a" pp s Types.VariantId.pp_id v
 end
 
 type layout = { size : int; align : int; fields : Fields_shape.t }
