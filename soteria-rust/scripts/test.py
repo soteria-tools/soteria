@@ -388,6 +388,11 @@ def benchmark(opts: CliOpts):
             if name == "custom":
                 continue
             test_conf = callback(opts)
+            if key == "miri" and name == "kani":
+                pprint(
+                    f"{CYAN}{BOLD}==>{RESET} Skipping benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{key}{RESET} (not supported)",
+                    inc=True,
+                )
             cmd = opts["tool_cmd"] + test_conf["args"]
             pprint(
                 f"{CYAN}{BOLD}==>{RESET} Running benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{key}",
