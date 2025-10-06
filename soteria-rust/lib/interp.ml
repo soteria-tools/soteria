@@ -157,7 +157,7 @@ module Make (State : State_intf.S) = struct
         let from_ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
         in
-        let^^+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
+        let$$+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
         value
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
@@ -425,10 +425,11 @@ module Make (State : State_intf.S) = struct
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr_fn in
-            State.lift_err @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
+            State.with_decay_map_res
+            @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr_fn in
-            State.lift_err
+            State.with_decay_map_res
             @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
         | Cast (CastUnsize (_, _, MetaVTablePtr _)) ->
@@ -510,12 +511,12 @@ module Make (State : State_intf.S) = struct
                 | _ -> assert false)
             | Eq | Ne ->
                 let v1, v2, _ = Typed.cast_checked2 v1 v2 in
-                let^^+ res = Core.equality_check v1 v2 in
+                let$$+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else BV.not_bool res in
                 Base (res :> T.cval Typed.t)
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
-                let^^+ res = Core.eval_lit_binop op ty v1 v2 in
+                let$$+ res = Core.eval_lit_binop op ty v1 v2 in
                 Base res
             | AddChecked | SubChecked | MulChecked ->
                 let ty =
@@ -523,7 +524,8 @@ module Make (State : State_intf.S) = struct
                   | TLiteral ty -> ty
                   | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
                 in
-                State.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
+                State.with_decay_map_res
+                @@ Core.eval_checked_lit_binop op ty v1 v2
             | Cmp ->
                 let v1, v2, ty = Typed.cast_checked2 v1 v2 in
                 if Typed.equal_ty ty (Typed.t_ptr ()) then
@@ -531,7 +533,7 @@ module Make (State : State_intf.S) = struct
                 else
                   let ty = type_of_operand e1 in
                   let ty = TypesUtils.ty_as_literal ty in
-                  let^+ cmp = Core.cmp ~signed:(Layout.is_signed ty) v1 v2 in
+                  let$+ cmp = Core.cmp ~signed:(Layout.is_signed ty) v1 v2 in
                   Base cmp
             | Offset ->
                 (* non-zero offset on integer pointer is not permitted, as these are always
@@ -569,7 +571,7 @@ module Make (State : State_intf.S) = struct
                 let^^+ p' = Sptr.offset ~signed ~ty p v in
                 Ptr (p', meta)
             | _ ->
-                let^^+ res = Core.eval_ptr_binop op p1 p2 in
+                let$$+ res = Core.eval_ptr_binop op p1 p2 in
                 Base res)
         | v1, v2 ->
             Fmt.kstr not_impl

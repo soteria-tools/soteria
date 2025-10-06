@@ -6,6 +6,74 @@ open Typed.Syntax
 open Typed.Infix
 open T
 
+module type DecayMapS = sig
+  type t
+
+  val pp : Format.formatter -> t -> unit
+
+  val decay :
+    size:[< sint ] Typed.t ->
+    align:[< nonzero ] Typed.t ->
+    [< T.sloc ] Typed.t ->
+    t option ->
+    (T.sint Typed.t * t option) Rustsymex.t
+end
+
+module DecayMap : DecayMapS = struct
+  module StateKey = struct
+    module Symex = Rustsymex
+    include Typed
+
+    type t = T.sloc Typed.t
+
+    let pp = ppa
+    let fresh () = failwith "Allocation is not valid for the decay map!"
+  end
+
+  module SPmap = Soteria.Sym_states.Pmap.Make (Rustsymex) (StateKey)
+
+  type t = T.sint Typed.t SPmap.t
+
+  let pp = SPmap.pp Typed.ppa
+
+  let decay ~size ~align (loc : [< T.sloc ] Typed.t) st =
+    if%sat Typed.Ptr.is_null_loc loc then return (Usize.(0s), st)
+    else
+      let+ res =
+        SPmap.wrap
+          (function
+            | Some decayed -> Result.ok (decayed, Some decayed)
+            | None ->
+                let* loc_int = nondet (Typed.t_usize ()) in
+                let isize_max = Layout.max_value_z (TInt Isize) in
+                let* () =
+                  Rustsymex.assume
+                    [
+                      (loc_int %@ align ==@ Usize.(0s));
+                      Usize.(0s) <@ loc_int;
+                      loc_int <@ Typed.BitVec.usize isize_max -!@ size;
+                    ]
+                in
+                Result.ok (loc_int, Some loc_int))
+          (loc :> T.sloc Typed.t)
+          st
+      in
+      Soteria.Symex.Compo_res.get_ok res
+end
+
+module DecayMapMonad = struct
+  include
+    Soteria.Sym_states.State_monad.Make
+      (Rustsymex)
+      (struct
+        type t = DecayMap.t option
+      end)
+
+  let not_impl msg = lift @@ not_impl msg
+  let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+  let match_on xs ~constr = lift @@ match_on xs ~constr
+end
+
 module type S = sig
   (** pointer type *)
   type t
@@ -25,7 +93,7 @@ module type S = sig
 
   (** The distance, in bytes, between two pointers; if they point to different
       allocations, they are decayed and substracted. *)
-  val distance : t -> t -> sint Typed.t Rustsymex.t
+  val distance : t -> t -> sint Typed.t DecayMapMonad.t
 
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
@@ -51,7 +119,7 @@ module type S = sig
     (t, [> `UBDanglingPointer ], 'a) Result.t
 
   (** Decay a pointer into an integer value, losing provenance. *)
-  val decay : t -> [> sint ] Typed.t Rustsymex.t
+  val decay : t -> [> sint ] Typed.t DecayMapMonad.t
 
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> [> sint ] Typed.t
@@ -140,47 +208,15 @@ module ArithPtr : S with type t = arithptr_t = struct
     let off = Layout.Fields_shape.offset_of field fields in
     offset ~signed:false ptr (Typed.BitVec.usizei off)
 
-  module ValMap = Map.Make (struct
-    type t = T.sloc Typed.t
-
-    let compare = Typed.compare
-  end)
-
-  (* FIXME: inter-test mutability *)
-  (* Create a map with the null-ptr preset to 0 *)
-  let decayed_vars = ref ValMap.empty
-
-  let decay { ptr; align; size; _ } =
-    let open Rustsymex in
-    let open Rustsymex.Syntax in
-    (* FIXME: if we want to be less unsound, we would also need to assert that this pointer's
-       base is distinct from all other decayed pointers' bases... *)
+  let decay { ptr; align; size; _ } decay_map =
     let loc, ofs = Typed.Ptr.decompose ptr in
-    match ValMap.find_opt loc !decayed_vars with
-    | Some loc_int -> return (loc_int +!@ ofs)
-    | None ->
-        let+ loc_int =
-          if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
-          else
-            let* loc_int = nondet (Typed.t_usize ()) in
-            let isize_max = Layout.max_value_z (TInt Isize) in
-            let constrs =
-              [
-                (loc_int %@ align ==@ Usize.(0s));
-                Usize.(0s) <@ loc_int;
-                loc_int <@ Typed.BitVec.usize isize_max -!@ size;
-              ]
-            in
-            let+ () = Rustsymex.assume constrs in
-            loc_int
-        in
-        L.debug (fun m -> m "Decayed %a to %a" Typed.ppa loc Typed.ppa loc_int);
-        decayed_vars := ValMap.add loc loc_int !decayed_vars;
-        loc_int +!@ ofs
+    let+ loc_int, decay_map = DecayMap.decay ~size ~align loc decay_map in
+    (loc_int +!@ ofs, decay_map)
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
+    let open DecayMapMonad.Syntax in
     if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
-      return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
+      DecayMapMonad.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
     else
       let* ptr1 = decay p1 in
       let+ ptr2 = decay p2 in
