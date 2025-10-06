@@ -37,7 +37,7 @@ Splitting and merging, via a union
   
 
 Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
-  $ soteria-rust rustc unwind.rs --clean --no-timing --ignore-leaks
+  $ soteria-rust rustc unwind.rs --clean --no-timing --ignore-leaks --monomorphize-old
   Compiling... done in <time>
   note: unwind::main: done in <time>, ran 2 branches
   PC 1: (V|1| <=u 0x01) /\ (0x00 != V|1|) /\ (V|2| <u 0x7ffffffffffffffe) /\

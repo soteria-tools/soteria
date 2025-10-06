@@ -193,8 +193,8 @@ module Make (Sptr : Sptr.S) = struct
               Option.get ~msg:"No matching variant?"
               @@ List.find_mapi
                    (fun i v ->
-                     if Z.equal disc_z (z_of_scalar Types.(v.discriminant)) then
-                       Some (i, v)
+                     if Z.equal disc_z (z_of_literal Types.(v.discriminant))
+                     then Some (i, v)
                      else None)
                    variants
             in
@@ -424,7 +424,7 @@ module Make (Sptr : Sptr.S) = struct
           let ty = Layout.resolve_trait_ty tref name in
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
-      | (TVar _ | TDynTrait _ | TError _) as ty ->
+      | (TVar _ | TDynTrait _ | TError _ | TPtrMetadata _) as ty ->
           Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
@@ -447,7 +447,7 @@ module Make (Sptr : Sptr.S) = struct
       let fields = Layout.Fields_shape.shape_for_variant v_id layout.fields in
       let variant = Types.VariantId.nth variants v_id in
       let layout = { layout with fields } in
-      let discr = BV.of_scalar variant.discriminant in
+      let discr = BV.of_literal variant.discriminant in
       variant.fields
       |> field_tys
       |> List.to_seq
@@ -469,6 +469,48 @@ module Make (Sptr : Sptr.S) = struct
     in
     aux offset
 
+  (** Transmute between literals; perform validation of the type's constraints.
+      See also:
+      https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
+  *)
+  let transmute_literal ~(from_ty : Types.literal_type)
+      ~(to_ty : Types.literal_type) v =
+    let open DecayMapMonad.Result in
+    match (from_ty, to_ty) with
+    | _, _ when from_ty = to_ty -> ok v
+    | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
+        let sv = as_base_f fty v in
+        let signed = Layout.is_signed lit_ty in
+        let size = 8 * size_of_literal_ty lit_ty in
+        let sv' = BV.of_float ~rounding:Truncate ~signed ~size sv in
+        ok (Base sv')
+    | (TInt _ | TUInt _), TFloat fp ->
+        let sv = as_base from_ty v in
+        let fp = Charon_util.float_precision fp in
+        let signed = Layout.is_signed from_ty in
+        let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
+        ok (Base sv')
+    | TFloat _, _ | _, TFloat _ ->
+        Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_literal_ty
+          from_ty pp_literal_ty to_ty
+    (* here we know we're only handling scalars: bool, char, or int/uint, so we can just
+       resize the value as needed! *)
+    | _ ->
+        let from_bits = 8 * Layout.size_of_literal_ty from_ty in
+        let from_signed = Layout.is_signed from_ty in
+        let to_bits = 8 * Layout.size_of_literal_ty to_ty in
+        let v = as_base from_ty v in
+        let v =
+          if from_bits = to_bits then v
+          else if from_bits < to_bits then
+            BV.extend ~signed:from_signed (to_bits - from_bits) v
+          else BV.extract 0 (to_bits - 1) v
+        in
+        let constraints = Typed.conj @@ Layout.constraints to_ty v in
+        let msg = Fmt.str "Constraints of %a unsatisfied" pp_literal_ty to_ty in
+        let++ () = assert_or_error constraints (`UBTransmute msg) in
+        Base v
+
   (** Transmute a value of the given type into the other type.
 
       Accepts an optional [verify_ptr] function, that symbolically checks if a
@@ -482,40 +524,8 @@ module Make (Sptr : Sptr.S) = struct
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
-      | TLiteral (TFloat fty), TLiteral ((TInt _ | TUInt _) as lit_ty), Base sv
-        ->
-          let sv = Typed.cast_f fty sv in
-          let signed = Layout.is_signed lit_ty in
-          let size = 8 * size_of_literal_ty lit_ty in
-          let sv' = BV.of_float ~signed ~size sv in
-          ok (Base sv')
-      | TLiteral ((TInt _ | TUInt _) as ity), TLiteral (TFloat fp), Base sv ->
-          let sv = Typed.cast_lit ity sv in
-          let fp = Charon_util.float_precision fp in
-          let signed = Layout.is_signed ity in
-          let sv' = BV.to_float ~signed ~fp sv in
-          ok (Base sv')
-      | TLiteral (TFloat _), _, _ | _, TLiteral (TFloat _), _ ->
-          Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_ty from_ty
-            pp_ty to_ty
-      | TLiteral from_ty, TLiteral to_ty, Base sv ->
-          let from_bits = 8 * Layout.size_of_literal_ty from_ty in
-          let from_signed = Layout.is_signed from_ty in
-          let to_bits = 8 * Layout.size_of_literal_ty to_ty in
-          let v = Typed.cast_lit from_ty sv in
-          let v =
-            if from_bits = to_bits then v
-            else if from_bits < to_bits then
-              BV.extend ~signed:from_signed (to_bits - from_bits) v
-            else BV.extract 0 (to_bits - 1) v
-          in
-          let constrs = Layout.constraints to_ty in
-          if%sat Typed.conj (constrs v) then ok (Base v)
-          else
-            let msg =
-              Fmt.str "Constraints of %a unsatisfied" pp_ty (TLiteral to_ty)
-            in
-            error (`UBTransmute msg)
+      | TLiteral from_ty, TLiteral to_ty, v ->
+          transmute_literal ~from_ty ~to_ty v
       (* A ref cannot be an invalid pointer *)
       | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
           error `UBDanglingPointer
