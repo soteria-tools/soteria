@@ -10,16 +10,12 @@ from parselog import (
 )
 
 
-ToolName = Literal["Rusteria", "Kani", "Miri"]
-SuiteName = Literal["kani", "miri", "custom"]
 CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
 CmdBenchmark = tuple[Literal["benchmark"], tuple]
 Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark
-
-SUITE_NAMES: list[SuiteName] = ["miri", "kani", "custom"]
 
 
 class CliOpts(TypedDict):
