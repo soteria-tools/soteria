@@ -26,6 +26,7 @@ KANI_EXCLUSIONS = [
     "/AsyncAwait/",
     "/Quantifiers/",
     "/FunctionContracts/",
+    "/UnsizedCoercion/defs.rs",
 ]
 
 MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()

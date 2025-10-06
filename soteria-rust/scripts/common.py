@@ -1,9 +1,11 @@
 import sys
 import os
 import subprocess
-import re
+import enum
 from pathlib import Path
-from typing import Optional, cast
+from typing import Literal, Optional, cast
+
+# ------ Pretty printing ------
 
 PURPLE = "\033[0;35m"
 RED = "\033[0;31m"
@@ -45,7 +47,7 @@ def rainbow():
     ][rainbow_ % 7]
 
 
-def pprint(*args, inc: bool = False, end="\n", **kwargs):
+def pprint(*args, inc: bool = True, end="\n", **kwargs):
     if NO_COLOR:
         print("| ", end="")
     else:
@@ -67,40 +69,121 @@ def pptable(rows: list[list[tuple[str, Optional[str]]]]):
                 (clr or "") + cell + RESET + " " * (col_len[i] - len(cell))
                 for i, (cell, clr) in enumerate(row)
             ),
-            inc=True,
         )
 
 
-pass_ = ("Success", GREEN, None)
-fail_ = ("Failure", RED, None)
+# ------ Shared types and definitions ------
+
+PWD = Path(os.path.dirname(os.path.abspath(__file__)))
+
+ToolName = Literal["Rusteria", "Kani", "Miri"]
+TOOL_NAMES: list[ToolName] = ["Rusteria", "Kani", "Miri"]
+SuiteName = Literal["kani", "miri", "custom"]
+SUITE_NAMES: list[SuiteName] = ["miri", "kani", "custom"]
+
+# ------ Outcomes ------
 
 
-def unkn_(x: str):
-    return ("Unknown", YELLOW, x)
+# We have detailed outcomes, and simplified ones for the benchmark, with a mapping
+class Outcome(enum.Enum):
+    def __new__(cls, *args, **kwds):
+        value = len(cls.__members__) + 1
+        obj = object.__new__(cls)
+        obj._value_ = value
+        return obj
 
+    def __init__(self, txt, clr):
+        self.txt = txt
+        self.clr = clr
+
+    def __str__(self):
+        return f"{self.clr}{self.txt}{RESET}"
+
+    def __lt__(self, other):
+        if not isinstance(other, Outcome):
+            return NotImplemented
+        return self.txt < other.txt
+
+    def __le__(self, other):
+        if not isinstance(other, Outcome):
+            return NotImplemented
+        return self.txt <= other.txt
+
+    def __call__(self, reason: Optional[str] = None) -> tuple["Outcome", Optional[str]]:
+        return (self, reason)
+
+    def is_pass(self) -> bool:
+        return self == Outcome.PASS
+
+    def is_fail(self) -> bool:
+        return self == Outcome.FAIL
+
+    def is_expected(self) -> bool:
+        return self in (Outcome.PASS, Outcome.FAIL)
+
+    def is_timeout(self) -> bool:
+        return self == Outcome.TIME_OUT
+
+    def is_tool(self) -> bool:
+        return self == Outcome.TOOL
+
+    def is_simple(self) -> bool:
+        return self in (Outcome.PASS, Outcome.FAIL, Outcome.TIME_OUT, Outcome.CRASH)
+
+    def simplify(self) -> "Outcome":
+        return {
+            Outcome.PASS: Outcome.PASS,
+            Outcome.FAIL: Outcome.FAIL,
+            Outcome.TIME_OUT: Outcome.TIME_OUT,
+        }.get(self, Outcome.CRASH)
+
+    txt: str
+    clr: str
+
+    PASS = "pass", GREEN
+    FAIL = "fail", RED
+    MISSING_DEP = "missing dependency", ORANGE
+    COMPILATION_ERR = "compilation error", ORANGE
+    TOOL = "tool", PURPLE
+    NO_ENTRY_POINTS = "no entry points", ORANGE
+    TIME_OUT = "timeout", YELLOW
+    UNSUPPORTED = "unsupported", ORANGE
+    CRASH = "crash", ORANGE
+    UNKNOWN = "unknown", MAGENTA
+
+
+# ------ Config for tests ------
 
 # Tests that we want to skip when running tests quickly to look for regressions, in development
-# path -> (message, color, optional reason)
-SKIPPED_TESTS: dict[str, tuple[str, str, Optional[str]]] = {
+# path -> (outcome, optional reason)
+SKIPPED_TESTS: dict[str, tuple[Outcome, Optional[str]]] = {
     # Kani
-    "ArithOperators/rem_float_fixme.rs": pass_,
-    "ConstEval/limit.rs": unkn_("Slow because of an array of size 131072"),
-    "FloatingPoint/main.rs": pass_,
-    "Intrinsics/Count/ctpop.rs": unkn_("Doesn't work in Charon, 2^N branches in Obol"),
-    "Intrinsics/FastMath/div_f64.rs": unkn_("Very slow"),
-    "Intrinsics/Math/Rounding/Ceil/ceilf64.rs": pass_,
-    "Intrinsics/Math/Rounding/Floor/floorf64.rs": pass_,
-    "Intrinsics/Math/Rounding/Ceil/floorf64.rs": pass_,
-    "Intrinsics/Math/Rounding/RInt/rintf64.rs": pass_,
-    "Intrinsics/Math/Rounding/Round/roundf64.rs": pass_,
-    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": pass_,
-    "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_,
+    "ArithOperators/rem_float_fixme.rs": Outcome.PASS(),
+    "ConstEval/limit.rs": Outcome.UNKNOWN("Slow because of an array of size 131072"),
+    "FloatingPoint/main.rs": Outcome.PASS(),
+    "Intrinsics/Count/ctpop.rs": Outcome.UNKNOWN(
+        "Doesn't work in Charon, 2^N branches in Obol",
+    ),
+    "Intrinsics/FastMath/div_f64.rs": Outcome.UNKNOWN("Very slow"),
+    "Intrinsics/Math/Rounding/Ceil/ceilf64.rs": Outcome.PASS(),
+    "Intrinsics/Math/Rounding/Floor/floorf64.rs": Outcome.PASS(),
+    "Intrinsics/Math/Rounding/Ceil/floorf64.rs": Outcome.PASS(),
+    "Intrinsics/Math/Rounding/RInt/rintf64.rs": Outcome.PASS(),
+    "Intrinsics/Math/Rounding/Round/roundf64.rs": Outcome.PASS(),
+    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": Outcome.PASS(),
+    "Intrinsics/Math/Rounding/Trunc/truncf64.rs": Outcome.PASS(),
     # Miri
-    "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
-    "pass/issues/issue-20575.rs": unkn_("Very slow compilation"),
-    "pass/issues/issue-29746.rs": unkn_("Very slow compilation"),
-    "pass/arrays.rs": unkn_("Makes an array [(), usize::MAX], which we try evaluating"),
-    "pass/tag-align-dyn-u64.rs": unkn_("Slow due to symbolic checks on the pointer"),
+    "pass/issues/issue-17877.rs": Outcome.UNKNOWN(
+        "Makes an array of size 16384, too slow",
+    ),
+    "pass/issues/issue-20575.rs": Outcome.UNKNOWN("Very slow compilation"),
+    "pass/issues/issue-29746.rs": Outcome.UNKNOWN("Very slow compilation"),
+    "pass/arrays.rs": Outcome.UNKNOWN(
+        "Makes an array [(), usize::MAX], which we try evaluating",
+    ),
+    "pass/tag-align-dyn-u64.rs": Outcome.UNKNOWN(
+        "Slow due to symbolic checks on the pointer",
+    ),
 }
 
 KNOWN_ISSUES = {
@@ -161,8 +244,6 @@ KNOWN_ISSUES = {
     "panic/mir-validation.rs": "We don't validate the MIR for projections",
 }
 
-PWD = Path(os.path.dirname(os.path.abspath(__file__)))
-
 
 def build_rusteria():
     env = (
@@ -171,7 +252,7 @@ def build_rusteria():
         .split("\n")
     )
     for line in env:
-        if not "=" in line:
+        if "=" not in line:
             continue
         name, value = line.split("=", 1)
         os.environ[name] = value
@@ -189,7 +270,7 @@ def determine_failure_expect(filepath: str) -> bool:
             with open(filepath, "r") as f:
                 content = f.read()
                 return "kani-verify-fail" in content
-        except:
+        except Exception:
             ...
     elif "miri" in filepath:
         return "/tests/fail/" in filepath or "/tests/panic/" in filepath
@@ -227,7 +308,7 @@ def subprocess_run(
     with Popen(*popenargs, **kwargs) as process:
         try:
             stdout, stderr = process.communicate(input, timeout=timeout)
-        except TimeoutExpired as exc:
+        except TimeoutExpired as _:
             process.terminate()
             # NOTE!!! HERE WE WINDOWS SHOULD BE HANDLED DIFFERENTLY
             # POSIX _communicate already populated the output so
