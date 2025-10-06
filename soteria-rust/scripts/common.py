@@ -71,44 +71,31 @@ def pptable(rows: list[list[tuple[str, Optional[str]]]]):
         )
 
 
-pass_ = lambda x: ("Success", GREEN, x)
-fail_ = lambda x: ("Failure", RED, x)
-unkn_ = lambda x: ("Unknown", YELLOW, x)
+pass_ = ("Success", GREEN, None)
+fail_ = ("Failure", RED, None)
 
-SKIPPED_TESTS: dict[str, tuple[str, str, str]] = {
+
+def unkn_(x: str):
+    return ("Unknown", YELLOW, x)
+
+
+# Tests that we want to skip when running tests quickly to look for regressions, in development
+# path -> (message, color, optional reason)
+SKIPPED_TESTS: dict[str, tuple[str, str, Optional[str]]] = {
     # Kani
-    "ArithOperators/rem_float_fixme.rs": fail_("Complicated float expression"),
+    "ArithOperators/rem_float_fixme.rs": pass_,
     "ConstEval/limit.rs": unkn_("Slow because of an array of size 131072"),
-    "FloatingPoint/main.rs": pass_("Slow floating operation operations"),
-    "BitwiseShiftOperators/shift_neg_vals.rs": unkn_(
-        "Wrapping operations without loop unrolling branch too much"
-    ),
-    "Intrinsics/bswap.rs": unkn_("Hard to reduce binary operations"),
-    "Intrinsics/Count/ctpop.rs": pass_("The test requires 2^N branches"),
-    "Intrinsics/FastMath/add_f64.rs": pass_("Slow floating point operation"),
-    "Intrinsics/FastMath/div_f64.rs": pass_("Slow floating point operation"),
-    "Intrinsics/FastMath/mul_f64.rs": pass_("Slow floating point operation"),
-    "Intrinsics/FastMath/sub_f64.rs": pass_("Slow floating point operation"),
-    "Intrinsics/Math/Rounding/Ceil/ceilf32.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/Ceil/ceilf64.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/Floor/floorf32.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/Floor/floorf64.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/Ceil/floorf32.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/Ceil/floorf64.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/RInt/rintf32.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/RInt/rintf64.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/Round/roundf32.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/Round/roundf64.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f32.rs": pass_(
-        "Slow floating point rounding"
-    ),
-    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": pass_(
-        "Slow floating point rounding"
-    ),
-    "Intrinsics/Math/Rounding/Trunc/truncf32.rs": pass_("Slow floating point rounding"),
-    "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_("Slow floating point rounding"),
+    "FloatingPoint/main.rs": pass_,
+    "Intrinsics/Count/ctpop.rs": unkn_("Doesn't work in Charon, 2^N branches in Obol"),
+    "Intrinsics/FastMath/div_f64.rs": unkn_("Very slow"),
+    "Intrinsics/Math/Rounding/Ceil/ceilf64.rs": pass_,
+    "Intrinsics/Math/Rounding/Floor/floorf64.rs": pass_,
+    "Intrinsics/Math/Rounding/Ceil/floorf64.rs": pass_,
+    "Intrinsics/Math/Rounding/RInt/rintf64.rs": pass_,
+    "Intrinsics/Math/Rounding/Round/roundf64.rs": pass_,
+    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": pass_,
+    "Intrinsics/Math/Rounding/Trunc/truncf64.rs": pass_,
     # Miri
-    "fail/layout_cycle.rs": fail_("We don't check for cycles in layout"),
     "pass/issues/issue-17877.rs": unkn_("Makes an array of size 16384, too slow"),
     "pass/issues/issue-20575.rs": unkn_("Very slow compilation"),
     "pass/issues/issue-29746.rs": unkn_("Very slow compilation"),
@@ -126,7 +113,6 @@ KNOWN_ISSUES = {
     "Enum/niche_many_variants.rs": "We don't handle enum niches yet",
     "FunctionCall/Variadic/fixme_main.rs": "We don't handle functions with spread arguments (not in Charon)",
     "FunctionCall/Variadic/main.rs": "We don't handle functions with spread arguments (not in Charon)",
-    "Intrinsics/Compiler/variant_count.rs": "Kani doesn't handle variant_count yet -- we do!",
     "Intrinsics/ConstEval/pref_align_of.rs": "Requires support for custom target architectures",
     "Intrinsics/CopySign/copysignf32.rs": "SMT-lib limitations around NaN mean we can't model this",
     "Intrinsics/CopySign/copysignf64.rs": "SMT-lib limitations around NaN mean we can't model this",

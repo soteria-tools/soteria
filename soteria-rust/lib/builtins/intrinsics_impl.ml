@@ -96,7 +96,7 @@ module M (State : State_intf.S) = struct
       ~_catch_fn:catch_fn_ptr =
     let[@inline] get_fn ptr =
       let+ fn_ptr = State.lookup_fn ptr in
-      match fn_ptr.func with
+      match fn_ptr.kind with
       | FunId (FRegular fid) -> Crate.get_fun fid
       | TraitMethod (_, _, fid) -> Crate.get_fun fid
       | FunId (FBuiltin _) -> failwith "Can't have function pointer to builtin"
@@ -323,7 +323,7 @@ module M (State : State_intf.S) = struct
     | Enum variants ->
         let+ variant_id = State.load_discriminant v t in
         let variant = Types.VariantId.nth variants variant_id in
-        Base (BV.of_scalar variant.discriminant)
+        Base (BV.of_literal variant.discriminant)
     | _ ->
         (* FIXME: this size is probably wrong *)
         ok (Base U8.(0s))
@@ -412,7 +412,7 @@ module M (State : State_intf.S) = struct
         (min <.@ f &&@ (f <.@ max))
         (`StdErr "float_to_int_unchecked out of int range")
     in
-    Base (BV.of_float ~signed ~size f)
+    Base (BV.of_float ~rounding:Truncate ~signed ~size f)
 
   let fmul_add ~a ~b ~c = ok ((a *.@ b) +.@ c)
   let fmaf16 = fmul_add

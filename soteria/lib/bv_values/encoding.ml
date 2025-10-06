@@ -27,16 +27,26 @@ let rec sort_of_ty : Svalue.ty -> sexp = function
 
 let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 
+let rm_to_smt : Svalue.RoundingMode.t -> Solvers.Smt_utils.RoundingMode.t =
+  function
+  | NearestTiesToEven -> NearestTiesToEven
+  | NearestTiesToAway -> NearestTiesToAway
+  | Ceil -> Ceil
+  | Floor -> Floor
+  | Truncate -> Truncate
+
 let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
   | Not -> bool_not
   | FAbs -> fp_abs
   | GetPtrLoc -> pointers_not_supported ()
   | GetPtrOfs -> pointers_not_supported ()
   | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)
-  | BvOfFloat (true, n) -> sbv_of_float n
-  | BvOfFloat (false, n) -> ubv_of_float n
-  | FloatOfBv (true, fp) -> float_of_sbv (Svalue.FloatPrecision.size fp)
-  | FloatOfBv (false, fp) -> float_of_ubv (Svalue.FloatPrecision.size fp)
+  | BvOfFloat (rm, true, n) -> sbv_of_float (rm_to_smt rm) n
+  | BvOfFloat (rm, false, n) -> ubv_of_float (rm_to_smt rm) n
+  | FloatOfBv (rm, true, fp) ->
+      float_of_sbv (rm_to_smt rm) (Svalue.FloatPrecision.size fp)
+  | FloatOfBv (rm, false, fp) ->
+      float_of_ubv (rm_to_smt rm) (Svalue.FloatPrecision.size fp)
   | BvExtract (from_, to_) -> bv_extract to_ from_
   | BvExtend (true, by) -> bv_sign_extend by
   | BvExtend (false, by) -> bv_zero_extend by
@@ -44,11 +54,7 @@ let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
   | Neg -> bv_neg
   | NegOvf -> bv_nego
   | FIs fc -> fp_is (Svalue.FloatClass.as_fpclass fc)
-  | FRound Ceil -> fp_round Ceil
-  | FRound Floor -> fp_round Floor
-  | FRound NearestTiesToAway -> fp_round NearestTiesToAway
-  | FRound NearestTiesToEven -> fp_round NearestTiesToEven
-  | FRound Truncate -> fp_round Truncate
+  | FRound rm -> fp_round (rm_to_smt rm)
 
 let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | Eq -> eq

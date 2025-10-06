@@ -115,7 +115,7 @@ module Diagnostic = struct
   let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col)
 
   let as_ranges (loc : Charon.Meta.span) =
-    let span = Option.value ~default:loc.span loc.generated_from_span in
+    let span = Option.value ~default:loc.data loc.generated_from_span in
     match span.file.name with
     | Local file when String.starts_with ~prefix:"/rustc/" file -> []
     | Local file ->
