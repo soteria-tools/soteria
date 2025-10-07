@@ -398,8 +398,10 @@ module Make (State : State_intf.S) = struct
     | RvRef (place, borrow, _metadata) ->
         let* ptr = resolve_place place in
         let* ptr' = State.borrow ptr place.ty borrow in
-        let* is_valid = State.is_valid_ptr ptr' place.ty in
-        if is_valid then ok (Ptr ptr') else error `UBDanglingPointer
+        (* let* is_valid = State.is_valid_ptr ptr' place.ty in
+        if is_valid then  *)
+        ok (Ptr ptr')
+    (* else error `UBDanglingPointer *)
     (* Raw pointer *)
     | RawPtr (place, _kind, _metadata) ->
         let+ ptr = resolve_place place in

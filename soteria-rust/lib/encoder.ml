@@ -386,7 +386,7 @@ module Make (Sptr : Sptr.S) = struct
           | Enum variants -> aux_enum offset ty variants
           | Union fs -> aux_union offset fs
           | _ ->
-              Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
+              Fmt.kstr not_impl "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
       | TAdt { id = TBuiltin TArray; generics = { types; const_generics; _ } }
         as ty ->
@@ -402,12 +402,13 @@ module Make (Sptr : Sptr.S) = struct
           match meta with
           | None -> Fmt.failwith "Tried reading slice without metadata"
           | Some meta ->
-              let len =
+              let*** len =
                 match Typed.kind meta with
-                | BitVec len -> len
+                | BitVec len -> ok len
                 | _ ->
-                    Fmt.failwith "Can't read a slice of non-concrete size %a"
-                      Typed.ppa meta
+                    Fmt.kstr not_impl
+                      "Can't read a slice of non-concrete size %a" Typed.ppa
+                      meta
               in
               let sub_ty =
                 if ty = TSlice then List.hd generics.types
@@ -425,7 +426,7 @@ module Make (Sptr : Sptr.S) = struct
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
       | (TVar _ | TDynTrait _ | TError _ | TPtrMetadata _) as ty ->
-          Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
+          Fmt.kstr not_impl "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
         ('e, 'fix, 'state) parser =

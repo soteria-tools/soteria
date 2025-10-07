@@ -552,4 +552,4 @@ end
 
 module Z3 = Solvers.Z3.Make (Encoding)
 module Z3_incremental_solver = Make_incremental (Analyses.None) (Z3)
-module Z3_solver = Make (Analyses.None) (Z3)
+module Z3_solver = Make (Analyses.Intervals) (Z3)
