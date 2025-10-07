@@ -474,18 +474,18 @@ module Make (Sptr : Sptr.S) = struct
       https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
   *)
   let transmute_literal ~(from_ty : Types.literal_type)
-      ~(to_ty : Types.literal_type) v =
-    let open Result in
+      ~(to_ty : Types.literal_type) (v : [< T.cval ] Typed.t) =
+    let open DecayMapMonad.Result in
     match (from_ty, to_ty) with
-    | _, _ when from_ty = to_ty -> ok v
+    | _, _ when from_ty = to_ty -> ok (Base v)
     | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
-        let sv = as_base_f fty v in
+        let sv = Typed.cast_f fty v in
         let signed = Layout.is_signed lit_ty in
         let size = 8 * size_of_literal_ty lit_ty in
         let sv' = BV.of_float ~rounding:Truncate ~signed ~size sv in
         Result.ok (Base sv')
     | (TInt _ | TUInt _), TFloat fp ->
-        let sv = as_base from_ty v in
+        let sv = Typed.cast_lit from_ty v in
         let fp = Charon_util.float_precision fp in
         let signed = Layout.is_signed from_ty in
         let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
@@ -499,7 +499,7 @@ module Make (Sptr : Sptr.S) = struct
         let from_bits = 8 * Layout.size_of_literal_ty from_ty in
         let from_signed = Layout.is_signed from_ty in
         let to_bits = 8 * Layout.size_of_literal_ty to_ty in
-        let v = as_base from_ty v in
+        let v = Typed.cast_lit from_ty v in
         let v =
           if from_bits = to_bits then v
           else if from_bits < to_bits then
@@ -524,7 +524,7 @@ module Make (Sptr : Sptr.S) = struct
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
-      | TLiteral from_ty, TLiteral to_ty, v ->
+      | TLiteral from_ty, TLiteral to_ty, Base v ->
           transmute_literal ~from_ty ~to_ty v
       (* A ref cannot be an invalid pointer *)
       | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
