@@ -111,7 +111,7 @@ module M (State : State_intf.S) = struct
           match bop with
           | Add _ -> BV.add l r
           | Sub _ -> BV.sub l r
-          | Mul _ -> BV.mul l r
+          | Mul om -> BV.mul ~checked:(om <> OWrap) l r
           | Div _ -> BV.div ~signed l (cast r)
           | Rem _ -> BV.rem ~signed l (cast r)
           | Shl _ -> BV.shl l r
