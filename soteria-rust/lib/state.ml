@@ -48,6 +48,7 @@ module StateKey = struct
     incr i;
     return (Ptr.loc_of_int !i)
 
+  let distinct _ = v_true
   let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
 
   (* The above only works in WPST -- otherwise, use:

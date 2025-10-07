@@ -41,17 +41,6 @@ module M (State : State_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a" ppa v1
           ppa v2
 
-  let binop_fn (bop : Expressions.binop) signed =
-    match bop with
-    | Add _ | AddChecked -> ( +!@ )
-    | Sub _ | SubChecked -> ( -!@ )
-    | Mul _ | MulChecked -> ( *!@ )
-    | Div _ -> BV.div ~signed
-    | Rem _ -> BV.rem ~signed
-    | Shl _ -> ( <<@ )
-    | Shr _ -> if signed then BV.ashr else BV.lshr
-    | _ -> failwith "Invalid binop in binop_fn"
-
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
       hand side. *)
@@ -118,8 +107,18 @@ module M (State : State_intf.S) = struct
         let r = normalise_shift_r bop l r in
         let l = cast_lit ty l in
         let r = cast_lit ty r in
-        let op = binop_fn bop signed in
-        Result.ok (cast (op l (cast r)))
+        let res =
+          match bop with
+          | Add _ -> BV.add l r
+          | Sub _ -> BV.sub l r
+          | Mul _ -> BV.mul l r
+          | Div _ -> BV.div ~signed l (cast r)
+          | Rem _ -> BV.rem ~signed l (cast r)
+          | Shl _ -> BV.shl l r
+          | Shr _ -> if signed then BV.ashr l r else BV.lshr l r
+          | _ -> failwith "Invalid binop in binop_fn"
+        in
+        Result.ok (cast res)
     | TFloat _ -> (
         let l, r = (cast l, cast r) in
         match bop with
