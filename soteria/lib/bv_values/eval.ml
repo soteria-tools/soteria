@@ -15,7 +15,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | FRem -> Float.rem
   | Add -> BitVec.add
   | Sub -> BitVec.sub
-  | Mul -> BitVec.mul
+  | Mul checked -> BitVec.mul ~checked
   | Div signed -> BitVec.div ~signed
   | Rem signed -> BitVec.rem ~signed
   | Mod -> BitVec.mod_
