@@ -37,6 +37,8 @@ type t = {
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
+  output_crate : bool; [@make.default false] [@names [ "output-crate" ]]
+      (** Pretty-print the compiled crate to a file *)
 }
 [@@deriving make, subliner]
 
