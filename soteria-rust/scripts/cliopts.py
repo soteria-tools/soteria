@@ -187,12 +187,26 @@ def opts_for_kani(opts: CliOpts) -> CliOpts:
 
 
 def opts_for_miri(opts: CliOpts) -> CliOpts:
+    sysroot = subprocess.run(
+        ["cargo", "+nightly", "miri", "setup", "--print-sysroot"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    miri = subprocess.run(
+        ["rustup", "+nightly", "which", "miri"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
     return {
         **opts,
         "tool": "Miri",
         "tool_cmd": [
-            str((PWD / ".." / ".." / ".." / "miri" / "miri").resolve()),
-            "run",
+            miri,
+            "--sysroot",
+            sysroot,
             "-Awarnings",
         ],
         "categorise": categorise_miri,
