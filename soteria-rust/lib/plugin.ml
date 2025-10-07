@@ -235,7 +235,7 @@ let miri =
   let mk_cmd () =
     let@ _ = with_compiled_lib "miri" in
     Cmd.make ~features:[ "miri" ]
-      ~rustc:[ "--extern=miristd"; "--edition=2024" ]
+      ~rustc:[ "--extern=miristd"; "--edition=2021" ]
       ~obol:[ "--entry-names miri_start" ]
       ()
   in
