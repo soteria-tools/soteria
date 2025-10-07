@@ -12,7 +12,7 @@ let to_string = function
 let ( >= ) l r =
   match (l, r) with
   | _, _ when l == r -> true
-  | Smt, _ -> false
+  | Smt, _ -> true
   | _, Smt -> true
   | Trace, _ -> false
   | _, Trace -> true
