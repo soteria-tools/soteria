@@ -76,7 +76,7 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | AShr -> bv_ashr
   | Add -> bv_add
   | Sub -> bv_sub
-  | Mul -> bv_mul
+  | Mul _ -> bv_mul
   | Div true -> bv_sdiv
   | Div false -> bv_udiv
   | Rem true -> bv_srem
