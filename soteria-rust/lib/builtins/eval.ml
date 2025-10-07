@@ -58,9 +58,9 @@ module M (State : State_intf.S) = struct
       ("miristd::miri_pointer_name", Miri Nop);
       ("miristd::miri_print_borrow_state", Miri Nop);
       (* Obol is quite bad at parsing names so this is how they're called there... *)
-      ("utils::miri_extern::miristd::miri_get_alloc_id", Miri AllocId);
-      ("utils::miri_extern::miristd::miri_pointer_name", Miri Nop);
-      ("utils::miri_extern::miristd::miri_print_borrow_state", Miri Nop);
+      ("utils::miri_extern::miri_get_alloc_id", Miri AllocId);
+      ("utils::miri_extern::miri_pointer_name", Miri Nop);
+      ("utils::miri_extern::miri_print_borrow_state", Miri Nop);
       (* Core *)
       (* This fails because of a silly thing with NonZero in monomorphisation, which we won't
          fix for now as it requires monomorphising trait impls.  *)
