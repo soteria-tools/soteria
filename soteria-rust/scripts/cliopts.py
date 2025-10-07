@@ -208,6 +208,8 @@ def opts_for_miri(opts: CliOpts) -> CliOpts:
             "--sysroot",
             sysroot,
             "-Awarnings",
+            "--edition",
+            "2021",
         ],
         "categorise": categorise_miri,
     }
