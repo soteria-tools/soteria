@@ -56,7 +56,7 @@ let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
     | _ -> frontend_err "Failed to parse ULLBC"
   in
   let crate = Result.get_or_raise frontend_err crate in
-  if not !Config.current.no_compile then (
+  if !Config.current.output_crate then (
     (* save pretty-printed crate to local file *)
     let crate_file = Printf.sprintf "%s.crate" output in
     let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
