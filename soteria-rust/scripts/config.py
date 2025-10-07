@@ -27,6 +27,7 @@ KANI_EXCLUSIONS = [
     "/Quantifiers/",
     "/FunctionContracts/",
     "/UnsizedCoercion/defs.rs",
+    "fixme",
 ]
 
 MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
