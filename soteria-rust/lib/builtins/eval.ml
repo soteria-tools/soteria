@@ -15,7 +15,7 @@ module M (State : State_intf.S) = struct
   type fixme_fn = BoxNew | Index | Nop | Panic | TryCleanup | NullPtr
 
   (* Functions we could not stub, but we do for performance *)
-  type optim_fn =
+  and optim_fn =
     | FloatIs of Svalue.FloatClass.t
     | FloatIsFinite
     | FloatIsSign of { positive : bool }
@@ -23,24 +23,25 @@ module M (State : State_intf.S) = struct
     | AllocImpl
 
   (* Rusteria builtin functions *)
-  type rusteria_fn = Assert | Assume | Nondet | Panic
+  and rusteria_fn = Assert | Assume | Nondet | Panic
 
   (* Miri builtin functions *)
-  type miri_fn = AllocId | Nop
+  and miri_fn = AllocId | Nop
 
   (* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
-  type alloc_fn =
+  and alloc_fn =
     | Alloc of { zeroed : bool }
     | Dealloc
     | Realloc
     | NoAllocShimIsUnstable
 
-  type fn =
+  and fn =
     | Rusteria of rusteria_fn
     | Miri of miri_fn
     | Alloc of alloc_fn
     | Fixme of fixme_fn
     | Optim of optim_fn
+  [@@deriving show { with_path = false }]
 
   let std_fun_map =
     [
@@ -81,42 +82,39 @@ module M (State : State_intf.S) = struct
       (* all float operations could be removed, but we lack bit precision when getting the
          const floats from Rust, meaning these don't really work. Either way, performance wise
          it is much preferable to override these and use SMTLib builtins. *)
-      ("core::f16::{f16}::is_finite", Optim FloatIsFinite);
-      ("core::f16::{f16}::is_infinite", Optim (FloatIs Infinite));
-      ("core::f16::{f16}::is_nan", Optim (FloatIs NaN));
-      ("core::f16::{f16}::is_normal", Optim (FloatIs Normal));
-      ( "core::f16::{f16}::is_sign_negative",
+      ("core::f16::_::is_finite", Optim FloatIsFinite);
+      ("core::f16::_::is_infinite", Optim (FloatIs Infinite));
+      ("core::f16::_::is_nan", Optim (FloatIs NaN));
+      ("core::f16::_::is_normal", Optim (FloatIs Normal));
+      ( "core::f16::_::is_sign_negative",
         Optim (FloatIsSign { positive = false }) );
-      ( "core::f16::{f16}::is_sign_positive",
-        Optim (FloatIsSign { positive = true }) );
-      ("core::f16::{f16}::is_subnormal", Optim (FloatIs Subnormal));
-      ("core::f32::{f32}::is_finite", Optim FloatIsFinite);
-      ("core::f32::{f32}::is_infinite", Optim (FloatIs Infinite));
-      ("core::f32::{f32}::is_nan", Optim (FloatIs NaN));
-      ("core::f32::{f32}::is_normal", Optim (FloatIs Normal));
-      ( "core::f32::{f32}::is_sign_negative",
+      ("core::f16::_::is_sign_positive", Optim (FloatIsSign { positive = true }));
+      ("core::f16::_::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f32::_::is_finite", Optim FloatIsFinite);
+      ("core::f32::_::is_infinite", Optim (FloatIs Infinite));
+      ("core::f32::_::is_nan", Optim (FloatIs NaN));
+      ("core::f32::_::is_normal", Optim (FloatIs Normal));
+      ( "core::f32::_::is_sign_negative",
         Optim (FloatIsSign { positive = false }) );
-      ( "core::f32::{f32}::is_sign_positive",
-        Optim (FloatIsSign { positive = true }) );
-      ("core::f32::{f32}::is_subnormal", Optim (FloatIs Subnormal));
-      ("core::f64::{f64}::is_finite", Optim FloatIsFinite);
-      ("core::f64::{f64}::is_infinite", Optim (FloatIs Infinite));
-      ("core::f64::{f64}::is_nan", Optim (FloatIs NaN));
-      ("core::f64::{f64}::is_normal", Optim (FloatIs Normal));
-      ( "core::f64::{f64}::is_sign_negative",
+      ("core::f32::_::is_sign_positive", Optim (FloatIsSign { positive = true }));
+      ("core::f32::_::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f64::_::is_finite", Optim FloatIsFinite);
+      ("core::f64::_::is_infinite", Optim (FloatIs Infinite));
+      ("core::f64::_::is_nan", Optim (FloatIs NaN));
+      ("core::f64::_::is_normal", Optim (FloatIs Normal));
+      ( "core::f64::_::is_sign_negative",
         Optim (FloatIsSign { positive = false }) );
-      ( "core::f64::{f64}::is_sign_positive",
-        Optim (FloatIsSign { positive = true }) );
-      ("core::f64::{f64}::is_subnormal", Optim (FloatIs Subnormal));
-      ("core::f128::{f128}::is_finite", Optim FloatIsFinite);
-      ("core::f128::{f128}::is_infinite", Optim (FloatIs Infinite));
-      ("core::f128::{f128}::is_nan", Optim (FloatIs NaN));
-      ("core::f128::{f128}::is_normal", Optim (FloatIs Normal));
-      ( "core::f128::{f128}::is_sign_negative",
+      ("core::f64::_::is_sign_positive", Optim (FloatIsSign { positive = true }));
+      ("core::f64::_::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f128::_::is_finite", Optim FloatIsFinite);
+      ("core::f128::_::is_infinite", Optim (FloatIs Infinite));
+      ("core::f128::_::is_nan", Optim (FloatIs NaN));
+      ("core::f128::_::is_normal", Optim (FloatIs Normal));
+      ( "core::f128::_::is_sign_negative",
         Optim (FloatIsSign { positive = false }) );
-      ( "core::f128::{f128}::is_sign_positive",
+      ( "core::f128::_::is_sign_positive",
         Optim (FloatIsSign { positive = true }) );
-      ("core::f128::{f128}::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f128::_::is_subnormal", Optim (FloatIs Subnormal));
       (* These don't compile, maybe because they const-panic? *)
       ("core::panicking::panic_fmt", Fixme Panic);
       ("core::slice::index::slice_index_order_fail", Fixme Panic);
