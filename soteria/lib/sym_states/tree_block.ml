@@ -147,15 +147,7 @@ struct
     type t = sint * sint
 
     let pp ft (l, u) = Fmt.pf ft "[%a, %a[" Symex.Value.ppa l Symex.Value.ppa u
-
-    let sem_eq (a, c) (b, d) =
-      let res = a ==@ b &&@ (c ==@ d) in
-      Logs.L.warn (fun m ->
-          m "Checking equality of (%a, %a) == (%a, %a) ==> %a" Symex.Value.ppa a
-            Symex.Value.ppa c Symex.Value.ppa b Symex.Value.ppa d
-            Symex.Value.ppa res);
-      res
-
+    let sem_eq (a, c) (b, d) = a ==@ b &&@ (c ==@ d)
     let is_inside (l1, u1) (l2, u2) = l2 <=@ l1 &&@ (u1 <=@ u2)
     let strictly_inside x (l, u) = l <@ x &&@ (x <@ u)
     let size (l, u) = u -@ l
