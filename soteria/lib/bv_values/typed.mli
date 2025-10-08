@@ -227,8 +227,8 @@ end
 
 module Infix : sig
   (* equality *)
-  val ( ==@ ) : 'a t -> 'a t -> [> sbool ] t
-  val ( ==?@ ) : 'a t -> 'b t -> [> sbool ] t
+  val ( ==@ ) : [< any ] t -> [< any ] t -> [> sbool ] t
+  val ( ==?@ ) : [< any ] t -> [< any ] t -> [> sbool ] t
 
   (* inequality -- [$] indicates signed *)
   val ( >@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
