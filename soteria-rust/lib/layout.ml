@@ -634,15 +634,8 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
   | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
       List.concat_map2 f vs types
   | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
-      match Typed.kind d with
-      | BitVec d -> (
-          let enum_layout = layout_of ty in
-          let discr_ty =
-            match enum_layout.fields with
-            | Enum (tag, _) -> tag.ty
-            | _ -> failwith "Expected enum layout"
-          in
-          let d = BV.bv_to_z discr_ty d in
+      match BV.to_z d with
+      | Some d -> (
           let variants = Crate.as_enum adt_id in
           let v =
             List.find_opt
@@ -653,7 +646,7 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
           match v with
           | Some v -> List.concat_map2 f vs (field_tys Types.(v.fields))
           | None -> [])
-      | _ -> [])
+      | None -> [])
   | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_union adt_id in
       let field = Types.FieldId.nth fields fid in

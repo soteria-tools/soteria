@@ -180,11 +180,11 @@ module Make (Sptr : Sptr.S) = struct
         | NotOwned Totally -> miss_no_fix ~reason:"decode" ()
         | Owned (Uninit Totally, _) -> Result.error `UninitializedMemoryAccess
         | Owned (Zeros, _) ->
-            let* ty =
-              match Typed.kind (Range.size leaf.range) with
-              | BitVec size -> return (Layout.size_to_uint (Z.to_int size))
-              | _ -> not_impl "Don't know how to read this size"
+            let* size =
+              of_opt_not_impl "Don't know how to read this size"
+              @@ BitVec.to_z (Range.size leaf.range)
             in
+            let ty = Layout.size_to_uint (Z.to_int size) in
             let+ value =
               of_opt_not_impl "Don't know how to zero this type"
               @@ Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) ty

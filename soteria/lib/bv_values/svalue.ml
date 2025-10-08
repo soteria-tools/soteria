@@ -376,6 +376,7 @@ module type BitVec = sig
   val zero : int -> t
   val one : int -> t
   val bv_to_z : bool -> int -> Z.t -> Z.t
+  val to_z : t -> Z.t option
 
   (* arithmetic *)
   val add : t -> t -> t
@@ -657,6 +658,8 @@ and BitVec : BitVec = struct
       let max = Z.(pred (one lsl bits_m_1)) in
       if Z.leq z max then z else Z.(z - (one lsl bits))
     else z
+
+  let to_z v = match v.node.kind with BitVec z -> Some z | _ -> None
 
   (** [max_for signed n] is the inclusive maximum for a bitvector of size [n]
       when it is [signed] *)
