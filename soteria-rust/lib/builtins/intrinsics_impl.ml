@@ -232,9 +232,7 @@ module M (State : State_intf.S) = struct
     let bits = 8 * Layout.size_of_literal_ty t in
     let x = as_base t x in
     let res =
-      match Typed.kind x with
-      | BitVec x -> concrete bits x
-      | _ -> symbolic bits x
+      match BV.to_z x with Some z -> concrete bits z | None -> symbolic bits x
     in
     ok res
 
@@ -627,8 +625,8 @@ module M (State : State_intf.S) = struct
       let val_ : [> T.sint ] Typed.t = Typed.cast val_ in
       if%sure val_ ==@ U8.(0s) then State.zeros dst size
       else
-        match Typed.kind size with
-        | BitVec bytes ->
+        match BV.to_z size with
+        | Some bytes ->
             fold_iter
               Iter.(0 -- (Z.to_int bytes - 1))
               ~init:()
@@ -636,5 +634,6 @@ module M (State : State_intf.S) = struct
                 let off = BV.usizei i in
                 let^^ ptr = Sptr.offset ~signed:false ptr off in
                 State.store (ptr, None) (TLiteral (TUInt U8)) (Base val_))
-        | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
+        | None ->
+            not_impl "write_bytes: don't know how to handle symbolic sizes"
 end

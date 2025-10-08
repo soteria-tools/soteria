@@ -71,6 +71,7 @@ module Make (Sptr : Sptr.S) = struct
       Compo_res.Ok (m, state)
 
     let not_impl msg = lift @@ not_impl msg
+    let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
 
     module Syntax = struct
       let ( let*** ) x f = bind x f
@@ -386,7 +387,7 @@ module Make (Sptr : Sptr.S) = struct
           | Enum variants -> aux_enum offset ty variants
           | Union fs -> aux_union offset fs
           | _ ->
-              Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
+              Fmt.kstr failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
       | TAdt { id = TBuiltin TArray; generics = { types; const_generics; _ } }
         as ty ->
@@ -396,36 +397,33 @@ module Make (Sptr : Sptr.S) = struct
           let fields = Seq.init_z len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
       | TAdt { id = TBuiltin (TStr as ty); generics }
-      | TAdt { id = TBuiltin (TSlice as ty); generics } -> (
+      | TAdt { id = TBuiltin (TSlice as ty); generics } ->
           (* We can only read a slice if we have the metadata of its length, in which case
            we interpret it as an array of that length. *)
-          match meta with
-          | None -> Fmt.failwith "Tried reading slice without metadata"
-          | Some meta ->
-              let len =
-                match Typed.kind meta with
-                | BitVec len -> len
-                | _ ->
-                    Fmt.failwith "Can't read a slice of non-concrete size %a"
-                      Typed.ppa meta
-              in
-              let sub_ty =
-                if ty = TSlice then List.hd generics.types
-                else TLiteral (TUInt U8)
-              in
-              (* FIXME: This is a bit hacky, and not performant -- instead we should try to
+          let meta =
+            Option.get ~msg:"Tried reading slice without metadata" meta
+          in
+          let*** len =
+            of_opt_not_impl
+              (Fmt.str "Slice length not concrete: %a" Typed.ppa meta)
+              (BV.to_z meta)
+          in
+          let sub_ty =
+            if ty = TSlice then List.hd generics.types else TLiteral (TUInt U8)
+          in
+          (* FIXME: This is a bit hacky, and not performant -- instead we should try to
                  group the reads together, at least for primitive types. *)
-              let arr_ty = mk_array_ty sub_ty len in
-              let layout = layout_of arr_ty in
-              let fields = Seq.init_z len (fun _ -> sub_ty) in
-              aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
+          let arr_ty = mk_array_ty sub_ty len in
+          let layout = layout_of arr_ty in
+          let fields = Seq.init_z len (fun _ -> sub_ty) in
+          aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
       | TNever -> error `RefToUninhabited
       | TTraitType (tref, name) ->
           let ty = Layout.resolve_trait_ty tref name in
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
       | (TVar _ | TDynTrait _ | TError _ | TPtrMetadata _) as ty ->
-          Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
+          Fmt.kstr not_impl "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
         ('e, 'fix, 'state) parser =
@@ -564,9 +562,7 @@ module Make (Sptr : Sptr.S) = struct
     let transmute = transmute ~try_splitting:false in
     let size_of ty = (Layout.layout_of ty).size in
     let int_of_val v =
-      match Typed.kind v with
-      | BitVec v -> Z.to_int v
-      | _ -> failwith "Expected a concrete integer"
+      Z.to_int (Option.get ~msg:"Non-concrete size" (BV.to_z v))
     in
     (* to make our life easier, we check for concrete offsets in the layout; this should
            always be true anyways. *)
@@ -691,11 +687,9 @@ module Make (Sptr : Sptr.S) = struct
         split (Base v) ty at
     | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
         let+ at =
-          match Typed.kind at with
-          | BitVec size -> return (Z.to_int size)
-          | _ ->
-              Fmt.kstr not_impl "Don't know how to read this size: %a" Typed.ppa
-                at
+          of_opt_not_impl
+            (Fmt.str "Don't know how to read this size: %a" Typed.ppa at)
+            (Option.map Z.to_int (BV.to_z at))
         in
         (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
            of size 2^n *)

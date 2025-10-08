@@ -398,7 +398,13 @@ module Make (State : State_intf.S) = struct
     | RvRef (place, borrow, _metadata) ->
         let* ptr = resolve_place place in
         let* ptr' = State.borrow ptr place.ty borrow in
-        let* is_valid = State.is_valid_ptr ptr' place.ty in
+        let* is_valid =
+          match ptr' with
+          (* FIXME: we don't support reads of symbolic slices lengths, so for now we
+             assume they are always valid. *)
+          | _, Some len when Option.is_none (BV.to_z len) -> ok true
+          | _ -> State.is_valid_ptr ptr' place.ty
+        in
         if is_valid then ok (Ptr ptr') else error `UBDanglingPointer
     (* Raw pointer *)
     | RawPtr (place, _kind, _metadata) ->

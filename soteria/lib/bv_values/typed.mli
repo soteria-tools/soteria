@@ -119,6 +119,7 @@ module BitVec : sig
   val zero : int -> [> zero ] t
   val one : int -> [> nonzero ] t
   val bv_to_z : bool -> int -> Z.t -> Z.t
+  val to_z : [< any ] t -> Z.t option
 
   (* arithmetic *)
   val add : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
