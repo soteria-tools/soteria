@@ -755,17 +755,6 @@ and BitVec : BitVec = struct
     | Unop (BvOfBool n, b) -> Bool.ite b (neg (one n)) (zero n)
     | _ -> Unop (Neg, v) <| v.node.ty
 
-  let div ~signed v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r ->
-        let size = size_of v1.node.ty in
-        let l = bv_to_z signed size l in
-        let r = bv_to_z signed size r in
-        let res = Z.(l / r) in
-        mk_masked size res
-    | _, BitVec r when Z.equal r Z.one -> v1
-    | _ -> Binop (Div signed, v1, v2) <| v1.node.ty
-
   (** [mod_ v1 v2] is the signed remainder of [v1 / v2], which takes the sign of
       the divisor [v2] if [signed]. For an unsigned version, use
       [rem ~signed:false]. *)
@@ -1050,6 +1039,35 @@ and BitVec : BitVec = struct
         let x = mk n x in
         Bool.ite b (mul l x) (mul r x)
     | _ -> mk_commut_binop (Mul checked) v1 v2 <| v1.node.ty
+
+  let rec div ~signed v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | BitVec l, BitVec r ->
+        let size = size_of v1.node.ty in
+        let l = bv_to_z signed size l in
+        let r = bv_to_z signed size r in
+        let res = Z.(l / r) in
+        mk_masked size res
+    | _, BitVec r when Z.equal r Z.one -> v1
+    (* this case shouldn't happen but it avoids conflicts for the next two patterns *)
+    | ( Binop
+          ( Mul checked,
+            ({ node = { kind = BitVec _; _ }; _ } as l),
+            ({ node = { kind = BitVec _; _ }; _ } as r) ),
+        BitVec _ ) ->
+        div ~signed (mul ~checked l r) v2
+    | Binop (Mul true, { node = { kind = BitVec n; _ }; _ }, x), BitVec d
+    | Binop (Mul true, x, { node = { kind = BitVec n; _ }; _ }), BitVec d
+      when Stdlib.not signed && Z.(equal (n mod d) zero) ->
+        (* (x * n) / d = x * (n / d) when n % d == 0 *)
+        mul ~checked:true x (mk (size_of v1.node.ty) Z.(n / d))
+    | Binop (Mul true, { node = { kind = BitVec n; _ }; _ }, x), BitVec d
+    | Binop (Mul true, x, { node = { kind = BitVec n; _ }; _ }), BitVec d
+      when Stdlib.not signed && Z.(equal (d mod n) zero) ->
+        (* (x * n) / d = x / (d / n) when d % n == 0 *)
+        let divisor = Z.(d / n) in
+        div ~signed x (mk (size_of v1.node.ty) divisor)
+    | _ -> Binop (Div signed, v1, v2) <| v1.node.ty
 
   let rec lt ~signed v1 v2 =
     let bits = size_of v1.node.ty in
