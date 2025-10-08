@@ -179,23 +179,24 @@ module Make (Sptr : Sptr.S) = struct
     (* Enums *)
     | Enum (disc, vals), (TAdt { id = TAdtId t_id; _ } as ty) -> (
         let variants = Crate.as_enum t_id in
-        match (variants, Typed.kind disc) with
+        let layout = Layout.layout_of ty in
+        match layout with
         (* fieldless enums with one option are zero-sized *)
-        | [ _ ], _ when Option.is_some @@ Layout.as_zst ty -> []
-        | variants, BitVec disc_bv ->
-            let layout = Layout.layout_of ty in
-            let tag_layout, var_fields =
-              match layout.fields with
-              | Enum (tag_layout, var_fields) -> (tag_layout, var_fields)
-              | _ -> failwith "Unexptected enum layout"
+        | { size = 0; _ } -> []
+        | { fields = Arbitrary (variant, _); _ } ->
+            let variant = Types.VariantId.nth variants variant in
+            let var_fields = field_tys variant.fields in
+            chain_cvals layout vals var_fields
+        | { fields = Enum (tag_layout, var_fields); _ } ->
+            let disc =
+              Option.get ~msg:"Discriminant not concrete" (BV.to_z disc)
             in
-            let disc_z = BV.bv_to_z tag_layout.ty disc_bv in
             let variant_id, variant =
               Option.get ~msg:"No matching variant?"
               @@ List.find_mapi
                    (fun i v ->
-                     if Z.equal disc_z (z_of_literal Types.(v.discriminant))
-                     then Some (i, v)
+                     if Z.equal disc (z_of_literal Types.(v.discriminant)) then
+                       Some (i, v)
                      else None)
                    variants
             in
@@ -211,7 +212,7 @@ module Make (Sptr : Sptr.S) = struct
             let var_layout = { layout with fields = var_fields } in
             discriminant
             @ chain_cvals var_layout vals (field_tys variant.fields)
-        | _ -> Fmt.failwith "Unexpected discriminant for enum: %a" pp_ty ty)
+        | _ -> Fmt.failwith "Unexpected layout for enum")
     | Base value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
         let layout = Layout.layout_of ty in
         let tag_ty =
@@ -258,40 +259,38 @@ module Make (Sptr : Sptr.S) = struct
     let layout = Layout.layout_of ty in
     (* if it's a ZST, we assume it's the first variant; I don't think this is
        always true, e.g. enum { A(!), B }, but it's ok for now. *)
-    if layout.size = 0 then ok (Types.VariantId.of_int 0)
-    else
-      let tag_layout =
-        match layout.fields with
-        | Enum (d, _) -> d
-        | _ -> failwith "Unexpected layout for enum"
-      in
-      let offset = offset +!@ BV.usizei tag_layout.offset in
-      let*** cval = query (TLiteral tag_layout.ty, offset) in
-      (* here we need to check and decay if it's a pointer, for niche encoding! *)
-      let*** cval =
-        match cval with
-        | Base cval -> ok (Typed.cast_lit tag_layout.ty cval)
-        | Ptr (p, None) -> lift @@ Sptr.decay p
-        | _ -> Fmt.failwith "Unexpected discriminant: %a" pp_rust_val cval
-      in
-      let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
-      let*** res =
-        lift
-        @@ match_on tags ~constr:(function
-             | _, None -> Typed.v_false
-             | _, Some tag -> cval ==@ BV.mk_lit tag_layout.ty tag)
-      in
-      match (tag_layout.encoding, res) with
-      | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
-      | Direct, None ->
-          let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
-          let adt = Crate.get_adt adt_id in
-          let msg =
-            Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
-              adt.item_meta.name Typed.ppa cval
-          in
-          error (`UBTransmute msg)
-      | Niche untagged, None -> ok untagged
+    match layout with
+    | { fields = Arbitrary (vid, _); _ } -> ok vid
+    | { size = 0; _ } -> ok (Types.VariantId.of_int 0)
+    | { fields = Enum (tag_layout, _); _ } -> (
+        let offset = offset +!@ BV.usizei tag_layout.offset in
+        let*** tag = query (TLiteral tag_layout.ty, offset) in
+        (* here we need to check and decay if it's a pointer, for niche encoding! *)
+        let*** tag =
+          match tag with
+          | Base tag -> ok (Typed.cast_lit tag_layout.ty tag)
+          | Ptr (p, None) -> lift @@ Sptr.decay p
+          | _ -> Fmt.failwith "Unexpected tag: %a" pp_rust_val tag
+        in
+        let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
+        let*** res =
+          lift
+          @@ match_on tags ~constr:(function
+               | _, None -> Typed.v_false
+               | _, Some t -> tag ==@ BV.mk_lit tag_layout.ty t)
+        in
+        match (tag_layout.encoding, res) with
+        | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
+        | Direct, None ->
+            let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
+            let adt = Crate.get_adt adt_id in
+            let msg =
+              Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
+                adt.item_meta.name Typed.ppa tag
+            in
+            error (`UBTransmute msg)
+        | Niche untagged, None -> ok untagged)
+    | _ -> failwith "Unexpected layout for enum"
 
   type ('e, 'fix, 'state) parser = (rust_val, 'state, 'e, 'fix) ParserMonad.t
 

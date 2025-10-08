@@ -225,11 +225,7 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   log "load" ptr st;
   let@ offset, block = with_ptr ptr st in
   let@ block, tb = with_tbs block in
-  let handler (ty, ofs) block =
-    L.debug (fun f ->
-        f "Loading blocks %a:%a" Typed.ppa ofs Charon_util.pp_ty ty);
-    Tree_block.load ~ignore_borrow ofs ty ptr.tag tb block
-  in
+  let handler (ty, ofs) = Tree_block.load ~ignore_borrow ofs ty ptr.tag tb in
   Encoder.ParserMonad.parse ~init:block ~handler @@ parser ~offset
 
 let load_discriminant (ptr, _) ty st =
