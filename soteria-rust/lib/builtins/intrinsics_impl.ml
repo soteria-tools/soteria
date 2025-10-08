@@ -178,7 +178,7 @@ module M (State : State_intf.S) = struct
     let* () = State.check_ptr_align src t in
     let* () = State.check_ptr_align dst t in
     let^ ty_size = Layout.size_of_s t in
-    if%sat ty_size ==@ zero then ok ()
+    if%sat ty_size ==@ zero ||@ (count ==@ zero) then ok ()
     else
       let* () =
         State.assert_not
