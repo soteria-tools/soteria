@@ -116,13 +116,15 @@ module M (State : State_intf.S) = struct
         Optim (FloatIsSign { positive = true }) );
       ("core::f128::_::is_subnormal", Optim (FloatIs Subnormal));
       (* These don't compile, maybe because they const-panic? *)
+      ("alloc::raw_vec::handle_error", Fixme Panic);
+      ("core::panicking::panic", Fixme Panic);
       ("core::panicking::panic_fmt", Fixme Panic);
-      ("core::slice::index::slice_index_order_fail", Fixme Panic);
       ("core::slice::index::slice_end_index_len_fail", Fixme Panic);
       ("core::slice::index::slice_end_index_overflow_fail", Fixme Panic);
+      ("core::slice::index::slice_index_order_fail", Fixme Panic);
       ("std::alloc::handle_alloc_error", Fixme Panic);
       ("std::option::unwrap_failed", Fixme Panic);
-      ("core::panicking::panic", Fixme Panic);
+      ("std::vec::Vec::_::remove::assert_failed", Fixme Panic);
       (* These don't compile, for some reason? *)
       ("std::panicking::try::cleanup", Fixme TryCleanup);
       ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);
@@ -173,12 +175,12 @@ module M (State : State_intf.S) = struct
          | Rusteria Assert -> assert_
          | Rusteria Assume -> assume
          | Rusteria Nondet -> nondet f.signature
-         | Rusteria Panic -> panic
+         | Rusteria Panic -> panic ?msg:None
          | Miri AllocId -> alloc_id
          | Miri Nop -> nop
          | Fixme BoxNew -> fixme_box_new f.signature
          | Fixme Index -> array_index_fn f.signature
-         | Fixme Panic -> panic
+         | Fixme Panic -> panic ~msg:(Fmt.to_to_string Crate.pp_name name)
          | Fixme Nop -> nop
          | Fixme NullPtr -> fixme_null_ptr
          | Fixme TryCleanup -> fixme_try_cleanup
