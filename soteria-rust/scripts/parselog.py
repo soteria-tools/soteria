@@ -407,7 +407,7 @@ def main(files: list[str]):
         inc_rainbow()
 
     print(
-        f"{BOLD}Total:{RESET} {len(set(t[0] for tests in stats.values() for t in tests))}"
+        f"{BOLD}Total:{RESET} {len(set(t[1] for tests in stats.values() for t in tests))}"
     )
 
 
@@ -418,10 +418,10 @@ Diff = dict[str, str | tuple[TestInfo, TestInfo]]
 
 
 def diff(f1: str, f2: str):
-    log1 = analyse(f1)
+    log1 = filtered(analyse(f1))
     tests1 = as_test_outcome_map(log1)
 
-    log2 = analyse(f2)
+    log2 = filtered(analyse(f2))
     tests2 = as_test_outcome_map(log2)
 
     all_tests = [*(set(tests1.keys()).union(tests2.keys()))]
@@ -495,12 +495,10 @@ def diff(f1: str, f2: str):
             pprint(f"{test}{RESET} {diff}", inc=False)
         else:
 
-            def mk_str(outcomes):
+            def mk_str(outcomes: TestInfo):
                 return ", ".join(
-                    f"{color}{cause}{RESET}"
-                    for cause, color in set(
-                        ((cause, color) for cause, color, _ in outcomes)
-                    )
+                    f"{outcome}"
+                    for outcome in set((outcome for _, outcome, _ in outcomes))
                 )
 
             only_before, only_after = diff
