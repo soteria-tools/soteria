@@ -449,9 +449,29 @@ struct
   let fresh_var solver ty =
     Declared_vars.fresh solver.vars (Typed.untype_type ty)
 
+  let equality_for solver var ty =
+    let exception Found of Svalue.t in
+    try
+      ( Solver_state.iter solver.state @@ fun v ->
+        match Typed.kind v with
+        | Binop
+            ( Eq,
+              { node = { kind = Var v; _ }; _ },
+              ({ node = { kind = BitVec _; _ }; _ } as x) )
+        | Binop
+            ( Eq,
+              ({ node = { kind = BitVec _; _ }; _ } as x),
+              { node = { kind = Var v; _ }; _ } )
+          when Var.equal v var ->
+            raise (Found x)
+        | _ -> () );
+      Svalue.mk_var var ty
+    with Found x -> x
+
   let simplify solver v : 'a Typed.t =
     v
     |> Typed.untyped
+    |> Eval.eval ~eval_var:(equality_for solver)
     |> simplify
          ~trivial_truthiness:(Solver_state.trivial_truthiness_of solver.state)
          ~fallback:(Analysis.simplify solver.analysis)
