@@ -1063,10 +1063,6 @@ and BitVec : BitVec = struct
         (* signed x < 0 is checking the sign bit *)
         let sign_bit = extract (bits - 1) (bits - 1) v1 in
         Bool.sem_eq sign_bit (one 1)
-    | BitVec x, _ when signed && Z.equal x Z.zero ->
-        (* signed 0 < x is checking the sign bit of x is not set *)
-        let sign_bit = extract (bits - 1) (bits - 1) v2 in
-        Bool.sem_eq sign_bit (zero 1)
     | BitVec x, _ when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.v_false
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (min_for signed bits) ->
