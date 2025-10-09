@@ -250,3 +250,7 @@ let exec_cargo config crate_dir =
   let plugin = Plugin.create_using_current_config () in
   let compile () = parse_ullbc_of_crate ~plugin crate_dir in
   exec_and_output_crate ~plugin compile
+
+let build_plugins config =
+  Config.set config;
+  wrap_step "Compiling plugins" Plugin.compile_all_plugins
