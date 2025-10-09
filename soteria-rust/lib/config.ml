@@ -11,6 +11,13 @@ type t = {
           powerful. *)
   no_compile : bool; [@make.default false] [@names [ "no-compile" ]]
       (** Do not compile the Rust code, as it is already compiled *)
+  no_compile_plugins : bool;
+      [@make.default false] [@names [ "no-compile-plugins" ]]
+      (** Do not compile the plugins, as they are already compiled *)
+  target : string option; [@names [ "target" ]] [@env "TARGET"]
+      (** The compilation target triple to use, e.g. x86_64-unknown-linux-gnu.
+          If not provided, the default target for the current machine is used.
+      *)
   output_crate : bool; [@make.default false] [@names [ "output-crate" ]]
       (** Pretty-print the compiled crate to a file *)
   rustc_flags : string list;
