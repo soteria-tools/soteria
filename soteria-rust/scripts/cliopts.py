@@ -165,6 +165,7 @@ def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
             "--no-color",
             "--log-compilation",
             "--solver-timeout=5000",
+            "--no-compile-plugins",
         ],
         "categorise": categorise_rusteria,
     }

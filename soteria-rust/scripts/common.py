@@ -256,9 +256,22 @@ def build_rusteria():
             continue
         name, value = line.split("=", 1)
         os.environ[name] = value
+
+    # find line starting with "host: "
+    targets = (
+        subprocess.check_output("$(charon toolchain-path)/bin/cargo -vV", shell=True)
+        .decode()
+        .split("\n")
+    )
+    for line in targets:
+        if line.startswith("host: "):
+            os.environ["TARGET"] = line[6:]
+            break
+
     os.environ["RUSTERIA_PLUGINS"] = str((PWD / ".." / "plugins").resolve())
     try:
         subprocess.check_call("dune build", shell=True)
+        subprocess.check_call("soteria-rust build-plugins > /dev/null", shell=True)
     except subprocess.CalledProcessError:
         print(f"{RED}Rusteria couldn't build")
         exit(1)
