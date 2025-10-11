@@ -362,7 +362,7 @@ module Make (Sptr : Sptr.S) = struct
             match meta with
             | Len len when must_be_valid ->
                 assert_or_error
-                  (Usize.(0s) <$@ len)
+                  (Usize.(0s) <=$@ len)
                   (`UBTransmute "Negative slice length")
             | _ -> ok ()
           in
