@@ -43,8 +43,15 @@ module M (State : State_intf.S) = struct
   let mul_with_overflow = checked_op (Mul OUB)
   let align_of ~t = lift_symex @@ Layout.align_of_s t
 
-  (* FIXME: how does the value influence the alignment? *)
-  let align_of_val ~t ~ptr:_ = lift_symex @@ Layout.align_of_s t
+  let align_of_val ~t ~ptr =
+    match (t, ptr) with
+    | Types.TDynTrait _, (_, VTable vt) ->
+        let^^ align_ptr =
+          Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(2s)
+        in
+        let+ align = State.load (align_ptr, Thin) (TLiteral (TUInt Usize)) in
+        as_base_i Usize align
+    | _ -> lift_symex @@ Layout.align_of_s t
 
   let arith_offset ~t ~dst:(dst, meta) ~offset =
     let^^+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
@@ -548,6 +555,12 @@ module M (State : State_intf.S) = struct
         let size, ovf = size *?@ len in
         let+ () = State.assert_not ovf `Overflow in
         size
+    | Types.TDynTrait _, VTable vt ->
+        let^^ size_ptr =
+          Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(1s)
+        in
+        let+ size = State.load (size_ptr, Thin) (TLiteral (TUInt Usize)) in
+        as_base_i Usize size
     | _ -> lift_symex @@ Layout.size_of_s t
 
   let transmute ~t_src ~dst ~src =

@@ -272,7 +272,8 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
           let vi = Types.VariantId.of_int i in
           let offset =
             match variant_layout.field_offsets with
-            | [ o ] -> o
+            | [] -> [||]
+            | [ o ] -> [| o |]
             | _ -> failwith "Expected single offset for single variant enum"
           in
           let variant = Types.VariantId.nth variants vi in
@@ -280,7 +281,7 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
           {
             size = sub_layout.size;
             align = sub_layout.align;
-            fields = Arbitrary (vi, [| offset |]);
+            fields = Arbitrary (vi, offset);
           }
       | _ ->
           Fmt.failwith
