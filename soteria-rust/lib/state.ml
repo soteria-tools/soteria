@@ -213,9 +213,10 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   Encoder.ParserMonad.parse ~init:block ~handler @@ parser ~offset
 
 let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Charon.Types.ty) st =
+  (* The expected alignment of a dyn pointer is stored inside the VTable  *)
   let** exp_align, st =
-    match meta with
-    | VTable vt ->
+    match (ty, meta) with
+    | TDynTrait _, VTable vt ->
         let usize = Charon.Types.TLiteral (TUInt Usize) in
         let** ptr =
           lift_err st @@ Sptr.offset ~ty:usize ~signed:false vt Usize.(2s)
