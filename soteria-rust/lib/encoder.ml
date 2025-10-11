@@ -428,8 +428,9 @@ module Make (Sptr : Sptr.S) = struct
           let ty = Layout.resolve_trait_ty tref name in
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
+      | TDynTrait _ -> not_impl "Tried reading a trait object?"
       | TAdt { id = TBuiltin TBox; _ } -> failwith "Invalid box"
-      | (TVar _ | TDynTrait _ | TError _ | TPtrMetadata _) as ty ->
+      | (TVar _ | TError _ | TPtrMetadata _) as ty ->
           Fmt.kstr not_impl "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
