@@ -237,7 +237,8 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Charon.Types.ty) st =
   let++ () =
     assert_
       (ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s)))
-      `MisalignedPointer st
+      (`MisalignedPointer (exp_align, align))
+      st
   in
   ((), st)
 

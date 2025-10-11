@@ -38,7 +38,7 @@ module type S = sig
       | `UseAfterFree
       | `UBTransmute of string
       | `AliasingError
-      | `MisalignedPointer
+      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
       | `RefToUninhabited
       | `UBDanglingPointer ]
       err
@@ -55,7 +55,7 @@ module type S = sig
       | `OutOfBounds
       | `UseAfterFree
       | `AliasingError
-      | `MisalignedPointer
+      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
       | `UBDanglingPointer ]
       err
       * t,
@@ -73,7 +73,7 @@ module type S = sig
       | `UseAfterFree
       | `UBTransmute of string
       | `AliasingError
-      | `MisalignedPointer
+      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
       | `RefToUninhabited
       | `UBDanglingPointer ]
       err
@@ -88,7 +88,7 @@ module type S = sig
     t ->
     ( unit * t,
       [> `AliasingError
-      | `MisalignedPointer
+      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
       | `NullDereference
       | `OutOfBounds
       | `RefToUninhabited
@@ -127,7 +127,7 @@ module type S = sig
     t ->
     ( unit * t,
       [> `AliasingError
-      | `MisalignedPointer
+      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
       | `NullDereference
       | `OutOfBounds
       | `RefToUninhabited
