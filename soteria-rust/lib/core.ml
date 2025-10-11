@@ -143,17 +143,29 @@ module M (State : State_intf.S) = struct
     in
     Result.ok (Tuple [ Base wrapped; Base (BV.of_bool overflowed) ])
 
+  let meta_as_int = function
+    | Len l -> return (Some l)
+    | VTable ptr ->
+        let+ ptr = Sptr.decay ptr in
+        Some ptr
+    | Thin -> return None
+
+  let eval_meta_eq l r =
+    let* meta_l = meta_as_int l in
+    let+ meta_r = meta_as_int r in
+    match (meta_l, meta_r) with
+    | Some l, Some r -> l ==@ r
+    | None, None -> v_true
+    | _, _ -> v_false
+
   let rec eval_ptr_binop (bop : Expressions.binop) l r =
     match (bop, l, r) with
     | Ne, _, _ ->
         let++ res = eval_ptr_binop Eq l r in
         BV.not_bool (cast res)
-    | Eq, Ptr (l, None), Ptr (r, None) ->
-        Result.ok (BV.of_bool (Sptr.sem_eq l r))
-    | Eq, Ptr (l, Some ml), Ptr (r, Some mr) ->
-        Result.ok (BV.of_bool (Sptr.sem_eq l r &&@ (ml ==@ mr)))
-    | Eq, Ptr (_, Some _), Ptr (_, None) | Eq, Ptr (_, None), Ptr (_, Some _) ->
-        Result.ok (BV.of_bool v_false)
+    | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
+        let* meta_eq = eval_meta_eq meta_l meta_r in
+        Result.ok (BV.of_bool (meta_eq &&@ Sptr.sem_eq l r))
     | Eq, Ptr (p, _), Base v | Eq, Base v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then
@@ -173,19 +185,17 @@ module M (State : State_intf.S) = struct
           in
           let v = bop dist Usize.(0s) in
           match (ml, mr) with
-          | Some ml, Some mr ->
+          | Thin, Thin -> Result.ok (BV.of_bool v)
+          (* is the below line correct? *)
+          | Thin, _ | _, Thin -> Result.ok (BV.of_bool v)
+          | _, _ ->
               if%sat dist ==@ Usize.(0s) then
-                let ml, mr, mty = cast_checked2 ml mr in
-                match untype_type mty with
-                | TBitVector _ -> Result.ok (BV.of_bool (bop ml mr))
-                | mty ->
-                    Fmt.kstr not_impl
-                      "Don't know how to compare metadata of type %a"
-                      Svalue.pp_ty mty
+                let* ml = meta_as_int ml in
+                let* mr = meta_as_int mr in
+                let ml = Option.get ml in
+                let mr = Option.get mr in
+                Result.ok (BV.of_bool (bop ml mr))
               else Result.ok (BV.of_bool v)
-          (* is this correct? *)
-          | Some _, None | None, Some _ -> Result.ok (BV.of_bool v)
-          | None, None -> Result.ok (BV.of_bool v)
         else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         let** () =

@@ -20,7 +20,7 @@ module M (State : State_intf.S) = struct
     | Base v ->
         let v = Typed.cast_i Usize v in
         let ptr = State.Sptr.null_ptr_of v in
-        (ptr, None)
+        (ptr, Thin)
     | _ -> failwith "expected pointer"
 
   let as_base ty (v : rust_val) = Rust_val.as_base ty v

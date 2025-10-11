@@ -87,12 +87,15 @@ module type S = sig
     Sptr.t rust_val ->
     t ->
     ( unit * t,
-      [> `NullDereference
-      | `OutOfBounds
-      | `AliasingError
-      | `UseAfterFree
+      [> `AliasingError
       | `MisalignedPointer
-      | `UBDanglingPointer ]
+      | `NullDereference
+      | `OutOfBounds
+      | `RefToUninhabited
+      | `UBDanglingPointer
+      | `UBTransmute of string
+      | `UninitializedMemoryAccess
+      | `UseAfterFree ]
       err
       * t,
       serialized )
@@ -119,10 +122,23 @@ module type S = sig
   val is_valid_ptr : t -> full_ptr -> Types.ty -> bool Rustsymex.t
 
   val check_ptr_align :
-    Sptr.t ->
+    full_ptr ->
     Types.ty ->
     t ->
-    (unit * t, [> `MisalignedPointer ] err * t, serialized) Result.t
+    ( unit * t,
+      [> `AliasingError
+      | `MisalignedPointer
+      | `NullDereference
+      | `OutOfBounds
+      | `RefToUninhabited
+      | `UBDanglingPointer
+      | `UBTransmute of string
+      | `UninitializedMemoryAccess
+      | `UseAfterFree ]
+      err
+      * t,
+      serialized )
+    Result.t
 
   val copy_nonoverlapping :
     dst:full_ptr ->

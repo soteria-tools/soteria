@@ -73,6 +73,11 @@ module Make (Sptr : Sptr.S) = struct
     let not_impl msg = lift @@ not_impl msg
     let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
 
+    let assert_or_error cond err =
+     fun _handler state ->
+      DecayMapMonad.Result.map (assert_or_error cond err) (fun () ->
+          ((), state))
+
     module Syntax = struct
       let ( let*** ) x f = bind x f
       let ( let++* ) x f = bind x (fun v -> lift @@ f v)
@@ -110,8 +115,8 @@ module Make (Sptr : Sptr.S) = struct
       cval_info list =
     let illegal_pair () =
       L.error (fun m ->
-          m "Wrong pair of rust_value and Charon.ty: %a / %a" pp_rust_val value
-            Types.pp_ty ty);
+          m "Wrong pair of rust_value and Charon.ty:@.- Val: %a@.- Ty: %a"
+            pp_rust_val value Types.pp_ty ty);
       failwith "Wrong pair of rust_value and Charon.ty"
     in
     let offset = Option.value ~default:Usize.(0s) offset in
@@ -136,28 +141,28 @@ module Make (Sptr : Sptr.S) = struct
     | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> [ { value; ty; offset } ]
     | _, TLiteral _ -> illegal_pair ()
     (* References / Pointers *)
-    | ( Ptr (_, None),
+    | ( Ptr (ptr, meta),
         TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
-    | Ptr (_, None), TRef (_, sub_ty, _)
-    | Ptr (_, None), TRawPtr (sub_ty, _) ->
+    | Ptr (ptr, meta), TRef (_, sub_ty, _)
+    | Ptr (ptr, meta), TRawPtr (sub_ty, _) -> (
         let ty : Types.ty = TLiteral (TInt Isize) in
-        if is_dst sub_ty then failwith "Expected a fat pointer"
-        else [ { value; ty; offset } ]
-    | ( Ptr (ptr, Some meta),
-        TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
-    | Ptr (ptr, Some meta), TRef (_, sub_ty, _)
-    | Ptr (ptr, Some meta), TRawPtr (sub_ty, _) ->
-        let ty : Types.ty = TLiteral (TInt Isize) in
-        let value = Ptr (ptr, None) in
-        if is_dst sub_ty then
-          let size = BV.usizei (Layout.size_of_int_ty Isize) in
-          [
-            { value; ty; offset };
-            { value = Base meta; ty; offset = offset +!@ size };
-          ]
-        else [ { value; ty; offset } ]
+        let size = BV.usizei (Layout.size_of_int_ty Isize) in
+        match (meta, is_dst sub_ty) with
+        | _, false -> [ { value = Ptr (ptr, Thin); ty; offset } ]
+        | Thin, true -> failwith "Expected a fat pointer"
+        | Len len, true ->
+            let len = (len :> T.cval Typed.t) in
+            [
+              { value = Ptr (ptr, Thin); ty; offset };
+              { value = Base len; ty; offset = offset +!@ size };
+            ]
+        | VTable vt, true ->
+            [
+              { value = Ptr (ptr, Thin); ty; offset };
+              { value = Ptr (vt, Thin); ty; offset = offset +!@ size };
+            ])
     (* Function pointer *)
-    | Ptr (_, None), TFnPtr _ ->
+    | Ptr (_, Thin), TFnPtr _ ->
         [ { value; ty = TLiteral (TInt Isize); offset } ]
     (* References / Pointers obtained from casting *)
     | Base _, TAdt { id = TBuiltin TBox; _ }
@@ -269,7 +274,7 @@ module Make (Sptr : Sptr.S) = struct
         let*** tag =
           match tag with
           | Base tag -> ok (Typed.cast_lit tag_layout.ty tag)
-          | Ptr (p, None) -> lift @@ Sptr.decay p
+          | Ptr (p, Thin) -> lift @@ Sptr.decay p
           | _ -> Fmt.failwith "Unexpected tag: %a" pp_rust_val tag
         in
         let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
@@ -298,7 +303,7 @@ module Make (Sptr : Sptr.S) = struct
       offset; once these are read, symbolically decides whether we must keep
       reading. [offset] is the initial offset to read from, [meta] is the
       optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?meta ~offset :
+  let rust_of_cvals ?(meta = Thin) ~offset :
       Types.ty -> (rust_val, 'state, 'e, 'fix) ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
@@ -309,7 +314,7 @@ module Make (Sptr : Sptr.S) = struct
           let*** q_res = query (ty, offset) in
           match q_res with
           | Base _ as v -> ok v
-          | Ptr (ptr, None) ->
+          | Ptr (ptr, Thin) ->
               let+++ ptr_v = lift @@ Sptr.decay ptr in
               Base ptr_v
           | _ ->
@@ -317,52 +322,51 @@ module Make (Sptr : Sptr.S) = struct
                 pp_rust_val q_res)
       | ( TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } }
         | TRef (_, sub_ty, _)
-        | TRawPtr (sub_ty, _) ) as ty
-        when is_dst sub_ty -> (
+        | TRawPtr (sub_ty, _) ) as ty ->
+          let must_be_valid =
+            match ty with
+            | TRef _ | TAdt { id = TBuiltin TBox; _ } -> true
+            | TRawPtr _ -> false
+            | _ -> failwith "Impossible"
+          in
           let ptr_size = BV.usizei @@ Layout.size_of_int_ty Isize in
           let isize : Types.ty = TLiteral (TInt Isize) in
-          let*** ptr_compo = query (isize, offset) in
-          let*** meta_compo = query (isize, offset +!@ ptr_size) in
-          match (ptr_compo, meta_compo) with
-          | ( ((Base _ | Ptr (_, None)) as ptr),
-              ((Base _ | Ptr (_, None)) as meta) ) -> (
-              let*** ptr =
-                match ptr with
-                | Ptr (ptr_v, None) -> ok ptr_v
-                | Base ptr_v ->
-                    let ptr_v = Typed.cast_i Usize ptr_v in
-                    ok (Sptr.null_ptr_of ptr_v)
-                | _ -> failwith "Expected a pointer or base"
-              in
-              let*** meta =
-                match meta with
-                | Base meta -> ok meta
-                | Ptr (meta_v, None) -> lift @@ Sptr.decay meta_v
-                | _ -> failwith "Expected a pointer or base"
-              in
-              let ptr = Ptr (ptr, Some meta) in
-              match ty with
-              | TRawPtr _ -> ok ptr
-              | _ ->
-                  let meta = Typed.cast_i Usize meta in
-                  (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
-                  if%sat meta <$@ Usize.(0s) then
-                    error (`UBTransmute "Negative slice length")
-                  else ok ptr)
-          | base, meta ->
-              Fmt.kstr not_impl "Expected a pointer and base, got %a and %a"
-                pp_rust_val base pp_rust_val meta)
-      | TRawPtr _ -> (
-          let*** raw_ptr = query (TLiteral (TInt Isize), offset) in
-          match raw_ptr with
-          | (Ptr _ | Base _) as ptr -> ok ptr
-          | _ -> not_impl "Expected a pointer or base")
-      | TAdt { id = TBuiltin TBox; _ } | TRef _ -> (
-          let*** boxed = query (TLiteral (TInt Isize), offset) in
-          match boxed with
-          | Ptr _ as ptr -> ok ptr
-          | Base _ -> error `UBDanglingPointer
-          | _ -> not_impl "Expected a pointer or base")
+          let*** ptr = query (isize, offset) in
+          let*** ptr =
+            match ptr with
+            | Ptr (ptr_v, Thin) -> ok ptr_v
+            | Base ptr_v when not must_be_valid ->
+                let ptr_v = Typed.cast_i Usize ptr_v in
+                ok (Sptr.null_ptr_of ptr_v)
+            | Base _ -> error `UBDanglingPointer
+            | _ -> not_impl "Unexpected pointer value"
+          in
+          let meta_kind = dst_kind sub_ty in
+          let*** meta : Sptr.t Rust_val.meta =
+            match meta_kind with
+            | NoneKind -> ok Thin
+            | LenKind | VTableKind -> (
+                let*** meta = query (isize, offset +!@ ptr_size) in
+                match (meta_kind, meta) with
+                | LenKind, Base meta -> ok (Len (Typed.cast_i Usize meta))
+                | LenKind, Ptr (meta_v, Thin) ->
+                    let+++ meta = lift @@ Sptr.decay meta_v in
+                    Len meta
+                | VTableKind, Ptr (meta_v, Thin) -> ok (VTable meta_v)
+                | VTableKind, Base meta ->
+                    let meta = Typed.cast_i Usize meta in
+                    ok (VTable (Sptr.null_ptr_of meta))
+                | _ -> not_impl "Unexpected metadata value")
+          in
+          let+++ () =
+            match meta with
+            | Len len when must_be_valid ->
+                assert_or_error
+                  (Usize.(0s) <$@ len)
+                  (`UBTransmute "Negative slice length")
+            | _ -> ok ()
+          in
+          Ptr (ptr, meta)
       | TFnPtr _ -> (
           let*** boxed = query (TLiteral (TInt Isize), offset) in
           match boxed with
@@ -399,13 +403,16 @@ module Make (Sptr : Sptr.S) = struct
       | TAdt { id = TBuiltin (TSlice as ty); generics } ->
           (* We can only read a slice if we have the metadata of its length, in which case
            we interpret it as an array of that length. *)
-          let meta =
-            Option.get ~msg:"Tried reading slice without metadata" meta
+          let*** len =
+            match meta with
+            | Thin -> failwith "Tried reading slice without metadata"
+            | Len l -> ok l
+            | VTable ptr -> lift @@ Sptr.decay ptr
           in
           let*** len =
             of_opt_not_impl
-              (Fmt.str "Slice length not concrete: %a" Typed.ppa meta)
-              (BV.to_z meta)
+              (Fmt.str "Slice length not concrete: %a" Typed.ppa len)
+              (BV.to_z len)
           in
           let sub_ty =
             if ty = TSlice then List.hd generics.types else TLiteral (TUInt U8)
@@ -421,6 +428,7 @@ module Make (Sptr : Sptr.S) = struct
           let ty = Layout.resolve_trait_ty tref name in
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
+      | TAdt { id = TBuiltin TBox; _ } -> failwith "Invalid box"
       | (TVar _ | TDynTrait _ | TError _ | TPtrMetadata _) as ty ->
           Fmt.kstr not_impl "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
@@ -541,9 +549,9 @@ module Make (Sptr : Sptr.S) = struct
       | _, TRawPtr _, Base off ->
           let off = Typed.cast_i Usize off in
           let ptr = Sptr.null_ptr_of off in
-          ok (Ptr (ptr, None))
+          ok (Ptr (ptr, Thin))
       | _, TRawPtr _, Ptr _ -> ok v
-      | _, TLiteral ((TInt _ | TUInt _) as litty), Ptr (ptr, None)
+      | _, TLiteral ((TInt _ | TUInt _) as litty), Ptr (ptr, Thin)
         when size_of_literal_ty litty = size_of_literal_ty (TInt Isize) ->
           let* ptr_v = Sptr.decay ptr in
           ok (Base ptr_v)
@@ -681,9 +689,17 @@ module Make (Sptr : Sptr.S) = struct
       ((rust_val * Types.ty) split_tree * (rust_val * Types.ty) split_tree)
       DecayMapMonad.t =
     match (v, ty) with
-    | Ptr (ptr, None), _ ->
+    | Ptr (ptr, meta), _ ->
         let* v = Sptr.decay ptr in
-        split (Base v) ty at
+        let* v =
+          match meta with
+          | Thin -> return v
+          | Len len -> return (BV.concat v len)
+          | VTable ptr ->
+              let+ v2 = Sptr.decay ptr in
+              BV.concat v v2
+        in
+        split (Base (v :> T.cval Typed.t)) ty at
     | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
         let+ at =
           of_opt_not_impl
