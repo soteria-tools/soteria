@@ -22,7 +22,7 @@ module M (State : State_intf.S) = struct
     | Base v ->
         let v = Typed.cast_i Usize v in
         let ptr = Sptr.null_ptr_of v in
-        (ptr, None)
+        (ptr, Thin)
     | _ -> failwith "expected pointer"
 
   let as_base ty (v : rust_val) = Rust_val.as_base ty v
@@ -113,7 +113,7 @@ module M (State : State_intf.S) = struct
          ~f:(fun _ -> ok U32.(0s))
          ~fe:(fun _ ->
            exec_fun "catch_unwind catch" catch_fn
-             [ Ptr data; Ptr (Sptr.null_ptr (), None) ]
+             [ Ptr data; Ptr (Sptr.null_ptr (), Thin) ]
            |> State.unwind_with
                 ~f:(fun _ -> ok U32.(1s))
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
@@ -150,9 +150,9 @@ module M (State : State_intf.S) = struct
       else
         let^^ l = Sptr.offset ~signed:false l inc in
         let^^ r = Sptr.offset ~signed:false r inc in
-        let* bl = State.load (l, None) byte in
+        let* bl = State.load (l, Thin) byte in
         let bl = as_base_i U8 bl in
-        let* br = State.load (r, None) byte in
+        let* br = State.load (r, Thin) byte in
         let br = as_base_i U8 br in
         if%sat bl ==@ br then aux l r (len -!@ one)
         else if%sat bl <@ br then ok U32.(-1s) else ok U32.(1s)
@@ -172,11 +172,11 @@ module M (State : State_intf.S) = struct
       (Sptr.is_same_loc l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
       (`StdErr (name ^ " overlapped"))
 
-  let copy_ nonoverlapping ~t ~src:((src, _) : full_ptr)
-      ~dst:((dst, _) : full_ptr) ~count : unit ret =
+  let copy_ nonoverlapping ~t ~src:((src, _) as fsrc : full_ptr)
+      ~dst:((dst, _) as fdst : full_ptr) ~count : unit ret =
     let zero = Usize.(0s) in
-    let* () = State.check_ptr_align src t in
-    let* () = State.check_ptr_align dst t in
+    let* () = State.check_ptr_align fsrc t in
+    let* () = State.check_ptr_align fdst t in
     let^ ty_size = Layout.size_of_s t in
     if%sat ty_size ==@ zero ||@ (count ==@ zero) then ok ()
     else
@@ -194,15 +194,15 @@ module M (State : State_intf.S) = struct
         if not nonoverlapping then ok ()
         else check_overlap "copy_nonoverlapping" src dst size
       in
-      State.copy_nonoverlapping ~dst:(dst, None) ~src:(src, None) ~size
+      State.copy_nonoverlapping ~dst:(dst, Thin) ~src:(src, Thin) ~size
 
   let copy ~t ~src ~dst ~count = copy_ false ~t ~src ~dst ~count
   let copy_nonoverlapping ~t ~src ~dst ~count = copy_ true ~t ~src ~dst ~count
 
   let typed_swap_nonoverlapping ~t ~x:((from_ptr, _) as from)
       ~y:((to_ptr, _) as to_) =
-    let* () = State.check_ptr_align from_ptr t in
-    let* () = State.check_ptr_align to_ptr t in
+    let* () = State.check_ptr_align from t in
+    let* () = State.check_ptr_align to_ t in
     let^ size = Layout.size_of_s t in
     let* () =
       State.assert_not
@@ -538,7 +538,7 @@ module M (State : State_intf.S) = struct
 
   let size_of_val ~t ~ptr:(_, meta) =
     match (t, meta) with
-    | Types.TAdt { id = TBuiltin ((TSlice | TStr) as id); generics }, Some meta
+    | Types.TAdt { id = TBuiltin ((TSlice | TStr) as id); generics }, Len meta
       ->
         let sub_ty =
           if id = TSlice then List.hd generics.types else TLiteral (TUInt U8)
@@ -577,7 +577,7 @@ module M (State : State_intf.S) = struct
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in
         let* ptr, _ = State.alloc_ty str_ty in
-        let ptr = (ptr, Some (BV.usizei len)) in
+        let ptr = (ptr, Len (BV.usizei len)) in
         let* () = State.store ptr str_ty char_arr in
         let+ () = State.store_str_global str ptr in
         ptr
@@ -615,7 +615,7 @@ module M (State : State_intf.S) = struct
 
   let write_bytes ~t ~dst:((ptr, _) as dst) ~val_ ~count =
     let zero = Usize.(0s) in
-    let* () = State.check_ptr_align ptr t in
+    let* () = State.check_ptr_align dst t in
     let^ size = Layout.size_of_s t in
     let size, overflowed = size *?@ count in
     let* () = State.assert_not overflowed `Overflow in
@@ -633,7 +633,7 @@ module M (State : State_intf.S) = struct
               ~f:(fun () i ->
                 let off = BV.usizei i in
                 let^^ ptr = Sptr.offset ~signed:false ptr off in
-                State.store (ptr, None) (TLiteral (TUInt U8)) (Base val_))
+                State.store (ptr, Thin) (TLiteral (TUInt U8)) (Base val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"
 end

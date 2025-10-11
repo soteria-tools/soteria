@@ -110,14 +110,19 @@ let is_int : Types.ty -> bool = function
 let align_of_literal_ty : Types.literal_type -> int = size_of_literal_ty
 let empty_generics = TypesUtils.empty_generic_args
 
-(** If this is a dynamically sized type (requiring a fat pointer) *)
-let rec is_dst : Types.ty -> bool = function
-  | TAdt { id = TBuiltin (TSlice | TStr); _ } | TDynTrait _ -> true
+type meta_kind = LenKind | VTableKind | NoneKind
+
+let rec dst_kind : Types.ty -> meta_kind = function
+  | TAdt { id = TBuiltin TStr; _ } | TAdt { id = TBuiltin TSlice; _ } -> LenKind
+  | TDynTrait _ -> VTableKind
   | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
-      | None -> false
-      | Some last -> is_dst Types.(last.field_ty))
-  | _ -> false
+      | None -> NoneKind
+      | Some last -> dst_kind Types.(last.field_ty))
+  | _ -> NoneKind
+
+(** If this is a dynamically sized type (requiring a fat pointer) *)
+let is_dst ty = dst_kind ty <> NoneKind
 
 let size_to_fit ~size ~align =
   let ( % ) = Stdlib.( mod ) in
@@ -161,6 +166,8 @@ let rec layout_of (ty : Types.ty) : layout =
       in
       let sub_layout = layout_of sub_ty in
       { size = 0; align = sub_layout.align; fields = Array sub_layout.size }
+  (* Same as above, but here we have even less information ! *)
+  | TDynTrait _ -> { size = 0; align = 1; fields = Primitive }
   (* Tuples *)
   | TAdt { id = TTuple; generics = { types; _ } } -> layout_of_members types
   (* Custom ADTs (struct, enum, etc.) *)
@@ -205,8 +212,6 @@ let rec layout_of (ty : Types.ty) : layout =
   | TFnPtr _ ->
       let ptr_size = Crate.pointer_size () in
       { size = ptr_size; align = ptr_size; fields = Primitive }
-  (* FIXME: this is wrong but at least some more code runs... *)
-  | TDynTrait _ -> { size = 0; align = 1; fields = Primitive }
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> raise (CantComputeLayout ("pointer metadata", ty))
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
@@ -544,7 +549,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in
   function
   | TLiteral lit_ty -> Some (Base (zeroed_lit lit_ty))
-  | TRawPtr _ -> Some (Ptr (null_ptr, None))
+  | TRawPtr _ -> Some (Ptr (null_ptr, Thin))
   | TFnPtr _ -> None
   | TRef _ -> None
   | TAdt { id = TTuple; generics = { types; _ } } ->
@@ -791,12 +796,10 @@ let rec update_ref_tys_in
     https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility *)
 let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   match (ty1, ty2) with
-  (* Refs and raw pointers are ABI-compatible if they have the same metadata type
-    FIXME: we only handle slices/strings, so we can just check if they're both DSTs;
-           once we handle [dyn] we need to actually check the metadata type *)
+  (* Refs and raw pointers are ABI-compatible if they have the same metadata type *)
   | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
     ->
-      is_dst ty1 = is_dst ty2
+      dst_kind ty1 = dst_kind ty2
   | TLiteral (TUInt uint1), TLiteral (TUInt uint2) ->
       size_of_uint_ty uint1 = size_of_uint_ty uint2
   | TLiteral (TInt int1), TLiteral (TInt int2) ->
@@ -812,4 +815,4 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
         layout.size = 0 && layout.align = 1
       in
       (* ZSTs with align 1 are compatible *)
-      if is_zst ty1 && is_zst ty2 then true else Types.equal_ty ty1 ty2
+      (is_zst ty1 && is_zst ty2) || Types.equal_ty ty1 ty2

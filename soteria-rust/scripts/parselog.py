@@ -254,12 +254,15 @@ def analyse(file: str) -> LogInfo:
             except Exception:
                 ...
         elif "miri" in file_path:
-            expect_failure = "/fail/" in file_path or "/panic/" in file_path
+            expect_failure = ("/fail/" in file_path or "/panic/" in file_path) and (
+                "/pass" not in file_path
+            )
 
         tests_idx = file_path.split("/").index("tests") + 1
         file_name = "/".join(file_path.split("/")[tests_idx:])
         if file_name.startswith("kani/"):
             file_name = file_name[len("kani/") :]
+        file_name = file_path
 
         # categorise appropriately
         if tool == "Kani":
