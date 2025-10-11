@@ -603,6 +603,18 @@ module M (State : State_intf.S) = struct
         ok (BV.usizei (List.length variants))
     | _ -> error (`StdErr "core::intrinsics::variant_count used with non-enum")
 
+  let read_vtable ~slot ~(ptr : full_ptr) : T.sint Typed.t ret =
+    let ptr, _ = ptr in
+    let^^ ptr =
+      Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) ptr
+        (BV.usizei slot)
+    in
+    let+ align = State.load (ptr, Thin) (TLiteral (TUInt Usize)) in
+    as_base_i Usize align
+
+  let vtable_align = read_vtable ~slot:2
+  let vtable_size = read_vtable ~slot:1
+
   let wrapping_op op ~t ~a ~b : rust_val ret =
     let ity = TypesUtils.ty_as_literal t in
     let a, b = (as_base ity a, as_base ity b) in
