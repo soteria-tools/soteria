@@ -284,7 +284,8 @@ module Make (State : State_intf.S) = struct
         (ptr', Len slice_len)
 
   (** Resolve a function operand, returning a callable symbolic function to
-      execute it.
+      execute it. It also returns the types expected of the function, which is
+      needed to load the first argument of a dyn method call.
 
       This function also handles validating the call; given the input types it
       will be called with and the output type expected, it will make sure these
@@ -292,7 +293,7 @@ module Make (State : State_intf.S) = struct
 
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
-  and resolve_function ~in_tys ~out_ty ~args :
+  and resolve_function ~in_tys ~out_ty ?vtable :
       GAst.fn_operand -> 'err fun_exec t =
     let validate_call ?(is_dyn = false) (fn : Types.fn_ptr) =
       match fn.kind with
@@ -336,20 +337,22 @@ module Make (State : State_intf.S) = struct
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
-        let* fn_ptr = State.load ~is_move:true fn_ptr_ptr place.ty in
+        let* fn_ptr =
+          State.load
+            (* FIXME: temp ~is_move:true *)
+            fn_ptr_ptr place.ty
+        in
         let* fn_ptr =
           match fn_ptr with Ptr ptr -> ok ptr | _ -> error `UBDanglingPointer
         in
         let* fn = State.lookup_fn fn_ptr in
         let* () = validate_call fn in
         let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function ~in_tys ~out_ty ~args fnop
+        resolve_function ~in_tys ~out_ty fnop
     | FnOpVTableMethod (_, idx) ->
         (* the first argument is the fat pointer with the VTable *)
         let* vtable =
-          match args with
-          | Ptr (_, VTable vt) :: _ -> ok vt
-          | _ -> not_impl "dyn method call without VTable pointer?"
+          of_opt_not_impl "dyn method call without VTable pointer?" vtable
         in
         let^^ fn_ptr_ptr =
           Sptr.offset ~check:true ~ty:unit_ptr ~signed:false vtable
@@ -360,7 +363,7 @@ module Make (State : State_intf.S) = struct
         let* fn = State.lookup_fn fn_ptr in
         let* () = validate_call ~is_dyn:true fn in
         let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function ~in_tys ~out_ty ~args fnop
+        resolve_function ~in_tys ~out_ty fnop
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
   and resolve_global ({ id; _ } : Types.global_decl_ref) =
@@ -903,8 +906,34 @@ module Make (State : State_intf.S) = struct
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
         let out_ty = ty in
+        (* for dyn calls, we need to find the metadata of the VTable. This is
+           slightly tricky, due to [unsized_locals] (e.g. [call_once] is dyn-compatible),
+           as we must check the operand doesn't dereference a trait object.
+           Since we technically read the pointer twice, we must also ensure the first read
+           (for the metadata) is not a move. *)
+        let is_dyn =
+          match func with FnOpVTableMethod _ -> true | _ -> false
+        in
+        let* vtable =
+          if is_dyn then
+            let dyn_arg = List.hd args in
+            let ptr_operand : Expressions.operand =
+              match (type_of_operand dyn_arg, dyn_arg) with
+              | ( TDynTrait _,
+                  ( Move { kind = PlaceProjection (base, Deref); _ }
+                  | Copy { kind = PlaceProjection (base, Deref); _ } ) )
+              | _, Move base ->
+                  Copy base
+              | _, dyn_arg -> dyn_arg
+            in
+            let* dyn_val = eval_operand ptr_operand in
+            match Rust_val.flatten dyn_val with
+            | Ptr (_, VTable vt) :: _ -> ok (Some vt)
+            | _ -> not_impl "dyn method call without VTable?"
+          else ok None
+        in
+        let* exec_fun = resolve_function ~in_tys ~out_ty ?vtable func in
         let* args = eval_operand_list args in
-        let* exec_fun = resolve_function ~in_tys ~out_ty ~args func in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:(any ", ") pp_rust_val)

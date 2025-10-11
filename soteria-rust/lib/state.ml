@@ -283,13 +283,12 @@ let tb_load (ptr, _) ty st =
     the tree-borrow state. Returns true if the value was read successfully,
     false otherwise. *)
 let is_valid_ptr st ptr (ty : Charon.Types.ty) =
-  match ty with
-  (* FIXME: i am not certain how one checks for the validity of a trait object *)
-  | TDynTrait _ -> return true
-  | _ -> (
-      L.debug (fun m -> m "The following read is a GHOST read");
-      let+ res = load ~ignore_borrow:true ptr ty st in
-      match res with Ok _ -> true | _ -> false)
+  (* FIXME: i am not certain how one checks for the validity of a DST *)
+  if Layout.is_dst ty then return true
+  else (
+    L.debug (fun m -> m "The following read is a GHOST read");
+    let+ res = load ~ignore_borrow:true ptr ty st in
+    match res with Ok _ -> true | _ -> false)
 
 let store ((ptr, _) as fptr) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
