@@ -200,9 +200,8 @@ module Make (Sptr : Sptr.S) = struct
               Option.get ~msg:"No matching variant?"
               @@ List.find_mapi
                    (fun i v ->
-                     if Z.equal disc (z_of_literal Types.(v.discriminant)) then
-                       Some (i, v)
-                     else None)
+                     let v_disc = z_of_literal Types.(v.discriminant) in
+                     if Z.equal disc v_disc then Some (i, v) else None)
                    variants
             in
             let var_fields = var_fields.(variant_id) in
