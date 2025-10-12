@@ -186,7 +186,7 @@ module Make (Sptr : Sptr.S) = struct
         let variants = Crate.as_enum t_id in
         let layout = Layout.layout_of ty in
         match layout with
-        (* fieldless enums with one option are zero-sized *)
+        (* zero-sized *)
         | { size = 0; _ } -> []
         | { fields = Arbitrary (variant, _); _ } ->
             let variant = Types.VariantId.nth variants variant in
