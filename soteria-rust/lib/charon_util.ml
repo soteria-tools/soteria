@@ -1,6 +1,9 @@
 open Charon
 
 let z_of_scalar : Values.scalar_value -> Z.t = function
+  | SignedScalar (ty, v) when Z.lt v Z.zero ->
+      let bits = Layout_common.size_of_int_ty ty * 8 in
+      Z.(v land pred (one lsl bits))
   | UnsignedScalar (_, v) | SignedScalar (_, v) -> v
 
 let z_of_literal : Values.literal -> Z.t = function
