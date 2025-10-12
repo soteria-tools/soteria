@@ -38,7 +38,8 @@ module type S = sig
       | `UseAfterFree
       | `UBTransmute of string
       | `AliasingError
-      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
       | `UBDanglingPointer ]
       err
@@ -55,7 +56,8 @@ module type S = sig
       | `OutOfBounds
       | `UseAfterFree
       | `AliasingError
-      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `UBDanglingPointer ]
       err
       * t,
@@ -73,7 +75,8 @@ module type S = sig
       | `UseAfterFree
       | `UBTransmute of string
       | `AliasingError
-      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
       | `UBDanglingPointer ]
       err
@@ -88,7 +91,8 @@ module type S = sig
     t ->
     ( unit * t,
       [> `AliasingError
-      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `NullDereference
       | `OutOfBounds
       | `RefToUninhabited
@@ -127,7 +131,8 @@ module type S = sig
     t ->
     ( unit * t,
       [> `AliasingError
-      | `MisalignedPointer of T.nonzero Typed.t * T.nonzero Typed.t
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `NullDereference
       | `OutOfBounds
       | `RefToUninhabited
