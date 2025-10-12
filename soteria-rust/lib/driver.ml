@@ -66,23 +66,20 @@ let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
     Cleaner.touched crate_file);
   crate
 
+let normalize_path path =
+  if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
+  else path
+
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
-  let file_name =
-    if Filename.is_relative file_name then
-      Filename.concat (Sys.getcwd ()) file_name
-    else file_name
-  in
+  let file_name = normalize_path file_name in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
-  let crate_dir =
-    if Filename.is_relative crate then Filename.concat (Sys.getcwd ()) crate
-    else crate
-  in
+let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate_dir =
+  let crate_dir = normalize_path crate_dir in
   let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
   parse_ullbc ~mode:Cargo ~plugin ~input:"" ~output ~pwd:crate_dir
 

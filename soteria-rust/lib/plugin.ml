@@ -74,11 +74,13 @@ module Cmd = struct
     In_channel.close inp;
     r
 
+  let quote str = "\"" ^ str ^ "\""
+
   let exec_in ~mode folder cmd =
     let verbosity =
       if !Config.current.log_compilation then "" else "> /dev/null 2>/dev/null"
     in
-    exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd ~mode cmd ^ verbosity
+    exec_cmd @@ "cd " ^ quote folder ^ " && " ^ build_cmd ~mode cmd ^ verbosity
 end
 
 exception PluginError of string
@@ -266,9 +268,10 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
   let mk_cmd ~input ~output () =
     let init =
       Cmd.make
-        ~charon:[ "--dest-file " ^ output ]
-        ~obol:[ "--dest-file " ^ output ]
-        ~rustc:[ input ] ()
+        ~charon:[ "--dest-file " ^ Cmd.quote output ]
+        ~obol:[ "--dest-file " ^ Cmd.quote output ]
+        ~rustc:[ Cmd.quote input ]
+        ()
     in
     List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
