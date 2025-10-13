@@ -159,49 +159,36 @@ class Outcome(enum.Enum):
 SKIPPED_TESTS: dict[str, tuple[Outcome, Optional[str]]] = {
     # Kani
     "ArithOperators/rem_float_fixme.rs": Outcome.PASS(),
-    "ConstEval/limit.rs": Outcome.UNKNOWN("Slow because of an array of size 131072"),
     "FloatingPoint/main.rs": Outcome.PASS(),
     "Intrinsics/Count/ctpop.rs": Outcome.UNKNOWN(
         "Doesn't work in Charon, 2^N branches in Obol",
     ),
     "Intrinsics/FastMath/div_f64.rs": Outcome.UNKNOWN("Very slow"),
-    "Intrinsics/Math/Rounding/Ceil/ceilf64.rs": Outcome.PASS(),
-    "Intrinsics/Math/Rounding/Floor/floorf64.rs": Outcome.PASS(),
-    "Intrinsics/Math/Rounding/Ceil/floorf64.rs": Outcome.PASS(),
-    "Intrinsics/Math/Rounding/RInt/rintf64.rs": Outcome.PASS(),
     "Intrinsics/Math/Rounding/Round/roundf64.rs": Outcome.PASS(),
     "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": Outcome.PASS(),
-    "Intrinsics/Math/Rounding/Trunc/truncf64.rs": Outcome.PASS(),
     # Miri
     "pass/issues/issue-17877.rs": Outcome.UNKNOWN(
         "Makes an array of size 16384, too slow",
     ),
-    "pass/issues/issue-20575.rs": Outcome.UNKNOWN("Very slow compilation"),
-    "pass/issues/issue-29746.rs": Outcome.UNKNOWN("Very slow compilation"),
     "pass/arrays.rs": Outcome.UNKNOWN(
         "Makes an array [(), usize::MAX], which we try evaluating",
-    ),
-    "pass/tag-align-dyn-u64.rs": Outcome.UNKNOWN(
-        "Slow due to symbolic checks on the pointer",
     ),
 }
 
 KNOWN_ISSUES = {
     # Kani
-    "Arbitrary/arbitrary_structs.rs": "any_array isn't correctly implemented, due to mono issues",
     "ArithOperators/unsafe_add_fail.rs": "The main function takes a parameter? Kani crashes too",
     "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter? Kani crashes too",
     "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter? Kani crashes too",
     "Cleanup/unwind_fixme.rs": "The main function takes a paramter? Kani crashes too",
-    "Enum/niche_many_variants.rs": "We don't handle enum niches yet",
+    "DynTrait/vtable_size_align_drop.rs": "The test does a ptr-int-ptr cast, which we don't support",
     "FunctionCall/Variadic/fixme_main.rs": "We don't handle functions with spread arguments (not in Charon)",
     "FunctionCall/Variadic/main.rs": "We don't handle functions with spread arguments (not in Charon)",
     "Intrinsics/ConstEval/pref_align_of.rs": "Requires support for custom target architectures",
     "Intrinsics/CopySign/copysignf32.rs": "SMT-lib limitations around NaN mean we can't model this",
     "Intrinsics/CopySign/copysignf64.rs": "SMT-lib limitations around NaN mean we can't model this",
     "LayoutRandomization/should_fail.rs": "We don't handle layout randomization yet",
-    "Static/anon_static.rs": "We don't handle pointers derived from globals properly, freeing referenced values",
-    "Str/raw_ptr.rs": "We don't handle #[safety_constraint(...)] yet",
+    "Slice/extra_checks_fail.rs": "There is no error here, and Kani fails this test too",
     "Uninit/access-padding-enum-diverging-variants.rs": "Kani can't handle variants with different paddings",
     "Unwind-Attribute/fixme_lib.rs": "We don't have a flag to not check for unwinding",
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
@@ -217,14 +204,11 @@ KNOWN_ISSUES = {
     "fail/function_calls/return_pointer_aliasing_write.rs": "We don't check arguments don't alias with the return place",
     "fail/overlapping_assignment.rs": "MIR-only check for assignment overlap (we don't do this atm)",
     "fail/provenance/strict_provenance_cast.rs": "Miri has a strict provenance flag, we don't",
-    "fail/unaligned_pointers/field_requires_parent_struct_alignment2.rs": "We don't handle repr(packed/align)",
-    "fail/unaligned_pointers/reference_to_packed.rs": "We don't handle repr(packed/align)",
     "fail/uninit/uninit_alloc_diagnostic.rs": "We don't detected an uninit access that.. doesn't seem to exist?",
     "fail/validity/nonzero.rs": "The valid_range_start attribute isn't parsed by Charon?",
     "fail/validity/ref_to_uninhabited1.rs": "We don't check Boxes have an inhabited value",
     "fail/validity/uninit_float.rs": "A uninit mitigation doesn't get compiled away despite flags set?",
     "pass/align.rs": "We don't allow ptr-int-ptr conversions, Miri does (under a flag)",
-    "pass/const-vec-of-fns.rs": "We don't handle pointers derived from globals properly, freeing referenced values",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
     "pass/extern_types.rs": "We don't handle extern types",

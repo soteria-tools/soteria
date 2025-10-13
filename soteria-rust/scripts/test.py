@@ -339,6 +339,8 @@ def benchmark(opts: CliOpts):
             if name == "custom":
                 continue
             test_conf = callback(opts)
+            if len(test_conf["tests"]) == 0:
+                continue
             cmd = opts["tool_cmd"] + test_conf["args"]
             pprint(
                 f"{CYAN}{BOLD}==>{RESET} Running benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{key}",
@@ -385,9 +387,12 @@ def benchmark(opts: CliOpts):
             )
 
     pprint(f"{BOLD}Running benchmark{RESET}")
-    run_benchmark("Rusteria", opts_for_rusteria(opts, force_obol=True))
-    run_benchmark("Kani", opts_for_kani(opts))
-    run_benchmark("Miri", opts_for_miri(opts))
+    try:
+        run_benchmark("Rusteria", opts_for_rusteria(opts, force_obol=True))
+        run_benchmark("Kani", opts_for_kani(opts))
+        run_benchmark("Miri", opts_for_miri(opts))
+    except:  # noqa E722: we make sure outputting results happens despite exit
+        ...
 
     rows: list[list[tuple[str, Optional[str]]]] = [
         [
