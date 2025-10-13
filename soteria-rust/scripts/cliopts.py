@@ -182,6 +182,8 @@ def opts_for_kani(opts: CliOpts) -> CliOpts:
             "kani",
             "-Z=unstable-options",
             "--harness-timeout=5s",
+            "--output-format",
+            "terse",
         ],
         "categorise": categorise_kani,
     }

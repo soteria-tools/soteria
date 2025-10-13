@@ -34,6 +34,8 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
                 Outcome.COMPILATION_ERR(f"missing {crate}::{fn}")
                 for fn, crate in unresolved
             ]
+        if "This macro cannot be used on the current target" in test:
+            return Outcome.COMPILATION_ERR("Wrong target")
 
         compile_errors = re.findall(r"error(\[E\d+\]: .+)\n", test)
         compile_errors = [
@@ -254,7 +256,9 @@ def analyse(file: str) -> LogInfo:
             except Exception:
                 ...
         elif "miri" in file_path:
-            expect_failure = "/fail/" in file_path or "/panic/" in file_path
+            expect_failure = ("/fail/" in file_path or "/panic/" in file_path) and (
+                "/pass" not in file_path
+            )
 
         tests_idx = file_path.split("/").index("tests") + 1
         file_name = "/".join(file_path.split("/")[tests_idx:])
