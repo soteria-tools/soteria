@@ -661,4 +661,13 @@ module M (State : State_intf.S) = struct
                 State.store (ptr, Thin) (TLiteral (TUInt U8)) (Base val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"
+
+  let volatile_load ~t ~src = State.load src t
+  let volatile_set_memory = write_bytes
+  let volatile_copy_memory ~t ~dst ~src ~count = copy ~t ~src ~dst ~count
+
+  let volatile_copy_nonoverlapping_memory ~t ~dst ~src ~count =
+    copy_nonoverlapping ~t ~src ~dst ~count
+
+  let volatile_store ~t ~dst ~val_ = State.store dst t val_
 end
