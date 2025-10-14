@@ -544,24 +544,31 @@ module M (State : State_intf.S) = struct
   let size_of ~t = lift_symex @@ Layout.size_of_s t
 
   let size_of_val ~t ~ptr:(_, meta) =
-    match (t, meta) with
-    | Types.TAdt { id = TBuiltin ((TSlice | TStr) as id); generics }, Len meta
-      ->
-        let sub_ty =
-          if id = TSlice then List.hd generics.types else TLiteral (TUInt U8)
-        in
-        let len = Typed.cast_i Usize meta in
-        let^ size = Layout.size_of_s sub_ty in
-        let size, ovf = size *?@ len in
-        let+ () = State.assert_not ovf `Overflow in
-        size
-    | Types.TDynTrait _, VTable vt ->
+    (* for DSTs, the size of the type is the size of all non-DST fields,
+       to which we just need to add the size of the DST part. *)
+    let^ base_size = Layout.size_of_s t in
+    match meta with
+    | Len meta -> (
+        let sub_ty = Layout.dst_slice_ty t in
+        match sub_ty with
+        | None -> ok base_size
+        | Some sub_ty ->
+            let len = Typed.cast_i Usize meta in
+            let^ size = Layout.size_of_s sub_ty in
+            let size, ovf_mul = size *?@ len in
+            let size, ovf_add = base_size +?@ size in
+            let+ () = State.assert_not (ovf_mul ||@ ovf_add) `Overflow in
+            size)
+    | VTable vt ->
         let^^ size_ptr =
           Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(1s)
         in
-        let+ size = State.load (size_ptr, Thin) (TLiteral (TUInt Usize)) in
-        as_base_i Usize size
-    | _ -> lift_symex @@ Layout.size_of_s t
+        let* dyn_size = State.load (size_ptr, Thin) (TLiteral (TUInt Usize)) in
+        let dyn_size = as_base_i Usize dyn_size in
+        let size, ovf = base_size +?@ dyn_size in
+        let+ () = State.assert_not ovf `Overflow in
+        size
+    | _ -> ok base_size
 
   let transmute ~t_src ~dst ~src =
     let* verify_ptr = State.is_valid_ptr_fn in

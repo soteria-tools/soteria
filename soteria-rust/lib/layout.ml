@@ -121,6 +121,18 @@ let rec dst_kind : Types.ty -> meta_kind = function
       | Some last -> dst_kind Types.(last.field_ty))
   | _ -> NoneKind
 
+(** If this is a DST type with a slice tail, return the type of the slice's
+    element. *)
+let rec dst_slice_ty : Types.ty -> Types.ty option = function
+  | TAdt { id = TBuiltin TStr; _ } -> Some (TLiteral (TUInt U8))
+  | TAdt { id = TBuiltin TSlice; generics = { types = [ sub_ty ]; _ } } ->
+      Some sub_ty
+  | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
+      match List.last_opt (Crate.as_struct id) with
+      | None -> None
+      | Some last -> dst_slice_ty Types.(last.field_ty))
+  | _ -> None
+
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let is_dst ty = dst_kind ty <> NoneKind
 
