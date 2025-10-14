@@ -74,12 +74,19 @@ def exec_test(
     return outcome, elapsed
 
 
+_built = False
+
+
 def build():
-    pprint(f"Building {BOLD}Rusteria{RESET} ... ", flush=True, inc=False)
+    global _built
+    if _built:
+        return
+    _built = True
+    pprint(f"Building {BOLD}Rusteria{RESET} ... ", flush=True, end="")
     before = time.time()
     build_rusteria()
     elapsed = time.time() - before
-    pprint(f"Took {elapsed:.3f}s to build")
+    print(f"took {BOLD}{elapsed:.3f}s{RESET}")
 
 
 def exec_tests(opts: CliOpts, test_conf: TestConfig):
@@ -134,12 +141,11 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                     txt += " 🐌"
                 if not outcome.is_expected() and reason:
                     txt += f" ({GRAY}{reason}{RESET})"
-                if str(relative) in KNOWN_ISSUES:
-                    issue = KNOWN_ISSUES[str(relative)]
+                if issue := dict_get_suffix(KNOWN_ISSUES, str(relative)):
                     txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
                     if outcome.is_pass():
                         end_msgs.append(f'Fixed {relative}, for "{BOLD}{issue}{RESET}"')
-                if str(relative) in SKIPPED_TESTS:
+                if relative := dict_get_suffix(SKIPPED_TESTS, str(relative)):
                     _, issue = SKIPPED_TESTS[str(relative)]
                     txt += f" {YELLOW}✦{RESET} {BOLD}(not skipped){RESET}"
                     if not outcome.is_timeout():
@@ -444,6 +450,8 @@ def main():
             if name == "custom":
                 continue
             config = callback(opts)
+            if len(config["tests"]) == 0:
+                continue
             pprint(f"Running {BOLD}{name}{RESET} tests")
             exec_tests(opts, config)
     elif cmd[0] == "eval":

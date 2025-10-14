@@ -170,15 +170,36 @@ def miri(opts: CliOpts) -> TestConfig:
 
 
 def custom(opts: CliOpts) -> TestConfig:
-    test_folder = opts["test_folder"]
-    if test_folder is None:
+    kani_config = kani(opts)
+    miri_config = miri(opts)
+
+    def dyn_flags(file: Path) -> list[str]:
+        if "/kani/" in str(file):
+            dyn = kani_config["dyn_flags"]
+            flags = kani_config["args"]
+        elif "/miri/" in str(file):
+            dyn = miri_config["dyn_flags"]
+            flags = miri_config["args"]
+        else:
+            dyn = None
+            flags = []
+        return (dyn(file) if dyn else []) + flags
+
+    if opts["test_folder"] is not None:
+        root = opts["test_folder"]
+        files = opts["test_folder"].rglob("*.rs")
+    elif opts["test_file"] is not None:
+        with open(opts["test_file"], "r") as f:
+            files = [Path(p.strip()) for p in f.readlines()]
+        root = Path(os.path.commonpath(files))
+    else:
         raise ArgError("No test folder specified, use --folder <path>")
-    tests = filter_tests(opts, (path for path in test_folder.rglob("*.rs")))
+    tests = filter_tests(opts, files)
     return {
         "name": "Custom",
-        "root": test_folder,
+        "root": root,
         "args": [],
-        "dyn_flags": lambda _: [],
+        "dyn_flags": dyn_flags,
         "tests": tests,
     }
 

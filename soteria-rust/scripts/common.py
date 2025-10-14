@@ -229,9 +229,18 @@ KNOWN_ISSUES = {
 }
 
 
+def dict_get_suffix(d: dict, key: str):
+    for k in d:
+        if key.endswith(k):
+            return d[k]
+    return None
+
+
 def build_rusteria():
     env = (
-        subprocess.check_output("opam exec -- dune exec -- env", shell=True)
+        subprocess.check_output(
+            "opam exec -- dune exec -- env 2> /dev/null", shell=True
+        )
         .decode()
         .split("\n")
     )
@@ -254,7 +263,7 @@ def build_rusteria():
 
     os.environ["RUSTERIA_PLUGINS"] = str((PWD / ".." / "plugins").resolve())
     try:
-        subprocess.check_call("dune build", shell=True)
+        subprocess.check_call("dune build > /dev/null 2> /dev/null", shell=True)
         subprocess.check_call("soteria-rust build-plugins > /dev/null", shell=True)
     except subprocess.CalledProcessError:
         print(f"{RED}Rusteria couldn't build")
