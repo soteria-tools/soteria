@@ -135,7 +135,7 @@ module Make (State : State_intf.S) = struct
             let* () = State.store ptr str_ty char_arr in
             let+ () = State.store_str_global str ptr in
             Ptr ptr)
-    | CFnPtr fn_ptr -> ok (ConstFn fn_ptr)
+    | CFnDef fn_ptr -> ok (ConstFn fn_ptr)
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
     | CTraitConst (tref, name) -> (
