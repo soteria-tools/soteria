@@ -316,8 +316,22 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
             { offset = 0; ty; tags = Array.of_list tags; encoding = Direct }
       in
       let variant_layouts =
-        Monad.ListM.map variants (fun v ->
-            layout_of_members (field_tys v.fields))
+        match adt.layout with
+        | Some { variant_layouts; size = Some size; align = Some align; _ } ->
+            let variant_layouts =
+              List.mapi
+                (fun i v -> (Types.VariantId.of_int i, v))
+                variant_layouts
+            in
+            Monad.ListM.map variant_layouts (fun (i, v) ->
+                {
+                  size;
+                  align;
+                  fields = Arbitrary (i, Array.of_list v.field_offsets);
+                })
+        | _ ->
+            Monad.ListM.map variants (fun v ->
+                layout_of_members (field_tys v.fields))
       in
       match variant_layouts with
       (* no variants: uninhabited ZST *)
