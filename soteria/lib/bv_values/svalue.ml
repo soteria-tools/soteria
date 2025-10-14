@@ -750,8 +750,9 @@ and BitVec : BitVec = struct
       when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
         (* FIXME: remove true; this is not actually checked, this would rather depend on
            if the addition is checked (which we dont track) *)
-        if equal l1 l2 || equal l1 r2 then
-          Binop (Mul true, l1, add r1 r2) <| v1.node.ty
+        if equal l1 l2 then Binop (Mul true, l1, add r1 r2) <| v1.node.ty
+        else if equal l1 r2 then Binop (Mul true, l1, add r1 l2) <| v1.node.ty
+        else if equal r1 l2 then Binop (Mul true, r1, add l1 r2) <| v1.node.ty
         else Binop (Mul true, r1, add l1 l2) <| v1.node.ty
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
