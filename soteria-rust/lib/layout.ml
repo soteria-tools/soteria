@@ -261,6 +261,16 @@ and layout_of_struct (adt : Types.type_decl) (fields : Types.field list) =
         align;
         fields = Arbitrary (Types.VariantId.zero, Array.of_list field_offsets);
       }
+  | Some { variant_layouts = [ { field_offsets; _ } ]; _ } ->
+      (* we want to compute a size/align, but keep the field offsets
+         this is needed for DSTs, where we're not provided a size but we definitely
+         care about field positions (the size won't matter anyways since we use
+         the pointer's metadata). *)
+      let base = layout_of_members (field_tys fields) in
+      {
+        base with
+        fields = Arbitrary (Types.VariantId.zero, Array.of_list field_offsets);
+      }
   | _ -> layout_of_members (field_tys fields)
 
 and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
