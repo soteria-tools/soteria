@@ -28,6 +28,7 @@ class CliOpts(TypedDict):
     no_skips: bool
     timeout: Optional[int]
     test_folder: Optional[Path]
+    test_file: Optional[Path]
     categorise: TestCategoriser
 
 
@@ -45,7 +46,7 @@ class FakeCliOpts:
         raise RuntimeError("Call parse_flags before accessing OPTS")
 
 
-def parse_flags():
+def parse_flags() -> CliOpts:
     opts: CliOpts = {
         "cmd": cast(Cmd, None),
         "tool": "Rusteria",
@@ -56,6 +57,7 @@ def parse_flags():
         "no_skips": False,
         "timeout": None,
         "test_folder": None,
+        "test_file": None,
         "categorise": categorise_rusteria,
     }
 
@@ -124,6 +126,11 @@ def parse_flags():
                     f"{RED}The folder {folder} does not exist or is not a directory."
                 )
             opts["test_folder"] = folder
+        elif arg == "--file":
+            file = Path(pop()).resolve()
+            if not file.is_file():
+                raise ArgError(f"{RED}The file {file} does not exist or is not a file.")
+            opts["test_file"] = file
         elif arg == "--no-skip" or arg == "--no-skips":
             opts["no_skips"] = True
         elif arg == "--timeout":
