@@ -636,6 +636,8 @@ module rec Bool : Bool = struct
     (* BvOfBool and If-then-elses *)
     | Ite (b, l, t), (BitVec _ | Bool _) -> ite b (sem_eq l v2) (sem_eq t v2)
     | (BitVec _ | Bool _), Ite (b, l, t) -> ite b (sem_eq v1 l) (sem_eq v1 t)
+    | Unop (BvOfBool _, b), Unop (BvOfBool _, c) -> sem_eq b c
+    | Unop (Not, b), Unop (Not, c) -> sem_eq b c
     | Unop (BvOfBool _, b), BitVec z | BitVec z, Unop (BvOfBool _, b) ->
         if Z.equal z Z.one then b
         else if Z.equal z Z.zero then not b
