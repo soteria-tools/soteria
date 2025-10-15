@@ -515,6 +515,37 @@ module M (State : State_intf.S) = struct
     in
     aux byte_pairs
 
+  let rotate_ ~(side : [ `Left | `Right ]) ~t ~x ~shift : rust_val ret =
+    let t = TypesUtils.ty_as_literal t in
+    let bits = 8 * Layout.size_of_literal_ty t in
+    let x = as_base t x in
+    match BV.to_z shift with
+    | Some shift ->
+        let shift = Z.(to_int (shift mod of_int bits)) in
+        if shift = 0 then ok (Base x)
+        else
+          let shift = if side = `Left then shift else bits - shift in
+          let high = BV.extract (bits - shift) (bits - 1) x in
+          let low = BV.extract 0 (bits - shift - 1) x in
+          let res = BV.concat low high in
+          ok (Base (res :> Typed.T.cval Typed.t))
+    | None ->
+        let bits' = BV.mki_nz bits bits in
+        (* we need shift to be of size [bits] (it originally is of size 32) *)
+        let shift =
+          if bits <= 32 then BV.extract 0 (bits - 1) shift
+          else BV.extend ~signed:false (bits - 32) shift
+        in
+        let shift = Typed.cast @@ BV.rem ~signed:false shift bits' in
+        let res =
+          if side = `Left then x <<@ shift |@ (x >>@ bits' -!@ shift)
+          else x >>@ shift |@ (x <<@ bits' -!@ shift)
+        in
+        ok (Base (res :> Typed.T.cval Typed.t))
+
+  let rotate_left ~t ~x ~shift = rotate_ ~side:`Left ~t ~x ~shift
+  let rotate_right ~t ~x ~shift = rotate_ ~side:`Right ~t ~x ~shift
+
   let saturating (op : Expressions.binop) ~t ~a ~b : rust_val ret =
     let t = TypesUtils.ty_as_literal t in
     let signed = Layout.is_signed t in
