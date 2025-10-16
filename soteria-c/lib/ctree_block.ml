@@ -191,9 +191,9 @@ let uninit ~range = Tree.make ~node:(Owned (Uninit Totally)) ~range ()
 let mk_fix_typed ofs ty () =
   let* len = Layout.size_of_s ty in
   let+ fixes = mk_fix_typed ty () in
-  List.map (fun v -> [ MemVal { offset = ofs; len; v } ]) fixes
+  List.map (fun v -> [ TB.MemVal { offset = ofs; len; v } ]) fixes
 
-let mk_fix_any ofs len () = [ [ MemVal { offset = ofs; len; v = SAny } ] ]
+let mk_fix_any ofs len () = [ [ TB.MemVal { offset = ofs; len; v = SAny } ] ]
 
 let decode ~ty ~ofs node =
   match node with

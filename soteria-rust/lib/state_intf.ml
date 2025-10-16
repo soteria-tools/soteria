@@ -3,6 +3,12 @@ open T
 open Rustsymex
 open Charon
 open Rust_val
+open Soteria.Sym_states
+
+module Template = struct
+  type ('a, 'b) t = { heap : 'a; globals : 'b }
+  [@@deriving show { with_path = false }]
+end
 
 module type S = sig
   module Sptr : Sptr.S
@@ -11,7 +17,14 @@ module type S = sig
 
   (* state *)
   type t
-  type serialized
+
+  type serialized = (serialized_atom list, sloc Typed.t list) Template.t
+
+  and serialized_atom =
+    sloc Typed.t
+    * (Sptr.t Rtree_block.serialized_val, sint Value.t) Tree_block.serialized
+      Freeable.serialized
+
   type 'a err
 
   val add_to_call_trace :
@@ -21,6 +34,15 @@ module type S = sig
 
   (** Prettier but expensive printing. *)
   val pp_pretty : ignore_freed:bool -> t Fmt.t
+
+  val serialize : t -> serialized
+  val pp_serialized : Format.formatter -> serialized -> unit
+
+  val iter_vars_serialized :
+    serialized -> (Svalue.Var.t * [< cval ] Typed.ty -> unit) -> unit
+
+  val subst_serialized :
+    (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
 
   val empty : t
 

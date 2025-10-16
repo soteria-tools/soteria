@@ -26,6 +26,33 @@ and 'a node = NotOwned of node_qty | Owned of 'a
 and node_qty = Partially | Totally
 [@@deriving show { with_path = false }, make]
 
+type ('a, 'sint) serialized_atom =
+  | MemVal of { offset : 'sint; len : 'sint; v : 'a }
+  | Bound of 'sint
+[@@deriving show { with_path = false }]
+
+type ('a, 'sint) serialized = ('a, 'sint) serialized_atom list
+
+let iter_vars_serialized iter_vars_serialized_val iter_vars_sint serialized f =
+  List.iter
+    (function
+      | MemVal { offset; len; v } ->
+          iter_vars_sint offset f;
+          iter_vars_sint len f;
+          iter_vars_serialized_val v f
+      | Bound v -> iter_vars_sint v f)
+    serialized
+
+let subst_serialized subst_serialized_val subst_sint subst_var serialized =
+  let v_subst = subst_sint subst_var in
+  let subst_atom = function
+    | MemVal { offset; len; v } ->
+        let v = subst_serialized_val subst_var v in
+        MemVal { offset = v_subst offset; len = v_subst len; v }
+    | Bound v -> Bound (v_subst v)
+  in
+  List.map subst_atom serialized
+
 (** The input module of [Tree_block]. A memory value [t] represents an owned
     part of the tree block, with the property that it can be split or merged as
     needed.
@@ -135,6 +162,8 @@ struct
   end
 
   type nonrec sint = sint Symex.Value.t
+
+  let pp_sint = Symex.Value.ppa
 
   (* re-export the types to be able to use them easily *)
   type nonrec ('a, 'sint) tree = ('a, 'sint) tree = {
@@ -534,16 +563,8 @@ struct
 
   (** Logic *)
 
-  type serialized_atom =
-    | MemVal of {
-        offset : sint; [@printer Symex.Value.ppa]
-        len : sint; [@printer Symex.Value.ppa]
-        v : MemVal.serialized;
-      }
-    | Bound of sint [@printer fun f v -> Fmt.pf f "Bound(%a)" Symex.Value.ppa v]
+  type serialized = (MemVal.serialized, sint) serialized_atom list
   [@@deriving show { with_path = false }]
-
-  type serialized = serialized_atom list
 
   let lift_miss ~offset ~len symex =
     let+? fix = symex in
@@ -613,27 +634,17 @@ struct
 
   (** Logic *)
 
-  let subst_serialized subst_var (serialized : serialized) =
-    let v_subst v = Symex.Value.subst subst_var v in
-    let subst_atom = function
-      | MemVal { offset; len; v } ->
-          let v = MemVal.subst_serialized subst_var v in
-          MemVal { offset = v_subst offset; len = v_subst len; v }
-      | Bound v -> Bound (v_subst v)
-    in
-    List.map subst_atom serialized
-
   let iter_vars_serialized serialized f =
-    List.iter
-      (function
-        | MemVal { offset; len; v } ->
-            Symex.Value.iter_vars offset f;
-            Symex.Value.iter_vars len f;
-            MemVal.iter_vars_serialized v f
-        | Bound v -> Symex.Value.iter_vars v f)
-      serialized
+    let iter_vars_serialized =
+      iter_vars_serialized MemVal.iter_vars_serialized Symex.Value.iter_vars
+    in
+    iter_vars_serialized serialized f
 
-  let pp_serialized = Fmt.Dump.list pp_serialized_atom
+  let subst_serialized subst_var (serialized : serialized) =
+    let subst_serialized =
+      subst_serialized MemVal.subst_serialized Symex.Value.subst
+    in
+    subst_serialized subst_var serialized
 
   let serialize t =
     let bound =

@@ -6,6 +6,20 @@ open Rustsymex
 open Rustsymex.Result
 open Charon
 
+type 'a serialized_val =
+  | SInit of ('a Rust_val.t * Types.ty)
+  | SUninit
+  | SZeros
+  | SAny
+[@@deriving show { with_path = false }]
+
+let iter_vars_serialized_val iter_vars_ptr v f =
+  match v with SInit (v, _) -> Rust_val.iter_vars iter_vars_ptr v f | _ -> ()
+
+let subst_serialized_val subst_ptr f = function
+  | SInit (v, ty) -> SInit (Rust_val.subst subst_ptr f v, ty)
+  | v -> v
+
 module Make (Sptr : Sptr.S) = struct
   module Encoder = Encoder.Make (Sptr)
 
@@ -80,22 +94,11 @@ module Make (Sptr : Sptr.S) = struct
       | Lazy | Uninit Partially ->
           failwith "Should never split an intermediate node"
 
-    type serialized =
-      | SInit of (rust_val * Types.ty)
-          [@printer Fmt.(pair ~sep:comma pp_rust_val Charon_util.pp_ty)]
-      | SUninit
-      | SZeros
-      | SAny
+    type serialized = Sptr.t serialized_val
     [@@deriving show { with_path = false }]
 
-    let subst_serialized f = function
-      | SInit (v, ty) -> SInit (Rust_val.subst Sptr.subst f v, ty)
-      | v -> v
-
-    let iter_vars_serialized v f =
-      match v with
-      | SInit (v, _) -> Rust_val.iter_vars Sptr.iter_vars v f
-      | _ -> ()
+    let iter_vars_serialized v f = iter_vars_serialized_val Sptr.iter_vars v f
+    let subst_serialized f = subst_serialized_val Sptr.subst f
 
     (* TODO: serialize tree borrow information! *)
     let serialize ((t, _) : t) : serialized Seq.t option =
@@ -222,7 +225,7 @@ module Make (Sptr : Sptr.S) = struct
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes () =
       let+ v = Layout.nondet ty in
-      [ [ MemVal { offset = ofs; len = size; v = SInit (v, ty) } ] ]
+      [ [ TB.MemVal { offset = ofs; len = size; v = SInit (v, ty) } ] ]
     in
     let@ t = with_bound_and_owned_check ~mk_fixes t bound in
     let replace_node t =
