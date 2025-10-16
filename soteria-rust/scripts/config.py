@@ -15,38 +15,134 @@ class TestConfig(TypedDict):
 
 KANI_PATH = (PWD / ".." / ".." / ".." / "kani" / "tests" / "kani").resolve()
 KANI_EXCLUSIONS = [
-    "/Stubbing/",
-    "/SIMD/",
-    "/Atomic/",
-    "/ForeignItems/",
-    "/Coroutines/",
-    "/VolatileIntrinsics/",
-    "/Volatile/",
-    "/Helpers/",
+    # unsupported: concurrency
     "/AsyncAwait/",
-    "/Quantifiers/",
+    "/Atomic/",
+    "/Coroutines/",
+    "Drop/drop_after_moving_across_channel.rs",
+    "Drop/drop_slice.rs",
+    "SizeAndAlignOfDst/main.rs",
+    "SizeAndAlignOfDst/main_assert.rs",
+    "/ThreadLocalRef/",
+    "Uninit/atomic.rs",
+    # unsupported: FFI
+    "/ForeignItems/",
+    "FunctionCall/Variadic/main.rs",
+    # unsupported: libc
+    "/LibC/",
+    "/Strings/copy_empty_string_by_intrinsic.rs",
+    # unsupported: SIMD
+    "/SIMD/",
+    # unsupported: volatile
+    "/Volatile/",
+    "/VolatileIntrinsics/",
+    # unsupported: #[kani::stub]
+    "/Stubbing/",
+    # unsupported: #[kani::proof_for_contract], #[kani::ensures], #[kani::requires]
     "/FunctionContracts/",
-    "/UnsizedCoercion/defs.rs",
+    # unsupported: kani::exists, kani::forall
+    "/Quantifiers/",
+    # unsupported: kani::mem
+    "/MemPredicates/",
+    "ValidValues/unaligned.rs",
+    # ignore: invalid tests
+    "ArithOperators/unsafe_add_fail.rs",
+    "ArithOperators/unsafe_mul_fail.rs",
+    "ArithOperators/unsafe_sub_fail.rs",
+    # utils
     "fixme",
+    "/Helpers/",
+    "/UnsizedCoercion/defs.rs",
 ]
 
 MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
 MIRI_EXCLUSIONS = [
-    "/ui.rs",
+    # unsupported: concurrency
+    "async",
+    "/concurrency/",
+    "/data_race/",
+    "/many-seeds/",
+    "/tls/",
+    "0weak_memory_consistency",
+    "fail/tls_macro_leak.rs",
+    "fail/tls_static_leak.rs",
+    "fail/panic/tls_macro_const_drop_panic.rs",
+    "fail/panic/tls_macro_drop_panic.rs",
+    "pass/issues/issue-139553.rs",
+    "fail/tree_borrows/reservedim_spurious_write.rs",
+    "fail/tree_borrows/spurious_read.rs",
+    "fail/unaligned_pointers/atomic_unaligned.rs",
+    "fail/coroutine-pinned-moved.rs",
+    "fail/both_borrows/retag_data_race_write.rs",
+    "pass/coroutine.rs",
+    "pass/future-self-referential.rs",
+    "pass/issues/issue-miri-2068.rs",
+    "pass/move-data-across-await-point.rs",
+    "pass/track-caller-attribute.rs",
+    "pass/atomic-compare-exchange-weak-never-fail.rs",
+    "pass/atomic-readonly-load.rs",
+    "pass/atomic.rs",
+    "pass/box-custom-alloc-aliasing.rs",
+    "pass/dyn-arbitrary-self.rs",
+    "pass/dyn-upcast.rs",
+    "pass/getpid.rs",
+    "pass/issues/issue-33387.rs",
+    "pass/leak-in-static.rs",
+    "pass/mpsc.rs",
+    "pass/panic/catch_panic.rs",
+    "pass/panic/concurrent-panic.rs",
+    "pass/panic/std-panic-locations.rs",
+    "pass/panic/thread_panic.rs",
+    "pass/sendable-class.rs",
+    "pass/send-is-not-static-par-for.rs",
+    "pass/static_memory_modification.rs",
+    "pass/tree_borrows/read_retag_no_race.rs",
+    "pass/tree_borrows/spurious_read.rs",
+    "pass/weak_memory",
+    "pass/iter_macro.rs",
+    # unsupported: FFI
+    "/native-lib/",
+    "exported_symbol",
+    "fail/function_calls/check_arg_count_abort.rs",
+    "fail/unsupported_foreign_function.rs",
+    "fail/extern-type-field-offset.rs",
+    "fail/function_calls/check_arg_abi.rs",
+    "fail/function_calls/check_arg_count_too_many_args.rs",
+    "fail/function_calls/exported_symbol_shim_clashing.rs",
+    "fail/function_calls/check_arg_count_too_few_args.rs",
+    "pass/extern_types.rs",
+    # unsuppported: libc
+    "fail/alloc/global_system_mixup.rs",
+    "pass/global_allocator.rs",
+    "pass/heap_allocator.rs",
+    # unsupported: Miri builtins
+    "pass/backtrace/backtrace-api-v1.rs",
+    "fail/panic/unwind_panic_abort.rs",
+    "fail/unaligned_pointers/promise_alignment.rs",
+    "fail/unaligned_pointers/promise_alignment_zero.rs",
+    # unsupported: OS builtins
+    "/shims/",
+    # unsupported: SIMD
+    "simd",
+    "fail/function_pointers/abi_mismatch_vector.rs",
+    # unsupported: stacked borrows
+    "/stacked-borrows/",
+    "/stacked_borrows/",
+    # unsupported: tail calls
+    "tail_call",
+    # unsupported: other targets (x86, wasm)
+    "fail/function_calls/target_feature.rs",
+    "fail/function_calls/target_feature_wasm.rs",
+    "fail/intrinsics/intrinsic_target_feature.rs",
+    "pass/function_calls/target_feature.rs",
+    "pass/wtf8.rs",
+    # ignored: tests with dependencies
     "/deps/",
     "/fail-dep/",
     "/pass-dep/",
-    "/native-lib/",
-    "/many-seeds/",
+    # utils
+    "/ui.rs",
     "/utils/",
-    "/stacked-borrows/",
-    "/stacked_borrows/",
-    "/concurrency/",
-    "/data_race/",
-    "/tls/",
-    "simd",
-    "async",
-    "/shims/",
 ]
 
 
@@ -204,7 +300,7 @@ def custom(opts: CliOpts) -> TestConfig:
     }
 
 
-TEST_SUITES: dict[SuiteName, Callable[[CliOpts], TestConfig]] = {
+TEST_SUITES: dict[SuiteName, Callable[[CliOpts], TestConfig]] = {  # type: ignore
     "kani": kani,
     "miri": miri,
     "custom": custom,

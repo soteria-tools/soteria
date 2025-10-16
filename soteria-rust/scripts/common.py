@@ -110,7 +110,7 @@ class Outcome(enum.Enum):
         return self.txt <= other.txt
 
     def __call__(self, reason: Optional[str] = None) -> tuple["Outcome", Optional[str]]:
-        return (self, reason)
+        return (self, reason or self.txt)
 
     def is_pass(self) -> bool:
         return self == Outcome.PASS
@@ -181,6 +181,7 @@ KNOWN_ISSUES = {
     "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter? Kani crashes too",
     "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter? Kani crashes too",
     "Cleanup/unwind_fixme.rs": "The main function takes a paramter? Kani crashes too",
+    "CodegenConstValue/main.rs": "We don't translate slice constants",
     "DynTrait/vtable_size_align_drop.rs": "The test does a ptr-int-ptr cast, which we don't support",
     "FunctionCall/Variadic/fixme_main.rs": "We don't handle functions with spread arguments (not in Charon)",
     "FunctionCall/Variadic/main.rs": "We don't handle functions with spread arguments (not in Charon)",
