@@ -15,7 +15,8 @@ CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
 CmdBenchmark = tuple[Literal["benchmark"], tuple]
-Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark
+CmdCompKani = tuple[Literal["comp-kani"], tuple[Path, bool]]
+Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark | CmdCompKani
 
 
 class CliOpts(TypedDict):
@@ -84,6 +85,19 @@ def parse_flags() -> CliOpts:
         opts["cmd"] = ("eval-diff", (file1, file2))
     elif arg == "benchmark":
         opts["cmd"] = ("benchmark", ())
+    elif arg == "comp-kani":
+        if len(sys.argv) < 1:
+            raise ArgError("missing path to path with tests")
+        path = Path(sys.argv.pop(0))
+        if not path.is_dir():
+            raise ArgError(
+                f"{RED}The path {path} does not exist or is not a directory."
+            )
+        if "--cached" in sys.argv:
+            sys.argv.remove("--cached")
+            opts["cmd"] = ("comp-kani", (path.resolve(), True))
+        else:
+            opts["cmd"] = ("comp-kani", (path.resolve(), False))
     else:
         raise ArgError(
             f"Unknown command, expected {', '.join(SUITE_NAMES)}, all, eval or eval-diff"

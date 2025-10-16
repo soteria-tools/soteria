@@ -12,6 +12,7 @@ from common import *
 from parselog import (
     TestCategoriser,
     LogCategorisation_,
+    parse_per_test,
 )
 from cliopts import (
     ArgError,
@@ -22,7 +23,7 @@ from cliopts import (
     opts_for_rusteria,
     parse_flags,
 )
-from config import TEST_SUITES, TestConfig
+from config import TEST_SUITES, TestConfig, filter_tests
 
 
 # Execute a test, return the categorisation and the elapsed time
@@ -31,13 +32,13 @@ def exec_test(
     *,
     cmd: list[str],
     categoriser: TestCategoriser,
-    test_conf: TestConfig,
+    test_conf: Optional[TestConfig] = None,
     tool: ToolName,
     log: Optional[TextIOWrapper] = None,
     timeout: Optional[int] = None,
 ) -> tuple[LogCategorisation_, float]:
     expect_failure = determine_failure_expect(str(file))
-    if test_conf["dyn_flags"]:
+    if test_conf and test_conf["dyn_flags"]:
         cmd = cmd + test_conf["dyn_flags"](file)
 
     if log:
@@ -54,7 +55,7 @@ def exec_test(
         )
     except subprocess.TimeoutExpired:
         if log:
-            log.write("Forced timeout")
+            log.write("Forced timeout\n")
 
         # Kani tends to leave a kani-compiler process behind
         if tool == "Kani":
@@ -336,7 +337,7 @@ def benchmark(opts: CliOpts):
 
     log = log.open("a")
 
-    results: dict[tuple[Path, SuiteName], Benchmark] = {}
+    results: dict[tuple[Path, SuiteName], Benchmark] = {}  # type: ignore
     end_msgs: set[str] = set()
     interrupts = 0
 
@@ -433,6 +434,141 @@ def benchmark(opts: CliOpts):
             pprint(f"{ORANGE}✭{RESET} {end_msg}")
 
 
+def kani_comparison(opts: CliOpts, path: Path, cached: bool):
+    build()
+
+    tests = filter_tests(opts, path.rglob("*.rs"))
+    pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
+
+    interrupts = 0
+
+    def run_with(
+        key: ToolName, opts: CliOpts, id: str
+    ) -> dict[str, tuple[Outcome, float]]:
+        log_path = PWD / f"kani-comparison-{id}.log"
+        if cached:
+            results = parse_per_test(log_path)
+            results = {k: v[key] for k, v in results.items()}
+            return results
+
+        log_path.touch()
+        log_path.write_text(
+            f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n"
+        )
+        log = log_path.open("a")
+
+        pprint(
+            f"{CYAN}{BOLD}==>{RESET} Running with {BOLD}{key}{RESET} {GRAY}({id})",
+        )
+        log.write(f"Running tests with {key}\n\n")
+
+        before = time.time()
+        for test in tests:
+            relative = test.relative_to(path)
+            pprint(f"Running {relative} ... ", end="", flush=True)
+            try:
+                (outcome, _), elapsed = exec_test(
+                    test,
+                    cmd=opts["tool_cmd"],
+                    log=log,
+                    categoriser=opts["categorise"],
+                    tool=key,
+                    timeout=opts["timeout"],
+                )
+            except KeyboardInterrupt:
+                nonlocal interrupts
+                interrupts += 1
+                print(
+                    f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
+                )
+                if interrupts >= 3:
+                    break
+                continue
+
+            outcome = outcome.simplify()
+            print(f"{outcome} in {elapsed:.3f}s")
+
+        elapsed = time.time() - before
+        pprint(
+            f"{BOLD}Finished in {elapsed:.3f}s{RESET}",
+        )
+        log.close()
+
+        results = parse_per_test(log_path)
+        results = {k: v[key] for k, v in results.items()}
+        return results
+
+    def with_env(key: str, value: str):
+        class WithEnv:
+            def __enter__(self):
+                self.prev = os.environ.get(key)
+                os.environ[key] = value
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                if self.prev is not None:
+                    os.environ[key] = self.prev
+                else:
+                    del os.environ[key]
+
+        return WithEnv()
+
+    rusteria = opts_for_rusteria(opts, force_obol=True)
+    rusteria["tool_cmd"] += ["--kani"]
+    res_rusteria = run_with("Rusteria", rusteria, "rusteria")
+    kani = opts_for_kani(opts)
+    kani["tool_cmd"].remove("--harness-timeout=5s")
+    kani["tool_cmd"] += ["--harness-timeout=10s"]
+    kani["tool_cmd"] += ["--solver", "kissat"]
+    res_kani = run_with("Kani", kani, "kani")
+
+    with with_env("RUSTFLAGS", "--cfg unwind"):
+        res_kani_unwind = run_with("Kani", kani, "kani-unwinding")
+
+    table: list[list[tuple[str, Optional[str]]]] = []
+    table += [
+        [
+            ("Suite", BOLD),
+            ("Test", BOLD),
+            ("Rusteria", BOLD),
+            ("(s)", None),
+            ("Kani", BOLD),
+            ("(s)", None),
+            ("Kani (unwinding)", BOLD),
+            ("(s)", None),
+        ]
+    ]
+    for test in res_rusteria.keys():
+        r_out, r_time = res_rusteria.get(test, (Outcome.UNKNOWN, -2))
+        k_out, k_time = res_kani.get(test, (Outcome.UNKNOWN, -2))
+        ku_out, ku_time = res_kani_unwind.get(test, (Outcome.UNKNOWN, -2))
+
+        if k_time == -1:
+            k_time = 10
+        if ku_time == -1:
+            ku_time = 10
+
+        suite, test = test.split("::")
+
+        table.append(
+            [
+                (suite, BOLD),
+                (test, None),
+                (r_out.txt, r_out.clr),
+                (f"{r_time:.3f}", None) if r_time >= 0 else ("-", GRAY),
+                (k_out.txt, k_out.clr),
+                (f"{k_time:.3f}", None) if k_time >= 0 else ("-", GRAY),
+                (ku_out.txt, ku_out.clr),
+                (f"{ku_time:.3f}", None) if ku_time >= 0 else ("-", GRAY),
+            ]
+        )
+
+    csv_file = PWD / "kani-comparison.csv"
+    csv_file.touch()
+    with csv_file.open("w") as csv_io:
+        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in table)
+    pptable(table)
+
+
 def main():
     try:
         opts = parse_flags()
@@ -463,6 +599,9 @@ def main():
         diff_evaluation(file1, file2)
     elif cmd[0] == "benchmark":
         benchmark(opts)
+    elif cmd[0] == "comp-kani":
+        (compare_path, cached) = cmd[1]
+        kani_comparison(opts, compare_path, cached)
     else:
         assert_never(cmd)
 
