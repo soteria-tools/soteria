@@ -114,7 +114,7 @@ module M (State : State_intf.S) = struct
       ( "core::f128::_::is_sign_positive",
         Optim (FloatIsSign { positive = true }) );
       ("core::f128::_::is_subnormal", Optim (FloatIs Subnormal));
-      (* These don't compile, maybe because they const-panic? *)
+      (* These don't compile, because we don't link a sysroot like Miri with -Zemit-mir *)
       ("alloc::raw_vec::handle_error", Fixme Panic);
       ("core::panicking::panic", Fixme Panic);
       ("core::panicking::panic_fmt", Fixme Panic);
@@ -123,6 +123,7 @@ module M (State : State_intf.S) = struct
       ("core::slice::index::slice_index_order_fail", Fixme Panic);
       ("std::alloc::handle_alloc_error", Fixme Panic);
       ("std::option::unwrap_failed", Fixme Panic);
+      ("std::result::unwrap_failed", Fixme Panic);
       ("std::vec::Vec::_::remove::assert_failed", Fixme Panic);
       (* These don't compile, for some reason? *)
       ("std::panicking::try::cleanup", Fixme TryCleanup);

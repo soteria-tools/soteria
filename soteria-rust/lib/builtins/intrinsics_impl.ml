@@ -99,6 +99,10 @@ module M (State : State_intf.S) = struct
     let v' = aux bytes in
     ok (Base (v' :> Typed.T.cval Typed.t))
 
+  let caller_location : full_ptr ret =
+    let+ () = ok () in
+    (Sptr.null_ptr (), Thin)
+
   let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
       ~_catch_fn:catch_fn_ptr =
     let[@inline] get_fn ptr =
@@ -181,6 +185,10 @@ module M (State : State_intf.S) = struct
 
   let copy_ nonoverlapping ~t ~src:((src, _) as fsrc : full_ptr)
       ~dst:((dst, _) as fdst : full_ptr) ~count : unit ret =
+    L.debug (fun m ->
+        m "Performing copy%s: %a -> %a, count %a"
+          (if nonoverlapping then "_non_overlapping" else "")
+          pp_full_ptr fsrc pp_full_ptr fdst Typed.ppa count);
     let zero = Usize.(0s) in
     let* () = State.check_ptr_align fsrc t in
     let* () = State.check_ptr_align fdst t in
