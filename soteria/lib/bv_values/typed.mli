@@ -161,10 +161,19 @@ module BitVec : sig
   val not_bool : [< sint ] t -> [> sint ] t
 
   (* float-bv conversions *)
-  val of_float : signed:bool -> size:int -> [< sfloat ] t -> [> sint ] t
+  val of_float :
+    rounding:Svalue.RoundingMode.t ->
+    signed:bool ->
+    size:int ->
+    [< sfloat ] t ->
+    [> sint ] t
 
   val to_float :
-    signed:bool -> fp:Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
+    rounding:Svalue.RoundingMode.t ->
+    signed:bool ->
+    fp:Svalue.FloatPrecision.t ->
+    [< sint ] t ->
+    [> sfloat ] t
 end
 
 (** Floating point operations *)
@@ -194,7 +203,7 @@ module Float : sig
   val is_zero : [< sfloat ] t -> [> sbool ] t
   val is_infinite : [< sfloat ] t -> [> sbool ] t
   val is_nan : [< sfloat ] t -> [> sbool ] t
-  val round : Svalue.FloatRoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
+  val round : Svalue.RoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
 end
 
 module Ptr : sig

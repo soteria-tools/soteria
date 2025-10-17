@@ -128,7 +128,7 @@ def parse_flags():
                     f"{RED}The folder {folder} does not exist or is not a directory."
                 )
             opts["test_folder"] = folder
-        elif arg == "--no-skip":
+        elif arg == "--no-skip" or arg == "--no-skips":
             opts["no_skips"] = True
         elif arg == "--timeout":
             opts["timeout"] = int(pop())

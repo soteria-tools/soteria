@@ -55,7 +55,10 @@ module Fields_shape = struct
 
   let shape_for_variant v = function
     | Enum (_, shapes) -> shapes.(Types.VariantId.to_int v)
-    | s -> Fmt.failwith "Shape %a is not an enum" pp s
+    | Arbitrary _ as fs when Types.VariantId.equal_id v Types.VariantId.zero ->
+        fs
+    | s ->
+        Fmt.failwith "Shape %a has no variant %a" pp s Types.VariantId.pp_id v
 end
 
 type layout = { size : int; align : int; fields : Fields_shape.t }
@@ -192,6 +195,7 @@ let rec layout_of (ty : Types.ty) : layout =
   (* FIXME: this is wrong but at least some more code runs... *)
   | TDynTrait _ -> { size = 0; align = 1; fields = Primitive }
   (* Others (unhandled for now) *)
+  | TPtrMetadata _ -> raise (CantComputeLayout ("pointer metadata", ty))
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
   | TError _ -> raise (CantComputeLayout ("error type", ty))
   | TTraitType (tref, ty_name) -> layout_of @@ resolve_trait_ty tref ty_name
@@ -219,7 +223,7 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
     | Some { variant_layouts; _ } ->
         Monad.ListM.map variant_layouts (fun v -> Option.map z_of_scalar v.tag)
     | None ->
-        Monad.ListM.map variants (fun v -> Some (z_of_scalar v.discriminant))
+        Monad.ListM.map variants (fun v -> Some (z_of_literal v.discriminant))
   in
   let tag_layout : Tag_layout.t =
     match adt.layout with
@@ -236,7 +240,7 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
         let ty : Types.literal_type =
           match variants with
           | [] -> TInt I32 (* Shouldn't matter *)
-          | v :: _ -> lit_of_scalar v.discriminant
+          | v :: _ -> lit_ty_of_lit v.discriminant
         in
         { offset = 0; ty; tags = Array.of_list tags; encoding = Direct }
   in
@@ -275,22 +279,17 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
       { size; align; fields = Enum (tag_layout, Array.of_list fields) }
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
-  match tref.trait_id with
+  match tref.kind with
   | TraitImpl { id; _ } -> (
       let impl = Crate.get_trait_impl id in
       match List.find_opt (fun (n, _) -> ty_name = n) impl.types with
-      | Some (_, ty) -> ty
+      | Some (_, ty) -> ty.binder_value.value
       | None ->
           let msg =
             Fmt.str "missing type '%s' in impl %a" ty_name Crate.pp_name
               impl.item_meta.name
           in
           raise (CantComputeLayout (msg, TTraitType (tref, ty_name))))
-  | BuiltinOrAuto (trait, _, _) when ty_name = "Metadata" ->
-      (* We need to special-case the metadata type *)
-      let ty = List.hd trait.binder_value.generics.types in
-      if is_dst ty then TLiteral (TInt Isize)
-      else TAdt { id = TTuple; generics = TypesUtils.empty_generic_args }
   | _ ->
       let msg = Fmt.str "trait type (%s)" ty_name in
       raise (CantComputeLayout (msg, TTraitType (tref, ty_name)))
@@ -439,26 +438,26 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
           let* d = nondet_literal_ty tag_layout.ty in
           let* res =
             match_on variants ~constr:(fun v ->
-                BV.of_scalar v.discriminant ==@ d)
+                BV.of_literal v.discriminant ==@ d)
           in
           match (res, tag_layout.encoding) with
           | Some variant, _ ->
-              let discr = BV.of_scalar variant.discriminant in
+              let discr = BV.of_literal variant.discriminant in
               let+ fields = nondets @@ Charon_util.field_tys variant.fields in
               Enum (discr, fields)
           | None, Direct -> vanish ()
           | None, Niche untagged ->
               let variant = Types.VariantId.nth variants untagged in
-              let discr = BV.of_scalar variant.discriminant in
+              let discr = BV.of_literal variant.discriminant in
               let+ fields = nondets @@ Charon_util.field_tys variant.fields in
               Enum (discr, fields))
       | Struct fields ->
           let+ fields = nondets @@ Charon_util.field_tys fields in
           Struct fields
       | ty ->
-          Rustsymex.not_impl
-            (Fmt.str "nondet: unsupported type %a" Types.pp_type_decl_kind ty))
-  | ty -> Rustsymex.not_impl (Fmt.str "nondet: unsupported type %a" pp_ty ty)
+          Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
+            Types.pp_type_decl_kind ty)
+  | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
 
 and nondets tys =
   let open Rustsymex.Syntax in
@@ -498,13 +497,13 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
       | Enum vars ->
           (vars
           |> List.find_opt (fun (v : Types.variant) ->
-                 Z.equal Z.zero (z_of_scalar v.discriminant))
+                 Z.equal Z.zero (z_of_literal v.discriminant))
           |> Option.bind)
           @@ fun (v : Types.variant) ->
           v.fields
           |> Charon_util.field_tys
           |> zeroeds
-          |> Option.map (fun fs -> Enum (BV.of_scalar v.discriminant, fs))
+          |> Option.map (fun fs -> Enum (BV.of_literal v.discriminant, fs))
       | Union fs ->
           let layouts =
             List.mapi
@@ -563,7 +562,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
       | Enum [] -> None (* an empty enum is uninhabited *)
       | Enum [ { fields; discriminant; _ } ] ->
           as_zsts @@ Charon_util.field_tys fields
-          |> Option.map (fun fs -> Enum (BV.of_scalar discriminant, fs))
+          |> Option.map (fun fs -> Enum (BV.of_literal discriminant, fs))
       | Enum _ -> None
       | _ -> None)
   | TAdt { id = TTuple; generics = { types; _ } } ->
@@ -648,7 +647,7 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
           let v =
             List.find_opt
               (fun (v : Types.variant) ->
-                Z.equal d (z_of_scalar v.discriminant))
+                Z.equal d (z_of_literal v.discriminant))
               variants
           in
           match v with
@@ -707,7 +706,7 @@ let rec update_ref_tys_in
   | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
       let variants = Crate.as_enum adt_id in
       let* var =
-        match_on variants ~constr:(fun v -> BV.of_scalar v.discriminant ==@ d)
+        match_on variants ~constr:(fun v -> BV.of_literal v.discriminant ==@ d)
       in
       match var with
       | Some var ->
