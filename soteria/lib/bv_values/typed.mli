@@ -119,11 +119,12 @@ module BitVec : sig
   val zero : int -> [> zero ] t
   val one : int -> [> nonzero ] t
   val bv_to_z : bool -> int -> Z.t -> Z.t
+  val to_z : [< any ] t -> Z.t option
 
   (* arithmetic *)
   val add : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val sub : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-  val mul : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val mul : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val div : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val rem : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val mod_ : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
@@ -161,10 +162,19 @@ module BitVec : sig
   val not_bool : [< sint ] t -> [> sint ] t
 
   (* float-bv conversions *)
-  val of_float : signed:bool -> size:int -> [< sfloat ] t -> [> sint ] t
+  val of_float :
+    rounding:Svalue.RoundingMode.t ->
+    signed:bool ->
+    size:int ->
+    [< sfloat ] t ->
+    [> sint ] t
 
   val to_float :
-    signed:bool -> fp:Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
+    rounding:Svalue.RoundingMode.t ->
+    signed:bool ->
+    fp:Svalue.FloatPrecision.t ->
+    [< sint ] t ->
+    [> sfloat ] t
 end
 
 (** Floating point operations *)
@@ -194,7 +204,7 @@ module Float : sig
   val is_zero : [< sfloat ] t -> [> sbool ] t
   val is_infinite : [< sfloat ] t -> [> sbool ] t
   val is_nan : [< sfloat ] t -> [> sbool ] t
-  val round : Svalue.FloatRoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
+  val round : Svalue.RoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
 end
 
 module Ptr : sig
@@ -217,8 +227,8 @@ end
 
 module Infix : sig
   (* equality *)
-  val ( ==@ ) : 'a t -> 'a t -> [> sbool ] t
-  val ( ==?@ ) : 'a t -> 'b t -> [> sbool ] t
+  val ( ==@ ) : [< any ] t -> [< any ] t -> [> sbool ] t
+  val ( ==?@ ) : [< any ] t -> [< any ] t -> [> sbool ] t
 
   (* inequality -- [$] indicates signed *)
   val ( >@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t

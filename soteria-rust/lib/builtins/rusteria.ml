@@ -55,9 +55,9 @@ module M (State : State_intf.S) = struct
     let^+ value = Layout.nondet ty in
     value
 
-  let panic args =
+  let panic ?msg args =
     let* msg =
-      match args with [ Ptr msg ] -> parse_string msg | _ -> ok None
+      match args with [ Ptr msg ] -> parse_string msg | _ -> ok msg
     in
     error (`Panic msg)
 end

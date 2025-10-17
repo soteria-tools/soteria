@@ -50,7 +50,27 @@ module Exec_cargo = struct
       term
 end
 
+module Build_plugins = struct
+  let term =
+    Term.(
+      const Soteria_rust_lib.Driver.build_plugins
+      $ Soteria_rust_lib.Config.global_term)
+
+  let cmd =
+    Cmd.v
+      (Cmd.info ~exits
+         ~doc:
+           "Build the plugins for Rusteria; this is done automatically when \
+            running Rusteria except when --no-compile-plugins is used, so you \
+            should only need to run this command if you want to build the \
+            plugins separately."
+         "build-plugins")
+      term
+end
+
 let cmd =
-  Cmd.group (Cmd.info ~exits "soteria-rust") [ Exec_rustc.cmd; Exec_cargo.cmd ]
+  Cmd.group
+    (Cmd.info ~exits "soteria-rust")
+    [ Exec_rustc.cmd; Exec_cargo.cmd; Build_plugins.cmd ]
 
 let () = exit @@ Cmd.eval cmd

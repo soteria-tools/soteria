@@ -4,7 +4,7 @@ open Compo_res
 module type SInt_sig = sig
   (** Symbolic integers *)
 
-  module Symex : Symex.S
+  module Symex : Symex.Base
   open Symex
 
   type t
@@ -22,7 +22,7 @@ module type SInt_sig = sig
   val iter_vars : t -> (Var.t * 'a Value.ty -> unit) -> unit
 end
 
-module Make (Symex : Symex.S) (SInt : SInt_sig with module Symex = Symex) =
+module Make (Symex : Symex.Base) (SInt : SInt_sig with module Symex = Symex) =
 struct
   open Symex.Syntax
   open Symex

@@ -13,6 +13,14 @@ end
 let foldM ~return ~bind ~fold xs ~init ~f =
   fold xs ~init:(return init) ~f:(fun acc x -> bind acc @@ fun acc -> f acc x)
 
+let all ~return ~bind fn xs =
+  let rec aux acc rs =
+    match rs with
+    | [] -> return (List.rev acc)
+    | r :: rs -> bind (fn r) @@ fun x -> aux (x :: acc) rs
+  in
+  aux [] xs
+
 module type Syntax = sig
   type 'a t
 

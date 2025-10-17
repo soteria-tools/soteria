@@ -50,13 +50,13 @@ module Make (State : State_intf.S) = struct
       map_env @@ fun store ->
       List.fold_left
         (fun st (local : GAst.local) ->
-          Store.add local.index (None, local.var_ty) st)
+          Store.add local.index (None, local.local_ty) st)
         store locals.locals
     in
     (* allocate arguments and return value, updating store *)
     let alloc_locs = List.take (1 + locals.arg_count) locals.locals in
     let tys =
-      List.map (fun ({ var_ty; _ } : GAst.local) -> var_ty) alloc_locs
+      List.map (fun ({ local_ty; _ } : GAst.local) -> local_ty) alloc_locs
     in
     let* ptrs = State.alloc_tys tys in
     let tys_ptrs = List.combine alloc_locs ptrs in
@@ -64,14 +64,14 @@ module Make (State : State_intf.S) = struct
       map_env @@ fun store ->
       List.fold_left
         (fun store ((local : GAst.local), ptr) ->
-          Store.add local.index (Some ptr, local.var_ty) store)
+          Store.add local.index (Some ptr, local.local_ty) store)
         store tys_ptrs
     in
     (* store values for the arguments *)
     let tys_ptrs = List.tl tys_ptrs in
     let+ protected =
       fold_list tys_ptrs ~init:[]
-        ~f:(fun protected ({ index; var_ty = ty; _ }, ptr) ->
+        ~f:(fun protected ({ index; local_ty = ty; _ }, ptr) ->
           let index = Expressions.LocalId.to_int index in
           let value = List.nth args (index - 1) in
           (* Passed (nested) references must be protected and be valid. *)
@@ -105,8 +105,8 @@ module Make (State : State_intf.S) = struct
         | Some ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
-  let resolve_constant (const : Expressions.constant_expr) =
-    match const.value with
+  let rec resolve_constant (const : Expressions.constant_expr) =
+    match const.kind with
     | CLiteral (VScalar scalar) -> ok (Base (BV.of_scalar scalar))
     | CLiteral (VBool b) -> ok (Base (BV.of_bool (Typed.bool b)))
     | CLiteral (VChar c) -> ok (Base (BV.u32i (Uchar.to_int c)))
@@ -138,26 +138,28 @@ module Make (State : State_intf.S) = struct
     | CFnPtr fn_ptr -> ok (ConstFn fn_ptr)
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
-    | CTraitConst (tref, "IS_ZST") ->
-        let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
-        let^+ size = Layout.size_of_s ty in
-        Base (BV.of_bool (size ==@ Usize.(0s)))
-    | CTraitConst (tref, "LAYOUT") ->
-        let ty = List.hd tref.trait_decl_ref.binder_value.generics.types in
-        let^ size = Layout.size_of_s ty in
-        let^+ align = Layout.align_of_s ty in
-        (* The alignment is a struct storing a value of the enum AlignmentEnum, where the
-           discriminant's value for variant N is 1 << N. *)
-        Struct [ Base size; Struct [ Enum (align, []) ] ]
-    | CTraitConst (_, name) ->
-        Fmt.kstr not_impl "TODO: resolve const TraitConst (%s)" name
+    | CTraitConst (tref, name) -> (
+        match tref.kind with
+        | TraitImpl { id; _ } ->
+            let timpl = Crate.get_trait_impl id in
+            let _, global = List.find (fun (n, _) -> n = name) timpl.consts in
+            let* glob_ptr = resolve_global global in
+            let glob = Crate.get_global global.id in
+            State.load glob_ptr glob.ty
+        | Clause _ -> not_impl "TODO: TraitConst(Clause)"
+        | ParentClause _ -> not_impl "TODO: TraitConst(ParentClause)"
+        | ItemClause _ -> not_impl "TODO: TraitConst(ItemClause)"
+        | Self -> not_impl "TODO: TraitConst(Self)"
+        | BuiltinOrAuto _ -> not_impl "TODO: TraitConst(BuiltinOrAuto)"
+        | Dyn -> not_impl "TODO: TraitConst(Dyn)"
+        | UnknownTrait _ -> not_impl "TODO: TraitConst(UnknownTrait)")
     | CRawMemory bytes ->
         let value = List.map (fun x -> Base (BV.u8i x)) bytes in
         let value = Array value in
         let from_ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
         in
-        let^^+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
+        let$$+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
         value
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
@@ -166,12 +168,12 @@ module Make (State : State_intf.S) = struct
       rather than T.sptr Typed.t, to be able to handle fat pointers; however
       there is the guarantee that this function returns either a Base or a
       FatPointer value. *)
-  let rec resolve_place ({ kind; ty } : Expressions.place) : full_ptr t =
+  and resolve_place ({ kind; ty } : Expressions.place) : full_ptr t =
     match kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable v
     (* Just a global *)
-    | PlaceGlobal g -> resolve_global g.id
+    | PlaceGlobal g -> resolve_global g
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         let* ptr = resolve_place base in
@@ -194,6 +196,15 @@ module Make (State : State_intf.S) = struct
             let ptr = Sptr.null_ptr_of off in
             ok (ptr, None)
         | _ -> not_impl "Unexpected value when dereferencing place")
+    (* The metadata of a pointer type is just the second part of the pointer *)
+    | PlaceProjection (base, PtrMetadata) ->
+        let* ptr, _ = resolve_place base in
+        let^^+ ptr' =
+          Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
+            ptr
+            Usize.(1s)
+        in
+        (ptr', None)
     | PlaceProjection (base, Field (kind, field)) ->
         let* ptr, meta = resolve_place base in
         let* () = State.check_ptr_align ptr base.ty in
@@ -281,8 +292,8 @@ module Make (State : State_intf.S) = struct
   and resolve_function ~in_tys ~out_ty : GAst.fn_operand -> 'err fun_exec t =
     function
     (* For static calls we don't need to check types, that's what the type checker does. *)
-    | FnOpRegular { func = FunId (FRegular fid); _ }
-    | FnOpRegular { func = TraitMethod (_, _, fid); _ } -> (
+    | FnOpRegular { kind = FunId (FRegular fid); _ }
+    | FnOpRegular { kind = TraitMethod (_, _, fid); _ } -> (
         try
           let fundef = Crate.get_fun fid in
           L.info (fun g ->
@@ -292,7 +303,7 @@ module Make (State : State_intf.S) = struct
           | Some fn -> ok fn
           | None -> ok (exec_fun fundef)
         with Crate.MissingDecl _ -> not_impl "Missing function declaration")
-    | FnOpRegular { func = FunId (FBuiltin fn); generics } ->
+    | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics)
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
@@ -303,7 +314,7 @@ module Make (State : State_intf.S) = struct
         in
         let* fn = State.lookup_fn fn_ptr in
         let* () =
-          match fn.func with
+          match fn.kind with
           | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
               let fn = Crate.get_fun fid in
               let rec check_tys l r =
@@ -325,14 +336,14 @@ module Make (State : State_intf.S) = struct
         resolve_function ~in_tys ~out_ty fnop
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
-  and resolve_global (g : Types.global_decl_id) =
-    let decl = Crate.get_global g in
-    let* v_opt = State.load_global g in
+  and resolve_global ({ id; _ } : Types.global_decl_ref) =
+    let decl = Crate.get_global id in
+    let* v_opt = State.load_global id in
     match v_opt with
     | Some v -> ok v
     | None ->
         (* Same as with strings -- here we need to somehow cache where we store the globals *)
-        let fundef = Crate.get_fun decl.body in
+        let fundef = Crate.get_fun decl.init in
         L.info (fun g ->
             g "Resolved global init call to %a" Crate.pp_name
               fundef.item_meta.name);
@@ -343,7 +354,7 @@ module Make (State : State_intf.S) = struct
         in
         (* First we allocate the global and store it in the State  *)
         let* ptr = State.alloc_ty decl.ty in
-        let* () = State.store_global g ptr in
+        let* () = State.store_global id ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in
         let+ () = State.store ptr decl.ty v in
@@ -384,13 +395,19 @@ module Make (State : State_intf.S) = struct
     match expr with
     | Use op -> eval_operand op
     (* Reference *)
-    | RvRef (place, borrow) ->
+    | RvRef (place, borrow, _metadata) ->
         let* ptr = resolve_place place in
         let* ptr' = State.borrow ptr place.ty borrow in
-        let* is_valid = State.is_valid_ptr ptr' place.ty in
+        let* is_valid =
+          match ptr' with
+          (* FIXME: we don't support reads of symbolic slices lengths, so for now we
+             assume they are always valid. *)
+          | _, Some len when Option.is_none (BV.to_z len) -> ok true
+          | _ -> State.is_valid_ptr ptr' place.ty
+        in
         if is_valid then ok (Ptr ptr') else error `UBDanglingPointer
     (* Raw pointer *)
-    | RawPtr (place, _kind) ->
+    | RawPtr (place, _kind, _metadata) ->
         let+ ptr = resolve_place place in
         Ptr ptr
     | UnaryOp (op, e) -> (
@@ -417,19 +434,14 @@ module Make (State : State_intf.S) = struct
                 let v = as_base_f fty v in
                 ok (Base (Typed.Float.neg v))
             | _ -> not_impl "Invalid type for Neg")
-        | PtrMetadata -> (
-            match v with
-            | Ptr (_, None) | Base _ -> ok (Tuple [])
-            | Ptr (_, Some v) -> ok (Base v)
-            | _ -> not_impl "Invalid value for PtrMetadata")
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr_fn in
-            State.lift_err @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
+            State.with_decay_map_res
+            @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            let* verify_ptr = State.is_valid_ptr_fn in
-            State.lift_err
-            @@ Encoder.transmute ~verify_ptr ~from_ty:(TLiteral from_ty)
+            State.with_decay_map_res
+            @@ Encoder.transmute ~from_ty:(TLiteral from_ty)
                  ~to_ty:(TLiteral to_ty) v
         | Cast (CastUnsize (_, _, MetaVTablePtr _)) ->
             not_impl "Unsupported: dyn"
@@ -463,6 +475,8 @@ module Make (State : State_intf.S) = struct
             in
             let size = BV.usize_of_const_generic length in
             with_ptr_meta size v
+        | Cast (CastConcretize (_from, _to)) ->
+            not_impl "Unsupported: dyn (concretize)"
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
@@ -510,12 +524,12 @@ module Make (State : State_intf.S) = struct
                 | _ -> assert false)
             | Eq | Ne ->
                 let v1, v2, _ = Typed.cast_checked2 v1 v2 in
-                let^^+ res = Core.equality_check v1 v2 in
+                let$$+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else BV.not_bool res in
                 Base (res :> T.cval Typed.t)
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
-                let^^+ res = Core.eval_lit_binop op ty v1 v2 in
+                let$$+ res = Core.eval_lit_binop op ty v1 v2 in
                 Base res
             | AddChecked | SubChecked | MulChecked ->
                 let ty =
@@ -523,7 +537,8 @@ module Make (State : State_intf.S) = struct
                   | TLiteral ty -> ty
                   | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
                 in
-                State.lift_err @@ Core.eval_checked_lit_binop op ty v1 v2
+                State.with_decay_map_res
+                @@ Core.eval_checked_lit_binop op ty v1 v2
             | Cmp ->
                 let v1, v2, ty = Typed.cast_checked2 v1 v2 in
                 if Typed.equal_ty ty (Typed.t_ptr ()) then
@@ -531,7 +546,7 @@ module Make (State : State_intf.S) = struct
                 else
                   let ty = type_of_operand e1 in
                   let ty = TypesUtils.ty_as_literal ty in
-                  let^+ cmp = Core.cmp ~signed:(Layout.is_signed ty) v1 v2 in
+                  let$+ cmp = Core.cmp ~signed:(Layout.is_signed ty) v1 v2 in
                   Base cmp
             | Offset ->
                 (* non-zero offset on integer pointer is not permitted, as these are always
@@ -569,7 +584,7 @@ module Make (State : State_intf.S) = struct
                 let^^+ p' = Sptr.offset ~signed ~ty p v in
                 Ptr (p', meta)
             | _ ->
-                let^^+ res = Core.eval_ptr_binop op p1 p2 in
+                let$$+ res = Core.eval_ptr_binop op p1 p2 in
                 Base res)
         | v1, v2 ->
             Fmt.kstr not_impl
@@ -588,9 +603,44 @@ module Make (State : State_intf.S) = struct
         | AlignOf ->
             let^+ align = Layout.align_of_s ty in
             Base align
-        | OffsetOf _ ->
-            Fmt.kstr not_impl "Unsupported nullary operator: %a"
-              Expressions.pp_nullop op)
+        | OffsetOf fields ->
+            let+ _, offset =
+              fold_list fields
+                ~init:(ty, Usize.(0s))
+                ~f:(fun (ty, off) (variant, field) ->
+                  let variant = Types.VariantId.of_int variant in
+                  let field = Types.FieldId.to_int field in
+
+                  let layout = Layout.layout_of ty in
+                  let fields =
+                    Layout.Fields_shape.shape_for_variant variant layout.fields
+                  in
+                  let inner_off = Layout.Fields_shape.offset_of field fields in
+                  let off = off +!@ BV.usizei inner_off in
+
+                  let sub_ty =
+                    match ty with
+                    | TAdt { id = TAdtId t_id; _ } -> (
+                        let type_decl = Crate.get_adt t_id in
+                        match type_decl.kind with
+                        | Enum vars ->
+                            let variant = Types.VariantId.nth vars variant in
+                            let field = List.nth variant.fields field in
+                            field.field_ty
+                        | Struct fields | Union fields ->
+                            let field = List.nth fields field in
+                            field.field_ty
+                        | Opaque | Alias _ | TDeclError _ ->
+                            failwith "OffsetOf on opaque/alias")
+                    | TAdt { id = TTuple; generics = { types; _ } } ->
+                        List.nth types field
+                    | _ ->
+                        Fmt.failwith "OffsetOf: unexpected ADT type: %a" pp_ty
+                          ty
+                  in
+                  ok (sub_ty, off))
+            in
+            Base (offset :> T.cval Typed.t))
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with
@@ -598,7 +648,7 @@ module Make (State : State_intf.S) = struct
             let variants = Crate.as_enum enum in
             let+ variant_id = State.load_discriminant loc place.ty in
             let variant = Types.VariantId.nth variants variant_id in
-            Base (BV.of_scalar variant.discriminant)
+            Base (BV.of_literal variant.discriminant)
         (* If a type doesn't have variants, return 0.
            https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
         | _ -> ok (Base U8.(0s)))
@@ -607,7 +657,7 @@ module Make (State : State_intf.S) = struct
       ->
         let variants = Crate.as_enum t_id in
         let variant = Types.VariantId.nth variants v_id in
-        let discr = BV.of_scalar variant.discriminant in
+        let discr = BV.of_literal variant.discriminant in
         let+ vals = eval_operand_list vals in
         Enum (discr, vals)
     (* Union aggregate *)
@@ -694,8 +744,8 @@ module Make (State : State_intf.S) = struct
   and exec_stmt stmt : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
     L.trace (fun m ->
-        m "Statement full:@.%a" UllbcAst.pp_raw_statement stmt.content);
-    let { span = loc; content = stmt; _ } : UllbcAst.statement = stmt in
+        m "Statement full:@.%a" UllbcAst.pp_statement_kind stmt.kind);
+    let { span = loc; kind = stmt; _ } : UllbcAst.statement = stmt in
     let@ () = with_loc ~loc in
     match stmt with
     | Nop -> ok ()
@@ -718,7 +768,7 @@ module Make (State : State_intf.S) = struct
         | None -> ok ())
     | Drop (place, trait_ref) -> (
         let* place_ptr = resolve_place place in
-        if not !Config.current.monomorphize_experimental then
+        if !Config.current.monomorphize_old then
           let* () =
             match place.ty with
             | TAdt { id = TAdtId id; _ } -> (
@@ -737,7 +787,7 @@ module Make (State : State_intf.S) = struct
           in
           State.uninit place_ptr place.ty
         else
-          match trait_ref.trait_id with
+          match trait_ref.kind with
           | TraitImpl impl_ref ->
               let impl = Crate.get_trait_impl impl_ref.id in
               (* The Drop trait will only have the drop function *)
@@ -791,7 +841,7 @@ module Make (State : State_intf.S) = struct
     let^ () = Rustsymex.consume_fuel_steps 1 in
     let* () = fold_list statements ~init:() ~f:(fun () -> exec_stmt) in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
-    let { span = loc; content = term; _ } : UllbcAst.terminator = terminator in
+    let { span = loc; kind = term; _ } : UllbcAst.terminator = terminator in
     let@ () = with_loc ~loc in
     match term with
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
@@ -867,7 +917,7 @@ module Make (State : State_intf.S) = struct
             L.info (fun g ->
                 let options =
                   List.map
-                    (fun (v, b) -> (PrintValues.scalar_value_to_string v, b))
+                    (fun (v, b) -> (PrintValues.literal_to_string v, b))
                     options
                 in
                 g "Switch options %a (else %a) for %a"
@@ -877,10 +927,10 @@ module Make (State : State_intf.S) = struct
                   options UllbcAst.pp_block_id default pp_rust_val discr);
             let compare_discr =
               match discr with
-              | Base discr -> fun (v, _) -> discr ==@ BV.of_scalar v
+              | Base discr -> fun (v, _) -> discr ==@ BV.of_literal v
               | Ptr (ptr, _) ->
                   fun (v, _) ->
-                    if Z.equal Z.zero (z_of_scalar v) then
+                    if Z.equal Z.zero (z_of_literal v) then
                       Sptr.is_at_null_loc ptr
                     else failwith "Can't compare pointer with non-0 scalar"
               | _ ->
@@ -889,7 +939,7 @@ module Make (State : State_intf.S) = struct
                       "Didn't know how to compare discriminant %a with scalar \
                        %s"
                       pp_rust_val discr
-                      (PrintValues.scalar_value_to_string v)
+                      (PrintValues.literal_to_string v)
             in
             let^ block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in

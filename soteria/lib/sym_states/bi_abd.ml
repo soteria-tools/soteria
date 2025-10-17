@@ -1,7 +1,7 @@
 open Logs.Import
 open Symex.Compo_res
 
-module Make (Symex : Symex.S) = struct
+module Make (Symex : Symex.Base) = struct
   (** This is unsound in {!Approx.OX}-mode, use only in {!Approx.UX}-mode. *)
 
   open Symex

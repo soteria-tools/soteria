@@ -36,7 +36,7 @@ module M (State : State_intf.S) = struct
   let checked_op op ~t ~x ~y : rust_val ret =
     let t = TypesUtils.ty_as_literal t in
     let x, y = (as_base t x, as_base t y) in
-    State.lift_err @@ Core.eval_checked_lit_binop op t x y
+    State.with_decay_map_res @@ Core.eval_checked_lit_binop op t x y
 
   let add_with_overflow = checked_op (Add OUB)
   let sub_with_overflow = checked_op (Sub OUB)
@@ -96,7 +96,7 @@ module M (State : State_intf.S) = struct
       ~_catch_fn:catch_fn_ptr =
     let[@inline] get_fn ptr =
       let+ fn_ptr = State.lookup_fn ptr in
-      match fn_ptr.func with
+      match fn_ptr.kind with
       | FunId (FRegular fid) -> Crate.get_fun fid
       | TraitMethod (_, _, fid) -> Crate.get_fun fid
       | FunId (FBuiltin _) -> failwith "Can't have function pointer to builtin"
@@ -165,8 +165,8 @@ module M (State : State_intf.S) = struct
   let check_overlap name l r size =
     let^^ l_end = Sptr.offset ~signed:false l size in
     let^^ r_end = Sptr.offset ~signed:false r size in
-    let^ dist1 = Sptr.distance l r_end in
-    let^ dist2 = Sptr.distance r l_end in
+    let$ dist1 = Sptr.distance l r_end in
+    let$ dist2 = Sptr.distance r l_end in
     let zero = Usize.(0s) in
     State.assert_not
       (Sptr.is_same_loc l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
@@ -178,7 +178,7 @@ module M (State : State_intf.S) = struct
     let* () = State.check_ptr_align src t in
     let* () = State.check_ptr_align dst t in
     let^ ty_size = Layout.size_of_s t in
-    if%sat ty_size ==@ zero then ok ()
+    if%sat ty_size ==@ zero ||@ (count ==@ zero) then ok ()
     else
       let* () =
         State.assert_not
@@ -232,9 +232,7 @@ module M (State : State_intf.S) = struct
     let bits = 8 * Layout.size_of_literal_ty t in
     let x = as_base t x in
     let res =
-      match Typed.kind x with
-      | BitVec x -> concrete bits x
-      | _ -> symbolic bits x
+      match BV.to_z x with Some z -> concrete bits z | None -> symbolic bits x
     in
     ok res
 
@@ -323,7 +321,7 @@ module M (State : State_intf.S) = struct
     | Enum variants ->
         let+ variant_id = State.load_discriminant v t in
         let variant = Types.VariantId.nth variants variant_id in
-        Base (BV.of_scalar variant.discriminant)
+        Base (BV.of_literal variant.discriminant)
     | _ ->
         (* FIXME: this size is probably wrong *)
         ok (Base U8.(0s))
@@ -342,7 +340,7 @@ module M (State : State_intf.S) = struct
     let lit = TypesUtils.ty_as_literal t in
     let x, y = (as_base lit x, as_base lit y) in
     let x, y, ty = Typed.cast_checked2 x y in
-    let^^ res = Core.eval_lit_binop (Div OUB) lit x y in
+    let$$ res = Core.eval_lit_binop (Div OUB) lit x y in
     if Typed.is_float ty then ok (Base res)
     else
       let zero = BV.mki_lit lit 0 in
@@ -412,7 +410,7 @@ module M (State : State_intf.S) = struct
         (min <.@ f &&@ (f <.@ max))
         (`StdErr "float_to_int_unchecked out of int range")
     in
-    Base (BV.of_float ~signed ~size f)
+    Base (BV.of_float ~rounding:Truncate ~signed ~size f)
 
   let fmul_add ~a ~b ~c = ok ((a *.@ b) +.@ c)
   let fmaf16 = fmul_add
@@ -452,8 +450,7 @@ module M (State : State_intf.S) = struct
   let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
 
   let ptr_guaranteed_cmp ~t:_ ~ptr ~other =
-    let^^+ res = Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other) in
-    Typed.cast res
+    State.with_decay_map_res @@ Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other)
 
   let ptr_offset_from_ ~unsigned ~t ~ptr:((ptr, _) : full_ptr)
       ~base:((base, _) : full_ptr) : T.sint Typed.t ret =
@@ -464,7 +461,7 @@ module M (State : State_intf.S) = struct
         (`Panic (Some "ptr_offset_from with ZST"))
     in
     let size = Typed.cast size in
-    let^ off = Sptr.distance ptr base in
+    let$ off = Sptr.distance ptr base in
     (* If the pointers are not equal, they mustn't be dangling *)
     let* () =
       State.assert_
@@ -555,7 +552,7 @@ module M (State : State_intf.S) = struct
 
   let transmute ~t_src ~dst ~src =
     let* verify_ptr = State.is_valid_ptr_fn in
-    State.lift_err
+    State.with_decay_map_res
     @@ Encoder.transmute ~verify_ptr ~from_ty:t_src ~to_ty:dst src
 
   let type_id ~t =
@@ -588,7 +585,7 @@ module M (State : State_intf.S) = struct
   let unchecked_op op ~t ~x ~y : rust_val ret =
     let t = TypesUtils.ty_as_literal t in
     let x, y = (as_base t x, as_base t y) in
-    let^^+ res = Core.eval_lit_binop op t x y in
+    let$$+ res = Core.eval_lit_binop op t x y in
     Base res
 
   let unchecked_add = unchecked_op (Add OUB)
@@ -609,7 +606,7 @@ module M (State : State_intf.S) = struct
   let wrapping_op op ~t ~a ~b : rust_val ret =
     let ity = TypesUtils.ty_as_literal t in
     let a, b = (as_base ity a, as_base ity b) in
-    let^^+ res = Core.eval_lit_binop op ity a b in
+    let$$+ res = Core.eval_lit_binop op ity a b in
     Base res
 
   let wrapping_add = wrapping_op (Add OWrap)
@@ -628,8 +625,8 @@ module M (State : State_intf.S) = struct
       let val_ : [> T.sint ] Typed.t = Typed.cast val_ in
       if%sure val_ ==@ U8.(0s) then State.zeros dst size
       else
-        match Typed.kind size with
-        | BitVec bytes ->
+        match BV.to_z size with
+        | Some bytes ->
             fold_iter
               Iter.(0 -- (Z.to_int bytes - 1))
               ~init:()
@@ -637,5 +634,6 @@ module M (State : State_intf.S) = struct
                 let off = BV.usizei i in
                 let^^ ptr = Sptr.offset ~signed:false ptr off in
                 State.store (ptr, None) (TLiteral (TUInt U8)) (Base val_))
-        | _ -> failwith "write_bytes: don't know how to handle symbolic sizes"
+        | None ->
+            not_impl "write_bytes: don't know how to handle symbolic sizes"
 end

@@ -77,7 +77,7 @@ let as_base_f ty = function
         ppa_rust_val v
 
 let as_base ty = function
-  | Enum (v, []) | Base v -> Typed.cast_lit ty v
+  | Base v -> Typed.cast_lit ty v
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         ppa_rust_val v

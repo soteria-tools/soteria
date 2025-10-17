@@ -28,7 +28,7 @@ module FloatClass = struct
     | NaN -> FP_nan
 end
 
-module FloatRoundingMode = struct
+module RoundingMode = struct
   type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
   [@@deriving eq, show { with_path = false }, ord]
 end
@@ -78,8 +78,9 @@ module Unop = struct
     | GetPtrLoc
     | GetPtrOfs
     | BvOfBool of int (* target bitvec size *)
-    | BvOfFloat of bool * int (* signed * target bitvec size *)
-    | FloatOfBv of bool * FloatPrecision.t (* signed * precision *)
+    | BvOfFloat of RoundingMode.t * bool * int (* signed * target bitvec size *)
+    | FloatOfBv of
+        RoundingMode.t * bool * FloatPrecision.t (* signed * precision *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
@@ -87,7 +88,7 @@ module Unop = struct
     | NegOvf
     | FAbs
     | FIs of FloatClass.t
-    | FRound of FloatRoundingMode.t
+    | FRound of RoundingMode.t
   [@@deriving eq, ord]
 
   let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
@@ -98,16 +99,18 @@ module Unop = struct
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
     | BvOfBool n -> Fmt.pf ft "b2bv[%d]" n
-    | BvOfFloat (signed, n) -> Fmt.pf ft "f2%abv[%d]" pp_signed signed n
-    | FloatOfBv (signed, p) ->
-        Fmt.pf ft "%abv2f[%a]" pp_signed signed FloatPrecision.pp p
+    | BvOfFloat (rm, signed, n) ->
+        Fmt.pf ft "f2%abv[%a,%d]" pp_signed signed RoundingMode.pp rm n
+    | FloatOfBv (rm, signed, p) ->
+        Fmt.pf ft "%abv2f[%a,%a]" pp_signed signed RoundingMode.pp rm
+          FloatPrecision.pp p
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
     | Neg -> Fmt.string ft "-"
     | NegOvf -> Fmt.string ft "-ovf"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
-    | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
+    | FRound mode -> Fmt.pf ft "fround(%a)" RoundingMode.pp mode
 end
 
 module Binop = struct
@@ -130,7 +133,7 @@ module Binop = struct
     (* BitVector arithmetic *)
     | Add
     | Sub
-    | Mul
+    | Mul of bool (* was overflow checked? for optimisations only *)
     | Div of bool (* signed *)
     | Rem of bool (* signed *)
     | Mod
@@ -164,7 +167,7 @@ module Binop = struct
     | FRem -> Fmt.string ft "rem."
     | Add -> Fmt.string ft "+"
     | Sub -> Fmt.string ft "-"
-    | Mul -> Fmt.string ft "*"
+    | Mul c -> Fmt.pf ft "*%s" (if c then "_checked" else "")
     | Div s -> Fmt.pf ft "/%a" pp_signed s
     | Rem s -> Fmt.pf ft "rem%a" pp_signed s
     | Mod -> Fmt.string ft "mod"
@@ -373,11 +376,12 @@ module type BitVec = sig
   val zero : int -> t
   val one : int -> t
   val bv_to_z : bool -> int -> Z.t -> Z.t
+  val to_z : t -> Z.t option
 
   (* arithmetic *)
   val add : t -> t -> t
   val sub : t -> t -> t
-  val mul : t -> t -> t
+  val mul : ?checked:bool -> t -> t -> t
   val div : signed:bool -> t -> t -> t
   val rem : signed:bool -> t -> t -> t
   val mod_ : t -> t -> t
@@ -415,8 +419,10 @@ module type BitVec = sig
   val not_bool : t -> t
 
   (* float-bv conversions *)
-  val of_float : signed:bool -> size:int -> t -> t
-  val to_float : signed:bool -> fp:FloatPrecision.t -> t -> t
+  val of_float : rounding:RoundingMode.t -> signed:bool -> size:int -> t -> t
+
+  val to_float :
+    rounding:RoundingMode.t -> signed:bool -> fp:FloatPrecision.t -> t -> t
 end
 
 module type Float = sig
@@ -437,7 +443,7 @@ module type Float = sig
   val rem : t -> t -> t
   val abs : t -> t
   val neg : t -> t
-  val round : FloatRoundingMode.t -> t -> t
+  val round : RoundingMode.t -> t -> t
 
   (* comparisons *)
   val eq : t -> t -> t
@@ -476,6 +482,12 @@ module rec Bool : Bool = struct
     | Bool false, _ | _, Bool false -> v_false
     | Bool true, _ -> v2
     | _, Bool true -> v1
+    | Binop (Eq, l1, r1), Binop (Eq, l2, r2)
+      when (equal l1 l2 && sure_neq r1 r2)
+           || (equal l1 r2 && sure_neq r1 l2)
+           || (equal r1 l2 && sure_neq l1 r2)
+           || (equal r1 r2 && sure_neq l1 l2) ->
+        v_false
     | _ -> mk_commut_binop And v1 v2 <| TBool
 
   let or_ v1 v2 =
@@ -561,6 +573,31 @@ module rec Bool : Bool = struct
         sem_eq (BitVec.add v2 r) l
     | Binop (Sub, ({ node = { kind = BitVec _; _ }; _ } as l), r), BitVec _ ->
         sem_eq (BitVec.sub l v2) r
+    | BitVec n, Binop (Mul true, { node = { kind = BitVec m; _ }; _ }, x)
+    | BitVec n, Binop (Mul true, x, { node = { kind = BitVec m; _ }; _ })
+    | Binop (Mul true, { node = { kind = BitVec m; _ }; _ }, x), BitVec n
+    | Binop (Mul true, x, { node = { kind = BitVec m; _ }; _ }), BitVec n ->
+        if Z.(equal m zero) then bool (Z.equal n Z.zero)
+        else if Z.(equal n zero) then sem_eq x (BitVec.zero (size_of x.node.ty))
+        else if Z.(divisible n m) then
+          sem_eq x (BitVec.mk (size_of x.node.ty) Z.(n / m))
+        else v_false
+    | ( Binop (Mul _, { node = { kind = BitVec a; _ }; _ }, b),
+        Binop (Mul _, { node = { kind = BitVec c; _ }; _ }, d) )
+      when Z.(equal a c && Stdlib.not (equal a zero)) ->
+        sem_eq b d
+    | ( Binop (Mul _, b, { node = { kind = BitVec a; _ }; _ }),
+        Binop (Mul _, d, { node = { kind = BitVec c; _ }; _ }) )
+      when Z.(equal a c && Stdlib.not (equal a zero)) ->
+        sem_eq b d
+    | ( Binop (Mul _, { node = { kind = BitVec a; _ }; _ }, b),
+        Binop (Mul _, d, { node = { kind = BitVec c; _ }; _ }) )
+      when Z.(equal a c && Stdlib.not (equal a zero)) ->
+        sem_eq b d
+    | ( Binop (Mul _, b, { node = { kind = BitVec a; _ }; _ }),
+        Binop (Mul _, { node = { kind = BitVec c; _ }; _ }, d) )
+      when Z.(equal a c && Stdlib.not (equal a zero)) ->
+        sem_eq b d
     (* Bitvectors *)
     | (BitVec _ as z), Binop (BvConcat, l, r)
     | Binop (BvConcat, l, r), (BitVec _ as z) ->
@@ -645,6 +682,8 @@ and BitVec : BitVec = struct
       if Z.leq z max then z else Z.(z - (one lsl bits))
     else z
 
+  let to_z v = match v.node.kind with BitVec z -> Some z | _ -> None
+
   (** [max_for signed n] is the inclusive maximum for a bitvector of size [n]
       when it is [signed] *)
   let max_for signed n =
@@ -669,6 +708,10 @@ and BitVec : BitVec = struct
   let covers_bitwidth bits z = is_right_mask z && right_mask_size z = bits
 
   let is_pow2 z = Z.(gt z zero && popcount z = 1)
+
+  (** [lsb z] returns the least significant bit of z that is set, or 128 if z is
+      0. *)
+  let lsb z = if Z.equal z Z.zero then 128 else Z.(logand z (neg z) |> log2)
 
   let of_bool n b =
     if equal Bool.v_true b then one n
@@ -701,6 +744,15 @@ and BitVec : BitVec = struct
     | Binop (Add, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
     | Binop (Add, r, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _ ->
         add (add c1 v2) r
+    | _, Binop (Sub, l, r) when equal r v1 -> l
+    | Binop (Sub, l, r), _ when equal r v2 -> l
+    | Binop (Mul _, l1, r1), Binop (Mul _, l2, r2)
+      when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
+        (* FIXME: remove true; this is not actually checked, this would rather depend on
+           if the addition is checked (which we dont track) *)
+        if equal l1 l2 || equal l1 r2 then
+          Binop (Mul true, l1, add r1 r2) <| v1.node.ty
+        else Binop (Mul true, r1, add l1 l2) <| v1.node.ty
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
         let n = size_of v1.node.ty in
@@ -719,6 +771,12 @@ and BitVec : BitVec = struct
         sub (sub c1 v2) s
     | Binop (Sub, s, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _ ->
         sub s (add c1 v2)
+    | BitVec _, Binop (Add, ({ node = { kind = BitVec _; _ }; _ } as r), c)
+    | BitVec _, Binop (Add, c, ({ node = { kind = BitVec _; _ }; _ } as r)) ->
+        sub (sub v1 r) c
+    | Binop (Add, ({ node = { kind = BitVec _; _ }; _ } as r), c), BitVec _
+    | Binop (Add, c, ({ node = { kind = BitVec _; _ }; _ } as r)), BitVec _ ->
+        add c (sub r v2)
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
     | BitVec _, Ite (b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
@@ -738,31 +796,6 @@ and BitVec : BitVec = struct
     | Ite (b, l, r) -> Bool.ite b (neg l) (neg r)
     | Unop (BvOfBool n, b) -> Bool.ite b (neg (one n)) (zero n)
     | _ -> Unop (Neg, v) <| v.node.ty
-
-  let rec mul v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l * r)
-    | _, BitVec z when Z.equal z Z.one -> v1
-    | BitVec z, _ when Z.equal z Z.one -> v2
-    | _, BitVec z when Z.equal z Z.zero -> zero (size_of v1.node.ty)
-    | BitVec z, _ when Z.equal z Z.zero -> zero (size_of v1.node.ty)
-    (* only propagate down ites if we know it's concrete *)
-    | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
-        let n = size_of v1.node.ty in
-        let x = mk n x in
-        Bool.ite b (mul l x) (mul r x)
-    | _ -> mk_commut_binop Mul v1 v2 <| v1.node.ty
-
-  let div ~signed v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r ->
-        let size = size_of v1.node.ty in
-        let l = bv_to_z signed size l in
-        let r = bv_to_z signed size r in
-        let res = Z.(l / r) in
-        mk_masked size res
-    | _, BitVec r when Z.equal r Z.one -> v1
-    | _ -> Binop (Div signed, v1, v2) <| v1.node.ty
 
   (** [mod_ v1 v2] is the signed remainder of [v1 / v2], which takes the sign of
       the divisor [v2] if [signed]. For an unsigned version, use
@@ -953,6 +986,13 @@ and BitVec : BitVec = struct
           let r' = extract from_ (size_r - 1) r in
           let l' = extract 0 (to_ - size_r) l in
           concat l' r'
+    | Binop (Add, { node = { kind = BitVec n; _ }; _ }, x) when to_ < lsb n ->
+        extract from_ to_ x
+    | Binop (Add, x, { node = { kind = BitVec n; _ }; _ }) when to_ < lsb n ->
+        extract from_ to_ x
+    | Binop (Mul _, { node = { kind = BitVec n; _ }; _ }, _)
+      when is_pow2 n && to_ < Z.log2 n ->
+        zero size
     | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
 
   and extend ~signed extend_by v =
@@ -1035,6 +1075,55 @@ and BitVec : BitVec = struct
         lshr v (mk n Z.(s1 + s2))
     | _ -> Binop (AShr, v1, v2) <| v1.node.ty
 
+  let rec mul ?(checked = false) v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l * r)
+    | _, BitVec z when Z.equal z Z.one -> v1
+    | BitVec z, _ when Z.equal z Z.one -> v2
+    | _, BitVec z when Z.equal z Z.zero -> zero (size_of v1.node.ty)
+    | BitVec z, _ when Z.equal z Z.zero -> zero (size_of v1.node.ty)
+    | Binop (Mul true, { node = { kind = BitVec n; _ }; _ }, x), BitVec m
+    | Binop (Mul true, x, { node = { kind = BitVec n; _ }; _ }), BitVec m
+    | BitVec m, Binop (Mul true, { node = { kind = BitVec n; _ }; _ }, x)
+    | BitVec m, Binop (Mul true, x, { node = { kind = BitVec n; _ }; _ })
+      when checked ->
+        mul ~checked:true x (mk (size_of v1.node.ty) Z.(n * m))
+    (* only propagate down ites if we know it's concrete *)
+    | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+        let n = size_of v1.node.ty in
+        let x = mk n x in
+        Bool.ite b (mul l x) (mul r x)
+    | _ -> mk_commut_binop (Mul checked) v1 v2 <| v1.node.ty
+
+  let rec div ~signed v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | BitVec l, BitVec r ->
+        let size = size_of v1.node.ty in
+        let l = bv_to_z signed size l in
+        let r = bv_to_z signed size r in
+        let res = Z.(l / r) in
+        mk_masked size res
+    | _, BitVec r when Z.equal r Z.one -> v1
+    (* this case shouldn't happen but it avoids conflicts for the next two patterns *)
+    | ( Binop
+          ( Mul checked,
+            ({ node = { kind = BitVec _; _ }; _ } as l),
+            ({ node = { kind = BitVec _; _ }; _ } as r) ),
+        BitVec _ ) ->
+        div ~signed (mul ~checked l r) v2
+    | Binop (Mul true, { node = { kind = BitVec n; _ }; _ }, x), BitVec d
+    | Binop (Mul true, x, { node = { kind = BitVec n; _ }; _ }), BitVec d
+      when Stdlib.not signed && Z.(divisible n d) ->
+        (* (x * n) / d = x * (n / d) when n % d == 0 *)
+        mul ~checked:true x (mk (size_of v1.node.ty) Z.(n / d))
+    | Binop (Mul true, { node = { kind = BitVec n; _ }; _ }, x), BitVec d
+    | Binop (Mul true, x, { node = { kind = BitVec n; _ }; _ }), BitVec d
+      when Stdlib.not signed && Z.(divisible d n) ->
+        (* (x * n) / d = x / (d / n) when d % n == 0 *)
+        let divisor = Z.(d / n) in
+        div ~signed x (mk (size_of v1.node.ty) divisor)
+    | _ -> Binop (Div signed, v1, v2) <| v1.node.ty
+
   let rec lt ~signed v1 v2 =
     let bits = size_of v1.node.ty in
     match (v1.node.kind, v2.node.kind) with
@@ -1047,10 +1136,6 @@ and BitVec : BitVec = struct
         (* signed x < 0 is checking the sign bit *)
         let sign_bit = extract (bits - 1) (bits - 1) v1 in
         Bool.sem_eq sign_bit (one 1)
-    | BitVec x, _ when signed && Z.equal x Z.zero ->
-        (* signed 0 < x is checking the sign bit of x is not set *)
-        let sign_bit = extract (bits - 1) (bits - 1) v2 in
-        Bool.sem_eq sign_bit (zero 1)
     | BitVec x, _ when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.v_false
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (min_for signed bits) ->
@@ -1059,6 +1144,20 @@ and BitVec : BitVec = struct
         Bool.not (Bool.sem_eq v1 v2)
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.not (Bool.sem_eq v1 v2)
+    | BitVec _, Binop (Mul true, z, ({ node = { kind = BitVec _; _ }; _ } as y))
+    | BitVec _, Binop (Mul true, ({ node = { kind = BitVec _; _ }; _ } as y), z)
+      ->
+        lt ~signed (div ~signed v1 y) z
+    | Binop (Mul true, z, ({ node = { kind = BitVec _; _ }; _ } as y)), BitVec _
+    | Binop (Mul true, ({ node = { kind = BitVec _; _ }; _ } as y), z), BitVec _
+      ->
+        lt ~signed z (div ~signed v2 y)
+    | Binop (Mul true, l1, r1), Binop (Mul true, l2, r2)
+      when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
+        if equal l1 l2 then lt ~signed r1 r2
+        else if equal l1 r2 then lt ~signed r1 l2
+        else if equal r1 l2 then lt ~signed l1 r2
+        else lt ~signed l1 l2
     (* x < ite(b, 1, 0) => ite(b, x < 1, x < 0) => ite(b, x = 0, false) => b && x = 0 *)
     | _, Unop (BvOfBool n, b) when Stdlib.not signed ->
         Bool.and_ b (Bool.sem_eq v1 (zero n))
@@ -1066,15 +1165,30 @@ and BitVec : BitVec = struct
     | _, Ite (b, l, r) -> Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
     | _ -> Binop (Lt signed, v1, v2) <| TBool
 
-  let leq ~signed v1 v2 =
+  let rec leq ~signed v1 v2 =
     let bits = size_of v1.node.ty in
     match (v1.node.kind, v2.node.kind) with
+    | _ when equal v1 v2 -> Bool.v_true
     | BitVec l, BitVec r ->
         Bool.bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
     | BitVec x, _ when Z.equal (bv_to_z signed bits x) (min_for signed bits) ->
         Bool.v_true
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.v_true
+    | BitVec _, Binop (Mul true, z, ({ node = { kind = BitVec _; _ }; _ } as y))
+    | BitVec _, Binop (Mul true, ({ node = { kind = BitVec _; _ }; _ } as y), z)
+      ->
+        leq ~signed (div ~signed v1 y) z
+    | Binop (Mul true, z, ({ node = { kind = BitVec _; _ }; _ } as y)), BitVec _
+    | Binop (Mul true, ({ node = { kind = BitVec _; _ }; _ } as y), z), BitVec _
+      ->
+        leq ~signed z (div ~signed v2 y)
+    | Binop (Mul true, l1, r1), Binop (Mul true, l2, r2)
+      when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
+        if equal l1 l2 then leq ~signed r1 r2
+        else if equal l1 r2 then leq ~signed r1 l2
+        else if equal r1 l2 then leq ~signed l1 r2
+        else leq ~signed l1 l2
     | _ -> Binop (Leq signed, v1, v2) <| TBool
 
   let gt ~signed v1 v2 = lt ~signed v2 v1
@@ -1117,16 +1231,17 @@ and BitVec : BitVec = struct
       let add_ovf = add_overflows ~signed v1 neg_v2 in
       Bool.or_ neg_ovf add_ovf
 
-  let of_float ~signed ~size v =
+  let of_float ~rounding ~signed ~size v =
     let p = precision_of_f v.node.ty in
     match (p, v.node.kind, size) with
     | F32, Float f, 32 ->
         mk 32 @@ Z.of_int32 (Int32.bits_of_float (Stdlib.Float.of_string f))
     | F64, Float f, 64 ->
         mk 64 @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
-    | _, _, _ -> Unop (BvOfFloat (signed, size), v) <| t_bv size
+    | _, _, _ -> Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size
 
-  let to_float ~signed ~fp v = Unop (FloatOfBv (signed, fp), v) <| t_f fp
+  let to_float ~rounding ~signed ~fp v =
+    Unop (FloatOfBv (rounding, signed, fp), v) <| t_f fp
 end
 
 (** {2 Floating point} *)
@@ -1253,7 +1368,7 @@ module Infix = struct
   let ( +@ ) = BitVec.add
   let ( -@ ) = BitVec.sub
   let ( ~- ) = BitVec.neg
-  let ( *@ ) = BitVec.mul
+  let ( *@ ) = BitVec.mul ~checked:false
   let ( /@ ) = BitVec.div ~signed:false
   let ( /$@ ) = BitVec.div ~signed:true
   let ( %@ ) = BitVec.rem ~signed:false

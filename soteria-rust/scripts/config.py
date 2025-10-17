@@ -26,6 +26,8 @@ KANI_EXCLUSIONS = [
     "/AsyncAwait/",
     "/Quantifiers/",
     "/FunctionContracts/",
+    "/UnsizedCoercion/defs.rs",
+    "fixme",
 ]
 
 MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
@@ -102,9 +104,9 @@ def kani(opts: CliOpts) -> TestConfig:
     )
 
     if opts["tool"] == "Kani":
-        args = ["-Zmiri-ignore-leaks"]
+        args = []
     elif opts["tool"] == "Miri":
-        args = ["--test"]
+        args = ["--test", "-Zmiri-ignore-leaks"]
     elif opts["tool"] == "Rusteria":
         args = ["--ignore-leaks", "--kani"]
     else:

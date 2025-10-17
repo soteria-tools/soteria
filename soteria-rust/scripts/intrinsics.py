@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
-from ast import Add
 import subprocess
 import json
-from typing import Any, Generic, Sequence, TypeVar, TypedDict, assert_never, Literal
+from typing import Any, Generic, Sequence, TypeVar, TypedDict, Literal
 from common import *
 
 
@@ -218,9 +217,9 @@ def output_type_cast(ty: InterpType) -> tuple[str, str]:
 def get_intrinsics() -> dict[str, FunDecl]:
     file_json = (PWD / "intrinsics.ullbc.temp").resolve()
     if "--cached" in sys.argv:
-        pprint(f"Using cached intrinsics", inc=True)
+        pprint("Using cached intrinsics")
     else:
-        pprint(f"Loading intrinsics...", inc=True)
+        pprint("Loading intrinsics...")
         file_rs = (PWD / "intrinsics.rs").resolve()
         with open(file_rs, "w") as f:
             f.write(
@@ -250,7 +249,7 @@ def get_intrinsics() -> dict[str, FunDecl]:
         # for now, we ignore intrinsics in submodules (mir, simd, fallbacks)
         and len(fun["item_meta"]["name"]) == 3
     }
-    pprint(f"Found {BOLD}{len(intrinsics)}{RESET} intrinsics", inc=True)
+    pprint(f"Found {BOLD}{len(intrinsics)}{RESET} intrinsics")
     return intrinsics
 
 
@@ -265,7 +264,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         types: list[str]
         ret: InterpType
 
-    pprint(f"Generating OCaml interface and stubs...", inc=True)
+    pprint("Generating OCaml interface and stubs...")
 
     def sanitize_comment(comment: str) -> str:
         return "{@markdown[\n" + comment.replace("(*", "( *").strip() + "\n]}"
@@ -304,7 +303,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         types = [
             (
                 param_l
-                if not (param_l := param["name"].lower()) in arg_names
+                if (param_l := param["name"].lower()) not in arg_names
                 else "t_" + param_l
             )
             for param in fun["signature"]["generics"]["types"]
@@ -380,7 +379,6 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
     """
 
     for info in intrinsics_info:
-        nl = "\n"
         args_and_tys: Sequence[tuple[Optional[str], InterpType]] = []
 
         # special-case catch_unwind; it needs to also received the function-execution function
@@ -410,7 +408,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         end
     """
 
-    stubs_str += f"""
+    stubs_str += """
             include Intrinsics_impl.M (State)
 
             let eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
@@ -464,9 +462,8 @@ def write_ocaml_file(filename: Path, content: str) -> None:
     except subprocess.CalledProcessError:
         pprint(
             f"{YELLOW}{BOLD}Warning{RESET}: Failed to format {filename} with ocamlformat.",
-            inc=True,
         )
-    pprint(f"Wrote OCaml file {BOLD}{filename}{RESET}", inc=True)
+    pprint(f"Wrote OCaml file {BOLD}{filename}{RESET}")
 
 
 if __name__ == "__main__":

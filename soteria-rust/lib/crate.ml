@@ -69,7 +69,7 @@ let is_struct adt_id =
 let as_enum adt_id =
   match (get_adt adt_id).kind with
   | Enum variants -> variants
-  | _ -> failwith "as_struct expected an enum"
+  | _ -> failwith "as_enum expected an enum"
 
 let as_struct adt_id =
   match (get_adt adt_id).kind with

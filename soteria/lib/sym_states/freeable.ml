@@ -6,7 +6,7 @@ let pp ?(alive_prefix = "") pp_alive ft = function
   | Freed -> Fmt.pf ft "Freed"
   | Alive a -> Fmt.pf ft "%s%a" alive_prefix pp_alive a
 
-module Make (Symex : Symex.S) = struct
+module Make (Symex : Symex.Base) = struct
   open Symex.Syntax
 
   type nonrec 'a t = 'a t = Freed | Alive of 'a

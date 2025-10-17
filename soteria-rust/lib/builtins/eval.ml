@@ -15,7 +15,7 @@ module M (State : State_intf.S) = struct
   type fixme_fn = BoxNew | Index | Nop | Panic | TryCleanup | NullPtr
 
   (* Functions we could not stub, but we do for performance *)
-  type optim_fn =
+  and optim_fn =
     | FloatIs of Svalue.FloatClass.t
     | FloatIsFinite
     | FloatIsSign of { positive : bool }
@@ -23,24 +23,25 @@ module M (State : State_intf.S) = struct
     | AllocImpl
 
   (* Rusteria builtin functions *)
-  type rusteria_fn = Assert | Assume | Nondet | Panic
+  and rusteria_fn = Assert | Assume | Nondet | Panic
 
   (* Miri builtin functions *)
-  type miri_fn = AllocId | Nop
+  and miri_fn = AllocId | Nop
 
   (* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
-  type alloc_fn =
+  and alloc_fn =
     | Alloc of { zeroed : bool }
     | Dealloc
     | Realloc
     | NoAllocShimIsUnstable
 
-  type fn =
+  and fn =
     | Rusteria of rusteria_fn
     | Miri of miri_fn
     | Alloc of alloc_fn
     | Fixme of fixme_fn
     | Optim of optim_fn
+  [@@deriving show { with_path = false }]
 
   let std_fun_map =
     [
@@ -58,9 +59,9 @@ module M (State : State_intf.S) = struct
       ("miristd::miri_pointer_name", Miri Nop);
       ("miristd::miri_print_borrow_state", Miri Nop);
       (* Obol is quite bad at parsing names so this is how they're called there... *)
-      ("utils::miri_extern::miristd::miri_get_alloc_id", Miri AllocId);
-      ("utils::miri_extern::miristd::miri_pointer_name", Miri Nop);
-      ("utils::miri_extern::miristd::miri_print_borrow_state", Miri Nop);
+      ("utils::miri_extern::miri_get_alloc_id", Miri AllocId);
+      ("utils::miri_extern::miri_pointer_name", Miri Nop);
+      ("utils::miri_extern::miri_print_borrow_state", Miri Nop);
       (* Core *)
       (* This fails because of a silly thing with NonZero in monomorphisation, which we won't
          fix for now as it requires monomorphising trait impls.  *)
@@ -81,50 +82,49 @@ module M (State : State_intf.S) = struct
       (* all float operations could be removed, but we lack bit precision when getting the
          const floats from Rust, meaning these don't really work. Either way, performance wise
          it is much preferable to override these and use SMTLib builtins. *)
-      ("core::f16::{f16}::is_finite", Optim FloatIsFinite);
-      ("core::f16::{f16}::is_infinite", Optim (FloatIs Infinite));
-      ("core::f16::{f16}::is_nan", Optim (FloatIs NaN));
-      ("core::f16::{f16}::is_normal", Optim (FloatIs Normal));
-      ( "core::f16::{f16}::is_sign_negative",
+      ("core::f16::_::is_finite", Optim FloatIsFinite);
+      ("core::f16::_::is_infinite", Optim (FloatIs Infinite));
+      ("core::f16::_::is_nan", Optim (FloatIs NaN));
+      ("core::f16::_::is_normal", Optim (FloatIs Normal));
+      ( "core::f16::_::is_sign_negative",
         Optim (FloatIsSign { positive = false }) );
-      ( "core::f16::{f16}::is_sign_positive",
-        Optim (FloatIsSign { positive = true }) );
-      ("core::f16::{f16}::is_subnormal", Optim (FloatIs Subnormal));
-      ("core::f32::{f32}::is_finite", Optim FloatIsFinite);
-      ("core::f32::{f32}::is_infinite", Optim (FloatIs Infinite));
-      ("core::f32::{f32}::is_nan", Optim (FloatIs NaN));
-      ("core::f32::{f32}::is_normal", Optim (FloatIs Normal));
-      ( "core::f32::{f32}::is_sign_negative",
+      ("core::f16::_::is_sign_positive", Optim (FloatIsSign { positive = true }));
+      ("core::f16::_::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f32::_::is_finite", Optim FloatIsFinite);
+      ("core::f32::_::is_infinite", Optim (FloatIs Infinite));
+      ("core::f32::_::is_nan", Optim (FloatIs NaN));
+      ("core::f32::_::is_normal", Optim (FloatIs Normal));
+      ( "core::f32::_::is_sign_negative",
         Optim (FloatIsSign { positive = false }) );
-      ( "core::f32::{f32}::is_sign_positive",
-        Optim (FloatIsSign { positive = true }) );
-      ("core::f32::{f32}::is_subnormal", Optim (FloatIs Subnormal));
-      ("core::f64::{f64}::is_finite", Optim FloatIsFinite);
-      ("core::f64::{f64}::is_infinite", Optim (FloatIs Infinite));
-      ("core::f64::{f64}::is_nan", Optim (FloatIs NaN));
-      ("core::f64::{f64}::is_normal", Optim (FloatIs Normal));
-      ( "core::f64::{f64}::is_sign_negative",
+      ("core::f32::_::is_sign_positive", Optim (FloatIsSign { positive = true }));
+      ("core::f32::_::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f64::_::is_finite", Optim FloatIsFinite);
+      ("core::f64::_::is_infinite", Optim (FloatIs Infinite));
+      ("core::f64::_::is_nan", Optim (FloatIs NaN));
+      ("core::f64::_::is_normal", Optim (FloatIs Normal));
+      ( "core::f64::_::is_sign_negative",
         Optim (FloatIsSign { positive = false }) );
-      ( "core::f64::{f64}::is_sign_positive",
-        Optim (FloatIsSign { positive = true }) );
-      ("core::f64::{f64}::is_subnormal", Optim (FloatIs Subnormal));
-      ("core::f128::{f128}::is_finite", Optim FloatIsFinite);
-      ("core::f128::{f128}::is_infinite", Optim (FloatIs Infinite));
-      ("core::f128::{f128}::is_nan", Optim (FloatIs NaN));
-      ("core::f128::{f128}::is_normal", Optim (FloatIs Normal));
-      ( "core::f128::{f128}::is_sign_negative",
+      ("core::f64::_::is_sign_positive", Optim (FloatIsSign { positive = true }));
+      ("core::f64::_::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f128::_::is_finite", Optim FloatIsFinite);
+      ("core::f128::_::is_infinite", Optim (FloatIs Infinite));
+      ("core::f128::_::is_nan", Optim (FloatIs NaN));
+      ("core::f128::_::is_normal", Optim (FloatIs Normal));
+      ( "core::f128::_::is_sign_negative",
         Optim (FloatIsSign { positive = false }) );
-      ( "core::f128::{f128}::is_sign_positive",
+      ( "core::f128::_::is_sign_positive",
         Optim (FloatIsSign { positive = true }) );
-      ("core::f128::{f128}::is_subnormal", Optim (FloatIs Subnormal));
+      ("core::f128::_::is_subnormal", Optim (FloatIs Subnormal));
       (* These don't compile, maybe because they const-panic? *)
+      ("alloc::raw_vec::handle_error", Fixme Panic);
+      ("core::panicking::panic", Fixme Panic);
       ("core::panicking::panic_fmt", Fixme Panic);
-      ("core::slice::index::slice_index_order_fail", Fixme Panic);
       ("core::slice::index::slice_end_index_len_fail", Fixme Panic);
       ("core::slice::index::slice_end_index_overflow_fail", Fixme Panic);
+      ("core::slice::index::slice_index_order_fail", Fixme Panic);
       ("std::alloc::handle_alloc_error", Fixme Panic);
       ("std::option::unwrap_failed", Fixme Panic);
-      ("core::panicking::panic", Fixme Panic);
+      ("std::vec::Vec::_::remove::assert_failed", Fixme Panic);
       (* These don't compile, for some reason? *)
       ("std::panicking::try::cleanup", Fixme TryCleanup);
       ("std::panicking::catch_unwind::cleanup", Fixme TryCleanup);
@@ -175,12 +175,12 @@ module M (State : State_intf.S) = struct
          | Rusteria Assert -> assert_
          | Rusteria Assume -> assume
          | Rusteria Nondet -> nondet f.signature
-         | Rusteria Panic -> panic
+         | Rusteria Panic -> panic ?msg:None
          | Miri AllocId -> alloc_id
          | Miri Nop -> nop
          | Fixme BoxNew -> fixme_box_new f.signature
          | Fixme Index -> array_index_fn f.signature
-         | Fixme Panic -> panic
+         | Fixme Panic -> panic ~msg:(Fmt.to_to_string Crate.pp_name name)
          | Fixme Nop -> nop
          | Fixme NullPtr -> fixme_null_ptr
          | Fixme TryCleanup -> fixme_try_cleanup

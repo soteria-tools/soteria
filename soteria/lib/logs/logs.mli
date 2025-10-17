@@ -25,6 +25,9 @@ module Config : sig
     level : Level.t option;
         (** The current level of logging, [None] if disabled.*)
     kind : log_kind;
+    always_log_smt : bool;
+        (** Whether to always log SMT queries, even when the level is above
+            {!Level.Smt}. *)
   }
 
   (** Receives a result wrapping a configuration (obtained from parsing the Cli

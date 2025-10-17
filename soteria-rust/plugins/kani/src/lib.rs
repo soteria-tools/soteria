@@ -46,6 +46,7 @@ macro_rules! cover {
 }
 
 pub mod invariant;
+pub mod vec;
 pub use invariant::Invariant;
 
 mod arbitrary;

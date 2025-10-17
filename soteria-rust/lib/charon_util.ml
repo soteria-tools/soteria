@@ -3,6 +3,12 @@ open Charon
 let z_of_scalar : Values.scalar_value -> Z.t = function
   | UnsignedScalar (_, v) | SignedScalar (_, v) -> v
 
+let z_of_literal : Values.literal -> Z.t = function
+  | VScalar s -> z_of_scalar s
+  | VBool b -> if b then Z.one else Z.zero
+  | VChar c -> Z.of_int @@ Uchar.to_int c
+  | VFloat _ | VByteStr _ | VStr _ -> failwith "z_of_literal: not an int"
+
 let type_of_operand : Expressions.operand -> Types.ty = function
   | Constant c -> c.ty
   | Copy p | Move p -> p.ty
@@ -12,6 +18,8 @@ let lit_to_string = PrintValues.literal_type_to_string
 let ty_as_float : Types.ty -> Values.float_type = function
   | TLiteral (TFloat f) -> f
   | _ -> failwith "ty_as_float: not a float type"
+
+let pp_literal_ty = Fmt.of_to_string PrintValues.literal_type_to_string
 
 let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TAdtId id; _ } ->
@@ -39,7 +47,7 @@ let rec pp_ty fmt : Types.ty -> unit = function
       Fmt.pf fmt "[%a]" pp_ty ty
   | TAdt { id = TBuiltin TSlice; _ } -> Fmt.string fmt "[?]"
   | TAdt { id = TBuiltin TStr; _ } -> Fmt.string fmt "str"
-  | TLiteral lit -> Fmt.string fmt @@ PrintValues.literal_type_to_string lit
+  | TLiteral lit -> pp_literal_ty fmt lit
   | TNever -> Fmt.string fmt "!"
   | TRef (_, ty, RMut) -> Fmt.pf fmt "&mut %a" pp_ty ty
   | TRef (_, ty, RShared) -> Fmt.pf fmt "&%a" pp_ty ty
@@ -49,9 +57,10 @@ let rec pp_ty fmt : Types.ty -> unit = function
       Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
   | TDynTrait _ -> Fmt.string fmt "dyn <trait>"
   | TTraitType (_, name) -> Fmt.pf fmt "Trait<?>::%s" name
-  | TFnDef { binder_value = { func = FunId (FRegular fid); _ }; _ } ->
+  | TFnDef { binder_value = { kind = FunId (FRegular fid); _ }; _ } ->
       let f = Crate.get_fun fid in
       Fmt.pf fmt "fn %a" Crate.pp_name f.item_meta.name
+  | TPtrMetadata ty -> Fmt.pf fmt "meta(%a)" pp_ty ty
   | TFnDef _ -> Fmt.string fmt "fn ?"
   | TVar _ -> Fmt.string fmt "T?"
   | TError err -> Fmt.pf fmt "Error(%s)" err
@@ -63,6 +72,13 @@ let lit_of_int_ty : Types.integer_type -> Types.literal_type = function
 let lit_of_scalar : Values.scalar_value -> Types.literal_type = function
   | SignedScalar (ity, _) -> TInt ity
   | UnsignedScalar (uty, _) -> TUInt uty
+
+let lit_ty_of_lit : Values.literal -> Types.literal_type = function
+  | VScalar s -> lit_of_scalar s
+  | VBool _ -> TBool
+  | VChar _ -> TChar
+  | VFloat { float_ty; _ } -> TFloat float_ty
+  | VStr _ | VByteStr _ -> failwith "lit_ty_of_lit: not a literal type"
 
 let z_of_const_generic : Types.const_generic -> Z.t = function
   | CgValue (VScalar s) -> z_of_scalar s
@@ -77,7 +93,7 @@ let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
 
 let empty_span : Meta.span =
   {
-    span =
+    data =
       {
         beg_loc = { line = 0; col = 0 };
         end_loc = { line = 0; col = 0 };
@@ -133,7 +149,7 @@ let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
   | F64 -> F64
   | F128 -> F128
 
-let pp_span ft ({ span = { file; beg_loc; end_loc }; _ } : Meta.span) =
+let pp_span ft ({ data = { file; beg_loc; end_loc }; _ } : Meta.span) =
   let clean_filename name =
     let parts = String.split_on_char '/' name in
     if List.compare_length_with parts 3 <= 0 then name
