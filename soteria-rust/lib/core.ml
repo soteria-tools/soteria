@@ -3,9 +3,10 @@ open Typed
 module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
-open Rustsymex
-open Rustsymex.Syntax
 open Rust_val
+open Sptr
+open DecayMapMonad
+open DecayMapMonad.Syntax
 
 module M (State : State_intf.S) = struct
   module Sptr = State.Sptr
@@ -143,8 +144,7 @@ module M (State : State_intf.S) = struct
     in
     Result.ok (Tuple [ Base wrapped; Base (BV.of_bool overflowed) ])
 
-  let rec eval_ptr_binop (bop : Expressions.binop) l r :
-      ([> T.cval ] Typed.t, 'e, 'm) Result.t =
+  let rec eval_ptr_binop (bop : Expressions.binop) l r =
     match (bop, l, r) with
     | Ne, _, _ ->
         let++ res = eval_ptr_binop Eq l r in
