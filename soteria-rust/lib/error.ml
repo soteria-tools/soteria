@@ -5,7 +5,10 @@ type t =
   [ `DoubleFree  (** Tried freeing the same allocation twice *)
   | `InvalidFree  (** Tried freeing memory at a non-0 offset *)
   | `MemoryLeak  (** Dynamically allocated memory was not freed *)
-  | `MisalignedPointer  (** Tried accessing memory with a misaligned pointer *)
+  | `MisalignedPointer of
+    Typed.T.nonzero Typed.t * Typed.T.nonzero Typed.t * Typed.T.sint Typed.t
+    (** Tried accessing memory with a misaligned pointer
+        [(expected, received, offset)] *)
   | `NullDereference  (** Dereferenced a null pointer *)
   | `OutOfBounds  (** Tried accessing memory outside the allocation bounds *)
   | `UninitializedMemoryAccess  (** Accessed uninitialised memory *)
@@ -57,7 +60,7 @@ let is_unwindable : [> t ] -> bool = function
       true
   | _ -> false
 
-let pp ft : [< t ] -> unit = function
+let pp ft : [> t ] -> unit = function
   | `AliasingError -> Fmt.string ft "Aliasing error"
   | `Breakpoint -> Fmt.string ft "Breakpoint hit"
   | `DeadVariable -> Fmt.string ft "Dead variable accessed"
@@ -81,7 +84,9 @@ let pp ft : [< t ] -> unit = function
   | `MemoryLeak -> Fmt.string ft "Memory leak"
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
-  | `MisalignedPointer -> Fmt.string ft "Misaligned pointer"
+  | `MisalignedPointer (exp, got, ofs) ->
+      Fmt.pf ft "Misaligned pointer; expected %a, received %a with offset %a"
+        Typed.ppa exp Typed.ppa got Typed.ppa ofs
   | `NotAFnPointer -> Fmt.string ft "Not a function pointer"
   | `NullDereference -> Fmt.string ft "Null dereference"
   | `OutOfBounds -> Fmt.string ft "Out of bounds"

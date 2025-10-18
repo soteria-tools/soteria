@@ -59,13 +59,6 @@ macro_rules! debug_assert_ne {
     ($($x:tt)*) => ({ $crate::assert_ne!($($x)*); })
 }
 
-// Override the print macros to skip all the printing functionality (which
-// is not relevant for verification)
-#[macro_export]
-macro_rules! format_args {
-    ($($x:tt)*) => {{ let _ = ($($x)*); }};
-}
-
 #[macro_export]
 macro_rules! print {
     ($($x:tt)*) => {{ let _ = format_args!($($x)*); }};
