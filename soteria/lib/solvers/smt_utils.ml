@@ -121,6 +121,7 @@ let bv_uaddo l r = app_ "bvuaddo" [ l; r ]
 let bv_saddo l r = app_ "bvsaddo" [ l; r ]
 let bv_umulo l r = app_ "bvumulo" [ l; r ]
 let bv_smulo l r = app_ "bvsmulo" [ l; r ]
+let bv_adds xs = app_ "bvadd" xs
 
 (* Solver commands *)
 

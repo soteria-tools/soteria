@@ -1,9 +1,13 @@
 open Svalue
 open Soteria_std
 
+let eval_nop : Nop.t -> t list -> t = function
+  | And -> Bool.conj
+  | Or -> Bool.disj
+  | Add -> BitVec.sum ?size:None
+  | Distinct -> Bool.distinct
+
 let eval_binop : Binop.t -> t -> t -> t = function
-  | And -> Bool.and_
-  | Or -> Bool.or_
   | Eq -> Bool.sem_eq
   | FEq -> Float.eq
   | FLeq -> Float.leq
@@ -13,8 +17,6 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | FMul -> Float.mul
   | FDiv -> Float.div
   | FRem -> Float.rem
-  | Add checked -> BitVec.add ~checked
-  | Sub checked -> BitVec.sub ~checked
   | Mul checked -> BitVec.mul ~checked
   | Div signed -> BitVec.div ~signed
   | Rem signed -> BitVec.rem ~signed
@@ -67,10 +69,9 @@ let rec eval ~eval_var (x : t) : t =
       let nv1 = eval v1 in
       let nv2 = eval v2 in
       if v1 == nv1 && v2 == nv2 then x else eval_binop binop nv1 nv2
-  | Nop (nop, l) -> (
+  | Nop (nop, l) ->
       let l, changed = List.map_changed eval l in
-      if Stdlib.not changed then x
-      else match nop with Distinct -> Bool.distinct l)
+      if Stdlib.not changed then x else eval_nop nop l
   | Ite (guard, then_, else_) ->
       let guard = eval guard in
       if equal guard Bool.v_true then eval then_

@@ -19,16 +19,12 @@ let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
               if Svalue.equal e1 e2 then Svalue.Bool.v_true
               else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
               else v
-          | Binop (And, e1, e2) ->
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-              else Svalue.Bool.and_ se1 se2
-          | Binop (Or, e1, e2) ->
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-              else Svalue.Bool.or_ se1 se2
+          | Nop (And, es) ->
+              let ses, changed = List.map_changed simplify es in
+              if not changed then v else Svalue.Bool.conj ses
+          | Nop (Or, es) ->
+              let ses, changed = List.map_changed simplify es in
+              if not changed then v else Svalue.Bool.disj ses
           | Ite (g, e1, e2) ->
               let sg = simplify g in
               let se1 = simplify e1 in

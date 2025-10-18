@@ -56,10 +56,18 @@ let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
   | FIs fc -> fp_is (Svalue.FloatClass.as_fpclass fc)
   | FRound rm -> fp_round (rm_to_smt rm)
 
+let smt_of_nop : Svalue.Nop.t -> sexp list -> sexp = function
+  | Distinct -> distinct
+  | And -> bool_ands
+  | Or -> bool_ors
+  | Add -> (
+      (* we implement add but we could do a custom encoding to convert negs to bvsubs *)
+      function
+      | [] -> failwith "Add nop with no arguments"
+      | h :: t -> List.fold_left bv_add h t)
+
 let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | Eq -> eq
-  | And -> bool_and
-  | Or -> bool_or
   | FEq -> fp_eq
   | FLeq -> fp_leq
   | FLt -> fp_lt
@@ -74,8 +82,6 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | Shl -> bv_shl
   | LShr -> bv_lshr
   | AShr -> bv_ashr
-  | Add _ -> bv_add
-  | Sub _ -> bv_sub
   | Mul _ -> bv_mul
   | Div true -> bv_sdiv
   | Div false -> bv_udiv
@@ -120,9 +126,27 @@ let rec encode_value (v : Svalue.t) =
       let v1 = encode_value_memo v1 in
       let v2 = encode_value_memo v2 in
       smt_of_binop binop v1 v2
-  | Nop (Distinct, vs) ->
+  (* | Nop (Add, vs) -> (
+      let rest, neg =
+        List.partition_map
+          (fun (v : Svalue.t) ->
+            match v.node.kind with
+            | Unop (Neg, a) -> Right (encode_value_memo a)
+            | _ -> Left (encode_value_memo v))
+          vs
+      in
+      match (rest, neg) with
+      | [], [] -> failwith "Add nop with no arguments"
+      | [], [ v ] -> bv_neg v
+      | h :: t, neg ->
+          let sum = List.fold_left bv_add h t in
+          List.fold_left bv_sub sum neg
+      | [], h :: t ->
+          let sum = List.fold_left bv_add h t in
+          bv_neg sum) *)
+  | Nop (nop, vs) ->
       let vs = List.map encode_value_memo vs in
-      distinct vs
+      smt_of_nop nop vs
 
 and encode_value_memo v =
   match Hashtbl.Hint.find_opt memo_encode_value_tbl v.Hc.tag with
@@ -138,4 +162,5 @@ let encode_value (v : Svalue.t) =
   |> Iter.to_list
   |> bool_ands
 
-let init_commands = [ Simple_smt.set_option ":sat.smt" "true" ]
+let init_commands = []
+(* [ Simple_smt.set_option ":sat.smt" "true" ] *)
