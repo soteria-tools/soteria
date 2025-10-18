@@ -3,7 +3,7 @@ import os
 import subprocess
 import enum
 from pathlib import Path
-from typing import Literal, Optional, cast
+from typing import Literal, Optional, TypeVar, cast
 
 # ------ Pretty printing ------
 
@@ -198,7 +198,15 @@ KNOWN_ISSUES = {
     "fail/dangling_pointers/dangling_pointer_project_underscore_let_type_annotation.rs": "let _ = ... assignments get optimized out",
     "fail/dangling_pointers/dangling_pointer_project_underscore_match.rs": "let _ = ... assignments get optimized out",
     "fail/dangling_pointers/deref_dangling_box.rs": "We don't check for dangling pointers for boxes",
+    "fail/dangling_pointers/deref_dangling_ref.rs": "We don't check the validity of a reference when dereferencing it?",
+    "fail/dangling_pointers/dyn_size.rs": "We don't check the validity of slice references",
+    "fail/dyn-call-trait-mismatch.rs": "We don't check the validity of dyn calls",
+    "fail/dyn-upcast-nop-wrong-trait.rs": "We don't check the validity of dyn casts",
+    "fail/dyn-upcast-trait-mismatch.rs": "We don't check the validity of dyn casts",
+    "fail/intrinsics/ptr_metadata_uninit_slice_data.rs": "We don't check a pointer is not uninitialised when reading it's meta",
+    "fail/intrinsics/ptr_metadata_uninit_thin.rs": "We don't check a pointer is not uninitialised when reading it's meta",
     "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",
+    "fail/issue-miri-1112.rs": "We don't check the validity of VTables",
     "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
     "fail/function_calls/arg_inplace_mutate.rs": "We don't check that arguments aren't mutated in place",
     "fail/function_calls/return_pointer_aliasing_read.rs": "We don't check arguments don't alias with the return place",
@@ -206,9 +214,13 @@ KNOWN_ISSUES = {
     "fail/overlapping_assignment.rs": "MIR-only check for assignment overlap (we don't do this atm)",
     "fail/provenance/strict_provenance_cast.rs": "Miri has a strict provenance flag, we don't",
     "fail/uninit/uninit_alloc_diagnostic.rs": "We don't detected an uninit access that.. doesn't seem to exist?",
+    "fail/validity/cast_fn_ptr_invalid_caller_ret.rs": "We don't use a fn ptr's type for checking validity",
     "fail/validity/nonzero.rs": "The valid_range_start attribute isn't parsed by Charon?",
     "fail/validity/ref_to_uninhabited1.rs": "We don't check Boxes have an inhabited value",
+    "fail/validity/transmute_through_ptr.rs": "We don't error on an invalid enum tag?",
     "fail/validity/uninit_float.rs": "A uninit mitigation doesn't get compiled away despite flags set?",
+    "fail/validity/wrong-dyn-trait-generic.rs": "We don't check the validity of dyn casts",
+    "fail/validity/wrong-dyn-trait.rs": "We don't check the validity of dyn casts",
     "pass/align.rs": "We don't allow ptr-int-ptr conversions, Miri does (under a flag)",
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
@@ -225,12 +237,15 @@ KNOWN_ISSUES = {
     "pass/provenance.rs": "It is unclear how to properly do ptr-int-ptr conversions",
     "pass/ptr_int_from_exposed.rs": "It is unclear how to properly do ptr-int-ptr conversions",
     "pass/ptr_offset.rs": "It is unclear how to properly do ptr-int-ptr conversions",
+    "pass/strings.rs": "A static region gets translated as erased memory, causing a use-after-free",
     "pass/u128.rs": "We don't do int-float-int conversions properly",
     "panic/mir-validation.rs": "We don't validate the MIR for projections",
 }
 
+T = TypeVar("T")
 
-def dict_get_suffix(d: dict, key: str):
+
+def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
     for k in d:
         if key.endswith(k):
             return d[k]
