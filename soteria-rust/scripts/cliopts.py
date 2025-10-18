@@ -16,7 +16,16 @@ CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
 CmdBenchmark = tuple[Literal["benchmark"], tuple]
 CmdCompKani = tuple[Literal["comp-kani"], tuple[Path, bool]]
-Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark | CmdCompKani
+CmdCompFinetime = tuple[Literal["finetime"], tuple]
+Cmd = (
+    CmdExec
+    | CmdAll
+    | CmdEval
+    | CmdEvalDiff
+    | CmdBenchmark
+    | CmdCompKani
+    | CmdCompFinetime
+)
 
 
 class CliOpts(TypedDict):
@@ -98,6 +107,8 @@ def parse_flags() -> CliOpts:
             opts["cmd"] = ("comp-kani", (path.resolve(), True))
         else:
             opts["cmd"] = ("comp-kani", (path.resolve(), False))
+    elif arg == "finetime":
+        opts["cmd"] = ("finetime", ())
     else:
         raise ArgError(
             f"Unknown command, expected {', '.join(SUITE_NAMES)}, all, eval or eval-diff"
@@ -175,7 +186,9 @@ def parse_flags() -> CliOpts:
     return opts
 
 
-def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
+def opts_for_rusteria(
+    opts: CliOpts, *, force_obol: bool = False, timeout: Optional[float] = 5
+) -> CliOpts:
     opts = {
         **opts,
         "tool": "Rusteria",
@@ -185,7 +198,7 @@ def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
             "--compact",
             "--no-color",
             "--log-compilation",
-            "--solver-timeout=5000",
+            *(["--solver-timeout", str(timeout * 1000)] if timeout is not None else []),
             "--no-compile-plugins",
         ],
         "categorise": categorise_rusteria,
@@ -195,14 +208,14 @@ def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
     return opts
 
 
-def opts_for_kani(opts: CliOpts) -> CliOpts:
+def opts_for_kani(opts: CliOpts, *, timeout: Optional[float] = 5) -> CliOpts:
     return {
         **opts,
         "tool": "Kani",
         "tool_cmd": [
             "kani",
             "-Z=unstable-options",
-            "--harness-timeout=5s",
+            *(["--harness-timeout", f"{timeout}s"] if timeout is not None else []),
             "--output-format",
             "terse",
         ],
