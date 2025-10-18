@@ -301,7 +301,7 @@ module M (State : State_intf.S) = struct
         else if n + 1 < bits then aux (n + 1)
         else bits
       in
-      Typed.BitVec.u32i @@ aux 0
+      BV.u32i @@ aux 0
     in
     (* we construct the following, from inside out:
       ite(x[bits-1] == 1 ? 0 :
@@ -312,9 +312,9 @@ module M (State : State_intf.S) = struct
       Iter.fold
         (fun acc off ->
           let res = bits - 1 - off in
-          let bit = Typed.BitVec.extract off off x in
-          Typed.ite (bit ==@ Typed.BitVec.one 1) (Typed.BitVec.u32i res) acc)
-        (Typed.BitVec.u32i bits)
+          let bit = BV.extract off off x in
+          Typed.ite (bit ==@ BV.one 1) (BV.u32i res) acc)
+        (BV.u32i bits)
         Iter.(0 -- (bits - 1))
     in
     binary_int_operation ~concrete ~symbolic
@@ -324,7 +324,7 @@ module M (State : State_intf.S) = struct
     let x_int = as_base tlit x in
     let* () =
       State.assert_not
-        (x_int ==@ Typed.BitVec.mki_lit tlit 0)
+        (x_int ==@ BV.mki_lit tlit 0)
         (`StdErr "core::intrinsics::ctlz_nonzero on zero")
     in
     ctlz ~t ~x
@@ -359,7 +359,7 @@ module M (State : State_intf.S) = struct
     if Typed.is_float ty then ok (Base res)
     else
       let zero = BV.mki_lit lit 0 in
-      let ( %@ ) = Typed.BitVec.rem ~signed:(Layout.is_signed lit) in
+      let ( %@ ) = BV.rem ~signed:(Layout.is_signed lit) in
       let+ () =
         State.assert_
           (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))

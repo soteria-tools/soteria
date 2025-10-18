@@ -440,6 +440,7 @@ let free (({ ptr; _ } : Sptr.t), _) st =
   let@ () = with_loc_err () in
   (* TODO: does the tag not play a role in freeing? *)
   let@ st = with_state st in
+  L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
   SPmap.wrap
     (Freeable.free ~assert_exclusively_owned:(fun t ->
          Tree_block.assert_exclusively_owned @@ Option.map fst t))
