@@ -74,10 +74,18 @@ module Infix = struct
   let ( -!@ ) = ( -@ )
   let ( *!@ ) = ( *@ )
   let ( ~-! ) = ( ~- )
-  let ( +?@ ) l r = (l +@ r, BitVec.add_overflows ~signed:false l r)
-  let ( +$?@ ) l r = (l +@ r, BitVec.add_overflows ~signed:true l r)
-  let ( -?@ ) l r = (l -@ r, BitVec.sub_overflows ~signed:false l r)
-  let ( -$?@ ) l r = (l -@ r, BitVec.sub_overflows ~signed:true l r)
+
+  let ( +?@ ) l r =
+    (BitVec.add ~checked:true l r, BitVec.add_overflows ~signed:false l r)
+
+  let ( +$?@ ) l r =
+    (BitVec.add ~checked:true l r, BitVec.add_overflows ~signed:true l r)
+
+  let ( -?@ ) l r =
+    (BitVec.sub ~checked:true l r, BitVec.sub_overflows ~signed:false l r)
+
+  let ( -$?@ ) l r =
+    (BitVec.sub ~checked:true l r, BitVec.sub_overflows ~signed:true l r)
 
   let ( *?@ ) l r =
     (BitVec.mul ~checked:true l r, BitVec.mul_overflows ~signed:false l r)
