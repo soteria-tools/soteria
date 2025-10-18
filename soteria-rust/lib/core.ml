@@ -134,11 +134,15 @@ module M (State : State_intf.S) = struct
   let eval_checked_lit_binop (op : Expressions.binop) ty l r =
     let l = cast_lit ty l in
     let r = cast_lit ty r in
+    let signed = Layout.is_signed ty in
     let wrapped, overflowed =
-      match op with
-      | AddChecked -> l +?@ r
-      | SubChecked -> l -?@ r
-      | MulChecked -> l *?@ r
+      match (op, signed) with
+      | AddChecked, false -> l +?@ r
+      | AddChecked, true -> l +$?@ r
+      | SubChecked, false -> l -?@ r
+      | SubChecked, true -> l -$?@ r
+      | MulChecked, false -> l *?@ r
+      | MulChecked, true -> l *$?@ r
       | _ -> failwith "Invalid checked op"
     in
     Result.ok (Tuple [ Base wrapped; Base (BV.of_bool overflowed) ])
