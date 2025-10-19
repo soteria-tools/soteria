@@ -642,6 +642,10 @@ module rec Bool : Bool = struct
     (* BvOfBool and If-then-elses *)
     | Ite (b, l, t), (BitVec _ | Bool _) -> ite b (sem_eq l v2) (sem_eq t v2)
     | (BitVec _ | Bool _), Ite (b, l, t) -> ite b (sem_eq v1 l) (sem_eq v1 t)
+    | Bool false, _ -> not v2
+    | _, Bool false -> not v1
+    | Bool true, _ -> v2
+    | _, Bool true -> v1
     | Unop (BvOfBool _, b), Unop (BvOfBool _, c) -> sem_eq b c
     | Unop (Not, b), Unop (Not, c) -> sem_eq b c
     | Unop (BvOfBool _, b), BitVec z | BitVec z, Unop (BvOfBool _, b) ->
@@ -1344,14 +1348,13 @@ and BitVec : BitVec = struct
         Bool.and_ b (Bool.sem_eq other (mk n max))
     | _ ->
         if signed then
-          let msb x =
-            extract (size_of x.node.ty - 1) (size_of x.node.ty - 1) x
-          in
-          let msb_l = msb v1 in
-          let msb_r = msb v2 in
-          let msb_res = msb (add v1 v2) in
-          Bool.and_ (Bool.sem_eq msb_l msb_r)
-            (Bool.not (Bool.sem_eq msb_l msb_res))
+          let sign_of v = lt ~signed v (zero (size_of v.node.ty)) in
+          let sign_l = sign_of v1 in
+          let sign_r = sign_of v2 in
+          let msb_res = sign_of (add v1 v2) in
+          Bool.and_
+            (Bool.sem_eq sign_l sign_r)
+            (Bool.not (Bool.sem_eq sign_l msb_res))
         else
           let res = add v1 v2 in
           Bool.or_ (lt ~signed res v1) (lt ~signed res v2)
