@@ -147,6 +147,24 @@ let print_outcomes_summary outcomes =
     (list ~sep:(any "@\n") pp_outcome)
     outcomes
 
+let print_stats (stats : Meta.span Stats.stats) =
+  let open Fmt in
+  let entries =
+    [
+      ("Steps", fun ft () -> int ft stats.steps_number);
+      ("Branches", fun ft () -> int ft stats.branch_number);
+      ("Exec time", fun ft () -> pp_time ft stats.exec_time);
+      ( "Solver time",
+        fun ft () ->
+          Fmt.pf ft "%a (%a%%)" pp_time stats.sat_time (float_dfrac 2)
+            (100. *. stats.sat_time /. stats.exec_time) );
+    ]
+  in
+  let pp_entry ft (name, pp_value) = Fmt.pf ft " • %s: %a" name pp_value () in
+  pr "%a:@\n%a@\n" (pp_style `Bold) "Statistics"
+    (list ~sep:(any "@\n") pp_entry)
+    entries
+
 let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let@ () = Crate.with_crate crate in
 
@@ -177,6 +195,8 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
         stats = Rustsymex.Stats.create ();
       }
   in
+
+  if !Config.current.print_stats then print_stats stats;
 
   (* inverse ok and errors if we expect a failure *)
   let nbranches = List.length branches in

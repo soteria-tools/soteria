@@ -48,6 +48,9 @@ type t = {
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
+  print_stats : bool; [@make.default false] [@names [ "stats" ]]
+      (** If statistics about the execution should be printed at the end of each
+          test *)
   (*
      Symbolic execution behaviour
    *)
