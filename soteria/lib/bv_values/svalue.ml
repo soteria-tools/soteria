@@ -1088,18 +1088,20 @@ and BitVec : BitVec = struct
       when to2 + 1 = from1 && equal v1 v2 ->
         extract from2 to1 v1
     (* We re-order (extract A ++ (extract B ++ X)) to ((extract A ++ extract B) ++ X) *)
-    | ( Unop (BvExtract (_, _), _),
+    | ( Unop (BvExtract _, x),
         Binop
           ( BvConcat,
-            ({ node = { kind = Unop (BvExtract _, _); _ }; _ } as left),
-            right ) ) ->
+            ({ node = { kind = Unop (BvExtract _, y); _ }; _ } as left),
+            right ) )
+      when equal x y ->
         concat (concat v1 left) right
     (* We re-order ((X ++ extract A) ++ extract B) to (X ++ (extract A ++ extract B)) *)
     | ( Binop
           ( BvConcat,
             left,
-            ({ node = { kind = Unop (BvExtract _, _); _ }; _ } as right) ),
-        Unop (BvExtract (_, _), _) ) ->
+            ({ node = { kind = Unop (BvExtract _, x); _ }; _ } as right) ),
+        Unop (BvExtract _, y) )
+      when equal x y ->
         concat left (concat right v2)
     | Ite (b1, l1, r1), Ite (b2, l2, r2) when equal b1 b2 ->
         Bool.ite b1 (concat l1 l2) (concat r1 r2)
