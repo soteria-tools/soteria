@@ -205,6 +205,7 @@ type t_kind =
   | Binop of Binop.t * t * t
   | Nop of Nop.t * t list
   | Ite of t * t * t
+  | Exists of (Var.t * ty) list * t
 
 and t_node = { kind : t_kind; ty : ty }
 and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
@@ -228,6 +229,15 @@ let iter =
         aux f c;
         aux f t;
         aux f e
+    | Exists (vs, sv) ->
+        let f sv =
+          match sv.node.kind with
+          | Var v ->
+              if List.exists (fun (v', _) -> Var.equal v v') vs then ()
+              else f sv
+          | _ -> f sv
+        in
+        aux f sv
   in
   Fun.flip aux
 
@@ -251,6 +261,9 @@ let rec pp ft t =
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
   | Ite (c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
+  | Exists (vs, v) ->
+      let var_pp ft (v, ty) = pf ft "V%a:%a" Var.pp v pp_ty ty in
+      pf ft "∃ %a. %a" (list ~sep:comma var_pp) vs pp v
   | Unop (Not, { node = { kind = Binop (Eq, v1, v2); _ }; _ }) ->
       pf ft "(%a != %a)" pp v1 pp v2
   | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
@@ -303,6 +316,7 @@ module Hcons = Hc.Make (struct
     | Binop (op, l, r) -> Hashtbl.hash (op, l.tag, r.tag, hty)
     | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
     | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
+    | Exists (vs, sv) -> Hashtbl.hash (vs, sv.tag, hty)
 end)
 
 let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
@@ -337,6 +351,7 @@ module type Bool = sig
   val split_ands : t -> t Iter.t
   val distinct : t list -> t
   val ite : t -> t -> t -> t
+  val exists : (Var.t * ty) list -> t -> t
   val sem_eq : t -> t -> t
   val sem_eq_untyped : t -> t -> t
 end
@@ -684,6 +699,8 @@ module rec Bool : Bool = struct
           (* regular sem_eq *)
           mk_commut_binop Eq v1 v2 <| TBool
     | _ -> mk_commut_binop Eq v1 v2 <| TBool
+
+  let exists vs body = Exists (vs, body) <| TBool
 
   let sem_eq_untyped v1 v2 =
     if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
