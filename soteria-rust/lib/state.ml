@@ -110,25 +110,24 @@ and t = {
 }
 [@@deriving show { with_path = false }]
 
-type serialized =
-  (serialized_atom list, serialized_globals) State_intf.Template.t
+type serialized_atom =
+  T.sloc Typed.t * Tree_block.serialized Freeable.serialized
+
+and serialized_global = T.sloc Typed.t
+
+and serialized = Heap of serialized_atom | Global of serialized_global
 [@@deriving show { with_path = false }]
 
-and serialized_atom = T.sloc Typed.t * Tree_block.serialized Freeable.serialized
-[@@deriving show { with_path = false }]
+let serialize_globals globals : serialized_global list =
+  List.map
+    (fun (_, ((ptr : Sptr.t), _)) -> (Typed.Ptr.loc ptr.ptr :> T.sloc Typed.t))
+    (GlobMap.bindings globals)
 
-and serialized_globals = T.sloc Typed.t list
-[@@deriving show { with_path = false }]
-
-let serialize_globals globals : serialized_globals =
-  ListLabels.fold_left (GlobMap.bindings globals) ~init:[]
-    ~f:(fun acc (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr :: acc)
-
-let lift_fix_globals globals res =
+let lift_fix () res =
   let+? heap = res in
-  State_intf.Template.{ heap; globals = serialize_globals globals }
+  List.map (fun f -> Heap f) heap
 
-let serialize st : serialized =
+let serialize st : serialized list =
   let heap =
     match st.state with
     | None -> []
@@ -137,18 +136,16 @@ let serialize st : serialized =
         SPmap.serialize (Freeable.serialize serialize_freeable) st
   in
   let globals = serialize_globals st.globals in
-  { heap; globals }
+  List.map (fun g -> Global g) globals @ List.map (fun h -> Heap h) heap
 
-let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
-    (serialized : serialized) : serialized =
-  let heap =
-    let subst_serialized_block subst_var f =
-      Freeable.subst_serialized Tree_block.subst_serialized subst_var f
-    in
-    SPmap.subst_serialized subst_serialized_block subst_var serialized.heap
-  in
-  let globals = List.map (Typed.subst subst_var) serialized.globals in
-  { heap; globals }
+let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t) :
+    serialized -> serialized = function
+  | Heap heap ->
+      let subst_serialized_block subst_var f =
+        Freeable.subst_serialized Tree_block.subst_serialized subst_var f
+      in
+      SPmap.subst_serialized subst_serialized_block subst_var heap
+  | Global glob -> Global (subst_var glob)
 
 let iter_vars_serialized (s : serialized) :
     (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit =
