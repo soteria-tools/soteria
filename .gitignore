@@ -234,6 +234,7 @@ soteria-rust/scripts/*.csv
 
 ### Misc ###
 *.temp
+*.smt
 
 ### Kani ###
 *.out
