@@ -1224,12 +1224,14 @@ and BitVec : BitVec = struct
         let rec aux_sign_node v =
           match v.node.kind with
           | Unop (BvExtend (true, _), v) -> aux_sign_node v
-          | Unop (BvExtend (false, _), _) -> zero 1
+          | Unop (BvExtend (false, _), _) -> Bool.v_false
           | Binop (Mod, l, _) -> aux_sign_node l
           | Binop (Rem true, _, r) -> aux_sign_node r
+          | Binop (Div true, l, r) ->
+              Bool.not (Bool.sem_eq (aux_sign_node l) (aux_sign_node r))
           | Binop (BvConcat, l, _) -> aux_sign_node l
           | Unop (BvNot, v) -> not (aux_sign_node v)
-          | Unop (BvOfBool n, _) when n > 1 -> zero 1
+          | Unop (BvOfBool n, _) when n > 1 -> Bool.v_false
           | Ite (_, l, r) ->
               let pos_l = aux_sign_node l in
               let pos_r = aux_sign_node r in
