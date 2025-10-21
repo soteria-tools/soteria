@@ -1154,7 +1154,11 @@ module Make (State : State_intf.S) = struct
         With_origin.
           {
             node =
-              Freeable.Alive [ Ctree_block.MemVal { offset; len; v = SZeros } ];
+              Freeable.Alive
+                [
+                  Soteria.Sym_states.Tree_block.MemVal
+                    { offset; len; v = Ctree_block.MemVal.SZeros };
+                ];
             info = None;
           }
       in
