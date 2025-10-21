@@ -163,8 +163,6 @@ struct
 
   type nonrec sint = sint Symex.Value.t
 
-  let pp_sint = Symex.Value.ppa
-
   (* re-export the types to be able to use them easily *)
   type nonrec ('a, 'sint) tree = ('a, 'sint) tree = {
     node : 'a node;
@@ -563,8 +561,7 @@ struct
 
   (** Logic *)
 
-  type serialized = (MemVal.serialized, sint) serialized_atom list
-  [@@deriving show { with_path = false }]
+  type nonrec serialized = (MemVal.serialized, sint) serialized
 
   let lift_miss ~offset ~len symex =
     let+? fix = symex in
@@ -645,6 +642,17 @@ struct
       subst_serialized MemVal.subst_serialized Symex.Value.subst
     in
     subst_serialized subst_var serialized
+
+  let pp_serialized_atom ft serialized =
+    let pp_serialized_atom =
+      pp_serialized_atom MemVal.pp_serialized Symex.Value.ppa
+    in
+    match serialized with
+    | Bound bound -> Fmt.pf ft "Bound(%a)" Symex.Value.ppa bound
+    | _ -> pp_serialized_atom ft serialized
+
+  let pp_serialized ft serialized =
+    Fmt.Dump.list pp_serialized_atom ft serialized
 
   let serialize t =
     let bound =
