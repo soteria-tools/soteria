@@ -827,6 +827,16 @@ let rec update_ref_tys_in
     The full specification is available at:
     https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility *)
 let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
+  let is_ptr_like : Types.ty -> bool = function
+    | TRef _ | TRawPtr _ -> true
+    | TAdt { id = TBuiltin TBox; _ } -> true
+    | TAdt { id = TAdtId id; _ } ->
+        let adt = Crate.get_adt id in
+        adt.item_meta.lang_item = Some "owned_box"
+        || Charon_util.meta_get_attr adt.item_meta "rustc_diagnostic_item"
+           = Some "NonNull"
+    | _ -> false
+  in
   match (ty1, ty2) with
   (* Refs and raw pointers are ABI-compatible if they have the same metadata type *)
   | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
@@ -839,6 +849,8 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
     ->
       true
+  (* We keep this later down to avoid the check for everything *)
+  | ty1, ty2 when is_ptr_like ty1 && is_ptr_like ty2 -> true
   (* FIXME: Function pointers are compatible if they have the same ABI-string (unsupported) *)
   | TFnPtr _, TFnPtr _ -> true
   | _ ->
