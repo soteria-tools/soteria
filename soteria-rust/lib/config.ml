@@ -29,6 +29,9 @@ type t = {
   frontend : (frontend[@conv frontend_cmdliner_conv ()]);
       [@default Obol] [@make.default Obol] [@names [ "frontend" ]]
       (** Choose the frontend to use: Charon or Obol *)
+  sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
+      (** The sysroot to use for compilation. If not provided, the default
+          sysroot is used. *)
   (*
      Plugins
    *)

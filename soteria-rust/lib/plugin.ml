@@ -28,19 +28,28 @@ module Cmd = struct
       rustc = c1.rustc @ c2.rustc;
     }
 
+  let current_rustc_flags () =
+    let rustc = !Config.current.rustc_flags in
+    let sysroot =
+      match !Config.current.sysroot with
+      | Some path -> [ "--sysroot"; path ]
+      | None -> []
+    in
+    rustc @ sysroot
+
   let build_cmd ~mode { charon; obol; features; rustc } =
     let spaced = String.concat " " in
     let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-    let rustc = rustc @ !Config.current.rustc_flags in
+    let features = List.map (( ^ ) "--cfg=") features in
+    let rustc = rustc @ current_rustc_flags () @ features in
     match mode with
     | Rustc ->
-        let features = List.map (( ^ ) "--cfg=") features in
         let compiler =
           match !Config.current.frontend with
           | Charon -> "charon rustc " ^ spaced charon
           | Obol -> "obol rustc " ^ spaced obol
         in
-        compiler ^ " -- " ^ spaced features ^ " " ^ escape (spaced rustc)
+        compiler ^ " -- " ^ escape (spaced rustc)
     | Cargo ->
         (* Cargo already specifies the edition *)
         let rustc =
@@ -48,8 +57,6 @@ module Cmd = struct
             (Fun.negate (String.starts_with ~prefix:"--edition"))
             rustc
         in
-        let features = List.map (( ^ ) "--cfg ") features in
-        let rustc = rustc @ features in
         let env =
           if not (List.is_empty rustc) then
             "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
@@ -131,9 +138,14 @@ let lib_compile ~target lib =
       if !Config.current.log_compilation then "--verbose"
       else "> /dev/null 2>/dev/null"
     in
+    let rustc_flags =
+      match Cmd.current_rustc_flags () with
+      | [] -> ""
+      | flags -> "RUSTFLAGS=\"" ^ String.concat " " flags ^ "\" "
+    in
     let res =
-      Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path
-        (cargo_cmd ()) target verbosity
+      Fmt.kstr Cmd.exec_cmd "cd %s && %s %s build --lib --target %s %s" path
+        rustc_flags (cargo_cmd ()) target verbosity
     in
     if res <> 0 && res <> 255 then
       let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
