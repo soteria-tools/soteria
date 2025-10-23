@@ -26,7 +26,7 @@ module M (State : State_intf.S) = struct
   and rusteria_fn = Assert | Assume | Nondet | Panic
 
   (* Miri builtin functions *)
-  and miri_fn = AllocId | Nop
+  and miri_fn = AllocId | PromiseAlignement | Nop
 
   (* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
   and alloc_fn =
@@ -58,7 +58,8 @@ module M (State : State_intf.S) = struct
       ("miristd::miri_get_alloc_id", Miri AllocId);
       ("miristd::miri_pointer_name", Miri Nop);
       ("miristd::miri_print_borrow_state", Miri Nop);
-      ("std::intrinsics::miri_promise_symbolic_alignment", Miri Nop);
+      ( "std::intrinsics::miri_promise_symbolic_alignment",
+        Miri PromiseAlignement );
       (* Obol is quite bad at parsing names so this is how they're called there... *)
       ("utils::miri_extern::miri_get_alloc_id", Miri AllocId);
       ("utils::miri_extern::miri_pointer_name", Miri Nop);
@@ -142,8 +143,6 @@ module M (State : State_intf.S) = struct
   let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
     let open Std in
     let open Alloc in
-    let open Rusteria in
-    let open Miri in
     let is_intrinsic = Charon_util.decl_has_attr f "rustc_intrinsic" in
     (* Rust allows defining functions and marking them as intrinsics within a module,
        and the compiler will treat them as the intrinsic of the same name; e.g.
@@ -173,11 +172,12 @@ module M (State : State_intf.S) = struct
       let ctx = Crate.as_namematcher_ctx () in
       NameMatcherMap.find_opt ctx match_config name std_fun_map
       |> Option.map @@ function
-         | Rusteria Assert -> assert_
-         | Rusteria Assume -> assume
-         | Rusteria Nondet -> nondet f.signature
-         | Rusteria Panic -> panic ?msg:None
-         | Miri AllocId -> alloc_id
+         | Rusteria Assert -> Rusteria.assert_
+         | Rusteria Assume -> Rusteria.assume
+         | Rusteria Nondet -> Rusteria.nondet f.signature
+         | Rusteria Panic -> Rusteria.panic ?msg:None
+         | Miri AllocId -> Miri.alloc_id
+         | Miri PromiseAlignement -> Miri.promise_alignement
          | Miri Nop -> nop
          | Fixme BoxNew -> fixme_box_new f.signature
          | Fixme Index -> array_index_fn f.signature
