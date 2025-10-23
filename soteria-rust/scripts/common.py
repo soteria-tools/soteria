@@ -253,6 +253,16 @@ def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
 
 
 def build_rusteria():
+    charon_path = PWD / ".." / ".." / ".." / "charon"
+    miri_sysroot = (
+        subprocess.check_output(
+            f"cd {charon_path} && cargo miri setup --print-sysroot", shell=True
+        )
+        .decode()
+        .strip()
+    )
+    os.environ["RUST_SYSROOT"] = miri_sysroot
+
     env = (
         subprocess.check_output(
             "opam exec -- dune exec -- env 2> /dev/null", shell=True

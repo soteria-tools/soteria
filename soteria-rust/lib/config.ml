@@ -23,6 +23,9 @@ type t = {
   rustc_flags : string list;
       [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
+  sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
+      (** The sysroot to use for compilation. If not provided, the default
+          sysroot is used. *)
   with_obol : bool; [@make.default false] [@names [ "obol" ]]
       (** Compile the code using Obol, rather than Charon *)
   (*
