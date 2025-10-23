@@ -958,27 +958,18 @@ module Make (State : State_intf.S) = struct
             L.info (fun g ->
                 g "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
                   UllbcAst.pp_block_id else_block pp_rust_val discr);
-            let* block =
-              (* if a base value, compare with 0 -- if a pointer, check for null *)
+            let bool_discr =
               match discr with
-              | Base discr ->
-                  let discr, _ = Typed.cast_int discr in
-                  if%sat [@lname "else case"] [@rname "if case"]
-                    BV.to_bool discr
-                  then ok if_block
-                  else ok else_block
-              | Ptr (ptr, _) ->
-                  if%sat [@lname "else case"] [@rname "if case"]
-                    Sptr.is_at_null_loc ptr
-                  then ok else_block
-                  else ok if_block
-              | _ ->
-                  Fmt.kstr not_impl
-                    "Expected base value for discriminant, got %a" pp_rust_val
-                    discr
+              | Base discr -> BV.to_bool (Typed.cast_lit TBool discr)
+              | Ptr (ptr, _) -> Typed.not (Sptr.sem_eq ptr (Sptr.null_ptr ()))
+              | _ -> failwith "Expected base value for if discriminant"
             in
-            let block = UllbcAst.BlockId.nth body.body block in
-            exec_block ~body block
+            if%sat [@lname "if case"] [@rname "else case"] bool_discr then
+              let block = UllbcAst.BlockId.nth body.body if_block in
+              exec_block ~body block
+            else
+              let block = UllbcAst.BlockId.nth body.body else_block in
+              exec_block ~body block
         | SwitchInt (_, options, default) ->
             L.info (fun g ->
                 let options =
@@ -997,7 +988,7 @@ module Make (State : State_intf.S) = struct
               | Ptr (ptr, _) ->
                   fun (v, _) ->
                     if Z.equal Z.zero (z_of_literal v) then
-                      Sptr.is_at_null_loc ptr
+                      Sptr.sem_eq ptr (Sptr.null_ptr ())
                     else failwith "Can't compare pointer with non-0 scalar"
               | _ ->
                   fun (v, _) ->
