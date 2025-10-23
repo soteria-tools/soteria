@@ -124,6 +124,10 @@ module type S = sig
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> [> sint ] Typed.t
 
+  (** Returns a symbolic boolean to check whether this pointer has the given
+      alignment *)
+  val is_aligned : [< T.nonzero ] Typed.t -> t -> [> sbool ] Typed.t
+
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
 
@@ -224,6 +228,14 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
   let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
+
+  let is_aligned exp_align { ptr; align; _ } =
+    let loc, ofs = Typed.Ptr.decompose ptr in
+    (* A pointer with no provenance is alignd to it's offset *)
+    let align =
+      Typed.ite (Typed.Ptr.is_null_loc loc) exp_align (Typed.cast align)
+    in
+    ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
 
   let iter_vars { ptr; align; size; tag = _ } f =
     Typed.iter_vars ptr f;

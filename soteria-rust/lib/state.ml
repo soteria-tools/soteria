@@ -233,16 +233,15 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Charon.Types.ty) st =
         let+ align = Layout.align_of_s ty in
         Ok (align, st)
   in
-  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-  (* 0-based pointers are aligned up to their offset *)
-  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
   L.debug (fun m ->
-      m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
-        Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa exp_align
-        Charon_util.pp_ty ty);
+      m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
+        Typed.ppa exp_align Charon_util.pp_ty ty);
+  (* 0-based pointers are aligned up to their offset *)
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
   let++ () =
     assert_
-      (ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s)))
+      (Sptr.is_aligned exp_align ptr)
       (`MisalignedPointer (exp_align, align, ofs))
       st
   in
