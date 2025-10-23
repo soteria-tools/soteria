@@ -57,6 +57,7 @@ module M (State : State_intf.S) = struct
       ("miristd::miri_get_alloc_id", Miri AllocId);
       ("miristd::miri_pointer_name", Miri Nop);
       ("miristd::miri_print_borrow_state", Miri Nop);
+      ("std::intrinsics::miri_promise_symbolic_alignment", Miri Nop);
       (* Obol is quite bad at parsing names so this is how they're called there... *)
       ("utils::miri_extern::miri_get_alloc_id", Miri AllocId);
       ("utils::miri_extern::miri_pointer_name", Miri Nop);
