@@ -44,9 +44,11 @@ end
 let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   if not !Config.current.no_compile then (
     let cmd = plugin.mk_cmd ~input ~output () in
-    let res = Plugin.Cmd.exec_in ~mode pwd cmd in
-    if res <> 0 then
-      Fmt.kstr frontend_err "Failed compilation to ULLBC: code %d" res;
+    let _, err, res = Plugin.Cmd.exec_in ~mode pwd cmd in
+    if not (Plugin.Exe.is_ok res) then
+      Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
+        Fmt.(list string)
+        err;
     Cleaner.touched output);
   let crate =
     try

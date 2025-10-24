@@ -124,9 +124,10 @@ module Diagnostic = struct
     match span.file.name with
     | Local file when String.starts_with ~prefix:"/rustc/" file -> []
     | Local file ->
+        let root = Lazy.force Plugin.Lib.root in
         let filename =
-          if String.starts_with ~prefix:Plugin.lib_root file then
-            let root_l = String.length Plugin.lib_root in
+          if String.starts_with ~prefix:root file then
+            let root_l = String.length root in
             let rel_path =
               String.sub file root_l (String.length file - root_l)
             in
