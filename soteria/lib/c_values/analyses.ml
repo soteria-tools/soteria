@@ -9,8 +9,8 @@ module type S = sig
   include Soteria_std.Reversible.Mutable
 
   val simplify : t -> Svalue.t -> Svalue.t
-  val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
-  val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
+  val add_constraint : t -> Svalue.t -> Svalue.t * Var_id.Set.t
+  val encode : ?vars:Var_id.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
 end
 
 module Merge (A1 : S) (A2 : S) : S = struct
@@ -35,7 +35,7 @@ module Merge (A1 : S) (A2 : S) : S = struct
   let add_constraint (a1, a2) v =
     let v', vars1 = A1.add_constraint a1 v in
     let v'', vars2 = A2.add_constraint a2 v' in
-    (v'', Var.Set.union vars1 vars2)
+    (v'', Var_id.Set.union vars1 vars2)
 
   let encode ?vars (a1, a2) : Typed.sbool Typed.t Iter.t =
     Iter.append (A1.encode ?vars a1) (A2.encode ?vars a2)
@@ -49,7 +49,7 @@ module None : S = struct
   let save () = ()
   let reset () = ()
   let simplify () v = v
-  let add_constraint () v = (v, Var.Set.empty)
+  let add_constraint () v = (v, Var_id.Set.empty)
   let encode ?vars:_ () = Iter.empty
 end
 
@@ -117,15 +117,15 @@ module Interval : S = struct
   end
 
   include Reversible.Make_mutable (struct
-    type t = Range.t Var.Map.t
+    type t = Range.t Var_id.Map.t
 
-    let default : t = Var.Map.empty
+    let default : t = Var_id.Map.empty
   end)
 
   (** Union of two interval mappings, doing the union of the intervals *)
-  let st_union = Var.Map.merge (fun _ -> Option.map2 Range.union)
+  let st_union = Var_id.Map.merge (fun _ -> Option.map2 Range.union)
 
-  let get v st = Var.Map.find_opt v st |> Option.value ~default:(None, None)
+  let get v st = Var_id.Map.find_opt v st |> Option.value ~default:(None, None)
 
   (** [simplify st v ] simplifies the constraint [v], without learning anything,
       using the current knowledge base. *)
@@ -191,7 +191,7 @@ module Interval : S = struct
       adding a negated constraint, so rather than doing set intersection, we
       need to do set difference. *)
   let rec add_constraint ?(neg = false) ?(absorb = true) (v : Svalue.t) st :
-      (Svalue.t * Var.Set.t) * Range.t Var.Map.t =
+      (Svalue.t * Var_id.Set.t) * Range.t Var_id.Map.t =
     let update var range' =
       let range = get var st in
       let new_range =
@@ -200,19 +200,19 @@ module Interval : S = struct
       in
       match new_range with
       (* We couldn't compute anything from this update *)
-      | None -> ((v, Var.Set.empty), st)
+      | None -> ((v, Var_id.Set.empty), st)
       (* We found an inequality, but we learnt nothing from it; we can discard it *)
       | Some new_range when range = new_range ->
           log (fun m ->
-              m "Useless range  %a: %a %s %a = %a" Var.pp var Range.pp range
+              m "Useless range  %a: %a %s %a = %a" Var_id.pp var Range.pp range
                 (if neg then "/" else "∩")
                 Range.pp range' Range.pp new_range);
           let is_ok = not (Range.is_empty range) in
-          ((Svalue.bool (is_ok <> neg), Var.Set.empty), st)
+          ((Svalue.bool (is_ok <> neg), Var_id.Set.empty), st)
       | Some new_range -> (
-          let st' = Var.Map.add var new_range st in
+          let st' = Var_id.Map.add var new_range st in
           log (fun m ->
-              m "New range %a: %a %s %a = %a" Var.pp var Range.pp range
+              m "New range %a: %a %s %a = %a" Var_id.pp var Range.pp range
                 (if neg then "/" else "∩")
                 Range.pp range' Range.pp new_range);
           match new_range with
@@ -221,19 +221,19 @@ module Interval : S = struct
               let eq = Svalue.int_z m ==@ mk_var var in
               (* this is hacky; we found the exact value, but we can't return the equality
                  if we're negating, since that equality will otherwise be negated. *)
-              (((if neg then Svalue.not eq else eq), Var.Set.empty), st')
+              (((if neg then Svalue.not eq else eq), Var_id.Set.empty), st')
           (* The range is empty, so this cannot be true *)
           | _ when Range.is_empty new_range ->
-              ((Svalue.v_false, Var.Set.empty), st')
+              ((Svalue.v_false, Var_id.Set.empty), st')
           (* We got a new range, but this is a negation, meaning we can' be sure we didn't lose
              some information; to be safe, we let the PC keep the value.
              Also take this case if we do not absorb this information (e.g. in a disjunction),
              as in that case the PC must keep track of the assertion.  *)
-          | _ when not absorb -> ((v, Var.Set.empty), st')
+          | _ when not absorb -> ((v, Var_id.Set.empty), st')
           (* We could cleanly absorb the range, so the PC doesn't need to store it -- however
              we must mark this variable as dirty, as maybe the modified range still renders
              the branch infeasible, e.g. because of some additional PC assertions. *)
-          | _ -> ((Svalue.bool (not neg), Var.Set.singleton var), st'))
+          | _ -> ((Svalue.bool (not neg), Var_id.Set.singleton var), st'))
     in
     match v.node.kind with
     | Binop
@@ -268,16 +268,16 @@ module Interval : S = struct
         log (fun m ->
             m "%a && %a => %a && %a" Svalue.pp v1 Svalue.pp v2 Svalue.pp v1'
               Svalue.pp v2');
-        if v1' == v && v2' == v then ((v, Var.Set.empty), st)
-        else ((v1' &&@ v2', Var.Set.union vars1 vars2), st'')
+        if v1' == v && v2' == v then ((v, Var_id.Set.empty), st)
+        else ((v1' &&@ v2', Var_id.Set.union vars1 vars2), st'')
     | Binop (Or, v1, v2) when not neg ->
         let (v1', vars1), st1 = add_constraint ~absorb:false v1 st in
         let (v2', vars2), st2 = add_constraint ~absorb:false v2 st in
         log (fun m ->
             m "%a || %a => %a || %a" Svalue.pp v1 Svalue.pp v2 Svalue.pp v1'
               Svalue.pp v2');
-        ((v1' ||@ v2', Var.Set.union vars1 vars2), st_union st1 st2)
-    | _ -> ((v, Var.Set.empty), st)
+        ((v1' ||@ v2', Var_id.Set.union vars1 vars2), st_union st1 st2)
+    | _ -> ((v, Var_id.Set.empty), st)
 
   (** Simplifies a constraints using the current knowledge base, without
       updating it. *)
@@ -291,12 +291,12 @@ module Interval : S = struct
       them with the given accumulator. *)
   let encode ?vars st : Typed.sbool Typed.t Iter.t =
     let to_check =
-      Option.fold ~none:(fun _ -> true) ~some:Var.Hashset.mem vars
+      Option.fold ~none:(fun _ -> true) ~some:Var_id.Hashset.mem vars
     in
     wrap_read
       (fun m ->
         fun f ->
-         Var.Map.iter
+         Var_id.Map.iter
            (fun v r -> if to_check v then Range.iter_sval_equivalent v r f)
            m)
       st

@@ -468,6 +468,7 @@ module Make (State : State_intf.S) = struct
     match (a_op : AilSyntax.arithmeticOperator) with
     | Div -> (
         let^ v1 = cast_to_int v1 in
+        let^ v2 = cast_to_int v2 in
         let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
         match v2 with
         | Ok v2 -> ok (v1 /@ v2)

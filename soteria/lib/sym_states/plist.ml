@@ -18,8 +18,8 @@ module type SInt_sig = sig
   val of_int : int -> t
   val in_range : t -> t * t -> sbool_v
   val greater_or_equal : t -> t -> sbool_v
-  val subst : (Var.t -> Var.t) -> t -> t
-  val iter_vars : t -> (Var.t * 'a Value.ty -> unit) -> unit
+  val subst : (Var_id.t -> Var_id.t) -> t -> t
+  val iter_vars : t -> (Var_id.t * 'a Value.ty -> unit) -> unit
 end
 
 module Make (Symex : Symex.S) (SInt : SInt_sig with module Symex = Symex) =

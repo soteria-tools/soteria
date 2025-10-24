@@ -1,9 +1,9 @@
 open Soteria_std
 open Svalue
 
-type _ Effect.t += Eval_var : Var.t * Svalue.ty -> t Effect.t
+type _ Effect.t += Eval_var : Var_id.t * Svalue.ty -> t Effect.t
 
-let eval_var (v : Var.t) (ty : Svalue.ty) : t =
+let eval_var (v : Var_id.t) (ty : Svalue.ty) : t =
   Effect.perform (Eval_var (v, ty))
 
 let eval_binop : Binop.t -> t -> t -> t = function
@@ -91,7 +91,7 @@ let rec eval (x : t) : t =
       let l, changed = List.map_changed eval l in
       if Stdlib.not changed then x else Svalue.SSeq.mk ~seq_ty:x.node.ty l
 
-let eval ~(eval_var : Var.t -> Svalue.ty -> t option) (x : t) : t option =
+let eval ~(eval_var : Var_id.t -> Svalue.ty -> t option) (x : t) : t option =
   try Some (eval x) with
   | Division_by_zero -> None
   | effect Eval_var (v, ty), k -> (

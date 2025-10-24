@@ -38,7 +38,7 @@ let serialize (st : t) : serialized =
   let globs = Globs.serialize st.globs in
   { heap; globs }
 
-let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
+let subst_serialized (subst_var : Svalue.Var_id.t -> Svalue.Var_id.t)
     (serialized : serialized) : serialized =
   let heap =
     SPmap.subst_serialized Block.subst_serialized subst_var serialized.heap
@@ -47,7 +47,7 @@ let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
   { heap; globs }
 
 let iter_vars_serialized (s : serialized) :
-    (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit =
+    (Svalue.Var_id.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit =
   let iter_heap =
     SPmap.iter_vars_serialized Block.iter_vars_serialized s.heap
   in

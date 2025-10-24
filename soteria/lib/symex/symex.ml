@@ -9,7 +9,7 @@ module Fuel_gauge = Fuel_gauge
 module Solver = Solver
 module Solver_result = Solver_result
 module Value = Value
-module Var = Var
+module Var_id = Var_id
 
 exception Gave_up of string
 
@@ -93,7 +93,7 @@ module type S = sig
   (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
 
-  val fresh_var : 'a vt -> Var.t t
+  val fresh_var : 'a vt -> Var_id.t t
 
   val branch_on :
     ?left_branch_name:string ->
@@ -305,8 +305,8 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   module Solver = struct
     include Solver.Mutable_to_in_place (Sol)
 
-    let sat () =
-      let res = Stats.As_ctx.add_sat_time_of sat in
+    let check_sat () =
+      let res = Stats.As_ctx.add_sat_time_of check_sat in
       if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
       res
   end
@@ -389,7 +389,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         in
         Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
-        let sat_result = Solver.sat () in
+        let sat_result = Solver.check_sat () in
         Symex_state.backtrack_n 1;
         if Approx.As_ctx.is_ux () then not (Solver_result.is_sat sat_result)
         else Solver_result.is_unsat sat_result
@@ -432,7 +432,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         Symex_state.save ();
         L.with_section ~is_branch:true left_branch_name (fun () ->
             Solver.add_constraints ~simplified:true [ guard ];
-            let sat_res = Solver.sat () in
+            let sat_res = Solver.check_sat () in
             left_unsat := Solver_result.is_unsat sat_res;
             if Solver_result.is_sat sat_res then then_ () f
             else L.trace (fun m -> m "Branch is not feasible"));
@@ -450,7 +450,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->
                   Stats.As_ctx.add_branches 1;
-                  if Solver_result.is_sat (Solver.sat ()) then else_ () f
+                  if Solver_result.is_sat (Solver.check_sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible"))
 
   let if_sure ?left_branch_name:_ ?right_branch_name:_ guard
@@ -465,7 +465,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ Value.(not guard) ];
-        let neg_unsat = Solver_result.is_unsat (Solver.sat ()) in
+        let neg_unsat = Solver_result.is_unsat (Solver.check_sat ()) in
         if neg_unsat then then_ () f;
         Symex_state.backtrack_n 1;
         if not neg_unsat then (
@@ -484,7 +484,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
-        let left_sat = Solver_result.is_sat (Solver.sat ()) in
+        let left_sat = Solver_result.is_sat (Solver.check_sat ()) in
         if left_sat then then_ () f;
         Symex_state.backtrack_n 1;
         if not left_sat then (
@@ -546,7 +546,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     let@ () = Fuel.run ~init:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
-    let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
+    let admissible () = Solver_result.admissible ~mode (Solver.check_sat ()) in
     let l = ref [] in
     let () =
       iter @@ fun x -> if admissible () then l := (x, Solver.as_values ()) :: !l
@@ -577,7 +577,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     Stats.As_ctx.push_give_up_reason ~loc reason;
     if
       Approx.As_ctx.is_ox ()
-      && Solver_result.admissible ~mode:OX (Solver.sat ())
+      && Solver_result.admissible ~mode:OX (Solver.check_sat ())
     then Give_up.perform reason
 
   let some_or_give_up ~loc reason = function
@@ -602,7 +602,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       let () =
         try
           iter @@ fun x ->
-          if Solver_result.admissible ~mode (Solver.sat ()) then
+          if Solver_result.admissible ~mode (Solver.check_sat ()) then
             (* Make sure to drop branche that have leftover assumes with unsatisfiable PCs. *)
             let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
             l := (x, Solver.as_values ()) :: !l
@@ -654,27 +654,27 @@ module Substs = struct
     type 'a ty
     type 'a symex
 
-    val from_iter : 'a ty Var.iter_vars -> t symex
+    val from_iter : 'a ty Var_id.iter_vars -> t symex
   end
 
   module Subst = struct
-    include Map.Make (Var)
+    include Map.Make (Var_id)
 
-    let pp = Fmt.Dump.iter_bindings iter Fmt.nop Var.pp Var.pp
+    let pp = Fmt.Dump.iter_bindings iter Fmt.nop Var_id.pp Var_id.pp
 
     let substitute_extensible ~f ~subst x =
       let next =
         ref
           (match max_binding_opt subst with
           | None -> 0
-          | Some (x, _) -> Var.to_int x)
+          | Some (x, _) -> Var_id.to_int x)
       in
       let subst = ref subst in
       let subst_var =
         match find_opt x !subst with
         | Some x' -> x'
         | None ->
-            let x' = Var.of_int !next in
+            let x' = Var_id.of_int !next in
             incr next;
             subst := add x x' !subst;
             x'
@@ -686,7 +686,7 @@ module Substs = struct
 
     module From_iter (Symex : S) :
       From_iter
-        with type t := Var.t t
+        with type t := Var_id.t t
          and type 'a ty := 'a Symex.Value.ty
          and type 'a symex := 'a Symex.t = struct
       let from_iter iter_vars =
@@ -700,19 +700,19 @@ module Substs = struct
   end
 
   module Subst_mut = struct
-    include Hashtbl.Make (Var)
+    include Hashtbl.Make (Var_id)
 
     let add = replace
 
     let substitute_extensible ~f ~subst x =
       let next =
-        ref (to_seq_keys subst |> Seq.map Var.to_int |> Seq.fold_left max 0)
+        ref (to_seq_keys subst |> Seq.map Var_id.to_int |> Seq.fold_left max 0)
       in
       let subst_var =
         match find_opt subst x with
         | Some x' -> x'
         | None ->
-            let x' = Var.of_int !next in
+            let x' = Var_id.of_int !next in
             incr next;
             add subst x x';
             x'
@@ -722,7 +722,7 @@ module Substs = struct
 
     module From_iter (Symex : S) :
       From_iter
-        with type t := Var.t t
+        with type t := Var_id.t t
          and type 'a ty := 'a Symex.Value.ty
          and type 'a symex := 'a Symex.t = struct
       let from_iter iter_vars =
@@ -741,8 +741,8 @@ module Substs = struct
 
   module Bi_subst = struct
     type t = {
-      forward : Var.t Subst.t;
-      backward : Var.t Subst_mut.t;
+      forward : Var_id.t Subst.t;
+      backward : Var_id.t Subst_mut.t;
       mutable next_backward : int;
     }
 
@@ -768,7 +768,7 @@ module Substs = struct
               let forward = Subst.add var var' bi_subst.forward in
               Subst_mut.replace bi_subst.backward var' var;
               let next_backward =
-                max bi_subst.next_backward (Var.to_int var + 1)
+                max bi_subst.next_backward (Var_id.to_int var + 1)
               in
               { forward; backward = bi_subst.backward; next_backward })
     end
@@ -782,7 +782,7 @@ module Substs = struct
       | None ->
           let v = bi_subst.next_backward in
           bi_subst.next_backward <- v + 1;
-          let v = Var.of_int v in
+          let v = Var_id.of_int v in
           Subst_mut.add bi_subst.backward v_id v;
           v
   end

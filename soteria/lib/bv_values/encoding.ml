@@ -88,7 +88,7 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
 
 let rec encode_value (v : Svalue.t) =
   match v.node.kind with
-  | Var v -> atom (Svalue.Var.to_string v)
+  | Var v -> atom (Svalue.Var_id.to_string v)
   | Float f -> (
       match Svalue.precision_of_f v.node.ty with
       | F16 -> f16_k @@ Float.of_string f

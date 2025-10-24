@@ -1,7 +1,7 @@
 open Soteria.Terminal
 open Syntaxes.FunctionWrap
 module T = Typed.T
-module Var = Soteria.Symex.Var
+module Var_id = Soteria.Symex.Var_id
 module Agv = Aggregate_val
 
 type after_exec = [ `After_exec ]
@@ -71,7 +71,7 @@ let pp : type a. Format.formatter -> a t -> unit =
         (Fmt.Dump.list (Fmt.Dump.pair Error.pp (Call_trace.pp Fmt_ail.pp_loc)))
         manifest_bugs
 
-module Var_graph = Graph.Make_in_place (Var)
+module Var_graph = Graph.Make_in_place (Var_id)
 module Var_hashset = Var_graph.Node_set
 
 let filter_pc relevant_vars pc =
@@ -137,7 +137,7 @@ let make ~args ~pre ~pc ~post ~ret () = After_exec { args; pre; pc; post; ret }
 let prune (summary : after_exec t) : pruned t =
   let (After_exec summary) = summary in
   L.trace (fun m -> m "Pruning summary %a" pp_raw summary);
-  let module Var_graph = Graph.Make_in_place (Var) in
+  let module Var_graph = Graph.Make_in_place (Var_id) in
   let graph = Var_graph.with_node_capacity 0 in
   let init_reachable = init_reachable_vars summary in
   (* For each equality [e1 = e2] in the path condition,

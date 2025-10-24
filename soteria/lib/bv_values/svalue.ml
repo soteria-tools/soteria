@@ -1,6 +1,6 @@
 open Hc
 open Soteria_std
-module Var = Symex.Var
+module Var_id = Symex.Var_id
 
 module FloatPrecision = struct
   type t = F16 | F32 | F64 | F128
@@ -186,7 +186,7 @@ let equal_hash_consed _ t1 t2 = Int.equal t1.tag t2.tag
 let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 
 type t_kind =
-  | Var of Var.t
+  | Var of Var_id.t
   | Bool of bool
   | Float of string
   | Ptr of t * t
@@ -220,7 +220,7 @@ let iter =
   in
   Fun.flip aux
 
-let iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
+let iter_vars (sv : t) (f : Var_id.t * ty -> unit) : unit =
   iter sv @@ fun sv ->
   match sv.node.kind with Var v -> f (v, sv.node.ty) | _ -> ()
 
@@ -229,7 +229,7 @@ let pp_full ft t = pp_t_node ft t.node
 let rec pp ft t =
   let open Fmt in
   match t.node.kind with
-  | Var v -> pf ft "V%a" Var.pp v
+  | Var v -> pf ft "V%a" Var_id.pp v
   | Bool b -> pf ft "%b" b
   | Float f -> pf ft "%sf" f
   | BitVec bv ->
@@ -248,7 +248,7 @@ let rec pp ft t =
       let rec aux = function
         | acc, [] -> acc
         | Some l, { node = { kind = Var v; _ }; _ } :: rest ->
-            aux (Some (Var.to_int v :: l), rest)
+            aux (Some (Var_id.to_int v :: l), rest)
         | _, _ -> None
       in
       let range = aux (Some [], l) in

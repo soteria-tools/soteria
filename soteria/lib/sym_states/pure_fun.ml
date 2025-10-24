@@ -14,8 +14,8 @@ module type Codom = sig
   val pp : Format.formatter -> t -> unit
   val fresh : unit -> t Symex.t
   val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
-  val subst : (Var.t -> Var.t) -> t -> t
-  val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+  val subst : (Var_id.t -> Var_id.t) -> t -> t
+  val iter_vars : t -> 'a Symex.Value.ty Var_id.iter_vars
 end
 
 module Make (C : Codom) = struct

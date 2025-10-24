@@ -59,8 +59,8 @@ module type S = sig
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
 
-  val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit
-  val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
+  val iter_vars : t -> (Svalue.Var_id.t * 'b ty -> unit) -> unit
+  val subst : (Svalue.Var_id.t -> Svalue.Var_id.t) -> t -> t
 end
 
 type arithptr_t = {

@@ -6,10 +6,10 @@ type serialized = (Symbol.sym * Typed.T.sloc Typed.t) list [@@deriving show]
 val serialize : t -> serialized
 
 val subst_serialized :
-  (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
+  (Svalue.Var_id.t -> Svalue.Var_id.t) -> serialized -> serialized
 
 val iter_vars_serialized :
-  serialized -> [< Typed.T.cval ] Typed.ty Svalue.Var.iter_vars
+  serialized -> [< Typed.T.cval ] Typed.ty Svalue.Var_id.iter_vars
 
 val get : Symbol.sym -> t -> (Typed.T.sloc Typed.t * t) Csymex.t
 val produce : serialized -> t -> t Csymex.t

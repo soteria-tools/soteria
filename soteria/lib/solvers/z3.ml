@@ -119,7 +119,7 @@ module Make (Value : Value) :
     solver
 
   let declare_var solver name ty =
-    let name = Symex.Var.to_string name in
+    let name = Symex.Var_id.to_string name in
     let ty = Value.sort_of_ty ty in
     let sexp = declare name ty in
     ack_command solver sexp

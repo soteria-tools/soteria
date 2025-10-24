@@ -70,9 +70,9 @@ val get_ty : 'a t -> Svalue.ty
 val type_type : Svalue.ty -> 'a ty
 val untype_type : 'a ty -> Svalue.ty
 val kind : 'a t -> Svalue.t_kind
-val mk_var : Svalue.Var.t -> 'a ty -> 'a t
-val iter_vars : 'a t -> (Svalue.Var.t * 'b ty -> unit) -> unit
-val subst : (Svalue.Var.t -> Svalue.Var.t) -> 'a t -> 'a t
+val mk_var : Svalue.Var_id.t -> 'a ty -> 'a t
+val iter_vars : 'a t -> (Svalue.Var_id.t * 'b ty -> unit) -> unit
+val subst : (Svalue.Var_id.t -> Svalue.Var_id.t) -> 'a t -> 'a t
 val type_ : Svalue.t -> 'a t
 val type_checked : Svalue.t -> 'a ty -> 'a t option
 val cast : 'a t -> 'b t

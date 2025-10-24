@@ -79,10 +79,10 @@ module type MemVal = sig
   type serialized
 
   val pp_serialized : Format.formatter -> serialized -> unit
-  val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
+  val subst_serialized : (Var_id.t -> Var_id.t) -> serialized -> serialized
 
   val iter_vars_serialized :
-    serialized -> (Var.t * 'b Symex.Value.ty -> unit) -> unit
+    serialized -> (Var_id.t * 'b Symex.Value.ty -> unit) -> unit
 
   (** Serialize this memory value; either returns [Some serialized], or [None]
       to signal the children must instead be serialized. *)

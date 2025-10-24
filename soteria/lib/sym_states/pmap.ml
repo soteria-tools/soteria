@@ -12,8 +12,8 @@ module type KeyS = sig
   val sem_eq : t -> t -> sbool_v
   val fresh : unit -> t Symex.t
   val distinct : t list -> sbool_v
-  val subst : (Var.t -> Var.t) -> t -> t
-  val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+  val subst : (Var_id.t -> Var_id.t) -> t -> t
+  val iter_vars : t -> 'a Symex.Value.ty Var_id.iter_vars
 end
 
 module Mk_concrete_key (Symex : Symex.S) (Key : Soteria_std.Ordered_type.S) :

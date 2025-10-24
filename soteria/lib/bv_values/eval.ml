@@ -82,5 +82,5 @@ let rec eval ~eval_var (x : t) : t =
 (** Evaluates an expression; will call [eval_var] on each [Var] encountered. If
     evaluation errors (e.g. from a division by zero), gives up and returns the
     original expression. *)
-let eval ?(eval_var : Var.t -> Svalue.ty -> t = Svalue.mk_var) (x : t) : t =
+let eval ?(eval_var : Var_id.t -> Svalue.ty -> t = Svalue.mk_var) (x : t) : t =
   try eval ~eval_var x with Division_by_zero -> x

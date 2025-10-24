@@ -1,6 +1,6 @@
 open Soteria_std
 open Logs.Import
-module Var = Svalue.Var
+module Var_id = Svalue.Var_id
 
 let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
   let simplify = simplify ~trivial_truthiness ~fallback in
@@ -47,7 +47,7 @@ module Make_incremental
 struct
   module Value = Typed
 
-  module Var_counter = Var.Incr_counter_mut (struct
+  module Var_counter = Var_id.Incr_counter_mut (struct
     let start_at = 0
   end)
 
@@ -203,7 +203,7 @@ module Make
 struct
   module Value = Typed
 
-  module Var_counter = Var.Incr_counter_mut (struct
+  module Var_counter = Var_id.Incr_counter_mut (struct
     let start_at = 1
   end)
 
@@ -214,7 +214,8 @@ struct
         is not directly in the PC. *)
     type slot_content =
       | Asrt of Typed.sbool Typed.t [@printer Typed.ppa]
-      | Dirty of Var.Set.t [@printer Fmt.(iter ~sep:comma) Var.Set.iter Var.pp]
+      | Dirty of Var_id.Set.t
+          [@printer Fmt.(iter ~sep:comma) Var_id.Set.iter Var_id.pp]
     [@@deriving show]
 
     (** Each slot holds a symbolic boolean, as well a boolean indicating if it
@@ -320,17 +321,17 @@ struct
         variables required. *)
     let unchecked_constraints t =
       let changed = ref false in
-      let var_set = Var.Hashset.with_capacity 8 in
+      let var_set = Var_id.Hashset.with_capacity 8 in
       let vars value = Value.iter_vars value |> Iter.map fst in
       let to_encode = Dynarray.create () in
-      let add_vars_raw vars = Var.Hashset.add_iter var_set vars in
+      let add_vars_raw vars = Var_id.Hashset.add_iter var_set vars in
       let add_vars vars =
         vars @@ fun v ->
-        let prev_size = Var.Hashset.cardinal var_set in
-        Var.Hashset.add var_set v;
-        if Var.Hashset.cardinal var_set <> prev_size then changed := true
+        let prev_size = Var_id.Hashset.cardinal var_set in
+        Var_id.Hashset.add var_set v;
+        if Var_id.Hashset.cardinal var_set <> prev_size then changed := true
       in
-      let relevant = Iter.exists (Var.Hashset.mem var_set) in
+      let relevant = Iter.exists (Var_id.Hashset.mem var_set) in
       (* We need to reach some kind of fixpoint *)
       let rec aux_checked others seq =
         match seq () with
@@ -360,7 +361,7 @@ struct
             add_vars_raw (vars value);
             aux rest
         | Cons ({ value = Dirty vars; checked = false }, rest) ->
-            add_vars_raw (fun f -> Var.Set.iter f vars);
+            add_vars_raw (fun f -> Var_id.Set.iter f vars);
             aux rest
         | Cons ({ checked = true; _ }, _) -> aux_checked Seq.empty seq
       in
@@ -369,12 +370,12 @@ struct
   end
 
   module Declared_vars = struct
-    module Var_counter = Var.Incr_counter_mut (struct
+    module Var_counter = Var_id.Incr_counter_mut (struct
       let start_at = 1
     end)
 
     (* Since we start addresses at one to improve trivial model hits, we need to offset to obtain an index. *)
-    let var_to_index v = Var.to_int v - 1
+    let var_to_index v = Var_id.to_int v - 1
 
     type t = {
       counter : Var_counter.t;
@@ -463,7 +464,7 @@ struct
     let v = if simplified then v else simplify solver v in
     let v, vars = Analysis.add_constraint solver.analysis (Typed.untyped v) in
     Solver_state.add_constraint solver.state (Typed.type_ v);
-    if not (Var.Set.is_empty vars) then
+    if not (Var_id.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
   let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
@@ -474,7 +475,7 @@ struct
     [|n|] with the corresponding integer [n]; except if an assertion
     [|n| == v] exists, in which case we replace it with the value [v].
     If the constraint evaluates to true, then it is satisfiable. *)
-    let v_eqs = Var.Hashtbl.create 8 in
+    let v_eqs = Var_id.Hashtbl.create 8 in
     Svalue.Bool.split_ands to_check (fun v ->
         match v.node.kind with
         | Binop
@@ -485,13 +486,13 @@ struct
             ( Eq,
               ({ node = { kind = BitVec _; _ }; _ } as x),
               { node = { kind = Var n; _ }; _ } ) ->
-            Var.Hashtbl.add v_eqs n x
+            Var_id.Hashtbl.add v_eqs n x
         | _ -> ());
     let eval_var v (ty : Svalue.ty) =
       match ty with
       | TBitVector n | TLoc n -> (
-          let i = Var.to_int v in
-          try Var.Hashtbl.find v_eqs v
+          let i = Var_id.to_int v in
+          try Var_id.Hashtbl.find v_eqs v
           with Not_found -> Svalue.BitVec.mk_masked n (Z.of_int i))
       | _ -> Svalue.mk_var v ty
     in
@@ -506,7 +507,7 @@ struct
       Intf.reset solver.z3_exe;
 
       (* Declare all relevant variables *)
-      Var.Hashset.iter
+      Var_id.Hashset.iter
         (fun v ->
           let ty = Declared_vars.get_ty solver.vars v in
           Intf.declare_var solver.z3_exe v ty)

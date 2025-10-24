@@ -6,7 +6,7 @@ val serialize : t -> serialized
 val pp_serialized : Format.formatter -> serialized -> unit
 
 val iter_vars_serialized :
-  serialized -> (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit
+  serialized -> (Svalue.Var_id.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit
 
 val subst_serialized :
-  (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
+  (Svalue.Var_id.t -> Svalue.Var_id.t) -> serialized -> serialized

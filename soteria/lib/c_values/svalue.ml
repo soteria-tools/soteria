@@ -1,6 +1,6 @@
 open Soteria_std
 open Hc
-module Var = Symex.Var
+module Var_id = Symex.Var_id
 
 module FloatPrecision = struct
   type t = F16 | F32 | F64 | F128
@@ -206,7 +206,7 @@ let equal_hash_consed _ t1 t2 = Int.equal t1.tag t2.tag
 let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 
 type t_kind =
-  | Var of Var.t
+  | Var of Var_id.t
   | Bool of bool
   | Int of Z.t [@printer Fmt.of_to_string Z.to_string]
   | Float of string
@@ -224,7 +224,7 @@ and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 let hash t = t.tag
 let kind t = t.node.kind
 
-let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
+let rec iter_vars (sv : t) (f : Var_id.t * ty -> unit) : unit =
   match sv.node.kind with
   | Var v -> f (v, sv.node.ty)
   | Bool _ | Int _ | Float _ | BitVec _ -> ()
@@ -243,7 +243,7 @@ let pp_full ft t = pp_t_node ft t.node
 let rec pp ft t =
   let open Fmt in
   match t.node.kind with
-  | Var v -> pf ft "V%a" Var.pp v
+  | Var v -> pf ft "V%a" Var_id.pp v
   | Bool b -> pf ft "%b" b
   | Int z when Z.(z > of_int 2048 || z < of_int (-2048)) ->
       pf ft "%s" (Z.format "%#x" z)
@@ -263,7 +263,7 @@ let rec pp ft t =
       let rec aux = function
         | acc, [] -> acc
         | Some l, { node = { kind = Var v; _ }; _ } :: rest ->
-            aux (Some (Var.to_int v :: l), rest)
+            aux (Some (Var_id.to_int v :: l), rest)
         | _, _ -> None
       in
       let range = aux (Some [], l) in
@@ -476,7 +476,7 @@ let rec minus v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.sub i1 i2)
-  | Var v1, Var v2 when Var.equal v1 v2 -> zero
+  | Var v1, Var v2 when Var_id.equal v1 v2 -> zero
   | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
       minus (int_z (Z.sub i2 i1)) v1
   | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
