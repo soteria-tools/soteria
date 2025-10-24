@@ -209,16 +209,22 @@ type 'fuel plugin = {
 let default =
   let mk_cmd () =
     let@ std_lib_path, target = Lib.with_compiled Std in
+    let opaque_names =
+      List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names
+    in
     Cmd.make
       ~charon:
-        [
-          "--ullbc";
-          "--extract-opaque-bodies";
-          "--monomorphize";
-          "--mir elaborated";
-          "--raw-boxes";
-        ]
-      ~obol:[ "--entry-names"; "main"; "--entry-attribs"; "rusteriatool::test" ]
+        ([
+           "--ullbc";
+           "--extract-opaque-bodies";
+           "--monomorphize";
+           "--mir elaborated";
+           "--raw-boxes";
+         ]
+        @ opaque_names)
+      ~obol:
+        ([ "--entry-names"; "main"; "--entry-attribs"; "rusteriatool::test" ]
+        @ opaque_names)
       ~features:[ "rusteria" ]
       ~rustc:
         [
@@ -253,7 +259,7 @@ let kani =
   let mk_cmd () =
     let@ _ = Lib.with_compiled Kani in
     Cmd.make ~features:[ "kani" ]
-      ~obol:[ "--entry-attribs kanitool::proof" ]
+      ~obol:[ "--entry-attribs"; "kanitool::proof" ]
       ~rustc:[ "-Zcrate-attr=\"register_tool(kanitool)\""; "--extern=kani" ]
       ()
   in
@@ -276,7 +282,7 @@ let miri =
     let@ _ = Lib.with_compiled Miri in
     Cmd.make ~features:[ "miri" ]
       ~rustc:[ "--extern=miristd"; "--edition=2021" ]
-      ~obol:[ "--entry-names miri_start" ]
+      ~obol:[ "--entry-names"; "miri_start" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =
