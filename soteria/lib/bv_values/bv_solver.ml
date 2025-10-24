@@ -174,7 +174,7 @@ struct
     Intf.add_constraint solver.z3_exe v
 
   (* Incremental doesn't allow for caching queries... *)
-  let sat solver =
+  let check_sat solver =
     match Solver_state.trivial_truthiness solver.state with
     | Some true -> Symex.Solver_result.Sat
     | Some false -> Unsat
@@ -525,7 +525,7 @@ struct
         Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
         result
 
-  let sat solver =
+  let check_sat solver =
     match Solver_state.trivial_truthiness solver.state with
     | Some true -> Symex.Solver_result.Sat
     | Some false -> Unsat

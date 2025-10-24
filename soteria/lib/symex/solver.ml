@@ -44,8 +44,8 @@ module Mutable_to_in_place (M : Mutable_incremental) = struct
   let add_constraints ?simplified vs =
     M.add_constraints (Lazy.force state) ?simplified vs
 
-  let sat () = M.sat (Lazy.force state)
-  let simplify x = M.simplify (Lazy.force state) x
-  let fresh_var x = M.fresh_var (Lazy.force state) x
-  let as_values () = M.as_values (Lazy.force state)
+  let sat = wrap M.sat
+  let simplify x = (wrap M.simplify ()) x
+  let fresh_var x = (wrap M.fresh_var ()) x
+  let as_values = wrap M.as_values
 end
