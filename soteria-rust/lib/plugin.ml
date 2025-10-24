@@ -195,18 +195,24 @@ type 'fuel plugin = {
 let default =
   let mk_cmd () =
     let@ std_lib_path, target = Lib.with_compiled Std in
+    let opaque_names =
+      List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names
+    in
     Cmd.make
       ~charon:
-        [
-          "--ullbc";
-          "--extract-opaque-bodies";
-          (if !Config.current.monomorphize_old then
-             "--monomorphize-conservative"
-           else "--monomorphize");
-          "--mir elaborated";
-          "--raw-boxes";
-        ]
-      ~obol:[ "--entry-names main"; "--entry-attribs rusteriatool::test" ]
+        ([
+           "--ullbc";
+           "--extract-opaque-bodies";
+           (if !Config.current.monomorphize_old then
+              "--monomorphize-conservative"
+            else "--monomorphize");
+           "--mir elaborated";
+           "--raw-boxes";
+         ]
+        @ opaque_names)
+      ~obol:
+        ([ "--entry-names main"; "--entry-attribs rusteriatool::test" ]
+        @ opaque_names)
       ~features:[ "rusteria" ]
       ~rustc:
         [

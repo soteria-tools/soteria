@@ -124,7 +124,7 @@ module Diagnostic = struct
     match span.file.name with
     | Local file when String.starts_with ~prefix:"/rustc/" file -> []
     | Local file ->
-        let root = Lazy.force Plugin.Lib.root in
+        (* let root = Lazy.force Plugin.Lib.root in
         let filename =
           if String.starts_with ~prefix:root file then
             let root_l = String.length root in
@@ -132,8 +132,8 @@ module Diagnostic = struct
               String.sub file root_l (String.length file - root_l)
             in
             Some ("$RUSTERIA" ^ rel_path)
-          else None
-        in
+          else None *)
+        let filename = None in
         [
           Soteria.Terminal.Diagnostic.mk_range_file ?filename
             ?content:span.file.contents file (to_loc span.beg_loc)
