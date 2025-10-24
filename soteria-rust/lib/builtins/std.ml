@@ -67,52 +67,6 @@ module M (State : State_intf.S) = struct
       let size = range_end -!@ idx in
       Ptr (ptr', Len size)
 
-  (* Some array accesses are ran on functions, so we handle those here and redirect them.
-     Eventually, it would be good to maybe make a Charon pass that gets rid of these before. *)
-  let array_index_fn (fun_sig : UllbcAst.fun_sig) args =
-    let ptr, range, mode, gargs, range_id =
-      match (args, fun_sig.inputs) with
-      (* Unfortunate, but right now i don't have a better way to handle this... *)
-      | ( [ ptr; Struct range ],
-          [
-            TRef
-              ( _,
-                TAdt { id = TBuiltin ((TArray | TSlice) as mode); generics },
-                _ );
-            TAdt { id = TAdtId range_id; _ };
-          ] ) ->
-          (ptr, range, mode, generics, range_id)
-      | _ -> failwith "Unexpected input type"
-    in
-    let range_item =
-      match (Crate.get_adt range_id).item_meta.lang_item with
-      | Some item -> item
-      | None -> failwith "Unexpected range item"
-    in
-    let size =
-      match (ptr, gargs.const_generics) with
-      (* Array with static size *)
-      | _, [ size ] -> BV.usize_of_const_generic size
-      | Ptr (_, Len size), [] -> Typed.cast size
-      | _ -> failwith "array_index (fn): couldn't calculate size"
-    in
-    let idx_from, idx_to =
-      match (range_item, range) with
-      | "RangeFull", [] -> (Base Usize.(0s), Base size)
-      | "RangeFrom", [ from ] -> (from, Base size)
-      | "RangeTo", [ to_ ] -> (Base Usize.(0s), to_)
-      | "Range", [ from; to_ ] -> (from, to_)
-      | "RangeInclusive", [ from; Base to_ ] ->
-          (from, Base (Typed.cast to_ +!@ Usize.(1s)))
-      | "RangeToInclusive", [ Base to_ ] ->
-          (Base Usize.(0s), Base (Typed.cast to_ +!@ Usize.(1s)))
-      | _ -> Fmt.failwith "array_index (fn): unexpected range %s" range_item
-    in
-    let idx_op : Types.builtin_index_op =
-      { is_array = mode = TArray; mutability = RShared; is_range = true }
-    in
-    array_index idx_op gargs [ ptr; idx_from; idx_to ]
-
   let array_slice ~mut:_ (gen_args : Types.generic_args) args =
     match (gen_args.const_generics, args) with
     | [ size ], [ Ptr (ptr, Thin) ] ->
@@ -203,18 +157,6 @@ module M (State : State_intf.S) = struct
     let unique = Struct [ non_null; phantom_data ] in
     let allocator = Struct [] in
     Struct [ unique; allocator ]
-
-  let fixme_try_cleanup _ =
-    (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
-              we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    ok @@ _mk_box (Ptr (Sptr.null_ptr (), Len Usize.(0s)))
-
-  let fixme_box_new (fun_sig : UllbcAst.fun_sig) args =
-    let ty = List.hd fun_sig.inputs in
-    let value = List.hd args in
-    let* ptr = State.alloc_ty ty in
-    let+ () = State.store ptr ty value in
-    _mk_box (Ptr ptr)
 
   let alloc_impl args =
     let zero = Usize.(0s) in
