@@ -110,14 +110,31 @@ let is_int : Types.ty -> bool = function
 let align_of_literal_ty : Types.literal_type -> int = size_of_literal_ty
 let empty_generics = TypesUtils.empty_generic_args
 
-(** If this is a dynamically sized type (requiring a fat pointer) *)
-let rec is_dst : Types.ty -> bool = function
-  | TAdt { id = TBuiltin (TSlice | TStr); _ } | TDynTrait _ -> true
+type meta_kind = LenKind | VTableKind | NoneKind
+
+let rec dst_kind : Types.ty -> meta_kind = function
+  | TAdt { id = TBuiltin TStr; _ } | TAdt { id = TBuiltin TSlice; _ } -> LenKind
+  | TDynTrait _ -> VTableKind
   | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
-      | None -> false
-      | Some last -> is_dst Types.(last.field_ty))
-  | _ -> false
+      | None -> NoneKind
+      | Some last -> dst_kind Types.(last.field_ty))
+  | _ -> NoneKind
+
+(** If this is a DST type with a slice tail, return the type of the slice's
+    element. *)
+let rec dst_slice_ty : Types.ty -> Types.ty option = function
+  | TAdt { id = TBuiltin TStr; _ } -> Some (TLiteral (TUInt U8))
+  | TAdt { id = TBuiltin TSlice; generics = { types = [ sub_ty ]; _ } } ->
+      Some sub_ty
+  | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
+      match List.last_opt (Crate.as_struct id) with
+      | None -> None
+      | Some last -> dst_slice_ty Types.(last.field_ty))
+  | _ -> None
+
+(** If this is a dynamically sized type (requiring a fat pointer) *)
+let is_dst ty = dst_kind ty <> NoneKind
 
 let size_to_fit ~size ~align =
   let ( % ) = Stdlib.( mod ) in
@@ -161,6 +178,8 @@ let rec layout_of (ty : Types.ty) : layout =
       in
       let sub_layout = layout_of sub_ty in
       { size = 0; align = sub_layout.align; fields = Array sub_layout.size }
+  (* Same as above, but here we have even less information ! *)
+  | TDynTrait _ -> { size = 0; align = 1; fields = Primitive }
   (* Tuples *)
   | TAdt { id = TTuple; generics = { types; _ } } -> layout_of_members types
   (* Custom ADTs (struct, enum, etc.) *)
@@ -205,8 +224,6 @@ let rec layout_of (ty : Types.ty) : layout =
   | TFnPtr _ ->
       let ptr_size = Crate.pointer_size () in
       { size = ptr_size; align = ptr_size; fields = Primitive }
-  (* FIXME: this is wrong but at least some more code runs... *)
-  | TDynTrait _ -> { size = 0; align = 1; fields = Primitive }
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> raise (CantComputeLayout ("pointer metadata", ty))
   | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
@@ -244,6 +261,16 @@ and layout_of_struct (adt : Types.type_decl) (fields : Types.field list) =
         align;
         fields = Arbitrary (Types.VariantId.zero, Array.of_list field_offsets);
       }
+  | Some { variant_layouts = [ { field_offsets; _ } ]; _ } ->
+      (* we want to compute a size/align, but keep the field offsets
+         this is needed for DSTs, where we're not provided a size but we definitely
+         care about field positions (the size won't matter anyways since we use
+         the pointer's metadata). *)
+      let base = layout_of_members (field_tys fields) in
+      {
+        base with
+        fields = Arbitrary (Types.VariantId.zero, Array.of_list field_offsets);
+      }
   | _ -> layout_of_members (field_tys fields)
 
 and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
@@ -265,17 +292,13 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
           { size = 0; align = 1; fields = Enum (tag, [||]) }
       | [ (i, variant_layout) ] ->
           let vi = Types.VariantId.of_int i in
-          let offset =
-            match variant_layout.field_offsets with
-            | [ o ] -> o
-            | _ -> failwith "Expected single offset for single variant enum"
-          in
+          let offsets = Array.of_list variant_layout.field_offsets in
           let variant = Types.VariantId.nth variants vi in
           let sub_layout = layout_of_members (field_tys variant.fields) in
           {
             size = sub_layout.size;
             align = sub_layout.align;
-            fields = Arbitrary (vi, [| offset |]);
+            fields = Arbitrary (vi, offsets);
           }
       | _ ->
           Fmt.failwith
@@ -315,8 +338,22 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
             { offset = 0; ty; tags = Array.of_list tags; encoding = Direct }
       in
       let variant_layouts =
-        Monad.ListM.map variants (fun v ->
-            layout_of_members (field_tys v.fields))
+        match adt.layout with
+        | Some { variant_layouts; size = Some size; align = Some align; _ } ->
+            let variant_layouts =
+              List.mapi
+                (fun i v -> (Types.VariantId.of_int i, v))
+                variant_layouts
+            in
+            Monad.ListM.map variant_layouts (fun (i, v) ->
+                {
+                  size;
+                  align;
+                  fields = Arbitrary (i, Array.of_list v.field_offsets);
+                })
+        | _ ->
+            Monad.ListM.map variants (fun v ->
+                layout_of_members (field_tys v.fields))
       in
       match variant_layouts with
       (* no variants: uninhabited ZST *)
@@ -544,7 +581,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in
   function
   | TLiteral lit_ty -> Some (Base (zeroed_lit lit_ty))
-  | TRawPtr _ -> Some (Ptr (null_ptr, None))
+  | TRawPtr _ -> Some (Ptr (null_ptr, Thin))
   | TFnPtr _ -> None
   | TRef _ -> None
   | TAdt { id = TTuple; generics = { types; _ } } ->
@@ -790,13 +827,21 @@ let rec update_ref_tys_in
     The full specification is available at:
     https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility *)
 let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
+  let is_ptr_like : Types.ty -> bool = function
+    | TRef _ | TRawPtr _ -> true
+    | TAdt { id = TBuiltin TBox; _ } -> true
+    | TAdt { id = TAdtId id; _ } ->
+        let adt = Crate.get_adt id in
+        adt.item_meta.lang_item = Some "owned_box"
+        || Charon_util.meta_get_attr adt.item_meta "rustc_diagnostic_item"
+           = Some "NonNull"
+    | _ -> false
+  in
   match (ty1, ty2) with
-  (* Refs and raw pointers are ABI-compatible if they have the same metadata type
-    FIXME: we only handle slices/strings, so we can just check if they're both DSTs;
-           once we handle [dyn] we need to actually check the metadata type *)
+  (* Refs and raw pointers are ABI-compatible if they have the same metadata type *)
   | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
     ->
-      is_dst ty1 = is_dst ty2
+      dst_kind ty1 = dst_kind ty2
   | TLiteral (TUInt uint1), TLiteral (TUInt uint2) ->
       size_of_uint_ty uint1 = size_of_uint_ty uint2
   | TLiteral (TInt int1), TLiteral (TInt int2) ->
@@ -804,6 +849,8 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
     ->
       true
+  (* We keep this later down to avoid the check for everything *)
+  | ty1, ty2 when is_ptr_like ty1 && is_ptr_like ty2 -> true
   (* FIXME: Function pointers are compatible if they have the same ABI-string (unsupported) *)
   | TFnPtr _, TFnPtr _ -> true
   | _ ->
@@ -812,4 +859,4 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
         layout.size = 0 && layout.align = 1
       in
       (* ZSTs with align 1 are compatible *)
-      if is_zst ty1 && is_zst ty2 then true else Types.equal_ty ty1 ty2
+      (is_zst ty1 && is_zst ty2) || Types.equal_ty ty1 ty2

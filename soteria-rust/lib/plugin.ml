@@ -1,6 +1,46 @@
 open Charon
 open Syntaxes.FunctionWrap
 
+exception PluginError of string
+
+(** Utilities to run commands *)
+module Exe = struct
+  let run_in path f =
+    let pwd = Unix.getcwd () in
+    Fun.protect
+      ~finally:(fun () -> Unix.chdir pwd)
+      (fun () ->
+        Unix.chdir path;
+        f ())
+
+  let pp_status ft = function
+    | Unix.WEXITED 0 -> Fmt.string ft "Exited successfully"
+    | Unix.WEXITED n -> Fmt.pf ft "Exit(%d)" n
+    | Unix.WSIGNALED n -> Fmt.pf ft "Killed(%d)" n
+    | Unix.WSTOPPED n -> Fmt.pf ft "Stopped(%d)" n
+
+  let is_ok = function Unix.WEXITED 0 -> true | _ -> false
+
+  let exec ?(env = []) cmd args =
+    (* let args = Array.of_list args in *)
+    let current_env = Unix.environment () in
+    let env = Array.append current_env (Array.of_list env) in
+    let cmd = String.concat " " (cmd :: args) in
+    if !Config.current.log_compilation then
+      L.app (fun g -> g "Running command: %s" cmd);
+    let out, inp, err = Unix.open_process_full cmd env in
+    let output = In_channel.input_lines out in
+    let error = In_channel.input_lines err in
+    let status = Unix.close_process_full (out, inp, err) in
+    (output, error, status)
+
+  let exec_exn ?env cmd args =
+    let output, _, status = exec ?env cmd args in
+    assert (is_ok status);
+    output
+end
+
+(** Organise commands to send to the Soteria-Rust frontend *)
 module Cmd = struct
   type t = {
     charon : string list; [@default []]
@@ -28,19 +68,26 @@ module Cmd = struct
       rustc = c1.rustc @ c2.rustc;
     }
 
+  let current_rustc_flags () =
+    let rustc = !Config.current.rustc_flags in
+    let sysroot =
+      match !Config.current.sysroot with
+      | Some path -> [ "--sysroot=" ^ path ]
+      | None -> []
+    in
+    rustc @ sysroot
+
+  let flags_as_rustc_env args =
+    if List.is_empty args then [] else [ "RUSTFLAGS=" ^ String.concat " " args ]
+
   let build_cmd ~mode { charon; obol; features; rustc } =
-    let spaced = String.concat " " in
-    let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
     let with_obol = !Config.current.with_obol in
-    let rustc = rustc @ !Config.current.rustc_flags in
+    let features = List.concat_map (fun f -> [ "--cfg"; f ]) features in
+    let rustc = rustc @ current_rustc_flags () @ features in
     match mode with
     | Rustc ->
-        let features = List.map (( ^ ) "--cfg=") features in
-        let compiler =
-          if not with_obol then "charon rustc " ^ spaced charon
-          else "obol " ^ spaced obol
-        in
-        compiler ^ " -- " ^ spaced features ^ " " ^ escape (spaced rustc)
+        if with_obol then ("obol", obol @ [ "--" ] @ rustc, [])
+        else ("charon", ("rustc" :: charon) @ [ "--" ] @ rustc, [])
     | Cargo ->
         (* Cargo already specifies the edition *)
         let rustc =
@@ -48,40 +95,86 @@ module Cmd = struct
             (Fun.negate (String.starts_with ~prefix:"--edition"))
             rustc
         in
-        let features = List.map (( ^ ) "--cfg ") features in
-        let rustc = rustc @ features in
-        let env =
-          if not (List.is_empty rustc) then
-            "RUSTFLAGS=\"" ^ spaced rustc ^ "\" "
-          else ""
-        in
-        let compiler =
-          if not with_obol then "charon cargo " ^ spaced charon
-          else "obol --cargo " ^ spaced obol
-        in
-        env ^ compiler
-
-  let exec_cmd cmd =
-    if !Config.current.log_compilation then
-      L.app (fun g -> g "Running command: %s" cmd);
-    Sys.command cmd
-
-  let exec_and_read cmd =
-    if !Config.current.log_compilation then
-      L.app (fun g -> g "Running command: %s" cmd);
-    let inp = Unix.open_process_in cmd in
-    let r = In_channel.input_lines inp in
-    In_channel.close inp;
-    r
+        let env = flags_as_rustc_env rustc in
+        if not with_obol then ("charon", "cargo" :: charon, env)
+        else ("obol", "--cargo" :: obol, env)
 
   let exec_in ~mode folder cmd =
-    let verbosity =
-      if !Config.current.log_compilation then "" else "> /dev/null 2>/dev/null"
-    in
-    exec_cmd @@ "cd " ^ folder ^ " && " ^ build_cmd ~mode cmd ^ verbosity
+    let cmd, args, env = build_cmd ~mode cmd in
+    let@ () = Exe.run_in folder in
+    Exe.exec ~env cmd args
+
+  let exec_in_exn ~mode folder cmd =
+    let cmd, args, env = build_cmd ~mode cmd in
+    let@ () = Exe.run_in folder in
+    Exe.exec_exn ~env cmd args
 end
 
-exception PluginError of string
+module Lib = struct
+  let toolchain_path =
+    lazy (Exe.exec_exn "charon" [ "toolchain-path" ] |> List.hd)
+
+  (* let cargo =
+    "RUSTC=$(charon toolchain-path)/bin/rustc $(charon toolchain-path)/bin/cargo" *)
+
+  let target =
+    lazy
+      (match !Config.current.target with
+      | Some t -> t
+      | None -> (
+          let toolchain = Lazy.force toolchain_path in
+          let info = Exe.exec_exn (toolchain ^ "/bin/cargo") [ "-vV" ] in
+          match List.find_opt (String.starts_with ~prefix:"host") info with
+          | Some s -> String.sub s 6 (String.length s - 6)
+          | None -> raise (PluginError "Couldn't find target host")))
+
+  let root =
+    lazy
+      (match Sys.getenv_opt "RUSTERIA_PLUGINS" with
+      | Some root -> root
+      | None -> List.hd Runtime_sites.Sites.plugins)
+
+  type t = Std | Kani | Miri
+
+  let name = function Std -> "std" | Kani -> "kani" | Miri -> "miri"
+  let path lib = Filename.concat (Lazy.force root) (name lib)
+
+  let compile lib =
+    if not !Config.current.no_compile_plugins then
+      let path = path lib in
+      let verbosity =
+        if !Config.current.log_compilation then [ "--verbose" ] else []
+      in
+      let toolchain = Lazy.force toolchain_path in
+      let env = Cmd.flags_as_rustc_env @@ Cmd.current_rustc_flags () in
+      let env = ("RUSTC=" ^ toolchain ^ "/bin/rustc") :: env in
+      let _out, err, status =
+        let@ () = Exe.run_in path in
+        Exe.exec ~env (toolchain ^ "/bin/cargo")
+          ([ "build"; "--offline"; "--lib"; "--target"; Lazy.force target ]
+          @ verbosity)
+      in
+      match status with
+      | WEXITED (0 | 255) -> ()
+      | _ ->
+          let msg =
+            Fmt.str "Couldn't compile lib at %s@.%a" path Fmt.(list string) err
+          in
+          raise (PluginError msg)
+
+  let with_compiled lib f =
+    let path = path lib in
+    let target = Lazy.force target in
+    compile lib;
+    let config : Cmd.t = f (path, target) in
+    let lib_imports =
+      [
+        Fmt.str "-L%s/target/%s/debug/deps" path target;
+        Fmt.str "-L%s/target/debug/deps" path;
+      ]
+    in
+    { config with rustc = config.rustc @ lib_imports }
+end
 
 type fun_decl = UllbcAst.fun_decl
 
@@ -94,71 +187,6 @@ type 'fuel entry_point = {
 let mk_entry_point ?(expect_error = false) ?fuel fun_decl =
   Some { fun_decl; expect_error; fuel }
 
-let cargo =
-  "RUSTC=$(charon toolchain-path)/bin/rustc $(charon toolchain-path)/bin/cargo"
-
-let target =
-  lazy
-    (match !Config.current.target with
-    | Some t -> t
-    | None -> (
-        let info = Fmt.kstr Cmd.exec_and_read "%s -vV" cargo in
-        match List.find_opt (String.starts_with ~prefix:"host") info with
-        | Some s -> String.sub s 6 (String.length s - 6)
-        | None -> raise (PluginError "Couldn't find target host")))
-
-let lib_root =
-  match Sys.getenv_opt "RUSTERIA_PLUGINS" with
-  | Some root -> root
-  | None -> List.hd Runtime_sites.Sites.plugins
-
-type lib = Std | Kani | Miri
-
-let lib_name = function Std -> "std" | Kani -> "kani" | Miri -> "miri"
-let lib_path lib = lib_root ^ "/" ^ lib_name lib
-
-let lib_compile ~target lib =
-  if not !Config.current.no_compile_plugins then
-    let path = lib_path lib in
-    let verbosity =
-      if !Config.current.log_compilation then "--verbose"
-      else "> /dev/null 2>/dev/null"
-    in
-    let res =
-      Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path cargo
-        target verbosity
-    in
-    if res <> 0 && res <> 255 then
-      let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
-      raise (PluginError msg)
-
-let with_compiled_lib lib f =
-  let path = lib_path lib in
-  let target = Lazy.force target in
-  lib_compile ~target lib;
-  let config : Cmd.t = f (path, target) in
-  let lib_imports =
-    [
-      Fmt.str "-L%s/target/%s/debug/deps" path target;
-      Fmt.str "-L%s/target/debug/deps" path;
-    ]
-  in
-  { config with rustc = config.rustc @ lib_imports }
-
-(* List of patterns that currently cause generic errors (and thus crashes in monomorphisation).
-   We tell Charon to not translate these, to avoid the crash, and we just hope the item is not
-   encountered at runtime. *)
-let known_generic_errors =
-  [
-    "alloc::borrow::ToOwned::to_owned";
-    "alloc::raw_vec::_::try_allocate_in";
-    "alloc::string::_::from";
-    "alloc::raw_vec::finish_grow";
-    "core::fmt::Display::fmt";
-    "std::path::_::from";
-    "core::iter::traits::iterator::Iterator::flatten";
-  ]
-
 type 'fuel plugin = {
   mk_cmd : unit -> Cmd.t;
   get_entry_point : fun_decl -> 'fuel entry_point option;
@@ -166,23 +194,25 @@ type 'fuel plugin = {
 
 let default =
   let mk_cmd () =
-    let@ std_lib_path, target = with_compiled_lib Std in
-    let opaques = List.map (( ^ ) "--opaque ") known_generic_errors in
-    let monomorphize_flag =
-      if !Config.current.monomorphize_old then "--monomorphize-conservative"
-      else "--monomorphize"
+    let@ std_lib_path, target = Lib.with_compiled Std in
+    let opaque_names =
+      List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names
     in
     Cmd.make
       ~charon:
         ([
            "--ullbc";
            "--extract-opaque-bodies";
-           monomorphize_flag;
+           (if !Config.current.monomorphize_old then
+              "--monomorphize-conservative"
+            else "--monomorphize");
            "--mir elaborated";
            "--raw-boxes";
          ]
-        @ opaques)
-      ~obol:[ "--entry-names main"; "--entry-attribs rusteriatool::test" ]
+        @ opaque_names)
+      ~obol:
+        ([ "--entry-names main"; "--entry-attribs rusteriatool::test" ]
+        @ opaque_names)
       ~features:[ "rusteria" ]
       ~rustc:
         [
@@ -192,8 +222,8 @@ let default =
           (* No warning *)
           "-Awarnings";
           (* include our std and rusteria crates *)
-          "-Zcrate-attr=feature(register_tool)";
-          "-Zcrate-attr=register_tool(rusteriatool)";
+          "-Zcrate-attr=\"feature(register_tool)\"";
+          "-Zcrate-attr=\"register_tool(rusteriatool)\"";
           "--extern=rusteria";
           (* include the std *)
           Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"
@@ -215,10 +245,10 @@ let default =
 
 let kani =
   let mk_cmd () =
-    let@ _ = with_compiled_lib Kani in
+    let@ _ = Lib.with_compiled Kani in
     Cmd.make ~features:[ "kani" ]
       ~obol:[ "--entry-attribs kanitool::proof" ]
-      ~rustc:[ "-Zcrate-attr=register_tool(kanitool)"; "--extern=kani" ]
+      ~rustc:[ "-Zcrate-attr=\"register_tool(kanitool)\""; "--extern=kani" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =
@@ -237,7 +267,7 @@ let kani =
 
 let miri =
   let mk_cmd () =
-    let@ _ = with_compiled_lib Miri in
+    let@ _ = Lib.with_compiled Miri in
     Cmd.make ~features:[ "miri" ]
       ~rustc:[ "--extern=miristd"; "--edition=2021" ]
       ~obol:[ "--entry-names miri_start" ]
@@ -266,9 +296,10 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
   let mk_cmd ~input ~output () =
     let init =
       Cmd.make
-        ~charon:[ "--dest-file " ^ output ]
-        ~obol:[ "--dest-file " ^ output ]
-        ~rustc:[ input ] ()
+        ~charon:[ "--dest-file"; Filename.quote output ]
+        ~obol:[ "--dest-file"; Filename.quote output ]
+        ~rustc:[ Filename.quote input ]
+        ()
     in
     List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
@@ -319,6 +350,4 @@ let create_using_current_config () =
       (!Config.current.with_miri, miri);
     ]
 
-let compile_all_plugins () =
-  let target = Lazy.force target in
-  List.iter (lib_compile ~target) [ Std; Kani; Miri ]
+let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]

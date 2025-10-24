@@ -12,6 +12,13 @@ type severity = Grace.Diagnostic.Severity.t =
   | Error
   | Bug
 
+let pp_severity ft = function
+  | Help -> Color.pp_clr2 `Cyan `Bold ft "help"
+  | Error -> Color.pp_clr2 `Red `Bold ft "error"
+  | Warning -> Color.pp_clr2 `Yellow `Bold ft "warning"
+  | Note -> Color.pp_clr2 `Green `Bold ft "note"
+  | Bug -> Color.pp_clr2 `Red `Bold ft "bug"
+
 let read_file file =
   let ic = open_in file in
   let rec iter () f =
@@ -138,8 +145,12 @@ let pp ft diag =
 let print_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
   with_unaltered_geo @@ fun () ->
   let labels = call_trace_to_labels ~as_ranges call_trace in
-  Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
-  |> Fmt.pr "%a@?" pp
+  try
+    Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
+    |> Fmt.pr "%a@?" pp
+  with _ ->
+    Fmt.pr "%a: %a@?" pp_severity severity (Color.pp_style `Bold)
+      (error ^ " in " ^ fname)
 
 let print_diagnostic_simple ~severity msg =
   with_unaltered_geo @@ fun () ->

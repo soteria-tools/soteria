@@ -44,9 +44,11 @@ end
 let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   if not !Config.current.no_compile then (
     let cmd = plugin.mk_cmd ~input ~output () in
-    let res = Plugin.Cmd.exec_in ~mode pwd cmd in
-    if res <> 0 then
-      Fmt.kstr frontend_err "Failed compilation to ULLBC: code %d" res;
+    let _, err, res = Plugin.Cmd.exec_in ~mode pwd cmd in
+    if not (Plugin.Exe.is_ok res) then
+      Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
+        Fmt.(list string)
+        err;
     Cleaner.touched output);
   let crate =
     try
@@ -66,23 +68,20 @@ let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
     Cleaner.touched crate_file);
   crate
 
+let normalize_path path =
+  if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
+  else path
+
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
-  let file_name =
-    if Filename.is_relative file_name then
-      Filename.concat (Sys.getcwd ()) file_name
-    else file_name
-  in
+  let file_name = normalize_path file_name in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
-  let crate_dir =
-    if Filename.is_relative crate then Filename.concat (Sys.getcwd ()) crate
-    else crate
-  in
+let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate_dir =
+  let crate_dir = normalize_path crate_dir in
   let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
   parse_ullbc ~mode:Cargo ~plugin ~input:"" ~output ~pwd:crate_dir
 
@@ -150,6 +149,24 @@ let print_outcomes_summary outcomes =
     (list ~sep:(any "@\n") pp_outcome)
     outcomes
 
+let print_stats (stats : Meta.span Stats.stats) =
+  let open Fmt in
+  let entries =
+    [
+      ("Steps", fun ft () -> int ft stats.steps_number);
+      ("Branches", fun ft () -> int ft stats.branch_number);
+      ("Exec time", fun ft () -> pp_time ft stats.exec_time);
+      ( "Solver time",
+        fun ft () ->
+          Fmt.pf ft "%a (%a%%)" pp_time stats.sat_time (float_dfrac 2)
+            (100. *. stats.sat_time /. stats.exec_time) );
+    ]
+  in
+  let pp_entry ft (name, pp_value) = Fmt.pf ft " • %s: %a" name pp_value () in
+  pr "%a:@\n%a@\n" (pp_style `Bold) "Statistics"
+    (list ~sep:(any "@\n") pp_entry)
+    entries
+
 let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
   let@ () = Crate.with_crate crate in
 
@@ -180,6 +197,8 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
         stats = Rustsymex.Stats.create ();
       }
   in
+
+  if !Config.current.print_stats then print_stats stats;
 
   (* inverse ok and errors if we expect a failure *)
   let nbranches = List.length branches in
