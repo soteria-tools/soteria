@@ -294,7 +294,7 @@ module Make (State : State_intf.S) = struct
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty ?vtable :
-      GAst.fn_operand -> 'err fun_exec t =
+      GAst.fn_operand -> ('err fun_exec * Types.ty list) t =
     let validate_call ?(is_dyn = false) (fn : Types.fn_ptr) =
       match fn.kind with
       | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
@@ -329,11 +329,11 @@ module Make (State : State_intf.S) = struct
               g "Resolved function call to %a" Crate.pp_name
                 fundef.item_meta.name);
           match Std_funs.std_fun_eval fundef exec_fun with
-          | Some fn -> ok fn
-          | None -> ok (exec_fun fundef)
+          | Some fn -> ok (fn, fundef.signature.inputs)
+          | None -> ok (exec_fun fundef, fundef.signature.inputs)
         with Crate.MissingDecl _ -> not_impl "Missing function declaration")
     | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
-        ok (Std_funs.builtin_fun_eval fn generics)
+        ok (Std_funs.builtin_fun_eval fn generics, in_tys)
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
@@ -913,8 +913,19 @@ module Make (State : State_intf.S) = struct
             | _ -> not_impl "dyn method call without VTable?"
           else ok None
         in
-        let* exec_fun = resolve_function ~in_tys ~out_ty ?vtable func in
-        let* args = eval_operand_list args in
+        let* exec_fun, exp_tys =
+          resolve_function ~in_tys ~out_ty ?vtable func
+        in
+        (* the expected types of the function may differ to those passed, e.g. with
+           function pointers or dyn calls, so we transmute here. *)
+        let* args =
+          fold_list (List.combine3 args in_tys exp_tys) ~init:[]
+            ~f:(fun acc (arg, from_ty, to_ty) ->
+              let* arg = eval_operand arg in
+              let$$+ arg = Encoder.transmute ~from_ty ~to_ty arg in
+              arg :: acc)
+        in
+        let args = List.rev args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:(any ", ") pp_rust_val)
