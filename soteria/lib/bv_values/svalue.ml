@@ -1219,16 +1219,18 @@ and BitVec : BitVec = struct
           let bits = size_of v.node.ty in
           Bool.sem_eq (one 1) (extract (bits - 1) (bits - 1) v)
         in
+        let not_eq_0 v = Bool.not (Bool.sem_eq v1 (zero (size_of v.node.ty))) in
         (* this function returns if this node is negative if we can tell,
            and otherwise the node that represents the sign bit *)
         let rec aux_sign_node v =
           match v.node.kind with
           | Unop (BvExtend (true, _), v) -> aux_sign_node v
           | Unop (BvExtend (false, _), _) -> Bool.v_false
-          | Binop (Mod, l, _) -> aux_sign_node l
-          | Binop (Rem true, _, r) -> aux_sign_node r
+          | Binop (Mod, _, r) -> Bool.and_ (aux_sign_node r) (not_eq_0 v)
+          | Binop (Rem true, l, _) -> Bool.and_ (aux_sign_node l) (not_eq_0 v)
           | Binop (Div true, l, r) ->
-              Bool.not (Bool.sem_eq (aux_sign_node l) (aux_sign_node r))
+              Bool.and_ (not_eq_0 v)
+                (Bool.not (Bool.sem_eq (aux_sign_node l) (aux_sign_node r)))
           | Binop (BvConcat, l, _) -> aux_sign_node l
           | Unop (BvNot, v) -> not (aux_sign_node v)
           | Unop (BvOfBool n, _) when n > 1 -> Bool.v_false
