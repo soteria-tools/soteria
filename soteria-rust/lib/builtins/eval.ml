@@ -98,12 +98,15 @@ let std_fun_pair_list =
     ("alloc::raw_vec::handle_error", Optim Panic);
     ("core::panicking::panic", Optim Panic);
     ("core::panicking::panic_fmt", Optim Panic);
+    ("core::panicking::panic_nounwind_fmt", Optim Panic);
     ("core::slice::index::slice_end_index_len_fail", Optim Panic);
     ("core::slice::index::slice_end_index_overflow_fail", Optim Panic);
     ("core::slice::index::slice_index_order_fail", Optim Panic);
     ("std::alloc::handle_alloc_error", Optim Panic);
+    ("std::char::encode_utf8_raw::do_panic", Optim Panic);
     ("std::option::unwrap_failed", Optim Panic);
     ("std::result::unwrap_failed", Optim Panic);
+    ("std::rt::panic_fmt", Optim Panic);
     ("std::vec::Vec::_::remove::assert_failed", Optim Panic);
   ]
 

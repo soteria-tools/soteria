@@ -977,6 +977,12 @@ and BitVec : BitVec = struct
         | BitOr -> or_ v1 v2
         | BitXor -> xor v1 v2
         | _ -> failwith "unreachable binop")
+    | Binop (Shl, v1, v2) ->
+        (* this only holds under the assumption v2 < BITS(v1), which should be true, since
+         it usually is UB otherwise *)
+        let v1 = extract from_ to_ v1 in
+        let v2 = extract from_ to_ v2 in
+        shl v1 v2
     | Binop (LShr, v1, { node = { kind = BitVec x; _ }; _ }) ->
         (* we have to be careful to not extract bits that are out of bounds *)
         let shift = Z.to_int x in
