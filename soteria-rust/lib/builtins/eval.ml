@@ -5,7 +5,7 @@ let match_config =
   NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
 (* Functions we could not stub, but we do for performance *)
-type fixme_fn = |
+type fixme_fn = PanicCleanup | CatchUnwindCleanup
 
 type optim_fn =
   | FloatIs of Svalue.FloatClass.t
@@ -29,10 +29,11 @@ type alloc_fn =
   | NoAllocShimIsUnstable
 
 type fn =
-  | Rusteria of rusteria_fn
-  | Miri of miri_fn
   | Alloc of alloc_fn
+  | Fixme of fixme_fn
+  | Miri of miri_fn
   | Optim of optim_fn
+  | Rusteria of rusteria_fn
 
 let std_fun_pair_list =
   [
@@ -60,6 +61,8 @@ let std_fun_pair_list =
     ("__rust_dealloc", Alloc Dealloc);
     ("__rust_no_alloc_shim_is_unstable_v2", Alloc NoAllocShimIsUnstable);
     ("__rust_realloc", Alloc Realloc);
+    (* Panic Builtins *)
+    ("__rust_panic_cleanup", Fixme PanicCleanup);
     (* Core *)
     ("std::alloc::Global::alloc_impl", Optim AllocImpl);
     (* FIXME(OCaml): all float operations could be removed, but we lack bit precision when
@@ -99,6 +102,7 @@ let std_fun_pair_list =
     ("core::panicking::panic", Optim Panic);
     ("core::panicking::panic_fmt", Optim Panic);
     ("core::panicking::panic_nounwind_fmt", Optim Panic);
+    ("core::slice::index::slice_start_index_len_fail", Optim Panic);
     ("core::slice::index::slice_end_index_len_fail", Optim Panic);
     ("core::slice::index::slice_end_index_overflow_fail", Optim Panic);
     ("core::slice::index::slice_index_order_fail", Optim Panic);
@@ -108,6 +112,8 @@ let std_fun_pair_list =
     ("std::result::unwrap_failed", Optim Panic);
     ("std::rt::panic_fmt", Optim Panic);
     ("std::vec::Vec::_::remove::assert_failed", Optim Panic);
+    (* This uses async stuff we would like to ignore, for now we patch it *)
+    ("std::panicking::catch_unwind::cleanup", Fixme CatchUnwindCleanup);
   ]
 
 let opaque_names = List.map fst std_fun_pair_list
@@ -173,6 +179,8 @@ module M (State : State_intf.S) = struct
          | Alloc Dealloc -> dealloc
          | Alloc NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
          | Alloc Realloc -> realloc
+         | Fixme PanicCleanup -> fixme_panic_cleanup
+         | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
 
   let builtin_fun_eval (f : Types.builtin_fun_id) generics =
     let open Std in

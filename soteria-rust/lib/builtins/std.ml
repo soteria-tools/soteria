@@ -188,4 +188,12 @@ module M (State : State_intf.S) = struct
       in
       (* FIXME: the size of this zero is probably wrong *)
       mk_res ptr size
+
+  let fixme_panic_cleanup _ =
+    (* TODO: whas is __rust_panic_cleanup meant to do and return? *)
+    ok (Ptr (Sptr.null_ptr (), VTable (Sptr.null_ptr ())))
+
+  let fixme_catch_unwind_cleanup _ =
+    (* We return a null dyn box, like above *)
+    ok @@ _mk_box (Ptr (Sptr.null_ptr (), VTable (Sptr.null_ptr ())))
 end
