@@ -128,7 +128,7 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             if (
                 "thread 'rustc' panicked at src/bin/obol-driver/translate/translate_constants.rs"
                 in test
-            ):
+            ) and "Unhandled global: TypeId" not in test:
                 reasons.add("constant unevaluation")
             if "is_opaque" in msg and "exported_symbol_" in test:
                 reasons.add("extern objects")
@@ -136,10 +136,15 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             if len(reasons) > 0:
                 return [Outcome.UNSUPPORTED(reason) for reason in reasons]
 
-            if (
-                re.findall(r"Function std::.* is opaque", test)
-                or "core::slice::memchr::memrchr" in test
-            ):
+            opaque_fn = re.findall(r"Function (std::.*) is opaque", test)
+            if len(opaque_fn) > 0:
+                if "--simple" in sys.argv:
+                    reasons.add("opaque functions")
+                else:
+                    for msg in opaque_fn:
+                        reasons.add(f"Opaque: {msg}")
+
+            if "core::slice::memchr::memrchr" in test:
                 return Outcome.UNSUPPORTED("we don't compile std with MIR")
 
             return Outcome.UNSUPPORTED(msg)

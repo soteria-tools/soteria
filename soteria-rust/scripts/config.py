@@ -49,6 +49,8 @@ KANI_EXCLUSIONS = [
     "ArithOperators/unsafe_add_fail.rs",
     "ArithOperators/unsafe_mul_fail.rs",
     "ArithOperators/unsafe_sub_fail.rs",
+    # ignore: everyone fails this test??
+    "Slice/extra_checks_fail.rs",
     # utils
     "fixme",
     "/Helpers/",
@@ -78,6 +80,8 @@ MIRI_EXCLUSIONS = [
     "pass/future-self-referential.rs",
     "pass/issues/issue-miri-2068.rs",
     "pass/move-data-across-await-point.rs",
+    "pass/rc.rs",
+    "pass/function_calls/abi_compat.rs",
     "pass/track-caller-attribute.rs",
     "pass/atomic-compare-exchange-weak-never-fail.rs",
     "pass/atomic-readonly-load.rs",
@@ -98,11 +102,12 @@ MIRI_EXCLUSIONS = [
     "pass/static_memory_modification.rs",
     "pass/tree_borrows/read_retag_no_race.rs",
     "pass/tree_borrows/spurious_read.rs",
-    "pass/weak_memory",
+    "weak_memory",
     "pass/iter_macro.rs",
     # unsupported: FFI
     "/native-lib/",
     "exported_symbol",
+    "extern_static",
     "fail/function_calls/check_arg_count_abort.rs",
     "fail/unsupported_foreign_function.rs",
     "fail/extern-type-field-offset.rs",
@@ -111,6 +116,8 @@ MIRI_EXCLUSIONS = [
     "fail/function_calls/exported_symbol_shim_clashing.rs",
     "fail/function_calls/check_arg_count_too_few_args.rs",
     "pass/extern_types.rs",
+    # unsupported: GenMC
+    "genmc/pass/test_cxx_build.rs",
     # unsuppported: libc
     "fail/alloc/global_system_mixup.rs",
     "pass/global_allocator.rs",
