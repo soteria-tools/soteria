@@ -105,7 +105,6 @@ struct
 
   type t = {
     z3_exe : Intf.t;
-    save_counter : Save_counter.t;
     var_counter : Var_counter.t;
     state : Solver_state.t;
     analysis : Analysis.t;
@@ -116,7 +115,6 @@ struct
     Intf.push z3_exe 1;
     {
       z3_exe;
-      save_counter = Save_counter.init ();
       var_counter = Var_counter.init ();
       state = Solver_state.init ();
       analysis = Analysis.init ();
@@ -124,7 +122,6 @@ struct
 
   let save solver =
     Var_counter.save solver.var_counter;
-    Save_counter.save solver.save_counter;
     Solver_state.save solver.state;
     Analysis.save solver.analysis;
     Intf.push solver.z3_exe 1
@@ -132,7 +129,6 @@ struct
   let backtrack_n solver n =
     Var_counter.backtrack_n solver.var_counter n;
     Solver_state.backtrack_n solver.state n;
-    Save_counter.backtrack_n solver.save_counter n;
     Analysis.backtrack_n solver.analysis n;
     Intf.pop solver.z3_exe n
 
@@ -140,16 +136,13 @@ struct
 
   let reset solver =
     (* We want to go back to 1, meaning after the first push which saved the declarations *)
-    let save_counter = !(solver.save_counter) in
-    if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
-    Save_counter.reset solver.save_counter;
     Var_counter.reset solver.var_counter;
     Solver_state.reset solver.state;
     Analysis.reset solver.analysis;
     (* We need to pop the initial push, so we go back to the state before the first push *)
-    Intf.pop solver.z3_exe (save_counter + 1);
+    Intf.reset solver.z3_exe;
     (* Make sure the basic definitions are saved again *)
-    Intf.pop solver.z3_exe 1
+    Intf.push solver.z3_exe 1
 
   let fresh_var solver ty =
     let v_id = Var_counter.get_next solver.var_counter in
@@ -408,7 +401,6 @@ struct
   type t = {
     z3_exe : Intf.t;
     vars : Declared_vars.t;
-    save_counter : Save_counter.t;
     state : Solver_state.t;
     analysis : Analysis.t;
   }
@@ -418,7 +410,6 @@ struct
     (* Before every check-sat we pop then push again. *)
     {
       z3_exe;
-      save_counter = Save_counter.init ();
       vars = Declared_vars.init ();
       state = Solver_state.init ();
       analysis = Analysis.init ();
@@ -426,23 +417,17 @@ struct
 
   let save solver =
     Declared_vars.save solver.vars;
-    Save_counter.save solver.save_counter;
     Solver_state.save solver.state;
     Analysis.save solver.analysis
 
   let backtrack_n solver n =
     Declared_vars.backtrack_n solver.vars n;
     Solver_state.backtrack_n solver.state n;
-    Save_counter.backtrack_n solver.save_counter n;
     Analysis.backtrack_n solver.analysis n
 
   (* Initialise and reset *)
 
   let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the declarations *)
-    let save_counter = !(solver.save_counter) in
-    if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
-    Save_counter.reset solver.save_counter;
     Declared_vars.reset solver.vars;
     Solver_state.reset solver.state;
     Analysis.reset solver.analysis
