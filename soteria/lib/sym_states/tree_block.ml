@@ -70,9 +70,11 @@ module type MemVal = sig
       children of the node are always preserved too, for further accesses. *)
   val merge : left:t -> right:t -> t
 
-  (** Splits the given node at [at], which is the relative offset within the
-      node. Returns the left and right split trees, which themselves may contain
-      further splits. *)
+  (** [split ~at node] Splits [node] at [at], which is the relative offset
+      within the node. Returns the left and right split trees, which themselves
+      may contain further splits.
+
+      [at] is guaranteed to be in the range [[1, size(node))], i.e. strictly within the node. *)
   val split :
     at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
 
