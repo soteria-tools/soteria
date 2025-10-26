@@ -1255,26 +1255,34 @@ and BitVec : BitVec = struct
         Bool.not (Bool.sem_eq v1 v2)
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.not (Bool.sem_eq v1 v2)
-    | ( BitVec _,
+    | ( BitVec l,
         ( Binop
             ( Mul { checked = true },
               z,
-              ({ node = { kind = BitVec _; _ }; _ } as y) )
+              ({ node = { kind = BitVec r; _ }; _ } as y) )
         | Binop
             ( Mul { checked = true },
-              ({ node = { kind = BitVec _; _ }; _ } as y),
+              ({ node = { kind = BitVec r; _ }; _ } as y),
               z ) ) ) ->
-        lt ~signed (div ~signed v1 y) z
+        let lhs =
+          if Z.divisible l r then div ~signed v1 y
+          else sub (div ~signed v1 y) (one bits)
+        in
+        lt ~signed lhs z
     | ( ( Binop
             ( Mul { checked = true },
               z,
-              ({ node = { kind = BitVec _; _ }; _ } as y) )
+              ({ node = { kind = BitVec l; _ }; _ } as y) )
         | Binop
             ( Mul { checked = true },
-              ({ node = { kind = BitVec _; _ }; _ } as y),
+              ({ node = { kind = BitVec l; _ }; _ } as y),
               z ) ),
-        BitVec _ ) ->
-        lt ~signed z (div ~signed v2 y)
+        BitVec r ) ->
+        let rhs =
+          if Z.divisible r l then div ~signed v2 y
+          else add (div ~signed v2 y) (one bits)
+        in
+        lt ~signed z rhs
     | ( Binop (Mul { checked = true }, l1, r1),
         Binop (Mul { checked = true }, l2, r2) )
       when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
