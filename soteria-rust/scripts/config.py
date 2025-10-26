@@ -49,7 +49,14 @@ KANI_EXCLUSIONS = [
     "ArithOperators/unsafe_add_fail.rs",
     "ArithOperators/unsafe_mul_fail.rs",
     "ArithOperators/unsafe_sub_fail.rs",
-    # ignore: everyone fails this test??
+    # ignore: tests that Kani also fails/can't compile
+    "Intrinsics/Assert/uninit_valid_panic.rs",
+    "Intrinsics/Forget/forget_fail.rs",
+    "NondetVectors/main.rs",
+    "Panic/compile_panic.rs",
+    "Panic/prove_safety_only.rs",
+    "Serde/main.rs",
+    "Slice/drop_in_place.rs",
     "Slice/extra_checks_fail.rs",
     # utils
     "fixme",
@@ -143,6 +150,12 @@ MIRI_EXCLUSIONS = [
     "fail/intrinsics/intrinsic_target_feature.rs",
     "pass/function_calls/target_feature.rs",
     "pass/wtf8.rs",
+    # ignored: we don't handle @revisions annotations
+    "fail/intrinsics/typed-swap-invalid-scalar.rs",
+    # ignored: tests Miri fails
+    "fail/no_main.rs",
+    "pass/provenance.rs",
+    "pass/transmute_ptr.rs",
     # ignored: tests with dependencies
     "/deps/",
     "/fail-dep/",
