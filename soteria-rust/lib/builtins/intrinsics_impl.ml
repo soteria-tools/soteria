@@ -617,8 +617,15 @@ module M (State : State_intf.S) = struct
         in
         let* dyn_size = State.load (size_ptr, Thin) (TLiteral (TUInt Usize)) in
         let dyn_size = as_base_i Usize dyn_size in
-        let size, ovf = base_size +?@ dyn_size in
-        let+ () = State.assert_not ovf `Overflow in
+        let size = base_size +!@ dyn_size in
+        (* e.g. if alignement of outer container is 8, but dyn size is 1, the added size is 8.
+           the real computation is a lot more complicated, but this does the trick for general use.
+           https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
+        let^+ align = Layout.align_of_s t in
+        let rem = size %@ align in
+        let size =
+          Typed.ite (rem ==@ Usize.(0s)) size (size +!@ (align -!@ rem))
+        in
         size
     | _ -> ok base_size
 
