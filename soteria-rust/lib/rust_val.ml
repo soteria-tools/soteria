@@ -9,9 +9,7 @@ type 'ptr t =
   | Ptr of 'ptr full_ptr
       (** pointer, parametric to enable Ruxt, with optional meta *)
   | Enum of T.cval Typed.t * 'ptr t list  (** discriminant * values *)
-  | Struct of 'ptr t list  (** contains ordered fields *)
-  | Tuple of 'ptr t list
-  | Array of 'ptr t list
+  | Tuple of 'ptr t list  (** contains ordered values *)
   | Union of Types.field_id * 'ptr t  (** field and value of union *)
   | ConstFn of Types.fn_ptr
 
@@ -27,9 +25,7 @@ let rec is_empty = function
   | Ptr _ -> false
   | Enum (_, _) -> false
   | ConstFn _ -> false
-  | Struct fields -> List.for_all is_empty fields
   | Tuple vals -> List.for_all is_empty vals
-  | Array vals -> List.for_all is_empty vals
   | Union (_, v) -> is_empty v
 
 let pp_meta pp_ptr fmt = function
@@ -50,12 +46,8 @@ let rec pp_rust_val pp_ptr fmt =
       Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
         (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val)
         vals
-  | Struct fields ->
-      Fmt.pf fmt "{%a}" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) fields
   | Tuple vals ->
       Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
-  | Array vals ->
-      Fmt.pf fmt "[%a]" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
   | Union (field_id, v) ->
       Fmt.pf fmt "Union(%a: %a)" Types.pp_field_id field_id pp_rust_val v
   | ConstFn fn_ptr -> Fmt.pf fmt "ConstFn(%a)" Types.pp_fn_ptr fn_ptr
@@ -94,8 +86,7 @@ let as_base_i ty = as_base (TUInt ty)
 
 let flatten v =
   let rec aux acc = function
-    | Tuple vs | Struct vs | Enum (_, vs) | Array vs ->
-        List.fold_left aux acc vs
+    | Tuple vs | Enum (_, vs) -> List.fold_left aux acc vs
     | Union (_, v) -> aux acc v
     | (Base _ | Ptr _ | ConstFn _) as v -> v :: acc
   in
@@ -109,8 +100,7 @@ let rec iter_vars ptr_iter_vars rv f =
   | Enum (disc, vals) ->
       Typed.iter_vars disc f;
       List.iter (fun v -> iter_vars v f) vals
-  | Struct vals | Tuple vals | Array vals ->
-      List.iter (fun v -> iter_vars v f) vals
+  | Tuple vals -> List.iter (fun v -> iter_vars v f) vals
   | Ptr (p, meta) ->
       (match meta with
       | Thin -> ()
@@ -126,9 +116,7 @@ let rec subst ptr_subst subst_var rv =
   | Base v -> Base (Typed.subst subst_var v)
   | Union (field_id, v) -> Union (field_id, subst v)
   | Enum (disc, vals) -> Enum (Typed.subst subst_var disc, map_subst vals)
-  | Struct vals -> Struct (map_subst vals)
   | Tuple vals -> Tuple (map_subst vals)
-  | Array vals -> Array (map_subst vals)
   | Ptr (p, meta) ->
       let meta =
         match meta with

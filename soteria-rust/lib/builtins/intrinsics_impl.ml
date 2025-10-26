@@ -525,7 +525,7 @@ module M (State : State_intf.S) = struct
     let* r = State.load b bytes in
     let byte_pairs =
       match (l, r) with
-      | Array l, Array r -> List.combine l r
+      | Tuple l, Tuple r -> List.combine l r
       | _ -> failwith "Unexpected read array"
     in
     let rec aux = function
@@ -651,7 +651,7 @@ module M (State : State_intf.S) = struct
           |> Bytes.fold_left (fun l c -> Base (BV.u8i (Char.code c)) :: l) []
           |> List.rev
         in
-        let char_arr = Array chars in
+        let char_arr = Tuple chars in
         let str_ty : Types.ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in

@@ -532,7 +532,7 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       } ->
       let size = Charon_util.int_of_const_generic len in
       let+ fields = nondets @@ List.init size (fun _ -> ty) in
-      Array fields
+      Tuple fields
   | TAdt { id = TAdtId t_id; _ } -> (
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
@@ -561,7 +561,7 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
               Enum (discr, fields))
       | Struct fields ->
           let+ fields = nondets @@ Charon_util.field_tys fields in
-          Struct fields
+          Tuple fields
       | ty ->
           Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
             Types.pp_type_decl_kind ty)
@@ -593,7 +593,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
       } ->
       let len = int_of_const_generic len in
       zeroed ~null_ptr ty
-      |> Option.map (fun v -> Array (List.init len (fun _ -> v)))
+      |> Option.map (fun v -> Tuple (List.init len (fun _ -> v)))
   | TAdt { id = TAdtId t_id; _ } -> (
       let adt = Crate.get_adt t_id in
       match adt.kind with
@@ -601,7 +601,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
           fields
           |> Charon_util.field_tys
           |> zeroeds
-          |> Option.map (fun fields -> Struct fields)
+          |> Option.map (fun fields -> Tuple fields)
       | Enum vars ->
           (vars
           |> List.find_opt (fun (v : Types.variant) ->
@@ -659,13 +659,12 @@ let rec as_zst : Types.ty -> 'a rust_val option =
   | TNever -> Some (Tuple [])
   | TAdt { id = TBuiltin TArray; generics = { const_generics = [ len ]; _ } }
     when int_of_const_generic len = 0 ->
-      Some (Array [])
+      Some (Tuple [])
   | TAdt { id = TAdtId id; _ } -> (
       let adt = Crate.get_adt id in
       match adt.kind with
       | Struct fs ->
-          as_zsts @@ Charon_util.field_tys fs
-          |> Option.map (fun fs -> Struct fs)
+          as_zsts @@ Charon_util.field_tys fs |> Option.map (fun fs -> Tuple fs)
       | Union _ -> None
       | Enum [] -> None (* an empty enum is uninhabited *)
       | Enum [ { fields; discriminant; _ } ] ->
@@ -732,10 +731,10 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
       [ (ptr, get_pointee ty) ]
   | Ptr ptr, TRawPtr _ when include_ptrs -> [ (ptr, get_pointee ty) ]
   | Base _, _ -> []
-  | Struct vs, TAdt { id = TAdtId adt_id; _ } ->
+  | Tuple vs, TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_struct adt_id in
       List.concat_map2 f vs (field_tys fields)
-  | ( Array vs,
+  | ( Tuple vs,
       TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
     ) ->
       List.concat_map (fun v -> f v ty) vs
@@ -792,15 +791,15 @@ let rec update_ref_tys_in
   | Ptr ptr, TRef (_, _, rk) ->
       let++ ptr, acc = fn init ptr (get_pointee ty) rk in
       (Ptr ptr, acc)
-  | Struct vs, TAdt { id = TAdtId adt_id; _ } ->
+  | Tuple vs, TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_struct adt_id in
       let++ vs, acc = fs2 init vs (field_tys fields) in
-      (Struct vs, acc)
-  | ( Array vs,
+      (Tuple vs, acc)
+  | ( Tuple vs,
       TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
     ) ->
       let++ vs, acc = fs init vs ty in
-      (Array vs, acc)
+      (Tuple vs, acc)
   | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
       let++ vs, acc = fs2 init vs types in
       (Tuple vs, acc)

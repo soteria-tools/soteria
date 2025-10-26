@@ -29,7 +29,7 @@ module M (State : State_intf.S) = struct
             Fmt.(list Types.pp_const_generic)
             cgens
     in
-    ok (Array (List.init size (fun _ -> rust_val)))
+    ok (Tuple (List.init size (fun _ -> rust_val)))
 
   let array_index (idx_op : Types.builtin_index_op)
       (gen_args : Types.generic_args) args =
@@ -152,19 +152,18 @@ module M (State : State_intf.S) = struct
     ok (Base (BV.of_bool res))
 
   let _mk_box ptr =
-    let non_null = Struct [ ptr ] in
-    let phantom_data = Struct [] in
-    let unique = Struct [ non_null; phantom_data ] in
-    let allocator = Struct [] in
-    Struct [ unique; allocator ]
+    let non_null = Tuple [ ptr ] in
+    let phantom_data = Tuple [] in
+    let unique = Tuple [ non_null; phantom_data ] in
+    let allocator = Tuple [] in
+    Tuple [ unique; allocator ]
 
   let alloc_impl args =
     let zero = Usize.(0s) in
     let size, align, zeroed =
       match args with
-      | [
-       _alloc; Struct [ Base size; Struct [ Enum (align, []) ] ]; Base zeroed;
-      ] ->
+      | [ _alloc; Tuple [ Base size; Tuple [ Enum (align, []) ] ]; Base zeroed ]
+        ->
           let size = Typed.cast_i Usize size in
           let align = Typed.cast_i Usize align in
           let zeroed = Typed.cast_i U8 zeroed in
@@ -175,7 +174,7 @@ module M (State : State_intf.S) = struct
             args
     in
     (* make Result<NonNull<[u8]>, AllocError> *)
-    let mk_res ptr len = Enum (zero, [ Struct [ Ptr (ptr, Len len) ] ]) in
+    let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
     if%sat size ==@ zero then
       let dangling = Sptr.null_ptr_of align in
       ok (mk_res dangling zero)

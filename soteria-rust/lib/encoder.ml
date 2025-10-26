@@ -175,12 +175,11 @@ module Make (Sptr : Sptr.S) = struct
     (* Tuples *)
     | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
         chain_cvals (layout_of ty) vs types
-    | Tuple _, _ | _, TAdt { id = TTuple; _ } -> illegal_pair ()
+    | _, TAdt { id = TTuple; _ } -> illegal_pair ()
     (* Structs *)
-    | Struct vals, TAdt { id = TAdtId t_id; _ } ->
+    | Tuple vals, TAdt { id = TAdtId t_id; _ } ->
         let fields = field_tys @@ Crate.as_struct t_id in
         chain_cvals (layout_of ty) vals fields
-    | Struct _, _ -> illegal_pair ()
     (* Enums *)
     | Enum (disc, vals), (TAdt { id = TAdtId t_id; _ } as ty) -> (
         let variants = Crate.as_enum t_id in
@@ -228,7 +227,7 @@ module Make (Sptr : Sptr.S) = struct
         [ { value = Base value; ty = TLiteral tag_ty; offset } ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
-    | ( Array vals,
+    | ( Tuple vals,
         TAdt
           {
             id = TBuiltin TArray;
@@ -238,7 +237,7 @@ module Make (Sptr : Sptr.S) = struct
         let len = int_of_const_generic len in
         if List.length vals <> len then failwith "Array length mismatch"
         else chain_cvals layout vals (List.init len (fun _ -> sub_ty))
-    | Array _, _ | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
+    | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
     (* Unions *)
     | Union (f, v), TAdt { id = TAdtId id; _ } ->
         let fields = Crate.as_union id in
@@ -248,6 +247,8 @@ module Make (Sptr : Sptr.S) = struct
     (* Static Functions (ZSTs) *)
     | ConstFn _, TFnDef _ -> []
     | ConstFn _, _ | _, TFnDef _ -> illegal_pair ()
+    (* Should have been handled for arrays, tuples and structs *)
+    | Tuple _, _ -> illegal_pair ()
     (* Rest *)
     | _ ->
         Fmt.failwith "Unhandled rust_value and Charon.ty: %a / %a" pp_rust_val
@@ -384,7 +385,7 @@ module Make (Sptr : Sptr.S) = struct
               fields
               |> field_tys
               |> List.to_seq
-              |> aux_fields ~f:(fun fs -> Struct fs) ~layout offset
+              |> aux_fields ~f:(fun fs -> Tuple fs) ~layout offset
           | Enum [] -> error `RefToUninhabited
           | Enum variants -> aux_enum offset ty variants
           | Union fs -> aux_union offset fs
@@ -397,7 +398,7 @@ module Make (Sptr : Sptr.S) = struct
           let len = z_of_const_generic @@ List.hd const_generics in
           let layout = layout_of ty in
           let fields = Seq.init_z len (fun _ -> sub_ty) in
-          aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
+          aux_fields ~f:(fun fs -> Tuple fs) ~layout offset fields
       | TAdt { id = TBuiltin (TStr as ty); generics }
       | TAdt { id = TBuiltin (TSlice as ty); generics } ->
           (* We can only read a slice if we have the metadata of its length, in which case
@@ -421,7 +422,7 @@ module Make (Sptr : Sptr.S) = struct
           let arr_ty = mk_array_ty sub_ty len in
           let layout = layout_of arr_ty in
           let fields = Seq.init_z len (fun _ -> sub_ty) in
-          aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
+          aux_fields ~f:(fun fs -> Tuple fs) ~layout offset fields
       | TNever -> error `RefToUninhabited
       | TTraitType (tref, name) ->
           let ty = Layout.resolve_trait_ty tref name in
