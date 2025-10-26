@@ -12,6 +12,7 @@ from common import *
 from parselog import (
     TestCategoriser,
     LogCategorisation_,
+    parse_per_test,
 )
 from cliopts import (
     ArgError,
@@ -22,22 +23,23 @@ from cliopts import (
     opts_for_rusteria,
     parse_flags,
 )
-from config import TEST_SUITES, TestConfig
+from config import TEST_SUITES, TestConfig, filter_tests
 
 
 # Execute a test, return the categorisation and the elapsed time
 def exec_test(
-    file: Path,
+    file: Optional[Path],
     *,
     cmd: list[str],
     categoriser: TestCategoriser,
-    test_conf: TestConfig,
+    test_conf: Optional[TestConfig] = None,
     tool: ToolName,
     log: Optional[TextIOWrapper] = None,
     timeout: Optional[int] = None,
+    cwd: Optional[Path] = None,
 ) -> tuple[LogCategorisation_, float]:
     expect_failure = determine_failure_expect(str(file))
-    if test_conf["dyn_flags"]:
+    if test_conf and file and test_conf["dyn_flags"]:
         cmd = cmd + test_conf["dyn_flags"](file)
 
     if log:
@@ -47,18 +49,21 @@ def exec_test(
 
     try:
         data = subprocess_run(
-            cmd + [str(file)],
+            cmd + ([str(file)] if file else []),
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=cwd,
         )
     except subprocess.TimeoutExpired:
         if log:
-            log.write("Forced timeout")
+            log.write("Forced timeout\n")
 
         # Kani tends to leave a kani-compiler process behind
         if tool == "Kani":
             subprocess.run(["pkill", "-f", "kani-compiler"])
+        if tool == "Rusteria":
+            subprocess.run(["pkill", "-f", "z3"])
 
         return ((Outcome.TIME_OUT, None), timeout or 0)
 
@@ -74,12 +79,19 @@ def exec_test(
     return outcome, elapsed
 
 
+_built = False
+
+
 def build():
-    pprint(f"Building {BOLD}Rusteria{RESET} ... ", flush=True, inc=False)
+    global _built
+    if _built:
+        return
+    _built = True
+    pprint(f"Building {BOLD}Rusteria{RESET} ... ", flush=True, end="")
     before = time.time()
     build_rusteria()
     elapsed = time.time() - before
-    pprint(f"Took {elapsed:.3f}s to build")
+    print(f"took {BOLD}{elapsed:.3f}s{RESET}")
 
 
 def exec_tests(opts: CliOpts, test_conf: TestConfig):
@@ -134,13 +146,12 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                     txt += " 🐌"
                 if not outcome.is_expected() and reason:
                     txt += f" ({GRAY}{reason}{RESET})"
-                if str(relative) in KNOWN_ISSUES:
-                    issue = KNOWN_ISSUES[str(relative)]
+                if issue := dict_get_suffix(KNOWN_ISSUES, str(relative)):
                     txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
                     if outcome.is_pass():
                         end_msgs.append(f'Fixed {relative}, for "{BOLD}{issue}{RESET}"')
-                if str(relative) in SKIPPED_TESTS:
-                    _, issue = SKIPPED_TESTS[str(relative)]
+                if issue := dict_get_suffix(SKIPPED_TESTS, str(relative)):
+                    _, issue = issue
                     txt += f" {YELLOW}✦{RESET} {BOLD}(not skipped){RESET}"
                     if not outcome.is_timeout():
                         end_msgs.append(
@@ -330,20 +341,23 @@ def benchmark(opts: CliOpts):
 
     log = log.open("a")
 
-    results: dict[tuple[Path, SuiteName], Benchmark] = {}
+    results: dict[tuple[Path, SuiteName], Benchmark] = {}  # type: ignore
     end_msgs: set[str] = set()
     interrupts = 0
+    timeout = opts["timeout"] or 5
 
-    def run_benchmark(key: ToolName, opts: CliOpts):
+    def run_benchmark(opts: CliOpts):
         for name, callback in TEST_SUITES.items():
             if name == "custom":
                 continue
             test_conf = callback(opts)
+            if len(test_conf["tests"]) == 0:
+                continue
             cmd = opts["tool_cmd"] + test_conf["args"]
             pprint(
-                f"{CYAN}{BOLD}==>{RESET} Running benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{key}",
+                f"{CYAN}{BOLD}==>{RESET} Running benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{opts['tool']}",
             )
-            log.write(f"Running benchmark {test_conf['name']} with {key}\n\n")
+            log.write(f"Running benchmark {test_conf['name']} with {opts['tool']}\n\n")
 
             before = time.time()
             for path in test_conf["tests"]:
@@ -356,8 +370,8 @@ def benchmark(opts: CliOpts):
                         log=log,
                         categoriser=opts["categorise"],
                         test_conf=test_conf,
-                        tool=key,
-                        timeout=opts["timeout"] or 5,
+                        tool=opts["tool"],
+                        timeout=timeout,
                     )
                 except KeyboardInterrupt:
                     nonlocal interrupts
@@ -376,7 +390,7 @@ def benchmark(opts: CliOpts):
                 res = results.get(
                     test_key, {tool: (Outcome.UNKNOWN, -1) for tool in TOOL_NAMES}
                 )
-                res[key] = outcome, elapsed
+                res[opts["tool"]] = outcome, elapsed
                 results[test_key] = res
 
             elapsed = time.time() - before
@@ -385,9 +399,12 @@ def benchmark(opts: CliOpts):
             )
 
     pprint(f"{BOLD}Running benchmark{RESET}")
-    run_benchmark("Rusteria", opts_for_rusteria(opts, force_obol=True))
-    run_benchmark("Kani", opts_for_kani(opts))
-    run_benchmark("Miri", opts_for_miri(opts))
+    try:
+        run_benchmark(opts_for_rusteria(opts, force_obol=True, timeout=timeout))
+        run_benchmark(opts_for_kani(opts, timeout=timeout))
+        run_benchmark(opts_for_miri(opts))
+    except:  # noqa E722: we make sure outputting results happens despite exit
+        ...
 
     rows: list[list[tuple[str, Optional[str]]]] = [
         [
@@ -422,6 +439,544 @@ def benchmark(opts: CliOpts):
             pprint(f"{ORANGE}✭{RESET} {end_msg}")
 
 
+def kani_comparison(opts: CliOpts, path: Path, cached: bool):
+    build()
+
+    tests = filter_tests(opts, path.rglob("*.rs"))
+    pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
+
+    interrupts = 0
+
+    def run_with(opts: CliOpts, id: str) -> dict[str, tuple[Outcome, float]]:
+        key = opts["tool"]
+        log_path = PWD / f"kani-comparison-{id}.log"
+        if cached:
+            results = parse_per_test(log_path)
+            results = {k: v[key] for k, v in results.items()}
+            return results
+
+        log_path.touch()
+        log_path.write_text(
+            f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n"
+        )
+        log = log_path.open("a")
+
+        pprint(
+            f"{CYAN}{BOLD}==>{RESET} Running with {BOLD}{key}{RESET} {GRAY}({id})",
+        )
+        log.write(f"Running tests with {key}\n\n")
+
+        before = time.time()
+        for test in tests:
+            relative = test.relative_to(path)
+            pprint(f"Running {relative} ... ", end="", flush=True)
+            try:
+                (outcome, _), elapsed = exec_test(
+                    test,
+                    cmd=opts["tool_cmd"],
+                    log=log,
+                    categoriser=opts["categorise"],
+                    tool=key,
+                    timeout=opts["timeout"],
+                )
+            except KeyboardInterrupt:
+                nonlocal interrupts
+                interrupts += 1
+                print(
+                    f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
+                )
+                if interrupts >= 3:
+                    break
+                continue
+
+            outcome = outcome.simplify()
+            print(f"{outcome} in {elapsed:.3f}s")
+
+        elapsed = time.time() - before
+        pprint(
+            f"{BOLD}Finished in {elapsed:.3f}s{RESET}",
+        )
+        log.close()
+
+        results = parse_per_test(log_path)
+        results = {k: v[key] for k, v in results.items()}
+        return results
+
+    def with_env(key: str, value: str):
+        class WithEnv:
+            def __enter__(self):
+                self.prev = os.environ.get(key)
+                os.environ[key] = value
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                if self.prev is not None:
+                    os.environ[key] = self.prev
+                else:
+                    del os.environ[key]
+
+        return WithEnv()
+
+    rusteria = opts_for_rusteria(opts, force_obol=True)
+    rusteria["tool_cmd"] += ["--kani"]
+    res_rusteria = run_with(rusteria, "rusteria")
+    kani = opts_for_kani(opts)
+    kani["tool_cmd"].remove("--harness-timeout=5s")
+    kani["tool_cmd"] += ["--harness-timeout=10s"]
+    res_kani = run_with(kani, "kani")
+
+    with with_env("RUSTFLAGS", "--cfg unwind"):
+        res_kani_unwind = run_with(kani, "kani-unwinding")
+
+    table: list[list[tuple[str, Optional[str]]]] = []
+    table += [
+        [
+            ("Suite", BOLD),
+            ("Test", BOLD),
+            ("Rusteria", BOLD),
+            ("(s)", None),
+            ("Kani", BOLD),
+            ("(s)", None),
+            ("Kani (unwinding)", BOLD),
+            ("(s)", None),
+        ]
+    ]
+    for test in res_rusteria.keys():
+        r_out, r_time = res_rusteria.get(test, (Outcome.UNKNOWN, -2))
+        k_out, k_time = res_kani.get(test, (Outcome.UNKNOWN, -2))
+        ku_out, ku_time = res_kani_unwind.get(test, (Outcome.UNKNOWN, -2))
+
+        if k_time == -1:
+            k_time = 10
+        if ku_time == -1:
+            ku_time = 10
+
+        suite, test = test.split("::")
+
+        table.append(
+            [
+                (suite, BOLD),
+                (test, None),
+                (r_out.txt, r_out.clr),
+                (f"{r_time:.3f}", None) if r_time >= 0 else ("-", GRAY),
+                (k_out.txt, k_out.clr),
+                (f"{k_time:.3f}", None) if k_time >= 0 else ("-", GRAY),
+                (ku_out.txt, ku_out.clr),
+                (f"{ku_time:.3f}", None) if ku_time >= 0 else ("-", GRAY),
+            ]
+        )
+
+    csv_file = PWD / "kani-comparison.csv"
+    csv_file.touch()
+    with csv_file.open("w") as csv_io:
+        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in table)
+    pptable(table)
+
+
+def finetime(opts: CliOpts):
+    build()
+
+    finetime = (PWD / ".." / ".." / ".." / "finetime").resolve()
+    tests = [
+        "calendar::gregorian::proof_harness::construction_never_panics",
+        "calendar::historic::proof_harness::construction_never_panics",
+        "calendar::historic::proof_harness::day_of_year_never_panics",
+        "calendar::historic::proof_harness::day_of_year_roundtrip",
+        "calendar::jd::proof_harness::from_historic_date_never_panics",
+        "calendar::jd::proof_harness::from_gregorian_never_panics",
+        "calendar::mjd::proof_harness::from_historic_date_never_panics",
+        "calendar::mjd::proof_harness::from_gregorian_never_panics",
+        "duration::proof_harness::roundtrip_atto_u64",
+        "duration::proof_harness::roundtrip_femto_u64",
+        "duration::proof_harness::roundtrip_milli_u32",
+        "duration::proof_harness::roundtrip_binaryfraction1_u64",
+        "duration::proof_harness::roundtrip_binaryfraction2_u64",
+        "duration::proof_harness::roundtrip_binaryfraction3_u64",
+        "duration::proof_harness::roundtrip_binaryfraction4_u64",
+        "duration::proof_harness::roundtrip_binaryfraction5_u64",
+        "duration::proof_harness::roundtrip_binaryfraction6_u64",
+        "duration::proof_harness::roundtrip_binaryfraction1_i64",
+        "duration::proof_harness::roundtrip_binaryfraction2_i64",
+        "duration::proof_harness::roundtrip_binaryfraction3_i64",
+        "duration::proof_harness::roundtrip_binaryfraction4_i64",
+        "duration::proof_harness::roundtrip_binaryfraction5_i64",
+        "duration::proof_harness::roundtrip_binaryfraction6_i64",
+        "duration::proof_harness::rounding_atto_u128",
+        "duration::proof_harness::rounding_atto_u64",
+        "duration::proof_harness::rounding_atto_u32",
+        "duration::proof_harness::rounding_atto_u16",
+        "duration::proof_harness::rounding_atto_u8",
+        "duration::proof_harness::rounding_atto_i128",
+        "duration::proof_harness::rounding_atto_i64",
+        "duration::proof_harness::rounding_atto_i32",
+        "duration::proof_harness::rounding_atto_i16",
+        "duration::proof_harness::rounding_atto_i8",
+        "duration::proof_harness::rounding_femto_u128",
+        "duration::proof_harness::rounding_femto_u64",
+        "duration::proof_harness::rounding_femto_u32",
+        "duration::proof_harness::rounding_femto_u16",
+        "duration::proof_harness::rounding_femto_u8",
+        "duration::proof_harness::rounding_femto_i128",
+        "duration::proof_harness::rounding_femto_i64",
+        "duration::proof_harness::rounding_femto_i32",
+        "duration::proof_harness::rounding_femto_i16",
+        "duration::proof_harness::rounding_femto_i8",
+        "duration::proof_harness::rounding_pico_u128",
+        "duration::proof_harness::rounding_pico_u64",
+        "duration::proof_harness::rounding_pico_u32",
+        "duration::proof_harness::rounding_pico_u16",
+        "duration::proof_harness::rounding_pico_u8",
+        "duration::proof_harness::rounding_pico_i128",
+        "duration::proof_harness::rounding_pico_i64",
+        "duration::proof_harness::rounding_pico_i32",
+        "duration::proof_harness::rounding_pico_i16",
+        "duration::proof_harness::rounding_pico_i8",
+        "duration::proof_harness::rounding_nano_u128",
+        "duration::proof_harness::rounding_nano_u64",
+        "duration::proof_harness::rounding_nano_u32",
+        "duration::proof_harness::rounding_nano_u16",
+        "duration::proof_harness::rounding_nano_u8",
+        "duration::proof_harness::rounding_nano_i128",
+        "duration::proof_harness::rounding_nano_i64",
+        "duration::proof_harness::rounding_nano_i32",
+        "duration::proof_harness::rounding_nano_i16",
+        "duration::proof_harness::rounding_nano_i8",
+        "duration::proof_harness::rounding_micro_u128",
+        "duration::proof_harness::rounding_micro_u64",
+        "duration::proof_harness::rounding_micro_u32",
+        "duration::proof_harness::rounding_micro_u16",
+        "duration::proof_harness::rounding_micro_u8",
+        "duration::proof_harness::rounding_micro_i128",
+        "duration::proof_harness::rounding_micro_i64",
+        "duration::proof_harness::rounding_micro_i32",
+        "duration::proof_harness::rounding_micro_i16",
+        "duration::proof_harness::rounding_micro_i8",
+        "duration::proof_harness::rounding_milli_u128",
+        "duration::proof_harness::rounding_milli_u64",
+        "duration::proof_harness::rounding_milli_u32",
+        "duration::proof_harness::rounding_milli_u16",
+        "duration::proof_harness::rounding_milli_u8",
+        "duration::proof_harness::rounding_milli_i128",
+        "duration::proof_harness::rounding_milli_i64",
+        "duration::proof_harness::rounding_milli_i32",
+        "duration::proof_harness::rounding_milli_i16",
+        "duration::proof_harness::rounding_milli_i8",
+        "duration::proof_harness::rounding_centi_u128",
+        "duration::proof_harness::rounding_centi_u64",
+        "duration::proof_harness::rounding_centi_u32",
+        "duration::proof_harness::rounding_centi_u16",
+        "duration::proof_harness::rounding_centi_u8",
+        "duration::proof_harness::rounding_centi_i128",
+        "duration::proof_harness::rounding_centi_i64",
+        "duration::proof_harness::rounding_centi_i32",
+        "duration::proof_harness::rounding_centi_i16",
+        "duration::proof_harness::rounding_centi_i8",
+        "duration::proof_harness::rounding_binaryfraction1_u128",
+        "duration::proof_harness::rounding_binaryfraction1_u64",
+        "duration::proof_harness::rounding_binaryfraction1_u32",
+        "duration::proof_harness::rounding_binaryfraction1_u16",
+        "duration::proof_harness::rounding_binaryfraction1_u8",
+        "duration::proof_harness::rounding_binaryfraction1_i128",
+        "duration::proof_harness::rounding_binaryfraction1_i64",
+        "duration::proof_harness::rounding_binaryfraction1_i32",
+        "duration::proof_harness::rounding_binaryfraction1_i16",
+        "duration::proof_harness::rounding_binaryfraction1_i8",
+        "duration::proof_harness::rounding_binaryfraction2_u128",
+        "duration::proof_harness::rounding_binaryfraction2_u64",
+        "duration::proof_harness::rounding_binaryfraction2_u32",
+        "duration::proof_harness::rounding_binaryfraction2_u16",
+        "duration::proof_harness::rounding_binaryfraction2_u8",
+        "duration::proof_harness::rounding_binaryfraction2_i128",
+        "duration::proof_harness::rounding_binaryfraction2_i64",
+        "duration::proof_harness::rounding_binaryfraction2_i32",
+        "duration::proof_harness::rounding_binaryfraction2_i16",
+        "duration::proof_harness::rounding_binaryfraction2_i8",
+        "duration::proof_harness::rounding_binaryfraction3_u128",
+        "duration::proof_harness::rounding_binaryfraction3_u64",
+        "duration::proof_harness::rounding_binaryfraction3_u32",
+        "duration::proof_harness::rounding_binaryfraction3_u16",
+        "duration::proof_harness::rounding_binaryfraction3_u8",
+        "duration::proof_harness::rounding_binaryfraction3_i128",
+        "duration::proof_harness::rounding_binaryfraction3_i64",
+        "duration::proof_harness::rounding_binaryfraction3_i32",
+        "duration::proof_harness::rounding_binaryfraction3_i16",
+        "duration::proof_harness::rounding_binaryfraction3_i8",
+        "duration::proof_harness::rounding_binaryfraction4_u128",
+        "duration::proof_harness::rounding_binaryfraction4_u64",
+        "duration::proof_harness::rounding_binaryfraction4_u32",
+        "duration::proof_harness::rounding_binaryfraction4_u16",
+        "duration::proof_harness::rounding_binaryfraction4_u8",
+        "duration::proof_harness::rounding_binaryfraction4_i128",
+        "duration::proof_harness::rounding_binaryfraction4_i64",
+        "duration::proof_harness::rounding_binaryfraction4_i32",
+        "duration::proof_harness::rounding_binaryfraction4_i16",
+        "duration::proof_harness::rounding_binaryfraction4_i8",
+        "duration::proof_harness::rounding_binaryfraction5_u128",
+        "duration::proof_harness::rounding_binaryfraction5_u64",
+        "duration::proof_harness::rounding_binaryfraction5_u32",
+        "duration::proof_harness::rounding_binaryfraction5_u16",
+        "duration::proof_harness::rounding_binaryfraction5_u8",
+        "duration::proof_harness::rounding_binaryfraction5_i128",
+        "duration::proof_harness::rounding_binaryfraction5_i64",
+        "duration::proof_harness::rounding_binaryfraction5_i32",
+        "duration::proof_harness::rounding_binaryfraction5_i16",
+        "duration::proof_harness::rounding_binaryfraction5_i8",
+        "duration::proof_harness::rounding_binaryfraction6_u128",
+        "duration::proof_harness::rounding_binaryfraction6_u64",
+        "duration::proof_harness::rounding_binaryfraction6_u32",
+        "duration::proof_harness::rounding_binaryfraction6_u16",
+        "duration::proof_harness::rounding_binaryfraction6_u8",
+        "duration::proof_harness::rounding_binaryfraction6_i128",
+        "duration::proof_harness::rounding_binaryfraction6_i64",
+        "duration::proof_harness::rounding_binaryfraction6_i32",
+        "duration::proof_harness::rounding_binaryfraction6_i16",
+        "duration::proof_harness::rounding_binaryfraction6_i8",
+        "duration::proof_harness::rounding_secondsperminute_u128",
+        "duration::proof_harness::rounding_secondsperminute_u64",
+        "duration::proof_harness::rounding_secondsperminute_u32",
+        "duration::proof_harness::rounding_secondsperminute_u16",
+        "duration::proof_harness::rounding_secondsperminute_u8",
+        "duration::proof_harness::rounding_secondsperminute_i128",
+        "duration::proof_harness::rounding_secondsperminute_i64",
+        "duration::proof_harness::rounding_secondsperminute_i32",
+        "duration::proof_harness::rounding_secondsperminute_i16",
+        "duration::proof_harness::rounding_secondsperminute_i8",
+        "duration::proof_harness::rounding_secondsperhour_u128",
+        "duration::proof_harness::rounding_secondsperhour_u64",
+        "duration::proof_harness::rounding_secondsperhour_u32",
+        "duration::proof_harness::rounding_secondsperhour_u16",
+        "duration::proof_harness::rounding_secondsperhour_u8",
+        "duration::proof_harness::rounding_secondsperhour_i128",
+        "duration::proof_harness::rounding_secondsperhour_i64",
+        "duration::proof_harness::rounding_secondsperhour_i32",
+        "duration::proof_harness::rounding_secondsperhour_i16",
+        "duration::proof_harness::rounding_secondsperhour_i8",
+        "duration::proof_harness::rounding_secondsperday_u128",
+        "duration::proof_harness::rounding_secondsperday_u64",
+        "duration::proof_harness::rounding_secondsperday_u32",
+        "duration::proof_harness::rounding_secondsperday_u16",
+        "duration::proof_harness::rounding_secondsperday_u8",
+        "duration::proof_harness::rounding_secondsperday_i128",
+        "duration::proof_harness::rounding_secondsperday_i64",
+        "duration::proof_harness::rounding_secondsperday_i32",
+        "duration::proof_harness::rounding_secondsperday_i16",
+        "duration::proof_harness::rounding_secondsperday_i8",
+        "duration::proof_harness::rounding_secondsperweek_u128",
+        "duration::proof_harness::rounding_secondsperweek_u64",
+        "duration::proof_harness::rounding_secondsperweek_u32",
+        "duration::proof_harness::rounding_secondsperweek_u16",
+        "duration::proof_harness::rounding_secondsperweek_u8",
+        "duration::proof_harness::rounding_secondsperweek_i128",
+        "duration::proof_harness::rounding_secondsperweek_i64",
+        "duration::proof_harness::rounding_secondsperweek_i32",
+        "duration::proof_harness::rounding_secondsperweek_i16",
+        "duration::proof_harness::rounding_secondsperweek_i8",
+        "duration::proof_harness::rounding_secondspermonth_u128",
+        "duration::proof_harness::rounding_secondspermonth_u64",
+        "duration::proof_harness::rounding_secondspermonth_u32",
+        "duration::proof_harness::rounding_secondspermonth_u16",
+        "duration::proof_harness::rounding_secondspermonth_u8",
+        "duration::proof_harness::rounding_secondspermonth_i128",
+        "duration::proof_harness::rounding_secondspermonth_i64",
+        "duration::proof_harness::rounding_secondspermonth_i32",
+        "duration::proof_harness::rounding_secondspermonth_i16",
+        "duration::proof_harness::rounding_secondspermonth_i8",
+        "duration::proof_harness::rounding_secondsperyear_u128",
+        "duration::proof_harness::rounding_secondsperyear_u64",
+        "duration::proof_harness::rounding_secondsperyear_u32",
+        "duration::proof_harness::rounding_secondsperyear_u16",
+        "duration::proof_harness::rounding_secondsperyear_u8",
+        "duration::proof_harness::rounding_secondsperyear_i128",
+        "duration::proof_harness::rounding_secondsperyear_i64",
+        "duration::proof_harness::rounding_secondsperyear_i32",
+        "duration::proof_harness::rounding_secondsperyear_i16",
+        "duration::proof_harness::rounding_secondsperyear_i8",
+        "time_scale::bdt::proof_harness::from_datetime_never_panics",
+        "time_scale::bdt::proof_harness::from_gregorian_never_panics",
+        "time_scale::bdt::proof_harness::datetime_tai_roundtrip",
+        "time_scale::gst::proof_harness::from_datetime_never_panics",
+        "time_scale::gst::proof_harness::from_gregorian_never_panics",
+        "time_scale::gst::proof_harness::datetime_tai_roundtrip",
+        "time_scale::gpst::proof_harness::from_datetime_never_panics",
+        "time_scale::gpst::proof_harness::from_gregorian_never_panics",
+        "time_scale::gpst::proof_harness::datetime_tai_roundtrip",
+        "time_scale::qzsst::proof_harness::from_datetime_never_panics",
+        "time_scale::qzsst::proof_harness::from_gregorian_never_panics",
+        "time_scale::qzsst::proof_harness::datetime_tai_roundtrip",
+        "time_scale::tai::proof_harness::from_datetime_never_panics",
+        "time_scale::tai::proof_harness::from_gregorian_never_panics",
+        "time_scale::tcg::proof_harness::from_datetime_never_panics",
+        "time_scale::tcg::proof_harness::from_gregorian_never_panics",
+        "time_scale::tcg::proof_harness::datetime_tt_tcg_roundtrip",
+        "time_scale::tt::proof_harness::from_datetime_never_panics",
+        "time_scale::tt::proof_harness::from_gregorian_never_panics",
+        "time_scale::tt::proof_harness::datetime_tai_roundtrip",
+        "time_scale::unix::proof_harness::from_datetime_never_panics",
+        "time_scale::unix::proof_harness::from_gregorian_never_panics",
+        "time_scale::utc::proof_harness::roundtrip_near_leap_seconds",
+        "time_scale::utc::proof_harness::infallible_with_deletions",
+    ]
+    pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
+
+    interrupts = 0
+
+    def run_with_rusteria() -> dict[str, tuple[Outcome, float]]:
+        ropts = opts_for_rusteria(opts, force_obol=True, timeout=None)
+        ropts["tool_cmd"][1] = "cargo"
+        ropts["tool_cmd"] += ["--kani"]
+        log_path = PWD / "finetime-comparison-rusteria.log"
+        log_path.touch()
+        log_path.write_text(
+            f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n"
+        )
+        log = log_path.open("a")
+
+        pprint(
+            f"{CYAN}{BOLD}==>{RESET} Running with {BOLD}Rusteria{RESET}",
+        )
+        log.write("Running tests with Rusteria\n\n")
+
+        before = time.time()
+        fst = True
+        for test in tests:
+            pprint(f"Running {test} ... ", end="", flush=True)
+            try:
+                filter = ["--filter", test]
+                if not fst:
+                    filter += ["--no-compile"]
+                fst = False
+                (outcome, _), elapsed = exec_test(
+                    finetime,
+                    cmd=ropts["tool_cmd"] + filter,
+                    log=log,
+                    categoriser=ropts["categorise"],
+                    tool="Rusteria",
+                    timeout=ropts["timeout"],
+                )
+            except KeyboardInterrupt:
+                nonlocal interrupts
+                interrupts += 1
+                print(
+                    f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
+                )
+                if interrupts >= 3:
+                    break
+                continue
+
+            outcome = outcome.simplify()
+            print(f"{outcome} in {elapsed:.3f}s")
+
+        elapsed = time.time() - before
+        pprint(
+            f"{BOLD}Finished in {elapsed:.3f}s{RESET}",
+        )
+        log.close()
+
+        results = parse_per_test(log_path)
+        results = {
+            (k if "finetime::" not in k else k.replace("finetime::", "")): v["Rusteria"]
+            for k, v in results.items()
+        }
+        return results
+
+    def run_with_kani(*, cached=False) -> dict[str, tuple[Outcome, float]]:
+        kopts = opts_for_kani(opts, timeout=None)
+        kopts["tool_cmd"] = ["cargo", "kani"] + kopts["tool_cmd"][1:]
+        log_path = PWD / "finetime-comparison-kani.log"
+
+        if cached:
+            results = parse_per_test(log_path)
+            results = {
+                (k if not k.startswith("None::") else k.replace("None::", "")): v[
+                    "Kani"
+                ]
+                for k, v in results.items()
+            }
+            return results
+
+        log_path.touch()
+        log_path.write_text(
+            f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n"
+        )
+        log = log_path.open("a")
+
+        pprint(
+            f"{CYAN}{BOLD}==>{RESET} Running with {BOLD}Kani",
+        )
+        log.write("Running tests with Kani\n\n")
+
+        before = time.time()
+
+        pprint("Running bulk ... ", end="", flush=True)
+        try:
+            (outcome, _), elapsed = exec_test(
+                None,
+                cmd=kopts["tool_cmd"],
+                log=log,
+                categoriser=kopts["categorise"],
+                tool="Kani",
+                timeout=kopts["timeout"],
+                cwd=finetime,
+            )
+        except KeyboardInterrupt:
+            nonlocal interrupts
+            print(f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)")
+            return {}
+
+        outcome = outcome.simplify()
+        print(f"{outcome} in {elapsed:.3f}s")
+
+        elapsed = time.time() - before
+        pprint(
+            f"{BOLD}Finished in {elapsed:.3f}s{RESET}",
+        )
+        log.close()
+
+        results = parse_per_test(log_path)
+        results = {k: v["Kani"] for k, v in results.items()}
+        return results
+
+    res_rusteria = run_with_rusteria()
+    res_kani = run_with_kani(cached=True)
+
+    table: list[list[tuple[str, Optional[str]]]] = []
+    table += [
+        [
+            ("Suite", BOLD),
+            ("Test", BOLD),
+            ("Rusteria", BOLD),
+            ("(s)", None),
+            ("Kani", BOLD),
+            ("(s)", None),
+        ]
+    ]
+    keys = list(set(res_rusteria.keys()).union(set(res_kani.keys())))
+    keys.sort()
+    for test in keys:
+        r_out, r_time = res_rusteria.get(test, (Outcome.UNKNOWN, -2))
+        k_out, k_time = res_kani.get(test, (Outcome.UNKNOWN, -2))
+
+        if k_time == -1:
+            k_time = 10
+        suite, test_name = test.split("::", 1)
+
+        table.append(
+            [
+                (suite, BOLD),
+                (test_name, None),
+                (r_out.txt, r_out.clr),
+                (f"{r_time:.3f}", None) if r_time >= 0 else ("-", GRAY),
+                (k_out.txt, k_out.clr),
+                (f"{k_time:.3f}", None) if k_time >= 0 else ("-", GRAY),
+            ]
+        )
+
+    csv_file = PWD / "finetime-comparison.csv"
+    csv_file.touch()
+    with csv_file.open("w") as csv_io:
+        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in table)
+    pptable(table)
+
+
 def main():
     try:
         opts = parse_flags()
@@ -439,6 +994,8 @@ def main():
             if name == "custom":
                 continue
             config = callback(opts)
+            if len(config["tests"]) == 0:
+                continue
             pprint(f"Running {BOLD}{name}{RESET} tests")
             exec_tests(opts, config)
     elif cmd[0] == "eval":
@@ -450,6 +1007,11 @@ def main():
         diff_evaluation(file1, file2)
     elif cmd[0] == "benchmark":
         benchmark(opts)
+    elif cmd[0] == "comp-kani":
+        (compare_path, cached) = cmd[1]
+        kani_comparison(opts, compare_path, cached)
+    elif cmd[0] == "finetime":
+        finetime(opts)
     else:
         assert_never(cmd)
 

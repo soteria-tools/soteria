@@ -1,3 +1,5 @@
+open Soteria.Symex.Compo_res
+open Rust_val
 open Rustsymex.Syntax
 open Typed.Infix
 open Typed.Syntax
@@ -87,6 +89,12 @@ module FunBiMap = struct
   let get_loc = find_r
 end
 
+(* TODO: we want to store additional metadata with each allocation:
+   - the type of allocation (Memory, VTable, Function, Static), to better detect more forms UB,
+     e.g. writing to static memory, casting between mismatched VTables, etc.
+     See: https://github.com/rust-lang/rust/blob/be0ade2b602bdfe37a3cc259fcc79e8624dcba94/compiler/rustc_middle/src/mir/interpret/mod.rs#L260-L276
+   - the source of the allocation (for nicer memory leak error messages) *)
+
 type sub = Tree_block.t * Tree_borrow.t
 
 and t = {
@@ -130,7 +138,6 @@ let log action ptr st =
         st)
 
 let with_state st f =
-  let open Soteria.Symex.Compo_res in
   let+ res, pointers =
     DecayMapMonad.with_state ~state:st.pointers @@ f st.state
   in
@@ -141,7 +148,6 @@ let with_state st f =
 
 let with_tbs b f =
   let open DecayMapMonad.Syntax in
-  let open Soteria.Symex.Compo_res in
   let block, tree_borrow =
     match b with
     | None -> (None, Tree_borrow.init ~state:UB ())
@@ -156,22 +162,6 @@ let with_tbs b f =
 let with_decay_map f st =
   let+ res, pointers = DecayMapMonad.with_state ~state:st.pointers f in
   (res, { st with pointers })
-
-let check_ptr_align (ptr : Sptr.t) ty st =
-  let* exp_align = Layout.align_of_s ty in
-  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-  (* 0-based pointers are aligned up to their offset *)
-  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
-  L.debug (fun m ->
-      m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
-        Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa exp_align
-        Charon_util.pp_ty ty);
-  let++ () =
-    assert_
-      (ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s)))
-      `MisalignedPointer st
-  in
-  ((), st)
 
 let with_ptr (ptr : Sptr.t) (st : t)
     (f :
@@ -228,14 +218,39 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   let handler (ty, ofs) = Tree_block.load ~ignore_borrow ofs ty ptr.tag tb in
   Encoder.ParserMonad.parse ~init:block ~handler @@ parser ~offset
 
-let load_discriminant (ptr, _) ty st =
-  let** (), st = check_ptr_align ptr ty st in
-  let parser ~offset = Encoder.variant_of_enum ty ~offset in
-  apply_parser ptr parser st
+let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Charon.Types.ty) st =
+  (* The expected alignment of a dyn pointer is stored inside the VTable  *)
+  let** exp_align, st =
+    match (ty, meta) with
+    | TDynTrait _, VTable vt ->
+        let usize = Charon.Types.TLiteral (TUInt Usize) in
+        let** ptr =
+          lift_err st @@ Sptr.offset ~ty:usize ~signed:false vt Usize.(2s)
+        in
+        let++ align, st = load (ptr, Thin) usize st in
+        (Typed.cast (as_base_i Usize align), st)
+    | _ ->
+        let+ align = Layout.align_of_s ty in
+        Ok (align, st)
+  in
+  L.debug (fun m ->
+      m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
+        Typed.ppa exp_align Charon_util.pp_ty ty);
+  (* 0-based pointers are aligned up to their offset *)
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
+  let++ () =
+    assert_
+      (Sptr.is_aligned exp_align ptr)
+      (`MisalignedPointer (exp_align, align, ofs))
+      st
+  in
+  ((), st)
 
-let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
-  let** (), st = check_ptr_align ptr ty st in
-  let parser ~offset = Encoder.rust_of_cvals ?meta ty ~offset in
+and load ?(is_move = false) ?(ignore_borrow = false) ((ptr, meta) as fptr) ty st
+    =
+  let** (), st = check_ptr_align fptr ty st in
+  let parser ~offset = Encoder.rust_of_cvals ~meta ty ~offset in
   let** value, st = apply_parser ~ignore_borrow ptr parser st in
   let++ (), st =
     if is_move then
@@ -250,6 +265,11 @@ let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   (value, st)
+
+let load_discriminant ((ptr, _) as fptr) ty st =
+  let** (), st = check_ptr_align fptr ty st in
+  let parser ~offset = Encoder.variant_of_enum ty ~offset in
+  apply_parser ptr parser st
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -268,16 +288,19 @@ let tb_load (ptr, _) ty st =
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns true if the value was read successfully,
     false otherwise. *)
-let is_valid_ptr st ptr ty =
-  L.debug (fun m -> m "The following read is a GHOST read");
-  let+ res = load ~ignore_borrow:true ptr ty st in
-  match res with Ok _ -> true | _ -> false
+let is_valid_ptr st ptr (ty : Charon.Types.ty) =
+  (* FIXME: i am not certain how one checks for the validity of a DST *)
+  if Layout.is_dst ty then return true
+  else (
+    L.debug (fun m -> m "The following read is a GHOST read");
+    let+ res = load ~ignore_borrow:true ptr ty st in
+    match res with Ok _ -> true | _ -> false)
 
-let store (ptr, _) ty sval st =
+let store ((ptr, _) as fptr) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
-    let** (), st = check_ptr_align ptr ty st in
+    let** (), st = check_ptr_align fptr ty st in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     L.debug (fun f ->
@@ -371,11 +394,11 @@ let alloc ?zeroed size align st =
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
   let ptr : Sptr.t Rust_val.full_ptr =
-    ({ ptr; tag = tb.tag; align; size }, None)
+    ({ ptr; tag = tb.tag; align; size }, Thin)
   in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-  Soteria.Symex.Compo_res.ok (ptr, state)
+  ok (ptr, state)
 
 let alloc_untyped ~zeroed ~size ~align st = alloc ~zeroed size align st
 
@@ -408,7 +431,7 @@ let alloc_tys tys st =
           size = Typed.BitVec.usizei layout.size;
         }
       in
-      (block, (ptr, None)))
+      (block, (ptr, Thin)))
 
 let free (({ ptr; _ } : Sptr.t), _) st =
   let** () = assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree st in
@@ -416,6 +439,7 @@ let free (({ ptr; _ } : Sptr.t), _) st =
   let@ () = with_loc_err () in
   (* TODO: does the tag not play a role in freeing? *)
   let@ st = with_state st in
+  L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
   SPmap.wrap
     (Freeable.free ~assert_exclusively_owned:(fun t ->
          Tree_block.assert_exclusively_owned @@ Option.map fst t))
@@ -503,7 +527,6 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
 
 let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   let lift_freed_err () f =
-    let open Soteria.Symex.Compo_res in
     let+ res = f () in
     match res with
     | Ok v -> Ok v
@@ -543,7 +566,7 @@ let leak_check st =
         | String _ -> Result.ok (loc :: acc, st)
         | Global g -> (
             let glob = Crate.get_global g in
-            let* res = load ~ignore_borrow:true (ptr, None) glob.ty st in
+            let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty st in
             match res with
             | Ok (v, st) ->
                 let ptrs = Layout.ref_tys_in ~include_ptrs:true v glob.ty in
@@ -604,7 +627,7 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
   let ptr : Sptr.t =
     { ptr; tag = Tree_borrow.zero; align = Usize.(1s); size = Usize.(0s) }
   in
-  Soteria.Symex.Compo_res.Ok ((ptr, None), st)
+  Ok ((ptr, Thin), st)
 
 let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let** () =

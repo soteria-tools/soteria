@@ -29,15 +29,15 @@ module M (State : State_intf.S) = struct
             Fmt.(list Types.pp_const_generic)
             cgens
     in
-    ok (Array (List.init size (fun _ -> rust_val)))
+    ok (Tuple (List.init size (fun _ -> rust_val)))
 
   let array_index (idx_op : Types.builtin_index_op)
       (gen_args : Types.generic_args) args =
     let ptr, size =
       match (idx_op.is_array, List.hd args, gen_args.const_generics) with
       (* Array with static size *)
-      | true, Ptr (ptr, None), [ size ] -> (ptr, BV.usize_of_const_generic size)
-      | false, Ptr (ptr, Some size), [] -> (ptr, Typed.cast_i Usize size)
+      | true, Ptr (ptr, Thin), [ size ] -> (ptr, BV.usize_of_const_generic size)
+      | false, Ptr (ptr, Len size), [] -> (ptr, Typed.cast_i Usize size)
       | _ ->
           Fmt.failwith "array_index: unexpected arguments: %a / %a"
             Fmt.(list pp_rust_val)
@@ -53,7 +53,7 @@ module M (State : State_intf.S) = struct
       let+ () =
         State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ size)) `OutOfBounds
       in
-      Ptr (ptr', None)
+      Ptr (ptr', Thin)
     else
       let range_end = as_base_i Usize (List.nth args 2) in
       let+ () =
@@ -65,59 +65,13 @@ module M (State : State_intf.S) = struct
           `OutOfBounds
       in
       let size = range_end -!@ idx in
-      Ptr (ptr', Some size)
-
-  (* Some array accesses are ran on functions, so we handle those here and redirect them.
-     Eventually, it would be good to maybe make a Charon pass that gets rid of these before. *)
-  let array_index_fn (fun_sig : UllbcAst.fun_sig) args =
-    let ptr, range, mode, gargs, range_id =
-      match (args, fun_sig.inputs) with
-      (* Unfortunate, but right now i don't have a better way to handle this... *)
-      | ( [ ptr; Struct range ],
-          [
-            TRef
-              ( _,
-                TAdt { id = TBuiltin ((TArray | TSlice) as mode); generics },
-                _ );
-            TAdt { id = TAdtId range_id; _ };
-          ] ) ->
-          (ptr, range, mode, generics, range_id)
-      | _ -> failwith "Unexpected input type"
-    in
-    let range_item =
-      match (Crate.get_adt range_id).item_meta.lang_item with
-      | Some item -> item
-      | None -> failwith "Unexpected range item"
-    in
-    let size =
-      match (ptr, gargs.const_generics) with
-      (* Array with static size *)
-      | _, [ size ] -> BV.usize_of_const_generic size
-      | Ptr (_, Some size), [] -> Typed.cast size
-      | _ -> failwith "array_index (fn): couldn't calculate size"
-    in
-    let idx_from, idx_to =
-      match (range_item, range) with
-      | "RangeFull", [] -> (Base Usize.(0s), Base size)
-      | "RangeFrom", [ from ] -> (from, Base size)
-      | "RangeTo", [ to_ ] -> (Base Usize.(0s), to_)
-      | "Range", [ from; to_ ] -> (from, to_)
-      | "RangeInclusive", [ from; Base to_ ] ->
-          (from, Base (Typed.cast to_ +!@ Usize.(1s)))
-      | "RangeToInclusive", [ Base to_ ] ->
-          (Base Usize.(0s), Base (Typed.cast to_ +!@ Usize.(1s)))
-      | _ -> Fmt.failwith "array_index (fn): unexpected range %s" range_item
-    in
-    let idx_op : Types.builtin_index_op =
-      { is_array = mode = TArray; mutability = RShared; is_range = true }
-    in
-    array_index idx_op gargs [ ptr; idx_from; idx_to ]
+      Ptr (ptr', Len size)
 
   let array_slice ~mut:_ (gen_args : Types.generic_args) args =
     match (gen_args.const_generics, args) with
-    | [ size ], [ Ptr (ptr, None) ] ->
+    | [ size ], [ Ptr (ptr, Thin) ] ->
         let size = BV.usize_of_const_generic size in
-        ok (Ptr (ptr, Some size))
+        ok (Ptr (ptr, Len size))
     | _ -> failwith "array_index: unexpected arguments"
 
   let box_new (gen_args : Types.generic_args) args =
@@ -131,16 +85,28 @@ module M (State : State_intf.S) = struct
     Ptr ptr
 
   let from_raw_parts args =
-    match args with
-    | [ Ptr (ptr, _); Base meta ] -> ok (Ptr (ptr, Some meta))
-    | [ Base v; Base meta ] ->
-        let v = Typed.cast_i Usize v in
-        let ptr = Sptr.null_ptr_of v in
-        ok (Ptr (ptr, Some meta))
-    | _ ->
-        Fmt.failwith "from_raw_parts: invalid arguments %a"
-          Fmt.(list ~sep:comma pp_rust_val)
-          args
+    let ptr, meta =
+      match args with
+      | [ ptr; meta ] -> (ptr, meta)
+      | _ -> failwith "from_raw_parts: invalid arguments"
+    in
+    let ptr =
+      match ptr with
+      | Ptr (ptr, Thin) -> ptr
+      | Base v -> Sptr.null_ptr_of @@ Typed.cast_i Usize v
+      | _ ->
+          failwith "from_raw_parts: first argument must be a pointer or usize"
+    in
+    let meta =
+      match meta with
+      | Tuple [] -> Thin
+      | Base v -> Len (Typed.cast_i Usize v)
+      | Ptr (ptr, Thin) -> VTable ptr
+      | _ ->
+          failwith
+            "from_raw_parts: second argument must be unit, a pointer or usize"
+    in
+    ok (Ptr (ptr, meta))
 
   let nop _ = ok (Tuple [])
 
@@ -186,35 +152,20 @@ module M (State : State_intf.S) = struct
     ok (Base (BV.of_bool res))
 
   let _mk_box ptr =
-    let non_null = Struct [ ptr ] in
-    let phantom_data = Struct [] in
-    let unique = Struct [ non_null; phantom_data ] in
-    let allocator = Struct [] in
-    Struct [ unique; allocator ]
-
-  let fixme_try_cleanup _ =
-    (* FIXME: for some reason Charon doesn't translate std::panicking::try::cleanup? Instead
-              we return a Box to a null pointer, hoping the client code doesn't access it. *)
-    let meta = Usize.(0s) in
-    let box = _mk_box (Ptr (Sptr.null_ptr (), Some meta)) in
-    ok box
-
-  let fixme_box_new (fun_sig : UllbcAst.fun_sig) args =
-    let ty = List.hd fun_sig.inputs in
-    let value = List.hd args in
-    let* ptr = State.alloc_ty ty in
-    let+ () = State.store ptr ty value in
-    _mk_box (Ptr ptr)
-
-  let fixme_null_ptr _ = ok (Ptr (Sptr.null_ptr (), None))
+    let non_null = Tuple [ ptr ] in
+    let phantom_data = Tuple [] in
+    let unique = Tuple [ non_null; phantom_data ] in
+    let allocator = Tuple [] in
+    Tuple [ unique; allocator ]
 
   let alloc_impl args =
     let zero = Usize.(0s) in
     let size, align, zeroed =
       match args with
-      | [
-       _alloc; Struct [ Base size; Struct [ Enum (align, []) ] ]; Base zeroed;
-      ] ->
+      | [ _alloc; Tuple [ Base size; Tuple [ Enum (align, []) ] ]; Base zeroed ]
+        ->
+          let size = Typed.cast_i Usize size in
+          let align = Typed.cast_i Usize align in
           let zeroed = Typed.cast_i U8 zeroed in
           (size, align, BV.to_bool zeroed)
       | _ ->
@@ -223,9 +174,9 @@ module M (State : State_intf.S) = struct
             args
     in
     (* make Result<NonNull<[u8]>, AllocError> *)
-    let mk_res ptr len = Enum (zero, [ Struct [ Ptr (ptr, Some len) ] ]) in
+    let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
     if%sat size ==@ zero then
-      let dangling = Sptr.null_ptr_of (Typed.cast align) in
+      let dangling = Sptr.null_ptr_of align in
       ok (mk_res dangling zero)
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
@@ -236,4 +187,12 @@ module M (State : State_intf.S) = struct
       in
       (* FIXME: the size of this zero is probably wrong *)
       mk_res ptr size
+
+  let fixme_panic_cleanup _ =
+    (* TODO: whas is __rust_panic_cleanup meant to do and return? *)
+    ok (Ptr (Sptr.null_ptr (), VTable (Sptr.null_ptr ())))
+
+  let fixme_catch_unwind_cleanup _ =
+    (* We return a null dyn box, like above *)
+    ok @@ _mk_box (Ptr (Sptr.null_ptr (), VTable (Sptr.null_ptr ())))
 end

@@ -1,6 +1,9 @@
 open Charon
 
 let z_of_scalar : Values.scalar_value -> Z.t = function
+  | SignedScalar (ty, v) when Z.lt v Z.zero ->
+      let bits = Layout_common.size_of_int_ty ty * 8 in
+      Z.(v land pred (one lsl bits))
   | UnsignedScalar (_, v) | SignedScalar (_, v) -> v
 
 let z_of_literal : Values.literal -> Z.t = function
@@ -125,16 +128,22 @@ let mk_array_ty ty len : Types.ty =
         };
     }
 
+(** The type [*const ()] *)
+let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)
+
 let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
   List.exists
     (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)
     decl.item_meta.attr_info.attributes
 
-let decl_get_attr (decl : 'a GAst.gfun_decl) attr =
+let meta_get_attr (meta : Types.item_meta) attr =
   List.find_map
     (function
       | Meta.AttrUnknown { path; args } when path = attr -> args | _ -> None)
-    decl.item_meta.attr_info.attributes
+    meta.attr_info.attributes
+
+let decl_get_attr (decl : 'a GAst.gfun_decl) attr =
+  meta_get_attr decl.item_meta attr
 
 let get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
