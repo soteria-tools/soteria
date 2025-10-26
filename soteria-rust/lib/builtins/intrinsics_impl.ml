@@ -84,6 +84,19 @@ module M (State : State_intf.S) = struct
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint : unit ret = error `Breakpoint
 
+  let bitreverse ~t ~x =
+    let lit = TypesUtils.ty_as_literal t in
+    let nbits = 8 * Layout.size_of_literal_ty lit in
+    let v = as_base lit x in
+    let bits = List.init nbits (fun i -> BV.extract i i v) in
+    let rec aux = function
+      | [] -> failwith "impossible: no bits"
+      | [ last ] -> last
+      | hd :: tl -> BV.concat hd (aux tl)
+    in
+    let v' = aux bits in
+    ok (Base (v' :> Typed.T.cval Typed.t))
+
   let bswap ~t ~x =
     let lit = TypesUtils.ty_as_literal t in
     let nbytes = Layout.size_of_literal_ty lit in
