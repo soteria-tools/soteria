@@ -701,11 +701,6 @@ module Make (Sptr : Sptr.S) = struct
         in
         split (Base (v :> T.cval Typed.t)) ty at
     | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
-        let+ at =
-          of_opt_not_impl
-            (Fmt.str "Don't know how to read this size: %a" Typed.ppa at)
-            (Option.map Z.to_int (BV.to_z at))
-        in
         (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
            of size 2^n *)
         let rec aux v sz =
@@ -730,8 +725,18 @@ module Make (Sptr : Sptr.S) = struct
         in
         (* get our starting size and unsigned integer *)
         let size = size_of_literal_ty lit_ty in
-        if at < 1 || at >= size then
-          Fmt.failwith "Invalid split: %a at %d" pp_ty ty at;
+        let+ at =
+          match BV.to_z at with
+          | Some at -> return (Z.to_int at)
+          | _ -> (
+              (* as per the contract of [split], we assume [at] is in [[1, size)] *)
+              let options = List.init (size - 1) (( + ) 1) in
+              let* res =
+                match_on options ~constr:(fun x ->
+                    Typed.sem_eq at (BV.usizei x))
+              in
+              match res with Some i -> return i | None -> vanish ())
+        in
         let v = as_base lit_ty v in
         split v size at
     | _ ->
