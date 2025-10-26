@@ -403,15 +403,12 @@ module Make (State : State_intf.S) = struct
             let+ () = State.check_ptr_align ptr ty in
             zst
         | None ->
-            let is_move =
-              (* TODO: properly detect if ty has the Copy trait, in which case is_move is
-             always false. *)
-              match (op, ty) with
-              | _, TLiteral _ -> false
-              | Move _, _ -> true
-              | _ -> false
-            in
-            State.load ~is_move ptr ty)
+            (* TODO: I don't think the operand being move matters at all, aside from
+               function calls. see:
+               https://github.com/rust-lang/unsafe-code-guidelines/issues/416
+               https://rust-lang.zulipchat.com/#narrow/channel/213817-t-lang/topic/Move.20value.20from.20enum.20Niche.3F/with/547083544
+             *)
+            State.load ~is_move:false ptr ty)
 
   and eval_operand_list ops =
     let+ vs =
