@@ -126,7 +126,7 @@ module Make (State : State_intf.S) = struct
                    []
               |> List.rev
             in
-            let char_arr = Array chars in
+            let char_arr = Tuple chars in
             let str_ty : Types.ty =
               mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
             in
@@ -155,7 +155,7 @@ module Make (State : State_intf.S) = struct
         | UnknownTrait _ -> not_impl "TODO: TraitConst(UnknownTrait)")
     | CRawMemory bytes ->
         let value = List.map (fun x -> Base (BV.u8i x)) bytes in
-        let value = Array value in
+        let value = Tuple value in
         let from_ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
         in
@@ -504,9 +504,7 @@ module Make (State : State_intf.S) = struct
               | Ptr (v, prev) ->
                   let+ meta = update_meta prev in
                   Ptr (v, meta)
-              | ( Struct (_ :: _ as fs)
-                | Array (_ :: _ as fs)
-                | Tuple (_ :: _ as fs) ) as v -> (
+              | Tuple (_ :: _ as fs) as v -> (
                   let rec split_at_non_empty fs left =
                     match fs with
                     | [] -> None
@@ -519,11 +517,7 @@ module Make (State : State_intf.S) = struct
                   | Some (left, nonempty, right) -> (
                       let+ nonempty = with_ptr_meta nonempty in
                       let fs = List.rev (left @ [ nonempty ] @ right) in
-                      match v with
-                      | Struct _ -> Struct fs
-                      | Array _ -> Array fs
-                      | Tuple _ -> Tuple fs
-                      | _ -> assert false)
+                      match v with Tuple _ -> Tuple fs | _ -> assert false)
                   | None -> not_impl "Couldn't set pointer meta in CastUnsize")
               | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
             in
@@ -739,7 +733,7 @@ module Make (State : State_intf.S) = struct
               State.lift_err @@ Layout.apply_attributes v attribs
           | _ -> ok ()
         in
-        Struct values
+        Tuple values
     (* Invalid aggregate (not sure, but seems like it) *)
     | Aggregate ((AggregatedAdt _ as v), _) ->
         Fmt.failwith "Invalid ADT aggregate kind: %a"
@@ -747,7 +741,7 @@ module Make (State : State_intf.S) = struct
     (* Array aggregate *)
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
         let+ values = eval_operand_list operands in
-        Array values
+        Tuple values
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) ->
         let* values = eval_operand_list operands in
@@ -784,7 +778,7 @@ module Make (State : State_intf.S) = struct
         let len = int_of_const_generic len in
         (* FIXME: this is horrible for large arrays! *)
         let els = List.init len (fun _ -> value) in
-        Array els
+        Tuple els
     (* Shallow init box -- get the pointer and transmute it to a box *)
     | ShallowInitBox (ptr, _) ->
         let+ ptr = eval_operand ptr in
