@@ -763,7 +763,9 @@ and BitVec : BitVec = struct
     | _ -> of_bool n (Bool.sem_eq v (zero n))
 
   let rec add ?(checked = false) v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
+    match[@warning "-ambiguous-var-in-pattern-guard"]
+      (v1.node.kind, v2.node.kind)
+    with
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l + r)
     | Unop (Neg, v1), _ -> sub v2 v1
     | _, Unop (Neg, v2) -> sub v1 v2
@@ -790,6 +792,45 @@ and BitVec : BitVec = struct
         else if equal l1 r2 then mul ~checked l1 (add ~checked r1 l2)
         else if equal r1 l2 then mul ~checked r1 (add ~checked l1 r2)
         else mul ~checked r1 (add ~checked l1 l2)
+    | ( Binop
+          ( Mul { checked = true },
+            ({ node = { kind = BitVec l1; _ }; _ } as v_l1),
+            r1 ),
+        Binop
+          ( Mul { checked = true },
+            ({ node = { kind = BitVec l2; _ }; _ } as v_l2),
+            r2 ) )
+    | ( Binop
+          ( Mul { checked = true },
+            r1,
+            ({ node = { kind = BitVec l1; _ }; _ } as v_l1) ),
+        Binop
+          ( Mul { checked = true },
+            ({ node = { kind = BitVec l2; _ }; _ } as v_l2),
+            r2 ) )
+    | ( Binop
+          ( Mul { checked = true },
+            ({ node = { kind = BitVec l1; _ }; _ } as v_l1),
+            r1 ),
+        Binop
+          ( Mul { checked = true },
+            r2,
+            ({ node = { kind = BitVec l2; _ }; _ } as v_l2) ) )
+    | ( Binop
+          ( Mul { checked = true },
+            r1,
+            ({ node = { kind = BitVec l1; _ }; _ } as v_l1) ),
+        Binop
+          ( Mul { checked = true },
+            r2,
+            ({ node = { kind = BitVec l2; _ }; _ } as v_l2) ) )
+      when checked && (Z.divisible l1 l2 || Z.divisible l2 l1) ->
+        if Z.divisible l2 l1 then
+          let common = mk (size_of v1.node.ty) (Z.div l2 l1) in
+          mul ~checked v_l1 (add ~checked r1 (mul ~checked common r2))
+        else
+          let common = mk (size_of v1.node.ty) (Z.div l1 l2) in
+          mul ~checked v_l2 (add ~checked r2 (mul ~checked common r1))
     | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
         (* only propagate down ites if we know it's concrete *)
         let n = size_of v1.node.ty in
