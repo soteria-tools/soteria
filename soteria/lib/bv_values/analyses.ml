@@ -132,13 +132,28 @@ module Interval : S = struct
       && List.for_all2 Range.eq d1.negs d2.negs
 
     let apply_negs size pos negs =
+      (* First, try filtering out negations that are included in others, and join them *)
+      let aux_merge_filter negs r =
+        let negs, r =
+          List.fold_left
+            (fun (acc, ((m, n) as ra)) ((a, b) as r) ->
+              (* no overlap (we offset by one since they're inclusive) *)
+              if succ b < m || pred a > n then (r :: acc, ra)
+              else (acc, (Z.min m a, Z.max n b)))
+            ([], r) negs
+        in
+        r :: negs
+      in
+      let negs = List.fold_left aux_merge_filter [] negs in
+      log (fun m -> m "negs after: %a" Fmt.(list ~sep:(any ", ") Range.pp) negs);
+
       (* See [3.1] in https://ceur-ws.org/Vol-1617/paper8.pdf *)
       let pos, negs =
         List.fold_left
           (fun (((l, u) as pos), negs) ((a, b) as neg) ->
             if a > u || b < l then (pos, negs)
             else if a <= l then
-              let neg_pos = (succ b, pow2 Stdlib.(size - 1)) in
+              let neg_pos = (succ b, pow2 size) in
               (Range.intersect pos neg_pos, negs)
             else if b >= u then
               let neg_pos = (zero, pred a) in
@@ -146,6 +161,11 @@ module Interval : S = struct
             else (pos, neg :: negs))
           (pos, []) negs
       in
+      log (fun m ->
+          m "pos/negs after: %a / %a" Range.pp pos
+            Fmt.(list ~sep:(any ", ") Range.pp)
+            negs);
+
       (pos, List.sort_uniq Range.cmp negs)
 
     (** Incorporates a positive range into this data, by using intersection.
@@ -161,7 +181,7 @@ module Interval : S = struct
         Returns the updated data, and whether the added range is redundant. *)
     let add_neg data r =
       let pos, negs = apply_negs data.size data.pos (r :: data.negs) in
-      if Range.eq pos data.pos && List.length negs = List.length data.negs then
+      if Range.eq pos data.pos && List.equal Range.eq negs data.negs then
         (data, true)
       else ({ data with pos; negs }, false)
 
@@ -242,8 +262,9 @@ module Interval : S = struct
     else
       let st = Var.Map.add var range' st in
       log (fun m ->
-          m "New range %a: %a %a@.  = %a" Var.pp var Data.pp range Range.pps
-            new_range Data.pp range');
+          m "New range (%b, %b) %a: %a %a@.  = %a" (Data.is_singleton range')
+            (Data.is_empty range') Var.pp var Data.pp range Range.pps new_range
+            Data.pp range');
       if Data.is_singleton range' then
         (* We narrowed the range to one value! *)
         let const = Svalue.BitVec.mk size (fst range'.pos) in
@@ -448,6 +469,8 @@ module Interval : S = struct
             m "Simplify range %a (curr %a) for %a" Range.pps srange Data.pp
               range pp st);
         let range', redundant = Data.add range srange in
+        log (fun m ->
+            m "Redundant? %b Empty? %b" redundant (Data.is_empty range'));
         if redundant then Svalue.Bool.v_true
         else if Data.is_empty range' then Svalue.Bool.v_false
         else v
@@ -458,7 +481,8 @@ module Interval : S = struct
     let v', learnt, vars, st' = add_constraint v st in
     if v <> v' || not (Var.Set.is_empty vars) then
       log (fun m ->
-          m "Change: %a -> %a (%a)@." Svalue.pp v Svalue.pp v'
+          m "Change: %a -> %a + %a (%a)@." Svalue.pp v Svalue.pp v' Svalue.pp
+            learnt
             Fmt.(list ~sep:(any ", ") Var.pp)
             (Var.Set.to_list vars))
     else log (fun m -> m "No change.@.");
