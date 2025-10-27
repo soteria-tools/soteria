@@ -775,31 +775,26 @@ and BitVec : BitVec = struct
     | Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
     | Binop (Add _, r, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
       ->
-        add (add c1 v2) r
+        add ~checked (add c1 v2) r
     | Binop (Sub _, l, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
       ->
-        add l (sub v2 c1)
+        add ~checked l (sub v2 c1)
     | Binop (Sub _, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
       ->
-        sub (add c1 v2) r
+        sub ~checked (add c1 v2) r
     | _, Binop (Sub _, l, r) when equal r v1 -> l
     | Binop (Sub _, l, r), _ when equal r v2 -> l
     | Binop (Mul _, l1, r1), Binop (Mul _, l2, r2)
       when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
-        (* FIXME: remove true; this is not actually checked, this would rather depend on
-           if the addition is checked (which we dont track) *)
-        if equal l1 l2 then
-          Binop (Mul { checked = true }, l1, add r1 r2) <| v1.node.ty
-        else if equal l1 r2 then
-          Binop (Mul { checked = true }, l1, add r1 l2) <| v1.node.ty
-        else if equal r1 l2 then
-          Binop (Mul { checked = true }, r1, add l1 r2) <| v1.node.ty
-        else Binop (Mul { checked = true }, r1, add l1 l2) <| v1.node.ty
-    (* only propagate down ites if we know it's concrete *)
+        if equal l1 l2 then mul ~checked l1 (add ~checked r1 r2)
+        else if equal l1 r2 then mul ~checked l1 (add ~checked r1 l2)
+        else if equal r1 l2 then mul ~checked r1 (add ~checked l1 r2)
+        else mul ~checked r1 (add ~checked l1 l2)
     | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+        (* only propagate down ites if we know it's concrete *)
         let n = size_of v1.node.ty in
         let x = mk n x in
-        Bool.ite b (add l x) (add r x)
+        Bool.ite b (add ~checked l x) (add ~checked r x)
     | _ -> mk_commut_binop (Add checked) v1 v2 <| v1.node.ty
 
   and sub ?(checked = false) v1 v2 =
@@ -844,7 +839,7 @@ and BitVec : BitVec = struct
   (** [mod_ v1 v2] is the signed remainder of [v1 / v2], which takes the sign of
       the divisor [v2] if [signed]. For an unsigned version, use
       [rem ~signed:false]. *)
-  let mod_ v1 v2 =
+  and mod_ v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
         let size = size_of v1.node.ty in
@@ -852,7 +847,7 @@ and BitVec : BitVec = struct
         let r = bv_to_z true size r in
         let res = Z.(l mod r) in
         let res =
-          if Z.(res < zero) && not Z.(r < zero) then Z.(res + r)
+          if Z.(res < zero) && Stdlib.not Z.(r < zero) then Z.(res + r)
           else if Z.(res >= zero) && Z.(r < zero) then Z.(res + r)
           else res
         in
@@ -861,7 +856,7 @@ and BitVec : BitVec = struct
 
   (** [rem ~signed v1 v2] is the remainder of [v1 / v2], which takes the sign of
       the dividend [v1] if [signed]. *)
-  let rec rem ~signed v1 v2 =
+  and rem ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
         let size = size_of v1.node.ty in
@@ -883,7 +878,7 @@ and BitVec : BitVec = struct
         rem ~signed r v2
     | _ -> Binop (Rem signed, v1, v2) <| v1.node.ty
 
-  and not v =
+  and not (v : t) =
     match v.node.kind with
     | BitVec bv ->
         let n = size_of v.node.ty in
@@ -1520,8 +1515,9 @@ and BitVec : BitVec = struct
         let other = other <| t_bv n in
         Bool.and_ b (Bool.sem_eq other (mk n max))
     | _ ->
+        let size = size_of v1.node.ty in
         if signed then
-          let sign_of v = lt ~signed v (zero (size_of v.node.ty)) in
+          let sign_of v = lt ~signed v (zero size) in
           let sign_l = sign_of v1 in
           let sign_r = sign_of v2 in
           let msb_res = sign_of (add v1 v2) in
@@ -1529,8 +1525,11 @@ and BitVec : BitVec = struct
             (Bool.sem_eq sign_l sign_r)
             (Bool.not (Bool.sem_eq sign_l msb_res))
         else
-          let res = add v1 v2 in
-          Bool.or_ (lt ~signed res v1) (lt ~signed res v2)
+          let max = max_for signed size in
+          let max = mk size max in
+          Bool.or_
+            (gt ~signed v1 (sub ~checked:true max v2))
+            (gt ~signed v2 (sub ~checked:true max v1))
 
   let mul_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
