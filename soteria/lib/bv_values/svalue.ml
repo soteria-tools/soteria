@@ -509,6 +509,10 @@ module rec Bool : Bool = struct
     | Binop (Lt s1, l1, r1), Binop (Lt s2, l2, r2)
       when s1 = s2 && equal l1 r2 && equal r1 l2 ->
         not (mk_commut_binop Eq l1 r1 <| TBool)
+    | Binop (Lt s1, l1, r1), Binop (Leq s2, l2, r2)
+    | Binop (Leq s1, l1, r1), Binop (Lt s2, l2, r2)
+      when s1 = s2 && equal l1 r2 && equal r1 l2 ->
+        v_true
     | Binop (Or, v1, v1'), _ when equal v1 v2 || equal v1' v2 -> v1
     | _, Binop (Or, v2, v2') when equal v1 v2 || equal v1 v2' -> v2
     | _ -> mk_commut_binop Or v1 v2 <| TBool
