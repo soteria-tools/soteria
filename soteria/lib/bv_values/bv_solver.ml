@@ -27,7 +27,7 @@ let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
           | Binop (Or, e1, e2) ->
               let se1 = simplify e1 in
               let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
+              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
               else Svalue.Bool.or_ se1 se2
           | Ite (g, e1, e2) ->
               let sg = simplify g in
