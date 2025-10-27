@@ -504,13 +504,15 @@ module M (State : State_intf.S) = struct
         (off ==@ zero ||@ Sptr.is_same_loc ptr base &&@ (off %$@ size ==@ zero))
         `UBPointerComparison
     in
-    if not unsigned then ok (off /$@ size)
+    (* we cast to ignore the overflow for MIN/-1, since the size can never be -1 *)
+    if not unsigned then ok (Typed.cast (off /$@ size))
     else
       let+ () =
-        State.assert_ (off >=$@ zero)
+        State.assert_
+          (Typed.cast (off >=$@ zero))
           (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
       in
-      off /$@ size
+      Typed.cast (off /$@ size)
 
   let ptr_offset_from = ptr_offset_from_ ~unsigned:false
   let ptr_offset_from_unsigned = ptr_offset_from_ ~unsigned:true
