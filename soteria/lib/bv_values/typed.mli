@@ -122,8 +122,8 @@ module BitVec : sig
   val to_z : [< any ] t -> Z.t option
 
   (* arithmetic *)
-  val add : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-  val sub : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val add : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val sub : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val mul : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val div : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val rem : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
@@ -252,15 +252,20 @@ module Infix : sig
   val ( ~- ) : [< sint ] t -> [> sint_ovf ] t
   val ( *@ ) : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val ( /@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
-  val ( /$@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+  val ( /$@ ) : [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val ( %@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
-  val ( %$@ ) : [< sint ] t -> [< nonzero ] t -> [> sint ] t
+  val ( %$@ ) : [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
 
   (* arithmetic operations with overflow ignored *)
   val ( +!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( -!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( *!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( ~-! ) : [< sint ] t -> [> sint ] t
+
+  (* checked arithmetic operations with overflow ignored *)
+  val ( +!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( -!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( *!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
 
   (* arithmetic operations for checked operations *)
   val ( +?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t

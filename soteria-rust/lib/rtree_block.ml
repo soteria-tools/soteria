@@ -29,8 +29,11 @@ module Make (Sptr : Sptr.S) = struct
       let zero () = Typed.BitVec.usize Z.zero
       let ( <@ ) = Typed.Infix.( <$@ )
       let ( <=@ ) = Typed.Infix.( <=$@ )
-      let ( +@ ) = Typed.Infix.( +!@ )
-      let ( -@ ) = Typed.Infix.( -!@ )
+
+      (* We assume addition/overflow within the range of an allocation may never overflow.
+         This allows extremely good reductions around inequalities, which Tree_block relies on.  *)
+      let ( +@ ) = Typed.Infix.( +!!@ )
+      let ( -@ ) = Typed.Infix.( -!!@ )
     end
 
     let pp_init ft (v, ty) =
