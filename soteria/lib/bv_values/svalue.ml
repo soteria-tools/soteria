@@ -519,8 +519,8 @@ module rec Bool : Bool = struct
     else
       match sv.node.kind with
       | Unop (Not, sv) -> sv
-      | Binop (Lt s, v1, v2) -> Binop (Leq s, v2, v1) <| TBool
-      | Binop (Leq s, v1, v2) -> Binop (Lt s, v2, v1) <| TBool
+      | Binop (Lt signed, v1, v2) -> BitVec.leq ~signed v2 v1
+      | Binop (Leq signed, v1, v2) -> BitVec.lt ~signed v2 v1
       | Binop (Or, v1, v2) -> and_ (not v1) (not v2)
       | Binop (And, v1, v2) -> or_ (not v1) (not v2)
       | Binop (Eq, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }, v)
