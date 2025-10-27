@@ -1270,34 +1270,89 @@ and BitVec : BitVec = struct
         Bool.not (Bool.sem_eq v1 v2)
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.not (Bool.sem_eq v1 v2)
-    | ( BitVec l,
+    | ( BitVec c2,
         ( Binop
             ( Mul { checked = true },
-              z,
-              ({ node = { kind = BitVec r; _ }; _ } as y) )
+              x,
+              ({ node = { kind = BitVec c1; _ }; _ } as v2) )
         | Binop
             ( Mul { checked = true },
-              ({ node = { kind = BitVec r; _ }; _ } as y),
-              z ) ) ) ->
-        let lhs =
-          if Z.divisible l r then div ~signed v1 y
-          else sub (div ~signed v1 y) (one bits)
-        in
-        lt ~signed lhs z
+              ({ node = { kind = BitVec c1; _ }; _ } as v2),
+              x ) ) ) ->
+        (* PROOF FOR c2 < x * c1
+        (assert (and
+          (not (bvsmulo x c1))
+          (not (= c1 #x00))
+          (let
+            (
+              (c1neg (bvslt c1 #x00))
+              (c2neg (bvslt c2 #x00))
+              (divs (= (bvsrem c2 c1) #x00)))
+            (not
+              (= (bvslt c2 (bvmul x c1))
+                (ite (or divs (not c2neg))
+                  (ite c1neg
+                    (or (and (= c1 #xff) (= c2 #x80))
+                      (bvslt x (bvsdiv c2 c1)))
+                    (bvslt (bvsdiv c2 c1) x))
+                  (ite c1neg
+                    (bvsle x (bvsdiv c2 c1))
+                    (bvsle (bvsdiv c2 c1) x)))))))) *)
+        let c1 = bv_to_z signed bits c1 in
+        let c2 = bv_to_z signed bits c2 in
+        (* be careful bc c1 = v2 and c2 = v1 in this case *)
+        if Z.divisible c2 c1 || Z.geq c2 Z.zero then
+          if Z.lt c1 Z.zero then
+            if
+              signed
+              && Z.equal c1 (Z.of_int (-1))
+              && Z.equal c2 (min_for signed bits)
+            then Bool.v_true
+            else lt ~signed x (div ~signed v1 v2)
+          else lt ~signed (div ~signed v1 v2) x
+        else if Z.lt c1 Z.zero then leq ~signed x (div ~signed v1 v2)
+        else leq ~signed (div ~signed v1 v2) x
     | ( ( Binop
             ( Mul { checked = true },
-              z,
-              ({ node = { kind = BitVec l; _ }; _ } as y) )
+              x,
+              ({ node = { kind = BitVec c1; _ }; _ } as v1) )
         | Binop
             ( Mul { checked = true },
-              ({ node = { kind = BitVec l; _ }; _ } as y),
-              z ) ),
-        BitVec r ) ->
-        let rhs =
-          if Z.divisible r l then div ~signed v2 y
-          else add (div ~signed v2 y) (one bits)
-        in
-        lt ~signed z rhs
+              ({ node = { kind = BitVec c1; _ }; _ } as v1),
+              x ) ),
+        BitVec c2 ) ->
+        (* PROOF FOR : x * c1 < c2
+          (assert (and
+            (not (bvsmulo x c1))
+            (not (= c1 #x00))
+            (let
+              (
+                (c1neg (bvslt c1 #x00))
+                (c2neg (bvslt c2 #x00))
+                (divs (= (bvsrem c2 c1) #x00)))
+              (not
+                (= (bvslt (bvmul x c1) c2)
+                  (ite (or divs c2neg)
+                    (ite c1neg
+                      (and (not (and (= c1 #xff) (= c2 #x80)))
+                        (bvslt (bvsdiv c2 c1) x))
+                      (bvslt x (bvsdiv c2 c1)))
+                    (ite c1neg
+                      (bvsle (bvsdiv c2 c1) x)
+                      (bvsle x (bvsdiv c2 c1))))))))) *)
+        let c1 = bv_to_z signed bits c1 in
+        let c2 = bv_to_z signed bits c2 in
+        if Z.divisible c2 c1 || Z.lt c2 Z.zero then
+          if Z.lt c1 Z.zero then
+            if
+              signed
+              && Z.equal c1 (Z.of_int (-1))
+              && Z.equal c2 (min_for signed bits)
+            then Bool.v_false
+            else lt ~signed (div ~signed v2 v1) x
+          else lt ~signed x (div ~signed v2 v1)
+        else if Z.lt c1 Z.zero then leq ~signed (div ~signed v2 v1) x
+        else leq ~signed x (div ~signed v2 v1)
     | ( Binop (Mul { checked = true }, l1, r1),
         Binop (Mul { checked = true }, l2, r2) )
       when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
@@ -1312,7 +1367,7 @@ and BitVec : BitVec = struct
     | _, Ite (b, l, r) -> Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
     | _ -> Binop (Lt signed, v1, v2) <| TBool
 
-  let rec leq ~signed v1 v2 =
+  and leq ~signed v1 v2 =
     let bits = size_of v1.node.ty in
     match (v1.node.kind, v2.node.kind) with
     | _ when equal v1 v2 -> Bool.v_true
@@ -1330,26 +1385,103 @@ and BitVec : BitVec = struct
         Bool.v_true
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.v_true
-    | ( BitVec _,
+    | ( BitVec c2,
         ( Binop
             ( Mul { checked = true },
-              z,
-              ({ node = { kind = BitVec _; _ }; _ } as y) )
+              x,
+              ({ node = { kind = BitVec c1; _ }; _ } as v2) )
         | Binop
             ( Mul { checked = true },
-              ({ node = { kind = BitVec _; _ }; _ } as y),
-              z ) ) ) ->
-        leq ~signed (div ~signed v1 y) z
+              ({ node = { kind = BitVec c1; _ }; _ } as v2),
+              x ) ) ) ->
+        (* PROOF FOR : c2 <= x * c1
+        (assert (and
+          (not (bvsmulo x c1))
+          (not (= c1 #x00))
+          (let
+            (
+              (c1neg (bvslt c1 #x00))
+              (c2neg (bvslt c2 #x00))
+              (divs (= (bvsrem c2 c1) #x00)))
+              (not
+                (= (bvsle c2 (bvmul x c1) )
+                  (ite divs
+                    (ite c1neg
+                      (or (and (= c1 #xff) (= c2 #x80))
+                        (bvsle x (bvsdiv c2 c1)))
+                      (bvsle (bvsdiv c2 c1) x))
+                    (ite c1neg
+                      (ite c2neg
+                        (bvsle x (bvsdiv c2 c1))
+                        (bvslt x (bvsdiv c2 c1)))
+                      (ite c2neg
+                        (bvsle (bvsdiv c2 c1) x)
+                        (bvslt (bvsdiv c2 c1) x))))))))) *)
+        let c1 = bv_to_z signed bits c1 in
+        let c2 = bv_to_z signed bits c2 in
+        (* be careful bc c1 = v2 and c2 = v1 in this case *)
+        if Z.divisible c2 c1 then
+          if Z.lt c1 Z.zero then
+            if
+              signed
+              && Z.equal c1 (Z.of_int (-1))
+              && Z.equal c2 (min_for signed bits)
+            then Bool.v_true
+            else leq ~signed x (div ~signed v1 v2)
+          else leq ~signed (div ~signed v1 v2) x
+        else if Z.lt c1 Z.zero then
+          if Z.lt c2 Z.zero then leq ~signed x (div ~signed v1 v2)
+          else lt ~signed x (div ~signed v1 v2)
+        else if Z.lt c2 Z.zero then leq ~signed (div ~signed v1 v2) x
+        else lt ~signed (div ~signed v1 v2) x
     | ( ( Binop
             ( Mul { checked = true },
-              z,
-              ({ node = { kind = BitVec _; _ }; _ } as y) )
+              x,
+              ({ node = { kind = BitVec c1; _ }; _ } as v2) )
         | Binop
             ( Mul { checked = true },
-              ({ node = { kind = BitVec _; _ }; _ } as y),
-              z ) ),
-        BitVec _ ) ->
-        leq ~signed z (div ~signed v2 y)
+              ({ node = { kind = BitVec c1; _ }; _ } as v2),
+              x ) ),
+        BitVec c2 ) ->
+        (* PROOF FOR : x * c1 <= c2
+          (assert (and
+            (not (bvsmulo x c1))
+            (not (= c1 #x00))
+            (let
+              (
+                (c1neg (bvslt c1 #x00))
+                (c2neg (bvslt c2 #x00))
+                (divs (= (bvsrem c2 c1) #x00)))
+              (not
+                (= (bvsle (bvmul x c1) c2)
+                  (ite divs
+                    (ite c1neg
+                      (and (not (and (= c1 #xff) (= c2 #x80)))
+                        (bvsle (bvsdiv c2 c1) x))
+                      (bvsle x (bvsdiv c2 c1)))
+                    (ite c1neg
+                      (ite c2neg
+                        (bvslt (bvsdiv c2 c1) x)
+                        (bvsle (bvsdiv c2 c1) x))
+                      (ite c2neg
+                        (bvslt x (bvsdiv c2 c1))
+                        (bvsle x (bvsdiv c2 c1)))))))))) *)
+        let c1 = bv_to_z signed bits c1 in
+        let c2 = bv_to_z signed bits c2 in
+        if Z.divisible c2 c1 then
+          if Z.lt c1 Z.zero then
+            if
+              signed
+              && Z.equal c1 (Z.of_int (-1))
+              && Z.equal c2 (min_for signed bits)
+            then Bool.v_false
+            else leq ~signed (div ~signed v2 v1) x
+          else leq ~signed x (div ~signed v2 v1)
+        else if Z.lt c1 Z.zero then
+          if Z.lt c2 Z.zero then lt ~signed (div ~signed v2 v1) x
+          else leq ~signed (div ~signed v2 v1) x
+        else if Z.lt c2 Z.zero then lt ~signed x (div ~signed v2 v1)
+        else leq ~signed x (div ~signed v2 v1)
     | ( Binop (Mul { checked = true }, l1, r1),
         Binop (Mul { checked = true }, l2, r2) )
       when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
