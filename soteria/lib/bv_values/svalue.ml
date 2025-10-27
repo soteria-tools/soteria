@@ -498,19 +498,22 @@ module rec Bool : Bool = struct
         mk_commut_binop Eq bv xy <| TBool
     | _ -> mk_commut_binop And v1 v2 <| TBool
 
-  let or_ v1 v2 =
+  let conj l = List.fold_left and_ v_true l
+
+  let rec or_ v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | _, _ when equal v1 v2 -> v1
     | Bool true, _ | _, Bool true -> v_true
     | Bool false, _ -> v2
     | _, Bool false -> v1
+    | Binop (Lt s1, l1, r1), Binop (Lt s2, l2, r2)
+      when s1 = s2 && equal l1 r2 && equal r1 l2 ->
+        not (mk_commut_binop Eq l1 r1 <| TBool)
     | Binop (Or, v1, v1'), _ when equal v1 v2 || equal v1' v2 -> v1
     | _, Binop (Or, v2, v2') when equal v1 v2 || equal v1 v2' -> v2
     | _ -> mk_commut_binop Or v1 v2 <| TBool
 
-  let conj l = List.fold_left and_ v_true l
-
-  let rec not sv =
+  and not sv =
     if equal sv v_true then v_false
     else if equal sv v_false then v_true
     else
@@ -1234,33 +1237,31 @@ and BitVec : BitVec = struct
         (* unsigned x < 1 is x == 0 *)
         Bool.sem_eq v1 (zero bits)
     | _, BitVec x when signed && Z.(equal x zero) ->
-        (* signed x < 0 is checking the sign bit *)
-        let sign_bit v =
-          let bits = size_of v.node.ty in
-          Bool.sem_eq (one 1) (extract (bits - 1) (bits - 1) v)
+        let lt_zero v =
+          Binop (Lt signed, v, zero (size_of v.node.ty)) <| TBool
         in
         let not_eq_0 v = Bool.not (Bool.sem_eq v1 (zero (size_of v.node.ty))) in
         (* this function returns if this node is negative if we can tell,
            and otherwise the node that represents the sign bit *)
-        let rec aux_sign_node v =
+        let rec aux_lt_zero v =
           match v.node.kind with
-          | Unop (BvExtend (true, _), v) -> aux_sign_node v
+          | Unop (BvExtend (true, _), v) -> aux_lt_zero v
           | Unop (BvExtend (false, _), _) -> Bool.v_false
-          | Binop (Mod, _, r) -> Bool.and_ (aux_sign_node r) (not_eq_0 v)
-          | Binop (Rem true, l, _) -> Bool.and_ (aux_sign_node l) (not_eq_0 v)
+          | Binop (Mod, _, r) -> Bool.and_ (aux_lt_zero r) (not_eq_0 v)
+          | Binop (Rem true, l, _) -> Bool.and_ (aux_lt_zero l) (not_eq_0 v)
           | Binop (Div true, l, r) ->
               Bool.and_ (not_eq_0 v)
-                (Bool.not (Bool.sem_eq (aux_sign_node l) (aux_sign_node r)))
-          | Binop (BvConcat, l, _) -> aux_sign_node l
-          | Unop (BvNot, v) -> not (aux_sign_node v)
+                (Bool.not (Bool.sem_eq (aux_lt_zero l) (aux_lt_zero r)))
+          | Binop (BvConcat, l, _) -> aux_lt_zero l
+          | Unop (BvNot, v) -> not (aux_lt_zero v)
           | Unop (BvOfBool n, _) when n > 1 -> Bool.v_false
           | Ite (_, l, r) ->
-              let pos_l = aux_sign_node l in
-              let pos_r = aux_sign_node r in
-              if pos_l = pos_r then pos_l else sign_bit v
-          | _ -> sign_bit v
+              let pos_l = aux_lt_zero l in
+              let pos_r = aux_lt_zero r in
+              if pos_l = pos_r then pos_l else lt_zero v
+          | _ -> lt_zero v
         in
-        aux_sign_node v1
+        aux_lt_zero v1
     | BitVec x, _ when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
         Bool.v_false
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (min_for signed bits) ->
