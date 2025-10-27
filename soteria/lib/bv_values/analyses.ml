@@ -107,6 +107,11 @@ module Interval : S = struct
     (** The union of two ranges; representable but OX *)
     let union (m1, n1) (m2, n2) = (Z.min m1 m2, Z.max n1 n2)
 
+    (** The exact union of two ranges; may not be representable, if they don't
+        overlap *)
+    let union_ex ((m1, n1) as r1) ((m2, n2) as r2) =
+      if succ n1 < m2 || pred m1 > n2 then None else Some (union r1 r2)
+
     let eq (m1, n1) (m2, n2) = Z.equal m1 m2 && Z.equal n1 n2
 
     let cmp (m1, n1) (m2, n2) =
@@ -136,10 +141,10 @@ module Interval : S = struct
       let aux_merge_filter negs r =
         let negs, r =
           List.fold_left
-            (fun (acc, ((m, n) as ra)) ((a, b) as r) ->
-              (* no overlap (we offset by one since they're inclusive) *)
-              if succ b < m || pred a > n then (r :: acc, ra)
-              else (acc, (Z.min m a, Z.max n b)))
+            (fun (acc, ra) r ->
+              match Range.union_ex r ra with
+              | Some merged -> (acc, merged)
+              | None -> (r :: acc, ra))
             ([], r) negs
         in
         r :: negs
