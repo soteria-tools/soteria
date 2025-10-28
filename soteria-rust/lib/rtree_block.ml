@@ -234,7 +234,7 @@ module Make (Sptr : Sptr.S) = struct
       let@ v, tb_st = as_owned t in
       let++^ tb_st' =
         if ignore_borrow then Rustsymex.Result.ok tb_st
-        else Tree_borrow.access tb tag Read tb_st
+        else Tree_borrow.access tag Read tb tb_st
       in
       { t with node = Owned (v, tb_st') }
     in
@@ -253,7 +253,7 @@ module Make (Sptr : Sptr.S) = struct
     let@ t = with_bound_and_owned_check t bound in
     let replace_node t =
       let@ _, tb_st = as_owned t in
-      let++^ tb_st' = Tree_borrow.access tb tag Write tb_st in
+      let++^ tb_st' = Tree_borrow.access tag Write tb tb_st in
       { node = Owned (Init (value, ty), tb_st'); range; children = None }
     in
     let rebuild_parent = Tree.of_children in
@@ -302,8 +302,8 @@ module Make (Sptr : Sptr.S) = struct
       let@ v, tb_st = as_owned t in
       (* We need to do two things: protect this tag for the block, and perform a read, as
          all function calls perform one on the parameters. *)
-      let tb_st' = Tree_borrow.set_protector ~protected:true tb tag tb_st in
-      let++^ tb_st' = Tree_borrow.access tb tag Tree_borrow.Read tb_st' in
+      let tb_st' = Tree_borrow.set_protector ~protected:true tag tb tb_st in
+      let++^ tb_st' = Tree_borrow.access tag Read tb tb_st' in
       { t with node = Owned (v, tb_st') }
     in
     let rebuild_parent = Tree.of_children in
@@ -317,7 +317,7 @@ module Make (Sptr : Sptr.S) = struct
       let@ v, tb_st = as_owned t in
       (* We need to do two things: protect this tag for the block, and perform a read, as
          all function calls perform one on the parameters. *)
-      let tb_st' = Tree_borrow.set_protector ~protected:false tb tag tb_st in
+      let tb_st' = Tree_borrow.set_protector ~protected:false tag tb tb_st in
       Result.ok { t with node = Owned (v, tb_st') }
     in
     let rebuild_parent = Tree.of_children in
@@ -334,7 +334,7 @@ module Make (Sptr : Sptr.S) = struct
       Tree.map_leaves t @@ fun tt ->
       match tt.node with
       | Owned (v, tb_st) ->
-          let++^ tb_st' = Tree_borrow.access tb tag Read tb_st in
+          let++^ tb_st' = Tree_borrow.access tag Read tb tb_st in
           { tt with node = Owned (v, tb_st') }
       | _ -> assert false
     in
