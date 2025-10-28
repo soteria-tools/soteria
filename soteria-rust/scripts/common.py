@@ -206,8 +206,6 @@ KNOWN_ISSUES = {
     "fail/dyn-call-trait-mismatch.rs": "We don't check the validity of dyn calls",
     "fail/dyn-upcast-nop-wrong-trait.rs": "We don't check the validity of dyn casts",
     "fail/dyn-upcast-trait-mismatch.rs": "We don't check the validity of dyn casts",
-    "fail/intrinsics/ptr_metadata_uninit_slice_data.rs": "We don't check a pointer is not uninitialised when reading it's meta",
-    "fail/intrinsics/ptr_metadata_uninit_thin.rs": "We don't check a pointer is not uninitialised when reading it's meta",
     "fail/intrinsics/typed-swap-invalid-scalar.rs": "Uses weird CFGs, technically we pass it",
     "fail/issue-miri-1112.rs": "We don't check the validity of VTables",
     "fail/erroneous_const.rs": "We lazily load constants, so the panic never triggers",
