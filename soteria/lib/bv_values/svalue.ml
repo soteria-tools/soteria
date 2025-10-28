@@ -1276,6 +1276,11 @@ and BitVec : BitVec = struct
     | _, BitVec x when Stdlib.not signed && Z.(equal x one) ->
         (* unsigned x < 1 is x == 0 *)
         Bool.sem_eq v1 (zero bits)
+    (* x < ite(b, 1, 0) => ite(b, x < 1, x < 0) => ite(b, x = 0, false) => b && x = 0 *)
+    | _, Unop (BvOfBool n, b) when Stdlib.not signed ->
+        Bool.and_ b (Bool.sem_eq v1 (zero n))
+    | Ite (b, l, r), _ -> Bool.ite b (lt ~signed l v2) (lt ~signed r v2)
+    | _, Ite (b, l, r) -> Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
     | _, BitVec x when signed && Z.(equal x zero) ->
         let lt_zero v =
           Binop (Lt signed, v, zero (size_of v.node.ty)) <| TBool
@@ -1400,11 +1405,6 @@ and BitVec : BitVec = struct
         else if equal l1 r2 then lt ~signed r1 l2
         else if equal r1 l2 then lt ~signed l1 r2
         else lt ~signed l1 l2
-    (* x < ite(b, 1, 0) => ite(b, x < 1, x < 0) => ite(b, x = 0, false) => b && x = 0 *)
-    | _, Unop (BvOfBool n, b) when Stdlib.not signed ->
-        Bool.and_ b (Bool.sem_eq v1 (zero n))
-    | Ite (b, l, r), _ -> Bool.ite b (lt ~signed l v2) (lt ~signed r v2)
-    | _, Ite (b, l, r) -> Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
     | _ -> Binop (Lt signed, v1, v2) <| TBool
 
   and leq ~signed v1 v2 =
@@ -1532,6 +1532,10 @@ and BitVec : BitVec = struct
     | Binop (Div false, _, { node = { kind = BitVec d; _ }; _ }), BitVec n
       when Stdlib.not signed && Z.(gt (mul n d) (max_for false bits)) ->
         Bool.v_true
+    | Ite (b, l, r), BitVec _ ->
+        Bool.ite b (leq ~signed l v2) (leq ~signed r v2)
+    | BitVec _, Ite (b, l, r) ->
+        Bool.ite b (leq ~signed v1 l) (leq ~signed v1 r)
     | _ -> Binop (Leq signed, v1, v2) <| TBool
 
   let gt ~signed v1 v2 = lt ~signed v2 v1
