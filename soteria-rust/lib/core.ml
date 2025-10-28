@@ -44,7 +44,7 @@ module M (State : State_intf.S) = struct
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
       hand side. *)
-  let normalise_shift_r (bop : Expressions.binop) l r =
+  let[@inline] normalise_shift_r (bop : Expressions.binop) l r =
     match bop with
     | Shl _ | Shr _ ->
         let l, r = (cast l, cast r) in
@@ -62,6 +62,7 @@ module M (State : State_intf.S) = struct
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
     let is_integer = match ty with TUInt _ | TInt _ -> true | _ -> false in
+    let r = normalise_shift_r bop l r in
     let** () =
       match bop with
       | _ when Stdlib.not is_integer -> Result.ok ()
@@ -93,9 +94,9 @@ module M (State : State_intf.S) = struct
           (* at this point, the size of the right-hand side might not match the given literal
              type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
-          let r, size_r = cast_int r in
+          let r = cast_lit ty r in
           assert_or_error
-            (BV.mki size_r 0 <=$@ r &&@ (r <$@ BV.mki size_r size))
+            (BV.mki_lit ty 0 <=$@ r &&@ (r <$@ BV.mki_lit ty size))
             `InvalidShift
       | _ -> Result.ok ()
     in
@@ -104,7 +105,6 @@ module M (State : State_intf.S) = struct
     | TInt _ | TUInt _ ->
         (* normalise both sides to be the same size; this is usually always the case,
            except for shift operations, so we do it manually *)
-        let r = normalise_shift_r bop l r in
         let l = cast_lit ty l in
         let r = cast_lit ty r in
         let res =
@@ -119,8 +119,8 @@ module M (State : State_intf.S) = struct
           | _ -> failwith "Invalid binop in binop_fn"
         in
         Result.ok (cast res)
-    | TFloat _ -> (
-        let l, r = (cast l, cast r) in
+    | TFloat f -> (
+        let l, r = (cast_f f l, cast_f f r) in
         match bop with
         | Add _ -> Result.ok (l +.@ r)
         | Sub _ -> Result.ok (l -.@ r)
