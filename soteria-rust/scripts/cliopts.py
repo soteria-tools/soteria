@@ -197,7 +197,6 @@ def opts_for_rusteria(
             "rustc",
             "--compact",
             "--no-color",
-            "--log-compilation",
             *(["--solver-timeout", str(timeout * 1000)] if timeout is not None else []),
             "--no-compile-plugins",
         ],
