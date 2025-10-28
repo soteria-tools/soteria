@@ -18,11 +18,7 @@ let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
           | Binop (Eq, e1, e2) ->
               if Svalue.equal e1 e2 then Svalue.Bool.v_true
               else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
-              else
-                let se1 = simplify e1 in
-                let se2 = simplify e2 in
-                if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-                else Svalue.Bool.sem_eq se1 se2
+              else v
           | Binop (And, e1, e2) ->
               let se1 = simplify e1 in
               let se2 = simplify e2 in
@@ -35,22 +31,11 @@ let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
               else Svalue.Bool.or_ se1 se2
           | Ite (g, e1, e2) ->
               let sg = simplify g in
-              if Svalue.equal sg Svalue.Bool.v_true then simplify e1
-              else if Svalue.equal sg Svalue.Bool.v_false then simplify e2
-              else
-                let se1 = simplify e1 in
-                let se2 = simplify e2 in
-                if
-                  Svalue.equal sg g
-                  && Svalue.equal se1 e1
-                  && Svalue.equal se2 e2
-                then v
-                else Svalue.Bool.ite sg se1 se2
-          | Binop (b, e1, e2) ->
               let se1 = simplify e1 in
               let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
-              else fallback @@ Eval.eval_binop b se1 se2
+              if Svalue.equal sg g && Svalue.equal se1 e1 && Svalue.equal se2 e2
+              then v
+              else Svalue.Bool.ite sg se1 se2
           | _ -> fallback v))
 
 module Make_incremental
@@ -484,16 +469,13 @@ struct
     with Found x -> x
 
   let simplify solver v : 'a Typed.t =
-    match Typed.untyped v with
-    | { node = { kind = Bool _ | BitVec _ | Float _; _ }; _ } -> v
-    | v ->
-        v
-        |> Eval.eval ~eval_var:(equality_for solver)
-        |> simplify
-             ~trivial_truthiness:
-               (Solver_state.trivial_truthiness_of solver.state)
-             ~fallback:(Analysis.simplify solver.analysis)
-        |> Typed.type_
+    v
+    |> Typed.untyped
+    |> Eval.eval ~eval_var:(equality_for solver)
+    |> simplify
+         ~trivial_truthiness:(Solver_state.trivial_truthiness_of solver.state)
+         ~fallback:(Analysis.simplify solver.analysis)
+    |> Typed.type_
 
   let add_constraints solver ?(simplified = false) vs =
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
