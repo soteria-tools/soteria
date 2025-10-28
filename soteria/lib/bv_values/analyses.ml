@@ -397,25 +397,6 @@ module Interval : S = struct
           { node = { kind = Var v; _ }; _ },
           { node = { kind = BitVec x; ty = TBitVector size }; _ } ) ->
         Some (v, size, (Pos, (x, x)))
-    (* Custom rules *)
-    | Binop
-        ( MulOvf false,
-          { node = { kind = Var v; ty = TBitVector size }; _ },
-          { node = { kind = BitVec x; _ }; _ } )
-    | Binop
-        ( MulOvf false,
-          { node = { kind = BitVec x; _ }; _ },
-          { node = { kind = Var v; ty = TBitVector size }; _ } ) ->
-        (* if x === 0, then this is always false *)
-        if Z.equal x Z.zero then Some (v, size, (Neg, (Z.zero, max_for size)))
-        else
-          (* v *uovf x <=> v >= ceil(2^n / x) *)
-          let pow2n = pow2 size in
-          let bound =
-            if Z.divisible pow2n x then Z.div pow2n x
-            else Z.succ (Z.div pow2n x)
-          in
-          Some (v, size, (Pos, (bound, max_for size)))
     (* This only works for a single fact; we can't apply this to [!(A && B)], since that's
        a disjunction! *)
     | Unop (Not, v) ->

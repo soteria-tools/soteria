@@ -1579,12 +1579,50 @@ and BitVec : BitVec = struct
   let mul_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( * )
-    | BitVec z, _ when Z.equal z Z.zero || Z.equal z Z.one -> Bool.v_false
-    | _, BitVec z when Z.equal z Z.zero || Z.equal z Z.one -> Bool.v_false
     | _
       when if signed then msb_of v1 + msb_of v2 < size_of v1.node.ty - 1
            else msb_of v1 + msb_of v2 < size_of v1.node.ty ->
         Bool.v_false
+    | BitVec z, x | x, BitVec z ->
+        (* z is a known constant *)
+        if Z.equal z Z.zero || Z.equal z Z.one then Bool.v_false
+        else
+          let n = size_of v1.node.ty in
+          let z = bv_to_z signed n z in
+          if signed then
+            (* For signed overflow, the correct condition is:
+               z * x overflows iff x < min_x or x > max_x,
+               where min_x = ceil((-2^(n-1))/z), max_x = floor((2^(n-1)-1)/z)
+               for z > 0, and swapped for z < 0.
+            *)
+            let min_val = Z.neg (Z.shift_left Z.one (n - 1)) in
+            let max_val = Z.pred (Z.shift_left Z.one (n - 1)) in
+            let min_x, max_x =
+              if Z.gt z Z.zero then
+                (* z > 0 *)
+                let min_x =
+                  if Z.divisible min_val z then Z.(min_val / z)
+                  else Z.((min_val / z) + one)
+                in
+                let max_x = Z.(max_val / z) in
+                (min_x, max_x)
+              else
+                (* z < 0 *)
+                let min_x =
+                  if Z.divisible max_val z then Z.(max_val / z)
+                  else Z.((max_val / z) + one)
+                in
+                let max_x = Z.(min_val / z) in
+                (min_x, max_x)
+            in
+            Bool.or_
+              (lt ~signed (x <| v1.node.ty) (mk_masked n min_x))
+              (gt ~signed (x <| v1.node.ty) (mk_masked n max_x))
+          else
+            (* For unsigned overflow, z * x overflows iff x > floor((2^n - 1) / z) *)
+            let maxn = Z.pred (Z.shift_left Z.one n) in
+            let bound = Z.(maxn / z) in
+            gt ~signed (x <| v1.node.ty) (mk n bound)
     | _ -> Binop (MulOvf signed, v1, v2) <| TBool
 
   let neg_overflows v =
