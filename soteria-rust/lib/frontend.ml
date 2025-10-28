@@ -4,6 +4,10 @@ open Syntaxes.FunctionWrap
 exception PluginError of string
 exception FrontendError of string
 
+(** Compilation of the code failed at the rustc level *)
+exception CompilationError of string
+
+let plugin_err msg = raise (PluginError msg)
 let frontend_err msg = raise (FrontendError msg)
 
 (** Utilities to run commands *)
@@ -14,6 +18,8 @@ module Exe = struct
       ~finally:(fun () -> Unix.chdir pwd)
       (fun () ->
         Unix.chdir path;
+        if !Config.current.log_compilation then
+          L.app (fun g -> g "Changed working directory to %s" path);
         f ())
 
   let pp_status ft = function
@@ -86,6 +92,19 @@ module Cmd = struct
       rustc = c1.rustc @ c2.rustc;
     }
 
+  let toolchain_path =
+    lazy
+      (let cmd =
+         match !Config.current.frontend with
+         | Obol -> "obol"
+         | Charon -> "charon"
+       in
+       Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
+
+  let cargo () = Lazy.force toolchain_path ^ "/bin/cargo"
+  let rustc () = Lazy.force toolchain_path ^ "/bin/rustc"
+  let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
+
   let current_rustc_flags () =
     let rustc = !Config.current.rustc_flags in
     let sysroot =
@@ -107,7 +126,20 @@ module Cmd = struct
       | Charon -> ("charon", charon)
     in
     match mode with
-    | Rustc -> (cmd, ("rustc" :: args) @ [ "--" ] @ rustc, [])
+    | Rustc ->
+        (* If these arguments are passed to the command line, we need to quote them
+       appropriately (since crate-attr) has parenthesis. We don't need to do this for
+       Cargo since they go in the environment, and adding quotes there would make
+       them wrong! This is lovely!  *)
+        let rustc =
+          List.map
+            (fun arg ->
+              if String.starts_with ~prefix:"crate-attr" arg then
+                "\"" ^ arg ^ "\""
+              else arg)
+            rustc
+        in
+        (cmd, ("rustc" :: args) @ [ "--" ] @ rustc, [])
     | Cargo ->
         (* Cargo already specifies the edition *)
         let rustc =
@@ -115,7 +147,7 @@ module Cmd = struct
             (Fun.negate (String.starts_with ~prefix:"--edition"))
             rustc
         in
-        let env = flags_as_rustc_env rustc in
+        let env = rustc_as_env () @ flags_as_rustc_env rustc in
         (cmd, "cargo" :: args, env)
 
   let exec_in ~mode folder cmd =
@@ -130,25 +162,16 @@ module Cmd = struct
 end
 
 module Lib = struct
-  let toolchain_path =
-    lazy
-      (let cmd =
-         match !Config.current.frontend with
-         | Obol -> "obol"
-         | Charon -> "charon"
-       in
-       Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
-
   let target =
     lazy
       (match !Config.current.target with
       | Some t -> t
       | None -> (
-          let toolchain = Lazy.force toolchain_path in
-          let info = Exe.exec_exn (toolchain ^ "/bin/cargo") [ "-vV" ] in
+          let env = Cmd.rustc_as_env () in
+          let info = Exe.exec_exn ~env (Cmd.cargo ()) [ "-vV" ] in
           match List.find_opt (String.starts_with ~prefix:"host") info with
           | Some s -> String.sub s 6 (String.length s - 6)
-          | None -> raise (PluginError "Couldn't find target host")))
+          | None -> plugin_err "Couldn't find target host"))
 
   let root =
     lazy
@@ -167,22 +190,19 @@ module Lib = struct
       let verbosity =
         if !Config.current.log_compilation then [ "--verbose" ] else []
       in
-      let toolchain = Lazy.force toolchain_path in
       let env = Cmd.flags_as_rustc_env @@ Cmd.current_rustc_flags () in
-      let env = ("RUSTC=" ^ toolchain ^ "/bin/rustc") :: env in
+      let env = Cmd.rustc_as_env () @ env in
       let _out, err, status =
         let@ () = Exe.run_in path in
-        Exe.exec ~env (toolchain ^ "/bin/cargo")
-          ([ "build"; "--offline"; "--lib"; "--target"; Lazy.force target ]
-          @ verbosity)
+        Exe.exec ~env (Cmd.cargo ())
+          ([ "build"; "--lib"; "--target"; Lazy.force target ] @ verbosity)
       in
       match status with
       | WEXITED (0 | 255) -> ()
       | _ ->
-          let msg =
-            Fmt.str "Couldn't compile lib at %s@.%a" path Fmt.(list string) err
-          in
-          raise (PluginError msg)
+          Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
+            Fmt.(list string)
+            err
 
   let with_compiled lib f =
     let path = path lib in
@@ -218,7 +238,8 @@ let default =
   let mk_cmd () =
     let@ std_lib_path, target = Lib.with_compiled Std in
     let opaque_names =
-      List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names
+      []
+      (* List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names *)
     in
     Cmd.make
       ~charon:
@@ -237,17 +258,23 @@ let default =
       ~rustc:
         [
           (* i.e. not always a binary! *)
-          "--crate-type=lib";
-          "-Zunstable-options";
+          "--crate-type";
+          "lib";
+          "-Z";
+          "unstable-options";
           (* No warning *)
           "-Awarnings";
           (* include our std and rusteria crates *)
-          "-Zcrate-attr=\"feature(register_tool)\"";
-          "-Zcrate-attr=\"register_tool(rusteriatool)\"";
-          "--extern=rusteria";
+          "-Z";
+          "crate-attr=feature(register_tool)";
+          "-Z";
+          "crate-attr=register_tool(rusteriatool)";
+          "--extern";
+          "rusteria";
           (* include the std *)
-          Fmt.str "--extern noprelude:std=%s/target/%s/debug/libstd.rlib"
-            std_lib_path target;
+          "--extern";
+          Fmt.str "noprelude:std=%s/target/%s/debug/libstd.rlib" std_lib_path
+            target;
         ]
       ()
   in
@@ -268,7 +295,7 @@ let kani =
     let@ _ = Lib.with_compiled Kani in
     Cmd.make ~features:[ "kani" ]
       ~obol:[ "--entry-attribs"; "kanitool::proof" ]
-      ~rustc:[ "-Zcrate-attr=\"register_tool(kanitool)\""; "--extern=kani" ]
+      ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)"; "--extern"; "kani" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =
@@ -289,7 +316,7 @@ let miri =
   let mk_cmd () =
     let@ _ = Lib.with_compiled Miri in
     Cmd.make ~features:[ "miri" ]
-      ~rustc:[ "--extern=miristd"; "--edition=2021" ]
+      ~rustc:[ "--extern"; "miristd"; "--edition"; "2021" ]
       ~obol:[ "--entry-names"; "miri_start" ]
       ()
   in
@@ -301,7 +328,7 @@ let miri =
   { mk_cmd; get_entry_point }
 
 type root_plugin = {
-  mk_cmd : input:string -> output:string -> unit -> Cmd.t;
+  mk_cmd : ?input:string -> output:string -> unit -> Cmd.t;
   get_entry_point : fun_decl -> Soteria.Symex.Fuel_gauge.t entry_point option;
 }
 
@@ -313,13 +340,15 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
       plugins
   in
 
-  let mk_cmd ~input ~output () =
+  let mk_cmd ?input ~output () =
+    let input =
+      Option.fold ~none:[] ~some:(fun s -> [ Filename.quote s ]) input
+    in
     let init =
       Cmd.make
         ~charon:[ "--dest-file"; Filename.quote output ]
         ~obol:[ "--dest-file"; Filename.quote output ]
-        ~rustc:[ Filename.quote input ]
-        ()
+        ~rustc:input ()
     in
     List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
@@ -371,9 +400,9 @@ let create_using_current_config () =
     ]
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc ~mode ~plugin ~input ~output ~pwd =
+let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
   if not !Config.current.no_compile then (
-    let cmd = plugin.mk_cmd ~input ~output () in
+    let cmd = plugin.mk_cmd ?input ~output () in
     let _, err, res = Cmd.exec_in ~mode pwd cmd in
     if not (Exe.is_ok res) then
       Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
@@ -415,7 +444,7 @@ let parse_ullbc_of_file file_name =
   let file_name = normalize_path file_name in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
-  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
+  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder ()
   |> with_entry_points ~plugin
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
@@ -423,7 +452,7 @@ let parse_ullbc_of_crate crate_dir =
   let plugin = create_using_current_config () in
   let crate_dir = normalize_path crate_dir in
   let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
-  parse_ullbc ~mode:Cargo ~plugin ~input:"" ~output ~pwd:crate_dir
+  parse_ullbc ~mode:Cargo ~plugin ~output ~pwd:crate_dir ()
   |> with_entry_points ~plugin
 
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
