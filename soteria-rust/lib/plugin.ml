@@ -1,6 +1,7 @@
 open Charon
 open Syntaxes.FunctionWrap
 
+(** Something wrong internally with plugins *)
 exception PluginError of string
 
 (** Utilities to run commands *)

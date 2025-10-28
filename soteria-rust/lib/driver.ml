@@ -8,11 +8,18 @@ module Compo_res = Soteria.Symex.Compo_res
 open Syntaxes.FunctionWrap
 open Charon
 
+(** An error happened at runtime during execution *)
 exception ExecutionError of string
+
+(** Compilation failed because of our frontend *)
 exception FrontendError of string
+
+(** Compilation of the code failed at the rustc level *)
+exception CompilationError of string
 
 let execution_err msg = raise (ExecutionError msg)
 let frontend_err msg = raise (FrontendError msg)
+let compilation_err msg = raise (CompilationError msg)
 
 module Outcome = struct
   type t = Ok | Error | Fatal
@@ -46,9 +53,12 @@ let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
     let cmd = plugin.mk_cmd ?input ~output () in
     let _, err, res = Plugin.Cmd.exec_in ~mode pwd cmd in
     if not (Plugin.Exe.is_ok res) then
-      Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
-        Fmt.(list string)
-        err;
+      if res = WEXITED 2 then compilation_err (String.concat "\n" err)
+      else
+        Fmt.kstr frontend_err "Failed compilation to ULLBC (%a):@,%a"
+          Plugin.Exe.pp_status res
+          Fmt.(list string)
+          err;
     Cleaner.touched output);
   let crate =
     try
@@ -258,6 +268,10 @@ let exec_and_output_crate ~plugin compile_fn =
   | exception Plugin.PluginError e -> fatal ~name:"Plugin" e
   | exception ExecutionError e -> fatal e
   | exception FrontendError e -> fatal ~name:"Frontend" ~code:3 e
+  | exception CompilationError e ->
+      Diagnostic.print_diagnostic_simple ~severity:Error
+        ("Compilation error:\n" ^ e);
+      Outcome.exit Error
 
 let exec_rustc config file_name =
   Config.set config;
