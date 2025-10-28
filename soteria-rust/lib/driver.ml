@@ -43,7 +43,7 @@ end
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
   if not !Config.current.no_compile then (
-    let cmd = plugin.mk_cmd ~input ~output () in
+    let cmd = plugin.mk_cmd ?input ~output () in
     let _, err, res = Plugin.Cmd.exec_in ~mode pwd cmd in
     if not (Plugin.Exe.is_ok res) then
       Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
@@ -77,13 +77,14 @@ let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
   let file_name = normalize_path file_name in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
-  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
+  parse_ullbc ~mode:Rustc ~plugin ~input:(Some file_name) ~output
+    ~pwd:parent_folder
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate_dir =
   let crate_dir = normalize_path crate_dir in
   let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
-  parse_ullbc ~mode:Cargo ~plugin ~input:"" ~output ~pwd:crate_dir
+  parse_ullbc ~mode:Cargo ~plugin ~input:None ~output ~pwd:crate_dir
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
