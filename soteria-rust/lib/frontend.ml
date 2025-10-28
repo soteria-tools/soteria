@@ -1,7 +1,10 @@
 open Charon
 open Syntaxes.FunctionWrap
 
+(** Something wrong internally with plugins *)
 exception PluginError of string
+
+(** Something wrong during compilation to ULLBC *)
 exception FrontendError of string
 
 (** Compilation of the code failed at the rustc level *)
@@ -9,6 +12,7 @@ exception CompilationError of string
 
 let plugin_err msg = raise (PluginError msg)
 let frontend_err msg = raise (FrontendError msg)
+let compilation_err msg = raise (CompilationError msg)
 
 (** Utilities to run commands *)
 module Exe = struct
@@ -405,9 +409,11 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
     let cmd = plugin.mk_cmd ?input ~output () in
     let _, err, res = Cmd.exec_in ~mode pwd cmd in
     if not (Exe.is_ok res) then
-      Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
-        Fmt.(list string)
-        err;
+      if res = WEXITED 2 then compilation_err (String.concat "\n" err)
+      else
+        Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
+          Fmt.(list string)
+          err;
     Cleaner.touched output);
   let crate =
     try

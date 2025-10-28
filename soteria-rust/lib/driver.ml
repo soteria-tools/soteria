@@ -8,6 +8,7 @@ module Compo_res = Soteria.Symex.Compo_res
 open Syntaxes.FunctionWrap
 open Charon
 
+(** An error happened at runtime during execution *)
 exception ExecutionError of string
 
 let execution_err msg = raise (ExecutionError msg)
@@ -201,6 +202,10 @@ let exec_and_output_crate compile_fn =
       Outcome.exit outcome
   | exception Frontend.PluginError e -> fatal ~name:"Plugin" e
   | exception Frontend.FrontendError e -> fatal ~name:"Frontend" ~code:3 e
+  | exception Frontend.CompilationError e ->
+      Diagnostic.print_diagnostic_simple ~severity:Error
+        ("Compilation error:\n" ^ e);
+      Outcome.exit Error
   | exception ExecutionError e -> fatal e
 
 let exec_rustc config file_name =

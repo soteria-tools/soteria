@@ -24,6 +24,13 @@ class TestCategoriser(Protocol):
 
 
 def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation:
+
+    if "error: Compilation error" in test:
+        if expect_failure:
+            return Outcome.PASS("Expected failure, got (compilation) failure")
+        else:
+            return Outcome.FAIL("Expected success, got compilation failure")
+
     if "Fatal (Frontend)" in test:
         # this isn't frontend's fault, really
         unresolved = re.findall(
