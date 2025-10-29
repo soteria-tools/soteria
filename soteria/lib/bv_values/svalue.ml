@@ -683,7 +683,7 @@ and BitVec : BitVec = struct
     assert (Z.(zero <= bv && bv < one lsl n));
     BitVec bv <| t_bv n
 
-  let mk_masked n bv = mk n Z.(bv land pred (one lsl n))
+  let mk_masked n bv = BitVec Z.(bv land pred (one lsl n)) <| t_bv n
   let mki n i = mk n (Z.of_int i)
   let zero n = mk n Z.zero
   let one n = mk n Z.one
