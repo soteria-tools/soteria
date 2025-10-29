@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
 from utils import *
+import shutil
 
 
 class ExperimentException(Exception):
@@ -67,6 +68,12 @@ parser.add_argument(
         "Remove existing results and build folders before running experiments "
         "(equivalent to --cleanup-results-first and --cleanup-builds-first)"
     ),
+)
+
+parser.add_argument(
+    "--benchmark",
+    action="store_true",
+    help="Run experiments using hyperfine for benchmarking",
 )
 
 
@@ -229,13 +236,20 @@ class Experiment(PrintersMixin):
         )
         os.makedirs(self.result_folder, exist_ok=True)
         cmd = (
-            "dune exec -- soteria-c capture-db "
+            "dune exec -- time soteria-c capture-db "
             f"{self.compile_commands} "
             f"--solver-timeout {global_config.solver_timeout} "
             "--dump-stats "
             f"{self.result_folder / 'stats.json'} "
             f"{' '.join(self.config.soteria_args)}"
         )
+        if global_config.benchmark:
+            if shutil.which("hyperfine") is None:
+                self.print_error(
+                    "Hyperfine is required for benchmarking but was not found in PATH. Install it and try again."
+                )
+                exit(4)
+            cmd = f"hyperfine '{cmd}' --warmup 1 --runs 10"
         self.run_command(cmd)
 
     def run(self):
