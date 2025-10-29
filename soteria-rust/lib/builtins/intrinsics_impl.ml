@@ -113,8 +113,35 @@ module M (State : State_intf.S) = struct
     ok (Base (v' :> Typed.T.cval Typed.t))
 
   let caller_location : full_ptr ret =
+    (* TODO: we should really do something better here *)
     let+ () = ok () in
     (Sptr.null_ptr (), Thin)
+
+  let carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry =
+    let t = TypesUtils.ty_as_literal t in
+    let u = TypesUtils.ty_as_literal u in
+    let size_t = Layout.size_of_literal_ty t in
+    let+ () =
+      if size_t <> Layout.size_of_literal_ty u then
+        not_impl "carrying_mul_add: size(U) != size(T)?"
+      else ok ()
+    in
+    let double_bv = BV.extend ~signed:false (size_t * 8) in
+    let multiplier = double_bv @@ as_base t multiplier in
+    let multiplicand = double_bv @@ as_base t multiplicand in
+    let addend = double_bv @@ as_base t addend in
+    let carry = double_bv @@ as_base t carry in
+    (* This cannot overflow:
+       MAX * MAX + MAX + MAX
+       => (2ⁿ-1) × (2ⁿ-1) + (2ⁿ-1) + (2ⁿ-1)
+       => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
+       => 2²ⁿ - 1 *)
+    let res = (multiplier *!!@ multiplicand) +!!@ addend +!!@ carry in
+    let res_l, res_h =
+      ( BV.extract 0 ((size_t * 8) - 1) res,
+        BV.extract (size_t * 8) ((size_t * 16) - 1) res )
+    in
+    Tuple [ Base res_l; Base res_h ]
 
   let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
       ~_catch_fn:catch_fn_ptr =
@@ -504,13 +531,15 @@ module M (State : State_intf.S) = struct
         (off ==@ zero ||@ Sptr.is_same_loc ptr base &&@ (off %$@ size ==@ zero))
         `UBPointerComparison
     in
-    if not unsigned then ok (off /$@ size)
+    (* we cast to ignore the overflow for MIN/-1, since the size can never be -1 *)
+    if not unsigned then ok (Typed.cast (off /$@ size))
     else
       let+ () =
-        State.assert_ (off >=$@ zero)
+        State.assert_
+          (Typed.cast (off >=$@ zero))
           (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
       in
-      off /$@ size
+      Typed.cast (off /$@ size)
 
   let ptr_offset_from = ptr_offset_from_ ~unsigned:false
   let ptr_offset_from_unsigned = ptr_offset_from_ ~unsigned:true

@@ -150,7 +150,7 @@ let with_tbs b f =
   let open DecayMapMonad.Syntax in
   let block, tree_borrow =
     match b with
-    | None -> (None, Tree_borrow.init ~state:UB ())
+    | None -> (None, Tree_borrow.ub_state)
     | Some (block, tb) -> (Some block, tb)
   in
   let+ res = f (block, tree_borrow) in
@@ -388,14 +388,12 @@ let alloc ?zeroed size align st =
   let@ state = with_state st in
   let open DecayMapMonad in
   let open DecayMapMonad.Syntax in
-  let tb = Tree_borrow.init ~state:Unique () in
+  let tb, tag = Tree_borrow.init ~state:Unique () in
   let block = Tree_block.alloc ?zeroed size in
   let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
-  let ptr : Sptr.t Rust_val.full_ptr =
-    ({ ptr; tag = tb.tag; align; size }, Thin)
-  in
+  let ptr : Sptr.t Rust_val.full_ptr = ({ ptr; tag; align; size }, Thin) in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
   ok (ptr, state)
@@ -418,19 +416,14 @@ let alloc_tys tys st =
       (* make Tree_block *)
       let* layout = lift @@ Layout.layout_of_s ty in
       let size = Typed.BitVec.usizei layout.size in
-      let tb = Tree_borrow.init ~state:Unique () in
+      let tb, tag = Tree_borrow.init ~state:Unique () in
       let block = Freeable.Alive (Tree_block.alloc size, tb) in
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
       let ptr = Typed.Ptr.mk loc Usize.(0s) in
-      let ptr : Sptr.t =
-        {
-          ptr;
-          tag = tb.tag;
-          align = Typed.BitVec.usizeinz layout.align;
-          size = Typed.BitVec.usizei layout.size;
-        }
-      in
+      let size = Typed.BitVec.usizei layout.size in
+      let align = Typed.BitVec.usizeinz layout.align in
+      let ptr : Sptr.t = { ptr; tag; align; size } in
       (block, (ptr, Thin)))
 
 let free (({ ptr; _ } : Sptr.t), _) st =
@@ -487,11 +480,10 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     let@ _, block = with_ptr ptr st in
-    let node = Tree_borrow.init ~state:tag_st () in
     let@ block, tb = with_opt_or block (ptr, meta) in
-    let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
+    let tb', tag = Tree_borrow.add_child ~parent:ptr.tag ~state:tag_st tb in
     let block = Some (block, tb') in
-    let ptr' = { ptr with tag = node.tag } in
+    let ptr' = { ptr with tag } in
     L.debug (fun m ->
         m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
           Tree_borrow.pp_state tag_st);
@@ -511,16 +503,17 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     let tag_st =
       match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
     in
-    let node = Tree_borrow.init ~state:tag_st ~protector:true () in
-    let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
-    let ptr' = { ptr with tag = node.tag } in
+    let tb', tag =
+      Tree_borrow.add_child ~parent:ptr.tag ~state:tag_st ~protector:true tb
+    in
+    let ptr' = { ptr with tag } in
     L.debug (fun m ->
         m "Protecting pointer %a -> %a, on [%a;%a]" Sptr.pp ptr Sptr.pp ptr'
           Typed.ppa ofs Typed.ppa size);
     let++ (), block' =
       (* nothing to protect *)
       if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), Some block)
-      else Tree_block.protect ofs size node.tag tb' (Some block)
+      else Tree_block.protect ofs size tag tb' (Some block)
     in
     let block = Option.map (fun b' -> (b', tb')) block' in
     ((ptr', meta), block)
@@ -544,9 +537,7 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   let@ ofs, block = with_ptr ptr st in
   let@ block, tb = with_opt_or block () in
   let open DecayMapMonad.Syntax in
-  let tb' =
-    Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
-  in
+  let tb' = Tree_borrow.unprotect ptr.tag tb in
   let++ (), block' =
     if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), Some block)
     else Tree_block.unprotect ofs size ptr.tag tb' (Some block)

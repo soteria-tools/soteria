@@ -126,7 +126,7 @@ module Make (Sptr : Sptr.S) = struct
           let field_offset =
             BV.usizei (Layout.Fields_shape.offset_of i layout.fields)
           in
-          let offset = field_offset +!@ offset in
+          let offset = field_offset +!!@ offset in
           rust_to_cvals ~offset value ty)
         vals types
       |> List.flatten
@@ -154,12 +154,12 @@ module Make (Sptr : Sptr.S) = struct
             let len = (len :> T.cval Typed.t) in
             [
               { value = Ptr (ptr, Thin); ty; offset };
-              { value = Base len; ty; offset = offset +!@ size };
+              { value = Base len; ty; offset = offset +!!@ size };
             ]
         | VTable vt, true ->
             [
               { value = Ptr (ptr, Thin); ty; offset };
-              { value = Ptr (vt, Thin); ty; offset = offset +!@ size };
+              { value = Ptr (vt, Thin); ty; offset = offset +!!@ size };
             ])
     (* Function pointer *)
     | Ptr (_, Thin), TFnPtr _ ->
@@ -209,7 +209,7 @@ module Make (Sptr : Sptr.S) = struct
               | None -> []
               | Some tag ->
                   let v = BV.mk_lit tag_layout.ty tag in
-                  let offset = BV.usizei tag_layout.offset +!@ offset in
+                  let offset = BV.usizei tag_layout.offset +!!@ offset in
                   [ { value = Base v; ty = TLiteral tag_layout.ty; offset } ]
             in
             let var_layout = { layout with fields = var_fields } in
@@ -268,7 +268,7 @@ module Make (Sptr : Sptr.S) = struct
     | { fields = Arbitrary (vid, _); _ } -> ok vid
     | { size = 0; _ } -> ok (Types.VariantId.of_int 0)
     | { fields = Enum (tag_layout, _); _ } -> (
-        let offset = offset +!@ BV.usizei tag_layout.offset in
+        let offset = offset +!!@ BV.usizei tag_layout.offset in
         let*** tag = query (TLiteral tag_layout.ty, offset) in
         (* here we need to check and decay if it's a pointer, for niche encoding! *)
         let*** tag =
@@ -346,7 +346,7 @@ module Make (Sptr : Sptr.S) = struct
             match meta_kind with
             | NoneKind -> ok Thin
             | LenKind | VTableKind -> (
-                let*** meta = query (isize, offset +!@ ptr_size) in
+                let*** meta = query (isize, offset +!!@ ptr_size) in
                 match (meta_kind, meta) with
                 | LenKind, Base meta -> ok (Len (Typed.cast_i Usize meta))
                 | LenKind, Ptr (meta_v, Thin) ->
@@ -435,13 +435,13 @@ module Make (Sptr : Sptr.S) = struct
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
         ('e, 'fix, 'state) parser =
-      let base_offset = offset +!@ (offset %@ BV.usizeinz layout.align) in
+      let base_offset = offset +!!@ (offset %@ BV.usizeinz layout.align) in
       let rec mk_callback idx to_parse parsed : ('e, 'fix, 'state) parser =
         match to_parse () with
         | Seq.Nil -> ok (f (List.rev parsed))
         | Seq.Cons (ty, rest) ->
             let field_off = Layout.Fields_shape.offset_of idx layout.fields in
-            let offset = base_offset +!@ BV.usizei field_off in
+            let offset = base_offset +!!@ BV.usizei field_off in
             bind (aux offset ty) (fun v ->
                 mk_callback (succ idx) rest (v :: parsed))
       in

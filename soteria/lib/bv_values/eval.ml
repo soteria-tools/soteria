@@ -13,8 +13,8 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | FMul -> Float.mul
   | FDiv -> Float.div
   | FRem -> Float.rem
-  | Add -> BitVec.add
-  | Sub -> BitVec.sub
+  | Add checked -> BitVec.add ~checked
+  | Sub checked -> BitVec.sub ~checked
   | Mul checked -> BitVec.mul ~checked
   | Div signed -> BitVec.div ~signed
   | Rem signed -> BitVec.rem ~signed
