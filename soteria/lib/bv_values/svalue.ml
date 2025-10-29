@@ -43,11 +43,11 @@ type ty =
 [@@deriving eq, show { with_path = false }, ord]
 
 let t_bool = TBool
-let t_f fp = TFloat fp
-let t_f16 = t_f F16
-let t_f32 = t_f F32
-let t_f64 = t_f F64
-let t_f128 = t_f F128
+let t_float fp = TFloat fp
+let t_f16 = t_float F16
+let t_f32 = t_float F32
+let t_f64 = t_float F64
+let t_f128 = t_float F128
 let t_loc n = TLoc n
 let t_ptr n = TPointer n
 let t_seq ty = TSeq ty
@@ -1126,15 +1126,15 @@ and BitVec : BitVec = struct
         mk 64 @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
     | _, _, _ -> Unop (BvOfFloat (signed, size), v) <| t_bv size
 
-  let to_float ~signed ~fp v = Unop (FloatOfBv (signed, fp), v) <| t_f fp
+  let to_float ~signed ~fp v = Unop (FloatOfBv (signed, fp), v) <| t_float fp
 end
 
 (** {2 Floating point} *)
 and Float : Float = struct
   let f2str = Stdlib.Float.to_string
   let str2f = Stdlib.Float.of_string
-  let mk fp f = Float f <| t_f fp
-  let mk_f fp f = Float (f2str f) <| t_f fp
+  let mk fp f = Float f <| t_float fp
+  let mk_f fp f = Float (f2str f) <| t_float fp
   let like v f = Float (f2str f) <| v.node.ty
 
   let fp_of v =

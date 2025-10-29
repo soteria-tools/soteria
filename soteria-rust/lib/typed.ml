@@ -37,10 +37,10 @@ let cast_i uty = cast_lit (TUInt uty)
 
 let cast_f fty v =
   let fp = Charon_util.float_precision fty in
-  cast_checked ~ty:(t_f fp) v
+  cast_checked ~ty:(t_float fp) v
 
 let cast_float v =
-  match cast_float v with Some v -> v | None -> cast_error v (t_f F64)
+  match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
 
 (** DEPRECATED: it is unlikely you need this; the interpreter should be well
     typed *)
