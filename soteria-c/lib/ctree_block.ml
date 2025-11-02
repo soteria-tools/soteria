@@ -86,8 +86,7 @@ module MemVal = struct
     | Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
            We have to approximate and vanish. *)
-        L.info (fun m -> m "Reading from Any memory, vanishing.");
-        Csymex.vanish ()
+        Csymex.not_impl "Reading from Any memory, vanishing."
 
   type serialized =
     | SInit of (T.cval Typed.t * Ctype.ctype)
