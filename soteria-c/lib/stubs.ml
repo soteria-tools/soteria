@@ -97,6 +97,17 @@ module M (State : State_intf.S) = struct
     if%sat to_assert ==@ 0s then State.error `FailedAssert state
     else Result.ok (Agv.int 0, state)
 
+  let assume_ ~(args : Agv.t list) state =
+    let* to_assume =
+      match args with
+      | [ Basic t ] ->
+          Csymex.of_opt_not_impl ~msg:"not an integer"
+            (Typed.cast_checked t Typed.t_int)
+      | _ -> not_impl "to_assume with non-one arguments"
+    in
+    let* () = Csymex.assume [ Typed.bool_of_int to_assume ] in
+    Result.ok (Agv.int 0, state)
+
   let nondet_int_fun ~args:_ state =
     let* v = Csymex.nondet Typed.t_int in
     let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
@@ -175,6 +186,7 @@ module M (State : State_intf.S) = struct
         | "__CPROVER_assert" ->
             (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
             with_cbmc_support (assert_, Some (fun i _ -> i == 0))
+        | "__CPROVER_assume" -> with_cbmc_support (assume_, None)
         | _ -> None)
     | _ -> None
 end
