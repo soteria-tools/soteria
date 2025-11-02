@@ -169,8 +169,7 @@ module Make (Sptr : Sptr.S) = struct
     | Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
          We have to approximate and vanish. *)
-        L.info (fun m -> m "Reading from Any memory, vanishing.");
-        vanish ()
+        not_impl "Reading from Any memory, vanishing."
 
   let collect_leaves (t : Tree.t) =
     Result.fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
