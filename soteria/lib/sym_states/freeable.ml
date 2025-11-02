@@ -1,6 +1,14 @@
 (* TODO: Build this with the Sum transformer and `Excl(Freed)` *)
 
 type 'a t = Freed | Alive of 'a
+type 'a serialized = 'a t
+
+let iter_vars_serialized iter_inner serialized f =
+  match serialized with Freed -> () | Alive a -> iter_inner a f
+
+let subst_serialized subst_inner subst_var = function
+  | Freed -> Freed
+  | Alive a -> Alive (subst_inner subst_var a)
 
 let pp ?(alive_prefix = "") pp_alive ft = function
   | Freed -> Fmt.pf ft "Freed"
@@ -10,24 +18,18 @@ module Make (Symex : Symex.S) = struct
   open Symex.Syntax
 
   type nonrec 'a t = 'a t = Freed | Alive of 'a
-  type 'a serialized = 'a t
+  type nonrec 'a serialized = 'a serialized
 
   let lift_fix fix = Alive fix
   let lift_fix_s r = Symex.Result.map_missing r lift_fix
+  let subst_serialized = subst_serialized
+  let iter_vars_serialized = iter_vars_serialized
+  let pp = pp
+  let pp_serialized = pp
 
   let serialize serialize_inner = function
     | Freed -> Freed
     | Alive a -> Alive (serialize_inner a)
-
-  let subst_serialized subst_inner subst_var = function
-    | Freed -> Freed
-    | Alive a -> Alive (subst_inner subst_var a)
-
-  let iter_vars_serialized iter_inner serialized f =
-    match serialized with Freed -> () | Alive a -> iter_inner a f
-
-  let pp = pp
-  let pp_serialized = pp
 
   let unwrap_alive = function
     | None -> Symex.Result.ok None

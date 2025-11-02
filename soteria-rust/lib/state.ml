@@ -110,8 +110,59 @@ and t = {
 }
 [@@deriving show { with_path = false }]
 
-type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
+type serialized =
+  (serialized_atom list, serialized_globals) State_intf.Template.t
 [@@deriving show { with_path = false }]
+
+and serialized_atom = T.sloc Typed.t * Tree_block.serialized Freeable.serialized
+[@@deriving show { with_path = false }]
+
+and serialized_globals = T.sloc Typed.t list
+[@@deriving show { with_path = false }]
+
+let serialize_globals globals : serialized_globals =
+  ListLabels.fold_left (GlobMap.bindings globals) ~init:[]
+    ~f:(fun acc (_, ((ptr : Sptr.t), _)) -> Typed.Ptr.loc ptr.ptr :: acc)
+
+let lift_fix_globals globals res =
+  let+? heap = res in
+  State_intf.Template.{ heap; globals = serialize_globals globals }
+
+let serialize st : serialized =
+  let heap =
+    match st.state with
+    | None -> []
+    | Some st ->
+        let serialize_freeable (b, _) = Tree_block.serialize b in
+        SPmap.serialize (Freeable.serialize serialize_freeable) st
+  in
+  let globals = serialize_globals st.globals in
+  { heap; globals }
+
+let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
+    (serialized : serialized) : serialized =
+  let heap =
+    let subst_serialized_block subst_var f =
+      Freeable.subst_serialized Tree_block.subst_serialized subst_var f
+    in
+    SPmap.subst_serialized subst_serialized_block subst_var serialized.heap
+  in
+  let globals = List.map (Typed.subst subst_var) serialized.globals in
+  { heap; globals }
+
+let iter_vars_serialized (s : serialized) :
+    (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit =
+  let iter_heap =
+    let iter_vars_serialized_block s =
+      Freeable.iter_vars_serialized Tree_block.iter_vars_serialized s
+    in
+    SPmap.iter_vars_serialized iter_vars_serialized_block s.heap
+  in
+  let iter_globals =
+    let append acc x = Iter.append acc (Typed.iter_vars x) in
+    List.fold_left append Iter.empty s.globals
+  in
+  Iter.append iter_heap iter_globals
 
 let pp_pretty ~ignore_freed ft { state; _ } =
   let ignore =
@@ -190,7 +241,10 @@ let with_ptr (ptr : Sptr.t) (st : t)
   in
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   let@ state = with_state st in
-  let* res = (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state in
+  let* res =
+    (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state
+    |> lift_fix_globals st.globals
+  in
   match res with
   | Missing _ as miss ->
       if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
@@ -365,7 +419,9 @@ let alloc ?zeroed size align st =
   let tb = Tree_borrow.init ~state:Unique () in
   let block = Tree_block.alloc ?zeroed size in
   let block = Freeable.Alive (block, tb) in
-  let** loc, state = SPmap.alloc ~new_codom:block state in
+  let** loc, state =
+    SPmap.alloc ~new_codom:block state |> lift_fix_globals st.globals
+  in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
   let ptr : Sptr.t Rust_val.full_ptr =
     ({ ptr; tag = tb.tag; align; size }, None)
@@ -404,6 +460,7 @@ let alloc_tys tys st =
         }
       in
       (block, (ptr, None)))
+  |> lift_fix_globals st.globals
 
 let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
   let** () = assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree st in
@@ -415,6 +472,7 @@ let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
       (Freeable.free ~assert_exclusively_owned:(fun t ->
            Tree_block.assert_exclusively_owned @@ Option.map fst t))
       (Typed.Ptr.loc ptr) state
+    |> lift_fix_globals st.globals
   in
   ((), { st with state })
 
@@ -559,6 +617,7 @@ let leak_check st =
           Result.ok (k :: leaks)
         else Result.ok leaks)
       [] state
+    |> lift_fix_globals st.globals
   in
   if List.is_empty leaks then Result.ok ((), state)
   else (
