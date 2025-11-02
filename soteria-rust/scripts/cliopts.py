@@ -126,7 +126,7 @@ def parse_flags() -> CliOpts:
 
     with_miri = False
     with_kani = False
-    with_obol = False
+    with_charon = False
     cmd_flags: list[str] = []
     while len(args) > 0:
         arg = pop()
@@ -164,14 +164,14 @@ def parse_flags() -> CliOpts:
             with_miri = True
         elif arg == "--kani":
             with_kani = True
-        elif arg == "--obol":
-            with_obol = True
+        elif arg == "--charon":
+            with_charon = True
 
         else:
             raise ArgError(f"{RED}Unknown flag: {arg}")
 
-    if with_miri + with_kani + with_obol > 1:
-        raise ArgError(f"{RED}Can't use both Kani, Miri or Obol!")
+    if with_miri + with_kani + with_charon > 1:
+        raise ArgError(f"{RED}Can't use both Kani, Miri or Charon!")
 
     if with_kani:
         opts = opts_for_kani(opts)
@@ -180,14 +180,14 @@ def parse_flags() -> CliOpts:
         opts = opts_for_miri(opts)
 
     else:
-        opts = opts_for_rusteria(opts, force_obol=with_obol)
+        opts = opts_for_rusteria(opts, force_obol=(not with_charon))
 
     opts["tool_cmd"] += cmd_flags
     return opts
 
 
 def opts_for_rusteria(
-    opts: CliOpts, *, force_obol: bool = False, timeout: Optional[float] = 5
+    opts: CliOpts, *, force_obol: bool = True, timeout: Optional[float] = 5
 ) -> CliOpts:
     opts = {
         **opts,

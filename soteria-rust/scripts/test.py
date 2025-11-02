@@ -520,7 +520,9 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
     rusteria["tool_cmd"] += ["--kani"]
     res_rusteria = run_with(rusteria, "rusteria")
     kani = opts_for_kani(opts)
-    kani["tool_cmd"].remove("--harness-timeout=5s")
+    kani["tool_cmd"] = [
+        f for f in kani["tool_cmd"] if not f.startswith("--harness-timeout=5s")
+    ]
     kani["tool_cmd"] += ["--harness-timeout=10s"]
     res_kani = run_with(kani, "kani")
 

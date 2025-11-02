@@ -28,9 +28,11 @@ KANI_EXCLUSIONS = [
     # unsupported: FFI
     "/ForeignItems/",
     "FunctionCall/Variadic/main.rs",
+    "Static/unsafe_extern_static_uninitialized.rs",
     # unsupported: libc
     "/LibC/",
     "/Strings/copy_empty_string_by_intrinsic.rs",
+    "Slice/pathbuf.rs",
     # unsupported: SIMD
     "/SIMD/",
     # unsupported: volatile
@@ -44,7 +46,12 @@ KANI_EXCLUSIONS = [
     "/Quantifiers/",
     # unsupported: kani::mem
     "/MemPredicates/",
+    "SizeAndAlignOfDst/unsized_tail.rs",
     "ValidValues/unaligned.rs",
+    # unsupported: kani::float::float_to_int_in_range
+    "FloatToIntInRange/test.rs",
+    # ignore: we don't support --test yet
+    "Options/check_tests.rs",
     # ignore: invalid tests
     "ArithOperators/unsafe_add_fail.rs",
     "ArithOperators/unsafe_mul_fail.rs",
@@ -131,6 +138,7 @@ MIRI_EXCLUSIONS = [
     "pass/heap_allocator.rs",
     # unsupported: Miri builtins
     "pass/backtrace/backtrace-api-v1.rs",
+    "fail/alloc/no_global_allocator.rs",
     "fail/panic/unwind_panic_abort.rs",
     "fail/unaligned_pointers/promise_alignment.rs",
     "fail/unaligned_pointers/promise_alignment_zero.rs",
