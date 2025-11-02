@@ -179,8 +179,12 @@ module M (State : State_intf.S) = struct
         | "calloc" -> Some (calloc, None)
         | "free" -> Some (free, None)
         | "memcpy" -> Some (memcpy, None)
-        (* See definition of this builtin, the last argument is not useful to us. *)
-        | "__builtin___memcpy_chk" -> Some (memcpy, Some (fun i _ -> i <> 3))
+        | "memmove" ->
+            (* We model memmove as memcpy, we should do non-overlapping checks but heh. *)
+            Some (memcpy, None)
+        | "__builtin___memcpy_chk" ->
+            (* See definition of this builtin, the last argument is not useful to us. *)
+            Some (memcpy, Some (fun i _ -> i <> 3))
         | "__soteria___nondet_int" -> Some (nondet_int_fun, None)
         | "__soteria___assert" -> Some (assert_, None)
         | "__CPROVER_assert" ->
