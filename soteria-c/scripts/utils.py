@@ -64,7 +64,10 @@ global_printer = GlobalPrinter()
 class Stats:
     branch_number: int
     steps_number: int
+    unexplored_branch_number: int
+    sat_unknowns: int
     exec_time: float
+    sat_time: float
     give_up_reasons: dict[str, int]
     missing_without_fixes: list[str]
 
@@ -89,6 +92,9 @@ class Stats:
             exec_time=0.0,
             give_up_reasons={},
             missing_without_fixes=[],
+            unexplored_branch_number=0,
+            sat_unknowns=0,
+            sat_time=0.0,
         )
 
 
@@ -104,6 +110,10 @@ def merge_stats(a: Stats, b: Stats) -> Stats:
         missing_without_fixes=list(
             set(a.missing_without_fixes + b.missing_without_fixes)
         ),
+        unexplored_branch_number=a.unexplored_branch_number
+        + b.unexplored_branch_number,
+        sat_unknowns=a.sat_unknowns + b.sat_unknowns,
+        sat_time=a.sat_time + b.sat_time,
     )
 
 

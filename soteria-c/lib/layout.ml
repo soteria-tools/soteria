@@ -336,7 +336,10 @@ let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
       let constrs = int_constraints ity |> Option.get in
       let+ () = Csymex.assume (constrs res) in
       (res :> Typed.T.cval Typed.t)
-  | Basic (Floating _) -> Csymex.not_impl "nondet_c_ty: floating"
+  | Basic (Floating fty) ->
+      let precision = precision fty in
+      let* res = Csymex.nondet (Typed.t_float precision) in
+      Csymex.return (res :> Typed.T.cval Typed.t)
   | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->
       Csymex.not_impl "nondet_c_ty: unsupported type"
 

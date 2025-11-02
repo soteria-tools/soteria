@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
 from utils import *
+import shutil
 
 
 class ExperimentException(Exception):
@@ -69,6 +70,12 @@ parser.add_argument(
     ),
 )
 
+parser.add_argument(
+    "--benchmark",
+    action="store_true",
+    help="Run experiments using hyperfine for benchmarking",
+)
+
 
 def validate_args(args):
     if args.experiment is None:
@@ -88,6 +95,7 @@ class GlobalConfig:
     experiments_to_run: Optional[list[str]]
     cleanup_results_first: bool
     cleanup_builds_first: bool
+    benchmark: bool
 
     def __init__(self):
         self.experiment_folder = default_experiment_folder.resolve()
@@ -95,6 +103,7 @@ class GlobalConfig:
         self.experiments_to_run = default_experiments_to_run
         self.cleanup_results_first = False
         self.cleanup_builds_first = False
+        self.benchmark = False
 
     def result_folder(self) -> Path:
         return self.experiment_folder / "results"
@@ -105,12 +114,16 @@ class GlobalConfig:
         self.experiments_to_run = args.experiment
         self.cleanup_results_first = args.cleanup_results_first or args.cleanup_first
         self.cleanup_builds_first = args.cleanup_builds_first or args.cleanup_first
+        self.benchmark = args.benchmark
 
     def to_dict(self):
         return {
             "experiment_folder": str(self.experiment_folder),
             "solver_timeout": self.solver_timeout,
             "experiments_to_run": self.experiments_to_run,
+            "cleanup_results_first": self.cleanup_results_first,
+            "cleanup_builds_first": self.cleanup_builds_first,
+            "benchmark": self.benchmark,
         }
 
 
@@ -223,13 +236,20 @@ class Experiment(PrintersMixin):
         )
         os.makedirs(self.result_folder, exist_ok=True)
         cmd = (
-            "dune exec -- soteria-c capture-db "
+            "dune exec -- time soteria-c capture-db "
             f"{self.compile_commands} "
             f"--solver-timeout {global_config.solver_timeout} "
             "--dump-stats "
             f"{self.result_folder / 'stats.json'} "
             f"{' '.join(self.config.soteria_args)}"
         )
+        if global_config.benchmark:
+            if shutil.which("hyperfine") is None:
+                self.print_error(
+                    "Hyperfine is required for benchmarking but was not found in PATH. Install it and try again."
+                )
+                exit(4)
+            cmd = f"hyperfine '{cmd}' --warmup 1 --runs 10"
         self.run_command(cmd)
 
     def run(self):
@@ -298,9 +318,14 @@ def aggregate_results():
             continue
         with open(file, "r") as f:
             try:
-                j = Stats.from_dict(json.load(f))
+                j = json.load(f)
             except:
                 global_printer.print_error(f"Failed to read json from {file}")
+                continue
+            try:
+                j = Stats.from_dict(j)
+            except:
+                global_printer.print_error(f"{file}'s json doesn't match expectations")
                 continue
             all_stats = merge_stats(all_stats, j)
     to_remove = "MISSING FEATURE, VANISHING: Could not resolve function"
