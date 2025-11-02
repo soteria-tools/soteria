@@ -434,7 +434,8 @@ module Make (State : State_intf.S) = struct
             State.with_decay_map_res
             @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            State.lift_err @@ Encoder.transmute_literal ~from_ty ~to_ty v
+            State.with_decay_map_res
+            @@ Encoder.transmute_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (_, _, MetaVTablePtr _)) ->
             not_impl "Unsupported: dyn"
         | Cast (CastUnsize (_, _, MetaUnknown)) ->
