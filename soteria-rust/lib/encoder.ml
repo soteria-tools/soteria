@@ -4,10 +4,11 @@ module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Charon_util
-open Rustsymex
-open Rustsymex.Syntax
 open Rust_val
 open Layout
+module DecayMapMonad = Sptr.DecayMapMonad
+open DecayMapMonad
+open DecayMapMonad.Syntax
 
 module Make (Sptr : Sptr.S) = struct
   type nonrec rust_val = Sptr.t Rust_val.t
@@ -64,22 +65,25 @@ module Make (Sptr : Sptr.S) = struct
     let query (q : query) : ('a, 'state, 'err, 'fix) t =
      fun handler state -> handler q state
 
-    let lift_rsymex (m : 'a Rustsymex.t) : ('a, 'state, 'err, 'fix) t =
+    let lift (m : 'a DecayMapMonad.t) : ('a, 'state, 'err, 'fix) t =
      fun _handler state ->
       let+ m in
       Compo_res.Ok (m, state)
 
-    let lift_rsymex_result (m : ('a, 'err, 'fix) Rustsymex.Result.t) :
-        ('a, 'state, 'err, 'fix) t =
-     fun _handler state ->
-      let++ m in
-      (m, state)
+    let not_impl msg = lift @@ not_impl msg
 
     module Syntax = struct
       let ( let*** ) x f = bind x f
-      let ( let++* ) x f = bind x (fun v -> lift_rsymex @@ f v)
-      let ( let+** ) x f = bind x (fun v -> lift_rsymex_result @@ f v)
+      let ( let++* ) x f = bind x (fun v -> lift @@ f v)
       let ( let+++ ) x f = map x f
+
+      module Symex_syntax = struct
+        let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
+         fun handler state ->
+          DecayMapMonad.branch_on ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () handler state)
+            ~else_:(fun () -> else_ () handler state)
+      end
     end
 
     (** Returns the first element that parsed, if one parses succesfully, and
@@ -266,12 +270,12 @@ module Make (Sptr : Sptr.S) = struct
       let*** cval =
         match cval with
         | Base cval -> ok (Typed.cast_lit tag_layout.ty cval)
-        | Ptr (p, None) -> lift_rsymex @@ Sptr.decay p
+        | Ptr (p, None) -> lift @@ Sptr.decay p
         | _ -> Fmt.failwith "Unexpected discriminant: %a" pp_rust_val cval
       in
       let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
       let*** res =
-        lift_rsymex
+        lift
         @@ match_on tags ~constr:(function
              | _, None -> Typed.v_false
              | _, Some tag -> cval ==@ BV.mk_lit tag_layout.ty tag)
@@ -294,19 +298,20 @@ module Make (Sptr : Sptr.S) = struct
       offset; once these are read, symbolically decides whether we must keep
       reading. [offset] is the initial offset to read from, [meta] is the
       optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?offset ?meta : Types.ty -> ('e, 'fix, 'state) parser =
+  let rust_of_cvals ?meta ~offset :
+      Types.ty -> (rust_val, 'state, 'e, 'fix) ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let module T = Typed.T in
     (* Base case, parses all types. *)
     let rec aux offset : Types.ty -> ('e, 'fix, 'state) parser = function
       | TLiteral _ as ty -> (
-          let+** q_res = query (ty, offset) in
+          let*** q_res = query (ty, offset) in
           match q_res with
-          | Base _ as v -> Result.ok v
+          | Base _ as v -> ok v
           | Ptr (ptr, None) ->
-              let+ ptr_v = Sptr.decay ptr in
-              Compo_res.ok (Base (ptr_v :> T.cval Typed.t))
+              let+++ ptr_v = lift @@ Sptr.decay ptr in
+              Base ptr_v
           | _ ->
               Fmt.kstr not_impl "Expected a base or a thin pointer, got %a"
                 pp_rust_val q_res)
@@ -317,54 +322,52 @@ module Make (Sptr : Sptr.S) = struct
           let ptr_size = BV.usizei @@ Layout.size_of_int_ty Isize in
           let isize : Types.ty = TLiteral (TInt Isize) in
           let*** ptr_compo = query (isize, offset) in
-          let+** meta_compo = query (isize, offset +!@ ptr_size) in
+          let*** meta_compo = query (isize, offset +!@ ptr_size) in
           match (ptr_compo, meta_compo) with
           | ( ((Base _ | Ptr (_, None)) as ptr),
               ((Base _ | Ptr (_, None)) as meta) ) -> (
-              let* ptr =
+              let*** ptr =
                 match ptr with
-                | Ptr (ptr_v, None) -> Rustsymex.return ptr_v
+                | Ptr (ptr_v, None) -> ok ptr_v
                 | Base ptr_v ->
                     let ptr_v = Typed.cast_i Usize ptr_v in
-                    return (Sptr.null_ptr_of ptr_v)
+                    ok (Sptr.null_ptr_of ptr_v)
                 | _ -> failwith "Expected a pointer or base"
               in
-              let* meta =
+              let*** meta =
                 match meta with
-                | Base meta -> Rustsymex.return meta
-                | Ptr (meta_v, None) ->
-                    let+ meta = Sptr.decay meta_v in
-                    (meta :> T.cval Typed.t)
+                | Base meta -> ok meta
+                | Ptr (meta_v, None) -> lift @@ Sptr.decay meta_v
                 | _ -> failwith "Expected a pointer or base"
               in
               let ptr = Ptr (ptr, Some meta) in
               match ty with
-              | TRawPtr _ -> Result.ok ptr
+              | TRawPtr _ -> ok ptr
               | _ ->
                   let meta = Typed.cast_i Usize meta in
                   (* FIXME: this only applies to slices, I'm not sure for other fat pointers... *)
                   if%sat meta <$@ Usize.(0s) then
-                    Result.error (`UBTransmute "Negative slice length")
-                  else Result.ok ptr)
+                    error (`UBTransmute "Negative slice length")
+                  else ok ptr)
           | base, meta ->
               Fmt.kstr not_impl "Expected a pointer and base, got %a and %a"
                 pp_rust_val base pp_rust_val meta)
       | TRawPtr _ -> (
-          let+** raw_ptr = query (TLiteral (TInt Isize), offset) in
+          let*** raw_ptr = query (TLiteral (TInt Isize), offset) in
           match raw_ptr with
-          | (Ptr _ | Base _) as ptr -> Result.ok ptr
+          | (Ptr _ | Base _) as ptr -> ok ptr
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TBuiltin TBox; _ } | TRef _ -> (
-          let+** boxed = query (TLiteral (TInt Isize), offset) in
+          let*** boxed = query (TLiteral (TInt Isize), offset) in
           match boxed with
-          | Ptr _ as ptr -> Result.ok ptr
-          | Base _ -> Result.error `UBDanglingPointer
+          | Ptr _ as ptr -> ok ptr
+          | Base _ -> error `UBDanglingPointer
           | _ -> not_impl "Expected a pointer or base")
       | TFnPtr _ -> (
-          let+** boxed = query (TLiteral (TInt Isize), offset) in
+          let*** boxed = query (TLiteral (TInt Isize), offset) in
           match boxed with
-          | Ptr _ as ptr -> Result.ok ptr
-          | Base _ -> Result.error `UBDanglingPointer
+          | Ptr _ as ptr -> ok ptr
+          | Base _ -> error `UBDanglingPointer
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
@@ -464,8 +467,7 @@ module Make (Sptr : Sptr.S) = struct
       |> List.map (fun (fid, ty, _) -> (fid, ty))
       |> first parse_field
     in
-    let off = Option.value ~default:Usize.(0s) offset in
-    aux off
+    aux offset
 
   (** Transmute between literals; perform validation of the type's constraints.
       See also:
@@ -516,7 +518,7 @@ module Make (Sptr : Sptr.S) = struct
       is a *ghost read*, and should not have side-effects. *)
   let rec transmute ?verify_ptr ?(try_splitting = true) ~(from_ty : Types.ty)
       ~(to_ty : Types.ty) v =
-    let open Result in
+    let open DecayMapMonad.Result in
     L.debug (fun m ->
         m "Transmuting %a: %a -> %a" pp_rust_val v pp_ty from_ty pp_ty to_ty);
     if from_ty = to_ty then ok v
@@ -536,7 +538,7 @@ module Make (Sptr : Sptr.S) = struct
           match verify_ptr with
           | None -> Result.ok v
           | Some fn ->
-              let* is_valid = fn ptr inner_ty in
+              let* is_valid = lift @@ fn ptr inner_ty in
               if is_valid then ok v else error `UBDanglingPointer)
       (* A raw pointer can be whatever *)
       | _, TRawPtr _, Base off ->
@@ -547,7 +549,7 @@ module Make (Sptr : Sptr.S) = struct
       | _, TLiteral ((TInt _ | TUInt _) as litty), Ptr (ptr, None)
         when size_of_literal_ty litty = size_of_literal_ty (TInt Isize) ->
           let* ptr_v = Sptr.decay ptr in
-          ok (Base (ptr_v :> Typed.T.cval Typed.t))
+          ok (Base ptr_v)
       | _ when try_splitting ->
           let blocks = rust_to_cvals v from_ty in
           transmute_many ~to_ty blocks
@@ -556,7 +558,6 @@ module Make (Sptr : Sptr.S) = struct
             pp_ty from_ty pp_ty to_ty
 
   and transmute_many ~(to_ty : Types.ty) vs =
-    let open Syntaxes.Option in
     let pp_triple fmt (v, ty, o) =
       Fmt.pf fmt "(%a:%a, %d)" pp_rust_val v pp_ty ty o
     in
@@ -582,6 +583,7 @@ module Make (Sptr : Sptr.S) = struct
           Fmt.(list ~sep:comma pp_triple)
           vs);
     let extract_block (ty, off) =
+      let open Syntaxes.Option in
       let off = int_of_val off in
       let vs = List.map (fun (v, ty, o) -> (v, ty, o - off)) vs in
       (* 0. make sure the entire range exists; otherwise it would mean there's an uninit access *)
@@ -649,7 +651,7 @@ module Make (Sptr : Sptr.S) = struct
                      Some (v, lit_ty, o)
                  | _ -> None)
             |> Option.map @@ fun (v, lit_ty, o) ->
-               let open Rustsymex.Syntax in
+               let open DecayMapMonad.Syntax in
                let* v =
                  match v with
                  | Base v -> return v
@@ -672,7 +674,8 @@ module Make (Sptr : Sptr.S) = struct
       (r, ())
     in
     let++ res, () =
-      ParserMonad.parse ~init:() ~handler:parse_fn @@ rust_of_cvals to_ty
+      ParserMonad.parse ~init:() ~handler:parse_fn
+      @@ rust_of_cvals ~offset:Usize.(0s) to_ty
     in
     res
 
@@ -681,11 +684,11 @@ module Make (Sptr : Sptr.S) = struct
 
   let rec split v (ty : Types.ty) at :
       ((rust_val * Types.ty) split_tree * (rust_val * Types.ty) split_tree)
-      Rustsymex.t =
+      DecayMapMonad.t =
     match (v, ty) with
     | Ptr (ptr, None), _ ->
         let* v = Sptr.decay ptr in
-        split (Base (v :> T.cval Typed.t)) ty at
+        split (Base v) ty at
     | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
         let+ at =
           match Typed.kind at with

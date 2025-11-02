@@ -2,7 +2,7 @@ open Soteria_std
 open Symex
 
 module Make
-    (Symex : Symex.S)
+    (Symex : Symex.Base)
     (Info : sig
       type t
 

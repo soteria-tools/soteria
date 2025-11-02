@@ -116,6 +116,7 @@ end
 module Ptr = struct
   include Ptr
 
+  let null_loc () = null_loc (8 * Lc.size_of_uint_ty Usize)
   let null () = null (8 * Lc.size_of_uint_ty Usize)
   let loc_of_int i = loc_of_int (8 * Lc.size_of_uint_ty Usize) i
 end
