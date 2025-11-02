@@ -28,7 +28,7 @@ module FloatClass = struct
     | NaN -> FP_nan
 end
 
-module FloatRoundingMode = struct
+module RoundingMode = struct
   type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
   [@@deriving eq, show { with_path = false }, ord]
 end
@@ -78,8 +78,9 @@ module Unop = struct
     | GetPtrLoc
     | GetPtrOfs
     | BvOfBool of int (* target bitvec size *)
-    | BvOfFloat of bool * int (* signed * target bitvec size *)
-    | FloatOfBv of bool * FloatPrecision.t (* signed * precision *)
+    | BvOfFloat of RoundingMode.t * bool * int (* signed * target bitvec size *)
+    | FloatOfBv of
+        RoundingMode.t * bool * FloatPrecision.t (* signed * precision *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
@@ -87,7 +88,7 @@ module Unop = struct
     | NegOvf
     | FAbs
     | FIs of FloatClass.t
-    | FRound of FloatRoundingMode.t
+    | FRound of RoundingMode.t
   [@@deriving eq, ord]
 
   let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
@@ -98,16 +99,18 @@ module Unop = struct
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
     | BvOfBool n -> Fmt.pf ft "b2bv[%d]" n
-    | BvOfFloat (signed, n) -> Fmt.pf ft "f2%abv[%d]" pp_signed signed n
-    | FloatOfBv (signed, p) ->
-        Fmt.pf ft "%abv2f[%a]" pp_signed signed FloatPrecision.pp p
+    | BvOfFloat (rm, signed, n) ->
+        Fmt.pf ft "f2%abv[%a,%d]" pp_signed signed RoundingMode.pp rm n
+    | FloatOfBv (rm, signed, p) ->
+        Fmt.pf ft "%abv2f[%a,%a]" pp_signed signed RoundingMode.pp rm
+          FloatPrecision.pp p
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
     | Neg -> Fmt.string ft "-"
     | NegOvf -> Fmt.string ft "-ovf"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
-    | FRound mode -> Fmt.pf ft "fround(%a)" FloatRoundingMode.pp mode
+    | FRound mode -> Fmt.pf ft "fround(%a)" RoundingMode.pp mode
 end
 
 module Binop = struct
@@ -415,8 +418,10 @@ module type BitVec = sig
   val not_bool : t -> t
 
   (* float-bv conversions *)
-  val of_float : signed:bool -> size:int -> t -> t
-  val to_float : signed:bool -> fp:FloatPrecision.t -> t -> t
+  val of_float : rounding:RoundingMode.t -> signed:bool -> size:int -> t -> t
+
+  val to_float :
+    rounding:RoundingMode.t -> signed:bool -> fp:FloatPrecision.t -> t -> t
 end
 
 module type Float = sig
@@ -437,7 +442,7 @@ module type Float = sig
   val rem : t -> t -> t
   val abs : t -> t
   val neg : t -> t
-  val round : FloatRoundingMode.t -> t -> t
+  val round : RoundingMode.t -> t -> t
 
   (* comparisons *)
   val eq : t -> t -> t
@@ -1117,16 +1122,17 @@ and BitVec : BitVec = struct
       let add_ovf = add_overflows ~signed v1 neg_v2 in
       Bool.or_ neg_ovf add_ovf
 
-  let of_float ~signed ~size v =
+  let of_float ~rounding ~signed ~size v =
     let p = precision_of_f v.node.ty in
     match (p, v.node.kind, size) with
     | F32, Float f, 32 ->
         mk 32 @@ Z.of_int32 (Int32.bits_of_float (Stdlib.Float.of_string f))
     | F64, Float f, 64 ->
         mk 64 @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
-    | _, _, _ -> Unop (BvOfFloat (signed, size), v) <| t_bv size
+    | _, _, _ -> Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size
 
-  let to_float ~signed ~fp v = Unop (FloatOfBv (signed, fp), v) <| t_float fp
+  let to_float ~rounding ~signed ~fp v =
+    Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp
 end
 
 (** {2 Floating point} *)

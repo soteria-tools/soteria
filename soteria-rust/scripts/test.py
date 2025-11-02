@@ -101,8 +101,9 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
 
             if str(relative) in SKIPPED_TESTS and not opts["no_skips"]:
                 (msg, clr, reason) = SKIPPED_TESTS[str(relative)]
+                msg = "" if reason is None else f": {BOLD}{reason}{RESET}"
                 print(
-                    f"{clr}{msg}{RESET} {YELLOW}✦{RESET} {GRAY}{BOLD}Skipped{RESET}: {BOLD}{reason}{RESET}"
+                    f"{clr}{msg}{RESET} {YELLOW}✦{RESET} {GRAY}{BOLD}Skipped{RESET}{msg}"
                 )
             else:
                 try:
@@ -134,6 +135,19 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                     txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
                     if msg == "Success":
                         end_msgs.append(f'Fixed {relative}, for "{BOLD}{issue}{RESET}"')
+                if str(relative) in SKIPPED_TESTS:
+                    _, _, issue = SKIPPED_TESTS[str(relative)]
+                    txt += f" {YELLOW}✦{RESET} {BOLD}(not skipped){RESET}"
+                    if not (msg == "Time out"):
+                        end_msgs.append(
+                            f"Fixed timeout {relative} ({elapsed:.3f}s)"
+                            + (
+                                f", for {BOLD}{issue}{RESET}"
+                                if issue is not None
+                                else ""
+                            )
+                        )
+
                 print(txt)
 
             if msg == "Success":
@@ -374,6 +388,11 @@ def benchmark(opts: CliOpts):
             if name == "custom":
                 continue
             test_conf = callback(opts)
+            if key == "miri" and name == "kani":
+                pprint(
+                    f"{CYAN}{BOLD}==>{RESET} Skipping benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{key}{RESET} (not supported)",
+                    inc=True,
+                )
             cmd = opts["tool_cmd"] + test_conf["args"]
             pprint(
                 f"{CYAN}{BOLD}==>{RESET} Running benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{key}",

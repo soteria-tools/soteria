@@ -176,9 +176,17 @@ module Float : sig
   val is_zero : [< sfloat ] t -> [> sbool ] t
   val is_infinite : [< sfloat ] t -> [> sbool ] t
   val is_nan : [< sfloat ] t -> [> sbool ] t
-  val round : Svalue.FloatRoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
-  val to_int : bool -> int -> [< sfloat ] t -> [> sint ] t
-  val of_int : bool -> Svalue.FloatPrecision.t -> [< sint ] t -> [> sfloat ] t
+  val round : Svalue.RoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
+
+  val to_int :
+    Svalue.RoundingMode.t -> bool -> int -> [< sfloat ] t -> [> sint ] t
+
+  val of_int :
+    Svalue.RoundingMode.t ->
+    bool ->
+    Svalue.FloatPrecision.t ->
+    [< sint ] t ->
+    [> sfloat ] t
 end
 
 module Ptr : sig

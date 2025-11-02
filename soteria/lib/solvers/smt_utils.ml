@@ -3,9 +3,16 @@ open Simple_smt
 (* Float types and constants *)
 (* Helpful: https://smt-lib.org/theories-FloatingPoint.shtml *)
 
-module FloatRoundingMode = struct
+module RoundingMode = struct
   type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
   [@@deriving eq, show { with_path = false }, ord]
+
+  let to_sexp = function
+    | NearestTiesToEven -> atom "RNE"
+    | NearestTiesToAway -> atom "RNA"
+    | Ceil -> atom "RTP"
+    | Floor -> atom "RTN"
+    | Truncate -> atom "RTZ"
 end
 
 (** [float_shape n] is the shape of a IEEE float of a given size in bits.
@@ -83,22 +90,22 @@ let fp_is (fc : fpclass) f =
   | FP_infinite -> app_ "fp.isInfinite" [ f ]
   | FP_nan -> app_ "fp.isNaN" [ f ]
 
-let fp_round (rm : FloatRoundingMode.t) f =
-  match rm with
-  | NearestTiesToEven -> app_ "fp.roundToIntegral" [ atom "RNE"; f ]
-  | NearestTiesToAway -> app_ "fp.roundToIntegral" [ atom "RNA"; f ]
-  | Ceil -> app_ "fp.roundToIntegral" [ atom "RTP"; f ]
-  | Floor -> app_ "fp.roundToIntegral" [ atom "RTN"; f ]
-  | Truncate -> app_ "fp.roundToIntegral" [ atom "RTZ"; f ]
+let fp_round (rm : RoundingMode.t) f =
+  app_ "fp.roundToIntegral" [ RoundingMode.to_sexp rm; f ]
 
 (* Float{Of,To}Bv *)
 
-let float_of_ubv size bv =
-  app (ifam "to_fp_unsigned" (float_shape size)) [ rm; bv ]
+let float_of_ubv rm size bv =
+  app (ifam "to_fp_unsigned" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
 
-let float_of_sbv size bv = app (ifam "to_fp" (float_shape size)) [ rm; bv ]
-let ubv_of_float n f = app (ifam "fp.to_ubv" [ n ]) [ rm; f ]
-let sbv_of_float n f = app (ifam "fp.to_sbv" [ n ]) [ rm; f ]
+let float_of_sbv rm size bv =
+  app (ifam "to_fp" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
+
+let ubv_of_float rm n f =
+  app (ifam "fp.to_ubv" [ n ]) [ RoundingMode.to_sexp rm; f ]
+
+let sbv_of_float rm n f =
+  app (ifam "fp.to_sbv" [ n ]) [ RoundingMode.to_sexp rm; f ]
 
 (* Int{Of,To}Bv *)
 

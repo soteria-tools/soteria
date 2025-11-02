@@ -37,8 +37,9 @@ let eval_unop : Unop.t -> t -> t = function
   | GetPtrLoc -> Ptr.loc
   | GetPtrOfs -> Ptr.ofs
   | BvOfBool n -> BitVec.of_bool n
-  | BvOfFloat (signed, size) -> BitVec.of_float ~signed ~size
-  | FloatOfBv (signed, fp) -> BitVec.to_float ~signed ~fp
+  | BvOfFloat (rounding, signed, size) ->
+      BitVec.of_float ~rounding ~signed ~size
+  | FloatOfBv (rounding, signed, fp) -> BitVec.to_float ~rounding ~signed ~fp
   | BvExtract (from, to_) -> BitVec.extract from to_
   | BvExtend (signed, by) -> BitVec.extend ~signed by
   | BvNot -> BitVec.not
