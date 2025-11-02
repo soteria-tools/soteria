@@ -57,7 +57,7 @@ val t_f16 : [> sfloat ] ty
 val t_f32 : [> sfloat ] ty
 val t_f64 : [> sfloat ] ty
 val t_f128 : [> sfloat ] ty
-val t_f : Svalue.FloatPrecision.t -> [> sfloat ] ty
+val t_float : Svalue.FloatPrecision.t -> [> sfloat ] ty
 
 (** {2 Typed svalues} *)
 

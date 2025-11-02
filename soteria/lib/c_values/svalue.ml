@@ -45,11 +45,11 @@ type ty =
 
 let t_bool = TBool
 let t_int = TInt
-let t_f fp = TFloat fp
-let t_f16 = t_f F16
-let t_f32 = t_f F32
-let t_f64 = t_f F64
-let t_f128 = t_f F128
+let t_float fp = TFloat fp
+let t_f16 = t_float F16
+let t_f32 = t_float F32
+let t_f64 = t_float F64
+let t_f128 = t_float F128
 let t_loc = TLoc
 let t_ptr = TPointer
 let t_seq ty = TSeq ty
@@ -1051,7 +1051,7 @@ module BitVec = struct
   let to_float rounding signed v =
     let size = size_of_bv v.node.ty in
     let fp = FloatPrecision.of_size size in
-    Unop (FloatOfBv (rounding, signed, fp), v) <| t_f fp
+    Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp
 
   let and_ ~size ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -1121,8 +1121,8 @@ end
 
 (** {2 Floating point} *)
 module Float = struct
-  let mk fp f = Float f <| t_f fp
-  let mk_f fp f = Float (Float.to_string f) <| t_f fp
+  let mk fp f = Float f <| t_float fp
+  let mk_f fp f = Float (Float.to_string f) <| t_float fp
   let like v f = Float (Float.to_string f) <| v.node.ty
 
   let fp_of v =

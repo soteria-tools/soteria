@@ -41,6 +41,7 @@ val t_int : [> sint ] ty
 val t_ptr : [> sptr ] ty
 val t_loc : [> sloc ] ty
 val t_seq : ([< any ] as 'a) ty -> [> 'a sseq ] ty
+val t_float : Svalue.FloatPrecision.t -> [> sfloat ] ty
 val t_f16 : [> sfloat ] ty
 val t_f32 : [> sfloat ] ty
 val t_f64 : [> sfloat ] ty

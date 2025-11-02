@@ -346,6 +346,11 @@ module Make (State : State_intf.S) = struct
   let cast ~old_ty ~new_ty (v : Agv.t) : Agv.t Csymex.t =
     let open Csymex.Syntax in
     let open Typed in
+    let known_to_be_bigger intty1 intty2 =
+      let size_1 = Layout.size_of_int_ty intty1 in
+      let size_2 = Layout.size_of_int_ty intty2 in
+      match (size_1, size_2) with Some s1, Some s2 -> s1 > s2 | _ -> false
+    in
     if Ctype.ctypeEqual old_ty new_ty then return v
     else
       let (Ctype.Ctype (_, old_ty)) = old_ty in
@@ -375,6 +380,9 @@ module Make (State : State_intf.S) = struct
                 in
                 let size_right = Typed.nonzero size_right in
                 Typed.mod_ v size_right
+            | Unsigned _, Unsigned _ when known_to_be_bigger ity_right ity_left
+              ->
+                return (v :> T.cval Typed.t)
             | _, _ ->
                 Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
                   ity_left Fmt_ail.pp_int_ty ity_right)
@@ -460,9 +468,9 @@ module Make (State : State_intf.S) = struct
         let v2 = Typed.cast v2 in
         ok (v1 *@ v2)
     | TPointer, _ | _, TPointer -> error `UBPointerArithmetic
-    | _ ->
+    | ty1, ty2 ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
-          Typed.ppa v1 Typed.ppa v2
+          Svalue.pp_ty ty1 Svalue.pp_ty ty2
 
   let arith (v1, t1) a_op (v2, t2) : [> T.sint ] Typed.t InterpM.t =
     match (a_op : AilSyntax.arithmeticOperator) with
