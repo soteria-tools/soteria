@@ -422,13 +422,15 @@ module Make (State : State_intf.S) = struct
     let^ v2 = Agv.basic_or_unsupported ~msg:"aggregate_equality_check" v2 in
     equality_check v1 v2
 
-  let rec arith_add (v1 : [< Typed.T.cval ] Typed.t)
+  let rec arith_add ~signed (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        ok (v1 +!@ v2)
+        let res, ovf = if signed then v1 +$?@ v2 else v1 +?@ v2 in
+        let+ () = assert_or_error (Typed.not ovf) `Overflow in
+        res
     | TPointer _, TBitVector _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
@@ -436,19 +438,21 @@ module Make (State : State_intf.S) = struct
         let ofs, ovf = Typed.Ptr.ofs v1 +$?@ v2 in
         let+ () = assert_or_error (Typed.not ovf) `Overflow in
         Typed.Ptr.mk loc ofs
-    | TBitVector _, TPointer _ -> arith_add v2 v1
+    | TBitVector _, TPointer _ -> arith_add ~signed v2 v1
     | TPointer _, TPointer _ -> error `UBPointerArithmetic
     | _ ->
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
 
-  let arith_sub (v1 : [< Typed.T.cval ] Typed.t)
+  let arith_sub ~signed (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        ok (v1 -!@ v2)
+        let res, ovf = if signed then v1 -$?@ v2 else v1 -?@ v2 in
+        let+ () = assert_or_error (Typed.not ovf) `Overflow in
+        res
     | TPointer _, TBitVector _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
@@ -468,13 +472,15 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
 
-  let arith_mul (v1 : [< Typed.T.cval ] Typed.t)
+  let arith_mul ~signed (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        ok (v1 *!@ v2)
+        let res, ovf = if signed then v1 *$?@ v2 else v1 *?@ v2 in
+        let+ () = assert_or_error (Typed.not ovf) `Overflow in
+        res
     | TPointer _, _ | _, TPointer _ -> error `UBPointerArithmetic
     | ty1, ty2 ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
@@ -495,27 +501,43 @@ module Make (State : State_intf.S) = struct
         | Ok v2 -> ok (Typed.cast @@ BV.div ~signed v1 v2)
         | Error `NonZeroIsZero -> error `DivisionByZero
         | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
-    | Mul -> arith_mul v1 v2
+    | Mul -> (
+        match t1 with
+        | Ctype.Ctype (_, Basic (Integer inty)) ->
+            let signed = Layout.is_int_ty_signed inty in
+            arith_mul ~signed v1 v2
+        | _ -> not_impl "Mul with non-integer type")
     | Add -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some _, Some _ -> error `UBPointerArithmetic
         | Some ty, None ->
             let^ factor = Layout.size_of_s ty in
-            let* v2 = arith_mul v2 factor in
-            arith_add v1 v2
+            let* v2 = arith_mul ~signed:true v2 factor in
+            arith_add ~signed:true v1 v2
         | None, Some ty ->
             let^ factor = Layout.size_of_s ty in
-            let* v1 = arith_mul v1 factor in
-            arith_add v2 v1
-        | None, None -> arith_add v1 v2)
+            let* v1 = arith_mul ~signed:true v1 factor in
+            arith_add ~signed:true v2 v1
+        | None, None -> (
+            match t1 with
+            | Ctype.Ctype (_, Basic (Integer inty)) ->
+                let signed = Layout.is_int_ty_signed inty in
+                arith_add ~signed v1 v2
+            | _ -> not_impl "Add with non-integer type"))
     | Sub -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some ty, None ->
             let^ factor = Layout.size_of_s ty in
-            let* v2 = arith_mul v2 factor in
-            arith_sub v1 v2
+            let* v2 = arith_mul ~signed:true v2 factor in
+            arith_sub ~signed:true v1 v2
         | None, Some _ -> error `UBPointerArithmetic
-        | Some _, Some _ | None, None -> arith_sub v1 v2)
+        | Some _, Some _ -> arith_sub ~signed:true v1 v2
+        | None, None -> (
+            match t1 with
+            | Ctype.Ctype (_, Basic (Integer inty)) ->
+                let signed = Layout.is_int_ty_signed inty in
+                arith_sub ~signed v1 v2
+            | _ -> not_impl "Sub with non-integer type"))
     | Mod -> (
         let t1 =
           match t1 with
@@ -687,25 +709,27 @@ module Make (State : State_intf.S) = struct
                    ~msg:"Member of Pointer that isn't of type pointer"
             in
             let^ mem_ofs = Layout.member_ofs member ty_pointee in
-            let+ res = arith_add ptr_v mem_ofs in
+            let+ res = arith_add ~signed:true ptr_v mem_ofs in
             Agv.Basic res
         | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
     | AilEunary (((PostfixIncr | PostfixDecr) as op), e) -> (
         let apply_op v =
           let^ v = Agv.basic_or_unsupported ~msg:"Postfix operator" v in
           let ty = type_of e in
-          let* operand =
+          let* operand, signed =
             match (pointer_inner ty, ty) with
-            | Some ty, _ -> lift_symex @@ Layout.size_of_s ty
+            | Some ty, _ ->
+                let^ operand = Layout.size_of_s ty in
+                ok (operand, true)
             | None, Ctype.Ctype (_, Basic (Integer inty)) ->
                 let^ size = Layout.size_of_int_ty_unsupported inty in
-                ok (BV.one size)
+                ok (BV.one size, Layout.is_int_ty_signed inty)
             | _ -> not_impl "Postfix operator on unsupported type"
           in
           let+ res =
             match op with
-            | PostfixIncr -> arith_add v operand
-            | PostfixDecr -> arith_sub v operand
+            | PostfixIncr -> arith_add ~signed v operand
+            | PostfixDecr -> arith_sub ~signed v operand
             | _ -> failwith "unreachable: postfix is not postfix??"
           in
           Agv.Basic res
@@ -871,14 +895,14 @@ module Make (State : State_intf.S) = struct
                ~msg:"Member of Pointer that isn't of type pointer"
         in
         let^ mem_ofs = Layout.member_ofs member ty_pointee in
-        let+ res = arith_add ptr_v mem_ofs in
+        let+ res = arith_add ~signed:true ptr_v mem_ofs in
         Agv.Basic res
     | AilEmemberof (obj, member) ->
         let* ptr_v = eval_expr obj in
         let^ ptr_v = Agv.basic_or_unsupported ~msg:"memberof" ptr_v in
         let ty_obj = type_of obj in
         let^ mem_ofs = Layout.member_ofs member ty_obj in
-        let+ res = arith_add ptr_v mem_ofs in
+        let+ res = arith_add ~signed:true ptr_v mem_ofs in
         Agv.Basic res
     | AilEcast (_quals, new_ty, expr) ->
         let old_ty = type_of expr in
