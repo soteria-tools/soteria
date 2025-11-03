@@ -52,7 +52,6 @@ let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
   | BvExtend (false, by) -> bv_zero_extend by
   | BvNot -> bv_not
   | Neg -> bv_neg
-  | NegOvf -> bv_nego
   | FIs fc -> fp_is (Svalue.FloatClass.as_fpclass fc)
   | FRound rm -> fp_round (rm_to_smt rm)
 
@@ -82,8 +81,6 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | Rem true -> bv_srem
   | Rem false -> bv_urem
   | Mod -> bv_smod
-  | AddOvf true -> bv_saddo
-  | AddOvf false -> bv_uaddo
   | MulOvf true -> bv_smulo
   | MulOvf false -> bv_umulo
   | Lt true -> bv_slt

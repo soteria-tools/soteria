@@ -73,6 +73,13 @@ pub fn proof(_attr: TokenStream, item: TokenStream) -> TokenStream {
 kani_attribute!(should_panic, no_args);
 kani_attribute!(recursion, no_args);
 kani_attribute!(solver);
-kani_attribute!(stub);
 kani_attribute!(unstable);
 kani_attribute!(unwind);
+
+// TODO: we ignore these for now
+kani_attribute!(stub);
+kani_attribute!(ensures);
+kani_attribute!(modifies);
+kani_attribute!(proof_for_contract);
+kani_attribute!(requires);
+kani_attribute!(stub_verified);

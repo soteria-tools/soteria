@@ -29,6 +29,9 @@ type t = {
   frontend : (frontend[@conv frontend_cmdliner_conv ()]);
       [@default Obol] [@make.default Obol] [@names [ "frontend" ]]
       (** Choose the frontend to use: Charon or Obol *)
+  sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
+      (** The sysroot to use for compilation. If not provided, the default
+          sysroot is used. *)
   (*
      Plugins
    *)
@@ -48,6 +51,9 @@ type t = {
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
+  print_stats : bool; [@make.default false] [@names [ "stats" ]]
+      (** If statistics about the execution should be printed at the end of each
+          test *)
   (*
      Symbolic execution behaviour
    *)

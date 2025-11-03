@@ -24,6 +24,13 @@ class TestCategoriser(Protocol):
 
 
 def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation:
+
+    if "error: Compilation error" in test:
+        if expect_failure:
+            return Outcome.PASS("Expected failure, got (compilation) failure")
+        else:
+            return Outcome.FAIL("Expected success, got compilation failure")
+
     if "Fatal (Frontend)" in test:
         # this isn't frontend's fault, really
         unresolved = re.findall(
@@ -34,6 +41,11 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
                 Outcome.COMPILATION_ERR(f"missing {crate}::{fn}")
                 for fn, crate in unresolved
             ]
+        if "This macro cannot be used on the current target" in test:
+            return Outcome.COMPILATION_ERR("Wrong target")
+
+        if "std::sync::atomic::AtomicPrimitive::AtomicInner" in test:
+            return Outcome.UNSUPPORTED("atomic operations")
 
         compile_errors = re.findall(r"error(\[E\d+\]: .+)\n", test)
         compile_errors = [
@@ -43,6 +55,8 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
             if not err.startswith("[E9999]")
         ]
         if compile_errors:
+            if "--simple" in sys.argv:
+                return Outcome.COMPILATION_ERR()
             return [Outcome.COMPILATION_ERR(error) for error in compile_errors]
 
         if "cannot find macro" in test:
@@ -87,7 +101,60 @@ def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation
     if fatals is not None:
         err = fatals.group(1)
         if err.startswith("unsupported feature"):
-            return Outcome.UNSUPPORTED(err[len("unsupported feature, ") :])
+            msg = err[len("unsupported feature, ") :]
+            reasons = set()
+            if "does not support thread local references" in test:
+                reasons.add("thread local references")
+            if (
+                re.findall(r"Item `std::intrinsics::atomic_.*` caused errors", test)
+                or "std::sync::atomic::AtomicPrimitive::AtomicInner" in test
+            ):
+                reasons.add("atomic operations")
+            if "Unhandled global: TypeId" in test:
+                reasons.add("TypeId globals")
+            if re.findall(
+                r"Unexpected rigid type for adt: Ty { id: \d+, kind: RigidTy\(Slice",
+                test,
+            ):
+                reasons.add("constant slice expressions")
+            if "Coroutine types are not supported yet" in test:
+                reasons.add("coroutine types")
+            if "Cannot compute layout: opaque" in test:
+                reasons.add("extern objects")
+            if "Unhandled: ZST union type" in test:
+                reasons.add("zero-sized unions constants")
+            if "Unsupported intrinsic" in test and "--simple" in sys.argv:
+                reasons.add("unsupported intrinsic")
+            if re.findall(r"Function libc::.* is opaque", test):
+                reasons.add("libc functions")
+            if (
+                "thread 'rustc' panicked at compiler/rustc_public/src/unstable/convert/stable/mir.rs:769:79"
+                in test
+            ):
+                reasons.add("tailcalls")
+            if (
+                "thread 'rustc' panicked at src/bin/obol-driver/translate/translate_constants.rs"
+                in test
+            ) and "Unhandled global: TypeId" not in test:
+                reasons.add("constant unevaluation")
+            if "is_opaque" in msg and "exported_symbol_" in test:
+                reasons.add("extern objects")
+
+            if len(reasons) > 0:
+                return [Outcome.UNSUPPORTED(reason) for reason in reasons]
+
+            opaque_fn = re.findall(r"Function (std::.*) is opaque", test)
+            if len(opaque_fn) > 0:
+                if "--simple" in sys.argv:
+                    reasons.add("opaque functions")
+                else:
+                    for msg in opaque_fn:
+                        reasons.add(f"Opaque: {msg}")
+
+            if "core::slice::memchr::memrchr" in test:
+                return Outcome.UNSUPPORTED("we don't compile std with MIR")
+
+            return Outcome.UNSUPPORTED(msg)
 
         if err.startswith("exception, "):
             err = err[len("exception, ") :]
@@ -254,7 +321,9 @@ def analyse(file: str) -> LogInfo:
             except Exception:
                 ...
         elif "miri" in file_path:
-            expect_failure = "/fail/" in file_path or "/panic/" in file_path
+            expect_failure = ("/fail/" in file_path or "/panic/" in file_path) and (
+                "/pass" not in file_path
+            )
 
         tests_idx = file_path.split("/").index("tests") + 1
         file_name = "/".join(file_path.split("/")[tests_idx:])
@@ -270,6 +339,13 @@ def analyse(file: str) -> LogInfo:
             categories = categorise_miri(test, expect_failure=expect_failure)
         else:
             assert_never(tool)
+
+        if "--simple" in sys.argv:
+            if isinstance(categories, list):
+                categories = [(o.simplify(), r) for o, r in categories]
+            else:
+                o, r = categories
+                categories = (o.simplify(), r)
 
         if isinstance(categories, list):
             for outcome, reason in categories:
@@ -377,7 +453,7 @@ def main(files: list[str]):
         pprint(f"{BOLD}{num:3d}{RESET} {outcome}", inc=False)
         if verbosity >= 1:
             dot = f"{rainbow()}•{RESET}"
-            if all(test[1] is None for test in tests):
+            if all(test[2] is None for test in tests):
                 # print tests one by one
                 ts: list[tuple[str, ToolName]] = [(file, t) for t, file, _ in tests]
                 ts.sort()
@@ -394,7 +470,7 @@ def main(files: list[str]):
                 if "--az" in sys.argv:
                     reasons = sorted(reasons, key=lambda x: x[0])
                 else:
-                    reasons = sorted(reasons, key=lambda x: -len(x[1]))
+                    reasons = sorted(reasons, key=lambda x: (-len(x[1]), x[0]))
                 if "--rev" in sys.argv:
                     reasons.reverse()
                 for reason, ts in reasons:
@@ -519,6 +595,117 @@ def diff(f1: str, f2: str):
                     print(f"  {plus} {outcome}")
 
 
+# Returns, for each tests found in the file: (tool, test, outcome, time)
+# only works for Rusteria and Kani
+def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]]]:
+    try:
+        content = open(file, "r").read()
+    except FileNotFoundError:
+        exit(f"File not found: {file}")
+    tests = content.split("[TEST] Running ")[1:]
+    result: dict[str, dict[ToolName, tuple[Outcome, float]]] = {}
+
+    def push(tool: ToolName, filename: str, test: str, outcome: Outcome, time: float):
+        if filename.endswith(".rs"):
+            filename = filename[:-3]
+        test = f"{filename}::{test}"
+        if test not in result:
+            result[test] = {}
+        if tool in result[test]:
+            raise ValueError(f"Duplicate entry for {test} with tool {tool}")
+        result[test][tool] = (outcome, time)
+
+    for test in tests:
+        # get file name
+        file_path = re.search(r"(.+) - .*\n", test)
+        if not file_path:
+            exit(f"No file found in {test}")
+        file_path = file_path.group(1)
+        file_name = file_path.split("/")[-1]
+
+        tool: ToolName = "Rusteria" if "Compiling... done" in test else "Kani"
+        if tool == "Rusteria":
+            # two options:
+            # - error: <name>: found issues in <time>, errors in N branches (out of M)
+            # - note: <name>: done in <time>, ran N branches
+            note_regex = r"^note: (.*): done in ([\d\.]+m?s), ran \d+ branch(es)?"
+            err_regex = (
+                r"^error: (.*): found issues in ([\d\.]+m?s), errors in \d+ branch(es)?"
+            )
+
+            def parse_time(t: str) -> float:
+                if t.endswith("ms"):
+                    return float(t[:-2]) / 1000.0
+                if t.endswith("s"):
+                    return float(t[:-1])
+                raise ValueError(f"Unknown time format: {t}")
+
+            for line in test.split("\n"):
+                note = re.search(note_regex, line)
+                if note is not None:
+                    name = note.group(1)
+                    time = parse_time(note.group(2))
+                    outcome = Outcome.PASS
+                    push(tool, file_name, name, outcome, time)
+                    continue
+                err = re.search(err_regex, line)
+                if err is not None:
+                    name = err.group(1)
+                    time = parse_time(err.group(2))
+                    outcome = Outcome.FAIL
+                    push(tool, file_name, name, outcome, time)
+
+        else:
+            for harness in test.split("Checking harness ")[1:]:
+                # <name>...<some stuff>CBMC timed out
+                # <name>...<some stuff>?
+                name = re.search(r"^(.*)\.\.\.", harness)
+                if not name:
+                    raise ValueError(f"Could not find file name in harness {harness}")
+                name = name.group(1)
+                if "CBMC timed out" in harness:
+                    push(tool, file_name, name, Outcome.TIME_OUT, -1.0)
+                    continue
+                if "VERIFICATION:- SUCCESSFUL" in harness:
+                    outcome = Outcome.PASS
+                elif "VERIFICATION:- FAILED" in harness:
+                    outcome = Outcome.FAIL
+                else:
+                    raise ValueError(f"Could not find outcome in harness {harness}")
+                time = re.search(r"Verification Time: ([\d\.]+)s", harness)
+                if not time:
+                    raise ValueError(f"Could not find time in harness {harness}")
+                time = float(time.group(1))
+                push(tool, file_name, name, outcome, time)
+    return result
+
+
+def parse_per_test_cmd(file: Path):
+    results = parse_per_test(file)
+    table: list[list[tuple[str, Optional[str]]]] = []
+    table += [
+        [
+            ("Test", BOLD),
+            ("Tool", BOLD),
+            ("Outcome", BOLD),
+            ("Time (s)", None),
+        ]
+    ]
+    for test, entries in results.items():
+        for tool, (outcome, time) in entries.items():
+            time_str = f"{time:.2f}" if time >= 0 else "N/A"
+            table.append(
+                [
+                    (test, None),
+                    (tool, None),
+                    (outcome.txt, outcome.clr),
+                    (time_str, None),
+                ]
+            )
+
+    pptable(table)
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2 or "--help" in sys.argv:
         print("Usage: parselog.py <logfile> [...logfiles] [...--flags]")
@@ -543,5 +730,10 @@ if __name__ == "__main__":
             print("--diff requires two files")
             sys.exit(1)
         diff(files[0], files[1])
+    elif "--per-test" in sys.argv:
+        if len(files) != 1:
+            print("--per-test requires one file")
+            sys.exit(1)
+        parse_per_test_cmd(Path(files[0]))
     else:
         main(files)

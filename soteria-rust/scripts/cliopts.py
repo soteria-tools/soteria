@@ -15,7 +15,17 @@ CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
 CmdBenchmark = tuple[Literal["benchmark"], tuple]
-Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark
+CmdCompKani = tuple[Literal["comp-kani"], tuple[Path, bool]]
+CmdCompFinetime = tuple[Literal["finetime"], tuple]
+Cmd = (
+    CmdExec
+    | CmdAll
+    | CmdEval
+    | CmdEvalDiff
+    | CmdBenchmark
+    | CmdCompKani
+    | CmdCompFinetime
+)
 
 
 class CliOpts(TypedDict):
@@ -28,6 +38,7 @@ class CliOpts(TypedDict):
     no_skips: bool
     timeout: Optional[int]
     test_folder: Optional[Path]
+    test_file: Optional[Path]
     categorise: TestCategoriser
 
 
@@ -45,7 +56,7 @@ class FakeCliOpts:
         raise RuntimeError("Call parse_flags before accessing OPTS")
 
 
-def parse_flags():
+def parse_flags() -> CliOpts:
     opts: CliOpts = {
         "cmd": cast(Cmd, None),
         "tool": "Rusteria",
@@ -56,6 +67,7 @@ def parse_flags():
         "no_skips": False,
         "timeout": None,
         "test_folder": None,
+        "test_file": None,
         "categorise": categorise_rusteria,
     }
 
@@ -82,6 +94,21 @@ def parse_flags():
         opts["cmd"] = ("eval-diff", (file1, file2))
     elif arg == "benchmark":
         opts["cmd"] = ("benchmark", ())
+    elif arg == "comp-kani":
+        if len(sys.argv) < 1:
+            raise ArgError("missing path to path with tests")
+        path = Path(sys.argv.pop(0))
+        if not path.is_dir():
+            raise ArgError(
+                f"{RED}The path {path} does not exist or is not a directory."
+            )
+        if "--cached" in sys.argv:
+            sys.argv.remove("--cached")
+            opts["cmd"] = ("comp-kani", (path.resolve(), True))
+        else:
+            opts["cmd"] = ("comp-kani", (path.resolve(), False))
+    elif arg == "finetime":
+        opts["cmd"] = ("finetime", ())
     else:
         raise ArgError(
             f"Unknown command, expected {', '.join(SUITE_NAMES)}, all, eval or eval-diff"
@@ -124,6 +151,11 @@ def parse_flags():
                     f"{RED}The folder {folder} does not exist or is not a directory."
                 )
             opts["test_folder"] = folder
+        elif arg == "--file":
+            file = Path(pop()).resolve()
+            if not file.is_file():
+                raise ArgError(f"{RED}The file {file} does not exist or is not a file.")
+            opts["test_file"] = file
         elif arg == "--no-skip" or arg == "--no-skips":
             opts["no_skips"] = True
         elif arg == "--timeout":
@@ -154,7 +186,9 @@ def parse_flags():
     return opts
 
 
-def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
+def opts_for_rusteria(
+    opts: CliOpts, *, force_obol: bool = False, timeout: Optional[float] = 5
+) -> CliOpts:
     opts = {
         **opts,
         "tool": "Rusteria",
@@ -164,7 +198,7 @@ def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
             "--compact",
             "--no-color",
             "--log-compilation",
-            "--solver-timeout=5000",
+            *(["--solver-timeout", str(timeout * 1000)] if timeout is not None else []),
             "--no-compile-plugins",
         ],
         "categorise": categorise_rusteria,
@@ -174,14 +208,16 @@ def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
     return opts
 
 
-def opts_for_kani(opts: CliOpts) -> CliOpts:
+def opts_for_kani(opts: CliOpts, *, timeout: Optional[float] = 5) -> CliOpts:
     return {
         **opts,
         "tool": "Kani",
         "tool_cmd": [
             "kani",
             "-Z=unstable-options",
-            "--harness-timeout=5s",
+            *(["--harness-timeout", f"{timeout}s"] if timeout is not None else []),
+            "--output-format",
+            "terse",
         ],
         "categorise": categorise_kani,
     }

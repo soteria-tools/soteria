@@ -8,11 +8,10 @@ module Compo_res = Soteria.Symex.Compo_res
 open Syntaxes.FunctionWrap
 open Charon
 
+(** An error happened at runtime during execution *)
 exception ExecutionError of string
-exception FrontendError of string
 
 let execution_err msg = raise (ExecutionError msg)
-let frontend_err msg = raise (FrontendError msg)
 
 module Outcome = struct
   type t = Ok | Error | Fatal
@@ -32,59 +31,6 @@ module Outcome = struct
     | Error -> Color.pp_clr `Red ft "error"
     | Fatal -> Color.pp_clr `Yellow ft "unknown"
 end
-
-module Cleaner = struct
-  let files = ref []
-  let touched file = files := file :: !files
-  let cleanup () = List.iter Sys.remove !files
-  let () = at_exit (fun () -> if !Config.current.cleanup then cleanup ())
-end
-
-(** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc ~mode ~(plugin : Plugin.root_plugin) ~input ~output ~pwd =
-  if not !Config.current.no_compile then (
-    let cmd = plugin.mk_cmd ~input ~output () in
-    let res = Plugin.Cmd.exec_in ~mode pwd cmd in
-    if res <> 0 then
-      Fmt.kstr frontend_err "Failed compilation to ULLBC: code %d" res;
-    Cleaner.touched output);
-  let crate =
-    try
-      output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json
-    with
-    | Sys_error _ -> frontend_err "File doesn't exist"
-    | _ -> frontend_err "Failed to parse ULLBC"
-  in
-  let crate = Result.get_or_raise frontend_err crate in
-  if !Config.current.output_crate then (
-    (* save pretty-printed crate to local file *)
-    let crate_file = Printf.sprintf "%s.crate" output in
-    let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
-    let oc = open_out_bin crate_file in
-    output_string oc str;
-    close_out oc;
-    Cleaner.touched crate_file);
-  crate
-
-(** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file ~(plugin : Plugin.root_plugin) file_name =
-  let file_name =
-    if Filename.is_relative file_name then
-      Filename.concat (Sys.getcwd ()) file_name
-    else file_name
-  in
-  let parent_folder = Filename.dirname file_name in
-  let output = Printf.sprintf "%s.llbc.json" file_name in
-  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
-
-(** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_crate ~(plugin : Plugin.root_plugin) crate =
-  let crate_dir =
-    if Filename.is_relative crate then Filename.concat (Sys.getcwd ()) crate
-    else crate
-  in
-  let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
-  parse_ullbc ~mode:Cargo ~plugin ~input:"" ~output ~pwd:crate_dir
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
@@ -124,7 +70,8 @@ let print_outcomes entry_name f =
       let ( let@@ ) f x = List.iter x f in
       let () =
         let@@ error, call_trace = List.sort_uniq Stdlib.compare errs in
-        Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error;
+        Frontend.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace
+          ~error;
         Fmt.pr "@.@."
       in
       (entry_name, Outcome.Error)
@@ -150,20 +97,36 @@ let print_outcomes_summary outcomes =
     (list ~sep:(any "@\n") pp_outcome)
     outcomes
 
-let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
+let print_stats (stats : Meta.span Stats.stats) =
+  let open Fmt in
+  let entries =
+    [
+      ("Steps", fun ft () -> int ft stats.steps_number);
+      ("Branches", fun ft () -> int ft stats.branch_number);
+      ("Exec time", fun ft () -> pp_time ft stats.exec_time);
+      ( "Solver time",
+        fun ft () ->
+          Fmt.pf ft "%a (%a%%)" pp_time stats.sat_time (float_dfrac 2)
+            (100. *. stats.sat_time /. stats.exec_time) );
+    ]
+  in
+  let pp_entry ft (name, pp_value) = Fmt.pf ft " • %s: %a" name pp_value () in
+  pr "%a:@\n%a@\n" (pp_style `Bold) "Statistics"
+    (list ~sep:(any "@\n") pp_entry)
+    entries
+
+let exec_crate
+    ( (crate : Charon.UllbcAst.crate),
+      (entry_points : 'fuel Frontend.entry_point list) ) =
   let@ () = Crate.with_crate crate in
 
   (* get entry points to the crate *)
-  let entry_points =
-    Types.FunDeclId.Map.values crate.fun_decls
-    |> List.filter_map plugin.get_entry_point
-  in
   if List.is_empty entry_points then execution_err "No entry points found";
 
   (* prepare executing the entry points *)
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
 
-  let@ entry : 'fuel Plugin.entry_point = (Fun.flip List.map) entry_points in
+  let@ entry : 'fuel Frontend.entry_point = (Fun.flip List.map) entry_points in
   (* execute! *)
   let entry_name =
     Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
@@ -180,6 +143,8 @@ let exec_crate ~(plugin : Plugin.root_plugin) (crate : Charon.UllbcAst.crate) =
         stats = Rustsymex.Stats.create ();
       }
   in
+
+  if !Config.current.print_stats then print_stats stats;
 
   (* inverse ok and errors if we expect a failure *)
   let nbranches = List.length branches in
@@ -229,28 +194,30 @@ let fatal ?name ?(code = 2) err =
   Diagnostic.print_diagnostic_simple ~severity:Error (msg ^ err);
   exit code
 
-let exec_and_output_crate ~plugin compile_fn =
-  match wrap_step "Compiling" compile_fn |> exec_crate ~plugin with
+let exec_and_output_crate compile_fn =
+  match wrap_step "Compiling" compile_fn |> exec_crate with
   | outcomes ->
       if !Config.current.print_summary then print_outcomes_summary outcomes;
       let outcome = Outcome.merge_list outcomes in
       Outcome.exit outcome
-  | exception Plugin.PluginError e -> fatal ~name:"Plugin" e
+  | exception Frontend.PluginError e -> fatal ~name:"Plugin" e
+  | exception Frontend.FrontendError e -> fatal ~name:"Frontend" ~code:3 e
+  | exception Frontend.CompilationError e ->
+      Diagnostic.print_diagnostic_simple ~severity:Error
+        ("Compilation error:\n" ^ e);
+      Outcome.exit Error
   | exception ExecutionError e -> fatal e
-  | exception FrontendError e -> fatal ~name:"Frontend" ~code:3 e
 
 let exec_rustc config file_name =
   Config.set config;
-  let plugin = Plugin.create_using_current_config () in
-  let compile () = parse_ullbc_of_file ~plugin file_name in
-  exec_and_output_crate ~plugin compile
+  let compile () = Frontend.parse_ullbc_of_file file_name in
+  exec_and_output_crate compile
 
 let exec_cargo config crate_dir =
   Config.set config;
-  let plugin = Plugin.create_using_current_config () in
-  let compile () = parse_ullbc_of_crate ~plugin crate_dir in
-  exec_and_output_crate ~plugin compile
+  let compile () = Frontend.parse_ullbc_of_crate crate_dir in
+  exec_and_output_crate compile
 
 let build_plugins config =
   Config.set config;
-  wrap_step "Compiling plugins" Plugin.compile_all_plugins
+  wrap_step "Compiling plugins" Frontend.compile_all_plugins
