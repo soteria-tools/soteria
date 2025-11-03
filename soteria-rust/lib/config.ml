@@ -12,9 +12,6 @@ type t = {
       (** Clean up compiled files after execution *)
   log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
       (** Log the compilation process *)
-  monomorphize_old : bool; [@make.default false] [@names [ "monomorphize-old" ]]
-      (** Use Charon's old monomorphization, which may be slower and less
-          powerful. *)
   no_compile : bool; [@make.default false] [@names [ "no-compile" ]]
       (** Do not compile the Rust code, as it is already compiled *)
   no_compile_plugins : bool;

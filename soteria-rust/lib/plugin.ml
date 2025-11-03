@@ -169,16 +169,12 @@ let default =
   let mk_cmd () =
     let@ std_lib_path, target = with_compiled_lib Std in
     let opaques = List.map (( ^ ) "--opaque ") known_generic_errors in
-    let monomorphize_flag =
-      if !Config.current.monomorphize_old then "--monomorphize-conservative"
-      else "--monomorphize"
-    in
     Cmd.make
       ~charon:
         ([
            "--ullbc";
            "--extract-opaque-bodies";
-           monomorphize_flag;
+           "--monomorphize";
            "--mir elaborated";
            "--raw-boxes";
          ]
