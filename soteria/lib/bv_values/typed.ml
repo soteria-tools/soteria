@@ -49,7 +49,7 @@ let[@inline] type_ x = x
 let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
 let cast_checked = type_checked
 let cast_float x = if is_float x.node.ty then Some x else None
-let cast_int x = if is_bv x.node.ty then Some x else None
+let cast_int x = if is_bv x.node.ty then Some (x, size_of x.node.ty) else None
 let size_of_int x = size_of x.node.ty
 
 let cast_checked2 x y =
