@@ -282,7 +282,7 @@ def build_rusteria():
 
     # find line starting with "host: "
     targets = (
-        subprocess.check_output("$(charon toolchain-path)/bin/cargo -vV", shell=True)
+        subprocess.check_output("$(obol toolchain-path)/bin/cargo -vV", shell=True)
         .decode()
         .split("\n")
     )

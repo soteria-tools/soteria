@@ -203,7 +203,9 @@ def opts_for_rusteria(
         "categorise": categorise_rusteria,
     }
     if force_obol:
-        opts["tool_cmd"].append("--obol")
+        opts["tool_cmd"].append("--frontend=obol")
+    else:
+        opts["tool_cmd"].append("--frontend=charon")
     return opts
 
 
