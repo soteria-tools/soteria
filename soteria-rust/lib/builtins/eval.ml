@@ -15,7 +15,7 @@ module M (State : State_intf.S) = struct
   type fixme_fn = BoxNew | Index | Nop | Panic | TryCleanup | NullPtr
 
   (* Functions we could not stub, but we do for performance *)
-  and optim_fn =
+  type optim_fn =
     | FloatIs of Svalue.FloatClass.t
     | FloatIsFinite
     | FloatIsSign of { positive : bool }
@@ -23,25 +23,24 @@ module M (State : State_intf.S) = struct
     | AllocImpl
 
   (* Rusteria builtin functions *)
-  and rusteria_fn = Assert | Assume | Nondet | Panic
+  type rusteria_fn = Assert | Assume | Nondet | Panic
 
   (* Miri builtin functions *)
-  and miri_fn = AllocId | Nop
+  type miri_fn = AllocId | Nop
 
   (* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
-  and alloc_fn =
+  type alloc_fn =
     | Alloc of { zeroed : bool }
     | Dealloc
     | Realloc
     | NoAllocShimIsUnstable
 
-  and fn =
+  type fn =
     | Rusteria of rusteria_fn
     | Miri of miri_fn
     | Alloc of alloc_fn
     | Fixme of fixme_fn
     | Optim of optim_fn
-  [@@deriving show { with_path = false }]
 
   let std_fun_map =
     [
