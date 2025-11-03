@@ -1,4 +1,4 @@
 pin-depends: [
-  ["name_matcher_parser.~dev" "git+https://github.com/AeneasVerif/charon#21a216722fe9a510d551fa7c1226fa6366fe156f"]
-  ["charon.~dev" "git+https://github.com/AeneasVerif/charon#21a216722fe9a510d551fa7c1226fa6366fe156f"]
+  ["name_matcher_parser.~dev" "git+https://github.com/soteria-tools/charon#a96a00b82f9aa79b35566b6f5fd49d5d9f250b2b"]
+  ["charon.~dev" "git+https://github.com/soteria-tools/charon#a96a00b82f9aa79b35566b6f5fd49d5d9f250b2b"]
 ]
