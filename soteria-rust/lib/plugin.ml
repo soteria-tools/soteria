@@ -38,7 +38,7 @@ module Cmd = struct
         let compiler =
           match !Config.current.frontend with
           | Charon -> "charon rustc " ^ spaced charon
-          | Obol -> "obol " ^ spaced obol
+          | Obol -> "obol rustc " ^ spaced obol
         in
         compiler ^ " -- " ^ spaced features ^ " " ^ escape (spaced rustc)
     | Cargo ->
@@ -58,7 +58,7 @@ module Cmd = struct
         let compiler =
           match !Config.current.frontend with
           | Charon -> "charon cargo " ^ spaced charon
-          | Obol -> "obol --cargo " ^ spaced obol
+          | Obol -> "obol cargo " ^ spaced obol
         in
         env ^ compiler
 
@@ -95,15 +95,19 @@ type 'fuel entry_point = {
 let mk_entry_point ?(expect_error = false) ?fuel fun_decl =
   Some { fun_decl; expect_error; fuel }
 
-let cargo =
-  "RUSTC=$(charon toolchain-path)/bin/rustc $(charon toolchain-path)/bin/cargo"
+let cargo_cmd () =
+  let cmd =
+    match !Config.current.frontend with Charon -> "charon" | Obol -> "obol"
+  in
+  Fmt.str "RUSTC=$(%s toolchain-path)/bin/rustc $(%s toolchain-path)/bin/cargo"
+    cmd cmd
 
 let target =
   lazy
     (match !Config.current.target with
     | Some t -> t
     | None -> (
-        let info = Fmt.kstr Cmd.exec_and_read "%s -vV" cargo in
+        let info = Fmt.kstr Cmd.exec_and_read "%s -vV" (cargo_cmd ()) in
         match List.find_opt (String.starts_with ~prefix:"host") info with
         | Some s -> String.sub s 6 (String.length s - 6)
         | None -> raise (PluginError "Couldn't find target host")))
@@ -126,8 +130,8 @@ let lib_compile ~target lib =
       else "> /dev/null 2>/dev/null"
     in
     let res =
-      Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path cargo
-        target verbosity
+      Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path
+        (cargo_cmd ()) target verbosity
     in
     if res <> 0 && res <> 255 then
       let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
