@@ -129,8 +129,10 @@ module Binop = struct
     | FDiv
     | FRem
     (* BitVector arithmetic *)
-    | Add of bool (* was overflow checked? for optimisations only *)
-    | Sub of bool (* was overflow checked? for optimisations only *)
+    | Add of { checked : bool }
+      (* was overflow checked? for optimisations only *)
+    | Sub of { checked : bool }
+      (* was overflow checked? for optimisations only *)
     | Mul of { checked : bool }
       (* was overflow checked? for optimisations only *)
     | Div of bool (* signed *)
@@ -164,8 +166,8 @@ module Binop = struct
     | FMul -> Fmt.string ft "*."
     | FDiv -> Fmt.string ft "/."
     | FRem -> Fmt.string ft "rem."
-    | Add c -> Fmt.pf ft "+%a" pp_checked c
-    | Sub c -> Fmt.pf ft "-%a" pp_checked c
+    | Add { checked } -> Fmt.pf ft "+%a" pp_checked checked
+    | Sub { checked } -> Fmt.pf ft "-%a" pp_checked checked
     | Mul { checked } -> Fmt.pf ft "*%a" pp_checked checked
     | Div s -> Fmt.pf ft "/%a" pp_signed s
     | Rem s -> Fmt.pf ft "rem%a" pp_signed s
@@ -840,7 +842,7 @@ and BitVec : BitVec = struct
         let n = size_of v1.node.ty in
         let x = mk n x in
         Bool.ite b (add ~checked l x) (add ~checked r x)
-    | _ -> mk_commut_binop (Add checked) v1 v2 <| v1.node.ty
+    | _ -> mk_commut_binop (Add { checked }) v1 v2 <| v1.node.ty
 
   and sub ?(checked = false) v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -866,7 +868,7 @@ and BitVec : BitVec = struct
     | BitVec _, Ite (b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
     | Unop (BvOfBool n, b), BitVec _ -> Bool.ite b (sub (one n) v2) (neg v2)
     | BitVec _, Unop (BvOfBool n, b) -> Bool.ite b (sub v1 (one n)) v1
-    | _ -> Binop (Sub checked, v1, v2) <| v1.node.ty
+    | _ -> Binop (Sub { checked }, v1, v2) <| v1.node.ty
 
   and neg v =
     (* let n = size_of v.node.ty in
@@ -1265,13 +1267,25 @@ and BitVec : BitVec = struct
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
         Bool.bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
-    | BitVec _, Binop (Add true, ({ node = { kind = BitVec _; _ }; _ } as r), x)
-    | BitVec _, Binop (Add true, x, ({ node = { kind = BitVec _; _ }; _ } as r))
-      ->
+    | ( BitVec _,
+        ( Binop
+            ( Add { checked = true },
+              ({ node = { kind = BitVec _; _ }; _ } as r),
+              x )
+        | Binop
+            ( Add { checked = true },
+              x,
+              ({ node = { kind = BitVec _; _ }; _ } as r) ) ) ) ->
         lt ~signed (sub ~checked:true v1 r) x
-    | Binop (Add true, ({ node = { kind = BitVec _; _ }; _ } as l), x), BitVec _
-    | Binop (Add true, x, ({ node = { kind = BitVec _; _ }; _ } as l)), BitVec _
-      ->
+    | ( ( Binop
+            ( Add { checked = true },
+              ({ node = { kind = BitVec _; _ }; _ } as l),
+              x )
+        | Binop
+            ( Add { checked = true },
+              x,
+              ({ node = { kind = BitVec _; _ }; _ } as l) ) ),
+        BitVec _ ) ->
         lt ~signed x (sub ~checked:true v2 l)
     | _, BitVec x when Stdlib.not signed && Z.(equal x one) ->
         (* unsigned x < 1 is x == 0 *)
@@ -1413,13 +1427,25 @@ and BitVec : BitVec = struct
     | _ when equal v1 v2 -> Bool.v_true
     | BitVec l, BitVec r ->
         Bool.bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
-    | BitVec _, Binop (Add true, ({ node = { kind = BitVec _; _ }; _ } as r), x)
-    | BitVec _, Binop (Add true, x, ({ node = { kind = BitVec _; _ }; _ } as r))
-      ->
+    | ( BitVec _,
+        ( Binop
+            ( Add { checked = true },
+              ({ node = { kind = BitVec _; _ }; _ } as r),
+              x )
+        | Binop
+            ( Add { checked = true },
+              x,
+              ({ node = { kind = BitVec _; _ }; _ } as r) ) ) ) ->
         leq ~signed (sub ~checked:true v1 r) x
-    | Binop (Add true, ({ node = { kind = BitVec _; _ }; _ } as l), x), BitVec _
-    | Binop (Add true, x, ({ node = { kind = BitVec _; _ }; _ } as l)), BitVec _
-      ->
+    | ( ( Binop
+            ( Add { checked = true },
+              ({ node = { kind = BitVec _; _ }; _ } as l),
+              x )
+        | Binop
+            ( Add { checked = true },
+              x,
+              ({ node = { kind = BitVec _; _ }; _ } as l) ) ),
+        BitVec _ ) ->
         leq ~signed x (sub ~checked:true v2 l)
     | BitVec x, _ when Z.equal (bv_to_z signed bits x) (min_for signed bits) ->
         Bool.v_true
