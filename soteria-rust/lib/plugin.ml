@@ -363,3 +363,34 @@ let create_using_current_config () =
     ]
 
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
+
+module Diagnostic = struct
+  let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col)
+
+  let as_ranges (loc : Charon.Meta.span) =
+    let span = Option.value ~default:loc.data loc.generated_from_span in
+    match span.file.name with
+    | Local file when String.starts_with ~prefix:"/rustc/" file -> []
+    | Local file ->
+        let root = Lazy.force Lib.root in
+        let filename =
+          if String.starts_with ~prefix:root file then
+            let root_l = String.length root in
+            let rel_path =
+              String.sub file root_l (String.length file - root_l)
+            in
+            Some ("$RUSTERIA" ^ rel_path)
+          else None
+        in
+        [
+          Soteria.Terminal.Diagnostic.mk_range_file ?filename
+            ?content:span.file.contents file (to_loc span.beg_loc)
+            (to_loc span.end_loc);
+        ]
+    | Virtual _ -> []
+
+  let print_diagnostic ~fname ~call_trace ~error =
+    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
+      ~error:(Fmt.to_to_string Error.pp error)
+      ~severity:(Error.severity error) ~fname
+end

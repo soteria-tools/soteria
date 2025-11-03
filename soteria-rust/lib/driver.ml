@@ -123,7 +123,7 @@ let print_outcomes entry_name f =
       let ( let@@ ) f x = List.iter x f in
       let () =
         let@@ error, call_trace = List.sort_uniq Stdlib.compare errs in
-        Error.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error;
+        Plugin.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace ~error;
         Fmt.pr "@.@."
       in
       (entry_name, Outcome.Error)

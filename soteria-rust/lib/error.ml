@@ -115,23 +115,3 @@ let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `MemoryLeak -> Warning
   | e when is_unwindable e -> Error
   | _ -> Bug
-
-module Diagnostic = struct
-  let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col)
-
-  let as_ranges (loc : Charon.Meta.span) =
-    let span = Option.value ~default:loc.data loc.generated_from_span in
-    match span.file.name with
-    | Local file when String.starts_with ~prefix:"/rustc/" file -> []
-    | Local file ->
-        [
-          Soteria.Terminal.Diagnostic.mk_range_file ?content:span.file.contents
-            file (to_loc span.beg_loc) (to_loc span.end_loc);
-        ]
-    | Virtual _ -> []
-
-  let print_diagnostic ~fname ~call_trace ~error =
-    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
-      ~error:(Fmt.to_to_string pp error)
-      ~severity:(severity error) ~fname
-end
