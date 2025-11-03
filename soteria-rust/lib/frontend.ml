@@ -2,6 +2,9 @@ open Charon
 open Syntaxes.FunctionWrap
 
 exception PluginError of string
+exception FrontendError of string
+
+let frontend_err msg = raise (FrontendError msg)
 
 (** Utilities to run commands *)
 module Exe = struct
@@ -45,6 +48,14 @@ module Exe = struct
     let output, _, status = exec ?env cmd args in
     assert (is_ok status);
     output
+end
+
+(** Simple utility to create and then delete files *)
+module Cleaner = struct
+  let files = ref []
+  let touched file = files := file :: !files
+  let cleanup () = List.iter Sys.remove !files
+  let () = at_exit (fun () -> if !Config.current.cleanup then cleanup ())
 end
 
 (** Organise commands to send to the Soteria-Rust frontend *)
@@ -127,9 +138,6 @@ module Lib = struct
          | Charon -> "charon"
        in
        Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
-
-  (* let cargo =
-    "RUSTC=$(charon toolchain-path)/bin/rustc $(charon toolchain-path)/bin/cargo" *)
 
   let target =
     lazy
@@ -361,6 +369,62 @@ let create_using_current_config () =
       (!Config.current.with_kani, kani);
       (!Config.current.with_miri, miri);
     ]
+
+(** Given a Rust file, parse it into LLBC, using Charon. *)
+let parse_ullbc ~mode ~plugin ~input ~output ~pwd =
+  if not !Config.current.no_compile then (
+    let cmd = plugin.mk_cmd ~input ~output () in
+    let _, err, res = Cmd.exec_in ~mode pwd cmd in
+    if not (Exe.is_ok res) then
+      Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
+        Fmt.(list string)
+        err;
+    Cleaner.touched output);
+  let crate =
+    try
+      output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json
+    with
+    | Sys_error _ -> frontend_err "File doesn't exist"
+    | _ -> frontend_err "Failed to parse ULLBC"
+  in
+  let crate = Result.get_or_raise frontend_err crate in
+  if !Config.current.output_crate then (
+    (* save pretty-printed crate to local file *)
+    let crate_file = Printf.sprintf "%s.crate" output in
+    let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
+    let oc = open_out_bin crate_file in
+    output_string oc str;
+    close_out oc;
+    Cleaner.touched crate_file);
+  crate
+
+let normalize_path path =
+  if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
+  else path
+
+let with_entry_points ~plugin (crate : Charon.UllbcAst.crate) =
+  let entry_points =
+    Charon.Types.FunDeclId.Map.values crate.fun_decls
+    |> List.filter_map plugin.get_entry_point
+  in
+  (crate, entry_points)
+
+(** Given a Rust file, parse it into LLBC, using Charon. *)
+let parse_ullbc_of_file file_name =
+  let plugin = create_using_current_config () in
+  let file_name = normalize_path file_name in
+  let parent_folder = Filename.dirname file_name in
+  let output = Printf.sprintf "%s.llbc.json" file_name in
+  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder
+  |> with_entry_points ~plugin
+
+(** Given a Rust file, parse it into LLBC, using Charon. *)
+let parse_ullbc_of_crate crate_dir =
+  let plugin = create_using_current_config () in
+  let crate_dir = normalize_path crate_dir in
+  let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
+  parse_ullbc ~mode:Cargo ~plugin ~input:"" ~output ~pwd:crate_dir
+  |> with_entry_points ~plugin
 
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
 
