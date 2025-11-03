@@ -32,9 +32,8 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span>(<span><span>[&gt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.nonzero</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span>, <span class="type-var">'a</span>)</span>
     <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-align_of_val"><a href="#val-align_of_val" class="anchor"></a><code><span><span class="keyword">val</span> align_of_val : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">ptr</span>:<span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.nonzero</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span>, <span class="type-var">'b</span>)</span>
-    <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-arith_offset"><a href="#val-arith_offset" class="anchor"></a><code><span><span class="keyword">val</span> arith_offset : 
+  <span><span class="label">ptr</span>:<span>(<span class="type-var">'a</span> * <span><a href="Monad/Sptr/index.html#type-t">Monad.Sptr.t</a> <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">Soteria_rust_lib.Typed.T.any</a> NonZero Zero ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span>, <span class="type-var">'b</span>)</span> <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-arith_offset"><a href="#val-arith_offset" class="anchor"></a><code><span><span class="keyword">val</span> arith_offset : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">dst</span>:<span>(<a href="Monad/Sptr/index.html#type-t">Monad.Sptr.t</a> * <span class="type-var">'a</span>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">offset</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -51,10 +50,13 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
     <span><span>[&lt; <a href="../../../Error/index.html#type-t">Error.t</a> StdErr ]</span> <a href="Monad/State/index.html#type-err">Monad.State.err</a></span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
     <a href="Monad/State/index.html#type-serialized">Monad.State.serialized</a>)</span>
     <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
-    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-black_box"><a href="#val-black_box" class="anchor"></a><code><span><span class="keyword">val</span> black_box : <span><span class="label">t</span>:<span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">dummy</span>:<span class="type-var">'b</span> <span class="arrow">&#45;&gt;</span></span> <span><span>(<span class="type-var">'b</span>, <span class="type-var">'c</span>)</span> <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-breakpoint"><a href="#val-breakpoint" class="anchor"></a><code><span><span class="keyword">val</span> breakpoint : <span>unit <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-bswap"><a href="#val-bswap" class="anchor"></a><code><span><span class="keyword">val</span> bswap : 
+    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-black_box"><a href="#val-black_box" class="anchor"></a><code><span><span class="keyword">val</span> black_box : <span><span class="label">t</span>:<span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">dummy</span>:<span class="type-var">'b</span> <span class="arrow">&#45;&gt;</span></span> <span><span>(<span class="type-var">'b</span>, <span class="type-var">'c</span>)</span> <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-breakpoint"><a href="#val-breakpoint" class="anchor"></a><code><span><span class="keyword">val</span> breakpoint : <span>unit <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-bitreverse"><a href="#val-bitreverse" class="anchor"></a><code><span><span class="keyword">val</span> bitreverse : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">x</span>:<a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span class="type-var">'a</span> <a href="../../../Rust_val/index.html#type-t">Rust_val.t</a></span>, <span class="type-var">'b</span>)</span> <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-catch_unwind"><a href="#val-catch_unwind" class="anchor"></a><code><span><span class="keyword">val</span> catch_unwind : 
+  <span><span>(<span><span class="type-var">'a</span> <a href="../../../Rust_val/index.html#type-t">Rust_val.t</a></span>, <span class="type-var">'b</span>)</span> <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-bswap"><a href="#val-bswap" class="anchor"></a><code><span><span class="keyword">val</span> bswap : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">x</span>:<a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span class="type-var">'a</span> <a href="../../../Rust_val/index.html#type-t">Rust_val.t</a></span>, <span class="type-var">'b</span>)</span> <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-caller_location"><a href="#val-caller_location" class="anchor"></a><code><span><span class="keyword">val</span> caller_location : <span><a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-catch_unwind"><a href="#val-catch_unwind" class="anchor"></a><code><span><span class="keyword">val</span> catch_unwind : 
   <span><span>(<span><span><span class="xref-unresolved">Charon</span>.UllbcAst.blocks <span class="xref-unresolved">Charon</span>.UllbcAst.gfun_decl</span> <span class="arrow">&#45;&gt;</span></span>
     <span><span><span><a href="Monad/Sptr/index.html#type-t">Monad.Sptr.t</a> <a href="../../../Rust_val/index.html#type-t">Rust_val.t</a></span> list</span> <span class="arrow">&#45;&gt;</span></span>
     <span><span>(<span class="type-var">'a</span>, <span class="type-var">'b</span>)</span> <a href="Monad/index.html#type-t">Monad.t</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
@@ -161,21 +163,21 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">src</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">dst</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-copy"><a href="#val-copy" class="anchor"></a><code><span><span class="keyword">val</span> copy : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">src</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">dst</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-copy_nonoverlapping"><a href="#val-copy_nonoverlapping" class="anchor"></a><code><span><span class="keyword">val</span> copy_nonoverlapping : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">src</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">dst</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-typed_swap_nonoverlapping"><a href="#val-typed_swap_nonoverlapping" class="anchor"></a><code><span><span class="keyword">val</span> typed_swap_nonoverlapping : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">x</span>:<span>(<a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> * <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a>)</span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">y</span>:<span>(<a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> * <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">x</span>:<span>(<a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> * <span><a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">y</span>:<span>(<a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> * <span><a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="Monad/State/index.html#type-t">Monad.State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>(unit * <span class="type-var">'a</span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
@@ -452,7 +454,20 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
     <span><a href="../../../Error/index.html#type-t">Error.t</a> <a href="Monad/State/index.html#type-err">Monad.State.err</a></span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
     <a href="Monad/State/index.html#type-serialized">Monad.State.serialized</a>)</span>
     <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
-    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-saturating"><a href="#val-saturating" class="anchor"></a><code><span><span class="keyword">val</span> saturating : 
+    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-rotate_"><a href="#val-rotate_" class="anchor"></a><code><span><span class="keyword">val</span> rotate_ : 
+  <span><span class="label">side</span>:<span>[ `Left <span>| `Right</span> ]</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">x</span>:<a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">shift</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-rotate_left"><a href="#val-rotate_left" class="anchor"></a><code><span><span class="keyword">val</span> rotate_left : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">x</span>:<a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">shift</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-rotate_right"><a href="#val-rotate_right" class="anchor"></a><code><span><span class="keyword">val</span> rotate_right : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">x</span>:<a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">shift</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-saturating"><a href="#val-saturating" class="anchor"></a><code><span><span class="keyword">val</span> saturating : 
   <span><span class="xref-unresolved">Charon</span>.Expressions.binop <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">a</span>:<a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <span class="arrow">&#45;&gt;</span></span>
@@ -470,9 +485,14 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span>(<span><span>[&gt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span>, <span class="type-var">'a</span>)</span>
     <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-size_of_val"><a href="#val-size_of_val" class="anchor"></a><code><span><span class="keyword">val</span> size_of_val : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">ptr</span>:<span>(<span class="type-var">'a</span> * <span><span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-any">Soteria_rust_lib.Typed.T.any</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> option</span>)</span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span>, <span class="type-var">'b</span>)</span>
-    <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-transmute"><a href="#val-transmute" class="anchor"></a><code><span><span class="keyword">val</span> transmute : 
+  <span><span class="label">ptr</span>:<span>(<span class="type-var">'a</span> * <span><a href="Monad/Sptr/index.html#type-t">Monad.Sptr.t</a> <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="type-var">'b</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="argument-1-State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>(<span><span>[ `NonZero <span>| `Zero</span> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> * <span class="type-var">'b</span> * <a href="argument-1-State/index.html#type-t">State.t</a>,
+    <span><a href="../../../Error/index.html#type-t">Error.t</a> <a href="argument-1-State/index.html#type-err">State.err</a></span> * <a href="argument-1-State/index.html#type-t">State.t</a>,
+    <a href="argument-1-State/index.html#type-serialized">State.serialized</a>)</span>
+    <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
+    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-transmute"><a href="#val-transmute" class="anchor"></a><code><span><span class="keyword">val</span> transmute : 
   <span><span class="label">t_src</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">dst</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">src</span>:<span><a href="argument-1-State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -533,7 +553,14 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-variant_count"><a href="#val-variant_count" class="anchor"></a><code><span><span class="keyword">val</span> variant_count : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span><span>[&gt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span>, <span class="type-var">'a</span>)</span>
-    <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-wrapping_op"><a href="#val-wrapping_op" class="anchor"></a><code><span><span class="keyword">val</span> wrapping_op : 
+    <a href="Monad/index.html#type-t">Monad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-read_vtable"><a href="#val-read_vtable" class="anchor"></a><code><span><span class="keyword">val</span> read_vtable : 
+  <span><span class="label">slot</span>:int <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ptr</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Rust_val.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-vtable_align"><a href="#val-vtable_align" class="anchor"></a><code><span><span class="keyword">val</span> vtable_align : 
+  <span><span class="label">ptr</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Rust_val.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-vtable_size"><a href="#val-vtable_size" class="anchor"></a><code><span><span class="keyword">val</span> vtable_size : 
+  <span><span class="label">ptr</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Rust_val.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-wrapping_op"><a href="#val-wrapping_op" class="anchor"></a><code><span><span class="keyword">val</span> wrapping_op : 
   <span><span class="xref-unresolved">Charon</span>.Expressions.binop <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">a</span>:<a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <span class="arrow">&#45;&gt;</span></span>
@@ -552,13 +579,79 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">b</span>:<a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="Monad/index.html#type-rust_val">Monad.rust_val</a> <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-write_bytes"><a href="#val-write_bytes" class="anchor"></a><code><span><span class="keyword">val</span> write_bytes : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">dst</span>:<span>(<a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> * <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<span>(<a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> * <span><a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">val_</span>:<span><span class="type-var">'a</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="type-var">'b</span> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="Monad/State/index.html#type-t">Monad.State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>(unit * <span class="type-var">'b</span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
     <span><a href="../../../Error/index.html#type-t">Error.t</a> <a href="Monad/State/index.html#type-err">Monad.State.err</a></span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <a href="Monad/State/index.html#type-serialized">Monad.State.serialized</a>)</span>
+    <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
+    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-volatile_load"><a href="#val-volatile_load" class="anchor"></a><code><span><span class="keyword">val</span> volatile_load : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<span><a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="Monad/State/index.html#type-t">Monad.State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>(<span><a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-rust_val">Rust_val.rust_val</a></span> * <span class="type-var">'a</span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <span><span>[&gt; `AliasingError
+    <span><span>| `MisalignedPointer</span> of
+      <span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-nonzero">Soteria_rust_lib.Rust_val.T.nonzero</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span>
+      * <span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-nonzero">Soteria_rust_lib.Rust_val.T.nonzero</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span>
+      * <span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Rust_val.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span></span>
+    <span>| `NullDereference</span>
+    <span>| `OutOfBounds</span>
+    <span>| `RefToUninhabited</span>
+    <span>| `UBDanglingPointer</span>
+    <span><span>| `UBTransmute</span> of string</span>
+    <span>| `UninitializedMemoryAccess</span>
+    <span>| `UseAfterFree</span> ]</span>
+      <a href="Monad/State/index.html#type-err">Monad.State.err</a></span>
+    * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <a href="Monad/State/index.html#type-serialized">Monad.State.serialized</a>)</span>
+    <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
+    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-volatile_set_memory"><a href="#val-volatile_set_memory" class="anchor"></a><code><span><span class="keyword">val</span> volatile_set_memory : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<span>(<a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> * <span><a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-meta">Rust_val.meta</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">val_</span>:<span><span class="type-var">'a</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="type-var">'b</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="Monad/State/index.html#type-t">Monad.State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>(unit * <span class="type-var">'b</span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <span><a href="../../../Error/index.html#type-t">Error.t</a> <a href="Monad/State/index.html#type-err">Monad.State.err</a></span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <a href="Monad/State/index.html#type-serialized">Monad.State.serialized</a>)</span>
+    <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
+    <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-volatile_copy_memory"><a href="#val-volatile_copy_memory" class="anchor"></a><code><span><span class="keyword">val</span> volatile_copy_memory : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-volatile_copy_nonoverlapping_memory"><a href="#val-volatile_copy_nonoverlapping_memory" class="anchor"></a><code><span><span class="keyword">val</span> volatile_copy_nonoverlapping_memory : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="Monad/index.html#type-full_ptr">Monad.full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">count</span>:<span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <a href="#type-ret">ret</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-volatile_store"><a href="#val-volatile_store" class="anchor"></a><code><span><span class="keyword">val</span> volatile_store : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<span><a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">val_</span>:<span><a href="Monad/State/Sptr/index.html#type-t">Monad.State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-rust_val">Rust_val.rust_val</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="type-var">'a</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="Monad/State/index.html#type-t">Monad.State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>(unit * <span class="type-var">'a</span> * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
+    <span><span>[&gt; `AliasingError
+    <span><span>| `MisalignedPointer</span> of
+      <span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-nonzero">Soteria_rust_lib.Rust_val.T.nonzero</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span>
+      * <span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-nonzero">Soteria_rust_lib.Rust_val.T.nonzero</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span>
+      * <span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Rust_val.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span></span>
+    <span>| `NullDereference</span>
+    <span>| `OutOfBounds</span>
+    <span>| `RefToUninhabited</span>
+    <span>| `UBDanglingPointer</span>
+    <span><span>| `UBTransmute</span> of string</span>
+    <span>| `UninitializedMemoryAccess</span>
+    <span>| `UseAfterFree</span> ]</span>
+      <a href="Monad/State/index.html#type-err">Monad.State.err</a></span>
+    * <a href="Monad/State/index.html#type-t">Monad.State.t</a>,
     <a href="Monad/State/index.html#type-serialized">Monad.State.serialized</a>)</span>
     <a href="../../../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
     <span class="xref-unresolved">Soteria_rust_lib__Rustsymex.t</span></span></span></code></div></div></div></body></html>
