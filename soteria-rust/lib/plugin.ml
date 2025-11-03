@@ -31,14 +31,14 @@ module Cmd = struct
   let build_cmd ~mode { charon; obol; features; rustc } =
     let spaced = String.concat " " in
     let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-    let with_obol = !Config.current.with_obol in
     let rustc = rustc @ !Config.current.rustc_flags in
     match mode with
     | Rustc ->
         let features = List.map (( ^ ) "--cfg=") features in
         let compiler =
-          if not with_obol then "charon rustc " ^ spaced charon
-          else "obol " ^ spaced obol
+          match !Config.current.frontend with
+          | Charon -> "charon rustc " ^ spaced charon
+          | Obol -> "obol rustc " ^ spaced obol
         in
         compiler ^ " -- " ^ spaced features ^ " " ^ escape (spaced rustc)
     | Cargo ->
@@ -56,8 +56,9 @@ module Cmd = struct
           else ""
         in
         let compiler =
-          if not with_obol then "charon cargo " ^ spaced charon
-          else "obol --cargo " ^ spaced obol
+          match !Config.current.frontend with
+          | Charon -> "charon cargo " ^ spaced charon
+          | Obol -> "obol cargo " ^ spaced obol
         in
         env ^ compiler
 
@@ -94,15 +95,19 @@ type 'fuel entry_point = {
 let mk_entry_point ?(expect_error = false) ?fuel fun_decl =
   Some { fun_decl; expect_error; fuel }
 
-let cargo =
-  "RUSTC=$(charon toolchain-path)/bin/rustc $(charon toolchain-path)/bin/cargo"
+let cargo_cmd () =
+  let cmd =
+    match !Config.current.frontend with Charon -> "charon" | Obol -> "obol"
+  in
+  Fmt.str "RUSTC=$(%s toolchain-path)/bin/rustc $(%s toolchain-path)/bin/cargo"
+    cmd cmd
 
 let target =
   lazy
     (match !Config.current.target with
     | Some t -> t
     | None -> (
-        let info = Fmt.kstr Cmd.exec_and_read "%s -vV" cargo in
+        let info = Fmt.kstr Cmd.exec_and_read "%s -vV" (cargo_cmd ()) in
         match List.find_opt (String.starts_with ~prefix:"host") info with
         | Some s -> String.sub s 6 (String.length s - 6)
         | None -> raise (PluginError "Couldn't find target host")))
@@ -125,8 +130,8 @@ let lib_compile ~target lib =
       else "> /dev/null 2>/dev/null"
     in
     let res =
-      Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path cargo
-        target verbosity
+      Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path
+        (cargo_cmd ()) target verbosity
     in
     if res <> 0 && res <> 255 then
       let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
@@ -168,16 +173,12 @@ let default =
   let mk_cmd () =
     let@ std_lib_path, target = with_compiled_lib Std in
     let opaques = List.map (( ^ ) "--opaque ") known_generic_errors in
-    let monomorphize_flag =
-      if !Config.current.monomorphize_old then "--monomorphize-conservative"
-      else "--monomorphize"
-    in
     Cmd.make
       ~charon:
         ([
            "--ullbc";
            "--extract-opaque-bodies";
-           monomorphize_flag;
+           "--monomorphize";
            "--mir elaborated";
            "--raw-boxes";
          ]

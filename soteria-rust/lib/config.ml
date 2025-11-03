@@ -1,3 +1,9 @@
+(* Cmdliner.deriving opens Cmdliner.Arg for the frontend argument, without using it.
+   We ignore the warning here. *)
+[@@@warning "-unused-open"]
+
+type frontend = Charon | Obol [@@deriving subliner_enum]
+
 type t = {
   (*
      Compilation flags
@@ -6,9 +12,6 @@ type t = {
       (** Clean up compiled files after execution *)
   log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
       (** Log the compilation process *)
-  monomorphize_old : bool; [@make.default false] [@names [ "monomorphize-old" ]]
-      (** Use Charon's old monomorphization, which may be slower and less
-          powerful. *)
   no_compile : bool; [@make.default false] [@names [ "no-compile" ]]
       (** Do not compile the Rust code, as it is already compiled *)
   no_compile_plugins : bool;
@@ -23,8 +26,9 @@ type t = {
   rustc_flags : string list;
       [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
-  with_obol : bool; [@make.default false] [@names [ "obol" ]]
-      (** Compile the code using Obol, rather than Charon *)
+  frontend : (frontend[@conv frontend_cmdliner_conv ()]);
+      [@default Obol] [@make.default Obol] [@names [ "frontend" ]]
+      (** Choose the frontend to use: Charon or Obol *)
   (*
      Plugins
    *)
