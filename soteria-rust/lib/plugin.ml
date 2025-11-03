@@ -31,14 +31,14 @@ module Cmd = struct
   let build_cmd ~mode { charon; obol; features; rustc } =
     let spaced = String.concat " " in
     let escape = Str.global_replace (Str.regexp {|\((\|)\)|}) {|\\\1|} in
-    let with_obol = !Config.current.with_obol in
     let rustc = rustc @ !Config.current.rustc_flags in
     match mode with
     | Rustc ->
         let features = List.map (( ^ ) "--cfg=") features in
         let compiler =
-          if not with_obol then "charon rustc " ^ spaced charon
-          else "obol " ^ spaced obol
+          match !Config.current.frontend with
+          | Charon -> "charon rustc " ^ spaced charon
+          | Obol -> "obol " ^ spaced obol
         in
         compiler ^ " -- " ^ spaced features ^ " " ^ escape (spaced rustc)
     | Cargo ->
@@ -56,8 +56,9 @@ module Cmd = struct
           else ""
         in
         let compiler =
-          if not with_obol then "charon cargo " ^ spaced charon
-          else "obol --cargo " ^ spaced obol
+          match !Config.current.frontend with
+          | Charon -> "charon cargo " ^ spaced charon
+          | Obol -> "obol --cargo " ^ spaced obol
         in
         env ^ compiler
 

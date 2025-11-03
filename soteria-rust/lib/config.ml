@@ -1,3 +1,9 @@
+(* Cmdliner.deriving opens Cmdliner.Arg for the frontend argument, without using it.
+   We ignore the warning here. *)
+[@@@warning "-unused-open"]
+
+type frontend = Charon | Obol [@@deriving subliner_enum]
+
 type t = {
   (*
      Compilation flags
@@ -23,8 +29,9 @@ type t = {
   rustc_flags : string list;
       [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
-  with_obol : bool; [@make.default false] [@names [ "obol" ]]
-      (** Compile the code using Obol, rather than Charon *)
+  frontend : (frontend[@conv frontend_cmdliner_conv ()]);
+      [@default Obol] [@make.default Obol] [@names [ "frontend" ]]
+      (** Choose the frontend to use: Charon or Obol *)
   (*
      Plugins
    *)
