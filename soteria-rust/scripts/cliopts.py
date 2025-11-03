@@ -10,16 +10,12 @@ from parselog import (
 )
 
 
-ToolName = Literal["Rusteria", "Kani", "Miri"]
-SuiteName = Literal["kani", "miri", "custom"]
 CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
 CmdBenchmark = tuple[Literal["benchmark"], tuple]
 Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark
-
-SUITE_NAMES: list[SuiteName] = ["miri", "kani", "custom"]
 
 
 class CliOpts(TypedDict):
@@ -169,6 +165,7 @@ def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
             "--no-color",
             "--log-compilation",
             "--solver-timeout=5000",
+            "--no-compile-plugins",
         ],
         "categorise": categorise_rusteria,
     }
@@ -191,13 +188,29 @@ def opts_for_kani(opts: CliOpts) -> CliOpts:
 
 
 def opts_for_miri(opts: CliOpts) -> CliOpts:
+    sysroot = subprocess.run(
+        ["cargo", "+nightly", "miri", "setup", "--print-sysroot"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    miri = subprocess.run(
+        ["rustup", "+nightly", "which", "miri"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
     return {
         **opts,
         "tool": "Miri",
         "tool_cmd": [
-            str((PWD / ".." / ".." / ".." / "miri" / "miri").resolve()),
-            "run",
+            miri,
+            "--sysroot",
+            sysroot,
             "-Awarnings",
+            "--edition",
+            "2021",
         ],
         "categorise": categorise_miri,
     }

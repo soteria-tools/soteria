@@ -97,41 +97,45 @@ let mk_entry_point ?(expect_error = false) ?fuel fun_decl =
 let cargo =
   "RUSTC=$(charon toolchain-path)/bin/rustc $(charon toolchain-path)/bin/cargo"
 
-let get_host =
-  let host = ref None in
-  fun () ->
-    match !host with
-    | Some h -> h
+let target =
+  lazy
+    (match !Config.current.target with
+    | Some t -> t
     | None -> (
         let info = Fmt.kstr Cmd.exec_and_read "%s -vV" cargo in
         match List.find_opt (String.starts_with ~prefix:"host") info with
-        | Some s ->
-            let host_ = String.sub s 6 (String.length s - 6) in
-            host := Some host_;
-            host_
-        | None -> raise (PluginError "Couldn't find target host"))
+        | Some s -> String.sub s 6 (String.length s - 6)
+        | None -> raise (PluginError "Couldn't find target host")))
 
 let lib_root =
   match Sys.getenv_opt "RUSTERIA_PLUGINS" with
   | Some root -> root
   | None -> List.hd Runtime_sites.Sites.plugins
 
-let lib_path name = lib_root ^ "/" ^ name
+type lib = Std | Kani | Miri
 
-let with_compiled_lib name f =
-  let path = lib_path name in
-  let target = get_host () in
-  let verbosity =
-    if !Config.current.log_compilation then "--verbose"
-    else "> /dev/null 2>/dev/null"
-  in
-  let res =
-    Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path cargo
-      target verbosity
-  in
-  (if res <> 0 && res <> 255 then
-     let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
-     raise (PluginError msg));
+let lib_name = function Std -> "std" | Kani -> "kani" | Miri -> "miri"
+let lib_path lib = lib_root ^ "/" ^ lib_name lib
+
+let lib_compile ~target lib =
+  if not !Config.current.no_compile_plugins then
+    let path = lib_path lib in
+    let verbosity =
+      if !Config.current.log_compilation then "--verbose"
+      else "> /dev/null 2>/dev/null"
+    in
+    let res =
+      Fmt.kstr Cmd.exec_cmd "cd %s && %s build --lib --target %s %s" path cargo
+        target verbosity
+    in
+    if res <> 0 && res <> 255 then
+      let msg = Fmt.str "Couldn't compile lib at %s: error %d" path res in
+      raise (PluginError msg)
+
+let with_compiled_lib lib f =
+  let path = lib_path lib in
+  let target = Lazy.force target in
+  lib_compile ~target lib;
   let config : Cmd.t = f (path, target) in
   let lib_imports =
     [
@@ -162,7 +166,7 @@ type 'fuel plugin = {
 
 let default =
   let mk_cmd () =
-    let@ std_lib_path, target = with_compiled_lib "std" in
+    let@ std_lib_path, target = with_compiled_lib Std in
     let opaques = List.map (( ^ ) "--opaque ") known_generic_errors in
     let monomorphize_flag =
       if !Config.current.monomorphize_old then "--monomorphize-conservative"
@@ -211,7 +215,7 @@ let default =
 
 let kani =
   let mk_cmd () =
-    let@ _ = with_compiled_lib "kani" in
+    let@ _ = with_compiled_lib Kani in
     Cmd.make ~features:[ "kani" ]
       ~obol:[ "--entry-attribs kanitool::proof" ]
       ~rustc:[ "-Zcrate-attr=register_tool(kanitool)"; "--extern=kani" ]
@@ -233,9 +237,9 @@ let kani =
 
 let miri =
   let mk_cmd () =
-    let@ _ = with_compiled_lib "miri" in
+    let@ _ = with_compiled_lib Miri in
     Cmd.make ~features:[ "miri" ]
-      ~rustc:[ "--extern=miristd"; "--edition=2024" ]
+      ~rustc:[ "--extern=miristd"; "--edition=2021" ]
       ~obol:[ "--entry-names miri_start" ]
       ()
   in
@@ -314,3 +318,7 @@ let create_using_current_config () =
       (!Config.current.with_kani, kani);
       (!Config.current.with_miri, miri);
     ]
+
+let compile_all_plugins () =
+  let target = Lazy.force target in
+  List.iter (lib_compile ~target) [ Std; Kani; Miri ]

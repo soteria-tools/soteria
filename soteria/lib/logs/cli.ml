@@ -11,7 +11,7 @@ let log_kind_conv =
   in
   Cmdliner.Arg.conv' ~docv:"LOG_KIND" (parse, pp)
 
-let process_args v_list silent log_kind html =
+let process_args v_list silent log_kind html always_log_smt =
   let open Syntaxes.Result in
   let* level =
     match (v_list, silent) with
@@ -35,7 +35,7 @@ let process_args v_list silent log_kind html =
     | Some _, true -> Error "Cannot use --html and --log-kind at the same time"
     | None, false -> Ok Config.Stderr
   in
-  Ok Config.{ level; kind }
+  Ok Config.{ level; kind; always_log_smt }
 
 let term =
   let v_list =
@@ -65,4 +65,12 @@ let term =
       & flag
       & info [ "html" ] ~docv:"" ~doc:"HTML logging, clashes with --log-kind")
   in
-  Cmdliner.Term.(const process_args $ v_list $ silent $ log_kind $ html)
+  let always_log_smt =
+    Cmdliner.Arg.(
+      value
+      & flag
+      & info [ "log-smt" ] ~docv:""
+          ~doc:"Always log SMT queries, even in silent mode")
+  in
+  Cmdliner.Term.(
+    const process_args $ v_list $ silent $ log_kind $ html $ always_log_smt)

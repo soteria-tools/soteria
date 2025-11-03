@@ -71,6 +71,7 @@ module Make (Sptr : Sptr.S) = struct
       Compo_res.Ok (m, state)
 
     let not_impl msg = lift @@ not_impl msg
+    let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
 
     module Syntax = struct
       let ( let*** ) x f = bind x f
@@ -178,23 +179,24 @@ module Make (Sptr : Sptr.S) = struct
     (* Enums *)
     | Enum (disc, vals), (TAdt { id = TAdtId t_id; _ } as ty) -> (
         let variants = Crate.as_enum t_id in
-        match (variants, Typed.kind disc) with
+        let layout = Layout.layout_of ty in
+        match layout with
         (* fieldless enums with one option are zero-sized *)
-        | [ _ ], _ when Option.is_some @@ Layout.as_zst ty -> []
-        | variants, BitVec disc_bv ->
-            let layout = Layout.layout_of ty in
-            let tag_layout, var_fields =
-              match layout.fields with
-              | Enum (tag_layout, var_fields) -> (tag_layout, var_fields)
-              | _ -> failwith "Unexptected enum layout"
+        | { size = 0; _ } -> []
+        | { fields = Arbitrary (variant, _); _ } ->
+            let variant = Types.VariantId.nth variants variant in
+            let var_fields = field_tys variant.fields in
+            chain_cvals layout vals var_fields
+        | { fields = Enum (tag_layout, var_fields); _ } ->
+            let disc =
+              Option.get ~msg:"Discriminant not concrete" (BV.to_z disc)
             in
-            let disc_z = BV.bv_to_z tag_layout.ty disc_bv in
             let variant_id, variant =
               Option.get ~msg:"No matching variant?"
               @@ List.find_mapi
                    (fun i v ->
-                     if Z.equal disc_z (z_of_literal Types.(v.discriminant))
-                     then Some (i, v)
+                     if Z.equal disc (z_of_literal Types.(v.discriminant)) then
+                       Some (i, v)
                      else None)
                    variants
             in
@@ -210,7 +212,7 @@ module Make (Sptr : Sptr.S) = struct
             let var_layout = { layout with fields = var_fields } in
             discriminant
             @ chain_cvals var_layout vals (field_tys variant.fields)
-        | _ -> Fmt.failwith "Unexpected discriminant for enum: %a" pp_ty ty)
+        | _ -> Fmt.failwith "Unexpected layout for enum")
     | Base value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
         let layout = Layout.layout_of ty in
         let tag_ty =
@@ -257,40 +259,38 @@ module Make (Sptr : Sptr.S) = struct
     let layout = Layout.layout_of ty in
     (* if it's a ZST, we assume it's the first variant; I don't think this is
        always true, e.g. enum { A(!), B }, but it's ok for now. *)
-    if layout.size = 0 then ok (Types.VariantId.of_int 0)
-    else
-      let tag_layout =
-        match layout.fields with
-        | Enum (d, _) -> d
-        | _ -> failwith "Unexpected layout for enum"
-      in
-      let offset = offset +!@ BV.usizei tag_layout.offset in
-      let*** cval = query (TLiteral tag_layout.ty, offset) in
-      (* here we need to check and decay if it's a pointer, for niche encoding! *)
-      let*** cval =
-        match cval with
-        | Base cval -> ok (Typed.cast_lit tag_layout.ty cval)
-        | Ptr (p, None) -> lift @@ Sptr.decay p
-        | _ -> Fmt.failwith "Unexpected discriminant: %a" pp_rust_val cval
-      in
-      let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
-      let*** res =
-        lift
-        @@ match_on tags ~constr:(function
-             | _, None -> Typed.v_false
-             | _, Some tag -> cval ==@ BV.mk_lit tag_layout.ty tag)
-      in
-      match (tag_layout.encoding, res) with
-      | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
-      | Direct, None ->
-          let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
-          let adt = Crate.get_adt adt_id in
-          let msg =
-            Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
-              adt.item_meta.name Typed.ppa cval
-          in
-          error (`UBTransmute msg)
-      | Niche untagged, None -> ok untagged
+    match layout with
+    | { fields = Arbitrary (vid, _); _ } -> ok vid
+    | { size = 0; _ } -> ok (Types.VariantId.of_int 0)
+    | { fields = Enum (tag_layout, _); _ } -> (
+        let offset = offset +!@ BV.usizei tag_layout.offset in
+        let*** tag = query (TLiteral tag_layout.ty, offset) in
+        (* here we need to check and decay if it's a pointer, for niche encoding! *)
+        let*** tag =
+          match tag with
+          | Base tag -> ok (Typed.cast_lit tag_layout.ty tag)
+          | Ptr (p, None) -> lift @@ Sptr.decay p
+          | _ -> Fmt.failwith "Unexpected tag: %a" pp_rust_val tag
+        in
+        let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
+        let*** res =
+          lift
+          @@ match_on tags ~constr:(function
+               | _, None -> Typed.v_false
+               | _, Some t -> tag ==@ BV.mk_lit tag_layout.ty t)
+        in
+        match (tag_layout.encoding, res) with
+        | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
+        | Direct, None ->
+            let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
+            let adt = Crate.get_adt adt_id in
+            let msg =
+              Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
+                adt.item_meta.name Typed.ppa tag
+            in
+            error (`UBTransmute msg)
+        | Niche untagged, None -> ok untagged)
+    | _ -> failwith "Unexpected layout for enum"
 
   type ('e, 'fix, 'state) parser = (rust_val, 'state, 'e, 'fix) ParserMonad.t
 
@@ -386,7 +386,7 @@ module Make (Sptr : Sptr.S) = struct
           | Enum variants -> aux_enum offset ty variants
           | Union fs -> aux_union offset fs
           | _ ->
-              Fmt.failwith "Unhandled ADT kind in rust_of_cvals: %a"
+              Fmt.kstr failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
       | TAdt { id = TBuiltin TArray; generics = { types; const_generics; _ } }
         as ty ->
@@ -396,36 +396,33 @@ module Make (Sptr : Sptr.S) = struct
           let fields = Seq.init_z len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
       | TAdt { id = TBuiltin (TStr as ty); generics }
-      | TAdt { id = TBuiltin (TSlice as ty); generics } -> (
+      | TAdt { id = TBuiltin (TSlice as ty); generics } ->
           (* We can only read a slice if we have the metadata of its length, in which case
            we interpret it as an array of that length. *)
-          match meta with
-          | None -> Fmt.failwith "Tried reading slice without metadata"
-          | Some meta ->
-              let len =
-                match Typed.kind meta with
-                | BitVec len -> len
-                | _ ->
-                    Fmt.failwith "Can't read a slice of non-concrete size %a"
-                      Typed.ppa meta
-              in
-              let sub_ty =
-                if ty = TSlice then List.hd generics.types
-                else TLiteral (TUInt U8)
-              in
-              (* FIXME: This is a bit hacky, and not performant -- instead we should try to
+          let meta =
+            Option.get ~msg:"Tried reading slice without metadata" meta
+          in
+          let*** len =
+            of_opt_not_impl
+              (Fmt.str "Slice length not concrete: %a" Typed.ppa meta)
+              (BV.to_z meta)
+          in
+          let sub_ty =
+            if ty = TSlice then List.hd generics.types else TLiteral (TUInt U8)
+          in
+          (* FIXME: This is a bit hacky, and not performant -- instead we should try to
                  group the reads together, at least for primitive types. *)
-              let arr_ty = mk_array_ty sub_ty len in
-              let layout = layout_of arr_ty in
-              let fields = Seq.init_z len (fun _ -> sub_ty) in
-              aux_fields ~f:(fun fs -> Array fs) ~layout offset fields)
+          let arr_ty = mk_array_ty sub_ty len in
+          let layout = layout_of arr_ty in
+          let fields = Seq.init_z len (fun _ -> sub_ty) in
+          aux_fields ~f:(fun fs -> Array fs) ~layout offset fields
       | TNever -> error `RefToUninhabited
       | TTraitType (tref, name) ->
           let ty = Layout.resolve_trait_ty tref name in
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
       | (TVar _ | TDynTrait _ | TError _ | TPtrMetadata _) as ty ->
-          Fmt.failwith "Unhandled Charon.ty: %a" Types.pp_ty ty
+          Fmt.kstr not_impl "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
     and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
         ('e, 'fix, 'state) parser =
@@ -474,18 +471,18 @@ module Make (Sptr : Sptr.S) = struct
       https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
   *)
   let transmute_literal ~(from_ty : Types.literal_type)
-      ~(to_ty : Types.literal_type) v =
-    let open Result in
+      ~(to_ty : Types.literal_type) (v : [< T.cval ] Typed.t) =
+    let open DecayMapMonad.Result in
     match (from_ty, to_ty) with
-    | _, _ when from_ty = to_ty -> ok v
+    | _, _ when from_ty = to_ty -> ok (Base v)
     | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
-        let sv = as_base_f fty v in
+        let sv = Typed.cast_f fty v in
         let signed = Layout.is_signed lit_ty in
         let size = 8 * size_of_literal_ty lit_ty in
         let sv' = BV.of_float ~rounding:Truncate ~signed ~size sv in
         Result.ok (Base sv')
     | (TInt _ | TUInt _), TFloat fp ->
-        let sv = as_base from_ty v in
+        let sv = Typed.cast_lit from_ty v in
         let fp = Charon_util.float_precision fp in
         let signed = Layout.is_signed from_ty in
         let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
@@ -499,7 +496,7 @@ module Make (Sptr : Sptr.S) = struct
         let from_bits = 8 * Layout.size_of_literal_ty from_ty in
         let from_signed = Layout.is_signed from_ty in
         let to_bits = 8 * Layout.size_of_literal_ty to_ty in
-        let v = as_base from_ty v in
+        let v = Typed.cast_lit from_ty v in
         let v =
           if from_bits = to_bits then v
           else if from_bits < to_bits then
@@ -524,7 +521,7 @@ module Make (Sptr : Sptr.S) = struct
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
-      | TLiteral from_ty, TLiteral to_ty, v ->
+      | TLiteral from_ty, TLiteral to_ty, Base v ->
           transmute_literal ~from_ty ~to_ty v
       (* A ref cannot be an invalid pointer *)
       | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
@@ -564,9 +561,7 @@ module Make (Sptr : Sptr.S) = struct
     let transmute = transmute ~try_splitting:false in
     let size_of ty = (Layout.layout_of ty).size in
     let int_of_val v =
-      match Typed.kind v with
-      | BitVec v -> Z.to_int v
-      | _ -> failwith "Expected a concrete integer"
+      Z.to_int (Option.get ~msg:"Non-concrete size" (BV.to_z v))
     in
     (* to make our life easier, we check for concrete offsets in the layout; this should
            always be true anyways. *)
@@ -691,11 +686,9 @@ module Make (Sptr : Sptr.S) = struct
         split (Base v) ty at
     | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
         let+ at =
-          match Typed.kind at with
-          | BitVec size -> return (Z.to_int size)
-          | _ ->
-              Fmt.kstr not_impl "Don't know how to read this size: %a" Typed.ppa
-                at
+          of_opt_not_impl
+            (Fmt.str "Don't know how to read this size: %a" Typed.ppa at)
+            (Option.map Z.to_int (BV.to_z at))
         in
         (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
            of size 2^n *)

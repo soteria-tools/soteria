@@ -119,11 +119,12 @@ module BitVec : sig
   val zero : int -> [> zero ] t
   val one : int -> [> nonzero ] t
   val bv_to_z : bool -> int -> Z.t -> Z.t
+  val to_z : [< any ] t -> Z.t option
 
   (* arithmetic *)
   val add : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val sub : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-  val mul : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val mul : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val div : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val rem : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val mod_ : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
@@ -226,8 +227,8 @@ end
 
 module Infix : sig
   (* equality *)
-  val ( ==@ ) : 'a t -> 'a t -> [> sbool ] t
-  val ( ==?@ ) : 'a t -> 'b t -> [> sbool ] t
+  val ( ==@ ) : [< any ] t -> [< any ] t -> [> sbool ] t
+  val ( ==?@ ) : [< any ] t -> [< any ] t -> [> sbool ] t
 
   (* inequality -- [$] indicates signed *)
   val ( >@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
