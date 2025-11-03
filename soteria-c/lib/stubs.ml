@@ -2,6 +2,7 @@ module Ctype = Cerb_frontend.Ctype
 open Csymex
 open Csymex.Syntax
 open Typed.Syntax
+open Typed.Infix
 module T = Typed.T
 open Ail_tys
 module Agv = Aggregate_val
@@ -27,7 +28,7 @@ module M (State : State_intf.S) = struct
       | [ Basic sz ] -> return sz
       | _ -> not_impl "malloc with non-one arguments"
     in
-    match Typed.cast_checked sz Typed.t_int with
+    match Typed.cast_checked sz Typed.t_usize with
     | Some sz ->
         Csymex.branches
           ([
@@ -42,10 +43,13 @@ module M (State : State_intf.S) = struct
     let* sz =
       match args with
       | [ Basic num; Basic sz ] -> (
-          let num = Typed.cast_checked num Typed.t_int in
-          let sz = Typed.cast_checked sz Typed.t_int in
+          let num = Typed.cast_checked num Typed.t_usize in
+          let sz = Typed.cast_checked sz Typed.t_usize in
           match (num, sz) with
-          | Some num, Some sz -> Csymex.return (Typed.times num sz)
+          | Some num, Some sz ->
+              let res, ovf = num *$?@ sz in
+              let+ () = Csymex.assume [ Typed.not ovf ] in
+              res
           | None, _ | _, None -> not_impl "calloc with non-integer arguments")
       | _ -> not_impl "calloc with non-one arguments"
     in
@@ -64,13 +68,14 @@ module M (State : State_intf.S) = struct
       | _ -> not_impl "free with non-one arguments"
     in
     match Typed.get_ty ptr with
-    | TPointer ->
+    | TPointer _ ->
         let++ (), state =
           if%sat Typed.Ptr.is_null (Typed.cast ptr) then Result.ok ((), state)
           else State.free (Typed.cast ptr) state
         in
-        (Agv.int 0, state)
-    | TInt -> Fmt.kstr not_impl "free with int argument: %a" Typed.ppa ptr
+        (Agv.void, state)
+    | TBitVector _ ->
+        Fmt.kstr not_impl "free with int argument: %a" Typed.ppa ptr
     | _ -> Fmt.kstr not_impl "free with non-pointer argument: %a" Typed.ppa ptr
 
   let memcpy ~(args : Agv.t list) state =
@@ -91,26 +96,27 @@ module M (State : State_intf.S) = struct
       match args with
       | [ Basic t ] | [ Basic t; _ ] ->
           Csymex.of_opt_not_impl ~msg:"not an integer"
-            (Typed.cast_checked t Typed.t_int)
+            (Typed.cast_checked t (Typed.t_int 8))
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ 0s then State.error `FailedAssert state
-    else Result.ok (Agv.int 0, state)
+    if%sat to_assert ==@ U8.(0s) then State.error `FailedAssert state
+    else Result.ok (Agv.void, state)
 
   let assume_ ~(args : Agv.t list) state =
     let* to_assume =
       match args with
       | [ Basic t ] ->
           Csymex.of_opt_not_impl ~msg:"not an integer"
-            (Typed.cast_checked t Typed.t_int)
+            (Typed.cast_checked t (Typed.t_int 8))
       | _ -> not_impl "to_assume with non-one arguments"
     in
-    let* () = Csymex.assume [ Typed.bool_of_int to_assume ] in
-    Result.ok (Agv.int 0, state)
+    let* () = Csymex.assume [ Typed.BitVec.to_bool to_assume ] in
+    Result.ok (Agv.void, state)
 
   let nondet_int_fun ~args:_ state =
-    let* v = Csymex.nondet Typed.t_int in
-    let constrs = Layout.int_constraints (Ctype.Signed Int_) |> Option.get in
+    let* size = Layout.size_of_int_ty_unsupported (Signed Int_) in
+    let* v = Csymex.nondet (Typed.t_int size) in
+    let constrs = Layout.int_constraints (Signed Int_) |> Option.get in
     let* () = Csymex.assume (constrs v) in
     let v = (v :> T.cval Typed.t) in
     Result.ok (Basic v, state)
@@ -118,10 +124,11 @@ module M (State : State_intf.S) = struct
   let havoc ~return_ty ~args state =
     let rec havoc_aggregate state (v : Agv.t) =
       match v with
-      | Basic v ->
-          if Svalue.equal_ty (Typed.get_ty v) Svalue.t_ptr then
-            Csymex.not_impl "Havocking input pointer for undefined function"
-          else Result.ok state
+      | Basic v -> (
+          match Typed.cast_checked v Typed.t_ptr with
+          | Some _ ->
+              Csymex.not_impl "Havocking input pointer for undefined function"
+          | None -> Result.ok state)
       | Struct fields -> Result.fold_list fields ~init:state ~f:havoc_aggregate
     in
     let** state = Result.fold_list args ~init:state ~f:havoc_aggregate in
@@ -130,7 +137,7 @@ module M (State : State_intf.S) = struct
       | Some return_ty -> Layout.nondet_c_ty_aggregate return_ty
       | None ->
           (* No return type, I guess it returns void? *)
-          Csymex.return (Agv.int 0)
+          Csymex.return Agv.void
     in
     Result.ok (ret, state)
 

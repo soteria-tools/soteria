@@ -2,6 +2,7 @@ module Call_trace = Soteria.Terminal.Call_trace
 open Csymex.Syntax
 open Typed.Infix
 open Typed.Syntax
+module BV = Typed.BitVec
 module T = Typed.T
 open Csymex
 open State_intf.Template
@@ -140,12 +141,12 @@ let rec store_aggregate (ptr : [< T.sptr ] Typed.t) ty v state =
         | ( (Layout.Field _, ofs) :: rest_ofs,
             (_, (_, _, _, mem_ty)) :: rest_mems,
             value :: rest_values ) ->
-            let ptr = Typed.Ptr.add_ofs ptr (Typed.int ofs) in
+            let ptr = Typed.Ptr.add_ofs ptr (BV.usizei ofs) in
             let** (), state = store_aggregate ptr mem_ty value state in
             aux rest_ofs rest_mems rest_values state
         | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
-            let ptr = Typed.Ptr.add_ofs ptr (Typed.int ofs) in
-            let** (), state = deinit ptr (Typed.int size) state in
+            let ptr = Typed.Ptr.add_ofs ptr (BV.usizei ofs) in
+            let** (), state = deinit ptr (BV.usizei size) state in
             aux rest_ofs members values state
         | _ -> failwith "Struct field mismatch"
       in
@@ -170,9 +171,9 @@ let alloc ?(zeroed = false) size st =
   let@ heap = with_heap st in
   let block = Block.alloc ~loc ~zeroed size in
   let** loc, st = SPmap.alloc ~new_codom:block heap in
-  let ptr = Typed.Ptr.mk loc 0s in
+  let ptr = Typed.Ptr.mk loc Usize.(0s) in
   (* The pointer is necessarily not null *)
-  let+ () = Typed.(assume [ not (loc ==@ Ptr.null_loc) ]) in
+  let+ () = Typed.(assume [ not (Ptr.is_null_loc loc) ]) in
   Soteria.Symex.Compo_res.ok (ptr, st)
 
 let alloc_ty ty st =
@@ -182,7 +183,7 @@ let alloc_ty ty st =
 let free (ptr : [< T.sptr ] Typed.t) (st : t) :
     (unit * t, 'err, serialized) Result.t =
   let@ () = with_error_loc_as_call_trace () in
-  if%sat Typed.Ptr.ofs ptr ==@ 0s then
+  if%sat Typed.Ptr.ofs ptr ==@ Usize.(0s) then
     let@ heap = with_heap st in
     (SPmap.wrap Block.free) (Typed.Ptr.loc ptr) heap
   else Result.error `InvalidFree
@@ -200,7 +201,7 @@ let produce (serialized : serialized) (st : t) : t Csymex.t =
       let globs_locs = List.to_seq serialized.globs |> Seq.map snd in
       Seq.append heap_locs globs_locs
     in
-    Seq.map (fun loc -> Typed.not (Typed.Ptr.null_loc ==@ loc)) locs
+    Seq.map (fun loc -> Typed.not (Typed.Ptr.is_null_loc loc)) locs
     |> List.of_seq
   in
   let* () = Csymex.assume non_null_locs in
@@ -243,7 +244,7 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) (state : t)
         | [], [], [] -> Csymex.return state
         | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
             let* state =
-              produce_padding loc ~offset:(Typed.int ofs) ~len:(Typed.int size)
+              produce_padding loc ~offset:(BV.usizei ofs) ~len:(BV.usizei size)
                 state
             in
             aux rest_ofs members values state
@@ -252,7 +253,7 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) (state : t)
             value :: rest_values ) ->
             let* state =
               produce_aggregate
-                (Typed.Ptr.mk loc (Typed.int ofs))
+                (Typed.Ptr.mk loc (BV.usizei ofs))
                 mem_ty value state
             in
             aux rest_ofs rest_mems rest_values state
@@ -283,5 +284,5 @@ let consume (serialized : serialized) (st : t) :
 
 let get_global (sym : Cerb_frontend.Symbol.sym) (st : t) =
   let+ loc, globs = Globs.get sym st.globs in
-  let ptr = Typed.Ptr.mk loc 0s in
+  let ptr = Typed.Ptr.mk loc Usize.(0s) in
   (ptr, { st with globs })

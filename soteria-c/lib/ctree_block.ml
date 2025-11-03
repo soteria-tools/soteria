@@ -18,7 +18,14 @@ module MemVal = struct
     type sint = T.sint
     type sbool = T.sbool
 
-    let[@inline] zero () = zero
+    let zero () = Usize.(0s)
+    let ( <@ ) = Typed.Infix.( <$@ )
+    let ( <=@ ) = Typed.Infix.( <=$@ )
+
+    (* We assume addition/overflow within the range of an allocation may never overflow.
+       This allows extremely good reductions around inequalities, which Tree_block relies on.  *)
+    let ( +@ ) = Typed.Infix.( +!!@ )
+    let ( -@ ) = Typed.Infix.( -!!@ )
   end
 
   let pp_init ft (v, ty) =
@@ -38,11 +45,12 @@ module MemVal = struct
   let any_of_type (Ctype.Ctype (_, kty) as ty) =
     match kty with
     | Basic (Integer int_ty) ->
+        let* size = Layout.size_of_int_ty_unsupported int_ty in
         let* constrs =
           Csymex.of_opt_not_impl ~msg:"Int constraints"
             (Layout.int_constraints int_ty)
         in
-        let* value = Csymex.nondet Typed.t_int in
+        let* value = Csymex.nondet (Typed.t_int size) in
         let+ () = Csymex.assume (constrs value) in
         ((value :> T.cval Typed.t), ty)
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
@@ -69,7 +77,9 @@ module MemVal = struct
         Result.error `UninitializedMemoryAccess
     | Zeros -> (
         match ty with
-        | Ctype.Ctype (_, Basic (Integer _)) -> Result.ok 0s
+        | Ctype.Ctype (_, Basic (Integer ity)) ->
+            let+ size = Layout.size_of_int_ty_unsupported ity in
+            Soteria.Symex.Compo_res.ok (BitVec.zero size)
         | Ctype (_, Basic (Floating fty)) ->
             let precision = Layout.precision fty in
             Result.ok (Typed.Float.mk precision "+0.0")
@@ -152,8 +162,14 @@ module MemVal = struct
     (* zeros *)
     | SZeros, NotOwned _ -> miss_no_fix ~reason:"consume_zeros" ()
     | SZeros, Owned Zeros -> ok (not_owned t)
-    | SZeros, Owned (Init (v, _)) ->
-        let+ () = Csymex.assume [ v ==?@ 0s ] in
+    | SZeros, Owned (Init (v, cty)) ->
+        let* size = Layout.size_of_s cty in
+        let* size =
+          of_opt_not_impl ~msg:"Consuming zeros with unknown size"
+          @@ Typed.BitVec.to_z size
+        in
+        let size = Z.to_int size in
+        let+ () = Csymex.assume [ v ==?@ BitVec.zero size ] in
         Ok (not_owned t)
     | SZeros, _ ->
         L.info (fun m -> m "Consuming zero but not zero, vanishing");
@@ -180,7 +196,7 @@ let log_fixes fixes =
 
 let range_of_low_and_type low ty =
   let+ size = Layout.size_of_s ty in
-  (low, low +@ size)
+  Range.of_low_and_size low size
 
 let sval_leaf ~range ~value ~ty =
   Tree.make ~node:(Owned (Init (value, ty))) ~range ?children:None ()
