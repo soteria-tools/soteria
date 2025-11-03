@@ -36,11 +36,19 @@ Splitting and merging, via a union
 Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
   $ soteria-rust rustc unwind.rs --clean --no-timing --ignore-leaks
   Compiling... done in <time>
-  warning: main (<time>): unsupported feature, Cannot compute layout: error type
-  Error(&dyn not supported in Obol)
-  Occurred when computing:
-  Error(&dyn not supported in Obol)
-  [2]
+  error: main: found issues in <time>, errors in 1 branch (out of 2)
+  error: Failed assertion: assertion failed: result.is_err() in main
+      ┌─ $RUSTERIA/std/src/lib.rs:20:10
+   20 │          rusteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
+      │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │           │
+      │           Triggering memory operation
+      │           2: Call trace
+      ┌─ $TESTCASE_ROOT/unwind.rs:1:2
+    1 │  fn main() {
+      │   --------- 1: Entry point
+  
+  [1]
 Test that we properly handle the niche optimisation
   $ soteria-rust rustc niche_optim.rs --clean --no-timing --ignore-leaks
   Compiling... done in <time>
