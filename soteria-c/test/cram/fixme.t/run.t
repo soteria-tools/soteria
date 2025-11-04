@@ -4,11 +4,17 @@
   Summaries for main_560:
     Analysed {
       raw =
-      { args = []; pre = []; pc = [(0 != V|1|); (0 != V|2|); (V|1| == V|2|)];
+      { args = []; pre = [];
+        pc =
+        [(0x0000000000000000 != V|1|); (0x0000000000000000 != V|2|);
+          (V|1| == V|2|)];
         post =
         { heap =
           [(V|2|,
-            { node = [MemVal {offset = 0; len = 4; v = SUninit}; Bound(4)];
+            { node =
+              [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
+                 v = SUninit};
+               Bound(0x0000000000000004)];
               info = (Some global_local_eq.c:6:28-30 (cursor: 6:28)) })];
           globs = [(x_559, V|1|)] };
         ret =
@@ -19,7 +25,8 @@
       manifest_bugs = []}
     Analysed {
       raw =
-      { args = []; pre = []; pc = [(0 != V|1|); (V|1| != V|2|)];
-        post = { heap = []; globs = [(x_559, V|1|)] }; ret = (Ok 0) };
+      { args = []; pre = [];
+        pc = [(0x0000000000000000 != V|1|); (V|1| != V|2|)];
+        post = { heap = []; globs = [(x_559, V|1|)] }; ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
