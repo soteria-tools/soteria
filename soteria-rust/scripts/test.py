@@ -520,7 +520,9 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
     rusteria["tool_cmd"] += ["--kani"]
     res_rusteria = run_with(rusteria, "rusteria")
     kani = opts_for_kani(opts)
-    kani["tool_cmd"].remove("--harness-timeout=5s")
+    kani["tool_cmd"] = [
+        f for f in kani["tool_cmd"] if not f.startswith("--harness-timeout=5s")
+    ]
     kani["tool_cmd"] += ["--harness-timeout=10s"]
     res_kani = run_with(kani, "kani")
 
@@ -576,253 +578,35 @@ def finetime(opts: CliOpts):
     build()
 
     finetime = (PWD / ".." / ".." / ".." / "finetime").resolve()
-    tests = [
-        "calendar::gregorian::proof_harness::construction_never_panics",
-        "calendar::historic::proof_harness::construction_never_panics",
-        "calendar::historic::proof_harness::day_of_year_never_panics",
-        "calendar::historic::proof_harness::day_of_year_roundtrip",
-        "calendar::jd::proof_harness::from_historic_date_never_panics",
-        "calendar::jd::proof_harness::from_gregorian_never_panics",
-        "calendar::mjd::proof_harness::from_historic_date_never_panics",
-        "calendar::mjd::proof_harness::from_gregorian_never_panics",
-        "duration::proof_harness::roundtrip_atto_u64",
-        "duration::proof_harness::roundtrip_femto_u64",
-        "duration::proof_harness::roundtrip_milli_u32",
-        "duration::proof_harness::roundtrip_binaryfraction1_u64",
-        "duration::proof_harness::roundtrip_binaryfraction2_u64",
-        "duration::proof_harness::roundtrip_binaryfraction3_u64",
-        "duration::proof_harness::roundtrip_binaryfraction4_u64",
-        "duration::proof_harness::roundtrip_binaryfraction5_u64",
-        "duration::proof_harness::roundtrip_binaryfraction6_u64",
-        "duration::proof_harness::roundtrip_binaryfraction1_i64",
-        "duration::proof_harness::roundtrip_binaryfraction2_i64",
-        "duration::proof_harness::roundtrip_binaryfraction3_i64",
-        "duration::proof_harness::roundtrip_binaryfraction4_i64",
-        "duration::proof_harness::roundtrip_binaryfraction5_i64",
-        "duration::proof_harness::roundtrip_binaryfraction6_i64",
-        "duration::proof_harness::rounding_atto_u128",
-        "duration::proof_harness::rounding_atto_u64",
-        "duration::proof_harness::rounding_atto_u32",
-        "duration::proof_harness::rounding_atto_u16",
-        "duration::proof_harness::rounding_atto_u8",
-        "duration::proof_harness::rounding_atto_i128",
-        "duration::proof_harness::rounding_atto_i64",
-        "duration::proof_harness::rounding_atto_i32",
-        "duration::proof_harness::rounding_atto_i16",
-        "duration::proof_harness::rounding_atto_i8",
-        "duration::proof_harness::rounding_femto_u128",
-        "duration::proof_harness::rounding_femto_u64",
-        "duration::proof_harness::rounding_femto_u32",
-        "duration::proof_harness::rounding_femto_u16",
-        "duration::proof_harness::rounding_femto_u8",
-        "duration::proof_harness::rounding_femto_i128",
-        "duration::proof_harness::rounding_femto_i64",
-        "duration::proof_harness::rounding_femto_i32",
-        "duration::proof_harness::rounding_femto_i16",
-        "duration::proof_harness::rounding_femto_i8",
-        "duration::proof_harness::rounding_pico_u128",
-        "duration::proof_harness::rounding_pico_u64",
-        "duration::proof_harness::rounding_pico_u32",
-        "duration::proof_harness::rounding_pico_u16",
-        "duration::proof_harness::rounding_pico_u8",
-        "duration::proof_harness::rounding_pico_i128",
-        "duration::proof_harness::rounding_pico_i64",
-        "duration::proof_harness::rounding_pico_i32",
-        "duration::proof_harness::rounding_pico_i16",
-        "duration::proof_harness::rounding_pico_i8",
-        "duration::proof_harness::rounding_nano_u128",
-        "duration::proof_harness::rounding_nano_u64",
-        "duration::proof_harness::rounding_nano_u32",
-        "duration::proof_harness::rounding_nano_u16",
-        "duration::proof_harness::rounding_nano_u8",
-        "duration::proof_harness::rounding_nano_i128",
-        "duration::proof_harness::rounding_nano_i64",
-        "duration::proof_harness::rounding_nano_i32",
-        "duration::proof_harness::rounding_nano_i16",
-        "duration::proof_harness::rounding_nano_i8",
-        "duration::proof_harness::rounding_micro_u128",
-        "duration::proof_harness::rounding_micro_u64",
-        "duration::proof_harness::rounding_micro_u32",
-        "duration::proof_harness::rounding_micro_u16",
-        "duration::proof_harness::rounding_micro_u8",
-        "duration::proof_harness::rounding_micro_i128",
-        "duration::proof_harness::rounding_micro_i64",
-        "duration::proof_harness::rounding_micro_i32",
-        "duration::proof_harness::rounding_micro_i16",
-        "duration::proof_harness::rounding_micro_i8",
-        "duration::proof_harness::rounding_milli_u128",
-        "duration::proof_harness::rounding_milli_u64",
-        "duration::proof_harness::rounding_milli_u32",
-        "duration::proof_harness::rounding_milli_u16",
-        "duration::proof_harness::rounding_milli_u8",
-        "duration::proof_harness::rounding_milli_i128",
-        "duration::proof_harness::rounding_milli_i64",
-        "duration::proof_harness::rounding_milli_i32",
-        "duration::proof_harness::rounding_milli_i16",
-        "duration::proof_harness::rounding_milli_i8",
-        "duration::proof_harness::rounding_centi_u128",
-        "duration::proof_harness::rounding_centi_u64",
-        "duration::proof_harness::rounding_centi_u32",
-        "duration::proof_harness::rounding_centi_u16",
-        "duration::proof_harness::rounding_centi_u8",
-        "duration::proof_harness::rounding_centi_i128",
-        "duration::proof_harness::rounding_centi_i64",
-        "duration::proof_harness::rounding_centi_i32",
-        "duration::proof_harness::rounding_centi_i16",
-        "duration::proof_harness::rounding_centi_i8",
-        "duration::proof_harness::rounding_binaryfraction1_u128",
-        "duration::proof_harness::rounding_binaryfraction1_u64",
-        "duration::proof_harness::rounding_binaryfraction1_u32",
-        "duration::proof_harness::rounding_binaryfraction1_u16",
-        "duration::proof_harness::rounding_binaryfraction1_u8",
-        "duration::proof_harness::rounding_binaryfraction1_i128",
-        "duration::proof_harness::rounding_binaryfraction1_i64",
-        "duration::proof_harness::rounding_binaryfraction1_i32",
-        "duration::proof_harness::rounding_binaryfraction1_i16",
-        "duration::proof_harness::rounding_binaryfraction1_i8",
-        "duration::proof_harness::rounding_binaryfraction2_u128",
-        "duration::proof_harness::rounding_binaryfraction2_u64",
-        "duration::proof_harness::rounding_binaryfraction2_u32",
-        "duration::proof_harness::rounding_binaryfraction2_u16",
-        "duration::proof_harness::rounding_binaryfraction2_u8",
-        "duration::proof_harness::rounding_binaryfraction2_i128",
-        "duration::proof_harness::rounding_binaryfraction2_i64",
-        "duration::proof_harness::rounding_binaryfraction2_i32",
-        "duration::proof_harness::rounding_binaryfraction2_i16",
-        "duration::proof_harness::rounding_binaryfraction2_i8",
-        "duration::proof_harness::rounding_binaryfraction3_u128",
-        "duration::proof_harness::rounding_binaryfraction3_u64",
-        "duration::proof_harness::rounding_binaryfraction3_u32",
-        "duration::proof_harness::rounding_binaryfraction3_u16",
-        "duration::proof_harness::rounding_binaryfraction3_u8",
-        "duration::proof_harness::rounding_binaryfraction3_i128",
-        "duration::proof_harness::rounding_binaryfraction3_i64",
-        "duration::proof_harness::rounding_binaryfraction3_i32",
-        "duration::proof_harness::rounding_binaryfraction3_i16",
-        "duration::proof_harness::rounding_binaryfraction3_i8",
-        "duration::proof_harness::rounding_binaryfraction4_u128",
-        "duration::proof_harness::rounding_binaryfraction4_u64",
-        "duration::proof_harness::rounding_binaryfraction4_u32",
-        "duration::proof_harness::rounding_binaryfraction4_u16",
-        "duration::proof_harness::rounding_binaryfraction4_u8",
-        "duration::proof_harness::rounding_binaryfraction4_i128",
-        "duration::proof_harness::rounding_binaryfraction4_i64",
-        "duration::proof_harness::rounding_binaryfraction4_i32",
-        "duration::proof_harness::rounding_binaryfraction4_i16",
-        "duration::proof_harness::rounding_binaryfraction4_i8",
-        "duration::proof_harness::rounding_binaryfraction5_u128",
-        "duration::proof_harness::rounding_binaryfraction5_u64",
-        "duration::proof_harness::rounding_binaryfraction5_u32",
-        "duration::proof_harness::rounding_binaryfraction5_u16",
-        "duration::proof_harness::rounding_binaryfraction5_u8",
-        "duration::proof_harness::rounding_binaryfraction5_i128",
-        "duration::proof_harness::rounding_binaryfraction5_i64",
-        "duration::proof_harness::rounding_binaryfraction5_i32",
-        "duration::proof_harness::rounding_binaryfraction5_i16",
-        "duration::proof_harness::rounding_binaryfraction5_i8",
-        "duration::proof_harness::rounding_binaryfraction6_u128",
-        "duration::proof_harness::rounding_binaryfraction6_u64",
-        "duration::proof_harness::rounding_binaryfraction6_u32",
-        "duration::proof_harness::rounding_binaryfraction6_u16",
-        "duration::proof_harness::rounding_binaryfraction6_u8",
-        "duration::proof_harness::rounding_binaryfraction6_i128",
-        "duration::proof_harness::rounding_binaryfraction6_i64",
-        "duration::proof_harness::rounding_binaryfraction6_i32",
-        "duration::proof_harness::rounding_binaryfraction6_i16",
-        "duration::proof_harness::rounding_binaryfraction6_i8",
-        "duration::proof_harness::rounding_secondsperminute_u128",
-        "duration::proof_harness::rounding_secondsperminute_u64",
-        "duration::proof_harness::rounding_secondsperminute_u32",
-        "duration::proof_harness::rounding_secondsperminute_u16",
-        "duration::proof_harness::rounding_secondsperminute_u8",
-        "duration::proof_harness::rounding_secondsperminute_i128",
-        "duration::proof_harness::rounding_secondsperminute_i64",
-        "duration::proof_harness::rounding_secondsperminute_i32",
-        "duration::proof_harness::rounding_secondsperminute_i16",
-        "duration::proof_harness::rounding_secondsperminute_i8",
-        "duration::proof_harness::rounding_secondsperhour_u128",
-        "duration::proof_harness::rounding_secondsperhour_u64",
-        "duration::proof_harness::rounding_secondsperhour_u32",
-        "duration::proof_harness::rounding_secondsperhour_u16",
-        "duration::proof_harness::rounding_secondsperhour_u8",
-        "duration::proof_harness::rounding_secondsperhour_i128",
-        "duration::proof_harness::rounding_secondsperhour_i64",
-        "duration::proof_harness::rounding_secondsperhour_i32",
-        "duration::proof_harness::rounding_secondsperhour_i16",
-        "duration::proof_harness::rounding_secondsperhour_i8",
-        "duration::proof_harness::rounding_secondsperday_u128",
-        "duration::proof_harness::rounding_secondsperday_u64",
-        "duration::proof_harness::rounding_secondsperday_u32",
-        "duration::proof_harness::rounding_secondsperday_u16",
-        "duration::proof_harness::rounding_secondsperday_u8",
-        "duration::proof_harness::rounding_secondsperday_i128",
-        "duration::proof_harness::rounding_secondsperday_i64",
-        "duration::proof_harness::rounding_secondsperday_i32",
-        "duration::proof_harness::rounding_secondsperday_i16",
-        "duration::proof_harness::rounding_secondsperday_i8",
-        "duration::proof_harness::rounding_secondsperweek_u128",
-        "duration::proof_harness::rounding_secondsperweek_u64",
-        "duration::proof_harness::rounding_secondsperweek_u32",
-        "duration::proof_harness::rounding_secondsperweek_u16",
-        "duration::proof_harness::rounding_secondsperweek_u8",
-        "duration::proof_harness::rounding_secondsperweek_i128",
-        "duration::proof_harness::rounding_secondsperweek_i64",
-        "duration::proof_harness::rounding_secondsperweek_i32",
-        "duration::proof_harness::rounding_secondsperweek_i16",
-        "duration::proof_harness::rounding_secondsperweek_i8",
-        "duration::proof_harness::rounding_secondspermonth_u128",
-        "duration::proof_harness::rounding_secondspermonth_u64",
-        "duration::proof_harness::rounding_secondspermonth_u32",
-        "duration::proof_harness::rounding_secondspermonth_u16",
-        "duration::proof_harness::rounding_secondspermonth_u8",
-        "duration::proof_harness::rounding_secondspermonth_i128",
-        "duration::proof_harness::rounding_secondspermonth_i64",
-        "duration::proof_harness::rounding_secondspermonth_i32",
-        "duration::proof_harness::rounding_secondspermonth_i16",
-        "duration::proof_harness::rounding_secondspermonth_i8",
-        "duration::proof_harness::rounding_secondsperyear_u128",
-        "duration::proof_harness::rounding_secondsperyear_u64",
-        "duration::proof_harness::rounding_secondsperyear_u32",
-        "duration::proof_harness::rounding_secondsperyear_u16",
-        "duration::proof_harness::rounding_secondsperyear_u8",
-        "duration::proof_harness::rounding_secondsperyear_i128",
-        "duration::proof_harness::rounding_secondsperyear_i64",
-        "duration::proof_harness::rounding_secondsperyear_i32",
-        "duration::proof_harness::rounding_secondsperyear_i16",
-        "duration::proof_harness::rounding_secondsperyear_i8",
-        "time_scale::bdt::proof_harness::from_datetime_never_panics",
-        "time_scale::bdt::proof_harness::from_gregorian_never_panics",
-        "time_scale::bdt::proof_harness::datetime_tai_roundtrip",
-        "time_scale::gst::proof_harness::from_datetime_never_panics",
-        "time_scale::gst::proof_harness::from_gregorian_never_panics",
-        "time_scale::gst::proof_harness::datetime_tai_roundtrip",
-        "time_scale::gpst::proof_harness::from_datetime_never_panics",
-        "time_scale::gpst::proof_harness::from_gregorian_never_panics",
-        "time_scale::gpst::proof_harness::datetime_tai_roundtrip",
-        "time_scale::qzsst::proof_harness::from_datetime_never_panics",
-        "time_scale::qzsst::proof_harness::from_gregorian_never_panics",
-        "time_scale::qzsst::proof_harness::datetime_tai_roundtrip",
-        "time_scale::tai::proof_harness::from_datetime_never_panics",
-        "time_scale::tai::proof_harness::from_gregorian_never_panics",
-        "time_scale::tcg::proof_harness::from_datetime_never_panics",
-        "time_scale::tcg::proof_harness::from_gregorian_never_panics",
-        "time_scale::tcg::proof_harness::datetime_tt_tcg_roundtrip",
-        "time_scale::tt::proof_harness::from_datetime_never_panics",
-        "time_scale::tt::proof_harness::from_gregorian_never_panics",
-        "time_scale::tt::proof_harness::datetime_tai_roundtrip",
-        "time_scale::unix::proof_harness::from_datetime_never_panics",
-        "time_scale::unix::proof_harness::from_gregorian_never_panics",
-        "time_scale::utc::proof_harness::roundtrip_near_leap_seconds",
-        "time_scale::utc::proof_harness::infallible_with_deletions",
-    ]
+
+    # to find the tests, we run the crate with a 0 step fuel
+    def get_tests() -> list[str]:
+        ropts = opts_for_rusteria(opts, force_obol=True, timeout=None)
+        tool_cmd = ropts["tool_cmd"].copy()
+        tool_cmd[1] = "cargo"
+        data = subprocess_run(
+            tool_cmd + ["--kani", "--step-fuel=0", str(finetime)],
+            capture_output=True,
+            text=True,
+        )
+        tests: list[str] = []
+        for line in data.stdout.splitlines():
+            # look for
+            # warning: <test> (0.01ms): runtime error, Missed 1 branches
+            if line.startswith("warning: "):
+                tests.append(line.split(" ")[1])
+        return tests
+
+    tests = get_tests()
     pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
 
     interrupts = 0
 
     def run_with_rusteria() -> dict[str, tuple[Outcome, float]]:
         ropts = opts_for_rusteria(opts, force_obol=True, timeout=None)
-        ropts["tool_cmd"][1] = "cargo"
-        ropts["tool_cmd"] += ["--kani"]
+        tool_cmd = ropts["tool_cmd"].copy()
+        tool_cmd[1] = "cargo"
+        tool_cmd += ["--kani", "--no-compile"]
         log_path = PWD / "finetime-comparison-rusteria.log"
         log_path.touch()
         log_path.write_text(
@@ -836,17 +620,13 @@ def finetime(opts: CliOpts):
         log.write("Running tests with Rusteria\n\n")
 
         before = time.time()
-        fst = True
         for test in tests:
             pprint(f"Running {test} ... ", end="", flush=True)
             try:
                 filter = ["--filter", test]
-                if not fst:
-                    filter += ["--no-compile"]
-                fst = False
                 (outcome, _), elapsed = exec_test(
                     finetime,
-                    cmd=ropts["tool_cmd"] + filter,
+                    cmd=tool_cmd + filter,
                     log=log,
                     categoriser=ropts["categorise"],
                     tool="Rusteria",

@@ -198,7 +198,11 @@ module Make (State : State_intf.S) = struct
         | _ -> not_impl "Unexpected value when dereferencing place")
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
-        let* ptr, _ = resolve_place base in
+        let* ((ptr, _) as fptr) = resolve_place base in
+        let* () =
+          let* valid = State.is_valid_ptr fptr base.ty in
+          if valid then ok () else error `UBDanglingPointer
+        in
         let^^+ ptr' =
           Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
             ptr

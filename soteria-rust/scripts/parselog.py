@@ -194,7 +194,7 @@ def categorise_kani(test: str, *, expect_failure: bool) -> LogCategorisation:
     if (
         "A Rust construct that is not currently supported by Kani was found to be reachable"
         in test
-    ):
+    ) or ("Kani currently doesn't support checking memory initialization for" in test):
         return Outcome.UNSUPPORTED()
 
     if "VERIFICATION:- SUCCESSFUL" in test:
