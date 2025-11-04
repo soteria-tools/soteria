@@ -1503,10 +1503,10 @@ and BitVec : BitVec = struct
     | ( ( Binop
             ( Mul { checked = true },
               x,
-              ({ node = { kind = BitVec c1; _ }; _ } as v2) )
+              ({ node = { kind = BitVec c1; _ }; _ } as v1) )
         | Binop
             ( Mul { checked = true },
-              ({ node = { kind = BitVec c1; _ }; _ } as v2),
+              ({ node = { kind = BitVec c1; _ }; _ } as v1),
               x ) ),
         BitVec c2 ) ->
         (* PROOF FOR : x * c1 <= c2
