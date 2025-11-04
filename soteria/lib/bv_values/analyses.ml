@@ -62,6 +62,10 @@ module None : S = struct
 end
 
 module Interval : S = struct
+  (** An interval analysis for bitvectors inspired by
+       https://ceur-ws.org/Vol-1617/paper8.pdf *)
+
+
   (* we only include stuff from Z we want  *)
   open struct
     let one = Z.one
