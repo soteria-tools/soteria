@@ -50,7 +50,7 @@ module MemVal = struct
           Csymex.of_opt_not_impl ~msg:"Int constraints"
             (Layout.int_constraints int_ty)
         in
-        let* value = Csymex.nondet (Typed.t_int size) in
+        let* value = Csymex.nondet (Typed.t_int (8 * size)) in
         let+ () = Csymex.assume (constrs value) in
         ((value :> T.cval Typed.t), ty)
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
@@ -79,7 +79,7 @@ module MemVal = struct
         match ty with
         | Ctype.Ctype (_, Basic (Integer ity)) ->
             let+ size = Layout.size_of_int_ty_unsupported ity in
-            Soteria.Symex.Compo_res.ok (BitVec.zero size)
+            Soteria.Symex.Compo_res.ok (BitVec.zero (8 * size))
         | Ctype (_, Basic (Floating fty)) ->
             let precision = Layout.precision fty in
             Result.ok (Typed.Float.mk precision "+0.0")
@@ -169,7 +169,7 @@ module MemVal = struct
           @@ Typed.BitVec.to_z size
         in
         let size = Z.to_int size in
-        let+ () = Csymex.assume [ v ==?@ BitVec.zero size ] in
+        let+ () = Csymex.assume [ v ==?@ BitVec.zero (8 * size) ] in
         Ok (not_owned t)
     | SZeros, _ ->
         L.info (fun m -> m "Consuming zero but not zero, vanishing");

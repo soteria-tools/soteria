@@ -276,7 +276,7 @@ let int_constraints (int_ty : integerType) =
   let open Typed.Infix in
   let int_ty = normalise_int_ty int_ty in
   match int_ty with
-  | Bool -> Some (fun x -> [ Usize.(0s) <=@ x; (x <@ Usize.(2s)) ])
+  | Bool -> Some (fun x -> [ U8.(0s) <=@ x; (x <@ U8.(2s)) ])
   | Char | Signed _ | Unsigned _ -> Some (fun _ -> [])
   | _ ->
       L.debug (fun m -> m "No int constraints for %a" Fmt_ail.pp_int_ty int_ty);
@@ -332,7 +332,7 @@ let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
       Csymex.return (Typed.Ptr.mk loc ofs)
   | Basic (Integer ity) ->
       let* size = size_of_int_ty_unsupported ity in
-      let* res = Csymex.nondet (Typed.t_int size) in
+      let* res = Csymex.nondet (Typed.t_int (8 * size)) in
       let constrs = int_constraints ity |> Option.get in
       let+ () = Csymex.assume (constrs res) in
       (res :> Typed.T.cval Typed.t)

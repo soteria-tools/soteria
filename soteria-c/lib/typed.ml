@@ -21,6 +21,12 @@ module BitVec = struct
   let usizenz z = mk_nz ptr_bits z
   let usizei i = mki ptr_bits i
   let usizeinz i = mki_nz ptr_bits i
+
+  let fit_to ?(signed = false) size bv =
+    let cur = size_of_int bv in
+    if cur = size then bv
+    else if cur < size then extend ~signed (size - cur) bv
+    else extract 0 (size - 1) bv
 end
 
 module Ptr = struct

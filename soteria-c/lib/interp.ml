@@ -313,7 +313,7 @@ module Make (State : State_intf.S) = struct
         in
         let size =
           match size with
-          | Some size -> size
+          | Some size -> size * 8
           | None -> unsupported "integer constant with unknown size"
         in
         Agv.int_z size z
@@ -321,7 +321,7 @@ module Make (State : State_intf.S) = struct
     | ConstantCharacter (pref, char) -> (
         if Option.is_some pref then unsupported "char prefix";
         match (Constants.string_to_char char, Layout.size_of_int_ty Char) with
-        | Some char, Some size -> Agv.int size char
+        | Some char, Some size -> Agv.int (8 * size) char
         | None, Some _ -> unsupported ("char constant: " ^ char)
         | _, None -> unsupported "char constant with unknown size")
     | ConstantStruct (tag, fields) ->
@@ -382,14 +382,10 @@ module Make (State : State_intf.S) = struct
             | TPointer _ -> return v
             | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
         | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
-        | Ctype.Basic (Integer ity_old), Ctype.Basic (Integer ity_new) ->
+        | Ctype.Basic (Integer _), Ctype.Basic (Integer ity_new) ->
             let* v = cast_to_int v in
-            let* size_old = Layout.size_of_int_ty_unsupported ity_old in
             let+ size_new = Layout.size_of_int_ty_unsupported ity_new in
-            if size_old > size_new then BV.extract 0 (size_new - 1) v
-            else if size_old < size_new then
-              BV.extend ~signed:false (size_new - size_old) v
-            else (v :> T.cval Typed.t)
+            (BV.fit_to ~signed:false (8 * size_new) v :> T.cval Typed.t)
         | _, Ctype.Void -> return U8.(0s)
         | _ ->
             Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
@@ -457,8 +453,8 @@ module Make (State : State_intf.S) = struct
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
         let loc = Typed.Ptr.loc v1 in
-        let ofs, res = Typed.Ptr.ofs v1 -$?@ v2 in
-        let+ () = assert_or_error (Typed.not res) `Overflow in
+        let ofs, ovf = Typed.Ptr.ofs v1 -$?@ v2 in
+        let+ () = assert_or_error (Typed.not ovf) `Overflow in
         Typed.Ptr.mk loc ofs
     | TPointer _, TPointer _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
@@ -512,10 +508,14 @@ module Make (State : State_intf.S) = struct
         | Some _, Some _ -> error `UBPointerArithmetic
         | Some ty, None ->
             let^ factor = Layout.size_of_s ty in
+            let^ ptr_size = Layout.size_of_int_ty_unsupported Size_t in
+            let v2 = BV.fit_to ~signed:false (8 * ptr_size) (Typed.cast v2) in
             let* v2 = arith_mul ~signed:true v2 factor in
             arith_add ~signed:true v1 v2
         | None, Some ty ->
             let^ factor = Layout.size_of_s ty in
+            let^ ptr_size = Layout.size_of_int_ty_unsupported Size_t in
+            let v1 = BV.fit_to ~signed:false (8 * ptr_size) (Typed.cast v1) in
             let* v1 = arith_mul ~signed:true v1 factor in
             arith_add ~signed:true v2 v1
         | None, None -> (
@@ -601,9 +601,12 @@ module Make (State : State_intf.S) = struct
       | TPointer _, TPointer _ ->
           let left = Typed.cast left in
           let right = Typed.cast right in
-          if%sat Typed.Ptr.loc left ==@ Typed.Ptr.loc right then
-            ok (int_cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right))
-          else error `UBPointerComparison
+          let+ () =
+            assert_or_error
+              (Typed.Ptr.loc left ==@ Typed.Ptr.loc right)
+              `UBPointerComparison
+          in
+          int_cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right)
       | _, TPointer _ | TPointer _, _ -> error `UBPointerComparison
       | _ ->
           Fmt.kstr not_impl "Unsupported comparison: %a and %a" Typed.ppa left
@@ -637,14 +640,15 @@ module Make (State : State_intf.S) = struct
           let* fptr = eval_expr fexpr in
           L.trace (fun m -> m "Function pointer is value: %a" Agv.pp fptr);
           let^ fptr = cast_aggregate_to_ptr fptr in
-          if%sat
-            Typed.not (Typed.Ptr.ofs fptr ==@ Usize.(0s))
-            ||@ Typed.Ptr.is_at_null_loc fptr
-          then error `InvalidFunctionPtr
-          else
-            let fctx = get_fun_ctx () in
-            let^ sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
-            ok (loc, sym)
+          let* () =
+            assert_or_error
+              Typed.(
+                Ptr.ofs fptr ==@ Usize.(0s) &&@ not (Ptr.is_at_null_loc fptr))
+              `InvalidFunctionPtr
+          in
+          let fctx = get_fun_ctx () in
+          let^ sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
+          ok (loc, sym)
     in
     let@ () = with_loc ~loc in
     let fundef_opt = Ail_helpers.find_fun_def fname in
@@ -723,7 +727,7 @@ module Make (State : State_intf.S) = struct
                 ok (operand, true)
             | None, Ctype.Ctype (_, Basic (Integer inty)) ->
                 let^ size = Layout.size_of_int_ty_unsupported inty in
-                ok (BV.one size, Layout.is_int_ty_signed inty)
+                ok (BV.one (8 * size), Layout.is_int_ty_signed inty)
             | _ -> not_impl "Postfix operator on unsupported type"
           in
           let+ res =
@@ -796,13 +800,28 @@ module Make (State : State_intf.S) = struct
             ok (Agv.Basic (BV.of_bool b_res))
           else ok (Agv.Basic U8.(0s))
     | AilEbinary (e1, op, e2) -> (
+        let ty = type_of aexpr in
+        let signed =
+          match ty with
+          | Ctype.Ctype (_, Basic (Integer inty)) ->
+              Layout.is_int_ty_signed inty
+          | _ -> false
+        in
         let* v1 = eval_expr e1 in
         let* v2 = eval_expr e2 in
         match op with
-        | Ge -> ineq_comparison ~int_cmp_op:( >=@ ) ~float_cmp_op:( >=.@ ) v1 v2
-        | Gt -> ineq_comparison ~int_cmp_op:( >@ ) ~float_cmp_op:( >.@ ) v1 v2
-        | Lt -> ineq_comparison ~int_cmp_op:( <@ ) ~float_cmp_op:( <.@ ) v1 v2
-        | Le -> ineq_comparison ~int_cmp_op:( <=@ ) ~float_cmp_op:( <=.@ ) v1 v2
+        | Ge ->
+            ineq_comparison ~int_cmp_op:(BV.geq ~signed) ~float_cmp_op:( >=.@ )
+              v1 v2
+        | Gt ->
+            ineq_comparison ~int_cmp_op:(BV.gt ~signed) ~float_cmp_op:( >.@ ) v1
+              v2
+        | Lt ->
+            ineq_comparison ~int_cmp_op:(BV.lt ~signed) ~float_cmp_op:( <.@ ) v1
+              v2
+        | Le ->
+            ineq_comparison ~int_cmp_op:(BV.leq ~signed) ~float_cmp_op:( <=.@ )
+              v1 v2
         | Eq ->
             let+ res = aggregate_equality_check v1 v2 in
             Agv.Basic res

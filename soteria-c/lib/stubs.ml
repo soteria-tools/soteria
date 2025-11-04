@@ -1,7 +1,6 @@
 module Ctype = Cerb_frontend.Ctype
 open Csymex
 open Csymex.Syntax
-open Typed.Syntax
 open Typed.Infix
 module T = Typed.T
 open Ail_tys
@@ -28,8 +27,8 @@ module M (State : State_intf.S) = struct
       | [ Basic sz ] -> return sz
       | _ -> not_impl "malloc with non-one arguments"
     in
-    match Typed.cast_checked sz Typed.t_usize with
-    | Some sz ->
+    match Typed.cast_int sz with
+    | Some (sz, _) ->
         Csymex.branches
           ([
              (fun () ->
@@ -42,15 +41,18 @@ module M (State : State_intf.S) = struct
   let calloc ~(args : Agv.t list) state =
     let* sz =
       match args with
-      | [ Basic num; Basic sz ] -> (
-          let num = Typed.cast_checked num Typed.t_usize in
-          let sz = Typed.cast_checked sz Typed.t_usize in
-          match (num, sz) with
-          | Some num, Some sz ->
-              let res, ovf = num *$?@ sz in
-              let+ () = Csymex.assume [ Typed.not ovf ] in
-              res
-          | None, _ | _, None -> not_impl "calloc with non-integer arguments")
+      | [ Basic num; Basic sz ] ->
+          let* num, _ =
+            of_opt_not_impl ~msg:"calloc with non-integer arguments"
+            @@ Typed.cast_int num
+          in
+          let* sz, _ =
+            of_opt_not_impl ~msg:"calloc with non-integer arguments"
+            @@ Typed.cast_int sz
+          in
+          let res, ovf = num *$?@ sz in
+          let+ () = Csymex.assume [ Typed.not ovf ] in
+          res
       | _ -> not_impl "calloc with non-one arguments"
     in
     Csymex.branches
@@ -92,21 +94,22 @@ module M (State : State_intf.S) = struct
 
   let assert_ ~(args : Agv.t list) state =
     let open Typed.Infix in
-    let* to_assert =
+    let* to_assert, size =
       match args with
       | [ Basic t ] | [ Basic t; _ ] ->
-          Csymex.of_opt_not_impl ~msg:"not an integer"
-            (Typed.cast_checked t (Typed.t_int 8))
+          Csymex.of_opt_not_impl ~msg:"assert: not an integer"
+            (Typed.cast_int t)
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ U8.(0s) then State.error `FailedAssert state
+    if%sat to_assert ==@ Typed.BitVec.zero size then
+      State.error `FailedAssert state
     else Result.ok (Agv.void, state)
 
   let assume_ ~(args : Agv.t list) state =
     let* to_assume =
       match args with
       | [ Basic t ] ->
-          Csymex.of_opt_not_impl ~msg:"not an integer"
+          Csymex.of_opt_not_impl ~msg:"assume: not an integer"
             (Typed.cast_checked t (Typed.t_int 8))
       | _ -> not_impl "to_assume with non-one arguments"
     in
@@ -115,7 +118,7 @@ module M (State : State_intf.S) = struct
 
   let nondet_int_fun ~args:_ state =
     let* size = Layout.size_of_int_ty_unsupported (Signed Int_) in
-    let* v = Csymex.nondet (Typed.t_int size) in
+    let* v = Csymex.nondet (Typed.t_int (8 * size)) in
     let constrs = Layout.int_constraints (Signed Int_) |> Option.get in
     let* () = Csymex.assume (constrs v) in
     let v = (v :> T.cval Typed.t) in
