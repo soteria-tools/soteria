@@ -853,16 +853,18 @@ and BitVec : BitVec = struct
     | _, Unop (Neg, v2) -> add v1 v2
     | Binop (Sub _, ({ node = { kind = BitVec _; _ }; _ } as c1), s), BitVec _
       ->
-        sub (sub c1 v2) s
+        sub ~checked (sub c1 v2) s
     | Binop (Sub _, s, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
       ->
-        sub s (add c1 v2)
+        sub ~checked s (add c1 v2)
     | BitVec _, Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as r), c)
     | BitVec _, Binop (Add _, c, ({ node = { kind = BitVec _; _ }; _ } as r)) ->
-        sub (sub v1 r) c
+        sub ~checked (sub v1 r) c
     | Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as r), c), BitVec _
     | Binop (Add _, c, ({ node = { kind = BitVec _; _ }; _ } as r)), BitVec _ ->
-        add c (sub r v2)
+        add ~checked c (sub r v2)
+    | Binop (Add _, l, r), _ when equal l v2 -> r
+    | Binop (Add _, l, r), _ when equal r v2 -> l
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
     | BitVec _, Ite (b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
@@ -1267,6 +1269,7 @@ and BitVec : BitVec = struct
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
         Bool.bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
+    | _ when equal v1 v2 -> Bool.v_false
     | ( BitVec _,
         ( Binop
             ( Add { checked = true },
