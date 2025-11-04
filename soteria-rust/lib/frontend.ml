@@ -333,7 +333,8 @@ let miri =
 
 type root_plugin = {
   mk_cmd : ?input:string -> output:string -> unit -> Cmd.t;
-  get_entry_point : fun_decl -> Soteria.Symex.Fuel_gauge.t entry_point option;
+  get_entry_point :
+    UllbcAst.crate -> fun_decl -> Soteria.Symex.Fuel_gauge.t entry_point option;
 }
 
 let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
@@ -357,7 +358,7 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
     List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
   in
-  let get_entry_point (decl : fun_decl) =
+  let get_entry_point crate (decl : fun_decl) =
     let rec aux acc rest =
       match (acc, rest) with
       | Some ep, _ ->
@@ -384,7 +385,8 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
       match filters with
       | [] -> true
       | _ ->
-          let name = Fmt.to_to_string Crate.pp_name decl.item_meta.name in
+          let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+          let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
           List.exists
             (fun f ->
               try Str.search_forward (Str.regexp f) name 0 >= 0
@@ -440,7 +442,7 @@ let normalize_path path =
 let with_entry_points ~plugin (crate : Charon.UllbcAst.crate) =
   let entry_points =
     Charon.Types.FunDeclId.Map.values crate.fun_decls
-    |> List.filter_map plugin.get_entry_point
+    |> List.filter_map (plugin.get_entry_point crate)
   in
   (crate, entry_points)
 
