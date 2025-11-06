@@ -26,9 +26,9 @@ Symbolic execution of a simple program with symbolic values that fails because o
               { node =
                 [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
                    v = 0x0000000c : signed int};
-                 MemVal {offset = 0x0000000000000004; len = 0x000003fc;
+                 MemVal {offset = 0x0000000000000004; len = 0x00000000000003fc;
                    v = SUninit};
-                 Bound(0x00000400)];
+                 Bound(0x0000000000000400)];
                 info = (Some err.c:5:12-24) })];
             globs = [] });
      Error: Null pointer dereference with trace
@@ -61,7 +61,7 @@ Checking that memcpy works correctly
                    v = 0x00000000 : signed int};
                  MemVal {offset = 0x0000000000000004; len = 0x0000000000000004;
                    v = 0x00000001 : signed int};
-                 Bound(0x00000008)];
+                 Bound(0x0000000000000008)];
                 info = (Some cpy.c:7:12-35) });
              (V|2|,
               { node =
@@ -69,7 +69,7 @@ Checking that memcpy works correctly
                    v = 0x00000000 : signed int};
                  MemVal {offset = 0x0000000000000004; len = 0x0000000000000004;
                    v = 0x00000001 : signed int};
-                 Bound(0x00000008)];
+                 Bound(0x0000000000000008)];
                 info = (Some cpy.c:12:12-35) })];
             globs = [] });
      Ok: (0x00000000,
@@ -80,7 +80,7 @@ Checking that memcpy works correctly
                    v = 0x00000000 : signed int};
                  MemVal {offset = 0x0000000000000004; len = 0x0000000000000004;
                    v = 0x00000001 : signed int};
-                 Bound(0x00000008)];
+                 Bound(0x0000000000000008)];
                 info = (Some cpy.c:7:12-35) })];
             globs = [] });
      Ok: (0x00000000, { heap = []; globs = [] })]
@@ -923,9 +923,9 @@ Expected to correctly find the harness function
                 info = None });
              (V|2|,
               { node =
-                [MemVal {offset = 0x0000000000000000; len = 0x00000008;
+                [MemVal {offset = 0x0000000000000000; len = 0x0000000000000008;
                    v = SZeros};
-                 Bound(0x00000008)];
+                 Bound(0x0000000000000008)];
                 info = (Some float.c:10:23-47) })];
             globs = [(f_560, V|1|)] });
      Ok: (0x00000001,
