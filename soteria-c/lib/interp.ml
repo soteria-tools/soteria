@@ -807,10 +807,17 @@ module Make (State : State_intf.S) = struct
         match op with
         | Indirection -> ok v
         | Address -> failwith "unreachable: address_of already handled"
-        | Minus ->
+        | Minus -> (
             let^ v = cast_aggregate_to_int v in
-            let res = Typed.cast @@ BV.neg v in
-            ok (Agv.Basic res)
+            match type_of aexpr |> unwrap_ctype with
+            | Basic (Integer _) ->
+                let ovf = BV.neg_overflows v in
+                let+ () = assert_or_error (Typed.not ovf) `Overflow in
+                Agv.Basic (Typed.cast @@ BV.neg v)
+            | Basic (Floating _) ->
+                let res = Typed.Float.neg (Typed.cast v) in
+                ok (Agv.Basic res)
+            | _ -> not_impl "Unary minus on unsupported type")
         | AilSyntax.Bnot ->
             let^ v = cast_aggregate_to_int v in
             let res = Typed.BitVec.not v in
