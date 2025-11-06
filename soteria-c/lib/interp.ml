@@ -491,9 +491,6 @@ module Make (State : State_intf.S) = struct
     | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        L.warn (fun m ->
-            m "%a: %a / %a: %a" Typed.ppa v1 Svalue.pp_ty (Typed.get_ty v1)
-              Typed.ppa v2 Svalue.pp_ty (Typed.get_ty v2));
         let res, ovf = if signed then v1 *$?@ v2 else v1 *?@ v2 in
         let+ () = assert_or_error (Typed.not ovf) `Overflow in
         res
@@ -848,7 +845,7 @@ module Make (State : State_intf.S) = struct
         let* v1, v2 =
           (* check if we need to cast the values *)
           match op with
-          | Eq | Ne | Gt | Ge | Lt | Le ->
+          | Gt | Ge | Lt | Le ->
               let new_ty = Layout.type_conversion_arith ty_v1 ty_v2 in
               let^ v1 = cast ~old_ty:ty_v1 ~new_ty v1 in
               let^ v2 = cast ~old_ty:ty_v2 ~new_ty v2 in

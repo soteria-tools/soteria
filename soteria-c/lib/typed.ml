@@ -27,6 +27,9 @@ module BitVec = struct
     if cur = size then bv
     else if cur < size then extend ~signed (size - cur) bv
     else extract 0 (size - 1) bv
+
+  let cast_to_size_t bv =
+    Option.map (fun (v, _) -> fit_to ~signed:false ptr_bits v) (cast_int bv)
 end
 
 module Ptr = struct

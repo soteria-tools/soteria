@@ -28,32 +28,30 @@ module M (State : State_intf.S) = struct
       | [ Basic sz ] -> return sz
       | _ -> not_impl "malloc with non-one arguments"
     in
-    match Typed.cast_int sz with
-    | Some (sz, _) ->
-        Csymex.branches
-          ([
-             (fun () ->
-               let++ ptr, state = State.alloc sz state in
-               (Basic ptr, state));
-           ]
-          @ failed_alloc_case state)
-    | None -> not_impl "malloc with non-integer argument"
+    let* sz =
+      of_opt_not_impl ~msg:"malloc with non-integer argument"
+      @@ BV.cast_to_size_t sz
+    in
+    Csymex.branches
+      ([
+         (fun () ->
+           let++ ptr, state = State.alloc sz state in
+           (Basic ptr, state));
+       ]
+      @ failed_alloc_case state)
 
   let calloc ~(args : Agv.t list) state =
     let* sz =
       match args with
       | [ Basic num; Basic sz ] ->
-          let* size = Layout.size_of_int_ty_unsupported Size_t in
-          let* num, _ =
+          let* num =
             of_opt_not_impl ~msg:"calloc with non-integer arguments"
-            @@ Typed.cast_int num
+            @@ BV.cast_to_size_t num
           in
-          let* sz, _ =
+          let* sz =
             of_opt_not_impl ~msg:"calloc with non-integer arguments"
-            @@ Typed.cast_int sz
+            @@ BV.cast_to_size_t sz
           in
-          let num = BV.fit_to ~signed:false (8 * size) num in
-          let sz = BV.fit_to ~signed:false (8 * size) sz in
           let res, ovf = num *$?@ sz in
           let+ () = Csymex.assume [ Typed.not ovf ] in
           res
