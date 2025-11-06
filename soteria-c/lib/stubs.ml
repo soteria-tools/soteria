@@ -4,7 +4,6 @@ open Csymex.Syntax
 open Typed.Infix
 module BV = Typed.BitVec
 module T = Typed.T
-open Ail_tys
 module Agv = Aggregate_val
 open Agv
 
@@ -154,12 +153,14 @@ module M (State : State_intf.S) = struct
         https://gcc.gnu.org/onlinedocs/gcc-4.3.0/gcc/Object-Size-Checking.html
     *)
 
-    type t = (int -> expr -> bool) option
+    type t = (int -> bool) option
 
     let no_filter : t = None
 
     let apply filter args =
-      match filter with None -> args | Some f -> List.filteri f args
+      match filter with
+      | None -> args
+      | Some f -> List.filteri (fun i _ -> f i) args
   end
 
   (* FIXME: make this more global when concurrency is added.
@@ -196,12 +197,12 @@ module M (State : State_intf.S) = struct
             Some (memcpy, None)
         | "__builtin___memcpy_chk" ->
             (* See definition of this builtin, the last argument is not useful to us. *)
-            Some (memcpy, Some (fun i _ -> i <> 3))
+            Some (memcpy, Some (( <> ) 3))
         | "__soteria___nondet_int" -> Some (nondet_int_fun, None)
         | "__soteria___assert" -> Some (assert_, None)
         | "__CPROVER_assert" ->
             (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
-            with_cbmc_support (assert_, Some (fun i _ -> i == 0))
+            with_cbmc_support (assert_, Some (( == ) 0))
         | "__CPROVER_assume" -> with_cbmc_support (assume_, None)
         | _ -> None)
     | _ -> None

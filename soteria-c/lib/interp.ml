@@ -168,7 +168,8 @@ module Make (State : State_intf.S) = struct
         let x = Typed.cast x in
         if%sat Typed.Ptr.is_at_null_loc x then Csymex.return (Typed.Ptr.ofs x)
         else
-          Fmt.failwith "Pointer to int that is not at null loc %a" Typed.ppa x
+          Fmt.kstr not_impl "Pointer to int that is not at null loc %a"
+            Typed.ppa x
     | _ -> Csymex.not_impl "Cannot cast to int"
 
   let cast_aggregate_to_int (x : Agv.t) : [> T.sint ] Typed.t Csymex.t =
@@ -661,7 +662,10 @@ module Make (State : State_intf.S) = struct
   end
 
   let rec resolve_function fexpr :
-      (Error.t State.err fun_exec * Stubs.Arg_filter.t) InterpM.t =
+      (Error.t State.err fun_exec
+      * Ail_tys.ctype list option
+      * Stubs.Arg_filter.t)
+      InterpM.t =
     let* loc, fname =
       let (AilSyntax.AnnotatedExpression (_, _, loc, inner_expr)) = fexpr in
       match inner_expr with
@@ -686,16 +690,17 @@ module Make (State : State_intf.S) = struct
           ok (loc, sym)
     in
     let@ () = with_loc ~loc in
+    let input_tys = Ail_helpers.get_param_tys fname in
     let fundef_opt = Ail_helpers.find_fun_def fname in
     match fundef_opt with
-    | Some fundef -> ok (exec_fun fundef, Stubs.Arg_filter.no_filter)
+    | Some fundef -> ok (exec_fun fundef, input_tys, Stubs.Arg_filter.no_filter)
     | None -> (
         match Stubs.find_stub fname with
-        | Some (stub, filter) -> ok (stub, filter)
+        | Some (stub, filter) -> ok (stub, input_tys, filter)
         | None ->
             if (Config.current ()).havoc_undefined_funs then
               let return_ty = Ail_helpers.get_return_ty fname in
-              ok (Stubs.havoc ~return_ty, None)
+              ok (Stubs.havoc ~return_ty, input_tys, None)
             else
               Fmt.kstr not_impl "Cannot call external function: %a"
                 Fmt_ail.pp_sym fname)
@@ -718,9 +723,22 @@ module Make (State : State_intf.S) = struct
         let^ v = aggregate_of_constant ~ty c in
         ok v
     | AilEcall (f, args) ->
-        let* exec_fun, filter = resolve_function f in
+        let* exec_fun, arg_tys, filter = resolve_function f in
         let args = Stubs.Arg_filter.apply filter args in
-        let* args = eval_expr_list args in
+        let* args =
+          match arg_tys with
+          | None -> eval_expr_list args
+          | Some arg_tys ->
+              let arg_tys = Stubs.Arg_filter.apply filter arg_tys in
+              let args = List.combine args arg_tys in
+              let+ args =
+                InterpM.fold_list args ~init:[] ~f:(fun acc (arg, ty) ->
+                    let* v = eval_expr arg in
+                    let^ v = cast ~old_ty:(type_of arg) ~new_ty:ty v in
+                    ok (v :: acc))
+              in
+              List.rev args
+        in
         let+ v =
           with_extra_call_trace ~loc ~msg:"Called from here"
           @@ lift_state_op
