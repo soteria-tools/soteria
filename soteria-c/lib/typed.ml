@@ -22,7 +22,7 @@ module BitVec = struct
   let usizei i = mki ptr_bits i
   let usizeinz i = mki_nz ptr_bits i
 
-  let fit_to ?(signed = false) size bv =
+  let fit_to ?(signed = false) size (bv : [< T.sint ] t) : [> T.sint ] t =
     let cur = size_of_int bv in
     if cur = size then bv
     else if cur < size then extend ~signed (size - cur) bv

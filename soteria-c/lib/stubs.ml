@@ -2,6 +2,7 @@ module Ctype = Cerb_frontend.Ctype
 open Csymex
 open Csymex.Syntax
 open Typed.Infix
+module BV = Typed.BitVec
 module T = Typed.T
 open Ail_tys
 module Agv = Aggregate_val
@@ -42,6 +43,7 @@ module M (State : State_intf.S) = struct
     let* sz =
       match args with
       | [ Basic num; Basic sz ] ->
+          let* size = Layout.size_of_int_ty_unsupported Size_t in
           let* num, _ =
             of_opt_not_impl ~msg:"calloc with non-integer arguments"
             @@ Typed.cast_int num
@@ -50,6 +52,8 @@ module M (State : State_intf.S) = struct
             of_opt_not_impl ~msg:"calloc with non-integer arguments"
             @@ Typed.cast_int sz
           in
+          let num = BV.fit_to ~signed:false (8 * size) num in
+          let sz = BV.fit_to ~signed:false (8 * size) sz in
           let res, ovf = num *$?@ sz in
           let+ () = Csymex.assume [ Typed.not ovf ] in
           res

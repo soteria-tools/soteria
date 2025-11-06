@@ -8,8 +8,8 @@ let rec pp ft =
   | Basic v -> Typed.ppa ft v
   | Struct fields -> braces (list ~sep:comma pp) ft fields
 
-let int_z size z = Basic (Typed.BitVec.mk size z)
-let int size i = Basic (Typed.BitVec.mki size i)
+let int_z size z = Basic (Typed.BitVec.mk_masked size z)
+let int size i = Basic (Typed.BitVec.mki_masked size i)
 let void = Basic (Typed.BitVec.zero 8)
 let null = Basic Typed.Ptr.null
 

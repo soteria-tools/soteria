@@ -347,3 +347,35 @@ let nondet_c_ty_aggregate (ty : ctype) : Agv.t Csymex.t =
   let open Csymex.Syntax in
   let+ res = nondet_c_ty ty in
   Agv.Basic res
+
+(** Returns the target type for "usual arithmetic conversions" between two
+    types.
+
+    See
+    https://learn.microsoft.com/en-us/cpp/c-language/usual-arithmetic-conversions
+*)
+let type_conversion_arith (ty1 : ctype) ty2 =
+  match (proj_ctype_ ty1, proj_ctype_ ty2) with
+  | Basic (Floating (RealFloating LongDouble)), _ -> ty1
+  | _, Basic (Floating (RealFloating LongDouble)) -> ty2
+  | Basic (Floating (RealFloating Double)), _ -> ty1
+  | _, Basic (Floating (RealFloating Double)) -> ty2
+  | Basic (Floating (RealFloating Float)), _ -> ty1
+  | _, Basic (Floating (RealFloating Float)) -> ty2
+  | Basic (Integer it1), Basic (Integer it2) -> (
+      let it1 = normalise_int_ty it1 in
+      let it2 = normalise_int_ty it2 in
+      if it1 = it2 then ty1
+      else
+        let size1 = Option.get @@ size_of_int_ty it1 in
+        let size2 = Option.get @@ size_of_int_ty it2 in
+        if size1 >= size2 then ty1
+        else if size2 > size1 then ty2
+        else
+          match (is_int_ty_signed it1, is_int_ty_signed it2) with
+          | true, false -> ty1
+          | false, true -> ty2
+          | _ -> ty1)
+  | Pointer _, _ -> ty1
+  | _, Pointer _ -> ty1
+  | _ -> failwith "non-basic types in arith operation"

@@ -362,36 +362,54 @@ module Make (State : State_intf.S) = struct
 
   let unwrap_expr (AnnotatedExpression (_, _, _, e) : expr) = e
 
-  let cast ~old_ty ~new_ty (v : Agv.t) : Agv.t Csymex.t =
-    let open Csymex.Syntax in
-    let open Typed in
+  let cast_basic ~old_ty ~new_ty v =
     if Ctype.ctypeEqual old_ty new_ty then return v
     else
-      let (Ctype.Ctype (_, old_ty)) = old_ty in
-      let (Ctype.Ctype (_, new_ty)) = new_ty in
-      let* v =
-        match v with
-        | Basic v -> return v
-        | Struct _ -> Fmt.kstr not_impl "Cannot cast %a" Agv.pp v
-      in
-      let+ res =
-        match (old_ty, new_ty) with
-        | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
-            match get_ty v with
-            | TBitVector _ -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
-            | TPointer _ -> return v
-            | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
-        | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
-        | Ctype.Basic (Integer _), Ctype.Basic (Integer ity_new) ->
-            let* v = cast_to_int v in
-            let+ size_new = Layout.size_of_int_ty_unsupported ity_new in
-            (BV.fit_to ~signed:false (8 * size_new) v :> T.cval Typed.t)
-        | _, Ctype.Void -> return U8.(0s)
-        | _ ->
-            Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
-              Fmt_ail.pp_ty_ new_ty
-      in
-      Agv.Basic res
+      let open Typed in
+      let open Csymex.Syntax in
+      match (unwrap_ctype old_ty, unwrap_ctype new_ty) with
+      | Basic (Integer _), Pointer (_quals, _ty) -> (
+          match get_ty v with
+          | TBitVector _ ->
+              let* size_t = Layout.size_of_int_ty_unsupported Size_t in
+              let v = BV.fit_to ~signed:false (8 * size_t) (cast v) in
+              return (Ptr.mk Ptr.null_loc v)
+          | TPointer _ -> return v
+          | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
+      | Pointer (_, _), Pointer (_, _) -> return v
+      | (Basic (Integer _) | Pointer (_, _)), Basic (Integer ity) ->
+          let* v = cast_to_int v in
+          let+ size_new = Layout.size_of_int_ty_unsupported ity in
+          (BV.fit_to ~signed:false (8 * size_new) v :> T.cval Typed.t)
+      | Basic (Integer ity), Basic (Floating fty) ->
+          let+ v = cast_to_int v in
+          let fp = Layout.precision fty in
+          let signed = Layout.is_int_ty_signed ity in
+          BV.to_float ~rounding:NearestTiesToEven ~signed ~fp v
+      | Basic (Floating fty), Basic (Integer ity) ->
+          let fp = Layout.precision fty in
+          let* size = Layout.size_of_int_ty_unsupported ity in
+          let+ v =
+            of_opt_not_impl ~msg:"Non-float in float cast"
+            @@ Typed.cast_checked v (Typed.t_float fp)
+          in
+          let signed = Layout.is_int_ty_signed ity in
+          BV.of_float ~rounding:Truncate ~signed ~size v
+      | _, Ctype.Void -> return U8.(0s)
+      | _ ->
+          Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty old_ty
+            Fmt_ail.pp_ty new_ty
+
+  let cast_basic ~old_ty ~new_ty v =
+    Csymex.map (cast_basic ~old_ty ~new_ty v) Typed.cast
+
+  let cast ~old_ty ~new_ty (v : Agv.t) : Agv.t Csymex.t =
+    if Ctype.ctypeEqual old_ty new_ty then return v
+    else
+      match v with
+      | Basic v ->
+          Csymex.map (cast_basic ~old_ty ~new_ty v) (fun x -> Agv.Basic x)
+      | Struct _ -> Fmt.kstr not_impl "Cannot cast %a" Agv.pp v
 
   open InterpM
 
@@ -474,6 +492,9 @@ module Make (State : State_intf.S) = struct
     | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
+        L.warn (fun m ->
+            m "%a: %a / %a: %a" Typed.ppa v1 Svalue.pp_ty (Typed.get_ty v1)
+              Typed.ppa v2 Svalue.pp_ty (Typed.get_ty v2));
         let res, ovf = if signed then v1 *$?@ v2 else v1 *?@ v2 in
         let+ () = assert_or_error (Typed.not ovf) `Overflow in
         res
@@ -482,28 +503,37 @@ module Make (State : State_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
           Svalue.pp_ty ty1 Svalue.pp_ty ty2
 
-  let arith (v1, t1) a_op (v2, t2) : [> T.sint ] Typed.t InterpM.t =
-    match (a_op : AilSyntax.arithmeticOperator) with
-    | Div -> (
-        let t1 =
-          match t1 with
-          | Ctype.Ctype (_, Basic (Integer inty)) -> inty
-          | _ -> failwith "Unreachable: Div with non-integer type"
-        in
-        let signed = Layout.is_int_ty_signed t1 in
-        let^ v1 = cast_to_int v1 in
+  let arith new_ty (v1, t1) a_op (v2, t2) : [> T.sint ] Typed.t InterpM.t =
+    match ((a_op : AilSyntax.arithmeticOperator), unwrap_ctype new_ty) with
+    | Div, Basic (Integer inty) -> (
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
         let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
         match v2 with
         | Ok v2 -> ok (Typed.cast @@ BV.div ~signed v1 v2)
         | Error `NonZeroIsZero -> error `DivisionByZero
         | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
-    | Mul -> (
-        match t1 with
-        | Ctype.Ctype (_, Basic (Integer inty)) ->
-            let signed = Layout.is_int_ty_signed inty in
-            arith_mul ~signed v1 v2
-        | _ -> not_impl "Mul with non-integer type")
-    | Add -> (
+    | Mod, Basic (Integer inty) -> (
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
+        match v2 with
+        | Ok v2 -> ok (Typed.cast @@ BV.rem ~signed v1 v2)
+        | Error `NonZeroIsZero -> error `DivisionByZero
+        | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
+    | Mul, Basic (Integer inty) ->
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        arith_mul ~signed v1 v2
+    | Add, Basic (Integer inty) ->
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        arith_add ~signed v1 v2
+    | Add, _ -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some _, Some _ -> error `UBPointerArithmetic
         | Some ty, None ->
@@ -518,45 +548,29 @@ module Make (State : State_intf.S) = struct
             let v1 = BV.fit_to ~signed:false (8 * ptr_size) (Typed.cast v1) in
             let* v1 = arith_mul ~signed:true v1 factor in
             arith_add ~signed:true v2 v1
-        | None, None -> (
-            match t1 with
-            | Ctype.Ctype (_, Basic (Integer inty)) ->
-                let signed = Layout.is_int_ty_signed inty in
-                arith_add ~signed v1 v2
-            | _ -> not_impl "Add with non-integer type"))
-    | Sub -> (
+        | None, None -> failwith "Should have been handled before?")
+    | Sub, Basic (Integer inty) ->
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        arith_sub ~signed v1 v2
+    | Sub, _ -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some ty, None ->
             let^ factor = Layout.size_of_s ty in
+            let^ ptr_size = Layout.size_of_int_ty_unsupported Size_t in
+            let v2 = BV.fit_to ~signed:false (8 * ptr_size) (Typed.cast v2) in
             let* v2 = arith_mul ~signed:true v2 factor in
             arith_sub ~signed:true v1 v2
         | None, Some _ -> error `UBPointerArithmetic
         | Some _, Some _ -> arith_sub ~signed:true v1 v2
-        | None, None -> (
-            match t1 with
-            | Ctype.Ctype (_, Basic (Integer inty)) ->
-                let signed = Layout.is_int_ty_signed inty in
-                arith_sub ~signed v1 v2
-            | _ -> not_impl "Sub with non-integer type"))
-    | Mod -> (
-        let t1 =
-          match t1 with
-          | Ctype.Ctype (_, Basic (Integer inty)) -> inty
-          | _ -> failwith "Unreachable: Div with non-integer type"
-        in
-        let signed = Layout.is_int_ty_signed t1 in
-        let^ v1 = cast_to_int v1 in
-        let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
-        match v2 with
-        | Ok v2 -> ok (Typed.cast @@ BV.rem ~signed v1 v2)
-        | Error `NonZeroIsZero -> error `DivisionByZero
-        | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
-    | (Band | Shl | Shr | Bxor | Bor) as a_op ->
+        | None, None -> failwith "Should have been handled before?")
+    | ((Band | Shl | Shr | Bxor | Bor) as a_op), _ ->
         let* { signed; _ } =
           Layout.bv_info t1 |> of_opt_not_impl ~msg:"bv_info"
         in
-        let^ v1 = cast_to_int v1 in
-        let^ v2 = cast_to_int v2 in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
         let op =
           match a_op with
           | Band -> Typed.BitVec.and_
@@ -567,6 +581,9 @@ module Make (State : State_intf.S) = struct
           | _ -> failwith "unreachable: bit operator is not bit operator?"
         in
         ok (op v1 v2)
+    | _ ->
+        Fmt.kstr not_impl "unsupported: binop %a %a %a -> %a" Fmt_ail.pp_ty t1
+          Fmt_ail.pp_arithop a_op Fmt_ail.pp_ty t2 Fmt_ail.pp_ty new_ty
 
   let try_immediate_postfix_op ~apply_op lvalue =
     let* v_opt = try_immediate_load lvalue in
@@ -684,7 +701,8 @@ module Make (State : State_intf.S) = struct
         ok v
     | AilEcall (f, args) ->
         let* exec_fun, filter = resolve_function f in
-        let* args = eval_expr_list (Stubs.Arg_filter.apply filter args) in
+        let args = Stubs.Arg_filter.apply filter args in
+        let* args = eval_expr_list args in
         let+ v =
           with_extra_call_trace ~loc ~msg:"Called from here"
           @@ lift_state_op
@@ -807,8 +825,21 @@ module Make (State : State_intf.S) = struct
               Layout.is_int_ty_signed inty
           | _ -> false
         in
+        let ty_v1 = type_of e1 in
+        let ty_v2 = type_of e2 in
+        (* we avoid doing type conversion and trust Ail, except when we cant use it *)
         let* v1 = eval_expr e1 in
         let* v2 = eval_expr e2 in
+        let* v1, v2 =
+          (* check if we need to cast the values *)
+          match op with
+          | Eq | Ne | Gt | Ge | Lt | Le ->
+              let new_ty = Layout.type_conversion_arith ty_v1 ty_v2 in
+              let^ v1 = cast ~old_ty:ty_v1 ~new_ty v1 in
+              let^ v2 = cast ~old_ty:ty_v2 ~new_ty v2 in
+              ok (v1, v2)
+          | _ -> ok (v1, v2)
+        in
         match op with
         | Ge ->
             ineq_comparison ~int_cmp_op:(BV.geq ~signed) ~float_cmp_op:( >=.@ )
@@ -833,7 +864,7 @@ module Make (State : State_intf.S) = struct
         | Arithmetic a_op ->
             let^ v1 = Agv.basic_or_unsupported ~msg:"Arithmetics" v1 in
             let^ v2 = Agv.basic_or_unsupported ~msg:"Arithmetics" v2 in
-            let+ res = arith (v1, type_of e1) a_op (v2, type_of e2) in
+            let+ res = arith ty (v1, type_of e1) a_op (v2, type_of e2) in
             Agv.Basic res
         | Comma -> ok v2)
     | AilErvalue e -> (
@@ -864,6 +895,9 @@ module Make (State : State_intf.S) = struct
     | AilEassign (lvalue, rvalue) -> (
         (* Evaluate rvalue first *)
         let* rval = eval_expr rvalue in
+        let^ rval =
+          cast ~old_ty:(type_of rvalue) ~new_ty:(type_of lvalue) rval
+        in
         (* Optimisation: if the lvalue is a variable to which we assign directly,
            we don't need to do anything with the heap, we can simply immediately assign,
            obtaining a new store.  *)
@@ -883,7 +917,7 @@ module Make (State : State_intf.S) = struct
         let apply_op v =
           let^ v = Agv.basic_or_unsupported ~msg:"compound assign" v in
           let^ rval = Agv.basic_or_unsupported ~msg:"compound assign" rval in
-          let+ res = arith (v, lty) op (rval, rty) in
+          let+ res = arith lty (v, lty) op (rval, rty) in
           Agv.Basic res
         in
         let* immediate_result = try_immediate_postfix_op ~apply_op lvalue in
@@ -1172,12 +1206,15 @@ module Make (State : State_intf.S) = struct
         loop ()
     | AilSlabel (_, stmt, _) | AilScase (_, stmt) -> exec_stmt stmt
     | AilSdeclaration decls ->
+        let* store = get_store () in
         let+ () =
           fold_list decls ~init:() ~f:(fun () (pname, expr) ->
               match expr with
               | None -> (* The thing is already declared *) ok ()
               | Some expr ->
                   let* v = eval_expr expr in
+                  let new_ty = Store.get_ty pname store in
+                  let^ v = cast ~old_ty:(type_of expr) ~new_ty v in
                   map_store (Store.declare_value pname v))
         in
         Normal
