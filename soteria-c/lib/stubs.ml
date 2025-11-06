@@ -87,6 +87,18 @@ module M (State : State_intf.S) = struct
       | [ Basic dst; Basic src; Basic size ] -> return (dst, src, size)
       | _ -> not_impl "memcpy with non-three arguments"
     in
+    let* dst =
+      of_opt_not_impl ~msg:"memcpy with non-pointer dst"
+      @@ Typed.cast_checked dst Typed.t_ptr
+    in
+    let* src =
+      of_opt_not_impl ~msg:"memcpy with non-pointer src"
+      @@ Typed.cast_checked src Typed.t_ptr
+    in
+    let* size =
+      of_opt_not_impl ~msg:"memcpy with non-integer arguments"
+      @@ BV.cast_to_size_t size
+    in
     let dst = Typed.cast dst in
     let src = Typed.cast src in
     let size = Typed.cast size in
