@@ -168,9 +168,8 @@ module Make (State : State_intf.S) = struct
         let x = Typed.cast x in
         if%sat Typed.Ptr.is_at_null_loc x then Csymex.return (Typed.Ptr.ofs x)
         else
-          Fmt.kstr Csymex.not_impl
-            "Pointer to int that is not at null loc %a at %a" Typed.ppa x
-            Fmt_ail.pp_loc (get_loc ())
+          Fmt.kstr Csymex.not_impl "Pointer to int that is not at null loc %a"
+            Typed.ppa x
     | _ -> Csymex.not_impl "Cannot cast to int"
 
   let cast_aggregate_to_int (x : Agv.t) : [> T.sint ] Typed.t Csymex.t =
@@ -394,7 +393,7 @@ module Make (State : State_intf.S) = struct
             @@ Typed.cast_checked v (Typed.t_float fp)
           in
           let signed = Layout.is_int_ty_signed ity in
-          BV.of_float ~rounding:Truncate ~signed ~size v
+          BV.of_float ~rounding:Truncate ~signed ~size:(size * 8) v
       | _, Ctype.Void -> return U8.(0s)
       | _ ->
           Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty old_ty
@@ -505,6 +504,7 @@ module Make (State : State_intf.S) = struct
 
   let arith new_ty (v1, t1) a_op (v2, t2) : [> T.sint ] Typed.t InterpM.t =
     match ((a_op : AilSyntax.arithmeticOperator), unwrap_ctype new_ty) with
+    (* Integer operations *)
     | Div, Basic (Integer inty) -> (
         let signed = Layout.is_int_ty_signed inty in
         let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
@@ -533,6 +533,25 @@ module Make (State : State_intf.S) = struct
         let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
         let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
         arith_add ~signed v1 v2
+    | Sub, Basic (Integer inty) ->
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        arith_sub ~signed v1 v2
+    (* Float arithmetics *)
+    | (Add | Sub | Mul | Div), Basic (Floating _) ->
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        let op =
+          match a_op with
+          | Add -> Typed.Float.add
+          | Sub -> Typed.Float.sub
+          | Mul -> Typed.Float.mul
+          | Div -> Typed.Float.div
+          | _ -> failwith "unreachable: all operators matches"
+        in
+        ok (op v1 v2)
+    (* Pointer arithmetic *)
     | Add, _ -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some _, Some _ -> error `UBPointerArithmetic
@@ -549,11 +568,6 @@ module Make (State : State_intf.S) = struct
             let* v1 = arith_mul ~signed:true v1 factor in
             arith_add ~signed:true v2 v1
         | None, None -> failwith "Should have been handled before?")
-    | Sub, Basic (Integer inty) ->
-        let signed = Layout.is_int_ty_signed inty in
-        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
-        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
-        arith_sub ~signed v1 v2
     | Sub, _ -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some ty, None ->
@@ -565,6 +579,7 @@ module Make (State : State_intf.S) = struct
         | None, Some _ -> error `UBPointerArithmetic
         | Some _, Some _ -> arith_sub ~signed:true v1 v2
         | None, None -> failwith "Should have been handled before?")
+    (* Bitwise operations *)
     | ((Band | Shl | Shr | Bxor | Bor) as a_op), _ ->
         let* { signed; _ } =
           Layout.bv_info t1 |> of_opt_not_impl ~msg:"bv_info"
