@@ -477,7 +477,7 @@ module rec Bool : Bool = struct
     (* avoid re-alloc and re-hashconsing *)
     if b then v_true else v_false
 
-  let and_ v1 v2 =
+  let rec and_ v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | _, _ when equal v1 v2 -> v1
     | Bool false, _ | _, Bool false -> v_false
@@ -497,12 +497,10 @@ module rec Bool : Bool = struct
           if e1 + 1 = s2 then (BitVec.concat bv2 bv1, BitVec.extract s1 e2 x)
           else (BitVec.concat bv1 bv2, BitVec.extract s2 e1 x)
         in
-        mk_commut_binop Eq bv xy <| TBool
+        sem_eq bv xy
     | _ -> mk_commut_binop And v1 v2 <| TBool
 
-  let conj l = List.fold_left and_ v_true l
-
-  let rec or_ v1 v2 =
+  and or_ v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | _, _ when equal v1 v2 -> v1
     | Bool true, _ | _, Bool true -> v_true
@@ -510,7 +508,7 @@ module rec Bool : Bool = struct
     | _, Bool false -> v1
     | Binop (Lt s1, l1, r1), Binop (Lt s2, l2, r2)
       when s1 = s2 && equal l1 r2 && equal r1 l2 ->
-        not (mk_commut_binop Eq l1 r1 <| TBool)
+        not (sem_eq l1 r1)
     | Binop (Lt s1, l1, r1), Binop (Leq s2, l2, r2)
     | Binop (Leq s1, l1, r1), Binop (Lt s2, l2, r2)
       when s1 = s2 && equal l1 r2 && equal r1 l2 ->
@@ -531,28 +529,10 @@ module rec Bool : Bool = struct
       | Binop (And, v1, v2) -> or_ (not v1) (not v2)
       | Binop (Eq, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }, v)
       | Binop (Eq, v, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }) ->
-          mk_commut_binop Eq (BitVec.mk 1 Z.(one - bv)) v <| TBool
+          sem_eq (BitVec.mk 1 Z.(one - bv)) v
       | _ -> Unop (Not, sv) <| TBool
 
-  let rec split_ands (sv : t) (f : t -> unit) : unit =
-    match sv.node.kind with
-    | Binop (And, s1, s2) ->
-        split_ands s1 f;
-        split_ands s2 f
-    | _ -> f sv
-
-  let distinct l =
-    (* [Distinct l] when l is empty or of size 1 is always true *)
-    match l with
-    | [] | [ _ ] -> v_true
-    | l ->
-        let cross_product = List.to_seq l |> Seq.self_cross_product in
-        let sure_distinct =
-          Seq.for_all (fun (a, b) -> sure_neq a b) cross_product
-        in
-        if sure_distinct then v_true else Nop (Distinct, l) <| TBool
-
-  let ite guard if_ else_ =
+  and ite guard if_ else_ =
     match (guard.node.kind, if_.node.kind, else_.node.kind) with
     | Bool true, _, _ -> if_
     | Bool false, _, _ -> else_
@@ -567,7 +547,7 @@ module rec Bool : Bool = struct
     | _ when equal if_ else_ -> if_
     | _ -> Ite (guard, if_, else_) <| if_.node.ty
 
-  let rec sem_eq v1 v2 =
+  and sem_eq v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | _ when equal v1 v2 -> v_true
     | Bool b1, Bool b2 -> bool (b1 = b2)
@@ -677,6 +657,26 @@ module rec Bool : Bool = struct
 
   let sem_eq_untyped v1 v2 =
     if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
+
+  let conj l = List.fold_left and_ v_true l
+
+  let rec split_ands (sv : t) (f : t -> unit) : unit =
+    match sv.node.kind with
+    | Binop (And, s1, s2) ->
+        split_ands s1 f;
+        split_ands s2 f
+    | _ -> f sv
+
+  let distinct l =
+    (* [Distinct l] when l is empty or of size 1 is always true *)
+    match l with
+    | [] | [ _ ] -> v_true
+    | l ->
+        let cross_product = List.to_seq l |> Seq.self_cross_product in
+        let sure_distinct =
+          Seq.for_all (fun (a, b) -> sure_neq a b) cross_product
+        in
+        if sure_distinct then v_true else Nop (Distinct, l) <| TBool
 end
 
 (** {2 Bit vectors} *)
