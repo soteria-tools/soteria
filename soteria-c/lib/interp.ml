@@ -168,8 +168,7 @@ module Make (State : State_intf.S) = struct
         let x = Typed.cast x in
         if%sat Typed.Ptr.is_at_null_loc x then Csymex.return (Typed.Ptr.ofs x)
         else
-          Fmt.kstr Csymex.not_impl "Pointer to int that is not at null loc %a"
-            Typed.ppa x
+          Fmt.failwith "Pointer to int that is not at null loc %a" Typed.ppa x
     | _ -> Csymex.not_impl "Cannot cast to int"
 
   let cast_aggregate_to_int (x : Agv.t) : [> T.sint ] Typed.t Csymex.t =
@@ -482,8 +481,8 @@ module Make (State : State_intf.S) = struct
           res
         else error `UBPointerArithmetic
     | _ ->
-        Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
-          Typed.ppa v2
+        Fmt.kstr not_impl "Unexpected types in subtraction: %a and %a" Typed.ppa
+          v1 Typed.ppa v2
 
   let arith_mul ~signed (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
@@ -530,11 +529,18 @@ module Make (State : State_intf.S) = struct
         let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
         let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
         arith_add ~signed v1 v2
-    | Sub, Basic (Integer inty) ->
-        let signed = Layout.is_int_ty_signed inty in
-        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
-        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
-        arith_sub ~signed v1 v2
+    | Sub, Basic (Integer inty) -> (
+        (* an integer could be the result of a pointer subtraction,
+           so we handle this separately *)
+        match (unwrap_ctype t1, unwrap_ctype t2) with
+        | Pointer (_, _), Pointer (_, _) ->
+            let signed = Layout.is_int_ty_signed inty in
+            arith_sub ~signed v1 v2
+        | _ ->
+            let signed = Layout.is_int_ty_signed inty in
+            let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+            let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+            arith_sub ~signed v1 v2)
     (* Float arithmetics *)
     | (Add | Sub | Mul | Div), Basic (Floating _) ->
         let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
