@@ -396,3 +396,43 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         };
       manifest_bugs = []}
   
+  $ soteria-c gen-summaries overflow.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  
+  error: Integer overflow in add_ovf_manifest
+      ┌─ overflow.c:9:11
+    9 │    int c = b + 1;
+      │            ^^^^^ Triggering operation
+  Summaries for add_561:
+    Analysed {
+      raw =
+      { args = [V|1|; V|2|]; pre = [];
+        pc =
+        [((V|1| <s 0x00000000) != ((V|1| + V|2|) <s 0x00000000));
+          ((V|1| <s 0x00000000) == (V|2| <s 0x00000000))];
+        post = { heap = []; globs = [] };
+        ret =
+        (Error (Integer overflow,
+                [• Triggering operation: overflow.c:3:10-15 (cursor: 3:12)]))
+        };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = [V|1|; V|2|]; pre = [];
+        pc =
+        [(((V|1| <s 0x00000000) == ((V|1| + V|2|) <s 0x00000000)) || ((V|1| <s 0x00000000) != (V|2| <s 0x00000000)))
+          ];
+        post = { heap = []; globs = [] }; ret = (Ok (V|1| +ck V|2|)) };
+      manifest_bugs = []}
+  
+  Summaries for add_ovf_manifest_564:
+    Analysed {
+      raw =
+      { args = [V|1|]; pre = []; pc = []; post = { heap = []; globs = [] };
+        ret =
+        (Error (Integer overflow,
+                [• Triggering operation: overflow.c:9:11-16 (cursor: 9:13)]))
+        };
+      manifest_bugs =
+      [(Integer overflow,
+        [• Triggering operation: overflow.c:9:11-16 (cursor: 9:13)])]}
+  
