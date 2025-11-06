@@ -608,6 +608,16 @@ module rec Bool : Bool = struct
         let z_r = BitVec.extract 0 (size_r - 1) z in
         let z_l = BitVec.extract size_r (size_r + size_l - 1) z in
         and_ (sem_eq l z_l) (sem_eq r z_r)
+    | Unop (BvExtend (false, by), bv), BitVec z
+    | BitVec z, Unop (BvExtend (false, by), bv) ->
+        let size_bv = size_of bv.node.ty in
+        (* if any of the bits of z are set in [size_bv, size_bv+by),
+           this cannot be true since they're extended to 0 *)
+        let mask = Z.(pred (one lsl by) lsl size_bv) in
+        if Stdlib.not Z.(equal (z land mask) Z.zero) then v_false
+        else
+          let z_bv = BitVec.mk size_bv z in
+          sem_eq bv z_bv
     (* ite(b, A::B, C::D) == l :: r <=> ite(b, A, C) == l && ite(b, B, D) == r *)
     | ( Ite
           ( b,
