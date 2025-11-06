@@ -769,6 +769,7 @@ and BitVec : BitVec = struct
     | _ -> of_bool n (Bool.sem_eq v (zero n))
 
   let rec add ?(checked = false) v1 v2 =
+    assert (equal_ty v1.node.ty v2.node.ty);
     match[@warning "-ambiguous-var-in-pattern-guard"]
       (v1.node.kind, v2.node.kind)
     with
@@ -1109,6 +1110,7 @@ and BitVec : BitVec = struct
     | _ -> Unop (BvExtract (from_, to_), v) <| t_bv size
 
   and extend ~signed extend_by v =
+    assert (is_bv v.node.ty);
     let n = size_of v.node.ty in
     let to_ = n + extend_by in
     assert (extend_by > 0);
@@ -1202,6 +1204,7 @@ and BitVec : BitVec = struct
     | _ -> Binop (AShr, v1, v2) <| v1.node.ty
 
   and mul ?(checked = false) v1 v2 =
+    assert (equal_ty v1.node.ty v2.node.ty);
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l * r)
     | _, BitVec z when Z.equal z Z.one -> v1
@@ -1265,6 +1268,7 @@ and BitVec : BitVec = struct
     | _ -> Binop (Div signed, v1, v2) <| v1.node.ty
 
   let rec lt ~signed v1 v2 =
+    assert (equal_ty v1.node.ty v2.node.ty);
     let bits = size_of v1.node.ty in
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
@@ -1746,7 +1750,9 @@ end
 (** {2 Pointers} *)
 
 module Ptr = struct
-  let mk l o = Ptr (l, o) <| TPointer (size_of o.node.ty)
+  let mk l o =
+    assert (size_of l.node.ty = size_of o.node.ty);
+    Ptr (l, o) <| TPointer (size_of o.node.ty)
 
   let loc p =
     match p.node.kind with
