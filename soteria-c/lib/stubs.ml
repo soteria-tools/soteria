@@ -119,11 +119,11 @@ module M (State : State_intf.S) = struct
     else Result.ok (Agv.void, state)
 
   let assume_ ~(args : Agv.t list) state =
-    let* to_assume =
+    let* to_assume, _ =
       match args with
       | [ Basic t ] ->
           Csymex.of_opt_not_impl ~msg:"assume: not an integer"
-            (Typed.cast_checked t (Typed.t_int 8))
+            (Typed.cast_int t)
       | _ -> not_impl "to_assume with non-one arguments"
     in
     let* () = Csymex.assume [ Typed.BitVec.to_bool to_assume ] in
