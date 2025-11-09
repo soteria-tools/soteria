@@ -23,7 +23,7 @@
                info = None })];
            globs = [] }
           ];
-        pc = [(0x0000000000000000 != V|1|)];
+        pc = [(0x0000000000000000 != V|1|); (0xfffffffffffffffc <=u V|2|)];
         post =
         { heap =
           [(V|1|,
@@ -122,7 +122,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
                info = None })];
            globs = [] }
           ];
-        pc = [(0x0000000000000000 != V|1|)];
+        pc = [(0x0000000000000000 != V|1|); (0xfffffffffffffffc <=u V|2|)];
         post =
         { heap =
           [(V|1|,
@@ -255,7 +255,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
           ];
         pc =
         [(0x0000000000000000 != V|2|); (0x00000001 <=u V|1|);
-          (V|1| <=u 0x7fffffff)];
+          (V|1| <=u 0x7fffffff); (0xfffffffffffffffc <=u V|3|)];
         post =
         { heap =
           [(V|2|,
@@ -309,7 +309,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
           ];
         pc =
         [(0x0000000000000000 != V|1|); (V|3| == 0x00000001);
-          (V|3| == 0x00000001)];
+          (0xfffffffffffffffc <=u V|2|); (V|3| == 0x00000001)];
         post =
         { heap =
           [(V|1|,
@@ -327,27 +327,40 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         [{ heap =
            [(V|1|,
              { node =
-               [MemVal {offset = V|2|; len = 0x0000000000000004;
-                  v = V|4| : signed int}];
+               [MemVal {offset = (V|2| +ck 0x0000000000000004);
+                  len = 0x0000000000000004; v = V|5| : signed int}];
                info = None })];
-           globs = [] }
+           globs = [] };
+          { heap =
+            [(V|1|,
+              { node =
+                [MemVal {offset = V|2|; len = 0x0000000000000004;
+                   v = V|4| : signed int}];
+                info = None })];
+            globs = [] }
           ];
         pc =
         [(0x0000000000000000 != V|1|);
-          ((V|2| <s 0x0000000000000000) != ((V|2| + 0x0000000000000004) <s 0x0000000000000000));
-          (V|2| <=u 0x7fffffffffffffff); (0x00000002 <=u V|3|);
+          (V|2| <=s (V|2| +ck 0x0000000000000004));
+          ((V|2| +ck 0x0000000000000004) <s (V|2| +ck 0x0000000000000008));
+          (V|2| != (V|2| +ck 0x0000000000000004));
+          ((V|4| <s 0x00000000) != ((V|4| + V|5|) <s 0x00000000));
+          ((V|4| <s 0x00000000) == (V|5| <s 0x00000000));
+          (0xfffffffffffffffc <=u V|2|); (0x00000002 <=u V|3|);
           (V|3| <=u 0x7fffffff)];
         post =
         { heap =
           [(V|1|,
             { node =
               [MemVal {offset = V|2|; len = 0x0000000000000004;
-                 v = V|4| : signed int}];
+                 v = V|4| : signed int};
+               MemVal {offset = (V|2| +ck 0x0000000000000004);
+                 len = 0x0000000000000004; v = V|5| : signed int}];
               info = None })];
           globs = [] };
         ret =
         (Error (Integer overflow,
-                [• Triggering operation: array_iter.c:6:12-16]))
+                [• Triggering operation: array_iter.c:6:5-16 (cursor: 6:9)]))
         };
       manifest_bugs = []}
     Analysed {
@@ -371,13 +384,12 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
           ];
         pc =
         [(0x0000000000000000 != V|1|);
-          ((V|2| <s 0x0000000000000000) || ((V|2| <s 0x0000000000000000) == ((V|2| + 0x0000000000000004) <s 0x0000000000000000)));
           (V|2| <=s (V|2| +ck 0x0000000000000004));
           ((V|2| +ck 0x0000000000000004) <s (V|2| +ck 0x0000000000000008));
           (V|2| != (V|2| +ck 0x0000000000000004));
-          ((V|4| <s 0x00000000) != ((V|4| + V|5|) <s 0x00000000));
-          ((V|4| <s 0x00000000) == (V|5| <s 0x00000000));
-          (0x00000002 <=u V|3|); (V|3| <=u 0x7fffffff)];
+          (((V|4| <s 0x00000000) == ((V|4| + V|5|) <s 0x00000000)) || ((V|4| <s 0x00000000) != (V|5| <s 0x00000000)));
+          (V|3| == 0x00000002); (0xfffffffffffffffc <=u V|2|);
+          (V|3| == 0x00000002)];
         post =
         { heap =
           [(V|1|,
@@ -385,15 +397,10 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
               [MemVal {offset = V|2|; len = 0x0000000000000004;
                  v = V|4| : signed int};
                MemVal {offset = (V|2| +ck 0x0000000000000004);
-                 len =
-                 ((V|2| +ck 0x0000000000000008) -ck (V|2| +ck 0x0000000000000004));
-                 v = V|5| : signed int}];
+                 len = 0x0000000000000004; v = V|5| : signed int}];
               info = None })];
           globs = [] };
-        ret =
-        (Error (Integer overflow,
-                [• Triggering operation: array_iter.c:6:5-16 (cursor: 6:9)]))
-        };
+        ret = (Ok (V|4| +ck V|5|)) };
       manifest_bugs = []}
   
   $ soteria-c gen-summaries overflow.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
