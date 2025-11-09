@@ -9,6 +9,8 @@ Test memory leaks
       │   │
       │   Leaking function
       │   1: Entry point
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (0x0000000000000001 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffffa)
   
   [1]
 
@@ -47,6 +49,7 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
       ┌─ $TESTCASE_ROOT/unwind.rs:1:2
     1 │  fn main() {
       │   --------- 1: Entry point
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   [1]
 Test that we properly handle the niche optimisation
