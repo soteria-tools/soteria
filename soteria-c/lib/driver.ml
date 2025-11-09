@@ -298,7 +298,8 @@ let exec_and_print log_config term_config solver_config config includes
     let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
     Fmt.pr
       "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
-       Executed %d statements"
+       Executed %d statements@\n\
+       @?"
       Fmt.Dump.(
         list @@ fun ft (r, _) ->
         (Soteria.Symex.Compo_res.pp
