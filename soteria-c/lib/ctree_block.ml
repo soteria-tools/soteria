@@ -11,7 +11,7 @@ module MemVal = struct
   module TB = Soteria.Sym_states.Tree_block
   module Symex = Csymex
 
-  module SInt = struct
+  module SBoundedInt = struct
     include Typed
     include Typed.Infix
 
@@ -26,6 +26,9 @@ module MemVal = struct
        This allows extremely good reductions around inequalities, which Tree_block relies on.  *)
     let ( +@ ) = Typed.Infix.( +!!@ )
     let ( -@ ) = Typed.Infix.( -!!@ )
+
+    let in_bound (v : sint Typed.t) : sbool Typed.t =
+      v >=@ zero () &&@ (v <=@ Typed.BitVec.isize_max)
   end
 
   let pp_init ft (v, ty) =

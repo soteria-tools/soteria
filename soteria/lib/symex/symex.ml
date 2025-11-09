@@ -401,6 +401,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         Symex_state.save ();
         Solver.add_constraints [ Value.(not value) ];
         let sat_result = Solver.sat () in
+        let () =
+          L.debug (fun m ->
+              m "Entailment SAT check returned %a" Solver_result.pp sat_result)
+        in
         Symex_state.backtrack_n 1;
         if Approx.As_ctx.is_ux () then not (Solver_result.is_sat sat_result)
         else Solver_result.is_unsat sat_result

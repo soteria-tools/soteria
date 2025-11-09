@@ -46,7 +46,7 @@ and node_qty = Partially | Totally
 module type MemVal = sig
   module Symex : Symex.Base
 
-  module SInt : sig
+  module SBoundedInt : sig
     type +'a t = 'a Symex.Value.t
     type sbool
     type sint
@@ -59,10 +59,11 @@ module type MemVal = sig
     val ( <=@ ) : sint t -> sint t -> sbool t
     val ( ==@ ) : sint t -> sint t -> sbool t
     val ( &&@ ) : sbool t -> sbool t -> sbool t
+    val in_bound : sint t -> sbool t
   end
 
   type t
-  type sint := SInt.sint SInt.t
+  type sint := SBoundedInt.sint SBoundedInt.t
 
   val pp : Format.formatter -> t -> unit
 
@@ -124,16 +125,16 @@ module Make
     (MemVal :
       MemVal
         with module Symex = Symex
-         and type 'a SInt.t = 'a Symex.Value.t
-         and type SInt.sbool = Symex.Value.sbool) =
+         and type 'a SBoundedInt.t = 'a Symex.Value.t
+         and type SBoundedInt.sbool = Symex.Value.sbool) =
 struct
   open Compo_res
   open Symex.Syntax
   open Symex
-  open MemVal.SInt
+  open MemVal.SBoundedInt
 
   module Sym_int_syntax = struct
-    let zero = MemVal.SInt.zero
+    let zero = MemVal.SBoundedInt.zero
   end
 
   type nonrec sint = sint Symex.Value.t
@@ -669,6 +670,7 @@ struct
         Ok (to_opt { bound = None; root })
 
   let produce_bound bound t =
+    let* () = Symex.assume [ MemVal.SBoundedInt.in_bound bound ] in
     match t with
     | None ->
         Symex.return
@@ -679,6 +681,7 @@ struct
 
   let produce_mem_val offset len v t =
     let ((_, high) as range) = Range.of_low_and_size offset len in
+    let* () = Symex.assume [ MemVal.SBoundedInt.in_bound high ] in
     let t =
       match t with
       | Some t -> t

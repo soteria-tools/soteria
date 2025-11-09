@@ -1,5 +1,10 @@
 type t = Sat | Unsat | Unknown
 
+let pp fmt = function
+  | Sat -> Format.fprintf fmt "Sat"
+  | Unsat -> Format.fprintf fmt "Unsat"
+  | Unknown -> Format.fprintf fmt "Unknown"
+
 let is_sat = function Sat -> true | Unsat | Unknown -> false
 let is_unsat = function Unsat -> true | Sat | Unknown -> false
 

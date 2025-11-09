@@ -19,7 +19,7 @@ module Make (Sptr : Sptr.S) = struct
     module TB = Soteria.Sym_states.Tree_block
     module Symex = DecayMapMonad
 
-    module SInt = struct
+    module SBoundedInt = struct
       include Typed
       include Typed.Infix
 
@@ -34,6 +34,11 @@ module Make (Sptr : Sptr.S) = struct
          This allows extremely good reductions around inequalities, which Tree_block relies on.  *)
       let ( +@ ) = Typed.Infix.( +!!@ )
       let ( -@ ) = Typed.Infix.( -!!@ )
+
+      let in_bound (v : sint Typed.t) : sbool Typed.t =
+        let max = Layout.max_value_z (TInt Isize) in
+        let max = Typed.BitVec.usize max in
+        v >=@ zero () &&@ (v <=@ max)
     end
 
     let pp_init ft (v, ty) =

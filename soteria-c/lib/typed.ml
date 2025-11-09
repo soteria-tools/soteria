@@ -21,6 +21,7 @@ module BitVec = struct
   let usizenz z = mk_nz ptr_bits z
   let usizei i = mki ptr_bits i
   let usizeinz i = mki_nz ptr_bits i
+  let isize_max = usize (Z.pred (Z.shift_left Z.one (ptr_bits - 1)))
 
   let fit_to ?(signed = false) size (bv : [< T.sint ] t) : [> T.sint ] t =
     let cur = size_of_int bv in
