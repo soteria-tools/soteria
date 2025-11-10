@@ -319,7 +319,12 @@ module Make (State : State_intf.S) = struct
     | ConstantNull -> Agv.null
     | ConstantCharacter (pref, char) -> (
         if Option.is_some pref then unsupported "char prefix";
-        match (Constants.string_to_char char, Layout.size_of_int_ty Char) with
+        let size =
+          match ty with
+          | Ctype.Ctype (_, Basic (Integer inty)) -> Layout.size_of_int_ty inty
+          | _ -> unsupported "integer constant with non-integer type"
+        in
+        match (Constants.string_to_char char, size) with
         | Some char, Some size -> Agv.int (8 * size) char
         | None, Some _ -> unsupported ("char constant: " ^ char)
         | _, None -> unsupported "char constant with unknown size")
@@ -816,6 +821,7 @@ module Make (State : State_intf.S) = struct
         | Indirection -> ok v
         | Address -> failwith "unreachable: address_of already handled"
         | Minus -> (
+            let^ v = cast ~old_ty:(type_of e) ~new_ty:(type_of aexpr) v in
             let^ v = cast_aggregate_to_int v in
             match type_of aexpr |> unwrap_ctype with
             | Basic (Integer _) ->
@@ -827,6 +833,7 @@ module Make (State : State_intf.S) = struct
                 ok (Agv.Basic res)
             | _ -> not_impl "Unary minus on unsupported type")
         | AilSyntax.Bnot ->
+            let^ v = cast ~old_ty:(type_of e) ~new_ty:(type_of aexpr) v in
             let^ v = cast_aggregate_to_int v in
             let res = Typed.BitVec.not v in
             ok (Agv.Basic res)

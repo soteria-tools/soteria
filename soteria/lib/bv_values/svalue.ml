@@ -1441,6 +1441,7 @@ and BitVec : BitVec = struct
     | _ -> Binop (Lt signed, v1, v2) <| TBool
 
   and leq ~signed v1 v2 =
+    assert (equal_ty v1.node.ty v2.node.ty);
     let bits = size_of v1.node.ty in
     match (v1.node.kind, v2.node.kind) with
     | _ when equal v1 v2 -> Bool.v_true
