@@ -348,6 +348,22 @@ let nondet_c_ty_aggregate (ty : ctype) : Agv.t Csymex.t =
   let+ res = nondet_c_ty ty in
   Agv.Basic res
 
+let int_ty_bounds int_ty =
+  let open Syntaxes.Option in
+  match int_ty with
+  | Char -> Some (Z.zero, Z.of_int 255)
+  | Bool -> Some (Z.zero, Z.one)
+  | Signed _ ->
+      let+ size = size_of_int_ty int_ty in
+      let min = Z.neg (Z.shift_left Z.one ((size * 8) - 1)) in
+      let max = Z.pred (Z.shift_left Z.one ((size * 8) - 1)) in
+      (min, max)
+  | Unsigned _ ->
+      let+ size = size_of_int_ty int_ty in
+      let max = Z.pred (Z.shift_left Z.one (size * 8)) in
+      (Z.zero, max)
+  | _ -> None
+
 (** Returns the target type for "usual arithmetic conversions" between two
     types.
 

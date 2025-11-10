@@ -302,7 +302,9 @@ module Make (State : State_intf.S) = struct
     | _ -> Result.ok (`NotImmediate, store, state)
 
   let rec aggregate_of_constant_exn ~ty (c : constant) : Agv.t =
-    let unsupported msg = raise (Unsupported (msg, get_loc ())) in
+    let unsupported fmt =
+      Fmt.kstr (fun msg -> raise (Unsupported (msg, get_loc ()))) fmt
+    in
     match c with
     | ConstantInteger (IConstant (z, _basis, _suff)) ->
         let size =
@@ -326,7 +328,7 @@ module Make (State : State_intf.S) = struct
         in
         match (Constants.string_to_char char, size) with
         | Some char, Some size -> Agv.int (8 * size) char
-        | None, Some _ -> unsupported ("char constant: " ^ char)
+        | None, Some _ -> unsupported "char constant: %s" char
         | _, None -> unsupported "char constant with unknown size")
     | ConstantStruct (tag, fields) ->
         let members =
@@ -352,11 +354,28 @@ module Make (State : State_intf.S) = struct
         in
         let f = Typed.Float.mk precision str in
         Agv.Basic f
-    | ConstantInteger _ | ConstantIndeterminate _ | ConstantPredefined _
+    | ConstantInteger ci -> (
+        let res_opt =
+          let open Syntaxes.Option in
+          match ci with
+          | AilSyntax.IConstant _ ->
+              unsupported "value of constant? %a" Fmt_ail.pp_constant c
+          | AilSyntax.IConstantMax int_ty ->
+              let* bv_info = Layout.int_bv_info int_ty in
+              let+ _, max = Layout.int_ty_bounds int_ty in
+              Typed.BitVec.mk bv_info.bv_size max
+          | AilSyntax.IConstantMin int_ty ->
+              let* bv_info = Layout.int_bv_info int_ty in
+              let+ min, _ = Layout.int_ty_bounds int_ty in
+              Typed.BitVec.mk bv_info.bv_size min
+        in
+        match res_opt with
+        | Some bv -> Agv.Basic bv
+        | None -> unsupported "value of constant? %a" Fmt_ail.pp_constant c)
+    | ConstantIndeterminate _ | ConstantPredefined _
     | ConstantArray (_, _)
     | ConstantUnion (_, _, _) ->
-        let msg = Fmt.str "value of constant? %a" Fmt_ail.pp_constant c in
-        unsupported msg
+        unsupported "value of constant? %a" Fmt_ail.pp_constant c
 
   let aggregate_of_constant ~ty (c : constant) : Agv.t Csymex.t =
     try Csymex.return (aggregate_of_constant_exn ~ty c)
