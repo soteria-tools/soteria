@@ -363,14 +363,14 @@ module Make (State : State_intf.S) = struct
           | AilSyntax.IConstantMax int_ty ->
               let* bv_info = Layout.int_bv_info int_ty in
               let+ _, max = Layout.int_ty_bounds int_ty in
-              Typed.BitVec.mk bv_info.bv_size max
+              Agv.int_z bv_info.bv_size max
           | AilSyntax.IConstantMin int_ty ->
               let* bv_info = Layout.int_bv_info int_ty in
               let+ min, _ = Layout.int_ty_bounds int_ty in
-              Typed.BitVec.mk bv_info.bv_size min
+              Agv.int_z bv_info.bv_size min
         in
         match res_opt with
-        | Some bv -> Agv.Basic bv
+        | Some agv -> agv
         | None -> unsupported "value of constant? %a" Fmt_ail.pp_constant c)
     | ConstantIndeterminate _ | ConstantPredefined _
     | ConstantArray (_, _)

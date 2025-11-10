@@ -997,7 +997,7 @@ Check that, with proper flag, undefined function calls are havoced. Expecting 2 
             globs = [(x_561, V|1|)] })]
   Executed 6 statements
 Should return -1
-  $ soteria-c exec constants.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v
+  $ soteria-c exec constants.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v --use-cerb-headers
   Symex terminated with the following outcomes:
     [Ok: (0xffffffff, { heap = []; globs = [] })]
   Executed 4 statements
