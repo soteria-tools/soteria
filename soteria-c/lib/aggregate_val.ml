@@ -11,6 +11,15 @@ let rec pp ft =
 
 let int_z size z = Basic (Typed.BitVec.mk_masked size z)
 let int size i = Basic (Typed.BitVec.mki_masked size i)
+
+let c_int i =
+  let c_int_size =
+    Option.get
+      (Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity
+         (Signed Int_))
+  in
+  int (c_int_size * 8) i
+
 let void = Basic (Typed.BitVec.zero 8)
 let null = Basic Typed.Ptr.null
 

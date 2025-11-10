@@ -406,3 +406,9 @@ let type_conversion_arith (ty1 : ctype) ty2 =
   | Pointer _, _ -> ty1
   | _, Pointer _ -> ty1
   | _ -> failwith "non-basic types in arith operation"
+
+(** Size of the [int] type in C. *)
+let c_int_size =
+  Option.get
+    (Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity
+       (Signed Int_))

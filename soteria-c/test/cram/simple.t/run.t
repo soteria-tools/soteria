@@ -1011,3 +1011,12 @@ Should return -1
              (V|2|, { node = Freed; info = (Some array0.c:5:34-39) })];
             globs = [] })]
   Executed 6 statements
+
+  $ soteria-c exec strcmp.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v
+  Symex terminated with the following outcomes:
+    [Ok: (0x00000000,
+          { heap =
+            [(V|1|, { node = Freed; info = (Some strcmp.c:7:29-30) });
+             (V|2|, { node = Freed; info = (Some strcmp.c:7:32-33) })];
+            globs = [] })]
+  Executed 7 statements

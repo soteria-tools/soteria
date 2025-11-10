@@ -2,6 +2,7 @@ module Ctype = Cerb_frontend.Ctype
 open Csymex
 open Csymex.Syntax
 open Typed.Infix
+open Typed.Syntax
 module BV = Typed.BitVec
 module T = Typed.T
 module Agv = Aggregate_val
@@ -137,6 +138,41 @@ module M (State : State_intf.S) = struct
     let v = (v :> T.cval Typed.t) in
     Result.ok (Basic v, state)
 
+  let strcmp ~args state =
+    let* s1, s2 =
+      match args with
+      | [ Basic s1; Basic s2 ] ->
+          let* s1_ptr =
+            of_opt_not_impl ~msg:"strcmp with non-pointer s1"
+            @@ Typed.cast_checked s1 Typed.t_ptr
+          in
+          let+ s2_ptr =
+            of_opt_not_impl ~msg:"strcmp with non-pointer s2"
+            @@ Typed.cast_checked s2 Typed.t_ptr
+          in
+          (s1_ptr, s2_ptr)
+      | _ -> not_impl "strcmp with non-two arguments"
+    in
+    (* TODO: Optimise strcmp directly on the heap model! *)
+    let[@inline] next ptr = Typed.Ptr.add_ofs ptr (BV.usizei 1) in
+    let rec loop s1_ptr s2_ptr state =
+      let** c1, state = State.load s1_ptr Ctype.char state in
+      let** c2, state = State.load s2_ptr Ctype.char state in
+      if%sat c1 ==@ U8.(0s) &&@ (c2 ==@ U8.(0s)) then
+        Result.ok (Agv.c_int 0, state)
+      else
+        if%sat c1 ==@ c2 then loop (next s1_ptr) (next s2_ptr) state
+        else
+          let* c1, _ = Typed.cast_int c1 |> of_opt_not_impl ~msg:"strcmp c1" in
+          let* c2, _ = Typed.cast_int c2 |> of_opt_not_impl ~msg:"strcmp c2" in
+          let c1 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c1 in
+          let c2 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c2 in
+          (* This cannot overflow because they were chars and operation happens in integer world *)
+          let res = c1 -!@ c2 in
+          Result.ok (Basic res, state)
+    in
+    loop s1 s2 state
+
   let havoc ~return_ty ~args state =
     let rec havoc_aggregate state (v : Agv.t) =
       match v with
@@ -209,6 +245,7 @@ module M (State : State_intf.S) = struct
         | "memmove" ->
             (* We model memmove as memcpy, we should do non-overlapping checks but heh. *)
             Some (memcpy, None)
+        | "strcmp" -> Some (strcmp, None)
         | "__builtin___memcpy_chk" ->
             (* See definition of this builtin, the last argument is not useful to us. *)
             Some (memcpy, Some (( <> ) 3))
