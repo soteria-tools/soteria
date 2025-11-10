@@ -854,11 +854,11 @@ module Make (State : State_intf.S) = struct
           ok (Agv.Basic (BV.of_bool b_res))
         else
           let^ v1 = cast_aggregate_to_bool v1 in
-          if%sat v1 then ok (Agv.Basic U8.(1s))
-          else
+          if%sat Typed.not v1 then
             let* v2 = eval_expr e2 in
             let^ b_res = cast_aggregate_to_bool v2 in
             ok (Agv.Basic (BV.of_bool b_res))
+          else ok (Agv.Basic U8.(1s))
     | AilEbinary (e1, And, e2) ->
         (* Same as Or, we need to short-circuit *)
         let* v1 = eval_expr e1 in
