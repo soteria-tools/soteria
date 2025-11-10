@@ -1032,14 +1032,23 @@ module Make (State : State_intf.S) = struct
         let* guard = eval_expr guard in
         let^ guard_bool = cast_aggregate_to_bool guard in
         if%sat guard_bool then eval_expr t else eval_expr e
-    | AilEstruct (_tag, fields) ->
+    | AilEstruct (tag, fields) ->
+        let* members =
+          match Layout.get_struct_fields tag with
+          | Some (members, None) -> ok members
+          | Some (_, Some _) -> not_impl "flexible array member"
+          | None -> not_impl "unknown struct tag"
+        in
+        let fields = List.combine members fields in
         let+ fields_rev =
-          fold_list fields ~init:[] ~f:(fun acc (_, e_opt) ->
+          fold_list fields ~init:[]
+            ~f:(fun acc ((_, (_, _, _, new_ty)), (_, e_opt)) ->
               match e_opt with
               | None -> not_impl "Partial field initialization"
               | Some e ->
-                  let+ new_res = eval_expr e in
-                  new_res :: acc)
+                  let* new_res = eval_expr e in
+                  let^ new_res = cast ~old_ty:(type_of e) ~new_ty new_res in
+                  ok (new_res :: acc))
         in
         Agv.Struct (List.rev fields_rev)
     | AilEcond (_, None, _) -> not_impl "GNU ?:"
