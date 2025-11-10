@@ -996,3 +996,8 @@ Check that, with proper flag, undefined function calls are havoced. Expecting 2 
              (V|2|, { node = Freed; info = (Some glob_struct.c:16:22-23) })];
             globs = [(x_561, V|1|)] })]
   Executed 6 statements
+Should return -1
+  $ soteria-c exec constants.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v
+  Symex terminated with the following outcomes:
+    [Ok: (0xffffffff, { heap = []; globs = [] })]
+  Executed 4 statements
