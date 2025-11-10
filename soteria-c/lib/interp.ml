@@ -1038,7 +1038,12 @@ module Make (State : State_intf.S) = struct
     | AilEcond (guard, Some t, e) ->
         let* guard = eval_expr guard in
         let^ guard_bool = cast_aggregate_to_bool guard in
-        if%sat guard_bool then eval_expr t else eval_expr e
+        if%sat guard_bool then
+          let* res = eval_expr t in
+          lift_symex @@ cast ~old_ty:(type_of t) ~new_ty:(type_of aexpr) res
+        else
+          let* res = eval_expr e in
+          lift_symex @@ cast ~old_ty:(type_of e) ~new_ty:(type_of aexpr) res
     | AilEstruct (tag, fields) ->
         let* members =
           match Layout.get_struct_fields tag with
