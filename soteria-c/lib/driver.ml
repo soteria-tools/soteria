@@ -379,10 +379,11 @@ let lsp config () =
   Config.with_config ~config @@ Soteria_c_lsp.run ~generate_errors
 
 (* Entry point function *)
-let show_ail logs_config term_config (includes : string list)
+let show_ail logs_config term_config config (includes : string list)
     (files : string list) =
   Soteria.Logs.Config.check_set_and_lock logs_config;
   Soteria.Terminal.Config.set_and_lock term_config;
+  Config.with_config ~config @@ fun () ->
   match parse_and_link_ail ~includes files with
   | Ok { symmap; sigma; entry_point } ->
       Fmt.pr "@[<v 2>Extern idmap:@ %a@]@\n@\n"
