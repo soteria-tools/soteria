@@ -666,7 +666,7 @@ module Make (State : State_intf.S) = struct
       | Break
       | Goto of Symbol_std.t
       | Case of T.sint Typed.t
-      | Returned of Agv.t
+      | Returned of Agv.t * (Ctype.ctype[@printer Fmt_ail.pp_ty])
     [@@deriving show { with_path = false }]
   end
 
@@ -1069,12 +1069,15 @@ module Make (State : State_intf.S) = struct
     | AilEgcc_statement (_, _) ->
         Fmt.kstr not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
-  and exec_body (body : stmt) : Agv.t InterpM.t =
+  and exec_body ~ret_ty (body : stmt) : Agv.t InterpM.t =
     let open Stmt_exec_result in
     let rec aux res =
       L.trace (fun m -> m "Body execution result: %a" Stmt_exec_result.pp res);
       match res with
-      | Returned v -> InterpM.ok v
+      | Returned (v, old_ty) -> (
+          match ret_ty with
+          | Some new_ty -> lift_symex @@ cast ~old_ty ~new_ty v
+          | _ -> InterpM.ok v)
       | Normal ->
           (* Function didn't return, we return void (encoded as 0) *)
           InterpM.ok Agv.void
@@ -1217,8 +1220,8 @@ module Make (State : State_intf.S) = struct
     | AilSreturn e ->
         let+ v = eval_expr e in
         L.debug (fun m -> m "Returning: %a" Agv.pp v);
-        Returned v
-    | AilSreturnVoid -> ok (Returned Agv.void)
+        Returned (v, type_of e)
+    | AilSreturnVoid -> ok (Returned (Agv.void, Ctype.void))
     | AilSblock (bindings, stmtl) ->
         let* () = attach_bindings bindings in
         (* Second result, corresponding to the block-scoped store, is discarded *)
@@ -1304,13 +1307,14 @@ module Make (State : State_intf.S) = struct
     let open Csymex.Syntax in
     (* Put arguments in store *)
     let name, (loc, _, _, params, stmt) = fundef in
+    let ret_ty = Ail_helpers.get_return_ty name in
     let@ () = with_loc ~loc in
     L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);
     L.trace (fun m -> m "Was given arguments: %a" (Fmt.Dump.list Agv.pp) args);
     let* ptys = get_param_tys name in
     let ps = List.combine3 params ptys args in
     let store = mk_store ps in
-    let** res, store, state = exec_body stmt store state in
+    let** res, store, state = exec_body ~ret_ty stmt store state in
     let++ state = dealloc_store store state in
     (* We model void as zero, it should never be used anyway *)
     (res, state)
