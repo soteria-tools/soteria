@@ -412,10 +412,18 @@ module Make (State : State_intf.S) = struct
 
   open InterpM
 
-  let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =
+  let rec equality_check ~ty (v1, t1) (v2, t2) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TBitVector _, TBitVector _ | TPointer _, TPointer _ ->
+    | TBitVector _, TBitVector _ ->
+        (* Here we need a cast because we may compare e.g. a [size_t] with [0], which
+           will have type [int].
+           We can't do this conversion earlier (in [eval_expr]) because we don't want
+           to cast integers to pointers or pointers to integers, loosing information;
+           this case only matters for BitVector values specifically. *)
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty:ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty:ty v2 in
         ok (v1 ==@ v2 |> BV.of_bool)
+    | TPointer _, TPointer _ -> ok (v1 ==@ v2 |> BV.of_bool)
     | TFloat fp1, TFloat fp2 when Svalue.FloatPrecision.equal fp1 fp2 ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
@@ -425,15 +433,15 @@ module Make (State : State_intf.S) = struct
         let v2, size = Option.get @@ Typed.cast_int v2 in
         let+ () = assert_or_error (v2 ==@ BV.zero size) `UBPointerComparison in
         v1 ==@ Typed.Ptr.null |> BV.of_bool
-    | TBitVector _, TPointer _ -> equality_check v2 v1
+    | TBitVector _, TPointer _ -> equality_check ~ty (v2, t2) (v1, t1)
     | _ ->
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
           Typed.ppa v1 Typed.ppa v2
 
-  let aggregate_equality_check (v1 : Agv.t) (v2 : Agv.t) =
+  let aggregate_equality_check ~ty (v1, t1) (v2, t2) =
     let^ v1 = Agv.basic_or_unsupported ~msg:"aggregate_equality_check" v1 in
     let^ v2 = Agv.basic_or_unsupported ~msg:"aggregate_equality_check" v2 in
-    equality_check v1 v2
+    equality_check ~ty (v1, t1) (v2, t2)
 
   let rec arith_add ~signed (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
@@ -576,8 +584,9 @@ module Make (State : State_intf.S) = struct
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some ty, None ->
             let^ factor = Layout.size_of_s ty in
-            let^ ptr_size = Layout.size_of_int_ty_unsupported Size_t in
-            let v2 = BV.fit_to ~signed:false (8 * ptr_size) (Typed.cast v2) in
+            let* v2 =
+              of_opt_not_impl ~msg:"Non integer in add" @@ BV.cast_to_size_t v2
+            in
             let* v2 = arith_mul ~signed:true v2 factor in
             arith_sub ~signed:true v1 v2
         | None, Some _ -> error `UBPointerArithmetic
@@ -720,8 +729,7 @@ module Make (State : State_intf.S) = struct
     match expr with
     | AilEconst c ->
         let ty = type_of aexpr in
-        let^ v = aggregate_of_constant ~ty c in
-        ok v
+        lift_symex @@ aggregate_of_constant ~ty c
     | AilEcall (f, args) ->
         let* exec_fun, arg_tys, filter = resolve_function f in
         let args = Stubs.Arg_filter.apply filter args in
@@ -896,13 +904,15 @@ module Make (State : State_intf.S) = struct
         | Le ->
             ineq_comparison ~int_cmp_op:(BV.leq ~signed) ~float_cmp_op:( <=.@ )
               v1 v2
-        | Eq ->
-            let+ res = aggregate_equality_check v1 v2 in
-            Agv.Basic res
-        | Ne ->
-            (* TODO: Semantics of Ne might be different from semantics of not eq? *)
-            let+ res = aggregate_equality_check v1 v2 in
-            Agv.Basic (BV.not_bool res)
+        | Eq | Ne ->
+            let new_ty = Layout.type_conversion_arith ty_v1 ty_v2 in
+            let+ res =
+              aggregate_equality_check ~ty:new_ty
+                (v1, type_of e1)
+                (v2, type_of e2)
+            in
+            if op = Eq then Agv.Basic (res :> T.cval Typed.t)
+            else Agv.Basic (BV.not_bool res)
         | Or | And -> failwith "Unreachable, handled earlier."
         | Arithmetic a_op ->
             let^ v1 = Agv.basic_or_unsupported ~msg:"Arithmetics" v1 in
