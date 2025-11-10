@@ -1084,10 +1084,10 @@ module Make (State : State_intf.S) = struct
         Agv.Struct (List.rev fields_rev)
     | AilEcond (_, None, _) -> not_impl "GNU ?:"
     | AilEarray_decay _ -> not_impl "Array decay"
+    | AilEarray (_, _, _) -> not_impl "Array expression"
     | AilEassert _
     | AilEoffsetof (_, _)
     | AilEgeneric (_, _)
-    | AilEarray (_, _, _)
     | AilEunion (_, _, _)
     | AilEcompound (_, _, _)
     | AilEbuiltin _ | AilEstr _ | AilEsizeof_expr _
