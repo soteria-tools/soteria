@@ -432,7 +432,7 @@ module Make (State : State_intf.S) = struct
       match v with
       | Basic v ->
           Csymex.map (cast_basic ~old_ty ~new_ty v) (fun x -> Agv.Basic x)
-      | Struct _ -> Fmt.kstr not_impl "Cannot cast %a" Agv.pp v
+      | Struct _ | Array _ -> Fmt.kstr not_impl "Cannot cast %a" Agv.pp v
 
   open InterpM
 
@@ -1082,9 +1082,31 @@ module Make (State : State_intf.S) = struct
                   ok (new_res :: acc))
         in
         Agv.Struct (List.rev fields_rev)
+    | AilEarray (_is_str_literal, elem_ty, expr_opt_list) ->
+        let+ elems_rev =
+          fold_list expr_opt_list ~init:[] ~f:(fun acc e_opt ->
+              match e_opt with
+              | None -> not_impl "Partial array initialization"
+              | Some e ->
+                  let* new_res = eval_expr e in
+                  let^ new_res =
+                    cast ~old_ty:(type_of e) ~new_ty:elem_ty new_res
+                  in
+                  ok (new_res :: acc))
+        in
+        Agv.Array (List.rev elems_rev)
+    | AilEarray_decay e -> (
+        match unwrap_expr e with
+        | AilEident id -> (
+            let id = Ail_helpers.resolve_sym id in
+            let* ptr_opt = get_stack_address id in
+            match ptr_opt with
+            | Some ptr -> ok (Agv.Basic (ptr :> T.cval Typed.t))
+            | None -> get_global id)
+        | AilEarray _ -> not_impl "Array decay of array literal"
+        | _ -> Fmt.kstr not_impl "Unsupported array decay: %a" Fmt_ail.pp_expr e
+        )
     | AilEcond (_, None, _) -> not_impl "GNU ?:"
-    | AilEarray_decay _ -> not_impl "Array decay"
-    | AilEarray (_, _, _) -> not_impl "Array expression"
     | AilEassert _
     | AilEoffsetof (_, _)
     | AilEgeneric (_, _)

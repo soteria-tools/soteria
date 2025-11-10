@@ -146,6 +146,8 @@ module M (State : State_intf.S) = struct
               Csymex.not_impl "Havocking input pointer for undefined function"
           | None -> Result.ok state)
       | Struct fields -> Result.fold_list fields ~init:state ~f:havoc_aggregate
+      | Array elements ->
+          Result.fold_list elements ~init:state ~f:havoc_aggregate
     in
     let** state = Result.fold_list args ~init:state ~f:havoc_aggregate in
     let* ret =

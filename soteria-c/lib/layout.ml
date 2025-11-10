@@ -82,6 +82,11 @@ let size_of_int_ty_unsupported (int_ty : integerType) =
     ~msg:"size_of_int_ty_unsupported: integer of unknown size"
   @@ size_of_int_ty int_ty
 
+let get_array_info ty =
+  match CF.Ctype.proj_ctype_ ty with
+  | Array (elem_ty, sz) -> Some (elem_ty, sz)
+  | _ -> None
+
 let get_struct_fields tag =
   let open Syntaxes.Option in
   let* _loc, def = Tag_defs.find_opt tag in
@@ -120,6 +125,11 @@ let rec layout_of ty =
             None
       in
       union_layout_of_members members
+  | Array (elem_ty, Some sz) ->
+      let* elem_layout = layout_of elem_ty in
+      let size = elem_layout.size * Z.to_int sz in
+      let align = elem_layout.align in
+      Some { size; align; members_ofs = [] }
   | _ ->
       L.debug (fun m -> m "Cannot compute layout of %a" Fmt_ail.pp_ty_ ty);
       None
@@ -287,10 +297,11 @@ exception Unsupported of string
 let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
   let open Typed.Infix in
   let unsupported msg = raise (Unsupported msg) in
+
   let basic_or_unsupported v =
     match v with
     | Agv.Basic v -> v
-    | Agv.Struct _ ->
+    | Agv.Struct _ | Agv.Array _ ->
         Fmt.kstr unsupported "Not a basic value (%a) for type %a" Agv.pp v
           Fmt_ail.pp_ty ty
   in

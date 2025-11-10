@@ -127,6 +127,19 @@ let deinit ptr len st =
 let rec store_aggregate (ptr : [< T.sptr ] Typed.t) ty v state =
   match v with
   | Agv.Basic v -> store ptr ty v state
+  | Agv.Array elems ->
+      let* elem_ty, _ =
+        Layout.get_array_info ty
+        |> Csymex.of_opt_not_impl ~msg:"Array element type"
+      in
+      let++ _, state =
+        Result.fold_list elems ~init:(ptr, state) ~f:(fun (ptr, state) elem ->
+            let** (), state = store_aggregate ptr elem_ty elem state in
+            let* elem_size = Layout.size_of_s elem_ty in
+            let ptr = Typed.Ptr.add_ofs ptr elem_size in
+            Result.ok (ptr, state))
+      in
+      ((), state)
   | Struct values ->
       let* members, _ =
         Layout.get_struct_fields_ty ty
@@ -231,6 +244,19 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) (state : t)
   let offset = Typed.Ptr.ofs ptr in
   match (v, ty) with
   | Basic v, _ -> produce_basic_val loc offset ty v state
+  | Array elems, ty ->
+      let* elem_ty, _ =
+        Layout.get_array_info ty
+        |> Csymex.of_opt_not_impl ~msg:"Array element type"
+      in
+      let+ _, state =
+        Csymex.fold_list elems ~init:(ptr, state) ~f:(fun (ptr, state) elem ->
+            let* state = produce_aggregate ptr elem_ty elem state in
+            let+ elem_size = Layout.size_of_s elem_ty in
+            let ptr = Typed.Ptr.add_ofs ptr elem_size in
+            (ptr, state))
+      in
+      state
   | Struct values, ty ->
       let* members, _ =
         Layout.get_struct_fields_ty ty
