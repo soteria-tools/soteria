@@ -1329,6 +1329,16 @@ and BitVec : BitVec = struct
               ({ node = { kind = BitVec _; _ }; _ } as l) ) ),
         BitVec _ ) ->
         lt ~signed x (sub ~checked:true v2 l)
+    | _, Binop (Add { checked = true }, v2, v2')
+      when equal v1 v2 || equal v1 v2' ->
+        (* a < a + b when + doesn't overflow is equivalent to 0 < b *)
+        let b = if equal v1 v2 then v2' else v2 in
+        lt ~signed (zero bits) b
+    | Binop (Add { checked = true }, v1, v1'), _
+      when equal v2 v1 || equal v2 v1' ->
+        (* a + b < a when + doesn't overflow is equivalent to b < 0 *)
+        let b = if equal v2 v1 then v1' else v1 in
+        lt ~signed b (zero bits)
     | ( ( Binop
             ( Add { checked = true },
               ({ node = { kind = BitVec bv_l; _ }; _ } as l),
