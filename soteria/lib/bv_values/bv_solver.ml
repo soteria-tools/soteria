@@ -14,11 +14,11 @@ let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
           match v.node.kind with
           | Unop (Not, e) ->
               let e' = simplify e in
-              if Svalue.equal e e' then v else Svalue.Bool.not e'
+              if Svalue.equal e e' then fallback v else Svalue.Bool.not e'
           | Binop (Eq, e1, e2) ->
               if Svalue.equal e1 e2 then Svalue.Bool.v_true
               else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
-              else v
+              else fallback v
           | Binop (And, e1, e2) ->
               let se1 = simplify e1 in
               let se2 = simplify e2 in
@@ -449,29 +449,9 @@ struct
   let fresh_var solver ty =
     Declared_vars.fresh solver.vars (Typed.untype_type ty)
 
-  let equality_for solver var ty =
-    let exception Found of Svalue.t in
-    try
-      ( Solver_state.iter solver.state @@ fun v ->
-        match Typed.kind v with
-        | Binop
-            ( Eq,
-              { node = { kind = Var v; _ }; _ },
-              ({ node = { kind = BitVec _; _ }; _ } as x) )
-        | Binop
-            ( Eq,
-              ({ node = { kind = BitVec _; _ }; _ } as x),
-              { node = { kind = Var v; _ }; _ } )
-          when Var.equal v var ->
-            raise (Found x)
-        | _ -> () );
-      Svalue.mk_var var ty
-    with Found x -> x
-
   let simplify solver v : 'a Typed.t =
     v
     |> Typed.untyped
-    |> Eval.eval ~eval_var:(equality_for solver)
     |> simplify
          ~trivial_truthiness:(Solver_state.trivial_truthiness_of solver.state)
          ~fallback:(Analysis.simplify solver.analysis)
@@ -572,4 +552,6 @@ end
 
 module Z3 = Solvers.Z3.Make (Encoding)
 module Z3_incremental_solver = Make_incremental (Analyses.None) (Z3)
-module Z3_solver = Make (Analyses.Interval) (Z3)
+
+module Z3_solver =
+  Make (Analyses.Merge (Analyses.Interval) (Analyses.Equality)) (Z3)

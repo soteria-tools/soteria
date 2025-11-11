@@ -491,3 +491,92 @@ module Interval : S = struct
           m)
       st
 end
+
+module Equality : S = struct
+  module UnionFind = UnionFind.Make (UnionFind.StoreMap)
+  module IMap = Map.Make (Int)
+
+  include Reversible.Make_mutable (struct
+    type t = Svalue.t UnionFind.store * Svalue.t UnionFind.rref IMap.t
+
+    let default = (UnionFind.new_store (), IMap.empty)
+  end)
+
+  let rec cost (v : Svalue.t) : int =
+    match v.node.kind with
+    | Binop (op, l, r) -> cost_binop op + cost l + cost r
+    | Unop (op, v) -> cost_unop op + cost v
+    | Ite (i, t, e) -> cost i + cost t + cost e
+    | Nop (_, vs) -> costs vs
+    | Var _ -> 3
+    | Float _ -> 2
+    | Seq vs -> costs vs
+    | Ptr _ | Bool _ | BitVec _ -> 1
+
+  and costs vs = List.fold_left (fun acc v -> acc + cost v) 0 vs
+
+  and cost_binop : Svalue.Binop.t -> int = function
+    | FAdd | FSub | FMul | FDiv | FEq | FLt | FLeq -> 3
+    | _ -> 1
+
+  and cost_unop : Svalue.Unop.t -> int = function
+    | FRound _ | FIs _ -> 5
+    | BvOfFloat _ | FloatOfBv _ -> 4
+    | _ -> 1
+
+  let get_or_make (v : Svalue.t) ((uf, refs) as st) =
+    match IMap.find_opt v.tag refs with
+    | None ->
+        let ref = UnionFind.make uf v in
+        let refs = IMap.add v.tag ref refs in
+        (ref, (uf, refs))
+    | Some ref -> (ref, st)
+
+  let merge v1 v2 (uf, _) =
+    ignore
+    @@ UnionFind.merge uf
+         (fun v1 v2 -> if cost v1 > cost v2 then v2 else v1)
+         v1 v2
+
+  let find_cheaper_opt (v : Svalue.t) (uf, refs) =
+    Option.bind (IMap.find_opt v.tag refs) @@ fun r ->
+    let v_repr = UnionFind.get uf r in
+    if Svalue.equal v v_repr then None else Some v_repr
+
+  let eval_var (uf, refs) (var : Svalue.t) _ _ =
+    IMap.find_opt var.tag refs |> Option.fold ~none:var ~some:(UnionFind.get uf)
+
+  let simplify (v : Svalue.t) st =
+    let rec simplify ~fuel v =
+      if fuel - 1 <= 0 then v
+      else
+        let simplify = simplify ~fuel:(fuel - 1) in
+        match find_cheaper_opt v st with
+        | Some v' -> v'
+        | None -> (
+            match v.node.kind with
+            | Binop (op, l, r) ->
+                let l' = simplify l in
+                let r' = simplify r in
+                if Svalue.equal l l' && Svalue.equal r r' then v
+                else Eval.eval_binop op l' r'
+            | Unop (op, x) ->
+                let x' = simplify x in
+                if Svalue.equal x x' then v else Eval.eval_unop op x'
+            | _ -> v)
+    in
+    Eval.eval ~eval_var:(eval_var st) v |> simplify ~fuel:3
+
+  let add_constraint (v : Svalue.t) st =
+    match v.node.kind with
+    | Binop (Eq, v1, v2) ->
+        let v1, st = get_or_make v1 st in
+        let v2, st = get_or_make v2 st in
+        merge v1 v2 st;
+        ((v, Var.Set.empty), st)
+    | _ -> ((v, Var.Set.empty), st)
+
+  let simplify st v = wrap_read (simplify v) st
+  let add_constraint st v = wrap (add_constraint v) st
+  let encode ?vars:_ _st = Iter.empty
+end

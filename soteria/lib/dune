@@ -16,6 +16,7 @@
   simple_smt
   tsort
   unix
+  unionFind
   yojson
   zarith)
  (preprocess
