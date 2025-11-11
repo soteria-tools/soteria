@@ -473,9 +473,11 @@ module Make (State : State_intf.S) = struct
     | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        let res, ovf = if signed then v1 +$?@ v2 else v1 +?@ v2 in
-        let+ () = assert_or_error (Typed.not ovf) `Overflow in
-        res
+        if signed then
+          let res, ovf = v1 +$?@ v2 in
+          let+ () = assert_or_error (Typed.not ovf) `Overflow in
+          res
+        else ok (v1 +!@ v2)
     | TPointer _, TBitVector _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
@@ -495,9 +497,11 @@ module Make (State : State_intf.S) = struct
     | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        let res, ovf = if signed then v1 -$?@ v2 else v1 -?@ v2 in
-        let+ () = assert_or_error (Typed.not ovf) `Overflow in
-        res
+        if signed then
+          let res, ovf = v1 -$?@ v2 in
+          let+ () = assert_or_error (Typed.not ovf) `Overflow in
+          res
+        else ok (v1 -!@ v2)
     | TPointer _, TBitVector _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
@@ -523,9 +527,12 @@ module Make (State : State_intf.S) = struct
     | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        let res, ovf = if signed then v1 *$?@ v2 else v1 *?@ v2 in
-        let+ () = assert_or_error (Typed.not ovf) `Overflow in
-        res
+
+        if signed then
+          let res, ovf = v1 *$?@ v2 in
+          let+ () = assert_or_error (Typed.not ovf) `Overflow in
+          res
+        else ok (v1 *!@ v2)
     | TPointer _, _ | _, TPointer _ -> error `UBPointerArithmetic
     | ty1, ty2 ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"

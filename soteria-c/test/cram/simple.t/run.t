@@ -1020,3 +1020,8 @@ Should return -1
              (V|2|, { node = Freed; info = (Some strcmp.c:7:32-33) })];
             globs = [] })]
   Executed 7 statements
+
+  $ soteria-c exec no_unsigned_overflows.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v
+  Symex terminated with the following outcomes:
+    [Ok: (0x00000000, { heap = []; globs = [] })]
+  Executed 4 statements
