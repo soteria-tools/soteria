@@ -168,6 +168,9 @@ let rec store_aggregate (ptr : [< T.sptr ] Typed.t) ty v state =
 
 let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
   let open Typed.Infix in
+  L.trace (fun m ->
+      m "copy_nonoverlapping: copying %a bytes from %a to %a" Typed.ppa size
+        Typed.ppa src Typed.ppa dst);
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering copy" () in
   if%sat [@rname "Both pointers are non-null"]
     Typed.Ptr.is_at_null_loc dst ||@ Typed.Ptr.is_at_null_loc src
