@@ -582,22 +582,11 @@ module rec Bool : Bool = struct
     | Binop (Add _, v1, { node = { kind = BitVec bv; _ }; _ }), _
       when equal v1 v2 ->
         bool Z.(equal bv zero)
-    | ( ( Binop
-            ( Add { checked = true },
-              ({ node = { kind = BitVec bv_l; _ }; _ } as l),
-              y )
-        | Binop
-            ( Add { checked = true },
-              y,
-              ({ node = { kind = BitVec bv_l; _ }; _ } as l) ) ),
-        ( Binop
-            ( Add { checked = true },
-              ({ node = { kind = BitVec bv_r; _ }; _ } as r),
-              x )
-        | Binop
-            ( Add { checked = true },
-              x,
-              ({ node = { kind = BitVec bv_r; _ }; _ } as r) ) ) ) ->
+    | ( ( Binop (Add _, ({ node = { kind = BitVec bv_l; _ }; _ } as l), y)
+        | Binop (Add _, y, ({ node = { kind = BitVec bv_l; _ }; _ } as l)) ),
+        ( Binop (Add _, ({ node = { kind = BitVec bv_r; _ }; _ } as r), x)
+        | Binop (Add _, x, ({ node = { kind = BitVec bv_r; _ }; _ } as r)) ) )
+      ->
         (* y + l == x + r <=> y == x + (r - l) <=> y + (l - r) == x *)
         (* we pick the option that will make a positive constant (superstition) *)
         if Z.geq bv_l bv_r then
@@ -1529,6 +1518,29 @@ and BitVec : BitVec = struct
               ({ node = { kind = BitVec _; _ }; _ } as l) ) ),
         BitVec _ ) ->
         leq ~signed x (sub ~checked:true v2 l)
+    | ( ( Binop
+            ( Add { checked = true },
+              ({ node = { kind = BitVec bv_l; _ }; _ } as l),
+              y )
+        | Binop
+            ( Add { checked = true },
+              y,
+              ({ node = { kind = BitVec bv_l; _ }; _ } as l) ) ),
+        ( Binop
+            ( Add { checked = true },
+              ({ node = { kind = BitVec bv_r; _ }; _ } as r),
+              x )
+        | Binop
+            ( Add { checked = true },
+              x,
+              ({ node = { kind = BitVec bv_r; _ }; _ } as r) ) ) ) ->
+        (* y + l <= x + r <=> y <= x + (r - l) <=> y + (l - r) <= x *)
+        let int_l = bv_to_z signed bits bv_l in
+        let int_r = bv_to_z signed bits bv_r in
+        (* we pick the option that will make a positive constant (superstition) *)
+        if Z.geq int_l int_r then
+          leq ~signed (add ~checked:true y (sub ~checked:true l r)) x
+        else leq ~signed y (add ~checked:true x (sub ~checked:true r l))
     | _, Binop (Add { checked = true }, v2, v2')
       when equal v1 v2 || equal v1 v2' ->
         (* a <= b + a when + doesn't overflow is equivalent to 0 <= b *)
