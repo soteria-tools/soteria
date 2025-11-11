@@ -502,6 +502,11 @@ module Equality : S = struct
     let default = (UnionFind.new_store (), IMap.empty)
   end)
 
+  (* override to account for UnionFind  *)
+  let save d =
+    let uf, st = Dynarray.get_last d in
+    Dynarray.add_last d (UnionFind.copy uf, st)
+
   let rec cost (v : Svalue.t) : int =
     match v.node.kind with
     | Binop (op, l, r) -> cost_binop op + cost l + cost r
