@@ -194,17 +194,21 @@ module M (State : State_intf.S) = struct
       | _ -> not_impl "memset with non-thre arguments"
     in
     let char = BV.fit_to ~signed:false 8 char_int in
-    let rec loop dest count state =
-      if%sat count ==@ Usize.(0s) then Result.ok (Agv.void, state)
-      else
-        let** (), state =
-          State.store dest Ctype.char (char :> T.cval Typed.t) state
-        in
-        let s1_ptr = Typed.Ptr.add_ofs dest (BV.usizei 1) in
-        let count = count -!@ Usize.(1s) in
-        loop s1_ptr count state
-    in
-    loop dest count state
+    if%sure char ==@ U8.(0s) then
+      let++ (), state = State.zero_range dest count state in
+      (Agv.void, state)
+    else
+      let rec loop dest count state =
+        if%sat count ==@ Usize.(0s) then Result.ok (Agv.void, state)
+        else
+          let** (), state =
+            State.store dest Ctype.char (char :> T.cval Typed.t) state
+          in
+          let s1_ptr = Typed.Ptr.add_ofs dest (BV.usizei 1) in
+          let count = count -!@ Usize.(1s) in
+          loop s1_ptr count state
+      in
+      loop dest count state
 
   let havoc ~return_ty ~args state =
     let rec havoc_aggregate state (v : Agv.t) =

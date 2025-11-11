@@ -209,6 +209,7 @@ let sval_leaf ~range ~value ~ty =
     Tree.make ~node:(Owned Zeros) ~range ?children:None ()
   else Tree.make ~node:(Owned (Init (value, ty))) ~range ?children:None ()
 
+let zeros ~range = Tree.make ~node:(Owned Zeros) ~range ()
 let uninit ~range = Tree.make ~node:(Owned (Uninit Totally)) ~range ()
 
 let mk_fix_typed ofs ty () =
@@ -260,6 +261,23 @@ let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
         | _ -> Result.ok ()
       in
       ((), tree)
+
+let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+    (t : t option) : (unit * t option, 'err, 'fix) Result.t =
+  let ((_, bound) as range) = Range.of_low_and_size ofs size in
+  let@ t = with_bound_and_owned_check t bound in
+  let replace_node t =
+    match t.node with
+    | NotOwned Totally ->
+        let fix = mk_fix_any ofs size () in
+        Result.miss (log_fixes fix)
+    | NotOwned Partially ->
+        miss_no_fix ~reason:"partially missing zero_range" ()
+    | Owned _ -> Result.ok @@ zeros ~range
+  in
+  let rebuild_parent = Tree.of_children in
+  let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
+  ((), tree)
 
 let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
     (t : t option) : (unit * t option, 'err, 'fix) Result.t =

@@ -120,6 +120,12 @@ let store ptr ty sval st =
   log "store" ptr st;
   with_ptr ptr st (fun ~ofs block -> Ctree_block.store ofs ty sval block)
 
+let zero_range ptr len st =
+  let@ () = with_error_loc_as_call_trace ~msg:"Triggering zero_range" () in
+  log "zero_range" ptr st;
+  if%sat len ==@ Usize.(0s) then Result.ok ((), st)
+  else with_ptr ptr st (fun ~ofs block -> Ctree_block.zero_range ofs len block)
+
 let deinit ptr len st =
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering deinit" () in
   log "deinit" ptr st;
