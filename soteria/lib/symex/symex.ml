@@ -318,6 +318,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let sat () =
       let res = Stats.As_ctx.add_sat_time_of sat in
+      Stats.As_ctx.add_sat_checks 1;
       if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
       res
   end
