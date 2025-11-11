@@ -543,6 +543,11 @@ module Equality : S = struct
     let v_repr = UnionFind.get uf r in
     if Svalue.equal v v_repr then None else Some v_repr
 
+  let known_eq (v1 : Svalue.t) (v2 : Svalue.t) (uf, refs) : bool =
+    match (IMap.find_opt v1.tag refs, IMap.find_opt v2.tag refs) with
+    | Some r1, Some r2 -> UnionFind.eq uf r1 r2
+    | _ -> false
+
   let eval_var (uf, refs) (var : Svalue.t) _ _ =
     IMap.find_opt var.tag refs |> Option.fold ~none:var ~some:(UnionFind.get uf)
 
@@ -555,6 +560,7 @@ module Equality : S = struct
         | Some v' -> v'
         | None -> (
             match v.node.kind with
+            | Binop (Eq, l, r) when known_eq l r st -> Svalue.Bool.v_true
             | Binop (op, l, r) ->
                 let l' = simplify l in
                 let r' = simplify r in
