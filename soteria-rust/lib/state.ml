@@ -52,6 +52,7 @@ module StateKey = struct
 
   let distinct _ = v_true
   let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
+  let simplify = DecayMapMonad.simplify
 
   (* The above only works in WPST -- otherwise, use:
   let fresh () = nondet (Typed.t_sloc ()) *)
