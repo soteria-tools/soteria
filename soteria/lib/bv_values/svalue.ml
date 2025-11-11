@@ -1556,6 +1556,11 @@ and BitVec : BitVec = struct
         (* a <= b + a when + doesn't overflow is equivalent to 0 <= b *)
         let b = if equal v1 v2 then v2' else v2 in
         leq ~signed (zero bits) b
+    | Binop (Add { checked = true }, v1, v1'), _
+      when equal v2 v1 || equal v2 v1' ->
+        (* a + b <= a when + doesn't overflow is equivalent to b <= 0 *)
+        let b = if equal v2 v1 then v1' else v1 in
+        leq ~signed b (zero bits)
     | BitVec x, _ when Z.equal (bv_to_z signed bits x) (min_for signed bits) ->
         Bool.v_true
     | _, BitVec x when Z.equal (bv_to_z signed bits x) (max_for signed bits) ->
