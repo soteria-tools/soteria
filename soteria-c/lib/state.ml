@@ -107,7 +107,8 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
 
 let load ptr ty st =
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering read" () in
-  log "load" ptr st;
+  let load_msg = Fmt.str "load of type %a" Fmt_ail.pp_ty ty in
+  log load_msg ptr st;
   with_ptr ptr st (fun ~ofs block -> Ctree_block.load ofs ty block)
 
 let load_aggregate (ptr : [< T.sptr ] Typed.t) ty state =
