@@ -172,9 +172,12 @@ let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size st =
       m "copy_nonoverlapping: copying %a bytes from %a to %a" Typed.ppa size
         Typed.ppa src Typed.ppa dst);
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering copy" () in
-  if%sat [@rname "Both pointers are non-null"]
-    Typed.Ptr.is_at_null_loc dst ||@ Typed.Ptr.is_at_null_loc src
-  then Result.error `NullDereference [@name "One of the pointers is null"]
+  let** () =
+    Csymex.assert_or_error
+      Typed.(not (Ptr.is_at_null_loc dst ||@ Ptr.is_at_null_loc src))
+      `NullDereference
+  in
+  if%sat size ==@ Usize.(0s) then Result.ok ((), st)
   else
     let** tree_to_write, st =
       with_ptr src st (fun ~ofs block ->
