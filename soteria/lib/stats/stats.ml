@@ -20,6 +20,7 @@ type 'range stats = {
       (** Number of branches that were not explored because of fuel exhaustion.
           This includes branches not taking due to missing branch fuel, and
           branches that were cut due to step fuel. *)
+  mutable sat_checks : int;  (** Number of times the SAT solver was called *)
   mutable sat_unknowns : int;
       (** Number of times the SAT solver returned [unknown] *)
 }
@@ -38,6 +39,7 @@ let create () =
     branch_number = 1;
     steps_number = 0;
     unexplored_branch_number = 0;
+    sat_checks = 0;
     sat_unknowns = 0;
   }
 
@@ -122,6 +124,10 @@ module type S = sig
         {!Symex.S.consume_fuel_steps} or when branching *)
     val add_unexplored_branches : int -> unit
 
+    (** Adds the number of times the SAT solver was called. Handled by Soteria.
+    *)
+    val add_sat_checks : int -> unit
+
     (** Adds the number of times the SAT solver returned unknowns to the count
         of statistics. Handled by Soteria. *)
     val add_sat_unknowns : int -> unit
@@ -180,6 +186,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
       steps_number = t1.steps_number + t2.steps_number;
       unexplored_branch_number =
         t1.unexplored_branch_number + t2.unexplored_branch_number;
+      sat_checks = t1.sat_checks + t2.sat_checks;
       sat_unknowns = t1.sat_unknowns + t2.sat_unknowns;
     }
 
@@ -249,6 +256,9 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
     let add_unexplored_branches n =
       apply (fun stats ->
           stats.unexplored_branch_number <- stats.unexplored_branch_number + n)
+
+    let add_sat_checks n =
+      apply (fun stats -> stats.sat_checks <- stats.sat_checks + n)
 
     let add_sat_unknowns n =
       apply (fun stats -> stats.sat_unknowns <- stats.sat_unknowns + n)

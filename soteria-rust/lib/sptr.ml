@@ -27,6 +27,7 @@ module DecayMap : DecayMapS = struct
     type t = T.sloc Typed.t
 
     let pp = ppa
+    let simplify = Rustsymex.simplify
     let fresh () = failwith "Allocation is not valid for the decay map!"
   end
 
