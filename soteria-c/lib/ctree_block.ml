@@ -63,6 +63,9 @@ module MemVal = struct
     | Zeros, Zeros -> Zeros
     | Uninit Totally, Uninit Totally -> Uninit Totally
     | Uninit _, Uninit _ -> Uninit Partially
+    | Init (v1, _), Init (v2, _)
+      when Typed.BitVec.sure_is_zero v1 && Typed.BitVec.sure_is_zero v2 ->
+        Zeros
     | _, _ -> Lazy
 
   let split ~at:_ node =
@@ -202,7 +205,9 @@ let range_of_low_and_type low ty =
   Range.of_low_and_size low size
 
 let sval_leaf ~range ~value ~ty =
-  Tree.make ~node:(Owned (Init (value, ty))) ~range ?children:None ()
+  if Typed.BitVec.sure_is_zero value then
+    Tree.make ~node:(Owned Zeros) ~range ?children:None ()
+  else Tree.make ~node:(Owned (Init (value, ty))) ~range ?children:None ()
 
 let uninit ~range = Tree.make ~node:(Owned (Uninit Totally)) ~range ()
 

@@ -173,6 +173,39 @@ module M (State : State_intf.S) = struct
     in
     loop s1 s2 state
 
+  let memset ~args state =
+    let* dest, char_int, count =
+      match args with
+      | [ Basic s1; Basic s2; Basic s3 ] ->
+          let* s1_ptr =
+            of_opt_not_impl ~msg:"memset with non-pointer s1"
+            @@ Typed.cast_checked s1 Typed.t_ptr
+          in
+          let sizeofint = Layout.c_int_size * 8 in
+          let* char_int =
+            of_opt_not_impl ~msg:"memset with non-pointer s2"
+            @@ Typed.cast_checked s2 (Typed.t_int sizeofint)
+          in
+          let+ count =
+            of_opt_not_impl ~msg:"memset with non-integer count"
+            @@ BV.cast_to_size_t s3
+          in
+          (s1_ptr, char_int, count)
+      | _ -> not_impl "memset with non-thre arguments"
+    in
+    let char = BV.fit_to ~signed:false 8 char_int in
+    let rec loop dest count state =
+      if%sat count ==@ Usize.(0s) then Result.ok (Agv.void, state)
+      else
+        let** (), state =
+          State.store dest Ctype.char (char :> T.cval Typed.t) state
+        in
+        let s1_ptr = Typed.Ptr.add_ofs dest (BV.usizei 1) in
+        let count = count -!@ Usize.(1s) in
+        loop s1_ptr count state
+    in
+    loop dest count state
+
   let havoc ~return_ty ~args state =
     let rec havoc_aggregate state (v : Agv.t) =
       match v with
@@ -246,6 +279,8 @@ module M (State : State_intf.S) = struct
             (* We model memmove as memcpy, we should do non-overlapping checks but heh. *)
             Some (memcpy, None)
         | "strcmp" -> Some (strcmp, None)
+        | "memset" -> Some (memset, None)
+        | "__builtin___memset_chk" -> Some (memset, Some (( <> ) 3))
         | "__builtin___memcpy_chk" ->
             (* See definition of this builtin, the last argument is not useful to us. *)
             Some (memcpy, Some (( <> ) 3))

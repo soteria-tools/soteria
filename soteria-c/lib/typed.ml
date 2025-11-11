@@ -23,6 +23,9 @@ module BitVec = struct
   let usizeinz i = mki_nz ptr_bits i
   let isize_max = usize (Z.pred (Z.shift_left Z.one (ptr_bits - 1)))
 
+  let sure_is_zero bv =
+    match to_z bv with Some z -> Z.equal z Z.zero | None -> false
+
   let fit_to ?(signed = false) size (bv : [< T.sint ] t) : [> T.sint ] t =
     let cur = size_of_int bv in
     if cur = size then bv
@@ -54,7 +57,7 @@ module Syntax = struct
     module Sym_int_syntax = struct
       let mk_nonzero = BitVec.mki_nz ptr_bits
       let zero () = BitVec.zero ptr_bits
-      let one () = BitVec.mki_nz ptr_bits
+      let one () = BitVec.one ptr_bits
     end
   end
 end

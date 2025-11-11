@@ -58,7 +58,7 @@ Checking that memcpy works correctly
             [(V|1|,
               { node =
                 [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
-                   v = 0x00000000 : signed int};
+                   v = SZeros};
                  MemVal {offset = 0x0000000000000004; len = 0x0000000000000004;
                    v = 0x00000001 : signed int};
                  Bound(0x0000000000000008)];
@@ -66,7 +66,7 @@ Checking that memcpy works correctly
              (V|2|,
               { node =
                 [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
-                   v = 0x00000000 : signed int};
+                   v = SZeros};
                  MemVal {offset = 0x0000000000000004; len = 0x0000000000000004;
                    v = 0x00000001 : signed int};
                  Bound(0x0000000000000008)];
@@ -77,7 +77,7 @@ Checking that memcpy works correctly
             [(V|1|,
               { node =
                 [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
-                   v = 0x00000000 : signed int};
+                   v = SZeros};
                  MemVal {offset = 0x0000000000000004; len = 0x0000000000000004;
                    v = 0x00000001 : signed int};
                  Bound(0x0000000000000008)];
@@ -1025,3 +1025,18 @@ Should return -1
   Symex terminated with the following outcomes:
     [Ok: (0x00000000, { heap = []; globs = [] })]
   Executed 4 statements
+
+
+  $ soteria-c exec memset.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v 
+  Symex terminated with the following outcomes:
+    [Ok: (0x00000000,
+          { heap =
+            [(V|1|,
+              { node =
+                [MemVal {offset = 0x0000000000000000; len = 0x0000000000000028;
+                   v = SZeros};
+                 Bound(0x0000000000000028)];
+                info = (Some memset.c:6:12-36) })];
+            globs = [] });
+     Ok: (0x00000000, { heap = []; globs = [] })]
+  Executed 51 statements
