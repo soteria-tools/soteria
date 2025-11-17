@@ -47,6 +47,14 @@ let eval_unop : Unop.t -> t -> t = function
   | FRound rm -> Float.round rm
 
 let rec eval ~eval_var (x : t) : t =
+  let eval_without_vars vs =
+    let eval_var v ty =
+      match List.find_opt (fun (v', _) -> Var.equal v v') vs with
+      | Some (v, ty) -> mk_var v ty
+      | None -> eval_var v ty
+    in
+    eval ~eval_var
+  in
   let eval = eval ~eval_var in
   match x.node.kind with
   | Var v -> eval_var x v x.node.ty
@@ -74,6 +82,9 @@ let rec eval ~eval_var (x : t) : t =
       if equal guard Bool.v_true then eval then_
       else if equal guard Bool.v_false then eval else_
       else Bool.ite guard (eval then_) (eval else_)
+  | Exists (vs, sv) ->
+      let sv = eval_without_vars vs sv in
+      Bool.exists vs sv
   | Seq l ->
       let l, changed = List.map_changed eval l in
       if Stdlib.not changed then x else Svalue.SSeq.mk ~seq_ty:x.node.ty l

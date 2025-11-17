@@ -90,8 +90,9 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | BvConcat -> bv_concat
 
 let rec encode_value (v : Svalue.t) =
+  let var v = atom (Svalue.Var.to_string v) in
   match v.node.kind with
-  | Var v -> atom (Svalue.Var.to_string v)
+  | Var v -> var v
   | Float f -> (
       match Svalue.precision_of_f v.node.ty with
       | F16 -> f16_k @@ Float.of_string f
@@ -110,6 +111,10 @@ let rec encode_value (v : Svalue.t) =
           List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat)
   | Ite (c, t, e) ->
       ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
+  | Exists (vs, sv) ->
+      let exists l x = list [ atom "exists"; list l; x ] in
+      let encode_var_memo (v, ty) = list [ var v; sort_of_ty ty ] in
+      exists (List.map encode_var_memo vs) (encode_value_memo sv)
   | Unop (unop, v1) ->
       let v1 = encode_value_memo v1 in
       smt_of_unop unop v1

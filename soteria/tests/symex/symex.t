@@ -31,3 +31,6 @@ This test is considered successful if the out of each process is a single branch
   if_false: [42]
   if_maybe: [42]
   if_guranteed: [42]
+
+  $ ./exists.exe
+  exists: [42]
