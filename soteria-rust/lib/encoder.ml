@@ -137,7 +137,8 @@ module Make (Sptr : Sptr.S) = struct
         let ty = Layout.resolve_trait_ty tref name in
         rust_to_cvals ~offset value ty
     (* Literals *)
-    | Base _, TLiteral _ -> [ { value; ty; offset } ]
+    | Int _, TLiteral _ -> [ { value; ty; offset } ]
+    | Float _, TLiteral _ -> [ { value; ty; offset } ]
     | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> [ { value; ty; offset } ]
     | _, TLiteral _ -> illegal_pair ()
     (* References / Pointers *)
@@ -151,10 +152,9 @@ module Make (Sptr : Sptr.S) = struct
         | _, false -> [ { value = Ptr (ptr, Thin); ty; offset } ]
         | Thin, true -> failwith "Expected a fat pointer"
         | Len len, true ->
-            let len = (len :> T.cval Typed.t) in
             [
               { value = Ptr (ptr, Thin); ty; offset };
-              { value = Base len; ty; offset = offset +!!@ size };
+              { value = Int len; ty; offset = offset +!!@ size };
             ]
         | VTable vt, true ->
             [
@@ -165,10 +165,10 @@ module Make (Sptr : Sptr.S) = struct
     | Ptr (_, Thin), TFnPtr _ ->
         [ { value; ty = TLiteral (TInt Isize); offset } ]
     (* References / Pointers obtained from casting *)
-    | Base _, TAdt { id = TBuiltin TBox; _ }
-    | Base _, TRef _
-    | Base _, TRawPtr _
-    | Base _, TFnPtr _ ->
+    | Int _, TAdt { id = TBuiltin TBox; _ }
+    | Int _, TRef _
+    | Int _, TRawPtr _
+    | Int _, TFnPtr _ ->
         [ { value; ty = TLiteral (TInt Isize); offset } ]
     | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
         illegal_pair ()
@@ -210,13 +210,13 @@ module Make (Sptr : Sptr.S) = struct
               | Some tag ->
                   let v = BV.mk_lit tag_layout.ty tag in
                   let offset = BV.usizei tag_layout.offset +!!@ offset in
-                  [ { value = Base v; ty = TLiteral tag_layout.ty; offset } ]
+                  [ { value = Int v; ty = TLiteral tag_layout.ty; offset } ]
             in
             let var_layout = { layout with fields = var_fields } in
             discriminant
             @ chain_cvals var_layout vals (field_tys variant.fields)
         | _ -> Fmt.failwith "Unexpected layout for enum")
-    | Base value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
+    | Int value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
         let layout = Layout.layout_of ty in
         let tag_ty =
           match layout.fields with
@@ -224,7 +224,7 @@ module Make (Sptr : Sptr.S) = struct
           | _ -> failwith "Expected enum layout"
         in
         let value = Typed.cast_lit tag_ty value in
-        [ { value = Base value; ty = TLiteral tag_ty; offset } ]
+        [ { value = Int value; ty = TLiteral tag_ty; offset } ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
     | ( Tuple vals,
@@ -273,7 +273,7 @@ module Make (Sptr : Sptr.S) = struct
         (* here we need to check and decay if it's a pointer, for niche encoding! *)
         let*** tag =
           match tag with
-          | Base tag -> ok (Typed.cast_lit tag_layout.ty tag)
+          | Int tag -> ok (Typed.cast_lit tag_layout.ty tag)
           | Ptr (p, Thin) -> lift @@ Sptr.decay p
           | _ -> Fmt.failwith "Unexpected tag: %a" pp_rust_val tag
         in
@@ -313,10 +313,10 @@ module Make (Sptr : Sptr.S) = struct
       | TLiteral _ as ty -> (
           let*** q_res = query (ty, offset) in
           match q_res with
-          | Base _ as v -> ok v
+          | (Int _ | Float _) as v -> ok v
           | Ptr (ptr, Thin) ->
               let+++ ptr_v = lift @@ Sptr.decay ptr in
-              Base ptr_v
+              Int ptr_v
           | _ ->
               Fmt.kstr not_impl "Expected a base or a thin pointer, got %a"
                 pp_rust_val q_res)
@@ -335,10 +335,10 @@ module Make (Sptr : Sptr.S) = struct
           let*** ptr =
             match ptr with
             | Ptr (ptr_v, Thin) -> ok ptr_v
-            | Base ptr_v when not must_be_valid ->
+            | Int ptr_v when not must_be_valid ->
                 let ptr_v = Typed.cast_i Usize ptr_v in
                 ok (Sptr.null_ptr_of ptr_v)
-            | Base _ -> error `UBDanglingPointer
+            | Int _ -> error `UBDanglingPointer
             | _ -> not_impl "Unexpected pointer value"
           in
           let meta_kind = dst_kind sub_ty in
@@ -348,12 +348,12 @@ module Make (Sptr : Sptr.S) = struct
             | LenKind | VTableKind -> (
                 let*** meta = query (isize, offset +!!@ ptr_size) in
                 match (meta_kind, meta) with
-                | LenKind, Base meta -> ok (Len (Typed.cast_i Usize meta))
+                | LenKind, Int meta -> ok (Len (Typed.cast_i Usize meta))
                 | LenKind, Ptr (meta_v, Thin) ->
                     let+++ meta = lift @@ Sptr.decay meta_v in
                     Len meta
                 | VTableKind, Ptr (meta_v, Thin) -> ok (VTable meta_v)
-                | VTableKind, Base meta ->
+                | VTableKind, Int meta ->
                     let meta = Typed.cast_i Usize meta in
                     ok (VTable (Sptr.null_ptr_of meta))
                 | _ -> not_impl "Unexpected metadata value")
@@ -371,7 +371,7 @@ module Make (Sptr : Sptr.S) = struct
           let*** boxed = query (TLiteral (TInt Isize), offset) in
           match boxed with
           | Ptr _ as ptr -> ok ptr
-          | Base _ -> error `UBDanglingPointer
+          | Int _ -> error `UBDanglingPointer
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
@@ -483,19 +483,21 @@ module Make (Sptr : Sptr.S) = struct
       ~(to_ty : Types.literal_type) (v : [< T.cval ] Typed.t) =
     let open DecayMapMonad.Result in
     match (from_ty, to_ty) with
-    | _, _ when from_ty = to_ty -> ok (Base v)
+    | _, TFloat _ when from_ty = to_ty -> ok (Float (Typed.cast v))
+    | _, (TInt _ | TUInt _ | TBool | TChar) when from_ty = to_ty ->
+        ok (Int (Typed.cast v))
     | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
         let sv = Typed.cast_f fty v in
         let signed = Layout.is_signed lit_ty in
         let size = 8 * size_of_literal_ty lit_ty in
         let sv' = BV.of_float ~rounding:Truncate ~signed ~size sv in
-        Result.ok (Base sv')
+        Result.ok (Int sv')
     | (TInt _ | TUInt _), TFloat fp ->
         let sv = Typed.cast_lit from_ty v in
         let fp = Charon_util.float_precision fp in
         let signed = Layout.is_signed from_ty in
         let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
-        Result.ok (Base sv')
+        Result.ok (Float sv')
     | TFloat _, _ | _, TFloat _ ->
         Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_literal_ty
           from_ty pp_literal_ty to_ty
@@ -515,7 +517,7 @@ module Make (Sptr : Sptr.S) = struct
         let constraints = Typed.conj @@ Layout.constraints to_ty v in
         let msg = Fmt.str "Constraints of %a unsatisfied" pp_literal_ty to_ty in
         let++ () = assert_or_error constraints (`UBTransmute msg) in
-        Base v
+        Int v
 
   (** Transmute a value of the given type into the other type.
 
@@ -530,10 +532,12 @@ module Make (Sptr : Sptr.S) = struct
     if from_ty = to_ty then ok v
     else
       match (from_ty, to_ty, v) with
-      | TLiteral from_ty, TLiteral to_ty, Base v ->
+      | TLiteral from_ty, TLiteral to_ty, Int v ->
+          transmute_literal ~from_ty ~to_ty v
+      | TLiteral from_ty, TLiteral to_ty, Float v ->
           transmute_literal ~from_ty ~to_ty v
       (* A ref cannot be an invalid pointer *)
-      | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
+      | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Int _ ->
           error `UBDanglingPointer
       (* A ref must point to a readable location *)
       | ( _,
@@ -547,7 +551,7 @@ module Make (Sptr : Sptr.S) = struct
               let* is_valid = lift @@ fn ptr inner_ty in
               if is_valid then ok v else error `UBDanglingPointer)
       (* A raw pointer can be whatever *)
-      | _, TRawPtr _, Base off ->
+      | _, TRawPtr _, Int off ->
           let off = Typed.cast_i Usize off in
           let ptr = Sptr.null_ptr_of off in
           ok (Ptr (ptr, Thin))
@@ -555,7 +559,7 @@ module Make (Sptr : Sptr.S) = struct
       | _, TLiteral ((TInt _ | TUInt _) as litty), Ptr (ptr, Thin)
         when size_of_literal_ty litty = size_of_literal_ty (TInt Isize) ->
           let* ptr_v = Sptr.decay ptr in
-          ok (Base ptr_v)
+          ok (Int ptr_v)
       | _ when try_splitting ->
           let blocks = rust_to_cvals v from_ty in
           transmute_many ~to_ty blocks
@@ -621,7 +625,7 @@ module Make (Sptr : Sptr.S) = struct
             let relevant =
               List.filter_map
                 (function
-                  | Base v, Types.TLiteral lit_ty, o
+                  | Int v, Types.TLiteral lit_ty, o
                     when 0 <= o && o + size_of_literal_ty lit_ty <= size ->
                       Iter.(0 -- (size_of_literal_ty lit_ty - 1)) (fun i ->
                           bytes.(o + i) <- true);
@@ -639,7 +643,7 @@ module Make (Sptr : Sptr.S) = struct
                 | (v, _) :: rest -> BV.concat (aux rest) v
               in
               let res = aux relevant in
-              Some (Result.ok (Base (res :> T.cval Typed.t)))
+              Some (Result.ok (Int res))
             else None
         | _ -> None
       in
@@ -658,13 +662,13 @@ module Make (Sptr : Sptr.S) = struct
                let open DecayMapMonad.Syntax in
                let* v =
                  match v with
-                 | Base v -> return v
+                 | Int v -> return v
                  | Ptr (ptr, _) -> Sptr.decay ptr
                  | _ -> not_impl "Transmute: don't know hot to split this"
                in
                let v = Typed.cast_lit lit_ty v in
                let v = BV.extract (o * -8) (((size - o) * 8) - 1) v in
-               Result.ok (Base v)
+               Result.ok (Int v)
         | _ -> None
       in
       (* X. give up *)
@@ -700,15 +704,15 @@ module Make (Sptr : Sptr.S) = struct
               let+ v2 = Sptr.decay ptr in
               BV.concat v v2
         in
-        split (Base (v :> T.cval Typed.t)) ty at
-    | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
+        split (Int v) ty at
+    | Int _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
         (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
            of size 2^n *)
         let rec aux v sz =
           (* we're a power of two, so we're done *)
           if Z.(popcount (of_int sz)) = 1 then
             let ty = size_to_uint sz in
-            `Leaf (Base (v :> T.cval Typed.t), ty)
+            `Leaf (Int v, ty)
           else
             (* Split at the most significant bit; e.g. for size 7 (0b111), will split at 0b100,
                resulting in a leaf of size 3 (0b11) and a right leaf of size 4 (0b100) *)

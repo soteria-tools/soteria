@@ -14,11 +14,9 @@ module M (State : State_intf.S) = struct
     match str_data with
     | Tuple bytes ->
         Some bytes
-        |> map_opt (function Base b -> Some (Typed.kind b) | _ -> None)
-        |> map_opt (function
-             | Svalue.BitVec b -> Some (Char.chr (Z.to_int b))
-             | _ -> None)
+        |> map_opt (function Int b -> Typed.BitVec.to_z b | _ -> None)
         |> Option.map (fun cs ->
+               let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
                let str = String.of_seq @@ List.to_seq cs in
                if
                  String.starts_with ~prefix:"\"" str
@@ -32,7 +30,7 @@ module M (State : State_intf.S) = struct
   let assert_ args =
     let to_assert, msg =
       match args with
-      | [ Base t; Ptr msg ] -> (Typed.cast_lit TBool t, msg)
+      | [ Int t; Ptr msg ] -> (Typed.cast_lit TBool t, msg)
       | _ -> failwith "to_assert with non-one arguments"
     in
     if%sat Typed.not (Typed.BitVec.to_bool to_assert) then
@@ -43,7 +41,7 @@ module M (State : State_intf.S) = struct
   let assume args =
     let to_assume =
       match args with
-      | [ Base t ] -> Typed.cast_lit TBool t
+      | [ Int t ] -> Typed.cast_lit TBool t
       | _ -> failwith "assume with non-one arguments"
     in
     L.debug (fun g -> g "Assuming: %a\n" Typed.ppa to_assume);

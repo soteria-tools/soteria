@@ -25,11 +25,11 @@ module M (State : State_intf.S) = struct
     if%sat v <$@ zero then return U8.(-1s)
     else if%sat v ==@ zero then return U8.(0s) else return U8.(1s)
 
-  let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =
+  let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
+      (v2 : [< T.sint | T.sptr ] Typed.t) =
     match (get_ty v1, get_ty v2) with
     | TBitVector _, TBitVector _ | TPointer _, TPointer _ ->
         Result.ok (BV.of_bool (v1 ==@ v2))
-    | TFloat _, TFloat _ -> Result.ok (BV.of_bool (v1 ==.@ v2))
     | TPointer _, TBitVector _ ->
         let v2 : T.sint Typed.t = cast v2 in
         if%sat v2 ==@ Usize.(0s) then
@@ -57,33 +57,27 @@ module M (State : State_intf.S) = struct
 
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
-  let eval_lit_binop (bop : Expressions.binop) ty (l : T.cval Typed.t)
-      (r : T.cval Typed.t) : ([> T.sfloat | T.sint ] Typed.t, 'e, 'f) Result.t =
+  let eval_lit_binop (bop : Expressions.binop) ty (l : [< T.sint ] Typed.t)
+      (r : [< T.sint ] Typed.t) : ([> T.sint ] Typed.t, 'e, 'f) Result.t =
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
-    let is_integer = match ty with TUInt _ | TInt _ -> true | _ -> false in
     let r = normalise_shift_r bop l r in
     let** () =
       match bop with
-      | _ when Stdlib.not is_integer -> Result.ok ()
       | Add (OUB | OPanic) ->
-          let l = cast_lit ty l in
-          let r = cast_lit ty r in
           let overflows = BV.add_overflows ~signed l r in
-          if%sat overflows then Result.error `Overflow else Result.ok ()
+          assert_or_error (not overflows) `Overflow
       | Sub (OUB | OPanic) ->
-          let l = cast_lit ty l in
-          let r = cast_lit ty r in
           let overflows = BV.sub_overflows ~signed l r in
-          if%sat overflows then Result.error `Overflow else Result.ok ()
+          assert_or_error (not overflows) `Overflow
       | Mul (OUB | OPanic) ->
-          let l = cast_lit ty l in
-          let r = cast_lit ty r in
           let overflows = BV.mul_overflows ~signed l r in
           assert_or_error (not overflows) `Overflow
       | Div _ | Rem _ ->
-          if%sat r ==@ BV.mki_lit ty 0 then Result.error `DivisionByZero
-          else if signed then
+          let** () =
+            assert_or_error (not (r ==@ BV.mki_lit ty 0)) `DivisionByZero
+          in
+          if signed then
             (* overflow on rem/div is UB even when wrapping *)
             let min = Layout.min_value_z ty in
             let min = BV.mk_lit ty min in
@@ -94,41 +88,20 @@ module M (State : State_intf.S) = struct
           (* at this point, the size of the right-hand side might not match the given literal
              type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
-          let r = cast_lit ty r in
           assert_or_error
             (BV.mki_lit ty 0 <=$@ r &&@ (r <$@ BV.mki_lit ty size))
             `InvalidShift
       | _ -> Result.ok ()
     in
-
-    match ty with
-    | TInt _ | TUInt _ ->
-        (* normalise both sides to be the same size; this is usually always the case,
-           except for shift operations, so we do it manually *)
-        let l = cast_lit ty l in
-        let r = cast_lit ty r in
-        let res =
-          match bop with
-          | Add _ -> BV.add l r
-          | Sub _ -> BV.sub l r
-          | Mul om -> BV.mul ~checked:(om <> OWrap) l r
-          | Div _ -> BV.div ~signed l (cast r)
-          | Rem _ -> BV.rem ~signed l (cast r)
-          | Shl _ -> BV.shl l r
-          | Shr _ -> if signed then BV.ashr l r else BV.lshr l r
-          | _ -> failwith "Invalid binop in binop_fn"
-        in
-        Result.ok (cast res)
-    | TFloat f -> (
-        let l, r = (cast_f f l, cast_f f r) in
-        match bop with
-        | Add _ -> Result.ok (l +.@ r)
-        | Sub _ -> Result.ok (l -.@ r)
-        | Mul _ -> Result.ok (l *.@ r)
-        | Div _ -> Result.ok (l /.@ r)
-        | Rem _ -> Result.ok (Float.rem l (cast r))
-        | _ -> not_impl "Invalid binop for float in eval_lit_binop")
-    | _ -> not_impl "Unexpected type in eval_lit_binop"
+    match bop with
+    | Add om -> Result.ok (BV.add ~checked:(om <> OWrap) l r)
+    | Sub om -> Result.ok (BV.sub ~checked:(om <> OWrap) l r)
+    | Mul om -> Result.ok (BV.mul ~checked:(om <> OWrap) l r)
+    | Div _ -> Result.ok (BV.div ~signed l (cast r))
+    | Rem _ -> Result.ok (BV.rem ~signed l (cast r))
+    | Shl _ -> Result.ok (BV.shl l r)
+    | Shr _ -> Result.ok (if signed then BV.ashr l r else BV.lshr l r)
+    | _ -> failwith "Invalid binop in binop_fn"
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop (op : Expressions.binop) ty l r =
@@ -145,7 +118,7 @@ module M (State : State_intf.S) = struct
       | MulChecked, true -> l *$?@ r
       | _ -> failwith "Invalid checked op"
     in
-    Result.ok (Tuple [ Base wrapped; Base (BV.of_bool overflowed) ])
+    Result.ok (Tuple [ Int wrapped; Int (BV.of_bool overflowed) ])
 
   let meta_as_int = function
     | Len l -> return (Some l)
@@ -170,12 +143,12 @@ module M (State : State_intf.S) = struct
     | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
         let* meta_eq = eval_meta_eq meta_l meta_r in
         Result.ok (BV.of_bool (meta_eq &&@ Sptr.sem_eq l r))
-    | Eq, Ptr (p, _), Base v | Eq, Base v, Ptr (p, _) ->
+    | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then
           Result.ok (BV.of_bool (Sptr.is_at_null_loc p))
         else Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p ppa v
-    | Eq, Base v1, Base v2 -> Result.ok (BV.of_bool (v1 ==@ v2))
+    | Eq, Int v1, Int v2 -> Result.ok (BV.of_bool (v1 ==@ v2))
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then
           let* dist = Sptr.distance l r in
@@ -208,10 +181,10 @@ module M (State : State_intf.S) = struct
         let* v = Sptr.distance l r in
         let* cmp = cmp_of_int v in
         Result.ok cmp
-    | Cmp, Ptr (p, _), Base v | Cmp, Base v, Ptr (p, _) ->
+    | Cmp, Ptr (p, _), Int v | Cmp, Int v, Ptr (p, _) ->
         if%sat v ==@ BV.usizei (Layout.size_of_uint_ty Usize) then
           if%sat Sptr.is_at_null_loc p then Result.ok U8.(0s)
-          else if l = Base v then Result.ok U8.(1s)
+          else if l = Int v then Result.ok U8.(1s)
           else Result.ok U8.(-1s)
         else
           Fmt.kstr not_impl "Don't know how to eval %a cmp %a" Sptr.pp p ppa v

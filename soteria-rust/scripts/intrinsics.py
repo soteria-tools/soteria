@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
-import subprocess
 import json
-from typing import Any, Generic, Sequence, TypeVar, TypedDict, Literal
+import subprocess
+from typing import Any, Generic, Literal, Sequence, TypedDict, TypeVar
+
 from common import *
 
 
@@ -202,10 +203,12 @@ def input_type_cast(arg: str, ty: InterpType) -> str:
 
 
 def output_type_cast(ty: InterpType) -> tuple[str, str]:
-    if ty[0] == "int" or ty[0] == "float":
-        return ("let+ ret = ", " in Base (ret :> Typed.T.cval Typed.t)")
+    if ty[0] == "int":
+        return ("let+ ret = ", " in Int ret")
+    if ty[0] == "float":
+        return ("let+ ret = ", " in Float ret")
     if ty[0] == "bool":
-        return "let+ ret = ", " in Base (Typed.BitVec.of_bool ret)"
+        return "let+ ret = ", " in Int (Typed.BitVec.of_bool ret)"
     if ty[0] == "ptr":
         return "let+ ret = ", " in Ptr ret"
     if ty[0] == "unit":
@@ -366,10 +369,10 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
           let[@inline] as_ptr (v : rust_val) =
             match v with
             | Ptr ptr -> ptr
-            | Base v ->
+            | Int v ->
                 let v = Typed.cast_i Usize v in
                 let ptr = State.Sptr.null_ptr_of v in
-                (ptr, None)
+                (ptr, Thin)
             | _ -> failwith "expected pointer"
 
           let as_base ty (v : rust_val) = Rust_val.as_base ty v

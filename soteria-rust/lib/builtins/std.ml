@@ -93,14 +93,14 @@ module M (State : State_intf.S) = struct
     let ptr =
       match ptr with
       | Ptr (ptr, Thin) -> ptr
-      | Base v -> Sptr.null_ptr_of @@ Typed.cast_i Usize v
+      | Int v -> Sptr.null_ptr_of @@ Typed.cast_i Usize v
       | _ ->
           failwith "from_raw_parts: first argument must be a pointer or usize"
     in
     let meta =
       match meta with
       | Tuple [] -> Thin
-      | Base v -> Len (Typed.cast_i Usize v)
+      | Int v -> Len (Typed.cast_i Usize v)
       | Ptr (ptr, Thin) -> VTable ptr
       | _ ->
           failwith
@@ -113,7 +113,7 @@ module M (State : State_intf.S) = struct
   let float_is (fp : Svalue.FloatClass.t) args =
     let v =
       match args with
-      | [ Base f ] -> f
+      | [ Float f ] -> f
       | _ -> failwith "float_is: invalid argument"
     in
     let v = Typed.cast_float v in
@@ -125,22 +125,22 @@ module M (State : State_intf.S) = struct
       | Zero -> Typed.Float.is_zero v
       | Subnormal -> Typed.Float.is_subnormal v
     in
-    ok (Base (BV.of_bool res))
+    ok (Int (BV.of_bool res))
 
   let float_is_finite args =
     let v =
       match args with
-      | [ Base f ] -> f
+      | [ Float f ] -> f
       | _ -> failwith "float_is_finite: invalid argument"
     in
     let v = Typed.cast_float v in
     let res = Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v)) in
-    ok (Base (BV.of_bool res))
+    ok (Int (BV.of_bool res))
 
   let float_is_sign pos args =
     let v =
       match args with
-      | [ Base f ] -> f
+      | [ Float f ] -> f
       | _ -> failwith "float_is_sign: invalid argument"
     in
     let v = Typed.cast_float v in
@@ -149,7 +149,7 @@ module M (State : State_intf.S) = struct
       else Typed.Float.(leq v (like v (-0.)))
     in
     let res = res ||@ Typed.Float.is_nan v in
-    ok (Base (BV.of_bool res))
+    ok (Int (BV.of_bool res))
 
   let _mk_box ptr =
     let non_null = Tuple [ ptr ] in
@@ -162,7 +162,7 @@ module M (State : State_intf.S) = struct
     let zero = Usize.(0s) in
     let size, align, zeroed =
       match args with
-      | [ _alloc; Tuple [ Base size; Tuple [ Enum (align, []) ] ]; Base zeroed ]
+      | [ _alloc; Tuple [ Int size; Tuple [ Enum (align, []) ] ]; Int zeroed ]
         ->
           let size = Typed.cast_i Usize size in
           let align = Typed.cast_i Usize align in
@@ -181,7 +181,7 @@ module M (State : State_intf.S) = struct
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
       (* allocate *)
-      let+ ptr = Alloc.alloc ~zeroed [ Base size; Base align ] in
+      let+ ptr = Alloc.alloc ~zeroed [ Int size; Int align ] in
       let ptr =
         match ptr with Ptr (p, _) -> p | _ -> failwith "Expected Ptr"
       in
