@@ -1,5 +1,5 @@
-// Kani: kani ./demo/darpa/simple.rs -Zuninit-checks
-// Rusteria: dune exec -- soteria-rust rustc ./demo/darpa/simple.rs --kani --obol --summary
+// Kani: kani ./demo/darpa/simple.rs -Zuninit-checks --output-format terse
+// Rusteria: dune exec -- soteria-rust rustc ./demo/darpa/simple.rs --kani --summary
 
 /// A classic overflow error when checking before adding two numbers
 #[kani::proof]

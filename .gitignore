@@ -230,7 +230,7 @@ __pycache__/
 
 ### Produced by Soteria ###
 json_dump/
-soteria-rust/scripts/*.csv
+soteria-rust/scripts/**/*.csv
 
 ### Misc ###
 *.temp

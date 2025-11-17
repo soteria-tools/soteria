@@ -45,6 +45,7 @@ Test kani::assert
       │       │
       │       Triggering memory operation
       │       2: Call trace
+  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
   error: fancy_assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 in fancy_assert_false
@@ -57,6 +58,7 @@ Test kani::assert
       │       │
       │       Triggering memory operation
       │       2: Call trace
+  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
   error: override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert!" in override_assert_macro
@@ -69,6 +71,7 @@ Test kani::assert
       ┌─ $TESTCASE_ROOT/assert.rs:14:2
    14 │  fn override_assert_macro() {
       │   -------------------------- 1: Entry point
+  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
   error: override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert_eq!" in override_asserteq_macro
@@ -81,6 +84,7 @@ Test kani::assert
       ┌─ $TESTCASE_ROOT/assert.rs:20:2
    20 │  fn override_asserteq_macro() {
       │   ---------------------------- 1: Entry point
+  PC 1: (V|1| != V|2|)
   
   [1]
 

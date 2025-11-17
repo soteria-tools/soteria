@@ -19,6 +19,7 @@ Simple tree borrow violation
     7 │      *x = 13;
     8 │      *y = 20; // UB: y is disabled
       │       ^^^^^^^ Triggering memory operation
+  PC 1: empty
   
   [1]
 

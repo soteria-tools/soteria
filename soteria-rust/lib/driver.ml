@@ -39,26 +39,29 @@ let pp_time ft t =
   else if t < 0.05 then Fmt.pf ft "%ams" (Fmt.float_dfrac 2) (t *. 1000.)
   else Fmt.pf ft "%as" (Fmt.float_dfrac 2) t
 
-let print_outcomes entry_name f =
+let print_pcs pcs =
   let open Fmt in
+  let pp_pc ft (pc, i) =
+    let name = "PC " ^ string_of_int i ^ ":" in
+    if List.is_empty pc then pf ft "%a empty" (pp_style `Bold) name
+    else
+      let pp_pc = list ~sep:(any " /\\@, ") Typed.ppa in
+      pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
+  in
+  if not @@ Soteria.Terminal.Config.compact () then
+    List.mapi (fun i pc -> (pc, i + 1)) pcs
+    |> Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_pc)
+
+let print_outcomes entry_name f =
   let time = Unix.gettimeofday () in
   match f () with
   | Ok (pcs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
-      let pcs = List.mapi (fun i pc -> (pc, i + 1)) pcs in
-      let pp_info ft (pc, i) =
-        let name = "PC " ^ string_of_int i ^ ":" in
-        if List.is_empty pc then pf ft "%a empty" (pp_style `Bold) name
-        else
-          let pp_pc = list ~sep:(any " /\\@, ") Typed.ppa in
-          pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
-      in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
-      if not @@ Soteria.Terminal.Config.compact () then
-        Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_info) pcs;
-      Fmt.pr "@\n@.";
+      print_pcs pcs;
+      Fmt.pr "@.@.";
       (entry_name, Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
@@ -67,11 +70,11 @@ let print_outcomes entry_name f =
         "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
         time pp_branches (List.length errs) ntotal;
       Fmt.pr "@.";
-      let ( let@@ ) f x = List.iter x f in
       let () =
-        let@@ error, call_trace = List.sort_uniq Stdlib.compare errs in
+        let@ error, call_trace, pcs = Fun.flip List.iter errs in
         Frontend.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace
           ~error;
+        print_pcs pcs;
         Fmt.pr "@.@."
       in
       (entry_name, Outcome.Error)
@@ -177,11 +180,29 @@ let exec_crate
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 
-  let errors = Compo_res.only_errors outcomes in
-  if List.is_empty errors then
+  if not (List.exists Compo_res.is_error outcomes) then
     let pcs = List.map snd branches in
     Ok (pcs, nbranches)
-  else Error (errors, nbranches)
+  else
+    (* join th errors by [error type * calltrace], and find all matching PCs *)
+    let errors =
+      List.filter_map
+        (function Compo_res.Error (e, ct), pc -> Some (e, ct, pc) | _ -> None)
+        branches
+    in
+    let errors =
+      List.map (fun (e, ct, _) -> (e, ct)) errors
+      |> List.sort_uniq compare
+      |> List.map (fun (e, ct) ->
+             let pcs =
+               List.filter_map
+                 (fun (e', ct', pc) ->
+                   if e = e' && ct = ct' then Some pc else None)
+                 errors
+             in
+             (e, ct, pcs))
+    in
+    Error (errors, nbranches)
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;
