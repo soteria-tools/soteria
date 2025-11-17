@@ -103,11 +103,18 @@ let print_stats (stats : Meta.span Stats.stats) =
     [
       ("Steps", fun ft () -> int ft stats.steps_number);
       ("Branches", fun ft () -> int ft stats.branch_number);
-      ("Exec time", fun ft () -> pp_time ft stats.exec_time);
+      ("Total time", fun ft () -> pp_time ft stats.exec_time);
+      ( "Execution time",
+        fun ft () ->
+          Fmt.pf ft "%a (%a%%)" pp_time
+            (stats.exec_time -. stats.sat_time)
+            (float_dfrac 2)
+            (100. *. (stats.exec_time -. stats.sat_time) /. stats.exec_time) );
       ( "Solver time",
         fun ft () ->
           Fmt.pf ft "%a (%a%%)" pp_time stats.sat_time (float_dfrac 2)
             (100. *. stats.sat_time /. stats.exec_time) );
+      ("SAT checks", fun ft () -> int ft stats.sat_checks);
     ]
   in
   let pp_entry ft (name, pp_value) = Fmt.pf ft " • %s: %a" name pp_value () in

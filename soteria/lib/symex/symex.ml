@@ -93,6 +93,10 @@ module type Base = sig
   (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
 
+  (** [simplify v] simplifies the value [v] according to the current path
+      condition. *)
+  val simplify : 'a v -> 'a v t
+
   val fresh_var : 'a vt -> Var.t t
 
   val branch_on :
@@ -318,6 +322,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let sat () =
       let res = Stats.As_ctx.add_sat_time_of sat in
+      Stats.As_ctx.add_sat_checks 1;
       if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
       res
   end
@@ -426,6 +431,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     let v = Value.mk_var v ty in
     f v
 
+  let simplify v f = f (Solver.simplify v)
   let fresh_var ty f = f (Solver.fresh_var ty)
 
   let branch_on ?(left_branch_name = "Left branch")

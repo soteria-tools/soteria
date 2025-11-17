@@ -9,12 +9,11 @@ from parselog import (
     categorise_rusteria,
 )
 
-
 CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
-CmdBenchmark = tuple[Literal["benchmark"], tuple]
+CmdBenchmark = tuple[Literal["benchmark"], tuple[Optional[ToolName]]]
 CmdCompKani = tuple[Literal["comp-kani"], tuple[Path, bool]]
 CmdCompFinetime = tuple[Literal["finetime"], tuple]
 Cmd = (
@@ -93,7 +92,11 @@ def parse_flags() -> CliOpts:
         file2 = Path(sys.argv.pop(0))
         opts["cmd"] = ("eval-diff", (file1, file2))
     elif arg == "benchmark":
-        opts["cmd"] = ("benchmark", ())
+        if sys.argv and sys.argv[0] in TOOL_NAMES:
+            tool = cast(ToolName, sys.argv.pop(0))
+            opts["cmd"] = ("benchmark", (tool,))
+        else:
+            opts["cmd"] = ("benchmark", (None,))
     elif arg == "comp-kani":
         if len(sys.argv) < 1:
             raise ArgError("missing path to path with tests")
