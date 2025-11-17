@@ -152,12 +152,10 @@ module Make (State : State_intf.S) = struct
         | Dyn -> not_impl "TODO: TraitConst(Dyn)"
         | UnknownTrait _ -> not_impl "TODO: TraitConst(UnknownTrait)")
     | CRawMemory bytes ->
-        let value = List.map (fun x -> Int (BV.u8i x)) bytes in
-        let value = Tuple value in
-        let from_ty =
-          mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
+        let blocks =
+          List.mapi (fun i x -> (Int (BV.u8i x), BV.usizei i)) bytes
         in
-        let$$+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
+        let$$+ value = Encoder.transmute blocks ~to_ty:const.ty in
         value
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
@@ -464,12 +462,17 @@ module Make (State : State_intf.S) = struct
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr_fn in
+            let blocks = Encoder.rust_to_cvals v from_ty in
             State.with_decay_map_res
-            @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
+            @@ Encoder.transmute ~verify_ptr ~to_ty blocks
         | Cast (CastScalar (from_ty, to_ty)) ->
-            State.with_decay_map_res
-            @@ Encoder.transmute ~from_ty:(TLiteral from_ty)
-                 ~to_ty:(TLiteral to_ty) v
+            let* v =
+              match v with
+              | Int i -> ok (i :> T.cval Typed.t)
+              | Float f -> ok (f :> T.cval Typed.t)
+              | _ -> not_impl "Invalid value for CastScalar"
+            in
+            State.with_decay_map_res @@ Encoder.cast_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (_, _, meta)) ->
             let update_meta prev =
               match meta with
@@ -705,7 +708,7 @@ module Make (State : State_intf.S) = struct
         let+ vals = eval_operand_list vals in
         Enum (discr, vals)
     (* Union aggregate *)
-    | Aggregate (AggregatedAdt (_, None, Some field), ops) ->
+    | Aggregate (AggregatedAdt (ty, None, Some field), ops) ->
         let op =
           match ops with
           | [ op ] -> op
@@ -713,7 +716,14 @@ module Make (State : State_intf.S) = struct
           | _ :: _ -> failwith "union aggregate with >1 values?"
         in
         let+ value = eval_operand op in
-        Union (field, value)
+        let field = Types.FieldId.to_int field in
+        let layout = Layout.layout_of (TAdt ty) in
+        let offset = Layout.Fields_shape.offset_of field layout.fields in
+        let offset = BV.usizei offset in
+        let op_blocks =
+          Encoder.rust_to_cvals ~offset value (type_of_operand op)
+        in
+        Union op_blocks
     (* Tuple aggregate *)
     | Aggregate (AggregatedAdt ({ id = TTuple; _ }, None, None), operands) ->
         let+ values = eval_operand_list operands in
@@ -910,8 +920,11 @@ module Make (State : State_intf.S) = struct
           fold_list (List.combine3 args in_tys exp_tys) ~init:[]
             ~f:(fun acc (arg, from_ty, to_ty) ->
               let* arg = eval_operand arg in
-              let$$+ arg = Encoder.transmute ~from_ty ~to_ty arg in
-              arg :: acc)
+              if Types.equal_ty from_ty to_ty then ok (arg :: acc)
+              else
+                let blocks = Encoder.rust_to_cvals arg from_ty in
+                let$$+ arg = Encoder.transmute ~to_ty blocks in
+                arg :: acc)
         in
         let args = List.rev args in
         L.info (fun g ->

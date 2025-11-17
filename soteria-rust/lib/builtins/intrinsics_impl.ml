@@ -655,8 +655,8 @@ module M (State : State_intf.S) = struct
 
   let transmute ~t_src ~dst ~src =
     let* verify_ptr = State.is_valid_ptr_fn in
-    State.with_decay_map_res
-    @@ Encoder.transmute ~verify_ptr ~from_ty:t_src ~to_ty:dst src
+    let blocks = Encoder.rust_to_cvals src t_src in
+    State.with_decay_map_res @@ Encoder.transmute ~verify_ptr ~to_ty:dst blocks
 
   let type_id ~t =
     (* lazy but works *)

@@ -595,7 +595,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
       let len = int_of_const_generic len in
       zeroed ~null_ptr ty
       |> Option.map (fun v -> Tuple (List.init len (fun _ -> v)))
-  | TAdt { id = TAdtId t_id; _ } -> (
+  | TAdt { id = TAdtId t_id; _ } as ty -> (
       let adt = Crate.get_adt t_id in
       match adt.kind with
       | Struct fields ->
@@ -613,20 +613,10 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
           |> Charon_util.field_tys
           |> zeroeds
           |> Option.map (fun fs -> Enum (BV.of_literal v.discriminant, fs))
-      | Union fs ->
-          let layouts =
-            List.mapi
-              (fun i (f : Types.field) -> (f.field_ty, i, layout_of f.field_ty))
-              fs
-          in
-          let ty, i, _ =
-            List.fold_left
-              (fun ((_, _, accl) as acc) ((_, _, l) as cur) ->
-                if l.size > accl.size then cur else acc)
-              (List.hd layouts) (List.tl layouts)
-          in
-          let field = Types.FieldId.of_int i in
-          zeroed ~null_ptr ty |> Option.map (fun v -> Union (field, v))
+      | Union _ ->
+          let layout = layout_of ty in
+          let bv = BV.zero (layout.size * 8) in
+          Some (Union [ (Int bv, Usize.(0s)) ])
       | k ->
           Fmt.failwith "Unhandled zeroed ADT kind: %a" Types.pp_type_decl_kind k
       )
@@ -755,10 +745,11 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
           | Some v -> List.concat_map2 f vs (field_tys Types.(v.fields))
           | None -> [])
       | None -> [])
-  | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
-      let fields = Crate.as_union adt_id in
-      let field = Types.FieldId.nth fields fid in
-      f v field.field_ty
+  | Union _, TAdt { id = TAdtId _; _ } ->
+      (* FIXME: figure out if references inside unions get reborrowed. They could, but I
+         suspect they don't because there's no guarantee the reference isn't some other field,
+         e.g. in [union { a: &u8, b: &u16 }]  *)
+      []
   | _ -> []
 
 let rec update_ref_tys_in
@@ -814,11 +805,11 @@ let rec update_ref_tys_in
           let++ vs, acc = fs2 init vs (field_tys Types.(var.fields)) in
           (Enum (d, vs), acc)
       | None -> Result.ok (v, init))
-  | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
-      let fields = Crate.as_union adt_id in
-      let field = Types.FieldId.nth fields fid in
-      let++ v, acc = f init v field.field_ty in
-      (Union (fid, v), acc)
+  | (Union _ as v), TAdt { id = TAdtId _; _ } ->
+      (* FIXME: figure out if references inside unions get reborrowed. They could, but I
+         suspect they don't because there's no guarantee the reference isn't some other field,
+         e.g. in [union { a: &u8, b: &u16 }]  *)
+      Result.ok (v, init)
   | v, _ -> Result.ok (v, init)
 
 (** [is_abi_compatible ty1 ty2] is true if a function expecting an argument of
