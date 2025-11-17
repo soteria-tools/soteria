@@ -294,11 +294,12 @@ let exec_and_print log_config term_config solver_config config includes
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   let@ () = initialise log_config term_config solver_config config in
   let result = exec_function ~includes file_names entry_point in
-  if not (Config.current ()).parse_only then
+  if not (Config.current ()).parse_only then (
     let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
     Fmt.pr
       "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
-       Executed %d statements"
+       Executed %d statements@\n\
+       @?"
       Fmt.Dump.(
         list @@ fun ft (r, _) ->
         (Soteria.Symex.Compo_res.pp
@@ -306,7 +307,8 @@ let exec_and_print log_config term_config solver_config config includes
            ~err:(Soteria.Symex.Or_gave_up.pp pp_err_and_call_trace)
            ~miss:(Fmt.Dump.list SState.pp_serialized))
           ft r)
-      result.res result.stats.steps_number
+      result.res result.stats.steps_number;
+    dump_stats result.stats)
 
 let dump_summaries results =
   match (Config.current ()).dump_summaries_file with
@@ -378,10 +380,11 @@ let lsp config () =
   Config.with_config ~config @@ Soteria_c_lsp.run ~generate_errors
 
 (* Entry point function *)
-let show_ail logs_config term_config (includes : string list)
+let show_ail logs_config term_config config (includes : string list)
     (files : string list) =
   Soteria.Logs.Config.check_set_and_lock logs_config;
   Soteria.Terminal.Config.set_and_lock term_config;
+  Config.with_config ~config @@ fun () ->
   match parse_and_link_ail ~includes files with
   | Ok { symmap; sigma; entry_point } ->
       Fmt.pr "@[<v 2>Extern idmap:@ %a@]@\n@\n"

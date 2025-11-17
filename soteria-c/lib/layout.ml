@@ -1,6 +1,7 @@
 module CF = Cerb_frontend
 open CF.Ctype
 open Typed.Syntax
+module BV = Typed.BitVec
 module Agv = Aggregate_val
 
 type bv_info = { bv_size : int; signed : bool }
@@ -76,6 +77,16 @@ let size_of_float_ty (fty : floatingType) =
 let align_of_float_ty (fty : floatingType) =
   CF.Ocaml_implementation.DefaultImpl.impl.alignof_fty fty
 
+let size_of_int_ty_unsupported (int_ty : integerType) =
+  Csymex.of_opt_not_impl
+    ~msg:"size_of_int_ty_unsupported: integer of unknown size"
+  @@ size_of_int_ty int_ty
+
+let get_array_info ty =
+  match CF.Ctype.proj_ctype_ ty with
+  | Array (elem_ty, sz) -> Some (elem_ty, sz)
+  | _ -> None
+
 let get_struct_fields tag =
   let open Syntaxes.Option in
   let* _loc, def = Tag_defs.find_opt tag in
@@ -114,6 +125,11 @@ let rec layout_of ty =
             None
       in
       union_layout_of_members members
+  | Array (elem_ty, Some sz) ->
+      let* elem_layout = layout_of elem_ty in
+      let size = elem_layout.size * Z.to_int sz in
+      let align = elem_layout.align in
+      Some { size; align; members_ofs = [] }
   | _ ->
       L.debug (fun m -> m "Cannot compute layout of %a" Fmt_ail.pp_ty_ ty);
       None
@@ -216,14 +232,14 @@ and struct_layout_of_members members =
 
 let size_of_s ty =
   match layout_of ty with
-  | Some { size; _ } -> Csymex.return (Typed.int size)
+  | Some { size; _ } -> Csymex.return (BV.usizei size)
   | None ->
       Fmt.kstr Csymex.not_impl "Cannot yet compute size of type %a"
         Fmt_ail.pp_ty ty
 
 let align_of_s ty =
   match layout_of ty with
-  | Some { align; _ } -> Csymex.return (Typed.int align)
+  | Some { align; _ } -> Csymex.return (BV.usizei align)
   | None ->
       Fmt.kstr Csymex.not_impl "Canot yet compute alignment of type %a"
         Fmt_ail.pp_ty ty
@@ -238,7 +254,7 @@ let member_ofs id ty =
           members_ofs
       in
       match res with
-      | Some (_, ofs) -> Csymex.return (Typed.int ofs)
+      | Some (_, ofs) -> Csymex.return (BV.usizei ofs)
       | None ->
           Fmt.kstr Csymex.not_impl "Cannot find member %a in type %a"
             Fmt_ail.pp_id id Fmt_ail.pp_ty ty)
@@ -246,41 +262,32 @@ let member_ofs id ty =
       Fmt.kstr Csymex.not_impl "Cannot yet compute layout of type %a"
         Fmt_ail.pp_ty ty
 
+let is_int_ty_signed (int_ty : integerType) =
+  let int_ty = normalise_int_ty int_ty in
+  match int_ty with
+  | Signed _ -> true
+  | Char | Bool | Unsigned _ -> false
+  | _ ->
+      L.debug (fun m ->
+          m "Cannot determine signedness of %a" Fmt_ail.pp_int_ty int_ty);
+      false
+
 let int_bv_info (int_ty : integerType) =
   let open Syntaxes.Option in
   let int_ty = normalise_int_ty int_ty in
-  match int_ty with
-  | Char | Bool -> Some { bv_size = 8; signed = false }
-  | Signed _ ->
-      let+ size = size_of_int_ty int_ty in
-      { bv_size = size * 8; signed = true }
-  | Unsigned _ ->
-      let+ size = size_of_int_ty int_ty in
-      { bv_size = size * 8; signed = false }
-  | _ ->
-      L.debug (fun m ->
-          m "Did not derive bv_info for %a" Fmt_ail.pp_int_ty int_ty);
-      None
+  let+ size = size_of_int_ty int_ty in
+  let signed = is_int_ty_signed int_ty in
+  { bv_size = size * 8; signed }
 
 let bv_info (ty : ctype) =
   match proj_ctype_ ty with Basic (Integer ity) -> int_bv_info ity | _ -> None
 
 let int_constraints (int_ty : integerType) =
   let open Typed.Infix in
-  let open Syntaxes.Option in
   let int_ty = normalise_int_ty int_ty in
   match int_ty with
-  | Char -> Some (fun x -> [ 0s <=@ x; x <@ 256s ])
-  | Bool -> Some (fun x -> [ 0s <=@ x; x <@ 2s ])
-  | Signed _ ->
-      let+ size = size_of_int_ty int_ty in
-      let min = Z.neg (Z.shift_left Z.one ((size * 8) - 1)) in
-      let max = Z.pred (Z.shift_left Z.one ((size * 8) - 1)) in
-      fun x -> [ Typed.int_z min <=@ x; x <=@ Typed.int_z max ]
-  | Unsigned _ ->
-      let+ size = size_of_int_ty int_ty in
-      let max = Z.pred (Z.shift_left Z.one (size * 8)) in
-      fun x -> [ 0s <=@ x; x <=@ Typed.int_z max ]
+  | Bool -> Some (fun x -> [ U8.(0s) <=@ x; (x <@ U8.(2s)) ])
+  | Char | Signed _ | Unsigned _ -> Some (fun _ -> [])
   | _ ->
       L.debug (fun m -> m "No int constraints for %a" Fmt_ail.pp_int_ty int_ty);
       None
@@ -290,26 +297,29 @@ exception Unsupported of string
 let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
   let open Typed.Infix in
   let unsupported msg = raise (Unsupported msg) in
+
   let basic_or_unsupported v =
     match v with
     | Agv.Basic v -> v
-    | Agv.Struct _ ->
+    | Agv.Struct _ | Agv.Array _ ->
         Fmt.kstr unsupported "Not a basic value (%a) for type %a" Agv.pp v
           Fmt_ail.pp_ty ty
   in
   match proj_ctype_ ty with
-  | Void ->
+  | Void -> (
       let v = basic_or_unsupported v in
-      [ v ==@ 0s ]
+      match Typed.cast_int v with
+      | None -> [ Typed.v_false ]
+      | Some (v, size) -> [ v ==@ BV.zero size ])
   | Pointer _ -> [] (* Pointers should already have their invariants hold *)
   | Basic (Integer ity) -> (
       match int_constraints ity with
       | None -> unsupported "No int constraints"
       | Some constrs -> (
           let v = basic_or_unsupported v in
-          match Typed.cast_checked v Typed.t_int with
+          match Typed.cast_int v with
           | None -> [ Typed.v_false ]
-          | Some x -> constrs x))
+          | Some (x, _) -> constrs x))
   | Basic (Floating _) ->
       (* Floating constraints are already included in the floating type itself (bitvectors) *)
       []
@@ -326,13 +336,14 @@ let constraints ~ty v =
 let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   let open Csymex.Syntax in
   match proj_ctype_ ty with
-  | Void -> Csymex.return 0s
+  | Void -> Csymex.return Usize.(0s)
   | Pointer _ ->
       let* loc = Csymex.nondet Typed.t_loc in
-      let* ofs = Csymex.nondet Typed.t_int in
+      let* ofs = Csymex.nondet Typed.t_usize in
       Csymex.return (Typed.Ptr.mk loc ofs)
   | Basic (Integer ity) ->
-      let* res = Csymex.nondet Typed.t_int in
+      let* size = size_of_int_ty_unsupported ity in
+      let* res = Csymex.nondet (Typed.t_int (8 * size)) in
       let constrs = int_constraints ity |> Option.get in
       let+ () = Csymex.assume (constrs res) in
       (res :> Typed.T.cval Typed.t)
@@ -347,3 +358,57 @@ let nondet_c_ty_aggregate (ty : ctype) : Agv.t Csymex.t =
   let open Csymex.Syntax in
   let+ res = nondet_c_ty ty in
   Agv.Basic res
+
+let int_ty_bounds int_ty =
+  let open Syntaxes.Option in
+  match int_ty with
+  | Char -> Some (Z.zero, Z.of_int 255)
+  | Bool -> Some (Z.zero, Z.one)
+  | Signed _ ->
+      let+ size = size_of_int_ty int_ty in
+      let min = Z.neg (Z.shift_left Z.one ((size * 8) - 1)) in
+      let max = Z.pred (Z.shift_left Z.one ((size * 8) - 1)) in
+      (min, max)
+  | Unsigned _ ->
+      let+ size = size_of_int_ty int_ty in
+      let max = Z.pred (Z.shift_left Z.one (size * 8)) in
+      (Z.zero, max)
+  | _ -> None
+
+(** Returns the target type for "usual arithmetic conversions" between two
+    types.
+
+    See
+    https://learn.microsoft.com/en-us/cpp/c-language/usual-arithmetic-conversions
+*)
+let type_conversion_arith (ty1 : ctype) ty2 =
+  match (proj_ctype_ ty1, proj_ctype_ ty2) with
+  | Basic (Floating (RealFloating LongDouble)), _ -> ty1
+  | _, Basic (Floating (RealFloating LongDouble)) -> ty2
+  | Basic (Floating (RealFloating Double)), _ -> ty1
+  | _, Basic (Floating (RealFloating Double)) -> ty2
+  | Basic (Floating (RealFloating Float)), _ -> ty1
+  | _, Basic (Floating (RealFloating Float)) -> ty2
+  | Basic (Integer it1), Basic (Integer it2) -> (
+      let it1 = normalise_int_ty it1 in
+      let it2 = normalise_int_ty it2 in
+      if it1 = it2 then ty1
+      else
+        let size1 = Option.get @@ size_of_int_ty it1 in
+        let size2 = Option.get @@ size_of_int_ty it2 in
+        if size1 >= size2 then ty1
+        else if size2 > size1 then ty2
+        else
+          match (is_int_ty_signed it1, is_int_ty_signed it2) with
+          | true, false -> ty1
+          | false, true -> ty2
+          | _ -> ty1)
+  | Pointer _, _ -> ty1
+  | _, Pointer _ -> ty1
+  | _ -> failwith "non-basic types in arith operation"
+
+(** Size of the [int] type in C. *)
+let c_int_size =
+  Option.get
+    (Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity
+       (Signed Int_))

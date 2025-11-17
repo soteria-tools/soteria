@@ -21,3 +21,4 @@ val is_empty : t -> bool
 val mem : Ail_tys.sym -> t -> bool
 val find_opt : Ail_tys.sym -> t -> binding option
 val declare_value : Ail_tys.sym -> Aggregate_val.t -> t -> t
+val get_ty : Ail_tys.sym -> t -> Ail_tys.ctype

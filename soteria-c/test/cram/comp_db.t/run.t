@@ -5,34 +5,34 @@
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
+        ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
   Summaries for test1_559:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
+        ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
   Summaries for test3_638:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
+        ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
   Summaries for main_720:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
+        ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
   Summaries for test2_639:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
+        ret = (Ok 0x00000000) };
       manifest_bugs = []}
   

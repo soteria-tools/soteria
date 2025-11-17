@@ -55,17 +55,14 @@ let of_linked_program (prog : Ail_tys.linked_program) =
 
 let decay_fn_sym sym t =
   Bidirectional_map.get_loc_id sym t.bmap
-  |> Option.map (fun z ->
-         let loc = Svalue.Ptr.loc_of_z z in
-         let loc : Typed.T.sloc Typed.t = Typed.type_ loc in
-         loc)
+  |> Option.map Typed.Ptr.loc_of_z
   |> Csymex.of_opt_not_impl
        ~msg:(Fmt.str "Function has not been declared! %a" Fmt_ail.pp_sym sym)
 
 let get_sym sv t =
   let res =
     match Typed.kind sv with
-    | Svalue.Int z -> Bidirectional_map.get_sym z t.bmap
+    | BitVec z -> Bidirectional_map.get_sym z t.bmap
     | _ -> None
   in
-  Csymex.of_opt_not_impl ~msg:"Could not resolve function" res
+  Csymex.of_opt_not_impl ~msg:"Could not resolve function" @@ res

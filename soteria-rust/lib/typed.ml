@@ -45,9 +45,7 @@ let cast_float v =
 (** DEPRECATED: it is unlikely you need this; the interpreter should be well
     typed *)
 let cast_int (v : 'a t) : [> T.sint ] t * int =
-  match cast_int v with
-  | Some v -> (v, size_of_int v)
-  | None -> cast_error v (t_int 0)
+  match cast_int v with Some v -> v | None -> cast_error v (t_int 0)
 
 module BitVec = struct
   include BitVec

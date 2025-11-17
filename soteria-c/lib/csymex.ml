@@ -7,7 +7,7 @@ module Meta = struct
   end
 end
 
-module SYMEX = Soteria.Symex.Make (Meta) (C_solver.Z3_solver)
+module SYMEX = Soteria.Symex.Make (Meta) (Bv_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
 
@@ -15,7 +15,8 @@ let check_nonzero (t : Typed.T.sint Typed.t) :
     ([> Typed.T.nonzero ] Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
   let open Syntax in
   let open Typed.Infix in
-  if%sat t ==@ Typed.zero then Result.error `NonZeroIsZero
+  if%sat t ==@ Typed.BitVec.zero (Typed.size_of_int t) then
+    Result.error `NonZeroIsZero
   else Result.ok (Typed.cast t)
 
 let current_loc = ref Cerb_location.unknown

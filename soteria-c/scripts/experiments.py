@@ -15,7 +15,7 @@ class ExperimentException(Exception):
 ####### GLOBAL CONFIGURATION ########
 
 default_experiment_folder: Path = Path("../soteria-c-experiments")
-default_solver_timeout = 25  # ms
+default_solver_timeout = 2  # ms
 default_experiments_to_run: Optional[list[str]] = None
 
 # Later modified by the script to include available experiments

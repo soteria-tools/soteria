@@ -565,7 +565,9 @@ module Equality : S = struct
         | Some v' -> v'
         | None -> (
             match v.node.kind with
-            | Binop (Eq, l, r) when known_eq l r st -> Svalue.Bool.v_true
+            | Binop ((Eq | Leq _), l, r) when known_eq l r st ->
+                Svalue.Bool.v_true
+            | Binop (Lt _, l, r) when known_eq l r st -> Svalue.Bool.v_false
             | Binop (op, l, r) ->
                 let l' = simplify l in
                 let r' = simplify r in
