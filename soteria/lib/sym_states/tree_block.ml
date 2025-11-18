@@ -680,8 +680,8 @@ struct
     | Some { bound = Some _; _ } -> Symex.vanish ()
 
   let produce_mem_val offset len v t =
-    let ((_, high) as range) = Range.of_low_and_size offset len in
-    let* () = Symex.assume [ MemVal.SBoundedInt.in_bound high ] in
+    let ((low, high) as range) = Range.of_low_and_size offset len in
+    let* () = Symex.assume MemVal.SBoundedInt.[ in_bound low; in_bound high ] in
     let t =
       match t with
       | Some t -> t

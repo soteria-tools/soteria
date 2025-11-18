@@ -13,7 +13,6 @@ module MemVal = struct
 
   module SBoundedInt = struct
     include Typed
-    include Typed.Infix
 
     type sint = T.sint
     type sbool = T.sbool
@@ -21,6 +20,8 @@ module MemVal = struct
     let zero () = Usize.(0s)
     let ( <@ ) = Typed.Infix.( <$@ )
     let ( <=@ ) = Typed.Infix.( <=$@ )
+    let ( ==@ ) = Typed.Infix.( ==@ )
+    let ( &&@ ) = Typed.Infix.( &&@ )
 
     (* We assume addition/overflow within the range of an allocation may never overflow.
        This allows extremely good reductions around inequalities, which Tree_block relies on.  *)
@@ -28,7 +29,7 @@ module MemVal = struct
     let ( -@ ) = Typed.Infix.( -!!@ )
 
     let in_bound (v : sint Typed.t) : sbool Typed.t =
-      v >=@ zero () &&@ (v <=@ Typed.BitVec.isize_max)
+      zero () <=@ v &&@ (v <=@ Typed.BitVec.isize_max)
   end
 
   let pp_init ft (v, ty) =
