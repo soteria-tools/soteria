@@ -704,26 +704,6 @@ module Make (Sptr : Sptr.S) = struct
         in
         split (Int v) at
     | Int v ->
-        (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
-           of size 2^n *)
-        let rec aux v sz =
-          (* we're a power of two, so we're done *)
-          if Z.(popcount (of_int sz)) = 1 then `Leaf (Int v)
-          else
-            (* Split at the most significant bit; e.g. for size 7 (0b111), will split at 0b100,
-               resulting in a leaf of size 3 (0b11) and a right leaf of size 4 (0b100) *)
-            let at = 1 lsl Z.(log2 (of_int sz)) in
-            let leaf_l, leaf_r = split v sz at in
-            `Node (BV.usizei at, leaf_l, leaf_r)
-        and split v sz at =
-          let size_l = at in
-          let size_r = sz - at in
-          let mask_l = BV.extract 0 ((at * 8) - 1) v in
-          let mask_r = BV.extract (at * 8) ((sz * 8) - 1) v in
-          let leaf_l = aux mask_l size_l in
-          let leaf_r = aux mask_r size_r in
-          (leaf_l, leaf_r)
-        in
         (* get our starting size and unsigned integer *)
         let size = Typed.size_of_int v / 8 in
         let+ at =
@@ -738,7 +718,9 @@ module Make (Sptr : Sptr.S) = struct
               in
               match res with Some i -> return i | None -> vanish ())
         in
-        split v size at
+        let mask_l = BV.extract 0 ((at * 8) - 1) v in
+        let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
+        (`Leaf (Int mask_l), `Leaf (Int mask_r))
     | _ ->
         Fmt.kstr not_impl "Split unsupported: %a at %a" pp_rust_val v Typed.ppa
           at
