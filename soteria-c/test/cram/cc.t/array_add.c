@@ -142,10 +142,6 @@ int array_remove(Array *ar, void *element, void **out)
     return CC_OK;
 }
 
-// TODO: This is an excellent example to experiment with tree rebalancing.
-// When increasing the loop limit (currently 50), things get extremely slow.
-// I suspect it the time to access the correct cell in the heap that just gets deeper and deeper into the corresponding tree.
-
 int main()
 {
     Array *v1 = malloc(sizeof(Array));

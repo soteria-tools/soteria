@@ -70,6 +70,7 @@ class Stats:
     sat_time: float
     give_up_reasons: dict[str, int]
     missing_without_fixes: list[str]
+    sat_checks: int
 
     def as_dict(self):
         return asdict(self)
@@ -95,6 +96,7 @@ class Stats:
             unexplored_branch_number=0,
             sat_unknowns=0,
             sat_time=0.0,
+            sat_checks=0,
         )
 
 
@@ -114,6 +116,7 @@ def merge_stats(a: Stats, b: Stats) -> Stats:
         + b.unexplored_branch_number,
         sat_unknowns=a.sat_unknowns + b.sat_unknowns,
         sat_time=a.sat_time + b.sat_time,
+        sat_checks=a.sat_checks + b.sat_checks,
     )
 
 
