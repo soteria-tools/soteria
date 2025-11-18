@@ -597,6 +597,8 @@ def finetime(opts: CliOpts):
             # warning: <test> (0.01ms): runtime error, Missed 1 branches
             if line.startswith("warning: "):
                 tests.append(line.split(" ")[1])
+        if len(tests) == 0:
+            raise RuntimeError(f"Could not find any tests in Finetime: {data.stdout}")
         return tests
 
     tests = get_tests()

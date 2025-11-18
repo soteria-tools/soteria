@@ -1,5 +1,5 @@
-// Kani: kani demo/darpa/aliasing.rs
-// Rusteria: dune exec -- soteria-rust rustc demo/darpa/aliasing.rs --kani --obol
+// Kani: kani demo/darpa/aliasing.rs --output-format terse
+// Rusteria: dune exec -- soteria-rust rustc demo/darpa/aliasing.rs --kani
 
 /// An example of Tree Borrows violation, according to the paper.
 /// We may only own one mutable reference to a memory location at a time;
