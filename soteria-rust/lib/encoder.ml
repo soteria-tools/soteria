@@ -400,6 +400,11 @@ module Make (Sptr : Sptr.S) = struct
               let layout = layout_of ty in
               if layout.size = 0 then ok (Union [])
               else
+                (* FIXME: this isn't exactly correct; union actually doesn't copy the padding
+                   bytes (i.e. the intersection of the padding bytes of all fields). It is
+                   quite painful to actually calculate these padding bytes so we just copy
+                   the whole thing for now.
+                   See https://github.com/rust-lang/unsafe-code-guidelines/issues/518 *)
                 let+++ blocks = get_all (BV.usizeinz layout.size, offset) in
                 Union blocks
           | _ ->
