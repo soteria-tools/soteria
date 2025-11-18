@@ -276,7 +276,7 @@
     return rvalue(*rvalue(ref));
   }
 
-  $ soteria-c exec file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols
+  $ soteria-c exec file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
     [Ok: (0x00000000,
           { heap =
@@ -291,4 +291,6 @@
                    v = 0x00000400 : signed int}];
                 info = None })];
             globs = [(glob_644, V|2|); (ref_645, V|1|)] })]
+  
   Executed 15 statements
+  Verification Success!

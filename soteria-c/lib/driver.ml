@@ -291,10 +291,7 @@ let initialise log_config term_config solver_config config f =
 let print_states result =
   let open Soteria.Stats in
   let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
-  Fmt.pr
-    "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
-     Executed %d statements@\n\
-     @?"
+  Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n@?"
     Fmt.Dump.(
       list @@ fun ft (r, _) ->
       (Soteria.Symex.Compo_res.pp
@@ -302,7 +299,7 @@ let print_states result =
          ~err:(Soteria.Symex.Or_gave_up.pp pp_err_and_call_trace)
          ~miss:(Fmt.Dump.list SState.pp_serialized))
         ft r)
-    result.res result.stats.steps_number
+    result.res
 
 (* Entry point function *)
 let exec_and_print log_config term_config solver_config config includes
@@ -329,6 +326,7 @@ let exec_and_print log_config term_config solver_config config includes
              print_diagnostic ~fid:entry_point ~call_trace:Call_trace.empty
                ~error:(`Gave_up msg));
     let success = List.is_empty errors in
+    Fmt.pr "@.Executed %d statements" result.stats.steps_number;
     if success then
       Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_ok "Verification Success!"
     else Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!")
