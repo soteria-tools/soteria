@@ -11,6 +11,7 @@ module type KeyS = sig
   val pp : Format.formatter -> t -> unit
   val sem_eq : t -> t -> sbool_v
   val fresh : unit -> t Symex.t
+  val simplify : t -> t Symex.t
   val distinct : t list -> sbool_v
   val subst : (Var.t -> Var.t) -> t -> t
   val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
@@ -23,6 +24,7 @@ module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
 
   let sem_eq x y = Symex.Value.bool (Key.compare x y = 0)
   let fresh () = failwith "Fresh not implemented for concrete keys"
+  let simplify = Symex.return
   let distinct _ = Symex.Value.bool true
   let subst _ x = x
   let iter_vars _ = fun _ -> ()
@@ -185,6 +187,7 @@ struct
           if%sat Key.sem_eq key k then Symex.return (k, Some v)
           else find_bindings tl
     in
+    let* key = Key.simplify key in
     match M'.find_opt key st with
     | Some v -> Symex.return (key, Some v)
     | None ->

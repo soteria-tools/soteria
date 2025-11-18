@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
 
 
+import datetime
+import math
+import time
 from io import TextIOWrapper
 from pathlib import Path
-import time
-import datetime
 from typing import assert_never
-import math
 
-from common import *
-from parselog import (
-    TestCategoriser,
-    LogCategorisation_,
-    parse_per_test,
-)
 from cliopts import (
     ArgError,
     CliOpts,
@@ -23,7 +17,13 @@ from cliopts import (
     opts_for_rusteria,
     parse_flags,
 )
+from common import *
 from config import TEST_SUITES, TestConfig, filter_tests
+from parselog import (
+    LogCategorisation_,
+    TestCategoriser,
+    parse_per_test,
+)
 
 
 # Execute a test, return the categorisation and the elapsed time
@@ -332,7 +332,7 @@ def diff_evaluation(path1: Path, path2: Path):
 Benchmark = dict[ToolName, tuple[Outcome, float]]
 
 
-def benchmark(opts: CliOpts):
+def benchmark(tool: Optional[ToolName], opts: CliOpts):
     build()
 
     log = PWD / "benchmark.log"
@@ -347,6 +347,8 @@ def benchmark(opts: CliOpts):
     timeout = opts["timeout"] or 5
 
     def run_benchmark(opts: CliOpts):
+        if tool is not None and opts["tool"] != tool:
+            return
         for name, callback in TEST_SUITES.items():
             if name == "custom":
                 continue
@@ -595,6 +597,8 @@ def finetime(opts: CliOpts):
             # warning: <test> (0.01ms): runtime error, Missed 1 branches
             if line.startswith("warning: "):
                 tests.append(line.split(" ")[1])
+        if len(tests) == 0:
+            raise RuntimeError(f"Could not find any tests in Finetime: {data.stdout}")
         return tests
 
     tests = get_tests()
@@ -786,7 +790,8 @@ def main():
         (file1, file2) = cmd[1]
         diff_evaluation(file1, file2)
     elif cmd[0] == "benchmark":
-        benchmark(opts)
+        (tool,) = cmd[1]
+        benchmark(tool, opts)
     elif cmd[0] == "comp-kani":
         (compare_path, cached) = cmd[1]
         kani_comparison(opts, compare_path, cached)

@@ -74,6 +74,7 @@ module Make
   let consume_pure b = lift (Sym.consume_pure b)
   let consume_false () = lift (Sym.consume_false ())
   let nondet ty = lift (Sym.nondet ty)
+  let simplify v = lift (Sym.simplify v)
   let fresh_var ty = lift (Sym.fresh_var ty)
   let assert_or_error b err = lift (Sym.assert_or_error b err)
   let branches b st = Sym.branches (List.map (fun f () -> f () st) b)

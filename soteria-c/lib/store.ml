@@ -34,4 +34,9 @@ let declare_value sym value t =
       | Some { kind = _; ty } -> Some { kind = Value value; ty })
     t
 
+let get_ty sym t =
+  match find_opt sym t with
+  | None -> failwith "Store: Getting type of unknown symbol?"
+  | Some { ty; _ } -> ty
+
 let pp : t Fmt.t = Fmt.Dump.iter_bindings iter Fmt.nop Fmt_ail.pp_sym pp_binding

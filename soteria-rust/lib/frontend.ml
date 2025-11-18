@@ -118,6 +118,9 @@ module Cmd = struct
     in
     rustc @ sysroot
 
+  let flags_for_cargo =
+    List.filter (Fun.negate (String.starts_with ~prefix:"--edition"))
+
   let flags_as_rustc_env args =
     if List.is_empty args then [] else [ "RUSTFLAGS=" ^ String.concat " " args ]
 
@@ -146,11 +149,7 @@ module Cmd = struct
         (cmd, ("rustc" :: args) @ [ "--" ] @ rustc, [])
     | Cargo ->
         (* Cargo already specifies the edition *)
-        let rustc =
-          List.filter
-            (Fun.negate (String.starts_with ~prefix:"--edition"))
-            rustc
-        in
+        let rustc = flags_for_cargo rustc in
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
         (cmd, "cargo" :: args, env)
 
@@ -194,7 +193,9 @@ module Lib = struct
       let verbosity =
         if !Config.current.log_compilation then [ "--verbose" ] else []
       in
-      let env = Cmd.flags_as_rustc_env @@ Cmd.current_rustc_flags () in
+      let env =
+        Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
+      in
       let env = Cmd.rustc_as_env () @ env in
       let _out, err, status =
         let@ () = Exe.run_in path in

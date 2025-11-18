@@ -12,7 +12,8 @@ type t =
   | `DoubleFree
   | `InvalidFree
   | `Memory_leak
-  | `FailedAssert ]
+  | `FailedAssert
+  | `Overflow ]
 
 let pp ft = function
   | `NullDereference -> Fmt.string ft "Null pointer dereference"
@@ -30,6 +31,7 @@ let pp ft = function
       Fmt.string ft "Freeing a pointer that was not obtained from malloc"
   | `Memory_leak -> Fmt.string ft "Memory leak"
   | `FailedAssert -> Fmt.string ft "Failed assertion"
+  | `Overflow -> Fmt.string ft "Integer overflow"
 
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `Memory_leak -> Warning

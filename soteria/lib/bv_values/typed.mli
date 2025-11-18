@@ -79,7 +79,7 @@ val cast : 'a t -> 'b t
 val cast_checked : 'a t -> 'b ty -> 'b t option
 val cast_checked2 : 'a t -> 'b t -> ('c t * 'c t * 'c ty) option
 val cast_float : 'a t -> [> sfloat ] t option
-val cast_int : 'a t -> [> sint ] t option
+val cast_int : 'a t -> ([> sint ] t * int) option
 val is_float : 'a ty -> bool
 val size_of_int : [< sint ] t -> int
 val untyped : 'a t -> Svalue.t
@@ -214,6 +214,7 @@ module Ptr : sig
   val decompose : [< sptr ] t -> [> sloc ] t * [> sint ] t
   val add_ofs : [< sptr ] t -> [< sint ] t -> [> sptr ] t
   val loc_of_int : int -> int -> [> sloc ] t
+  val loc_of_z : int -> Z.t -> [> sloc ] t
   val null : int -> [> sptr ] t
   val null_loc : int -> [> sloc ] t
   val is_null_loc : [< sloc ] t -> [> sbool ] t

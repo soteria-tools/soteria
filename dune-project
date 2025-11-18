@@ -55,6 +55,7 @@
    (>= 0.5))
   (yojson
    (< 3.0))
+  unionFind
   ppx_deriving_yojson
   (ocamlformat
    (and

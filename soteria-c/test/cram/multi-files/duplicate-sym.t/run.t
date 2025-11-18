@@ -5,7 +5,7 @@
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0) };
+        ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
 We avoid printing the backtrace in the test output to reduce flakiness of the test

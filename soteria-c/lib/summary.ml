@@ -239,9 +239,10 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
             try
               let result = Csymex.run ~mode:OX process in
               (* The bug is manifest if the test passed in every branch. *)
-              List.for_all fst result
+              (not (List.is_empty result)) && List.for_all fst result
             with Soteria.Symex.Gave_up _ -> false
           in
+          if is_manifest then L.debug (fun m -> m "Bug is manifest!!");
           let manifest_bugs = if is_manifest then [ error ] else [] in
           Analysed { raw = summary; manifest_bugs })
 

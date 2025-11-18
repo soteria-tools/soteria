@@ -13,9 +13,8 @@ module Loc = struct
   let pp = Typed.ppa
 
   let fresh () =
-    let open Typed.Infix in
     let* loc = Csymex.nondet Typed.t_loc in
-    let+ () = Symex.assume [ Typed.not (loc ==@ Typed.Ptr.null_loc) ] in
+    let+ () = Symex.assume [ Typed.not (Typed.Ptr.is_null_loc loc) ] in
     loc
 
   let sem_eq = Typed.sem_eq
