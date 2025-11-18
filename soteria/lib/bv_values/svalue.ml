@@ -1364,11 +1364,6 @@ and BitVec : BitVec = struct
         if Z.geq int_l int_r then
           lt ~signed (add ~checked:true y (sub ~checked:true l r)) x
         else lt ~signed y (add ~checked:true x (sub ~checked:true r l))
-    | _, Binop (Add { checked = true }, v2, v2')
-      when equal v1 v2 || equal v1 v2' ->
-        (* a < b + a when + doesn't overflow is equivalent to 0 < b *)
-        let b = if equal v1 v2 then v2' else v2 in
-        lt ~signed (zero bits) b
     | _, BitVec x when Stdlib.not signed && Z.(equal x one) ->
         (* unsigned x < 1 is x == 0 *)
         Bool.sem_eq v1 (zero bits)
