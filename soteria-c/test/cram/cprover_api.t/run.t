@@ -1,14 +1,18 @@
 Warning and unspported with CBMC enabled 
   $ soteria-c exec test.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   [WARN] CBMC support is not enabled, but detected use of the __CPROVER API. Soteria will consider the function as missing a body.
-  Symex terminated with the following outcomes:
-    [Error: Gave up: MISSING FEATURE, VANISHING: Cannot call external function: __CPROVER_assume_563]
+  error: Analysis gave up: MISSING FEATURE, VANISHING: Cannot call external function: __CPROVER_assume_563 in main
   Executed 2 statements
+  Verification Failure!
 
 Behaves as expected with the API declared.
   $ soteria-c exec test.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --cbmc-compat
-  Symex terminated with the following outcomes:
-    [Error: Failed assertion with trace
-            [• Called from here: test.c:7:3-26;
-             • Triggering operation: test.c:7:3-26]]
+  error: Failed assertion in main
+      ┌─ test.c:7:3
+    7 │    __CPROVER_assert(0, "");
+      │    ^^^^^^^^^^^^^^^^^^^^^^^
+      │    │
+      │    Triggering operation
+      │    1: Called from here
   Executed 3 statements
+  Verification Failure!

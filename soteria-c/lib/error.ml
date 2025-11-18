@@ -13,7 +13,8 @@ type t =
   | `InvalidFree
   | `Memory_leak
   | `FailedAssert
-  | `Overflow ]
+  | `Overflow
+  | `Gave_up of string ]
 
 let pp ft = function
   | `NullDereference -> Fmt.string ft "Null pointer dereference"
@@ -32,6 +33,7 @@ let pp ft = function
   | `Memory_leak -> Fmt.string ft "Memory leak"
   | `FailedAssert -> Fmt.string ft "Failed assertion"
   | `Overflow -> Fmt.string ft "Integer overflow"
+  | `Gave_up s -> Fmt.pf ft "Analysis gave up: %s" s
 
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `Memory_leak -> Warning
@@ -72,6 +74,5 @@ module Diagnostic = struct
   let print_diagnostic ~fid ~call_trace ~error =
     Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
       ~error:(Fmt.to_to_string pp error)
-      ~severity:(severity error)
-      ~fname:(Fmt.to_to_string Ail_helpers.pp_sym_hum fid)
+      ~severity:(severity error) ~fname:fid
 end
