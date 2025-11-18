@@ -1,3 +1,4 @@
+open Charon
 open Soteria.Symex.Compo_res
 open Rust_val
 open Rustsymex.Syntax
@@ -63,10 +64,10 @@ module SPmap = Soteria.Sym_states.Pmap.Direct_access (DecayMapMonad) (StateKey)
 module Bi = Soteria.Sym_states.Bi_abd.Make (DecayMapMonad)
 module Tree_block = Rtree_block.Make (Sptr)
 
-type global = String of string | Global of Charon.Types.global_decl_id
+type global = String of string | Global of Types.global_decl_id
 
 module GlobMap = Map.MakePp (struct
-  type t = global = String of string | Global of Charon.Types.global_decl_id
+  type t = global = String of string | Global of Types.global_decl_id
   [@@deriving show { with_path = false }, ord]
 end)
 
@@ -80,10 +81,10 @@ module FunBiMap = struct
         let pp = Typed.ppa
       end)
       (struct
-        type t = Charon.Types.fn_ptr
+        type t = Types.fun_decl_ref
 
-        let compare = Charon.Types.compare_fn_ptr
-        let pp = Charon.Types.pp_fn_ptr
+        let compare = Types.compare_fun_decl_ref
+        let pp = Types.pp_fun_decl_ref
       end)
 
   let get_fn = find_l
@@ -220,12 +221,12 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
   Encoder.ParserMonad.parse ~init:block ~handler ~get_all @@ parser ~offset
 
-let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Charon.Types.ty) st =
+let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) st =
   (* The expected alignment of a dyn pointer is stored inside the VTable  *)
   let** exp_align, st =
     match (ty, meta) with
     | TDynTrait _, VTable vt ->
-        let usize = Charon.Types.TLiteral (TUInt Usize) in
+        let usize = Types.TLiteral (TUInt Usize) in
         let** ptr =
           lift_err st @@ Sptr.offset ~ty:usize ~signed:false vt Usize.(2s)
         in
@@ -290,7 +291,7 @@ let tb_load (ptr, _) ty st =
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns true if the value was read successfully,
     false otherwise. *)
-let is_valid_ptr st ptr (ty : Charon.Types.ty) =
+let is_valid_ptr st ptr (ty : Types.ty) =
   (* FIXME: i am not certain how one checks for the validity of a DST *)
   if Layout.is_dst ty then return true
   else (
@@ -464,8 +465,7 @@ let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
 
-let borrow (ptr, meta) (ty : Charon.Types.ty)
-    (kind : Charon.Expressions.borrow_kind) st =
+let borrow (ptr, meta) (ty : Types.ty) (kind : Expressions.borrow_kind) st =
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
   if Tree_borrow.is_disabled () || (kind = BShared && Layout.is_unsafe_cell ty)
   then Result.ok ((ptr, meta), st)
@@ -491,8 +491,7 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
           Tree_borrow.pp_state tag_st);
     DecayMapMonad.Result.ok ((ptr', meta), block)
 
-let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
-    =
+let protect (ptr, meta) (ty : Types.ty) (mut : Types.ref_kind) st =
   if Tree_borrow.is_disabled () || Layout.is_unsafe_cell ty then
     Result.ok ((ptr, meta), st)
   else
@@ -520,7 +519,7 @@ let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     let block = Option.map (fun b' -> (b', tb')) block' in
     ((ptr', meta), block)
 
-let unprotect (ptr, _) (ty : Charon.Types.ty) st =
+let unprotect (ptr, _) (ty : Types.ty) st =
   let lift_freed_err () f =
     let+ res = f () in
     match res with

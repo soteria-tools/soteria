@@ -105,6 +105,14 @@ module Make (State : State_intf.S) = struct
         | Some ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
+  let resolve_fn_ptr (fn : Types.fn_ptr) : Types.fun_decl_ref =
+    match fn.kind with
+    | FunId (FRegular id) -> { id; generics = fn.generics }
+    (* TODO: the generics here are probably wrong; we should also go via the trait,
+       and properly resolve it. *)
+    | TraitMethod (_, _, id) -> { id; generics = fn.generics }
+    | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
+
   let rec resolve_constant (const : Expressions.constant_expr) =
     match const.kind with
     | CLiteral (VScalar scalar) -> ok (Int (BV.of_scalar scalar))
@@ -295,60 +303,51 @@ module Make (State : State_intf.S) = struct
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty ?vtable :
       GAst.fn_operand -> ('err fun_exec * Types.ty list) t =
-    let validate_call ?(is_dyn = false) (fn : Types.fn_ptr) =
-      match fn.kind with
-      | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
-          let fn = Crate.get_fun fid in
-          let rec check_tys l r =
-            match (l, r) with
-            | [], [] -> ok ()
-            | ty1 :: l, ty2 :: r ->
-                if Layout.is_abi_compatible ty1 ty2 then check_tys l r
-                else error (`InvalidFnArgTys (ty1, ty2))
-            | _ ->
-                error
-                  (`InvalidFnArgCount
-                     (List.length in_tys, List.length fn.signature.inputs))
-          in
-          (* a bit hacky, but we don't want to compare the dyn parameter with
+    let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
+      let fn = Crate.get_fun fn.id in
+      let rec check_tys l r =
+        match (l, r) with
+        | [], [] -> ok ()
+        | ty1 :: l, ty2 :: r ->
+            if Layout.is_abi_compatible ty1 ty2 then check_tys l r
+            else error (`InvalidFnArgTys (ty1, ty2))
+        | _ ->
+            error
+              (`InvalidFnArgCount
+                 (List.length in_tys, List.length fn.signature.inputs))
+      in
+      (* a bit hacky, but we don't want to compare the dyn parameter with
              the expected input; the mismatch is intended here. *)
-          let in_tys, sig_ins =
-            if is_dyn then (List.tl in_tys, List.tl fn.signature.inputs)
-            else (in_tys, fn.signature.inputs)
-          in
-          check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
-      | FunId (FBuiltin _) -> ok ()
+      let in_tys, sig_ins =
+        if is_dyn then (List.tl in_tys, List.tl fn.signature.inputs)
+        else (in_tys, fn.signature.inputs)
+      in
+      check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
+    in
+    let perform_call (fn : Types.fun_decl_ref) =
+      try
+        let fundef = Crate.get_fun fn.id in
+        L.info (fun g ->
+            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
+        match Std_funs.std_fun_eval fundef exec_fun with
+        | Some fn -> ok (fn, fundef.signature.inputs)
+        | None -> ok (exec_fun fundef, fundef.signature.inputs)
+      with Crate.MissingDecl _ -> not_impl "Missing function declaration"
     in
     function
-    (* For static calls we don't need to check types, that's what the type checker does. *)
-    | FnOpRegular { kind = FunId (FRegular fid); _ }
-    | FnOpRegular { kind = TraitMethod (_, _, fid); _ } -> (
-        try
-          let fundef = Crate.get_fun fid in
-          L.info (fun g ->
-              g "Resolved function call to %a" Crate.pp_name
-                fundef.item_meta.name);
-          match Std_funs.std_fun_eval fundef exec_fun with
-          | Some fn -> ok (fn, fundef.signature.inputs)
-          | None -> ok (exec_fun fundef, fundef.signature.inputs)
-        with Crate.MissingDecl _ -> not_impl "Missing function declaration")
+    (* Handle builtins separately *)
     | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics, in_tys)
+    (* For static calls we don't need to check types, that's what the type checker does. *)
+    | FnOpRegular fn_ptr -> perform_call @@ resolve_fn_ptr fn_ptr
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
-        let* fn_ptr =
-          State.load
-            (* FIXME: temp ~is_move:true *)
-            fn_ptr_ptr place.ty
-        in
-        let* fn_ptr =
-          match fn_ptr with Ptr ptr -> ok ptr | _ -> error `UBDanglingPointer
-        in
+        let* fn_ptr = State.load fn_ptr_ptr place.ty in
+        let fn_ptr = as_ptr fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
         let* () = validate_call fn in
-        let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function ~in_tys ~out_ty fnop
+        perform_call fn
     | FnOpVTableMethod (_, idx) ->
         (* the first argument is the fat pointer with the VTable *)
         let* vtable =
@@ -362,8 +361,7 @@ module Make (State : State_intf.S) = struct
         let fn_ptr = as_ptr fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
         let* () = validate_call ~is_dyn:true fn in
-        let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function ~in_tys ~out_ty fnop
+        perform_call fn
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
   and resolve_global ({ id; _ } : Types.global_decl_ref) =
@@ -530,7 +528,8 @@ module Make (State : State_intf.S) = struct
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
-                let+ ptr = State.declare_fn fn_ptr in
+                let fn = resolve_fn_ptr fn_ptr in
+                let+ ptr = State.declare_fn fn in
                 Ptr ptr
             | Ptr _ as ptr -> ok ptr
             | _ -> not_impl "Invalid argument to CastFnPtr"))

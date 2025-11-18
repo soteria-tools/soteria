@@ -268,14 +268,14 @@ module type S = sig
     ('b, 'e err * t, serialized) Result.t
 
   val declare_fn :
-    Charon.Types.fn_ptr ->
+    Charon.Types.fun_decl_ref ->
     t ->
     (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val lookup_fn :
     full_ptr ->
     t ->
-    ( Charon.Types.fn_ptr * t,
+    ( Charon.Types.fun_decl_ref * t,
       [> `MisalignedFnPointer
       | `NotAFnPointer
       | `NullDereference

@@ -143,20 +143,15 @@ module M (State : State_intf.S) = struct
 
   let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
       ~_catch_fn:catch_fn_ptr =
-    let[@inline] get_fn ptr =
-      let+ fn_ptr = State.lookup_fn ptr in
-      match fn_ptr.kind with
-      | FunId (FRegular fid) -> Crate.get_fun fid
-      | TraitMethod (_, _, fid) -> Crate.get_fun fid
-      | FunId (FBuiltin _) -> failwith "Can't have function pointer to builtin"
-    in
     let loc = !Rustsymex.current_loc in
     let[@inline] exec_fun msg fn args =
       with_extra_call_trace ~loc ~msg @@ exec_fun fn args
     in
     let try_fn_ptr, catch_fn_ptr = (as_ptr try_fn_ptr, as_ptr catch_fn_ptr) in
-    let* try_fn = get_fn try_fn_ptr in
-    let* catch_fn = get_fn catch_fn_ptr in
+    let* try_fn = State.lookup_fn try_fn_ptr in
+    let try_fn = Crate.get_fun try_fn.id in
+    let* catch_fn = State.lookup_fn catch_fn_ptr in
+    let catch_fn = Crate.get_fun catch_fn.id in
     exec_fun "catch_unwind try" try_fn [ Ptr data ]
     |> State.unwind_with
          ~f:(fun _ -> ok U32.(0s))
