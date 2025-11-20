@@ -19,7 +19,7 @@ module M (State : State_intf.S) = struct
   let[@inline] as_ptr (v : rust_val) =
     match v with
     | Ptr ptr -> ptr
-    | Base v ->
+    | Int v ->
         let v = Typed.cast_i Usize v in
         let ptr = Sptr.null_ptr_of v in
         (ptr, Thin)
@@ -64,7 +64,7 @@ module M (State : State_intf.S) = struct
         let signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
         let^^+ dst' = Sptr.offset ~signed ~ty:ptr dst offset in
         Ptr (dst', meta)
-    | Base _ -> error `UBPointerArithmetic
+    | Int _ -> error `UBPointerArithmetic
     | _ -> not_impl "ptr_add: invalid arguments"
 
   let assert_inhabited ~t =
@@ -94,8 +94,7 @@ module M (State : State_intf.S) = struct
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
-    let v' = aux bits in
-    ok (Base (v' :> Typed.T.cval Typed.t))
+    ok (Int (aux bits))
 
   let bswap ~t ~x =
     let lit = TypesUtils.ty_as_literal t in
@@ -109,8 +108,7 @@ module M (State : State_intf.S) = struct
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
-    let v' = aux bytes in
-    ok (Base (v' :> Typed.T.cval Typed.t))
+    ok (Int (aux bytes))
 
   let caller_location : full_ptr ret =
     (* TODO: we should really do something better here *)
@@ -141,7 +139,7 @@ module M (State : State_intf.S) = struct
       ( BV.extract 0 ((size_t * 8) - 1) res,
         BV.extract (size_t * 8) ((size_t * 16) - 1) res )
     in
-    Tuple [ Base res_l; Base res_h ]
+    Tuple [ Int res_l; Int res_h ]
 
   let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
       ~_catch_fn:catch_fn_ptr =
@@ -376,10 +374,10 @@ module M (State : State_intf.S) = struct
     | Enum variants ->
         let+ variant_id = State.load_discriminant v t in
         let variant = Types.VariantId.nth variants variant_id in
-        Base (BV.of_literal variant.discriminant)
+        Int (BV.of_literal variant.discriminant)
     | _ ->
         (* FIXME: this size is probably wrong *)
-        ok (Base U8.(0s))
+        ok (Int U8.(0s))
 
   let disjoint_bitor ~t ~a ~b =
     let ty = TypesUtils.ty_as_literal t in
@@ -389,23 +387,20 @@ module M (State : State_intf.S) = struct
         (a &@ b ==@ BV.mki_lit ty 0)
         (`StdErr "core::intrinsics::disjoint_bitor with overlapping bits")
     in
-    Base (a |@ b)
+    Int (a |@ b)
 
   let exact_div ~t ~x ~y =
     let lit = TypesUtils.ty_as_literal t in
     let x, y = (as_base lit x, as_base lit y) in
-    let x, y, ty = Typed.cast_checked2 x y in
     let$$ res = Core.eval_lit_binop (Div OUB) lit x y in
-    if Typed.is_float ty then ok (Base res)
-    else
-      let zero = BV.mki_lit lit 0 in
-      let ( %@ ) = BV.rem ~signed:(Layout.is_signed lit) in
-      let+ () =
-        State.assert_
-          (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))
-          (`StdErr "core::intrinsics::exact_div on non divisible")
-      in
-      Base res
+    let zero = BV.mki_lit lit 0 in
+    let ( %@ ) = BV.rem ~signed:(Layout.is_signed lit) in
+    let+ () =
+      State.assert_
+        (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))
+        (`StdErr "core::intrinsics::exact_div on non divisible")
+    in
+    Int (Typed.cast res)
 
   let abs ~x = ok (Typed.Float.abs x)
   let fabsf16 = abs
@@ -435,7 +430,7 @@ module M (State : State_intf.S) = struct
         (is_finite l &&@ is_finite r &&@ is_finite (bop l r))
         (`StdErr (name ^ ": operands and result must be finite"))
     in
-    Base res
+    Float res
 
   let fadd_fast = float_fast (Add OUB)
   let fdiv_fast = float_fast (Div OUB)
@@ -465,7 +460,7 @@ module M (State : State_intf.S) = struct
         (min <.@ f &&@ (f <.@ max))
         (`StdErr "float_to_int_unchecked out of int range")
     in
-    Base (BV.of_float ~rounding:Truncate ~signed ~size f)
+    Int (BV.of_float ~rounding:Truncate ~signed ~size f)
 
   let fmul_add ~a ~b ~c = ok ((a *.@ b) +.@ c)
   let fmaf16 = fmul_add
@@ -559,7 +554,7 @@ module M (State : State_intf.S) = struct
     in
     let rec aux = function
       | [] -> ok Typed.v_true
-      | (Base l, Base r) :: rest ->
+      | (Int l, Int r) :: rest ->
           if%sat l ==@ r then aux rest else ok Typed.v_false
       | _ :: _ -> failwith "Unexpected read array"
     in
@@ -572,13 +567,13 @@ module M (State : State_intf.S) = struct
     match BV.to_z shift with
     | Some shift ->
         let shift = Z.(to_int (shift mod of_int bits)) in
-        if shift = 0 then ok (Base x)
+        if shift = 0 then ok (Int x)
         else
           let shift = if side = `Left then shift else bits - shift in
           let high = BV.extract (bits - shift) (bits - 1) x in
           let low = BV.extract 0 (bits - shift - 1) x in
           let res = BV.concat low high in
-          ok (Base (res :> Typed.T.cval Typed.t))
+          ok (Int res)
     | None ->
         let bits' = BV.mki_nz bits bits in
         (* we need shift to be of size [bits] (it originally is of size 32) *)
@@ -591,7 +586,7 @@ module M (State : State_intf.S) = struct
           if side = `Left then x <<@ shift |@ (x >>@ bits' -!@ shift)
           else x >>@ shift |@ (x <<@ bits' -!@ shift)
         in
-        ok (Base (res :> Typed.T.cval Typed.t))
+        ok (Int res)
 
   let rotate_left ~t ~x ~shift = rotate_ ~side:`Left ~t ~x ~shift
   let rotate_right ~t ~x ~shift = rotate_ ~side:`Right ~t ~x ~shift
@@ -618,7 +613,7 @@ module M (State : State_intf.S) = struct
           Typed.ite ovf if_ovf (a -!@ b)
       | _ -> failwith "Unreachable: not add or sub?"
     in
-    ok (Base (res :> Typed.T.cval Typed.t))
+    ok (Int res)
 
   let saturating_add = saturating (Add OUB)
   let saturating_sub = saturating (Sub OUB)
@@ -660,13 +655,13 @@ module M (State : State_intf.S) = struct
 
   let transmute ~t_src ~dst ~src =
     let* verify_ptr = State.is_valid_ptr_fn in
-    State.with_decay_map_res
-    @@ Encoder.transmute ~verify_ptr ~from_ty:t_src ~to_ty:dst src
+    let blocks = Encoder.rust_to_cvals src t_src in
+    State.with_decay_map_res @@ Encoder.transmute ~verify_ptr ~to_ty:dst blocks
 
   let type_id ~t =
     (* lazy but works *)
     let hash = Hashtbl.hash t in
-    ok (BV.u128i hash)
+    ok (Int (BV.u128i hash))
 
   let type_name ~t =
     let str = Fmt.to_to_string pp_ty t in
@@ -677,7 +672,7 @@ module M (State : State_intf.S) = struct
         let len = String.length str in
         let chars =
           String.to_bytes str
-          |> Bytes.fold_left (fun l c -> Base (BV.u8i (Char.code c)) :: l) []
+          |> Bytes.fold_left (fun l c -> Int (BV.u8i (Char.code c)) :: l) []
           |> List.rev
         in
         let char_arr = Tuple chars in
@@ -694,7 +689,7 @@ module M (State : State_intf.S) = struct
     let t = TypesUtils.ty_as_literal t in
     let x, y = (as_base t x, as_base t y) in
     let$$+ res = Core.eval_lit_binop op t x y in
-    Base res
+    Int (Typed.cast res)
 
   let unchecked_add = unchecked_op (Add OUB)
   let unchecked_div = unchecked_op (Div OUB)
@@ -727,7 +722,7 @@ module M (State : State_intf.S) = struct
     let ity = TypesUtils.ty_as_literal t in
     let a, b = (as_base ity a, as_base ity b) in
     let$$+ res = Core.eval_lit_binop op ity a b in
-    Base res
+    Int (Typed.cast res)
 
   let wrapping_add = wrapping_op (Add OWrap)
   let wrapping_mul = wrapping_op (Mul OWrap)
@@ -753,7 +748,7 @@ module M (State : State_intf.S) = struct
               ~f:(fun () i ->
                 let off = BV.usizei i in
                 let^^ ptr = Sptr.offset ~signed:false ptr off in
-                State.store (ptr, Thin) (TLiteral (TUInt U8)) (Base val_))
+                State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"
 

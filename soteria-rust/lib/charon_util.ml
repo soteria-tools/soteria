@@ -131,6 +131,8 @@ let mk_array_ty ty len : Types.ty =
 (** The type [*const ()] *)
 let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)
 
+let unit_ref = Types.TRef (RErased, TypesUtils.mk_unit_ty, RShared)
+
 let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
   List.exists
     (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)

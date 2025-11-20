@@ -107,11 +107,11 @@ module Make (State : State_intf.S) = struct
 
   let rec resolve_constant (const : Expressions.constant_expr) =
     match const.kind with
-    | CLiteral (VScalar scalar) -> ok (Base (BV.of_scalar scalar))
-    | CLiteral (VBool b) -> ok (Base (BV.of_bool (Typed.bool b)))
-    | CLiteral (VChar c) -> ok (Base (BV.u32i (Uchar.to_int c)))
+    | CLiteral (VScalar scalar) -> ok (Int (BV.of_scalar scalar))
+    | CLiteral (VBool b) -> ok (Int (BV.of_bool (Typed.bool b)))
+    | CLiteral (VChar c) -> ok (Int (BV.u32i (Uchar.to_int c)))
     | CLiteral (VFloat { float_value; float_ty }) ->
-        ok (Base (Typed.Float.mk float_ty float_value))
+        ok (Float (Typed.Float.mk float_ty float_value))
     | CLiteral (VStr str) -> (
         let* ptr_opt = State.load_str_global str in
         match ptr_opt with
@@ -121,9 +121,7 @@ module Make (State : State_intf.S) = struct
             let len = String.length str in
             let chars =
               String.to_bytes str
-              |> Bytes.fold_left
-                   (fun l c -> Base (BV.u8i (Char.code c)) :: l)
-                   []
+              |> Bytes.fold_left (fun l c -> Int (BV.u8i (Char.code c)) :: l) []
               |> List.rev
             in
             let char_arr = Tuple chars in
@@ -154,12 +152,10 @@ module Make (State : State_intf.S) = struct
         | Dyn -> not_impl "TODO: TraitConst(Dyn)"
         | UnknownTrait _ -> not_impl "TODO: TraitConst(UnknownTrait)")
     | CRawMemory bytes ->
-        let value = List.map (fun x -> Base (BV.u8i x)) bytes in
-        let value = Tuple value in
-        let from_ty =
-          mk_array_ty (TLiteral (TUInt U8)) (Z.of_int @@ List.length bytes)
+        let blocks =
+          List.mapi (fun i x -> (Int (BV.u8i x), BV.usizei i)) bytes
         in
-        let$$+ value = Encoder.transmute value ~from_ty ~to_ty:const.ty in
+        let$$+ value = Encoder.transmute blocks ~to_ty:const.ty in
         value
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
@@ -191,7 +187,7 @@ module Make (State : State_intf.S) = struct
                 let+ () = State.check_ptr_align fptr pointee in
                 fptr
             | _ -> ok fptr)
-        | Base off ->
+        | Int off ->
             let off = Typed.cast_i Usize off in
             let ptr = Sptr.null_ptr_of off in
             ok (ptr, Thin)
@@ -449,31 +445,34 @@ module Make (State : State_intf.S) = struct
             let ty = TypesUtils.ty_as_literal ty in
             let v = as_base ty v in
             match ty with
-            | TBool -> ok (Base (BV.not_bool v))
-            | TInt _ | TUInt _ -> ok (Base (BV.not v))
-            | ty ->
-                Fmt.kstr not_impl "Unexpect type in UnaryOp.Neg: %a" pp_ty
-                  (TLiteral ty))
+            | TBool -> ok (Int (BV.not_bool v))
+            | TInt _ | TUInt _ -> ok (Int (BV.not v))
+            | _ -> not_impl "Invalid type for Not")
         | Neg _ -> (
             match type_of_operand e with
             | TLiteral ((TInt _ | TUInt _) as ty) ->
                 let v = as_base ty v in
                 let res, overflowed = ~-?v in
                 let+ () = State.assert_not overflowed `Overflow in
-                Base res
+                Int res
             | TLiteral (TFloat fty) ->
                 let v = as_base_f fty v in
-                ok (Base (Typed.Float.neg v))
+                ok (Float (Typed.Float.neg v))
             | _ -> not_impl "Invalid type for Neg")
         | Cast (CastRawPtr (_from, _to)) -> ok v
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr_fn in
+            let blocks = Encoder.rust_to_cvals v from_ty in
             State.with_decay_map_res
-            @@ Encoder.transmute ~verify_ptr ~from_ty ~to_ty v
+            @@ Encoder.transmute ~verify_ptr ~to_ty blocks
         | Cast (CastScalar (from_ty, to_ty)) ->
-            State.with_decay_map_res
-            @@ Encoder.transmute ~from_ty:(TLiteral from_ty)
-                 ~to_ty:(TLiteral to_ty) v
+            let* v =
+              match v with
+              | Int i -> ok (i :> T.cval Typed.t)
+              | Float f -> ok (f :> T.cval Typed.t)
+              | _ -> not_impl "Invalid value for CastScalar"
+            in
+            State.with_decay_map_res @@ Encoder.cast_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (_, _, meta)) ->
             let update_meta prev =
               match meta with
@@ -539,49 +538,30 @@ module Make (State : State_intf.S) = struct
         let* v1 = eval_operand e1 in
         let* v2 = eval_operand e2 in
         match (v1, v2) with
-        | Base v1, Base v2 -> (
+        | Int v1, Int v2 -> (
             match op with
-            | Ge | Gt | Lt | Le -> (
-                let v1, v2, ty = Typed.cast_checked2 v1 v2 in
-                match Typed.untype_type ty with
-                | TBitVector _ ->
-                    let lit_ty =
-                      TypesUtils.ty_as_literal (type_of_operand e1)
-                    in
-                    let signed = Layout.is_signed lit_ty in
-                    let op =
-                      match op with
-                      | Ge -> BV.geq
-                      | Gt -> BV.gt
-                      | Lt -> BV.lt
-                      | Le -> BV.leq
-                      | _ -> assert false
-                    in
-                    let v = op ~signed v1 v2 |> BV.of_bool in
-                    ok (Base v)
-                | TFloat _ ->
-                    let op =
-                      match op with
-                      | Ge -> Typed.Float.geq
-                      | Gt -> Typed.Float.gt
-                      | Lt -> Typed.Float.lt
-                      | Le -> Typed.Float.leq
-                      | _ -> assert false
-                    in
-                    let v1, v2 = (Typed.cast v1, Typed.cast v2) in
-                    let v = op v1 v2 |> BV.of_bool in
-                    ok (Base v)
-                | TPointer _ -> error `UBPointerComparison
-                | _ -> assert false)
+            | Ge | Gt | Lt | Le ->
+                let lit_ty = TypesUtils.ty_as_literal (type_of_operand e1) in
+                let signed = Layout.is_signed lit_ty in
+                let op =
+                  match op with
+                  | Ge -> BV.geq
+                  | Gt -> BV.gt
+                  | Lt -> BV.lt
+                  | Le -> BV.leq
+                  | _ -> assert false
+                in
+                let v = op ~signed v1 v2 |> BV.of_bool in
+                ok (Int v)
             | Eq | Ne ->
                 let v1, v2, _ = Typed.cast_checked2 v1 v2 in
                 let$$+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else BV.not_bool res in
-                Base (res :> T.cval Typed.t)
+                Int res
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let$$+ res = Core.eval_lit_binop op ty v1 v2 in
-                Base res
+                Int (Typed.cast res)
             | AddChecked | SubChecked | MulChecked ->
                 let ty =
                   match type_of_operand e1 with
@@ -598,7 +578,7 @@ module Make (State : State_intf.S) = struct
                   let ty = type_of_operand e1 in
                   let ty = TypesUtils.ty_as_literal ty in
                   let$+ cmp = Core.cmp ~signed:(Layout.is_signed ty) v1 v2 in
-                  Base cmp
+                  Int cmp
             | Offset ->
                 (* non-zero offset on integer pointer is not permitted, as these are always
                    dangling *)
@@ -610,22 +590,22 @@ module Make (State : State_intf.S) = struct
                     (v2 ==@ Usize.(0s) ||@ (size ==@ Usize.(0s)))
                     `UBDanglingPointer
                 in
-                Base v1
+                Int v1
             | BitOr | BitAnd | BitXor -> (
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let v1 = Typed.cast_lit ty v1 in
                 let v2 = Typed.cast_lit ty v2 in
                 match op with
-                | BitOr -> ok (Base (v1 |@ v2))
-                | BitAnd -> ok (Base (v1 &@ v2))
-                | BitXor -> ok (Base (v1 ^@ v2))
+                | BitOr -> ok (Int (v1 |@ v2))
+                | BitAnd -> ok (Int (v1 &@ v2))
+                | BitXor -> ok (Int (v1 ^@ v2))
                 | _ -> assert false))
-        | ((Ptr _ | Base _) as p1), ((Ptr _ | Base _) as p2) -> (
+        | ((Ptr _ | Int _) as p1), ((Ptr _ | Int _) as p2) -> (
             match op with
             | Offset ->
                 let^ p, meta, v =
                   match (p1, p2) with
-                  | Ptr (p, meta), Base v -> return (p, meta, v)
+                  | Ptr (p, meta), Int v -> return (p, meta, v)
                   | _ -> Rustsymex.not_impl "Invalid operands in offset"
                 in
                 let ty = Charon_util.get_pointee (type_of_operand e1) in
@@ -636,7 +616,23 @@ module Make (State : State_intf.S) = struct
                 Ptr (p', meta)
             | _ ->
                 let$$+ res = Core.eval_ptr_binop op p1 p2 in
-                Base res)
+                Int res)
+        | Float v1, Float v2 -> (
+            match op with
+            | Eq -> ok (Int (BV.of_bool (v1 ==.@ v2)))
+            | Ne -> ok (Int (BV.of_bool (Typed.not (v1 ==.@ v2))))
+            | Ge -> ok (Int (BV.of_bool (v1 >=.@ v2)))
+            | Gt -> ok (Int (BV.of_bool (v1 >.@ v2)))
+            | Lt -> ok (Int (BV.of_bool (v1 <.@ v2)))
+            | Le -> ok (Int (BV.of_bool (v1 <=.@ v2)))
+            | Add _ -> ok (Float (v1 +.@ v2))
+            | Sub _ -> ok (Float (v1 -.@ v2))
+            | Mul _ -> ok (Float (v1 *.@ v2))
+            | Div _ -> ok (Float (v1 /.@ v2))
+            | Rem _ -> ok (Float (Typed.Float.rem v1 v2))
+            | _ ->
+                Fmt.kstr not_impl "Unsupported float binary operator (%a)"
+                  Expressions.pp_binop op)
         | v1, v2 ->
             Fmt.kstr not_impl
               "Unsupported values for binary operator (%a): %a / %a"
@@ -647,13 +643,13 @@ module Make (State : State_intf.S) = struct
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
                Our execution already checks for UB, so we should return
                false, to indicate runtime UB checks aren't needed. *)
-            ok (Base (BV.of_bool Typed.v_false))
+            ok (Int (BV.of_bool Typed.v_false))
         | SizeOf ->
             let^+ size = Layout.size_of_s ty in
-            Base size
+            Int size
         | AlignOf ->
             let^+ align = Layout.align_of_s ty in
-            Base align
+            Int align
         | OffsetOf fields ->
             let+ _, offset =
               fold_list fields
@@ -691,7 +687,7 @@ module Make (State : State_intf.S) = struct
                   in
                   ok (sub_ty, off))
             in
-            Base (offset :> T.cval Typed.t))
+            Int offset)
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with
@@ -699,10 +695,10 @@ module Make (State : State_intf.S) = struct
             let variants = Crate.as_enum enum in
             let+ variant_id = State.load_discriminant loc place.ty in
             let variant = Types.VariantId.nth variants variant_id in
-            Base (BV.of_literal variant.discriminant)
+            Int (BV.of_literal variant.discriminant)
         (* If a type doesn't have variants, return 0.
            https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
-        | _ -> ok (Base U8.(0s)))
+        | _ -> ok (Int U8.(0s)))
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
       ->
@@ -712,7 +708,7 @@ module Make (State : State_intf.S) = struct
         let+ vals = eval_operand_list vals in
         Enum (discr, vals)
     (* Union aggregate *)
-    | Aggregate (AggregatedAdt (_, None, Some field), ops) ->
+    | Aggregate (AggregatedAdt (ty, None, Some field), ops) ->
         let op =
           match ops with
           | [ op ] -> op
@@ -720,7 +716,14 @@ module Make (State : State_intf.S) = struct
           | _ :: _ -> failwith "union aggregate with >1 values?"
         in
         let+ value = eval_operand op in
-        Union (field, value)
+        let field = Types.FieldId.to_int field in
+        let layout = Layout.layout_of (TAdt ty) in
+        let offset = Layout.Fields_shape.offset_of field layout.fields in
+        let offset = BV.usizei offset in
+        let op_blocks =
+          Encoder.rust_to_cvals ~offset value (type_of_operand op)
+        in
+        Union op_blocks
     (* Tuple aggregate *)
     | Aggregate (AggregatedAdt ({ id = TTuple; _ }, None, None), operands) ->
         let+ values = eval_operand_list operands in
@@ -757,7 +760,7 @@ module Make (State : State_intf.S) = struct
         let* ptr =
           match ptr with
           | Ptr (ptr, _) -> ok ptr
-          | Base v ->
+          | Int v ->
               let v = Typed.cast_i Usize v in
               ok (Sptr.null_ptr_of v)
           | _ ->
@@ -768,7 +771,7 @@ module Make (State : State_intf.S) = struct
         let+ meta =
           match Rust_val.flatten meta with
           | [] -> ok Thin
-          | [ Base meta ] -> ok (Len (Typed.cast_i Usize meta))
+          | [ Int meta ] -> ok (Len (Typed.cast_i Usize meta))
           | [ Ptr (ptr, Thin) ] -> ok (VTable ptr)
           | elms ->
               Fmt.kstr not_impl "Unexpected meta in AggregatedRawPtr: %a"
@@ -791,8 +794,8 @@ module Make (State : State_intf.S) = struct
     | Len (place, _, size_opt) -> (
         let* _, meta = resolve_place place in
         match (meta, size_opt) with
-        | _, Some size -> ok (Base (BV.usize_of_const_generic size))
-        | Len len, None -> ok (Base (len :> T.cval Typed.t))
+        | _, Some size -> ok (Int (BV.usize_of_const_generic size))
+        | Len len, None -> ok (Int len)
         | _ -> not_impl "Unexpected len rvalue")
 
   and exec_stmt stmt : unit t =
@@ -917,8 +920,11 @@ module Make (State : State_intf.S) = struct
           fold_list (List.combine3 args in_tys exp_tys) ~init:[]
             ~f:(fun acc (arg, from_ty, to_ty) ->
               let* arg = eval_operand arg in
-              let$$+ arg = Encoder.transmute ~from_ty ~to_ty arg in
-              arg :: acc)
+              if Types.equal_ty from_ty to_ty then ok (arg :: acc)
+              else
+                let blocks = Encoder.rust_to_cvals arg from_ty in
+                let$$+ arg = Encoder.transmute ~to_ty blocks in
+                arg :: acc)
         in
         let args = List.rev args in
         L.info (fun g ->
@@ -966,7 +972,7 @@ module Make (State : State_intf.S) = struct
                   UllbcAst.pp_block_id else_block pp_rust_val discr);
             let bool_discr =
               match discr with
-              | Base discr -> BV.to_bool (Typed.cast_lit TBool discr)
+              | Int discr -> BV.to_bool (Typed.cast_lit TBool discr)
               | Ptr (ptr, _) -> Typed.not (Sptr.sem_eq ptr (Sptr.null_ptr ()))
               | _ -> failwith "Expected base value for if discriminant"
             in
@@ -990,7 +996,7 @@ module Make (State : State_intf.S) = struct
                   options UllbcAst.pp_block_id default pp_rust_val discr);
             let compare_discr =
               match discr with
-              | Base discr -> fun (v, _) -> discr ==@ BV.of_literal v
+              | Int discr -> fun (v, _) -> discr ==@ BV.of_literal v
               | Ptr (ptr, _) ->
                   fun (v, _) ->
                     if Z.equal Z.zero (z_of_literal v) then

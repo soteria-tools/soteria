@@ -9,7 +9,7 @@ module M (State : State_intf.S) = struct
   let alloc ?(zeroed = false) args =
     let size, align =
       match args with
-      | [ Base size; Base align ] -> (size, align)
+      | [ Int size; Int align ] -> (size, align)
       | _ -> failwith "alloc: invalid arguments"
     in
     let align = Typed.cast_i Usize align in
@@ -26,8 +26,8 @@ module M (State : State_intf.S) = struct
   let dealloc args =
     let ((ptr_in, _) as ptr), size, align =
       match args with
-      | [ Ptr ptr; Base size; Base align ] -> (ptr, size, align)
-      | [ Base ptr; Base size; Base align ] ->
+      | [ Ptr ptr; Int size; Int align ] -> (ptr, size, align)
+      | [ Int ptr; Int size; Int align ] ->
           let ptr = Typed.cast_i Usize ptr in
           let ptr = Sptr.null_ptr_of ptr in
           ((ptr, Thin), size, align)
@@ -45,7 +45,7 @@ module M (State : State_intf.S) = struct
   let realloc args =
     let ptr, old_size, align, size =
       match args with
-      | [ Ptr ptr; Base old_size; Base align; Base size ] ->
+      | [ Ptr ptr; Int old_size; Int align; Int size ] ->
           (ptr, old_size, align, size)
       | _ -> failwith "realloc: invalid arguments"
     in

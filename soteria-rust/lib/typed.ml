@@ -34,6 +34,7 @@ let cast_lit ty (v : 'a t) : [> T.sint ] t =
   cast_checked ~ty:(t_int size) v
 
 let cast_i uty = cast_lit (TUInt uty)
+let cast_fp fp v = cast_checked ~ty:(t_float fp) v
 
 let cast_f fty v =
   let fp = Charon_util.float_precision fty in

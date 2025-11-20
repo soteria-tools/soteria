@@ -18,55 +18,68 @@ module Make (Sptr : Sptr.S) = struct
   module ParserMonad = struct
     type query = Types.ty * T.sint Typed.t
 
+    (* size * offset  *)
+    type get_all_query = T.nonzero Typed.t * T.sint Typed.t
+
     (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t
          where StateResult = StateT (Result), but I need StateT1of3 urgh. *)
     type ('state, 'err, 'fix) handler =
       query -> 'state -> (rust_val * 'state, 'err, 'fix) Result.t
 
+    type ('state, 'err, 'fix) get_all_handler =
+      get_all_query ->
+      'state ->
+      ((rust_val * T.sint Typed.t) list * 'state, 'err, 'fix) Result.t
+
     (* A parser monad is an object such that, given a query handler with state ['state],
       returns a state monad-ish for that state which may fail or branch *)
     type ('res, 'state, 'err, 'fix) t =
       ('state, 'err, 'fix) handler ->
+      ('state, 'err, 'fix) get_all_handler ->
       'state ->
       ('res * 'state, 'err, 'fix) Result.t
 
     let parse ~(init : 'state) ~(handler : ('state, 'err, 'fix) handler)
-        scheduler : ('res * 'state, 'err, 'fix) Result.t =
-      scheduler handler init
+        ~(get_all : ('state, 'err, 'fix) get_all_handler) scheduler :
+        ('res * 'state, 'err, 'fix) Result.t =
+      scheduler handler get_all init
 
     let ok (x : 'a) : ('a, 'state, 'err, 'fix) t =
-     fun _handler state -> Result.ok (x, state)
+     fun _handler _get_all state -> Result.ok (x, state)
 
     let error (e : 'err) : ('a, 'state, 'err, 'fix) t =
-     fun _handler _state -> Result.error e
+     fun _handler _get_all _state -> Result.error e
 
     let bind2 (m : ('a, 'state, 'err, 'fix) t)
         (f : 'a -> ('b, 'state, 'err, 'fix) t)
         (fe : 'err -> ('b, 'state, 'err, 'fix) t) : ('b, 'state, 'err, 'fix) t =
-     fun handler state ->
-      let* res = m handler state in
+     fun handler get_all state ->
+      let* res = m handler get_all state in
       match res with
-      | Compo_res.Ok (x, new_state) -> f x handler new_state
-      | Compo_res.Error e -> fe e handler state
+      | Compo_res.Ok (x, new_state) -> f x handler get_all new_state
+      | Compo_res.Error e -> fe e handler get_all state
       | Compo_res.Missing f -> Result.miss f
 
     let bind (m : ('a, 'state, 'err, 'fix) t)
         (f : 'a -> ('b, 'state, 'err, 'fix) t) : ('b, 'state, 'err, 'fix) t =
-     fun handler state ->
-      let** x, new_state = m handler state in
-      f x handler new_state
+     fun handler get_all state ->
+      let** x, new_state = m handler get_all state in
+      f x handler get_all new_state
 
     let map (m : ('a, 'state, 'err, 'fix) t) (f : 'a -> 'b) :
         ('b, 'state, 'err, 'fix) t =
-     fun handler state ->
-      let++ x, new_state = m handler state in
+     fun handler get_all state ->
+      let++ x, new_state = m handler get_all state in
       (f x, new_state)
 
     let query (q : query) : ('a, 'state, 'err, 'fix) t =
-     fun handler state -> handler q state
+     fun handler _ state -> handler q state
+
+    let get_all (q : get_all_query) : ('a, 'state, 'err, 'fix) t =
+     fun _ get_all state -> get_all q state
 
     let lift (m : 'a DecayMapMonad.t) : ('a, 'state, 'err, 'fix) t =
-     fun _handler state ->
+     fun _handler _get_all state ->
       let+ m in
       Compo_res.Ok (m, state)
 
@@ -74,7 +87,7 @@ module Make (Sptr : Sptr.S) = struct
     let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
 
     let assert_or_error cond err =
-     fun _handler state ->
+     fun _handler _get_all state ->
       DecayMapMonad.Result.map (assert_or_error cond err) (fun () ->
           ((), state))
 
@@ -91,22 +104,9 @@ module Make (Sptr : Sptr.S) = struct
             ~else_:(fun () -> else_ () handler state)
       end
     end
-
-    (** Returns the first element that parsed, if one parses succesfully, and
-        else returns the first error that occurred. *)
-    let first fn xs =
-      let rec aux es = function
-        | [] -> error (List.last es)
-        | x :: xs -> bind2 (fn x) ok (fun e -> aux (e :: es) xs)
-      in
-      aux [] xs
   end
 
-  type cval_info = {
-    value : rust_val;
-    ty : Types.ty; [@printer Charon_util.pp_ty]
-    offset : T.sint Typed.t;
-  }
+  type cval_info = rust_val * T.sint Typed.t
   [@@deriving show { with_path = false }]
 
   (** Converts a Rust value of the given type into a list of sub values, along
@@ -137,39 +137,31 @@ module Make (Sptr : Sptr.S) = struct
         let ty = Layout.resolve_trait_ty tref name in
         rust_to_cvals ~offset value ty
     (* Literals *)
-    | Base _, TLiteral _ -> [ { value; ty; offset } ]
-    | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> [ { value; ty; offset } ]
+    | Int _, TLiteral _ -> [ (value, offset) ]
+    | Float _, TLiteral _ -> [ (value, offset) ]
+    | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> [ (value, offset) ]
     | _, TLiteral _ -> illegal_pair ()
     (* References / Pointers *)
     | ( Ptr (ptr, meta),
         TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
     | Ptr (ptr, meta), TRef (_, sub_ty, _)
     | Ptr (ptr, meta), TRawPtr (sub_ty, _) -> (
-        let ty : Types.ty = TLiteral (TInt Isize) in
         let size = BV.usizei (Layout.size_of_int_ty Isize) in
         match (meta, is_dst sub_ty) with
-        | _, false -> [ { value = Ptr (ptr, Thin); ty; offset } ]
+        | _, false -> [ (Ptr (ptr, Thin), offset) ]
         | Thin, true -> failwith "Expected a fat pointer"
         | Len len, true ->
-            let len = (len :> T.cval Typed.t) in
-            [
-              { value = Ptr (ptr, Thin); ty; offset };
-              { value = Base len; ty; offset = offset +!!@ size };
-            ]
+            [ (Ptr (ptr, Thin), offset); (Int len, offset +!!@ size) ]
         | VTable vt, true ->
-            [
-              { value = Ptr (ptr, Thin); ty; offset };
-              { value = Ptr (vt, Thin); ty; offset = offset +!!@ size };
-            ])
+            [ (Ptr (ptr, Thin), offset); (Ptr (vt, Thin), offset +!!@ size) ])
     (* Function pointer *)
-    | Ptr (_, Thin), TFnPtr _ ->
-        [ { value; ty = TLiteral (TInt Isize); offset } ]
+    | Ptr (_, Thin), TFnPtr _ -> [ (value, offset) ]
     (* References / Pointers obtained from casting *)
-    | Base _, TAdt { id = TBuiltin TBox; _ }
-    | Base _, TRef _
-    | Base _, TRawPtr _
-    | Base _, TFnPtr _ ->
-        [ { value; ty = TLiteral (TInt Isize); offset } ]
+    | Int _, TAdt { id = TBuiltin TBox; _ }
+    | Int _, TRef _
+    | Int _, TRawPtr _
+    | Int _, TFnPtr _ ->
+        [ (value, offset) ]
     | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
         illegal_pair ()
     (* Tuples *)
@@ -210,13 +202,13 @@ module Make (Sptr : Sptr.S) = struct
               | Some tag ->
                   let v = BV.mk_lit tag_layout.ty tag in
                   let offset = BV.usizei tag_layout.offset +!!@ offset in
-                  [ { value = Base v; ty = TLiteral tag_layout.ty; offset } ]
+                  [ (Int v, offset) ]
             in
             let var_layout = { layout with fields = var_fields } in
             discriminant
             @ chain_cvals var_layout vals (field_tys variant.fields)
         | _ -> Fmt.failwith "Unexpected layout for enum")
-    | Base value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
+    | Int value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
         let layout = Layout.layout_of ty in
         let tag_ty =
           match layout.fields with
@@ -224,7 +216,7 @@ module Make (Sptr : Sptr.S) = struct
           | _ -> failwith "Expected enum layout"
         in
         let value = Typed.cast_lit tag_ty value in
-        [ { value = Base value; ty = TLiteral tag_ty; offset } ]
+        [ (Int value, offset) ]
     | Enum _, _ -> illegal_pair ()
     (* Arrays *)
     | ( Tuple vals,
@@ -239,10 +231,8 @@ module Make (Sptr : Sptr.S) = struct
         else chain_cvals layout vals (List.init len (fun _ -> sub_ty))
     | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
     (* Unions *)
-    | Union (f, v), TAdt { id = TAdtId id; _ } ->
-        let fields = Crate.as_union id in
-        let field = Types.FieldId.nth fields f in
-        rust_to_cvals ~offset v field.field_ty
+    | Union blocks, TAdt { id = TAdtId _; _ } ->
+        List.map (fun (v, o) -> (v, offset +!!@ o)) blocks
     | Union _, _ -> illegal_pair ()
     (* Static Functions (ZSTs) *)
     | ConstFn _, TFnDef _ -> []
@@ -273,7 +263,7 @@ module Make (Sptr : Sptr.S) = struct
         (* here we need to check and decay if it's a pointer, for niche encoding! *)
         let*** tag =
           match tag with
-          | Base tag -> ok (Typed.cast_lit tag_layout.ty tag)
+          | Int tag -> ok (Typed.cast_lit tag_layout.ty tag)
           | Ptr (p, Thin) -> lift @@ Sptr.decay p
           | _ -> Fmt.failwith "Unexpected tag: %a" pp_rust_val tag
         in
@@ -313,10 +303,10 @@ module Make (Sptr : Sptr.S) = struct
       | TLiteral _ as ty -> (
           let*** q_res = query (ty, offset) in
           match q_res with
-          | Base _ as v -> ok v
+          | (Int _ | Float _) as v -> ok v
           | Ptr (ptr, Thin) ->
               let+++ ptr_v = lift @@ Sptr.decay ptr in
-              Base ptr_v
+              Int ptr_v
           | _ ->
               Fmt.kstr not_impl "Expected a base or a thin pointer, got %a"
                 pp_rust_val q_res)
@@ -330,48 +320,66 @@ module Make (Sptr : Sptr.S) = struct
             | _ -> failwith "Impossible"
           in
           let ptr_size = BV.usizei @@ Layout.size_of_int_ty Isize in
-          let isize : Types.ty = TLiteral (TInt Isize) in
-          let*** ptr = query (isize, offset) in
-          let*** ptr =
-            match ptr with
-            | Ptr (ptr_v, Thin) -> ok ptr_v
-            | Base ptr_v when not must_be_valid ->
-                let ptr_v = Typed.cast_i Usize ptr_v in
-                ok (Sptr.null_ptr_of ptr_v)
-            | Base _ -> error `UBDanglingPointer
-            | _ -> not_impl "Unexpected pointer value"
-          in
           let meta_kind = dst_kind sub_ty in
+          (* Small hack; we don't want to read the metadata ! *)
+          let ty =
+            match (meta_kind, ty) with
+            | NoneKind, _ -> ty
+            | _, TRawPtr _ -> unit_ptr
+            | _, _ -> unit_ref
+          in
+          let*** ptr = query (ty, offset) in
           let*** meta : Sptr.t Rust_val.meta =
             match meta_kind with
             | NoneKind -> ok Thin
-            | LenKind | VTableKind -> (
+            | LenKind -> (
+                let isize : Types.ty = TLiteral (TInt Isize) in
                 let*** meta = query (isize, offset +!!@ ptr_size) in
-                match (meta_kind, meta) with
-                | LenKind, Base meta -> ok (Len (Typed.cast_i Usize meta))
-                | LenKind, Ptr (meta_v, Thin) ->
-                    let+++ meta = lift @@ Sptr.decay meta_v in
-                    Len meta
-                | VTableKind, Ptr (meta_v, Thin) -> ok (VTable meta_v)
-                | VTableKind, Base meta ->
-                    let meta = Typed.cast_i Usize meta in
-                    ok (VTable (Sptr.null_ptr_of meta))
+                match meta with
+                | Int meta -> ok (Len meta)
+                | _ -> not_impl "Unexpected metadata value")
+            | VTableKind -> (
+                let*** meta = query (unit_ptr, offset +!!@ ptr_size) in
+                match meta with
+                | Ptr (meta_v, Thin) -> ok (VTable meta_v)
                 | _ -> not_impl "Unexpected metadata value")
           in
-          let+++ () =
-            match meta with
-            | Len len when must_be_valid ->
-                assert_or_error
-                  (Usize.(0s) <=$@ len)
-                  (`UBTransmute "Negative slice length")
-            | _ -> ok ()
+          let*** () =
+            if must_be_valid then
+              if match ptr with Ptr _ -> false | _ -> true then
+                error `UBDanglingPointer
+              else if not @@ Layout.is_inhabited sub_ty then
+                error `RefToUninhabited
+              else
+                match meta with
+                | Len len when must_be_valid ->
+                    assert_or_error
+                      (Usize.(0s) <=$@ len)
+                      (`UBTransmute "Negative slice length")
+                | _ -> ok ()
+            else ok ()
+          in
+          let+++ ptr =
+            match ptr with
+            | Ptr (ptr_v, Thin) -> ok ptr_v
+            | Int ptr_v ->
+                let ptr_v = Typed.cast_i Usize ptr_v in
+                ok (Sptr.null_ptr_of ptr_v)
+            | v ->
+                Fmt.kstr not_impl "Unexpected pointer value: %a" pp_rust_val v
           in
           Ptr (ptr, meta)
-      | TFnPtr _ -> (
-          let*** boxed = query (TLiteral (TInt Isize), offset) in
+      | TFnPtr _ as ty -> (
+          let*** boxed = query (ty, offset) in
           match boxed with
-          | Ptr _ as ptr -> ok ptr
-          | Base _ -> error `UBDanglingPointer
+          | Ptr (p, _) as ptr ->
+              let+++ () =
+                assert_or_error
+                  (Typed.not (Sptr.sem_eq (Sptr.null_ptr ()) p))
+                  `UBDanglingPointer
+              in
+              ptr
+          | Int _ -> error `UBDanglingPointer
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
           let layout = layout_of ty in
@@ -388,7 +396,17 @@ module Make (Sptr : Sptr.S) = struct
               |> aux_fields ~f:(fun fs -> Tuple fs) ~layout offset
           | Enum [] -> error `RefToUninhabited
           | Enum variants -> aux_enum offset ty variants
-          | Union fs -> aux_union offset fs
+          | Union _ ->
+              let layout = layout_of ty in
+              if layout.size = 0 then ok (Union [])
+              else
+                (* FIXME: this isn't exactly correct; union actually doesn't copy the padding
+                   bytes (i.e. the intersection of the padding bytes of all fields). It is
+                   quite painful to actually calculate these padding bytes so we just copy
+                   the whole thing for now.
+                   See https://github.com/rust-lang/unsafe-code-guidelines/issues/518 *)
+                let+++ blocks = get_all (BV.usizeinz layout.size, offset) in
+                Union blocks
           | _ ->
               Fmt.kstr failwith "Unhandled ADT kind in rust_of_cvals: %a"
                 Types.pp_type_decl_kind type_decl.kind)
@@ -458,44 +476,41 @@ module Make (Sptr : Sptr.S) = struct
       |> field_tys
       |> List.to_seq
       |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
-    and aux_union offset fs : ('e, 'fix, 'state) parser =
-      let parse_field (i, ty) = map (aux offset ty) (fun v -> Union (i, v)) in
-      (* We try parsing all of fields of the enum, sorted by decreasing layout size.
-         The first that succeeds gets returned, and otherwise we return the first error.
-         We parse in decreasing type size, because if a union has () as a field (e.g.
-         MaybeUninit), that field would always be returned, even in the presence of data. *)
-      fs
-      |> List.mapi (fun i (f : Types.field) ->
-             let fid = Types.FieldId.of_int i in
-             let l = layout_of f.field_ty in
-             (fid, f.field_ty, l.size))
-      |> List.sort (fun (_, _, s1) (_, _, s2) -> s2 - s1)
-      |> List.map (fun (fid, ty, _) -> (fid, ty))
-      |> first parse_field
     in
     aux offset
 
-  (** Transmute between literals; perform validation of the type's constraints.
+  let with_constraints ~ty v =
+    let constraints = Typed.conj @@ Layout.constraints ty v in
+    let msg = Fmt.str "Constraints of %a unsatisfied" pp_literal_ty ty in
+    let++ () = assert_or_error constraints (`UBTransmute msg) in
+    Int v
+
+  (** Cast between literals; perform validation of the type's constraints. This
+      is different from a transmute! It doesn't simply reinterpret the bits, but
+      rather converts between types, e.g. rounding, truncating, extending, etc.
+
       See also:
       https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
   *)
-  let transmute_literal ~(from_ty : Types.literal_type)
-      ~(to_ty : Types.literal_type) (v : [< T.cval ] Typed.t) =
+  let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
+      (v : [< T.cval ] Typed.t) =
     let open DecayMapMonad.Result in
     match (from_ty, to_ty) with
-    | _, _ when from_ty = to_ty -> ok (Base v)
+    | _, TFloat _ when from_ty = to_ty -> ok (Float (Typed.cast v))
+    | _, (TInt _ | TUInt _ | TBool | TChar) when from_ty = to_ty ->
+        ok (Int (Typed.cast v))
     | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
         let sv = Typed.cast_f fty v in
         let signed = Layout.is_signed lit_ty in
         let size = 8 * size_of_literal_ty lit_ty in
         let sv' = BV.of_float ~rounding:Truncate ~signed ~size sv in
-        Result.ok (Base sv')
+        Result.ok (Int sv')
     | (TInt _ | TUInt _), TFloat fp ->
         let sv = Typed.cast_lit from_ty v in
         let fp = Charon_util.float_precision fp in
         let signed = Layout.is_signed from_ty in
         let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
-        Result.ok (Base sv')
+        Result.ok (Float sv')
     | TFloat _, _ | _, TFloat _ ->
         Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_literal_ty
           from_ty pp_literal_ty to_ty
@@ -512,173 +527,166 @@ module Make (Sptr : Sptr.S) = struct
             BV.extend ~signed:from_signed (to_bits - from_bits) v
           else BV.extract 0 (to_bits - 1) v
         in
-        let constraints = Typed.conj @@ Layout.constraints to_ty v in
-        let msg = Fmt.str "Constraints of %a unsatisfied" pp_literal_ty to_ty in
-        let++ () = assert_or_error constraints (`UBTransmute msg) in
-        Base v
+        with_constraints ~ty:to_ty v
 
-  (** Transmute a value of the given type into the other type.
+  (** Transmutes a singular rust value, without splitting. This is under the
+      assumption that [size_of to_ty = size_of v], and both are primitives
+      (literal or pointer). *)
+  let transmute_one ~(to_ty : Types.ty) (v : rust_val) =
+    let open DecayMapMonad.Result in
+    match (to_ty, v) with
+    | TLiteral (TFloat _), Float _ -> ok v
+    | TLiteral (TFloat fp), Int v ->
+        (* FIXME: here we should have *no* rounding, just interpret bytes *)
+        let fp = Charon_util.float_precision fp in
+        let f = BV.to_float ~rounding:NearestTiesToEven ~signed:false ~fp v in
+        ok (Float f)
+    | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Int v ->
+        with_constraints ~ty v
+    | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Ptr (p, Thin) ->
+        let* p = Sptr.decay p in
+        with_constraints ~ty p
+    | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Float f ->
+        (* FIXME: here we should have *no* rounding, just interpret bytes *)
+        let size = Svalue.FloatPrecision.size (Typed.Float.fp_of f) in
+        let v = BV.of_float ~rounding:Truncate ~signed:false ~size f in
+        with_constraints ~ty v
+    | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> ok v
+    | TRef _, Int _ -> error `UBDanglingPointer
+    | (TRawPtr _ | TFnPtr _), Int v -> ok (Ptr (Sptr.null_ptr_of v, Thin))
+    | _ ->
+        Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" pp_rust_val v
+          pp_ty to_ty
+
+  (** Transmute a series of blocks into another type.
 
       Accepts an optional [verify_ptr] function, that symbolically checks if a
       pointer can be used to read a value of the given type. This verification
-      is a *ghost read*, and should not have side-effects. *)
-  let rec transmute ?verify_ptr ?(try_splitting = true) ~(from_ty : Types.ty)
-      ~(to_ty : Types.ty) v =
+      is a *ghost read*, and does not have side-effects. *)
+  let transmute ?verify_ptr ~(to_ty : Types.ty) (vs : cval_info list) =
+    (* FIXME: we heavily manipulate integers here, which is ok in most cases but really we should
+       be doing all of this at least with Z.t, and at best at the symbolic level directly. *)
     let open DecayMapMonad.Result in
-    L.debug (fun m ->
-        m "Transmuting %a: %a -> %a" pp_rust_val v pp_ty from_ty pp_ty to_ty);
-    if from_ty = to_ty then ok v
-    else
-      match (from_ty, to_ty, v) with
-      | TLiteral from_ty, TLiteral to_ty, Base v ->
-          transmute_literal ~from_ty ~to_ty v
-      (* A ref cannot be an invalid pointer *)
-      | _, (TRef _ | TAdt { id = TBuiltin TBox; _ }), Base _ ->
-          error `UBDanglingPointer
-      (* A ref must point to a readable location *)
-      | ( _,
-          ( TRef (_, inner_ty, _)
-          | TAdt { id = TBuiltin TBox; generics = { types = [ inner_ty ]; _ } }
-            ),
-          Ptr ptr ) -> (
-          match verify_ptr with
-          | None -> Result.ok v
-          | Some fn ->
-              let* is_valid = lift @@ fn ptr inner_ty in
-              if is_valid then ok v else error `UBDanglingPointer)
-      (* A raw pointer can be whatever *)
-      | _, TRawPtr _, Base off ->
-          let off = Typed.cast_i Usize off in
-          let ptr = Sptr.null_ptr_of off in
-          ok (Ptr (ptr, Thin))
-      | _, TRawPtr _, Ptr _ -> ok v
-      | _, TLiteral ((TInt _ | TUInt _) as litty), Ptr (ptr, Thin)
-        when size_of_literal_ty litty = size_of_literal_ty (TInt Isize) ->
-          let* ptr_v = Sptr.decay ptr in
-          ok (Base ptr_v)
-      | _ when try_splitting ->
-          let blocks = rust_to_cvals v from_ty in
-          transmute_many ~to_ty blocks
-      | _ ->
-          Fmt.kstr not_impl "Unhandled transmute of %a: %a -> %a" pp_rust_val v
-            pp_ty from_ty pp_ty to_ty
-
-  and transmute_many ~(to_ty : Types.ty) vs =
-    let pp_triple fmt (v, ty, o) =
-      Fmt.pf fmt "(%a:%a, %d)" pp_rust_val v pp_ty ty o
-    in
-    let transmute = transmute ~try_splitting:false in
-    let size_of ty = (Layout.layout_of ty).size in
+    let pp_triple fmt (v, o, s) = Fmt.pf fmt "(%a, %d, %d)" pp_rust_val v o s in
+    let size_of_ty ty = (Layout.layout_of ty).size in
     let int_of_val v =
       Z.to_int (Option.get ~msg:"Non-concrete size" (BV.to_z v))
     in
-    (* to make our life easier, we check for concrete offsets in the layout; this should
-           always be true anyways. *)
+    let to_bitvec v =
+      match v with
+      | Int v -> return v
+      | Float f ->
+          let size = Svalue.FloatPrecision.size (Typed.Float.fp_of f) in
+          (* FIXME: here we should have *no* rounding, just interpret bytes *)
+          return @@ BV.of_float ~rounding:Truncate ~signed:false ~size f
+      | Ptr (ptr, Thin) -> Sptr.decay ptr
+      | Ptr (ptr, Len len) ->
+          let+ ptr = Sptr.decay ptr in
+          BV.concat len ptr
+      | Ptr (ptr, VTable vt) ->
+          let* ptr = Sptr.decay ptr in
+          let+ vt = Sptr.decay vt in
+          BV.concat vt ptr
+      | _ -> failwith "Expected Base or Ptr"
+    in
+    let fuse_bvs bvs =
+      let bvs = List.sort (fun (_, o1, _) (_, o2, _) -> o1 - o2) bvs in
+      let rec aux = function
+        | [] -> failwith "impossible: empty list"
+        | [ (last, _, _) ] -> to_bitvec last
+        | (v, _, _) :: rest ->
+            let* l = aux rest in
+            let+ r = to_bitvec v in
+            BV.concat l r
+      in
+      aux bvs
+    in
+
+    (* to make our life easier, we check for concrete offsets in the layout *)
     let** vs =
       try
-        Result.ok
-        @@ List.map
-             (fun { value; ty; offset; _ } -> (value, ty, int_of_val offset))
-             vs
+        vs
+        |> List.map (fun (value, offset) ->
+               (value, int_of_val offset, size_of value))
+        |> Result.ok
       with _ -> not_impl "Symbolic offset in layout"
     in
     L.debug (fun m ->
-        m "Transmute many: %a <- [%a]" pp_ty to_ty
-          Fmt.(list ~sep:comma pp_triple)
-          vs);
-    let extract_block (ty, off) =
-      let open Syntaxes.Option in
-      let off = int_of_val off in
-      let vs = List.map (fun (v, ty, o) -> (v, ty, o - off)) vs in
-      (* 0. make sure the entire range exists; otherwise it would mean there's an uninit access *)
-      let- () =
-        let size = (layout_of ty).size in
-        let bytes = Array.make size false in
-        List.iter
-          (fun (_, ty, o) ->
-            let s = (layout_of ty).size in
-            Iter.(o -- (o + s - 1)) (fun i ->
-                if 0 <= i && i < size then bytes.(i) <- true))
-          vs;
-        if Array.for_all (fun b -> b) bytes then None
-        else Some (Result.error `UninitializedMemoryAccess)
-      in
-      (* 1. ideal case, we find a block with the same size and offset *)
-      let- () =
-        List.find_map
-          (fun (v, ty', o) ->
-            if o = 0 && size_of ty = size_of ty' then
-              Some (transmute ~from_ty:ty' ~to_ty:ty v)
-            else None)
-          vs
-      in
-      (* 2. Several integers that can be merged together without splitting. *)
-      let- () =
-        match ty with
-        | TLiteral lit_ty ->
-            let size = size_of_literal_ty lit_ty in
-            let bytes = Array.make size false in
-            let relevant =
-              List.filter_map
-                (function
-                  | Base v, Types.TLiteral lit_ty, o
-                    when 0 <= o && o + size_of_literal_ty lit_ty <= size ->
-                      Iter.(0 -- (size_of_literal_ty lit_ty - 1)) (fun i ->
-                          bytes.(o + i) <- true);
-                      Some (Typed.cast_lit lit_ty v, o)
-                  | _ -> None)
-                vs
-            in
-            if Array.for_all (fun b -> b) bytes then
-              let relevant =
-                List.sort (fun (_, o1) (_, o2) -> o1 - o2) relevant
-              in
-              let rec aux = function
-                | [] -> failwith "impossible: empty list"
-                | [ (last, _) ] -> last
-                | (v, _) :: rest -> BV.concat (aux rest) v
-              in
-              let res = aux relevant in
-              Some (Result.ok (Base (res :> T.cval Typed.t)))
-            else None
-        | _ -> None
-      in
-      (* 3. If there's an integer block that contains what we're looking for, we split it *)
-      let- () =
-        match ty with
-        | TLiteral lit_ty ->
-            let size = size_of_literal_ty lit_ty in
-            vs
-            |> List.find_map (function
-                 | v, Types.TLiteral lit_ty, o
-                   when o <= 0 && size <= o + size_of_literal_ty lit_ty ->
-                     Some (v, lit_ty, o)
-                 | _ -> None)
-            |> Option.map @@ fun (v, lit_ty, o) ->
-               let open DecayMapMonad.Syntax in
-               let* v =
-                 match v with
-                 | Base v -> return v
-                 | Ptr (ptr, _) -> Sptr.decay ptr
-                 | _ -> not_impl "Transmute: don't know hot to split this"
-               in
-               let v = Typed.cast_lit lit_ty v in
-               let v = BV.extract (o * -8) (((size - o) * 8) - 1) v in
-               Result.ok (Base v)
-        | _ -> None
-      in
-      (* X. give up *)
-      Fmt.kstr not_impl "Transmute: Couldn't extract %a at %d from [%a]" pp_ty
-        ty off
-        Fmt.(list ~sep:comma pp_triple)
-        vs
+        m "Transmute: %a <- [%a]" pp_ty to_ty Fmt.(list ~sep:comma pp_triple) vs);
+
+    let get_relevant size off =
+      let vs = List.map (fun (v, o, s) -> (v, o - off, s)) vs in
+      DecayMapMonad.fold_list vs ~init:[] ~f:(fun acc (v, o, s) ->
+          if o + s <= 0 || o >= size then return acc
+          else if 0 <= o && o + s <= size then return ((v, o, s) :: acc)
+          else
+            let+ v = to_bitvec v in
+            let crop_l = max 0 (0 - o) in
+            let crop_r = max 0 (o + s - size) in
+            let v = BV.extract (crop_l * 8) (((s - crop_r) * 8) - 1) v in
+            let o = max 0 o in
+            (Int v, max 0 o, s - crop_l - crop_r) :: acc)
     in
-    let parse_fn query () =
+
+    let get_all (size, off) () =
+      let size = int_of_val size in
+      let off = int_of_val off in
+      let+ relevant = get_relevant size off in
+      let relevant =
+        List.map (fun (v, o, _) -> (v, BV.usizei (o + off))) relevant
+      in
+      Compo_res.Ok (relevant, ())
+    in
+
+    let extract_block (ty, off) =
+      let off = int_of_val off in
+      let tgt_size = size_of_ty ty in
+      (* get all blocks within the desired range, cropping as needed *)
+      let* relevant = get_relevant tgt_size off in
+      let** () =
+        if
+          Iter.for_all
+            (fun i ->
+              List.exists (fun (_, o, s) -> o <= i && i < o + s) relevant)
+            Iter.(0 -- (tgt_size - 1))
+        then ok ()
+        else error `UninitializedMemoryAccess
+      in
+      match ty with
+      | TLiteral (TInt _ | TUInt _ | TChar | TBool) ->
+          let* res = fuse_bvs relevant in
+          transmute_one ~to_ty:ty (Int res)
+      | TLiteral (TFloat _) ->
+          let* v =
+            match relevant with
+            | [ ((Float _ as f), _, _) ] -> return f
+            | _ ->
+                let+ v = fuse_bvs relevant in
+                Int v
+          in
+          transmute_one ~to_ty:ty v
+      | TRawPtr _ | TRef _ | TFnPtr _ -> (
+          let* ptr =
+            match relevant with
+            | [ ((Ptr (_, Thin) as ptr), _, _) ] -> return ptr
+            | _ ->
+                let+ res = fuse_bvs relevant in
+                Int res
+          in
+          let** ptr = transmute_one ~to_ty:ty ptr in
+          match (ty, verify_ptr, ptr) with
+          | TRef (_, inner_ty, _), Some fn, Ptr inner ->
+              let* is_valid = lift @@ fn inner inner_ty in
+              if is_valid then ok ptr else error `UBDanglingPointer
+          | _ -> ok ptr)
+      | _ -> Fmt.kstr not_impl "Couldn't transmute to %a" pp_ty ty
+    in
+    let handler query () =
       let++ r = extract_block query in
       (r, ())
     in
     let++ res, () =
-      ParserMonad.parse ~init:() ~handler:parse_fn
+      ParserMonad.parse ~init:() ~handler ~get_all
       @@ rust_of_cvals ~offset:Usize.(0s) to_ty
     in
     res
@@ -686,11 +694,10 @@ module Make (Sptr : Sptr.S) = struct
   type 'a split_tree =
     [ `Node of T.sint Typed.t * 'a split_tree * 'a split_tree | `Leaf of 'a ]
 
-  let rec split v (ty : Types.ty) at :
-      ((rust_val * Types.ty) split_tree * (rust_val * Types.ty) split_tree)
-      DecayMapMonad.t =
-    match (v, ty) with
-    | Ptr (ptr, meta), _ ->
+  let rec split v at :
+      (rust_val split_tree * rust_val split_tree) DecayMapMonad.t =
+    match v with
+    | Ptr (ptr, meta) ->
         let* v = Sptr.decay ptr in
         let* v =
           match meta with
@@ -700,32 +707,10 @@ module Make (Sptr : Sptr.S) = struct
               let+ v2 = Sptr.decay ptr in
               BV.concat v v2
         in
-        split (Base (v :> T.cval Typed.t)) ty at
-    | Base _, TLiteral ((TInt _ | TUInt _ | TChar) as lit_ty) ->
-        (* Given an integer value and its size in bytes, returns a binary tree with leaves that are
-           of size 2^n *)
-        let rec aux v sz =
-          (* we're a power of two, so we're done *)
-          if Z.(popcount (of_int sz)) = 1 then
-            let ty = size_to_uint sz in
-            `Leaf (Base (v :> T.cval Typed.t), ty)
-          else
-            (* Split at the most significant bit; e.g. for size 7 (0b111), will split at 0b100,
-               resulting in a leaf of size 3 (0b11) and a right leaf of size 4 (0b100) *)
-            let at = 1 lsl Z.(log2 (of_int sz)) in
-            let leaf_l, leaf_r = split v sz at in
-            `Node (BV.usizei at, leaf_l, leaf_r)
-        and split v sz at =
-          let size_l = at in
-          let size_r = sz - at in
-          let mask_l = BV.extract 0 ((at * 8) - 1) v in
-          let mask_r = BV.extract (at * 8) ((sz * 8) - 1) v in
-          let leaf_l = aux mask_l size_l in
-          let leaf_r = aux mask_r size_r in
-          (leaf_l, leaf_r)
-        in
+        split (Int v) at
+    | Int v ->
         (* get our starting size and unsigned integer *)
-        let size = size_of_literal_ty lit_ty in
+        let size = Typed.size_of_int v / 8 in
         let+ at =
           match BV.to_z at with
           | Some at -> return (Z.to_int at)
@@ -738,9 +723,10 @@ module Make (Sptr : Sptr.S) = struct
               in
               match res with Some i -> return i | None -> vanish ())
         in
-        let v = as_base lit_ty v in
-        split v size at
+        let mask_l = BV.extract 0 ((at * 8) - 1) v in
+        let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
+        (`Leaf (Int mask_l), `Leaf (Int mask_r))
     | _ ->
-        Fmt.kstr not_impl "Split unsupported: %a: %a at %a" pp_rust_val v pp_ty
-          ty Typed.ppa at
+        Fmt.kstr not_impl "Split unsupported: %a at %a" pp_rust_val v Typed.ppa
+          at
 end

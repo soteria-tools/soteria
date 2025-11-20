@@ -2,15 +2,17 @@ open Charon
 module T = Typed.T
 
 type 'ptr meta = Thin | Len of T.sint Typed.t | VTable of 'ptr
-and 'ptr full_ptr = 'ptr * 'ptr meta
+type 'ptr full_ptr = 'ptr * 'ptr meta
 
 type 'ptr t =
-  | Base of T.cval Typed.t
+  | Int of T.sint Typed.t
+  | Float of T.sfloat Typed.t
   | Ptr of 'ptr full_ptr
       (** pointer, parametric to enable Ruxt, with optional meta *)
   | Enum of T.cval Typed.t * 'ptr t list  (** discriminant * values *)
   | Tuple of 'ptr t list  (** contains ordered values *)
-  | Union of Types.field_id * 'ptr t  (** field and value of union *)
+  | Union of ('ptr t * T.sint Typed.t) list
+      (** list of blocks in the union, with their offset *)
   | ConstFn of Types.fn_ptr
 
 type 'ptr rust_val = 'ptr t
@@ -21,12 +23,10 @@ type 'ptr rust_val = 'ptr t
 
     Used in unsizing, to find the field with the pointer to modify. *)
 let rec is_empty = function
-  | Base _ -> false
-  | Ptr _ -> false
-  | Enum (_, _) -> false
-  | ConstFn _ -> false
+  | Int _ | Float _ | Ptr _ | Enum (_, _) | ConstFn _ -> false
   | Tuple vals -> List.for_all is_empty vals
-  | Union (_, v) -> is_empty v
+  (* I'm not sure about this one *)
+  | Union _ -> false
 
 let pp_meta pp_ptr fmt = function
   | Thin -> Fmt.pf fmt "-"
@@ -40,7 +40,8 @@ let pp_full_ptr pp_ptr fmt = function
 let rec pp_rust_val pp_ptr fmt =
   let pp_rust_val = pp_rust_val pp_ptr in
   function
-  | Base v -> Typed.ppa fmt v
+  | Int v -> Typed.ppa fmt v
+  | Float v -> Typed.ppa fmt v
   | Ptr ptr -> Fmt.pf fmt "Ptr%a" (pp_full_ptr pp_ptr) ptr
   | Enum (disc, vals) ->
       Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
@@ -48,8 +49,11 @@ let rec pp_rust_val pp_ptr fmt =
         vals
   | Tuple vals ->
       Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
-  | Union (field_id, v) ->
-      Fmt.pf fmt "Union(%a: %a)" Types.pp_field_id field_id pp_rust_val v
+  | Union vs ->
+      let pp_block ft (v, ofs) =
+        Fmt.pf ft "(%a: %a)" Typed.ppa ofs pp_rust_val v
+      in
+      Fmt.pf fmt "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
   | ConstFn fn_ptr -> Fmt.pf fmt "ConstFn(%a)" Types.pp_fn_ptr fn_ptr
 
 let pp = pp_rust_val
@@ -64,39 +68,54 @@ let as_ptr = function
 
 let as_ptr_or ~make = function
   | Ptr ptr -> ptr
-  | Base v -> (make @@ Typed.cast_i Usize v, Thin)
+  | Int v -> (make @@ Typed.cast_i Usize v, Thin)
   | v ->
       Fmt.failwith
         "Unexpected rust_val kind, expected a pointer or base, got: %a"
         ppa_rust_val v
 
 let as_base_f ty = function
-  | Base v -> Typed.cast_f ty v
+  | Float v -> Typed.cast_f ty v
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         ppa_rust_val v
 
 let as_base ty = function
-  | Base v -> Typed.cast_lit ty v
+  | Int v -> Typed.cast_lit ty v
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
         ppa_rust_val v
 
 let as_base_i ty = as_base (TUInt ty)
 
+let size_of = function
+  | Int v -> Typed.size_of_int v / 8
+  | Float f -> Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8
+  | Ptr (_, Thin) -> Crate.pointer_size ()
+  | Ptr (_, (Len _ | VTable _)) -> Crate.pointer_size () * 2
+  | ConstFn _ -> 0
+  (* We can't know the size of a union/tuple/enum, because of e.g. niches, or padding *)
+  | Union _ | Enum _ | Tuple _ ->
+      failwith "Impossible to get size of Enum/Tuple rust_val"
+
 let flatten v =
   let rec aux acc = function
     | Tuple vs | Enum (_, vs) -> List.fold_left aux acc vs
-    | Union (_, v) -> aux acc v
-    | (Base _ | Ptr _ | ConstFn _) as v -> v :: acc
+    | (Int _ | Float _ | Ptr _ | ConstFn _ | Union _) as v -> v :: acc
   in
   List.rev (aux [] v)
 
 let rec iter_vars ptr_iter_vars rv f =
   let iter_vars = iter_vars ptr_iter_vars in
   match rv with
-  | Base v -> Typed.iter_vars v f
-  | Union (_, v) -> iter_vars v f
+  | Int v -> Typed.iter_vars v f
+  | Float v -> Typed.iter_vars v f
+  | Union vs ->
+      List.iter
+        (fun (v, ofs) ->
+          iter_vars v f;
+          Typed.iter_vars ofs f)
+        vs
   | Enum (disc, vals) ->
       Typed.iter_vars disc f;
       List.iter (fun v -> iter_vars v f) vals
@@ -113,8 +132,10 @@ let rec subst ptr_subst subst_var rv =
   let subst = subst ptr_subst subst_var in
   let map_subst vals = List.map subst vals in
   match rv with
-  | Base v -> Base (Typed.subst subst_var v)
-  | Union (field_id, v) -> Union (field_id, subst v)
+  | Int v -> Int (Typed.subst subst_var v)
+  | Float v -> Float (Typed.subst subst_var v)
+  | Union vs ->
+      Union (List.map (fun (v, ofs) -> (subst v, Typed.subst subst_var ofs)) vs)
   | Enum (disc, vals) -> Enum (Typed.subst subst_var disc, map_subst vals)
   | Tuple vals -> Tuple (map_subst vals)
   | Ptr (p, meta) ->

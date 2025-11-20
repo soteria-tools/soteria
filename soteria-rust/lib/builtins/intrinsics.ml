@@ -17,7 +17,7 @@ module M (State : State_intf.S) = struct
   let[@inline] as_ptr (v : rust_val) =
     match v with
     | Ptr ptr -> ptr
-    | Base v ->
+    | Int v ->
         let v = Typed.cast_i Usize v in
         let ptr = State.Sptr.null_ptr_of v in
         (ptr, Thin)
@@ -84,9 +84,8 @@ module M (State : State_intf.S) = struct
   let const_deallocate ~_ptr:_ ~_size:_ ~_align:_ () _state =
     not_impl "Unsupported intrinsic: const_deallocate"
 
-  let const_eval_select ~arg:_ ~f:_ ~g:_ ~ret:_ ~_arg:_ ~_called_in_const:_
-      ~_called_at_rt:_ () _state =
-    not_impl "Unsupported intrinsic: const_eval_select"
+  let const_make_global ~ptr:_ () _state =
+    not_impl "Unsupported intrinsic: const_make_global"
 
   let contract_check_ensures ~c:_ ~t_ret:_ ~cond:_ ~ret:_ () _state =
     not_impl "Unsupported intrinsic: contract_check_ensures"
@@ -398,6 +397,10 @@ module M (State : State_intf.S) = struct
   let truncf32 ~x:_ () _state = not_impl "Unsupported intrinsic: truncf32"
   let truncf64 ~x:_ () _state = not_impl "Unsupported intrinsic: truncf64"
   let type_id ~t:_ () _state = not_impl "Unsupported intrinsic: type_id"
+
+  let type_id_eq ~a:_ ~b:_ () _state =
+    not_impl "Unsupported intrinsic: type_id_eq"
+
   let type_name ~t:_ () _state = not_impl "Unsupported intrinsic: type_name"
 
   let typed_swap_nonoverlapping ~t:_ ~x:_ ~y:_ () _state =
@@ -493,11 +496,11 @@ module M (State : State_intf.S) = struct
         aggregate_raw_ptr ~p ~d ~m ~data ~meta
     | "align_of", [ t ], [] ->
         let+ ret = align_of ~t in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "align_of_val", [ t ], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = align_of_val ~t ~ptr in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "arith_offset", [ t ], [ dst; offset ] ->
         let dst = as_ptr dst in
         let offset = as_base_i Usize offset in
@@ -531,23 +534,23 @@ module M (State : State_intf.S) = struct
     | "catch_unwind", [], [ _try_fn; _data; _catch_fn ] ->
         let _data = as_ptr _data in
         let+ ret = catch_unwind fun_exec ~_try_fn ~_data ~_catch_fn in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "ceilf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = ceilf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "ceilf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = ceilf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "ceilf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = ceilf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "ceilf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = ceilf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "cold_path", [], [] ->
         let+ () = cold_path in
         Tuple []
@@ -556,17 +559,17 @@ module M (State : State_intf.S) = struct
         let right = as_ptr right in
         let bytes = as_base_i Usize bytes in
         let+ ret = compare_bytes ~left ~right ~bytes in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "const_deallocate", [], [ _ptr; _size; _align ] ->
         let _ptr = as_ptr _ptr in
         let _size = as_base_i Usize _size in
         let _align = as_base_i Usize _align in
         let+ () = const_deallocate ~_ptr ~_size ~_align in
         Tuple []
-    | ( "const_eval_select",
-        [ arg; f; g; ret ],
-        [ _arg; _called_in_const; _called_at_rt ] ) ->
-        const_eval_select ~arg ~f ~g ~ret ~_arg ~_called_in_const ~_called_at_rt
+    | "const_make_global", [], [ ptr ] ->
+        let ptr = as_ptr ptr in
+        let+ ret = const_make_global ~ptr in
+        Ptr ret
     | "contract_check_ensures", [ c; t_ret ], [ cond; ret ] ->
         contract_check_ensures ~c ~t_ret ~cond ~ret
     | "contract_check_requires", [ c ], [ arg1 ] ->
@@ -574,7 +577,7 @@ module M (State : State_intf.S) = struct
         Tuple []
     | "contract_checks", [], [] ->
         let+ ret = contract_checks in
-        Base (Typed.BitVec.of_bool ret)
+        Int (Typed.BitVec.of_bool ret)
     | "copy", [ t ], [ src; dst; count ] ->
         let src = as_ptr src in
         let dst = as_ptr dst in
@@ -591,53 +594,53 @@ module M (State : State_intf.S) = struct
         let x = as_base_f F128 x in
         let y = as_base_f F128 y in
         let+ ret = copysignf128 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "copysignf16", [], [ x; y ] ->
         let x = as_base_f F16 x in
         let y = as_base_f F16 y in
         let+ ret = copysignf16 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "copysignf32", [], [ x; y ] ->
         let x = as_base_f F32 x in
         let y = as_base_f F32 y in
         let+ ret = copysignf32 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "copysignf64", [], [ x; y ] ->
         let x = as_base_f F64 x in
         let y = as_base_f F64 y in
         let+ ret = copysignf64 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "cosf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = cosf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "cosf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = cosf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "cosf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = cosf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "cosf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = cosf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "ctlz", [ t ], [ x ] ->
         let+ ret = ctlz ~t ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "ctlz_nonzero", [ t ], [ x ] ->
         let+ ret = ctlz_nonzero ~t ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "ctpop", [ t ], [ x ] ->
         let+ ret = ctpop ~t ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "cttz", [ t ], [ x ] ->
         let+ ret = cttz ~t ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "cttz_nonzero", [ t ], [ x ] ->
         let+ ret = cttz_nonzero ~t ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "discriminant_value", [ t ], [ v ] ->
         let v = as_ptr v in
         discriminant_value ~t ~v
@@ -646,51 +649,51 @@ module M (State : State_intf.S) = struct
     | "exp2f128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = exp2f128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "exp2f16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = exp2f16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "exp2f32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = exp2f32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "exp2f64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = exp2f64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "expf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = expf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "expf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = expf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "expf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = expf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "expf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = expf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fabsf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = fabsf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fabsf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = fabsf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fabsf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = fabsf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fabsf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = fabsf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fadd_algebraic", [ t ], [ a; b ] -> fadd_algebraic ~t ~a ~b
     | "fadd_fast", [ t ], [ a; b ] -> fadd_fast ~t ~a ~b
     | "fdiv_algebraic", [ t ], [ a; b ] -> fdiv_algebraic ~t ~a ~b
@@ -700,43 +703,43 @@ module M (State : State_intf.S) = struct
     | "floorf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = floorf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "floorf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = floorf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "floorf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = floorf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "floorf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = floorf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fmaf128", [], [ a; b; c ] ->
         let a = as_base_f F128 a in
         let b = as_base_f F128 b in
         let c = as_base_f F128 c in
         let+ ret = fmaf128 ~a ~b ~c in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fmaf16", [], [ a; b; c ] ->
         let a = as_base_f F16 a in
         let b = as_base_f F16 b in
         let c = as_base_f F16 c in
         let+ ret = fmaf16 ~a ~b ~c in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fmaf32", [], [ a; b; c ] ->
         let a = as_base_f F32 a in
         let b = as_base_f F32 b in
         let c = as_base_f F32 c in
         let+ ret = fmaf32 ~a ~b ~c in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fmaf64", [], [ a; b; c ] ->
         let a = as_base_f F64 a in
         let b = as_base_f F64 b in
         let c = as_base_f F64 c in
         let+ ret = fmaf64 ~a ~b ~c in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fmul_algebraic", [ t ], [ a; b ] -> fmul_algebraic ~t ~a ~b
     | "fmul_fast", [ t ], [ a; b ] -> fmul_fast ~t ~a ~b
     | "fmuladdf128", [], [ a; b; c ] ->
@@ -744,25 +747,25 @@ module M (State : State_intf.S) = struct
         let b = as_base_f F128 b in
         let c = as_base_f F128 c in
         let+ ret = fmuladdf128 ~a ~b ~c in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fmuladdf16", [], [ a; b; c ] ->
         let a = as_base_f F16 a in
         let b = as_base_f F16 b in
         let c = as_base_f F16 c in
         let+ ret = fmuladdf16 ~a ~b ~c in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fmuladdf32", [], [ a; b; c ] ->
         let a = as_base_f F32 a in
         let b = as_base_f F32 b in
         let c = as_base_f F32 c in
         let+ ret = fmuladdf32 ~a ~b ~c in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "fmuladdf64", [], [ a; b; c ] ->
         let a = as_base_f F64 a in
         let b = as_base_f F64 b in
         let c = as_base_f F64 c in
         let+ ret = fmuladdf64 ~a ~b ~c in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "forget", [ t ], [ arg ] ->
         let+ () = forget ~t ~arg in
         Tuple []
@@ -772,143 +775,143 @@ module M (State : State_intf.S) = struct
     | "fsub_fast", [ t ], [ a; b ] -> fsub_fast ~t ~a ~b
     | "is_val_statically_known", [ t ], [ _arg ] ->
         let+ ret = is_val_statically_known ~t ~_arg in
-        Base (Typed.BitVec.of_bool ret)
+        Int (Typed.BitVec.of_bool ret)
     | "likely", [], [ b ] ->
         let b = Typed.BitVec.to_bool (as_base TBool b) in
         let+ ret = likely ~b in
-        Base (Typed.BitVec.of_bool ret)
+        Int (Typed.BitVec.of_bool ret)
     | "log10f128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = log10f128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "log10f16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = log10f16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "log10f32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = log10f32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "log10f64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = log10f64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "log2f128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = log2f128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "log2f16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = log2f16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "log2f32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = log2f32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "log2f64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = log2f64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "logf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = logf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "logf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = logf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "logf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = logf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "logf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = logf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "maximumf128", [], [ x; y ] ->
         let x = as_base_f F128 x in
         let y = as_base_f F128 y in
         let+ ret = maximumf128 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "maximumf16", [], [ x; y ] ->
         let x = as_base_f F16 x in
         let y = as_base_f F16 y in
         let+ ret = maximumf16 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "maximumf32", [], [ x; y ] ->
         let x = as_base_f F32 x in
         let y = as_base_f F32 y in
         let+ ret = maximumf32 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "maximumf64", [], [ x; y ] ->
         let x = as_base_f F64 x in
         let y = as_base_f F64 y in
         let+ ret = maximumf64 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "maxnumf128", [], [ x; y ] ->
         let x = as_base_f F128 x in
         let y = as_base_f F128 y in
         let+ ret = maxnumf128 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "maxnumf16", [], [ x; y ] ->
         let x = as_base_f F16 x in
         let y = as_base_f F16 y in
         let+ ret = maxnumf16 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "maxnumf32", [], [ x; y ] ->
         let x = as_base_f F32 x in
         let y = as_base_f F32 y in
         let+ ret = maxnumf32 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "maxnumf64", [], [ x; y ] ->
         let x = as_base_f F64 x in
         let y = as_base_f F64 y in
         let+ ret = maxnumf64 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "minimumf128", [], [ x; y ] ->
         let x = as_base_f F128 x in
         let y = as_base_f F128 y in
         let+ ret = minimumf128 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "minimumf16", [], [ x; y ] ->
         let x = as_base_f F16 x in
         let y = as_base_f F16 y in
         let+ ret = minimumf16 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "minimumf32", [], [ x; y ] ->
         let x = as_base_f F32 x in
         let y = as_base_f F32 y in
         let+ ret = minimumf32 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "minimumf64", [], [ x; y ] ->
         let x = as_base_f F64 x in
         let y = as_base_f F64 y in
         let+ ret = minimumf64 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "minnumf128", [], [ x; y ] ->
         let x = as_base_f F128 x in
         let y = as_base_f F128 y in
         let+ ret = minnumf128 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "minnumf16", [], [ x; y ] ->
         let x = as_base_f F16 x in
         let y = as_base_f F16 y in
         let+ ret = minnumf16 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "minnumf32", [], [ x; y ] ->
         let x = as_base_f F32 x in
         let y = as_base_f F32 y in
         let+ ret = minnumf32 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "minnumf64", [], [ x; y ] ->
         let x = as_base_f F64 x in
         let y = as_base_f F64 y in
         let+ ret = minnumf64 ~x ~y in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "mul_with_overflow", [ t ], [ x; y ] -> mul_with_overflow ~t ~x ~y
     | "needs_drop", [ t ], [] ->
         let+ ret = needs_drop ~t in
-        Base (Typed.BitVec.of_bool ret)
+        Int (Typed.BitVec.of_bool ret)
     | "nontemporal_store", [ t ], [ ptr; val_ ] ->
         let ptr = as_ptr ptr in
         let+ () = nontemporal_store ~t ~ptr ~val_ in
@@ -919,42 +922,42 @@ module M (State : State_intf.S) = struct
         let a = as_base_f F128 a in
         let x = as_base_f F128 x in
         let+ ret = powf128 ~a ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "powf16", [], [ a; x ] ->
         let a = as_base_f F16 a in
         let x = as_base_f F16 x in
         let+ ret = powf16 ~a ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "powf32", [], [ a; x ] ->
         let a = as_base_f F32 a in
         let x = as_base_f F32 x in
         let+ ret = powf32 ~a ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "powf64", [], [ a; x ] ->
         let a = as_base_f F64 a in
         let x = as_base_f F64 x in
         let+ ret = powf64 ~a ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "powif128", [], [ a; x ] ->
         let a = as_base_f F128 a in
         let x = as_base_i U32 x in
         let+ ret = powif128 ~a ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "powif16", [], [ a; x ] ->
         let a = as_base_f F16 a in
         let x = as_base_i U32 x in
         let+ ret = powif16 ~a ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "powif32", [], [ a; x ] ->
         let a = as_base_f F32 a in
         let x = as_base_i U32 x in
         let+ ret = powif32 ~a ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "powif64", [], [ a; x ] ->
         let a = as_base_f F64 a in
         let x = as_base_i U32 x in
         let+ ret = powif64 ~a ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "prefetch_read_data", [ t ], [ data; locality ] ->
         let data = as_ptr data in
         let locality = as_base_i U32 locality in
@@ -979,7 +982,7 @@ module M (State : State_intf.S) = struct
         let ptr = as_ptr ptr in
         let other = as_ptr other in
         let+ ret = ptr_guaranteed_cmp ~t ~ptr ~other in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "ptr_mask", [ t ], [ ptr; mask ] ->
         let ptr = as_ptr ptr in
         let mask = as_base_i Usize mask in
@@ -992,17 +995,17 @@ module M (State : State_intf.S) = struct
         let ptr = as_ptr ptr in
         let base = as_ptr base in
         let+ ret = ptr_offset_from ~t ~ptr ~base in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "ptr_offset_from_unsigned", [ t ], [ ptr; base ] ->
         let ptr = as_ptr ptr in
         let base = as_ptr base in
         let+ ret = ptr_offset_from_unsigned ~t ~ptr ~base in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "raw_eq", [ t ], [ a; b ] ->
         let a = as_ptr a in
         let b = as_ptr b in
         let+ ret = raw_eq ~t ~a ~b in
-        Base (Typed.BitVec.of_bool ret)
+        Int (Typed.BitVec.of_bool ret)
     | "read_via_copy", [ t ], [ ptr ] ->
         let ptr = as_ptr ptr in
         read_via_copy ~t ~ptr
@@ -1015,35 +1018,35 @@ module M (State : State_intf.S) = struct
     | "round_ties_even_f128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = round_ties_even_f128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "round_ties_even_f16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = round_ties_even_f16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "round_ties_even_f32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = round_ties_even_f32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "round_ties_even_f64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = round_ties_even_f64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "roundf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = roundf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "roundf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = roundf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "roundf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = roundf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "roundf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = roundf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "rustc_peek", [ t ], [ arg ] -> rustc_peek ~t ~arg
     | "saturating_add", [ t ], [ a; b ] -> saturating_add ~t ~a ~b
     | "saturating_sub", [ t ], [ a; b ] -> saturating_sub ~t ~a ~b
@@ -1053,45 +1056,45 @@ module M (State : State_intf.S) = struct
     | "sinf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = sinf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "sinf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = sinf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "sinf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = sinf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "sinf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = sinf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "size_of", [ t ], [] ->
         let+ ret = size_of ~t in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "size_of_val", [ t ], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = size_of_val ~t ~ptr in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "slice_get_unchecked", [ itemptr; sliceptr; t ], [ slice_ptr; index ] ->
         let index = as_base_i Usize index in
         slice_get_unchecked ~itemptr ~sliceptr ~t ~slice_ptr ~index
     | "sqrtf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = sqrtf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "sqrtf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = sqrtf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "sqrtf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = sqrtf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "sqrtf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = sqrtf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "sub_with_overflow", [ t ], [ x; y ] -> sub_with_overflow ~t ~x ~y
     | "three_way_compare", [ t ], [ lhs; rhss ] ->
         three_way_compare ~t ~lhs ~rhss
@@ -1101,22 +1104,23 @@ module M (State : State_intf.S) = struct
     | "truncf128", [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = truncf128 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "truncf16", [], [ x ] ->
         let x = as_base_f F16 x in
         let+ ret = truncf16 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "truncf32", [], [ x ] ->
         let x = as_base_f F32 x in
         let+ ret = truncf32 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
     | "truncf64", [], [ x ] ->
         let x = as_base_f F64 x in
         let+ ret = truncf64 ~x in
-        Base (ret :> Typed.T.cval Typed.t)
-    | "type_id", [ t ], [] ->
-        let+ ret = type_id ~t in
-        Base (ret :> Typed.T.cval Typed.t)
+        Float ret
+    | "type_id", [ t ], [] -> type_id ~t
+    | "type_id_eq", [], [ a; b ] ->
+        let+ ret = type_id_eq ~a ~b in
+        Int (Typed.BitVec.of_bool ret)
     | "type_name", [ t ], [] ->
         let+ ret = type_name ~t in
         Ptr ret
@@ -1127,7 +1131,7 @@ module M (State : State_intf.S) = struct
         Tuple []
     | "ub_checks", [], [] ->
         let+ ret = ub_checks in
-        Base (Typed.BitVec.of_bool ret)
+        Int (Typed.BitVec.of_bool ret)
     | "unaligned_volatile_load", [ t ], [ src ] ->
         let src = as_ptr src in
         unaligned_volatile_load ~t ~src
@@ -1145,7 +1149,7 @@ module M (State : State_intf.S) = struct
     | "unlikely", [], [ b ] ->
         let b = Typed.BitVec.to_bool (as_base TBool b) in
         let+ ret = unlikely ~b in
-        Base (Typed.BitVec.of_bool ret)
+        Int (Typed.BitVec.of_bool ret)
     | "unreachable", [], [] ->
         let+ () = unreachable in
         Tuple []
@@ -1163,7 +1167,7 @@ module M (State : State_intf.S) = struct
         Tuple []
     | "variant_count", [ t ], [] ->
         let+ ret = variant_count ~t in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "volatile_copy_memory", [ t ], [ dst; src; count ] ->
         let dst = as_ptr dst in
         let src = as_ptr src in
@@ -1192,11 +1196,11 @@ module M (State : State_intf.S) = struct
     | "vtable_align", [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = vtable_align ~ptr in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "vtable_size", [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = vtable_size ~ptr in
-        Base (ret :> Typed.T.cval Typed.t)
+        Int ret
     | "wrapping_add", [ t ], [ a; b ] -> wrapping_add ~t ~a ~b
     | "wrapping_mul", [ t ], [ a; b ] -> wrapping_mul ~t ~a ~b
     | "wrapping_sub", [ t ], [ a; b ] -> wrapping_sub ~t ~a ~b

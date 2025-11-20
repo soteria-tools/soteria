@@ -1,7 +1,7 @@
-import sys
+import enum
 import os
 import subprocess
-import enum
+import sys
 from pathlib import Path
 from typing import Literal, Optional, TypeVar, cast
 
@@ -228,6 +228,7 @@ KNOWN_ISSUES = {
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
     "pass/dyn-traits.rs": "VTable addresses should be randomised",
+    "pass/enum_discriminant_ptr_value.rs": "We don't provide a way to disable validity checks",
     "pass/extern_types.rs": "We don't handle extern types",
     "pass/function_calls/abi_compat.rs": "We are too restrictive on fn pointer casts",
     "pass/issues/issue-120337-irrefutable-let-ice.rs": "Weird ! type in a union?",
@@ -322,10 +323,10 @@ def subprocess_run(
     """
     from subprocess import (
         PIPE,
-        Popen,
-        TimeoutExpired,
         CalledProcessError,
         CompletedProcess,
+        Popen,
+        TimeoutExpired,
     )
 
     if input is not None:

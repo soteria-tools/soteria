@@ -516,12 +516,15 @@ let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
     external function that computes the arbitrary value; it tries using it, and
     otherwise guesses the valid values. [init] is the initial "state", that is
     modified and returned by [extern]. *)
-let rec nondet ty : 'a rust_val Rustsymex.t =
+let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
   let open Rustsymex.Syntax in
-  match ty with
-  | Types.TLiteral lit ->
-      let+ cval = nondet_literal_ty lit in
-      Base cval
+  function
+  | TLiteral (TFloat _ as lit) ->
+      let+ f = nondet_literal_ty lit in
+      Float (Typed.cast f)
+  | TLiteral lit ->
+      let+ i = nondet_literal_ty lit in
+      Int (Typed.cast i)
   | TAdt { id = TTuple; generics = { types; _ } } ->
       let+ fields = nondets types in
       Tuple fields
@@ -533,7 +536,7 @@ let rec nondet ty : 'a rust_val Rustsymex.t =
       let size = Charon_util.int_of_const_generic len in
       let+ fields = nondets @@ List.init size (fun _ -> ty) in
       Tuple fields
-  | TAdt { id = TAdtId t_id; _ } -> (
+  | TAdt { id = TAdtId t_id; _ } as ty -> (
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
@@ -573,14 +576,12 @@ and nondets tys =
       let+ f = nondet ty in
       f :: fields)
 
-let zeroed_lit : Types.literal_type -> T.cval Typed.t = function
-  | TFloat fty -> Typed.Float.mk fty "0.0"
-  | (TInt _ | TUInt _ | TBool | TChar) as ty -> BV.mki_lit ty 0
-
 let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
   let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in
   function
-  | TLiteral lit_ty -> Some (Base (zeroed_lit lit_ty))
+  | TLiteral (TFloat fty) -> Some (Float (Typed.Float.mk fty "0.0"))
+  | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty) ->
+      Some (Int (BV.mki_lit ty 0))
   | TRawPtr _ -> Some (Ptr (null_ptr, Thin))
   | TFnPtr _ -> None
   | TRef _ -> None
@@ -594,7 +595,7 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
       let len = int_of_const_generic len in
       zeroed ~null_ptr ty
       |> Option.map (fun v -> Tuple (List.init len (fun _ -> v)))
-  | TAdt { id = TAdtId t_id; _ } -> (
+  | TAdt { id = TAdtId t_id; _ } as ty -> (
       let adt = Crate.get_adt t_id in
       match adt.kind with
       | Struct fields ->
@@ -612,20 +613,10 @@ let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
           |> Charon_util.field_tys
           |> zeroeds
           |> Option.map (fun fs -> Enum (BV.of_literal v.discriminant, fs))
-      | Union fs ->
-          let layouts =
-            List.mapi
-              (fun i (f : Types.field) -> (f.field_ty, i, layout_of f.field_ty))
-              fs
-          in
-          let ty, i, _ =
-            List.fold_left
-              (fun ((_, _, accl) as acc) ((_, _, l) as cur) ->
-                if l.size > accl.size then cur else acc)
-              (List.hd layouts) (List.tl layouts)
-          in
-          let field = Types.FieldId.of_int i in
-          zeroed ~null_ptr ty |> Option.map (fun v -> Union (field, v))
+      | Union _ ->
+          let layout = layout_of ty in
+          let bv = BV.zero (layout.size * 8) in
+          Some (Union [ (Int bv, Usize.(0s)) ])
       | k ->
           Fmt.failwith "Unhandled zeroed ADT kind: %a" Types.pp_type_decl_kind k
       )
@@ -681,18 +672,18 @@ let rec as_zst : Types.ty -> 'a rust_val option =
 let apply_attribute v attr =
   let open Rustsymex.Syntax in
   match (v, attr) with
-  | ( Base v,
+  | ( Int v,
       Meta.AttrUnknown
         { path = "rustc_layout_scalar_valid_range_start"; args = Some min } ) ->
       let min = Z.of_string min in
-      let v, bits = Typed.cast_int v in
+      let bits = Typed.size_of_int v in
       if%sat v >=@ BV.mk bits min then Result.ok ()
       else Result.error (`StdErr "rustc_layout_scalar_valid_range_start")
-  | ( Base v,
+  | ( Int v,
       AttrUnknown
         { path = "rustc_layout_scalar_valid_range_end"; args = Some max_s } ) ->
       let max = Z.of_string max_s in
-      let v, bits = Typed.cast_int v in
+      let bits = Typed.size_of_int v in
       if%sat v <=@ BV.mk bits max then Result.ok ()
       else Result.error (`StdErr "rustc_layout_scalar_valid_range_end")
   | _ -> Result.ok ()
@@ -730,7 +721,7 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
   | Ptr ptr, (TAdt { id = TBuiltin TBox; _ } | TRef _) ->
       [ (ptr, get_pointee ty) ]
   | Ptr ptr, TRawPtr _ when include_ptrs -> [ (ptr, get_pointee ty) ]
-  | Base _, _ -> []
+  | (Int _ | Float _), _ -> []
   | Tuple vs, TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_struct adt_id in
       List.concat_map2 f vs (field_tys fields)
@@ -754,10 +745,11 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
           | Some v -> List.concat_map2 f vs (field_tys Types.(v.fields))
           | None -> [])
       | None -> [])
-  | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
-      let fields = Crate.as_union adt_id in
-      let field = Types.FieldId.nth fields fid in
-      f v field.field_ty
+  | Union _, TAdt { id = TAdtId _; _ } ->
+      (* FIXME: figure out if references inside unions get reborrowed. They could, but I
+         suspect they don't because there's no guarantee the reference isn't some other field,
+         e.g. in [union { a: &u8, b: &u16 }]  *)
+      []
   | _ -> []
 
 let rec update_ref_tys_in
@@ -813,11 +805,11 @@ let rec update_ref_tys_in
           let++ vs, acc = fs2 init vs (field_tys Types.(var.fields)) in
           (Enum (d, vs), acc)
       | None -> Result.ok (v, init))
-  | Union (fid, v), TAdt { id = TAdtId adt_id; _ } ->
-      let fields = Crate.as_union adt_id in
-      let field = Types.FieldId.nth fields fid in
-      let++ v, acc = f init v field.field_ty in
-      (Union (fid, v), acc)
+  | (Union _ as v), TAdt { id = TAdtId _; _ } ->
+      (* FIXME: figure out if references inside unions get reborrowed. They could, but I
+         suspect they don't because there's no guarantee the reference isn't some other field,
+         e.g. in [union { a: &u8, b: &u16 }]  *)
+      Result.ok (v, init)
   | v, _ -> Result.ok (v, init)
 
 (** [is_abi_compatible ty1 ty2] is true if a function expecting an argument of

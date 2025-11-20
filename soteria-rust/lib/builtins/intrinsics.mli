@@ -350,68 +350,9 @@ module M : (State : State_intf.S) -> sig
     unit ret
 
   (** {@markdown[
-        Selects which function to call depending on the context.
 
-         If this function is evaluated at compile-time, then a call to this
-         intrinsic will be replaced with a call to `called_in_const`. It gets
-         replaced with a call to `called_at_rt` otherwise.
-
-         This function is safe to call, but note the stability concerns below.
-
-         # Type Requirements
-
-         The two functions must be both function items. They cannot be function
-         pointers or closures. The first function must be a `const fn`.
-
-         `arg` will be the tupled arguments that will be passed to either one of
-         the two functions, therefore, both functions must accept the same type of
-         arguments. Both functions must return RET.
-
-         # Stability concerns
-
-         Rust has not yet decided that `const fn` are allowed to tell whether
-         they run at compile-time or at runtime. Therefore, when using this
-         intrinsic anywhere that can be reached from stable, it is crucial that
-         the end-to-end behavior of the stable `const fn` is the same for both
-         modes of execution. (Here, Undefined Behavior is considered "the same"
-         as any other behavior, so if the function exhibits UB at runtime then
-         it may do whatever it wants at compile-time.)
-
-         Here is an example of how this could cause a problem:
-         ```no_run
-         #![feature(const_eval_select)]
-         #![feature(core_intrinsics)]
-         # #![allow(internal_features)]
-         use std::intrinsics::const_eval_select;
-
-         // Standard library
-         pub const fn inconsistent() -> i32 {
-             fn runtime() -> i32 { 1 }
-             const fn compiletime() -> i32 { 2 }
-
-             // ⚠ This code violates the required equivalence of `compiletime`
-             // and `runtime`.
-             const_eval_select((), compiletime, runtime)
-         }
-
-         // User Crate
-         const X: i32 = inconsistent();
-         let x = inconsistent();
-         assert_eq!(x, X);
-         ```
-
-         Currently such an assertion would always succeed; until Rust decides
-         otherwise, that principle should not be violated.
-      ]} *)
-  val const_eval_select :
-    arg:Types.ty ->
-    f:Types.ty ->
-    g:Types.ty ->
-    ret:Types.ty ->
-    _arg:rust_val ->
-    _called_in_const:rust_val ->
-    _called_at_rt:rust_val ->
-    rust_val ret
+]} *)
+  val const_make_global : ptr:full_ptr -> full_ptr ret
 
   (** {@markdown[
         Check if the post-condition `cond` has been met.
@@ -2022,7 +1963,7 @@ module M : (State : State_intf.S) -> sig
          # Safety
 
          - `index < PtrMetadata(slice_ptr)`, so the indexing is in-bounds for the slice
-         - the resulting offsetting is in-bounds of the allocated object, which is
+         - the resulting offsetting is in-bounds of the allocation, which is
            always the case for references, but needs to be upheld manually for pointers
       ]} *)
   val slice_get_unchecked :
@@ -2438,7 +2379,16 @@ module M : (State : State_intf.S) -> sig
 
          The stabilized version of this intrinsic is [`core::any::TypeId::of`].
       ]} *)
-  val type_id : t:Types.ty -> Typed.T.sint Typed.t ret
+  val type_id : t:Types.ty -> rust_val ret
+
+  (** {@markdown[
+        Tests (at compile-time) if two [`crate::any::TypeId`] instances identify the
+         same type. This is necessary because at const-eval time the actual discriminating
+         data is opaque and cannot be inspected directly.
+
+         The stabilized version of this intrinsic is the [PartialEq] impl for [`core::any::TypeId`].
+      ]} *)
+  val type_id_eq : a:rust_val -> b:rust_val -> Typed.T.sbool Typed.t ret
 
   (** {@markdown[
         Gets a static string slice containing the name of a type.

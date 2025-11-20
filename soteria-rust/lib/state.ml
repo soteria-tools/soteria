@@ -217,7 +217,8 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   let@ offset, block = with_ptr ptr st in
   let@ block, tb = with_tbs block in
   let handler (ty, ofs) = Tree_block.load ~ignore_borrow ofs ty ptr.tag tb in
-  Encoder.ParserMonad.parse ~init:block ~handler @@ parser ~offset
+  let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
+  Encoder.ParserMonad.parse ~init:block ~handler ~get_all @@ parser ~offset
 
 let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Charon.Types.ty) st =
   (* The expected alignment of a dyn pointer is stored inside the VTable  *)
@@ -318,8 +319,8 @@ let store ((ptr, _) as fptr) ty sval st =
            there are any. *)
     let** (), block = Tree_block.uninit_range ofs size block in
     Result.fold_list parts ~init:((), block)
-      ~f:(fun ((), block) { value; ty; offset } ->
-        Tree_block.store (offset +!@ ofs) ty value ptr.tag tb block)
+      ~f:(fun ((), block) (value, offset) ->
+        Tree_block.store (offset +!@ ofs) value ptr.tag tb block)
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace st in

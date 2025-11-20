@@ -41,19 +41,8 @@ module Make (Sptr : Sptr.S) = struct
         v >=@ zero () &&@ (v <=@ max)
     end
 
-    let pp_init ft (v, ty) =
-      let open Fmt in
-      pf ft "%a : %a" pp_rust_val v Charon_util.pp_ty ty
-
     type qty = Totally | Partially [@@deriving show { with_path = false }]
-
-    type value =
-      | Init of (rust_val * Types.ty) [@printer pp_init]
-      | Zeros
-      | Uninit of qty
-      | Any
-      | Lazy
-
+    type value = Init of rust_val | Zeros | Uninit of qty | Any | Lazy
     type t = value * Tree_borrow.tb_state
 
     let pp_value ft =
@@ -62,7 +51,7 @@ module Make (Sptr : Sptr.S) = struct
       | Zeros -> pf ft "Zeros"
       | Uninit qty -> pf ft "Uninit %a" pp_qty qty
       | Lazy -> pf ft "Lazy"
-      | Init mv -> pp_init ft mv
+      | Init mv -> pp_rust_val ft mv
       | Any -> pf ft "Any"
 
     let pp ft (v, _) = pp_value ft v
@@ -80,32 +69,25 @@ module Make (Sptr : Sptr.S) = struct
       match node with
       | (Uninit Totally | Zeros | Any) as v ->
           return (Leaf (v, tb), Leaf (v, tb))
-      | Init (value, ty) ->
+      | Init value ->
           let rec aux = function
-            | `Leaf (value, ty) -> Leaf (Init (value, ty), tb)
+            | `Leaf value -> Leaf (Init value, tb)
             | `Node (at, l, r) -> Node (aux l, at, aux r)
           in
-          let+ ltree, rtree = Encoder.split value ty at in
+          let+ ltree, rtree = Encoder.split value at in
           (aux ltree, aux rtree)
       | Lazy | Uninit Partially ->
           failwith "Should never split an intermediate node"
 
-    type serialized =
-      | SInit of (rust_val * Types.ty)
-          [@printer Fmt.(pair ~sep:comma pp_rust_val Charon_util.pp_ty)]
-      | SUninit
-      | SZeros
-      | SAny
+    type serialized = SInit of rust_val | SUninit | SZeros | SAny
     [@@deriving show { with_path = false }]
 
     let subst_serialized f = function
-      | SInit (v, ty) -> SInit (Rust_val.subst Sptr.subst f v, ty)
+      | SInit v -> SInit (Rust_val.subst Sptr.subst f v)
       | v -> v
 
     let iter_vars_serialized v f =
-      match v with
-      | SInit (v, _) -> Rust_val.iter_vars Sptr.iter_vars v f
-      | _ -> ()
+      match v with SInit v -> Rust_val.iter_vars Sptr.iter_vars v f | _ -> ()
 
     (* TODO: serialize tree borrow information! *)
     let serialize ((t, _) : t) : serialized Seq.t option =
@@ -167,13 +149,7 @@ module Make (Sptr : Sptr.S) = struct
         in
         Ok v
     | Lazy -> not_impl "Lazy memory access, cannot decode"
-    | Init (value, tyw) ->
-        if Types.equal_ty ty tyw then Result.ok value
-        else (
-          L.debug (fun m ->
-              m "Transmuting %a to %a" Charon_util.pp_ty tyw Charon_util.pp_ty
-                ty);
-          Encoder.transmute ~from_ty:tyw ~to_ty:ty value)
+    | Init value -> Encoder.transmute_one ~to_ty:ty value
     | Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
          We have to approximate and vanish. *)
@@ -185,7 +161,7 @@ module Make (Sptr : Sptr.S) = struct
         let offset = offset -!@ fst t.range in
         match leaf.node with
         | NotOwned Totally -> miss_no_fix ~reason:"decode" ()
-        | Owned (Uninit Totally, _) -> Result.error `UninitializedMemoryAccess
+        | Owned (Uninit Totally, _) -> Result.ok vs
         | Owned (Zeros, _) ->
             let* size =
               of_opt_not_impl "Don't know how to read this size"
@@ -196,9 +172,8 @@ module Make (Sptr : Sptr.S) = struct
               of_opt_not_impl "Don't know how to zero this type"
               @@ Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) ty
             in
-            Ok (Encoder.{ value; ty; offset } :: vs)
-        | Owned (Init (value, ty), _) ->
-            Result.ok (Encoder.{ value; ty; offset } :: vs)
+            Ok ((value, offset) :: vs)
+        | Owned (Init value, _) -> Result.ok ((value, offset) :: vs)
         | Owned (Any, _) ->
             L.info (fun m -> m "Reading from Any memory, vanishing.");
             vanish ()
@@ -211,7 +186,7 @@ module Make (Sptr : Sptr.S) = struct
     | NotOwned _ -> miss []
     | Owned (Lazy, _) ->
         let** leaves = collect_leaves t in
-        Encoder.transmute_many ~to_ty:ty leaves
+        Encoder.transmute ~to_ty:ty leaves
     | Owned (node, _) -> decode_mem_val ~ty node
 
   let uninit range tb : Tree.t =
@@ -231,7 +206,7 @@ module Make (Sptr : Sptr.S) = struct
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes () =
       let+^ v = Layout.nondet ty in
-      [ [ MemVal { offset = ofs; len = size; v = SInit (v, ty) } ] ]
+      [ [ MemVal { offset = ofs; len = size; v = SInit v } ] ]
     in
     let@ t = with_bound_and_owned_check ~mk_fixes t bound in
     let replace_node t =
@@ -249,16 +224,16 @@ module Make (Sptr : Sptr.S) = struct
     let++ sval = decode_tree ~ty framed in
     (sval, tree)
 
-  let store (ofs : [< T.sint ] Typed.t) (ty : Types.ty) (value : rust_val)
+  let store (ofs : [< T.sint ] Typed.t) (value : rust_val)
       (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t option) :
       (unit * t option, 'err, 'fix) Result.t =
-    let*^ size = Layout.size_of_s ty in
+    let size = Typed.BitVec.usizei @@ Rust_val.size_of value in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let@ t = with_bound_and_owned_check t bound in
     let replace_node t =
       let@ _, tb_st = as_owned t in
       let++^ tb_st' = Tree_borrow.access tag Write tb tb_st in
-      { node = Owned (Init (value, ty), tb_st'); range; children = None }
+      { node = Owned (Init value, tb_st'); range; children = None }
     in
     let rebuild_parent = Tree.of_children in
     let** node, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
@@ -268,6 +243,19 @@ module Make (Sptr : Sptr.S) = struct
       | _ -> Result.ok ()
     in
     ((), tree)
+
+  let get_init_leaves (ofs : [< T.sint ] Typed.t)
+      (size : [< T.nonzero ] Typed.t) (t : t option) :
+      (Encoder.cval_info list * t option, 'err, 'fix) Result.t =
+    let ((_, bound) as range) = Range.of_low_and_size ofs (Typed.cast size) in
+    let@ t = with_bound_and_owned_check t bound in
+    let replace_node node = Result.ok node in
+    let rebuild_parent = Tree.with_children in
+    let** framed, tree =
+      Tree.frame_range t ~replace_node ~rebuild_parent range
+    in
+    let++ leaves = collect_leaves framed in
+    (leaves, tree)
 
   let uninit_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
       (t : t option) : (unit * t option, 'err, 'fix) Result.t =

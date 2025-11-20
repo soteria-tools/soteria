@@ -433,7 +433,7 @@ module Interval : S = struct
         (Svalue.Bool.v_true, learnt, vars, st')
     | _, (lazy None) -> (v, Svalue.Bool.v_true, Var.Set.empty, st)
 
-  let simplify (v : Svalue.t) st =
+  let rec simplify (v : Svalue.t) st =
     match (v.node.kind, lazy (as_range v)) with
     | Binop (Or, v1, v2), _ ->
         let v1', _learnt1, vars1, st1 = add_constraint v1 st in
@@ -452,11 +452,20 @@ module Interval : S = struct
           && st_equal st st'
         then Svalue.Bool.v_true
         else v
+    | ( Binop
+          ( Eq,
+            ({ node = { kind = Binop (Lt _, _, _); _ }; _ } as l),
+            ({ node = { kind = Binop (Lt _, _, _); _ }; _ } as r) ),
+        _ ) ->
+        let l' = simplify l st in
+        let r' = simplify r st in
+        if Svalue.equal l l' && Svalue.equal r r' then v
+        else Eval.eval_binop Eq l' r'
     | _, (lazy (Some (var, size, srange))) ->
         let range = get size var st in
         log (fun m ->
-            m "Simplify range %a (curr %a) for %a" Range.pps srange Data.pp
-              range pp st);
+            m "Simplify range of %a: %a (curr %a) for %a" Svalue.pp v Range.pps
+              srange Data.pp range pp st);
         let range', redundant = Data.add range srange in
         log (fun m ->
             m "Redundant? %b Empty? %b" redundant (Data.is_empty range'));
