@@ -62,3 +62,9 @@ Test that we properly handle the niche optimisation
         (V|2| <=u 0x7ffffffffffffff6) /\ (0x0000000000000001 <=u V|3|) /\
         (V|3| <=u 0x7ffffffffffffffa)
   
+Test function calls on function pointers
+  $ soteria-rust rustc fn_ptr.rs --clean --no-timing
+  Compiling... done in <time>
+  note: main: done in <time>, ran 1 branch
+  PC 1: empty
+  
