@@ -40,7 +40,7 @@ let with_loc_immediate ~loc f =
   res
 
 let not_impl msg =
-  let msg = "MISSING FEATURE, VANISHING: " ^ msg in
+  let msg = "Unsupported: " ^ msg in
   give_up ~loc:(get_loc ()) msg
 
 let[@inline] with_error_loc_as_call_trace ?(msg = "Triggering operation") () f =
