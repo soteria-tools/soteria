@@ -64,6 +64,9 @@ module SPmap = Soteria.Sym_states.Pmap.Direct_access (DecayMapMonad) (StateKey)
 module Bi = Soteria.Sym_states.Bi_abd.Make (DecayMapMonad)
 module Tree_block = Rtree_block.Make (Sptr)
 
+module With_meta =
+  Soteria.Sym_states.With_info.Make (DecayMapMonad) (Alloc_meta)
+
 type global = String of string | Global of Types.global_decl_id
 
 module GlobMap = Map.MakePp (struct
@@ -97,10 +100,11 @@ end
      See: https://github.com/rust-lang/rust/blob/be0ade2b602bdfe37a3cc259fcc79e8624dcba94/compiler/rustc_middle/src/mir/interpret/mod.rs#L260-L276
    - the source of the allocation (for nicer memory leak error messages) *)
 
-type sub = Tree_block.t * Tree_borrow.t
+type sub = Tree_block.t * Tree_borrow.t [@@deriving show { with_path = false }]
+type block = sub Freeable.t With_meta.t [@@deriving show { with_path = false }]
 
-and t = {
-  state : sub Freeable.t SPmap.t option;
+type t = {
+  state : block SPmap.t option;
   functions : FunBiMap.t;
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
@@ -108,19 +112,23 @@ and t = {
 }
 [@@deriving show { with_path = false }]
 
-type serialized = Tree_block.serialized Freeable.serialized SPmap.serialized
+type serialized =
+  Tree_block.serialized Freeable.serialized With_meta.serialized
+  SPmap.serialized
 [@@deriving show { with_path = false }]
 
 let pp_pretty ~ignore_freed ft { state; _ } =
   let ignore =
-    if ignore_freed then function _, Freeable.Freed -> true | _ -> false
+    if ignore_freed then function
+      | _, With_meta.{ node = Freeable.Freed; _ } -> true | _ -> false
     else fun _ -> false
   in
   match state with
   | None -> Fmt.pf ft "Empty State"
   | Some st ->
       SPmap.pp ~ignore
-        (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
+        (With_meta.pp
+           (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb)))
         ft st
 
 let empty =
@@ -179,7 +187,10 @@ let with_ptr (ptr : Sptr.t) (st : t)
   let@ state = with_state st in
   let open DecayMapMonad in
   let open DecayMapMonad.Syntax in
-  let* res = (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state in
+  let* res =
+    (SPmap.wrap (With_meta.wrap (Freeable.wrap (fun st -> f (ofs, st)))))
+      loc state
+  in
   match res with
   | Missing _ as miss ->
       if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
@@ -384,7 +395,14 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   in
   Tree_block.put_raw_tree ofs tree_to_write block
 
-let alloc ?zeroed size align st =
+let mk_block ?(kind = Alloc_meta.Heap) ?span ?zeroed ~size ~align ~tb () : block
+    =
+  let block = Tree_block.alloc ?zeroed size in
+  let span = Option.value span ~default:(get_loc ()) in
+  let info : Alloc_meta.t = { alignment = align; kind; span } in
+  { node = Alive (block, tb); info = Some info }
+
+let alloc ?kind ?span ?zeroed size align st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
   let@ () = with_error_loc_as_call_trace st in
@@ -392,8 +410,7 @@ let alloc ?zeroed size align st =
   let open DecayMapMonad in
   let open DecayMapMonad.Syntax in
   let tb, tag = Tree_borrow.init ~state:Unique () in
-  let block = Tree_block.alloc ?zeroed size in
-  let block = Freeable.Alive (block, tb) in
+  let block = mk_block ?kind ?span ?zeroed ~align ~size ~tb () in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
   let ptr : Sptr.t Rust_val.full_ptr = ({ ptr; tag; align; size }, Thin) in
@@ -401,16 +418,17 @@ let alloc ?zeroed size align st =
   let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
   ok (ptr, state)
 
-let alloc_untyped ~zeroed ~size ~align st = alloc ~zeroed size align st
+let alloc_untyped ?kind ?span ~zeroed ~size ~align st =
+  alloc ?kind ?span ~zeroed size align st
 
-let alloc_ty ty st =
+let alloc_ty ?kind ?span ty st =
   let* layout = Layout.layout_of_s ty in
-  alloc
+  alloc ?kind ?span
     (Typed.BitVec.usizei layout.size)
     (Typed.BitVec.usizeinz layout.align)
     st
 
-let alloc_tys tys st =
+let alloc_tys ?kind ?span tys st =
   let@ () = with_error_loc_as_call_trace st in
   let@ st = with_state st in
   SPmap.allocs st ~els:tys ~fn:(fun ty loc ->
@@ -419,13 +437,12 @@ let alloc_tys tys st =
       (* make Tree_block *)
       let* layout = lift @@ Layout.layout_of_s ty in
       let size = Typed.BitVec.usizei layout.size in
+      let align = Typed.BitVec.usizeinz layout.align in
       let tb, tag = Tree_borrow.init ~state:Unique () in
-      let block = Freeable.Alive (Tree_block.alloc size, tb) in
+      let block = mk_block ?kind ?span ~align ~size ~tb () in
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
       let ptr = Typed.Ptr.mk loc Usize.(0s) in
-      let size = Typed.BitVec.usizei layout.size in
-      let align = Typed.BitVec.usizeinz layout.align in
       let ptr : Sptr.t = { ptr; tag; align; size } in
       (block, (ptr, Thin)))
 
@@ -437,8 +454,9 @@ let free (({ ptr; _ } : Sptr.t), _) st =
   let@ st = with_state st in
   L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
   SPmap.wrap
-    (Freeable.free ~assert_exclusively_owned:(fun t ->
-         Tree_block.assert_exclusively_owned @@ Option.map fst t))
+    (With_meta.wrap
+       (Freeable.free ~assert_exclusively_owned:(fun t ->
+            Tree_block.assert_exclusively_owned @@ Option.map fst t)))
     (Typed.Ptr.loc ptr) st
 
 let zeros (ptr, _) size st =
@@ -575,9 +593,9 @@ let leak_check st =
   let open DecayMapMonad.Syntax in
   let** leaks =
     SPmap.fold
-      (fun leaks (k, v) ->
+      (fun leaks (k, (v : block)) ->
         (* FIXME: This only works because our addresses are concrete *)
-        if Freeable.Freed <> v && not (List.mem k global_addresses) then
+        if Freeable.Freed <> v.node && not (List.mem k global_addresses) then
           Result.ok (k :: leaks)
         else Result.ok leaks)
       [] st
@@ -601,27 +619,35 @@ let unwind_with ~f ~fe symex =
       if Error.is_unwindable err_ty then fe (err, state)
       else Result.error (err, state))
 
-let declare_fn fn_ptr ({ functions; _ } as st) =
-  let+ loc, st =
-    match FunBiMap.get_loc fn_ptr functions with
-    | Some loc -> return (loc, st)
-    | None ->
-        (* FIXME: once we stop having concrete locations, we'll need to add a distinct
+let declare_fn fn_def ({ functions; _ } as st) =
+  match FunBiMap.get_loc fn_def functions with
+  | Some loc ->
+      let ptr : Sptr.t =
+        {
+          ptr = Typed.Ptr.mk loc Usize.(0s);
+          tag = Tree_borrow.zero;
+          align = Usize.(1s);
+          size = Usize.(0s);
+        }
+      in
+      Result.ok ((ptr, Thin), st)
+  | None ->
+      (* FIXME: once we stop having concrete locations, we'll need to add a distinct
        constraint here. *)
-        (* FIXME: should we use [SPmap.alloc] here instead? What would go in the map? *)
-        let+ loc = StateKey.fresh_rsym () in
-        let functions = FunBiMap.add loc fn_ptr functions in
-        (loc, { st with functions })
-  in
-  (* FIXME: what is the size and align of a fn pointer?
-     See https://github.com/rust-lang/rust/issues/82232 *)
-  let ptr = Typed.Ptr.mk loc Usize.(0s) in
-  let ptr : Sptr.t =
-    { ptr; tag = Tree_borrow.zero; align = Usize.(1s); size = Usize.(0s) }
-  in
-  Ok ((ptr, Thin), st)
+      (* FIXME: should we use [SPmap.alloc] here instead? What would go in the map? *)
+      let fn = Crate.get_fun fn_def.id in
+      let++ ((ptr, _) as fptr), st =
+        alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span
+          ~zeroed:false
+          ~size:Usize.(0s)
+          ~align:Usize.(1s)
+          st
+      in
+      let loc = Typed.Ptr.loc ptr.ptr in
+      let functions = FunBiMap.add loc fn_def functions in
+      (fptr, { st with functions })
 
-let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
+let lookup_fn (({ ptr; _ } : Sptr.t), _) ({ functions; _ } as st) =
   let** () =
     assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer st
   in
@@ -630,10 +656,4 @@ let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let loc = Typed.Ptr.loc ptr in
   match FunBiMap.get_fn loc functions with
   | Some fn -> Result.ok (fn, st)
-  | None -> (
-      let open DecayMapMonad in
-      let@ _, block = with_ptr fptr st in
-      (* If a block exists, we can be sure that this isn't a function pointer *)
-      match block with
-      | Some _ -> Result.error `NotAFnPointer
-      | None -> Result.miss [])
+  | None -> Result.error `NotAFnPointer

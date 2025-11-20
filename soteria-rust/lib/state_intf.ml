@@ -106,6 +106,8 @@ module type S = sig
     Result.t
 
   val alloc_untyped :
+    ?kind:Alloc_meta.kind ->
+    ?span:Meta.span ->
     zeroed:bool ->
     size:sint Typed.t ->
     align:nonzero Typed.t ->
@@ -113,10 +115,18 @@ module type S = sig
     (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_ty :
-    Types.ty -> t -> (full_ptr * t, [> ] err * t, serialized) Result.t
+    ?kind:Alloc_meta.kind ->
+    ?span:Meta.span ->
+    Types.ty ->
+    t ->
+    (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_tys :
-    Types.ty list -> t -> (full_ptr list * t, [> ] err * t, serialized) Result.t
+    ?kind:Alloc_meta.kind ->
+    ?span:Meta.span ->
+    Types.ty list ->
+    t ->
+    (full_ptr list * t, [> ] err * t, serialized) Result.t
 
   val free :
     full_ptr ->
@@ -214,7 +224,7 @@ module type S = sig
 
   val borrow :
     full_ptr ->
-    Charon.Types.ty ->
+    Types.ty ->
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
@@ -224,8 +234,8 @@ module type S = sig
 
   val protect :
     full_ptr ->
-    Charon.Types.ty ->
-    Charon.Types.ref_kind ->
+    Types.ty ->
+    Types.ref_kind ->
     t ->
     ( full_ptr * t,
       [> `NullDereference
@@ -240,7 +250,7 @@ module type S = sig
 
   val unprotect :
     full_ptr ->
-    Charon.Types.ty ->
+    Types.ty ->
     t ->
     ( unit * t,
       [> `NullDereference
@@ -268,14 +278,12 @@ module type S = sig
     ('b, 'e err * t, serialized) Result.t
 
   val declare_fn :
-    Charon.Types.fun_decl_ref ->
-    t ->
-    (full_ptr * t, [> ] err * t, serialized) Result.t
+    Types.fun_decl_ref -> t -> (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val lookup_fn :
     full_ptr ->
     t ->
-    ( Charon.Types.fun_decl_ref * t,
+    ( Types.fun_decl_ref * t,
       [> `MisalignedFnPointer
       | `NotAFnPointer
       | `NullDereference

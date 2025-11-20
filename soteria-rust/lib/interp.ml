@@ -136,7 +136,7 @@ module Make (State : State_intf.S) = struct
             let str_ty : Types.ty =
               mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
             in
-            let* ptr, _ = State.alloc_ty str_ty in
+            let* ptr, _ = State.alloc_ty ~kind:StaticString str_ty in
             let ptr = (ptr, Len (BV.usizei len)) in
             let* () = State.store ptr str_ty char_arr in
             let+ () = State.store_str_global str ptr in
@@ -364,9 +364,9 @@ module Make (State : State_intf.S) = struct
         perform_call fn
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
-  and resolve_global ({ id; _ } : Types.global_decl_ref) =
-    let decl = Crate.get_global id in
-    let* v_opt = State.load_global id in
+  and resolve_global (glob : Types.global_decl_ref) =
+    let decl = Crate.get_global glob.id in
+    let* v_opt = State.load_global glob.id in
     match v_opt with
     | Some v -> ok v
     | None ->
@@ -381,8 +381,10 @@ module Make (State : State_intf.S) = struct
           | None -> exec_fun fundef
         in
         (* First we allocate the global and store it in the State  *)
-        let* ptr = State.alloc_ty decl.ty in
-        let* () = State.store_global id ptr in
+        let* ptr =
+          State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span decl.ty
+        in
+        let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in
         let+ () = State.store ptr decl.ty v in
@@ -843,9 +845,7 @@ module Make (State : State_intf.S) = struct
         let* cond = eval_operand cond in
         let cond_int = as_base TBool cond in
         let cond_bool = BV.to_bool cond_int in
-        let cond_bool =
-          if expected = true then cond_bool else Typed.not cond_bool
-        in
+        let cond_bool = if expected then cond_bool else Typed.not cond_bool in
         if%sat cond_bool then ok ()
         else
           match on_failure with

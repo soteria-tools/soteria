@@ -674,7 +674,7 @@ module M (State : State_intf.S) = struct
         let str_ty : Types.ty =
           mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in
-        let* ptr, _ = State.alloc_ty str_ty in
+        let* ptr, _ = State.alloc_ty ~kind:StaticString str_ty in
         let ptr = (ptr, Len (BV.usizei len)) in
         let* () = State.store ptr str_ty char_arr in
         let+ () = State.store_str_global str ptr in

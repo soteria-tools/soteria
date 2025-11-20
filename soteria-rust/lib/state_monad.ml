@@ -123,11 +123,15 @@ module Make (State : State_intf.S) = struct
 
     let[@inline] store ptr ty v = lift_state_op (store ptr ty v)
     let[@inline] zeros ptr size = lift_state_op (zeros ptr size)
-    let[@inline] alloc_ty ty = lift_state_op (alloc_ty ty)
-    let[@inline] alloc_tys tys = lift_state_op (alloc_tys tys)
 
-    let[@inline] alloc_untyped ~zeroed ~size ~align =
-      lift_state_op (alloc_untyped ~zeroed ~size ~align)
+    let[@inline] alloc_ty ?kind ?span ty =
+      lift_state_op (alloc_ty ?kind ?span ty)
+
+    let[@inline] alloc_tys ?kind ?span tys =
+      lift_state_op (alloc_tys ?kind ?span tys)
+
+    let[@inline] alloc_untyped ?kind ?span ~zeroed ~size ~align () =
+      lift_state_op (alloc_untyped ?kind ?span ~zeroed ~size ~align)
 
     let[@inline] copy_nonoverlapping ~src ~dst ~size =
       lift_state_op (copy_nonoverlapping ~src ~dst ~size)

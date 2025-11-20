@@ -20,7 +20,7 @@ module M (State : State_intf.S) = struct
       State.assert_ (Usize.(1s) <=@ align &&@ (size <@ max_size)) `InvalidAlloc
     in
     let align = Typed.cast align in
-    let+ ptr = State.alloc_untyped ~zeroed ~size ~align in
+    let+ ptr = State.alloc_untyped ~zeroed ~size ~align () in
     Ptr ptr
 
   let dealloc args =
@@ -58,7 +58,7 @@ module M (State : State_intf.S) = struct
     in
     let align = Typed.cast align in
     let size = Typed.cast_i Usize size in
-    let* new_ptr = State.alloc_untyped ~zeroed:false ~size ~align in
+    let* new_ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
     let* () =
       if%sat size >=@ prev_size then
         State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size:prev_size
