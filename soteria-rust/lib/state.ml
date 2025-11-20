@@ -188,7 +188,10 @@ let with_ptr (ptr : Sptr.t) (st : t)
   let open DecayMapMonad in
   let open DecayMapMonad.Syntax in
   let* res =
-    (SPmap.wrap (With_meta.wrap (Freeable.wrap (fun st -> f (ofs, st)))))
+    (SPmap.wrap (function
+      | Some ({ info = Some { kind = Function _; _ }; _ } : block) ->
+          Result.error `AccessedFnPointer
+      | block -> With_meta.wrap (Freeable.wrap (fun st -> f (ofs, st))) block))
       loc state
   in
   match res with
@@ -545,8 +548,8 @@ let unprotect (ptr, _) (ty : Types.ty) st =
     | Missing fixes -> Missing fixes
     | Error `UseAfterFree -> Error `RefInvalidatedEarly
     | Error
-        ((`AliasingError | `NullDereference | `OutOfBounds | `UBDanglingPointer)
-         as e) ->
+        (( `AliasingError | `NullDereference | `OutOfBounds | `UBDanglingPointer
+         | `AccessedFnPointer ) as e) ->
         Error e
   in
   let@ () = with_error_loc_as_call_trace st in

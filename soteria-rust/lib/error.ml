@@ -18,6 +18,7 @@ type t =
     (** Tried calling a function pointer with a non-0 offset *)
   | `NotAFnPointer
     (** Tried calling a function pointer, but it doesn't represent a function *)
+  | `AccessedFnPointer  (** Tried accessing a function pointer's pointee *)
   | `InvalidFnArgCount of int * int
     (** Invalid argument count for function (function pointers only)
         [(expected, received)] *)
@@ -62,6 +63,7 @@ let is_unwindable : [> t ] -> bool = function
   | _ -> false
 
 let pp ft : [> t ] -> unit = function
+  | `AccessedFnPointer -> Fmt.string ft "Accessed function pointer's pointee"
   | `AliasingError -> Fmt.string ft "Aliasing error"
   | `Breakpoint -> Fmt.string ft "Breakpoint hit"
   | `DeadVariable -> Fmt.string ft "Dead variable accessed"

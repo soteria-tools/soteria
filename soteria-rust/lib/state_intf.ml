@@ -41,7 +41,8 @@ module type S = sig
       | `MisalignedPointer of
         T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -58,7 +59,8 @@ module type S = sig
       | `AliasingError
       | `MisalignedPointer of
         T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -78,7 +80,8 @@ module type S = sig
       | `MisalignedPointer of
         T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -99,7 +102,8 @@ module type S = sig
       | `UBDanglingPointer
       | `UBTransmute of string
       | `UninitializedMemoryAccess
-      | `UseAfterFree ]
+      | `UseAfterFree
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -149,7 +153,8 @@ module type S = sig
       | `UBDanglingPointer
       | `UBTransmute of string
       | `UninitializedMemoryAccess
-      | `UseAfterFree ]
+      | `UseAfterFree
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -161,7 +166,11 @@ module type S = sig
     size:sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      [> `NullDereference
+      | `OutOfBounds
+      | `UseAfterFree
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -172,7 +181,11 @@ module type S = sig
     Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      [> `NullDereference
+      | `OutOfBounds
+      | `UseAfterFree
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -183,7 +196,11 @@ module type S = sig
     sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      [> `NullDereference
+      | `OutOfBounds
+      | `UseAfterFree
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -228,7 +245,12 @@ module type S = sig
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree | `UBDanglingPointer ] err * t,
+      [> `NullDereference
+      | `UseAfterFree
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
+      err
+      * t,
       serialized )
     Result.t
 
@@ -242,7 +264,8 @@ module type S = sig
       | `UseAfterFree
       | `OutOfBounds
       | `AliasingError
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -257,7 +280,8 @@ module type S = sig
       | `RefInvalidatedEarly
       | `OutOfBounds
       | `AliasingError
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -288,13 +312,7 @@ module type S = sig
     full_ptr ->
     t ->
     ( Types.fun_decl_ref * t,
-      [> `MisalignedFnPointer
-      | `NotAFnPointer
-      | `NullDereference
-      | `UseAfterFree
-      | `UBDanglingPointer ]
-      err
-      * t,
+      [> `MisalignedFnPointer | `NotAFnPointer ] err * t,
       serialized )
     Result.t
 end

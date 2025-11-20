@@ -65,6 +65,31 @@ Test that we properly handle the niche optimisation
 Test function calls on function pointers
   $ soteria-rust rustc fn_ptr.rs --clean --no-timing
   Compiling... done in <time>
-  note: main: done in <time>, ran 1 branch
+  note: fn_ptr_call: done in <time>, ran 1 branch
   PC 1: empty
   
+  error: fn_ptr_read: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Accessed function pointer's pointee in fn_ptr_read
+      ┌─ $TESTCASE_ROOT/fn_ptr.rs:25:19
+   21 │  fn fn_ptr_read() {
+      │   ---------------- 1: Entry point
+   22 │      let add: fn(u8, u8) -> u8 = add;
+   23 │      let ptr = add as *const u8;
+   24 │      unsafe {
+   25 │          let _b = *ptr;
+      │                    ^^^^ Triggering memory operation
+  PC 1: empty
+  
+  error: fn_ptr_write: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Accessed function pointer's pointee in fn_ptr_write
+      ┌─ $TESTCASE_ROOT/fn_ptr.rs:34:10
+   30 │  fn fn_ptr_write() {
+      │   ----------------- 1: Entry point
+   31 │      let add: fn(u8, u8) -> u8 = add;
+   32 │      let ptr = add as *mut u8;
+   33 │      unsafe {
+   34 │          *ptr = 0;
+      │           ^^^^^^^^ Triggering memory operation
+  PC 1: empty
+  
+  [1]
