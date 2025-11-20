@@ -16,7 +16,7 @@ module type S = sig
   type 'a err
 
   val add_to_call_trace :
-    'a err -> Meta.span Soteria.Terminal.Call_trace.element -> 'a err
+    'a err -> Meta.span_data Soteria.Terminal.Call_trace.element -> 'a err
 
   val pp : t Fmt.t
 
@@ -107,7 +107,7 @@ module type S = sig
 
   val alloc_untyped :
     ?kind:Alloc_meta.kind ->
-    ?span:Meta.span ->
+    ?span:Meta.span_data ->
     zeroed:bool ->
     size:sint Typed.t ->
     align:nonzero Typed.t ->
@@ -116,14 +116,14 @@ module type S = sig
 
   val alloc_ty :
     ?kind:Alloc_meta.kind ->
-    ?span:Meta.span ->
+    ?span:Meta.span_data ->
     Types.ty ->
     t ->
     (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_tys :
     ?kind:Alloc_meta.kind ->
-    ?span:Meta.span ->
+    ?span:Meta.span_data ->
     Types.ty list ->
     t ->
     (full_ptr list * t, [> ] err * t, serialized) Result.t

@@ -15,7 +15,7 @@ module Make (State : State_intf.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
-  exception Unsupported of (string * Meta.span)
+  exception Unsupported of (string * Meta.span_data)
 
   open InterpM
   open InterpM.Syntax
@@ -382,7 +382,8 @@ module Make (State : State_intf.S) = struct
         in
         (* First we allocate the global and store it in the State  *)
         let* ptr =
-          State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span decl.ty
+          State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
+            decl.ty
         in
         let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
@@ -803,9 +804,8 @@ module Make (State : State_intf.S) = struct
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
     L.trace (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_statement_kind stmt.kind);
-    let { span = loc; kind = stmt; _ } : UllbcAst.statement = stmt in
-    let@ () = with_loc ~loc in
-    match stmt with
+    let@ () = with_loc ~loc:stmt.span.data in
+    match stmt.kind with
     | Nop -> ok ()
     | Assign (({ ty; _ } as place), rval) ->
         let* ptr = resolve_place place in
@@ -833,7 +833,7 @@ module Make (State : State_intf.S) = struct
             let _, drop_ref = List.hd impl.methods in
             let drop = Crate.get_fun drop_ref.binder_value.id in
             let fun_exec =
-              with_extra_call_trace ~loc ~msg:"Drop"
+              with_extra_call_trace ~loc:stmt.span.data ~msg:"Drop"
               @@ with_env ~env:()
               @@ exec_fun drop [ Ptr place_ptr ]
             in
@@ -878,9 +878,8 @@ module Make (State : State_intf.S) = struct
     let^ () = Rustsymex.consume_fuel_steps 1 in
     let* () = fold_list statements ~init:() ~f:(fun () -> exec_stmt) in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
-    let { span = loc; kind = term; _ } : UllbcAst.terminator = terminator in
-    let@ () = with_loc ~loc in
-    match term with
+    let@ () = with_loc ~loc:terminator.span.data in
+    match terminator.kind with
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
         let out_ty = ty in
@@ -931,7 +930,7 @@ module Make (State : State_intf.S) = struct
               Fmt.(list ~sep:(any ", ") pp_rust_val)
               args);
         let fun_exec =
-          with_extra_call_trace ~loc ~msg:"Call trace"
+          with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
           @@ with_env ~env:()
           @@ exec_fun args
         in
@@ -1023,15 +1022,14 @@ module Make (State : State_intf.S) = struct
     | UnwindResume -> State.pop_error ()
 
   and exec_fun (fundef : UllbcAst.fun_decl) args : (rust_val, unit) InterpM.t =
-    (* Put arguments in store *)
-    let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
+    let name = fundef.item_meta.name in
     let* body =
-      match body with
+      match fundef.body with
       | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> ok body
     in
     let@@ () = with_env ~env:Store.empty in
-    let@ () = with_loc ~loc in
+    let@ () = with_loc ~loc:fundef.item_meta.span.data in
     L.info (fun m ->
         m "Calling %a with %a" Crate.pp_name name
           Fmt.(hbox @@ brackets @@ list ~sep:comma pp_rust_val)
@@ -1056,12 +1054,12 @@ module Make (State : State_intf.S) = struct
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = InterpM.run ~env:() ~state in
     let@@ () =
-      with_extra_call_trace ~loc:fundef.item_meta.span ~msg:"Entry point"
+      with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let* value = exec_fun fundef args in
     if !Config.current.ignore_leaks then ok value
     else
-      let@ () = with_loc ~loc:fundef.item_meta.span in
+      let@ () = with_loc ~loc:fundef.item_meta.span.data in
       let+ () = State.leak_check () in
       value
 end

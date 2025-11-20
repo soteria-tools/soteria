@@ -8,5 +8,9 @@ type kind =
   | StaticString
 [@@deriving show { with_path = false }]
 
-type t = { alignment : Typed.T.nonzero Typed.t; kind : kind; span : Meta.span }
+type t = {
+  alignment : Typed.T.nonzero Typed.t;
+  kind : kind;
+  span : Meta.span_data;
+}
 [@@deriving show { with_path = false }]

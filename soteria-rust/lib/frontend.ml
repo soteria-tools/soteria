@@ -469,8 +469,7 @@ let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
 module Diagnostic = struct
   let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col)
 
-  let as_ranges (loc : Charon.Meta.span) =
-    let span = Option.value ~default:loc.data loc.generated_from_span in
+  let as_ranges (span : Charon.Meta.span_data) =
     match span.file.name with
     | Local file when String.starts_with ~prefix:"/rustc/" file -> []
     | Local file ->

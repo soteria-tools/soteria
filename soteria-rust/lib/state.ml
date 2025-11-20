@@ -7,7 +7,7 @@ open Typed.Syntax
 module T = Typed.T
 open Rustsymex
 
-type 'a err = 'a * Charon.Meta.span Soteria.Terminal.Call_trace.t
+type 'a err = 'a * Charon.Meta.span_data Soteria.Terminal.Call_trace.t
 
 let add_to_call_trace (err, trace_elem) trace_elem' =
   (err, trace_elem' :: trace_elem)
@@ -143,7 +143,7 @@ let empty =
 let log action ptr st =
   L.trace (fun m ->
       m "About to execute action: %s at %a (%a)@\n@[<2>STATE:@ %a@]" action
-        Sptr.pp ptr Charon_util.pp_span (get_loc ())
+        Sptr.pp ptr Charon_util.pp_span_data (get_loc ())
         (pp_pretty ~ignore_freed:true)
         st)
 
@@ -637,7 +637,7 @@ let declare_fn fn_def ({ functions; _ } as st) =
       (* FIXME: should we use [SPmap.alloc] here instead? What would go in the map? *)
       let fn = Crate.get_fun fn_def.id in
       let++ ((ptr, _) as fptr), st =
-        alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span
+        alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span.data
           ~zeroed:false
           ~size:Usize.(0s)
           ~align:Usize.(1s)
