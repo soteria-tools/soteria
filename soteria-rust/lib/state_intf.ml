@@ -3,6 +3,7 @@ open T
 open Rustsymex
 open Charon
 open Rust_val
+open Sptr
 
 module type S = sig
   module Sptr : Sptr.S
@@ -37,7 +38,8 @@ module type S = sig
       | `UseAfterFree
       | `UBTransmute of string
       | `AliasingError
-      | `MisalignedPointer
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
       | `UBDanglingPointer ]
       err
@@ -54,7 +56,8 @@ module type S = sig
       | `OutOfBounds
       | `UseAfterFree
       | `AliasingError
-      | `MisalignedPointer
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `UBDanglingPointer ]
       err
       * t,
@@ -72,7 +75,8 @@ module type S = sig
       | `UseAfterFree
       | `UBTransmute of string
       | `AliasingError
-      | `MisalignedPointer
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
       | `UBDanglingPointer ]
       err
@@ -86,12 +90,16 @@ module type S = sig
     Sptr.t rust_val ->
     t ->
     ( unit * t,
-      [> `NullDereference
+      [> `AliasingError
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
+      | `NullDereference
       | `OutOfBounds
-      | `AliasingError
-      | `UseAfterFree
-      | `MisalignedPointer
-      | `UBDanglingPointer ]
+      | `RefToUninhabited
+      | `UBDanglingPointer
+      | `UBTransmute of string
+      | `UninitializedMemoryAccess
+      | `UseAfterFree ]
       err
       * t,
       serialized )
@@ -118,10 +126,24 @@ module type S = sig
   val is_valid_ptr : t -> full_ptr -> Types.ty -> bool Rustsymex.t
 
   val check_ptr_align :
-    Sptr.t ->
+    full_ptr ->
     Types.ty ->
     t ->
-    (unit * t, [> `MisalignedPointer ] err * t, serialized) Result.t
+    ( unit * t,
+      [> `AliasingError
+      | `MisalignedPointer of
+        T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
+      | `NullDereference
+      | `OutOfBounds
+      | `RefToUninhabited
+      | `UBDanglingPointer
+      | `UBTransmute of string
+      | `UninitializedMemoryAccess
+      | `UseAfterFree ]
+      err
+      * t,
+      serialized )
+    Result.t
 
   val copy_nonoverlapping :
     dst:full_ptr ->
@@ -164,6 +186,8 @@ module type S = sig
     t ->
     ('ok, ([< Error.t ] as 'err), 'f) Result.t ->
     ('ok, 'err err * t, 'f) Result.t
+
+  val with_decay_map : 'a DecayMapMonad.t -> t -> ('a * t) Rustsymex.t
 
   val assert_ :
     sbool Typed.t ->
@@ -260,5 +284,5 @@ module type S = sig
       err
       * t,
       serialized )
-    SYMEX.Result.t
+    Result.t
 end

@@ -21,9 +21,8 @@ module type S = sig
   type +'a t
   type +'a ty
 
-  module S_bool : S_bool.S with type +'a v = 'a t
+  module S_bool : S_bool.S with type 'a v = 'a t
 
-  val sem_eq : 'a t -> 'a t -> S_bool.t t
   val ppa : Format.formatter -> 'a t -> unit
   val iter_vars : 'a t -> 'b ty Var.iter_vars
   val subst : (Var.t -> Var.t) -> 'a t -> 'a t

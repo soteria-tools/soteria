@@ -3,6 +3,7 @@ open Rustsymex
 open Rustsymex.Syntax
 module BV = Typed.BitVec
 open Charon
+open Sptr
 
 module Make (State : State_intf.S) = struct
   (* utilities *)
@@ -171,6 +172,16 @@ module Make (State : State_intf.S) = struct
       let++ res = lift_err state sym in
       (res, env, state)
 
+    let[@inline] with_decay_map_res (f : ('a, 'e, 'f) DecayMapMonad.Result.t) =
+     fun env state ->
+      let* res, state = with_decay_map f state in
+      lift_err (return res) env state
+
+    let[@inline] with_decay_map f =
+     fun env state ->
+      let+ res, state = with_decay_map f state in
+      Ok (res, env, state)
+
     let[@inline] assert_ guard err =
      fun env state ->
       let++ () = assert_ (guard :> Typed.T.sbool Typed.t) err state in
@@ -186,6 +197,10 @@ module Make (State : State_intf.S) = struct
     let ( let^+ ) x f = map (lift_symex x) f
     let ( let^^ ) x f = bind (State.lift_err x) f
     let ( let^^+ ) x f = map (State.lift_err x) f
+    let ( let$ ) x f = bind (State.with_decay_map x) f
+    let ( let$+ ) x f = map (State.with_decay_map x) f
+    let ( let$$ ) x f = bind (State.with_decay_map_res x) f
+    let ( let$$+ ) x f = map (State.with_decay_map_res x) f
 
     module Symex_syntax = struct
       let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =

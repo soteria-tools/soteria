@@ -1,10 +1,10 @@
+open Soteria.Symex.Compo_res
+open Rust_val
 open Rustsymex.Syntax
 open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
 open Rustsymex
-module Sptr = Sptr.ArithPtr
-module Encoder = Encoder.Make (Sptr)
 
 type 'a err = 'a * Charon.Meta.span Soteria.Terminal.Call_trace.t
 
@@ -29,76 +29,72 @@ let lift_err st (symex : ('a, 'e, 'f) Result.t) =
 
 let assert_ guard err st = lift_err st (assert_or_error guard err)
 
+(* State details *)
+module DecayMap = Sptr.DecayMap
+module DecayMapMonad = Sptr.DecayMapMonad
+module Sptr = Sptr.ArithPtr
+module Encoder = Encoder.Make (Sptr)
+
+(* State combinators *)
+
 module StateKey = struct
   include Typed
-  module Symex = Rustsymex.SYMEX
-  (* FIXME: Rustsymex.SYMEX instead of just Rustsymex because Rustsymex overrides the L module right now. *)
+  module Symex = DecayMapMonad
 
   type t = T.sloc Typed.t
 
   let pp = ppa
+  let i = ref 0
 
-  (* let fresh ?constrs () = Rustsymex.nondet ?constrs Typed.t_loc *)
-  let indices = ref 0
+  let fresh_rsym () =
+    incr i;
+    return (Ptr.loc_of_int !i)
 
-  (* We know all keys are distinct, so we avoid the extra assertion *)
-  let distinct _ = Typed.v_true
+  let distinct _ = v_true
+  let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
+  let simplify = DecayMapMonad.simplify
 
-  (* This *only* works in WPST!!! *)
-  let fresh () =
-    incr indices;
-    Rustsymex.return (Ptr.loc_of_int !indices)
+  (* The above only works in WPST -- otherwise, use:
+  let fresh () = nondet (Typed.t_sloc ()) *)
 end
 
-module SPmap = Pmap_direct_access (StateKey)
+module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
+module SPmap = Soteria.Sym_states.Pmap.Direct_access (DecayMapMonad) (StateKey)
+module Bi = Soteria.Sym_states.Bi_abd.Make (DecayMapMonad)
 module Tree_block = Rtree_block.Make (Sptr)
 
 type global = String of string | Global of Charon.Types.global_decl_id
-[@@deriving show { with_path = false }, ord]
 
-module GlobMap = struct
-  include Map.Make (struct
-    type t = global
-
-    let compare = compare_global
-  end)
-
-  let pp pp_v fmt m =
-    let pp_pair = Fmt.pair ~sep:(Fmt.any " -> ") pp_global pp_v in
-    (Fmt.iter_bindings ~sep:Fmt.comma iter pp_pair) fmt m
-end
+module GlobMap = Map.MakePp (struct
+  type t = global = String of string | Global of Charon.Types.global_decl_id
+  [@@deriving show { with_path = false }, ord]
+end)
 
 module FunBiMap = struct
-  module LocMap = Map.Make (struct
-    type t = T.sloc Typed.t
+  include
+    Bimap.Make
+      (struct
+        type t = T.sloc Typed.t
 
-    let compare = Typed.compare
-  end)
+        let compare = Typed.compare
+        let pp = Typed.ppa
+      end)
+      (struct
+        type t = Charon.Types.fn_ptr
 
-  module FunMap = Map.Make (struct
-    type t = Charon.Types.fn_ptr
+        let compare = Charon.Types.compare_fn_ptr
+        let pp = Charon.Types.pp_fn_ptr
+      end)
 
-    let compare = Charon.Types.compare_fn_ptr
-  end)
-
-  type t = Charon.Types.fn_ptr LocMap.t * T.sloc Typed.t FunMap.t
-
-  let empty = (LocMap.empty, FunMap.empty)
-
-  let add loc fn_ptr (lmap, fmap) =
-    let lmap' = LocMap.add loc fn_ptr lmap in
-    let fmap' = FunMap.add fn_ptr loc fmap in
-    (lmap', fmap')
-
-  let get_fn loc (lmap, _) = LocMap.find_opt loc lmap
-  let get_loc fn (_, fmap) = FunMap.find_opt fn fmap
-
-  let pp fmt (lmap, _) =
-    let pp_pair =
-      Fmt.pair ~sep:(Fmt.any " -> ") Typed.ppa Charon.Types.pp_fn_ptr
-    in
-    (Fmt.iter_bindings ~sep:Fmt.comma LocMap.iter pp_pair) fmt lmap
+  let get_fn = find_l
+  let get_loc = find_r
 end
+
+(* TODO: we want to store additional metadata with each allocation:
+   - the type of allocation (Memory, VTable, Function, Static), to better detect more forms UB,
+     e.g. writing to static memory, casting between mismatched VTables, etc.
+     See: https://github.com/rust-lang/rust/blob/be0ade2b602bdfe37a3cc259fcc79e8624dcba94/compiler/rustc_middle/src/mir/interpret/mod.rs#L260-L276
+   - the source of the allocation (for nicer memory leak error messages) *)
 
 type sub = Tree_block.t * Tree_borrow.t
 
@@ -107,6 +103,7 @@ and t = {
   functions : FunBiMap.t;
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
+  pointers : DecayMap.t option;
 }
 [@@deriving show { with_path = false }]
 
@@ -131,6 +128,7 @@ let empty =
     functions = FunBiMap.empty;
     globals = GlobMap.empty;
     errors = [];
+    pointers = None;
   }
 
 let log action ptr st =
@@ -141,47 +139,35 @@ let log action ptr st =
         st)
 
 let with_state st f =
-  let open Soteria.Symex.Compo_res in
-  let+ res = f st.state in
+  let+ res, pointers =
+    DecayMapMonad.with_state ~state:st.pointers @@ f st.state
+  in
   match res with
-  | Ok (v, h) -> Ok (v, { st with state = h })
+  | Ok (v, state) -> Ok (v, { st with state; pointers })
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
 let with_tbs b f =
+  let open DecayMapMonad.Syntax in
   let block, tree_borrow =
     match b with
-    | None -> (None, Tree_borrow.init ~state:UB ())
+    | None -> (None, Tree_borrow.ub_state)
     | Some (block, tb) -> (Some block, tb)
   in
   let+ res = f (block, tree_borrow) in
   match res with
-  | Soteria.Symex.Compo_res.Ok (v, block) ->
-      let block = Option.map (fun b -> (b, tree_borrow)) block in
-      Soteria.Symex.Compo_res.Ok (v, block)
+  | Ok (v, b) -> Ok (v, Option.map (fun b -> (b, tree_borrow)) b)
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
-let check_ptr_align (ptr : Sptr.t) ty st =
-  let* exp_align = Layout.align_of_s ty in
-  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-  (* 0-based pointers are aligned up to their offset *)
-  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
-  L.debug (fun m ->
-      m "Checking pointer alignment of %a: ofs %a mod %a / expect %a for %a"
-        Sptr.pp ptr Typed.ppa ofs Typed.ppa align Typed.ppa exp_align
-        Charon_util.pp_ty ty);
-  let++ () =
-    assert_
-      (ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s)))
-      `MisalignedPointer st
-  in
-  ((), st)
+let with_decay_map f st =
+  let+ res, pointers = DecayMapMonad.with_state ~state:st.pointers f in
+  (res, { st with pointers })
 
 let with_ptr (ptr : Sptr.t) (st : t)
     (f :
       [< T.sint ] Typed.t * sub option ->
-      ('a * sub option, 'err, 'fix list) Result.t) :
+      ('a * sub option, 'err, 'fix list) DecayMapMonad.Result.t) :
     ('a * t, 'err, serialized) Result.t =
   let** () =
     assert_or_error
@@ -190,6 +176,8 @@ let with_ptr (ptr : Sptr.t) (st : t)
   in
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   let@ state = with_state st in
+  let open DecayMapMonad in
+  let open DecayMapMonad.Syntax in
   let* res = (SPmap.wrap (Freeable.wrap (fun st -> f (ofs, st)))) loc state in
   match res with
   | Missing _ as miss ->
@@ -205,9 +193,11 @@ let with_ptr (ptr : Sptr.t) (st : t)
     For instance, if a function pointer hiding as a pointer is passed to a
     function, protecting it should do nothing, and should be allowed. *)
 let with_opt_or (x : 'a option) (otherwise : 'b)
-    (f : 'a -> ('b * 'a option, 'err, 'f) Result.t) :
-    ('b * 'a option, 'err, 'f) Result.t =
-  match x with Some v -> f v | None -> Result.ok (otherwise, None)
+    (f : 'a -> ('b * 'a option, 'err, 'f) DecayMapMonad.Result.t) :
+    ('b * 'a option, 'err, 'f) DecayMapMonad.Result.t =
+  match x with
+  | Some v -> f v
+  | None -> DecayMapMonad.Result.ok (otherwise, None)
 
 let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -218,42 +208,69 @@ let uninit (ptr, _) ty st =
   let@ block, _ = with_tbs block in
   Tree_block.uninit_range ofs size block
 
-let apply_parser ?(ignore_borrow = false) ptr parser st =
+let apply_parser (type a) ?(ignore_borrow = false) ptr
+    (parser : offset:T.sint Typed.t -> (a, 's, 'e, 'f) Encoder.ParserMonad.t) st
+    : (a * t, 'e err * t, serialized) Result.t =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   log "load" ptr st;
   let@ offset, block = with_ptr ptr st in
   let@ block, tb = with_tbs block in
-  let handler (ty, ofs) block =
-    L.debug (fun f ->
-        f "Loading blocks %a:%a" Typed.ppa ofs Charon_util.pp_ty ty);
-    Tree_block.load ~ignore_borrow ofs ty ptr.tag tb block
+  let handler (ty, ofs) = Tree_block.load ~ignore_borrow ofs ty ptr.tag tb in
+  Encoder.ParserMonad.parse ~init:block ~handler @@ parser ~offset
+
+let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Charon.Types.ty) st =
+  (* The expected alignment of a dyn pointer is stored inside the VTable  *)
+  let** exp_align, st =
+    match (ty, meta) with
+    | TDynTrait _, VTable vt ->
+        let usize = Charon.Types.TLiteral (TUInt Usize) in
+        let** ptr =
+          lift_err st @@ Sptr.offset ~ty:usize ~signed:false vt Usize.(2s)
+        in
+        let++ align, st = load (ptr, Thin) usize st in
+        (Typed.cast (as_base_i Usize align), st)
+    | _ ->
+        let+ align = Layout.align_of_s ty in
+        Ok (align, st)
   in
-  let parser = parser ~offset in
-  Encoder.ParserMonad.parse ~init:block ~handler parser
+  L.debug (fun m ->
+      m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
+        Typed.ppa exp_align Charon_util.pp_ty ty);
+  (* 0-based pointers are aligned up to their offset *)
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
+  let++ () =
+    assert_
+      (Sptr.is_aligned exp_align ptr)
+      (`MisalignedPointer (exp_align, align, ofs))
+      st
+  in
+  ((), st)
 
-let load_discriminant (ptr, _) ty st =
-  let** (), st = check_ptr_align ptr ty st in
-  let parser = Encoder.variant_of_enum ty in
-  apply_parser ptr parser st
-
-let load ?(is_move = false) ?(ignore_borrow = false) (ptr, meta) ty st =
-  let** (), st = check_ptr_align ptr ty st in
-  let parser ~offset = Encoder.rust_of_cvals ?meta ~offset ty in
+and load ?(is_move = false) ?(ignore_borrow = false) ((ptr, meta) as fptr) ty st
+    =
+  let** (), st = check_ptr_align fptr ty st in
+  let parser ~offset = Encoder.rust_of_cvals ~meta ty ~offset in
   let** value, st = apply_parser ~ignore_borrow ptr parser st in
   let++ (), st =
     if is_move then
+      let* size = Layout.size_of_s ty in
       let@ () = with_error_loc_as_call_trace st in
       let@ () = with_loc_err () in
       let@ ofs, block = with_ptr ptr st in
       let@ block, _ = with_tbs block in
-      let* size = Layout.size_of_s ty in
       Tree_block.uninit_range ofs size block
     else Result.ok ((), st)
   in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   (value, st)
+
+let load_discriminant ((ptr, _) as fptr) ty st =
+  let** (), st = check_ptr_align fptr ty st in
+  let parser ~offset = Encoder.variant_of_enum ty ~offset in
+  apply_parser ptr parser st
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -272,16 +289,19 @@ let tb_load (ptr, _) ty st =
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns true if the value was read successfully,
     false otherwise. *)
-let is_valid_ptr st ptr ty =
-  L.debug (fun m -> m "The following read is a GHOST read");
-  let+ res = load ~ignore_borrow:true ptr ty st in
-  match res with Ok _ -> true | _ -> false
+let is_valid_ptr st ptr (ty : Charon.Types.ty) =
+  (* FIXME: i am not certain how one checks for the validity of a DST *)
+  if Layout.is_dst ty then return true
+  else (
+    L.debug (fun m -> m "The following read is a GHOST read");
+    let+ res = load ~ignore_borrow:true ptr ty st in
+    match res with Ok _ -> true | _ -> false)
 
-let store (ptr, _) ty sval st =
+let store ((ptr, _) as fptr) ty sval st =
   let parts = Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
-    let** (), st = check_ptr_align ptr ty st in
+    let** (), st = check_ptr_align fptr ty st in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     L.debug (fun f ->
@@ -289,9 +309,11 @@ let store (ptr, _) ty sval st =
           Fmt.(list ~sep:comma Encoder.pp_cval_info)
           parts);
     log "store" ptr st;
+    let* size = Layout.size_of_s ty in
     let@ ofs, block = with_ptr ptr st in
     let@ block, tb = with_tbs block in
-    let* size = Layout.size_of_s ty in
+    let open DecayMapMonad in
+    let open DecayMapMonad.Syntax in
     (* We uninitialise the whole range before writing, to ensure padding bytes are copied if
            there are any. *)
     let** (), block = Tree_block.uninit_range ofs size block in
@@ -303,11 +325,14 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   let** tree_to_write, st =
+    let open DecayMapMonad.Syntax in
     let@ ofs, block = with_ptr src st in
     let@ block, _ = with_tbs block in
     let++ tree, _ = Tree_block.get_raw_tree_owned ofs size block in
     (tree, block)
   in
+  let open DecayMapMonad in
+  let open DecayMapMonad.Syntax in
   let@ ofs, block = with_ptr dst st in
   let@ block, _ = with_tbs block in
   (* We need to be careful about tree borrows; the tree we copy has a tree borrow state inside,
@@ -360,19 +385,19 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
 let alloc ?zeroed size align st =
   (* Commenting this out as alloc cannot fail *)
   (* let@ () = with_loc_err () in*)
-  let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
-  let tb = Tree_borrow.init ~state:Unique () in
+  let@ state = with_state st in
+  let open DecayMapMonad in
+  let open DecayMapMonad.Syntax in
+  let tb, tag = Tree_borrow.init ~state:Unique () in
   let block = Tree_block.alloc ?zeroed size in
   let block = Freeable.Alive (block, tb) in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
-  let ptr : Sptr.t Rust_val.full_ptr =
-    ({ ptr; tag = tb.tag; align; size }, None)
-  in
+  let ptr : Sptr.t Rust_val.full_ptr = ({ ptr; tag; align; size }, Thin) in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-  Soteria.Symex.Compo_res.ok (ptr, state)
+  ok (ptr, state)
 
 let alloc_untyped ~zeroed ~size ~align st = alloc ~zeroed size align st
 
@@ -384,39 +409,35 @@ let alloc_ty ty st =
     st
 
 let alloc_tys tys st =
-  let@ state = with_state st in
   let@ () = with_error_loc_as_call_trace st in
-  SPmap.allocs state ~els:tys ~fn:(fun ty loc ->
+  let@ st = with_state st in
+  SPmap.allocs st ~els:tys ~fn:(fun ty loc ->
+      let open DecayMapMonad in
+      let open DecayMapMonad.Syntax in
       (* make Tree_block *)
-      let* layout = Layout.layout_of_s ty in
+      let* layout = lift @@ Layout.layout_of_s ty in
       let size = Typed.BitVec.usizei layout.size in
-      let tb = Tree_borrow.init ~state:Unique () in
+      let tb, tag = Tree_borrow.init ~state:Unique () in
       let block = Freeable.Alive (Tree_block.alloc size, tb) in
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
       let ptr = Typed.Ptr.mk loc Usize.(0s) in
-      let ptr : Sptr.t =
-        {
-          ptr;
-          tag = tb.tag;
-          align = Typed.BitVec.usizeinz layout.align;
-          size = Typed.BitVec.usizei layout.size;
-        }
-      in
-      (block, (ptr, None)))
+      let size = Typed.BitVec.usizei layout.size in
+      let align = Typed.BitVec.usizeinz layout.align in
+      let ptr : Sptr.t = { ptr; tag; align; size } in
+      (block, (ptr, Thin)))
 
-let free (({ ptr; _ } : Sptr.t), _) ({ state; _ } as st) =
+let free (({ ptr; _ } : Sptr.t), _) st =
   let** () = assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree st in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   (* TODO: does the tag not play a role in freeing? *)
-  let++ (), state =
-    SPmap.wrap
-      (Freeable.free ~assert_exclusively_owned:(fun t ->
-           Tree_block.assert_exclusively_owned @@ Option.map fst t))
-      (Typed.Ptr.loc ptr) state
-  in
-  ((), { st with state })
+  let@ st = with_state st in
+  L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
+  SPmap.wrap
+    (Freeable.free ~assert_exclusively_owned:(fun t ->
+         Tree_block.assert_exclusively_owned @@ Option.map fst t))
+    (Typed.Ptr.loc ptr) st
 
 let zeros (ptr, _) size st =
   let@ () = with_error_loc_as_call_trace st in
@@ -448,9 +469,6 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
   if Tree_borrow.is_disabled () || (kind = BShared && Layout.is_unsafe_cell ty)
   then Result.ok ((ptr, meta), st)
   else
-    let@ () = with_error_loc_as_call_trace st in
-    let@ () = with_loc_err () in
-    let@ _, block = with_ptr ptr st in
     let* tag_st =
       match kind with
       | BShared -> return Tree_borrow.Frozen
@@ -460,46 +478,49 @@ let borrow (ptr, meta) (ty : Charon.Types.ty)
       | BUniqueImmutable -> return @@ Tree_borrow.Reserved false
       | BShallow -> Fmt.kstr not_impl "Unhandled borrow kind: BShallow"
     in
-    let node = Tree_borrow.init ~state:tag_st () in
+    let@ () = with_error_loc_as_call_trace st in
+    let@ () = with_loc_err () in
+    let@ _, block = with_ptr ptr st in
     let@ block, tb = with_opt_or block (ptr, meta) in
-    let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
+    let tb', tag = Tree_borrow.add_child ~parent:ptr.tag ~state:tag_st tb in
     let block = Some (block, tb') in
-    let ptr' = { ptr with tag = node.tag } in
+    let ptr' = { ptr with tag } in
     L.debug (fun m ->
         m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
           Tree_borrow.pp_state tag_st);
-    Result.ok ((ptr', meta), block)
+    DecayMapMonad.Result.ok ((ptr', meta), block)
 
 let protect (ptr, meta) (ty : Charon.Types.ty) (mut : Charon.Types.ref_kind) st
     =
   if Tree_borrow.is_disabled () || Layout.is_unsafe_cell ty then
     Result.ok ((ptr, meta), st)
   else
+    let* size = Layout.size_of_s ty in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     let@ ofs, block = with_ptr ptr st in
     let@ block, tb = with_opt_or block (ptr, meta) in
+    let open DecayMapMonad.Syntax in
     let tag_st =
       match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
     in
-    let node = Tree_borrow.init ~state:tag_st ~protector:true () in
-    let tb' = Tree_borrow.add_child ~root:tb ~parent:ptr.tag node in
-    let ptr' = { ptr with tag = node.tag } in
-    let* size = Layout.size_of_s ty in
+    let tb', tag =
+      Tree_borrow.add_child ~parent:ptr.tag ~state:tag_st ~protector:true tb
+    in
+    let ptr' = { ptr with tag } in
     L.debug (fun m ->
         m "Protecting pointer %a -> %a, on [%a;%a]" Sptr.pp ptr Sptr.pp ptr'
           Typed.ppa ofs Typed.ppa size);
     let++ (), block' =
       (* nothing to protect *)
-      if%sat size ==@ Usize.(0s) then Result.ok ((), Some block)
-      else Tree_block.protect ofs size node.tag tb' (Some block)
+      if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), Some block)
+      else Tree_block.protect ofs size tag tb' (Some block)
     in
     let block = Option.map (fun b' -> (b', tb')) block' in
     ((ptr', meta), block)
 
 let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   let lift_freed_err () f =
-    let open Soteria.Symex.Compo_res in
     let+ res = f () in
     match res with
     | Ok v -> Ok v
@@ -513,14 +534,13 @@ let unprotect (ptr, _) (ty : Charon.Types.ty) st =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   let@ () = lift_freed_err () in
-  let@ ofs, block = with_ptr ptr st in
   let* size = Layout.size_of_s ty in
+  let@ ofs, block = with_ptr ptr st in
   let@ block, tb = with_opt_or block () in
-  let tb' =
-    Tree_borrow.update tb (fun n -> { n with protector = false }) ptr.tag
-  in
+  let open DecayMapMonad.Syntax in
+  let tb' = Tree_borrow.unprotect ptr.tag tb in
   let++ (), block' =
-    if%sat size ==@ Usize.(0s) then Result.ok ((), Some block)
+    if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), Some block)
     else Tree_block.unprotect ofs size ptr.tag tb' (Some block)
   in
   let block' = Option.map (fun b' -> (b', tb')) block' in
@@ -538,7 +558,7 @@ let leak_check st =
         | String _ -> Result.ok (loc :: acc, st)
         | Global g -> (
             let glob = Crate.get_global g in
-            let* res = load ~ignore_borrow:true (ptr, None) glob.ty st in
+            let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty st in
             match res with
             | Ok (v, st) ->
                 let ptrs = Layout.ref_tys_in ~include_ptrs:true v glob.ty in
@@ -550,7 +570,9 @@ let leak_check st =
                 Result.ok (loc :: (ptrs @ acc), st)
             | _ -> Result.ok (acc, st)))
   in
-  let@ state = with_state st in
+  let@ st = with_state st in
+  let open DecayMapMonad in
+  let open DecayMapMonad.Syntax in
   let** leaks =
     SPmap.fold
       (fun leaks (k, v) ->
@@ -558,9 +580,9 @@ let leak_check st =
         if Freeable.Freed <> v && not (List.mem k global_addresses) then
           Result.ok (k :: leaks)
         else Result.ok leaks)
-      [] state
+      [] st
   in
-  if List.is_empty leaks then Result.ok ((), state)
+  if List.is_empty leaks then Result.ok ((), st)
   else (
     L.info (fun m ->
         m "Found leaks: %a" Fmt.(list ~sep:(any ", ") Typed.ppa) leaks);
@@ -586,7 +608,8 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
     | None ->
         (* FIXME: once we stop having concrete locations, we'll need to add a distinct
        constraint here. *)
-        let+ loc = StateKey.fresh () in
+        (* FIXME: should we use [SPmap.alloc] here instead? What would go in the map? *)
+        let+ loc = StateKey.fresh_rsym () in
         let functions = FunBiMap.add loc fn_ptr functions in
         (loc, { st with functions })
   in
@@ -596,7 +619,7 @@ let declare_fn fn_ptr ({ functions; _ } as st) =
   let ptr : Sptr.t =
     { ptr; tag = Tree_borrow.zero; align = Usize.(1s); size = Usize.(0s) }
   in
-  Soteria.Symex.Compo_res.Ok ((ptr, None), st)
+  Ok ((ptr, Thin), st)
 
 let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   let** () =
@@ -608,6 +631,7 @@ let lookup_fn (({ ptr; _ } as fptr : Sptr.t), _) ({ functions; _ } as st) =
   match FunBiMap.get_fn loc functions with
   | Some fn -> Result.ok (fn, st)
   | None -> (
+      let open DecayMapMonad in
       let@ _, block = with_ptr fptr st in
       (* If a block exists, we can be sure that this isn't a function pointer *)
       match block with

@@ -1,26 +1,66 @@
+(* Cmdliner.deriving opens Cmdliner.Arg for the frontend argument, without using it.
+   We ignore the warning here. *)
+[@@@warning "-unused-open"]
+
+type frontend = Charon | Obol [@@deriving subliner_enum]
+
 type t = {
+  (*
+     Compilation flags
+   *)
+  cleanup : bool; [@make.default false] [@names [ "clean" ]]
+      (** Clean up compiled files after execution *)
+  log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
+      (** Log the compilation process *)
   no_compile : bool; [@make.default false] [@names [ "no-compile" ]]
       (** Do not compile the Rust code, as it is already compiled *)
-  no_timing : bool; [@make.default false] [@names [ "no-timing" ]]
-      (** Do not display execution times *)
-  cleanup : bool; [@make.default false] [@names [ "clean" ]]
-      (** Clean up compiles files after execution *)
-  ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
-      (** Ignore memory leaks *)
-  ignore_aliasing : bool; [@make.default false] [@names [ "ignore-aliasing" ]]
-      (** Ignore pointer aliasing rules (tree borrows) *)
-  monomorphize_experimental : bool;
-      [@make.default false] [@names [ "monomorphize-experimental" ]]
-      (** Use Charon's new monomorphization, which may cause unexpected results
-          but resolves drops. *)
+  no_compile_plugins : bool;
+      [@make.default false] [@names [ "no-compile-plugins" ]]
+      (** Do not compile the plugins, as they are already compiled *)
+  target : string option; [@names [ "target" ]] [@env "TARGET"]
+      (** The compilation target triple to use, e.g. x86_64-unknown-linux-gnu.
+          If not provided, the default target for the current machine is used.
+      *)
+  output_crate : bool; [@make.default false] [@names [ "output-crate" ]]
+      (** Pretty-print the compiled crate to a file *)
+  rustc_flags : string list;
+      [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
+      (** Additional flags to pass to the Rustc compiler *)
+  frontend : (frontend[@conv frontend_cmdliner_conv ()]);
+      [@default Obol] [@make.default Obol] [@names [ "frontend" ]]
+      (** Choose the frontend to use: Charon or Obol *)
+  sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
+      (** The sysroot to use for compilation. If not provided, the default
+          sysroot is used. *)
+  (*
+     Plugins
+   *)
   with_kani : bool; [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
       (** Use the Miri library *)
-  with_obol : bool; [@make.default false] [@names [ "obol" ]]
-      (** Compile the code using Obol, rather than Charon *)
-  log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
-      (** Log the compilation process *)
+  (*
+     Printing settings
+   *)
+  filter : string list; [@default []] [@names [ "filter" ]]
+      (** Filter the entrypoints to run, by name. If empty, all entrypoints are
+          run. Multiple filters can be provided; tests matching any will be
+          selected. The filters are treated as regexes. *)
+  no_timing : bool; [@make.default false] [@names [ "no-timing" ]]
+      (** Do not display execution times *)
+  print_summary : bool; [@make.default false] [@names [ "summary" ]]
+      (** If a summary of all test cases should be printed at the end of
+          execution *)
+  print_stats : bool; [@make.default false] [@names [ "stats" ]]
+      (** If statistics about the execution should be printed at the end of each
+          test *)
+  (*
+     Symbolic execution behaviour
+   *)
+  ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
+      (** Ignore memory leaks *)
+  ignore_aliasing : bool; [@make.default false] [@names [ "ignore-aliasing" ]]
+      (** Ignore pointer aliasing rules (tree borrows) *)
   step_fuel : int option; [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
       (** The default step fuel for each entrypoint -- every control flow jump
           counts as one fuel. Defaults to infinite fuel. *)
@@ -28,16 +68,6 @@ type t = {
       (** The default branch fuel for each entrypoint -- every symbolic
           execution branching point counts as one fuel. Defaults to infinite
           fuel. *)
-  rustc_flags : string list;
-      [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
-      (** Additional flags to pass to the Rustc compiler *)
-  filter : string list; [@default []] [@names [ "filter" ]]
-      (** Filter the entrypoints to run, by name. If empty, all entrypoints are
-          run. Multiple filters can be provided; tests matching any will be
-          selected. The filters are treated as regexes. *)
-  print_summary : bool; [@make.default false] [@names [ "summary" ]]
-      (** If a summary of all test cases should be printed at the end of
-          execution *)
 }
 [@@deriving make, subliner]
 

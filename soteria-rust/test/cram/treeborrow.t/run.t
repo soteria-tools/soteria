@@ -1,69 +1,66 @@
 Basic code, reference gets invalidated
   $ soteria-rust rustc raw-ptrs.rs --clean --no-timing
   Compiling... done in <time>
-  note: raw_ptrs::main: done in <time>, ran 1 branch
+  note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Simple tree borrow violation
   $ soteria-rust rustc simple-fail.rs --clean --no-timing
   Compiling... done in <time>
-  error: simple_fail::main: found issues in <time>, errors in 1 branch (out of 1)
-  bug: Aliasing error in simple_fail::main
-      ┌─ $TESTCASE_ROOT/simple-fail.rs:8:5
-    2 │    // https://perso.crans.org/vanille/treebor/aux/preprint.pdf
-    3 │ ╭  fn main() {
-    4 │ │      let mut root = 42;
-    5 │ │      let ptr = &mut root as *mut i32;
-    6 │ │      let (x, y) = unsafe { (&mut *ptr, &mut *ptr) };
-    7 │ │      *x = 13;
-    8 │ │      *y = 20; // UB: y is disabled
-      │ │      ^^^^^^^ Triggering memory operation
-    9 │ │      let val = *x;
-   10 │ │  }
-      │ ╰──' 1: Entry point
-   11 │    
+  error: main: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Aliasing error in main
+      ┌─ $TESTCASE_ROOT/simple-fail.rs:8:6
+    3 │  fn main() {
+      │   --------- 1: Entry point
+    4 │      let mut root = 42;
+    5 │      let ptr = &mut root as *mut i32;
+    6 │      let (x, y) = unsafe { (&mut *ptr, &mut *ptr) };
+    7 │      *x = 13;
+    8 │      *y = 20; // UB: y is disabled
+      │       ^^^^^^^ Triggering memory operation
+  PC 1: empty
   
   [1]
 
 Raw pointers don't get new tags
   $ soteria-rust rustc raw-ptrs.rs --clean --no-timing
   Compiling... done in <time>
-  note: raw_ptrs::main: done in <time>, ran 1 branch
+  note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Raw pointers can access outside the parent's range, with offsets
   $ soteria-rust rustc offsets.rs --clean --no-timing
   Compiling... done in <time>
-  note: offsets::main: done in <time>, ran 1 branch
+  note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Can have two mutable protected refs to the same allocation, if they don't overlap
   $ soteria-rust rustc two-mut-protected.rs --clean --no-timing
   Compiling... done in <time>
-  note: two_mut_protected::main: done in <time>, ran 1 branch
+  note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 UnsafeCell allow foreign writes followed by local writes
   $ soteria-rust rustc cell.rs --clean --no-timing
   Compiling... done in <time>
-  note: cell::main: done in <time>, ran 1 branch
+  note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
   $ soteria-rust rustc nested.rs --clean --no-timing
   Compiling... done in <time>
-  note: nested::main: done in <time>, ran 1 branch
+  note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Test --ignore-aliasing flag
   $ soteria-rust rustc simple-fail.rs --clean --no-timing --ignore-aliasing
   Compiling... done in <time>
-  note: simple_fail::main: done in <time>, ran 1 branch
+  note: main: done in <time>, ran 1 branch
   PC 1: empty
   

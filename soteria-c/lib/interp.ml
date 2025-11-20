@@ -7,6 +7,7 @@ open Ail_tys
 module Ctype = Cerb_frontend.Ctype
 module AilSyntax = Cerb_frontend.AilSyntax
 module T = Typed.T
+module BV = Typed.BitVec
 module Agv = Aggregate_val
 
 module InterpM (State : State_intf.S) = struct
@@ -52,6 +53,14 @@ module InterpM (State : State_intf.S) = struct
     (s, store, state)
 
   let of_opt_not_impl ~msg x = lift_symex (of_opt_not_impl ~msg x)
+
+  let assert_or_error cond (err : 'e) : unit t =
+   fun store state ->
+    let* res = Csymex.assert_or_error cond err in
+    match res with
+    | Ok () -> return (Ok ((), store, state))
+    | Error e -> State.error e state
+    | Missing f -> return (Missing f)
 
   let with_loc ~loc f =
     let old_loc = !Csymex.current_loc in
@@ -143,10 +152,10 @@ module Make (State : State_intf.S) = struct
     let open Csymex.Syntax in
     let* x = Agv.basic_or_unsupported ~msg:"cast_aggregate_to_ptr" x in
     match Typed.get_ty x with
-    | TInt ->
+    | TBitVector _ ->
         (* We can cast an integer to a pointer by assigning the "null" location *)
         Csymex.return (Typed.Ptr.mk Typed.Ptr.null_loc (Typed.cast x))
-    | TPointer ->
+    | TPointer _ ->
         (* Already a pointer *)
         Csymex.return (Typed.cast x)
     | _ -> Csymex.not_impl "Cannot cast to pointer"
@@ -154,14 +163,13 @@ module Make (State : State_intf.S) = struct
   let cast_to_int (x : [< T.cval ] Typed.t) : [> T.sint ] Typed.t Csymex.t =
     let open Csymex.Syntax in
     match Typed.get_ty x with
-    | TInt -> Csymex.return (Typed.cast x)
-    | TPointer ->
+    | TBitVector _ -> Csymex.return (Typed.cast x)
+    | TPointer _ ->
         let x = Typed.cast x in
         if%sat Typed.Ptr.is_at_null_loc x then Csymex.return (Typed.Ptr.ofs x)
         else
-          Fmt.kstr Csymex.not_impl
-            "Pointer to int that is not at null loc %a at %a" Typed.ppa x
-            Fmt_ail.pp_loc (get_loc ())
+          Fmt.kstr not_impl "Pointer to int that is not at null loc %a"
+            Typed.ppa x
     | _ -> Csymex.not_impl "Cannot cast to int"
 
   let cast_aggregate_to_int (x : Agv.t) : [> T.sint ] Typed.t Csymex.t =
@@ -172,8 +180,8 @@ module Make (State : State_intf.S) = struct
   let cast_to_bool (x : [< T.cval ] Typed.t) : [> T.sbool ] Typed.t Csymex.t =
     let open Typed in
     match get_ty x with
-    | TInt -> Csymex.return (bool_of_int (cast x))
-    | TPointer -> Csymex.return (S_bool.not (Ptr.is_null (cast x)))
+    | TBitVector _ -> Csymex.return (BV.to_bool (cast x))
+    | TPointer _ -> Csymex.return (not (Ptr.is_null (cast x)))
     | _ -> Csymex.not_impl "Cannot cast to bool"
 
   let cast_aggregate_to_bool (x : Agv.t) : [> T.sbool ] Typed.t Csymex.t =
@@ -294,23 +302,40 @@ module Make (State : State_intf.S) = struct
     | _ -> Result.ok (`NotImmediate, store, state)
 
   let rec aggregate_of_constant_exn ~ty (c : constant) : Agv.t =
+    let unsupported fmt =
+      Fmt.kstr (fun msg -> raise (Unsupported (msg, get_loc ()))) fmt
+    in
     match c with
-    | ConstantInteger (IConstant (z, _basis, _suff)) -> Agv.int_z z
+    | ConstantInteger (IConstant (z, _basis, _suff)) ->
+        let size =
+          match ty with
+          | Ctype.Ctype (_, Basic (Integer inty)) -> Layout.size_of_int_ty inty
+          | _ -> unsupported "integer constant with non-integer type"
+        in
+        let size =
+          match size with
+          | Some size -> size * 8
+          | None -> unsupported "integer constant with unknown size"
+        in
+        Agv.int_z size z
     | ConstantNull -> Agv.null
     | ConstantCharacter (pref, char) -> (
-        if Option.is_some pref then
-          raise (Unsupported ("char prefix", get_loc ()))
-        else
-          match Constants.string_to_char char with
-          | Some char -> Agv.int char
-          | None -> raise (Unsupported ("char constant: " ^ char, get_loc ())))
+        if Option.is_some pref then unsupported "char prefix";
+        let size =
+          match ty with
+          | Ctype.Ctype (_, Basic (Integer inty)) -> Layout.size_of_int_ty inty
+          | _ -> unsupported "integer constant with non-integer type"
+        in
+        match (Constants.string_to_char char, size) with
+        | Some char, Some size -> Agv.int (8 * size) char
+        | None, Some _ -> unsupported "char constant: %s" char
+        | _, None -> unsupported "char constant with unknown size")
     | ConstantStruct (tag, fields) ->
         let members =
           match Layout.get_struct_fields tag with
           | Some (members, None) -> members
-          | Some (_, Some _) ->
-              raise (Unsupported ("flexible array member", get_loc ()))
-          | None -> raise (Unsupported ("unknown struct tag", get_loc ()))
+          | Some (_, Some _) -> unsupported "flexible array member"
+          | None -> unsupported "unknown struct tag"
         in
         let fields =
           List.map2
@@ -329,11 +354,28 @@ module Make (State : State_intf.S) = struct
         in
         let f = Typed.Float.mk precision str in
         Agv.Basic f
-    | ConstantInteger _ | ConstantIndeterminate _ | ConstantPredefined _
+    | ConstantInteger ci -> (
+        let res_opt =
+          let open Syntaxes.Option in
+          match ci with
+          | AilSyntax.IConstant _ ->
+              unsupported "value of constant? %a" Fmt_ail.pp_constant c
+          | AilSyntax.IConstantMax int_ty ->
+              let* bv_info = Layout.int_bv_info int_ty in
+              let+ _, max = Layout.int_ty_bounds int_ty in
+              Agv.int_z bv_info.bv_size max
+          | AilSyntax.IConstantMin int_ty ->
+              let* bv_info = Layout.int_bv_info int_ty in
+              let+ min, _ = Layout.int_ty_bounds int_ty in
+              Agv.int_z bv_info.bv_size min
+        in
+        match res_opt with
+        | Some agv -> agv
+        | None -> unsupported "value of constant? %a" Fmt_ail.pp_constant c)
+    | ConstantIndeterminate _ | ConstantPredefined _
     | ConstantArray (_, _)
     | ConstantUnion (_, _, _) ->
-        let msg = Fmt.str "value of constant? %a" Fmt_ail.pp_constant c in
-        raise (Unsupported (msg, get_loc ()))
+        unsupported "value of constant? %a" Fmt_ail.pp_constant c
 
   let aggregate_of_constant ~ty (c : constant) : Agv.t Csymex.t =
     try Csymex.return (aggregate_of_constant_exn ~ty c)
@@ -343,170 +385,251 @@ module Make (State : State_intf.S) = struct
 
   let unwrap_expr (AnnotatedExpression (_, _, _, e) : expr) = e
 
-  let cast ~old_ty ~new_ty (v : Agv.t) : Agv.t Csymex.t =
-    let open Csymex.Syntax in
-    let open Typed in
+  let cast_basic ~old_ty ~new_ty v =
     if Ctype.ctypeEqual old_ty new_ty then return v
     else
-      let (Ctype.Ctype (_, old_ty)) = old_ty in
-      let (Ctype.Ctype (_, new_ty)) = new_ty in
-      let* v =
-        match v with
-        | Basic v -> return v
-        | Struct _ -> Fmt.kstr not_impl "Cannot cast %a" Agv.pp v
-      in
-      let+ res =
-        match (old_ty, new_ty) with
-        | Ctype.Basic (Integer _), Ctype.Pointer (_quals, _ty) -> (
-            match get_ty v with
-            | TInt -> return (Ptr.mk Ptr.null_loc (Typed.cast v))
-            | TPointer -> return v
-            | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
-        | Ctype.Pointer (_, _), Ctype.Pointer (_, _) -> return v
-        | Ctype.Basic (Integer ity_left), Ctype.Basic (Integer ity_right) -> (
-            let* v = cast_to_int v in
-            let ity_left = Layout.normalise_int_ty ity_left in
-            let ity_right = Layout.normalise_int_ty ity_right in
-            match (ity_left, ity_right) with
-            | Signed _, Unsigned _ ->
-                let+ size_right =
-                  Layout.size_of_int_ty ity_right
-                  |> Csymex.of_opt_not_impl ~msg:"Size of int ty"
-                in
-                let size_right = Typed.nonzero size_right in
-                Typed.mod_ v size_right
-            | _, _ ->
-                Fmt.kstr not_impl "Integer cast : %a -> %a" Fmt_ail.pp_int_ty
-                  ity_left Fmt_ail.pp_int_ty ity_right)
-        | _, Ctype.Void -> return 0s
-        | _ ->
-            Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty_ old_ty
-              Fmt_ail.pp_ty_ new_ty
-      in
-      Agv.Basic res
+      let open Typed in
+      let open Csymex.Syntax in
+      match (unwrap_ctype old_ty, unwrap_ctype new_ty) with
+      | Basic (Integer _), Pointer (_quals, _ty) -> (
+          match get_ty v with
+          | TBitVector _ ->
+              let* size_t = Layout.size_of_int_ty_unsupported Size_t in
+              let v = BV.fit_to ~signed:false (8 * size_t) (cast v) in
+              return (Ptr.mk Ptr.null_loc v)
+          | TPointer _ -> return v
+          | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
+      | Pointer (_, _), Pointer (_, _) -> return v
+      | (Basic (Integer _) | Pointer (_, _)), Basic (Integer ity) ->
+          let* v = cast_to_int v in
+          let+ size_new = Layout.size_of_int_ty_unsupported ity in
+          (BV.fit_to ~signed:false (8 * size_new) v :> T.cval Typed.t)
+      | Basic (Integer ity), Basic (Floating fty) ->
+          let+ v = cast_to_int v in
+          let fp = Layout.precision fty in
+          let signed = Layout.is_int_ty_signed ity in
+          BV.to_float ~rounding:NearestTiesToEven ~signed ~fp v
+      | Basic (Floating fty), Basic (Integer ity) ->
+          let fp = Layout.precision fty in
+          let* size = Layout.size_of_int_ty_unsupported ity in
+          let+ v =
+            of_opt_not_impl ~msg:"Non-float in float cast"
+            @@ Typed.cast_checked v (Typed.t_float fp)
+          in
+          let signed = Layout.is_int_ty_signed ity in
+          BV.of_float ~rounding:Truncate ~signed ~size:(size * 8) v
+      | _, Ctype.Void -> return U8.(0s)
+      | _ ->
+          Fmt.kstr Csymex.not_impl "Cast %a -> %a" Fmt_ail.pp_ty old_ty
+            Fmt_ail.pp_ty new_ty
+
+  let cast_basic ~old_ty ~new_ty v =
+    Csymex.map (cast_basic ~old_ty ~new_ty v) Typed.cast
+
+  let cast ~old_ty ~new_ty (v : Agv.t) : Agv.t Csymex.t =
+    if Ctype.ctypeEqual old_ty new_ty then return v
+    else
+      match v with
+      | Basic v ->
+          Csymex.map (cast_basic ~old_ty ~new_ty v) (fun x -> Agv.Basic x)
+      | Struct _ | Array _ -> Fmt.kstr not_impl "Cannot cast %a" Agv.pp v
 
   open InterpM
 
-  let rec equality_check (v1 : [< T.cval ] Typed.t) (v2 : [< T.cval ] Typed.t) =
+  let rec equality_check ~ty (v1, t1) (v2, t2) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt | TPointer, TPointer -> ok (v1 ==@ v2 |> Typed.int_of_bool)
+    | TBitVector _, TBitVector _ ->
+        (* Here we need a cast because we may compare e.g. a [size_t] with [0], which
+           will have type [int].
+           We can't do this conversion earlier (in [eval_expr]) because we don't want
+           to cast integers to pointers or pointers to integers, loosing information;
+           this case only matters for BitVector values specifically. *)
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty:ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty:ty v2 in
+        ok (v1 ==@ v2 |> BV.of_bool)
+    | TPointer _, TPointer _ -> ok (v1 ==@ v2 |> BV.of_bool)
     | TFloat fp1, TFloat fp2 when Svalue.FloatPrecision.equal fp1 fp2 ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        ok (v1 ==.@ v2 |> Typed.int_of_bool)
-    | TPointer, TInt ->
+        ok (v1 ==.@ v2 |> BV.of_bool)
+    | TPointer _, TBitVector _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
-        let v2 : T.sint Typed.t = Typed.cast v2 in
-        if%sat Typed.(v2 ==@ zero) then
-          ok (v1 ==@ Typed.Ptr.null |> Typed.int_of_bool)
-        else error `UBPointerComparison
-    | TInt, TPointer -> equality_check v2 v1
+        let v2, size = Option.get @@ Typed.cast_int v2 in
+        let+ () = assert_or_error (v2 ==@ BV.zero size) `UBPointerComparison in
+        v1 ==@ Typed.Ptr.null |> BV.of_bool
+    | TBitVector _, TPointer _ -> equality_check ~ty (v2, t2) (v1, t1)
     | _ ->
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
           Typed.ppa v1 Typed.ppa v2
 
-  let aggregate_equality_check (v1 : Agv.t) (v2 : Agv.t) =
+  let aggregate_equality_check ~ty (v1, t1) (v2, t2) =
     let^ v1 = Agv.basic_or_unsupported ~msg:"aggregate_equality_check" v1 in
     let^ v2 = Agv.basic_or_unsupported ~msg:"aggregate_equality_check" v2 in
-    equality_check v1 v2
+    equality_check ~ty (v1, t1) (v2, t2)
 
-  let rec arith_add (v1 : [< Typed.T.cval ] Typed.t)
+  let rec arith_add ~signed (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt ->
+    | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        ok (v1 +@ v2)
-    | TPointer, TInt ->
+        if signed then
+          let res, ovf = v1 +$?@ v2 in
+          let+ () = assert_or_error (Typed.not ovf) `Overflow in
+          res
+        else ok (v1 +!@ v2)
+    | TPointer _, TBitVector _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
         let loc = Typed.Ptr.loc v1 in
-        let ofs = Typed.Ptr.ofs v1 +@ v2 in
-        ok (Typed.Ptr.mk loc ofs)
-    | TInt, TPointer -> arith_add v2 v1
-    | TPointer, TPointer -> error `UBPointerArithmetic
+        let ofs, ovf = Typed.Ptr.ofs v1 +$?@ v2 in
+        let+ () = assert_or_error (Typed.not ovf) `Overflow in
+        Typed.Ptr.mk loc ofs
+    | TBitVector _, TPointer _ -> arith_add ~signed v2 v1
+    | TPointer _, TPointer _ -> error `UBPointerArithmetic
     | _ ->
         Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
           Typed.ppa v2
 
-  let arith_sub (v1 : [< Typed.T.cval ] Typed.t)
+  let arith_sub ~signed (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt ->
+    | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        ok (v1 -@ v2)
-    | TPointer, TInt ->
+        if signed then
+          let res, ovf = v1 -$?@ v2 in
+          let+ () = assert_or_error (Typed.not ovf) `Overflow in
+          res
+        else ok (v1 -!@ v2)
+    | TPointer _, TBitVector _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sint Typed.t = Typed.cast v2 in
         let loc = Typed.Ptr.loc v1 in
-        let ofs = Typed.Ptr.ofs v1 -@ v2 in
-        ok (Typed.Ptr.mk loc ofs)
-    | TPointer, TPointer ->
+        let ofs, ovf = Typed.Ptr.ofs v1 -$?@ v2 in
+        let+ () = assert_or_error (Typed.not ovf) `Overflow in
+        Typed.Ptr.mk loc ofs
+    | TPointer _, TPointer _ ->
         let v1 : T.sptr Typed.t = Typed.cast v1 in
         let v2 : T.sptr Typed.t = Typed.cast v2 in
         if%sat Typed.Ptr.loc v1 ==@ Typed.Ptr.loc v2 then
-          ok (Typed.Ptr.ofs v1 -@ Typed.Ptr.ofs v2)
+          let res, ovf = Typed.Ptr.ofs v1 -$?@ Typed.Ptr.ofs v2 in
+          let+ () = assert_or_error (Typed.not ovf) `Overflow in
+          res
         else error `UBPointerArithmetic
     | _ ->
-        Fmt.kstr not_impl "Unexpected types in addition: %a and %a" Typed.ppa v1
-          Typed.ppa v2
+        Fmt.kstr not_impl "Unexpected types in subtraction: %a and %a" Typed.ppa
+          v1 Typed.ppa v2
 
-  let arith_mul (v1 : [< Typed.T.cval ] Typed.t)
+  let arith_mul ~signed (v1 : [< Typed.T.cval ] Typed.t)
       (v2 : [< Typed.T.cval ] Typed.t) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
-    | TInt, TInt ->
+    | TBitVector _, TBitVector _ ->
         let v1 = Typed.cast v1 in
         let v2 = Typed.cast v2 in
-        ok (v1 *@ v2)
-    | TPointer, _ | _, TPointer -> error `UBPointerArithmetic
-    | _ ->
-        Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
-          Typed.ppa v1 Typed.ppa v2
 
-  let arith (v1, t1) a_op (v2, t2) : [> T.sint ] Typed.t InterpM.t =
-    match (a_op : AilSyntax.arithmeticOperator) with
-    | Div -> (
-        let^ v1 = cast_to_int v1 in
+        if signed then
+          let res, ovf = v1 *$?@ v2 in
+          let+ () = assert_or_error (Typed.not ovf) `Overflow in
+          res
+        else ok (v1 *!@ v2)
+    | TPointer _, _ | _, TPointer _ -> error `UBPointerArithmetic
+    | ty1, ty2 ->
+        Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
+          Svalue.pp_ty ty1 Svalue.pp_ty ty2
+
+  let arith new_ty (v1, t1) a_op (v2, t2) : [> T.sint ] Typed.t InterpM.t =
+    match ((a_op : AilSyntax.arithmeticOperator), unwrap_ctype new_ty) with
+    (* Integer operations *)
+    | Div, Basic (Integer inty) -> (
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
         let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
         match v2 with
-        | Ok v2 -> ok (v1 /@ v2)
+        | Ok v2 -> ok (Typed.cast @@ BV.div ~signed v1 v2)
         | Error `NonZeroIsZero -> error `DivisionByZero
         | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
-    | Mul -> arith_mul v1 v2
-    | Add -> (
+    | Mod, Basic (Integer inty) -> (
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
+        match v2 with
+        | Ok v2 -> ok (Typed.cast @@ BV.rem ~signed v1 v2)
+        | Error `NonZeroIsZero -> error `DivisionByZero
+        | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
+    | Mul, Basic (Integer inty) ->
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        arith_mul ~signed v1 v2
+    | Add, Basic (Integer inty) ->
+        let signed = Layout.is_int_ty_signed inty in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        arith_add ~signed v1 v2
+    | Sub, Basic (Integer inty) -> (
+        (* an integer could be the result of a pointer subtraction,
+           so we handle this separately *)
+        match (unwrap_ctype t1, unwrap_ctype t2) with
+        | Pointer (_, _), Pointer (_, _) ->
+            let signed = Layout.is_int_ty_signed inty in
+            arith_sub ~signed v1 v2
+        | _ ->
+            let signed = Layout.is_int_ty_signed inty in
+            let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+            let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+            arith_sub ~signed v1 v2)
+    (* Float arithmetics *)
+    | (Add | Sub | Mul | Div), Basic (Floating _) ->
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
+        let op =
+          match a_op with
+          | Add -> Typed.Float.add
+          | Sub -> Typed.Float.sub
+          | Mul -> Typed.Float.mul
+          | Div -> Typed.Float.div
+          | _ -> failwith "unreachable: all operators matches"
+        in
+        ok (op v1 v2)
+    (* Pointer arithmetic *)
+    | Add, _ -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some _, Some _ -> error `UBPointerArithmetic
         | Some ty, None ->
             let^ factor = Layout.size_of_s ty in
-            let* v2 = arith_mul v2 factor in
-            arith_add v1 v2
+            let^ ptr_size = Layout.size_of_int_ty_unsupported Size_t in
+            let v2 = BV.fit_to ~signed:false (8 * ptr_size) (Typed.cast v2) in
+            let* v2 = arith_mul ~signed:true v2 factor in
+            arith_add ~signed:true v1 v2
         | None, Some ty ->
             let^ factor = Layout.size_of_s ty in
-            let* v1 = arith_mul v1 factor in
-            arith_add v2 v1
-        | None, None -> arith_add v1 v2)
-    | Sub -> (
+            let^ ptr_size = Layout.size_of_int_ty_unsupported Size_t in
+            let v1 = BV.fit_to ~signed:false (8 * ptr_size) (Typed.cast v1) in
+            let* v1 = arith_mul ~signed:true v1 factor in
+            arith_add ~signed:true v2 v1
+        | None, None -> failwith "Should have been handled before?")
+    | Sub, _ -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some ty, None ->
             let^ factor = Layout.size_of_s ty in
-            let* v2 = arith_mul v2 factor in
-            arith_sub v1 v2
+            let* v2 =
+              of_opt_not_impl ~msg:"Non integer in add" @@ BV.cast_to_size_t v2
+            in
+            let* v2 = arith_mul ~signed:true v2 factor in
+            arith_sub ~signed:true v1 v2
         | None, Some _ -> error `UBPointerArithmetic
-        | Some _, Some _ | None, None -> arith_sub v1 v2)
-    | Mod -> (
-        let^ v1 = cast_to_int v1 in
-        let^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
-        match v2 with
-        | Ok v2 -> ok (Typed.rem v1 v2)
-        | Error `NonZeroIsZero -> error `DivisionByZero
-        | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
-    | (Band | Shl | Shr | Bxor | Bor) as a_op ->
-        let* { bv_size; signed } =
+        | Some _, Some _ -> arith_sub ~signed:true v1 v2
+        | None, None -> failwith "Should have been handled before?")
+    (* Bitwise operations *)
+    | ((Band | Shl | Shr | Bxor | Bor) as a_op), _ ->
+        let* { signed; _ } =
           Layout.bv_info t1 |> of_opt_not_impl ~msg:"bv_info"
         in
-        let^ v1 = cast_to_int v1 in
-        let^ v2 = cast_to_int v2 in
+        let^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
+        let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
         let op =
           match a_op with
           | Band -> Typed.BitVec.and_
@@ -516,7 +639,10 @@ module Make (State : State_intf.S) = struct
           | Shr -> if signed then Typed.BitVec.ashr else Typed.BitVec.lshr
           | _ -> failwith "unreachable: bit operator is not bit operator?"
         in
-        ok (op ~size:bv_size ~signed v1 v2)
+        ok (op v1 v2)
+    | _ ->
+        Fmt.kstr not_impl "unsupported: binop %a %a %a -> %a" Fmt_ail.pp_ty t1
+          Fmt_ail.pp_arithop a_op Fmt_ail.pp_ty t2 Fmt_ail.pp_ty new_ty
 
   let try_immediate_postfix_op ~apply_op lvalue =
     let* v_opt = try_immediate_load lvalue in
@@ -538,23 +664,26 @@ module Make (State : State_intf.S) = struct
     let+ res =
       let^ left = Agv.basic_or_unsupported ~msg:"ineq_comparison" left in
       let^ right = Agv.basic_or_unsupported ~msg:"ineq_comparison" right in
-      let int_cmp_op left right = int_cmp_op left right |> Typed.int_of_bool in
+      let int_cmp_op left right = int_cmp_op left right |> BV.of_bool in
       match (Typed.get_ty left, Typed.get_ty right) with
-      | TInt, TInt ->
+      | TBitVector _, TBitVector _ ->
           let left = Typed.cast left in
           let right = Typed.cast right in
           ok (int_cmp_op left right)
       | TFloat fp1, TFloat fp2 when Svalue.FloatPrecision.equal fp1 fp2 ->
           let left = Typed.cast left in
           let right = Typed.cast right in
-          ok (float_cmp_op left right |> Typed.int_of_bool)
-      | TPointer, TPointer ->
+          ok (float_cmp_op left right |> BV.of_bool)
+      | TPointer _, TPointer _ ->
           let left = Typed.cast left in
           let right = Typed.cast right in
-          if%sat Typed.Ptr.loc left ==@ Typed.Ptr.loc right then
-            ok (int_cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right))
-          else error `UBPointerComparison
-      | _, TPointer | TPointer, _ -> error `UBPointerComparison
+          let+ () =
+            assert_or_error
+              (Typed.Ptr.loc left ==@ Typed.Ptr.loc right)
+              `UBPointerComparison
+          in
+          int_cmp_op (Typed.Ptr.ofs left) (Typed.Ptr.ofs right)
+      | _, TPointer _ | TPointer _, _ -> error `UBPointerComparison
       | _ ->
           Fmt.kstr not_impl "Unsupported comparison: %a and %a" Typed.ppa left
             Typed.ppa right
@@ -568,12 +697,15 @@ module Make (State : State_intf.S) = struct
       | Break
       | Goto of Symbol_std.t
       | Case of T.sint Typed.t
-      | Returned of Agv.t
+      | Returned of Agv.t * (Ctype.ctype[@printer Fmt_ail.pp_ty])
     [@@deriving show { with_path = false }]
   end
 
   let rec resolve_function fexpr :
-      (Error.t State.err fun_exec * Stubs.Arg_filter.t) InterpM.t =
+      (Error.t State.err fun_exec
+      * Ail_tys.ctype list option
+      * Stubs.Arg_filter.t)
+      InterpM.t =
     let* loc, fname =
       let (AilSyntax.AnnotatedExpression (_, _, loc, inner_expr)) = fexpr in
       match inner_expr with
@@ -587,26 +719,28 @@ module Make (State : State_intf.S) = struct
           let* fptr = eval_expr fexpr in
           L.trace (fun m -> m "Function pointer is value: %a" Agv.pp fptr);
           let^ fptr = cast_aggregate_to_ptr fptr in
-          if%sat
-            Typed.S_bool.not (Typed.Ptr.ofs fptr ==@ 0s)
-            ||@ Typed.Ptr.is_at_null_loc fptr
-          then error `InvalidFunctionPtr
-          else
-            let fctx = get_fun_ctx () in
-            let^ sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
-            ok (loc, sym)
+          let* () =
+            assert_or_error
+              Typed.(
+                Ptr.ofs fptr ==@ Usize.(0s) &&@ not (Ptr.is_at_null_loc fptr))
+              `InvalidFunctionPtr
+          in
+          let fctx = get_fun_ctx () in
+          let^ sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
+          ok (loc, sym)
     in
     let@ () = with_loc ~loc in
+    let input_tys = Ail_helpers.get_param_tys fname in
     let fundef_opt = Ail_helpers.find_fun_def fname in
     match fundef_opt with
-    | Some fundef -> ok (exec_fun fundef, Stubs.Arg_filter.no_filter)
+    | Some fundef -> ok (exec_fun fundef, input_tys, Stubs.Arg_filter.no_filter)
     | None -> (
         match Stubs.find_stub fname with
-        | Some (stub, filter) -> ok (stub, filter)
+        | Some (stub, filter) -> ok (stub, input_tys, filter)
         | None ->
             if (Config.current ()).havoc_undefined_funs then
               let return_ty = Ail_helpers.get_return_ty fname in
-              ok (Stubs.havoc ~return_ty, None)
+              ok (Stubs.havoc ~return_ty, input_tys, None)
             else
               Fmt.kstr not_impl "Cannot call external function: %a"
                 Fmt_ail.pp_sym fname)
@@ -626,11 +760,24 @@ module Make (State : State_intf.S) = struct
     match expr with
     | AilEconst c ->
         let ty = type_of aexpr in
-        let^ v = aggregate_of_constant ~ty c in
-        ok v
+        lift_symex @@ aggregate_of_constant ~ty c
     | AilEcall (f, args) ->
-        let* exec_fun, filter = resolve_function f in
-        let* args = eval_expr_list (Stubs.Arg_filter.apply filter args) in
+        let* exec_fun, arg_tys, filter = resolve_function f in
+        let args = Stubs.Arg_filter.apply filter args in
+        let* args =
+          match arg_tys with
+          | None -> eval_expr_list args
+          | Some arg_tys ->
+              let arg_tys = Stubs.Arg_filter.apply filter arg_tys in
+              let args = List.combine args arg_tys in
+              let+ args =
+                InterpM.fold_list args ~init:[] ~f:(fun acc (arg, ty) ->
+                    let* v = eval_expr arg in
+                    let^ v = cast ~old_ty:(type_of arg) ~new_ty:ty v in
+                    ok (v :: acc))
+              in
+              List.rev args
+        in
         let+ v =
           with_extra_call_trace ~loc ~msg:"Called from here"
           @@ lift_state_op
@@ -659,21 +806,27 @@ module Make (State : State_intf.S) = struct
                    ~msg:"Member of Pointer that isn't of type pointer"
             in
             let^ mem_ofs = Layout.member_ofs member ty_pointee in
-            let+ res = arith_add ptr_v mem_ofs in
+            let+ res = arith_add ~signed:true ptr_v mem_ofs in
             Agv.Basic res
         | _ -> Fmt.kstr not_impl "Unsupported address_of: %a" Fmt_ail.pp_expr e)
     | AilEunary (((PostfixIncr | PostfixDecr) as op), e) -> (
         let apply_op v =
           let^ v = Agv.basic_or_unsupported ~msg:"Postfix operator" v in
-          let^ operand =
-            match pointer_inner (type_of e) with
-            | Some ty -> Layout.size_of_s ty
-            | None -> return 1s
+          let ty = type_of e in
+          let* operand, signed =
+            match (pointer_inner ty, ty) with
+            | Some ty, _ ->
+                let^ operand = Layout.size_of_s ty in
+                ok (operand, true)
+            | None, Ctype.Ctype (_, Basic (Integer inty)) ->
+                let^ size = Layout.size_of_int_ty_unsupported inty in
+                ok (BV.one (8 * size), Layout.is_int_ty_signed inty)
+            | _ -> not_impl "Postfix operator on unsupported type"
           in
           let+ res =
             match op with
-            | PostfixIncr -> arith_add v operand
-            | PostfixDecr -> arith_sub v operand
+            | PostfixIncr -> arith_add ~signed v operand
+            | PostfixDecr -> arith_sub ~signed v operand
             | _ -> failwith "unreachable: postfix is not postfix??"
           in
           Agv.Basic res
@@ -693,16 +846,22 @@ module Make (State : State_intf.S) = struct
         match op with
         | Indirection -> ok v
         | Address -> failwith "unreachable: address_of already handled"
-        | Minus ->
+        | Minus -> (
+            let^ v = cast ~old_ty:(type_of e) ~new_ty:(type_of aexpr) v in
             let^ v = cast_aggregate_to_int v in
-            let+ res = arith_sub Typed.zero v in
-            Agv.Basic res
+            match type_of aexpr |> unwrap_ctype with
+            | Basic (Integer _) ->
+                let ovf = BV.neg_overflows v in
+                let+ () = assert_or_error (Typed.not ovf) `Overflow in
+                Agv.Basic (Typed.cast @@ BV.neg v)
+            | Basic (Floating _) ->
+                let res = Typed.Float.neg (Typed.cast v) in
+                ok (Agv.Basic res)
+            | _ -> not_impl "Unary minus on unsupported type")
         | AilSyntax.Bnot ->
+            let^ v = cast ~old_ty:(type_of e) ~new_ty:(type_of aexpr) v in
             let^ v = cast_aggregate_to_int v in
-            let* { bv_size; signed } =
-              Layout.bv_info (type_of e) |> of_opt_not_impl ~msg:"bv_info"
-            in
-            let res = Typed.BitVec.not ~size:bv_size ~signed v in
+            let res = Typed.BitVec.not v in
             ok (Agv.Basic res)
         | AilSyntax.Plus | AilSyntax.PostfixIncr | AilSyntax.PostfixDecr ->
             Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op
@@ -718,14 +877,14 @@ module Make (State : State_intf.S) = struct
           let^ v1 = cast_aggregate_to_bool v1 in
           let^ v2 = cast_aggregate_to_bool v2 in
           let b_res = v1 ||@ v2 in
-          ok (Agv.Basic (Typed.int_of_bool b_res))
+          ok (Agv.Basic (BV.of_bool b_res))
         else
           let^ v1 = cast_aggregate_to_bool v1 in
-          if%sat v1 then ok (Agv.Basic Typed.one)
-          else
+          if%sat Typed.not v1 then
             let* v2 = eval_expr e2 in
             let^ b_res = cast_aggregate_to_bool v2 in
-            ok (Agv.Basic (Typed.int_of_bool b_res))
+            ok (Agv.Basic (BV.of_bool b_res))
+          else ok (Agv.Basic U8.(1s))
     | AilEbinary (e1, And, e2) ->
         (* Same as Or, we need to short-circuit *)
         let* v1 = eval_expr e1 in
@@ -734,34 +893,64 @@ module Make (State : State_intf.S) = struct
           let^ v2 = cast_aggregate_to_bool v2 in
           let^ v1 = cast_aggregate_to_bool v1 in
           let b_res = v1 &&@ v2 in
-          ok (Agv.Basic (Typed.int_of_bool b_res))
+          ok (Agv.Basic (BV.of_bool b_res))
         else
           let^ v1 = cast_aggregate_to_bool v1 in
           if%sat v1 then
             let* v2 = eval_expr e2 in
             let^ b_res = cast_aggregate_to_bool v2 in
-            ok (Agv.Basic (Typed.int_of_bool b_res))
-          else ok (Agv.int 0)
+            ok (Agv.Basic (BV.of_bool b_res))
+          else ok (Agv.Basic U8.(0s))
     | AilEbinary (e1, op, e2) -> (
+        let ty = type_of aexpr in
+        let signed =
+          match ty with
+          | Ctype.Ctype (_, Basic (Integer inty)) ->
+              Layout.is_int_ty_signed inty
+          | _ -> false
+        in
+        let ty_v1 = type_of e1 in
+        let ty_v2 = type_of e2 in
+        (* we avoid doing type conversion and trust Ail, except when we cant use it *)
         let* v1 = eval_expr e1 in
         let* v2 = eval_expr e2 in
+        let* v1, v2 =
+          (* check if we need to cast the values *)
+          match op with
+          | Gt | Ge | Lt | Le ->
+              let new_ty = Layout.type_conversion_arith ty_v1 ty_v2 in
+              let^ v1 = cast ~old_ty:ty_v1 ~new_ty v1 in
+              let^ v2 = cast ~old_ty:ty_v2 ~new_ty v2 in
+              ok (v1, v2)
+          | _ -> ok (v1, v2)
+        in
         match op with
-        | Ge -> ineq_comparison ~int_cmp_op:( >=@ ) ~float_cmp_op:( >=.@ ) v1 v2
-        | Gt -> ineq_comparison ~int_cmp_op:( >@ ) ~float_cmp_op:( >.@ ) v1 v2
-        | Lt -> ineq_comparison ~int_cmp_op:( <@ ) ~float_cmp_op:( <.@ ) v1 v2
-        | Le -> ineq_comparison ~int_cmp_op:( <=@ ) ~float_cmp_op:( <=.@ ) v1 v2
-        | Eq ->
-            let+ res = aggregate_equality_check v1 v2 in
-            Agv.Basic res
-        | Ne ->
-            (* TODO: Semantics of Ne might be different from semantics of not eq? *)
-            let+ res = aggregate_equality_check v1 v2 in
-            Agv.Basic (Typed.not_int_bool res)
+        | Ge ->
+            ineq_comparison ~int_cmp_op:(BV.geq ~signed) ~float_cmp_op:( >=.@ )
+              v1 v2
+        | Gt ->
+            ineq_comparison ~int_cmp_op:(BV.gt ~signed) ~float_cmp_op:( >.@ ) v1
+              v2
+        | Lt ->
+            ineq_comparison ~int_cmp_op:(BV.lt ~signed) ~float_cmp_op:( <.@ ) v1
+              v2
+        | Le ->
+            ineq_comparison ~int_cmp_op:(BV.leq ~signed) ~float_cmp_op:( <=.@ )
+              v1 v2
+        | Eq | Ne ->
+            let new_ty = Layout.type_conversion_arith ty_v1 ty_v2 in
+            let+ res =
+              aggregate_equality_check ~ty:new_ty
+                (v1, type_of e1)
+                (v2, type_of e2)
+            in
+            if op = Eq then Agv.Basic (res :> T.cval Typed.t)
+            else Agv.Basic (BV.not_bool res)
         | Or | And -> failwith "Unreachable, handled earlier."
         | Arithmetic a_op ->
             let^ v1 = Agv.basic_or_unsupported ~msg:"Arithmetics" v1 in
             let^ v2 = Agv.basic_or_unsupported ~msg:"Arithmetics" v2 in
-            let+ res = arith (v1, type_of e1) a_op (v2, type_of e2) in
+            let+ res = arith ty (v1, type_of e1) a_op (v2, type_of e2) in
             Agv.Basic res
         | Comma -> ok v2)
     | AilErvalue e -> (
@@ -792,6 +981,9 @@ module Make (State : State_intf.S) = struct
     | AilEassign (lvalue, rvalue) -> (
         (* Evaluate rvalue first *)
         let* rval = eval_expr rvalue in
+        let^ rval =
+          cast ~old_ty:(type_of rvalue) ~new_ty:(type_of lvalue) rval
+        in
         (* Optimisation: if the lvalue is a variable to which we assign directly,
            we don't need to do anything with the heap, we can simply immediately assign,
            obtaining a new store.  *)
@@ -811,7 +1003,7 @@ module Make (State : State_intf.S) = struct
         let apply_op v =
           let^ v = Agv.basic_or_unsupported ~msg:"compound assign" v in
           let^ rval = Agv.basic_or_unsupported ~msg:"compound assign" rval in
-          let+ res = arith (v, lty) op (rval, rty) in
+          let+ res = arith lty (v, lty) op (rval, rty) in
           Agv.Basic res
         in
         let* immediate_result = try_immediate_postfix_op ~apply_op lvalue in
@@ -842,14 +1034,14 @@ module Make (State : State_intf.S) = struct
                ~msg:"Member of Pointer that isn't of type pointer"
         in
         let^ mem_ofs = Layout.member_ofs member ty_pointee in
-        let+ res = arith_add ptr_v mem_ofs in
+        let+ res = arith_add ~signed:true ptr_v mem_ofs in
         Agv.Basic res
     | AilEmemberof (obj, member) ->
         let* ptr_v = eval_expr obj in
         let^ ptr_v = Agv.basic_or_unsupported ~msg:"memberof" ptr_v in
         let ty_obj = type_of obj in
         let^ mem_ofs = Layout.member_ofs member ty_obj in
-        let+ res = arith_add ptr_v mem_ofs in
+        let+ res = arith_add ~signed:true ptr_v mem_ofs in
         Agv.Basic res
     | AilEcast (_quals, new_ty, expr) ->
         let old_ty = type_of expr in
@@ -862,7 +1054,7 @@ module Make (State : State_intf.S) = struct
             let id = Ail_helpers.resolve_sym id in
             let ctx = get_fun_ctx () in
             let^ floc = Fun_ctx.decay_fn_sym id ctx in
-            ok (Agv.Basic (Typed.Ptr.mk floc 0s))
+            ok (Agv.Basic (Typed.Ptr.mk floc Usize.(0s)))
         | _ ->
             Fmt.kstr not_impl "Unsupported function decay: %a" Fmt_ail.pp_expr
               outer_fexpr)
@@ -872,23 +1064,59 @@ module Make (State : State_intf.S) = struct
     | AilEcond (guard, Some t, e) ->
         let* guard = eval_expr guard in
         let^ guard_bool = cast_aggregate_to_bool guard in
-        if%sat guard_bool then eval_expr t else eval_expr e
-    | AilEstruct (_tag, fields) ->
+        if%sat guard_bool then
+          let* res = eval_expr t in
+          lift_symex @@ cast ~old_ty:(type_of t) ~new_ty:(type_of aexpr) res
+        else
+          let* res = eval_expr e in
+          lift_symex @@ cast ~old_ty:(type_of e) ~new_ty:(type_of aexpr) res
+    | AilEstruct (tag, fields) ->
+        let* members =
+          match Layout.get_struct_fields tag with
+          | Some (members, None) -> ok members
+          | Some (_, Some _) -> not_impl "flexible array member"
+          | None -> not_impl "unknown struct tag"
+        in
+        let fields = List.combine members fields in
         let+ fields_rev =
-          fold_list fields ~init:[] ~f:(fun acc (_, e_opt) ->
+          fold_list fields ~init:[]
+            ~f:(fun acc ((_, (_, _, _, new_ty)), (_, e_opt)) ->
               match e_opt with
               | None -> not_impl "Partial field initialization"
               | Some e ->
-                  let+ new_res = eval_expr e in
-                  new_res :: acc)
+                  let* new_res = eval_expr e in
+                  let^ new_res = cast ~old_ty:(type_of e) ~new_ty new_res in
+                  ok (new_res :: acc))
         in
         Agv.Struct (List.rev fields_rev)
+    | AilEarray (_is_str_literal, elem_ty, expr_opt_list) ->
+        let+ elems_rev =
+          fold_list expr_opt_list ~init:[] ~f:(fun acc e_opt ->
+              match e_opt with
+              | None -> not_impl "Partial array initialization"
+              | Some e ->
+                  let* new_res = eval_expr e in
+                  let^ new_res =
+                    cast ~old_ty:(type_of e) ~new_ty:elem_ty new_res
+                  in
+                  ok (new_res :: acc))
+        in
+        Agv.Array (List.rev elems_rev)
+    | AilEarray_decay e -> (
+        match unwrap_expr e with
+        | AilEident id -> (
+            let id = Ail_helpers.resolve_sym id in
+            let* ptr_opt = get_stack_address id in
+            match ptr_opt with
+            | Some ptr -> ok (Agv.Basic (ptr :> T.cval Typed.t))
+            | None -> get_global id)
+        | AilEarray _ -> not_impl "Array decay of array literal"
+        | _ -> Fmt.kstr not_impl "Unsupported array decay: %a" Fmt_ail.pp_expr e
+        )
     | AilEcond (_, None, _) -> not_impl "GNU ?:"
-    | AilEarray_decay _ -> not_impl "Array decay"
     | AilEassert _
     | AilEoffsetof (_, _)
     | AilEgeneric (_, _)
-    | AilEarray (_, _, _)
     | AilEunion (_, _, _)
     | AilEcompound (_, _, _)
     | AilEbuiltin _ | AilEstr _ | AilEsizeof_expr _
@@ -901,15 +1129,18 @@ module Make (State : State_intf.S) = struct
     | AilEgcc_statement (_, _) ->
         Fmt.kstr not_impl "Unsupported expr: %a" Fmt_ail.pp_expr aexpr
 
-  and exec_body (body : stmt) : Agv.t InterpM.t =
+  and exec_body ~ret_ty (body : stmt) : Agv.t InterpM.t =
     let open Stmt_exec_result in
     let rec aux res =
       L.trace (fun m -> m "Body execution result: %a" Stmt_exec_result.pp res);
       match res with
-      | Returned v -> InterpM.ok v
+      | Returned (v, old_ty) -> (
+          match ret_ty with
+          | Some new_ty -> lift_symex @@ cast ~old_ty ~new_ty v
+          | _ -> InterpM.ok v)
       | Normal ->
           (* Function didn't return, we return void (encoded as 0) *)
-          InterpM.ok (Agv.int 0)
+          InterpM.ok Agv.void
       | Goto label ->
           L.trace (fun m ->
               m "Body terminated with Goto %a" Fmt_ail.pp_sym label);
@@ -987,7 +1218,8 @@ module Make (State : State_intf.S) = struct
     let AilSyntax.{ node = stmt; _ } = astmt in
     match stmt with
     | AilScase (case, stmt) ->
-        if%sat guard ==@ Typed.int_z case then exec_stmt stmt
+        let guard_size = Typed.size_of_int guard in
+        if%sat guard ==@ BV.mk guard_size case then exec_stmt stmt
         else exec_case guard stmt
     | AilSdefault stmt -> exec_stmt stmt
     | AilSlabel (_, stmt, _) -> exec_case guard stmt
@@ -1048,8 +1280,8 @@ module Make (State : State_intf.S) = struct
     | AilSreturn e ->
         let+ v = eval_expr e in
         L.debug (fun m -> m "Returning: %a" Agv.pp v);
-        Returned v
-    | AilSreturnVoid -> ok (Returned (Agv.int 0))
+        Returned (v, type_of e)
+    | AilSreturnVoid -> ok (Returned (Agv.void, Ctype.void))
     | AilSblock (bindings, stmtl) ->
         let* () = attach_bindings bindings in
         (* Second result, corresponding to the block-scoped store, is discarded *)
@@ -1099,12 +1331,15 @@ module Make (State : State_intf.S) = struct
         loop ()
     | AilSlabel (_, stmt, _) | AilScase (_, stmt) -> exec_stmt stmt
     | AilSdeclaration decls ->
+        let* store = get_store () in
         let+ () =
           fold_list decls ~init:() ~f:(fun () (pname, expr) ->
               match expr with
               | None -> (* The thing is already declared *) ok ()
               | Some expr ->
                   let* v = eval_expr expr in
+                  let new_ty = Store.get_ty pname store in
+                  let^ v = cast ~old_ty:(type_of expr) ~new_ty v in
                   map_store (Store.declare_value pname v))
         in
         Normal
@@ -1132,13 +1367,14 @@ module Make (State : State_intf.S) = struct
     let open Csymex.Syntax in
     (* Put arguments in store *)
     let name, (loc, _, _, params, stmt) = fundef in
+    let ret_ty = Ail_helpers.get_return_ty name in
     let@ () = with_loc ~loc in
     L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);
     L.trace (fun m -> m "Was given arguments: %a" (Fmt.Dump.list Agv.pp) args);
     let* ptys = get_param_tys name in
     let ps = List.combine3 params ptys args in
     let store = mk_store ps in
-    let** res, store, state = exec_body stmt store state in
+    let** res, store, state = exec_body ~ret_ty stmt store state in
     let++ state = dealloc_store store state in
     (* We model void as zero, it should never be used anyway *)
     (res, state)

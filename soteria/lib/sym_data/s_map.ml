@@ -8,7 +8,8 @@ module Key = struct
     include Soteria_std.Printable.S with type t := t
   end
 
-  module Of_concrete (Symex : Symex.S) (K : Soteria_std.Ordered_type.S) = struct
+  module Of_concrete (Symex : Symex.Base) (K : Soteria_std.Ordered_type.S) =
+  struct
     include K
     include S_elt.Of_concrete (Symex) (K)
 
@@ -26,7 +27,7 @@ end
 module type S = sig
   (** Defines a type that is a symbolic map from [key] to value. *)
 
-  module Symex : Symex.S
+  module Symex : Symex.Base
 
   type key
 
@@ -45,7 +46,7 @@ module type S = sig
   val find_opt : key -> 'a t -> (key * 'a option) Symex.t
 end
 
-module Make (Symex : Symex.S) (Key : Key.S with module Symex = Symex) :
+module Make (Symex : Symex.Base) (Key : Key.S with module Symex = Symex) :
   S with type key = Key.t and module Symex = Symex = struct
   module Symex = Symex
   open Symex.Syntax

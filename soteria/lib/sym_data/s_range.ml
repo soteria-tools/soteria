@@ -19,7 +19,7 @@ module Make (S_int : S_int.S) = struct
     Symex.Value.S_bool.and_ (S_int.sem_eq a1 a2) (S_int.sem_eq b1 b2)
 
   (** [size (a, b)] is [b - a] *)
-  let size (a, b) = minus b a
+  let size (a, b) = sub b a
 
   (** [split_at (a, b) x] is [(a, x), (x, b)] *)
   let split_at (l, h) x = ((l, x), (x, h))

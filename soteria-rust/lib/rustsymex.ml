@@ -1,4 +1,4 @@
-module SYMEX =
+include
   Soteria.Symex.Make
     (struct
       module Range = struct
@@ -10,7 +10,6 @@ module SYMEX =
     end)
     (Bv_solver.Z3_solver)
 
-include SYMEX
 include Syntaxes.FunctionWrap
 
 let match_on (elements : 'a list) ~(constr : 'a -> Typed.S_bool.t Typed.t) :
@@ -47,9 +46,3 @@ let[@inline] with_loc_err () f =
 let error e = Result.error (e, get_loc ())
 let not_impl msg = give_up ~loc:(get_loc ()) msg
 let of_opt_not_impl msg = some_or_give_up ~loc:(get_loc ()) msg
-
-module Freeable = Soteria.Sym_states.Freeable.Make (SYMEX)
-module Pmap_direct_access = Soteria.Sym_states.Pmap.Direct_access (SYMEX)
-module Pmap = Soteria.Sym_states.Pmap.Make (SYMEX)
-module Tree_block = Soteria.Sym_states.Tree_block.Make (SYMEX)
-module Bi = Soteria.Sym_states.Bi_abd.Make (SYMEX)

@@ -20,18 +20,26 @@ module type S = sig
   type sbool_v := Symex.Value.S_bool.t Symex.Value.t
 
   val add : t -> t -> t
-  val minus : t -> t -> t
+  val sub : t -> t -> t
   val lt : t -> t -> sbool_v
   val leq : t -> t -> sbool_v
+  val sem_eq : t -> t -> sbool_v
+end
+
+module type Bounded_S = sig
+  include S
+
+  val in_bound : t -> Symex.Value.S_bool.t Symex.Value.t
 end
 
 module Make_syntax (S_int : S) = struct
   include S_eq.Make_syntax (S_int)
 
   let ( +@ ) = S_int.add
-  let ( -@ ) = S_int.minus
+  let ( -@ ) = S_int.sub
   let ( <@ ) = S_int.lt
   let ( <=@ ) = S_int.leq
+  let ( ==@ ) = S_int.sem_eq
 
   module Sym_int_syntax = struct
     let mk_nonzero x = S_int.of_z (Z.of_int x)

@@ -45,11 +45,11 @@ and node_qty = Partially | Totally
     to, as [Tree_block] wraps it into a structure containing this information.
 *)
 module type MemVal = sig
-  module Symex : Symex.S
-  module S_int : Sym_data.S_int.S with module Symex = Symex
+  module Symex : Symex.Base
+  module Bounded_int : Sym_data.S_int.Bounded_S with module Symex = Symex
 
   type t
-  type sint := S_int.t
+  type sint := Bounded_int.t
 
   val pp : Format.formatter -> t -> unit
 
@@ -57,9 +57,11 @@ module type MemVal = sig
       children of the node are always preserved too, for further accesses. *)
   val merge : left:t -> right:t -> t
 
-  (** Splits the given node at [at], which is the relative offset within the
-      node. Returns the left and right split trees, which themselves may contain
-      further splits. *)
+  (** [split ~at node] Splits [node] at [at], which is the relative offset
+      within the node. Returns the left and right split trees, which themselves
+      may contain further splits.
+
+      [at] is guaranteed to be in the range [[1, size(node))], i.e. strictly within the node. *)
   val split :
     at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
 
@@ -104,20 +106,21 @@ module type MemVal = sig
   val assert_exclusively_owned : t -> (unit, 'err, serialized) Symex.Result.t
 end
 
-module Make (Symex : Symex.S) (MemVal : MemVal with module Symex = Symex) =
+module Make (Symex : Symex.Base) (MemVal : MemVal with module Symex = Symex) =
 struct
   open Compo_res
   open Symex.Syntax
   open Symex
-  open Sym_data.S_int.Make_syntax (MemVal.S_int)
+  open MemVal.Bounded_int
   open Make_bool_syntax (Symex.Value.S_bool)
-  module Range = Sym_data.S_range.Make (MemVal.S_int)
+  module Range = Sym_data.S_range.Make (MemVal.Bounded_int)
+  open Sym_data.S_int.Make_syntax (MemVal.Bounded_int)
 
   module Sym_int_syntax = struct
-    let zero = MemVal.S_int.zero
+    let zero = MemVal.Bounded_int.zero
   end
 
-  type sint = MemVal.S_int.t [@@deriving show { with_path = false }]
+  type sint = MemVal.Bounded_int.t
 
   (* re-export the types to be able to use them easily *)
   type nonrec ('a, 'sint) tree = ('a, 'sint) tree = {
@@ -478,7 +481,8 @@ struct
 
   type t = {
     root : Tree.t;
-    bound : sint option; [@printer Fmt.(option ~none:(any "⊥") MemVal.S_int.pp)]
+    bound : sint option;
+        [@printer Fmt.(option ~none:(any "⊥") MemVal.Bounded_int.pp)]
   }
   [@@deriving show { with_path = false }]
 
@@ -490,7 +494,7 @@ struct
     let () =
       Option.iter
         (fun b ->
-          let range_str = Fmt.str "[%a; ∞[" MemVal.S_int.pp b in
+          let range_str = Fmt.str "[%a; ∞[" MemVal.Bounded_int.pp b in
           r := [ (range_str, text "OOB") ])
         t.bound
     in
@@ -505,8 +509,13 @@ struct
   (** Logic *)
 
   type serialized_atom =
-    | MemVal of { offset : sint; len : sint; v : MemVal.serialized }
-    | Bound of sint [@printer fun f v -> Fmt.pf f "Bound(%a)" MemVal.S_int.pp v]
+    | MemVal of {
+        offset : MemVal.Bounded_int.t;
+        len : MemVal.Bounded_int.t;
+        v : MemVal.serialized;
+      }
+    | Bound of MemVal.Bounded_int.t
+        [@printer fun f v -> Fmt.pf f "Bound(%a)" MemVal.Bounded_int.pp v]
   [@@deriving show { with_path = false }]
 
   type serialized = serialized_atom list
@@ -580,7 +589,7 @@ struct
   (** Logic *)
 
   let subst_serialized subst_var (serialized : serialized) =
-    let v_subst v = MemVal.S_int.subst subst_var v in
+    let v_subst v = MemVal.Bounded_int.subst subst_var v in
     let subst_atom = function
       | MemVal { offset; len; v } ->
           let v = MemVal.subst_serialized subst_var v in
@@ -593,10 +602,10 @@ struct
     List.iter
       (function
         | MemVal { offset; len; v } ->
-            MemVal.S_int.iter_vars offset f;
-            MemVal.S_int.iter_vars len f;
+            MemVal.Bounded_int.iter_vars offset f;
+            MemVal.Bounded_int.iter_vars len f;
             MemVal.iter_vars_serialized v f
-        | Bound v -> MemVal.S_int.iter_vars v f)
+        | Bound v -> MemVal.Bounded_int.iter_vars v f)
       serialized
 
   let pp_serialized = Fmt.Dump.list pp_serialized_atom
@@ -633,6 +642,7 @@ struct
         Ok (to_opt { bound = None; root })
 
   let produce_bound bound t =
+    let* () = Symex.assume [ MemVal.Bounded_int.in_bound bound ] in
     match t with
     | None ->
         Symex.return
@@ -643,6 +653,7 @@ struct
 
   let produce_mem_val offset len v t =
     let ((_, high) as range) = Range.of_low_and_size offset len in
+    let* () = Symex.assume [ MemVal.Bounded_int.in_bound high ] in
     let t =
       match t with
       | Some t -> t

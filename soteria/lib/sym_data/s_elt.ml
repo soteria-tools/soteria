@@ -8,14 +8,14 @@ module type S = sig
   type t
 
   include Soteria_std.Printable.S with type t := t
-  module Symex : Symex.S
+  module Symex : Symex.Base
 
   val subst : (Var.t -> Var.t) -> t -> t
   val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
 end
 
 module Of_concrete
-    (Symex : Symex.S)
+    (Symex : Symex.Base)
     (C : sig
       type t
     end) =

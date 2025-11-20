@@ -74,6 +74,15 @@ module type S = sig
       serialized )
     Csymex.Result.t
 
+  val zero_range :
+    [< sptr ] Typed.t ->
+    sint Typed.t ->
+    t ->
+    ( unit * t,
+      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
+      serialized )
+    Csymex.Result.t
+
   val alloc :
     ?zeroed:bool ->
     sint Typed.t ->

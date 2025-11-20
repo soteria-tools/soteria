@@ -6,7 +6,7 @@ module type S = sig
       syntactic equality ([equal]) implies semantic equality ([sem_eq]) *)
 
   (** The symex world in which the type lives. *)
-  module Symex : Symex.S
+  module Symex : Symex.Base
 
   type t
 
@@ -27,7 +27,7 @@ module Make_syntax (S : S) = struct
 end
 
 module Of_concrete
-    (Symex : Symex.S)
+    (Symex : Symex.Base)
     (C : sig
       type t
 

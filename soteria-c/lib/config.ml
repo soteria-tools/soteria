@@ -70,6 +70,11 @@ type t = {
         [@env "SOTERIA_HAVOC_UNDEFINED_FUNS"]]
       (** Assume that all undefined functions can return any value. Warning:
           this can lead to unsoundnesses in analyses. *)
+  print_states : bool;
+      [@make.default false]
+      [@names [ "print-states" ]]
+      [@env "SOTERIA_PRINT_STATES"]
+      (** Print final program states after whole-program symbolic testing *)
 }
 [@@deriving make, subliner]
 

@@ -3,9 +3,10 @@ open Typed
 module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
-open Rustsymex
-open Rustsymex.Syntax
 open Rust_val
+open Sptr
+open DecayMapMonad
+open DecayMapMonad.Syntax
 
 module M (State : State_intf.S) = struct
   module Sptr = State.Sptr
@@ -40,21 +41,10 @@ module M (State : State_intf.S) = struct
         Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a" ppa v1
           ppa v2
 
-  let binop_fn (bop : Expressions.binop) signed =
-    match bop with
-    | Add _ | AddChecked -> ( +!@ )
-    | Sub _ | SubChecked -> ( -!@ )
-    | Mul _ | MulChecked -> ( *!@ )
-    | Div _ -> BV.div ~signed
-    | Rem _ -> BV.rem ~signed
-    | Shl _ -> ( <<@ )
-    | Shr _ -> if signed then BV.ashr else BV.lshr
-    | _ -> failwith "Invalid binop in binop_fn"
-
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
       hand side. *)
-  let normalise_shift_r (bop : Expressions.binop) l r =
+  let[@inline] normalise_shift_r (bop : Expressions.binop) l r =
     match bop with
     | Shl _ | Shr _ ->
         let l, r = (cast l, cast r) in
@@ -72,6 +62,7 @@ module M (State : State_intf.S) = struct
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
     let is_integer = match ty with TUInt _ | TInt _ -> true | _ -> false in
+    let r = normalise_shift_r bop l r in
     let** () =
       match bop with
       | _ when Stdlib.not is_integer -> Result.ok ()
@@ -103,9 +94,9 @@ module M (State : State_intf.S) = struct
           (* at this point, the size of the right-hand side might not match the given literal
              type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
-          let r, size_r = cast_int r in
+          let r = cast_lit ty r in
           assert_or_error
-            (BV.mki size_r 0 <=$@ r &&@ (r <$@ BV.mki size_r size))
+            (BV.mki_lit ty 0 <=$@ r &&@ (r <$@ BV.mki_lit ty size))
             `InvalidShift
       | _ -> Result.ok ()
     in
@@ -114,13 +105,22 @@ module M (State : State_intf.S) = struct
     | TInt _ | TUInt _ ->
         (* normalise both sides to be the same size; this is usually always the case,
            except for shift operations, so we do it manually *)
-        let r = normalise_shift_r bop l r in
         let l = cast_lit ty l in
         let r = cast_lit ty r in
-        let op = binop_fn bop signed in
-        Result.ok (cast (op l (cast r)))
-    | TFloat _ -> (
-        let l, r = (cast l, cast r) in
+        let res =
+          match bop with
+          | Add _ -> BV.add l r
+          | Sub _ -> BV.sub l r
+          | Mul om -> BV.mul ~checked:(om <> OWrap) l r
+          | Div _ -> BV.div ~signed l (cast r)
+          | Rem _ -> BV.rem ~signed l (cast r)
+          | Shl _ -> BV.shl l r
+          | Shr _ -> if signed then BV.ashr l r else BV.lshr l r
+          | _ -> failwith "Invalid binop in binop_fn"
+        in
+        Result.ok (cast res)
+    | TFloat f -> (
+        let l, r = (cast_f f l, cast_f f r) in
         match bop with
         | Add _ -> Result.ok (l +.@ r)
         | Sub _ -> Result.ok (l -.@ r)
@@ -134,27 +134,42 @@ module M (State : State_intf.S) = struct
   let eval_checked_lit_binop (op : Expressions.binop) ty l r =
     let l = cast_lit ty l in
     let r = cast_lit ty r in
+    let signed = Layout.is_signed ty in
     let wrapped, overflowed =
-      match op with
-      | AddChecked -> l +?@ r
-      | SubChecked -> l -?@ r
-      | MulChecked -> l *?@ r
+      match (op, signed) with
+      | AddChecked, false -> l +?@ r
+      | AddChecked, true -> l +$?@ r
+      | SubChecked, false -> l -?@ r
+      | SubChecked, true -> l -$?@ r
+      | MulChecked, false -> l *?@ r
+      | MulChecked, true -> l *$?@ r
       | _ -> failwith "Invalid checked op"
     in
     Result.ok (Tuple [ Base wrapped; Base (BV.of_bool overflowed) ])
 
-  let rec eval_ptr_binop (bop : Expressions.binop) l r :
-      ([> T.cval ] Typed.t, 'e, 'm) Result.t =
+  let meta_as_int = function
+    | Len l -> return (Some l)
+    | VTable ptr ->
+        let+ ptr = Sptr.decay ptr in
+        Some ptr
+    | Thin -> return None
+
+  let eval_meta_eq l r =
+    let* meta_l = meta_as_int l in
+    let+ meta_r = meta_as_int r in
+    match (meta_l, meta_r) with
+    | Some l, Some r -> l ==@ r
+    | None, None -> v_true
+    | _, _ -> v_false
+
+  let rec eval_ptr_binop (bop : Expressions.binop) l r =
     match (bop, l, r) with
     | Ne, _, _ ->
         let++ res = eval_ptr_binop Eq l r in
         BV.not_bool (cast res)
-    | Eq, Ptr (l, None), Ptr (r, None) ->
-        Result.ok (BV.of_bool (Sptr.sem_eq l r))
-    | Eq, Ptr (l, Some ml), Ptr (r, Some mr) ->
-        Result.ok (BV.of_bool (Sptr.sem_eq l r &&@ (ml ==@ mr)))
-    | Eq, Ptr (_, Some _), Ptr (_, None) | Eq, Ptr (_, None), Ptr (_, Some _) ->
-        Result.ok (BV.of_bool v_false)
+    | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
+        let* meta_eq = eval_meta_eq meta_l meta_r in
+        Result.ok (BV.of_bool (meta_eq &&@ Sptr.sem_eq l r))
     | Eq, Ptr (p, _), Base v | Eq, Base v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then
@@ -174,19 +189,17 @@ module M (State : State_intf.S) = struct
           in
           let v = bop dist Usize.(0s) in
           match (ml, mr) with
-          | Some ml, Some mr ->
+          | Thin, Thin -> Result.ok (BV.of_bool v)
+          (* is the below line correct? *)
+          | Thin, _ | _, Thin -> Result.ok (BV.of_bool v)
+          | _, _ ->
               if%sat dist ==@ Usize.(0s) then
-                let ml, mr, mty = cast_checked2 ml mr in
-                match untype_type mty with
-                | TBitVector _ -> Result.ok (BV.of_bool (bop ml mr))
-                | mty ->
-                    Fmt.kstr not_impl
-                      "Don't know how to compare metadata of type %a"
-                      Svalue.pp_ty mty
+                let* ml = meta_as_int ml in
+                let* mr = meta_as_int mr in
+                let ml = Option.get ml in
+                let mr = Option.get mr in
+                Result.ok (BV.of_bool (bop ml mr))
               else Result.ok (BV.of_bool v)
-          (* is this correct? *)
-          | Some _, None | None, Some _ -> Result.ok (BV.of_bool v)
-          | None, None -> Result.ok (BV.of_bool v)
         else Result.error `UBPointerComparison
     | Cmp, Ptr (l, _), Ptr (r, _) ->
         let** () =

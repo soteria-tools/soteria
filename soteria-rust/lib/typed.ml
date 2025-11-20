@@ -37,17 +37,15 @@ let cast_i uty = cast_lit (TUInt uty)
 
 let cast_f fty v =
   let fp = Charon_util.float_precision fty in
-  cast_checked ~ty:(t_f fp) v
+  cast_checked ~ty:(t_float fp) v
 
 let cast_float v =
-  match cast_float v with Some v -> v | None -> cast_error v (t_f F64)
+  match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
 
 (** DEPRECATED: it is unlikely you need this; the interpreter should be well
     typed *)
 let cast_int (v : 'a t) : [> T.sint ] t * int =
-  match cast_int v with
-  | Some v -> (v, size_of_int v)
-  | None -> cast_error v (t_int 0)
+  match cast_int v with Some v -> v | None -> cast_error v (t_int 0)
 
 module BitVec = struct
   include BitVec
@@ -83,8 +81,7 @@ module BitVec = struct
   let usize_of_const_generic cgen = usize (Charon_util.z_of_const_generic cgen)
 
   let of_bool : T.sbool t -> [> T.sint ] t =
-    let size = Lc.size_of_literal_ty TBool * 8 in
-    of_bool size
+    of_bool (Lc.size_of_literal_ty TBool * 8)
 
   let of_scalar : Values.scalar_value -> [> T.sint ] t = function
     | UnsignedScalar (Usize, v) | SignedScalar (Isize, v) -> usize v
@@ -93,6 +90,14 @@ module BitVec = struct
     | UnsignedScalar (U32, v) | SignedScalar (I32, v) -> u32 v
     | UnsignedScalar (U64, v) | SignedScalar (I64, v) -> u64 v
     | UnsignedScalar (U128, v) | SignedScalar (I128, v) -> u128 v
+
+  let of_literal : Values.literal -> [> T.sint ] t = function
+    | VScalar s -> of_scalar s
+    | VChar c -> u32i (Uchar.to_int c)
+    | VBool b -> of_bool (S_bool.of_bool b)
+    | l ->
+        Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
+          (PrintValues.literal_to_string l)
 
   let bv_to_z ty z =
     let tag_size = 8 * Lc.size_of_literal_ty ty in
@@ -109,6 +114,7 @@ end
 module Ptr = struct
   include Ptr
 
+  let null_loc () = null_loc (8 * Lc.size_of_uint_ty Usize)
   let null () = null (8 * Lc.size_of_uint_ty Usize)
   let loc_of_int i = loc_of_int (8 * Lc.size_of_uint_ty Usize) i
 end

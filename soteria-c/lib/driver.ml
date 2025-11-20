@@ -288,25 +288,48 @@ let initialise log_config term_config solver_config config f =
   Soteria.Solvers.Config.set solver_config;
   Config.with_config ~config f
 
+let print_states result =
+  let open Soteria.Stats in
+  let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
+  Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n@?"
+    Fmt.Dump.(
+      list @@ fun ft (r, _) ->
+      (Soteria.Symex.Compo_res.pp
+         ~ok:(pair Aggregate_val.pp pp_state)
+         ~err:(Soteria.Symex.Or_gave_up.pp pp_err_and_call_trace)
+         ~miss:(Fmt.Dump.list SState.pp_serialized))
+        ft r)
+    result.res
+
 (* Entry point function *)
 let exec_and_print log_config term_config solver_config config includes
     file_names entry_point =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   let@ () = initialise log_config term_config solver_config config in
   let result = exec_function ~includes file_names entry_point in
-  if not (Config.current ()).parse_only then
-    let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
-    Fmt.pr
-      "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n\
-       Executed %d statements"
-      Fmt.Dump.(
-        list @@ fun ft (r, _) ->
-        (Soteria.Symex.Compo_res.pp
-           ~ok:(pair Aggregate_val.pp pp_state)
-           ~err:(Soteria.Symex.Or_gave_up.pp pp_err_and_call_trace)
-           ~miss:(Fmt.Dump.list SState.pp_serialized))
-          ft r)
-      result.res result.stats.steps_number
+  if not (Config.current ()).parse_only then (
+    dump_stats result.stats;
+    if (Config.current ()).print_states then print_states result;
+    let errors =
+      List.filter_map
+        (function Soteria.Symex.Compo_res.Error e, _ -> Some e | _ -> None)
+        result.res
+    in
+
+    ListLabels.iter errors
+      ~f:
+        (let open Error.Diagnostic in
+         function
+         | Soteria.Symex.Or_gave_up.E (err, trace) ->
+             print_diagnostic ~fid:entry_point ~call_trace:trace ~error:err
+         | Gave_up msg ->
+             print_diagnostic ~fid:entry_point ~call_trace:Call_trace.empty
+               ~error:(`Gave_up msg));
+    let success = List.is_empty errors in
+    Fmt.pr "@.Executed %d statements" result.stats.steps_number;
+    if success then
+      Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_ok "Verification Success!"
+    else Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!")
 
 let dump_summaries results =
   match (Config.current ()).dump_summaries_file with
@@ -365,7 +388,9 @@ let generate_summaries ~functions_to_analyse prog =
     already_signaled := remaining_to_signal @ !already_signaled;
     let@ error, call_trace = list_iter remaining_to_signal in
     found_bugs := true;
-    Error.Diagnostic.print_diagnostic ~fid ~call_trace ~error;
+    Error.Diagnostic.print_diagnostic
+      ~fid:(Fmt.to_to_string Ail_helpers.pp_sym_hum fid)
+      ~call_trace ~error;
     if (Config.current ()).show_manifest_summaries then
       Fmt.pr "@\n@[Corresponding summary:@ %a@]" Summary.pp_raw raw;
     Fmt.pr "@\n@?"
@@ -378,10 +403,11 @@ let lsp config () =
   Config.with_config ~config @@ Soteria_c_lsp.run ~generate_errors
 
 (* Entry point function *)
-let show_ail logs_config term_config (includes : string list)
+let show_ail logs_config term_config config (includes : string list)
     (files : string list) =
   Soteria.Logs.Config.check_set_and_lock logs_config;
   Soteria.Terminal.Config.set_and_lock term_config;
+  Config.with_config ~config @@ fun () ->
   match parse_and_link_ail ~includes files with
   | Ok { symmap; sigma; entry_point } ->
       Fmt.pr "@[<v 2>Extern idmap:@ %a@]@\n@\n"

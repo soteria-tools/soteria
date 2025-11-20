@@ -5,7 +5,10 @@ type t =
   [ `DoubleFree  (** Tried freeing the same allocation twice *)
   | `InvalidFree  (** Tried freeing memory at a non-0 offset *)
   | `MemoryLeak  (** Dynamically allocated memory was not freed *)
-  | `MisalignedPointer  (** Tried accessing memory with a misaligned pointer *)
+  | `MisalignedPointer of
+    Typed.T.nonzero Typed.t * Typed.T.nonzero Typed.t * Typed.T.sint Typed.t
+    (** Tried accessing memory with a misaligned pointer
+        [(expected, received, offset)] *)
   | `NullDereference  (** Dereferenced a null pointer *)
   | `OutOfBounds  (** Tried accessing memory outside the allocation bounds *)
   | `UninitializedMemoryAccess  (** Accessed uninitialised memory *)
@@ -57,7 +60,7 @@ let is_unwindable : [> t ] -> bool = function
       true
   | _ -> false
 
-let pp ft : [< t ] -> unit = function
+let pp ft : [> t ] -> unit = function
   | `AliasingError -> Fmt.string ft "Aliasing error"
   | `Breakpoint -> Fmt.string ft "Breakpoint hit"
   | `DeadVariable -> Fmt.string ft "Dead variable accessed"
@@ -81,7 +84,9 @@ let pp ft : [< t ] -> unit = function
   | `MemoryLeak -> Fmt.string ft "Memory leak"
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
-  | `MisalignedPointer -> Fmt.string ft "Misaligned pointer"
+  | `MisalignedPointer (exp, got, ofs) ->
+      Fmt.pf ft "Misaligned pointer; expected %a, received %a with offset %a"
+        Typed.ppa exp Typed.ppa got Typed.ppa ofs
   | `NotAFnPointer -> Fmt.string ft "Not a function pointer"
   | `NullDereference -> Fmt.string ft "Null dereference"
   | `OutOfBounds -> Fmt.string ft "Out of bounds"
@@ -110,33 +115,3 @@ let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `MemoryLeak -> Warning
   | e when is_unwindable e -> Error
   | _ -> Bug
-
-module Diagnostic = struct
-  let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col)
-
-  let as_ranges (loc : Charon.Meta.span) =
-    let span = Option.value ~default:loc.span loc.generated_from_span in
-    match span.file.name with
-    | Local file when String.starts_with ~prefix:"/rustc/" file -> []
-    | Local file ->
-        let filename =
-          if String.starts_with ~prefix:Plugin.lib_root file then
-            let root_l = String.length Plugin.lib_root in
-            let rel_path =
-              String.sub file root_l (String.length file - root_l)
-            in
-            Some ("$RUSTERIA" ^ rel_path)
-          else None
-        in
-        [
-          Soteria.Terminal.Diagnostic.mk_range_file ?filename
-            ?content:span.file.contents file (to_loc span.beg_loc)
-            (to_loc span.end_loc);
-        ]
-    | Virtual _ -> []
-
-  let print_diagnostic ~fname ~call_trace ~error =
-    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
-      ~error:(Fmt.to_to_string pp error)
-      ~severity:(severity error) ~fname
-end

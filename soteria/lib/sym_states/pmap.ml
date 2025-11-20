@@ -3,7 +3,7 @@ open Symex
 module type KeyS = sig
   type t
 
-  module Symex : Symex.S
+  module Symex : Symex.Base
   include Stdlib.Map.OrderedType with type t := t
 
   type sbool_v := Symex.Value.S_bool.t Symex.Value.t
@@ -11,25 +11,27 @@ module type KeyS = sig
   val pp : Format.formatter -> t -> unit
   val sem_eq : t -> t -> sbool_v
   val fresh : unit -> t Symex.t
+  val simplify : t -> t Symex.t
   val distinct : t list -> sbool_v
   val subst : (Var.t -> Var.t) -> t -> t
   val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
 end
 
-module Mk_concrete_key (Symex : Symex.S) (Key : Soteria_std.Ordered_type.S) :
+module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
   KeyS with module Symex = Symex and type t = Key.t = struct
   module Symex = Symex
   include Key
 
   let sem_eq x y = Symex.Value.S_bool.of_bool (Key.compare x y = 0)
   let fresh () = failwith "Fresh not implemented for concrete keys"
+  let simplify = Symex.return
   let distinct _ = Symex.Value.S_bool.of_bool true
   let subst _ x = x
   let iter_vars _ = fun _ -> ()
 end
 
 module Build_from_find_opt_sym
-    (Symex : Symex.S)
+    (Symex : Symex.Base)
     (Key : KeyS with module Symex = Symex)
     (Find_opt_sym : sig
       val f : Key.t -> 'a Stdlib.Map.Make(Key).t -> (Key.t * 'a option) Symex.t
@@ -149,7 +151,7 @@ struct
     Result.fold_seq (M.to_seq st) ~init ~f
 end
 
-module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
+module Make (Symex : Symex.Base) (Key : KeyS with module Symex = Symex) = struct
   open Symex.Syntax
   module M' = Stdlib.Map.Make (Key)
 
@@ -172,7 +174,7 @@ module Make (Symex : Symex.S) (Key : KeyS with module Symex = Symex) = struct
       end)
 end
 
-module Direct_access (Symex : Symex.S) (Key : KeyS with module Symex = Symex) =
+module Direct_access (Symex : Symex.Base) (Key : KeyS with module Symex = Symex) =
 struct
   open Symex.Syntax
   module M' = Stdlib.Map.Make (Key)
@@ -184,6 +186,7 @@ struct
           if%sat Key.sem_eq key k then Symex.return (k, Some v)
           else find_bindings tl
     in
+    let* key = Key.simplify key in
     match M'.find_opt key st with
     | Some v -> Symex.return (key, Some v)
     | None ->
@@ -202,7 +205,7 @@ end
 
 (** Only sound to use if the keys of the map are invariant under interpretations
     of the symbolic variables *)
-module Concrete (Symex : Symex.S) (Key : Soteria_std.Ordered_type.S) = struct
+module Concrete (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) = struct
   module Key = Mk_concrete_key (Symex) (Key)
   module M' = Stdlib.Map.Make (Key)
 

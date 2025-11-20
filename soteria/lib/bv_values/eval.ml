@@ -13,13 +13,12 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | FMul -> Float.mul
   | FDiv -> Float.div
   | FRem -> Float.rem
-  | Add -> BitVec.add
-  | Sub -> BitVec.sub
-  | Mul -> BitVec.mul
+  | Add { checked } -> BitVec.add ~checked
+  | Sub { checked } -> BitVec.sub ~checked
+  | Mul { checked } -> BitVec.mul ~checked
   | Div signed -> BitVec.div ~signed
   | Rem signed -> BitVec.rem ~signed
   | Mod -> BitVec.mod_
-  | AddOvf signed -> BitVec.add_overflows ~signed
   | MulOvf signed -> BitVec.mul_overflows ~signed
   | Lt signed -> BitVec.lt ~signed
   | Leq signed -> BitVec.leq ~signed
@@ -37,20 +36,20 @@ let eval_unop : Unop.t -> t -> t = function
   | GetPtrLoc -> Ptr.loc
   | GetPtrOfs -> Ptr.ofs
   | BvOfBool n -> BitVec.of_bool n
-  | BvOfFloat (signed, size) -> BitVec.of_float ~signed ~size
-  | FloatOfBv (signed, fp) -> BitVec.to_float ~signed ~fp
+  | BvOfFloat (rounding, signed, size) ->
+      BitVec.of_float ~rounding ~signed ~size
+  | FloatOfBv (rounding, signed, fp) -> BitVec.to_float ~rounding ~signed ~fp
   | BvExtract (from, to_) -> BitVec.extract from to_
   | BvExtend (signed, by) -> BitVec.extend ~signed by
   | BvNot -> BitVec.not
   | Neg -> BitVec.neg
-  | NegOvf -> BitVec.neg_overflows
   | FIs fc -> Float.is_floatclass fc
   | FRound rm -> Float.round rm
 
 let rec eval ~eval_var (x : t) : t =
   let eval = eval ~eval_var in
   match x.node.kind with
-  | Var v -> eval_var v x.node.ty
+  | Var v -> eval_var x v x.node.ty
   | Bool _ | Float _ | BitVec _ -> x
   | Ptr (l, o) ->
       let nl = eval l in
@@ -82,5 +81,6 @@ let rec eval ~eval_var (x : t) : t =
 (** Evaluates an expression; will call [eval_var] on each [Var] encountered. If
     evaluation errors (e.g. from a division by zero), gives up and returns the
     original expression. *)
-let eval ?(eval_var : Var.t -> Svalue.ty -> t = Svalue.mk_var) (x : t) : t =
+let eval ?(eval_var : Svalue.t -> Var.t -> Svalue.ty -> t = fun x _ _ -> x)
+    (x : t) : t =
   try eval ~eval_var x with Division_by_zero -> x

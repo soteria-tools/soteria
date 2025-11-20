@@ -1,10 +1,12 @@
 open Soteria.Symex.Compo_res
-open Rustsymex.Syntax
 open Typed
 open Typed.Infix
-open Rustsymex
-open Rustsymex.Result
 open Charon
+open Syntaxes.FunctionWrap
+module DecayMapMonad = Sptr.DecayMapMonad
+open DecayMapMonad
+open DecayMapMonad.Result
+open DecayMapMonad.Syntax
 
 module Make (Sptr : Sptr.S) = struct
   module Encoder = Encoder.Make (Sptr)
@@ -15,24 +17,33 @@ module Make (Sptr : Sptr.S) = struct
 
   module MemVal = struct
     module TB = Soteria.Sym_states.Tree_block
-    module Symex = Rustsymex
+    module Symex = DecayMapMonad
 
-    module S_int = struct
-      module Symex = Rustsymex
-      include Typed
-      include Typed.Infix
+    module Bounded_int = struct
+      module Symex = Symex
 
       type t = T.sint Typed.t
 
-      let pp = ppa
       let zero () = Typed.BitVec.usize Z.zero
       let one () = Typed.BitVec.usize Z.one
-      let of_z = Typed.BitVec.usize
-      let to_z _ = None (* Can be improved, but sound. *)
-      let add = Typed.Infix.( +!@ )
-      let minus = Typed.Infix.( -!@ )
-      let lt = Typed.BitVec.lt ~signed:false
-      let leq = Typed.BitVec.leq ~signed:false
+
+      let in_bound (v : t) : S_bool.t Typed.t =
+        let max = Layout.max_value_z (TInt Isize) in
+        let max = Typed.BitVec.usize max in
+        v >=@ zero () &&@ (v <=@ max)
+
+      let pp = Value.ppa
+      let of_z z = Typed.BitVec.usize z
+      let subst = Typed.subst
+      let iter_vars v f = Typed.iter_vars v f
+      let equal = Typed.equal
+      let sem_eq = Typed.sem_eq
+      let distinct = Typed.distinct
+      let add = Infix.( +!@ )
+      let sub = Infix.( -!@ )
+      let to_z = Typed.BitVec.to_z
+      let lt = Infix.( <@ )
+      let leq = Infix.( <=@ )
     end
 
     let pp_init ft (v, ty) =
@@ -138,7 +149,7 @@ module Make (Sptr : Sptr.S) = struct
       | SZeros, Owned (Init _, _) -> not_impl "Assume rust_val == 0s"
       | SZeros, _ -> vanish ()
 
-    let produce (s : serialized) (t : tree) : tree Rustsymex.t =
+    let produce (s : serialized) (t : tree) : tree Symex.t =
       match (s, t.node) with
       | _, (Owned _ | NotOwned Partially) -> vanish ()
       | SInit v, NotOwned Totally -> return (owned t (Init v))
@@ -150,7 +161,7 @@ module Make (Sptr : Sptr.S) = struct
   end
 
   open MemVal
-  include Tree_block (MemVal)
+  include Soteria.Sym_states.Tree_block.Make (DecayMapMonad) (MemVal)
 
   let decode_mem_val ~ty = function
     | Uninit _ -> Result.error `UninitializedMemoryAccess
@@ -171,8 +182,7 @@ module Make (Sptr : Sptr.S) = struct
     | Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
          We have to approximate and vanish. *)
-        L.info (fun m -> m "Reading from Any memory, vanishing.");
-        Rustsymex.vanish ()
+        not_impl "Reading from Any memory, vanishing."
 
   let collect_leaves (t : Tree.t) =
     Result.fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
@@ -182,11 +192,11 @@ module Make (Sptr : Sptr.S) = struct
         | NotOwned Totally -> miss_no_fix ~reason:"decode" ()
         | Owned (Uninit Totally, _) -> Result.error `UninitializedMemoryAccess
         | Owned (Zeros, _) ->
-            let* ty =
-              match Typed.kind (Range.size leaf.range) with
-              | BitVec size -> return (Layout.size_to_uint (Z.to_int size))
-              | _ -> not_impl "Don't know how to read this size"
+            let* size =
+              of_opt_not_impl "Don't know how to read this size"
+              @@ BitVec.to_z (Range.size leaf.range)
             in
+            let ty = Layout.size_to_uint (Z.to_int size) in
             let+ value =
               of_opt_not_impl "Don't know how to zero this type"
               @@ Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) ty
@@ -222,18 +232,18 @@ module Make (Sptr : Sptr.S) = struct
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
       (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t option) :
       (rust_val * t option, 'err, 'fix) Result.t =
-    let* size = Layout.size_of_s ty in
+    let*^ size = Layout.size_of_s ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes () =
-      let+ v = Layout.nondet ty in
+      let+^ v = Layout.nondet ty in
       [ [ MemVal { offset = ofs; len = size; v = SInit (v, ty) } ] ]
     in
     let@ t = with_bound_and_owned_check ~mk_fixes t bound in
     let replace_node t =
       let@ v, tb_st = as_owned t in
-      let++ tb_st' =
-        if ignore_borrow then Result.ok tb_st
-        else Tree_borrow.access tb tag Read tb_st
+      let++^ tb_st' =
+        if ignore_borrow then Rustsymex.Result.ok tb_st
+        else Tree_borrow.access tag Read tb tb_st
       in
       { t with node = Owned (v, tb_st') }
     in
@@ -247,12 +257,12 @@ module Make (Sptr : Sptr.S) = struct
   let store (ofs : [< T.sint ] Typed.t) (ty : Types.ty) (value : rust_val)
       (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t option) :
       (unit * t option, 'err, 'fix) Result.t =
-    let* size = Layout.size_of_s ty in
+    let*^ size = Layout.size_of_s ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let@ t = with_bound_and_owned_check t bound in
     let replace_node t =
       let@ _, tb_st = as_owned t in
-      let++ tb_st' = Tree_borrow.access tb tag Write tb_st in
+      let++^ tb_st' = Tree_borrow.access tag Write tb tb_st in
       { node = Owned (Init (value, ty), tb_st'); range; children = None }
     in
     let rebuild_parent = Tree.of_children in
@@ -301,8 +311,8 @@ module Make (Sptr : Sptr.S) = struct
       let@ v, tb_st = as_owned t in
       (* We need to do two things: protect this tag for the block, and perform a read, as
          all function calls perform one on the parameters. *)
-      let tb_st' = Tree_borrow.set_protector ~protected:true tb tag tb_st in
-      let++ tb_st' = Tree_borrow.access tb tag Tree_borrow.Read tb_st' in
+      let tb_st' = Tree_borrow.set_protector ~protected:true tag tb tb_st in
+      let++^ tb_st' = Tree_borrow.access tag Read tb tb_st' in
       { t with node = Owned (v, tb_st') }
     in
     let rebuild_parent = Tree.of_children in
@@ -316,7 +326,7 @@ module Make (Sptr : Sptr.S) = struct
       let@ v, tb_st = as_owned t in
       (* We need to do two things: protect this tag for the block, and perform a read, as
          all function calls perform one on the parameters. *)
-      let tb_st' = Tree_borrow.set_protector ~protected:false tb tag tb_st in
+      let tb_st' = Tree_borrow.set_protector ~protected:false tag tb tb_st in
       Result.ok { t with node = Owned (v, tb_st') }
     in
     let rebuild_parent = Tree.of_children in
@@ -333,7 +343,7 @@ module Make (Sptr : Sptr.S) = struct
       Tree.map_leaves t @@ fun tt ->
       match tt.node with
       | Owned (v, tb_st) ->
-          let++ tb_st' = Tree_borrow.access tb tag Read tb_st in
+          let++^ tb_st' = Tree_borrow.access tag Read tb tb_st in
           { tt with node = Owned (v, tb_st') }
       | _ -> assert false
     in

@@ -55,7 +55,7 @@ let[@inline] type_ x = x
 let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
 let cast_checked = type_checked
 let cast_float x = if is_float x.node.ty then Some x else None
-let cast_int x = if is_bv x.node.ty then Some x else None
+let cast_int x = if is_bv x.node.ty then Some (x, size_of x.node.ty) else None
 let size_of_int x = size_of x.node.ty
 
 let cast_checked2 x y =
@@ -79,14 +79,18 @@ module Infix = struct
   include Infix
 
   let ( +!@ ) = ( +@ )
+  let ( +!!@ ) = BitVec.add ~checked:true
   let ( -!@ ) = ( -@ )
+  let ( -!!@ ) = BitVec.sub ~checked:true
   let ( *!@ ) = ( *@ )
+  let ( *!!@ ) = BitVec.mul ~checked:true
   let ( ~-! ) = ( ~- )
-  let ( +?@ ) l r = (l +@ r, BitVec.add_overflows ~signed:false l r)
-  let ( +$?@ ) l r = (l +@ r, BitVec.add_overflows ~signed:true l r)
-  let ( -?@ ) l r = (l -@ r, BitVec.sub_overflows ~signed:false l r)
-  let ( -$?@ ) l r = (l -@ r, BitVec.sub_overflows ~signed:true l r)
-  let ( *?@ ) l r = (l *@ r, BitVec.mul_overflows ~signed:false l r)
-  let ( *$?@ ) l r = (l *@ r, BitVec.mul_overflows ~signed:true l r)
+  let mk_checked_op op ovf = fun l r -> (op ?checked:(Some true) l r, ovf l r)
+  let ( +?@ ) = mk_checked_op BitVec.add (BitVec.add_overflows ~signed:false)
+  let ( +$?@ ) = mk_checked_op BitVec.add (BitVec.add_overflows ~signed:true)
+  let ( -?@ ) = mk_checked_op BitVec.sub (BitVec.sub_overflows ~signed:false)
+  let ( -$?@ ) = mk_checked_op BitVec.sub (BitVec.sub_overflows ~signed:true)
+  let ( *?@ ) = mk_checked_op BitVec.mul (BitVec.mul_overflows ~signed:false)
+  let ( *$?@ ) = mk_checked_op BitVec.mul (BitVec.mul_overflows ~signed:true)
   let ( ~-? ) x = (~-x, BitVec.neg_overflows x)
 end

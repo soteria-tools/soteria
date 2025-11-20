@@ -3,20 +3,6 @@ open Rustsymex
 let[@inline] is_disabled () = !Config.current.ignore_aliasing
 
 type tag = int
-and access = Read | Write
-and locality = Local | Foreign
-and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
-
-(** The tag of the node, whether it has a protector (this is distinct from
-    having the protector toggled!), its children, and its initial state if it
-    doesn't exist in the state. *)
-and t = {
-  tag : tag;
-  protector : bool;
-  children : t list;
-  initial_state : state;
-}
-[@@deriving show { with_path = false }]
 
 let tag_counter = ref 0
 
@@ -27,6 +13,27 @@ let fresh_tag () =
 let zero = 0
 let pp_tag fmt tag = Fmt.pf fmt "‖%d‖" tag
 
+module TagMap = Map.Make (struct
+  type t = tag
+
+  let compare = compare
+end)
+
+type access = Read | Write
+and locality = Local | Foreign
+and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
+
+(** The tag of the node, whether it has a protector (this is distinct from
+    having the protector toggled!), its parents (including this node's ID!), and
+    its initial state if it doesn't exist in the state. *)
+and node = {
+  tag : tag;
+  protector : bool;
+  parents : tag list;
+  initial_state : state;
+}
+[@@deriving show { with_path = false }]
+
 let pp_state fmt = function
   | Reserved true -> Fmt.string fmt "Re T"
   | Reserved false -> Fmt.string fmt "Re F"
@@ -35,15 +42,6 @@ let pp_state fmt = function
   | ReservedIM -> Fmt.string fmt "ReIM"
   | Disabled -> Fmt.string fmt "Dis "
   | UB -> Fmt.string fmt "UB  "
-
-let rec pp fmt t =
-  if List.is_empty t.children then pp_tag fmt t.tag
-  else Fmt.pf fmt "%a(%a)" pp_tag t.tag Fmt.(list ~sep:comma pp) t.children
-
-let init ?(protector = false) ~state () =
-  { tag = fresh_tag (); protector; children = []; initial_state = state }
-
-let equal n1 n2 = n1.tag == n2.tag
 
 let meet st1 st2 =
   match (st1, st2) with
@@ -88,50 +86,40 @@ let transition =
   in
   fun ~protected -> if protected then transition_protected else transition
 
-(* let[@tailrec] rec root n = match n.parent with None -> n | Some p -> root p *)
+type t = node TagMap.t
 
-let rec iter n f =
-  f n;
-  List.iter (fun n -> iter n f) n.children
+let pp ft t =
+  let open Fmt in
+  iter_bindings TagMap.iter
+    (fun ft (tag, node) -> pf ft "%a -> %a" pp_tag tag pp_node node)
+    ft t
 
-(** [find n t] Looks for the node with tag [t] in the tree rooted at [n] *)
-let find n t = Iter.find_pred_exn (fun n -> n.tag = t) (iter n)
-
-(** [is_derived n t]: Returns [Local] if [t] is derived from [n], i.e. [t] is a
-    descendant of [n], [Foreign] otherwise *)
-let is_derived n t =
-  try
-    let _ = find n t in
-    Local
-  with Not_found -> Foreign
-
-let add_child ~parent ~root child =
-  let found = ref false in
-  let rec aux node =
-    if node.tag = parent then (
-      found := true;
-      { node with children = child :: node.children })
-    else { node with children = List.map aux node.children }
+let init ~state () =
+  let tag = fresh_tag () in
+  let node =
+    { tag; protector = false; parents = [ tag ]; initial_state = state }
   in
-  let root' = aux root in
-  if !found then root' else raise Not_found
+  (TagMap.singleton tag node, tag)
 
-let update root f tag =
-  let found = ref false in
-  let rec aux node =
-    if node.tag = tag then (
-      found := true;
-      f node)
-    else { node with children = List.map aux node.children }
+let ub_state = fst @@ init ~state:UB ()
+
+let add_child ~parent ?(protector = false) ~state st =
+  let tag = fresh_tag () in
+  let node_parent = TagMap.find parent st in
+  let node =
+    {
+      tag;
+      protector;
+      parents = tag :: node_parent.parents;
+      initial_state = state;
+    }
   in
-  let root' = aux root in
-  if !found then root' else raise Not_found
+  (TagMap.add tag node st, tag)
 
-module TagMap = Map.Make (struct
-  type t = tag
-
-  let compare = compare
-end)
+let unprotect tag =
+  TagMap.update tag (function
+    | None -> raise Not_found
+    | Some n -> Some { n with protector = false })
 
 (** [tag -> (protected * state)], [protected] indicating the tag's protector
     (managed outside [tb_state]) was toggled. *)
@@ -145,29 +133,25 @@ let pp_tb_state =
 
 let empty_state = TagMap.empty
 
-let set_protector ~protected root tag st =
-  TagMap.update tag
-    (function
-      | None ->
-          let node = find root tag in
-          Some (protected, node.initial_state)
-      | Some (_, st) -> Some (protected, st))
-    st
+let set_protector ~protected tag root =
+  TagMap.update tag (function
+    | None ->
+        let node = TagMap.find tag root in
+        Some (protected, node.initial_state)
+    | Some (_, st) -> Some (protected, st))
 
-(** [access root accessed im e state]: Update all nodes in the mapping [state]
-    for the tree rooted at [root] with an event [e], that happened at
-    [accessed]. *)
-let access (root : t) accessed e st =
+(** [access accessed im e structure state]: Update all nodes in the mapping
+    [state] for the tree structure [structure] with an event [e], that happened
+    at [accessed]. *)
+let access accessed e (root : t) st =
   let ub_happened = ref false in
   let st =
-    Iter.fold
-      (fun st node ->
-        TagMap.update node.tag
-          (function
-            | None -> Some (false, node.initial_state) | Some _ as st -> st)
-          st)
-      st
-    @@ iter root
+    TagMap.fold
+      (fun tag node ->
+        TagMap.update tag (function
+          | None -> Some (false, node.initial_state)
+          | Some _ as st -> st))
+      root st
   in
   L.trace (fun m ->
       let pp_binding fmt (tag, (protected, st)) =
@@ -178,22 +162,26 @@ let access (root : t) accessed e st =
         accessed pp root
         Fmt.(iter_bindings ~sep:(Fmt.any ", ") TagMap.iter pp_binding)
         st);
+  let accessed_node = TagMap.find accessed root in
   let st' =
     TagMap.mapi
       (fun tag (protected, st) ->
-        let node = find root tag in
-        let rel = is_derived node accessed in
+        let rel =
+          if List.mem tag accessed_node.parents then Local else Foreign
+        in
         (* if the tag has a protector and is accessed, this toggles the protector! *)
-        let protected = node.protector && (tag = accessed || protected) in
+        let protected =
+          (tag = accessed || protected) && (TagMap.find tag root).protector
+        in
         let st' = transition ~protected st (rel, e) in
         if st' = UB then (
           ub_happened := true;
           L.debug (fun m ->
               m
                 "TB: Undefined behavior encountered for %a, %a %a (protected? \
-                 %b): %a->%a"
+                 %b): %a -> %a in structure@.%a"
                 pp_tag tag pp_locality rel pp_access e protected pp_state st
-                pp_state st'));
+                pp_state st' pp root));
         (protected, st'))
       st
   in

@@ -487,13 +487,13 @@ struct
               { node = { kind = Var n; _ }; _ } ) ->
             Var.Hashtbl.add v_eqs n x
         | _ -> ());
-    let eval_var v (ty : Svalue.ty) =
+    let eval_var v_var v (ty : Svalue.ty) =
       match ty with
       | TBitVector n | TLoc n -> (
           let i = Var.to_int v in
           try Var.Hashtbl.find v_eqs v
           with Not_found -> Svalue.BitVec.mk_masked n (Z.of_int i))
-      | _ -> Svalue.mk_var v ty
+      | _ -> v_var
     in
     let res = Eval.eval ~eval_var to_check in
     Svalue.equal res Svalue.S_bool.v_true
@@ -554,4 +554,6 @@ end
 
 module Z3 = Solvers.Z3.Make (Encoding)
 module Z3_incremental_solver = Make_incremental (Analyses.None) (Z3)
-module Z3_solver = Make (Analyses.None) (Z3)
+
+module Z3_solver =
+  Make (Analyses.Merge (Analyses.Interval) (Analyses.Equality)) (Z3)

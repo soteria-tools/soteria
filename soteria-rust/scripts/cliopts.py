@@ -9,17 +9,22 @@ from parselog import (
     categorise_rusteria,
 )
 
-
-ToolName = Literal["Rusteria", "Kani", "Miri"]
-SuiteName = Literal["kani", "miri", "custom"]
 CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
-CmdBenchmark = tuple[Literal["benchmark"], tuple]
-Cmd = CmdExec | CmdAll | CmdEval | CmdEvalDiff | CmdBenchmark
-
-SUITE_NAMES: list[SuiteName] = ["miri", "kani", "custom"]
+CmdBenchmark = tuple[Literal["benchmark"], tuple[Optional[ToolName]]]
+CmdCompKani = tuple[Literal["comp-kani"], tuple[Path, bool]]
+CmdCompFinetime = tuple[Literal["finetime"], tuple]
+Cmd = (
+    CmdExec
+    | CmdAll
+    | CmdEval
+    | CmdEvalDiff
+    | CmdBenchmark
+    | CmdCompKani
+    | CmdCompFinetime
+)
 
 
 class CliOpts(TypedDict):
@@ -32,6 +37,7 @@ class CliOpts(TypedDict):
     no_skips: bool
     timeout: Optional[int]
     test_folder: Optional[Path]
+    test_file: Optional[Path]
     categorise: TestCategoriser
 
 
@@ -49,7 +55,7 @@ class FakeCliOpts:
         raise RuntimeError("Call parse_flags before accessing OPTS")
 
 
-def parse_flags():
+def parse_flags() -> CliOpts:
     opts: CliOpts = {
         "cmd": cast(Cmd, None),
         "tool": "Rusteria",
@@ -60,6 +66,7 @@ def parse_flags():
         "no_skips": False,
         "timeout": None,
         "test_folder": None,
+        "test_file": None,
         "categorise": categorise_rusteria,
     }
 
@@ -85,7 +92,26 @@ def parse_flags():
         file2 = Path(sys.argv.pop(0))
         opts["cmd"] = ("eval-diff", (file1, file2))
     elif arg == "benchmark":
-        opts["cmd"] = ("benchmark", ())
+        if sys.argv and sys.argv[0] in TOOL_NAMES:
+            tool = cast(ToolName, sys.argv.pop(0))
+            opts["cmd"] = ("benchmark", (tool,))
+        else:
+            opts["cmd"] = ("benchmark", (None,))
+    elif arg == "comp-kani":
+        if len(sys.argv) < 1:
+            raise ArgError("missing path to path with tests")
+        path = Path(sys.argv.pop(0))
+        if not path.is_dir():
+            raise ArgError(
+                f"{RED}The path {path} does not exist or is not a directory."
+            )
+        if "--cached" in sys.argv:
+            sys.argv.remove("--cached")
+            opts["cmd"] = ("comp-kani", (path.resolve(), True))
+        else:
+            opts["cmd"] = ("comp-kani", (path.resolve(), False))
+    elif arg == "finetime":
+        opts["cmd"] = ("finetime", ())
     else:
         raise ArgError(
             f"Unknown command, expected {', '.join(SUITE_NAMES)}, all, eval or eval-diff"
@@ -103,7 +129,7 @@ def parse_flags():
 
     with_miri = False
     with_kani = False
-    with_obol = False
+    with_charon = False
     cmd_flags: list[str] = []
     while len(args) > 0:
         arg = pop()
@@ -128,7 +154,12 @@ def parse_flags():
                     f"{RED}The folder {folder} does not exist or is not a directory."
                 )
             opts["test_folder"] = folder
-        elif arg == "--no-skip":
+        elif arg == "--file":
+            file = Path(pop()).resolve()
+            if not file.is_file():
+                raise ArgError(f"{RED}The file {file} does not exist or is not a file.")
+            opts["test_file"] = file
+        elif arg == "--no-skip" or arg == "--no-skips":
             opts["no_skips"] = True
         elif arg == "--timeout":
             opts["timeout"] = int(pop())
@@ -136,14 +167,14 @@ def parse_flags():
             with_miri = True
         elif arg == "--kani":
             with_kani = True
-        elif arg == "--obol":
-            with_obol = True
+        elif arg == "--charon":
+            with_charon = True
 
         else:
             raise ArgError(f"{RED}Unknown flag: {arg}")
 
-    if with_miri + with_kani + with_obol > 1:
-        raise ArgError(f"{RED}Can't use both Kani, Miri or Obol!")
+    if with_miri + with_kani + with_charon > 1:
+        raise ArgError(f"{RED}Can't use both Kani, Miri or Charon!")
 
     if with_kani:
         opts = opts_for_kani(opts)
@@ -152,13 +183,15 @@ def parse_flags():
         opts = opts_for_miri(opts)
 
     else:
-        opts = opts_for_rusteria(opts, force_obol=with_obol)
+        opts = opts_for_rusteria(opts, force_obol=(not with_charon))
 
     opts["tool_cmd"] += cmd_flags
     return opts
 
 
-def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
+def opts_for_rusteria(
+    opts: CliOpts, *, force_obol: bool = True, timeout: Optional[float] = 5
+) -> CliOpts:
     opts = {
         **opts,
         "tool": "Rusteria",
@@ -167,37 +200,57 @@ def opts_for_rusteria(opts: CliOpts, *, force_obol: bool = False) -> CliOpts:
             "rustc",
             "--compact",
             "--no-color",
-            "--log-compilation",
-            "--solver-timeout=5000",
+            *(["--solver-timeout", str(timeout * 1000)] if timeout is not None else []),
+            "--no-compile-plugins",
         ],
         "categorise": categorise_rusteria,
     }
     if force_obol:
-        opts["tool_cmd"].append("--obol")
+        opts["tool_cmd"].append("--frontend=obol")
+    else:
+        opts["tool_cmd"].append("--frontend=charon")
     return opts
 
 
-def opts_for_kani(opts: CliOpts) -> CliOpts:
+def opts_for_kani(opts: CliOpts, *, timeout: Optional[float] = 5) -> CliOpts:
     return {
         **opts,
         "tool": "Kani",
         "tool_cmd": [
             "kani",
             "-Z=unstable-options",
-            "--harness-timeout=5s",
+            *(["--harness-timeout", f"{timeout}s"] if timeout is not None else []),
+            "--output-format",
+            "terse",
         ],
         "categorise": categorise_kani,
     }
 
 
 def opts_for_miri(opts: CliOpts) -> CliOpts:
+    sysroot = subprocess.run(
+        ["cargo", "+nightly", "miri", "setup", "--print-sysroot"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    miri = subprocess.run(
+        ["rustup", "+nightly", "which", "miri"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
     return {
         **opts,
         "tool": "Miri",
         "tool_cmd": [
-            str((PWD / ".." / ".." / ".." / "miri" / "miri").resolve()),
-            "run",
+            miri,
+            "--sysroot",
+            sysroot,
             "-Awarnings",
+            "--edition",
+            "2021",
         ],
         "categorise": categorise_miri,
     }

@@ -12,7 +12,7 @@ module M (State : State_intf.S) = struct
     let+ str_data = State.load ptr str_ty in
     let map_opt f l = Option.bind l (Monad.OptionM.all f) in
     match str_data with
-    | Array bytes ->
+    | Tuple bytes ->
         Some bytes
         |> map_opt (function Base b -> Some (Typed.kind b) | _ -> None)
         |> map_opt (function
@@ -55,9 +55,9 @@ module M (State : State_intf.S) = struct
     let^+ value = Layout.nondet ty in
     value
 
-  let panic args =
+  let panic ?msg args =
     let* msg =
-      match args with [ Ptr msg ] -> parse_string msg | _ -> ok None
+      match args with [ Ptr msg ] -> parse_string msg | _ -> ok msg
     in
     error (`Panic msg)
 end

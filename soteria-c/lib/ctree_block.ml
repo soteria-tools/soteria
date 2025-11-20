@@ -11,20 +11,29 @@ module MemVal = struct
   module TB = Soteria.Sym_states.Tree_block
   module Symex = Csymex
 
-  module S_int = struct
-    module Symex = Csymex
-    include Typed
-    include Typed.Infix
+  module Bounded_int = struct
+    module Symex = Symex
 
     type t = T.sint Typed.t
 
-    let[@inline] zero () = zero
-    let[@inline] one () = one
-    let of_z = Typed.int_z
-    let to_z = Typed.to_z
-    let pp = Typed.ppa
-    let add = Typed.plus
-    let sub = Typed.minus
+    let zero () = Usize.(0s)
+    let one () = Usize.(1s)
+
+    let in_bound (v : t) : T.sbool Typed.t =
+      v >=@ zero () &&@ (v <=@ Typed.BitVec.isize_max)
+
+    let pp = Value.ppa
+    let of_z z = Typed.BitVec.usize z
+    let subst = Typed.subst
+    let iter_vars v f = Typed.iter_vars v f
+    let equal = Typed.equal
+    let sem_eq = Typed.sem_eq
+    let distinct = Typed.distinct
+    let add = Infix.( +!@ )
+    let sub = Infix.( -!@ )
+    let to_z = Typed.BitVec.to_z
+    let lt = Infix.( <@ )
+    let leq = Infix.( <=@ )
   end
 
   let pp_init ft (v, ty) =
@@ -44,11 +53,12 @@ module MemVal = struct
   let any_of_type (Ctype.Ctype (_, kty) as ty) =
     match kty with
     | Basic (Integer int_ty) ->
+        let* size = Layout.size_of_int_ty_unsupported int_ty in
         let* constrs =
           Csymex.of_opt_not_impl ~msg:"Int constraints"
             (Layout.int_constraints int_ty)
         in
-        let* value = Csymex.nondet Typed.t_int in
+        let* value = Csymex.nondet (Typed.t_int (8 * size)) in
         let+ () = Csymex.assume (constrs value) in
         ((value :> T.cval Typed.t), ty)
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
@@ -58,6 +68,9 @@ module MemVal = struct
     | Zeros, Zeros -> Zeros
     | Uninit Totally, Uninit Totally -> Uninit Totally
     | Uninit _, Uninit _ -> Uninit Partially
+    | Init (v1, _), Init (v2, _)
+      when Typed.BitVec.sure_is_zero v1 && Typed.BitVec.sure_is_zero v2 ->
+        Zeros
     | _, _ -> Lazy
 
   let split ~at:_ node =
@@ -75,7 +88,9 @@ module MemVal = struct
         Result.error `UninitializedMemoryAccess
     | Zeros -> (
         match ty with
-        | Ctype.Ctype (_, Basic (Integer _)) -> Result.ok 0s
+        | Ctype.Ctype (_, Basic (Integer ity)) ->
+            let+ size = Layout.size_of_int_ty_unsupported ity in
+            Soteria.Symex.Compo_res.ok (BitVec.zero (8 * size))
         | Ctype (_, Basic (Floating fty)) ->
             let precision = Layout.precision fty in
             Result.ok (Typed.Float.mk precision "+0.0")
@@ -92,8 +107,7 @@ module MemVal = struct
     | Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
            We have to approximate and vanish. *)
-        L.info (fun m -> m "Reading from Any memory, vanishing.");
-        Csymex.vanish ()
+        Csymex.not_impl "Reading from Any memory, vanishing."
 
   type serialized =
     | SInit of (T.cval Typed.t * Ctype.ctype)
@@ -159,8 +173,14 @@ module MemVal = struct
     (* zeros *)
     | SZeros, NotOwned _ -> miss_no_fix ~reason:"consume_zeros" ()
     | SZeros, Owned Zeros -> ok (not_owned t)
-    | SZeros, Owned (Init (v, _)) ->
-        let+ () = Csymex.assume [ v ==?@ 0s ] in
+    | SZeros, Owned (Init (v, cty)) ->
+        let* size = Layout.size_of_s cty in
+        let* size =
+          of_opt_not_impl ~msg:"Consuming zeros with unknown size"
+          @@ Typed.BitVec.to_z size
+        in
+        let size = Z.to_int size in
+        let+ () = Csymex.assume [ v ==?@ BitVec.zero (8 * size) ] in
         Ok (not_owned t)
     | SZeros, _ ->
         L.info (fun m -> m "Consuming zero but not zero, vanishing");
@@ -187,11 +207,14 @@ let log_fixes fixes =
 
 let range_of_low_and_type low ty =
   let+ size = Layout.size_of_s ty in
-  (low, low +@ size)
+  Range.of_low_and_size low size
 
 let sval_leaf ~range ~value ~ty =
-  Tree.make ~node:(Owned (Init (value, ty))) ~range ?children:None ()
+  if Typed.BitVec.sure_is_zero value then
+    Tree.make ~node:(Owned Zeros) ~range ?children:None ()
+  else Tree.make ~node:(Owned (Init (value, ty))) ~range ?children:None ()
 
+let zeros ~range = Tree.make ~node:(Owned Zeros) ~range ()
 let uninit ~range = Tree.make ~node:(Owned (Uninit Totally)) ~range ()
 
 let mk_fix_typed ofs ty () =
@@ -243,6 +266,23 @@ let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
         | _ -> Result.ok ()
       in
       ((), tree)
+
+let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
+    (t : t option) : (unit * t option, 'err, 'fix) Result.t =
+  let ((_, bound) as range) = Range.of_low_and_size ofs size in
+  let@ t = with_bound_and_owned_check t bound in
+  let replace_node t =
+    match t.node with
+    | NotOwned Totally ->
+        let fix = mk_fix_any ofs size () in
+        Result.miss (log_fixes fix)
+    | NotOwned Partially ->
+        miss_no_fix ~reason:"partially missing zero_range" ()
+    | Owned _ -> Result.ok @@ zeros ~range
+  in
+  let rebuild_parent = Tree.of_children in
+  let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
+  ((), tree)
 
 let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
     (t : t option) : (unit * t option, 'err, 'fix) Result.t =
