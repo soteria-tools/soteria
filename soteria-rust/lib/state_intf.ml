@@ -264,7 +264,11 @@ module type S = sig
     Result.t
 
   val leak_check :
-    t -> (unit * t, [> `MemoryLeak ] err * t, serialized) Result.t
+    t ->
+    ( unit * t,
+      [> `MemoryLeak of Meta.span_data list ] err * t,
+      serialized )
+    Result.t
 
   val add_error :
     [< Error.t ] err -> t -> (unit * t, [> ] err * t, serialized) Result.t

@@ -595,16 +595,23 @@ let leak_check st =
     SPmap.fold
       (fun leaks (k, (v : block)) ->
         (* FIXME: This only works because our addresses are concrete *)
-        if Freeable.Freed <> v.node && not (List.mem k global_addresses) then
-          Result.ok (k :: leaks)
-        else Result.ok leaks)
+        match v with
+        | { node = Alive _; info = Some { kind = Heap; span; _ }; _ }
+          when not (List.mem k global_addresses) ->
+            Result.ok ((k, span) :: leaks)
+        | _ -> Result.ok leaks)
       [] st
   in
   if List.is_empty leaks then Result.ok ((), st)
   else (
     L.info (fun m ->
-        m "Found leaks: %a" Fmt.(list ~sep:(any ", ") Typed.ppa) leaks);
-    Result.error `MemoryLeak)
+        let pp_leak ft (k, span) =
+          Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Charon_util.pp_span_data
+            span
+        in
+        m "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks);
+    let spans = List.map snd leaks in
+    Result.error (`MemoryLeak spans))
 
 let add_error e ({ errors; _ } as st) =
   Result.ok ((), { st with errors = (e :> Error.t err) :: errors })

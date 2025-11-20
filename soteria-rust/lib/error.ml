@@ -4,7 +4,8 @@ open Charon_util
 type t =
   [ `DoubleFree  (** Tried freeing the same allocation twice *)
   | `InvalidFree  (** Tried freeing memory at a non-0 offset *)
-  | `MemoryLeak  (** Dynamically allocated memory was not freed *)
+  | `MemoryLeak of Meta.span_data list
+    (** Dynamically allocated memory was not freed *)
   | `MisalignedPointer of
     Typed.T.nonzero Typed.t * Typed.T.nonzero Typed.t * Typed.T.sint Typed.t
     (** Tried accessing memory with a misaligned pointer
@@ -81,7 +82,8 @@ let pp ft : [> t ] -> unit = function
   | `InvalidFree -> Fmt.string ft "Invalid free"
   | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
-  | `MemoryLeak -> Fmt.string ft "Memory leak"
+  | `MemoryLeak span ->
+      Fmt.pf ft "Memory leak at %a" Fmt.(list ~sep:comma pp_span_data) span
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
   | `MisalignedPointer (exp, got, ofs) ->
@@ -108,10 +110,10 @@ let pp ft : [> t ] -> unit = function
 
 let pp_err_and_call_trace ft (err, call_trace) =
   Fmt.pf ft "@[%a with trace@ %a@]" pp err
-    (Soteria.Terminal.Call_trace.pp Charon.Meta.pp_span)
+    (Soteria.Terminal.Call_trace.pp pp_span_data)
     call_trace
 
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
-  | `MemoryLeak -> Warning
+  | `MemoryLeak _ -> Warning
   | e when is_unwindable e -> Error
   | _ -> Bug

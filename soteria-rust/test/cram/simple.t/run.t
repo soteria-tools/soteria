@@ -2,7 +2,7 @@ Test memory leaks
   $ soteria-rust rustc leak.rs --clean --no-timing
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
-  warning: Memory leak in main
+  warning: Memory leak at ../alloc/src/alloc.rs:250:9-39 in main
       ┌─ $TESTCASE_ROOT/leak.rs:1:2
     1 │  fn main() {
       │   ^^^^^^^^^
