@@ -328,7 +328,7 @@ def aggregate_results():
                 global_printer.print_error(f"{file}'s json doesn't match expectations")
                 continue
             all_stats = merge_stats(all_stats, j)
-    to_remove = "MISSING FEATURE, VANISHING: Could not resolve function"
+    to_remove = "Unsupported: Could not resolve function"
     if to_remove in all_stats.give_up_reasons:
         del all_stats.give_up_reasons[to_remove]
     all_stats.give_up_reasons = dict(
