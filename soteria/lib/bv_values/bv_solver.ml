@@ -14,7 +14,7 @@ let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
           match v.node.kind with
           | Unop (Not, e) ->
               let e' = simplify e in
-              if Svalue.equal e e' then v else Svalue.S_bool.not e'
+              if Svalue.equal e e' then fallback v else Svalue.S_bool.not e'
           | Binop (Eq, e1, e2) ->
               if Svalue.equal e1 e2 then Svalue.S_bool.v_true
               else if Svalue.sure_neq e1 e2 then Svalue.S_bool.v_false
