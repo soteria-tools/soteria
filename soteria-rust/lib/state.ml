@@ -301,16 +301,19 @@ let load_discriminant ((ptr, _) as fptr) ty st =
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
     accesses; all of these are ignored. *)
-let tb_load (ptr, _) ty st =
-  let* size = Layout.size_of_s ty in
-  if%sat size ==@ Usize.(0s) then Result.ok ((), st)
-  else
-    let@ () = with_error_loc_as_call_trace st in
-    let@ () = with_loc_err () in
-    log "tb_load" ptr st;
-    let@ ofs, block = with_ptr ptr st in
-    let@ block, tb = with_tbs block in
-    Tree_block.tb_access ofs size ptr.tag tb block
+let tb_load ((ptr : Sptr.t), _) ty st =
+  match ptr.tag with
+  | None -> Result.ok ((), st)
+  | Some tag ->
+      let* size = Layout.size_of_s ty in
+      if%sat size ==@ Usize.(0s) then Result.ok ((), st)
+      else
+        let@ () = with_error_loc_as_call_trace st in
+        let@ () = with_loc_err () in
+        log "tb_load" ptr st;
+        let@ ofs, block = with_ptr ptr st in
+        let@ block, tb = with_tbs block in
+        Tree_block.tb_access ofs size tag tb block
 
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns true if the value was read successfully,
@@ -426,10 +429,10 @@ let alloc ?kind ?span ?zeroed size align st =
   let block, tag = mk_block ?kind ?span ?zeroed ~align ~size () in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
-  let ptr : Sptr.t Rust_val.full_ptr = ({ ptr; tag; align; size }, Thin) in
+  let ptr : Sptr.t = { ptr; tag = Some tag; align; size } in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-  ok (ptr, state)
+  ok ((ptr, Thin), state)
 
 let alloc_untyped ?kind ?span ~zeroed ~size ~align st =
   alloc ?kind ?span ~zeroed size align st
@@ -455,7 +458,7 @@ let alloc_tys ?kind ?span tys st =
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
       let ptr = Typed.Ptr.mk loc Usize.(0s) in
-      let ptr : Sptr.t = { ptr; tag; align; size } in
+      let ptr : Sptr.t = { ptr; tag = Some tag; align; size } in
       (block, (ptr, Thin)))
 
 let free (({ ptr; _ } : Sptr.t), _) st =
@@ -495,9 +498,13 @@ let load_global g ({ globals; _ } as st) =
   let ptr = GlobMap.find_opt (Global g) globals in
   Result.ok (ptr, st)
 
-let borrow (ptr, meta) (ty : Types.ty) (kind : Expressions.borrow_kind) st =
+let borrow ((ptr : Sptr.t), meta) (ty : Types.ty)
+    (kind : Expressions.borrow_kind) st =
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
-  if Tree_borrow.is_disabled () || (kind = BShared && Layout.is_unsafe_cell ty)
+  if
+    Option.is_none ptr.tag
+    || Tree_borrow.is_disabled ()
+    || (kind = BShared && Layout.is_unsafe_cell ty)
   then Result.ok ((ptr, meta), st)
   else
     let* tag_st =
@@ -513,17 +520,21 @@ let borrow (ptr, meta) (ty : Types.ty) (kind : Expressions.borrow_kind) st =
     let@ () = with_loc_err () in
     let@ _, block = with_ptr ptr st in
     let@ block, tb = with_opt_or block (ptr, meta) in
-    let tb', tag = Tree_borrow.add_child ~parent:ptr.tag ~state:tag_st tb in
+    let parent = Option.get ptr.tag in
+    let tb', tag = Tree_borrow.add_child ~parent ~state:tag_st tb in
     let block = Some (block, tb') in
-    let ptr' = { ptr with tag } in
+    let ptr' = { ptr with tag = Some tag } in
     L.debug (fun m ->
         m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
           Tree_borrow.pp_state tag_st);
     DecayMapMonad.Result.ok ((ptr', meta), block)
 
-let protect (ptr, meta) (ty : Types.ty) (mut : Types.ref_kind) st =
-  if Tree_borrow.is_disabled () || Layout.is_unsafe_cell ty then
-    Result.ok ((ptr, meta), st)
+let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) st =
+  if
+    Option.is_none ptr.tag
+    || Tree_borrow.is_disabled ()
+    || Layout.is_unsafe_cell ty
+  then Result.ok ((ptr, meta), st)
   else
     let* size = Layout.size_of_s ty in
     let@ () = with_error_loc_as_call_trace st in
@@ -531,13 +542,12 @@ let protect (ptr, meta) (ty : Types.ty) (mut : Types.ref_kind) st =
     let@ ofs, block = with_ptr ptr st in
     let@ block, tb = with_opt_or block (ptr, meta) in
     let open DecayMapMonad.Syntax in
-    let tag_st =
+    let state =
       match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
     in
-    let tb', tag =
-      Tree_borrow.add_child ~parent:ptr.tag ~state:tag_st ~protector:true tb
-    in
-    let ptr' = { ptr with tag } in
+    let parent = Option.get ptr.tag in
+    let tb', tag = Tree_borrow.add_child ~parent ~state ~protector:true tb in
+    let ptr' = { ptr with tag = Some tag } in
     L.debug (fun m ->
         m "Protecting pointer %a -> %a, on [%a;%a]" Sptr.pp ptr Sptr.pp ptr'
           Typed.ppa ofs Typed.ppa size);
@@ -549,33 +559,36 @@ let protect (ptr, meta) (ty : Types.ty) (mut : Types.ref_kind) st =
     let block = Option.map (fun b' -> (b', tb')) block' in
     ((ptr', meta), block)
 
-let unprotect (ptr, _) (ty : Types.ty) st =
-  let lift_freed_err () f =
-    let+ res = f () in
-    match res with
-    | Ok v -> Ok v
-    | Missing fixes -> Missing fixes
-    | Error `UseAfterFree -> Error `RefInvalidatedEarly
-    | Error
-        (( `AliasingError | `NullDereference | `OutOfBounds | `UBDanglingPointer
-         | `AccessedFnPointer ) as e) ->
-        Error e
-  in
-  let@ () = with_error_loc_as_call_trace st in
-  let@ () = with_loc_err () in
-  let@ () = lift_freed_err () in
-  let* size = Layout.size_of_s ty in
-  let@ ofs, block = with_ptr ptr st in
-  let@ block, tb = with_opt_or block () in
-  let open DecayMapMonad.Syntax in
-  let tb' = Tree_borrow.unprotect ptr.tag tb in
-  let++ (), block' =
-    if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), Some block)
-    else Tree_block.unprotect ofs size ptr.tag tb' (Some block)
-  in
-  let block' = Option.map (fun b' -> (b', tb')) block' in
-  L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
-  ((), block')
+let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) st =
+  match ptr.tag with
+  | None -> Result.ok ((), st)
+  | Some tag ->
+      let lift_freed_err () f =
+        let+ res = f () in
+        match res with
+        | Ok v -> Ok v
+        | Missing fixes -> Missing fixes
+        | Error `UseAfterFree -> Error `RefInvalidatedEarly
+        | Error
+            (( `AliasingError | `NullDereference | `OutOfBounds
+             | `UBDanglingPointer | `AccessedFnPointer ) as e) ->
+            Error e
+      in
+      let@ () = with_error_loc_as_call_trace st in
+      let@ () = with_loc_err () in
+      let@ () = lift_freed_err () in
+      let* size = Layout.size_of_s ty in
+      let@ ofs, block = with_ptr ptr st in
+      let@ block, tb = with_opt_or block () in
+      let open DecayMapMonad.Syntax in
+      let tb' = Tree_borrow.unprotect tag tb in
+      let++ (), block' =
+        if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), Some block)
+        else Tree_block.unprotect ofs size tag tb' (Some block)
+      in
+      let block' = Option.map (fun b' -> (b', tb')) block' in
+      L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
+      ((), block')
 
 let leak_check st =
   let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" st in
@@ -644,7 +657,7 @@ let declare_fn fn_def ({ functions; _ } as st) =
       let ptr : Sptr.t =
         {
           ptr = Typed.Ptr.mk loc Usize.(0s);
-          tag = Tree_borrow.zero;
+          tag = None;
           align = Usize.(1s);
           size = Usize.(0s);
         }

@@ -138,7 +138,7 @@ end
 
 type arithptr_t = {
   ptr : T.sptr Typed.t;
-  tag : Tree_borrow.tag;
+  tag : Tree_borrow.tag option;
   align : T.nonzero Typed.t;
   size : T.sint Typed.t;
 }
@@ -148,18 +148,20 @@ type arithptr_t = {
 module ArithPtr : S with type t = arithptr_t = struct
   type t = arithptr_t = {
     ptr : T.sptr Typed.t;
-    tag : Tree_borrow.tag;
+    tag : Tree_borrow.tag option;
     align : T.nonzero Typed.t;
     size : T.sint Typed.t;
   }
 
   let pp fmt { ptr; tag; _ } =
-    Fmt.pf fmt "%a[%a]" Typed.ppa ptr Tree_borrow.pp_tag tag
+    Fmt.pf fmt "%a[%a]" Typed.ppa ptr
+      Fmt.(option ~none:(any "*") Tree_borrow.pp_tag)
+      tag
 
   let null_ptr () =
     {
       ptr = Typed.Ptr.null ();
-      tag = Tree_borrow.zero;
+      tag = None;
       align = Usize.(1s);
       size = Usize.(0s);
     }
@@ -216,7 +218,7 @@ module ArithPtr : S with type t = arithptr_t = struct
   let decay { ptr; align; size; _ } decay_map =
     let loc, ofs = Typed.Ptr.decompose ptr in
     let+ loc_int, decay_map = DecayMap.decay ~size ~align loc decay_map in
-    (loc_int +!@ ofs, decay_map)
+    (loc_int +!!@ ofs, decay_map)
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
     let open DecayMapMonad.Syntax in

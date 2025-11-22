@@ -200,7 +200,7 @@ module Make (Sptr : Sptr.S) = struct
     | Owned (v, tb) -> f (v, tb)
 
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
-      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t option) :
+      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) (t : t option) :
       (rust_val * t option, 'err, 'fix) Result.t =
     let*^ size = Layout.size_of_s ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
@@ -212,8 +212,9 @@ module Make (Sptr : Sptr.S) = struct
     let replace_node t =
       let@ v, tb_st = as_owned t in
       let++^ tb_st' =
-        if ignore_borrow then Rustsymex.Result.ok tb_st
-        else Tree_borrow.access tag Read tb tb_st
+        match (ignore_borrow, tag) with
+        | false, Some tag -> Tree_borrow.access tag Read tb tb_st
+        | true, _ | _, None -> Rustsymex.Result.ok tb_st
       in
       { t with node = Owned (v, tb_st') }
     in
@@ -225,14 +226,18 @@ module Make (Sptr : Sptr.S) = struct
     (sval, tree)
 
   let store (ofs : [< T.sint ] Typed.t) (value : rust_val)
-      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t option) :
+      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) (t : t option) :
       (unit * t option, 'err, 'fix) Result.t =
     let size = Typed.BitVec.usizei @@ Rust_val.size_of value in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let@ t = with_bound_and_owned_check t bound in
     let replace_node t =
       let@ _, tb_st = as_owned t in
-      let++^ tb_st' = Tree_borrow.access tag Write tb tb_st in
+      let++^ tb_st' =
+        match tag with
+        | Some tag -> Tree_borrow.access tag Write tb tb_st
+        | None -> Rustsymex.Result.ok tb_st
+      in
       { node = Owned (Init value, tb_st'); range; children = None }
     in
     let rebuild_parent = Tree.of_children in
