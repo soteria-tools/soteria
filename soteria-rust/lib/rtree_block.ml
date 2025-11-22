@@ -163,16 +163,13 @@ module Make (Sptr : Sptr.S) = struct
         | NotOwned Totally -> miss_no_fix ~reason:"decode" ()
         | Owned (Uninit Totally, _) -> Result.ok vs
         | Owned (Zeros, _) ->
-            let* size =
+            let+ size =
               of_opt_not_impl "Don't know how to read this size"
               @@ BitVec.to_z (Range.size leaf.range)
             in
-            let ty = Layout.size_to_uint (Z.to_int size) in
-            let+ value =
-              of_opt_not_impl "Don't know how to zero this type"
-              @@ Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) ty
-            in
-            Ok ((value, offset) :: vs)
+            let size = Z.to_int size in
+            let value = BitVec.zero size in
+            Ok ((Rust_val.Int value, offset) :: vs)
         | Owned (Init value, _) -> Result.ok ((value, offset) :: vs)
         | Owned (Any, _) ->
             L.info (fun m -> m "Reading from Any memory, vanishing.");
