@@ -104,12 +104,6 @@ module FunBiMap = struct
   let get_loc = find_r
 end
 
-(* TODO: we want to store additional metadata with each allocation:
-   - the type of allocation (Memory, VTable, Function, Static), to better detect more forms UB,
-     e.g. writing to static memory, casting between mismatched VTables, etc.
-     See: https://github.com/rust-lang/rust/blob/be0ade2b602bdfe37a3cc259fcc79e8624dcba94/compiler/rustc_middle/src/mir/interpret/mod.rs#L260-L276
-   - the source of the allocation (for nicer memory leak error messages) *)
-
 type sub = Tree_block.t * Tree_borrow.t [@@deriving show { with_path = false }]
 type block = sub Freeable.t With_meta.t [@@deriving show { with_path = false }]
 
