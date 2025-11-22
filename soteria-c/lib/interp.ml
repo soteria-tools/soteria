@@ -89,11 +89,6 @@ module InterpM (State : State_intf.S) = struct
   module IState = struct
     let load ptr ty = lift_state_op (State.load ptr ty)
     let store ptr ty v = lift_state_op (State.store ptr ty v)
-    let load_aggregate ptr ty = lift_state_op (State.load_aggregate ptr ty)
-
-    let store_aggregate ptr ty v =
-      lift_state_op (State.store_aggregate ptr ty v)
-
     let alloc ?zeroed size = lift_state_op (State.alloc ?zeroed size)
     let alloc_ty ty = lift_state_op (State.alloc_ty ty)
 
@@ -268,7 +263,7 @@ module Make (State : State_intf.S) = struct
         let* ptr = InterpM.IState.alloc_ty ty in
         let* () =
           match other with
-          | Value v -> InterpM.IState.store_aggregate ptr ty v
+          | Value v -> InterpM.IState.store ptr ty v
           | _ -> InterpM.ok ()
         in
         let+ () = InterpM.map_store (Store.add_stackptr sym ptr ty) in
@@ -837,9 +832,9 @@ module Make (State : State_intf.S) = struct
         | None ->
             let* v = eval_expr e in
             let^ ptr = cast_aggregate_to_ptr v in
-            let* v = load_aggregate ptr (type_of e) in
+            let* v = load ptr (type_of e) in
             let* v_incr = apply_op v in
-            let+ () = store_aggregate ptr (type_of e) v_incr in
+            let+ () = store ptr (type_of e) v_incr in
             v)
     | AilEunary (op, e) -> (
         let* v = eval_expr e in
@@ -966,7 +961,7 @@ module Make (State : State_intf.S) = struct
             let ty = type_of e in
             (* At this point, lvalue must be a pointer (including to the stack) *)
             let^ lvalue = cast_aggregate_to_ptr lvalue in
-            load_aggregate lvalue ty)
+            load lvalue ty)
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym id in
         let* ptr_opt = get_stack_address id in
@@ -994,7 +989,7 @@ module Make (State : State_intf.S) = struct
             let* ptr = eval_expr lvalue in
             let^ ptr = cast_aggregate_to_ptr ptr in
             let ty = type_of lvalue in
-            let+ () = store_aggregate ptr ty rval in
+            let+ () = store ptr ty rval in
             rval)
     | AilEcompoundAssign (lvalue, op, rvalue) -> (
         let* rval = eval_expr rvalue in
@@ -1014,9 +1009,9 @@ module Make (State : State_intf.S) = struct
             let* ptr = eval_expr lvalue in
             (* At this point, lvalue must be a pointer (including to the stack) *)
             let^ ptr = cast_aggregate_to_ptr ptr in
-            let* operand = load_aggregate ptr lty in
+            let* operand = load ptr lty in
             let* res = apply_op operand in
-            let+ () = store_aggregate ptr lty res in
+            let+ () = store ptr lty res in
             res)
     | AilEsizeof (_quals, ty) ->
         let^ res = Layout.size_of_s ty in
