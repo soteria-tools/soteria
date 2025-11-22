@@ -1027,8 +1027,8 @@ Check with the proper flag we obtain only one branch
 Check that, without proper flag, undefined function calls are not-implemented
   $ soteria-c exec havoc_undef.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
-    [Error: Gave up: MISSING FEATURE, VANISHING: Cannot call external function: nondet_int_559]
-  error: Analysis gave up: MISSING FEATURE, VANISHING: Cannot call external function: nondet_int_559 in main
+    [Error: Gave up: Unsupported: Cannot call external function: nondet_int_559]
+  error: Analysis gave up: Unsupported: Cannot call external function: nondet_int_559 in main
   Executed 2 statements
   Verification Failure!
 
