@@ -117,6 +117,53 @@ Check strict provenance disables int to ptr casts
 Check permissive provenance allows int to ptr casts
   $ soteria-rust rustc provenance.rs --clean --no-timing --provenance permissive
   Compiling... done in <time>
-  note: main: done in <time>, ran 1 branch
+  error: main: found issues in <time>, errors in 1 branch (out of 1)
+  bug: UB: dangling pointer in main
+      ┌─ $TESTCASE_ROOT/provenance.rs:7:10
+    1 │  fn main() {
+      │   --------- 1: Entry point
+    2 │      let mut x: u8 = 0;
+    3 │      let p = &mut x as *mut u8;
+    4 │      let p_int = p.expose_provenance();
+    5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
+    6 │      unsafe {
+    7 │          *p_back = 1;
+      │           ^^^^^^^^^^^ Triggering memory operation
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
+  [1]
+
+Check corner cases with permissive provenance, around transmutes
+  $ soteria-rust rustc provenance_transmute.rs --clean --no-timing --provenance permissive
+  Compiling... done in <time>
+  error: addr_doesnt_expose: found issues in <time>, errors in 1 branch (out of 1)
+  bug: UB: dangling pointer in addr_doesnt_expose
+      ┌─ $TESTCASE_ROOT/provenance_transmute.rs:9:10
+    2 │  fn addr_doesnt_expose() {
+      │   ----------------------- 1: Entry point
+    3 │      let mut x: u8 = 0;
+    4 │      let p = &mut x as *mut u8;
+    5 │      let p_int = p.addr();
+    6 │      // this will not return the provenance information, since it was never exposed!
+    7 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
+    8 │      unsafe {
+    9 │          *p_back = 1;
+      │           ^^^^^^^^^^^ Triggering memory operation
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
+  
+  error: transmute_doesnt_restore_provenance: found issues in <time>, errors in 1 branch (out of 1)
+  bug: UB: dangling pointer in transmute_doesnt_restore_provenance
+      ┌─ $TESTCASE_ROOT/provenance_transmute.rs:22:10
+   15 │  fn transmute_doesnt_restore_provenance() {
+      │   ---------------------------------------- 1: Entry point
+   16 │      let mut x: u8 = 0;
+   17 │      let p = &mut x as *mut u8;
+   18 │      let p_int = p.expose_provenance();
+   19 │      // this will not return the provenance information, because it's a transmute!
+   20 │      let p_back = unsafe { std::mem::transmute::<usize, *mut u8>(p_int) };
+   21 │      unsafe {
+   22 │          *p_back = 1;
+      │           ^^^^^^^^^^^ Triggering memory operation
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
+  
+  [1]

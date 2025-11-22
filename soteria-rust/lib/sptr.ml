@@ -19,7 +19,12 @@ module type DecayMapS = sig
 
   val pp : Format.formatter -> t -> unit
 
+  (** Decays the given location into an integer, updating the decay map
+      accordingly. If [expose] is true, the provenance is marked as exposed, and
+      can be retrieved later with [from_exposed]. Returns the decayed integer,
+      along with the updated decay map. *)
   val decay :
+    expose:bool ->
     size:[< sint ] Typed.t ->
     align:[< nonzero ] Typed.t ->
     [< T.sloc ] Typed.t ->
@@ -49,29 +54,35 @@ module DecayMap : DecayMapS = struct
 
   module SPmap = Soteria.Sym_states.Pmap.Make (Rustsymex) (StateKey)
 
-  type t = T.sint Typed.t SPmap.t
+  type data = { address : T.sint Typed.t; exposed : bool }
+  [@@deriving show { with_path = false }]
 
-  let pp = SPmap.pp Typed.ppa
+  type t = data SPmap.t
 
-  let decay ~size ~align (loc : [< T.sloc ] Typed.t) st =
+  let pp = SPmap.pp pp_data
+
+  let decay ~expose ~size ~align (loc : [< T.sloc ] Typed.t) st =
     if%sat Typed.Ptr.is_null_loc loc then return (Usize.(0s), st)
     else
       let+ res =
         SPmap.wrap
           (function
-            | Some decayed -> Result.ok (decayed, Some decayed)
+            | Some { address; exposed } ->
+                Result.ok
+                  (address, Some { address; exposed = exposed || expose })
             | None ->
-                let* loc_int = nondet (Typed.t_usize ()) in
+                let* addr = nondet (Typed.t_usize ()) in
                 let isize_max = Layout.max_value_z (TInt Isize) in
                 let* () =
                   Rustsymex.assume
                     [
-                      (loc_int %@ align ==@ Usize.(0s));
-                      Usize.(0s) <@ loc_int;
-                      loc_int <@ Typed.BitVec.usize isize_max -!@ size;
+                      (addr %@ align ==@ Usize.(0s));
+                      Usize.(0s) <@ addr;
+                      addr <@ Typed.BitVec.usize isize_max -!@ size;
                     ]
                 in
-                Result.ok (loc_int, Some loc_int))
+                let info = { address = addr; exposed = false } in
+                Result.ok (addr, Some info))
           (loc :> T.sloc Typed.t)
           st
       in
@@ -91,12 +102,14 @@ module DecayMap : DecayMapS = struct
       |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
       |> Iter.filter_map (fun (var, ty) ->
              let v = Typed.mk_var var ty in
-             List.find_opt (fun (_, addr) -> Typed.equal v addr) bindings)
+             List.find_opt
+               (fun (_, { address; exposed }) ->
+                 exposed && Typed.equal v address)
+               bindings)
+      |> Iter.map (fun (loc, { address; _ }) -> (loc, address))
       |> Iter.to_opt
     in
-    match binding with
-    | None -> return (None, st)
-    | Some (loc, addr) -> return (Some (loc, addr), st)
+    return (binding, st)
 end
 
 module DecayMapMonad = struct
@@ -156,8 +169,15 @@ module type S = sig
     t ->
     (t, [> `UBDanglingPointer ], 'a) Result.t
 
-  (** Decay a pointer into an integer value, losing provenance. *)
+  (** Decay a pointer into an integer value, losing provenance.
+      {b This does not expose the address of the allocation; for that, use
+         [expose]} *)
   val decay : t -> [> sint ] Typed.t DecayMapMonad.t
+
+  (** Decay a pointer into an integer value, exposing the address of the
+      allocation, allowing it to be retrieved with [DecayMapS.from_exposed]
+      later. *)
+  val expose : t -> [> sint ] Typed.t DecayMapMonad.t
 
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> [> sint ] Typed.t
@@ -252,10 +272,15 @@ module ArithPtr : S with type t = arithptr_t = struct
     let off = Layout.Fields_shape.offset_of field fields in
     offset ~signed:false ptr (Typed.BitVec.usizei off)
 
-  let decay { ptr; align; size; _ } decay_map =
+  let[@inline] _decay ~expose { ptr; align; size; _ } decay_map =
     let loc, ofs = Typed.Ptr.decompose ptr in
-    let+ loc_int, decay_map = DecayMap.decay ~size ~align loc decay_map in
+    let+ loc_int, decay_map =
+      DecayMap.decay ~expose ~size ~align loc decay_map
+    in
     (loc_int +!!@ ofs, decay_map)
+
+  let decay p = _decay ~expose:false p
+  let expose p = _decay ~expose:true p
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
     let open DecayMapMonad.Syntax in

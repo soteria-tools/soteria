@@ -465,7 +465,7 @@ module Make (State : State_intf.S) = struct
             | (TRef _ | TRawPtr _), TLiteral _ ->
                 (* expose provenance *)
                 let v, _ = as_ptr v in
-                let$+ v' = Sptr.decay v in
+                let$+ v' = Sptr.expose v in
                 Int v'
             | TLiteral _, (TRef _ | TRawPtr _) ->
                 (* with provenance *)
