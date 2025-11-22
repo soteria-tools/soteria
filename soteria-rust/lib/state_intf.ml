@@ -110,7 +110,7 @@ module type S = sig
     Result.t
 
   val alloc_untyped :
-    ?kind:Alloc_meta.kind ->
+    ?kind:Alloc_kind.t ->
     ?span:Meta.span_data ->
     zeroed:bool ->
     size:sint Typed.t ->
@@ -119,14 +119,14 @@ module type S = sig
     (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_ty :
-    ?kind:Alloc_meta.kind ->
+    ?kind:Alloc_kind.t ->
     ?span:Meta.span_data ->
     Types.ty ->
     t ->
     (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_tys :
-    ?kind:Alloc_meta.kind ->
+    ?kind:Alloc_kind.t ->
     ?span:Meta.span_data ->
     Types.ty list ->
     t ->

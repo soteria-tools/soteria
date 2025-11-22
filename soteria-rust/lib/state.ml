@@ -64,8 +64,18 @@ module SPmap = Soteria.Sym_states.Pmap.Direct_access (DecayMapMonad) (StateKey)
 module Bi = Soteria.Sym_states.Bi_abd.Make (DecayMapMonad)
 module Tree_block = Rtree_block.Make (Sptr)
 
-module With_meta =
-  Soteria.Sym_states.With_info.Make (DecayMapMonad) (Alloc_meta)
+module Meta = struct
+  type t = {
+    alignment : Typed.T.nonzero Typed.t;
+    size : Typed.T.sint Typed.t;
+    tb_root : Tree_borrow.tag;
+    kind : Alloc_kind.t;
+    span : Meta.span_data;
+  }
+  [@@deriving show { with_path = false }]
+end
+
+module With_meta = Soteria.Sym_states.With_info.Make (DecayMapMonad) (Meta)
 
 type global = String of string | Global of Types.global_decl_id
 
@@ -398,12 +408,13 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   in
   Tree_block.put_raw_tree ofs tree_to_write block
 
-let mk_block ?(kind = Alloc_meta.Heap) ?span ?zeroed ~size ~align ~tb () : block
-    =
+let mk_block ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
+    block * Tree_borrow.tag =
+  let tb, tag = Tree_borrow.init ~state:Unique () in
   let block = Tree_block.alloc ?zeroed size in
   let span = Option.value span ~default:(get_loc ()) in
-  let info : Alloc_meta.t = { alignment = align; kind; span } in
-  { node = Alive (block, tb); info = Some info }
+  let info : Meta.t = { alignment = align; size; kind; span; tb_root = tag } in
+  ({ node = Alive (block, tb); info = Some info }, tag)
 
 let alloc ?kind ?span ?zeroed size align st =
   (* Commenting this out as alloc cannot fail *)
@@ -412,8 +423,7 @@ let alloc ?kind ?span ?zeroed size align st =
   let@ state = with_state st in
   let open DecayMapMonad in
   let open DecayMapMonad.Syntax in
-  let tb, tag = Tree_borrow.init ~state:Unique () in
-  let block = mk_block ?kind ?span ?zeroed ~align ~size ~tb () in
+  let block, tag = mk_block ?kind ?span ?zeroed ~align ~size () in
   let** loc, state = SPmap.alloc ~new_codom:block state in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
   let ptr : Sptr.t Rust_val.full_ptr = ({ ptr; tag; align; size }, Thin) in
@@ -441,8 +451,7 @@ let alloc_tys ?kind ?span tys st =
       let* layout = lift @@ Layout.layout_of_s ty in
       let size = Typed.BitVec.usizei layout.size in
       let align = Typed.BitVec.usizeinz layout.align in
-      let tb, tag = Tree_borrow.init ~state:Unique () in
-      let block = mk_block ?kind ?span ~align ~size ~tb () in
+      let block, tag = mk_block ?kind ?span ~align ~size () in
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
       let ptr = Typed.Ptr.mk loc Usize.(0s) in
@@ -453,9 +462,9 @@ let free (({ ptr; _ } : Sptr.t), _) st =
   let** () = assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree st in
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
-  (* TODO: does the tag not play a role in freeing? *)
   let@ st = with_state st in
   L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
+  (* TODO: does the tag not play a role in freeing? *)
   SPmap.wrap
     (With_meta.wrap
        (Freeable.free ~assert_exclusively_owned:(fun t ->
