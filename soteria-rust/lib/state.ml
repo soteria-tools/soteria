@@ -314,7 +314,7 @@ let tb_load ((ptr : Sptr.t), _) ty st =
     false otherwise. *)
 let is_valid_ptr st ptr (ty : Types.ty) =
   (* FIXME: i am not certain how one checks for the validity of a DST *)
-  if Layout.is_dst ty then return true
+  if Layout.is_dst ty || Option.is_some (Layout.as_zst ty) then return true
   else (
     L.debug (fun m -> m "The following read is a GHOST read");
     let+ res = load ~ignore_borrow:true ptr ty st in
@@ -595,9 +595,7 @@ let with_exposed addr state =
       let open DecayMapMonad.Syntax in
       let* res = DecayMap.from_exposed addr in
       match res with
-      | None ->
-          Result.error
-            (`UBIntToPointerNoProvenance (addr :> Typed.T.sint Typed.t))
+      | None -> Result.ok ((Sptr.null_ptr_of addr, Thin), st)
       | Some (loc, ofs) -> (
           let ofs = addr -!@ ofs in
           let ptr = Typed.Ptr.mk loc ofs in
@@ -686,16 +684,17 @@ let declare_fn fn_def ({ functions; _ } as st) =
        constraint here. *)
       (* FIXME: should we use [SPmap.alloc] here instead? What would go in the map? *)
       let fn = Crate.get_fun fn_def.id in
-      let++ ((ptr, _) as fptr), st =
+      let++ (ptr, meta), st =
         alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span.data
           ~zeroed:false
           ~size:Usize.(0s)
           ~align:Usize.(1s)
           st
       in
+      let ptr = { ptr with tag = None } in
       let loc = Typed.Ptr.loc ptr.ptr in
       let functions = FunBiMap.add loc fn_def functions in
-      (fptr, { st with functions })
+      ((ptr, meta), { st with functions })
 
 let lookup_fn (({ ptr; _ } : Sptr.t), _) ({ functions; _ } as st) =
   let** () =

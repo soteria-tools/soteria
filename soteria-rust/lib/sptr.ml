@@ -118,7 +118,7 @@ module type S = sig
 
   val pp : t Fmt.t
   val null_ptr : unit -> t
-  val null_ptr_of : sint Typed.t -> t
+  val null_ptr_of : [< sint ] Typed.t -> t
 
   (** Pointer equality *)
   val sem_eq : t -> t -> sbool Typed.t

@@ -63,9 +63,9 @@ type t = {
   ignore_aliasing : bool; [@make.default false] [@names [ "ignore-aliasing" ]]
       (** Ignore pointer aliasing rules (tree borrows) *)
   provenance : (provenance[@conv provenance_cmdliner_conv ()]);
-      [@default Strict] [@names [ "provenance" ]]
+      [@default Permissive] [@names [ "provenance" ]]
       (** The provenance model to use for pointers. If not provided, the default
-          is Strict. *)
+          is permissive. *)
   step_fuel : int option; [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
       (** The default step fuel for each entrypoint -- every control flow jump
           counts as one fuel. Defaults to infinite fuel. *)
