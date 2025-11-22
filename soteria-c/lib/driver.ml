@@ -104,7 +104,6 @@ module Frontend = struct
         }
       in
       set_cerb_conf ();
-      Switches.(set [ "at_magic_comments" ]);
       Ocaml_implementation.(set HafniumImpl.impl);
       let* stdlib = load_core_stdlib () in
       let* impl = load_core_impl stdlib impl_name in
