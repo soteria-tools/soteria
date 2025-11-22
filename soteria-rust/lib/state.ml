@@ -66,7 +66,7 @@ module Tree_block = Rtree_block.Make (Sptr)
 
 module Meta = struct
   type t = {
-    alignment : Typed.T.nonzero Typed.t;
+    align : Typed.T.nonzero Typed.t;
     size : Typed.T.sint Typed.t;
     tb_root : Tree_borrow.tag;
     kind : Alloc_kind.t;
@@ -416,7 +416,7 @@ let mk_block ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
   let tb, tag = Tree_borrow.init ~state:Unique () in
   let block = Tree_block.alloc ?zeroed size in
   let span = Option.value span ~default:(get_loc ()) in
-  let info : Meta.t = { alignment = align; size; kind; span; tb_root = tag } in
+  let info : Meta.t = { align; size; kind; span; tb_root = tag } in
   ({ node = Alive (block, tb); info = Some info }, tag)
 
 let alloc ?kind ?span ?zeroed size align st =
@@ -589,6 +589,30 @@ let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) st =
       let block' = Option.map (fun b' -> (b', tb')) block' in
       L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
       ((), block')
+
+let with_exposed addr state =
+  let@ () = with_error_loc_as_call_trace state in
+  let@ () = with_loc_err () in
+  match !Config.current.provenance with
+  | Strict -> Result.error `UBIntToPointerStrict
+  | Permissive -> (
+      let@ st = with_state state in
+      let open DecayMapMonad in
+      let open DecayMapMonad.Syntax in
+      let* res = DecayMap.from_exposed addr in
+      match res with
+      | None ->
+          Result.error
+            (`UBIntToPointerNoProvenance (addr :> Typed.T.sint Typed.t))
+      | Some (loc, ofs) -> (
+          let ofs = addr -!@ ofs in
+          let ptr = Typed.Ptr.mk loc ofs in
+          let** block, st = SPmap.wrap (fun b -> Result.ok (b, b)) loc st in
+          match block with
+          | None | Some { info = None; _ } -> Result.miss []
+          | Some { info = Some { size; align; _ }; _ } ->
+              let ptr : Sptr.t = { ptr; tag = None; align; size } in
+              Result.ok ((ptr, Thin), st)))
 
 let leak_check st =
   let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" st in

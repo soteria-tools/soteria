@@ -93,3 +93,30 @@ Test function calls on function pointers
   PC 1: empty
   
   [1]
+
+Check strict provenance disables int to ptr casts
+  $ soteria-rust rustc provenance.rs --clean --no-timing --provenance strict
+  Compiling... done in <time>
+  error: main: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Attempted ot cast integer to pointer with strict provenance in main
+      ┌─ $TESTCASE_ROOT/provenance.rs:5:19
+    1 │  fn main() {
+      │   --------- 1: Entry point
+    2 │      let mut x: u8 = 0;
+    3 │      let p = &mut x as *mut u8;
+    4 │      let p_int = p.expose_provenance();
+    5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
+      │                    ---------------------------------------------- 2: Call trace
+      ┌─ /Users/opale/.rustup/toolchains/nightly-2025-07-20-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:975:6
+  975 │      addr as *const T
+      │       ^^^^^^^^^^^^^^^ Triggering memory operation
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
+  
+  [1]
+
+Check permissive provenance allows int to ptr casts
+  $ soteria-rust rustc provenance.rs --clean --no-timing --provenance permissive
+  Compiling... done in <time>
+  note: main: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
+  

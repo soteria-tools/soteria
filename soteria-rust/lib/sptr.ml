@@ -6,6 +6,14 @@ open Typed.Syntax
 open Typed.Infix
 open T
 
+(** A map to store information on "decayed" pointers, namely mapping from
+    locations to integers (their decayed) value.
+
+    It exposes two functions: [decay], to convert a location to an integer
+    (given the size and alignment of its allocation), and [from_exposed] which
+    does the reverse operation. Importantly, while [decay] is total,
+    [from_exposed] is partial: if a provenance cannot be guessed from the
+    integer, [None] is returned. *)
 module type DecayMapS = sig
   type t
 
@@ -17,6 +25,14 @@ module type DecayMapS = sig
     [< T.sloc ] Typed.t ->
     t option ->
     (T.sint Typed.t * t option) Rustsymex.t
+
+  (** Tries finding, for the given integer, the matching provenance in the decay
+      map. If found, it returns that provenance, along with the exposed address
+      for that allocation at offset 0. Otherwise returns [None]. *)
+  val from_exposed :
+    [< sint ] Typed.t ->
+    t option ->
+    ((T.sloc Typed.t * T.sint Typed.t) option * t option) Rustsymex.t
 end
 
 module DecayMap : DecayMapS = struct
@@ -60,6 +76,27 @@ module DecayMap : DecayMapS = struct
           st
       in
       Soteria.Symex.Compo_res.get_ok res
+
+  let from_exposed (loc_int : [< sint ] Typed.t) st =
+    (* UX: we only consider the first one; this is more or less correct, as per the
+       documentation of [with_exposed_provenance]: "The provenance of the returned pointer is
+       that of some pointer that was previously exposed"
+
+       See https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html
+       *)
+    let usize_ty = Typed.t_usize () in
+    let bindings = SPmap.M.bindings (SPmap.of_opt st) in
+    let binding =
+      Typed.iter_vars loc_int
+      |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
+      |> Iter.filter_map (fun (var, ty) ->
+             let v = Typed.mk_var var ty in
+             List.find_opt (fun (_, addr) -> Typed.equal v addr) bindings)
+      |> Iter.to_opt
+    in
+    match binding with
+    | None -> return (None, st)
+    | Some (loc, addr) -> return (Some (loc, addr), st)
 end
 
 module DecayMapMonad = struct

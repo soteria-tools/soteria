@@ -142,6 +142,7 @@ module Make (State : State_intf.S) = struct
     let[@inline] borrow ptr ty mut = lift_state_op (borrow ptr ty mut)
     let[@inline] protect ptr ty mut = lift_state_op (protect ptr ty mut)
     let[@inline] unprotect ptr ty = lift_state_op (unprotect ptr ty)
+    let[@inline] with_exposed addr = lift_state_op (with_exposed addr)
     let[@inline] tb_load ptr ty = lift_state_op (tb_load ptr ty)
     let[@inline] load_global g = lift_state_op (load_global g)
     let[@inline] store_global g ptr = lift_state_op (store_global g ptr)

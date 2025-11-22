@@ -40,6 +40,9 @@ type t =
   | `UBPointerArithmetic  (** Arithmetics on two pointers *)
   | `UBPointerComparison
     (** Comparison of pointers with different provenance *)
+  | `UBIntToPointerNoProvenance of Typed.T.sint Typed.t
+    (** Integer to pointer cast with no provenance *)
+  | `UBIntToPointerStrict  (** Integer to pointer cast with strict provenance *)
   | `UBTransmute of string
     (** Invalid transmute, e.g. null reference, wrong enum discriminant *)
   | `AliasingError  (** Tree borrow violation that lead to UB *)
@@ -106,6 +109,11 @@ let pp ft : [> t ] -> unit = function
   | `UBDanglingPointer -> Fmt.string ft "UB: dangling pointer"
   | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
   | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
+  | `UBIntToPointerNoProvenance addr ->
+      Fmt.pf ft "UB: int to pointer without exposed address: %a" Typed.ppa addr
+  | `UBIntToPointerStrict ->
+      Fmt.string ft
+        "Attempted ot cast integer to pointer with strict provenance"
   | `UBTransmute msg -> Fmt.pf ft "UB: Transmute: %s" msg
   | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
   | `UseAfterFree -> Fmt.string ft "Use after free"

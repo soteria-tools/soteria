@@ -460,7 +460,19 @@ module Make (State : State_intf.S) = struct
                 let v = as_base_f fty v in
                 ok (Float (Typed.Float.neg v))
             | _ -> not_impl "Invalid type for Neg")
-        | Cast (CastRawPtr (_from, _to)) -> ok v
+        | Cast (CastRawPtr (from_ty, to_ty)) -> (
+            match (from_ty, to_ty) with
+            | (TRef _ | TRawPtr _), TLiteral _ ->
+                (* expose provenance *)
+                let v, _ = as_ptr v in
+                let$+ v' = Sptr.decay v in
+                Int v'
+            | TLiteral _, (TRef _ | TRawPtr _) ->
+                (* with provenance *)
+                let v = as_base_i Usize v in
+                let+ ptr = State.with_exposed v in
+                Ptr ptr
+            | _ -> ok v)
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr_fn in
             let blocks = Encoder.rust_to_cvals v from_ty in

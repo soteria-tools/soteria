@@ -42,7 +42,9 @@ module type S = sig
         T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
       | `UBDanglingPointer
-      | `AccessedFnPointer ]
+      | `AccessedFnPointer
+      | `UBIntToPointerNoProvenance of T.sint Typed.t
+      | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
@@ -81,7 +83,9 @@ module type S = sig
         T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
       | `UBDanglingPointer
-      | `AccessedFnPointer ]
+      | `AccessedFnPointer
+      | `UBIntToPointerNoProvenance of T.sint Typed.t
+      | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
@@ -103,7 +107,9 @@ module type S = sig
       | `UBTransmute of string
       | `UninitializedMemoryAccess
       | `UseAfterFree
-      | `AccessedFnPointer ]
+      | `AccessedFnPointer
+      | `UBIntToPointerNoProvenance of T.sint Typed.t
+      | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
@@ -154,7 +160,9 @@ module type S = sig
       | `UBTransmute of string
       | `UninitializedMemoryAccess
       | `UseAfterFree
-      | `AccessedFnPointer ]
+      | `AccessedFnPointer
+      | `UBIntToPointerNoProvenance of T.sint Typed.t
+      | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
@@ -282,6 +290,16 @@ module type S = sig
       | `AliasingError
       | `UBDanglingPointer
       | `AccessedFnPointer ]
+      err
+      * t,
+      serialized )
+    Result.t
+
+  val with_exposed :
+    [< sint ] Typed.t ->
+    t ->
+    ( full_ptr * t,
+      [> `UBIntToPointerNoProvenance of sint Typed.t | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
