@@ -1,3 +1,5 @@
+(** Extensions to [Stdlib.Result] with conversion and extraction utilities. *)
+
 include Stdlib.Result
 
 let of_opt ~err = function Some v -> Ok v | None -> Error err
