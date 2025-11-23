@@ -13,6 +13,11 @@ type t = Excl_val.t Freeable.t PMap.t option
 type fixes = Excl_val.serialized Freeable.serialized PMap.serialized
 [@@deriving show { with_path = false }]
 
+let serialize (st : t) : fixes =
+  match st with
+  | None -> []
+  | Some pmap -> PMap.serialize (Freeable.serialize Excl_val.serialize) pmap
+
 let empty : t = None
 let load addr st = PMap.wrap (Freeable.wrap Excl_val.load) addr st
 
@@ -28,4 +33,5 @@ let free addr st =
     (Freeable.free ~assert_exclusively_owned:Excl_val.assert_exclusively_owned)
     addr st
 
+let produce fix t = PMap.produce (Freeable.produce Excl_val.produce) fix t
 let error msg _state = `Interp msg
