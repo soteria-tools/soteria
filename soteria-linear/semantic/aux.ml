@@ -1,5 +1,5 @@
 open Soteria_linear_ast.Lang
-module S_val = Soteria.Tiny_values.Typed
+module Typed = Soteria.Tiny_values.Typed
 
 module Symex =
   Soteria.Symex.Make
@@ -8,19 +8,29 @@ module Symex =
 
 module S_int = struct
   module Symex = Symex
-  include S_val
+  include Typed
 
-  type t = S_val.T.sint S_val.t
+  type t = Typed.T.sint Typed.t
 
   let simplify = Symex.simplify
-  let fresh () = Symex.nondet S_val.t_int
-  let pp = S_val.ppa
+  let fresh () = Symex.nondet Typed.t_int
+  let pp = Typed.ppa
+end
+
+module S_val = struct
+  module Symex = Symex
+  include Typed
+
+  type t = T.any Typed.t [@@deriving show { with_path = false }]
+
+  let fresh () : t Symex.t =
+    let open Symex.Syntax in
+    let* v = Symex.nondet Typed.t_int in
+    Symex.return v
 end
 
 type _ Effect.t += Resolve_function : string -> Fun_def.t Effect.t
-
-type subst = S_val.T.any S_val.t String_map.t
-[@@deriving show { with_path = false }]
+type subst = S_val.t String_map.t [@@deriving show { with_path = false }]
 
 let get_function fname = Effect.perform (Resolve_function fname)
 

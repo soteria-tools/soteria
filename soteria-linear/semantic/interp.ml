@@ -23,7 +23,7 @@ let cast_to_int v =
   | None -> Result.error "Type error"
 
 let rec interp_pure_expr (subst : subst) expr :
-    (S_val.T.any S_val.t, 'err, 'a) Symex.Result.t =
+    (S_val.t, 'err, 'a) Symex.Result.t =
   match expr with
   | Pure_expr.Int n -> Result.ok (S_val.int n)
   | Bool b -> Result.ok (S_val.bool b)
@@ -108,15 +108,15 @@ module Make (State : State_intf.S) = struct
         let** addr = cast_to_int addr state in
         let** value = interp_pure_expr subst state value in
         let++ (), state = State.store addr value state in
-        ((S_val.v_false :> S_val.T.any S_val.t), state)
+        ((S_val.v_false :> S_val.t), state)
     | Alloc ->
         let++ addr, state = State.alloc state in
-        ((addr :> S_val.T.any S_val.t), state)
+        ((addr :> S_val.t), state)
     | Free addr ->
         let** addr = interp_pure_expr subst state addr in
         let** addr = cast_to_int addr state in
         let++ (), state = State.free addr state in
-        ((S_val.v_false :> S_val.T.any S_val.t), state)
+        ((S_val.v_false :> S_val.t), state)
 
   and run_function func state args =
     let subst = List.combine func.Fun_def.args args |> String_map.of_list in
