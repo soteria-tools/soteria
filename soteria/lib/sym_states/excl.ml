@@ -6,6 +6,7 @@ module type Elem = sig
   type t [@@deriving show]
 
   val fresh : unit -> t Symex.t
+  val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
 end
 
 module Make (Symex : Symex.Base) (E : Elem with module Symex = Symex) = struct
@@ -43,12 +44,12 @@ module Make (Symex : Symex.Base) (E : Elem with module Symex = Symex) = struct
 
   let subst_serialized subst_inner subst_var x = subst_inner subst_var x
 
-  let consume ~sem_eq (serialized : serialized) (t : t option) :
+  let consume (serialized : serialized) (t : t option) :
       (t option, [> Symex.lfail ], serialized) Symex.Result.t =
     let open Symex.Syntax in
     match t with
     | Some x ->
-        let++ () = Symex.consume_pure (sem_eq x serialized) in
+        let++ () = Symex.consume_pure (E.sem_eq x serialized) in
         None
     | None -> Symex.Result.miss [ serialized ]
 

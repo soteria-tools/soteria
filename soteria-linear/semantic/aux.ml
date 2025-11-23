@@ -23,6 +23,8 @@ module S_val = struct
 
   type t = T.any Typed.t [@@deriving show { with_path = false }]
 
+  let sem_eq = sem_eq_untyped
+
   let fresh () : t Symex.t =
     let open Symex.Syntax in
     let* v = Symex.nondet Typed.t_int in
