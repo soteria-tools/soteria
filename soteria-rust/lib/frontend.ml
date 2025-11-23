@@ -480,8 +480,15 @@ module Diagnostic = struct
             let rel_path =
               String.sub file root_l (String.length file - root_l)
             in
-            Some ("$RUSTERIA" ^ rel_path)
-          else None
+            Some ("$SOTERIA-RUST" ^ rel_path)
+          else
+            let rustlib = Filename.concat "lib" "rustlib" in
+            match String.index_of ~sub_str:rustlib file with
+            | Some idx ->
+                let idx = idx + String.length rustlib in
+                let rel_path = String.sub file idx (String.length file - idx) in
+                Some ("$RUSTLIB" ^ rel_path)
+            | None -> None
         in
         [
           Soteria.Terminal.Diagnostic.mk_range_file ?filename

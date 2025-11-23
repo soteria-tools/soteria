@@ -40,7 +40,7 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: assertion failed: result.is_err() in main
-      ┌─ $RUSTERIA/std/src/lib.rs:20:10
+      ┌─ $SOTERIA-RUST/std/src/lib.rs:20:10
    20 │          rusteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
       │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │           │
@@ -99,6 +99,9 @@ Check strict provenance disables int to ptr casts
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Attempted ot cast integer to pointer with strict provenance in main
+      ┌─ $RUSTLIB/src/rust/library/core/src/ptr/mod.rs:975:6
+  975 │      addr as *const T
+      │       ^^^^^^^^^^^^^^^ Triggering memory operation
       ┌─ $TESTCASE_ROOT/provenance.rs:5:19
     1 │  fn main() {
       │   --------- 1: Entry point
@@ -107,9 +110,6 @@ Check strict provenance disables int to ptr casts
     4 │      let p_int = p.expose_provenance();
     5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
       │                    ---------------------------------------------- 2: Call trace
-      ┌─ /Users/opale/.rustup/toolchains/nightly-2025-07-20-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:975:6
-  975 │      addr as *const T
-      │       ^^^^^^^^^^^^^^^ Triggering memory operation
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
   [1]
