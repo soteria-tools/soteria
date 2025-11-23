@@ -1,5 +1,5 @@
 // Kani: kani ./demo/darpa/simple.rs -Zuninit-checks --output-format terse
-// Rusteria: dune exec -- soteria-rust rustc ./demo/darpa/simple.rs --kani --summary
+// Soteria Rust: dune exec -- soteria-rust rustc ./demo/darpa/simple.rs --kani --summary
 
 /// A classic overflow error when checking before adding two numbers
 #[kani::proof]
@@ -26,7 +26,7 @@ fn overflow_fixed() -> u32 {
     }
 }
 
-/// Rusteria can detect memory leaks, caused by dynamically allocated memory
+/// Soteria Rust can detect memory leaks, caused by dynamically allocated memory
 #[kani::proof]
 #[kani::should_panic]
 fn memory_leak() {
@@ -53,7 +53,7 @@ impl<T: Arbitrary> Arbitrary for MyOption<T> {
     }
 }
 
-/// Rusteria can reliably detected uninitialised memory access
+/// Soteria Rust can reliably detected uninitialised memory access
 #[kani::proof]
 #[kani::should_panic]
 fn uninit_access() {
