@@ -30,11 +30,12 @@ end
 module Expr = struct
   type t =
     | Pure_expr of Pure_expr.t  (** Pure expression *)
-    | Let of string * t * t  (** Let binding *)
+    | Let of string option * t * t  (** Let binding *)
     | If of t * t * t  (** If expression *)
     | Load of Pure_expr.t  (** Load from memory address *)
     | Store of Pure_expr.t * Pure_expr.t  (** Store to memory address *)
     | Alloc
+    | Free of Pure_expr.t
     | Call of string * Pure_expr.t list  (** Function call *)
   [@@deriving show { with_path = false }]
 end

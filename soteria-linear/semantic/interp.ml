@@ -81,7 +81,9 @@ module Make (State : State_intf.S) = struct
         (v, state)
     | Let (x, e1, e2) ->
         let** v1, state = interp_expr subst state e1 in
-        let subst = String_map.add x v1 subst in
+        let subst =
+          Option.fold ~none:subst ~some:(fun x -> String_map.add x v1 subst) x
+        in
         interp_expr subst state e2
     | If (guard, then_, else_) ->
         let** v_guard, state = interp_expr subst state guard in
@@ -101,8 +103,20 @@ module Make (State : State_intf.S) = struct
         let** addr = interp_pure_expr subst state addr in
         let** addr = cast_to_int addr state in
         State.load addr state
-    | Store (_addr, _value) -> give_up ~loc:() "Store not implemented yet"
-    | Alloc -> give_up ~loc:() "Alloc not implemented yet"
+    | Store (addr, value) ->
+        let** addr = interp_pure_expr subst state addr in
+        let** addr = cast_to_int addr state in
+        let** value = interp_pure_expr subst state value in
+        let++ (), state = State.store addr value state in
+        ((S_val.v_false :> S_val.T.any S_val.t), state)
+    | Alloc ->
+        let++ addr, state = State.alloc state in
+        ((addr :> S_val.T.any S_val.t), state)
+    | Free addr ->
+        let** addr = interp_pure_expr subst state addr in
+        let** addr = cast_to_int addr state in
+        let++ (), state = State.free addr state in
+        ((S_val.v_false :> S_val.T.any S_val.t), state)
 
   and run_function func state args =
     let subst = List.combine func.Fun_def.args args |> String_map.of_list in
