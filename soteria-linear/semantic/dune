@@ -1,0 +1,5 @@
+(library
+ (name soteria_linear_semantic)
+ (libraries soteria_linear_ast soteria)
+ (preprocess
+  (pps ppx_deriving.std soteria.ppx)))

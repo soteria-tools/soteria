@@ -1,0 +1,9 @@
+let abs x =
+  if x < 0 then
+    0 - x
+  else
+    x
+
+let main =
+  let x = nondet in
+  abs(x)
