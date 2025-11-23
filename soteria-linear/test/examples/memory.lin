@@ -4,3 +4,10 @@ let swap p =
   [p] <- y;
   [p + 1] <- x;
   0
+
+let main =
+  let p = alloc in
+  let q = alloc in
+  [p] <- 10;
+  [q] <- 20;
+  swap(p)

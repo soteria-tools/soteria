@@ -6,12 +6,14 @@ module Parser = Soteria_linear_parser.Parse
 
 let pp_results ft v =
   let pp =
-    Fmt.Dump.list
-    @@ Fmt.Dump.pair
-         (Symex.Compo_res.pp ~ok:Interp.S_val.ppa
-            ~err:(Soteria.Symex.Or_gave_up.pp Fmt.string)
+    let open Fmt.Dump in
+    list
+    @@ pair
+         (Symex.Compo_res.pp
+            ~ok:(pair Interp.S_val.ppa State.pp)
+            ~err:(Soteria.Symex.Or_gave_up.pp State.pp_err)
             ~miss:Fmt.nop)
-         (Fmt.Dump.list Interp.S_val.ppa)
+         (list Interp.S_val.ppa)
   in
   pp ft v
 
@@ -30,7 +32,7 @@ let exec file =
     | Some f -> f
     | None -> failwith "No main function found"
   in
-  let process = Exec_interp.run_function main [] in
+  let process = Exec_interp.run_function main State.empty [] in
   let results =
     let@ () = Interp.with_program program in
     Interp.Symex.Result.run ~fuel:Symex.Fuel_gauge.infinite ~mode:OX process

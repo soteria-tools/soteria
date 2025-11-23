@@ -8,7 +8,7 @@
 %token PLUS MINUS TIMES DIV AND OR EQ EQEQ LT
 %token LBRACK RBRACK ASSIGN SEMI LPAREN RPAREN COMMA
 %token LET IN IF THEN ELSE
-%token TAKE RW FREED TRUE FALSE NONDET
+%token TAKE RW FREED TRUE FALSE NONDET ALLOC
 %token REQUIRES ENSURES
 %token EOF
 
@@ -62,6 +62,7 @@ expr:
   | np = non_pure_expr { np }
 
 non_pure_expr:
+  | ALLOC { Expr.Alloc }
   | LET x = ID EQ e1 = expr IN e2 = expr { Expr.Let(x, e1, e2) }
   | IF e1 = expr THEN e2 = expr ELSE e3 = expr { Expr.If(e1, e2, e3) }
   | e1 = expr SEMI e2 = expr { Expr.Let("_", e1, e2) }

@@ -34,6 +34,7 @@ module Expr = struct
     | If of t * t * t  (** If expression *)
     | Load of Pure_expr.t  (** Load from memory address *)
     | Store of Pure_expr.t * Pure_expr.t  (** Store to memory address *)
+    | Alloc
     | Call of string * Pure_expr.t list  (** Function call *)
   [@@deriving show { with_path = false }]
 end

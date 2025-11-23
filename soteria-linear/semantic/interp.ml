@@ -17,8 +17,13 @@ let cast_to_bool v =
   | Some v -> Result.ok v
   | None -> Result.error "Type error"
 
+let cast_to_int v =
+  match S_val.cast_checked v S_val.t_int with
+  | Some v -> Result.ok v
+  | None -> Result.error "Type error"
+
 let rec interp_pure_expr (subst : subst) expr :
-    (S_val.T.any S_val.t, string, 'a) Symex.Result.t =
+    (S_val.T.any S_val.t, 'err, 'a) Symex.Result.t =
   match expr with
   | Pure_expr.Int n -> Result.ok (S_val.int n)
   | Bool b -> Result.ok (S_val.bool b)
@@ -54,36 +59,55 @@ let rec interp_pure_expr (subst : subst) expr :
       Result.ok v
 
 module Make (State : State_intf.S) = struct
-  let rec interp_expr (subst : subst) expr =
+  let interp_pure_expr (subst : subst) (state : State.t) expr =
+    let+- msg = interp_pure_expr subst expr in
+    State.error msg state
+
+  let cast_to_bool v state =
+    let+- msg = cast_to_bool v in
+    State.error msg state
+
+  let cast_to_int v state =
+    let+- msg = cast_to_int v in
+    State.error msg state
+
+  let rec interp_expr (subst : subst) (state : State.t) expr =
     L.debug (fun m ->
         m "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp
           expr pp_subst subst);
     match expr with
-    | Expr.Pure_expr e -> interp_pure_expr subst e
+    | Expr.Pure_expr e ->
+        let++ v = interp_pure_expr subst state e in
+        (v, state)
     | Let (x, e1, e2) ->
-        let** v1 = interp_expr subst e1 in
+        let** v1, state = interp_expr subst state e1 in
         let subst = String_map.add x v1 subst in
-        interp_expr subst e2
+        interp_expr subst state e2
     | If (guard, then_, else_) ->
-        let** v_guard = interp_expr subst guard in
-        let** v_guard = cast_to_bool v_guard in
-        if%sat v_guard then interp_expr subst then_ else interp_expr subst else_
+        let** v_guard, state = interp_expr subst state guard in
+        let** v_guard = cast_to_bool v_guard state in
+        if%sat v_guard then interp_expr subst state then_
+        else interp_expr subst state else_
     | Call (fname, arg_exprs) ->
         let** arg_values =
           Symex.Result.fold_list arg_exprs ~init:[] ~f:(fun acc e ->
-              let++ res = interp_pure_expr subst e in
+              let++ res = interp_pure_expr subst state e in
               res :: acc)
         in
         let arg_values = List.rev arg_values in
         let func = get_function fname in
-        run_function func arg_values
-    | Load _addr -> give_up ~loc:() "Load not implemented yet"
+        run_function func state arg_values
+    | Load addr ->
+        let** addr = interp_pure_expr subst state addr in
+        let** addr = cast_to_int addr state in
+        State.load addr state
     | Store (_addr, _value) -> give_up ~loc:() "Store not implemented yet"
+    | Alloc -> give_up ~loc:() "Alloc not implemented yet"
 
-  and run_function func args =
+  and run_function func state args =
     let subst = List.combine func.Fun_def.args args |> String_map.of_list in
     L.debug (fun m ->
         m "@[<v 2>Running function %s with args:@ %a@]" func.Fun_def.name
           pp_subst subst);
-    interp_expr subst func.Fun_def.body
+    interp_expr subst state func.Fun_def.body
 end
