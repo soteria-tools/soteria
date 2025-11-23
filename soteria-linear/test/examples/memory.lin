@@ -11,6 +11,6 @@ let main =
   [p] <- 10;
   [q] <- 20;
   swap(p, q);
-  let p = [p] in
-  let q = [q] in
-  p - q
+  let a = [p] in
+  let b = [q] in
+  a - b
