@@ -7,7 +7,6 @@ module Symex =
     (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
 module S_int = struct
-  module Symex = Symex
   include Typed
 
   type t = Typed.T.sint Typed.t
@@ -18,7 +17,6 @@ module S_int = struct
 end
 
 module S_val = struct
-  module Symex = Symex
   include Typed
 
   type t = T.any Typed.t [@@deriving show { with_path = false }]
