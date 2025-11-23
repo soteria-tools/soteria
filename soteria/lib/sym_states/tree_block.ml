@@ -43,89 +43,90 @@ and node_qty = Partially | Totally
     [serialized] mustn't store information about the offset or length it applies
     to, as [Tree_block] wraps it into a structure containing this information.
 *)
-module type MemVal = sig
-  module Symex : Symex.Base
+module MemVal (Symex : Symex.Base) = struct
+  module type S = sig
+    module SBoundedInt : sig
+      type +'a t = 'a Symex.Value.t
+      type sbool
+      type sint
 
-  module SBoundedInt : sig
-    type +'a t = 'a Symex.Value.t
-    type sbool
-    type sint
+      val v_false : sbool t
+      val zero : unit -> sint t
+      val ( +@ ) : sint t -> sint t -> sint t
+      val ( -@ ) : sint t -> sint t -> sint t
+      val ( <@ ) : sint t -> sint t -> sbool t
+      val ( <=@ ) : sint t -> sint t -> sbool t
+      val ( ==@ ) : sint t -> sint t -> sbool t
+      val ( &&@ ) : sbool t -> sbool t -> sbool t
+      val in_bound : sint t -> sbool t
+    end
 
-    val v_false : sbool t
-    val zero : unit -> sint t
-    val ( +@ ) : sint t -> sint t -> sint t
-    val ( -@ ) : sint t -> sint t -> sint t
-    val ( <@ ) : sint t -> sint t -> sbool t
-    val ( <=@ ) : sint t -> sint t -> sbool t
-    val ( ==@ ) : sint t -> sint t -> sbool t
-    val ( &&@ ) : sbool t -> sbool t -> sbool t
-    val in_bound : sint t -> sbool t
-  end
+    type t
+    type sint := SBoundedInt.sint SBoundedInt.t
 
-  type t
-  type sint := SBoundedInt.sint SBoundedInt.t
+    val pp : Format.formatter -> t -> unit
 
-  val pp : Format.formatter -> t -> unit
+    (** Merges two children node into a single node; returns the merged node.
+        Note children of the node are always preserved too, for further
+        accesses. *)
+    val merge : left:t -> right:t -> t
 
-  (** Merges two children node into a single node; returns the merged node. Note
-      children of the node are always preserved too, for further accesses. *)
-  val merge : left:t -> right:t -> t
-
-  (** [split ~at node] Splits [node] at [at], which is the relative offset
+    (** [split ~at node] Splits [node] at [at], which is the relative offset
       within the node. Returns the left and right split trees, which themselves
       may contain further splits.
 
       [at] is guaranteed to be in the range [[1, size(node))], i.e. strictly within the node. *)
-  val split :
-    at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
+    val split :
+      at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
 
-  type serialized
+    type serialized
 
-  val pp_serialized : Format.formatter -> serialized -> unit
-  val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
+    val pp_serialized : Format.formatter -> serialized -> unit
+    val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
 
-  val iter_vars_serialized :
-    serialized -> (Var.t * 'b Symex.Value.ty -> unit) -> unit
+    val iter_vars_serialized :
+      serialized -> (Var.t * 'b Symex.Value.ty -> unit) -> unit
 
-  (** Serialize this memory value; either returns [Some serialized], or [None]
-      to signal the children must instead be serialized. *)
-  val serialize : t -> serialized Seq.t option
+    (** Serialize this memory value; either returns [Some serialized], or [None]
+        to signal the children must instead be serialized. *)
+    val serialize : t -> serialized Seq.t option
 
-  (** Extract the given [serialized] predicate from the tree; this may result in
-      an empty ([NotOwned Totally]) tree, or may only modify part of the tree if
-      the predicate only represents part of this tree's state. A [Missing] may
-      be raised if part of the state is missing for the consumption to succeed.
+    (** Extract the given [serialized] predicate from the tree; this may result
+        in an empty ([NotOwned Totally]) tree, or may only modify part of the
+        tree if the predicate only represents part of this tree's state. A
+        [Missing] may be raised if part of the state is missing for the
+        consumption to succeed.
 
-      The input tree corresponds to the subtree relevant to the predicate's
-      offset and length, meaning [t.node] is the node covering the whole
-      predicate's range. *)
-  val consume :
-    serialized ->
-    (t, sint) tree ->
-    ((t, sint) tree, 'err, serialized) Symex.Result.t
+        The input tree corresponds to the subtree relevant to the predicate's
+        offset and length, meaning [t.node] is the node covering the whole
+        predicate's range. *)
+    val consume :
+      serialized ->
+      (t, sint) tree ->
+      ((t, sint) tree, 'err, serialized) Symex.Result.t
 
-  (** Add the given [serialized] predicate onto the given tree; the input tree
-      is not necessarily empty ([NotOwned Totally]), and if the predicate
-      overlaps the production may [vanish].
+    (** Add the given [serialized] predicate onto the given tree; the input tree
+        is not necessarily empty ([NotOwned Totally]), and if the predicate
+        overlaps the production may [vanish].
 
-      The input tree corresponds to the subtree relevant to the predicate's
-      offset and length, meaning [t.node] is the node covering the whole
-      predicate's range. *)
-  val produce : serialized -> (t, sint) tree -> (t, sint) tree Symex.t
+        The input tree corresponds to the subtree relevant to the predicate's
+        offset and length, meaning [t.node] is the node covering the whole
+        predicate's range. *)
+    val produce : serialized -> (t, sint) tree -> (t, sint) tree Symex.t
 
-  (** Returns [ok] if this memory value is exclusively owned, ie no additional
-      state can be composed with it; in other words, calling [produce] on a tree
-      with this node must always vanish. Otherwise this should raise a [miss]
-      with the fixes needed for this to become exclusively owned. *)
-  val assert_exclusively_owned : t -> (unit, 'err, serialized) Symex.Result.t
+    (** Returns [ok] if this memory value is exclusively owned, ie no additional
+        state can be composed with it; in other words, calling [produce] on a
+        tree with this node must always vanish. Otherwise this should raise a
+        [miss] with the fixes needed for this to become exclusively owned. *)
+    val assert_exclusively_owned : t -> (unit, 'err, serialized) Symex.Result.t
+  end
 end
 
 module Make
     (Symex : Symex.Base)
     (MemVal :
-      MemVal
-        with module Symex = Symex
-         and type 'a SBoundedInt.t = 'a Symex.Value.t
+      MemVal(Symex).S
+        with type 'a SBoundedInt.t = 'a Symex.Value.t
          and type SBoundedInt.sbool = Symex.Value.sbool) =
 struct
   open Compo_res

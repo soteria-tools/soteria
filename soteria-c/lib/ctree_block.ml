@@ -9,7 +9,6 @@ module Ctype = Cerb_frontend.Ctype
 
 module MemVal = struct
   module TB = Soteria.Sym_states.Tree_block
-  module Symex = Csymex
 
   module SBoundedInt = struct
     include Typed

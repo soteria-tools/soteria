@@ -1,25 +1,25 @@
 open Symex
 
-module type KeyS = sig
-  type t
+module KeyS (Symex : Symex.Base) = struct
+  module type S = sig
+    type t
 
-  module Symex : Symex.Base
-  include Stdlib.Map.OrderedType with type t := t
+    include Stdlib.Map.OrderedType with type t := t
 
-  type sbool_v := Symex.Value.sbool Symex.Value.t
+    type sbool_v := Symex.Value.sbool Symex.Value.t
 
-  val pp : Format.formatter -> t -> unit
-  val sem_eq : t -> t -> sbool_v
-  val fresh : unit -> t Symex.t
-  val simplify : t -> t Symex.t
-  val distinct : t list -> sbool_v
-  val subst : (Var.t -> Var.t) -> t -> t
-  val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+    val pp : Format.formatter -> t -> unit
+    val sem_eq : t -> t -> sbool_v
+    val fresh : unit -> t Symex.t
+    val simplify : t -> t Symex.t
+    val distinct : t list -> sbool_v
+    val subst : (Var.t -> Var.t) -> t -> t
+    val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+  end
 end
 
 module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
-  KeyS with module Symex = Symex and type t = Key.t = struct
-  module Symex = Symex
+  KeyS(Symex).S with type t = Key.t = struct
   include Key
 
   let sem_eq x y = Symex.Value.bool (Key.compare x y = 0)
@@ -32,7 +32,7 @@ end
 
 module Build_from_find_opt_sym
     (Symex : Symex.Base)
-    (Key : KeyS with module Symex = Symex)
+    (Key : KeyS(Symex).S)
     (Find_opt_sym : sig
       val f : Key.t -> 'a Stdlib.Map.Make(Key).t -> (Key.t * 'a option) Symex.t
     end) =
@@ -151,7 +151,7 @@ struct
     Result.fold_seq (M.to_seq st) ~init ~f
 end
 
-module Make (Symex : Symex.Base) (Key : KeyS with module Symex = Symex) = struct
+module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
   open Symex.Syntax
   module M' = Stdlib.Map.Make (Key)
 
@@ -175,8 +175,7 @@ module Make (Symex : Symex.Base) (Key : KeyS with module Symex = Symex) = struct
       end)
 end
 
-module Direct_access (Symex : Symex.Base) (Key : KeyS with module Symex = Symex) =
-struct
+module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
   open Symex.Syntax
   module M' = Stdlib.Map.Make (Key)
 
