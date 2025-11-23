@@ -12,9 +12,9 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | Eq -> sem_eq
   | Leq -> leq
   | Lt -> lt
-  | Plus -> plus
-  | Minus -> minus
-  | Times -> times
+  | Plus -> add
+  | Minus -> sub
+  | Times -> mul
   | Div -> div
   | Rem -> rem
   | Mod -> mod_

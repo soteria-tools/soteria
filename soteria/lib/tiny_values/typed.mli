@@ -79,9 +79,9 @@ val geq : [< sint ] t -> [< sint ] t -> [> sbool ] t
 val gt : [< sint ] t -> [< sint ] t -> [> sbool ] t
 val leq : [< sint ] t -> [< sint ] t -> [> sbool ] t
 val lt : [< sint ] t -> [< sint ] t -> [> sbool ] t
-val plus : [< sint ] t -> [< sint ] t -> [> sint ] t
-val minus : [< sint ] t -> [< sint ] t -> [> sint ] t
-val times : [< sint ] t -> [< sint ] t -> [> sint ] t
+val add : [< sint ] t -> [< sint ] t -> [> sint ] t
+val sub : [< sint ] t -> [< sint ] t -> [> sint ] t
+val mul : [< sint ] t -> [< sint ] t -> [> sint ] t
 val div : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 val rem : [< sint ] t -> [< nonzero ] t -> [> sint ] t
 val mod_ : [< sint ] t -> nonzero t -> [> sint ] t

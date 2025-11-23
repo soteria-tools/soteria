@@ -272,41 +272,41 @@ let nonzero x = if x = 0 then raise (Invalid_argument "nonzero") else int x
 let zero = int_z Z.zero
 let one = int_z Z.one
 
-let rec plus v1 v2 =
+let rec add v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v1 zero -> v2
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.add i1 i2)
   | Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }), Int i3 ->
-      plus v1 (int_z (Z.add i2 i3))
+      add v1 (int_z (Z.add i2 i3))
   | Binop (Plus, { node = { kind = Int i1; _ }; _ }, v2), Int i3 ->
-      plus (int_z (Z.add i1 i3)) v2
+      add (int_z (Z.add i1 i3)) v2
   | Int i1, Binop (Plus, v1, { node = { kind = Int i2; _ }; _ }) ->
-      plus (int_z (Z.add i1 i2)) v1
+      add (int_z (Z.add i1 i2)) v1
   | Int i1, Binop (Plus, { node = { kind = Int i2; _ }; _ }, v2) ->
-      plus (int_z (Z.add i1 i2)) v2
+      add (int_z (Z.add i1 i2)) v2
   | _ -> mk_commut_binop Plus v1 v2 <| TInt
 
-let rec minus v1 v2 =
+let rec sub v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v2 zero -> v1
   | Int i1, Int i2 -> int_z (Z.sub i1 i2)
   | Var v1, Var v2 when Var.equal v1 v2 -> zero
   | Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1), Int i1 ->
-      minus (int_z (Z.sub i2 i1)) v1
+      sub (int_z (Z.sub i2 i1)) v1
   | Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }), Int i1 ->
-      minus v1 (int_z (Z.add i2 i1))
+      sub v1 (int_z (Z.add i2 i1))
   | Int i1, Binop (Minus, { node = { kind = Int i2; _ }; _ }, v1) ->
-      plus (int_z (Z.sub i1 i2)) v1
+      add (int_z (Z.sub i1 i2)) v1
   | Int i1, Binop (Minus, v1, { node = { kind = Int i2; _ }; _ }) ->
-      minus (int_z (Z.add i1 i2)) v1
+      sub (int_z (Z.add i1 i2)) v1
   | Binop (Plus, x, y), _ when equal x v2 -> y
   | Binop (Plus, x, y), _ when equal y v2 -> x
-  | _, Binop (Plus, x, y) when equal x v1 -> minus zero y
-  | _, Binop (Plus, x, y) when equal y v1 -> minus zero x
+  | _, Binop (Plus, x, y) when equal x v1 -> sub zero y
+  | _, Binop (Plus, x, y) when equal y v1 -> sub zero x
   | _ -> Binop (Minus, v1, v2) <| TInt
 
-let times v1 v2 =
+let mul v1 v2 =
   match (v1.node.kind, v2.node.kind) with
   | _, _ when equal v1 zero || equal v2 zero -> zero
   | _, _ when equal v1 one -> v2
@@ -342,9 +342,9 @@ let rec rem v1 v2 =
   | _, Int i2 when is_mod v1 i2 -> zero
   | Int i1, Int i2 -> int_z (Z.rem i1 i2)
   | Binop (Times, v1, n), Binop (Times, v2, m) when equal n m ->
-      times n (rem v1 v2)
+      mul n (rem v1 v2)
   | Binop (Times, n, v1), Binop (Times, m, v2) when equal n m ->
-      times n (rem v1 v2)
+      mul n (rem v1 v2)
   | _ -> Binop (Rem, v1, v2) <| v1.node.ty
 
 let rec mod_ v1 v2 =
@@ -369,11 +369,10 @@ let rec mod_ v1 v2 =
           } ),
       Int m2 )
     when Z.geq m1 m2 && Z.divisible m1 m2 ->
-      mod_ (plus x l) v2
+      mod_ (add x l) v2
   | _ -> Binop (Mod, v1, v2) <| TInt
 
-let neg v =
-  match v.node.kind with Int i -> int_z (Z.neg i) | _ -> minus zero v
+let neg v = match v.node.kind with Int i -> int_z (Z.neg i) | _ -> sub zero v
 
 (* {2 Equality, comparison, int-bool conversions} *)
 
@@ -530,10 +529,10 @@ module Infix = struct
   let ( <=@ ) = leq
   let ( &&@ ) = and_
   let ( ||@ ) = or_
-  let ( +@ ) = plus
-  let ( -@ ) = minus
+  let ( +@ ) = add
+  let ( -@ ) = sub
   let ( ~- ) = neg
-  let ( *@ ) = times
+  let ( *@ ) = mul
   let ( /@ ) = div
   let ( %@ ) = mod_
 end
