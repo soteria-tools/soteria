@@ -1,8 +1,8 @@
-let swap p =
+let swap p q =
   let x = [p] in
-  let y = [p + 1] in
+  let y = [q] in
   [p] <- y;
-  [p + 1] <- x;
+  [q] <- x;
   0
 
 let main =
@@ -10,4 +10,7 @@ let main =
   let q = alloc in
   [p] <- 10;
   [q] <- 20;
-  swap(p)
+  swap(p, q);
+  let p = [p] in
+  let q = [q] in
+  p - q

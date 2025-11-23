@@ -25,6 +25,7 @@ rule read = parse
   | "false" { FALSE }
   | "nondet" { NONDET }
   | "alloc" { ALLOC }
+  | "free" { FREE }
   | "+" { PLUS }
   | "-" { MINUS }
   | "*" { TIMES }
