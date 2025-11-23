@@ -34,7 +34,7 @@ module Make (Symex : Symex.Base) (E : Elem with module Symex = Symex) = struct
     let++ _ = unwrap st in
     ((), Some x)
 
-  let serialize serialize_val x = serialize_val x
+  let serialize x = x
   let pp_serialized = pp
 
   let iter_vars_serialized (i : 'a -> 'b Symex.Value.ty Var.iter_vars)
