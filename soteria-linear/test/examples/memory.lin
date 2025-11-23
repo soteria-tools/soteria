@@ -1,0 +1,6 @@
+let swap p =
+  let x = [p] in
+  let y = [p + 1] in
+  [p] <- y;
+  [p + 1] <- x;
+  0
