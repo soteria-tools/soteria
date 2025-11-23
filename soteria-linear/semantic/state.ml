@@ -1,6 +1,7 @@
 open Aux
 
-type err = string [@@deriving show { with_path = false }]
+type err = [ `UseAfterFree | `Interp of string ]
+[@@deriving show { with_path = false }]
 
 module PMap = Soteria.Sym_states.Pmap.Make (Symex) (S_int)
 module Excl = Soteria.Sym_states.Excl.Make (Symex)
@@ -20,3 +21,4 @@ let alloc st =
   PMap.alloc ~new_codom:v_false st
 
 let free _addr _st = Symex.give_up ~loc:() "unimplemented: free"
+let error msg _state = `Interp msg

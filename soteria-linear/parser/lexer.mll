@@ -24,6 +24,7 @@ rule read = parse
   | "true" { TRUE }
   | "false" { FALSE }
   | "nondet" { NONDET }
+  | "alloc" { ALLOC }
   | "+" { PLUS }
   | "-" { MINUS }
   | "*" { TIMES }

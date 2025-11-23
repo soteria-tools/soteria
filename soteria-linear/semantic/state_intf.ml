@@ -10,4 +10,5 @@ module type S = sig
   val store : S_int.t -> S_val.T.any S_val.t -> unit state_res
   val alloc : S_int.t state_res
   val free : S_int.t -> unit state_res
+  val error : string -> t -> err
 end
