@@ -1,3 +1,10 @@
+(** An in-place mutable graph implementation with reachability and topological ordering.
+
+    Provides a directed graph structure where nodes are stored in a hashtable
+    mapping to sets of adjacent nodes. Supports edge addition, breadth-first
+    reachability queries, and weak topological ordering of strongly connected
+    components. *)
+
 module Make_in_place (Node : Hashset.PrintableHashedType) = struct
   type node = Node.t
 

@@ -1,3 +1,10 @@
+(** Monad interfaces and implementations.
+
+    This module provides standard module types and functors for defining and
+    working with monads, including support for syntax extensions (let* operators),
+    common monad instances (List, Result, Option, etc.), and transformers. *)
+
+(** Basic interface for a monad with one type parameter. *)
 module type Base = sig
   type 'a t
 
@@ -6,13 +13,16 @@ module type Base = sig
   val map : 'a t -> ('a -> 'b) -> 'b t
 end
 
+(** Functor to create a monadic fold function over a foldable container. *)
 module FoldM (M : Base) (F : Foldable.S) = struct
   type ('a, 'b) folder = 'a F.t -> init:'b -> f:('b -> 'a -> 'b M.t) -> 'b M.t
 end
 
+(** Generic monadic fold function. *)
 let foldM ~return ~bind ~fold xs ~init ~f =
   fold xs ~init:(return init) ~f:(fun acc x -> bind acc @@ fun acc -> f acc x)
 
+(** Generic monadic map function that collects results. *)
 let all ~return ~bind fn xs =
   let rec aux acc rs =
     match rs with
@@ -21,6 +31,7 @@ let all ~return ~bind fn xs =
   in
   aux [] xs
 
+(** Syntax extension for monads (let* and let+). *)
 module type Syntax = sig
   type 'a t
 
@@ -28,6 +39,7 @@ module type Syntax = sig
   val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
 end
 
+(** Complete monad interface including generic operations and syntax. *)
 module type S = sig
   include Base
 
@@ -37,6 +49,7 @@ module type S = sig
   module Syntax : Syntax with type 'a t := 'a t
 end
 
+(** Functor to extend a basic monad with derived operations and syntax. *)
 module Extend (Base : Base) = struct
   include Base
 
@@ -57,6 +70,7 @@ module Extend (Base : Base) = struct
   end
 end
 
+(** Basic interface for a monad with two type parameters (e.g. Result). *)
 module type Base2 = sig
   type ('a, 'b) t
 
@@ -68,15 +82,18 @@ module type Base2 = sig
   val map_error : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t
 end
 
+(** Functor to create a monadic fold for two-parameter monads. *)
 module FoldM2 (M : Base2) (F : Foldable.S) = struct
   type ('elem, 'a, 'b) folder =
     'elem F.t -> init:'a -> f:('a -> 'elem -> ('a, 'b) M.t) -> ('a, 'b) M.t
 end
 
+(** Interface for a type with three type parameters. *)
 module type Ty3 = sig
   type ('a, 'b, 'c) t
 end
 
+(** Functor to create a monadic fold for three-parameter monads. *)
 module FoldM3 (M : Ty3) (F : Foldable.S) = struct
   type ('elem, 'a, 'b, 'c) folder =
     'elem F.t ->
@@ -85,6 +102,7 @@ module FoldM3 (M : Ty3) (F : Foldable.S) = struct
     ('a, 'b, 'c) M.t
 end
 
+(** Syntax extension for two-parameter monads. *)
 module type Syntax2 = sig
   type ('a, 'b) t
 
@@ -94,6 +112,7 @@ module type Syntax2 = sig
   val ( let- ) : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t
 end
 
+(** Complete interface for two-parameter monads. *)
 module type S2 = sig
   include Base2
 
@@ -105,6 +124,7 @@ module type S2 = sig
   module Syntax : Syntax2 with type ('a, 'b) t := ('a, 'b) t
 end
 
+(** Functor to extend a basic two-parameter monad. *)
 module Extend2 (Base : Base2) : S2 with type ('a, 'b) t = ('a, 'b) Base.t =
 struct
   include Base

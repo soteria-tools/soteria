@@ -1,3 +1,10 @@
+(** Extensions to [Stdlib.Hashtbl] with JSON serialization support.
+
+    Includes the standard hash table implementation and provides a functor
+    to create hash tables with Yojson serialization/deserialization for
+    keys that can be encoded as strings. Includes pre-made modules for
+    integer and string keys. *)
+
 include Stdlib.Hashtbl
 
 module type HashedAndStringEncodable = sig

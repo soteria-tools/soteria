@@ -1,3 +1,9 @@
+(** Extensions to [Stdlib.Dynarray] with pretty-printing and JSON support.
+
+    This module includes the standard dynamic array implementation and adds
+    formatting functions compatible with [Fmt] and JSON serialization via
+    [Yojson]. *)
+
 include Stdlib.Dynarray
 
 let pp pp_elem = Fmt.brackets @@ Fmt.iter ~sep:Fmt.comma iter pp_elem
