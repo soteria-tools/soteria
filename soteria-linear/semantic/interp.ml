@@ -123,5 +123,10 @@ module Make (State : State_intf.S) = struct
     L.debug (fun m ->
         m "@[<v 2>Running function %s with args:@ %a@]" func.Fun_def.name
           pp_subst subst);
-    interp_expr subst state func.Fun_def.body
+    let++ r = interp_expr subst state func.Fun_def.body in
+    L.debug (fun m ->
+        m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name
+          (Fmt.Dump.pair S_val.pp State.pp)
+          r);
+    r
 end
