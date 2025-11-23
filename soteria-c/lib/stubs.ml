@@ -158,6 +158,12 @@ module M (State : State_intf.S) = struct
     let rec loop s1_ptr s2_ptr state =
       let** c1, state = State.load s1_ptr Ctype.char state in
       let** c2, state = State.load s2_ptr Ctype.char state in
+      let* c1 =
+        Agv.basic_or_unsupported ~msg:"strcmp: loaded but not char" c1
+      in
+      let* c2 =
+        Agv.basic_or_unsupported ~msg:"strcmp: loaded but not char" c2
+      in
       if%sat c1 ==@ U8.(0s) &&@ (c2 ==@ U8.(0s)) then
         Result.ok (Agv.c_int 0, state)
       else
@@ -202,7 +208,9 @@ module M (State : State_intf.S) = struct
         if%sat count ==@ Usize.(0s) then Result.ok (Agv.void, state)
         else
           let** (), state =
-            State.store dest Ctype.char (char :> T.cval Typed.t) state
+            State.store dest Ctype.char
+              (Agv.Basic (char :> T.cval Typed.t))
+              state
           in
           let s1_ptr = Typed.Ptr.add_ofs dest (BV.usizei 1) in
           let count = count -!@ Usize.(1s) in
