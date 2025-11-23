@@ -24,9 +24,19 @@ module S_val = struct
   let sem_eq = sem_eq_untyped
 
   let fresh () : t Symex.t =
+    Symex.branches
+      [
+        (fun () -> Symex.nondet Typed.t_int);
+        (fun () -> Symex.nondet Typed.t_bool);
+      ]
+
+  let check_nonzero (v : T.sint Typed.t) :
+      (T.nonzero Typed.t, string, 'a) Symex.Result.t =
     let open Symex.Syntax in
-    let* v = Symex.nondet Typed.t_int in
-    Symex.return v
+    let open Typed.Infix in
+    let open Typed.Syntax in
+    if%sat v ==@ 0s then Symex.Result.error "ZeroException"
+    else Symex.Result.ok (Typed.cast v)
 end
 
 type _ Effect.t += Resolve_function : string -> Fun_def.t Effect.t
