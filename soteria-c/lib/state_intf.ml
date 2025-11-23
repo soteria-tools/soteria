@@ -32,19 +32,6 @@ module type S = sig
     [< sptr ] Typed.t ->
     Ctree_block.Ctype.ctype ->
     t ->
-    ( cval Typed.t * t,
-      [> `NullDereference
-      | `OutOfBounds
-      | `UninitializedMemoryAccess
-      | `UseAfterFree ]
-      err,
-      serialized )
-    Csymex.Result.t
-
-  val load_aggregate :
-    [< sptr ] Typed.t ->
-    Ctree_block.Ctype.ctype ->
-    t ->
     ( Agv.t * t,
       [> `NullDereference
       | `OutOfBounds
@@ -55,16 +42,6 @@ module type S = sig
     Csymex.Result.t
 
   val store :
-    [< sptr ] Typed.t ->
-    Ctree_block.Ctype.ctype ->
-    cval Typed.t ->
-    t ->
-    ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree ] err,
-      serialized )
-    Csymex.Result.t
-
-  val store_aggregate :
     sptr Typed.t ->
     Ctree_block.Ctype.ctype ->
     Agv.t ->

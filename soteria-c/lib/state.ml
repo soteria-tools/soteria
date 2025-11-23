@@ -106,17 +106,17 @@ let with_ptr (ptr : [< T.sptr ] Typed.t) (st : t)
   let@ heap = with_heap st in
   (SPmap.wrap (With_origin.wrap (Freeable.wrap (f ~ofs)))) loc heap
 
-let load ptr ty st =
+let load_basic ptr ty st =
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering read" () in
   let load_msg = Fmt.str "load of type %a" Fmt_ail.pp_ty ty in
   log load_msg ptr st;
   with_ptr ptr st (fun ~ofs block -> Ctree_block.load ofs ty block)
 
-let load_aggregate (ptr : [< T.sptr ] Typed.t) ty state =
-  let++ v, state = load ptr ty state in
+let load (ptr : [< T.sptr ] Typed.t) ty state =
+  let++ v, state = load_basic ptr ty state in
   (Agv.Basic v, state)
 
-let store ptr ty sval st =
+let store_basic ptr ty sval st =
   let@ () = with_error_loc_as_call_trace ~msg:"Triggering write" () in
   log "store" ptr st;
   with_ptr ptr st (fun ~ofs block -> Ctree_block.store ofs ty sval block)
@@ -132,9 +132,9 @@ let deinit ptr len st =
   log "deinit" ptr st;
   with_ptr ptr st (fun ~ofs block -> Ctree_block.deinit ofs len block)
 
-let rec store_aggregate (ptr : [< T.sptr ] Typed.t) ty v state =
+let rec store (ptr : [< T.sptr ] Typed.t) ty v state =
   match v with
-  | Agv.Basic v -> store ptr ty v state
+  | Agv.Basic v -> store_basic ptr ty v state
   | Agv.Array elems ->
       let* elem_ty, _ =
         Layout.get_array_info ty
@@ -142,7 +142,7 @@ let rec store_aggregate (ptr : [< T.sptr ] Typed.t) ty v state =
       in
       let++ _, state =
         Result.fold_list elems ~init:(ptr, state) ~f:(fun (ptr, state) elem ->
-            let** (), state = store_aggregate ptr elem_ty elem state in
+            let** (), state = store ptr elem_ty elem state in
             let* elem_size = Layout.size_of_s elem_ty in
             let ptr = Typed.Ptr.add_ofs ptr elem_size in
             Result.ok (ptr, state))
@@ -163,7 +163,7 @@ let rec store_aggregate (ptr : [< T.sptr ] Typed.t) ty v state =
             (_, (_, _, _, mem_ty)) :: rest_mems,
             value :: rest_values ) ->
             let ptr = Typed.Ptr.add_ofs ptr (BV.usizei ofs) in
-            let** (), state = store_aggregate ptr mem_ty value state in
+            let** (), state = store ptr mem_ty value state in
             aux rest_ofs rest_mems rest_values state
         | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
             let ptr = Typed.Ptr.add_ofs ptr (BV.usizei ofs) in
