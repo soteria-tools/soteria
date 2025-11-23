@@ -1,8 +1,13 @@
 open Soteria
 open Soteria_std.Syntaxes.FunctionWrap
 open Soteria_linear_semantic
+open Soteria.Logs
 module Lang = Soteria_linear_ast.Lang
 module Parser = Soteria_linear_parser.Parse
+module LSymex = Aux.Symex
+open Lang
+
+let bi_abd_fuel = Symex.Fuel_gauge.{ steps = Finite 100; branching = Finite 3 }
 
 let pp_results ft v =
   let pp =
@@ -35,6 +40,40 @@ let exec file =
   let process = Exec_interp.run_function main State.empty [] in
   let results =
     let@ () = Interp.with_program program in
-    Interp.Symex.Result.run ~fuel:Symex.Fuel_gauge.infinite ~mode:OX process
+    Interp.Symex.Result.run ~mode:OX process
   in
   Fmt.pr "@[<v 2>Program executed with result:@ %a@]@?" pp_results results
+
+module Bi_interp = Interp.Make (Bi_state)
+
+let generate_summaries file =
+  let program = Parser.parse_file file in
+  String_map.iter
+    (fun fname (func_dec : Fun_def.t) ->
+      let@ () = L.with_section (Fmt.str "Generating summary for %s" fname) in
+      Fmt.pr "@[<v 2>Summaries for %s:@ " fname;
+      let process =
+        let open LSymex.Syntax in
+        let* args =
+          LSymex.fold_list func_dec.args ~init:[] ~f:(fun acc _ ->
+              let+ v = Interp.S_val.fresh () in
+              v :: acc)
+        in
+        let args = List.rev args in
+        Bi_interp.run_function func_dec Bi_state.empty args
+      in
+      let results =
+        let@ () = Interp.with_program program in
+        LSymex.run ~mode:UX ~fuel:bi_abd_fuel process
+      in
+      List.iter
+        (fun (res, pc) ->
+          match res with
+          | Symex.Compo_res.Error (err, state) ->
+              Fmt.pr "%a@,@," Bi_state.pp_spec (state, pc, Result.error err)
+          | Symex.Compo_res.Ok (v, state) ->
+              Fmt.pr "%a@,@," Bi_state.pp_spec (state, pc, Result.ok v)
+          | Symex.Compo_res.Missing _ -> ())
+        results;
+      Fmt.pr "@]")
+    program
