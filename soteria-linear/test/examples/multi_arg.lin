@@ -1,6 +1,9 @@
 let add x y =
   x + y
 
-let main a b c =
+let main =
+  let a = nondet in
+  let b = nondet in
+  let c = nondet in
   let r = add(a, b) in
   r + c
