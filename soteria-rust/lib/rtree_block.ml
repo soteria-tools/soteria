@@ -17,7 +17,6 @@ module Make (Sptr : Sptr.S) = struct
 
   module MemVal = struct
     module TB = Soteria.Sym_states.Tree_block
-    module Symex = DecayMapMonad
 
     module SBoundedInt = struct
       include Typed
@@ -126,7 +125,7 @@ module Make (Sptr : Sptr.S) = struct
       | SZeros, Owned (Init _, _) -> not_impl "Assume rust_val == 0s"
       | SZeros, _ -> vanish ()
 
-    let produce (s : serialized) (t : tree) : tree Symex.t =
+    let produce (s : serialized) (t : tree) : tree DecayMapMonad.t =
       match (s, t.node) with
       | _, (Owned _ | NotOwned Partially) -> vanish ()
       | SInit v, NotOwned Totally -> return (owned t (Init v))
