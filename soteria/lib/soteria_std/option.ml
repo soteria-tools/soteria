@@ -1,3 +1,9 @@
+(** Extensions to [Stdlib.Option] with binary operations and safe extraction.
+
+    Includes the standard option module and adds functions for working with
+    pairs of options, merging options, and extracting values with custom
+    error messages. *)
+
 include Stdlib.Option
 
 let bind2 f x y = match (x, y) with Some x, Some y -> f x y | _ -> None

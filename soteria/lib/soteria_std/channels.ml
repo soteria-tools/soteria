@@ -1,3 +1,5 @@
+(** File channel management with automatic resource cleanup. *)
+
 let with_out_file file f =
   let oc = open_out file in
   Fun.protect ~finally:(fun () -> close_out oc) (fun () -> f oc)

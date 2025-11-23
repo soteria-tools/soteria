@@ -1,3 +1,5 @@
+(** Extensions to [Stdlib.List] with additional utility functions. *)
+
 include Stdlib.List
 
 (** [take_count n l] takes the prefix [l'] of at most [n] from the beginning of
@@ -16,9 +18,14 @@ let take_count n l =
   let result = aux n l in
   (result, !taken)
 
+(** [combine_opt l1 l2] combines two lists into a list of pairs, returning
+    [Some] result if the lists have equal length, or [None] if they differ. *)
 let combine_opt l1 l2 =
   try Some (combine l1 l2) with Invalid_argument _ -> None
 
+(** [join_results outcomes] partitions a list of results into successful
+    values and errors. Returns [Ok oks] if all results are successful,
+    or [Error errors] if any errors are present. *)
 let join_results outcomes =
   let oks, errors =
     partition_map
@@ -27,12 +34,17 @@ let join_results outcomes =
   in
   if is_empty errors then Ok oks else Error errors
 
+(** [combine3 l1 l2 l3] combines three lists into a list of triples.
+    Raises [Invalid_argument] if the lists have different lengths. *)
 let rec combine3 l1 l2 l3 =
   match (l1, l2, l3) with
   | a :: l1, b :: l2, c :: l3 -> (a, b, c) :: combine3 l1 l2 l3
   | [], [], [] -> []
   | _ -> raise (Invalid_argument "combine3")
 
+(** [combine3_opt l1 l2 l3] combines three lists into a list of triples,
+    returning [Some] result if the lists have equal length, or [None] if
+    they differ. *)
 let combine3_opt l1 l2 l3 =
   try Some (combine3 l1 l2 l3) with Invalid_argument _ -> None
 
@@ -48,8 +60,15 @@ let[@tail_mod_cons] rec map2i i f l1 l2 =
       r1 :: r2 :: map2i (i + 2) f l1 l2
   | _, _ -> invalid_arg "List_ex.map2i"
 
+(** [map2i f l1 l2] maps function [f] over two lists simultaneously,
+    passing the current index as the first argument to [f]. The function
+    [f] receives [(index, element1, element2)] for each pair of elements.
+    Raises [Invalid_argument] if the lists have different lengths. *)
 let map2i f l1 l2 = map2i 0 f l1 l2
 
+(** [map_changed f l] maps function [f] over list [l] and returns both
+    the resulting list and a boolean indicating whether any element was
+    changed (using physical equality [!=]). *)
 let map_changed f l =
   let changed = ref false in
   let res =
@@ -62,12 +81,19 @@ let map_changed f l =
   in
   (res, !changed)
 
+(** [last l] returns the last element of list [l].
+    Raises [Invalid_argument] if the list is empty. *)
 let rec last l =
   match l with [] -> invalid_arg "List.last" | [ x ] -> x | _ :: l -> last l
 
+(** [last_opt l] returns [Some] of the last element of list [l],
+    or [None] if the list is empty. *)
 let rec last_opt l =
   match l with [] -> None | [ x ] -> Some x | _ :: l -> last_opt l
 
+(** [concat_map2 f l1 l2] applies [f] to each pair of elements from [l1]
+    and [l2], concatenating all resulting lists. Raises [Invalid_argument]
+    if the lists have different lengths. *)
 let[@tail_mod_cons] rec concat_map2 f l1 l2 =
   match (l1, l2) with
   | [], [] -> []
