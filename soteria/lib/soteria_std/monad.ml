@@ -240,3 +240,16 @@ Extend (struct
     let x', s' = x s in
     (f x', s')
 end)
+
+module StateT
+    (State : sig
+      type t
+    end)
+    (M : Base) =
+Extend (struct
+  type 'a t = State.t -> ('a * State.t) M.t
+
+  let[@inline] return x s = M.return (x, s)
+  let[@inline] bind x f s = M.bind (x s) (fun (x', s') -> f x' s')
+  let[@inline] map x f s = M.map (x s) (fun (x', s') -> (f x', s'))
+end)

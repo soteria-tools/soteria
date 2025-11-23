@@ -28,6 +28,9 @@ let rec interp_pure_expr (subst : subst) expr :
   | Pure_expr.Int n -> Result.ok (S_val.int n)
   | Bool b -> Result.ok (S_val.bool b)
   | Var x -> Result.ok (String_map.find x subst)
+  | NondetInt ->
+      let* v = Symex.nondet S_val.t_int in
+      Result.ok v
   | BinOp (e1, op, e2) -> (
       let** v1 = interp_pure_expr subst e1 in
       let** v2 = interp_pure_expr subst e2 in
@@ -52,24 +55,18 @@ let rec interp_pure_expr (subst : subst) expr :
           let++ v1, v2 = cast_both S_val.t_int v1 v2 in
           v1 *@ v2
       | BinOp.Div ->
-          (* TODO: soundness danger! *)
-          give_up ~loc:() "Division not implemented yet")
-  | NondetInt ->
-      let* v = Symex.nondet S_val.t_int in
-      Result.ok v
+          (* TODO: Danger! *)
+          give_up ~loc:() "DEMO: division")
 
 module Make (State : State_intf.S) = struct
-  let interp_pure_expr (subst : subst) (state : State.t) expr =
-    let+- msg = interp_pure_expr subst expr in
+  let lift_to_state f =
+   fun state ->
+    let+- msg = f in
     State.error msg state
 
-  let cast_to_bool v state =
-    let+- msg = cast_to_bool v in
-    State.error msg state
-
-  let cast_to_int v state =
-    let+- msg = cast_to_int v in
-    State.error msg state
+  let interp_pure_expr subst expr = lift_to_state (interp_pure_expr subst expr)
+  let cast_to_bool v = lift_to_state (cast_to_bool v)
+  let cast_to_int v = lift_to_state (cast_to_int v)
 
   let rec interp_expr (subst : subst) (state : State.t) expr =
     L.debug (fun m ->
@@ -77,7 +74,7 @@ module Make (State : State_intf.S) = struct
           expr pp_subst subst);
     match expr with
     | Expr.Pure_expr e ->
-        let++ v = interp_pure_expr subst state e in
+        let++ v = interp_pure_expr subst e state in
         (v, state)
     | Let (x, e1, e2) ->
         let** v1, state = interp_expr subst state e1 in
@@ -93,27 +90,27 @@ module Make (State : State_intf.S) = struct
     | Call (fname, arg_exprs) ->
         let** arg_values =
           Symex.Result.fold_list arg_exprs ~init:[] ~f:(fun acc e ->
-              let++ res = interp_pure_expr subst state e in
+              let++ res = interp_pure_expr subst e state in
               res :: acc)
         in
         let arg_values = List.rev arg_values in
         let func = get_function fname in
         run_function func state arg_values
     | Load addr ->
-        let** addr = interp_pure_expr subst state addr in
+        let** addr = interp_pure_expr subst addr state in
         let** addr = cast_to_int addr state in
         State.load addr state
     | Store (addr, value) ->
-        let** addr = interp_pure_expr subst state addr in
+        let** addr = interp_pure_expr subst addr state in
         let** addr = cast_to_int addr state in
-        let** value = interp_pure_expr subst state value in
+        let** value = interp_pure_expr subst value state in
         let++ (), state = State.store addr value state in
         ((S_val.v_false :> S_val.t), state)
     | Alloc ->
         let++ addr, state = State.alloc state in
         ((addr :> S_val.t), state)
     | Free addr ->
-        let** addr = interp_pure_expr subst state addr in
+        let** addr = interp_pure_expr subst addr state in
         let** addr = cast_to_int addr state in
         let++ (), state = State.free addr state in
         ((S_val.v_false :> S_val.t), state)
