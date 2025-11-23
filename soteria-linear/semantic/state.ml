@@ -5,7 +5,6 @@ type err = [ `UseAfterFree | `Interp of string ]
 
 module PMap = Soteria.Sym_states.Pmap.Make (Symex) (S_int)
 module Excl_val = Soteria.Sym_states.Excl.Make (Symex) (S_val)
-module Freeable = Soteria.Sym_states.Freeable.Make (Symex)
 
 type t = Excl_val.t PMap.t option [@@deriving show { with_path = false }]
 
