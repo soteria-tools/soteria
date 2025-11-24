@@ -69,6 +69,7 @@ module Make (State : State_intf.S) = struct
   let cast_to_int v = lift_to_state (cast_to_int v)
 
   let rec interp_expr (subst : subst) (state : State.t) expr =
+    let* () = Symex.consume_fuel_steps 1 in
     L.debug (fun m ->
         m "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp
           expr pp_subst subst);
