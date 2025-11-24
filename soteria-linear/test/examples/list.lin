@@ -9,10 +9,14 @@ let append l =
     alloc
   else
     let ll = [l] in
-    append(ll);
+    let t = append(ll) in
+    [l] <- t;
     l
     
+let empty = false   
+    
 let main =
-  let empty = false in
+  let l = empty() in
   let l = prepend(l) in
+  let l = append(l) in
   append(l)
