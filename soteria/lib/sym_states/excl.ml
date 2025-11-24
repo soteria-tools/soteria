@@ -13,23 +13,15 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
   open Symex
   open Symex.Syntax
 
-  module Logic = struct
-    type pred = Owned [@@deriving show { with_path = false }]
-    type ins = unit [@@deriving show { with_path = false }]
-    type outs = E.t [@@deriving show { with_path = false }]
-  end
-
   type t = E.t [@@deriving show { with_path = false }]
-
-  type serialized = Logic.pred * Logic.ins * Logic.outs
-  [@@deriving show { with_path = false }]
+  type serialized = E.t [@@deriving show { with_path = false }]
 
   let unwrap st =
     match st with
     | Some x -> Symex.Result.ok x
     | None ->
         let* v = E.fresh () in
-        Result.miss [ (Logic.Owned, (), v) ]
+        Result.miss [ v ]
 
   let assert_exclusively_owned (st : t option) =
     let** _ = unwrap st in
@@ -43,19 +35,20 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
     let++ _ = unwrap st in
     ((), Some x)
 
-  let serialize x = (Logic.Owned, (), x)
+  let serialize x = x
 
   let iter_vars_serialized (i : 'a -> 'b Symex.Value.ty Var.iter_vars)
-      ((Logic.Owned, (), x) : serialized) : 'b Symex.Value.ty Var.iter_vars =
+      (x : serialized) : 'b Symex.Value.ty Var.iter_vars =
    fun f -> i x f
 
   let subst_serialized subst_inner subst_var x = subst_inner subst_var x
 
-  let consume Logic.Owned (() : Logic.ins) (t : t option) :
-      (Logic.outs * t option, [> Symex.lfail ], serialized) Symex.Result.t =
-    let++ x = unwrap t in
-    (x, None)
+  let consume x (t : t option) :
+      (t option, [> Symex.lfail ], serialized) Symex.Result.t =
+    let** y = unwrap t in
+    let++ () = Symex.consume_pure (E.sem_eq x y) in
+    None
 
-  let produce ((Owned, (), v) : serialized) (t : t option) =
+  let produce (v : serialized) (t : t option) =
     match t with None -> Symex.return (Some v) | Some _ -> Symex.vanish ()
 end
