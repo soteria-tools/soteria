@@ -41,3 +41,10 @@ let pp_stmt : Format.formatter -> stmt -> unit =
 
 let pp_program : Format.formatter -> program -> unit =
   pp_to_fmt (pp_program ~show_include:true)
+
+let pp_program_ast ft (entry_point, sigma) =
+  let profile = !Soteria.Terminal.Profile.profile in
+  let show_includes = true in
+  pp_to_fmt
+    (Cerb_frontend.Pp_ail_ast.pp_program profile.color show_includes)
+    ft (entry_point, sigma)

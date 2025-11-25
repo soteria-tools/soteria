@@ -409,40 +409,8 @@ let show_ail logs_config term_config config (includes : string list)
   Soteria.Terminal.Config.set_and_lock term_config;
   Config.with_config ~config @@ fun () ->
   match parse_and_link_ail ~includes files with
-  | Ok { symmap; sigma; entry_point } ->
-      Fmt.pr "@[<v 2>Extern idmap:@ %a@]@\n@\n"
-        Fmt.(
-          iter_bindings ~sep:semi Pmap.iter
-            (hbox
-               (pair ~sep:(any " ->@ ") Fmt_ail.pp_id
-                  (Dump.pair Fmt_ail.pp_sym Fmt_ail.pp_id_kind))))
-        sigma.AilSyntax.extern_idmap;
-
-      Fmt.pr "@[<v 2>Declarations:@ %a@]@\n@\n"
-        (Fmt.list ~sep:Fmt.semi (fun ft (sym, (_, _, decl)) ->
-             let declstr =
-               match decl with
-               | AilSyntax.Decl_object _ -> "object"
-               | Decl_function _ -> "function"
-             in
-             Fmt.pf ft "@[<h>%a ->@ %s@]" Fmt_ail.pp_sym sym declstr))
-        sigma.declarations;
-
-      Fmt.pr "@[<v 2>Object definitions:@ %a@]@\n@\n"
-        (Fmt.list ~sep:Fmt.sp (Fmt.Dump.pair Fmt_ail.pp_sym Fmt_ail.pp_expr))
-        sigma.object_definitions;
-
-      Fmt.pr "@[<v 2>Function definitions:@ %a@]@\n@\n"
-        (Fmt.list ~sep:Fmt.sp (fun ft (sym, _) -> Fmt_ail.pp_sym ft sym))
-        sigma.function_definitions;
-
-      Fmt.pr "@[<v 2> Symmap:@ %a@]@\n@\n"
-        Fmt.(
-          iter_bindings ~sep:semi Pmap.iter
-            (hbox Fmt_ail.(pair ~sep:(any " ->@ ") pp_sym pp_sym)))
-        symmap;
-
-      Fmt.pr "@[<v>%a@]" Fmt_ail.pp_program (entry_point, sigma)
+  | Ok { symmap = _; sigma; entry_point } ->
+      Fmt.pr "%a@." Fmt_ail.pp_program_ast (entry_point, sigma)
   | Error err -> Fmt.pr "%a@." pp_err_and_call_trace err
 
 (* Entry point function *)
