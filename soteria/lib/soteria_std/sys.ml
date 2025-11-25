@@ -1,3 +1,5 @@
+(** Extensions to [Stdlib.Sys] with helpers for working directories. *)
+
 include Stdlib.Sys
 
 let with_working_dir dir f =

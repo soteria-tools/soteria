@@ -1,3 +1,5 @@
+(** Extensions to [Stdlib.Int] with safe string conversion. *)
+
 include Stdlib.Int
 
 let to_string = string_of_int

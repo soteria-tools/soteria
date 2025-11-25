@@ -1,3 +1,5 @@
+(** Sequence utilities that extend [Stdlib.Seq] with additional helpers. *)
+
 include Stdlib.Seq
 
 (** An iteration over the cross-product of [seq] with itself, excluding pairs
