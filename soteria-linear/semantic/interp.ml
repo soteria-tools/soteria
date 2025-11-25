@@ -55,8 +55,9 @@ let rec interp_pure_expr (subst : subst) expr :
           let++ v1, v2 = cast_both S_val.t_int v1 v2 in
           v1 *@ v2
       | BinOp.Div ->
-          (* TODO: Danger! *)
-          give_up ~loc:() "DEMO: division")
+          let** v1, v2 = cast_both S_val.t_int v1 v2 in
+          let++ v2 = S_val.check_nonzero v2 in
+          v1 /@ v2)
 
 module Make (State : State_intf.S) = struct
   let lift_to_state f =
