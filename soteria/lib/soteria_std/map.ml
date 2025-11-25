@@ -1,7 +1,7 @@
-(** A wrapper around [Stdlib.Map] that includes a pretty-printer. 
+(** A wrapper around [Stdlib.Map] that includes a pretty-printer.
 
-    This module extends the standard map functor with a [pp] function 
-    compatible with the [Fmt] library. *)
+    This module extends the standard map functor with a [pp] function compatible
+    with the [Fmt] library. *)
 
 include Stdlib.Map
 
