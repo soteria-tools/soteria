@@ -1,23 +1,31 @@
 (** Reversible computation abstractions.
 
-    This module provides interfaces and implementations for reversible
-    state management, allowing computations to save checkpoints and
-    backtrack to previous states. Supports mutable, in-place, immutable,
-    and effect-based reversible computations. *)
+    This module provides interfaces and implementations for reversible state
+    management, allowing computations to save checkpoints and backtrack to
+    previous states. Supports mutable, in-place, immutable, and effect-based
+    reversible computations. *)
 
 (** Interface for mutable reversible state. *)
 module type Mutable = sig
   type t
 
+  (** [init ()] creates a new reversible state initialized with the default
+      value. *)
   val init : unit -> t
+
+  (** [backtrack_n d n] removes the last [n] checkpoints from state [d]. *)
   val backtrack_n : t -> int -> unit
+
+  (** [save d] saves the current state as a new checkpoint. *)
   val save : t -> unit
+
+  (** [reset d] clears all checkpoints and resets to the default value. *)
   val reset : t -> unit
 end
 
-(** Functor to create a mutable reversible state from a default value.
-    The state is stored as a dynamic array, allowing backtracking by
-    truncating to previous checkpoints. *)
+(** Functor to create a mutable reversible state from a default value. The state
+    is stored as a dynamic array, allowing backtracking by truncating to
+    previous checkpoints. *)
 module Make_mutable (M : sig
   type t
 
@@ -25,11 +33,14 @@ module Make_mutable (M : sig
 end) : sig
   include Mutable with type t = M.t Dynarray.t
 
-  (** [set_default v] sets the default value used when initializing new states. *)
+  (** [set_default v] sets the default value used when initializing new states.
+  *)
   val set_default : M.t -> unit
-  (** [wrap f t] applies function [f] to the current state, updating it with
-      the returned value. *)
+
+  (** [wrap f t] applies function [f] to the current state, updating it with the
+      returned value. *)
   val wrap : (M.t -> 'a * M.t) -> t -> 'a
+
   (** [wrap_read f t] applies function [f] to the current state without
       modifying it. *)
   val wrap_read : (M.t -> 'a) -> t -> 'a
@@ -38,7 +49,6 @@ end = struct
 
   let default = ref M.default
 
-  (** [init ()] creates a new reversible state initialized with the default value. *)
   let init () =
     let d = Dynarray.create () in
     Dynarray.add_last d !default;
@@ -46,15 +56,12 @@ end = struct
 
   let set_default v = default := v
 
-  (** [backtrack_n d n] removes the last [n] checkpoints from state [d]. *)
   let backtrack_n d n =
     let len = Dynarray.length d in
     Dynarray.truncate d (len - n)
 
-  (** [save d] saves the current state as a new checkpoint. *)
   let save d = Dynarray.add_last d (Dynarray.get_last d)
 
-  (** [reset d] clears all checkpoints and resets to the default value. *)
   let reset d =
     Dynarray.clear d;
     Dynarray.add_last d !default
@@ -70,18 +77,21 @@ end = struct
     f e
 end
 
-(** Interface for in-place reversible operations that operate on a global state. *)
+(** Interface for in-place reversible operations that operate on a global state.
+*)
 module type In_place = sig
   (** [backtrack_n n] removes the last [n] checkpoints. *)
   val backtrack_n : int -> unit
+
   (** [save ()] saves the current state as a new checkpoint. *)
   val save : unit -> unit
+
   (** [reset ()] clears all checkpoints and resets to the default value. *)
   val reset : unit -> unit
 end
 
-(** Converts a mutable reversible state to an in-place interface using
-    a lazy global state. *)
+(** Converts a mutable reversible state to an in-place interface using a lazy
+    global state. *)
 module Mutable_to_in_place (M : Mutable) = struct
   let state = lazy (M.init ())
   let save () = M.save (Lazy.force state)
@@ -103,9 +113,12 @@ struct
 
   (** [set_default v] sets the default value used when resetting. *)
   let set_default = Mutable.set_default
+
   (** [wrap_read f ()] applies [f] to the current state without modifying it. *)
   let wrap_read f () = wrap (Mutable.wrap_read f) ()
-  (** [wrap f ()] applies [f] to the current state, updating it with the result. *)
+
+  (** [wrap f ()] applies [f] to the current state, updating it with the result.
+  *)
   let wrap f () = wrap (Mutable.wrap f) ()
 end
 
@@ -115,10 +128,14 @@ module type Immutable = sig
 
   (** [init] is the initial state value. *)
   val init : t
-  (** [backtrack_n t n] returns a state with the last [n] checkpoints removed. *)
+
+  (** [backtrack_n t n] returns a state with the last [n] checkpoints removed.
+  *)
   val backtrack_n : t -> int -> t
+
   (** [save t] saves the current state as a new checkpoint. *)
   val save : t -> t
+
   (** [reset t] returns the initial state. *)
   val reset : t -> t
 end
@@ -156,9 +173,12 @@ struct
 
   (** [backtrack_n n] removes the last [n] checkpoints. *)
   let backtrack_n n = Effect.perform (Backtrack_n n)
+
   (** [save ()] saves the current state as a new checkpoint. *)
   let save () = Effect.perform Save
-  (** [wrap f ()] applies [f] to the current state, updating it with the result. *)
+
+  (** [wrap f ()] applies [f] to the current state, updating it with the result.
+  *)
   let wrap f () = Effect.perform (Update f)
 
   (** [wrap_read f ()] applies [f] to the current state without modifying it. *)
@@ -166,8 +186,8 @@ struct
     let update s = (f s, s) in
     wrap update ()
 
-  (** [run ~init f] executes the effectful computation [f] with initial state [init],
-      handling backtrack, save, and update effects. *)
+  (** [run ~init f] executes the effectful computation [f] with initial state
+      [init], handling backtrack, save, and update effects. *)
   let run ~(init : M.t) f =
     let state = Dynarray.create () in
     Dynarray.add_last state init;
