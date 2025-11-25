@@ -1,4 +1,5 @@
-(** An in-place mutable graph implementation with reachability and topological ordering.
+(** An in-place mutable graph implementation with reachability and topological
+    ordering.
 
     Provides a directed graph structure where nodes are stored in a hashtable
     mapping to sets of adjacent nodes. Supports edge addition, breadth-first

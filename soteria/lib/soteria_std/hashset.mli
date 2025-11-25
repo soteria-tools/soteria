@@ -1,9 +1,9 @@
 (** A hash set implementation with pretty-printing support.
 
     Provides mutable sets implemented using hash tables, with operations for
-    membership testing, iteration, subset checking, and equality. Includes
-    a functor to create sets for any hashable and printable element type,
-    with pre-made modules for strings and integers. *)
+    membership testing, iteration, subset checking, and equality. Includes a
+    functor to create sets for any hashable and printable element type, with
+    pre-made modules for strings and integers. *)
 
 type 'a t
 

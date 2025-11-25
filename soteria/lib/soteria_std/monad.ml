@@ -1,8 +1,9 @@
 (** Monad interfaces and implementations.
 
     This module provides standard module types and functors for defining and
-    working with monads, including support for syntax extensions (let* operators),
-    common monad instances (List, Result, Option, etc.), and transformers. *)
+    working with monads, including support for syntax extensions (let*
+    operators), common monad instances (List, Result, Option, etc.), and
+    transformers. *)
 
 (** Basic interface for a monad with one type parameter. *)
 module type Base = sig

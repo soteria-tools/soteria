@@ -1,7 +1,7 @@
 (** Cmdliner argument converters for file and directory paths.
 
-    Provides converters that normalize relative paths to absolute paths
-    and validate their existence before use in command-line interfaces. *)
+    Provides converters that normalize relative paths to absolute paths and
+    validate their existence before use in command-line interfaces. *)
 
 let file_as_absolute =
   let pp = Format.pp_print_string in
