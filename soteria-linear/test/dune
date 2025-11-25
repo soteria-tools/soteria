@@ -1,0 +1,3 @@
+(executables
+ (names test_examples test_parser)
+ (libraries soteria_linear_lib))

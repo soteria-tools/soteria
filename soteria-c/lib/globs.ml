@@ -6,15 +6,13 @@ open Csymex.Syntax
 module Sym_map = Concrete_map (Symbol_std)
 
 module Loc = struct
-  module Symex = Csymex
-
   type t = Typed.T.sloc Typed.t
 
   let pp = Typed.ppa
 
   let fresh () =
     let* loc = Csymex.nondet Typed.t_loc in
-    let+ () = Symex.assume [ Typed.not (Typed.Ptr.is_null_loc loc) ] in
+    let+ () = Csymex.assume [ Typed.not (Typed.Ptr.is_null_loc loc) ] in
     loc
 
   let sem_eq = Typed.sem_eq
@@ -22,7 +20,7 @@ module Loc = struct
   let iter_vars = Typed.iter_vars
 end
 
-module GlobFn = Soteria.Sym_states.Pure_fun.Make (Loc)
+module GlobFn = Soteria.Sym_states.Pure_fun.Make (Csymex) (Loc)
 
 type t = GlobFn.t Sym_map.t option [@@deriving show { with_path = false }]
 

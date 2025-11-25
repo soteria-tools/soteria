@@ -21,7 +21,6 @@ end
 
 module DecayMap : DecayMapS = struct
   module StateKey = struct
-    module Symex = Rustsymex
     include Typed
 
     type t = T.sloc Typed.t

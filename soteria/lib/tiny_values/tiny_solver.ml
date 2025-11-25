@@ -123,7 +123,7 @@ struct
   (* We should factor simplifications out also... *)
   let rec simplify' solver (v : Svalue.t) : Svalue.t =
     match v.node.kind with
-    | Int _ | Bool _ | BitVec _ | Float _ -> v
+    | Int _ | Bool _ -> v
     | _ -> (
         match
           Solver_state.trivial_truthiness_of solver.state (Typed.type_ v)
@@ -136,8 +136,7 @@ struct
                 let e' = simplify' solver e in
                 if Svalue.equal e e' then v else Svalue.not e'
             | Binop (Eq, e1, e2) ->
-                if Svalue.equal e1 e2 && (not @@ Svalue.is_float e1.node.ty)
-                then Svalue.v_true
+                if Svalue.equal e1 e2 then Svalue.v_true
                 else if Svalue.sure_neq e1 e2 then Svalue.v_false
                 else v
             | Binop (Or, e1, e2) ->
@@ -439,7 +438,7 @@ struct
 
   let rec simplify' solver (v : Svalue.t) : Svalue.t =
     match v.node.kind with
-    | Int _ | Bool _ | BitVec _ | Float _ -> v
+    | Int _ | Bool _ -> v
     | _ -> (
         match
           Solver_state.trivial_truthiness_of solver.state (Typed.type_ v)
@@ -452,8 +451,7 @@ struct
                 let e' = simplify' solver e in
                 if Svalue.equal e e' then v else Svalue.not e'
             | Binop (Eq, e1, e2) ->
-                if Svalue.equal e1 e2 && (not @@ Svalue.is_float e1.node.ty)
-                then Svalue.v_true
+                if Svalue.equal e1 e2 then Svalue.v_true
                 else if Svalue.sure_neq e1 e2 then Svalue.v_false
                 else v
             | Binop (And, e1, e2) ->
@@ -512,7 +510,7 @@ struct
         | _ -> ());
     let eval_var v ty =
       match ty with
-      | Svalue.TInt | Svalue.TLoc -> (
+      | Svalue.TInt -> (
           let i = Var.to_int v in
           try Some (Var.Hashtbl.find v_eqs v)
           with Not_found -> Some (Svalue.int i))
