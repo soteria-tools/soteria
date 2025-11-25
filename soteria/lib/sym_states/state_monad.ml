@@ -117,7 +117,7 @@ module Make
 
     let with_state ~state x =
       Symex.map (x state) @@ function
-      | Compo_res.Ok res, _ -> Compo_res.Ok (res, state)
+      | Compo_res.Ok res, state -> Compo_res.Ok (res, state)
       | Error e, _ -> Error e
       | Missing f, _ -> Missing f
 
