@@ -42,7 +42,7 @@ let utf8_to_byte_offset str idx =
 
 let real_index (file : string) ((line, col) : pos) =
   let open Syntaxes.FunctionWrap in
-  let@ ic = Channels.with_in_file file in
+  let@ ic = In_channel.with_open_text file in
   let current_index = ref 0 in
   let current_line = ref 0 in
   while !current_line <= line do
