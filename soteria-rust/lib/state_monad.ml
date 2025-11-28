@@ -123,11 +123,15 @@ module Make (State : State_intf.S) = struct
 
     let[@inline] store ptr ty v = lift_state_op (store ptr ty v)
     let[@inline] zeros ptr size = lift_state_op (zeros ptr size)
-    let[@inline] alloc_ty ty = lift_state_op (alloc_ty ty)
-    let[@inline] alloc_tys tys = lift_state_op (alloc_tys tys)
 
-    let[@inline] alloc_untyped ~zeroed ~size ~align =
-      lift_state_op (alloc_untyped ~zeroed ~size ~align)
+    let[@inline] alloc_ty ?kind ?span ty =
+      lift_state_op (alloc_ty ?kind ?span ty)
+
+    let[@inline] alloc_tys ?kind ?span tys =
+      lift_state_op (alloc_tys ?kind ?span tys)
+
+    let[@inline] alloc_untyped ?kind ?span ~zeroed ~size ~align () =
+      lift_state_op (alloc_untyped ?kind ?span ~zeroed ~size ~align)
 
     let[@inline] copy_nonoverlapping ~src ~dst ~size =
       lift_state_op (copy_nonoverlapping ~src ~dst ~size)
@@ -138,6 +142,7 @@ module Make (State : State_intf.S) = struct
     let[@inline] borrow ptr ty mut = lift_state_op (borrow ptr ty mut)
     let[@inline] protect ptr ty mut = lift_state_op (protect ptr ty mut)
     let[@inline] unprotect ptr ty = lift_state_op (unprotect ptr ty)
+    let[@inline] with_exposed addr = lift_state_op (with_exposed addr)
     let[@inline] tb_load ptr ty = lift_state_op (tb_load ptr ty)
     let[@inline] load_global g = lift_state_op (load_global g)
     let[@inline] store_global g ptr = lift_state_op (store_global g ptr)

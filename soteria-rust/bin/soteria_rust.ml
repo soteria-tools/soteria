@@ -4,7 +4,7 @@ let exits =
   [
     Cmd.Exit.info ~doc:"on success" 0;
     Cmd.Exit.info ~doc:"on failure (bug or error found)" 1;
-    Cmd.Exit.info ~doc:"on crash caused by Rusteria" 2;
+    Cmd.Exit.info ~doc:"on crash caused by Soteria Rust" 2;
     Cmd.Exit.info ~doc:"on crash caused by Charon" 3;
   ]
 
@@ -27,8 +27,9 @@ module Exec_rustc = struct
     Cmd.v
       (Cmd.info ~exits
          ~doc:
-           "Run Rusteria on the specified file; this will use Rustc to compile \
-            that file only (not the crate), and look for all entrypoints."
+           "Run Soteria Rust on the specified file; this will use Rustc to \
+            compile that file only (not the crate), and look for all \
+            entrypoints."
          "rustc")
       term
 end
@@ -44,8 +45,9 @@ module Exec_cargo = struct
     Cmd.v
       (Cmd.info ~exits
          ~doc:
-           "Run Rusteria on the crate at the specified directory; this will \
-            use Cargo to compile that crate, and look for all entrypoints."
+           "Run Soteria Rust on the crate at the specified directory; this \
+            will use Cargo to compile that crate, and look for all \
+            entrypoints."
          "cargo")
       term
 end
@@ -60,10 +62,10 @@ module Build_plugins = struct
     Cmd.v
       (Cmd.info ~exits
          ~doc:
-           "Build the plugins for Rusteria; this is done automatically when \
-            running Rusteria except when --no-compile-plugins is used, so you \
-            should only need to run this command if you want to build the \
-            plugins separately."
+           "Build the plugins for Soteria Rust; this is done automatically \
+            when running Soteria Rust except when --no-compile-plugins is \
+            used, so you should only need to run this command if you want to \
+            build the plugins separately."
          "build-plugins")
       term
 end

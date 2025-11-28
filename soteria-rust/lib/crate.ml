@@ -33,7 +33,9 @@ let pp_name = mk_pp PrintTypes.name_to_string
 let pp_statement = mk_pp_indent PrintUllbcAst.Ast.statement_to_string
 let pp_terminator = mk_pp_indent PrintUllbcAst.Ast.terminator_to_string
 let pp_fn_operand = mk_pp PrintUllbcAst.Ast.fn_operand_to_string
+let pp_fun_decl_ref = mk_pp PrintTypes.fun_decl_ref_to_string
 let pp_generic_args = mk_pp PrintTypes.generic_args_to_string
+let pp_global_decl_ref = mk_pp PrintTypes.global_decl_ref_to_string
 let pp_place = mk_pp PrintExpressions.place_to_string
 
 let get_adt id =

@@ -1,4 +1,4 @@
 pin-depends: [
   ["name_matcher_parser.~dev" "git+https://github.com/soteria-tools/charon#68bf861b78c8ede8cc501e7440f5cfa5e16c50f5"]
-  ["charon.~dev" "git+https://github.com/soteria-tools/charon#68bf861b78c8ede8cc501e7440f5cfa5e16c50f5"]
+  ["charon.~dev" "git+https://github.com/soteria-tools/charon#4e887f9194fc6bba68f599acb1e1b06f9ca67f51"]
 ]

@@ -16,7 +16,7 @@ module type S = sig
   type 'a err
 
   val add_to_call_trace :
-    'a err -> Meta.span Soteria.Terminal.Call_trace.element -> 'a err
+    'a err -> Meta.span_data Soteria.Terminal.Call_trace.element -> 'a err
 
   val pp : t Fmt.t
 
@@ -41,7 +41,10 @@ module type S = sig
       | `MisalignedPointer of
         T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer
+      | `UBIntToPointerNoProvenance of T.sint Typed.t
+      | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
@@ -58,7 +61,8 @@ module type S = sig
       | `AliasingError
       | `MisalignedPointer of
         T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -78,7 +82,10 @@ module type S = sig
       | `MisalignedPointer of
         T.nonzero Typed.t * T.nonzero Typed.t * T.sint Typed.t
       | `RefToUninhabited
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer
+      | `UBIntToPointerNoProvenance of T.sint Typed.t
+      | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
@@ -99,13 +106,18 @@ module type S = sig
       | `UBDanglingPointer
       | `UBTransmute of string
       | `UninitializedMemoryAccess
-      | `UseAfterFree ]
+      | `UseAfterFree
+      | `AccessedFnPointer
+      | `UBIntToPointerNoProvenance of T.sint Typed.t
+      | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
     Result.t
 
   val alloc_untyped :
+    ?kind:Alloc_kind.t ->
+    ?span:Meta.span_data ->
     zeroed:bool ->
     size:sint Typed.t ->
     align:nonzero Typed.t ->
@@ -113,10 +125,18 @@ module type S = sig
     (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_ty :
-    Types.ty -> t -> (full_ptr * t, [> ] err * t, serialized) Result.t
+    ?kind:Alloc_kind.t ->
+    ?span:Meta.span_data ->
+    Types.ty ->
+    t ->
+    (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val alloc_tys :
-    Types.ty list -> t -> (full_ptr list * t, [> ] err * t, serialized) Result.t
+    ?kind:Alloc_kind.t ->
+    ?span:Meta.span_data ->
+    Types.ty list ->
+    t ->
+    (full_ptr list * t, [> ] err * t, serialized) Result.t
 
   val free :
     full_ptr ->
@@ -139,7 +159,10 @@ module type S = sig
       | `UBDanglingPointer
       | `UBTransmute of string
       | `UninitializedMemoryAccess
-      | `UseAfterFree ]
+      | `UseAfterFree
+      | `AccessedFnPointer
+      | `UBIntToPointerNoProvenance of T.sint Typed.t
+      | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
@@ -151,7 +174,11 @@ module type S = sig
     size:sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      [> `NullDereference
+      | `OutOfBounds
+      | `UseAfterFree
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -162,7 +189,11 @@ module type S = sig
     Types.ty ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      [> `NullDereference
+      | `OutOfBounds
+      | `UseAfterFree
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -173,7 +204,11 @@ module type S = sig
     sint Typed.t ->
     t ->
     ( unit * t,
-      [> `NullDereference | `OutOfBounds | `UseAfterFree | `UBDanglingPointer ]
+      [> `NullDereference
+      | `OutOfBounds
+      | `UseAfterFree
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -214,25 +249,31 @@ module type S = sig
 
   val borrow :
     full_ptr ->
-    Charon.Types.ty ->
+    Types.ty ->
     Expressions.borrow_kind ->
     t ->
     ( full_ptr * t,
-      [> `NullDereference | `UseAfterFree | `UBDanglingPointer ] err * t,
+      [> `NullDereference
+      | `UseAfterFree
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
+      err
+      * t,
       serialized )
     Result.t
 
   val protect :
     full_ptr ->
-    Charon.Types.ty ->
-    Charon.Types.ref_kind ->
+    Types.ty ->
+    Types.ref_kind ->
     t ->
     ( full_ptr * t,
       [> `NullDereference
       | `UseAfterFree
       | `OutOfBounds
       | `AliasingError
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
       err
       * t,
       serialized )
@@ -240,21 +281,36 @@ module type S = sig
 
   val unprotect :
     full_ptr ->
-    Charon.Types.ty ->
+    Types.ty ->
     t ->
     ( unit * t,
       [> `NullDereference
       | `RefInvalidatedEarly
       | `OutOfBounds
       | `AliasingError
-      | `UBDanglingPointer ]
+      | `UBDanglingPointer
+      | `AccessedFnPointer ]
+      err
+      * t,
+      serialized )
+    Result.t
+
+  val with_exposed :
+    [< sint ] Typed.t ->
+    t ->
+    ( full_ptr * t,
+      [> `UBIntToPointerNoProvenance of sint Typed.t | `UBIntToPointerStrict ]
       err
       * t,
       serialized )
     Result.t
 
   val leak_check :
-    t -> (unit * t, [> `MemoryLeak ] err * t, serialized) Result.t
+    t ->
+    ( unit * t,
+      [> `MemoryLeak of Meta.span_data list ] err * t,
+      serialized )
+    Result.t
 
   val add_error :
     [< Error.t ] err -> t -> (unit * t, [> ] err * t, serialized) Result.t
@@ -268,21 +324,13 @@ module type S = sig
     ('b, 'e err * t, serialized) Result.t
 
   val declare_fn :
-    Charon.Types.fn_ptr ->
-    t ->
-    (full_ptr * t, [> ] err * t, serialized) Result.t
+    Types.fun_decl_ref -> t -> (full_ptr * t, [> ] err * t, serialized) Result.t
 
   val lookup_fn :
     full_ptr ->
     t ->
-    ( Charon.Types.fn_ptr * t,
-      [> `MisalignedFnPointer
-      | `NotAFnPointer
-      | `NullDereference
-      | `UseAfterFree
-      | `UBDanglingPointer ]
-      err
-      * t,
+    ( Types.fun_decl_ref * t,
+      [> `MisalignedFnPointer | `NotAFnPointer ] err * t,
       serialized )
     Result.t
 end

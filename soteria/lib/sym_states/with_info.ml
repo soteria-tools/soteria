@@ -42,8 +42,6 @@ struct
     | Missing fixes ->
         Missing (List.map (fun fix -> { node = fix; info }) fixes)
 
-  (* wraps a Tree_block operation *)
-
   let produce produce_inner serialized t : 'a t option Symex.t =
     let t_opt, t_orig = of_opt t in
     let info = Option.merge (fun a _ -> a) t_orig serialized.info in

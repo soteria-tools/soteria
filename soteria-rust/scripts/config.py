@@ -1,6 +1,7 @@
 from typing import Callable, Iterable, TypedDict, assert_never
-from common import *
+
 from cliopts import ArgError, CliOpts, SuiteName
+from common import *
 
 DynFlagFn = Optional[Callable[[Path], list[str]]]
 
@@ -250,9 +251,17 @@ def miri(opts: CliOpts) -> TestConfig:
     @with_cache
     def rusteria_dyn_flags(file: Path) -> list[str]:
         flags = []
+        config = get_config_line(file, "//@compile-flags:")
         # if file contains "-Zmiri-ignore-leaks", add "--ignore-leaks"
-        if "-Zmiri-ignore-leaks" in file.read_text():
-            flags.append("--ignore-leaks")
+        if config:
+            if "-Zmiri-ignore-leaks" in config:
+                flags.append("--ignore-leaks")
+            if "-Zmiri-strict-provenance" in config:
+                flags.append("--provenance=strict")
+            if "-Zmiri-permissive-provenance" in config:
+                flags.append("--provenance=permissive")
+            if "-Zmiri-disable-stacked-borrows" in config:
+                flags.append("--ignore-aliasing")
         return flags
 
     @with_cache

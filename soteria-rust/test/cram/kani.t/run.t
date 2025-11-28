@@ -62,7 +62,7 @@ Test kani::assert
   
   error: override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert!" in override_assert_macro
-      ┌─ $RUSTERIA/std/src/lib.rs:23:10
+      ┌─ $SOTERIA-RUST/std/src/lib.rs:23:10
    23 │          rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
       │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │           │
@@ -75,7 +75,7 @@ Test kani::assert
   
   error: override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert_eq!" in override_asserteq_macro
-      ┌─ $RUSTERIA/std/src/lib.rs:23:10
+      ┌─ $SOTERIA-RUST/std/src/lib.rs:23:10
    23 │          rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
       │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │           │

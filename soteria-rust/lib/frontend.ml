@@ -469,8 +469,7 @@ let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
 module Diagnostic = struct
   let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col)
 
-  let as_ranges (loc : Charon.Meta.span) =
-    let span = Option.value ~default:loc.data loc.generated_from_span in
+  let as_ranges (span : Charon.Meta.span_data) =
     match span.file.name with
     | Local file when String.starts_with ~prefix:"/rustc/" file -> []
     | Local file ->
@@ -481,8 +480,15 @@ module Diagnostic = struct
             let rel_path =
               String.sub file root_l (String.length file - root_l)
             in
-            Some ("$RUSTERIA" ^ rel_path)
-          else None
+            Some ("$SOTERIA-RUST" ^ rel_path)
+          else
+            let rustlib = Filename.concat "lib" "rustlib" in
+            match String.index_of ~sub_str:rustlib file with
+            | Some idx ->
+                let idx = idx + String.length rustlib in
+                let rel_path = String.sub file idx (String.length file - idx) in
+                Some ("$RUSTLIB" ^ rel_path)
+            | None -> None
         in
         [
           Soteria.Terminal.Diagnostic.mk_range_file ?filename

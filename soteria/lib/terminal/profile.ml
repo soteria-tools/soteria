@@ -1,16 +1,10 @@
 open Soteria_std
 
-let rec string_contains ~sub_str = function
-  | "" -> sub_str = "" (* the empty string contains itself *)
-  | s ->
-      String.starts_with ~prefix:sub_str s
-      || string_contains ~sub_str (String.sub s 1 (String.length s - 1))
-
 let color_from_env () =
   let term = Sys.getenv_opt "TERM" in
   let color_term = Sys.getenv_opt "COLORTERM" in
   let is_term sub_str =
-    term |> Option.map (string_contains ~sub_str) |> Option.value ~default:false
+    term |> Option.map (String.contains ~sub_str) |> Option.value ~default:false
   in
   let is_256color = is_term "256color" in
   let is_color = is_term "color" in
@@ -30,7 +24,7 @@ let supports_utf8_from_env () =
       (Sys.getenv_opt "LC_CTYPE")
       (Sys.getenv_opt "LANG")
   in
-  Option.fold ~none:false ~some:(string_contains ~sub_str:"UTF-8") var
+  Option.fold ~none:false ~some:(String.contains ~sub_str:"UTF-8") var
 
 type t = { color : bool; utf8 : bool }
 

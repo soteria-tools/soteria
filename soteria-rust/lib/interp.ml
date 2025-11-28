@@ -15,7 +15,7 @@ module Make (State : State_intf.S) = struct
 
   let pp_rust_val = pp_rust_val Sptr.pp
 
-  exception Unsupported of (string * Meta.span)
+  exception Unsupported of (string * Meta.span_data)
 
   open InterpM
   open InterpM.Syntax
@@ -105,6 +105,14 @@ module Make (State : State_intf.S) = struct
         | Some ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
+  let resolve_fn_ptr (fn : Types.fn_ptr) : Types.fun_decl_ref =
+    match fn.kind with
+    | FunId (FRegular id) -> { id; generics = fn.generics }
+    (* TODO: the generics here are probably wrong; we should also go via the trait,
+       and properly resolve it. *)
+    | TraitMethod (_, _, id) -> { id; generics = fn.generics }
+    | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
+
   let rec resolve_constant (const : Expressions.constant_expr) =
     match const.kind with
     | CLiteral (VScalar scalar) -> ok (Int (BV.of_scalar scalar))
@@ -128,7 +136,7 @@ module Make (State : State_intf.S) = struct
             let str_ty : Types.ty =
               mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
             in
-            let* ptr, _ = State.alloc_ty str_ty in
+            let* ptr, _ = State.alloc_ty ~kind:StaticString str_ty in
             let ptr = (ptr, Len (BV.usizei len)) in
             let* () = State.store ptr str_ty char_arr in
             let+ () = State.store_str_global str ptr in
@@ -295,60 +303,51 @@ module Make (State : State_intf.S) = struct
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty ?vtable :
       GAst.fn_operand -> ('err fun_exec * Types.ty list) t =
-    let validate_call ?(is_dyn = false) (fn : Types.fn_ptr) =
-      match fn.kind with
-      | FunId (FRegular fid) | TraitMethod (_, _, fid) ->
-          let fn = Crate.get_fun fid in
-          let rec check_tys l r =
-            match (l, r) with
-            | [], [] -> ok ()
-            | ty1 :: l, ty2 :: r ->
-                if Layout.is_abi_compatible ty1 ty2 then check_tys l r
-                else error (`InvalidFnArgTys (ty1, ty2))
-            | _ ->
-                error
-                  (`InvalidFnArgCount
-                     (List.length in_tys, List.length fn.signature.inputs))
-          in
-          (* a bit hacky, but we don't want to compare the dyn parameter with
+    let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
+      let fn = Crate.get_fun fn.id in
+      let rec check_tys l r =
+        match (l, r) with
+        | [], [] -> ok ()
+        | ty1 :: l, ty2 :: r ->
+            if Layout.is_abi_compatible ty1 ty2 then check_tys l r
+            else error (`InvalidFnArgTys (ty1, ty2))
+        | _ ->
+            error
+              (`InvalidFnArgCount
+                 (List.length in_tys, List.length fn.signature.inputs))
+      in
+      (* a bit hacky, but we don't want to compare the dyn parameter with
              the expected input; the mismatch is intended here. *)
-          let in_tys, sig_ins =
-            if is_dyn then (List.tl in_tys, List.tl fn.signature.inputs)
-            else (in_tys, fn.signature.inputs)
-          in
-          check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
-      | FunId (FBuiltin _) -> ok ()
+      let in_tys, sig_ins =
+        if is_dyn then (List.tl in_tys, List.tl fn.signature.inputs)
+        else (in_tys, fn.signature.inputs)
+      in
+      check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
+    in
+    let perform_call (fn : Types.fun_decl_ref) =
+      try
+        let fundef = Crate.get_fun fn.id in
+        L.info (fun g ->
+            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
+        match Std_funs.std_fun_eval fundef exec_fun with
+        | Some fn -> ok (fn, fundef.signature.inputs)
+        | None -> ok (exec_fun fundef, fundef.signature.inputs)
+      with Crate.MissingDecl _ -> not_impl "Missing function declaration"
     in
     function
-    (* For static calls we don't need to check types, that's what the type checker does. *)
-    | FnOpRegular { kind = FunId (FRegular fid); _ }
-    | FnOpRegular { kind = TraitMethod (_, _, fid); _ } -> (
-        try
-          let fundef = Crate.get_fun fid in
-          L.info (fun g ->
-              g "Resolved function call to %a" Crate.pp_name
-                fundef.item_meta.name);
-          match Std_funs.std_fun_eval fundef exec_fun with
-          | Some fn -> ok (fn, fundef.signature.inputs)
-          | None -> ok (exec_fun fundef, fundef.signature.inputs)
-        with Crate.MissingDecl _ -> not_impl "Missing function declaration")
+    (* Handle builtins separately *)
     | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics, in_tys)
+    (* For static calls we don't need to check types, that's what the type checker does. *)
+    | FnOpRegular fn_ptr -> perform_call @@ resolve_fn_ptr fn_ptr
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpMove place ->
         let* fn_ptr_ptr = resolve_place place in
-        let* fn_ptr =
-          State.load
-            (* FIXME: temp ~is_move:true *)
-            fn_ptr_ptr place.ty
-        in
-        let* fn_ptr =
-          match fn_ptr with Ptr ptr -> ok ptr | _ -> error `UBDanglingPointer
-        in
+        let* fn_ptr = State.load fn_ptr_ptr place.ty in
+        let fn_ptr = as_ptr fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
         let* () = validate_call fn in
-        let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function ~in_tys ~out_ty fnop
+        perform_call fn
     | FnOpVTableMethod (_, idx) ->
         (* the first argument is the fat pointer with the VTable *)
         let* vtable =
@@ -362,13 +361,12 @@ module Make (State : State_intf.S) = struct
         let fn_ptr = as_ptr fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
         let* () = validate_call ~is_dyn:true fn in
-        let fnop : GAst.fn_operand = FnOpRegular fn in
-        resolve_function ~in_tys ~out_ty fnop
+        perform_call fn
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
-  and resolve_global ({ id; _ } : Types.global_decl_ref) =
-    let decl = Crate.get_global id in
-    let* v_opt = State.load_global id in
+  and resolve_global (glob : Types.global_decl_ref) =
+    let decl = Crate.get_global glob.id in
+    let* v_opt = State.load_global glob.id in
     match v_opt with
     | Some v -> ok v
     | None ->
@@ -383,8 +381,11 @@ module Make (State : State_intf.S) = struct
           | None -> exec_fun fundef
         in
         (* First we allocate the global and store it in the State  *)
-        let* ptr = State.alloc_ty decl.ty in
-        let* () = State.store_global id ptr in
+        let* ptr =
+          State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
+            decl.ty
+        in
+        let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in
         let+ () = State.store ptr decl.ty v in
@@ -459,7 +460,19 @@ module Make (State : State_intf.S) = struct
                 let v = as_base_f fty v in
                 ok (Float (Typed.Float.neg v))
             | _ -> not_impl "Invalid type for Neg")
-        | Cast (CastRawPtr (_from, _to)) -> ok v
+        | Cast (CastRawPtr (from_ty, to_ty)) -> (
+            match (from_ty, to_ty) with
+            | (TRef _ | TRawPtr _), TLiteral _ ->
+                (* expose provenance *)
+                let v, _ = as_ptr v in
+                let$+ v' = Sptr.expose v in
+                Int v'
+            | TLiteral _, (TRef _ | TRawPtr _) ->
+                (* with provenance *)
+                let v = as_base_i Usize v in
+                let+ ptr = State.with_exposed v in
+                Ptr ptr
+            | _ -> ok v)
         | Cast (CastTransmute (from_ty, to_ty)) ->
             let* verify_ptr = State.is_valid_ptr_fn in
             let blocks = Encoder.rust_to_cvals v from_ty in
@@ -530,7 +543,8 @@ module Make (State : State_intf.S) = struct
         | Cast (CastFnPtr (_from, _to)) -> (
             match v with
             | ConstFn fn_ptr ->
-                let+ ptr = State.declare_fn fn_ptr in
+                let fn = resolve_fn_ptr fn_ptr in
+                let+ ptr = State.declare_fn fn in
                 Ptr ptr
             | Ptr _ as ptr -> ok ptr
             | _ -> not_impl "Invalid argument to CastFnPtr"))
@@ -802,9 +816,8 @@ module Make (State : State_intf.S) = struct
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
     L.trace (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_statement_kind stmt.kind);
-    let { span = loc; kind = stmt; _ } : UllbcAst.statement = stmt in
-    let@ () = with_loc ~loc in
-    match stmt with
+    let@ () = with_loc ~loc:stmt.span.data in
+    match stmt.kind with
     | Nop -> ok ()
     | Assign (({ ty; _ } as place), rval) ->
         let* ptr = resolve_place place in
@@ -832,7 +845,7 @@ module Make (State : State_intf.S) = struct
             let _, drop_ref = List.hd impl.methods in
             let drop = Crate.get_fun drop_ref.binder_value.id in
             let fun_exec =
-              with_extra_call_trace ~loc ~msg:"Drop"
+              with_extra_call_trace ~loc:stmt.span.data ~msg:"Drop"
               @@ with_env ~env:()
               @@ exec_fun drop [ Ptr place_ptr ]
             in
@@ -844,9 +857,7 @@ module Make (State : State_intf.S) = struct
         let* cond = eval_operand cond in
         let cond_int = as_base TBool cond in
         let cond_bool = BV.to_bool cond_int in
-        let cond_bool =
-          if expected = true then cond_bool else Typed.not cond_bool
-        in
+        let cond_bool = if expected then cond_bool else Typed.not cond_bool in
         if%sat cond_bool then ok ()
         else
           match on_failure with
@@ -879,9 +890,8 @@ module Make (State : State_intf.S) = struct
     let^ () = Rustsymex.consume_fuel_steps 1 in
     let* () = fold_list statements ~init:() ~f:(fun () -> exec_stmt) in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
-    let { span = loc; kind = term; _ } : UllbcAst.terminator = terminator in
-    let@ () = with_loc ~loc in
-    match term with
+    let@ () = with_loc ~loc:terminator.span.data in
+    match terminator.kind with
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
         let out_ty = ty in
@@ -932,7 +942,7 @@ module Make (State : State_intf.S) = struct
               Fmt.(list ~sep:(any ", ") pp_rust_val)
               args);
         let fun_exec =
-          with_extra_call_trace ~loc ~msg:"Call trace"
+          with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
           @@ with_env ~env:()
           @@ exec_fun args
         in
@@ -1024,15 +1034,14 @@ module Make (State : State_intf.S) = struct
     | UnwindResume -> State.pop_error ()
 
   and exec_fun (fundef : UllbcAst.fun_decl) args : (rust_val, unit) InterpM.t =
-    (* Put arguments in store *)
-    let GAst.{ item_meta = { span = loc; name; _ }; body; _ } = fundef in
+    let name = fundef.item_meta.name in
     let* body =
-      match body with
+      match fundef.body with
       | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> ok body
     in
     let@@ () = with_env ~env:Store.empty in
-    let@ () = with_loc ~loc in
+    let@ () = with_loc ~loc:fundef.item_meta.span.data in
     L.info (fun m ->
         m "Calling %a with %a" Crate.pp_name name
           Fmt.(hbox @@ brackets @@ list ~sep:comma pp_rust_val)
@@ -1057,12 +1066,12 @@ module Make (State : State_intf.S) = struct
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = InterpM.run ~env:() ~state in
     let@@ () =
-      with_extra_call_trace ~loc:fundef.item_meta.span ~msg:"Entry point"
+      with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let* value = exec_fun fundef args in
     if !Config.current.ignore_leaks then ok value
     else
-      let@ () = with_loc ~loc:fundef.item_meta.span in
+      let@ () = with_loc ~loc:fundef.item_meta.span.data in
       let+ () = State.leak_check () in
       value
 end

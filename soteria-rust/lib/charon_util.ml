@@ -94,16 +94,15 @@ let int_of_const_generic (c : Types.const_generic) : int =
 
 let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
 
-let empty_span : Meta.span =
+let empty_span_data : Meta.span_data =
   {
-    data =
-      {
-        beg_loc = { line = 0; col = 0 };
-        end_loc = { line = 0; col = 0 };
-        file = { name = Virtual ""; contents = None; crate_name = "" };
-      };
-    generated_from_span = None;
+    beg_loc = { line = 0; col = 0 };
+    end_loc = { line = 0; col = 0 };
+    file = { name = Virtual ""; contents = None; crate_name = "" };
   }
+
+let empty_span : Meta.span =
+  { data = empty_span_data; generated_from_span = None }
 
 let fields_of_tys : Types.ty list -> Types.field list =
   List.map (fun field_ty : Types.field ->
@@ -160,7 +159,7 @@ let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
   | F64 -> F64
   | F128 -> F128
 
-let pp_span ft ({ data = { file; beg_loc; end_loc }; _ } : Meta.span) =
+let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
   let clean_filename name =
     let parts = String.split_on_char '/' name in
     if List.compare_length_with parts 3 <= 0 then name
