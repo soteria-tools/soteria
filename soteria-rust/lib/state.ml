@@ -131,8 +131,9 @@ let pp_pretty ~ignore_freed ft { state; _ } =
   | None -> Fmt.pf ft "Empty State"
   | Some st ->
       SPmap.pp ~ignore
-        (With_meta.pp
-           (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb)))
+        (fun ft block ->
+          (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
+            ft block.node)
         ft st
 
 let empty =
