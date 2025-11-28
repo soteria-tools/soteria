@@ -168,7 +168,7 @@ module Make (Sptr : Sptr.S) = struct
               @@ BitVec.to_z (Range.size leaf.range)
             in
             let size = Z.to_int size in
-            let value = BitVec.zero size in
+            let value = BitVec.zero (size * 8) in
             Ok ((Rust_val.Int value, offset) :: vs)
         | Owned (Init value, _) -> Result.ok ((value, offset) :: vs)
         | Owned (Any, _) ->
