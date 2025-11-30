@@ -160,8 +160,62 @@ module Make (State : State_intf.S) = struct
         | Dyn -> not_impl "TODO: TraitConst(Dyn)"
         | UnknownTrait _ -> not_impl "TODO: TraitConst(UnknownTrait)")
     | CRawMemory bytes ->
+        (* This whole function is a bit complicated, due to the fact we don't supprt
+           pointer chunks, meaning we need to do a best-effort reconstruction of the
+           full pointers from the pointer bytes. *)
+        (* First, we iterate over the bytes and try to group up the pointers *)
+        let bytes = List.mapi (fun i b -> (i, b)) bytes in
+        let last, blocks =
+          List.fold_left
+            (fun (curr, blocks) (i, (byte : Expressions.byte)) ->
+              match (curr, byte) with
+              | None, Uninit -> (None, blocks)
+              | None, Value b -> (None, `Byte (BV.u8i b, i) :: blocks)
+              | None, Provenance (p, from_) -> (Some (p, from_, i), blocks)
+              | Some (p, from_, ofs), Provenance (p', idx) ->
+                  (* if different provenance or non-contiguous, stop *)
+                  if
+                    (not (Expressions.equal_provenance p p'))
+                    || idx <> from_ + (i - ofs)
+                  then
+                    (Some (p', idx, i), `Ptr (p, from_, i - ofs, ofs) :: blocks)
+                  else (Some (p, from_, ofs), blocks)
+              | Some (p, from_, ofs), Value b ->
+                  ( None,
+                    `Byte (BV.u8i b, i)
+                    :: `Ptr (p, from_, i - ofs, ofs)
+                    :: blocks )
+              | Some (p, from_, ofs), Uninit ->
+                  (None, `Ptr (p, from_, i - ofs, ofs) :: blocks))
+            (None, []) bytes
+        in
         let blocks =
-          List.mapi (fun i x -> (Int (BV.u8i x), BV.usizei i)) bytes
+          match last with
+          | None -> blocks
+          | Some (p, from_, ofs) ->
+              `Ptr (p, from_, List.length bytes - ofs, ofs) :: blocks
+        in
+        (* Map the smaller blocks to actual rust values, ie. pointers or integers *)
+        let ptr_size = Crate.pointer_size () in
+        let ptr_of_provenance : Expressions.provenance -> full_ptr t = function
+          | Global g -> resolve_global g
+          | Function f -> State.declare_fn f
+          | Unknown -> not_impl "Unknown provenance in RawMemory"
+        in
+        let* blocks =
+          fold_list blocks ~init:[] ~f:(fun acc block ->
+              match block with
+              | `Byte (b, ofs) -> ok ((Int b, BV.usizei ofs) :: acc)
+              | `Ptr (p, from_, size, ofs) ->
+                  let* ptr, _ = ptr_of_provenance p in
+                  if from_ = 0 && size = ptr_size then
+                    ok ((Ptr (ptr, Thin), BV.usizei ofs) :: acc)
+                  else
+                    let$+ ptr_int = Sptr.decay ptr in
+                    let ptr_frag =
+                      BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
+                    in
+                    (Int ptr_frag, BV.usizei ofs) :: acc)
         in
         let$$+ value = Encoder.transmute blocks ~to_ty:const.ty in
         value
@@ -207,6 +261,9 @@ module Make (State : State_intf.S) = struct
           let* valid = State.is_valid_ptr fptr base.ty in
           if valid then ok () else error `UBDanglingPointer
         in
+        L.debug (fun f ->
+            f "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty
+              base.ty);
         let^^+ ptr' =
           Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
             ptr
@@ -221,9 +278,7 @@ module Make (State : State_intf.S) = struct
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
         let^^ ptr' = Sptr.project base.ty kind field ptr in
         L.debug (fun f ->
-            f
-              "Dereferenced ADT projection %a, field %a, with pointer %a to \
-               pointer %a"
+            f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
         if not @@ Layout.is_inhabited ty then error `RefToUninhabited
@@ -301,7 +356,7 @@ module Make (State : State_intf.S) = struct
 
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
-  and resolve_function ~in_tys ~out_ty ?vtable :
+  and resolve_function ~in_tys ~out_ty :
       GAst.fn_operand -> ('err fun_exec * Types.ty list) t =
     let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
       let fn = Crate.get_fun fn.id in
@@ -341,26 +396,11 @@ module Make (State : State_intf.S) = struct
     (* For static calls we don't need to check types, that's what the type checker does. *)
     | FnOpRegular fn_ptr -> perform_call @@ resolve_fn_ptr fn_ptr
     (* Here we need to check the type of the actual function, as it could have been cast. *)
-    | FnOpMove place ->
-        let* fn_ptr_ptr = resolve_place place in
-        let* fn_ptr = State.load fn_ptr_ptr place.ty in
+    | FnOpDynamic op ->
+        let* fn_ptr = eval_operand op in
         let fn_ptr = as_ptr fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
         let* () = validate_call fn in
-        perform_call fn
-    | FnOpVTableMethod (_, idx) ->
-        (* the first argument is the fat pointer with the VTable *)
-        let* vtable =
-          of_opt_not_impl "dyn method call without VTable pointer?" vtable
-        in
-        let^^ fn_ptr_ptr =
-          Sptr.offset ~check:true ~ty:unit_ptr ~signed:false vtable
-            (BV.usizei idx)
-        in
-        let* fn_ptr = State.load (fn_ptr_ptr, Thin) unit_ptr in
-        let fn_ptr = as_ptr fn_ptr in
-        let* fn = State.lookup_fn fn_ptr in
-        let* () = validate_call ~is_dyn:true fn in
         perform_call fn
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
@@ -491,20 +531,22 @@ module Make (State : State_intf.S) = struct
               match meta with
               | MetaLength length ->
                   ok @@ Len (BV.usize_of_const_generic length)
-              | MetaMonoVTablePtr glob ->
+              | MetaVTableDirect (_, glob) ->
                   (* the global adds one level of indirection *)
+                  let* glob = of_opt_not_impl "Missing VTable global" glob in
                   let* ptr = resolve_global glob in
                   let+ vtable = State.load ptr unit_ptr in
                   let vtable, _ = as_ptr vtable in
                   VTable vtable
               (* We don't check validity of the metadata if the unsizing
                   doesn't need to modify the VTable. *)
-              | MetaMonoVTableReindex None -> ok prev
-              | MetaMonoVTableReindex (Some idx) -> (
+              | MetaVTableNested (_, None) -> ok prev
+              | MetaVTableNested (_, Some field) -> (
                   match prev with
                   | Thin -> failwith "Unsizing VTable with no meta?"
                   | Len _ -> error `UBDanglingPointer
                   | VTable vt ->
+                      let idx = Types.FieldId.to_int field in
                       let^^ vt_addr =
                         Sptr.offset ~ty:unit_ptr ~signed:false vt
                           (BV.usizei idx)
@@ -512,7 +554,7 @@ module Make (State : State_intf.S) = struct
                       let+ vt = State.load (vt_addr, Thin) unit_ptr in
                       let vt, _ = as_ptr vt in
                       VTable vt)
-              | MetaUnknown | MetaVTablePtr _ ->
+              | MetaUnknown ->
                   Fmt.kstr not_impl "Unsupported metadata in CastUnsize: %a"
                     Expressions.pp_unsizing_metadata meta
             in
@@ -658,50 +700,29 @@ module Make (State : State_intf.S) = struct
                Our execution already checks for UB, so we should return
                false, to indicate runtime UB checks aren't needed. *)
             ok (Int (BV.of_bool Typed.v_false))
+        | OverflowChecks ->
+            (* See https://doc.rust-lang.org/nightly/std/intrinsics/fn.overflow_checks.html
+               Our execution already checks for overflows, so we don't need them at runtime. *)
+            ok (Int (BV.of_bool Typed.v_false))
+        | ContractChecks ->
+            (* For now we don't do contracts. *)
+            ok (Int (BV.of_bool Typed.v_false))
         | SizeOf ->
             let^+ size = Layout.size_of_s ty in
             Int size
         | AlignOf ->
             let^+ align = Layout.align_of_s ty in
             Int align
-        | OffsetOf fields ->
-            let+ _, offset =
-              fold_list fields
-                ~init:(ty, Usize.(0s))
-                ~f:(fun (ty, off) (variant, field) ->
-                  let variant = Types.VariantId.of_int variant in
-                  let field = Types.FieldId.to_int field in
-
-                  let layout = Layout.layout_of ty in
-                  let fields =
-                    Layout.Fields_shape.shape_for_variant variant layout.fields
-                  in
-                  let inner_off = Layout.Fields_shape.offset_of field fields in
-                  let off = off +!@ BV.usizei inner_off in
-
-                  let sub_ty =
-                    match ty with
-                    | TAdt { id = TAdtId t_id; _ } -> (
-                        let type_decl = Crate.get_adt t_id in
-                        match type_decl.kind with
-                        | Enum vars ->
-                            let variant = Types.VariantId.nth vars variant in
-                            let field = List.nth variant.fields field in
-                            field.field_ty
-                        | Struct fields | Union fields ->
-                            let field = List.nth fields field in
-                            field.field_ty
-                        | Opaque | Alias _ | TDeclError _ ->
-                            failwith "OffsetOf on opaque/alias")
-                    | TAdt { id = TTuple; generics = { types; _ } } ->
-                        List.nth types field
-                    | _ ->
-                        Fmt.failwith "OffsetOf: unexpected ADT type: %a" pp_ty
-                          ty
-                  in
-                  ok (sub_ty, off))
+        | OffsetOf (ty, variant, field) ->
+            let variant = Option.value variant ~default:Types.VariantId.zero in
+            let field = Types.FieldId.to_int field in
+            let ty : Types.ty = TAdt ty in
+            let layout = Layout.layout_of ty in
+            let fields =
+              Layout.Fields_shape.shape_for_variant variant layout.fields
             in
-            Int offset)
+            let inner_off = Layout.Fields_shape.offset_of field fields in
+            ok (Int (BV.usizei inner_off)))
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with
@@ -836,23 +857,6 @@ module Make (State : State_intf.S) = struct
             let* () = State.free ptr in
             map_env (Store.add local (None, ty))
         | None -> ok ())
-    | Drop (place, trait_ref) -> (
-        let* place_ptr = resolve_place place in
-        match trait_ref.kind with
-        | TraitImpl impl_ref ->
-            let impl = Crate.get_trait_impl impl_ref.id in
-            (* The Drop trait will only have the drop function *)
-            let _, drop_ref = List.hd impl.methods in
-            let drop = Crate.get_fun drop_ref.binder_value.id in
-            let fun_exec =
-              with_extra_call_trace ~loc:stmt.span.data ~msg:"Drop"
-              @@ with_env ~env:()
-              @@ exec_fun drop [ Ptr place_ptr ]
-            in
-            State.unwind_with fun_exec
-              ~f:(fun _ -> ok ())
-              ~fe:(fun err -> error_raw err)
-        | _ -> State.uninit place_ptr place.ty)
     | Assert { cond; expected; on_failure } -> (
         let* cond = eval_operand cond in
         let cond_int = as_base TBool cond in
@@ -895,35 +899,7 @@ module Make (State : State_intf.S) = struct
     | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
         let out_ty = ty in
-        (* for dyn calls, we need to find the metadata of the VTable. This is
-           slightly tricky, due to [unsized_locals] (e.g. [call_once] is dyn-compatible),
-           as we must check the operand doesn't dereference a trait object.
-           Since we technically read the pointer twice, we must also ensure the first read
-           (for the metadata) is not a move. *)
-        let is_dyn =
-          match func with FnOpVTableMethod _ -> true | _ -> false
-        in
-        let* vtable =
-          if is_dyn then
-            let dyn_arg = List.hd args in
-            let ptr_operand : Expressions.operand =
-              match (type_of_operand dyn_arg, dyn_arg) with
-              | ( TDynTrait _,
-                  ( Move { kind = PlaceProjection (base, Deref); _ }
-                  | Copy { kind = PlaceProjection (base, Deref); _ } ) )
-              | _, Move base ->
-                  Copy base
-              | _, dyn_arg -> dyn_arg
-            in
-            let* dyn_val = eval_operand ptr_operand in
-            match Rust_val.flatten dyn_val with
-            | Ptr (_, VTable vt) :: _ -> ok (Some vt)
-            | _ -> not_impl "dyn method call without VTable?"
-          else ok None
-        in
-        let* exec_fun, exp_tys =
-          resolve_function ~in_tys ~out_ty ?vtable func
-        in
+        let* exec_fun, exp_tys = resolve_function ~in_tys ~out_ty func in
         (* the expected types of the function may differ to those passed, e.g. with
            function pointers or dyn calls, so we transmute here. *)
         let* args =
@@ -1023,6 +999,36 @@ module Make (State : State_intf.S) = struct
             let^ block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in
             let block = UllbcAst.BlockId.nth body.body block in
+            exec_block ~body block)
+    | Drop (drop_kind, place, trait_ref, target, on_unwind) -> (
+        assert (drop_kind = Precise);
+        let* place_ptr = resolve_place place in
+        match trait_ref.kind with
+        | TraitImpl impl_ref ->
+            let impl = Crate.get_trait_impl impl_ref.id in
+            (* The Drop trait will only have the drop function *)
+            let _, drop_ref = List.hd impl.methods in
+            let drop = Crate.get_fun drop_ref.binder_value.id in
+            let fun_exec =
+              with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
+              @@ with_env ~env:()
+              @@ exec_fun drop [ Ptr place_ptr ]
+            in
+            State.unwind_with fun_exec
+              ~f:(fun _ ->
+                let block = UllbcAst.BlockId.nth body.body target in
+                L.info (fun m ->
+                    m "Dropped with %a" Crate.pp_name drop.item_meta.name);
+                exec_block ~body block)
+              ~fe:(fun err ->
+                let* () = State.add_error err in
+                L.info (fun m ->
+                    m "Unwinding drop from %a" Crate.pp_name drop.item_meta.name);
+                let block = UllbcAst.BlockId.nth body.body on_unwind in
+                exec_block ~body block)
+        | _ ->
+            let* () = State.uninit place_ptr place.ty in
+            let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
     | Abort kind -> (
         match kind with

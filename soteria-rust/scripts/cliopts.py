@@ -198,6 +198,7 @@ def opts_for_rusteria(
         "tool_cmd": [
             "soteria-rust",
             "rustc",
+            "--log-compilation",
             "--compact",
             "--no-color",
             *(["--solver-timeout", str(timeout * 1000)] if timeout is not None else []),

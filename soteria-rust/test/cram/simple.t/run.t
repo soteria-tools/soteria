@@ -2,7 +2,7 @@ Test memory leaks
   $ soteria-rust rustc leak.rs --clean --no-timing
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
-  warning: Memory leak at ../alloc/src/alloc.rs:250:9-39 in main
+  warning: Memory leak at ../alloc/src/alloc.rs:251:9-39 in main
       ┌─ $TESTCASE_ROOT/leak.rs:1:2
     1 │  fn main() {
       │   ^^^^^^^^^
@@ -99,8 +99,8 @@ Check strict provenance disables int to ptr casts
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Attempted ot cast integer to pointer with strict provenance in main
-      ┌─ $RUSTLIB/src/rust/library/core/src/ptr/mod.rs:975:6
-  975 │      addr as *const T
+      ┌─ $RUSTLIB/src/rust/library/core/src/ptr/mod.rs:986:6
+  986 │      addr as *const T
       │       ^^^^^^^^^^^^^^^ Triggering memory operation
       ┌─ $TESTCASE_ROOT/provenance.rs:5:19
     1 │  fn main() {

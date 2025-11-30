@@ -145,7 +145,8 @@ module M (State : State_intf.S) = struct
       let name, mono =
         match List.rev f.item_meta.name with
         | PeIdent (name, _) :: _ -> (name, TypesUtils.empty_generic_args)
-        | PeMonomorphized mono :: PeIdent (name, _) :: _ -> (name, mono)
+        | PeInstantiated mono :: PeIdent (name, _) :: _ ->
+            (name, mono.binder_value)
         | _ -> failwith "Unexpected intrinsic shape"
       in
       let fn = Intrinsics.eval_fun name fun_exec mono in

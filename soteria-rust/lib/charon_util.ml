@@ -29,7 +29,8 @@ let rec pp_ty fmt : Types.ty -> unit = function
       let adt = Crate.get_adt id in
       let name, generics =
         match List.rev adt.item_meta.name with
-        | PeMonomorphized generics :: rest -> (List.rev rest, generics)
+        | PeInstantiated generics :: rest ->
+            (List.rev rest, generics.binder_value)
         | _ -> (adt.item_meta.name, TypesUtils.empty_generic_args)
       in
       Fmt.pf fmt "%a%a" Crate.pp_name name Crate.pp_generic_args generics

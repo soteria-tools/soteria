@@ -132,8 +132,12 @@ let pp_pretty ~ignore_freed ft { state; _ } =
   | Some st ->
       SPmap.pp ~ignore
         (fun ft block ->
-          (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
-            ft block.node)
+          match block with
+          | { info = Some { kind = Function fn; _ }; _ } ->
+              Fmt.pf ft "function %a" Crate.pp_fun_decl_ref fn
+          | { node; _ } ->
+              (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
+                ft node)
         ft st
 
 let empty =
