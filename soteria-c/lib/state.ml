@@ -15,7 +15,6 @@ let add_to_call_trace (err, trace_elem) trace_elem' =
 
 module SPmap = Pmap_direct_access (struct
   include Typed
-  module Symex = Csymex
 
   type t = T.sloc Typed.t
 
