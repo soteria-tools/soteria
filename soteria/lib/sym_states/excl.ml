@@ -1,41 +1,54 @@
 open Symex
 
-module Make (Symex : Symex.Base) = struct
-  type 'a t = 'a
-  type 'a serialized = 'a
+module Elem (Symex : Symex.Base) = struct
+  module type S = sig
+    type t [@@deriving show]
 
-  let pp pp_value = pp_value
+    val fresh : unit -> t Symex.t
+    val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
+  end
+end
 
-  let load (st : 'a t option) =
+module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
+  open Symex
+  open Symex.Syntax
+
+  type t = E.t [@@deriving show { with_path = false }]
+  type serialized = E.t [@@deriving show { with_path = false }]
+
+  let unwrap st =
     match st with
-    | Some x -> Symex.Result.ok (x, st)
-    | None -> Symex.Result.miss []
+    | Some x -> Symex.Result.ok x
+    | None ->
+        let* v = E.fresh () in
+        Result.miss [ v ]
 
-  let store x (st : 'a t option) =
-    match st with
-    | Some _ -> Symex.Result.ok ((), Some x)
-    | None -> Symex.Result.miss []
+  let assert_exclusively_owned (st : t option) =
+    let** _ = unwrap st in
+    Result.ok ()
 
-  let serialize serialize_val x = serialize_val x
-  let pp_serialized = pp
+  let load (st : t option) =
+    let++ x = unwrap st in
+    (x, st)
+
+  let store x (st : t option) =
+    let++ _ = unwrap st in
+    ((), Some x)
+
+  let serialize x = x
 
   let iter_vars_serialized (i : 'a -> 'b Symex.Value.ty Var.iter_vars)
-      (x : 'a serialized) : 'b Symex.Value.ty Var.iter_vars =
+      (x : serialized) : 'b Symex.Value.ty Var.iter_vars =
    fun f -> i x f
 
   let subst_serialized subst_inner subst_var x = subst_inner subst_var x
 
-  let consume ~sem_eq (serialized : 'a serialized) (t : 'a t option) :
-      ('a t option, [> Symex.lfail ], 'a serialized) Symex.Result.t =
-    let open Symex.Syntax in
-    match t with
-    | Some x ->
-        let++ () = Symex.consume_pure (sem_eq x serialized) in
-        None
-    | None -> Symex.Result.miss [ serialized ]
+  let consume x (t : t option) :
+      (t option, [> Symex.lfail ], serialized) Symex.Result.t =
+    let** y = unwrap t in
+    let++ () = Symex.consume_pure (E.sem_eq x y) in
+    None
 
-  let produce (serialized : 'a serialized) (t : 'a t option) =
-    match t with
-    | None -> Symex.return (Some serialized)
-    | Some _ -> Symex.vanish ()
+  let produce (v : serialized) (t : t option) =
+    match t with None -> Symex.return (Some v) | Some _ -> Symex.vanish ()
 end

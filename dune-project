@@ -8,6 +8,8 @@
 
 (using mdx 0.4)
 
+(using menhir 3.0)
+
 (generate_opam_files)
 
 (license Apache-2.0)

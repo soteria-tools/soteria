@@ -16,7 +16,7 @@ To instantiate it, you need to provide a {{!Soteria.Symex.Solver.Mutable_increme
 You also need to provide a {{!Soteria.Symex.Meta.S}Meta} module which describes types useful for statistics bookkeeping (see {!Soteria.Stats}), but can be set to {{!Soteria.Symex.Meta.Dummy}Dummy} if they are not necessary.
 
 {@ocaml[
-module Symex = Symex.Make (Symex.Meta.Dummy) (C_solver.Z3_solver)
+module Symex = Symex.Make (Symex.Meta.Dummy) (Tiny_solver.Z3_solver)
 ]}
 
 
