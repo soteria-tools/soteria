@@ -1,10 +1,5 @@
 (** An in-place mutable graph implementation with reachability and topological
-    ordering.
-
-    Provides a directed graph structure where nodes are stored in a hashtable
-    mapping to sets of adjacent nodes. Supports edge addition, breadth-first
-    reachability queries, and weak topological ordering of strongly connected
-    components. *)
+    ordering. *)
 
 module Make_in_place (Node : Hashset.PrintableHashedType) = struct
   type node = Node.t
@@ -14,26 +9,34 @@ module Make_in_place (Node : Hashset.PrintableHashedType) = struct
 
   type t = Node_set.t Hashtbl.t
 
+  (** Create a new graph with the given initial capacity for nodes. *)
   let with_node_capacity n = Hashtbl.create n
+
+  (** Return the number of nodes in the graph. *)
   let node_count graph = Hashtbl.length graph
 
+  (** Pretty-printer for the graph. *)
   let pp =
     let pp_caller ft (caller, callees) =
       Fmt.pf ft "@[<h>%a ->@ %a@]" Node.pp caller Node_set.pp callees
     in
     Fmt.vbox (Fmt.iter_bindings ~sep:Fmt.sp Hashtbl.iter pp_caller)
 
+  (** Add a directed edge from one node to another. *)
   let add_edge graph from to_ =
     match Hashtbl.find_opt graph from with
     | None -> Hashtbl.replace graph from (Node_set.singleton to_)
     | Some tos -> Node_set.add tos to_
 
+  (** Add a bidirectional edge between two nodes. *)
   let add_double_edge graph from to_ =
     add_edge graph from to_;
     add_edge graph to_ from
 
+  (** Set the outgoing edges for a specific node. *)
   let set_edges_from graph from nodes = Hashtbl.replace graph from nodes
 
+  (** Compute the set of all nodes reachable from a given set of start nodes. *)
   let reachable_from graph reachable : Node_set.t =
     let visited = Node_set.with_capacity (Node_set.cardinal reachable) in
     let queue = Queue.of_seq (Node_set.to_seq reachable) in

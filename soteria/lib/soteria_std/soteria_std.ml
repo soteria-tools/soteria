@@ -17,5 +17,6 @@ module Path = Path
 module Result = Result
 module Reversible = Reversible
 module Seq = Seq
+module String = String
 module Syntaxes = Syntaxes
 module Sys = Sys
