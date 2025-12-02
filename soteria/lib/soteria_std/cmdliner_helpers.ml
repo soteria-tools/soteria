@@ -1,8 +1,7 @@
-(** Cmdliner argument converters for file and directory paths.
+(** Cmdliner argument converters for file and directory paths. *)
 
-    Provides converters that normalize relative paths to absolute paths and
-    validate their existence before use in command-line interfaces. *)
-
+(** Converter for file paths. Normalizes the path to an absolute path and checks
+    if the file exists. *)
 let file_as_absolute =
   let pp = Format.pp_print_string in
   let parse path =
@@ -12,6 +11,8 @@ let file_as_absolute =
   in
   Cmdliner.Arg.conv' ~docv:"FILE" (parse, pp)
 
+(** Converter for directory paths. Normalizes the path to an absolute path and
+    checks if the directory exists. *)
 let dir_as_absolute =
   let pp = Format.pp_print_string in
   let parse path =

@@ -1,12 +1,10 @@
 (** A foldable interface for uniform iteration over different container types.
-
-    Defines a common [fold] operation that can be implemented for various data
-    structures, allowing generic algorithms to work with lists, options,
-    sequences, and iterators through a single interface. *)
+*)
 
 module type S = sig
   type 'a t
 
+  (** Fold over the elements of the data structure. *)
   val fold : 'a t -> init:'b -> f:('b -> 'a -> 'b) -> 'b
 end
 

@@ -1,9 +1,4 @@
-(** Monad interfaces and implementations.
-
-    This module provides standard module types and functors for defining and
-    working with monads, including support for syntax extensions (let*
-    operators), common monad instances (List, Result, Option, etc.), and
-    transformers. *)
+(** Monad interfaces and implementations. *)
 
 (** Basic interface for a monad with one type parameter. *)
 module type Base = sig
@@ -54,6 +49,7 @@ end
 module Extend (Base : Base) = struct
   include Base
 
+  (** Generic monadic map function that collects results. *)
   let all fn xs =
     let rec aux vs l =
       match l with
@@ -62,6 +58,7 @@ module Extend (Base : Base) = struct
     in
     aux [] xs
 
+  (** Generic monadic fold function over a list. *)
   let fold_list ~init ~f xs =
     foldM ~return ~bind ~fold:Foldable.List.fold xs ~init ~f
 
@@ -130,6 +127,7 @@ module Extend2 (Base : Base2) : S2 with type ('a, 'b) t = ('a, 'b) Base.t =
 struct
   include Base
 
+  (** Generic monadic map function that collects results. *)
   let all fn xs =
     let rec aux vs l =
       match l with
@@ -138,6 +136,7 @@ struct
     in
     aux [] xs
 
+  (** Generic monadic fold function over a list. *)
   let fold_list ~init ~f xs =
     foldM ~return:ok ~bind ~fold:Foldable.List.fold xs ~init ~f
 
@@ -149,6 +148,7 @@ struct
   end
 end
 
+(** Identity monad. *)
 module Id = Extend (struct
   type 'a t = 'a
 
@@ -157,6 +157,7 @@ module Id = Extend (struct
   let[@inline] map x f = f x
 end)
 
+(** Result transformer. *)
 module ResultT (M : Base) : Base2 with type ('a, 'b) t = ('a, 'b) Result.t M.t =
 struct
   type ('a, 'b) t = ('a, 'b) Result.t M.t
@@ -174,6 +175,7 @@ struct
   let map_error x f = M.map x (Result.map_error f)
 end
 
+(** List monad. *)
 module ListM = Extend (struct
   type 'a t = 'a list
 
@@ -182,6 +184,7 @@ module ListM = Extend (struct
   let map x f = List.map f x
 end)
 
+(** Result monad. *)
 module ResultM = Extend2 (struct
   type ('a, 'b) t = ('a, 'b) result
 
@@ -193,6 +196,7 @@ module ResultM = Extend2 (struct
   let map_error x f = Result.map_error f x
 end)
 
+(** Option monad. *)
 module OptionM = Extend (struct
   type 'a t = 'a option
 
@@ -201,6 +205,7 @@ module OptionM = Extend (struct
   let return x = Some x
 end)
 
+(** Sequence monad. *)
 module SeqM = Extend (struct
   type 'a t = 'a Seq.t
 
@@ -209,6 +214,7 @@ module SeqM = Extend (struct
   let[@inline] return x = Seq.return x
 end)
 
+(** Iterator monad. *)
 module IterM = Extend (struct
   type 'a t = 'a Iter.t
 
@@ -217,6 +223,7 @@ module IterM = Extend (struct
   let[@inline] return x = Iter.return x
 end)
 
+(** State monad. *)
 module StateM (State : sig
   type t
 end) =

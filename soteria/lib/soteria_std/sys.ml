@@ -1,4 +1,4 @@
-(** Extensions to [Stdlib.Sys] with helpers for working directories. *)
+(** Extensions to [Stdlib.Sys] with utility functions. *)
 
 include Stdlib.Sys
 
