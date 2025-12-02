@@ -6,19 +6,19 @@
 
 open Symex
 
-module type Codom = sig
-  module Symex : Symex.Base
+module Codom (Symex : Symex.Base) = struct
+  module type S = sig
+    type t
 
-  type t
-
-  val pp : Format.formatter -> t -> unit
-  val fresh : unit -> t Symex.t
-  val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
-  val subst : (Var.t -> Var.t) -> t -> t
-  val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+    val pp : Format.formatter -> t -> unit
+    val fresh : unit -> t Symex.t
+    val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
+    val subst : (Var.t -> Var.t) -> t -> t
+    val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+  end
 end
 
-module Make (C : Codom) = struct
+module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
   open C
   open Symex.Syntax
 
