@@ -40,7 +40,6 @@ module Encoder = Encoder.Make (Sptr)
 
 module StateKey = struct
   include Typed
-  module Symex = DecayMapMonad
 
   type t = T.sloc Typed.t
 
