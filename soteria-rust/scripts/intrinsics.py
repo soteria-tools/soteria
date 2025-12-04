@@ -87,24 +87,21 @@ TypeNever = Literal["Never"]
 Type = TypeAdt | TypeLiteral | TypeTypeVar | TypeRef | TypePtr | TypeNever
 
 
+class DedupedType(TypedDict):
+    Deduplicated: int
+
+
+class HashConsedType(TypedDict):
+    HashConsedValue: tuple[int, Type]
+
+
+UniqueType = DedupedType | HashConsedType
+
+
 class Signature(TypedDict):
     generics: GenericParams
-    inputs: list[Type]
-    output: Type
-
-
-T = TypeVar("T")
-
-
-class ResultOk(TypedDict, Generic[T]):
-    Ok: T
-
-
-class ResultError(TypedDict):
-    Err: None
-
-
-Result = ResultOk[T] | ResultError
+    inputs: list[UniqueType]
+    output: UniqueType
 
 
 class Local(TypedDict):
@@ -129,7 +126,7 @@ class Body(TypedDict):
 class FunDecl(TypedDict):
     item_meta: ItemMeta
     signature: Signature
-    body: Result[Body]
+    body: Body
 
 
 InterpTypeBase = Literal[
@@ -138,8 +135,21 @@ InterpTypeBase = Literal[
 InterpTypeMeta = Optional[str]
 InterpType = tuple[InterpTypeBase, InterpTypeMeta]
 
+type_cache: dict[int, Type] = {}
 
-def type_of(ty: Type) -> InterpType:
+
+def type_of(unique_ty: UniqueType) -> InterpType:
+    ty: Type
+    if "Deduplicated" in unique_ty:
+        type_id = unique_ty["Deduplicated"]
+        if type_id not in type_cache:
+            raise ValueError(f"Unknown deduplicated type id: {type_id}")
+        ty = type_cache[type_id]
+    elif "HashConsedValue" in unique_ty:
+        type_id, inner_ty = unique_ty["HashConsedValue"]
+        type_cache[type_id] = inner_ty
+        ty = inner_ty
+
     if ty == "Never":
         return "unit", None
 
@@ -162,7 +172,29 @@ def type_of(ty: Type) -> InterpType:
         if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
             return "unit", None
 
+    if "TypeVar" in ty:
+        return "unknown", None
+
+    # raise RuntimeError(f"Unhandled type: {ty}")
     return "unknown", None
+
+
+# try traversing the whole JSON to cache all types
+def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
+    if isinstance(x, list):
+        for v in x:
+            traverse_types(v, prev_key)
+        return
+
+    if not isinstance(x, dict):
+        return
+
+    if "HashConsedValue" in x and prev_key != "tref" and prev_key != "trait_refs":
+        type_id, inner_ty = x["HashConsedValue"]
+        type_cache[type_id] = inner_ty
+
+    for k, v in x.items():
+        traverse_types(v, k)
 
 
 input_type: dict[InterpTypeBase, str] = {
@@ -243,6 +275,7 @@ def get_intrinsics() -> dict[str, FunDecl]:
         file_rs.unlink(missing_ok=True)
 
     ullbc = json.loads(file_json.read_text())
+    traverse_types(ullbc)
     intrinsics: dict[str, FunDecl] = {
         "::".join(i["Ident"][0] for i in fun["item_meta"]["name"][2:]): fun
         for fun in ullbc["translated"]["fun_decls"]
@@ -289,19 +322,12 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         )
         doc = sanitize_comment(doc)
         arg_count = len(fun["signature"]["inputs"])
-        args: list[tuple[str, InterpType]] = (
-            [
-                (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
-                for param in fun["body"]["Ok"]["Unstructured"]["locals"]["locals"][
-                    1 : arg_count + 1
-                ]
+        args: list[tuple[str, InterpType]] = [
+            (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
+            for param in fun["body"]["Unstructured"]["locals"]["locals"][
+                1 : arg_count + 1
             ]
-            if "Ok" in fun["body"]
-            else [
-                (f"arg{i+1}", type_of(ty))
-                for i, ty in enumerate(fun["signature"]["inputs"])
-            ]
-        )
+        ]
         arg_names = [arg for (arg, _) in args]
         types = [
             (
