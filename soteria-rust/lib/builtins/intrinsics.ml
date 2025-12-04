@@ -53,6 +53,9 @@ module M (State : State_intf.S) = struct
 
   let assume ~b:_ () _state = not_impl "Unsupported intrinsic: assume"
 
+  let autodiff ~t_f:_ ~g:_ ~t:_ ~r:_ ~f:_ ~df:_ ~args:_ () _state =
+    not_impl "Unsupported intrinsic: autodiff"
+
   let bitreverse ~t:_ ~x:_ () _state =
     not_impl "Unsupported intrinsic: bitreverse"
 
@@ -84,17 +87,18 @@ module M (State : State_intf.S) = struct
   let const_deallocate ~_ptr:_ ~_size:_ ~_align:_ () _state =
     not_impl "Unsupported intrinsic: const_deallocate"
 
+  let const_eval_select ~arg:_ ~f:_ ~g:_ ~ret:_ ~_arg:_ ~_called_in_const:_
+      ~_called_at_rt:_ () _state =
+    not_impl "Unsupported intrinsic: const_eval_select"
+
   let const_make_global ~ptr:_ () _state =
     not_impl "Unsupported intrinsic: const_make_global"
 
   let contract_check_ensures ~c:_ ~t_ret:_ ~cond:_ ~ret:_ () _state =
     not_impl "Unsupported intrinsic: contract_check_ensures"
 
-  let contract_check_requires ~c:_ ~arg1:_ () _state =
+  let contract_check_requires ~c:_ ~cond:_ () _state =
     not_impl "Unsupported intrinsic: contract_check_requires"
-
-  let contract_checks () _state =
-    not_impl "Unsupported intrinsic: contract_checks"
 
   let copy ~t:_ ~src:_ ~dst:_ ~count:_ () _state =
     not_impl "Unsupported intrinsic: copy"
@@ -286,6 +290,12 @@ module M (State : State_intf.S) = struct
   let offset ~ptr:_ ~delta:_ ~dst:_ ~offset:_ () _state =
     not_impl "Unsupported intrinsic: offset"
 
+  let offset_of ~t:_ ~variant:_ ~field:_ () _state =
+    not_impl "Unsupported intrinsic: offset_of"
+
+  let overflow_checks () _state =
+    not_impl "Unsupported intrinsic: overflow_checks"
+
   let powf128 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powf128"
   let powf16 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powf16"
   let powf32 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powf32"
@@ -295,16 +305,16 @@ module M (State : State_intf.S) = struct
   let powif32 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powif32"
   let powif64 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powif64"
 
-  let prefetch_read_data ~t:_ ~data:_ ~locality:_ () _state =
+  let prefetch_read_data ~t:_ ~data:_ () _state =
     not_impl "Unsupported intrinsic: prefetch_read_data"
 
-  let prefetch_read_instruction ~t:_ ~data:_ ~locality:_ () _state =
+  let prefetch_read_instruction ~t:_ ~data:_ () _state =
     not_impl "Unsupported intrinsic: prefetch_read_instruction"
 
-  let prefetch_write_data ~t:_ ~data:_ ~locality:_ () _state =
+  let prefetch_write_data ~t:_ ~data:_ () _state =
     not_impl "Unsupported intrinsic: prefetch_write_data"
 
-  let prefetch_write_instruction ~t:_ ~data:_ ~locality:_ () _state =
+  let prefetch_write_instruction ~t:_ ~data:_ () _state =
     not_impl "Unsupported intrinsic: prefetch_write_instruction"
 
   let ptr_guaranteed_cmp ~t:_ ~ptr:_ ~other:_ () _state =
@@ -420,6 +430,12 @@ module M (State : State_intf.S) = struct
   let unchecked_div ~t:_ ~x:_ ~y:_ () _state =
     not_impl "Unsupported intrinsic: unchecked_div"
 
+  let unchecked_funnel_shl ~t:_ ~a:_ ~b:_ ~shift:_ () _state =
+    not_impl "Unsupported intrinsic: unchecked_funnel_shl"
+
+  let unchecked_funnel_shr ~t:_ ~a:_ ~b:_ ~shift:_ () _state =
+    not_impl "Unsupported intrinsic: unchecked_funnel_shr"
+
   let unchecked_mul ~t:_ ~x:_ ~y:_ () _state =
     not_impl "Unsupported intrinsic: unchecked_mul"
 
@@ -519,6 +535,8 @@ module M (State : State_intf.S) = struct
         let b = Typed.BitVec.to_bool (as_base TBool b) in
         let+ () = assume ~b in
         Tuple []
+    | "autodiff", [ t_f; g; t; r ], [ f; df; args ] ->
+        autodiff ~t_f ~g ~t ~r ~f ~df ~args
     | "bitreverse", [ t ], [ x ] -> bitreverse ~t ~x
     | "black_box", [ t ], [ dummy ] -> black_box ~t ~dummy
     | "breakpoint", [], [] ->
@@ -566,18 +584,19 @@ module M (State : State_intf.S) = struct
         let _align = as_base_i Usize _align in
         let+ () = const_deallocate ~_ptr ~_size ~_align in
         Tuple []
+    | ( "const_eval_select",
+        [ arg; f; g; ret ],
+        [ _arg; _called_in_const; _called_at_rt ] ) ->
+        const_eval_select ~arg ~f ~g ~ret ~_arg ~_called_in_const ~_called_at_rt
     | "const_make_global", [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = const_make_global ~ptr in
         Ptr ret
     | "contract_check_ensures", [ c; t_ret ], [ cond; ret ] ->
         contract_check_ensures ~c ~t_ret ~cond ~ret
-    | "contract_check_requires", [ c ], [ arg1 ] ->
-        let+ () = contract_check_requires ~c ~arg1 in
+    | "contract_check_requires", [ c ], [ cond ] ->
+        let+ () = contract_check_requires ~c ~cond in
         Tuple []
-    | "contract_checks", [], [] ->
-        let+ ret = contract_checks in
-        Int (Typed.BitVec.of_bool ret)
     | "copy", [ t ], [ src; dst; count ] ->
         let src = as_ptr src in
         let dst = as_ptr dst in
@@ -918,6 +937,14 @@ module M (State : State_intf.S) = struct
         Tuple []
     | "offset", [ ptr; delta ], [ dst; offset_ ] ->
         offset ~ptr ~delta ~dst ~offset:offset_
+    | "offset_of", [ t ], [ variant; field ] ->
+        let variant = as_base_i U32 variant in
+        let field = as_base_i U32 field in
+        let+ ret = offset_of ~t ~variant ~field in
+        Int ret
+    | "overflow_checks", [], [] ->
+        let+ ret = overflow_checks in
+        Int (Typed.BitVec.of_bool ret)
     | "powf128", [], [ a; x ] ->
         let a = as_base_f F128 a in
         let x = as_base_f F128 x in
@@ -958,25 +985,21 @@ module M (State : State_intf.S) = struct
         let x = as_base_i U32 x in
         let+ ret = powif64 ~a ~x in
         Float ret
-    | "prefetch_read_data", [ t ], [ data; locality ] ->
+    | "prefetch_read_data", [ t ], [ data ] ->
         let data = as_ptr data in
-        let locality = as_base_i U32 locality in
-        let+ () = prefetch_read_data ~t ~data ~locality in
+        let+ () = prefetch_read_data ~t ~data in
         Tuple []
-    | "prefetch_read_instruction", [ t ], [ data; locality ] ->
+    | "prefetch_read_instruction", [ t ], [ data ] ->
         let data = as_ptr data in
-        let locality = as_base_i U32 locality in
-        let+ () = prefetch_read_instruction ~t ~data ~locality in
+        let+ () = prefetch_read_instruction ~t ~data in
         Tuple []
-    | "prefetch_write_data", [ t ], [ data; locality ] ->
+    | "prefetch_write_data", [ t ], [ data ] ->
         let data = as_ptr data in
-        let locality = as_base_i U32 locality in
-        let+ () = prefetch_write_data ~t ~data ~locality in
+        let+ () = prefetch_write_data ~t ~data in
         Tuple []
-    | "prefetch_write_instruction", [ t ], [ data; locality ] ->
+    | "prefetch_write_instruction", [ t ], [ data ] ->
         let data = as_ptr data in
-        let locality = as_base_i U32 locality in
-        let+ () = prefetch_write_instruction ~t ~data ~locality in
+        let+ () = prefetch_write_instruction ~t ~data in
         Tuple []
     | "ptr_guaranteed_cmp", [ t ], [ ptr; other ] ->
         let ptr = as_ptr ptr in
@@ -1141,6 +1164,12 @@ module M (State : State_intf.S) = struct
         Tuple []
     | "unchecked_add", [ t ], [ x; y ] -> unchecked_add ~t ~x ~y
     | "unchecked_div", [ t ], [ x; y ] -> unchecked_div ~t ~x ~y
+    | "unchecked_funnel_shl", [ t ], [ a; b; shift ] ->
+        let shift = as_base_i U32 shift in
+        unchecked_funnel_shl ~t ~a ~b ~shift
+    | "unchecked_funnel_shr", [ t ], [ a; b; shift ] ->
+        let shift = as_base_i U32 shift in
+        unchecked_funnel_shr ~t ~a ~b ~shift
     | "unchecked_mul", [ t ], [ x; y ] -> unchecked_mul ~t ~x ~y
     | "unchecked_rem", [ t ], [ x; y ] -> unchecked_rem ~t ~x ~y
     | "unchecked_shl", [ t; u ], [ x; y ] -> unchecked_shl ~t ~u ~x ~y

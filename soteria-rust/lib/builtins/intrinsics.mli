@@ -82,14 +82,19 @@ module M : (State : State_intf.S) -> sig
          Therefore, implementations must not require the user to uphold
          any safety invariants.
 
-         The stabilized version of this intrinsic is [`align_of`].
+         Note that, unlike most intrinsics, this can only be called at compile-time
+         as backends do not have an implementation for it. The only caller (its
+         stable counterpart) wraps this intrinsic call in a `const` block so that
+         backends only see an evaluated constant.
+
+         The stabilized version of this intrinsic is [`core::mem::align_of`].
       ]} *)
   val align_of : t:Types.ty -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         The required alignment of the referenced value.
 
-         The stabilized version of this intrinsic is [`align_of_val`].
+         The stabilized version of this intrinsic is [`core::mem::align_of_val`].
 
          # Safety
 
@@ -159,6 +164,52 @@ module M : (State : State_intf.S) -> sig
          The stabilized version of this intrinsic is [`core::hint::assert_unchecked`].
       ]} *)
   val assume : b:[< Typed.T.sbool ] Typed.t -> unit ret
+
+  (** {@markdown[
+        Generates the LLVM body for the automatic differentiation of `f` using Enzyme,
+         with `df` as the derivative function and `args` as its arguments.
+
+         Used internally as the body of `df` when expanding the `#[autodiff_forward]`
+         and `#[autodiff_reverse]` attribute macros.
+
+         Type Parameters:
+         - `F`: The original function to differentiate. Must be a function item.
+         - `G`: The derivative function. Must be a function item.
+         - `T`: A tuple of arguments passed to `df`.
+         - `R`: The return type of the derivative function.
+
+         This shows where the `autodiff` intrinsic is used during macro expansion:
+
+         ```rust,ignore (macro example)
+         #[autodiff_forward(df1, Dual, Const, Dual)]
+         pub fn f1(x: &[f64], y: f64) -> f64 {
+             unimplemented!()
+         }
+         ```
+
+         expands to:
+
+         ```rust,ignore (macro example)
+         #[rustc_autodiff]
+         #[inline(never)]
+         pub fn f1(x: &[f64], y: f64) -> f64 {
+             ::core::panicking::panic("not implemented")
+         }
+         #[rustc_autodiff(Forward, 1, Dual, Const, Dual)]
+         pub fn df1(x: &[f64], bx_0: &[f64], y: f64) -> (f64, f64) {
+             ::core::intrinsics::autodiff(f1::<>, df1::<>, (x, bx_0, y))
+         }
+         ```
+      ]} *)
+  val autodiff :
+    t_f:Types.ty ->
+    g:Types.ty ->
+    t:Types.ty ->
+    r:Types.ty ->
+    f:rust_val ->
+    df:rust_val ->
+    args:rust_val ->
+    rust_val ret
 
   (** {@markdown[
         Reverses the bits in an integer type `T`.
@@ -350,6 +401,70 @@ module M : (State : State_intf.S) -> sig
     unit ret
 
   (** {@markdown[
+        Selects which function to call depending on the context.
+
+         If this function is evaluated at compile-time, then a call to this
+         intrinsic will be replaced with a call to `called_in_const`. It gets
+         replaced with a call to `called_at_rt` otherwise.
+
+         This function is safe to call, but note the stability concerns below.
+
+         # Type Requirements
+
+         The two functions must be both function items. They cannot be function
+         pointers or closures. The first function must be a `const fn`.
+
+         `arg` will be the tupled arguments that will be passed to either one of
+         the two functions, therefore, both functions must accept the same type of
+         arguments. Both functions must return RET.
+
+         # Stability concerns
+
+         Rust has not yet decided that `const fn` are allowed to tell whether
+         they run at compile-time or at runtime. Therefore, when using this
+         intrinsic anywhere that can be reached from stable, it is crucial that
+         the end-to-end behavior of the stable `const fn` is the same for both
+         modes of execution. (Here, Undefined Behavior is considered "the same"
+         as any other behavior, so if the function exhibits UB at runtime then
+         it may do whatever it wants at compile-time.)
+
+         Here is an example of how this could cause a problem:
+         ```no_run
+         #![feature(const_eval_select)]
+         #![feature(core_intrinsics)]
+         # #![allow(internal_features)]
+         use std::intrinsics::const_eval_select;
+
+         // Standard library
+         pub const fn inconsistent() -> i32 {
+             fn runtime() -> i32 { 1 }
+             const fn compiletime() -> i32 { 2 }
+
+             // ⚠ This code violates the required equivalence of `compiletime`
+             // and `runtime`.
+             const_eval_select((), compiletime, runtime)
+         }
+
+         // User Crate
+         const X: i32 = inconsistent();
+         let x = inconsistent();
+         assert_eq!(x, X);
+         ```
+
+         Currently such an assertion would always succeed; until Rust decides
+         otherwise, that principle should not be violated.
+      ]} *)
+  val const_eval_select :
+    arg:Types.ty ->
+    f:Types.ty ->
+    g:Types.ty ->
+    ret:Types.ty ->
+    _arg:rust_val ->
+    _called_in_const:rust_val ->
+    _called_at_rt:rust_val ->
+    rust_val ret
+
+  (** {@markdown[
 
 ]} *)
   val const_make_global : ptr:full_ptr -> full_ptr ret
@@ -359,6 +474,8 @@ module M : (State : State_intf.S) -> sig
 
          By default, if `contract_checks` is enabled, this will panic with no unwind if the condition
          returns false.
+
+         If `cond` is `None`, then no postcondition checking is performed.
 
          Note that this function is a no-op during constant evaluation.
       ]} *)
@@ -377,17 +494,7 @@ module M : (State : State_intf.S) -> sig
 
          Note that this function is a no-op during constant evaluation.
       ]} *)
-  val contract_check_requires : c:Types.ty -> arg1:rust_val -> unit ret
-
-  (** {@markdown[
-        Returns whether we should perform contract-checking at runtime.
-
-         This is meant to be similar to the ub_checks intrinsic, in terms
-         of not prematurely committing at compile-time to whether contract
-         checking is turned on, so that we can specify contracts in libstd
-         and let an end user opt into turning them on.
-      ]} *)
-  val contract_checks : Typed.T.sbool Typed.t ret
+  val contract_check_requires : c:Types.ty -> cond:rust_val -> unit ret
 
   (** {@markdown[
         This is an accidentally-stable alias to [`ptr::copy`]; use that instead.
@@ -761,7 +868,7 @@ module M : (State : State_intf.S) -> sig
 
   (** {@markdown[
         Float addition that allows optimizations based on algebraic rules.
-         May assume inputs are finite.
+         Requires that inputs and output of the operation are finite, causing UB otherwise.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
@@ -776,7 +883,7 @@ module M : (State : State_intf.S) -> sig
 
   (** {@markdown[
         Float division that allows optimizations based on algebraic rules.
-         May assume inputs are finite.
+         Requires that inputs and output of the operation are finite, causing UB otherwise.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
@@ -880,7 +987,7 @@ module M : (State : State_intf.S) -> sig
 
   (** {@markdown[
         Float multiplication that allows optimizations based on algebraic rules.
-         May assume inputs are finite.
+         Requires that inputs and output of the operation are finite, causing UB otherwise.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
@@ -980,7 +1087,7 @@ module M : (State : State_intf.S) -> sig
 
   (** {@markdown[
         Float remainder that allows optimizations based on algebraic rules.
-         May assume inputs are finite.
+         Requires that inputs and output of the operation are finite, causing UB otherwise.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
@@ -995,7 +1102,7 @@ module M : (State : State_intf.S) -> sig
 
   (** {@markdown[
         Float subtraction that allows optimizations based on algebraic rules.
-         May assume inputs are finite.
+         Requires that inputs and output of the operation are finite, causing UB otherwise.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
@@ -1491,6 +1598,42 @@ module M : (State : State_intf.S) -> sig
     rust_val ret
 
   (** {@markdown[
+        The offset of a field inside a type.
+
+         Note that, unlike most intrinsics, this is safe to call;
+         it does not require an `unsafe` block.
+         Therefore, implementations must not require the user to uphold
+         any safety invariants.
+
+         This intrinsic can only be evaluated at compile-time, and should only appear in
+         constants or inline const blocks.
+
+         The stabilized version of this intrinsic is [`core::mem::offset_of`].
+         This intrinsic is also a lang item so `offset_of!` can desugar to calls to it.
+      ]} *)
+  val offset_of :
+    t:Types.ty ->
+    variant:[< Typed.T.sint ] Typed.t ->
+    field:[< Typed.T.sint ] Typed.t ->
+    Typed.T.sint Typed.t ret
+
+  (** {@markdown[
+        Returns whether we should perform some overflow-checking at runtime. This eventually evaluates to
+         `cfg!(overflow_checks)`, but behaves different from `cfg!` when mixing crates built with different
+         flags: if the crate has overflow checks enabled or carries the `#[rustc_inherit_overflow_checks]`
+         attribute, evaluation is delayed until monomorphization (or until the call gets inlined into
+         a crate that does not delay evaluation further); otherwise it can happen any time.
+
+         The common case here is a user program built with overflow_checks linked against the distributed
+         sysroot which is built without overflow_checks but with `#[rustc_inherit_overflow_checks]`.
+         For code that gets monomorphized in the user crate (i.e., generic functions and functions with
+         `#[inline]`), gating assertions on `overflow_checks()` rather than `cfg!(overflow_checks)` means that
+         assertions are enabled whenever the *user crate* has overflow checks enabled. However if the
+         user has overflow checks disabled, the checks will still get optimized out.
+      ]} *)
+  val overflow_checks : Typed.T.sbool Typed.t ret
+
+  (** {@markdown[
         Raises an `f128` to an `f128` power.
 
          The stabilized version of this intrinsic is
@@ -1580,71 +1723,55 @@ module M : (State : State_intf.S) -> sig
 
   (** {@markdown[
         The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
-         if supported; otherwise, it is a no-op.
+         for the given address if supported; otherwise, it is a no-op.
          Prefetches have no effect on the behavior of the program but can change its performance
          characteristics.
 
-         The `locality` argument must be a constant integer and is a temporal locality specifier
-         ranging from (0) - no locality, to (3) - extremely local keep in cache.
+         The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
+         to (3) - extremely local keep in cache.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val prefetch_read_data :
-    t:Types.ty ->
-    data:full_ptr ->
-    locality:[< Typed.T.sint ] Typed.t ->
-    unit ret
+  val prefetch_read_data : t:Types.ty -> data:full_ptr -> unit ret
 
   (** {@markdown[
         The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
-         if supported; otherwise, it is a no-op.
+         for the given address if supported; otherwise, it is a no-op.
          Prefetches have no effect on the behavior of the program but can change its performance
          characteristics.
 
-         The `locality` argument must be a constant integer and is a temporal locality specifier
-         ranging from (0) - no locality, to (3) - extremely local keep in cache.
+         The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
+         to (3) - extremely local keep in cache.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val prefetch_read_instruction :
-    t:Types.ty ->
-    data:full_ptr ->
-    locality:[< Typed.T.sint ] Typed.t ->
-    unit ret
+  val prefetch_read_instruction : t:Types.ty -> data:full_ptr -> unit ret
 
   (** {@markdown[
         The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
-         if supported; otherwise, it is a no-op.
+         for the given address if supported; otherwise, it is a no-op.
          Prefetches have no effect on the behavior of the program but can change its performance
          characteristics.
 
-         The `locality` argument must be a constant integer and is a temporal locality specifier
-         ranging from (0) - no locality, to (3) - extremely local keep in cache.
+         The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
+         to (3) - extremely local keep in cache.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val prefetch_write_data :
-    t:Types.ty ->
-    data:full_ptr ->
-    locality:[< Typed.T.sint ] Typed.t ->
-    unit ret
+  val prefetch_write_data : t:Types.ty -> data:full_ptr -> unit ret
 
   (** {@markdown[
         The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
-         if supported; otherwise, it is a no-op.
+         for the given address if supported; otherwise, it is a no-op.
          Prefetches have no effect on the behavior of the program but can change its performance
          characteristics.
 
-         The `locality` argument must be a constant integer and is a temporal locality specifier
-         ranging from (0) - no locality, to (3) - extremely local keep in cache.
+         The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
+         to (3) - extremely local keep in cache.
 
          This intrinsic does not have a stable counterpart.
       ]} *)
-  val prefetch_write_instruction :
-    t:Types.ty ->
-    data:full_ptr ->
-    locality:[< Typed.T.sint ] Typed.t ->
-    unit ret
+  val prefetch_write_instruction : t:Types.ty -> data:full_ptr -> unit ret
 
   (** {@markdown[
         See documentation of `<*const T>::guaranteed_eq` for details.
@@ -1934,14 +2061,19 @@ module M : (State : State_intf.S) -> sig
          More specifically, this is the offset in bytes between successive
          items of the same type, including alignment padding.
 
-         The stabilized version of this intrinsic is [`size_of`].
+         Note that, unlike most intrinsics, this can only be called at compile-time
+         as backends do not have an implementation for it. The only caller (its
+         stable counterpart) wraps this intrinsic call in a `const` block so that
+         backends only see an evaluated constant.
+
+         The stabilized version of this intrinsic is [`core::mem::size_of`].
       ]} *)
   val size_of : t:Types.ty -> Typed.T.sint Typed.t ret
 
   (** {@markdown[
         The size of the referenced value in bytes.
 
-         The stabilized version of this intrinsic is [`size_of_val`].
+         The stabilized version of this intrinsic is [`core::mem::size_of_val`].
 
          # Safety
 
@@ -2108,7 +2240,7 @@ module M : (State : State_intf.S) -> sig
          // Crucially, we `as`-cast to a raw pointer before `transmute`ing to a function pointer.
          // This avoids an integer-to-pointer `transmute`, which can be problematic.
          // Transmuting between raw pointers and function pointers (i.e., two pointer types) is fine.
-         let pointer = foo as *const ();
+         let pointer = foo as fn() -> i32 as *const ();
          let function = unsafe {
              std::mem::transmute::<*const (), fn() -> i32>(pointer)
          };
@@ -2255,12 +2387,9 @@ module M : (State : State_intf.S) -> sig
          // in terms of converting the original inner type (`&i32`) to the new one (`Option<&i32>`),
          // this has all the same caveats. Besides the information provided above, also consult the
          // [`from_raw_parts`] documentation.
+         let (ptr, len, capacity) = v_clone.into_raw_parts();
          let v_from_raw = unsafe {
-             // Ensure the original vector is not dropped.
-             let mut v_clone = std::mem::ManuallyDrop::new(v_clone);
-             Vec::from_raw_parts(v_clone.as_mut_ptr() as *mut Option<&i32>,
-                                 v_clone.len(),
-                                 v_clone.capacity())
+             Vec::from_raw_parts(ptr.cast::<*mut Option<&i32>>(), len, capacity)
          };
          ```
 
@@ -2481,6 +2610,49 @@ module M : (State : State_intf.S) -> sig
   val unchecked_div : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
   (** {@markdown[
+        Funnel Shift left.
+
+         Concatenates `a` and `b` (with `a` in the most significant half),
+         creating an integer twice as wide. Then shift this integer left
+         by `shift`), and extract the most significant half. If `a` and `b`
+         are the same, this is equivalent to a rotate left operation.
+
+         It is undefined behavior if `shift` is greater than or equal to the
+         bit size of `T`.
+
+         Safe versions of this intrinsic are available on the integer primitives
+         via the `funnel_shl` method. For example, [`u32::funnel_shl`].
+      ]} *)
+  val unchecked_funnel_shl :
+    t:Types.ty ->
+    a:rust_val ->
+    b:rust_val ->
+    shift:[< Typed.T.sint ] Typed.t ->
+    rust_val ret
+
+  (** {@markdown[
+        Funnel Shift right.
+
+         Concatenates `a` and `b` (with `a` in the most significant half),
+         creating an integer twice as wide. Then shift this integer right
+         by `shift` (taken modulo the bit size of `T`), and extract the
+         least significant half. If `a` and `b` are the same, this is equivalent
+         to a rotate right operation.
+
+         It is undefined behavior if `shift` is greater than or equal to the
+         bit size of `T`.
+
+         Safer versions of this intrinsic are available on the integer primitives
+         via the `funnel_shr` method. For example, [`u32::funnel_shr`]
+      ]} *)
+  val unchecked_funnel_shr :
+    t:Types.ty ->
+    a:rust_val ->
+    b:rust_val ->
+    shift:[< Typed.T.sint ] Typed.t ->
+    rust_val ret
+
+  (** {@markdown[
         Returns the result of an unchecked multiplication, resulting in
          undefined behavior when `x * y > T::MAX` or `x * y < T::MIN`.
 
@@ -2561,21 +2733,37 @@ module M : (State : State_intf.S) -> sig
         Loads an argument of type `T` from the `va_list` `ap` and increment the
          argument `ap` points to.
 
-         FIXME: document safety requirements
+         # Safety
+
+         This function is only sound to call when:
+
+         - there is a next variable argument available.
+         - the next argument's type must be ABI-compatible with the type `T`.
+         - the next argument must have a properly initialized value of type `T`.
+
+         Calling this function with an incompatible type, an invalid value, or when there
+         are no more variable arguments, is unsound.
       ]} *)
   val va_arg : t:Types.ty -> ap:full_ptr -> rust_val ret
 
   (** {@markdown[
         Copies the current location of arglist `src` to the arglist `dst`.
 
-         FIXME: document safety requirements
+         # Safety
+
+         You must check the following invariants before you call this function:
+
+         - `dest` must be non-null and point to valid, writable memory.
+         - `dest` must not alias `src`.
       ]} *)
   val va_copy : dest:full_ptr -> src:full_ptr -> unit ret
 
   (** {@markdown[
         Destroy the arglist `ap` after initialization with `va_start` or `va_copy`.
 
-         FIXME: document safety requirements
+         # Safety
+
+         `ap` must not be used to access variable arguments after this call.
       ]} *)
   val va_end : ap:full_ptr -> unit ret
 
