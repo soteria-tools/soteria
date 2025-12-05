@@ -4,7 +4,8 @@ open Charon_util
 type t =
   [ `DoubleFree  (** Tried freeing the same allocation twice *)
   | `InvalidFree  (** Tried freeing memory at a non-0 offset *)
-  | `MemoryLeak  (** Dynamically allocated memory was not freed *)
+  | `MemoryLeak of Meta.span_data list
+    (** Dynamically allocated memory was not freed *)
   | `MisalignedPointer of
     Typed.T.nonzero Typed.t * Typed.T.nonzero Typed.t * Typed.T.sint Typed.t
     (** Tried accessing memory with a misaligned pointer
@@ -17,6 +18,7 @@ type t =
     (** Tried calling a function pointer with a non-0 offset *)
   | `NotAFnPointer
     (** Tried calling a function pointer, but it doesn't represent a function *)
+  | `AccessedFnPointer  (** Tried accessing a function pointer's pointee *)
   | `InvalidFnArgCount of int * int
     (** Invalid argument count for function (function pointers only)
         [(expected, received)] *)
@@ -38,6 +40,9 @@ type t =
   | `UBPointerArithmetic  (** Arithmetics on two pointers *)
   | `UBPointerComparison
     (** Comparison of pointers with different provenance *)
+  | `UBIntToPointerNoProvenance of Typed.T.sint Typed.t
+    (** Integer to pointer cast with no provenance *)
+  | `UBIntToPointerStrict  (** Integer to pointer cast with strict provenance *)
   | `UBTransmute of string
     (** Invalid transmute, e.g. null reference, wrong enum discriminant *)
   | `AliasingError  (** Tree borrow violation that lead to UB *)
@@ -61,6 +66,7 @@ let is_unwindable : [> t ] -> bool = function
   | _ -> false
 
 let pp ft : [> t ] -> unit = function
+  | `AccessedFnPointer -> Fmt.string ft "Accessed function pointer's pointee"
   | `AliasingError -> Fmt.string ft "Aliasing error"
   | `Breakpoint -> Fmt.string ft "Breakpoint hit"
   | `DeadVariable -> Fmt.string ft "Dead variable accessed"
@@ -81,7 +87,8 @@ let pp ft : [> t ] -> unit = function
   | `InvalidFree -> Fmt.string ft "Invalid free"
   | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
-  | `MemoryLeak -> Fmt.string ft "Memory leak"
+  | `MemoryLeak span ->
+      Fmt.pf ft "Memory leak at %a" Fmt.(list ~sep:comma pp_span_data) span
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
   | `MisalignedPointer (exp, got, ofs) ->
@@ -102,16 +109,21 @@ let pp ft : [> t ] -> unit = function
   | `UBDanglingPointer -> Fmt.string ft "UB: dangling pointer"
   | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
   | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
+  | `UBIntToPointerNoProvenance addr ->
+      Fmt.pf ft "UB: int to pointer without exposed address: %a" Typed.ppa addr
+  | `UBIntToPointerStrict ->
+      Fmt.string ft
+        "Attempted ot cast integer to pointer with strict provenance"
   | `UBTransmute msg -> Fmt.pf ft "UB: Transmute: %s" msg
   | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
   | `UseAfterFree -> Fmt.string ft "Use after free"
 
 let pp_err_and_call_trace ft (err, call_trace) =
   Fmt.pf ft "@[%a with trace@ %a@]" pp err
-    (Soteria.Terminal.Call_trace.pp Charon.Meta.pp_span)
+    (Soteria.Terminal.Call_trace.pp pp_span_data)
     call_trace
 
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
-  | `MemoryLeak -> Warning
+  | `MemoryLeak _ -> Warning
   | e when is_unwindable e -> Error
   | _ -> Bug

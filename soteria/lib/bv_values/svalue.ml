@@ -883,6 +883,7 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l - r)
     | _, BitVec z when Z.equal z Z.zero -> v1
     | BitVec z, _ when Z.equal z Z.zero -> neg v2
+    | _, _ when equal v1 v2 -> zero (size_of v1.node.ty)
     (* BAD PERF:!!!! *)
     | _, Unop (Neg, v2) -> add v1 v2
     | Binop (Sub _, ({ node = { kind = BitVec _; _ }; _ } as c1), s), BitVec _

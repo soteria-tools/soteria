@@ -6,17 +6,38 @@ open Typed.Syntax
 open Typed.Infix
 open T
 
+(** A map to store information on "decayed" pointers, namely mapping from
+    locations to integers (their decayed) value.
+
+    It exposes two functions: [decay], to convert a location to an integer
+    (given the size and alignment of its allocation), and [from_exposed] which
+    does the reverse operation. Importantly, while [decay] is total,
+    [from_exposed] is partial: if a provenance cannot be guessed from the
+    integer, [None] is returned. *)
 module type DecayMapS = sig
   type t
 
   val pp : Format.formatter -> t -> unit
 
+  (** Decays the given location into an integer, updating the decay map
+      accordingly. If [expose] is true, the provenance is marked as exposed, and
+      can be retrieved later with [from_exposed]. Returns the decayed integer,
+      along with the updated decay map. *)
   val decay :
+    expose:bool ->
     size:[< sint ] Typed.t ->
     align:[< nonzero ] Typed.t ->
     [< T.sloc ] Typed.t ->
     t option ->
     (T.sint Typed.t * t option) Rustsymex.t
+
+  (** Tries finding, for the given integer, the matching provenance in the decay
+      map. If found, it returns that provenance, along with the exposed address
+      for that allocation at offset 0. Otherwise returns [None]. *)
+  val from_exposed :
+    [< sint ] Typed.t ->
+    t option ->
+    ((T.sloc Typed.t * T.sint Typed.t) option * t option) Rustsymex.t
 end
 
 module DecayMap : DecayMapS = struct
@@ -32,33 +53,62 @@ module DecayMap : DecayMapS = struct
 
   module SPmap = Soteria.Sym_states.Pmap.Make (Rustsymex) (StateKey)
 
-  type t = T.sint Typed.t SPmap.t
+  type data = { address : T.sint Typed.t; exposed : bool }
+  [@@deriving show { with_path = false }]
 
-  let pp = SPmap.pp Typed.ppa
+  type t = data SPmap.t
 
-  let decay ~size ~align (loc : [< T.sloc ] Typed.t) st =
+  let pp = SPmap.pp pp_data
+
+  let decay ~expose ~size ~align (loc : [< T.sloc ] Typed.t) st =
     if%sat Typed.Ptr.is_null_loc loc then return (Usize.(0s), st)
     else
       let+ res =
         SPmap.wrap
           (function
-            | Some decayed -> Result.ok (decayed, Some decayed)
+            | Some { address; exposed } ->
+                Result.ok
+                  (address, Some { address; exposed = exposed || expose })
             | None ->
-                let* loc_int = nondet (Typed.t_usize ()) in
+                let* addr = nondet (Typed.t_usize ()) in
                 let isize_max = Layout.max_value_z (TInt Isize) in
                 let* () =
                   Rustsymex.assume
                     [
-                      (loc_int %@ align ==@ Usize.(0s));
-                      Usize.(0s) <@ loc_int;
-                      loc_int <@ Typed.BitVec.usize isize_max -!@ size;
+                      (addr %@ align ==@ Usize.(0s));
+                      Usize.(0s) <@ addr;
+                      addr <@ Typed.BitVec.usize isize_max -!@ size;
                     ]
                 in
-                Result.ok (loc_int, Some loc_int))
+                let info = { address = addr; exposed = false } in
+                Result.ok (addr, Some info))
           (loc :> T.sloc Typed.t)
           st
       in
       Soteria.Symex.Compo_res.get_ok res
+
+  let from_exposed (loc_int : [< sint ] Typed.t) st =
+    (* UX: we only consider the first one; this is more or less correct, as per the
+       documentation of [with_exposed_provenance]: "The provenance of the returned pointer is
+       that of some pointer that was previously exposed"
+
+       See https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html
+       *)
+    let usize_ty = Typed.t_usize () in
+    let bindings = SPmap.M.bindings (SPmap.of_opt st) in
+    let binding =
+      Typed.iter_vars loc_int
+      |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
+      |> Iter.filter_map (fun (var, ty) ->
+             let v = Typed.mk_var var ty in
+             List.find_opt
+               (fun (_, { address; exposed }) ->
+                 exposed && Typed.equal v address)
+               bindings)
+      |> Iter.map (fun (loc, { address; _ }) -> (loc, address))
+      |> Iter.to_opt
+    in
+    return (binding, st)
 end
 
 module DecayMapMonad = struct
@@ -80,7 +130,7 @@ module type S = sig
 
   val pp : t Fmt.t
   val null_ptr : unit -> t
-  val null_ptr_of : sint Typed.t -> t
+  val null_ptr_of : [< sint ] Typed.t -> t
 
   (** Pointer equality *)
   val sem_eq : t -> t -> sbool Typed.t
@@ -118,8 +168,15 @@ module type S = sig
     t ->
     (t, [> `UBDanglingPointer ], 'a) Result.t
 
-  (** Decay a pointer into an integer value, losing provenance. *)
+  (** Decay a pointer into an integer value, losing provenance.
+      {b This does not expose the address of the allocation; for that, use
+         [expose]} *)
   val decay : t -> [> sint ] Typed.t DecayMapMonad.t
+
+  (** Decay a pointer into an integer value, exposing the address of the
+      allocation, allowing it to be retrieved with [DecayMapS.from_exposed]
+      later. *)
+  val expose : t -> [> sint ] Typed.t DecayMapMonad.t
 
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> [> sint ] Typed.t
@@ -137,7 +194,7 @@ end
 
 type arithptr_t = {
   ptr : T.sptr Typed.t;
-  tag : Tree_borrow.tag;
+  tag : Tree_borrow.tag option;
   align : T.nonzero Typed.t;
   size : T.sint Typed.t;
 }
@@ -147,18 +204,20 @@ type arithptr_t = {
 module ArithPtr : S with type t = arithptr_t = struct
   type t = arithptr_t = {
     ptr : T.sptr Typed.t;
-    tag : Tree_borrow.tag;
+    tag : Tree_borrow.tag option;
     align : T.nonzero Typed.t;
     size : T.sint Typed.t;
   }
 
   let pp fmt { ptr; tag; _ } =
-    Fmt.pf fmt "%a[%a]" Typed.ppa ptr Tree_borrow.pp_tag tag
+    Fmt.pf fmt "%a[%a]" Typed.ppa ptr
+      Fmt.(option ~none:(any "*") Tree_borrow.pp_tag)
+      tag
 
   let null_ptr () =
     {
       ptr = Typed.Ptr.null ();
-      tag = Tree_borrow.zero;
+      tag = None;
       align = Usize.(1s);
       size = Usize.(0s);
     }
@@ -212,10 +271,15 @@ module ArithPtr : S with type t = arithptr_t = struct
     let off = Layout.Fields_shape.offset_of field fields in
     offset ~signed:false ptr (Typed.BitVec.usizei off)
 
-  let decay { ptr; align; size; _ } decay_map =
+  let[@inline] _decay ~expose { ptr; align; size; _ } decay_map =
     let loc, ofs = Typed.Ptr.decompose ptr in
-    let+ loc_int, decay_map = DecayMap.decay ~size ~align loc decay_map in
-    (loc_int +!@ ofs, decay_map)
+    let+ loc_int, decay_map =
+      DecayMap.decay ~expose ~size ~align loc decay_map
+    in
+    (loc_int +!!@ ofs, decay_map)
+
+  let decay p = _decay ~expose:false p
+  let expose p = _decay ~expose:true p
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
     let open DecayMapMonad.Syntax in

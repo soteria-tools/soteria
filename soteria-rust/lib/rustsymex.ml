@@ -2,10 +2,10 @@ include
   Soteria.Symex.Make
     (struct
       module Range = struct
-        type t = Charon.Meta.span
+        type t = Charon.Meta.span_data
 
         let to_yojson _ = `Null
-        let of_yojson _ = Ok Charon_util.empty_span
+        let of_yojson _ = Ok Charon_util.empty_span_data
       end
     end)
     (Bv_solver.Z3_solver)
@@ -21,7 +21,7 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
   in
   aux elements
 
-let current_loc = ref Charon_util.empty_span
+let current_loc = ref Charon_util.empty_span_data
 let get_loc () = !current_loc
 
 let with_loc ~loc f =

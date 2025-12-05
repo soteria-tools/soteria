@@ -829,6 +829,11 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
     | _ -> false
   in
   match (ty1, ty2) with
+  (* Hack: &dyn is always compatible  *)
+  | TDynTrait _, _
+  | ( (TRef (_, TDynTrait _, _) | TRawPtr (TDynTrait _, _)),
+      (TRef (_, _, _) | TRawPtr (_, _)) ) ->
+      true
   (* Refs and raw pointers are ABI-compatible if they have the same metadata type *)
   | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
     ->

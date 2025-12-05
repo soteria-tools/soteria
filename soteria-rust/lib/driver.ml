@@ -6,7 +6,6 @@ open Color
 module Wpst_interp = Interp.Make (State)
 module Compo_res = Soteria.Symex.Compo_res
 open Syntaxes.FunctionWrap
-open Charon
 
 (** An error happened at runtime during execution *)
 exception ExecutionError of string
@@ -100,7 +99,7 @@ let print_outcomes_summary outcomes =
     (list ~sep:(any "@\n") pp_outcome)
     outcomes
 
-let print_stats (stats : Meta.span Stats.stats) =
+let print_stats (stats : 'a Stats.stats) =
   let open Fmt in
   let entries =
     [
@@ -162,7 +161,9 @@ let exec_crate
     if not entry.expect_error then branches
     else
       let open Compo_res in
-      let trace = Call_trace.singleton ~loc:entry.fun_decl.item_meta.span () in
+      let trace =
+        Call_trace.singleton ~loc:entry.fun_decl.item_meta.span.data ()
+      in
       let oks, errors =
         branches
         |> List.partition_map @@ function
