@@ -599,13 +599,13 @@ module M (State : State_intf.S) = struct
           let if_ovf =
             if not signed then max else Typed.ite (a <$@ BV.mki_lit t 0) min max
           in
-          Typed.ite ovf if_ovf (a +!@ b)
+          Typed.ite ovf if_ovf (a +!!@ b)
       | Sub _ ->
           let ovf = BV.sub_overflows ~signed a b in
           let if_ovf =
             if not signed then min else Typed.ite (a <$@ b) min max
           in
-          Typed.ite ovf if_ovf (a -!@ b)
+          Typed.ite ovf if_ovf (a -!!@ b)
       | _ -> failwith "Unreachable: not add or sub?"
     in
     ok (Int res)

@@ -3,7 +3,6 @@
 
 /// A classic overflow error when checking before adding two numbers
 #[kani::proof]
-#[kani::should_panic]
 fn overflow() -> u32 {
     let a: u32 = kani::any();
     let b: u32 = kani::any();
@@ -28,7 +27,6 @@ fn overflow_fixed() -> u32 {
 
 /// Soteria Rust can detect memory leaks, caused by dynamically allocated memory
 #[kani::proof]
-#[kani::should_panic]
 fn memory_leak() {
     let allocated = Box::new(11);
     std::mem::forget(allocated);
@@ -55,7 +53,6 @@ impl<T: Arbitrary> Arbitrary for MyOption<T> {
 
 /// Soteria Rust can reliably detected uninitialised memory access
 #[kani::proof]
-#[kani::should_panic]
 fn uninit_access() {
     unsafe {
         let any_option: MyOption<u32> = kani::any();
