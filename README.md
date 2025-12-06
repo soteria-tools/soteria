@@ -50,14 +50,14 @@ You may add `--help` to either of these commands to see all available options.
 
 To use Soteria Rust you must have a frontend installed; we support [Obol](https://github.com/soteria-tools/obol) (recommended) and [Charon](https://github.com/AeneasVerif/charon).
 
-To use [Obol](https://github.com/soteria-tools/obol), **you must add the `--obol` flag to `soteria-rust` commands**, and have the `obol` command on your path. To do so:
-1. clone Obol
+[Obol](https://github.com/soteria-tools/obol) is the default, to use it you must have it installed and and have the `obol` command on your path. To do so:
+1. clone Obol (the right version is indicated [here](https://github.com/soteria-tools/soteria/blob/main/.github/workflows/ci.yml#L20-L22))
 2. run `make build`
 3. add `obol/bin` to your path (e.g. `export PATH=$PATH:/path/to/obol/bin`)
 
 
-To use [Charon](https://github.com/AeneasVerif/charon), you must have the `charon` command on your path. To do so:
-1. clone Charon
+To use [Charon](https://github.com/AeneasVerif/charon), you must specify `--frontend charon` and have the `charon` command on your path. To do so:
+1. clone Charon (the right version is indicated [here](https://github.com/soteria-tools/soteria/blob/main/soteria-rust.opam#L55))
 2. run `make build-charon-rust`
 3. add `charon/bin` to your path (e.g. `export PATH=$PATH:/path/to/charon/bin`)
 
@@ -69,11 +69,10 @@ You can also test Soteria Rust on the Miri test suite: clone [Miri](https://gith
 
 ## Limitations
 
-Soteria-rust supports a large subset of Rust, but is still in development. Some currently unsupported features include:
+Soteria Rust supports a large subset of Rust, but is still in development. Some currently unsupported features include:
 - Concurrency
 - Inline assembly
 - SIMD intrinsics
-- Trait objects (`dyn Trait`)
 
 Currently, and unlike Soteria-C, Soteria-Rust has neither IDE integration or compositionality support (all tests must instead start from an entry point). We are actively working on the latter!
 
