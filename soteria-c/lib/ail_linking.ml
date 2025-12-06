@@ -113,12 +113,12 @@ let rec free_syms_expr acc expr =
         acc eopts
   | AilEunion (_ty_sym, _field, e_opt) ->
       Option.fold ~none:acc ~some:(free_syms_expr acc) e_opt
-  | AilEgeneric (e, assocs) ->
+  | AilEgeneric (e, _, assocs) ->
       let acc = free_syms_expr acc e in
       List.fold_left
         (fun acc assoc ->
           match assoc with
-          | AilGAtype (_, e) | AilGAdefault e -> free_syms_expr acc e)
+          | AilGAtype (_, _, e) | AilGAdefault e -> free_syms_expr acc e)
         acc assocs
   | AilEgcc_statement (bindings, stmts) ->
       let exclude = set_of_bindings bindings in

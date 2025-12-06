@@ -351,7 +351,7 @@ let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
       let precision = precision fty in
       let* res = Csymex.nondet (Typed.t_float precision) in
       Csymex.return (res :> Typed.T.cval Typed.t)
-  | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->
+  | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ | Byte ->
       Csymex.not_impl "nondet_c_ty: unsupported type"
 
 let nondet_c_ty_aggregate (ty : ctype) : Agv.t Csymex.t =
