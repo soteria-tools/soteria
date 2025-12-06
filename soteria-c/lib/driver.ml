@@ -316,6 +316,7 @@ let exec_and_print log_config term_config solver_config config includes
         result.res
     in
 
+    let has_error = ref false in
     ListLabels.iter errors
       ~f:
         (let open Error.Diagnostic in
@@ -323,13 +324,17 @@ let exec_and_print log_config term_config solver_config config includes
          | Soteria.Symex.Or_gave_up.E (err, trace) ->
              print_diagnostic ~fid:entry_point ~call_trace:trace ~error:err
          | Gave_up msg ->
+             has_error := true;
              print_diagnostic ~fid:entry_point ~call_trace:Call_trace.empty
                ~error:(`Gave_up msg));
     let success = List.is_empty errors in
     Fmt.pr "@.Executed %d statements" result.stats.steps_number;
     if success then
       Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_ok "Verification Success!"
-    else Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!")
+    else begin
+      Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!";
+        exit (if !has_error then 2 else 13)
+    end)
 
 let dump_summaries results =
   match (Config.current ()).dump_summaries_file with
