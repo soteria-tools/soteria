@@ -1111,7 +1111,7 @@ module Make (State : State_intf.S) = struct
     | AilEcond (_, None, _) -> not_impl "GNU ?:"
     | AilEassert _
     | AilEoffsetof (_, _)
-    | AilEgeneric (_, _)
+    | AilEgeneric (_, _, _)
     | AilEunion (_, _, _)
     | AilEcompound (_, _, _)
     | AilEbuiltin _ | AilEstr _ | AilEsizeof_expr _
