@@ -24,6 +24,7 @@ from parselog import (
     TestCategoriser,
     parse_per_test,
 )
+from test_exclusions import KNOWN_ISSUES, SKIPPED_TESTS
 
 
 # Execute a test, return the categorisation and the elapsed time
