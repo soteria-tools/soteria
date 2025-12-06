@@ -119,6 +119,10 @@ module M (State : State_intf.S) = struct
       State.error `FailedAssert state
     else Result.ok (Agv.void, state)
 
+  let assert_fail ~(args : Agv.t list) state =
+    ignore args;
+    State.error `FailedAssert state
+
   let assume_ ~(args : Agv.t list) state =
     let* to_assume, _ =
       match args with
@@ -296,8 +300,25 @@ module M (State : State_intf.S) = struct
         | "__builtin___memcpy_chk" ->
             (* See definition of this builtin, the last argument is not useful to us. *)
             Some (memcpy, Some (( <> ) 3))
-        | "__soteria___nondet_int" -> Some (nondet_int_fun, None)
+                | "__soteria___nondet_int"
+        | "__VERIFIER_nondet_bool"
+        | "__VERIFIER_nondet_char"
+        | "__VERIFIER_nondet_uchar"
+        | "__VERIFIER_nondet_short"
+        | "__VERIFIER_nondet_ushort"
+        | "__VERIFIER_nondet_int"
+        | "__VERIFIER_nondet_uint"
+        | "__VERIFIER_nondet_int128"
+        | "__VERIFIER_nondet_uint128"
+        | "__VERIFIER_nondet_charp"
+        | "__VERIFIER_nondet_long"
+        | "__VERIFIER_nondet_ulong"
+        | "__VERIFIER_nondet_longlong"
+        | "__VERIFIER_nondet_ulonglong"
+        | "__VERIFIER_nondet_float"
+        | "__VERIFIER_nondet_double" -> Some (nondet_int_fun, None)
         | "__soteria___assert" -> Some (assert_, None)
+        | "__assert_fail" -> Some (assert_fail, None)
         | "__CPROVER_assert" ->
             (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
             with_cbmc_support (assert_, Some (( == ) 0))
