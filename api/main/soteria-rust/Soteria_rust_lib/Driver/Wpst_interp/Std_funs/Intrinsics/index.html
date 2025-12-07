@@ -69,6 +69,19 @@ let search_urls = ['../../../../../db.js','../../../../../../sherlodoc.js'];
   <span>unit <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit * unit * <a href="../../../../State/index.html#type-t">State.t</a>, <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>, <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
+    <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-autodiff"><a href="#val-autodiff" class="anchor"></a><code><span><span class="keyword">val</span> autodiff : 
+  <span><span class="label">t_f</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">g</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">r</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">f</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">df</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">args</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-bitreverse"><a href="#val-bitreverse" class="anchor"></a><code><span><span class="keyword">val</span> bitreverse : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">x</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -180,6 +193,19 @@ let search_urls = ['../../../../../db.js','../../../../../../sherlodoc.js'];
   <span>unit <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit * unit * <a href="../../../../State/index.html#type-t">State.t</a>, <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>, <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
+    <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-const_eval_select"><a href="#val-const_eval_select" class="anchor"></a><code><span><span class="keyword">val</span> const_eval_select : 
+  <span><span class="label">arg</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">f</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">g</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ret</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_arg</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_called_in_const</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_called_at_rt</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-const_make_global"><a href="#val-const_make_global" class="anchor"></a><code><span><span class="keyword">val</span> const_make_global : 
   <span><span class="label">ptr</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <span class="arrow">&#45;&gt;</span></span>
@@ -199,16 +225,10 @@ let search_urls = ['../../../../../db.js','../../../../../../sherlodoc.js'];
     <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_check_requires"><a href="#val-contract_check_requires" class="anchor"></a><code><span><span class="keyword">val</span> contract_check_requires : 
   <span><span class="label">c</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">arg1</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">cond</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit * unit * <a href="../../../../State/index.html#type-t">State.t</a>, <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>, <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
-    <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_checks"><a href="#val-contract_checks" class="anchor"></a><code><span><span class="keyword">val</span> contract_checks : 
-  <span>unit <span class="arrow">&#45;&gt;</span></span>
-  <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sbool">Soteria_rust_lib.Typed.T.sbool</a> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
-    <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>,
-    <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-copy"><a href="#val-copy" class="anchor"></a><code><span><span class="keyword">val</span> copy : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">src</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -900,6 +920,21 @@ let search_urls = ['../../../../../db.js','../../../../../../sherlodoc.js'];
   <span><span>(<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
     <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>,
     <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
+    <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-offset_of"><a href="#val-offset_of" class="anchor"></a><code><span><span class="keyword">val</span> offset_of : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">variant</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">field</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
+    <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-overflow_checks"><a href="#val-overflow_checks" class="anchor"></a><code><span><span class="keyword">val</span> overflow_checks : 
+  <span>unit <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sbool">Soteria_rust_lib.Typed.T.sbool</a> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-powf128"><a href="#val-powf128" class="anchor"></a><code><span><span class="keyword">val</span> powf128 : 
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -967,28 +1002,24 @@ let search_urls = ['../../../../../db.js','../../../../../../sherlodoc.js'];
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_data"><a href="#val-prefetch_read_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_data : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">data</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">locality</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit * unit * <a href="../../../../State/index.html#type-t">State.t</a>, <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>, <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_instruction"><a href="#val-prefetch_read_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_instruction : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">data</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">locality</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit * unit * <a href="../../../../State/index.html#type-t">State.t</a>, <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>, <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_data"><a href="#val-prefetch_write_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_data : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">data</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">locality</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit * unit * <a href="../../../../State/index.html#type-t">State.t</a>, <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>, <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
     <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_instruction"><a href="#val-prefetch_write_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_instruction : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">data</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">locality</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit * unit * <a href="../../../../State/index.html#type-t">State.t</a>, <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>, <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
@@ -1373,6 +1404,26 @@ let search_urls = ['../../../../../db.js','../../../../../../sherlodoc.js'];
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">x</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
+    <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-unchecked_funnel_shl"><a href="#val-unchecked_funnel_shl" class="anchor"></a><code><span><span class="keyword">val</span> unchecked_funnel_shl : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">a</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">b</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">shift</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <span><a href="../../../../Error/index.html#type-t">Error.t</a> <a href="../../../../State/index.html#type-err">State.err</a></span> * <a href="../../../../State/index.html#type-t">State.t</a>,
+    <a href="../../../../State/index.html#type-serialized">State.serialized</a>)</span>
+    <a href="../../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-unchecked_funnel_shr"><a href="#val-unchecked_funnel_shr" class="anchor"></a><code><span><span class="keyword">val</span> unchecked_funnel_shr : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">a</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">b</span>:<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">shift</span>:<span><span>[&lt; <a href="../../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../../../State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span><a href="../../../../State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../../Rust_val/index.html#type-t">Rust_val.t</a></span> * unit * <a href="../../../../State/index.html#type-t">State.t</a>,
