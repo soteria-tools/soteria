@@ -33,6 +33,7 @@ path = [
   "NOTICE",              # Other files
   "THIRD_PARTY_NOTICES",
   "CONTRIBUTING.md",
+  "CLA.md",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = "2025 Soteria Team"
