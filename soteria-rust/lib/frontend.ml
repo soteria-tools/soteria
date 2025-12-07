@@ -118,15 +118,24 @@ module Cmd = struct
     in
     rustc @ sysroot
 
+  let is_crate_type_flag = String.starts_with ~prefix:"--crate-type"
+  let is_edition_flag = String.starts_with ~prefix:"--edition"
+
   let flags_for_cargo =
-    List.filter (Fun.negate (String.starts_with ~prefix:"--edition"))
+    List.filter (fun s -> not (is_edition_flag s || is_crate_type_flag s))
 
   let flags_as_rustc_env args =
     if List.is_empty args then [] else [ "RUSTFLAGS=" ^ String.concat " " args ]
 
   let build_cmd ~mode { charon; obol; features; rustc } =
     let features = List.concat_map (fun f -> [ "--cfg"; f ]) features in
-    let rustc = rustc @ current_rustc_flags () @ features in
+    let user_specified = current_rustc_flags () in
+    let rustc =
+      if List.exists is_crate_type_flag user_specified then
+        List.filter (Fun.negate is_crate_type_flag) rustc
+      else rustc
+    in
+    let rustc = rustc @ user_specified @ features in
     let cmd, args =
       match !Config.current.frontend with
       | Obol -> ("obol", obol)
@@ -135,9 +144,9 @@ module Cmd = struct
     match mode with
     | Rustc ->
         (* If these arguments are passed to the command line, we need to quote them
-       appropriately (since crate-attr) has parenthesis. We don't need to do this for
-       Cargo since they go in the environment, and adding quotes there would make
-       them wrong! This is lovely!  *)
+           appropriately (since crate-attr) has parenthesis. We don't need to do this for
+           Cargo since they go in the environment, and adding quotes there would make
+           them wrong! This is lovely!  *)
         let rustc =
           List.map
             (fun arg ->
@@ -263,8 +272,7 @@ let default =
       ~rustc:
         [
           (* i.e. not always a binary! *)
-          "--crate-type";
-          "lib";
+          "--crate-type=lib";
           "-Z";
           "unstable-options";
           (* No warning *)
