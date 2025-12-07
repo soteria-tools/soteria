@@ -81,4 +81,8 @@ Currently, and unlike Soteria-C, Soteria-Rust has neither IDE integration or com
 
 Soteria and derived tools in this repository are under Apache-2.0 license, copyright Soteria Team 2025.
 
-The Soteria logo is a trademark of the Soteria Team.
+The Soteria logo is a trademark of the Soteria Tools Ltd.
+
+# Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md), and make sure you have read the [Contributor License Agreement](./CLA.md)
