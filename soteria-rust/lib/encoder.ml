@@ -404,7 +404,9 @@ module Make (Sptr : Sptr.S) = struct
                    bytes (i.e. the intersection of the padding bytes of all fields). It is
                    quite painful to actually calculate these padding bytes so we just copy
                    the whole thing for now.
-                   See https://github.com/rust-lang/unsafe-code-guidelines/issues/518 *)
+                   See https://github.com/rust-lang/unsafe-code-guidelines/issues/518
+                   And a proper implementation is here:
+                   https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
                 let+++ blocks = get_all (BV.usizeinz layout.size, offset) in
                 Union blocks
           | _ ->

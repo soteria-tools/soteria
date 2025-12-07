@@ -1,12 +1,10 @@
 (** This file was generated with [scripts/intrinsics.py] -- do not edit it
     manually, instead modify the script and re-run it. *)
 
-[@@@warning "-unused-value-declaration"]
-
 open Rustsymex
 open Rust_val
 
-module M (State : State_intf.S) = struct
+module M (State : State_intf.S) : Intrinsics_intf.M(State).S = struct
   type rust_val = State.Sptr.t Rust_val.t
 
   let ( let+ ) x f () st =
@@ -26,463 +24,6 @@ module M (State : State_intf.S) = struct
   let as_base ty (v : rust_val) = Rust_val.as_base ty v
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
   let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
-  let abort () _state = not_impl "Unsupported intrinsic: abort"
-
-  let add_with_overflow ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: add_with_overflow"
-
-  let aggregate_raw_ptr ~p:_ ~d:_ ~m:_ ~data:_ ~meta:_ () _state =
-    not_impl "Unsupported intrinsic: aggregate_raw_ptr"
-
-  let align_of ~t:_ () _state = not_impl "Unsupported intrinsic: align_of"
-
-  let align_of_val ~t:_ ~ptr:_ () _state =
-    not_impl "Unsupported intrinsic: align_of_val"
-
-  let arith_offset ~t:_ ~dst:_ ~offset:_ () _state =
-    not_impl "Unsupported intrinsic: arith_offset"
-
-  let assert_inhabited ~t:_ () _state =
-    not_impl "Unsupported intrinsic: assert_inhabited"
-
-  let assert_mem_uninitialized_valid ~t:_ () _state =
-    not_impl "Unsupported intrinsic: assert_mem_uninitialized_valid"
-
-  let assert_zero_valid ~t:_ () _state =
-    not_impl "Unsupported intrinsic: assert_zero_valid"
-
-  let assume ~b:_ () _state = not_impl "Unsupported intrinsic: assume"
-
-  let bitreverse ~t:_ ~x:_ () _state =
-    not_impl "Unsupported intrinsic: bitreverse"
-
-  let black_box ~t:_ ~dummy:_ () _state =
-    not_impl "Unsupported intrinsic: black_box"
-
-  let breakpoint () _state = not_impl "Unsupported intrinsic: breakpoint"
-  let bswap ~t:_ ~x:_ () _state = not_impl "Unsupported intrinsic: bswap"
-
-  let caller_location () _state =
-    not_impl "Unsupported intrinsic: caller_location"
-
-  let carrying_mul_add ~t:_ ~u:_ ~multiplier:_ ~multiplicand:_ ~addend:_
-      ~carry:_ () _state =
-    not_impl "Unsupported intrinsic: carrying_mul_add"
-
-  let catch_unwind _ ~_try_fn:_ ~_data:_ ~_catch_fn:_ () _state =
-    not_impl "Unsupported intrinsic: catch_unwind"
-
-  let ceilf128 ~x:_ () _state = not_impl "Unsupported intrinsic: ceilf128"
-  let ceilf16 ~x:_ () _state = not_impl "Unsupported intrinsic: ceilf16"
-  let ceilf32 ~x:_ () _state = not_impl "Unsupported intrinsic: ceilf32"
-  let ceilf64 ~x:_ () _state = not_impl "Unsupported intrinsic: ceilf64"
-  let cold_path () _state = not_impl "Unsupported intrinsic: cold_path"
-
-  let compare_bytes ~left:_ ~right:_ ~bytes:_ () _state =
-    not_impl "Unsupported intrinsic: compare_bytes"
-
-  let const_deallocate ~_ptr:_ ~_size:_ ~_align:_ () _state =
-    not_impl "Unsupported intrinsic: const_deallocate"
-
-  let const_make_global ~ptr:_ () _state =
-    not_impl "Unsupported intrinsic: const_make_global"
-
-  let contract_check_ensures ~c:_ ~t_ret:_ ~cond:_ ~ret:_ () _state =
-    not_impl "Unsupported intrinsic: contract_check_ensures"
-
-  let contract_check_requires ~c:_ ~arg1:_ () _state =
-    not_impl "Unsupported intrinsic: contract_check_requires"
-
-  let contract_checks () _state =
-    not_impl "Unsupported intrinsic: contract_checks"
-
-  let copy ~t:_ ~src:_ ~dst:_ ~count:_ () _state =
-    not_impl "Unsupported intrinsic: copy"
-
-  let copy_nonoverlapping ~t:_ ~src:_ ~dst:_ ~count:_ () _state =
-    not_impl "Unsupported intrinsic: copy_nonoverlapping"
-
-  let copysignf128 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: copysignf128"
-
-  let copysignf16 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: copysignf16"
-
-  let copysignf32 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: copysignf32"
-
-  let copysignf64 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: copysignf64"
-
-  let cosf128 ~x:_ () _state = not_impl "Unsupported intrinsic: cosf128"
-  let cosf16 ~x:_ () _state = not_impl "Unsupported intrinsic: cosf16"
-  let cosf32 ~x:_ () _state = not_impl "Unsupported intrinsic: cosf32"
-  let cosf64 ~x:_ () _state = not_impl "Unsupported intrinsic: cosf64"
-  let ctlz ~t:_ ~x:_ () _state = not_impl "Unsupported intrinsic: ctlz"
-
-  let ctlz_nonzero ~t:_ ~x:_ () _state =
-    not_impl "Unsupported intrinsic: ctlz_nonzero"
-
-  let ctpop ~t:_ ~x:_ () _state = not_impl "Unsupported intrinsic: ctpop"
-  let cttz ~t:_ ~x:_ () _state = not_impl "Unsupported intrinsic: cttz"
-
-  let cttz_nonzero ~t:_ ~x:_ () _state =
-    not_impl "Unsupported intrinsic: cttz_nonzero"
-
-  let discriminant_value ~t:_ ~v:_ () _state =
-    not_impl "Unsupported intrinsic: discriminant_value"
-
-  let disjoint_bitor ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: disjoint_bitor"
-
-  let exact_div ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: exact_div"
-
-  let exp2f128 ~x:_ () _state = not_impl "Unsupported intrinsic: exp2f128"
-  let exp2f16 ~x:_ () _state = not_impl "Unsupported intrinsic: exp2f16"
-  let exp2f32 ~x:_ () _state = not_impl "Unsupported intrinsic: exp2f32"
-  let exp2f64 ~x:_ () _state = not_impl "Unsupported intrinsic: exp2f64"
-  let expf128 ~x:_ () _state = not_impl "Unsupported intrinsic: expf128"
-  let expf16 ~x:_ () _state = not_impl "Unsupported intrinsic: expf16"
-  let expf32 ~x:_ () _state = not_impl "Unsupported intrinsic: expf32"
-  let expf64 ~x:_ () _state = not_impl "Unsupported intrinsic: expf64"
-  let fabsf128 ~x:_ () _state = not_impl "Unsupported intrinsic: fabsf128"
-  let fabsf16 ~x:_ () _state = not_impl "Unsupported intrinsic: fabsf16"
-  let fabsf32 ~x:_ () _state = not_impl "Unsupported intrinsic: fabsf32"
-  let fabsf64 ~x:_ () _state = not_impl "Unsupported intrinsic: fabsf64"
-
-  let fadd_algebraic ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: fadd_algebraic"
-
-  let fadd_fast ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: fadd_fast"
-
-  let fdiv_algebraic ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: fdiv_algebraic"
-
-  let fdiv_fast ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: fdiv_fast"
-
-  let float_to_int_unchecked ~float:_ ~int:_ ~value:_ () _state =
-    not_impl "Unsupported intrinsic: float_to_int_unchecked"
-
-  let floorf128 ~x:_ () _state = not_impl "Unsupported intrinsic: floorf128"
-  let floorf16 ~x:_ () _state = not_impl "Unsupported intrinsic: floorf16"
-  let floorf32 ~x:_ () _state = not_impl "Unsupported intrinsic: floorf32"
-  let floorf64 ~x:_ () _state = not_impl "Unsupported intrinsic: floorf64"
-
-  let fmaf128 ~a:_ ~b:_ ~c:_ () _state =
-    not_impl "Unsupported intrinsic: fmaf128"
-
-  let fmaf16 ~a:_ ~b:_ ~c:_ () _state = not_impl "Unsupported intrinsic: fmaf16"
-  let fmaf32 ~a:_ ~b:_ ~c:_ () _state = not_impl "Unsupported intrinsic: fmaf32"
-  let fmaf64 ~a:_ ~b:_ ~c:_ () _state = not_impl "Unsupported intrinsic: fmaf64"
-
-  let fmul_algebraic ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: fmul_algebraic"
-
-  let fmul_fast ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: fmul_fast"
-
-  let fmuladdf128 ~a:_ ~b:_ ~c:_ () _state =
-    not_impl "Unsupported intrinsic: fmuladdf128"
-
-  let fmuladdf16 ~a:_ ~b:_ ~c:_ () _state =
-    not_impl "Unsupported intrinsic: fmuladdf16"
-
-  let fmuladdf32 ~a:_ ~b:_ ~c:_ () _state =
-    not_impl "Unsupported intrinsic: fmuladdf32"
-
-  let fmuladdf64 ~a:_ ~b:_ ~c:_ () _state =
-    not_impl "Unsupported intrinsic: fmuladdf64"
-
-  let forget ~t:_ ~arg:_ () _state = not_impl "Unsupported intrinsic: forget"
-
-  let frem_algebraic ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: frem_algebraic"
-
-  let frem_fast ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: frem_fast"
-
-  let fsub_algebraic ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: fsub_algebraic"
-
-  let fsub_fast ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: fsub_fast"
-
-  let is_val_statically_known ~t:_ ~_arg:_ () _state =
-    not_impl "Unsupported intrinsic: is_val_statically_known"
-
-  let likely ~b:_ () _state = not_impl "Unsupported intrinsic: likely"
-  let log10f128 ~x:_ () _state = not_impl "Unsupported intrinsic: log10f128"
-  let log10f16 ~x:_ () _state = not_impl "Unsupported intrinsic: log10f16"
-  let log10f32 ~x:_ () _state = not_impl "Unsupported intrinsic: log10f32"
-  let log10f64 ~x:_ () _state = not_impl "Unsupported intrinsic: log10f64"
-  let log2f128 ~x:_ () _state = not_impl "Unsupported intrinsic: log2f128"
-  let log2f16 ~x:_ () _state = not_impl "Unsupported intrinsic: log2f16"
-  let log2f32 ~x:_ () _state = not_impl "Unsupported intrinsic: log2f32"
-  let log2f64 ~x:_ () _state = not_impl "Unsupported intrinsic: log2f64"
-  let logf128 ~x:_ () _state = not_impl "Unsupported intrinsic: logf128"
-  let logf16 ~x:_ () _state = not_impl "Unsupported intrinsic: logf16"
-  let logf32 ~x:_ () _state = not_impl "Unsupported intrinsic: logf32"
-  let logf64 ~x:_ () _state = not_impl "Unsupported intrinsic: logf64"
-
-  let maximumf128 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: maximumf128"
-
-  let maximumf16 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: maximumf16"
-
-  let maximumf32 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: maximumf32"
-
-  let maximumf64 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: maximumf64"
-
-  let maxnumf128 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: maxnumf128"
-
-  let maxnumf16 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: maxnumf16"
-
-  let maxnumf32 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: maxnumf32"
-
-  let maxnumf64 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: maxnumf64"
-
-  let minimumf128 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: minimumf128"
-
-  let minimumf16 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: minimumf16"
-
-  let minimumf32 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: minimumf32"
-
-  let minimumf64 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: minimumf64"
-
-  let minnumf128 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: minnumf128"
-
-  let minnumf16 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: minnumf16"
-
-  let minnumf32 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: minnumf32"
-
-  let minnumf64 ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: minnumf64"
-
-  let mul_with_overflow ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: mul_with_overflow"
-
-  let needs_drop ~t:_ () _state = not_impl "Unsupported intrinsic: needs_drop"
-
-  let nontemporal_store ~t:_ ~ptr:_ ~val_:_ () _state =
-    not_impl "Unsupported intrinsic: nontemporal_store"
-
-  let offset ~ptr:_ ~delta:_ ~dst:_ ~offset:_ () _state =
-    not_impl "Unsupported intrinsic: offset"
-
-  let powf128 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powf128"
-  let powf16 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powf16"
-  let powf32 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powf32"
-  let powf64 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powf64"
-  let powif128 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powif128"
-  let powif16 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powif16"
-  let powif32 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powif32"
-  let powif64 ~a:_ ~x:_ () _state = not_impl "Unsupported intrinsic: powif64"
-
-  let prefetch_read_data ~t:_ ~data:_ ~locality:_ () _state =
-    not_impl "Unsupported intrinsic: prefetch_read_data"
-
-  let prefetch_read_instruction ~t:_ ~data:_ ~locality:_ () _state =
-    not_impl "Unsupported intrinsic: prefetch_read_instruction"
-
-  let prefetch_write_data ~t:_ ~data:_ ~locality:_ () _state =
-    not_impl "Unsupported intrinsic: prefetch_write_data"
-
-  let prefetch_write_instruction ~t:_ ~data:_ ~locality:_ () _state =
-    not_impl "Unsupported intrinsic: prefetch_write_instruction"
-
-  let ptr_guaranteed_cmp ~t:_ ~ptr:_ ~other:_ () _state =
-    not_impl "Unsupported intrinsic: ptr_guaranteed_cmp"
-
-  let ptr_mask ~t:_ ~ptr:_ ~mask:_ () _state =
-    not_impl "Unsupported intrinsic: ptr_mask"
-
-  let ptr_metadata ~p:_ ~m:_ ~ptr:_ () _state =
-    not_impl "Unsupported intrinsic: ptr_metadata"
-
-  let ptr_offset_from ~t:_ ~ptr:_ ~base:_ () _state =
-    not_impl "Unsupported intrinsic: ptr_offset_from"
-
-  let ptr_offset_from_unsigned ~t:_ ~ptr:_ ~base:_ () _state =
-    not_impl "Unsupported intrinsic: ptr_offset_from_unsigned"
-
-  let raw_eq ~t:_ ~a:_ ~b:_ () _state = not_impl "Unsupported intrinsic: raw_eq"
-
-  let read_via_copy ~t:_ ~ptr:_ () _state =
-    not_impl "Unsupported intrinsic: read_via_copy"
-
-  let rotate_left ~t:_ ~x:_ ~shift:_ () _state =
-    not_impl "Unsupported intrinsic: rotate_left"
-
-  let rotate_right ~t:_ ~x:_ ~shift:_ () _state =
-    not_impl "Unsupported intrinsic: rotate_right"
-
-  let round_ties_even_f128 ~x:_ () _state =
-    not_impl "Unsupported intrinsic: round_ties_even_f128"
-
-  let round_ties_even_f16 ~x:_ () _state =
-    not_impl "Unsupported intrinsic: round_ties_even_f16"
-
-  let round_ties_even_f32 ~x:_ () _state =
-    not_impl "Unsupported intrinsic: round_ties_even_f32"
-
-  let round_ties_even_f64 ~x:_ () _state =
-    not_impl "Unsupported intrinsic: round_ties_even_f64"
-
-  let roundf128 ~x:_ () _state = not_impl "Unsupported intrinsic: roundf128"
-  let roundf16 ~x:_ () _state = not_impl "Unsupported intrinsic: roundf16"
-  let roundf32 ~x:_ () _state = not_impl "Unsupported intrinsic: roundf32"
-  let roundf64 ~x:_ () _state = not_impl "Unsupported intrinsic: roundf64"
-
-  let rustc_peek ~t:_ ~arg:_ () _state =
-    not_impl "Unsupported intrinsic: rustc_peek"
-
-  let saturating_add ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: saturating_add"
-
-  let saturating_sub ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: saturating_sub"
-
-  let select_unpredictable ~t:_ ~b:_ ~true_val:_ ~false_val:_ () _state =
-    not_impl "Unsupported intrinsic: select_unpredictable"
-
-  let sinf128 ~x:_ () _state = not_impl "Unsupported intrinsic: sinf128"
-  let sinf16 ~x:_ () _state = not_impl "Unsupported intrinsic: sinf16"
-  let sinf32 ~x:_ () _state = not_impl "Unsupported intrinsic: sinf32"
-  let sinf64 ~x:_ () _state = not_impl "Unsupported intrinsic: sinf64"
-  let size_of ~t:_ () _state = not_impl "Unsupported intrinsic: size_of"
-
-  let size_of_val ~t:_ ~ptr:_ () _state =
-    not_impl "Unsupported intrinsic: size_of_val"
-
-  let slice_get_unchecked ~itemptr:_ ~sliceptr:_ ~t:_ ~slice_ptr:_ ~index:_ ()
-      _state =
-    not_impl "Unsupported intrinsic: slice_get_unchecked"
-
-  let sqrtf128 ~x:_ () _state = not_impl "Unsupported intrinsic: sqrtf128"
-  let sqrtf16 ~x:_ () _state = not_impl "Unsupported intrinsic: sqrtf16"
-  let sqrtf32 ~x:_ () _state = not_impl "Unsupported intrinsic: sqrtf32"
-  let sqrtf64 ~x:_ () _state = not_impl "Unsupported intrinsic: sqrtf64"
-
-  let sub_with_overflow ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: sub_with_overflow"
-
-  let three_way_compare ~t:_ ~lhs:_ ~rhss:_ () _state =
-    not_impl "Unsupported intrinsic: three_way_compare"
-
-  let transmute ~t_src:_ ~dst:_ ~src:_ () _state =
-    not_impl "Unsupported intrinsic: transmute"
-
-  let transmute_unchecked ~t_src:_ ~dst:_ ~src:_ () _state =
-    not_impl "Unsupported intrinsic: transmute_unchecked"
-
-  let truncf128 ~x:_ () _state = not_impl "Unsupported intrinsic: truncf128"
-  let truncf16 ~x:_ () _state = not_impl "Unsupported intrinsic: truncf16"
-  let truncf32 ~x:_ () _state = not_impl "Unsupported intrinsic: truncf32"
-  let truncf64 ~x:_ () _state = not_impl "Unsupported intrinsic: truncf64"
-  let type_id ~t:_ () _state = not_impl "Unsupported intrinsic: type_id"
-
-  let type_id_eq ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: type_id_eq"
-
-  let type_name ~t:_ () _state = not_impl "Unsupported intrinsic: type_name"
-
-  let typed_swap_nonoverlapping ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: typed_swap_nonoverlapping"
-
-  let ub_checks () _state = not_impl "Unsupported intrinsic: ub_checks"
-
-  let unaligned_volatile_load ~t:_ ~src:_ () _state =
-    not_impl "Unsupported intrinsic: unaligned_volatile_load"
-
-  let unaligned_volatile_store ~t:_ ~dst:_ ~val_:_ () _state =
-    not_impl "Unsupported intrinsic: unaligned_volatile_store"
-
-  let unchecked_add ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: unchecked_add"
-
-  let unchecked_div ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: unchecked_div"
-
-  let unchecked_mul ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: unchecked_mul"
-
-  let unchecked_rem ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: unchecked_rem"
-
-  let unchecked_shl ~t:_ ~u:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: unchecked_shl"
-
-  let unchecked_shr ~t:_ ~u:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: unchecked_shr"
-
-  let unchecked_sub ~t:_ ~x:_ ~y:_ () _state =
-    not_impl "Unsupported intrinsic: unchecked_sub"
-
-  let unlikely ~b:_ () _state = not_impl "Unsupported intrinsic: unlikely"
-  let unreachable () _state = not_impl "Unsupported intrinsic: unreachable"
-  let va_arg ~t:_ ~ap:_ () _state = not_impl "Unsupported intrinsic: va_arg"
-
-  let va_copy ~dest:_ ~src:_ () _state =
-    not_impl "Unsupported intrinsic: va_copy"
-
-  let va_end ~ap:_ () _state = not_impl "Unsupported intrinsic: va_end"
-
-  let variant_count ~t:_ () _state =
-    not_impl "Unsupported intrinsic: variant_count"
-
-  let volatile_copy_memory ~t:_ ~dst:_ ~src:_ ~count:_ () _state =
-    not_impl "Unsupported intrinsic: volatile_copy_memory"
-
-  let volatile_copy_nonoverlapping_memory ~t:_ ~dst:_ ~src:_ ~count:_ () _state
-      =
-    not_impl "Unsupported intrinsic: volatile_copy_nonoverlapping_memory"
-
-  let volatile_load ~t:_ ~src:_ () _state =
-    not_impl "Unsupported intrinsic: volatile_load"
-
-  let volatile_set_memory ~t:_ ~dst:_ ~val_:_ ~count:_ () _state =
-    not_impl "Unsupported intrinsic: volatile_set_memory"
-
-  let volatile_store ~t:_ ~dst:_ ~val_:_ () _state =
-    not_impl "Unsupported intrinsic: volatile_store"
-
-  let vtable_align ~ptr:_ () _state =
-    not_impl "Unsupported intrinsic: vtable_align"
-
-  let vtable_size ~ptr:_ () _state =
-    not_impl "Unsupported intrinsic: vtable_size"
-
-  let wrapping_add ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: wrapping_add"
-
-  let wrapping_mul ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: wrapping_mul"
-
-  let wrapping_sub ~t:_ ~a:_ ~b:_ () _state =
-    not_impl "Unsupported intrinsic: wrapping_sub"
-
-  let write_bytes ~t:_ ~dst:_ ~val_:_ ~count:_ () _state =
-    not_impl "Unsupported intrinsic: write_bytes"
-
-  let write_via_move ~t:_ ~ptr:_ ~value:_ () _state =
-    not_impl "Unsupported intrinsic: write_via_move"
 
   include Intrinsics_impl.M (State)
 
@@ -519,6 +60,8 @@ module M (State : State_intf.S) = struct
         let b = Typed.BitVec.to_bool (as_base TBool b) in
         let+ () = assume ~b in
         Tuple []
+    | "autodiff", [ t_f; g; t; r ], [ f; df; args ] ->
+        autodiff ~t_f ~g ~t ~r ~f ~df ~args
     | "bitreverse", [ t ], [ x ] -> bitreverse ~t ~x
     | "black_box", [ t ], [ dummy ] -> black_box ~t ~dummy
     | "breakpoint", [], [] ->
@@ -566,18 +109,19 @@ module M (State : State_intf.S) = struct
         let _align = as_base_i Usize _align in
         let+ () = const_deallocate ~_ptr ~_size ~_align in
         Tuple []
+    | ( "const_eval_select",
+        [ arg; f; g; ret ],
+        [ _arg; _called_in_const; _called_at_rt ] ) ->
+        const_eval_select ~arg ~f ~g ~ret ~_arg ~_called_in_const ~_called_at_rt
     | "const_make_global", [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = const_make_global ~ptr in
         Ptr ret
     | "contract_check_ensures", [ c; t_ret ], [ cond; ret ] ->
         contract_check_ensures ~c ~t_ret ~cond ~ret
-    | "contract_check_requires", [ c ], [ arg1 ] ->
-        let+ () = contract_check_requires ~c ~arg1 in
+    | "contract_check_requires", [ c ], [ cond ] ->
+        let+ () = contract_check_requires ~c ~cond in
         Tuple []
-    | "contract_checks", [], [] ->
-        let+ ret = contract_checks in
-        Int (Typed.BitVec.of_bool ret)
     | "copy", [ t ], [ src; dst; count ] ->
         let src = as_ptr src in
         let dst = as_ptr dst in
@@ -918,6 +462,14 @@ module M (State : State_intf.S) = struct
         Tuple []
     | "offset", [ ptr; delta ], [ dst; offset_ ] ->
         offset ~ptr ~delta ~dst ~offset:offset_
+    | "offset_of", [ t ], [ variant; field ] ->
+        let variant = as_base_i U32 variant in
+        let field = as_base_i U32 field in
+        let+ ret = offset_of ~t ~variant ~field in
+        Int ret
+    | "overflow_checks", [], [] ->
+        let+ ret = overflow_checks in
+        Int (Typed.BitVec.of_bool ret)
     | "powf128", [], [ a; x ] ->
         let a = as_base_f F128 a in
         let x = as_base_f F128 x in
@@ -958,25 +510,21 @@ module M (State : State_intf.S) = struct
         let x = as_base_i U32 x in
         let+ ret = powif64 ~a ~x in
         Float ret
-    | "prefetch_read_data", [ t ], [ data; locality ] ->
+    | "prefetch_read_data", [ t ], [ data ] ->
         let data = as_ptr data in
-        let locality = as_base_i U32 locality in
-        let+ () = prefetch_read_data ~t ~data ~locality in
+        let+ () = prefetch_read_data ~t ~data in
         Tuple []
-    | "prefetch_read_instruction", [ t ], [ data; locality ] ->
+    | "prefetch_read_instruction", [ t ], [ data ] ->
         let data = as_ptr data in
-        let locality = as_base_i U32 locality in
-        let+ () = prefetch_read_instruction ~t ~data ~locality in
+        let+ () = prefetch_read_instruction ~t ~data in
         Tuple []
-    | "prefetch_write_data", [ t ], [ data; locality ] ->
+    | "prefetch_write_data", [ t ], [ data ] ->
         let data = as_ptr data in
-        let locality = as_base_i U32 locality in
-        let+ () = prefetch_write_data ~t ~data ~locality in
+        let+ () = prefetch_write_data ~t ~data in
         Tuple []
-    | "prefetch_write_instruction", [ t ], [ data; locality ] ->
+    | "prefetch_write_instruction", [ t ], [ data ] ->
         let data = as_ptr data in
-        let locality = as_base_i U32 locality in
-        let+ () = prefetch_write_instruction ~t ~data ~locality in
+        let+ () = prefetch_write_instruction ~t ~data in
         Tuple []
     | "ptr_guaranteed_cmp", [ t ], [ ptr; other ] ->
         let ptr = as_ptr ptr in
@@ -1141,6 +689,12 @@ module M (State : State_intf.S) = struct
         Tuple []
     | "unchecked_add", [ t ], [ x; y ] -> unchecked_add ~t ~x ~y
     | "unchecked_div", [ t ], [ x; y ] -> unchecked_div ~t ~x ~y
+    | "unchecked_funnel_shl", [ t ], [ a; b; shift ] ->
+        let shift = as_base_i U32 shift in
+        unchecked_funnel_shl ~t ~a ~b ~shift
+    | "unchecked_funnel_shr", [ t ], [ a; b; shift ] ->
+        let shift = as_base_i U32 shift in
+        unchecked_funnel_shr ~t ~a ~b ~shift
     | "unchecked_mul", [ t ], [ x; y ] -> unchecked_mul ~t ~x ~y
     | "unchecked_rem", [ t ], [ x; y ] -> unchecked_rem ~t ~x ~y
     | "unchecked_shl", [ t; u ], [ x; y ] -> unchecked_shl ~t ~u ~x ~y
