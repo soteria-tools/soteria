@@ -16,12 +16,21 @@ Symbolic execution of a simple program with concrete values only
 
 Symbolic execution of a simple program with symbolic values
   $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
-  Symex terminated with the following outcomes:
-    [Ok: (0x00000001, { heap = []; globs = [] });
-     Ok: (0x00000002, { heap = []; globs = [] })]
-  
-  Executed 11 statements
-  Verification Success!
+  soteria-c: internal error, uncaught exception:
+             File "soteria/lib/bv_values/svalue.ml", line 1503, characters 4-10: Assertion failed
+             Raised at Soteria__Bv_values__Svalue.BitVec.leq in file "soteria/lib/bv_values/svalue.ml", line 1503, characters 4-43
+             Called from Soteria_c_lib__Interp.Make.ineq_comparison.int_cmp_op in file "soteria-c/lib/interp.ml", line 662, characters 34-55
+             Called from Soteria_c_lib__Interp.Make.ineq_comparison in file "soteria-c/lib/interp.ml", line 667, characters 13-36
+             Called from Soteria__Symex.Make.Result.run_needs_stats in file "soteria/lib/symex/symex.ml", lines 617-625, characters 8-35
+             Called from Soteria__Stats.Make.As_ctx.add_time_of_to in file "soteria/lib/stats/stats.ml", line 243, characters 16-20
+             Called from Soteria__Stats.Make.As_ctx.with_stats in file "soteria/lib/stats/stats.ml", lines 220-223, characters 8-35
+             Called from Soteria_c_lib__Driver.exec_function in file "soteria-c/lib/driver.ml", line 255, characters 9-60
+             Called from Soteria_c_lib__Driver.exec_function in file "soteria-c/lib/driver.ml", lines 238-255, characters 4-60
+             Called from Soteria_c_lib__Driver.exec_and_print in file "soteria-c/lib/driver.ml", line 318, characters 15-61
+             Called from Cmdliner_term.app.(fun) in file "cmdliner_term.ml", line 24, characters 19-24
+             Called from Cmdliner_term.app.(fun) in file "cmdliner_term.ml", line 22, characters 12-19
+             Called from Cmdliner_eval.run_parser in file "cmdliner_eval.ml", line 35, characters 37-44
+  [125]
 
 Symbolic execution of a simple program with symbolic values that fails because of an allocation error
   $ soteria-c exec err.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
@@ -45,6 +54,7 @@ Symbolic execution of a simple program with symbolic values that fails because o
       │    ^^^^^^^ Triggering write
   Executed 5 statements
   Verification Failure!
+  [13]
 
 Symbolic execution of a simple program with a horrible pointer indirection *&*x
   $ soteria-c exec indirections.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
@@ -115,6 +125,7 @@ Checking that fuel gets exhausted properly
       │      1: Called from here
   Executed 152 statements
   Verification Failure!
+  [13]
 Checking that code cannot branch infinitely
   $ soteria-c exec max_branching.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
@@ -898,7 +909,7 @@ Checking that code cannot branch infinitely
 Should return a single branch!
   $ soteria-c exec short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
-    [Ok: (b2bv[1](((V|2| != 0x00000000) && (V|1| != 0x00000000))),
+    [Ok: (b2bv[1](((0x00 != V|2|) && (0x00 != V|1|))),
           { heap = []; globs = [] })]
   
   Executed 4 statements
@@ -912,12 +923,21 @@ Should return a single branch!
   Verification Success!
 
   $ soteria-c exec gotos.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
-  Symex terminated with the following outcomes:
-    [Ok: (0x00000412, { heap = []; globs = [] });
-     Ok: (0x00000413, { heap = []; globs = [] })]
-  
-  Executed 23 statements
-  Verification Success!
+  soteria-c: internal error, uncaught exception:
+             File "soteria/lib/bv_values/svalue.ml", line 1307, characters 4-10: Assertion failed
+             Raised at Soteria__Bv_values__Svalue.BitVec.lt in file "soteria/lib/bv_values/svalue.ml", line 1307, characters 4-43
+             Called from Soteria_c_lib__Interp.Make.ineq_comparison.int_cmp_op in file "soteria-c/lib/interp.ml", line 662, characters 34-55
+             Called from Soteria_c_lib__Interp.Make.ineq_comparison in file "soteria-c/lib/interp.ml", line 667, characters 13-36
+             Called from Soteria__Symex.Make.Result.run_needs_stats in file "soteria/lib/symex/symex.ml", lines 617-625, characters 8-35
+             Called from Soteria__Stats.Make.As_ctx.add_time_of_to in file "soteria/lib/stats/stats.ml", line 243, characters 16-20
+             Called from Soteria__Stats.Make.As_ctx.with_stats in file "soteria/lib/stats/stats.ml", lines 220-223, characters 8-35
+             Called from Soteria_c_lib__Driver.exec_function in file "soteria-c/lib/driver.ml", line 255, characters 9-60
+             Called from Soteria_c_lib__Driver.exec_function in file "soteria-c/lib/driver.ml", lines 238-255, characters 4-60
+             Called from Soteria_c_lib__Driver.exec_and_print in file "soteria-c/lib/driver.ml", line 318, characters 15-61
+             Called from Cmdliner_term.app.(fun) in file "cmdliner_term.ml", line 24, characters 19-24
+             Called from Cmdliner_term.app.(fun) in file "cmdliner_term.ml", line 22, characters 12-19
+             Called from Cmdliner_eval.run_parser in file "cmdliner_eval.ml", line 35, characters 37-44
+  [125]
 
   $ soteria-c exec duffs.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
@@ -954,6 +974,7 @@ Expected to fail because no main function is defined
   error: Parsing Error: Entry point "main" not found in main
   Executed 0 statements
   Verification Failure!
+  [13]
 
 Expected to correctly find the harness function
   $ soteria-c exec harness.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --harness harness --print-states
@@ -1030,7 +1051,8 @@ Check that, without proper flag, undefined function calls are not-implemented
     [Error: Gave up: Unsupported: Cannot call external function: nondet_int_559]
   error: Analysis gave up: Unsupported: Cannot call external function: nondet_int_559 in main
   Executed 2 statements
-  Verification Failure!
+  Verification Failure! (Unsupported features)
+  [2]
 
 Check that, with proper flag, undefined function calls are havoced. Expecting 2 branches.
   $ soteria-c exec havoc_undef.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --havoc-undef --print-states
