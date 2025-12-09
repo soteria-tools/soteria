@@ -63,6 +63,12 @@ type t = {
       [@names [ "cbmc"; "cbmc-compat" ]]
       [@env "SOTERIA_CBMC_COMPAT"]
       (** Enable support for a subset of the __CPROVER_ API. *)
+  testcomp_compat : bool;
+      [@make.default false]
+      [@names [ "testcomp"; "testcomp-compat" ]]
+      [@env "SOTERIA_TESTCOMP_COMPAT"]
+      (** Enable support for a subset of the testcomp API (e.g.,
+          __VERIFIER_nondet_*)
   havoc_undefined_funs : bool;
       [@make.default false]
       [@names
