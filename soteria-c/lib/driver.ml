@@ -6,7 +6,11 @@ module Wpst_interp = Interp.Make (SState)
 
 exception Tool_error
 
-let with_tool_error () f =
+let tool_error msg =
+  Fmt.epr "%a" Soteria.Terminal.Color.pp_fatal msg;
+  raise Tool_error
+
+let with_tool_errors_caught () f =
   try f () with Tool_error -> Error.Exit_code.Tool_error
 
 let dump_stats stats =
@@ -434,7 +438,7 @@ let show_ail log_config term_config config (includes : string list)
 let generate_all_summaries log_config term_config solver_config config includes
     functions_to_analyse file_names =
   (* TODO: generate a compilation database directly, to simplify the interface in this file. *)
-  let@ () = with_tool_error () in
+  let@ () = with_tool_errors_caught () in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
   let@ () = initialise ~log_config ~term_config ~solver_config config in
   let prog =
@@ -442,7 +446,7 @@ let generate_all_summaries log_config term_config solver_config config includes
     parse_and_link_ail ~includes file_names
     |> Result.get_or ~err:(fun e ->
            Fmt.epr "%a@\n@?" pp_err_and_call_trace e;
-           raise Tool_error)
+           tool_error "Failed to parse AIL")
   in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else generate_summaries ~functions_to_analyse prog
@@ -451,7 +455,7 @@ let generate_all_summaries log_config term_config solver_config config includes
 let capture_db log_config term_config solver_config config json_file
     functions_to_analyse =
   let open Syntaxes.Result in
-  let@ () = with_tool_error () in
+  let@ () = with_tool_errors_caught () in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
   let@ () = initialise ~log_config ~term_config ~solver_config config in
   let linked_prog =
@@ -498,7 +502,7 @@ let capture_db log_config term_config solver_config config json_file
       ~err:(function
         | `ParsingError msg, _ ->
             Fmt.epr "%s@\n@?" msg;
-            raise Tool_error
+            tool_error "Failed to parse AIL"
         | `LinkError msg, _ ->
             let msg =
               if (Config.current ()).no_ignore_parse_failures then msg
@@ -506,7 +510,7 @@ let capture_db log_config term_config solver_config config json_file
             in
             Fmt.pr "Error: %a@\n@?" Soteria.Terminal.Color.pp_err msg;
             if (Config.current ()).no_ignore_parse_failures then
-              raise Tool_error
+              tool_error "Failed to link AIL"
             else Ail_tys.empty_linked_program)
       linked_prog
   in
