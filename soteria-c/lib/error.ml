@@ -76,3 +76,19 @@ module Diagnostic = struct
       ~error:(Fmt.to_to_string pp error)
       ~severity:(severity error) ~fname:fid
 end
+
+module Exit_code = struct
+  type t =
+    | Success  (** Everything terminated correctly and no bug was found. *)
+    | Found_bug  (** Analysis was successful and found a bug in the program. *)
+    | Tool_error  (** Soteria-C gave up on analysis *)
+
+  let to_int = function Success -> 0 | Found_bug -> 13 | Tool_error -> 2
+
+  let explain = function
+    | Success -> "on successful analysis (no bugs found)."
+    | Found_bug -> "when a bug or error was found in the analysed program."
+    | Tool_error ->
+        "when Soteria-C did not complete the analysis because of a missing \
+         feature or internal error."
+end

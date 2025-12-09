@@ -105,6 +105,8 @@ class soteria_lsp_server generate_errors =
       | _ -> super#on_unknown_notification ~notify_back notif
   end
 
+exception LSP_error of string
+
 let run ~generate_errors () =
   Eio_main.run @@ fun env ->
   let s = new soteria_lsp_server generate_errors in
@@ -114,8 +116,8 @@ let run ~generate_errors () =
     Linol_eio.Jsonrpc2.run ~shutdown server
   in
   match task () with
-  | () -> ()
+  | () -> Error.Exit_code.Success
   | exception e ->
       let e = Printexc.to_string e in
       Printf.eprintf "error: %s\n%!" e;
-      exit 1
+      Error.Exit_code.Tool_error
