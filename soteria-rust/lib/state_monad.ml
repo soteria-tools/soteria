@@ -3,17 +3,213 @@ open Rustsymex
 open Rustsymex.Syntax
 module BV = Typed.BitVec
 open Charon
-open Sptr
+(* open Sptr *)
 
-module Make (State : State_intf.S) = struct
+module type S = sig
+  module RawState : State_intf.S
+
+  type full_ptr = RawState.Sptr.t Rust_val.full_ptr
+  type rust_val = RawState.Sptr.t Rust_val.t
+
+  val pp_rust_val : Format.formatter -> rust_val -> unit
+  val pp_full_ptr : Format.formatter -> full_ptr -> unit
+
+  type ('a, 'env) t
+  type ('a, 'env) monad := ('a, 'env) t
+  type 'e err := 'e RawState.err
+
+  val ok : 'a -> ('a, 'env) t
+  val error : Error.t -> ('a, 'env) t
+  val error_raw : Error.t err -> ('a, 'env) t
+  val not_impl : string -> ('a, 'env) t
+  val get_env : unit -> ('env, 'env) t
+  val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
+  val map : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
+
+  val fold_list :
+    'a list -> init:'b -> f:('b -> 'a -> ('b, 'env) t) -> ('b, 'env) t
+
+  val fold_iter :
+    'a Foldable.Iter.t ->
+    init:'b ->
+    f:('b -> 'a -> ('b, 'env) t) ->
+    ('b, 'env) t
+
+  val map_env : ('env -> 'env) -> (unit, 'env) t
+  val with_env : env:'env1 -> ('a, 'env1) t -> ('a, 'env) t
+  val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
+  val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
+  val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+
+  val with_extra_call_trace :
+    loc:Meta.span_data -> msg:string -> ('a, 'env) t -> ('a, 'env) t
+
+  val run :
+    env:'env ->
+    state:RawState.t ->
+    (unit -> ('a, 'env) t) ->
+    ('a * RawState.t, Error.t err, RawState.serialized) Result.t
+
+  val update_ref_tys_in :
+    f:
+      ('acc ->
+      full_ptr ->
+      Types.ty ->
+      Types.ref_kind ->
+      (full_ptr * 'acc, 'env) t) ->
+    init:'acc ->
+    rust_val ->
+    Types.ty ->
+    (rust_val * 'acc, 'env) t
+
+  val lift_symex : 'a Rustsymex.t -> ('a, 'env) t
+
+  module State : sig
+    val empty : RawState.t
+    val load : ?is_move:bool -> full_ptr -> Types.ty -> (rust_val, 'env) t
+    val load_discriminant : full_ptr -> Types.ty -> (Types.variant_id, 'env) t
+    val store : full_ptr -> Types.ty -> rust_val -> (unit, 'env) t
+    val zeros : full_ptr -> Typed.T.sint Typed.t -> (unit, 'env) t
+
+    val alloc_ty :
+      ?kind:Alloc_kind.t ->
+      ?span:Meta.span_data ->
+      Types.ty ->
+      (full_ptr, 'env) t
+
+    val alloc_tys :
+      ?kind:Alloc_kind.t ->
+      ?span:Meta.span_data ->
+      Types.ty list ->
+      (full_ptr list, 'env) t
+
+    val alloc_untyped :
+      ?kind:Alloc_kind.t ->
+      ?span:Meta.span_data ->
+      zeroed:bool ->
+      size:Typed.T.sint Typed.t ->
+      align:Typed.T.nonzero Typed.t ->
+      unit ->
+      (full_ptr, 'env) t
+
+    val copy_nonoverlapping :
+      src:full_ptr ->
+      dst:full_ptr ->
+      size:Typed.T.sint Typed.t ->
+      (unit, 'env) t
+
+    val uninit : full_ptr -> Types.ty -> (unit, 'env) t
+    val free : full_ptr -> (unit, 'env) t
+    val check_ptr_align : full_ptr -> Types.ty -> (unit, 'env) t
+
+    val borrow :
+      full_ptr -> Types.ty -> Expressions.borrow_kind -> (full_ptr, 'env) t
+
+    val protect : full_ptr -> Types.ty -> Types.ref_kind -> (full_ptr, 'env) t
+    val unprotect : full_ptr -> Types.ty -> (unit, 'env) t
+    val with_exposed : [< Typed.T.sint ] Typed.t -> (full_ptr, 'env) t
+    val tb_load : full_ptr -> Types.ty -> (unit, 'env) t
+    val load_global : Types.global_decl_id -> (full_ptr option, 'env) t
+    val store_global : Types.global_decl_id -> full_ptr -> (unit, 'env) t
+    val load_str_global : string -> (full_ptr option, 'env) t
+    val store_str_global : string -> full_ptr -> (unit, 'env) t
+    val declare_fn : Types.fun_decl_ref -> (full_ptr, 'env) t
+    val lookup_fn : full_ptr -> (Types.fun_decl_ref, 'env) t
+    val add_error : Error.t err -> (unit, 'env) t
+    val pop_error : unit -> ('a, 'env) t
+    val leak_check : unit -> (unit, 'env) t
+
+    val unwind_with :
+      f:('a -> ('b, 'env) t) ->
+      fe:(Error.t err -> ('b, 'env) t) ->
+      ('a, 'env) t ->
+      ('b, 'env) t
+
+    val is_valid_ptr_fn : (full_ptr -> Types.ty -> bool Rustsymex.t, 'env) t
+    val is_valid_ptr : full_ptr -> Types.ty -> (bool, 'env) t
+    val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
+    val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
+    val lift_err : ('a, Error.t, RawState.serialized) Result.t -> ('a, 'env) t
+  end
+
+  module Sptr : sig
+    include Sptr.S with type t = RawState.Sptr.t
+
+    val offset :
+      ?check:bool ->
+      ?ty:Charon.Types.ty ->
+      signed:bool ->
+      t ->
+      [< Typed.T.sint ] Typed.t ->
+      (t, 'env) monad
+
+    val project :
+      Types.ty ->
+      Expressions.field_proj_kind ->
+      Types.field_id ->
+      t ->
+      (t, 'env) monad
+
+    val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
+    val decay : t -> (Typed.T.sint Typed.t, 'env) monad
+    val expose : t -> (Typed.T.sint Typed.t, 'env) monad
+  end
+
+  module Encoder : sig
+    include module type of Encoder.Make (RawState.Sptr)
+
+    val cast_literal :
+      from_ty:Values.literal_type ->
+      to_ty:Values.literal_type ->
+      [< Typed.T.cval ] Typed.t ->
+      (rust_val, 'env) monad
+
+    val transmute : to_ty:Types.ty -> cval_info list -> (rust_val, 'env) monad
+  end
+
+  module Syntax : sig
+    val ( let* ) : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
+    val ( let+ ) : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
+    val ( let^ ) : 'a Rustsymex.t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
+    val ( let^+ ) : 'a Rustsymex.t -> ('a -> 'b) -> ('b, 'env) t
+
+    module Symex_syntax : sig
+      val branch_on :
+        ?left_branch_name:string ->
+        ?right_branch_name:string ->
+        Typed.T.sbool Typed.t ->
+        then_:(unit -> ('a, 'env) t) ->
+        else_:(unit -> ('a, 'env) t) ->
+        ('a, 'env) t
+
+      val branch_on_take_one :
+        ?left_branch_name:string ->
+        ?right_branch_name:string ->
+        Typed.T.sbool Typed.t ->
+        then_:(unit -> ('a, 'env) t) ->
+        else_:(unit -> ('a, 'env) t) ->
+        ('a, 'env) t
+
+      val if_sure :
+        ?left_branch_name:string ->
+        ?right_branch_name:string ->
+        Typed.T.sbool Typed.t ->
+        then_:(unit -> ('a, 'env) t) ->
+        else_:(unit -> ('a, 'env) t) ->
+        ('a, 'env) t
+    end
+  end
+end
+
+module Make (State : State_intf.S) : S with module RawState = State = struct
   (* utilities *)
-  module Sptr = State.Sptr
+  module RawState = State
 
-  type full_ptr = Sptr.t Rust_val.full_ptr
-  type rust_val = Sptr.t Rust_val.t
+  type full_ptr = State.Sptr.t Rust_val.full_ptr
+  type rust_val = State.Sptr.t Rust_val.t
 
-  let pp_rust_val = Rust_val.pp Sptr.pp
-  let pp_full_ptr = Rust_val.pp_full_ptr Sptr.pp
+  let pp_rust_val = Rust_val.pp State.Sptr.pp
+  let pp_full_ptr = Rust_val.pp_full_ptr State.Sptr.pp
 
   type ('a, 'env) t =
     'env ->
@@ -177,7 +373,7 @@ module Make (State : State_intf.S) = struct
       let++ res = lift_err state sym in
       (res, env, state)
 
-    let[@inline] with_decay_map_res (f : ('a, 'e, 'f) DecayMapMonad.Result.t) =
+    let[@inline] with_decay_map_res f =
      fun env state ->
       let* res, state = with_decay_map f state in
       lift_err (return res) env state
@@ -195,17 +391,36 @@ module Make (State : State_intf.S) = struct
     let[@inline] assert_not guard err = assert_ (Typed.not guard) err
   end
 
+  module Encoder = struct
+    include Encoder.Make (State.Sptr)
+
+    let[@inline] cast_literal ~from_ty ~to_ty cval =
+      State.with_decay_map_res (cast_literal ~from_ty ~to_ty cval)
+
+    let[@inline] transmute ~to_ty cvals =
+      bind State.is_valid_ptr_fn (fun verify_ptr ->
+          State.with_decay_map_res @@ transmute ~verify_ptr ~to_ty cvals)
+  end
+
+  module Sptr = struct
+    include State.Sptr
+
+    let[@inline] offset ?check ?ty ~signed ptr off =
+      State.lift_err (offset ?check ?ty ~signed ptr off)
+
+    let[@inline] project ty proj_kind field_id ptr =
+      State.lift_err (project ty proj_kind field_id ptr)
+
+    let[@inline] distance ptr1 ptr2 = State.with_decay_map (distance ptr1 ptr2)
+    let[@inline] decay ptr = State.with_decay_map (decay ptr)
+    let[@inline] expose ptr = State.with_decay_map (expose ptr)
+  end
+
   module Syntax = struct
     let ( let* ) = bind
     let ( let+ ) = map
     let ( let^ ) x f = bind (lift_symex x) f
     let ( let^+ ) x f = map (lift_symex x) f
-    let ( let^^ ) x f = bind (State.lift_err x) f
-    let ( let^^+ ) x f = map (State.lift_err x) f
-    let ( let$ ) x f = bind (State.with_decay_map x) f
-    let ( let$+ ) x f = map (State.with_decay_map x) f
-    let ( let$$ ) x f = bind (State.with_decay_map_res x) f
-    let ( let$$+ ) x f = map (State.with_decay_map_res x) f
 
     module Symex_syntax = struct
       let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =

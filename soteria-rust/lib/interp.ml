@@ -8,19 +8,14 @@ open Rust_val
 
 module Make (State : State_intf.S) = struct
   module InterpM = State_monad.Make (State)
-  module Core = Core.M (State)
-  module Std_funs = Builtins.Eval.M (State)
-  module Sptr = State.Sptr
-  module Encoder = Encoder.Make (Sptr)
-
-  let pp_rust_val = pp_rust_val Sptr.pp
+  module Core = Core.M (InterpM)
+  module Std_funs = Builtins.Eval.M (InterpM)
 
   exception Unsupported of (string * Meta.span_data)
 
   open InterpM
   open InterpM.Syntax
 
-  type state = State.t
   type store = (full_ptr option * Types.ty) Store.t
   type 'a t = ('a, store) InterpM.t
   type 'err fun_exec = rust_val list -> (rust_val, unit) InterpM.t
@@ -211,13 +206,13 @@ module Make (State : State_intf.S) = struct
                   if from_ = 0 && size = ptr_size then
                     ok ((Ptr (ptr, Thin), BV.usizei ofs) :: acc)
                   else
-                    let$+ ptr_int = Sptr.decay ptr in
+                    let+ ptr_int = Sptr.decay ptr in
                     let ptr_frag =
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
                     in
                     (Int ptr_frag, BV.usizei ofs) :: acc)
         in
-        let$$+ value = Encoder.transmute blocks ~to_ty:const.ty in
+        let+ value = Encoder.transmute blocks ~to_ty:const.ty in
         value
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
@@ -264,7 +259,7 @@ module Make (State : State_intf.S) = struct
         L.debug (fun f ->
             f "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty
               base.ty);
-        let^^+ ptr' =
+        let+ ptr' =
           Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
             ptr
             Usize.(1s)
@@ -276,7 +271,7 @@ module Make (State : State_intf.S) = struct
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
-        let^^ ptr' = Sptr.project base.ty kind field ptr in
+        let* ptr' = Sptr.project base.ty kind field ptr in
         L.debug (fun f ->
             f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
@@ -304,7 +299,7 @@ module Make (State : State_intf.S) = struct
         let* () =
           State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        let^^+ ptr' = Sptr.offset ~signed:false ~ty ptr idx in
+        let+ ptr' = Sptr.offset ~signed:false ~ty ptr idx in
         L.debug (fun f ->
             f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
               Sptr.pp ptr');
@@ -337,7 +332,7 @@ module Make (State : State_intf.S) = struct
             (Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len))
             `OutOfBounds
         in
-        let^^+ ptr' = Sptr.offset ~signed:false ~ty ptr from in
+        let+ ptr' = Sptr.offset ~signed:false ~ty ptr from in
         let slice_len = to_ -!@ from in
         L.debug (fun f ->
             f "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp ptr
@@ -505,7 +500,7 @@ module Make (State : State_intf.S) = struct
             | (TRef _ | TRawPtr _), TLiteral _ ->
                 (* expose provenance *)
                 let v, _ = as_ptr v in
-                let$+ v' = Sptr.expose v in
+                let+ v' = Sptr.expose v in
                 Int v'
             | TLiteral _, (TRef _ | TRawPtr _) ->
                 (* with provenance *)
@@ -514,10 +509,8 @@ module Make (State : State_intf.S) = struct
                 Ptr ptr
             | _ -> ok v)
         | Cast (CastTransmute (from_ty, to_ty)) ->
-            let* verify_ptr = State.is_valid_ptr_fn in
             let blocks = Encoder.rust_to_cvals v from_ty in
-            State.with_decay_map_res
-            @@ Encoder.transmute ~verify_ptr ~to_ty blocks
+            Encoder.transmute ~to_ty blocks
         | Cast (CastScalar (from_ty, to_ty)) ->
             let* v =
               match v with
@@ -525,7 +518,7 @@ module Make (State : State_intf.S) = struct
               | Float f -> ok (f :> T.cval Typed.t)
               | _ -> not_impl "Invalid value for CastScalar"
             in
-            State.with_decay_map_res @@ Encoder.cast_literal ~from_ty ~to_ty v
+            Encoder.cast_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (_, _, meta)) ->
             let update_meta prev =
               match meta with
@@ -547,7 +540,7 @@ module Make (State : State_intf.S) = struct
                   | Len _ -> error `UBDanglingPointer
                   | VTable vt ->
                       let idx = Types.FieldId.to_int field in
-                      let^^ vt_addr =
+                      let* vt_addr =
                         Sptr.offset ~ty:unit_ptr ~signed:false vt
                           (BV.usizei idx)
                       in
@@ -611,12 +604,12 @@ module Make (State : State_intf.S) = struct
                 ok (Int v)
             | Eq | Ne ->
                 let v1, v2, _ = Typed.cast_checked2 v1 v2 in
-                let$$+ res = Core.equality_check v1 v2 in
+                let+ res = Core.equality_check v1 v2 in
                 let res = if op = Eq then res else BV.not_bool res in
                 Int res
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
-                let$$+ res = Core.eval_lit_binop op ty v1 v2 in
+                let+ res = Core.eval_lit_binop op ty v1 v2 in
                 Int (Typed.cast res)
             | AddChecked | SubChecked | MulChecked ->
                 let ty =
@@ -624,8 +617,7 @@ module Make (State : State_intf.S) = struct
                   | TLiteral ty -> ty
                   | ty -> Fmt.failwith "Unexpected type in binop: %a" pp_ty ty
                 in
-                State.with_decay_map_res
-                @@ Core.eval_checked_lit_binop op ty v1 v2
+                Core.eval_checked_lit_binop op ty v1 v2
             | Cmp ->
                 let v1, v2, ty = Typed.cast_checked2 v1 v2 in
                 if Typed.equal_ty ty (Typed.t_ptr ()) then
@@ -633,7 +625,7 @@ module Make (State : State_intf.S) = struct
                 else
                   let ty = type_of_operand e1 in
                   let ty = TypesUtils.ty_as_literal ty in
-                  let$+ cmp = Core.cmp ~signed:(Layout.is_signed ty) v1 v2 in
+                  let+ cmp = Core.cmp ~signed:(Layout.is_signed ty) v1 v2 in
                   Int cmp
             | Offset ->
                 (* non-zero offset on integer pointer is not permitted, as these are always
@@ -668,10 +660,10 @@ module Make (State : State_intf.S) = struct
                 let v = Typed.cast_i Usize v in
                 let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
                 let signed = Layout.is_signed off_ty in
-                let^^+ p' = Sptr.offset ~signed ~ty p v in
+                let+ p' = Sptr.offset ~signed ~ty p v in
                 Ptr (p', meta)
             | _ ->
-                let$$+ res = Core.eval_ptr_binop op p1 p2 in
+                let+ res = Core.eval_ptr_binop op p1 p2 in
                 Int res)
         | Float v1, Float v2 -> (
             match op with
@@ -909,7 +901,7 @@ module Make (State : State_intf.S) = struct
               if Types.equal_ty from_ty to_ty then ok (arg :: acc)
               else
                 let blocks = Encoder.rust_to_cvals arg from_ty in
-                let$$+ arg = Encoder.transmute ~to_ty blocks in
+                let+ arg = Encoder.transmute ~to_ty blocks in
                 arg :: acc)
         in
         let args = List.rev args in

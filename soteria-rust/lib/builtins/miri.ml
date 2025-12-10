@@ -1,7 +1,7 @@
 open Rust_val
 
-module M (State : State_intf.S) = struct
-  open State_monad.Make (State)
+module M (State_monad : State_monad.S) = struct
+  open State_monad
   open Syntax
 
   let alloc_id args =

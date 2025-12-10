@@ -123,12 +123,12 @@ let std_fun_map =
   |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
   |> NameMatcherMap.of_list
 
-module M (State : State_intf.S) = struct
-  module Alloc = Alloc.M (State)
-  module Intrinsics = Intrinsics.M (State)
-  module Miri = Miri.M (State)
-  module Rusteria = Rusteria.M (State)
-  module Std = Std.M (State)
+module M (State_monad : State_monad.S) = struct
+  module Alloc = Alloc.M (State_monad)
+  module Intrinsics = Intrinsics.M (State_monad)
+  module Miri = Miri.M (State_monad)
+  module Rusteria = Rusteria.M (State_monad)
+  module Std = Std.M (State_monad)
 
   let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
     let open Std in

@@ -2,31 +2,16 @@
     manually, instead modify the script and re-run it. *)
 
 open Charon
-open Rustsymex
 
-module M (State : State_intf.S) = struct
+module M (State_monad : State_monad.S) = struct
   module type Impl = sig
-    type rust_val := State.Sptr.t Rust_val.t
-
-    type 'a ret :=
-      unit ->
-      State.t ->
-      ( 'a * unit * State.t,
-        Error.t State.err * State.t,
-        State.serialized )
-      Result.t
+    type rust_val := State_monad.Sptr.t Rust_val.t
+    type 'a ret := ('a, unit) State_monad.t
 
     type fun_exec :=
-      UllbcAst.fun_decl ->
-      rust_val list ->
-      unit ->
-      State.t ->
-      ( rust_val * unit * State.t,
-        Error.t State.err * State.t,
-        State.serialized )
-      Result.t
+      UllbcAst.fun_decl -> rust_val list -> (rust_val, unit) State_monad.t
 
-    type full_ptr := State.Sptr.t Rust_val.full_ptr
+    type full_ptr := State_monad.Sptr.t Rust_val.full_ptr
 
     (** {@markdown[
           Aborts the execution of the process.
@@ -2949,25 +2934,11 @@ module M (State : State_intf.S) = struct
   module type S = sig
     include Impl
 
-    type rust_val := State.Sptr.t Rust_val.t
-
-    type 'a ret :=
-      unit ->
-      State.t ->
-      ( 'a * unit * State.t,
-        Error.t State.err * State.t,
-        State.serialized )
-      Result.t
+    type rust_val := State_monad.Sptr.t Rust_val.t
+    type 'a ret := ('a, unit) State_monad.t
 
     type fun_exec :=
-      UllbcAst.fun_decl ->
-      rust_val list ->
-      unit ->
-      State.t ->
-      ( rust_val * unit * State.t,
-        Error.t State.err * State.t,
-        State.serialized )
-      Result.t
+      UllbcAst.fun_decl -> rust_val list -> (rust_val, unit) State_monad.t
 
     val eval_fun :
       string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret

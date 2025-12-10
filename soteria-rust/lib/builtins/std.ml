@@ -4,11 +4,10 @@ open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (State : State_intf.S) = struct
-  module Core = Core.M (State)
-  module Alloc = Alloc.M (State)
-  module Encoder = Encoder.Make (State.Sptr)
-  open State_monad.Make (State)
+module M (State_monad : State_monad.S) = struct
+  module Core = Core.M (State_monad)
+  module Alloc = Alloc.M (State_monad)
+  open State_monad
   open Syntax
 
   let zeroed (fun_sig : UllbcAst.fun_sig) _ =
@@ -48,7 +47,7 @@ module M (State : State_intf.S) = struct
     (* TODO: take into account idx.mutability *)
     let idx = as_base_i Usize (List.nth args 1) in
     let ty = List.hd gen_args.types in
-    let^^ ptr' = Sptr.offset ~signed:false ~ty ptr idx in
+    let* ptr' = Sptr.offset ~signed:false ~ty ptr idx in
     if not idx_op.is_range then
       let+ () =
         State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ size)) `OutOfBounds

@@ -1,23 +1,21 @@
 (** This file was generated with [scripts/intrinsics.py] -- do not edit it
     manually, instead modify the script and re-run it. *)
 
-open Rustsymex
 open Rust_val
 
-module M (State : State_intf.S) : Intrinsics_intf.M(State).S = struct
-  type rust_val = State.Sptr.t Rust_val.t
+module M (State_monad : State_monad.S) : Intrinsics_intf.M(State_monad).S =
+struct
+  open State_monad
+  open Syntax
 
-  let ( let+ ) x f () st =
-    let open Rustsymex.Syntax in
-    let++ y, (), st' = x () st in
-    (f y, (), st')
+  type rust_val = Sptr.t Rust_val.t
 
   let[@inline] as_ptr (v : rust_val) =
     match v with
     | Ptr ptr -> ptr
     | Int v ->
         let v = Typed.cast_i Usize v in
-        let ptr = State.Sptr.null_ptr_of v in
+        let ptr = Sptr.null_ptr_of v in
         (ptr, Thin)
     | _ -> failwith "expected pointer"
 
@@ -25,7 +23,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).S = struct
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
   let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
 
-  include Intrinsics_impl.M (State)
+  include Intrinsics_impl.M (State_monad)
 
   let eval_fun name fun_exec (generics : Charon.Types.generic_args) args =
     match (name, generics.types, args) with
@@ -769,8 +767,6 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).S = struct
         let+ () = write_via_move ~t ~ptr ~value in
         Tuple []
     | name, _, _ ->
-        fun () _ ->
-          Fmt.kstr not_impl
-            "Intrinsic %s not found, or not called with the right arguments"
-            name
+        Fmt.kstr not_impl
+          "Intrinsic %s not found, or not called with the right arguments" name
 end
