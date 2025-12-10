@@ -120,7 +120,7 @@ module Frontend = struct
         (fun ~cpp_cmd filename ->
           let cpp_cmd =
             cpp_cmd
-            ^ " -E -CC "
+            ^ " -E -x c -CC "
             ^ include_soteria_c_h
             ^ use_cerb_libc_if_asked ()
           in
