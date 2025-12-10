@@ -1,9 +1,11 @@
 // Kani: kani ./demo/darpa/simple.rs -Zuninit-checks --output-format terse
 // Soteria Rust: dune exec -- soteria-rust rustc ./demo/darpa/simple.rs --kani --summary
 
+#![feature(core_intrinsics)]
+
 /// A classic overflow error when checking before adding two numbers
 #[kani::proof]
-fn overflow() -> u32 {
+fn saturating_add_overflow() -> u32 {
     let a: u32 = kani::any();
     let b: u32 = kani::any();
     if a + b < u32::MAX {
@@ -15,7 +17,7 @@ fn overflow() -> u32 {
 
 /// A fix to this, which passes the analysis
 #[kani::proof]
-fn overflow_fixed() -> u32 {
+fn saturating_add() -> u32 {
     let a: u32 = kani::any();
     let b: u32 = kani::any();
     if a < u32::MAX - b {
@@ -54,9 +56,9 @@ impl<T: Arbitrary> Arbitrary for MyOption<T> {
 /// Soteria Rust can reliably detected uninitialised memory access
 #[kani::proof]
 fn uninit_access() {
+    let any_option: MyOption<u32> = kani::any();
+    let addr: *const u32 = &any_option as *const MyOption<u32> as *const u32;
     unsafe {
-        let any_option: MyOption<u32> = kani::any();
-        let addr: *const u32 = &any_option as *const MyOption<u32> as *const u32;
         let addr_value = addr.offset(1);
         let value: u32 = *addr_value;
     }
