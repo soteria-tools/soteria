@@ -1,11 +1,11 @@
 module Var = Symex.Var
 
-module type From_iter = sig
-  type t
-  type 'a ty
-  type 'a symex
+module From_iter (Symex : Symex.Base) = struct
+  module type S = sig
+    type t
 
-  val from_iter : 'a ty Var.iter_vars -> t symex
+    val from_iter : 'a Symex.Value.ty Var.iter_vars -> t Symex.t
+  end
 end
 
 module Subst = struct
@@ -35,11 +35,8 @@ module Subst = struct
 
   let to_fn subst x = find x subst
 
-  module From_iter (Symex : Symex.S) :
-    From_iter
-      with type t := Var.t t
-       and type 'a ty := 'a Symex.Value.ty
-       and type 'a symex := 'a Symex.t = struct
+  module From_iter (Symex : Symex.Base) :
+    From_iter(Symex).S with type t := Var.t t = struct
     let from_iter iter_vars =
       let open Symex.Syntax in
       Symex.fold_iter iter_vars ~init:empty ~f:(fun subst (var, ty) ->
@@ -71,11 +68,8 @@ module Subst_mut = struct
     let res = f subst_var x in
     (res, subst)
 
-  module From_iter (Symex : Symex.S) :
-    From_iter
-      with type t := Var.t t
-       and type 'a ty := 'a Symex.Value.ty
-       and type 'a symex := 'a Symex.t = struct
+  module From_iter (Symex : Symex.Base) :
+    From_iter(Symex).S with type t := Var.t t = struct
     let from_iter iter_vars =
       let open Symex.Syntax in
       let subst = create 0 in
@@ -100,11 +94,8 @@ module Bi_subst = struct
   let empty () =
     { forward = Subst.empty; backward = Subst_mut.create 0; next_backward = 0 }
 
-  module From_iter (Symex : Symex.S) :
-    From_iter
-      with type t := t
-       and type 'a ty := 'a Symex.Value.ty
-       and type 'a symex := 'a Symex.t = struct
+  module From_iter (Symex : Symex.Base) : From_iter(Symex).S with type t := t =
+  struct
     open Symex.Syntax
 
     let from_iter iter_vars =
