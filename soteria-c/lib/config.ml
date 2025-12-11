@@ -63,6 +63,10 @@ type t = {
       [@env "SOTERIA_TESTCOMP_COMPAT"]
       (** Enable support for a subset of the testcomp API (e.g.,
           __VERIFIER_nondet_*)
+  ignore_ub : bool;
+      [@make.default false] [@names [ "ignore-ub" ]] [@env "SOTERIA_IGNORE_UB"]
+      (** Ignores undefined behaviour branches (mostly for Test-Comp's weird
+          requirements). Only has effect in symbolic testing mode. *)
   havoc_undefined_funs : bool;
       [@make.default false]
       [@names

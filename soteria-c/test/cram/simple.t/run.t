@@ -1117,3 +1117,21 @@ Should return -1
   
   Executed 51 statements
   Verification Success!
+  
+Does find UB but says Verification Success!
+  $ soteria-c exec ignore_ub.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v --print-states --ignore-ub
+  Symex terminated with the following outcomes:
+    [Ok: (0x00,
+          { heap =
+            [(V|1|,
+              { node =
+                [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
+                   v = 0x0000000c : signed int};
+                 Bound(0x0000000000000004)];
+                info = (Some ignore_ub.c:5:19-38) })];
+            globs = [] });
+     Error: Null pointer dereference with trace
+            [• Triggering write: ignore_ub.c:7:3-10 (cursor: 7:6)]]
+  
+  Executed 5 statements
+  Verification Success!

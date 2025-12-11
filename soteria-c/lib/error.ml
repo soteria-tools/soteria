@@ -35,6 +35,14 @@ let pp ft = function
   | `Overflow -> Fmt.string ft "Integer overflow"
   | `Gave_up s -> Fmt.pf ft "Analysis gave up: %s" s
 
+let is_ub = function
+  | `NullDereference | `OutOfBounds | `UninitializedMemoryAccess | `UseAfterFree
+  | `DivisionByZero | `UBPointerComparison | `UBPointerArithmetic
+  | `InvalidFunctionPtr | `DoubleFree | `InvalidFree | `Overflow
+  | `Memory_leak (* Not really UB but we want to ignore it in Test-Comp *) ->
+      true
+  | `LinkError _ | `FailedAssert | `ParsingError _ | `Gave_up _ -> false
+
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `Memory_leak -> Warning
   | _ -> Error

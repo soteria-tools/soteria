@@ -316,56 +316,44 @@ let exec_and_print log_config term_config solver_config config fuel includes
   else (
     dump_stats result.stats;
     if (Config.current ()).print_states then print_states result;
-    let errors =
+    let errors_to_signal =
       List.filter_map
-        (function Soteria.Symex.Compo_res.Error e, _ -> Some e | _ -> None)
+        (function
+          | ( Soteria.Symex.Compo_res.Error
+                (Soteria.Symex.Or_gave_up.Gave_up _ as err),
+              _ ) ->
+              Some err
+          | Error (E (e, _) as err), _
+          (* Test-Comp requires filtering out UBs... *)
+            when not ((Config.current ()).ignore_ub && Error.is_ub e) ->
+              Some err
+          | _ -> None)
         result.res
     in
-    let tool_gave_up = ref false in
-    let fail_on_assertion_only =
-      match Sys.getenv_opt "SYMBOCALYPSE_SOTERIA_FAIL_ON_ASSERTION_ONLY" with
-      | None -> false
-      | Some _ -> true
-    in
-    ListLabels.iter errors
+
+    let has_found_bugs = ref false in
+    ListLabels.iter errors_to_signal
       ~f:
         (let open Error.Diagnostic in
-          function
-          | Soteria.Symex.Or_gave_up.E (err, trace) ->
-            if not fail_on_assertion_only || err = `FailedAssert then
-              print_diagnostic ~fid:entry_point ~call_trace:trace ~error:err
-          | Gave_up msg ->
-             tool_gave_up := true;
+         function
+         | Soteria.Symex.Or_gave_up.E (err, trace) ->
+             has_found_bugs := true;
+             print_diagnostic ~fid:entry_point ~call_trace:trace ~error:err
+         | Gave_up msg ->
              print_diagnostic ~fid:entry_point ~call_trace:Call_trace.empty
                ~error:(`Gave_up msg));
-    let success = List.is_empty errors in
+    let success = List.is_empty errors_to_signal in
     Fmt.pr "@.Executed %d statements" result.stats.steps_number;
     if success then (
       Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_ok "Verification Success!";
       Error.Exit_code.Success)
-    else if !tool_gave_up then (
+    else if !has_found_bugs then (
+      Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!";
+      Error.Exit_code.Found_bug)
+    else (
       Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err
         "Verification Failure! (Unsupported features)";
-      Error.Exit_code.Tool_error)
-    else if fail_on_assertion_only then
-      let has_assertion_failure =
-        List.fold_left (fun has ->
-          let open Error.Diagnostic in
-          function
-        | Soteria.Symex.Or_gave_up.E (`FailedAssert, _trace) -> true
-        | _ -> has) false errors
-      in
-      if has_assertion_failure then begin
-        Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!";
-        Error.Exit_code.Found_bug
-      end else begin
-        Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_ok "Verification Success!";
-        Error.Exit_code.Success
-      end
-    else begin
-      Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!";
-      Error.Exit_code.Found_bug
-    end)
+      Error.Exit_code.Tool_error))
 
 let dump_summaries results =
   match (Config.current ()).dump_summaries_file with
