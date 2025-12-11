@@ -87,24 +87,21 @@ TypeNever = Literal["Never"]
 Type = TypeAdt | TypeLiteral | TypeTypeVar | TypeRef | TypePtr | TypeNever
 
 
+class DedupedType(TypedDict):
+    Deduplicated: int
+
+
+class HashConsedType(TypedDict):
+    HashConsedValue: tuple[int, Type]
+
+
+UniqueType = DedupedType | HashConsedType
+
+
 class Signature(TypedDict):
     generics: GenericParams
-    inputs: list[Type]
-    output: Type
-
-
-T = TypeVar("T")
-
-
-class ResultOk(TypedDict, Generic[T]):
-    Ok: T
-
-
-class ResultError(TypedDict):
-    Err: None
-
-
-Result = ResultOk[T] | ResultError
+    inputs: list[UniqueType]
+    output: UniqueType
 
 
 class Local(TypedDict):
@@ -129,7 +126,7 @@ class Body(TypedDict):
 class FunDecl(TypedDict):
     item_meta: ItemMeta
     signature: Signature
-    body: Result[Body]
+    body: Body
 
 
 InterpTypeBase = Literal[
@@ -138,8 +135,21 @@ InterpTypeBase = Literal[
 InterpTypeMeta = Optional[str]
 InterpType = tuple[InterpTypeBase, InterpTypeMeta]
 
+type_cache: dict[int, Type] = {}
 
-def type_of(ty: Type) -> InterpType:
+
+def type_of(unique_ty: UniqueType) -> InterpType:
+    ty: Type
+    if "Deduplicated" in unique_ty:
+        type_id = unique_ty["Deduplicated"]
+        if type_id not in type_cache:
+            raise ValueError(f"Unknown deduplicated type id: {type_id}")
+        ty = type_cache[type_id]
+    elif "HashConsedValue" in unique_ty:
+        type_id, inner_ty = unique_ty["HashConsedValue"]
+        type_cache[type_id] = inner_ty
+        ty = inner_ty
+
     if ty == "Never":
         return "unit", None
 
@@ -162,7 +172,29 @@ def type_of(ty: Type) -> InterpType:
         if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
             return "unit", None
 
+    if "TypeVar" in ty:
+        return "unknown", None
+
+    # raise RuntimeError(f"Unhandled type: {ty}")
     return "unknown", None
+
+
+# try traversing the whole JSON to cache all types
+def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
+    if isinstance(x, list):
+        for v in x:
+            traverse_types(v, prev_key)
+        return
+
+    if not isinstance(x, dict):
+        return
+
+    if "HashConsedValue" in x and prev_key != "tref" and prev_key != "trait_refs":
+        type_id, inner_ty = x["HashConsedValue"]
+        type_cache[type_id] = inner_ty
+
+    for k, v in x.items():
+        traverse_types(v, k)
 
 
 input_type: dict[InterpTypeBase, str] = {
@@ -243,6 +275,7 @@ def get_intrinsics() -> dict[str, FunDecl]:
         file_rs.unlink(missing_ok=True)
 
     ullbc = json.loads(file_json.read_text())
+    traverse_types(ullbc)
     intrinsics: dict[str, FunDecl] = {
         "::".join(i["Ident"][0] for i in fun["item_meta"]["name"][2:]): fun
         for fun in ullbc["translated"]["fun_decls"]
@@ -257,8 +290,8 @@ def get_intrinsics() -> dict[str, FunDecl]:
 
 
 # Generate the OCaml interface for the intrinsics stubs, along with the stub file itself;
-# returns [interface string, stubs string]
-def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
+# returns [interfaces string, stubs string, main string]
+def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     class IntrinsicInfo(TypedDict):
         name: str
         path: str
@@ -289,19 +322,12 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         )
         doc = sanitize_comment(doc)
         arg_count = len(fun["signature"]["inputs"])
-        args: list[tuple[str, InterpType]] = (
-            [
-                (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
-                for param in fun["body"]["Ok"]["Unstructured"]["locals"]["locals"][
-                    1 : arg_count + 1
-                ]
+        args: list[tuple[str, InterpType]] = [
+            (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
+            for param in fun["body"]["Unstructured"]["locals"]["locals"][
+                1 : arg_count + 1
             ]
-            if "Ok" in fun["body"]
-            else [
-                (f"arg{i+1}", type_of(ty))
-                for i, ty in enumerate(fun["signature"]["inputs"])
-            ]
-        )
+        ]
         arg_names = [arg for (arg, _) in args]
         types = [
             (
@@ -325,39 +351,49 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         )
     intrinsics_info.sort(key=lambda x: x["name"])
 
-    interface_str = """
-        (** This file was generated with [scripts/intrinsics.py] -- do not edit it manually,
-            instead modify the script and re-run it. *)
+    prelude = """
+    (** This file was generated with [scripts/intrinsics.py] -- do not edit it manually,
+        instead modify the script and re-run it. *)
+    """
+
+    type_utils = """
+        type rust_val := State.Sptr.t Rust_val.t
+        type 'a ret := (
+            unit ->
+            State.t ->
+            ('a * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t
+        )
+        type fun_exec := (
+            UllbcAst.fun_decl ->
+            rust_val list ->
+            unit ->
+            State.t ->
+            (rust_val * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t)
+    """
+
+    interface_str = f"""
+        {prelude}
 
         open Charon
         open Rustsymex
 
-        module M: (State: State_intf.S) -> sig
-            type rust_val := State.Sptr.t Rust_val.t
+        module M (State: State_intf.S) = struct
+          module type Impl = sig
+            {type_utils}
             type full_ptr := State.Sptr.t Rust_val.full_ptr
-            type 'a ret := (
-                unit ->
-                State.t ->
-                ('a * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t
-            )
-            type fun_exec := (
-                UllbcAst.fun_decl ->
-                rust_val list ->
-                unit ->
-                State.t ->
-                (rust_val * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t)
+
     """
 
-    stubs_str = """
-        (** This file was generated with [scripts/intrinsics.py] -- do not edit it manually,
-            instead modify the script and re-run it. *)
+    stubs_str = f"""
+        {prelude}
+
 
         [@@@warning "-unused-value-declaration"]
 
         open Rustsymex
         open Rust_val
 
-        module M (State: State_intf.S) = struct
+        module M (State: State_intf.S): Intrinsics_intf.M(State).Impl = struct
 
           type rust_val = State.Sptr.t Rust_val.t
 
@@ -378,6 +414,36 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
           let as_base ty (v : rust_val) = Rust_val.as_base ty v
           let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
           let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
+
+    """
+
+    main_str = f"""
+        {prelude}
+
+        open Rustsymex
+        open Rust_val
+
+        module M (State: State_intf.S): Intrinsics_intf.M(State).S = struct
+
+            type rust_val = State.Sptr.t Rust_val.t
+
+            let ( let+ ) x f () st =
+            let open Rustsymex.Syntax in
+            let++ y, (), st' = x () st in
+            (f y, (), st')
+
+            let[@inline] as_ptr (v : rust_val) =
+            match v with
+            | Ptr ptr -> ptr
+            | Int v ->
+                let v = Typed.cast_i Usize v in
+                let ptr = State.Sptr.null_ptr_of v in
+                (ptr, Thin)
+            | _ -> failwith "expected pointer"
+
+            let as_base ty (v : rust_val) = Rust_val.as_base ty v
+            let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
+            let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
 
     """
 
@@ -405,13 +471,22 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
                 not_impl "Unsupported intrinsic: {info['name']}"
         """
 
-    interface_str += """
+    interface_str += f"""
+        end
 
+        module type S = sig
+            include Impl
+            {type_utils}
             val eval_fun : string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
         end
+    end
     """
 
     stubs_str += """
+        end
+    """
+
+    main_str += """
             include Intrinsics_impl.M (State)
 
             let eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
@@ -431,25 +506,25 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str]:
         if info["name"] == "catch_unwind":
             call_args.insert(0, "fun_exec")
 
-        stubs_str += f"""
+        main_str += f"""
             | "{info['name']}", [{types}], [{args_match}] ->
         """
 
         for arg, ty in info["args"]:
-            stubs_str += input_type_cast(arg, ty)
+            main_str += input_type_cast(arg, ty)
 
         prefix, postfix = output_type_cast(info["ret"])
-        stubs_str += f"""
+        main_str += f"""
             {prefix} {info['name']} {' '.join(call_args)} {postfix}
         """
 
-    stubs_str += """
+    main_str += """
                 | name, _, _ -> fun () _ ->
                     Fmt.kstr not_impl "Intrinsic %s not found, or not called with the right arguments" name
         end
     """
 
-    return interface_str, stubs_str
+    return interface_str, stubs_str, main_str
 
 
 def write_ocaml_file(filename: Path, content: str) -> None:
@@ -471,11 +546,12 @@ def write_ocaml_file(filename: Path, content: str) -> None:
 
 if __name__ == "__main__":
     intrinsics = get_intrinsics()
-    interface, stubs = generate_interface(intrinsics)
+    interface, stubs, main = generate_interface(intrinsics)
 
     ml_folder = PWD / ".." / "lib" / "builtins"
-    write_ocaml_file(ml_folder / "intrinsics.mli", interface)
-    write_ocaml_file(ml_folder / "intrinsics.ml", stubs)
+    write_ocaml_file(ml_folder / "intrinsics_intf.ml", interface)
+    write_ocaml_file(ml_folder / "intrinsics_stubs.ml", stubs)
+    write_ocaml_file(ml_folder / "intrinsics.ml", main)
 
     # generate the "intrinsincs_impl.ml" file if it doesn't exist
     impl_file = ml_folder / "intrinsics_impl.ml"
