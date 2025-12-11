@@ -66,7 +66,8 @@ type t = {
   ignore_ub : bool;
       [@make.default false] [@names [ "ignore-ub" ]] [@env "SOTERIA_IGNORE_UB"]
       (** Ignores undefined behaviour branches (mostly for Test-Comp's weird
-          requirements). Only has effect in symbolic testing mode. *)
+          requirements). Branches reaching UB will be dismissed. Only has effect
+          in symbolic testing mode. *)
   havoc_undefined_funs : bool;
       [@make.default false]
       [@names

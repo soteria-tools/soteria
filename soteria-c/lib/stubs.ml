@@ -277,14 +277,14 @@ module M (State : State_intf.S) = struct
       in
       None
 
-  let signaled_textcomp = ref false
+  let signaled_testcomp = ref false
 
   let with_testcomp_support x =
     if (Config.current ()).testcomp_compat then Some x
     else
       let () =
-        if not !signaled_cbmc then (
-          signaled_cbmc := true;
+        if not !signaled_testcomp then (
+          signaled_testcomp := true;
           L.warn (fun m ->
               m
                 "Test-Comp support is not enabled, but detected use of the \

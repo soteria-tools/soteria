@@ -105,8 +105,6 @@ class soteria_lsp_server generate_errors =
       | _ -> super#on_unknown_notification ~notify_back notif
   end
 
-exception LSP_error of string
-
 let run ~generate_errors () =
   Eio_main.run @@ fun env ->
   let s = new soteria_lsp_server generate_errors in
