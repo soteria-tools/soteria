@@ -238,6 +238,8 @@ module M (State : State_intf.S) = struct
     in
     Result.ok (ret, state)
 
+  let vanish_fn ~args:_ _state = vanish ()
+
   module Arg_filter = struct
     (** HACK: Some internal functions such as __builtin___memcpy_chk are not
         needed in our tool, since we perform all checks. For this function, we
@@ -355,6 +357,7 @@ module M (State : State_intf.S) = struct
               (nondet (Basic (Floating (RealFloating Double))), None)
         | "__soteria___assert" -> Some (assert_, None)
         | "__assert_fail" -> with_testcomp_support (assert_fail, None)
+        | "abort" -> with_testcomp_support (vanish_fn, None)
         | "__CPROVER_assert" ->
             (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
             with_cbmc_support (assert_, Some (( == ) 0))
