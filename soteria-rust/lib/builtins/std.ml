@@ -11,11 +11,6 @@ module M (State : State_intf.S) = struct
   open State_monad.Make (State)
   open Syntax
 
-  let zeroed (fun_sig : UllbcAst.fun_sig) _ =
-    match Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) fun_sig.output with
-    | Some v -> ok v
-    | None -> error (`StdErr "Non-zeroable type")
-
   let array_repeat (gen_args : Types.generic_args) args =
     let rust_val, size =
       match (args, gen_args.const_generics) with
