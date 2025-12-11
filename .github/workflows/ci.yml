@@ -4,7 +4,7 @@ permissions:
   contents: write
   pages: write
   id-token: write
-  
+
 on:
   push:
     branches: ["main"]
@@ -105,10 +105,10 @@ jobs:
           name: ${{ matrix.operating-system }}-package
           path: package
           if-no-files-found: error
-          
+
       - name: Build API documentation
         run: make doc
-        
+
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4
         with:
@@ -117,7 +117,7 @@ jobs:
           if-no-files-found: error
         # No need to upload artifact twice
         if: ${{ matrix.operating-system == 'macos-latest' }}
-        
+
       - name: Opam Cleanup
         run: opam clean -a -r
 
@@ -146,13 +146,21 @@ jobs:
         run: |
           chmod +x ./bin/soteria-c
           chmod +x ./bin/z3
-      - run: CERB_INSTALL_PREFIX=$(pwd) DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c capture-db build/compile_commands.json
+      - name: Run soteria-c (expecting exit code 13)
+        run: |
+          CERB_INSTALL_PREFIX=$(pwd) DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c capture-db build/compile_commands.json
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 13 ]; then
+            echo "Expected exit code 13, but got $EXIT_CODE"
+            exit 1
+          fi
+          echo "Correctly received exit code 13, bug was found"
         env:
           SOTERIA_Z3_PATH: ./bin/z3
           SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
           SOTERIA_SOLVER_TIMEOUT: 100
           SOTERIA_USE_CERB_HEADERS: true
-          
+
   publish-doc:
     name: Publish documentation
     runs-on: ubuntu-latest
@@ -171,13 +179,12 @@ jobs:
         with:
           name: odoc
           path: site
-      
+
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
           destination_dir: ./api/${{ env.ENTRY_PATH }}
-      
+
       - run: echo "Successfully published documentation to ${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/${{ env.ENTRY_PATH }}"
-        

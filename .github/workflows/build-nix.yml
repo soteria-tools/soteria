@@ -12,7 +12,7 @@ jobs:
     container:
       image: nixos/nix:latest
     steps:
-      - name: test
+      - name: build
         run: |
           set -x
 
