@@ -5,7 +5,8 @@ open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (State : State_intf.S) = struct
+module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
+  include Intrinsics_stubs.M (State)
   module Core = Core.M (State)
   module Encoder = Encoder.Make (State.Sptr)
   module Monad = State_monad.Make (State)
