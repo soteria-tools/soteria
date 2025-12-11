@@ -314,6 +314,8 @@ module M (State : State_intf.S) = struct
             Some (memcpy, Some (( <> ) 3))
         | "__soteria___nondet_int" ->
             Some (nondet (Basic (Integer (Signed Int_))), None)
+        | "__VERIFIER_nondet_bool" ->
+            with_testcomp_support (nondet (Basic (Integer Bool)), None)
         | "__VERIFIER_nondet_char" ->
             with_testcomp_support (nondet (Basic (Integer Char)), None)
         | "__VERIFIER_nondet_uchar" ->

@@ -67,7 +67,7 @@ Symbolic execution of a simple program with a horrible pointer indirection *&*x
 Checking that memcpy works correctly
   $ soteria-c exec cpy.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
-    [Ok: (0b1,
+    [Ok: (0x1,
           { heap =
             [(V|1|,
               { node =
@@ -900,7 +900,7 @@ Checking that code cannot branch infinitely
 Should return a single branch!
   $ soteria-c exec short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
-    [Ok: (b2bv[1](((V|2| != 0x00000000) && (V|1| != 0x00000000))),
+    [Ok: (b2bv[4](((V|2| != 0x00000000) && (V|1| != 0x00000000))),
           { heap = []; globs = [] })]
   
   Executed 4 statements
@@ -1117,7 +1117,6 @@ Should return -1
   
   Executed 51 statements
   Verification Success!
-  
 Does find UB but says Verification Success!
   $ soteria-c exec ignore_ub.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v --print-states --ignore-ub
   Symex terminated with the following outcomes:

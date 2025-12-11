@@ -879,7 +879,7 @@ module Make (State : State_intf.S) = struct
             let* v2 = eval_expr e2 in
             let^ b_res = cast_aggregate_to_bool v2 in
             ok (Agv.Basic (BV.of_bool b_res))
-          else ok (Agv.Basic U8.(1s))
+          else ok (Agv.Basic CInt.(1s))
     | AilEbinary (e1, And, e2) ->
         (* Same as Or, we need to short-circuit *)
         let* v1 = eval_expr e1 in
@@ -895,7 +895,7 @@ module Make (State : State_intf.S) = struct
             let* v2 = eval_expr e2 in
             let^ b_res = cast_aggregate_to_bool v2 in
             ok (Agv.Basic (BV.of_bool b_res))
-          else ok (Agv.Basic U8.(0s))
+          else ok (Agv.Basic CInt.(0s))
     | AilEbinary (e1, op, e2) -> (
         let ty = type_of aexpr in
         let signed =
