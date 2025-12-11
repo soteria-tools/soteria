@@ -825,18 +825,18 @@ module Make (State : State_intf.S) = struct
         | Len len, None -> ok (Int len)
         | _ -> not_impl "Unexpected len rvalue")
 
-  and exec_stmt stmt : unit t =
+  and exec_stmt (stmt : UllbcAst.statement) : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
     L.trace (fun m ->
         m "Statement full:@.%a" UllbcAst.pp_statement_kind stmt.kind);
     let@ () = with_loc ~loc:stmt.span.data in
     match stmt.kind with
     | Nop -> ok ()
-    | Assign (({ ty; _ } as place), rval) ->
+    | Assign (place, rval) ->
         let* ptr = resolve_place place in
         let* v = eval_rvalue rval in
         L.info (fun m -> m "Assigning %a <- %a" pp_full_ptr ptr pp_rust_val v);
-        State.store ptr ty v
+        State.store ptr place.ty v
     | StorageLive local ->
         let* ptr, ty = get_variable_and_ty local in
         let* () = match ptr with None -> ok () | Some ptr -> State.free ptr in
@@ -888,10 +888,11 @@ module Make (State : State_intf.S) = struct
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
     let@ () = with_loc ~loc:terminator.span.data in
     match terminator.kind with
-    | Call ({ func; args; dest = { ty; _ } as place }, target, on_unwind) ->
+    | Call ({ func; args; dest }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
-        let out_ty = ty in
-        let* exec_fun, exp_tys = resolve_function ~in_tys ~out_ty func in
+        let* exec_fun, exp_tys =
+          resolve_function ~in_tys ~out_ty:dest.ty func
+        in
         (* the expected types of the function may differ to those passed, e.g. with
            function pointers or dyn calls, so we transmute here. *)
         let* args =
@@ -916,11 +917,11 @@ module Make (State : State_intf.S) = struct
         in
         State.unwind_with fun_exec
           ~f:(fun v ->
-            let* ptr = resolve_place place in
+            let* ptr = resolve_place dest in
             L.info (fun m ->
-                m "Returned %a <- %a from %a" Crate.pp_place place pp_rust_val v
+                m "Returned %a <- %a from %a" Crate.pp_place dest pp_rust_val v
                   Crate.pp_fn_operand func);
-            let* () = State.store ptr ty v in
+            let* () = State.store ptr dest.ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
