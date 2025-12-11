@@ -201,7 +201,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           in
           Analysed { raw = summary; manifest_bugs = manifest_leak }
       | Error error ->
-          let module Subst = Soteria.Symex.Substs.Subst in
+          let module Subst = Soteria.Logic.Substs.Subst in
           let module From_iter = Subst.From_iter (Csymex) in
           let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
           let iter_post = State.iter_vars_serialized summary.post in
