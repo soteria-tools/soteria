@@ -82,8 +82,13 @@ module Exit_code = struct
     | Success  (** Everything terminated correctly and no bug was found. *)
     | Found_bug  (** Analysis was successful and found a bug in the program. *)
     | Tool_error  (** Soteria-C gave up on analysis *)
+    | Arg_parsing_error  (** User gave invalid arguments *)
 
-  let to_int = function Success -> 0 | Found_bug -> 13 | Tool_error -> 2
+  let to_int = function
+    | Success -> 0
+    | Found_bug -> 13
+    | Tool_error -> 2
+    | Arg_parsing_error -> Cmdliner.Cmd.Exit.cli_error
 
   let explain = function
     | Success -> "on successful analysis (no bugs found)."
@@ -91,4 +96,5 @@ module Exit_code = struct
     | Tool_error ->
         "when Soteria-C did not complete the analysis because of a missing \
          feature or internal error."
+    | Arg_parsing_error -> "on invalid cli arguments"
 end
