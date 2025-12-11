@@ -310,7 +310,8 @@ module M (State : State_intf.S) = struct
         | "__builtin___memcpy_chk" ->
             (* See definition of this builtin, the last argument is not useful to us. *)
             Some (memcpy, Some (( <> ) 3))
-        | "__soteria___nondet_int" -> Some (nondet (Basic (Integer Bool)), None)
+        | "__soteria___nondet_int" ->
+            Some (nondet (Basic (Integer (Signed Int_))), None)
         | "__VERIFIER_nondet_char" ->
             with_testcomp_support (nondet (Basic (Integer Char)), None)
         | "__VERIFIER_nondet_uchar" ->
