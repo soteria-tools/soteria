@@ -30,6 +30,10 @@ type t = {
       [@names [ "parse-only" ]]
       [@env "SOTERIA_PARSE_ONLY"]
       (** Only parse and link the C program, do not perform analysis *)
+  no_c23 : bool;
+      [@make.default false] [@names [ "no-c23" ]] [@env "SOTERIA_NO_C23"]
+      (** Disable C23 support (even if the underlying Cerberus library supports
+          it). *)
   dump_summaries_file : string option;
       [@docv "FILE"]
       [@names [ "dump-summaries"; "dump-summaries-to" ]]

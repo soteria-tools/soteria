@@ -31,7 +31,13 @@ let impl_name =
 
 let set_cerb_conf () =
   let open Cerb_global in
-  let lexicon = { with_c23 = true; with_gnu = true; without_cerb = false } in
+  let lexicon =
+    {
+      with_c23 = not (Config.current ()).no_c23;
+      with_gnu = true;
+      without_cerb = false;
+    }
+  in
   set_cerb_conf ~lexicon ~backend_name:"soteria-c" ~exec:false Random
     ~concurrency:false Basic ~defacto:false ~permissive:true ~agnostic:false
     ~ignore_bitfields:true
