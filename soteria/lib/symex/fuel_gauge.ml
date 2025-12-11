@@ -104,20 +104,22 @@ module Cli = struct
       Cmdliner.Arg.(
         value
         & opt (some fuel_value_conv) None
-        & info [ "steps-fuel" ]
+        & info [ "step-fuel" ]
             ~env:(Cmdliner.Cmd.Env.info "SOTERIA_STEP_FUEL")
             ~doc:
               (Fmt.str
                  "How many symbolic execution steps (~1 statement) are \
-                  executed, clashes with --infinite-fuel if finite. Default: \
-                  %a"
+                  executed per branch, clashes with --infinite-fuel if finite. \
+                  Default: %a"
                  Fuel_value.pp default.steps))
     in
     let branching =
       Cmdliner.Arg.(
         value
         & opt (some fuel_value_conv) None
-        & info [ "branching-fuel" ] ~docv:"N"
+        & info
+            [ "branching-fuel"; "branch-fuel" ]
+            ~docv:"N"
             ~env:(Cmdliner.Cmd.Env.info "SOTERIA_BRANCHING_FUEL")
             ~doc:
               (Fmt.str
