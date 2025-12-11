@@ -8,6 +8,7 @@ Warning and unspported with __VERIFIER enabled
 
 Behaves as expected with the API declared.
   $ soteria-c exec test.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --testcomp-compat
+  [WARN] Test-Comp compatibility mode enabled. Note that Soteria-C is *not* optimised for this test suite, and does not aim to be performant on it.
   error: Failed assertion in main
       ┌─ test.c:7:3
     7 │    __assert_fail();
