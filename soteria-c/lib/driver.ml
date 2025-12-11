@@ -326,13 +326,19 @@ let exec_and_print log_config term_config solver_config config includes
         result.res
     in
     let tool_gave_up = ref false in
+    let fail_on_assertion_only =
+      match Sys.getenv_opt "SYMBOCALYPSE_SOTERIA_FAIL_ON_ASSERTION_ONLY" with
+      | None -> false
+      | Some _ -> true
+    in
     ListLabels.iter errors
       ~f:
         (let open Error.Diagnostic in
-         function
-         | Soteria.Symex.Or_gave_up.E (err, trace) ->
-             print_diagnostic ~fid:entry_point ~call_trace:trace ~error:err
-         | Gave_up msg ->
+          function
+          | Soteria.Symex.Or_gave_up.E (err, trace) ->
+            if not fail_on_assertion_only || err = `FailedAssert then
+              print_diagnostic ~fid:entry_point ~call_trace:trace ~error:err
+          | Gave_up msg ->
              tool_gave_up := true;
              print_diagnostic ~fid:entry_point ~call_trace:Call_trace.empty
                ~error:(`Gave_up msg));
@@ -345,9 +351,25 @@ let exec_and_print log_config term_config solver_config config includes
       Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err
         "Verification Failure! (Unsupported features)";
       Error.Exit_code.Tool_error)
-    else (
+    else if fail_on_assertion_only then
+      let has_assertion_failure =
+        List.fold_left (fun has ->
+          let open Error.Diagnostic in
+          function
+        | Soteria.Symex.Or_gave_up.E (`FailedAssert, _trace) -> true
+        | _ -> has) false errors
+      in
+      if has_assertion_failure then begin
+        Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!";
+        Error.Exit_code.Found_bug
+      end else begin
+        Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_ok "Verification Success!";
+        Error.Exit_code.Success
+      end
+    else begin
       Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!";
-      Error.Exit_code.Found_bug))
+      Error.Exit_code.Found_bug
+    end)
 
 let dump_summaries results =
   match (Config.current ()).dump_summaries_file with
