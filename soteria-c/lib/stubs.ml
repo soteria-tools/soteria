@@ -357,7 +357,7 @@ module M (State : State_intf.S) = struct
               (nondet (Basic (Floating (RealFloating Double))), None)
         | "__soteria___assert" -> Some (assert_, None)
         | "__assert_fail" -> with_testcomp_support (assert_fail, None)
-        | "abort" -> with_testcomp_support (vanish_fn, None)
+        | "abort" | "exit" -> with_testcomp_support (vanish_fn, None)
         | "__CPROVER_assert" ->
             (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
             with_cbmc_support (assert_, Some (( == ) 0))
