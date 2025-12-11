@@ -52,12 +52,6 @@ type t = {
       [@env "SOTERIA_USE_CERB_HEADERS"]
       (** Use the Cerberus-provided standard headers instead of the system
           headers. *)
-  infinite_fuel : bool;
-      [@make.default false]
-      [@names [ "infinite-fuel" ]]
-      [@env "SOTERIA_INFINITE_FUEL"]
-      (** Infinite fuel for the analysis. If there is an unbounded loop, the
-          analysis will not stop. (Used only for whole-program analysis) *)
   cbmc_compat : bool;
       [@make.default false]
       [@names [ "cbmc"; "cbmc-compat" ]]

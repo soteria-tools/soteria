@@ -1,5 +1,6 @@
+open Soteria_c_lib
 open Cmdliner
-module Exit_code = Soteria_c_lib.Error.Exit_code
+module Exit_code = Error.Exit_code
 
 let exits =
   List.map
@@ -40,6 +41,7 @@ module Exec_main = struct
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ Soteria.Solvers.Config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
+      $ Soteria.Symex.Fuel_gauge.Cli.term ~default:Driver.default_wpst_fuel ()
       $ includes_arg
       $ files_arg
       $ entry_point_arg)

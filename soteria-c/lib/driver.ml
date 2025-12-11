@@ -232,7 +232,7 @@ let with_function_context prog f =
   Ail_helpers.run_with_prog prog @@ fun () ->
   try f () with effect Interp.Get_fun_ctx, k -> continue k fctx
 
-let exec_function ~includes file_names function_name =
+let exec_function ~includes ~fuel file_names function_name =
   let open Syntaxes.Result in
   let result =
     let* linked = parse_and_link_ail ~includes file_names in
@@ -247,11 +247,6 @@ let exec_function ~includes file_names function_name =
         Wpst_interp.exec_fun entry_point ~args:[] state
       in
       let@ () = with_function_context linked in
-      let fuel =
-        if (Config.current ()).infinite_fuel then
-          Soteria.Symex.Fuel_gauge.infinite
-        else default_wpst_fuel
-      in
       Ok (Csymex.Result.run_with_stats ~mode:OX ~fuel symex)
   in
   match result with
@@ -311,11 +306,12 @@ let print_states result =
     result.res
 
 (* Entry point function *)
-let exec_and_print log_config term_config solver_config config includes
+let exec_and_print log_config term_config solver_config config fuel includes
     file_names entry_point : Error.Exit_code.t =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
+  let fuel = Soteria.Symex.Fuel_gauge.Cli.validate_or_exit fuel in
   let@ () = initialise ~log_config ~term_config ~solver_config config in
-  let result = exec_function ~includes file_names entry_point in
+  let result = exec_function ~includes ~fuel file_names entry_point in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else (
     dump_stats result.stats;
