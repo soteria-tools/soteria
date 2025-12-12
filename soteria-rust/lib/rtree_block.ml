@@ -171,6 +171,11 @@ module Make (Sptr : Sptr.S) = struct
   open MemVal
   include Soteria.Sym_states.Tree_block.Make (DecayMapMonad) (MemVal)
 
+  let sint_to_int v =
+    match BitVec.to_z v with
+    | Some z -> return (Z.to_int z)
+    | None -> not_impl "Cannot convert size to int"
+
   let collect_leaves (t : Tree.t) =
     Result.fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
         let offset, _ = leaf.range in
@@ -179,11 +184,7 @@ module Make (Sptr : Sptr.S) = struct
         | NotOwned Totally -> miss_no_fix ~reason:"decode" ()
         | Owned (Uninit Totally, _) -> Result.ok vs
         | Owned (Zeros, _) ->
-            let+ size =
-              of_opt_not_impl "Don't know how to read this size"
-              @@ BitVec.to_z (Range.size leaf.range)
-            in
-            let size = Z.to_int size in
+            let+ size = sint_to_int (Range.size leaf.range) in
             let value = BitVec.zero (size * 8) in
             Ok ((Rust_val.Int value, offset) :: vs)
         | Owned (Init value, _) -> Result.ok ((value, offset) :: vs)
@@ -194,14 +195,18 @@ module Make (Sptr : Sptr.S) = struct
             failwith "Iterating over an intermediate node?")
 
   let decode_mem_val ~ty = function
-    | Uninit _ -> Result.error `UninitializedMemoryAccess
-    | Zeros -> not_impl "Decoding zeroed memory"
-    | Lazy -> failwith "Should have been handled earlier"
     | Init value -> Encoder.transmute_one ~to_ty:ty value
+    | Zeros ->
+        let**^ size = Layout.size_of ty in
+        let* size = sint_to_int size in
+        let zero = BV.zero (size * 8) in
+        Encoder.transmute_one ~to_ty:ty (Int zero)
+    | Uninit _ -> Result.error `UninitializedMemoryAccess
     | Any ->
         (* We don't know if this read is valid, as memory could be uninitialised.
          We have to approximate and vanish. *)
         not_impl "Reading from Any memory, vanishing."
+    | Lazy -> failwith "Should have been handled earlier"
 
   let decode_lazy ~ty (t : Tree.t) =
     (* The tree spans the entire type we're interested in.
