@@ -531,6 +531,22 @@ module Make (Sptr : Sptr.S) = struct
         in
         with_constraints ~ty:to_ty v
 
+  (** Converts a floating value to a bitvector, preserving it's bit
+      representation. This is a symbolic process, because SMT-Lib has no
+      operation for "float->bv" that preserves the bits, due to NaN.
+
+      See https://smt-lib.org/theories-FloatingPoint.shtml, "Conversions to
+      other sorts" *)
+  let float_to_bv_bits (f : [< T.sfloat ] Typed.t) :
+      [> T.sint ] Typed.t DecayMapMonad.t =
+    let fp = Typed.Float.fp_of f in
+    let size = Svalue.FloatPrecision.size fp in
+    let* bv = nondet (Typed.t_int size) in
+    let bv_f = BV.to_float_raw bv in
+    (* here we use structural equality rather than float equality; this is intended. *)
+    let+ () = assume [ bv_f ==@ f ] in
+    bv
+
   (** Transmutes a singular rust value, without splitting. This is under the
       assumption that [size_of to_ty = size_of v], and both are primitives
       (literal or pointer). *)
@@ -538,20 +554,14 @@ module Make (Sptr : Sptr.S) = struct
     let open DecayMapMonad.Result in
     match (to_ty, v) with
     | TLiteral (TFloat _), Float _ -> ok v
-    | TLiteral (TFloat fp), Int v ->
-        (* FIXME: here we should have *no* rounding, just interpret bytes *)
-        let fp = Charon_util.float_precision fp in
-        let f = BV.to_float ~rounding:NearestTiesToEven ~signed:false ~fp v in
-        ok (Float f)
+    | TLiteral (TFloat _), Int v -> ok (Float (BV.to_float_raw v))
     | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Int v ->
         with_constraints ~ty v
     | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Ptr (p, Thin) ->
         let* p = Sptr.decay p in
         with_constraints ~ty p
     | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Float f ->
-        (* FIXME: here we should have *no* rounding, just interpret bytes *)
-        let size = Svalue.FloatPrecision.size (Typed.Float.fp_of f) in
-        let v = BV.of_float ~rounding:Truncate ~signed:false ~size f in
+        let* v = float_to_bv_bits f in
         with_constraints ~ty v
     | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> ok v
     | TRef _, Int _ -> error `UBDanglingPointer
@@ -577,10 +587,7 @@ module Make (Sptr : Sptr.S) = struct
     let to_bitvec v =
       match v with
       | Int v -> return v
-      | Float f ->
-          let size = Svalue.FloatPrecision.size (Typed.Float.fp_of f) in
-          (* FIXME: here we should have *no* rounding, just interpret bytes *)
-          return @@ BV.of_float ~rounding:Truncate ~signed:false ~size f
+      | Float f -> float_to_bv_bits f
       | Ptr (ptr, Thin) -> Sptr.decay ptr
       | Ptr (ptr, Len len) ->
           let+ ptr = Sptr.decay ptr in
