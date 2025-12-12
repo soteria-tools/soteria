@@ -45,6 +45,7 @@ Symbolic execution of a simple program with symbolic values that fails because o
       │    ^^^^^^^ Triggering write
   Executed 5 statements
   Verification Failure!
+  [13]
 
 Symbolic execution of a simple program with a horrible pointer indirection *&*x
   $ soteria-c exec indirections.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
@@ -66,7 +67,7 @@ Symbolic execution of a simple program with a horrible pointer indirection *&*x
 Checking that memcpy works correctly
   $ soteria-c exec cpy.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
-    [Ok: (0b1,
+    [Ok: (0x1,
           { heap =
             [(V|1|,
               { node =
@@ -115,6 +116,7 @@ Checking that fuel gets exhausted properly
       │      1: Called from here
   Executed 152 statements
   Verification Failure!
+  [13]
 Checking that code cannot branch infinitely
   $ soteria-c exec max_branching.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
@@ -898,7 +900,7 @@ Checking that code cannot branch infinitely
 Should return a single branch!
   $ soteria-c exec short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
-    [Ok: (b2bv[1](((V|2| != 0x00000000) && (V|1| != 0x00000000))),
+    [Ok: (b2bv[4](((V|2| != 0x00000000) && (V|1| != 0x00000000))),
           { heap = []; globs = [] })]
   
   Executed 4 statements
@@ -954,6 +956,7 @@ Expected to fail because no main function is defined
   error: Parsing Error: Entry point "main" not found in main
   Executed 0 statements
   Verification Failure!
+  [13]
 
 Expected to correctly find the harness function
   $ soteria-c exec harness.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --harness harness --print-states
@@ -1030,7 +1033,8 @@ Check that, without proper flag, undefined function calls are not-implemented
     [Error: Gave up: Unsupported: Cannot call external function: nondet_int_559]
   error: Analysis gave up: Unsupported: Cannot call external function: nondet_int_559 in main
   Executed 2 statements
-  Verification Failure!
+  Verification Failure! (Unsupported features)
+  [2]
 
 Check that, with proper flag, undefined function calls are havoced. Expecting 2 branches.
   $ soteria-c exec havoc_undef.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --havoc-undef --print-states
@@ -1112,4 +1116,21 @@ Should return -1
      Ok: (0x00000000, { heap = []; globs = [] })]
   
   Executed 51 statements
+  Verification Success!
+Does find UB but says Verification Success!
+  $ soteria-c exec ignore_ub.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v --print-states --ignore-ub
+  Symex terminated with the following outcomes:
+    [Ok: (0x00,
+          { heap =
+            [(V|1|,
+              { node =
+                [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
+                   v = 0x0000000c : signed int};
+                 Bound(0x0000000000000004)];
+                info = (Some ignore_ub.c:5:19-38) })];
+            globs = [] });
+     Error: Null pointer dereference with trace
+            [• Triggering write: ignore_ub.c:7:3-10 (cursor: 7:6)]]
+  
+  Executed 5 statements
   Verification Success!

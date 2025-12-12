@@ -1,4 +1,4 @@
-  $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   No bugs found
   Summaries for f_560:
@@ -36,7 +36,7 @@
       manifest_bugs = []}
   
 NO_COLOR=true is necessary to avoid test output changing in CI. For some reason, Grace doesn't prints a final caret at the end with color, and not without color.
-  $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   error: Null pointer dereference in test_np
       ┌─ manifest.c:51:3
@@ -225,7 +225,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
   
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
-  $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   No bugs found
   Summaries for test_561:
@@ -273,7 +273,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         post = { heap = []; globs = [] }; ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
-  $ soteria-c gen-summaries array_iter.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  $ soteria-c gen-summaries array_iter.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   No bugs found
   Summaries for test_561:
@@ -399,7 +399,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         ret = (Ok (V|4| +ck V|5|)) };
       manifest_bugs = []}
   
-  $ soteria-c gen-summaries overflow.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" && cat out.summaries
+  $ soteria-c gen-summaries overflow.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   error: Integer overflow in add_ovf_manifest
       ┌─ overflow.c:9:11
