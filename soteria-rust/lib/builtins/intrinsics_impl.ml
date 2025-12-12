@@ -42,7 +42,10 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let add_with_overflow = checked_op (Add OUB)
   let sub_with_overflow = checked_op (Sub OUB)
   let mul_with_overflow = checked_op (Mul OUB)
-  let align_of ~t = lift_symex @@ Layout.align_of_s t
+
+  let align_of ~t =
+    let^^+ align = Layout.align_of t in
+    (align :> T.sint Typed.t)
 
   let align_of_val ~t ~ptr =
     match (t, ptr) with
@@ -52,7 +55,9 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
         in
         let+ align = State.load (align_ptr, Thin) (TLiteral (TUInt Usize)) in
         as_base_i Usize align
-    | _ -> lift_symex @@ Layout.align_of_s t
+    | _ ->
+        let^^+ align = Layout.align_of t in
+        Typed.cast align
 
   let arith_offset ~t ~dst:(dst, meta) ~offset =
     let^^+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
@@ -226,7 +231,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
     let zero = Usize.(0s) in
     let* () = State.check_ptr_align fsrc t in
     let* () = State.check_ptr_align fdst t in
-    let^ ty_size = Layout.size_of_s t in
+    let^^ ty_size = Layout.size_of t in
     if%sat ty_size ==@ zero ||@ (count ==@ zero) then ok ()
     else
       let* () =
@@ -252,7 +257,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
       ~y:((to_ptr, _) as to_) =
     let* () = State.check_ptr_align from t in
     let* () = State.check_ptr_align to_ t in
-    let^ size = Layout.size_of_s t in
+    let^^ size = Layout.size_of t in
     let* () =
       State.assert_not
         (Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr)
@@ -501,7 +506,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let ptr_offset_from_ ~unsigned ~t ~ptr:((ptr, _) : full_ptr)
       ~base:((base, _) : full_ptr) : T.sint Typed.t ret =
     let zero = Usize.(0s) in
-    let^ size = Layout.size_of_s t in
+    let^^ size = Layout.size_of t in
     let* () =
       State.assert_not (size ==@ zero)
         (`Panic (Some "ptr_offset_from with ZST"))
@@ -536,8 +541,11 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let ptr_offset_from_unsigned = ptr_offset_from_ ~unsigned:true
 
   let raw_eq ~t ~a ~b =
-    let layout = Layout.layout_of t in
-    let bytes = mk_array_ty (TLiteral (TUInt U8)) (Z.of_int layout.size) in
+    let^^ layout = Layout.layout_of t in
+    let* size =
+      of_opt_not_impl "raw_eq with nondet size" @@ BV.to_z layout.size
+    in
+    let bytes = mk_array_ty (TLiteral (TUInt U8)) size in
     (* TODO: figure out if for these two reads we should ignore the modified state,
        as its leaves may be split in bytes which will require ugly transmutations
        to be read from again later. *)
@@ -613,12 +621,12 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
 
   let saturating_add = saturating (Add OUB)
   let saturating_sub = saturating (Sub OUB)
-  let size_of ~t = lift_symex @@ Layout.size_of_s t
+  let size_of ~t = State.lift_err @@ Layout.size_of t
 
   let size_of_val ~t ~ptr:(_, meta) =
     (* for DSTs, the size of the type is the size of all non-DST fields,
        to which we just need to add the size of the DST part. *)
-    let^ base_size = Layout.size_of_s t in
+    let^^ base_size = Layout.size_of t in
     match meta with
     | Len meta -> (
         let sub_ty = Layout.dst_slice_ty t in
@@ -626,7 +634,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
         | None -> ok base_size
         | Some sub_ty ->
             let len = Typed.cast_i Usize meta in
-            let^ size = Layout.size_of_s sub_ty in
+            let^^ size = Layout.size_of sub_ty in
             let size, ovf_mul = size *?@ len in
             let size, ovf_add = base_size +?@ size in
             let+ () = State.assert_not (ovf_mul ||@ ovf_add) `Overflow in
@@ -641,7 +649,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
         (* e.g. if alignement of outer container is 8, but dyn size is 1, the added size is 8.
            the real computation is a lot more complicated, but this does the trick for general use.
            https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
-        let^+ align = Layout.align_of_s t in
+        let^^+ align = Layout.align_of t in
         let rem = size %@ align in
         let size =
           Typed.ite (rem ==@ Usize.(0s)) size (size +!@ (align -!@ rem))
@@ -724,7 +732,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let write_bytes ~t ~dst:((ptr, _) as dst) ~val_ ~count =
     let zero = Usize.(0s) in
     let* () = State.check_ptr_align dst t in
-    let^ size = Layout.size_of_s t in
+    let^^ size = Layout.size_of t in
     let size, overflowed = size *?@ count in
     let* () = State.assert_not overflowed `Overflow in
     if%sat size ==@ zero then ok ()

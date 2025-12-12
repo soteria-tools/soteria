@@ -363,7 +363,8 @@ module Make (State : State_intf.S) = struct
         match (l, r) with
         | [], [] -> ok ()
         | ty1 :: l, ty2 :: r ->
-            if Layout.is_abi_compatible ty1 ty2 then check_tys l r
+            let^^ compatible = Layout.is_abi_compatible ty1 ty2 in
+            if%sat compatible then check_tys l r
             else error (`InvalidFnArgTys (ty1, ty2))
         | _ ->
             error
@@ -630,7 +631,7 @@ module Make (State : State_intf.S) = struct
                    dangling *)
                 let v2 = Typed.cast_i Usize v2 in
                 let ty = Charon_util.get_pointee (type_of_operand e1) in
-                let^ size = Layout.size_of_s ty in
+                let^^ size = Layout.size_of ty in
                 let+ () =
                   State.assert_
                     (v2 ==@ Usize.(0s) ||@ (size ==@ Usize.(0s)))
@@ -698,21 +699,21 @@ module Make (State : State_intf.S) = struct
             (* For now we don't do contracts. *)
             ok (Int (BV.of_bool Typed.v_false))
         | SizeOf ->
-            let^+ size = Layout.size_of_s ty in
+            let^^+ size = Layout.size_of ty in
             Int size
         | AlignOf ->
-            let^+ align = Layout.align_of_s ty in
-            Int align
+            let^^+ align = Layout.align_of ty in
+            Int (align :> T.sint Typed.t)
         | OffsetOf (ty, variant, field) ->
             let variant = Option.value variant ~default:Types.VariantId.zero in
             let field = Types.FieldId.to_int field in
             let ty : Types.ty = TAdt ty in
-            let layout = Layout.layout_of ty in
+            let^^ layout = Layout.layout_of ty in
             let fields =
               Layout.Fields_shape.shape_for_variant variant layout.fields
             in
             let inner_off = Layout.Fields_shape.offset_of field fields in
-            ok (Int (BV.usizei inner_off)))
+            ok (Int inner_off))
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with
@@ -740,12 +741,11 @@ module Make (State : State_intf.S) = struct
           | [] -> failwith "union aggregate with 0 values?"
           | _ :: _ -> failwith "union aggregate with >1 values?"
         in
-        let+ value = eval_operand op in
+        let* value = eval_operand op in
         let field = Types.FieldId.to_int field in
-        let layout = Layout.layout_of (TAdt ty) in
+        let^^ layout = Layout.layout_of (TAdt ty) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
-        let offset = BV.usizei offset in
-        let op_blocks =
+        let^^+ op_blocks =
           Encoder.rust_to_cvals ~offset value (type_of_operand op)
         in
         Union op_blocks

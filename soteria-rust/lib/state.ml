@@ -226,16 +226,14 @@ let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   log "uninit" ptr st;
-  let* size = Layout.size_of_s ty in
+  let** size = Layout.size_of ty in
   let@ ofs, block = with_ptr ptr st in
   let@ block, _ = with_tbs block in
   Tree_block.uninit_range ofs size block
 
 let apply_parser (type a) ?(ignore_borrow = false) ptr
     (parser : offset:T.sint Typed.t -> (a, 's, 'e, 'f) Encoder.ParserMonad.t) st
-    : (a * t, 'e err * t, serialized) Result.t =
-  let@ () = with_error_loc_as_call_trace st in
-  let@ () = with_loc_err () in
+    : (a * t, 'e, serialized) Result.t =
   log "load" ptr st;
   let@ offset, block = with_ptr ptr st in
   let@ block, tb = with_tbs block in
@@ -249,14 +247,12 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) st =
     match (ty, meta) with
     | TDynTrait _, VTable vt ->
         let usize = Types.TLiteral (TUInt Usize) in
-        let** ptr =
-          lift_err st @@ Sptr.offset ~ty:usize ~signed:false vt Usize.(2s)
-        in
+        let** ptr = Sptr.offset ~ty:usize ~signed:false vt Usize.(2s) in
         let++ align, st = load (ptr, Thin) usize st in
         (Typed.cast (as_base_i Usize align), st)
     | _ ->
-        let+ align = Layout.align_of_s ty in
-        Ok (align, st)
+        let++ align = Layout.align_of ty in
+        (align, st)
   in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
@@ -265,23 +261,20 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) st =
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
   let++ () =
-    assert_
+    assert_or_error
       (Sptr.is_aligned exp_align ptr)
       (`MisalignedPointer (exp_align, align, ofs))
-      st
   in
   ((), st)
 
 and load ?(is_move = false) ?(ignore_borrow = false) ((ptr, meta) as fptr) ty st
-    =
+    : (Sptr.t rust_val * t, Error.t, serialized) Result.t =
   let** (), st = check_ptr_align fptr ty st in
   let parser ~offset = Encoder.rust_of_cvals ~meta ty ~offset in
   let** value, st = apply_parser ~ignore_borrow ptr parser st in
   let++ (), st =
     if is_move then
-      let* size = Layout.size_of_s ty in
-      let@ () = with_error_loc_as_call_trace st in
-      let@ () = with_loc_err () in
+      let** size = Layout.size_of ty in
       let@ ofs, block = with_ptr ptr st in
       let@ block, _ = with_tbs block in
       Tree_block.uninit_range ofs size block
@@ -291,10 +284,25 @@ and load ?(is_move = false) ?(ignore_borrow = false) ((ptr, meta) as fptr) ty st
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   (value, st)
 
-let load_discriminant ((ptr, _) as fptr) ty st =
+and load_discriminant ((ptr, _) as fptr) ty st =
   let** (), st = check_ptr_align fptr ty st in
   let parser ~offset = Encoder.variant_of_enum ty ~offset in
   apply_parser ptr parser st
+
+let check_ptr_align ptr ty st =
+  let@ () = with_error_loc_as_call_trace st in
+  let@ () = with_loc_err () in
+  check_ptr_align ptr ty st
+
+let load ?is_move ?ignore_borrow ptr ty st =
+  let@ () = with_error_loc_as_call_trace st in
+  let@ () = with_loc_err () in
+  load ?is_move ?ignore_borrow ptr ty st
+
+let load_discriminant ptr ty st =
+  let@ () = with_error_loc_as_call_trace st in
+  let@ () = with_loc_err () in
+  load_discriminant ptr ty st
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -303,15 +311,15 @@ let tb_load ((ptr : Sptr.t), _) ty st =
   match ptr.tag with
   | None -> Result.ok ((), st)
   | Some tag ->
-      let* size = Layout.size_of_s ty in
+      let@ () = with_error_loc_as_call_trace st in
+      let@ () = with_loc_err () in
+      let** size = Layout.size_of ty in
       if%sat size ==@ Usize.(0s) then Result.ok ((), st)
-      else
-        let@ () = with_error_loc_as_call_trace st in
-        let@ () = with_loc_err () in
+      else (
         log "tb_load" ptr st;
         let@ ofs, block = with_ptr ptr st in
         let@ block, tb = with_tbs block in
-        Tree_block.tb_access ofs size tag tb block
+        Tree_block.tb_access ofs size tag tb block)
 
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns true if the value was read successfully,
@@ -322,10 +330,10 @@ let is_valid_ptr st ptr (ty : Types.ty) =
   else (
     L.debug (fun m -> m "The following read is a GHOST read");
     let+ res = load ~ignore_borrow:true ptr ty st in
-    match res with Ok _ -> true | _ -> false)
+    is_ok res)
 
 let store ((ptr, _) as fptr) ty sval st =
-  let parts = Encoder.rust_to_cvals sval ty in
+  let** parts = lift_err st @@ Encoder.rust_to_cvals sval ty in
   if List.is_empty parts then Result.ok ((), st)
   else
     let** (), st = check_ptr_align fptr ty st in
@@ -336,7 +344,7 @@ let store ((ptr, _) as fptr) ty sval st =
           Fmt.(list ~sep:comma Encoder.pp_cval_info)
           parts);
     log "store" ptr st;
-    let* size = Layout.size_of_s ty in
+    let** size = Layout.size_of ty in
     let@ ofs, block = with_ptr ptr st in
     let@ block, tb = with_tbs block in
     let open DecayMapMonad in
@@ -346,7 +354,7 @@ let store ((ptr, _) as fptr) ty sval st =
     let** (), block = Tree_block.uninit_range ofs size block in
     Result.fold_list parts ~init:((), block)
       ~f:(fun ((), block) (value, offset) ->
-        Tree_block.store (offset +!@ ofs) value ptr.tag tb block)
+        Tree_block.store (offset +!!@ ofs) value ptr.tag tb block)
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   let@ () = with_error_loc_as_call_trace st in
@@ -436,22 +444,24 @@ let alloc_untyped ?kind ?span ~zeroed ~size ~align st =
   alloc ?kind ?span ~zeroed size align st
 
 let alloc_ty ?kind ?span ty st =
-  let* layout = Layout.layout_of_s ty in
-  alloc ?kind ?span
-    (Typed.BitVec.usizei layout.size)
-    (Typed.BitVec.usizeinz layout.align)
-    st
+  let** layout = lift_err st @@ Layout.layout_of ty in
+  alloc ?kind ?span layout.size layout.align st
 
 let alloc_tys ?kind ?span tys st =
   let@ () = with_error_loc_as_call_trace st in
+  let@ () = with_loc_err () in
+  let** layouts =
+    Result.fold_list tys ~init:[] ~f:(fun acc ty ->
+        let++ layout = Layout.layout_of ty in
+        layout :: acc)
+  in
+  let layouts = List.rev layouts in
   let@ st = with_state st in
-  SPmap.allocs st ~els:tys ~fn:(fun ty loc ->
+  SPmap.allocs st ~els:layouts ~fn:(fun layout loc ->
       let open DecayMapMonad in
       let open DecayMapMonad.Syntax in
       (* make Tree_block *)
-      let* layout = lift @@ Layout.layout_of_s ty in
-      let size = Typed.BitVec.usizei layout.size in
-      let align = Typed.BitVec.usizeinz layout.align in
+      let { size; align; _ } : Layout.t = layout in
       let block, tag = mk_block ?kind ?span ~align ~size () in
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
@@ -534,9 +544,9 @@ let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) st =
     || Layout.is_unsafe_cell ty
   then Result.ok ((ptr, meta), st)
   else
-    let* size = Layout.size_of_s ty in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
+    let** size = Layout.size_of ty in
     let@ ofs, block = with_ptr ptr st in
     let@ block, tb = with_opt_or block (ptr, meta) in
     let open DecayMapMonad.Syntax in
@@ -564,18 +574,13 @@ let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) st =
       let lift_freed_err () f =
         let+ res = f () in
         match res with
-        | Ok v -> Ok v
-        | Missing fixes -> Missing fixes
         | Error `UseAfterFree -> Error `RefInvalidatedEarly
-        | Error
-            (( `AliasingError | `NullDereference | `OutOfBounds
-             | `UBDanglingPointer | `AccessedFnPointer ) as e) ->
-            Error e
+        | v -> v
       in
       let@ () = with_error_loc_as_call_trace st in
       let@ () = with_loc_err () in
+      let** size = Layout.size_of ty in
       let@ () = lift_freed_err () in
-      let* size = Layout.size_of_s ty in
       let@ ofs, block = with_ptr ptr st in
       let@ block, tb = with_opt_or block () in
       let open DecayMapMonad.Syntax in

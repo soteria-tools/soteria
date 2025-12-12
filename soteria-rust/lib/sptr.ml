@@ -158,7 +158,7 @@ module type S = sig
     signed:bool ->
     t ->
     [< sint ] Typed.t ->
-    (t, [> `UBDanglingPointer ], 'a) Result.t
+    (t, [> Error.t ], 'a) Result.t
 
   (** Project a pointer to a field of the given type. *)
   val project :
@@ -166,7 +166,7 @@ module type S = sig
     Expressions.field_proj_kind ->
     Types.field_id ->
     t ->
-    (t, [> `UBDanglingPointer ], 'a) Result.t
+    (t, [> Error.t ], 'a) Result.t
 
   (** Decay a pointer into an integer value, losing provenance.
       {b This does not expose the address of the allocation; for that, use
@@ -239,7 +239,7 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8)) ~signed
       ({ ptr; _ } as fptr) off_by =
-    let* size = Layout.size_of_s ty in
+    let** size = Layout.size_of ty in
     let loc, off = Typed.Ptr.decompose ptr in
     let ( *? ), ( +? ) =
       if signed then (( *$?@ ), ( +$?@ )) else (( *?@ ), ( +?@ ))
@@ -261,7 +261,7 @@ module ArithPtr : S with type t = arithptr_t = struct
 
   let project ty kind field ptr =
     let field = Types.FieldId.to_int field in
-    let layout = Layout.layout_of ty in
+    let** layout = Layout.layout_of ty in
     let fields =
       match kind with
       | Expressions.ProjAdt (_, Some variant) ->
@@ -269,7 +269,7 @@ module ArithPtr : S with type t = arithptr_t = struct
       | ProjAdt (_, None) | ProjTuple _ -> layout.fields
     in
     let off = Layout.Fields_shape.offset_of field fields in
-    offset ~signed:false ptr (Typed.BitVec.usizei off)
+    offset ~signed:false ptr off
 
   let[@inline] _decay ~expose { ptr; align; size; _ } decay_map =
     let loc, ofs = Typed.Ptr.decompose ptr in

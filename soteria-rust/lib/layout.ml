@@ -3,11 +3,10 @@ open Typed.Infix
 open Typed.Syntax
 module BV = Typed.BitVec
 open Rustsymex
+open Rustsymex.Result
+open Rustsymex.Syntax
 open Rust_val
 open Charon_util
-
-exception CantComputeLayout of string * Types.ty
-exception InvalidLayout of Types.ty
 
 (** Layout of enum tags in memory. Note tags are distinct from discriminants: a
     discriminant is user specified and is what [Rvalue.Discriminant] returns,
@@ -18,13 +17,13 @@ module Tag_layout = struct
   type encoding = Direct | Niche of Types.variant_id
 
   and t = {
-    offset : int;
+    offset : T.sint Typed.t;
     ty : Types.literal_type; [@printer Charon_util.pp_literal_ty]
     encoding : encoding;
-    tags : Z.t option Array.t;
+    tags : T.sint Typed.t option Array.t;
         [@printer
           Fmt.(
-            brackets @@ array ~sep:comma (option ~none:(any "none") Z.pp_print))]
+            brackets @@ array ~sep:comma (option ~none:(any "none") Typed.ppa))]
         (** The tag associated to each variant, indexed by variant ID. If
             [None], the variant is either uninhabited or the untagged variant.
         *)
@@ -38,7 +37,7 @@ end
 module Fields_shape = struct
   type t =
     | Primitive  (** No fields present *)
-    | Arbitrary of Types.variant_id * int Array.t
+    | Arbitrary of Types.variant_id * T.sint Typed.t Array.t
         (** Arbitrary field placement (structs, unions...), with the variant
             (e.g. enums with a single inhabited variant) *)
     | Enum of Tag_layout.t * t Array.t
@@ -46,25 +45,26 @@ module Fields_shape = struct
             variant (indexed by variant ID). Using [offset_of] on this isn't
             valid; one must first retrieve the fields shape of the corresponding
             variant. *)
-    | Array of int  (** All fields are equally spaced (arrays, slices) *)
+    | Array of T.sint Typed.t
+        (** All fields are equally spaced (arrays, slices) *)
 
   let rec pp ft = function
     | Primitive -> Fmt.string ft "()"
     | Arbitrary (var, arr) ->
         Fmt.pf ft "{%a: %a}" Types.VariantId.pp_id var
-          Fmt.(braces @@ array ~sep:comma int)
+          Fmt.(braces @@ array ~sep:comma Typed.ppa)
           arr
     | Enum (tag_layout, shapes) ->
         Fmt.pf ft "Enum (%a, %a)" Tag_layout.pp tag_layout
           Fmt.(brackets @@ array ~sep:comma pp)
           shapes
-    | Array stride -> Fmt.pf ft "Array(%d)" stride
+    | Array stride -> Fmt.pf ft "Array(%a)" Typed.ppa stride
 
   let offset_of f = function
     | Primitive -> failwith "This layout has no fields"
     | Enum _ -> failwith "Can't get fields of enum; use `shape_for_variant`"
     | Arbitrary (_, arr) -> arr.(f)
-    | Array stride -> f * stride
+    | Array stride -> BV.usizei f *!@ stride
 
   let shape_for_variant variant = function
     | Enum (_, shapes) -> shapes.(Types.VariantId.to_int variant)
@@ -74,11 +74,15 @@ module Fields_shape = struct
           variant
 end
 
-type layout = { size : int; align : int; fields : Fields_shape.t }
+type t = {
+  size : T.sint Typed.t;
+  align : T.nonzero Typed.t;
+  fields : Fields_shape.t;
+}
 
-let pp_layout fmt { size; align; fields } =
-  Format.fprintf fmt "{ size = %d;@, align = %d;@, fields = @[%a@] }" size align
-    Fields_shape.pp fields
+let pp fmt { size; align; fields } =
+  Format.fprintf fmt "{ size = %a;@, align = %a;@, fields = @[%a@] }" Typed.ppa
+    size Typed.ppa align Fields_shape.pp fields
 
 module Session = struct
   type ty_key = Types.ty
@@ -88,26 +92,23 @@ module Session = struct
   (* FIXME: inter-test mutability *)
 
   (** Cache of (type or variant) -> layout *)
-  let layout_cache : (Types.ty, layout) Hashtbl.t = Hashtbl.create 128
+  let layout_cache : (Types.ty, t) Hashtbl.t = Hashtbl.create 128
 
   let get_or_compute_cached_layout ty f =
     match Hashtbl.find_opt layout_cache ty with
-    | Some layout -> layout
+    | Some layout -> ok layout
     | None ->
-        let layout = f () in
+        let++ layout = f () in
         Hashtbl.add layout_cache ty layout;
         layout
 end
 
 include Layout_common
 
-let is_int : Types.ty -> bool = function
-  | TLiteral (TInt _ | TUInt _) -> true
-  | _ -> false
-
 (* TODO: this is not really accurate, but good enough for now.
    See https://doc.rust-lang.org/reference/type-layout.html#r-layout.primitive.align *)
-let align_of_literal_ty : Types.literal_type -> int = size_of_literal_ty
+let align_of_literal_ty ty = size_of_literal_ty ty
+let size_of_literal_ty ty = size_of_literal_ty ty
 let empty_generics = TypesUtils.empty_generic_args
 
 type meta_kind = LenKind | VTableKind | NoneKind
@@ -137,34 +138,39 @@ let rec dst_slice_ty : Types.ty -> Types.ty option = function
 let is_dst ty = dst_kind ty <> NoneKind
 
 let size_to_fit ~size ~align =
-  let ( % ) = Stdlib.( mod ) in
-  if size % align = 0 then size else size + align - (size % align)
+  Typed.ite
+    (size %@ align ==@ Usize.(0s))
+    size
+    (size +!@ align -!@ (size %@ align))
 
-let max_array_len sub_size =
-  (* We calculate the max array size for a 32bit architecture, like Miri does. *)
-  let isize_bits = 32 - 1 in
-  if sub_size = 0 then Z.of_int isize_bits
-  else Z.((one lsl isize_bits) / of_int sub_size)
+let mk ~size ~align ?(fields : Fields_shape.t = Primitive) () =
+  { size; align; fields }
 
-let rec layout_of (ty : Types.ty) : layout =
+let mk_concrete ~size ~align ?fields () =
+  mk ~size:(BV.usizei size) ~align:(BV.usizeinz align) ?fields ()
+
+let not_impl_layout msg ty =
+  Fmt.kstr not_impl "Can't compute layout: %s %a" msg pp_ty ty
+
+let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   Session.get_or_compute_cached_layout ty @@ fun () ->
   match ty with
   (* Literals *)
   | TLiteral ty ->
       let size = size_of_literal_ty ty in
       let align = align_of_literal_ty ty in
-      { size; align; fields = Primitive }
+      ok (mk_concrete ~size ~align ())
   (* Fat pointers *)
   | TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } }
   | TRef (_, sub_ty, _)
   | TRawPtr (sub_ty, _)
     when is_dst sub_ty ->
       let ptr_size = Crate.pointer_size () in
-      { size = ptr_size * 2; align = ptr_size; fields = Primitive }
+      ok (mk_concrete ~size:(ptr_size * 2) ~align:ptr_size ())
   (* Refs, pointers, boxes *)
   | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) ->
       let ptr_size = Crate.pointer_size () in
-      { size = ptr_size; align = ptr_size; fields = Primitive }
+      ok (mk_concrete ~size:ptr_size ~align:ptr_size ())
   (* Dynamically sized types -- we assume they have a size of 0. In truth, these types should
      simply never be allocated directly, and instead can only be obtained hidden behind
      references; however we must be able to compute their layout, to get e.g. the offset of
@@ -176,10 +182,11 @@ let rec layout_of (ty : Types.ty) : layout =
       let sub_ty =
         if ty = TSlice then List.hd generics.types else TLiteral (TUInt U8)
       in
-      let sub_layout = layout_of sub_ty in
-      { size = 0; align = sub_layout.align; fields = Array sub_layout.size }
+      let++ sub_layout = layout_of sub_ty in
+      mk ~size:(BV.usizei 0) ~align:sub_layout.align
+        ~fields:(Array sub_layout.size) ()
   (* Same as above, but here we have even less information ! *)
-  | TDynTrait _ -> { size = 0; align = 1; fields = Primitive }
+  | TDynTrait _ -> ok (mk_concrete ~size:0 ~align:1 ())
   (* Tuples *)
   | TAdt { id = TTuple; generics = { types; _ } } -> layout_of_members types
   (* Custom ADTs (struct, enum, etc.) *)
@@ -189,63 +196,87 @@ let rec layout_of (ty : Types.ty) : layout =
       | Struct fields -> layout_of_struct adt fields
       | Enum variants -> layout_of_enum adt variants
       | Union fs ->
-          let layouts = List.map layout_of @@ Charon_util.field_tys fs in
+          let++ layouts =
+            Result.fold_list (Charon_util.field_tys fs) ~init:[]
+              ~f:(fun acc ty ->
+                let++ l = layout_of ty in
+                l :: acc)
+          in
+          let layouts = List.rev layouts in
+
           let hd = List.hd layouts in
           let tl = List.tl layouts in
           let size, align =
             List.fold_left
-              (fun (size, align) l -> (max size l.size, max align l.align))
+              (fun (size, align) l ->
+                ( BV.max ~signed:false size l.size,
+                  BV.max ~signed:false align l.align ))
               (hd.size, hd.align) tl
           in
           let size = size_to_fit ~size ~align in
           (* All fields in the union start at 0 and overlap *)
-          let fields = Array.make (List.length fs) 0 in
-          { size; align; fields = Arbitrary (Types.VariantId.zero, fields) }
-      | Opaque ->
-          let msg = Fmt.str "opaque (%a)" Crate.pp_name adt.item_meta.name in
-          raise (CantComputeLayout (msg, ty))
-      | TDeclError _ -> raise (CantComputeLayout ("decl error", ty))
-      | Alias _ -> raise (CantComputeLayout ("alias", ty)))
+          let fields = Array.make (List.length fs) (BV.usizei 0) in
+          mk ~size ~align ~fields:(Arbitrary (Types.VariantId.zero, fields)) ()
+      | Opaque -> not_impl_layout "opaque" ty
+      | TDeclError _ -> not_impl_layout "decl error" ty
+      | Alias _ -> not_impl_layout "alias" ty)
   (* Arrays *)
   | TAdt { id = TBuiltin TArray; generics } ->
+      let max_array_len sub_size =
+        (* We calculate the max array size for a 32bit architecture, like Miri does. *)
+        if Typed.equal sub_size Usize.(0s) then
+          (* Special case to avoid a division by zero in the concrete case *)
+          BV.usize Z.(pow (of_int 2) 32)
+        else
+          let isize_bits = 32 - 1 in
+          BV.usize Z.(one lsl isize_bits) /@ Typed.cast sub_size
+      in
       let size = List.hd generics.const_generics in
       let subty = List.hd generics.types in
-      let len = Charon_util.z_of_const_generic size in
-      let sub_layout = layout_of subty in
-      if sub_layout.size <> 0 && Z.gt len (max_array_len sub_layout.size) then
-        raise (InvalidLayout ty);
-      let size = Z.(to_int (len * of_int sub_layout.size)) in
-      { size; align = sub_layout.align; fields = Array sub_layout.size }
+      let len = BV.of_const_generic size in
+      let** sub_layout = layout_of subty in
+      let++ () =
+        assert_or_error
+          (sub_layout.size
+          ==@ Usize.(0s)
+          ||@ (len <=@ max_array_len sub_layout.size))
+          (`InvalidLayout ty)
+      in
+      let size = len *!!@ sub_layout.size in
+      mk ~size ~align:sub_layout.align ~fields:(Array sub_layout.size) ()
   (* Never -- zero sized type *)
-  | TNever -> { size = 0; align = 1; fields = Primitive }
+  | TNever -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Function definitions -- zero sized type *)
-  | TFnDef _ -> { size = 0; align = 1; fields = Primitive }
+  | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Function pointers (can point to a function or a state-less closure). *)
   | TFnPtr _ ->
       let ptr_size = Crate.pointer_size () in
-      { size = ptr_size; align = ptr_size; fields = Primitive }
+      ok (mk_concrete ~size:ptr_size ~align:ptr_size ~fields:Primitive ())
   (* Others (unhandled for now) *)
-  | TPtrMetadata _ -> raise (CantComputeLayout ("pointer metadata", ty))
-  | TVar _ -> raise (CantComputeLayout ("De Bruijn variable", ty))
-  | TError _ -> raise (CantComputeLayout ("error type", ty))
-  | TTraitType (tref, ty_name) -> layout_of @@ resolve_trait_ty tref ty_name
+  | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
+  | TVar _ -> not_impl_layout "type variable" ty
+  | TError _ -> not_impl_layout "error" ty
+  | TTraitType (tref, ty_name) ->
+      let** resolved = resolve_trait_ty tref ty_name in
+      layout_of resolved
 
-and layout_of_members ?(fst_size = 0) ?(fst_align = 1) members =
+and layout_of_members ?fst_size ?fst_align members =
   let rec aux offsets curr_size curr_align = function
-    | [] -> (List.rev offsets, curr_size, curr_align)
+    | [] -> ok (List.rev offsets, curr_size, curr_align)
     | ty :: rest ->
-        let { size; align; _ } = layout_of ty in
+        let** { size; align; _ } = layout_of ty in
         let offset = size_to_fit ~size:curr_size ~align in
-        let new_size = offset + size in
-        let new_align = max align curr_align in
+        let new_size = offset +!@ size in
+        let new_align = BV.max ~signed:false align curr_align in
         aux (offset :: offsets) new_size new_align rest
   in
-  let offsets, size, align = aux [] fst_size fst_align members in
-  {
-    size = size_to_fit ~size ~align;
-    align;
-    fields = Arbitrary (Types.VariantId.zero, Array.of_list offsets);
-  }
+  let fst_size = Option.value fst_size ~default:(BV.usizei 0) in
+  let fst_align = Option.value fst_align ~default:(BV.usizeinz 1) in
+  let++ offsets, size, align = aux [] fst_size fst_align members in
+  let size = size_to_fit ~size ~align in
+  mk ~size ~align
+    ~fields:(Arbitrary (Types.VariantId.zero, Array.of_list offsets))
+    ()
 
 and layout_of_struct (adt : Types.type_decl) (fields : Types.field list) =
   match adt.layout with
@@ -256,21 +287,21 @@ and layout_of_struct (adt : Types.type_decl) (fields : Types.field list) =
         align = Some align;
         _;
       } ->
-      {
-        size;
-        align;
-        fields = Arbitrary (Types.VariantId.zero, Array.of_list field_offsets);
-      }
+      let offsets = Array.of_list @@ List.map BV.usizei field_offsets in
+      ok
+        (mk_concrete ~size ~align
+           ~fields:(Arbitrary (Types.VariantId.zero, offsets))
+           ())
   | Some { variant_layouts = [ { field_offsets; _ } ]; _ } ->
       (* we want to compute a size/align, but keep the field offsets
          this is needed for DSTs, where we're not provided a size but we definitely
          care about field positions (the size won't matter anyways since we use
          the pointer's metadata). *)
-      let base = layout_of_members (field_tys fields) in
-      {
-        base with
-        fields = Arbitrary (Types.VariantId.zero, Array.of_list field_offsets);
-      }
+      let++ base = layout_of_members (field_tys fields) in
+      let offsets = Array.of_list @@ List.map BV.usizei field_offsets in
+      mk ~size:base.size ~align:base.align
+        ~fields:(Arbitrary (Types.VariantId.zero, offsets))
+        ()
   | _ -> layout_of_members (field_tys fields)
 
 and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
@@ -287,19 +318,24 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
       | [] ->
           (* no inhabited variant: uninhabited ZST *)
           let tag : Tag_layout.t =
-            { offset = 0; ty = TInt I32; tags = [||]; encoding = Direct }
+            {
+              offset = Usize.(0s);
+              ty = TInt I32;
+              tags = [||];
+              encoding = Direct;
+            }
           in
-          { size = 0; align = 1; fields = Enum (tag, [||]) }
+          ok (mk_concrete ~size:0 ~align:1 ~fields:(Enum (tag, [||])) ())
       | [ (i, variant_layout) ] ->
           let vi = Types.VariantId.of_int i in
-          let offsets = Array.of_list variant_layout.field_offsets in
+          let offsets =
+            Array.of_list @@ List.map BV.usizei variant_layout.field_offsets
+          in
           let variant = Types.VariantId.nth variants vi in
-          let sub_layout = layout_of_members (field_tys variant.fields) in
-          {
-            size = sub_layout.size;
-            align = sub_layout.align;
-            fields = Arbitrary (vi, offsets);
-          }
+          let++ sub_layout = layout_of_members (field_tys variant.fields) in
+          mk ~size:sub_layout.size ~align:sub_layout.align
+            ~fields:(Arbitrary (vi, offsets))
+            ()
       | _ ->
           Fmt.failwith
             "More than one inhabited variant, but no discriminant layout? For \
@@ -310,24 +346,26 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
         match adt.layout with
         | Some { variant_layouts; _ } ->
             Monad.ListM.map variant_layouts (fun v ->
-                Option.map z_of_scalar v.tag)
+                Option.map BV.of_scalar v.tag)
         | None ->
+            (* this is bad, best effort *)
             Monad.ListM.map variants (fun v ->
-                Some (z_of_literal v.discriminant))
+                Some (BV.mk_lit (TInt I32) (z_of_literal v.discriminant)))
       in
+      let tags = Array.of_list tags in
       let tag_layout : Tag_layout.t =
         match adt.layout with
         | Some { discriminant_layout = None; _ } -> failwith "Handled above"
         | Some { discriminant_layout = Some discr_layout; _ } ->
             (* there's a discriminant to handle *)
             let ty = lit_of_int_ty discr_layout.tag_ty in
-            let offset = discr_layout.offset in
+            let offset = BV.usizei discr_layout.offset in
             let encoding : Tag_layout.encoding =
               match discr_layout.encoding with
               | Niche v -> Niche v
               | Direct -> Direct
             in
-            { offset; ty; tags = Array.of_list tags; encoding }
+            { offset; ty; tags; encoding }
         | None ->
             (* best effort: we assume direct encoding *)
             let ty : Types.literal_type =
@@ -335,53 +373,65 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
               | [] -> TInt I32 (* Shouldn't matter *)
               | v :: _ -> lit_ty_of_lit v.discriminant
             in
-            { offset = 0; ty; tags = Array.of_list tags; encoding = Direct }
+            { offset = Usize.(0s); ty; tags; encoding = Direct }
       in
-      let variant_layouts =
+      let** variant_layouts =
         match adt.layout with
         | Some { variant_layouts; size = Some size; align = Some align; _ } ->
             let variant_layouts =
               List.mapi
-                (fun i v -> (Types.VariantId.of_int i, v))
+                (fun i (v : Types.variant_layout) ->
+                  let ofs =
+                    Array.of_list (List.map BV.usizei v.field_offsets)
+                  in
+                  (Types.VariantId.of_int i, ofs))
                 variant_layouts
             in
-            Monad.ListM.map variant_layouts (fun (i, v) ->
-                {
-                  size;
-                  align;
-                  fields = Arbitrary (i, Array.of_list v.field_offsets);
-                })
+            let size = BV.usizei size in
+            let align = BV.usizeinz align in
+            let vs =
+              Monad.ListM.map variant_layouts (fun (i, ofs) ->
+                  mk ~size ~align ~fields:(Arbitrary (i, ofs)) ())
+            in
+            ok vs
         | _ ->
-            Monad.ListM.map variants (fun v ->
-                layout_of_members (field_tys v.fields))
+            let++ vs =
+              Result.fold_list variants ~init:[] ~f:(fun acc v ->
+                  let++ l = layout_of_members (field_tys v.fields) in
+                  l :: acc)
+            in
+            List.rev vs
       in
       match variant_layouts with
       (* no variants: uninhabited ZST *)
-      | [] -> { size = 0; align = 1; fields = Enum (tag_layout, [||]) }
-      (* one ZST variant: inhabited ZST *)
-      | [ { size = 0; align; fields } ] ->
-          { size = 0; align; fields = Enum (tag_layout, [| fields |]) }
+      | [] ->
+          ok (mk_concrete ~size:0 ~align:1 ~fields:(Enum (tag_layout, [||])) ())
       (* N variants: realign variants with prepended tag (if not niche),
      use biggest and most aligned *)
       | _ ->
-          let variant_layouts =
+          let++ variant_layouts =
             match tag_layout.encoding with
             | Direct ->
                 (* if we need to prepend the tag, we recompute the layout to consider its
                size and alignement (there probably is a smarter way to do this). *)
-                let discr_layout = layout_of (TLiteral tag_layout.ty) in
+                let** discr_layout = layout_of (TLiteral tag_layout.ty) in
                 let layout_adjusted =
                   layout_of_members ~fst_size:discr_layout.size
                     ~fst_align:discr_layout.align
                 in
-                Monad.ListM.map variants (fun v ->
-                    layout_adjusted (field_tys v.fields))
-            | Niche _ -> variant_layouts
+                let++ vs =
+                  Result.fold_list variants ~init:[] ~f:(fun acc v ->
+                      let++ v = layout_adjusted (field_tys v.fields) in
+                      v :: acc)
+                in
+                List.rev vs
+            | Niche _ -> ok variant_layouts
           in
           let size, align =
             List.fold_left
               (fun (size, align) l -> (max size l.size, max align l.align))
-              (0, 1) variant_layouts
+              (Usize.(0s), Usize.(1s))
+              variant_layouts
           in
           let fields = List.map (fun v -> v.fields) variant_layouts in
           { size; align; fields = Enum (tag_layout, Array.of_list fields) })
@@ -391,42 +441,22 @@ and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   | TraitImpl { id; _ } -> (
       let impl = Crate.get_trait_impl id in
       match List.find_opt (fun (n, _) -> ty_name = n) impl.types with
-      | Some (_, ty) -> ty.binder_value.value
+      | Some (_, ty) -> ok ty.binder_value.value
       | None ->
           let msg =
             Fmt.str "missing type '%s' in impl %a" ty_name Crate.pp_name
               impl.item_meta.name
           in
-          raise (CantComputeLayout (msg, TTraitType (tref, ty_name))))
-  | _ ->
-      let msg = Fmt.str "trait type (%s)" ty_name in
-      raise (CantComputeLayout (msg, TTraitType (tref, ty_name)))
+          not_impl_layout msg (TTraitType (tref, ty_name)))
+  | _ -> not_impl_layout "trait type" (TTraitType (tref, ty_name))
 
-let offset_in_array ty idx =
-  let sub_layout = layout_of ty in
-  idx * sub_layout.size
+let size_of ty =
+  let++ { size; _ } = layout_of ty in
+  size
 
-let layout_of_s ty =
-  try return @@ layout_of ty with
-  | CantComputeLayout (msg, ty') ->
-      Fmt.kstr Rustsymex.not_impl
-        "Cannot compute layout: %s@.%a@.Occurred when computing:@.%a" msg pp_ty
-        ty' pp_ty ty
-  | Crate.MissingDecl decl_ty ->
-      Fmt.kstr Rustsymex.not_impl
-        "Cannot compute layout: missing %s declaration@.Occured when computing \
-         %a"
-        decl_ty pp_ty ty
-
-let size_of_s ty =
-  let open Rustsymex.Syntax in
-  let+ { size; _ } = layout_of_s ty in
-  BV.usizei size
-
-let align_of_s ty =
-  let open Rustsymex.Syntax in
-  let+ { align; _ } = layout_of_s ty in
-  BV.usizeinz align
+let align_of ty =
+  let++ { align; _ } = layout_of ty in
+  align
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
@@ -463,19 +493,11 @@ let size_to_uint : int -> Types.ty = function
 
 let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
 
-(* when using BitVector values, there are no constraints as they're encoded in the BV size
-  let int_constraints ty =
-  let min = min_value ty in
-  let max = max_value ty in
-  fun x -> [ min <=@ x; x <=@ max ] *)
-
 let constraints :
     Types.literal_type -> [< T.cval ] Typed.t -> T.sbool Typed.t list = function
   | TInt _ | TUInt _ | TFloat (F16 | F32 | F64 | F128) -> fun _ -> []
   | TBool ->
       fun x ->
-        (* Maybe worth checking which of these is better (if it matters at all)
-           [ x ==@ 0s ||@ (x ==@ 1s) ]) *)
         let x = Typed.cast_lit TBool x in
         [ U8.(0s) <=@ x; (x <=@ U8.(1s)) ]
   | TChar ->
@@ -516,17 +538,17 @@ let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
     external function that computes the arbitrary value; it tries using it, and
     otherwise guesses the valid values. [init] is the initial "state", that is
     modified and returned by [extern]. *)
-let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
-  let open Rustsymex.Syntax in
+let rec nondet : Types.ty -> ('a rust_val, 'e, 'f) Result.t =
+  let open Soteria.Symex.Compo_res in
   function
   | TLiteral (TFloat _ as lit) ->
       let+ f = nondet_literal_ty lit in
-      Float (Typed.cast f)
+      Ok (Float (Typed.cast f))
   | TLiteral lit ->
       let+ i = nondet_literal_ty lit in
-      Int (Typed.cast i)
+      Ok (Int (Typed.cast i))
   | TAdt { id = TTuple; generics = { types; _ } } ->
-      let+ fields = nondets types in
+      let++ fields = nondets types in
       Tuple fields
   | TAdt
       {
@@ -534,13 +556,13 @@ let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
         generics = { const_generics = [ len ]; types = [ ty ]; _ };
       } ->
       let size = Charon_util.int_of_const_generic len in
-      let+ fields = nondets @@ List.init size (fun _ -> ty) in
+      let++ fields = nondets @@ List.init size (fun _ -> ty) in
       Tuple fields
   | TAdt { id = TAdtId t_id; _ } as ty -> (
       let type_decl = Crate.get_adt t_id in
       match type_decl.kind with
       | Enum variants -> (
-          let layout = layout_of ty in
+          let** layout = layout_of ty in
           let tag_layout =
             match layout.fields with
             | Fields_shape.Enum (tag_layout, _) -> tag_layout
@@ -554,16 +576,16 @@ let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
           match (res, tag_layout.encoding) with
           | Some variant, _ ->
               let discr = BV.of_literal variant.discriminant in
-              let+ fields = nondets @@ Charon_util.field_tys variant.fields in
+              let++ fields = nondets @@ Charon_util.field_tys variant.fields in
               Enum (discr, fields)
           | None, Direct -> vanish ()
           | None, Niche untagged ->
               let variant = Types.VariantId.nth variants untagged in
               let discr = BV.of_literal variant.discriminant in
-              let+ fields = nondets @@ Charon_util.field_tys variant.fields in
+              let++ fields = nondets @@ Charon_util.field_tys variant.fields in
               Enum (discr, fields))
       | Struct fields ->
-          let+ fields = nondets @@ Charon_util.field_tys fields in
+          let++ fields = nondets @@ Charon_util.field_tys fields in
           Tuple fields
       | ty ->
           Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
@@ -571,10 +593,12 @@ let rec nondet : Types.ty -> 'a rust_val Rustsymex.t =
   | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
 
 and nondets tys =
-  let open Rustsymex.Syntax in
-  Rustsymex.fold_list tys ~init:[] ~f:(fun fields ty ->
-      let+ f = nondet ty in
-      f :: fields)
+  let++ vs =
+    Result.fold_list tys ~init:[] ~f:(fun fields ty ->
+        let++ f = nondet ty in
+        f :: fields)
+  in
+  List.rev vs
 
 let rec is_inhabited : Types.ty -> bool = function
   | TNever -> false
@@ -787,26 +811,29 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   | TDynTrait _, _
   | ( (TRef (_, TDynTrait _, _) | TRawPtr (TDynTrait _, _)),
       (TRef (_, _, _) | TRawPtr (_, _)) ) ->
-      true
+      ok Typed.v_true
   (* Refs and raw pointers are ABI-compatible if they have the same metadata type *)
   | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
     ->
-      dst_kind ty1 = dst_kind ty2
+      ok (Typed.bool (dst_kind ty1 = dst_kind ty2))
   | TLiteral (TUInt uint1), TLiteral (TUInt uint2) ->
-      size_of_uint_ty uint1 = size_of_uint_ty uint2
+      ok (Typed.bool (size_of_uint_ty uint1 = size_of_uint_ty uint2))
   | TLiteral (TInt int1), TLiteral (TInt int2) ->
-      size_of_int_ty int1 = size_of_int_ty int2
+      ok (Typed.bool (size_of_int_ty int1 = size_of_int_ty int2))
   | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
     ->
-      true
+      ok Typed.v_true
   (* We keep this later down to avoid the check for everything *)
-  | ty1, ty2 when is_ptr_like ty1 && is_ptr_like ty2 -> true
+  | ty1, ty2 when is_ptr_like ty1 && is_ptr_like ty2 -> ok Typed.v_true
   (* FIXME: Function pointers are compatible if they have the same ABI-string (unsupported) *)
-  | TFnPtr _, TFnPtr _ -> true
+  | TFnPtr _, TFnPtr _ -> ok Typed.v_true
+  | ty1, ty2 when Types.equal_ty ty1 ty2 -> ok Typed.v_true
   | _ ->
-      let[@inline] is_zst ty =
-        let layout = layout_of ty in
-        layout.size = 0 && layout.align = 1
+      let[@inline] is_1zst ty =
+        let++ layout = layout_of ty in
+        layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
       in
-      (* ZSTs with align 1 are compatible *)
-      (is_zst ty1 && is_zst ty2) || Types.equal_ty ty1 ty2
+      let** ty1_1zst = is_1zst ty1 in
+      let++ ty2_1zst = is_1zst ty2 in
+      (* 1ZSTs are exclusively compatible with themselves; otherwise type equality! *)
+      ty1_1zst &&@ ty2_1zst

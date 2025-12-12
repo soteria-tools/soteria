@@ -50,7 +50,7 @@ module M (State : State_intf.S) = struct
 
   let nondet (fun_sig : Charon.UllbcAst.fun_sig) _ =
     let ty = fun_sig.output in
-    let^+ value = Layout.nondet ty in
+    let^^+ value = Layout.nondet ty in
     value
 
   let panic ?msg args =

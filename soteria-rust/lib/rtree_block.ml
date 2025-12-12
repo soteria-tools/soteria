@@ -246,10 +246,13 @@ module Make (Sptr : Sptr.S) = struct
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
       (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) (t : t option) :
       (rust_val * t option, 'err, 'fix) Result.t =
-    let*^ size = Layout.size_of_s ty in
+    let**^ size = Layout.size_of ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes () =
       let+^ v = Layout.nondet ty in
+      (* we're basically guaranteed this won't error (ie. layout error) by now,
+         so we can safely unwrap. *)
+      let v = get_ok v in
       [ [ MemVal { offset = ofs; len = size; v = SInit v } ] ]
     in
     let@ t = with_bound_and_owned_check ~mk_fixes t bound in

@@ -78,13 +78,20 @@ module Make (Sptr : Sptr.S) = struct
     let get_all (q : get_all_query) : ('a, 'state, 'err, 'fix) t =
      fun _ get_all state -> get_all q state
 
-    let lift (m : 'a DecayMapMonad.t) : ('a, 'state, 'err, 'fix) t =
+    let[@inline] lift (m : 'a DecayMapMonad.t) : ('a, 'state, 'err, 'fix) t =
      fun _handler _get_all state ->
       let+ m in
       Compo_res.Ok (m, state)
 
+    let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) :
+        ('a, 'state, 'err, 'fix) t =
+     fun _handler _get_all state ->
+      let++ m = DecayMapMonad.lift m in
+      (m, state)
+
     let not_impl msg = lift @@ not_impl msg
     let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+    let layout_of ty = lift_rsymex @@ Layout.layout_of ty
 
     let assert_or_error cond err =
      fun _handler _get_all state ->
@@ -93,15 +100,14 @@ module Make (Sptr : Sptr.S) = struct
 
     module Syntax = struct
       let ( let*** ) x f = bind x f
-      let ( let++* ) x f = bind x (fun v -> lift @@ f v)
       let ( let+++ ) x f = map x f
 
       module Symex_syntax = struct
         let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
-         fun handler state ->
+         fun handler get_all state ->
           DecayMapMonad.branch_on ?left_branch_name ?right_branch_name guard
-            ~then_:(fun () -> then_ () handler state)
-            ~else_:(fun () -> else_ () handler state)
+            ~then_:(fun () -> then_ () handler get_all state)
+            ~else_:(fun () -> else_ () handler get_all state)
       end
     end
   end
@@ -112,7 +118,10 @@ module Make (Sptr : Sptr.S) = struct
   (** Converts a Rust value of the given type into a list of sub values, along
       with their size and offset, and whether they are interiorly mutable. *)
   let rec rust_to_cvals ?offset (value : rust_val) (ty : Types.ty) :
-      cval_info list =
+      (cval_info list, 'e, 'f) Rustsymex.Result.t =
+    let open Rustsymex in
+    let open Syntax in
+    let open Result in
     let illegal_pair () =
       L.error (fun m ->
           m "Wrong pair of rust_value and Charon.ty:@.- Val: %a@.- Ty: %a"
@@ -121,25 +130,22 @@ module Make (Sptr : Sptr.S) = struct
     in
     let offset = Option.value ~default:Usize.(0s) offset in
     let chain_cvals layout vals types =
-      List.map2i
-        (fun i value ty ->
-          let field_offset =
-            BV.usizei (Layout.Fields_shape.offset_of i layout.fields)
-          in
+      let sub_vals = List.combinei vals types in
+      fold_list sub_vals ~init:[] ~f:(fun acc (i, value, ty) ->
+          let field_offset = Layout.Fields_shape.offset_of i layout.fields in
           let offset = field_offset +!!@ offset in
-          rust_to_cvals ~offset value ty)
-        vals types
-      |> List.flatten
+          let++ blocks = rust_to_cvals ~offset value ty in
+          acc @ blocks)
     in
     match (value, ty) with
     (* Trait types: we resolve them early *)
     | _, TTraitType (tref, name) ->
-        let ty = Layout.resolve_trait_ty tref name in
+        let** ty = Layout.resolve_trait_ty tref name in
         rust_to_cvals ~offset value ty
     (* Literals *)
-    | Int _, TLiteral _ -> [ (value, offset) ]
-    | Float _, TLiteral _ -> [ (value, offset) ]
-    | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> [ (value, offset) ]
+    | Int _, TLiteral _ -> ok [ (value, offset) ]
+    | Float _, TLiteral _ -> ok [ (value, offset) ]
+    | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> ok [ (value, offset) ]
     | _, TLiteral _ -> illegal_pair ()
     (* References / Pointers *)
     | ( Ptr (ptr, meta),
@@ -148,37 +154,38 @@ module Make (Sptr : Sptr.S) = struct
     | Ptr (ptr, meta), TRawPtr (sub_ty, _) -> (
         let size = BV.usizei (Layout.size_of_int_ty Isize) in
         match (meta, is_dst sub_ty) with
-        | _, false -> [ (Ptr (ptr, Thin), offset) ]
+        | _, false -> ok [ (Ptr (ptr, Thin), offset) ]
         | Thin, true -> failwith "Expected a fat pointer"
         | Len len, true ->
-            [ (Ptr (ptr, Thin), offset); (Int len, offset +!!@ size) ]
+            ok [ (Ptr (ptr, Thin), offset); (Int len, offset +!!@ size) ]
         | VTable vt, true ->
-            [ (Ptr (ptr, Thin), offset); (Ptr (vt, Thin), offset +!!@ size) ])
+            ok [ (Ptr (ptr, Thin), offset); (Ptr (vt, Thin), offset +!!@ size) ]
+        )
     (* Function pointer *)
-    | Ptr (_, Thin), TFnPtr _ -> [ (value, offset) ]
+    | Ptr (_, Thin), TFnPtr _ -> ok [ (value, offset) ]
     (* References / Pointers obtained from casting *)
     | Int _, TAdt { id = TBuiltin TBox; _ }
     | Int _, TRef _
     | Int _, TRawPtr _
     | Int _, TFnPtr _ ->
-        [ (value, offset) ]
+        ok [ (value, offset) ]
     | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
         illegal_pair ()
     (* Tuples *)
     | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
-        chain_cvals (layout_of ty) vs types
+        let** layout = layout_of ty in
+        chain_cvals layout vs types
     | _, TAdt { id = TTuple; _ } -> illegal_pair ()
     (* Structs *)
     | Tuple vals, TAdt { id = TAdtId t_id; _ } ->
         let fields = field_tys @@ Crate.as_struct t_id in
-        chain_cvals (layout_of ty) vals fields
+        let** layout = layout_of ty in
+        chain_cvals layout vals fields
     (* Enums *)
     | Enum (disc, vals), (TAdt { id = TAdtId t_id; _ } as ty) -> (
         let variants = Crate.as_enum t_id in
-        let layout = Layout.layout_of ty in
+        let** layout = Layout.layout_of ty in
         match layout with
-        (* zero-sized *)
-        | { size = 0; _ } -> []
         | { fields = Arbitrary (variant, _); _ } ->
             let variant = Types.VariantId.nth variants variant in
             let var_fields = field_tys variant.fields in
@@ -200,16 +207,17 @@ module Make (Sptr : Sptr.S) = struct
               match tag_layout.tags.(variant_id) with
               | None -> []
               | Some tag ->
-                  let v = BV.mk_lit tag_layout.ty tag in
-                  let offset = BV.usizei tag_layout.offset +!!@ offset in
-                  [ (Int v, offset) ]
+                  let offset = tag_layout.offset +!!@ offset in
+                  [ (Int tag, offset) ]
             in
             let var_layout = { layout with fields = var_fields } in
-            discriminant
-            @ chain_cvals var_layout vals (field_tys variant.fields)
+            let++ content =
+              chain_cvals var_layout vals (field_tys variant.fields)
+            in
+            discriminant @ content
         | _ -> Fmt.failwith "Unexpected layout for enum")
     | Int value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
-        let layout = Layout.layout_of ty in
+        let++ layout = Layout.layout_of ty in
         let tag_ty =
           match layout.fields with
           | Enum (tag, _) -> tag.ty
@@ -225,24 +233,24 @@ module Make (Sptr : Sptr.S) = struct
             id = TBuiltin TArray;
             generics = { types = [ sub_ty ]; const_generics = [ len ]; _ };
           } ) ->
-        let layout = layout_of ty in
+        let** layout = layout_of ty in
         let len = int_of_const_generic len in
-        if List.length vals <> len then failwith "Array length mismatch"
-        else chain_cvals layout vals (List.init len (fun _ -> sub_ty))
+        if List.length vals <> len then failwith "Array length mismatch";
+        chain_cvals layout vals (List.init len (fun _ -> sub_ty))
     | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
     (* Unions *)
     | Union blocks, TAdt { id = TAdtId _; _ } ->
-        List.map (fun (v, o) -> (v, offset +!!@ o)) blocks
+        ok (List.map (fun (v, o) -> (v, offset +!!@ o)) blocks)
     | Union _, _ -> illegal_pair ()
     (* Static Functions (ZSTs) *)
-    | ConstFn _, TFnDef _ -> []
+    | ConstFn _, TFnDef _ -> ok []
     | ConstFn _, _ | _, TFnDef _ -> illegal_pair ()
     (* Should have been handled for arrays, tuples and structs *)
     | Tuple _, _ -> illegal_pair ()
     (* Rest *)
     | _ ->
-        Fmt.failwith "Unhandled rust_value and Charon.ty: %a / %a" pp_rust_val
-          value pp_ty ty
+        Fmt.kstr not_impl "Unhandled value/ty: %a / %a" pp_rust_val value pp_ty
+          ty
 
   (** Parses the current variant of the enum at the given offset. This handles
       cases such as niches, where the discriminant isn't directly encoded as a
@@ -251,14 +259,13 @@ module Make (Sptr : Sptr.S) = struct
       (Types.variant_id, 'state, 'e, 'fix) ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
-    let layout = Layout.layout_of ty in
+    let*** layout = layout_of ty in
     (* if it's a ZST, we assume it's the first variant; I don't think this is
        always true, e.g. enum { A(!), B }, but it's ok for now. *)
     match layout with
     | { fields = Arbitrary (vid, _); _ } -> ok vid
-    | { size = 0; _ } -> ok (Types.VariantId.of_int 0)
     | { fields = Enum (tag_layout, _); _ } -> (
-        let offset = offset +!!@ BV.usizei tag_layout.offset in
+        let offset = offset +!!@ tag_layout.offset in
         let*** tag = query (TLiteral tag_layout.ty, offset) in
         (* here we need to check and decay if it's a pointer, for niche encoding! *)
         let*** tag =
@@ -272,7 +279,7 @@ module Make (Sptr : Sptr.S) = struct
           lift
           @@ match_on tags ~constr:(function
                | _, None -> Typed.v_false
-               | _, Some t -> tag ==@ BV.mk_lit tag_layout.ty t)
+               | _, Some t -> tag ==@ t)
         in
         match (tag_layout.encoding, res) with
         | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
@@ -299,7 +306,8 @@ module Make (Sptr : Sptr.S) = struct
     let open ParserMonad.Syntax in
     let module T = Typed.T in
     (* Base case, parses all types. *)
-    let rec aux offset : Types.ty -> ('e, 'fix, 'state) parser = function
+    let rec aux offset ty : ('e, 'fix, 'state) parser =
+      match (ty : Types.ty) with
       | TLiteral _ as ty -> (
           let*** q_res = query (ty, offset) in
           match q_res with
@@ -382,14 +390,14 @@ module Make (Sptr : Sptr.S) = struct
           | Int _ -> error `UBDanglingPointer
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
-          let layout = layout_of ty in
+          let*** layout = layout_of ty in
           let types = List.to_seq types in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
       | TAdt { id = TAdtId t_id; _ } as ty -> (
           let type_decl = Crate.get_adt t_id in
           match type_decl.kind with
           | Struct fields ->
-              let layout = layout_of ty in
+              let*** layout = layout_of ty in
               fields
               |> field_tys
               |> List.to_seq
@@ -397,8 +405,8 @@ module Make (Sptr : Sptr.S) = struct
           | Enum [] -> error `RefToUninhabited
           | Enum variants -> aux_enum offset ty variants
           | Union _ ->
-              let layout = layout_of ty in
-              if layout.size = 0 then ok (Union [])
+              let*** layout = layout_of ty in
+              if%sat layout.size ==@ Usize.(0s) then ok (Union [])
               else
                 (* FIXME: this isn't exactly correct; union actually doesn't copy the padding
                    bytes (i.e. the intersection of the padding bytes of all fields). It is
@@ -407,7 +415,7 @@ module Make (Sptr : Sptr.S) = struct
                    See https://github.com/rust-lang/unsafe-code-guidelines/issues/518
                    And a proper implementation is here:
                    https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
-                let+++ blocks = get_all (BV.usizeinz layout.size, offset) in
+                let+++ blocks = get_all (Typed.cast layout.size, offset) in
                 Union blocks
           | _ ->
               Fmt.kstr failwith "Unhandled ADT kind in rust_of_cvals: %a"
@@ -416,7 +424,7 @@ module Make (Sptr : Sptr.S) = struct
         as ty ->
           let sub_ty = List.hd types in
           let len = z_of_const_generic @@ List.hd const_generics in
-          let layout = layout_of ty in
+          let*** layout = layout_of ty in
           let fields = Seq.init_z len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset fields
       | TAdt { id = TBuiltin (TStr as ty); generics }
@@ -440,12 +448,12 @@ module Make (Sptr : Sptr.S) = struct
           (* FIXME: This is a bit hacky, and not performant -- instead we should try to
                  group the reads together, at least for primitive types. *)
           let arr_ty = mk_array_ty sub_ty len in
-          let layout = layout_of arr_ty in
+          let*** layout = layout_of arr_ty in
           let fields = Seq.init_z len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset fields
       | TNever -> error `RefToUninhabited
       | TTraitType (tref, name) ->
-          let ty = Layout.resolve_trait_ty tref name in
+          let*** ty = lift_rsymex @@ Layout.resolve_trait_ty tref name in
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
       | TDynTrait _ -> not_impl "Tried reading a trait object?"
@@ -453,15 +461,15 @@ module Make (Sptr : Sptr.S) = struct
       | (TVar _ | TError _ | TPtrMetadata _) as ty ->
           Fmt.kstr not_impl "Unhandled Charon.ty: %a" Types.pp_ty ty
     (* Parses a sequence of fields (for structs, tuples, arrays) *)
-    and aux_fields ~f ~layout offset (fields : Types.ty Seq.t) :
+    and aux_fields ~f ~(layout : Layout.t) offset (fields : Types.ty Seq.t) :
         ('e, 'fix, 'state) parser =
-      let base_offset = offset +!!@ (offset %@ BV.usizeinz layout.align) in
+      let base_offset = offset +!!@ (offset %@ layout.align) in
       let rec mk_callback idx to_parse parsed : ('e, 'fix, 'state) parser =
         match to_parse () with
         | Seq.Nil -> ok (f (List.rev parsed))
         | Seq.Cons (ty, rest) ->
             let field_off = Layout.Fields_shape.offset_of idx layout.fields in
-            let offset = base_offset +!!@ BV.usizei field_off in
+            let offset = base_offset +!!@ field_off in
             bind (aux offset ty) (fun v ->
                 mk_callback (succ idx) rest (v :: parsed))
       in
@@ -469,7 +477,7 @@ module Make (Sptr : Sptr.S) = struct
     (* Parses what enum variant we're handling *)
     and aux_enum offset ty variants : ('e, 'fix, 'state) parser =
       let*** v_id = variant_of_enum ~offset ty in
-      let layout = Layout.layout_of ty in
+      let*** layout = layout_of ty in
       let fields = Layout.Fields_shape.shape_for_variant v_id layout.fields in
       let variant = Types.VariantId.nth variants v_id in
       let layout = { layout with fields } in
