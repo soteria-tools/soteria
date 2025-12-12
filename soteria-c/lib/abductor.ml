@@ -45,7 +45,7 @@ let generate_summaries_for (fundef : fundef) =
   let+ (args, ret, bi_state), pc = res in
   let@ () = L.with_section "Building summary" in
   L.trace (fun m ->
-      m "Building summary for %a using bistate: %a" Fmt_ail.pp_sym fid
+      m "@[<2>Building summary for %a using bistate:@ %a@]" Fmt_ail.pp_sym fid
         Bi_state.pp bi_state);
   let pre, post = Bi_state.to_spec bi_state in
   let ret = Summary.make ~args ~ret ~pre ~post ~pc () in

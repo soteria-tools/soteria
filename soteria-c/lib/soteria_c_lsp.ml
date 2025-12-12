@@ -114,8 +114,8 @@ let run ~generate_errors () =
     Linol_eio.Jsonrpc2.run ~shutdown server
   in
   match task () with
-  | () -> ()
+  | () -> Error.Exit_code.Success
   | exception e ->
       let e = Printexc.to_string e in
       Printf.eprintf "error: %s\n%!" e;
-      exit 1
+      Error.Exit_code.Tool_error
