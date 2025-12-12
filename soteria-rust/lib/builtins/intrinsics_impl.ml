@@ -5,15 +5,15 @@ open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (State_monad : State_monad.S) : Intrinsics_intf.M(State_monad).Impl =
-struct
-  include Intrinsics_stubs.M (State_monad)
-  module Core = Core.M (State_monad)
-  open State_monad
+module M (Rust_state_m : Rust_state_m.S) :
+  Intrinsics_intf.M(Rust_state_m).Impl = struct
+  include Intrinsics_stubs.M (Rust_state_m)
+  module Core = Core.M (Rust_state_m)
+  open Rust_state_m
   open Syntax
 
   (* some utils *)
-  type 'a ret = ('a, unit) State_monad.t
+  type 'a ret = ('a, unit) Rust_state_m.t
 
   (* we retype these to avoid non-generalisable type variables in ['a Rust_val.t] *)
   let[@inline] as_ptr (v : rust_val) =

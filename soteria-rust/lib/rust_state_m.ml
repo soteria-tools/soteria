@@ -1,9 +1,7 @@
 open Soteria.Symex.Compo_res
 open Rustsymex
 open Rustsymex.Syntax
-module BV = Typed.BitVec
 open Charon
-(* open Sptr *)
 
 module type S = sig
   module RawState : State_intf.S

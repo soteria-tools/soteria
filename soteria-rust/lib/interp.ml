@@ -7,18 +7,18 @@ open Charon_util
 open Rust_val
 
 module Make (State : State_intf.S) = struct
-  module InterpM = State_monad.Make (State)
-  module Core = Core.M (InterpM)
-  module Std_funs = Builtins.Eval.M (InterpM)
+  module Rust_state_m = Rust_state_m.Make (State)
+  module Core = Core.M (Rust_state_m)
+  module Std_funs = Builtins.Eval.M (Rust_state_m)
 
   exception Unsupported of (string * Meta.span_data)
 
-  open InterpM
-  open InterpM.Syntax
+  open Rust_state_m
+  open Rust_state_m.Syntax
 
   type store = (full_ptr option * Types.ty) Store.t
-  type 'a t = ('a, store) InterpM.t
-  type 'err fun_exec = rust_val list -> (rust_val, unit) InterpM.t
+  type 'a t = ('a, store) Rust_state_m.t
+  type 'err fun_exec = rust_val list -> (rust_val, unit) Rust_state_m.t
 
   let get_variable var_id =
     let* store = get_env () in
@@ -1032,7 +1032,7 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun (fundef : UllbcAst.fun_decl) args : (rust_val, unit) InterpM.t =
+  and exec_fun (fundef : UllbcAst.fun_decl) args =
     let name = fundef.item_meta.name in
     let* body =
       match fundef.body with
@@ -1063,7 +1063,7 @@ module Make (State : State_intf.S) = struct
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
-    let@ () = InterpM.run ~env:() ~state in
+    let@ () = Rust_state_m.run ~env:() ~state in
     let@@ () =
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in

@@ -2,8 +2,8 @@ open Rust_val
 open Typed.Infix
 open Typed.Syntax
 
-module M (State_monad : State_monad.S) = struct
-  open State_monad
+module M (Rust_state_m : Rust_state_m.S) = struct
+  open Rust_state_m
   open Syntax
 
   let alloc ?(zeroed = false) args =

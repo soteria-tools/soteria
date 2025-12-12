@@ -4,10 +4,10 @@ open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (State_monad : State_monad.S) = struct
-  module Core = Core.M (State_monad)
-  module Alloc = Alloc.M (State_monad)
-  open State_monad
+module M (Rust_state_m : Rust_state_m.S) = struct
+  module Core = Core.M (Rust_state_m)
+  module Alloc = Alloc.M (Rust_state_m)
+  open Rust_state_m
   open Syntax
 
   let zeroed (fun_sig : UllbcAst.fun_sig) _ =

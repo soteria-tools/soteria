@@ -5,8 +5,8 @@ open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (State_monad : State_monad.S) = struct
-  open State_monad
+module M (Rust_state_m : Rust_state_m.S) = struct
+  open Rust_state_m
   open Syntax
 
   let cmp ~signed l r =
@@ -52,7 +52,7 @@ module M (State_monad : State_monad.S) = struct
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
   let eval_lit_binop (bop : Expressions.binop) ty (l : [< T.sint ] Typed.t)
-      (r : [< T.sint ] Typed.t) : ([> T.sint ] Typed.t, 'e) State_monad.t =
+      (r : [< T.sint ] Typed.t) : ([> T.sint ] Typed.t, 'e) Rust_state_m.t =
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
     let r = normalise_shift_r bop l r in

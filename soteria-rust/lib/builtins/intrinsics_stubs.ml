@@ -3,26 +3,10 @@
 
 [@@@warning "-unused-value-declaration"]
 
-open Rust_val
+module M (Rust_state_m : Rust_state_m.S) :
+  Intrinsics_intf.M(Rust_state_m).Impl = struct
+  open Rust_state_m
 
-module M (State_monad : State_monad.S) : Intrinsics_intf.M(State_monad).Impl =
-struct
-  open State_monad
-
-  type rust_val = State_monad.Sptr.t Rust_val.t
-
-  let[@inline] as_ptr (v : rust_val) =
-    match v with
-    | Ptr ptr -> ptr
-    | Int v ->
-        let v = Typed.cast_i Usize v in
-        let ptr = Sptr.null_ptr_of v in
-        (ptr, Thin)
-    | _ -> failwith "expected pointer"
-
-  let as_base ty (v : rust_val) = Rust_val.as_base ty v
-  let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
-  let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
   let abort = not_impl "Unsupported intrinsic: abort"
 
   let add_with_overflow ~t:_ ~x:_ ~y:_ =
