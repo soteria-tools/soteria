@@ -5,16 +5,15 @@ open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
-  include Intrinsics_stubs.M (State)
-  module Core = Core.M (State)
-  module Encoder = Encoder.Make (State.Sptr)
-  module Monad = State_monad.Make (State)
-  open Monad
+module M (Rust_state_m : Rust_state_m.S) :
+  Intrinsics_intf.M(Rust_state_m).Impl = struct
+  include Intrinsics_stubs.M (Rust_state_m)
+  module Core = Core.M (Rust_state_m)
+  open Rust_state_m
   open Syntax
 
   (* some utils *)
-  type 'a ret = ('a, unit) Monad.t
+  type 'a ret = ('a, unit) Rust_state_m.t
 
   (* we retype these to avoid non-generalisable type variables in ['a Rust_val.t] *)
   let[@inline] as_ptr (v : rust_val) =
@@ -34,10 +33,10 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
 
   let abort : unit ret = error (`Panic (Some "aborted"))
 
-  let checked_op op ~t ~x ~y : rust_val ret =
+  let checked_op op ~t ~x ~y =
     let t = TypesUtils.ty_as_literal t in
     let x, y = (as_base t x, as_base t y) in
-    State.with_decay_map_res @@ Core.eval_checked_lit_binop op t x y
+    Core.eval_checked_lit_binop op t x y
 
   let add_with_overflow = checked_op (Add OUB)
   let sub_with_overflow = checked_op (Sub OUB)
@@ -47,7 +46,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let align_of_val ~t ~ptr =
     match (t, ptr) with
     | Types.TDynTrait _, (_, VTable vt) ->
-        let^^ align_ptr =
+        let* align_ptr =
           Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(2s)
         in
         let+ align = State.load (align_ptr, Thin) (TLiteral (TUInt Usize)) in
@@ -55,7 +54,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
     | _ -> lift_symex @@ Layout.align_of_s t
 
   let arith_offset ~t ~dst:(dst, meta) ~offset =
-    let^^+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
+    let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
     (dst', meta)
 
   let offset ~ptr ~delta ~dst ~offset =
@@ -63,7 +62,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
     | Ptr (dst, meta) ->
         let offset = as_base_i Usize offset in
         let signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
-        let^^+ dst' = Sptr.offset ~signed ~ty:ptr dst offset in
+        let+ dst' = Sptr.offset ~signed ~ty:ptr dst offset in
         Ptr (dst', meta)
     | Int _ -> error `UBPointerArithmetic
     | _ -> not_impl "ptr_add: invalid arguments"
@@ -193,8 +192,8 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
     let rec aux ?(inc = one) l r len =
       if%sat len ==@ zero then ok U32.(0s)
       else
-        let^^ l = Sptr.offset ~signed:false l inc in
-        let^^ r = Sptr.offset ~signed:false r inc in
+        let* l = Sptr.offset ~signed:false l inc in
+        let* r = Sptr.offset ~signed:false r inc in
         let* bl = State.load (l, Thin) byte in
         let bl = as_base_i U8 bl in
         let* br = State.load (r, Thin) byte in
@@ -208,10 +207,10 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
       overlap for a range of size [size]; otherwise errors, with
       [`StdErr (name ^ " overlapped")]. *)
   let check_overlap name l r size =
-    let^^ l_end = Sptr.offset ~signed:false l size in
-    let^^ r_end = Sptr.offset ~signed:false r size in
-    let$ dist1 = Sptr.distance l r_end in
-    let$ dist2 = Sptr.distance r l_end in
+    let* l_end = Sptr.offset ~signed:false l size in
+    let* r_end = Sptr.offset ~signed:false r size in
+    let* dist1 = Sptr.distance l r_end in
+    let* dist2 = Sptr.distance r l_end in
     let zero = Usize.(0s) in
     State.assert_not
       (Sptr.is_same_loc l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
@@ -388,7 +387,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let exact_div ~t ~x ~y =
     let lit = TypesUtils.ty_as_literal t in
     let x, y = (as_base lit x, as_base lit y) in
-    let$$ res = Core.eval_lit_binop (Div OUB) lit x y in
+    let* res = Core.eval_lit_binop (Div OUB) lit x y in
     let zero = BV.mki_lit lit 0 in
     let ( %@ ) = BV.rem ~signed:(Layout.is_signed lit) in
     let+ () =
@@ -496,7 +495,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
 
   let ptr_guaranteed_cmp ~t:_ ~ptr ~other =
-    State.with_decay_map_res @@ Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other)
+    Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other)
 
   let ptr_offset_from_ ~unsigned ~t ~ptr:((ptr, _) : full_ptr)
       ~base:((base, _) : full_ptr) : T.sint Typed.t ret =
@@ -507,7 +506,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
         (`Panic (Some "ptr_offset_from with ZST"))
     in
     let size = Typed.cast size in
-    let$ off = Sptr.distance ptr base in
+    let* off = Sptr.distance ptr base in
     (* If the pointers are not equal, they mustn't be dangling *)
     let* () =
       State.assert_
@@ -632,7 +631,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
             let+ () = State.assert_not (ovf_mul ||@ ovf_add) `Overflow in
             size)
     | VTable vt ->
-        let^^ size_ptr =
+        let* size_ptr =
           Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(1s)
         in
         let* dyn_size = State.load (size_ptr, Thin) (TLiteral (TUInt Usize)) in
@@ -650,9 +649,8 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
     | _ -> ok base_size
 
   let transmute ~t_src ~dst ~src =
-    let* verify_ptr = State.is_valid_ptr_fn in
     let blocks = Encoder.rust_to_cvals src t_src in
-    State.with_decay_map_res @@ Encoder.transmute ~verify_ptr ~to_ty:dst blocks
+    Encoder.transmute ~to_ty:dst blocks
 
   let type_id ~t =
     (* lazy but works *)
@@ -684,7 +682,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let unchecked_op op ~t ~x ~y : rust_val ret =
     let t = TypesUtils.ty_as_literal t in
     let x, y = (as_base t x, as_base t y) in
-    let$$+ res = Core.eval_lit_binop op t x y in
+    let+ res = Core.eval_lit_binop op t x y in
     Int (Typed.cast res)
 
   let unchecked_add = unchecked_op (Add OUB)
@@ -704,7 +702,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
 
   let read_vtable ~slot ~(ptr : full_ptr) : T.sint Typed.t ret =
     let ptr, _ = ptr in
-    let^^ ptr =
+    let* ptr =
       Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) ptr
         (BV.usizei slot)
     in
@@ -717,7 +715,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
   let wrapping_op op ~t ~a ~b : rust_val ret =
     let ity = TypesUtils.ty_as_literal t in
     let a, b = (as_base ity a, as_base ity b) in
-    let$$+ res = Core.eval_lit_binop op ity a b in
+    let+ res = Core.eval_lit_binop op ity a b in
     Int (Typed.cast res)
 
   let wrapping_add = wrapping_op (Add OWrap)
@@ -743,7 +741,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
               ~init:()
               ~f:(fun () i ->
                 let off = BV.usizei i in
-                let^^ ptr = Sptr.offset ~signed:false ptr off in
+                let* ptr = Sptr.offset ~signed:false ptr off in
                 State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"
