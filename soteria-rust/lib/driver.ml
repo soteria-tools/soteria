@@ -64,10 +64,14 @@ let print_outcomes entry_name f =
       (entry_name, Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
+      let err_branches =
+        List.map (fun (_, _, pcs) -> List.length pcs) errs
+        |> List.fold_left ( + ) 0
+      in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
         "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
-        time pp_branches (List.length errs) ntotal;
+        time pp_branches err_branches ntotal;
       Fmt.pr "@.";
       let () =
         let@ error, call_trace, pcs = Fun.flip List.iter errs in
