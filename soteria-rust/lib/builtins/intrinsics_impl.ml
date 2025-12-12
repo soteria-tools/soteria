@@ -73,10 +73,11 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
     else error (`Panic (Some "core::intrinsics::assert_inhabited"))
 
   let assert_mem_uninitialized_valid ~t:_ = ok ()
-  let assert_zero_valid ~t:_ = not_impl "core::intrinsics::assert_zero_valid"
-  (* match Layout.zeroed ~null_ptr:Sptr.null_ptr t with
-    | None -> error (`Panic (Some "core::intrinsics::assert_zero_valid"))
-    | _ -> ok () *)
+
+  let assert_zero_valid ~t =
+    let* res = Core.zero_valid ~ty:t in
+    if res then ok ()
+    else error (`Panic (Some "core::intrinsics::assert_zero_valid"))
 
   let assume ~b =
     State.assert_ b (`StdErr "core::intrinsics::assume with false")

@@ -209,4 +209,15 @@ module M (State : State_intf.S) = struct
     let** ptr, st = State.alloc_ty from_ty st in
     let** (), st = State.store ptr from_ty v st in
     State.load ptr to_ty st
+
+  let zero_valid ~ty =
+    let f st =
+      let open Rustsymex.Syntax in
+      let** { size; align; _ } = State.lift_err st @@ Layout.layout_of ty in
+      let** ptr, st = State.alloc_untyped ~zeroed:true ~size ~align st in
+      State.load ptr ty st
+    in
+    let open State_monad.Syntax in
+    let+ res = State_monad.lift_symex (f State.empty) in
+    Soteria.Symex.Compo_res.is_ok res
 end
