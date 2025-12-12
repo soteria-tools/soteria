@@ -195,7 +195,10 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   let transmute ~from_ty ~to_ty v =
     let^ res =
       let@ () = run ~env:() ~state:State.empty in
-      let* ptr = State.alloc_ty from_ty in
+      let* { size; align; _ } = Layout.layout_of from_ty in
+      let* { align = align_2; _ } = Layout.layout_of to_ty in
+      let align = BV.max ~signed:false align align_2 in
+      let* ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
       let* () = State.store ptr from_ty v in
       State.load ptr to_ty
     in
