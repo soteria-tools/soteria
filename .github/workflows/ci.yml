@@ -148,6 +148,7 @@ jobs:
           chmod +x ./bin/z3
       - name: Run soteria-c (expecting exit code 13)
         run: |
+          set +e
           CERB_INSTALL_PREFIX=$(pwd) DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c capture-db build/compile_commands.json
           EXIT_CODE=$?
           if [ $EXIT_CODE -ne 13 ]; then
