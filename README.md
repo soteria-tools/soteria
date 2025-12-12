@@ -76,8 +76,16 @@ Soteria Rust supports a large subset of Rust, but is still in development. Some 
 
 Currently, and unlike Soteria-C, Soteria-Rust has neither IDE integration or compositionality support (all tests must instead start from an entry point). We are actively working on the latter!
 
+# Contributing
+
+We are very happy to welcome contributions from the community!
+Soteria is open source and will remain open source, feel free to use it for your own projects as well and let us know if we can help!
+
+If you want to submit a pull request, take a quick look at the [contribution guidelines](./CONTRIBUTING.md), and make sure you have read the [Contributor License Agreement](./CLA.md) which requires your contributions to be compatible with our open source license.
+
+
 # License
 
 Soteria and derived tools in this repository are under Apache-2.0 license, copyright Soteria Team 2025.
 
-The Soteria logo is a trademark of the Soteria Team.
+The Soteria logo is a trademark of the Soteria Tools Ltd.

@@ -1,4 +1,4 @@
-  $ soteria-c capture-db compilation_database.json --dump-summaries "out.summaries" && cat out.summaries
+  $ soteria-c capture-db compilation_database.json --dump-summaries "out.summaries" ; cat out.summaries
   
   No bugs found
   Summaries for test2_719:

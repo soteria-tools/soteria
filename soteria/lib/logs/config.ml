@@ -24,7 +24,9 @@ let check_set_and_lock config =
   | Ok config ->
       set config;
       lock ()
-  | Error msg -> Format.kasprintf failwith "Invalid CLI arguments: %s" msg
+  | Error msg ->
+      Fmt.epr "Invalid CLI arguments: %s" msg;
+      exit Cmdliner.Cmd.Exit.cli_error
 
 let logs_enabled () =
   let conf = get () in

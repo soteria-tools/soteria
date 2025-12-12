@@ -4,6 +4,12 @@ let ptr_bits =
   Option.get Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_pointer
   * 8
 
+let c_int_bits =
+  Option.get
+    (Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity
+       (Signed Int_))
+  * 8
+
 let t_loc = t_loc ptr_bits
 let t_ptr = t_ptr ptr_bits
 let t_usize = t_int ptr_bits
@@ -14,7 +20,8 @@ module BitVec = struct
   let of_bool x =
     of_bool
       (Option.get
-         (Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity Bool))
+         (Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity
+            (Signed Int_)))
       x
 
   let usize z = mk ptr_bits z
@@ -50,6 +57,14 @@ module Syntax = struct
       let mk_nonzero = BitVec.mki_nz 8
       let zero () = BitVec.zero 8
       let one () = BitVec.mki_nz 8 1
+    end
+  end
+
+  module CInt = struct
+    module Sym_int_syntax = struct
+      let mk_nonzero = BitVec.mki_nz c_int_bits
+      let zero () = BitVec.zero c_int_bits
+      let one () = BitVec.mki_nz c_int_bits 1
     end
   end
 

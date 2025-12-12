@@ -1,4 +1,12 @@
+open Soteria_c_lib
 open Cmdliner
+module Exit_code = Error.Exit_code
+
+let exits =
+  List.map
+    (fun code ->
+      Cmd.Exit.info ~doc:(Exit_code.explain code) (Exit_code.to_int code))
+    [ Success; Found_bug; Tool_error ]
 
 let functions_arg =
   let doc = "List of functions to analyse" in
@@ -33,22 +41,34 @@ module Exec_main = struct
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ Soteria.Solvers.Config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
+      $ Soteria.Symex.Fuel_gauge.Cli.term ~default:Driver.default_wpst_fuel ()
       $ includes_arg
       $ files_arg
       $ entry_point_arg)
 
-  let cmd = Cmd.v (Cmd.info "exec") term
+  let cmd =
+    Cmd.v
+      (Cmd.info ~exits
+         ~doc:"Symbolically execute a program starting from the main function."
+         "exec")
+      (Term.map Exit_code.to_int term)
 end
 
 module Lsp = struct
   let lsp config show_version =
-    if show_version then print_endline "dev"
+    if show_version then (
+      print_endline "dev";
+      Soteria_c_lib.Error.Exit_code.Success)
     else Soteria_c_lib.Driver.lsp config ()
 
   let term =
     Term.(const lsp $ Soteria_c_lib.Config.cmdliner_term () $ version_arg)
 
-  let cmd = Cmd.v (Cmd.info "lsp") term
+  let cmd =
+    Cmd.v
+      (Cmd.info ~exits
+         ~doc:"Run soteria-c in LSP mode for bug finding (experimental)" "lsp")
+      (Term.map Exit_code.to_int term)
 end
 
 module Show_ail = struct
@@ -61,7 +81,14 @@ module Show_ail = struct
       $ includes_arg
       $ files_arg)
 
-  let cmd = Cmd.v (Cmd.info "show-ail") term
+  let cmd =
+    Cmd.v
+      (Cmd.info ~exits
+         ~doc:
+           "Parse and link the ail program and print its AST (for debugging \
+            purposes)"
+         "show-ail")
+      (Term.map Exit_code.to_int term)
 end
 
 module Generate_summaries = struct
@@ -76,7 +103,16 @@ module Generate_summaries = struct
       $ functions_arg
       $ files_arg)
 
-  let cmd = Cmd.v (Cmd.info "gen-summaries") term
+  let cmd =
+    Cmd.v
+      (Cmd.info ~exits
+         ~doc:
+           "Run soteria-c in bug-finding mode. Soteria will perform \
+            bi-abduction and generate summaries for all functions in the code \
+            base. It will then analyse these summaries and report any bugs it \
+            finds."
+         "gen-summaries")
+      (Term.map Exit_code.to_int term)
 end
 
 module Capture_db = struct
@@ -95,7 +131,12 @@ module Capture_db = struct
       $ compilation_db_arg
       $ functions_arg)
 
-  let cmd = Cmd.v (Cmd.info "capture-db") term
+  let cmd =
+    Cmd.v
+      (Cmd.info ~exits
+         ~doc:"Same as gen-summaries but runs on a compilation database."
+         "capture-db")
+      (Term.map Exit_code.to_int term)
 end
 
 let cmd =
@@ -108,4 +149,4 @@ let cmd =
       Capture_db.cmd;
     ]
 
-let () = exit @@ Cmd.eval cmd
+let () = exit @@ Cmd.eval' cmd
