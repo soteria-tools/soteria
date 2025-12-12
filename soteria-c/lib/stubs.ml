@@ -119,6 +119,8 @@ module M (State : State_intf.S) = struct
       State.error `FailedAssert state
     else Result.ok (Agv.void, state)
 
+  let assert_fail ~args:_ state = State.error `FailedAssert state
+
   let assume_ ~(args : Agv.t list) state =
     let* to_assume, _ =
       match args with
@@ -130,13 +132,9 @@ module M (State : State_intf.S) = struct
     let* () = Csymex.assume [ Typed.BitVec.to_bool to_assume ] in
     Result.ok (Agv.void, state)
 
-  let nondet_int_fun ~args:_ state =
-    let* size = Layout.size_of_int_ty_unsupported (Signed Int_) in
-    let* v = Csymex.nondet (Typed.t_int (8 * size)) in
-    let constrs = Layout.int_constraints (Signed Int_) |> Option.get in
-    let* () = Csymex.assume (constrs v) in
-    let v = (v :> T.cval Typed.t) in
-    Result.ok (Basic v, state)
+  let nondet ty ~args:_ state =
+    let* v = Layout.nondet_c_ty_aggregate_ ty in
+    Result.ok (v, state)
 
   let strcmp ~args state =
     let* s1, s2 =
@@ -240,6 +238,8 @@ module M (State : State_intf.S) = struct
     in
     Result.ok (ret, state)
 
+  let vanish_fn ~args:_ _state = vanish ()
+
   module Arg_filter = struct
     (** HACK: Some internal functions such as __builtin___memcpy_chk are not
         needed in our tool, since we perform all checks. For this function, we
@@ -277,6 +277,22 @@ module M (State : State_intf.S) = struct
       in
       None
 
+  let signaled_testcomp = ref false
+
+  let with_testcomp_support x =
+    if (Config.current ()).testcomp_compat then Some x
+    else
+      let () =
+        if not !signaled_testcomp then (
+          signaled_testcomp := true;
+          L.warn (fun m ->
+              m
+                "Test-Comp support is not enabled, but detected use of the \
+                 __VERIFIER API. Soteria will consider the function as missing \
+                 a body."))
+      in
+      None
+
   let find_stub (fname : Cerb_frontend.Symbol.sym) :
       ('err fun_exec * Arg_filter.t) option =
     let (Symbol (_, _, descr)) = fname in
@@ -296,8 +312,54 @@ module M (State : State_intf.S) = struct
         | "__builtin___memcpy_chk" ->
             (* See definition of this builtin, the last argument is not useful to us. *)
             Some (memcpy, Some (( <> ) 3))
-        | "__soteria___nondet_int" -> Some (nondet_int_fun, None)
+        | "__soteria___nondet_int" ->
+            Some (nondet (Basic (Integer (Signed Int_))), None)
+        | "__VERIFIER_nondet_bool" ->
+            with_testcomp_support (nondet (Basic (Integer Bool)), None)
+        | "__VERIFIER_nondet_char" ->
+            with_testcomp_support (nondet (Basic (Integer Char)), None)
+        | "__VERIFIER_nondet_uchar" ->
+            with_testcomp_support
+              (nondet (Basic (Integer (Unsigned Ichar))), None)
+        | "__VERIFIER_nondet_short" ->
+            with_testcomp_support (nondet (Basic (Integer (Signed Short))), None)
+        | "__VERIFIER_nondet_ushort" ->
+            with_testcomp_support
+              (nondet (Basic (Integer (Unsigned Short))), None)
+        | "__VERIFIER_nondet_int" ->
+            with_testcomp_support (nondet (Basic (Integer (Signed Int_))), None)
+        | "__VERIFIER_nondet_uint" ->
+            with_testcomp_support
+              (nondet (Basic (Integer (Unsigned Int_))), None)
+        | "__VERIFIER_nondet_int128" ->
+            with_testcomp_support
+              (nondet (Basic (Integer (Signed (IntN_t 128)))), None)
+        | "__VERIFIER_nondet_uint128" ->
+            with_testcomp_support
+              (nondet (Basic (Integer (Unsigned (IntN_t 128)))), None)
+        (* | "__VERIFIER_nondet_charp" ->
+            with_testcomp_support 
+              (nondet (Basic (Typed.TPointer Typed.t_char)), None) *)
+        | "__VERIFIER_nondet_long" ->
+            with_testcomp_support (nondet (Basic (Integer (Signed Long))), None)
+        | "__VERIFIER_nondet_ulong" ->
+            with_testcomp_support
+              (nondet (Basic (Integer (Unsigned Long))), None)
+        | "__VERIFIER_nondet_longlong" ->
+            with_testcomp_support
+              (nondet (Basic (Integer (Signed LongLong))), None)
+        | "__VERIFIER_nondet_ulonglong" ->
+            with_testcomp_support
+              (nondet (Basic (Integer (Unsigned LongLong))), None)
+        | "__VERIFIER_nondet_float" ->
+            with_testcomp_support
+              (nondet (Basic (Floating (RealFloating Float))), None)
+        | "__VERIFIER_nondet_double" ->
+            with_testcomp_support
+              (nondet (Basic (Floating (RealFloating Double))), None)
         | "__soteria___assert" -> Some (assert_, None)
+        | "__assert_fail" -> with_testcomp_support (assert_fail, None)
+        | "abort" | "exit" -> with_testcomp_support (vanish_fn, None)
         | "__CPROVER_assert" ->
             (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
             with_cbmc_support (assert_, Some (( == ) 0))

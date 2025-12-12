@@ -333,9 +333,9 @@ let constraints ~ty v =
     L.debug (fun m -> m "Constraints for %a: %s" Fmt_ail.pp_ty ty msg);
     None
 
-let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
+let nondet_c_ty_ (ty : ctype_) : Typed.T.cval Typed.t Csymex.t =
   let open Csymex.Syntax in
-  match proj_ctype_ ty with
+  match ty with
   | Void -> Csymex.return Usize.(0s)
   | Pointer _ ->
       let* loc = Csymex.nondet Typed.t_loc in
@@ -354,10 +354,16 @@ let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
   | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->
       Csymex.not_impl "nondet_c_ty: unsupported type"
 
-let nondet_c_ty_aggregate (ty : ctype) : Agv.t Csymex.t =
+let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
+  nondet_c_ty_ (proj_ctype_ ty)
+
+let nondet_c_ty_aggregate_ (ty : ctype_) : Agv.t Csymex.t =
   let open Csymex.Syntax in
-  let+ res = nondet_c_ty ty in
+  let+ res = nondet_c_ty_ ty in
   Agv.Basic res
+
+let nondet_c_ty_aggregate (ty : ctype) : Agv.t Csymex.t =
+  nondet_c_ty_aggregate_ (proj_ctype_ ty)
 
 let int_ty_bounds int_ty =
   let open Syntaxes.Option in

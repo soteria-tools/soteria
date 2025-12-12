@@ -3,6 +3,8 @@ void __soteria___assert(int x);
 
 #define __attribute__(X)
 #define restrict
+#define __extension__
+#define __PRETTY_FUNCTION__ "__PRETTY_FUNCTION__"
 
 // Dealing with Apple extensions
 // Uncomment this or pass "-fno-blocks" to clang's cpp
@@ -12,6 +14,7 @@ void __soteria___assert(int x);
 
 // Non standard 128 bits type
 #define __uint128_t __cerbty_uint128_t
+#define __int128 __cerbty_int128_t
 
 // Mapping clang builtin idents for stdarg.h to Cerberus' counterparts
 #define __builtin_va_start __cerb_va_start
@@ -20,6 +23,9 @@ void __soteria___assert(int x);
 // TODO(HACK): this is a hack which is sufficient if we only care about
 // the frontend
 typedef void *__builtin_va_list;
+
+// Ignore threading for ow
+#define __thread
 
 // TODO(HACK): this disables the detection of extensions so that they are not
 // used when preprocessing Apple's libc (NOTE: this was at least needed to
