@@ -73,11 +73,10 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
     else error (`Panic (Some "core::intrinsics::assert_inhabited"))
 
   let assert_mem_uninitialized_valid ~t:_ = ok ()
-
-  let assert_zero_valid ~t =
-    match Layout.zeroed ~null_ptr:Sptr.null_ptr t with
+  let assert_zero_valid ~t:_ = not_impl "core::intrinsics::assert_zero_valid"
+  (* match Layout.zeroed ~null_ptr:Sptr.null_ptr t with
     | None -> error (`Panic (Some "core::intrinsics::assert_zero_valid"))
-    | _ -> ok ()
+    | _ -> ok () *)
 
   let assume ~b =
     State.assert_ b (`StdErr "core::intrinsics::assume with false")
@@ -649,10 +648,7 @@ module M (State : State_intf.S) : Intrinsics_intf.M(State).Impl = struct
         size
     | _ -> ok base_size
 
-  let transmute ~t_src ~dst ~src =
-    let* verify_ptr = State.is_valid_ptr_fn in
-    let blocks = Encoder.rust_to_cvals src t_src in
-    State.with_decay_map_res @@ Encoder.transmute ~verify_ptr ~to_ty:dst blocks
+  let transmute ~t_src ~dst ~src = Core.transmute ~from_ty:t_src ~to_ty:dst src
 
   let type_id ~t =
     (* lazy but works *)

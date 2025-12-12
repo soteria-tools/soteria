@@ -192,4 +192,21 @@ module M (State : State_intf.S) = struct
         Fmt.kstr not_impl
           "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
           Expressions.pp_binop op pp_rust_val l pp_rust_val r
+
+  module State_monad = State_monad.Make (State)
+
+  let state_op f =
+    let open State_monad.Syntax in
+    let* res = State_monad.lift_symex (f State.empty) in
+    match (res : ('a, 'e, 'f) Soteria.Symex.Compo_res.t) with
+    | Ok (v, _) -> State_monad.ok v
+    | Error (e, _) -> State_monad.error_raw e
+    | Missing m -> State_monad.miss m
+
+  let transmute ~from_ty ~to_ty v =
+    state_op @@ fun st ->
+    let open Rustsymex.Syntax in
+    let** ptr, st = State.alloc_ty from_ty st in
+    let** (), st = State.store ptr from_ty v st in
+    State.load ptr to_ty st
 end

@@ -202,7 +202,7 @@ module Make (State : State_intf.S) = struct
           | Function f -> State.declare_fn f
           | Unknown -> not_impl "Unknown provenance in RawMemory"
         in
-        let* blocks =
+        let+ blocks =
           fold_list blocks ~init:[] ~f:(fun acc block ->
               match block with
               | `Byte (b, ofs) -> ok ((Int b, BV.usizei ofs) :: acc)
@@ -217,8 +217,7 @@ module Make (State : State_intf.S) = struct
                     in
                     (Int ptr_frag, BV.usizei ofs) :: acc)
         in
-        let$$+ value = Encoder.transmute blocks ~to_ty:const.ty in
-        value
+        Union blocks
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
@@ -466,13 +465,7 @@ module Make (State : State_intf.S) = struct
     | RvRef (place, borrow, _metadata) ->
         let* ptr = resolve_place place in
         let* ptr' = State.borrow ptr place.ty borrow in
-        let* is_valid =
-          match ptr' with
-          (* FIXME: we don't support reads of symbolic slices lengths, so for now we
-             assume they are always valid. *)
-          | _, Len len when Option.is_none (BV.to_z len) -> ok true
-          | _ -> State.is_valid_ptr ptr' place.ty
-        in
+        let* is_valid = State.is_valid_ptr ptr' place.ty in
         if is_valid then ok (Ptr ptr') else error `UBDanglingPointer
     (* Raw pointer *)
     | RawPtr (place, _kind, _metadata) ->
@@ -514,10 +507,7 @@ module Make (State : State_intf.S) = struct
                 Ptr ptr
             | _ -> ok v)
         | Cast (CastTransmute (from_ty, to_ty)) ->
-            let* verify_ptr = State.is_valid_ptr_fn in
-            let blocks = Encoder.rust_to_cvals v from_ty in
-            State.with_decay_map_res
-            @@ Encoder.transmute ~verify_ptr ~to_ty blocks
+            Core.transmute ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
             let* v =
               match v with
@@ -908,8 +898,7 @@ module Make (State : State_intf.S) = struct
               let* arg = eval_operand arg in
               if Types.equal_ty from_ty to_ty then ok (arg :: acc)
               else
-                let blocks = Encoder.rust_to_cvals arg from_ty in
-                let$$+ arg = Encoder.transmute ~to_ty blocks in
+                let+ arg = Core.transmute ~from_ty ~to_ty arg in
                 arg :: acc)
         in
         let args = List.rev args in

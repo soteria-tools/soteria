@@ -25,6 +25,7 @@ module Make (State : State_intf.S) = struct
 
   let ok x : ('a, 'env) t = fun env state -> Result.ok (x, env, state)
   let error err : ('a, 'env) t = fun _env state -> State.error err state
+  let miss f : ('a, 'env) t = fun _env _state -> Result.miss f
   let error_raw err : ('a, 'env) t = fun _env state -> Result.error (err, state)
   let not_impl str : ('a, 'env) t = fun _env _state -> Rustsymex.not_impl str
   let get_env () = fun env state -> Result.ok (env, env, state)

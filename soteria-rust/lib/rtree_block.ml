@@ -1,6 +1,7 @@
 open Soteria.Symex.Compo_res
 open Typed
 open Typed.Infix
+module BV = Typed.BitVec
 open Charon
 open Syntaxes.FunctionWrap
 module DecayMapMonad = Sptr.DecayMapMonad
@@ -63,18 +64,49 @@ module Make (Sptr : Sptr.S) = struct
       | Uninit _, Uninit _ -> (Uninit Partially, tb)
       | _, _ -> (Lazy, tb)
 
+    let rec split_rval (v : rust_val) at =
+      match v with
+      | Ptr (ptr, meta) ->
+          let* v = Sptr.decay ptr in
+          let* v =
+            match meta with
+            | Thin -> return v
+            | Len len -> return (BV.concat v len)
+            | VTable ptr ->
+                let+ v2 = Sptr.decay ptr in
+                BV.concat v v2
+          in
+          split_rval (Int v) at
+      | Int v ->
+          (* get our starting size and unsigned integer *)
+          let size = Typed.size_of_int v / 8 in
+          let+ at =
+            match BV.to_z at with
+            | Some at -> return (Z.to_int at)
+            | _ -> (
+                (* as per the contract of [split], we assume [at] is in [[1, size)] *)
+                let options = List.init (size - 1) (( + ) 1) in
+                let* res =
+                  match_on options ~constr:(fun x ->
+                      Typed.sem_eq at (BV.usizei x))
+                in
+                match res with Some i -> return i | None -> vanish ())
+          in
+          let mask_l = BV.extract 0 ((at * 8) - 1) v in
+          let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
+          (Rust_val.Int mask_l, Rust_val.Int mask_r)
+      | _ ->
+          Fmt.kstr not_impl "Split unsupported: %a at %a" pp_rust_val v
+            Typed.ppa at
+
     let split ~(at : T.sint Typed.t) (node, tb) =
       let open TB.Split_tree in
       match node with
       | (Uninit Totally | Zeros | Any) as v ->
           return (Leaf (v, tb), Leaf (v, tb))
       | Init value ->
-          let rec aux = function
-            | `Leaf value -> Leaf (Init value, tb)
-            | `Node (at, l, r) -> Node (aux l, at, aux r)
-          in
-          let+ ltree, rtree = Encoder.split value at in
-          (aux ltree, aux rtree)
+          let+ vl, vr = split_rval value at in
+          (Leaf (Init vl, tb), Leaf (Init vr, tb))
       | Lazy | Uninit Partially ->
           failwith "Should never split an intermediate node"
 
@@ -139,21 +171,6 @@ module Make (Sptr : Sptr.S) = struct
   open MemVal
   include Soteria.Sym_states.Tree_block.Make (DecayMapMonad) (MemVal)
 
-  let decode_mem_val ~ty = function
-    | Uninit _ -> Result.error `UninitializedMemoryAccess
-    | Zeros ->
-        let+ v =
-          of_opt_not_impl "Don't know how to zero this type"
-          @@ Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) ty
-        in
-        Ok v
-    | Lazy -> not_impl "Lazy memory access, cannot decode"
-    | Init value -> Encoder.transmute_one ~to_ty:ty value
-    | Any ->
-        (* We don't know if this read is valid, as memory could be uninitialised.
-         We have to approximate and vanish. *)
-        not_impl "Reading from Any memory, vanishing."
-
   let collect_leaves (t : Tree.t) =
     Result.fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
         let offset, _ = leaf.range in
@@ -174,15 +191,46 @@ module Make (Sptr : Sptr.S) = struct
             L.info (fun m -> m "Reading from Any memory, vanishing.");
             vanish ()
         | NotOwned Partially | Owned ((Lazy | Uninit Partially), _) ->
-            L.debug (fun m -> m "Iterating over an intermediate node?");
-            vanish ())
+            failwith "Iterating over an intermediate node?")
+
+  let decode_mem_val ~ty = function
+    | Uninit _ -> Result.error `UninitializedMemoryAccess
+    | Zeros -> not_impl "Decoding zeroed memory"
+    | Lazy -> failwith "Should have been handled earlier"
+    | Init value -> Encoder.transmute_one ~to_ty:ty value
+    | Any ->
+        (* We don't know if this read is valid, as memory could be uninitialised.
+         We have to approximate and vanish. *)
+        not_impl "Reading from Any memory, vanishing."
+
+  let decode_lazy ~ty (t : Tree.t) =
+    (* The tree spans the entire type we're interested in.
+       Furthermore, we only read/write scalars (int, float, pointers...) which
+       cover the whole range with no gaps.
+       For lazy nodes, we convert all of these to bitvectors, the concatenate
+       them and call the encoder to decode the full value. *)
+    let** leaves = collect_leaves t in
+    let** leaves =
+      fold_list leaves ~init:[] ~f:(fun acc (v, _) ->
+          match v with
+          | Int bv -> ok (bv :: acc)
+          | Ptr (ptr, Thin) ->
+              let+ bv = Sptr.decay ptr in
+              Ok (bv :: acc)
+          | _ ->
+              Fmt.kstr not_impl "Unexpected rust_val in lazy decoding: %a"
+                pp_rust_val v)
+    in
+    match leaves with
+    | hd :: tl ->
+        let bv = List.fold_left BV.concat hd tl in
+        Encoder.transmute_one ~to_ty:ty (Int bv)
+    | _ -> failwith "Impossible"
 
   let decode_tree ~ty (t : Tree.t) =
     match t.node with
     | NotOwned _ -> miss []
-    | Owned (Lazy, _) ->
-        let** leaves = collect_leaves t in
-        Encoder.transmute ~to_ty:ty leaves
+    | Owned (Lazy, _) -> decode_lazy ~ty t
     | Owned (node, _) -> decode_mem_val ~ty node
 
   let uninit range tb : Tree.t =

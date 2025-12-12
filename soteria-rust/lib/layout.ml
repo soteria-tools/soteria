@@ -576,52 +576,6 @@ and nondets tys =
       let+ f = nondet ty in
       f :: fields)
 
-let rec zeroed ~(null_ptr : 'a) : Types.ty -> 'a rust_val option =
-  let zeroeds tys = Monad.OptionM.all (zeroed ~null_ptr) tys in
-  function
-  | TLiteral (TFloat fty) -> Some (Float (Typed.Float.mk fty "0.0"))
-  | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty) ->
-      Some (Int (BV.mki_lit ty 0))
-  | TRawPtr _ -> Some (Ptr (null_ptr, Thin))
-  | TFnPtr _ -> None
-  | TRef _ -> None
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      zeroeds types |> Option.map (fun fields -> Tuple fields)
-  | TAdt
-      {
-        id = TBuiltin TArray;
-        generics = { types = [ ty ]; const_generics = [ len ]; _ };
-      } ->
-      let len = int_of_const_generic len in
-      zeroed ~null_ptr ty
-      |> Option.map (fun v -> Tuple (List.init len (fun _ -> v)))
-  | TAdt { id = TAdtId t_id; _ } as ty -> (
-      let adt = Crate.get_adt t_id in
-      match adt.kind with
-      | Struct fields ->
-          fields
-          |> Charon_util.field_tys
-          |> zeroeds
-          |> Option.map (fun fields -> Tuple fields)
-      | Enum vars ->
-          (vars
-          |> List.find_opt (fun (v : Types.variant) ->
-                 Z.equal Z.zero (z_of_literal v.discriminant))
-          |> Option.bind)
-          @@ fun (v : Types.variant) ->
-          v.fields
-          |> Charon_util.field_tys
-          |> zeroeds
-          |> Option.map (fun fs -> Enum (BV.of_literal v.discriminant, fs))
-      | Union _ ->
-          let layout = layout_of ty in
-          let bv = BV.zero (layout.size * 8) in
-          Some (Union [ (Int bv, Usize.(0s)) ])
-      | k ->
-          Fmt.failwith "Unhandled zeroed ADT kind: %a" Types.pp_type_decl_kind k
-      )
-  | ty -> Fmt.failwith "Unhandled zeroed type: %a" pp_ty ty
-
 let rec is_inhabited : Types.ty -> bool = function
   | TNever -> false
   | TAdt { id = TAdtId id; _ } -> (
