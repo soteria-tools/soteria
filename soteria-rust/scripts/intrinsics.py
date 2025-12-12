@@ -357,30 +357,22 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     """
 
     type_utils = """
-        type rust_val := State.Sptr.t Rust_val.t
-        type 'a ret := (
-            unit ->
-            State.t ->
-            ('a * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t
-        )
-        type fun_exec := (
+        type rust_val := Rust_state_m.Sptr.t Rust_val.t
+        type 'a ret := ('a, unit) Rust_state_m.t
+        type fun_exec :=
             UllbcAst.fun_decl ->
-            rust_val list ->
-            unit ->
-            State.t ->
-            (rust_val * unit * State.t, Error.t State.err * State.t, State.serialized) Result.t)
+            rust_val list -> (rust_val, unit) Rust_state_m.t
     """
 
     interface_str = f"""
         {prelude}
 
         open Charon
-        open Rustsymex
 
-        module M (State: State_intf.S) = struct
+        module M (Rust_state_m: Rust_state_m.S) = struct
           module type Impl = sig
             {type_utils}
-            type full_ptr := State.Sptr.t Rust_val.full_ptr
+            type full_ptr := Rust_state_m.Sptr.t Rust_val.full_ptr
 
     """
 
@@ -390,54 +382,27 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
         [@@@warning "-unused-value-declaration"]
 
-        open Rustsymex
-        open Rust_val
-
-        module M (State: State_intf.S): Intrinsics_intf.M(State).Impl = struct
-
-          type rust_val = State.Sptr.t Rust_val.t
-
-          let ( let+ ) x f () st =
-            let open Rustsymex.Syntax in
-            let++ y, (), st' = x () st in
-            (f y, (), st')
-
-          let[@inline] as_ptr (v : rust_val) =
-            match v with
-            | Ptr ptr -> ptr
-            | Int v ->
-                let v = Typed.cast_i Usize v in
-                let ptr = State.Sptr.null_ptr_of v in
-                (ptr, Thin)
-            | _ -> failwith "expected pointer"
-
-          let as_base ty (v : rust_val) = Rust_val.as_base ty v
-          let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
-          let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
-
+        module M (Rust_state_m: Rust_state_m.S): Intrinsics_intf.M(Rust_state_m).Impl = struct
+          open Rust_state_m
     """
 
     main_str = f"""
         {prelude}
 
-        open Rustsymex
         open Rust_val
 
-        module M (State: State_intf.S): Intrinsics_intf.M(State).S = struct
+        module M (Rust_state_m: Rust_state_m.S): Intrinsics_intf.M(Rust_state_m).S = struct
+            open Rust_state_m
+            open Syntax
 
-            type rust_val = State.Sptr.t Rust_val.t
-
-            let ( let+ ) x f () st =
-            let open Rustsymex.Syntax in
-            let++ y, (), st' = x () st in
-            (f y, (), st')
+            type rust_val = Sptr.t Rust_val.t
 
             let[@inline] as_ptr (v : rust_val) =
             match v with
             | Ptr ptr -> ptr
             | Int v ->
                 let v = Typed.cast_i Usize v in
-                let ptr = State.Sptr.null_ptr_of v in
+                let ptr = Sptr.null_ptr_of v in
                 (ptr, Thin)
             | _ -> failwith "expected pointer"
 
@@ -467,7 +432,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         stubs_str += f"""
             let {info['name']} {' '.join(
                 f"~{arg}:_" if arg else "_"
-                for (arg, _) in args_and_tys)} () _state =
+                for (arg, _) in args_and_tys)} =
                 not_impl "Unsupported intrinsic: {info['name']}"
         """
 
@@ -487,7 +452,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     """
 
     main_str += """
-            include Intrinsics_impl.M (State)
+            include Intrinsics_impl.M (Rust_state_m)
 
             let eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
                 match name, generics.types, args with
@@ -519,7 +484,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         """
 
     main_str += """
-                | name, _, _ -> fun () _ ->
+                | name, _, _ ->
                     Fmt.kstr not_impl "Intrinsic %s not found, or not called with the right arguments" name
         end
     """
@@ -557,7 +522,7 @@ if __name__ == "__main__":
     impl_file = ml_folder / "intrinsics_impl.ml"
     if not impl_file.exists():
         impl_content = """
-        module M (State: State_intf.S) = struct
+        module M (Rust_state_m: Rust_state_m.S) = struct
         end
         """
         write_ocaml_file(impl_file, impl_content)
