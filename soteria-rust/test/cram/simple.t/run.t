@@ -167,3 +167,21 @@ Check corner cases with permissive provenance, around transmutes
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
   [1]
+
+Test transmutations keeping the bit-patterns the same
+  $ soteria-rust rustc transmute_roundtrip.rs --clean --no-timing
+  Compiling... done in <time>
+  note: one_way_u32_f32: done in <time>, ran 1 branch
+  PC 1: (bv2f[F32](V|1|) == bv2f[F32](V|2|)) /\ !(fis(NaN)(bv2f[F32](V|1|))) /\
+        (V|1| == V|2|)
+  
+  note: one_way_f32_u32: done in <time>, ran 2 branches
+  PC 1: (bv2f[F32](V|2|) == V|1|) /\ fis(NaN)(V|1|)
+  PC 2: (bv2f[F32](V|2|) == V|1|) /\ !(fis(NaN)(V|1|))
+  
+  note: two_way_u32_i32: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  note: two_way_u8x4_u16x2: done in <time>, ran 1 branch
+  PC 1: empty
+  
