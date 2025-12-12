@@ -163,3 +163,47 @@ Test kani::vec::any_vec
          (V|1| == 0x0000000000000010) /\ (0x0000000000000001 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe)
   
+Test our simple Kani demo works
+  $ soteria-rust rustc demo.rs --clean --no-timing --kani
+  Compiling... done in <time>
+  error: saturating_add_overflow: found issues in <time>, errors in 1 branch (out of 3)
+  error: Overflow in saturating_add_overflow
+      ┌─ $TESTCASE_ROOT/demo.rs:11:9
+    8 │  fn saturating_add_overflow() -> u32 {
+      │   ----------------------------------- 1: Entry point
+    9 │      let a: u32 = kani::any();
+   10 │      let b: u32 = kani::any();
+   11 │      if a + b < u32::MAX {
+      │          ^^^^^ Triggering memory operation
+  PC 1: (((0xffffffff -ck V|1|) <u V|2|) || ((0xffffffff -ck V|2|) <u V|1|))
+  
+  note: saturating_add: done in <time>, ran 2 branches
+  PC 1: (V|1| <u (0xffffffff -ck V|2|)) /\ (V|1| <=u (0xffffffff -ck V|2|)) /\
+        (V|2| <=u (0xffffffff -ck V|1|))
+  PC 2: ((0xffffffff -ck V|2|) <=u V|1|)
+  
+  error: memory_leak: found issues in <time>, errors in 1 branch (out of 1)
+  warning: Memory leak at ../alloc/src/alloc.rs:251:9-39 in memory_leak
+      ┌─ $TESTCASE_ROOT/demo.rs:32:2
+   32 │  fn memory_leak() {
+      │   ^^^^^^^^^^^^^^^^
+      │   │
+      │   Leaking function
+      │   1: Entry point
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (0x0000000000000001 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffffa)
+  
+  error: uninit_access: found issues in <time>, errors in 1 branch (out of 2)
+  bug: Uninitialized memory access in uninit_access
+      ┌─ $TESTCASE_ROOT/demo.rs:63:27
+   58 │  fn uninit_access() {
+      │   ------------------ 1: Entry point
+   59 │      let any_option: MyOption<u32> = kani::any();
+   60 │      let addr: *const u32 = &any_option as *const MyOption<u32> as *const u32;
+   61 │      unsafe {
+   62 │          let addr_value = addr.offset(1);
+   63 │          let value: u32 = *addr_value;
+      │                            ^^^^^^^^^^^ Triggering memory operation
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
+  
+  [1]
