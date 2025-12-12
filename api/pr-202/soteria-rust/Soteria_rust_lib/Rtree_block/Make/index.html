@@ -68,7 +68,9 @@ let search_urls = ['../../../db.js','../../../../sherlodoc.js'];
   <span><span>(<span><a href="#type-t">t</a> option</span>, <span class="type-var">'a</span>, <span><a href="#type-serialized_atom">serialized_atom</a> list</span>)</span> <a href="../../Sptr/DecayMapMonad/Result/index.html#type-t">DecayMapMonad.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-consume"><a href="#val-consume" class="anchor"></a><code><span><span class="keyword">val</span> consume : 
   <span><a href="#type-serialized">serialized</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="#type-t">t</a> option</span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><a href="#type-t">t</a> option</span>, <span class="type-var">'a</span>, <span><a href="#type-serialized_atom">serialized_atom</a> list</span>)</span> <a href="../../Sptr/DecayMapMonad/Result/index.html#type-t">DecayMapMonad.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-produce"><a href="#val-produce" class="anchor"></a><code><span><span class="keyword">val</span> produce : <span><a href="#type-serialized">serialized</a> <span class="arrow">&#45;&gt;</span></span> <span><span><a href="#type-t">t</a> option</span> <span class="arrow">&#45;&gt;</span></span> <span><span><a href="#type-t">t</a> option</span> <a href="../../Sptr/DecayMapMonad/index.html#type-t">DecayMapMonad.t</a></span></span></code></div></div></details></div><div class="odoc-spec"><div class="spec value anchored" id="val-collect_leaves"><a href="#val-collect_leaves" class="anchor"></a><code><span><span class="keyword">val</span> collect_leaves : 
+  <span><span>(<span><a href="#type-t">t</a> option</span>, <span class="type-var">'a</span>, <span><a href="#type-serialized_atom">serialized_atom</a> list</span>)</span> <a href="../../Sptr/DecayMapMonad/Result/index.html#type-t">DecayMapMonad.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-produce"><a href="#val-produce" class="anchor"></a><code><span><span class="keyword">val</span> produce : <span><a href="#type-serialized">serialized</a> <span class="arrow">&#45;&gt;</span></span> <span><span><a href="#type-t">t</a> option</span> <span class="arrow">&#45;&gt;</span></span> <span><span><a href="#type-t">t</a> option</span> <a href="../../Sptr/DecayMapMonad/index.html#type-t">DecayMapMonad.t</a></span></span></code></div></div></details></div><div class="odoc-spec"><div class="spec value anchored" id="val-sint_to_int"><a href="#val-sint_to_int" class="anchor"></a><code><span><span class="keyword">val</span> sint_to_int : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span>int <a href="../../Sptr/DecayMapMonad/index.html#type-t">DecayMapMonad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-collect_leaves"><a href="#val-collect_leaves" class="anchor"></a><code><span><span class="keyword">val</span> collect_leaves : 
   <span><a href="Tree/index.html#type-t">Tree.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span><span>(<a href="#type-rust_val">rust_val</a>
     * <span><span>[&gt; <span class="xref-unresolved">Soteria__Bv_values__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria__Bv_values__Typed.t</span></span>)</span>
@@ -79,11 +81,12 @@ let search_urls = ['../../../db.js','../../../../sherlodoc.js'];
   <span><span class="label">ty</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><a href="MemVal/index.html#type-value">MemVal.value</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<a href="Encoder/index.html#type-rust_val">Encoder.rust_val</a>,
-    <span>[&gt; `UBDanglingPointer
+    <span>[&gt; <span>`InvalidLayout of <span class="xref-unresolved">Charon</span>.Types.ty</span>
+    <span>| `UBDanglingPointer</span>
     <span><span>| `UBTransmute</span> of string</span>
     <span>| `UninitializedMemoryAccess</span> ]</span>,
     <span class="type-var">'a</span>)</span>
-    <a href="../../Sptr/DecayMapMonad/Result/index.html#type-t">DecayMapMonad.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-decode_lazy"><a href="#val-decode_lazy" class="anchor"></a><code><span><span class="keyword">val</span> decode_lazy : 
+    <a href="../../Sptr/DecayMapMonad/Result/index.html#type-t">Sptr.DecayMapMonad.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-decode_lazy"><a href="#val-decode_lazy" class="anchor"></a><code><span><span class="keyword">val</span> decode_lazy : 
   <span><span class="label">ty</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><a href="Tree/index.html#type-t">Tree.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span class="xref-unresolved">Soteria_rust_lib__Sptr.DecayMap.t</span> option</span> <span class="arrow">&#45;&gt;</span></span>
@@ -94,7 +97,8 @@ let search_urls = ['../../../db.js','../../../../sherlodoc.js'];
   <span><span class="label">ty</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><a href="Tree/index.html#type-t">Tree.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<a href="Encoder/index.html#type-rust_val">Encoder.rust_val</a>,
-    <span>[&gt; `UBDanglingPointer
+    <span>[&gt; <span>`InvalidLayout of <span class="xref-unresolved">Charon</span>.Types.ty</span>
+    <span>| `UBDanglingPointer</span>
     <span><span>| `UBTransmute</span> of string</span>
     <span>| `UninitializedMemoryAccess</span> ]</span>,
     <span class="type-var">'a</span>)</span>
