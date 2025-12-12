@@ -452,11 +452,11 @@ and resolve_trait_ty (tref : Types.trait_ref) ty_name =
 
 let size_of ty =
   let++ { size; _ } = layout_of ty in
-  size
+  (Typed.cast size :> [> T.sint ] Typed.t)
 
 let align_of ty =
   let++ { align; _ } = layout_of ty in
-  align
+  (Typed.cast align :> [> T.nonzero ] Typed.t)
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero

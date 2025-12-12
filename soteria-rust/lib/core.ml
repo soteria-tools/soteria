@@ -4,6 +4,7 @@ module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Rust_val
+open Syntaxes.FunctionWrap
 
 module M (Rust_state_m : Rust_state_m.S) = struct
   open Rust_state_m
@@ -184,31 +185,31 @@ module M (Rust_state_m : Rust_state_m.S) = struct
           "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
           Expressions.pp_binop op pp_rust_val l pp_rust_val r
 
-  module State_monad = State_monad.Make (State)
-
   let state_op f =
-    let open State_monad.Syntax in
-    let* res = State_monad.lift_symex (f State.empty) in
-    match (res : ('a, 'e, 'f) Soteria.Symex.Compo_res.t) with
-    | Ok (v, _) -> State_monad.ok v
-    | Error (e, _) -> State_monad.error_raw e
-    | Missing m -> State_monad.miss m
+    let* res = Rust_state_m.lift_symex (run ~env:() ~state:State.empty f) in
+    match res with
+    | Ok (v, _) -> ok v
+    | Error e -> error_raw e
+    | Missing m -> miss m
 
   let transmute ~from_ty ~to_ty v =
-    state_op @@ fun st ->
-    let open Rustsymex.Syntax in
-    let** ptr, st = State.alloc_ty from_ty st in
-    let** (), st = State.store ptr from_ty v st in
-    State.load ptr to_ty st
+    let^ res =
+      let@ () = run ~env:() ~state:State.empty in
+      let* ptr = State.alloc_ty from_ty in
+      let* () = State.store ptr from_ty v in
+      State.load ptr to_ty
+    in
+    match res with
+    | Ok (v, _) -> ok v
+    | Error e -> error_raw e
+    | Missing m -> miss m
 
   let zero_valid ~ty =
-    let f st =
-      let open Rustsymex.Syntax in
-      let** { size; align; _ } = State.lift_err st @@ Layout.layout_of ty in
-      let** ptr, st = State.alloc_untyped ~zeroed:true ~size ~align st in
-      State.load ptr ty st
+    let^+ res =
+      let@ () = run ~env:() ~state:State.empty in
+      let* { size; align; _ } = Layout.layout_of ty in
+      let* ptr = State.alloc_untyped ~zeroed:true ~size ~align () in
+      State.load ptr ty
     in
-    let open State_monad.Syntax in
-    let+ res = State_monad.lift_symex (f State.empty) in
     Soteria.Symex.Compo_res.is_ok res
 end
