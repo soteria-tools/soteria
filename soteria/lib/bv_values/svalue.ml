@@ -1819,7 +1819,22 @@ and Float : Float = struct
   let f32 f = mk_f F32 f
   let f64 f = mk_f F64 f
   let f128 f = mk_f F128 f
-  let eq v1 v2 = mk_commut_binop FEq v1 v2 <| TBool
+
+  let[@inline] is_floatclass fc =
+   fun sv ->
+    match sv.node.kind with
+    | Float f -> Bool.bool (FloatClass.as_fpclass fc = classify_float (str2f f))
+    | _ -> Unop (FIs fc, sv) <| TBool
+
+  let is_normal = is_floatclass Normal
+  let is_subnormal = is_floatclass Subnormal
+  let is_infinite = is_floatclass Infinite
+  let is_nan = is_floatclass NaN
+  let is_zero = is_floatclass Zero
+
+  let eq v1 v2 =
+    if equal v1 v2 then Bool.not (is_nan v1)
+    else mk_commut_binop FEq v1 v2 <| TBool
 
   let lt v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -1848,17 +1863,6 @@ and Float : Float = struct
     let fp = fp_of v in
     Binop (FSub, mk fp "0.0", v) <| v.node.ty
 
-  let[@inline] is_floatclass fc =
-   fun sv ->
-    match sv.node.kind with
-    | Float f -> Bool.bool (FloatClass.as_fpclass fc = classify_float (str2f f))
-    | _ -> Unop (FIs fc, sv) <| TBool
-
-  let is_normal = is_floatclass Normal
-  let is_subnormal = is_floatclass Subnormal
-  let is_infinite = is_floatclass Infinite
-  let is_nan = is_floatclass NaN
-  let is_zero = is_floatclass Zero
   let round rm sv = Unop (FRound rm, sv) <| sv.node.ty
 end
 
