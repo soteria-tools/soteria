@@ -81,6 +81,7 @@ module Unop = struct
     | BvOfFloat of RoundingMode.t * bool * int (* signed * target bitvec size *)
     | FloatOfBv of
         RoundingMode.t * bool * FloatPrecision.t (* signed * precision *)
+    | FloatOfBvRaw of FloatPrecision.t
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
@@ -103,6 +104,7 @@ module Unop = struct
     | FloatOfBv (rm, signed, p) ->
         Fmt.pf ft "%abv2f[%a,%a]" pp_signed signed RoundingMode.pp rm
           FloatPrecision.pp p
+    | FloatOfBvRaw p -> Fmt.pf ft "bv2f[%a]" FloatPrecision.pp p
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
@@ -424,6 +426,8 @@ module type BitVec = sig
 
   val to_float :
     rounding:RoundingMode.t -> signed:bool -> fp:FloatPrecision.t -> t -> t
+
+  val to_float_raw : t -> t
 end
 
 module type Float = sig
@@ -1792,6 +1796,10 @@ and BitVec : BitVec = struct
 
   let to_float ~rounding ~signed ~fp v =
     Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp
+
+  let to_float_raw v =
+    let fp = FloatPrecision.of_size (size_of v.node.ty) in
+    Unop (FloatOfBvRaw fp, v) <| t_float fp
 end
 
 (** {2 Floating point} *)

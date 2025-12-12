@@ -175,6 +175,8 @@ module BitVec : sig
     fp:Svalue.FloatPrecision.t ->
     [< sint ] t ->
     [> sfloat ] t
+
+  val to_float_raw : [< sint ] t -> [> sfloat ] t
 end
 
 (** Floating point operations *)

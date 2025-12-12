@@ -95,6 +95,8 @@ let fp_round (rm : RoundingMode.t) f =
 
 (* Float{Of,To}Bv *)
 
+let float_of_bv size bv = app (ifam "to_fp" (float_shape size)) [ bv ]
+
 let float_of_ubv rm size bv =
   app (ifam "to_fp_unsigned" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
 

@@ -47,6 +47,7 @@ let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function
       float_of_sbv (rm_to_smt rm) (Svalue.FloatPrecision.size fp)
   | FloatOfBv (rm, false, fp) ->
       float_of_ubv (rm_to_smt rm) (Svalue.FloatPrecision.size fp)
+  | FloatOfBvRaw fp -> float_of_bv (Svalue.FloatPrecision.size fp)
   | BvExtract (from_, to_) -> bv_extract to_ from_
   | BvExtend (true, by) -> bv_sign_extend by
   | BvExtend (false, by) -> bv_zero_extend by
