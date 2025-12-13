@@ -5,7 +5,7 @@
 let file_as_absolute =
   let pp = Format.pp_print_string in
   let parse path =
-    let path = Path.normalise path in
+    let path = Filename.normalise path in
     if Sys.file_exists path then Ok path
     else Error ("No such file or directory: " ^ path)
   in
@@ -16,7 +16,7 @@ let file_as_absolute =
 let dir_as_absolute =
   let pp = Format.pp_print_string in
   let parse path =
-    let path = Path.normalise path in
+    let path = Filename.normalise path in
     if Sys.file_exists path then
       if Sys.is_directory path then Ok path
       else Error ("Not a directory " ^ path)

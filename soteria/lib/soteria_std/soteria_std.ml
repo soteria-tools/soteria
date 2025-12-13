@@ -3,6 +3,7 @@
 module Bimap = Bimap
 module Cmdliner_helpers = Cmdliner_helpers
 module Dynarray = Dynarray
+module Filename = Filename
 module Foldable = Foldable
 module Graph = Graph
 module Hashset = Hashset
@@ -13,7 +14,6 @@ module Map = Map
 module Monad = Monad
 module Option = Option
 module Ordered_type = Ordered_type
-module Path = Path
 module Result = Result
 module Reversible = Reversible
 module Seq = Seq
