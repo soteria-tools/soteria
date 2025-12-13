@@ -1,3 +1,5 @@
+(** Monad syntax extensions for various container types. *)
+
 module List : Monad.Syntax with type 'a t := 'a list
 
 module Option : sig

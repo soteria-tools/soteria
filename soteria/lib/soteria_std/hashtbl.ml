@@ -1,3 +1,5 @@
+(** Extensions to [Stdlib.Hashtbl] with JSON support. *)
+
 include Stdlib.Hashtbl
 
 module type HashedAndStringEncodable = sig
@@ -10,6 +12,7 @@ end
 module MakeYojsonable (Key : HashedAndStringEncodable) = struct
   include Stdlib.Hashtbl.Make (Key)
 
+  (** Convert a hash table to a Yojson object. *)
   let to_yojson (value_to_yojson : 'a -> Yojson.Safe.t) (tbl : 'a t) :
       Yojson.Safe.t =
     let l =
@@ -17,6 +20,7 @@ module MakeYojsonable (Key : HashedAndStringEncodable) = struct
     in
     `Assoc (List.of_seq l)
 
+  (** Convert a Yojson object to a hash table. *)
   let of_yojson (value_of_yojson : Yojson.Safe.t -> ('a, string) result)
       (json : Yojson.Safe.t) : ('a t, string) result =
     let open Syntaxes.Result in
@@ -40,8 +44,10 @@ module MakeYojsonable (Key : HashedAndStringEncodable) = struct
     | _ -> Error "Expected an object"
 end
 
+(** Hash table with integer keys and JSON support. *)
 module Hint = MakeYojsonable (Int)
 
+(** Hash table with string keys and JSON support. *)
 module Hstring = MakeYojsonable (struct
   include String
 

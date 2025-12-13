@@ -1,3 +1,5 @@
+(** Extensions to [Stdlib.Map] with pretty-printing support. *)
+
 include Stdlib.Map
 
 module MakePp (Key : Ordered_type.S) = struct

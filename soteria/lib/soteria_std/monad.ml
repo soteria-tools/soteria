@@ -1,3 +1,6 @@
+(** Monad interfaces and implementations. *)
+
+(** Basic interface for a monad with one type parameter. *)
 module type Base = sig
   type 'a t
 
@@ -6,13 +9,16 @@ module type Base = sig
   val map : 'a t -> ('a -> 'b) -> 'b t
 end
 
+(** Functor to create a monadic fold function over a foldable container. *)
 module FoldM (M : Base) (F : Foldable.S) = struct
   type ('a, 'b) folder = 'a F.t -> init:'b -> f:('b -> 'a -> 'b M.t) -> 'b M.t
 end
 
+(** Generic monadic fold function. *)
 let foldM ~return ~bind ~fold xs ~init ~f =
   fold xs ~init:(return init) ~f:(fun acc x -> bind acc @@ fun acc -> f acc x)
 
+(** Generic monadic map function that collects results. *)
 let all ~return ~bind fn xs =
   let rec aux acc rs =
     match rs with
@@ -21,6 +27,7 @@ let all ~return ~bind fn xs =
   in
   aux [] xs
 
+(** Syntax extension for monads (let* and let+). *)
 module type Syntax = sig
   type 'a t
 
@@ -28,6 +35,7 @@ module type Syntax = sig
   val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
 end
 
+(** Complete monad interface including generic operations and syntax. *)
 module type S = sig
   include Base
 
@@ -37,9 +45,11 @@ module type S = sig
   module Syntax : Syntax with type 'a t := 'a t
 end
 
+(** Functor to extend a basic monad with derived operations and syntax. *)
 module Extend (Base : Base) = struct
   include Base
 
+  (** Generic monadic map function that collects results. *)
   let all fn xs =
     let rec aux vs l =
       match l with
@@ -48,6 +58,7 @@ module Extend (Base : Base) = struct
     in
     aux [] xs
 
+  (** Generic monadic fold function over a list. *)
   let fold_list ~init ~f xs =
     foldM ~return ~bind ~fold:Foldable.List.fold xs ~init ~f
 
@@ -57,6 +68,7 @@ module Extend (Base : Base) = struct
   end
 end
 
+(** Basic interface for a monad with two type parameters (e.g. Result). *)
 module type Base2 = sig
   type ('a, 'b) t
 
@@ -68,15 +80,18 @@ module type Base2 = sig
   val map_error : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t
 end
 
+(** Functor to create a monadic fold for two-parameter monads. *)
 module FoldM2 (M : Base2) (F : Foldable.S) = struct
   type ('elem, 'a, 'b) folder =
     'elem F.t -> init:'a -> f:('a -> 'elem -> ('a, 'b) M.t) -> ('a, 'b) M.t
 end
 
+(** Interface for a type with three type parameters. *)
 module type Ty3 = sig
   type ('a, 'b, 'c) t
 end
 
+(** Functor to create a monadic fold for three-parameter monads. *)
 module FoldM3 (M : Ty3) (F : Foldable.S) = struct
   type ('elem, 'a, 'b, 'c) folder =
     'elem F.t ->
@@ -85,6 +100,7 @@ module FoldM3 (M : Ty3) (F : Foldable.S) = struct
     ('a, 'b, 'c) M.t
 end
 
+(** Syntax extension for two-parameter monads. *)
 module type Syntax2 = sig
   type ('a, 'b) t
 
@@ -94,6 +110,7 @@ module type Syntax2 = sig
   val ( let- ) : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t
 end
 
+(** Complete interface for two-parameter monads. *)
 module type S2 = sig
   include Base2
 
@@ -105,10 +122,12 @@ module type S2 = sig
   module Syntax : Syntax2 with type ('a, 'b) t := ('a, 'b) t
 end
 
+(** Functor to extend a basic two-parameter monad. *)
 module Extend2 (Base : Base2) : S2 with type ('a, 'b) t = ('a, 'b) Base.t =
 struct
   include Base
 
+  (** Generic monadic map function that collects results. *)
   let all fn xs =
     let rec aux vs l =
       match l with
@@ -117,6 +136,7 @@ struct
     in
     aux [] xs
 
+  (** Generic monadic fold function over a list. *)
   let fold_list ~init ~f xs =
     foldM ~return:ok ~bind ~fold:Foldable.List.fold xs ~init ~f
 
@@ -128,6 +148,7 @@ struct
   end
 end
 
+(** Identity monad. *)
 module Id = Extend (struct
   type 'a t = 'a
 
@@ -136,6 +157,7 @@ module Id = Extend (struct
   let[@inline] map x f = f x
 end)
 
+(** Result transformer. *)
 module ResultT (M : Base) : Base2 with type ('a, 'b) t = ('a, 'b) Result.t M.t =
 struct
   type ('a, 'b) t = ('a, 'b) Result.t M.t
@@ -153,6 +175,7 @@ struct
   let map_error x f = M.map x (Result.map_error f)
 end
 
+(** List monad. *)
 module ListM = Extend (struct
   type 'a t = 'a list
 
@@ -161,6 +184,7 @@ module ListM = Extend (struct
   let map x f = List.map f x
 end)
 
+(** Result monad. *)
 module ResultM = Extend2 (struct
   type ('a, 'b) t = ('a, 'b) result
 
@@ -172,6 +196,7 @@ module ResultM = Extend2 (struct
   let map_error x f = Result.map_error f x
 end)
 
+(** Option monad. *)
 module OptionM = Extend (struct
   type 'a t = 'a option
 
@@ -180,6 +205,7 @@ module OptionM = Extend (struct
   let return x = Some x
 end)
 
+(** Sequence monad. *)
 module SeqM = Extend (struct
   type 'a t = 'a Seq.t
 
@@ -188,6 +214,7 @@ module SeqM = Extend (struct
   let[@inline] return x = Seq.return x
 end)
 
+(** Iterator monad. *)
 module IterM = Extend (struct
   type 'a t = 'a Iter.t
 
@@ -196,6 +223,7 @@ module IterM = Extend (struct
   let[@inline] return x = Iter.return x
 end)
 
+(** State monad. *)
 module StateM (State : sig
   type t
 end) =

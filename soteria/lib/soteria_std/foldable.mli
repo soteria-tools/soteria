@@ -1,6 +1,10 @@
+(** A foldable interface for uniform iteration over different container types.
+*)
+
 module type S = sig
   type 'a t
 
+  (** Fold over the elements of the data structure. *)
   val fold : 'a t -> init:'b -> f:('b -> 'a -> 'b) -> 'b
 end
 
