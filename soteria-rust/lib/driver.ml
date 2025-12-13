@@ -147,14 +147,8 @@ let exec_crate
   let@ () = print_outcomes entry_name in
   let { res = branches; stats } : ('res, 'range) Soteria.Stats.with_stats =
     let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
-    try
-      Rustsymex.run_with_stats ~mode:OX ~fuel:entry.fuel
-      @@ exec_fun entry.fun_decl
-    with Layout.InvalidLayout ty ->
-      {
-        res = [ (Error (`InvalidLayout ty, Call_trace.empty), []) ];
-        stats = Rustsymex.Stats.create ();
-      }
+    Rustsymex.run_with_stats ~mode:OX ~fuel:entry.fuel
+    @@ exec_fun entry.fun_decl
   in
 
   if !Config.current.print_stats then print_stats stats;

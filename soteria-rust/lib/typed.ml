@@ -100,10 +100,18 @@ module BitVec = struct
         Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
           (PrintValues.literal_to_string l)
 
+  let of_const_generic : Types.const_generic -> [> T.sint ] t = function
+    | CgValue lit -> of_literal lit
+    | c ->
+        Fmt.failwith "Cannot convert non-value const generic %a to bitvector"
+          Types.pp_const_generic c
+
   let bv_to_z ty z =
     let tag_size = 8 * Lc.size_of_literal_ty ty in
     let signed = Lc.is_signed ty in
     bv_to_z signed tag_size z
+
+  let max ~signed l r = ite (gt ~signed l r) l r
 end
 
 module Float = struct

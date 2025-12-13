@@ -47,6 +47,14 @@ let rec combine3 l1 l2 l3 =
 let combine3_opt l1 l2 l3 =
   try Some (combine3 l1 l2 l3) with Invalid_argument _ -> None
 
+let rec combinei i l1 l2 =
+  match (l1, l2) with
+  | [], [] -> []
+  | a1 :: l1, a2 :: l2 -> (i, a1, a2) :: combinei (i + 1) l1 l2
+  | _, _ -> invalid_arg "List.combinei"
+
+let combinei l1 l2 = combinei 0 l1 l2
+
 let[@tail_mod_cons] rec map2i i f l1 l2 =
   match (l1, l2) with
   | [], [] -> []

@@ -11,7 +11,6 @@ type optim_fn =
   | FloatIs of Svalue.FloatClass.t
   | FloatIsFinite
   | FloatIsSign of { positive : bool }
-  | Zeroed
   | AllocImpl
   | Panic
 
@@ -175,7 +174,6 @@ module M (Rust_state_m : Rust_state_m.S) = struct
          | Optim (FloatIs fc) -> float_is fc
          | Optim FloatIsFinite -> float_is_finite
          | Optim (FloatIsSign { positive }) -> float_is_sign positive
-         | Optim Zeroed -> zeroed f.signature
          | Alloc (Alloc { zeroed }) -> alloc ~zeroed
          | Alloc Dealloc -> dealloc
          | Alloc NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
