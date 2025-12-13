@@ -54,7 +54,7 @@ module type S = sig
 
   module State : sig
     val empty : RawState.t
-    val load : ?is_move:bool -> full_ptr -> Types.ty -> (rust_val, 'env) t
+    val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> (rust_val, 'env) t
     val load_discriminant : full_ptr -> Types.ty -> (Types.variant_id, 'env) t
     val store : full_ptr -> Types.ty -> rust_val -> (unit, 'env) t
     val zeros : full_ptr -> Typed.T.sint Typed.t -> (unit, 'env) t

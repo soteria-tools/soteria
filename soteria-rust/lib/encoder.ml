@@ -300,7 +300,7 @@ module Make (Sptr : Sptr.S) = struct
       offset; once these are read, symbolically decides whether we must keep
       reading. [offset] is the initial offset to read from, [meta] is the
       optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?(meta = Thin) ~offset :
+  let rust_of_cvals ?(meta = Thin) ~is_valid_ptr ~offset :
       Types.ty -> (rust_val, 'state, 'e, 'fix) ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
@@ -353,19 +353,20 @@ module Make (Sptr : Sptr.S) = struct
                 | _ -> not_impl "Unexpected metadata value")
           in
           let*** () =
-            if must_be_valid then
-              if match ptr with Ptr _ -> false | _ -> true then
-                error `UBDanglingPointer
-              else if not @@ Layout.is_inhabited sub_ty then
-                error `RefToUninhabited
-              else
-                match meta with
-                | Len len when must_be_valid ->
+            match (must_be_valid, ptr) with
+            | false, _ -> ok ()
+            | true, Ptr ptr -> (
+                let*** valid =
+                  lift @@ DecayMapMonad.lift @@ is_valid_ptr ptr sub_ty
+                in
+                match (valid, meta) with
+                | false, _ -> error `UBDanglingPointer
+                | _, Len len when must_be_valid ->
                     assert_or_error
                       (Usize.(0s) <=$@ len)
                       (`UBTransmute "Negative slice length")
-                | _ -> ok ()
-            else ok ()
+                | _ -> ok ())
+            | true, _ -> error `UBDanglingPointer
           in
           let+++ ptr =
             match ptr with

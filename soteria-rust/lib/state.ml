@@ -267,19 +267,14 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) st =
   in
   ((), st)
 
-and load ?(is_move = false) ?(ignore_borrow = false) ((ptr, meta) as fptr) ty st
-    : (Sptr.t rust_val * t, Error.t, serialized) Result.t =
+and load ?ignore_borrow ?(ref_checks = true) ((ptr, meta) as fptr) ty st :
+    (Sptr.t rust_val * t, Error.t, serialized) Result.t =
   let** (), st = check_ptr_align fptr ty st in
-  let parser ~offset = Encoder.rust_of_cvals ~meta ty ~offset in
-  let** value, st = apply_parser ~ignore_borrow ptr parser st in
-  let++ (), st =
-    if is_move then
-      let** size = Layout.size_of ty in
-      let@ ofs, block = with_ptr ptr st in
-      let@ block, _ = with_tbs block in
-      Tree_block.uninit_range ofs size block
-    else Result.ok ((), st)
+  let is_valid_ptr =
+    if ref_checks then is_valid_ptr st else fun _ _ -> return true
   in
+  let parser ~offset = Encoder.rust_of_cvals ~meta ~offset ~is_valid_ptr ty in
+  let++ value, st = apply_parser ?ignore_borrow ptr parser st in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   (value, st)
@@ -289,15 +284,28 @@ and load_discriminant ((ptr, _) as fptr) ty st =
   let parser ~offset = Encoder.variant_of_enum ty ~offset in
   apply_parser ptr parser st
 
+(** Performs a side-effect free ghost read -- this does not modify the state or
+    the tree-borrow state. Returns true if the value was read successfully,
+    false otherwise. *)
+and is_valid_ptr st ptr ty =
+  (* FIXME: i am not certain how one checks for the validity of a DST *)
+  if Layout.is_dst ty || Option.is_some (Layout.as_zst ty) then return true
+  else (
+    L.debug (fun m ->
+        m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
+          Charon_util.pp_ty ty);
+    let+ res = load ~ignore_borrow:true ~ref_checks:false ptr ty st in
+    is_ok res)
+
 let check_ptr_align ptr ty st =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
   check_ptr_align ptr ty st
 
-let load ?is_move ?ignore_borrow ptr ty st =
+let load ?ignore_borrow ptr ty st =
   let@ () = with_error_loc_as_call_trace st in
   let@ () = with_loc_err () in
-  load ?is_move ?ignore_borrow ptr ty st
+  load ?ignore_borrow ptr ty st
 
 let load_discriminant ptr ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -320,17 +328,6 @@ let tb_load ((ptr : Sptr.t), _) ty st =
         let@ ofs, block = with_ptr ptr st in
         let@ block, tb = with_tbs block in
         Tree_block.tb_access ofs size tag tb block)
-
-(** Performs a side-effect free ghost read -- this does not modify the state or
-    the tree-borrow state. Returns true if the value was read successfully,
-    false otherwise. *)
-let is_valid_ptr st ptr (ty : Types.ty) =
-  (* FIXME: i am not certain how one checks for the validity of a DST *)
-  if Layout.is_dst ty || Option.is_some (Layout.as_zst ty) then return true
-  else (
-    L.debug (fun m -> m "The following read is a GHOST read");
-    let+ res = load ~ignore_borrow:true ptr ty st in
-    is_ok res)
 
 let store ((ptr, _) as fptr) ty sval st =
   let** parts = lift_err st @@ Encoder.rust_to_cvals sval ty in

@@ -26,15 +26,7 @@ module type S = sig
   val pp_pretty : ignore_freed:bool -> t Fmt.t
 
   val empty : t
-
-  val load :
-    ?is_move:bool ->
-    ?ignore_borrow:bool ->
-    full_ptr ->
-    Types.ty ->
-    t ->
-    rust_val ret
-
+  val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> t -> rust_val ret
   val tb_load : full_ptr -> Types.ty -> t -> unit ret
   val load_discriminant : full_ptr -> Types.ty -> t -> Types.variant_id ret
   val store : full_ptr -> Types.ty -> rust_val -> t -> unit ret
