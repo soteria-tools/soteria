@@ -222,6 +222,9 @@ module Make (Sptr : Sptr.S) = struct
           | Ptr (ptr, Thin) ->
               let+ bv = Sptr.decay ptr in
               Ok (bv :: acc)
+          | Float f ->
+              let+ bv = Encoder.float_to_bv_bits f in
+              Ok (bv :: acc)
           | _ ->
               Fmt.kstr not_impl "Unexpected rust_val in lazy decoding: %a"
                 pp_rust_val v)
