@@ -21,7 +21,6 @@ module type S = sig
   val error_raw : Error.t err -> ('a, 'env) t
   val miss : RawState.serialized list -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
-  val get_env : unit -> ('env, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
   val map : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
 
@@ -34,6 +33,8 @@ module type S = sig
     f:('b -> 'a -> ('b, 'env) t) ->
     ('b, 'env) t
 
+  val get_state : unit -> (RawState.t, 'env) t
+  val get_env : unit -> ('env, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
   val with_env : env:'env1 -> ('a, 'env1) t -> ('a, 'env) t
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
@@ -112,7 +113,6 @@ module type S = sig
       ('a, 'env) t ->
       ('b, 'env) t
 
-    val is_valid_ptr_fn : (full_ptr -> Types.ty -> bool Rustsymex.t, 'env) t
     val is_valid_ptr : full_ptr -> Types.ty -> (bool, 'env) t
     val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
     val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
@@ -241,6 +241,7 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
   let error_raw err : ('a, 'env) t = fun _env state -> Result.error (err, state)
   let miss f : ('a, 'env) t = fun _env _state -> Result.miss f
   let not_impl str : ('a, 'env) t = fun _env _state -> Rustsymex.not_impl str
+  let get_state () = fun env state -> Result.ok (state, env, state)
   let get_env () = fun env state -> Result.ok (env, env, state)
 
   (* we don't type annotate this to allow for ['env] type changes through [f] *)
@@ -310,7 +311,8 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
   module State = struct
     include State
 
-    let[@inline] load ?is_move ptr ty = lift_state_op (load ?is_move ptr ty)
+    let[@inline] load ?ignore_borrow ptr ty =
+      lift_state_op (load ?ignore_borrow ptr ty)
 
     let[@inline] load_discriminant ptr ty =
       lift_state_op (load_discriminant ptr ty)
@@ -357,9 +359,6 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
         ~f:(fun (x, env, state) -> f x env state)
         ~fe:(fun (e, state) -> fe e env state)
         (x env state)
-
-    let[@inline] is_valid_ptr_fn =
-     fun env state -> Result.ok (is_valid_ptr state, env, state)
 
     let[@inline] is_valid_ptr ptr ty =
      fun env state ->
