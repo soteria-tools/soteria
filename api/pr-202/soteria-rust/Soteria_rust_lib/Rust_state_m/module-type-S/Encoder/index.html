@@ -16,17 +16,15 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">is_valid_ptr</span>:
     <span>(<span><span><a href="../RawState/Sptr/index.html#type-t">RawState.Sptr.t</a> <a href="../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span> <span class="arrow">&#45;&gt;</span></span>
       <span><span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-      <span>bool <a href="../../../Sptr/DecayMapMonad/Symex/index.html#type-t">Sptr.DecayMapMonad.Symex.t</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+      <span><span><span>(<span>[&gt; <span>`InvalidLayout of <span class="xref-unresolved">Charon</span>.Types.ty</span>
+       <span>| `RefToUninhabited</span>
+       <span>| `UBDanglingPointer</span>
+       <span><span>| `UBTransmute</span> of string</span> ]</span> <span class="keyword">as</span> 'a)</span>
+        option</span>
+        <a href="../../../Sptr/DecayMapMonad/Symex/index.html#type-t">Sptr.DecayMapMonad.Symex.t</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">offset</span>:<span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Rust_val.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<a href="#type-rust_val">rust_val</a>,
-    <span class="type-var">'state</span>,
-    <span>[&gt; <span>`InvalidLayout of <span class="xref-unresolved">Charon</span>.Types.ty</span>
-    <span>| `RefToUninhabited</span>
-    <span>| `UBDanglingPointer</span>
-    <span><span>| `UBTransmute</span> of string</span> ]</span>,
-    <span class="type-var">'fix</span>)</span>
-    <a href="ParserMonad/index.html#type-t">ParserMonad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-with_constraints"><a href="#val-with_constraints" class="anchor"></a><code><span><span class="keyword">val</span> with_constraints : 
+  <span><span>(<a href="#type-rust_val">rust_val</a>, <span class="type-var">'state</span>, <span class="type-var">'a</span>, <span class="type-var">'fix</span>)</span> <a href="ParserMonad/index.html#type-t">ParserMonad.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-with_constraints"><a href="#val-with_constraints" class="anchor"></a><code><span><span class="keyword">val</span> with_constraints : 
   <span><span class="label">ty</span>:<span class="xref-unresolved">Charon</span>.Types.literal_type <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Rust_val.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span class="xref-unresolved">Soteria_rust_lib__Sptr.DecayMap.t</span> option</span> <span class="arrow">&#45;&gt;</span></span>
