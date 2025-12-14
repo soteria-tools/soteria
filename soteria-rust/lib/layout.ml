@@ -188,13 +188,13 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   (* Same as above, but here we have even less information ! *)
   | TDynTrait _ -> ok (mk_concrete ~size:0 ~align:1 ())
   (* Tuples *)
-  | TAdt { id = TTuple; generics = { types; _ } } -> layout_of_members types
+  | TAdt { id = TTuple; generics = { types; _ } } -> layout_of_members ty types
   (* Custom ADTs (struct, enum, etc.) *)
   | TAdt { id = TAdtId id; _ } -> (
       let adt = Crate.get_adt id in
       match adt.kind with
-      | Struct fields -> layout_of_struct adt fields
-      | Enum variants -> layout_of_enum adt variants
+      | Struct fields -> layout_of_struct ty adt fields
+      | Enum variants -> layout_of_enum ty adt variants
       | Union fs ->
           let++ layouts =
             Result.fold_list (Charon_util.field_tys fs) ~init:[]
@@ -260,25 +260,33 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let** resolved = resolve_trait_ty tref ty_name in
       layout_of resolved
 
-and layout_of_members ?fst_size ?fst_align members =
-  let rec aux offsets curr_size curr_align = function
-    | [] -> ok (List.rev offsets, curr_size, curr_align)
+and layout_of_members ?fst_size ?fst_align ty members =
+  (* Note: here we manually calculate a layout, à la [repr(C)]. We should avoid doing this,
+     and make it clearer when we do. *)
+  (* Calculates the offsets, size and alignment for a tuple-like type with fields of
+     the given types. Also returns a symbolic boolean to assert this calculation did
+     not overflow. *)
+  let rec aux offsets curr_size curr_align overflowed = function
+    | [] -> ok (List.rev offsets, curr_size, curr_align, overflowed)
     | ty :: rest ->
         let** { size; align; _ } = layout_of ty in
         let offset = size_to_fit ~size:curr_size ~align in
-        let new_size = offset +!@ size in
+        let new_size, ovf = offset +$?@ size in
         let new_align = BV.max ~signed:false align curr_align in
-        aux (offset :: offsets) new_size new_align rest
+        aux (offset :: offsets) new_size new_align (ovf ||@ overflowed) rest
   in
   let fst_size = Option.value fst_size ~default:(BV.usizei 0) in
   let fst_align = Option.value fst_align ~default:(BV.usizeinz 1) in
-  let++ offsets, size, align = aux [] fst_size fst_align members in
+  let** offsets, size, align, overflowed =
+    aux [] fst_size fst_align Typed.v_false members
+  in
+  let++ () = assert_or_error (Typed.not overflowed) (`InvalidLayout ty) in
   let size = size_to_fit ~size ~align in
   mk ~size ~align
     ~fields:(Arbitrary (Types.VariantId.zero, Array.of_list offsets))
     ()
 
-and layout_of_struct (adt : Types.type_decl) (fields : Types.field list) =
+and layout_of_struct ty (adt : Types.type_decl) (fields : Types.field list) =
   match adt.layout with
   | Some
       {
@@ -297,14 +305,14 @@ and layout_of_struct (adt : Types.type_decl) (fields : Types.field list) =
          this is needed for DSTs, where we're not provided a size but we definitely
          care about field positions (the size won't matter anyways since we use
          the pointer's metadata). *)
-      let++ base = layout_of_members (field_tys fields) in
+      let++ base = layout_of_members ty (field_tys fields) in
       let offsets = Array.of_list @@ List.map BV.usizei field_offsets in
       mk ~size:base.size ~align:base.align
         ~fields:(Arbitrary (Types.VariantId.zero, offsets))
         ()
-  | _ -> layout_of_members (field_tys fields)
+  | _ -> layout_of_members ty (field_tys fields)
 
-and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
+and layout_of_enum ty (adt : Types.type_decl) (variants : Types.variant list) =
   match adt.layout with
   | Some { discriminant_layout = None; variant_layouts; _ } -> (
       (* no discriminant: this means there is only one inhabited variant *)
@@ -332,7 +340,7 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
             Array.of_list @@ List.map BV.usizei variant_layout.field_offsets
           in
           let variant = Types.VariantId.nth variants vi in
-          let++ sub_layout = layout_of_members (field_tys variant.fields) in
+          let++ sub_layout = layout_of_members ty (field_tys variant.fields) in
           mk ~size:sub_layout.size ~align:sub_layout.align
             ~fields:(Arbitrary (vi, offsets))
             ()
@@ -397,7 +405,7 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
         | _ ->
             let++ vs =
               Result.fold_list variants ~init:[] ~f:(fun acc v ->
-                  let++ l = layout_of_members (field_tys v.fields) in
+                  let++ l = layout_of_members ty (field_tys v.fields) in
                   l :: acc)
             in
             List.rev vs
@@ -416,7 +424,7 @@ and layout_of_enum (adt : Types.type_decl) (variants : Types.variant list) =
                size and alignement (there probably is a smarter way to do this). *)
                 let** discr_layout = layout_of (TLiteral tag_layout.ty) in
                 let layout_adjusted =
-                  layout_of_members ~fst_size:discr_layout.size
+                  layout_of_members ty ~fst_size:discr_layout.size
                     ~fst_align:discr_layout.align
                 in
                 let++ vs =

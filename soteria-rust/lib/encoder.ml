@@ -99,8 +99,8 @@ module Make (Sptr : Sptr.S) = struct
           ((), state))
 
     module Syntax = struct
-      let ( let*** ) x f = bind x f
-      let ( let+++ ) x f = map x f
+      let ( let* ) x f = bind x f
+      let ( let+ ) x f = map x f
 
       module Symex_syntax = struct
         let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
@@ -259,23 +259,23 @@ module Make (Sptr : Sptr.S) = struct
       (Types.variant_id, 'state, 'e, 'fix) ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
-    let*** layout = layout_of ty in
+    let* layout = layout_of ty in
     (* if it's a ZST, we assume it's the first variant; I don't think this is
        always true, e.g. enum { A(!), B }, but it's ok for now. *)
     match layout with
     | { fields = Arbitrary (vid, _); _ } -> ok vid
     | { fields = Enum (tag_layout, _); _ } -> (
         let offset = offset +!!@ tag_layout.offset in
-        let*** tag = query (TLiteral tag_layout.ty, offset) in
+        let* tag = query (TLiteral tag_layout.ty, offset) in
         (* here we need to check and decay if it's a pointer, for niche encoding! *)
-        let*** tag =
+        let* tag =
           match tag with
           | Int tag -> ok (Typed.cast_lit tag_layout.ty tag)
           | Ptr (p, Thin) -> lift @@ Sptr.decay p
           | _ -> Fmt.failwith "Unexpected tag: %a" pp_rust_val tag
         in
         let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
-        let*** res =
+        let* res =
           lift
           @@ match_on tags ~constr:(function
                | _, None -> Typed.v_false
@@ -309,11 +309,11 @@ module Make (Sptr : Sptr.S) = struct
     let rec aux offset ty : ('e, 'fix, 'state) parser =
       match (ty : Types.ty) with
       | TLiteral _ as ty -> (
-          let*** q_res = query (ty, offset) in
+          let* q_res = query (ty, offset) in
           match q_res with
           | (Int _ | Float _) as v -> ok v
           | Ptr (ptr, Thin) ->
-              let+++ ptr_v = lift @@ Sptr.decay ptr in
+              let+ ptr_v = lift @@ Sptr.decay ptr in
               Int ptr_v
           | _ ->
               Fmt.kstr not_impl "Expected a base or a thin pointer, got %a"
@@ -336,27 +336,27 @@ module Make (Sptr : Sptr.S) = struct
             | _, TRawPtr _ -> unit_ptr
             | _, _ -> unit_ref
           in
-          let*** ptr = query (ty, offset) in
-          let*** meta : Sptr.t Rust_val.meta =
+          let* ptr = query (ty, offset) in
+          let* meta : Sptr.t Rust_val.meta =
             match meta_kind with
             | NoneKind -> ok Thin
             | LenKind -> (
                 let isize : Types.ty = TLiteral (TInt Isize) in
-                let*** meta = query (isize, offset +!!@ ptr_size) in
+                let* meta = query (isize, offset +!!@ ptr_size) in
                 match meta with
                 | Int meta -> ok (Len meta)
                 | _ -> not_impl "Unexpected metadata value")
             | VTableKind -> (
-                let*** meta = query (unit_ptr, offset +!!@ ptr_size) in
+                let* meta = query (unit_ptr, offset +!!@ ptr_size) in
                 match meta with
                 | Ptr (meta_v, Thin) -> ok (VTable meta_v)
                 | _ -> not_impl "Unexpected metadata value")
           in
-          let*** () =
+          let* () =
             match (must_be_valid, ptr) with
             | false, _ -> ok ()
             | true, Ptr ptr -> (
-                let*** valid =
+                let* valid =
                   lift @@ DecayMapMonad.lift @@ is_valid_ptr ptr sub_ty
                 in
                 match (valid, meta) with
@@ -368,7 +368,7 @@ module Make (Sptr : Sptr.S) = struct
                 | _ -> ok ())
             | true, _ -> error `UBDanglingPointer
           in
-          let+++ ptr =
+          let+ ptr =
             match ptr with
             | Ptr (ptr_v, Thin) -> ok ptr_v
             | Int ptr_v ->
@@ -379,10 +379,10 @@ module Make (Sptr : Sptr.S) = struct
           in
           Ptr (ptr, meta)
       | TFnPtr _ as ty -> (
-          let*** boxed = query (ty, offset) in
+          let* boxed = query (ty, offset) in
           match boxed with
           | Ptr (p, _) as ptr ->
-              let+++ () =
+              let+ () =
                 assert_or_error
                   (Typed.not (Sptr.sem_eq (Sptr.null_ptr ()) p))
                   `UBDanglingPointer
@@ -391,14 +391,14 @@ module Make (Sptr : Sptr.S) = struct
           | Int _ -> error `UBDanglingPointer
           | _ -> not_impl "Expected a pointer or base")
       | TAdt { id = TTuple; generics = { types; _ } } as ty ->
-          let*** layout = layout_of ty in
+          let* layout = layout_of ty in
           let types = List.to_seq types in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
       | TAdt { id = TAdtId t_id; _ } as ty -> (
           let type_decl = Crate.get_adt t_id in
           match type_decl.kind with
           | Struct fields ->
-              let*** layout = layout_of ty in
+              let* layout = layout_of ty in
               fields
               |> field_tys
               |> List.to_seq
@@ -406,7 +406,7 @@ module Make (Sptr : Sptr.S) = struct
           | Enum [] -> error `RefToUninhabited
           | Enum variants -> aux_enum offset ty variants
           | Union _ ->
-              let*** layout = layout_of ty in
+              let* layout = layout_of ty in
               if%sat layout.size ==@ Usize.(0s) then ok (Union [])
               else
                 (* FIXME: this isn't exactly correct; union actually doesn't copy the padding
@@ -416,7 +416,7 @@ module Make (Sptr : Sptr.S) = struct
                    See https://github.com/rust-lang/unsafe-code-guidelines/issues/518
                    And a proper implementation is here:
                    https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
-                let+++ blocks = get_all (Typed.cast layout.size, offset) in
+                let+ blocks = get_all (Typed.cast layout.size, offset) in
                 Union blocks
           | _ ->
               Fmt.kstr failwith "Unhandled ADT kind in rust_of_cvals: %a"
@@ -425,20 +425,20 @@ module Make (Sptr : Sptr.S) = struct
         as ty ->
           let sub_ty = List.hd types in
           let len = z_of_const_generic @@ List.hd const_generics in
-          let*** layout = layout_of ty in
+          let* layout = layout_of ty in
           let fields = Seq.init_z len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset fields
       | TAdt { id = TBuiltin (TStr as ty); generics }
       | TAdt { id = TBuiltin (TSlice as ty); generics } ->
           (* We can only read a slice if we have the metadata of its length, in which case
            we interpret it as an array of that length. *)
-          let*** len =
+          let* len =
             match meta with
             | Thin -> failwith "Tried reading slice without metadata"
             | Len l -> ok l
             | VTable ptr -> lift @@ Sptr.decay ptr
           in
-          let*** len =
+          let* len =
             of_opt_not_impl
               (Fmt.str "Slice length not concrete: %a" Typed.ppa len)
               (BV.to_z len)
@@ -449,12 +449,12 @@ module Make (Sptr : Sptr.S) = struct
           (* FIXME: This is a bit hacky, and not performant -- instead we should try to
                  group the reads together, at least for primitive types. *)
           let arr_ty = mk_array_ty sub_ty len in
-          let*** layout = layout_of arr_ty in
+          let* layout = layout_of arr_ty in
           let fields = Seq.init_z len (fun _ -> sub_ty) in
           aux_fields ~f:(fun fs -> Tuple fs) ~layout offset fields
       | TNever -> error `RefToUninhabited
       | TTraitType (tref, name) ->
-          let*** ty = lift_rsymex @@ Layout.resolve_trait_ty tref name in
+          let* ty = lift_rsymex @@ Layout.resolve_trait_ty tref name in
           aux offset ty
       | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
       | TDynTrait _ -> not_impl "Tried reading a trait object?"
@@ -477,8 +477,8 @@ module Make (Sptr : Sptr.S) = struct
       mk_callback 0 fields []
     (* Parses what enum variant we're handling *)
     and aux_enum offset ty variants : ('e, 'fix, 'state) parser =
-      let*** v_id = variant_of_enum ~offset ty in
-      let*** layout = layout_of ty in
+      let* v_id = variant_of_enum ~offset ty in
+      let* layout = layout_of ty in
       let fields = Layout.Fields_shape.shape_for_variant v_id layout.fields in
       let variant = Types.VariantId.nth variants v_id in
       let layout = { layout with fields } in

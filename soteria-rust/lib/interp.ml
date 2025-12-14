@@ -432,6 +432,8 @@ module Make (State : State_intf.S) = struct
     | (Move loc | Copy loc) when not (Layout.is_inhabited loc.ty) ->
         error `RefToUninhabited
     | Move loc | Copy loc -> (
+        (* I don't think the operand being [Move] matters at all, aside from function calls.
+           See: https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
         let ty = loc.ty in
         let* ptr = resolve_place loc in
         match Layout.as_zst ty with

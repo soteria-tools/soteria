@@ -191,7 +191,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
          using an empty state, because if the [load] does any reference validity
          checks we need the current state to have these addresses!
        - we need to take the max of either types for the alignment, to ensure that
-         transmuting e.g. from (u16, u16) to (u32) works. *)
+         transmuting e.g. from [u16; 2] to (u32) works. *)
     L.debug (fun m ->
         m "Transmuting %a: %a -> %a" pp_rust_val v Charon_util.pp_ty from_ty
           Charon_util.pp_ty to_ty);
