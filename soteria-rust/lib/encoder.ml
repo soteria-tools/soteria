@@ -360,12 +360,12 @@ module Make (Sptr : Sptr.S) = struct
                   lift @@ DecayMapMonad.lift @@ is_valid_ptr ptr sub_ty
                 in
                 match (valid, meta) with
-                | false, _ -> error `UBDanglingPointer
-                | _, Len len when must_be_valid ->
+                | Some err, _ -> error err
+                | None, Len len when must_be_valid ->
                     assert_or_error
                       (Usize.(0s) <=$@ len)
                       (`UBTransmute "Negative slice length")
-                | _ -> ok ())
+                | None, _ -> ok ())
             | true, _ -> error `UBDanglingPointer
           in
           let+ ptr =

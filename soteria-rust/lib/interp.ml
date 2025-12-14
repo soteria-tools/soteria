@@ -251,10 +251,7 @@ module Make (State : State_intf.S) = struct
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
         let* ((ptr, _) as fptr) = resolve_place base in
-        let* () =
-          let* valid = State.is_valid_ptr fptr base.ty in
-          if valid then ok () else error `UBDanglingPointer
-        in
+        let* () = State.fake_read fptr base.ty in
         L.debug (fun f ->
             f "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty
               base.ty);
@@ -457,8 +454,8 @@ module Make (State : State_intf.S) = struct
     | RvRef (place, borrow, _metadata) ->
         let* ptr = resolve_place place in
         let* ptr' = State.borrow ptr place.ty borrow in
-        let* is_valid = State.is_valid_ptr ptr' place.ty in
-        if is_valid then ok (Ptr ptr') else error `UBDanglingPointer
+        let+ () = State.fake_read ptr' place.ty in
+        Ptr ptr'
     (* Raw pointer *)
     | RawPtr (place, _kind, _metadata) ->
         let+ ptr = resolve_place place in

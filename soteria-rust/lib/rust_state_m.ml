@@ -113,7 +113,7 @@ module type S = sig
       ('a, 'env) t ->
       ('b, 'env) t
 
-    val is_valid_ptr : full_ptr -> Types.ty -> (bool, 'env) t
+    val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
     val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
     val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
     val lift_err : ('a, Error.t, RawState.serialized) Result.t -> ('a, 'env) t
@@ -309,7 +309,9 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
     | Missing f -> Missing f
 
   module State = struct
-    include State
+    open State
+
+    let empty = State.empty
 
     let[@inline] load ?ignore_borrow ptr ty =
       lift_state_op (load ?ignore_borrow ptr ty)
@@ -360,10 +362,12 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
         ~fe:(fun (e, state) -> fe e env state)
         (x env state)
 
-    let[@inline] is_valid_ptr ptr ty =
+    let[@inline] fake_read ptr ty =
      fun env state ->
-      let+ is_valid = is_valid_ptr state ptr ty in
-      Ok (is_valid, env, state)
+      let* is_valid = fake_read ptr ty state in
+      match is_valid with
+      | None -> ok () env state
+      | Some err -> error err state
 
     let[@inline] lift_err sym =
      fun env state ->
@@ -389,7 +393,7 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
   end
 
   module Encoder = struct
-    include Encoder.Make (State.Sptr)
+    include Encoder.Make (RawState.Sptr)
 
     let[@inline] rust_to_cvals ?offset v ty =
       State.lift_err (rust_to_cvals ?offset v ty)
@@ -399,7 +403,7 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
   end
 
   module Sptr = struct
-    include State.Sptr
+    include RawState.Sptr
 
     let[@inline] offset ?check ?ty ~signed ptr off =
       State.lift_err (offset ?check ?ty ~signed ptr off)

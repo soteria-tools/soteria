@@ -51,7 +51,7 @@ module type S = sig
     full_ptr list ret
 
   val free : full_ptr -> t -> unit ret
-  val is_valid_ptr : t -> full_ptr -> Types.ty -> bool Rustsymex.t
+  val fake_read : full_ptr -> Types.ty -> t -> Error.t option Rustsymex.t
   val check_ptr_align : full_ptr -> Types.ty -> t -> unit ret
 
   val copy_nonoverlapping :
