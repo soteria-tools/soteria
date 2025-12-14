@@ -360,7 +360,9 @@ module type Bool = sig
   val as_bool : t -> bool option
   val bool : bool -> t
   val and_ : t -> t -> t
+  val and_lazy : t -> (unit -> t) -> t
   val or_ : t -> t -> t
+  val or_lazy : t -> (unit -> t) -> t
   val conj : t list -> t
   val not : t -> t
   val split_ands : t -> t Iter.t
@@ -694,6 +696,12 @@ module rec Bool : Bool = struct
 
   let sem_eq_untyped v1 v2 =
     if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
+
+  let and_lazy v1 v2 =
+    match v1.node.kind with Bool false -> v_false | _ -> and_ v1 (v2 ())
+
+  let or_lazy v1 v2 =
+    match v1.node.kind with Bool true -> v_true | _ -> or_ v1 (v2 ())
 
   let conj l = List.fold_left and_ v_true l
 

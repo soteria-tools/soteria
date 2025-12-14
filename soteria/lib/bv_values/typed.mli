@@ -99,9 +99,11 @@ val v_false : [> sbool ] t
 val bool : bool -> [> sbool ] t
 val as_bool : 'a t -> bool option
 val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+val and_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
 val conj : [< sbool ] t list -> [> sbool ] t
 val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
 val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+val or_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
 val not : [< sbool ] t -> [> sbool ] t
 val distinct : 'a t list -> [> sbool ] t
 val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t

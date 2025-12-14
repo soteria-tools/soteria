@@ -224,12 +224,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TAdt { id = TBuiltin TArray; generics } ->
       let max_array_len sub_size =
         (* We calculate the max array size for a 32bit architecture, like Miri does. *)
-        if Typed.equal sub_size Usize.(0s) then
-          (* Special case to avoid a division by zero in the concrete case *)
-          BV.usize Z.(pow (of_int 2) 32)
-        else
-          let isize_bits = 32 - 1 in
-          BV.usize Z.(one lsl isize_bits) /@ Typed.cast sub_size
+        let isize_bits = 32 - 1 in
+        BV.usize Z.(one lsl isize_bits) /@ Typed.cast sub_size
       in
       let size = List.hd generics.const_generics in
       let subty = List.hd generics.types in
@@ -237,9 +233,9 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let** sub_layout = layout_of subty in
       let++ () =
         assert_or_error
-          (sub_layout.size
-          ==@ Usize.(0s)
-          ||@ (len <=@ max_array_len sub_layout.size))
+          (Typed.or_lazy
+             (sub_layout.size ==@ Usize.(0s))
+             (fun () -> len <=@ max_array_len sub_layout.size))
           (`InvalidLayout ty)
       in
       let size = len *!!@ sub_layout.size in
