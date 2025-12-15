@@ -10,15 +10,19 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   open Rust_state_m
   open Syntax
 
+  let ordering_enum_lt = Enum (U8.(-1s), [])
+  let ordering_enum_eq = Enum (U8.(0s), [])
+  let ordering_enum_gt = Enum (U8.(1s), [])
+
   let cmp ~signed l r =
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
-    if%sat l < r then ok U8.(-1s)
-    else if%sat l ==@ r then ok U8.(0s) else ok U8.(1s)
+    if%sat l < r then ok ordering_enum_lt
+    else if%sat l ==@ r then ok ordering_enum_eq else ok ordering_enum_gt
 
   let cmp_of_int v =
     let zero = BV.zero (size_of_int v) in
-    if%sat v <$@ zero then ok U8.(-1s)
-    else if%sat v ==@ zero then ok U8.(0s) else ok U8.(1s)
+    if%sat v <$@ zero then ok ordering_enum_lt
+    else if%sat v ==@ zero then ok ordering_enum_eq else ok ordering_enum_gt
 
   let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
       (v2 : [< T.sint | T.sptr ] Typed.t) =
@@ -168,18 +172,6 @@ module M (Rust_state_m : Rust_state_m.S) = struct
                 ok (BV.of_bool (bop ml mr))
               else ok (BV.of_bool v)
         else error `UBPointerComparison
-    | Cmp, Ptr (l, _), Ptr (r, _) ->
-        let* () = State.assert_ (Sptr.is_same_loc l r) `UBPointerComparison in
-        let* v = Sptr.distance l r in
-        let* cmp = cmp_of_int v in
-        ok cmp
-    | Cmp, Ptr (p, _), Int v | Cmp, Int v, Ptr (p, _) ->
-        if%sat v ==@ BV.usizei (Layout.size_of_uint_ty Usize) then
-          if%sat Sptr.is_at_null_loc p then ok U8.(0s)
-          else if l = Int v then ok U8.(1s)
-          else ok U8.(-1s)
-        else
-          Fmt.kstr not_impl "Don't know how to eval %a cmp %a" Sptr.pp p ppa v
     | op, l, r ->
         Fmt.kstr not_impl
           "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
