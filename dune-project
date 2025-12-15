@@ -30,31 +30,19 @@
   (name simple_smt)))
 
 (pin
- (url
-  "git+https://github.com/giltho/progress#c1eb9495a83c956ee765b30cb3f058431b1c8877")
- (package
-  (name progress)))
-
-(pin
- (url
-  "git+https://github.com/giltho/progress#c1eb9495a83c956ee765b30cb3f058431b1c8877")
- (package
-  (name terminal)))
-
-(pin
  (url "git+https://github.com/kmemarian/cerberus#frontend-for-system-libc")
  (package
   (name cerberus-lib)))
 
 (pin
  (url
-  "git+https://github.com/AeneasVerif/charon#aeaf873b600381bf2a5dc968f096a39994b37746")
+  "git+https://github.com/giltho/charon#852f899fd8fe3d7501a5de352fdfd3fe2f6b0ef0")
  (package
   (name name_matcher_parser)))
 
 (pin
  (url
-  "git+https://github.com/AeneasVerif/charon#aeaf873b600381bf2a5dc968f096a39994b37746")
+  "git+https://github.com/giltho/charon#852f899fd8fe3d7501a5de352fdfd3fe2f6b0ef0")
  (package
   (name charon)))
 
@@ -82,7 +70,7 @@
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
   (ocaml
-   (>= 5.3.0))
+   (= 5.3.0))
   (tsort
    (>= 2.1.0))
   eio_main

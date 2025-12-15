@@ -38,11 +38,10 @@ jobs:
         with:
           cache: "yarn"
       - name: Setup OCaml
-        uses: ocaml-dune/setup-dune@v0
-      - run: dune pkg lock
+        uses: ocaml-dune/setup-dune@v1
+        with:
+          automagic: true
       # OCaml build
-      - name: Build OCaml stuff
-        run: make ocaml
       - name: Check formatting
         run: make ocaml-format-check
 
