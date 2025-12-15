@@ -10,11 +10,6 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   open Rust_state_m
   open Syntax
 
-  let zeroed (fun_sig : UllbcAst.fun_sig) _ =
-    match Layout.zeroed ~null_ptr:(Sptr.null_ptr ()) fun_sig.output with
-    | Some v -> ok v
-    | None -> error (`StdErr "Non-zeroable type")
-
   let array_repeat (gen_args : Types.generic_args) args =
     let rust_val, size =
       match (args, gen_args.const_generics) with

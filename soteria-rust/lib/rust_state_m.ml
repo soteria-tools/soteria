@@ -19,8 +19,8 @@ module type S = sig
   val ok : 'a -> ('a, 'env) t
   val error : Error.t -> ('a, 'env) t
   val error_raw : Error.t err -> ('a, 'env) t
+  val miss : RawState.serialized list -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
-  val get_env : unit -> ('env, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
   val map : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
 
@@ -33,6 +33,8 @@ module type S = sig
     f:('b -> 'a -> ('b, 'env) t) ->
     ('b, 'env) t
 
+  val get_state : unit -> (RawState.t, 'env) t
+  val get_env : unit -> ('env, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
   val with_env : env:'env1 -> ('a, 'env1) t -> ('a, 'env) t
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
@@ -48,23 +50,11 @@ module type S = sig
     (unit -> ('a, 'env) t) ->
     ('a * RawState.t, Error.t err, RawState.serialized) Result.t
 
-  val update_ref_tys_in :
-    f:
-      ('acc ->
-      full_ptr ->
-      Types.ty ->
-      Types.ref_kind ->
-      (full_ptr * 'acc, 'env) t) ->
-    init:'acc ->
-    rust_val ->
-    Types.ty ->
-    (rust_val * 'acc, 'env) t
-
   val lift_symex : 'a Rustsymex.t -> ('a, 'env) t
 
   module State : sig
     val empty : RawState.t
-    val load : ?is_move:bool -> full_ptr -> Types.ty -> (rust_val, 'env) t
+    val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> (rust_val, 'env) t
     val load_discriminant : full_ptr -> Types.ty -> (Types.variant_id, 'env) t
     val store : full_ptr -> Types.ty -> rust_val -> (unit, 'env) t
     val zeros : full_ptr -> Typed.T.sint Typed.t -> (unit, 'env) t
@@ -123,8 +113,7 @@ module type S = sig
       ('a, 'env) t ->
       ('b, 'env) t
 
-    val is_valid_ptr_fn : (full_ptr -> Types.ty -> bool Rustsymex.t, 'env) t
-    val is_valid_ptr : full_ptr -> Types.ty -> (bool, 'env) t
+    val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
     val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
     val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
     val lift_err : ('a, Error.t, RawState.serialized) Result.t -> ('a, 'env) t
@@ -156,13 +145,41 @@ module type S = sig
   module Encoder : sig
     include module type of Encoder.Make (RawState.Sptr)
 
+    val rust_to_cvals :
+      ?offset:Typed.T.sint Typed.t ->
+      rust_val ->
+      Types.ty ->
+      (cval_info list, 'env) monad
+
     val cast_literal :
       from_ty:Values.literal_type ->
       to_ty:Values.literal_type ->
       [< Typed.T.cval ] Typed.t ->
       (rust_val, 'env) monad
+  end
 
-    val transmute : to_ty:Types.ty -> cval_info list -> (rust_val, 'env) monad
+  module Layout : sig
+    include module type of Layout
+
+    val layout_of : Types.ty -> (Layout.t, 'env) monad
+    val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
+    val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
+    val nondet : Types.ty -> (rust_val, 'env) monad
+
+    val is_abi_compatible :
+      Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+
+    val update_ref_tys_in :
+      f:
+        ('acc ->
+        full_ptr ->
+        Types.ty ->
+        Types.ref_kind ->
+        (full_ptr * 'acc, 'env) monad) ->
+      init:'acc ->
+      rust_val ->
+      Types.ty ->
+      (rust_val * 'acc, 'env) monad
   end
 
   module Syntax : sig
@@ -217,10 +234,14 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
       State.serialized )
     Result.t
 
+  type ('a, 'env) monad = ('a, 'env) t
+
   let ok x : ('a, 'env) t = fun env state -> Result.ok (x, env, state)
   let error err : ('a, 'env) t = fun _env state -> State.error err state
   let error_raw err : ('a, 'env) t = fun _env state -> Result.error (err, state)
+  let miss f : ('a, 'env) t = fun _env _state -> Result.miss f
   let not_impl str : ('a, 'env) t = fun _env _state -> Rustsymex.not_impl str
+  let get_state () = fun env state -> Result.ok (state, env, state)
   let get_env () = fun env state -> Result.ok (env, env, state)
 
   (* we don't type annotate this to allow for ['env] type changes through [f] *)
@@ -287,30 +308,13 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
     | Error (e, _) -> Error e
     | Missing f -> Missing f
 
-  (** We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
-      without having to re-define. *)
-  let update_ref_tys_in
-      ~(f :
-         'acc ->
-         full_ptr ->
-         Types.ty ->
-         Types.ref_kind ->
-         (full_ptr * 'acc, 'env) t) ~(init : 'acc) (v : rust_val)
-      (ty : Types.ty) : (rust_val * 'acc, 'env) t =
-   fun env state ->
-    let f (acc, env, state) ptr ty rk =
-      let++ (res, acc), env, state = f acc ptr ty rk env state in
-      (res, (acc, env, state))
-    in
-    let++ res, (acc, env, state) =
-      Layout.update_ref_tys_in f (init, env, state) v ty
-    in
-    ((res, acc), env, state)
-
   module State = struct
-    include State
+    open State
 
-    let[@inline] load ?is_move ptr ty = lift_state_op (load ?is_move ptr ty)
+    let empty = State.empty
+
+    let[@inline] load ?ignore_borrow ptr ty =
+      lift_state_op (load ?ignore_borrow ptr ty)
 
     let[@inline] load_discriminant ptr ty =
       lift_state_op (load_discriminant ptr ty)
@@ -358,13 +362,12 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
         ~fe:(fun (e, state) -> fe e env state)
         (x env state)
 
-    let[@inline] is_valid_ptr_fn =
-     fun env state -> Result.ok (is_valid_ptr state, env, state)
-
-    let[@inline] is_valid_ptr ptr ty =
+    let[@inline] fake_read ptr ty =
      fun env state ->
-      let+ is_valid = is_valid_ptr state ptr ty in
-      Ok (is_valid, env, state)
+      let* is_valid = fake_read ptr ty state in
+      match is_valid with
+      | None -> ok () env state
+      | Some err -> error err state
 
     let[@inline] lift_err sym =
      fun env state ->
@@ -390,18 +393,17 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
   end
 
   module Encoder = struct
-    include Encoder.Make (State.Sptr)
+    include Encoder.Make (RawState.Sptr)
+
+    let[@inline] rust_to_cvals ?offset v ty =
+      State.lift_err (rust_to_cvals ?offset v ty)
 
     let[@inline] cast_literal ~from_ty ~to_ty cval =
       State.with_decay_map_res (cast_literal ~from_ty ~to_ty cval)
-
-    let[@inline] transmute ~to_ty cvals =
-      bind State.is_valid_ptr_fn (fun verify_ptr ->
-          State.with_decay_map_res @@ transmute ~verify_ptr ~to_ty cvals)
   end
 
   module Sptr = struct
-    include State.Sptr
+    include RawState.Sptr
 
     let[@inline] offset ?check ?ty ~signed ptr off =
       State.lift_err (offset ?check ?ty ~signed ptr off)
@@ -412,6 +414,38 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
     let[@inline] distance ptr1 ptr2 = State.with_decay_map (distance ptr1 ptr2)
     let[@inline] decay ptr = State.with_decay_map (decay ptr)
     let[@inline] expose ptr = State.with_decay_map (expose ptr)
+  end
+
+  module Layout = struct
+    include Layout
+
+    let[@inline] layout_of ty = State.lift_err (layout_of ty)
+    let[@inline] size_of ty = State.lift_err (size_of ty)
+    let[@inline] align_of ty = State.lift_err (align_of ty)
+    let[@inline] nondet ty = State.lift_err (nondet ty)
+
+    let[@inline] is_abi_compatible ty1 ty2 =
+      State.lift_err (is_abi_compatible ty1 ty2)
+
+    (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
+        without having to re-define. *)
+    let update_ref_tys_in
+        ~(f :
+           'acc ->
+           full_ptr ->
+           Types.ty ->
+           Types.ref_kind ->
+           (full_ptr * 'acc, 'env) monad) ~(init : 'acc) (v : rust_val)
+        (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
+     fun env state ->
+      let f (acc, env, state) ptr ty rk =
+        let++ (res, acc), env, state = f acc ptr ty rk env state in
+        (res, (acc, env, state))
+      in
+      let++ res, (acc, env, state) =
+        update_ref_tys_in f (init, env, state) v ty
+      in
+      ((res, acc), env, state)
   end
 
   module Syntax = struct

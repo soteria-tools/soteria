@@ -49,9 +49,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     unit_
 
   let nondet (fun_sig : Charon.UllbcAst.fun_sig) _ =
-    let ty = fun_sig.output in
-    let^+ value = Layout.nondet ty in
-    value
+    Layout.nondet fun_sig.output
 
   let panic ?msg args =
     let* msg =

@@ -71,7 +71,7 @@ module Make (State : State_intf.S) = struct
           let value = List.nth args (index - 1) in
           (* Passed (nested) references must be protected and be valid. *)
           let* value, protected' =
-            update_ref_tys_in value ty ~init:protected
+            Layout.update_ref_tys_in value ty ~init:protected
               ~f:(fun acc ptr subty mut ->
                 let+ ptr' = State.protect ptr subty mut in
                 (ptr', (ptr', subty) :: acc))
@@ -197,7 +197,7 @@ module Make (State : State_intf.S) = struct
           | Function f -> State.declare_fn f
           | Unknown -> not_impl "Unknown provenance in RawMemory"
         in
-        let* blocks =
+        let+ blocks =
           fold_list blocks ~init:[] ~f:(fun acc block ->
               match block with
               | `Byte (b, ofs) -> ok ((Int b, BV.usizei ofs) :: acc)
@@ -212,8 +212,7 @@ module Make (State : State_intf.S) = struct
                     in
                     (Int ptr_frag, BV.usizei ofs) :: acc)
         in
-        let+ value = Encoder.transmute blocks ~to_ty:const.ty in
-        value
+        Union blocks
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
@@ -252,10 +251,7 @@ module Make (State : State_intf.S) = struct
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
         let* ((ptr, _) as fptr) = resolve_place base in
-        let* () =
-          let* valid = State.is_valid_ptr fptr base.ty in
-          if valid then ok () else error `UBDanglingPointer
-        in
+        let* () = State.fake_read fptr base.ty in
         L.debug (fun f ->
             f "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty
               base.ty);
@@ -359,7 +355,8 @@ module Make (State : State_intf.S) = struct
         match (l, r) with
         | [], [] -> ok ()
         | ty1 :: l, ty2 :: r ->
-            if Layout.is_abi_compatible ty1 ty2 then check_tys l r
+            let* compatible = Layout.is_abi_compatible ty1 ty2 in
+            if%sat compatible then check_tys l r
             else error (`InvalidFnArgTys (ty1, ty2))
         | _ ->
             error
@@ -432,19 +429,15 @@ module Make (State : State_intf.S) = struct
     | (Move loc | Copy loc) when not (Layout.is_inhabited loc.ty) ->
         error `RefToUninhabited
     | Move loc | Copy loc -> (
+        (* I don't think the operand being [Move] matters at all, aside from function calls.
+           See: https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
         let ty = loc.ty in
         let* ptr = resolve_place loc in
         match Layout.as_zst ty with
         | Some zst ->
             let+ () = State.check_ptr_align ptr ty in
             zst
-        | None ->
-            (* TODO: I don't think the operand being move matters at all, aside from
-               function calls. see:
-               https://github.com/rust-lang/unsafe-code-guidelines/issues/416
-               https://rust-lang.zulipchat.com/#narrow/channel/213817-t-lang/topic/Move.20value.20from.20enum.20Niche.3F/with/547083544
-             *)
-            State.load ~is_move:false ptr ty)
+        | None -> State.load ptr ty)
 
   and eval_operand_list ops =
     let+ vs =
@@ -461,14 +454,8 @@ module Make (State : State_intf.S) = struct
     | RvRef (place, borrow, _metadata) ->
         let* ptr = resolve_place place in
         let* ptr' = State.borrow ptr place.ty borrow in
-        let* is_valid =
-          match ptr' with
-          (* FIXME: we don't support reads of symbolic slices lengths, so for now we
-             assume they are always valid. *)
-          | _, Len len when Option.is_none (BV.to_z len) -> ok true
-          | _ -> State.is_valid_ptr ptr' place.ty
-        in
-        if is_valid then ok (Ptr ptr') else error `UBDanglingPointer
+        let+ () = State.fake_read ptr' place.ty in
+        Ptr ptr'
     (* Raw pointer *)
     | RawPtr (place, _kind, _metadata) ->
         let+ ptr = resolve_place place in
@@ -509,8 +496,7 @@ module Make (State : State_intf.S) = struct
                 Ptr ptr
             | _ -> ok v)
         | Cast (CastTransmute (from_ty, to_ty)) ->
-            let blocks = Encoder.rust_to_cvals v from_ty in
-            Encoder.transmute ~to_ty blocks
+            Core.transmute ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
             let* v =
               match v with
@@ -632,7 +618,7 @@ module Make (State : State_intf.S) = struct
                    dangling *)
                 let v2 = Typed.cast_i Usize v2 in
                 let ty = Charon_util.get_pointee (type_of_operand e1) in
-                let^ size = Layout.size_of_s ty in
+                let* size = Layout.size_of ty in
                 let+ () =
                   State.assert_
                     (v2 ==@ Usize.(0s) ||@ (size ==@ Usize.(0s)))
@@ -700,21 +686,21 @@ module Make (State : State_intf.S) = struct
             (* For now we don't do contracts. *)
             ok (Int (BV.of_bool Typed.v_false))
         | SizeOf ->
-            let^+ size = Layout.size_of_s ty in
+            let+ size = Layout.size_of ty in
             Int size
         | AlignOf ->
-            let^+ align = Layout.align_of_s ty in
-            Int align
+            let+ align = Layout.align_of ty in
+            Int (align :> T.sint Typed.t)
         | OffsetOf (ty, variant, field) ->
             let variant = Option.value variant ~default:Types.VariantId.zero in
             let field = Types.FieldId.to_int field in
             let ty : Types.ty = TAdt ty in
-            let layout = Layout.layout_of ty in
+            let+ layout = Layout.layout_of ty in
             let fields =
               Layout.Fields_shape.shape_for_variant variant layout.fields
             in
             let inner_off = Layout.Fields_shape.offset_of field fields in
-            ok (Int (BV.usizei inner_off)))
+            Int inner_off)
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with
@@ -742,12 +728,11 @@ module Make (State : State_intf.S) = struct
           | [] -> failwith "union aggregate with 0 values?"
           | _ :: _ -> failwith "union aggregate with >1 values?"
         in
-        let+ value = eval_operand op in
+        let* value = eval_operand op in
         let field = Types.FieldId.to_int field in
-        let layout = Layout.layout_of (TAdt ty) in
+        let* layout = Layout.layout_of (TAdt ty) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
-        let offset = BV.usizei offset in
-        let op_blocks =
+        let+ op_blocks =
           Encoder.rust_to_cvals ~offset value (type_of_operand op)
         in
         Union op_blocks
@@ -901,8 +886,7 @@ module Make (State : State_intf.S) = struct
               let* arg = eval_operand arg in
               if Types.equal_ty from_ty to_ty then ok (arg :: acc)
               else
-                let blocks = Encoder.rust_to_cvals arg from_ty in
-                let+ arg = Encoder.transmute ~to_ty blocks in
+                let+ arg = Core.transmute ~from_ty ~to_ty arg in
                 arg :: acc)
         in
         let args = List.rev args in

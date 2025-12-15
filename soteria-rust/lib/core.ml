@@ -4,6 +4,7 @@ module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Rust_val
+open Syntaxes.FunctionWrap
 
 module M (Rust_state_m : Rust_state_m.S) = struct
   open Rust_state_m
@@ -183,4 +184,38 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         Fmt.kstr not_impl
           "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
           Expressions.pp_binop op pp_rust_val l pp_rust_val r
+
+  let transmute ~from_ty ~to_ty v =
+    (* Some fun details:
+       - we need to use [get_state] and re-use the current state, rather than
+         using an empty state, because if the [load] does any reference validity
+         checks we need the current state to have these addresses!
+       - we need to take the max of either types for the alignment, to ensure that
+         transmuting e.g. from [u16; 2] to (u32) works. *)
+    L.debug (fun m ->
+        m "Transmuting %a: %a -> %a" pp_rust_val v Charon_util.pp_ty from_ty
+          Charon_util.pp_ty to_ty);
+    let* state = get_state () in
+    let^ res =
+      let@ () = run ~env:() ~state in
+      let* { size; align; _ } = Layout.layout_of from_ty in
+      let* { align = align_2; _ } = Layout.layout_of to_ty in
+      let align = BV.max ~signed:false align align_2 in
+      let* ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
+      let* () = State.store ptr from_ty v in
+      State.load ptr to_ty
+    in
+    match res with
+    | Ok (v, _) -> ok v
+    | Error e -> error_raw e
+    | Missing m -> miss m
+
+  let zero_valid ~ty =
+    let^+ res =
+      let@ () = run ~env:() ~state:State.empty in
+      let* { size; align; _ } = Layout.layout_of ty in
+      let* ptr = State.alloc_untyped ~zeroed:true ~size ~align () in
+      State.load ptr ty
+    in
+    Soteria.Symex.Compo_res.is_ok res
 end
