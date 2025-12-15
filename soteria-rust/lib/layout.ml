@@ -64,7 +64,7 @@ module Fields_shape = struct
     | Primitive -> failwith "This layout has no fields"
     | Enum _ -> failwith "Can't get fields of enum; use `shape_for_variant`"
     | Arbitrary (_, arr) -> arr.(f)
-    | Array stride -> BV.usizei f *!@ stride
+    | Array stride -> BV.usizei f *!!@ stride
 
   let shape_for_variant variant = function
     | Enum (_, shapes) -> shapes.(Types.VariantId.to_int variant)
@@ -166,7 +166,10 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TRawPtr (sub_ty, _)
     when is_dst sub_ty ->
       let ptr_size = Crate.pointer_size () in
-      ok (mk_concrete ~size:(ptr_size * 2) ~align:ptr_size ())
+      ok
+        (mk_concrete ~size:(ptr_size * 2) ~align:ptr_size
+           ~fields:(Array (BV.usizei ptr_size))
+           ())
   (* Refs, pointers, boxes *)
   | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) ->
       let ptr_size = Crate.pointer_size () in

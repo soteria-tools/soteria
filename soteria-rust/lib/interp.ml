@@ -273,7 +273,8 @@ module Make (State : State_intf.S) = struct
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
         if not @@ Layout.is_inhabited ty then error `RefToUninhabited
-        else ok (ptr', meta)
+        else if Layout.is_dst ty then ok (ptr', meta)
+        else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
         let len =
@@ -494,7 +495,14 @@ module Make (State : State_intf.S) = struct
                 let v = as_base_i Usize v in
                 let+ ptr = State.with_exposed v in
                 Ptr ptr
-            | _ -> ok v)
+            | _, (TRef (_, to_ty, _) | TRawPtr (to_ty, _)) -> (
+                match (v, Layout.is_dst to_ty) with
+                | Ptr (ptr, _), false -> ok (Ptr (ptr, Thin))
+                | Ptr (_, Thin), true ->
+                    not_impl "Cannot cast to fat pointer without meta"
+                | Ptr _, true -> ok v
+                | _ -> not_impl "Invalid value for CastRawPtr")
+            | _ -> not_impl "Invalid types for CastRawPtr")
         | Cast (CastTransmute (from_ty, to_ty)) ->
             Core.transmute ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
@@ -731,9 +739,8 @@ module Make (State : State_intf.S) = struct
         let field = Types.FieldId.to_int field in
         let* layout = Layout.layout_of (TAdt ty) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
-        let+ op_blocks =
-          Encoder.rust_to_cvals ~offset value (type_of_operand op)
-        in
+        let+ op_blocks = Encoder.encode ~offset value (type_of_operand op) in
+        let op_blocks = Iter.to_list op_blocks in
         Union op_blocks
     (* Tuple aggregate *)
     | Aggregate (AggregatedAdt ({ id = TTuple; _ }, None, None), operands) ->

@@ -112,145 +112,89 @@ module Make (Sptr : Sptr.S) = struct
     end
   end
 
-  type cval_info = rust_val * T.sint Typed.t
-  [@@deriving show { with_path = false }]
-
-  (** Converts a Rust value of the given type into a list of sub values, along
-      with their size and offset, and whether they are interiorly mutable. *)
-  let rec rust_to_cvals ?offset (value : rust_val) (ty : Types.ty) :
-      (cval_info list, 'e, 'f) Rustsymex.Result.t =
+  (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an
+      iterator over its sub values, along with their offset. Offsets all blocks
+      by [offset] if specified *)
+  let rec encode ?offset (value : rust_val) (ty : Types.ty) :
+      ((rust_val * T.sint Typed.t) Iter.t, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Result in
-    let illegal_pair () =
-      L.error (fun m ->
-          m "Wrong pair of rust_value and Charon.ty:@.- Val: %a@.- Ty: %a"
-            pp_rust_val value Types.pp_ty ty);
-      failwith "Wrong pair of rust_value and Charon.ty"
-    in
     let offset = Option.value ~default:Usize.(0s) offset in
-    let chain_cvals layout vals types =
-      let sub_vals = List.combinei vals types in
-      fold_list sub_vals ~init:[] ~f:(fun acc (i, value, ty) ->
-          let field_offset = Layout.Fields_shape.offset_of i layout.fields in
-          let offset = field_offset +!!@ offset in
-          let++ blocks = rust_to_cvals ~offset value ty in
-          acc @ blocks)
+    let chain layout iter =
+      Result.fold_iter ~init:(0, Iter.empty)
+        ~f:(fun (i, acc) (v, ty) ->
+          let offset = offset +!!@ Fields_shape.offset_of i layout in
+          let++ ys = encode ~offset v ty in
+          (i + 1, Iter.append acc ys))
+        iter
+      |> (Fun.flip Result.map) snd
     in
-    match (value, ty) with
-    (* Trait types: we resolve them early *)
-    | _, TTraitType (tref, name) ->
-        let** ty = Layout.resolve_trait_ty tref name in
-        rust_to_cvals ~offset value ty
-    (* Literals *)
-    | Int _, TLiteral _ -> ok [ (value, offset) ]
-    | Float _, TLiteral _ -> ok [ (value, offset) ]
-    | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> ok [ (value, offset) ]
-    | _, TLiteral _ -> illegal_pair ()
-    (* References / Pointers *)
-    | ( Ptr (ptr, meta),
-        TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
-    | Ptr (ptr, meta), TRef (_, sub_ty, _)
-    | Ptr (ptr, meta), TRawPtr (sub_ty, _) -> (
-        let size = BV.usizei (Layout.size_of_int_ty Isize) in
-        match (meta, is_dst sub_ty) with
-        | _, false -> ok [ (Ptr (ptr, Thin), offset) ]
-        | Thin, true -> failwith "Expected a fat pointer"
-        | Len len, true ->
-            ok [ (Ptr (ptr, Thin), offset); (Int len, offset +!!@ size) ]
-        | VTable vt, true ->
-            ok [ (Ptr (ptr, Thin), offset); (Ptr (vt, Thin), offset +!!@ size) ]
-        )
-    (* Function pointer *)
-    | Ptr (_, Thin), TFnPtr _ -> ok [ (value, offset) ]
-    (* References / Pointers obtained from casting *)
-    | Int _, TAdt { id = TBuiltin TBox; _ }
-    | Int _, TRef _
-    | Int _, TRawPtr _
-    | Int _, TFnPtr _ ->
-        ok [ (value, offset) ]
-    | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
-        illegal_pair ()
-    (* Tuples *)
-    | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
-        let** layout = layout_of ty in
-        chain_cvals layout vs types
-    | _, TAdt { id = TTuple; _ } -> illegal_pair ()
-    (* Structs *)
-    | Tuple vals, TAdt { id = TAdtId t_id; _ } ->
-        let fields = field_tys @@ Crate.as_struct t_id in
-        let** layout = layout_of ty in
-        chain_cvals layout vals fields
-    (* Enums *)
-    | Enum (disc, vals), (TAdt { id = TAdtId t_id; _ } as ty) -> (
-        let variants = Crate.as_enum t_id in
-        let** layout = Layout.layout_of ty in
-        match layout with
-        | { fields = Arbitrary (variant, _); _ } ->
-            let variant = Types.VariantId.nth variants variant in
-            let var_fields = field_tys variant.fields in
-            chain_cvals layout vals var_fields
-        | { fields = Enum (tag_layout, var_fields); _ } ->
-            let disc =
-              Option.get ~msg:"Discriminant not concrete" (BV.to_z disc)
-            in
-            let variant_id, variant =
-              Option.get ~msg:"No matching variant?"
-              @@ List.find_mapi
-                   (fun i v ->
-                     let v_disc = z_of_literal Types.(v.discriminant) in
-                     if Z.equal disc v_disc then Some (i, v) else None)
-                   variants
-            in
-            let var_fields = var_fields.(variant_id) in
-            let discriminant =
-              match tag_layout.tags.(variant_id) with
-              | None -> []
-              | Some tag ->
-                  let offset = tag_layout.offset +!!@ offset in
-                  [ (Int tag, offset) ]
-            in
-            let var_layout = { layout with fields = var_fields } in
-            let++ content =
-              chain_cvals var_layout vals (field_tys variant.fields)
-            in
-            discriminant @ content
-        | _ -> Fmt.failwith "Unexpected layout for enum")
-    | Int value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
-        let++ layout = Layout.layout_of ty in
-        let tag_ty =
-          match layout.fields with
-          | Enum (tag, _) -> tag.ty
-          | _ -> failwith "Expected enum layout"
-        in
-        let value = Typed.cast_lit tag_ty value in
-        [ (Int value, offset) ]
-    | Enum _, _ -> illegal_pair ()
-    (* Arrays *)
-    | ( Tuple vals,
-        TAdt
-          {
-            id = TBuiltin TArray;
-            generics = { types = [ sub_ty ]; const_generics = [ len ]; _ };
-          } ) ->
-        let** layout = layout_of ty in
-        let len = int_of_const_generic len in
-        if List.length vals <> len then failwith "Array length mismatch";
-        chain_cvals layout vals (List.init len (fun _ -> sub_ty))
-    | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
-    (* Unions *)
-    | Union blocks, TAdt { id = TAdtId _; _ } ->
-        ok (List.map (fun (v, o) -> (v, offset +!!@ o)) blocks)
-    | Union _, _ -> illegal_pair ()
-    (* Static Functions (ZSTs) *)
-    | ConstFn _, TFnDef _ -> ok []
-    | ConstFn _, _ | _, TFnDef _ -> illegal_pair ()
-    (* Should have been handled for arrays, tuples and structs *)
-    | Tuple _, _ -> illegal_pair ()
-    (* Rest *)
-    | _ ->
-        Fmt.kstr not_impl "Unhandled value/ty: %a / %a" pp_rust_val value pp_ty
-          ty
+    let iter_fields ?variant () =
+      match (value, ty) with
+      | Tuple vals, TAdt { id = TTuple; generics = { types; _ } } ->
+          Iter.of_list_combine vals types
+      | ( Tuple vals,
+          TAdt { id = TBuiltin TArray; generics = { types = [ ty ]; _ } } ) ->
+          Iter.of_list vals |> Iter.map (fun v -> (v, ty))
+      | Tuple vals, TAdt { id = TAdtId t_id; _ } -> (
+          let type_decl = Crate.get_adt t_id in
+          match (type_decl.kind, variant) with
+          | Struct fields, _ ->
+              let field_tys = field_tys fields in
+              Iter.of_list_combine vals field_tys
+          | Enum variants, Some variant ->
+              let variant = Types.VariantId.nth variants variant in
+              let field_tys = field_tys variant.fields in
+              Iter.of_list_combine vals field_tys
+          | _ -> failwith "invalid iter_fields type_decl")
+      | Enum (_, vals), TAdt { id = TAdtId t_id; _ } ->
+          let variants = Crate.as_enum t_id in
+          let variant = Option.get ~msg:"variant required for enum" variant in
+          let variant = Types.VariantId.nth variants variant in
+          let field_tys = field_tys variant.fields in
+          Iter.of_list_combine vals field_tys
+      | Ptr (base, VTable vt), _ ->
+          Iter.of_list
+            [ (Ptr (base, Thin), unit_ptr); (Ptr (vt, Thin), unit_ptr) ]
+      | Ptr (base, Len len), _ ->
+          Iter.of_list
+            [ (Ptr (base, Thin), unit_ptr); (Int len, TLiteral (TInt Isize)) ]
+      | _ -> Fmt.failwith "invalid iter_fields: %a" pp_rust_val value
+    in
+    let** layout = Layout.layout_of ty in
+    if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
+    else
+      match (layout.fields, value) with
+      | _, Union blocks ->
+          ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
+      | Primitive, _ -> ok (Iter.singleton (value, offset))
+      | Array _, _ -> iter_fields () |> chain layout.fields
+      | Arbitrary (variant, _), _ ->
+          iter_fields ~variant () |> chain layout.fields
+      | Enum (tag_layout, variant_layouts), _ -> (
+          let disc =
+            match value with
+            | Enum (d, _) -> d
+            | _ -> failwith "non-enum for enum layout"
+          in
+          let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
+          let variants = Crate.as_enum adt_id in
+          let variants = List.mapi (fun i v -> (i, v)) variants in
+          let* variant =
+            match_on variants ~constr:(fun (_, v) ->
+                BV.of_literal v.discriminant ==@ disc)
+          in
+          let* i, _ =
+            of_opt_not_impl "no matching variant for enum discriminant" variant
+          in
+          let variant = Types.VariantId.of_int i in
+          let++ fields = iter_fields ~variant () |> chain variant_layouts.(i) in
+          match tag_layout.tags.(i) with
+          | None -> fields
+          | Some tag ->
+              let offset = tag_layout.offset +!!@ offset in
+              Iter.cons (Int tag, offset) fields)
 
   (** Parses the current variant of the enum at the given offset. This handles
       cases such as niches, where the discriminant isn't directly encoded as a

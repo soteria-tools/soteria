@@ -9,6 +9,7 @@ module Graph = Graph
 module Hashset = Hashset
 module Hashtbl = Hashtbl
 module Int = Int
+module Iter = Iter_soteria
 module List = List
 module Map = Map
 module Monad = Monad

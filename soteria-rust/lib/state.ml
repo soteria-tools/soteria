@@ -340,16 +340,16 @@ let tb_load ((ptr : Sptr.t), _) ty st =
         Tree_block.tb_access ofs size tag tb block)
 
 let store ((ptr, _) as fptr) ty sval st =
-  let** parts = lift_err st @@ Encoder.rust_to_cvals sval ty in
-  if List.is_empty parts then Result.ok ((), st)
+  let** parts = lift_err st @@ Encoder.encode sval ty in
+  if Iter.is_empty parts then Result.ok ((), st)
   else
     let** (), st = check_ptr_align fptr ty st in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
-    L.debug (fun f ->
+    (* L.debug (fun f ->
         f "Parsed to parts [%a]"
           Fmt.(list ~sep:comma Encoder.pp_cval_info)
-          parts);
+          parts); *)
     log "store" ptr st;
     let** size = Layout.size_of ty in
     let@ ofs, block = with_ptr ptr st in
@@ -359,8 +359,10 @@ let store ((ptr, _) as fptr) ty sval st =
     (* We uninitialise the whole range before writing, to ensure padding bytes are copied if
            there are any. *)
     let** (), block = Tree_block.uninit_range ofs size block in
-    Result.fold_list parts ~init:((), block)
+    Result.fold_iter parts ~init:((), block)
       ~f:(fun ((), block) (value, offset) ->
+        (* L.warn (fun f ->
+            f "Storing part %a: %a" Typed.ppa offset (pp_rust_val Sptr.pp) value); *)
         Tree_block.store (offset +!!@ ofs) value ptr.tag tb block)
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
