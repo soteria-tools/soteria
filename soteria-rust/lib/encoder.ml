@@ -112,6 +112,47 @@ module Make (Sptr : Sptr.S) = struct
     end
   end
 
+  (** Iterator over the fields and offsets of a type; for primitive types,
+      returns a singleton iterator for that value. *)
+  let iter_fields ?variant layout (ty : Types.ty) =
+    let aux ?variant fields =
+      Iter.mapi (fun i ty -> (ty, Fields_shape.offset_of i fields))
+      @@
+      match ty with
+      | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
+      | TAdt
+          {
+            id = TBuiltin TArray;
+            generics = { types = [ ty ]; const_generics = [ len ]; _ };
+          } ->
+          Iter.repeatz (z_of_const_generic len) ty
+      | TAdt { id = TAdtId t_id; _ } -> (
+          let type_decl = Crate.get_adt t_id in
+          match (type_decl.kind, variant) with
+          | Struct fields, _ ->
+              let field_tys = field_tys fields in
+              Iter.of_list field_tys
+          | Enum variants, Some variant ->
+              let variant = Types.VariantId.nth variants variant in
+              let field_tys = field_tys variant.fields in
+              Iter.of_list field_tys
+          | _ -> failwith "invalid iter_fields type_decl")
+      | TRef (_, pointee, _) | TRawPtr (pointee, _) -> (
+          match Layout.dst_kind pointee with
+          | NoneKind -> failwith "invalid iter_fields: no metadata"
+          | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
+          | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
+      | _ -> Fmt.failwith "invalid iter_fields: %a" pp_ty ty
+    in
+    match layout.fields with
+    | Primitive -> Iter.singleton (ty, Usize.(0s))
+    | Array _ -> aux ?variant layout.fields
+    | Arbitrary (variant, _) -> aux ~variant layout.fields
+    | Enum (_, variant_layouts) ->
+        let variant = Option.get ~msg:"variant required for enum" variant in
+        let fields = variant_layouts.(Types.VariantId.to_int variant) in
+        aux ~variant fields
+
   (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an
       iterator over its sub values, along with their offset. Offsets all blocks
       by [offset] if specified *)
@@ -121,46 +162,21 @@ module Make (Sptr : Sptr.S) = struct
     let open Syntax in
     let open Result in
     let offset = Option.value ~default:Usize.(0s) offset in
-    let chain layout iter =
-      Result.fold_iter ~init:(0, Iter.empty)
-        ~f:(fun (i, acc) (v, ty) ->
-          let offset = offset +!!@ Fields_shape.offset_of i layout in
-          let++ ys = encode ~offset v ty in
-          (i + 1, Iter.append acc ys))
-        iter
+    let chain iter =
+      (match value with
+      | Tuple vals | Enum (_, vals) -> vals
+      | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
+      | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
+      | Ptr (_, Thin) | Int _ | Float _ | ConstFn _ ->
+          failwith "Cannot split primitive"
+      | Union _ -> failwith "Cannot encode union directly")
+      |> Iter.join_list iter
+      |> Result.fold_iter ~init:(0, Iter.empty)
+           ~f:(fun (i, acc) ((ty, ofs), v) ->
+             let offset = offset +!!@ ofs in
+             let++ ys = encode ~offset v ty in
+             (i + 1, Iter.append acc ys))
       |> (Fun.flip Result.map) snd
-    in
-    let iter_fields ?variant () =
-      match (value, ty) with
-      | Tuple vals, TAdt { id = TTuple; generics = { types; _ } } ->
-          Iter.of_list_combine vals types
-      | ( Tuple vals,
-          TAdt { id = TBuiltin TArray; generics = { types = [ ty ]; _ } } ) ->
-          Iter.of_list vals |> Iter.map (fun v -> (v, ty))
-      | Tuple vals, TAdt { id = TAdtId t_id; _ } -> (
-          let type_decl = Crate.get_adt t_id in
-          match (type_decl.kind, variant) with
-          | Struct fields, _ ->
-              let field_tys = field_tys fields in
-              Iter.of_list_combine vals field_tys
-          | Enum variants, Some variant ->
-              let variant = Types.VariantId.nth variants variant in
-              let field_tys = field_tys variant.fields in
-              Iter.of_list_combine vals field_tys
-          | _ -> failwith "invalid iter_fields type_decl")
-      | Enum (_, vals), TAdt { id = TAdtId t_id; _ } ->
-          let variants = Crate.as_enum t_id in
-          let variant = Option.get ~msg:"variant required for enum" variant in
-          let variant = Types.VariantId.nth variants variant in
-          let field_tys = field_tys variant.fields in
-          Iter.of_list_combine vals field_tys
-      | Ptr (base, VTable vt), _ ->
-          Iter.of_list
-            [ (Ptr (base, Thin), unit_ptr); (Ptr (vt, Thin), unit_ptr) ]
-      | Ptr (base, Len len), _ ->
-          Iter.of_list
-            [ (Ptr (base, Thin), unit_ptr); (Int len, TLiteral (TInt Isize)) ]
-      | _ -> Fmt.failwith "invalid iter_fields: %a" pp_rust_val value
     in
     let** layout = Layout.layout_of ty in
     if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
@@ -169,15 +185,8 @@ module Make (Sptr : Sptr.S) = struct
       | _, Union blocks ->
           ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
       | Primitive, _ -> ok (Iter.singleton (value, offset))
-      | Array _, _ -> iter_fields () |> chain layout.fields
-      | Arbitrary (variant, _), _ ->
-          iter_fields ~variant () |> chain layout.fields
-      | Enum (tag_layout, variant_layouts), _ -> (
-          let disc =
-            match value with
-            | Enum (d, _) -> d
-            | _ -> failwith "non-enum for enum layout"
-          in
+      | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
+      | Enum (tag_layout, _), Enum (disc, _) -> (
           let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
           let variants = Crate.as_enum adt_id in
           let variants = List.mapi (fun i v -> (i, v)) variants in
@@ -189,12 +198,15 @@ module Make (Sptr : Sptr.S) = struct
             of_opt_not_impl "no matching variant for enum discriminant" variant
           in
           let variant = Types.VariantId.of_int i in
-          let++ fields = iter_fields ~variant () |> chain variant_layouts.(i) in
+          let++ fields = chain (iter_fields ~variant layout ty) in
           match tag_layout.tags.(i) with
           | None -> fields
           | Some tag ->
               let offset = tag_layout.offset +!!@ offset in
               Iter.cons (Int tag, offset) fields)
+      | Enum _, _ ->
+          Fmt.kstr not_impl "encode: expected enum value for enum type %a" pp_ty
+            ty
 
   (** Parses the current variant of the enum at the given offset. This handles
       cases such as niches, where the discriminant isn't directly encoded as a
