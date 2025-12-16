@@ -340,7 +340,7 @@ let tb_load ((ptr : Sptr.t), _) ty st =
         Tree_block.tb_access ofs size tag tb block)
 
 let store ((ptr, _) as fptr) ty sval st =
-  let** parts = lift_err st @@ Encoder.encode sval ty in
+  let** parts = lift_err st @@ Encoder.encode ~offset:Usize.(0s) sval ty in
   if Iter.is_empty parts then Result.ok ((), st)
   else
     let** (), st = check_ptr_align fptr ty st in

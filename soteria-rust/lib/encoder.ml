@@ -156,12 +156,11 @@ module Make (Sptr : Sptr.S) = struct
   (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an
       iterator over its sub values, along with their offset. Offsets all blocks
       by [offset] if specified *)
-  let rec encode ?offset (value : rust_val) (ty : Types.ty) :
+  let rec encode ~offset (value : rust_val) (ty : Types.ty) :
       ((rust_val * T.sint Typed.t) Iter.t, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Result in
-    let offset = Option.value ~default:Usize.(0s) offset in
     let chain iter =
       (match value with
       | Tuple vals | Enum (_, vals) -> vals

@@ -146,7 +146,7 @@ module type S = sig
     include module type of Encoder.Make (RawState.Sptr)
 
     val encode :
-      ?offset:Typed.T.sint Typed.t ->
+      offset:Typed.T.sint Typed.t ->
       rust_val ->
       Types.ty ->
       ((rust_val * Typed.T.sint Typed.t) Iter.t, 'env) monad
@@ -395,7 +395,7 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
   module Encoder = struct
     include Encoder.Make (RawState.Sptr)
 
-    let[@inline] encode ?offset v ty = State.lift_err (encode ?offset v ty)
+    let[@inline] encode ~offset v ty = State.lift_err (encode ~offset v ty)
 
     let[@inline] cast_literal ~from_ty ~to_ty cval =
       State.with_decay_map_res (cast_literal ~from_ty ~to_ty cval)
