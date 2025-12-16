@@ -163,3 +163,35 @@
     :with-dev-setup
     (= 0.27.0)))
   (ocaml-lsp-server :with-dev-setup)))
+
+(package
+ (name ruxt)
+ (synopsis "Type safety refuter for Rust")
+ (description "Type safety refuter for Rust")
+ (sites
+  (share plugins))
+ (depends
+  (ocaml
+   (>= 5.3.0))
+  soteria-rust
+  dune-site
+  zarith
+  ppx_deriving
+  cmdliner
+  fmt
+  charon
+  (ppx_subliner
+   (>= 0.2.1))
+  (odoc :with-doc)
+  (alcotest :with-test)
+  (yojson
+   (< 3.0))
+  (dune
+   (and
+    :build
+    (>= 3.14.0)))
+  (ocamlformat
+   (and
+    :with-dev-setup
+    (= 0.27.0)))
+  (ocaml-lsp-server :with-dev-setup)))

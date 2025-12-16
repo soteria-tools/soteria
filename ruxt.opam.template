@@ -1,0 +1,3 @@
+pin-depends: [
+  ["charon.~dev" "git+https://github.com/soteria-tools/charon#dc438b20ff10b213dc8c5c9917e575e030af3db0"]
+]
