@@ -475,11 +475,12 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =
   Tree_block.put_raw_tree ofs tree_to_write block
 
 let mk_block ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
-    block * Tree_borrow.tag =
+    block * Tree_borrow.tag option =
   let tb, tag = Tree_borrow.init ~state:Unique () in
   let block = Tree_block.alloc ?zeroed size in
   let span = Option.value span ~default:(get_loc ()) in
   let info : Meta.t = { align; size; kind; span; tb_root = tag } in
+  let tag = if !Config.current.ignore_aliasing then None else Some tag in
   ({ node = Alive (block, tb); info = Some info }, tag)
 
 let alloc ?kind ?span ?zeroed size align st =
@@ -495,7 +496,7 @@ let alloc ?kind ?span ?zeroed size align st =
     SPmap.alloc ~new_codom:block state |> lift_fix_globals globals
   in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
-  let ptr : Sptr.t = { ptr; tag = Some tag; align; size } in
+  let ptr : Sptr.t = { ptr; tag; align; size } in
   (* The pointer is necessarily not null *)
   let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
   ok ((ptr, Thin), state)
@@ -527,7 +528,7 @@ let alloc_tys ?kind ?span tys st =
       (* create pointer *)
       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
       let ptr = Typed.Ptr.mk loc Usize.(0s) in
-      let ptr : Sptr.t = { ptr; tag = Some tag; align; size } in
+      let ptr : Sptr.t = { ptr; tag; align; size } in
       (block, (ptr, Thin)))
   |> lift_fix_globals globals
 
@@ -573,11 +574,8 @@ let load_global g ({ globals; _ } as st) =
 let borrow ((ptr : Sptr.t), meta) (ty : Types.ty)
     (kind : Expressions.borrow_kind) st =
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
-  if
-    Option.is_none ptr.tag
-    || Tree_borrow.is_disabled ()
-    || (kind = BShared && Layout.is_unsafe_cell ty)
-  then Result.ok ((ptr, meta), st)
+  if Option.is_none ptr.tag || (kind = BShared && Layout.is_unsafe_cell ty) then
+    Result.ok ((ptr, meta), st)
   else
     let* tag_st =
       match kind with
@@ -602,11 +600,8 @@ let borrow ((ptr : Sptr.t), meta) (ty : Types.ty)
     DecayMapMonad.Result.ok ((ptr', meta), block)
 
 let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) st =
-  if
-    Option.is_none ptr.tag
-    || Tree_borrow.is_disabled ()
-    || Layout.is_unsafe_cell ty
-  then Result.ok ((ptr, meta), st)
+  if Option.is_none ptr.tag || Layout.is_unsafe_cell ty then
+    Result.ok ((ptr, meta), st)
   else
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
