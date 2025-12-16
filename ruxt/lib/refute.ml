@@ -170,7 +170,7 @@ let try_refute fuel drop_ctx fundef summs summ_ctx =
     wrap_call fundef summs
     |> wrap_return summ_ctx
     |> drop_and_return drop_ctx
-    |> Rustsymex.run ~mode:UX ~fuel
+    |> Rustsymex.run_needs_stats ~mode:UX ~fuel
   in
   (* For each successful outcome, the summary context will be updated. *)
   ListLabels.fold_left outcomes ~init:(Result.ok summ_ctx)
@@ -228,8 +228,14 @@ let exec_crate (crate : Charon.UllbcAst.crate) =
       | Ok summ_ctx -> meta_loop summ_ctx (fuel - 1)
       | Error _ -> true (* Type unsoundness found *)
   in
-  (* Run the algorithm starting from an empty summary context *)
-  meta_loop Summary.Context.empty !Config.current.pass_fuel
+  (* Collect statistics from all the runs *)
+  let Soteria.Stats.{ res = found_unsoundness; stats } =
+    Rustsymex.Stats.As_ctx.with_stats () (fun () ->
+        (* Run the algorithm starting from an empty summary context *)
+        meta_loop Summary.Context.empty !Config.current.pass_fuel)
+  in
+  if !Config.current.print_stats then Soteria_rust_lib.Driver.print_stats stats;
+  found_unsoundness
 
 let exec_ruxt config file_name =
   Config.set config;
