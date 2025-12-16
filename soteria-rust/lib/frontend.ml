@@ -34,7 +34,7 @@ module Exe = struct
 
   let is_ok = function Unix.WEXITED 0 -> true | _ -> false
 
-  let exec ?(env = []) cmd args =
+  let exec ?(read_out = false) ?(read_err = false) ?(env = []) cmd args =
     (* let args = Array.of_list args in *)
     let current_env = Unix.environment () in
     let env = Array.append current_env (Array.of_list env) in
@@ -42,12 +42,14 @@ module Exe = struct
     if !Config.current.log_compilation then
       L.app (fun g -> g "Running command: %s" cmd);
     let out, inp, err = Unix.open_process_full cmd env in
-    let output = In_channel.input_lines out in
-    let error = In_channel.input_lines err in
+    (* FIXME: this line hangs if nothing is printed to stdout *)
+    let output = if read_out then In_channel.input_lines out else [] in
+    let error = if read_err then In_channel.input_lines err else [] in
     let status = Unix.close_process_full (out, inp, err) in
     if !Config.current.log_compilation then
       L.app (fun g ->
-          g "Command finished with status: %a@.%a@.%a" pp_status status
+          g "Command finished with status: %a@.stdout:@.%a@.stderr:@.%a"
+            pp_status status
             Fmt.(list ~sep:(any "@\n") string)
             output
             Fmt.(list ~sep:(any "@\n") string)
@@ -55,8 +57,11 @@ module Exe = struct
     (output, error, status)
 
   let exec_exn ?env cmd args =
-    let output, _, status = exec ?env cmd args in
-    assert (is_ok status);
+    let output, _, status = exec ~read_out:true ?env cmd args in
+    if not (is_ok status) then
+      Fmt.kstr frontend_err "Command %s %a failed with status %a" cmd
+        Fmt.(list ~sep:(any " ") string)
+        args pp_status status;
     output
 end
 
@@ -162,15 +167,10 @@ module Cmd = struct
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
         (cmd, "cargo" :: args, env)
 
-  let exec_in ~mode folder cmd =
+  let exec_in ?read_out ?read_err ~mode folder cmd =
     let cmd, args, env = build_cmd ~mode cmd in
     let@ () = Exe.run_in folder in
-    Exe.exec ~env cmd args
-
-  let exec_in_exn ~mode folder cmd =
-    let cmd, args, env = build_cmd ~mode cmd in
-    let@ () = Exe.run_in folder in
-    Exe.exec_exn ~env cmd args
+    Exe.exec ?read_out ?read_err ~env cmd args
 end
 
 module Lib = struct
@@ -206,9 +206,9 @@ module Lib = struct
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
       let env = Cmd.rustc_as_env () @ env in
-      let _out, err, status =
+      let _, err, status =
         let@ () = Exe.run_in path in
-        Exe.exec ~env (Cmd.cargo ())
+        Exe.exec ~read_err:true ~env (Cmd.cargo ())
           ([ "build"; "--lib"; "--target"; Lazy.force target ] @ verbosity)
       in
       match status with
@@ -418,7 +418,7 @@ let create_using_current_config () =
 let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
   if not !Config.current.no_compile then (
     let cmd = plugin.mk_cmd ?input ~output () in
-    let _, err, res = Cmd.exec_in ~mode pwd cmd in
+    let _, err, res = Cmd.exec_in ~read_err:true ~mode pwd cmd in
     if not (Exe.is_ok res) then
       if res = WEXITED 2 then compilation_err (String.concat "\n" err)
       else

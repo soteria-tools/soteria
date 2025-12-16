@@ -1,7 +1,5 @@
 open Rustsymex
 
-let[@inline] is_disabled () = !Config.current.ignore_aliasing
-
 type tag = int
 
 let tag_counter = ref 0
