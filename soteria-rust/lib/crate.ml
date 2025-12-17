@@ -68,6 +68,9 @@ let is_enum adt_id =
 let is_struct adt_id =
   match (get_adt adt_id).kind with Struct _ -> true | _ -> false
 
+let is_union adt_id =
+  match (get_adt adt_id).kind with Union _ -> true | _ -> false
+
 let as_enum adt_id =
   match (get_adt adt_id).kind with
   | Enum variants -> variants

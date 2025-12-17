@@ -270,15 +270,15 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) st =
 and load ?ignore_borrow ?(ref_checks = true) ((ptr, meta) as fptr) ty st :
     (Sptr.t rust_val * t, Error.t, serialized) Result.t =
   let** (), st = check_ptr_align fptr ty st in
-  let is_valid_ptr =
-    if ref_checks then fun ptr ty -> fake_read ptr ty st
-    else fun _ _ -> return None
-  in
-  let parser ~offset = Encoder.rust_of_cvals ~meta ~offset ~is_valid_ptr ty in
-  let++ value, st = apply_parser ?ignore_borrow ptr parser st in
+  let parser ~offset = Encoder.decode ~meta ~offset ty in
+  let** value, st = apply_parser ?ignore_borrow ptr parser st in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
-  (value, st)
+  if ref_checks then
+    let fake_read ptr ty = fake_read ptr ty st in
+    let++ () = Encoder.check_valid ~fake_read value ty in
+    (value, st)
+  else Result.ok (value, st)
 
 and load_discriminant ((ptr, _) as fptr) ty st =
   let** (), st = check_ptr_align fptr ty st in

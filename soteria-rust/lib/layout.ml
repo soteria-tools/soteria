@@ -74,6 +74,8 @@ module Fields_shape = struct
           variant
 end
 
+(* TODO: size should be an [option], for unsized types *)
+(* TODO: add a uninhabited flag (concrete..?) *)
 type t = {
   size : T.sint Typed.t;
   align : T.nonzero Typed.t;
