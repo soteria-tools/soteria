@@ -294,9 +294,18 @@ and load_discriminant ((ptr, _) as fptr) ty st =
    This could be fixed by lifting all misses individually inside [handler] and
    [get_all] in [apply_parser], but that's kind of a mess to change and not really
    worth it I believe; I don't think these misses matter at all (TBD). *)
-and fake_read ptr ty st =
-  (* FIXME: i am not certain how one checks for the validity of a DST *)
-  if Layout.is_dst ty || Option.is_some (Layout.as_zst ty) then return None
+and fake_read ((_, meta) as ptr) ty st =
+  let can_check_dst =
+    match meta with
+    | Thin -> true
+    | Len l ->
+        (* TODO: we don't support symbolic slices *)
+        Option.is_some (Typed.BitVec.to_z l)
+    | VTable _ ->
+        (* FIXME: i am not certain how one checks for the validity of a &dyn *)
+        false
+  in
+  if (not can_check_dst) || Option.is_some (Layout.as_zst ty) then return None
   else (
     L.debug (fun m ->
         m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
