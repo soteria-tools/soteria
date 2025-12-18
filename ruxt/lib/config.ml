@@ -67,7 +67,8 @@ type t = {
           fuel. *)
   pass_fuel : int; [@default 5] [@names [ "pass-fuel" ]] [@env "PASS_FUEL"]
       (** The default pass fuel for each library -- calling every function of
-          the library with the current summaries counts as one fuel *)
+          the library with the current summaries counts as one fuel. Defaults to
+          5 passes *)
 }
 [@@deriving make, subliner]
 
