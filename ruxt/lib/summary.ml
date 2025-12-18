@@ -72,20 +72,21 @@ let make ret pcs state =
     @@ Typed.iter_vars sv
   in
   (* We can now filter the summary to keep only the reachable values *)
-  let state, leaks =
+  let ( let** ) = Result.bind in
+  let** state =
     let heap, unreachable =
       ListLabels.partition heap ~f:(fun (loc, _) -> is_relevant loc)
     in
-    let leaks =
-      if !Config.current.ignore_leaks then []
-      else
+    if !Config.current.ignore_leaks then Result.ok (heap, globals)
+    else
+      let leaks =
         ListLabels.filter unreachable
           ~f:(fun (loc, Heap.With_meta.{ node; _ }) ->
             (* A leak occurs when the pointer is alive and is not global *)
             node <> Soteria.Sym_states.Freeable.Freed
             && not (List.mem loc globals))
-    in
-    ((heap, globals), leaks)
+      in
+      if leaks <> [] then Result.error `MemoryLeak else Result.ok (heap, globals)
   in
   let pcs =
     let pcs =
@@ -97,7 +98,7 @@ let make ret pcs state =
     let locs = List.map fst (fst state) in
     if List.length locs <= 1 then pcs else Typed.distinct locs :: pcs
   in
-  ({ ret; pcs; state }, leaks)
+  Result.ok { ret; pcs; state }
 
 let literal ty =
   let process = Soteria_rust_lib.Layout.nondet (TLiteral ty) in
