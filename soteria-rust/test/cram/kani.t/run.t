@@ -2,11 +2,11 @@ Test kani::any
   $ soteria-rust rustc any.rs --clean --no-timing --kani
   Compiling... done in <time>
   note: any_bool: done in <time>, ran 2 branches
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
-  PC 2: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
+  PC 2: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   note: any_i8: done in <time>, ran 3 branches
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   PC 2: (0x80 <=u V|1|)
   PC 3: (0x01 <=u V|1|) /\ (V|1| <=u 0x7f)
   
@@ -16,7 +16,7 @@ Test kani::assume
   $ soteria-rust rustc assume.rs --clean --no-timing --kani
   Compiling... done in <time>
   note: assume_bool: done in <time>, ran 1 branch
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
+  PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
   
   note: assume_i32: done in <time>, ran 1 branch
   PC 1: (0x00000001 <=u V|1|)
@@ -45,7 +45,7 @@ Test kani::assert
       │       │
       │       Triggering memory operation
       │       2: Call trace
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   error: fancy_assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 in fancy_assert_false
@@ -58,7 +58,7 @@ Test kani::assert
       │       │
       │       Triggering memory operation
       │       2: Call trace
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   error: override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert!" in override_assert_macro
@@ -71,7 +71,7 @@ Test kani::assert
       ┌─ $TESTCASE_ROOT/assert.rs:14:2
    14 │  fn override_assert_macro() {
       │   -------------------------- 1: Entry point
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   error: override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert_eq!" in override_asserteq_macro
