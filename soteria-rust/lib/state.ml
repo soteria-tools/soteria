@@ -85,7 +85,7 @@ end)
 
 module FunBiMap = struct
   include
-    Bimap.Make
+    Bimap.MakePp
       (struct
         type t = T.sloc Typed.t
 
