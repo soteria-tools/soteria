@@ -439,7 +439,10 @@ module Make (Sptr : Sptr.S) = struct
         let* v = float_to_bv_bits f in
         with_constraints ~ty v
     | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> ok v
-    | (TRef _ | TFnPtr _), Int _ -> error `UBDanglingPointer
+    | TRef _, Int _ -> error `UBDanglingPointer
+    | TFnPtr _, Int v ->
+        if%sat v ==@ Usize.(0s) then error `UBDanglingPointer
+        else ok (Ptr (Sptr.null_ptr_of v, Thin))
     | TRawPtr _, Int v -> ok (Ptr (Sptr.null_ptr_of v, Thin))
     | _ ->
         Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" pp_rust_val v
