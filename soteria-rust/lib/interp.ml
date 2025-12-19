@@ -16,88 +16,126 @@ module Make (State : State_intf.S) = struct
   open Rust_state_m
   open Rust_state_m.Syntax
 
-  type store = (full_ptr option * Types.ty) Store.t
-  type 'a t = ('a, store) Rust_state_m.t
+  type 'a t = ('a, Sptr.t Store.t) Rust_state_m.t
   type 'err fun_exec = rust_val list -> (rust_val, unit) Rust_state_m.t
 
-  let get_variable var_id =
+  type lazy_ptr = Store of Expressions.local_id | Heap of full_ptr
+  [@@deriving show { with_path = false }]
+
+  let get_variable_ptr var_id =
     let* store = get_env () in
-    match Store.find_value var_id store with
-    | Some ptr ->
+    let binding = Store.find var_id store in
+    match binding.kind with
+    | Stackptr ptr ->
         L.debug (fun m ->
             m "Variable %a has pointer %a" Expressions.pp_var_id var_id
               pp_full_ptr ptr);
         ok ptr
-    | None -> error `DeadVariable
+    | Uninit ->
+        let* ptr = State.alloc_ty binding.ty in
+        let+ () = map_env (Store.declare_ptr var_id ptr) in
+        L.debug (fun m ->
+            m "Variable %a was uninitialized, allocated pointer %a"
+              Expressions.pp_var_id var_id pp_full_ptr ptr);
+        ptr
+    | Value v ->
+        let* ptr = State.alloc_ty binding.ty in
+        let* () = State.store ptr binding.ty v in
+        let+ () = map_env (Store.declare_ptr var_id ptr) in
+        L.debug (fun m ->
+            m "Variable %a had value, allocated pointer %a"
+              Expressions.pp_var_id var_id pp_full_ptr ptr);
+        ptr
+    | Dead -> error `DeadVariable
 
-  let get_variable_and_ty var_id =
+  let get_variable_lazy var_id =
     let* store = get_env () in
-    match Store.find_opt var_id store with
-    | Some ptr_and_ty -> ok ptr_and_ty
-    | None -> error `DeadVariable
+    let binding = Store.find var_id store in
+    match binding.kind with
+    | Stackptr ptr -> ok (Heap ptr)
+    | Uninit | Value _ -> ok (Store var_id)
+    | Dead -> error `DeadVariable
 
-  let alloc_stack (locals : GAst.locals) args : (full_ptr * Types.ty) list t =
+  let get_variable_lazy_and_ty var_id =
+    let* store = get_env () in
+    let binding = Store.find var_id store in
+    match binding.kind with
+    | Stackptr ptr -> ok (Heap ptr, binding.ty)
+    | Uninit | Value _ -> ok (Store var_id, binding.ty)
+    | Dead -> error `DeadVariable
+
+  let load_lazy lazy_ptr ty : rust_val t =
+    match lazy_ptr with
+    | Store var_id -> (
+        let* store = get_env () in
+        let binding = Store.find var_id store in
+        match binding.kind with
+        | Value v -> ok v
+        | Uninit -> error `UninitializedMemoryAccess
+        | Dead -> error `DeadVariable
+        | Stackptr ptr -> State.load ptr ty)
+    | Heap ptr -> State.load ptr ty
+
+  let store_lazy lazy_ptr ty v : unit t =
+    match lazy_ptr with
+    | Store var_id -> map_env (Store.declare_value var_id v)
+    | Heap ptr -> State.store ptr ty v
+
+  let uninit_lazy lazy_ptr ty : unit t =
+    match lazy_ptr with
+    | Store var_id -> map_env (Store.declare_uninit var_id)
+    | Heap ptr -> State.uninit ptr ty
+
+  (** [alloc_stack locals args] Allocates stack space for the locals in
+      [locals], and initializes the arguments with [args]. Returns a list of
+      protected pointers that need to be unprotected at the end of the function.
+  *)
+  let alloc_stack (locals : GAst.locals) args =
     if List.compare_length_with args locals.arg_count <> 0 then
       failwith
         "Function called with wrong arg count, should have been caught before";
-    (* create a store with all types *)
+
     let* () =
       map_env @@ fun store ->
+      (* create a store with all types *)
       List.fold_left
         (fun st (local : GAst.local) ->
-          Store.add local.index (None, local.local_ty) st)
+          Store.reserve local.index local.local_ty st)
         store locals.locals
+      (* the return type is always allocated (but uninitialised) *)
+      |> Store.declare_uninit Expressions.LocalId.zero
     in
-    (* allocate arguments and return value, updating store *)
-    let alloc_locs = List.take (1 + locals.arg_count) locals.locals in
-    let tys =
-      List.map (fun ({ local_ty; _ } : GAst.local) -> local_ty) alloc_locs
-    in
-    let* ptrs = State.alloc_tys tys in
-    let tys_ptrs = List.combine alloc_locs ptrs in
-    let* () =
-      map_env @@ fun store ->
-      List.fold_left
-        (fun store ((local : GAst.local), ptr) ->
-          Store.add local.index (Some ptr, local.local_ty) store)
-        store tys_ptrs
-    in
-    (* store values for the arguments *)
-    let tys_ptrs = List.tl tys_ptrs in
-    let+ protected =
-      fold_list tys_ptrs ~init:[]
-        ~f:(fun protected ({ index; local_ty = ty; _ }, ptr) ->
-          let index = Expressions.LocalId.to_int index in
-          let value = List.nth args (index - 1) in
-          (* Passed (nested) references must be protected and be valid. *)
-          let* value, protected' =
-            Layout.update_ref_tys_in value ty ~init:protected
-              ~f:(fun acc ptr subty mut ->
-                let+ ptr' = State.protect ptr subty mut in
-                (ptr', (ptr', subty) :: acc))
-          in
-          let+ () = State.store ptr ty value in
-          protected')
-    in
-    protected
 
-  (** [dealloc_store ?protected_address store protected st] Deallocates the
+    (* store the arguments *)
+    List.combine (List.sub 1 locals.arg_count locals.locals) args
+    |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
+           (* Passed (nested) references must be protected and be valid. *)
+           let* value, protected' =
+             Layout.update_ref_tys_in value local.local_ty ~init:acc
+               ~f:(fun acc ptr subty mut ->
+                 let+ ptr' = State.protect ptr subty mut in
+                 (ptr', (ptr', subty) :: acc))
+           in
+           let+ () = map_env (Store.declare_value local.index value) in
+           protected')
+
+  (** [dealloc_stack ?protected_address store protected st] Deallocates the
       locations in [st] used for the variables in [store]; if
       [protected_address] is provided, will not deallocate that location (this
       is used e.g. for globals, that return a &'static reference). Will also
       remove the protectors from the pointers [protected] that were given at the
       function's entry. *)
-  let dealloc_store ?protected_address protected =
+  let dealloc_stack ?protected_address protected =
     let* () =
       fold_list protected ~init:() ~f:(fun () (ptr, ty) ->
           State.unprotect ptr ty)
     in
     let* store = get_env () in
-    fold_list (Store.bindings store) ~init:() ~f:(fun () (_, (ptr, _)) ->
-        match (ptr, protected_address) with
-        | None, _ -> ok ()
-        | Some ptr, None -> State.free ptr
-        | Some ((ptr, _) as fptr), Some protect ->
+    fold_list (Store.bindings store) ~init:() ~f:(fun () (_, binding) ->
+        match (binding.kind, protected_address) with
+        | (Dead | Uninit | Value _), _ -> ok ()
+        | Stackptr ptr, None -> State.free ptr
+        | Stackptr ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
   let resolve_fn_ptr (fn : Types.fn_ptr) : Types.fun_decl_ref =
@@ -216,14 +254,11 @@ module Make (State : State_intf.S) = struct
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
-  (** Resolves a place to a pointer, in the form of a rust_val. We use rust_val
-      rather than T.sptr Typed.t, to be able to handle fat pointers; however
-      there is the guarantee that this function returns either a Base or a
-      FatPointer value. *)
-  and resolve_place ({ kind; ty } : Expressions.place) : full_ptr t =
-    match kind with
+  (** Resolves a place to a pointer *)
+  and resolve_place (place : Expressions.place) : full_ptr t =
+    match place.kind with
     (* Just a local *)
-    | PlaceLocal v -> get_variable v
+    | PlaceLocal v -> get_variable_ptr v
     (* Just a global *)
     | PlaceGlobal g -> resolve_global g
     (* Dereference a pointer *)
@@ -272,8 +307,8 @@ module Make (State : State_intf.S) = struct
             f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
-        if not @@ Layout.is_inhabited ty then error `RefToUninhabited
-        else if Layout.is_dst ty then ok (ptr', meta)
+        if not @@ Layout.is_inhabited place.ty then error `RefToUninhabited
+        else if Layout.is_dst place.ty then ok (ptr', meta)
         else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
@@ -296,7 +331,7 @@ module Make (State : State_intf.S) = struct
         let* () =
           State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty ptr idx in
+        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty ptr idx in
         L.debug (fun f ->
             f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
               Sptr.pp ptr');
@@ -337,6 +372,16 @@ module Make (State : State_intf.S) = struct
               (if from_end then "(from end)" else "")
               Sptr.pp ptr' Typed.ppa slice_len);
         (ptr', Len slice_len)
+
+  and resolve_place_lazy (place : Expressions.place) : lazy_ptr t =
+    match place.kind with
+    | PlaceLocal v ->
+        (* we compute the layout here in case of a layout error *)
+        let* _ = Layout.layout_of place.ty in
+        get_variable_lazy v
+    | _ ->
+        let+ ptr = resolve_place place in
+        Heap ptr
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
@@ -433,12 +478,12 @@ module Make (State : State_intf.S) = struct
         (* I don't think the operand being [Move] matters at all, aside from function calls.
            See: https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
         let ty = loc.ty in
-        let* ptr = resolve_place loc in
-        match Layout.as_zst ty with
-        | Some zst ->
+        let* ptr = resolve_place_lazy loc in
+        match (ptr, Layout.as_zst ty) with
+        | Heap ptr, Some zst ->
             let+ () = State.check_ptr_align ptr ty in
             zst
-        | None -> State.load ptr ty)
+        | _, _ -> load_lazy ptr ty)
 
   and eval_operand_list ops =
     let+ vs =
@@ -821,22 +866,28 @@ module Make (State : State_intf.S) = struct
     match stmt.kind with
     | Nop -> ok ()
     | Assign (place, rval) ->
-        let* ptr = resolve_place place in
+        let* ptr = resolve_place_lazy place in
         let* v = eval_rvalue rval in
-        L.info (fun m -> m "Assigning %a <- %a" pp_full_ptr ptr pp_rust_val v);
-        State.store ptr place.ty v
+        L.info (fun m -> m "Assigning %a <- %a" pp_lazy_ptr ptr pp_rust_val v);
+        store_lazy ptr place.ty v
     | StorageLive local ->
-        let* ptr, ty = get_variable_and_ty local in
-        let* () = match ptr with None -> ok () | Some ptr -> State.free ptr in
-        let* ptr = State.alloc_ty ty in
-        map_env (Store.add local (Some ptr, ty))
+        let* store = get_env () in
+        let binding = Store.find local store in
+        let* () =
+          match binding.kind with
+          | Stackptr ptr -> State.free ptr
+          | Dead | Uninit | Value _ -> ok ()
+        in
+        map_env (Store.declare_uninit local)
     | StorageDead local -> (
-        let* ptr, ty = get_variable_and_ty local in
-        match ptr with
-        | Some ptr ->
+        let* store = get_env () in
+        let binding = Store.find local store in
+        match binding.kind with
+        | Stackptr ptr ->
             let* () = State.free ptr in
-            map_env (Store.add local (None, ty))
-        | None -> ok ())
+            map_env (Store.dealloc local)
+        | Uninit | Value _ -> map_env (Store.dealloc local)
+        | Dead -> ok ())
     | Assert { cond; expected; on_failure } -> (
         let* cond = eval_operand cond in
         let cond_int = as_base TBool cond in
@@ -864,8 +915,8 @@ module Make (State : State_intf.S) = struct
         in
         ok ()
     | Deinit place ->
-        let* place_ptr = resolve_place place in
-        State.uninit place_ptr place.ty
+        let* place_ptr = resolve_place_lazy place in
+        uninit_lazy place_ptr place.ty
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
 
@@ -920,9 +971,8 @@ module Make (State : State_intf.S) = struct
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~body block
     | Return ->
-        let* ptr, ty = get_variable_and_ty Expressions.LocalId.zero in
-        let* ptr = of_opt_not_impl "Return value unset, but returned" ptr in
-        let* value = State.load ptr ty in
+        let* ptr, ty = get_variable_lazy_and_ty Expressions.LocalId.zero in
+        let* value = load_lazy ptr ty in
         let ptr_tys = Layout.ref_tys_in value ty in
         let+ () =
           fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
@@ -1042,10 +1092,10 @@ module Make (State : State_intf.S) = struct
           | (TRef (RStatic, _, _) | TRawPtr _), Ptr (addr, _) -> Some addr
           | _ -> None
         in
-        let+ () = dealloc_store ?protected_address protected in
+        let+ () = dealloc_stack ?protected_address protected in
         value)
       ~fe:(fun err ->
-        let* () = dealloc_store protected in
+        let* () = dealloc_stack protected in
         error_raw err)
 
   (* re-define this for the export, nowhere else: *)

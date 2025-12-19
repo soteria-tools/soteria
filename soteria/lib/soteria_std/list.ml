@@ -116,3 +116,7 @@ and[@tail_mod_cons] prepend_concat_map2 zs f xs ys =
   match zs with
   | [] -> concat_map2 f xs ys
   | z :: zs -> z :: prepend_concat_map2 zs f xs ys
+
+(** [sub from n l] returns the sublist of [l], from index [from] (inclusive), of
+    length [n]. *)
+let sub from n l = l |> drop from |> take n
