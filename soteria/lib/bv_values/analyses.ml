@@ -503,12 +503,12 @@ end
 
 module Equality : S = struct
   module UnionFind = UnionFind.Make (UnionFind.StoreMap)
-  module IMap = PatriciaTree.MakeMap (Int)
+  module VMap = PatriciaTree.MakeMap (Svalue)
 
   include Reversible.Make_mutable (struct
-    type t = Svalue.t UnionFind.store * Svalue.t UnionFind.rref IMap.t
+    type t = Svalue.t UnionFind.store * Svalue.t UnionFind.rref VMap.t
 
-    let default = (UnionFind.new_store (), IMap.empty)
+    let default = (UnionFind.new_store (), VMap.empty)
   end)
 
   (* override to account for UnionFind  *)
@@ -538,11 +538,11 @@ module Equality : S = struct
     | BvOfFloat _ | FloatOfBv _ -> 4
     | _ -> 1
 
-  let get_or_make (v : Svalue.t) ((uf, refs) as st) =
-    match IMap.find_opt v.tag refs with
+  let get_or_make v ((uf, refs) as st) =
+    match VMap.find_opt v refs with
     | None ->
         let ref = UnionFind.make uf v in
-        let refs = IMap.add v.tag ref refs in
+        let refs = VMap.add v ref refs in
         (ref, (uf, refs))
     | Some ref -> (ref, st)
 
@@ -552,18 +552,18 @@ module Equality : S = struct
          (fun v1 v2 -> if cost v1 > cost v2 then v2 else v1)
          v1 v2
 
-  let find_cheaper_opt (v : Svalue.t) (uf, refs) =
-    Option.bind (IMap.find_opt v.tag refs) @@ fun r ->
+  let find_cheaper_opt v (uf, refs) =
+    Option.bind (VMap.find_opt v refs) @@ fun r ->
     let v_repr = UnionFind.get uf r in
     if Svalue.equal v v_repr then None else Some v_repr
 
-  let known_eq (v1 : Svalue.t) (v2 : Svalue.t) (uf, refs) : bool =
-    match (IMap.find_opt v1.tag refs, IMap.find_opt v2.tag refs) with
+  let known_eq v1 v2 (uf, refs) : bool =
+    match (VMap.find_opt v1 refs, VMap.find_opt v2 refs) with
     | Some r1, Some r2 -> UnionFind.eq uf r1 r2
     | _ -> false
 
-  let eval_var (uf, refs) (var : Svalue.t) _ _ =
-    IMap.find_opt var.tag refs |> Option.fold ~none:var ~some:(UnionFind.get uf)
+  let eval_var (uf, refs) var _ _ =
+    VMap.find_opt var refs |> Option.fold ~none:var ~some:(UnionFind.get uf)
 
   let simplify (v : Svalue.t) st =
     let rec simplify ~fuel v =
@@ -595,6 +595,10 @@ module Equality : S = struct
         let v1, st = get_or_make v1 st in
         let v2, st = get_or_make v2 st in
         merge v1 v2 st;
+        (* Here we choose to pass down the equality (rather than simplifying to true),
+           so that the underlying solver can do trivial SAT checks using these equalities.
+           This also means this analysis is exempt from implementing [encode], since it
+           doesn't store anything. *)
         ((v, Var.Set.empty), st)
     | _ -> ((v, Var.Set.empty), st)
 

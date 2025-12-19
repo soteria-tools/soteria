@@ -208,6 +208,9 @@ and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 let hash t = t.tag
 let kind t = t.node.kind
 
+(** Used for [PatriciaTree] *)
+let to_int t = t.tag
+
 let iter =
   let rec aux (f : t -> unit) (sv : t) : unit =
     f sv;
