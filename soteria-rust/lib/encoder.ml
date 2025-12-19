@@ -328,7 +328,7 @@ module Make (Sptr : Sptr.S) = struct
       pointer metadata, e.g. slice lengths and vtables. The [fake_read] function
       is used to simulate reading from memory to check the validity of a pointee
       type. *)
-  let check_valid ~fake_read v ty =
+  let check_valid ~fake_read v ty st =
     let open Rustsymex in
     let open Syntax in
     let open Result in
@@ -345,13 +345,16 @@ module Make (Sptr : Sptr.S) = struct
               (* TODO: check the vtable pointer is of the right trait kind *)
               ok ()
         in
-        let* opt_err = fake_read p pointee in
-        match opt_err with Some err -> error err | None -> ok ())
+        let* opt_err, st = fake_read p pointee st in
+        match opt_err with Some err -> error err | None -> ok st)
     | Ptr (p, _), TFnPtr _ ->
-        assert_or_error
-          (Typed.not (Sptr.sem_eq (Sptr.null_ptr ()) p))
-          `UBDanglingPointer
-    | _ -> ok ()
+        let++ () =
+          assert_or_error
+            (Typed.not (Sptr.sem_eq (Sptr.null_ptr ()) p))
+            `UBDanglingPointer
+        in
+        st
+    | _ -> ok st
 
   let with_constraints ~ty v =
     let constraints = Typed.conj @@ Layout.constraints ty v in

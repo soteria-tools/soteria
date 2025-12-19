@@ -187,20 +187,14 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     L.debug (fun m ->
         m "Transmuting %a: %a -> %a" pp_rust_val v Charon_util.pp_ty from_ty
           Charon_util.pp_ty to_ty);
-    let* state = get_state () in
-    let^ res =
-      let@ () = run ~env:() ~state in
-      let* { size; align; _ } = Layout.layout_of from_ty in
-      let* { align = align_2; _ } = Layout.layout_of to_ty in
-      let align = BV.max ~signed:false align align_2 in
-      let* ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
-      let* () = State.store ptr from_ty v in
-      State.load ptr to_ty
-    in
-    match res with
-    | Ok (v, _) -> ok v
-    | Error e -> error_raw e
-    | Missing m -> miss m
+    let* { size; align; _ } = Layout.layout_of from_ty in
+    let* { align = align_2; _ } = Layout.layout_of to_ty in
+    let align = BV.max ~signed:false align align_2 in
+    let* ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
+    let* () = State.store ptr from_ty v in
+    let* v = State.load ptr to_ty in
+    let+ () = State.free ptr in
+    v
 
   let zero_valid ~ty =
     let^+ res =

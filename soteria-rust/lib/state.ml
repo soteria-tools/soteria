@@ -275,8 +275,7 @@ and load ?ignore_borrow ?(ref_checks = true) ((ptr, meta) as fptr) ty st :
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   if ref_checks then
-    let fake_read ptr ty = fake_read ptr ty st in
-    let++ () = Encoder.check_valid ~fake_read value ty in
+    let++ st = Encoder.check_valid ~fake_read value ty st in
     (value, st)
   else Result.ok (value, st)
 
@@ -305,15 +304,16 @@ and fake_read ((_, meta) as ptr) ty st =
         (* FIXME: i am not certain how one checks for the validity of a &dyn *)
         false
   in
-  if (not can_check_dst) || Option.is_some (Layout.as_zst ty) then return None
+  if (not can_check_dst) || Option.is_some (Layout.as_zst ty) then
+    return (None, st)
   else (
     L.debug (fun m ->
         m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
           Charon_util.pp_ty ty);
     let+ res = load ~ignore_borrow:true ~ref_checks:false ptr ty st in
     match res with
-    | Ok _ -> None
-    | Error e -> Some e
+    | Ok (_, st) -> (None, st)
+    | Error e -> (Some e, st)
     | Missing _ -> failwith "Miss in fake_read")
 
 let check_ptr_align ptr ty st =

@@ -276,6 +276,7 @@ module ArithPtr : S with type t = arithptr_t = struct
     let+ loc_int, decay_map =
       DecayMap.decay ~expose ~size ~align loc decay_map
     in
+    L.debug (fun fmt -> fmt "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int);
     (loc_int +!!@ ofs, decay_map)
 
   let decay p = _decay ~expose:false p

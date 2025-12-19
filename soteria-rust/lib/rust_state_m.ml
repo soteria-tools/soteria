@@ -364,7 +364,7 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
 
     let[@inline] fake_read ptr ty =
      fun env state ->
-      let* is_valid = fake_read ptr ty state in
+      let* is_valid, state = fake_read ptr ty state in
       match is_valid with
       | None -> ok () env state
       | Some err -> error err state
