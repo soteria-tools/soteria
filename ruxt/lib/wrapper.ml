@@ -42,13 +42,22 @@ module Symok = struct
     | _ -> none
 end
 
-type t =
+type t = Summary.t list -> process
+
+and process =
   ( Heap.Sptr.t Rust_val.t * Heap.t * ty,
     Error.t Heap.err,
     Heap.serialized )
   Rustsymex.Result.t
 
 let call (fun_decl : Frontend.fun_decl) summs =
+  let ty = fun_decl.signature.output in
+  let if_rmut ~then_ ~else_ =
+    let rmut_ty = match ty with TRef (_, ty, RMut) -> Some ty | _ -> None in
+    Option.fold rmut_ty ~none:else_ ~some:then_
+  in
+  let summ = if_rmut ~then_:(fun _ -> Some (List.hd summs)) ~else_:None in
+  let summs = if_rmut ~then_:(fun _ -> List.tl summs) ~else_:summs in
   (* Check reference arguments and allocate values on heap *)
   let* args, state, arg_ptrs =
     ListLabels.fold_left2 summs fun_decl.signature.inputs
@@ -64,13 +73,9 @@ let call (fun_decl : Frontend.fun_decl) summs =
   in
   let args = List.rev args in
   (* Symbolically execute the function call *)
-  let++ ret, state = Wpst_interp.exec_fun fun_decl ~args ~state in
-  (ret, state, arg_ptrs)
-
-let return ty summ_ctx wrapper =
-  (* Obtain the result from the executing the function call *)
-  let** ret, state, arg_ptrs = wrapper in
-  let* state =
+  let** ret, state = Wpst_interp.exec_fun fun_decl ~args ~state in
+  (* Handle the return value if it is a reference *)
+  let+ state =
     match ty with
     | TRef (_, ty, kind) -> (
         (* The return value must be a pointer *)
@@ -82,19 +87,15 @@ let return ty summ_ctx wrapper =
             state
         | RMut ->
             (* For mutable references, we write to the pointer with safe values*)
-            let summs = Summary.Context.get ty summ_ctx in
-            ListLabels.map summs ~f:(fun summ () ->
-                let* ret, state = Summary.produce summ state in
-                Symok.store ptr ty ret state)
-            |> Rustsymex.branches)
+            let* ret, state = Summary.produce (Option.get summ) state in
+            Symok.store ptr ty ret state)
     | _ -> Rustsymex.return state
   in
-  (* Return the same result with the updated state *)
-  Rustsymex.Result.ok (ret, state, arg_ptrs)
+  Compo_res.Ok (ret, state, ty, arg_ptrs)
 
-let branch ty drops wrapper =
+let branch drops wrapper =
   (* Obtain the result from the executing the function call *)
-  let** ret, state, arg_ptrs = wrapper in
+  let** ret, state, ty, arg_ptrs = wrapper in
   (* Drop the return value *)
   let drop_ret state =
     Symok.exec_drop drops ty ~none:(Rustsymex.return state)
@@ -137,14 +138,13 @@ let branch ty drops wrapper =
   in
   get_branches arg_ptrs |> Rustsymex.branches
 
-let make drops (fun_decl : Frontend.fun_decl) summ_ctx : t list =
-  let wrap summs =
-    let ty = fun_decl.signature.output in
-    call fun_decl summs |> return ty summ_ctx |> branch ty drops
+let make drops (fun_decl : Frontend.fun_decl) : t * ty list =
+  let tys =
+    let sign = fun_decl.signature in
+    let tys = List.map (function TRef (_, ty, _) | ty -> ty) sign.inputs in
+    match sign.output with TRef (_, ty, RMut) -> ty :: tys | _ -> tys
   in
-  let summs_iter =
-    let flatten_refs = function TRef (_, ty, _) | ty -> ty in
-    let tys = List.map flatten_refs fun_decl.signature.inputs in
-    Summary.Context.iter_summs tys summ_ctx
-  in
-  Iter.fold (fun wrappers summs -> wrap summs :: wrappers) [] summs_iter
+  let wrapper summs = call fun_decl summs |> branch drops in
+  (wrapper, tys)
+
+let process (wrapper : t) summs : process = wrapper summs

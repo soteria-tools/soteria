@@ -100,7 +100,7 @@ let make ret pcs state =
   in
   Result.ok { ret; pcs; state }
 
-let literal ty =
+let base ty =
   let process = Soteria_rust_lib.Layout.nondet (TLiteral ty) in
   match Rustsymex.run ~mode:UX process with
   | [ (Compo_res.Ok ret, pcs) ] ->
@@ -111,30 +111,40 @@ module Context = struct
   open Charon.Types
   module M = TypeDeclId.Map
 
-  type nonrec t = t list M.t
+  (* Each custom type has separate lists for visited and unvisited summaries *)
+  type value = Base of t | Custom of t list * t list
+  type nonrec t = (t list * t list) M.t
 
   let empty : t = M.empty
 
-  let update ty summ (ctx : t) : t =
+  let add ty summ (ctx : t) : t =
     match ty with
     | TAdt { id = TAdtId id; _ } ->
         let opt_cons = function
-          | None -> Some [ summ ]
-          | Some summs -> Some (summ :: summs)
+          | None -> Some ([], [ summ ])
+          | Some (visited, unvisited) -> Some (visited, summ :: unvisited)
         in
         M.update id opt_cons ctx
     | _ -> ctx
 
-  let get ty (ctx : t) =
+  let find ty (ctx : t) : value =
     match ty with
-    | TAdt { id = TAdtId id; _ } -> Option.value ~default:[] (M.find_opt id ctx)
-    | TLiteral lit -> [ literal lit ]
-    | _ -> []
+    | TAdt { id = TAdtId id; _ } ->
+        let visited, unvisited =
+          Option.value ~default:([], []) (M.find_opt id ctx)
+        in
+        Custom (visited, unvisited)
+    | TLiteral lit -> Base (base lit)
+    | _ -> Custom ([], [])
 
   let iter_summs tys (ctx : t) f =
     let rec aux ?(acc = []) = function
       | [] -> f acc
       | summs :: rest -> List.iter (fun s -> aux ~acc:(s :: acc) rest) summs
     in
-    aux (List.rev_map (fun ty -> get ty ctx) tys)
+    let flatten_value = function
+      | Base summ -> [ summ ]
+      | Custom (visited, unvisited) -> visited @ unvisited
+    in
+    aux (List.rev_map (fun ty -> find ty ctx |> flatten_value) tys)
 end
