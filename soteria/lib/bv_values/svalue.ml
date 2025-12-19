@@ -737,13 +737,7 @@ and BitVec : BitVec = struct
 
   (** [bv_to_z signed bits z] parses a BitVector [z], for a given bitwidth
       [bits], with [signed], into an integer. *)
-  let bv_to_z signed bits z =
-    let z = Z.(z land pred (one lsl bits)) in
-    if signed then
-      let bits_m_1 = bits - 1 in
-      let max = Z.(pred (one lsl bits_m_1)) in
-      if Z.leq z max then z else Z.(z - (one lsl bits))
-    else z
+  let bv_to_z signed bits z = if signed then Z.signed_extract z 0 bits else z
 
   let to_z v = match v.node.kind with BitVec z -> Some z | _ -> None
 
