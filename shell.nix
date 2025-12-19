@@ -135,6 +135,7 @@ let
       hc
       htmlit
       iter
+      patricia-tree
       ppxlib
       ppx_blob
       ppx_deriving
