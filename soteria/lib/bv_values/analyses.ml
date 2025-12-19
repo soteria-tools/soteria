@@ -243,8 +243,8 @@ module Interval : S = struct
   let get n v st =
     match Var.Map.find_opt v st with Some r -> r | None -> Data.mk n
 
-  let st_equal = Var.Map.equal Data.equal
-  let merge_states = Var.Map.merge (fun _ -> Option.merge Data.union)
+  let st_equal = Var.Map.reflexive_equal Data.equal
+  let merge_states = Var.Map.idempotent_inter (fun _ -> Data.union)
 
   let pp ft st =
     Fmt.(iter_bindings Var.Map.iter (pair ~sep:(any " -> ") Var.pp Data.pp))
@@ -503,7 +503,7 @@ end
 
 module Equality : S = struct
   module UnionFind = UnionFind.Make (UnionFind.StoreMap)
-  module IMap = Map.Make (Int)
+  module IMap = PatriciaTree.MakeMap (Int)
 
   include Reversible.Make_mutable (struct
     type t = Svalue.t UnionFind.store * Svalue.t UnionFind.rref IMap.t
