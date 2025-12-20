@@ -450,7 +450,7 @@ struct
     in
     let fuel = 3 in
     try
-      let var_values =
+      let bindings =
         Var.Map.fold
           (fun v (ty : Svalue.ty) acc ->
             let values =
@@ -465,7 +465,7 @@ struct
       in
       let rec aux i =
         let rec eval_var _ v _ =
-          let values = Var.Map.find v var_values in
+          let values = Var.Map.find v bindings in
           let index = i mod Array.length values in
           match values.(index) with
           | { node = { kind = Var var; ty }; _ } as v -> eval_var v var ty
