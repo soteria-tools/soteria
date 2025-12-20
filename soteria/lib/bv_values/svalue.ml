@@ -1359,12 +1359,11 @@ and BitVec : BitVec = struct
     assert (extend_by > 0);
     match v.node.kind with
     | BitVec bv ->
-        if signed && Z.testbit bv (n - 1) then
+        if signed then
           (* Sign extend: replicate the MSB *)
-          let mask = Z.(pred (one lsl extend_by) lsl n) in
-          mk to_ Z.(bv lor mask)
+          mk_masked to_ (Z.signed_extract bv 0 n)
         else
-          (* Zero extend: just mask to ensure no extra bits *)
+          (* Zero extend: do nothing *)
           mk to_ bv
     | Unop (BvExtend (prev_signed, prev_by), v) when prev_signed = signed ->
         (* combine extensions *)
@@ -1478,7 +1477,9 @@ and BitVec : BitVec = struct
 
   and ashr v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l asr to_int r)
+    | BitVec l, BitVec r ->
+        let n = size_of v1.node.ty in
+        mk_masked n Z.(Z.signed_extract l 0 n asr to_int r)
     | _, BitVec s when Z.equal s Z.zero -> v1
     | Binop (AShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
