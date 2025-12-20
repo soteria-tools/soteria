@@ -117,15 +117,24 @@ module Context = struct
 
   let empty : t = M.empty
 
+  let ( let+ ) (ty, ctx) f =
+    match ty with TAdt { id = TAdtId id; _ } -> f id | _ -> ctx
+
   let add ty summ (ctx : t) : t =
-    match ty with
-    | TAdt { id = TAdtId id; _ } ->
-        let opt_cons = function
-          | None -> Some ([], [ summ ])
-          | Some (visited, unvisited) -> Some (visited, summ :: unvisited)
-        in
-        M.update id opt_cons ctx
-    | _ -> ctx
+    let+ id = (ty, ctx) in
+    let opt_cons = function
+      | None -> Some ([], [ summ ])
+      | Some (visited, unvisited) -> Some (visited, summ :: unvisited)
+    in
+    M.update id opt_cons ctx
+
+  let remove ty summ (ctx : t) : t =
+    let+ id = (ty, ctx) in
+    let filter l = List.filter (fun s -> s != summ) l in
+    match M.find_opt id ctx with
+    | Some (visited, unvisited) ->
+        M.add id (filter visited, filter unvisited) ctx
+    | None -> ctx
 
   let find ty (ctx : t) : value =
     match ty with
@@ -159,6 +168,6 @@ module Context = struct
     in
     aux (List.rev_map (fun ty -> find ty ctx) tys)
 
-  let visit (ctx : t) : t =
-    M.map (fun (visited, unvisited) -> (visited @ unvisited, [])) ctx
+  let update (ctx1 : t) (ctx2 : t) : t =
+    M.union (fun _ (v1, u1) (v2, u2) -> Some (v2 @ u2, v1 @ u1)) ctx1 ctx2
 end
