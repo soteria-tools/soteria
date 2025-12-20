@@ -717,12 +717,21 @@ module rec Bool : Bool = struct
     (* [Distinct l] when l is empty or of size 1 is always true *)
     match l with
     | [] | [ _ ] -> v_true
-    | l ->
+    | l -> (
         let cross_product = List.to_seq l |> Seq.self_cross_product in
-        let sure_distinct =
-          Seq.for_all (fun (a, b) -> sure_neq a b) cross_product
+        let rec aux seq =
+          match seq () with
+          | Seq.Nil -> Some true
+          | Seq.Cons ((a, b), rest) ->
+              if equal a b then Some false
+              else if sure_neq a b then aux rest
+              else None
         in
-        if sure_distinct then v_true else Nop (Distinct, l) <| TBool
+        let res = aux cross_product in
+        match res with
+        | Some true -> v_true
+        | Some false -> v_false
+        | None -> Nop (Distinct, l) <| TBool)
 end
 
 (** {2 Bit vectors} *)
