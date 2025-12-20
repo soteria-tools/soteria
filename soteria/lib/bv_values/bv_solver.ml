@@ -432,34 +432,52 @@ struct
   let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
     Hashtbl.Hint.create 1023
 
-  let trivial_model_works to_check =
-    (* We try a trivial model where replacing each variable with name
-    [|n|] with the corresponding integer [n]; except if an assertion
-    [|n| == v] exists, in which case we replace it with the value [v].
-    If the constraint evaluates to true, then it is satisfiable. *)
-    let v_eqs = Var.Hashtbl.create 8 in
-    Svalue.Bool.split_ands to_check (fun v ->
-        match v.node.kind with
-        | Binop
-            ( Eq,
-              { node = { kind = Var n; _ }; _ },
-              ({ node = { kind = BitVec _; _ }; _ } as x) )
-        | Binop
-            ( Eq,
-              ({ node = { kind = BitVec _; _ }; _ } as x),
-              { node = { kind = Var n; _ }; _ } ) ->
-            Var.Hashtbl.add v_eqs n x
-        | _ -> ());
-    let eval_var v_var v (ty : Svalue.ty) =
-      match ty with
-      | TBitVector n | TLoc n -> (
-          let i = Var.to_int v in
-          try Var.Hashtbl.find v_eqs v
-          with Not_found -> Svalue.BitVec.mk_masked n (Z.of_int i))
-      | _ -> v_var
+  let trivial_model_works solver to_check var_tys =
+    let exception No_model in
+    let value_generator : Svalue.ty -> unit -> Svalue.t = function
+      | TLoc n ->
+          let max = Z.(shift_left one n) in
+          fun () -> Svalue.Ptr.loc_of_z n (Z.random_int max)
+      | TBitVector n ->
+          let max = Z.(shift_left one n) in
+          fun () -> Svalue.BitVec.mk n (Z.random_int max)
+      | TBool -> fun () -> Svalue.Bool.bool (Random.bool ())
+      (* TODO: because we can't evaluate floats, we can never do a
+         trivial check for them. *)
+      | TFloat _ -> raise No_model
+      (* TODO: figure this out *)
+      | TPointer _ | TSeq _ -> raise No_model
     in
-    let res = Eval.eval ~eval_var to_check in
-    Svalue.equal res Svalue.Bool.v_true
+    let fuel = 3 in
+    try
+      let var_values =
+        Var.Map.fold
+          (fun v (ty : Svalue.ty) acc ->
+            let values =
+              Iter.forever (value_generator ty)
+              |> Analysis.filter solver.analysis v ty
+              |> Iter.take fuel
+              |> Iter.to_array
+            in
+            if Array.length values = 0 then raise No_model;
+            Var.Map.add v values acc)
+          var_tys Var.Map.empty
+      in
+      let rec aux i =
+        let rec eval_var _ v _ =
+          let values = Var.Map.find v var_values in
+          let index = i mod Array.length values in
+          match values.(index) with
+          | { node = { kind = Var var; ty }; _ } as v -> eval_var v var ty
+          | v -> v
+        in
+        let res = Eval.eval ~eval_var to_check in
+        if Svalue.equal res Svalue.Bool.v_true then true
+        else if i >= fuel then false
+        else aux (i + 1)
+      in
+      aux 0
+    with No_model -> false
 
   let check_sat_raw solver to_check =
     (* TODO: we shouldn't wait for ack for each command individually... *)
@@ -467,7 +485,7 @@ struct
       Svalue.iter_vars to_check
       |> Iter.fold (fun acc (v, ty) -> Var.Map.add v ty acc) Var.Map.empty
     in
-    if trivial_model_works to_check then Symex.Solver_result.Sat
+    if trivial_model_works solver to_check var_tys then Symex.Solver_result.Sat
     else (
       (* We need to reset the state, so we can push the new constraints *)
       Intf.reset solver.z3_exe;
@@ -512,8 +530,8 @@ struct
     |> Iter.to_list
 end
 
+open Analyses
+module Analysis = Merge (Interval) (Equality)
 module Z3 = Solvers.Z3.Make (Encoding)
-module Z3_incremental_solver = Make_incremental (Analyses.None) (Z3)
-
-module Z3_solver =
-  Make (Analyses.Merge (Analyses.Interval) (Analyses.Equality)) (Z3)
+module Z3_incremental_solver = Make_incremental (Analysis) (Z3)
+module Z3_solver = Make (Analysis) (Z3)
