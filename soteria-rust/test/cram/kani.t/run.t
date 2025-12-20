@@ -205,11 +205,10 @@ Test our simple Kani demo works
    10 │      let b: u32 = kani::any();
    11 │      if a + b < u32::MAX {
       │          ^^^^^ Triggering memory operation
-  PC 1: (((0xffffffff -ck V|1|) <u V|2|) || ((0xffffffff -ck V|2|) <u V|1|))
+  PC 1: (V|1| +u_ovf V|2|)
   
   note: saturating_add: done in <time>, ran 2 branches
-  PC 1: (V|1| <u (0xffffffff -ck V|2|)) /\ (V|1| <=u (0xffffffff -ck V|2|)) /\
-        (V|2| <=u (0xffffffff -ck V|1|))
+  PC 1: (V|1| <u (0xffffffff -ck V|2|)) /\ !((V|1| +u_ovf V|2|))
   PC 2: ((0xffffffff -ck V|2|) <=u V|1|)
   
   error: memory_leak: found issues in <time>, errors in 1 branch (out of 1)
