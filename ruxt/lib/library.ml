@@ -46,15 +46,17 @@ let get () =
     crate.fun_decls
     { constructors = []; fun_decls = []; drops = TypeDeclId.Map.empty }
 
-let infer_summaries ?summ_ctx f library : (Summary.Context.t, 'a) result =
+let infer_summaries ?summ_ctx ~fuel library : (Summary.Context.t, 'a) result =
   (* No context provided: initialize first context with constructors *)
   let summ_ctx, fun_decls =
     match summ_ctx with
     | Some summ_ctx -> (summ_ctx, library.fun_decls)
     | None -> (Summary.Context.empty, library.constructors)
   in
-  (* Fix drop context for wrappers *)
+  (* Set drop context for creating wrappers *)
   let wrap = Wrapper.make library.drops in
+  (* Set fuel for executing wrappers *)
+  let exec = Wrapper.exec ~fuel in
   (* Infer summaries and prune summary context  *)
   let+ summs, summ_ctx =
     ListLabels.fold_left fun_decls
@@ -67,7 +69,7 @@ let infer_summaries ?summ_ctx f library : (Summary.Context.t, 'a) result =
         IterLabels.fold snapshot ~init:acc ~f:(fun acc inputs ->
             let* summs, summ_ctx = acc in
             (* Obtain new summaries for specific inputs *)
-            let+ outputs = f wrapper inputs in
+            let+ outputs = exec wrapper inputs in
             (* Iterate over new summaries *)
             let fold_outputs f init =
               List.fold_left (fun ctx (ty, summ) -> f ty summ ctx) init outputs
