@@ -611,3 +611,109 @@ module Equality : S = struct
   let add_constraint st v = wrap (add_constraint v) st
   let encode ?vars:_ _st = Iter.empty
 end
+
+module Disjoint = struct
+  module VSet = Set.Make (Svalue)
+  module VMap = Map.Make (Svalue)
+
+  include Reversible.Make_mutable (struct
+    type t = VSet.t VMap.t
+
+    let default = VMap.empty
+  end)
+
+  let[@inline] sort (v1 : Svalue.t) (v2 : Svalue.t) =
+    if v1.tag < v2.tag then (v1, v2) else (v2, v1)
+
+  let var_set v =
+    Svalue.iter_vars v
+    |> Iter.map fst
+    |> Iter.fold (fun set x -> Var.Set.add x set) Var.Set.empty
+
+  (** Adds inequalities between all values in [vs] to the state [st], returning
+      the updated state along with the set of variables that are dirty (i.e.
+      something was learnt from this). *)
+  let add_inequalities vs st =
+    let dirty = ref VSet.empty in
+    let vs = List.sort (fun v1 v2 -> Int.compare v1.Hc.tag v2.Hc.tag) vs in
+    let rec aux st = function
+      | [] | [ _ ] -> st
+      | v1 :: rest ->
+          let st =
+            VMap.update v1
+              (fun s ->
+                let s = Option.value s ~default:VSet.empty in
+                let s, is_new' =
+                  List.fold_left
+                    (fun (s, is_new) v2 ->
+                      assert (v1.Hc.tag < v2.Hc.tag);
+                      if VSet.mem v2 s then (s, is_new)
+                      else (
+                        dirty := VSet.add v2 !dirty;
+                        (VSet.add v2 s, true)))
+                    (s, false) rest
+                in
+                if is_new' then dirty := VSet.add v1 !dirty;
+                Some s)
+              st
+          in
+          aux st rest
+    in
+    let st = aux st vs in
+    let dirty =
+      VSet.fold (fun v -> Var.Set.union (var_set v)) !dirty Var.Set.empty
+    in
+    (dirty, st)
+
+  let[@inline] is_relevant : Svalue.t -> bool = function
+    | { node = { ty = TLoc _; _ }; _ } -> true
+    | _ -> false
+
+  let add_constraint (v : Svalue.t) st =
+    match v.node.kind with
+    | Unop (Not, { node = { kind = Binop (Eq, l, r); _ }; _ })
+      when is_relevant l && is_relevant r ->
+        let l, r = sort l r in
+        let vars, st = add_inequalities [ l; r ] st in
+        ((Svalue.Bool.v_true, vars), st)
+    | Nop (Distinct, vs) when List.hd vs |> is_relevant ->
+        let vars, st = add_inequalities vs st in
+        ((Svalue.Bool.v_true, vars), st)
+    | _ -> ((v, Var.Set.empty), st)
+
+  let simplify (v : Svalue.t) st =
+    match v.node.kind with
+    | Binop (Eq, l, r) when is_relevant l && is_relevant r -> (
+        let l, r = sort l r in
+        match VMap.find_opt l st with
+        | None -> v
+        | Some s -> if VSet.mem r s then Svalue.Bool.v_false else v)
+    | Unop (Not, { node = { kind = Binop (Eq, l, r); _ }; _ })
+      when is_relevant l && is_relevant r -> (
+        let l, r = sort l r in
+        match VMap.find_opt l st with
+        | None -> v
+        | Some s -> if VSet.mem r s then Svalue.Bool.v_true else v)
+    | _ -> v
+
+  let simplify st v = wrap_read (simplify v) st
+  let add_constraint st v = wrap (add_constraint v) st
+  let mk_var n v = Typed.mk_var v (Typed.t_int n)
+  let uneq l r = Typed.not (Typed.sem_eq (Typed.type_ l) (Typed.type_ r))
+
+  let encode ?vars st : Typed.sbool Typed.t Iter.t =
+    let to_check =
+      Option.fold ~none:(fun _ -> true) ~some:Var.Hashset.mem vars
+    in
+    let to_check v =
+      Iter.exists to_check (Svalue.iter_vars v |> Iter.map fst)
+    in
+    wrap_read
+      (fun m f ->
+        VMap.iter
+          (fun v s ->
+            if to_check v then VSet.iter (fun v2 -> f (uneq v v2)) s
+            else VSet.iter (fun v2 -> if to_check v2 then f (uneq v v2)) s)
+          m)
+      st
+end
