@@ -1934,14 +1934,24 @@ and BitVec : BitVec = struct
     | _, BitVec z when Z.equal z Z.zero -> Bool.v_false
     | BitVec z, _ when Stdlib.not signed ->
         let n = size_of v1.node.ty in
-        let z = bv_to_z signed n z in
         let m = max_for signed n in
-        gt ~signed v2 (mk_masked n Z.(m - z))
+        gt ~signed v2 (mk n Z.(m - z))
     | _, BitVec z when Stdlib.not signed ->
         let n = size_of v1.node.ty in
-        let z = bv_to_z signed n z in
         let m = max_for signed n in
-        gt ~signed v1 (mk_masked n Z.(m - z))
+        gt ~signed v1 (mk n Z.(m - z))
+    | (BitVec z, x | x, BitVec z) when signed ->
+        let x = if x == v1.node.kind then v1 else v2 in
+        let n = size_of v1.node.ty in
+        let z = bv_to_z signed n z in
+        if Z.gt z Z.zero then
+          (* z > 0 so overflows if  max - z < x *)
+          let max = max_for signed n in
+          gt ~signed x (mk n (Z.sub max z))
+        else
+          (* z < 0 so overflows if x < min - z *)
+          let min = min_for signed n in
+          lt ~signed x (mk_masked n (Z.sub min z))
     | Unop (BvOfBool _, _), Unop (BvOfBool _, _) -> Bool.v_false
     | Unop (BvOfBool _, b), other | other, Unop (BvOfBool _, b) ->
         (* ite(b, 1, 0) + x only overflows if b && x == max *)
