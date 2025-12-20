@@ -605,6 +605,17 @@ module Equality : S = struct
            This also means this analysis is exempt from implementing [encode], since it
            doesn't store anything. *)
         ((v, Var.Set.empty), st)
+    | Unop (Not, { node = { kind = Nop (Distinct, hd :: tl); _ }; _ }) ->
+        let v1, st = get_or_make hd st in
+        let rec aux st = function
+          | [] -> st
+          | v2 :: rest ->
+              let v2, st = get_or_make v2 st in
+              merge v1 v2 st;
+              aux st rest
+        in
+        let st = aux st tl in
+        ((v, Var.Set.empty), st)
     | _ -> ((v, Var.Set.empty), st)
 
   let simplify st v = wrap_read (simplify v) st
