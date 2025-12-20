@@ -494,39 +494,28 @@ module Interval : S = struct
 
   let filter var ty vs st =
     match ty with
-    | Svalue.TBitVector _ -> (
+    | Svalue.TBitVector n -> (
         let range_opt = Var.Map.find_opt var st in
         match range_opt with
         | None -> vs
         | Some range ->
+            (* In sparsely populated ranges (e.g. [0, 1000] - [1, 999]), filtering
+               can be very slow since the odds of getting a valid integer is so low.
+               Because of this, we reset the iterator and generate values ourselves. *)
             let l, h = range.Data.pos in
-            Iter.filter
-              (fun (v : Svalue.t) ->
-                match v.node.kind with
-                | BitVec z ->
-                    Z.Compare.(l <= z && z <= h)
-                    && List.for_all
-                         (fun (m, n) -> Z.Compare.(z < m || n < z))
-                         range.Data.negs
-                | _ -> true)
-              vs
-        (* if it turns out too slow to filter for a valid value,
-           we could also just iterate over every value in the range: *)
-        (* let rec iter z f =
-            f (Svalue.BitVec.mk n z);
-
-            (* if a negative range exists, update to next value *)
-            let z = Z.succ z in
-            let neg =
-              List.find_opt
-                (fun (m, n) -> Z.Compare.(m <= z && z <= n))
-                range.Data.negs
+            let rec iter z f =
+              f (Svalue.BitVec.mk n z);
+              (* if a negative range exists, update to next value *)
+              let z = Z.succ z in
+              let neg =
+                List.find_opt
+                  (fun (m, n) -> Z.Compare.(m <= z && z <= n))
+                  range.Data.negs
+              in
+              let z' = match neg with None -> z | Some (_, n) -> Z.succ n in
+              if Z.Compare.(z' <= h) then iter z' f
             in
-            let z' = match neg with None -> z | Some (_, n) -> Z.succ n in
-            if Z.Compare.(z' <= h) then iter z' f
-          in
-          iter l *)
-        )
+            iter l)
     | _ -> vs
 
   let simplify st v = wrap_read (simplify v) st
