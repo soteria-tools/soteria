@@ -310,6 +310,14 @@ let mk_var v ty = Var v <| ty
 let mk_commut_binop op l r =
   if l.tag <= r.tag then Binop (op, l, r) else Binop (op, r, l)
 
+(** We put commutative n-ary operators in some sort of normal form where
+    elements are sorted by ud, to increase cache hits. If [idem] is true, will
+    also remove duplicates. *)
+let mk_commut_nop ?(idem = true) op vs =
+  let sort = if idem then List.sort_uniq else List.sort in
+  let vs = sort (fun l r -> Int.compare l.tag r.tag) vs in
+  Nop (op, vs)
+
 (* TODO: substitution will break normal forms. *)
 let rec subst subst_var sv =
   match sv.node.kind with
@@ -539,6 +547,7 @@ module rec Bool : Bool = struct
       | Binop (Eq, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }, v)
       | Binop (Eq, v, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }) ->
           sem_eq (BitVec.mk 1 Z.(one - bv)) v
+      | Nop (Distinct, [ l; r ]) -> sem_eq l r
       | _ -> Unop (Not, sv) <| TBool
 
   and ite guard if_ else_ =
@@ -705,7 +714,7 @@ module rec Bool : Bool = struct
     | _ when is_bv v1.node.ty && is_bv v2.node.ty ->
         let current_size = size_of v1.node.ty in
         let msb = max (BitVec.msb_of v1) (BitVec.msb_of v2) in
-        if 0 < msb && msb < current_size - 1 then
+        if 0 <= msb && msb < current_size - 1 then
           let v1' = BitVec.extract 0 msb v1 in
           let v2' = BitVec.extract 0 msb v2 in
           sem_eq v1' v2'
@@ -750,7 +759,7 @@ module rec Bool : Bool = struct
         match res with
         | Some true -> v_true
         | Some false -> v_false
-        | None -> Nop (Distinct, l) <| TBool)
+        | None -> mk_commut_nop Distinct l <| TBool)
 end
 
 (** {2 Bit vectors} *)
@@ -801,8 +810,8 @@ and BitVec : BitVec = struct
 
   let rec msb_of v =
     match v.node.kind with
-    | BitVec v when Z.(v > zero) -> Z.log2 v
-    | BitVec v when Z.(equal v zero) -> 0
+    | BitVec z when Z.(z > zero) -> Z.log2 z
+    | BitVec z when Z.(equal z zero) -> size_of v.node.ty - 1
     | Binop (BitAnd, bv1, bv2) -> min (msb_of bv1) (msb_of bv2)
     | Ite (_, l, r) -> max (msb_of l) (msb_of r)
     | Unop (BvExtend (false, __), v) -> msb_of v
@@ -1512,6 +1521,7 @@ and BitVec : BitVec = struct
     | _ -> mk_commut_binop (Mul { checked }) v1 v2 <| v1.node.ty
 
   let rec div ~signed v1 v2 =
+    assert (equal_ty v1.node.ty v2.node.ty);
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
         let size = size_of v1.node.ty in
@@ -1548,6 +1558,11 @@ and BitVec : BitVec = struct
       ->
         (* (x / n) / d = x / (n * d) (if n * d doesn't overflow) *)
         div ~signed x (mk (size_of v1.node.ty) Z.(n * d))
+    | Unop (BvExtend (false, by), x), BitVec z
+      when Stdlib.not signed && msb_of v2 < size_of x.node.ty ->
+        (* extend[uN](X) / N when msb(N) < size(X) <=> extend[uN](X / N) *)
+        let v2 = mk (size_of x.node.ty) z in
+        extend ~signed:false by (div ~signed x v2)
     | _ -> Binop (Div signed, v1, v2) <| v1.node.ty
 
   let rec lt ~signed v1 v2 =
