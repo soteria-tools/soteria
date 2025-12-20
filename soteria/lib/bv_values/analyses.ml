@@ -87,9 +87,6 @@ module Interval : S = struct
 
   type sign = Pos | Neg
 
-  (** Sign multiplication *)
-  let ( ** ) l r = if l = r then Pos else Neg
-
   let pp_sign fmt = function
     | Pos -> Fmt.string fmt "+"
     | Neg -> Fmt.string fmt "-"
@@ -404,7 +401,8 @@ module Interval : S = struct
        a disjunction! *)
     | Unop (Not, v) ->
         Option.map
-          (fun (v1, size, (sign, range)) -> (v1, size, (Neg ** sign, range)))
+          (fun (v1, size, (sign, range)) ->
+            (v1, size, ((if sign = Neg then Pos else Neg), range)))
           (as_range v)
     | _ -> None
 
