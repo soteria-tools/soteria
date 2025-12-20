@@ -140,6 +140,7 @@ module Binop = struct
     | Div of bool (* signed *)
     | Rem of bool (* signed *)
     | Mod
+    | AddOvf of bool (* signed *)
     | MulOvf of bool (* signed *)
     | Lt of bool (* signed *)
     | Leq of bool (* signed *)
@@ -174,6 +175,7 @@ module Binop = struct
     | Div s -> Fmt.pf ft "/%a" pp_signed s
     | Rem s -> Fmt.pf ft "rem%a" pp_signed s
     | Mod -> Fmt.string ft "mod"
+    | AddOvf s -> Fmt.pf ft "+%a_ovf" pp_signed s
     | MulOvf s -> Fmt.pf ft "*%a_ovf" pp_signed s
     | Lt s -> Fmt.pf ft "<%a" pp_signed s
     | Leq s -> Fmt.pf ft "<=%a" pp_signed s
@@ -1947,22 +1949,7 @@ and BitVec : BitVec = struct
         let max = max_for signed n in
         let other = other <| t_bv n in
         Bool.and_ b (Bool.sem_eq other (mk n max))
-    | _ ->
-        let size = size_of v1.node.ty in
-        if signed then
-          let sign_of v = lt ~signed v (zero size) in
-          let sign_l = sign_of v1 in
-          let sign_r = sign_of v2 in
-          let msb_res = sign_of (add v1 v2) in
-          Bool.and_
-            (Bool.sem_eq sign_l sign_r)
-            (Bool.not (Bool.sem_eq sign_l msb_res))
-        else
-          let max = max_for signed size in
-          let max = mk size max in
-          Bool.or_
-            (gt ~signed v1 (sub ~checked:true max v2))
-            (gt ~signed v2 (sub ~checked:true max v1))
+    | _ -> mk_commut_binop (AddOvf signed) v1 v2 <| TBool
 
   let mul_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -2015,7 +2002,7 @@ and BitVec : BitVec = struct
             let maxn = Z.pred (Z.shift_left Z.one n) in
             let bound = Z.(maxn / z) in
             gt ~signed (x <| v1.node.ty) (mk n bound)
-    | _ -> Binop (MulOvf signed, v1, v2) <| TBool
+    | _ -> mk_commut_binop (MulOvf signed) v1 v2 <| TBool
 
   let neg_overflows v =
     let n = size_of v.node.ty in
