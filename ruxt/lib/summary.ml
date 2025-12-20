@@ -138,13 +138,27 @@ module Context = struct
     | _ -> Custom ([], [])
 
   let iter_summs tys (ctx : t) f =
-    let rec aux ?(acc = []) = function
-      | [] -> f acc
-      | summs :: rest -> List.iter (fun s -> aux ~acc:(s :: acc) rest) summs
+    let rec aux ?(visited = false) ?(curr = []) ?(acc = []) = function
+      | [] ->
+          let acc = if visited then acc else curr :: acc in
+          let rec aux' ?(acc = []) = function
+            | [] -> f acc
+            | summs :: rest ->
+                List.iter (fun s -> aux' ~acc:(s :: acc) rest) summs
+          in
+          List.iter aux' acc
+      | Base summ :: values -> aux values ~curr:([ summ ] :: curr) ~acc
+      | Custom (visited, unvisited) :: values ->
+          let summs =
+            ListLabels.fold_left values ~init:(unvisited :: curr)
+              ~f:(fun acc -> function
+              | Base summ -> [ summ ] :: acc
+              | Custom (visited, unvisited) -> (visited @ unvisited) :: acc)
+          in
+          aux values ~visited:true ~curr:(visited :: curr) ~acc:(summs :: acc)
     in
-    let flatten_value = function
-      | Base summ -> [ summ ]
-      | Custom (visited, unvisited) -> visited @ unvisited
-    in
-    aux (List.rev_map (fun ty -> find ty ctx |> flatten_value) tys)
+    aux (List.rev_map (fun ty -> find ty ctx) tys)
+
+  let visit (ctx : t) : t =
+    M.map (fun (visited, unvisited) -> (visited @ unvisited, [])) ctx
 end

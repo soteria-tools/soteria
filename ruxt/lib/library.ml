@@ -46,20 +46,30 @@ let get () =
     crate.fun_decls
     { constructors = []; fun_decls = []; drops = TypeDeclId.Map.empty }
 
-let infer_summaries ?summ_ctx f library =
-  let wrap = Wrapper.make library.drops in
-  let f summ_ctx acc (fun_decl : Frontend.fun_decl) =
-    let wrapper, tys = wrap fun_decl in
-    let summs_iter = Summary.Context.iter_summs tys summ_ctx in
-    IterLabels.fold summs_iter ~init:acc ~f:(fun acc inputs ->
-        let* summ_ctx = acc in
-        let+ outputs = f wrapper inputs in
-        let update acc (ty, summ) = Summary.Context.add ty summ acc in
-        List.fold_left update summ_ctx outputs)
+let infer_summaries ?summ_ctx f library : (Summary.Context.t, 'a) result =
+  (* No context provided: initialize first context with constructors *)
+  let summ_ctx, fun_decls =
+    match summ_ctx with
+    | Some summ_ctx -> (summ_ctx, library.fun_decls)
+    | None -> (Summary.Context.empty, library.constructors)
   in
-  match summ_ctx with
-  | Some summ_ctx ->
-      List.fold_left (f summ_ctx) (Result.ok summ_ctx) library.fun_decls
-  | None ->
-      let summ_ctx = Summary.Context.empty in
-      List.fold_left (f summ_ctx) (Result.ok summ_ctx) library.constructors
+  (* Always iterate over a snapshot of the summary context *)
+  let iter_summs tys = Summary.Context.iter_summs tys summ_ctx in
+  (* Fix drop context for wrappers *)
+  let wrap = Wrapper.make library.drops in
+  (* Accumulate all inferred summaries *)
+  let+ ty_summs =
+    ListLabels.fold_left fun_decls ~init:(Result.ok [])
+      ~f:(fun acc (fun_decl : Frontend.fun_decl) ->
+        let wrapper, tys = wrap fun_decl in
+        let summs_iter = iter_summs tys in
+        IterLabels.fold summs_iter ~init:acc ~f:(fun acc inputs ->
+            let* ty_summs = acc in
+            let+ outputs = f wrapper inputs in
+            outputs @ ty_summs))
+  in
+  (* Mark all existing summaries as visited *)
+  let summ_ctx = Summary.Context.visit summ_ctx in
+  (* Add inferred summaries as unvisited *)
+  ListLabels.fold_left ty_summs ~init:summ_ctx ~f:(fun summ_ctx (ty, summ) ->
+      Summary.Context.add ty summ summ_ctx)
