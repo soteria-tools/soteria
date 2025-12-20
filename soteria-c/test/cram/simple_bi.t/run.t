@@ -23,7 +23,7 @@
                info = None })];
            globs = [] }
           ];
-        pc = [(0x0000000000000000 != V|1|); (V|2| <=u 0x7ffffffffffffffb)];
+        pc = [(V|2| <=u 0x7ffffffffffffffb); (0x0000000000000000 != V|1|)];
         post =
         { heap =
           [(V|1|,
@@ -122,7 +122,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
                info = None })];
            globs = [] }
           ];
-        pc = [(0x0000000000000000 != V|1|); (V|2| <=u 0x7ffffffffffffffb)];
+        pc = [(V|2| <=u 0x7ffffffffffffffb); (0x0000000000000000 != V|1|)];
         post =
         { heap =
           [(V|1|,
@@ -254,8 +254,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
            globs = [] }
           ];
         pc =
-        [(0x0000000000000000 != V|2|); (0x00000001 <=u V|1|);
-          (V|1| <=u 0x7fffffff); (V|3| <=u 0x7ffffffffffffffb)];
+        [(0x00000001 <=u V|1|); (V|1| <=u 0x7fffffff);
+          (V|3| <=u 0x7ffffffffffffffb); (0x0000000000000000 != V|2|)];
         post =
         { heap =
           [(V|2|,
@@ -308,8 +308,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
            globs = [] }
           ];
         pc =
-        [(0x0000000000000000 != V|1|); (V|3| == 0x00000001);
-          (V|2| <=u 0x7ffffffffffffffb); (V|3| == 0x00000001)];
+        [(V|3| == 0x00000001); (V|2| <=u 0x7ffffffffffffffb);
+          (V|3| == 0x00000001); (0x0000000000000000 != V|1|)];
         post =
         { heap =
           [(V|1|,
@@ -340,12 +340,9 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
             globs = [] }
           ];
         pc =
-        [(0x0000000000000000 != V|1|);
-          (0x0000000000000000 <=s (V|2| + 0x0000000000000004));
-          ((V|4| <s 0x00000000) != ((V|4| + V|5|) <s 0x00000000));
-          ((V|4| <s 0x00000000) == (V|5| <s 0x00000000));
-          (V|2| <=u 0x7ffffffffffffff7); (0x00000002 <=u V|3|);
-          (V|3| <=u 0x7fffffff)];
+        [(V|4| +s_ovf V|5|); (V|2| <=u 0x7ffffffffffffff7);
+          (0x00000002 <=u V|3|); (V|3| <=u 0x7fffffff);
+          (0x0000000000000000 != V|1|)];
         post =
         { heap =
           [(V|1|,
@@ -381,11 +378,9 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
             globs = [] }
           ];
         pc =
-        [(0x0000000000000000 != V|1|);
-          (0x0000000000000000 <=s (V|2| + 0x0000000000000004));
-          (((V|4| <s 0x00000000) == ((V|4| + V|5|) <s 0x00000000)) || ((V|4| <s 0x00000000) != (V|5| <s 0x00000000)));
-          (V|3| == 0x00000002); (V|2| <=u 0x7ffffffffffffff7);
-          (V|3| == 0x00000002)];
+        [!((V|4| +s_ovf V|5|)); (V|3| == 0x00000002);
+          (V|2| <=u 0x7ffffffffffffff7); (V|3| == 0x00000002);
+          (0x0000000000000000 != V|1|)];
         post =
         { heap =
           [(V|1|,
@@ -408,10 +403,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
   Summaries for add_561:
     Analysed {
       raw =
-      { args = [V|1|; V|2|]; pre = [];
-        pc =
-        [((V|1| <s 0x00000000) != ((V|1| + V|2|) <s 0x00000000));
-          ((V|1| <s 0x00000000) == (V|2| <s 0x00000000))];
+      { args = [V|1|; V|2|]; pre = []; pc = [(V|1| +s_ovf V|2|)];
         post = { heap = []; globs = [] };
         ret =
         (Error (Integer overflow,
@@ -420,10 +412,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       manifest_bugs = []}
     Analysed {
       raw =
-      { args = [V|1|; V|2|]; pre = [];
-        pc =
-        [(((V|1| <s 0x00000000) == ((V|1| + V|2|) <s 0x00000000)) || ((V|1| <s 0x00000000) != (V|2| <s 0x00000000)))
-          ];
+      { args = [V|1|; V|2|]; pre = []; pc = [!((V|1| +s_ovf V|2|))];
         post = { heap = []; globs = [] }; ret = (Ok (V|1| +ck V|2|)) };
       manifest_bugs = []}
   
