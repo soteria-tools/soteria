@@ -550,8 +550,8 @@ struct
     |> Iter.to_list
 end
 
+open Analyses
+module Analysis = Merge (Interval) (Equality)
 module Z3 = Solvers.Z3.Make (Encoding)
-module Z3_incremental_solver = Make_incremental (Analyses.None) (Z3)
-
-module Z3_solver =
-  Make (Analyses.Merge (Analyses.Interval) (Analyses.Equality)) (Z3)
+module Z3_incremental_solver = Make_incremental (Analysis) (Z3)
+module Z3_solver = Make (Analysis) (Z3)
