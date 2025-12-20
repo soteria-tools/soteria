@@ -1,8 +1,6 @@
-module Typed = Soteria_rust_lib.Typed
-module Rustsymex = Soteria_rust_lib.Rustsymex
-module Compo_res = Soteria.Symex.Compo_res
-module Rust_val = Soteria_rust_lib.Rust_val
+open Soteria_rust_lib
 open Rustsymex.Syntax
+open Soteria.Symex
 
 type t = {
   ret : Heap.Sptr.t Rust_val.t;
@@ -28,11 +26,17 @@ let fresh_vars summ =
   let+ subst_var = Subst.add_vars Subst.empty (iter_vars summ) in
   subst (Subst.to_fn subst_var) summ
 
-let produce (summ : t) st =
+let produce (summ : t) (st : Heap.t) :
+    (Heap.Sptr.t Rust_val.t * Heap.t) Rustsymex.t =
   let* summ = fresh_vars summ in
   let* () = Rustsymex.assume summ.pcs in
   let+ st = Heap.produce summ.state st in
   (summ.ret, st)
+
+let consume (_summ : t) (_ret : Heap.Sptr.t Rust_val.t) (_st : Heap.t) :
+    (Heap.t, [> Rustsymex.lfail ], Heap.serialized) Rustsymex.Result.t =
+  (* TODO: Actually implement summary consumption *)
+  Rustsymex.Result.error `NotImplemented
 
 let make ret pcs state =
   let module Var_graph = Soteria.Soteria_std.Graph.Make_in_place (Svalue.Var) in
@@ -117,11 +121,11 @@ module Context = struct
 
   let empty : t = M.empty
 
-  let ( let+ ) (ty, ctx) f =
+  let ( let@ ) (ty, ctx) f =
     match ty with TAdt { id = TAdtId id; _ } -> f id | _ -> ctx
 
   let add ty summ (ctx : t) : t =
-    let+ id = (ty, ctx) in
+    let@ id = (ty, ctx) in
     let opt_cons = function
       | None -> Some ([], [ summ ])
       | Some (visited, unvisited) -> Some (visited, summ :: unvisited)
@@ -129,12 +133,43 @@ module Context = struct
     M.update id opt_cons ctx
 
   let remove ty summ (ctx : t) : t =
-    let+ id = (ty, ctx) in
-    let filter l = List.filter (fun s -> s != summ) l in
-    match M.find_opt id ctx with
-    | Some (visited, unvisited) ->
-        M.add id (filter visited, filter unvisited) ctx
-    | None -> ctx
+    let@ id = (ty, ctx) in
+    let filter (visited, unvisited) =
+      let implies s_pre s_post =
+        let* ret, st = produce s_pre Heap.empty in
+        let** st = consume s_post ret st in
+        if st == Heap.empty then Rustsymex.Result.ok ()
+        else Rustsymex.Result.error `HeapNotEmpty
+      in
+      let filter_process summs =
+        ListLabels.fold_left summs ~init:(Rustsymex.Result.ok [])
+          ~f:(fun acc s ->
+            let** summs = acc in
+            let** () =
+              (* The new summary implies an existing summary: discard the new summary *)
+              let+ res = implies summ s in
+              match res with
+              | Compo_res.Ok () -> Compo_res.error `SummaryAlreadyExists
+              | _ -> Compo_res.Ok ()
+            in
+            let+ summs =
+              (* An existing summary implies the new summary: discard the existing summary *)
+              let+ res = implies s summ in
+              match res with Compo_res.Ok () -> summs | _ -> s :: summs
+            in
+            Compo_res.Ok summs)
+      in
+      let process =
+        let** unvisited = filter_process unvisited in
+        let++ visited = filter_process visited in
+        (visited, unvisited)
+      in
+      match Rustsymex.run_needs_stats ~mode:OX process with
+      | [ (Compo_res.Ok summs, _) ] -> summs
+      | [ (_, _) ] -> (visited, unvisited)
+      | _ -> failwith "Expected exactly 1 outcome"
+    in
+    M.update id (Option.map filter) ctx
 
   let find ty (ctx : t) : value =
     match ty with

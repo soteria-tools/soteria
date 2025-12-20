@@ -1,8 +1,7 @@
 module Config_ = Config
 open Soteria_rust_lib
 module Config = Config_
-module Wpst_interp = Interp.Make (Heap)
-module Compo_res = Soteria.Symex.Compo_res
+open Soteria.Symex
 open Syntaxes.FunctionWrap
 
 let ( let* ) = Result.bind
@@ -24,7 +23,7 @@ let exec_crate (crate : Crate.t) =
   (* Set fuel for wrapper execution *)
   let exec_wrapper =
     let soteria_fuel =
-      let open Soteria.Symex.Fuel_gauge in
+      let open Fuel_gauge in
       let fuel = function None -> Fuel_value.Infinite | Some i -> Finite i in
       { steps = fuel config.step_fuel; branching = fuel config.branch_fuel }
     in

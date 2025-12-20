@@ -1,6 +1,6 @@
+open Charon.Types
 module Frontend = Soteria_rust_lib.Frontend
 module Crate = Soteria_rust_lib.Crate
-open Charon.Types
 
 let ( let* ) = Result.bind
 let ( let+ ) x f = Result.map f x

@@ -1,8 +1,8 @@
 open Soteria_rust_lib
-module Wpst_interp = Interp.Make (Heap)
-module Compo_res = Soteria.Symex.Compo_res
 open Rustsymex.Syntax
+open Soteria.Symex
 open Charon.Types
+module Wpst_interp = Interp.Make (Heap)
 
 module Symok = struct
   let unwrap res =
