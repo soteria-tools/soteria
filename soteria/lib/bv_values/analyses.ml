@@ -716,7 +716,8 @@ module Disjoint = struct
       something was learnt from this). *)
   let add_inequalities vs st =
     let dirty = ref VSet.empty in
-    let vs = List.sort (fun v1 v2 -> Int.compare v1.Hc.tag v2.Hc.tag) vs in
+    let dirty_v v = if ineq_matters v then dirty := VSet.add v !dirty in
+    let vs = List.sort_uniq (fun v1 v2 -> Int.compare v1.Hc.tag v2.Hc.tag) vs in
     let rec aux st = function
       | [] | [ _ ] -> st
       | v1 :: rest ->
@@ -730,11 +731,11 @@ module Disjoint = struct
                       assert (v1.Hc.tag < v2.Hc.tag);
                       if VSet.mem v2 s then (s, is_new)
                       else (
-                        dirty := VSet.add v2 !dirty;
+                        dirty_v v2;
                         (VSet.add v2 s, true)))
                     (s, false) rest
                 in
-                if is_new' then dirty := VSet.add v1 !dirty;
+                if is_new' then dirty_v v1;
                 Some s)
               st
           in
@@ -762,19 +763,26 @@ module Disjoint = struct
         ((Svalue.Bool.v_true, vars), st)
     | _ -> ((v, Var.Set.empty), st)
 
+  let sure_neq l r st =
+    let l, r = sort l r in
+    match VMap.find_opt l st with None -> false | Some s -> VSet.mem r s
+
   let simplify (v : Svalue.t) st =
     match v.node.kind with
-    | Binop (Eq, l, r) when is_relevant l && is_relevant r -> (
-        let l, r = sort l r in
-        match VMap.find_opt l st with
-        | None -> v
-        | Some s -> if VSet.mem r s then Svalue.Bool.v_false else v)
+    | Binop (Eq, l, r) when is_relevant l && is_relevant r && sure_neq l r st ->
+        Svalue.Bool.v_false
     | Unop (Not, { node = { kind = Binop (Eq, l, r); _ }; _ })
-      when is_relevant l && is_relevant r -> (
-        let l, r = sort l r in
-        match VMap.find_opt l st with
-        | None -> v
-        | Some s -> if VSet.mem r s then Svalue.Bool.v_true else v)
+      when is_relevant l && is_relevant r && sure_neq l r st ->
+        Svalue.Bool.v_true
+    | Nop (Distinct, vs) ->
+        let cross_product = List.to_seq vs |> Seq.self_cross_product in
+        let rec aux seq =
+          match seq () with
+          | Seq.Nil -> Svalue.Bool.v_true
+          | Seq.Cons ((l, r), rest) when sure_neq l r st -> aux rest
+          | _ -> v
+        in
+        aux cross_product
     | _ -> v
 
   let filter v ty st =
@@ -792,8 +800,10 @@ module Disjoint = struct
   let uneq l r = Typed.not (Typed.sem_eq (Typed.type_ l) (Typed.type_ r))
 
   let encode ?vars st : Typed.sbool Typed.t Iter.t =
-    let to_check =
-      Option.fold ~none:(fun _ -> true) ~some:Var.Hashset.mem vars
+    let to_check, ineq_matters =
+      match vars with
+      | Some vars -> (Var.Hashset.mem vars, ineq_matters)
+      | None -> ((fun _ -> true), fun _ -> true)
     in
     let to_check v =
       Iter.exists to_check (Svalue.iter_vars v |> Iter.map fst)
@@ -802,8 +812,14 @@ module Disjoint = struct
       (fun m f ->
         VMap.iter
           (fun v s ->
-            if to_check v then VSet.iter (fun v2 -> f (uneq v v2)) s
-            else VSet.iter (fun v2 -> if to_check v2 then f (uneq v v2)) s)
+            if to_check v then
+              VSet.iter
+                (fun v2 -> if ineq_matters v2 || to_check v2 then f (uneq v v2))
+                s
+            else
+              VSet.iter
+                (fun v2 -> if ineq_matters v2 && to_check v2 then f (uneq v v2))
+                s)
           m)
       st
 end
