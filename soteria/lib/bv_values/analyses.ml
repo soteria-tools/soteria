@@ -16,6 +16,10 @@ module type S = sig
       data. *)
   val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
 
+  (** Filters the given iterator of symbolic values, keeping only those relevant
+      to the given variable according to the analysis. *)
+  val filter : t -> Var.t -> Svalue.ty -> Svalue.t Iter.t -> Svalue.t Iter.t
+
   (** Encode all the information relevant to the given variables and conjuncts
       them with the given accumulator. *)
   val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
@@ -45,6 +49,9 @@ module Merge (A1 : S) (A2 : S) : S = struct
     let v'', vars2 = A2.add_constraint a2 v' in
     (v'', Var.Set.union vars1 vars2)
 
+  let filter (a1, a2) var ty vs =
+    vs |> A1.filter a1 var ty |> A2.filter a2 var ty
+
   let encode ?vars (a1, a2) : Typed.sbool Typed.t Iter.t =
     Iter.append (A1.encode ?vars a1) (A2.encode ?vars a2)
 end
@@ -58,6 +65,7 @@ module None : S = struct
   let reset () = ()
   let simplify () v = v
   let add_constraint () v = (v, Var.Set.empty)
+  let filter () _ _ vs = vs
   let encode ?vars:_ () = Iter.empty
 end
 
@@ -484,8 +492,46 @@ module Interval : S = struct
     else log (fun m -> m "No change.@.");
     ((v' &&@ learnt, vars), st')
 
+  let filter var ty vs st =
+    match ty with
+    | Svalue.TBitVector _ -> (
+        let range_opt = Var.Map.find_opt var st in
+        match range_opt with
+        | None -> vs
+        | Some range ->
+            let l, h = range.Data.pos in
+            Iter.filter
+              (fun (v : Svalue.t) ->
+                match v.node.kind with
+                | BitVec z ->
+                    Z.Compare.(l <= z && z <= h)
+                    && List.for_all
+                         (fun (m, n) -> Z.Compare.(z < m || n < z))
+                         range.Data.negs
+                | _ -> true)
+              vs
+        (* if it turns out too slow to filter for a valid value,
+           we could also just iterate over every value in the range: *)
+        (* let rec iter z f =
+            f (Svalue.BitVec.mk n z);
+
+            (* if a negative range exists, update to next value *)
+            let z = Z.succ z in
+            let neg =
+              List.find_opt
+                (fun (m, n) -> Z.Compare.(m <= z && z <= n))
+                range.Data.negs
+            in
+            let z' = match neg with None -> z | Some (_, n) -> Z.succ n in
+            if Z.Compare.(z' <= h) then iter z' f
+          in
+          iter l *)
+        )
+    | _ -> vs
+
   let simplify st v = wrap_read (simplify v) st
   let add_constraint st v = wrap (add_constraint v) st
+  let filter st var ty vs = wrap_read (filter var ty vs) st
 
   let encode ?vars st : Typed.sbool Typed.t Iter.t =
     let to_check =
@@ -616,8 +662,18 @@ module Equality : S = struct
         ((v, Var.Set.empty), st)
     | _ -> ((v, Var.Set.empty), st)
 
+  (** In equality analysis we can be certain of the value of a variable, so we
+      can entirely replace the set of possible values [vs] with the
+      representative value (if any). *)
+  let filter var ty vs st =
+    let v = Svalue.mk_var var ty in
+    match find_cheaper_opt v st with
+    | None -> vs
+    | Some v_repr -> Iter.singleton v_repr
+
   let simplify st v = wrap_read (simplify v) st
   let add_constraint st v = wrap (add_constraint v) st
+  let filter st var ty vs = wrap_read (filter var ty vs) st
   let encode ?vars:_ _st = Iter.empty
 end
 
@@ -630,6 +686,12 @@ module Disjoint = struct
 
     let default = VMap.empty
   end)
+
+  let pp ft st =
+    Fmt.(
+      iter_bindings VMap.iter
+        (pair ~sep:(any " -> ") Svalue.pp (iter VSet.iter Svalue.pp)))
+      ft st
 
   let[@inline] sort (v1 : Svalue.t) (v2 : Svalue.t) =
     if v1.tag < v2.tag then (v1, v2) else (v2, v1)
@@ -675,7 +737,9 @@ module Disjoint = struct
     (dirty, st)
 
   let[@inline] is_relevant : Svalue.t -> bool = function
-    | { node = { ty = TLoc _; _ }; _ } -> true
+    | { node = { ty = TLoc _; _ }; _ }
+    | { node = { kind = BitVec _ | Var _; _ }; _ } ->
+        true
     | _ -> false
 
   let add_constraint (v : Svalue.t) st =
@@ -705,8 +769,17 @@ module Disjoint = struct
         | Some s -> if VSet.mem r s then Svalue.Bool.v_true else v)
     | _ -> v
 
+  let filter v ty st =
+    let v1 = Svalue.mk_var v ty in
+    Iter.filter (fun v2 ->
+        let v1, v2 = sort v1 v2 in
+        match VMap.find_opt v1 st with
+        | None -> true
+        | Some s -> not (VSet.mem v2 s))
+
   let simplify st v = wrap_read (simplify v) st
   let add_constraint st v = wrap (add_constraint v) st
+  let filter st var ty = wrap_read (filter var ty) st
   let mk_var n v = Typed.mk_var v (Typed.t_int n)
   let uneq l r = Typed.not (Typed.sem_eq (Typed.type_ l) (Typed.type_ r))
 
