@@ -31,7 +31,7 @@ module Outcome = struct
     | Fatal -> Color.pp_clr `Yellow ft "unknown"
 end
 
-let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
+let pp_branches = Printers.pp_plural ~sing:"branch" ~plur:"branches"
 
 let print_pcs pcs =
   let open Fmt in
