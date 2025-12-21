@@ -13,10 +13,8 @@ type t = {
 
 let get () =
   let crate = Crate.get_crate () in
-  let is_drop (fun_decl : Frontend.fun_decl) =
-    match fun_decl.src with
-    | TraitImplItem (_, _, "drop", _) -> true
-    | _ -> false
+  let is_drop ({ src; _ } : Frontend.fun_decl) =
+    match src with TraitImplItem (_, _, "drop", _) -> true | _ -> false
   in
   let update_drops (fun_decl : Frontend.fun_decl) library =
     match List.hd fun_decl.signature.inputs with
@@ -24,14 +22,13 @@ let get () =
         { library with drops = TypeDeclId.Map.add id fun_decl library.drops }
     | _ -> failwith "Library with invalid drop signature"
   in
-  let can_infer (fun_decl : Frontend.fun_decl) =
-    fun_decl.item_meta.is_local
-    && (not fun_decl.signature.is_unsafe)
-    && (fun_decl.item_meta.attr_info.public || not !Config.current.only_public)
+  let can_infer ({ item_meta; signature; _ } : Frontend.fun_decl) =
+    item_meta.is_local
+    && (not signature.is_unsafe)
+    && (item_meta.attr_info.public || not !Config.current.only_public)
   in
-  let is_constructor (fun_decl : Frontend.fun_decl) =
-    let is_base ty = match ty with TLiteral _ -> true | _ -> false in
-    List.fold_left (fun b ty -> b && is_base ty) true fun_decl.signature.inputs
+  let is_constructor ({ signature = { inputs; _ }; _ } : Frontend.fun_decl) =
+    List.for_all Summary.Context.is_base_ty inputs
   in
   let update_fun_decls (fun_decl : Frontend.fun_decl) library =
     if is_constructor fun_decl then
@@ -59,8 +56,9 @@ let infer_summaries ?summ_ctx ~fuel library : (Summary.Context.t, 'a) result =
   let exec = Wrapper.exec ~fuel in
   (* Infer summaries and prune summary context  *)
   let+ summs, summ_ctx =
+    let summs = Summary.Context.empty in
     ListLabels.fold_left fun_decls
-      ~init:(Result.ok (Summary.Context.empty, summ_ctx))
+      ~init:(Result.ok (summs, summ_ctx))
       ~f:(fun acc (fun_decl : Frontend.fun_decl) ->
         let* _, summ_ctx = acc in
         let wrapper, tys = wrap fun_decl in

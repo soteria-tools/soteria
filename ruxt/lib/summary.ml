@@ -1,6 +1,5 @@
 open Soteria_rust_lib
 open Rustsymex.Syntax
-open Soteria.Symex
 
 type t = {
   ret : Heap.Sptr.t Rust_val.t;
@@ -104,22 +103,17 @@ let make ret pcs state =
   in
   Result.ok { ret; pcs; state }
 
-let base ty =
-  let process = Soteria_rust_lib.Layout.nondet (TLiteral ty) in
-  match Rustsymex.run ~mode:UX process with
-  | [ (Compo_res.Ok ret, pcs) ] ->
-      { ret; pcs; state = Heap.serialize Heap.empty }
-  | _ -> failwith "nondet for literals should have exactly 1 Ok outcome"
-
 module Context = struct
+  open Soteria.Symex
   open Charon.Types
   module M = TypeDeclId.Map
 
   (* Each custom type has separate lists for visited and unvisited summaries *)
-  type value = Base of t | Custom of t list * t list
+  type value = Base of t list | Custom of t list * t list
   type nonrec t = (t list * t list) M.t
 
   let empty : t = M.empty
+  let is_base_ty ty = match ty with TLiteral _ -> true | _ -> false
 
   let ( let@ ) (ty, ctx) f =
     match ty with TAdt { id = TAdtId id; _ } -> f id | _ -> ctx
@@ -149,7 +143,7 @@ module Context = struct
               (* The new summary implies an existing summary: discard the new summary *)
               let+ res = implies summ s in
               match res with
-              | Compo_res.Ok () -> Compo_res.error `SummaryAlreadyExists
+              | Compo_res.Ok () -> Compo_res.Error `SummaryAlreadyExists
               | _ -> Compo_res.Ok ()
             in
             let+ summs =
@@ -172,14 +166,22 @@ module Context = struct
     M.update id (Option.map filter) ctx
 
   let find ty (ctx : t) : value =
+    let nondet ty =
+      let state = Heap.serialize Heap.empty in
+      Rustsymex.run_needs_stats ~mode:UX @@ Layout.nondet ty
+      |> List.map (function
+           | Compo_res.Ok ret, pcs -> { ret; pcs; state }
+           | _ -> failwith "Expected Ok in nondet")
+    in
     match ty with
     | TAdt { id = TAdtId id; _ } ->
         let visited, unvisited =
           Option.value ~default:([], []) (M.find_opt id ctx)
         in
         Custom (visited, unvisited)
-    | TLiteral lit -> Base (base lit)
-    | _ -> Custom ([], [])
+    | ty ->
+        if is_base_ty ty then Base (nondet ty)
+        else failwith "Type not supported"
 
   let iter_summs tys (ctx : t) f =
     let rec aux ?(visited = false) ?(curr = []) ?(acc = []) = function
@@ -191,18 +193,18 @@ module Context = struct
                 List.iter (fun s -> aux' ~acc:(s :: acc) rest) summs
           in
           List.iter aux' acc
-      | Base summ :: values -> aux values ~curr:([ summ ] :: curr) ~acc
+      | Base summs :: values -> aux values ~curr:(summs :: curr) ~acc
       | Custom (visited, unvisited) :: values ->
           let summs =
             ListLabels.fold_left values ~init:(unvisited :: curr)
               ~f:(fun acc -> function
-              | Base summ -> [ summ ] :: acc
+              | Base summs -> summs :: acc
               | Custom (visited, unvisited) -> (visited @ unvisited) :: acc)
           in
           aux values ~visited:true ~curr:(visited :: curr) ~acc:(summs :: acc)
     in
-    aux (List.rev_map (fun ty -> find ty ctx) tys)
+    try aux (List.rev_map (fun ty -> find ty ctx) tys) with _ -> f []
 
-  let update (ctx1 : t) (ctx2 : t) : t =
-    M.union (fun _ (v1, u1) (v2, u2) -> Some (v2 @ u2, v1 @ u1)) ctx1 ctx2
+  let update (summs : t) (ctx : t) : t =
+    M.union (fun _ (_, summs) (v, u) -> Some (v @ u, summs)) summs ctx
 end
