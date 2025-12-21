@@ -1,5 +1,5 @@
 Test kani::any
-  $ soteria-rust rustc any.rs --clean --no-timing --kani
+  $ soteria-rust rustc any.rs --clean --diffable --kani
   Compiling... done in <time>
   note: any_bool: done in <time>, ran 2 branches
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
@@ -10,10 +10,8 @@ Test kani::any
   PC 2: (0x80 <=u V|1|)
   PC 3: (0x01 <=u V|1|) /\ (V|1| <=u 0x7f)
   
-
-
 Test kani::assume
-  $ soteria-rust rustc assume.rs --clean --no-timing --kani
+  $ soteria-rust rustc assume.rs --clean --diffable --kani
   Compiling... done in <time>
   note: assume_bool: done in <time>, ran 1 branch
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
@@ -21,18 +19,14 @@ Test kani::assume
   note: assume_i32: done in <time>, ran 1 branch
   PC 1: (0x00000001 <=u V|1|)
   
-
-
 Test #[kani::should_panic]
-  $ soteria-rust rustc should_panic.rs --clean --no-timing --kani
+  $ soteria-rust rustc should_panic.rs --clean --diffable --kani
   Compiling... done in <time>
   note: when_at_the_disco: done in <time>, ran 1 branch
   PC 1: empty
   
-
-
 Test kani::assert
-  $ soteria-rust rustc assert.rs --clean --no-timing --kani
+  $ soteria-rust rustc assert.rs --clean --diffable --kani
   Compiling... done in <time>
   error: assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: Expected true! in assert_false
@@ -89,11 +83,11 @@ Test kani::assert
   [1]
 
 Test kani::slice::any_slice_of_array
-  $ echo "Skipped; can't read symbolic slice" # soteria-rust rustc any_slice.rs --clean --no-timing --kani
+  $ echo "Skipped; can't read symbolic slice" # soteria-rust rustc any_slice.rs --clean --diffable --kani
   Skipped; can't read symbolic slice
 
 Test kani::vec::any_vec
-  $ soteria-rust rustc any_vec.rs --clean --no-timing --kani
+  $ soteria-rust rustc any_vec.rs --clean --diffable --kani
   Compiling... done in <time>
   note: len_capacity_invariant: done in <time>, ran 17 branches
   PC 1: (extract[0-1](V|18|) == 0b00) /\ (0x0000000000000000 == V|1|) /\
@@ -194,7 +188,7 @@ Test kani::vec::any_vec
          (V|18| <=u 0x7fffffffffffffbe)
   
 Test our simple Kani demo works
-  $ soteria-rust rustc demo.rs --clean --no-timing --kani
+  $ soteria-rust rustc demo.rs --clean --diffable --kani
   Compiling... done in <time>
   error: saturating_add_overflow: found issues in <time>, errors in 1 branch (out of 3)
   error: Overflow in saturating_add_overflow
@@ -213,7 +207,7 @@ Test our simple Kani demo works
   PC 2: ((0xffffffff -ck V|2|) <=u V|1|)
   
   error: memory_leak: found issues in <time>, errors in 1 branch (out of 1)
-  warning: Memory leak at ../alloc/src/alloc.rs:251:9-39 in memory_leak
+  warning: Memory leak at ../alloc/src/alloc.rs:<range> in memory_leak
       ┌─ $TESTCASE_ROOT/demo.rs:32:2
    32 │  fn memory_leak() {
       │   ^^^^^^^^^^^^^^^^

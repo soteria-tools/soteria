@@ -1,8 +1,8 @@
 Test memory leaks
-  $ soteria-rust rustc leak.rs --clean --no-timing
+  $ soteria-rust rustc leak.rs --clean --diffable
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
-  warning: Memory leak at ../alloc/src/alloc.rs:251:9-39 in main
+  warning: Memory leak at ../alloc/src/alloc.rs:<range> in main
       ┌─ $TESTCASE_ROOT/leak.rs:1:2
     1 │  fn main() {
       │   ^^^^^^^^^
@@ -15,28 +15,25 @@ Test memory leaks
   [1]
 
 Test reading the max and min chars (used to crash Charon-ML)
-  $ soteria-rust rustc char_min_max.rs --clean --no-timing
+  $ soteria-rust rustc char_min_max.rs --clean --diffable
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
-
 Test casting between integer types
-  $ soteria-rust rustc int_casting.rs --clean --no-timing
+  $ soteria-rust rustc int_casting.rs --clean --diffable
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
-
 Splitting and merging, via a union
-  $ soteria-rust rustc split_merges.rs --clean --no-timing
+  $ soteria-rust rustc split_merges.rs --clean --diffable
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
-
 Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
-  $ soteria-rust rustc unwind.rs --clean --no-timing --ignore-leaks
+  $ soteria-rust rustc unwind.rs --clean --diffable --ignore-leaks
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: assertion failed: result.is_err() in main
@@ -53,7 +50,7 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   
   [1]
 Test that we properly handle the niche optimisation
-  $ soteria-rust rustc niche_optim.rs --clean --no-timing --ignore-leaks
+  $ soteria-rust rustc niche_optim.rs --clean --diffable --ignore-leaks
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: (extract[0-1](V|1|) == 0b00) /\ (0b00 == extract[0-1](V|2|)) /\
@@ -63,7 +60,7 @@ Test that we properly handle the niche optimisation
         (V|3| <=u 0x7ffffffffffffffa)
   
 Test function calls on function pointers
-  $ soteria-rust rustc fn_ptr.rs --clean --no-timing
+  $ soteria-rust rustc fn_ptr.rs --clean --diffable
   Compiling... done in <time>
   note: fn_ptr_call: done in <time>, ran 1 branch
   PC 1: empty
@@ -95,7 +92,7 @@ Test function calls on function pointers
   [1]
 
 Check strict provenance disables int to ptr casts
-  $ soteria-rust rustc provenance.rs --clean --no-timing --provenance strict
+  $ soteria-rust rustc provenance.rs --clean --diffable --provenance strict
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Attempted ot cast integer to pointer with strict provenance in main
@@ -115,7 +112,7 @@ Check strict provenance disables int to ptr casts
   [1]
 
 Check permissive provenance allows int to ptr casts
-  $ soteria-rust rustc provenance.rs --clean --no-timing --provenance permissive
+  $ soteria-rust rustc provenance.rs --clean --diffable --provenance permissive
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   bug: UB: dangling pointer in main
@@ -134,7 +131,7 @@ Check permissive provenance allows int to ptr casts
   [1]
 
 Check corner cases with permissive provenance, around transmutes
-  $ soteria-rust rustc provenance_transmute.rs --clean --no-timing --provenance permissive
+  $ soteria-rust rustc provenance_transmute.rs --clean --diffable --provenance permissive
   Compiling... done in <time>
   error: addr_doesnt_expose: found issues in <time>, errors in 1 branch (out of 1)
   bug: UB: dangling pointer in addr_doesnt_expose
@@ -169,7 +166,7 @@ Check corner cases with permissive provenance, around transmutes
   [1]
 
 Test transmutations keeping the bit-patterns the same
-  $ soteria-rust rustc transmute_roundtrip.rs --clean --no-timing
+  $ soteria-rust rustc transmute_roundtrip.rs --clean --diffable
   Compiling... done in <time>
   note: one_way_u32_f32: done in <time>, ran 1 branch
   PC 1: (bv2f[F32](V|1|) == bv2f[F32](V|2|)) /\ !(fis(NaN)(bv2f[F32](V|1|))) /\

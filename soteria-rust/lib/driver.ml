@@ -33,11 +33,6 @@ end
 
 let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
 
-let pp_time ft t =
-  if !Config.current.no_timing then Fmt.pf ft "<time>"
-  else if t < 0.05 then Fmt.pf ft "%ams" (Fmt.float_dfrac 2) (t *. 1000.)
-  else Fmt.pf ft "%as" (Fmt.float_dfrac 2) t
-
 let print_pcs pcs =
   let open Fmt in
   let pp_pc ft (pc, i) =
@@ -58,7 +53,8 @@ let print_outcomes entry_name f =
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
-        "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
+        "%s: done in %a, ran %a" entry_name Printers.pp_time time pp_branches
+        ntotal;
       print_pcs pcs;
       Fmt.pr "@.@.";
       (entry_name, Outcome.Ok)
@@ -70,8 +66,8 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
-        time pp_branches err_branches ntotal;
+        "%s: found issues in %a, errors in %a (out of %d)" entry_name
+        Printers.pp_time time pp_branches err_branches ntotal;
       Fmt.pr "@.";
       let () =
         let@ error, call_trace, pcs = Fun.flip List.iter errs in
@@ -93,7 +89,7 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
+        "%s (%a): %s, %s@.@." entry_name Printers.pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
@@ -209,7 +205,7 @@ let wrap_step name f =
     let time = Unix.gettimeofday () in
     let res = f () in
     let time = Unix.gettimeofday () -. time in
-    Fmt.pr " done in %a@." pp_time time;
+    Fmt.pr " done in %a@." Printers.pp_time time;
     res
   with e ->
     let bt = Printexc.get_raw_backtrace () in
