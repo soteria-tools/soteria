@@ -50,9 +50,6 @@ type t = {
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
-  print_stats : bool; [@make.default false] [@names [ "stats" ]]
-      (** If statistics about the execution should be printed at the end of each
-          test *)
   (*
      Symbolic execution behaviour
    *)
@@ -82,6 +79,7 @@ type global = {
       [@term Soteria.Terminal.Config.cmdliner_term ()]
   solver : Soteria.Solvers.Config.t;
       [@term Soteria.Solvers.Config.cmdliner_term ()]
+  stats : Soteria.Stats.Config.t; [@term Soteria.Stats.Config.cmdliner_term ()]
   rusteria : t; [@term term]
 }
 [@@deriving make, subliner]
@@ -94,4 +92,5 @@ let set (config : global) =
   Soteria.Solvers.Config.set config.solver;
   Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
+  Soteria.Stats.Config.set_and_lock config.stats;
   current := config.rusteria

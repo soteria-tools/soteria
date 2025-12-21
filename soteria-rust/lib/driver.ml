@@ -99,31 +99,6 @@ let print_outcomes_summary outcomes =
     (list ~sep:(any "@\n") pp_outcome)
     outcomes
 
-let print_stats (stats : 'a Stats.stats) =
-  let open Fmt in
-  let entries =
-    [
-      ("Steps", fun ft () -> int ft stats.steps_number);
-      ("Branches", fun ft () -> int ft stats.branch_number);
-      ("Total time", fun ft () -> pp_time ft stats.exec_time);
-      ( "Execution time",
-        fun ft () ->
-          Fmt.pf ft "%a (%a%%)" pp_time
-            (stats.exec_time -. stats.sat_time)
-            (float_dfrac 2)
-            (100. *. (stats.exec_time -. stats.sat_time) /. stats.exec_time) );
-      ( "Solver time",
-        fun ft () ->
-          Fmt.pf ft "%a (%a%%)" pp_time stats.sat_time (float_dfrac 2)
-            (100. *. stats.sat_time /. stats.exec_time) );
-      ("SAT checks", fun ft () -> int ft stats.sat_checks);
-    ]
-  in
-  let pp_entry ft (name, pp_value) = Fmt.pf ft " • %s: %a" name pp_value () in
-  pr "%a:@\n%a@\n" (pp_style `Bold) "Statistics"
-    (list ~sep:(any "@\n") pp_entry)
-    entries
-
 let exec_crate
     ( (crate : Charon.UllbcAst.crate),
       (entry_points : 'fuel Frontend.entry_point list) ) =
@@ -147,7 +122,7 @@ let exec_crate
     @@ exec_fun entry.fun_decl
   in
 
-  if !Config.current.print_stats then print_stats stats;
+  Rustsymex.Stats.output stats;
 
   (* inverse ok and errors if we expect a failure *)
   let nbranches = List.length branches in
