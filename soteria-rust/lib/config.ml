@@ -18,6 +18,10 @@ type t = {
   no_compile_plugins : bool;
       [@make.default false] [@names [ "no-compile-plugins" ]]
       (** Do not compile the plugins, as they are already compiled *)
+  plugin_directory : string option;
+      [@names [ "plugins" ]] [@env "RUSTERIA_PLUGINS"]
+      (** The directory in which plugins are and should be compiled; defaults to
+          the current dune-managed site. *)
   target : string option; [@names [ "target" ]] [@env "TARGET"]
       (** The compilation target triple to use, e.g. x86_64-unknown-linux-gnu.
           If not provided, the default target for the current machine is used.
