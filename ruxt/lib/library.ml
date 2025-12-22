@@ -21,8 +21,9 @@ let get () =
         { library with drops = TypeDeclId.Map.add id fun_decl library.drops }
     | _ -> failwith "Library with invalid drop signature"
   in
-  let can_infer ({ item_meta; signature; _ } : Frontend.fun_decl) =
-    item_meta.is_local
+  let can_infer ({ src; item_meta; signature; _ } : Frontend.fun_decl) =
+    src = TopLevelItem
+    && item_meta.is_local
     && (not signature.is_unsafe)
     && (item_meta.attr_info.public || not !Config.current.only_public)
   in

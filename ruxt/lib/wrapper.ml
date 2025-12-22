@@ -42,9 +42,8 @@ module Symok = struct
     | _ -> none
 end
 
-type t = Summary.t list -> process
-
-and process =
+type t =
+  Summary.t list ->
   ( Heap.Sptr.t Rust_val.t * Heap.t * ty,
     Error.t Heap.err,
     Heap.serialized )
