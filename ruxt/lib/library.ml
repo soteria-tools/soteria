@@ -1,9 +1,8 @@
+module Config_ = Config
+open Soteria_rust_lib
+module Config = Config_
+open Result.Syntax
 open Charon.Types
-module Frontend = Soteria_rust_lib.Frontend
-module Crate = Soteria_rust_lib.Crate
-
-let ( let* ) = Result.bind
-let ( let+ ) x f = Result.map f x
 
 type t = {
   constructors : Frontend.fun_decl list;
@@ -55,28 +54,16 @@ let infer_summaries ?summ_ctx ~fuel library : (Summary.Context.t, 'a) result =
   (* Set fuel for executing wrappers *)
   let exec = Wrapper.exec ~fuel in
   (* Infer summaries and prune summary context  *)
-  let+ summs, summ_ctx =
-    let summs = Summary.Context.empty in
-    ListLabels.fold_left fun_decls
-      ~init:(Result.ok (summs, summ_ctx))
-      ~f:(fun acc (fun_decl : Frontend.fun_decl) ->
-        let* _, summ_ctx = acc in
+  let+ summ_ctx =
+    Result.fold_list fun_decls ~init:summ_ctx ~f:(fun summ_ctx fun_decl ->
         let wrapper, tys = wrap fun_decl in
         (* Iterate over snapshot of current summary context *)
         let snapshot = Summary.Context.iter_summs tys summ_ctx in
-        IterLabels.fold snapshot ~init:acc ~f:(fun acc inputs ->
-            let* summs, summ_ctx = acc in
-            (* Obtain new summaries for specific inputs *)
+        Result.fold_iter snapshot ~init:summ_ctx ~f:(fun summ_ctx inputs ->
+            (* Stage update to summary context with inferred summaries *)
             let+ outputs = exec wrapper inputs in
-            (* Iterate over new summaries *)
-            let fold_outputs f init =
-              List.fold_left (fun ctx (ty, summ) -> f ty summ ctx) init outputs
-            in
-            (* Register new summaries for the next iteration *)
-            let summs = fold_outputs Summary.Context.add summs in
-            (* Remove outdated summaries from current snapshot *)
-            let summ_ctx = fold_outputs Summary.Context.remove summ_ctx in
-            (summs, summ_ctx)))
+            ListLabels.fold_left outputs ~init:summ_ctx
+              ~f:(fun ctx (ty, summ) -> Summary.Context.stage ty summ ctx)))
   in
-  (* Update summary context with inferred summaries *)
-  Summary.Context.update summs summ_ctx
+  (* Commit update with new summaries *)
+  Summary.Context.commit summ_ctx

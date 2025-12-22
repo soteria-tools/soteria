@@ -1,14 +1,13 @@
 module Config_ = Config
 open Soteria_rust_lib
 module Config = Config_
+open Result.Syntax
 open Syntaxes.FunctionWrap
-
-let ( let* ) = Result.bind
 
 let exec_crate (crate : Crate.t) =
   let@ () = Crate.with_crate crate in
   let config = !Config.current in
-  (* Set fuel for wrapper execution *)
+  (* Set fuel for summary inference *)
   let infer_summaries =
     let fuel =
       let open Soteria.Symex.Fuel_gauge in

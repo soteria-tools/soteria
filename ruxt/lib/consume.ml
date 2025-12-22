@@ -1,67 +1,58 @@
-module Typed = Soteria_rust_lib.Typed
-module Rustsymex = Soteria_rust_lib.Rustsymex
+open Soteria_rust_lib
 open Rustsymex.Syntax
 
-let try_pc (s : Subst.values) (pc : Typed.sbool Typed.t) =
+let from_pc (s : Subst.values) (pc : Typed.sbool Typed.t) =
   match Typed.kind pc with
   | Binop (Eq, l, r) -> (
       match (Subst.learn s l, Subst.learn s r) with
       | Known l, Known r ->
           let** () = Rustsymex.consume_pure (Subst.Value.sem_eq l r) in
-          Rustsymex.Result.ok (Some (s, []))
+          Rustsymex.Result.ok (s, [], true)
       | Known v, Outcome f_subst | Outcome f_subst, Known v ->
-          Rustsymex.Result.ok (Some (f_subst v))
-      | _ -> Rustsymex.Result.ok None)
+          let s, pcs = f_subst v in
+          Rustsymex.Result.ok (s, pcs, true)
+      | _ -> Rustsymex.Result.ok (s, [ pc ], false))
   | _ -> (
       match Subst.learn s Subst.Value.(Typed.kind pc <| Typed.get_ty pc) with
       | Known v ->
           let** () = Rustsymex.consume_pure (Typed.type_ v) in
-          Rustsymex.Result.ok (Some (s, []))
-      | _ -> Rustsymex.Result.ok None)
+          Rustsymex.Result.ok (s, [], true)
+      | _ -> Rustsymex.Result.ok (s, [ pc ], false))
 
-let iter_pcs (s : Subst.values) (pcs : Typed.sbool Typed.t list) =
-  ListLabels.fold_left pcs
-    ~init:(Rustsymex.Result.ok ([], None))
-    ~f:(fun acc pc ->
-      let** pcs, o_subst = acc in
-      let s = Option.value ~default:s o_subst in
-      let++ o_res = try_pc s pc in
-      match o_res with
-      | None -> (pc :: pcs, o_subst)
-      | Some (s, new_pcs) -> (new_pcs @ pcs, Some s))
+let from_pcs (s : Subst.values) (pcs : Typed.sbool Typed.t list) =
+  Rustsymex.Result.fold_list pcs ~init:(s, [], false)
+    ~f:(fun (s, pcs, consumed) pc ->
+      let++ s, sub_pcs, consumed_pc = from_pc s pc in
+      (s, sub_pcs @ pcs, consumed || consumed_pc))
 
-let iter_serialized (s : Subst.values) ((heap, globals) : Heap.serialized)
-    (st : Heap.t) :
-    ( Heap.serialized * (Subst.values * Heap.t) option,
-      [> Rustsymex.lfail ],
-      Heap.serialized )
-    Rustsymex.Result.t =
-  let++ heap, o_st =
-    ListLabels.fold_left heap
-      ~init:(Rustsymex.Result.ok ([], None))
-      ~f:(fun acc (l, b) ->
-        let** ser, o_st = acc in
+let from_serialized (s : Subst.values) ((heap, globals) : Heap.serialized) st =
+  let++ s, heap, st, consumed =
+    Rustsymex.Result.fold_list heap ~init:(s, [], st, false)
+      ~f:(fun (s, ser, st, consumed) (l, b) ->
         match Typed.kind l with
         | Var v -> (
             match Subst.find_opt v s with
             | Some v ->
-                let s, st = Option.value ~default:(s, st) o_st in
-                (* FIXME: heap consumption should update s *)
+                (* TODO: heap consumption should update s *)
                 let** st = Heap.consume (Typed.type_ v, b) st in
-                Rustsymex.Result.ok (ser, Some (s, st))
-            | None -> Rustsymex.Result.ok ((l, b) :: ser, o_st))
+                Rustsymex.Result.ok (s, ser, st, true)
+            | None -> Rustsymex.Result.ok (s, (l, b) :: ser, st, consumed))
         | _ -> failwith "expected a variable")
   in
-  ((heap, globals), o_st)
+  (s, (heap, globals), st, consumed)
 
-let rec iter ?(s = Subst.empty) ser pcs st =
-  let** pcs, o_pcs = iter_pcs s pcs in
-  let s = Option.value ~default:s o_pcs in
-  let** ser, o_ser = iter_serialized s ser st in
-  match (o_ser, o_pcs) with
-  | None, None -> Rustsymex.Result.ok (st, pcs)
-  | _ -> (
-      let s, st = Option.value ~default:(s, st) o_ser in
+let run (ser : Heap.serialized) (pcs : Typed.sbool Typed.t list) (st : Heap.t) :
+    (Heap.t, [> Rustsymex.lfail ], Heap.serialized) Rustsymex.Result.t =
+  let rec iter s ser pcs st =
+    let** s, pcs, consumed_pc = from_pcs s pcs in
+    let** s, ser, st, consumed_atom = from_serialized s ser st in
+    if consumed_pc || consumed_atom then
       match (ser, pcs) with
       | ([], _), [] -> Rustsymex.Result.ok (st, pcs)
-      | _ -> iter ~s ser pcs st)
+      | _ -> iter s ser pcs st
+    else Rustsymex.Result.ok (st, pcs)
+  in
+  let** st, pcs = iter Subst.empty ser pcs st in
+  if pcs = [] then Rustsymex.Result.ok st
+  (* TODO: Send pcs to the solver with existentials *)
+    else Rustsymex.consume_false ()

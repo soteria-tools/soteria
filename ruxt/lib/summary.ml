@@ -7,8 +7,39 @@ type t = {
   state : Heap.serialized;
 }
 
+let pp fmt =
+  let pp_list pp_elem fmt lst =
+    Fmt.pf fmt "[\n    %a\n]" (Fmt.list ~sep:(Fmt.any ";\n    ") pp_elem) lst
+  in
+  function
+  | { ret; pcs; state } ->
+      Fmt.pf fmt "{\n ret = %a;\n pcs = %a;\n state = %a\n}"
+        (Rust_val.pp Heap.Sptr.pp) ret
+        (pp_list (Typed.pp Typed.T.pp_sbool))
+        pcs Heap.pp_serialized state
+
 let iter_vars_ret ret = Rust_val.iter_vars Heap.Sptr.iter_vars ret
 let subst_ret subst_var ret = Rust_val.subst Heap.Sptr.subst subst_var ret
+
+(* TODO: export this to Rust_val *)
+let rec sem_eq_ret v1 v2 =
+  let fold vs1 vs2 =
+    if List.length vs1 = List.length vs2 then
+      ListLabels.fold_left2 vs1 vs2 ~init:Typed.v_true ~f:(fun pc v1 v2 ->
+          Typed.and_ pc (sem_eq_ret v1 v2))
+    else Typed.v_false
+  in
+  let open Rust_val in
+  match (v1, v2) with
+  | Int v1, Int v2 -> Typed.sem_eq v1 v2
+  | Float v1, Float v2 -> Typed.sem_eq v1 v2
+  | Ptr (p1, _), Ptr (p2, _) -> Heap.Sptr.sem_eq p1 p2
+  | Enum (v1, vs1), Enum (v2, vs2) ->
+      Typed.and_ (Typed.sem_eq v1 v2) (fold vs1 vs2)
+  | Tuple vs1, Tuple vs2 -> fold vs1 vs2
+  | Union vs1, Union vs2 -> fold (List.map fst vs1) (List.map fst vs2)
+  | ConstFn fn_ptr1, ConstFn fn_ptr2 when fn_ptr1 = fn_ptr2 -> Typed.v_true
+  | _ -> Typed.v_false
 
 let iter_vars summ f =
   iter_vars_ret summ.ret f;
@@ -21,21 +52,18 @@ let subst subst_var summ =
   let state = Heap.subst_serialized subst_var summ.state in
   { ret; pcs; state }
 
-let fresh_vars summ =
-  let+ subst_var = Subst.add_vars Subst.empty (iter_vars summ) in
-  subst (Subst.to_fn subst_var) summ
-
 let produce (summ : t) (st : Heap.t) :
     (Heap.Sptr.t Rust_val.t * Heap.t) Rustsymex.t =
-  let* summ = fresh_vars summ in
+  let* subst_var = Subst.add_vars Subst.empty (iter_vars summ) in
+  let summ = subst (Subst.to_fn subst_var) summ in
   let* () = Rustsymex.assume summ.pcs in
   let+ st = Heap.produce summ.state st in
   (summ.ret, st)
 
-let consume (_summ : t) (_ret : Heap.Sptr.t Rust_val.t) (_st : Heap.t) :
+let consume (summ : t) (ret : Heap.Sptr.t Rust_val.t) (st : Heap.t) :
     (Heap.t, [> Rustsymex.lfail ], Heap.serialized) Rustsymex.Result.t =
-  (* TODO: Actually implement summary consumption *)
-  Rustsymex.Result.error `NotImplemented
+  let ret_eqs = sem_eq_ret ret summ.ret |> Typed.split_ands |> Iter.to_list in
+  Consume.run summ.state (ret_eqs @ summ.pcs) st
 
 let make ret pcs state =
   let module Var_graph = Soteria.Soteria_std.Graph.Make_in_place (Svalue.Var) in
@@ -75,8 +103,8 @@ let make ret pcs state =
     @@ Typed.iter_vars sv
   in
   (* We can now filter the summary to keep only the reachable values *)
-  let ( let** ) = Result.bind in
-  let** state =
+  let open Result.Syntax in
+  let+ state =
     let heap, unreachable =
       ListLabels.partition heap ~f:(fun (loc, _) -> is_relevant loc)
     in
@@ -101,69 +129,26 @@ let make ret pcs state =
     let locs = List.map fst (fst state) in
     if List.length locs <= 1 then pcs else Typed.distinct locs :: pcs
   in
-  Result.ok { ret; pcs; state }
+  { ret; pcs; state }
 
 module Context = struct
   open Soteria.Symex
   open Charon.Types
   module M = TypeDeclId.Map
 
-  (* Each custom type has separate lists for visited and unvisited summaries *)
-  type value = Base of t list | Custom of t list * t list
-  type nonrec t = (t list * t list) M.t
+  exception TypeNotSupported
+
+  let type_not_supported () = raise TypeNotSupported
+
+  (* Each custom type has separate lists for visited, unvisited and staged summaries *)
+  type value = Base of t list | Custom of t list * t list * t list
+  type nonrec t = (t list * t list * t list) M.t
 
   let empty : t = M.empty
   let is_base_ty ty = match ty with TLiteral _ -> true | _ -> false
 
-  let ( let@ ) (ty, ctx) f =
-    match ty with TAdt { id = TAdtId id; _ } -> f id | _ -> ctx
-
-  let add ty summ (ctx : t) : t =
-    let@ id = (ty, ctx) in
-    let opt_cons = function
-      | None -> Some ([], [ summ ])
-      | Some (visited, unvisited) -> Some (visited, summ :: unvisited)
-    in
-    M.update id opt_cons ctx
-
-  let remove ty summ (ctx : t) : t =
-    let@ id = (ty, ctx) in
-    let filter (visited, unvisited) =
-      let implies s_pre s_post =
-        let* ret, st = produce s_pre Heap.empty in
-        let** st = consume s_post ret st in
-        if st == Heap.empty then Rustsymex.Result.ok ()
-        else Rustsymex.Result.error `HeapNotEmpty
-      in
-      let filter_process summs =
-        ListLabels.fold_left summs ~init:(Rustsymex.Result.ok [])
-          ~f:(fun acc s ->
-            let** summs = acc in
-            let** () =
-              (* The new summary implies an existing summary: discard the new summary *)
-              let+ res = implies summ s in
-              match res with
-              | Compo_res.Ok () -> Compo_res.Error `SummaryAlreadyExists
-              | _ -> Compo_res.Ok ()
-            in
-            let+ summs =
-              (* An existing summary implies the new summary: discard the existing summary *)
-              let+ res = implies s summ in
-              match res with Compo_res.Ok () -> summs | _ -> s :: summs
-            in
-            Compo_res.Ok summs)
-      in
-      let process =
-        let** unvisited = filter_process unvisited in
-        let++ visited = filter_process visited in
-        (visited, unvisited)
-      in
-      match Rustsymex.run_needs_stats ~mode:OX process with
-      | [ (Compo_res.Ok summs, _) ] -> summs
-      | [ (_, _) ] -> (visited, unvisited)
-      | _ -> failwith "Expected exactly 1 outcome"
-    in
-    M.update id (Option.map filter) ctx
+  let ( let@ ) (ty, default) f =
+    match ty with TAdt { id = TAdtId id; _ } -> f id | _ -> default
 
   let find ty (ctx : t) : value =
     let nondet ty =
@@ -175,13 +160,11 @@ module Context = struct
     in
     match ty with
     | TAdt { id = TAdtId id; _ } ->
-        let visited, unvisited =
-          Option.value ~default:([], []) (M.find_opt id ctx)
+        let visited, unvisited, staged =
+          Option.value ~default:([], [], []) (M.find_opt id ctx)
         in
-        Custom (visited, unvisited)
-    | ty ->
-        if is_base_ty ty then Base (nondet ty)
-        else failwith "Type not supported"
+        Custom (visited, unvisited, staged)
+    | ty -> if is_base_ty ty then Base (nondet ty) else type_not_supported ()
 
   let iter_summs tys (ctx : t) f =
     let rec aux ?(visited = false) ?(curr = []) ?(acc = []) = function
@@ -194,17 +177,55 @@ module Context = struct
           in
           List.iter aux' acc
       | Base summs :: values -> aux values ~curr:(summs :: curr) ~acc
-      | Custom (visited, unvisited) :: values ->
+      | Custom (visited, unvisited, _) :: values ->
           let summs =
             ListLabels.fold_left values ~init:(unvisited :: curr)
               ~f:(fun acc -> function
               | Base summs -> summs :: acc
-              | Custom (visited, unvisited) -> (visited @ unvisited) :: acc)
+              | Custom (visited, unvisited, _) -> (visited @ unvisited) :: acc)
           in
           aux values ~visited:true ~curr:(visited :: curr) ~acc:(summs :: acc)
     in
-    try aux (List.rev_map (fun ty -> find ty ctx) tys) with _ -> f []
+    try aux (List.rev_map (fun ty -> find ty ctx) tys)
+    with TypeNotSupported -> f []
 
-  let update (summs : t) (ctx : t) : t =
-    M.union (fun _ (_, summs) (v, u) -> Some (v @ u, summs)) summs ctx
+  let stage ty summ (ctx : t) : t =
+    let@ id = (ty, ctx) in
+    let filter summ summs =
+      let check_implication s_pre s_post =
+        let* ret, st = produce s_pre Heap.empty in
+        let+ res = consume s_post ret st in
+        match res with Compo_res.Ok st -> st == Heap.empty | _ -> false
+      in
+      let+ summs =
+        Rustsymex.fold_list summs ~init:[] ~f:(fun summs s ->
+            (* The new summary implies an existing summary: discard the new summary *)
+            let* implies = check_implication summ s in
+            if implies then Rustsymex.vanish ()
+            else
+              (* An existing summary implies the new summary: discard the existing summary *)
+              let+ implies = check_implication s summ in
+              if implies then summs else s :: summs)
+      in
+      summs
+    in
+    let opt_cons = function
+      | None -> Some ([], [], [ summ ])
+      | Some (visited, unvisited, staged) ->
+          let summs =
+            let process =
+              let* unvisited = filter summ unvisited in
+              let+ visited = filter summ visited in
+              (visited, unvisited, summ :: staged)
+            in
+            match Rustsymex.run_needs_stats ~mode:OX process with
+            | [] -> (visited, unvisited, staged)
+            | [ (summs, _) ] -> summs
+            | _ -> failwith "Expected at most 1 outcome"
+          in
+          Some summs
+    in
+    M.update id opt_cons ctx
+
+  let commit (ctx : t) : t = M.map (fun (v, u, s) -> (u @ v, s, [])) ctx
 end

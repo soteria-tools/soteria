@@ -150,10 +150,11 @@ let make drops (fun_decl : Frontend.fun_decl) : t * ty list =
 let exec ~fuel (wrapper : t) summs =
   (* Symbolically execute the wrapped function call *)
   Rustsymex.run_needs_stats ~mode:UX ~fuel (wrapper summs)
-  |> ListLabels.fold_left ~init:(Result.ok []) ~f:(fun acc -> function
+  |> Result.fold_list ~init:[] ~f:(fun summs -> function
        (* Successful termination: a new summary can been inferred *)
        | Compo_res.Ok (ret, state, ty), pcs ->
-           Result.bind (Summary.make ret pcs state) @@ fun summ ->
-           Result.map (fun summs -> (ty, summ) :: summs) acc
+           let open Result.Syntax in
+           let+ summ = Summary.make ret pcs state in
+           (ty, summ) :: summs
        (* Unsuccessful termination: found a type unsoundness *)
        | _ -> Result.error `TypeUnsound)
