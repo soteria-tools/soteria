@@ -84,7 +84,7 @@ type global = {
   solver : Soteria.Solvers.Config.t;
       [@term Soteria.Solvers.Config.cmdliner_term ()]
   stats : Soteria.Stats.Config.t; [@term Soteria.Stats.Config.cmdliner_term ()]
-  rusteria : t; [@term term]
+  soteria_rust : t; [@term term]
 }
 [@@deriving make, subliner]
 
@@ -97,4 +97,9 @@ let set (config : global) =
   Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
   Soteria.Stats.Config.set_and_lock config.stats;
-  current := config.rusteria
+  let soteria_rust =
+    if Soteria.Terminal.Config.in_test_environment () then
+      { config.soteria_rust with cleanup = true }
+    else config.soteria_rust
+  in
+  current := soteria_rust
