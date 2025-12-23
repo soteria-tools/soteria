@@ -272,6 +272,7 @@ module Make (Sptr : Sptr.S) = struct
     let rec aux offset ty : (rust_val, 'state, 'e, 'fix) ParserMonad.t =
       let* layout = layout_of ty in
       match (layout.fields, ty) with
+      | _ when layout.uninhabited -> error `RefToUninhabited
       | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
       | _, TAdt { id = TAdtId id; _ } when Crate.is_union id ->
           if%sat layout.size ==@ Usize.(0s) then ok (Union [])
@@ -285,7 +286,6 @@ module Make (Sptr : Sptr.S) = struct
                https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
             let+ blocks = get_all (Typed.cast layout.size, offset) in
             Union blocks
-      | Primitive, TNever -> error `RefToUninhabited
       | Primitive, TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
       | Primitive, _ -> query (ty, offset)
       | Array _, (TRawPtr (pointee, _) | TRef (_, pointee, _)) -> (
@@ -345,8 +345,11 @@ module Make (Sptr : Sptr.S) = struct
               (* TODO: check the vtable pointer is of the right trait kind *)
               ok ()
         in
-        let* opt_err, st = fake_read p pointee st in
-        match opt_err with Some err -> error err | None -> ok st)
+        let** layout = Layout.layout_of pointee in
+        if layout.uninhabited then error `RefToUninhabited
+        else
+          let* opt_err, st = fake_read p pointee st in
+          match opt_err with Some err -> error err | None -> ok st)
     | Ptr (p, _), TFnPtr _ ->
         let++ () =
           assert_or_error

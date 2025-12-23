@@ -75,16 +75,13 @@ module Fields_shape = struct
 end
 
 (* TODO: size should be an [option], for unsized types *)
-(* TODO: add a uninhabited flag (concrete..?) *)
 type t = {
   size : T.sint Typed.t;
   align : T.nonzero Typed.t;
+  uninhabited : bool;
   fields : Fields_shape.t;
 }
-
-let pp fmt { size; align; fields } =
-  Format.fprintf fmt "{ size = %a;@, align = %a;@, fields = @[%a@] }" Typed.ppa
-    size Typed.ppa align Fields_shape.pp fields
+[@@deriving show]
 
 module Session = struct
   type ty_key = Types.ty
@@ -145,11 +142,12 @@ let[@inline] size_to_fit ~size ~align =
     size
     (size +!!@ align -!!@ (size %@ align))
 
-let mk ~size ~align ?(fields : Fields_shape.t = Primitive) () =
-  { size; align; fields }
+let mk ~size ~align ?(uninhabited = false)
+    ?(fields : Fields_shape.t = Primitive) () =
+  { size; align; uninhabited; fields }
 
-let mk_concrete ~size ~align ?fields () =
-  mk ~size:(BV.usizei size) ~align:(BV.usizeinz align) ?fields ()
+let mk_concrete ~size ~align =
+  mk ~size:(BV.usizei size) ~align:(BV.usizeinz align)
 
 let not_impl_layout msg ty =
   Fmt.kstr not_impl "Can't compute layout: %s %a" msg pp_ty ty
@@ -229,7 +227,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let size = len *!!@ sub_layout.size in
       mk ~size ~align:sub_layout.align ~fields:(Array sub_layout.size) ()
   (* Never -- zero sized type *)
-  | TNever -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
+  | TNever ->
+      ok (mk_concrete ~size:0 ~align:1 ~uninhabited:false ~fields:Primitive ())
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Others (unhandled for now) *)
@@ -243,6 +242,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
 and translate_layout ty (layout : Types.layout) =
   let size = compute_size ty layout.size in
   let align = compute_align ty layout.align in
+  let uninhabited = layout.uninhabited in
   let tag_layout =
     Option.map
       (fun (discr_layout : Types.discriminant_layout) : Tag_layout.t ->
@@ -271,16 +271,18 @@ and translate_layout ty (layout : Types.layout) =
       layout.variant_layouts
     |> Array.of_list
   in
-  match (tag_layout, variant_layouts) with
-  (* tag layouts only exist on enum layouts *)
-  | Some tag_layout, _ ->
-      ok @@ mk ~size ~align ~fields:(Enum (tag_layout, variant_layouts)) ()
-  (* for single variants, we use an arbitrary layout *)
-  | None, [| variant |] -> ok @@ mk ~size ~align ~fields:variant ()
-  (* no variants, so this is uninhabited; we can use primitive *)
-  | None, [||] -> ok @@ mk ~size ~align ()
-  | None, _ ->
-      not_impl_layout "Layout with multiple variants but no discriminant?" ty
+  let fields : Fields_shape.t =
+    match (tag_layout, variant_layouts) with
+    (* tag layouts only exist on enum layouts *)
+    | Some tag_layout, _ -> Enum (tag_layout, variant_layouts)
+    (* for single variants, we use an arbitrary layout *)
+    | None, [| variant |] -> variant
+    (* no variants, so this is uninhabited; we can use primitive *)
+    | None, [||] -> Primitive
+    | None, _ ->
+        Fmt.failwith "Layout with multiple variants but no discriminant?" ty
+  in
+  ok @@ mk ~size ~align ~uninhabited ~fields ()
 
 and compute_size ty size =
   match size with
@@ -345,7 +347,11 @@ and compute_enum_layout ty (variants : Types.variant list) =
   let variant_layouts = List.rev variant_layouts in
   match variant_layouts with
   (* no variants: uninhabited ZST *)
-  | [] -> ok (mk_concrete ~size:0 ~align:1 ~fields:(Enum (tag_layout, [||])) ())
+  | [] ->
+      ok
+        (mk_concrete ~size:0 ~align:1 ~uninhabited:true
+           ~fields:(Enum (tag_layout, [||]))
+           ())
   (* N variants: realign variants with prepended tag, use biggest and most aligned *)
   | _ ->
       (* if we need to prepend the tag, we recompute the layout to consider its
@@ -368,7 +374,7 @@ and compute_enum_layout ty (variants : Types.variant list) =
           (Usize.(0s), Usize.(1s))
           variant_layouts
       in
-      { size; align; fields = Enum (tag_layout, Array.of_list fields) }
+      mk ~size ~align ~fields:(Enum (tag_layout, Array.of_list fields)) ()
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.kind with
