@@ -262,12 +262,12 @@ and translate_layout ty (layout : Types.layout) =
       layout.discriminant_layout
   in
   let variant_layouts =
-    List.filter_mapi
-      (fun i (v : Types.variant_layout) : Fields_shape.t option ->
-        if v.uninhabited then None
+    List.mapi
+      (fun i (v : Types.variant_layout) : Fields_shape.t ->
+        if v.uninhabited then Primitive
         else
           let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
-          Some (Arbitrary (Types.VariantId.of_int i, ofs)))
+          Arbitrary (Types.VariantId.of_int i, ofs))
       layout.variant_layouts
     |> Array.of_list
   in
@@ -275,12 +275,22 @@ and translate_layout ty (layout : Types.layout) =
     match (tag_layout, variant_layouts) with
     (* tag layouts only exist on enum layouts *)
     | Some tag_layout, _ -> Enum (tag_layout, variant_layouts)
-    (* for single variants, we use an arbitrary layout *)
-    | None, [| variant |] -> variant
     (* no variants, so this is uninhabited; we can use primitive *)
     | None, [||] -> Primitive
+    (* there should be only one inhabited (non-Primitive) variant *)
     | None, _ ->
-        Fmt.failwith "Layout with multiple variants but no discriminant?" ty
+        let is_inhabited = function
+          | Fields_shape.Arbitrary _ -> true
+          | _ -> false
+        in
+        let count = Array.count is_inhabited variant_layouts in
+        if count = 0 then Primitive
+        else if count = 1 then
+          variant_layouts
+          |> Array.find_index is_inhabited
+          |> Option.get
+          |> Array.get variant_layouts
+        else failwith ">1 inhabited variants with no tag encoding?"
   in
   ok @@ mk ~size ~align ~uninhabited ~fields ()
 
