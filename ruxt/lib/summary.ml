@@ -138,7 +138,7 @@ module Context = struct
 
   exception TypeNotSupported
 
-  let type_not_supported () = raise TypeNotSupported
+  let type_not_supported (_ : ty) = raise TypeNotSupported
 
   (* Each custom type has separate lists for visited, unvisited and staged summaries *)
   type value = Base of t list | Custom of t list * t list * t list
@@ -151,20 +151,22 @@ module Context = struct
     match ty with TAdt { id = TAdtId id; _ } -> f id | _ -> default
 
   let find ty (ctx : t) : value =
-    let nondet ty =
-      let state = Heap.serialize Heap.empty in
-      Rustsymex.run_needs_stats ~mode:UX @@ Layout.nondet ty
-      |> List.map (function
-           | Compo_res.Ok ret, pcs -> { ret; pcs; state }
-           | _ -> failwith "Expected Ok in nondet")
-    in
     match ty with
     | TAdt { id = TAdtId id; _ } ->
         let visited, unvisited, staged =
           Option.value ~default:([], [], []) (M.find_opt id ctx)
         in
         Custom (visited, unvisited, staged)
-    | ty -> if is_base_ty ty then Base (nondet ty) else type_not_supported ()
+    | ty when is_base_ty ty ->
+        let nondet ty =
+          let state = Heap.serialize Heap.empty in
+          Rustsymex.run_needs_stats ~mode:UX @@ Layout.nondet ty
+          |> List.map (function
+               | Compo_res.Ok ret, pcs -> { ret; pcs; state }
+               | _ -> failwith "Expected Ok in nondet")
+        in
+        Base (nondet ty)
+    | ty -> type_not_supported ty
 
   let iter_summs tys (ctx : t) f =
     let rec aux ?(visited = false) ?(curr = []) ?(acc = []) = function

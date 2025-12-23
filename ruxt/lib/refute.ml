@@ -8,27 +8,24 @@ let exec_crate (crate : Crate.t) =
   let@ () = Crate.with_crate crate in
   let config = !Config.current in
   (* Set fuel for summary inference *)
-  let infer_summaries =
-    let fuel =
-      let open Soteria.Symex.Fuel_gauge in
-      let fuel = function None -> Fuel_value.Infinite | Some i -> Finite i in
-      { steps = fuel config.step_fuel; branching = fuel config.branch_fuel }
-    in
-    Library.infer_summaries ~fuel
+  let fuel =
+    let open Soteria.Symex.Fuel_gauge in
+    let fuel = function None -> Fuel_value.Infinite | Some i -> Finite i in
+    { steps = fuel config.step_fuel; branching = fuel config.branch_fuel }
   in
   (* Fetch the library and perform a bounded number of inference passes *)
   let library = Library.get () in
-  let rec find_unsoundness fuel summ_ctx =
-    if fuel <= 0 then Result.ok () (* Fuel exhausted, no unsoundness found *)
+  let rec find_unsoundness passes summ_ctx =
+    if passes <= 0 then Result.ok () (* Fuel exhausted, no unsoundness found *)
     else (* Pass over the library and update the summary context *)
-      let* summ_ctx = infer_summaries library ~summ_ctx in
-      find_unsoundness (fuel - 1) summ_ctx
+      let* summ_ctx = Library.infer_summaries ~fuel summ_ctx library in
+      find_unsoundness (passes - 1) summ_ctx
   in
   (* Collect statistics from all the runs *)
   let Soteria.Stats.{ res; stats } =
     Rustsymex.Stats.As_ctx.with_stats () (fun () ->
         (* Run the algorithm starting from the base summary context *)
-        let* summ_ctx = infer_summaries library in
+        let* summ_ctx = Library.init_summaries ~fuel library in
         find_unsoundness config.pass_fuel summ_ctx)
   in
   if config.print_stats then Driver.print_stats stats;

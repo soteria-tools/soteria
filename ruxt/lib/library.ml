@@ -43,15 +43,9 @@ let get () =
     crate.fun_decls
     { constructors = []; fun_decls = []; drops = TypeDeclId.Map.empty }
 
-let infer_summaries ?summ_ctx ~fuel library : (Summary.Context.t, 'a) result =
-  (* No context provided: initialize first context with constructors *)
-  let summ_ctx, fun_decls =
-    match summ_ctx with
-    | Some summ_ctx -> (summ_ctx, library.fun_decls)
-    | None -> (Summary.Context.empty, library.constructors)
-  in
+let infer_summaries ~fuel summ_ctx fun_decls drops =
   (* Set drop context for creating wrappers *)
-  let wrap = Wrapper.make library.drops in
+  let wrap = Wrapper.make drops in
   (* Set fuel for executing wrappers *)
   let exec = Wrapper.exec ~fuel in
   (* Infer summaries and prune summary context  *)
@@ -68,3 +62,9 @@ let infer_summaries ?summ_ctx ~fuel library : (Summary.Context.t, 'a) result =
   in
   (* Commit update with new summaries *)
   Summary.Context.commit summ_ctx
+
+let init_summaries ~fuel library =
+  infer_summaries ~fuel Summary.Context.empty library.constructors library.drops
+
+let infer_summaries ~fuel summ_ctx library =
+  infer_summaries ~fuel summ_ctx library.fun_decls library.drops
