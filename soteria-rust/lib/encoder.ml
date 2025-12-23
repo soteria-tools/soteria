@@ -117,8 +117,9 @@ module Make (Sptr : Sptr.S) = struct
 
   (** Iterator over the fields and offsets of a type; for primitive types,
       returns a singleton iterator for that value. *)
-  let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
-    let aux ?variant fields =
+  let iter_fields ?(variant = Types.VariantId.zero) ?(meta = Thin) layout
+      (ty : Types.ty) =
+    let aux variant fields =
       Iter.mapi (fun i ty -> (ty, Fields_shape.offset_of i fields))
       @@
       match ty with
@@ -144,11 +145,11 @@ module Make (Sptr : Sptr.S) = struct
               failwith "iter_fields: invalid length for slice/str")
       | TAdt { id = TAdtId t_id; _ } -> (
           let type_decl = Crate.get_adt t_id in
-          match (type_decl.kind, variant) with
-          | Struct fields, _ ->
+          match type_decl.kind with
+          | Struct fields ->
               let field_tys = field_tys fields in
               Iter.of_list field_tys
-          | Enum variants, Some variant ->
+          | Enum variants ->
               let variant = Types.VariantId.nth variants variant in
               let field_tys = field_tys variant.fields in
               Iter.of_list field_tys
@@ -160,14 +161,12 @@ module Make (Sptr : Sptr.S) = struct
           | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
       | _ -> Fmt.failwith "invalid iter_fields: %a" pp_ty ty
     in
-    match layout.fields with
+    let fields = layout.variants.(Types.VariantId.to_int variant).fields in
+    match fields with
     | Primitive -> Iter.singleton (ty, Usize.(0s))
-    | Array _ -> aux ?variant layout.fields
-    | Arbitrary (variant, _) -> aux ~variant layout.fields
-    | Enum (_, variant_layouts) ->
-        let variant = Option.get ~msg:"variant required for enum" variant in
-        let fields = variant_layouts.(Types.VariantId.to_int variant) in
-        aux ~variant fields
+    | Array _ -> aux variant fields
+    | Arbitrary (variant, _) -> aux variant fields
+    | Unsized -> failwith "Can't encode unsized layouts"
 
   (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an
       iterator over its sub values, along with their offset. Offsets all blocks
@@ -194,9 +193,10 @@ module Make (Sptr : Sptr.S) = struct
       |> (Fun.flip Result.map) snd
     in
     let** layout = Layout.layout_of ty in
-    if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
+    let* size = of_opt_not_impl "Encoding an unsized type" layout.size in
+    if%sat size ==@ Usize.(0s) then ok Iter.empty
     else
-      match (layout.fields, value) with
+      match (layout.variants, value) with
       | _, Union blocks ->
           ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
       | Primitive, _ -> ok (Iter.singleton (value, offset))

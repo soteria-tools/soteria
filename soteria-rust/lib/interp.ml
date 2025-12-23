@@ -267,6 +267,16 @@ module Make (State : State_intf.S) = struct
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
+        (*     let field = Types.FieldId.to_int field in
+        let** layout = Layout.layout_of ty in
+        let fields =
+          match kind with
+          | Expressions.ProjAdt (_, Some variant) ->
+              Layout.Fields_shape.shape_for_variant variant layout.fields
+          | ProjAdt (_, None) | ProjTuple _ -> layout.fields
+        in
+        let off = Layout.Fields_shape.offset_of field fields in
+        offset ~signed:false ptr off *)
         let* ptr' = Sptr.project base.ty kind field ptr in
         L.debug (fun f ->
             f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
