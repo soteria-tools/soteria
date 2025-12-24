@@ -332,55 +332,43 @@ and compute_arbitrary_layout ?fst_size ?fst_align
 
 and compute_enum_layout ty (variants : Types.variant list) =
   layout_warning "Computed an enum layout" ty;
-  let tags =
-    Monad.ListM.map variants (fun v -> Some (BV.of_literal v.discriminant))
-  in
-  let tags = Array.of_list tags in
-  let tag_layout : Tag_layout.t =
-    (* best effort: we assume direct encoding *)
-    let ty : Types.literal_type =
-      match variants with
-      | [] -> TInt I32 (* Shouldn't matter *)
-      | v :: _ -> lit_ty_of_lit v.discriminant
-    in
-    { offset = Usize.(0s); ty; tags; encoding = Direct }
-  in
-  let** variant_layouts =
-    Result.fold_list variants ~init:[] ~f:(fun acc v ->
-        let++ l = compute_arbitrary_layout ty (field_tys v.fields) in
-        l :: acc)
-  in
-  let variant_layouts = List.rev variant_layouts in
-  match variant_layouts with
+  match variants with
   (* no variants: uninhabited ZST *)
   | [] ->
-      ok
-        (mk_concrete ~size:0 ~align:1 ~uninhabited:true
-           ~fields:(Enum (tag_layout, [||]))
-           ())
-  (* N variants: realign variants with prepended tag, use biggest and most aligned *)
-  | _ ->
-      (* if we need to prepend the tag, we recompute the layout to consider its
-               size and alignement (there probably is a smarter way to do this). *)
+      ok (mk_concrete ~size:0 ~align:1 ~uninhabited:true ~fields:Primitive ())
+  (* N variants: we assume a tagged variant *)
+  | _ :: _ ->
+      let tags =
+        Monad.ListM.map variants (fun v -> Some (BV.of_literal v.discriminant))
+      in
+      let tags = Array.of_list tags in
+      let tag_layout : Tag_layout.t =
+        (* best effort: we assume direct encoding *)
+        let ty : Types.literal_type =
+          match variants with
+          | [] -> TInt I32 (* Shouldn't matter *)
+          | v :: _ -> lit_ty_of_lit v.discriminant
+        in
+        { offset = Usize.(0s); ty; tags; encoding = Direct }
+      in
       let** tag = layout_of (TLiteral tag_layout.ty) in
-      let layout_adjusted =
-        compute_arbitrary_layout ty ~fst_size:tag.size ~fst_align:tag.align
+      let++ size, align, variants, uninhabited =
+        Result.fold_list variants
+          ~init:(Usize.(0s), Usize.(1s), [], true)
+          ~f:(fun (size, align, variants, uninhabited) v ->
+            let++ l =
+              compute_arbitrary_layout ty ~fst_size:tag.size
+                ~fst_align:tag.align (field_tys v.fields)
+            in
+            ( max size l.size,
+              max align l.align,
+              l.fields :: variants,
+              uninhabited && l.uninhabited ))
       in
-      let++ variant_layouts =
-        Result.fold_list variants ~init:[] ~f:(fun acc v ->
-            let++ v = layout_adjusted (field_tys v.fields) in
-            v :: acc)
-      in
-      let fields =
-        variant_layouts |> List.rev |> List.map (fun v -> v.fields)
-      in
-      let size, align =
-        List.fold_left
-          (fun (size, align) l -> (max size l.size, max align l.align))
-          (Usize.(0s), Usize.(1s))
-          variant_layouts
-      in
-      mk ~size ~align ~fields:(Enum (tag_layout, Array.of_list fields)) ()
+      let variants = List.rev variants in
+      mk ~size ~align ~uninhabited
+        ~fields:(Enum (tag_layout, Array.of_list variants))
+        ()
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.kind with
