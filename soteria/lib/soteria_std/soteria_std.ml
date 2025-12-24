@@ -1,6 +1,5 @@
 (** Standard library extensions and utilities for Soteria.*)
 
-module Array = Array
 module Bimap = Bimap
 module Cmdliner_helpers = Cmdliner_helpers
 module Dynarray = Dynarray

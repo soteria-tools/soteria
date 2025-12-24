@@ -269,28 +269,24 @@ and translate_layout ty (layout : Types.layout) =
           let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
           Arbitrary (Types.VariantId.of_int i, ofs))
       layout.variant_layouts
-    |> Array.of_list
   in
   let fields : Fields_shape.t =
     match (tag_layout, variant_layouts) with
     (* tag layouts only exist on enum layouts *)
-    | Some tag_layout, _ -> Enum (tag_layout, variant_layouts)
+    | Some tag_layout, _ -> Enum (tag_layout, Array.of_list variant_layouts)
     (* no variants, so this is uninhabited; we can use primitive *)
-    | None, [||] -> Primitive
+    | None, [] -> Primitive
     (* there should be only one inhabited (non-Primitive) variant *)
-    | None, _ ->
+    | None, _ -> (
         let is_inhabited = function
           | Fields_shape.Arbitrary _ -> true
           | _ -> false
         in
-        let count = Array.count is_inhabited variant_layouts in
-        if count = 0 then Primitive
-        else if count = 1 then
-          variant_layouts
-          |> Array.find_index is_inhabited
-          |> Option.get
-          |> Array.get variant_layouts
-        else failwith ">1 inhabited variants with no tag encoding?"
+        let inhabited = List.filter is_inhabited variant_layouts in
+        match inhabited with
+        | [] -> Primitive
+        | [ single ] -> single
+        | _ :: _ :: _ -> failwith ">1 inhabited variants with no tag encoding?")
   in
   ok @@ mk ~size ~align ~uninhabited ~fields ()
 
