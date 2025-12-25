@@ -306,7 +306,7 @@ module Make (Sptr : Sptr.S) = struct
 
   let get_init_leaves (ofs : [< T.sint ] Typed.t)
       (size : [< T.nonzero ] Typed.t) (t : t option) :
-      (Encoder.cval_info list * t option, 'err, 'fix) Result.t =
+      ((rust_val * T.sint Typed.t) list * t option, 'err, 'fix) Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs (Typed.cast size) in
     let@ t = with_bound_and_owned_check t bound in
     let replace_node node = Result.ok node in
