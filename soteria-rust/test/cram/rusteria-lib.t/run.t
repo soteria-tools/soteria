@@ -2,7 +2,7 @@ Test base functions
   $ soteria-rust rustc lib-fns.rs --clean --no-timing
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
-  PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
+  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
   
 
 
@@ -27,8 +27,8 @@ Test #[soteria::*] annotations
   PC 6: (V|1| == 0x04) /\ (V|1| == 0x04)
   PC 7: (V|1| == 0x03) /\ (V|1| == 0x03)
   PC 8: (V|1| == 0x02) /\ (V|1| == 0x02)
-  PC 9: (0x01 == V|1|) /\ (0x01 == V|1|)
-  PC 10: (0x00 == V|1|) /\ (0x00 == V|1|)
+  PC 9: (V|1| == 0x01) /\ (V|1| == 0x01)
+  PC 10: (V|1| == 0x00) /\ (V|1| == 0x00)
   
   note: test_step_fuel: done in <time>, ran 1 branch
   PC 1: empty
