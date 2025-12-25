@@ -356,7 +356,7 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
             test_conf = callback(opts)
             if len(test_conf["tests"]) == 0:
                 continue
-            cmd = opts["tool_cmd"] + test_conf["args"]
+            cmd = opts["tool_cmd"] + test_conf["args"] + opts["cli_extra_flags"]
             pprint(
                 f"{CYAN}{BOLD}==>{RESET} Running benchmark {BOLD}{test_conf['name']}{RESET} with {BOLD}{opts['tool']}",
             )
