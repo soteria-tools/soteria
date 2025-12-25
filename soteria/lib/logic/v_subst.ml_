@@ -1,0 +1,55 @@
+(* type subst_err = Subst_does_not_cover
+
+module Make (Symex : Symex.Base) = struct
+  open Symex
+
+  type binding = B : 'a Value.t * 'a Value.t -> binding
+  type t = binding list
+
+  let rec find_opt : type a. t -> a Value.t -> a Value.t option =
+   fun subst (key : a Value.t) ->
+    match subst with
+    | [] -> None
+    | B (k, v) :: rest -> (
+        match Value.equal_wit key k with
+        | Some Eq_witness -> Some v
+        | None -> find_opt rest key)
+
+  let learn (type a) ~sem_eq (subst : t) (key : a Value.t) (value : a Value.t) :
+      (t, [> lfail ], 'miss) Result.t =
+    let open Symex.Syntax in
+    match find_opt subst key with
+    | Some v ->
+        let++ () = consume_pure (sem_eq v value) in
+        subst
+    | None -> Result.ok (B (key, value) :: subst)
+
+  (** A monad for writing producers, which handles the management of the
+      substitution. *)
+  module Producer = struct
+    type subst = t
+
+    (** A state monad for producing, which may extend the substitution for free
+        variables (assumed to be implictly existentially quantified). *)
+    type 'a t = subst -> ('a * subst) Symex.t
+
+    let return (x : 'a) : 'a t = fun subst -> Symex.return (x, subst)
+
+    let bind (m : 'a t) (f : 'a -> 'b t) : 'b t =
+     fun subst -> Symex.bind (m subst) (fun (x, subst') -> f x subst')
+
+    let map (m : 'a t) (f : 'a -> 'b) : 'b t =
+     fun subst -> Symex.map (m subst) (fun (x, subst') -> (f x, subst'))
+
+    (* let apply_subst ~(subst : ('a Value.t -> 'a Value.t) -> 'b -> 'b) (x : 'b) :
+        'b t =
+     fun s ->
+      let s = ref s in
+      Symex.return x *)
+
+    module Syntax = struct
+      let ( let* ) = bind
+      let ( let+ ) = map
+    end
+  end
+end *)
