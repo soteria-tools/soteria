@@ -613,13 +613,10 @@ module Make (State : State_intf.S) = struct
                 in
                 Core.eval_checked_lit_binop op ty v1 v2
             | Cmp ->
-                let v1, v2, ty = Typed.cast_checked2 v1 v2 in
-                if Typed.equal_ty ty (Typed.t_ptr ()) then
-                  error `UBPointerComparison
-                else
-                  let ty = type_of_operand e1 in
-                  let ty = TypesUtils.ty_as_literal ty in
-                  Core.cmp ~signed:(Layout.is_signed ty) v1 v2
+                let v1, v2, _ = Typed.cast_checked2 v1 v2 in
+                let ty = type_of_operand e1 in
+                let ty = TypesUtils.ty_as_literal ty in
+                ok (Core.cmp ~signed:(Layout.is_signed ty) v1 v2)
             | Offset ->
                 (* non-zero offset on integer pointer is not permitted, as these are always
                    dangling *)

@@ -10,19 +10,12 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   open Rust_state_m
   open Syntax
 
-  let ordering_enum_lt = Enum (U8.(-1s), [])
-  let ordering_enum_eq = Enum (U8.(0s), [])
-  let ordering_enum_gt = Enum (U8.(1s), [])
-
   let cmp ~signed l r =
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
-    if%sat l < r then ok ordering_enum_lt
-    else if%sat l ==@ r then ok ordering_enum_eq else ok ordering_enum_gt
-
-  let cmp_of_int v =
-    let zero = BV.zero (size_of_int v) in
-    if%sat v <$@ zero then ok ordering_enum_lt
-    else if%sat v ==@ zero then ok ordering_enum_eq else ok ordering_enum_gt
+    let discr =
+      Typed.ite (l < r) U8.(-1s) (Typed.ite (l ==@ r) U8.(0s) U8.(1s))
+    in
+    Enum (discr, [])
 
   let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
       (v2 : [< T.sint | T.sptr ] Typed.t) =
