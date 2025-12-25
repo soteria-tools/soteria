@@ -10,14 +10,15 @@ let rec of_list_combine l1 l2 k =
       of_list_combine l1 l2 k
   | _, _ -> invalid_arg "Iter.of_list_combine"
 
-(** [join_list i l] will join the iterator [i] with the list [l], returning a
-    new iterator over the values of both [i] and [l]. If [l] is smaller than
-    [i], will raise a [Invalid_argument] at the end of the iterator. *)
-let[@inline] join_list (i : 'a t) (l : 'b list) k =
+(** [combine_list i l] will combine the iterator [i] with the list [l],
+    returning a new iterator over the values of both [i] and [l]. If [l] is
+    smaller than [i], will raise a [Invalid_argument] at the end of the
+    iterator. *)
+let[@inline] combine_list (i : 'a t) (l : 'b list) k =
   let l = ref l in
   i (fun x ->
       match !l with
-      | [] -> invalid_arg "Iter.join_list"
+      | [] -> invalid_arg "Iter.combine_list"
       | a :: b ->
           l := b;
           k (x, a))

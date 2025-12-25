@@ -185,7 +185,7 @@ module Make (Sptr : Sptr.S) = struct
       | Ptr (_, Thin) | Int _ | Float _ | ConstFn _ ->
           failwith "Cannot split primitive"
       | Union _ -> failwith "Cannot encode union directly")
-      |> Iter.join_list iter
+      |> Iter.combine_list iter
       |> Result.fold_iter ~init:(0, Iter.empty)
            ~f:(fun (i, acc) ((ty, ofs), v) ->
              let offset = offset +!!@ ofs in
