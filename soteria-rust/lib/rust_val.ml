@@ -88,6 +88,12 @@ let as_base ty = function
 
 let as_base_i ty = as_base (TUInt ty)
 
+let as_tuple = function
+  | Tuple vals -> vals
+  | v ->
+      Fmt.failwith "Unexpected rust_val kind, expected a tuple, got: %a"
+        ppa_rust_val v
+
 let size_of = function
   | Int v -> Typed.size_of_int v / 8
   | Float f -> Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8

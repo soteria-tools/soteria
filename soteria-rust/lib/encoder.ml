@@ -98,6 +98,9 @@ module Make (Sptr : Sptr.S) = struct
       DecayMapMonad.Result.map (assert_or_error cond err) (fun () ->
           ((), state))
 
+    let fold_iter x ~init ~f =
+      Monad.foldM ~bind ~return:ok ~fold:Foldable.Iter.fold x ~init ~f
+
     module Syntax = struct
       let ( let* ) x f = bind x f
       let ( let+ ) x f = map x f
@@ -112,145 +115,113 @@ module Make (Sptr : Sptr.S) = struct
     end
   end
 
-  type cval_info = rust_val * T.sint Typed.t
-  [@@deriving show { with_path = false }]
+  (** Iterator over the fields and offsets of a type; for primitive types,
+      returns a singleton iterator for that value. *)
+  let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
+    let aux ?variant fields =
+      Iter.mapi (fun i ty -> (ty, Fields_shape.offset_of i fields))
+      @@
+      match ty with
+      | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
+      | TAdt
+          {
+            id = TBuiltin TArray;
+            generics = { types = [ ty ]; const_generics = [ len ]; _ };
+          } ->
+          Iter.repeatz (z_of_const_generic len) ty
+      | TAdt { id = TBuiltin ((TStr | TSlice) as kind); generics } -> (
+          let sub_ty =
+            match kind with
+            | TSlice -> List.hd generics.types
+            | TStr -> TLiteral (TUInt U8)
+            | _ -> failwith "unreachable"
+          in
+          match meta with
+          | Len len when Option.is_some (BV.to_z len) ->
+              (* TODO: strings and slices of symbolic length *)
+              Iter.repeatz (Option.get (BV.to_z len)) sub_ty
+          | Thin | Len _ | VTable _ ->
+              failwith "iter_fields: invalid length for slice/str")
+      | TAdt { id = TAdtId t_id; _ } -> (
+          let type_decl = Crate.get_adt t_id in
+          match (type_decl.kind, variant) with
+          | Struct fields, _ ->
+              let field_tys = field_tys fields in
+              Iter.of_list field_tys
+          | Enum variants, Some variant ->
+              let variant = Types.VariantId.nth variants variant in
+              let field_tys = field_tys variant.fields in
+              Iter.of_list field_tys
+          | _ -> failwith "invalid iter_fields type_decl")
+      | TRef (_, pointee, _) | TRawPtr (pointee, _) -> (
+          match Layout.dst_kind pointee with
+          | NoneKind -> failwith "invalid iter_fields: no metadata"
+          | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
+          | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
+      | _ -> Fmt.failwith "invalid iter_fields: %a" pp_ty ty
+    in
+    match layout.fields with
+    | Primitive -> Iter.singleton (ty, Usize.(0s))
+    | Array _ -> aux ?variant layout.fields
+    | Arbitrary (variant, _) -> aux ~variant layout.fields
+    | Enum (_, variant_layouts) ->
+        let variant = Option.get ~msg:"variant required for enum" variant in
+        let fields = variant_layouts.(Types.VariantId.to_int variant) in
+        aux ~variant fields
 
-  (** Converts a Rust value of the given type into a list of sub values, along
-      with their size and offset, and whether they are interiorly mutable. *)
-  let rec rust_to_cvals ?offset (value : rust_val) (ty : Types.ty) :
-      (cval_info list, 'e, 'f) Rustsymex.Result.t =
+  (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an
+      iterator over its sub values, along with their offset. Offsets all blocks
+      by [offset] if specified *)
+  let rec encode ~offset (value : rust_val) (ty : Types.ty) :
+      ((rust_val * T.sint Typed.t) Iter.t, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Result in
-    let illegal_pair () =
-      L.error (fun m ->
-          m "Wrong pair of rust_value and Charon.ty:@.- Val: %a@.- Ty: %a"
-            pp_rust_val value Types.pp_ty ty);
-      failwith "Wrong pair of rust_value and Charon.ty"
+    let chain iter =
+      (match value with
+      | Tuple vals | Enum (_, vals) -> vals
+      | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
+      | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
+      | Ptr (_, Thin) | Int _ | Float _ | ConstFn _ ->
+          failwith "Cannot split primitive"
+      | Union _ -> failwith "Cannot encode union directly")
+      |> Iter.combine_list iter
+      |> Result.fold_iter ~init:(0, Iter.empty)
+           ~f:(fun (i, acc) ((ty, ofs), v) ->
+             let offset = offset +!!@ ofs in
+             let++ ys = encode ~offset v ty in
+             (i + 1, Iter.append acc ys))
+      |> (Fun.flip Result.map) snd
     in
-    let offset = Option.value ~default:Usize.(0s) offset in
-    let chain_cvals layout vals types =
-      let sub_vals = List.combinei vals types in
-      fold_list sub_vals ~init:[] ~f:(fun acc (i, value, ty) ->
-          let field_offset = Layout.Fields_shape.offset_of i layout.fields in
-          let offset = field_offset +!!@ offset in
-          let++ blocks = rust_to_cvals ~offset value ty in
-          acc @ blocks)
-    in
-    match (value, ty) with
-    (* Trait types: we resolve them early *)
-    | _, TTraitType (tref, name) ->
-        let** ty = Layout.resolve_trait_ty tref name in
-        rust_to_cvals ~offset value ty
-    (* Literals *)
-    | Int _, TLiteral _ -> ok [ (value, offset) ]
-    | Float _, TLiteral _ -> ok [ (value, offset) ]
-    | Ptr _, TLiteral (TInt Isize | TUInt Usize) -> ok [ (value, offset) ]
-    | _, TLiteral _ -> illegal_pair ()
-    (* References / Pointers *)
-    | ( Ptr (ptr, meta),
-        TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } } )
-    | Ptr (ptr, meta), TRef (_, sub_ty, _)
-    | Ptr (ptr, meta), TRawPtr (sub_ty, _) -> (
-        let size = BV.usizei (Layout.size_of_int_ty Isize) in
-        match (meta, is_dst sub_ty) with
-        | _, false -> ok [ (Ptr (ptr, Thin), offset) ]
-        | Thin, true -> failwith "Expected a fat pointer"
-        | Len len, true ->
-            ok [ (Ptr (ptr, Thin), offset); (Int len, offset +!!@ size) ]
-        | VTable vt, true ->
-            ok [ (Ptr (ptr, Thin), offset); (Ptr (vt, Thin), offset +!!@ size) ]
-        )
-    (* Function pointer *)
-    | Ptr (_, Thin), TFnPtr _ -> ok [ (value, offset) ]
-    (* References / Pointers obtained from casting *)
-    | Int _, TAdt { id = TBuiltin TBox; _ }
-    | Int _, TRef _
-    | Int _, TRawPtr _
-    | Int _, TFnPtr _ ->
-        ok [ (value, offset) ]
-    | _, TAdt { id = TBuiltin TBox; _ } | _, TRawPtr _ | _, TRef _ ->
-        illegal_pair ()
-    (* Tuples *)
-    | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
-        let** layout = layout_of ty in
-        chain_cvals layout vs types
-    | _, TAdt { id = TTuple; _ } -> illegal_pair ()
-    (* Structs *)
-    | Tuple vals, TAdt { id = TAdtId t_id; _ } ->
-        let fields = field_tys @@ Crate.as_struct t_id in
-        let** layout = layout_of ty in
-        chain_cvals layout vals fields
-    (* Enums *)
-    | Enum (disc, vals), (TAdt { id = TAdtId t_id; _ } as ty) -> (
-        let variants = Crate.as_enum t_id in
-        let** layout = Layout.layout_of ty in
-        match layout with
-        | { fields = Arbitrary (variant, _); _ } ->
-            let variant = Types.VariantId.nth variants variant in
-            let var_fields = field_tys variant.fields in
-            chain_cvals layout vals var_fields
-        | { fields = Enum (tag_layout, var_fields); _ } ->
-            let disc =
-              Option.get ~msg:"Discriminant not concrete" (BV.to_z disc)
-            in
-            let variant_id, variant =
-              Option.get ~msg:"No matching variant?"
-              @@ List.find_mapi
-                   (fun i v ->
-                     let v_disc = z_of_literal Types.(v.discriminant) in
-                     if Z.equal disc v_disc then Some (i, v) else None)
-                   variants
-            in
-            let var_fields = var_fields.(variant_id) in
-            let discriminant =
-              match tag_layout.tags.(variant_id) with
-              | None -> []
-              | Some tag ->
-                  let offset = tag_layout.offset +!!@ offset in
-                  [ (Int tag, offset) ]
-            in
-            let var_layout = { layout with fields = var_fields } in
-            let++ content =
-              chain_cvals var_layout vals (field_tys variant.fields)
-            in
-            discriminant @ content
-        | _ -> Fmt.failwith "Unexpected layout for enum")
-    | Int value, TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
-        let++ layout = Layout.layout_of ty in
-        let tag_ty =
-          match layout.fields with
-          | Enum (tag, _) -> tag.ty
-          | _ -> failwith "Expected enum layout"
-        in
-        let value = Typed.cast_lit tag_ty value in
-        [ (Int value, offset) ]
-    | Enum _, _ -> illegal_pair ()
-    (* Arrays *)
-    | ( Tuple vals,
-        TAdt
-          {
-            id = TBuiltin TArray;
-            generics = { types = [ sub_ty ]; const_generics = [ len ]; _ };
-          } ) ->
-        let** layout = layout_of ty in
-        let len = int_of_const_generic len in
-        if List.length vals <> len then failwith "Array length mismatch";
-        chain_cvals layout vals (List.init len (fun _ -> sub_ty))
-    | _, TAdt { id = TBuiltin TArray; _ } -> illegal_pair ()
-    (* Unions *)
-    | Union blocks, TAdt { id = TAdtId _; _ } ->
-        ok (List.map (fun (v, o) -> (v, offset +!!@ o)) blocks)
-    | Union _, _ -> illegal_pair ()
-    (* Static Functions (ZSTs) *)
-    | ConstFn _, TFnDef _ -> ok []
-    | ConstFn _, _ | _, TFnDef _ -> illegal_pair ()
-    (* Should have been handled for arrays, tuples and structs *)
-    | Tuple _, _ -> illegal_pair ()
-    (* Rest *)
-    | _ ->
-        Fmt.kstr not_impl "Unhandled value/ty: %a / %a" pp_rust_val value pp_ty
-          ty
+    let** layout = Layout.layout_of ty in
+    if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
+    else
+      match (layout.fields, value) with
+      | _, Union blocks ->
+          ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
+      | Primitive, _ -> ok (Iter.singleton (value, offset))
+      | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
+      | Enum (tag_layout, _), Enum (disc, _) -> (
+          let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
+          let variants = Crate.as_enum adt_id in
+          let variants = List.mapi (fun i v -> (i, v)) variants in
+          let* variant =
+            match_on variants ~constr:(fun (_, v) ->
+                BV.of_literal v.discriminant ==@ disc)
+          in
+          let* i, _ =
+            of_opt_not_impl "no matching variant for enum discriminant" variant
+          in
+          let variant = Types.VariantId.of_int i in
+          let++ fields = chain (iter_fields ~variant layout ty) in
+          match tag_layout.tags.(i) with
+          | None -> fields
+          | Some tag ->
+              let offset = tag_layout.offset +!!@ offset in
+              Iter.cons (Int tag, offset) fields)
+      | Enum _, _ ->
+          Fmt.kstr not_impl "encode: expected enum value for enum type %a" pp_ty
+            ty
 
   (** Parses the current variant of the enum at the given offset. This handles
       cases such as niches, where the discriminant isn't directly encoded as a
@@ -262,18 +233,12 @@ module Make (Sptr : Sptr.S) = struct
     let* layout = layout_of ty in
     (* if it's a ZST, we assume it's the first variant; I don't think this is
        always true, e.g. enum { A(!), B }, but it's ok for now. *)
-    match layout with
-    | { fields = Arbitrary (vid, _); _ } -> ok vid
-    | { fields = Enum (tag_layout, _); _ } -> (
+    match layout.fields with
+    | Arbitrary (vid, _) -> ok vid
+    | Enum (tag_layout, _) -> (
         let offset = offset +!!@ tag_layout.offset in
         let* tag = query (TLiteral tag_layout.ty, offset) in
-        (* here we need to check and decay if it's a pointer, for niche encoding! *)
-        let* tag =
-          match tag with
-          | Int tag -> ok (Typed.cast_lit tag_layout.ty tag)
-          | Ptr (p, Thin) -> lift @@ Sptr.decay p
-          | _ -> Fmt.failwith "Unexpected tag: %a" pp_rust_val tag
-        in
+        let tag = as_base tag_layout.ty tag in
         let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
         let* res =
           lift
@@ -292,203 +257,104 @@ module Make (Sptr : Sptr.S) = struct
             in
             error (`UBTransmute msg)
         | Niche untagged, None -> ok untagged)
-    | _ -> failwith "Unexpected layout for enum"
+    | Array _ | Primitive -> failwith "Unexpected layout for enum"
 
-  type ('e, 'fix, 'state) parser = (rust_val, 'state, 'e, 'fix) ParserMonad.t
-
-  (** Converts a Rust type into a list of types to read, along with their
-      offset; once these are read, symbolically decides whether we must keep
-      reading. [offset] is the initial offset to read from, [meta] is the
-      optional metadata, that originates from a fat pointer. *)
-  let rust_of_cvals ?(meta = Thin) ~is_valid_ptr ~offset :
+  (** [decode ~meta ~offset ty] Parses a rust value of type [ty] at the given
+      offset, using the provided metadata for DSTs, and returns the associated
+      [Rust_val]. This does not perform any validity checking, aside from
+      erroring if the type is uninhabited. *)
+  let decode ~meta ~offset :
       Types.ty -> (rust_val, 'state, 'e, 'fix) ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let module T = Typed.T in
     (* Base case, parses all types. *)
-    let rec aux offset ty : ('e, 'fix, 'state) parser =
-      match (ty : Types.ty) with
-      | TLiteral _ as ty -> (
-          let* q_res = query (ty, offset) in
-          match q_res with
-          | (Int _ | Float _) as v -> ok v
-          | Ptr (ptr, Thin) ->
-              let+ ptr_v = lift @@ Sptr.decay ptr in
-              Int ptr_v
-          | _ ->
-              Fmt.kstr not_impl "Expected a base or a thin pointer, got %a"
-                pp_rust_val q_res)
-      | ( TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } }
-        | TRef (_, sub_ty, _)
-        | TRawPtr (sub_ty, _) ) as ty ->
-          let must_be_valid =
-            match ty with
-            | TRef _ | TAdt { id = TBuiltin TBox; _ } -> true
-            | TRawPtr _ -> false
-            | _ -> failwith "Impossible"
-          in
-          let ptr_size = BV.usizei @@ Layout.size_of_int_ty Isize in
-          let meta_kind = dst_kind sub_ty in
-          (* Small hack; we don't want to read the metadata ! *)
-          let ty =
-            match (meta_kind, ty) with
-            | NoneKind, _ -> ty
-            | _, TRawPtr _ -> unit_ptr
-            | _, _ -> unit_ref
-          in
-          let* ptr = query (ty, offset) in
-          let* meta : Sptr.t Rust_val.meta =
-            match meta_kind with
-            | NoneKind -> ok Thin
-            | LenKind -> (
-                let isize : Types.ty = TLiteral (TInt Isize) in
-                let* meta = query (isize, offset +!!@ ptr_size) in
-                match meta with
-                | Int meta -> ok (Len meta)
-                | _ -> not_impl "Unexpected metadata value")
-            | VTableKind -> (
-                let* meta = query (unit_ptr, offset +!!@ ptr_size) in
-                match meta with
-                | Ptr (meta_v, Thin) -> ok (VTable meta_v)
-                | _ -> not_impl "Unexpected metadata value")
-          in
-          let* () =
-            match (must_be_valid, ptr) with
-            | false, _ -> ok ()
-            | true, Ptr ptr -> (
-                let* valid =
-                  lift @@ DecayMapMonad.lift @@ is_valid_ptr ptr sub_ty
-                in
-                match (valid, meta) with
-                | Some err, _ -> error err
-                | None, Len len when must_be_valid ->
-                    assert_or_error
-                      (Usize.(0s) <=$@ len)
-                      (`UBTransmute "Negative slice length")
-                | None, _ -> ok ())
-            | true, _ -> error `UBDanglingPointer
-          in
-          let+ ptr =
-            match ptr with
-            | Ptr (ptr_v, Thin) -> ok ptr_v
-            | Int ptr_v ->
-                let ptr_v = Typed.cast_i Usize ptr_v in
-                ok (Sptr.null_ptr_of ptr_v)
-            | v ->
-                Fmt.kstr not_impl "Unexpected pointer value: %a" pp_rust_val v
-          in
-          Ptr (ptr, meta)
-      | TFnPtr _ as ty -> (
-          let* boxed = query (ty, offset) in
-          match boxed with
-          | Ptr (p, _) as ptr ->
-              let+ () =
-                assert_or_error
-                  (Typed.not (Sptr.sem_eq (Sptr.null_ptr ()) p))
-                  `UBDanglingPointer
-              in
-              ptr
-          | Int _ -> error `UBDanglingPointer
-          | _ -> not_impl "Expected a pointer or base")
-      | TAdt { id = TTuple; generics = { types; _ } } as ty ->
-          let* layout = layout_of ty in
-          let types = List.to_seq types in
-          aux_fields ~f:(fun fs -> Tuple fs) ~layout offset types
-      | TAdt { id = TAdtId t_id; _ } as ty -> (
-          let type_decl = Crate.get_adt t_id in
-          match type_decl.kind with
-          | Struct fields ->
-              let* layout = layout_of ty in
-              fields
-              |> field_tys
-              |> List.to_seq
-              |> aux_fields ~f:(fun fs -> Tuple fs) ~layout offset
-          | Enum [] -> error `RefToUninhabited
-          | Enum variants -> aux_enum offset ty variants
-          | Union _ ->
-              let* layout = layout_of ty in
-              if%sat layout.size ==@ Usize.(0s) then ok (Union [])
-              else
-                (* FIXME: this isn't exactly correct; union actually doesn't copy the padding
-                   bytes (i.e. the intersection of the padding bytes of all fields). It is
-                   quite painful to actually calculate these padding bytes so we just copy
-                   the whole thing for now.
-                   See https://github.com/rust-lang/unsafe-code-guidelines/issues/518
-                   And a proper implementation is here:
-                   https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
-                let+ blocks = get_all (Typed.cast layout.size, offset) in
-                Union blocks
-          | _ ->
-              Fmt.kstr failwith "Unhandled ADT kind in rust_of_cvals: %a"
-                Types.pp_type_decl_kind type_decl.kind)
-      | TAdt { id = TBuiltin TArray; generics = { types; const_generics; _ } }
-        as ty ->
-          let sub_ty = List.hd types in
-          let len = z_of_const_generic @@ List.hd const_generics in
-          let* layout = layout_of ty in
-          let fields = Seq.init_z len (fun _ -> sub_ty) in
-          aux_fields ~f:(fun fs -> Tuple fs) ~layout offset fields
-      | TAdt { id = TBuiltin (TStr as ty); generics }
-      | TAdt { id = TBuiltin (TSlice as ty); generics } ->
-          (* We can only read a slice if we have the metadata of its length, in which case
-           we interpret it as an array of that length. *)
-          let* len =
-            match meta with
-            | Thin -> failwith "Tried reading slice without metadata"
-            | Len l -> ok l
-            | VTable ptr -> lift @@ Sptr.decay ptr
-          in
-          let* len =
-            of_opt_not_impl
-              (Fmt.str "Slice length not concrete: %a" Typed.ppa len)
-              (BV.to_z len)
-          in
-          let sub_ty =
-            if ty = TSlice then List.hd generics.types else TLiteral (TUInt U8)
-          in
-          (* FIXME: This is a bit hacky, and not performant -- instead we should try to
-                 group the reads together, at least for primitive types. *)
-          let arr_ty = mk_array_ty sub_ty len in
-          let* layout = layout_of arr_ty in
-          let fields = Seq.init_z len (fun _ -> sub_ty) in
-          aux_fields ~f:(fun fs -> Tuple fs) ~layout offset fields
-      | TNever -> error `RefToUninhabited
-      | TTraitType (tref, name) ->
-          let* ty = lift_rsymex @@ Layout.resolve_trait_ty tref name in
-          aux offset ty
-      | TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
-      | TDynTrait _ -> not_impl "Tried reading a trait object?"
-      | TAdt { id = TBuiltin TBox; _ } -> failwith "Invalid box"
-      | (TVar _ | TError _ | TPtrMetadata _) as ty ->
-          Fmt.kstr not_impl "Unhandled Charon.ty: %a" Types.pp_ty ty
-    (* Parses a sequence of fields (for structs, tuples, arrays) *)
-    and aux_fields ~f ~(layout : Layout.t) offset (fields : Types.ty Seq.t) :
-        ('e, 'fix, 'state) parser =
-      let base_offset = offset +!!@ (offset %@ layout.align) in
-      let rec mk_callback idx to_parse parsed : ('e, 'fix, 'state) parser =
-        match to_parse () with
-        | Seq.Nil -> ok (f (List.rev parsed))
-        | Seq.Cons (ty, rest) ->
-            let field_off = Layout.Fields_shape.offset_of idx layout.fields in
-            let offset = base_offset +!!@ field_off in
-            bind (aux offset ty) (fun v ->
-                mk_callback (succ idx) rest (v :: parsed))
-      in
-      mk_callback 0 fields []
-    (* Parses what enum variant we're handling *)
-    and aux_enum offset ty variants : ('e, 'fix, 'state) parser =
-      let* v_id = variant_of_enum ~offset ty in
+    let rec aux offset ty : (rust_val, 'state, 'e, 'fix) ParserMonad.t =
       let* layout = layout_of ty in
-      let fields = Layout.Fields_shape.shape_for_variant v_id layout.fields in
-      let variant = Types.VariantId.nth variants v_id in
-      let layout = { layout with fields } in
-      let discr = BV.of_literal variant.discriminant in
-      variant.fields
-      |> field_tys
-      |> List.to_seq
-      |> aux_fields ~f:(fun fs -> Enum (discr, fs)) ~layout offset
+      match (layout.fields, ty) with
+      | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
+      | _, TAdt { id = TAdtId id; _ } when Crate.is_union id ->
+          if%sat layout.size ==@ Usize.(0s) then ok (Union [])
+          else
+            (* FIXME: this isn't exactly correct; union actually doesn't copy the padding
+               bytes (i.e. the intersection of the padding bytes of all fields). It is
+               quite painful to actually calculate these padding bytes so we just copy
+               the whole thing for now.
+               See https://github.com/rust-lang/unsafe-code-guidelines/issues/518
+               And a proper implementation is here:
+               https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
+            let+ blocks = get_all (Typed.cast layout.size, offset) in
+            Union blocks
+      | Primitive, TNever -> error `RefToUninhabited
+      | Primitive, TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
+      | Primitive, _ -> query (ty, offset)
+      | Array _, (TRawPtr (pointee, _) | TRef (_, pointee, _)) -> (
+          let+ vs = iter (iter_fields ~meta layout ty) offset in
+          let vs = as_tuple vs in
+          match (dst_kind pointee, vs) with
+          | LenKind, [ Ptr (base, Thin); Int len ] -> Ptr (base, Len len)
+          | VTableKind, [ Ptr (base, Thin); Ptr (vtable, Thin) ] ->
+              Ptr (base, VTable vtable)
+          | _ -> failwith "decode: invalid metadata for pointer type")
+      | Array _, _ -> iter (iter_fields ~meta layout ty) offset
+      | Arbitrary (variant, _), _ -> (
+          let+ vs = iter (iter_fields ~meta layout ty) offset in
+          match ty with
+          | TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
+              let variants = Crate.as_enum t_id in
+              let variant = Types.VariantId.nth variants variant in
+              let fields = as_tuple vs in
+              let discr = BV.of_literal variant.discriminant in
+              Enum (discr, fields)
+          | _ -> vs)
+      | Enum _, TAdt { id = TAdtId t_id; _ } ->
+          let variants = Crate.as_enum t_id in
+          let* variant = variant_of_enum ~offset ty in
+          let+ fields = iter (iter_fields ~variant ~meta layout ty) offset in
+          let fields = as_tuple fields in
+          let variant = Types.VariantId.nth variants variant in
+          let discr = BV.of_literal variant.discriminant in
+          Enum (discr, fields)
+      | Enum _, _ -> failwith "decode: expected enum type for enum layout"
+    and iter fields offset =
+      fold_iter fields ~init:[] ~f:(fun vs (ty, o) ->
+          let+ v = aux (offset +!!@ o) ty in
+          v :: vs)
+      |> (Fun.flip map) (fun vs -> Tuple (List.rev vs))
     in
     aux offset
+
+  (** Ensures this value is valid for the given type. This includes checking
+      pointer metadata, e.g. slice lengths and vtables. The [fake_read] function
+      is used to simulate reading from memory to check the validity of a pointee
+      type. *)
+  let check_valid ~fake_read v ty st =
+    let open Rustsymex in
+    let open Syntax in
+    let open Result in
+    match (v, (ty : Types.ty)) with
+    | Ptr ((_, meta) as p), TRef (_, pointee, _) -> (
+        let** () =
+          match meta with
+          | Thin -> ok ()
+          | Len len ->
+              assert_or_error
+                (Usize.(0s) <=$@ len)
+                (`UBTransmute "Negative slice length")
+          | VTable _ ->
+              (* TODO: check the vtable pointer is of the right trait kind *)
+              ok ()
+        in
+        let* opt_err, st = fake_read p pointee st in
+        match opt_err with Some err -> error err | None -> ok st)
+    | Ptr (p, _), TFnPtr _ ->
+        let++ () =
+          assert_or_error
+            (Typed.not (Sptr.sem_eq (Sptr.null_ptr ()) p))
+            `UBDanglingPointer
+        in
+        st
+    | _ -> ok st
 
   let with_constraints ~ty v =
     let constraints = Typed.conj @@ Layout.constraints ty v in
@@ -574,7 +440,10 @@ module Make (Sptr : Sptr.S) = struct
         with_constraints ~ty v
     | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> ok v
     | TRef _, Int _ -> error `UBDanglingPointer
-    | (TRawPtr _ | TFnPtr _), Int v -> ok (Ptr (Sptr.null_ptr_of v, Thin))
+    | TFnPtr _, Int v ->
+        if%sat v ==@ Usize.(0s) then error `UBDanglingPointer
+        else ok (Ptr (Sptr.null_ptr_of v, Thin))
+    | TRawPtr _, Int v -> ok (Ptr (Sptr.null_ptr_of v, Thin))
     | _ ->
         Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" pp_rust_val v
           pp_ty to_ty
