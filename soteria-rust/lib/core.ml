@@ -12,13 +12,10 @@ module M (Rust_state_m : Rust_state_m.S) = struct
 
   let cmp ~signed l r =
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
-    if%sat l < r then ok U8.(-1s)
-    else if%sat l ==@ r then ok U8.(0s) else ok U8.(1s)
-
-  let cmp_of_int v =
-    let zero = BV.zero (size_of_int v) in
-    if%sat v <$@ zero then ok U8.(-1s)
-    else if%sat v ==@ zero then ok U8.(0s) else ok U8.(1s)
+    let discr =
+      Typed.ite (l < r) U8.(-1s) (Typed.ite (l ==@ r) U8.(0s) U8.(1s))
+    in
+    Enum (discr, [])
 
   let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
       (v2 : [< T.sint | T.sptr ] Typed.t) =
@@ -168,18 +165,6 @@ module M (Rust_state_m : Rust_state_m.S) = struct
                 ok (BV.of_bool (bop ml mr))
               else ok (BV.of_bool v)
         else error `UBPointerComparison
-    | Cmp, Ptr (l, _), Ptr (r, _) ->
-        let* () = State.assert_ (Sptr.is_same_loc l r) `UBPointerComparison in
-        let* v = Sptr.distance l r in
-        let* cmp = cmp_of_int v in
-        ok cmp
-    | Cmp, Ptr (p, _), Int v | Cmp, Int v, Ptr (p, _) ->
-        if%sat v ==@ BV.usizei (Layout.size_of_uint_ty Usize) then
-          if%sat Sptr.is_at_null_loc p then ok U8.(0s)
-          else if l = Int v then ok U8.(1s)
-          else ok U8.(-1s)
-        else
-          Fmt.kstr not_impl "Don't know how to eval %a cmp %a" Sptr.pp p ppa v
     | op, l, r ->
         Fmt.kstr not_impl
           "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
@@ -195,20 +180,14 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     L.debug (fun m ->
         m "Transmuting %a: %a -> %a" pp_rust_val v Charon_util.pp_ty from_ty
           Charon_util.pp_ty to_ty);
-    let* state = get_state () in
-    let^ res =
-      let@ () = run ~env:() ~state in
-      let* { size; align; _ } = Layout.layout_of from_ty in
-      let* { align = align_2; _ } = Layout.layout_of to_ty in
-      let align = BV.max ~signed:false align align_2 in
-      let* ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
-      let* () = State.store ptr from_ty v in
-      State.load ptr to_ty
-    in
-    match res with
-    | Ok (v, _) -> ok v
-    | Error e -> error_raw e
-    | Missing m -> miss m
+    let* { size; align; _ } = Layout.layout_of from_ty in
+    let* { align = align_2; _ } = Layout.layout_of to_ty in
+    let align = BV.max ~signed:false align align_2 in
+    let* ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
+    let* () = State.store ptr from_ty v in
+    let* v = State.load ptr to_ty in
+    let+ () = State.free ptr in
+    v
 
   let zero_valid ~ty =
     let^+ res =
