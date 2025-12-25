@@ -44,3 +44,9 @@ let cast_float x = if is_float x.node.ty then Some x else None
 
 let cast_checked2 x y =
   if equal_ty x.node.ty y.node.ty then Some (x, y, x.node.ty) else None
+
+module Syn = struct
+  include Syn
+
+  type 'a t = Svalue.t
+end

@@ -240,3 +240,5 @@ module Syntax : sig
     val one : unit -> [> sint ] t
   end
 end
+
+module Syn : Symex.Value.Syn with type 'a v := 'a t and type 'a ty := 'a ty

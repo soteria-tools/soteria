@@ -310,3 +310,5 @@ module Infix : sig
   val ( *.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( /.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 end
+
+module Syn : Symex.Value.Syn with type 'a v := 'a t and type 'a ty := 'a ty

@@ -1459,6 +1459,69 @@ module SSeq = struct
     match ty with TSeq ty -> ty | _ -> failwith "Expected a sequence type"
 end
 
+(** {2 General constructors} *)
+
+let mk_unop (op : Unop.t) v =
+  match op with
+  | Not -> not v
+  | GetPtrLoc -> Ptr.loc v
+  | GetPtrOfs -> Ptr.ofs v
+  | BvOfFloat (rounding, signed, size) -> BitVec.of_float rounding signed size v
+  | FloatOfBv (rounding, signed, _) -> BitVec.to_float rounding signed v
+  | BvExtract (from, to_) -> BitVec.Raw.extract from to_ v
+  | BvExtend (signed, l) -> BitVec.Raw.extend signed l v
+  | BvNot -> BitVec.Raw.not v
+  | BvNegOvf -> BitVec.Raw.neg_overflows v
+  | FAbs -> Float.abs v
+  | FIs fc -> Float.is_floatclass fc v
+  | FRound rounding -> Float.round rounding v
+  | IntOfBool -> int_of_bool v
+  | BvOfInt (signed, size) -> BitVec.of_int signed size v
+  | IntOfBv signed -> BitVec.to_int signed v
+
+let mk_binop (op : Binop.t) v1 v2 =
+  match op with
+  | And -> and_ v1 v2
+  | Or -> or_ v1 v2
+  | Eq -> sem_eq v1 v2
+  | Leq -> leq v1 v2
+  | Lt -> lt v1 v2
+  | Plus -> plus v1 v2
+  | Minus -> minus v1 v2
+  | Times -> times v1 v2
+  | Div -> div v1 v2
+  | Rem -> rem v1 v2
+  | Mod -> mod_ v1 v2
+  | FEq -> Float.eq v1 v2
+  | FLeq -> Float.leq v1 v2
+  | FLt -> Float.lt v1 v2
+  | FPlus -> Float.plus v1 v2
+  | FMinus -> Float.minus v1 v2
+  | FTimes -> Float.times v1 v2
+  | FDiv -> Float.div v1 v2
+  | FRem -> Float.rem v1 v2
+  | BvPlus -> BitVec.Raw.plus v1 v2
+  | BvMinus -> BitVec.Raw.minus v1 v2
+  | BvTimes -> BitVec.Raw.times v1 v2
+  | BvDiv signed -> BitVec.Raw.div signed v1 v2
+  | BvRem signed -> BitVec.Raw.rem signed v1 v2
+  | BvMod -> BitVec.Raw.mod_ v1 v2
+  | BvPlusOvf signed ->
+      BitVec.plus_overflows ~size:(size_of_bv v1.node.ty) ~signed v1 v2
+  | BvTimesOvf signed ->
+      BitVec.times_overflows ~size:(size_of_bv v1.node.ty) ~signed v1 v2
+  | BvLt signed -> BitVec.Raw.lt signed v1 v2
+  | BvLeq signed -> BitVec.Raw.leq signed v1 v2
+  | BvConcat -> BitVec.Raw.concat v1 v2
+  | BitAnd -> BitVec.Raw.and_ v1 v2
+  | BitOr -> BitVec.Raw.or_ v1 v2
+  | BitXor -> BitVec.Raw.xor v1 v2
+  | BitShl -> BitVec.Raw.shl v1 v2
+  | BitLShr -> BitVec.Raw.lshr v1 v2
+  | BitAShr -> BitVec.Raw.ashr v1 v2
+
+let mk_nop (op : Nop.t) vs = match op with Nop.Distinct -> distinct vs
+
 (** {2 Infix operators} *)
 
 module Infix = struct
