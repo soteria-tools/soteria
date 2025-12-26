@@ -23,13 +23,54 @@
 (source
  (github soteria-tools/soteria))
 
+(pin
+ (url
+  "git+https://github.com/NatKarmios/simple-smt-ocaml#9db7ef0bb61a76010de255af3cbe4066dd8dd622")
+ (package
+  (name simple_smt)))
+
+(pin
+ (url "git+https://github.com/kmemarian/cerberus#frontend-for-system-libc")
+ (package
+  (name cerberus-lib)))
+
+(pin
+ (url
+  "git+https://github.com/giltho/charon#852f899fd8fe3d7501a5de352fdfd3fe2f6b0ef0")
+ (package
+  (name name_matcher_parser)))
+
+(pin
+ (url
+  "git+https://github.com/giltho/charon#852f899fd8fe3d7501a5de352fdfd3fe2f6b0ef0")
+ (package
+  (name charon)))
+
+(pin
+ (url
+  "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c")
+ (package
+  (name vscode)))
+
+(pin
+ (url
+  "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c")
+ (package
+  (name vscode-node)))
+
+(pin
+ (url
+  "git+https://github.com/ocamllabs/vscode-ocaml-platform#205efaf51a709a9ef23a1ba62f32db571a7f6a8c")
+ (package
+  (name vscode-interop)))
+
 (package
  (name soteria)
  (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools")
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
   (ocaml
-   (>= 5.3.0))
+   (= 5.3.0))
   (tsort
    (>= 2.1.0))
   eio_main
