@@ -30,15 +30,15 @@ let reserve sym ty =
   let binding = { kind = Dead; ty } in
   Map.add sym binding
 
-let[@inline] declare_ sym kind =
+let[@inline] declare sym kind =
   Map.update sym (function
     | None -> failwith "Store: Assigning unknown symbol?"
     | Some { kind = _; ty } -> Some { kind; ty })
 
-let declare_value sym value t = declare_ sym (Value value) t
-let declare_ptr sym ptr t = declare_ sym (Stackptr ptr) t
-let declare_uninit sym t = declare_ sym Uninit t
-let dealloc sym t = declare_ sym Dead t
+let declare_value sym value t = declare sym (Value value) t
+let declare_ptr sym ptr t = declare sym (Stackptr ptr) t
+let declare_uninit sym t = declare sym Uninit t
+let dealloc sym t = declare sym Dead t
 
 let get_ty sym t =
   match Map.find_opt sym t with

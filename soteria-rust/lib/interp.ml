@@ -107,7 +107,7 @@ module Make (State : State_intf.S) = struct
     in
 
     (* store the arguments *)
-    List.combine (List.sub 1 locals.arg_count locals.locals) args
+    List.combine (List.sub ~from:1 ~len:locals.arg_count locals.locals) args
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
            (* Passed (nested) references must be protected and be valid. *)
            let* value, protected' =
