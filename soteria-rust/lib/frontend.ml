@@ -503,7 +503,7 @@ module Diagnostic = struct
             ?content:span.file.contents file (to_loc span.beg_loc)
             (to_loc span.end_loc);
         ]
-    | Virtual _ -> []
+    | Virtual _ | NotReal _ -> []
 
   let print_diagnostic ~fname ~call_trace ~error =
     Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
