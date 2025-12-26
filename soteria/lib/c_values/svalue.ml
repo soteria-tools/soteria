@@ -225,6 +225,7 @@ and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
 let hash t = t.tag
 let kind t = t.node.kind
+let ty t = t.node.ty
 
 let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
   match sv.node.kind with

@@ -34,6 +34,8 @@
    (>= 2.1.0))
   eio_main
   simple_smt
+  (smtml
+   (>= 0.16.0))
   iter
   (ppx_expect
    (>= 0.17.0))
