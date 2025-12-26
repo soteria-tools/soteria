@@ -244,6 +244,17 @@ module type Base = sig
         'a t
     end
   end
+
+  module Producer : sig
+    type 'a symex := 'a t
+    type subst := Value.Syn.Subst.t
+
+    include Monad.S with type 'a t = subst -> ('a * subst) symex
+
+    val vanish : unit -> 'a t
+    val subst : 'a Value.Syn.t -> 'a Value.t t
+    val producer : subst:subst -> 'a t -> ('a * subst) symex
+  end
 end
 
 module type S = sig
@@ -430,11 +441,11 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     if Approx.As_ctx.is_ux () then ()
     else f (Compo_res.Error (`Lfail (Value.bool false)))
 
-  let nondet ty f =
+  let nondet_immediate ty =
     let v = Solver.fresh_var ty in
-    let v = Value.mk_var v ty in
-    f v
+    Value.mk_var v ty
 
+  let nondet ty f = f (nondet_immediate ty)
   let simplify v f = f (Solver.simplify v)
   let fresh_var ty f = f (Solver.fresh_var ty)
 
@@ -659,6 +670,19 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       let branch_on_take_one = branch_on_take_one
       let if_sure = if_sure
     end
+  end
+
+  module Producer = struct
+    include Soteria_std.Monad.StateT (Value.Syn.Subst) (MONAD)
+
+    let vanish () = lift (vanish ())
+
+    let subst (e : 'a Value.Syn.t) =
+     fun s ->
+      let v, s = Value.Syn.subst ~fresh:nondet_immediate s e in
+      MONAD.return (v, s)
+
+    let producer ~subst p = p subst
   end
 end
 
