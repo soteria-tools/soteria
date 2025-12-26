@@ -4,15 +4,20 @@
   <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
 </picture>
 
+
 Soteria is a library for writing efficient symbolic interpreters directly in OCaml.
 The core library is just a small toolbox that we use for writing a set of analyses, currently for C and Rust.
+
+[![Zulip Chat](https://img.shields.io/badge/join-zulip?logo=zulip&label=Zulip&labelColor=%2330363D&color=%232FBC4F)](https://soteria.zulipchat.com/)
+[![CI](https://github.com/soteria-tools/soteria/actions/workflows/ci.yml/badge.svg)](https://github.com/soteria-tools/soteria/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?labelColor=%2330363D)](https://opensource.org/licenses/Apache-2.0)
 
 # Build instructions
 
 To build the current repository, you first need to [install OCaml](https://ocaml.org/docs/installing-ocaml).
 We then advise to create a local switch for development, and build the project:
 ```sh
-opam switch create . --deps-only -y
+opam switch create . --deps-only --with-test --with-doc -y
 dune build @all
 ```
 
@@ -79,10 +84,9 @@ Currently, and unlike Soteria-C, Soteria-Rust has neither IDE integration or com
 # Contributing
 
 We are very happy to welcome contributions from the community!
-Soteria is open source and will remain open source, feel free to use it for your own projects as well and let us know if we can help!
+Soteria is open source and will remain open source, feel free to use it for your own projects as well and let us know if we can help! Feel free to join our [Zulip chat](https://soteria.zulipchat.com/) as well.
 
 If you want to submit a pull request, take a quick look at the [contribution guidelines](./CONTRIBUTING.md), and make sure you have read the [Contributor License Agreement](./CLA.md) which requires your contributions to be compatible with our open source license.
-
 
 # License
 

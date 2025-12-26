@@ -31,6 +31,7 @@ class CliOpts(TypedDict):
     cmd: Cmd
     tool: ToolName
     tool_cmd: list[str]
+    cli_extra_flags: list[str]
     filters: list[str]
     exclusions: list[str]
     tag: Optional[str]
@@ -60,6 +61,7 @@ def parse_flags() -> CliOpts:
         "cmd": cast(Cmd, None),
         "tool": "Rusteria",
         "tool_cmd": [],
+        "cli_extra_flags": [],
         "filters": [],
         "exclusions": [],
         "tag": None,
@@ -186,6 +188,7 @@ def parse_flags() -> CliOpts:
         opts = opts_for_rusteria(opts, force_obol=(not with_charon))
 
     opts["tool_cmd"] += cmd_flags
+    opts["cli_extra_flags"] = cmd_flags
     return opts
 
 
