@@ -120,12 +120,3 @@ and[@tail_mod_cons] prepend_concat_map2 zs f xs ys =
 (** [sub ~from ~len l] returns the sublist of [l], from index [from]
     (inclusive), of length [n]. *)
 let sub ~from ~len l = l |> drop from |> take len
-
-let[@tail_mod_cons] rec filter_mapi f i = function
-  | [] -> []
-  | x :: l -> (
-      match f i x with
-      | None -> filter_mapi f (i + 1) l
-      | Some v -> v :: filter_mapi f (i + 1) l)
-
-let filter_mapi f l = filter_mapi f 0 l
