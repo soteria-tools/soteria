@@ -31,12 +31,7 @@ module Outcome = struct
     | Fatal -> Color.pp_clr `Yellow ft "unknown"
 end
 
-let pp_branches ft n = Fmt.pf ft "%i branch%s" n (if n = 1 then "" else "es")
-
-let pp_time ft t =
-  if !Config.current.no_timing then Fmt.pf ft "<time>"
-  else if t < 0.05 then Fmt.pf ft "%ams" (Fmt.float_dfrac 2) (t *. 1000.)
-  else Fmt.pf ft "%as" (Fmt.float_dfrac 2) t
+let pp_branches = Printers.pp_plural ~sing:"branch" ~plur:"branches"
 
 let print_pcs pcs =
   let open Fmt in
@@ -58,7 +53,8 @@ let print_outcomes entry_name f =
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
-        "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
+        "%s: done in %a, ran %a" entry_name Printers.pp_time time pp_branches
+        ntotal;
       print_pcs pcs;
       Fmt.pr "@.@.";
       (entry_name, Outcome.Ok)
@@ -70,8 +66,8 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
-        time pp_branches err_branches ntotal;
+        "%s: found issues in %a, errors in %a (out of %d)" entry_name
+        Printers.pp_time time pp_branches err_branches ntotal;
       Fmt.pr "@.";
       let () =
         let@ error, call_trace, pcs = Fun.flip List.iter errs in
@@ -93,7 +89,7 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
+        "%s (%a): %s, %s@.@." entry_name Printers.pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
@@ -102,31 +98,6 @@ let print_outcomes_summary outcomes =
   pr "%a:@\n%a@\n" (pp_style `Bold) "Summary"
     (list ~sep:(any "@\n") pp_outcome)
     outcomes
-
-let print_stats (stats : 'a Stats.stats) =
-  let open Fmt in
-  let entries =
-    [
-      ("Steps", fun ft () -> int ft stats.steps_number);
-      ("Branches", fun ft () -> int ft stats.branch_number);
-      ("Total time", fun ft () -> pp_time ft stats.exec_time);
-      ( "Execution time",
-        fun ft () ->
-          Fmt.pf ft "%a (%a%%)" pp_time
-            (stats.exec_time -. stats.sat_time)
-            (float_dfrac 2)
-            (100. *. (stats.exec_time -. stats.sat_time) /. stats.exec_time) );
-      ( "Solver time",
-        fun ft () ->
-          Fmt.pf ft "%a (%a%%)" pp_time stats.sat_time (float_dfrac 2)
-            (100. *. stats.sat_time /. stats.exec_time) );
-      ("SAT checks", fun ft () -> int ft stats.sat_checks);
-    ]
-  in
-  let pp_entry ft (name, pp_value) = Fmt.pf ft " • %s: %a" name pp_value () in
-  pr "%a:@\n%a@\n" (pp_style `Bold) "Statistics"
-    (list ~sep:(any "@\n") pp_entry)
-    entries
 
 let exec_crate
     ( (crate : Charon.UllbcAst.crate),
@@ -151,7 +122,7 @@ let exec_crate
     @@ exec_fun entry.fun_decl
   in
 
-  if !Config.current.print_stats then print_stats stats;
+  Rustsymex.Stats.output stats;
 
   (* inverse ok and errors if we expect a failure *)
   let nbranches = List.length branches in
@@ -209,7 +180,7 @@ let wrap_step name f =
     let time = Unix.gettimeofday () in
     let res = f () in
     let time = Unix.gettimeofday () -. time in
-    Fmt.pr " done in %a@." pp_time time;
+    Fmt.pr " done in %a@." Printers.pp_time time;
     res
   with e ->
     let bt = Printexc.get_raw_backtrace () in

@@ -31,3 +31,17 @@ This test is considered successful if the out of each process is a single branch
   if_false: [42]
   if_maybe: [42]
   if_guranteed: [42]
+
+Test printing stats to stdout (ensure this looks somewhat nice)
+  $ ./print_stats.exe
+  Statistics:
+   • Steps: 0
+   • Branches: 4 (0 unexplored)
+   • Total time: <time>
+   • Execution time: <time> (<x>%)
+   • Solver time: <time> (<x>%)
+   • SAT checks: 9 (0 unknowns)
+   • Give up reasons:
+     - give up reason
+   • Misses without fixes:
+     - miss no fix
