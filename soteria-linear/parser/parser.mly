@@ -13,7 +13,7 @@
 %token EOF
 
 %start <Program.t> program
-%start <Asrt.t> assertion_eof
+// %start <Asrt.t> assertion_eof
 
 %nonassoc IN
 %right SEMI
@@ -32,14 +32,24 @@ program:
     }
 
 fun_def:
-  | LET name = ID args = list(ID) spec = option(spec) EQ body = expr {
-      { Fun_def.name; args; body; spec }
+  | LET
+    name = ID
+    args = list(ID)
+    // spec = option(spec)
+    EQ
+    body = expr {
+      {
+        Fun_def.name;
+        args;
+        body;
+        (* spec *)
+      }
     }
 
-spec:
-  | REQUIRES pre = assertion ENSURES post = assertion { { Spec.pre; post } }
-  | REQUIRES pre = assertion { { Spec.pre; post = [Asrt.Pure (Pure_expr.Bool true)] } }
-  | ENSURES post = assertion { { Spec.pre = [Asrt.Pure (Pure_expr.Bool true)]; post } }
+// spec:
+//   | REQUIRES pre = assertion ENSURES post = assertion { { Spec.pre; post } }
+//   | REQUIRES pre = assertion { { Spec.pre; post = [Asrt.Pure (Pure_expr.Bool true)] } }
+//   | ENSURES post = assertion { { Spec.pre = [Asrt.Pure (Pure_expr.Bool true)]; post } }
 
 pure_expr:
   | i = INT { Pure_expr.Int i }
@@ -75,13 +85,13 @@ non_pure_simple_expr:
   | f = ID LPAREN args = separated_list(COMMA, pure_expr) RPAREN { Expr.Call(f, args) }
   | LPAREN e = non_pure_expr RPAREN { e }
 
-assertion:
-  | atoms = separated_list(SEMI, atom) { atoms }
+// assertion:
+//   | atoms = separated_list(SEMI, atom) { atoms }
 
-atom:
-  | TAKE x = ID EQ RW LPAREN p = pure_expr RPAREN { Asrt.TakePointsTo(x, p) }
-  | TAKE FREED LPAREN p = pure_expr RPAREN { Asrt.TakePointsToFreed(p) }
-  | p = pure_expr { Asrt.Pure p }
+// atom:
+//   | TAKE x = ID EQ RW LPAREN p = pure_expr RPAREN { Asrt.TakePointsTo(x, p) }
+//   | TAKE FREED LPAREN p = pure_expr RPAREN { Asrt.TakePointsToFreed(p) }
+//   | p = pure_expr { Asrt.Pure p }
 
-assertion_eof:
-  | a = assertion EOF { a }
+// assertion_eof:
+//   | a = assertion EOF { a }

@@ -16,7 +16,7 @@ module Pure_expr = struct
   [@@deriving show { with_path = false }]
 end
 
-module Asrt = struct
+(* module Asrt = struct
   type atom =
     | TakePointsTo of string * Pure_expr.t  (** Take points-to assertion *)
     | TakePointsToFreed of Pure_expr.t  (** Take points-to-freed assertion *)
@@ -25,7 +25,7 @@ module Asrt = struct
 
   (** Separating conjunction of atomic assertions *)
   type t = atom list [@@deriving show { with_path = false }]
-end
+end *)
 
 module Expr = struct
   type t =
@@ -40,17 +40,16 @@ module Expr = struct
   [@@deriving show { with_path = false }]
 end
 
-module Spec = struct
+(* module Spec = struct
   type t = { pre : Asrt.t; post : Asrt.t }
   [@@deriving show { with_path = false }]
-end
+end *)
 
 module Fun_def = struct
   type t = {
     name : string;
     args : string list;
-    body : Expr.t;
-    spec : Spec.t option;
+    body : Expr.t; (* spec : Spec.t option; *)
   }
   [@@deriving show { with_path = false }]
 end
