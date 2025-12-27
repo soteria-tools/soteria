@@ -2,26 +2,15 @@ open Hc
 include Svalue
 
 module T = struct
-  type sint = [ `NonZero | `MaybeZero ]
-  type sfloat = [ `Float ]
+  type sint = [ `NonZero | `Zero ]
   type nonzero = [ `NonZero ]
   type sbool = [ `Bool ]
-  type sptr = [ `Ptr ]
-  type sloc = [ `Loc ]
-  type 'a sseq = [ `List of 'a ]
-  type cval = [ sint | sptr | sfloat ]
-
-  type any =
-    [ `Bool | `Ptr | `Loc | `List of any | `NonZero | `MaybeZero | `Float ]
+  type any = [ `Bool | `NonZero | `Zero ]
 
   let pp_sint _ _ = ()
   let pp_nonzero _ _ = ()
   let pp_sbool _ _ = ()
-  let pp_sptr _ _ = ()
-  let pp_sloc _ _ = ()
-  let pp_sseq _ _ _ = ()
   let pp_any _ _ = ()
-  let pp_cval _ _ = ()
 end
 
 type nonrec +'a t = t
@@ -40,7 +29,6 @@ let[@inline] untyped_list l = l
 let[@inline] type_ x = x
 let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
 let cast_checked = type_checked
-let cast_float x = if is_float x.node.ty then Some x else None
 
 let cast_checked2 x y =
   if equal_ty x.node.ty y.node.ty then Some (x, y, x.node.ty) else None

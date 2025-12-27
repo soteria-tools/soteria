@@ -1,12 +1,12 @@
 open Soteria;;
-open C_values;;
+open Tiny_values;;
 
 let pp_stats _pp_inner ft (_t: 'a Soteria.Stats.stats) =
   Fmt.pf ft "...";;
 
 #install_printer pp_stats;;
 #install_printer pp_run_results;;
-#install_printer Soteria.C_values.Typed.ppa;;
+#install_printer Soteria.Tiny_values.Typed.ppa;;
 #require "soteria.ppx";;
 
 

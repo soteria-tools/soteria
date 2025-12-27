@@ -12,6 +12,7 @@ path = [
   "soteria/**",
   "soteria-rust/**",
   "soteria-c/**",
+  "soteria-linear/**",
   "ppx/**",
   "vscode/**",
   "packaging/**",
