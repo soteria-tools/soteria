@@ -209,7 +209,7 @@ let hash t = t.tag
 let kind t = t.node.kind
 
 (** Used for [PatriciaTree] *)
-let to_int t = t.tag
+let to_int = hash
 
 let iter =
   let rec aux (f : t -> unit) (sv : t) : unit =

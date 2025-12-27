@@ -59,7 +59,10 @@ module StateKey = struct
 end
 
 module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
-module SPmap = Soteria.Sym_states.Pmap.Direct_access (DecayMapMonad) (StateKey)
+
+module SPmap =
+  Soteria.Sym_states.Pmap.Direct_access_patricia_tree (DecayMapMonad) (StateKey)
+
 module Bi = Soteria.Sym_states.Bi_abd.Make (DecayMapMonad)
 module Tree_block = Rtree_block.Make (Sptr)
 

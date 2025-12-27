@@ -21,6 +21,7 @@ module SPmap = Pmap_direct_access (struct
   let pp = ppa
   let fresh () = Csymex.nondet Typed.t_loc
   let simplify = Csymex.simplify
+  let to_int = Typed.to_int
 end)
 
 type t = (Block.t SPmap.t option, Globs.t) State_intf.Template.t

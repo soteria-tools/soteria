@@ -90,6 +90,9 @@ val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
 val hash : [< any ] t -> int
 
+(** Same as [hash] *)
+val to_int : [< any ] t -> int
+
 (** Typed constructors *)
 
 val sem_eq : 'a t -> 'a t -> sbool t
