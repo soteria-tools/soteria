@@ -10,18 +10,18 @@ module Make (Symex : Symex.Base) = struct
   open Symex.Syntax
 
   type nonrec 'a t = 'a t = Freed | Alive of 'a
-  type 'a serialized = 'a t
+  type 'a syn = 'a t
 
   let lift_fix fix = Alive fix
   let lift_fix_s r = Symex.Result.map_missing r lift_fix
 
-  let serialize serialize_inner = function
+  let to_syn to_syn_inner = function
     | Freed -> Freed
-    | Alive a -> Alive (serialize_inner a)
+    | Alive a -> Alive (to_syn_inner a)
 
-  let subst_serialized subst_inner subst_var = function
+  let subst subst_inner subst_vals = function
     | Freed -> Freed
-    | Alive a -> Alive (subst_inner subst_var a)
+    | Alive a -> Alive (subst_inner subst_vals a)
 
   let iter_vars_serialized iter_inner serialized f =
     match serialized with Freed -> () | Alive a -> iter_inner a f
@@ -41,8 +41,7 @@ module Make (Symex : Symex.Base) = struct
 
   (* [f] must be a "symex state monad" *)
   let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
-      (st : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
+      (st : 'a t option) : ('b * 'a t option, 'err, 'fix syn) Symex.Result.t =
     match st with
     | None ->
         let++ res, st' = f None |> lift_fix_s in
@@ -55,46 +54,47 @@ module Make (Symex : Symex.Base) = struct
   (* In the context of UX, using a non-matching spec will simply vanish *)
   let consume
       (cons :
-        'inner_ser ->
+        'inner_syn ->
         'inner_st option ->
-        ('inner_st option, [> Symex.lfail ], 'inner_ser) Symex.Result.t)
-      (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
-      ( 'inner_st t option,
-        [> Symex.lfail ],
-        'inner_ser serialized )
-      Symex.Result.t =
-    match serialized with
+        ('inner_st option, 'inner_syn) Symex.Consumer.t) (syn : 'inner_syn syn)
+      (st : 'inner_st t option) :
+      ('inner_st t option, 'inner_syn syn) Symex.Consumer.t =
+    let open Symex.Consumer in
+    let open Syntax in
+    let lift_fix_s s = map_missing s lift_fix in
+    match syn with
     | Freed -> (
         match st with
-        | None -> Symex.Result.miss [ Freed ]
-        | Some Freed -> Symex.Result.ok None
-        | Some (Alive _) -> Symex.consume_false ())
-    | Alive ser -> (
+        | None -> miss [ Freed ]
+        | Some Freed -> ok None
+        | Some (Alive _) -> lfail (Symex.Value.bool false))
+    | Alive syn -> (
         match st with
         | None ->
-            let++ st' = cons ser None |> lift_fix_s in
+            let+ st' = cons syn None |> lift_fix_s in
             Option.map (fun x -> Alive x) st'
-        | Some Freed -> Symex.vanish ()
+        | Some Freed -> lfail (Symex.Value.bool false)
         | Some (Alive st) ->
-            let++ st' = cons ser (Some st) |> lift_fix_s in
+            let+ st' = cons syn (Some st) |> lift_fix_s in
             Option.map (fun x -> Alive x) st')
 
   let produce
-      (prod : 'inner_ser -> 'inner_st option -> 'inner_st option Symex.t)
-      (serialize : 'inner_ser serialized) (st : 'inner_st t option) :
-      'inner_st t option Symex.t =
-    match serialize with
+      (prod :
+        'inner_syn -> 'inner_st option -> 'inner_st option Symex.Producer.t)
+      (syn : 'inner_syn syn) (st : 'inner_st t option) :
+      'inner_st t option Symex.Producer.t =
+    let open Symex.Producer in
+    let open Syntax in
+    match syn with
     | Freed -> (
-        match st with
-        | None -> Symex.return (Some Freed)
-        | Some _ -> Symex.vanish ())
-    | Alive ser -> (
+        match st with None -> return (Some Freed) | Some _ -> vanish ())
+    | Alive syn -> (
         match st with
         | None ->
-            let+ st' = prod ser None in
+            let+ st' = prod syn None in
             Option.map (fun s -> Alive s) st'
         | Some (Alive st) ->
-            let+ st' = prod ser (Some st) in
+            let+ st' = prod syn (Some st) in
             Option.map (fun s -> Alive s) st'
-        | Some Freed -> Symex.vanish ())
+        | Some Freed -> vanish ())
 end
