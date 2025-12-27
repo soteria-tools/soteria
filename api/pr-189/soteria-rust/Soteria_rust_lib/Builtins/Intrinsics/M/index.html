@@ -1,17 +1,10 @@
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>M (soteria-rust.Soteria_rust_lib.Builtins.Intrinsics.M)</title><meta charset="utf-8"/><link rel="stylesheet" href="../../../../../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.1.0"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../../../../../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script><script>let base_url = '../../../../../';
 let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
-</script><script src="../../../../../odoc.support/odoc_search.js" defer="defer"></script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../../../index.html">Index</a> &#x00BB; <a href="../../../../index.html">soteria-rust</a> &#x00BB; <a href="../../../index.html">Soteria_rust_lib</a> &#x00BB; <a href="../../index.html">Builtins</a> &#x00BB; <a href="../index.html">Intrinsics</a> &#x00BB; M</nav><div class="odoc-search"><div class="search-inner"><input class="search-bar" placeholder="🔎 Type '/' to search..."/><div class="search-snake"></div><div class="search-result"></div></div></div><header class="odoc-preamble"><h1>Module <code><span>Intrinsics.M</span></code></h1></header><div class="odoc-tocs"><nav class="odoc-toc odoc-local-toc"><ul><li><a href="#parameters">Parameters</a></li><li><a href="#signature">Signature</a></li></ul></nav></div><div class="odoc-content"><h2 id="parameters"><a href="#parameters" class="anchor"></a>Parameters</h2><div class="odoc-spec"><div class="spec parameter anchored" id="argument-1-State"><a href="#argument-1-State" class="anchor"></a><code><span><span class="keyword">module</span> </span><span><a href="argument-1-State/index.html">State</a></span><span> : <a href="../../../State_intf/module-type-S/index.html">State_intf.S</a></span></code></div></div><h2 id="signature"><a href="#signature" class="anchor"></a>Signature</h2><div class="odoc-spec"><div class="spec type subst anchored" id="type-rust_val"><a href="#type-rust_val" class="anchor"></a><code><span><span class="keyword">type</span> rust_val</span><span> := <span><a href="argument-1-State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-t">Rust_val.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-full_ptr"><a href="#type-full_ptr" class="anchor"></a><code><span><span class="keyword">type</span> full_ptr</span><span> := <span><a href="argument-1-State/Sptr/index.html#type-t">State.Sptr.t</a> <a href="../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span></span></code></div></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-ret"><a href="#type-ret" class="anchor"></a><code><span><span class="keyword">type</span> <span>'a ret</span></span><span> :=
-  <span>unit <span class="arrow">&#45;&gt;</span></span>
-  <span><a href="argument-1-State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span class="type-var">'a</span> * unit * <a href="argument-1-State/index.html#type-t">State.t</a>, <span><a href="../../../Error/index.html#type-t">Error.t</a> <a href="argument-1-State/index.html#type-err">State.err</a></span> * <a href="argument-1-State/index.html#type-t">State.t</a>, <a href="argument-1-State/index.html#type-serialized">State.serialized</a>)</span>
-    <a href="../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-fun_exec"><a href="#type-fun_exec" class="anchor"></a><code><span><span class="keyword">type</span> fun_exec</span><span> :=
+</script><script src="../../../../../odoc.support/odoc_search.js" defer="defer"></script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../../../index.html">Index</a> &#x00BB; <a href="../../../../index.html">soteria-rust</a> &#x00BB; <a href="../../../index.html">Soteria_rust_lib</a> &#x00BB; <a href="../../index.html">Builtins</a> &#x00BB; <a href="../index.html">Intrinsics</a> &#x00BB; M</nav><div class="odoc-search"><div class="search-inner"><input class="search-bar" placeholder="🔎 Type '/' to search..."/><div class="search-snake"></div><div class="search-result"></div></div></div><header class="odoc-preamble"><h1>Module <code><span>Intrinsics.M</span></code></h1></header><div class="odoc-tocs"><nav class="odoc-toc odoc-local-toc"><ul><li><a href="#parameters">Parameters</a></li><li><a href="#signature">Signature</a></li></ul></nav></div><div class="odoc-content"><h2 id="parameters"><a href="#parameters" class="anchor"></a>Parameters</h2><div class="odoc-spec"><div class="spec parameter anchored" id="argument-1-Rust_state_m"><a href="#argument-1-Rust_state_m" class="anchor"></a><code><span><span class="keyword">module</span> </span><span><a href="argument-1-Rust_state_m/index.html">Rust_state_m</a></span><span> : <a href="../../../Rust_state_m/module-type-S/index.html">Rust_state_m.S</a></span></code></div></div><h2 id="signature"><a href="#signature" class="anchor"></a>Signature</h2><div class="odoc-include"><details open="open"><summary class="spec include"><code><span><span class="keyword">include</span> <a href="../../Intrinsics_intf/M/module-type-Impl/index.html">Intrinsics_intf.M(Rust_state_m).Impl</a></span></code></summary><div class="odoc-spec"><div class="spec type subst anchored" id="type-rust_val"><a href="#type-rust_val" class="anchor"></a><code><span><span class="keyword">type</span> rust_val</span><span> := <span><a href="argument-1-Rust_state_m/Sptr/index.html#type-t">Rust_state_m.Sptr.t</a> <a href="../../../Rust_val/index.html#type-t">Rust_val.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-ret"><a href="#type-ret" class="anchor"></a><code><span><span class="keyword">type</span> <span>'a ret</span></span><span> := <span><span>(<span class="type-var">'a</span>, unit)</span> <a href="argument-1-Rust_state_m/index.html#type-t">Rust_state_m.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-fun_exec"><a href="#type-fun_exec" class="anchor"></a><code><span><span class="keyword">type</span> fun_exec</span><span> :=
   <span><span class="xref-unresolved">Charon</span>.UllbcAst.fun_decl <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="#type-rust_val">rust_val</a> list</span> <span class="arrow">&#45;&gt;</span></span>
-  <span>unit <span class="arrow">&#45;&gt;</span></span>
-  <span><a href="argument-1-State/index.html#type-t">State.t</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<a href="#type-rust_val">rust_val</a> * unit * <a href="argument-1-State/index.html#type-t">State.t</a>, <span><a href="../../../Error/index.html#type-t">Error.t</a> <a href="argument-1-State/index.html#type-err">State.err</a></span> * <a href="argument-1-State/index.html#type-t">State.t</a>, <a href="argument-1-State/index.html#type-serialized">State.serialized</a>)</span>
-    <a href="../../../Rustsymex/Result/index.html#type-t">Rustsymex.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-abort"><a href="#val-abort" class="anchor"></a><code><span><span class="keyword">val</span> abort : <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Aborts the execution of the process.
+  <span><span>(<a href="#type-rust_val">rust_val</a>, unit)</span> <a href="argument-1-Rust_state_m/index.html#type-t">Rust_state_m.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-full_ptr"><a href="#type-full_ptr" class="anchor"></a><code><span><span class="keyword">type</span> full_ptr</span><span> := <span><a href="argument-1-Rust_state_m/Sptr/index.html#type-t">Rust_state_m.Sptr.t</a> <a href="../../../Rust_val/index.html#type-full_ptr">Rust_val.full_ptr</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-abort"><a href="#val-abort" class="anchor"></a><code><span><span class="keyword">val</span> abort : <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Aborts the execution of the process.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -55,12 +48,17 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is [`align_of`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-align_of_val"><a href="#val-align_of_val" class="anchor"></a><code><span><span class="keyword">val</span> align_of_val : 
+   Note that, unlike most intrinsics, this can only be called at compile-time
+   as backends do not have an implementation for it. The only caller (its
+   stable counterpart) wraps this intrinsic call in a `const` block so that
+   backends only see an evaluated constant.
+
+   The stabilized version of this intrinsic is [`core::mem::align_of`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-align_of_val"><a href="#val-align_of_val" class="anchor"></a><code><span><span class="keyword">val</span> align_of_val : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">ptr</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The required alignment of the referenced value.
 
-   The stabilized version of this intrinsic is [`align_of_val`].
+   The stabilized version of this intrinsic is [`core::mem::align_of_val`].
 
    # Safety
 
@@ -102,7 +100,48 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    not be used if the invariant can be discovered by the optimizer on its
    own, or if it does not enable any significant optimizations.
 
-   The stabilized version of this intrinsic is [`core::hint::assert_unchecked`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-bitreverse"><a href="#val-bitreverse" class="anchor"></a><code><span><span class="keyword">val</span> bitreverse : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">x</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Reverses the bits in an integer type `T`.
+   The stabilized version of this intrinsic is [`core::hint::assert_unchecked`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-autodiff"><a href="#val-autodiff" class="anchor"></a><code><span><span class="keyword">val</span> autodiff : 
+  <span><span class="label">t_f</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">g</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">r</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">f</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">df</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">args</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Generates the LLVM body for the automatic differentiation of `f` using Enzyme,
+   with `df` as the derivative function and `args` as its arguments.
+
+   Used internally as the body of `df` when expanding the `#[autodiff_forward]`
+   and `#[autodiff_reverse]` attribute macros.
+
+   Type Parameters:
+   - `F`: The original function to differentiate. Must be a function item.
+   - `G`: The derivative function. Must be a function item.
+   - `T`: A tuple of arguments passed to `df`.
+   - `R`: The return type of the derivative function.
+
+   This shows where the `autodiff` intrinsic is used during macro expansion:
+
+   ```rust,ignore (macro example)
+   #[autodiff_forward(df1, Dual, Const, Dual)]
+   pub fn f1(x: &amp;[f64], y: f64) -&gt; f64 {
+       unimplemented!()
+   }
+   ```
+
+   expands to:
+
+   ```rust,ignore (macro example)
+   #[rustc_autodiff]
+   #[inline(never)]
+   pub fn f1(x: &amp;[f64], y: f64) -&gt; f64 {
+       ::core::panicking::panic(&quot;not implemented&quot;)
+   }
+   #[rustc_autodiff(Forward, 1, Dual, Const, Dual)]
+   pub fn df1(x: &amp;[f64], bx_0: &amp;[f64], y: f64) -&gt; (f64, f64) {
+       ::core::intrinsics::autodiff(f1::&lt;&gt;, df1::&lt;&gt;, (x, bx_0, y))
+   }
+   ```</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-bitreverse"><a href="#val-bitreverse" class="anchor"></a><code><span><span class="keyword">val</span> bitreverse : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">x</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Reverses the bits in an integer type `T`.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -229,7 +268,66 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
       - At compile time, a compile error occurs if this constraint is violated.
       - At runtime, it is not checked.
    - If the `ptr` is created in an another const, this intrinsic doesn't deallocate it.
-   - If the `ptr` is pointing to a local variable, this intrinsic doesn't deallocate it.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-const_make_global"><a href="#val-const_make_global" class="anchor"></a><code><span><span class="keyword">val</span> const_make_global : <span><span class="label">ptr</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-full_ptr">full_ptr</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_check_ensures"><a href="#val-contract_check_ensures" class="anchor"></a><code><span><span class="keyword">val</span> contract_check_ensures : 
+   - If the `ptr` is pointing to a local variable, this intrinsic doesn't deallocate it.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-const_eval_select"><a href="#val-const_eval_select" class="anchor"></a><code><span><span class="keyword">val</span> const_eval_select : 
+  <span><span class="label">arg</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">f</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">g</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ret</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_arg</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_called_in_const</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_called_at_rt</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Selects which function to call depending on the context.
+
+   If this function is evaluated at compile-time, then a call to this
+   intrinsic will be replaced with a call to `called_in_const`. It gets
+   replaced with a call to `called_at_rt` otherwise.
+
+   This function is safe to call, but note the stability concerns below.
+
+   # Type Requirements
+
+   The two functions must be both function items. They cannot be function
+   pointers or closures. The first function must be a `const fn`.
+
+   `arg` will be the tupled arguments that will be passed to either one of
+   the two functions, therefore, both functions must accept the same type of
+   arguments. Both functions must return RET.
+
+   # Stability concerns
+
+   Rust has not yet decided that `const fn` are allowed to tell whether
+   they run at compile-time or at runtime. Therefore, when using this
+   intrinsic anywhere that can be reached from stable, it is crucial that
+   the end-to-end behavior of the stable `const fn` is the same for both
+   modes of execution. (Here, Undefined Behavior is considered &quot;the same&quot;
+   as any other behavior, so if the function exhibits UB at runtime then
+   it may do whatever it wants at compile-time.)
+
+   Here is an example of how this could cause a problem:
+   ```no_run
+   #![feature(const_eval_select)]
+   #![feature(core_intrinsics)]
+   # #![allow(internal_features)]
+   use std::intrinsics::const_eval_select;
+
+   // Standard library
+   pub const fn inconsistent() -&gt; i32 {
+       fn runtime() -&gt; i32 { 1 }
+       const fn compiletime() -&gt; i32 { 2 }
+
+       // ⚠ This code violates the required equivalence of `compiletime`
+       // and `runtime`.
+       const_eval_select((), compiletime, runtime)
+   }
+
+   // User Crate
+   const X: i32 = inconsistent();
+   let x = inconsistent();
+   assert_eq!(x, X);
+   ```
+
+   Currently such an assertion would always succeed; until Rust decides
+   otherwise, that principle should not be violated.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-const_make_global"><a href="#val-const_make_global" class="anchor"></a><code><span><span class="keyword">val</span> const_make_global : <span><span class="label">ptr</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-full_ptr">full_ptr</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_check_ensures"><a href="#val-contract_check_ensures" class="anchor"></a><code><span><span class="keyword">val</span> contract_check_ensures : 
   <span><span class="label">c</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">t_ret</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">cond</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
@@ -239,17 +337,14 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    By default, if `contract_checks` is enabled, this will panic with no unwind if the condition
    returns false.
 
-   Note that this function is a no-op during constant evaluation.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_check_requires"><a href="#val-contract_check_requires" class="anchor"></a><code><span><span class="keyword">val</span> contract_check_requires : <span><span class="label">c</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">arg1</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Check if the pre-condition `cond` has been met.
+   If `cond` is `None`, then no postcondition checking is performed.
+
+   Note that this function is a no-op during constant evaluation.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_check_requires"><a href="#val-contract_check_requires" class="anchor"></a><code><span><span class="keyword">val</span> contract_check_requires : <span><span class="label">c</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">cond</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Check if the pre-condition `cond` has been met.
 
    By default, if `contract_checks` is enabled, this will panic with no unwind if the condition
    returns false.
 
-   Note that this function is a no-op during constant evaluation.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_checks"><a href="#val-contract_checks" class="anchor"></a><code><span><span class="keyword">val</span> contract_checks : <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sbool">Soteria_rust_lib.Typed.T.sbool</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns whether we should perform contract-checking at runtime.
-
-   This is meant to be similar to the ub_checks intrinsic, in terms
-   of not prematurely committing at compile-time to whether contract
-   checking is turned on, so that we can specify contracts in libstd
-   and let an end user opt into turning them on.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-copy"><a href="#val-copy" class="anchor"></a><code><span><span class="keyword">val</span> copy : 
+   Note that this function is a no-op during constant evaluation.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-copy"><a href="#val-copy" class="anchor"></a><code><span><span class="keyword">val</span> copy : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">src</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
@@ -520,7 +615,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float addition that allows optimizations based on algebraic rules.
 
    Stabilized as [`f16::algebraic_add`], [`f32::algebraic_add`], [`f64::algebraic_add`] and [`f128::algebraic_add`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fadd_fast"><a href="#val-fadd_fast" class="anchor"></a><code><span><span class="keyword">val</span> fadd_fast : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">a</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">b</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float addition that allows optimizations based on algebraic rules.
-   May assume inputs are finite.
+   Requires that inputs and output of the operation are finite, causing UB otherwise.
 
    This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fdiv_algebraic"><a href="#val-fdiv_algebraic" class="anchor"></a><code><span><span class="keyword">val</span> fdiv_algebraic : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -529,7 +624,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float division that allows optimizations based on algebraic rules.
 
    Stabilized as [`f16::algebraic_div`], [`f32::algebraic_div`], [`f64::algebraic_div`] and [`f128::algebraic_div`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fdiv_fast"><a href="#val-fdiv_fast" class="anchor"></a><code><span><span class="keyword">val</span> fdiv_fast : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">a</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">b</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float division that allows optimizations based on algebraic rules.
-   May assume inputs are finite.
+   Requires that inputs and output of the operation are finite, causing UB otherwise.
 
    This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-float_to_int_unchecked"><a href="#val-float_to_int_unchecked" class="anchor"></a><code><span><span class="keyword">val</span> float_to_int_unchecked : 
   <span><span class="label">float</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -593,7 +688,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float multiplication that allows optimizations based on algebraic rules.
 
    Stabilized as [`f16::algebraic_mul`], [`f32::algebraic_mul`], [`f64::algebraic_mul`] and [`f128::algebraic_mul`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fmul_fast"><a href="#val-fmul_fast" class="anchor"></a><code><span><span class="keyword">val</span> fmul_fast : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">a</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">b</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float multiplication that allows optimizations based on algebraic rules.
-   May assume inputs are finite.
+   Requires that inputs and output of the operation are finite, causing UB otherwise.
 
    This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fmuladdf128"><a href="#val-fmuladdf128" class="anchor"></a><code><span><span class="keyword">val</span> fmuladdf128 : 
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -662,7 +757,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float remainder that allows optimizations based on algebraic rules.
 
    Stabilized as [`f16::algebraic_rem`], [`f32::algebraic_rem`], [`f64::algebraic_rem`] and [`f128::algebraic_rem`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-frem_fast"><a href="#val-frem_fast" class="anchor"></a><code><span><span class="keyword">val</span> frem_fast : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">a</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">b</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float remainder that allows optimizations based on algebraic rules.
-   May assume inputs are finite.
+   Requires that inputs and output of the operation are finite, causing UB otherwise.
 
    This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fsub_algebraic"><a href="#val-fsub_algebraic" class="anchor"></a><code><span><span class="keyword">val</span> fsub_algebraic : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -671,7 +766,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float subtraction that allows optimizations based on algebraic rules.
 
    Stabilized as [`f16::algebraic_sub`], [`f32::algebraic_sub`], [`f64::algebraic_sub`] and [`f128::algebraic_sub`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fsub_fast"><a href="#val-fsub_fast" class="anchor"></a><code><span><span class="keyword">val</span> fsub_fast : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">a</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">b</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Float subtraction that allows optimizations based on algebraic rules.
-   May assume inputs are finite.
+   Requires that inputs and output of the operation are finite, causing UB otherwise.
 
    This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-is_val_statically_known"><a href="#val-is_val_statically_known" class="anchor"></a><code><span><span class="keyword">val</span> is_val_statically_known : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -1029,7 +1124,33 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    either in bounds or at the end of an allocation. If either pointer is out
    of bounds or arithmetic overflow occurs then this operation is undefined behavior.
 
-   The stabilized version of this intrinsic is [`pointer::offset`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-powf128"><a href="#val-powf128" class="anchor"></a><code><span><span class="keyword">val</span> powf128 : 
+   The stabilized version of this intrinsic is [`pointer::offset`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-offset_of"><a href="#val-offset_of" class="anchor"></a><code><span><span class="keyword">val</span> offset_of : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">variant</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">field</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The offset of a field inside a type.
+
+   Note that, unlike most intrinsics, this is safe to call;
+   it does not require an `unsafe` block.
+   Therefore, implementations must not require the user to uphold
+   any safety invariants.
+
+   This intrinsic can only be evaluated at compile-time, and should only appear in
+   constants or inline const blocks.
+
+   The stabilized version of this intrinsic is [`core::mem::offset_of`].
+   This intrinsic is also a lang item so `offset_of!` can desugar to calls to it.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-overflow_checks"><a href="#val-overflow_checks" class="anchor"></a><code><span><span class="keyword">val</span> overflow_checks : <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sbool">Soteria_rust_lib.Typed.T.sbool</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns whether we should perform some overflow-checking at runtime. This eventually evaluates to
+   `cfg!(overflow_checks)`, but behaves different from `cfg!` when mixing crates built with different
+   flags: if the crate has overflow checks enabled or carries the `#[rustc_inherit_overflow_checks]`
+   attribute, evaluation is delayed until monomorphization (or until the call gets inlined into
+   a crate that does not delay evaluation further); otherwise it can happen any time.
+
+   The common case here is a user program built with overflow_checks linked against the distributed
+   sysroot which is built without overflow_checks but with `#[rustc_inherit_overflow_checks]`.
+   For code that gets monomorphized in the user crate (i.e., generic functions and functions with
+   `#[inline]`), gating assertions on `overflow_checks()` rather than `cfg!(overflow_checks)` means that
+   assertions are enabled whenever the *user crate* has overflow checks enabled. However if the
+   user has overflow checks disabled, the checks will still get optimized out.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-powf128"><a href="#val-powf128" class="anchor"></a><code><span><span class="keyword">val</span> powf128 : 
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Raises an `f128` to an `f128` power.
@@ -1077,53 +1198,37 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Raises an `f64` to an integer power.
 
    The stabilized version of this intrinsic is
-   [`f64::powi`](../../std/primitive.f64.html#method.powi)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_data"><a href="#val-prefetch_read_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_data : 
-  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">locality</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
-   if supported; otherwise, it is a no-op.
+   [`f64::powi`](../../std/primitive.f64.html#method.powi)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_data"><a href="#val-prefetch_read_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_data : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
+   for the given address if supported; otherwise, it is a no-op.
    Prefetches have no effect on the behavior of the program but can change its performance
    characteristics.
 
-   The `locality` argument must be a constant integer and is a temporal locality specifier
-   ranging from (0) - no locality, to (3) - extremely local keep in cache.
+   The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
+   to (3) - extremely local keep in cache.
 
-   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_instruction"><a href="#val-prefetch_read_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_instruction : 
-  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">locality</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
-   if supported; otherwise, it is a no-op.
+   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_instruction"><a href="#val-prefetch_read_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_instruction : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
+   for the given address if supported; otherwise, it is a no-op.
    Prefetches have no effect on the behavior of the program but can change its performance
    characteristics.
 
-   The `locality` argument must be a constant integer and is a temporal locality specifier
-   ranging from (0) - no locality, to (3) - extremely local keep in cache.
+   The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
+   to (3) - extremely local keep in cache.
 
-   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_data"><a href="#val-prefetch_write_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_data : 
-  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">locality</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
-   if supported; otherwise, it is a no-op.
+   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_data"><a href="#val-prefetch_write_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_data : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
+   for the given address if supported; otherwise, it is a no-op.
    Prefetches have no effect on the behavior of the program but can change its performance
    characteristics.
 
-   The `locality` argument must be a constant integer and is a temporal locality specifier
-   ranging from (0) - no locality, to (3) - extremely local keep in cache.
+   The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
+   to (3) - extremely local keep in cache.
 
-   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_instruction"><a href="#val-prefetch_write_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_instruction : 
-  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
-  <span><span class="label">locality</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
-   if supported; otherwise, it is a no-op.
+   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_instruction"><a href="#val-prefetch_write_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_instruction : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
+   for the given address if supported; otherwise, it is a no-op.
    Prefetches have no effect on the behavior of the program but can change its performance
    characteristics.
 
-   The `locality` argument must be a constant integer and is a temporal locality specifier
-   ranging from (0) - no locality, to (3) - extremely local keep in cache.
+   The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
+   to (3) - extremely local keep in cache.
 
    This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-ptr_guaranteed_cmp"><a href="#val-ptr_guaranteed_cmp" class="anchor"></a><code><span><span class="keyword">val</span> ptr_guaranteed_cmp : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -1340,12 +1445,17 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    More specifically, this is the offset in bytes between successive
    items of the same type, including alignment padding.
 
-   The stabilized version of this intrinsic is [`size_of`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-size_of_val"><a href="#val-size_of_val" class="anchor"></a><code><span><span class="keyword">val</span> size_of_val : 
+   Note that, unlike most intrinsics, this can only be called at compile-time
+   as backends do not have an implementation for it. The only caller (its
+   stable counterpart) wraps this intrinsic call in a `const` block so that
+   backends only see an evaluated constant.
+
+   The stabilized version of this intrinsic is [`core::mem::size_of`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-size_of_val"><a href="#val-size_of_val" class="anchor"></a><code><span><span class="keyword">val</span> size_of_val : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">ptr</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The size of the referenced value in bytes.
 
-   The stabilized version of this intrinsic is [`size_of_val`].
+   The stabilized version of this intrinsic is [`core::mem::size_of_val`].
 
    # Safety
 
@@ -1491,7 +1601,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    // Crucially, we `as`-cast to a raw pointer before `transmute`ing to a function pointer.
    // This avoids an integer-to-pointer `transmute`, which can be problematic.
    // Transmuting between raw pointers and function pointers (i.e., two pointer types) is fine.
-   let pointer = foo as *const ();
+   let pointer = foo as fn() -&gt; i32 as *const ();
    let function = unsafe {
        std::mem::transmute::&lt;*const (), fn() -&gt; i32&gt;(pointer)
    };
@@ -1638,12 +1748,9 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    // in terms of converting the original inner type (`&amp;i32`) to the new one (`Option&lt;&amp;i32&gt;`),
    // this has all the same caveats. Besides the information provided above, also consult the
    // [`from_raw_parts`] documentation.
+   let (ptr, len, capacity) = v_clone.into_raw_parts();
    let v_from_raw = unsafe {
-       // Ensure the original vector is not dropped.
-       let mut v_clone = std::mem::ManuallyDrop::new(v_clone);
-       Vec::from_raw_parts(v_clone.as_mut_ptr() as *mut Option&lt;&amp;i32&gt;,
-                           v_clone.len(),
-                           v_clone.capacity())
+       Vec::from_raw_parts(ptr.cast::&lt;*mut Option&lt;&amp;i32&gt;&gt;(), len, capacity)
    };
    ```
 
@@ -1817,7 +1924,40 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
    Safe wrappers for this intrinsic are available on the integer
    primitives via the `checked_div` method. For example,
-   [`u32::checked_div`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-unchecked_mul"><a href="#val-unchecked_mul" class="anchor"></a><code><span><span class="keyword">val</span> unchecked_mul : 
+   [`u32::checked_div`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-unchecked_funnel_shl"><a href="#val-unchecked_funnel_shl" class="anchor"></a><code><span><span class="keyword">val</span> unchecked_funnel_shl : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">a</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">b</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">shift</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Funnel Shift left.
+
+   Concatenates `a` and `b` (with `a` in the most significant half),
+   creating an integer twice as wide. Then shift this integer left
+   by `shift`), and extract the most significant half. If `a` and `b`
+   are the same, this is equivalent to a rotate left operation.
+
+   It is undefined behavior if `shift` is greater than or equal to the
+   bit size of `T`.
+
+   Safe versions of this intrinsic are available on the integer primitives
+   via the `funnel_shl` method. For example, [`u32::funnel_shl`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-unchecked_funnel_shr"><a href="#val-unchecked_funnel_shr" class="anchor"></a><code><span><span class="keyword">val</span> unchecked_funnel_shr : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">a</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">b</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">shift</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Funnel Shift right.
+
+   Concatenates `a` and `b` (with `a` in the most significant half),
+   creating an integer twice as wide. Then shift this integer right
+   by `shift` (taken modulo the bit size of `T`), and extract the
+   least significant half. If `a` and `b` are the same, this is equivalent
+   to a rotate right operation.
+
+   It is undefined behavior if `shift` is greater than or equal to the
+   bit size of `T`.
+
+   Safer versions of this intrinsic are available on the integer primitives
+   via the `funnel_shr` method. For example, [`u32::funnel_shr`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-unchecked_mul"><a href="#val-unchecked_mul" class="anchor"></a><code><span><span class="keyword">val</span> unchecked_mul : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">x</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
@@ -1884,11 +2024,27 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    The stabilized version of this intrinsic is [`core::hint::unreachable_unchecked`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_arg"><a href="#val-va_arg" class="anchor"></a><code><span><span class="keyword">val</span> va_arg : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">ap</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Loads an argument of type `T` from the `va_list` `ap` and increment the
    argument `ap` points to.
 
-   FIXME: document safety requirements</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_copy"><a href="#val-va_copy" class="anchor"></a><code><span><span class="keyword">val</span> va_copy : <span><span class="label">dest</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">src</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Copies the current location of arglist `src` to the arglist `dst`.
+   # Safety
 
-   FIXME: document safety requirements</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_end"><a href="#val-va_end" class="anchor"></a><code><span><span class="keyword">val</span> va_end : <span><span class="label">ap</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Destroy the arglist `ap` after initialization with `va_start` or `va_copy`.
+   This function is only sound to call when:
 
-   FIXME: document safety requirements</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-variant_count"><a href="#val-variant_count" class="anchor"></a><code><span><span class="keyword">val</span> variant_count : 
+   - there is a next variable argument available.
+   - the next argument's type must be ABI-compatible with the type `T`.
+   - the next argument must have a properly initialized value of type `T`.
+
+   Calling this function with an incompatible type, an invalid value, or when there
+   are no more variable arguments, is unsound.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_copy"><a href="#val-va_copy" class="anchor"></a><code><span><span class="keyword">val</span> va_copy : <span><span class="label">dest</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">src</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Copies the current location of arglist `src` to the arglist `dst`.
+
+   # Safety
+
+   You must check the following invariants before you call this function:
+
+   - `dest` must be non-null and point to valid, writable memory.
+   - `dest` must not alias `src`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_end"><a href="#val-va_end" class="anchor"></a><code><span><span class="keyword">val</span> va_end : <span><span class="label">ap</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Destroy the arglist `ap` after initialization with `va_start` or `va_copy`.
+
+   # Safety
+
+   `ap` must not be used to access variable arguments after this call.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-variant_count"><a href="#val-variant_count" class="anchor"></a><code><span><span class="keyword">val</span> variant_count : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the number of variants of the type `T` cast to a `usize`;
    if `T` has no variants, returns `0`. Uninhabited variants will be counted.
@@ -2007,7 +2163,10 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
    This intrinsic can *only* be called where the pointer is a local without
    projections (`write_via_move(ptr, x)`, not `write_via_move( *ptr, x)`) so
-   that it trivially obeys runtime-MIR rules about derefs in operands.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-eval_fun"><a href="#val-eval_fun" class="anchor"></a><code><span><span class="keyword">val</span> eval_fun : 
+   that it trivially obeys runtime-MIR rules about derefs in operands.</code></pre></div></div></details></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-rust_val"><a href="#type-rust_val" class="anchor"></a><code><span><span class="keyword">type</span> rust_val</span><span> := <span><a href="argument-1-Rust_state_m/Sptr/index.html#type-t">Rust_state_m.Sptr.t</a> <a href="../../../Rust_val/index.html#type-t">Rust_val.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-ret"><a href="#type-ret" class="anchor"></a><code><span><span class="keyword">type</span> <span>'a ret</span></span><span> := <span><span>(<span class="type-var">'a</span>, unit)</span> <a href="argument-1-Rust_state_m/index.html#type-t">Rust_state_m.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec type subst anchored" id="type-fun_exec"><a href="#type-fun_exec" class="anchor"></a><code><span><span class="keyword">type</span> fun_exec</span><span> :=
+  <span><span class="xref-unresolved">Charon</span>.UllbcAst.fun_decl <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="#type-rust_val">rust_val</a> list</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<a href="#type-rust_val">rust_val</a>, unit)</span> <a href="argument-1-Rust_state_m/index.html#type-t">Rust_state_m.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-eval_fun"><a href="#val-eval_fun" class="anchor"></a><code><span><span class="keyword">val</span> eval_fun : 
   <span>string <span class="arrow">&#45;&gt;</span></span>
   <span><a href="#type-fun_exec">fun_exec</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="xref-unresolved">Charon</span>.Types.generic_args <span class="arrow">&#45;&gt;</span></span>
