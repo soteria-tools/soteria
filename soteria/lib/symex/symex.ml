@@ -93,6 +93,9 @@ module type Base = sig
   (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
 
+  (** Do not use [nondet_UNSAFE]. *)
+  val nondet_UNSAFE : 'a vt -> 'a v
+
   (** [simplify v] simplifies the value [v] according to the current path
       condition. *)
   val simplify : 'a v -> 'a v t
@@ -254,6 +257,31 @@ module type Base = sig
     val vanish : unit -> 'a t
     val subst : 'a Value.Syn.t -> 'a Value.t t
     val producer : subst:subst -> 'a t -> ('a * subst) symex
+  end
+
+  module Consumer : sig
+    type subst := Value.Syn.Subst.t
+    type 'a symex := 'a t
+    type ('a, 'fix) t = subst -> ('a * subst, lfail, 'fix) Result.t
+
+    val lift_res : ('a, lfail, 'fix) Result.t -> ('a, 'fix) t
+    val lift_symex : 'a symex -> ('a, 'fix) t
+    val ok : 'a -> ('a, 'fix) t
+    val lfail : Value.sbool Value.t -> ('a, 'fix) t
+    val miss : 'fix list -> ('a, 'fix) t
+    val miss_no_fix : reason:string -> unit -> ('a, 'fix) t
+    val map : ('a, 'fix) t -> ('a -> 'b) -> ('b, 'fix) t
+    val map_missing : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
+    val bind : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+
+    val consumer :
+      subst:subst -> ('a, 'fix) t -> ('a * subst, lfail, 'fix) Result.t
+
+    module Syntax : sig
+      val ( let* ) : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+      val ( let+ ) : ('a, 'fix) t -> ('a -> 'b) -> ('b, 'fix) t
+      val ( let+? ) : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
+    end
   end
 end
 
@@ -441,11 +469,11 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     if Approx.As_ctx.is_ux () then ()
     else f (Compo_res.Error (`Lfail (Value.bool false)))
 
-  let nondet_immediate ty =
+  let nondet_UNSAFE ty =
     let v = Solver.fresh_var ty in
     Value.mk_var v ty
 
-  let nondet ty f = f (nondet_immediate ty)
+  let nondet ty f = f (nondet_UNSAFE ty)
   let simplify v f = f (Solver.simplify v)
   let fresh_var ty f = f (Solver.fresh_var ty)
 
@@ -679,10 +707,44 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let subst (e : 'a Value.Syn.t) =
      fun s ->
-      let v, s = Value.Syn.subst ~fresh:nondet_immediate s e in
+      let v, s = Value.Syn.subst ~fresh:nondet_UNSAFE s e in
       MONAD.return (v, s)
 
     let producer ~subst p = p subst
+  end
+
+  module Consumer = struct
+    type 'a symex = 'a t
+    type subst = Value.Syn.Subst.t
+    type ('a, 'fix) t = subst -> ('a * subst, lfail, 'fix) Result.t
+
+    let lift_res (r : ('a, lfail, 'fix) Result.t) : ('a, 'fix) t =
+     fun subst -> Result.map r (fun a -> (a, subst))
+
+    let lift_symex (m : 'a symex) : ('a, 'fix) t =
+     fun subst -> MONAD.map m (fun a -> Compo_res.ok (a, subst))
+
+    let ok x = fun subst -> Result.ok (x, subst)
+    let lfail v = lift_res (Result.error (`Lfail v))
+    let miss fixes = lift_res (Result.miss fixes)
+    let miss_no_fix ~reason () = lift_res (Result.miss_no_fix ~reason ())
+
+    let map (m : ('a, 'fix) t) (f : 'a -> 'b) : ('b, 'fix) t =
+     fun s -> Result.map (m s) (fun (a, s) -> (f a, s))
+
+    let map_missing (m : ('a, 'fix) t) (f : 'fix -> 'g) : ('a, 'g) t =
+     fun s -> Result.map_missing (m s) f
+
+    let bind (m : ('a, 'fix) t) (f : 'a -> ('b, 'fix) t) : ('b, 'fix) t =
+     fun s -> Result.bind (m s) (fun (a, s) -> f a s)
+
+    let consumer ~subst p = p subst
+
+    module Syntax = struct
+      let ( let* ) = bind
+      let ( let+ ) = map
+      let ( let+? ) = map_missing
+    end
   end
 end
 

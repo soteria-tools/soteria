@@ -49,19 +49,26 @@ module Make
   module Value = Sym.Value
   module Stats = Sym.Stats
 
-  type 'a t = State.t -> ('a * State.t) Sym.t
+  let nondet_UNSAFE = Sym.nondet_UNSAFE
+
+  module MONAD = struct
+    type 'a t = State.t -> ('a * State.t) Sym.t
+
+    let return x st = Sym.return (x, st)
+
+    let bind m f st =
+      let* x, st' = m st in
+      f x st'
+
+    let map m f st =
+      let+ x, st' = m st in
+      (f x, st')
+  end
+
+  include MONAD
+
   type lfail = Sym.lfail
   type st = State.t
-
-  let return x st = Sym.return (x, st)
-
-  let bind m f st =
-    let* x, st' = m st in
-    f x st'
-
-  let map m f st =
-    let+ x, st' = m st in
-    (f x, st')
 
   let lift x st =
     let+ x in
@@ -144,6 +151,53 @@ module Make
       let branch_on = branch_on
       let branch_on_take_one = branch_on_take_one
       let if_sure = if_sure
+    end
+  end
+
+  module Producer = struct
+    include Soteria_std.Monad.StateT (Value.Syn.Subst) (MONAD)
+
+    let vanish () = lift (vanish ())
+
+    let subst (e : 'a Value.Syn.t) =
+     fun s ->
+      let v, s = Value.Syn.subst ~fresh:nondet_UNSAFE s e in
+      MONAD.return (v, s)
+
+    let producer ~subst p = p subst
+  end
+
+  module Consumer = struct
+    type 'a symex = 'a t
+    type subst = Value.Syn.Subst.t
+    type ('a, 'fix) t = subst -> ('a * subst, lfail, 'fix) Result.t
+
+    let lift_res (r : ('a, lfail, 'fix) Result.t) : ('a, 'fix) t =
+     fun subst -> Result.map r (fun a -> (a, subst))
+
+    let lift_symex (m : 'a symex) : ('a, 'fix) t =
+     fun subst -> MONAD.map m (fun a -> Compo_res.ok (a, subst))
+
+    let ok x = fun subst -> Result.ok (x, subst)
+    let lfail v = lift_res (Result.error (`Lfail v))
+    let miss fixes = lift_res (Result.miss fixes)
+    let miss_no_fix ~reason () = lift_res (Result.miss_no_fix ~reason ())
+
+    let map (m : ('a, 'fix) t) (f : 'a -> 'b) : ('b, 'fix) t =
+     fun s -> Result.map (m s) (fun (a, s) -> (f a, s))
+
+    let map_missing (m : ('a, 'fix) t) (f : 'fix -> 'g) : ('a, 'g) t =
+     fun s -> Result.map_missing (m s) f
+
+    let bind (m : ('a, 'fix) t) (f : 'a -> ('b, 'fix) t) : ('b, 'fix) t =
+     fun s -> Result.bind (m s) (fun (a, s) -> f a s)
+
+    let consumer ~subst p = p subst
+
+    module Syntax = struct
+      let ( let* ) = bind
+      let ( let+ ) = map
+      let ( let+? ) = map_missing
     end
   end
 end
