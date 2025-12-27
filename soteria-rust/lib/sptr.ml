@@ -51,7 +51,8 @@ module DecayMap : DecayMapS = struct
     let fresh () = failwith "Allocation is not valid for the decay map!"
   end
 
-  module SPmap = Soteria.Sym_states.Pmap.Make (Rustsymex) (StateKey)
+  module SPmap =
+    Soteria.Sym_states.Pmap.Make_patricia_tree (Rustsymex) (StateKey)
 
   type data = { address : T.sint Typed.t; exposed : bool }
   [@@deriving show { with_path = false }]

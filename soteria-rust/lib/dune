@@ -4,18 +4,19 @@
  (package soteria-rust)
  (name soteria_rust_lib)
  (libraries
-  soteria
+  charon
   cmdliner
+  dune-site
   fmt
   fmt.tty
-  iter
-  zarith
   grace
   grace.ansi_renderer
+  iter
   simple_smt
-  charon
-  dune-site
-  str)
+  soteria
+  str
+  patricia-tree
+  zarith)
  (flags :standard -open Soteria.Soteria_std -open Soteria.Bv_values)
  (preprocess
   (pps ppx_deriving.std ppx_subliner soteria.ppx))

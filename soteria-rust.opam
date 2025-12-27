@@ -19,6 +19,7 @@ depends: [
   "soteria"
   "dune-site"
   "zarith"
+  "patricia-tree"
   "ppx_deriving"
   "cmdliner"
   "fmt"

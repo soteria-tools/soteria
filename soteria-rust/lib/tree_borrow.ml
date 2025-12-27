@@ -11,10 +11,10 @@ let fresh_tag () =
 let zero = 0
 let pp_tag fmt tag = Fmt.pf fmt "‖%d‖" tag
 
-module TagMap = Map.Make (struct
+module TagMap = PatriciaTree.MakeMap (struct
   type t = tag
 
-  let compare = compare
+  let to_int = Fun.id
 end)
 
 type access = Read | Write
@@ -41,7 +41,7 @@ let pp_state fmt = function
   | Disabled -> Fmt.string fmt "Dis "
   | UB -> Fmt.string fmt "UB  "
 
-let meet st1 st2 =
+let[@inline] meet st1 st2 =
   match (st1, st2) with
   | UB, _ | _, UB -> UB
   | Disabled, _ | _, Disabled -> Disabled
@@ -52,7 +52,7 @@ let meet st1 st2 =
   | Reserved _, ReservedIM | ReservedIM, Reserved _ ->
       failwith "Can't compare Reserved and ReservedIM"
 
-let meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
+let[@inline] meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
 
 let transition =
   let transition st e =
@@ -185,4 +185,4 @@ let access accessed e (root : t) st =
   in
   if !ub_happened then Result.error `AliasingError else Result.ok st'
 
-let merge = TagMap.merge @@ fun _ -> Option.merge meet'
+let merge = TagMap.idempotent_union @@ fun _ -> meet'
