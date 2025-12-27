@@ -1,19 +1,14 @@
 module Elem (Symex : Symex.Base) = struct
+  open Symex
+
   module type S = sig
     type t [@@deriving show]
     type syn [@@deriving show]
 
-    val to_syn : t -> syn
-
-    module Produce : sig
-      val subst : syn -> t Symex.Producer.t
-    end
-
-    module Consume : sig
-      val learn_eq : syn -> t -> (unit, 'a) Symex.Consumer.t
-    end
-
     val fresh : unit -> t Symex.t
+    val to_syn : t -> syn
+    val subst : ('a Value.Syn.t -> 'a Value.t) -> syn -> t
+    val learn_eq : syn -> t -> (unit, 'a) Symex.Consumer.t
   end
 end
 
@@ -52,13 +47,13 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
     let open Producer.Syntax in
     match t with
     | None ->
-        let+ x = E.Produce.subst s in
+        let+ x = Producer.apply_subst E.subst s in
         Some x
     | Some _ -> Producer.vanish ()
 
   let consume (s : syn) (t : t option) : (t option, syn) Consumer.t =
     let open Consumer.Syntax in
     let* v = Consumer.lift_res (unwrap t) in
-    let+ () = E.Consume.learn_eq s v in
+    let+ () = E.learn_eq s v in
     None
 end

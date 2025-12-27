@@ -11,6 +11,8 @@ module Solver_result = Solver_result
 module Value = Value
 module Var = Var
 
+type missing_subst = [ `Missing_subst ]
+
 exception Gave_up of string
 
 module Or_gave_up = struct
@@ -58,6 +60,9 @@ module type Base = sig
       potential typos such as [`LFail] which will take precious time to debug...
       trust me. *)
   type lfail = [ `Lfail of Value.sbool Value.t ]
+
+  (** Consumption failures *)
+  type cons_fail = [ lfail | missing_subst ]
 
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
@@ -255,16 +260,22 @@ module type Base = sig
     include Monad.S with type 'a t = subst -> ('a * subst) symex
 
     val vanish : unit -> 'a t
-    val subst : 'a Value.Syn.t -> 'a Value.t t
+
+    val apply_subst :
+      (('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
+
     val producer : subst:subst -> 'a t -> ('a * subst) symex
   end
 
   module Consumer : sig
     type subst := Value.Syn.Subst.t
     type 'a symex := 'a t
-    type ('a, 'fix) t = subst -> ('a * subst, lfail, 'fix) Result.t
+    type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
 
-    val lift_res : ('a, lfail, 'fix) Result.t -> ('a, 'fix) t
+    val apply_subst :
+      (('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
+
+    val lift_res : ('a, cons_fail, 'fix) Result.t -> ('a, 'fix) t
     val lift_symex : 'a symex -> ('a, 'fix) t
     val ok : 'a -> ('a, 'fix) t
     val lfail : Value.sbool Value.t -> ('a, 'fix) t
@@ -275,7 +286,7 @@ module type Base = sig
     val bind : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
 
     val consumer :
-      subst:subst -> ('a, 'fix) t -> ('a * subst, lfail, 'fix) Result.t
+      subst:subst -> ('a, 'fix) t -> ('a * subst, cons_fail, 'fix) Result.t
 
     module Syntax : sig
       val ( let* ) : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
@@ -392,6 +403,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
   type 'a t = 'a Iter.t
   type lfail = [ `Lfail of Value.sbool Value.t ]
+  type cons_fail = [ lfail | missing_subst ]
 
   module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
@@ -705,10 +717,18 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let vanish () = lift (vanish ())
 
-    let subst (e : 'a Value.Syn.t) =
+    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : 'sem t =
      fun s ->
-      let v, s = Value.Syn.subst ~fresh:nondet_UNSAFE s e in
-      MONAD.return (v, s)
+      (* There's maybe a safer version with effects and no reference? *)
+      let s = ref s in
+      let vsf e =
+        let v, s' = Value.Syn.subst ~fresh:nondet_UNSAFE !s e in
+        s := s';
+        v
+      in
+      let res = sf vsf e in
+      MONAD.return (res, !s)
 
     let producer ~subst p = p subst
   end
@@ -716,9 +736,24 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   module Consumer = struct
     type 'a symex = 'a t
     type subst = Value.Syn.Subst.t
-    type ('a, 'fix) t = subst -> ('a * subst, lfail, 'fix) Result.t
+    type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
 
-    let lift_res (r : ('a, lfail, 'fix) Result.t) : ('a, 'fix) t =
+    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : ('sem, 'fix) t =
+      let exception Missing_subst in
+      fun s ->
+        let vsf e =
+          let v, _ =
+            Value.Syn.subst ~fresh:(fun _ -> raise Missing_subst) s e
+          in
+          v
+        in
+        try
+          let res = sf vsf e in
+          Result.ok (res, s)
+        with Missing_subst -> Result.error `Missing_subst
+
+    let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
      fun subst -> Result.map r (fun a -> (a, subst))
 
     let lift_symex (m : 'a symex) : ('a, 'fix) t =

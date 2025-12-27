@@ -68,6 +68,7 @@ module Make
   include MONAD
 
   type lfail = Sym.lfail
+  type cons_fail = Sym.cons_fail
   type st = State.t
 
   let lift x st =
@@ -159,10 +160,18 @@ module Make
 
     let vanish () = lift (vanish ())
 
-    let subst (e : 'a Value.Syn.t) =
+    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : 'sem t =
      fun s ->
-      let v, s = Value.Syn.subst ~fresh:nondet_UNSAFE s e in
-      MONAD.return (v, s)
+      (* There's maybe a safer version with effects and no reference? *)
+      let s = ref s in
+      let vsf e =
+        let v, s' = Value.Syn.subst ~fresh:nondet_UNSAFE !s e in
+        s := s';
+        v
+      in
+      let res = sf vsf e in
+      MONAD.return (res, !s)
 
     let producer ~subst p = p subst
   end
@@ -170,9 +179,24 @@ module Make
   module Consumer = struct
     type 'a symex = 'a t
     type subst = Value.Syn.Subst.t
-    type ('a, 'fix) t = subst -> ('a * subst, lfail, 'fix) Result.t
+    type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
 
-    let lift_res (r : ('a, lfail, 'fix) Result.t) : ('a, 'fix) t =
+    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : ('sem, 'fix) t =
+      let exception Missing_subst in
+      fun s ->
+        let vsf e =
+          let v, _ =
+            Value.Syn.subst ~fresh:(fun _ -> raise Missing_subst) s e
+          in
+          v
+        in
+        try
+          let res = sf vsf e in
+          Result.ok (res, s)
+        with Missing_subst -> Result.error `Missing_subst
+
+    let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
      fun subst -> Result.map r (fun a -> (a, subst))
 
     let lift_symex (m : 'a symex) : ('a, 'fix) t =
