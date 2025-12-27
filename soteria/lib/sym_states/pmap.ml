@@ -17,7 +17,7 @@ module KeyS (Symex : Symex.Base) = struct
     val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
   end
 
-  module type S_PatriciaTree = sig
+  module type S_patricia_tree = sig
     include S
 
     val to_int : t -> int
@@ -295,7 +295,7 @@ module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) =
 
 module Make_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_PatriciaTree) =
+    (Key : KeyS(Symex).S_patricia_tree) =
   Build_base (Symex) (Key) (PatriciaTreeMakeMap (Key))
 
 (** Sound to use when the keys of the map may depend on symbolic variables *)
@@ -337,7 +337,7 @@ end
 
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_PatriciaTree) =
+    (Key : KeyS(Symex).S_patricia_tree) =
 struct
   module M' = PatriciaTreeMakeMap (Key)
   include Build_direct_access (Symex) (Key) (M')

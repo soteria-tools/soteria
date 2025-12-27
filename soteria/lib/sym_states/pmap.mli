@@ -17,7 +17,7 @@ module KeyS (Symex : Symex.Base) : sig
     val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
   end
 
-  module type S_PatriciaTree = sig
+  module type S_patricia_tree = sig
     include S
 
     val to_int : t -> int
@@ -124,14 +124,14 @@ module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) :
 
 module Make_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_PatriciaTree) : S(Symex).S with type M.key = Key.t
+    (Key : KeyS(Symex).S_patricia_tree) : S(Symex).S with type M.key = Key.t
 
 module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) :
   S(Symex).S with type M.key = Key.t
 
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_PatriciaTree) : S(Symex).S with type M.key = Key.t
+    (Key : KeyS(Symex).S_patricia_tree) : S(Symex).S with type M.key = Key.t
 
 module Concrete (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
   S(Symex).S with type M.key = Key.t
