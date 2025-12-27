@@ -17,7 +17,7 @@ let exec_term =
 
 let exec_cmd = Cmd.v (Cmd.info "exec") exec_term
 
-let gen_summaries_ter =
+let gen_summaries_term =
   let gen_summaries logs_config solver_config file =
     Soteria_linear_lib.with_config logs_config solver_config (fun () ->
         Soteria_linear_lib.generate_summaries file)
@@ -28,6 +28,6 @@ let gen_summaries_ter =
     $ Soteria.Solvers.Config.cmdliner_term ()
     $ file_arg)
 
-let gen_summaries_cmd = Cmd.v (Cmd.info "gen-summaries") gen_summaries_ter
+let gen_summaries_cmd = Cmd.v (Cmd.info "gen-summaries") gen_summaries_term
 let cmd = Cmd.group (Cmd.info "soteria-linear") [ exec_cmd; gen_summaries_cmd ]
 let () = Cmd.eval cmd |> exit
