@@ -11,6 +11,8 @@ module Solver_result = Solver_result
 module Value = Value
 module Var = Var
 
+type missing_subst = [ `Missing_subst ]
+
 exception Gave_up of string
 
 module Or_gave_up = struct
@@ -59,6 +61,9 @@ module type Base = sig
       trust me. *)
   type lfail = [ `Lfail of Value.sbool Value.t ]
 
+  (** Consumption failures *)
+  type cons_fail = [ lfail | missing_subst ]
+
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
   type sbool := Value.sbool
@@ -92,6 +97,9 @@ module type Base = sig
 
   (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
+
+  (** Do not use [nondet_UNSAFE]. *)
+  val nondet_UNSAFE : 'a vt -> 'a v
 
   (** [simplify v] simplifies the value [v] according to the current path
       condition. *)
@@ -244,6 +252,48 @@ module type Base = sig
         'a t
     end
   end
+
+  module Producer : sig
+    type 'a symex := 'a t
+    type subst := Value.Syn.Subst.t
+
+    include Monad.S with type 'a t = subst -> ('a * subst) symex
+
+    val vanish : unit -> 'a t
+
+    val apply_subst :
+      (('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
+
+    val producer : subst:subst -> 'a t -> ('a * subst) symex
+  end
+
+  module Consumer : sig
+    type subst := Value.Syn.Subst.t
+    type 'a symex := 'a t
+    type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
+
+    val apply_subst :
+      (('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
+
+    val lift_res : ('a, cons_fail, 'fix) Result.t -> ('a, 'fix) t
+    val lift_symex : 'a symex -> ('a, 'fix) t
+    val ok : 'a -> ('a, 'fix) t
+    val lfail : Value.sbool Value.t -> ('a, 'fix) t
+    val miss : 'fix list -> ('a, 'fix) t
+    val miss_no_fix : reason:string -> unit -> ('a, 'fix) t
+    val map : ('a, 'fix) t -> ('a -> 'b) -> ('b, 'fix) t
+    val map_missing : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
+    val bind : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+
+    val consumer :
+      subst:subst -> ('a, 'fix) t -> ('a * subst, cons_fail, 'fix) Result.t
+
+    module Syntax : sig
+      val ( let* ) : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+      val ( let+ ) : ('a, 'fix) t -> ('a -> 'b) -> ('b, 'fix) t
+      val ( let+? ) : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
+    end
+  end
 end
 
 module type S = sig
@@ -353,6 +403,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
   type 'a t = 'a Iter.t
   type lfail = [ `Lfail of Value.sbool Value.t ]
+  type cons_fail = [ lfail | missing_subst ]
 
   module Symex_state : Reversible.In_place = struct
     let backtrack_n n =
@@ -430,11 +481,11 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     if Approx.As_ctx.is_ux () then ()
     else f (Compo_res.Error (`Lfail (Value.bool false)))
 
-  let nondet ty f =
+  let nondet_UNSAFE ty =
     let v = Solver.fresh_var ty in
-    let v = Value.mk_var v ty in
-    f v
+    Value.mk_var v ty
 
+  let nondet ty f = f (nondet_UNSAFE ty)
   let simplify v f = f (Solver.simplify v)
   let fresh_var ty f = f (Solver.fresh_var ty)
 
@@ -658,6 +709,76 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       let branch_on = branch_on
       let branch_on_take_one = branch_on_take_one
       let if_sure = if_sure
+    end
+  end
+
+  module Producer = struct
+    include Soteria_std.Monad.StateT (Value.Syn.Subst) (MONAD)
+
+    let vanish () = lift (vanish ())
+
+    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : 'sem t =
+     fun s ->
+      (* There's maybe a safer version with effects and no reference? *)
+      let s = ref s in
+      let vsf e =
+        let v, s' = Value.Syn.subst ~fresh:nondet_UNSAFE !s e in
+        s := s';
+        v
+      in
+      let res = sf vsf e in
+      MONAD.return (res, !s)
+
+    let producer ~subst p = p subst
+  end
+
+  module Consumer = struct
+    type 'a symex = 'a t
+    type subst = Value.Syn.Subst.t
+    type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
+
+    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : ('sem, 'fix) t =
+      let exception Missing_subst in
+      fun s ->
+        let vsf e =
+          let v, _ =
+            Value.Syn.subst ~fresh:(fun _ -> raise Missing_subst) s e
+          in
+          v
+        in
+        try
+          let res = sf vsf e in
+          Result.ok (res, s)
+        with Missing_subst -> Result.error `Missing_subst
+
+    let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
+     fun subst -> Result.map r (fun a -> (a, subst))
+
+    let lift_symex (m : 'a symex) : ('a, 'fix) t =
+     fun subst -> MONAD.map m (fun a -> Compo_res.ok (a, subst))
+
+    let ok x = fun subst -> Result.ok (x, subst)
+    let lfail v = lift_res (Result.error (`Lfail v))
+    let miss fixes = lift_res (Result.miss fixes)
+    let miss_no_fix ~reason () = lift_res (Result.miss_no_fix ~reason ())
+
+    let map (m : ('a, 'fix) t) (f : 'a -> 'b) : ('b, 'fix) t =
+     fun s -> Result.map (m s) (fun (a, s) -> (f a, s))
+
+    let map_missing (m : ('a, 'fix) t) (f : 'fix -> 'g) : ('a, 'g) t =
+     fun s -> Result.map_missing (m s) f
+
+    let bind (m : ('a, 'fix) t) (f : 'a -> ('b, 'fix) t) : ('b, 'fix) t =
+     fun s -> Result.bind (m s) (fun (a, s) -> f a s)
+
+    let consumer ~subst p = p subst
+
+    module Syntax = struct
+      let ( let* ) = bind
+      let ( let+ ) = map
+      let ( let+? ) = map_missing
     end
   end
 end

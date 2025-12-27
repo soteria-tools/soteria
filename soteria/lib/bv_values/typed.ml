@@ -86,3 +86,9 @@ module Infix = struct
   let ( *$?@ ) = mk_checked_op BitVec.mul (BitVec.mul_overflows ~signed:true)
   let ( ~-? ) x = (~-x, BitVec.neg_overflows x)
 end
+
+module Syn = struct
+  include Syn
+
+  type 'a t = Svalue.t
+end
