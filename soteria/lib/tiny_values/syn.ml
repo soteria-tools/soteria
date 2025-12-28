@@ -20,14 +20,7 @@ let rec subst ~fresh (s : Subst.t) (v : Svalue.t) =
           let v' = fresh v.node.ty in
           let s = Subst.add v v' s in
           (v', s)
-      | Bool _ | Float _ | BitVec _ | Int _ -> (v, s)
-      | Seq elements ->
-          let elements, s = subst_list ~fresh s elements in
-          (Svalue.SSeq.mk ~seq_ty:v.node.ty elements, s)
-      | Ptr (loc, ofs) ->
-          let loc, s = subst ~fresh s loc in
-          let ofs, s = subst ~fresh s ofs in
-          (Ptr.mk loc ofs, s)
+      | Bool _ | Int _ -> (v, s)
       | Unop (unop, v1) ->
           let v1, s = subst ~fresh s v1 in
           (Svalue.mk_unop unop v1, s)

@@ -516,6 +516,26 @@ let rec sem_eq v1 v2 =
 let sem_eq_untyped v1 v2 =
   if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
 
+(** {2 General constructors} *)
+
+let mk_unop (op : Unop.t) v = match op with Not -> not v
+
+let mk_binop (op : Binop.t) v1 v2 =
+  match op with
+  | And -> and_ v1 v2
+  | Or -> or_ v1 v2
+  | Eq -> sem_eq v1 v2
+  | Leq -> leq v1 v2
+  | Lt -> lt v1 v2
+  | Plus -> add v1 v2
+  | Minus -> sub v1 v2
+  | Times -> mul v1 v2
+  | Div -> div v1 v2
+  | Rem -> rem v1 v2
+  | Mod -> mod_ v1 v2
+
+let mk_nop (op : Nop.t) vs = match op with Nop.Distinct -> distinct vs
+
 (** {2 Infix operators} *)
 
 module Infix = struct
