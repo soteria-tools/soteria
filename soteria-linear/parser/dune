@@ -1,0 +1,9 @@
+(library
+ (name soteria_linear_parser)
+ (libraries soteria_linear_ast))
+
+(menhir
+ (modules parser))
+
+(ocamllex
+ (modules lexer))

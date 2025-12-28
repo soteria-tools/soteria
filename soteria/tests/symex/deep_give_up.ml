@@ -1,10 +1,10 @@
 open
   Soteria.Symex.Make
     (Soteria.Symex.Meta.Dummy)
-    (Soteria.C_values.C_solver.Z3_solver)
+    (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
 open Syntax
-open Soteria.C_values
+open Soteria.Tiny_values
 
 let pp_branch pp_err =
   let pp_pc = Fmt.Dump.list Typed.ppa in

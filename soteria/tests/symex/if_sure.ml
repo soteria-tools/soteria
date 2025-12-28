@@ -1,10 +1,10 @@
 open
   Soteria.Symex.Make
     (Soteria.Symex.Meta.Dummy)
-    (Soteria.C_values.C_solver.Z3_solver)
+    (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
 open Syntax
-open Soteria.C_values.Typed
+open Soteria.Tiny_values.Typed
 open Infix
 
 let if_true = if%sure v_true then return 42 else return (-1)
