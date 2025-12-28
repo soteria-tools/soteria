@@ -1,0 +1,3 @@
+(library
+ (name soteria_linear_lib)
+ (libraries soteria_linear_ast soteria_linear_parser soteria_linear_semantic))

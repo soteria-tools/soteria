@@ -132,7 +132,7 @@ module Interval : S = struct
   let rec simplify (v : Svalue.t) st : Svalue.t =
     let simplify v = simplify v st in
     match v.node.kind with
-    | Binop (((Eq | Lt | Leq | BvLt false | BvLeq false) as bop), l, r) -> (
+    | Binop (((Eq | Lt | Leq) as bop), l, r) -> (
         let rec to_range (v : Svalue.t) : Range.t =
           match v.node.kind with
           | Var v -> get v st
@@ -167,14 +167,10 @@ module Interval : S = struct
         let rr = to_range r in
         match (bop, lr, rr) with
         | Eq, _, _ when Range.is_empty (Range.intersect lr rr) -> Svalue.v_false
-        | (Lt | BvLt false), (Some ml, _), (_, Some nr) when Z.geq ml nr ->
-            Svalue.v_false
-        | (Leq | BvLeq false), (Some ml, _), (_, Some nr) when Z.gt ml nr ->
-            Svalue.v_false
-        | (Lt | BvLt false), (_, Some nl), (Some mr, _) when Z.lt nl mr ->
-            Svalue.v_true
-        | (Leq | BvLeq false), (_, Some nl), (Some mr, _) when Z.leq nl mr ->
-            Svalue.v_true
+        | Lt, (Some ml, _), (_, Some nr) when Z.geq ml nr -> Svalue.v_false
+        | Leq, (Some ml, _), (_, Some nr) when Z.gt ml nr -> Svalue.v_false
+        | Lt, (_, Some nl), (Some mr, _) when Z.lt nl mr -> Svalue.v_true
+        | Leq, (_, Some nl), (Some mr, _) when Z.leq nl mr -> Svalue.v_true
         | Leq, (Some ml, Some mr), (Some nr, _)
           when Z.equal ml mr && Z.leq mr nr ->
             Svalue.v_true
