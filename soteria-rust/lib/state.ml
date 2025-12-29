@@ -44,6 +44,7 @@ module StateKey = struct
   type t = T.sloc Typed.t
 
   let pp = ppa
+  let to_int = unique_tag
   let i = ref 0
 
   let fresh_rsym () =
@@ -59,7 +60,10 @@ module StateKey = struct
 end
 
 module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
-module SPmap = Soteria.Sym_states.Pmap.Direct_access (DecayMapMonad) (StateKey)
+
+module SPmap =
+  Soteria.Sym_states.Pmap.Direct_access_patricia_tree (DecayMapMonad) (StateKey)
+
 module Bi = Soteria.Sym_states.Bi_abd.Make (DecayMapMonad)
 module Tree_block = Rtree_block.Make (Sptr)
 
@@ -85,7 +89,7 @@ end)
 
 module FunBiMap = struct
   include
-    Bimap.Make
+    Bimap.MakePp
       (struct
         type t = T.sloc Typed.t
 

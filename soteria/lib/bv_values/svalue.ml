@@ -207,6 +207,7 @@ and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
 let hash t = t.tag
 let kind t = t.node.kind
+let unique_tag t = t.tag
 
 let iter =
   let rec aux (f : t -> unit) (sv : t) : unit =
@@ -737,13 +738,7 @@ and BitVec : BitVec = struct
 
   (** [bv_to_z signed bits z] parses a BitVector [z], for a given bitwidth
       [bits], with [signed], into an integer. *)
-  let bv_to_z signed bits z =
-    let z = Z.(z land pred (one lsl bits)) in
-    if signed then
-      let bits_m_1 = bits - 1 in
-      let max = Z.(pred (one lsl bits_m_1)) in
-      if Z.leq z max then z else Z.(z - (one lsl bits))
-    else z
+  let bv_to_z signed bits z = if signed then Z.signed_extract z 0 bits else z
 
   let to_z v = match v.node.kind with BitVec z -> Some z | _ -> None
 
@@ -974,6 +969,12 @@ and BitVec : BitVec = struct
     | Binop (Add _, r, { node = { kind = BitVec l; _ }; _ }), BitVec d
       when Stdlib.not signed && Z.(equal l d) ->
         rem ~signed r v2
+    | ( Binop (Rem false, r, ({ node = { kind = BitVec r1; _ }; _ } as v_r1)),
+        BitVec r2 )
+      when Stdlib.not signed
+           && Z.(equal zero (rem r1 r2) || equal zero (rem r2 r1)) ->
+        let rhs = if Z.(equal (min r1 r2) r1) then v_r1 else v2 in
+        rem ~signed r rhs
     | _ -> Binop (Rem signed, v1, v2) <| v1.node.ty
 
   and not (v : t) =
@@ -1032,6 +1033,7 @@ and BitVec : BitVec = struct
         mk n Z.(l lor r)
     | BitVec z, _ when Z.equal z Z.zero -> v2
     | _, BitVec z when Z.equal z Z.zero -> v1
+    | _, _ when equal v1 v2 -> v1
     (* 0x0..0X..X | (0x0..0Y..Y << N) when N = |X..X| ==> 0x0..0Y..YX..X  *)
     | ( Unop (BvExtend (false, nx), base),
         Binop
@@ -1794,13 +1796,7 @@ and BitVec : BitVec = struct
       Bool.or_ neg_ovf add_ovf
 
   let of_float ~rounding ~signed ~size v =
-    let p = precision_of_f v.node.ty in
-    match (p, v.node.kind, size) with
-    | F32, Float f, 32 ->
-        mk 32 @@ Z.of_int32 (Int32.bits_of_float (Stdlib.Float.of_string f))
-    | F64, Float f, 64 ->
-        mk 64 @@ Z.of_int64 (Int64.bits_of_float (Stdlib.Float.of_string f))
-    | _, _, _ -> Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size
+    Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size
 
   let to_float ~rounding ~signed ~fp v =
     Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp

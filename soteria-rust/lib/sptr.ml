@@ -46,12 +46,14 @@ module DecayMap : DecayMapS = struct
 
     type t = T.sloc Typed.t
 
+    let to_int = unique_tag
     let pp = ppa
     let simplify = Rustsymex.simplify
     let fresh () = failwith "Allocation is not valid for the decay map!"
   end
 
-  module SPmap = Soteria.Sym_states.Pmap.Make (Rustsymex) (StateKey)
+  module SPmap =
+    Soteria.Sym_states.Pmap.Make_patricia_tree (Rustsymex) (StateKey)
 
   type data = { address : T.sint Typed.t; exposed : bool }
   [@@deriving show { with_path = false }]
@@ -95,13 +97,13 @@ module DecayMap : DecayMapS = struct
        See https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html
        *)
     let usize_ty = Typed.t_usize () in
-    let bindings = SPmap.M.bindings (SPmap.of_opt st) in
+    let bindings = SPmap.syntactic_bindings (SPmap.of_opt st) in
     let binding =
       Typed.iter_vars loc_int
       |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
       |> Iter.filter_map (fun (var, ty) ->
              let v = Typed.mk_var var ty in
-             List.find_opt
+             Seq.find
                (fun (_, { address; exposed }) ->
                  exposed && Typed.equal v address)
                bindings)
