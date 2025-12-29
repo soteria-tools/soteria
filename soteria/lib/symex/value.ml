@@ -1,30 +1,30 @@
 module type Syn = sig
   type 'a ty
   type 'a v
-  type 'a t
+  type t [@@deriving show]
 
   (** Obtain a syntactic representation from a semantic value. This implicitly
       uses an identity substitution. *)
-  val of_value : 'a v -> 'a t
+  val of_value : 'a v -> t
 
   (** A susbtitution projects the syntactic to the semantic world. *)
   module Subst : sig
-    type 'a s := 'a t
+    type s := t
 
     (** Type of substitutions *)
     type t
 
     (** Adds a binding to the substitution *)
-    val add : 'a s -> 'a v -> t -> t
+    val add : s -> 'a v -> t -> t
 
     (** Find a binding in the substitution *)
-    val find_opt : 'a s -> t -> 'a v option
+    val find_opt : s -> t -> 'a v option
   end
 
   (** Applies a substitution to a syntactic representation to obtain a symbolic
       value. Should values be missing, fresh values are generated using the
       provided function. *)
-  val subst : fresh:('a ty -> 'a v) -> Subst.t -> 'a t -> 'a v * Subst.t
+  val subst : fresh:('a ty -> 'a v) -> Subst.t -> t -> 'a v * Subst.t
 end
 
 module type S = sig

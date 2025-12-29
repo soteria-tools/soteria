@@ -1,5 +1,7 @@
 open Svalue
 
+type t = Svalue.t [@@deriving show { with_path = false }]
+
 let[@inline] of_value v = v
 
 module Subst = struct

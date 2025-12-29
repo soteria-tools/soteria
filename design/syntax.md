@@ -18,3 +18,9 @@ Function specifications can then be *executed* by first consuming the preconditi
 ## Alternative design
 
 Each atom of the logic can be designed as objects with inputs and outputs that are always only symbolic values.
+
+
+## Bikeshedding list
+
+- All `subst` functions require a `Typed.cast`, can we get around this?
+- fixes are now `syn list list`, this makes sense but can we add some type beauty to it?

@@ -10,13 +10,15 @@ module Freeable = Soteria.Sym_states.Freeable.Make (Symex)
 type t = Excl_val.t Freeable.t PMap.t option
 [@@deriving show { with_path = false }]
 
-type fixes = Excl_val.serialized Freeable.serialized PMap.serialized
-[@@deriving show { with_path = false }]
+type syn = Excl_val.syn Freeable.syn PMap.syn
 
-let serialize (st : t) : fixes =
+let ins_outs (syn : syn) =
+  PMap.ins_outs (Freeable.ins_outs Excl_val.ins_outs) syn
+
+let to_syn (st : t) : syn list =
   match st with
   | None -> []
-  | Some pmap -> PMap.serialize (Freeable.serialize Excl_val.serialize) pmap
+  | Some pmap -> PMap.to_syn (Freeable.to_syn Excl_val.to_syn) pmap
 
 let empty : t = None
 let load addr st = PMap.wrap (Freeable.wrap Excl_val.load) addr st
@@ -33,5 +35,4 @@ let free addr st =
     (Freeable.free ~assert_exclusively_owned:Excl_val.assert_exclusively_owned)
     addr st
 
-let produce fix t = PMap.produce (Freeable.produce Excl_val.produce) fix t
 let error msg _state = `Interp msg

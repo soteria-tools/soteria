@@ -87,8 +87,4 @@ module Infix = struct
   let ( ~-? ) x = (~-x, BitVec.neg_overflows x)
 end
 
-module Syn = struct
-  include Syn
-
-  type 'a t = Svalue.t
-end
+module Syn = Syn

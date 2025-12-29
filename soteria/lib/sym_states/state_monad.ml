@@ -160,7 +160,7 @@ module Make
 
     let vanish () = lift (vanish ())
 
-    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+    let apply_subst (sf : (Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
         (e : 'syn) : 'sem t =
      fun s ->
       (* There's maybe a safer version with effects and no reference? *)
@@ -181,7 +181,7 @@ module Make
     type subst = Value.Syn.Subst.t
     type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
 
-    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+    let apply_subst (sf : (Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
         (e : 'syn) : ('sem, 'fix) t =
       let exception Missing_subst in
       fun s ->

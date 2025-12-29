@@ -259,10 +259,11 @@ module type Base = sig
 
     include Monad.S with type 'a t = subst -> ('a * subst) symex
 
+    val lift : 'a symex -> 'a t
     val vanish : unit -> 'a t
 
     val apply_subst :
-      (('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
+      ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
 
     val producer : subst:subst -> 'a t -> ('a * subst) symex
   end
@@ -273,7 +274,7 @@ module type Base = sig
     type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
 
     val apply_subst :
-      (('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
+      ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
 
     val lift_res : ('a, cons_fail, 'fix) Result.t -> ('a, 'fix) t
     val lift_symex : 'a symex -> ('a, 'fix) t
@@ -717,7 +718,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let vanish () = lift (vanish ())
 
-    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+    let apply_subst (sf : (Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
         (e : 'syn) : 'sem t =
      fun s ->
       (* There's maybe a safer version with effects and no reference? *)
@@ -738,7 +739,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     type subst = Value.Syn.Subst.t
     type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
 
-    let apply_subst (sf : ('a Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+    let apply_subst (sf : (Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
         (e : 'syn) : ('sem, 'fix) t =
       let exception Missing_subst in
       fun s ->

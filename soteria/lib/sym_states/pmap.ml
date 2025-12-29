@@ -1,8 +1,11 @@
 open Symex
 
 module KeyS (Symex : Symex.Base) = struct
+  open Symex
+
   module type S = sig
     type t
+    type syn
 
     include Stdlib.Map.OrderedType with type t := t
 
@@ -13,8 +16,10 @@ module KeyS (Symex : Symex.Base) = struct
     val fresh : unit -> t Symex.t
     val simplify : t -> t Symex.t
     val distinct : t list -> sbool_v
-    val subst : (Var.t -> Var.t) -> t -> t
     val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+    val to_syn : t -> syn
+    val subst : (Value.Syn.t -> 'a Value.t) -> syn -> t
+    val exprs_syn : syn -> Symex.Value.Syn.t list
   end
 end
 
@@ -22,12 +27,16 @@ module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
   KeyS(Symex).S with type t = Key.t = struct
   include Key
 
+  type syn = Key.t
+
+  let[@inline] to_syn x = x
   let sem_eq x y = Symex.Value.bool (Key.compare x y = 0)
   let fresh () = failwith "Fresh not implemented for concrete keys"
   let simplify = Symex.return
   let distinct _ = Symex.Value.bool true
   let subst _ x = x
   let iter_vars _ = fun _ -> ()
+  let exprs_syn _ = []
 end
 
 module Build_from_find_opt_sym
@@ -43,10 +52,16 @@ struct
 
   type 'a t = 'a M.t
   type 'a serialized = (Key.t * 'a) list
+  type 'a syn = Key.syn * 'a
+
+  let ins_outs ins_outs_codom (k, v) =
+    let ins, outs = ins_outs_codom v in
+    (Key.exprs_syn k @ ins, outs)
 
   let lift_fix_s ~key res =
+    let key = Key.to_syn key in
     let+? fix = res in
-    [ (key, fix) ]
+    List.map (fun v -> (key, v)) fix
 
   let pp_serialized pp_inner : Format.formatter -> 'a serialized -> unit =
     Fmt.brackets
@@ -54,6 +69,12 @@ struct
 
   let serialize serialize_inner m =
     M.to_seq m |> Seq.map (fun (k, v) -> (k, serialize_inner v)) |> List.of_seq
+
+  let to_syn to_syn_inner m =
+    M.to_list m
+    |> List.concat_map (fun (k, v) ->
+           let k = Key.to_syn k in
+           List.map (fun v -> (k, v)) (to_syn_inner v))
 
   let subst_serialized subst_inner subst_var l =
     List.map
@@ -103,44 +124,27 @@ struct
     let+ () = Symex.assume [ Key.distinct @@ List.map fst @@ M.bindings st ] in
     Compo_res.Ok (out_keys, to_opt st)
 
-  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
+  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix list) Symex.Result.t)
       (key : Key.t) (st : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
+      ('b * 'a t option, 'err, 'fix syn list) Symex.Result.t =
     let st = of_opt st in
     let* key, codom = Find_opt_sym.f key st in
     let++ res, codom = f codom |> lift_fix_s ~key in
     (res, to_opt (add_opt key codom st))
 
   let produce
-      (prod : 'inner_serialized -> 'inner_st option -> 'inner_st option Symex.t)
-      (serialized : 'inner_cp serialized) (st : 'inner_st t option) :
-      'inner_st t option Symex.t =
+      (prod :
+        'inner_syn -> 'inner_st option -> 'inner_st option Symex.Producer.t)
+      (syn : 'inner_syn syn) (st : 'inner_st t option) :
+      'inner_st t option Symex.Producer.t =
+    let open Symex in
+    let open Symex.Producer.Syntax in
+    let key, inner_syn = syn in
     let st = of_opt st in
-    let+ st =
-      Symex.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
-          let* key, codom = Find_opt_sym.f key st in
-          let+ codom = prod inner_ser codom in
-          add_opt key codom st)
-    in
-    to_opt st
-
-  let consume
-      (cons :
-        'inner_serialized ->
-        'inner_st option ->
-        ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
-      (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-      ( 'inner_st t option,
-        [> Symex.lfail ],
-        'inner_serialized serialized )
-      Symex.Result.t =
-    let st = of_opt st in
-    let++ st =
-      Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
-          let* key, codom = Find_opt_sym.f key st in
-          let++ codom = cons inner_ser codom |> lift_fix_s ~key in
-          add_opt key codom st)
-    in
+    let* key = Producer.apply_subst Key.subst key in
+    let* key, codom = Producer.lift (Find_opt_sym.f key st) in
+    let+ codom = prod inner_syn codom in
+    let st = add_opt key codom st in
     to_opt st
 
   let fold

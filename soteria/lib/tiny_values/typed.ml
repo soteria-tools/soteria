@@ -33,8 +33,4 @@ let cast_checked = type_checked
 let cast_checked2 x y =
   if equal_ty x.node.ty y.node.ty then Some (x, y, x.node.ty) else None
 
-module Syn = struct
-  include Syn
-
-  type 'a t = Svalue.t
-end
+module Syn = Syn

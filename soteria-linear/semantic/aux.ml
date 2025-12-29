@@ -1,5 +1,6 @@
 open Soteria_linear_ast.Lang
 module Typed = Soteria.Tiny_values.Typed
+module Syn = Soteria.Tiny_values.Typed.Syn
 
 module Symex =
   Soteria.Symex.Make
@@ -10,18 +11,32 @@ module S_int = struct
   include Typed
 
   type t = Typed.T.sint Typed.t
+  type syn = Syn.t
 
   let simplify = Symex.simplify
   let fresh () = Symex.nondet Typed.t_int
   let pp = Typed.ppa
+
+  let subst (f : syn -> 'a Typed.t) (e : syn) : t =
+    (* FIXME: I don't know how to do without `Typed.cast`... *)
+    Typed.cast (f e)
+
+  let to_syn = Syn.of_value
+  let exprs_syn (s : syn) : Symex.Value.Syn.t list = [ s ]
 end
 
 module S_val = struct
   include Typed
 
   type t = T.any Typed.t [@@deriving show { with_path = false }]
+  type syn = Syn.t [@@deriving show { with_path = false }]
 
-  let sem_eq = sem_eq_untyped
+  let subst (f : syn -> 'a Typed.t) (e : syn) : t = Typed.cast (f e)
+  let to_syn = Syn.of_value
+  let exprs_syn (s : syn) : Symex.Value.Syn.t list = [ s ]
+
+  let learn_eq (_ : syn) (_ : t) : (unit, 'a) Symex.Consumer.t =
+    failwith "Not implemented"
 
   let fresh () : t Symex.t =
     Symex.branches
