@@ -1,10 +1,10 @@
 open
   Soteria.Symex.Make
     (Soteria.Symex.Meta.Dummy)
-    (Soteria.C_values.C_solver.Z3_solver)
+    (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
 open Syntax
-open Soteria.C_values.Typed
+open Soteria.Tiny_values.Typed
 
 let process : (int, int, unit) Result.t =
   let* b1 = nondet t_bool in
