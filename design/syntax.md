@@ -24,3 +24,4 @@ Each atom of the logic can be designed as objects with inputs and outputs that a
 
 - All `subst` functions require a `Typed.cast`, can we get around this?
 - fixes are now `syn list list`, this makes sense but can we add some type beauty to it?
+- The horrible interface Value.Syn.Subst

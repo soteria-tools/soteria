@@ -14,6 +14,8 @@ module type Syn = sig
     (** Type of substitutions *)
     type t
 
+    val empty : t
+
     (** Adds a binding to the substitution *)
     val add : s -> 'a v -> t -> t
 
@@ -24,7 +26,8 @@ module type Syn = sig
   (** Applies a substitution to a syntactic representation to obtain a symbolic
       value. Should values be missing, fresh values are generated using the
       provided function. *)
-  val subst : fresh:('a ty -> 'a v) -> Subst.t -> t -> 'a v * Subst.t
+  val subst :
+    missing_var:(Var.t -> 'a ty -> 'a v) -> Subst.t -> t -> 'a v * Subst.t
 end
 
 module type S = sig

@@ -11,7 +11,7 @@ module Solver_result = Solver_result
 module Value = Value
 module Var = Var
 
-type missing_subst = [ `Missing_subst ]
+type missing_subst = [ `Missing_subst of Var.t ]
 
 exception Gave_up of string
 
@@ -257,7 +257,7 @@ module type Base = sig
     type 'a symex := 'a t
     type subst := Value.Syn.Subst.t
 
-    include Monad.S with type 'a t = subst -> ('a * subst) symex
+    include Monad.S with type 'a t = subst option -> ('a * subst option) symex
 
     val lift : 'a symex -> 'a t
     val vanish : unit -> 'a t
@@ -266,6 +266,7 @@ module type Base = sig
       ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
 
     val producer : subst:subst -> 'a t -> ('a * subst) symex
+    val identity_producer : 'a t -> 'a symex
   end
 
   module Consumer : sig
@@ -714,7 +715,12 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   end
 
   module Producer = struct
-    include Soteria_std.Monad.StateT (Value.Syn.Subst) (MONAD)
+    include
+      Soteria_std.Monad.StateT
+        (struct
+          type t = Value.Syn.Subst.t option
+        end)
+        (MONAD)
 
     let vanish () = lift (vanish ())
 
@@ -722,16 +728,34 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         (e : 'syn) : 'sem t =
      fun s ->
       (* There's maybe a safer version with effects and no reference? *)
-      let s = ref s in
-      let vsf e =
-        let v, s' = Value.Syn.subst ~fresh:nondet_UNSAFE !s e in
-        s := s';
-        v
-      in
-      let res = sf vsf e in
-      MONAD.return (res, !s)
+      match s with
+      | None ->
+          let vsf e =
+            let v, _ =
+              Value.Syn.subst
+                ~missing_var:(fun v ty -> Value.mk_var v ty)
+                Value.Syn.Subst.empty e
+            in
+            v
+          in
+          let res = sf vsf e in
+          MONAD.return (res, None)
+      | Some s ->
+          let s = ref s in
+          let vsf e =
+            let v, s' =
+              Value.Syn.subst ~missing_var:(fun _ ty -> nondet_UNSAFE ty) !s e
+            in
+            s := s';
+            v
+          in
+          let res = sf vsf e in
+          MONAD.return (res, Some !s)
 
-    let producer ~subst p = p subst
+    let producer ~subst p =
+      MONAD.map (p (Some subst)) (fun (x, s) -> (x, Option.get s))
+
+    let identity_producer p = MONAD.map (p None) (fun (x, _s) -> x)
   end
 
   module Consumer = struct
@@ -741,18 +765,20 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let apply_subst (sf : (Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
         (e : 'syn) : ('sem, 'fix) t =
-      let exception Missing_subst in
+      let exception Missing_subst of Var.t in
       fun s ->
         let vsf e =
           let v, _ =
-            Value.Syn.subst ~fresh:(fun _ -> raise Missing_subst) s e
+            Value.Syn.subst
+              ~missing_var:(fun v _ -> raise (Missing_subst v))
+              s e
           in
           v
         in
         try
           let res = sf vsf e in
           Result.ok (res, s)
-        with Missing_subst -> Result.error `Missing_subst
+        with Missing_subst v -> Result.error (`Missing_subst v)
 
     let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
      fun subst -> Result.map r (fun a -> (a, subst))
