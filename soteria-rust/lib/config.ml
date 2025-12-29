@@ -20,6 +20,10 @@ type t = {
   no_compile_plugins : bool;
       [@make.default false] [@names [ "no-compile-plugins" ]]
       (** Do not compile the plugins, as they are already compiled *)
+  plugin_directory : string option;
+      [@names [ "plugins" ]] [@env "RUSTERIA_PLUGINS"]
+      (** The directory in which plugins are and should be compiled; defaults to
+          the current dune-managed site. *)
   target : string option; [@names [ "target" ]] [@env "TARGET"]
       (** The compilation target triple to use, e.g. x86_64-unknown-linux-gnu.
           If not provided, the default target for the current machine is used.
@@ -49,14 +53,9 @@ type t = {
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided; tests matching any will be
           selected. The filters are treated as regexes. *)
-  no_timing : bool; [@make.default false] [@names [ "no-timing" ]]
-      (** Do not display execution times *)
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
-  print_stats : bool; [@make.default false] [@names [ "stats" ]]
-      (** If statistics about the execution should be printed at the end of each
-          test *)
   (*
      Symbolic execution behaviour
    *)
@@ -86,7 +85,8 @@ type global = {
       [@term Soteria.Terminal.Config.cmdliner_term ()]
   solver : Soteria.Solvers.Config.t;
       [@term Soteria.Solvers.Config.cmdliner_term ()]
-  rusteria : t; [@term term]
+  stats : Soteria.Stats.Config.t; [@term Soteria.Stats.Config.cmdliner_term ()]
+  soteria_rust : t; [@term term]
 }
 [@@deriving make, subliner]
 
@@ -98,4 +98,10 @@ let set (config : global) =
   Soteria.Solvers.Config.set config.solver;
   Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
-  current := config.rusteria
+  Soteria.Stats.Config.set_and_lock config.stats;
+  let soteria_rust =
+    if Soteria.Terminal.Config.in_test_environment () then
+      { config.soteria_rust with cleanup = true }
+    else config.soteria_rust
+  in
+  current := soteria_rust

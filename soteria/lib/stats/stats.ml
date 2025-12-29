@@ -1,6 +1,7 @@
 open Soteria_std
 module Hstring = Hashtbl.Hstring
 module Hsset = Hashset.Hstring
+module Config = Config
 
 type 'range stats = {
   mutable exec_time : float;  (** Execution time for the whole execution *)
@@ -76,6 +77,13 @@ module type S = sig
 
   (** Dumps the stats record to a file in JSON format *)
   val dump : t -> string -> unit
+
+  (** Pretty-prints stats. *)
+  val pp : Format.formatter -> t -> unit
+
+  (** Outputs the stats to a file, to stdout, or nowhere, according to the
+      current configuration. *)
+  val output : t -> unit
 
   module As_ctx : sig
     (** Module for manipulating statistics as a context using algebraic effects
@@ -210,6 +218,69 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
     let json = to_yojson t in
     Yojson.Safe.to_channel oc json;
     close_out oc
+
+  let pp ft (stats : t) =
+    let open Terminal in
+    let pp_entry ft (name, content) =
+      match content with
+      | `Int n -> Fmt.pf ft " • %s: %d" name n
+      | `Fn pp -> Fmt.pf ft " • %s: %a" name pp ()
+      | `StrSeq seq ->
+          if not (Seq.is_empty seq) then (
+            Fmt.pf ft " • %s:@\n" name;
+            Seq.iter (Fmt.pf ft "   - %s") seq)
+    in
+    let {
+      steps_number;
+      branch_number;
+      exec_time;
+      sat_time;
+      sat_checks;
+      sat_unknowns;
+      give_up_reasons;
+      missing_without_fixes;
+      unexplored_branch_number;
+    } =
+      stats
+    in
+    let entries =
+      [
+        ("Steps", `Int steps_number);
+        ( "Branches",
+          `Fn
+            (fun ft () ->
+              Fmt.pf ft "%d (%d unexplored)" branch_number
+                unexplored_branch_number) );
+        ("Total time", `Fn (fun ft () -> Printers.pp_time ft exec_time));
+        ( "Execution time",
+          `Fn
+            (fun ft () ->
+              Fmt.pf ft "%a (%a%%)" Printers.pp_time (exec_time -. sat_time)
+                (Printers.pp_unstable Printers.pp_percent)
+                (exec_time, exec_time -. sat_time)) );
+        ( "Solver time",
+          `Fn
+            (fun ft () ->
+              Fmt.pf ft "%a (%a%%)" Printers.pp_time sat_time
+                (Printers.pp_unstable Printers.pp_percent)
+                (exec_time, sat_time)) );
+        ( "SAT checks",
+          `Fn
+            (fun ft () -> Fmt.pf ft "%d (%d unknowns)" sat_checks sat_unknowns)
+        );
+        ("Give up reasons", `StrSeq (Hstring.to_seq_keys give_up_reasons));
+        ("Misses without fixes", `StrSeq (Dynarray.to_seq missing_without_fixes));
+      ]
+    in
+    Fmt.pf ft "%a:@\n%a" (Color.pp_style `Bold) "Statistics"
+      Fmt.(list ~sep:(any "@\n") pp_entry)
+      entries
+
+  let output t =
+    match (Config.get ()).output_stats with
+    | None -> ()
+    | Some "stdout" -> pp Fmt.stdout t
+    | Some file -> dump t file
 
   module As_ctx = struct
     type _ Effect.t += Apply : (t -> unit) -> unit Effect.t

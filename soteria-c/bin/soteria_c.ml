@@ -40,6 +40,7 @@ module Exec_main = struct
       $ Soteria.Logs.Cli.term
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ Soteria.Solvers.Config.cmdliner_term ()
+      $ Soteria.Stats.Config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
       $ Soteria.Symex.Fuel_gauge.Cli.term ~default:Driver.default_wpst_fuel ()
       $ includes_arg
@@ -98,6 +99,7 @@ module Generate_summaries = struct
       $ Soteria.Logs.Cli.term
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ Soteria.Solvers.Config.cmdliner_term ()
+      $ Soteria.Stats.Config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
       $ includes_arg
       $ functions_arg
@@ -127,6 +129,7 @@ module Capture_db = struct
       $ Soteria.Logs.Cli.term
       $ Soteria.Terminal.Config.cmdliner_term ()
       $ Soteria.Solvers.Config.cmdliner_term ()
+      $ Soteria.Stats.Config.cmdliner_term ()
       $ Soteria_c_lib.Config.cmdliner_term ()
       $ compilation_db_arg
       $ functions_arg)

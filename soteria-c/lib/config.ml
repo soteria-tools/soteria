@@ -9,10 +9,6 @@ type t = {
       [@names [ "auto-include-path" ]]
       [@env "SOTERIA_AUTO_INCLUDE_PATH"]
       (** Path to the directory that contains the soteria-c.h *)
-  dump_stats_file : string option;
-      [@docv "FILE"] [@names [ "dump-stats" ]] [@env "SOTERIA_DUMP_STATS"]
-      (** Dump a json file with unsupported features and their number of
-          occurences *)
   no_ignore_parse_failures : bool;
       [@make.default false]
       [@names [ "no-ignore-parse-failures" ]]
