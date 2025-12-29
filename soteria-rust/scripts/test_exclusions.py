@@ -112,6 +112,7 @@ KANI_EXCLUSIONS = [
     "FunctionCall/Variadic/main.rs",
     "Static/unsafe_extern_static_uninitialized.rs",
     # unsupported: libc
+    "Cast/cast_abstract_args_to_concrete.rs",
     "/LibC/",
     "/Strings/copy_empty_string_by_intrinsic.rs",
     "Slice/pathbuf.rs",
