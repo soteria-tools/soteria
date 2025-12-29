@@ -57,8 +57,11 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TRef (_, ty, RShared) -> Fmt.pf fmt "&%a" pp_ty ty
   | TRawPtr (ty, RMut) -> Fmt.pf fmt "*mut %a" pp_ty ty
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
-  | TFnPtr { binder_value = ins, out; _ } ->
-      Fmt.pf fmt "fn (%a) -> %a" Fmt.(list ~sep:(any ", ") pp_ty) ins pp_ty out
+  | TFnPtr { binder_value = { inputs; output; is_unsafe }; _ } ->
+      Fmt.pf fmt "%sfn (%a) -> %a"
+        (if is_unsafe then "unsafe " else "")
+        Fmt.(list ~sep:(any ", ") pp_ty)
+        inputs pp_ty output
   | TDynTrait _ -> Fmt.string fmt "dyn <trait>"
   | TTraitType (_, name) -> Fmt.pf fmt "Trait<?>::%s" name
   | TFnDef { binder_value = { kind = FunId (FRegular fid); _ }; _ } ->
@@ -172,6 +175,7 @@ let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
     match name with
     | Local name -> Fmt.string ft (clean_filename name)
     | Virtual name -> Fmt.pf ft "%s (virtual)" (clean_filename name)
+    | NotReal name -> Fmt.pf ft "%s (synthetic)" (clean_filename name)
   in
   if beg_loc.line = end_loc.line then
     Fmt.pf ft "%a:%d:%d-%d" pp_filename file beg_loc.line beg_loc.col
