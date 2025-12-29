@@ -19,6 +19,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | Div signed -> BitVec.div ~signed
   | Rem signed -> BitVec.rem ~signed
   | Mod -> BitVec.mod_
+  | AddOvf signed -> BitVec.add_overflows ~signed
   | MulOvf signed -> BitVec.mul_overflows ~signed
   | Lt signed -> BitVec.lt ~signed
   | Leq signed -> BitVec.leq ~signed
