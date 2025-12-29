@@ -427,13 +427,18 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
           err;
     Cleaner.touched output);
   let crate =
-    try
+    match
       output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json
     with
-    | Sys_error _ -> frontend_err "File doesn't exist"
-    | _ -> frontend_err "Failed to parse ULLBC"
+    | Ok crate -> crate
+    | Error _ ->
+        Fmt.kstr frontend_err
+          "Failed to parse ULLBC. Do you have the right version of %a \
+           installed?"
+          Config.pp_frontend !Config.current.frontend
+    | exception Sys_error _ -> frontend_err "File doesn't exist"
+    | exception _ -> frontend_err "Unexpected error"
   in
-  let crate = Result.get_or_raise frontend_err crate in
   if !Config.current.output_crate then (
     (* save pretty-printed crate to local file *)
     let crate_file = Printf.sprintf "%s.crate" output in

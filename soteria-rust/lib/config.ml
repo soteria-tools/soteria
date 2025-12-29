@@ -2,7 +2,9 @@
    We ignore the warning here. *)
 [@@@warning "-unused-open"]
 
-type frontend = Charon | Obol [@@deriving subliner_enum]
+type frontend = Charon | Obol
+[@@deriving subliner_enum, show { with_path = false }]
+
 type provenance = Strict | Permissive [@@deriving subliner_enum]
 
 type t = {

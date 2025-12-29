@@ -8,6 +8,8 @@
 
 (using mdx 0.4)
 
+(using menhir 3.0)
+
 (generate_opam_files)
 
 (license Apache-2.0)
@@ -35,6 +37,7 @@
   eio_main
   simple_smt
   iter
+  patricia-tree
   (ppx_expect
    (>= 0.17.0))
   ppx_deriving
@@ -142,6 +145,7 @@
   soteria
   dune-site
   zarith
+  patricia-tree
   ppx_deriving
   cmdliner
   fmt
