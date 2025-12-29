@@ -227,6 +227,9 @@ module Make
     let lift_symex (m : 'a symex) : ('a, 'fix) t =
      fun subst -> MONAD.map m (fun a -> Compo_res.ok (a, subst))
 
+    let branches (l : (unit -> ('a, 'fix) t) list) : ('a, 'fix) t =
+     fun s -> branches (List.map (fun f () -> f () s) l)
+
     let ok x = fun subst -> Result.ok (x, subst)
     let lfail v = lift_res (Result.error (`Lfail v))
     let miss fixes = lift_res (Result.miss fixes)
@@ -241,12 +244,23 @@ module Make
     let bind (m : ('a, 'fix) t) (f : 'a -> ('b, 'fix) t) : ('b, 'fix) t =
      fun s -> Result.bind (m s) (fun (a, s) -> f a s)
 
+    let bind_res (m : ('a, 'fix) t)
+        (f : ('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) : ('b, 'fix2) t
+        =
+     fun s ->
+      MONAD.bind (m s) (fun r ->
+          match r with
+          | Compo_res.Ok (a, s) -> f (Compo_res.Ok a) s
+          | Error e -> f (Compo_res.Error e) s
+          | Missing fixes -> f (Compo_res.Missing fixes) s)
+
     let run_consumer ~subst p = p subst
 
     module Syntax = struct
       let ( let* ) = bind
       let ( let+ ) = map
       let ( let+? ) = map_missing
+      let ( let*! ) = bind_res
     end
   end
 end
