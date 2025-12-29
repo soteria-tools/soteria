@@ -257,7 +257,7 @@ module type Base = sig
     type 'a symex := 'a t
     type subst := Value.Syn.Subst.t
 
-    include Monad.S with type 'a t = subst option -> ('a * subst option) symex
+    include Monad.S
 
     val lift : 'a symex -> 'a t
     val vanish : unit -> 'a t
@@ -265,14 +265,14 @@ module type Base = sig
     val apply_subst :
       ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
 
-    val producer : subst:subst -> 'a t -> ('a * subst) symex
-    val identity_producer : 'a t -> 'a symex
+    val run_producer : subst:subst -> 'a t -> ('a * subst) symex
+    val run_identity_producer : 'a t -> 'a symex
   end
 
   module Consumer : sig
     type subst := Value.Syn.Subst.t
     type 'a symex := 'a t
-    type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
+    type ('a, 'fix) t
 
     val apply_subst :
       ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
@@ -287,7 +287,7 @@ module type Base = sig
     val map_missing : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
     val bind : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
 
-    val consumer :
+    val run_consumer :
       subst:subst -> ('a, 'fix) t -> ('a * subst, cons_fail, 'fix) Result.t
 
     module Syntax : sig
@@ -752,10 +752,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
           let res = sf vsf e in
           MONAD.return (res, Some !s)
 
-    let producer ~subst p =
+    let run_producer ~subst p =
       MONAD.map (p (Some subst)) (fun (x, s) -> (x, Option.get s))
 
-    let identity_producer p = MONAD.map (p None) (fun (x, _s) -> x)
+    let run_identity_producer p = MONAD.map (p None) (fun (x, _s) -> x)
   end
 
   module Consumer = struct
@@ -800,7 +800,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     let bind (m : ('a, 'fix) t) (f : 'a -> ('b, 'fix) t) : ('b, 'fix) t =
      fun s -> Result.bind (m s) (fun (a, s) -> f a s)
 
-    let consumer ~subst p = p subst
+    let run_consumer ~subst p = p subst
 
     module Syntax = struct
       let ( let* ) = bind

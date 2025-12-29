@@ -193,10 +193,10 @@ module Make
           let res = sf vsf e in
           MONAD.return (res, Some !s)
 
-    let producer ~subst p =
+    let run_producer ~subst p =
       MONAD.map (p (Some subst)) (fun (x, s) -> (x, Option.get s))
 
-    let identity_producer p = MONAD.map (p None) (fun (x, _s) -> x)
+    let run_identity_producer p = MONAD.map (p None) (fun (x, _s) -> x)
   end
 
   module Consumer = struct
@@ -241,7 +241,7 @@ module Make
     let bind (m : ('a, 'fix) t) (f : 'a -> ('b, 'fix) t) : ('b, 'fix) t =
      fun s -> Result.bind (m s) (fun (a, s) -> f a s)
 
-    let consumer ~subst p = p subst
+    let run_consumer ~subst p = p subst
 
     module Syntax = struct
       let ( let* ) = bind
