@@ -24,31 +24,21 @@ module KeyS (Symex : Symex.Base) : sig
   end
 end
 
-module type MapS = sig
-  type key
-  type 'a t
-
-  val empty : 'a t
-  val is_empty : 'a t -> bool
-  val add : key -> 'a -> 'a t -> 'a t
-  val add_seq : (key * 'a) Seq.t -> 'a t -> 'a t
-  val update : key -> ('a option -> 'a option) -> 'a t -> 'a t
-  val mem : key -> 'a t -> bool
-  val find_opt : key -> 'a t -> 'a option
-  val iter : (key -> 'a -> unit) -> 'a t -> unit
-  val to_seq : 'a t -> (key * 'a) Seq.t
-  val bindings : 'a t -> (key * 'a) list
-end
-
-module S (Symex : Symex.Base) : sig
+module S
+    (Symex : Symex.Base)
+    (Key : sig
+      type t
+    end) : sig
   module type S = sig
-    module M : MapS
+    type 'a t
+    type 'a serialized = (Key.t * 'a) list
 
-    type 'a t = 'a M.t
-    type 'a serialized = (M.key * 'a) list
+    val empty : 'a t
+    val syntactic_bindings : 'a t -> (Key.t * 'a) Seq.t
+    val syntactic_mem : Key.t -> 'a t -> bool
 
     val pp :
-      ?ignore:(M.key * 'a -> bool) ->
+      ?ignore:(Key.t * 'a -> bool) ->
       (Format.formatter -> 'a -> unit) ->
       Format.formatter ->
       'a t ->
@@ -60,7 +50,7 @@ module S (Symex : Symex.Base) : sig
       'a serialized ->
       unit
 
-    val serialize : ('a -> 'b) -> 'a t -> (M.key * 'b) list
+    val serialize : ('a -> 'b) -> 'a t -> (Key.t * 'b) list
 
     val subst_serialized :
       ((Var.t -> Var.t) -> 'a -> 'b) ->
@@ -80,22 +70,22 @@ module S (Symex : Symex.Base) : sig
     val alloc :
       new_codom:'a ->
       'a t option ->
-      (M.key * 'a t option, 'err, 'fix list) Symex.Result.t
+      (Key.t * 'a t option, 'err, 'fix list) Symex.Result.t
 
     val allocs :
-      fn:('b -> M.key -> ('a * 'k) Symex.t) ->
+      fn:('b -> Key.t -> ('a * 'k) Symex.t) ->
       els:'b list ->
       'a t option ->
       ('k list * 'a t option, 'err, 'fix list) Symex.Result.t
 
     val wrap :
       ('a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t) ->
-      M.key ->
+      Key.t ->
       'a t option ->
       ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t
 
     val fold :
-      ('acc -> M.key * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t) ->
+      ('acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t) ->
       'acc ->
       'a t option ->
       ('acc, 'err, 'fix serialized) Symex.Result.t
@@ -119,19 +109,18 @@ module S (Symex : Symex.Base) : sig
   end
 end
 
-module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) :
-  S(Symex).S with type M.key = Key.t
+module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) : S(Symex)(Key).S
 
 module Make_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_patricia_tree) : S(Symex).S with type M.key = Key.t
+    (Key : KeyS(Symex).S_patricia_tree) : S(Symex)(Key).S
 
 module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) :
-  S(Symex).S with type M.key = Key.t
+  S(Symex)(Key).S
 
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_patricia_tree) : S(Symex).S with type M.key = Key.t
+    (Key : KeyS(Symex).S_patricia_tree) : S(Symex)(Key).S
 
 module Concrete (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
-  S(Symex).S with type M.key = Key.t
+  S(Symex)(Key).S

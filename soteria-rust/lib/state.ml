@@ -44,6 +44,7 @@ module StateKey = struct
   type t = T.sloc Typed.t
 
   let pp = ppa
+  let to_int = unique_tag
   let i = ref 0
 
   let fresh_rsym () =

@@ -503,7 +503,12 @@ end
 
 module Equality : S = struct
   module UnionFind = UnionFind.Make (UnionFind.StoreMap)
-  module VMap = PatriciaTree.MakeMap (Svalue)
+
+  module VMap = PatriciaTree.MakeMap (struct
+    type t = Svalue.t
+
+    let to_int = Svalue.unique_tag
+  end)
 
   include Reversible.Make_mutable (struct
     type t = Svalue.t UnionFind.store * Svalue.t UnionFind.rref VMap.t
