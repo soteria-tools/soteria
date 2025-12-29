@@ -42,24 +42,22 @@ let get sym st =
            It'd be nice to enforce this modularly, but right now we do it as a wrapper.
            Unless one has hundreds of globals, the cost is negligeable, but still. *)
   let open Csymex.Syntax in
-  let existed = Option.fold ~none:false ~some:(Sym_map.M.mem sym) st in
+  let existed = Option.fold ~none:false ~some:(Sym_map.syntactic_mem sym) st in
   let* res = (Sym_map.wrap GlobFn.load) sym st in
   let loc, st = Soteria.Symex.Compo_res.get_ok res in
   let+ () =
     if existed then (* We haven't created a new location *) return ()
     else
       (* We learn that the new location is distinct from all other global locations *)
-      let to_assume =
-        Sym_map.M.to_seq (Option.value ~default:Sym_map.M.empty st)
-        |> Seq.filter_map (fun (k, v) ->
-               let open Typed.Infix in
-               if Cerb_frontend.Symbol.equal_sym k sym then None
-               else
-                 let neq = Typed.not (v ==@ loc) in
-                 Some neq)
-        |> List.of_seq
-      in
-      assume to_assume
+      Sym_map.syntactic_bindings (Option.value ~default:Sym_map.empty st)
+      |> Seq.filter_map (fun (k, v) ->
+             let open Typed.Infix in
+             if Cerb_frontend.Symbol.equal_sym k sym then None
+             else
+               let neq = Typed.not (v ==@ loc) in
+               Some neq)
+      |> List.of_seq
+      |> assume
   in
   (loc, st)
 
@@ -69,14 +67,12 @@ let produce serialized st =
   let+ () =
     (* Bit heavy-handed but we just massively assume the well-formedness *)
     let to_assume =
-      Sym_map.M.to_seq (Option.value ~default:Sym_map.M.empty st')
-      |> Seq.self_cross_product
-      |> Seq.map (fun ((_, loca), (_, locb)) ->
-             let open Typed.Infix in
-             Typed.not (loca ==@ locb))
+      Sym_map.syntactic_bindings (Option.value ~default:Sym_map.empty st')
+      |> Seq.map snd
       |> List.of_seq
+      |> Typed.distinct
     in
-    assume to_assume
+    assume [ to_assume ]
   in
   st'
 

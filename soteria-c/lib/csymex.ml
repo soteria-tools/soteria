@@ -62,8 +62,11 @@ module With_origin =
     end)
 
 module Freeable = Soteria.Sym_states.Freeable.Make (SYMEX)
-module Pmap_direct_access = Soteria.Sym_states.Pmap.Direct_access (SYMEX)
-module Pmap = Soteria.Sym_states.Pmap.Make (SYMEX)
+
+module Pmap_direct_access =
+  Soteria.Sym_states.Pmap.Direct_access_patricia_tree (SYMEX)
+
+module Pmap = Soteria.Sym_states.Pmap.Make_patricia_tree (SYMEX)
 module Tree_block = Soteria.Sym_states.Tree_block.Make (SYMEX)
 module Concrete_map = Soteria.Sym_states.Pmap.Concrete (SYMEX)
 module Bi = Soteria.Sym_states.Bi_abd.Make (SYMEX)
