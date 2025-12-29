@@ -1,0 +1,16 @@
+let swap p q =
+  let x = [p] in
+  let y = [q] in
+  [p] <- y;
+  [q] <- x;
+  0
+
+let main =
+  let p = alloc in
+  let q = alloc in
+  [p] <- 10;
+  [q] <- 20;
+  swap(p, q);
+  let a = [p] in
+  let b = [q] in
+  a - b
