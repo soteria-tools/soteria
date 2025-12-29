@@ -1,19 +1,9 @@
 module Bidirectional_map = struct
-  module SMap = Symbol_std.Map
-  module IMap = Map.Make (Z)
+  include Bimap.Make (Symbol_std) (Z)
 
-  type t = { s_to_i : Z.t SMap.t; i_to_s : Symbol_std.t IMap.t }
-
-  let empty = { s_to_i = SMap.empty; i_to_s = IMap.empty }
-  let has_sym s map = SMap.mem s map.s_to_i
-
-  let add s i map =
-    let s_to_i = SMap.add s i map.s_to_i in
-    let i_to_s = IMap.add i s map.i_to_s in
-    { s_to_i; i_to_s }
-
-  let get_loc_id s map = SMap.find_opt s map.s_to_i
-  let get_sym i map = IMap.find_opt i map.i_to_s
+  let has_sym = mem_l
+  let get_loc_id = find_l
+  let get_sym = find_r
 end
 
 (* FIXME: This is slightly off because we could have a location that is already assigned.

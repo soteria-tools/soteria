@@ -4,8 +4,9 @@
     correspondence between keys of type [KeyL] (left) and [KeyR] (right). It
     allows efficient lookup in both directions by internally maintaining two
     synchronized maps. *)
-module Make (KeyL : Ordered_type.S) (KeyR : Ordered_type.S) = struct
-  module M = Map.MakePp (KeyL)
+module Make (KeyL : Stdlib.Map.OrderedType) (KeyR : Stdlib.Map.OrderedType) =
+struct
+  module M = Map.Make (KeyL)
   module M_rev = Map.Make (KeyR)
 
   type t = KeyR.t M.t * KeyL.t M_rev.t
@@ -40,12 +41,25 @@ module Make (KeyL : Ordered_type.S) (KeyR : Ordered_type.S) = struct
     | None -> (m, m_rev)
     | Some k1 -> (M.remove k1 m, M_rev.remove k2 m_rev)
 
+  (** Whether the map contains a binding for the given left key. *)
+  let mem_l k1 (m, _) = M.mem k1 m
+
+  (** Whether the map contains a binding for the given right key. *)
+  let mem_r k2 (_, m_rev) = M_rev.mem k2 m_rev
+
   (** Find the right key associated with the given left key. *)
   let find_l k1 (m, _) = M.find_opt k1 m
 
   (** Find the left key associated with the given right key. *)
   let find_r k2 (_, m_rev) = M_rev.find_opt k2 m_rev
+end
+
+(** Equivalent to [Make], but with pretty-printing. *)
+module MakePp (KeyL : Ordered_type.S) (KeyR : Ordered_type.S) = struct
+  include Make (KeyL) (KeyR)
 
   (** Pretty-printer for the map. *)
-  let pp ft (m, _) = M.pp KeyR.pp ft m
+  let pp ft (m, _) =
+    let pp_pair = Fmt.pair ~sep:(Fmt.any " -> ") KeyL.pp KeyR.pp in
+    Fmt.iter_bindings ~sep:Fmt.cut M.iter pp_pair ft m
 end

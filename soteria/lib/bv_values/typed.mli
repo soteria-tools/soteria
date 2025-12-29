@@ -89,6 +89,7 @@ val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
 val hash : [< any ] t -> int
+val unique_tag : [< any ] t -> int
 
 (** Typed constructors *)
 
