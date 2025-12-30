@@ -45,13 +45,17 @@ module StateKey = struct
   type t = T.sloc Typed.t
 
   let pp = ppa
+  let to_int = unique_tag
   let fresh_rsym () = nondet (Typed.t_loc (8 * Lc.size_of_uint_ty Usize))
   let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
   let simplify = DecayMapMonad.simplify
 end
 
 module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
-module SPmap = Soteria.Sym_states.Pmap.Direct_access (DecayMapMonad) (StateKey)
+
+module SPmap =
+  Soteria.Sym_states.Pmap.Direct_access_patricia_tree (DecayMapMonad) (StateKey)
+
 module Bi = Soteria.Sym_states.Bi_abd.Make (DecayMapMonad)
 module Tree_block = Rtree_block.Make (Sptr)
 
@@ -77,7 +81,7 @@ end)
 
 module FunBiMap = struct
   include
-    Bimap.Make
+    Bimap.MakePp
       (struct
         type t = T.sloc Typed.t
 
@@ -320,15 +324,14 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) st =
 and load ?ignore_borrow ?(ref_checks = true) ((ptr, meta) as fptr) ty st :
     (Sptr.t rust_val * t, Error.t, serialized) Result.t =
   let** (), st = check_ptr_align fptr ty st in
-  let is_valid_ptr =
-    if ref_checks then fun ptr ty -> fake_read ptr ty st
-    else fun _ _ -> return None
-  in
-  let parser ~offset = Encoder.rust_of_cvals ~meta ~offset ~is_valid_ptr ty in
-  let++ value, st = apply_parser ?ignore_borrow ptr parser st in
+  let parser ~offset = Encoder.decode ~meta ~offset ty in
+  let** value, st = apply_parser ?ignore_borrow ptr parser st in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
-  (value, st)
+  if ref_checks then
+    let++ st = Encoder.check_valid ~fake_read value ty st in
+    (value, st)
+  else Result.ok (value, st)
 
 and load_discriminant ((ptr, _) as fptr) ty st =
   let** (), st = check_ptr_align fptr ty st in
@@ -344,17 +347,27 @@ and load_discriminant ((ptr, _) as fptr) ty st =
    This could be fixed by lifting all misses individually inside [handler] and
    [get_all] in [apply_parser], but that's kind of a mess to change and not really
    worth it I believe; I don't think these misses matter at all (TBD). *)
-and fake_read ptr ty st =
-  (* FIXME: i am not certain how one checks for the validity of a DST *)
-  if Layout.is_dst ty || Option.is_some (Layout.as_zst ty) then return None
+and fake_read ((_, meta) as ptr) ty st =
+  let can_check_dst =
+    match meta with
+    | Thin -> true
+    | Len l ->
+        (* TODO: we don't support symbolic slices *)
+        Option.is_some (Typed.BitVec.to_z l)
+    | VTable _ ->
+        (* FIXME: i am not certain how one checks for the validity of a &dyn *)
+        false
+  in
+  if (not can_check_dst) || Option.is_some (Layout.as_zst ty) then
+    return (None, st)
   else (
     L.debug (fun m ->
         m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
           Charon_util.pp_ty ty);
     let+ res = load ~ignore_borrow:true ~ref_checks:false ptr ty st in
     match res with
-    | Ok _ -> None
-    | Error e -> Some e
+    | Ok (_, st) -> (None, st)
+    | Error e -> (Some e, st)
     | Missing _ -> failwith "Miss in fake_read")
 
 let check_ptr_align ptr ty st =
@@ -390,16 +403,16 @@ let tb_load ((ptr : Sptr.t), _) ty st =
         Tree_block.tb_access ofs size tag tb block)
 
 let store ((ptr, _) as fptr) ty sval st =
-  let** parts = lift_err st @@ Encoder.rust_to_cvals sval ty in
-  if List.is_empty parts then Result.ok ((), st)
+  let** parts = lift_err st @@ Encoder.encode ~offset:Usize.(0s) sval ty in
+  if Iter.is_empty parts then Result.ok ((), st)
   else
     let** (), st = check_ptr_align fptr ty st in
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
-    L.debug (fun f ->
+    (* L.debug (fun f ->
         f "Parsed to parts [%a]"
           Fmt.(list ~sep:comma Encoder.pp_cval_info)
-          parts);
+          parts); *)
     log "store" ptr st;
     let** size = Layout.size_of ty in
     let@ ofs, block = with_ptr ptr st in
@@ -409,8 +422,10 @@ let store ((ptr, _) as fptr) ty sval st =
     (* We uninitialise the whole range before writing, to ensure padding bytes are copied if
            there are any. *)
     let** (), block = Tree_block.uninit_range ofs size block in
-    Result.fold_list parts ~init:((), block)
+    Result.fold_iter parts ~init:((), block)
       ~f:(fun ((), block) (value, offset) ->
+        (* L.warn (fun f ->
+            f "Storing part %a: %a" Typed.ppa offset (pp_rust_val Sptr.pp) value); *)
         Tree_block.store (offset +!!@ ofs) value ptr.tag tb block)
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size st =

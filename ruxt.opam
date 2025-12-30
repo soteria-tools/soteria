@@ -14,21 +14,9 @@ license: "Apache-2.0"
 homepage: "https://github.com/soteria-tools/soteria"
 bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
-  "ocaml" {>= "5.3.0"}
+  "dune" {>= "3.14"}
   "soteria-rust"
-  "dune-site"
-  "zarith"
-  "ppx_deriving"
-  "cmdliner"
-  "fmt"
-  "charon"
-  "ppx_subliner" {>= "0.2.1"}
   "odoc" {with-doc}
-  "alcotest" {with-test}
-  "yojson" {< "3.0"}
-  "dune" {>= "3.14" & build & >= "3.14.0"}
-  "ocamlformat" {with-dev-setup & = "0.27.0"}
-  "ocaml-lsp-server" {with-dev-setup}
 ]
 build: [
   ["dune" "subst"] {dev}
@@ -47,6 +35,3 @@ build: [
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
-pin-depends: [
-  ["charon.~dev" "git+https://github.com/soteria-tools/charon#dc438b20ff10b213dc8c5c9917e575e030af3db0"]
-]
