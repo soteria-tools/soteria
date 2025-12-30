@@ -319,14 +319,8 @@ module Make (State : State_intf.S) = struct
         let len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | ( Thin,
-              TAdt
-                {
-                  id = TBuiltin TArray;
-                  generics = { const_generics = [ len ]; _ };
-                } ) ->
-              BV.usize_of_const_generic len
-          | Len len, TAdt { id = TBuiltin TSlice; _ } -> Typed.cast_i Usize len
+          | Thin, TArray (_, len) -> BV.usize_of_const_generic len
+          | Len len, TSlice _ -> Typed.cast_i Usize len
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
@@ -345,17 +339,8 @@ module Make (State : State_intf.S) = struct
         let ty, len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | ( Thin,
-              TAdt
-                {
-                  id = TBuiltin TArray;
-                  generics = { const_generics = [ len ]; types = [ ty ]; _ };
-                } ) ->
-              (ty, BV.usize_of_const_generic len)
-          | ( Len len,
-              TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } )
-            ->
-              (ty, Typed.cast len)
+          | Thin, TArray (ty, len) -> (ty, BV.usize_of_const_generic len)
+          | Len len, TSlice ty -> (ty, Typed.cast len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* from = eval_operand from in

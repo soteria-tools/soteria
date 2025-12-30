@@ -39,17 +39,10 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
       Fmt.pf fmt "Box<%a>" pp_ty ty
   | TAdt { id = TBuiltin TBox; _ } -> Fmt.string fmt "Box<?>"
-  | TAdt
-      {
-        id = TBuiltin TArray;
-        generics =
-          { types = [ ty ]; const_generics = [ CgValue (VScalar len) ]; _ };
-      } ->
+  | TArray (ty, CgValue (VScalar len)) ->
       Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print (z_of_scalar len)
-  | TAdt { id = TBuiltin TArray; _ } -> Fmt.string fmt "[?; ?]"
-  | TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } ->
-      Fmt.pf fmt "[%a]" pp_ty ty
-  | TAdt { id = TBuiltin TSlice; _ } -> Fmt.string fmt "[?]"
+  | TArray (ty, _) -> Fmt.pf fmt "[%a; ?]" pp_ty ty
+  | TSlice ty -> Fmt.pf fmt "[%a]" pp_ty ty
   | TAdt { id = TBuiltin TStr; _ } -> Fmt.string fmt "str"
   | TLiteral lit -> pp_literal_ty fmt lit
   | TNever -> Fmt.string fmt "!"
@@ -119,17 +112,7 @@ let fields_of_tys : Types.ty list -> Types.field list =
       })
 
 let mk_array_ty ty len : Types.ty =
-  TAdt
-    {
-      id = TBuiltin TArray;
-      generics =
-        {
-          types = [ ty ];
-          const_generics = [ CgValue (VScalar (UnsignedScalar (Usize, len))) ];
-          regions = [];
-          trait_refs = [];
-        };
-    }
+  TArray (ty, CgValue (VScalar (UnsignedScalar (Usize, len))))
 
 (** The type [*const ()] *)
 let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)

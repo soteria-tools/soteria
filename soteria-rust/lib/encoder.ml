@@ -123,18 +123,10 @@ module Make (Sptr : Sptr.S) = struct
       @@
       match ty with
       | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
-      | TAdt
-          {
-            id = TBuiltin TArray;
-            generics = { types = [ ty ]; const_generics = [ len ]; _ };
-          } ->
-          Iter.repeatz (z_of_const_generic len) ty
-      | TAdt { id = TBuiltin ((TStr | TSlice) as kind); generics } -> (
+      | TArray (ty, len) -> Iter.repeatz (z_of_const_generic len) ty
+      | TSlice _ | TAdt { id = TBuiltin TStr; _ } -> (
           let sub_ty =
-            match kind with
-            | TSlice -> List.hd generics.types
-            | TStr -> TLiteral (TUInt U8)
-            | _ -> failwith "unreachable"
+            match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
           in
           match meta with
           | Len len when Option.is_some (BV.to_z len) ->
