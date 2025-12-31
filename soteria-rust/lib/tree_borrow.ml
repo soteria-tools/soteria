@@ -21,15 +21,10 @@ type access = Read | Write
 and locality = Local | Foreign
 and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
 
-(** The tag of the node, whether it has a protector (this is distinct from
-    having the protector toggled!), its parents (including this node's ID!), and
-    its initial state if it doesn't exist in the state. *)
-and node = {
-  tag : tag;
-  protector : bool;
-  parents : tag list;
-  initial_state : state;
-}
+(** Whether this node has a protector (this is distinct from having the
+    protector toggled!), its parents (including this node's ID!), and its
+    initial state if it doesn't exist in the state. *)
+and node = { protector : bool; parents : tag list; initial_state : state }
 [@@deriving show { with_path = false }]
 
 let pp_state fmt = function
@@ -94,9 +89,7 @@ let pp ft t =
 
 let init ~state () =
   let tag = fresh_tag () in
-  let node =
-    { tag; protector = false; parents = [ tag ]; initial_state = state }
-  in
+  let node = { protector = false; parents = [ tag ]; initial_state = state } in
   (TagMap.singleton tag node, tag)
 
 let ub_state = fst @@ init ~state:UB ()
@@ -105,12 +98,7 @@ let add_child ~parent ?(protector = false) ~state st =
   let tag = fresh_tag () in
   let node_parent = TagMap.find parent st in
   let node =
-    {
-      tag;
-      protector;
-      parents = tag :: node_parent.parents;
-      initial_state = state;
-    }
+    { protector; parents = tag :: node_parent.parents; initial_state = state }
   in
   (TagMap.add tag node st, tag)
 
