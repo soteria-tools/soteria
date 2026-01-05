@@ -11,7 +11,7 @@ module S_int = struct
   include Typed
 
   type t = Typed.T.sint Typed.t
-  type syn = Syn.t
+  type syn = Syn.t [@@deriving show { with_path = false }]
 
   let simplify = Symex.simplify
   let fresh () = Symex.nondet Typed.t_int

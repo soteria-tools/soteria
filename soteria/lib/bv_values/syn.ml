@@ -1,7 +1,9 @@
 open Svalue
 
 type t = Svalue.t [@@deriving show { with_path = false }]
+type ty = Svalue.ty [@@deriving show { with_path = false }]
 
+let ty (s : t) : ty = s.node.ty
 let[@inline] of_value v = v
 
 module Subst = struct
@@ -9,19 +11,17 @@ module Subst = struct
 
   type t = Svalue.t Raw_map.t
 
-  let add s v subst = Raw_map.add s v subst
-  let find_opt s subst = Raw_map.find_opt s subst
   let empty = Raw_map.empty
 end
 
 let rec subst ~missing_var (s : Subst.t) (v : Svalue.t) =
-  match Subst.find_opt v s with
+  match Subst.Raw_map.find_opt v s with
   | Some v -> (v, s)
   | None -> (
       match v.node.kind with
       | Var x ->
           let v' = missing_var x v.node.ty in
-          let s = Subst.add v v' s in
+          let s = Subst.Raw_map.add v v' s in
           (v', s)
       | Bool _ | Float _ | BitVec _ -> (v, s)
       | Seq elements ->
@@ -54,3 +54,6 @@ and subst_list ~missing_var s vs =
       let v, s = subst ~missing_var s v in
       let vs, s = subst_list ~missing_var s vs in
       (v :: vs, s)
+
+let learn (_s : Subst.t) (_syn : t) (_v : t) : Subst.t option =
+  failwith "TODO: bv_values.syn.learn"

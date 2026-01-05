@@ -33,6 +33,7 @@ module Make (Symex : Symex.Base) = struct
 
   let pp = pp
   let pp_serialized = pp
+  let pp_syn = pp
 
   let unwrap_alive = function
     | None -> Symex.Result.ok None

@@ -221,6 +221,8 @@ module Make
           Result.ok (res, s)
         with Missing_subst x -> Result.error (`Missing_subst x)
 
+    let expose_subst () : (subst, 'fix) t = fun s -> Result.ok (s, s)
+
     let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
      fun subst -> Result.map r (fun a -> (a, subst))
 

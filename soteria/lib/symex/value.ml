@@ -7,20 +7,18 @@ module type Syn = sig
       uses an identity substitution. *)
   val of_value : 'a v -> t
 
+  (** Gets the type associated to a syntactic values.
+
+      Note: this might be too restrictive for some applications with dynamic
+      types? *)
+  val ty : t -> 'a ty
+
   (** A susbtitution projects the syntactic to the semantic world. *)
   module Subst : sig
-    type s := t
-
     (** Type of substitutions *)
     type t
 
     val empty : t
-
-    (** Adds a binding to the substitution *)
-    val add : s -> 'a v -> t -> t
-
-    (** Find a binding in the substitution *)
-    val find_opt : s -> t -> 'a v option
   end
 
   (** Applies a substitution to a syntactic representation to obtain a symbolic
@@ -28,6 +26,8 @@ module type Syn = sig
       provided function. *)
   val subst :
     missing_var:(Var.t -> 'a ty -> 'a v) -> Subst.t -> t -> 'a v * Subst.t
+
+  val learn : Subst.t -> t -> 'a v -> Subst.t option
 end
 
 module type S = sig

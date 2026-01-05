@@ -5,7 +5,7 @@ module KeyS (Symex : Symex.Base) = struct
 
   module type S = sig
     type t
-    type syn
+    type syn [@@deriving show { with_path = false }]
 
     include Stdlib.Map.OrderedType with type t := t
 
@@ -27,7 +27,7 @@ module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
   KeyS(Symex).S with type t = Key.t = struct
   include Key
 
-  type syn = Key.t
+  type syn = Key.t [@@deriving show { with_path = false }]
 
   let[@inline] to_syn x = x
   let sem_eq x y = Symex.Value.bool (Key.compare x y = 0)
@@ -52,16 +52,19 @@ struct
 
   type 'a t = 'a M.t
   type 'a serialized = (Key.t * 'a) list
-  type 'a syn = Key.syn * 'a
+  type 'a syn = Key.syn * 'a [@@deriving show { with_path = false }]
 
   let ins_outs ins_outs_codom (k, v) =
     let ins, outs = ins_outs_codom v in
     (Key.exprs_syn k @ ins, outs)
 
-  let lift_fix_s ~key res =
+  let lift_fix ~key fix =
     let key = Key.to_syn key in
-    let+? fix = res in
     List.map (fun v -> (key, v)) fix
+
+  let lift_fix_s ~key res =
+    let+? fix = res in
+    lift_fix ~key fix
 
   let pp_serialized pp_inner : Format.formatter -> 'a serialized -> unit =
     Fmt.brackets
@@ -144,6 +147,23 @@ struct
     let* key = Producer.apply_subst Key.subst key in
     let* key, codom = Producer.lift (Find_opt_sym.f key st) in
     let+ codom = prod inner_syn codom in
+    let st = add_opt key codom st in
+    to_opt st
+
+  let consume
+      (cons :
+        'inner_syn ->
+        'inner_st option ->
+        ('inner_st option, 'inner_syn list) Symex.Consumer.t)
+      (syn : 'inner_syn syn) (st : 'inner_st t option) :
+      ('inner_st t option, 'inner_syn syn list) Symex.Consumer.t =
+    let open Symex in
+    let open Consumer.Syntax in
+    let st = of_opt st in
+    let key, inner_syn = syn in
+    let* key = Consumer.apply_subst Key.subst key in
+    let* key, codom = Consumer.lift_symex (Find_opt_sym.f key st) in
+    let+ codom = Consumer.map_missing (cons inner_syn codom) (lift_fix ~key) in
     let st = add_opt key codom st in
     to_opt st
 

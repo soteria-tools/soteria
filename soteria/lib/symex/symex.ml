@@ -277,6 +277,7 @@ module type Base = sig
     val apply_subst :
       ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
 
+    val expose_subst : unit -> (subst, 'fix) t
     val lift_res : ('a, cons_fail, 'fix) Result.t -> ('a, 'fix) t
     val lift_symex : 'a symex -> ('a, 'fix) t
     val branches : (unit -> ('a, 'fix) t) list -> ('a, 'fix) t
@@ -790,6 +791,8 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
           let res = sf vsf e in
           Result.ok (res, s)
         with Missing_subst v -> Result.error (`Missing_subst v)
+
+    let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)
 
     let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
      fun subst -> Result.map r (fun a -> (a, subst))

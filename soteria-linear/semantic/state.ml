@@ -11,6 +11,7 @@ type t = Excl_val.t Freeable.t PMap.t option
 [@@deriving show { with_path = false }]
 
 type syn = Excl_val.syn Freeable.syn PMap.syn
+[@@deriving show { with_path = false }]
 
 let ins_outs (syn : syn) =
   PMap.ins_outs (Freeable.ins_outs Excl_val.ins_outs) syn
@@ -36,3 +37,5 @@ let free addr st =
     addr st
 
 let error msg _state = `Interp msg
+let consume s t = PMap.consume (Freeable.consume Excl_val.consume) s t
+let produce s t = PMap.produce (Freeable.produce Excl_val.produce) s t

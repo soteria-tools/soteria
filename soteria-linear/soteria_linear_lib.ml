@@ -1,12 +1,11 @@
 open Soteria
 open Soteria_std.Syntaxes.FunctionWrap
 open Soteria_linear_semantic
-
-(* open Soteria.Logs *)
+open Soteria.Logs
 module Lang = Soteria_linear_ast.Lang
 module Parser = Soteria_linear_parser.Parse
 module LSymex = Aux.Symex
-(* open Lang *)
+open Lang
 
 let bi_abd_fuel = Symex.Fuel_gauge.{ steps = Finite 100; branching = Finite 3 }
 
@@ -45,10 +44,9 @@ let exec file =
   in
   Fmt.pr "@[<v 2>Program executed with result:@ %a@]@?" pp_results results
 
-(* module Bi_interp = Interp.Make (Bi_state) *)
+module Bi_interp = Interp.Make (Bi_state)
 
-let generate_summaries _file = failwith "FIXME"
-(*
+let generate_summaries file =
   let program = Parser.parse_file file in
   String_map.iter
     (fun fname (func_dec : Fun_def.t) ->
@@ -78,4 +76,4 @@ let generate_summaries _file = failwith "FIXME"
           | Symex.Compo_res.Missing _ -> ())
         results;
       Fmt.pr "@]")
-    program *)
+    program

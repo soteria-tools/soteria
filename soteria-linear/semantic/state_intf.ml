@@ -3,7 +3,7 @@ open Aux
 module type S = sig
   type t [@@deriving show]
   type err
-  type syn
+  type syn [@@deriving show]
   type 'a state_res := t -> ('a * t, err, syn list) Symex.Result.t
 
   val load : S_int.t -> S_val.t state_res

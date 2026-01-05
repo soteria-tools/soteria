@@ -2,9 +2,11 @@ open Svalue
 
 type t = Svalue.t [@@deriving show { with_path = false }]
 
+let ty (s : t) : ty = s.node.ty
 let[@inline] of_value v = v
 
 module Subst = struct
+  (* TODO: make this a Patricia Tree *)
   module Raw_map = Map.Make (Svalue)
 
   type t = Svalue.t Raw_map.t
@@ -47,3 +49,15 @@ and subst_list ~missing_var s vs =
       let v, s = subst ~missing_var s v in
       let vs, s = subst_list ~missing_var s vs in
       (v :: vs, s)
+
+let learn (s : Subst.t) (syn : t) (v : t) : Subst.t option =
+  let rec aux (syn : t) v =
+    match syn.node.kind with
+    | Var _ ->
+        if Subst.Raw_map.mem syn s then Some Subst.empty
+        else Some (Subst.Raw_map.singleton syn v)
+    | Unop (Unop.Not, s') -> aux s' (not v)
+    (* This pattern matching can be extended for any reversible operation. *)
+    | _ -> None
+  in
+  aux syn v
