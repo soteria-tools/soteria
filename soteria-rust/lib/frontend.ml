@@ -262,7 +262,6 @@ let default =
            "--extract-opaque-bodies";
            "--monomorphize";
            "--mir elaborated";
-           "--raw-boxes";
          ]
         @ opaque_names)
       ~obol:

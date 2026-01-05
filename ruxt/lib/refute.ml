@@ -28,7 +28,7 @@ let exec_crate (crate : Crate.t) =
         let* summ_ctx = Library.init_summaries ~fuel library in
         find_unsoundness config.pass_fuel summ_ctx)
   in
-  if config.print_stats then Driver.print_stats stats;
+  Rustsymex.Stats.output stats;
   res
 
 let exec_ruxt config file_name =

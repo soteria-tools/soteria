@@ -37,14 +37,9 @@ type t = {
   (*
      Printing settings
    *)
-  no_timing : bool; [@make.default false] [@names [ "no-timing" ]]
-      (** Do not display execution times *)
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
-  print_stats : bool; [@make.default false] [@names [ "stats" ]]
-      (** If statistics about the execution should be printed at the end of each
-          test *)
   (*
      Symbolic execution behaviour
    *)
@@ -80,6 +75,7 @@ type global = {
       [@term Soteria.Terminal.Config.cmdliner_term ()]
   solver : Soteria.Solvers.Config.t;
       [@term Soteria.Solvers.Config.cmdliner_term ()]
+  stats : Soteria.Stats.Config.t; [@term Soteria.Stats.Config.cmdliner_term ()]
   ruxt : t; [@term term]
 }
 [@@deriving make, subliner]
@@ -95,7 +91,8 @@ let set (config : global) =
       logs = config.logs;
       terminal = config.terminal;
       solver = config.solver;
-      rusteria =
+      stats = config.stats;
+      soteria_rust =
         {
           cleanup = config.ruxt.cleanup;
           log_compilation = config.ruxt.log_compilation;
@@ -104,6 +101,7 @@ let set (config : global) =
           target = config.ruxt.target;
           output_crate = config.ruxt.output_crate;
           rustc_flags = config.ruxt.rustc_flags;
+          plugin_directory = None;
           (* Default to Charon for compositionality *)
           frontend = Soteria_rust_lib.Config.Charon;
           sysroot = config.ruxt.sysroot;
@@ -111,9 +109,7 @@ let set (config : global) =
           with_miri = config.ruxt.with_miri;
           (* No entry points needed as RUXt is compositional *)
           filter = [];
-          no_timing = config.ruxt.no_timing;
           print_summary = config.ruxt.print_summary;
-          print_stats = config.ruxt.print_stats;
           (* Ignore leaks in Soteria, we implement our own leak check *)
           ignore_leaks = true;
           (* Tree borrows are not supported *)
