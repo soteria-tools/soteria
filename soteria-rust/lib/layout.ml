@@ -116,7 +116,7 @@ let empty_generics = TypesUtils.empty_generic_args
 type meta_kind = LenKind | VTableKind | NoneKind
 
 let rec dst_kind : Types.ty -> meta_kind = function
-  | TAdt { id = TBuiltin TStr; _ } | TAdt { id = TBuiltin TSlice; _ } -> LenKind
+  | TAdt { id = TBuiltin TStr; _ } | TSlice _ -> LenKind
   | TDynTrait _ -> VTableKind
   | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
@@ -128,8 +128,7 @@ let rec dst_kind : Types.ty -> meta_kind = function
     element. *)
 let rec dst_slice_ty : Types.ty -> Types.ty option = function
   | TAdt { id = TBuiltin TStr; _ } -> Some (TLiteral (TUInt U8))
-  | TAdt { id = TBuiltin TSlice; generics = { types = [ sub_ty ]; _ } } ->
-      Some sub_ty
+  | TSlice sub_ty -> Some sub_ty
   | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
       match List.last_opt (Crate.as_struct id) with
       | None -> None
@@ -182,11 +181,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
      the tail in a DST struct.
      FIXME: Maybe we should mark the layout as a DST, and ensure a DST layout's size is never
      used for an allocation. *)
-  | TAdt { id = TBuiltin (TStr as ty); generics }
-  | TAdt { id = TBuiltin (TSlice as ty); generics } ->
-      let sub_ty =
-        if ty = TSlice then List.hd generics.types else TLiteral (TUInt U8)
-      in
+  | TAdt { id = TBuiltin TStr; _ } | TSlice _ ->
+      let sub_ty = match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8) in
       let++ sub_layout = layout_of sub_ty in
       mk ~size:(BV.usizei 0) ~align:sub_layout.align
         ~fields:(Array sub_layout.size) ()
@@ -226,14 +222,12 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       | TDeclError _ -> not_impl_layout "decl error" ty
       | Alias _ -> not_impl_layout "alias" ty)
   (* Arrays *)
-  | TAdt { id = TBuiltin TArray; generics } ->
+  | TArray (subty, size) ->
       let max_array_len sub_size =
         (* We calculate the max array size for a 32bit architecture, like Miri does. *)
         let isize_bits = 32 - 1 in
         BV.usize Z.(one lsl isize_bits) /@ Typed.cast sub_size
       in
-      let size = List.hd generics.const_generics in
-      let subty = List.hd generics.types in
       let len = BV.of_const_generic size in
       let** sub_layout = layout_of subty in
       let++ () =
@@ -559,11 +553,7 @@ let rec nondet : Types.ty -> ('a rust_val, 'e, 'f) Result.t =
   | TAdt { id = TTuple; generics = { types; _ } } ->
       let++ fields = nondets types in
       Tuple fields
-  | TAdt
-      {
-        id = TBuiltin TArray;
-        generics = { const_generics = [ len ]; types = [ ty ]; _ };
-      } ->
+  | TArray (ty, len) ->
       let size = Charon_util.int_of_const_generic len in
       let++ fields = nondets @@ List.init size (fun _ -> ty) in
       Tuple fields
@@ -635,9 +625,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
   let as_zsts tys = Monad.OptionM.all as_zst tys in
   function
   | TNever -> Some (Tuple [])
-  | TAdt { id = TBuiltin TArray; generics = { const_generics = [ len ]; _ } }
-    when int_of_const_generic len = 0 ->
-      Some (Tuple [])
+  | TArray (_, len) when z_of_const_generic len = Z.zero -> Some (Tuple [])
   | TAdt { id = TAdtId id; _ } -> (
       let adt = Crate.get_adt id in
       match adt.kind with
@@ -690,9 +678,7 @@ let rec is_unsafe_cell : Types.ty -> bool = function
             @@ Iter.flat_map_l (fun (v : Types.variant) -> field_tys v.fields)
             @@ Iter.of_list vs
         | _ -> false)
-  | TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
-    ->
-      is_unsafe_cell ty
+  | TArray (ty, _) | TSlice ty -> is_unsafe_cell ty
   | TAdt { id = TTuple; generics = { types; _ } } ->
       List.exists is_unsafe_cell types
   | _ -> false
@@ -712,9 +698,7 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
   | Tuple vs, TAdt { id = TAdtId adt_id; _ } ->
       let fields = Crate.as_struct adt_id in
       List.concat_map2 f vs (field_tys fields)
-  | ( Tuple vs,
-      TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
-    ) ->
+  | Tuple vs, (TArray (ty, _) | TSlice ty) ->
       List.concat_map (fun v -> f v ty) vs
   | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
       List.concat_map2 f vs types
@@ -774,9 +758,7 @@ let rec update_ref_tys_in
       let fields = Crate.as_struct adt_id in
       let++ vs, acc = fs2 init vs (field_tys fields) in
       (Tuple vs, acc)
-  | ( Tuple vs,
-      TAdt { id = TBuiltin (TArray | TSlice); generics = { types = [ ty ]; _ } }
-    ) ->
+  | Tuple vs, (TArray (ty, _) | TSlice ty) ->
       let++ vs, acc = fs init vs ty in
       (Tuple vs, acc)
   | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
