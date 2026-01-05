@@ -37,7 +37,7 @@ let exec file =
     | Some f -> f
     | None -> failwith "No main function found"
   in
-  let process = Exec_interp.run_function main State.empty [] in
+  let process = Exec_interp.eval_function main State.empty [] in
   let results =
     let@ () = Interp.with_program program in
     Interp.Symex.Result.run ~mode:OX process
@@ -60,7 +60,7 @@ let generate_summaries file =
               v :: acc)
         in
         let args = List.rev args in
-        Bi_interp.run_function func_dec Bi_state.empty args
+        Bi_interp.eval_function func_dec Bi_state.empty args
       in
       let results =
         let@ () = Interp.with_program program in
