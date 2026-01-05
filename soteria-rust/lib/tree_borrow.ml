@@ -129,36 +129,22 @@ let set_protector ~protected tag root =
 (** [access accessed im e structure state]: Update all nodes in the mapping
     [state] for the tree structure [structure] with an event [e], that happened
     at [accessed]. *)
-let access accessed e (root : t) st =
+let access accessed e (root : t) (st : tb_state) =
   let ub_happened = ref false in
-  let st =
-    TagMap.fold
-      (fun tag node ->
-        TagMap.update tag (function
-          | None -> Some (false, node.initial_state)
-          | Some _ as st -> st))
-      root st
-  in
-  L.trace (fun m ->
-      let pp_binding fmt (tag, (protected, st)) =
-        Fmt.pf fmt "%a -> %a%s" pp_tag tag pp_state st
-          (if protected then " (p)" else "")
-      in
-      m "TB: %a at %a, for tree %a, state@[<hov 2> %a@]" pp_access e pp_tag
-        accessed pp root
-        Fmt.(iter_bindings ~sep:(Fmt.any ", ") TagMap.iter pp_binding)
-        st);
   let accessed_node = TagMap.find accessed root in
   let st' =
-    TagMap.mapi
-      (fun tag (protected, st) ->
+    TagMap.filter_map_no_share
+      (fun tag { protector; initial_state; _ } ->
+        let protected, st =
+          match TagMap.find_opt tag st with
+          | None -> (false, initial_state)
+          | Some ps -> ps
+        in
         let rel =
           if List.mem tag accessed_node.parents then Local else Foreign
         in
         (* if the tag has a protector and is accessed, this toggles the protector! *)
-        let protected =
-          (tag = accessed || protected) && (TagMap.find tag root).protector
-        in
+        let protected = (tag = accessed || protected) && protector in
         let st' = transition ~protected st (rel, e) in
         if st' = UB then (
           ub_happened := true;
@@ -168,8 +154,9 @@ let access accessed e (root : t) st =
                  %b): %a -> %a in structure@.%a"
                 pp_tag tag pp_locality rel pp_access e protected pp_state st
                 pp_state st' pp root));
-        (protected, st'))
-      st
+        if (not protected) && st' = initial_state then None
+        else Some (protected, st'))
+      root
   in
   if !ub_happened then Result.error `AliasingError else Result.ok st'
 

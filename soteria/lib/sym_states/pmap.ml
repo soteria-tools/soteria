@@ -37,7 +37,6 @@ module type MapS = sig
   val find_opt : key -> 'a t -> 'a option
   val iter : (key -> 'a -> unit) -> 'a t -> unit
   val to_seq : 'a t -> (key * 'a) Seq.t
-  val bindings : 'a t -> (key * 'a) list
 end
 
 module S
@@ -138,16 +137,6 @@ module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
   let iter_vars _ = fun _ -> ()
 end
 
-module PatriciaTreeMakeMap (K : sig
-  type t
-
-  val to_int : t -> int
-end) : MapS with type key = K.t = struct
-  include PatriciaTree.MakeMap (K)
-
-  let bindings m = to_seq m |> List.of_seq
-end
-
 module Build_from_find_opt_sym
     (Symex : Symex.Base)
     (Key : KeyS(Symex).S)
@@ -208,7 +197,8 @@ struct
     let st = of_opt st in
     let* key = Key.fresh () in
     let* () =
-      Symex.assume [ Key.distinct (key :: (M.bindings st |> List.map fst)) ]
+      Symex.assume
+        [ Key.distinct (key :: (M.to_seq st |> Seq.map fst |> List.of_seq)) ]
     in
     Result.ok (key, to_opt (M.add key new_codom st))
 
@@ -223,7 +213,9 @@ struct
     in
     let out_keys = List.rev out_keys in
     let st = M.add_seq bindings st in
-    let+ () = Symex.assume [ Key.distinct @@ List.map fst @@ M.bindings st ] in
+    let+ () =
+      Symex.assume [ M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct ]
+    in
     Compo_res.Ok (out_keys, to_opt st)
 
   let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
@@ -292,7 +284,7 @@ struct
     in
     match M.find_opt key st with
     | Some v -> Symex.return (key, Some v)
-    | None -> find_bindings (M.bindings st)
+    | None -> M.to_seq st |> List.of_seq |> find_bindings
 
   include
     Build_from_find_opt_sym (Symex) (Key) (M)
@@ -307,7 +299,7 @@ module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) =
 module Make_patricia_tree
     (Symex : Symex.Base)
     (Key : KeyS(Symex).S_patricia_tree) =
-  Build_base (Symex) (Key) (PatriciaTreeMakeMap (Key))
+  Build_base (Symex) (Key) (PatriciaTree.MakeMap (Key))
 
 (** Sound to use when the keys of the map may depend on symbolic variables *)
 
@@ -333,7 +325,7 @@ struct
           M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct
         in
         if%sat1 not_in_map then Symex.return (key, None)
-        else find_bindings (M.bindings st)
+        else M.to_seq st |> List.of_seq |> find_bindings
 
   include
     Build_from_find_opt_sym (Symex) (Key) (M)
@@ -350,7 +342,7 @@ module Direct_access_patricia_tree
     (Symex : Symex.Base)
     (Key : KeyS(Symex).S_patricia_tree) =
 struct
-  module M' = PatriciaTreeMakeMap (Key)
+  module M' = PatriciaTree.MakeMap (Key)
   include Build_direct_access (Symex) (Key) (M')
 end
 
