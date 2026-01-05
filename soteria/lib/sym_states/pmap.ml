@@ -137,6 +137,16 @@ module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
   let iter_vars _ = fun _ -> ()
 end
 
+module PatriciaTreeMakeMap (K : sig
+  type t
+
+  val to_int : t -> int
+end) : MapS with type key = K.t = struct
+  include PatriciaTree.MakeMap (K)
+
+  let bindings m = to_seq m |> List.of_seq
+end
+
 module Build_from_find_opt_sym
     (Symex : Symex.Base)
     (Key : KeyS(Symex).S)

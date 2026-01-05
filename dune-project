@@ -167,3 +167,9 @@
     :with-dev-setup
     (= 0.27.0)))
   (ocaml-lsp-server :with-dev-setup)))
+
+(package
+ (name ruxt)
+ (synopsis "Type safety refuter for Rust")
+ (description "Type safety refuter for Rust")
+ (depends soteria-rust))

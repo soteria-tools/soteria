@@ -1102,7 +1102,7 @@ Should return -1
   Verification Success!
 
 
-  $ soteria-c exec memset.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v  --print-states
+  $ soteria-c exec memset.c --no-ignore-parse-failures --no-ignore-duplicate-symbols -v  --print-states --use-cerb-headers
   Symex terminated with the following outcomes:
     [Ok: (0x00000000,
           { heap =
