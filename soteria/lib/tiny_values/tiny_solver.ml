@@ -1,5 +1,4 @@
 open Soteria_std
-open Logs.Import
 module Var = Svalue.Var
 
 module Make_incremental
@@ -161,16 +160,11 @@ struct
   (* Incremental doesn't allow for caching queries... *)
   let sat solver =
     match Solver_state.trivial_truthiness solver.state with
-    | Some true -> Symex.Solver_result.Sat
-    | Some false -> Unsat
-    | None -> (
+    | Some true -> (Symex.Solver_result.Sat, false)
+    | Some false -> (Unsat, false)
+    | None ->
         let answer = Intf.check_sat solver.z3_exe in
-        match answer with
-        | Sat -> Sat
-        | Unsat -> Unsat
-        | Unknown ->
-            L.info (fun m -> m "Solver returned unknown");
-            Unknown)
+        (answer, true)
 
   let as_values solver =
     Iter.append
@@ -546,10 +540,10 @@ struct
         Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
         result
 
-  let sat solver : Symex.Solver_result.t =
+  let sat solver : Symex.Solver_result.t * bool =
     match Solver_state.trivial_truthiness solver.state with
-    | Some true -> Sat
-    | Some false -> Unsat
+    | Some true -> (Sat, false)
+    | Some false -> (Unsat, false)
     | None ->
         let to_check, relevant_vars =
           Solver_state.unchecked_constraints solver.state
@@ -562,7 +556,7 @@ struct
         in
         let answer = check_sat_raw_memo solver relevant_vars to_check in
         if answer = Sat then Solver_state.mark_checked solver.state;
-        answer
+        (answer, true)
 
   let as_values solver =
     Iter.append

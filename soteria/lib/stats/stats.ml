@@ -21,7 +21,11 @@ type 'range stats = {
       (** Number of branches that were not explored because of fuel exhaustion.
           This includes branches not taking due to missing branch fuel, and
           branches that were cut due to step fuel. *)
-  mutable sat_checks : int;  (** Number of times the SAT solver was called *)
+  mutable sat_checks : int;
+      (** Number of times the provided solver was called for a SAT check *)
+  mutable smt_solver_calls : int;
+      (** Number of times the underlying SMT solver was actually called for a
+          SAT check *)
   mutable sat_unknowns : int;
       (** Number of times the SAT solver returned [unknown] *)
 }
@@ -41,6 +45,7 @@ let create () =
     steps_number = 0;
     unexplored_branch_number = 0;
     sat_checks = 0;
+    smt_solver_calls = 0;
     sat_unknowns = 0;
   }
 
@@ -136,6 +141,10 @@ module type S = sig
     *)
     val add_sat_checks : int -> unit
 
+    (** Adds the number of times the underlying SMT solver was actually called.
+        Handled by the provided solver module. *)
+    val add_smt_solver_calls : int -> unit
+
     (** Adds the number of times the SAT solver returned unknowns to the count
         of statistics. Handled by Soteria. *)
     val add_sat_unknowns : int -> unit
@@ -195,6 +204,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
       unexplored_branch_number =
         t1.unexplored_branch_number + t2.unexplored_branch_number;
       sat_checks = t1.sat_checks + t2.sat_checks;
+      smt_solver_calls = t1.smt_solver_calls + t2.smt_solver_calls;
       sat_unknowns = t1.sat_unknowns + t2.sat_unknowns;
     }
 
@@ -236,6 +246,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
       exec_time;
       sat_time;
       sat_checks;
+      smt_solver_calls;
       sat_unknowns;
       give_up_reasons;
       missing_without_fixes;
@@ -268,6 +279,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
           `Fn
             (fun ft () -> Fmt.pf ft "%d (%d unknowns)" sat_checks sat_unknowns)
         );
+        ("SMT solver calls", `Fn (fun ft () -> Fmt.pf ft "%d" smt_solver_calls));
         ("Give up reasons", `StrSeq (Hstring.to_seq_keys give_up_reasons));
         ("Misses without fixes", `StrSeq (Dynarray.to_seq missing_without_fixes));
       ]
@@ -330,6 +342,9 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
 
     let add_sat_checks n =
       apply (fun stats -> stats.sat_checks <- stats.sat_checks + n)
+
+    let add_smt_solver_calls n =
+      apply (fun stats -> stats.smt_solver_calls <- stats.smt_solver_calls + n)
 
     let add_sat_unknowns n =
       apply (fun stats -> stats.sat_unknowns <- stats.sat_unknowns + n)

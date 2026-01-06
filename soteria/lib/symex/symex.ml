@@ -321,8 +321,9 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     include Solver.Mutable_to_in_place (Sol)
 
     let sat () =
-      let res = Stats.As_ctx.add_sat_time_of sat in
+      let res, smt_called = Stats.As_ctx.add_sat_time_of sat in
       Stats.As_ctx.add_sat_checks 1;
+      if smt_called then Stats.As_ctx.add_smt_solver_calls 1;
       if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
       res
   end

@@ -1,5 +1,4 @@
 open Soteria_std
-open Logs.Import
 module Var = Svalue.Var
 
 let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
@@ -176,16 +175,11 @@ struct
   (* Incremental doesn't allow for caching queries... *)
   let sat solver =
     match Solver_state.trivial_truthiness solver.state with
-    | Some true -> Symex.Solver_result.Sat
-    | Some false -> Unsat
-    | None -> (
+    | Some true -> (Symex.Solver_result.Sat, false)
+    | Some false -> (Unsat, false)
+    | None ->
         let answer = Intf.check_sat solver.z3_exe in
-        match answer with
-        | Sat -> Sat
-        | Unsat -> Unsat
-        | Unknown ->
-            L.info (fun m -> m "Solver returned unknown");
-            Unknown)
+        (answer, false)
 
   let as_values solver =
     Iter.append
@@ -485,7 +479,8 @@ struct
       Svalue.iter_vars to_check
       |> Iter.fold (fun acc (v, ty) -> Var.Map.add v ty acc) Var.Map.empty
     in
-    if trivial_model_works solver to_check var_tys then Symex.Solver_result.Sat
+    if trivial_model_works solver to_check var_tys then
+      (Symex.Solver_result.Sat, false)
     else (
       (* We need to reset the state, so we can push the new constraints *)
       Intf.reset solver.z3_exe;
@@ -494,21 +489,21 @@ struct
       (* Declare the constraint *)
       Intf.add_constraint solver.z3_exe to_check;
       (* Actually check sat *)
-      Intf.check_sat solver.z3_exe)
+      (Intf.check_sat solver.z3_exe, true))
 
   let check_sat_raw_memo solver to_check =
     let to_check = Typed.untyped to_check in
     match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
-    | Some result -> result
+    | Some result -> (result, false)
     | None ->
-        let result = check_sat_raw solver to_check in
+        let result, called_smt = check_sat_raw solver to_check in
         Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
-        result
+        (result, called_smt)
 
   let sat solver =
     match Solver_state.trivial_truthiness solver.state with
-    | Some true -> Symex.Solver_result.Sat
-    | Some false -> Unsat
+    | Some true -> (Symex.Solver_result.Sat, false)
+    | Some false -> (Unsat, false)
     | None ->
         let to_check, relevant_vars =
           Solver_state.unchecked_constraints solver.state
@@ -519,9 +514,9 @@ struct
           Iter.fold Typed.and_ to_check
             (Analysis.encode ~vars:relevant_vars solver.analysis)
         in
-        let answer = check_sat_raw_memo solver to_check in
+        let answer, called_smt = check_sat_raw_memo solver to_check in
         if answer = Sat then Solver_state.mark_checked solver.state;
-        answer
+        (answer, called_smt)
 
   let as_values solver =
     Iter.append
@@ -531,7 +526,12 @@ struct
 end
 
 open Analyses
-module Analysis = Merge (Merge (Interval) (Equality)) (Disjoint)
+
+module Analysis =
+  (* *)
+  None
+
+(* Merge (Merge (Interval) (Equality)) (Disjoint) *)
 module Z3 = Solvers.Z3.Make (Encoding)
 module Z3_incremental_solver = Make_incremental (Analysis) (Z3)
 module Z3_solver = Make (Analysis) (Z3)
