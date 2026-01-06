@@ -25,7 +25,11 @@ let default = make ()
     values automatically, instead of passing [--hide-unstable] to all tests
     manually. *)
 let in_test_environment =
-  let v = lazy (Option.is_some (Sys.getenv_opt "INSIDE_DUNE")) in
+  let v =
+    lazy
+      (Option.is_some (Sys.getenv_opt "INSIDE_DUNE")
+      && Option.is_some (Sys.getenv_opt "BUILD_PATH_PREFIX_MAP"))
+  in
   fun () -> Lazy.force v
 
 let set, get, lock =
