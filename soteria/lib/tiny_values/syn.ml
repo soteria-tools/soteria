@@ -1,4 +1,5 @@
 open Svalue
+open Soteria_std
 
 type t = Svalue.t [@@deriving show { with_path = false }]
 
@@ -7,11 +8,11 @@ let[@inline] of_value v = v
 
 module Subst = struct
   (* TODO: make this a Patricia Tree *)
-  module Raw_map = Map.Make (Svalue)
+  module Raw_map = Map.MakePp (Svalue)
 
   type t = Svalue.t Raw_map.t
 
-  let add s v subst = Raw_map.add s v subst
+  let extend s v subst = Raw_map.add_if_not_exists s v subst
   let find_opt s subst = Raw_map.find_opt s subst
   let empty = Raw_map.empty
 end
@@ -23,7 +24,7 @@ let rec subst ~missing_var (s : Subst.t) (v : Svalue.t) =
       match v.node.kind with
       | Var x ->
           let v' = missing_var x v.node.ty in
-          let s = Subst.add v v' s in
+          let s = Subst.extend v v' s in
           (v', s)
       | Bool _ | Int _ -> (v, s)
       | Unop (unop, v1) ->
@@ -50,14 +51,9 @@ and subst_list ~missing_var s vs =
       let vs, s = subst_list ~missing_var s vs in
       (v :: vs, s)
 
-let learn (s : Subst.t) (syn : t) (v : t) : Subst.t option =
-  let rec aux (syn : t) v =
-    match syn.node.kind with
-    | Var _ ->
-        if Subst.Raw_map.mem syn s then Some Subst.empty
-        else Some (Subst.Raw_map.singleton syn v)
-    | Unop (Unop.Not, s') -> aux s' (not v)
-    (* This pattern matching can be extended for any reversible operation. *)
-    | _ -> None
-  in
-  aux syn v
+let rec learn (s : Subst.t) (e : t) (v : t) : Subst.t option =
+  match e.node.kind with
+  | Var _ -> if Subst.Raw_map.mem e s then Some s else Some (Subst.extend e v s)
+  | Unop (Unop.Not, e') -> learn s e' (not v)
+  (* This pattern matching can be extended for any reversible operation. *)
+  | _ -> None

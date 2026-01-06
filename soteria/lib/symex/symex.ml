@@ -277,6 +277,7 @@ module type Base = sig
     val apply_subst :
       ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
 
+    val learn_eq : Value.Syn.t -> 'a Value.t -> (unit, 'fix) t
     val expose_subst : unit -> (subst, 'fix) t
     val lift_res : ('a, cons_fail, 'fix) Result.t -> ('a, 'fix) t
     val lift_symex : 'a symex -> ('a, 'fix) t
@@ -791,6 +792,28 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
           let res = sf vsf e in
           Result.ok (res, s)
         with Missing_subst v -> Result.error (`Missing_subst v)
+
+    let learn_eq syn v : (unit, 'fix) t =
+      let open Syntax in
+      fun subst ->
+        let subst =
+          match Value.Syn.learn subst syn v with
+          | Some s -> s
+          | None ->
+              failwith
+                "Consumed something that was not yet consumable, this is a \
+                 tool bug!"
+        in
+        let v', subst =
+          Value.Syn.subst
+            ~missing_var:(fun _ _ ->
+              failwith
+                "Tool Bug: learned substitution does not cover expression's \
+                 free variables.")
+            subst syn
+        in
+        let++ () = consume_pure (Value.sem_eq_untyped v v') in
+        ((), subst)
 
     let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)
 

@@ -221,6 +221,28 @@ module Make
           Result.ok (res, s)
         with Missing_subst x -> Result.error (`Missing_subst x)
 
+    let learn_eq syn v : (unit, 'fix) t =
+      let open Syntax in
+      fun subst ->
+        let subst =
+          match Value.Syn.learn subst syn v with
+          | Some s -> s
+          | None ->
+              failwith
+                "Consumed something that was not yet consumable, this is a \
+                 tool bug!"
+        in
+        let v', subst =
+          Value.Syn.subst
+            ~missing_var:(fun _ _ ->
+              failwith
+                "Tool Bug: learned substitution does not cover expression's \
+                 free variables.")
+            subst syn
+        in
+        let++ () = consume_pure (Value.sem_eq_untyped v v') in
+        ((), subst)
+
     let expose_subst () : (subst, 'fix) t = fun s -> Result.ok (s, s)
 
     let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =

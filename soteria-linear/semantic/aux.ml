@@ -35,8 +35,8 @@ module S_val = struct
   let to_syn = Syn.of_value
   let exprs_syn (s : syn) : Symex.Value.Syn.t list = [ s ]
 
-  let learn_eq (_ : syn) (_ : t) : (unit, 'a) Symex.Consumer.t =
-    failwith "Not implemented"
+  let learn_eq (syn : syn) (v : t) : (unit, 'a) Symex.Consumer.t =
+    Symex.Consumer.learn_eq syn v
 
   let fresh () : t Symex.t =
     Symex.branches
