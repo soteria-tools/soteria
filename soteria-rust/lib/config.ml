@@ -11,7 +11,8 @@ type t = {
   (*
      Compilation flags
    *)
-  cleanup : bool; [@make.default false] [@names [ "clean" ]]
+  cleanup : bool;
+      [@make.default false] [@names [ "clean" ]] [@env "SOTERIA_RUST_CLEANUP"]
       (** Clean up compiled files after execution *)
   log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
       (** Log the compilation process *)
@@ -21,7 +22,7 @@ type t = {
       [@make.default false] [@names [ "no-compile-plugins" ]]
       (** Do not compile the plugins, as they are already compiled *)
   plugin_directory : string option;
-      [@names [ "plugins" ]] [@env "RUSTERIA_PLUGINS"]
+      [@names [ "plugins" ]] [@env "SOTERIA_RUST_PLUGINS"]
       (** The directory in which plugins are and should be compiled; defaults to
           the current dune-managed site. *)
   target : string option; [@names [ "target" ]] [@env "TARGET"]
@@ -99,9 +100,4 @@ let set (config : global) =
   Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
   Soteria.Stats.Config.set_and_lock config.stats;
-  let soteria_rust =
-    if Soteria.Terminal.Config.in_test_environment () then
-      { config.soteria_rust with cleanup = true }
-    else config.soteria_rust
-  in
-  current := soteria_rust
+  current := config.soteria_rust
