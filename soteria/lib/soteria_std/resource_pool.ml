@@ -35,7 +35,7 @@ module type S = sig
   (** Access the underlying resource. The auth token must match the current
       valid token for this resource. Raises [Pool_invalid_auth] if the resource
       has been released. *)
-  val wrap : auth:auth -> t -> (resource -> 'a) -> 'a
+  val apply : auth:auth -> t -> (resource -> 'a) -> 'a
 
   val total_resources : pool -> int
   val available_resources : pool -> int
@@ -90,7 +90,7 @@ module Make (R : Resource) : S with type resource = R.t = struct
 
   let handle pooled = pooled.handle
 
-  let wrap ~auth pooled f =
+  let apply ~auth pooled f =
     match pooled.auth with
     | Some current_auth when current_auth = auth -> f pooled.res
     | _ -> raise Pool_invalid_auth

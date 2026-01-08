@@ -54,7 +54,7 @@ let acquire_creates_resource =
   Counter_resource.reset ();
   let pool = Counter_pool.create_pool () in
   let t, auth = Counter_pool.acquire pool in
-  let id = Counter_pool.wrap ~auth t (fun r -> r.id) in
+  let id = Counter_pool.apply ~auth t (fun r -> r.id) in
   Alcotest.(check int) "resource id is 0" 0 id;
   Alcotest.(check int) "one resource created" 1 !Counter_resource.counter
 
@@ -64,7 +64,7 @@ let acquire_returns_valid_auth =
   let pool = Counter_pool.create_pool () in
   let t, auth = Counter_pool.acquire pool in
   (* Should not raise *)
-  let _ = Counter_pool.wrap ~auth t (fun r -> r.id) in
+  let _ = Counter_pool.apply ~auth t (fun r -> r.id) in
   ()
 
 let wrap_returns_function_result =
@@ -72,7 +72,7 @@ let wrap_returns_function_result =
   Counter_resource.reset ();
   let pool = Counter_pool.create_pool () in
   let t, auth = Counter_pool.acquire pool in
-  let result = Counter_pool.wrap ~auth t (fun r -> r.id + 42) in
+  let result = Counter_pool.apply ~auth t (fun r -> r.id + 42) in
   Alcotest.(check int) "wrap returns correct result" 42 result
 
 let release_makes_resource_available =
@@ -80,10 +80,10 @@ let release_makes_resource_available =
   Counter_resource.reset ();
   let pool = Counter_pool.create_pool () in
   let t1, auth1 = Counter_pool.acquire pool in
-  let id1 = Counter_pool.wrap ~auth:auth1 t1 (fun r -> r.id) in
+  let id1 = Counter_pool.apply ~auth:auth1 t1 (fun r -> r.id) in
   Counter_pool.release pool auth1 t1;
   let t2, auth2 = Counter_pool.acquire pool in
-  let id2 = Counter_pool.wrap ~auth:auth2 t2 (fun r -> r.id) in
+  let id2 = Counter_pool.apply ~auth:auth2 t2 (fun r -> r.id) in
   Alcotest.(check int) "same resource reused" id1 id2;
   Alcotest.(check int) "only one resource created" 1 !Counter_resource.counter
 
@@ -96,10 +96,10 @@ let reuse_after_release =
   Counter_resource.reset ();
   let pool = Counter_pool.create_pool () in
   let t1, auth1 = Counter_pool.acquire pool in
-  let id1 = Counter_pool.wrap ~auth:auth1 t1 (fun r -> r.id) in
+  let id1 = Counter_pool.apply ~auth:auth1 t1 (fun r -> r.id) in
   Counter_pool.release pool auth1 t1;
   let t2, auth2 = Counter_pool.acquire pool in
-  let id2 = Counter_pool.wrap ~auth:auth2 t2 (fun r -> r.id) in
+  let id2 = Counter_pool.apply ~auth:auth2 t2 (fun r -> r.id) in
   Alcotest.(check int) "resource reused has same id" id1 id2
 
 let multiple_resources_created =
@@ -109,9 +109,9 @@ let multiple_resources_created =
   let t1, auth1 = Counter_pool.acquire pool in
   let t2, auth2 = Counter_pool.acquire pool in
   let t3, auth3 = Counter_pool.acquire pool in
-  let id1 = Counter_pool.wrap ~auth:auth1 t1 (fun r -> r.id) in
-  let id2 = Counter_pool.wrap ~auth:auth2 t2 (fun r -> r.id) in
-  let id3 = Counter_pool.wrap ~auth:auth3 t3 (fun r -> r.id) in
+  let id1 = Counter_pool.apply ~auth:auth1 t1 (fun r -> r.id) in
+  let id2 = Counter_pool.apply ~auth:auth2 t2 (fun r -> r.id) in
+  let id3 = Counter_pool.apply ~auth:auth3 t3 (fun r -> r.id) in
   Alcotest.(check int) "three resources created" 3 !Counter_resource.counter;
   Alcotest.(check bool)
     "all ids distinct" true
@@ -123,13 +123,13 @@ let lifo_reuse =
   let pool = Counter_pool.create_pool () in
   let t1, auth1 = Counter_pool.acquire pool in
   let t2, auth2 = Counter_pool.acquire pool in
-  let _id1 = Counter_pool.wrap ~auth:auth1 t1 (fun r -> r.id) in
-  let id2 = Counter_pool.wrap ~auth:auth2 t2 (fun r -> r.id) in
+  let _id1 = Counter_pool.apply ~auth:auth1 t1 (fun r -> r.id) in
+  let id2 = Counter_pool.apply ~auth:auth2 t2 (fun r -> r.id) in
   Counter_pool.release pool auth1 t1;
   Counter_pool.release pool auth2 t2;
   (* LIFO: t2 was released last, so it should be acquired first *)
   let t3, auth3 = Counter_pool.acquire pool in
-  let id3 = Counter_pool.wrap ~auth:auth3 t3 (fun r -> r.id) in
+  let id3 = Counter_pool.apply ~auth:auth3 t3 (fun r -> r.id) in
   Alcotest.(check int) "LIFO reuse order" id2 id3
 
 (* ============================================================================
@@ -144,7 +144,7 @@ let wrap_with_wrong_auth_raises =
   let _t2, wrong_auth = Counter_pool.acquire pool in
   (* Use auth from t2 to access t1 - should fail *)
   Alcotest.check_raises "wrong auth raises" Resource_pool.Pool_invalid_auth
-    (fun () -> ignore (Counter_pool.wrap ~auth:wrong_auth t1 (fun r -> r.id)))
+    (fun () -> ignore (Counter_pool.apply ~auth:wrong_auth t1 (fun r -> r.id)))
 
 let wrap_after_release_raises =
   let@ () = register "wrap_after_release_raises" in
@@ -154,7 +154,7 @@ let wrap_after_release_raises =
   Counter_pool.release pool auth t;
   Alcotest.check_raises "wrap after release raises"
     Resource_pool.Pool_invalid_auth (fun () ->
-      ignore (Counter_pool.wrap ~auth t (fun r -> r.id)))
+      ignore (Counter_pool.apply ~auth t (fun r -> r.id)))
 
 let release_with_wrong_auth_raises =
   let@ () = register "release_with_wrong_auth_raises" in
@@ -184,7 +184,7 @@ let old_auth_invalid_after_reacquire =
   let _t2, _auth2 = Counter_pool.acquire pool in
   (* t and _t2 point to the same underlying resource, but auth1 is now invalid *)
   Alcotest.check_raises "old auth invalid" Resource_pool.Pool_invalid_auth
-    (fun () -> ignore (Counter_pool.wrap ~auth:auth1 t (fun r -> r.id)))
+    (fun () -> ignore (Counter_pool.apply ~auth:auth1 t (fun r -> r.id)))
 
 (* ============================================================================
    Mutable Resource Tests
@@ -194,12 +194,12 @@ let mutable_resource_state_persists =
   let@ () = register "mutable_resource_state_persists" in
   let pool = Mutable_pool.create_pool () in
   let t, auth = Mutable_pool.acquire pool in
-  Mutable_pool.wrap ~auth t (fun r -> r.value <- 42);
-  let v1 = Mutable_pool.wrap ~auth t (fun r -> r.value) in
+  Mutable_pool.apply ~auth t (fun r -> r.value <- 42);
+  let v1 = Mutable_pool.apply ~auth t (fun r -> r.value) in
   Alcotest.(check int) "value persists within session" 42 v1;
   Mutable_pool.release pool auth t;
   let t2, auth2 = Mutable_pool.acquire pool in
-  let v2 = Mutable_pool.wrap ~auth:auth2 t2 (fun r -> r.value) in
+  let v2 = Mutable_pool.apply ~auth:auth2 t2 (fun r -> r.value) in
   Alcotest.(check int) "value persists across sessions" 42 v2
 
 let mutable_resource_isolated =
@@ -207,10 +207,10 @@ let mutable_resource_isolated =
   let pool = Mutable_pool.create_pool () in
   let t1, auth1 = Mutable_pool.acquire pool in
   let t2, auth2 = Mutable_pool.acquire pool in
-  Mutable_pool.wrap ~auth:auth1 t1 (fun r -> r.value <- 100);
-  Mutable_pool.wrap ~auth:auth2 t2 (fun r -> r.value <- 200);
-  let v1 = Mutable_pool.wrap ~auth:auth1 t1 (fun r -> r.value) in
-  let v2 = Mutable_pool.wrap ~auth:auth2 t2 (fun r -> r.value) in
+  Mutable_pool.apply ~auth:auth1 t1 (fun r -> r.value <- 100);
+  Mutable_pool.apply ~auth:auth2 t2 (fun r -> r.value <- 200);
+  let v1 = Mutable_pool.apply ~auth:auth1 t1 (fun r -> r.value) in
+  let v2 = Mutable_pool.apply ~auth:auth2 t2 (fun r -> r.value) in
   Alcotest.(check int) "resource 1 has correct value" 100 v1;
   Alcotest.(check int) "resource 2 has correct value" 200 v2
 
@@ -226,12 +226,12 @@ let separate_pools_independent =
   let t1, auth1 = Counter_pool.acquire pool1 in
   let t2, auth2 = Counter_pool.acquire pool2 in
   (* Resources are different (different ids from the shared counter) *)
-  let id1 = Counter_pool.wrap ~auth:auth1 t1 (fun r -> r.id) in
-  let id2 = Counter_pool.wrap ~auth:auth2 t2 (fun r -> r.id) in
+  let id1 = Counter_pool.apply ~auth:auth1 t1 (fun r -> r.id) in
+  let id2 = Counter_pool.apply ~auth:auth2 t2 (fun r -> r.id) in
   Alcotest.(check bool) "different resources" true (id1 <> id2);
   (* Release from pool1 doesn't affect pool2 *)
   Counter_pool.release pool1 auth1 t1;
-  let v2 = Counter_pool.wrap ~auth:auth2 t2 (fun r -> r.id) in
+  let v2 = Counter_pool.apply ~auth:auth2 t2 (fun r -> r.id) in
   Alcotest.(check int) "pool2 resource still valid" id2 v2
 
 (* ============================================================================
@@ -286,7 +286,7 @@ let concurrent_acquire_release =
             (* Each domain does many acquire/release cycles *)
             for _ = 1 to iterations_per_domain do
               let t, auth = Atomic_pool.acquire pool in
-              let _ = Atomic_pool.wrap ~auth t (fun r -> r.id) in
+              let _ = Atomic_pool.apply ~auth t (fun r -> r.id) in
               Atomic_pool.release pool auth t;
               Atomic.incr successful_ops
             done))
@@ -320,9 +320,9 @@ let concurrent_wrap_is_safe =
             done;
             (* Increment many times *)
             for _ = 1 to increments_per_domain do
-              Mutable_pool.wrap ~auth t (fun r -> r.value <- r.value + 1)
+              Mutable_pool.apply ~auth t (fun r -> r.value <- r.value + 1)
             done;
-            let final_value = Mutable_pool.wrap ~auth t (fun r -> r.value) in
+            let final_value = Mutable_pool.apply ~auth t (fun r -> r.value) in
             Mutable_pool.release pool auth t;
             final_value))
   in
@@ -369,7 +369,7 @@ let concurrent_no_use_after_release =
         (* Now try to use the stale auth *)
         match (!stale_t, !stale_auth) with
         | Some t, Some auth -> (
-            try ignore (Atomic_pool.wrap ~auth t (fun r -> r.id))
+            try ignore (Atomic_pool.apply ~auth t (fun r -> r.id))
             with Resource_pool.Pool_invalid_auth ->
               Atomic.set got_exception true)
         | _ -> ())
