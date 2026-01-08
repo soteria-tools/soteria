@@ -249,6 +249,13 @@ end
 module type S = sig
   include Base
 
+  (** A Symex runs in a pooled solver environment. This module exposes some
+      information about the solver pool. *)
+  module Solver_pool : sig
+    val total_created : unit -> int
+    val total_available : unit -> int
+  end
+
   type 'a v := 'a Value.t
   type sbool := Value.sbool
 
@@ -318,13 +325,18 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   module Stats = Stats.Make (Meta.Range)
 
   module Solver = struct
-    include Solver.Mutable_to_effectful (Sol)
+    include Solver.Mutable_to_pooled (Sol)
 
     let sat () =
       let res = Stats.As_ctx.add_sat_time_of sat in
       Stats.As_ctx.add_sat_checks 1;
       if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
       res
+  end
+
+  module Solver_pool = struct
+    let total_created () = Solver.total_resources ()
+    let total_available () = Solver.available_resources ()
   end
 
   module Fuel = struct

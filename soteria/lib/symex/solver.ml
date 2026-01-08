@@ -32,3 +32,16 @@ module Mutable_to_effectful (M : Mutable_incremental) = struct
   let fresh_var x = wrap (fun st -> M.fresh_var st x) ()
   let as_values () = wrap M.as_values ()
 end
+
+module Mutable_to_pooled (M : Mutable_incremental) = struct
+  include Reversible.Mutable_to_pooled (M)
+  module Value = M.Value
+
+  let add_constraints ?simplified vs =
+    wrap (fun st -> M.add_constraints st ?simplified vs) ()
+
+  let sat () = wrap M.sat ()
+  let simplify x = wrap (fun st -> M.simplify st x) ()
+  let fresh_var x = wrap (fun st -> M.fresh_var st x) ()
+  let as_values () = wrap M.as_values ()
+end

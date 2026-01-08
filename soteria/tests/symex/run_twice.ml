@@ -34,3 +34,12 @@ let do_test () =
   Fmt.pr "Branches: %a@\n" pp b
 
 let () = do_test ()
+
+(* Check that a unique solver instance is used accross sequential runs *)
+let () =
+  let created = Solver_pool.total_created () in
+  let available = Solver_pool.total_available () in
+  Printf.printf
+    "Because we only ever run things sequentially,\n\
+     we should only have created 1 solver, and it should now be available:\n";
+  Printf.printf "Created solvers: %d, available solvers: %d\n" created available
