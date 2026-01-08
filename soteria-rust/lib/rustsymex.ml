@@ -1,4 +1,4 @@
-include
+module MonoSymex =
   Soteria.Symex.Make
     (struct
       module Range = struct
@@ -10,7 +10,38 @@ include
     end)
     (Bv_solver.Z3_solver)
 
+include
+  Soteria.Sym_states.State_monad.Make
+    (MonoSymex)
+    (struct
+      type t = Charon.Substitute.subst
+    end)
+
 include Syntaxes.FunctionWrap
+
+let run_with_stats ?fuel ~mode symex =
+  with_state ~state:Charon.Substitute.empty_subst symex
+  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.run_with_stats ?fuel ~mode
+
+module Poly = struct
+  open Charon.Substitute
+  open Syntax
+
+  let push_generics ~params ~args =
+    map_state (fun subst ->
+        generic_args_substitute subst args
+        |> make_sb_subst_from_generics params
+        |> subst_at_binder_zero)
+
+  let subst_ty ty =
+    let+ subst = get_state () in
+    ty_substitute subst ty
+
+  let subst_tys tys =
+    let+ subst = get_state () in
+    List.map (ty_substitute subst) tys
+end
 
 let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
     'a option t =

@@ -431,6 +431,11 @@ module Make (Sptr : Sptr.S) = struct
         if%sat v ==@ Usize.(0s) then error `UBDanglingPointer
         else ok (Ptr (Sptr.null_ptr_of v, Thin))
     | TRawPtr _, Int v -> ok (Ptr (Sptr.null_ptr_of v, Thin))
+    | TVar _, _ ->
+        Fmt.kstr not_impl
+          "losing concrete value in %a -> %a; somewhere we lost track of \
+           generics"
+          pp_rust_val v pp_ty to_ty
     | _ ->
         Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" pp_rust_val v
           pp_ty to_ty

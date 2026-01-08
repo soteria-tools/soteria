@@ -52,6 +52,14 @@ module type S = sig
 
   val lift_symex : 'a Rustsymex.t -> ('a, 'env) t
 
+  module Poly : sig
+    val push_generics :
+      params:Types.generic_params -> args:Types.generic_args -> (unit, 'env) t
+
+    val subst_ty : Types.ty -> (Types.ty, 'env) t
+    val subst_tys : Types.ty list -> (Types.ty list, 'env) t
+  end
+
   module State : sig
     val empty : RawState.t
     val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> (rust_val, 'env) t
@@ -307,6 +315,14 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
     | Ok (res, _, state) -> Ok (res, state)
     | Error (e, _) -> Error e
     | Missing f -> Missing f
+
+  module Poly = struct
+    let[@inline] push_generics ~params ~args =
+      lift_symex (Poly.push_generics ~params ~args)
+
+    let[@inline] subst_ty ty = lift_symex (Poly.subst_ty ty)
+    let[@inline] subst_tys tys = lift_symex (Poly.subst_tys tys)
+  end
 
   module State = struct
     open State

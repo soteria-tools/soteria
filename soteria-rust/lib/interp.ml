@@ -410,11 +410,17 @@ module Make (State : State_intf.S) = struct
     let perform_call (fn : Types.fun_decl_ref) =
       try
         let fundef = Crate.get_fun fn.id in
+        let* inputs =
+          let* () =
+            Poly.push_generics ~params:fundef.generics ~args:fn.generics
+          in
+          Poly.subst_tys fundef.signature.inputs
+        in
         L.info (fun g ->
             g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
         match Std_funs.std_fun_eval fundef exec_fun with
-        | Some fn -> ok (fn, fundef.signature.inputs)
-        | None -> ok (exec_fun fundef, fundef.signature.inputs)
+        | Some fn -> ok (fn, inputs)
+        | None -> ok (exec_fun fundef fn.generics, inputs)
       with Crate.MissingDecl _ -> not_impl "Missing function declaration"
     in
     function
@@ -446,7 +452,7 @@ module Make (State : State_intf.S) = struct
         let global_fn =
           match Std_funs.std_fun_eval fundef exec_fun with
           | Some fn -> fn
-          | None -> exec_fun fundef
+          | None -> exec_fun fundef glob.generics
         in
         (* First we allocate the global and store it in the State  *)
         let* ptr =
@@ -1028,15 +1034,18 @@ module Make (State : State_intf.S) = struct
               (* The Drop trait will only have the drop function *)
               let _, drop_ref = List.hd impl.methods in
               let drop = Crate.get_fun drop_ref.binder_value.id in
-              if Option.is_some drop.body then Some drop else None
+              if Option.is_some drop.body then
+                (* TODO: i don't think we should read [binder_value] here *)
+                Some (drop, drop_ref.binder_value.generics)
+              else None
           | _ -> None
         in
         match drop_fn with
-        | Some drop ->
+        | Some (drop, generics) ->
             let fun_exec =
               with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
               @@ with_env ~env:()
-              @@ exec_fun drop [ Ptr place_ptr ]
+              @@ exec_fun drop generics [ Ptr place_ptr ]
             in
             State.unwind_with fun_exec
               ~f:(fun _ ->
@@ -1063,13 +1072,15 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun (fundef : UllbcAst.fun_decl) args =
+  and exec_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args) args
+      =
     let name = fundef.item_meta.name in
     let* body =
       match fundef.body with
       | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> ok body
     in
+    let* () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in
     L.info (fun m ->
@@ -1098,7 +1109,8 @@ module Make (State : State_intf.S) = struct
     let@@ () =
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
-    let* value = exec_fun fundef args in
+    let generics = TypesUtils.generic_args_of_params () fundef.generics in
+    let* value = exec_fun fundef generics args in
     if (Config.get ()).ignore_leaks then ok value
     else
       let@ () = with_loc ~loc:fundef.item_meta.span.data in
