@@ -15,16 +15,6 @@ module M (Rust_state_m : Rust_state_m.S) :
   (* some utils *)
   type 'a ret = ('a, unit) Rust_state_m.t
 
-  (* we retype these to avoid non-generalisable type variables in ['a Rust_val.t] *)
-  let[@inline] as_ptr (v : rust_val) =
-    match v with
-    | Ptr ptr -> ptr
-    | Int v ->
-        let v = Typed.cast_i Usize v in
-        let ptr = Sptr.null_ptr_of v in
-        (ptr, Thin)
-    | _ -> failwith "expected pointer"
-
   let as_base ty (v : rust_val) = Rust_val.as_base ty v
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
   let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
@@ -136,9 +126,9 @@ module M (Rust_state_m : Rust_state_m.S) :
       ~_catch_fn:catch_fn_ptr =
     let loc = !Rustsymex.current_loc in
     let[@inline] exec_fun msg fn args =
-      with_extra_call_trace ~loc ~msg @@ exec_fun fn args
+      with_extra_call_trace ~loc ~msg
+      @@ exec_fun fn TypesUtils.empty_generic_args args
     in
-    let try_fn_ptr, catch_fn_ptr = (as_ptr try_fn_ptr, as_ptr catch_fn_ptr) in
     let* try_fn = State.lookup_fn try_fn_ptr in
     let try_fn = Crate.get_fun try_fn.id in
     let* catch_fn = State.lookup_fn catch_fn_ptr in

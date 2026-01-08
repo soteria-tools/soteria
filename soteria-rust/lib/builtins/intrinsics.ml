@@ -73,7 +73,9 @@ struct
       ->
         carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry
     | "catch_unwind", [], [ _try_fn; _data; _catch_fn ] ->
+        let _try_fn = as_ptr _try_fn in
         let _data = as_ptr _data in
+        let _catch_fn = as_ptr _catch_fn in
         let+ ret = catch_unwind fun_exec ~_try_fn ~_data ~_catch_fn in
         Int ret
     | "ceilf128", [], [ x ] ->
