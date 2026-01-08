@@ -5,6 +5,11 @@ open Symex.Syntax
 open S_val.Infix
 open Soteria.Logs
 
+let collapse_spec_execution_error (error : (State.err, cons_fail) Either.t) =
+  function
+  | Either.Left err -> err
+  | Either.Right err -> err
+
 let cast_both (ty : [< S_val.T.any ] S_val.ty) v1 v2 =
   let v1 = S_val.cast_checked v1 ty in
   let v2 = S_val.cast_checked v2 ty in
@@ -69,7 +74,7 @@ module Make (State : State_intf.S) = struct
   let cast_to_bool v = lift_to_state (cast_to_bool v)
   let cast_to_int v = lift_to_state (cast_to_int v)
 
-  let rec eval_expr (subst : subst) (state : State.t) expr =
+  let rec eval_expr (subst : subst) (state : State.t option) expr =
     let* () = Symex.consume_fuel_steps 1 in
     L.debug (fun m ->
         m "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp
@@ -96,8 +101,8 @@ module Make (State : State_intf.S) = struct
               res :: acc)
         in
         let arg_values = List.rev arg_values in
-        let func = get_function fname in
-        eval_function func state arg_values
+        let func = Context.get_function fname in
+        eval_call func state arg_values
     | Load addr ->
         let** addr = eval_pure_expr subst addr state in
         let** addr = cast_to_int addr state in
@@ -125,7 +130,22 @@ module Make (State : State_intf.S) = struct
     let++ r = eval_expr subst state func.Fun_def.body in
     L.debug (fun m ->
         m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name
-          (Fmt.Dump.pair S_val.pp State.pp)
+          (Fmt.Dump.pair S_val.pp (Fmt.Dump.option State.pp))
           r);
     r
+
+  and eval_call func state args =
+    let use_specs = Context.use_specs () in
+    if use_specs then
+      let* specs = get_specs func.Fun_def.name in
+      let executions =
+        List.map (fun spec -> fun () -> Context.Spec.execute spec args state)
+      in
+      ()
+    else eval_function func state args
+
+  and get_specs name =
+    match Context.get_specs name with
+    | Some specs -> Symex.return specs
+    | None -> failwith "TODO: compute missing specifications"
 end

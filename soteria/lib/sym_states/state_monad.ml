@@ -1,5 +1,6 @@
 open Soteria_std
 module Compo_res = Symex.Compo_res
+module Approx = Symex.Approx
 
 module type S = sig
   include Symex.Base
@@ -67,8 +68,8 @@ module Make
 
   include MONAD
 
-  type lfail = Sym.lfail
-  type cons_fail = Sym.cons_fail
+  type lfail = Sym.lfail [@@deriving show { with_path = false }]
+  type cons_fail = Sym.cons_fail [@@deriving show { with_path = false }]
   type st = State.t
 
   let lift x st =
@@ -193,6 +194,10 @@ module Make
           let res = sf vsf e in
           MONAD.return (res, Some !s)
 
+    let produce_pure e : unit t =
+      (* FIXME: This does no check that `e` is indeed a boolean. *)
+      bind (apply_subst Fun.id e) @@ fun v -> lift (assume [ v ])
+
     let run_producer ~subst p =
       MONAD.map (p (Some subst)) (fun (x, s) -> (x, Option.get s))
 
@@ -278,6 +283,9 @@ module Make
           | Error e -> f (Compo_res.Error e) s
           | Missing fixes -> f (Compo_res.Missing fixes) s)
 
+    let fold_list x ~init ~f =
+      Monad.foldM ~return:ok ~bind ~fold:Foldable.List.fold x ~init ~f
+
     let run_consumer ~subst p = p subst
 
     module Syntax = struct
@@ -286,5 +294,13 @@ module Make
       let ( let+? ) = map_missing
       let ( let*! ) = bind_res
     end
+
+    let consume_pure e : (unit, 'fix) t =
+      let open Syntax in
+      let* v = apply_subst Fun.id e in
+      if Approx.As_ctx.is_ux () then lift_symex (assume [ v ])
+      else
+        bind (lift_symex (assert_ v)) @@ fun assert_passed ->
+        if assert_passed then ok () else lfail v
   end
 end

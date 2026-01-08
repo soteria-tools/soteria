@@ -54,14 +54,8 @@ module S_val = struct
     else Symex.Result.ok (Typed.cast v)
 end
 
-type _ Effect.t += Resolve_function : string -> Fun_def.t Effect.t
 type subst = S_val.t String_map.t [@@deriving show { with_path = false }]
 
-let get_function fname = Effect.perform (Resolve_function fname)
-
-let with_program (program : Program.t) f =
-  try f ()
-  with effect Resolve_function name, k -> (
-    match String_map.find_opt name program with
-    | Some func_def -> Effect.Deep.continue k func_def
-    | None -> failwith ("Function not found: " ^ name))
+module PMap = Soteria.Sym_states.Pmap.Make (Symex) (S_int)
+module Excl_val = Soteria.Sym_states.Excl.Make (Symex) (S_val)
+module Freeable = Soteria.Sym_states.Freeable.Make (Symex)

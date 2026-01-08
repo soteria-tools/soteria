@@ -14,10 +14,11 @@ We re-use concepts from Compositional Symbolic Execution (CSE) to reason about s
 
 Function specifications can then be *executed* by first consuming the precondition, and then producing the postcondition. Similarly, implications of the form `A ⊢ B` can be checked by producing `A` and then consuming `B` (in OX mode).
 
+# TO EXPLAIN
 
-## Alternative design
-
-Each atom of the logic can be designed as objects with inputs and outputs that are always only symbolic values.
+- Identity producer
+- Syntax needs of substitution, define it in a single place
+- Why ability to consume needs to be checked pre-emptively
 
 
 ## Bikeshedding list
@@ -25,3 +26,11 @@ Each atom of the logic can be designed as objects with inputs and outputs that a
 - All `subst` functions require a `Typed.cast`, can we get around this?
 - fixes are now `syn list list`, this makes sense but can we add some type beauty to it?
 - The horrible interface Value.Syn.Subst
+- The specifications of the various functions in Value.Syn have too many invariants. How much could we simplify it?
+- `State_monad`:
+  - Exactly duplicates the code of Symex for Producer and Consumer. Needs to become a functor to avoid this
+  - Has to expose `nondet_UNSAFE`, though possibly we could make `subst` produce something *within a monad*. Modular explicit would be extremely helpful, but in the meantime we can make a mini functor that we instantiate inline.
+
+
+## TODOS
+  - Go through Symex interface and remove all things that are useless. Specifically, old consume_pure!
