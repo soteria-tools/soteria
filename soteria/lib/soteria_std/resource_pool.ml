@@ -6,7 +6,7 @@ exception Pool_invalid_auth
 module type Resource = sig
   type t
 
-  val create : handle:int -> unit -> t
+  val create : unit -> t
 end
 
 module type S = sig
@@ -65,8 +65,8 @@ module Make (R : Resource) : S with type resource = R.t = struct
   let acquire pool =
     Mutex.protect pool.mutex @@ fun () ->
     if Dynarray.is_empty pool.available then (
+      let res = R.create () in
       let handle = Dynarray.length pool.resources in
-      let res = R.create ~handle () in
       let auth = pool.next_auth in
       pool.next_auth <- pool.next_auth + 1;
       let pooled = { handle; res; auth = Some auth } in
