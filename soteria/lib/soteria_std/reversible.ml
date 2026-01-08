@@ -67,9 +67,12 @@ end = struct
     f e
 end
 
-(** Interface for in-place reversible operations that operate on a global state.
-*)
-module type In_place = sig
+(** Interface for effectful reversible operations that operate on a state
+    captured by an algebraic effect. *)
+module type Effectful = sig
+  (** Type of the reversible state. May be mutable! *)
+  type t
+
   (** Remove the last [n] checkpoints. *)
   val backtrack_n : int -> unit
 
@@ -78,37 +81,46 @@ module type In_place = sig
 
   (** Clear all checkpoints and reset to the default value. *)
   val reset : unit -> unit
+
+  (** Apply function [f] to the current state, may modify the state in place if
+      it is mutable. *)
+  val wrap : (t -> 'a) -> unit -> 'a
+
+  (** Runs an effectful reversible computation [f] with a fresh mutable state.
+  *)
+  val run : (unit -> 'a) -> 'a
 end
 
-(** Converts a mutable reversible state to an in-place interface using a lazy
-    global state. *)
-module Mutable_to_in_place (M : Mutable) = struct
-  let state = lazy (M.init ())
-  let save () = M.save (Lazy.force state)
-  let backtrack_n n = M.backtrack_n (Lazy.force state) n
-  let reset () = M.reset (Lazy.force state)
-  let wrap (f : M.t -> 'a) () : 'a = f (Lazy.force state)
-end
+(** Converts a mutable reversible state to an effectful interface *)
+module Mutable_to_effectful (M : Mutable) : Effectful with type t = M.t = struct
+  type t = M.t
 
-(** Functor to create an in-place reversible state from a default value.
-    Provides a global state that can be saved and backtracked. *)
-module Make_in_place (M : sig
-  type t
+  type _ Effect.t +=
+    | Backtrack_n : int -> unit Effect.t
+    | Save : unit Effect.t
+    | Reset : unit Effect.t
+    | Wrap : 'a. (M.t -> 'a) -> 'a Effect.t
 
-  val default : t
-end) =
-struct
-  module Mutable = Make_mutable (M)
-  include Mutable_to_in_place (Mutable)
+  let backtrack_n n = Effect.perform (Backtrack_n n)
+  let save () = Effect.perform Save
+  let reset () = Effect.perform Reset
+  let wrap f () = Effect.perform (Wrap f)
 
-  (** Set the default value used when resetting. *)
-  let set_default = Mutable.set_default
-
-  (** Apply [f] to the current state without modifying it. *)
-  let wrap_read f () = wrap (Mutable.wrap_read f) ()
-
-  (** Apply [f] to the current state, updating it with the result. *)
-  let wrap f () = wrap (Mutable.wrap f) ()
+  let run f =
+    let state = M.init () in
+    try f () with
+    | effect Backtrack_n n, k ->
+        M.backtrack_n state n;
+        Effect.Deep.continue k ()
+    | effect Save, k ->
+        M.save state;
+        Effect.Deep.continue k ()
+    | effect Reset, k ->
+        M.reset state;
+        Effect.Deep.continue k ()
+    | effect Wrap g, k ->
+        let result = g state in
+        Effect.Deep.continue k result
 end
 
 (** Interface for immutable reversible state. *)
@@ -128,21 +140,21 @@ module type Immutable = sig
   val reset : t -> t
 end
 
-module Effectful (M : sig
+module Make_effectful (M : sig
   type t
 end) =
 struct
-  (** Effectful reversible computation. Note that this module is a functor, so
-      that we can create any amount, we are not limited to a unique reversible
-      effect.
+  (** Effectful reversible computation for a value of type [t]. Note that this
+      module is a functor, so that we can create any amount, we are not limited
+      to a unique reversible effect.
 
       I.e. one can do
       {@ocaml[
-        module Rev1 = Effectful (struct
+        module Rev1 = Make_effectful (struct
           type t = int
         end)
 
-        module Rev2 = Effectful (struct
+        module Rev2 = Make_effectful (struct
           type t = string
         end)
 
