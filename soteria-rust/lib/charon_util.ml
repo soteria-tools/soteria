@@ -62,7 +62,7 @@ let rec pp_ty fmt : Types.ty -> unit = function
       Fmt.pf fmt "fn %a" Crate.pp_name f.item_meta.name
   | TPtrMetadata ty -> Fmt.pf fmt "meta(%a)" pp_ty ty
   | TFnDef _ -> Fmt.string fmt "fn ?"
-  | TVar _ -> Fmt.string fmt "T?"
+  | TVar var -> Fmt.string fmt (PrintTypes.type_db_var_to_pretty_string var)
   | TError err -> Fmt.pf fmt "Error(%s)" err
 
 let lit_of_int_ty : Types.integer_type -> Types.literal_type = function

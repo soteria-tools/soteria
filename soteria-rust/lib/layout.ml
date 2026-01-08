@@ -152,6 +152,7 @@ let layout_warning msg ty =
   L.debug (fun m -> m "⚠️ Layout: %s (%a)" msg pp_ty ty)
 
 let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
+  let* ty = Poly.subst_ty ty in
   Session.get_or_compute_cached_layout ty @@ fun () ->
   match ty with
   (* Literals *)

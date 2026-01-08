@@ -8,6 +8,8 @@ module type S = sig
   type st
 
   val lift : 'a Symex.t -> 'a t
+  val get_state : unit -> st t
+  val map_state : (st -> st) -> unit t
   val with_state : state:st -> 'a t -> ('a * st) Symex.t
 
   module Result : sig
@@ -67,6 +69,8 @@ module Make
     let+ x in
     (x, st)
 
+  let get_state () st = Sym.return (st, st)
+  let map_state f st = Sym.return ((), f st)
   let with_state ~state x = x state
   let assume b = lift (Sym.assume b)
   let vanish () = lift (Sym.vanish ())
