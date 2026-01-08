@@ -36,6 +36,9 @@ module type S = sig
       valid token for this resource. Raises [Pool_invalid_auth] if the resource
       has been released. *)
   val wrap : auth:auth -> t -> (resource -> 'a) -> 'a
+
+  val total_resources : pool -> int
+  val available_resources : pool -> int
 end
 
 module Make (R : Resource) : S with type resource = R.t = struct
@@ -91,4 +94,7 @@ module Make (R : Resource) : S with type resource = R.t = struct
     match pooled.auth with
     | Some current_auth when current_auth = auth -> f pooled.res
     | _ -> raise Pool_invalid_auth
+
+  let total_resources pool = Dynarray.length pool.resources
+  let available_resources pool = Dynarray.length pool.available
 end
