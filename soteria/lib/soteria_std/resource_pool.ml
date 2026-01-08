@@ -28,6 +28,10 @@ module type S = sig
       invalid. *)
   val release : pool -> auth -> t -> unit
 
+  (** Get the handle of the pooled resource. It is a unique identifier for the
+      resource within the pool. *)
+  val handle : t -> int
+
   (** Access the underlying resource. The auth token must match the current
       valid token for this resource. Raises [Pool_invalid_auth] if the resource
       has been released. *)
@@ -80,6 +84,8 @@ module Make (R : Resource) : S with type resource = R.t = struct
         pooled.auth <- None;
         Dynarray.add_last pool.available pooled.handle
     | _ -> raise Pool_invalid_auth
+
+  let handle pooled = pooled.handle
 
   let wrap ~auth pooled f =
     match pooled.auth with
