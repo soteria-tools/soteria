@@ -1,9 +1,6 @@
-(executables
+(tests
  (names run_twice deep_give_up if_sure)
- (libraries soteria soteria_c_lib)
+ (libraries soteria soteria_c_lib alcotest)
  (flags :standard -open Soteria.Tiny_values)
  (preprocess
   (pps soteria.ppx)))
-
-(cram
- (deps ./run_twice.exe ./deep_give_up.exe ./if_sure.exe))
