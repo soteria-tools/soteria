@@ -1,6 +1,6 @@
 open Test_register
 
-let register = register "Pool"
+let register = register "Resource_pool"
 
 (* ============================================================================
    Test Resource Modules
