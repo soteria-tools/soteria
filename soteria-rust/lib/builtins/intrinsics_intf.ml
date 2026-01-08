@@ -9,7 +9,10 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     type 'a ret := ('a, unit) Rust_state_m.t
 
     type fun_exec :=
-      UllbcAst.fun_decl -> rust_val list -> (rust_val, unit) Rust_state_m.t
+      UllbcAst.fun_decl ->
+      Charon.Types.generic_args ->
+      rust_val list ->
+      (rust_val, unit) Rust_state_m.t
 
     type full_ptr := Rust_state_m.Sptr.t Rust_val.full_ptr
 
@@ -299,9 +302,9 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         ]} *)
     val catch_unwind :
       fun_exec ->
-      _try_fn:rust_val ->
+      _try_fn:full_ptr ->
       _data:full_ptr ->
-      _catch_fn:rust_val ->
+      _catch_fn:full_ptr ->
       Typed.T.sint Typed.t ret
 
     (** {@markdown[
@@ -2938,7 +2941,10 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     type 'a ret := ('a, unit) Rust_state_m.t
 
     type fun_exec :=
-      UllbcAst.fun_decl -> rust_val list -> (rust_val, unit) Rust_state_m.t
+      UllbcAst.fun_decl ->
+      Charon.Types.generic_args ->
+      rust_val list ->
+      (rust_val, unit) Rust_state_m.t
 
     val eval_fun :
       string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
