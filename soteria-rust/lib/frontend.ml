@@ -290,19 +290,19 @@ let default =
   let mk_cmd () =
     let@ std_lib_path, target = Lib.with_compiled Std in
     let opaque_names =
-      []
-      (* List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names *)
+      List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names
     in
     Cmd.make
       ~charon:
         ([
            "--ullbc";
            "--extract-opaque-bodies";
-           "--monomorphize";
            "--mir elaborated";
-           "--raw-boxes";
+           "--reconstruct-fallible-operations";
+           "--reconstruct-asserts";
          ]
-        @ opaque_names)
+        @ opaque_names
+        @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
       ~obol:
         ([ "--entry-names"; "main"; "--entry-attribs"; "rusteriatool::test" ]
         @ opaque_names)

@@ -84,9 +84,6 @@ type t = {
 [@@deriving show]
 
 module Session = struct
-  type ty_key = Types.ty
-  type variant_key = Types.type_decl_id * Types.variant
-
   (* TODO: allow different caches for different crates *)
   (* FIXME: inter-test mutability *)
 
@@ -225,9 +222,23 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       ok (mk_concrete ~size:0 ~align:1 ~uninhabited:true ~fields:Primitive ())
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
+  (* Type variables : non-deterministically generate a layout *)
+  | TVar _ ->
+      (* FIXME: we need to scope these type variables, as the T in foo<T> and
+         in bar<T> are "different" Ts. *)
+      let* size = nondet (Typed.t_usize ()) in
+      let* () = assume Usize.[ 0s <=$@ size; size <$@ 1024s ] in
+      (* this is real non-determinism of the alignment; we don't do it because
+         it creates quite expensive formulae that we want to avoid.
+         We make the assumption the biggest possible alignment is 16, which
+         is that of u128.
+      let* align_shift = nondet (Typed.t_usize ()) in
+      let* () = assume Usize.[ 0s <=$@ align_shift; align_shift <=$@ 4s ] in
+      let align = Typed.cast (Usize.(1s) <<@ align_shift) in *)
+      let align = Usize.(1s) in
+      ok (mk ~size ~align ())
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
-  | TVar _ -> not_impl_layout "type variable" ty
   | TError _ -> not_impl_layout "error" ty
   | TTraitType (tref, ty_name) ->
       let** resolved = resolve_trait_ty tref ty_name in

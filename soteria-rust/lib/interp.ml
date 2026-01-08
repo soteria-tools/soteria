@@ -1019,12 +1019,20 @@ module Make (State : State_intf.S) = struct
     | Drop (drop_kind, place, trait_ref, target, on_unwind) -> (
         assert (drop_kind = Precise);
         let* place_ptr = resolve_place place in
-        match trait_ref.kind with
-        | TraitImpl impl_ref ->
-            let impl = Crate.get_trait_impl impl_ref.id in
-            (* The Drop trait will only have the drop function *)
-            let _, drop_ref = List.hd impl.methods in
-            let drop = Crate.get_fun drop_ref.binder_value.id in
+        (* Try to find a drop function that exists; it may be opaque if the
+           drop contains polymorphic types. *)
+        let drop_fn =
+          match trait_ref.kind with
+          | TraitImpl impl_ref ->
+              let impl = Crate.get_trait_impl impl_ref.id in
+              (* The Drop trait will only have the drop function *)
+              let _, drop_ref = List.hd impl.methods in
+              let drop = Crate.get_fun drop_ref.binder_value.id in
+              if Option.is_some drop.body then Some drop else None
+          | _ -> None
+        in
+        match drop_fn with
+        | Some drop ->
             let fun_exec =
               with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
               @@ with_env ~env:()
@@ -1042,7 +1050,7 @@ module Make (State : State_intf.S) = struct
                     m "Unwinding drop from %a" Crate.pp_name drop.item_meta.name);
                 let block = UllbcAst.BlockId.nth body.body on_unwind in
                 exec_block ~body block)
-        | _ ->
+        | None ->
             let* () = State.uninit place_ptr place.ty in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
