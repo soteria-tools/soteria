@@ -12,7 +12,7 @@ module Counter_resource = struct
 
   let counter = ref 0
 
-  let create () =
+  let init () =
     let id = !counter in
     counter := id + 1;
     { id }
@@ -24,7 +24,7 @@ end
 module Mutable_resource = struct
   type t = { mutable value : int }
 
-  let create () = { value = 0 }
+  let init () = { value = 0 }
 end
 
 (* Atomic counter resource for concurrent tests *)
@@ -33,7 +33,7 @@ module Atomic_resource = struct
 
   let counter = Atomic.make 0
 
-  let create () =
+  let init () =
     let id = Atomic.fetch_and_add counter 1 in
     { id }
 
