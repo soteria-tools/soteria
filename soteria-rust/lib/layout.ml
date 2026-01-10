@@ -112,8 +112,8 @@ type meta_kind = LenKind | VTableKind | NoneKind
 let rec dst_kind : Types.ty -> meta_kind = function
   | TAdt { id = TBuiltin TStr; _ } | TSlice _ -> LenKind
   | TDynTrait _ -> VTableKind
-  | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
-      match List.last_opt (Crate.as_struct id) with
+  | TAdt adt when Crate.is_struct adt -> (
+      match List.last_opt (Crate.as_struct adt) with
       | None -> NoneKind
       | Some last -> dst_kind Types.(last.field_ty))
   | _ -> NoneKind
@@ -123,8 +123,8 @@ let rec dst_kind : Types.ty -> meta_kind = function
 let rec dst_slice_ty : Types.ty -> Types.ty option = function
   | TAdt { id = TBuiltin TStr; _ } -> Some (TLiteral (TUInt U8))
   | TSlice sub_ty -> Some sub_ty
-  | TAdt { id = TAdtId id; _ } when Crate.is_struct id -> (
-      match List.last_opt (Crate.as_struct id) with
+  | TAdt adt when Crate.is_struct adt -> (
+      match List.last_opt (Crate.as_struct adt) with
       | None -> None
       | Some last -> dst_slice_ty Types.(last.field_ty))
   | _ -> None
@@ -192,8 +192,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TAdt { id = TTuple; generics = { types; _ } } ->
       compute_arbitrary_layout ty types
   (* Custom ADTs (struct, enum, etc.) *)
-  | TAdt { id = TAdtId id; _ } -> (
-      let adt = Crate.get_adt id in
+  | TAdt adt -> (
+      let adt = Crate.get_adt adt in
       match (adt.layout, adt.kind) with
       | Some layout, _ -> translate_layout ty layout
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
@@ -507,8 +507,8 @@ let rec nondet : Types.ty -> ('a rust_val, 'e, 'f) Result.t =
       let size = Charon_util.int_of_const_generic len in
       let++ fields = nondets @@ List.init size (fun _ -> ty) in
       Tuple fields
-  | TAdt { id = TAdtId t_id; _ } as ty -> (
-      let type_decl = Crate.get_adt t_id in
+  | TAdt adt as ty -> (
+      let type_decl = Crate.get_adt adt in
       match type_decl.kind with
       | Enum variants -> (
           let** layout = layout_of ty in
@@ -575,8 +575,8 @@ let rec is_unsafe_cell : Types.ty -> bool = function
   | TAdt { id = TTuple; generics = { types; _ } } ->
       List.exists is_unsafe_cell types
   | TAdt { id = TBuiltin _; _ } -> false
-  | TAdt { id = TAdtId id; _ } -> (
-      let adt = Crate.get_adt id in
+  | TAdt adt -> (
+      let adt = Crate.get_adt adt in
       if adt.item_meta.lang_item = Some "unsafe_cell" then true
       else
         match adt.kind with
@@ -601,17 +601,13 @@ let rec ref_tys_in ?(include_ptrs = false) (v : 'a rust_val) (ty : Types.ty) :
       [ (ptr, get_pointee ty) ]
   | Ptr ptr, TRawPtr _ when include_ptrs -> [ (ptr, get_pointee ty) ]
   | (Int _ | Float _), _ -> []
-  | Tuple vs, TAdt { id = TAdtId adt_id; _ } ->
-      let fields = Crate.as_struct adt_id in
-      List.concat_map2 f vs (field_tys fields)
+  | Tuple vs, TAdt adt -> List.concat_map2 f vs (Crate.as_struct_or_tuple adt)
   | Tuple vs, (TArray (ty, _) | TSlice ty) ->
       List.concat_map (fun v -> f v ty) vs
-  | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
-      List.concat_map2 f vs types
-  | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
+  | Enum (d, vs), TAdt adt -> (
       match BV.to_z d with
       | Some d -> (
-          let variants = Crate.as_enum adt_id in
+          let variants = Crate.as_enum adt in
           let v =
             List.find_opt
               (fun (v : Types.variant) ->
@@ -660,18 +656,14 @@ let rec update_ref_tys_in
   | Ptr ptr, TRef (_, _, rk) ->
       let++ ptr, acc = fn init ptr (get_pointee ty) rk in
       (Ptr ptr, acc)
-  | Tuple vs, TAdt { id = TAdtId adt_id; _ } ->
-      let fields = Crate.as_struct adt_id in
-      let++ vs, acc = fs2 init vs (field_tys fields) in
+  | Tuple vs, TAdt adt ->
+      let++ vs, acc = fs2 init vs (Crate.as_struct_or_tuple adt) in
       (Tuple vs, acc)
   | Tuple vs, (TArray (ty, _) | TSlice ty) ->
       let++ vs, acc = fs init vs ty in
       (Tuple vs, acc)
-  | Tuple vs, TAdt { id = TTuple; generics = { types; _ } } ->
-      let++ vs, acc = fs2 init vs types in
-      (Tuple vs, acc)
-  | Enum (d, vs), TAdt { id = TAdtId adt_id; _ } -> (
-      let variants = Crate.as_enum adt_id in
+  | Enum (d, vs), TAdt adt -> (
+      let variants = Crate.as_enum adt in
       let* var =
         match_on variants ~constr:(fun v -> BV.of_literal v.discriminant ==@ d)
       in
@@ -697,7 +689,7 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
     | TRef _ | TRawPtr _ -> true
     | TAdt { id = TBuiltin TBox; _ } -> true
     | TAdt { id = TAdtId id; _ } ->
-        let adt = Crate.get_adt id in
+        let adt = Crate.get_adt_raw id in
         adt.item_meta.lang_item = Some "owned_box"
         || Charon_util.meta_get_attr adt.item_meta "rustc_diagnostic_item"
            = Some "NonNull"

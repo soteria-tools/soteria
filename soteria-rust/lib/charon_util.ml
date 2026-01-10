@@ -25,13 +25,18 @@ let ty_as_float : Types.ty -> Values.float_type = function
 let pp_literal_ty = Fmt.of_to_string PrintValues.literal_type_to_string
 
 let rec pp_ty fmt : Types.ty -> unit = function
-  | TAdt { id = TAdtId id; _ } ->
-      let adt = Crate.get_adt id in
+  | TAdt { id = TAdtId id; generics } ->
+      let adt = Crate.get_adt_raw id in
       let name, generics =
         match List.rev adt.item_meta.name with
         | PeInstantiated generics :: rest ->
             (List.rev rest, generics.binder_value)
-        | _ -> (adt.item_meta.name, TypesUtils.empty_generic_args)
+        | _ ->
+            let args =
+              if (Config.get ()).polymorphic then generics
+              else TypesUtils.empty_generic_args
+            in
+            (adt.item_meta.name, args)
       in
       Fmt.pf fmt "%a%a" Crate.pp_name name Crate.pp_generic_args generics
   | TAdt { id = TTuple; generics = { types = tys; _ } } ->
@@ -145,6 +150,11 @@ let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
   | F32 -> F32
   | F64 -> F64
   | F128 -> F128
+
+let ty_as_adt (ty : Types.ty) : Types.type_decl_ref =
+  match ty with
+  | TAdt tref -> tref
+  | _ -> invalid_arg "ty_as_adt: not an ADT type"
 
 let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
   let clean_filename name =

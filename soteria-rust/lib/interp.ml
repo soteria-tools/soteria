@@ -178,6 +178,7 @@ module Make (State : State_intf.S) = struct
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
     | CTraitConst (tref, name) -> (
+        let* tref = Poly.subst_tref tref in
         match tref.kind with
         | TraitImpl { id; _ } ->
             let timpl = Crate.get_trait_impl id in
@@ -411,14 +412,13 @@ module Make (State : State_intf.S) = struct
       try
         let fundef = Crate.get_fun fn.id in
         let* inputs =
-          let* () =
-            Poly.push_generics ~params:fundef.generics ~args:fn.generics
-          in
-          Poly.subst_tys fundef.signature.inputs
+          Poly.push_generics ~params:fundef.generics ~args:fn.generics
+          @@ Poly.subst_tys fundef.signature.inputs
         in
         L.info (fun g ->
             g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
-        match Std_funs.std_fun_eval fundef exec_fun with
+        let^ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
+        match fun_maybe_stubbed with
         | Some fn -> ok (fn, inputs)
         | None -> ok (exec_fun fundef fn.generics, inputs)
       with Crate.MissingDecl _ -> not_impl "Missing function declaration"
@@ -449,8 +449,9 @@ module Make (State : State_intf.S) = struct
         L.info (fun g ->
             g "Resolved global init call to %a" Crate.pp_name
               fundef.item_meta.name);
-        let global_fn =
-          match Std_funs.std_fun_eval fundef exec_fun with
+        let* global_fn =
+          let^+ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
+          match fun_maybe_stubbed with
           | Some fn -> fn
           | None -> exec_fun fundef glob.generics
         in
@@ -745,8 +746,8 @@ module Make (State : State_intf.S) = struct
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with
-        | TAdt { id = TAdtId enum; _ } when Crate.is_enum enum ->
-            let variants = Crate.as_enum enum in
+        | TAdt adt when Crate.is_enum adt ->
+            let variants = Crate.as_enum adt in
             let+ variant_id = State.load_discriminant loc place.ty in
             let variant = Types.VariantId.nth variants variant_id in
             Int (BV.of_literal variant.discriminant)
@@ -754,9 +755,8 @@ module Make (State : State_intf.S) = struct
            https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
         | _ -> ok (Int U8.(0s)))
     (* Enum aggregate *)
-    | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
-      ->
-        let variants = Crate.as_enum t_id in
+    | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
+        let variants = Crate.as_enum adt in
         let variant = Types.VariantId.nth variants v_id in
         let discr = BV.of_literal variant.discriminant in
         let+ vals = eval_operand_list vals in
@@ -776,18 +776,13 @@ module Make (State : State_intf.S) = struct
         let+ op_blocks = Encoder.encode ~offset value (type_of_operand op) in
         let op_blocks = Iter.to_list op_blocks in
         Union op_blocks
-    (* Tuple aggregate *)
-    | Aggregate (AggregatedAdt ({ id = TTuple; _ }, None, None), operands) ->
-        let+ values = eval_operand_list operands in
-        Tuple values
     (* Struct aggregate *)
-    | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, None, None), operands)
-      ->
-        let type_decl = Crate.get_adt t_id in
+    | Aggregate (AggregatedAdt (adt, None, None), operands) ->
         let* values = eval_operand_list operands in
         let+ () =
-          match values with
-          | [ v ] ->
+          match (adt.id, values) with
+          | TAdtId _, [ v ] ->
+              let type_decl = Crate.get_adt adt in
               let attribs = type_decl.item_meta.attr_info.attributes in
               State.lift_err @@ Layout.apply_attributes v attribs
           | _ -> ok ()
@@ -1080,7 +1075,7 @@ module Make (State : State_intf.S) = struct
       | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> ok body
     in
-    let* () = Poly.push_generics ~params:fundef.generics ~args:generics in
+    let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in
     L.info (fun m ->

@@ -134,8 +134,8 @@ module Make (Sptr : Sptr.S) = struct
               Iter.repeatz (Option.get (BV.to_z len)) sub_ty
           | Thin | Len _ | VTable _ ->
               failwith "iter_fields: invalid length for slice/str")
-      | TAdt { id = TAdtId t_id; _ } -> (
-          let type_decl = Crate.get_adt t_id in
+      | TAdt adt -> (
+          let type_decl = Crate.get_adt adt in
           match (type_decl.kind, variant) with
           | Struct fields, _ ->
               let field_tys = field_tys fields in
@@ -193,8 +193,8 @@ module Make (Sptr : Sptr.S) = struct
       | Primitive, _ -> ok (Iter.singleton (value, offset))
       | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
       | Enum (tag_layout, _), Enum (disc, _) -> (
-          let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
-          let variants = Crate.as_enum adt_id in
+          let adt = Charon_util.ty_as_adt ty in
+          let variants = Crate.as_enum adt in
           let variants = List.mapi (fun i v -> (i, v)) variants in
           let* variant =
             match_on variants ~constr:(fun (_, v) ->
@@ -238,8 +238,8 @@ module Make (Sptr : Sptr.S) = struct
         match (tag_layout.encoding, res) with
         | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
         | Direct, None ->
-            let adt_id, _ = TypesUtils.ty_as_custom_adt ty in
-            let adt = Crate.get_adt adt_id in
+            let adt = Charon_util.ty_as_adt ty in
+            let adt = Crate.get_adt adt in
             let msg =
               Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
                 adt.item_meta.name Typed.ppa tag
@@ -265,7 +265,7 @@ module Make (Sptr : Sptr.S) = struct
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error `RefToUninhabited
     | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
-    | _, TAdt { id = TAdtId id; _ } when Crate.is_union id ->
+    | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Union [])
         else
           (* FIXME: this isn't exactly correct; union actually doesn't copy the
@@ -291,15 +291,15 @@ module Make (Sptr : Sptr.S) = struct
     | Arbitrary (variant, _), _ -> (
         let+ vs = iter (iter_fields ~meta layout ty) offset in
         match ty with
-        | TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
-            let variants = Crate.as_enum t_id in
+        | TAdt adt when Crate.is_enum adt ->
+            let variants = Crate.as_enum adt in
             let variant = Types.VariantId.nth variants variant in
             let fields = as_tuple vs in
             let discr = BV.of_literal variant.discriminant in
             Enum (discr, fields)
         | _ -> vs)
-    | Enum _, TAdt { id = TAdtId t_id; _ } ->
-        let variants = Crate.as_enum t_id in
+    | Enum _, TAdt adt ->
+        let variants = Crate.as_enum adt in
         let* variant = variant_of_enum ~offset ty in
         let+ fields = iter (iter_fields ~variant ~meta layout ty) offset in
         let fields = as_tuple fields in

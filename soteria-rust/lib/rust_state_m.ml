@@ -54,10 +54,14 @@ module type S = sig
 
   module Poly : sig
     val push_generics :
-      params:Types.generic_params -> args:Types.generic_args -> (unit, 'env) t
+      params:Types.generic_params ->
+      args:Types.generic_args ->
+      ('a, 'env) t ->
+      ('a, 'env) t
 
     val subst_ty : Types.ty -> (Types.ty, 'env) t
     val subst_tys : Types.ty list -> (Types.ty list, 'env) t
+    val subst_tref : Types.trait_ref -> (Types.trait_ref, 'env) t
   end
 
   module State : sig
@@ -317,11 +321,12 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
     | Missing f -> Missing f
 
   module Poly = struct
-    let[@inline] push_generics ~params ~args =
-      lift_symex (Poly.push_generics ~params ~args)
+    let[@inline] push_generics ~params ~args (x : ('a, 'env) t) =
+     fun env state -> Poly.push_generics ~params ~args (x env state)
 
     let[@inline] subst_ty ty = lift_symex (Poly.subst_ty ty)
     let[@inline] subst_tys tys = lift_symex (Poly.subst_tys tys)
+    let[@inline] subst_tref tref = lift_symex (Poly.subst_tref tref)
   end
 
   module State = struct

@@ -20,19 +20,23 @@ include
 include Syntaxes.FunctionWrap
 
 let run_with_stats ?fuel ~mode symex =
-  with_state ~state:Charon.Substitute.empty_subst symex
+  run_with_state ~state:Charon.Substitute.empty_subst symex
   |> (Fun.flip MonoSymex.map) fst
   |> MonoSymex.run_with_stats ?fuel ~mode
 
 module Poly = struct
-  open Charon.Substitute
+  open Charon
+  open Substitute
   open Syntax
 
-  let push_generics ~params ~args =
-    map_state (fun subst ->
-        generic_args_substitute subst args
-        |> make_sb_subst_from_generics params
-        |> subst_at_binder_zero)
+  let push_generics ~params ~args (x : 'a t) : 'a t =
+    let* subst = get_state () in
+    let subst =
+      generic_args_substitute subst args
+      |> make_sb_subst_from_generics params
+      |> subst_at_binder_zero
+    in
+    with_state ~state:subst x
 
   let subst_ty ty =
     let+ subst = get_state () in
@@ -41,6 +45,15 @@ module Poly = struct
   let subst_tys tys =
     let+ subst = get_state () in
     List.map (ty_substitute subst) tys
+
+  let subst_tref tref =
+    let+ subst = get_state () in
+    trait_ref_substitute subst tref
+
+  let fill_params params =
+    let args = bound_identity_args params in
+    let+ subst = get_state () in
+    generic_args_substitute subst args
 end
 
 let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :

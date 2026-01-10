@@ -161,7 +161,7 @@ let log action ptr st =
 
 let with_state st f =
   let+ res, pointers =
-    DecayMapMonad.with_state ~state:st.pointers @@ f st.state
+    DecayMapMonad.run_with_state ~state:st.pointers @@ f st.state
   in
   match res with
   | Ok (v, state) -> Ok (v, { st with state; pointers })
@@ -188,7 +188,7 @@ let with_tbs b f =
   | Error e -> Error e
 
 let with_decay_map f st =
-  let+ res, pointers = DecayMapMonad.with_state ~state:st.pointers f in
+  let+ res, pointers = DecayMapMonad.run_with_state ~state:st.pointers f in
   (res, { st with pointers })
 
 let with_ptr_raw (ptr : Sptr.t) (st : block SPmap.t option)

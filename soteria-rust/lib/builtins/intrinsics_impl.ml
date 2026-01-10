@@ -344,8 +344,8 @@ module M (Rust_state_m : Rust_state_m.S) :
     ctlz ~t ~x
 
   let discriminant_value ~t ~v =
-    let adt_id, _ = TypesUtils.ty_as_custom_adt t in
-    let adt = Crate.get_adt adt_id in
+    let adt = Charon_util.ty_as_adt t in
+    let adt = Crate.get_adt adt in
     match adt.kind with
     | Enum variants ->
         let+ variant_id = State.load_discriminant v t in
@@ -636,8 +636,7 @@ module M (Rust_state_m : Rust_state_m.S) :
       | TAdt { id = TTuple | TAdtId _; _ }, _ ->
           let field_tys =
             match t with
-            | TAdt { id = TAdtId id; _ } -> Crate.as_struct id |> field_tys
-            | TAdt { id = TTuple; generics = { types; _ } } -> types
+            | TAdt adt -> Crate.as_struct_or_tuple adt
             | _ -> failwith "impossible"
           in
           let last_field_ty = List.last field_tys in
@@ -708,9 +707,9 @@ module M (Rust_state_m : Rust_state_m.S) :
   let unchecked_sub = unchecked_op (Sub OUB)
 
   let variant_count ~t =
-    match t with
-    | Types.TAdt { id = TAdtId id; _ } when Crate.is_enum id ->
-        let variants = Crate.as_enum id in
+    match (t : Types.ty) with
+    | TAdt adt when Crate.is_enum adt ->
+        let variants = Crate.as_enum adt in
         ok (BV.usizei (List.length variants))
     | _ -> error (`StdErr "core::intrinsics::variant_count used with non-enum")
 
