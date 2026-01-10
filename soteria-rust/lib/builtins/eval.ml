@@ -1,3 +1,5 @@
+open Rustsymex
+open Syntax
 open Charon
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 
@@ -141,14 +143,18 @@ module M (Rust_state_m : Rust_state_m.S) = struct
        This means their path doesn't match the one we expect for the patterns; so instead of
        matching on a path, we only consider intrinsics from their name. *)
     if Charon_util.decl_has_attr f "rustc_intrinsic" then
-      let name, mono =
+      let+ name, generics =
         match List.rev f.item_meta.name with
-        | PeIdent (name, _) :: _ -> (name, TypesUtils.empty_generic_args)
+        | PeIdent (name, _) :: _ ->
+            if (Config.get ()).polymorphic then
+              let+ args = Rustsymex.Poly.fill_params f.generics in
+              (name, args)
+            else return (name, TypesUtils.empty_generic_args)
         | PeInstantiated mono :: PeIdent (name, _) :: _ ->
-            (name, mono.binder_value)
+            return (name, mono.binder_value)
         | _ -> failwith "Unexpected intrinsic shape"
       in
-      let fn = Intrinsics.eval_fun name fun_exec mono in
+      let fn = Intrinsics.eval_fun name fun_exec generics in
       Some fn
     else
       let name =
@@ -159,6 +165,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         | _ -> f.item_meta.name
       in
       let ctx = Crate.as_namematcher_ctx () in
+      let@@ () = return in
       NameMatcherMap.find_opt ctx match_config name std_fun_map
       |> Option.map @@ function
          | Rusteria Assert -> Rusteria.assert_
