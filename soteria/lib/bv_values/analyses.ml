@@ -627,28 +627,30 @@ module Equality : S = struct
     in
     Eval.eval ~eval_var:(eval_var st) v |> simplify ~fuel:3
 
+  let add_vars v s =
+    Svalue.iter_vars v |> Iter.fold (fun s (v, _) -> Var.Set.add v s) s
+
   let add_constraint (v : Svalue.t) st =
     match v.node.kind with
     | Binop (Eq, v1, v2) ->
+        let vars = Var.Set.empty |> add_vars v1 |> add_vars v2 in
         let v1, st = get_or_make v1 st in
         let v2, st = get_or_make v2 st in
         merge v1 v2 st;
-        (* Here we choose to pass down the equality (rather than simplifying to true),
-           so that the underlying solver can do trivial SAT checks using these equalities.
-           This also means this analysis is exempt from implementing [encode], since it
-           doesn't store anything. *)
-        ((v, Var.Set.empty), st)
+        ((Svalue.Bool.v_true, vars), st)
     | Unop (Not, { node = { kind = Nop (Distinct, hd :: tl); _ }; _ }) ->
+        let vars = add_vars hd Var.Set.empty in
         let v1, st = get_or_make hd st in
-        let rec aux st = function
-          | [] -> st
+        let rec aux vars st = function
+          | [] -> (vars, st)
           | v2 :: rest ->
+              let vars = add_vars v2 vars in
               let v2, st = get_or_make v2 st in
               merge v1 v2 st;
-              aux st rest
+              aux vars st rest
         in
-        let st = aux st tl in
-        ((v, Var.Set.empty), st)
+        let vars, st = aux vars st tl in
+        ((Svalue.Bool.v_true, vars), st)
     | _ -> ((v, Var.Set.empty), st)
 
   (** In equality analysis we can be certain of the value of a variable, so we
@@ -660,8 +662,25 @@ module Equality : S = struct
     | None -> vs
     | Some v_repr -> Iter.singleton v_repr
 
+  let encode ?vars (uf, refs) =
+    let is_relevant =
+      match vars with
+      | None -> fun _ -> true
+      | Some vars ->
+          fun v ->
+            Svalue.iter_vars v
+            |> Iter.exists (fun (v, _) -> Var.Hashset.mem vars v)
+    in
+    fun f ->
+      refs
+      |> VMap.iter @@ fun v ufref ->
+         if is_relevant v then
+           let v_repr = UnionFind.get uf ufref in
+           if not (Svalue.equal v v_repr) then
+             f (Typed.sem_eq (Typed.type_ v) (Typed.type_ v_repr))
+
   let simplify st v = wrap_read (simplify v) st
   let add_constraint st v = wrap (add_constraint v) st
   let filter st var ty vs = wrap_read (filter var ty vs) st
-  let encode ?vars:_ _st = Iter.empty
+  let encode ?vars st = wrap_read (encode ?vars) st
 end
