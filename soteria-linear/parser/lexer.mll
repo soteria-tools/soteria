@@ -16,11 +16,11 @@ rule read = parse
   | "if" { IF }
   | "then" { THEN }
   | "else" { ELSE }
-  | "take" { TAKE }
-  | "requires" { REQUIRES }
-  | "ensures" { ENSURES }
-  | "RW" { RW }
-  | "Freed" { FREED }
+  (* | "take" { TAKE } *)
+  (* | "requires" { REQUIRES } *)
+  (* | "ensures" { ENSURES } *)
+  (* | "RW" { RW } *)
+  (* | "Freed" { FREED } *)
   | "true" { TRUE }
   | "false" { FALSE }
   | "nondet" { NONDET }

@@ -13,11 +13,6 @@ let tool_error msg =
 let with_tool_errors_caught () f =
   try f () with Tool_error -> Error.Exit_code.Tool_error
 
-let dump_stats stats =
-  match (Config.current ()).dump_stats_file with
-  | None -> ()
-  | Some file -> Csymex.Stats.dump stats file
-
 let default_wpst_fuel =
   Soteria.Symex.Fuel_gauge.{ steps = Finite 150; branching = Finite 4 }
 
@@ -292,10 +287,11 @@ let generate_errors content =
 (** {2 Entry points} *)
 
 (* Helper for all main entry points *)
-let initialise ?log_config ?term_config ?solver_config config f =
+let initialise ?log_config ?term_config ?solver_config ?stats_config config f =
   Option.iter Soteria.Logs.Config.check_set_and_lock log_config;
   Option.iter Soteria.Terminal.Config.set_and_lock term_config;
   Option.iter Soteria.Solvers.Config.set solver_config;
+  Option.iter Soteria.Stats.Config.set_and_lock stats_config;
   Config.with_config ~config f
 
 let print_states result =
@@ -312,15 +308,17 @@ let print_states result =
     result.res
 
 (* Entry point function *)
-let exec_and_print log_config term_config solver_config config fuel includes
-    file_names entry_point : Error.Exit_code.t =
+let exec_and_print log_config term_config solver_config stats_config config fuel
+    includes file_names entry_point : Error.Exit_code.t =
   (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
   let fuel = Soteria.Symex.Fuel_gauge.Cli.validate_or_exit fuel in
-  let@ () = initialise ~log_config ~term_config ~solver_config config in
+  let@ () =
+    initialise ~log_config ~term_config ~solver_config ~stats_config config
+  in
   let result = exec_function ~includes ~fuel file_names entry_point in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else (
-    dump_stats result.stats;
+    Csymex.Stats.output result.stats;
     if (Config.current ()).print_states then print_states result;
     let errors_to_signal =
       List.filter_map
@@ -402,7 +400,7 @@ let generate_summaries ~functions_to_analyse prog =
   let { Soteria.Stats.res; stats } =
     Abductor.generate_all_summaries ~functions_to_analyse prog
   in
-  dump_stats stats;
+  Csymex.Stats.output stats;
   let results = analyse_summaries res in
   dump_summaries results;
   Fmt.pr "@\n@?";
@@ -447,12 +445,14 @@ let show_ail log_config term_config config (includes : string list)
       Error.Exit_code.Tool_error
 
 (* Entry point function *)
-let generate_all_summaries log_config term_config solver_config config includes
-    functions_to_analyse file_names =
+let generate_all_summaries log_config term_config solver_config stats_config
+    config includes functions_to_analyse file_names =
   (* TODO: generate a compilation database directly, to simplify the interface in this file. *)
   let@ () = with_tool_errors_caught () in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  let@ () = initialise ~log_config ~term_config ~solver_config config in
+  let@ () =
+    initialise ~log_config ~term_config ~solver_config ~stats_config config
+  in
   let prog =
     let@ () = L.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
@@ -464,12 +464,14 @@ let generate_all_summaries log_config term_config solver_config config includes
   else generate_summaries ~functions_to_analyse prog
 
 (* Entry point function *)
-let capture_db log_config term_config solver_config config json_file
-    functions_to_analyse =
+let capture_db log_config term_config solver_config stats_config config
+    json_file functions_to_analyse =
   let open Syntaxes.Result in
   let@ () = with_tool_errors_caught () in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  let@ () = initialise ~log_config ~term_config ~solver_config config in
+  let@ () =
+    initialise ~log_config ~term_config ~solver_config ~stats_config config
+  in
   let linked_prog =
     let@ () = L.with_section "Parsing and Linking from database" in
     let db = Compilation_database.from_file json_file in
