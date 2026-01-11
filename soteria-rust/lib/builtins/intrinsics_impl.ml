@@ -615,9 +615,9 @@ module M (Rust_state_m : Rust_state_m.S) :
       (layout.size, layout.align)
     else
       match (t, meta) with
-      | TAdt { id = TBuiltin (TSlice | TStr); _ }, (Thin | VTable _) ->
+      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), (Thin | VTable _) ->
           failwith "size_and_align_of_val: Invalid metadata for slice type"
-      | TAdt { id = TBuiltin (TSlice | TStr); _ }, Len meta ->
+      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), Len meta ->
           let sub_ty = Layout.dst_slice_ty t in
           let* sub_ty =
             of_opt_not_impl "size_of_val: missing a DST slice type" sub_ty

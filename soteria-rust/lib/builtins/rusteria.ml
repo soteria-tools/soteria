@@ -48,8 +48,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let+ () = assume [ Typed.BitVec.to_bool to_assume ] in
     unit_
 
-  let nondet (fun_sig : Charon.UllbcAst.fun_sig) _ =
-    Layout.nondet fun_sig.output
+  let nondet (fun_sig : Charon.Types.fun_sig) _ = Layout.nondet fun_sig.output
 
   let panic ?msg args =
     let* msg =
