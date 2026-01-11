@@ -118,6 +118,7 @@ let exec_crate
   let@ () = print_outcomes entry_name in
   let { res = branches; stats } : ('res, 'range) Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
+    let@ () = Layout.Session.with_layout_cache in
     let@@ () = Rustsymex.run_with_stats ~mode:OX ~fuel in
     exec_fun fun_decl
   in
