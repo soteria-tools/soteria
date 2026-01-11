@@ -138,12 +138,33 @@ module Make (State : State_intf.S) = struct
         | Stackptr ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
-  let resolve_fn_ptr (fn : Types.fn_ptr) : Types.fun_decl_ref =
+  let resolve_fn_ptr (fn : Types.fn_ptr) : Types.fun_decl_ref t =
     match fn.kind with
-    | FunId (FRegular id) -> { id; generics = fn.generics }
-    (* TODO: the generics here are probably wrong; we should also go via the trait,
-       and properly resolve it. *)
-    | TraitMethod (_, _, id) -> { id; generics = fn.generics }
+    | FunId (FRegular id) ->
+        ok ({ id; generics = fn.generics } : Types.fun_decl_ref)
+    | TraitMethod (tref, name, _) -> (
+        let* tref = Poly.subst_tref tref in
+        let trait_ref = tref.trait_decl_ref.binder_value in
+        let* timplref =
+          match tref.kind with
+          | TraitImpl timpl -> ok timpl
+          | _ -> not_impl "No trait impl in method"
+        in
+        let timpl = Crate.get_trait_impl timplref in
+        let methodref =
+          Substitute.lookup_and_subst_trait_impl_method timpl name
+            timplref.generics fn.generics
+        in
+        match methodref with
+        | Some fn -> ok fn
+        | None ->
+            (* get the default method *)
+            let trait_decl = Crate.get_trait_decl trait_ref in
+            let fnref =
+              Substitute.lookup_and_subst_trait_decl_method trait_decl name tref
+                fn.generics
+            in
+            of_opt_not_impl "Could not resolve trait method" fnref)
     | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
 
   let rec resolve_constant (const : Expressions.constant_expr) =
@@ -180,8 +201,8 @@ module Make (State : State_intf.S) = struct
     | CTraitConst (tref, name) -> (
         let* tref = Poly.subst_tref tref in
         match tref.kind with
-        | TraitImpl { id; _ } ->
-            let timpl = Crate.get_trait_impl id in
+        | TraitImpl implref ->
+            let timpl = Crate.get_trait_impl implref in
             let _, global = List.find (fun (n, _) -> n = name) timpl.consts in
             let* glob_ptr = resolve_global global in
             let glob = Crate.get_global global.id in
@@ -428,7 +449,9 @@ module Make (State : State_intf.S) = struct
     | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics, in_tys)
     (* For static calls we don't need to check types, that's what the type checker does. *)
-    | FnOpRegular fn_ptr -> perform_call @@ resolve_fn_ptr fn_ptr
+    | FnOpRegular fn_ptr ->
+        let* fn = resolve_fn_ptr fn_ptr in
+        perform_call fn
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpDynamic op ->
         let* fn_ptr = eval_operand op in
@@ -610,7 +633,7 @@ module Make (State : State_intf.S) = struct
         | Cast (CastFnPtr (_from, _to)) -> (
             match (type_of_operand e, v) with
             | TFnDef fn_ptr, _ ->
-                let fn = resolve_fn_ptr fn_ptr.binder_value in
+                let* fn = resolve_fn_ptr fn_ptr.binder_value in
                 let+ ptr = State.declare_fn fn in
                 Ptr ptr
             | _, (Ptr _ as ptr) -> ok ptr
@@ -912,6 +935,8 @@ module Make (State : State_intf.S) = struct
     let^ () = Rustsymex.consume_fuel_steps 1 in
     let* () = fold_list statements ~init:() ~f:(fun () -> exec_stmt) in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
+    L.trace (fun m ->
+        m "Terminator full:@.%a" UllbcAst.pp_terminator_kind terminator.kind);
     let@ () = with_loc ~loc:terminator.span.data in
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
@@ -1025,7 +1050,7 @@ module Make (State : State_intf.S) = struct
         let drop_fn =
           match trait_ref.kind with
           | TraitImpl impl_ref ->
-              let impl = Crate.get_trait_impl impl_ref.id in
+              let impl = Crate.get_trait_impl impl_ref in
               (* The Drop trait will only have the drop function *)
               let _, drop_ref = List.hd impl.methods in
               let drop = Crate.get_fun drop_ref.binder_value.id in

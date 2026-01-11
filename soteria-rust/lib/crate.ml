@@ -36,6 +36,7 @@ let pp_generic_args = mk_pp PrintTypes.generic_args_to_string
 let pp_global_decl_ref = mk_pp PrintTypes.global_decl_ref_to_string
 let pp_name = mk_pp PrintTypes.name_to_string
 let pp_place = mk_pp PrintExpressions.place_to_string
+let pp_trait_ref = mk_pp PrintTypes.trait_ref_to_string
 let pp_statement = mk_pp_indent PrintUllbcAst.Ast.statement_to_string
 let pp_terminator = mk_pp_indent PrintUllbcAst.Ast.terminator_to_string
 
@@ -68,11 +69,31 @@ let get_global id =
   | Some global -> global
   | None -> raise (MissingDecl "Global")
 
-let get_trait_impl id =
+let get_trait_impl_raw id =
   let crate = get_crate () in
   match UllbcAst.TraitImplId.Map.find_opt id crate.trait_impls with
   | Some impl -> impl
   | None -> raise (MissingDecl "TraitImpl")
+
+let get_trait_impl (timplref : Types.trait_impl_ref) =
+  let open Substitute in
+  let impl = get_trait_impl_raw timplref.id in
+  let subst = make_sb_subst_from_generics impl.generics timplref.generics in
+  let subst = subst_at_binder_zero subst in
+  st_substitute_visitor#visit_trait_impl subst impl
+
+let get_trait_decl_raw id =
+  let crate = get_crate () in
+  match Types.TraitDeclId.Map.find_opt id crate.trait_decls with
+  | Some trait -> trait
+  | None -> raise (MissingDecl "TraitDecl")
+
+let get_trait_decl (trait_ref : Types.trait_decl_ref) =
+  let open Substitute in
+  let trait = get_trait_decl_raw trait_ref.id in
+  let subst = make_sb_subst_from_generics trait.generics trait_ref.generics in
+  let subst = subst_at_binder_zero subst in
+  st_substitute_visitor#visit_trait_decl subst trait
 
 let is_enum (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with

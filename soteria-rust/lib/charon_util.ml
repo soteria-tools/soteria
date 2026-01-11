@@ -61,7 +61,8 @@ let rec pp_ty fmt : Types.ty -> unit = function
         Fmt.(list ~sep:(any ", ") pp_ty)
         inputs pp_ty output
   | TDynTrait _ -> Fmt.string fmt "dyn <trait>"
-  | TTraitType (_, name) -> Fmt.pf fmt "Trait<?>::%s" name
+  | TTraitType (tref, name) ->
+      Fmt.pf fmt "Trait<%a>::%s" Crate.pp_trait_ref tref name
   | TFnDef { binder_value = { kind = FunId (FRegular fid); _ }; _ } ->
       let f = Crate.get_fun fid in
       Fmt.pf fmt "fn %a" Crate.pp_name f.item_meta.name

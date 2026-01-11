@@ -31,24 +31,20 @@ module Poly = struct
 
   let push_generics ~params ~args (x : 'a t) : 'a t =
     let* subst = get_state () in
+    let args' = generic_args_substitute subst args in
+    L.debug (fun m -> m "Pushing generics %a" Crate.pp_generic_args args');
     let subst =
-      generic_args_substitute subst args
-      |> make_sb_subst_from_generics params
-      |> subst_at_binder_zero
+      args' |> make_sb_subst_from_generics params |> subst_at_binder_zero
     in
     with_state ~state:subst x
 
-  let subst_ty ty =
+  let subst f x =
     let+ subst = get_state () in
-    ty_substitute subst ty
+    f subst x
 
-  let subst_tys tys =
-    let+ subst = get_state () in
-    List.map (ty_substitute subst) tys
-
-  let subst_tref tref =
-    let+ subst = get_state () in
-    trait_ref_substitute subst tref
+  let subst_ty = subst ty_substitute
+  let subst_tys = subst (fun subst -> List.map (ty_substitute subst))
+  let subst_tref = subst trait_ref_substitute
 
   let fill_params params =
     let args = bound_identity_args params in

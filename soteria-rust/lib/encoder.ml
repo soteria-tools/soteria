@@ -92,6 +92,7 @@ module Make (Sptr : Sptr.S) = struct
     let not_impl msg = lift @@ not_impl msg
     let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
     let layout_of ty = lift_rsymex @@ Layout.layout_of ty
+    let normalise ty = lift_rsymex @@ Layout.normalise ty
 
     let assert_or_error cond err =
      fun _handler _get_all state ->
@@ -184,6 +185,7 @@ module Make (Sptr : Sptr.S) = struct
              (i + 1, Iter.append acc ys))
       |> (Fun.flip Result.map) snd
     in
+    let** ty = Layout.normalise ty in
     let** layout = Layout.layout_of ty in
     if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
     else
@@ -261,6 +263,7 @@ module Make (Sptr : Sptr.S) = struct
           v :: vs)
       |> (Fun.flip map) (fun vs -> Tuple (List.rev vs))
     in
+    let* ty = normalise ty in
     let* layout = layout_of ty in
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error `RefToUninhabited

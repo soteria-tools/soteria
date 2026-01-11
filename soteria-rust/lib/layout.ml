@@ -391,8 +391,8 @@ and compute_union_layout ty members =
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.kind with
-  | TraitImpl { id; _ } -> (
-      let impl = Crate.get_trait_impl id in
+  | TraitImpl timplref -> (
+      let impl = Crate.get_trait_impl timplref in
       match List.find_opt (fun (n, _) -> ty_name = n) impl.types with
       | Some (_, ty) -> ok ty.binder_value.value
       | None ->
@@ -402,6 +402,17 @@ and resolve_trait_ty (tref : Types.trait_ref) ty_name =
           in
           not_impl_layout msg (TTraitType (tref, ty_name)))
   | _ -> not_impl_layout "trait type" (TTraitType (tref, ty_name))
+
+(** Normalise a type, by substituting any generics with the current generic
+    environment, and resolving the trait type if needed. *)
+let normalise (ty : Types.ty) =
+  let** ty =
+    match ty with
+    | TTraitType (tref, name) -> resolve_trait_ty tref name
+    | _ -> ok ty
+  in
+  let+ ty = Poly.subst_ty ty in
+  Soteria.Symex.Compo_res.Ok ty
 
 let size_of ty =
   let++ { size; _ } = layout_of ty in
