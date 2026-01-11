@@ -600,6 +600,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
   | TArray (_, len) when z_of_const_generic len = Z.zero -> Some (Tuple [])
   | TAdt { id = TTuple; generics = { types; _ } } ->
       as_zsts types |> Option.map (fun fs -> Tuple fs)
+  | TAdt { id = TBuiltin (TStr | TBox); _ } -> None
   | TAdt adt -> (
       let adt = Crate.get_adt adt in
       match adt.kind with
