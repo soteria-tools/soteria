@@ -16,7 +16,8 @@ let pp_time =
 (** For a given value [(total, part)], prints what percentage of [total] is
     represented by [part]. e.g. [pp_percent stdout (5, 1)] will print [20.00%]
 *)
-let pp_percent ft (total, part) = (Fmt.float_dfrac 2) ft (100. *. part /. total)
+let pp_percent ft (total, part) =
+  Fmt.pf ft "%a%%" (Fmt.float_dfrac 2) (100. *. part /. total)
 
 (** Prints [1 sing] if [n = 1], [n plur] otherwise. *)
 let pp_plural ~sing ~plur ft n =

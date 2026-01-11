@@ -255,13 +255,13 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
         ( "Execution time",
           `Fn
             (fun ft () ->
-              Fmt.pf ft "%a (%a%%)" Printers.pp_time (exec_time -. sat_time)
+              Fmt.pf ft "%a (%a)" Printers.pp_time (exec_time -. sat_time)
                 (Printers.pp_unstable ~name:"%" Printers.pp_percent)
                 (exec_time, exec_time -. sat_time)) );
         ( "Solver time",
           `Fn
             (fun ft () ->
-              Fmt.pf ft "%a (%a%%)" Printers.pp_time sat_time
+              Fmt.pf ft "%a (%a)" Printers.pp_time sat_time
                 (Printers.pp_unstable ~name:"%" Printers.pp_percent)
                 (exec_time, sat_time)) );
         ( "SAT checks",
