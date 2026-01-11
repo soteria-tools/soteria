@@ -1094,7 +1094,7 @@ module Make (State : State_intf.S) = struct
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let* value = exec_fun fundef args in
-    if !Config.current.ignore_leaks then ok value
+    if (Config.get ()).ignore_leaks then ok value
     else
       let@ () = with_loc ~loc:fundef.item_meta.span.data in
       let+ () = State.leak_check () in

@@ -195,7 +195,7 @@ let fatal ?name ?(code = 2) err =
 let exec_and_output_crate compile_fn =
   match wrap_step "Compiling" compile_fn |> exec_crate with
   | outcomes ->
-      if !Config.current.print_summary then print_outcomes_summary outcomes;
+      if (Config.get ()).print_summary then print_outcomes_summary outcomes;
       let outcome = Outcome.merge_list outcomes in
       Outcome.exit outcome
   | exception Frontend.PluginError e -> fatal ~name:"Plugin" e
@@ -207,15 +207,15 @@ let exec_and_output_crate compile_fn =
   | exception ExecutionError e -> fatal e
 
 let exec_rustc config file_name =
-  Config.set config;
+  Config.set_and_lock_global config;
   let compile () = Frontend.parse_ullbc_of_file file_name in
   exec_and_output_crate compile
 
 let exec_cargo config crate_dir =
-  Config.set config;
+  Config.set_and_lock_global config;
   let compile () = Frontend.parse_ullbc_of_crate crate_dir in
   exec_and_output_crate compile
 
 let build_plugins config =
-  Config.set config;
+  Config.set_and_lock_global config;
   wrap_step "Compiling plugins" Frontend.compile_all_plugins
