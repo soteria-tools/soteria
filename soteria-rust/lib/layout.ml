@@ -360,8 +360,8 @@ and compute_enum_layout ty (variants : Types.variant list) =
               compute_arbitrary_layout ty ~fst_size:tag.size
                 ~fst_align:tag.align (field_tys v.fields)
             in
-            ( max size l.size,
-              max align l.align,
+            ( BV.max ~signed:false size l.size,
+              BV.max ~signed:false align l.align,
               l.fields :: variants,
               uninhabited && l.uninhabited ))
       in
