@@ -88,14 +88,24 @@ module Session = struct
   (* FIXME: inter-test mutability *)
 
   (** Cache of (type or variant) -> layout *)
-  let layout_cache : (Types.ty, t) Hashtbl.t = Hashtbl.create 128
+  type cache = (Types.ty, t) Hashtbl.t
+
+  type _ Effect.t += Get_cache : cache Effect.t
+
+  let get_cache () = Effect.perform Get_cache
+
+  let with_layout_cache f =
+    let open Effect.Deep in
+    let cache : (Types.ty, t) Hashtbl.t = Hashtbl.create 128 in
+    try f () with effect Get_cache, k -> continue k cache
 
   let get_or_compute_cached_layout ty f =
-    match Hashtbl.find_opt layout_cache ty with
+    let cache = get_cache () in
+    match Hashtbl.find_opt cache ty with
     | Some layout -> ok layout
     | None ->
         let++ layout = f () in
-        Hashtbl.add layout_cache ty layout;
+        Hashtbl.add cache ty layout;
         layout
 end
 
