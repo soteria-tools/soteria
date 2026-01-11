@@ -1,19 +1,12 @@
-open
-  Soteria.Symex.Make
-    (Soteria.Symex.Meta.Dummy)
-    (Soteria.Tiny_values.Tiny_solver.Z3_solver)
-
+open Soteria.Symex.Make (Soteria.Symex.Meta.Dummy) (Tiny_solver.Z3_solver)
 open Syntax
 open Soteria.Tiny_values
 
-let pp_branch pp_err =
-  let pp_pc = Fmt.Dump.list Typed.ppa in
-  let pp_res =
-    Soteria.Symex.Compo_res.pp ~ok:Typed.ppa ~err:pp_err ~miss:Fmt.nop
-  in
-  Fmt.Dump.pair pp_res pp_pc
+(* ============================================================================
+   Test Process
+   ============================================================================ *)
 
-let complex_process =
+let complex_process () =
   let open Typed.Infix in
   let* x = nondet Typed.t_int in
   let* y = nondet Typed.t_int in
@@ -21,30 +14,85 @@ let complex_process =
     if%sat x >@ Typed.zero then Result.ok (x +@ y) else Result.ok (x -@ y)
   else if%sat x ==@ y then give_up ~loc:() "x == y" else Result.error "okkk"
 
-let _give_up_in_ux =
-  let results = run ~mode:UX complex_process in
-  Fmt.pr "@[<v 2>Csymex.run ~mode:UX complex_process:@ %a@]@\n@\n"
-    (Fmt.Dump.list (pp_branch Fmt.string))
+(* ============================================================================
+   Helper Functions
+   ============================================================================ *)
+
+let count_oks results =
+  List.filter (fun (res, _) -> Soteria.Symex.Compo_res.is_ok res) results
+  |> List.length
+
+let count_errors results =
+  List.filter (fun (res, _) -> Soteria.Symex.Compo_res.is_error res) results
+  |> List.length
+
+let get_gave_up_reasons results =
+  List.filter_map
+    (fun (res, _) ->
+      match res with
+      | Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.Gave_up reason)
+        ->
+          Some reason
+      | _ -> None)
     results
 
-let _give_up_in_ux_res =
-  let results = Result.run ~mode:UX complex_process in
-  Fmt.pr "@[<v 2>Csymex.Result.run ~mode:UX complex_process:@ %a@]@\n@\n"
-    (Fmt.Dump.list (pp_branch (Soteria.Symex.Or_gave_up.pp Fmt.string)))
-    results
+(* ============================================================================
+   UX Mode Tests
+   ============================================================================ *)
 
-let _give_up_in_ox_exn =
-  Fmt.pr "Csymex.run ~mode:OX complex_process;; EXPECTING EXCEPTION -- ";
-  try
-    let results = run ~mode:OX complex_process in
-    Fmt.pr "In OX with Csymex.run: %a@\n"
-      (Fmt.Dump.list (pp_branch Fmt.string))
-      results
-  with Soteria.Symex.Gave_up reason ->
-    Fmt.pr "Caught Gave_up in OX: %s@\n@\n" reason
+let ux_mode_returns_three_branches () =
+  let results = run ~mode:UX (complex_process ()) in
+  Alcotest.(check int) "number of branches" 3 (List.length results);
+  Alcotest.(check int) "ok branches" 2 (count_oks results);
+  Alcotest.(check int) "error branches" 1 (count_errors results)
 
-let _give_up_in_ox_res =
-  let results = Result.run ~mode:OX complex_process in
-  Fmt.pr "@[<v 2>Csymex.Result.run ~mode:OX complex_process:@ %a@]@\n@\n"
-    (Fmt.Dump.list (pp_branch (Soteria.Symex.Or_gave_up.pp Fmt.string)))
-    results
+let ux_mode_result_returns_three_branches () =
+  let results = Result.run ~mode:UX (complex_process ()) in
+  Alcotest.(check int) "number of branches" 3 (List.length results);
+  Alcotest.(check int) "ok branches" 2 (count_oks results);
+  Alcotest.(check int) "error branches" 1 (count_errors results)
+
+(* ============================================================================
+   OX Mode Tests
+   ============================================================================ *)
+
+let ox_mode_raises_gave_up () =
+  let raised = ref false in
+  let reason_msg = ref "" in
+  (try
+     let _ = run ~mode:OX (complex_process ()) in
+     ()
+   with Soteria.Symex.Gave_up reason ->
+     raised := true;
+     reason_msg := reason);
+  Alcotest.(check bool) "raised Gave_up" true !raised;
+  Alcotest.(check string) "gave up reason" "x == y" !reason_msg
+
+let ox_mode_result_returns_four_branches () =
+  let results = Result.run ~mode:OX (complex_process ()) in
+  Alcotest.(check int) "number of branches" 4 (List.length results);
+  Alcotest.(check int) "ok branches" 2 (count_oks results);
+  Alcotest.(check int) "error branches" 2 (count_errors results);
+  let gave_up_reasons = get_gave_up_reasons results in
+  Alcotest.(check int) "gave up branches" 1 (List.length gave_up_reasons);
+  Alcotest.(check string) "gave up reason" "x == y" (List.hd gave_up_reasons)
+
+(* ============================================================================
+   Test Runner
+   ============================================================================ *)
+
+let () =
+  Alcotest.run "Deep_give_up"
+    [
+      ( "Deep_give_up",
+        [
+          Alcotest.test_case "ux_mode_returns_three_branches" `Quick
+            ux_mode_returns_three_branches;
+          Alcotest.test_case "ux_mode_result_returns_three_branches" `Quick
+            ux_mode_result_returns_three_branches;
+          Alcotest.test_case "ox_mode_raises_gave_up" `Quick
+            ox_mode_raises_gave_up;
+          Alcotest.test_case "ox_mode_result_returns_four_branches" `Quick
+            ox_mode_result_returns_four_branches;
+        ] );
+    ]

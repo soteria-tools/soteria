@@ -15,6 +15,7 @@ module Map = Map
 module Monad = Monad
 module Option = Option
 module Ordered_type = Ordered_type
+module Resource_pool = Resource_pool
 module Result = Result
 module Reversible = Reversible
 module Seq = Seq
