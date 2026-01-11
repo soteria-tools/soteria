@@ -1,13 +1,12 @@
 Test base functions
-  $ soteria-rust rustc lib-fns.rs --clean --no-timing
+  $ soteria-rust rustc lib-fns.rs
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
   
 
-
 Test #[soteria::*] annotations
-  $ soteria-rust rustc annots.rs --clean --no-timing
+  $ soteria-rust rustc annots.rs
   Compiling... done in <time>
   note: test1: done in <time>, ran 1 branch
   PC 1: empty
