@@ -96,7 +96,7 @@ let default = make ()
 let current : t ref = ref default
 
 let set (config : global) =
-  Soteria.Solvers.Config.set config.solver;
+  Soteria.Solvers.Config.set_and_lock config.solver;
   Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
   Soteria.Stats.Config.set_and_lock config.stats;
