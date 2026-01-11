@@ -1,7 +1,7 @@
 (** Wraps a pretty-printer for unstable values, that should not be output into
     e.g. testing environments where diffs matter. If the config option
     [hide_unstable] is set, will replace *)
-let pp_unstable ?(name = "x") pp ft x =
+let pp_unstable ~name pp ft x =
   if (Config.get ()).hide_unstable then Fmt.pf ft "<%s>" name else pp ft x
 
 (** Pretty-prints a time quantity in seconds, displaying it in either seconds or
