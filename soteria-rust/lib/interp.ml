@@ -252,6 +252,10 @@ module Make (State : State_intf.S) = struct
         in
         Union blocks
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
+    | CAdt _ | CArray _ | CSlice _ | CGlobal _ | CRef _ | CPtr _ | CFnPtr _
+    | CPtrNoProvenance _ ->
+        Fmt.kstr not_impl "TODO: complex constant %a" Crate.pp_constant_expr
+          const
     | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
   (** Resolves a place to a pointer *)
@@ -315,14 +319,8 @@ module Make (State : State_intf.S) = struct
         let len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | ( Thin,
-              TAdt
-                {
-                  id = TBuiltin TArray;
-                  generics = { const_generics = [ len ]; _ };
-                } ) ->
-              BV.usize_of_const_generic len
-          | Len len, TAdt { id = TBuiltin TSlice; _ } -> Typed.cast_i Usize len
+          | Thin, TArray (_, len) -> BV.usize_of_const_generic len
+          | Len len, TSlice _ -> Typed.cast_i Usize len
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
@@ -341,17 +339,8 @@ module Make (State : State_intf.S) = struct
         let ty, len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | ( Thin,
-              TAdt
-                {
-                  id = TBuiltin TArray;
-                  generics = { const_generics = [ len ]; types = [ ty ]; _ };
-                } ) ->
-              (ty, BV.usize_of_const_generic len)
-          | ( Len len,
-              TAdt { id = TBuiltin TSlice; generics = { types = [ ty ]; _ } } )
-            ->
-              (ty, Typed.cast len)
+          | Thin, TArray (ty, len) -> (ty, BV.usize_of_const_generic len)
+          | Len len, TSlice ty -> (ty, Typed.cast len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* from = eval_operand from in
@@ -563,29 +552,29 @@ module Make (State : State_intf.S) = struct
               match meta with
               | MetaLength length ->
                   ok @@ Len (BV.usize_of_const_generic length)
-              | MetaVTableDirect (_, glob) ->
+              | MetaVTable (_, glob) ->
                   (* the global adds one level of indirection *)
                   let* glob = of_opt_not_impl "Missing VTable global" glob in
                   let* ptr = resolve_global glob in
                   let+ vtable = State.load ptr unit_ptr in
                   let vtable, _ = as_ptr vtable in
                   VTable vtable
-              (* We don't check validity of the metadata if the unsizing
-                  doesn't need to modify the VTable. *)
-              | MetaVTableNested (_, None) -> ok prev
-              | MetaVTableNested (_, Some field) -> (
+              | MetaVTableUpcast fields -> (
                   match prev with
                   | Thin -> failwith "Unsizing VTable with no meta?"
                   | Len _ -> error `UBDanglingPointer
                   | VTable vt ->
-                      let idx = Types.FieldId.to_int field in
-                      let* vt_addr =
-                        Sptr.offset ~ty:unit_ptr ~signed:false vt
-                          (BV.usizei idx)
+                      let+ vt' =
+                        fold_list fields ~init:vt ~f:(fun vt field ->
+                            let idx = Types.FieldId.to_int field in
+                            let* vt_addr =
+                              Sptr.offset ~ty:unit_ptr ~signed:false vt
+                                (BV.usizei idx)
+                            in
+                            let+ vt = State.load (vt_addr, Thin) unit_ptr in
+                            fst (as_ptr vt))
                       in
-                      let+ vt = State.load (vt_addr, Thin) unit_ptr in
-                      let vt, _ = as_ptr vt in
-                      VTable vt)
+                      VTable vt')
               | MetaUnknown ->
                   Fmt.kstr not_impl "Unsupported metadata in CastUnsize: %a"
                     Expressions.pp_unsizing_metadata meta
