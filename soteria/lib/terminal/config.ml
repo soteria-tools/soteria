@@ -3,7 +3,13 @@ type t = {
       [@names [ "no-color"; "no-colour" ]]
       [@env "NO_COLOR"]
       [@make.default false]
-      (** Disables coloured output *)
+      (** Disables coloured output. *)
+  hide_unstable : bool;
+      [@names [ "hide-unstable"; "diffable" ]]
+      [@env "HIDE_UNSTABLE"]
+      [@make.default false]
+      (** Do not display unstable values like durations (e.g. for diffing
+          purposes). *)
   compact : bool;
       [@name [ "compact" ]]
       [@env "SOTERIA_COMPACT_DIAGNOSTICS"]

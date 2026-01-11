@@ -43,16 +43,6 @@ module M (Rust_state_m : Rust_state_m.S) :
   let mul_with_overflow = checked_op (Mul OUB)
   let align_of ~t = Layout.align_of t
 
-  let align_of_val ~t ~ptr =
-    match (t, ptr) with
-    | Types.TDynTrait _, (_, VTable vt) ->
-        let* align_ptr =
-          Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(2s)
-        in
-        let+ align = State.load (align_ptr, Thin) (TLiteral (TUInt Usize)) in
-        as_base_i Usize align
-    | _ -> Layout.align_of t
-
   let arith_offset ~t ~dst:(dst, meta) ~offset =
     let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
     (dst', meta)
@@ -617,39 +607,71 @@ module M (Rust_state_m : Rust_state_m.S) :
   let saturating_sub = saturating (Sub OUB)
   let size_of ~t = Layout.size_of t
 
+  let rec size_and_align_of_val ~t ~meta =
+    (* Takes inspiration from rustc, to calculate the size and alignment of DSTs.
+     https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
+    if not (Layout.is_dst t) then
+      let+ layout = Layout.layout_of t in
+      (layout.size, layout.align)
+    else
+      match (t, meta) with
+      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), (Thin | VTable _) ->
+          failwith "size_and_align_of_val: Invalid metadata for slice type"
+      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), Len meta ->
+          let sub_ty = Layout.dst_slice_ty t in
+          let* sub_ty =
+            of_opt_not_impl "size_of_val: missing a DST slice type" sub_ty
+          in
+          let* layout = Layout.layout_of sub_ty in
+          let len = Typed.cast_i Usize meta in
+          let size, ovf_mul = layout.size *?@ len in
+          let+ () = State.assert_not ovf_mul `Overflow in
+          (size, layout.align)
+      | TDynTrait _, (Thin | Len _) ->
+          failwith "size_and_align_of_val: Invalid metadata for dyn type"
+      | TDynTrait _, VTable vtable ->
+          let usize = Types.TLiteral (TUInt Usize) in
+          let* size_ptr =
+            Sptr.offset ~signed:true ~ty:usize vtable Usize.(1s)
+          in
+          let* align_ptr =
+            Sptr.offset ~signed:true ~ty:usize vtable Usize.(2s)
+          in
+          let* size = State.load (size_ptr, Thin) usize in
+          let+ align = State.load (align_ptr, Thin) usize in
+          let size = as_base_i Usize size in
+          let align = as_base_i Usize align in
+          (size, Typed.cast align)
+      | TAdt { id = TTuple | TAdtId _; _ }, _ ->
+          let field_tys =
+            match t with
+            | TAdt { id = TAdtId id; _ } -> Crate.as_struct id |> field_tys
+            | TAdt { id = TTuple; generics = { types; _ } } -> types
+            | _ -> failwith "impossible"
+          in
+          let last_field_ty = List.last field_tys in
+          let* layout = Layout.layout_of t in
+          let last_field_ofs =
+            match layout.fields with
+            | Arbitrary (_, offsets) -> offsets.(Array.length offsets - 1)
+            | _ -> failwith "size_and_align_of_val: Unexpected layout for ADT"
+          in
+          let+ unsized_size, unsized_align =
+            size_and_align_of_val ~t:last_field_ty ~meta
+          in
+          let align = BV.max ~signed:false unsized_align layout.align in
+          let size = last_field_ofs +!!@ unsized_size in
+          let size = Layout.size_to_fit ~size ~align in
+          (size, align)
+      | _ -> not_impl "size_and_align_of_val: Unexpected type"
+
   let size_of_val ~t ~ptr:(_, meta) =
-    (* for DSTs, the size of the type is the size of all non-DST fields,
-       to which we just need to add the size of the DST part. *)
-    let* base_size = Layout.size_of t in
-    match meta with
-    | Len meta -> (
-        let sub_ty = Layout.dst_slice_ty t in
-        match sub_ty with
-        | None -> ok base_size
-        | Some sub_ty ->
-            let len = Typed.cast_i Usize meta in
-            let* size = Layout.size_of sub_ty in
-            let size, ovf_mul = size *?@ len in
-            let size, ovf_add = base_size +?@ size in
-            let+ () = State.assert_not (ovf_mul ||@ ovf_add) `Overflow in
-            size)
-    | VTable vt ->
-        let* size_ptr =
-          Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(1s)
-        in
-        let* dyn_size = State.load (size_ptr, Thin) (TLiteral (TUInt Usize)) in
-        let dyn_size = as_base_i Usize dyn_size in
-        let size = base_size +!@ dyn_size in
-        (* e.g. if alignment of outer container is 8, but dyn size is 1, the added size is 8.
-           the real computation is a lot more complicated, but this does the trick for general use.
-           https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
-        let+ align = Layout.align_of t in
-        let rem = size %@ align in
-        let size =
-          Typed.ite (rem ==@ Usize.(0s)) size (size +!@ (align -!@ rem))
-        in
-        size
-    | _ -> ok base_size
+    let+ size, _ = size_and_align_of_val ~t ~meta in
+    size
+
+  let align_of_val ~t ~ptr:(_, meta) =
+    let+ _, align = size_and_align_of_val ~t ~meta in
+    (align :> T.sint Typed.t)
 
   let transmute ~t_src ~dst ~src = Core.transmute ~from_ty:t_src ~to_ty:dst src
 
