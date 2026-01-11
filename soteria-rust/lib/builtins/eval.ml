@@ -6,9 +6,10 @@ module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 let match_config =
   NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-(* Functions we could not stub, but we do for performance *)
+(* Functions we stub to avoid problems in the interpreter *)
 type fixme_fn = PanicCleanup | CatchUnwindCleanup
 
+(* Functions we could not stub, but we do for performance *)
 type optim_fn =
   | FloatIs of Svalue.FloatClass.t
   | FloatIsFinite
@@ -35,6 +36,7 @@ type fn =
   | Miri of miri_fn
   | Optim of optim_fn
   | Rusteria of rusteria_fn
+  | DropInPlace
 
 let std_fun_pair_list =
   [
@@ -64,6 +66,8 @@ let std_fun_pair_list =
     ("__rust_realloc", Alloc Realloc);
     (* Panic Builtins *)
     ("__rust_panic_cleanup", Fixme PanicCleanup);
+    (* Dropping, in particular for the generic case, does nothing. *)
+    ("core::ptr::drop_in_place", DropInPlace);
     (* Core *)
     ("std::alloc::Global::alloc_impl", Optim AllocImpl);
     (* FIXME(OCaml): all float operations could be removed, but we lack bit precision when
@@ -147,7 +151,8 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         match List.rev f.item_meta.name with
         | PeIdent (name, _) :: _ ->
             if (Config.get ()).polymorphic then
-              let+ args = Rustsymex.Poly.fill_params f.generics in
+              let generics' = { f.generics with trait_clauses = [] } in
+              let+ args = Rustsymex.Poly.fill_params generics' in
               (name, args)
             else return (name, TypesUtils.empty_generic_args)
         | PeInstantiated mono :: PeIdent (name, _) :: _ ->
@@ -187,6 +192,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
          | Alloc Realloc -> realloc
          | Fixme PanicCleanup -> fixme_panic_cleanup
          | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
+         | DropInPlace -> nop
 
   let builtin_fun_eval (f : Types.builtin_fun_id) generics =
     let open Std in

@@ -33,6 +33,12 @@ let pp_constant_expr = mk_pp PrintExpressions.constant_expr_to_string
 let pp_fn_operand = mk_pp PrintUllbcAst.Ast.fn_operand_to_string
 let pp_fun_decl_ref = mk_pp PrintTypes.fun_decl_ref_to_string
 let pp_generic_args = mk_pp PrintTypes.generic_args_to_string
+
+let pp_generic_params =
+  mk_pp (fun env params ->
+      let generics, clauses = PrintTypes.generic_params_to_strings env params in
+      String.concat " + " (generics @ clauses))
+
 let pp_global_decl_ref = mk_pp PrintTypes.global_decl_ref_to_string
 let pp_name = mk_pp PrintTypes.name_to_string
 let pp_place = mk_pp PrintExpressions.place_to_string
@@ -55,7 +61,9 @@ let get_adt (adt_ref : Types.type_decl_ref) =
       let subst = make_sb_subst_from_generics adt.generics adt_ref.generics in
       let subst = subst_at_binder_zero subst in
       st_substitute_visitor#visit_type_decl subst adt
-  | TBuiltin _ | TTuple -> failwith "get_adt: unexpected non-ADT type decl id"
+  | TBuiltin _ | TTuple ->
+      Fmt.failwith "get_adt: unexpected non-ADT type decl id: %a"
+        Types.pp_type_id adt_ref.id
 
 let get_fun id =
   let crate = get_crate () in

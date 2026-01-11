@@ -300,6 +300,8 @@ let default =
            "--mir elaborated";
            "--reconstruct-fallible-operations";
            "--reconstruct-asserts";
+           "--desugar-drops";
+           "--precise-drops";
          ]
         @ opaque_names
         @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
