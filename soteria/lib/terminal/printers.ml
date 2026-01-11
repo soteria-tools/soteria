@@ -5,7 +5,7 @@ let pp_unstable ~name pp ft x =
   if (Config.get ()).hide_unstable then Fmt.pf ft "<%s>" name else pp ft x
 
 (** Pretty-prints a time quantity in seconds, displaying it in either seconds or
-    milli-seconds for smaller values (< 0.05s). Wrapped in [pp_unstable]. *)
+    milli-seconds for smaller values (< 0.05s). Wrapped in {!pp_unstable}. *)
 let pp_time =
   let pp_time ft t =
     if t < 0.05 then Fmt.pf ft "%ams" (Fmt.float_dfrac 2) (t *. 1000.)
