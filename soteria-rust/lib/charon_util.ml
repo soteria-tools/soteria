@@ -160,9 +160,11 @@ let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
     | Virtual name -> Fmt.pf ft "%s (virtual)" (clean_filename name)
     | NotReal name -> Fmt.pf ft "%s (synthetic)" (clean_filename name)
   in
-  if beg_loc.line = end_loc.line then
-    Fmt.pf ft "%a:%d:%d-%d" pp_filename file beg_loc.line beg_loc.col
-      end_loc.col
-  else
-    Fmt.pf ft "%a:%d:%d-%d:%d" pp_filename file beg_loc.line beg_loc.col
-      end_loc.line end_loc.col
+  let pp_range ft ((start, stop) : Meta.loc * Meta.loc) =
+    if start.line = stop.line then
+      Fmt.pf ft "%d:%d-%d" start.line start.col stop.col
+    else Fmt.pf ft "%d:%d-%d:%d" start.line start.col stop.line stop.col
+  in
+  Fmt.pf ft "%a:%a" pp_filename file
+    (Soteria.Terminal.Printers.pp_unstable ~name:"range" pp_range)
+    (beg_loc, end_loc)

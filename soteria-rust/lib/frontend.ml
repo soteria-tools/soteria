@@ -187,7 +187,7 @@ module Lib = struct
 
   let root =
     lazy
-      (match Sys.getenv_opt "RUSTERIA_PLUGINS" with
+      (match !Config.current.plugin_directory with
       | Some root -> root
       | None -> List.hd Runtime_sites.Sites.plugins)
 

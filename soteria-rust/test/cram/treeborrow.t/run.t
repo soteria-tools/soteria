@@ -1,12 +1,12 @@
 Basic code, reference gets invalidated
-  $ soteria-rust rustc raw-ptrs.rs --clean --no-timing
+  $ soteria-rust rustc raw-ptrs.rs
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Simple tree borrow violation
-  $ soteria-rust rustc simple-fail.rs --clean --no-timing
+  $ soteria-rust rustc simple-fail.rs
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Aliasing error in main
@@ -24,42 +24,42 @@ Simple tree borrow violation
   [1]
 
 Raw pointers don't get new tags
-  $ soteria-rust rustc raw-ptrs.rs --clean --no-timing
+  $ soteria-rust rustc raw-ptrs.rs
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Raw pointers can access outside the parent's range, with offsets
-  $ soteria-rust rustc offsets.rs --clean --no-timing
+  $ soteria-rust rustc offsets.rs
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Can have two mutable protected refs to the same allocation, if they don't overlap
-  $ soteria-rust rustc two-mut-protected.rs --clean --no-timing
+  $ soteria-rust rustc two-mut-protected.rs
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 UnsafeCell allow foreign writes followed by local writes
-  $ soteria-rust rustc cell.rs --clean --no-timing
+  $ soteria-rust rustc cell.rs
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
-  $ soteria-rust rustc nested.rs --clean --no-timing
+  $ soteria-rust rustc nested.rs
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 
 Test --ignore-aliasing flag
-  $ soteria-rust rustc simple-fail.rs --clean --no-timing --ignore-aliasing
+  $ soteria-rust rustc simple-fail.rs --ignore-aliasing
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
   PC 1: empty
