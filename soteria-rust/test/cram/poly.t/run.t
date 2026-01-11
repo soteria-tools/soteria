@@ -14,3 +14,5 @@ Ensure generic args are passed through function calls and not lost
   note: subst_generics::wrap_stuff: done in <time>, ran 1 branch
   PC 1: empty
   
+Try creating a generic vec
+  $ soteria-rust rustc vec.rs --frontend charon --poly --clean --no-timing
