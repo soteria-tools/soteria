@@ -202,8 +202,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let adt = Crate.get_adt id in
       match (adt.layout, adt.kind) with
       | Some layout, _ -> translate_layout ty layout
-      | _, (Struct fields | Union fields) ->
-          compute_arbitrary_layout ty (field_tys fields)
+      | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
+      | _, Union fields -> compute_union_layout ty (field_tys fields)
       | _, Enum variants -> compute_enum_layout ty variants
       | _, (Opaque | TDeclError _ | Alias _) -> not_impl_layout "unexpected" ty)
   (* Arrays *)
@@ -369,6 +369,19 @@ and compute_enum_layout ty (variants : Types.variant list) =
       mk ~size ~align ~uninhabited
         ~fields:(Enum (tag_layout, Array.of_list variants))
         ()
+
+and compute_union_layout ty members =
+  layout_warning "Computed a union layout" ty;
+  let++ size, align =
+    Result.fold_list members
+      ~init:(Usize.(0s), Usize.(1s))
+      ~f:(fun (size, align) member_ty ->
+        let++ member = layout_of member_ty in
+        ( BV.max ~signed:false size member.size,
+          BV.max ~signed:false align member.align ))
+  in
+  let fields = Array.make (List.length members) (BV.usizei 0) in
+  mk ~size ~align ~fields:(Arbitrary (Types.VariantId.zero, fields)) ()
 
 and resolve_trait_ty (tref : Types.trait_ref) ty_name =
   match tref.kind with
