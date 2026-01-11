@@ -2,5 +2,6 @@
 module _ = List_tests
 module _ = Graph_tests
 module _ = Iter_tests
+module _ = Resource_pool_tests
 
 let () = Test_register.run_all ()
