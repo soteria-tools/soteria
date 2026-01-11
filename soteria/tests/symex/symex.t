@@ -38,8 +38,8 @@ Test printing stats to stdout (ensure this looks somewhat nice)
    • Steps: 0
    • Branches: 4 (0 unexplored)
    • Total time: <time>
-   • Execution time: <time> (<x>%)
-   • Solver time: <time> (<x>%)
+   • Execution time: <time> (<%>)
+   • Solver time: <time> (<%>)
    • SAT checks: 9 (0 unknowns)
    • Give up reasons:
      - give up reason
