@@ -30,13 +30,17 @@ module Poly = struct
   open Syntax
 
   let push_generics ~params ~args (x : 'a t) : 'a t =
-    let* subst = get_state () in
-    let args' = generic_args_substitute subst args in
-    L.debug (fun m -> m "Pushing generics %a" Crate.pp_generic_args args');
-    let subst =
-      args' |> make_sb_subst_from_generics params |> subst_at_binder_zero
-    in
-    with_state ~state:subst x
+    (* We only push generics in polymorphic mode, as otherwise we may get some
+       wrong generics in monomorphic code we want to ignore. *)
+    if (Config.get ()).polymorphic then (
+      let* subst = get_state () in
+      let args' = generic_args_substitute subst args in
+      L.debug (fun m -> m "Pushing generics %a" Crate.pp_generic_args args');
+      let subst =
+        args' |> make_sb_subst_from_generics params |> subst_at_binder_zero
+      in
+      with_state ~state:subst x)
+    else x
 
   let subst f x =
     let+ subst = get_state () in
