@@ -319,6 +319,13 @@ end
 module type S = sig
   include Base
 
+  (** A Symex runs in a pooled solver environment. This module exposes some
+      information about the solver pool. *)
+  module Solver_pool : sig
+    val total_created : unit -> int
+    val total_available : unit -> int
+  end
+
   type 'a v := 'a Value.t
   type sbool := Value.sbool
 
@@ -388,7 +395,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   module Stats = Stats.Make (Meta.Range)
 
   module Solver = struct
-    include Solver.Mutable_to_in_place (Sol)
+    include Solver.Mutable_to_pooled (Sol)
 
     let sat () =
       let res = Stats.As_ctx.add_sat_time_of sat in
@@ -397,8 +404,13 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       res
   end
 
+  module Solver_pool = struct
+    let total_created () = Solver.total_resources ()
+    let total_available () = Solver.available_resources ()
+  end
+
   module Fuel = struct
-    include Reversible.Effectful (Fuel_gauge)
+    include Reversible.Make_effectful (Fuel_gauge)
 
     let consume_branching n = wrap (Fuel_gauge.consume_branching n) ()
     let consume_fuel_steps n = wrap (Fuel_gauge.consume_fuel_steps n) ()
@@ -430,7 +442,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   type cons_fail = [ lfail | missing_subst ]
   [@@deriving show { with_path = false }]
 
-  module Symex_state : Reversible.In_place = struct
+  module Symex_state = struct
     let backtrack_n n =
       Solver.backtrack_n n;
       Fuel.backtrack_n n
@@ -439,7 +451,9 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       Solver.save ();
       Fuel.save ()
 
-    let reset () = Solver.reset ()
+    let run ~init_fuel f =
+      Solver.run @@ fun () ->
+      Fuel.run ~init:init_fuel @@ fun () -> f ()
   end
 
   let consume_fuel_steps n f =
@@ -637,18 +651,18 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         (with_section @@ fun () -> a () f);
         loop r
 
-  let run_needs_stats ?(fuel = Fuel_gauge.infinite) ~mode iter =
+  let run_needs_stats_iter ?(fuel = Fuel_gauge.infinite) ~mode iter :
+      ('a * Value.sbool Value.t list) Iter.t =
+   fun continue ->
     let@ () = Stats.As_ctx.add_time_of in
-    Symex_state.reset ();
-    let@ () = Fuel.run ~init:fuel in
+    let@ () = Symex_state.run ~init_fuel:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
-    let l = ref [] in
-    let () =
-      iter @@ fun x -> if admissible () then l := (x, Solver.as_values ()) :: !l
-    in
-    List.rev !l
+    iter @@ fun x -> if admissible () then continue (x, Solver.as_values ())
+
+  let run_needs_stats ?(fuel = Fuel_gauge.infinite) ~mode iter =
+    Iter.to_list (run_needs_stats_iter ~fuel ~mode iter)
 
   let run ?fuel ~mode iter =
     let@ () = Stats.As_ctx.with_stats_ignored () in
@@ -684,8 +698,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let run_needs_stats ?(fuel = Fuel_gauge.infinite) ~mode iter =
       let@ () = Stats.As_ctx.add_time_of in
-      Symex_state.reset ();
-      let@ () = Fuel.run ~init:fuel in
+      let@ () = Symex_state.run ~init_fuel:fuel in
       let@ () = Approx.As_ctx.with_mode mode in
 
       let l = ref [] in

@@ -11,25 +11,20 @@ let fresh_tag () =
 let zero = 0
 let pp_tag fmt tag = Fmt.pf fmt "‖%d‖" tag
 
-module TagMap = Map.Make (struct
+module TagMap = PatriciaTree.MakeMap (struct
   type t = tag
 
-  let compare = compare
+  let to_int = Fun.id
 end)
 
 type access = Read | Write
 and locality = Local | Foreign
 and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
 
-(** The tag of the node, whether it has a protector (this is distinct from
-    having the protector toggled!), its parents (including this node's ID!), and
-    its initial state if it doesn't exist in the state. *)
-and node = {
-  tag : tag;
-  protector : bool;
-  parents : tag list;
-  initial_state : state;
-}
+(** Whether this node has a protector (this is distinct from having the
+    protector toggled!), its parents (including this node's ID!), and its
+    initial state if it doesn't exist in the state. *)
+and node = { protector : bool; parents : tag list; initial_state : state }
 [@@deriving show { with_path = false }]
 
 let pp_state fmt = function
@@ -41,7 +36,7 @@ let pp_state fmt = function
   | Disabled -> Fmt.string fmt "Dis "
   | UB -> Fmt.string fmt "UB  "
 
-let meet st1 st2 =
+let[@inline] meet st1 st2 =
   match (st1, st2) with
   | UB, _ | _, UB -> UB
   | Disabled, _ | _, Disabled -> Disabled
@@ -52,7 +47,7 @@ let meet st1 st2 =
   | Reserved _, ReservedIM | ReservedIM, Reserved _ ->
       failwith "Can't compare Reserved and ReservedIM"
 
-let meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
+let[@inline] meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
 
 let transition =
   let transition st e =
@@ -94,9 +89,7 @@ let pp ft t =
 
 let init ~state () =
   let tag = fresh_tag () in
-  let node =
-    { tag; protector = false; parents = [ tag ]; initial_state = state }
-  in
+  let node = { protector = false; parents = [ tag ]; initial_state = state } in
   (TagMap.singleton tag node, tag)
 
 let ub_state = fst @@ init ~state:UB ()
@@ -105,12 +98,7 @@ let add_child ~parent ?(protector = false) ~state st =
   let tag = fresh_tag () in
   let node_parent = TagMap.find parent st in
   let node =
-    {
-      tag;
-      protector;
-      parents = tag :: node_parent.parents;
-      initial_state = state;
-    }
+    { protector; parents = tag :: node_parent.parents; initial_state = state }
   in
   (TagMap.add tag node st, tag)
 
@@ -141,36 +129,22 @@ let set_protector ~protected tag root =
 (** [access accessed im e structure state]: Update all nodes in the mapping
     [state] for the tree structure [structure] with an event [e], that happened
     at [accessed]. *)
-let access accessed e (root : t) st =
+let access accessed e (root : t) (st : tb_state) =
   let ub_happened = ref false in
-  let st =
-    TagMap.fold
-      (fun tag node ->
-        TagMap.update tag (function
-          | None -> Some (false, node.initial_state)
-          | Some _ as st -> st))
-      root st
-  in
-  L.trace (fun m ->
-      let pp_binding fmt (tag, (protected, st)) =
-        Fmt.pf fmt "%a -> %a%s" pp_tag tag pp_state st
-          (if protected then " (p)" else "")
-      in
-      m "TB: %a at %a, for tree %a, state@[<hov 2> %a@]" pp_access e pp_tag
-        accessed pp root
-        Fmt.(iter_bindings ~sep:(Fmt.any ", ") TagMap.iter pp_binding)
-        st);
   let accessed_node = TagMap.find accessed root in
   let st' =
-    TagMap.mapi
-      (fun tag (protected, st) ->
+    TagMap.filter_map_no_share
+      (fun tag { protector; initial_state; _ } ->
+        let protected, st =
+          match TagMap.find_opt tag st with
+          | None -> (false, initial_state)
+          | Some ps -> ps
+        in
         let rel =
           if List.mem tag accessed_node.parents then Local else Foreign
         in
         (* if the tag has a protector and is accessed, this toggles the protector! *)
-        let protected =
-          (tag = accessed || protected) && (TagMap.find tag root).protector
-        in
+        let protected = (tag = accessed || protected) && protector in
         let st' = transition ~protected st (rel, e) in
         if st' = UB then (
           ub_happened := true;
@@ -180,9 +154,10 @@ let access accessed e (root : t) st =
                  %b): %a -> %a in structure@.%a"
                 pp_tag tag pp_locality rel pp_access e protected pp_state st
                 pp_state st' pp root));
-        (protected, st'))
-      st
+        if (not protected) && st' = initial_state then None
+        else Some (protected, st'))
+      root
   in
   if !ub_happened then Result.error `AliasingError else Result.ok st'
 
-let merge = TagMap.merge @@ fun _ -> Option.merge meet'
+let merge = TagMap.idempotent_union @@ fun _ -> meet'

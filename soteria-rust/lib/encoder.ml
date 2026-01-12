@@ -123,18 +123,10 @@ module Make (Sptr : Sptr.S) = struct
       @@
       match ty with
       | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
-      | TAdt
-          {
-            id = TBuiltin TArray;
-            generics = { types = [ ty ]; const_generics = [ len ]; _ };
-          } ->
-          Iter.repeatz (z_of_const_generic len) ty
-      | TAdt { id = TBuiltin ((TStr | TSlice) as kind); generics } -> (
+      | TArray (ty, len) -> Iter.repeatz (z_of_const_generic len) ty
+      | TSlice _ | TAdt { id = TBuiltin TStr; _ } -> (
           let sub_ty =
-            match kind with
-            | TSlice -> List.hd generics.types
-            | TStr -> TLiteral (TUInt U8)
-            | _ -> failwith "unreachable"
+            match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
           in
           match meta with
           | Len len when Option.is_some (BV.to_z len) ->
@@ -263,66 +255,61 @@ module Make (Sptr : Sptr.S) = struct
       offset, using the provided metadata for DSTs, and returns the associated
       [Rust_val]. This does not perform any validity checking, aside from
       erroring if the type is uninhabited. *)
-  let decode ~meta ~offset :
-      Types.ty -> (rust_val, 'state, 'e, 'fix) ParserMonad.t =
+  let rec decode ~meta ~offset ty : (rust_val, 'state, 'e, 'fix) ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
-    let module T = Typed.T in
-    (* Base case, parses all types. *)
-    let rec aux offset ty : (rust_val, 'state, 'e, 'fix) ParserMonad.t =
-      let* layout = layout_of ty in
-      match (layout.fields, ty) with
-      | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
-      | _, TAdt { id = TAdtId id; _ } when Crate.is_union id ->
-          if%sat layout.size ==@ Usize.(0s) then ok (Union [])
-          else
-            (* FIXME: this isn't exactly correct; union actually doesn't copy the padding
-               bytes (i.e. the intersection of the padding bytes of all fields). It is
-               quite painful to actually calculate these padding bytes so we just copy
-               the whole thing for now.
-               See https://github.com/rust-lang/unsafe-code-guidelines/issues/518
-               And a proper implementation is here:
-               https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
-            let+ blocks = get_all (Typed.cast layout.size, offset) in
-            Union blocks
-      | Primitive, TNever -> error `RefToUninhabited
-      | Primitive, TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
-      | Primitive, _ -> query (ty, offset)
-      | Array _, (TRawPtr (pointee, _) | TRef (_, pointee, _)) -> (
-          let+ vs = iter (iter_fields ~meta layout ty) offset in
-          let vs = as_tuple vs in
-          match (dst_kind pointee, vs) with
-          | LenKind, [ Ptr (base, Thin); Int len ] -> Ptr (base, Len len)
-          | VTableKind, [ Ptr (base, Thin); Ptr (vtable, Thin) ] ->
-              Ptr (base, VTable vtable)
-          | _ -> failwith "decode: invalid metadata for pointer type")
-      | Array _, _ -> iter (iter_fields ~meta layout ty) offset
-      | Arbitrary (variant, _), _ -> (
-          let+ vs = iter (iter_fields ~meta layout ty) offset in
-          match ty with
-          | TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
-              let variants = Crate.as_enum t_id in
-              let variant = Types.VariantId.nth variants variant in
-              let fields = as_tuple vs in
-              let discr = BV.of_literal variant.discriminant in
-              Enum (discr, fields)
-          | _ -> vs)
-      | Enum _, TAdt { id = TAdtId t_id; _ } ->
-          let variants = Crate.as_enum t_id in
-          let* variant = variant_of_enum ~offset ty in
-          let+ fields = iter (iter_fields ~variant ~meta layout ty) offset in
-          let fields = as_tuple fields in
-          let variant = Types.VariantId.nth variants variant in
-          let discr = BV.of_literal variant.discriminant in
-          Enum (discr, fields)
-      | Enum _, _ -> failwith "decode: expected enum type for enum layout"
-    and iter fields offset =
+    let iter fields offset =
       fold_iter fields ~init:[] ~f:(fun vs (ty, o) ->
-          let+ v = aux (offset +!!@ o) ty in
+          let+ v = decode ~meta ~offset:(offset +!!@ o) ty in
           v :: vs)
       |> (Fun.flip map) (fun vs -> Tuple (List.rev vs))
     in
-    aux offset
+    let* layout = layout_of ty in
+    match (layout.fields, ty) with
+    | _ when layout.uninhabited -> error `RefToUninhabited
+    | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
+    | _, TAdt { id = TAdtId id; _ } when Crate.is_union id ->
+        if%sat layout.size ==@ Usize.(0s) then ok (Union [])
+        else
+          (* FIXME: this isn't exactly correct; union actually doesn't copy the
+             padding bytes (i.e. the intersection of the padding bytes of all
+             fields). It is quite painful to actually calculate these padding
+             bytes so we just copy the whole thing for now.
+             See https://github.com/rust-lang/unsafe-code-guidelines/issues/518
+             And a proper implementation is here:
+             https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
+          let+ blocks = get_all (Typed.cast layout.size, offset) in
+          Union blocks
+    | Primitive, TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
+    | Primitive, _ -> query (ty, offset)
+    | Array _, (TRawPtr (pointee, _) | TRef (_, pointee, _)) -> (
+        let+ vs = iter (iter_fields ~meta layout ty) offset in
+        let vs = as_tuple vs in
+        match (dst_kind pointee, vs) with
+        | LenKind, [ Ptr (base, Thin); Int len ] -> Ptr (base, Len len)
+        | VTableKind, [ Ptr (base, Thin); Ptr (vtable, Thin) ] ->
+            Ptr (base, VTable vtable)
+        | _ -> failwith "decode: invalid metadata for pointer type")
+    | Array _, _ -> iter (iter_fields ~meta layout ty) offset
+    | Arbitrary (variant, _), _ -> (
+        let+ vs = iter (iter_fields ~meta layout ty) offset in
+        match ty with
+        | TAdt { id = TAdtId t_id; _ } when Crate.is_enum t_id ->
+            let variants = Crate.as_enum t_id in
+            let variant = Types.VariantId.nth variants variant in
+            let fields = as_tuple vs in
+            let discr = BV.of_literal variant.discriminant in
+            Enum (discr, fields)
+        | _ -> vs)
+    | Enum _, TAdt { id = TAdtId t_id; _ } ->
+        let variants = Crate.as_enum t_id in
+        let* variant = variant_of_enum ~offset ty in
+        let+ fields = iter (iter_fields ~variant ~meta layout ty) offset in
+        let fields = as_tuple fields in
+        let variant = Types.VariantId.nth variants variant in
+        let discr = BV.of_literal variant.discriminant in
+        Enum (discr, fields)
+    | Enum _, _ -> failwith "decode: expected enum type for enum layout"
 
   (** Ensures this value is valid for the given type. This includes checking
       pointer metadata, e.g. slice lengths and vtables. The [fake_read] function
@@ -345,8 +332,11 @@ module Make (Sptr : Sptr.S) = struct
               (* TODO: check the vtable pointer is of the right trait kind *)
               ok ()
         in
-        let* opt_err, st = fake_read p pointee st in
-        match opt_err with Some err -> error err | None -> ok st)
+        let** layout = Layout.layout_of pointee in
+        if layout.uninhabited then error `RefToUninhabited
+        else
+          let* opt_err, st = fake_read p pointee st in
+          match opt_err with Some err -> error err | None -> ok st)
     | Ptr (p, _), TFnPtr _ ->
         let++ () =
           assert_or_error

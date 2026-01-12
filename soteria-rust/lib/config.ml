@@ -2,14 +2,17 @@
    We ignore the warning here. *)
 [@@@warning "-unused-open"]
 
-type frontend = Charon | Obol [@@deriving subliner_enum]
+type frontend = Charon | Obol
+[@@deriving subliner_enum, show { with_path = false }]
+
 type provenance = Strict | Permissive [@@deriving subliner_enum]
 
 type t = {
   (*
      Compilation flags
    *)
-  cleanup : bool; [@make.default false] [@names [ "clean" ]]
+  cleanup : bool;
+      [@make.default false] [@names [ "clean" ]] [@env "SOTERIA_RUST_CLEANUP"]
       (** Clean up compiled files after execution *)
   log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
       (** Log the compilation process *)
@@ -18,6 +21,10 @@ type t = {
   no_compile_plugins : bool;
       [@make.default false] [@names [ "no-compile-plugins" ]]
       (** Do not compile the plugins, as they are already compiled *)
+  plugin_directory : string option;
+      [@names [ "plugins" ]] [@env "SOTERIA_RUST_PLUGINS"]
+      (** The directory in which plugins are and should be compiled; defaults to
+          the current dune-managed site. *)
   target : string option; [@names [ "target" ]] [@env "TARGET"]
       (** The compilation target triple to use, e.g. x86_64-unknown-linux-gnu.
           If not provided, the default target for the current machine is used.
@@ -47,14 +54,9 @@ type t = {
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided; tests matching any will be
           selected. The filters are treated as regexes. *)
-  no_timing : bool; [@make.default false] [@names [ "no-timing" ]]
-      (** Do not display execution times *)
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
-  print_stats : bool; [@make.default false] [@names [ "stats" ]]
-      (** If statistics about the execution should be printed at the end of each
-          test *)
   (*
      Symbolic execution behaviour
    *)
@@ -84,7 +86,8 @@ type global = {
       [@term Soteria.Terminal.Config.cmdliner_term ()]
   solver : Soteria.Solvers.Config.t;
       [@term Soteria.Solvers.Config.cmdliner_term ()]
-  rusteria : t; [@term term]
+  stats : Soteria.Stats.Config.t; [@term Soteria.Stats.Config.cmdliner_term ()]
+  soteria_rust : t; [@term term]
 }
 [@@deriving make, subliner]
 
@@ -96,4 +99,5 @@ let set (config : global) =
   Soteria.Solvers.Config.set config.solver;
   Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
-  current := config.rusteria
+  Soteria.Stats.Config.set_and_lock config.stats;
+  current := config.soteria_rust

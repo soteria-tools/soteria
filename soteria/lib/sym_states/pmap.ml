@@ -21,6 +21,113 @@ module KeyS (Symex : Symex.Base) = struct
     val subst : (Value.Syn.t -> 'a Value.t) -> syn -> t
     val exprs_syn : syn -> Symex.Value.Syn.t list
   end
+
+  module type S_patricia_tree = sig
+    include S
+
+    val to_int : t -> int
+  end
+end
+
+module type MapS = sig
+  type key
+  type 'a t
+
+  val empty : 'a t
+  val is_empty : 'a t -> bool
+  val add : key -> 'a -> 'a t -> 'a t
+  val add_seq : (key * 'a) Seq.t -> 'a t -> 'a t
+  val update : key -> ('a option -> 'a option) -> 'a t -> 'a t
+  val mem : key -> 'a t -> bool
+  val find_opt : key -> 'a t -> 'a option
+  val iter : (key -> 'a -> unit) -> 'a t -> unit
+  val to_seq : 'a t -> (key * 'a) Seq.t
+end
+
+module S
+    (Symex : Symex.Base)
+    (Key : sig
+      type t
+    end) =
+struct
+  module type S = sig
+    type 'a t
+    type 'a serialized = (Key.t * 'a) list
+
+    val empty : 'a t
+    val syntactic_bindings : 'a t -> (Key.t * 'a) Seq.t
+    val syntactic_mem : Key.t -> 'a t -> bool
+
+    val pp :
+      ?ignore:(Key.t * 'a -> bool) ->
+      (Format.formatter -> 'a -> unit) ->
+      Format.formatter ->
+      'a t ->
+      unit
+
+    val pp_serialized :
+      (Format.formatter -> 'a -> unit) ->
+      Format.formatter ->
+      'a serialized ->
+      unit
+
+    val serialize : ('a -> 'b) -> 'a t -> (Key.t * 'b) list
+
+    val subst_serialized :
+      ((Var.t -> Var.t) -> 'a -> 'b) ->
+      (Var.t -> Var.t) ->
+      'a serialized ->
+      'b serialized
+
+    val iter_vars_serialized :
+      ('a -> (Var.t * 'b Symex.Value.ty -> unit) -> unit) ->
+      'a serialized ->
+      (Var.t * 'b Symex.Value.ty -> unit) ->
+      unit
+
+    val of_opt : 'a t option -> 'a t
+    val to_opt : 'a t -> 'a t option
+
+    val alloc :
+      new_codom:'a ->
+      'a t option ->
+      (Key.t * 'a t option, 'err, 'fix list) Symex.Result.t
+
+    val allocs :
+      fn:('b -> Key.t -> ('a * 'k) Symex.t) ->
+      els:'b list ->
+      'a t option ->
+      ('k list * 'a t option, 'err, 'fix list) Symex.Result.t
+
+    val wrap :
+      ('a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t) ->
+      Key.t ->
+      'a t option ->
+      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t
+
+    val fold :
+      ('acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t) ->
+      'acc ->
+      'a t option ->
+      ('acc, 'err, 'fix serialized) Symex.Result.t
+
+    val produce :
+      ('inner_serialized -> 'inner_st option -> 'inner_st option Symex.t) ->
+      'inner_serialized serialized ->
+      'inner_st t option ->
+      'inner_st t option Symex.t
+
+    val consume :
+      ('inner_serialized ->
+      'inner_st option ->
+      ( 'inner_st option,
+        ([> Symex.lfail ] as 'a),
+        'inner_serialized )
+      Symex.Result.t) ->
+      'inner_serialized serialized ->
+      'inner_st t option ->
+      ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t
+  end
 end
 
 module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
@@ -42,13 +149,14 @@ end
 module Build_from_find_opt_sym
     (Symex : Symex.Base)
     (Key : KeyS(Symex).S)
+    (Map : MapS with type key = Key.t)
     (Find_opt_sym : sig
-      val f : Key.t -> 'a Stdlib.Map.Make(Key).t -> (Key.t * 'a option) Symex.t
+      val f : Key.t -> 'a Map.t -> (Key.t * 'a option) Symex.t
     end) =
 struct
   open Symex.Syntax
   open Symex
-  module M = Stdlib.Map.Make (Key)
+  module M = Map
 
   type 'a t = 'a M.t
   type 'a serialized = (Key.t * 'a) list
@@ -61,6 +169,10 @@ struct
   let lift_fix ~key fix =
     let key = Key.to_syn key in
     List.map (fun v -> (key, v)) fix
+
+  let empty = M.empty
+  let syntactic_bindings = M.to_seq
+  let syntactic_mem = M.mem
 
   let lift_fix_s ~key res =
     let+? fix = res in
@@ -109,7 +221,8 @@ struct
     let st = of_opt st in
     let* key = Key.fresh () in
     let* () =
-      Symex.assume [ Key.distinct (key :: (M.bindings st |> List.map fst)) ]
+      Symex.assume
+        [ Key.distinct (key :: (M.to_seq st |> Seq.map fst |> List.of_seq)) ]
     in
     Result.ok (key, to_opt (M.add key new_codom st))
 
@@ -124,7 +237,9 @@ struct
     in
     let out_keys = List.rev out_keys in
     let st = M.add_seq bindings st in
-    let+ () = Symex.assume [ Key.distinct @@ List.map fst @@ M.bindings st ] in
+    let+ () =
+      Symex.assume [ M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct ]
+    in
     Compo_res.Ok (out_keys, to_opt st)
 
   let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix list) Symex.Result.t)
@@ -175,12 +290,15 @@ struct
     Result.fold_seq (M.to_seq st) ~init ~f
 end
 
-module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
+module Build_base
+    (Symex : Symex.Base)
+    (Key : KeyS(Symex).S)
+    (M : MapS with type key = Key.t) =
+struct
   open Symex.Syntax
-  module M' = Stdlib.Map.Make (Key)
 
   (* Symbolic process that under-approximates Map.find_opt *)
-  let find_opt_sym (key : Key.t) (st : 'a M'.t) =
+  let find_opt_sym (key : Key.t) (st : 'a M.t) =
     let rec find_bindings = function
       | [] -> Symex.return (key, None)
       | (k, v) :: tl ->
@@ -188,22 +306,35 @@ module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
           else find_bindings tl
       (* TODO: Investigate: this is not a tailcall, because if%sat is not an if. *)
     in
-    match M'.find_opt key st with
+    match M.find_opt key st with
     | Some v -> Symex.return (key, Some v)
-    | None -> find_bindings (M'.bindings st)
+    | None -> M.to_seq st |> List.of_seq |> find_bindings
 
   include
-    Build_from_find_opt_sym (Symex) (Key)
+    Build_from_find_opt_sym (Symex) (Key) (M)
       (struct
         let f = find_opt_sym
       end)
 end
 
-module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
-  open Symex.Syntax
-  module M' = Stdlib.Map.Make (Key)
+module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) =
+  Build_base (Symex) (Key) (Stdlib.Map.Make (Key))
 
-  let find_opt_sym (key : Key.t) (st : 'a M'.t) =
+module Make_patricia_tree
+    (Symex : Symex.Base)
+    (Key : KeyS(Symex).S_patricia_tree) =
+  Build_base (Symex) (Key) (PatriciaTree.MakeMap (Key))
+
+(** Sound to use when the keys of the map may depend on symbolic variables *)
+
+module Build_direct_access
+    (Symex : Symex.Base)
+    (Key : KeyS(Symex).S)
+    (M : MapS with type key = Key.t) =
+struct
+  open Symex.Syntax
+
+  let find_opt_sym (key : Key.t) (st : 'a M.t) =
     let rec find_bindings = function
       | [] -> Symex.vanish ()
       | (k, v) :: tl ->
@@ -211,20 +342,32 @@ module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
           else find_bindings tl
     in
     let* key = Key.simplify key in
-    match M'.find_opt key st with
+    match M.find_opt key st with
     | Some v -> Symex.return (key, Some v)
     | None ->
         let not_in_map =
-          M'.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct
+          M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct
         in
         if%sat1 not_in_map then Symex.return (key, None)
-        else find_bindings (M'.bindings st)
+        else M.to_seq st |> List.of_seq |> find_bindings
 
   include
-    Build_from_find_opt_sym (Symex) (Key)
+    Build_from_find_opt_sym (Symex) (Key) (M)
       (struct
         let f = find_opt_sym
       end)
+end
+
+module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
+  include Build_direct_access (Symex) (Key) (Stdlib.Map.Make (Key))
+end
+
+module Direct_access_patricia_tree
+    (Symex : Symex.Base)
+    (Key : KeyS(Symex).S_patricia_tree) =
+struct
+  module M' = PatriciaTree.MakeMap (Key)
+  include Build_direct_access (Symex) (Key) (M')
 end
 
 (** Only sound to use if the keys of the map are invariant under interpretations
@@ -237,7 +380,7 @@ module Concrete (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) = struct
     Symex.return (key, M'.find_opt key st)
 
   include
-    Build_from_find_opt_sym (Symex) (Key)
+    Build_from_find_opt_sym (Symex) (Key) (M')
       (struct
         let f = find_opt_sym
       end)

@@ -249,7 +249,7 @@ class Experiment(PrintersMixin):
                     "Hyperfine is required for benchmarking but was not found in PATH. Install it and try again."
                 )
                 exit(4)
-            cmd = f"hyperfine '{cmd}' --warmup 1 --runs 10"
+            cmd = f"hyperfine '{cmd}' --warmup 1 --runs 10 -i"
         self.run_command(cmd)
 
     def run(self):

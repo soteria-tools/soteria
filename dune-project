@@ -37,6 +37,7 @@
   eio_main
   simple_smt
   iter
+  patricia-tree
   (ppx_expect
    (>= 0.17.0))
   ppx_deriving
@@ -144,6 +145,7 @@
   soteria
   dune-site
   zarith
+  patricia-tree
   ppx_deriving
   cmdliner
   fmt

@@ -123,7 +123,7 @@ module Interval : S = struct
   end)
 
   (** Union of two interval mappings, doing the union of the intervals *)
-  let st_union = Var.Map.merge (fun _ -> Option.map2 Range.union)
+  let st_inter = Var.Map.idempotent_inter (fun _ -> Range.union)
 
   let get v st = Var.Map.find_opt v st |> Option.value ~default:(None, None)
 
@@ -272,7 +272,7 @@ module Interval : S = struct
         log (fun m ->
             m "%a || %a => %a || %a" Svalue.pp v1 Svalue.pp v2 Svalue.pp v1'
               Svalue.pp v2');
-        ((v1' ||@ v2', Var.Set.union vars1 vars2), st_union st1 st2)
+        ((v1' ||@ v2', Var.Set.union vars1 vars2), st_inter st1 st2)
     | _ -> ((v, Var.Set.empty), st)
 
   (** Simplifies a constraints using the current knowledge base, without
