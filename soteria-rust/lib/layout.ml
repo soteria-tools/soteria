@@ -222,7 +222,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       mk ~size ~align:sub_layout.align ~fields:(Array sub_layout.size) ()
   (* Never -- zero sized type *)
   | TNever ->
-      ok (mk_concrete ~size:0 ~align:1 ~uninhabited:false ~fields:Primitive ())
+      ok (mk_concrete ~size:0 ~align:1 ~uninhabited:true ~fields:Primitive ())
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Others (unhandled for now) *)
