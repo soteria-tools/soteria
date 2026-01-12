@@ -196,7 +196,6 @@ let with_ptr_raw (ptr : Sptr.t) (st : block SPmap.t option)
       [< T.sint ] Typed.t * sub option ->
       ('a * sub option, 'err, 'fix list) DecayMapMonad.Result.t) :
     ('a * block SPmap.t option, 'err, serialized) DecayMapMonad.Result.t =
-  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   let open DecayMapMonad in
   let open DecayMapMonad.Syntax in
   let** () =
@@ -204,6 +203,7 @@ let with_ptr_raw (ptr : Sptr.t) (st : block SPmap.t option)
       Typed.(not (Sptr.sem_eq ptr (Sptr.null_ptr ())))
       `NullDereference
   in
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   let* res =
     (SPmap.wrap (function
       | Some ({ info = Some { kind = Function _; _ }; _ } : block) ->
