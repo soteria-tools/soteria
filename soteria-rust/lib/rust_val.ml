@@ -1,4 +1,3 @@
-open Charon
 module T = Typed.T
 
 type 'ptr meta = Thin | Len of T.sint Typed.t | VTable of 'ptr
@@ -13,7 +12,6 @@ type 'ptr t =
   | Tuple of 'ptr t list  (** contains ordered values *)
   | Union of ('ptr t * T.sint Typed.t) list
       (** list of blocks in the union, with their offset *)
-  | ConstFn of Types.fn_ptr
 
 type 'ptr rust_val = 'ptr t
 
@@ -23,7 +21,7 @@ type 'ptr rust_val = 'ptr t
 
     Used in unsizing, to find the field with the pointer to modify. *)
 let rec is_empty = function
-  | Int _ | Float _ | Ptr _ | Enum (_, _) | ConstFn _ -> false
+  | Int _ | Float _ | Ptr _ | Enum (_, _) -> false
   | Tuple vals -> List.for_all is_empty vals
   (* I'm not sure about this one *)
   | Union _ -> false
@@ -54,7 +52,6 @@ let rec pp_rust_val pp_ptr fmt =
         Fmt.pf ft "(%a: %a)" Typed.ppa ofs pp_rust_val v
       in
       Fmt.pf fmt "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
-  | ConstFn fn_ptr -> Fmt.pf fmt "ConstFn(%a)" Types.pp_fn_ptr fn_ptr
 
 let pp = pp_rust_val
 let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv
@@ -99,7 +96,6 @@ let size_of = function
   | Float f -> Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8
   | Ptr (_, Thin) -> Crate.pointer_size ()
   | Ptr (_, (Len _ | VTable _)) -> Crate.pointer_size () * 2
-  | ConstFn _ -> 0
   (* We can't know the size of a union/tuple/enum, because of e.g. niches, or padding *)
   | Union _ | Enum _ | Tuple _ ->
       failwith "Impossible to get size of Enum/Tuple rust_val"
@@ -107,7 +103,7 @@ let size_of = function
 let flatten v =
   let rec aux acc = function
     | Tuple vs | Enum (_, vs) -> List.fold_left aux acc vs
-    | (Int _ | Float _ | Ptr _ | ConstFn _ | Union _) as v -> v :: acc
+    | (Int _ | Float _ | Ptr _ | Union _) as v -> v :: acc
   in
   List.rev (aux [] v)
 
@@ -132,7 +128,6 @@ let rec iter_vars ptr_iter_vars rv f =
       | Len v -> Typed.iter_vars v f
       | VTable v -> ptr_iter_vars v f);
       ptr_iter_vars p f
-  | ConstFn _ -> ()
 
 let rec subst ptr_subst subst_var rv =
   let subst = subst ptr_subst subst_var in
@@ -152,4 +147,3 @@ let rec subst ptr_subst subst_var rv =
         | VTable ptr -> VTable (ptr_subst subst_var ptr)
       in
       Ptr (ptr_subst subst_var p, meta)
-  | ConstFn _ -> rv

@@ -613,7 +613,7 @@ let rec as_zst : Types.ty -> 'a rust_val option =
           |> Option.map (fun fs -> Enum (BV.of_literal discriminant, fs))
       | Enum _ -> None
       | _ -> None)
-  | TFnDef binder -> Some (ConstFn binder.binder_value)
+  | TFnDef _ -> Some (Tuple [])
   | _ -> None
 
 (** Apply the compiler-attribute to the given value *)
@@ -642,6 +642,7 @@ let apply_attributes v attributes =
 let rec is_unsafe_cell : Types.ty -> bool = function
   | TAdt { id = TTuple; generics = { types; _ } } ->
       List.exists is_unsafe_cell types
+  | TAdt { id = TBuiltin _; _ } -> false
   | TAdt adt -> (
       let adt = Crate.get_adt adt in
       if adt.item_meta.lang_item = Some "unsafe_cell" then true
