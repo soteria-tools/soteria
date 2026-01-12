@@ -191,41 +191,17 @@ let with_ptr_raw (ptr : Sptr.t) (st : block SPmap.t option)
     ('a * block SPmap.t option, 'err, serialized) DecayMapMonad.Result.t =
   let open DecayMapMonad in
   let open DecayMapMonad.Syntax in
-  let loc = Typed.Ptr.loc ptr.ptr in
-  let* res =
-    (SPmap.wrap (function
-      | Some ({ info = Some { kind = Function _; _ }; _ } : block) ->
-          Result.error `AccessedFnPointer
-      | block -> With_meta.wrap (Freeable.wrap f) block))
-      loc st
-  in
-  match res with
-  | Missing _ as miss ->
-      if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
-      else return miss
-  | Ok (x, st) -> Result.ok (x, st)
-  | Error e -> Result.error e
-
-let with_ptr (ptr : Sptr.t) (st : t)
-    (f :
-      [< T.sint ] Typed.t * sub option ->
-      ('a * sub option, 'err, 'fix list) DecayMapMonad.Result.t) :
-    ('a * t, 'err, serialized) Result.t =
   let** () =
     assert_or_error
       Typed.(not (Sptr.sem_eq ptr (Sptr.null_ptr ())))
       `NullDereference
   in
-  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-  let@ state = with_state st in
-  let open DecayMapMonad in
-  let open DecayMapMonad.Syntax in
   let* res =
     (SPmap.wrap (function
       | Some ({ info = Some { kind = Function _; _ }; _ } : block) ->
           Result.error `AccessedFnPointer
       | block -> With_meta.wrap (Freeable.wrap (fun st -> f (ofs, st))) block))
-      loc state
+      loc st
   in
   match res with
   | Missing _ as miss ->
@@ -246,6 +222,7 @@ let with_opt_or (x : 'a option) (otherwise : 'b)
   match x with
   | Some v -> f v
   | None -> DecayMapMonad.Result.ok (otherwise, None)
+let with_ptr ptr st f = with_state st (fun st -> with_ptr_raw ptr st f)
 
 let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -262,12 +239,12 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   log "load" ptr st;
   let@ st = with_state st in
   let handler (ty, ofs) st =
-    let@ block = with_ptr_raw ptr st in
+    let@ _, block = with_ptr_raw ptr st in
     let@ block, tb = with_tbs block in
     Tree_block.load ~ignore_borrow ofs ty ptr.tag tb block
   in
   let get_all (size, ofs) st =
-    let@ block = with_ptr_raw ptr st in
+    let@ _, block = with_ptr_raw ptr st in
     let@ block, _ = with_tbs block in
     Tree_block.get_init_leaves ofs size block
   in
