@@ -445,7 +445,7 @@ let mk_block ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
   let block = Tree_block.alloc ?zeroed size in
   let span = Option.value span ~default:(get_loc ()) in
   let info : Meta.t = { align; size; kind; span; tb_root = tag } in
-  let tag = if !Config.current.ignore_aliasing then None else Some tag in
+  let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
   ({ node = Alive (block, tb); info = Some info }, tag)
 
 let alloc ?kind ?span ?zeroed size align st =
@@ -613,7 +613,7 @@ let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) st =
 let with_exposed addr state =
   let@ () = with_error_loc_as_call_trace state in
   let@ () = with_loc_err () in
-  match !Config.current.provenance with
+  match (Config.get ()).provenance with
   | Strict -> Result.error `UBIntToPointerStrict
   | Permissive -> (
       let@ st = with_state state in

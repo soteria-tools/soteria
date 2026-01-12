@@ -22,3 +22,4 @@ module Seq = Seq
 module String = String
 module Syntaxes = Syntaxes
 module Sys = Sys
+module Write_once = Write_once

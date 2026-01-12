@@ -24,7 +24,7 @@ let pp_results ft v =
 
 let with_config logs_config solver_config f =
   Soteria.Logs.Config.check_set_and_lock logs_config;
-  Soteria.Solvers.Config.set solver_config;
+  Soteria.Solvers.Config.set_and_lock solver_config;
   f ()
 
 module Exec_interp = Interp.Make (State)
