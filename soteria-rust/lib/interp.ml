@@ -311,7 +311,8 @@ module Make (State : State_intf.S) = struct
             f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
-        if not @@ Layout.is_inhabited place.ty then error `RefToUninhabited
+        let* layout = Layout.layout_of place.ty in
+        if layout.uninhabited then error `RefToUninhabited
         else if Layout.is_dst place.ty then ok (ptr', meta)
         else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
@@ -461,18 +462,14 @@ module Make (State : State_intf.S) = struct
   and eval_operand (op : Expressions.operand) =
     match op with
     | Constant c -> resolve_constant c
-    | (Move loc | Copy loc) when not (Layout.is_inhabited loc.ty) ->
-        error `RefToUninhabited
-    | Move loc | Copy loc -> (
+    | Move loc | Copy loc ->
         (* I don't think the operand being [Move] matters at all, aside from function calls.
            See: https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
-        let ty = loc.ty in
-        let* ptr = resolve_place_lazy loc in
-        match (ptr, Layout.as_zst ty) with
-        | Heap ptr, Some zst ->
-            let+ () = State.check_ptr_align ptr ty in
-            zst
-        | _, _ -> load_lazy ptr ty)
+        let* layout = Layout.layout_of loc.ty in
+        if layout.uninhabited then error `RefToUninhabited
+        else
+          let* ptr = resolve_place_lazy loc in
+          load_lazy ptr loc.ty
 
   and eval_operand_list ops =
     let+ vs =

@@ -58,7 +58,8 @@ module M (Rust_state_m : Rust_state_m.S) :
     | _ -> not_impl "ptr_add: invalid arguments"
 
   let assert_inhabited ~t =
-    if Layout.is_inhabited t then ok ()
+    let* layout = Layout.layout_of t in
+    if not layout.uninhabited then ok ()
     else error (`Panic (Some "core::intrinsics::assert_inhabited"))
 
   let assert_mem_uninitialized_valid ~t:_ = ok ()
