@@ -185,15 +185,6 @@ Test transmutations keeping the bit-patterns the same
 Test reading ZSTs via null pointers
   $ soteria-rust rustc null_ptr_zst.rs
   Compiling... done in <time>
-  error: null_ptr_zst: found issues in <time>, errors in 1 branch (out of 1)
-  error: Null dereference in null_ptr_zst
-      ┌─ $TESTCASE_ROOT/null_ptr_zst.rs:5:29
-    2 │  fn null_ptr_zst() {
-      │   ----------------- 1: Entry point
-    3 │      let ptr: *const () = std::ptr::null();
-    4 │      // this shouldn't fail; reading a ZST through a null pointer is allowed
-    5 │      let zst: () = unsafe { *ptr };
-      │                              ^^^^ Triggering memory operation
+  note: null_ptr_zst: done in <time>, ran 1 branch
   PC 1: empty
   
-  [1]
