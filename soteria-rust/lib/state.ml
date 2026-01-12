@@ -185,6 +185,27 @@ let with_decay_map f st =
   let+ res, pointers = DecayMapMonad.with_state ~state:st.pointers f in
   (res, { st with pointers })
 
+let with_ptr_raw (ptr : Sptr.t) (st : block SPmap.t option)
+    (f :
+      sub option -> ('a * sub option, 'err, 'fix list) DecayMapMonad.Result.t) :
+    ('a * block SPmap.t option, 'err, serialized) DecayMapMonad.Result.t =
+  let open DecayMapMonad in
+  let open DecayMapMonad.Syntax in
+  let loc = Typed.Ptr.loc ptr.ptr in
+  let* res =
+    (SPmap.wrap (function
+      | Some ({ info = Some { kind = Function _; _ }; _ } : block) ->
+          Result.error `AccessedFnPointer
+      | block -> With_meta.wrap (Freeable.wrap f) block))
+      loc st
+  in
+  match res with
+  | Missing _ as miss ->
+      if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
+      else return miss
+  | Ok (x, st) -> Result.ok (x, st)
+  | Error e -> Result.error e
+
 let with_ptr (ptr : Sptr.t) (st : t)
     (f :
       [< T.sint ] Typed.t * sub option ->
@@ -239,11 +260,19 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
     (parser : offset:T.sint Typed.t -> (a, 's, 'e, 'f) Encoder.ParserMonad.t) st
     : (a * t, 'e, serialized) Result.t =
   log "load" ptr st;
-  let@ offset, block = with_ptr ptr st in
-  let@ block, tb = with_tbs block in
-  let handler (ty, ofs) = Tree_block.load ~ignore_borrow ofs ty ptr.tag tb in
-  let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
-  Encoder.ParserMonad.parse ~init:block ~handler ~get_all @@ parser ~offset
+  let@ st = with_state st in
+  let handler (ty, ofs) st =
+    let@ block = with_ptr_raw ptr st in
+    let@ block, tb = with_tbs block in
+    Tree_block.load ~ignore_borrow ofs ty ptr.tag tb block
+  in
+  let get_all (size, ofs) st =
+    let@ block = with_ptr_raw ptr st in
+    let@ block, _ = with_tbs block in
+    Tree_block.get_init_leaves ofs size block
+  in
+  let offset = Typed.Ptr.ofs ptr.ptr in
+  Encoder.ParserMonad.parse ~init:st ~handler ~get_all @@ parser ~offset
 
 let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) st =
   (* The expected alignment of a dyn pointer is stored inside the VTable  *)
