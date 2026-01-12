@@ -19,21 +19,10 @@ type t = {
 [@@deriving subliner, make]
 
 let default = make ()
-
-let set, get, lock =
-  let current_config = ref default in
-  let locked = ref false in
-  let lock () = locked := true in
-  let set_config config =
-    if !locked then failwith "Terminal configuration cannot be changed anymore";
-    current_config := config
-  in
-  let current_config () = !current_config in
-  (set_config, current_config, lock)
+let get, set_and_lock = Soteria_std.Write_once.make ~name:"Terminal" ~default ()
 
 let set_and_lock config =
-  set config;
-  lock ();
+  set_and_lock config;
   Profile.init ~no_color:config.no_color ()
 
 let no_color () = (get ()).no_color

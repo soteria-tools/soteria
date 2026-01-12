@@ -22,7 +22,7 @@ module Exe = struct
       ~finally:(fun () -> Unix.chdir pwd)
       (fun () ->
         Unix.chdir path;
-        if !Config.current.log_compilation then
+        if (Config.get ()).log_compilation then
           L.app (fun g -> g "Changed working directory to %s" path);
         f ())
 
@@ -39,14 +39,14 @@ module Exe = struct
     let current_env = Unix.environment () in
     let env = Array.append current_env (Array.of_list env) in
     let cmd = String.concat " " (cmd :: args) in
-    if !Config.current.log_compilation then
+    if (Config.get ()).log_compilation then
       L.app (fun g -> g "Running command: %s" cmd);
     let out, inp, err = Unix.open_process_full cmd env in
     (* FIXME: this line hangs if nothing is printed to stdout *)
     let output = if read_out then In_channel.input_lines out else [] in
     let error = if read_err then In_channel.input_lines err else [] in
     let status = Unix.close_process_full (out, inp, err) in
-    if !Config.current.log_compilation then
+    if (Config.get ()).log_compilation then
       L.app (fun g ->
           g "Command finished with status: %a@.stdout:@.%a@.stderr:@.%a"
             pp_status status
@@ -70,7 +70,7 @@ module Cleaner = struct
   let files = ref []
   let touched file = files := file :: !files
   let cleanup () = List.iter Sys.remove !files
-  let () = at_exit (fun () -> if !Config.current.cleanup then cleanup ())
+  let () = at_exit (fun () -> if (Config.get ()).cleanup then cleanup ())
 end
 
 (** Organise commands to send to the Soteria-Rust frontend *)
@@ -104,7 +104,7 @@ module Cmd = struct
   let toolchain_path =
     lazy
       (let cmd =
-         match !Config.current.frontend with
+         match (Config.get ()).frontend with
          | Obol -> "obol"
          | Charon -> "charon"
        in
@@ -115,9 +115,9 @@ module Cmd = struct
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
 
   let current_rustc_flags () =
-    let rustc = !Config.current.rustc_flags in
+    let rustc = (Config.get ()).rustc_flags in
     let sysroot =
-      match !Config.current.sysroot with
+      match (Config.get ()).sysroot with
       | Some path -> [ "--sysroot=" ^ path ]
       | None -> []
     in
@@ -142,7 +142,7 @@ module Cmd = struct
     in
     let rustc = rustc @ user_specified @ features in
     let cmd, args =
-      match !Config.current.frontend with
+      match (Config.get ()).frontend with
       | Obol -> ("obol", obol)
       | Charon -> ("charon", charon)
     in
@@ -176,7 +176,7 @@ end
 module Lib = struct
   let target =
     lazy
-      (match !Config.current.target with
+      (match (Config.get ()).target with
       | Some t -> t
       | None -> (
           let env = Cmd.rustc_as_env () in
@@ -187,7 +187,7 @@ module Lib = struct
 
   let root =
     lazy
-      (match !Config.current.plugin_directory with
+      (match (Config.get ()).plugin_directory with
       | Some root -> root
       | None -> List.hd Runtime_sites.Sites.plugins)
 
@@ -197,10 +197,10 @@ module Lib = struct
   let path lib = Filename.concat (Lazy.force root) (name lib)
 
   let compile lib =
-    if not !Config.current.no_compile_plugins then
+    if not (Config.get ()).no_compile_plugins then
       let path = path lib in
       let verbosity =
-        if !Config.current.log_compilation then [ "--verbose" ] else []
+        if (Config.get ()).log_compilation then [ "--verbose" ] else []
       in
       let env =
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
@@ -380,16 +380,16 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
               | None, None -> Infinite
             in
             {
-              steps = get_or "rusteriatool::step_fuel" !Config.current.step_fuel;
+              steps = get_or "rusteriatool::step_fuel" (Config.get ()).step_fuel;
               branching =
-                get_or "rusteriatool::branch_fuel" !Config.current.branch_fuel;
+                get_or "rusteriatool::branch_fuel" (Config.get ()).branch_fuel;
             }
           in
           Some { ep with fuel }
       | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest
       | None, [] -> None
     in
-    let filters = !Config.current.filter in
+    let filters = (Config.get ()).filter in
     let filter_ok =
       match filters with
       | [] -> true
@@ -410,13 +410,13 @@ let create_using_current_config () =
   merge_ifs
     [
       (true, default);
-      (!Config.current.with_kani, kani);
-      (!Config.current.with_miri, miri);
+      ((Config.get ()).with_kani, kani);
+      ((Config.get ()).with_miri, miri);
     ]
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
-  if not !Config.current.no_compile then (
+  if not (Config.get ()).no_compile then (
     let cmd = plugin.mk_cmd ?input ~output () in
     let _, err, res = Cmd.exec_in ~read_err:true ~mode pwd cmd in
     if not (Exe.is_ok res) then
@@ -435,11 +435,11 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
         Fmt.kstr frontend_err
           "Failed to parse ULLBC. Do you have the right version of %a \
            installed?"
-          Config.pp_frontend !Config.current.frontend
+          Config.pp_frontend (Config.get ()).frontend
     | exception Sys_error _ -> frontend_err "File doesn't exist"
     | exception _ -> frontend_err "Unexpected error"
   in
-  if !Config.current.output_crate then (
+  if (Config.get ()).output_crate then (
     (* save pretty-printed crate to local file *)
     let crate_file = Printf.sprintf "%s.crate" output in
     let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in

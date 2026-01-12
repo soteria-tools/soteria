@@ -290,7 +290,7 @@ let generate_errors content =
 let initialise ?log_config ?term_config ?solver_config ?stats_config config f =
   Option.iter Soteria.Logs.Config.check_set_and_lock log_config;
   Option.iter Soteria.Terminal.Config.set_and_lock term_config;
-  Option.iter Soteria.Solvers.Config.set solver_config;
+  Option.iter Soteria.Solvers.Config.set_and_lock solver_config;
   Option.iter Soteria.Stats.Config.set_and_lock stats_config;
   Config.with_config ~config f
 

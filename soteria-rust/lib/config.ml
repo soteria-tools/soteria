@@ -79,6 +79,10 @@ type t = {
 [@@deriving make, subliner]
 
 let term = cmdliner_term ()
+let default = make ()
+
+let get, set_and_lock =
+  Soteria.Soteria_std.Write_once.make ~name:"Soteria-Rust" ~default ()
 
 type global = {
   logs : (Soteria.Logs.Config.t, string) result; [@term Soteria.Logs.Cli.term]
@@ -92,12 +96,10 @@ type global = {
 [@@deriving make, subliner]
 
 let global_term = global_cmdliner_term ()
-let default = make ()
-let current : t ref = ref default
 
-let set (config : global) =
-  Soteria.Solvers.Config.set config.solver;
+let set_and_lock_global (config : global) =
+  Soteria.Solvers.Config.set_and_lock config.solver;
   Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
   Soteria.Stats.Config.set_and_lock config.stats;
-  current := config.soteria_rust
+  set_and_lock config.soteria_rust
