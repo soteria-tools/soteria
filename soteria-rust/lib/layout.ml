@@ -539,7 +539,6 @@ and nondets tys =
 
 (** Apply the compiler-attribute to the given value *)
 let apply_attribute v attr =
-  let open Rustsymex.Syntax in
   match (v, attr) with
   | ( Int v,
       Meta.AttrUnknown
