@@ -1,7 +1,9 @@
 open Aux
 module Bi = Soteria.Sym_states.Bi_abd.Make (Symex)
 
-type t = (State.t, State.syn) Bi.t [@@deriving show { with_path = false }]
+type t = (State.t option, State.syn) Bi.t
+[@@deriving show { with_path = false }]
+
 type syn = State.syn [@@deriving show { with_path = false }]
 type fixes = State.syn list [@@deriving show { with_path = false }]
 type err = State.err * t [@@deriving show { with_path = false }]

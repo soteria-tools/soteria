@@ -1,35 +1,7 @@
 open Symex
+module Key = Pmap_intf.Key
 
-module KeyS (Symex : Symex.Base) = struct
-  open Symex
-
-  module type S = sig
-    type t
-    type syn [@@deriving show { with_path = false }]
-
-    include Stdlib.Map.OrderedType with type t := t
-
-    type sbool_v := Symex.Value.sbool Symex.Value.t
-
-    val pp : Format.formatter -> t -> unit
-    val sem_eq : t -> t -> sbool_v
-    val fresh : unit -> t Symex.t
-    val simplify : t -> t Symex.t
-    val distinct : t list -> sbool_v
-    val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
-    val to_syn : t -> syn
-    val subst : (Value.Syn.t -> 'a Value.t) -> syn -> t
-    val exprs_syn : syn -> Symex.Value.Syn.t list
-  end
-
-  module type S_patricia_tree = sig
-    include S
-
-    val to_int : t -> int
-  end
-end
-
-module type MapS = sig
+module type Container_map_S = sig
   type key
   type 'a t
 
@@ -42,102 +14,20 @@ module type MapS = sig
   val find_opt : key -> 'a t -> 'a option
   val iter : (key -> 'a -> unit) -> 'a t -> unit
   val to_seq : 'a t -> (key * 'a) Seq.t
+  val to_list : 'a t -> (key * 'a) list
 end
 
-module S
-    (Symex : Symex.Base)
-    (Key : sig
-      type t
-    end) =
-struct
-  module type S = sig
-    type 'a t
-    type 'a serialized = (Key.t * 'a) list
+(** @canonical *)
+module S = Pmap_intf.M
 
-    val empty : 'a t
-    val syntactic_bindings : 'a t -> (Key.t * 'a) Seq.t
-    val syntactic_mem : Key.t -> 'a t -> bool
+module Mk_concrete_key (Symex : Symex.Base) (K : Soteria_std.Ordered_type.S) :
+  Key(Symex).S with type t = K.t and type syn = K.t = struct
+  include K
 
-    val pp :
-      ?ignore:(Key.t * 'a -> bool) ->
-      (Format.formatter -> 'a -> unit) ->
-      Format.formatter ->
-      'a t ->
-      unit
-
-    val pp_serialized :
-      (Format.formatter -> 'a -> unit) ->
-      Format.formatter ->
-      'a serialized ->
-      unit
-
-    val serialize : ('a -> 'b) -> 'a t -> (Key.t * 'b) list
-
-    val subst_serialized :
-      ((Var.t -> Var.t) -> 'a -> 'b) ->
-      (Var.t -> Var.t) ->
-      'a serialized ->
-      'b serialized
-
-    val iter_vars_serialized :
-      ('a -> (Var.t * 'b Symex.Value.ty -> unit) -> unit) ->
-      'a serialized ->
-      (Var.t * 'b Symex.Value.ty -> unit) ->
-      unit
-
-    val of_opt : 'a t option -> 'a t
-    val to_opt : 'a t -> 'a t option
-
-    val alloc :
-      new_codom:'a ->
-      'a t option ->
-      (Key.t * 'a t option, 'err, 'fix list) Symex.Result.t
-
-    val allocs :
-      fn:('b -> Key.t -> ('a * 'k) Symex.t) ->
-      els:'b list ->
-      'a t option ->
-      ('k list * 'a t option, 'err, 'fix list) Symex.Result.t
-
-    val wrap :
-      ('a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t) ->
-      Key.t ->
-      'a t option ->
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t
-
-    val fold :
-      ('acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t) ->
-      'acc ->
-      'a t option ->
-      ('acc, 'err, 'fix serialized) Symex.Result.t
-
-    val produce :
-      ('inner_serialized -> 'inner_st option -> 'inner_st option Symex.t) ->
-      'inner_serialized serialized ->
-      'inner_st t option ->
-      'inner_st t option Symex.t
-
-    val consume :
-      ('inner_serialized ->
-      'inner_st option ->
-      ( 'inner_st option,
-        ([> Symex.lfail ] as 'a),
-        'inner_serialized )
-      Symex.Result.t) ->
-      'inner_serialized serialized ->
-      'inner_st t option ->
-      ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t
-  end
-end
-
-module Mk_concrete_key (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
-  KeyS(Symex).S with type t = Key.t = struct
-  include Key
-
-  type syn = Key.t [@@deriving show { with_path = false }]
+  type syn = K.t [@@deriving show { with_path = false }]
 
   let[@inline] to_syn x = x
-  let sem_eq x y = Symex.Value.bool (Key.compare x y = 0)
+  let sem_eq x y = Symex.Value.bool (K.compare x y = 0)
   let fresh () = failwith "Fresh not implemented for concrete keys"
   let simplify = Symex.return
   let distinct _ = Symex.Value.bool true
@@ -148,8 +38,8 @@ end
 
 module Build_from_find_opt_sym
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S)
-    (Map : MapS with type key = Key.t)
+    (Key : Key(Symex).S)
+    (Map : Container_map_S with type key = Key.t)
     (Find_opt_sym : sig
       val f : Key.t -> 'a Map.t -> (Key.t * 'a option) Symex.t
     end) =
@@ -159,7 +49,6 @@ struct
   module M = Map
 
   type 'a t = 'a M.t
-  type 'a serialized = (Key.t * 'a) list
   type 'a syn = Key.syn * 'a [@@deriving show { with_path = false }]
 
   let ins_outs ins_outs_codom (k, v) =
@@ -178,30 +67,14 @@ struct
     let+? fix = res in
     lift_fix ~key fix
 
-  let pp_serialized pp_inner : Format.formatter -> 'a serialized -> unit =
-    Fmt.brackets
-      (Fmt.iter ~sep:(Fmt.any ";@ ") List.iter Fmt.Dump.(pair Key.pp pp_inner))
+  let pp_syn pp_inner : Format.formatter -> 'a syn -> unit =
+    Fmt.brackets Fmt.Dump.(pair Key.pp_syn pp_inner)
 
-  let serialize serialize_inner m =
-    M.to_seq m |> Seq.map (fun (k, v) -> (k, serialize_inner v)) |> List.of_seq
-
-  let to_syn to_syn_inner m =
+  let to_syn (to_syn_inner : 'a -> 'syn list) (m : 'a t) : 'syn syn list =
     M.to_list m
     |> List.concat_map (fun (k, v) ->
            let k = Key.to_syn k in
            List.map (fun v -> (k, v)) (to_syn_inner v))
-
-  let subst_serialized subst_inner subst_var l =
-    List.map
-      (fun (key, v) -> (Key.subst subst_var key, subst_inner subst_var v))
-      l
-
-  let iter_vars_serialized iter_inner l f =
-    List.iter
-      (fun (key, v) ->
-        Key.iter_vars key f;
-        iter_inner v f)
-      l
 
   let pp ?(ignore = fun _ -> false) pp_value =
     let open Fmt in
@@ -251,12 +124,11 @@ struct
     (res, to_opt (add_opt key codom st))
 
   let produce
-      (prod :
-        'inner_syn -> 'inner_st option -> 'inner_st option Symex.Producer.t)
+      (prod : 'inner_syn -> 'inner_st option -> 'inner_st option Producer.t)
       (syn : 'inner_syn syn) (st : 'inner_st t option) :
-      'inner_st t option Symex.Producer.t =
+      'inner_st t option Producer.t =
     let open Symex in
-    let open Symex.Producer.Syntax in
+    let open Producer.Syntax in
     let key, inner_syn = syn in
     let st = of_opt st in
     let* key = Producer.apply_subst Key.subst key in
@@ -282,18 +154,16 @@ struct
     let st = add_opt key codom st in
     to_opt st
 
-  let fold
-      (f : 'acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t)
-      (init : 'acc) (st : 'a t option) :
-      ('acc, 'err, 'fix serialized) Symex.Result.t =
+  let fold (f : 'acc -> Key.t * 'a -> ('acc, 'err, 'fix) Symex.Result.t)
+      (init : 'acc) (st : 'a t option) : ('acc, 'err, 'fix) Symex.Result.t =
     let st = of_opt st in
     Result.fold_seq (M.to_seq st) ~init ~f
 end
 
 module Build_base
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S)
-    (M : MapS with type key = Key.t) =
+    (Key : Key(Symex).S)
+    (M : Container_map_S with type key = Key.t) =
 struct
   open Symex.Syntax
 
@@ -317,20 +187,20 @@ struct
       end)
 end
 
-module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) =
+module Make (Symex : Symex.Base) (Key : Key(Symex).S) =
   Build_base (Symex) (Key) (Stdlib.Map.Make (Key))
 
 module Make_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_patricia_tree) =
+    (Key : Key(Symex).S_patricia_tree) =
   Build_base (Symex) (Key) (PatriciaTree.MakeMap (Key))
 
 (** Sound to use when the keys of the map may depend on symbolic variables *)
 
 module Build_direct_access
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S)
-    (M : MapS with type key = Key.t) =
+    (Key : Key(Symex).S)
+    (M : Container_map_S with type key = Key.t) =
 struct
   open Symex.Syntax
 
@@ -358,13 +228,13 @@ struct
       end)
 end
 
-module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
+module Direct_access (Symex : Symex.Base) (Key : Key(Symex).S) = struct
   include Build_direct_access (Symex) (Key) (Stdlib.Map.Make (Key))
 end
 
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_patricia_tree) =
+    (Key : Key(Symex).S_patricia_tree) =
 struct
   module M' = PatriciaTree.MakeMap (Key)
   include Build_direct_access (Symex) (Key) (M')
