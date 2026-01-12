@@ -560,8 +560,11 @@ let apply_attributes v attributes =
   Result.fold_list attributes ~f:(fun () -> apply_attribute v) ~init:()
 
 let rec is_unsafe_cell : Types.ty -> bool = function
-  | TAdt { id = TAdtId adt_id; _ } -> (
-      let adt = Crate.get_adt adt_id in
+  | TAdt { id = TTuple; generics = { types; _ } } ->
+      List.exists is_unsafe_cell types
+  | TAdt { id = TBuiltin _; _ } -> false
+  | TAdt { id = TAdtId id; _ } -> (
+      let adt = Crate.get_adt id in
       if adt.item_meta.lang_item = Some "unsafe_cell" then true
       else
         match adt.kind with
@@ -572,8 +575,6 @@ let rec is_unsafe_cell : Types.ty -> bool = function
             @@ Iter.of_list vs
         | _ -> false)
   | TArray (ty, _) | TSlice ty -> is_unsafe_cell ty
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      List.exists is_unsafe_cell types
   | _ -> false
 
 (** Traverses the given type and rust value, and returns all findable references
