@@ -89,7 +89,7 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.@." entry_name Printers.pp_time time error msg;
+        "%s (%a): %s, %s@.@.@." entry_name Printers.pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =

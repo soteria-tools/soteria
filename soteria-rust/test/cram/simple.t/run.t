@@ -182,3 +182,30 @@ Test transmutations keeping the bit-patterns the same
   note: two_way_u8x4_u16x2: done in <time>, ran 1 branch
   PC 1: empty
   
+Test null and dangling pointers
+  $ soteria-rust rustc dangling_ptrs.rs
+  Compiling... done in <time>
+  note: null_ptr_zst: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  error: null_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
+  error: Null dereference in null_ptr_not_zst
+      ┌─ $TESTCASE_ROOT/dangling_ptrs.rs:11:31
+    9 │  fn null_ptr_not_zst() {
+      │   --------------------- 1: Entry point
+   10 │      let ptr: *const u32 = std::ptr::null();
+   11 │      let _val: u32 = unsafe { *ptr };
+      │                                ^^^^ Triggering memory operation
+  PC 1: empty
+  
+  error: dangling_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
+  bug: UB: dangling pointer in dangling_ptr_not_zst
+      ┌─ $TESTCASE_ROOT/dangling_ptrs.rs:17:30
+   15 │  fn dangling_ptr_not_zst() {
+      │   ------------------------- 1: Entry point
+   16 │      let ptr: *const u8 = 0xdeadbeef as *const u8;
+   17 │      let _val: u8 = unsafe { *ptr };
+      │                               ^^^^ Triggering memory operation
+  PC 1: empty
+  
+  [1]
