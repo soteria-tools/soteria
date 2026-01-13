@@ -222,8 +222,6 @@ module Make (Sptr : Sptr.S) = struct
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let* layout = layout_of ty in
-    (* if it's a ZST, we assume it's the first variant; I don't think this is
-       always true, e.g. enum { A(!), B }, but it's ok for now. *)
     match layout.fields with
     | Arbitrary (vid, _) -> ok vid
     | Enum (tag_layout, _) -> (
