@@ -174,8 +174,7 @@ module Make (Sptr : Sptr.S) = struct
       | Tuple vals | Enum (_, vals) -> vals
       | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
       | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
-      | Ptr (_, Thin) | Int _ | Float _ | ConstFn _ ->
-          failwith "Cannot split primitive"
+      | Ptr (_, Thin) | Int _ | Float _ -> failwith "Cannot split primitive"
       | Union _ -> failwith "Cannot encode union directly")
       |> Iter.combine_list iter
       |> Result.fold_iter ~init:(0, Iter.empty)
@@ -223,8 +222,6 @@ module Make (Sptr : Sptr.S) = struct
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let* layout = layout_of ty in
-    (* if it's a ZST, we assume it's the first variant; I don't think this is
-       always true, e.g. enum { A(!), B }, but it's ok for now. *)
     match layout.fields with
     | Arbitrary (vid, _) -> ok vid
     | Enum (tag_layout, _) -> (
@@ -280,7 +277,7 @@ module Make (Sptr : Sptr.S) = struct
              https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
           let+ blocks = get_all (Typed.cast layout.size, offset) in
           Union blocks
-    | Primitive, TFnDef fnptr -> ok (ConstFn fnptr.binder_value)
+    | Primitive, TFnDef _ -> ok (Tuple [])
     | Primitive, _ -> query (ty, offset)
     | Array _, (TRawPtr (pointee, _) | TRef (_, pointee, _)) -> (
         let+ vs = iter (iter_fields ~meta layout ty) offset in
