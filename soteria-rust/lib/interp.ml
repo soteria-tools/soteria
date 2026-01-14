@@ -967,11 +967,11 @@ module Make (State : State_intf.S) = struct
         in
         State.unwind_with fun_exec
           ~f:(fun v ->
-            let* ptr = resolve_place dest in
+            let* ptr = resolve_place_lazy dest in
             L.info (fun m ->
                 m "Returned %a <- %a from %a" Crate.pp_place dest pp_rust_val v
                   Crate.pp_fn_operand func);
-            let* () = State.store ptr dest.ty v in
+            let* () = store_lazy ptr dest.ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
