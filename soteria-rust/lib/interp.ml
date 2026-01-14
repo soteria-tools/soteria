@@ -111,7 +111,7 @@ module Make (State : State_intf.S) = struct
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
            (* Passed (nested) references must be protected and be valid. *)
            let* value, protected' =
-             Layout.update_ref_tys_in value local.local_ty ~init:acc
+             Encoder.update_ref_tys_in value local.local_ty ~init:acc
                ~f:(fun acc ptr subty mut ->
                  let+ ptr' = State.protect ptr subty mut in
                  (ptr', (ptr', subty) :: acc))
@@ -807,7 +807,7 @@ module Make (State : State_intf.S) = struct
           | TAdtId _, [ v ] ->
               let type_decl = Crate.get_adt adt in
               let attribs = type_decl.item_meta.attr_info.attributes in
-              State.lift_err @@ Layout.apply_attributes v attribs
+              Encoder.apply_attributes v attribs
           | _ -> ok ()
         in
         Tuple values
@@ -985,7 +985,7 @@ module Make (State : State_intf.S) = struct
     | Return ->
         let* ptr, ty = get_variable_lazy_and_ty Expressions.LocalId.zero in
         let* value = load_lazy ptr ty in
-        let ptr_tys = Layout.ref_tys_in value ty in
+        let ptr_tys = Encoder.ref_tys_in value ty in
         let+ () =
           fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
               State.tb_load ptr ty)

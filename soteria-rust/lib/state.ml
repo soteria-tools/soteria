@@ -636,7 +636,7 @@ let leak_check st =
             let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty st in
             match res with
             | Ok (v, st) ->
-                let ptrs = Layout.ref_tys_in ~include_ptrs:true v glob.ty in
+                let ptrs = Encoder.ref_tys_in ~include_ptrs:true v glob.ty in
                 let ptrs =
                   List.map
                     (fun (((p : Sptr.t), _), _) -> Typed.Ptr.loc p.ptr)
