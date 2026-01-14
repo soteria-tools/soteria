@@ -168,18 +168,9 @@ module type S = sig
       to_ty:Values.literal_type ->
       [< Typed.T.cval ] Typed.t ->
       (rust_val, 'env) monad
-  end
 
-  module Layout : sig
-    include module type of Layout
-
-    val layout_of : Types.ty -> (Layout.t, 'env) monad
-    val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
-    val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
     val nondet : Types.ty -> (rust_val, 'env) monad
-
-    val is_abi_compatible :
-      Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+    val apply_attributes : rust_val -> Meta.attribute list -> (unit, 'env) monad
 
     val update_ref_tys_in :
       f:
@@ -192,6 +183,17 @@ module type S = sig
       rust_val ->
       Types.ty ->
       (rust_val * 'acc, 'env) monad
+  end
+
+  module Layout : sig
+    include module type of Layout
+
+    val layout_of : Types.ty -> (Layout.t, 'env) monad
+    val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
+    val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
+
+    val is_abi_compatible :
+      Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
   end
 
   module Syntax : sig
@@ -420,6 +422,31 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
 
     let[@inline] cast_literal ~from_ty ~to_ty cval =
       State.with_decay_map_res (cast_literal ~from_ty ~to_ty cval)
+
+    let[@inline] nondet ty = State.lift_err (nondet ty)
+
+    let[@inline] apply_attributes v attrs =
+      State.lift_err (apply_attributes v attrs)
+
+    (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
+        without having to re-define. *)
+    let update_ref_tys_in
+        ~(f :
+           'acc ->
+           full_ptr ->
+           Types.ty ->
+           Types.ref_kind ->
+           (full_ptr * 'acc, 'env) monad) ~(init : 'acc) (v : rust_val)
+        (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
+     fun env state ->
+      let f (acc, env, state) ptr ty rk =
+        let++ (res, acc), env, state = f acc ptr ty rk env state in
+        (res, (acc, env, state))
+      in
+      let++ res, (acc, env, state) =
+        update_ref_tys_in f (init, env, state) v ty
+      in
+      ((res, acc), env, state)
   end
 
   module Sptr = struct
@@ -442,30 +469,9 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
     let[@inline] layout_of ty = State.lift_err (layout_of ty)
     let[@inline] size_of ty = State.lift_err (size_of ty)
     let[@inline] align_of ty = State.lift_err (align_of ty)
-    let[@inline] nondet ty = State.lift_err (nondet ty)
 
     let[@inline] is_abi_compatible ty1 ty2 =
       State.lift_err (is_abi_compatible ty1 ty2)
-
-    (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
-        without having to re-define. *)
-    let update_ref_tys_in
-        ~(f :
-           'acc ->
-           full_ptr ->
-           Types.ty ->
-           Types.ref_kind ->
-           (full_ptr * 'acc, 'env) monad) ~(init : 'acc) (v : rust_val)
-        (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
-     fun env state ->
-      let f (acc, env, state) ptr ty rk =
-        let++ (res, acc), env, state = f acc ptr ty rk env state in
-        (res, (acc, env, state))
-      in
-      let++ res, (acc, env, state) =
-        update_ref_tys_in f (init, env, state) v ty
-      in
-      ((res, acc), env, state)
   end
 
   module Syntax = struct

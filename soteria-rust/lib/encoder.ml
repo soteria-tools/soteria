@@ -175,7 +175,8 @@ module Make (Sptr : Sptr.S) = struct
       | Tuple vals | Enum (_, vals) -> vals
       | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
       | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
-      | Ptr (_, Thin) | Int _ | Float _ -> failwith "Cannot split primitive"
+      | Ptr (_, Thin) | Int _ | Float _ | TypeVar _ ->
+          failwith "Cannot split primitive"
       | Union _ -> failwith "Cannot encode union directly")
       |> Iter.combine_list iter
       |> Result.fold_iter ~init:(0, Iter.empty)
@@ -442,4 +443,195 @@ module Make (Sptr : Sptr.S) = struct
     | _ ->
         Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" pp_rust_val v
           pp_ty to_ty
+
+  (** [nondet ~extern ~init ty] returns a nondeterministic value for [ty], along
+      with some "state". It receives a function [extern] to get an optional
+      external function that computes the arbitrary value; it tries using it,
+      and otherwise guesses the valid values. [init] is the initial "state",
+      that is modified and returned by [extern]. *)
+  let rec nondet : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
+    let open Rustsymex in
+    let open Syntax in
+    let open Soteria.Symex.Compo_res in
+    function
+    | TLiteral (TFloat _ as lit) ->
+        let+ f = Layout.nondet_literal_ty lit in
+        Ok (Float (Typed.cast f))
+    | TLiteral lit ->
+        let+ i = Layout.nondet_literal_ty lit in
+        Ok (Int (Typed.cast i))
+    | TAdt { id = TTuple; generics = { types; _ } } ->
+        let++ fields = nondets types in
+        Tuple fields
+    | TArray (ty, len) ->
+        let size = Charon_util.int_of_const_generic len in
+        let++ fields = nondets @@ List.init size (fun _ -> ty) in
+        Tuple fields
+    | TAdt adt as ty -> (
+        let type_decl = Crate.get_adt adt in
+        match type_decl.kind with
+        | Enum variants -> (
+            let** layout = layout_of ty in
+            let tag_layout =
+              match layout.fields with
+              | Fields_shape.Enum (tag_layout, _) -> tag_layout
+              | _ -> failwith "Expected enum layout"
+            in
+            let* d = nondet_literal_ty tag_layout.ty in
+            let* res =
+              match_on variants ~constr:(fun v ->
+                  BV.of_literal v.discriminant ==@ d)
+            in
+            match (res, tag_layout.encoding) with
+            | Some variant, _ ->
+                let discr = BV.of_literal variant.discriminant in
+                let++ fields =
+                  nondets @@ Charon_util.field_tys variant.fields
+                in
+                Enum (discr, fields)
+            | None, Direct -> vanish ()
+            | None, Niche untagged ->
+                let variant = Types.VariantId.nth variants untagged in
+                let discr = BV.of_literal variant.discriminant in
+                let++ fields =
+                  nondets @@ Charon_util.field_tys variant.fields
+                in
+                Enum (discr, fields))
+        | Struct fields ->
+            let++ fields = nondets @@ Charon_util.field_tys fields in
+            Tuple fields
+        | ty ->
+            Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
+              Types.pp_type_decl_kind ty)
+    | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
+
+  and nondets tys =
+    let open Rustsymex.Syntax in
+    let++ l =
+      Rustsymex.Result.fold_list tys ~init:[] ~f:(fun fields ty ->
+          let++ f = nondet ty in
+          f :: fields)
+    in
+    List.rev l
+
+  (** Apply the compiler-attribute to the given value *)
+  let apply_attribute v attr =
+    let open Rustsymex in
+    let open Syntax in
+    match (v, attr) with
+    | ( Int v,
+        Meta.AttrUnknown
+          { path = "rustc_layout_scalar_valid_range_start"; args = Some min } )
+      ->
+        let min = Z.of_string min in
+        let bits = Typed.size_of_int v in
+        if%sat v >=@ BV.mk bits min then Result.ok ()
+        else Result.error (`StdErr "rustc_layout_scalar_valid_range_start")
+    | ( Int v,
+        AttrUnknown
+          { path = "rustc_layout_scalar_valid_range_end"; args = Some max_s } )
+      ->
+        let max = Z.of_string max_s in
+        let bits = Typed.size_of_int v in
+        if%sat v <=@ BV.mk bits max then Result.ok ()
+        else Result.error (`StdErr "rustc_layout_scalar_valid_range_end")
+    | _ -> Result.ok ()
+
+  let apply_attributes v attributes =
+    Rustsymex.Result.fold_list attributes
+      ~f:(fun () -> apply_attribute v)
+      ~init:()
+
+  (** Traverses the given type and rust value, and returns all findable
+      references with their type (ignores pointers, except if [include_ptrs] is
+      true). This is needed e.g. when needing to get the pointers along with the
+      size of their pointee, in particular in nested cases. *)
+  let rec ref_tys_in ?(include_ptrs = false) (v : rust_val) (ty : Types.ty) :
+      ('a full_ptr * Types.ty) list =
+    let f = ref_tys_in ~include_ptrs in
+    match (v, ty) with
+    | Ptr ptr, (TAdt { id = TBuiltin TBox; _ } | TRef _) ->
+        [ (ptr, get_pointee ty) ]
+    | Ptr ptr, TRawPtr _ when include_ptrs -> [ (ptr, get_pointee ty) ]
+    | (Int _ | Float _), _ -> []
+    | Tuple vs, TAdt adt -> List.concat_map2 f vs (Crate.as_struct_or_tuple adt)
+    | Tuple vs, (TArray (ty, _) | TSlice ty) ->
+        List.concat_map (fun v -> f v ty) vs
+    | Enum (d, vs), TAdt adt -> (
+        match BV.to_z d with
+        | Some d -> (
+            let variants = Crate.as_enum adt in
+            let v =
+              List.find_opt
+                (fun (v : Types.variant) ->
+                  Z.equal d (z_of_literal v.discriminant))
+                variants
+            in
+            match v with
+            | Some v -> List.concat_map2 f vs (field_tys Types.(v.fields))
+            | None -> [])
+        | None -> [])
+    | Union _, TAdt { id = TAdtId _; _ } ->
+        (* FIXME: figure out if references inside unions get reborrowed. They could, but I
+           suspect they don't because there's no guarantee the reference isn't some other field,
+           e.g. in [union { a: &u8, b: &u16 }]  *)
+        []
+    | _ -> []
+
+  let rec update_ref_tys_in
+      (fn :
+        'acc ->
+        'a full_ptr ->
+        Types.ty ->
+        Types.ref_kind ->
+        ('a full_ptr * 'acc, 'e, 'f) Rustsymex.Result.t) (init : 'acc)
+      (v : rust_val) (ty : Types.ty) :
+      (rust_val * 'acc, 'e, 'f) Rustsymex.Result.t =
+    let open Rustsymex in
+    let open Syntax in
+    let f = update_ref_tys_in fn in
+    let fs acc vs ty =
+      let++ vs, acc =
+        Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) v ->
+            let++ v, acc = f acc v ty in
+            (v :: vs, acc))
+      in
+      (List.rev vs, acc)
+    in
+    let fs2 acc vs tys =
+      let vs = List.combine vs tys in
+      let++ vs, acc =
+        Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
+            let++ v, acc = f acc v ty in
+            (v :: vs, acc))
+      in
+      (List.rev vs, acc)
+    in
+    match (v, ty) with
+    | Ptr ptr, TRef (_, _, rk) ->
+        let++ ptr, acc = fn init ptr (get_pointee ty) rk in
+        (Ptr ptr, acc)
+    | Tuple vs, TAdt adt ->
+        let++ vs, acc = fs2 init vs (Crate.as_struct_or_tuple adt) in
+        (Tuple vs, acc)
+    | Tuple vs, (TArray (ty, _) | TSlice ty) ->
+        let++ vs, acc = fs init vs ty in
+        (Tuple vs, acc)
+    | Enum (d, vs), TAdt adt -> (
+        let variants = Crate.as_enum adt in
+        let* var =
+          match_on variants ~constr:(fun v ->
+              BV.of_literal v.discriminant ==@ d)
+        in
+        match var with
+        | Some var ->
+            let++ vs, acc = fs2 init vs (field_tys Types.(var.fields)) in
+            (Enum (d, vs), acc)
+        | None -> Result.ok (v, init))
+    | (Union _ as v), TAdt { id = TAdtId _; _ } ->
+        (* FIXME: figure out if references inside unions get reborrowed. They could, but I
+           suspect they don't because there's no guarantee the reference isn't some other field,
+           e.g. in [union { a: &u8, b: &u16 }]  *)
+        Result.ok (v, init)
+    | v, _ -> Result.ok (v, init)
 end
