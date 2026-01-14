@@ -1,4 +1,5 @@
 module T = Typed.T
+module BV = Typed.BitVec
 
 type 'ptr meta = Thin | Len of T.sint Typed.t | VTable of 'ptr
 type 'ptr full_ptr = 'ptr * 'ptr meta
@@ -12,6 +13,9 @@ type 'ptr t =
   | Tuple of 'ptr t list  (** contains ordered values *)
   | Union of ('ptr t * T.sint Typed.t) list
       (** list of blocks in the union, with their offset *)
+  | TypeVar of int * T.sint Typed.t
+      (** The opaque value of a type variable, identified by (type variable
+          index, unique identifier). *)
 
 type 'ptr rust_val = 'ptr t
 
@@ -21,7 +25,7 @@ type 'ptr rust_val = 'ptr t
 
     Used in unsizing, to find the field with the pointer to modify. *)
 let rec is_empty = function
-  | Int _ | Float _ | Ptr _ | Enum (_, _) -> false
+  | Int _ | Float _ | Ptr _ | Enum (_, _) | TypeVar _ -> false
   | Tuple vals -> List.for_all is_empty vals
   (* I'm not sure about this one *)
   | Union _ -> false
@@ -52,6 +56,7 @@ let rec pp_rust_val pp_ptr fmt =
         Fmt.pf ft "(%a: %a)" Typed.ppa ofs pp_rust_val v
       in
       Fmt.pf fmt "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
+  | TypeVar (idx, uid) -> Fmt.pf fmt "TypeVar(%d, %a)" idx Typed.ppa uid
 
 let pp = pp_rust_val
 let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv
@@ -91,11 +96,16 @@ let as_tuple = function
       Fmt.failwith "Unexpected rust_val kind, expected a tuple, got: %a"
         ppa_rust_val v
 
-let size_of = function
-  | Int v -> Typed.size_of_int v / 8
-  | Float f -> Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8
-  | Ptr (_, Thin) -> Crate.pointer_size ()
-  | Ptr (_, (Len _ | VTable _)) -> Crate.pointer_size () * 2
+let size_of =
+  let open Rustsymex.Result in
+  function
+  | Int v -> ok (BV.usizei (Typed.size_of_int v / 8))
+  | Float f ->
+      ok (BV.usizei (Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8))
+  | Ptr (_, Thin) -> ok (BV.usizei (Crate.pointer_size ()))
+  | Ptr (_, (Len _ | VTable _)) -> ok (BV.usizei (Crate.pointer_size () * 2))
+  | TypeVar (t_id, _) ->
+      Layout.size_of (TVar (Free (Charon.Types.TypeVarId.of_int t_id)))
   (* We can't know the size of a union/tuple/enum, because of e.g. niches, or padding *)
   | Union _ | Enum _ | Tuple _ ->
       failwith "Impossible to get size of Enum/Tuple rust_val"
@@ -103,7 +113,7 @@ let size_of = function
 let flatten v =
   let rec aux acc = function
     | Tuple vs | Enum (_, vs) -> List.fold_left aux acc vs
-    | (Int _ | Float _ | Ptr _ | Union _) as v -> v :: acc
+    | (Int _ | Float _ | Ptr _ | Union _ | TypeVar _) as v -> v :: acc
   in
   List.rev (aux [] v)
 
@@ -112,6 +122,7 @@ let rec iter_vars ptr_iter_vars rv f =
   match rv with
   | Int v -> Typed.iter_vars v f
   | Float v -> Typed.iter_vars v f
+  | TypeVar _ -> ()
   | Union vs ->
       List.iter
         (fun (v, ofs) ->
@@ -135,6 +146,7 @@ let rec subst ptr_subst subst_var rv =
   match rv with
   | Int v -> Int (Typed.subst subst_var v)
   | Float v -> Float (Typed.subst subst_var v)
+  | TypeVar _ -> rv
   | Union vs ->
       Union (List.map (fun (v, ofs) -> (subst v, Typed.subst subst_var ofs)) vs)
   | Enum (disc, vals) -> Enum (Typed.subst subst_var disc, map_subst vals)

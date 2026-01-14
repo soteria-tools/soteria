@@ -435,6 +435,14 @@ module Make (Sptr : Sptr.S) = struct
         if%sat v ==@ Usize.(0s) then error `UBDanglingPointer
         else ok (Ptr (Sptr.null_ptr_of v, Thin))
     | TRawPtr _, Int v -> ok (Ptr (Sptr.null_ptr_of v, Thin))
+    | TVar (Free type_var_id), (TypeVar (tid, _) as v) ->
+        let type_var_id = Types.TypeVarId.to_int type_var_id in
+        if type_var_id = tid then ok v
+        else
+          Fmt.kstr not_impl "transmute_one: mismatched type variables %d -> %d"
+            type_var_id tid
+    | TVar (Bound _), _ ->
+        not_impl "transmute_one: cannot handle bound type variables"
     | TVar _, _ ->
         Fmt.kstr not_impl
           "losing concrete value in %a -> %a; somewhere we lost track of \
@@ -503,6 +511,10 @@ module Make (Sptr : Sptr.S) = struct
         | ty ->
             Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
               Types.pp_type_decl_kind ty)
+    | TVar (Free id) ->
+        let+ v = Rustsymex.nondet (Typed.t_usize ()) in
+        let id = Types.TypeVarId.to_int id in
+        Ok (TypeVar (id, v))
     | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
 
   and nondets tys =
