@@ -148,7 +148,10 @@ module Make (State : State_intf.S) = struct
         let* timplref =
           match tref.kind with
           | TraitImpl timpl -> ok timpl
-          | _ -> not_impl "No trait impl in method"
+          | Clause (Free _) -> Fmt.kstr not_impl "trait call %s on generic" name
+          | _ ->
+              Fmt.kstr not_impl "Unexpected tref kind, got: %a"
+                Types.pp_trait_ref_kind tref.kind
         in
         let timpl = Crate.get_trait_impl timplref in
         let methodref =
