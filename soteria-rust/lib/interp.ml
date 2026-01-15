@@ -138,36 +138,46 @@ module Make (State : State_intf.S) = struct
         | Stackptr ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
-  let resolve_fn_ptr (fn : Types.fn_ptr) : Types.fun_decl_ref t =
+  let resolve_fn_ptr (fn : Types.fn_ptr) : Fun_kind.t t =
+    let open Fun_kind in
     match fn.kind with
-    | FunId (FRegular id) ->
-        ok ({ id; generics = fn.generics } : Types.fun_decl_ref)
+    | FunId (FRegular id) -> ok (Real { id; generics = fn.generics })
     | TraitMethod (tref, name, _) -> (
         let* tref = Poly.subst_tref tref in
         let trait_ref = tref.trait_decl_ref.binder_value in
         let* timplref =
           match tref.kind with
-          | TraitImpl timpl -> ok timpl
-          | Clause (Free _) -> Fmt.kstr not_impl "trait call %s on generic" name
+          | TraitImpl timpl -> ok (`Impl timpl)
+          | Clause (Free _) -> (
+              let trait_decl = Crate.get_trait_decl trait_ref in
+              match trait_decl.item_meta.lang_item with
+              | Some "destruct" ->
+                  ok (`Stubbed (DropInPlace, TypesUtils.empty_generic_params))
+              | Some _ | None ->
+                  Fmt.kstr not_impl "trait call %a::%s on generic" Crate.pp_name
+                    trait_decl.item_meta.name name)
           | _ ->
               Fmt.kstr not_impl "Unexpected tref kind, got: %a"
                 Types.pp_trait_ref_kind tref.kind
         in
-        let timpl = Crate.get_trait_impl timplref in
-        let methodref =
-          Substitute.lookup_and_subst_trait_impl_method timpl name
-            timplref.generics fn.generics
-        in
-        match methodref with
-        | Some fn -> ok fn
-        | None ->
-            (* get the default method *)
-            let trait_decl = Crate.get_trait_decl trait_ref in
-            let fnref =
-              Substitute.lookup_and_subst_trait_decl_method trait_decl name tref
-                fn.generics
-            in
-            of_opt_not_impl "Could not resolve trait method" fnref)
+        match timplref with
+        | `Stubbed (kind, params) -> ok (Stubbed (kind, params))
+        | `Impl timplref -> (
+            let timpl = Crate.get_trait_impl timplref in
+            match
+              Substitute.lookup_and_subst_trait_impl_method timpl name
+                timplref.generics fn.generics
+            with
+            | Some fn -> ok (Real fn)
+            | None -> (
+                (* get the default method *)
+                let trait_decl = Crate.get_trait_decl trait_ref in
+                match
+                  Substitute.lookup_and_subst_trait_decl_method trait_decl name
+                    tref fn.generics
+                with
+                | Some fn -> ok (Real fn)
+                | None -> not_impl "Could not resolve trait method")))
     | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
 
   let rec resolve_constant (const : Expressions.constant_expr) =

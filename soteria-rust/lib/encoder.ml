@@ -282,6 +282,12 @@ module Make (Sptr : Sptr.S) = struct
           let+ blocks = get_all (Typed.cast layout.size, offset) in
           Union blocks
     | Primitive, TFnDef _ -> ok (Tuple [])
+    | Primitive, TVar (Free id) ->
+        if%sat layout.size ==@ Usize.(0s) then
+          let* v = lift @@ nondet (Typed.t_usize ()) in
+          let id = Types.TypeVarId.to_int id in
+          ok (TypeVar (id, v))
+        else query (ty, offset)
     | Primitive, _ -> query (ty, offset)
     | Array _, (TRawPtr (pointee, _) | TRef (_, pointee, _)) -> (
         let+ vs = iter (iter_fields ~meta layout ty) offset in
