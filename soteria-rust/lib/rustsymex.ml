@@ -10,18 +10,17 @@ module MonoSymex =
     end)
     (Bv_solver.Z3_solver)
 
-module PolySymex =
+include
   Soteria.Sym_states.State_monad.Make
     (MonoSymex)
     (struct
       type t = Charon.Substitute.subst
     end)
 
-include PolySymex
 include Syntaxes.FunctionWrap
 
 let run_with_stats ?fuel ~mode symex =
-  PolySymex.run_with_state ~state:Charon.Substitute.empty_subst symex
+  run_with_state ~state:Charon.Substitute.empty_subst symex
   |> (Fun.flip MonoSymex.map) fst
   |> MonoSymex.run_with_stats ?fuel ~mode
 
