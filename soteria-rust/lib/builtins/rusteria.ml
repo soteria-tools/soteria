@@ -50,7 +50,6 @@ module M (Rust_state_m : Rust_state_m.S) = struct
 
   let nondet (fun_sig : Charon.Types.fun_sig) _ =
     let* output = Poly.subst_ty fun_sig.output in
-    L.warn (fun m -> m "ty: %a" Charon_util.pp_ty output);
     Encoder.nondet output
 
   let panic ?msg args =

@@ -1,9 +1,42 @@
+open Rustsymex
+open Syntax
 open Charon
-open Fun_kind
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 
 let match_config =
   NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
+
+(* Functions we stub to avoid problems in the interpreter *)
+type fixme_fn = PanicCleanup | CatchUnwindCleanup
+
+(* Functions we could not stub, but we do for performance *)
+type optim_fn =
+  | FloatIs of Svalue.FloatClass.t
+  | FloatIsFinite
+  | FloatIsSign of { positive : bool }
+  | AllocImpl
+  | Panic
+
+(* Rusteria builtin functions *)
+type rusteria_fn = Assert | Assume | Nondet | Panic
+
+(* Miri builtin functions *)
+type miri_fn = AllocId | PromiseAlignement | Nop
+
+(* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
+type alloc_fn =
+  | Alloc of { zeroed : bool }
+  | Dealloc
+  | Realloc
+  | NoAllocShimIsUnstable
+
+type fn =
+  | Alloc of alloc_fn
+  | Fixme of fixme_fn
+  | Miri of miri_fn
+  | Optim of optim_fn
+  | Rusteria of rusteria_fn
+  | DropInPlace
 
 let std_fun_pair_list =
   [
@@ -96,39 +129,15 @@ let std_fun_map =
   |> NameMatcherMap.of_list
 
 module M (Rust_state_m : Rust_state_m.S) = struct
-  open Rust_state_m
-  open Syntax
   module Alloc = Alloc.M (Rust_state_m)
   module Intrinsics = Intrinsics.M (Rust_state_m)
   module Miri = Miri.M (Rust_state_m)
   module Rusteria = Rusteria.M (Rust_state_m)
   module Std = Std.M (Rust_state_m)
 
-  let fn_map fnsig name =
+  let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
     let open Std in
     let open Alloc in
-    function
-    | Rusteria Assert -> Rusteria.assert_
-    | Rusteria Assume -> Rusteria.assume
-    | Rusteria Nondet -> Rusteria.nondet fnsig
-    | Rusteria Panic -> Rusteria.panic ?msg:None
-    | Miri AllocId -> Miri.alloc_id
-    | Miri PromiseAlignement -> Miri.promise_alignement
-    | Miri Nop -> nop
-    | Optim AllocImpl -> alloc_impl
-    | Optim Panic -> Rusteria.panic ~msg:(Fmt.to_to_string Crate.pp_name name)
-    | Optim (FloatIs fc) -> float_is fc
-    | Optim FloatIsFinite -> float_is_finite
-    | Optim (FloatIsSign { positive }) -> float_is_sign positive
-    | Alloc (Alloc { zeroed }) -> alloc ~zeroed
-    | Alloc Dealloc -> dealloc
-    | Alloc NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
-    | Alloc Realloc -> realloc
-    | Fixme PanicCleanup -> fixme_panic_cleanup
-    | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
-    | DropInPlace -> nop
-
-  let std_fun_eval (f : UllbcAst.fun_decl) (generics : Types.generic_args) =
     (* Rust allows defining functions and marking them as intrinsics within a module,
        and the compiler will treat them as the intrinsic of the same name; e.g.
        mod Foo {
@@ -143,14 +152,15 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         | PeIdent (name, _) :: _ ->
             if (Config.get ()).polymorphic then
               let generics' = { f.generics with trait_clauses = [] } in
-              let+ args = Poly.fill_params generics' in
+              let+ args = Rustsymex.Poly.fill_params generics' in
               (name, args)
-            else ok (name, TypesUtils.empty_generic_args)
+            else return (name, TypesUtils.empty_generic_args)
         | PeInstantiated mono :: PeIdent (name, _) :: _ ->
-            ok (name, mono.binder_value)
+            return (name, mono.binder_value)
         | _ -> failwith "Unexpected intrinsic shape"
       in
-      Intrinsic (name, generics)
+      let fn = Intrinsics.eval_fun name fun_exec generics in
+      Some fn
     else
       let name =
         match List.last f.item_meta.name with
@@ -160,9 +170,29 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         | _ -> f.item_meta.name
       in
       let ctx = Crate.as_namematcher_ctx () in
-      match NameMatcherMap.find_opt ctx match_config name std_fun_map with
-      | Some fn -> ok (Stubbed (fn, f.generics))
-      | None -> ok (Real { id = f.def_id; generics })
+      let@@ () = return in
+      NameMatcherMap.find_opt ctx match_config name std_fun_map
+      |> Option.map @@ function
+         | Rusteria Assert -> Rusteria.assert_
+         | Rusteria Assume -> Rusteria.assume
+         | Rusteria Nondet -> Rusteria.nondet f.signature
+         | Rusteria Panic -> Rusteria.panic ?msg:None
+         | Miri AllocId -> Miri.alloc_id
+         | Miri PromiseAlignement -> Miri.promise_alignement
+         | Miri Nop -> nop
+         | Optim AllocImpl -> alloc_impl
+         | Optim Panic ->
+             Rusteria.panic ~msg:(Fmt.to_to_string Crate.pp_name name)
+         | Optim (FloatIs fc) -> float_is fc
+         | Optim FloatIsFinite -> float_is_finite
+         | Optim (FloatIsSign { positive }) -> float_is_sign positive
+         | Alloc (Alloc { zeroed }) -> alloc ~zeroed
+         | Alloc Dealloc -> dealloc
+         | Alloc NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
+         | Alloc Realloc -> realloc
+         | Fixme PanicCleanup -> fixme_panic_cleanup
+         | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
+         | DropInPlace -> nop
 
   let builtin_fun_eval (f : Types.builtin_fun_id) generics =
     let open Std in

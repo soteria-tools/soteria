@@ -96,7 +96,12 @@ module FunBiMap = struct
         let compare = Typed.compare
         let pp = Typed.ppa
       end)
-      (Fun_kind)
+      (struct
+        type t = Types.fun_decl_ref
+
+        let compare = Types.compare_fun_decl_ref
+        let pp = Types.pp_fun_decl_ref
+      end)
 
   let get_fn = find_l
   let get_loc = find_r
@@ -132,7 +137,7 @@ let pp_pretty ~ignore_freed ft { state; _ } =
         (fun ft block ->
           match block with
           | { info = Some { kind = Function fn; _ }; _ } ->
-              Fmt.pf ft "function %a" Fun_kind.pp fn
+              Fmt.pf ft "function %a" Crate.pp_fun_decl_ref fn
           | { node; _ } ->
               (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
                 ft node)
@@ -678,7 +683,7 @@ let unwind_with ~f ~fe symex =
       if Error.is_unwindable err_ty then fe (err, state)
       else Result.error (err, state))
 
-let declare_fn (fn_def : Fun_kind.t) ({ functions; _ } as st) =
+let declare_fn fn_def ({ functions; _ } as st) =
   match FunBiMap.get_loc fn_def functions with
   | Some loc ->
       let ptr : Sptr.t =
@@ -691,13 +696,10 @@ let declare_fn (fn_def : Fun_kind.t) ({ functions; _ } as st) =
       in
       Result.ok ((ptr, Thin), st)
   | None ->
-      let span =
-        match fn_def with
-        | Real fn -> Some (Crate.get_fun fn.id).item_meta.span.data
-        | Stubbed _ | Intrinsic _ | Builtin _ -> None
-      in
+      let fn = Crate.get_fun fn_def.id in
       let++ (ptr, meta), st =
-        alloc_untyped ~kind:(Function fn_def) ?span ~zeroed:false
+        alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span.data
+          ~zeroed:false
           ~size:Usize.(0s)
           ~align:Usize.(1s)
           st
