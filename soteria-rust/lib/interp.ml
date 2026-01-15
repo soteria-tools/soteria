@@ -151,8 +151,7 @@ module Make (State : State_intf.S) = struct
           | Clause (Free _) -> (
               let trait_decl = Crate.get_trait_decl trait_ref in
               match trait_decl.item_meta.lang_item with
-              | Some "destruct" ->
-                  ok (`Stubbed (DropInPlace, TypesUtils.empty_generic_params))
+              | Some "destruct" -> ok (`Synth GenericDropInPlace)
               | Some _ | None ->
                   Fmt.kstr not_impl "trait call %a::%s on generic" Crate.pp_name
                     trait_decl.item_meta.name name)
@@ -161,7 +160,7 @@ module Make (State : State_intf.S) = struct
                 Types.pp_trait_ref_kind tref.kind
         in
         match timplref with
-        | `Stubbed (kind, params) -> ok (Stubbed (kind, params))
+        | `Synth kind -> ok (Synthetic kind)
         | `Impl timplref -> (
             let timpl = Crate.get_trait_impl timplref in
             match
@@ -267,7 +266,7 @@ module Make (State : State_intf.S) = struct
         let ptr_size = Crate.pointer_size () in
         let ptr_of_provenance : Expressions.provenance -> full_ptr t = function
           | Global g -> resolve_global g
-          | Function f -> State.declare_fn f
+          | Function f -> State.declare_fn (Real f)
           | Unknown -> not_impl "Unknown provenance in RawMemory"
         in
         let+ blocks =
@@ -442,20 +441,26 @@ module Make (State : State_intf.S) = struct
       in
       check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
     in
-    let perform_call (fn : Types.fun_decl_ref) =
-      try
-        let fundef = Crate.get_fun fn.id in
-        let* inputs =
-          Poly.push_generics ~params:fundef.generics ~args:fn.generics
-          @@ Poly.subst_tys fundef.signature.inputs
-        in
-        L.info (fun g ->
-            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
-        let^ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
-        match fun_maybe_stubbed with
-        | Some fn -> ok (fn, inputs)
-        | None -> ok (exec_fun fundef fn.generics, inputs)
-      with Crate.MissingDecl _ -> not_impl "Missing function declaration"
+    let perform_call : Fun_kind.t -> ('a fun_exec * Types.ty list) t = function
+      | Synthetic _ as fn -> ok (exec_fun fn, in_tys)
+      | Real fn -> (
+          let fundef = Crate.get_fun fn.id in
+          let* inputs =
+            Poly.push_generics ~params:fundef.generics ~args:fn.generics
+            @@ Poly.subst_tys fundef.signature.inputs
+          in
+          L.info (fun g ->
+              g "Resolved function call to %a" Crate.pp_name
+                fundef.item_meta.name);
+          let^ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
+          match fun_maybe_stubbed with
+          | Some stub ->
+              let stub args =
+                Poly.push_generics ~params:fundef.generics ~args:fn.generics
+                @@ stub args
+              in
+              ok (stub, inputs)
+          | None -> ok (exec_fun (Real fn), inputs))
     in
     function
     (* Handle builtins separately *)
@@ -470,7 +475,9 @@ module Make (State : State_intf.S) = struct
         let* fn_ptr = eval_operand op in
         let fn_ptr = as_ptr fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
-        let* () = validate_call fn in
+        let* () =
+          match fn with Real fn -> validate_call fn | Synthetic _ -> ok ()
+        in
         perform_call fn
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
@@ -489,7 +496,7 @@ module Make (State : State_intf.S) = struct
           let^+ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
           match fun_maybe_stubbed with
           | Some fn -> fn
-          | None -> exec_fun fundef glob.generics
+          | None -> exec_fun (Real { id = decl.init; generics = glob.generics })
         in
         (* First we allocate the global and store it in the State  *)
         let* ptr =
@@ -1060,7 +1067,7 @@ module Make (State : State_intf.S) = struct
         let* place_ptr = resolve_place place in
         (* Try to find a drop function that exists; it may be opaque if the
            drop contains polymorphic types. *)
-        let drop_fn =
+        let drop_fn : Fun_kind.t option =
           match trait_ref.kind with
           | TraitImpl impl_ref ->
               let impl = Crate.get_trait_impl impl_ref in
@@ -1069,27 +1076,25 @@ module Make (State : State_intf.S) = struct
               let drop = Crate.get_fun drop_ref.binder_value.id in
               if Option.is_some drop.body then
                 (* TODO: i don't think we should read [binder_value] here *)
-                Some (drop, drop_ref.binder_value.generics)
+                Some (Real drop_ref.binder_value)
               else None
           | _ -> None
         in
         match drop_fn with
-        | Some (drop, generics) ->
+        | Some drop ->
             let fun_exec =
               with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
               @@ with_env ~env:()
-              @@ exec_fun drop generics [ Ptr place_ptr ]
+              @@ exec_fun drop [ Ptr place_ptr ]
             in
             State.unwind_with fun_exec
               ~f:(fun _ ->
                 let block = UllbcAst.BlockId.nth body.body target in
-                L.info (fun m ->
-                    m "Dropped with %a" Crate.pp_name drop.item_meta.name);
+                L.info (fun m -> m "Dropped with %a" Fun_kind.pp drop);
                 exec_block ~body block)
               ~fe:(fun err ->
                 let* () = State.add_error err in
-                L.info (fun m ->
-                    m "Unwinding drop from %a" Crate.pp_name drop.item_meta.name);
+                L.info (fun m -> m "Unwinding drop from %a" Fun_kind.pp drop);
                 let block = UllbcAst.BlockId.nth body.body on_unwind in
                 exec_block ~body block)
         | None ->
@@ -1105,8 +1110,8 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args) args
-      =
+  and exec_real_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args)
+      args =
     let name = fundef.item_meta.name in
     let* body =
       match fundef.body with
@@ -1136,6 +1141,13 @@ module Make (State : State_intf.S) = struct
         let* () = dealloc_stack protected in
         error_raw err)
 
+  and exec_fun (fn : Fun_kind.t) =
+    match fn with
+    | Synthetic GenericDropInPlace -> fun _ -> ok (Tuple [])
+    | Real fundef ->
+        let fn = Crate.get_fun fundef.id in
+        exec_real_fun fn fundef.generics
+
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = Rust_state_m.run ~env:() ~state in
@@ -1143,7 +1155,7 @@ module Make (State : State_intf.S) = struct
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
-    let* value = exec_fun fundef generics args in
+    let* value = exec_real_fun fundef generics args in
     if (Config.get ()).ignore_leaks then ok value
     else
       let@ () = with_loc ~loc:fundef.item_meta.span.data in
