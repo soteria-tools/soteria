@@ -4,22 +4,16 @@ open Rustsymex.Syntax
 open Charon
 
 module type S = sig
-  module RawState : State_intf.S
-
-  type full_ptr = RawState.Sptr.t Rust_val.full_ptr
-  type rust_val = RawState.Sptr.t Rust_val.t
-
-  val pp_rust_val : Format.formatter -> rust_val -> unit
-  val pp_full_ptr : Format.formatter -> full_ptr -> unit
-
+  type serialized
+  type st
   type ('a, 'env) t
   type ('a, 'env) monad := ('a, 'env) t
-  type 'e err := 'e RawState.err
+  type 'e err
 
   val ok : 'a -> ('a, 'env) t
   val error : Error.t -> ('a, 'env) t
   val error_raw : Error.t err -> ('a, 'env) t
-  val miss : RawState.serialized list -> ('a, 'env) t
+  val miss : serialized list -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
   val map : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
@@ -33,7 +27,7 @@ module type S = sig
     f:('b -> 'a -> ('b, 'env) t) ->
     ('b, 'env) t
 
-  val get_state : unit -> (RawState.t, 'env) t
+  val get_state : unit -> (st, 'env) t
   val get_env : unit -> ('env, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
   val with_env : env:'env1 -> ('a, 'env1) t -> ('a, 'env) t
@@ -46,9 +40,9 @@ module type S = sig
 
   val run :
     env:'env ->
-    state:RawState.t ->
+    state:st ->
     (unit -> ('a, 'env) t) ->
-    ('a * RawState.t, Error.t err, RawState.serialized) Result.t
+    ('a * st, Error.t err, serialized) Result.t
 
   val lift_symex : 'a Rustsymex.t -> ('a, 'env) t
 
@@ -59,13 +53,86 @@ module type S = sig
       ('a, 'env) t ->
       ('a, 'env) t
 
+    val fill_params : Types.generic_params -> (Types.generic_args, 'a) monad
     val subst_ty : Types.ty -> (Types.ty, 'env) t
     val subst_tys : Types.ty list -> (Types.ty list, 'env) t
     val subst_tref : Types.trait_ref -> (Types.trait_ref, 'env) t
   end
 
+  module Sptr : sig
+    include Sptr.S
+
+    val offset :
+      ?check:bool ->
+      ?ty:Charon.Types.ty ->
+      signed:bool ->
+      t ->
+      [< Typed.T.sint ] Typed.t ->
+      (t, 'env) monad
+
+    val project :
+      Types.ty ->
+      Expressions.field_proj_kind ->
+      Types.field_id ->
+      t ->
+      (t, 'env) monad
+
+    val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
+    val decay : t -> (Typed.T.sint Typed.t, 'env) monad
+    val expose : t -> (Typed.T.sint Typed.t, 'env) monad
+  end
+
+  type full_ptr = Sptr.t Rust_val.full_ptr
+  type rust_val = Sptr.t Rust_val.t
+
+  val pp_rust_val : Format.formatter -> rust_val -> unit
+  val pp_full_ptr : Format.formatter -> full_ptr -> unit
+
+  module Layout : sig
+    include module type of Layout
+
+    val layout_of : Types.ty -> (Layout.t, 'env) monad
+    val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
+    val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
+
+    val is_abi_compatible :
+      Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+  end
+
+  module Encoder : sig
+    val encode :
+      offset:Typed.T.sint Typed.t ->
+      rust_val ->
+      Types.ty ->
+      ((rust_val * Typed.T.sint Typed.t) Iter.t, 'env) monad
+
+    val cast_literal :
+      from_ty:Values.literal_type ->
+      to_ty:Values.literal_type ->
+      [< Typed.T.cval ] Typed.t ->
+      (rust_val, 'env) monad
+
+    val nondet : Types.ty -> (rust_val, 'env) monad
+    val apply_attributes : rust_val -> Meta.attribute list -> (unit, 'env) monad
+
+    val ref_tys_in :
+      ?include_ptrs:bool -> rust_val -> Types.ty -> (full_ptr * Types.ty) list
+
+    val update_ref_tys_in :
+      f:
+        ('acc ->
+        full_ptr ->
+        Types.ty ->
+        Types.ref_kind ->
+        (full_ptr * 'acc, 'env) monad) ->
+      init:'acc ->
+      rust_val ->
+      Types.ty ->
+      (rust_val * 'acc, 'env) monad
+  end
+
   module State : sig
-    val empty : RawState.t
+    val empty : st
     val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> (rust_val, 'env) t
     val load_discriminant : full_ptr -> Types.ty -> (Types.variant_id, 'env) t
     val store : full_ptr -> Types.ty -> rust_val -> (unit, 'env) t
@@ -113,8 +180,8 @@ module type S = sig
     val store_global : Types.global_decl_id -> full_ptr -> (unit, 'env) t
     val load_str_global : string -> (full_ptr option, 'env) t
     val store_str_global : string -> full_ptr -> (unit, 'env) t
-    val declare_fn : Types.fun_decl_ref -> (full_ptr, 'env) t
-    val lookup_fn : full_ptr -> (Types.fun_decl_ref, 'env) t
+    val declare_fn : Fun_kind.t -> (full_ptr, 'env) t
+    val lookup_fn : full_ptr -> (Fun_kind.t, 'env) t
     val add_error : Error.t err -> (unit, 'env) t
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
@@ -128,72 +195,7 @@ module type S = sig
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
     val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
     val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-    val lift_err : ('a, Error.t, RawState.serialized) Result.t -> ('a, 'env) t
-  end
-
-  module Sptr : sig
-    include Sptr.S with type t = RawState.Sptr.t
-
-    val offset :
-      ?check:bool ->
-      ?ty:Charon.Types.ty ->
-      signed:bool ->
-      t ->
-      [< Typed.T.sint ] Typed.t ->
-      (t, 'env) monad
-
-    val project :
-      Types.ty ->
-      Expressions.field_proj_kind ->
-      Types.field_id ->
-      t ->
-      (t, 'env) monad
-
-    val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
-    val decay : t -> (Typed.T.sint Typed.t, 'env) monad
-    val expose : t -> (Typed.T.sint Typed.t, 'env) monad
-  end
-
-  module Encoder : sig
-    include module type of Encoder.Make (RawState.Sptr)
-
-    val encode :
-      offset:Typed.T.sint Typed.t ->
-      rust_val ->
-      Types.ty ->
-      ((rust_val * Typed.T.sint Typed.t) Iter.t, 'env) monad
-
-    val cast_literal :
-      from_ty:Values.literal_type ->
-      to_ty:Values.literal_type ->
-      [< Typed.T.cval ] Typed.t ->
-      (rust_val, 'env) monad
-
-    val nondet : Types.ty -> (rust_val, 'env) monad
-    val apply_attributes : rust_val -> Meta.attribute list -> (unit, 'env) monad
-
-    val update_ref_tys_in :
-      f:
-        ('acc ->
-        full_ptr ->
-        Types.ty ->
-        Types.ref_kind ->
-        (full_ptr * 'acc, 'env) monad) ->
-      init:'acc ->
-      rust_val ->
-      Types.ty ->
-      (rust_val * 'acc, 'env) monad
-  end
-
-  module Layout : sig
-    include module type of Layout
-
-    val layout_of : Types.ty -> (Layout.t, 'env) monad
-    val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
-    val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
-
-    val is_abi_compatible :
-      Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+    val lift_err : ('a, Error.t, serialized) Result.t -> ('a, 'env) t
   end
 
   module Syntax : sig
@@ -230,10 +232,16 @@ module type S = sig
   end
 end
 
-module Make (State : State_intf.S) : S with module RawState = State = struct
+module Make (State : State_intf.S) :
+  S
+    with type st = State.t
+     and type 'e err = 'e State.err
+     and type serialized = State.serialized = struct
   (* utilities *)
-  module RawState = State
 
+  type st = State.t
+  type 'e err = 'e State.err
+  type serialized = State.serialized
   type full_ptr = State.Sptr.t Rust_val.full_ptr
   type rust_val = State.Sptr.t Rust_val.t
 
@@ -282,10 +290,25 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
     let++ res, _, state = f env state in
     (res, old_env, state)
 
+  let[@inline] lift_err sym =
+   fun env state ->
+    let++ res = State.lift_err state sym in
+    (res, env, state)
+
   let[@inline] lift_state_op f =
    fun env state ->
     let++ v, state = f state in
     (v, env, state)
+
+  let[@inline] with_decay_map_res f =
+   fun env state ->
+    let* res, state = State.with_decay_map f state in
+    lift_err (return res) env state
+
+  let[@inline] with_decay_map f =
+   fun env state ->
+    let+ res, state = State.with_decay_map f state in
+    Ok (res, env, state)
 
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =
    fun env state ->
@@ -326,9 +349,67 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
     let[@inline] push_generics ~params ~args (x : ('a, 'env) t) =
      fun env state -> Poly.push_generics ~params ~args (x env state)
 
+    let[@inline] fill_params params = lift_symex (Poly.fill_params params)
     let[@inline] subst_ty ty = lift_symex (Poly.subst_ty ty)
     let[@inline] subst_tys tys = lift_symex (Poly.subst_tys tys)
     let[@inline] subst_tref tref = lift_symex (Poly.subst_tref tref)
+  end
+
+  module Sptr = struct
+    include State.Sptr
+
+    let[@inline] offset ?check ?ty ~signed ptr off =
+      lift_err (offset ?check ?ty ~signed ptr off)
+
+    let[@inline] project ty proj_kind field_id ptr =
+      lift_err (project ty proj_kind field_id ptr)
+
+    let[@inline] distance ptr1 ptr2 = with_decay_map (distance ptr1 ptr2)
+    let[@inline] decay ptr = with_decay_map (decay ptr)
+    let[@inline] expose ptr = with_decay_map (expose ptr)
+  end
+
+  module Layout = struct
+    include Layout
+
+    let[@inline] layout_of ty = lift_err (layout_of ty)
+    let[@inline] size_of ty = lift_err (size_of ty)
+    let[@inline] align_of ty = lift_err (align_of ty)
+
+    let[@inline] is_abi_compatible ty1 ty2 =
+      lift_err (is_abi_compatible ty1 ty2)
+  end
+
+  module Encoder = struct
+    include Encoder.Make (State.Sptr)
+
+    let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
+
+    let[@inline] cast_literal ~from_ty ~to_ty cval =
+      with_decay_map_res (cast_literal ~from_ty ~to_ty cval)
+
+    let[@inline] nondet ty = lift_err (nondet ty)
+    let[@inline] apply_attributes v attrs = lift_err (apply_attributes v attrs)
+
+    (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
+        without having to re-define. *)
+    let update_ref_tys_in
+        ~(f :
+           'acc ->
+           full_ptr ->
+           Types.ty ->
+           Types.ref_kind ->
+           (full_ptr * 'acc, 'env) monad) ~(init : 'acc) (v : rust_val)
+        (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
+     fun env state ->
+      let f (acc, env, state) ptr ty rk =
+        let++ (res, acc), env, state = f acc ptr ty rk env state in
+        (res, (acc, env, state))
+      in
+      let++ res, (acc, env, state) =
+        update_ref_tys_in f (init, env, state) v ty
+      in
+      ((res, acc), env, state)
   end
 
   module State = struct
@@ -397,81 +478,12 @@ module Make (State : State_intf.S) : S with module RawState = State = struct
       let++ res = lift_err state sym in
       (res, env, state)
 
-    let[@inline] with_decay_map_res f =
-     fun env state ->
-      let* res, state = with_decay_map f state in
-      lift_err (return res) env state
-
-    let[@inline] with_decay_map f =
-     fun env state ->
-      let+ res, state = with_decay_map f state in
-      Ok (res, env, state)
-
     let[@inline] assert_ guard err =
      fun env state ->
       let++ () = assert_ (guard :> Typed.T.sbool Typed.t) err state in
       ((), env, state)
 
     let[@inline] assert_not guard err = assert_ (Typed.not guard) err
-  end
-
-  module Encoder = struct
-    include Encoder.Make (RawState.Sptr)
-
-    let[@inline] encode ~offset v ty = State.lift_err (encode ~offset v ty)
-
-    let[@inline] cast_literal ~from_ty ~to_ty cval =
-      State.with_decay_map_res (cast_literal ~from_ty ~to_ty cval)
-
-    let[@inline] nondet ty = State.lift_err (nondet ty)
-
-    let[@inline] apply_attributes v attrs =
-      State.lift_err (apply_attributes v attrs)
-
-    (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
-        without having to re-define. *)
-    let update_ref_tys_in
-        ~(f :
-           'acc ->
-           full_ptr ->
-           Types.ty ->
-           Types.ref_kind ->
-           (full_ptr * 'acc, 'env) monad) ~(init : 'acc) (v : rust_val)
-        (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
-     fun env state ->
-      let f (acc, env, state) ptr ty rk =
-        let++ (res, acc), env, state = f acc ptr ty rk env state in
-        (res, (acc, env, state))
-      in
-      let++ res, (acc, env, state) =
-        update_ref_tys_in f (init, env, state) v ty
-      in
-      ((res, acc), env, state)
-  end
-
-  module Sptr = struct
-    include RawState.Sptr
-
-    let[@inline] offset ?check ?ty ~signed ptr off =
-      State.lift_err (offset ?check ?ty ~signed ptr off)
-
-    let[@inline] project ty proj_kind field_id ptr =
-      State.lift_err (project ty proj_kind field_id ptr)
-
-    let[@inline] distance ptr1 ptr2 = State.with_decay_map (distance ptr1 ptr2)
-    let[@inline] decay ptr = State.with_decay_map (decay ptr)
-    let[@inline] expose ptr = State.with_decay_map (expose ptr)
-  end
-
-  module Layout = struct
-    include Layout
-
-    let[@inline] layout_of ty = State.lift_err (layout_of ty)
-    let[@inline] size_of ty = State.lift_err (size_of ty)
-    let[@inline] align_of ty = State.lift_err (align_of ty)
-
-    let[@inline] is_abi_compatible ty1 ty2 =
-      State.lift_err (is_abi_compatible ty1 ty2)
   end
 
   module Syntax = struct
