@@ -368,13 +368,16 @@ and compute_enum_layout ty (variants : Types.variant list) =
         { offset = Usize.(0s); ty; tags; encoding = Direct }
       in
       let** tag = layout_of (TLiteral tag_layout.ty) in
+      let variants =
+        List.mapi (fun i v -> (Types.VariantId.of_int i, v)) variants
+      in
       let++ size, align, variants, uninhabited =
         Result.fold_list variants
           ~init:(Usize.(0s), Usize.(1s), [], true)
-          ~f:(fun (size, align, variants, uninhabited) v ->
+          ~f:(fun (size, align, variants, uninhabited) (i, v) ->
             let++ l =
               compute_arbitrary_layout ty ~fst_size:tag.size
-                ~fst_align:tag.align (field_tys v.fields)
+                ~fst_align:tag.align ~variant:i (field_tys v.fields)
             in
             ( BV.max ~signed:false size l.size,
               BV.max ~signed:false align l.align,
