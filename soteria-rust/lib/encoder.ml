@@ -1,6 +1,5 @@
 module Compo_res = Soteria.Symex.Compo_res
 open Charon
-module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Charon_util
