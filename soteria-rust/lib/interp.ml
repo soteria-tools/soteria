@@ -267,7 +267,7 @@ module Make (State : State_intf.S) = struct
         let ptr_size = Crate.pointer_size () in
         let ptr_of_provenance : Expressions.provenance -> full_ptr t = function
           | Global g -> resolve_global g
-          | Function f -> State.declare_fn f
+          | Function f -> State.declare_fn (Real f)
           | Unknown -> not_impl "Unknown provenance in RawMemory"
         in
         let+ blocks =
@@ -419,7 +419,7 @@ module Make (State : State_intf.S) = struct
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty :
-      GAst.fn_operand -> ('err fun_exec * Types.ty list) t =
+      GAst.fn_operand -> (Fun_kind.t * Types.ty list) t =
     let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
       let fn = Crate.get_fun fn.id in
       let rec check_tys l r =
@@ -442,25 +442,26 @@ module Make (State : State_intf.S) = struct
       in
       check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
     in
-    let perform_call (fn : Types.fun_decl_ref) =
-      try
-        let fundef = Crate.get_fun fn.id in
-        let* inputs =
-          Poly.push_generics ~params:fundef.generics ~args:fn.generics
-          @@ Poly.subst_tys fundef.signature.inputs
-        in
-        L.info (fun g ->
-            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
-        let^ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
-        match fun_maybe_stubbed with
-        | Some fn -> ok (fn, inputs)
-        | None -> ok (exec_fun fundef fn.generics, inputs)
-      with Crate.MissingDecl _ -> not_impl "Missing function declaration"
+    let perform_call (fn : Fun_kind.t) =
+      let+ fn, inputs =
+        match fn with
+        | Real fn ->
+            let fundef = Crate.get_fun fn.id in
+            let* inputs =
+              Poly.push_generics ~params:fundef.generics ~args:fn.generics
+              @@ Poly.subst_tys fundef.signature.inputs
+            in
+            let+ fn = Std_funs.std_fun_eval fundef fn.generics in
+            (fn, inputs)
+        | Intrinsic _ | Builtin _ | Stubbed _ -> ok (fn, in_tys)
+      in
+      L.info (fun g -> g "Resolved function call to %a" Fun_kind.pp fn);
+      (fn, inputs)
     in
     function
     (* Handle builtins separately *)
     | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
-        ok (Std_funs.builtin_fun_eval fn generics, in_tys)
+        ok (Fun_kind.Builtin (fn, generics), in_tys)
     (* For static calls we don't need to check types, that's what the type checker does. *)
     | FnOpRegular fn_ptr ->
         let* fn = resolve_fn_ptr fn_ptr in
@@ -470,7 +471,11 @@ module Make (State : State_intf.S) = struct
         let* fn_ptr = eval_operand op in
         let fn_ptr = as_ptr fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
-        let* () = validate_call fn in
+        let* () =
+          match fn with
+          | Real fn -> validate_call fn
+          | Builtin _ | Stubbed _ | Intrinsic _ -> ok ()
+        in
         perform_call fn
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
@@ -485,12 +490,7 @@ module Make (State : State_intf.S) = struct
         L.info (fun g ->
             g "Resolved global init call to %a" Crate.pp_name
               fundef.item_meta.name);
-        let* global_fn =
-          let^+ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
-          match fun_maybe_stubbed with
-          | Some fn -> fn
-          | None -> exec_fun fundef glob.generics
-        in
+        let* global_fn = Std_funs.std_fun_eval fundef glob.generics in
         (* First we allocate the global and store it in the State  *)
         let* ptr =
           State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
@@ -498,7 +498,7 @@ module Make (State : State_intf.S) = struct
         in
         let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
-        let* v = with_env ~env:() @@ global_fn [] in
+        let* v = exec_fun global_fn [] in
         let+ () = State.store ptr decl.ty v in
         ptr
 
@@ -954,9 +954,7 @@ module Make (State : State_intf.S) = struct
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
-        let* exec_fun, exp_tys =
-          resolve_function ~in_tys ~out_ty:dest.ty func
-        in
+        let* fn, exp_tys = resolve_function ~in_tys ~out_ty:dest.ty func in
         (* the expected types of the function may differ to those passed, e.g. with
            function pointers or dyn calls, so we transmute here. *)
         let* args =
@@ -975,8 +973,7 @@ module Make (State : State_intf.S) = struct
               args);
         let fun_exec =
           with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
-          @@ with_env ~env:()
-          @@ exec_fun args
+          @@ exec_fun fn args
         in
         State.unwind_with fun_exec
           ~f:(fun v ->
@@ -1069,27 +1066,24 @@ module Make (State : State_intf.S) = struct
               let drop = Crate.get_fun drop_ref.binder_value.id in
               if Option.is_some drop.body then
                 (* TODO: i don't think we should read [binder_value] here *)
-                Some (drop, drop_ref.binder_value.generics)
+                Some (Fun_kind.Real drop_ref.binder_value)
               else None
           | _ -> None
         in
         match drop_fn with
-        | Some (drop, generics) ->
+        | Some drop_fn ->
             let fun_exec =
               with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
-              @@ with_env ~env:()
-              @@ exec_fun drop generics [ Ptr place_ptr ]
+              @@ exec_fun drop_fn [ Ptr place_ptr ]
             in
             State.unwind_with fun_exec
               ~f:(fun _ ->
                 let block = UllbcAst.BlockId.nth body.body target in
-                L.info (fun m ->
-                    m "Dropped with %a" Crate.pp_name drop.item_meta.name);
+                L.info (fun m -> m "Dropped with %a" Fun_kind.pp drop_fn);
                 exec_block ~body block)
               ~fe:(fun err ->
                 let* () = State.add_error err in
-                L.info (fun m ->
-                    m "Unwinding drop from %a" Crate.pp_name drop.item_meta.name);
+                L.info (fun m -> m "Unwinding drop from %a" Fun_kind.pp drop_fn);
                 let block = UllbcAst.BlockId.nth body.body on_unwind in
                 exec_block ~body block)
         | None ->
@@ -1105,15 +1099,13 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args) args
-      =
+  and exec_real_fun (fundef : UllbcAst.fun_decl) args =
     let name = fundef.item_meta.name in
     let* body =
       match fundef.body with
       | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> ok body
     in
-    let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in
     L.info (fun m ->
@@ -1135,6 +1127,16 @@ module Make (State : State_intf.S) = struct
       ~fe:(fun err ->
         let* () = dealloc_stack protected in
         error_raw err)
+
+  and exec_fun (fn : Fun_kind.t) (args : rust_val list) =
+    match fn with
+    | Real fref ->
+        let fdecl = Crate.get_fun fref.id in
+        let@@ () =
+          Poly.push_generics ~params:fdecl.generics ~args:fref.generics
+        in
+        exec_real_fun fdecl args
+    | Stubbed (stub_fun, generics) -> with_env ~env:() @@ stub_fun generics args
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =

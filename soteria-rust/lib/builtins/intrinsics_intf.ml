@@ -9,10 +9,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     type 'a ret := ('a, unit) Rust_state_m.t
 
     type fun_exec :=
-      UllbcAst.fun_decl ->
-      Charon.Types.generic_args ->
-      rust_val list ->
-      (rust_val, unit) Rust_state_m.t
+      Fun_kind.t -> rust_val list -> (rust_val, unit) Rust_state_m.t
 
     type full_ptr := Rust_state_m.Sptr.t Rust_val.full_ptr
 
@@ -2941,10 +2938,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     type 'a ret := ('a, unit) Rust_state_m.t
 
     type fun_exec :=
-      UllbcAst.fun_decl ->
-      Charon.Types.generic_args ->
-      rust_val list ->
-      (rust_val, unit) Rust_state_m.t
+      Fun_kind.t -> rust_val list -> (rust_val, unit) Rust_state_m.t
 
     val eval_fun :
       string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
