@@ -452,14 +452,12 @@ module Make (State : State_intf.S) = struct
           L.info (fun g ->
               g "Resolved function call to %a" Crate.pp_name
                 fundef.item_meta.name);
-          let^ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
+          let* fun_maybe_stubbed =
+            Poly.push_generics ~params:fundef.generics ~args:fn.generics
+            @@ lift_symex (Std_funs.std_fun_eval fundef exec_fun)
+          in
           match fun_maybe_stubbed with
-          | Some stub ->
-              let stub args =
-                Poly.push_generics ~params:fundef.generics ~args:fn.generics
-                @@ stub args
-              in
-              ok (stub, inputs)
+          | Some stub -> ok (stub, inputs)
           | None -> ok (exec_fun (Real fn), inputs))
     in
     function
