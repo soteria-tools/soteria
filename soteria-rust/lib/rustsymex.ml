@@ -21,16 +21,16 @@ module MonadState = struct
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
   }
+
+  let empty =
+    { subst = Charon.Substitute.empty_subst; generic_layouts = TypeMap.empty }
 end
 
 include Soteria.Sym_states.State_monad.Make (MonoSymex) (MonadState)
 include Syntaxes.FunctionWrap
 
 let run_with_stats ?fuel ~mode symex =
-  let state : MonadState.t =
-    { subst = Charon.Substitute.empty_subst; generic_layouts = TypeMap.empty }
-  in
-  run_with_state ~state symex
+  run_with_state ~state:MonadState.empty symex
   |> (Fun.flip MonoSymex.map) fst
   |> MonoSymex.run_with_stats ?fuel ~mode
 
