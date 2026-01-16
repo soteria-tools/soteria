@@ -516,12 +516,12 @@ module Make (State : State_intf.S) = struct
             | _ -> not_impl "Invalid type for Neg")
         | Cast (CastRawPtr (from_ty, to_ty)) -> (
             match (from_ty, to_ty) with
-            | (TRef _ | TRawPtr _), TLiteral to_ty ->
+            | (TRef _ | TRawPtr _ | TFnPtr _), TLiteral to_ty ->
                 (* expose provenance *)
                 let v, _ = as_ptr v in
                 let* v' = Sptr.expose v in
                 Encoder.cast_literal ~from_ty:(TUInt Usize) ~to_ty v'
-            | TLiteral _, (TRef _ | TRawPtr _) ->
+            | TLiteral _, (TRef _ | TRawPtr _ | TFnPtr _) ->
                 (* with provenance *)
                 let v = as_base_i Usize v in
                 let+ ptr = State.with_exposed v in
