@@ -58,7 +58,9 @@ let get_adt (adt_ref : Types.type_decl_ref) =
   | TAdtId id ->
       let open Substitute in
       let adt = get_adt_raw id in
-      let subst = make_sb_subst_from_generics adt.generics adt_ref.generics in
+      let subst =
+        make_sb_subst_from_generics adt.generics adt_ref.generics Self
+      in
       let subst = subst_at_binder_zero subst in
       st_substitute_visitor#visit_type_decl subst adt
   | TBuiltin _ | TTuple ->
@@ -86,7 +88,9 @@ let get_trait_impl_raw id =
 let get_trait_impl (timplref : Types.trait_impl_ref) =
   let open Substitute in
   let impl = get_trait_impl_raw timplref.id in
-  let subst = make_sb_subst_from_generics impl.generics timplref.generics in
+  let subst =
+    make_sb_subst_from_generics impl.generics timplref.generics Self
+  in
   let subst = subst_at_binder_zero subst in
   st_substitute_visitor#visit_trait_impl subst impl
 
@@ -99,7 +103,9 @@ let get_trait_decl_raw id =
 let get_trait_decl (trait_ref : Types.trait_decl_ref) =
   let open Substitute in
   let trait = get_trait_decl_raw trait_ref.id in
-  let subst = make_sb_subst_from_generics trait.generics trait_ref.generics in
+  let subst =
+    make_sb_subst_from_generics trait.generics trait_ref.generics Self
+  in
   let subst = subst_at_binder_zero subst in
   st_substitute_visitor#visit_trait_decl subst trait
 
