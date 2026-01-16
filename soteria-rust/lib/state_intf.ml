@@ -99,4 +99,7 @@ module type S = sig
 
   val declare_fn : Fun_kind.t -> t -> full_ptr ret
   val lookup_fn : full_ptr -> t -> Fun_kind.t ret
+
+  val lookup_const_generic :
+    Types.const_generic_var_id -> Types.ty -> t -> rust_val ret
 end
