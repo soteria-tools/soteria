@@ -443,22 +443,19 @@ module Make (State : State_intf.S) = struct
     in
     let perform_call : Fun_kind.t -> ('a fun_exec * Types.ty list) t = function
       | Synthetic _ as fn -> ok (exec_fun fn, in_tys)
-      | Real fn -> (
+      | Real fn ->
           let fundef = Crate.get_fun fn.id in
-          let* inputs =
+          let+ inputs =
             Poly.push_generics ~params:fundef.generics ~args:fn.generics
             @@ Poly.subst_tys fundef.signature.inputs
           in
           L.info (fun g ->
               g "Resolved function call to %a" Crate.pp_name
                 fundef.item_meta.name);
-          let* fun_maybe_stubbed =
-            Poly.push_generics ~params:fundef.generics ~args:fn.generics
-            @@ lift_symex (Std_funs.std_fun_eval fundef exec_fun)
+          let fun_maybe_stubbed =
+            Std_funs.std_fun_eval fundef fn.generics exec_fun
           in
-          match fun_maybe_stubbed with
-          | Some stub -> ok (stub, inputs)
-          | None -> ok (exec_fun (Real fn), inputs))
+          (fun_maybe_stubbed, inputs)
     in
     function
     (* Handle builtins separately *)
@@ -490,12 +487,7 @@ module Make (State : State_intf.S) = struct
         L.info (fun g ->
             g "Resolved global init call to %a" Crate.pp_name
               fundef.item_meta.name);
-        let* global_fn =
-          let^+ fun_maybe_stubbed = Std_funs.std_fun_eval fundef exec_fun in
-          match fun_maybe_stubbed with
-          | Some fn -> fn
-          | None -> exec_fun (Real { id = decl.init; generics = glob.generics })
-        in
+        let global_fn = Std_funs.std_fun_eval fundef glob.generics exec_fun in
         (* First we allocate the global and store it in the State  *)
         let* ptr =
           State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data

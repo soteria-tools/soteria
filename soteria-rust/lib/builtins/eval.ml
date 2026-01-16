@@ -1,5 +1,3 @@
-open Rustsymex
-open Syntax
 open Charon
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 
@@ -135,9 +133,31 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   module Rusteria = Rusteria.M (Rust_state_m)
   module Std = Std.M (Rust_state_m)
 
-  let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
+  let fn_to_stub fn_sig fn_name =
     let open Std in
-    let open Alloc in
+    function
+    | Rusteria Assert -> Rusteria.assert_
+    | Rusteria Assume -> Rusteria.assume
+    | Rusteria Nondet -> Rusteria.nondet fn_sig
+    | Rusteria Panic -> Rusteria.panic ?msg:None
+    | Miri AllocId -> Miri.alloc_id
+    | Miri PromiseAlignement -> Miri.promise_alignement
+    | Miri Nop -> nop
+    | Optim AllocImpl -> alloc_impl
+    | Optim Panic ->
+        Rusteria.panic ~msg:(Fmt.to_to_string Crate.pp_name fn_name)
+    | Optim (FloatIs fc) -> float_is fc
+    | Optim FloatIsFinite -> float_is_finite
+    | Optim (FloatIsSign { positive }) -> float_is_sign positive
+    | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
+    | Alloc Dealloc -> Alloc.dealloc
+    | Alloc NoAllocShimIsUnstable -> Alloc.no_alloc_shim_is_unstable
+    | Alloc Realloc -> Alloc.realloc
+    | Fixme PanicCleanup -> fixme_panic_cleanup
+    | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
+    | DropInPlace -> nop
+
+  let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =
     (* Rust allows defining functions and marking them as intrinsics within a module,
        and the compiler will treat them as the intrinsic of the same name; e.g.
        mod Foo {
@@ -147,20 +167,14 @@ module M (Rust_state_m : Rust_state_m.S) = struct
        This means their path doesn't match the one we expect for the patterns; so instead of
        matching on a path, we only consider intrinsics from their name. *)
     if Charon_util.decl_has_attr f "rustc_intrinsic" then
-      let+ name, generics =
+      let name, generics =
         match List.rev f.item_meta.name with
-        | PeIdent (name, _) :: _ ->
-            if (Config.get ()).polymorphic then
-              let generics' = { f.generics with trait_clauses = [] } in
-              let+ args = Rustsymex.Poly.fill_params generics' in
-              (name, args)
-            else return (name, TypesUtils.empty_generic_args)
+        | PeIdent (name, _) :: _ -> (name, generics)
         | PeInstantiated mono :: PeIdent (name, _) :: _ ->
-            return (name, mono.binder_value)
+            (name, mono.binder_value)
         | _ -> failwith "Unexpected intrinsic shape"
       in
-      let fn = Intrinsics.eval_fun name fun_exec generics in
-      Some fn
+      Intrinsics.eval_fun name fun_exec generics
     else
       let name =
         match List.last f.item_meta.name with
@@ -170,29 +184,13 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         | _ -> f.item_meta.name
       in
       let ctx = Crate.as_namematcher_ctx () in
-      let@@ () = return in
-      NameMatcherMap.find_opt ctx match_config name std_fun_map
-      |> Option.map @@ function
-         | Rusteria Assert -> Rusteria.assert_
-         | Rusteria Assume -> Rusteria.assume
-         | Rusteria Nondet -> Rusteria.nondet f.signature
-         | Rusteria Panic -> Rusteria.panic ?msg:None
-         | Miri AllocId -> Miri.alloc_id
-         | Miri PromiseAlignement -> Miri.promise_alignement
-         | Miri Nop -> nop
-         | Optim AllocImpl -> alloc_impl
-         | Optim Panic ->
-             Rusteria.panic ~msg:(Fmt.to_to_string Crate.pp_name name)
-         | Optim (FloatIs fc) -> float_is fc
-         | Optim FloatIsFinite -> float_is_finite
-         | Optim (FloatIsSign { positive }) -> float_is_sign positive
-         | Alloc (Alloc { zeroed }) -> alloc ~zeroed
-         | Alloc Dealloc -> dealloc
-         | Alloc NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
-         | Alloc Realloc -> realloc
-         | Fixme PanicCleanup -> fixme_panic_cleanup
-         | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
-         | DropInPlace -> nop
+      let stub = NameMatcherMap.find_opt ctx match_config name std_fun_map in
+      match stub with
+      | Some stub ->
+          fun args ->
+            Rust_state_m.Poly.push_generics ~params:f.generics ~args:generics
+            @@ fn_to_stub f.signature name stub args
+      | None -> fun_exec (Real { id = f.def_id; generics })
 
   let builtin_fun_eval (f : Types.builtin_fun_id) generics =
     let open Std in
