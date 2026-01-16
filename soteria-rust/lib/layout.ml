@@ -32,10 +32,19 @@ module Session = struct
     let cache = get_cache () in
     match Hashtbl.find_opt cache ty with
     | Some layout -> ok layout
-    | None ->
-        let++ layout = f () in
-        Hashtbl.add cache ty layout;
-        layout
+    | None -> (
+        let* gen_layout = Poly.get_layout ty in
+        match gen_layout with
+        | Some layout -> ok layout
+        | None ->
+            let** layout = f () in
+            let is_concrete = Iter.is_empty (iter_vars layout) in
+            if is_concrete then (
+              Hashtbl.add cache ty layout;
+              Result.ok layout)
+            else
+              let+ () = Poly.push_layout ty layout in
+              Ok layout)
 end
 
 let size_of_int_ty = size_of_int_ty
@@ -165,7 +174,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Type variables : non-deterministically generate a layout *)
-  | TVar _ ->
+  | TVar (Free _) ->
       (* FIXME: we need to scope these type variables, as the T in foo<T> and
          in bar<T> are "different" Ts. *)
       let* size = nondet (Typed.t_usize ()) in
@@ -179,6 +188,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let align = Typed.cast (Usize.(1s) <<@ align_shift) in *)
       let align = Usize.(1s) in
       ok (mk ~size ~align ())
+  | TVar (Bound _) -> failwith "escaping bound type variable found in layout_of"
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
   | TError _ -> not_impl_layout "error" ty
