@@ -34,7 +34,47 @@ module Exe = struct
 
   let is_ok = function Unix.WEXITED 0 -> true | _ -> false
 
-  let exec ?(read_out = false) ?(read_err = false) ?(env = []) cmd args =
+  (** Read from both channels simultaneously to avoid blocking *)
+  let read_both_nonblocking out err =
+    let out_fd = Unix.descr_of_in_channel out in
+    let err_fd = Unix.descr_of_in_channel err in
+
+    let buffer_size = 4096 in
+    let buf = Bytes.create buffer_size in
+    let out_buffer = Buffer.create buffer_size in
+    let err_buffer = Buffer.create buffer_size in
+    let out_open = ref true in
+    let err_open = ref true in
+
+    while !out_open || !err_open do
+      (* Build the list of open file descriptors *)
+      let fd_to_read =
+        (if !out_open then [ out_fd ] else [])
+        @ if !err_open then [ err_fd ] else []
+      in
+      (* Wait until one of the file descriptor is ready to be read.
+         Note: the -1.0 means that there is no timeout, we wait as long as needed.*)
+      let ready, _, _ = Unix.select fd_to_read [] [] (-1.0) in
+      List.iter
+        (fun fd ->
+          let n = Unix.read fd buf 0 buffer_size in
+          if n = 0 then
+            (* EOF, stop reading from that channel *)
+            if fd = out_fd then out_open := false else err_open := false
+          else
+            (* Data available *)
+            let chunk = Bytes.sub_string buf 0 n in
+            if fd = out_fd then Buffer.add_string out_buffer chunk
+            else Buffer.add_string err_buffer chunk)
+        ready
+    done;
+
+    (* Split into lines *)
+    let output = Buffer.contents out_buffer |> String.split_on_char '\n' in
+    let error = Buffer.contents err_buffer |> String.split_on_char '\n' in
+    (output, error)
+
+  let exec ?(env = []) cmd args =
     (* let args = Array.of_list args in *)
     let current_env = Unix.environment () in
     let env = Array.append current_env (Array.of_list env) in
@@ -42,9 +82,7 @@ module Exe = struct
     if (Config.get ()).log_compilation then
       L.app (fun g -> g "Running command: %s" cmd);
     let out, inp, err = Unix.open_process_full cmd env in
-    (* FIXME: this line hangs if nothing is printed to stdout *)
-    let output = if read_out then In_channel.input_lines out else [] in
-    let error = if read_err then In_channel.input_lines err else [] in
+    let output, error = read_both_nonblocking out err in
     let status = Unix.close_process_full (out, inp, err) in
     if (Config.get ()).log_compilation then
       L.app (fun g ->
@@ -57,7 +95,7 @@ module Exe = struct
     (output, error, status)
 
   let exec_exn ?env cmd args =
-    let output, _, status = exec ~read_out:true ?env cmd args in
+    let output, _, status = exec ?env cmd args in
     if not (is_ok status) then
       Fmt.kstr frontend_err "Command %s %a failed with status %a" cmd
         Fmt.(list ~sep:(any " ") string)
@@ -167,10 +205,10 @@ module Cmd = struct
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
         (cmd, "cargo" :: args, env)
 
-  let exec_in ?read_out ?read_err ~mode folder cmd =
+  let exec_in ~mode folder cmd =
     let cmd, args, env = build_cmd ~mode cmd in
     let@ () = Exe.run_in folder in
-    Exe.exec ?read_out ?read_err ~env cmd args
+    Exe.exec ~env cmd args
 end
 
 module Lib = struct
@@ -208,7 +246,7 @@ module Lib = struct
       let env = Cmd.rustc_as_env () @ env in
       let _, err, status =
         let@ () = Exe.run_in path in
-        Exe.exec ~read_err:true ~env (Cmd.cargo ())
+        Exe.exec ~env (Cmd.cargo ())
           ([ "build"; "--lib"; "--target"; Lazy.force target ] @ verbosity)
       in
       match status with
@@ -418,7 +456,7 @@ let create_using_current_config () =
 let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
   if not (Config.get ()).no_compile then (
     let cmd = plugin.mk_cmd ?input ~output () in
-    let _, err, res = Cmd.exec_in ~read_err:true ~mode pwd cmd in
+    let _, err, res = Cmd.exec_in ~mode pwd cmd in
     if not (Exe.is_ok res) then
       if res = WEXITED 2 then compilation_err (String.concat "\n" err)
       else
