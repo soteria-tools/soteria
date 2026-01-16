@@ -180,6 +180,7 @@ module Make (State : State_intf.S) = struct
     | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
 
   let rec resolve_constant (const : Expressions.constant_expr) =
+    let* const = Poly.subst_constant_expr const in
     match const.kind with
     | CLiteral (VScalar scalar) -> ok (Int (BV.of_scalar scalar))
     | CLiteral (VBool b) -> ok (Int (BV.of_bool (Typed.bool b)))
@@ -285,12 +286,13 @@ module Make (State : State_intf.S) = struct
                     (Int ptr_frag, BV.usizei ofs) :: acc)
         in
         Union blocks
+    | CVar (Free id) -> State.lookup_const_generic id const.ty
+    | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CAdt _ | CArray _ | CSlice _ | CGlobal _ | CRef _ | CPtr _ | CFnPtr _
     | CPtrNoProvenance _ ->
         Fmt.kstr not_impl "TODO: complex constant %a" Crate.pp_constant_expr
           const
-    | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
   (** Resolves a place to a pointer *)
   and resolve_place (place : Expressions.place) : full_ptr t =

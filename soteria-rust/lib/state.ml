@@ -111,6 +111,7 @@ type t = {
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
   pointers : DecayMap.t option;
+  const_generics : Sptr.t rust_val Types.ConstGenericVarId.Map.t;
 }
 [@@deriving show { with_path = false }]
 
@@ -145,6 +146,7 @@ let empty =
     globals = GlobMap.empty;
     errors = [];
     pointers = None;
+    const_generics = Types.ConstGenericVarId.Map.empty;
   }
 
 let log action ptr st =
@@ -717,3 +719,15 @@ let lookup_fn (({ ptr; _ } : Sptr.t), _) ({ functions; _ } as st) =
   match FunBiMap.get_fn loc functions with
   | Some fn -> Result.ok (fn, st)
   | None -> Result.error `NotAFnPointer
+
+let lookup_const_generic id ty ({ const_generics; _ } as st) =
+  match Types.ConstGenericVarId.Map.find_opt id const_generics with
+  | Some v -> Result.ok (v, st)
+  | None ->
+      let@ () = with_error_loc_as_call_trace st in
+      let@ () = with_loc_err () in
+      let++ v = Encoder.nondet ty in
+      let const_generics =
+        Types.ConstGenericVarId.Map.add id v const_generics
+      in
+      (v, { st with const_generics })

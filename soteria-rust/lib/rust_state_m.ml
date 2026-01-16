@@ -57,6 +57,9 @@ module type S = sig
     val subst_ty : Types.ty -> (Types.ty, 'env) t
     val subst_tys : Types.ty list -> (Types.ty list, 'env) t
     val subst_tref : Types.trait_ref -> (Types.trait_ref, 'env) t
+
+    val subst_constant_expr :
+      Expressions.constant_expr -> (Expressions.constant_expr, 'env) t
   end
 
   module Sptr : sig
@@ -182,6 +185,10 @@ module type S = sig
     val store_str_global : string -> full_ptr -> (unit, 'env) t
     val declare_fn : Fun_kind.t -> (full_ptr, 'env) t
     val lookup_fn : full_ptr -> (Fun_kind.t, 'env) t
+
+    val lookup_const_generic :
+      Types.const_generic_var_id -> Types.ty -> (rust_val, 'env) t
+
     val add_error : Error.t err -> (unit, 'env) t
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
@@ -353,6 +360,7 @@ module Make (State : State_intf.S) :
     let[@inline] subst_ty ty = lift_symex (Poly.subst_ty ty)
     let[@inline] subst_tys tys = lift_symex (Poly.subst_tys tys)
     let[@inline] subst_tref tref = lift_symex (Poly.subst_tref tref)
+    let[@inline] subst_constant_expr c = lift_symex (Poly.subst_constant_expr c)
   end
 
   module Sptr = struct
@@ -455,6 +463,10 @@ module Make (State : State_intf.S) :
 
     let[@inline] declare_fn fn = lift_state_op (declare_fn fn)
     let[@inline] lookup_fn fn = lift_state_op (lookup_fn fn)
+
+    let[@inline] lookup_const_generic id ty =
+      lift_state_op (lookup_const_generic id ty)
+
     let[@inline] add_error e = lift_state_op (add_error e)
     let[@inline] pop_error () = lift_state_op pop_error
     let[@inline] leak_check () = lift_state_op leak_check

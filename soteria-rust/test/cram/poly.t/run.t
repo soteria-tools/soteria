@@ -63,3 +63,24 @@ Try generics when moving them between argumen ts
   PC 3: (V|2| <=u V|1|) /\ (V|1| <=u V|2|) /\ (V|1| == V|2|) /\
         (V|1| <=u 0x00000000000003ff) /\ (V|2| <=u 0x00000000000003ff)
   
+Try const generics
+  $ soteria-rust rustc const_generics.rs --frontend charon --poly
+  Compiling... done in <time>
+  note: const_generics::test_concrete_const_generic: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  note: const_generics::test_concrete_const_generic_vanish: done in <time>, ran 0 branches
+  
+  
+  note: const_generics::test_poly_const_generic: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  
+  note: const_generics::test_poly_const_generic2: done in <time>, ran 6 branches
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  PC 2: (0x0000000000000001 == V|1|) /\ (0x0000000000000001 == V|1|)
+  PC 3: (V|1| == 0x0000000000000008) /\ (V|1| == 0x0000000000000008)
+  PC 4: (V|1| == 0x000000000000000f) /\ (V|1| == 0x000000000000000f)
+  PC 5: (V|1| == 0x00000000000000ff) /\ (V|1| == 0x00000000000000ff)
+  PC 6: (0x0000000000000002 <=u V|1|) /\ (V|1| != 0x0000000000000008) /\
+        (V|1| != 0x000000000000000f) /\ (V|1| != 0x00000000000000ff)
+  
