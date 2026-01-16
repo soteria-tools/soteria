@@ -1,6 +1,7 @@
 open Charon
 open Typed.Infix
 open Typed.Syntax
+open Soteria.Symex.Compo_res
 module T = Typed.T
 module BV = Typed.BitVec
 open Rustsymex
@@ -8,80 +9,8 @@ open Rustsymex.Result
 open Rustsymex.Syntax
 open Charon_util
 
-(** Layout of enum tags in memory. Note tags are distinct from discriminants: a
-    discriminant is user specified and is what [Rvalue.Discriminant] returns,
-    whereas a tag is specific to variant layouts, and may be of smaller size
-    than the discriminant, or not be encoded at all if it is the untagged
-    variant of a niche-optimised enum. *)
-module Tag_layout = struct
-  type encoding = Direct | Niche of Types.variant_id
-
-  and t = {
-    offset : T.sint Typed.t;
-    ty : Types.literal_type; [@printer Charon_util.pp_literal_ty]
-    encoding : encoding;
-    tags : T.sint Typed.t option Array.t;
-        [@printer
-          Fmt.(
-            brackets @@ array ~sep:comma (option ~none:(any "none") Typed.ppa))]
-        (** The tag associated to each variant, indexed by variant ID. If
-            [None], the variant is either uninhabited or the untagged variant.
-        *)
-  }
-  [@@deriving show { with_path = false }]
-end
-
-(** We use a custom type for the member offsets for layouts; this allows us to
-    use a more efficient representation for arrays [T; N], that doesn't require
-    N offsets. *)
-module Fields_shape = struct
-  type t =
-    | Primitive  (** No fields present *)
-    | Arbitrary of Types.variant_id * T.sint Typed.t Array.t
-        (** Arbitrary field placement (structs, unions...), with the variant
-            (e.g. enums with a single inhabited variant) *)
-    | Enum of Tag_layout.t * t Array.t
-        (** Enum fields: encodes a tag, and an array of field shapes for each
-            variant (indexed by variant ID). Using [offset_of] on this isn't
-            valid; one must first retrieve the fields shape of the corresponding
-            variant. *)
-    | Array of T.sint Typed.t
-        (** All fields are equally spaced (arrays, slices) *)
-
-  let rec pp ft = function
-    | Primitive -> Fmt.string ft "()"
-    | Arbitrary (var, arr) ->
-        Fmt.pf ft "{%a: %a}" Types.VariantId.pp_id var
-          Fmt.(braces @@ array ~sep:comma Typed.ppa)
-          arr
-    | Enum (tag_layout, shapes) ->
-        Fmt.pf ft "Enum (%a, %a)" Tag_layout.pp tag_layout
-          Fmt.(brackets @@ array ~sep:comma pp)
-          shapes
-    | Array stride -> Fmt.pf ft "Array(%a)" Typed.ppa stride
-
-  let offset_of f = function
-    | Primitive -> failwith "This layout has no fields"
-    | Enum _ -> failwith "Can't get fields of enum; use `shape_for_variant`"
-    | Arbitrary (_, arr) -> arr.(f)
-    | Array stride -> BV.usizei f *!!@ stride
-
-  let shape_for_variant variant = function
-    | Enum (_, shapes) -> shapes.(Types.VariantId.to_int variant)
-    | Arbitrary (v, _) as fs when Types.VariantId.equal_id v variant -> fs
-    | s ->
-        Fmt.failwith "Shape %a has no variant %a" pp s Types.VariantId.pp_id
-          variant
-end
-
-(* TODO: size should be an [option], for unsized types *)
-type t = {
-  size : T.sint Typed.t;
-  align : T.nonzero Typed.t;
-  uninhabited : bool;
-  fields : Fields_shape.t;
-}
-[@@deriving show]
+(* Import types *)
+include Layout_common
 
 module Session = struct
   (* TODO: allow different caches for different crates *)
@@ -109,13 +38,15 @@ module Session = struct
         layout
 end
 
-include Layout_common
+let size_of_int_ty = size_of_int_ty
+let size_of_uint_ty = size_of_uint_ty
+let size_of_literal_ty = size_of_literal_ty
+let is_signed = is_signed
 
-(* TODO: this is not really accurate, but good enough for now.
+(* TODO: this is not really if we want to properly emulate different platforms,
+   but this is good enough for now.
    See https://doc.rust-lang.org/reference/type-layout.html#r-layout.primitive.align *)
-let align_of_literal_ty ty = size_of_literal_ty ty
-let size_of_literal_ty ty = size_of_literal_ty ty
-let empty_generics = TypesUtils.empty_generic_args
+let align_of_literal_ty = size_of_literal_ty
 
 type meta_kind = LenKind | VTableKind | NoneKind
 
