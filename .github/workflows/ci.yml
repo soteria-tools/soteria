@@ -19,7 +19,7 @@ concurrency:
 
 env:
   OBOL_REPO: soteria-tools/obol
-  OBOL_COMMIT_HASH: bf524f4242a874d716ab3964dd344cda833ba3f8
+  OBOL_COMMIT_HASH: 322400fbe54d5958cf1585b7b9e0ac3f804e1333
 
 jobs:
   build:

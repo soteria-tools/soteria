@@ -47,7 +47,7 @@ module Poly = struct
       let args' = generic_args_substitute subst args in
       L.debug (fun m -> m "Pushing generics %a" Crate.pp_generic_args args');
       let subst =
-        args' |> make_sb_subst_from_generics params |> subst_at_binder_zero
+        subst_at_binder_zero (make_sb_subst_from_generics params args' Self)
       in
       with_state ~state:{ st with subst } x)
     else x
