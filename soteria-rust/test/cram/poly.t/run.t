@@ -25,10 +25,11 @@ Try creating a generic vec
   $ soteria-rust rustc vec.rs --frontend charon --poly
   Compiling... done in <time>
   note: vec::with_vec: done in <time>, ran 2 branches
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
-  PC 2: (V|2| <u (0x7fffffffffffffff - (0x000000000000000a *ck V|1|))) /\
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|) /\
+        (V|2| <=u 0x00000000000003ff)
+  PC 2: (V|3| <u (0x7fffffffffffffff - (0x000000000000000a *ck V|1|))) /\
         (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
-        (0x0000000000000001 <=u V|2|)
+        (V|2| <=u 0x00000000000003ff) /\ (0x0000000000000001 <=u V|3|)
   
   error: vec::with_vec_wrong: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: assertion failed: my_vec.capacity() == 10 in vec::with_vec_wrong
@@ -46,6 +47,19 @@ Try creating a generic vec
    17 │ │  }
       │ ╰──' 1: Entry point
    18 │    
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|) /\
+        (V|2| <=u 0x00000000000003ff)
   
   [1]
+
+Try generics when moving them between argumen ts
+  $ soteria-rust rustc moving_generics.rs --frontend charon --poly
+  Compiling... done in <time>
+  note: moving_generics::two_generics: done in <time>, ran 3 branches
+  PC 1: (V|1| <u V|2|) /\ (V|1| <=u 0x00000000000003ff) /\
+        (V|2| <=u 0x00000000000003ff)
+  PC 2: (V|2| <=u V|1|) /\ (V|2| <u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
+        (V|2| <=u 0x00000000000003ff)
+  PC 3: (V|2| <=u V|1|) /\ (V|1| <=u V|2|) /\ (V|1| == V|2|) /\
+        (V|1| <=u 0x00000000000003ff) /\ (V|2| <=u 0x00000000000003ff)
+  
