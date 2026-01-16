@@ -684,13 +684,14 @@ let unwind_with ~f ~fe symex =
       else Result.error (err, state))
 
 let declare_fn fn_def ({ functions; _ } as st) =
+  let align = Usize.(16s) in
   match FunBiMap.get_loc fn_def functions with
   | Some loc ->
       let ptr : Sptr.t =
         {
           ptr = Typed.Ptr.mk loc Usize.(0s);
           tag = None;
-          align = Usize.(1s);
+          align;
           size = Usize.(0s);
         }
       in
@@ -701,8 +702,7 @@ let declare_fn fn_def ({ functions; _ } as st) =
         alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span.data
           ~zeroed:false
           ~size:Usize.(0s)
-          ~align:Usize.(1s)
-          st
+          ~align st
       in
       let ptr = { ptr with tag = None } in
       let loc = Typed.Ptr.loc ptr.ptr in
