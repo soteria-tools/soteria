@@ -209,3 +209,11 @@ Test null and dangling pointers
   PC 1: empty
   
   [1]
+
+Test exposing function pointers
+  $ soteria-rust rustc expose_fn_ptr.rs
+  Compiling... done in <time>
+  note: main: done in <time>, ran 1 branch
+  PC 1: (extract[0-3](V|1|) == 0x0) /\ (0x0000000000000001 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffffe)
+  
