@@ -71,7 +71,12 @@ module Make (State : State_intf.S) = struct
         let binding = Store.find var_id store in
         match binding.kind with
         | Value v -> ok v
-        | Uninit -> error `UninitializedMemoryAccess
+        | Uninit ->
+            let* layout = Layout.layout_of ty in
+            if%sat layout.size ==@ Usize.(0s) then
+              let* ptr = get_variable_ptr var_id in
+              State.load ptr ty
+            else error `UninitializedMemoryAccess
         | Dead -> error `DeadVariable
         | Stackptr ptr -> State.load ptr ty)
     | Heap ptr -> State.load ptr ty
