@@ -21,6 +21,15 @@ Function specifications can then be *executed* by first consuming the preconditi
 - Why ability to consume needs to be checked pre-emptively
 
 
+# Alternative choices
+An alternative implementation could be to expose the `any` type. This would avoid defining `syn` as a separate thing everywhere.
+We can still enforce the things that need to be substituted *are* substituted using the `EarlyBinder` trick:
+```ocaml
+type syn =
+  | Needs_susbt of any Value.t
+```
+
+
 ## Bikeshedding list
 
 - All `subst` functions require a `Typed.cast`, can we get around this?

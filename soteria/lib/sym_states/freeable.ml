@@ -63,7 +63,7 @@ module Make (Symex : Symex.Base) = struct
     | Freed -> ([], [])
 
   let consume
-      (cons :
+      (cons_inner :
         'inner_syn ->
         'inner_st option ->
         ('inner_st option, 'inner_syn list) Symex.Consumer.t)
@@ -81,15 +81,15 @@ module Make (Symex : Symex.Base) = struct
     | Alive syn -> (
         match st with
         | None ->
-            let+ st' = cons syn None |> lift_fix_s in
+            let+ st' = cons_inner syn None |> lift_fix_s in
             Option.map (fun x -> Alive x) st'
         | Some Freed -> lfail (Symex.Value.bool false)
         | Some (Alive st) ->
-            let+ st' = cons syn (Some st) |> lift_fix_s in
+            let+ st' = cons_inner syn (Some st) |> lift_fix_s in
             Option.map (fun x -> Alive x) st')
 
   let produce
-      (prod :
+      (prod_inner :
         'inner_syn -> 'inner_st option -> 'inner_st option Symex.Producer.t)
       (syn : 'inner_syn syn) (st : 'inner_st t option) :
       'inner_st t option Symex.Producer.t =
@@ -101,10 +101,10 @@ module Make (Symex : Symex.Base) = struct
     | Alive syn -> (
         match st with
         | None ->
-            let+ st' = prod syn None in
+            let+ st' = prod_inner syn None in
             Option.map (fun s -> Alive s) st'
         | Some (Alive st) ->
-            let+ st' = prod syn (Some st) in
+            let+ st' = prod_inner syn (Some st) in
             Option.map (fun s -> Alive s) st'
         | Some Freed -> vanish ())
 end
