@@ -20,6 +20,8 @@ concurrency:
 env:
   OBOL_REPO: soteria-tools/obol
   OBOL_COMMIT_HASH: 322400fbe54d5958cf1585b7b9e0ac3f804e1333
+  CHARON_REPO: soteria-tools/charon
+  CHARON_COMMIT_HASH: 95fb6b5f31a0cf74e9a3977c1dbe43786661fe39
 
 jobs:
   build:
@@ -85,6 +87,29 @@ jobs:
         if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
       - name: Add Obol to path
         run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
+
+      # Install Charon
+      - name: Restore Charon cache
+        uses: actions/cache@v4
+        id: restore-charon-cache
+        with:
+          path: charon-bin
+          key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
+      - name: Install Charon if not cached
+        run: |
+          brew install make
+          cd ..
+          mkdir charon
+          cd charon
+          git init
+          git remote add origin https://github.com/$CHARON_REPO.git
+          git fetch --depth=1 origin $CHARON_COMMIT_HASH
+          git checkout $CHARON_COMMIT_HASH
+          gmake build-dev-charon-rust
+          cp -r bin ../soteria/charon-bin
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
+      - name: Add Charon to path
+        run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
 
       # Run tests
       - name: Test
