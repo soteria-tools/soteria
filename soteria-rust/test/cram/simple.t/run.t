@@ -209,3 +209,10 @@ Test null and dangling pointers
   PC 1: empty
   
   [1]
+
+Test cloning ZSTs works; in particular, this generates a function with an empty body that just returns, so if we don't handle the ZST case we get an uninit access.
+  $ soteria-rust rustc clone_zst.rs
+  Compiling... done in <time>
+  note: main: done in <time>, ran 1 branch
+  PC 1: empty
+  
