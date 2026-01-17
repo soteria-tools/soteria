@@ -15,9 +15,10 @@ module Make (Symex : Symex.Base) = struct
     Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" pp_inner st
       (Fmt.Dump.list pp_fix) fixes
 
-  let wrap ?(fuel = 1) ~(produce : 'fix -> 'a -> 'a Symex.t)
-      (f : 'a -> ('v * 'a, 'err, 'fix) Symex.Result.t) (bi_st : ('a, 'fix) t) :
-      ('v * ('a, 'fix) t, 'err * ('a, 'fix) t, 'fix) Result.t =
+  let wrap ?(fuel = 1) ~(produce : 'syn -> 'a -> 'a Symex.Producer.t)
+      (f : 'a -> ('v * 'a, 'err, 'syn list) Symex.Result.t)
+      (bi_st : ('a, 'syn) t) :
+      ('v * ('a, 'syn) t, 'err * ('a, 'syn) t, 'syn list) Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
     let rec with_fuel fuel bi_st =
       let st, fixes = bi_st in
@@ -32,8 +33,13 @@ module Make (Symex : Symex.Base) = struct
               (List.map
                  (fun fix ->
                    fun () ->
-                    let* st = produce fix st in
-                    with_fuel (fuel - 1) (st, fix :: fixes))
+                    let* st =
+                      Symex.Producer.run_identity_producer
+                        (Producer.fold_list ~init:st
+                           ~f:(fun st s -> produce s st)
+                           fix)
+                    in
+                    with_fuel (fuel - 1) (st, fix @ fixes))
                  fix_choices)
     in
     with_fuel fuel bi_st
@@ -52,32 +58,39 @@ module Make (Symex : Symex.Base) = struct
     (v, (st, fixes))
 
   let produce prod inner_ser st =
+    let open Symex.Producer.Syntax in
     let st, fixes = st in
     let+ st = prod inner_ser st in
     (st, fixes)
 
-  let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)
-      (cons : 'ser -> 't -> ('t, 'err, 'ser) Symex.Result.t) (inner_ser : 'ser)
-      (bi_st : ('t, 'ser) t) :
-      (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser) Symex.Result.t =
+  let consume ?(fuel = 1) ~(produce : 'syn -> 'a -> 'a Symex.Producer.t)
+      (cons : 'syn -> 't -> ('t, 'syn list) Symex.Consumer.t) (inner_ser : 'syn)
+      (bi_st : ('t, 'syn) t) : (('t, 'syn) t, 'syn list) Symex.Consumer.t =
+    let open Symex.Consumer.Syntax in
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
     let rec with_fuel fuel bi_st =
       let st, fixes = bi_st in
-      let* res = cons inner_ser st in
+      let*! res = cons inner_ser st in
       match res with
-      | Ok st -> Result.ok (st, fixes)
+      | Ok st -> Consumer.ok (st, fixes)
       | Error _e ->
           L.info (fun m -> m "Bi_abd.consume: vanishing an error");
-          Symex.vanish ()
+          Consumer.lfail (Value.bool false)
       | Missing fix_choices ->
-          if fuel <= 0 then Symex.vanish ()
+          if fuel <= 0 then Consumer.lift_symex (Symex.vanish ())
           else
-            Symex.branches
+            Consumer.branches
               (List.map
                  (fun fix ->
                    fun () ->
-                    let* st = produce fix st in
-                    with_fuel (fuel - 1) (st, fix :: fixes))
+                    let* st =
+                      Consumer.lift_symex
+                        (Symex.Producer.run_identity_producer
+                           (Producer.fold_list ~init:st
+                              ~f:(fun st s -> produce s st)
+                              fix))
+                    in
+                    with_fuel (fuel - 1) (st, fix @ fixes))
                  fix_choices)
     in
     with_fuel fuel bi_st

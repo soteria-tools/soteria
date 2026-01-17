@@ -12,6 +12,7 @@
 {!modules:
   Soteria.Symex
   Soteria.Sym_states
+  Soteria.Logic
   Soteria.Logs
   Soteria.Tiny_values
   Soteria.BV_values

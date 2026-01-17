@@ -31,15 +31,16 @@ module Exec_interp = Interp.Make (State)
 
 let exec file =
   let program = Parser.parse_file file in
+  let context = Context.make ~use_specs:false ~program () in
   Fmt.pr "@[<v 2>Parsed program:@ %a@]@." Lang.Program.pp program;
   let main =
     match Lang.String_map.find_opt "main" program with
     | Some f -> f
     | None -> failwith "No main function found"
   in
-  let process = Exec_interp.run_function main State.empty [] in
+  let process = Exec_interp.eval_function main State.empty [] in
   let results =
-    let@ () = Interp.with_program program in
+    let@ () = Context.with_context context in
     Interp.Symex.Result.run ~mode:OX process
   in
   Fmt.pr "@[<v 2>Program executed with result:@ %a@]@?" pp_results results
@@ -48,6 +49,7 @@ module Bi_interp = Interp.Make (Bi_state)
 
 let generate_summaries file =
   let program = Parser.parse_file file in
+  let context = Context.make ~use_specs:true ~program () in
   String_map.iter
     (fun fname (func_dec : Fun_def.t) ->
       let@ () = L.with_section (Fmt.str "Generating summary for %s" fname) in
@@ -60,10 +62,10 @@ let generate_summaries file =
               v :: acc)
         in
         let args = List.rev args in
-        Bi_interp.run_function func_dec Bi_state.empty args
+        Bi_interp.eval_function func_dec Bi_state.empty args
       in
       let results =
-        let@ () = Interp.with_program program in
+        let@ () = Context.with_context context in
         LSymex.run ~mode:UX ~fuel:bi_abd_fuel process
       in
       List.iter

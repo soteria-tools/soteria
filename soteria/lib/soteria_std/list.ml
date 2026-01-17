@@ -120,3 +120,15 @@ and[@tail_mod_cons] prepend_concat_map2 zs f xs ys =
 (** [sub ~from ~len l] returns the sublist of [l], from index [from]
     (inclusive), of length [n]. *)
 let sub ~from ~len l = l |> drop from |> take len
+
+(** Like {!find_opt} but returns both the found value, and the rest of the list.
+*)
+let rec find_with_rest f l =
+  match l with
+  | [] -> None
+  | x :: xs -> (
+      if f x then Some (x, xs)
+      else
+        match find_with_rest f xs with
+        | None -> None
+        | Some (found, rest) -> Some (found, x :: rest))
