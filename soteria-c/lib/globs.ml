@@ -51,11 +51,11 @@ let get sym st =
       (* We learn that the new location is distinct from all other global locations *)
       Sym_map.syntactic_bindings (Option.value ~default:Sym_map.empty st)
       |> Seq.filter_map (fun (k, v) ->
-             let open Typed.Infix in
-             if Cerb_frontend.Symbol.equal_sym k sym then None
-             else
-               let neq = Typed.not (v ==@ loc) in
-               Some neq)
+          let open Typed.Infix in
+          if Cerb_frontend.Symbol.equal_sym k sym then None
+          else
+            let neq = Typed.not (v ==@ loc) in
+            Some neq)
       |> List.of_seq
       |> assume
   in

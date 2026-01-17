@@ -17,7 +17,7 @@ let get_abort_diagnostics (stats : Csymex.Stats.t) =
     stats.give_up_reasons
     |> Hashtbl.Hstring.to_seq
     |> Seq.concat_map (fun (reason, locs) ->
-           Seq.map (fun loc -> (reason, loc)) (Dynarray.to_seq locs))
+        Seq.map (fun loc -> (reason, loc)) (Dynarray.to_seq locs))
     |> List.of_seq
   in
   let+ msg, loc = list_reasons in

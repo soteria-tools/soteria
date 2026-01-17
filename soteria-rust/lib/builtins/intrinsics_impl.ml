@@ -190,7 +190,8 @@ module M (Rust_state_m : Rust_state_m.S) :
         let* br = State.load (r, Thin) byte in
         let br = as_base_i U8 br in
         if%sat bl ==@ br then aux l r (len -!@ one)
-        else if%sat bl <@ br then ok U32.(-1s) else ok U32.(1s)
+        else if%sat bl <@ br then ok U32.(-1s)
+        else ok U32.(1s)
     in
     aux ~inc:zero l r (bytes :> T.sint Typed.t)
 
@@ -256,7 +257,7 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let copy_sign ~x ~y =
     let zero = Typed.Float.like y 0.0 in
-    if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] y <.@ zero then
+    if%sat[@lname "copy_sign < 0"] [@rname "copy_sign >=0"] y <.@ zero then
       ok (Typed.Float.neg (Typed.Float.abs x))
     else ok (Typed.Float.abs x)
 
@@ -470,11 +471,10 @@ module M (Rust_state_m : Rust_state_m.S) :
     let x = (x :> T.sfloat Typed.t) in
     let y = (y :> T.sfloat Typed.t) in
     if%sat Typed.Float.is_nan x then ok y
+    else if%sat Typed.Float.is_nan y then ok x
     else
-      if%sat Typed.Float.is_nan y then ok x
-      else
-        let op = if is_min then ( <.@ ) else ( >.@ ) in
-        ok (Typed.ite (op x y) x y)
+      let op = if is_min then ( <.@ ) else ( >.@ ) in
+      ok (Typed.ite (op x y) x y)
 
   let minnumf16 ~x ~y = float_minmax ~is_min:true ~x ~y
   let minnumf32 ~x ~y = float_minmax ~is_min:true ~x ~y
