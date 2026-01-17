@@ -96,10 +96,17 @@ module Exe = struct
 
   let exec_exn ?env cmd args =
     let output, _, status = exec ?env cmd args in
-    if not (is_ok status) then
-      Fmt.kstr frontend_err "Command %s %a failed with status %a" cmd
-        Fmt.(list ~sep:(any " ") string)
-        args pp_status status;
+    (if not (is_ok status) then
+       match status with
+       | WEXITED 127 ->
+           Fmt.kstr frontend_err
+             "Command %s %a not found; do you have %a installed?" cmd
+             Fmt.(list ~sep:(any " ") string)
+             args Config.pp_frontend (Config.get ()).frontend
+       | _ ->
+           Fmt.kstr frontend_err "Command %s %a failed with status %a" cmd
+             Fmt.(list ~sep:(any " ") string)
+             args pp_status status);
     output
 end
 
