@@ -174,7 +174,7 @@ module Make (Sptr : Sptr.S) = struct
       | Tuple vals | Enum (_, vals) -> vals
       | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
       | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
-      | Ptr (_, Thin) | Int _ | Float _ | TypeVar _ ->
+      | Ptr (_, Thin) | Int _ | Float _ | PolyVal _ ->
           failwith "Cannot split primitive"
       | Union _ -> failwith "Cannot encode union directly")
       |> Iter.combine_list iter
@@ -282,10 +282,7 @@ module Make (Sptr : Sptr.S) = struct
           Union blocks
     | Primitive, TFnDef _ -> ok (Tuple [])
     | Primitive, TVar (Free id) ->
-        if%sat layout.size ==@ Usize.(0s) then
-          let* v = lift @@ nondet (Typed.t_usize ()) in
-          let id = Types.TypeVarId.to_int id in
-          ok (TypeVar (id, v))
+        if%sat layout.size ==@ Usize.(0s) then ok (PolyVal id)
         else query (ty, offset)
     | Primitive, _ -> query (ty, offset)
     | Array _, (TRawPtr (pointee, _) | TRef (_, pointee, _)) -> (
@@ -440,12 +437,11 @@ module Make (Sptr : Sptr.S) = struct
         if%sat v ==@ Usize.(0s) then error `UBDanglingPointer
         else ok (Ptr (Sptr.null_ptr_of v, Thin))
     | TRawPtr _, Int v -> ok (Ptr (Sptr.null_ptr_of v, Thin))
-    | TVar (Free type_var_id), (TypeVar (tid, _) as v) ->
-        let type_var_id = Types.TypeVarId.to_int type_var_id in
-        if type_var_id = tid then ok v
+    | TVar (Free type_var_id), (PolyVal tid as v) ->
+        if Types.TypeVarId.equal_id type_var_id tid then ok v
         else
-          Fmt.kstr not_impl "transmute_one: mismatched type variables %d -> %d"
-            type_var_id tid
+          Fmt.kstr not_impl "transmute_one: mismatched type variables %a -> %a"
+            Types.pp_type_var_id type_var_id Types.pp_type_var_id tid
     | TVar (Bound _), _ ->
         not_impl "transmute_one: cannot handle bound type variables"
     | TVar _, _ ->
@@ -516,10 +512,7 @@ module Make (Sptr : Sptr.S) = struct
         | ty ->
             Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
               Types.pp_type_decl_kind ty)
-    | TVar (Free id) ->
-        let+ v = Rustsymex.nondet (Typed.t_usize ()) in
-        let id = Types.TypeVarId.to_int id in
-        Ok (TypeVar (id, v))
+    | TVar (Free id) -> Result.ok (PolyVal id)
     | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
 
   and nondets tys =
