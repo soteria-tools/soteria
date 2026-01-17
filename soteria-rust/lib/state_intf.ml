@@ -97,6 +97,6 @@ module type S = sig
     ('a, 'e err * t, serialized) Result.t ->
     ('b, 'e err * t, serialized) Result.t
 
-  val declare_fn : Types.fun_decl_ref -> t -> full_ptr ret
-  val lookup_fn : full_ptr -> t -> Types.fun_decl_ref ret
+  val declare_fn : Fun_kind.t -> t -> full_ptr ret
+  val lookup_fn : full_ptr -> t -> Fun_kind.t ret
 end

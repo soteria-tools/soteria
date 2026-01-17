@@ -96,12 +96,7 @@ module FunBiMap = struct
         let compare = Typed.compare
         let pp = Typed.ppa
       end)
-      (struct
-        type t = Types.fun_decl_ref
-
-        let compare = Types.compare_fun_decl_ref
-        let pp = Types.pp_fun_decl_ref
-      end)
+      (Fun_kind)
 
   let get_fn = find_l
   let get_loc = find_r
@@ -137,7 +132,7 @@ let pp_pretty ~ignore_freed ft { state; _ } =
         (fun ft block ->
           match block with
           | { info = Some { kind = Function fn; _ }; _ } ->
-              Fmt.pf ft "function %a" Crate.pp_fun_decl_ref fn
+              Fmt.pf ft "function %a" Fun_kind.pp fn
           | { node; _ } ->
               (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
                 ft node)
@@ -697,10 +692,13 @@ let declare_fn fn_def ({ functions; _ } as st) =
       in
       Result.ok ((ptr, Thin), st)
   | None ->
-      let fn = Crate.get_fun fn_def.id in
+      let span =
+        match fn_def with
+        | Real fn -> Some (Crate.get_fun fn.id).item_meta.span.data
+        | Synthetic _ -> None
+      in
       let++ (ptr, meta), st =
-        alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span.data
-          ~zeroed:false
+        alloc_untyped ~kind:(Function fn_def) ?span ~zeroed:false
           ~size:Usize.(0s)
           ~align st
       in
