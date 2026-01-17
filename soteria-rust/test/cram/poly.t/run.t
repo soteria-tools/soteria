@@ -84,3 +84,10 @@ Try const generics
   PC 6: (0x0000000000000002 <=u V|1|) /\ (V|1| != 0x0000000000000008) /\
         (V|1| != 0x000000000000000f) /\ (V|1| != 0x00000000000000ff)
   
+Test generating nondeterministic values of type T
+  $ soteria-rust rustc nondet_t.rs --frontend charon --poly
+  Compiling... done in <time>
+  note: nondet_t::nondet_t: done in <time>, ran 2 branches
+  PC 1: (0x0000000000000000 == V|2|) /\ (0x0000000000000000 == V|2|)
+  PC 2: (0x0000000000000001 <=u V|2|) /\ (V|2| <=u 0x00000000000003ff)
+  
