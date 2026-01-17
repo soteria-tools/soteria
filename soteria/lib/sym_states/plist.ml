@@ -10,7 +10,7 @@ module SInt_sig (Symex : Symex.Base) = struct
 
     include Stdlib.Map.OrderedType with type t := t
 
-    type sbool_v := Value.sbool Value.t
+    type sbool_v := Value.(sbool t)
 
     val pp : Format.formatter -> t -> unit
     val sem_eq : t -> t -> sbool_v
