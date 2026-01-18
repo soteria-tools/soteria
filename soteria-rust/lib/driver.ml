@@ -163,13 +163,13 @@ let exec_crate
       List.map (fun (e, ct, _) -> (e, ct)) errors
       |> List.sort_uniq compare
       |> List.map (fun (e, ct) ->
-             let pcs =
-               List.filter_map
-                 (fun (e', ct', pc) ->
-                   if e = e' && ct = ct' then Some pc else None)
-                 errors
-             in
-             (e, ct, pcs))
+          let pcs =
+            List.filter_map
+              (fun (e', ct', pc) ->
+                if e = e' && ct = ct' then Some pc else None)
+              errors
+          in
+          (e, ct, pcs))
     in
     Error (errors, nbranches)
 

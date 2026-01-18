@@ -20,22 +20,22 @@ type style = [ `Bold | `Italic | `Underline ]
 
 let to_progress (c : color) : Terminal_ansi.Color.t =
   (match c with
-  | `Black -> `black
-  | `Maroon -> `red
-  | `Forest -> `green
-  | `Orange -> `yellow
-  | `DarkBlue -> `blue
-  | `Purple -> `magenta
-  | `Teal -> `cyan
-  | `Silver -> `white
-  | `Gray -> `bright `black
-  | `Red -> `bright `red
-  | `Green -> `bright `green
-  | `Blue -> `bright `blue
-  | `Cyan -> `bright `cyan
-  | `Magenta -> `bright `magenta
-  | `White -> `bright `white
-  | `Yellow -> `bright `yellow)
+    | `Black -> `black
+    | `Maroon -> `red
+    | `Forest -> `green
+    | `Orange -> `yellow
+    | `DarkBlue -> `blue
+    | `Purple -> `magenta
+    | `Teal -> `cyan
+    | `Silver -> `white
+    | `Gray -> `bright `black
+    | `Red -> `bright `red
+    | `Green -> `bright `green
+    | `Blue -> `bright `blue
+    | `Cyan -> `bright `cyan
+    | `Magenta -> `bright `magenta
+    | `White -> `bright `white
+    | `Yellow -> `bright `yellow)
   |> Progress.Color.ansi
 
 let to_fmt : color -> Fmt.style = function

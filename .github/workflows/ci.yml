@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  OCAML_VERSION: 5.4.0
   OBOL_REPO: soteria-tools/obol
   OBOL_COMMIT_HASH: 322400fbe54d5958cf1585b7b9e0ac3f804e1333
   CHARON_REPO: soteria-tools/charon
@@ -25,6 +26,7 @@ env:
 
 jobs:
   build:
+    name: Build and Test
     strategy:
       matrix:
         operating-system: [macos-latest] # TODO: add other operating systems
@@ -42,16 +44,16 @@ jobs:
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:
-          ocaml-compiler: 5.3.0
+          ocaml-compiler: ${{ env.OCAML_VERSION }}
           dune-cache: true
           opam-pin: false
       - name: Restore opam cache
         uses: actions/cache@v4
         with:
           path: _opam
-          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ hashFiles('*.opam') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('*.opam') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-opam-
+            ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-
       - run: opam update
       # OCaml build
       - name: setup dependencies
@@ -147,13 +149,14 @@ jobs:
         run: opam clean -a -r
 
   test-package:
+    name: Test Package
     strategy:
       matrix:
         operating-system: [macos-latest]
     runs-on: ${{ matrix.operating-system }}
     needs: build
     steps:
-      - name: checkout Collections-C, version where we find a bug
+      - name: Checkout Collections-C, version where we find a bug
         uses: actions/checkout@v4
         with:
           repository: srdja/Collections-C

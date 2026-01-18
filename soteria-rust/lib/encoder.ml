@@ -171,12 +171,12 @@ module Make (Sptr : Sptr.S) = struct
     let open Result in
     let chain iter =
       (match value with
-      | Tuple vals | Enum (_, vals) -> vals
-      | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
-      | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
-      | Ptr (_, Thin) | Int _ | Float _ | PolyVal _ ->
-          failwith "Cannot split primitive"
-      | Union _ -> failwith "Cannot encode union directly")
+        | Tuple vals | Enum (_, vals) -> vals
+        | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
+        | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
+        | Ptr (_, Thin) | Int _ | Float _ | PolyVal _ ->
+            failwith "Cannot split primitive"
+        | Union _ -> failwith "Cannot encode union directly")
       |> Iter.combine_list iter
       |> Result.fold_iter ~init:(0, Iter.empty)
            ~f:(fun (i, acc) ((ty, ofs), v) ->
@@ -234,8 +234,8 @@ module Make (Sptr : Sptr.S) = struct
         let* res =
           lift
           @@ match_on tags ~constr:(function
-               | _, None -> Typed.v_false
-               | _, Some t -> tag ==@ t)
+            | _, None -> Typed.v_false
+            | _, Some t -> tag ==@ t)
         in
         match (tag_layout.encoding, res) with
         | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)

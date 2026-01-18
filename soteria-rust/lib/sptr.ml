@@ -102,11 +102,10 @@ module DecayMap : DecayMapS = struct
       Typed.iter_vars loc_int
       |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
       |> Iter.filter_map (fun (var, ty) ->
-             let v = Typed.mk_var var ty in
-             Seq.find
-               (fun (_, { address; exposed }) ->
-                 exposed && Typed.equal v address)
-               bindings)
+          let v = Typed.mk_var var ty in
+          Seq.find
+            (fun (_, { address; exposed }) -> exposed && Typed.equal v address)
+            bindings)
       |> Iter.map (fun (loc, { address; _ }) -> (loc, address))
       |> Iter.to_opt
     in

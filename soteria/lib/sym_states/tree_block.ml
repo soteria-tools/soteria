@@ -302,33 +302,32 @@ struct
         let* left = of_split_tree left_span left_node in
         let+ right = of_split_tree right_span right_node in
         (left.node, left, right)
+      else if%sat oh ==@ nh then
+        let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
+        let left_span, right_span = Range.split_at old_span nl in
+        let* left = of_split_tree left_span left_node in
+        let+ right = of_split_tree right_span right_node in
+        (right.node, left, right)
       else
-        if%sat oh ==@ nh then
-          let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
-          let left_span, right_span = Range.split_at old_span nl in
-          let* left = of_split_tree left_span left_node in
-          let+ right = of_split_tree right_span right_node in
-          (right.node, left, right)
-        else
-          (* We're first splitting on the left then splitting again on the right *)
-          let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
-          let left_span, right_span = Range.split_at old_span nl in
-          let* left = of_split_tree left_span left_node in
-          let* full_right = of_split_tree right_span right_node in
-          (* we need to first extract the relevant part of the right subtree; as
+        (* We're first splitting on the left then splitting again on the right *)
+        let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
+        let left_span, right_span = Range.split_at old_span nl in
+        let* left = of_split_tree left_span left_node in
+        let* full_right = of_split_tree right_span right_node in
+        (* we need to first extract the relevant part of the right subtree; as
              constructing it may have yielded a complex tree *)
-          let* sub_right, right_extra = extract full_right range in
-          let* node, right_left, right_right = split ~range sub_right in
-          let* right =
-            with_children sub_right ~left:right_left ~right:right_right
-          in
-          let+ right =
-            match right_extra with
-            | None -> return right
-            | Some right_extra ->
-                with_children full_right ~left:right ~right:right_extra
-          in
-          (node, left, right)
+        let* sub_right, right_extra = extract full_right range in
+        let* node, right_left, right_right = split ~range sub_right in
+        let* right =
+          with_children sub_right ~left:right_left ~right:right_right
+        in
+        let+ right =
+          match right_extra with
+          | None -> return right
+          | Some right_extra ->
+              with_children full_right ~left:right ~right:right_extra
+        in
+        (node, left, right)
 
     and extract (t : t) (range : Range.t) : (t * t option) Symex.t =
       (* First result is the extracted tree, second is the remain *)
@@ -452,20 +451,19 @@ struct
                     of_children_s ~left ~right:(Option.get right_opt)
                   in
                   frame_inside ~replace_node ~rebuild_parent new_self range
+              else if%sat Range.is_inside range left.range then
+                let** node, left =
+                  frame_inside ~replace_node ~rebuild_parent left range
+                in
+                let+ new_parent = rebuild_parent t ~left ~right in
+                Ok (node, new_parent)
               else
-                if%sat Range.is_inside range left.range then
-                  let** node, left =
-                    frame_inside ~replace_node ~rebuild_parent left range
-                  in
-                  let+ new_parent = rebuild_parent t ~left ~right in
-                  Ok (node, new_parent)
-                else
-                  (* Range is necessarily inside of right *)
-                  let** node, right =
-                    frame_inside ~replace_node ~rebuild_parent right range
-                  in
-                  let+ new_parent = rebuild_parent t ~left ~right in
-                  Ok (node, new_parent)
+                (* Range is necessarily inside of right *)
+                let** node, right =
+                  frame_inside ~replace_node ~rebuild_parent right range
+                in
+                let+ new_parent = rebuild_parent t ~left ~right in
+                Ok (node, new_parent)
           | None ->
               let* _, left, right = split ~range t in
               let* new_self = with_children t ~left ~right in

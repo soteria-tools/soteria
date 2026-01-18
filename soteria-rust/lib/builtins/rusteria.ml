@@ -16,15 +16,15 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         Some bytes
         |> map_opt (function Int b -> Typed.BitVec.to_z b | _ -> None)
         |> Option.map (fun cs ->
-               let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
-               let str = String.of_seq @@ List.to_seq cs in
-               if
-                 String.starts_with ~prefix:"\"" str
-                 && String.ends_with ~suffix:"\"" str
-               then
-                 let unquoted = String.sub str 1 (String.length str - 2) in
-                 try Scanf.unescaped unquoted with _ -> unquoted
-               else str)
+            let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
+            let str = String.of_seq @@ List.to_seq cs in
+            if
+              String.starts_with ~prefix:"\"" str
+              && String.ends_with ~suffix:"\"" str
+            then
+              let unquoted = String.sub str 1 (String.length str - 2) in
+              try Scanf.unescaped unquoted with _ -> unquoted
+            else str)
     | _ -> None
 
   let assert_ args =
