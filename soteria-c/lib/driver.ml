@@ -271,18 +271,14 @@ let generate_errors content =
       let@ () = with_function_context prog in
       Abductor.generate_all_summaries ~functions_to_analyse:None prog
       |> Soteria.Stats.map_with_stats (fun summaries ->
-             let results =
-               List.concat_map
-                 (fun (fid, summaries) ->
-                   let@ () =
-                     L.with_section
-                       ("Anaysing summaries for function"
-                       ^ Symbol.show_symbol fid)
-                   in
-                   List.concat_map (Summary.manifest_bugs ~fid) summaries)
-                 summaries
-             in
-             List.sort_uniq Stdlib.compare results)
+          summaries
+          |> List.concat_map (fun (fid, summaries) ->
+              let@ () =
+                L.with_section
+                  ("Analysing summaries for function" ^ Symbol.show_symbol fid)
+              in
+              List.concat_map (Summary.manifest_bugs ~fid) summaries)
+          |> List.sort_uniq Stdlib.compare)
 
 (** {2 Entry points} *)
 
@@ -457,8 +453,8 @@ let generate_all_summaries log_config term_config solver_config stats_config
     let@ () = L.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
     |> Result.get_or ~err:(fun e ->
-           Fmt.epr "%a@\n@?" pp_err_and_call_trace e;
-           tool_error "Failed to parse AIL")
+        Fmt.epr "%a@\n@?" pp_err_and_call_trace e;
+        tool_error "Failed to parse AIL")
   in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else generate_summaries ~functions_to_analyse prog

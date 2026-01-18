@@ -12,7 +12,8 @@ let complex_process () =
   let* y = nondet Typed.t_int in
   if%sat x >@ y then
     if%sat x >@ Typed.zero then Result.ok (x +@ y) else Result.ok (x -@ y)
-  else if%sat x ==@ y then give_up ~loc:() "x == y" else Result.error "okkk"
+  else if%sat x ==@ y then give_up ~loc:() "x == y"
+  else Result.error "okkk"
 
 (* ============================================================================
    Helper Functions

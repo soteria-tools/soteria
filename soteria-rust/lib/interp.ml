@@ -109,15 +109,15 @@ module Make (State : State_intf.S) = struct
     (* store the arguments *)
     List.combine (List.sub ~from:1 ~len:locals.arg_count locals.locals) args
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
-           (* Passed (nested) references must be protected and be valid. *)
-           let* value, protected' =
-             Layout.update_ref_tys_in value local.local_ty ~init:acc
-               ~f:(fun acc ptr subty mut ->
-                 let+ ptr' = State.protect ptr subty mut in
-                 (ptr', (ptr', subty) :: acc))
-           in
-           let+ () = map_env (Store.declare_value local.index value) in
-           protected')
+        (* Passed (nested) references must be protected and be valid. *)
+        let* value, protected' =
+          Layout.update_ref_tys_in value local.local_ty ~init:acc
+            ~f:(fun acc ptr subty mut ->
+              let+ ptr' = State.protect ptr subty mut in
+              (ptr', (ptr', subty) :: acc))
+        in
+        let+ () = map_env (Store.declare_value local.index value) in
+        protected')
 
   (** [dealloc_stack ?protected_address store protected st] Deallocates the
       locations in [st] used for the variables in [store]; if
@@ -978,7 +978,7 @@ module Make (State : State_intf.S) = struct
               | Ptr (ptr, _) -> Typed.not (Sptr.sem_eq ptr (Sptr.null_ptr ()))
               | _ -> failwith "Expected base value for if discriminant"
             in
-            if%sat [@lname "if case"] [@rname "else case"] bool_discr then
+            if%sat[@lname "if case"] [@rname "else case"] bool_discr then
               let block = UllbcAst.BlockId.nth body.body if_block in
               exec_block ~body block
             else

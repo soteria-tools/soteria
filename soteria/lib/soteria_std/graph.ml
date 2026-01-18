@@ -61,7 +61,7 @@ module Make_in_place (Node : Hashset.PrintableHashedType) = struct
     let cg_list =
       Hashtbl.to_seq cg
       |> Seq.map (fun (caller, callees) ->
-             (caller, Node_set.to_seq callees |> List.of_seq))
+          (caller, Node_set.to_seq callees |> List.of_seq))
       |> List.of_seq
     in
     let sorted_components = Tsort.sort_strongly_connected_components cg_list in
