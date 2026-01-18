@@ -1,3 +1,4 @@
+OCAML_VERSION=5.4.0
 OPAM=opam
 OPAMX=$(OPAM) exec --
 DUNE=$(OPAMX) dune
@@ -53,7 +54,7 @@ packaging/macOS_dylibs.txt:
 
 .PHONY: switch
 switch:
-	$(OPAM) switch create . ocaml-base-compiler.5.3.0 --deps-only --with-test --with-doc -y
+	$(OPAM) switch create . ocaml-base-compiler.$(OCAML_VERSION) --deps-only --with-test --with-doc -y
 	$(OPAM) install ocaml-lsp-server odig ocamlformat -y
 
 .PHONY: ocaml-deps
