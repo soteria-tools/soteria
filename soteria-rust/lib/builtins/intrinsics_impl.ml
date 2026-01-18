@@ -15,16 +15,6 @@ module M (Rust_state_m : Rust_state_m.S) :
   (* some utils *)
   type 'a ret = ('a, unit) Rust_state_m.t
 
-  (* we retype these to avoid non-generalisable type variables in ['a Rust_val.t] *)
-  let[@inline] as_ptr (v : rust_val) =
-    match v with
-    | Ptr ptr -> ptr
-    | Int v ->
-        let v = Typed.cast_i Usize v in
-        let ptr = Sptr.null_ptr_of v in
-        (ptr, Thin)
-    | _ -> failwith "expected pointer"
-
   let as_base ty (v : rust_val) = Rust_val.as_base ty v
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
   let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
@@ -138,11 +128,8 @@ module M (Rust_state_m : Rust_state_m.S) :
     let[@inline] exec_fun msg fn args =
       with_extra_call_trace ~loc ~msg @@ exec_fun fn args
     in
-    let try_fn_ptr, catch_fn_ptr = (as_ptr try_fn_ptr, as_ptr catch_fn_ptr) in
     let* try_fn = State.lookup_fn try_fn_ptr in
-    let try_fn = Crate.get_fun try_fn.id in
     let* catch_fn = State.lookup_fn catch_fn_ptr in
-    let catch_fn = Crate.get_fun catch_fn.id in
     exec_fun "catch_unwind try" try_fn [ Ptr data ]
     |> State.unwind_with
          ~f:(fun _ -> ok U32.(0s))
@@ -355,8 +342,8 @@ module M (Rust_state_m : Rust_state_m.S) :
     ctlz ~t ~x
 
   let discriminant_value ~t ~v =
-    let adt_id, _ = TypesUtils.ty_as_custom_adt t in
-    let adt = Crate.get_adt adt_id in
+    let adt = Charon_util.ty_as_adt t in
+    let adt = Crate.get_adt adt in
     match adt.kind with
     | Enum variants ->
         let+ variant_id = State.load_discriminant v t in
@@ -646,8 +633,7 @@ module M (Rust_state_m : Rust_state_m.S) :
       | TAdt { id = TTuple | TAdtId _; _ }, _ ->
           let field_tys =
             match t with
-            | TAdt { id = TAdtId id; _ } -> Crate.as_struct id |> field_tys
-            | TAdt { id = TTuple; generics = { types; _ } } -> types
+            | TAdt adt -> Crate.as_struct_or_tuple adt
             | _ -> failwith "impossible"
           in
           let last_field_ty = List.last field_tys in
@@ -718,9 +704,9 @@ module M (Rust_state_m : Rust_state_m.S) :
   let unchecked_sub = unchecked_op (Sub OUB)
 
   let variant_count ~t =
-    match t with
-    | Types.TAdt { id = TAdtId id; _ } when Crate.is_enum id ->
-        let variants = Crate.as_enum id in
+    match (t : Types.ty) with
+    | TAdt adt when Crate.is_enum adt ->
+        let variants = Crate.as_enum adt in
         ok (BV.usizei (List.length variants))
     | _ -> error (`StdErr "core::intrinsics::variant_count used with non-enum")
 
