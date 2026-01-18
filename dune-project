@@ -31,7 +31,7 @@
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
   (ocaml
-   (>= 5.3.0))
+   (>= 5.4.0))
   (tsort
    (>= 2.1.0))
   eio_main
@@ -63,7 +63,7 @@
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.27.0)))
+    (= 0.28.1)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -74,7 +74,7 @@
   (share includes))
  (depends
   (ocaml
-   (>= 5.3.0))
+   (>= 5.4.0))
   (shexp :build)
   eio_main
   soteria
@@ -104,7 +104,7 @@
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.27.0)))
+    (= 0.28.1)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -114,7 +114,7 @@
  (description "VSCode extension for Soteria-C")
  (depends
   (ocaml
-   (>= 5.3.0))
+   (>= 5.4.0))
   (dune
    (and
     :build
@@ -123,7 +123,7 @@
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.27.0)))
+    (= 0.28.1)))
   js_of_ocaml
   js_of_ocaml-ppx
   ppx_deriving
@@ -140,7 +140,7 @@
   (share plugins))
  (depends
   (ocaml
-   (>= 5.3.0))
+   (>= 5.4.0))
   (shexp :build)
   soteria
   dune-site
@@ -165,7 +165,7 @@
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.27.0)))
+    (= 0.28.1)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package

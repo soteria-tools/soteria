@@ -6,7 +6,7 @@ module KeyS (Symex : Symex.Base) : sig
 
     include Stdlib.Map.OrderedType with type t := t
 
-    type sbool_v := Symex.Value.sbool Symex.Value.t
+    type sbool_v := Symex.Value.(sbool t)
 
     val pp : Format.formatter -> t -> unit
     val sem_eq : t -> t -> sbool_v

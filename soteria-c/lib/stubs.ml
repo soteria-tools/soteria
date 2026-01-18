@@ -164,16 +164,15 @@ module M (State : State_intf.S) = struct
       in
       if%sat c1 ==@ U8.(0s) &&@ (c2 ==@ U8.(0s)) then
         Result.ok (Agv.c_int 0, state)
+      else if%sat c1 ==@ c2 then loop (next s1_ptr) (next s2_ptr) state
       else
-        if%sat c1 ==@ c2 then loop (next s1_ptr) (next s2_ptr) state
-        else
-          let* c1, _ = Typed.cast_int c1 |> of_opt_not_impl ~msg:"strcmp c1" in
-          let* c2, _ = Typed.cast_int c2 |> of_opt_not_impl ~msg:"strcmp c2" in
-          let c1 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c1 in
-          let c2 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c2 in
-          (* This cannot overflow because they were chars and operation happens in integer world *)
-          let res = c1 -!@ c2 in
-          Result.ok (Basic res, state)
+        let* c1, _ = Typed.cast_int c1 |> of_opt_not_impl ~msg:"strcmp c1" in
+        let* c2, _ = Typed.cast_int c2 |> of_opt_not_impl ~msg:"strcmp c2" in
+        let c1 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c1 in
+        let c2 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c2 in
+        (* This cannot overflow because they were chars and operation happens in integer world *)
+        let res = c1 -!@ c2 in
+        Result.ok (Basic res, state)
     in
     loop s1 s2 state
 

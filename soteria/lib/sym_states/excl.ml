@@ -5,7 +5,7 @@ module Elem (Symex : Symex.Base) = struct
     type t [@@deriving show]
 
     val fresh : unit -> t Symex.t
-    val sem_eq : t -> t -> Symex.Value.sbool Symex.Value.t
+    val sem_eq : t -> t -> Symex.Value.(sbool t)
   end
 end
 
