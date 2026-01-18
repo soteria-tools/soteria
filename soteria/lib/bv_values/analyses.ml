@@ -16,6 +16,10 @@ module type S = sig
       data. *)
   val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
 
+  (** Filters the given iterator of symbolic values, keeping only those relevant
+      to the given variable according to the analysis. *)
+  val filter : t -> Var.t -> Svalue.ty -> Svalue.t Iter.t -> Svalue.t Iter.t
+
   (** Encode all the information relevant to the given variables and conjuncts
       them with the given accumulator. *)
   val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
@@ -45,6 +49,9 @@ module Merge (A1 : S) (A2 : S) : S = struct
     let v'', vars2 = A2.add_constraint a2 v' in
     (v'', Var.Set.union vars1 vars2)
 
+  let filter (a1, a2) var ty vs =
+    vs |> A1.filter a1 var ty |> A2.filter a2 var ty
+
   let encode ?vars (a1, a2) : Typed.sbool Typed.t Iter.t =
     Iter.append (A1.encode ?vars a1) (A2.encode ?vars a2)
 end
@@ -58,6 +65,7 @@ module None : S = struct
   let reset () = ()
   let simplify () v = v
   let add_constraint () v = (v, Var.Set.empty)
+  let filter () _ _ vs = vs
   let encode ?vars:_ () = Iter.empty
 end
 
@@ -86,9 +94,6 @@ module Interval : S = struct
   let max_for n = Z.(pred (shift_left one n))
 
   type sign = Pos | Neg
-
-  (** Sign multiplication *)
-  let ( ** ) l r = if l = r then Pos else Neg
 
   let pp_sign fmt = function
     | Pos -> Fmt.string fmt "+"
@@ -404,7 +409,8 @@ module Interval : S = struct
        a disjunction! *)
     | Unop (Not, v) ->
         Option.map
-          (fun (v1, size, (sign, range)) -> (v1, size, (Neg ** sign, range)))
+          (fun (v1, size, (sign, range)) ->
+            (v1, size, ((if sign = Neg then Pos else Neg), range)))
           (as_range v)
     | _ -> None
 
@@ -486,8 +492,35 @@ module Interval : S = struct
     else log (fun m -> m "No change.@.");
     ((v' &&@ learnt, vars), st')
 
+  let filter var ty vs st =
+    match ty with
+    | Svalue.TBitVector n -> (
+        let range_opt = Var.Map.find_opt var st in
+        match range_opt with
+        | None -> vs
+        | Some range ->
+            (* In sparsely populated ranges (e.g. [0, 1000] - [1, 999]), filtering
+               can be very slow since the odds of getting a valid integer is so low.
+               Because of this, we reset the iterator and generate values ourselves. *)
+            let l, h = range.Data.pos in
+            let rec iter z f =
+              f (Svalue.BitVec.mk n z);
+              (* if a negative range exists, update to next value *)
+              let z = Z.succ z in
+              let neg =
+                List.find_opt
+                  (fun (m, n) -> Z.Compare.(m <= z && z <= n))
+                  range.Data.negs
+              in
+              let z' = match neg with None -> z | Some (_, n) -> Z.succ n in
+              if Z.Compare.(z' <= h) then iter z' f
+            in
+            iter l)
+    | _ -> vs
+
   let simplify st v = wrap_read (simplify v) st
   let add_constraint st v = wrap (add_constraint v) st
+  let filter st var ty vs = wrap_read (filter var ty vs) st
 
   let encode ?vars st : Typed.sbool Typed.t Iter.t =
     let to_check =
@@ -594,20 +627,203 @@ module Equality : S = struct
     in
     Eval.eval ~eval_var:(eval_var st) v |> simplify ~fuel:3
 
+  let add_vars v s =
+    Svalue.iter_vars v |> Iter.fold (fun s (v, _) -> Var.Set.add v s) s
+
   let add_constraint (v : Svalue.t) st =
     match v.node.kind with
     | Binop (Eq, v1, v2) ->
+        let vars = Var.Set.empty |> add_vars v1 |> add_vars v2 in
         let v1, st = get_or_make v1 st in
         let v2, st = get_or_make v2 st in
         merge v1 v2 st;
-        (* Here we choose to pass down the equality (rather than simplifying to true),
-           so that the underlying solver can do trivial SAT checks using these equalities.
-           This also means this analysis is exempt from implementing [encode], since it
-           doesn't store anything. *)
-        ((v, Var.Set.empty), st)
+        ((Svalue.Bool.v_true, vars), st)
+    | Unop (Not, { node = { kind = Nop (Distinct, hd :: tl); _ }; _ }) ->
+        let vars = add_vars hd Var.Set.empty in
+        let v1, st = get_or_make hd st in
+        let rec aux vars st = function
+          | [] -> (vars, st)
+          | v2 :: rest ->
+              let vars = add_vars v2 vars in
+              let v2, st = get_or_make v2 st in
+              merge v1 v2 st;
+              aux vars st rest
+        in
+        let vars, st = aux vars st tl in
+        ((Svalue.Bool.v_true, vars), st)
     | _ -> ((v, Var.Set.empty), st)
+
+  (** In equality analysis we can be certain of the value of a variable, so we
+      can entirely replace the set of possible values [vs] with the
+      representative value (if any). *)
+  let filter var ty vs st =
+    let v = Svalue.mk_var var ty in
+    match find_cheaper_opt v st with
+    | None -> vs
+    | Some v_repr -> Iter.singleton v_repr
+
+  let encode ?vars (uf, refs) =
+    let is_relevant =
+      match vars with
+      | None -> fun _ -> true
+      | Some vars ->
+          fun v ->
+            Svalue.iter_vars v
+            |> Iter.exists (fun (v, _) -> Var.Hashset.mem vars v)
+    in
+    fun f ->
+      refs
+      |> VMap.iter @@ fun v ufref ->
+         if is_relevant v then
+           let v_repr = UnionFind.get uf ufref in
+           if not (Svalue.equal v v_repr) then
+             f (Typed.sem_eq (Typed.type_ v) (Typed.type_ v_repr))
 
   let simplify st v = wrap_read (simplify v) st
   let add_constraint st v = wrap (add_constraint v) st
-  let encode ?vars:_ _st = Iter.empty
+  let filter st var ty vs = wrap_read (filter var ty vs) st
+  let encode ?vars st = wrap_read (encode ?vars) st
+end
+
+module Disjoint = struct
+  module VSet = Set.Make (Svalue)
+  module VMap = Map.Make (Svalue)
+
+  include Reversible.Make_mutable (struct
+    type t = VSet.t VMap.t
+
+    let default = VMap.empty
+  end)
+
+  let pp ft st =
+    Fmt.(
+      iter_bindings VMap.iter
+        (pair ~sep:(any " -> ") Svalue.pp (iter VSet.iter Svalue.pp)))
+      ft st
+
+  let[@inline] sort (v1 : Svalue.t) (v2 : Svalue.t) =
+    if v1.tag < v2.tag then (v1, v2) else (v2, v1)
+
+  let var_set v =
+    Svalue.iter_vars v
+    |> Iter.map fst
+    |> Iter.fold (fun set x -> Var.Set.add x set) Var.Set.empty
+
+  let[@inline] is_relevant : Svalue.t -> bool = function
+    | { node = { ty = TLoc _; _ }; _ }
+    | { node = { kind = BitVec _ | Var _; _ }; _ } ->
+        true
+    | _ -> false
+
+  let[@inline] ineq_matters : Svalue.t -> bool = function
+    | { node = { kind = Var _; ty = TLoc _ }; _ } -> false
+    | _ -> true
+
+  (** Adds inequalities between all values in [vs] to the state [st], returning
+      the updated state along with the set of variables that are dirty (i.e.
+      something was learnt from this). *)
+  let add_inequalities vs st =
+    let dirty = ref VSet.empty in
+    let dirty_v v = if ineq_matters v then dirty := VSet.add v !dirty in
+    let vs = List.sort_uniq (fun v1 v2 -> Int.compare v1.Hc.tag v2.Hc.tag) vs in
+    let rec aux st = function
+      | [] | [ _ ] -> st
+      | v1 :: rest ->
+          let st =
+            VMap.update v1
+              (fun s ->
+                let s = Option.value s ~default:VSet.empty in
+                let s, is_new' =
+                  List.fold_left
+                    (fun (s, is_new) v2 ->
+                      assert (v1.Hc.tag < v2.Hc.tag);
+                      if VSet.mem v2 s then (s, is_new)
+                      else (
+                        dirty_v v2;
+                        (VSet.add v2 s, true)))
+                    (s, false) rest
+                in
+                if is_new' then dirty_v v1;
+                Some s)
+              st
+          in
+          aux st rest
+    in
+    let st = aux st vs in
+    let dirty =
+      VSet.fold (fun v -> Var.Set.union (var_set v)) !dirty Var.Set.empty
+    in
+    (dirty, st)
+
+  let add_constraint (v : Svalue.t) st =
+    match v.node.kind with
+    | Unop (Not, { node = { kind = Binop (Eq, l, r); _ }; _ })
+      when is_relevant l && is_relevant r ->
+        let l, r = sort l r in
+        let vars, st = add_inequalities [ l; r ] st in
+        ((Svalue.Bool.v_true, vars), st)
+    | Nop (Distinct, vs) when List.hd vs |> is_relevant ->
+        let vars, st = add_inequalities vs st in
+        ((Svalue.Bool.v_true, vars), st)
+    | _ -> ((v, Var.Set.empty), st)
+
+  let sure_neq l r st =
+    let l, r = sort l r in
+    match VMap.find_opt l st with None -> false | Some s -> VSet.mem r s
+
+  let simplify (v : Svalue.t) st =
+    match v.node.kind with
+    | Binop (Eq, l, r) when is_relevant l && is_relevant r && sure_neq l r st ->
+        Svalue.Bool.v_false
+    | Unop (Not, { node = { kind = Binop (Eq, l, r); _ }; _ })
+      when is_relevant l && is_relevant r && sure_neq l r st ->
+        Svalue.Bool.v_true
+    | Nop (Distinct, vs) ->
+        let cross_product = List.to_seq vs |> Seq.self_cross_product in
+        let rec aux seq =
+          match seq () with
+          | Seq.Nil -> Svalue.Bool.v_true
+          | Seq.Cons ((l, r), rest) when sure_neq l r st -> aux rest
+          | _ -> v
+        in
+        aux cross_product
+    | _ -> v
+
+  let filter v ty st =
+    let v1 = Svalue.mk_var v ty in
+    Iter.filter (fun v2 ->
+        let v1, v2 = sort v1 v2 in
+        match VMap.find_opt v1 st with
+        | None -> true
+        | Some s -> not (VSet.mem v2 s))
+
+  let simplify st v = wrap_read (simplify v) st
+  let add_constraint st v = wrap (add_constraint v) st
+  let filter st var ty = wrap_read (filter var ty) st
+  let mk_var n v = Typed.mk_var v (Typed.t_int n)
+  let uneq l r = Typed.not (Typed.sem_eq (Typed.type_ l) (Typed.type_ r))
+
+  let encode ?vars st : Typed.sbool Typed.t Iter.t =
+    let to_check, ineq_matters =
+      match vars with
+      | Some vars -> (Var.Hashset.mem vars, ineq_matters)
+      | None -> ((fun _ -> true), fun _ -> true)
+    in
+    let to_check v =
+      Iter.exists to_check (Svalue.iter_vars v |> Iter.map fst)
+    in
+    wrap_read
+      (fun m f ->
+        VMap.iter
+          (fun v s ->
+            if to_check v then
+              VSet.iter
+                (fun v2 -> if ineq_matters v2 || to_check v2 then f (uneq v v2))
+                s
+            else
+              VSet.iter
+                (fun v2 -> if ineq_matters v2 && to_check v2 then f (uneq v v2))
+                s)
+          m)
+      st
 end
