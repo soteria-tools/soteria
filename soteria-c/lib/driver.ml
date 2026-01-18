@@ -271,17 +271,14 @@ let generate_errors content =
       let@ () = with_function_context prog in
       Abductor.generate_all_summaries ~functions_to_analyse:None prog
       |> Soteria.Stats.map_with_stats (fun summaries ->
-          let results =
-            List.concat_map
-              (fun (fid, summaries) ->
-                let@ () =
-                  L.with_section
-                    ("Anaysing summaries for function" ^ Symbol.show_symbol fid)
-                in
-                List.concat_map (Summary.manifest_bugs ~fid) summaries)
-              summaries
-          in
-          List.sort_uniq Stdlib.compare results)
+          summaries
+          |> List.concat_map (fun (fid, summaries) ->
+              let@ () =
+                L.with_section
+                  ("Analysing summaries for function" ^ Symbol.show_symbol fid)
+              in
+              List.concat_map (Summary.manifest_bugs ~fid) summaries)
+          |> List.sort_uniq Stdlib.compare)
 
 (** {2 Entry points} *)
 
