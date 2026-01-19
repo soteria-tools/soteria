@@ -34,8 +34,8 @@ jobs:
       - name: Get PR details
         id: pr
         run: |
-          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json headRefSha)
-          SHA=$(echo "$PR_DATA" | jq -r .headRefSha)
+          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json headRefOid)
+          SHA=$(echo "$PR_DATA" | jq -r .headRefOid)
           echo "sha=$SHA" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
