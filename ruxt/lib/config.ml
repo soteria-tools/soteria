@@ -6,7 +6,8 @@ type t = {
   (*
      Compilation flags
    *)
-  cleanup : bool; [@make.default false] [@names [ "clean" ]]
+  cleanup : bool;
+      [@make.default false] [@names [ "clean" ]] [@env "SOTERIA_RUST_CLEANUP"]
       (** Clean up compiled files after execution *)
   log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
       (** Log the compilation process *)
@@ -15,6 +16,10 @@ type t = {
   no_compile_plugins : bool;
       [@make.default false] [@names [ "no-compile-plugins" ]]
       (** Do not compile the plugins, as they are already compiled *)
+  plugin_directory : string option;
+      [@names [ "plugins" ]] [@env "SOTERIA_RUST_PLUGINS"]
+      (** The directory in which plugins are and should be compiled; defaults to
+          the current dune-managed site. *)
   target : string option; [@names [ "target" ]] [@env "TARGET"]
       (** The compilation target triple to use, e.g. x86_64-unknown-linux-gnu.
           If not provided, the default target for the current machine is used.
@@ -37,14 +42,13 @@ type t = {
   (*
      Printing settings
    *)
-  no_timing : bool; [@make.default false] [@names [ "no-timing" ]]
-      (** Do not display execution times *)
+  filter : string list; [@default []] [@names [ "filter" ]]
+      (** Filter the entrypoints to run, by name. If empty, all entrypoints are
+          run. Multiple filters can be provided; tests matching any will be
+          selected. The filters are treated as regexes. *)
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
-  print_stats : bool; [@make.default false] [@names [ "stats" ]]
-      (** If statistics about the execution should be printed at the end of each
-          test *)
   (*
      Symbolic execution behaviour
    *)
@@ -73,6 +77,10 @@ type t = {
 [@@deriving make, subliner]
 
 let term = cmdliner_term ()
+let default = make ()
+
+let get, set_and_lock =
+  Soteria.Soteria_std.Write_once.make ~name:"RUXt" ~default ()
 
 type global = {
   logs : (Soteria.Logs.Config.t, string) result; [@term Soteria.Logs.Cli.term]
@@ -80,27 +88,28 @@ type global = {
       [@term Soteria.Terminal.Config.cmdliner_term ()]
   solver : Soteria.Solvers.Config.t;
       [@term Soteria.Solvers.Config.cmdliner_term ()]
+  stats : Soteria.Stats.Config.t; [@term Soteria.Stats.Config.cmdliner_term ()]
   ruxt : t; [@term term]
 }
 [@@deriving make, subliner]
 
 let global_term = global_cmdliner_term ()
-let default = make ()
-let current : t ref = ref default
 
-let set (config : global) =
-  current := config.ruxt;
+let set_and_lock_global (config : global) =
+  set_and_lock config.ruxt;
   let (config : Soteria_rust_lib.Config.global) =
     {
       logs = config.logs;
       terminal = config.terminal;
       solver = config.solver;
-      rusteria =
+      stats = config.stats;
+      soteria_rust =
         {
           cleanup = config.ruxt.cleanup;
           log_compilation = config.ruxt.log_compilation;
           no_compile = config.ruxt.no_compile;
           no_compile_plugins = config.ruxt.no_compile_plugins;
+          plugin_directory = config.ruxt.plugin_directory;
           target = config.ruxt.target;
           output_crate = config.ruxt.output_crate;
           rustc_flags = config.ruxt.rustc_flags;
@@ -111,9 +120,7 @@ let set (config : global) =
           with_miri = config.ruxt.with_miri;
           (* No entry points needed as RUXt is compositional *)
           filter = [];
-          no_timing = config.ruxt.no_timing;
           print_summary = config.ruxt.print_summary;
-          print_stats = config.ruxt.print_stats;
           (* Ignore leaks in Soteria, we implement our own leak check *)
           ignore_leaks = true;
           (* Tree borrows are not supported *)
@@ -124,4 +131,4 @@ let set (config : global) =
         };
     }
   in
-  Soteria_rust_lib.Config.set config
+  Soteria_rust_lib.Config.set_and_lock_global config

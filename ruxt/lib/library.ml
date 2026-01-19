@@ -25,7 +25,7 @@ let get () =
     src = TopLevelItem
     && item_meta.is_local
     && (not signature.is_unsafe)
-    && (item_meta.attr_info.public || not !Config.current.only_public)
+    && (item_meta.attr_info.public || not (Config.get ()).only_public)
   in
   let is_constructor ({ signature = { inputs; _ }; _ } : Frontend.fun_decl) =
     List.for_all Summary.Context.is_base_ty inputs

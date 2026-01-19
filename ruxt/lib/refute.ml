@@ -6,7 +6,7 @@ open Syntaxes.FunctionWrap
 
 let exec_crate (crate : Crate.t) =
   let@ () = Crate.with_crate crate in
-  let config = !Config.current in
+  let config = Config.get () in
   (* Set fuel for summary inference *)
   let fuel =
     let open Soteria.Symex.Fuel_gauge in
@@ -28,11 +28,11 @@ let exec_crate (crate : Crate.t) =
         let* summ_ctx = Library.init_summaries ~fuel library in
         find_unsoundness config.pass_fuel summ_ctx)
   in
-  if config.print_stats then Driver.print_stats stats;
+  Rustsymex.Stats.output stats;
   res
 
 let exec_ruxt config file_name =
-  Config.set config;
+  Config.set_and_lock_global config;
   let compile () = fst @@ Frontend.parse_ullbc_of_file file_name in
   match Driver.wrap_step "Compiling" compile |> exec_crate with
   | soundness_res ->

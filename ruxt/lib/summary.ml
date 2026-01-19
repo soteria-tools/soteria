@@ -1,4 +1,6 @@
+module Config_ = Config
 open Soteria_rust_lib
+module Config = Config_
 open Rustsymex.Syntax
 
 type t = {
@@ -38,7 +40,6 @@ let rec sem_eq_ret v1 v2 =
       Typed.and_ (Typed.sem_eq v1 v2) (fold vs1 vs2)
   | Tuple vs1, Tuple vs2 -> fold vs1 vs2
   | Union vs1, Union vs2 -> fold (List.map fst vs1) (List.map fst vs2)
-  | ConstFn fn_ptr1, ConstFn fn_ptr2 when fn_ptr1 = fn_ptr2 -> Typed.v_true
   | _ -> Typed.v_false
 
 let iter_vars summ f =
@@ -108,7 +109,7 @@ let make ret pcs state =
     let heap, unreachable =
       ListLabels.partition heap ~f:(fun (loc, _) -> is_relevant loc)
     in
-    if !Config.current.ignore_leaks then Result.ok (heap, globals)
+    if (Config.get ()).ignore_leaks then Result.ok (heap, globals)
     else
       let leaks =
         ListLabels.filter unreachable
@@ -162,8 +163,8 @@ module Context = struct
           let state = Heap.serialize Heap.empty in
           Rustsymex.run_needs_stats ~mode:UX @@ Layout.nondet ty
           |> List.map (function
-               | Compo_res.Ok ret, pcs -> { ret; pcs; state }
-               | _ -> failwith "Expected Ok in nondet")
+            | Compo_res.Ok ret, pcs -> { ret; pcs; state }
+            | _ -> failwith "Expected Ok in nondet")
         in
         Base (nondet ty)
     | ty -> type_not_supported ty

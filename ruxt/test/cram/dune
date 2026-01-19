@@ -1,3 +1,9 @@
+(env
+ (_
+  (env-vars
+   (HIDE_UNSTABLE 1)
+   (SOTERIA_RUST_CLEANUP 1))))
+
 (cram
  (deps ../../bin/ruxt.exe)
  (applies_to :whole_subtree))
