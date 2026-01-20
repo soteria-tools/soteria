@@ -26,6 +26,7 @@ ocaml-format-check:
 ocaml-test:
 	$(DUNE) test
 
+.PHONY: doc
 doc:
 	$(DUNE) build @doc
 
