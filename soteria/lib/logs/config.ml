@@ -6,24 +6,12 @@ let pp_log_kind fmt = function
 
 type t = { level : Level.t option; kind : log_kind; always_log_smt : bool }
 
-let set, get, lock =
-  let current_config =
-    ref { level = Some Warn; kind = Stderr; always_log_smt = false }
-  in
-  let locked = ref false in
-  let lock () = locked := true in
-  let set_config config =
-    if !locked then failwith "Logging configuration cannot be changed anymore";
-    current_config := config
-  in
-  let current_config () = !current_config in
-  (set_config, current_config, lock)
+let default = { level = Some Warn; kind = Stderr; always_log_smt = false }
+let get, set_and_lock = Soteria_std.Write_once.make ~name:"Logs" ~default ()
 
 let check_set_and_lock config =
   match config with
-  | Ok config ->
-      set config;
-      lock ()
+  | Ok config -> set_and_lock config
   | Error msg ->
       Fmt.epr "Invalid CLI arguments: %s" msg;
       exit Cmdliner.Cmd.Exit.cli_error

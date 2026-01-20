@@ -222,7 +222,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       mk ~size ~align:sub_layout.align ~fields:(Array sub_layout.size) ()
   (* Never -- zero sized type *)
   | TNever ->
-      ok (mk_concrete ~size:0 ~align:1 ~uninhabited:false ~fields:Primitive ())
+      ok (mk_concrete ~size:0 ~align:1 ~uninhabited:true ~fields:Primitive ())
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Others (unhandled for now) *)
@@ -537,53 +537,8 @@ and nondets tys =
   in
   List.rev vs
 
-let rec is_inhabited : Types.ty -> bool = function
-  | TNever -> false
-  | TAdt { id = TAdtId id; _ } -> (
-      let adt = Crate.get_adt id in
-      match adt.kind with
-      | Struct fs -> List.for_all is_inhabited @@ Charon_util.field_tys fs
-      | Union fs -> List.exists is_inhabited @@ Charon_util.field_tys fs
-      | Enum [] -> false
-      | Enum vars ->
-          List.exists
-            (fun (v : Types.variant) ->
-              List.for_all is_inhabited @@ Charon_util.field_tys v.fields)
-            vars
-      | _ -> true)
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      List.for_all is_inhabited types
-  | _ -> true
-
-(** Returns the given type as it's unique representant if it's a ZST; otherwise
-    [None].
-
-    FIXME: giltho: this plays awfully with polymorphism. *)
-let rec as_zst : Types.ty -> 'a rust_val option =
-  let as_zsts tys = Monad.OptionM.all as_zst tys in
-  function
-  | TNever -> Some (Tuple [])
-  | TArray (_, len) when z_of_const_generic len = Z.zero -> Some (Tuple [])
-  | TAdt { id = TAdtId id; _ } -> (
-      let adt = Crate.get_adt id in
-      match adt.kind with
-      | Struct fs ->
-          as_zsts @@ Charon_util.field_tys fs |> Option.map (fun fs -> Tuple fs)
-      | Union _ -> None
-      | Enum [] -> None (* an empty enum is uninhabited *)
-      | Enum [ { fields; discriminant; _ } ] ->
-          as_zsts @@ Charon_util.field_tys fields
-          |> Option.map (fun fs -> Enum (BV.of_literal discriminant, fs))
-      | Enum _ -> None
-      | _ -> None)
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      as_zsts types |> Option.map (fun fs -> Tuple fs)
-  | TFnDef binder -> Some (ConstFn binder.binder_value)
-  | _ -> None
-
 (** Apply the compiler-attribute to the given value *)
 let apply_attribute v attr =
-  let open Rustsymex.Syntax in
   match (v, attr) with
   | ( Int v,
       Meta.AttrUnknown
@@ -605,8 +560,11 @@ let apply_attributes v attributes =
   Result.fold_list attributes ~f:(fun () -> apply_attribute v) ~init:()
 
 let rec is_unsafe_cell : Types.ty -> bool = function
-  | TAdt { id = TAdtId adt_id; _ } -> (
-      let adt = Crate.get_adt adt_id in
+  | TAdt { id = TTuple; generics = { types; _ } } ->
+      List.exists is_unsafe_cell types
+  | TAdt { id = TBuiltin _; _ } -> false
+  | TAdt { id = TAdtId id; _ } -> (
+      let adt = Crate.get_adt id in
       if adt.item_meta.lang_item = Some "unsafe_cell" then true
       else
         match adt.kind with
@@ -617,8 +575,6 @@ let rec is_unsafe_cell : Types.ty -> bool = function
             @@ Iter.of_list vs
         | _ -> false)
   | TArray (ty, _) | TSlice ty -> is_unsafe_cell ty
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      List.exists is_unsafe_cell types
   | _ -> false
 
 (** Traverses the given type and rust value, and returns all findable references

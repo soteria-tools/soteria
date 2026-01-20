@@ -11,11 +11,11 @@ let process : (int, int, unit) Result.t =
   let* b2 = nondet t_bool in
   let* b3 = nondet t_bool in
   if%sat b1 then give_up ~loc:() "give up reason"
-  else
-    if%sat b2 then Result.miss_no_fix ~reason:"miss no fix" ()
-    else if%sat b3 then Result.ok 1 else Result.error 2
+  else if%sat b2 then Result.miss_no_fix ~reason:"miss no fix" ()
+  else if%sat b3 then Result.ok 1
+  else Result.error 2
 
 let () =
-  Soteria.Terminal.Config.(set (make ~hide_unstable:true ()));
+  Soteria.Terminal.Config.(set_and_lock (make ~hide_unstable:true ()));
   let { stats; _ } : 'a Stats.with_stats = run_with_stats ~mode:UX process in
   Stats.pp Fmt.stdout stats

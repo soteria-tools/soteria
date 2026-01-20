@@ -1,5 +1,5 @@
 (tests
- (names run_twice deep_give_up if_sure)
+ (names run_twice deep_give_up if_sure interrupt)
  (libraries soteria soteria_c_lib alcotest)
  (flags :standard -open Soteria.Tiny_values)
  (preprocess

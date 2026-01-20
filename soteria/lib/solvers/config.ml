@@ -17,5 +17,4 @@ type t = {
 [@@deriving make, subliner]
 
 let default = make ()
-let current : t ref = ref default
-let set (config : t) = current := config
+let get, set_and_lock = Soteria_std.Write_once.make ~name:"Solvers" ~default ()

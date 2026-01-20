@@ -73,8 +73,8 @@ struct
   let to_syn (to_syn_inner : 'a -> 'syn list) (m : 'a t) : 'syn syn list =
     M.to_list m
     |> List.concat_map (fun (k, v) ->
-           let k = Key.to_syn k in
-           List.map (fun v -> (k, v)) (to_syn_inner v))
+        let k = Key.to_syn k in
+        List.map (fun v -> (k, v)) (to_syn_inner v))
 
   let pp ?(ignore = fun _ -> false) pp_value =
     let open Fmt in

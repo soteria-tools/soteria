@@ -168,16 +168,22 @@ let with_state st f =
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
-let with_tbs b f =
+let with_tbs_mut_borrow b f =
   let open DecayMapMonad.Syntax in
   let block, tree_borrow =
     match b with
     | None -> (None, Tree_borrow.ub_state)
     | Some (block, tb) -> (Some block, tb)
   in
-  let+ res = f (block, tree_borrow) in
+  let++ res, (block, tree_borrow) = f (block, tree_borrow) in
+  (res, Option.map (fun block -> (block, tree_borrow)) block)
+
+let with_tbs b f =
+  let open DecayMapMonad.Syntax in
+  with_tbs_mut_borrow b @@ fun (b, tb) ->
+  let+ res = f (b, tb) in
   match res with
-  | Ok (v, b) -> Ok (v, Option.map (fun b -> (b, tree_borrow)) b)
+  | Ok (v, b) -> Ok (v, (b, tb))
   | Missing fixes -> Missing fixes
   | Error e -> Error e
 
@@ -185,26 +191,25 @@ let with_decay_map f st =
   let+ res, pointers = DecayMapMonad.with_state ~state:st.pointers f in
   (res, { st with pointers })
 
-let with_ptr (ptr : Sptr.t) (st : t)
+let with_ptr_raw (ptr : Sptr.t) (st : block SPmap.t option)
     (f :
       [< T.sint ] Typed.t * sub option ->
       ('a * sub option, 'err, 'fix list) DecayMapMonad.Result.t) :
-    ('a * t, 'err, serialized) Result.t =
+    ('a * block SPmap.t option, 'err, serialized) DecayMapMonad.Result.t =
+  let open DecayMapMonad in
+  let open DecayMapMonad.Syntax in
   let** () =
     assert_or_error
       Typed.(not (Sptr.sem_eq ptr (Sptr.null_ptr ())))
       `NullDereference
   in
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-  let@ state = with_state st in
-  let open DecayMapMonad in
-  let open DecayMapMonad.Syntax in
   let* res =
     (SPmap.wrap (function
       | Some ({ info = Some { kind = Function _; _ }; _ } : block) ->
           Result.error `AccessedFnPointer
       | block -> With_meta.wrap (Freeable.wrap (fun st -> f (ofs, st))) block))
-      loc state
+      loc st
   in
   match res with
   | Missing _ as miss ->
@@ -212,19 +217,7 @@ let with_ptr (ptr : Sptr.t) (st : t)
       else return miss
   | ok_or_err -> return ok_or_err
 
-(** This is used as a stopgap for cases where a function pointer is cast to a
-    regular pointer and is used on the state; the location won't exist in tree
-    block, and we don't want to add it there (I think), but we don't want to
-    crash, so we just ignore the action.
-
-    For instance, if a function pointer hiding as a pointer is passed to a
-    function, protecting it should do nothing, and should be allowed. *)
-let with_opt_or (x : 'a option) (otherwise : 'b)
-    (f : 'a -> ('b * 'a option, 'err, 'f) DecayMapMonad.Result.t) :
-    ('b * 'a option, 'err, 'f) DecayMapMonad.Result.t =
-  match x with
-  | Some v -> f v
-  | None -> DecayMapMonad.Result.ok (otherwise, None)
+let with_ptr ptr st f = with_state st (fun st -> with_ptr_raw ptr st f)
 
 let uninit (ptr, _) ty st =
   let@ () = with_error_loc_as_call_trace st in
@@ -239,11 +232,19 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
     (parser : offset:T.sint Typed.t -> (a, 's, 'e, 'f) Encoder.ParserMonad.t) st
     : (a * t, 'e, serialized) Result.t =
   log "load" ptr st;
-  let@ offset, block = with_ptr ptr st in
-  let@ block, tb = with_tbs block in
-  let handler (ty, ofs) = Tree_block.load ~ignore_borrow ofs ty ptr.tag tb in
-  let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
-  Encoder.ParserMonad.parse ~init:block ~handler ~get_all @@ parser ~offset
+  let@ st = with_state st in
+  let handler (ty, ofs) st =
+    let@ _, block = with_ptr_raw ptr st in
+    let@ block, tb = with_tbs block in
+    Tree_block.load ~ignore_borrow ofs ty ptr.tag tb block
+  in
+  let get_all (size, ofs) st =
+    let@ _, block = with_ptr_raw ptr st in
+    let@ block, _ = with_tbs block in
+    Tree_block.get_init_leaves ofs size block
+  in
+  let offset = Typed.Ptr.ofs ptr.ptr in
+  Encoder.ParserMonad.parse ~init:st ~handler ~get_all @@ parser ~offset
 
 let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) st =
   (* The expected alignment of a dyn pointer is stored inside the VTable  *)
@@ -298,18 +299,17 @@ and load_discriminant ((ptr, _) as fptr) ty st =
    [get_all] in [apply_parser], but that's kind of a mess to change and not really
    worth it I believe; I don't think these misses matter at all (TBD). *)
 and fake_read ((_, meta) as ptr) ty st =
-  let can_check_dst =
+  let is_uncheckable_dst =
     match meta with
-    | Thin -> true
+    | Thin -> false
     | Len l ->
         (* TODO: we don't support symbolic slices *)
-        Option.is_some (Typed.BitVec.to_z l)
+        Option.is_none (Typed.BitVec.to_z l)
     | VTable _ ->
         (* FIXME: i am not certain how one checks for the validity of a &dyn *)
-        false
+        true
   in
-  if (not can_check_dst) || Option.is_some (Layout.as_zst ty) then
-    return (None, st)
+  if is_uncheckable_dst then return (None, st)
   else (
     L.debug (fun m ->
         m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
@@ -445,7 +445,7 @@ let mk_block ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
   let block = Tree_block.alloc ?zeroed size in
   let span = Option.value span ~default:(get_loc ()) in
   let info : Meta.t = { align; size; kind; span; tb_root = tag } in
-  let tag = if !Config.current.ignore_aliasing then None else Some tag in
+  let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
   ({ node = Alive (block, tb); info = Some info }, tag)
 
 let alloc ?kind ?span ?zeroed size align st =
@@ -547,15 +547,14 @@ let borrow ((ptr : Sptr.t), meta) (ty : Types.ty)
     let@ () = with_error_loc_as_call_trace st in
     let@ () = with_loc_err () in
     let@ _, block = with_ptr ptr st in
-    let@ block, tb = with_opt_or block (ptr, meta) in
+    let@ block, tb = with_tbs_mut_borrow block in
     let parent = Option.get ptr.tag in
     let tb', tag = Tree_borrow.add_child ~parent ~state:tag_st tb in
-    let block = Some (block, tb') in
     let ptr' = { ptr with tag = Some tag } in
     L.debug (fun m ->
         m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
           Tree_borrow.pp_state tag_st);
-    DecayMapMonad.Result.ok ((ptr', meta), block)
+    DecayMapMonad.Result.ok ((ptr', meta), (block, tb'))
 
 let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) st =
   if Option.is_none ptr.tag || Layout.is_unsafe_cell ty then
@@ -565,7 +564,7 @@ let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) st =
     let@ () = with_loc_err () in
     let** size = Layout.size_of ty in
     let@ ofs, block = with_ptr ptr st in
-    let@ block, tb = with_opt_or block (ptr, meta) in
+    let@ block, tb = with_tbs_mut_borrow block in
     let open DecayMapMonad.Syntax in
     let state =
       match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
@@ -578,42 +577,33 @@ let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) st =
           Typed.ppa ofs Typed.ppa size);
     let++ (), block' =
       (* nothing to protect *)
-      if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), Some block)
-      else Tree_block.protect ofs size tag tb' (Some block)
+      if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), block)
+      else Tree_block.protect ofs size tag tb' block
     in
-    let block = Option.map (fun b' -> (b', tb')) block' in
-    ((ptr', meta), block)
+    ((ptr', meta), (block', tb'))
 
 let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) st =
   match ptr.tag with
   | None -> Result.ok ((), st)
   | Some tag ->
-      let lift_freed_err () f =
-        let+ res = f () in
-        match res with
-        | Error `UseAfterFree -> Error `RefInvalidatedEarly
-        | v -> v
-      in
       let@ () = with_error_loc_as_call_trace st in
       let@ () = with_loc_err () in
       let** size = Layout.size_of ty in
-      let@ () = lift_freed_err () in
       let@ ofs, block = with_ptr ptr st in
-      let@ block, tb = with_opt_or block () in
+      let@ block, tb = with_tbs_mut_borrow block in
       let open DecayMapMonad.Syntax in
       let tb' = Tree_borrow.unprotect tag tb in
       let++ (), block' =
-        if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), Some block)
-        else Tree_block.unprotect ofs size tag tb' (Some block)
+        if%sat size ==@ Usize.(0s) then DecayMapMonad.Result.ok ((), block)
+        else Tree_block.unprotect ofs size tag tb' block
       in
-      let block' = Option.map (fun b' -> (b', tb')) block' in
       L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
-      ((), block')
+      ((), (block', tb'))
 
 let with_exposed addr state =
   let@ () = with_error_loc_as_call_trace state in
   let@ () = with_loc_err () in
-  match !Config.current.provenance with
+  match (Config.get ()).provenance with
   | Strict -> Result.error `UBIntToPointerStrict
   | Permissive -> (
       let@ st = with_state state in
@@ -694,28 +684,25 @@ let unwind_with ~f ~fe symex =
       else Result.error (err, state))
 
 let declare_fn fn_def ({ functions; _ } as st) =
+  let align = Usize.(16s) in
   match FunBiMap.get_loc fn_def functions with
   | Some loc ->
       let ptr : Sptr.t =
         {
           ptr = Typed.Ptr.mk loc Usize.(0s);
           tag = None;
-          align = Usize.(1s);
+          align;
           size = Usize.(0s);
         }
       in
       Result.ok ((ptr, Thin), st)
   | None ->
-      (* FIXME: once we stop having concrete locations, we'll need to add a distinct
-       constraint here. *)
-      (* FIXME: should we use [SPmap.alloc] here instead? What would go in the map? *)
       let fn = Crate.get_fun fn_def.id in
       let++ (ptr, meta), st =
         alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span.data
           ~zeroed:false
           ~size:Usize.(0s)
-          ~align:Usize.(1s)
-          st
+          ~align st
       in
       let ptr = { ptr with tag = None } in
       let loc = Typed.Ptr.loc ptr.ptr in

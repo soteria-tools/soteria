@@ -1,7 +1,8 @@
+OCAML_VERSION=5.4.0
 OPAM=opam
 OPAMX=$(OPAM) exec --
 DUNE=$(OPAMX) dune
-WHICHX=$(DUNE) exec -- which 
+WHICHX=$(DUNE) exec -- which
 
 YARN=yarn
 
@@ -17,17 +18,17 @@ VSCODE_DIST=dist
 .PHONY: ocaml
 ocaml:
 	$(DUNE) build
-	 
+
 ocaml-format-check:
 	$(DUNE) build @fmt
 
 .PHONY: ocaml-test
 ocaml-test:
 	$(DUNE) test
-	
+
 doc:
 	$(DUNE) build @doc
-	
+
 ##### Packaging soteria-c #####
 
 # From inside the package folder one can run:
@@ -40,7 +41,7 @@ package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	mkdir -p $(PACKAGE_DIST)/lib
 	$(PACKAGING_BIN) copy-cerb-runtime $(PACKAGE_DIST)/lib
 	$(PACKAGING_BIN) copy-soteria-c-auto-includes $(PACKAGE_DIST)/lib/
-	
+
 
 packaging/bin-locations.txt:
 	$(WHICHX) soteria-c > $@
@@ -53,13 +54,13 @@ packaging/macOS_dylibs.txt:
 
 .PHONY: switch
 switch:
-	$(OPAM) switch create . ocaml-base-compiler.5.3.0 --deps-only --with-test --with-doc -y
+	$(OPAM) switch create . ocaml-base-compiler.$(OCAML_VERSION) --deps-only --with-test --with-doc -y
 	$(OPAM) install ocaml-lsp-server odig ocamlformat -y
-	
+
 .PHONY: ocaml-deps
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc
-	$(OPAM) install ocamlformat.0.27.0
+	$(OPAM) install ocamlformat.0.28.1
 	$(OPAM) install sherlodoc
 
 ##### JavaScript stuff #####
@@ -67,16 +68,16 @@ ocaml-deps:
 .PHONY: npm-deps
 npm-deps:
 	$(YARN) install --immutable
-	
+
 .PHONY: vscode-reinstall-dev
 vscode-reinstall-dev: vscode-package
 	$(YARN) install-ext
-		
-	
+
+
 .PHONY: vscode-package
 vscode-package: vscode
 	$(YARN) package
-	
+
 .PHONY: vscode
 vscode: js-bundle
 
@@ -88,10 +89,10 @@ js-bundle: vscode-ocaml
 .PHONY: vscode-ocaml
 vscode-ocaml:
 	$(DUNE) build $(VSCODE_BC_JS)
-	
+
 .PHONY: for-local
 for-local: ocaml vscode
-	
+
 .PHONY: clean
 clean:
 	$(DUNE) clean
@@ -99,8 +100,8 @@ clean:
 	rm -rf $(VSCODE_DIST)
 	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt
 	rm -f soteria-vscode.vsix
-	
+
 license-check:
-	reuse lint	
-	
+	reuse lint
+
 .PHONY: license license-lint

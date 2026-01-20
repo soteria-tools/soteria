@@ -89,7 +89,7 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.@." entry_name Printers.pp_time time error msg;
+        "%s (%a): %s, %s@.@.@." entry_name Printers.pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
@@ -164,13 +164,13 @@ let exec_crate
       List.map (fun (e, ct, _) -> (e, ct)) errors
       |> List.sort_uniq compare
       |> List.map (fun (e, ct) ->
-             let pcs =
-               List.filter_map
-                 (fun (e', ct', pc) ->
-                   if e = e' && ct = ct' then Some pc else None)
-                 errors
-             in
-             (e, ct, pcs))
+          let pcs =
+            List.filter_map
+              (fun (e', ct', pc) ->
+                if e = e' && ct = ct' then Some pc else None)
+              errors
+          in
+          (e, ct, pcs))
     in
     Error (errors, nbranches)
 
@@ -195,7 +195,7 @@ let fatal ?name ?(code = 2) err =
 let exec_and_output_crate compile_fn =
   match wrap_step "Compiling" compile_fn |> exec_crate with
   | outcomes ->
-      if !Config.current.print_summary then print_outcomes_summary outcomes;
+      if (Config.get ()).print_summary then print_outcomes_summary outcomes;
       let outcome = Outcome.merge_list outcomes in
       Outcome.exit outcome
   | exception Frontend.PluginError e -> fatal ~name:"Plugin" e
@@ -207,15 +207,15 @@ let exec_and_output_crate compile_fn =
   | exception ExecutionError e -> fatal e
 
 let exec_rustc config file_name =
-  Config.set config;
+  Config.set_and_lock_global config;
   let compile () = Frontend.parse_ullbc_of_file file_name in
   exec_and_output_crate compile
 
 let exec_cargo config crate_dir =
-  Config.set config;
+  Config.set_and_lock_global config;
   let compile () = Frontend.parse_ullbc_of_crate crate_dir in
   exec_and_output_crate compile
 
 let build_plugins config =
-  Config.set config;
+  Config.set_and_lock_global config;
   wrap_step "Compiling plugins" Frontend.compile_all_plugins

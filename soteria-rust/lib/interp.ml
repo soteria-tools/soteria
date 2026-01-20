@@ -109,15 +109,15 @@ module Make (State : State_intf.S) = struct
     (* store the arguments *)
     List.combine (List.sub ~from:1 ~len:locals.arg_count locals.locals) args
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
-           (* Passed (nested) references must be protected and be valid. *)
-           let* value, protected' =
-             Layout.update_ref_tys_in value local.local_ty ~init:acc
-               ~f:(fun acc ptr subty mut ->
-                 let+ ptr' = State.protect ptr subty mut in
-                 (ptr', (ptr', subty) :: acc))
-           in
-           let+ () = map_env (Store.declare_value local.index value) in
-           protected')
+        (* Passed (nested) references must be protected and be valid. *)
+        let* value, protected' =
+          Layout.update_ref_tys_in value local.local_ty ~init:acc
+            ~f:(fun acc ptr subty mut ->
+              let+ ptr' = State.protect ptr subty mut in
+              (ptr', (ptr', subty) :: acc))
+        in
+        let+ () = map_env (Store.declare_value local.index value) in
+        protected')
 
   (** [dealloc_stack ?protected_address store protected st] Deallocates the
       locations in [st] used for the variables in [store]; if
@@ -174,7 +174,7 @@ module Make (State : State_intf.S) = struct
             let* () = State.store ptr str_ty char_arr in
             let+ () = State.store_str_global str ptr in
             Ptr ptr)
-    | CFnDef fn_ptr -> ok (ConstFn fn_ptr)
+    | CFnDef _ -> ok (Tuple [])
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
     | CTraitConst (tref, name) -> (
@@ -311,7 +311,8 @@ module Make (State : State_intf.S) = struct
             f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
-        if not @@ Layout.is_inhabited place.ty then error `RefToUninhabited
+        let* layout = Layout.layout_of place.ty in
+        if layout.uninhabited then error `RefToUninhabited
         else if Layout.is_dst place.ty then ok (ptr', meta)
         else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
@@ -461,18 +462,14 @@ module Make (State : State_intf.S) = struct
   and eval_operand (op : Expressions.operand) =
     match op with
     | Constant c -> resolve_constant c
-    | (Move loc | Copy loc) when not (Layout.is_inhabited loc.ty) ->
-        error `RefToUninhabited
-    | Move loc | Copy loc -> (
+    | Move loc | Copy loc ->
         (* I don't think the operand being [Move] matters at all, aside from function calls.
            See: https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
-        let ty = loc.ty in
-        let* ptr = resolve_place_lazy loc in
-        match (ptr, Layout.as_zst ty) with
-        | Heap ptr, Some zst ->
-            let+ () = State.check_ptr_align ptr ty in
-            zst
-        | _, _ -> load_lazy ptr ty)
+        let* layout = Layout.layout_of loc.ty in
+        if layout.uninhabited then error `RefToUninhabited
+        else
+          let* ptr = resolve_place_lazy loc in
+          load_lazy ptr loc.ty
 
   and eval_operand_list ops =
     let+ vs =
@@ -519,12 +516,12 @@ module Make (State : State_intf.S) = struct
             | _ -> not_impl "Invalid type for Neg")
         | Cast (CastRawPtr (from_ty, to_ty)) -> (
             match (from_ty, to_ty) with
-            | (TRef _ | TRawPtr _), TLiteral to_ty ->
+            | (TRef _ | TRawPtr _ | TFnPtr _), TLiteral to_ty ->
                 (* expose provenance *)
                 let v, _ = as_ptr v in
                 let* v' = Sptr.expose v in
                 Encoder.cast_literal ~from_ty:(TUInt Usize) ~to_ty v'
-            | TLiteral _, (TRef _ | TRawPtr _) ->
+            | TLiteral _, (TRef _ | TRawPtr _ | TFnPtr _) ->
                 (* with provenance *)
                 let v = as_base_i Usize v in
                 let+ ptr = State.with_exposed v in
@@ -604,12 +601,12 @@ module Make (State : State_intf.S) = struct
         | Cast (CastConcretize (_from, _to)) ->
             not_impl "Unsupported: dyn (concretize)"
         | Cast (CastFnPtr (_from, _to)) -> (
-            match v with
-            | ConstFn fn_ptr ->
-                let fn = resolve_fn_ptr fn_ptr in
+            match (type_of_operand e, v) with
+            | TFnDef fn_ptr, _ ->
+                let fn = resolve_fn_ptr fn_ptr.binder_value in
                 let+ ptr = State.declare_fn fn in
                 Ptr ptr
-            | Ptr _ as ptr -> ok ptr
+            | _, (Ptr _ as ptr) -> ok ptr
             | _ -> not_impl "Invalid argument to CastFnPtr"))
     | BinaryOp (op, e1, e2) -> (
         let* v1 = eval_operand e1 in
@@ -981,7 +978,7 @@ module Make (State : State_intf.S) = struct
               | Ptr (ptr, _) -> Typed.not (Sptr.sem_eq ptr (Sptr.null_ptr ()))
               | _ -> failwith "Expected base value for if discriminant"
             in
-            if%sat [@lname "if case"] [@rname "else case"] bool_discr then
+            if%sat[@lname "if case"] [@rname "else case"] bool_discr then
               let block = UllbcAst.BlockId.nth body.body if_block in
               exec_block ~body block
             else
@@ -1094,7 +1091,7 @@ module Make (State : State_intf.S) = struct
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let* value = exec_fun fundef args in
-    if !Config.current.ignore_leaks then ok value
+    if (Config.get ()).ignore_leaks then ok value
     else
       let@ () = with_loc ~loc:fundef.item_meta.span.data in
       let+ () = State.leak_check () in

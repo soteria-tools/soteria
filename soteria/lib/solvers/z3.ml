@@ -32,7 +32,7 @@ module Make (Value : Value) :
 
   let () =
     register_solver_init (fun solver ->
-        match !Config.current.solver_timeout with
+        match (Config.get ()).solver_timeout with
         | None -> ()
         | Some timeout ->
             ack_command solver (set_option ":timeout" (string_of_int timeout)))
@@ -64,7 +64,7 @@ module Make (Value : Value) :
 
     let channel () =
       (* We only open if current file is not None and its different from current config *)
-      match (!Config.current.dump_smt_file, !current_channel) with
+      match ((Config.get ()).dump_smt_file, !current_channel) with
       | None, None -> None
       | Some f, None -> open_channel f
       | Some f, Some (oc, f') ->
@@ -89,7 +89,7 @@ module Make (Value : Value) :
       | Some oc ->
           output_string oc " ; -> ";
           Sexplib.Sexp.output_hum oc response;
-          if elapsed > 0 && not !Config.current.hide_response_times then (
+          if elapsed > 0 && not (Config.get ()).hide_response_times then (
             output_string oc " (";
             output_string oc (string_of_int elapsed);
             output_string oc "ms)");
@@ -102,7 +102,7 @@ module Make (Value : Value) :
   type ty = Value.ty
 
   let solver_config () =
-    { z3 with log = solver_log; exe = !Config.current.z3_path }
+    { z3 with log = solver_log; exe = (Config.get ()).z3_path }
 
   let init () =
     let solver = new_solver (solver_config ()) in

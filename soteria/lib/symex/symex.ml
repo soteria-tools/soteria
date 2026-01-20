@@ -59,7 +59,7 @@ module type Base = sig
       Use this instead of [`Lfail] directly in type signatures to avoid
       potential typos such as [`LFail] which will take precious time to debug...
       trust me. *)
-  type lfail = [ `Lfail of Value.sbool Value.t ] [@@deriving show]
+  type lfail = [ `Lfail of Value.(sbool t) ] [@@deriving show]
 
   (** Consumption failures *)
   type cons_fail = [ lfail | missing_subst ] [@@deriving show]
@@ -225,7 +225,7 @@ module type Base = sig
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax : sig
-      type sbool_v := Value.sbool Value.t
+      type sbool_v := Value.(sbool t)
 
       val branch_on :
         ?left_branch_name:string ->
@@ -370,23 +370,20 @@ module type S = sig
       ?fuel:Fuel_gauge.t ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
-      list
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
 
     val run_with_stats :
       ?fuel:Fuel_gauge.t ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
-      list
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
       Stats.with_stats
 
     val run_needs_stats :
       ?fuel:Fuel_gauge.t ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.sbool Value.t list)
-      list
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
   end
 end
 
@@ -434,7 +431,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   end
 
   type 'a t = 'a Iter.t
-  type lfail = [ `Lfail of Value.sbool Value.t ]
+  type lfail = [ `Lfail of Value.(sbool t) ]
 
   let pp_lfail ft (`Lfail v) = Format.fprintf ft "Lfail: %a" Value.ppa v
   let show_lfail = Fmt.to_to_string pp_lfail
@@ -652,7 +649,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
         loop r
 
   let run_needs_stats_iter ?(fuel = Fuel_gauge.infinite) ~mode iter :
-      ('a * Value.sbool Value.t list) Iter.t =
+      ('a * Value.(sbool t) list) Iter.t =
    fun continue ->
     let@ () = Stats.As_ctx.add_time_of in
     let@ () = Symex_state.run ~init_fuel:fuel in
