@@ -73,6 +73,6 @@ module Asrt_model (State : State_intf.S) = struct
   module Model_with_pure = With_pure.Model (Spatial_atom_model)
   include Logic.Asrt.Model_with_star (With_pure.Atom) (Model_with_pure)
 
-  let execute (spec : spec) (args : 'a Typed.t list) (state : State.t option) =
+  let exec_spec spec args state =
     Logic.Spec.execute ~consume ~produce spec args state
 end

@@ -5,11 +5,6 @@ open Symex.Syntax
 open S_val.Infix
 open Soteria.Logs
 
-let collapse_spec_execution_error (error : (State.err, cons_fail) Either.t) =
-  function
-  | Either.Left err -> err
-  | Either.Right err -> err
-
 let cast_both (ty : [< S_val.T.any ] S_val.ty) v1 v2 =
   let v1 = S_val.cast_checked v1 ty in
   let v2 = S_val.cast_checked v2 ty in
@@ -65,6 +60,12 @@ let rec eval_pure_expr (subst : subst) expr : (S_val.t, 'err, 'a) Symex.Result.t
           v1 /@ v2)
 
 module Make (State : State_intf.S) = struct
+  module Asrt_model = Context.Asrt_model (State)
+
+  let exec_spec spec args state =
+    let+- err = Asrt_model.exec_spec spec args state in
+    match err with Either.Left err -> err | Either.Right err -> err
+
   let lift_to_state f =
    fun state ->
     let+- msg = f in
@@ -139,9 +140,9 @@ module Make (State : State_intf.S) = struct
     if use_specs then
       let* specs = get_specs func.Fun_def.name in
       let executions =
-        List.map (fun spec -> fun () -> Context.Spec.execute spec args state)
+        List.map (fun spec -> fun () -> exec_spec spec args state) specs
       in
-      ()
+      Symex.branches executions
     else eval_function func state args
 
   and get_specs name =
