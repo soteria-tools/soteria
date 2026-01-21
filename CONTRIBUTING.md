@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to Soteria! This document provides guidelines and instructions for contributing to the project.
 
+Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools.com). The core team makes final decisions on project direction, but we value community input and aim to be transparent about our decision-making process.
+
 ## Table of Contents
 
 - [Getting Started](#getting-started)
@@ -177,5 +179,6 @@ This ensures that we can safely incorporate your contribution into the project.
 
 ## Questions?
 
+- Visit our [website](https://soteria-tools.com) for more information
 - Join our [Zulip chat](https://soteria.zulipchat.com/) for questions and discussions
 - Open an issue on GitHub for bug reports or feature requests

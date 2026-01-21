@@ -7,9 +7,12 @@
 Soteria is a library for writing efficient symbolic interpreters directly in OCaml.
 The core library is just a small toolbox that we use for writing a set of analyses, currently for Rust and C.
 
+
 [![Zulip Chat](https://img.shields.io/badge/join-zulip?logo=zulip&label=Zulip&labelColor=%2330363D&color=%232FBC4F)](https://soteria.zulipchat.com/)
 [![CI](https://github.com/soteria-tools/soteria/actions/workflows/ci.yml/badge.svg)](https://github.com/soteria-tools/soteria/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?labelColor=%2330363D)](https://opensource.org/licenses/Apache-2.0)
+
+**[Website](https://soteria-tools.com)** | **[API Documentation](https://soteria-tools.github.io/soteria/api/main/soteria/index.html)**
 
 ## Table of Contents
 
@@ -17,6 +20,7 @@ The core library is just a small toolbox that we use for writing a set of analys
   - [Prerequisites](#prerequisites)
   - [Building from Source](#building-from-source)
   - [Installing Rust Frontends](#installing-rust-frontends)
+- [Using Soteria as a Library](#using-soteria-as-a-library)
 - [Soteria Rust](#soteria-rust)
 - [Soteria-C](#soteria-c)
 - [Contributing](#contributing)
@@ -129,6 +133,10 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
    ```
    Add this line to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it permanent.
 
+## Using Soteria as a Library
+
+Soteria can be used as a library to build your own symbolic execution engines. The [API documentation](https://soteria-tools.github.io/soteria/api/main/soteria/index.html) provides a complete reference, and includes a tutorial on how to get started building your own analysis tools.
+
 ## Soteria Rust
 
 Soteria Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
@@ -201,6 +209,8 @@ soteria-c --help
 ## Contributing
 
 We welcome contributions from the community! Soteria is open source and will remain open source.
+
+Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools.com). The core team makes final decisions on project direction, but we value community input and aim to be transparent about our decision-making process.
 
 - **Chat with us:** Join our [Zulip chat](https://soteria.zulipchat.com/) to ask questions or discuss ideas
 - **Submit a PR:** Read our [contribution guidelines](./CONTRIBUTING.md) first
