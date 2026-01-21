@@ -7,6 +7,11 @@ module Symex =
     (Soteria.Symex.Meta.Dummy)
     (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
+module Error = struct
+  type t = [ `UseAfterFree | `Interp of string | Symex.cons_fail ]
+  [@@deriving show { with_path = false }]
+end
+
 module S_int = struct
   include Typed
 

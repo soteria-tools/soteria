@@ -14,7 +14,7 @@ end
 module With_pure = Logic.Asrt.With_pure (Spatial_atom)
 module Atom = With_pure.Atom
 
-type spec = (Atom.t list, State.err) Logic.Spec.t
+type spec = (Atom.t list, Error.t) Logic.Spec.t
 
 type t = {
   program : Program.t;

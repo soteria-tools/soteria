@@ -62,14 +62,18 @@ let rec eval_pure_expr (subst : subst) expr : (S_val.t, 'err, 'a) Symex.Result.t
 module Make (State : State_intf.S) = struct
   module Asrt_model = Context.Asrt_model (State)
 
+  let error msg = State.error (`Interp msg)
+
   let exec_spec spec args state =
     let+- err = Asrt_model.exec_spec spec args state in
-    match err with Either.Left err -> err | Either.Right err -> err
+    match err with
+    | Either.Left err -> err
+    | Either.Right err -> State.error (err :> Error.t) state
 
   let lift_to_state f =
    fun state ->
     let+- msg = f in
-    State.error msg state
+    State.error (`Interp msg) state
 
   let eval_pure_expr subst expr = lift_to_state (eval_pure_expr subst expr)
   let cast_to_bool v = lift_to_state (cast_to_bool v)

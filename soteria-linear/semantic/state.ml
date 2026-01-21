@@ -1,8 +1,6 @@
 open Aux
 
-type err = [ `UseAfterFree | `Interp of string | Symex.cons_fail ]
-[@@deriving show { with_path = false }]
-
+type err = Error.t [@@deriving show]
 type t = Excl_val.t Freeable.t PMap.t [@@deriving show { with_path = false }]
 
 type syn = Excl_val.syn Freeable.syn PMap.syn
@@ -31,7 +29,7 @@ let free addr st =
     (Freeable.free ~assert_exclusively_owned:Excl_val.assert_exclusively_owned)
     addr st
 
-let error msg _state = `Interp msg
+let error (err : Error.t) _state = err
 let consume s t = PMap.consume (Freeable.consume Excl_val.consume) s t
 
 let produce (s : syn) (t : t option) =
