@@ -4,7 +4,6 @@
   <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
 </picture>
 
-
 Soteria is a library for writing efficient symbolic interpreters directly in OCaml.
 The core library is just a small toolbox that we use for writing a set of analyses, currently for Rust and C.
 
@@ -12,83 +11,202 @@ The core library is just a small toolbox that we use for writing a set of analys
 [![CI](https://github.com/soteria-tools/soteria/actions/workflows/ci.yml/badge.svg)](https://github.com/soteria-tools/soteria/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?labelColor=%2330363D)](https://opensource.org/licenses/Apache-2.0)
 
-# Build instructions
+## Table of Contents
 
-To build the current repository, you first need to [install OCaml](https://ocaml.org/docs/installing-ocaml).
-We then advise to create a local switch for development, and build the project:
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Building from Source](#building-from-source)
+  - [Installing Rust Frontends](#installing-rust-frontends)
+- [Soteria Rust](#soteria-rust)
+- [Soteria-C](#soteria-c)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Getting Started
+
+### Prerequisites
+
+Before building Soteria, ensure you have the following installed:
+
+| Dependency | Version | Installation |
+|------------|---------|--------------|
+| OCaml | >= 5.4.0 | [ocaml.org/docs/installing-ocaml](https://ocaml.org/docs/installing-ocaml) |
+| opam | >= 2.0 | Included with OCaml installation |
+| Z3 | latest | [github.com/Z3Prover/z3](https://github.com/Z3Prover/z3) |
+
+For **Soteria Rust**, you will also need:
+
+| Dependency | Version | Installation |
+|------------|---------|--------------|
+| Rust | nightly | [rustup.rs](https://rustup.rs/) |
+| Obol | see below | [Installing Obol](#installing-obol) |
+| Charon | see below | [Installing Charon](#installing-charon) |
+
+> **Note:** Both frontends are required to run the full test suite.
+
+### Building from Source
+
+1. **Clone the repository:**
+   ```sh
+   git clone https://github.com/soteria-tools/soteria.git
+   cd soteria
+   ```
+
+2. **Create a local opam switch and install dependencies:**
+   ```sh
+   make switch
+   ```
+   This creates an isolated OCaml environment with all required dependencies.
+
+   Alternatively, if you already have a switch you want to use:
+   ```sh
+   make ocaml-deps
+   ```
+
+3. **Build the project:**
+   ```sh
+   dune build
+   ```
+
+4. **Verify the installation by running the test suite:**
+   ```sh
+   dune test
+   ```
+
+   > **Note:** Running `dune test` requires both Rust frontends (Obol and Charon) to be installed. To run only the core Soteria or Soteria-C tests without Rust frontends:
+   > ```sh
+   > dune test soteria      # Core library tests only
+   > dune test soteria-c    # Soteria-C tests only
+   > ```
+
+### Installing Rust Frontends
+
+To use Soteria Rust, you need a frontend to translate Rust code to an intermediate representation. We support two frontends:
+
+#### Installing Obol
+
+[Obol](https://github.com/soteria-tools/obol) is the default frontend (recommended for most use cases).
+
+1. **Clone Obol at the correct commit:**
+   ```sh
+   git clone https://github.com/soteria-tools/obol.git
+   cd obol
+   git checkout <COMMIT HASH> # See OBOL_COMMIT_HASH in .github/workflows/ci.yml
+   ```
+   > **Note:** The required commit hash can always be found in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) under `OBOL_COMMIT_HASH`.
+
+2. **Build Obol:**
+   ```sh
+   make build
+   ```
+
+3. **Add Obol to your PATH:**
+   ```sh
+   export PATH="$PATH:$(pwd)/bin"
+   ```
+   Add this line to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it permanent.
+
+#### Installing Charon
+
+[Charon](https://github.com/AeneasVerif/charon) is an alternative frontend. To use it, pass `--frontend charon` to `soteria-rust`.
+
+1. **Clone Charon at the correct commit:**
+   ```sh
+   git clone https://github.com/soteria-tools/charon.git
+   cd charon
+   git checkout <COMMIT HASH> # See charon's commit hash in soteria-rust.opam
+   ```
+   > **Note:** The required commit hash can always be found in [`soteria-rust.opam`](soteria-rust.opam) under `pin-depends`.
+
+2. **Build Charon:**
+   ```sh
+   make build-charon-rust
+   ```
+
+3. **Add Charon to your PATH:**
+   ```sh
+   export PATH="$PATH:$(pwd)/bin"
+   ```
+   Add this line to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it permanent.
+
+## Soteria Rust
+
+Soteria Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
+
+### Usage
+
+Run on a standalone Rust file, symbolically executing the `main` function:
 ```sh
-opam switch create . --deps-only --with-test --with-doc -y
-dune build @all
+soteria-rust rustc <file.rs>
 ```
 
-If you want to run the build version of the code, you must also [install Z3](https://github.com/Z3Prover/z3).
-
-You can make sure that everything is working properly by running the test suite:
+Run in Kani mode to execute any function with the `#[kani::proof]` attribute:
 ```sh
-dune test
+soteria-rust rustc --kani <file.rs>
 ```
 
-# Soteria-c (working name)
-
-Soteria-C is an automatic in-IDE bug finder for C programs. It is in heavy development.
-
-It can currently be tested on standalone files by opening this project in VSCode.
-To do so, open the `Run and Debug` tab of the sidebar, select the "Launch (Local)" configuration and click the "play" button.
-
-# Soteria Rust
-
-Soteria-Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
-
-It can run standalone files, symbolically executing the `main` function, or any function with the attribute `#[kani::proof]`, if in Kani mode (`--kani`).
+Run all tests in a crate:
 ```sh
-soteria-rust rustc <file>
+soteria-rust cargo <crate-dir>
 ```
 
-It can also run all tests in a crate:
+Use `--help` with any command for a full list of options:
 ```sh
-soteria-rust cargo <crate dir>
+soteria-rust rustc --help
+soteria-rust cargo --help
 ```
 
-You may add `--help` to either of these commands to see all available options.
+### Testing Against External Suites
 
-## Frontend
+To test Soteria Rust against external test suites:
 
-To use Soteria Rust you must have a frontend installed; we support [Obol](https://github.com/soteria-tools/obol) (recommended) and [Charon](https://github.com/AeneasVerif/charon).
+```sh
+# Test against the Kani test suite
+git clone https://github.com/model-checking/kani.git ../kani
+soteria-rust/scripts/test.py kani
 
-[Obol](https://github.com/soteria-tools/obol) is the default, to use it you must have it installed and and have the `obol` command on your path. To do so:
-1. clone Obol (the right version is indicated [here](https://github.com/soteria-tools/soteria/blob/main/.github/workflows/ci.yml#L20-L22))
-2. run `make build`
-3. add `obol/bin` to your path (e.g. `export PATH=$PATH:/path/to/obol/bin`)
+# Test against the Miri test suite
+git clone https://github.com/rust-lang/miri.git ../miri
+soteria-rust/scripts/test.py miri
+```
 
+### Limitations
 
-To use [Charon](https://github.com/AeneasVerif/charon), you must specify `--frontend charon` and have the `charon` command on your path. To do so:
-1. clone Charon (the right version is indicated [here](https://github.com/soteria-tools/soteria/blob/main/soteria-rust.opam#L55))
-2. run `make build-charon-rust`
-3. add `charon/bin` to your path (e.g. `export PATH=$PATH:/path/to/charon/bin`)
-
-## Testing
-
-To test Soteria Rust on the Kani test suite, clone [Kani](https://github.com/model-checking/kani) next to `soteria`, and run `soteria-rust/scripts/test.py kani`.
-
-You can also test Soteria Rust on the Miri test suite: clone [Miri](https://github.com/rust-lang/miri) next to `soteria` and run `soteria-rust/scripts/test.py miri`.
-
-## Limitations
-
-Soteria Rust supports a large subset of Rust, but is still in development. Some currently unsupported features include:
+Soteria Rust supports a large subset of Rust, but some features are not yet supported:
 - Concurrency
 - Inline assembly
 - SIMD intrinsics
 
-Currently, and unlike Soteria-C, Soteria-Rust has neither IDE integration or compositionality support (all tests must instead start from an entry point). We are actively working on the latter!
+## Soteria-C
 
-# Contributing
+Soteria-C is an automatic bug finder for C programs. It is in heavy development.
 
-We are very happy to welcome contributions from the community!
-Soteria is open source and will remain open source, feel free to use it for your own projects as well and let us know if we can help! Feel free to join our [Zulip chat](https://soteria.zulipchat.com/) as well.
+### Usage
 
-If you want to submit a pull request, take a quick look at the [contribution guidelines](./CONTRIBUTING.md), and make sure you have read the [Contributor License Agreement](./CLA.md) which requires your contributions to be compatible with our open source license.
+Run on a standalone C file:
+```sh
+soteria-c exec-main <file.c>
+```
 
-# License
+Run with a compilation database:
+```sh
+soteria-c capture-db compile_commands.json
+```
+
+Use `--help` for a full list of options:
+```sh
+soteria-c --help
+```
+
+## Contributing
+
+We welcome contributions from the community! Soteria is open source and will remain open source.
+
+- **Chat with us:** Join our [Zulip chat](https://soteria.zulipchat.com/) to ask questions or discuss ideas
+- **Submit a PR:** Read our [contribution guidelines](./CONTRIBUTING.md) first
+- **License agreement:** Review the [Contributor License Agreement](./CLA.md) before contributing
+
+## License
 
 Soteria and derived tools in this repository are under Apache-2.0 license, copyright Soteria Team 2025.
 
