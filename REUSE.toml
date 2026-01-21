@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 Soteria Team
+# SPDX-FileCopyrightText: 2026 Soteria Tools Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
 version = 1
@@ -38,7 +38,7 @@ path = [
   "CLA.md",
 ]
 precedence = "override"
-SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-FileCopyrightText = "2026 Soteria Tools Ltd."
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
@@ -81,5 +81,5 @@ SPDX-License-Identifier = "MIT OR Apache-2.0"
 [[annotations]]
 path = ["assets/*.png"]
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2025 Soteria Team"
+SPDX-FileCopyrightText = "2026 Soteria Tools Ltd."
 SPDX-License-Identifier = "LicenseRef-Soteria-Logo"
