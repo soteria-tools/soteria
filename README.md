@@ -218,6 +218,6 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
 
 ## License
 
-Soteria and derived tools in this repository are under Apache-2.0 license, copyright Soteria Team 2025.
+Soteria and derived tools in this repository are under Apache-2.0 license, copyright Soteria Tools Ltd 2026.
 
 The Soteria logo is a trademark of the Soteria Tools Ltd.
