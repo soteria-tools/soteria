@@ -52,7 +52,7 @@ module type S = sig
   val iter_vars : 'a t -> 'b ty Var.iter_vars
   val subst : (Var.t -> Var.t) -> 'a t -> 'a t
   val mk_var : Var.t -> 'a ty -> 'a t
-  val as_bool : 'a t -> bool option
+  val as_bool : sbool t -> bool option
   val bool : bool -> sbool t
 
   module Syn : Syn with type 'a v := 'a t and type 'a ty := 'a ty
