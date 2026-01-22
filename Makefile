@@ -26,8 +26,11 @@ ocaml-format-check:
 ocaml-test:
 	$(DUNE) test
 
+.PHONY: doc
 doc:
 	$(DUNE) build @doc
+	chmod u+w _build/default/_doc/_html/odoc.support/odoc.css
+	cp doc/odoc-theme/odoc.css _build/default/_doc/_html/odoc.support/odoc.css
 
 ##### Packaging soteria-c #####
 
