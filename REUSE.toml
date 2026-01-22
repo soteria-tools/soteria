@@ -17,6 +17,7 @@ path = [
   "vscode/**",
   "packaging/**",
   "demo/**",
+  "doc/**",
   "*.opam",
   "*.opam.template",
   "dune-project",
