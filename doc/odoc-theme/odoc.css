@@ -253,6 +253,12 @@ body {
 	margin: 0;
 }
 
+/* Root */
+
+.content .by-name {
+	margin: 12px 24px;
+}
+
 /* ============================================================================
    BRANDED HEADER BAR
    Using CSS pseudo-element for branding without HTML injection
