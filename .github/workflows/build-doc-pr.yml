@@ -62,7 +62,7 @@ jobs:
             sleep 10
             ATTEMPT=$((ATTEMPT + 1))
           done
-          
+
           echo "No CI workflow run found for commit ${{ steps.pr.outputs.sha }}"
           exit 1
         env:
@@ -113,7 +113,7 @@ jobs:
               owner,
               repo,
               issue_number: prNumber,
-              body: `Documentation published at: ${url}`
+              body: `Documentation published at: ${url}. It should appear online in a few minutes.`
             });
 
       - name: Add failure reaction

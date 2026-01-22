@@ -58,7 +58,7 @@ packaging/macOS_dylibs.txt:
 .PHONY: switch
 switch:
 	$(OPAM) switch create . ocaml-base-compiler.$(OCAML_VERSION) --deps-only --with-test --with-doc -y
-	$(OPAM) install ocaml-lsp-server odig ocamlformat -y
+	$(OPAM) install ocaml-lsp-server odig ocamlformat.0.28.1 -y
 
 .PHONY: ocaml-deps
 ocaml-deps:
