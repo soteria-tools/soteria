@@ -111,11 +111,6 @@ jobs:
       - name: Build API documentation
         run: make doc
 
-      - name: Apply custom odoc theme
-        run: |
-          chmod u+w _build/default/_doc/_html/odoc.support/odoc.css
-          cp doc/odoc-theme/odoc.css _build/default/_doc/_html/odoc.support/odoc.css
-
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4
         with:
