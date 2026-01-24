@@ -99,4 +99,6 @@ module type S = sig
 
   val declare_fn : Types.fun_decl_ref -> t -> full_ptr ret
   val lookup_fn : full_ptr -> t -> Types.fun_decl_ref ret
+  val register_thread_exit : (unit -> t -> unit ret) -> t -> unit ret
+  val run_thread_exits : t -> unit ret
 end

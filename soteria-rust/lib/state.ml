@@ -110,18 +110,21 @@ end
 type sub = Tree_block.t * Tree_borrow.t [@@deriving show { with_path = false }]
 type block = sub Freeable.t With_meta.t [@@deriving show { with_path = false }]
 
+type serialized =
+  Tree_block.serialized Freeable.serialized With_meta.serialized
+  SPmap.serialized
+[@@deriving show { with_path = false }]
+
 type t = {
   state : block SPmap.t option;
   functions : FunBiMap.t;
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
   pointers : DecayMap.t option;
+  thread_destructor :
+    unit -> t -> (unit * t, Error.t err * t, serialized) Result.t;
+      [@printer Fmt.any "code"]
 }
-[@@deriving show { with_path = false }]
-
-type serialized =
-  Tree_block.serialized Freeable.serialized With_meta.serialized
-  SPmap.serialized
 [@@deriving show { with_path = false }]
 
 let pp_pretty ~ignore_freed ft { state; _ } =
@@ -150,6 +153,7 @@ let empty =
     globals = GlobMap.empty;
     errors = [];
     pointers = None;
+    thread_destructor = (fun () st -> Result.ok ((), st));
   }
 
 let log action ptr st =
@@ -719,3 +723,12 @@ let lookup_fn (({ ptr; _ } : Sptr.t), _) ({ functions; _ } as st) =
   match FunBiMap.get_fn loc functions with
   | Some fn -> Result.ok (fn, st)
   | None -> Result.error `NotAFnPointer
+
+let register_thread_exit callback ({ thread_destructor; _ } as st) =
+  let thread_destructor () st =
+    let** (), st = thread_destructor () st in
+    callback () st
+  in
+  Result.ok ((), { st with thread_destructor })
+
+let run_thread_exits st = st.thread_destructor () st
