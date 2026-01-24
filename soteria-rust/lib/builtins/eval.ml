@@ -27,12 +27,15 @@ type alloc_fn =
   | Realloc
   | NoAllocShimIsUnstable
 
+type system_fn = TlvAtexit
+
 type fn =
   | Alloc of alloc_fn
   | Fixme of fixme_fn
   | Miri of miri_fn
   | Optim of optim_fn
   | Rusteria of rusteria_fn
+  | System of system_fn
 
 let std_fun_pair_list =
   [
@@ -60,6 +63,13 @@ let std_fun_pair_list =
     ("__rust_dealloc", Alloc Dealloc);
     ("__rust_no_alloc_shim_is_unstable_v2", Alloc NoAllocShimIsUnstable);
     ("__rust_realloc", Alloc Realloc);
+    (* System stuff *)
+    (* TODO: the name of the function is *just* _tlv_atexit, because it's an
+       external function, but we don't yet have a way to detect that. This
+       is the same issue we have for allocator calls, for which our solution
+       is unsatisfactory (checking if the name starts with "__rust"). *)
+    ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
+      System TlvAtexit );
     (* Panic Builtins *)
     ("__rust_panic_cleanup", Fixme PanicCleanup);
     (* Core *)
@@ -128,6 +138,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   module Miri = Miri.M (Rust_state_m)
   module Rusteria = Rusteria.M (Rust_state_m)
   module Std = Std.M (Rust_state_m)
+  module System = System.M (Rust_state_m)
 
   let std_fun_eval (f : UllbcAst.fun_decl) fun_exec =
     let open Std in
@@ -180,6 +191,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
          | Alloc Realloc -> realloc
          | Fixme PanicCleanup -> fixme_panic_cleanup
          | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
+         | System TlvAtexit -> System.tlv_atexit fun_exec
 
   let builtin_fun_eval (f : Types.builtin_fun_id) generics =
     let open Std in
