@@ -15,8 +15,10 @@ let pp_results ft v =
     list
     @@ pair
          (Symex.Compo_res.pp
-            ~ok:(pair Interp.S_val.ppa State.pp)
-            ~err:(Soteria.Symex.Or_gave_up.pp State.pp_err)
+            ~ok:(pair Interp.S_val.ppa (Fmt.Dump.option State.pp))
+            ~err:
+              (Soteria.Symex.Or_gave_up.pp
+                 (pair State.pp_err (Fmt.Dump.option State.pp)))
             ~miss:Fmt.nop)
          (list Interp.S_val.ppa)
   in
@@ -37,7 +39,10 @@ let exec file =
     | Some f -> f
     | None -> failwith "No main function found"
   in
-  let process = Exec_interp.run_function main State.empty [] in
+  let process =
+    let@@ () = Exec_interp.SM.Result.run_with_state ~state:State.empty in
+    Exec_interp.run_function main []
+  in
   let results =
     let@ () = Interp.with_program program in
     Interp.Symex.Result.run ~mode:OX process
@@ -53,14 +58,16 @@ let generate_summaries file =
       let@ () = L.with_section (Fmt.str "Generating summary for %s" fname) in
       Fmt.pr "@[<v 2>Summaries for %s:@ " fname;
       let process =
-        let open LSymex.Syntax in
+        let open Bi_interp in
+        let@@ () = SM.Result.run_with_state ~state:Bi_state.empty in
+        let open SM.Syntax in
         let* args =
-          LSymex.fold_list func_dec.args ~init:[] ~f:(fun acc _ ->
-              let+ v = Interp.S_val.fresh () in
+          SM.fold_list func_dec.args ~init:[] ~f:(fun acc _ ->
+              let+ v = SM.lift @@ Interp.S_val.fresh () in
               v :: acc)
         in
         let args = List.rev args in
-        Bi_interp.run_function func_dec Bi_state.empty args
+        Bi_interp.run_function func_dec args
       in
       let results =
         let@ () = Interp.with_program program in
