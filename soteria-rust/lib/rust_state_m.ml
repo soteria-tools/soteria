@@ -189,6 +189,8 @@ module type S = sig
     val lookup_const_generic :
       Types.const_generic_var_id -> Types.ty -> (rust_val, 'env) t
 
+    val register_thread_exit : (unit -> (unit, unit) t) -> (unit, 'env) t
+    val run_thread_exits : unit -> (unit, 'env) t
     val add_error : Error.t err -> (unit, 'env) t
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
@@ -470,6 +472,15 @@ module Make (State : State_intf.S) :
     let[@inline] add_error e = lift_state_op (add_error e)
     let[@inline] pop_error () = lift_state_op pop_error
     let[@inline] leak_check () = lift_state_op leak_check
+
+    let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =
+      let unlifted () st =
+        let++ (), (), st = f () () st in
+        ((), st)
+      in
+      lift_state_op (register_thread_exit unlifted)
+
+    let[@inline] run_thread_exits () = lift_state_op run_thread_exits
 
     let[@inline] unwind_with ~f ~fe x =
      fun env state ->

@@ -105,19 +105,22 @@ end
 type sub = Tree_block.t * Tree_borrow.t [@@deriving show { with_path = false }]
 type block = sub Freeable.t With_meta.t [@@deriving show { with_path = false }]
 
+type serialized =
+  Tree_block.serialized Freeable.serialized With_meta.serialized
+  SPmap.serialized
+[@@deriving show { with_path = false }]
+
 type t = {
   state : block SPmap.t option;
   functions : FunBiMap.t;
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.t err list; [@printer Fmt.list Error.pp_err_and_call_trace]
   pointers : DecayMap.t option;
+  thread_destructor :
+    unit -> t -> (unit * t, Error.t err * t, serialized) Result.t;
+      [@printer Fmt.any "code"]
   const_generics : Sptr.t rust_val Types.ConstGenericVarId.Map.t;
 }
-[@@deriving show { with_path = false }]
-
-type serialized =
-  Tree_block.serialized Freeable.serialized With_meta.serialized
-  SPmap.serialized
 [@@deriving show { with_path = false }]
 
 let pp_pretty ~ignore_freed ft { state; _ } =
@@ -146,6 +149,7 @@ let empty =
     globals = GlobMap.empty;
     errors = [];
     pointers = None;
+    thread_destructor = (fun () st -> Result.ok ((), st));
     const_generics = Types.ConstGenericVarId.Map.empty;
   }
 
@@ -731,3 +735,12 @@ let lookup_const_generic id ty ({ const_generics; _ } as st) =
         Types.ConstGenericVarId.Map.add id v const_generics
       in
       (v, { st with const_generics })
+
+let register_thread_exit callback ({ thread_destructor; _ } as st) =
+  let thread_destructor () st =
+    let** (), st = thread_destructor () st in
+    callback () st
+  in
+  Result.ok ((), { st with thread_destructor })
+
+let run_thread_exits st = st.thread_destructor () st

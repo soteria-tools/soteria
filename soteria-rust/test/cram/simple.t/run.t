@@ -217,6 +217,19 @@ Test exposing function pointers
   PC 1: (extract[0-3](V|1|) == 0x0) /\ (0x0000000000000001 <=u V|1|) /\
         (V|1| <=u 0x7ffffffffffffffe)
   
+Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
+  $ soteria-rust rustc thread_local.rs
+  Compiling... done in <time>
+  note: pub_static_cell: done in <time>, ran 1 branch
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (0x0000000000000001 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffffa)
+  
+  warning: static_ref_cell (<time>): unsupported feature, Function std::sys::thread_local::destructors::list::register is opaque
+  
+  warning: pub_static_from_const_expr (<time>): unsupported feature, Function std::sys::thread_local::destructors::list::register is opaque
+  
+  [2]
+
 Test cloning ZSTs works; in particular, this generates a function with an empty body that just returns, so if we don't handle the ZST case we get an uninit access.
   $ soteria-rust rustc clone_zst.rs
   Compiling... done in <time>

@@ -1,3 +1,4 @@
+OCAML_VERSION=5.4.0
 OPAM=opam
 OPAMX=$(OPAM) exec --
 DUNE=$(OPAMX) dune
@@ -25,8 +26,11 @@ ocaml-format-check:
 ocaml-test:
 	$(DUNE) test
 
+.PHONY: doc
 doc:
 	$(DUNE) build @doc
+	chmod u+w _build/default/_doc/_html/odoc.support/odoc.css
+	cp doc/odoc-theme/odoc.css _build/default/_doc/_html/odoc.support/odoc.css
 
 ##### Packaging soteria-c #####
 
@@ -53,8 +57,8 @@ packaging/macOS_dylibs.txt:
 
 .PHONY: switch
 switch:
-	$(OPAM) switch create . ocaml-base-compiler.5.3.0 --deps-only --with-test --with-doc -y
-	$(OPAM) install ocaml-lsp-server odig ocamlformat -y
+	$(OPAM) switch create . ocaml-base-compiler.$(OCAML_VERSION) --deps-only --with-test --with-doc -y
+	$(OPAM) install ocaml-lsp-server odig ocamlformat.0.28.1 -y
 
 .PHONY: ocaml-deps
 ocaml-deps:

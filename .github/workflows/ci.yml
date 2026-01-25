@@ -20,9 +20,9 @@ concurrency:
 env:
   OCAML_VERSION: 5.4.0
   OBOL_REPO: soteria-tools/obol
-  OBOL_COMMIT_HASH: 322400fbe54d5958cf1585b7b9e0ac3f804e1333
+  OBOL_COMMIT_HASH: 187f57d9518027bc12e3f145bf85229256f29d5c
   CHARON_REPO: soteria-tools/charon
-  CHARON_COMMIT_HASH: 95fb6b5f31a0cf74e9a3977c1dbe43786661fe39
+  CHARON_COMMIT_HASH: a1c7a2e6a8acee130139192e1e4e000c013de1d0
 
 jobs:
   build:
@@ -194,16 +194,9 @@ jobs:
     name: Publish documentation
     runs-on: ubuntu-latest
     needs: build
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Get current branch name
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "ENTRY_PATH=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
-          else
-            echo "ENTRY_PATH=${GITHUB_REF##*/}" >> $GITHUB_ENV
-          fi
-
-      - name: retrieve documentation artifact
+      - name: Retrieve documentation artifact
         uses: actions/download-artifact@v4
         with:
           name: odoc
@@ -214,6 +207,6 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
-          destination_dir: ./api/${{ env.ENTRY_PATH }}
+          destination_dir: ./api/main
 
-      - run: echo "Successfully published documentation to ${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/${{ env.ENTRY_PATH }}"
+      - run: echo "Successfully published documentation to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/main"
