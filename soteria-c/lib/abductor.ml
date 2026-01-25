@@ -32,10 +32,10 @@ let generate_summaries_for (fundef : fundef) =
   let process =
     let open Csymex.Syntax in
     let* args = Csymex.all Layout.nondet_c_ty_aggregate arg_tys in
-    let* result = Bi_interp.exec_fun fundef ~args Bi_state.empty in
+    let* result, state = Bi_interp.exec_fun fundef ~args Bi_state.empty in
     match result with
-    | Ok (ret, bi_state) -> Csymex.return (args, Ok ret, bi_state)
-    | Error (err, bi_state) -> Csymex.return (args, Error err, bi_state)
+    | Ok ret -> Csymex.return (args, Ok ret, state)
+    | Error err -> Csymex.return (args, Error err, state)
     | Missing _ -> Csymex.vanish ()
   in
   let res =
@@ -46,7 +46,8 @@ let generate_summaries_for (fundef : fundef) =
   let@ () = L.with_section "Building summary" in
   L.trace (fun m ->
       m "@[<2>Building summary for %a using bistate:@ %a@]" Fmt_ail.pp_sym fid
-        Bi_state.pp bi_state);
+        (Fmt.Dump.option Bi_state.pp)
+        bi_state);
   let pre, post = Bi_state.to_spec bi_state in
   let ret = Summary.make ~args ~ret ~pre ~post ~pc () in
   L.trace (fun m -> m "Obtained summary: %a" Summary.pp ret);

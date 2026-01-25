@@ -2,10 +2,10 @@
     immutable total map from identifier to address *)
 
 open Csymex
-open Csymex.Syntax
-module Sym_map = Concrete_map (Symbol_std)
 
 module Loc = struct
+  open Csymex.Syntax
+
   type t = Typed.T.sloc Typed.t
 
   let pp = Typed.ppa
@@ -20,36 +20,35 @@ module Loc = struct
   let iter_vars = Typed.iter_vars
 end
 
-module GlobFn = Soteria.Sym_states.Pure_fun.Make (Csymex) (Loc)
+module Glob_fn = Pure_fun (Loc)
+include Concrete_map (Symbol_std) (Glob_fn)
 
-type t = GlobFn.t Sym_map.t option [@@deriving show { with_path = false }]
+let pp ft t = pp ft t
 
-type serialized = GlobFn.serialized Sym_map.serialized
-[@@deriving show { with_path = false }]
+module SM =
+  Soteria.Sym_states.State_monad.Make
+    (Csymex)
+    (struct
+      type nonrec t = t option
+    end)
 
-let serialize st =
-  match st with None -> [] | Some st -> Sym_map.serialize GlobFn.serialize st
+(* The Concrete_map [pp] function has an option ?ignore parameter *)
 
-let subst_serialized subst_var serialized =
-  Sym_map.subst_serialized GlobFn.subst_serialized subst_var serialized
-
-let iter_vars_serialized s =
-  (Sym_map.iter_vars_serialized GlobFn.iter_vars_serialized) s
-
-let get sym st =
+let get sym =
   (* TODO: This is correct, but a tiny bit of a hack.
            We need to enforce the invariant that all symbols are different.
            It'd be nice to enforce this modularly, but right now we do it as a wrapper.
            Unless one has hundreds of globals, the cost is negligeable, but still. *)
-  let open Csymex.Syntax in
-  let existed = Option.fold ~none:false ~some:(Sym_map.syntactic_mem sym) st in
-  let* res = (Sym_map.wrap GlobFn.load) sym st in
-  let loc, st = Soteria.Symex.Compo_res.get_ok res in
+  let open SM.Syntax in
+  let* st = SM.get_state () in
+  let existed = Option.fold ~none:false ~some:(syntactic_mem sym) st in
+  let* res = wrap sym (Glob_fn.load ()) in
+  let loc = Soteria.Symex.Compo_res.get_ok res in
   let+ () =
-    if existed then (* We haven't created a new location *) return ()
+    if existed then (* We haven't created a new location *) SM.return ()
     else
       (* We learn that the new location is distinct from all other global locations *)
-      Sym_map.syntactic_bindings (Option.value ~default:Sym_map.empty st)
+      syntactic_bindings (Option.value ~default:empty st)
       |> Seq.filter_map (fun (k, v) ->
           let open Typed.Infix in
           if Cerb_frontend.Symbol.equal_sym k sym then None
@@ -57,25 +56,21 @@ let get sym st =
             let neq = Typed.not (v ==@ loc) in
             Some neq)
       |> List.of_seq
-      |> assume
+      |> SM.assume
   in
-  (loc, st)
+  loc
 
-let produce serialized st =
-  let open Csymex.Syntax in
-  let* st' = (Sym_map.produce GlobFn.produce) serialized st in
-  let+ () =
-    (* Bit heavy-handed but we just massively assume the well-formedness *)
-    let to_assume =
-      Sym_map.syntactic_bindings (Option.value ~default:Sym_map.empty st')
-      |> Seq.map snd
-      |> List.of_seq
-      |> Typed.distinct
-    in
-    assume [ to_assume ]
+let produce serialized : unit SM.t =
+  let open SM.Syntax in
+  let* () = produce serialized in
+  let* state_after_prod = SM.get_state () in
+  (* Bit heavy-handed but we just massively assume the well-formedness *)
+  let to_assume =
+    syntactic_bindings (Option.value ~default:empty state_after_prod)
+    |> Seq.map snd
+    |> List.of_seq
+    |> Typed.distinct
   in
-  st'
+  SM.assume [ to_assume ]
 
-(* For pure predicates in UX, consume = produce *)
-let consume serialized st = (Sym_map.consume GlobFn.consume) serialized st
 let empty = None
