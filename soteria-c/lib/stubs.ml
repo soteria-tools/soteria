@@ -1,6 +1,5 @@
 module Ctype = Cerb_frontend.Ctype
 open Csymex
-open Csymex.Syntax
 open Typed.Infix
 open Typed.Syntax
 module BV = Typed.BitVec
@@ -12,60 +11,72 @@ open Agv
 
 let builtin_functions = [ "malloc"; "free"; "memcpy"; "calloc" ]
 
-let failed_alloc_case state =
-  if (Config.current ()).alloc_cannot_fail then []
-  else [ (fun () -> Result.ok (Basic Typed.Ptr.null, state)) ]
-
 module M (State : State_intf.S) = struct
+  module SM =
+    Soteria.Sym_states.State_monad.Make
+      (Csymex)
+      (struct
+        type t = State.t option
+      end)
+
+  open SM
+  open SM.Syntax
+
+  let not_impl s = SM.lift @@ not_impl s
+  let of_opt_not_impl ~msg x = SM.lift @@ of_opt_not_impl ~msg x
+
   type 'err fun_exec =
     args:Agv.t list ->
-    State.t ->
-    (Agv.t * State.t, 'err, State.serialized) Result.t
+    (Agv.t, Error.with_trace, State.serialized list) SM.Result.t
 
-  let malloc ~(args : Agv.t list) state =
+  let failed_alloc_case () =
+    if (Config.current ()).alloc_cannot_fail then []
+    else [ (fun () -> Result.ok (Basic Typed.Ptr.null)) ]
+
+  let malloc ~(args : Agv.t list) =
     let* sz =
       match args with
       | [ Basic sz ] -> return sz
       | _ -> not_impl "malloc with non-one arguments"
     in
     let* sz =
-      of_opt_not_impl ~msg:"malloc with non-integer argument"
-      @@ BV.cast_to_size_t sz
+      BV.cast_to_size_t sz
+      |> of_opt_not_impl ~msg:"malloc with non-integer argument"
     in
-    Csymex.branches
+    SM.branches
       ([
          (fun () ->
-           let++ ptr, state = State.alloc sz state in
-           (Basic ptr, state));
+           let++ ptr = State.alloc sz in
+           Basic ptr);
        ]
-      @ failed_alloc_case state)
+      @ failed_alloc_case ())
 
-  let calloc ~(args : Agv.t list) state =
+  let calloc ~(args : Agv.t list) =
     let* sz =
       match args with
       | [ Basic num; Basic sz ] ->
           let* num =
-            of_opt_not_impl ~msg:"calloc with non-integer arguments"
-            @@ BV.cast_to_size_t num
+            BV.cast_to_size_t num
+            |> of_opt_not_impl ~msg:"calloc with non-integer arguments"
           in
           let* sz =
-            of_opt_not_impl ~msg:"calloc with non-integer arguments"
-            @@ BV.cast_to_size_t sz
+            BV.cast_to_size_t sz
+            |> of_opt_not_impl ~msg:"calloc with non-integer arguments"
           in
           let res, ovf = num *$?@ sz in
-          let+ () = Csymex.assume [ Typed.not ovf ] in
+          let+ () = SM.assume [ Typed.not ovf ] in
           res
       | _ -> not_impl "calloc with non-one arguments"
     in
-    Csymex.branches
+    SM.branches
       ([
          (fun () ->
-           let++ ptr, state = State.alloc ~zeroed:true sz state in
-           (Basic ptr, state));
+           let++ ptr = State.alloc ~zeroed:true sz in
+           Basic ptr);
        ]
-      @ failed_alloc_case state)
+      @ failed_alloc_case ())
 
-  let free ~(args : Agv.t list) state =
+  let free ~(args : Agv.t list) =
     let* ptr =
       match args with
       | [ Basic ptr ] -> return ptr
@@ -73,98 +84,100 @@ module M (State : State_intf.S) = struct
     in
     match Typed.get_ty ptr with
     | TPointer _ ->
-        let++ (), state =
-          if%sat Typed.Ptr.is_null (Typed.cast ptr) then Result.ok ((), state)
-          else State.free (Typed.cast ptr) state
+        let++ () =
+          if%sat Typed.Ptr.is_null (Typed.cast ptr) then Result.ok ()
+          else State.free (Typed.cast ptr)
         in
-        (Agv.void, state)
+        Agv.void
     | TBitVector _ ->
         Fmt.kstr not_impl "free with int argument: %a" Typed.ppa ptr
     | _ -> Fmt.kstr not_impl "free with non-pointer argument: %a" Typed.ppa ptr
 
-  let memcpy ~(args : Agv.t list) state =
+  let memcpy ~(args : Agv.t list) =
     let* dst, src, size =
       match args with
       | [ Basic dst; Basic src; Basic size ] -> return (dst, src, size)
       | _ -> not_impl "memcpy with non-three arguments"
     in
     let* dst =
-      of_opt_not_impl ~msg:"memcpy with non-pointer dst"
-      @@ Typed.cast_checked dst Typed.t_ptr
+      Typed.cast_checked dst Typed.t_ptr
+      |> of_opt_not_impl ~msg:"memcpy with non-pointer dst"
     in
     let* src =
-      of_opt_not_impl ~msg:"memcpy with non-pointer src"
-      @@ Typed.cast_checked src Typed.t_ptr
+      Typed.cast_checked src Typed.t_ptr
+      |> of_opt_not_impl ~msg:"memcpy with non-pointer src"
     in
     let* size =
-      of_opt_not_impl ~msg:"memcpy with non-integer arguments"
-      @@ BV.cast_to_size_t size
+      BV.cast_to_size_t size
+      |> of_opt_not_impl ~msg:"memcpy with non-integer arguments"
     in
     let dst = Typed.cast dst in
     let src = Typed.cast src in
     let size = Typed.cast size in
-    let++ (), state = State.copy_nonoverlapping ~dst ~src ~size state in
-    (Basic dst, state)
+    let++ () = State.copy_nonoverlapping ~dst ~src ~size in
+    Basic dst
 
-  let assert_ ~(args : Agv.t list) state =
+  let assert_ ~(args : Agv.t list) =
     let open Typed.Infix in
     let* to_assert, size =
       match args with
       | [ Basic t ] | [ Basic t; _ ] ->
-          Csymex.of_opt_not_impl ~msg:"assert: not an integer"
-            (Typed.cast_int t)
+          Typed.cast_int t
+          |> Csymex.of_opt_not_impl ~msg:"assert: not an integer"
+          |> SM.lift
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ Typed.BitVec.zero size then
-      State.error `FailedAssert state
-    else Result.ok (Agv.void, state)
+    if%sat to_assert ==@ Typed.BitVec.zero size then State.error `FailedAssert
+    else Result.ok Agv.void
 
-  let assert_fail ~args:_ state = State.error `FailedAssert state
+  let assert_fail ~args:_ = State.error `FailedAssert
 
-  let assume_ ~(args : Agv.t list) state =
+  let assume_ ~(args : Agv.t list) =
     let* to_assume, _ =
       match args with
       | [ Basic t ] ->
-          Csymex.of_opt_not_impl ~msg:"assume: not an integer"
-            (Typed.cast_int t)
+          Typed.cast_int t
+          |> Csymex.of_opt_not_impl ~msg:"assume: not an integer"
+          |> SM.lift
       | _ -> not_impl "to_assume with non-one arguments"
     in
-    let* () = Csymex.assume [ Typed.BitVec.to_bool to_assume ] in
-    Result.ok (Agv.void, state)
+    let* () = SM.assume [ Typed.BitVec.to_bool to_assume ] in
+    Result.ok Agv.void
 
-  let nondet ty ~args:_ state =
-    let* v = Layout.nondet_c_ty_aggregate_ ty in
-    Result.ok (v, state)
+  let nondet ty ~args:_ =
+    let* v = SM.lift @@ Layout.nondet_c_ty_aggregate_ ty in
+    Result.ok v
 
-  let strcmp ~args state =
+  let strcmp ~args =
     let* s1, s2 =
       match args with
       | [ Basic s1; Basic s2 ] ->
           let* s1_ptr =
-            of_opt_not_impl ~msg:"strcmp with non-pointer s1"
-            @@ Typed.cast_checked s1 Typed.t_ptr
+            Typed.cast_checked s1 Typed.t_ptr
+            |> of_opt_not_impl ~msg:"strcmp with non-pointer s1"
           in
           let+ s2_ptr =
-            of_opt_not_impl ~msg:"strcmp with non-pointer s2"
-            @@ Typed.cast_checked s2 Typed.t_ptr
+            Typed.cast_checked s2 Typed.t_ptr
+            |> of_opt_not_impl ~msg:"strcmp with non-pointer s2"
           in
           (s1_ptr, s2_ptr)
       | _ -> not_impl "strcmp with non-two arguments"
     in
     (* TODO: Optimise strcmp directly on the heap model! *)
     let[@inline] next ptr = Typed.Ptr.add_ofs ptr (BV.usizei 1) in
-    let rec loop s1_ptr s2_ptr state =
-      let** c1, state = State.load s1_ptr Ctype.char state in
-      let** c2, state = State.load s2_ptr Ctype.char state in
+    let rec loop s1_ptr s2_ptr =
+      let** c1 = State.load s1_ptr Ctype.char in
+      let** c2 = State.load s2_ptr Ctype.char in
       let* c1 =
-        Agv.basic_or_unsupported ~msg:"strcmp: loaded but not char" c1
+        SM.lift
+        @@ Agv.basic_or_unsupported ~msg:"strcmp: loaded but not char" c1
       in
       let* c2 =
-        Agv.basic_or_unsupported ~msg:"strcmp: loaded but not char" c2
+        SM.lift
+        @@ Agv.basic_or_unsupported ~msg:"strcmp: loaded but not char" c2
       in
-      if%sat c1 ==@ U8.(0s) &&@ (c2 ==@ U8.(0s)) then
-        Result.ok (Agv.c_int 0, state)
-      else if%sat c1 ==@ c2 then loop (next s1_ptr) (next s2_ptr) state
+      if%sat c1 ==@ U8.(0s) &&@ (c2 ==@ U8.(0s)) then Result.ok (Agv.c_int 0)
+      else if%sat c1 ==@ c2 then loop (next s1_ptr) (next s2_ptr)
       else
         let* c1, _ = Typed.cast_int c1 |> of_opt_not_impl ~msg:"strcmp c1" in
         let* c2, _ = Typed.cast_int c2 |> of_opt_not_impl ~msg:"strcmp c2" in
@@ -172,72 +185,71 @@ module M (State : State_intf.S) = struct
         let c2 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c2 in
         (* This cannot overflow because they were chars and operation happens in integer world *)
         let res = c1 -!@ c2 in
-        Result.ok (Basic res, state)
+        Result.ok (Basic res)
     in
-    loop s1 s2 state
+    loop s1 s2
 
-  let memset ~args state =
+  let memset ~args =
     let* dest, char_int, count =
       match args with
       | [ Basic s1; Basic s2; Basic s3 ] ->
           let* s1_ptr =
-            of_opt_not_impl ~msg:"memset with non-pointer s1"
-            @@ Typed.cast_checked s1 Typed.t_ptr
+            Typed.cast_checked s1 Typed.t_ptr
+            |> of_opt_not_impl ~msg:"memset with non-pointer s1"
           in
           let sizeofint = Layout.c_int_size * 8 in
           let* char_int =
-            of_opt_not_impl ~msg:"memset with non-pointer s2"
-            @@ Typed.cast_checked s2 (Typed.t_int sizeofint)
+            Typed.cast_checked s2 (Typed.t_int sizeofint)
+            |> of_opt_not_impl ~msg:"memset with non-pointer s2"
           in
           let+ count =
-            of_opt_not_impl ~msg:"memset with non-integer count"
-            @@ BV.cast_to_size_t s3
+            BV.cast_to_size_t s3
+            |> of_opt_not_impl ~msg:"memset with non-integer count"
           in
           (s1_ptr, char_int, count)
       | _ -> not_impl "memset with non-thre arguments"
     in
     let char = BV.fit_to ~signed:false 8 char_int in
     if%sure char ==@ U8.(0s) then
-      let++ (), state = State.zero_range dest count state in
-      (Agv.void, state)
+      let++ () = State.zero_range dest count in
+      Agv.void
     else
-      let rec loop dest count state =
-        if%sat count ==@ Usize.(0s) then Result.ok (Agv.void, state)
+      let rec loop dest count =
+        if%sat count ==@ Usize.(0s) then Result.ok Agv.void
         else
-          let** (), state =
-            State.store dest Ctype.char
-              (Agv.Basic (char :> T.cval Typed.t))
-              state
+          let** () =
+            State.store dest Ctype.char (Agv.Basic (char :> T.cval Typed.t))
           in
           let s1_ptr = Typed.Ptr.add_ofs dest (BV.usizei 1) in
           let count = count -!@ Usize.(1s) in
-          loop s1_ptr count state
+          loop s1_ptr count
       in
-      loop dest count state
+      loop dest count
 
-  let havoc ~return_ty ~args state =
-    let rec havoc_aggregate state (v : Agv.t) =
+  let havoc ~return_ty ~args =
+    let rec havoc_aggregate () (v : Agv.t) =
       match v with
       | Basic v -> (
           match Typed.cast_checked v Typed.t_ptr with
           | Some _ ->
-              Csymex.not_impl "Havocking input pointer for undefined function"
-          | None -> Result.ok state)
-      | Struct fields -> Result.fold_list fields ~init:state ~f:havoc_aggregate
-      | Array elements ->
-          Result.fold_list elements ~init:state ~f:havoc_aggregate
+              SM.lift
+              @@ Csymex.not_impl
+                   "Havocking input pointer for undefined function"
+          | None -> Result.ok ())
+      | Struct fields -> Result.fold_list fields ~init:() ~f:havoc_aggregate
+      | Array elements -> Result.fold_list elements ~init:() ~f:havoc_aggregate
     in
-    let** state = Result.fold_list args ~init:state ~f:havoc_aggregate in
+    let** () = Result.fold_list args ~init:() ~f:havoc_aggregate in
     let* ret =
       match return_ty with
-      | Some return_ty -> Layout.nondet_c_ty_aggregate return_ty
+      | Some return_ty -> SM.lift @@ Layout.nondet_c_ty_aggregate return_ty
       | None ->
           (* No return type, I guess it returns void? *)
-          Csymex.return Agv.void
+          SM.return Agv.void
     in
-    Result.ok (ret, state)
+    Result.ok ret
 
-  let vanish_fn ~args:_ _state = vanish ()
+  let vanish_fn ~args:_ = SM.vanish ()
 
   module Arg_filter = struct
     (** HACK: Some internal functions such as __builtin___memcpy_chk are not

@@ -197,7 +197,7 @@ include Tree_block (MemVal)
 
 let log_fixes fixes =
   L.trace (fun m ->
-      m "MISSING WITH FIXES: %a" (Fmt.Dump.list pp_serialized) fixes);
+      m "MISSING WITH FIXES: %a" Fmt.Dump.(list @@ list pp_serialized) fixes);
   fixes
 
 let range_of_low_and_type low ty =
@@ -219,6 +219,10 @@ let mk_fix_typed ofs ty () =
 
 let mk_fix_any ofs len () = [ [ MemVal { offset = ofs; len; v = SAny } ] ]
 
+let mk_fix_any_s ofs len () =
+  let fixes = mk_fix_any ofs len () in
+  Csymex.return (log_fixes fixes)
+
 let decode ~ty ~ofs node =
   match node with
   | TB.Owned node -> MemVal.decode ~ty node
@@ -226,26 +230,27 @@ let decode ~ty ~ofs node =
       let+ fixes = mk_fix_typed ofs ty () in
       Soteria.Symex.Compo_res.miss (log_fixes fixes)
 
-let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) (t : t option) :
-    (T.cval Typed.t * t option, 'err, 'fix) Result.t =
-  let* ((_, bound) as range) = range_of_low_and_type ofs ty in
-  let@ t = with_bound_and_owned_check ~mk_fixes:(mk_fix_typed ofs ty) t bound in
-  let replace_node node = Result.ok node in
-  let rebuild_parent = Tree.with_children in
-  let** framed, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
-  let++ sval = decode ~ty ~ofs framed.node in
-  ((sval :> T.cval Typed.t), tree)
+let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
+    (T.cval Typed.t, 'err, serialized list) SM.Result.t =
+  let open SM.Syntax in
+  let* ((_, bound) as range) = SM.lift @@ range_of_low_and_type ofs ty in
+  with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
+      let open Csymex.Syntax in
+      let replace_node node = Result.ok node in
+      let rebuild_parent = Tree.with_children in
+      let** framed, tree =
+        Tree.frame_range t ~replace_node ~rebuild_parent range
+      in
+      let++ sval = decode ~ty ~ofs framed.node in
+      ((sval :> T.cval Typed.t), tree))
 
 let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
-    (sval : [< T.cval ] Typed.t) (t : t option) :
-    (unit * t option, 'err, 'fix) Result.t =
-  let* ((_, bound) as range) = range_of_low_and_type low ty in
-  match t with
-  | None ->
-      let fixes = mk_fix_any low (Range.size range) () in
-      Result.miss (log_fixes fixes)
-  | Some t ->
-      let@ t = with_bound_check t bound in
+    (sval : [< T.cval ] Typed.t) : (unit, 'err, serialized list) SM.Result.t =
+  let open SM.Syntax in
+  let* ((_, bound) as range) = SM.lift @@ range_of_low_and_type low ty in
+  let len = Range.size range in
+  with_bound_check ~mk_fixes:(mk_fix_any_s low len) bound (fun t ->
+      let open Csymex.Syntax in
       let replace_node _ = Result.ok @@ sval_leaf ~range ~value:sval ~ty in
       let rebuild_parent = Tree.of_children in
       let** node, tree =
@@ -260,34 +265,30 @@ let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
         | NotOwned Partially -> miss_no_fix ~reason:"partially missing store" ()
         | _ -> Result.ok ()
       in
-      ((), tree)
+      ((), tree))
 
-let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-    (t : t option) : (unit * t option, 'err, 'fix) Result.t =
+let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
+    (unit, 'err, serialized list) SM.Result.t =
   let ((_, bound) as range) = Range.of_low_and_size ofs size in
-  let@ t = with_bound_and_owned_check t bound in
-  let replace_node t =
-    match t.node with
-    | NotOwned Totally ->
-        let fix = mk_fix_any ofs size () in
-        Result.miss (log_fixes fix)
-    | NotOwned Partially ->
-        miss_no_fix ~reason:"partially missing zero_range" ()
-    | Owned _ -> Result.ok @@ zeros ~range
-  in
-  let rebuild_parent = Tree.of_children in
-  let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
-  ((), tree)
+  let len = Range.size range in
+  with_bound_check ~mk_fixes:(mk_fix_any_s ofs len) bound (fun t ->
+      let replace_node t =
+        match t.node with
+        | NotOwned Totally ->
+            let fix = mk_fix_any ofs size () in
+            Result.miss (log_fixes fix)
+        | NotOwned Partially ->
+            miss_no_fix ~reason:"partially missing zero_range" ()
+        | Owned _ -> Result.ok @@ zeros ~range
+      in
+      let rebuild_parent = Tree.of_children in
+      let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
+      ((), tree))
 
-let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
-    (t : t option) : (unit * t option, 'err, 'fix) Result.t =
-  match t with
-  | None ->
-      let fixes = mk_fix_any low len () in
-      Result.miss (log_fixes fixes)
-  | Some t ->
-      let ((_, bound) as range) = Range.of_low_and_size low len in
-      let@ t = with_bound_check t bound in
+let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t) :
+    (unit, 'err, 'fix) SM.Result.t =
+  let ((_, bound) as range) = Range.of_low_and_size low len in
+  with_bound_check ~mk_fixes:(mk_fix_any_s low len) bound (fun t ->
       let replace_node _ = Result.ok @@ uninit ~range in
       let rebuild_parent = Tree.of_children in
       let** node, tree =
@@ -302,6 +303,6 @@ let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
             miss_no_fix ~reason:"partially missing deinit" ()
         | _ -> Result.ok ()
       in
-      ((), tree)
+      ((), tree))
 
 let alloc ~zeroed size = alloc (if zeroed then Zeros else Uninit Totally) size
