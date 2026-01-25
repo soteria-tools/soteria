@@ -3,9 +3,7 @@
   No bugs found
   Summaries for test_561:
     Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0x00000000) };
+      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
 We avoid printing the backtrace in the test output to reduce flakiness of the test
