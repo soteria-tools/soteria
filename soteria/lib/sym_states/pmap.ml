@@ -46,73 +46,51 @@ module S
     end) =
 struct
   module type S = sig
-    type 'a t
-    type 'a serialized = (Key.t * 'a) list
+    type codom
+    type t
+    type codom_serialized
+    type serialized = Key.t * codom_serialized
 
-    val empty : 'a t
-    val syntactic_bindings : 'a t -> (Key.t * 'a) Seq.t
-    val syntactic_mem : Key.t -> 'a t -> bool
+    type ('a, 'err) res :=
+      t option -> (('a, 'err, serialized list) Compo_res.t * t option) Symex.t
 
-    val pp :
-      ?ignore:(Key.t * 'a -> bool) ->
-      (Format.formatter -> 'a -> unit) ->
-      Format.formatter ->
-      'a t ->
-      unit
+    type ('a, 'err) codom_res :=
+      codom option ->
+      (('a, 'err, codom_serialized list) Compo_res.t * codom option) Symex.t
 
-    val pp_serialized :
-      (Format.formatter -> 'a -> unit) ->
-      Format.formatter ->
-      'a serialized ->
-      unit
-
-    val serialize : ('a -> 'b) -> 'a t -> (Key.t * 'b) list
-
-    val subst_serialized :
-      ((Var.t -> Var.t) -> 'a -> 'b) ->
-      (Var.t -> Var.t) ->
-      'a serialized ->
-      'b serialized
+    val empty : t
+    val syntactic_bindings : t -> (Key.t * codom) Seq.t
+    val syntactic_mem : Key.t -> t -> bool
+    val pp : ?ignore:(Key.t * codom -> bool) -> Format.formatter -> t -> unit
+    val show : t -> string
+    val pp_serialized : Format.formatter -> serialized -> unit
+    val show_serialized : serialized -> string
+    val serialize : t -> serialized list
+    val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
 
     val iter_vars_serialized :
-      ('a -> (Var.t * 'b Symex.Value.ty -> unit) -> unit) ->
-      'a serialized ->
-      (Var.t * 'b Symex.Value.ty -> unit) ->
-      unit
+      serialized -> (Var.t * 'b Symex.Value.ty -> unit) -> unit
 
-    val of_opt : 'a t option -> 'a t
-    val to_opt : 'a t -> 'a t option
-
-    val alloc :
-      new_codom:'a ->
-      'a t option ->
-      (Key.t * 'a t option, 'err, 'fix list) Symex.Result.t
+    val of_opt : t option -> t
+    val to_opt : t -> t option
+    val alloc : new_codom:codom -> (Key.t, 'err) res
 
     val allocs :
-      fn:('b -> Key.t -> ('a * 'k) Symex.t) ->
-      els:'b list ->
-      'a t option ->
-      ('k list * 'a t option, 'err, 'fix list) Symex.Result.t
+      fn:('a -> Key.t -> ('k * codom) Symex.t) ->
+      els:'a list ->
+      ('k list, 'err) res
 
-    val wrap :
-      ('a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t) ->
-      Key.t ->
-      'a t option ->
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t
+    val wrap : Key.t -> ('a, 'err) codom_res -> ('a, 'err) res
 
     val fold :
-      ('acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t) ->
+      ('acc -> Key.t * codom -> ('acc, 'err, serialized list) Symex.Result.t) ->
       'acc ->
-      'a t option ->
-      ('acc, 'err, 'fix serialized) Symex.Result.t
+      t option ->
+      ('acc, 'err, serialized list) Symex.Result.t
 
-    val produce :
-      ('inner_serialized -> 'inner_st option -> 'inner_st option Symex.t) ->
-      'inner_serialized serialized ->
-      'inner_st t option ->
-      'inner_st t option Symex.t
+    val produce : serialized -> t option -> (unit * t option) Symex.t
 
-    val consume :
+    (* val consume :
       ('inner_serialized ->
       'inner_st option ->
       ( 'inner_st option,
@@ -121,7 +99,7 @@ struct
       Symex.Result.t) ->
       'inner_serialized serialized ->
       'inner_st t option ->
-      ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t
+      ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t *)
   end
 end
 
@@ -143,103 +121,128 @@ module Build_from_find_opt_sym
     (Map : MapS with type key = Key.t)
     (Find_opt_sym : sig
       val f : Key.t -> 'a Map.t -> (Key.t * 'a option) Symex.t
-    end) =
-struct
-  open Symex.Syntax
-  open Symex
+    end)
+    (Codom : Base.M(Symex).S) :
+  S(Symex)(Key).S
+    with type codom := Codom.t
+     and type codom_serialized := Codom.serialized = struct
   module M = Map
 
-  type 'a t = 'a M.t
-  type 'a serialized = (Key.t * 'a) list
+  type t = Codom.t M.t
+  type serialized = Key.t * Codom.serialized
+
+  module SM =
+    State_monad.Make
+      (Symex)
+      (struct
+        type nonrec t = t option
+      end)
+
+  module CSM =
+    State_monad.Tys
+      (Symex)
+      (struct
+        type t = Codom.t option
+      end)
 
   let empty = M.empty
-  let syntactic_bindings = M.to_seq
+  let syntactic_bindings (x : t) = M.to_seq x
   let syntactic_mem = M.mem
 
-  let lift_fix_s ~key res =
-    let+? fix = res in
-    [ (key, fix) ]
+  let lift_fix ~key (fix : Codom.serialized list) : serialized list =
+    List.map (fun v_ser -> (key, v_ser)) fix
 
-  let pp_serialized pp_inner : Format.formatter -> 'a serialized -> unit =
-    Fmt.brackets
-      (Fmt.iter ~sep:(Fmt.any ";@ ") List.iter Fmt.Dump.(pair Key.pp pp_inner))
+  let lift_fix_r ~key (res : ('a, 'err, Codom.serialized list) Compo_res.t) :
+      ('a, 'err, serialized list) Compo_res.t =
+    Compo_res.map_missing res (lift_fix ~key)
 
-  let serialize serialize_inner m =
-    M.to_seq m |> Seq.map (fun (k, v) -> (k, serialize_inner v)) |> List.of_seq
+  open SM
+  open SM.Syntax
 
-  let subst_serialized subst_inner subst_var l =
-    List.map
-      (fun (key, v) -> (Key.subst subst_var key, subst_inner subst_var v))
-      l
+  let pp_serialized : Format.formatter -> serialized -> unit =
+    Fmt.Dump.(pair Key.pp Codom.pp_serialized)
 
-  let iter_vars_serialized iter_inner l f =
-    List.iter
-      (fun (key, v) ->
-        Key.iter_vars key f;
-        iter_inner v f)
-      l
+  let show_serialized = Fmt.to_to_string pp_serialized
 
-  let pp ?(ignore = fun _ -> false) pp_value =
+  let serialize m =
+    M.to_seq m
+    |> Seq.concat_map (fun (k, v) ->
+        List.to_seq (Codom.serialize v) |> Seq.map (fun v_ser -> (k, v_ser)))
+    |> List.of_seq
+
+  let subst_serialized subst_var (key, v) =
+    (Key.subst subst_var key, Codom.subst_serialized subst_var v)
+
+  let iter_vars_serialized (key, v) f =
+    Key.iter_vars key f;
+    Codom.iter_vars_serialized v f
+
+  let pp ?(ignore = fun _ -> false) =
     let open Fmt in
     let iter f = M.iter (fun k v -> f (k, v)) in
-    let pp_binding ft (k, v) = pf ft "@[<2>%a ->@ %a@]" Key.pp k pp_value v in
+    let pp_binding ft (k, v) = pf ft "@[<2>%a ->@ %a@]" Key.pp k Codom.pp v in
     let iter_non_ignored f m =
       iter (fun (k, v) -> if ignore (k, v) then () else f (k, v)) m
     in
     braces (Fmt.iter ~sep:(any ";@\n") iter_non_ignored pp_binding)
 
+  let show = Fmt.to_to_string (fun ft t -> pp ft t)
   let of_opt = function None -> M.empty | Some m -> m
   let to_opt m = if M.is_empty m then None else Some m
   let add_opt k v m = M.update k (fun _ -> v) m
 
-  let alloc (type a) ~(new_codom : a) (st : a t option) :
-      (Key.t * a t option, 'err, 'fix list) Result.t =
+  let alloc ~(new_codom : Codom.t) : (Key.t, 'err, serialized list) SM.Result.t
+      =
+    let* st = SM.get_state () in
     let st = of_opt st in
-    let* key = Key.fresh () in
+    let* key = lift @@ Key.fresh () in
     let* () =
-      Symex.assume
+      SM.assume
         [ Key.distinct (key :: (M.to_seq st |> Seq.map fst |> List.of_seq)) ]
     in
-    Result.ok (key, to_opt (M.add key new_codom st))
+    let* () = SM.set_state (to_opt (M.add key new_codom st)) in
+    Result.ok key
 
-  let allocs (type a b k) ~(fn : b -> Key.t -> (a * k) Symex.t) ~(els : b list)
-      (st : a t option) : (k list * a t option, 'err, 'fix list) Result.t =
+  let allocs (type a k) ~(fn : a -> Key.t -> (k * Codom.t) Symex.t)
+      ~(els : a list) : (k list, 'err, serialized list) SM.Result.t =
+    let* st = SM.get_state () in
     let st = of_opt st in
     let* bindings, out_keys =
-      Symex.fold_list els ~init:(Seq.empty, []) ~f:(fun (b, ks') e ->
+      lift
+      @@ Symex.fold_list els ~init:(Seq.empty, []) ~f:(fun (b, ks') e ->
+          let open Symex.Syntax in
           let* k = Key.fresh () in
-          let+ v, k' = fn e k in
+          let+ k', v = fn e k in
           (Seq.cons (k, v) b, k' :: ks'))
     in
     let out_keys = List.rev out_keys in
     let st = M.add_seq bindings st in
-    let+ () =
-      Symex.assume [ M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct ]
+    let* () =
+      SM.assume [ M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct ]
     in
-    Compo_res.Ok (out_keys, to_opt st)
+    let* () = SM.set_state (to_opt st) in
+    SM.Result.ok out_keys
 
-  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
-      (key : Key.t) (st : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
+  let wrap (type a err) (key : Key.t)
+      (f : (a, err, Codom.serialized list) CSM.Result.t) :
+      (a, err, serialized list) SM.Result.t =
+    let* st = SM.get_state () in
     let st = of_opt st in
-    let* key, codom = Find_opt_sym.f key st in
-    let++ res, codom = f codom |> lift_fix_s ~key in
-    (res, to_opt (add_opt key codom st))
+    let* key, codom = lift @@ Find_opt_sym.f key st in
+    let* res, codom = lift @@ f codom in
+    let+ () = SM.set_state (to_opt (add_opt key codom st)) in
+    lift_fix_r ~key res
 
-  let produce
-      (prod : 'inner_serialized -> 'inner_st option -> 'inner_st option Symex.t)
-      (serialized : 'inner_cp serialized) (st : 'inner_st t option) :
-      'inner_st t option Symex.t =
+  let produce (serialized : serialized) : unit SM.t =
+    let* st = SM.get_state () in
     let st = of_opt st in
-    let+ st =
-      Symex.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
-          let* key, codom = Find_opt_sym.f key st in
-          let+ codom = prod inner_ser codom in
-          add_opt key codom st)
-    in
-    to_opt st
+    let key, inner_ser = serialized in
+    let* key, codom = lift @@ Find_opt_sym.f key st in
+    let* (), codom = lift @@ Codom.produce inner_ser codom in
+    let st = add_opt key codom st in
+    SM.set_state (to_opt st)
 
-  let consume
+  (* let consume
       (cons :
         'inner_serialized ->
         'inner_st option ->
@@ -256,12 +259,19 @@ struct
           let++ codom = cons inner_ser codom |> lift_fix_s ~key in
           add_opt key codom st)
     in
-    to_opt st
+    to_opt st *)
 
-  let fold
-      (f : 'acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t)
-      (init : 'acc) (st : 'a t option) :
-      ('acc, 'err, 'fix serialized) Symex.Result.t =
+  (*     val fold :
+      ('acc -> Key.t * codom -> ('acc, 'err, serialized) Symex.Result.t) ->
+      'acc ->
+      t option ->
+      ('acc, 'err, serialized) Symex.Result.t *)
+
+  let fold (type acc)
+      (f :
+        acc -> Key.t * Codom.t -> (acc, 'err, serialized list) Symex.Result.t)
+      (init : acc) st : (acc, 'err, serialized list) Symex.Result.t =
+    let open Symex in
     let st = of_opt st in
     Result.fold_seq (M.to_seq st) ~init ~f
 end
@@ -269,7 +279,8 @@ end
 module Build_base
     (Symex : Symex.Base)
     (Key : KeyS(Symex).S)
-    (M : MapS with type key = Key.t) =
+    (M : MapS with type key = Key.t)
+    (Codom : Base.M(Symex).S) =
 struct
   open Symex.Syntax
 
@@ -291,6 +302,7 @@ struct
       (struct
         let f = find_opt_sym
       end)
+      (Codom)
 end
 
 module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) =
@@ -306,7 +318,8 @@ module Make_patricia_tree
 module Build_direct_access
     (Symex : Symex.Base)
     (Key : KeyS(Symex).S)
-    (M : MapS with type key = Key.t) =
+    (M : MapS with type key = Key.t)
+    (Codom : Base.M(Symex).S) =
 struct
   open Symex.Syntax
 
@@ -332,23 +345,33 @@ struct
       (struct
         let f = find_opt_sym
       end)
+      (Codom)
 end
 
-module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) = struct
-  include Build_direct_access (Symex) (Key) (Stdlib.Map.Make (Key))
+module Direct_access
+    (Symex : Symex.Base)
+    (Key : KeyS(Symex).S)
+    (Codom : Base.M(Symex).S) =
+struct
+  include Build_direct_access (Symex) (Key) (Stdlib.Map.Make (Key)) (Codom)
 end
 
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_patricia_tree) =
+    (Key : KeyS(Symex).S_patricia_tree)
+    (Codom : Base.M(Symex).S) =
 struct
   module M' = PatriciaTree.MakeMap (Key)
-  include Build_direct_access (Symex) (Key) (M')
+  include Build_direct_access (Symex) (Key) (M') (Codom)
 end
 
 (** Only sound to use if the keys of the map are invariant under interpretations
     of the symbolic variables *)
-module Concrete (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) = struct
+module Concrete
+    (Symex : Symex.Base)
+    (Key : Soteria_std.Ordered_type.S)
+    (Codom : Base.M(Symex).S) =
+struct
   module Key = Mk_concrete_key (Symex) (Key)
   module M' = Stdlib.Map.Make (Key)
 
@@ -360,4 +383,5 @@ module Concrete (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) = struct
       (struct
         let f = find_opt_sym
       end)
+      (Codom)
 end
