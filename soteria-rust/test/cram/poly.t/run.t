@@ -1,3 +1,8 @@
+Ensure we fail when in polymorphic mode with Obol
+  $ soteria-rust rustc trivial.rs --frontend obol --poly
+  error: Fatal (Config): Obol does not support polymorphic analyses; use --frontend charon
+  [124]
+
 Simple polymorphic function with no polymorphic values
   $ soteria-rust rustc trivial.rs --frontend charon --poly
   Compiling... done in <time>

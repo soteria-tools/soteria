@@ -2,6 +2,10 @@
    We ignore the warning here. *)
 [@@@warning "-unused-open"]
 
+exception ConfigError of string
+
+let config_error msg = raise (ConfigError msg)
+
 type frontend = Charon | Obol
 [@@deriving subliner_enum, show { with_path = false }]
 
@@ -107,5 +111,6 @@ let set_and_lock_global (config : global) =
   Soteria.Terminal.Config.set_and_lock config.terminal;
   Soteria.Stats.Config.set_and_lock config.stats;
   if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
-    failwith "Obol does not support polymorphic analyses; use --frontend charon";
+    config_error
+      "Obol does not support polymorphic analyses; use --frontend charon";
   set_and_lock config.soteria_rust

@@ -191,6 +191,11 @@ let fatal ?name ?(code = 2) err =
   Diagnostic.print_diagnostic_simple ~severity:Error (msg ^ err);
   exit code
 
+let set_config config =
+  try Config.set_and_lock_global config
+  with Config.ConfigError err ->
+    fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
+
 let exec_and_output_crate compile_fn =
   match wrap_step "Compiling" compile_fn |> exec_crate with
   | outcomes ->
@@ -206,15 +211,15 @@ let exec_and_output_crate compile_fn =
   | exception ExecutionError e -> fatal e
 
 let exec_rustc config file_name =
-  Config.set_and_lock_global config;
+  set_config config;
   let compile () = Frontend.parse_ullbc_of_file file_name in
   exec_and_output_crate compile
 
 let exec_cargo config crate_dir =
-  Config.set_and_lock_global config;
+  set_config config;
   let compile () = Frontend.parse_ullbc_of_crate crate_dir in
   exec_and_output_crate compile
 
 let build_plugins config =
-  Config.set_and_lock_global config;
+  set_config config;
   wrap_step "Compiling plugins" Frontend.compile_all_plugins
