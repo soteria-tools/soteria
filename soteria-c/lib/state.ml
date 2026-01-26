@@ -21,13 +21,6 @@ module Heap =
     end)
     (Block)
 
-module HSM =
-  Soteria.Sym_states.State_monad.Make
-    (Csymex)
-    (struct
-      type t = Heap.t option
-    end)
-
 type t = { heap : Heap.t option; globs : Globs.t option }
 [@@deriving show { with_path = false }]
 
@@ -101,7 +94,7 @@ let log action ptr =
         st);
   ()
 
-let with_heap (f : ('a, 'err, Heap.serialized list) HSM.Result.t) :
+let with_heap (f : ('a, 'err, Heap.serialized list) Heap.SM.Result.t) :
     ('a, 'err, serialized list) SM.Result.t =
   let open SM.Syntax in
   let* st_opt = SM.get_state () in
@@ -219,12 +212,12 @@ let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size =
 let alloc ?(zeroed = false) size =
   let loc = Csymex.get_loc () in
   with_heap
-    (let open HSM.Syntax in
+    (let open Heap.SM.Syntax in
      let block = Block.alloc ~loc ~zeroed size in
      let** loc = Heap.alloc ~new_codom:block in
      let ptr = Typed.Ptr.mk loc Usize.(0s) in
      (* The pointer is necessarily not null *)
-     let+ () = HSM.assume Typed.[ not (Ptr.is_null_loc loc) ] in
+     let+ () = Heap.SM.assume Typed.[ not (Ptr.is_null_loc loc) ] in
      Soteria.Symex.Compo_res.ok ptr)
 
 let alloc_ty ty =

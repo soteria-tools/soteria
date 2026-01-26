@@ -6,13 +6,6 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
   type t = B.t option * B.serialized list
   type serialized = B.serialized
 
-  module BSM =
-    State_monad.Make
-      (Symex)
-      (struct
-        type nonrec t = B.t option
-      end)
-
   module SM =
     State_monad.Make
       (Symex)
@@ -37,7 +30,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
 
   let show = Fmt.to_to_string pp
 
-  let wrap ?(fuel = 1) (f : ('v, 'err, B.serialized list) BSM.Result.t) :
+  let wrap ?(fuel = 1) (f : ('v, 'err, B.serialized list) B.SM.Result.t) :
       ('v, 'err, serialized list) SM.Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
     let rec with_fuel fuel : ('v, 'err, serialized list) SM.Result.t =
@@ -60,7 +53,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
                    fun () ->
                     let* (), st'' =
                       let fn =
-                        BSM.fold_list fix ~init:() ~f:(fun () fix ->
+                        B.SM.fold_list fix ~init:() ~f:(fun () fix ->
                             B.produce fix)
                       in
                       SM.lift @@ fn st
@@ -71,7 +64,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
     in
     with_fuel fuel
 
-  let wrap_no_fail (f : 'a BSM.t) : 'a SM.t =
+  let wrap_no_fail (f : 'a B.SM.t) : 'a SM.t =
    fun (bi_st : t option) ->
     let open Symex.Syntax in
     let st, fixes = of_opt bi_st in

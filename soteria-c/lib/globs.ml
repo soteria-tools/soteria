@@ -25,13 +25,6 @@ include Concrete_map (Symbol_std) (Glob_fn)
 
 let pp ft t = pp ft t
 
-module SM =
-  Soteria.Sym_states.State_monad.Make
-    (Csymex)
-    (struct
-      type nonrec t = t option
-    end)
-
 (* The Concrete_map [pp] function has an option ?ignore parameter *)
 
 let get sym =

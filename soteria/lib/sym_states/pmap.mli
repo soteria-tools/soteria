@@ -35,8 +35,13 @@ module S
     type codom_serialized
     type serialized = Key.t * codom_serialized
 
-    type ('a, 'err) res :=
-      t option -> (('a, 'err, serialized list) Compo_res.t * t option) Symex.t
+    module SM :
+      State_monad.S
+        with type 'a Symex.t = 'a Symex.t
+         and type st = t option
+         and module Value = Symex.Value
+
+    type ('a, 'err) res := ('a, 'err, serialized list) SM.Result.t
 
     type ('a, 'err) codom_res :=
       codom option ->

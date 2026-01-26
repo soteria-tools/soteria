@@ -51,8 +51,13 @@ struct
     type codom_serialized
     type serialized = Key.t * codom_serialized
 
-    type ('a, 'err) res :=
-      t option -> (('a, 'err, serialized list) Compo_res.t * t option) Symex.t
+    module SM :
+      State_monad.S
+        with type 'a Symex.t = 'a Symex.t
+         and type st = t option
+         and module Value = Symex.Value
+
+    type ('a, 'err) res := ('a, 'err, serialized list) SM.Result.t
 
     type ('a, 'err) codom_res :=
       codom option ->
@@ -138,13 +143,6 @@ module Build_from_find_opt_sym
         type nonrec t = t option
       end)
 
-  module CSM =
-    State_monad.Tys
-      (Symex)
-      (struct
-        type t = Codom.t option
-      end)
-
   let empty = M.empty
   let syntactic_bindings (x : t) = M.to_seq x
   let syntactic_mem = M.mem
@@ -224,7 +222,7 @@ module Build_from_find_opt_sym
     SM.Result.ok out_keys
 
   let wrap (type a err) (key : Key.t)
-      (f : (a, err, Codom.serialized list) CSM.Result.t) :
+      (f : (a, err, Codom.serialized list) Codom.SM.Result.t) :
       (a, err, serialized list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in

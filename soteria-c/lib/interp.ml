@@ -10,13 +10,7 @@ module BV = Typed.BitVec
 module Agv = Aggregate_val
 
 module InterpM (State : State_intf.S) = struct
-  module StateM =
-    Soteria.Sym_states.State_monad.Make
-      (Csymex)
-      (struct
-        type t = State.t option
-      end)
-
+  module StateM = State.SM
   module SSM = Soteria.Sym_states.State_monad.Make (StateM) (Store)
   open SSM
 
