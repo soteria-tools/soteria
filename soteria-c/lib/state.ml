@@ -99,7 +99,7 @@ let with_heap (f : ('a, 'err, Heap.serialized list) Heap.SM.Result.t) :
   let open SM.Syntax in
   let* st_opt = SM.get_state () in
   let { heap; globs } = of_opt st_opt in
-  let* res, heap = SM.lift @@ f heap in
+  let*^ res, heap = f heap in
   let+ () = SM.set_state (to_opt { heap; globs }) in
   Compo_res.map_missing res (fun fix -> List.map (fun h -> Ser_heap h) fix)
 
@@ -160,7 +160,7 @@ let rec store (ptr : [< T.sptr ] Typed.t) ty v =
       let++ _ =
         SM.Result.fold_list elems ~init:ptr ~f:(fun ptr elem ->
             let** () = store ptr elem_ty elem in
-            let* elem_size = SM.lift @@ Layout.size_of_s elem_ty in
+            let*^ elem_size = Layout.size_of_s elem_ty in
             let ptr = Typed.Ptr.add_ofs ptr elem_size in
             SM.Result.ok ptr)
       in
@@ -221,7 +221,7 @@ let alloc ?(zeroed = false) size =
      Soteria.Symex.Compo_res.ok ptr)
 
 let alloc_ty ty =
-  let* size = SM.lift @@ Layout.size_of_s ty in
+  let*^ size = Layout.size_of_s ty in
   alloc size
 
 let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, serialized list) SM.Result.t
@@ -244,15 +244,15 @@ let produce (serialized : serialized) : unit SM.t =
   match serialized with
   | Ser_heap sh ->
       let* () = SM.assume [ Typed.not (Typed.Ptr.is_null_loc (fst sh)) ] in
-      let* (), heap = SM.lift @@ Heap.produce sh heap in
+      let*^ (), heap = Heap.produce sh heap in
       SM.set_state (to_opt { heap; globs })
   | Ser_globs sg ->
       let* () = SM.assume [ Typed.not (Typed.Ptr.is_null_loc (snd sg)) ] in
-      let* (), globs = SM.lift @@ Globs.produce sg globs in
+      let*^ (), globs = Globs.produce sg globs in
       SM.set_state (to_opt { heap; globs })
 
 let produce_basic_val loc offset ty v =
-  let* len = SM.lift @@ Layout.size_of_s ty in
+  let*^ len = Layout.size_of_s ty in
   let block : Block.serialized =
     { node = Alive (MemVal { offset; len; v = SInit (v, ty) }); info = None }
   in
@@ -280,7 +280,7 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) =
       let+ _ =
         SM.fold_list elems ~init:ptr ~f:(fun ptr elem ->
             let* () = produce_aggregate ptr elem_ty elem in
-            let+ elem_size = SM.lift @@ Layout.size_of_s elem_ty in
+            let+^ elem_size = Layout.size_of_s elem_ty in
             Typed.Ptr.add_ofs ptr elem_size)
       in
       ()
@@ -336,7 +336,7 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) =
 let get_global (sym : Cerb_frontend.Symbol.sym) =
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
-  let* loc, globs = SM.lift @@ Globs.get sym st.globs in
+  let*^ loc, globs = Globs.get sym st.globs in
   let ptr = Typed.Ptr.mk loc Usize.(0s) in
   let+ () = SM.set_state (to_opt { st with globs }) in
   ptr

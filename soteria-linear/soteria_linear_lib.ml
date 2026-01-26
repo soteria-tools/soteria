@@ -63,7 +63,7 @@ let generate_summaries file =
         let open SM.Syntax in
         let* args =
           SM.fold_list func_dec.args ~init:[] ~f:(fun acc _ ->
-              let+ v = SM.lift @@ Interp.S_val.fresh () in
+              let+^ v = Interp.S_val.fresh () in
               v :: acc)
         in
         let args = List.rev args in

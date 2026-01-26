@@ -145,7 +145,7 @@ module M (State : State_intf.S) = struct
     Result.ok Agv.void
 
   let nondet ty ~args:_ =
-    let* v = SM.lift @@ Layout.nondet_c_ty_aggregate_ ty in
+    let*^ v = Layout.nondet_c_ty_aggregate_ ty in
     Result.ok v
 
   let strcmp ~args =
