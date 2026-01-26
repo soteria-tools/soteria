@@ -36,9 +36,9 @@ module SM =
 
 let get sym =
   (* TODO: This is correct, but a tiny bit of a hack.
-  We need to enforce the invariant that all symbols are different.
-  It'd be nice to enforce this modularly, but right now we do it as a wrapper.
-  Unless one has hundreds of globals, the cost is negligeable, but still. *)
+           We need to enforce the invariant that all symbols are different.
+           It'd be nice to enforce this modularly, but right now we do it as a wrapper.
+           Unless one has hundreds of globals, the cost is negligeable, but still. *)
   let open SM.Syntax in
   let* st = SM.get_state () in
   let existed = Option.fold ~none:false ~some:(syntactic_mem sym) st in
