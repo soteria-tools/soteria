@@ -99,7 +99,7 @@ let not_impl_layout msg ty =
   Fmt.kstr not_impl "Can't compute layout: %s %a" msg pp_ty ty
 
 let layout_warning msg ty =
-  L.debug (fun m -> m "⚠️ Layout: %s (%a)" msg pp_ty ty)
+  L.debug (fun m -> m "⚠️ Layout: %s@.Type: %a" msg pp_ty ty)
 
 let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   let* ty = Poly.subst_ty ty in
@@ -145,7 +145,14 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TAdt adt -> (
       let adt = Crate.get_adt adt in
       match (adt.layout, adt.kind) with
-      | Some layout, _ -> translate_layout ty layout
+      (* FIXME: Charon has surprising behaviour when translating layouts in
+         polymorphic mode, meaning some types may have a layout while their
+         fields don't. To avoid this, we *never* consider layouts of generic
+         types, even if one is provided. This avoids inconsistent layouts. *)
+      | Some layout, _
+        when (not (Config.get ()).polymorphic)
+             || Charon_util.ty_is_monomorphic ty ->
+          translate_layout ty layout
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)
       | _, Enum variants -> compute_enum_layout ty variants
@@ -263,7 +270,6 @@ and compute_align ty align =
 
 and compute_arbitrary_layout ?fst_size ?fst_align
     ?(variant = Types.VariantId.zero) ty members =
-  layout_warning "Computed an arbitrary layout" ty;
   (* Note: here we manually calculate a layout, à la [repr(C)]. We should avoid doing this,
      and make it clearer when we do. *)
   (* Calculates the offsets, size and alignment for a tuple-like type with fields of
@@ -285,13 +291,17 @@ and compute_arbitrary_layout ?fst_size ?fst_align
   in
   let++ () = assert_or_error (Typed.not overflowed) (`InvalidLayout ty) in
   let size = size_to_fit ~size ~align in
-  mk ~size ~align ~fields:(Arbitrary (variant, Array.of_list offsets)) ()
+  let layout =
+    mk ~size ~align ~fields:(Arbitrary (variant, Array.of_list offsets)) ()
+  in
+  Fmt.kstr layout_warning "Computed an arbitrary layout:@.%a" pp layout ty;
+  layout
 
 and compute_enum_layout ty (variants : Types.variant list) =
-  layout_warning "Computed an enum layout" ty;
   match variants with
   (* no variants: uninhabited ZST *)
   | [] ->
+      layout_warning "Computed an enum layout (ZST)" ty;
       ok (mk_concrete ~size:0 ~align:1 ~uninhabited:true ~fields:Primitive ())
   (* N variants: we assume a tagged variant *)
   | _ :: _ ->
@@ -326,9 +336,13 @@ and compute_enum_layout ty (variants : Types.variant list) =
               uninhabited && l.uninhabited ))
       in
       let variants = List.rev variants in
-      mk ~size ~align ~uninhabited
-        ~fields:(Enum (tag_layout, Array.of_list variants))
-        ()
+      let layout =
+        mk ~size ~align ~uninhabited
+          ~fields:(Enum (tag_layout, Array.of_list variants))
+          ()
+      in
+      Fmt.kstr layout_warning "Computed an enum layout:@.%a" pp layout ty;
+      layout
 
 and compute_union_layout ty members =
   layout_warning "Computed a union layout" ty;

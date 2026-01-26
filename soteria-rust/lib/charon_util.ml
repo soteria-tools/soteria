@@ -187,6 +187,22 @@ let ty_as_adt (ty : Types.ty) : Types.type_decl_ref =
   | TAdt tref -> tref
   | _ -> invalid_arg "ty_as_adt: not an ADT type"
 
+(** Whether the given type is monomorphic, i.e. contains no type variables.
+    {b This is a conservative estimate}: [struct Foo<T> {}] is considered
+    polymorphic despite the generics being unused. *)
+let ty_is_monomorphic ty =
+  let exception FoundGeneric in
+  let ty_visitor =
+    object (_)
+      inherit [_] Types.iter_ty
+      method! visit_TVar _ _ = raise FoundGeneric
+    end
+  in
+  try
+    ty_visitor#visit_ty () ty;
+    true
+  with FoundGeneric -> false
+
 let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
   let clean_filename name =
     let parts = String.split_on_char '/' name in
