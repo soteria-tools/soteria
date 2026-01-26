@@ -22,13 +22,6 @@ struct
   type serialized = I.serialized freeable
   [@@deriving show { with_path = false }]
 
-  module ISM =
-    State_monad.Tys
-      (Symex)
-      (struct
-        type nonrec t = I.t option
-      end)
-
   module SM =
     State_monad.Make
       (Symex)
@@ -61,7 +54,7 @@ struct
     | Some Freed -> Result.error `UseAfterFree
 
   (* [f] must be a "symex state monad" *)
-  let wrap (f : ('a, 'err, I.serialized list) ISM.Result.t) :
+  let wrap (f : ('a, 'err, I.serialized list) I.SM.Result.t) :
       ('b, 'err, serialized list) SM.Result.t =
     let** inner_state = unwrap_alive () in
     let* res, inner_state' = SM.lift @@ f inner_state in

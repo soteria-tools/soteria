@@ -13,9 +13,15 @@ module type S = sig
   type t
   type nonrec serialized = serialized
 
-  type 'a res :=
-    t option ->
-    (('a, Error.with_trace, serialized list) Compo_res.t * t option) Csymex.t
+  module SM :
+    Soteria.Sym_states.State_monad.S
+      with type 'a Symex.t = 'a Csymex.t
+       and type st = t option
+       and module Symex.Value = Csymex.Value
+       and module Value = Csymex.Value
+       and module Stats = Csymex.Stats
+
+  type 'a res := ('a, Error.with_trace, serialized list) SM.Result.t
 
   val pp : Format.formatter -> t -> unit
   val show : t -> string

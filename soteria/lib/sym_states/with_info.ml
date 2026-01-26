@@ -17,13 +17,6 @@ struct
 
   type t = (B.t, Info.t) with_info [@@deriving show { with_path = false }]
 
-  module BSM =
-    State_monad.Tys
-      (Symex)
-      (struct
-        type nonrec t = B.t option
-      end)
-
   module SM =
     State_monad.Make
       (Symex)
@@ -51,7 +44,7 @@ struct
 
   let lift ~info = function None -> None | Some node -> Some { node; info }
 
-  let wrap (f : ('a, 'err, B.serialized list) BSM.Result.t) :
+  let wrap (f : ('a, 'err, B.serialized list) B.SM.Result.t) :
       ('a, 'err, serialized list) SM.Result.t =
     let* t = SM.get_state () in
     let node, info = lower t in

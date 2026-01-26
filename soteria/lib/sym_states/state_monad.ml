@@ -1,11 +1,13 @@
 open Soteria_std
 module Compo_res = Symex.Compo_res
 
-module type S = sig
-  include Symex.Base
-  module Symex : Symex.Base
+module type Base_sig = Symex.Base
 
+module type S = sig
   type st
+
+  module Symex : Base_sig
+  include Base_sig with type 'a t = st -> ('a * st) Symex.t
 
   val lift : 'a Symex.t -> 'a t
   val get_state : unit -> st t
@@ -15,7 +17,9 @@ module type S = sig
   val run_with_state : state:st -> 'a t -> ('a * st) Symex.t
 
   module Result : sig
-    include module type of Result
+    include
+      module type of Result
+        with type ('a, 'e, 'f) t = ('a, 'e, 'f) Compo_res.t t
 
     val run_with_state :
       state:st -> ('a, 'e, 'f) t -> ('a * st, 'e * st, 'f) Symex.Result.t
@@ -37,19 +41,6 @@ module type S = sig
   end
 end
 
-module Tys
-    (Sym : Symex.Base)
-    (State : sig
-      type t
-    end) =
-struct
-  type 'a t = State.t -> ('a * State.t) Sym.t
-
-  module Result = struct
-    type nonrec ('a, 'e, 'f) t = ('a, 'e, 'f) Compo_res.t t
-  end
-end
-
 module Make
     (Sym : Symex.Base)
     (State : sig
@@ -65,7 +56,6 @@ module Make
   module Symex = Sym
   module Value = Sym.Value
   module Stats = Sym.Stats
-  module Tys = Tys (Sym) (State)
 
   type 'a t = State.t -> ('a * State.t) Sym.t
   type lfail = Sym.lfail
