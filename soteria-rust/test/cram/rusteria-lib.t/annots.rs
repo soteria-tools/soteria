@@ -8,7 +8,7 @@ fn test3() {}
 #[rusteria::test]
 #[rusteria::branch_fuel(10)]
 fn test_branch_fuel() {
-    let n: u8 = rusteria::nondet();
+    let n: u8 = rusteria::nondet_bytes();
     rusteria::assume(n < 10);
     let mut i = 0;
     while i < n {

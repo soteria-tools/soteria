@@ -39,5 +39,5 @@ impl<T> Drop for List<T> {
 #[rusteria::test]
 fn test_linked_list<T>() {
     let mut list: List<T> = List::new();
-    list.push(rusteria::nondet::<T>());
+    list.push(rusteria::nondet_bytes::<T>());
 }

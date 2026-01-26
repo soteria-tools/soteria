@@ -26,7 +26,7 @@ pub const fn assume(cond: bool) {
 
 #[inline(never)]
 pub const fn nondet<T>() -> T {
-    rusteria::nondet::<T>()
+    rusteria::nondet_bytes::<T>()
 }
 
 #[inline(never)]

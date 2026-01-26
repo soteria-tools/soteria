@@ -1,7 +1,7 @@
 use std::cmp::PartialEq;
 macro_rules! test {
     ($from:ty, $to:ty) => {{
-        let x1: $from = rusteria::nondet();
+        let x1: $from = rusteria::nondet_bytes();
         let x2: $to = unsafe { core::mem::transmute(x1) };
         let x3: $from = unsafe { core::mem::transmute(x2) };
         assert_eq!(x1, x3);
@@ -18,7 +18,7 @@ macro_rules! test_two_way {
 #[rusteria::test]
 fn one_way_u32_f32() {
     // we custom write this, as this test does *not* work in the case of NaN values
-    let x1: u32 = rusteria::nondet();
+    let x1: u32 = rusteria::nondet_bytes();
     let x2: f32 = unsafe { core::mem::transmute(x1) };
     let x3: u32 = unsafe { core::mem::transmute(x2) };
     rusteria::assume(!x2.is_nan());
@@ -28,7 +28,7 @@ fn one_way_u32_f32() {
 #[rusteria::test]
 fn one_way_f32_u32() {
     // we custom write this, as this test does *not* work in the case of NaN values
-    let x1: f32 = rusteria::nondet();
+    let x1: f32 = rusteria::nondet_bytes();
     let x2: u32 = unsafe { core::mem::transmute(x1) };
     let x3: f32 = unsafe { core::mem::transmute(x2) };
     if x1.is_nan() {

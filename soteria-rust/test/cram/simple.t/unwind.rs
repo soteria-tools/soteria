@@ -1,5 +1,5 @@
 fn main() {
-    let cond: bool = rusteria::nondet();
+    let cond: bool = rusteria::nondet_bytes();
     let result = std::panic::catch_unwind(|| if cond { 11 } else { panic!("oh no!") });
 
     if cond {

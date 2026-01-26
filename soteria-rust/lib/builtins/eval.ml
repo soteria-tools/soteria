@@ -16,7 +16,7 @@ type optim_fn =
   | Panic
 
 (* Rusteria builtin functions *)
-type rusteria_fn = Assert | Assume | Nondet | Panic
+type rusteria_fn = Assert | Assume | NondetBytes | Panic
 
 (* Miri builtin functions *)
 type miri_fn = AllocId | PromiseAlignement | Nop
@@ -44,7 +44,7 @@ let std_fun_pair_list =
     (* Rusteria builtins *)
     ("rusteria::assert", Rusteria Assert);
     ("rusteria::assume", Rusteria Assume);
-    ("rusteria::nondet", Rusteria Nondet);
+    ("rusteria::nondet_bytes", Rusteria NondetBytes);
     ("rusteria::panic", Rusteria Panic);
     (* Kani builtins -- we re-define these for nicer call traces *)
     ("kani::assert", Rusteria Assert);
@@ -149,7 +149,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     function
     | Rusteria Assert -> Rusteria.assert_
     | Rusteria Assume -> Rusteria.assume
-    | Rusteria Nondet -> Rusteria.nondet fn_sig
+    | Rusteria NondetBytes -> Rusteria.nondet_bytes fn_sig
     | Rusteria Panic -> Rusteria.panic ?msg:None
     | Miri AllocId -> Miri.alloc_id
     | Miri PromiseAlignement -> Miri.promise_alignement
