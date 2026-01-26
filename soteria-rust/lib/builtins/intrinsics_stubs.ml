@@ -31,6 +31,56 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let assume ~b:_ = not_impl "Unsupported intrinsic: assume"
 
+  let atomic_and ~t:_ ~u:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_and"
+
+  let atomic_cxchg ~t:_ ~ord_succ:_ ~ord_fail:_ ~dst:_ ~old:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_cxchg"
+
+  let atomic_cxchgweak ~t:_ ~ord_succ:_ ~ord_fail:_ ~_dst:_ ~_old:_ ~_src:_ =
+    not_impl "Unsupported intrinsic: atomic_cxchgweak"
+
+  let atomic_fence ~ord:_ = not_impl "Unsupported intrinsic: atomic_fence"
+
+  let atomic_load ~t:_ ~ord:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_load"
+
+  let atomic_max ~t:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_max"
+
+  let atomic_min ~t:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_min"
+
+  let atomic_nand ~t:_ ~u:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_nand"
+
+  let atomic_or ~t:_ ~u:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_or"
+
+  let atomic_singlethreadfence ~ord:_ =
+    not_impl "Unsupported intrinsic: atomic_singlethreadfence"
+
+  let atomic_store ~t:_ ~ord:_ ~dst:_ ~val_:_ =
+    not_impl "Unsupported intrinsic: atomic_store"
+
+  let atomic_umax ~t:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_umax"
+
+  let atomic_umin ~t:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_umin"
+
+  let atomic_xadd ~t:_ ~u:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_xadd"
+
+  let atomic_xchg ~t:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_xchg"
+
+  let atomic_xor ~t:_ ~u:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_xor"
+
+  let atomic_xsub ~t:_ ~u:_ ~ord:_ ~dst:_ ~src:_ =
+    not_impl "Unsupported intrinsic: atomic_xsub"
+
   let autodiff ~t_f:_ ~g:_ ~t:_ ~r:_ ~f:_ ~df:_ ~args:_ =
     not_impl "Unsupported intrinsic: autodiff"
 
@@ -210,16 +260,16 @@ module M (Rust_state_m : Rust_state_m.S) :
   let powif32 ~a:_ ~x:_ = not_impl "Unsupported intrinsic: powif32"
   let powif64 ~a:_ ~x:_ = not_impl "Unsupported intrinsic: powif64"
 
-  let prefetch_read_data ~t:_ ~data:_ =
+  let prefetch_read_data ~t:_ ~locality:_ ~data:_ =
     not_impl "Unsupported intrinsic: prefetch_read_data"
 
-  let prefetch_read_instruction ~t:_ ~data:_ =
+  let prefetch_read_instruction ~t:_ ~locality:_ ~data:_ =
     not_impl "Unsupported intrinsic: prefetch_read_instruction"
 
-  let prefetch_write_data ~t:_ ~data:_ =
+  let prefetch_write_data ~t:_ ~locality:_ ~data:_ =
     not_impl "Unsupported intrinsic: prefetch_write_data"
 
-  let prefetch_write_instruction ~t:_ ~data:_ =
+  let prefetch_write_instruction ~t:_ ~locality:_ ~data:_ =
     not_impl "Unsupported intrinsic: prefetch_write_instruction"
 
   let ptr_guaranteed_cmp ~t:_ ~ptr:_ ~other:_ =
