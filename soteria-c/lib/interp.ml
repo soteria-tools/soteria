@@ -22,8 +22,8 @@ module InterpM (State : State_intf.S) = struct
 
   type 'a t = ('a, Error.with_trace, State.serialized list) SSM.Result.t
 
-  let map x f = SSM.Result.map x f
-  let bind x f = SSM.Result.bind x f
+  let map x f = Result.map x f
+  let bind x f = Result.bind x f
 
   module Syntax = struct
     let ( let* ) = bind
