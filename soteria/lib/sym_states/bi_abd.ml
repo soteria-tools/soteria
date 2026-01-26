@@ -36,7 +36,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
     let rec with_fuel fuel : ('v, 'err, serialized list) SM.Result.t =
       let* bi_st = SM.get_state () in
       let st, fixes = of_opt bi_st in
-      let* res, st' = SM.lift @@ f st in
+      let*^ res, st' = f st in
       match res with
       | Ok v ->
           let* () = SM.set_state (to_opt (st', fixes)) in
@@ -74,7 +74,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
   let produce inner_ser : unit SM.t =
     let* st = SM.get_state () in
     let st, fixes = of_opt st in
-    let* (), st = SM.lift @@ B.produce inner_ser st in
+    let*^ (), st = B.produce inner_ser st in
     SM.set_state (to_opt (st, fixes))
 
   (* let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)

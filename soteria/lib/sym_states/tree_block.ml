@@ -701,7 +701,7 @@ struct
       | None -> SM.return ()
       | Some bound -> SM.assume [ high <=@ bound ]
     in
-    let* root = SM.lift @@ Tree.produce v range t.root in
+    let*^ root = Tree.produce v range t.root in
     SM.set_state (to_opt { t with root })
 
   let consume_mem_val offset len v t =

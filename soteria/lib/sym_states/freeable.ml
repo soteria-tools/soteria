@@ -57,7 +57,7 @@ struct
   let wrap (f : ('a, 'err, I.serialized list) I.SM.Result.t) :
       ('b, 'err, serialized list) SM.Result.t =
     let** inner_state = unwrap_alive () in
-    let* res, inner_state' = SM.lift @@ f inner_state in
+    let*^ res, inner_state' = f inner_state in
     let* () = SM.set_state (Option.map (fun x -> Alive x) inner_state') in
     return (lift_fix_r res)
 
@@ -112,6 +112,6 @@ struct
           | Some (Alive s) -> SM.return (Some s)
           | Some Freed -> SM.vanish ()
         in
-        let* (), ist' = SM.lift @@ I.produce ser ist in
+        let*^ (), ist' = I.produce ser ist in
         SM.set_state (Option.map (fun s -> Alive s) ist')
 end

@@ -233,7 +233,7 @@ let decode ~ty ~ofs node =
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
     (T.cval Typed.t, 'err, serialized list) SM.Result.t =
   let open SM.Syntax in
-  let* ((_, bound) as range) = SM.lift @@ range_of_low_and_type ofs ty in
+  let*^ ((_, bound) as range) = range_of_low_and_type ofs ty in
   with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
       let open Csymex.Syntax in
       let replace_node node = Result.ok node in
@@ -247,7 +247,7 @@ let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
 let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
     (sval : [< T.cval ] Typed.t) : (unit, 'err, serialized list) SM.Result.t =
   let open SM.Syntax in
-  let* ((_, bound) as range) = SM.lift @@ range_of_low_and_type low ty in
+  let*^ ((_, bound) as range) = range_of_low_and_type low ty in
   let len = Range.size range in
   with_bound_check ~mk_fixes:(mk_fix_any_s low len) bound (fun t ->
       let open Csymex.Syntax in

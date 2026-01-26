@@ -48,7 +48,7 @@ struct
       ('a, 'err, serialized list) SM.Result.t =
     let* t = SM.get_state () in
     let node, info = lower t in
-    let* res, node' = SM.lift @@ f node in
+    let*^ res, node' = f node in
     let+ () = SM.set_state (lift ~info node') in
     Compo_res.map_missing res (List.map (fun fix -> { node = fix; info }))
 
@@ -56,7 +56,7 @@ struct
     let* t = SM.get_state () in
     let t_opt, t_orig = lower t in
     let info = Option.merge (fun a _ -> a) t_orig serialized.info in
-    let* (), node = SM.lift @@ B.produce serialized.node t_opt in
+    let*^ (), node = B.produce serialized.node t_opt in
     SM.set_state (lift ~info node)
 
   (* let consume consume_inner serialized t =
