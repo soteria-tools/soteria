@@ -52,6 +52,6 @@ build: [
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
 pin-depends: [
-  ["name_matcher_parser.~dev" "git+https://github.com/soteria-tools/charon#a1c7a2e6a8acee130139192e1e4e000c013de1d0"]
-  ["charon.~dev" "git+https://github.com/soteria-tools/charon#a1c7a2e6a8acee130139192e1e4e000c013de1d0"]
+  ["name_matcher_parser.~dev" "git+https://github.com/soteria-tools/charon#3928ea9e91a1c7babd84acd9bdf4b4b164614d0e"]
+  ["charon.~dev" "git+https://github.com/soteria-tools/charon#3928ea9e91a1c7babd84acd9bdf4b4b164614d0e"]
 ]

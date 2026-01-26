@@ -184,7 +184,7 @@ module Make (State : State_intf.S) = struct
                 | None -> not_impl "Could not resolve trait method")))
     | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
 
-  let rec resolve_constant (const : Expressions.constant_expr) =
+  let rec resolve_constant (const : Types.constant_expr) =
     let* const = Poly.subst_constant_expr const in
     match const.kind with
     | CLiteral (VScalar scalar) -> ok (Int (BV.of_scalar scalar))
@@ -240,7 +240,7 @@ module Make (State : State_intf.S) = struct
         let bytes = List.mapi (fun i b -> (i, b)) bytes in
         let last, blocks =
           List.fold_left
-            (fun (curr, blocks) (i, (byte : Expressions.byte)) ->
+            (fun (curr, blocks) (i, (byte : Types.byte)) ->
               match (curr, byte) with
               | None, Uninit -> (None, blocks)
               | None, Value b -> (None, `Byte (BV.u8i b, i) :: blocks)
@@ -248,7 +248,7 @@ module Make (State : State_intf.S) = struct
               | Some (p, from_, ofs), Provenance (p', idx) ->
                   (* if different provenance or non-contiguous, stop *)
                   if
-                    (not (Expressions.equal_provenance p p'))
+                    (not (Types.equal_provenance p p'))
                     || idx <> from_ + (i - ofs)
                   then
                     (Some (p', idx, i), `Ptr (p, from_, i - ofs, ofs) :: blocks)
@@ -270,7 +270,7 @@ module Make (State : State_intf.S) = struct
         in
         (* Map the smaller blocks to actual rust values, ie. pointers or integers *)
         let ptr_size = Crate.pointer_size () in
-        let ptr_of_provenance : Expressions.provenance -> full_ptr t = function
+        let ptr_of_provenance : Types.provenance -> full_ptr t = function
           | Global g -> resolve_global g
           | Function f -> State.declare_fn (Real f)
           | Unknown -> not_impl "Unknown provenance in RawMemory"
@@ -358,11 +358,13 @@ module Make (State : State_intf.S) = struct
         else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let len =
+        let* len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | Thin, TArray (_, len) -> BV.usize_of_const_generic len
-          | Len len, TSlice _ -> Typed.cast_i Usize len
+          | Thin, TArray (_, len) ->
+              let+ len = resolve_constant len in
+              as_base_i Usize len
+          | Len len, TSlice _ -> ok len
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
@@ -378,11 +380,13 @@ module Make (State : State_intf.S) = struct
         (ptr', Thin)
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let ty, len =
+        let* ty, len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | Thin, TArray (ty, len) -> (ty, BV.usize_of_const_generic len)
-          | Len len, TSlice ty -> (ty, Typed.cast len)
+          | Thin, TArray (ty, len) ->
+              let+ len = resolve_constant len in
+              (ty, as_base_i Usize len)
+          | Len len, TSlice ty -> ok (ty, Typed.cast len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* from = eval_operand from in
@@ -595,7 +599,8 @@ module Make (State : State_intf.S) = struct
             let update_meta prev =
               match meta with
               | MetaLength length ->
-                  ok @@ Len (BV.usize_of_const_generic length)
+                  let+ len = resolve_constant length in
+                  Len (as_base_i Usize len)
               | MetaVTable (_, glob) ->
                   (* the global adds one level of indirection *)
                   let* glob = of_opt_not_impl "Missing VTable global" glob in
@@ -869,7 +874,7 @@ module Make (State : State_intf.S) = struct
     (* Array repetition *)
     | Repeat (value, _, len) ->
         let+ value = eval_operand value in
-        let len = int_of_const_generic len in
+        let len = int_of_constant_expr len in
         (* FIXME: this is horrible for large arrays! *)
         let els = List.init len (fun _ -> value) in
         Tuple els
@@ -881,7 +886,7 @@ module Make (State : State_intf.S) = struct
     | Len (place, _, size_opt) -> (
         let* _, meta = resolve_place place in
         match (meta, size_opt) with
-        | _, Some size -> ok (Int (BV.usize_of_const_generic size))
+        | _, Some size -> resolve_constant size
         | Len len, None -> ok (Int len)
         | _ -> not_impl "Unexpected len rvalue")
 
