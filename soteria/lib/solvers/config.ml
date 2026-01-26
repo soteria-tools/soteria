@@ -7,12 +7,6 @@ type t = {
   z3_path : string;
       [@default "z3"] [@names [ "z3-path" ]] [@env "SOTERIA_Z3_PATH"]
       (** Path to the Z3 executable *)
-  hide_response_times : bool;
-      [@make.default false]
-      [@names [ "hide-response-times" ]]
-      [@env "SOTERIA_HIDE_RESPONSE_TIMES"]
-      (** Hide the response times in the solver response logs, useful for
-          reproducible output *)
 }
 [@@deriving make, subliner]
 

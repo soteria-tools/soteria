@@ -956,6 +956,7 @@ and BitVec : BitVec = struct
         let l = bv_to_z signed size l in
         let r = bv_to_z signed size r in
         mk_masked size Z.(l mod r)
+    | BitVec z, _ when Z.equal Z.zero z -> zero (size_of v1.node.ty)
     | _, BitVec r when Stdlib.not signed && Z.(equal r one) ->
         zero (size_of v1.node.ty)
     | _, BitVec r when Stdlib.not signed && is_pow2 r ->

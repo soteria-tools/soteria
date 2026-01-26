@@ -1,6 +1,6 @@
 open Charon
+open Charon_util
 include Soteria.Bv_values.Typed
-module Lc = Layout_common
 
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty
@@ -18,8 +18,8 @@ let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
     (CastError
        ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
 
-let t_ptr () = t_ptr (8 * Lc.size_of_uint_ty Usize)
-let t_usize () = t_int (8 * Lc.size_of_uint_ty Usize)
+let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
+let t_usize () = t_int (8 * size_of_uint_ty Usize)
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -30,7 +30,7 @@ let cast_checked2 v1 v2 =
   | None -> cast_error v1 (type_type @@ get_ty v2)
 
 let cast_lit ty (v : 'a t) : [> T.sint ] t =
-  let size = 8 * Lc.size_of_literal_ty ty in
+  let size = 8 * size_of_literal_ty ty in
   cast_checked ~ty:(t_int size) v
 
 let cast_i uty = cast_lit (TUInt uty)
@@ -51,10 +51,10 @@ let cast_int (v : 'a t) : [> T.sint ] t * int =
 module BitVec = struct
   include BitVec
 
-  let mk_lit ty = BitVec.mk_masked (Lc.size_of_literal_ty ty * 8)
-  let mk_lit_nz ty = BitVec.mk_nz (Lc.size_of_literal_ty ty * 8)
-  let mki_lit ty = BitVec.mki_masked (Lc.size_of_literal_ty ty * 8)
-  let mki_lit_nz ty = BitVec.mki_nz (Lc.size_of_literal_ty ty * 8)
+  let mk_lit ty = BitVec.mk_masked (size_of_literal_ty ty * 8)
+  let mk_lit_nz ty = BitVec.mk_nz (size_of_literal_ty ty * 8)
+  let mki_lit ty = BitVec.mki_masked (size_of_literal_ty ty * 8)
+  let mki_lit_nz ty = BitVec.mki_nz (size_of_literal_ty ty * 8)
   let u8 = mk_lit (TUInt U8)
   let u8i = mki_lit (TUInt U8)
   let u8nz = mk_lit_nz (TUInt U8)
@@ -82,7 +82,7 @@ module BitVec = struct
   let usize_of_const_generic cgen = usize (Charon_util.z_of_const_generic cgen)
 
   let of_bool : T.sbool t -> [> T.sint ] t =
-    of_bool (Lc.size_of_literal_ty TBool * 8)
+    of_bool (size_of_literal_ty TBool * 8)
 
   let of_scalar : Values.scalar_value -> [> T.sint ] t = function
     | UnsignedScalar (Usize, v) | SignedScalar (Isize, v) -> usize v
@@ -107,12 +107,14 @@ module BitVec = struct
           Types.pp_const_generic c
 
   let bv_to_z ty z =
-    let tag_size = 8 * Lc.size_of_literal_ty ty in
-    let signed = Lc.is_signed ty in
+    let tag_size = 8 * size_of_literal_ty ty in
+    let signed = is_signed ty in
     bv_to_z signed tag_size z
 
   let max ~signed l r = ite (gt ~signed l r) l r
 end
+
+module BV = BitVec
 
 module Float = struct
   include Float
@@ -123,9 +125,9 @@ end
 module Ptr = struct
   include Ptr
 
-  let null_loc () = null_loc (8 * Lc.size_of_uint_ty Usize)
-  let null () = null (8 * Lc.size_of_uint_ty Usize)
-  let loc_of_int i = loc_of_int (8 * Lc.size_of_uint_ty Usize) i
+  let null_loc () = null_loc (8 * size_of_uint_ty Usize)
+  let null () = null (8 * size_of_uint_ty Usize)
+  let loc_of_int i = loc_of_int (8 * size_of_uint_ty Usize) i
 end
 
 module Syntax = struct

@@ -2,7 +2,7 @@
 
 import json
 import subprocess
-from typing import Any, Generic, Literal, Sequence, TypedDict, TypeVar
+from typing import Any, Literal, Sequence, TypedDict
 
 from common import *
 
@@ -99,7 +99,6 @@ UniqueType = DedupedType | HashConsedType
 
 
 class Signature(TypedDict):
-    generics: GenericParams
     inputs: list[UniqueType]
     output: UniqueType
 
@@ -126,6 +125,7 @@ class Body(TypedDict):
 class FunDecl(TypedDict):
     item_meta: ItemMeta
     signature: Signature
+    generics: GenericParams
     body: Body
 
 
@@ -145,9 +145,11 @@ def type_of(unique_ty: UniqueType) -> InterpType:
         if type_id not in type_cache:
             raise ValueError(f"Unknown deduplicated type id: {type_id}")
         ty = type_cache[type_id]
+        print(f"Read {type_id} -> {ty}")
     elif "HashConsedValue" in unique_ty:
         type_id, inner_ty = unique_ty["HashConsedValue"]
         type_cache[type_id] = inner_ty
+        print("Cache <-", type_id, inner_ty)
         ty = inner_ty
 
     if ty == "Never":
@@ -165,17 +167,18 @@ def type_of(unique_ty: UniqueType) -> InterpType:
         if "Float" in ty["Literal"]:
             return "float", ty["Literal"]["Float"]
 
-    if "RawPtr" in ty or "Ref" in ty:
+    if "RawPtr" in ty or "Ref" in ty or "FnPtr" in ty:
         return "ptr", None
 
     if "Adt" in ty:
         if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
             return "unit", None
 
-    if "TypeVar" in ty:
+    ignored = ["TypeVar", "Adt", "TraitType"]
+    if any(kind in ty for kind in ignored):
         return "unknown", None
 
-    # raise RuntimeError(f"Unhandled type: {ty}")
+    raise RuntimeError(f"Unhandled type: {ty}")
     return "unknown", None
 
 
@@ -189,9 +192,19 @@ def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
     if not isinstance(x, dict):
         return
 
-    if "HashConsedValue" in x and prev_key != "tref" and prev_key != "trait_refs":
+    invalid_prev_keys = [
+        "tref",
+        "trait_ref",
+        "trait_refs",
+        "Trait",
+        "ParentClause",
+        "TraitType",
+        "TraitConst",
+    ]
+    if "HashConsedValue" in x and prev_key not in invalid_prev_keys:
         type_id, inner_ty = x["HashConsedValue"]
         type_cache[type_id] = inner_ty
+        print(f"Cache ({prev_key}) <-", type_id, inner_ty)
 
     for k, v in x.items():
         traverse_types(v, k)
@@ -322,6 +335,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         )
         doc = sanitize_comment(doc)
         arg_count = len(fun["signature"]["inputs"])
+        print(fun)
         args: list[tuple[str, InterpType]] = [
             (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
             for param in fun["body"]["Unstructured"]["locals"]["locals"][
@@ -335,7 +349,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
                 if (param_l := param["name"].lower()) not in arg_names
                 else "t_" + param_l
             )
-            for param in fun["signature"]["generics"]["types"]
+            for param in fun["generics"]["types"]
         ]
         ret = type_of(fun["signature"]["output"])
 
@@ -361,6 +375,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         type 'a ret := ('a, unit) Rust_state_m.t
         type fun_exec :=
             UllbcAst.fun_decl ->
+            Charon.Types.generic_args ->
             rust_val list -> (rust_val, unit) Rust_state_m.t
     """
 

@@ -17,6 +17,6 @@ pub const fn assert(_cond: bool, _msg: &'static str) {}
 pub const fn assume(_cond: bool) {}
 
 #[inline(never)]
-pub const fn nondet<T>() -> T {
+pub const fn nondet_bytes<T>() -> T {
     unreachable!()
 }

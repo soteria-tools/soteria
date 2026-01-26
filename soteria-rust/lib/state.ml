@@ -96,12 +96,7 @@ module FunBiMap = struct
         let compare = Typed.compare
         let pp = Typed.ppa
       end)
-      (struct
-        type t = Types.fun_decl_ref
-
-        let compare = Types.compare_fun_decl_ref
-        let pp = Types.pp_fun_decl_ref
-      end)
+      (Fun_kind)
 
   let get_fn = find_l
   let get_loc = find_r
@@ -124,6 +119,7 @@ type t = {
   thread_destructor :
     unit -> t -> (unit * t, Error.t err * t, serialized) Result.t;
       [@printer Fmt.any "code"]
+  const_generics : Sptr.t rust_val Types.ConstGenericVarId.Map.t;
 }
 [@@deriving show { with_path = false }]
 
@@ -140,7 +136,7 @@ let pp_pretty ~ignore_freed ft { state; _ } =
         (fun ft block ->
           match block with
           | { info = Some { kind = Function fn; _ }; _ } ->
-              Fmt.pf ft "function %a" Crate.pp_fun_decl_ref fn
+              Fmt.pf ft "function %a" Fun_kind.pp fn
           | { node; _ } ->
               (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
                 ft node)
@@ -154,6 +150,7 @@ let empty =
     errors = [];
     pointers = None;
     thread_destructor = (fun () st -> Result.ok ((), st));
+    const_generics = Types.ConstGenericVarId.Map.empty;
   }
 
 let log action ptr st =
@@ -165,7 +162,7 @@ let log action ptr st =
 
 let with_state st f =
   let+ res, pointers =
-    DecayMapMonad.with_state ~state:st.pointers @@ f st.state
+    DecayMapMonad.run_with_state ~state:st.pointers @@ f st.state
   in
   match res with
   | Ok (v, state) -> Ok (v, { st with state; pointers })
@@ -192,7 +189,7 @@ let with_tbs b f =
   | Error e -> Error e
 
 let with_decay_map f st =
-  let+ res, pointers = DecayMapMonad.with_state ~state:st.pointers f in
+  let+ res, pointers = DecayMapMonad.run_with_state ~state:st.pointers f in
   (res, { st with pointers })
 
 let with_ptr_raw (ptr : Sptr.t) (st : block SPmap.t option)
@@ -640,7 +637,7 @@ let leak_check st =
             let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty st in
             match res with
             | Ok (v, st) ->
-                let ptrs = Layout.ref_tys_in ~include_ptrs:true v glob.ty in
+                let ptrs = Encoder.ref_tys_in ~include_ptrs:true v glob.ty in
                 let ptrs =
                   List.map
                     (fun (((p : Sptr.t), _), _) -> Typed.Ptr.loc p.ptr)
@@ -701,10 +698,13 @@ let declare_fn fn_def ({ functions; _ } as st) =
       in
       Result.ok ((ptr, Thin), st)
   | None ->
-      let fn = Crate.get_fun fn_def.id in
+      let span =
+        match fn_def with
+        | Real fn -> Some (Crate.get_fun fn.id).item_meta.span.data
+        | Synthetic _ -> None
+      in
       let++ (ptr, meta), st =
-        alloc_untyped ~kind:(Function fn_def) ~span:fn.item_meta.span.data
-          ~zeroed:false
+        alloc_untyped ~kind:(Function fn_def) ?span ~zeroed:false
           ~size:Usize.(0s)
           ~align st
       in
@@ -723,6 +723,18 @@ let lookup_fn (({ ptr; _ } : Sptr.t), _) ({ functions; _ } as st) =
   match FunBiMap.get_fn loc functions with
   | Some fn -> Result.ok (fn, st)
   | None -> Result.error `NotAFnPointer
+
+let lookup_const_generic id ty ({ const_generics; _ } as st) =
+  match Types.ConstGenericVarId.Map.find_opt id const_generics with
+  | Some v -> Result.ok (v, st)
+  | None ->
+      let@ () = with_error_loc_as_call_trace st in
+      let@ () = with_loc_err () in
+      let++ v = Encoder.nondet ty in
+      let const_generics =
+        Types.ConstGenericVarId.Map.add id v const_generics
+      in
+      (v, { st with const_generics })
 
 let register_thread_exit callback ({ thread_destructor; _ } as st) =
   let thread_destructor () st =

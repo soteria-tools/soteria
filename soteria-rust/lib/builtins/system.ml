@@ -22,7 +22,6 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let+ () =
       State.register_thread_exit (fun () ->
           let* fn = State.lookup_fn dtor in
-          let fn = Crate.get_fun fn.id in
           let* _ = exec_fun fn [ arg ] in
           ok ())
     in

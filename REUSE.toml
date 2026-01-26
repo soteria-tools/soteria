@@ -78,6 +78,12 @@ precedence = "override"
 SPDX-FileCopyrightText = "The Rust Project Developers (see https://thanks.rust-lang.org)"
 SPDX-License-Identifier = "MIT OR Apache-2.0"
 
+[[annotations]]
+path = "soteria-rust/test/cram/poly.t/linked_list.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "Aria Desires"
+SPDX-License-Identifier = "MIT"
+
 # Assets (images, vectors) — licensed under Apache-2.0 with the rest of the repo.
 [[annotations]]
 path = ["assets/*.png"]
