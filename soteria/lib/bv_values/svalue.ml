@@ -1008,6 +1008,11 @@ and BitVec : BitVec = struct
         base <| t_bv n
     | BitVec _, Ite (b, l, r) -> Bool.ite b (and_ v1 l) (and_ v1 r)
     | Ite (b, l, r), BitVec _ -> Bool.ite b (and_ l v2) (and_ r v2)
+    | BitVec m1, Binop (BitAnd, x, { node = { kind = BitVec m2; _ }; _ })
+    | BitVec m1, Binop (BitAnd, { node = { kind = BitVec m2; _ }; _ }, x)
+    | Binop (BitAnd, x, { node = { kind = BitVec m2; _ }; _ }), BitVec m1
+    | Binop (BitAnd, { node = { kind = BitVec m2; _ }; _ }, x), BitVec m1 ->
+        and_ x (mk n (Z.logand m1 m2))
     (* if it's a right mask, it's usually beneficial to propagate it *)
     | (BitVec mask, Binop (BitAnd, l, r) | Binop (BitAnd, l, r), BitVec mask)
       when is_right_mask mask ->
