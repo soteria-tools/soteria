@@ -107,7 +107,7 @@ let search_urls = ['../../../db.js','../../../../sherlodoc.js'];
   <span><span>(<span><span>(<span class="type-var">'a</span> * <span class="type-var">'b</span>)</span> <span class="arrow">&#45;&gt;</span></span> <span><span>(<span class="type-var">'d</span>, <span class="type-var">'e</span>, <span class="type-var">'f</span>)</span> <a href="../../Sptr/DecayMapMonad/Result/index.html#type-t">DecayMapMonad.Result.t</a></span>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span class="type-var">'d</span>, <span class="type-var">'e</span>, <span class="type-var">'f</span>)</span> <a href="../../Sptr/DecayMapMonad/Result/index.html#type-t">DecayMapMonad.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-load"><a href="#val-load" class="anchor"></a><code><span><span class="keyword">val</span> load : 
   <span><span class="label">ignore_borrow</span>:bool <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Rust_val.T.sint</a> <a href="../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Layout.T.sint</a> <a href="../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="../../Tree_borrow/index.html#type-tag">Tree_borrow.tag</a> option</span> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../Tree_borrow/index.html#type-t">Tree_borrow.t</a> <span class="arrow">&#45;&gt;</span></span>
@@ -126,7 +126,9 @@ let search_urls = ['../../../db.js','../../../../sherlodoc.js'];
   <span><span><a href="../../Tree_borrow/index.html#type-tag">Tree_borrow.tag</a> option</span> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../../Tree_borrow/index.html#type-t">Tree_borrow.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="#type-t">t</a> option</span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(unit * <span><a href="#type-t">t</a> option</span>, <span>[&gt; `AliasingError <span>| `OutOfBounds</span> ]</span>, <span class="type-var">'fix</span>)</span>
+  <span><span>(unit * <span><a href="#type-t">t</a> option</span>,
+    <span>[&gt; `AliasingError <span><span>| `InvalidLayout</span> of <span class="xref-unresolved">Charon</span>.Types.ty</span> <span>| `OutOfBounds</span> ]</span>,
+    <span class="type-var">'fix</span>)</span>
     <a href="../../Sptr/DecayMapMonad/Result/index.html#type-t">DecayMapMonad.Result.t</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-get_init_leaves"><a href="#val-get_init_leaves" class="anchor"></a><code><span><span class="keyword">val</span> get_init_leaves : 
   <span><span><a href="../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> <a href="../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; <a href="../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-nonzero">Soteria_rust_lib.Typed.T.nonzero</a> ]</span> <a href="../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
