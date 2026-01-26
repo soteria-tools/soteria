@@ -87,14 +87,9 @@ module Make (Value : Value) :
       match channel () with
       | None -> ()
       | Some oc ->
-          output_string oc " ; -> ";
-          Sexplib.Sexp.output_hum oc response;
-          if elapsed > 0 && not (Config.get ()).hide_response_times then (
-            output_string oc " (";
-            output_string oc (string_of_int elapsed);
-            output_string oc "ms)");
-          output_char oc '\n';
-          flush oc
+          let fmt = Format.formatter_of_out_channel oc in
+          Fmt.pf fmt " ; -> %a (%a)\n@?" Sexplib.Sexp.pp_hum response
+            Terminal.Printers.pp_time elapsed
   end
 
   type t = Simple_smt.solver
@@ -110,7 +105,7 @@ module Make (Value : Value) :
       Dump.log_sexp sexp;
       let now = Unix.gettimeofday () in
       let res = solver.command sexp in
-      let elapsed = Int.of_float ((Unix.gettimeofday () -. now) *. 1000.) in
+      let elapsed = Unix.gettimeofday () -. now in
       Dump.log_response res elapsed;
       res
     in

@@ -2,6 +2,10 @@
    We ignore the warning here. *)
 [@@@warning "-unused-open"]
 
+exception ConfigError of string
+
+let config_error msg = raise (ConfigError msg)
+
 type frontend = Charon | Obol
 [@@deriving subliner_enum, show { with_path = false }]
 
@@ -29,6 +33,10 @@ type t = {
       (** The compilation target triple to use, e.g. x86_64-unknown-linux-gnu.
           If not provided, the default target for the current machine is used.
       *)
+  polymorphic : bool; [@make.default false] [@names [ "polymorphic"; "poly" ]]
+      (** Whether compilation (and thus analysis) should be done on polymorphic
+          code (experimental), rather than on monomorphic code (with generics
+          substituted). *)
   output_crate : bool; [@make.default false] [@names [ "output-crate" ]]
       (** Pretty-print the compiled crate to a file *)
   rustc_flags : string list;
@@ -102,4 +110,7 @@ let set_and_lock_global (config : global) =
   Soteria.Logs.Config.check_set_and_lock config.logs;
   Soteria.Terminal.Config.set_and_lock config.terminal;
   Soteria.Stats.Config.set_and_lock config.stats;
+  if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
+    config_error
+      "Obol does not support polymorphic analyses; use --frontend charon";
   set_and_lock config.soteria_rust

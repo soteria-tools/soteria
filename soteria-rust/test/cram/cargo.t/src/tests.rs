@@ -3,7 +3,7 @@ mod tests {
     use crate::MyOpt;
 
     fn any_my_opt() -> MyOpt<i32> {
-        if rusteria::nondet() {
+        if rusteria::nondet_bytes() {
             MyOpt::Some(42)
         } else {
             MyOpt::None

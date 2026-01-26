@@ -71,7 +71,12 @@ module Make (State : State_intf.S) = struct
         let binding = Store.find var_id store in
         match binding.kind with
         | Value v -> ok v
-        | Uninit -> error `UninitializedMemoryAccess
+        | Uninit ->
+            let* layout = Layout.layout_of ty in
+            if%sat layout.size ==@ Usize.(0s) then
+              let* ptr = get_variable_ptr var_id in
+              State.load ptr ty
+            else error `UninitializedMemoryAccess
         | Dead -> error `DeadVariable
         | Stackptr ptr -> State.load ptr ty)
     | Heap ptr -> State.load ptr ty
@@ -111,7 +116,7 @@ module Make (State : State_intf.S) = struct
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
         (* Passed (nested) references must be protected and be valid. *)
         let* value, protected' =
-          Layout.update_ref_tys_in value local.local_ty ~init:acc
+          Encoder.update_ref_tys_in value local.local_ty ~init:acc
             ~f:(fun acc ptr subty mut ->
               let+ ptr' = State.protect ptr subty mut in
               (ptr', (ptr', subty) :: acc))
@@ -138,15 +143,49 @@ module Make (State : State_intf.S) = struct
         | Stackptr ((ptr, _) as fptr), Some protect ->
             if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
 
-  let resolve_fn_ptr (fn : Types.fn_ptr) : Types.fun_decl_ref =
+  let resolve_fn_ptr (fn : Types.fn_ptr) : Fun_kind.t t =
+    let open Fun_kind in
     match fn.kind with
-    | FunId (FRegular id) -> { id; generics = fn.generics }
-    (* TODO: the generics here are probably wrong; we should also go via the trait,
-       and properly resolve it. *)
-    | TraitMethod (_, _, id) -> { id; generics = fn.generics }
+    | FunId (FRegular id) -> ok (Real { id; generics = fn.generics })
+    | TraitMethod (tref, name, _) -> (
+        let* tref = Poly.subst_tref tref in
+        let trait_ref = tref.trait_decl_ref.binder_value in
+        let* timplref =
+          match tref.kind with
+          | TraitImpl timpl -> ok (`Impl timpl)
+          | Clause (Free _) -> (
+              let trait_decl = Crate.get_trait_decl trait_ref in
+              match trait_decl.item_meta.lang_item with
+              | Some "destruct" -> ok (`Synth GenericDropInPlace)
+              | Some _ | None ->
+                  Fmt.kstr not_impl "trait call %a::%s on generic" Crate.pp_name
+                    trait_decl.item_meta.name name)
+          | _ ->
+              Fmt.kstr not_impl "Unexpected tref kind, got: %a"
+                Types.pp_trait_ref_kind tref.kind
+        in
+        match timplref with
+        | `Synth kind -> ok (Synthetic kind)
+        | `Impl timplref -> (
+            let timpl = Crate.get_trait_impl timplref in
+            match
+              Substitute.lookup_and_subst_trait_impl_method timpl name
+                timplref.generics fn.generics
+            with
+            | Some fn -> ok (Real fn)
+            | None -> (
+                (* get the default method *)
+                let trait_decl = Crate.get_trait_decl trait_ref in
+                match
+                  Substitute.lookup_and_subst_trait_decl_method trait_decl name
+                    tref fn.generics
+                with
+                | Some fn -> ok (Real fn)
+                | None -> not_impl "Could not resolve trait method")))
     | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
 
   let rec resolve_constant (const : Expressions.constant_expr) =
+    let* const = Poly.subst_constant_expr const in
     match const.kind with
     | CLiteral (VScalar scalar) -> ok (Int (BV.of_scalar scalar))
     | CLiteral (VBool b) -> ok (Int (BV.of_bool (Typed.bool b)))
@@ -178,9 +217,10 @@ module Make (State : State_intf.S) = struct
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
     | CTraitConst (tref, name) -> (
+        let* tref = Poly.subst_tref tref in
         match tref.kind with
-        | TraitImpl { id; _ } ->
-            let timpl = Crate.get_trait_impl id in
+        | TraitImpl implref ->
+            let timpl = Crate.get_trait_impl implref in
             let _, global = List.find (fun (n, _) -> n = name) timpl.consts in
             let* glob_ptr = resolve_global global in
             let glob = Crate.get_global global.id in
@@ -232,7 +272,7 @@ module Make (State : State_intf.S) = struct
         let ptr_size = Crate.pointer_size () in
         let ptr_of_provenance : Expressions.provenance -> full_ptr t = function
           | Global g -> resolve_global g
-          | Function f -> State.declare_fn f
+          | Function f -> State.declare_fn (Real f)
           | Unknown -> not_impl "Unknown provenance in RawMemory"
         in
         let+ blocks =
@@ -251,12 +291,13 @@ module Make (State : State_intf.S) = struct
                     (Int ptr_frag, BV.usizei ofs) :: acc)
         in
         Union blocks
+    | CVar (Free id) -> State.lookup_const_generic id const.ty
+    | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CAdt _ | CArray _ | CSlice _ | CGlobal _ | CRef _ | CPtr _ | CFnPtr _
     | CPtrNoProvenance _ ->
         Fmt.kstr not_impl "TODO: complex constant %a" Crate.pp_constant_expr
           const
-    | CVar _ -> not_impl "TODO: resolve const Var (mono error)"
 
   (** Resolves a place to a pointer *)
   and resolve_place (place : Expressions.place) : full_ptr t =
@@ -407,28 +448,38 @@ module Make (State : State_intf.S) = struct
       in
       check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
     in
-    let perform_call (fn : Types.fun_decl_ref) =
-      try
-        let fundef = Crate.get_fun fn.id in
-        L.info (fun g ->
-            g "Resolved function call to %a" Crate.pp_name fundef.item_meta.name);
-        match Std_funs.std_fun_eval fundef exec_fun with
-        | Some fn -> ok (fn, fundef.signature.inputs)
-        | None -> ok (exec_fun fundef, fundef.signature.inputs)
-      with Crate.MissingDecl _ -> not_impl "Missing function declaration"
+    let perform_call : Fun_kind.t -> ('a fun_exec * Types.ty list) t = function
+      | Synthetic _ as fn -> ok (exec_fun fn, in_tys)
+      | Real fn ->
+          let fundef = Crate.get_fun fn.id in
+          let+ inputs =
+            Poly.push_generics ~params:fundef.generics ~args:fn.generics
+            @@ Poly.subst_tys fundef.signature.inputs
+          in
+          L.info (fun g ->
+              g "Resolved function call to %a" Crate.pp_name
+                fundef.item_meta.name);
+          let fun_maybe_stubbed =
+            Std_funs.std_fun_eval fundef fn.generics exec_fun
+          in
+          (fun_maybe_stubbed, inputs)
     in
     function
     (* Handle builtins separately *)
     | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics, in_tys)
     (* For static calls we don't need to check types, that's what the type checker does. *)
-    | FnOpRegular fn_ptr -> perform_call @@ resolve_fn_ptr fn_ptr
+    | FnOpRegular fn_ptr ->
+        let* fn = resolve_fn_ptr fn_ptr in
+        perform_call fn
     (* Here we need to check the type of the actual function, as it could have been cast. *)
     | FnOpDynamic op ->
         let* fn_ptr = eval_operand op in
         let fn_ptr = as_ptr fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
-        let* () = validate_call fn in
+        let* () =
+          match fn with Real fn -> validate_call fn | Synthetic _ -> ok ()
+        in
         perform_call fn
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
@@ -443,11 +494,7 @@ module Make (State : State_intf.S) = struct
         L.info (fun g ->
             g "Resolved global init call to %a" Crate.pp_name
               fundef.item_meta.name);
-        let global_fn =
-          match Std_funs.std_fun_eval fundef exec_fun with
-          | Some fn -> fn
-          | None -> exec_fun fundef
-        in
+        let global_fn = Std_funs.std_fun_eval fundef glob.generics exec_fun in
         (* First we allocate the global and store it in the State  *)
         let* ptr =
           State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
@@ -603,7 +650,7 @@ module Make (State : State_intf.S) = struct
         | Cast (CastFnPtr (_from, _to)) -> (
             match (type_of_operand e, v) with
             | TFnDef fn_ptr, _ ->
-                let fn = resolve_fn_ptr fn_ptr.binder_value in
+                let* fn = resolve_fn_ptr fn_ptr.binder_value in
                 let+ ptr = State.declare_fn fn in
                 Ptr ptr
             | _, (Ptr _ as ptr) -> ok ptr
@@ -739,8 +786,8 @@ module Make (State : State_intf.S) = struct
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with
-        | TAdt { id = TAdtId enum; _ } when Crate.is_enum enum ->
-            let variants = Crate.as_enum enum in
+        | TAdt adt when Crate.is_enum adt ->
+            let variants = Crate.as_enum adt in
             let+ variant_id = State.load_discriminant loc place.ty in
             let variant = Types.VariantId.nth variants variant_id in
             Int (BV.of_literal variant.discriminant)
@@ -748,9 +795,8 @@ module Make (State : State_intf.S) = struct
            https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
         | _ -> ok (Int U8.(0s)))
     (* Enum aggregate *)
-    | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, Some v_id, None), vals)
-      ->
-        let variants = Crate.as_enum t_id in
+    | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
+        let variants = Crate.as_enum adt in
         let variant = Types.VariantId.nth variants v_id in
         let discr = BV.of_literal variant.discriminant in
         let+ vals = eval_operand_list vals in
@@ -770,20 +816,15 @@ module Make (State : State_intf.S) = struct
         let+ op_blocks = Encoder.encode ~offset value (type_of_operand op) in
         let op_blocks = Iter.to_list op_blocks in
         Union op_blocks
-    (* Tuple aggregate *)
-    | Aggregate (AggregatedAdt ({ id = TTuple; _ }, None, None), operands) ->
-        let+ values = eval_operand_list operands in
-        Tuple values
     (* Struct aggregate *)
-    | Aggregate (AggregatedAdt ({ id = TAdtId t_id; _ }, None, None), operands)
-      ->
-        let type_decl = Crate.get_adt t_id in
+    | Aggregate (AggregatedAdt (adt, None, None), operands) ->
         let* values = eval_operand_list operands in
         let+ () =
-          match values with
-          | [ v ] ->
+          match (adt.id, values) with
+          | TAdtId _, [ v ] ->
+              let type_decl = Crate.get_adt adt in
               let attribs = type_decl.item_meta.attr_info.attributes in
-              State.lift_err @@ Layout.apply_attributes v attribs
+              Encoder.apply_attributes v attribs
           | _ -> ok ()
         in
         Tuple values
@@ -911,6 +952,8 @@ module Make (State : State_intf.S) = struct
     let^ () = Rustsymex.consume_fuel_steps 1 in
     let* () = fold_list statements ~init:() ~f:(fun () -> exec_stmt) in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
+    L.trace (fun m ->
+        m "Terminator full:@.%a" UllbcAst.pp_terminator_kind terminator.kind);
     let@ () = with_loc ~loc:terminator.span.data in
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
@@ -941,11 +984,11 @@ module Make (State : State_intf.S) = struct
         in
         State.unwind_with fun_exec
           ~f:(fun v ->
-            let* ptr = resolve_place dest in
+            let* ptr = resolve_place_lazy dest in
             L.info (fun m ->
                 m "Returned %a <- %a from %a" Crate.pp_place dest pp_rust_val v
                   Crate.pp_fn_operand func);
-            let* () = State.store ptr dest.ty v in
+            let* () = store_lazy ptr dest.ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
@@ -959,7 +1002,7 @@ module Make (State : State_intf.S) = struct
     | Return ->
         let* ptr, ty = get_variable_lazy_and_ty Expressions.LocalId.zero in
         let* value = load_lazy ptr ty in
-        let ptr_tys = Layout.ref_tys_in value ty in
+        let ptr_tys = Encoder.ref_tys_in value ty in
         let+ () =
           fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
               State.tb_load ptr ty)
@@ -1019,12 +1062,23 @@ module Make (State : State_intf.S) = struct
     | Drop (drop_kind, place, trait_ref, target, on_unwind) -> (
         assert (drop_kind = Precise);
         let* place_ptr = resolve_place place in
-        match trait_ref.kind with
-        | TraitImpl impl_ref ->
-            let impl = Crate.get_trait_impl impl_ref.id in
-            (* The Drop trait will only have the drop function *)
-            let _, drop_ref = List.hd impl.methods in
-            let drop = Crate.get_fun drop_ref.binder_value.id in
+        (* Try to find a drop function that exists; it may be opaque if the
+           drop contains polymorphic types. *)
+        let drop_fn : Fun_kind.t option =
+          match trait_ref.kind with
+          | TraitImpl impl_ref ->
+              let impl = Crate.get_trait_impl impl_ref in
+              (* The Drop trait will only have the drop function *)
+              let _, drop_ref = List.hd impl.methods in
+              let drop = Crate.get_fun drop_ref.binder_value.id in
+              if Option.is_some drop.body then
+                (* TODO: i don't think we should read [binder_value] here *)
+                Some (Real drop_ref.binder_value)
+              else None
+          | _ -> None
+        in
+        match drop_fn with
+        | Some drop ->
             let fun_exec =
               with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
               @@ with_env ~env:()
@@ -1033,16 +1087,14 @@ module Make (State : State_intf.S) = struct
             State.unwind_with fun_exec
               ~f:(fun _ ->
                 let block = UllbcAst.BlockId.nth body.body target in
-                L.info (fun m ->
-                    m "Dropped with %a" Crate.pp_name drop.item_meta.name);
+                L.info (fun m -> m "Dropped with %a" Fun_kind.pp drop);
                 exec_block ~body block)
               ~fe:(fun err ->
                 let* () = State.add_error err in
-                L.info (fun m ->
-                    m "Unwinding drop from %a" Crate.pp_name drop.item_meta.name);
+                L.info (fun m -> m "Unwinding drop from %a" Fun_kind.pp drop);
                 let block = UllbcAst.BlockId.nth body.body on_unwind in
                 exec_block ~body block)
-        | _ ->
+        | None ->
             let* () = State.uninit place_ptr place.ty in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
@@ -1055,13 +1107,15 @@ module Make (State : State_intf.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
 
-  and exec_fun (fundef : UllbcAst.fun_decl) args =
+  and exec_real_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args)
+      args =
     let name = fundef.item_meta.name in
     let* body =
       match fundef.body with
       | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> ok body
     in
+    let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in
     L.info (fun m ->
@@ -1084,13 +1138,21 @@ module Make (State : State_intf.S) = struct
         let* () = dealloc_stack protected in
         error_raw err)
 
+  and exec_fun (fn : Fun_kind.t) =
+    match fn with
+    | Synthetic GenericDropInPlace -> fun _ -> ok (Tuple [])
+    | Real fundef ->
+        let fn = Crate.get_fun fundef.id in
+        exec_real_fun fn fundef.generics
+
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = Rust_state_m.run ~env:() ~state in
     let@@ () =
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
-    let* value = exec_fun fundef args in
+    let generics = TypesUtils.generic_args_of_params () fundef.generics in
+    let* value = exec_real_fun fundef generics args in
     let* () = State.run_thread_exits () in
     if (Config.get ()).ignore_leaks then ok value
     else

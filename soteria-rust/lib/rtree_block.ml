@@ -257,7 +257,7 @@ module Make (Sptr : Sptr.S) = struct
     let**^ size = Layout.size_of ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes () =
-      let+^ v = Layout.nondet ty in
+      let+^ v = Encoder.nondet ty in
       (* we're basically guaranteed this won't error (ie. layout error) by now,
          so we can safely unwrap. *)
       let v = get_ok v in
@@ -283,7 +283,7 @@ module Make (Sptr : Sptr.S) = struct
   let store (ofs : [< T.sint ] Typed.t) (value : rust_val)
       (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) (t : t option) :
       (unit * t option, 'err, 'fix) Result.t =
-    let size = Typed.BitVec.usizei @@ Rust_val.size_of value in
+    let** size = lift @@ Rust_val.size_of value in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let@ t = with_bound_and_owned_check t bound in
     let replace_node t =

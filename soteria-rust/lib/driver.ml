@@ -110,16 +110,17 @@ let exec_crate
   (* prepare executing the entry points *)
   let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
 
-  let@ entry : 'fuel Frontend.entry_point = (Fun.flip List.map) entry_points in
-  (* execute! *)
-  let entry_name =
-    Fmt.to_to_string Crate.pp_name entry.fun_decl.item_meta.name
+  let@ { fuel; fun_decl; expect_error } : 'fuel Frontend.entry_point =
+    (Fun.flip List.map) entry_points
   in
+  (* execute! *)
+  let entry_name = Fmt.to_to_string Crate.pp_name fun_decl.item_meta.name in
   let@ () = print_outcomes entry_name in
   let { res = branches; stats } : ('res, 'range) Soteria.Stats.with_stats =
-    let@ () = L.entry_point_section entry.fun_decl.item_meta.name in
-    Rustsymex.run_with_stats ~mode:OX ~fuel:entry.fuel
-    @@ exec_fun entry.fun_decl
+    let@ () = L.entry_point_section fun_decl.item_meta.name in
+    let@ () = Layout.Session.with_layout_cache in
+    let@@ () = Rustsymex.run_with_stats ~mode:OX ~fuel in
+    exec_fun fun_decl
   in
 
   Rustsymex.Stats.output stats;
@@ -127,12 +128,10 @@ let exec_crate
   (* inverse ok and errors if we expect a failure *)
   let nbranches = List.length branches in
   let branches =
-    if not entry.expect_error then branches
+    if not expect_error then branches
     else
       let open Compo_res in
-      let trace =
-        Call_trace.singleton ~loc:entry.fun_decl.item_meta.span.data ()
-      in
+      let trace = Call_trace.singleton ~loc:fun_decl.item_meta.span.data () in
       let oks, errors =
         branches
         |> List.partition_map @@ function
@@ -192,6 +191,11 @@ let fatal ?name ?(code = 2) err =
   Diagnostic.print_diagnostic_simple ~severity:Error (msg ^ err);
   exit code
 
+let set_config config =
+  try Config.set_and_lock_global config
+  with Config.ConfigError err ->
+    fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
+
 let exec_and_output_crate compile_fn =
   match wrap_step "Compiling" compile_fn |> exec_crate with
   | outcomes ->
@@ -207,15 +211,15 @@ let exec_and_output_crate compile_fn =
   | exception ExecutionError e -> fatal e
 
 let exec_rustc config file_name =
-  Config.set_and_lock_global config;
+  set_config config;
   let compile () = Frontend.parse_ullbc_of_file file_name in
   exec_and_output_crate compile
 
 let exec_cargo config crate_dir =
-  Config.set_and_lock_global config;
+  set_config config;
   let compile () = Frontend.parse_ullbc_of_crate crate_dir in
   exec_and_output_crate compile
 
 let build_plugins config =
-  Config.set_and_lock_global config;
+  set_config config;
   wrap_step "Compiling plugins" Frontend.compile_all_plugins

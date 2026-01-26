@@ -8,12 +8,15 @@ module type S = sig
   type st
 
   val lift : 'a Symex.t -> 'a t
-  val with_state : state:st -> 'a t -> ('a * st) Symex.t
+  val get_state : unit -> st t
+  val map_state : (st -> st) -> unit t
+  val with_state : state:st -> 'a t -> 'a t
+  val run_with_state : state:st -> 'a t -> ('a * st) Symex.t
 
   module Result : sig
     include module type of Result
 
-    val with_state :
+    val run_with_state :
       state:st -> ('a, 'e, 'f) t -> ('a * st, 'e, 'f) Symex.Result.t
   end
 
@@ -67,7 +70,15 @@ module Make
     let+ x in
     (x, st)
 
-  let with_state ~state x = x state
+  let get_state () st = Sym.return (st, st)
+  let map_state f st = Sym.return ((), f st)
+
+  let with_state ~state x =
+   fun st ->
+    let+ res, _ = x state in
+    (res, st)
+
+  let run_with_state ~state x = x state
   let assume b = lift (Sym.assume b)
   let vanish () = lift (Sym.vanish ())
   let assert_ b = lift (Sym.assert_ b)
@@ -115,7 +126,7 @@ module Make
       let map = map
     end)
 
-    let with_state ~state x =
+    let run_with_state ~state x =
       Symex.map (x state) @@ function
       | Compo_res.Ok res, state -> Compo_res.Ok (res, state)
       | Error e, _ -> Error e

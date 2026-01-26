@@ -1,8 +1,38 @@
 open Charon
 
+let size_of_int_ty : Values.int_ty -> int = function
+  | I128 -> 16
+  | I64 -> 8
+  | I32 -> 4
+  | I16 -> 2
+  | I8 -> 1
+  | Isize -> Crate.pointer_size ()
+
+let size_of_uint_ty : Values.u_int_ty -> int = function
+  | U128 -> 16
+  | U64 -> 8
+  | U32 -> 4
+  | U16 -> 2
+  | U8 -> 1
+  | Usize -> Crate.pointer_size ()
+
+let size_of_literal_ty : Types.literal_type -> int = function
+  | TInt int_ty -> size_of_int_ty int_ty
+  | TUInt uint_ty -> size_of_uint_ty uint_ty
+  | TBool -> 1
+  | TChar -> 4
+  | TFloat F16 -> 2
+  | TFloat F32 -> 4
+  | TFloat F64 -> 8
+  | TFloat F128 -> 16
+
+let[@inline] is_signed : Types.literal_type -> bool = function
+  | TInt _ -> true
+  | _ -> false
+
 let z_of_scalar : Values.scalar_value -> Z.t = function
   | SignedScalar (ty, v) when Z.lt v Z.zero ->
-      let bits = Layout_common.size_of_int_ty ty * 8 in
+      let bits = size_of_int_ty ty * 8 in
       Z.(v land pred (one lsl bits))
   | UnsignedScalar (_, v) | SignedScalar (_, v) -> v
 
@@ -25,13 +55,18 @@ let ty_as_float : Types.ty -> Values.float_type = function
 let pp_literal_ty = Fmt.of_to_string PrintValues.literal_type_to_string
 
 let rec pp_ty fmt : Types.ty -> unit = function
-  | TAdt { id = TAdtId id; _ } ->
-      let adt = Crate.get_adt id in
+  | TAdt { id = TAdtId id; generics } ->
+      let adt = Crate.get_adt_raw id in
       let name, generics =
         match List.rev adt.item_meta.name with
         | PeInstantiated generics :: rest ->
             (List.rev rest, generics.binder_value)
-        | _ -> (adt.item_meta.name, TypesUtils.empty_generic_args)
+        | _ ->
+            let args =
+              if (Config.get ()).polymorphic then generics
+              else TypesUtils.empty_generic_args
+            in
+            (adt.item_meta.name, args)
       in
       Fmt.pf fmt "%a%a" Crate.pp_name name Crate.pp_generic_args generics
   | TAdt { id = TTuple; generics = { types = tys; _ } } ->
@@ -56,13 +91,14 @@ let rec pp_ty fmt : Types.ty -> unit = function
         Fmt.(list ~sep:(any ", ") pp_ty)
         inputs pp_ty output
   | TDynTrait _ -> Fmt.string fmt "dyn <trait>"
-  | TTraitType (_, name) -> Fmt.pf fmt "Trait<?>::%s" name
+  | TTraitType (tref, name) ->
+      Fmt.pf fmt "Trait<%a>::%s" Crate.pp_trait_ref tref name
   | TFnDef { binder_value = { kind = FunId (FRegular fid); _ }; _ } ->
       let f = Crate.get_fun fid in
       Fmt.pf fmt "fn %a" Crate.pp_name f.item_meta.name
   | TPtrMetadata ty -> Fmt.pf fmt "meta(%a)" pp_ty ty
   | TFnDef _ -> Fmt.string fmt "fn ?"
-  | TVar _ -> Fmt.string fmt "T?"
+  | TVar var -> Fmt.string fmt (PrintTypes.type_db_var_to_pretty_string var)
   | TError err -> Fmt.pf fmt "Error(%s)" err
 
 let lit_of_int_ty : Types.integer_type -> Types.literal_type = function
@@ -145,6 +181,27 @@ let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
   | F32 -> F32
   | F64 -> F64
   | F128 -> F128
+
+let ty_as_adt (ty : Types.ty) : Types.type_decl_ref =
+  match ty with
+  | TAdt tref -> tref
+  | _ -> invalid_arg "ty_as_adt: not an ADT type"
+
+(** Whether the given type is monomorphic, i.e. contains no type variables.
+    {b This is a conservative estimate}: [struct Foo<T> {}] is considered
+    polymorphic despite the generics being unused. *)
+let ty_is_monomorphic ty =
+  let exception FoundGeneric in
+  let ty_visitor =
+    object (_)
+      inherit [_] Types.iter_ty
+      method! visit_TVar _ _ = raise FoundGeneric
+    end
+  in
+  try
+    ty_visitor#visit_ty () ty;
+    true
+  with FoundGeneric -> false
 
 let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
   let clean_filename name =
