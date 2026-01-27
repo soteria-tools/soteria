@@ -29,7 +29,7 @@ let[@inline] mk_pp_indent to_string =
   let to_str = to_string (as_fmt_env ()) "" in
   Fmt.pf ft "%s" (to_str v)
 
-let pp_constant_expr = mk_pp PrintExpressions.constant_expr_to_string
+let pp_constant_expr = mk_pp PrintTypes.constant_expr_to_string
 let pp_fn_operand = mk_pp PrintUllbcAst.Ast.fn_operand_to_string
 let pp_fun_decl_ref = mk_pp PrintTypes.fun_decl_ref_to_string
 let pp_generic_args = mk_pp PrintTypes.generic_args_to_string

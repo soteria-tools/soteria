@@ -79,7 +79,6 @@ module BitVec = struct
   let usizei z = mki_lit (TUInt Usize) z
   let usizenz z = mk_lit_nz (TUInt Usize) z
   let usizeinz z = mki_lit_nz (TUInt Usize) z
-  let usize_of_const_generic cgen = usize (Charon_util.z_of_const_generic cgen)
 
   let of_bool : T.sbool t -> [> T.sint ] t =
     of_bool (size_of_literal_ty TBool * 8)
@@ -100,11 +99,11 @@ module BitVec = struct
         Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
           (PrintValues.literal_to_string l)
 
-  let of_const_generic : Types.const_generic -> [> T.sint ] t = function
-    | CgValue lit -> of_literal lit
+  let of_constant_expr : Types.constant_expr -> [> T.sint ] t = function
+    | { kind = CLiteral lit; _ } -> of_literal lit
     | c ->
-        Fmt.failwith "Cannot convert non-value const generic %a to bitvector"
-          Types.pp_const_generic c
+        Fmt.failwith "Cannot convert non-value const expr %a to bitvector"
+          Types.pp_constant_expr c
 
   let bv_to_z ty z =
     let tag_size = 8 * size_of_literal_ty ty in

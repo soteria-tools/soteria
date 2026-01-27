@@ -74,7 +74,7 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
       Fmt.pf fmt "Box<%a>" pp_ty ty
   | TAdt { id = TBuiltin TBox; _ } -> Fmt.string fmt "Box<?>"
-  | TArray (ty, CgValue (VScalar len)) ->
+  | TArray (ty, { kind = CLiteral (VScalar len); _ }) ->
       Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print (z_of_scalar len)
   | TArray (ty, _) -> Fmt.pf fmt "[%a; ?]" pp_ty ty
   | TSlice ty -> Fmt.pf fmt "[%a]" pp_ty ty
@@ -116,14 +116,14 @@ let lit_ty_of_lit : Values.literal -> Types.literal_type = function
   | VFloat { float_ty; _ } -> TFloat float_ty
   | VStr _ | VByteStr _ -> failwith "lit_ty_of_lit: not a literal type"
 
-let z_of_const_generic : Types.const_generic -> Z.t = function
-  | CgValue (VScalar s) -> z_of_scalar s
+let z_of_constant_expr : Types.constant_expr -> Z.t = function
+  | { kind = CLiteral (VScalar s); _ } -> z_of_scalar s
   | cg ->
       Fmt.failwith "int_of_const_generic: unhandled const: %a"
-        Types.pp_const_generic cg
+        Types.pp_constant_expr cg
 
-let int_of_const_generic (c : Types.const_generic) : int =
-  Z.to_int (z_of_const_generic c)
+let int_of_constant_expr (c : Types.constant_expr) : int =
+  Z.to_int (z_of_constant_expr c)
 
 let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
 
@@ -148,7 +148,12 @@ let fields_of_tys : Types.ty list -> Types.field list =
       })
 
 let mk_array_ty ty len : Types.ty =
-  TArray (ty, CgValue (VScalar (UnsignedScalar (Usize, len))))
+  TArray
+    ( ty,
+      {
+        ty = TypesUtils.mk_usize_ty;
+        kind = CLiteral (VScalar (UnsignedScalar (Usize, len)));
+      } )
 
 (** The type [*const ()] *)
 let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)

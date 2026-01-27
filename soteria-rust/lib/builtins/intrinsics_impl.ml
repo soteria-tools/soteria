@@ -62,6 +62,9 @@ module M (Rust_state_m : Rust_state_m.S) :
   let assume ~b =
     State.assert_ b (`StdErr "core::intrinsics::assume with false")
 
+  (* TODO: atomics are, for now, single-threaded *)
+  let atomic_load ~t ~ord:_ ~src = State.load src t
+  let atomic_store ~t ~ord:_ ~dst ~val_ = State.store dst t val_
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint : unit ret = error `Breakpoint
 

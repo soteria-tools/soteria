@@ -59,7 +59,7 @@ module type S = sig
     val subst_tref : Types.trait_ref -> (Types.trait_ref, 'env) t
 
     val subst_constant_expr :
-      Expressions.constant_expr -> (Expressions.constant_expr, 'env) t
+      Types.constant_expr -> (Types.constant_expr, 'env) t
   end
 
   module Sptr : sig
