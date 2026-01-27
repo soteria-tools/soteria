@@ -1,6 +1,7 @@
 module Config_ = Config
 open Soteria_rust_lib
 module Config = Config_
+open Soteria.Symex
 open Rustsymex.Syntax
 
 type t = {
@@ -132,8 +133,17 @@ let make ret pcs state =
   in
   { ret; pcs; state }
 
+let implies s_pre s_post =
+  let process =
+    let* ret, st = produce s_pre Heap.empty in
+    let+ res = consume s_post ret st in
+    match res with Compo_res.Ok st -> st == Heap.empty | _ -> false
+  in
+  match Rustsymex.run_needs_stats ~mode:OX process with
+  | [ (b, _) ] -> b
+  | _ -> false
+
 module Context = struct
-  open Soteria.Symex
   open Charon.Types
   module M = TypeDeclId.Map
 
@@ -194,39 +204,24 @@ module Context = struct
 
   let stage ty summ (ctx : t) : t =
     let@ id = (ty, ctx) in
-    let filter summ summs =
-      let check_implication s_pre s_post =
-        let* ret, st = produce s_pre Heap.empty in
-        let+ res = consume s_post ret st in
-        match res with Compo_res.Ok st -> st == Heap.empty | _ -> false
-      in
-      let+ summs =
-        Rustsymex.fold_list summs ~init:[] ~f:(fun summs s ->
+    let exception SummaryAlreadyExists in
+    let[@tail_mod_cons] rec filter = function
+      | [] -> []
+      | x :: l ->
+          if implies summ x then raise SummaryAlreadyExists
             (* The new summary implies an existing summary: discard the new summary *)
-            let* implies = check_implication summ s in
-            if implies then Rustsymex.vanish ()
-            else
-              (* An existing summary implies the new summary: discard the existing summary *)
-              let+ implies = check_implication s summ in
-              if implies then summs else s :: summs)
-      in
-      summs
+          else if implies x summ then filter l
+            (* An existing summary implies the new summary: discard the existing summary *)
+          else x :: filter l
     in
     let opt_cons = function
       | None -> Some ([], [], [ summ ])
-      | Some (visited, unvisited, staged) ->
-          let summs =
-            let process =
-              let* unvisited = filter summ unvisited in
-              let+ visited = filter summ visited in
-              (visited, unvisited, summ :: staged)
-            in
-            match Rustsymex.run_needs_stats ~mode:OX process with
-            | [] -> (visited, unvisited, staged)
-            | [ (summs, _) ] -> summs
-            | _ -> failwith "Expected at most 1 outcome"
-          in
-          Some summs
+      | Some (visited, unvisited, staged) -> (
+          try
+            filter unvisited |> fun unvisited ->
+            filter visited |> fun visited ->
+            Some (visited, unvisited, summ :: staged)
+          with SummaryAlreadyExists -> Some (visited, unvisited, staged))
     in
     M.update id opt_cons ctx
 
