@@ -67,7 +67,7 @@ let print_outcomes entry_name f =
       if (Config.get ()).fail_fast then
         Fmt.kstr
           (Diagnostic.print_diagnostic_simple ~severity:Error)
-          "%s: Found an issue in %a after exploring %a and stopped immediately \
+          "%s: found an issue in %a after exploring %a -- stopped immediately \
            (fail-fast)"
           entry_name Printers.pp_time time pp_branches ntotal
       else
