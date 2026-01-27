@@ -123,7 +123,7 @@ module Make (Sptr : Sptr.S) = struct
       @@
       match ty with
       | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
-      | TArray (ty, len) -> Iter.repeatz (z_of_const_generic len) ty
+      | TArray (ty, len) -> Iter.repeatz (z_of_constant_expr len) ty
       | TSlice _ | TAdt { id = TBuiltin TStr; _ } -> (
           let sub_ty =
             match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
@@ -473,7 +473,7 @@ module Make (Sptr : Sptr.S) = struct
         let++ fields = nondets types in
         Tuple fields
     | TArray (ty, len) ->
-        let size = Charon_util.int_of_const_generic len in
+        let size = Charon_util.int_of_constant_expr len in
         let++ fields = nondets @@ List.init size (fun _ -> ty) in
         Tuple fields
     | TAdt adt as ty -> (

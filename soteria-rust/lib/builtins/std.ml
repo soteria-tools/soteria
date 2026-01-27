@@ -14,13 +14,13 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let rust_val, size =
       match (args, gen_args.const_generics) with
       | [ rust_val ], [ size ] ->
-          (rust_val, Charon_util.int_of_const_generic size)
+          (rust_val, Charon_util.int_of_constant_expr size)
       | args, cgens ->
           Fmt.failwith
             "array_repeat: unexpected params / generic constants: %a / %a"
             Fmt.(list pp_rust_val)
             args
-            Fmt.(list Types.pp_const_generic)
+            Fmt.(list Types.pp_constant_expr)
             cgens
     in
     ok (Tuple (List.init size (fun _ -> rust_val)))
@@ -30,13 +30,13 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let ptr, size =
       match (idx_op.is_array, List.hd args, gen_args.const_generics) with
       (* Array with static size *)
-      | true, Ptr (ptr, Thin), [ size ] -> (ptr, BV.usize_of_const_generic size)
+      | true, Ptr (ptr, Thin), [ size ] -> (ptr, BV.of_constant_expr size)
       | false, Ptr (ptr, Len size), [] -> (ptr, Typed.cast_i Usize size)
       | _ ->
           Fmt.failwith "array_index: unexpected arguments: %a / %a"
             Fmt.(list pp_rust_val)
             args
-            Fmt.(list Types.pp_const_generic)
+            Fmt.(list Types.pp_constant_expr)
             gen_args.const_generics
     in
     (* TODO: take into account idx.mutability *)
@@ -64,7 +64,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   let array_slice ~mut:_ (gen_args : Types.generic_args) args =
     match (gen_args.const_generics, args) with
     | [ size ], [ Ptr (ptr, Thin) ] ->
-        let size = BV.usize_of_const_generic size in
+        let size = BV.of_constant_expr size in
         ok (Ptr (ptr, Len size))
     | _ -> failwith "array_index: unexpected arguments"
 

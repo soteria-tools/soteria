@@ -33,8 +33,15 @@ class TypeParam(TypedDict):
     name: str
 
 
+class ConstParam(TypedDict):
+    index: int
+    name: str
+    ty: "UniqueType"
+
+
 class GenericParams(TypedDict):
     types: list[TypeParam]
+    const_generics: list[ConstParam]
 
 
 class AdtId(TypedDict):
@@ -130,7 +137,15 @@ class FunDecl(TypedDict):
 
 
 InterpTypeBase = Literal[
-    "unit", "int", "bool", "float", "ptr", "unknown", "fun_exec", "meta_ty"
+    "unit",
+    "int",
+    "bool",
+    "float",
+    "ptr",
+    "unknown",
+    "fun_exec",
+    "meta_ty",
+    "meta_const",
 ]
 InterpTypeMeta = Optional[str]
 InterpType = tuple[InterpTypeBase, InterpTypeMeta]
@@ -145,11 +160,11 @@ def type_of(unique_ty: UniqueType) -> InterpType:
         if type_id not in type_cache:
             raise ValueError(f"Unknown deduplicated type id: {type_id}")
         ty = type_cache[type_id]
-        print(f"Read {type_id} -> {ty}")
+        # print(f"Read {type_id} -> {ty}")
     elif "HashConsedValue" in unique_ty:
         type_id, inner_ty = unique_ty["HashConsedValue"]
         type_cache[type_id] = inner_ty
-        print("Cache <-", type_id, inner_ty)
+        # print("Cache <-", type_id, inner_ty)
         ty = inner_ty
 
     if ty == "Never":
@@ -204,7 +219,7 @@ def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
     if "HashConsedValue" in x and prev_key not in invalid_prev_keys:
         type_id, inner_ty = x["HashConsedValue"]
         type_cache[type_id] = inner_ty
-        print(f"Cache ({prev_key}) <-", type_id, inner_ty)
+        # print(f"Cache ({prev_key}) <-", type_id, inner_ty)
 
     for k, v in x.items():
         traverse_types(v, k)
@@ -219,6 +234,7 @@ input_type: dict[InterpTypeBase, str] = {
     "unknown": "rust_val",
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
+    "meta_const": "Types.constant_expr",
 }
 
 
@@ -231,6 +247,7 @@ output_type: dict[InterpTypeBase, str] = {
     "unknown": "rust_val",
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
+    "meta_const": "Types.constant_expr",
 }
 
 
@@ -311,6 +328,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         doc: str
         args: list[tuple[str, InterpType]]
         types: list[str]
+        consts: list[str]
         ret: InterpType
 
     pprint("Generating OCaml interface and stubs...")
@@ -351,6 +369,14 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             )
             for param in fun["generics"]["types"]
         ]
+        consts = [
+            (
+                param_l
+                if (param_l := param["name"].lower()) not in arg_names
+                else "c_" + param_l
+            )
+            for param in fun["generics"]["const_generics"]
+        ]
         ret = type_of(fun["signature"]["output"])
 
         intrinsics_info.append(
@@ -360,6 +386,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
                 "doc": doc,
                 "args": args,
                 "types": types,
+                "consts": consts,
                 "ret": ret,
             }
         )
@@ -374,9 +401,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         type rust_val := Rust_state_m.Sptr.t Rust_val.t
         type 'a ret := ('a, unit) Rust_state_m.t
         type fun_exec :=
-            UllbcAst.fun_decl ->
-            Charon.Types.generic_args ->
-            rust_val list -> (rust_val, unit) Rust_state_m.t
+            Fun_kind.t -> rust_val list -> (rust_val, unit) Rust_state_m.t
     """
 
     interface_str = f"""
@@ -435,6 +460,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             args_and_tys.append((None, ("fun_exec", None)))
 
         args_and_tys.extend((type, ("meta_ty", None)) for type in info["types"])
+        args_and_tys.extend((const, ("meta_const", None)) for const in info["consts"])
         args_and_tys.extend(info["args"])
         interface_str += f"""
             (** {info["doc"]} *)
@@ -470,24 +496,25 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             include Intrinsics_impl.M (Rust_state_m)
 
             let eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
-                match name, generics.types, args with
+                match name, generics.types, generics.const_generics, args with
     """
 
     for info in intrinsics_info:
         types = "; ".join(info["types"])
+        consts = "; ".join(info["consts"])
         args_match = "; ".join(
             a if a != info["name"] else f"{a}_" for (a, _) in info["args"]
         )
 
         call_args = [
             f"~{arg}" if arg != info["name"] else f"~{arg}:{arg}_"
-            for arg in info["types"] + [a for (a, _) in info["args"]]
+            for arg in info["types"] + info["consts"] + [a for (a, _) in info["args"]]
         ]
         if info["name"] == "catch_unwind":
             call_args.insert(0, "fun_exec")
 
         main_str += f"""
-            | "{info['name']}", [{types}], [{args_match}] ->
+            | "{info['name']}", [{types}], [{consts}], [{args_match}] ->
         """
 
         for arg, ty in info["args"]:
@@ -499,8 +526,13 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         """
 
     main_str += """
-                | name, _, _ ->
-                    Fmt.kstr not_impl "Intrinsic %s not found, or not called with the right arguments" name
+                | name, tys, cs, args ->
+                    Fmt.kstr not_impl
+                        "Intrinsic %s not found, or not called with the right arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
+                        name
+                        Fmt.(list ~sep:comma Charon_util.pp_ty) tys
+                        Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
+                        Fmt.(list ~sep:comma pp_rust_val) args
         end
     """
 

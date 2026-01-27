@@ -164,7 +164,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
         let isize_bits = 32 - 1 in
         BV.usize Z.(one lsl isize_bits) /@ Typed.cast sub_size
       in
-      let len = BV.of_const_generic size in
+      let len = BV.of_constant_expr size in
       let** sub_layout = layout_of subty in
       let++ () =
         assert_or_error
