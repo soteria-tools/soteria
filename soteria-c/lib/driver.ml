@@ -299,7 +299,7 @@ let print_states result =
       (Soteria.Symex.Compo_res.pp
          ~ok:(pair Aggregate_val.pp pp_state)
          ~err:(Soteria.Symex.Or_gave_up.pp pp_err_and_call_trace)
-         ~miss:(Fmt.Dump.list SState.pp_serialized))
+         ~miss:SState.pp_serialized)
         ft r)
     result.res
 

@@ -19,6 +19,10 @@ module Or_gave_up = struct
   let pp pp_err fmt = function
     | E e -> pp_err fmt e
     | Gave_up reason -> Format.fprintf fmt "Gave up: %s" reason
+
+  let unwrap_exn = function
+    | E e -> e
+    | Gave_up reason -> raise (Gave_up reason)
 end
 
 module Meta = struct
@@ -298,12 +302,14 @@ module type S = sig
         list. *)
     val run :
       ?fuel:Fuel_gauge.t ->
+      ?fail_fast:bool ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
       (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
 
     val run_with_stats :
       ?fuel:Fuel_gauge.t ->
+      ?fail_fast:bool ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
       (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
@@ -311,6 +317,7 @@ module type S = sig
 
     val run_needs_stats :
       ?fuel:Fuel_gauge.t ->
+      ?fail_fast:bool ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
       (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
@@ -617,32 +624,37 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   module Result = struct
     include Compo_res.T (MONAD)
 
-    let run_needs_stats ?(fuel = Fuel_gauge.infinite) ~mode iter =
+    let run_needs_stats ?(fuel = Fuel_gauge.infinite) ?(fail_fast = false) ~mode
+        iter =
       let@ () = Stats.As_ctx.add_time_of in
       let@ () = Symex_state.run ~init_fuel:fuel in
       let@ () = Approx.As_ctx.with_mode mode in
-
       let l = ref [] in
       let () =
+        let exception Fail_fast in
         try
           iter @@ fun x ->
-          if Solver_result.admissible ~mode (Solver.sat ()) then
+          if Solver_result.admissible ~mode (Solver.sat ()) then (
             (* Make sure to drop branche that have leftover assumes with unsatisfiable PCs. *)
             let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
-            l := (x, Solver.as_values ()) :: !l
-        with effect Give_up.Gave_up_eff reason, k ->
-          l := (Compo_res.Error (Gave_up reason), Solver.as_values ()) :: !l;
-          Effect.Deep.continue k ()
+            l := (x, Solver.as_values ()) :: !l;
+            if fail_fast && Compo_res.is_error x then raise Fail_fast)
+        with
+        | effect Give_up.Gave_up_eff reason, k ->
+            l := (Compo_res.Error (Gave_up reason), Solver.as_values ()) :: !l;
+            if fail_fast then Effect.Deep.discontinue k Fail_fast
+            else Effect.Deep.continue k ()
+        | Fail_fast -> ()
       in
       List.rev !l
 
-    let run ?fuel ~mode iter =
+    let run ?fuel ?fail_fast ~mode iter =
       let@ () = Stats.As_ctx.with_stats_ignored () in
-      run_needs_stats ?fuel ~mode iter
+      run_needs_stats ?fuel ?fail_fast ~mode iter
 
-    let run_with_stats ?fuel ~mode iter =
+    let run_with_stats ?fuel ?fail_fast ~mode iter =
       let@ () = Stats.As_ctx.with_stats () in
-      run_needs_stats ?fuel ~mode iter
+      run_needs_stats ?fuel ?fail_fast ~mode iter
 
     let miss_no_fix ~reason () =
       bind (ok ()) @@ fun () ->
