@@ -238,8 +238,8 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   
 --fail-fast should stop symbolic execution upon the first error encountered
   $ soteria-rust rustc fail_fast.rs --fail-fast
-  Compiling... done in <time>             
-  error: main: Found an issue in <time> after exploring 1 branch and stopped immediately (fail-fast)
+  Compiling... done in <time>
+  error: main: found an issue in <time> after exploring 1 branch -- stopped immediately (fail-fast)
   error: Panic: ok in main
       ┌─ $SOTERIA-RUST/std/src/lib.rs:103:10
   103 │          rusteria::panic(concat!($msg))
