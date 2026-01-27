@@ -5,7 +5,7 @@ type ('ok, 'err, 'fix) t = Ok of 'ok | Error of 'err | Missing of 'fix list
 let pp ~ok ~err ~miss fmt = function
   | Ok x -> Format.fprintf fmt "Ok: %a" ok x
   | Error e -> Format.fprintf fmt "Error: %a" err e
-  | Missing fix -> Format.fprintf fmt "Missing: %a" miss fix
+  | Missing fix -> Format.fprintf fmt "Missing: %a" (Fmt.Dump.list miss) fix
 
 let[@inline] ok x = Ok x
 let[@inline] error x = Error x

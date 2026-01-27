@@ -83,6 +83,9 @@ type t = {
       (** The default branch fuel for each entrypoint -- every symbolic
           execution branching point counts as one fuel. Defaults to infinite
           fuel. *)
+  fail_fast : bool;
+      [@make.default false] [@names [ "fail-fast" ]] [@env "FAIL_FAST"]
+      (** Stop symbolic execution upon the first error encountered. *)
 }
 [@@deriving make, subliner]
 
