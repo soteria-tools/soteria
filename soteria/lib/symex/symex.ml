@@ -633,12 +633,12 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       let () =
         let exception Fail_fast in
         try
-          iter (fun x ->
-              if Solver_result.admissible ~mode (Solver.sat ()) then (
-                (* Make sure to drop branche that have leftover assumes with unsatisfiable PCs. *)
-                let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
-                l := (x, Solver.as_values ()) :: !l;
-                if fail_fast && Compo_res.is_error x then raise Fail_fast))
+          iter @@ fun x ->
+          if Solver_result.admissible ~mode (Solver.sat ()) then (
+            (* Make sure to drop branche that have leftover assumes with unsatisfiable PCs. *)
+            let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
+            l := (x, Solver.as_values ()) :: !l;
+            if fail_fast && Compo_res.is_error x then raise Fail_fast)
         with
         | effect Give_up.Gave_up_eff reason, k ->
             l := (Compo_res.Error (Gave_up reason), Solver.as_values ()) :: !l;
