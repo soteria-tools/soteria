@@ -555,7 +555,9 @@ module rec Bool : Bool = struct
     | _ -> Ite (guard, if_, else_) <| if_.node.ty
 
   and sem_eq v1 v2 =
-    match (v1.node.kind, v2.node.kind) with
+    match[@warning "-ambiguous-var-in-pattern-guard"]
+      (v1.node.kind, v2.node.kind)
+    with
     | _ when equal v1 v2 -> v_true
     | Bool b1, Bool b2 -> bool (b1 = b2)
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
@@ -628,8 +630,23 @@ module rec Bool : Bool = struct
     | ( Binop (Mul _, b, { node = { kind = BitVec a; _ }; _ }),
         Binop (Mul _, { node = { kind = BitVec c; _ }; _ }, d) )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
-        sem_eq b d
-    (* Bitvectors *)
+        sem_eq b d (* Bitvectors *)
+    (* 0 == L | R ==> 0 == L && 0 == R, splitting is better for the PC *)
+    | (BitVec z, Binop (BitOr, l, r) | Binop (BitOr, l, r), BitVec z)
+      when Z.equal z Z.zero ->
+        let z = BitVec.zero (size_of v1.node.ty) in
+        and_ (sem_eq l z) (sem_eq r z)
+    (* for N == (M & X), if N has bits set that aren't in M, then it must
+       be false, since the mask would unset them *)
+    | BitVec n, Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, _)
+    | BitVec n, Binop (BitAnd, _, { node = { kind = BitVec mask; _ }; _ })
+    | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, _), BitVec n
+    | Binop (BitAnd, _, { node = { kind = BitVec mask; _ }; _ }), BitVec n
+      when let sz = size_of v1.node.ty in
+           let full_mask = Z.(pred (one lsl sz)) in
+           let mask_not = Z.(lognot mask land full_mask) in
+           Stdlib.not Z.(equal (n land mask_not) Z.zero) ->
+        v_false
     | (BitVec _ as z), Binop (BvConcat, l, r)
     | Binop (BvConcat, l, r), (BitVec _ as z) ->
         let z = z <| v1.node.ty in
@@ -1013,6 +1030,19 @@ and BitVec : BitVec = struct
     | Binop (BitAnd, x, { node = { kind = BitVec m2; _ }; _ }), BitVec m1
     | Binop (BitAnd, { node = { kind = BitVec m2; _ }; _ }, x), BitVec m1 ->
         and_ x (mk n (Z.logand m1 m2))
+    | BitVec m_and, Binop (BitOr, x, { node = { kind = BitVec m_or; _ }; _ })
+    | BitVec m_and, Binop (BitOr, { node = { kind = BitVec m_or; _ }; _ }, x)
+    | Binop (BitOr, x, { node = { kind = BitVec m_or; _ }; _ }), BitVec m_and
+    | Binop (BitOr, { node = { kind = BitVec m_or; _ }; _ }, x), BitVec m_and ->
+        let overlap = Z.logand m_and m_or in
+        if Z.equal overlap m_and then
+          (* M & (N | X) when M & N == M ==> M (all bits already set by the or) *)
+          mk n m_and
+        else if Z.equal overlap Z.zero then
+          (* M & (N | X) when M & N == 0 ==> M & X (no bits set by the or) *)
+          and_ x (mk n m_and)
+        else (* give up *)
+          mk_commut_binop BitAnd v1 v2 <| t_bv n
     (* if it's a right mask, it's usually beneficial to propagate it *)
     | (BitVec mask, Binop (BitAnd, l, r) | Binop (BitAnd, l, r), BitVec mask)
       when is_right_mask mask ->
@@ -1040,6 +1070,11 @@ and BitVec : BitVec = struct
     | BitVec z, _ when Z.equal z Z.zero -> v2
     | _, BitVec z when Z.equal z Z.zero -> v1
     | _, _ when equal v1 v2 -> v1
+    | BitVec m1, Binop (BitOr, x, { node = { kind = BitVec m2; _ }; _ })
+    | BitVec m1, Binop (BitOr, { node = { kind = BitVec m2; _ }; _ }, x)
+    | Binop (BitOr, x, { node = { kind = BitVec m2; _ }; _ }), BitVec m1
+    | Binop (BitOr, { node = { kind = BitVec m2; _ }; _ }, x), BitVec m1 ->
+        or_ x (mk (size_of v1.node.ty) (Z.logor m1 m2))
     (* 0x0..0X..X | (0x0..0Y..Y << N) when N = |X..X| ==> 0x0..0Y..YX..X  *)
     | ( Unop (BvExtend (false, nx), base),
         Binop
