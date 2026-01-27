@@ -97,7 +97,165 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    not be used if the invariant can be discovered by the optimizer on its
    own, or if it does not enable any significant optimizations.
 
-   The stabilized version of this intrinsic is [`core::hint::assert_unchecked`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-autodiff"><a href="#val-autodiff" class="anchor"></a><code><span><span class="keyword">val</span> autodiff : 
+   The stabilized version of this intrinsic is [`core::hint::assert_unchecked`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_and"><a href="#val-atomic_and" class="anchor"></a><code><span><span class="keyword">val</span> atomic_and : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Bitwise and with the current value, returning the previous value.
+   `T` must be an integer or pointer type.
+   `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `fetch_and` method. For example, [`AtomicBool::fetch_and`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_cxchg"><a href="#val-atomic_cxchg" class="anchor"></a><code><span><span class="keyword">val</span> atomic_cxchg : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord_succ</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord_fail</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">old</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Stores a value if the current value is the same as the `old` value.
+   `T` must be an integer or pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `compare_exchange` method.
+   For example, [`AtomicBool::compare_exchange`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_cxchgweak"><a href="#val-atomic_cxchgweak" class="anchor"></a><code><span><span class="keyword">val</span> atomic_cxchgweak : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord_succ</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord_fail</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_old</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">_src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Stores a value if the current value is the same as the `old` value.
+   `T` must be an integer or pointer type. The comparison may spuriously fail.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `compare_exchange_weak` method.
+   For example, [`AtomicBool::compare_exchange_weak`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_fence"><a href="#val-atomic_fence" class="anchor"></a><code><span><span class="keyword">val</span> atomic_fence : <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  An atomic fence.
+
+   The stabilized version of this intrinsic is available in
+   [`atomic::fence`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_load"><a href="#val-atomic_load" class="anchor"></a><code><span><span class="keyword">val</span> atomic_load : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Loads the current value of the pointer.
+   `T` must be an integer or pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `load` method. For example, [`AtomicBool::load`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_max"><a href="#val-atomic_max" class="anchor"></a><code><span><span class="keyword">val</span> atomic_max : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Maximum with the current value using a signed comparison.
+   `T` must be a signed integer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] signed integer types via the `fetch_max` method. For example, [`AtomicI32::fetch_max`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_min"><a href="#val-atomic_min" class="anchor"></a><code><span><span class="keyword">val</span> atomic_min : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Minimum with the current value using a signed comparison.
+   `T` must be a signed integer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] signed integer types via the `fetch_min` method. For example, [`AtomicI32::fetch_min`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_nand"><a href="#val-atomic_nand" class="anchor"></a><code><span><span class="keyword">val</span> atomic_nand : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Bitwise nand with the current value, returning the previous value.
+   `T` must be an integer or pointer type.
+   `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`AtomicBool`] type via the `fetch_nand` method. For example, [`AtomicBool::fetch_nand`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_or"><a href="#val-atomic_or" class="anchor"></a><code><span><span class="keyword">val</span> atomic_or : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Bitwise or with the current value, returning the previous value.
+   `T` must be an integer or pointer type.
+   `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `fetch_or` method. For example, [`AtomicBool::fetch_or`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_singlethreadfence"><a href="#val-atomic_singlethreadfence" class="anchor"></a><code><span><span class="keyword">val</span> atomic_singlethreadfence : <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  An atomic fence for synchronization within a single thread.
+
+   The stabilized version of this intrinsic is available in
+   [`atomic::compiler_fence`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_store"><a href="#val-atomic_store" class="anchor"></a><code><span><span class="keyword">val</span> atomic_store : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">val_</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Stores the value at the specified memory location.
+   `T` must be an integer or pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `store` method. For example, [`AtomicBool::store`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_umax"><a href="#val-atomic_umax" class="anchor"></a><code><span><span class="keyword">val</span> atomic_umax : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Maximum with the current value using an unsigned comparison.
+   `T` must be an unsigned integer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] unsigned integer types via the `fetch_max` method. For example, [`AtomicU32::fetch_max`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_umin"><a href="#val-atomic_umin" class="anchor"></a><code><span><span class="keyword">val</span> atomic_umin : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Minimum with the current value using an unsigned comparison.
+   `T` must be an unsigned integer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] unsigned integer types via the `fetch_min` method. For example, [`AtomicU32::fetch_min`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_xadd"><a href="#val-atomic_xadd" class="anchor"></a><code><span><span class="keyword">val</span> atomic_xadd : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Adds to the current value, returning the previous value.
+   `T` must be an integer or pointer type.
+   `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `fetch_add` method. For example, [`AtomicIsize::fetch_add`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_xchg"><a href="#val-atomic_xchg" class="anchor"></a><code><span><span class="keyword">val</span> atomic_xchg : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Stores the value at the specified memory location, returning the old value.
+   `T` must be an integer or pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `swap` method. For example, [`AtomicBool::swap`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_xor"><a href="#val-atomic_xor" class="anchor"></a><code><span><span class="keyword">val</span> atomic_xor : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Bitwise xor with the current value, returning the previous value.
+   `T` must be an integer or pointer type.
+   `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `fetch_xor` method. For example, [`AtomicBool::fetch_xor`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_xsub"><a href="#val-atomic_xsub" class="anchor"></a><code><span><span class="keyword">val</span> atomic_xsub : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">dst</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">src</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Subtract from the current value, returning the previous value.
+   `T` must be an integer or pointer type.
+   `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+   The stabilized version of this intrinsic is available on the
+   [`atomic`] types via the `fetch_sub` method. For example, [`AtomicIsize::fetch_sub`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-autodiff"><a href="#val-autodiff" class="anchor"></a><code><span><span class="keyword">val</span> autodiff : 
   <span><span class="label">t_f</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">g</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -1195,7 +1353,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Raises an `f64` to an integer power.
 
    The stabilized version of this intrinsic is
-   [`f64::powi`](../../std/primitive.f64.html#method.powi)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_data"><a href="#val-prefetch_read_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_data : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
+   [`f64::powi`](../../std/primitive.f64.html#method.powi)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_data"><a href="#val-prefetch_read_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_data : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">locality</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
    for the given address if supported; otherwise, it is a no-op.
    Prefetches have no effect on the behavior of the program but can change its performance
    characteristics.
@@ -1203,7 +1365,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
    to (3) - extremely local keep in cache.
 
-   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_instruction"><a href="#val-prefetch_read_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_instruction : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
+   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_read_instruction"><a href="#val-prefetch_read_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_read_instruction : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">locality</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
    for the given address if supported; otherwise, it is a no-op.
    Prefetches have no effect on the behavior of the program but can change its performance
    characteristics.
@@ -1211,7 +1377,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
    to (3) - extremely local keep in cache.
 
-   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_data"><a href="#val-prefetch_write_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_data : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
+   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_data"><a href="#val-prefetch_write_data" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_data : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">locality</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
    for the given address if supported; otherwise, it is a no-op.
    Prefetches have no effect on the behavior of the program but can change its performance
    characteristics.
@@ -1219,7 +1389,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    The `LOCALITY` argument is a temporal locality specifier ranging from (0) - no locality,
    to (3) - extremely local keep in cache.
 
-   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_instruction"><a href="#val-prefetch_write_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_instruction : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
+   This intrinsic does not have a stable counterpart.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-prefetch_write_instruction"><a href="#val-prefetch_write_instruction" class="anchor"></a><code><span><span class="keyword">val</span> prefetch_write_instruction : 
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">locality</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">data</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
+  <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
    for the given address if supported; otherwise, it is a no-op.
    Prefetches have no effect on the behavior of the program but can change its performance
    characteristics.
