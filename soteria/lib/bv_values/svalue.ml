@@ -1030,6 +1030,124 @@ and BitVec : BitVec = struct
     | Binop (BitAnd, x, { node = { kind = BitVec m2; _ }; _ }), BitVec m1
     | Binop (BitAnd, { node = { kind = BitVec m2; _ }; _ }, x), BitVec m1 ->
         and_ x (mk n (Z.logand m1 m2))
+    (* collapse M & (N | (P & X)) into (M & N) | (M & P & X)
+       where M, N and P concrete *)
+    | ( (BitVec _ as m),
+        Binop
+          ( BitOr,
+            ({ node = { kind = BitVec _; _ }; _ } as n),
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      (BitAnd, ({ node = { kind = BitVec _; _ }; _ } as p), x);
+                  _;
+                };
+              _;
+            } ) )
+    | ( (BitVec _ as m),
+        Binop
+          ( BitOr,
+            ({ node = { kind = BitVec _; _ }; _ } as n),
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      (BitAnd, x, ({ node = { kind = BitVec _; _ }; _ } as p));
+                  _;
+                };
+              _;
+            } ) )
+    | ( (BitVec _ as m),
+        Binop
+          ( BitOr,
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      (BitAnd, ({ node = { kind = BitVec _; _ }; _ } as p), x);
+                  _;
+                };
+              _;
+            },
+            ({ node = { kind = BitVec _; _ }; _ } as n) ) )
+    | ( (BitVec _ as m),
+        Binop
+          ( BitOr,
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      (BitAnd, x, ({ node = { kind = BitVec _; _ }; _ } as p));
+                  _;
+                };
+              _;
+            },
+            ({ node = { kind = BitVec _; _ }; _ } as n) ) )
+    | ( Binop
+          ( BitOr,
+            ({ node = { kind = BitVec _; _ }; _ } as n),
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      (BitAnd, ({ node = { kind = BitVec _; _ }; _ } as p), x);
+                  _;
+                };
+              _;
+            } ),
+        (BitVec _ as m) )
+    | ( Binop
+          ( BitOr,
+            ({ node = { kind = BitVec _; _ }; _ } as n),
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      (BitAnd, x, ({ node = { kind = BitVec _; _ }; _ } as p));
+                  _;
+                };
+              _;
+            } ),
+        (BitVec _ as m) )
+    | ( Binop
+          ( BitOr,
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      (BitAnd, ({ node = { kind = BitVec _; _ }; _ } as p), x);
+                  _;
+                };
+              _;
+            },
+            ({ node = { kind = BitVec _; _ }; _ } as n) ),
+        (BitVec _ as m) )
+    | ( Binop
+          ( BitOr,
+            {
+              node =
+                {
+                  kind =
+                    Binop
+                      (BitAnd, x, ({ node = { kind = BitVec _; _ }; _ } as p));
+                  _;
+                };
+              _;
+            },
+            ({ node = { kind = BitVec _; _ }; _ } as n) ),
+        (BitVec _ as m) ) ->
+        let ty = v1.node.ty in
+        let m = m <| ty in
+        or_ (and_ m n) (and_ m p |> and_ x)
+    (* M & (N | X) *)
     | BitVec m_and, Binop (BitOr, x, { node = { kind = BitVec m_or; _ }; _ })
     | BitVec m_and, Binop (BitOr, { node = { kind = BitVec m_or; _ }; _ }, x)
     | Binop (BitOr, x, { node = { kind = BitVec m_or; _ }; _ }), BitVec m_and
@@ -1286,6 +1404,24 @@ and BitVec : BitVec = struct
     | Binop (Shl, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
         shl v (mk n Z.(s1 + s2))
+    | Binop (LShr, x, { node = { kind = BitVec sr; _ }; _ }), BitVec sl ->
+        if Z.leq sl sr then
+          (* (x >> s1) << s2 where s2 < s1 = x >> (s1 - s2) & (mask with lower bits cleared) *)
+          let n = size_of v1.node.ty in
+          let mask = Z.(lognot (pred (one lsl to_int sr))) in
+          and_ (lshr x (mk n Z.(sr - sl))) (mk_masked n mask)
+        else
+          (* (x >> s1) << s2 where s2 > s1 = x << (s2 - s1) & (mask with lower bits cleared) *)
+          let n = size_of v1.node.ty in
+          let shift = Z.(sl - sr) in
+          let mask = Z.(lognot (pred (one lsl to_int sl))) in
+          and_ (shl x (mk n shift)) (mk_masked n mask)
+    | Binop (BitAnd, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
+    | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
+        (* (x & mask) << s = (x << s) & (mask << s) *)
+        let n = size_of v1.node.ty in
+        let shifted_mask = Z.(mask lsl to_int s) in
+        and_ (shl x v2) (mk_masked n shifted_mask)
     | _ -> Binop (Shl, v1, v2) <| v1.node.ty
 
   and lshr v1 v2 =
@@ -1297,6 +1433,12 @@ and BitVec : BitVec = struct
     | Binop (LShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
         lshr v (mk n Z.(s1 + s2))
+    | Binop (BitAnd, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
+    | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
+        (* (x & mask) >> s = (x >> s) & (mask >> s) *)
+        let n = size_of v1.node.ty in
+        let shifted_mask = Z.(mask asr to_int s) in
+        and_ (lshr x v2) (mk n shifted_mask)
     | _ -> Binop (LShr, v1, v2) <| v1.node.ty
 
   and ashr v1 v2 =
