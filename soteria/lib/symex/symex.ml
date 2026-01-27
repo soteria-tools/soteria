@@ -648,13 +648,13 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       in
       List.rev !l
 
-    let run ?fuel ?(fail_fast = false) ~mode iter =
+    let run ?fuel ?fail_fast ~mode iter =
       let@ () = Stats.As_ctx.with_stats_ignored () in
-      run_needs_stats ?fuel ~fail_fast ~mode iter
+      run_needs_stats ?fuel ?fail_fast ~mode iter
 
-    let run_with_stats ?fuel ?(fail_fast = false) ~mode iter =
+    let run_with_stats ?fuel ?fail_fast ~mode iter =
       let@ () = Stats.As_ctx.with_stats () in
-      run_needs_stats ?fuel ~fail_fast ~mode iter
+      run_needs_stats ?fuel ?fail_fast ~mode iter
 
     let miss_no_fix ~reason () =
       bind (ok ()) @@ fun () ->
