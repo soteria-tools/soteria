@@ -508,6 +508,9 @@ module Make (State : State_intf.S) = struct
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in
         let+ () = State.store ptr decl.ty v in
+        L.info (fun g ->
+            g "Initialized global %a at %a to %a" Crate.pp_name
+              decl.item_meta.name pp_full_ptr ptr pp_rust_val v);
         ptr
 
   and eval_operand (op : Expressions.operand) =
@@ -626,7 +629,7 @@ module Make (State : State_intf.S) = struct
                       VTable vt')
               | MetaUnknown ->
                   Fmt.kstr not_impl "Unsupported metadata in CastUnsize: %a"
-                    Expressions.pp_unsizing_metadata meta
+                    Types.pp_unsizing_metadata meta
             in
             let rec with_ptr_meta : rust_val -> rust_val t = function
               | Ptr (v, prev) ->

@@ -20,9 +20,9 @@ concurrency:
 env:
   OCAML_VERSION: 5.4.0
   OBOL_REPO: soteria-tools/obol
-  OBOL_COMMIT_HASH: f047696fd8e43e1ac58807d2966ba84be45d1be6
+  OBOL_COMMIT_HASH: 45f2f95cf034c5daa448b64945e721839a57bb22
   CHARON_REPO: soteria-tools/charon
-  CHARON_COMMIT_HASH: 3928ea9e91a1c7babd84acd9bdf4b4b164614d0e
+  CHARON_COMMIT_HASH: a71b958e7127c99ed85cbc520f85a155e38991be
 
 jobs:
   build:
