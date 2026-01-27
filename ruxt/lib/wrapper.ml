@@ -150,10 +150,10 @@ let exec ~fuel (wrapper : t) summs =
   (* Symbolically execute the wrapped function call *)
   Rustsymex.run_needs_stats ~mode:UX ~fuel (wrapper summs)
   |> Result.fold_list ~init:[] ~f:(fun summs -> function
-       (* Successful termination: a new summary can been inferred *)
-       | Compo_res.Ok (ret, state, ty), pcs ->
-           let open Result.Syntax in
-           let+ summ = Summary.make ret pcs state in
-           (ty, summ) :: summs
-       (* Unsuccessful termination: found a type unsoundness *)
-       | _ -> Result.error `TypeUnsound)
+    (* Successful termination: a new summary can been inferred *)
+    | Compo_res.Ok (ret, state, ty), pcs ->
+        let open Result.Syntax in
+        let+ summ = Summary.make ret pcs state in
+        (ty, summ) :: summs
+    (* Unsuccessful termination: found a type unsoundness *)
+    | _ -> Result.error `TypeUnsound)
