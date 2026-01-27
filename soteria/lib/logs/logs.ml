@@ -4,6 +4,27 @@ module Profile = Profile
 module Color = Color
 module Printers = Printers
 
+let level_color : Level.t -> Color.t = function
+  | Smt -> `Purple
+  | Trace -> `Gray
+  | Debug -> `DarkBlue
+  | Info -> `Teal
+  | Warn -> `Orange
+  | App -> `Forest
+  | Error -> `Maroon
+
+let format_level level =
+  let level_str = Level.to_string level in
+  if (Config.get ()).no_color then Printf.sprintf "[%s]" level_str
+  else
+    let color = level_color level in
+    let buf = Buffer.create 32 in
+    let fmt = Format.formatter_of_buffer buf in
+    Fmt.set_style_renderer fmt `Ansi_tty;
+    Format.fprintf fmt "[%a]" (Printers.pp_clr color) level_str;
+    Format.pp_print_flush fmt ();
+    Buffer.contents buf
+
 type logger = { oc : Out_channel.t; mutable depth_counter : int }
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
 
@@ -91,7 +112,7 @@ module L = struct
             (* TODO: Write a different logger for each kind, instead of pattern matching in each function *)
             match (Config.get ()).kind with
             | Html -> Html.message level msg
-            | Stderr -> Printf.sprintf "[%s] %s" (Level.to_string level) msg
+            | Stderr -> Printf.sprintf "%s %s" (format_level level) msg
           in
           write_string msg)
         fmt
