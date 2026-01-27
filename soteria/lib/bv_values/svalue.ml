@@ -1122,24 +1122,38 @@ and BitVec : BitVec = struct
         | BitOr -> or_ v1 v2
         | BitXor -> xor v1 v2
         | _ -> failwith "unreachable binop")
-    | Binop (Shl, v1, v2) ->
-        (* this only holds under the assumption v2 < BITS(v1), which should be true, since
-         it usually is UB otherwise *)
-        let v1 = extract from_ to_ v1 in
-        let v2 = extract from_ to_ v2 in
-        shl v1 v2
-    | Binop (LShr, v1, { node = { kind = BitVec x; _ }; _ }) ->
-        (* we have to be careful to not extract bits that are out of bounds *)
+    | Binop (Shl, v1, { node = { kind = BitVec x; _ }; _ }) ->
+        (* extract[from_, to_](v1 << x) *)
         let shift = Z.to_int x in
-        if to_ + shift < prev_size then
-          (* 1. we can just shift the extraction *)
-          extract (from_ + shift) (to_ + shift) v1
-        else if from_ + shift >= prev_size then
-          (* 2. the full shift is out of bounds! so 0 *)
+        if from_ >= shift then
+          (* All extracted bits come from the original v1, shifted *)
+          extract (from_ - shift) (to_ - shift) v1
+        else if to_ < shift then
+          (* All extracted bits are zeros introduced by the shift *)
           zero size
         else
-          (* 3. it's an in between - for now, we don't do anything *)
-          Unop (BvExtract (from_, to_), v) <| t_bv size
+          (* Some bits are zeros, some are from v1 *)
+          (* bits [from_, shift-1] are 0, bits [shift, to_] come from v1[0, to_-shift] *)
+          let high_part = extract 0 (to_ - shift) v1 in
+          let low_zeros = zero (shift - from_) in
+          concat high_part low_zeros
+    | Binop (LShr, v1, { node = { kind = BitVec x; _ }; _ }) ->
+        (* extract[from_, to_](v1 >> x) *)
+        (* After right shift by x, bit i of result = bit (i+x) of original if i+x < prev_size, else 0 *)
+        let shift = Z.to_int x in
+        if from_ + shift >= prev_size then
+          (* All extracted bits are zeros introduced by the shift *)
+          zero size
+        else if to_ + shift < prev_size then
+          (* All extracted bits come from the original v1, shifted *)
+          extract (from_ + shift) (to_ + shift) v1
+        else
+          (* Some bits are from v1, some are zeros *)
+          (* bits [from_, prev_size-shift-1] come from v1[from_+shift, prev_size-1] *)
+          (* bits [prev_size-shift, to_] are 0 *)
+          let low_part = extract (from_ + shift) (prev_size - 1) v1 in
+          let high_zeros = zero (to_ - (prev_size - shift - 1)) in
+          concat high_zeros low_part
     | Ite (b, l, r) ->
         let l = extract from_ to_ l in
         let r = extract from_ to_ r in
