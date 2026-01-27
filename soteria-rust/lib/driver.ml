@@ -64,10 +64,17 @@ let print_outcomes entry_name f =
         List.map (fun (_, _, pcs) -> List.length pcs) errs
         |> List.fold_left ( + ) 0
       in
-      Fmt.kstr
-        (Diagnostic.print_diagnostic_simple ~severity:Error)
-        "%s: found issues in %a, errors in %a (out of %d)" entry_name
-        Printers.pp_time time pp_branches err_branches ntotal;
+      if (Config.get ()).fail_fast then
+        Fmt.kstr
+          (Diagnostic.print_diagnostic_simple ~severity:Error)
+          "%s: Found an issue in %a after exploring %a and stopped immediately \
+           (fail-fast)"
+          entry_name Printers.pp_time time pp_branches ntotal
+      else
+        Fmt.kstr
+          (Diagnostic.print_diagnostic_simple ~severity:Error)
+          "%s: found issues in %a, errors in %a (out of %d)" entry_name
+          Printers.pp_time time pp_branches err_branches ntotal;
       Fmt.pr "@.";
       let () =
         let@ error, call_trace, pcs = Fun.flip List.iter errs in
@@ -119,10 +126,20 @@ let exec_crate
   let { res = branches; stats } : ('res, 'range) Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
-    let@@ () = Rustsymex.run_with_stats ~mode:OX ~fuel in
+    let@@ () =
+      Rustsymex.run_with_stats ~mode:OX ~fuel
+        ~fail_fast:(Config.get ()).fail_fast
+    in
     exec_fun fun_decl
   in
-
+  let branches =
+    (* If any of the results were "Gave_up", we raise an exception to be caught by [print_outcomes] *)
+    let map_first f (x, y) = (f x, y) in
+    List.map
+      (map_first
+      @@ Fun.flip Compo_res.map_error Soteria.Symex.Or_gave_up.unwrap_exn)
+      branches
+  in
   Rustsymex.Stats.output stats;
 
   (* inverse ok and errors if we expect a failure *)

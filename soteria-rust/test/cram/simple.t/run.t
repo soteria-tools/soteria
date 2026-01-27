@@ -236,3 +236,20 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
+--fail-fast should stop symbolic execution upon the first error encountered
+  $ soteria-rust rustc fail_fast.rs --fail-fast
+  Compiling... done in 0.13s             
+  error: main: Found an issue in 0.06s after exploring 1 branch and stopped immediately (fail-fast)
+  error: Panic: ok in main
+      ┌─ $SOTERIA-RUST/std/src/lib.rs:103:10
+  103 │          rusteria::panic(concat!($msg))
+      │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │           │
+      │           Triggering memory operation
+      │           2: Call trace
+      ┌─ /Users/sacha/Prog/soteria/soteria-rust/test/cram/simple.t/fail_fast.rs:1:2
+    1 │  fn main() {
+      │   --------- 1: Entry point
+  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
+  
+  [1]

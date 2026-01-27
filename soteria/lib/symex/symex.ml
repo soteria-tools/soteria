@@ -19,6 +19,10 @@ module Or_gave_up = struct
   let pp pp_err fmt = function
     | E e -> pp_err fmt e
     | Gave_up reason -> Format.fprintf fmt "Gave up: %s" reason
+
+  let unwrap_exn = function
+    | E e -> e
+    | Gave_up reason -> raise (Gave_up reason)
 end
 
 module Meta = struct
