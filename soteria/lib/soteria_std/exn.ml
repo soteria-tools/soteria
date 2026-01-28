@@ -1,3 +1,5 @@
+(** Common exceptions that are not defined in the OCaml Stdlib *)
+
 (** An error that happen due to a misconfiguration. *)
 exception Config_error of string
 
