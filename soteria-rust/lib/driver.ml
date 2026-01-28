@@ -2,7 +2,7 @@ module Stats = Soteria.Stats
 module Config_ = Config
 open Soteria.Terminal
 module Config = Config_
-open Color
+open Soteria.Logs.Printers
 module Wpst_interp = Interp.Make (State)
 module Compo_res = Soteria.Symex.Compo_res
 open Syntaxes.FunctionWrap
@@ -26,12 +26,12 @@ module Outcome = struct
   let exit o = exit (as_status_code o)
 
   let pp ft = function
-    | Ok -> Color.pp_clr `Green ft "ok"
-    | Error -> Color.pp_clr `Red ft "error"
-    | Fatal -> Color.pp_clr `Yellow ft "unknown"
+    | Ok -> pp_ok ft "ok"
+    | Error -> pp_err ft "error"
+    | Fatal -> pp_fatal ft "unknown"
 end
 
-let pp_branches = Printers.pp_plural ~sing:"branch" ~plur:"branches"
+let pp_branches = pp_plural ~sing:"branch" ~plur:"branches"
 
 let print_pcs pcs =
   let open Fmt in
@@ -42,7 +42,7 @@ let print_pcs pcs =
       let pp_pc = list ~sep:(any " /\\@, ") Typed.ppa in
       pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
   in
-  if not @@ Soteria.Terminal.Config.compact () then
+  if not @@ (Soteria.Terminal.Config.get ()).compact then
     List.mapi (fun i pc -> (pc, i + 1)) pcs
     |> Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_pc)
 
@@ -53,8 +53,7 @@ let print_outcomes entry_name f =
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
-        "%s: done in %a, ran %a" entry_name Printers.pp_time time pp_branches
-        ntotal;
+        "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       print_pcs pcs;
       Fmt.pr "@.@.";
       (entry_name, Outcome.Ok)
@@ -69,12 +68,12 @@ let print_outcomes entry_name f =
           (Diagnostic.print_diagnostic_simple ~severity:Error)
           "%s: found an issue in %a after exploring %a -- stopped immediately \
            (fail-fast)"
-          entry_name Printers.pp_time time pp_branches ntotal
+          entry_name pp_time time pp_branches ntotal
       else
         Fmt.kstr
           (Diagnostic.print_diagnostic_simple ~severity:Error)
-          "%s: found issues in %a, errors in %a (out of %d)" entry_name
-          Printers.pp_time time pp_branches err_branches ntotal;
+          "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
+          time pp_branches err_branches ntotal;
       Fmt.pr "@.";
       let () =
         let@ error, call_trace, pcs = Fun.flip List.iter errs in
@@ -96,7 +95,7 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.@.@." entry_name Printers.pp_time time error msg;
+        "%s (%a): %s, %s@.@.@." entry_name pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
@@ -196,7 +195,7 @@ let wrap_step name f =
     let time = Unix.gettimeofday () in
     let res = f () in
     let time = Unix.gettimeofday () -. time in
-    Fmt.pr " done in %a@." Printers.pp_time time;
+    Fmt.pr " done in %a@." pp_time time;
     res
   with e ->
     let bt = Printexc.get_raw_backtrace () in
@@ -210,7 +209,7 @@ let fatal ?name ?(code = 2) err =
 
 let set_config config =
   try Config.set_and_lock_global config
-  with Config.ConfigError err ->
+  with Exn.Config_error err ->
     fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
 
 let exec_and_output_crate compile_fn =

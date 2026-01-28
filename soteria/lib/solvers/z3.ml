@@ -89,7 +89,7 @@ module Make (Value : Value) :
       | Some oc ->
           let fmt = Format.formatter_of_out_channel oc in
           Fmt.pf fmt " ; -> %a (%a)\n@?" Sexplib.Sexp.pp_hum response
-            Terminal.Printers.pp_time elapsed
+            Logs.Printers.pp_time elapsed
   end
 
   type t = Simple_smt.solver

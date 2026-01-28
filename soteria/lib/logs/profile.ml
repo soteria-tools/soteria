@@ -33,11 +33,12 @@ let mk_profile () =
   let color = color_from_env () in
   { color; utf8 }
 
-let profile = ref { color = false; utf8 = false }
+let default = { color = false; utf8 = false }
+let get, set_and_lock = Soteria_std.Write_once.make ~name:"Profile" ~default ()
 
-let init ?(no_color = false) () =
+let check_set_and_lock ?(no_color = false) () =
   let p = mk_profile () in
   let p = if no_color then { p with color = false } else p in
-  profile := p;
+  set_and_lock p;
   Fmt.set_style_renderer Format.std_formatter
     (if p.color then `Ansi_tty else `None)
