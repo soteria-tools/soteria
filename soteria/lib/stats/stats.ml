@@ -220,7 +220,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
     close_out oc
 
   let pp ft (stats : t) =
-    let open Terminal in
+    let open Logs.Printers in
     let pp_entry ft (name, content) =
       match content with
       | `Int n -> Fmt.pf ft " • %s: %d" name n
@@ -251,18 +251,18 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
             (fun ft () ->
               Fmt.pf ft "%d (%d unexplored)" branch_number
                 unexplored_branch_number) );
-        ("Total time", `Fn (fun ft () -> Printers.pp_time ft exec_time));
+        ("Total time", `Fn (fun ft () -> pp_time ft exec_time));
         ( "Execution time",
           `Fn
             (fun ft () ->
-              Fmt.pf ft "%a (%a)" Printers.pp_time (exec_time -. sat_time)
-                (Printers.pp_unstable ~name:"%" Printers.pp_percent)
+              Fmt.pf ft "%a (%a)" pp_time (exec_time -. sat_time)
+                (pp_unstable ~name:"%" pp_percent)
                 (exec_time, exec_time -. sat_time)) );
         ( "Solver time",
           `Fn
             (fun ft () ->
-              Fmt.pf ft "%a (%a)" Printers.pp_time sat_time
-                (Printers.pp_unstable ~name:"%" Printers.pp_percent)
+              Fmt.pf ft "%a (%a)" pp_time sat_time
+                (pp_unstable ~name:"%" pp_percent)
                 (exec_time, sat_time)) );
         ( "SAT checks",
           `Fn
@@ -272,7 +272,7 @@ module Make (Range : CodeRange) : S with module Range = Range = struct
         ("Misses without fixes", `StrSeq (Dynarray.to_seq missing_without_fixes));
       ]
     in
-    Fmt.pf ft "%a:@\n%a" (Color.pp_style `Bold) "Statistics"
+    Fmt.pf ft "%a:@\n%a" (pp_style `Bold) "Statistics"
       Fmt.(list ~sep:(any "@\n") pp_entry)
       entries
 

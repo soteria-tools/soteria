@@ -3,6 +3,7 @@
 module Bimap = Bimap
 module Cmdliner_helpers = Cmdliner_helpers
 module Dynarray = Dynarray
+module Exn = Exn
 module Filename = Filename
 module Foldable = Foldable
 module Graph = Graph

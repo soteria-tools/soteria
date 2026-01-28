@@ -1,6 +1,8 @@
 module Level = Level
 module Config = Config
-module Cli = Cli
+module Profile = Profile
+module Color = Color
+module Printers = Printers
 
 type logger = { oc : Out_channel.t; mutable depth_counter : int }
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
