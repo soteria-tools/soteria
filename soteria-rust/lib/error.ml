@@ -60,8 +60,7 @@ type t =
     (** Error in alloc/realloc; a wrong alignment or size was provided *) ]
 
 let is_unwindable : [> t ] -> bool = function
-  | `NullDereference | `OutOfBounds | `DivisionByZero | `FailedAssert _
-  | `Panic _ | `Overflow ->
+  | `NullDereference | `OutOfBounds | `DivisionByZero | `Panic _ | `Overflow ->
       true
   | _ -> false
 
@@ -126,4 +125,5 @@ let pp_err_and_call_trace ft (err, call_trace) =
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `MemoryLeak _ -> Warning
   | e when is_unwindable e -> Error
+  | `FailedAssert _ -> Error
   | _ -> Bug

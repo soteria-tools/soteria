@@ -161,7 +161,14 @@ let exec_crate
   (* check for uncaught failure conditions *)
   let outcomes = List.map fst branches in
   if stats.unexplored_branch_number > 0 then
-    Fmt.kstr execution_err "Missed %d branches" stats.unexplored_branch_number
+    if Option.is_some (Config.get ()).branch_fuel then
+      L.warn (fun m ->
+          m
+            "Note that %d branches were left unexplored due to branch fuel. \
+             Errors may have been missed."
+            stats.unexplored_branch_number)
+    else
+      Fmt.kstr execution_err "Missed %d branches" stats.unexplored_branch_number
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 
