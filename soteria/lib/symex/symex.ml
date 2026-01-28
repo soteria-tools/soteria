@@ -11,6 +11,8 @@ module Solver_result = Solver_result
 module Value = Value
 module Var = Var
 
+type missing_subst = [ `Missing_subst of Var.t ] [@@deriving show]
+
 exception Gave_up of string
 
 module Or_gave_up = struct
@@ -61,7 +63,10 @@ module type Base = sig
       Use this instead of [`Lfail] directly in type signatures to avoid
       potential typos such as [`LFail] which will take precious time to debug...
       trust me. *)
-  type lfail = [ `Lfail of Value.(sbool t) ]
+  type lfail = [ `Lfail of Value.(sbool t) ] [@@deriving show]
+
+  (** Consumption failures *)
+  type cons_fail = [ lfail | missing_subst ] [@@deriving show]
 
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
@@ -96,6 +101,9 @@ module type Base = sig
 
   (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
+
+  (** Do not use [nondet_UNSAFE]. *)
+  val nondet_UNSAFE : 'a vt -> 'a v
 
   (** [simplify v] simplifies the value [v] according to the current path
       condition. *)
@@ -248,6 +256,68 @@ module type Base = sig
         'a t
     end
   end
+
+  module Producer : sig
+    type 'a symex := 'a t
+    type subst := Value.Syn.Subst.t
+
+    include Monad.S
+
+    val lift : 'a symex -> 'a t
+    val vanish : unit -> 'a t
+
+    val apply_subst :
+      ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
+
+    val produce_pure : Value.Syn.t -> unit t
+    val run_producer : subst:subst -> 'a t -> ('a * subst) symex
+    val run_identity_producer : 'a t -> 'a symex
+  end
+
+  module Consumer : sig
+    type subst := Value.Syn.Subst.t
+    type 'a symex := 'a t
+    type ('a, 'fix) t
+
+    val apply_subst :
+      ((Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
+
+    val consume_pure : Value.Syn.t -> (unit, 'fix) t
+    val learn_eq : Value.Syn.t -> 'a Value.t -> (unit, 'fix) t
+    val expose_subst : unit -> (subst, 'fix) t
+    val lift_res : ('a, cons_fail, 'fix) Result.t -> ('a, 'fix) t
+    val lift_symex : 'a symex -> ('a, 'fix) t
+    val branches : (unit -> ('a, 'fix) t) list -> ('a, 'fix) t
+    val ok : 'a -> ('a, 'fix) t
+    val lfail : Value.sbool Value.t -> ('a, 'fix) t
+    val miss : 'fix list -> ('a, 'fix) t
+    val miss_no_fix : reason:string -> unit -> ('a, 'fix) t
+    val map : ('a, 'fix) t -> ('a -> 'b) -> ('b, 'fix) t
+    val map_missing : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
+    val bind : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+
+    val fold_list :
+      'a list -> init:'b -> f:('b -> 'a -> ('b, 'fix) t) -> ('b, 'fix) t
+
+    val bind_res :
+      ('a, 'fix) t ->
+      (('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) ->
+      ('b, 'fix2) t
+
+    val run_consumer :
+      subst:subst -> ('a, 'fix) t -> ('a * subst, cons_fail, 'fix) Result.t
+
+    module Syntax : sig
+      val ( let* ) : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+      val ( let+ ) : ('a, 'fix) t -> ('a -> 'b) -> ('b, 'fix) t
+      val ( let+? ) : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
+
+      val ( let*! ) :
+        ('a, 'fix) t ->
+        (('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) ->
+        ('b, 'fix2) t
+    end
+  end
 end
 
 module type S = sig
@@ -370,6 +440,12 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   type 'a t = 'a Iter.t
   type lfail = [ `Lfail of Value.(sbool t) ]
 
+  let pp_lfail ft (`Lfail v) = Format.fprintf ft "Lfail: %a" Value.ppa v
+  let show_lfail = Fmt.to_to_string pp_lfail
+
+  type cons_fail = [ lfail | missing_subst ]
+  [@@deriving show { with_path = false }]
+
   module Symex_state = struct
     let backtrack_n n =
       Solver.backtrack_n n;
@@ -448,11 +524,11 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     if Approx.As_ctx.is_ux () then ()
     else f (Compo_res.Error (`Lfail (Value.bool false)))
 
-  let nondet ty f =
+  let nondet_UNSAFE ty =
     let v = Solver.fresh_var ty in
-    let v = Value.mk_var v ty in
-    f v
+    Value.mk_var v ty
 
+  let nondet ty f = f (nondet_UNSAFE ty)
   let simplify v f = f (Solver.simplify v)
   let fresh_var ty f = f (Solver.fresh_var ty)
 
@@ -681,6 +757,161 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
       let branch_on_take_one = branch_on_take_one
       let if_sure = if_sure
     end
+  end
+
+  module Producer = struct
+    include
+      Soteria_std.Monad.StateT
+        (struct
+          type t = Value.Syn.Subst.t option
+        end)
+        (MONAD)
+
+    let vanish () = lift (vanish ())
+
+    let apply_subst (sf : (Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : 'sem t =
+     fun s ->
+      (* There's maybe a safer version with effects and no reference? *)
+      match s with
+      | None ->
+          let vsf e =
+            let v, _ =
+              Value.Syn.subst
+                ~missing_var:(fun v ty -> Value.mk_var v ty)
+                Value.Syn.Subst.empty e
+            in
+            v
+          in
+          let res = sf vsf e in
+          MONAD.return (res, None)
+      | Some s ->
+          let s = ref s in
+          let vsf e =
+            let v, s' =
+              Value.Syn.subst ~missing_var:(fun _ ty -> nondet_UNSAFE ty) !s e
+            in
+            s := s';
+            v
+          in
+          let res = sf vsf e in
+          MONAD.return (res, Some !s)
+
+    let produce_pure e : unit t =
+      let open Syntax in
+      (* FIXME: This does no check that `e` is indeed a boolean. *)
+      let* v = apply_subst Fun.id e in
+      lift (assume [ v ])
+
+    let run_producer ~subst p =
+      let open MONAD.Syntax in
+      let+ x, s = p (Some subst) in
+      (x, Option.get s)
+
+    let run_identity_producer p =
+      let open MONAD.Syntax in
+      let+ x, _s = p None in
+      x
+  end
+
+  module Consumer = struct
+    type 'a symex = 'a t
+    type subst = Value.Syn.Subst.t
+    type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
+
+    let learn_eq syn v : (unit, 'fix) t =
+      let open Syntax in
+      fun subst ->
+        let subst =
+          match Value.Syn.learn subst syn v with
+          | Some s -> s
+          | None ->
+              failwith
+                "Consumed something that was not yet consumable, this is a \
+                 tool bug!"
+        in
+        let v', subst =
+          Value.Syn.subst
+            ~missing_var:(fun _ _ ->
+              failwith
+                "Tool Bug: learned substitution does not cover expression's \
+                 free variables.")
+            subst syn
+        in
+        let++ () = consume_pure (Value.sem_eq_untyped v v') in
+        ((), subst)
+
+    let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
+     fun subst -> Result.map r (fun a -> (a, subst))
+
+    let lift_symex (m : 'a symex) : ('a, 'fix) t =
+     fun subst -> MONAD.map m (fun a -> Compo_res.ok (a, subst))
+
+    let branches (l : (unit -> ('a, 'fix) t) list) : ('a, 'fix) t =
+     fun s -> branches (List.map (fun f () -> f () s) l)
+
+    let ok x = fun subst -> Result.ok (x, subst)
+    let lfail v = lift_res (Result.error (`Lfail v))
+    let miss fixes = lift_res (Result.miss fixes)
+    let miss_no_fix ~reason () = lift_res (Result.miss_no_fix ~reason ())
+
+    let map (m : ('a, 'fix) t) (f : 'a -> 'b) : ('b, 'fix) t =
+     fun s -> Result.map (m s) (fun (a, s) -> (f a, s))
+
+    let map_missing (m : ('a, 'fix) t) (f : 'fix -> 'g) : ('a, 'g) t =
+     fun s -> Result.map_missing (m s) f
+
+    let bind (m : ('a, 'fix) t) (f : 'a -> ('b, 'fix) t) : ('b, 'fix) t =
+     fun s -> Result.bind (m s) (fun (a, s) -> f a s)
+
+    let bind_res (m : ('a, 'fix) t)
+        (f : ('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) : ('b, 'fix2) t
+        =
+     fun s ->
+      MONAD.bind (m s) (fun r ->
+          match r with
+          | Compo_res.Ok (a, s) -> f (Compo_res.Ok a) s
+          | Error e -> f (Compo_res.Error e) s
+          | Missing fixes -> f (Compo_res.Missing fixes) s)
+
+    let fold_list x ~init ~f =
+      Monad.foldM ~return:ok ~bind ~fold:Foldable.List.fold x ~init ~f
+
+    let run_consumer ~subst p = p subst
+
+    module Syntax = struct
+      let ( let* ) = bind
+      let ( let+ ) = map
+      let ( let+? ) = map_missing
+      let ( let*! ) = bind_res
+    end
+
+    let apply_subst (sf : (Value.Syn.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : ('sem, 'fix) t =
+      let exception Missing_subst of Var.t in
+      fun s ->
+        let vsf e =
+          let v, _ =
+            Value.Syn.subst
+              ~missing_var:(fun v _ -> raise (Missing_subst v))
+              s e
+          in
+          v
+        in
+        try
+          let res = sf vsf e in
+          Result.ok (res, s)
+        with Missing_subst v -> Result.error (`Missing_subst v)
+
+    let consume_pure e : (unit, 'fix) t =
+      let open Syntax in
+      let* v = apply_subst Fun.id e in
+      if Approx.As_ctx.is_ux () then lift_symex (assume [ v ])
+      else
+        let assert_passed = assert_raw v in
+        if assert_passed then ok () else lfail v
+
+    let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)
   end
 end
 

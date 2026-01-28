@@ -1,24 +1,20 @@
 open Aux
 
-type err = [ `UseAfterFree | `Interp of string ]
+type err = Error.t [@@deriving show]
+type t = Excl_val.t Freeable.t PMap.t [@@deriving show { with_path = false }]
+
+type syn = Excl_val.syn Freeable.syn PMap.syn
 [@@deriving show { with_path = false }]
 
-module PMap = Soteria.Sym_states.Pmap.Make (Symex) (S_int)
-module Excl_val = Soteria.Sym_states.Excl.Make (Symex) (S_val)
-module Freeable = Soteria.Sym_states.Freeable.Make (Symex)
+let ins_outs (syn : syn) =
+  PMap.ins_outs (Freeable.ins_outs Excl_val.ins_outs) syn
 
-type t = Excl_val.t Freeable.t PMap.t option
-[@@deriving show { with_path = false }]
-
-type fixes = Excl_val.serialized Freeable.serialized PMap.serialized
-[@@deriving show { with_path = false }]
-
-let serialize (st : t) : fixes =
+let to_syn (st : t option) : syn list =
   match st with
   | None -> []
-  | Some pmap -> PMap.serialize (Freeable.serialize Excl_val.serialize) pmap
+  | Some pmap -> PMap.to_syn (Freeable.to_syn Excl_val.to_syn) pmap
 
-let empty : t = None
+let empty : t option = None
 let load addr st = PMap.wrap (Freeable.wrap Excl_val.load) addr st
 
 let store addr value st =
@@ -33,5 +29,8 @@ let free addr st =
     (Freeable.free ~assert_exclusively_owned:Excl_val.assert_exclusively_owned)
     addr st
 
-let produce fix t = PMap.produce (Freeable.produce Excl_val.produce) fix t
-let error msg _state = `Interp msg
+let error (err : Error.t) _state = err
+let consume s t = PMap.consume (Freeable.consume Excl_val.consume) s t
+
+let produce (s : syn) (t : t option) =
+  PMap.produce (Freeable.produce Excl_val.produce) s t

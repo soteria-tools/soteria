@@ -1,27 +1,47 @@
 open Soteria_linear_ast.Lang
 module Typed = Soteria.Tiny_values.Typed
+module Syn = Soteria.Tiny_values.Typed.Syn
 
 module Symex =
   Soteria.Symex.Make
     (Soteria.Symex.Meta.Dummy)
     (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
+module Error = struct
+  type t = [ `UseAfterFree | `Interp of string | Symex.cons_fail ]
+  [@@deriving show { with_path = false }]
+end
+
 module S_int = struct
   include Typed
 
   type t = Typed.T.sint Typed.t
+  type syn = Syn.t [@@deriving show { with_path = false }]
 
   let simplify = Symex.simplify
   let fresh () = Symex.nondet Typed.t_int
   let pp = Typed.ppa
+
+  let subst (f : syn -> 'a Typed.t) (e : syn) : t =
+    (* FIXME: I don't know how to do without `Typed.cast`... *)
+    Typed.cast (f e)
+
+  let to_syn = Syn.of_value
+  let exprs_syn (s : syn) : Symex.Value.Syn.t list = [ s ]
 end
 
 module S_val = struct
   include Typed
 
   type t = T.any Typed.t [@@deriving show { with_path = false }]
+  type syn = Syn.t [@@deriving show { with_path = false }]
 
-  let sem_eq = sem_eq_untyped
+  let subst (f : syn -> 'a Typed.t) (e : syn) : t = Typed.cast (f e)
+  let to_syn = Syn.of_value
+  let exprs_syn (s : syn) : Symex.Value.Syn.t list = [ s ]
+
+  let learn_eq (syn : syn) (v : t) : (unit, 'a) Symex.Consumer.t =
+    Symex.Consumer.learn_eq syn v
 
   let fresh () : t Symex.t =
     Symex.branches
@@ -39,14 +59,8 @@ module S_val = struct
     else Symex.Result.ok (Typed.cast v)
 end
 
-type _ Effect.t += Resolve_function : string -> Fun_def.t Effect.t
 type subst = S_val.t String_map.t [@@deriving show { with_path = false }]
 
-let get_function fname = Effect.perform (Resolve_function fname)
-
-let with_program (program : Program.t) f =
-  try f ()
-  with effect Resolve_function name, k -> (
-    match String_map.find_opt name program with
-    | Some func_def -> Effect.Deep.continue k func_def
-    | None -> failwith ("Function not found: " ^ name))
+module PMap = Soteria.Sym_states.Pmap.Make (Symex) (S_int)
+module Excl_val = Soteria.Sym_states.Excl.Make (Symex) (S_val)
+module Freeable = Soteria.Sym_states.Freeable.Make (Symex)

@@ -11,13 +11,18 @@ module Make (Symex : Symex.Base) = struct
 
   type nonrec 'a t = 'a t = Freed | Alive of 'a
   type 'a serialized = 'a t
+  type 'a syn = 'a t
 
-  let lift_fix fix = Alive fix
+  let lift_fix fix = List.map (fun x -> Alive x) fix
   let lift_fix_s r = Symex.Result.map_missing r lift_fix
 
   let serialize serialize_inner = function
     | Freed -> Freed
     | Alive a -> Alive (serialize_inner a)
+
+  let to_syn to_syn_inner = function
+    | Freed -> [ Freed ]
+    | Alive a -> List.map (fun x -> Alive x) (to_syn_inner a)
 
   let subst_serialized subst_inner subst_var = function
     | Freed -> Freed
@@ -28,6 +33,7 @@ module Make (Symex : Symex.Base) = struct
 
   let pp = pp
   let pp_serialized = pp
+  let pp_syn = pp
 
   let unwrap_alive = function
     | None -> Symex.Result.ok None
@@ -40,9 +46,9 @@ module Make (Symex : Symex.Base) = struct
     ((), Some Freed)
 
   (* [f] must be a "symex state monad" *)
-  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
+  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix list) Symex.Result.t)
       (st : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
+      ('b * 'a t option, 'err, 'fix syn list) Symex.Result.t =
     match st with
     | None ->
         let++ res, st' = f None |> lift_fix_s in
@@ -52,49 +58,53 @@ module Make (Symex : Symex.Base) = struct
         (res, Option.map (fun x -> Alive x) st')
     | Some Freed -> Symex.Result.error `UseAfterFree
 
-  (* In the context of UX, using a non-matching spec will simply vanish *)
+  let ins_outs ins_outs_inner = function
+    | Alive a -> ins_outs_inner a
+    | Freed -> ([], [])
+
   let consume
-      (cons :
-        'inner_ser ->
+      (cons_inner :
+        'inner_syn ->
         'inner_st option ->
-        ('inner_st option, [> Symex.lfail ], 'inner_ser) Symex.Result.t)
-      (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
-      ( 'inner_st t option,
-        [> Symex.lfail ],
-        'inner_ser serialized )
-      Symex.Result.t =
-    match serialized with
+        ('inner_st option, 'inner_syn list) Symex.Consumer.t)
+      (syn : 'inner_syn syn) (st : 'inner_st t option) :
+      ('inner_st t option, 'inner_syn syn list) Symex.Consumer.t =
+    let open Symex.Consumer in
+    let open Syntax in
+    let lift_fix_s s = map_missing s lift_fix in
+    match syn with
     | Freed -> (
         match st with
-        | None -> Symex.Result.miss [ Freed ]
-        | Some Freed -> Symex.Result.ok None
-        | Some (Alive _) -> Symex.consume_false ())
-    | Alive ser -> (
+        | None -> miss [ [ Freed ] ]
+        | Some Freed -> ok None
+        | Some (Alive _) -> lfail (Symex.Value.bool false))
+    | Alive syn -> (
         match st with
         | None ->
-            let++ st' = cons ser None |> lift_fix_s in
+            let+ st' = cons_inner syn None |> lift_fix_s in
             Option.map (fun x -> Alive x) st'
-        | Some Freed -> Symex.vanish ()
+        | Some Freed -> lfail (Symex.Value.bool false)
         | Some (Alive st) ->
-            let++ st' = cons ser (Some st) |> lift_fix_s in
+            let+ st' = cons_inner syn (Some st) |> lift_fix_s in
             Option.map (fun x -> Alive x) st')
 
   let produce
-      (prod : 'inner_ser -> 'inner_st option -> 'inner_st option Symex.t)
-      (serialize : 'inner_ser serialized) (st : 'inner_st t option) :
-      'inner_st t option Symex.t =
-    match serialize with
+      (prod_inner :
+        'inner_syn -> 'inner_st option -> 'inner_st option Symex.Producer.t)
+      (syn : 'inner_syn syn) (st : 'inner_st t option) :
+      'inner_st t option Symex.Producer.t =
+    let open Symex.Producer in
+    let open Syntax in
+    match syn with
     | Freed -> (
-        match st with
-        | None -> Symex.return (Some Freed)
-        | Some _ -> Symex.vanish ())
-    | Alive ser -> (
+        match st with None -> return (Some Freed) | Some _ -> vanish ())
+    | Alive syn -> (
         match st with
         | None ->
-            let+ st' = prod ser None in
+            let+ st' = prod_inner syn None in
             Option.map (fun s -> Alive s) st'
         | Some (Alive st) ->
-            let+ st' = prod ser (Some st) in
+            let+ st' = prod_inner syn (Some st) in
             Option.map (fun s -> Alive s) st'
-        | Some Freed -> Symex.vanish ())
+        | Some Freed -> vanish ())
 end
