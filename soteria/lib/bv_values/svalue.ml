@@ -1355,6 +1355,9 @@ and BitVec : BitVec = struct
         else
           (* Zero extend: just mask to ensure no extra bits *)
           mk to_ bv
+    | Unop (BvExtend (prev_signed, prev_by), v) when prev_signed = signed ->
+        (* combine extensions *)
+        extend ~signed (prev_by + extend_by) v
     | Ite (b, l, r) ->
         let l = extend ~signed extend_by l in
         let r = extend ~signed extend_by r in
