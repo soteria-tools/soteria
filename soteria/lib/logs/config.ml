@@ -40,9 +40,34 @@ type cli = {
 
 let cmdliner_term = cli_cmdliner_term
 let default = make ()
-let get, set_and_lock = Soteria_std.Write_once.make ~name:"Logs" ~default ()
 
-let check_set_and_lock args =
+include struct
+  open Soteria_std.Effectful.Read_only_state (struct
+    type nonrec t = t
+  end)
+
+  let get = get
+  let with_config = run
+end
+
+type _ Effect.t += Interject_logs : (unit -> unit) -> unit Effect.t
+
+let interject f = Effect.perform (Interject_logs f)
+
+let with_interject : interject:((unit -> unit) -> unit) -> (unit -> 'a) -> 'a =
+ fun ~interject f ->
+  try f ()
+  with effect Interject_logs interj, k ->
+    interject interj;
+    Effect.Deep.continue k ()
+
+let with_config_raw ?(config = default) (f : unit -> 'a) : 'a =
+  (* The following line still prevents one from running this function several times... *)
+  Profile.check_set_and_lock ~no_color:config.no_color ();
+  with_interject ~interject:(fun interj -> interj ()) @@ fun () ->
+  with_config config f
+
+let check (args : cli) : t =
   let level =
     match (List.length args.v_list, args.silent) with
     | 0, true -> None
@@ -61,17 +86,17 @@ let check_set_and_lock args =
     | None, true -> Html
     | None, false -> Stderr
   in
-  let config =
-    {
-      level;
-      kind;
-      always_log_smt = args.always_log_smt;
-      no_color = args.no_color;
-      hide_unstable = args.hide_unstable;
-    }
-  in
-  set_and_lock config;
-  Profile.check_set_and_lock ~no_color:config.no_color ()
+  {
+    level;
+    kind;
+    always_log_smt = args.always_log_smt;
+    no_color = args.no_color;
+    hide_unstable = args.hide_unstable;
+  }
+
+let with_config ?config (f : unit -> 'a) : 'a =
+  let config = Option.map check config in
+  with_config_raw ?config f
 
 let logs_enabled () =
   let conf = get () in
@@ -96,13 +121,3 @@ let channel =
             at_exit (fun () -> close_out oc);
             oc_ref := Some oc;
             oc)
-
-type interject = (unit -> unit) -> unit
-
-let cur_interject : interject ref = ref (fun f -> f ())
-
-let with_interject : interject:interject -> (unit -> 'a) -> 'a =
- fun ~interject f ->
-  let old = !cur_interject in
-  cur_interject := interject;
-  Fun.protect ~finally:(fun () -> cur_interject := old) f

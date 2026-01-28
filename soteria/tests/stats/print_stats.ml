@@ -16,6 +16,7 @@ let process : (int, int, unit) Result.t =
   else Result.error 2
 
 let () =
-  Soteria.Logs.Config.(set_and_lock (make ~hide_unstable:true ()));
+  Soteria.Logs.Config.(with_config_raw ~config:(make ~hide_unstable:true ()))
+  @@ fun () ->
   let { stats; _ } : 'a Stats.with_stats = run_with_stats ~mode:UX process in
   Stats.pp Fmt.stdout stats

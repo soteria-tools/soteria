@@ -104,12 +104,13 @@ type global = {
 
 let global_term = global_cmdliner_term ()
 
-let set_and_lock_global (config : global) =
+let with_global_config (config : global) f =
   Soteria.Solvers.Config.set_and_lock config.solver;
-  Soteria.Logs.Config.check_set_and_lock config.logs;
+  Soteria.Logs.Config.with_config ~config:config.logs @@ fun () ->
   Soteria.Terminal.Config.set_and_lock config.terminal;
   Soteria.Stats.Config.set_and_lock config.stats;
   if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
     Exn.config_error
       "Obol does not support polymorphic analyses; use --frontend charon";
-  set_and_lock config.soteria_rust
+  set_and_lock config.soteria_rust;
+  f ()

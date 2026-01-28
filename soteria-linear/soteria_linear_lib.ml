@@ -23,7 +23,7 @@ let pp_results ft v =
   pp ft v
 
 let with_config logs_config solver_config f =
-  Soteria.Logs.Config.check_set_and_lock logs_config;
+  let@ () = Soteria.Logs.Config.with_config ~config:logs_config in
   Soteria.Solvers.Config.set_and_lock solver_config;
   f ()
 

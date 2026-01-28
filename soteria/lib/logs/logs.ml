@@ -70,7 +70,7 @@ let write_string str =
      so that interject would be part of a given logger. *)
   match (Config.get ()).kind with
   | Html -> do_ ()
-  | Stderr -> !Config.cur_interject do_
+  | Stderr -> Config.interject do_
 
 let incr_depth_counter () =
   let logger = logger () in

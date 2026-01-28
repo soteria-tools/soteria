@@ -48,15 +48,17 @@ module Config : sig
   (** A [Cmdliner] term for parsing cli arguments and obtain a {!Config.t}. *)
   val cmdliner_term : unit -> cli Cmdliner.Term.t
 
-  (** Bypass CLI parsing, and manually set the configuration. *)
-  val set_and_lock : t -> unit
+  (** [with_config conf f] receives a configuration and runs function [f] with
+      that configuration (accessible using [get ()]). *)
+  val with_config_raw : ?config:t -> (unit -> 'a) -> 'a
 
-  (** Receives a CLI input configuration (obtained from parsing the Cli
-      arguments using {!Soteria.Logs.Cli.cmdliner_term}), checks that parsing
-      went correctly, sets the contained configuration as global configuartion,
-      and locks the configuration to prevent the configuration to be modified
-      during execution. *)
-  val check_set_and_lock : cli -> unit
+  (** [with_config cli f] receives a [cli] input configuration (obtained from
+      parsing the Cli arguments using {!Soteria.Logs.Cli.cmdliner_term}), checks
+      that parsing went correctly, and runs function [f] with that configuration
+      (accessible using [get ()]).
+
+      @raise {!Soteria_std.Exn.Config_error} if the configuration is invalid. *)
+  val with_config : ?config:cli -> (unit -> 'a) -> 'a
 
   (** [with_interject ~interject f] runs [f] while using [interject] as function
       to interact with Stderr.
