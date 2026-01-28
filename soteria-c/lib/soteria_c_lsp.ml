@@ -11,17 +11,34 @@ let cerb_loc_to_range loc =
       end_ = { character = end_c; line = end_l };
     }
 
-let get_abort_diagnostics (stats : Csymex.Stats.t) =
+let yojson_loc_to_range (loc : Yojson.Safe.t) =
+  let open Lsp.Types in
+  let (start_l, start_c), (end_l, end_c) =
+    match loc with
+    | `List [ `List [ `Int sl; `Int sc ]; `List [ `Int el; `Int ec ] ] ->
+        ((sl, sc), (el, ec))
+    | _ -> ((0, 0), (0, 0))
+  in
+  Range.
+    {
+      start = { character = start_c; line = start_l };
+      end_ = { character = end_c; line = end_l };
+    }
+
+let get_abort_diagnostics (stats : Soteria.Stats.t) =
   let open Syntaxes.List in
   let list_reasons =
-    stats.give_up_reasons
+    Soteria.Stats.get_map stats Soteria.Symex.StatKeys.give_up_reasons
     |> Hashtbl.Hstring.to_seq
     |> Seq.concat_map (fun (reason, locs) ->
-        Seq.map (fun loc -> (reason, loc)) (Dynarray.to_seq locs))
+        Soteria.Stats.as_yojson locs
+        |> Yojson.Safe.Util.to_list
+        |> List.to_seq
+        |> Seq.map (fun loc -> (reason, loc)))
     |> List.of_seq
   in
   let+ msg, loc = list_reasons in
-  let range = cerb_loc_to_range loc in
+  let range = yojson_loc_to_range loc in
   Lsp.Types.Diagnostic.create ~message:(`String msg) ~severity:Information
     ~range ~source:"soteria" ()
 

@@ -1,13 +1,21 @@
-module Meta = struct
-  module Range = struct
-    type t = Cerb_location.t
+module SYMEX =
+  Soteria.Symex.Make
+    (struct
+      module Range = struct
+        type t = Cerb_location.t
 
-    let to_yojson _ = `Null
-    let of_yojson _ = Ok Cerb_location.unknown
-  end
-end
+        (* We take the easy way out and just convert to cartesian coordinates *)
+        let to_yojson loc =
+          let (p1, p2), (p3, p4) =
+            Option.value
+              ~default:((0, 0), (0, 0))
+              (Cerb_location.to_cartesian_user loc)
+          in
+          `List [ `List [ `Int p1; `Int p2 ]; `List [ `Int p3; `Int p4 ] ]
+      end
+    end)
+    (Bv_solver.Z3_solver)
 
-module SYMEX = Soteria.Symex.Make (Meta) (Bv_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
 

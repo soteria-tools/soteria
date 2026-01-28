@@ -51,14 +51,14 @@ module Make
     end) :
   S
     with module Value = Sym.Value
-     and module Stats = Sym.Stats
+     and module Meta = Sym.Meta
      and module Symex = Sym
      and type st = State.t
      and type 'a t = State.t -> ('a * State.t) Sym.t = struct
   open Sym.Syntax
   module Symex = Sym
   module Value = Sym.Value
-  module Stats = Sym.Stats
+  module Meta = Sym.Meta
 
   type 'a t = State.t -> ('a * State.t) Sym.t
   type lfail = Sym.lfail

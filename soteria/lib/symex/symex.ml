@@ -25,6 +25,12 @@ module Or_gave_up = struct
     | Gave_up reason -> raise (Gave_up reason)
 end
 
+module type CodeRange = sig
+  type t
+
+  val to_yojson : t -> Yojson.Safe.t
+end
+
 module Meta = struct
   (** Management of meta-information about the execution. *)
 
@@ -32,7 +38,7 @@ module Meta = struct
     (** Management of meta-information about the execution. *)
 
     (** Used for various bookkeeping utilities. *)
-    module Range : Stats.CodeRange
+    module Range : CodeRange
   end
 
   module Dummy : S with type Range.t = unit = struct
@@ -42,14 +48,13 @@ module Meta = struct
       type t = unit
 
       let to_yojson () = `Null
-      let of_yojson _ = Ok ()
     end
   end
 end
 
 module type Base = sig
   module Value : Value.S
-  module Stats : Stats.S
+  module Meta : Meta.S
 
   (** Represents a yet-to-be-executed symbolic process which terminates with a
       value of type ['a]. *)
@@ -161,11 +166,11 @@ module type Base = sig
 
       This function also logs, and adds the reason for giving up to the
       execution statistics. *)
-  val give_up : loc:Stats.Range.t -> string -> 'a t
+  val give_up : loc:Meta.Range.t -> string -> 'a t
 
   (** If the given option is None, gives up execution, otherwise continues,
       unwrapping the option. *)
-  val some_or_give_up : loc:Stats.Range.t -> string -> 'a option -> 'a t
+  val some_or_give_up : loc:Meta.Range.t -> string -> 'a option -> 'a t
 
   val all : ('a -> 'b t) -> 'a list -> 'b list t
   val fold_list : 'a list -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
@@ -324,17 +329,76 @@ module type S = sig
   end
 end
 
+module StatKeys = struct
+  (** Keys for statistics used in Soteria's symex engine. These are exposed so
+      clients can query statistics if needed; the type with which they are
+      logged is also documented.
+
+      It is recommended for clients to not use these keys for custom statistics
+      tracking. To avoid clashes, all of these are prefixed with [soteria.] *)
+
+  (** Total execution time. Logged as a {!Stats.Float}. *)
+  let exec_time = "soteria.exec-time"
+
+  (** SAT solving time. Logged as a {!Stats.Float}. *)
+  let sat_time = "soteria.sat-time"
+
+  (** Number of calls to the solver's [sat] function. Logged as a {!Stats.Int}.
+  *)
+  let sat_checks = "soteria.sat-checks"
+
+  (** Number of calls to the solver's [sat] function that returned [Unknown].
+      Logged as a {!Stats.Int}. *)
+  let sat_unknowns = "soteria.sat-unknowns"
+
+  (** Number of unexplored branches due to fuel exhaustion. Logged as a
+      {!Stats.Int}. *)
+  let unexplored_branches = "soteria.unexplored-branches"
+
+  (** Number of branches explored. Logged as a {!Stats.Int}. *)
+  let branches = "soteria.branches"
+
+  (** Total number of steps taken across all branches. Logged as a {!Stats.Int}.
+  *)
+  let steps = "soteria.steps"
+
+  (** Number of give-ups due to incompleteness. Logged as a {!Stats.Map},
+      mapping locations as strings to the give up messages for that location as
+      a {!Stats.StrSeq}. *)
+  let give_up_reasons = "soteria.give-up-reasons"
+
+  (** Number of misses without any fix. Logged as a {!Stats.StrSeq}. *)
+  let miss_without_fix = "soteria.miss-without-fix"
+
+  let () =
+    Stats.register_float_printer exec_time ~name:"Execution time"
+      Logs.Printers.pp_time;
+    Stats.register_float_printer sat_time ~name:"SAT solving time"
+      Logs.Printers.pp_time;
+    Stats.register_int_printer sat_checks ~name:"SAT checks" Fmt.int;
+    Stats.register_int_printer sat_unknowns ~name:"Unknown SAT checks" Fmt.int;
+    Stats.register_int_printer unexplored_branches ~name:"Unexplored branches"
+      Fmt.int;
+    Stats.register_int_printer branches ~name:"Branches" Fmt.int;
+    Stats.register_int_printer steps ~name:"Steps" Fmt.int;
+    Stats.register_map_printer give_up_reasons ~name:"Give up reasons"
+      (Stats.pp_iter_bindings_list Hashtbl.Hstring.iter (fun ft (key, _) ->
+           Fmt.string ft key));
+    Stats.register_printer miss_without_fix ~name:"Misses without fix"
+      Stats.default_printer
+end
+
 module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
-  S with module Value = Sol.Value and module Stats.Range = Meta.Range = struct
-  module Stats = Stats.Make (Meta.Range)
+  S with module Value = Sol.Value and module Meta = Meta = struct
+  module Meta = Meta
 
   module Solver = struct
     include Solver.Mutable_to_pooled (Sol)
 
     let sat () =
-      let res = Stats.As_ctx.add_sat_time_of sat in
-      Stats.As_ctx.add_sat_checks 1;
-      if res = Unknown then Stats.As_ctx.add_sat_unknowns 1;
+      let res = Stats.As_ctx.add_time_of_to StatKeys.sat_time sat in
+      Stats.As_ctx.incr StatKeys.sat_checks;
+      if res = Unknown then Stats.As_ctx.incr StatKeys.sat_unknowns;
       res
   end
 
@@ -387,10 +451,10 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   let consume_fuel_steps n f =
     match Fuel.consume_fuel_steps n with
     | Exhausted ->
-        Stats.As_ctx.add_unexplored_branches 1;
+        Stats.As_ctx.incr StatKeys.unexplored_branches;
         L.debug (fun m -> m "Exhausted step fuel")
     | Not_exhausted ->
-        Stats.As_ctx.add_steps n;
+        Stats.As_ctx.add_int StatKeys.steps n;
         f ()
 
   let assume learned f =
@@ -484,11 +548,11 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
             else
               match Fuel.consume_branching 1 with
               | Exhausted ->
-                  Stats.As_ctx.add_unexplored_branches 1;
+                  Stats.As_ctx.incr StatKeys.unexplored_branches;
                   L.debug (fun m ->
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->
-                  Stats.As_ctx.add_branches 1;
+                  Stats.As_ctx.incr StatKeys.branches;
                   if Solver_result.is_sat (Solver.sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible"))
 
@@ -548,7 +612,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
     let brs = Fuel.take_branches brs in
     (* If there are 0 or 1 branches, we don't do anything,
        else we add how many *new* branches we take. *)
-    Stats.As_ctx.add_branches (max (List.length brs - 1) 0);
+    Stats.As_ctx.add_int StatKeys.branches (max (List.length brs - 1) 0);
     match brs with
     | [] -> ()
     | [ a ] -> a () f
@@ -582,7 +646,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   let run_needs_stats_iter ?(fuel = Fuel_gauge.infinite) ~mode iter :
       ('a * Value.(sbool t) list) Iter.t =
    fun continue ->
-    let@ () = Stats.As_ctx.add_time_of in
+    let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
     let@ () = Symex_state.run ~init_fuel:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
@@ -606,7 +670,8 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   let give_up ~loc reason _f =
     (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
     L.info (fun m -> m "%s" reason);
-    Stats.As_ctx.push_give_up_reason ~loc reason;
+    Stats.As_ctx.push_binding StatKeys.give_up_reasons reason
+      (Yojson (Meta.Range.to_yojson loc));
     if
       Approx.As_ctx.is_ox ()
       && Solver_result.admissible ~mode:OX (Solver.sat ())
@@ -626,7 +691,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let run_needs_stats ?(fuel = Fuel_gauge.infinite) ?(fail_fast = false) ~mode
         iter =
-      let@ () = Stats.As_ctx.add_time_of in
+      let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
       let@ () = Symex_state.run ~init_fuel:fuel in
       let@ () = Approx.As_ctx.with_mode mode in
       let l = ref [] in
@@ -658,7 +723,7 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
 
     let miss_no_fix ~reason () =
       bind (ok ()) @@ fun () ->
-      Stats.As_ctx.push_missing_without_fix reason;
+      Stats.As_ctx.push_str StatKeys.miss_without_fix reason;
       L.debug (fun m -> m "Missing without fix: %s" reason);
       miss []
 
