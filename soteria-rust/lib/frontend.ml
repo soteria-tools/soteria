@@ -484,7 +484,7 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
            installed?"
           Config.pp_frontend (Config.get ()).frontend
     | exception Sys_error _ -> frontend_err "File doesn't exist"
-    | exception _ -> frontend_err "Unexpected error"
+    | exception e -> Fmt.kstr frontend_err "Unexpected error: %a" Fmt.exn e
   in
   if (Config.get ()).output_crate then (
     (* save pretty-printed crate to local file *)
