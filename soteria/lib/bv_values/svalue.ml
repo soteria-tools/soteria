@@ -1181,13 +1181,22 @@ and BitVec : BitVec = struct
   and or_ v1 v2 =
     assert (match v1.node.ty with TBitVector _ -> true | _ -> false);
     assert (match v2.node.ty with TBitVector _ -> true | _ -> false);
-    match (v1.node.kind, v2.node.kind) with
+    match[@warning "-ambiguous-var-in-pattern-guard"]
+      (v1.node.kind, v2.node.kind)
+    with
     | BitVec l, BitVec r ->
         let n = size_of v1.node.ty in
         mk n Z.(l lor r)
     | BitVec z, _ when Z.equal z Z.zero -> v2
     | _, BitVec z when Z.equal z Z.zero -> v1
     | _, _ when equal v1 v2 -> v1
+    (* m1 | (x & m2) where m2 is a subset of m1's bits means the & is redundant *)
+    | BitVec m1, Binop (BitAnd, _, { node = { kind = BitVec m2; _ }; _ })
+    | BitVec m1, Binop (BitAnd, { node = { kind = BitVec m2; _ }; _ }, _)
+    | Binop (BitAnd, _, { node = { kind = BitVec m2; _ }; _ }), BitVec m1
+    | Binop (BitAnd, { node = { kind = BitVec m2; _ }; _ }, _), BitVec m1
+      when Z.(equal (logand m1 m2) m2) ->
+        mk (size_of v1.node.ty) m1
     | BitVec m1, Binop (BitOr, x, { node = { kind = BitVec m2; _ }; _ })
     | BitVec m1, Binop (BitOr, { node = { kind = BitVec m2; _ }; _ }, x)
     | Binop (BitOr, x, { node = { kind = BitVec m2; _ }; _ }), BitVec m1
