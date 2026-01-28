@@ -1422,6 +1422,12 @@ and BitVec : BitVec = struct
         let n = size_of v1.node.ty in
         let shifted_mask = Z.(mask lsl to_int s) in
         and_ (shl x v2) (mk_masked n shifted_mask)
+    | Binop (BitOr, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
+    | Binop (BitOr, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
+        (* (x | mask) << s = (x << s) | (mask << s) *)
+        let n = size_of v1.node.ty in
+        let shifted_mask = Z.(mask lsl to_int s) in
+        or_ (shl x v2) (mk_masked n shifted_mask)
     | _ -> Binop (Shl, v1, v2) <| v1.node.ty
 
   and lshr v1 v2 =
@@ -1439,6 +1445,12 @@ and BitVec : BitVec = struct
         let n = size_of v1.node.ty in
         let shifted_mask = Z.(mask asr to_int s) in
         and_ (lshr x v2) (mk n shifted_mask)
+    | Binop (BitOr, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
+    | Binop (BitOr, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
+        (* (x | mask) >> s = (x >> s) | (mask >> s) *)
+        let n = size_of v1.node.ty in
+        let shifted_mask = Z.(mask asr to_int s) in
+        or_ (lshr x v2) (mk n shifted_mask)
     | _ -> Binop (LShr, v1, v2) <| v1.node.ty
 
   and ashr v1 v2 =
