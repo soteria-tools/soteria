@@ -228,13 +228,6 @@ let exec_and_output_crate compile_fn =
 
 let exec_rustc config file_name =
   set_config config;
-  L.app (fun m -> m "app");
-  L.warn (fun m -> m "warn");
-  L.error (fun m -> m "error");
-  L.info (fun m -> m "info");
-  L.debug (fun m -> m "debug");
-  L.trace (fun m -> m "trace");
-  L.smt (fun m -> m "smt");
   let compile () = Frontend.parse_ullbc_of_file file_name in
   exec_and_output_crate compile
 
