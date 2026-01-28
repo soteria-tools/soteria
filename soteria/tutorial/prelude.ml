@@ -1,7 +1,7 @@
 open Soteria;;
 open Tiny_values;;
 
-let pp_stats _pp_inner ft (_t: 'a Soteria.Stats.stats) =
+let pp_stats _pp_inner ft (_t: Soteria.Stats.t) =
   Fmt.pf ft "...";;
 
 #install_printer pp_stats;;

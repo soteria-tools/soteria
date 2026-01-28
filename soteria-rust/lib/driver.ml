@@ -122,7 +122,7 @@ let exec_crate
   (* execute! *)
   let entry_name = Fmt.to_to_string Crate.pp_name fun_decl.item_meta.name in
   let@ () = print_outcomes entry_name in
-  let { res = branches; stats } : ('res, 'range) Soteria.Stats.with_stats =
+  let { res = branches; stats } : 'res Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
     let@@ () =
@@ -139,7 +139,7 @@ let exec_crate
       @@ Fun.flip Compo_res.map_error Soteria.Symex.Or_gave_up.unwrap_exn)
       branches
   in
-  Rustsymex.Stats.output stats;
+  Soteria.Stats.output stats;
 
   (* inverse ok and errors if we expect a failure *)
   let nbranches = List.length branches in
@@ -160,8 +160,11 @@ let exec_crate
 
   (* check for uncaught failure conditions *)
   let outcomes = List.map fst branches in
-  if stats.unexplored_branch_number > 0 then
-    Fmt.kstr execution_err "Missed %d branches" stats.unexplored_branch_number
+  let unexplored =
+    Stats.get_int stats Soteria.Symex.StatKeys.unexplored_branches
+  in
+  if unexplored > 0 then
+    Fmt.kstr execution_err "Missed %a" pp_branches unexplored
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";
 

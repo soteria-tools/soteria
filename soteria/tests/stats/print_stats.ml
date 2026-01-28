@@ -10,12 +10,27 @@ let process : (int, int, unit) Result.t =
   let* b1 = nondet t_bool in
   let* b2 = nondet t_bool in
   let* b3 = nondet t_bool in
+  let* b4 = nondet t_bool in
   if%sat b1 then give_up ~loc:() "give up reason"
   else if%sat b2 then Result.miss_no_fix ~reason:"miss no fix" ()
-  else if%sat b3 then Result.ok 1
+  else if%sat b3 then Result.miss_no_fix ~reason:"other miss no fix" ()
+  else if%sat b4 then Result.ok 1
   else Result.error 2
 
 let () =
   Soteria.Logs.Config.(set_and_lock (make ~hide_unstable:true ()));
-  let { stats; _ } : 'a Stats.with_stats = run_with_stats ~mode:UX process in
-  Stats.pp Fmt.stdout stats
+  let { stats; _ } : 'a Soteria.Stats.with_stats =
+    run_with_stats ~mode:UX process
+  in
+  Soteria.Stats.pp Fmt.stdout stats;
+  Fmt.pr "@.";
+  let as_yojson = Soteria.Stats.to_yojson stats in
+  Yojson.Safe.pretty_to_channel stdout as_yojson;
+  Fmt.pr "@.@.";
+  match Soteria.Stats.of_yojson as_yojson with
+  | Ok stats' ->
+      let as_yojson' = Soteria.Stats.to_yojson stats' in
+      if Yojson.Safe.equal as_yojson as_yojson' then
+        Fmt.pr "Serialization round-trip successful.@."
+      else Fmt.pr "Serialization round-trip failed.@."
+  | Error err -> Fmt.pr "Deserialization failed: %s@." err

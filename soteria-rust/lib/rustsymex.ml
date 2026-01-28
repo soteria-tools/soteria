@@ -4,8 +4,19 @@ module MonoSymex =
       module Range = struct
         type t = Charon.Meta.span_data
 
-        let to_yojson _ = `Null
-        let of_yojson _ = Ok Charon_util.empty_span_data
+        let file_name_to_yojson (fn : Charon.Meta.file_name) : Yojson.Safe.t =
+          match fn with
+          | Virtual s -> `List [ `String "Virtual"; `String s ]
+          | Local s -> `List [ `String "Local"; `String s ]
+          | NotReal s -> `List [ `String "NotReal"; `String s ]
+
+        let to_yojson ({ file; beg_loc; end_loc } : t) : Yojson.Safe.t =
+          `Assoc
+            [
+              ("file", file_name_to_yojson file.name);
+              ("beg_loc", `List [ `Int beg_loc.line; `Int beg_loc.col ]);
+              ("end_loc", `List [ `Int end_loc.line; `Int end_loc.col ]);
+            ]
       end
     end)
     (Bv_solver.Z3_solver)
