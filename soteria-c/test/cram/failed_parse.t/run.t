@@ -1,5 +1,5 @@
   $ soteria-c gen-summaries file1.c file2.c --dump-summaries "out.summaries" ; cat out.summaries
-  [WARN] Ignoring file that did not parse correctly: file1.c
+  [WARN ] Ignoring file that did not parse correctly: file1.c
   Failed to parse AIL: file1.c:4:1: error: unexpected token after '?' and before '}'
   parsing "conditional_expression": seen "logical_OR_expression QUESTION", expecting "expression COLON conditional_expression"
   }

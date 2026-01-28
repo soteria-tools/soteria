@@ -13,11 +13,11 @@ type severity = Grace.Diagnostic.Severity.t =
   | Bug
 
 let pp_severity ft = function
-  | Help -> Color.pp_clr2 `Cyan `Bold ft "help"
-  | Error -> Color.pp_clr2 `Red `Bold ft "error"
-  | Warning -> Color.pp_clr2 `Yellow `Bold ft "warning"
-  | Note -> Color.pp_clr2 `Green `Bold ft "note"
-  | Bug -> Color.pp_clr2 `Red `Bold ft "bug"
+  | Help -> Logs.Printers.pp_clr2 `Cyan `Bold ft "help"
+  | Error -> Logs.Printers.pp_err ft "error"
+  | Warning -> Logs.Printers.pp_warn ft "warning"
+  | Note -> Logs.Printers.pp_ok ft "note"
+  | Bug -> Logs.Printers.pp_err ft "bug"
 
 let read_file file =
   let ic = open_in file in
@@ -131,14 +131,14 @@ let with_unaltered_geo f =
 
 let pp ft diag =
   let module GConfig = Grace_ansi_renderer.Config in
-  let { color; utf8 } : Profile.t = !Profile.profile in
+  let { color; utf8 } : Logs.Profile.t = Logs.Profile.get () in
   let styles, use_ansi =
     if color then (GConfig.Style_sheet.default, true)
     else (GConfig.Style_sheet.(no_color default), false)
   in
   let chars = if utf8 then GConfig.Chars.unicode else GConfig.Chars.ascii in
   let config = GConfig.{ chars; styles; use_ansi } in
-  if Config.compact () then
+  if (Config.get ()).compact then
     Grace_ansi_renderer.pp_compact_diagnostic ~config () ft diag
   else Grace_ansi_renderer.pp_diagnostic ~config () ft diag
 
@@ -149,7 +149,8 @@ let print_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
     Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
     |> Fmt.pr "%a@?" pp
   with _ ->
-    Fmt.pr "%a: %a@?" pp_severity severity (Color.pp_style `Bold)
+    Fmt.pr "%a: %a@?" pp_severity severity
+      (Logs.Printers.pp_style `Bold)
       (error ^ " in " ^ fname)
 
 let print_diagnostic_simple ~severity msg =

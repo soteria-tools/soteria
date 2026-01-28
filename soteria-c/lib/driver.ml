@@ -2,12 +2,13 @@ module Call_trace = Soteria.Terminal.Call_trace
 module SState = State (* Clashes with Cerb_frontend.State *)
 open Cerb_frontend
 open Syntaxes.FunctionWrap
+open Soteria.Logs.Printers
 module Wpst_interp = Interp.Make (SState)
 
 exception Tool_error
 
 let tool_error msg =
-  Fmt.epr "%a" Soteria.Terminal.Color.pp_fatal msg;
+  Fmt.epr "%a" pp_fatal msg;
   raise Tool_error
 
 let with_tool_errors_caught () f =
@@ -345,14 +346,13 @@ let exec_and_print log_config term_config solver_config stats_config config fuel
     let success = List.is_empty errors_to_signal in
     Fmt.pr "@.Executed %d statements" result.stats.steps_number;
     if success then (
-      Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_ok "Verification Success!";
+      Fmt.pr "@.%a@.@?" pp_ok "Verification Success!";
       Error.Exit_code.Success)
     else if !has_found_bugs then (
-      Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err "Verification Failure!";
+      Fmt.pr "@.%a@.@?" pp_err "Verification Failure!";
       Error.Exit_code.Found_bug)
     else (
-      Fmt.pr "@.%a@.@?" Soteria.Terminal.Color.pp_err
-        "Verification Failure! (Unsupported features)";
+      Fmt.pr "@.%a@.@?" pp_err "Verification Failure! (Unsupported features)";
       Error.Exit_code.Tool_error))
 
 let dump_summaries results =
@@ -421,7 +421,7 @@ let generate_summaries ~functions_to_analyse prog =
   in
   if !found_bugs then Error.Exit_code.Found_bug
   else (
-    Fmt.pr "%a@.@?" Soteria.Terminal.Color.pp_ok "No bugs found";
+    Fmt.pr "%a@.@?" pp_ok "No bugs found";
     Error.Exit_code.Success)
 
 (* Entry point function *)
@@ -518,7 +518,7 @@ let capture_db log_config term_config solver_config stats_config config
               if (Config.current ()).no_ignore_parse_failures then msg
               else "All files failed to parse, no analysis will be performed"
             in
-            Fmt.pr "Error: %a@\n@?" Soteria.Terminal.Color.pp_err msg;
+            Fmt.pr "Error: %a@\n@?" pp_err msg;
             if (Config.current ()).no_ignore_parse_failures then
               tool_error "Failed to link AIL"
             else Ail_tys.empty_linked_program)

@@ -65,7 +65,7 @@ module Cli = struct
     match g with
     | Ok g -> g
     | Error e ->
-        Fmt.epr "%a" Terminal.Color.pp_fatal e;
+        Fmt.epr "%a" Logs.Printers.pp_fatal e;
         exit Cmdliner.Cmd.Exit.cli_error
 
   let fuel_value_conv =

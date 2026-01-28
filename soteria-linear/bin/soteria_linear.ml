@@ -11,7 +11,7 @@ let exec_term =
   in
   Term.(
     const exec
-    $ Soteria.Logs.Cli.term
+    $ Soteria.Logs.Config.cmdliner_term ()
     $ Soteria.Solvers.Config.cmdliner_term ()
     $ file_arg)
 
@@ -24,7 +24,7 @@ let gen_summaries_term =
   in
   Term.(
     const gen_summaries
-    $ Soteria.Logs.Cli.term
+    $ Soteria.Logs.Config.cmdliner_term ()
     $ Soteria.Solvers.Config.cmdliner_term ()
     $ file_arg)
 

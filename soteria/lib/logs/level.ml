@@ -1,13 +1,13 @@
 type t = Smt | Trace | Debug | Info | Warn | App | Error
 
 let to_string = function
-  | Smt -> "SMT"
+  | Smt -> "SMT  "
   | Trace -> "TRACE"
   | Debug -> "DEBUG"
-  | Info -> "INFO"
-  | Warn -> "WARN"
+  | Info -> "INFO "
+  | Warn -> "WARN "
   | Error -> "ERROR"
-  | App -> "APP"
+  | App -> "APP  "
 
 let ( >= ) l r =
   match (l, r) with
