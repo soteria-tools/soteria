@@ -43,12 +43,6 @@ let not_impl msg =
   let msg = "Unsupported: " ^ msg in
   give_up ~loc:(get_loc ()) msg
 
-let[@inline] with_error_loc_as_call_trace ?(msg = "Triggering operation") () f =
-  let loc = get_loc () in
-  Result.map_error (f ()) (fun e ->
-      let call_trace = Soteria.Terminal.Call_trace.singleton ~loc ~msg () in
-      (e, call_trace))
-
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 
@@ -70,3 +64,4 @@ module Pmap = Soteria.Sym_states.Pmap.Make_patricia_tree (SYMEX)
 module Tree_block = Soteria.Sym_states.Tree_block.Make (SYMEX)
 module Concrete_map = Soteria.Sym_states.Pmap.Concrete (SYMEX)
 module Bi = Soteria.Sym_states.Bi_abd.Make (SYMEX)
+module Pure_fun = Soteria.Sym_states.Pure_fun.Make (SYMEX)

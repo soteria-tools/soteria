@@ -1,5 +1,4 @@
 open Symex
-open Soteria_std.Syntaxes.FunctionWrap
 
 (** A [Split_tree] is a simplified representation of a tree, that has no offset.
     It however indicates, on [Node]s, at what offset the split occurs, relative
@@ -82,6 +81,7 @@ module MemVal (Symex : Symex.Base) = struct
     type serialized
 
     val pp_serialized : Format.formatter -> serialized -> unit
+    val show_serialized : serialized -> string
     val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
 
     val iter_vars_serialized :
@@ -514,6 +514,13 @@ struct
   }
   [@@deriving show { with_path = false }]
 
+  module SM =
+    State_monad.Make
+      (Symex)
+      (struct
+        type nonrec t = t option
+      end)
+
   let is_empty t = Option.is_none t.bound && Tree.is_empty t.root
 
   let pp_pretty ft t =
@@ -536,7 +543,7 @@ struct
 
   (** Logic *)
 
-  type serialized_atom =
+  type serialized =
     | MemVal of {
         offset : sint; [@printer Symex.Value.ppa]
         len : sint; [@printer Symex.Value.ppa]
@@ -544,8 +551,6 @@ struct
       }
     | Bound of sint [@printer fun f v -> Fmt.pf f "Bound(%a)" Symex.Value.ppa v]
   [@@deriving show { with_path = false }]
-
-  type serialized = serialized_atom list
 
   let lift_miss ~offset ~len symex =
     let+? fix = symex in
@@ -562,19 +567,26 @@ struct
 
   let to_opt t = if is_empty t then None else Some t
 
-  let with_bound_check (t : t) (ofs : sint) f =
-    let** () =
-      match t.bound with
-      | None -> Result.ok ()
-      | Some bound ->
-          if%sat bound <@ ofs then Result.error `OutOfBounds else Result.ok ()
+  (* Bit of a hack here, we lift the [StateT (Result)] to [ResultT (State)] by propagating the input state to erroneous outcomes. *)
+  let with_bound_check ?mk_fixes (ofs : sint)
+      (f : Tree.t -> ('a * Tree.t, 'err, serialized list) Symex.Result.t) :
+      ('a, 'err, serialized list) SM.Result.t =
+   fun st ->
+    let+ res =
+      let** t = of_opt ?mk_fixes st in
+      let** () =
+        match t.bound with
+        | None -> Result.ok ()
+        | Some bound ->
+            if%sat bound <@ ofs then Result.error `OutOfBounds else Result.ok ()
+      in
+      let++ v, root = f t.root in
+      (v, to_opt { t with root })
     in
-    let++ res, root = f t.root in
-    (res, to_opt { t with root })
-
-  let with_bound_and_owned_check ?mk_fixes t ofs f =
-    let** t = of_opt ?mk_fixes t in
-    with_bound_check t ofs f
+    match res with
+    | Ok (v, t) -> (Compo_res.Ok v, t)
+    | Error e -> (Error e, st)
+    | Missing f -> (Missing f, st)
 
   let assert_exclusively_owned t =
     let** t = of_opt t in
@@ -590,22 +602,22 @@ struct
             ~reason:"assert_exclusively_owned - tree does not span [0; bound["
             ()
 
-  let get_raw_tree_owned ofs size t =
-    let@ t = with_bound_and_owned_check t (ofs +@ size) in
-    let** tree, t = Tree.get_raw ofs size t in
-    if Node.is_fully_owned tree.node then
-      let tree = Tree.offset ~by:(0s -@ ofs) tree in
-      Result.ok (tree, t)
-    else Result.miss_no_fix ~reason:"get_raw_tree_owned" ()
+  let get_raw_tree_owned ofs size =
+    with_bound_check (ofs +@ size) (fun t ->
+        let** tree, t = Tree.get_raw ofs size t in
+        if Node.is_fully_owned tree.node then
+          let tree = Tree.offset ~by:(0s -@ ofs) tree in
+          Result.ok (tree, t)
+        else Result.miss_no_fix ~reason:"get_raw_tree_owned" ())
 
   (* This is used for copy_nonoverapping.
    It is an action on the destination block, and assumes the received tree is at offset 0 *)
-  let put_raw_tree ofs (tree : Tree.t) t :
-      (unit * t option, 'err, 'fix list) Result.t =
+  let put_raw_tree ofs (tree : Tree.t) :
+      (unit, 'err, serialized list) SM.Result.t =
     let size = Range.size tree.range in
-    let@ t = with_bound_and_owned_check t (ofs +@ size) in
-    let tree = Tree.offset ~by:ofs tree in
-    Tree.put_raw tree t
+    with_bound_check (ofs +@ size) (fun t ->
+        let tree = Tree.offset ~by:ofs tree in
+        Tree.put_raw tree t)
 
   let alloc v size =
     {
@@ -617,27 +629,21 @@ struct
 
   let subst_serialized subst_var (serialized : serialized) =
     let v_subst v = Symex.Value.subst subst_var v in
-    let subst_atom = function
-      | MemVal { offset; len; v } ->
-          let v = MemVal.subst_serialized subst_var v in
-          MemVal { offset = v_subst offset; len = v_subst len; v }
-      | Bound v -> Bound (v_subst v)
-    in
-    List.map subst_atom serialized
+    match serialized with
+    | MemVal { offset; len; v } ->
+        let v = MemVal.subst_serialized subst_var v in
+        MemVal { offset = v_subst offset; len = v_subst len; v }
+    | Bound v -> Bound (v_subst v)
 
   let iter_vars_serialized serialized f =
-    List.iter
-      (function
-        | MemVal { offset; len; v } ->
-            Symex.Value.iter_vars offset f;
-            Symex.Value.iter_vars len f;
-            MemVal.iter_vars_serialized v f
-        | Bound v -> Symex.Value.iter_vars v f)
-      serialized
+    match serialized with
+    | MemVal { offset; len; v } ->
+        Symex.Value.iter_vars offset f;
+        Symex.Value.iter_vars len f;
+        MemVal.iter_vars_serialized v f
+    | Bound v -> Symex.Value.iter_vars v f
 
-  let pp_serialized = Fmt.Dump.list pp_serialized_atom
-
-  let serialize t =
+  let serialize (t : t) : serialized list =
     let bound =
       match t.bound with
       | None -> Seq.empty
@@ -668,19 +674,23 @@ struct
         let+ () = Symex.assume [ v ==@ bound ] in
         Ok (to_opt { bound = None; root })
 
-  let produce_bound bound t =
-    let* () = Symex.assume [ MemVal.SBoundedInt.in_bound bound ] in
+  let produce_bound bound : unit SM.t =
+    let open SM.Syntax in
+    let* () = SM.assume [ MemVal.SBoundedInt.in_bound bound ] in
+    let* t = SM.get_state () in
     match t with
     | None ->
-        Symex.return
+        SM.set_state
           (Some { bound = Some bound; root = Tree.not_owned (0s, bound) })
     | Some { bound = None; root } ->
-        Symex.return (Some { bound = Some bound; root })
-    | Some { bound = Some _; _ } -> Symex.vanish ()
+        SM.set_state (Some { bound = Some bound; root })
+    | Some { bound = Some _; _ } -> SM.vanish ()
 
-  let produce_mem_val offset len v t =
+  let produce_mem_val offset len v : unit SM.t =
+    let open SM.Syntax in
     let ((low, high) as range) = Range.of_low_and_size offset len in
-    let* () = Symex.assume MemVal.SBoundedInt.[ in_bound low; in_bound high ] in
+    let* () = SM.assume MemVal.SBoundedInt.[ in_bound low; in_bound high ] in
+    let* t = SM.get_state () in
     let t =
       match t with
       | Some t -> t
@@ -688,11 +698,11 @@ struct
     in
     let* () =
       match t.bound with
-      | None -> return ()
-      | Some bound -> Symex.assume [ high <=@ bound ]
+      | None -> SM.return ()
+      | Some bound -> SM.assume [ high <=@ bound ]
     in
-    let+ root = Tree.produce v range t.root in
-    to_opt { t with root }
+    let*^ root = Tree.produce v range t.root in
+    SM.set_state (to_opt { t with root })
 
   let consume_mem_val offset len v t =
     let ((_, high) as range) = Range.of_low_and_size offset len in
@@ -705,17 +715,15 @@ struct
     let++ root = lift_miss ~offset ~len @@ Tree.consume v range t.root in
     to_opt { t with root }
 
-  let consume (list : serialized) (t : t option) =
+  (* let consume (list : serialized) (t : t option) =
     Symex.Result.fold_list
       ~f:(fun acc -> function
         | Bound bound -> consume_bound bound acc
         | MemVal { offset; len; v } -> consume_mem_val offset len v acc)
-      ~init:t list
+      ~init:t list *)
 
-  let produce (list : serialized) (t : t option) =
-    Symex.fold_list
-      ~f:(fun acc -> function
-        | Bound bound -> produce_bound bound acc
-        | MemVal { offset; len; v } -> produce_mem_val offset len v acc)
-      ~init:t list
+  let produce (ser : serialized) : unit SM.t =
+    match ser with
+    | Bound bound -> produce_bound bound
+    | MemVal { offset; len; v } -> produce_mem_val offset len v
 end

@@ -242,11 +242,15 @@ let exec_function ~includes ~fuel file_names function_name =
       Ok (Soteria.Stats.with_empty_stats [])
     else
       let* entry_point = resolve_function linked function_name in
+      let open Wpst_interp.InterpM in
       let symex =
-        let open Csymex.Syntax in
-        let** state = Wpst_interp.init_prog_state linked in
-        L.debug (fun m -> m "@[<2>Initial state:@ %a@]" SState.pp state);
-        Wpst_interp.exec_fun entry_point ~args:[] state
+        let open StateM.Syntax in
+        let@@ () = StateM.Result.run_with_state ~state:SState.empty in
+        let** () = Wpst_interp.init_prog_state linked in
+        let* state = StateM.get_state () in
+        L.debug (fun m ->
+            m "@[<2>Initial state:@ %a@]" (Fmt.Dump.option SState.pp) state);
+        Wpst_interp.exec_fun entry_point ~args:[]
       in
       let@ () = with_function_context linked in
       Ok (Csymex.Result.run_with_stats ~mode:OX ~fuel symex)
@@ -254,6 +258,7 @@ let exec_function ~includes ~fuel file_names function_name =
   match result with
   | Ok v -> v
   | Error e ->
+      let e = (e, SState.empty) in
       Soteria.Stats.with_empty_stats
         [ (Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.E e), []) ]
 
@@ -293,14 +298,18 @@ let initialise ?log_config ?term_config ?solver_config ?stats_config config f =
 
 let print_states result =
   let open Soteria.Stats in
-  let pp_state ft state = SState.pp_serialized ft (SState.serialize state) in
+  let pp_state ft state =
+    (Fmt.Dump.list SState.pp_serialized) ft (SState.serialize state)
+  in
   Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n@?"
     Fmt.Dump.(
       list @@ fun ft (r, _) ->
       (Soteria.Symex.Compo_res.pp
-         ~ok:(pair Aggregate_val.pp pp_state)
-         ~err:(Soteria.Symex.Or_gave_up.pp pp_err_and_call_trace)
-         ~miss:SState.pp_serialized)
+         ~ok:(pair Aggregate_val.pp (Fmt.Dump.option pp_state))
+         ~err:
+           (Soteria.Symex.Or_gave_up.pp
+              (pair pp_err_and_call_trace (option SState.pp)))
+         ~miss:Fmt.Dump.(list SState.pp_serialized))
         ft r)
     result.res
 
@@ -324,10 +333,10 @@ let exec_and_print log_config term_config solver_config stats_config config fuel
                 (Soteria.Symex.Or_gave_up.Gave_up _ as err),
               _ ) ->
               Some err
-          | Error (E (e, _) as err), _
+          | Error (E (((e, _) as err_with_trace), _)), _
           (* Test-Comp requires filtering out UBs... *)
             when not ((Config.current ()).ignore_ub && Error.is_ub e) ->
-              Some err
+              Some (E err_with_trace)
           | _ -> None)
         result.res
     in

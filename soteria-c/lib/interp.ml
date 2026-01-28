@@ -1,6 +1,5 @@
 open Soteria.Symex.Compo_res
 open Csymex
-open Csymex.Syntax
 open Typed.Infix
 open Typed.Syntax
 open Ail_tys
@@ -11,56 +10,64 @@ module BV = Typed.BitVec
 module Agv = Aggregate_val
 
 module InterpM (State : State_intf.S) = struct
-  type 'a t =
-    Store.t ->
-    State.t ->
-    ('a * Store.t * State.t, Error.t State.err, State.serialized) Result.t
+  module StateM = State.SM
+  module SSM = Soteria.Sym_states.State_monad.Make (StateM) (Store)
+  open SSM
 
-  let ok x : 'a t = fun store state -> Result.ok (x, store, state)
-  let error err : 'a t = fun _store state -> State.error err state
-  let not_impl str : 'a t = fun _store _state -> Csymex.not_impl str
-  let get_store () = fun store state -> Result.ok (store, store, state)
+  type 'a t = ('a, Error.with_trace, State.serialized list) SSM.Result.t
 
-  let bind (x : 'a t) (f : 'a -> 'b t) : 'b t =
-   fun store state ->
-    let** y, store, state = x store state in
-    (f y) store state
+  let map x f = Result.map x f
+  let bind x f = Result.bind x f
 
-  let map (x : 'a t) (f : 'a -> 'b) : 'b t =
-   fun store state ->
-    let++ y, store, state = x store state in
-    (f y, store, state)
+  module Syntax = struct
+    let ( let* ) = bind
+    let ( let+ ) = map
 
-  let fold_list x ~init ~f =
-    Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold x ~init ~f
+    let ( let^ ) (x : 'a Csymex.t) (f : 'a -> 'b t) : 'b t =
+      let x_res = Csymex.map x Soteria.Symex.Compo_res.ok in
+      bind (SSM.lift @@ StateM.lift @@ x_res) f
 
-  let map_store f = fun store state -> Result.ok ((), f store, state)
+    module Symex_syntax = SSM.Syntax.Symex_syntax
+  end
 
-  let lift_state_op f =
-   fun store state ->
-    let++ v, state = f state in
-    (v, store, state)
+  let[@inline] ok (x : 'a) : 'a t = Result.ok x
+  let[@inline] error (err : Error.t) : 'a t = SSM.lift @@ State.error err
+
+  let[@inline] not_impl str : 'a t =
+    SSM.lift @@ StateM.lift @@ Csymex.not_impl str
+
+  let get_store () : Store.t t =
+    let open SSM.Syntax in
+    let* store = SSM.get_state () in
+    Result.ok store
+
+  let fold_list (l : 'a list) ~(init : 'b) ~(f : 'b -> 'a -> 'b t) : 'b t =
+    Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold l ~init ~f
+
+  let map_store f =
+    let open SSM.Syntax in
+    let* store = SSM.get_state () in
+    let* () = SSM.set_state (f store) in
+    Result.ok ()
+
+  let lift_state_op f = SSM.lift f
 
   let lift_symex (s : 'a Csymex.t) : 'a t =
-   fun store state ->
-    let+ s = s in
-    Ok (s, store, state)
+    SSM.lift @@ StateM.lift (Csymex.map s Soteria.Symex.Compo_res.ok)
 
-  let lift_symex_res (s : ('a, Error.t State.err, State.serialized) Result.t) :
-      'a t =
-   fun store state ->
-    let++ s = s in
-    (s, store, state)
+  let lift_symex_res (type a)
+      (s : (a, Error.with_trace, State.serialized list) Csymex.Result.t) : a t =
+    SSM.lift @@ StateM.lift s
 
   let of_opt_not_impl ~msg x = lift_symex (of_opt_not_impl ~msg x)
 
-  let assert_or_error cond (err : 'e) : unit t =
-   fun store state ->
-    let* res = Csymex.assert_or_error cond err in
+  let assert_or_error cond (err : Error.t) : unit t =
+    let open SSM.Syntax in
+    let* res = SSM.assert_or_error cond err in
     match res with
-    | Ok () -> return (Ok ((), store, state))
-    | Error e -> State.error e state
-    | Missing f -> return (Missing f)
+    | Ok v -> ok v
+    | Missing v -> SSM.Result.miss v
+    | Error e -> lift_state_op (State.error e)
 
   let with_loc ~loc f =
     let old_loc = !Csymex.current_loc in
@@ -70,53 +77,33 @@ module InterpM (State : State_intf.S) = struct
     res
 
   let with_extra_call_trace ~loc ~msg (x : 'a t) : 'a t =
-   fun store state ->
-    let+ res = x store state in
-    match res with
-    | Ok triple -> Ok triple
-    | Error e ->
-        let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
-        Error (State.add_to_call_trace e elem)
-    | Missing f -> Missing f
+    SSM.Result.map_error x @@ fun e ->
+    let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
+    Error.add_to_call_trace e elem
 
-  let if_not_ok do_this (x : 'a t) : 'a t =
-   fun store state ->
-    let+ res = x store state in
-    match res with Ok _ -> res | _ -> do_this ()
-
-  let run ~store ~state f = f store state
+  let run ~store ~state (f : 'a t) = f store state
 
   module IState = struct
     let load ptr ty = lift_state_op (State.load ptr ty)
     let store ptr ty v = lift_state_op (State.store ptr ty v)
     let alloc ?zeroed size = lift_state_op (State.alloc ?zeroed size)
     let alloc_ty ty = lift_state_op (State.alloc_ty ty)
+    let free ptr = lift_state_op (State.free ptr)
+    let error err = lift_state_op (State.error err)
 
     let get_global id =
-      lift_state_op (fun state ->
-          let+ v, state = State.get_global id state in
-          Ok (Agv.Basic v, state))
+      lift_state_op
+        (let open StateM.Syntax in
+         let+ v = State.get_global id in
+         Ok (Agv.Basic v))
   end
 
   module IStore = struct
     let find_opt sym =
-     fun store state ->
+      let open SSM.Syntax in
+      let* store = SSM.get_state () in
       let binding = Store.find_opt sym store in
-      Result.ok (binding, store, state)
-  end
-
-  module Syntax = struct
-    let ( let* ) = bind
-    let ( let+ ) = map
-    let ( let^ ) x f = bind (lift_symex x) f
-
-    module Symex_syntax = struct
-      let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
-       fun store state ->
-        Csymex.branch_on ?left_branch_name ?right_branch_name guard
-          ~then_:(fun () -> then_ () store state)
-          ~else_:(fun () -> else_ () store state)
-    end
+      Result.ok binding
   end
 end
 
@@ -184,8 +171,9 @@ module Make (State : State_intf.S) = struct
     let* x = Agv.basic_or_unsupported ~msg:"cast_aggregate_to_bool" x in
     cast_to_bool x
 
-  type 'err fun_exec =
-    args:Agv.t list -> state -> (Agv.t * state, 'err, State.serialized) Result.t
+  type fun_exec =
+    args:Agv.t list ->
+    (Agv.t, Error.with_trace, State.serialized list) InterpM.StateM.Result.t
 
   let get_param_tys name =
     let ptys = Ail_helpers.get_param_tys name in
@@ -200,8 +188,9 @@ module Make (State : State_intf.S) = struct
         if Option.is_some align then raise (Unsupported ("align", loc));
         f acc (pname, ty))
 
-  let try_with_unsupported f store state =
-    try (InterpM.map_store f) store state
+  let try_with_unsupported (f : Store.t -> Store.t) : unit InterpM.t =
+   fun store state ->
+    try InterpM.map_store f store state
     with Unsupported (msg, loc) ->
       let@ () = with_loc ~loc in
       Csymex.not_impl msg
@@ -211,30 +200,27 @@ module Make (State : State_intf.S) = struct
     fold_bindings bindings ~init:store ~f:(fun store (pname, ty) ->
         Store.reserve pname ty store)
 
-  let remove_bindings (bindings : AilSyntax.bindings) =
+  let remove_bindings (bindings : AilSyntax.bindings) : unit InterpM.t =
     try_with_unsupported @@ fun store ->
     fold_bindings bindings ~init:store ~f:(fun store (pname, _) ->
         Store.remove pname store)
 
   (* We're assuming all bindings declared, and they have already been removed from the store. *)
   let free_bindings (bindings : AilSyntax.bindings) : unit InterpM.t =
-   fun store state ->
-    let++ state =
-      Result.fold_list bindings ~init:state
-        ~f:(fun state (pname, ((loc, _, _), _, _, _)) ->
-          let@ () = with_loc_immediate ~loc in
-          match Store.find_opt pname store with
-          | Some { kind = Stackptr ptr; _ } ->
-              let++ (), state = State.free ptr state in
-              state
-          | _ -> Result.ok state)
-    in
-    ((), store, state)
+    let open InterpM.Syntax in
+    InterpM.fold_list bindings ~init:()
+      ~f:(fun () (pname, ((loc, _, _), _, _, _)) ->
+        let@ () = InterpM.with_loc ~loc in
+        let* binding = InterpM.IStore.find_opt pname in
+        match binding with
+        | Some { kind = Stackptr ptr; _ } -> InterpM.IState.free ptr
+        | _ -> InterpM.ok ())
 
   let pp_bindings : AilSyntax.bindings Fmt.t =
     Fmt.Dump.iter List.iter Fmt.nop (Fmt.pair Fmt_ail.pp_sym Fmt.nop)
 
-  let remove_and_free_bindings (bindings : AilSyntax.bindings) =
+  let remove_and_free_bindings (bindings : AilSyntax.bindings) : unit InterpM.t
+      =
     let* () = free_bindings bindings in
     remove_bindings bindings
 
@@ -245,14 +231,13 @@ module Make (State : State_intf.S) = struct
             m "Putting variable to the store: %a" Fmt_ail.pp_sym pname);
         Store.add_value pname value ty store)
 
-  let dealloc_store store state =
-    Result.fold_list (Store.bindings store) ~init:state
-      ~f:(fun state (_, { kind; _ }) ->
+  let dealloc_store () : unit InterpM.t =
+    let* store = InterpM.get_store () in
+    InterpM.fold_list (Store.bindings store) ~init:()
+      ~f:(fun () (_, { kind; _ }) ->
         match kind with
-        | Stackptr ptr ->
-            let++ (), st = State.free ptr state in
-            st
-        | _ -> Result.ok state)
+        | Stackptr ptr -> InterpM.IState.free ptr
+        | _ -> InterpM.ok ())
 
   let get_stack_address (sym : Ail_tys.sym) : T.sptr Typed.t option InterpM.t =
     let* binding = InterpM.IStore.find_opt sym in
@@ -269,32 +254,36 @@ module Make (State : State_intf.S) = struct
         let+ () = InterpM.map_store (Store.add_stackptr sym ptr ty) in
         Some ptr
 
-  let try_immediate_load e (store : Store.t) state =
+  let try_immediate_load e =
+    let open InterpM in
     let (AilSyntax.AnnotatedExpression (_, _, _, e)) = e in
     match e with
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym id in
-        match Store.find_opt id store with
+        let* binding = IStore.find_opt id in
+        match binding with
         | Some { kind = Value v; _ } ->
             L.trace (fun m -> m "Immediate load: %a" Agv.pp v);
-            Result.ok (Some v, store, state)
-        | Some { kind = Uninit; _ } ->
-            State.error `UninitializedMemoryAccess state
-        | _ -> Result.ok (None, store, state))
-    | _ -> Result.ok (None, store, state)
+            ok (Some v)
+        | Some { kind = Uninit; _ } -> IState.error `UninitializedMemoryAccess
+        | _ -> ok None)
+    | _ -> ok None
 
-  let try_immediate_store lvalue rval (store : Store.t) state =
+  let try_immediate_store lvalue rval : [> `NotImmediate | `Success ] InterpM.t
+      =
+    let open InterpM in
     let (AilSyntax.AnnotatedExpression (_, _, _, lvalue)) = lvalue in
     match lvalue with
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym id in
         L.trace (fun m -> m "Trying immediate store at %a" Fmt_ail.pp_sym id);
-        match Store.find_opt id store with
+        let* binding = IStore.find_opt id in
+        match binding with
         | Some { kind = Value _ | Uninit; ty } ->
-            let store = Store.add_value id rval ty store in
-            Result.ok (`Success, store, state)
-        | _ -> Result.ok (`NotImmediate, store, state))
-    | _ -> Result.ok (`NotImmediate, store, state)
+            let* () = InterpM.map_store (Store.add_value id rval ty) in
+            ok `Success
+        | _ -> ok `NotImmediate)
+    | _ -> ok `NotImmediate
 
   let rec aggregate_of_constant_exn ~ty (c : constant) : Agv.t =
     let unsupported fmt =
@@ -697,10 +686,7 @@ module Make (State : State_intf.S) = struct
   end
 
   let rec resolve_function fexpr :
-      (Error.t State.err fun_exec
-      * Ail_tys.ctype list option
-      * Stubs.Arg_filter.t)
-      InterpM.t =
+      (fun_exec * Ail_tys.ctype list option * Stubs.Arg_filter.t) InterpM.t =
     let* loc, fname =
       let (AilSyntax.AnnotatedExpression (_, _, loc, inner_expr)) = fexpr in
       match inner_expr with
@@ -1357,58 +1343,67 @@ module Make (State : State_intf.S) = struct
     | AilSmarker (_, _) ->
         Fmt.kstr not_impl "Unsupported statement: %a" Fmt_ail.pp_stmt astmt
 
-  and exec_fun (fundef : fundef) ~(args : Agv.t list) state =
-    let open Csymex in
+  and exec_fun (fundef : fundef) : fun_exec =
+   fun ~args state ->
     let open Csymex.Syntax in
     (* Put arguments in store *)
-    let name, (loc, _, _, params, stmt) = fundef in
+    let name, (_loc, _, _, params, stmt) = fundef in
     let ret_ty = Ail_helpers.get_return_ty name in
-    let@ () = with_loc ~loc in
+    (* FIXME: let@ () = with_loc ~loc in *)
     L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);
     L.trace (fun m -> m "Was given arguments: %a" (Fmt.Dump.list Agv.pp) args);
     let* ptys = get_param_tys name in
     let ps = List.combine3 params ptys args in
     let store = mk_store ps in
-    let** res, store, state = exec_body ~ret_ty stmt store state in
-    let++ state = dealloc_store store state in
-    (* We model void as zero, it should never be used anyway *)
+    let subcall =
+      let open InterpM.Syntax in
+      let* res = exec_body ~ret_ty stmt in
+      let+ () = dealloc_store () in
+      res
+    in
+    let+ (res, _), state = subcall store state in
     (res, state)
 
   let init_prog_state (prog : Ail_tys.linked_program) =
-    let open Csymex.Syntax in
-    (* Produce_zero will be useful when Kayvan allows for knowing when no declaration is given. *)
-    let _produce_zero (ptr : [< T.sptr ] Typed.t) ty (state : State.t) =
+    let open StateM.Syntax in
+    let eval_expr_no_store expr : (Agv.t, 'err, 'fix) StateM.Result.t =
+     fun state ->
+      let open Csymex.Syntax in
+      let+ (res, _), state = eval_expr expr Store.empty state in
+      (res, state)
+    in
+    (* Produce_zero will be useful when Cerberus allows for knowing when no declaration is given. *)
+    let _produce_zero (ptr : [< T.sptr ] Typed.t) ty =
       let loc = Typed.Ptr.loc ptr in
       let offset = Typed.Ptr.ofs ptr in
-      let* len = Layout.size_of_s ty in
+      let* len = StateM.lift @@ Layout.size_of_s ty in
       let block =
-        With_origin.
+        Block.
           {
             node =
-              Freeable.Alive [ Ctree_block.MemVal { offset; len; v = SZeros } ];
+              Soteria.Sym_states.Freeable.Alive
+                (Ctree_block.MemVal { offset; len; v = SZeros });
             info = None;
           }
       in
-      let serialized : State.serialized =
-        { heap = [ (loc, block) ]; globs = [] }
-      in
-      let+ state = State.produce serialized state in
-      Ok state
+      let serialized : State.serialized = Ser_heap (loc, block) in
+      State.produce serialized
     in
-    let produce_value (ptr : [< T.sptr ] Typed.t) ty expr (state : State.t) =
-      let** v, _, state = eval_expr expr Store.empty state in
-      let+ state = State.produce_aggregate ptr ty v state in
-      Ok state
+    let produce_expr (ptr : [< T.sptr ] Typed.t) ty expr =
+      let** v = eval_expr_no_store expr in
+      let* () = State.produce_aggregate ptr ty v in
+      StateM.Result.ok ()
     in
-    Csymex.Result.fold_list prog.sigma.object_definitions ~init:State.empty
-      ~f:(fun (state : State.t) def ->
+    StateM.Result.fold_list prog.sigma.object_definitions ~init:()
+      ~f:(fun () def ->
         let id, e = def in
         let* ty =
           match Ail_helpers.find_obj_decl ~prog id with
-          | None -> Csymex.not_impl "Couldn't find object declaration"
-          | Some (_, _, _, ty) -> Csymex.return ty
+          | None ->
+              StateM.lift @@ Csymex.not_impl "Couldn't find object declaration"
+          | Some (_, _, _, ty) -> StateM.return ty
         in
         (* TODO: handle other parameters here *)
-        let* ptr, state = State.get_global id state in
-        produce_value ptr ty e state)
+        let* ptr = State.get_global id in
+        produce_expr ptr ty e)
 end
