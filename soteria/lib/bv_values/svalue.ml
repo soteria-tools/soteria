@@ -1447,7 +1447,7 @@ and BitVec : BitVec = struct
     | _, BitVec s when Z.equal s Z.zero -> v1
     | Binop (AShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
-        lshr v (mk n Z.(s1 + s2))
+        ashr v (mk n Z.(s1 + s2))
     | _ -> Binop (AShr, v1, v2) <| v1.node.ty
 
   and mul ?(checked = false) v1 v2 =
