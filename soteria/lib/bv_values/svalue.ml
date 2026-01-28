@@ -1488,7 +1488,7 @@ and BitVec : BitVec = struct
         | Binop (Mul { checked = true }, x, { node = { kind = BitVec n; _ }; _ })
           ) )
       when checked ->
-        mul ~checked:true x (mk (size_of v1.node.ty) Z.(n * m))
+        mul ~checked:true x (mk_masked (size_of v1.node.ty) Z.(n * m))
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
         let n = size_of v1.node.ty in
@@ -1973,27 +1973,31 @@ and BitVec : BitVec = struct
             *)
             let min_val = Z.neg (Z.shift_left Z.one (n - 1)) in
             let max_val = Z.pred (Z.shift_left Z.one (n - 1)) in
-            let min_x, max_x =
-              if Z.gt z Z.zero then
-                (* z > 0 *)
-                let min_x =
-                  if Z.divisible min_val z then Z.(min_val / z)
-                  else Z.((min_val / z) + one)
-                in
-                let max_x = Z.(max_val / z) in
-                (min_x, max_x)
-              else
-                (* z < 0 *)
-                let min_x =
-                  if Z.divisible max_val z then Z.(max_val / z)
-                  else Z.((max_val / z) + one)
-                in
-                let max_x = Z.(min_val / z) in
-                (min_x, max_x)
-            in
-            Bool.or_
-              (lt ~signed (x <| v1.node.ty) (mk_masked n min_x))
-              (gt ~signed (x <| v1.node.ty) (mk_masked n max_x))
+            if Z.equal z (Z.of_int (-1)) then
+              (* z = -1: only overflows when x = MIN_VALUE *)
+              Bool.sem_eq (x <| v1.node.ty) (mk_masked n min_val)
+            else
+              let min_x, max_x =
+                if Z.gt z Z.zero then
+                  (* z > 0 *)
+                  let min_x =
+                    if Z.divisible min_val z then Z.(min_val / z)
+                    else Z.((min_val / z) + one)
+                  in
+                  let max_x = Z.(max_val / z) in
+                  (min_x, max_x)
+                else
+                  (* z < 0 *)
+                  let min_x =
+                    if Z.divisible max_val z then Z.(max_val / z)
+                    else Z.((max_val / z) + one)
+                  in
+                  let max_x = Z.(min_val / z) in
+                  (min_x, max_x)
+              in
+              Bool.or_
+                (lt ~signed (x <| v1.node.ty) (mk_masked n min_x))
+                (gt ~signed (x <| v1.node.ty) (mk_masked n max_x))
           else
             (* For unsigned overflow, z * x overflows iff x > floor((2^n - 1) / z) *)
             let maxn = Z.pred (Z.shift_left Z.one n) in
