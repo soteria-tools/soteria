@@ -741,11 +741,7 @@ let with_exposed addr =
              let ofs = addr -!@ ofs in
              let ptr = Typed.Ptr.mk loc ofs in
              let** block =
-               Heap.wrap loc
-                 (let open Freeable_block_with_meta.SM in
-                  let open Syntax in
-                  let* st = get_state () in
-                  Result.ok st)
+               Heap.wrap loc @@ Freeable_block_with_meta.SM.Result.get_state ()
              in
              match (block : Freeable_block_with_meta.t option) with
              | None | Some { info = None; _ } -> Result.miss []
