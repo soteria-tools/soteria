@@ -71,10 +71,11 @@ module MemVal (Symex : Symex.Base) = struct
     val merge : left:t -> right:t -> t
 
     (** [split ~at node] Splits [node] at [at], which is the relative offset
-      within the node. Returns the left and right split trees, which themselves
-      may contain further splits.
+        within the node. Returns the left and right split trees, which
+        themselves may contain further splits.
 
-      [at] is guaranteed to be in the range [[1, size(node))], i.e. strictly within the node. *)
+        [at] is guaranteed to be in the range [\[1, size(node))], i.e. strictly
+        within the node. *)
     val split :
       at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
 

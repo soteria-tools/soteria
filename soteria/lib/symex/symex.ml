@@ -144,13 +144,15 @@ module type Base = sig
     'a t
 
   (** [assert_or_error guard err] asserts [guard] is true, and otherwise returns
-      [Compo_res.Error err]. Biased towards the assertion being [false] to reduce SAT-checks.
+      [Compo_res.Error err]. Biased towards the assertion being [false] to
+      reduce SAT-checks.
 
-      This is provided as a utility, and is equivalent to {@ocaml[
+      This is provided as a utility, and is equivalent to
+      {@ocaml[
         branch_on (not guard)
           ~then_:(fun () -> return (Compo_res.error err))
           ~else_:(fun () -> return (Compo_res.ok ()))
-        ]} *)
+      ]} *)
   val assert_or_error : sbool v -> 'err -> (unit, 'err, 'f) Compo_res.t t
 
   val branches : (unit -> 'a t) list -> 'a t
@@ -292,9 +294,9 @@ module type S = sig
     'a t ->
     ('a * sbool v list) list Stats.with_stats
 
-  (** Same as {!run} but has to be run within {!Stats.with_stats} or will throw
-      an exception. This function is exposed should users wish to run several
-      symbolic execution processes using a single [stats] record. *)
+  (** Same as {!run} but has to be run within {!Stats.As_ctx.with_stats} or will
+      throw an exception. This function is exposed should users wish to run
+      several symbolic execution processes using a single [stats] record. *)
   val run_needs_stats :
     ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
 
@@ -367,7 +369,8 @@ module StatKeys = struct
       a {!Stats.StrSeq}. *)
   let give_up_reasons = "soteria.give-up-reasons"
 
-  (** Number of misses without any fix. Logged as a {!Stats.StrSeq}. *)
+  (** Number of misses without any fix. Logged as a {!Stats.stat_entry.StrSeq}.
+  *)
   let miss_without_fix = "soteria.miss-without-fix"
 
   let () =
