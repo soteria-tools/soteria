@@ -5,6 +5,7 @@
     read/consumption. *)
 
 open Symex
+open Compo_res
 
 module Codom (Symex : Symex.Base) = struct
   module type S = sig
@@ -46,8 +47,8 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
     | Some x -> Result.ok x
     | None ->
         let* x = lift @@ fresh () in
-        let* () = SM.set_state (Some x) in
-        Result.ok x
+        let+ () = SM.set_state (Some x) in
+        Ok x
 
   let produce (serialized : serialized) : unit SM.t =
     let* t = SM.get_state () in

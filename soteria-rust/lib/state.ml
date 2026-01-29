@@ -142,8 +142,8 @@ module Block = struct
     L.debug (fun m ->
         m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
           Tree_borrow.pp_state tag_st);
-    let* () = SM.set_state (to_opt (block, tb')) in
-    Result.ok (ptr', meta)
+    let+ () = SM.set_state (to_opt (block, tb')) in
+    Ok (ptr', meta)
 
   let protect ((ptr : Sptr.t), meta) (mut : Types.ref_kind) ofs size =
     let open SM in
@@ -160,14 +160,14 @@ module Block = struct
         m "Protecting pointer %a -> %a, on [%a;%a]" Sptr.pp ptr Sptr.pp ptr'
           Typed.ppa ofs Typed.ppa size);
     if%sat size ==@ Usize.(0s) then
-      let* () = SM.set_state (to_opt (block, tb')) in
-      Result.ok (ptr', meta)
+      let+ () = SM.set_state (to_opt (block, tb')) in
+      Ok (ptr', meta)
     else
       let*^ res, block' = Tree_block.protect ofs size tag tb' block in
       match res with
       | Ok () ->
-          let* () = SM.set_state (to_opt (block', tb')) in
-          Result.ok (ptr', meta)
+          let+ () = SM.set_state (to_opt (block', tb')) in
+          Ok (ptr', meta)
       | Error e -> Result.error e
       | Missing f -> Result.miss f
 
@@ -671,8 +671,8 @@ let with_globals (type a) () (f : globals -> a * globals) :
   let* st = SM.get_state () in
   let st = of_opt st in
   let res, globals = f st.globals in
-  let* () = SM.set_state (Some { st with globals }) in
-  Result.ok res
+  let+ () = SM.set_state (Some { st with globals }) in
+  Ok res
 
 let store_str_global str ptr =
   let@ globals = with_globals () in
@@ -814,8 +814,8 @@ let with_errors () (f : Error.with_trace list -> 'a * Error.with_trace list) :
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
   let res, errors = f st.errors in
-  let* () = SM.set_state (Some { st with errors }) in
-  Result.ok res
+  let+ () = SM.set_state (Some { st with errors }) in
+  Ok res
 
 let add_error e =
   let@ errors = with_errors () in
@@ -896,8 +896,8 @@ let lookup_const_generic id ty =
       let const_generics =
         Types.ConstGenericVarId.Map.add id v st.const_generics
       in
-      let* () = SM.set_state (Some { st with const_generics }) in
-      Result.ok v
+      let+ () = SM.set_state (Some { st with const_generics }) in
+      Ok v
 
 let register_thread_exit callback =
   let* st_opt = SM.get_state () in

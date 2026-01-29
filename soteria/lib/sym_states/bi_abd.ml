@@ -38,12 +38,9 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
       let st, fixes = of_opt bi_st in
       let*^ res, st' = f st in
       match res with
-      | Ok v ->
-          let* () = SM.set_state (to_opt (st', fixes)) in
-          SM.Result.ok v
-      | Error e ->
-          let* () = SM.set_state (to_opt (st', fixes)) in
-          SM.Result.error e
+      | Ok _ | Error _ ->
+          let+ () = SM.set_state (to_opt (st', fixes)) in
+          res
       | Missing fix_choices ->
           if fuel <= 0 then SM.vanish ()
           else

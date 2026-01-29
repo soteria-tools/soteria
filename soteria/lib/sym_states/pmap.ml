@@ -1,4 +1,5 @@
 open Symex
+open Compo_res
 
 module KeyS (Symex : Symex.Base) = struct
   module type S = sig
@@ -198,8 +199,8 @@ module Build_from_find_opt_sym
       SM.assume
         [ Key.distinct (key :: (M.to_seq st |> Seq.map fst |> List.of_seq)) ]
     in
-    let* () = SM.set_state (to_opt (M.add key new_codom st)) in
-    Result.ok key
+    let+ () = SM.set_state (to_opt (M.add key new_codom st)) in
+    Ok key
 
   let allocs (type a k) ~(fn : a -> Key.t -> (k * Codom.t) Symex.t)
       ~(els : a list) : (k list, 'err, serialized list) SM.Result.t =
@@ -218,8 +219,8 @@ module Build_from_find_opt_sym
     let* () =
       SM.assume [ M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct ]
     in
-    let* () = SM.set_state (to_opt st) in
-    SM.Result.ok out_keys
+    let+ () = SM.set_state (to_opt st) in
+    Ok out_keys
 
   let wrap (type a err) (key : Key.t)
       (f : (a, err, Codom.serialized list) Codom.SM.Result.t) :
