@@ -103,7 +103,7 @@ let get_map stats key =
   | Some e -> as_map e
   | None -> Hstring.create 0
 
-type printer_config = (string * stat_entry Fmt.t) Hstring.t
+type printer_config = (string * (t -> stat_entry Fmt.t)) option Hstring.t
 
 let default_printer_config : printer_config = Hstring.create 0
 
@@ -130,23 +130,25 @@ let rec default_printer ft = function
 
 let register_printer key ?name pp =
   let name = Option.value name ~default:key in
-  Hstring.add default_printer_config key (name, pp)
+  Hstring.add default_printer_config key (Some (name, pp))
+
+let disable_printer key = Hstring.add default_printer_config key None
 
 let register_int_printer key ?name pp =
-  register_printer key ?name @@ fun ft e ->
-  match e with Int n -> pp ft n | _ -> default_printer ft e
+  register_printer key ?name @@ fun stats ft e ->
+  match e with Int n -> pp stats ft n | _ -> default_printer ft e
 
 let register_float_printer key ?name pp =
-  register_printer key ?name @@ fun ft e ->
-  match e with Float f -> pp ft f | _ -> default_printer ft e
+  register_printer key ?name @@ fun stats ft e ->
+  match e with Float f -> pp stats ft f | _ -> default_printer ft e
 
 let register_strseq_printer key ?name pp =
-  register_printer key ?name @@ fun ft e ->
-  match e with StrSeq arr -> pp ft arr | _ -> default_printer ft e
+  register_printer key ?name @@ fun stats ft e ->
+  match e with StrSeq arr -> pp stats ft arr | _ -> default_printer ft e
 
 let register_map_printer key ?name pp =
-  register_printer key ?name @@ fun ft e ->
-  match e with Map m -> pp ft m | _ -> default_printer ft e
+  register_printer key ?name @@ fun stats ft e ->
+  match e with Map m -> pp stats ft m | _ -> default_printer ft e
 
 let dump t file =
   let oc = open_out file in
@@ -159,13 +161,14 @@ let pp ft (stats : t) =
   Fmt.pf ft "%a:@\n" (pp_style `Bold) "Statistics";
   Hstring.iter
     (fun key entry ->
-      let name, pp_entry =
-        match Hstring.find_opt default_printer_config key with
-        | Some (name, pp) -> (name, pp)
-        | None -> (key, default_printer)
-      in
-      Fmt.pf ft "@[<v 0>@[<v 2>• %s: %a@]@,@]@," name pp_entry entry)
-    stats
+      match Hstring.find_opt default_printer_config key with
+      | Some (Some (name, pp)) ->
+          Fmt.pf ft "@[<v 0>@[<v 2>• %s: %a@]@,@]@," name (pp stats) entry
+      | Some None -> ()
+      | None ->
+          Fmt.pf ft "@[<v 0>@[<v 2>• %s: %a@]@,@]@," key default_printer entry)
+    stats;
+  Fmt.pf ft "@?"
 
 let output t =
   match (Config.get ()).output_stats with

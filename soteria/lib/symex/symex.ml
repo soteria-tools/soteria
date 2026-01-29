@@ -371,21 +371,28 @@ module StatKeys = struct
   let miss_without_fix = "soteria.miss-without-fix"
 
   let () =
-    Stats.register_float_printer exec_time ~name:"Execution time"
-      Logs.Printers.pp_time;
-    Stats.register_float_printer sat_time ~name:"SAT solving time"
-      Logs.Printers.pp_time;
-    Stats.register_int_printer sat_checks ~name:"SAT checks" Fmt.int;
-    Stats.register_int_printer sat_unknowns ~name:"Unknown SAT checks" Fmt.int;
-    Stats.register_int_printer unexplored_branches ~name:"Unexplored branches"
-      Fmt.int;
-    Stats.register_int_printer branches ~name:"Branches" Fmt.int;
-    Stats.register_int_printer steps ~name:"Steps" Fmt.int;
-    Stats.register_map_printer give_up_reasons ~name:"Give up reasons"
-      (Stats.pp_iter_bindings_list Hashtbl.Hstring.iter (fun ft (key, _) ->
-           Fmt.string ft key));
-    Stats.register_printer miss_without_fix ~name:"Misses without fix"
-      Stats.default_printer
+    let open Stats in
+    let open Logs.Printers in
+    register_float_printer exec_time ~name:"Execution time" (fun _ -> pp_time);
+    register_float_printer sat_time ~name:"SAT solving time" (fun stats ft t ->
+        let exec_time = get_float stats exec_time in
+        Fmt.pf ft "%a (%a)" pp_time t
+          (pp_unstable ~name:"%" pp_percent)
+          (exec_time, t));
+    disable_printer sat_unknowns;
+    register_int_printer sat_checks ~name:"SAT checks" (fun stats ft sats ->
+        let unknowns = get_int stats sat_unknowns in
+        Fmt.pf ft "%d (%d unknowns)" sats unknowns);
+    disable_printer unexplored_branches;
+    register_int_printer branches ~name:"Branches" (fun stats ft b ->
+        let unexplored = get_int stats unexplored_branches in
+        Fmt.pf ft "%d (%d unexplored)" b unexplored);
+    register_int_printer steps ~name:"Steps" (fun _ -> Fmt.int);
+    register_map_printer give_up_reasons ~name:"Give up reasons" (fun _ ->
+        pp_iter_bindings_list Hashtbl.Hstring.iter (fun ft (key, _) ->
+            Fmt.string ft key));
+    register_printer miss_without_fix ~name:"Misses without fix" (fun _ ->
+        default_printer)
 end
 
 module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :

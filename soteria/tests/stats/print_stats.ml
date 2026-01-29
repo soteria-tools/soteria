@@ -25,7 +25,14 @@ let () =
   Soteria.Stats.pp Fmt.stdout stats;
   Fmt.pr "@.";
   let as_yojson = Soteria.Stats.to_yojson stats in
-  Yojson.Safe.pretty_to_channel stdout as_yojson;
+  let as_yojson_stable =
+    Yojson.Safe.Util.to_assoc as_yojson
+    |> List.map (function
+      | k, `Float _ -> (k, `String "<float>")
+      | k, v -> (k, v))
+    |> fun lst -> `Assoc lst
+  in
+  Yojson.Safe.pretty_to_channel stdout as_yojson_stable;
   Fmt.pr "@.@.";
   match Soteria.Stats.of_yojson as_yojson with
   | Ok stats' ->
