@@ -1,23 +1,16 @@
-module SYMEX =
-  Soteria.Symex.Make
-    (struct
-      module Range = struct
-        type t = Cerb_location.t
-
-        (* We take the easy way out and just convert to cartesian coordinates *)
-        let to_yojson loc =
-          let (p1, p2), (p3, p4) =
-            Option.value
-              ~default:((0, 0), (0, 0))
-              (Cerb_location.to_cartesian_user loc)
-          in
-          `List [ `List [ `Int p1; `Int p2 ]; `List [ `Int p3; `Int p4 ] ]
-      end
-    end)
-    (Bv_solver.Z3_solver)
-
+module SYMEX = Soteria.Symex.Make (Bv_solver.Z3_solver)
 include SYMEX
 include Syntaxes.FunctionWrap
+
+module StatKeys = struct
+  let give_up_reasons = "soteria-c.give-up-reasons"
+
+  let () =
+    let open Soteria.Stats in
+    (* Soteria already keeps track of give up reasons so we don't need to
+       display them twice. *)
+    disable_printer give_up_reasons
+end
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
     ([> Typed.T.nonzero ] Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
@@ -48,8 +41,9 @@ let with_loc_immediate ~loc f =
   res
 
 let not_impl msg =
-  let msg = "Unsupported: " ^ msg in
-  give_up ~loc:(get_loc ()) msg
+  Soteria.Stats.As_ctx.push_binding StatKeys.give_up_reasons msg
+    (Yojson (Ail_helpers.cerb_loc_to_yojson (get_loc ())));
+  give_up ("Unsupported: " ^ msg)
 
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg

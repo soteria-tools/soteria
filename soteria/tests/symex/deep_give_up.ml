@@ -1,4 +1,4 @@
-open Soteria.Symex.Make (Soteria.Symex.Meta.Dummy) (Tiny_solver.Z3_solver)
+open Soteria.Symex.Make (Tiny_solver.Z3_solver)
 open Syntax
 open Soteria.Tiny_values
 
@@ -12,7 +12,7 @@ let complex_process () =
   let* y = nondet Typed.t_int in
   if%sat x >@ y then
     if%sat x >@ Typed.zero then Result.ok (x +@ y) else Result.ok (x -@ y)
-  else if%sat x ==@ y then give_up ~loc:() "x == y"
+  else if%sat x ==@ y then give_up "x == y"
   else
     let** () = assert_or_error (Typed.not (x ==@ y)) "x != y" in
     Result.error "okkk"

@@ -25,36 +25,8 @@ module Or_gave_up = struct
     | Gave_up reason -> raise (Gave_up reason)
 end
 
-module type CodeRange = sig
-  type t
-
-  val to_yojson : t -> Yojson.Safe.t
-end
-
-module Meta = struct
-  (** Management of meta-information about the execution. *)
-
-  module type S = sig
-    (** Management of meta-information about the execution. *)
-
-    (** Used for various bookkeeping utilities. *)
-    module Range : CodeRange
-  end
-
-  module Dummy : S with type Range.t = unit = struct
-    (** Can be used by users as a default *)
-
-    module Range = struct
-      type t = unit
-
-      let to_yojson () = `Null
-    end
-  end
-end
-
 module type Base = sig
   module Value : Value.S
-  module Meta : Meta.S
 
   (** Represents a yet-to-be-executed symbolic process which terminates with a
       value of type ['a]. *)
@@ -164,15 +136,12 @@ module type Base = sig
   include Monad.Base with type 'a t := 'a t
 
   (** Gives up on this path of execution for incompleteness reason. For
-      instance, if a give feature is unsupported.
-
-      This function also logs, and adds the reason for giving up to the
-      execution statistics. *)
-  val give_up : loc:Meta.Range.t -> string -> 'a t
+      instance, if a give feature is unsupported. *)
+  val give_up : string -> 'a t
 
   (** If the given option is None, gives up execution, otherwise continues,
       unwrapping the option. *)
-  val some_or_give_up : loc:Meta.Range.t -> string -> 'a option -> 'a t
+  val some_or_give_up : string -> 'a option -> 'a t
 
   val all : ('a -> 'b t) -> 'a list -> 'b list t
   val fold_list : 'a list -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
@@ -364,9 +333,8 @@ module StatKeys = struct
   *)
   let steps = "soteria.steps"
 
-  (** Number of give-ups due to incompleteness. Logged as a {!Stats.Map},
-      mapping locations as strings to the give up messages for that location as
-      a {!Stats.StrSeq}. *)
+  (** Number of give-ups due to incompleteness. Logged as a
+      {!Stats.stat_entry.StrSeq}. *)
   let give_up_reasons = "soteria.give-up-reasons"
 
   (** Number of misses without any fix. Logged as a {!Stats.stat_entry.StrSeq}.
@@ -391,17 +359,14 @@ module StatKeys = struct
         let unexplored = get_int stats unexplored_branches in
         Fmt.pf ft "%d (%d unexplored)" b unexplored);
     register_int_printer steps ~name:"Steps" (fun _ -> Fmt.int);
-    register_map_printer give_up_reasons ~name:"Give up reasons" (fun _ ->
-        pp_iter_bindings_list Hashtbl.Hstring.iter (fun ft (key, _) ->
-            Fmt.string ft key));
+    register_printer give_up_reasons ~name:"Give up reasons" (fun _ ->
+        default_printer);
     register_printer miss_without_fix ~name:"Misses without fix" (fun _ ->
         default_printer)
 end
 
-module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
-  S with module Value = Sol.Value and module Meta = Meta = struct
-  module Meta = Meta
-
+module Make (Sol : Solver.Mutable_incremental) :
+  S with module Value = Sol.Value = struct
   module Solver = struct
     include Solver.Mutable_to_pooled (Sol)
 
@@ -677,19 +642,18 @@ module Make (Meta : Meta.S) (Sol : Solver.Mutable_incremental) :
   let vanish () _f = ()
   let all fn xs = Monad.all ~bind ~return fn xs
 
-  let give_up ~loc reason _f =
+  let give_up reason _f =
     (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
     L.info (fun m -> m "%s" reason);
-    Stats.As_ctx.push_binding StatKeys.give_up_reasons reason
-      (Yojson (Meta.Range.to_yojson loc));
+    Stats.As_ctx.push_str StatKeys.give_up_reasons reason;
     if
       Approx.As_ctx.is_ox ()
       && Solver_result.admissible ~mode:OX (Solver.sat ())
     then Give_up.perform reason
 
-  let some_or_give_up ~loc reason = function
+  let some_or_give_up reason = function
     | Some x -> return x
-    | None -> give_up ~loc reason
+    | None -> give_up reason
 
   let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
   let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f

@@ -51,14 +51,12 @@ module Make
     end) :
   S
     with module Value = Sym.Value
-     and module Meta = Sym.Meta
      and module Symex = Sym
      and type st = State.t
      and type 'a t = State.t -> ('a * State.t) Sym.t = struct
   open Sym.Syntax
   module Symex = Sym
   module Value = Sym.Value
-  module Meta = Sym.Meta
 
   type 'a t = State.t -> ('a * State.t) Sym.t
   type lfail = Sym.lfail
@@ -99,7 +97,7 @@ module Make
   let[@inline] assert_or_error b err = lift (Sym.assert_or_error b err)
   let[@inline] branches b st = Sym.branches (List.map (fun f () -> f () st) b)
   let[@inline] consume_fuel_steps n = lift (Sym.consume_fuel_steps n)
-  let[@inline] give_up ~loc msg = lift (Sym.give_up ~loc msg)
+  let[@inline] give_up msg = lift (Sym.give_up msg)
 
   let[@inline] some_or_give_up ~loc msg x =
     lift (Sym.some_or_give_up ~loc msg x)

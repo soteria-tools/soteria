@@ -15,28 +15,7 @@ module StatKeys = struct
         Fmt.int)
 end
 
-module MonoSymex =
-  Soteria.Symex.Make
-    (struct
-      module Range = struct
-        type t = Charon.Meta.span_data
-
-        let file_name_to_yojson (fn : Charon.Meta.file_name) : Yojson.Safe.t =
-          match fn with
-          | Virtual s -> `List [ `String "Virtual"; `String s ]
-          | Local s -> `List [ `String "Local"; `String s ]
-          | NotReal s -> `List [ `String "NotReal"; `String s ]
-
-        let to_yojson ({ file; beg_loc; end_loc } : t) : Yojson.Safe.t =
-          `Assoc
-            [
-              ("file", file_name_to_yojson file.name);
-              ("beg_loc", `List [ `Int beg_loc.line; `Int beg_loc.col ]);
-              ("end_loc", `List [ `Int end_loc.line; `Int end_loc.col ]);
-            ]
-      end
-    end)
-    (Bv_solver.Z3_solver)
+module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver)
 
 module TypeMap = Map.Make (struct
   type t = Charon.Types.ty
@@ -133,5 +112,5 @@ let[@inline] with_loc_err () f =
   Result.map_error (f ()) (fun e -> (e, loc))
 
 let error e = Result.error (e, get_loc ())
-let not_impl msg = give_up ~loc:(get_loc ()) msg
-let of_opt_not_impl msg = some_or_give_up ~loc:(get_loc ()) msg
+let not_impl = give_up
+let of_opt_not_impl = some_or_give_up

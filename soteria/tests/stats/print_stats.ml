@@ -1,8 +1,4 @@
-open
-  Soteria.Symex.Make
-    (Soteria.Symex.Meta.Dummy)
-    (Soteria.Tiny_values.Tiny_solver.Z3_solver)
-
+open Soteria.Symex.Make (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 open Syntax
 open Soteria.Tiny_values.Typed
 
@@ -11,7 +7,7 @@ let process : (int, int, unit) Result.t =
   let* b2 = nondet t_bool in
   let* b3 = nondet t_bool in
   let* b4 = nondet t_bool in
-  if%sat b1 then give_up ~loc:() "give up reason"
+  if%sat b1 then give_up "give up reason"
   else if%sat b2 then Result.miss_no_fix ~reason:"miss no fix" ()
   else if%sat b3 then Result.miss_no_fix ~reason:"other miss no fix" ()
   else if%sat b4 then Result.ok 1

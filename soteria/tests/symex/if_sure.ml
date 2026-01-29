@@ -1,4 +1,4 @@
-open Soteria.Symex.Make (Soteria.Symex.Meta.Dummy) (Tiny_solver.Z3_solver)
+open Soteria.Symex.Make (Tiny_solver.Z3_solver)
 open Syntax
 open Soteria.Tiny_values.Typed
 open Infix
