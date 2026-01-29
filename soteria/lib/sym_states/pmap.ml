@@ -272,12 +272,6 @@ module Build_from_find_opt_sym
     in
     to_opt st *)
 
-  (*     val fold :
-      ('acc -> Key.t * codom -> ('acc, 'err, serialized) Symex.Result.t) ->
-      'acc ->
-      t option ->
-      ('acc, 'err, serialized) Symex.Result.t *)
-
   let fold (type acc)
       (f :
         acc -> Key.t * Codom.t -> (acc, 'err, serialized list) Symex.Result.t)

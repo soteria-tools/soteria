@@ -51,12 +51,10 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
               (List.map
                  (fun fix ->
                    fun () ->
-                    let* (), st'' =
-                      let fn =
-                        B.SM.fold_list fix ~init:() ~f:(fun () fix ->
-                            B.produce fix)
-                      in
-                      SM.lift @@ fn st
+                    let*^ (), st'' =
+                      B.SM.fold_list fix ~init:()
+                        ~f:(fun () fix -> B.produce fix)
+                        st
                     in
                     let* () = SM.set_state (to_opt (st'', fix @ fixes)) in
                     with_fuel (fuel - 1))

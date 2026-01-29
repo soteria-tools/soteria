@@ -720,10 +720,8 @@ let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) =
       let@ () = with_loc_err () in
       let**^ size = Layout.size_of ty in
       let@ ofs = with_ptr ptr in
-      let open Block.SM.Syntax in
-      let+ res = Block.unprotect ofs tag size in
-      L.debug (fun m -> m "Unprotected pointer %a" Sptr.pp ptr);
-      res
+      L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
+      Block.unprotect ofs tag size
 
 let with_exposed addr =
   let@ () = with_error_loc_as_call_trace () in
@@ -778,18 +776,17 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
     (let open Heap.SM in
      let open Heap.SM.Syntax in
      let* heap = get_state () in
-     let** leaks =
-       lift
-       @@ Heap.fold
-            (fun leaks (k, (v : Freeable_block_with_meta.t)) ->
-              (* FIXME: This only works because our addresses are concrete *)
-              let open DecayMapMonad in
-              match v with
-              | { node = Alive _; info = Some { kind = Heap; span; _ }; _ }
-                when not (List.mem k global_addresses) ->
-                  Result.ok ((k, span) :: leaks)
-              | _ -> Result.ok leaks)
-            [] heap
+     let**^ leaks =
+       Heap.fold
+         (fun leaks (k, (v : Freeable_block_with_meta.t)) ->
+           (* FIXME: This only works because our addresses are concrete *)
+           let open DecayMapMonad in
+           match v with
+           | { node = Alive _; info = Some { kind = Heap; span; _ }; _ }
+             when not (List.mem k global_addresses) ->
+               Result.ok ((k, span) :: leaks)
+           | _ -> Result.ok leaks)
+         [] heap
      in
      if List.is_empty leaks then Result.ok ()
      else (
