@@ -286,10 +286,7 @@ module SM =
       type nonrec t = t option
     end)
 
-let pp_pretty ~ignore_freed:_ ft state = pp ft state
-
-(* TODO: re-establish *)
-(* let pp_pretty ~ignore_freed ft { heap; _ } =
+let pp_pretty ~ignore_freed ft { heap; _ } =
   let (ignore : 'a * Freeable_block_with_meta.t -> bool) =
     if ignore_freed then function _, { node = Freed; _ } -> true | _ -> false
     else fun _ -> false
@@ -297,15 +294,18 @@ let pp_pretty ~ignore_freed:_ ft state = pp ft state
   match heap with
   | None -> Fmt.pf ft "Empty State"
   | Some st ->
-      Heap.pp ~ignore
-        (fun ft block ->
+      Heap.pp' ~ignore
+        ~codom:(fun ft block ->
           match (block : Freeable_block_with_meta.t) with
           | { info = Some { kind = Function fn; _ }; _ } ->
               Fmt.pf ft "function %a" Fun_kind.pp fn
-          | { node; _ } -> Freeable_block.pp ft node)
-        (* (Freeable.pp (fun fmt (tb, _) -> Tree_block.pp_pretty fmt tb))
-                ft node) *)
-        ft st *)
+          | { node; _ } ->
+              Freeable_block.pp'
+                ~inner:(fun fmt (tb, _) ->
+                  Fmt.option ~none:(Fmt.any "Empty Block") Tree_block.pp_pretty
+                    fmt tb)
+                ft node)
+        ft st
 
 let empty_state =
   {

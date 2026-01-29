@@ -67,7 +67,16 @@ struct
     val empty : t
     val syntactic_bindings : t -> (Key.t * codom) Seq.t
     val syntactic_mem : Key.t -> t -> bool
-    val pp : ?ignore:(Key.t * codom -> bool) -> Format.formatter -> t -> unit
+
+    val pp' :
+      ?key:(Format.formatter -> Key.t -> unit) ->
+      ?codom:(Format.formatter -> codom -> unit) ->
+      ?ignore:(Key.t * codom -> bool) ->
+      Format.formatter ->
+      t ->
+      unit
+
+    val pp : Format.formatter -> t -> unit
     val show : t -> string
     val pp_serialized : Format.formatter -> serialized -> unit
     val show_serialized : serialized -> string
@@ -176,15 +185,16 @@ module Build_from_find_opt_sym
     Key.iter_vars key f;
     Codom.iter_vars_serialized v f
 
-  let pp ?(ignore = fun _ -> false) =
+  let pp' ?(key = Key.pp) ?(codom = Codom.pp) ?(ignore = fun _ -> false) =
     let open Fmt in
     let iter f = M.iter (fun k v -> f (k, v)) in
-    let pp_binding ft (k, v) = pf ft "@[<2>%a ->@ %a@]" Key.pp k Codom.pp v in
+    let pp_binding ft (k, v) = pf ft "@[<2>%a ->@ %a@]" key k codom v in
     let iter_non_ignored f m =
       iter (fun (k, v) -> if ignore (k, v) then () else f (k, v)) m
     in
     braces (Fmt.iter ~sep:(any ";@\n") iter_non_ignored pp_binding)
 
+  let pp ft t = pp' ft t
   let show = Fmt.to_to_string (fun ft t -> pp ft t)
   let of_opt = function None -> M.empty | Some m -> m
   let to_opt m = if M.is_empty m then None else Some m

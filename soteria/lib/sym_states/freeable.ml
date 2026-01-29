@@ -19,6 +19,9 @@ module Make
 struct
   type t = I.t freeable [@@deriving show { with_path = false }]
 
+  let pp' ?(inner = I.pp) = pp_freeable inner
+  let pp ft t = pp' ft t
+
   type serialized = I.serialized freeable
   [@@deriving show { with_path = false }]
 

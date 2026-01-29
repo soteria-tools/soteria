@@ -80,7 +80,7 @@ let pp_pretty ~ignore_freed ft st =
   | None -> Fmt.pf ft "Empty Heap"
   | Some st ->
       (* FIXME: This used to call [Ctree_block.pp_pretty], but I can't parametrise the heap printer anymore... *)
-      Heap.pp ~ignore ft st
+      Heap.pp' ~ignore ~codom:Block.pp_pretty ft st
 
 let empty = None
 

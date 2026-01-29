@@ -1,6 +1,6 @@
 open Symex.Compo_res
 
-let pp fmt pp_st pp_fixes (st, fixes) =
+let pp_bi_state pp_st pp_fixes fmt (st, fixes) =
   Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" (Fmt.Dump.option pp_st) st
     (Fmt.Dump.list pp_fixes) fixes
 
@@ -26,12 +26,11 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
   let to_opt : t -> t option = function None, [] -> None | other -> Some other
   let expose (st, fixes) = (st, fixes)
 
-  let pp fmt ((st, fixes) : t) =
-    Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" (Fmt.Dump.option B.pp)
-      st
-      (Fmt.Dump.list B.pp_serialized)
-      fixes
+  let pp' ?(inner = B.pp) ?(serialized = B.pp_serialized) fmt (st, fixes) =
+    Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" (Fmt.Dump.option inner)
+      st (Fmt.Dump.list serialized) fixes
 
+  let pp fmt t = pp' fmt t
   let show = Fmt.to_to_string pp
 
   let wrap ?(fuel = 1) (f : ('v, 'err, B.serialized list) B.SM.Result.t) :

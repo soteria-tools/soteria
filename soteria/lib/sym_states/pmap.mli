@@ -50,7 +50,16 @@ module S
     val empty : t
     val syntactic_bindings : t -> (Key.t * codom) Seq.t
     val syntactic_mem : Key.t -> t -> bool
-    val pp : ?ignore:(Key.t * codom -> bool) -> Format.formatter -> t -> unit
+
+    val pp' :
+      ?key:(Format.formatter -> Key.t -> unit) ->
+      ?codom:(Format.formatter -> codom -> unit) ->
+      ?ignore:(Key.t * codom -> bool) ->
+      Format.formatter ->
+      t ->
+      unit
+
+    val pp : Format.formatter -> t -> unit
     val show : t -> string
     val pp_serialized : Format.formatter -> serialized -> unit
     val show_serialized : serialized -> string

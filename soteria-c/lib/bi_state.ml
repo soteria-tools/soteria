@@ -1,8 +1,8 @@
 open Csymex
 include Bi (State)
 
-let pp_pretty ~ignore_freed:_ _ft _t = failwith "to_reimplement"
-(* Bi.pp (State.pp_pretty ~ignore_freed) State.pp_serialized *)
+let pp_pretty ~ignore_freed ft t =
+  pp' ~inner:(State.pp_pretty ~ignore_freed) ft t
 
 let empty = None
 let load ptr ty = wrap (State.load ptr ty)

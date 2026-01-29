@@ -17,6 +17,9 @@ struct
 
   type t = (B.t, Info.t) with_info [@@deriving show { with_path = false }]
 
+  let pp' ?(inner = B.pp) ?(info = Info.pp) ft t = pp_with_info inner info ft t
+  let pp ft t = pp' ft t
+
   module SM =
     State_monad.Make
       (Symex)
