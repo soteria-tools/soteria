@@ -554,7 +554,8 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
      We only want to update the values in the tree, not the tree borrow state. *)
      let module Tree = Tree_block.Tree in
      let** original_tree =
-       read_only @@ Tree_block.get_raw_tree_owned ofs size
+       let* state = get_state () in
+       with_state ~state @@ Tree_block.get_raw_tree_owned ofs size
      in
      (* Iterator over the tree borrow states in a tree. *)
      let collect_tb_states f =

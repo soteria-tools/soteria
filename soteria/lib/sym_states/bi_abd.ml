@@ -1,5 +1,9 @@
 open Symex.Compo_res
 
+let pp fmt pp_st pp_fixes (st, fixes) =
+  Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" (Fmt.Dump.option pp_st) st
+    (Fmt.Dump.list pp_fixes) fixes
+
 module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
   (** This is unsound in {!Approx.OX}-mode, use only in {!Approx.UX}-mode. *)
 

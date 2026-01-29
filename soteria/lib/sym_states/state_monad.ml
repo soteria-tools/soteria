@@ -13,11 +13,6 @@ module type S = sig
   val get_state : unit -> st t
   val set_state : st -> unit t
   val map_state : (st -> st) -> unit t
-
-  (** Receives a monad and applies it in the current context, but discards the
-      updated state leaving the state unchanged. *)
-  val read_only : 'a t -> 'a t
-
   val with_state : state:st -> 'a t -> 'a t
   val run_with_state : state:st -> 'a t -> ('a * st) Symex.t
 
@@ -92,11 +87,6 @@ module Make
   let[@inline] get_state () = fun st -> Symex.return (st, st)
   let[@inline] set_state st = fun _ -> Symex.return ((), st)
   let[@inline] map_state f st = Sym.return ((), f st)
-
-  let[@inline] read_only m st =
-    let+ res, _ = m st in
-    (res, st)
-
   let[@inline] assume b = lift (Sym.assume b)
   let[@inline] vanish () = lift (Sym.vanish ())
   let[@inline] assert_ b = lift (Sym.assert_ b)
