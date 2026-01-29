@@ -68,8 +68,7 @@ struct
           let+ res = I.assert_exclusively_owned st in
           (res, st))
     in
-    let* () = SM.set_state (Some Freed) in
-    Result.ok ()
+    SM.Result.set_state (Some Freed)
 
   (* In the context of UX, using a non-matching spec will simply vanish
   let consume

@@ -26,6 +26,8 @@ module type S = sig
       module type of Result
         with type ('a, 'e, 'f) t = ('a, 'e, 'f) Compo_res.t t
 
+    val set_state : st -> (unit, 'e, 'f) t
+
     val run_with_state :
       state:st -> ('a, 'e, 'f) t -> ('a * st, 'e * st, 'f) Symex.Result.t
   end
@@ -149,6 +151,8 @@ module Make
       let bind = bind
       let map = map
     end)
+
+    let[@inline] set_state st = fun _ -> Symex.return (Compo_res.Ok (), st)
 
     let[@inline] run_with_state ~state x =
       Symex.map (x state) @@ function

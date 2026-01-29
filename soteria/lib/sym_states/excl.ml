@@ -43,8 +43,7 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
 
   let store x =
     let** _ = unwrap () in
-    let* () = SM.set_state (Some x) in
-    SM.Result.ok ()
+    SM.Result.set_state (Some x)
 
   let serialize s = [ s ]
 
@@ -58,8 +57,7 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
   let consume x : (unit, [> Symex.lfail ], serialized list) SM.Result.t =
     let** y = unwrap () in
     let** () = SM.consume_pure (E.sem_eq x y) in
-    let* () = SM.set_state None in
-    Result.ok ()
+    SM.Result.set_state None
 
   let produce (v : serialized) : unit SM.t =
     let* t = SM.get_state () in

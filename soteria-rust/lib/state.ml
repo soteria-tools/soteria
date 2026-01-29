@@ -186,8 +186,7 @@ module Block = struct
         | Error e -> Result.error e
         | Missing f -> Result.miss f
     in
-    let* () = SM.set_state (to_opt (block', tb')) in
-    Result.ok ()
+    SM.Result.set_state (to_opt (block', tb'))
 
   let assert_exclusively_owned t_opt =
     let a, _ = of_opt t_opt in
@@ -907,8 +906,7 @@ let register_thread_exit callback =
     let** () = st.thread_destructor () in
     callback ()
   in
-  let* () = SM.set_state (Some { st with thread_destructor }) in
-  Result.ok ()
+  SM.Result.set_state (Some { st with thread_destructor })
 
 let run_thread_exits () =
  fun st_opt ->
