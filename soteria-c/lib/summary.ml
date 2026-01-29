@@ -80,12 +80,19 @@ let filter_pc relevant_vars pc =
         (fun (var, _) -> Var_hashset.mem relevant_vars var)
         (Typed.iter_vars v))
 
+module Leak_set = Hashset.Make (struct
+  type t = (Cerb_location.t[@printer Fmt_ail.pp_loc]) option [@@deriving show]
+
+  let equal = Option.equal Stdlib.( = )
+  let hash = Hashtbl.hash
+end)
+
 (** Removes any bit of the state that does not any "relevant variables". i.e.,
     bits that are not reachable from the precondition. *)
 let filter_serialized_state relevant_vars (state : State.serialized list) =
   (* leak_origins tracks the source code location of allocation for each heap location that was detected to leak.
      If empty, no leak is detected. *)
-  let leak_origins = ref [] in
+  let leak_origins = Leak_set.with_capacity 0 in
   let resulting_state =
     ListLabels.filter state ~f:(function
       | State_intf.Ser_globs _ ->
@@ -102,7 +109,7 @@ let filter_serialized_state relevant_vars (state : State.serialized list) =
           else
             (* If the block is not freed, we record where the object was allocated *)
             let leaked = not (Block.serialized_is_freed b) in
-            if leaked then leak_origins := b.info :: !leak_origins;
+            if leaked then Leak_set.add leak_origins b.info;
             L.trace (fun m ->
                 m "Filtering out unreachable location: %a which %a." Typed.ppa
                   loc
@@ -111,7 +118,8 @@ let filter_serialized_state relevant_vars (state : State.serialized list) =
                   leaked);
             false)
   in
-  (resulting_state, !leak_origins)
+  let leaked = List.of_seq (Leak_set.to_seq leak_origins) in
+  (resulting_state, leaked)
 
 let init_reachable_vars summary =
   let init_reachable = Var_hashset.with_capacity 0 in

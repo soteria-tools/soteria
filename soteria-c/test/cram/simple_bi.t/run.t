@@ -90,10 +90,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       │ ╭───^
    27 │ │  {
    28 │ │    int *x = (int *)malloc(sizeof(int));
-      │ │                    -------------------
-      │ │                    │
-      │ │                    2: This allocation leaked
-      │ │                    1: This allocation leaked
+      │ │                    ------------------- 1: This allocation leaked
    29 │ │    if (!x)
    30 │ │      return 1;
    31 │ │    *x = 12;
@@ -207,7 +204,6 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       manifest_bugs =
       [(Memory leak,
         [• This allocation leaked: manifest.c:28:19-38;
-         • This allocation leaked: manifest.c:28:19-38;
          • manifest.c:26:1-34:2 (cursor: 26:5 - 26:14)])]}
     Analysed {
       raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000001) };
