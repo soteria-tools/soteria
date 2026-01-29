@@ -108,28 +108,37 @@ val pp_iter_bindings_list :
 (** [register key ?name printer] Registers a new printer for statistics entries
     of name [name], possibly overriding previously set printers. If an entry
     with the given name is found during pretty-printing and no printer has been
-    registered for that name, [default_printer] is used instead. A string [name]
-    can be provided to be used as a header when printing the statistic; if none
-    is provided, [key] is used instead. *)
+    registered for that name, [default_printer] is used instead. [printer] also
+    receives the full stats object, to enable more context-aware printing. A
+    string [name] can be provided to be used as a header when printing the
+    statistic; if none is provided, [key] is used instead. *)
 val register_printer :
-  string -> ?name:string -> (Format.formatter -> stat_entry -> unit) -> unit
+  string ->
+  ?name:string ->
+  (t -> Format.formatter -> stat_entry -> unit) ->
+  unit
+
+(** [disable_printer key] disables any printing for the statistic for [key],
+    meaning it will not be printed at all. Use [register_printer] to revert
+    this. *)
+val disable_printer : string -> unit
 
 (** Convenience function to register a printer for [Int] statistics, fallsback
     to [default_printer] for other types. *)
 val register_int_printer :
-  string -> ?name:string -> (Format.formatter -> int -> unit) -> unit
+  string -> ?name:string -> (t -> Format.formatter -> int -> unit) -> unit
 
 (** Convenience function to register a printer for [Float] statistics, fallsback
     to [default_printer] for other types. *)
 val register_float_printer :
-  string -> ?name:string -> (Format.formatter -> float -> unit) -> unit
+  string -> ?name:string -> (t -> Format.formatter -> float -> unit) -> unit
 
 (** Convenience function to register a printer for [StrSeq] statistics,
     fallsback to [default_printer] for other types. *)
 val register_strseq_printer :
   string ->
   ?name:string ->
-  (Format.formatter -> string Dynarray.t -> unit) ->
+  (t -> Format.formatter -> string Dynarray.t -> unit) ->
   unit
 
 (** Convenience function to register a printer for [Map] statistics, fallsback
@@ -137,7 +146,7 @@ val register_strseq_printer :
 val register_map_printer :
   string ->
   ?name:string ->
-  (Format.formatter -> stat_entry Hstring.t -> unit) ->
+  (t -> Format.formatter -> stat_entry Hstring.t -> unit) ->
   unit
 
 (** Pretty-prints statistics to the given formatter. *)
