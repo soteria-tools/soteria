@@ -17,6 +17,14 @@ module type Value = sig
   val encode_value : t -> sexp
 end
 
+module StatKeys = struct
+  let check_sats = "solvers.z3.check_sats"
+
+  let () =
+    Stats.register_int_printer ~name:"Z3 check-sat calls" check_sats (fun _ ->
+        Fmt.int)
+end
+
 module Make (Value : Value) :
   Solver_interface.S with type value = Value.t and type ty = Value.ty = struct
   let initialize_solver : (Simple_smt.solver -> unit) ref =
@@ -125,6 +133,7 @@ module Make (Value : Value) :
     ack_command solver sexp
 
   let check_sat solver : Symex.Solver_result.t =
+    Stats.As_ctx.incr StatKeys.check_sats;
     let smt_res =
       try check solver
       with Simple_smt.UnexpectedSolverResponse s ->

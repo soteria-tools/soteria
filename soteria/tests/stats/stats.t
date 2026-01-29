@@ -1,6 +1,7 @@
 Test printing stats to stdout (ensure this looks somewhat nice)
   $ ./print_stats.exe
   Statistics:
+  • Z3 check-sat calls: 8
   • Execution time: <time>
   • Give up reasons: 
     - give up reason
@@ -13,6 +14,7 @@ Test printing stats to stdout (ensure this looks somewhat nice)
   
   
   {
+    "solvers.z3.check_sats": 8,
     "soteria.exec-time": "<float>",
     "soteria.give-up-reasons": { "give up reason": [ "RawJson", null ] },
     "soteria.miss-without-fix": [ "miss no fix", "other miss no fix" ],
