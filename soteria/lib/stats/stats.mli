@@ -163,7 +163,7 @@ module As_ctx : sig
       statistics are properly passed around. *)
 
   (** [with_stats () f] runs function [f] and handles effects raised by the
-      functions of this module such as {!add_exec_time}, and returns a record
+      functions of this module such as {!push_entry}, and returns a record
       containing the result of executing [f] together with the obtained
       statistics. *)
   val with_stats : unit -> (unit -> 'a) -> 'a with_stats
