@@ -2,7 +2,8 @@ open Logs.Import
 open Symex.Compo_res
 
 module Make (Symex : Symex.Base) = struct
-  (** This is unsound in {!Approx.OX}-mode, use only in {!Approx.UX}-mode. *)
+  (** This is unsound in {!Symex.Approx.OX}-mode, use only in
+      {!Symex.Approx.UX}-mode. *)
 
   open Symex
   open Symex.Syntax

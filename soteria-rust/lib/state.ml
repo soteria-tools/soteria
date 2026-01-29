@@ -1,4 +1,3 @@
-open Charon
 open Soteria.Symex.Compo_res
 open Rust_val
 open Rustsymex.Syntax
@@ -6,6 +5,7 @@ open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
 open Rustsymex
+open Charon
 
 type 'a err = 'a * Charon.Meta.span_data Soteria.Terminal.Call_trace.t
 

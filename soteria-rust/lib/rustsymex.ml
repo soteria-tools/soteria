@@ -1,11 +1,39 @@
+module StatKeys = struct
+  let load_accesses = "soteria-rust.loads"
+  let loads_from_store = "soteria-rust.loads_from_store"
+  let function_calls = "soteria-rust.function_calls"
+
+  let () =
+    let open Soteria.Stats in
+    let open Soteria.Logs.Printers in
+    disable_printer loads_from_store;
+    register_int_printer ~name:"Load accesses" load_accesses (fun stats ft n ->
+        let store_loads = get_int stats loads_from_store in
+        Fmt.pf ft "%d (%a through store)" n pp_percent
+          (Float.of_int n, Float.of_int store_loads));
+    register_int_printer ~name:"Function calls" function_calls (fun _ ->
+        Fmt.int)
+end
+
 module MonoSymex =
   Soteria.Symex.Make
     (struct
       module Range = struct
         type t = Charon.Meta.span_data
 
-        let to_yojson _ = `Null
-        let of_yojson _ = Ok Charon_util.empty_span_data
+        let file_name_to_yojson (fn : Charon.Meta.file_name) : Yojson.Safe.t =
+          match fn with
+          | Virtual s -> `List [ `String "Virtual"; `String s ]
+          | Local s -> `List [ `String "Local"; `String s ]
+          | NotReal s -> `List [ `String "NotReal"; `String s ]
+
+        let to_yojson ({ file; beg_loc; end_loc } : t) : Yojson.Safe.t =
+          `Assoc
+            [
+              ("file", file_name_to_yojson file.name);
+              ("beg_loc", `List [ `Int beg_loc.line; `Int beg_loc.col ]);
+              ("end_loc", `List [ `Int end_loc.line; `Int end_loc.col ]);
+            ]
       end
     end)
     (Bv_solver.Z3_solver)
