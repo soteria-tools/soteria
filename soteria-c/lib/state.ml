@@ -44,9 +44,9 @@ open SM.Syntax
 let[@inline] with_error_loc_as_call_trace ?(msg = "Triggering operation") ()
     (f : unit -> ('a, 'b, 'c) SM.Result.t) =
   let loc = Csymex.get_loc () in
-  SM.Result.map_error (f ()) (fun e ->
-      let call_trace = Soteria.Terminal.Call_trace.singleton ~loc ~msg () in
-      (e, call_trace))
+  let+- e = f () in
+  let call_trace = Soteria.Terminal.Call_trace.singleton ~loc ~msg () in
+  (e, call_trace)
 
 let serialize (st : t) : serialized list =
   let heaps =

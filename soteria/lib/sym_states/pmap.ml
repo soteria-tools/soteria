@@ -53,9 +53,9 @@ struct
 
     module SM :
       State_monad.S
-        with type 'a Symex.t = 'a Symex.t
-         and type st = t option
+        with module Symex = Symex
          and module Value = Symex.Value
+         and type st = t option
 
     type ('a, 'err) res := ('a, 'err, serialized list) SM.Result.t
 
