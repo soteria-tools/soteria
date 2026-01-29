@@ -65,13 +65,17 @@ module Make (State : State_intf.S) = struct
     | Dead -> error `DeadVariable
 
   let load_lazy lazy_ptr ty : rust_val t =
+    Soteria.Stats.As_ctx.incr StatKeys.load_accesses;
     match lazy_ptr with
     | Store var_id -> (
         let* store = get_env () in
         let binding = Store.find var_id store in
         match binding.kind with
-        | Value v -> ok v
+        | Value v ->
+            Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
+            ok v
         | Uninit ->
+            Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
             let* layout = Layout.layout_of ty in
             if%sat layout.size ==@ Usize.(0s) then
               let* ptr = get_variable_ptr var_id in
@@ -1123,6 +1127,7 @@ module Make (State : State_intf.S) = struct
       | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> ok body
     in
+    Soteria.Stats.As_ctx.incr StatKeys.function_calls;
     let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in

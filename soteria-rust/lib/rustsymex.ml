@@ -1,3 +1,20 @@
+module StatKeys = struct
+  let load_accesses = "soteria-rust.loads"
+  let loads_from_store = "soteria-rust.loads_from_store"
+  let function_calls = "soteria-rust.function_calls"
+
+  let () =
+    let open Soteria.Stats in
+    let open Soteria.Logs.Printers in
+    disable_printer loads_from_store;
+    register_int_printer ~name:"Load accesses" load_accesses (fun stats ft n ->
+        let store_loads = get_int stats loads_from_store in
+        Fmt.pf ft "%d (%a through store)" n pp_percent
+          (Float.of_int n, Float.of_int store_loads));
+    register_int_printer ~name:"Function calls" function_calls (fun _ ->
+        Fmt.int)
+end
+
 module MonoSymex =
   Soteria.Symex.Make
     (struct
