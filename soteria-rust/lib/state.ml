@@ -261,13 +261,10 @@ end
 
 type serialized = Heap.serialized [@@deriving show { with_path = false }]
 
-type globals = Sptr.t Rust_val.full_ptr GlobMap.t
-[@@deriving show { with_path = false }]
-
 type t = {
   heap : Heap.t option;
   functions : FunBiMap.t;
-  globals : globals;
+  globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.with_trace list;
       [@printer Fmt.list Error.pp_err_and_call_trace]
   pointers : DecayMap.t option;
@@ -666,8 +663,7 @@ let zeros (ptr, _) size =
   let@ ofs = with_ptr ptr in
   Block.with_tree_block (Tree_block.zero_range ofs size)
 
-let with_globals (type a) () (f : globals -> a * globals) :
-    (a, Error.with_trace, serialized list) Result.t =
+let with_globals () f =
   let* st = SM.get_state () in
   let st = of_opt st in
   let res, globals = f st.globals in
