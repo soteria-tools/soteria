@@ -157,12 +157,9 @@ module Build_from_find_opt_sym
   let syntactic_bindings (x : t) = M.to_seq x
   let syntactic_mem = M.mem
 
-  let lift_fix ~key (fix : Codom.serialized list) : serialized list =
-    List.map (fun v_ser -> (key, v_ser)) fix
-
-  let lift_fix_r ~key (res : ('a, 'err, Codom.serialized list) Compo_res.t) :
-      ('a, 'err, serialized list) Compo_res.t =
-    Compo_res.map_missing res (lift_fix ~key)
+  let lift_fixes ~key (fix : Codom.serialized list list) : serialized list list
+      =
+    List.map (List.map (fun v_ser -> (key, v_ser))) fix
 
   open SM
   open SM.Syntax
@@ -239,8 +236,13 @@ module Build_from_find_opt_sym
     let st = of_opt st in
     let* key, codom = lift @@ Find_opt_sym.f key st in
     let* res, codom = lift @@ f codom in
-    let+ () = SM.set_state (to_opt (add_opt key codom st)) in
-    lift_fix_r ~key res
+    match res with
+    | Ok v ->
+        (* Only update the state in case of success! *)
+        let+ () = SM.set_state (to_opt (add_opt key codom st)) in
+        Ok v
+    | Error e -> SM.Result.error e
+    | Missing fixes -> SM.Result.miss (lift_fixes ~key fixes)
 
   let produce (serialized : serialized) : unit SM.t =
     let* st = SM.get_state () in
