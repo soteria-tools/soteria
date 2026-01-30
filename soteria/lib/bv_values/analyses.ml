@@ -638,6 +638,15 @@ module Equality : S = struct
         let v2, st = get_or_make v2 st in
         merge v1 v2 st;
         ((Svalue.Bool.v_true, vars), st)
+    | Binop (FEq, ({ node = { kind = Float f; _ }; _ } as v1), v2)
+    | Binop (FEq, v1, ({ node = { kind = Float f; _ }; _ } as v2)) ->
+        if Floatml.AnyFloat.fpclass f <> FP_nan then (
+          let vars = Var.Set.empty |> add_vars v1 |> add_vars v2 in
+          let v1, st = get_or_make v1 st in
+          let v2, st = get_or_make v2 st in
+          merge v1 v2 st;
+          ((Svalue.Bool.v_true, vars), st))
+        else ((v, Var.Set.empty), st)
     | Unop (Not, { node = { kind = Nop (Distinct, hd :: tl); _ }; _ }) ->
         let vars = add_vars hd Var.Set.empty in
         let v1, st = get_or_make hd st in
