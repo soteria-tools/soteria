@@ -1,58 +1,79 @@
 (* TODO: Build this with the Sum transformer and `Excl(Freed)` *)
 
-type 'a t = Freed | Alive of 'a
+open Symex
 
-let pp ?(alive_prefix = "") pp_alive ft = function
+type 'a freeable = Freed | Alive of 'a
+
+let pp_freeable pp_a ft = function
   | Freed -> Fmt.pf ft "Freed"
-  | Alive a -> Fmt.pf ft "%s%a" alive_prefix pp_alive a
+  | Alive a -> pp_a ft a
 
-module Make (Symex : Symex.Base) = struct
-  open Symex.Syntax
+module Make
+    (Symex : Symex.Base)
+    (I : sig
+      include Base.M(Symex).S
 
-  type nonrec 'a t = 'a t = Freed | Alive of 'a
-  type 'a serialized = 'a t
+      val assert_exclusively_owned :
+        t option -> (unit, 'err, serialized list) Symex.Result.t
+    end) =
+struct
+  type t = I.t freeable [@@deriving show { with_path = false }]
+
+  let pp' ?(inner = I.pp) = pp_freeable inner
+  let pp ft t = pp' ft t
+
+  type serialized = I.serialized freeable
+  [@@deriving show { with_path = false }]
+
+  module SM =
+    State_monad.Make
+      (Symex)
+      (struct
+        type nonrec t = t option
+      end)
 
   let lift_fix fix = Alive fix
-  let lift_fix_s r = Symex.Result.map_missing r lift_fix
+  let lift_fix_r r = Compo_res.map_missing r (List.map lift_fix)
 
-  let serialize serialize_inner = function
+  let serialize = function
+    | Freed -> [ Freed ]
+    | Alive a -> List.map (fun x -> Alive x) (I.serialize a)
+
+  let subst_serialized subst_var = function
     | Freed -> Freed
-    | Alive a -> Alive (serialize_inner a)
+    | Alive a -> Alive (I.subst_serialized subst_var a)
 
-  let subst_serialized subst_inner subst_var = function
-    | Freed -> Freed
-    | Alive a -> Alive (subst_inner subst_var a)
+  let iter_vars_serialized serialized f =
+    match serialized with Freed -> () | Alive a -> I.iter_vars_serialized a f
 
-  let iter_vars_serialized iter_inner serialized f =
-    match serialized with Freed -> () | Alive a -> iter_inner a f
+  open SM
+  open SM.Syntax
 
-  let pp = pp
-  let pp_serialized = pp
-
-  let unwrap_alive = function
-    | None -> Symex.Result.ok None
-    | Some (Alive s) -> Symex.Result.ok (Some s)
-    | Some Freed -> Symex.Result.error `UseAfterFree
-
-  let free ~assert_exclusively_owned freeable =
-    let** s = unwrap_alive freeable in
-    let++ () = assert_exclusively_owned s |> lift_fix_s in
-    ((), Some Freed)
+  let unwrap_alive () =
+    let* st = SM.get_state () in
+    match st with
+    | None -> Result.ok None
+    | Some (Alive s) -> Result.ok (Some s)
+    | Some Freed -> Result.error `UseAfterFree
 
   (* [f] must be a "symex state monad" *)
-  let wrap (f : 'a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t)
-      (st : 'a t option) :
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t =
-    match st with
-    | None ->
-        let++ res, st' = f None |> lift_fix_s in
-        (res, Option.map (fun x -> Alive x) st')
-    | Some (Alive st) ->
-        let++ res, st' = f (Some st) |> lift_fix_s in
-        (res, Option.map (fun x -> Alive x) st')
-    | Some Freed -> Symex.Result.error `UseAfterFree
+  let wrap (f : ('a, 'err, I.serialized list) I.SM.Result.t) :
+      ('b, 'err, serialized list) SM.Result.t =
+    let** inner_state = unwrap_alive () in
+    let*^ res, inner_state' = f inner_state in
+    let* () = SM.set_state (Option.map (fun x -> Alive x) inner_state') in
+    return (lift_fix_r res)
 
-  (* In the context of UX, using a non-matching spec will simply vanish *)
+  let free () : (unit, 'err, serialized list) SM.Result.t =
+    let** () =
+      wrap (fun st ->
+          let open Symex.Syntax in
+          let+ res = I.assert_exclusively_owned st in
+          (res, st))
+    in
+    SM.Result.set_state (Some Freed)
+
+  (* In the context of UX, using a non-matching spec will simply vanish
   let consume
       (cons :
         'inner_ser ->
@@ -76,25 +97,23 @@ module Make (Symex : Symex.Base) = struct
             Option.map (fun x -> Alive x) st'
         | Some Freed -> Symex.vanish ()
         | Some (Alive st) ->
-            let++ st' = cons ser (Some st) |> lift_fix_s in
-            Option.map (fun x -> Alive x) st')
+            let++ st' = cons ser (Some st) |> lift_fix_Us in
+            Option.map (fun x -> Alive x) st') *)
 
-  let produce
-      (prod : 'inner_ser -> 'inner_st option -> 'inner_st option Symex.t)
-      (serialize : 'inner_ser serialized) (st : 'inner_st t option) :
-      'inner_st t option Symex.t =
+  let produce (serialize : serialized) : unit SM.t =
+    let* st = SM.get_state () in
     match serialize with
     | Freed -> (
         match st with
-        | None -> Symex.return (Some Freed)
-        | Some _ -> Symex.vanish ())
-    | Alive ser -> (
-        match st with
-        | None ->
-            let+ st' = prod ser None in
-            Option.map (fun s -> Alive s) st'
-        | Some (Alive st) ->
-            let+ st' = prod ser (Some st) in
-            Option.map (fun s -> Alive s) st'
-        | Some Freed -> Symex.vanish ())
+        | None -> SM.set_state (Some Freed)
+        | Some _ -> SM.vanish ())
+    | Alive ser ->
+        let* ist =
+          match st with
+          | None -> SM.return None
+          | Some (Alive s) -> SM.return (Some s)
+          | Some Freed -> SM.vanish ()
+        in
+        let*^ (), ist' = I.produce ser ist in
+        SM.set_state (Option.map (fun s -> Alive s) ist')
 end

@@ -60,72 +60,75 @@ let rec interp_pure_expr (subst : subst) expr :
           v1 /@ v2)
 
 module Make (State : State_intf.S) = struct
+  module SM =
+    Soteria.Sym_states.State_monad.Make
+      (Symex)
+      (struct
+        type t = State.t option
+      end)
+
+  open SM.Syntax
+
   let lift_to_state f =
-   fun state ->
-    let+- msg = f in
-    State.error msg state
+    let+- err = SM.lift f in
+    `Interp err
 
   let interp_pure_expr subst expr = lift_to_state (interp_pure_expr subst expr)
   let cast_to_bool v = lift_to_state (cast_to_bool v)
   let cast_to_int v = lift_to_state (cast_to_int v)
 
-  let rec interp_expr (subst : subst) (state : State.t) expr =
-    let* () = Symex.consume_fuel_steps 1 in
+  let rec interp_expr (subst : subst) expr : (S_val.t, 'err, 'fix) SM.Result.t =
+    let* () = SM.consume_fuel_steps 1 in
     L.debug (fun m ->
         m "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp
           expr pp_subst subst);
     match expr with
-    | Expr.Pure_expr e ->
-        let++ v = interp_pure_expr subst e state in
-        (v, state)
+    | Expr.Pure_expr e -> interp_pure_expr subst e
     | Let (x, e1, e2) ->
-        let** v1, state = interp_expr subst state e1 in
+        let** v1 = interp_expr subst e1 in
         let subst =
           Option.fold ~none:subst ~some:(fun x -> String_map.add x v1 subst) x
         in
-        interp_expr subst state e2
+        interp_expr subst e2
     | If (guard, then_, else_) ->
-        let** v_guard, state = interp_expr subst state guard in
-        let** v_guard = cast_to_bool v_guard state in
-        if%sat v_guard then interp_expr subst state then_
-        else interp_expr subst state else_
+        let** v_guard = interp_expr subst guard in
+        let** v_guard = cast_to_bool v_guard in
+        if%sat v_guard then interp_expr subst then_ else interp_expr subst else_
     | Call (fname, arg_exprs) ->
         let** arg_values =
-          Symex.Result.fold_list arg_exprs ~init:[] ~f:(fun acc e ->
-              let++ res = interp_pure_expr subst e state in
+          SM.Result.fold_list arg_exprs ~init:[] ~f:(fun acc e ->
+              let++ res = interp_pure_expr subst e in
               res :: acc)
         in
         let arg_values = List.rev arg_values in
         let func = get_function fname in
-        run_function func state arg_values
+        run_function func arg_values
     | Load addr ->
-        let** addr = interp_pure_expr subst addr state in
-        let** addr = cast_to_int addr state in
-        State.load addr state
+        let** addr = interp_pure_expr subst addr in
+        let** addr = cast_to_int addr in
+        State.load addr
     | Store (addr, value) ->
-        let** addr = interp_pure_expr subst addr state in
-        let** addr = cast_to_int addr state in
-        let** value = interp_pure_expr subst value state in
-        let++ (), state = State.store addr value state in
-        ((S_val.v_false :> S_val.t), state)
+        let** addr = interp_pure_expr subst addr in
+        let** addr = cast_to_int addr in
+        let** value = interp_pure_expr subst value in
+        let++ () = State.store addr value in
+        (S_val.v_false :> S_val.t)
     | Alloc ->
-        let++ addr, state = State.alloc state in
-        ((addr :> S_val.t), state)
+        let++ addr = State.alloc () in
+        (addr :> S_val.t)
     | Free addr ->
-        let** addr = interp_pure_expr subst addr state in
-        let** addr = cast_to_int addr state in
-        let++ (), state = State.free addr state in
-        ((S_val.v_false :> S_val.t), state)
+        let** addr = interp_pure_expr subst addr in
+        let** addr = cast_to_int addr in
+        let++ () = State.free addr in
+        (S_val.v_false :> S_val.t)
 
-  and run_function func state args =
+  and run_function func args =
     let subst = List.combine func.Fun_def.args args |> String_map.of_list in
     L.debug (fun m ->
         m "@[<v 2>Running function %s with args:@ %a@]" func.Fun_def.name
           pp_subst subst);
-    let++ r = interp_expr subst state func.Fun_def.body in
+    let++ r = interp_expr subst func.Fun_def.body in
     L.debug (fun m ->
-        m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name
-          (Fmt.Dump.pair S_val.pp State.pp)
-          r);
+        m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name S_val.pp r);
     r
 end

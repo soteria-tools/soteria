@@ -5,6 +5,7 @@
     read/consumption. *)
 
 open Symex
+open Compo_res
 
 module Codom (Symex : Symex.Base) = struct
   module type S = sig
@@ -20,39 +21,42 @@ end
 
 module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
   open C
-  open Symex.Syntax
 
-  type t = C.t
-  type serialized = t
+  type t = C.t [@@deriving show]
+  type serialized = t [@@deriving show]
 
-  let serialize s = s
+  module SM =
+    State_monad.Make
+      (Symex)
+      (struct
+        type t = C.t option
+      end)
+
+  open SM
+  open SM.Syntax
+
+  let serialize s = [ s ]
   let subst_serialized subst_var s = C.subst subst_var s
   let iter_vars_serialized s f = C.iter_vars s f
   let pp = C.pp
   let pp_serialized = pp
 
-  let load (st : t option) : ('a * t option, 'err, 'fix) Symex.Result.t =
+  let load () =
+    let* st = SM.get_state () in
     match st with
-    | Some x -> Symex.Result.ok (x, st)
+    | Some x -> Result.ok x
     | None ->
-        let* x = fresh () in
-        Symex.Result.ok (x, Some x)
+        let* x = lift @@ fresh () in
+        let+ () = SM.set_state (Some x) in
+        Ok x
 
-  let produce (serialized : serialized) (t : t option) =
+  let produce (serialized : serialized) : unit SM.t =
+    let* t = SM.get_state () in
     match t with
-    | Some x ->
-        let+ () = Symex.assume [ sem_eq x serialized ] in
-        t
-    | None ->
-        let+ x = fresh () in
-        Some x
+    | Some x -> SM.assume [ sem_eq x serialized ]
+    | None -> SM.set_state (Some serialized)
 
-  let consume (serialized : serialized) (t : t option) =
-    match t with
-    | Some x ->
-        let++ () = Symex.consume_pure (sem_eq x serialized) in
-        t
-    | None ->
-        let* x = fresh () in
-        Symex.Result.ok (Some x)
+  let consume (serialized : serialized) =
+    let** t = load () in
+    lift @@ Symex.consume_pure (sem_eq t serialized)
 end

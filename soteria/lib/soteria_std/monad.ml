@@ -240,3 +240,28 @@ Extend (struct
     let x', s' = x s in
     (f x', s')
 end)
+
+module StateT_p (M : Base) = struct
+  type ('a, 'state) t = 'state -> ('a * 'state) M.t
+
+  let[@inline] return x s = M.return (x, s)
+  let[@inline] bind x f s = M.bind (x s) (fun (x', s') -> f x' s')
+  let[@inline] map x f s = M.map (x s) (fun (x', s') -> (f x', s'))
+  let[@inline] get_state () : ('state, 'state) t = fun s -> M.return (s, s)
+
+  let[@inline] set_state (s : 'state) : (unit, 'state) t =
+   fun _ -> M.return ((), s)
+
+  let[@inline] map_state (f : 'state -> 'state) : (unit, 'state) t =
+   fun s -> M.return ((), f s)
+
+  let[@inline] lift (m : 'a M.t) : ('a, 'state) t =
+   fun s -> M.map m (fun x -> (x, s))
+
+  module Syntax = struct
+    let ( let* ) x f = bind x f
+    let ( let+ ) x f = map x f
+    let ( let*^ ) x f = bind x f
+    let ( let+^ ) x f = map x f
+  end
+end

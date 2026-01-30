@@ -13,7 +13,9 @@ let complex_process () =
   if%sat x >@ y then
     if%sat x >@ Typed.zero then Result.ok (x +@ y) else Result.ok (x -@ y)
   else if%sat x ==@ y then give_up ~loc:() "x == y"
-  else Result.error "okkk"
+  else
+    let** () = assert_or_error (Typed.not (x ==@ y)) "x != y" in
+    Result.error "okkk"
 
 (* ============================================================================
    Helper Functions

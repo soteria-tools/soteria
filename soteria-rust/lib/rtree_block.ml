@@ -10,7 +10,7 @@ open DecayMapMonad.Result
 open DecayMapMonad.Syntax
 
 module Make (Sptr : Sptr.S) = struct
-  module Encoder = Encoder.Make (Sptr)
+  module Encoder = Value_codec.Encoder (Sptr)
 
   type rust_val = Sptr.t Rust_val.t
 
@@ -171,6 +171,8 @@ module Make (Sptr : Sptr.S) = struct
   open MemVal
   include Soteria.Sym_states.Tree_block.Make (DecayMapMonad) (MemVal)
 
+  let lift_symex x = SM.lift @@ DecayMapMonad.lift x
+
   let sint_to_int v =
     match BitVec.to_z v with
     | Some z -> return (Z.to_int z)
@@ -252,147 +254,171 @@ module Make (Sptr : Sptr.S) = struct
     | Owned (v, tb) -> f (v, tb)
 
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
-      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) (t : t option) :
-      (rust_val * t option, 'err, 'fix) Result.t =
-    let**^ size = Layout.size_of ty in
+      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) =
+    let open SM.Syntax in
+    let** size = lift_symex @@ Layout.size_of ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes () =
+      let open DecayMapMonad.Syntax in
       let+^ v = Encoder.nondet ty in
       (* we're basically guaranteed this won't error (ie. layout error) by now,
          so we can safely unwrap. *)
       let v = get_ok v in
       [ [ MemVal { offset = ofs; len = size; v = SInit v } ] ]
     in
-    let@ t = with_bound_and_owned_check ~mk_fixes t bound in
-    let replace_node t =
-      let@ v, tb_st = as_owned t in
-      let++^ tb_st' =
-        match (ignore_borrow, tag) with
-        | false, Some tag -> Tree_borrow.access tag Read tb tb_st
-        | true, _ | _, None -> Rustsymex.Result.ok tb_st
-      in
-      { t with node = Owned (v, tb_st') }
-    in
-    let rebuild_parent = Tree.with_children in
-    let** framed, tree =
-      Tree.frame_range t ~replace_node ~rebuild_parent range
-    in
-    let++ sval = decode_tree ~ty framed in
-    (sval, tree)
+    with_bound_check ~mk_fixes bound (fun t ->
+        let open DecayMapMonad.Syntax in
+        let replace_node t =
+          let@ v, tb_st = as_owned t in
+          let++^ tb_st' =
+            match (ignore_borrow, tag) with
+            | false, Some tag -> Tree_borrow.access tag Read tb tb_st
+            | true, _ | _, None -> Rustsymex.Result.ok tb_st
+          in
+          { t with node = Owned (v, tb_st') }
+        in
+        let rebuild_parent = Tree.with_children in
+        let** framed, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        let++ sval = decode_tree ~ty framed in
+        (sval, tree))
 
   let store (ofs : [< T.sint ] Typed.t) (value : rust_val)
-      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) (t : t option) :
-      (unit * t option, 'err, 'fix) Result.t =
-    let** size = lift @@ Rust_val.size_of value in
+      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) :
+      (unit, 'err, 'fix) SM.Result.t =
+    let open SM.Syntax in
+    let** size = lift_symex @@ Rust_val.size_of value in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let@ t = with_bound_and_owned_check t bound in
-    let replace_node t =
-      let@ _, tb_st = as_owned t in
-      let++^ tb_st' =
-        match tag with
-        | Some tag -> Tree_borrow.access tag Write tb tb_st
-        | None -> Rustsymex.Result.ok tb_st
-      in
-      { node = Owned (Init value, tb_st'); range; children = None }
-    in
-    let rebuild_parent = Tree.of_children in
-    let** node, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
-    let++ () =
-      match node.node with
-      | NotOwned _ -> miss_no_fix ~reason:"store" ()
-      | _ -> Result.ok ()
-    in
-    ((), tree)
+    with_bound_check bound (fun t ->
+        let open DecayMapMonad.Syntax in
+        let replace_node t =
+          let@ _, tb_st = as_owned t in
+          let++^ tb_st' =
+            match tag with
+            | Some tag -> Tree_borrow.access tag Write tb tb_st
+            | None -> Rustsymex.Result.ok tb_st
+          in
+          { node = Owned (Init value, tb_st'); range; children = None }
+        in
+        let rebuild_parent = Tree.of_children in
+        let** node, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        let++ () =
+          match node.node with
+          | NotOwned _ -> miss_no_fix ~reason:"store" ()
+          | _ -> Result.ok ()
+        in
+        ((), tree))
 
   let get_init_leaves (ofs : [< T.sint ] Typed.t)
-      (size : [< T.nonzero ] Typed.t) (t : t option) :
-      ((rust_val * T.sint Typed.t) list * t option, 'err, 'fix) Result.t =
+      (size : [< T.nonzero ] Typed.t) :
+      ((rust_val * T.sint Typed.t) list, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs (Typed.cast size) in
-    let@ t = with_bound_and_owned_check t bound in
-    let replace_node node = Result.ok node in
-    let rebuild_parent = Tree.with_children in
-    let** framed, tree =
-      Tree.frame_range t ~replace_node ~rebuild_parent range
-    in
-    let++ leaves = collect_leaves framed in
-    (leaves, tree)
+    with_bound_check bound (fun t ->
+        let open DecayMapMonad.Syntax in
+        let replace_node node = Result.ok node in
+        let rebuild_parent = Tree.with_children in
+        let** framed, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        let++ leaves = collect_leaves framed in
+        (leaves, tree))
 
-  let uninit_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (t : t option) : (unit * t option, 'err, 'fix) Result.t =
+  let uninit_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
+      (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let@ t = with_bound_and_owned_check t bound in
-    let replace_node t =
-      let@ _ = as_owned t in
-      Tree.map_leaves t @@ fun tt ->
-      match tt.node with
-      | Owned (_, tb) -> Result.ok (uninit tt.range tb)
-      | _ -> assert false
-    in
-    let rebuild_parent = Tree.of_children in
-    let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
-    ((), tree)
+    with_bound_check bound (fun t ->
+        let open DecayMapMonad.Syntax in
+        let replace_node t =
+          let@ _ = as_owned t in
+          Tree.map_leaves t @@ fun tt ->
+          match tt.node with
+          | Owned (_, tb) -> Result.ok (uninit tt.range tb)
+          | _ -> assert false
+        in
+        let rebuild_parent = Tree.of_children in
+        let++ _, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        ((), tree))
 
-  let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (t : t option) : (unit * t option, 'err, 'fix) Result.t =
+  let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
+      (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let@ t = with_bound_and_owned_check t bound in
-    let replace_node t =
-      let@ _, tb = as_owned t in
-      (* Is there something to do with the tree borrow here? *)
-      Result.ok @@ zeros range tb
-    in
-    let rebuild_parent = Tree.of_children in
-    let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
-    ((), tree)
+    with_bound_check bound (fun t ->
+        let open DecayMapMonad.Syntax in
+        let replace_node t =
+          let@ _, tb = as_owned t in
+          (* Is there something to do with the tree borrow here? *)
+          Result.ok @@ zeros range tb
+        in
+        let rebuild_parent = Tree.of_children in
+        let++ _, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        ((), tree))
 
   (* Tree borrow updates *)
 
-  let protect ofs size tag tb t =
+  let protect ofs size tag tb =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let@ t = with_bound_and_owned_check t bound in
-    let replace_node t =
-      let@ v, tb_st = as_owned t in
-      (* We need to do two things: protect this tag for the block, and perform a read, as
+    with_bound_check bound (fun t ->
+        let open DecayMapMonad.Syntax in
+        let replace_node t =
+          let@ v, tb_st = as_owned t in
+          (* We need to do two things: protect this tag for the block, and perform a read, as
          all function calls perform one on the parameters. *)
-      let tb_st' = Tree_borrow.set_protector ~protected:true tag tb tb_st in
-      let++^ tb_st' = Tree_borrow.access tag Read tb tb_st' in
-      { t with node = Owned (v, tb_st') }
-    in
-    let rebuild_parent = Tree.of_children in
-    let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
-    ((), tree)
+          let tb_st' = Tree_borrow.set_protector ~protected:true tag tb tb_st in
+          let++^ tb_st' = Tree_borrow.access tag Read tb tb_st' in
+          { t with node = Owned (v, tb_st') }
+        in
+        let rebuild_parent = Tree.of_children in
+        let++ _, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        ((), tree))
 
-  let unprotect ofs size tag tb t =
+  let unprotect ofs size tag tb =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let@ t = with_bound_and_owned_check t bound in
-    let replace_node t =
-      let@ v, tb_st = as_owned t in
-      (* We need to do two things: protect this tag for the block, and perform a read, as
+    with_bound_check bound (fun t ->
+        let open DecayMapMonad.Syntax in
+        let replace_node t =
+          let@ v, tb_st = as_owned t in
+          (* We need to do two things: protect this tag for the block, and perform a read, as
          all function calls perform one on the parameters. *)
-      let tb_st' = Tree_borrow.set_protector ~protected:false tag tb tb_st in
-      Result.ok { t with node = Owned (v, tb_st') }
-    in
-    let rebuild_parent = Tree.of_children in
-    let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
-    ((), tree)
+          let tb_st' =
+            Tree_borrow.set_protector ~protected:false tag tb tb_st
+          in
+          Result.ok { t with node = Owned (v, tb_st') }
+        in
+        let rebuild_parent = Tree.of_children in
+        let++ _, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        ((), tree))
 
   let tb_access (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) (t : t option) :
-      (unit * t option, 'err, 'fix) Result.t =
+      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) :
+      (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let@ t = with_bound_and_owned_check t bound in
-    let replace_node t =
-      let@ _ = as_owned t in
-      Tree.map_leaves t @@ fun tt ->
-      match tt.node with
-      | Owned (v, tb_st) ->
-          let++^ tb_st' = Tree_borrow.access tag Read tb tb_st in
-          { tt with node = Owned (v, tb_st') }
-      | _ -> assert false
-    in
-    let rebuild_parent = Tree.with_children in
-    let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
-    ((), tree)
+    with_bound_check bound (fun t ->
+        let open DecayMapMonad.Syntax in
+        let replace_node t =
+          let@ _ = as_owned t in
+          Tree.map_leaves t @@ fun tt ->
+          match tt.node with
+          | Owned (v, tb_st) ->
+              let++^ tb_st' = Tree_borrow.access tag Read tb tb_st in
+              { tt with node = Owned (v, tb_st') }
+          | _ -> assert false
+        in
+        let rebuild_parent = Tree.with_children in
+        let++ _, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        ((), tree))
 
   let alloc ?(zeroed = false) size =
     let st = if zeroed then Zeros else Uninit Totally in

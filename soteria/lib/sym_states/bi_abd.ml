@@ -1,62 +1,81 @@
-open Logs.Import
 open Symex.Compo_res
 
-module Make (Symex : Symex.Base) = struct
+let pp_bi_state pp_st pp_fixes fmt (st, fixes) =
+  Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" (Fmt.Dump.option pp_st) st
+    (Fmt.Dump.list pp_fixes) fixes
+
+module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
   (** This is unsound in {!Approx.OX}-mode, use only in {!Approx.UX}-mode. *)
 
-  open Symex
-  open Symex.Syntax
+  type t = B.t option * B.serialized list
+  type serialized = B.serialized
 
-  type ('a, 'fix) t = 'a * 'fix list
+  module SM =
+    State_monad.Make
+      (Symex)
+      (struct
+        type nonrec t = t option
+      end)
 
+  open SM.Syntax
+
+  let of_opt : t option -> t = function
+    | None -> (None, [])
+    | Some (st, v) -> (st, v)
+
+  let to_opt : t -> t option = function None, [] -> None | other -> Some other
   let expose (st, fixes) = (st, fixes)
 
-  let pp pp_inner pp_fix fmt (st, fixes) =
-    Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" pp_inner st
-      (Fmt.Dump.list pp_fix) fixes
+  let pp' ?(inner = B.pp) ?(serialized = B.pp_serialized) fmt (st, fixes) =
+    Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" (Fmt.Dump.option inner)
+      st (Fmt.Dump.list serialized) fixes
 
-  let wrap ?(fuel = 1) ~(produce : 'fix -> 'a -> 'a Symex.t)
-      (f : 'a -> ('v * 'a, 'err, 'fix) Symex.Result.t) (bi_st : ('a, 'fix) t) :
-      ('v * ('a, 'fix) t, 'err * ('a, 'fix) t, 'fix) Result.t =
+  let pp fmt t = pp' fmt t
+  let show = Fmt.to_to_string pp
+
+  let wrap ?(fuel = 1) (f : ('v, 'err, B.serialized list) B.SM.Result.t) :
+      ('v, 'err, serialized list) SM.Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
-    let rec with_fuel fuel bi_st =
-      let st, fixes = bi_st in
-      let* res = f st in
+    let rec with_fuel fuel : ('v, 'err, serialized list) SM.Result.t =
+      let* bi_st = SM.get_state () in
+      let st, fixes = of_opt bi_st in
+      let*^ res, st' = f st in
       match res with
-      | Ok (v, st) -> Result.ok (v, (st, fixes))
-      | Error e -> Result.error (e, bi_st)
+      | Ok _ | Error _ ->
+          let+ () = SM.set_state (to_opt (st', fixes)) in
+          res
       | Missing fix_choices ->
-          if fuel <= 0 then Symex.vanish ()
+          if fuel <= 0 then SM.vanish ()
           else
-            Symex.branches
+            SM.branches
               (List.map
                  (fun fix ->
                    fun () ->
-                    let* st = produce fix st in
-                    with_fuel (fuel - 1) (st, fix :: fixes))
+                    let*^ (), st'' =
+                      B.SM.fold_list fix ~init:()
+                        ~f:(fun () fix -> B.produce fix)
+                        st
+                    in
+                    let* () = SM.set_state (to_opt (st'', fix @ fixes)) in
+                    with_fuel (fuel - 1))
                  fix_choices)
     in
-    with_fuel fuel bi_st
+    with_fuel fuel
 
-  let wrap_error (f : 'a -> ('ok, 'err, 'fix) Symex.Result.t)
-      (bi_st : ('a, 'fix) t) : ('ok, 'err * ('a, 'fix) t, 'fix) Result.t =
-    let st, _ = bi_st in
-    let* res = f st in
-    match res with
-    | Error e -> Result.error (e, bi_st)
-    | _ -> failwith "Bi_abd.wrap_error: expected error result"
-
-  let wrap_no_fail f bi_st =
-    let st, fixes = bi_st in
+  let wrap_no_fail (f : 'a B.SM.t) : 'a SM.t =
+   fun (bi_st : t option) ->
+    let open Symex.Syntax in
+    let st, fixes = of_opt bi_st in
     let+ v, st = f st in
-    (v, (st, fixes))
+    (v, to_opt (st, fixes))
 
-  let produce prod inner_ser st =
-    let st, fixes = st in
-    let+ st = prod inner_ser st in
-    (st, fixes)
+  let produce inner_ser : unit SM.t =
+    let* st = SM.get_state () in
+    let st, fixes = of_opt st in
+    let*^ (), st = B.produce inner_ser st in
+    SM.set_state (to_opt (st, fixes))
 
-  let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)
+  (* let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)
       (cons : 'ser -> 't -> ('t, 'err, 'ser) Symex.Result.t) (inner_ser : 'ser)
       (bi_st : ('t, 'ser) t) :
       (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser) Symex.Result.t =
@@ -80,5 +99,5 @@ module Make (Symex : Symex.Base) = struct
                     with_fuel (fuel - 1) (st, fix :: fixes))
                  fix_choices)
     in
-    with_fuel fuel bi_st
+    with_fuel fuel bi_st *)
 end

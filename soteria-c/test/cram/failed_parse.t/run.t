@@ -8,9 +8,7 @@
   No bugs found
   Summaries for test_559:
     Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0x00000000) };
+      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
 We do not want to print the backtrace in the test output to reduce flakiness of the test

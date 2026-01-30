@@ -47,6 +47,11 @@ let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `Memory_leak -> Warning
   | _ -> Error
 
+type with_trace = t * Cerb_location.t Soteria.Terminal.Call_trace.t
+
+let add_to_call_trace ((err, trace_elem) : with_trace) trace_elem' =
+  (err, trace_elem' :: trace_elem)
+
 module Diagnostic = struct
   let to_loc pos =
     let col = Cerb_position.column pos in

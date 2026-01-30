@@ -30,73 +30,65 @@ module S
       type t
     end) : sig
   module type S = sig
-    type 'a t
-    type 'a serialized = (Key.t * 'a) list
+    type codom
+    type t
+    type codom_serialized
+    type serialized = Key.t * codom_serialized
 
-    val empty : 'a t
-    val syntactic_bindings : 'a t -> (Key.t * 'a) Seq.t
-    val syntactic_mem : Key.t -> 'a t -> bool
+    module SM :
+      State_monad.S
+        with module Symex = Symex
+         and module Value = Symex.Value
+         and type st = t option
 
-    val pp :
-      ?ignore:(Key.t * 'a -> bool) ->
-      (Format.formatter -> 'a -> unit) ->
+    type ('a, 'err) res := ('a, 'err, serialized list) SM.Result.t
+
+    type ('a, 'err) codom_res :=
+      codom option ->
+      (('a, 'err, codom_serialized list) Compo_res.t * codom option) Symex.t
+
+    val empty : t
+    val syntactic_bindings : t -> (Key.t * codom) Seq.t
+    val syntactic_mem : Key.t -> t -> bool
+
+    val pp' :
+      ?key:(Format.formatter -> Key.t -> unit) ->
+      ?codom:(Format.formatter -> codom -> unit) ->
+      ?ignore:(Key.t * codom -> bool) ->
       Format.formatter ->
-      'a t ->
+      t ->
       unit
 
-    val pp_serialized :
-      (Format.formatter -> 'a -> unit) ->
-      Format.formatter ->
-      'a serialized ->
-      unit
-
-    val serialize : ('a -> 'b) -> 'a t -> (Key.t * 'b) list
-
-    val subst_serialized :
-      ((Var.t -> Var.t) -> 'a -> 'b) ->
-      (Var.t -> Var.t) ->
-      'a serialized ->
-      'b serialized
+    val pp : Format.formatter -> t -> unit
+    val show : t -> string
+    val pp_serialized : Format.formatter -> serialized -> unit
+    val show_serialized : serialized -> string
+    val serialize : t -> serialized list
+    val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
 
     val iter_vars_serialized :
-      ('a -> (Var.t * 'b Symex.Value.ty -> unit) -> unit) ->
-      'a serialized ->
-      (Var.t * 'b Symex.Value.ty -> unit) ->
-      unit
+      serialized -> (Var.t * 'b Symex.Value.ty -> unit) -> unit
 
-    val of_opt : 'a t option -> 'a t
-    val to_opt : 'a t -> 'a t option
-
-    val alloc :
-      new_codom:'a ->
-      'a t option ->
-      (Key.t * 'a t option, 'err, 'fix list) Symex.Result.t
+    val of_opt : t option -> t
+    val to_opt : t -> t option
+    val alloc : new_codom:codom -> (Key.t, 'err) res
 
     val allocs :
-      fn:('b -> Key.t -> ('a * 'k) Symex.t) ->
-      els:'b list ->
-      'a t option ->
-      ('k list * 'a t option, 'err, 'fix list) Symex.Result.t
+      fn:('a -> Key.t -> ('k * codom) Symex.t) ->
+      els:'a list ->
+      ('k list, 'err) res
 
-    val wrap :
-      ('a option -> ('b * 'a option, 'err, 'fix) Symex.Result.t) ->
-      Key.t ->
-      'a t option ->
-      ('b * 'a t option, 'err, 'fix serialized) Symex.Result.t
+    val wrap : Key.t -> ('a, 'err) codom_res -> ('a, 'err) res
 
     val fold :
-      ('acc -> Key.t * 'a -> ('acc, 'err, 'fix serialized) Symex.Result.t) ->
+      ('acc -> Key.t * codom -> ('acc, 'err, serialized list) Symex.Result.t) ->
       'acc ->
-      'a t option ->
-      ('acc, 'err, 'fix serialized) Symex.Result.t
+      t option ->
+      ('acc, 'err, serialized list) Symex.Result.t
 
-    val produce :
-      ('inner_serialized -> 'inner_st option -> 'inner_st option Symex.t) ->
-      'inner_serialized serialized ->
-      'inner_st t option ->
-      'inner_st t option Symex.t
+    val produce : serialized -> t option -> (unit * t option) Symex.t
 
-    val consume :
+    (* val consume :
       ('inner_serialized ->
       'inner_st option ->
       ( 'inner_st option,
@@ -105,22 +97,46 @@ module S
       Symex.Result.t) ->
       'inner_serialized serialized ->
       'inner_st t option ->
-      ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t
+      ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t *)
   end
 end
 
-module Make (Symex : Symex.Base) (Key : KeyS(Symex).S) : S(Symex)(Key).S
+module Make
+    (Symex : Symex.Base)
+    (Key : KeyS(Symex).S)
+    (Codom : Base.M(Symex).S) :
+  S(Symex)(Key).S
+    with type codom := Codom.t
+     and type codom_serialized := Codom.serialized
 
 module Make_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_patricia_tree) : S(Symex)(Key).S
-
-module Direct_access (Symex : Symex.Base) (Key : KeyS(Symex).S) :
+    (Key : KeyS(Symex).S_patricia_tree)
+    (Codom : Base.M(Symex).S) :
   S(Symex)(Key).S
+    with type codom := Codom.t
+     and type codom_serialized := Codom.serialized
+
+module Direct_access
+    (Symex : Symex.Base)
+    (Key : KeyS(Symex).S)
+    (Codom : Base.M(Symex).S) :
+  S(Symex)(Key).S
+    with type codom := Codom.t
+     and type codom_serialized := Codom.serialized
 
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
-    (Key : KeyS(Symex).S_patricia_tree) : S(Symex)(Key).S
-
-module Concrete (Symex : Symex.Base) (Key : Soteria_std.Ordered_type.S) :
+    (Key : KeyS(Symex).S_patricia_tree)
+    (Codom : Base.M(Symex).S) :
   S(Symex)(Key).S
+    with type codom := Codom.t
+     and type codom_serialized := Codom.serialized
+
+module Concrete
+    (Symex : Symex.Base)
+    (Key : Soteria_std.Ordered_type.S)
+    (Codom : Base.M(Symex).S) :
+  S(Symex)(Key).S
+    with type codom := Codom.t
+     and type codom_serialized := Codom.serialized
