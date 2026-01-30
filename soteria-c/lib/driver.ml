@@ -324,7 +324,7 @@ let exec_and_print log_config term_config solver_config stats_config config fuel
   let result = exec_function ~includes ~fuel file_names entry_point in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else (
-    Csymex.Stats.output result.stats;
+    Soteria.Stats.output result.stats;
     if (Config.current ()).print_states then print_states result;
     let errors_to_signal =
       List.filter_map
@@ -353,7 +353,10 @@ let exec_and_print log_config term_config solver_config stats_config config fuel
              print_diagnostic ~fid:entry_point ~call_trace:Call_trace.empty
                ~error:(`Gave_up msg));
     let success = List.is_empty errors_to_signal in
-    Fmt.pr "@.Executed %d statements" result.stats.steps_number;
+    let steps_number =
+      Soteria.Stats.get_int result.stats Soteria.Symex.StatKeys.steps
+    in
+    Fmt.pr "@.Executed %d statements" steps_number;
     if success then (
       Fmt.pr "@.%a@.@?" pp_ok "Verification Success!";
       Error.Exit_code.Success)
@@ -405,7 +408,7 @@ let generate_summaries ~functions_to_analyse prog =
   let { Soteria.Stats.res; stats } =
     Abductor.generate_all_summaries ~functions_to_analyse prog
   in
-  Csymex.Stats.output stats;
+  Soteria.Stats.output stats;
   let results = analyse_summaries res in
   dump_summaries results;
   Fmt.pr "@\n@?";

@@ -52,7 +52,7 @@ module Config : sig
   val set_and_lock : t -> unit
 
   (** Receives a CLI input configuration (obtained from parsing the Cli
-      arguments using {!Soteria.Logs.Cli.cmdliner_term}), checks that parsing
+      arguments using {!Soteria.Logs.Config.cmdliner_term}), checks that parsing
       went correctly, sets the contained configuration as global configuartion,
       and locks the configuration to prevent the configuration to be modified
       during execution. *)

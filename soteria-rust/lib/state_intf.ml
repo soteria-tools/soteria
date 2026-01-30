@@ -21,7 +21,6 @@ module type S = sig
        and type st = t option
        and module Symex.Value = Rustsymex.Value
        and module Value = Rustsymex.Value
-       and module Stats = Rustsymex.Stats
 
   type 'a ret := ('a, Error.with_trace, serialized list) SM.Result.t
 

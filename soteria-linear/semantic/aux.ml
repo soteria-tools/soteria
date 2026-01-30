@@ -1,10 +1,6 @@
 open Soteria_linear_ast.Lang
 module Typed = Soteria.Tiny_values.Typed
-
-module Symex =
-  Soteria.Symex.Make
-    (Soteria.Symex.Meta.Dummy)
-    (Soteria.Tiny_values.Tiny_solver.Z3_solver)
+module Symex = Soteria.Symex.Make (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
 module S_int = struct
   include Typed

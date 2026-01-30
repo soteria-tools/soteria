@@ -1,10 +1,10 @@
-open Charon
 open Soteria.Symex.Compo_res
 open Rust_val
 open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
 open Rustsymex
+open Charon
 
 (* State details *)
 module DecayMap = Sptr.DecayMap
