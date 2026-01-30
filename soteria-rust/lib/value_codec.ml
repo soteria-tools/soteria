@@ -9,84 +9,126 @@ module DecayMapMonad = Sptr.DecayMapMonad
 open DecayMapMonad
 open DecayMapMonad.Syntax
 
-module Make (Sptr : Sptr.S) = struct
+(** Iterator over the fields and offsets of a type; for primitive types, returns
+    a singleton iterator for that value. *)
+let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
+  let aux ?variant fields =
+    Iter.mapi (fun i ty -> (ty, Fields_shape.offset_of i fields))
+    @@
+    match ty with
+    | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
+    | TArray (ty, len) -> Iter.repeatz (z_of_constant_expr len) ty
+    | TSlice _ | TAdt { id = TBuiltin TStr; _ } -> (
+        let sub_ty =
+          match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
+        in
+        match meta with
+        | Len len when Option.is_some (BV.to_z len) ->
+            (* TODO: strings and slices of symbolic length *)
+            Iter.repeatz (Option.get (BV.to_z len)) sub_ty
+        | Thin | Len _ | VTable _ ->
+            failwith "iter_fields: invalid length for slice/str")
+    | TAdt adt -> (
+        let type_decl = Crate.get_adt adt in
+        match (type_decl.kind, variant) with
+        | Struct fields, _ ->
+            let field_tys = field_tys fields in
+            Iter.of_list field_tys
+        | Enum variants, Some variant ->
+            let variant = Types.VariantId.nth variants variant in
+            let field_tys = field_tys variant.fields in
+            Iter.of_list field_tys
+        | _ -> failwith "invalid iter_fields type_decl")
+    | TRef (_, pointee, _) | TRawPtr (pointee, _) -> (
+        match Layout.dst_kind pointee with
+        | NoneKind -> failwith "invalid iter_fields: no metadata"
+        | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
+        | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
+    | _ -> Fmt.failwith "invalid iter_fields: %a" pp_ty ty
+  in
+  match layout.fields with
+  | Primitive -> Iter.singleton (ty, Usize.(0s))
+  | Array _ -> aux ?variant layout.fields
+  | Arbitrary (variant, _) -> aux ~variant layout.fields
+  | Enum (_, variant_layouts) ->
+      let variant = Option.get ~msg:"variant required for enum" variant in
+      let fields = variant_layouts.(Types.VariantId.to_int variant) in
+      aux ~variant fields
+
+module Decoder
+    (Sptr : Sptr.S)
+    (State_tys : sig
+      module SM :
+        Soteria.Sym_states.State_monad.S
+          with type 'a Symex.t = 'a DecayMapMonad.t
+           and type 'a Symex.Value.t = 'a Typed.t
+           and type 'a Symex.Value.ty = 'a Typed.ty
+           and type Symex.Value.sbool = Typed.sbool
+
+      type fix
+    end) =
+struct
   type nonrec rust_val = Sptr.t Rust_val.t
 
-  let pp_rust_val = Rust_val.pp Sptr.pp
-
   module ParserMonad = struct
+    open State_tys
+
     type query = Types.ty * T.sint Typed.t
+    type 'a res = ('a, Error.t, fix) SM.Result.t
 
     (* size * offset  *)
     type get_all_query = T.nonzero Typed.t * T.sint Typed.t
 
     (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t
          where StateResult = StateT (Result), but I need StateT1of3 urgh. *)
-    type ('state, 'err, 'fix) handler =
-      query -> 'state -> (rust_val * 'state, 'err, 'fix) Result.t
-
-    type ('state, 'err, 'fix) get_all_handler =
-      get_all_query ->
-      'state ->
-      ((rust_val * T.sint Typed.t) list * 'state, 'err, 'fix) Result.t
+    type handler = query -> rust_val res
+    type get_all_handler = get_all_query -> (rust_val * T.sint Typed.t) list res
 
     (* A parser monad is an object such that, given a query handler with state ['state],
       returns a state monad-ish for that state which may fail or branch *)
-    type ('res, 'state, 'err, 'fix) t =
-      ('state, 'err, 'fix) handler ->
-      ('state, 'err, 'fix) get_all_handler ->
-      'state ->
-      ('res * 'state, 'err, 'fix) Result.t
+    type 'a t = handler -> get_all_handler -> 'a res
 
-    let parse ~(init : 'state) ~(handler : ('state, 'err, 'fix) handler)
-        ~(get_all : ('state, 'err, 'fix) get_all_handler) scheduler :
-        ('res * 'state, 'err, 'fix) Result.t =
-      scheduler handler get_all init
+    let parse ~(handler : handler) ~(get_all : get_all_handler) scheduler :
+        'a res =
+      scheduler handler get_all
 
-    let ok (x : 'a) : ('a, 'state, 'err, 'fix) t =
-     fun _handler _get_all state -> Result.ok (x, state)
+    let ok (x : 'a) : 'a t = fun _handler _get_all -> SM.Result.ok x
+    let error (e : Error.t) : 'a t = fun _handler _get_all -> SM.Result.error e
 
-    let error (e : 'err) : ('a, 'state, 'err, 'fix) t =
-     fun _handler _get_all _state -> Result.error e
-
-    let bind2 (m : ('a, 'state, 'err, 'fix) t)
-        (f : 'a -> ('b, 'state, 'err, 'fix) t)
-        (fe : 'err -> ('b, 'state, 'err, 'fix) t) : ('b, 'state, 'err, 'fix) t =
-     fun handler get_all state ->
-      let* res = m handler get_all state in
+    let bind2 (m : 'a t) (f : 'a -> 'b t) (fe : 'err -> 'b t) : 'b t =
+     fun handler get_all ->
+      let open SM.Syntax in
+      let* res = m handler get_all in
       match res with
-      | Compo_res.Ok (x, new_state) -> f x handler get_all new_state
-      | Compo_res.Error e -> fe e handler get_all state
-      | Compo_res.Missing f -> Result.miss f
+      | Compo_res.Ok x -> f x handler get_all
+      | Compo_res.Error e -> fe e handler get_all
+      | Compo_res.Missing f -> SM.Result.miss f
 
-    let bind (m : ('a, 'state, 'err, 'fix) t)
-        (f : 'a -> ('b, 'state, 'err, 'fix) t) : ('b, 'state, 'err, 'fix) t =
-     fun handler get_all state ->
-      let** x, new_state = m handler get_all state in
-      f x handler get_all new_state
+    let bind (m : 'a t) (f : 'a -> 'b t) : 'b t =
+     fun handler get_all ->
+      let open SM.Syntax in
+      let** x = m handler get_all in
+      f x handler get_all
 
-    let map (m : ('a, 'state, 'err, 'fix) t) (f : 'a -> 'b) :
-        ('b, 'state, 'err, 'fix) t =
-     fun handler get_all state ->
-      let++ x, new_state = m handler get_all state in
-      (f x, new_state)
+    let map (m : 'a t) (f : 'a -> 'b) : 'b t =
+     fun handler get_all ->
+      let open SM.Syntax in
+      let++ x = m handler get_all in
+      f x
 
-    let query (q : query) : ('a, 'state, 'err, 'fix) t =
-     fun handler _ state -> handler q state
+    let query (q : query) : 'a t = fun (handler : handler) _ -> handler q
 
-    let get_all (q : get_all_query) : ('a, 'state, 'err, 'fix) t =
+    let get_all (q : get_all_query) : 'a t =
      fun _ get_all state -> get_all q state
 
-    let[@inline] lift (m : 'a DecayMapMonad.t) : ('a, 'state, 'err, 'fix) t =
-     fun _handler _get_all state ->
-      let+ m in
-      Compo_res.Ok (m, state)
+    let[@inline] lift (m : 'a DecayMapMonad.t) : 'a t =
+      let open SM.Syntax in
+      fun _handler _get_all ->
+        let*^ m in
+        SM.Result.ok m
 
-    let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) :
-        ('a, 'state, 'err, 'fix) t =
-     fun _handler _get_all state ->
-      let++ m = DecayMapMonad.lift m in
-      (m, state)
+    let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
+     fun _handler _get_all -> SM.lift (DecayMapMonad.lift m)
 
     let not_impl msg = lift @@ not_impl msg
     let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
@@ -115,112 +157,10 @@ module Make (Sptr : Sptr.S) = struct
     end
   end
 
-  (** Iterator over the fields and offsets of a type; for primitive types,
-      returns a singleton iterator for that value. *)
-  let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
-    let aux ?variant fields =
-      Iter.mapi (fun i ty -> (ty, Fields_shape.offset_of i fields))
-      @@
-      match ty with
-      | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
-      | TArray (ty, len) -> Iter.repeatz (z_of_constant_expr len) ty
-      | TSlice _ | TAdt { id = TBuiltin TStr; _ } -> (
-          let sub_ty =
-            match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
-          in
-          match meta with
-          | Len len when Option.is_some (BV.to_z len) ->
-              (* TODO: strings and slices of symbolic length *)
-              Iter.repeatz (Option.get (BV.to_z len)) sub_ty
-          | Thin | Len _ | VTable _ ->
-              failwith "iter_fields: invalid length for slice/str")
-      | TAdt adt -> (
-          let type_decl = Crate.get_adt adt in
-          match (type_decl.kind, variant) with
-          | Struct fields, _ ->
-              let field_tys = field_tys fields in
-              Iter.of_list field_tys
-          | Enum variants, Some variant ->
-              let variant = Types.VariantId.nth variants variant in
-              let field_tys = field_tys variant.fields in
-              Iter.of_list field_tys
-          | _ -> failwith "invalid iter_fields type_decl")
-      | TRef (_, pointee, _) | TRawPtr (pointee, _) -> (
-          match Layout.dst_kind pointee with
-          | NoneKind -> failwith "invalid iter_fields: no metadata"
-          | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
-          | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
-      | _ -> Fmt.failwith "invalid iter_fields: %a" pp_ty ty
-    in
-    match layout.fields with
-    | Primitive -> Iter.singleton (ty, Usize.(0s))
-    | Array _ -> aux ?variant layout.fields
-    | Arbitrary (variant, _) -> aux ~variant layout.fields
-    | Enum (_, variant_layouts) ->
-        let variant = Option.get ~msg:"variant required for enum" variant in
-        let fields = variant_layouts.(Types.VariantId.to_int variant) in
-        aux ~variant fields
-
-  (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an
-      iterator over its sub values, along with their offset. Offsets all blocks
-      by [offset] if specified *)
-  let rec encode ~offset (value : rust_val) (ty : Types.ty) :
-      ((rust_val * T.sint Typed.t) Iter.t, 'e, 'f) Rustsymex.Result.t =
-    let open Rustsymex in
-    let open Syntax in
-    let open Result in
-    let chain iter =
-      (match value with
-        | Tuple vals | Enum (_, vals) -> vals
-        | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
-        | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
-        | Ptr (_, Thin) | Int _ | Float _ | PolyVal _ ->
-            failwith "Cannot split primitive"
-        | Union _ -> failwith "Cannot encode union directly")
-      |> Iter.combine_list iter
-      |> Result.fold_iter ~init:(0, Iter.empty)
-           ~f:(fun (i, acc) ((ty, ofs), v) ->
-             let offset = offset +!!@ ofs in
-             let++ ys = encode ~offset v ty in
-             (i + 1, Iter.append acc ys))
-      |> (Fun.flip Result.map) snd
-    in
-    let** ty = Layout.normalise ty in
-    let** layout = Layout.layout_of ty in
-    if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
-    else
-      match (layout.fields, value) with
-      | _, Union blocks ->
-          ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
-      | Primitive, _ -> ok (Iter.singleton (value, offset))
-      | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
-      | Enum (tag_layout, _), Enum (disc, _) -> (
-          let adt = Charon_util.ty_as_adt ty in
-          let variants = Crate.as_enum adt in
-          let variants = List.mapi (fun i v -> (i, v)) variants in
-          let* variant =
-            match_on variants ~constr:(fun (_, v) ->
-                BV.of_literal v.discriminant ==@ disc)
-          in
-          let* i, _ =
-            of_opt_not_impl "no matching variant for enum discriminant" variant
-          in
-          let variant = Types.VariantId.of_int i in
-          let++ fields = chain (iter_fields ~variant layout ty) in
-          match tag_layout.tags.(i) with
-          | None -> fields
-          | Some tag ->
-              let offset = tag_layout.offset +!!@ offset in
-              Iter.cons (Int tag, offset) fields)
-      | Enum _, _ ->
-          Fmt.kstr not_impl "encode: expected enum value for enum type %a" pp_ty
-            ty
-
   (** Parses the current variant of the enum at the given offset. This handles
       cases such as niches, where the discriminant isn't directly encoded as a
       tag. *)
-  let variant_of_enum ~offset ty :
-      (Types.variant_id, 'state, 'e, 'fix) ParserMonad.t =
+  let variant_of_enum ~offset ty : Types.variant_id ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let* layout = layout_of ty in
@@ -254,7 +194,7 @@ module Make (Sptr : Sptr.S) = struct
       offset, using the provided metadata for DSTs, and returns the associated
       [Rust_val]. This does not perform any validity checking, aside from
       erroring if the type is uninhabited. *)
-  let rec decode ~meta ~offset ty : (rust_val, 'state, 'e, 'fix) ParserMonad.t =
+  let rec decode ~meta ~offset ty : rust_val ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let iter fields offset =
@@ -313,6 +253,67 @@ module Make (Sptr : Sptr.S) = struct
         let discr = BV.of_literal variant.discriminant in
         Enum (discr, fields)
     | Enum _, _ -> failwith "decode: expected enum type for enum layout"
+end
+
+module Encoder (Sptr : Sptr.S) = struct
+  type nonrec rust_val = Sptr.t Rust_val.t
+
+  let pp_rust_val = Rust_val.pp Sptr.pp
+
+  (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an
+      iterator over its sub values, along with their offset. Offsets all blocks
+      by [offset] if specified *)
+  let rec encode ~offset (value : rust_val) (ty : Types.ty) :
+      ((rust_val * T.sint Typed.t) Iter.t, 'e, 'f) Rustsymex.Result.t =
+    let open Rustsymex in
+    let open Syntax in
+    let open Result in
+    let chain iter =
+      (match value with
+        | Tuple vals | Enum (_, vals) -> vals
+        | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
+        | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
+        | Ptr (_, Thin) | Int _ | Float _ | PolyVal _ ->
+            failwith "Cannot split primitive"
+        | Union _ -> failwith "Cannot encode union directly")
+      |> Iter.combine_list iter
+      |> Result.fold_iter ~init:(0, Iter.empty)
+           ~f:(fun (i, acc) ((ty, ofs), v) ->
+             let offset = offset +!!@ ofs in
+             let++ ys = encode ~offset v ty in
+             (i + 1, Iter.append acc ys))
+      |> (Fun.flip Result.map) snd
+    in
+    let** ty = Layout.normalise ty in
+    let** layout = Layout.layout_of ty in
+    if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
+    else
+      match (layout.fields, value) with
+      | _, Union blocks ->
+          ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
+      | Primitive, _ -> ok (Iter.singleton (value, offset))
+      | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
+      | Enum (tag_layout, _), Enum (disc, _) -> (
+          let adt = Charon_util.ty_as_adt ty in
+          let variants = Crate.as_enum adt in
+          let variants = List.mapi (fun i v -> (i, v)) variants in
+          let* variant =
+            match_on variants ~constr:(fun (_, v) ->
+                BV.of_literal v.discriminant ==@ disc)
+          in
+          let* i, _ =
+            of_opt_not_impl "no matching variant for enum discriminant" variant
+          in
+          let variant = Types.VariantId.of_int i in
+          let++ fields = chain (iter_fields ~variant layout ty) in
+          match tag_layout.tags.(i) with
+          | None -> fields
+          | Some tag ->
+              let offset = tag_layout.offset +!!@ offset in
+              Iter.cons (Int tag, offset) fields)
+      | Enum _, _ ->
+          Fmt.kstr not_impl "encode: expected enum value for enum type %a" pp_ty
+            ty
 
   (** Ensures this value is valid for the given type. This includes checking
       pointer metadata, e.g. slice lengths and vtables. The [fake_read] function
@@ -321,33 +322,40 @@ module Make (Sptr : Sptr.S) = struct
   let check_valid ~fake_read v ty st =
     let open Rustsymex in
     let open Syntax in
+    let open Compo_res in
     let open Result in
     match (v, (ty : Types.ty)) with
     | Ptr ((_, meta) as p), TRef (_, pointee, _) -> (
-        let** () =
-          match meta with
-          | Thin -> ok ()
-          | Len len ->
-              assert_or_error
-                (Usize.(0s) <=$@ len)
-                (`UBTransmute "Negative slice length")
-          | VTable _ ->
-              (* TODO: check the vtable pointer is of the right trait kind *)
-              ok ()
+        let+ res =
+          let** () =
+            match meta with
+            | Thin -> ok ()
+            | Len len ->
+                assert_or_error
+                  (Usize.(0s) <=$@ len)
+                  (`UBTransmute "Negative slice length")
+            | VTable _ ->
+                (* TODO: check the vtable pointer is of the right trait kind *)
+                ok ()
+          in
+          let** layout = Layout.layout_of pointee in
+          if layout.uninhabited then error `RefToUninhabited
+          else
+            let* opt_err, st = fake_read p pointee st in
+            match opt_err with Some err -> error err | None -> ok st
         in
-        let** layout = Layout.layout_of pointee in
-        if layout.uninhabited then error `RefToUninhabited
-        else
-          let* opt_err, st = fake_read p pointee st in
-          match opt_err with Some err -> error err | None -> ok st)
+        match res with
+        | Ok st -> (Ok (), st)
+        | Error e -> (Error e, st)
+        | Missing f -> (Missing f, st))
     | Ptr (p, _), TFnPtr _ ->
-        let++ () =
+        let+ res =
           assert_or_error
             (Typed.not (Sptr.sem_eq (Sptr.null_ptr ()) p))
             `UBDanglingPointer
         in
-        st
-    | _ -> ok st
+        (res, st)
+    | _ -> return (Ok (), st)
 
   let with_constraints ~ty v =
     let constraints = Typed.conj @@ Layout.constraints ty v in

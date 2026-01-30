@@ -1,9 +1,5 @@
-type t = State.t * State.serialized list
+type t = State.t option * State.serialized list
 
-include
-  State_intf.S
-    with type t := t
-    with type serialized = State.serialized
-     and type 'a err = 'a State.err * t
+include State_intf.S with type t := t with type serialized = State.serialized
 
-val to_spec : t -> serialized list * serialized
+val to_spec : t option -> serialized list * serialized list

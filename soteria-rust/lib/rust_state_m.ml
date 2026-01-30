@@ -1,19 +1,55 @@
-open Soteria.Symex.Compo_res
+module Compo_res = Soteria.Symex.Compo_res
+open Compo_res
 open Rustsymex
-open Rustsymex.Syntax
 open Charon
+
+module Compo_resT2 (I : sig
+  type fix
+  type error
+end) (M : sig
+  type ('a, 'b) t
+
+  val return : 'a -> ('a, 'b) t
+  val bind : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
+  val map : ('a, 'b) t -> ('a -> 'c) -> ('c, 'b) t
+end) =
+struct
+  open I
+
+  type ('a, 'b) t = (('a, error, fix) Compo_res.t, 'b) M.t
+
+  let ok x = M.return (Ok x)
+  let error e = M.return (Error e)
+  let miss f = M.return (Missing f)
+
+  let bind x f =
+    M.bind x @@ function
+    | Ok v -> f v
+    | Error e -> M.return (Error e)
+    | Missing f' -> M.return (Missing f')
+
+  let bind2 x f fe =
+    M.bind x @@ function
+    | Ok v -> f v
+    | Error e -> fe e
+    | Missing f' -> M.return (Missing f')
+
+  let map (x : ('a, 'b) t) (f : 'a -> 'c) : ('c, 'b) t =
+    M.map x @@ Fun.flip Compo_res.map f
+
+  let lift (x : ('a, 'b) M.t) : ('a, 'b) t = M.map x @@ fun v -> Ok v
+end
 
 module type S = sig
   type serialized
   type st
   type ('a, 'env) t
   type ('a, 'env) monad := ('a, 'env) t
-  type 'e err
 
   val ok : 'a -> ('a, 'env) t
   val error : Error.t -> ('a, 'env) t
-  val error_raw : Error.t err -> ('a, 'env) t
-  val miss : serialized list -> ('a, 'env) t
+  val error_raw : Error.with_trace -> ('a, 'env) t
+  val miss : serialized list list -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
   val map : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
@@ -42,7 +78,7 @@ module type S = sig
     env:'env ->
     state:st ->
     (unit -> ('a, 'env) t) ->
-    ('a * st, Error.t err, serialized) Result.t
+    ('a * st, Error.with_trace, serialized list) Result.t
 
   val lift_symex : 'a Rustsymex.t -> ('a, 'env) t
 
@@ -191,20 +227,20 @@ module type S = sig
 
     val register_thread_exit : (unit -> (unit, unit) t) -> (unit, 'env) t
     val run_thread_exits : unit -> (unit, 'env) t
-    val add_error : Error.t err -> (unit, 'env) t
+    val add_error : Error.with_trace -> (unit, 'env) t
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
 
     val unwind_with :
       f:('a -> ('b, 'env) t) ->
-      fe:(Error.t err -> ('b, 'env) t) ->
+      fe:(Error.with_trace -> ('b, 'env) t) ->
       ('a, 'env) t ->
       ('b, 'env) t
 
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
     val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
     val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-    val lift_err : ('a, Error.t, serialized) Result.t -> ('a, 'env) t
+    val lift_err : ('a, Error.t, serialized list) Result.t -> ('a, 'env) t
   end
 
   module Syntax : sig
@@ -242,14 +278,11 @@ module type S = sig
 end
 
 module Make (State : State_intf.S) :
-  S
-    with type st = State.t
-     and type 'e err = 'e State.err
-     and type serialized = State.serialized = struct
+  S with type st = State.t option and type serialized = State.serialized =
+struct
   (* utilities *)
 
-  type st = State.t
-  type 'e err = 'e State.err
+  type st = State.t option
   type serialized = State.serialized
   type full_ptr = State.Sptr.t Rust_val.full_ptr
   type rust_val = State.Sptr.t Rust_val.t
@@ -257,34 +290,46 @@ module Make (State : State_intf.S) :
   let pp_rust_val = Rust_val.pp State.Sptr.pp
   let pp_full_ptr = Rust_val.pp_full_ptr State.Sptr.pp
 
-  type ('a, 'env) t =
-    'env ->
-    State.t ->
-    ( 'a * 'env * State.t,
-      Error.t State.err * State.t,
-      State.serialized )
-    Result.t
+  module ESM = struct
+    module MONAD = Monad.StateT_p (State.SM)
+    include MONAD
 
+    module Result = struct
+      let l = lift
+
+      include
+        Compo_resT2
+          (struct
+            type fix = serialized list
+            type error = Error.with_trace
+          end)
+          (MONAD)
+
+      let lift_state x = lift @@ l x
+    end
+  end
+
+  type ('a, 'env) t = ('a, 'env) ESM.Result.t
   type ('a, 'env) monad = ('a, 'env) t
 
-  let ok x : ('a, 'env) t = fun env state -> Result.ok (x, env, state)
-  let error err : ('a, 'env) t = fun _env state -> State.error err state
-  let error_raw err : ('a, 'env) t = fun _env state -> Result.error (err, state)
-  let miss f : ('a, 'env) t = fun _env _state -> Result.miss f
-  let not_impl str : ('a, 'env) t = fun _env _state -> Rustsymex.not_impl str
-  let get_state () = fun env state -> Result.ok (state, env, state)
-  let get_env () = fun env state -> Result.ok (env, env, state)
+  let ok x : ('a, 'env) t = ESM.Result.ok x
+  let error err : ('a, 'env) t = ESM.lift @@ State.error err
+  let error_raw err : ('a, 'env) t = ESM.Result.error err
+  let miss f : ('a, 'env) t = ESM.Result.miss f
 
-  (* we don't type annotate this to allow for ['env] type changes through [f] *)
-  let bind x f =
-   fun env state ->
-    let** y, env, state = x env state in
-    (f y) env state
+  let not_impl str : ('a, 'env) t =
+    ESM.lift @@ State.SM.lift @@ Rustsymex.not_impl str
+
+  let get_state () : (st, 'env) t =
+    ESM.Result.lift_state @@ State.SM.get_state ()
+
+  let get_env () : ('env, 'env) t = ESM.Result.lift @@ ESM.get_state ()
+
+  let bind (x : ('a, 'env) t) (f : 'a -> ('b, 'env) t) : ('b, 'env) t =
+    ESM.Result.bind x f
 
   let map (x : ('a, 'env) t) (f : 'a -> 'b) : ('b, 'env) t =
-   fun env state ->
-    let++ y, env, state = x env state in
-    (f y, env, state)
+    ESM.map x (Fun.flip Compo_res.map f)
 
   let fold_list x ~init ~f =
     Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold x ~init ~f
@@ -292,37 +337,35 @@ module Make (State : State_intf.S) :
   let fold_iter x ~init ~f =
     Monad.foldM ~bind ~return:ok ~fold:Foldable.Iter.fold x ~init ~f
 
-  let map_env f = fun env state -> Result.ok ((), f env, state)
+  let map_env f =
+    let open ESM.Syntax in
+    let+ () = ESM.map_state f in
+    Compo_res.Ok ()
 
   let with_env ~(env : 'env1) (f : ('a, 'env1) t) : ('a, 'env) t =
-   fun old_env state ->
-    let++ res, _, state = f env state in
-    (res, old_env, state)
+   fun old_env ->
+    let open State.SM.Syntax in
+    let+ res, _ = f env in
+    (res, old_env)
 
-  let[@inline] lift_err sym =
-   fun env state ->
-    let++ res = State.lift_err state sym in
-    (res, env, state)
+  let[@inline] lift_err sym = ESM.lift (State.lift_err sym)
 
-  let[@inline] lift_state_op f =
-   fun env state ->
-    let++ v, state = f state in
-    (v, env, state)
+  let[@inline] with_decay_map_res
+      (f : ('a, Error.t, serialized list) Sptr.DecayMapMonad.Result.t) :
+      ('a, 'env) t =
+    ESM.lift
+      (let open State.SM.Syntax in
+       let* res = State.with_decay_map f in
+       State.lift_err (Rustsymex.return res))
 
-  let[@inline] with_decay_map_res f =
-   fun env state ->
-    let* res, state = State.with_decay_map f state in
-    lift_err (return res) env state
-
-  let[@inline] with_decay_map f =
-   fun env state ->
-    let+ res, state = State.with_decay_map f state in
-    Ok (res, env, state)
+  let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
+    ESM.lift
+      (let open State.SM.Syntax in
+       let+ res = State.with_decay_map f in
+       Compo_res.Ok res)
 
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =
-   fun env state ->
-    let+ s = s in
-    Ok (s, env, state)
+    ESM.Result.lift_state @@ State.SM.lift s
 
   let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
   let assume x = lift_symex (assume x)
@@ -335,27 +378,28 @@ module Make (State : State_intf.S) :
     res
 
   let with_extra_call_trace ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
-   fun env state ->
-    let+ res = x env state in
+    let open ESM.Syntax in
+    let+ res = x in
     match res with
-    | Ok triple -> Ok triple
-    | Error (e, st) ->
+    | Ok v -> Compo_res.Ok v
+    | Error e ->
         let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
-        Error (State.add_to_call_trace e elem, st)
+        Compo_res.Error (Error.add_to_call_trace e elem)
     | Missing f -> Missing f
 
   (** Run the state monad, with the given initial state and environment; the
       environment is discarded at the end of the execution. *)
   let run ~env ~state (f : unit -> ('a, 'env) t) :
-      ('a * State.t, Error.t State.err, 'f) Result.t =
-    let+ res = f () env state in
+      ('a * st, Error.with_trace, serialized list) Result.t =
+    let open Rustsymex.Syntax in
+    let+ (res, _env), st = f () env state in
     match res with
-    | Ok (res, _, state) -> Ok (res, state)
-    | Error (e, _) -> Error e
+    | Ok v -> Ok (v, st)
+    | Error e -> Error e
     | Missing f -> Missing f
 
   module Poly = struct
-    let[@inline] push_generics ~params ~args (x : ('a, 'env) t) =
+    let[@inline] push_generics ~params ~args (x : ('a, 'env) t) : ('a, 'env) t =
      fun env state -> Poly.push_generics ~params ~args (x env state)
 
     let[@inline] fill_params params = lift_symex (Poly.fill_params params)
@@ -391,7 +435,7 @@ module Make (State : State_intf.S) :
   end
 
   module Encoder = struct
-    include Encoder.Make (State.Sptr)
+    include Value_codec.Encoder (State.Sptr)
 
     let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
 
@@ -412,14 +456,18 @@ module Make (State : State_intf.S) :
            (full_ptr * 'acc, 'env) monad) ~(init : 'acc) (v : rust_val)
         (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
      fun env state ->
-      let f (acc, env, state) ptr ty rk =
-        let++ (res, acc), env, state = f acc ptr ty rk env state in
-        (res, (acc, env, state))
+      let open Rustsymex.Syntax in
+      (* The inner function operates in Rustsymex.Result.t, carrying (acc, env, state) as accumulator *)
+      let f_inner (acc, env, state) ptr ty rk =
+        let+ (res, new_env), new_state = f acc ptr ty rk env state in
+        Compo_res.map res (fun (ptr, acc) -> (ptr, (acc, new_env, new_state)))
       in
-      let++ res, (acc, env, state) =
-        update_ref_tys_in f (init, env, state) v ty
-      in
-      ((res, acc), env, state)
+      let+ res = update_ref_tys_in f_inner (init, env, state) v ty in
+      match res with
+      | Compo_res.Ok (v, (acc, env, state)) ->
+          ((Compo_res.Ok (v, acc), env), state)
+      | Compo_res.Error e -> ((Compo_res.Error e, env), state)
+      | Compo_res.Missing fixes -> ((Compo_res.Missing fixes, env), state)
   end
 
   module State = struct
@@ -428,83 +476,84 @@ module Make (State : State_intf.S) :
     let empty = State.empty
 
     let[@inline] load ?ignore_borrow ptr ty =
-      lift_state_op (load ?ignore_borrow ptr ty)
+      ESM.lift (load ?ignore_borrow ptr ty)
 
-    let[@inline] load_discriminant ptr ty =
-      lift_state_op (load_discriminant ptr ty)
-
-    let[@inline] store ptr ty v = lift_state_op (store ptr ty v)
-    let[@inline] zeros ptr size = lift_state_op (zeros ptr size)
-
-    let[@inline] alloc_ty ?kind ?span ty =
-      lift_state_op (alloc_ty ?kind ?span ty)
+    let[@inline] load_discriminant ptr ty = ESM.lift (load_discriminant ptr ty)
+    let[@inline] store ptr ty v = ESM.lift (store ptr ty v)
+    let[@inline] zeros ptr size = ESM.lift (zeros ptr size)
+    let[@inline] alloc_ty ?kind ?span ty = ESM.lift (alloc_ty ?kind ?span ty)
 
     let[@inline] alloc_tys ?kind ?span tys =
-      lift_state_op (alloc_tys ?kind ?span tys)
+      ESM.lift (alloc_tys ?kind ?span tys)
 
     let[@inline] alloc_untyped ?kind ?span ~zeroed ~size ~align () =
-      lift_state_op (alloc_untyped ?kind ?span ~zeroed ~size ~align)
+      ESM.lift (alloc_untyped ?kind ?span ~zeroed ~size ~align)
 
     let[@inline] copy_nonoverlapping ~src ~dst ~size =
-      lift_state_op (copy_nonoverlapping ~src ~dst ~size)
+      ESM.lift (copy_nonoverlapping ~src ~dst ~size)
 
-    let[@inline] uninit ptr ty = lift_state_op (uninit ptr ty)
-    let[@inline] free ptr = lift_state_op (free ptr)
-    let[@inline] check_ptr_align ptr ty = lift_state_op (check_ptr_align ptr ty)
-    let[@inline] borrow ptr ty mut = lift_state_op (borrow ptr ty mut)
-    let[@inline] protect ptr ty mut = lift_state_op (protect ptr ty mut)
-    let[@inline] unprotect ptr ty = lift_state_op (unprotect ptr ty)
-    let[@inline] with_exposed addr = lift_state_op (with_exposed addr)
-    let[@inline] tb_load ptr ty = lift_state_op (tb_load ptr ty)
-    let[@inline] load_global g = lift_state_op (load_global g)
-    let[@inline] store_global g ptr = lift_state_op (store_global g ptr)
-    let[@inline] load_str_global str = lift_state_op (load_str_global str)
-
-    let[@inline] store_str_global str ptr =
-      lift_state_op (store_str_global str ptr)
-
-    let[@inline] declare_fn fn = lift_state_op (declare_fn fn)
-    let[@inline] lookup_fn fn = lift_state_op (lookup_fn fn)
+    let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
+    let[@inline] free ptr = ESM.lift (free ptr)
+    let[@inline] check_ptr_align ptr ty = ESM.lift (check_ptr_align ptr ty)
+    let[@inline] borrow ptr ty mut = ESM.lift (borrow ptr ty mut)
+    let[@inline] protect ptr ty mut = ESM.lift (protect ptr ty mut)
+    let[@inline] unprotect ptr ty = ESM.lift (unprotect ptr ty)
+    let[@inline] with_exposed addr = ESM.lift (with_exposed addr)
+    let[@inline] tb_load ptr ty = ESM.lift (tb_load ptr ty)
+    let[@inline] load_global g = ESM.lift (load_global g)
+    let[@inline] store_global g ptr = ESM.lift (store_global g ptr)
+    let[@inline] load_str_global str = ESM.lift (load_str_global str)
+    let[@inline] store_str_global str ptr = ESM.lift (store_str_global str ptr)
+    let[@inline] declare_fn fn = ESM.lift (declare_fn fn)
+    let[@inline] lookup_fn fn = ESM.lift (lookup_fn fn)
 
     let[@inline] lookup_const_generic id ty =
-      lift_state_op (lookup_const_generic id ty)
+      ESM.lift (lookup_const_generic id ty)
 
-    let[@inline] add_error e = lift_state_op (add_error e)
-    let[@inline] pop_error () = lift_state_op pop_error
-    let[@inline] leak_check () = lift_state_op leak_check
+    let[@inline] add_error e = ESM.lift (add_error e)
+
+    (** pop_error always errors, so the result type 'a is polymorphic. We need
+        to coerce the unit result to 'a since it never succeeds. *)
+    let[@inline] pop_error () : ('a, 'env) monad =
+     fun env ->
+      let open SM.Syntax in
+      let+ res = pop_error () in
+      (res, env)
+
+    let[@inline] leak_check () = ESM.lift (leak_check ())
 
     let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =
-      let unlifted () st =
-        let++ (), (), st = f () () st in
-        ((), st)
+      let unlifted () : (unit, Error.with_trace, serialized list) SM.Result.t =
+        SM.Result.bind_2
+          (SM.map (f () ()) fst)
+          ~f:SM.Result.ok ~fe:SM.Result.error
       in
-      lift_state_op (register_thread_exit unlifted)
+      ESM.lift (register_thread_exit unlifted)
 
-    let[@inline] run_thread_exits () = lift_state_op run_thread_exits
+    let[@inline] run_thread_exits () = ESM.lift (run_thread_exits ())
 
-    let[@inline] unwind_with ~f ~fe x =
-     fun env state ->
-      unwind_with
-        ~f:(fun (x, env, state) -> f x env state)
-        ~fe:(fun (e, state) -> fe e env state)
-        (x env state)
+    let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
+      ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->
+          if Error.is_unwindable err_ty then fe err else error_raw err)
 
-    let[@inline] fake_read ptr ty =
-     fun env state ->
-      let* is_valid, state = fake_read ptr ty state in
+    let[@inline] fake_read ptr ty : (unit, 'env) monad =
+     fun env ->
+      let open SM.Syntax in
+      let* is_valid = fake_read ptr ty in
       match is_valid with
-      | None -> ok () env state
-      | Some err -> error err state
+      | None -> SM.return (Compo_res.Ok (), env)
+      | Some err ->
+          (* Convert Error.t to Error.with_trace by adding location *)
+          let+ res = State.error err in
+          (res, env)
 
-    let[@inline] lift_err sym =
-     fun env state ->
-      let++ res = lift_err state sym in
-      (res, env, state)
+    let[@inline] lift_err
+        (sym : ('a, Error.t, serialized list) Rustsymex.Result.t) :
+        ('a, 'env) monad =
+      ESM.lift (State.lift_err sym)
 
-    let[@inline] assert_ guard err =
-     fun env state ->
-      let++ () = assert_ (guard :> Typed.T.sbool Typed.t) err state in
-      ((), env, state)
+    let[@inline] assert_ guard err : (unit, 'env) monad =
+      ESM.lift (State.assert_ (guard :> Typed.T.sbool Typed.t) err)
 
     let[@inline] assert_not guard err = assert_ (Typed.not guard) err
   end

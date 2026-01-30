@@ -25,7 +25,7 @@ type raw = {
   pc : Typed.T.sbool Typed.t list;
       (** Path condition. Whether it is in the post or in the pre, it doesn't
           matter for UX. *)
-  post : State.serialized;  (** Post condition as a serialized heap *)
+  post : State.serialized list;  (** Post condition as a serialized heap *)
   ret :
     ( Agv.t,
       Error.t * (Cerb_location.t[@printer Fmt_ail.pp_loc]) Call_trace.t )
@@ -80,34 +80,46 @@ let filter_pc relevant_vars pc =
         (fun (var, _) -> Var_hashset.mem relevant_vars var)
         (Typed.iter_vars v))
 
+module Leak_set = Hashset.Make (struct
+  type t = (Cerb_location.t[@printer Fmt_ail.pp_loc]) option [@@deriving show]
+
+  let equal = Option.equal Stdlib.( = )
+  let hash = Hashtbl.hash
+end)
+
 (** Removes any bit of the state that does not any "relevant variables". i.e.,
     bits that are not reachable from the precondition. *)
-let filter_serialized_state relevant_vars (state : State.serialized) =
+let filter_serialized_state relevant_vars (state : State.serialized list) =
   (* leak_origins tracks the source code location of allocation for each heap location that was detected to leak.
      If empty, no leak is detected. *)
-  let leak_origins = ref [] in
-  let resulting_heap =
-    ListLabels.filter state.heap ~f:(fun (loc, b) ->
-        let relevant =
-          Iter.exists
-            (fun (var, _) -> Var_hashset.mem relevant_vars var)
-            (Typed.iter_vars loc)
-        in
-        if relevant then true
-        else
-          (* If the block is not freed, we record where the object was allocated *)
-          let leaked = not (Block.is_freed b) in
-          if leaked then leak_origins := b.info :: !leak_origins;
-          L.trace (fun m ->
-              m "Filtering out unreachable location: %a which %a." Typed.ppa loc
-                (fun ft b ->
-                  if b then Fmt.pf ft "leaked" else Fmt.pf ft "did not leak")
-                leaked);
-          false)
+  let leak_origins = Leak_set.with_capacity 0 in
+  let resulting_state =
+    ListLabels.filter state ~f:(function
+      | State_intf.Ser_globs _ ->
+          (* Globals are not filtered:
+             if they are in the spec,they were bi-abduced and necessary *)
+          true
+      | State_intf.Ser_heap (loc, b) ->
+          let relevant =
+            Iter.exists
+              (fun (var, _) -> Var_hashset.mem relevant_vars var)
+              (Typed.iter_vars loc)
+          in
+          if relevant then true
+          else
+            (* If the block is not freed, we record where the object was allocated *)
+            let leaked = not (Block.serialized_is_freed b) in
+            if leaked then Leak_set.add leak_origins b.info;
+            L.trace (fun m ->
+                m "Filtering out unreachable location: %a which %a." Typed.ppa
+                  loc
+                  (fun ft b ->
+                    if b then Fmt.pf ft "leaked" else Fmt.pf ft "did not leak")
+                  leaked);
+            false)
   in
-  (* Globals are not filtered: if they are in the spec, they were bi-abduced and necessary *)
-  let resulting_state = { state with heap = resulting_heap } in
-  (resulting_state, !leak_origins)
+  let leaked = List.of_seq (Leak_set.to_seq leak_origins) in
+  (resulting_state, leaked)
 
 let init_reachable_vars summary =
   let init_reachable = Var_hashset.with_capacity 0 in
@@ -120,8 +132,10 @@ let init_reachable_vars summary =
   let () = Result.iter mark_cval_reachable summary.ret in
   let () =
     (* We mark all accessed globals as reachable. *)
-    Globs.iter_vars_serialized summary.post.State_intf.Template.globs
-      (fun (x, _) -> mark_reachable x)
+    ListLabels.iter summary.post ~f:(function
+      | State_intf.Ser_heap _ -> ()
+      | Ser_globs g ->
+          Globs.iter_vars_serialized g (fun (x, _) -> mark_reachable x))
   in
   init_reachable
 
@@ -152,10 +166,13 @@ let prune (summary : after_exec t) : pruned t =
       | _ -> ());
   (* For each block $l -> B in the pre and post state, we add a single-sided arrow
      from all variables in $l to all variables contained in B. *)
-  ListLabels.iter
-    (List.concat (List.map (fun (x : State.serialized) -> x.heap) summary.pre)
-    @ summary.post.heap)
-    ~f:(fun (l, b) ->
+  let all_points_tos =
+    let get_heaps =
+      List.filter_map (function State_intf.Ser_heap h -> Some h | _ -> None)
+    in
+    get_heaps (summary.pre @ summary.post)
+  in
+  ListLabels.iter all_points_tos ~f:(fun (l, b) ->
       let b_iter = Block.iter_vars_serialized b in
       Iter.product (Typed.iter_vars l) (Iter.persistent_lazy b_iter)
         (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));
@@ -204,7 +221,9 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           let module Subst = Soteria.Symex.Substs.Subst in
           let module From_iter = Subst.From_iter (Csymex) in
           let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
-          let iter_post = State.iter_vars_serialized summary.post in
+          let iter_post f =
+            List.iter (fun s -> State.iter_vars_serialized s f) summary.post
+          in
           let iter_args f =
             List.iter (fun cval -> Agv.iter_vars cval f) summary.args
           in
@@ -223,11 +242,16 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
             in
             let constrs = List.concat constrs in
             let* () = Csymex.assume constrs in
-            let serialized_heap = State.subst_serialized subst summary.post in
+            let serialized_heap =
+              List.map (State.subst_serialized subst) summary.post
+            in
             (* We don't need the produced heap, just its wf condition *)
             (* We might want to use another symex monad, à grisette,
            that produces the condition as a writer monad in an \/ or something *)
-            let* _heap = State.produce serialized_heap State.empty in
+            let* (), _ =
+              Csymex.fold_list serialized_heap ~init:((), State.empty)
+                ~f:(fun ((), st) ser -> State.produce ser st)
+            in
             let pc = List.map (Typed.subst subst) summary.pc in
             L.trace (fun m ->
                 m

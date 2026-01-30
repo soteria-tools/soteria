@@ -52,44 +52,67 @@ module DecayMap : DecayMapS = struct
     let fresh () = failwith "Allocation is not valid for the decay map!"
   end
 
-  module SPmap =
+  module Data = struct
+    type t = { address : T.sint Typed.t; exposed : bool }
+    [@@deriving show { with_path = false }]
+
+    let fresh () =
+      Rustsymex.not_impl "DecayMap.Data.fresh (cannot fix missing decay info)"
+
+    let sem_eq d1 d2 =
+      if d1.exposed == d2.exposed then d1.address ==@ d2.address
+      else Typed.bool false
+
+    let subst subst_var d =
+      let address = Typed.subst subst_var d.address in
+      { d with address }
+
+    let iter_vars d f = Typed.iter_vars d.address f
+  end
+
+  module Excl_data = Soteria.Sym_states.Excl.Make (Rustsymex) (Data)
+
+  include
     Soteria.Sym_states.Pmap.Make_patricia_tree (Rustsymex) (StateKey)
+      (Excl_data)
 
-  type data = { address : T.sint Typed.t; exposed : bool }
-  [@@deriving show { with_path = false }]
+  open SM.Syntax
 
-  type t = data SPmap.t
+  let pp ft t = pp ft t
 
-  let pp = SPmap.pp pp_data
-
-  let decay ~expose ~size ~align (loc : [< T.sloc ] Typed.t) st =
-    if%sat Typed.Ptr.is_null_loc loc then return (Usize.(0s), st)
+  let decay ~expose ~size ~align (loc : [< T.sloc ] Typed.t) :
+      T.sint Typed.t SM.t =
+    if%sat Typed.Ptr.is_null_loc loc then SM.return Usize.(0s)
     else
       let+ res =
-        SPmap.wrap
-          (function
-            | Some { address; exposed } ->
-                Result.ok
-                  (address, Some { address; exposed = exposed || expose })
-            | None ->
-                let* addr = nondet (Typed.t_usize ()) in
-                let isize_max = Layout.max_value_z (TInt Isize) in
-                let* () =
-                  Rustsymex.assume
-                    [
-                      (addr %@ align ==@ Usize.(0s));
-                      Usize.(0s) <@ addr;
-                      addr <@ Typed.BitVec.usize isize_max -!@ size;
-                    ]
-                in
-                let info = { address = addr; exposed = false } in
-                Result.ok (addr, Some info))
+        wrap
           (loc :> T.sloc Typed.t)
-          st
+          (let open Excl_data.SM in
+           let open Syntax in
+           let* data_opt = get_state () in
+           match data_opt with
+           | Some { address; exposed } ->
+               let* () =
+                 set_state (Some { address; exposed = exposed || expose })
+               in
+               Result.ok address
+           | None ->
+               let* addr = nondet (Typed.t_usize ()) in
+               let isize_max = Layout.max_value_z (TInt Isize) in
+               let* () =
+                 assume
+                   [
+                     (addr %@ align ==@ Usize.(0s));
+                     Usize.(0s) <@ addr;
+                     addr <@ Typed.BitVec.usize isize_max -!@ size;
+                   ]
+               in
+               let* () = set_state (Some { address = addr; exposed = false }) in
+               Result.ok addr)
       in
       Soteria.Symex.Compo_res.get_ok res
 
-  let from_exposed (loc_int : [< sint ] Typed.t) st =
+  let from_exposed (loc_int : [< sint ] Typed.t) =
     (* UX: we only consider the first one; this is more or less correct, as per the
        documentation of [with_exposed_provenance]: "The provenance of the returned pointer is
        that of some pointer that was previously exposed"
@@ -97,19 +120,21 @@ module DecayMap : DecayMapS = struct
        See https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html
        *)
     let usize_ty = Typed.t_usize () in
-    let bindings = SPmap.syntactic_bindings (SPmap.of_opt st) in
+    let* st = SM.get_state () in
+    let bindings = syntactic_bindings (of_opt st) in
     let binding =
       Typed.iter_vars loc_int
       |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
       |> Iter.filter_map (fun (var, ty) ->
           let v = Typed.mk_var var ty in
           Seq.find
-            (fun (_, { address; exposed }) -> exposed && Typed.equal v address)
+            (fun (_, Data.{ address; exposed }) ->
+              exposed && Typed.equal v address)
             bindings)
-      |> Iter.map (fun (loc, { address; _ }) -> (loc, address))
+      |> Iter.map (fun (loc, Data.{ address; _ }) -> (loc, address))
       |> Iter.to_opt
     in
-    return (binding, st)
+    SM.return binding
 end
 
 module DecayMapMonad = struct
