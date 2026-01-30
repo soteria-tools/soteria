@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Version synchronization script for Soteria.
+Version synchronization script for the codebase.
 
 This script manages version strings across the codebase to ensure consistency.
 Versions are defined in scripts/versions.json and embedded in tags throughout
@@ -101,7 +101,9 @@ def save_versions(path: Path, versions: dict[str, str]) -> None:
 
 def find_tags_in_file(
     content: str,
-) -> list[tuple[int, int, str, str, str, list[tuple[str, tuple[int | None, int | None]]]]]:
+) -> list[
+    tuple[int, int, str, str, str, list[tuple[str, tuple[int | None, int | None]]]]
+]:
     """
     Find all versionsync tags in file content.
     Returns list of (line_number, column, name, tag_value, full_line, filters) tuples.
@@ -110,7 +112,9 @@ def find_tags_in_file(
     for i, line in enumerate(content.splitlines()):
         for match in TAG_PATTERN.finditer(line):
             filters = find_filters_on_line(line)
-            tags.append((i, match.start(), match.group(1), match.group(2), line, filters))
+            tags.append(
+                (i, match.start(), match.group(1), match.group(2), line, filters)
+            )
     return tags
 
 

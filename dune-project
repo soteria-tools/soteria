@@ -30,9 +30,9 @@
  (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools")
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
-  ; [versionsync: OCAML_VERSION=5.6.0]
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
-   (>= 5.6.0))
+   (>= 5.4.0))
   (tsort
    (>= 2.1.0))
   eio_main
@@ -75,9 +75,9 @@
  (sites
   (share includes))
  (depends
-  ; [versionsync: OCAML_VERSION=5.6.0]
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
-   (>= 5.6.0))
+   (>= 5.4.0))
   (shexp :build)
   eio_main
   soteria
@@ -117,9 +117,9 @@
  (synopsis "VSCode extension for Soteria-C")
  (description "VSCode extension for Soteria-C")
  (depends
-  ; [versionsync: OCAML_VERSION=5.6.0]
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
-   (>= 5.6.0))
+   (>= 5.4.0))
   (dune
    (and
     :build
@@ -145,9 +145,9 @@
  (sites
   (share plugins))
  (depends
-  ; [versionsync: OCAML_VERSION=5.6.0]
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
-   (>= 5.6.0))
+   (>= 5.4.0))
   (shexp :build)
   soteria
   dune-site
