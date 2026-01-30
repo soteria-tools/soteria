@@ -2,6 +2,14 @@ open Soteria_std
 open Logs.Import
 module Var = Svalue.Var
 
+module StatKeys = struct
+  let trivial_check = "bv_values.solver.trivial-check"
+
+  let () =
+    let open Stats in
+    register_int_printer trivial_check ~name:"Trivial checks" (fun _ -> Fmt.int)
+end
+
 let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
   let simplify = simplify ~trivial_truthiness ~fallback in
   match v.node.kind with
@@ -485,7 +493,9 @@ struct
       Svalue.iter_vars to_check
       |> Iter.fold (fun acc (v, ty) -> Var.Map.add v ty acc) Var.Map.empty
     in
-    if trivial_model_works solver to_check var_tys then Symex.Solver_result.Sat
+    if trivial_model_works solver to_check var_tys then (
+      Stats.As_ctx.incr StatKeys.trivial_check;
+      Symex.Solver_result.Sat)
     else (
       (* We need to reset the state, so we can push the new constraints *)
       Intf.reset solver.z3_exe;
