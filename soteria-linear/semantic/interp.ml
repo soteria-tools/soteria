@@ -22,8 +22,8 @@ let cast_to_int v =
   | Some v -> Result.ok v
   | None -> Result.error "Type error"
 
-let rec interp_pure_expr (subst : subst) expr :
-    (S_val.t, 'err, 'a) Symex.Result.t =
+let rec eval_pure_expr (subst : subst) expr : (S_val.t, 'err, 'a) Symex.Result.t
+    =
   match expr with
   | Pure_expr.Int n -> Result.ok (S_val.int n)
   | Bool b -> Result.ok (S_val.bool b)
@@ -32,8 +32,8 @@ let rec interp_pure_expr (subst : subst) expr :
       let* v = Symex.nondet S_val.t_int in
       Result.ok v
   | BinOp (e1, op, e2) -> (
-      let** v1 = interp_pure_expr subst e1 in
-      let** v2 = interp_pure_expr subst e2 in
+      let** v1 = eval_pure_expr subst e1 in
+      let** v2 = eval_pure_expr subst e2 in
       match op with
       | BinOp.Eq -> Symex.Result.ok (v1 ==?@ v2)
       | BinOp.And ->
@@ -73,61 +73,61 @@ module Make (State : State_intf.S) = struct
     let+- err = SM.lift f in
     `Interp err
 
-  let interp_pure_expr subst expr = lift_to_state (interp_pure_expr subst expr)
+  let eval_pure_expr subst expr = lift_to_state (eval_pure_expr subst expr)
   let cast_to_bool v = lift_to_state (cast_to_bool v)
   let cast_to_int v = lift_to_state (cast_to_int v)
 
-  let rec interp_expr (subst : subst) expr : (S_val.t, 'err, 'fix) SM.Result.t =
+  let rec eval_expr (subst : subst) expr : (S_val.t, 'err, 'fix) SM.Result.t =
     let* () = SM.consume_fuel_steps 1 in
     L.debug (fun m ->
         m "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp
           expr pp_subst subst);
     match expr with
-    | Expr.Pure_expr e -> interp_pure_expr subst e
+    | Expr.Pure_expr e -> eval_pure_expr subst e
     | Let (x, e1, e2) ->
-        let** v1 = interp_expr subst e1 in
+        let** v1 = eval_expr subst e1 in
         let subst =
           Option.fold ~none:subst ~some:(fun x -> String_map.add x v1 subst) x
         in
-        interp_expr subst e2
+        eval_expr subst e2
     | If (guard, then_, else_) ->
-        let** v_guard = interp_expr subst guard in
+        let** v_guard = eval_expr subst guard in
         let** v_guard = cast_to_bool v_guard in
-        if%sat v_guard then interp_expr subst then_ else interp_expr subst else_
+        if%sat v_guard then eval_expr subst then_ else eval_expr subst else_
     | Call (fname, arg_exprs) ->
         let** arg_values =
           SM.Result.fold_list arg_exprs ~init:[] ~f:(fun acc e ->
-              let++ res = interp_pure_expr subst e in
+              let++ res = eval_pure_expr subst e in
               res :: acc)
         in
         let arg_values = List.rev arg_values in
         let func = get_function fname in
-        run_function func arg_values
+        eval_function func arg_values
     | Load addr ->
-        let** addr = interp_pure_expr subst addr in
+        let** addr = eval_pure_expr subst addr in
         let** addr = cast_to_int addr in
         State.load addr
     | Store (addr, value) ->
-        let** addr = interp_pure_expr subst addr in
+        let** addr = eval_pure_expr subst addr in
         let** addr = cast_to_int addr in
-        let** value = interp_pure_expr subst value in
+        let** value = eval_pure_expr subst value in
         let++ () = State.store addr value in
         (S_val.v_false :> S_val.t)
     | Alloc ->
         let++ addr = State.alloc () in
         (addr :> S_val.t)
     | Free addr ->
-        let** addr = interp_pure_expr subst addr in
+        let** addr = eval_pure_expr subst addr in
         let** addr = cast_to_int addr in
         let++ () = State.free addr in
         (S_val.v_false :> S_val.t)
 
-  and run_function func args =
+  and eval_function func args =
     let subst = List.combine func.Fun_def.args args |> String_map.of_list in
     L.debug (fun m ->
         m "@[<v 2>Running function %s with args:@ %a@]" func.Fun_def.name
           pp_subst subst);
-    let++ r = interp_expr subst func.Fun_def.body in
+    let++ r = eval_expr subst func.Fun_def.body in
     L.debug (fun m ->
         m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name S_val.pp r);
     r
