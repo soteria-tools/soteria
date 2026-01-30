@@ -39,6 +39,8 @@ jobs:
     steps:
       # Setup steps: checkout, z3, node, ocaml and opam
       - uses: actions/checkout@v4
+      - name: Check versions.json sync
+        run: python3 scripts/versionsync.py check
       - name: Setup Z3
         uses: cda-tum/setup-z3@v1
         id: z3
