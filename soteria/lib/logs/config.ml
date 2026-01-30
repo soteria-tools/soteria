@@ -26,8 +26,8 @@ type cli = {
   log_kind : (log_kind[@conv log_kind_cmdliner_conv ()]) option;
       [@names [ "l"; "log_kind" ]]
       (** Log kind, clashes with --html *)
-  html : bool; [@name "html"]  (** HTML logging, clashes with --log-kind *)
-  always_log_smt : bool; [@name "log-smt"]
+  html : bool; [@names [ "html" ]]  (** HTML logging, clashes with --log-kind *)
+  always_log_smt : bool; [@names [ "log-smt" ]]
       (** Always log SMT queries, even in silent mode *)
   no_color : bool; [@names [ "no-color"; "no-colour" ]] [@env "NO_COLOR"]
       (** Disables coloured output. *)
