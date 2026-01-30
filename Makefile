@@ -1,6 +1,6 @@
-# [versionsync: OCAML_VERSION]
+# [versionsync: OCAML_VERSION=5.4.0]
 OCAML_VERSION=5.4.0
-# [versionsync: OCAMLFORMAT_VERSION]
+# [versionsync: OCAMLFORMAT_VERSION=0.28.1]
 OCAMLFORMAT_VERSION=0.28.1
 
 OPAM=opam

@@ -1,6 +1,6 @@
-# [versionsync: OCAMLFORMAT_VERSION]
+# [versionsync: OCAMLFORMAT_VERSION=0.28.1]
 version=0.28.1
-# [versionsync: OCAML_VERSION]
+# [versionsync: OCAML_VERSION_SHORT=5.4]
 ocaml-version = 5.4
 break-infix=wrap-or-vertical
 doc-comments=before
