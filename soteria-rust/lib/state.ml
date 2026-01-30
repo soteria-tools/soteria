@@ -1,6 +1,3 @@
-(** This module defines common exceptions that are not defined in the OCaml
-    Stdlib *)
-
 open Charon
 open Soteria.Symex.Compo_res
 open Rust_val
