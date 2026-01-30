@@ -1004,7 +1004,7 @@ module Make (State : State_intf.S) = struct
           @@ with_env ~env:()
           @@ exec_fun args
         in
-        State.unwind_with fun_exec
+        unwind_with fun_exec
           ~f:(fun v ->
             let* ptr = resolve_place_lazy dest in
             L.info (fun m ->
@@ -1106,7 +1106,7 @@ module Make (State : State_intf.S) = struct
               @@ with_env ~env:()
               @@ exec_fun drop [ Ptr place_ptr ]
             in
-            State.unwind_with fun_exec
+            unwind_with fun_exec
               ~f:(fun _ ->
                 let block = UllbcAst.BlockId.nth body.body target in
                 L.info (fun m -> m "Dropped with %a" Fun_kind.pp drop);
@@ -1148,7 +1148,7 @@ module Make (State : State_intf.S) = struct
     let* protected = alloc_stack body.locals args in
     let starting_block = List.hd body.body in
     let exec_block = exec_block ~body starting_block in
-    State.unwind_with exec_block
+    unwind_with exec_block
       ~f:(fun value ->
         let protected_address =
           match (fundef.signature.output, value) with

@@ -781,10 +781,6 @@ let pop_error () =
   in
   Result.error error
 
-let unwind_with ~f ~fe symex =
-  Result.bind_2 symex ~f ~fe:(fun ((err_ty, _) as err) ->
-      if Error.is_unwindable err_ty then fe err else Result.error err)
-
 let with_functions (type a) (f : FunBiMap.t -> a * FunBiMap.t) : a SM.t =
   let* st = SM.get_state () in
   let st = of_opt st in

@@ -72,10 +72,6 @@ module type S = sig
   val leak_check : unit -> unit ret
   val add_error : Error.with_trace -> unit ret
   val pop_error : unit -> 'a ret
-
-  val unwind_with :
-    f:('a -> 'b ret) -> fe:(Error.with_trace -> 'b ret) -> 'a ret -> 'b ret
-
   val declare_fn : Fun_kind.t -> full_ptr ret
   val lookup_fn : full_ptr -> Fun_kind.t ret
 

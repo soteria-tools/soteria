@@ -133,12 +133,12 @@ module M (Rust_state_m : Rust_state_m.S) :
     let* try_fn = State.lookup_fn try_fn_ptr in
     let* catch_fn = State.lookup_fn catch_fn_ptr in
     exec_fun "catch_unwind try" try_fn [ Ptr data ]
-    |> State.unwind_with
+    |> unwind_with
          ~f:(fun _ -> ok U32.(0s))
          ~fe:(fun _ ->
            exec_fun "catch_unwind catch" catch_fn
              [ Ptr data; Ptr (Sptr.null_ptr (), Thin) ]
-           |> State.unwind_with
+           |> unwind_with
                 ~f:(fun _ -> ok U32.(1s))
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
 

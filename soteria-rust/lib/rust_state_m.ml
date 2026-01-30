@@ -76,6 +76,12 @@ module type S = sig
   val with_extra_call_trace :
     loc:Meta.span_data -> msg:string -> ('a, 'env) t -> ('a, 'env) t
 
+  val unwind_with :
+    f:('a -> ('b, 'env) t) ->
+    fe:(Error.with_trace -> ('b, 'env) t) ->
+    ('a, 'env) t ->
+    ('b, 'env) t
+
   val run :
     env:'env ->
     state:st ->
@@ -232,13 +238,6 @@ module type S = sig
     val add_error : Error.with_trace -> (unit, 'env) t
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
-
-    val unwind_with :
-      f:('a -> ('b, 'env) t) ->
-      fe:(Error.with_trace -> ('b, 'env) t) ->
-      ('a, 'env) t ->
-      ('b, 'env) t
-
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
   end
 
@@ -389,6 +388,10 @@ struct
         Compo_res.Error (Error.add_to_call_trace e elem)
     | Missing f -> Missing f
 
+  let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
+    ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->
+        if Error.is_unwindable err_ty then fe err else error_raw err)
+
   (** Run the state monad, with the given initial state and environment; the
       environment is discarded at the end of the execution. *)
   let run ~env ~state (f : unit -> ('a, 'env) t) :
@@ -534,10 +537,6 @@ struct
       ESM.lift (register_thread_exit unlifted)
 
     let[@inline] run_thread_exits () = ESM.lift (run_thread_exits ())
-
-    let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
-      ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->
-          if Error.is_unwindable err_ty then fe err else error_raw err)
 
     let[@inline] fake_read ptr ty : (unit, 'env) monad =
      fun env ->
