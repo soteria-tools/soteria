@@ -19,10 +19,13 @@ end
 
 module StatKeys = struct
   let check_sats = "solvers.z3.check_sats"
+  let z3_time = "solvers.z3.time"
 
   let () =
     Stats.register_int_printer ~name:"Z3 check-sat calls" check_sats (fun _ ->
-        Fmt.int)
+        Fmt.int);
+    Stats.register_float_printer ~name:"Z3 time" z3_time (fun _ ->
+        Logs.Printers.pp_time)
 end
 
 module Make (Value : Value) :
@@ -115,6 +118,7 @@ module Make (Value : Value) :
       let res = solver.command sexp in
       let elapsed = Unix.gettimeofday () -. now in
       Dump.log_response res elapsed;
+      Stats.As_ctx.add_float StatKeys.z3_time elapsed;
       res
     in
     let solver = { solver with command } in
