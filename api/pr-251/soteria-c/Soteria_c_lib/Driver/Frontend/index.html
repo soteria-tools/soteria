@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Frontend (soteria-c.Soteria_c_lib.Driver.Frontend)</title><meta charset="utf-8"/><link rel="stylesheet" href="../../../../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.1.0"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../../../../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script><script>let base_url = '../../../../';
+let search_urls = ['../../../db.js','../../../../sherlodoc.js'];
+</script><script src="../../../../odoc.support/odoc_search.js" defer="defer"></script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../../index.html">Index</a> &#x00BB; <a href="../../../index.html">soteria-c</a> &#x00BB; <a href="../../index.html">Soteria_c_lib</a> &#x00BB; <a href="../index.html">Driver</a> &#x00BB; Frontend</nav><div class="odoc-search"><div class="search-inner"><input class="search-bar" placeholder="🔎 Type '/' to search..."/><div class="search-snake"></div><div class="search-result"></div></div></div><header class="odoc-preamble"><h1>Module <code><span>Driver.Frontend</span></code></h1></header><div class="odoc-content"><div class="odoc-spec"><div class="spec value anchored" id="val-lift_parsing_result"><a href="#val-lift_parsing_result" class="anchor"></a><code><span><span class="keyword">val</span> lift_parsing_result : 
+  <span><span><span>(<span class="type-var">'a</span> * <span>(<span class="type-var">'b</span> * <span class="type-var">'c</span>)</span>, <span class="xref-unresolved">Cerb_location</span>.t * <span class="xref-unresolved">Cerb_frontend</span>.Errors.cause)</span>
+    <span class="xref-unresolved">Cerb_frontend</span>.Exception.exceptM</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span class="type-var">'c</span>, <span>[&gt; <span>`ParsingError of string</span> ]</span> * <span><span class="xref-unresolved">Cerb_location</span>.t <a href="../../../../soteria/Soteria/Terminal/Call_trace/index.html#type-t">Call_trace.t</a></span>)</span>
+    <span class="xref-unresolved">Stdlib</span>.result</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-use_cerb_libc_if_asked"><a href="#val-use_cerb_libc_if_asked" class="anchor"></a><code><span><span class="keyword">val</span> use_cerb_libc_if_asked : <span>unit <span class="arrow">&#45;&gt;</span></span> string</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-init"><a href="#val-init" class="anchor"></a><code><span><span class="keyword">val</span> init : 
+  <span>unit <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">cpp_cmd</span>:string <span class="arrow">&#45;&gt;</span></span>
+  <span>string <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span class="xref-unresolved">Cerb_frontend</span>.Cabs.translation_unit
+   * <span>(<span class="xref-unresolved">Cerb_frontend</span>.Cabs_to_ail_effect.fin_markers_env
+      * <span><span class="xref-unresolved">Cerb_frontend</span>.GenTypes.genTypeCategory
+          <span class="xref-unresolved">Cerb_frontend</span>.AilSyntax.ail_program</span>)</span>,
+    <span class="xref-unresolved">Cerb_location</span>.t * <span class="xref-unresolved">Cerb_frontend</span>.Errors.cause)</span>
+    <span class="xref-unresolved">Cerb_frontend</span>.Exception.exceptM</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-frontend"><a href="#val-frontend" class="anchor"></a><code><span><span class="keyword">val</span> frontend : 
+  <span><span class="optlabel">?cwd</span>:string <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">cpp_cmd</span>:string <span class="arrow">&#45;&gt;</span></span>
+  <span>string <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span class="xref-unresolved">Cerb_frontend</span>.GenTypes.genTypeCategory <span class="xref-unresolved">Cerb_frontend</span>.AilSyntax.ail_program</span>,
+    <span>[&gt; <span>`ParsingError of string</span> ]</span> * <span><span class="xref-unresolved">Cerb_location</span>.t <a href="../../../../soteria/Soteria/Terminal/Call_trace/index.html#type-t">Call_trace.t</a></span>)</span>
+    <span class="xref-unresolved">Stdlib</span>.result</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simple_frontend"><a href="#val-simple_frontend" class="anchor"></a><code><span><span class="keyword">val</span> simple_frontend : 
+  <span><span class="label">includes</span>:<span>string list</span> <span class="arrow">&#45;&gt;</span></span>
+  <span>string <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span class="xref-unresolved">Cerb_frontend</span>.GenTypes.genTypeCategory <span class="xref-unresolved">Cerb_frontend</span>.AilSyntax.ail_program</span>,
+    <span>[&gt; <span>`ParsingError of string</span> ]</span> * <span><span class="xref-unresolved">Cerb_location</span>.t <a href="../../../../soteria/Soteria/Terminal/Call_trace/index.html#type-t">Call_trace.t</a></span>)</span>
+    <span class="xref-unresolved">Stdlib</span>.result</span></span></code></div></div></div></body></html>
