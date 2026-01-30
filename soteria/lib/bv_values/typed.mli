@@ -195,7 +195,7 @@ end
 (** Floating point operations *)
 
 module Float : sig
-  val mk : Svalue.FloatPrecision.t -> string -> [> sfloat ] t
+  val mk_s : Svalue.FloatPrecision.t -> string -> [> sfloat ] t
   val f16 : float -> [> sfloat ] t
   val f32 : float -> [> sfloat ] t
   val f64 : float -> [> sfloat ] t

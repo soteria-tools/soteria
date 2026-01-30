@@ -483,7 +483,7 @@ module Interval : S = struct
   let add_constraint v st =
     log (fun m -> m "Adding constraint: %a" Svalue.pp v);
     let v', learnt, vars, st' = add_constraint v st in
-    if v <> v' || not (Var.Set.is_empty vars) then
+    if (not (Svalue.equal v v')) || not (Var.Set.is_empty vars) then
       log (fun m ->
           m "Change: %a -> %a + %a (%a)@." Svalue.pp v Svalue.pp v' Svalue.pp
             learnt

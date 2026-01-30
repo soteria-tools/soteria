@@ -96,11 +96,12 @@ let rec encode_value (v : Svalue.t) =
   match v.node.kind with
   | Var v -> atom (Svalue.Var.to_string v)
   | Float f -> (
-      match Svalue.precision_of_f v.node.ty with
-      | F16 -> f16_k @@ Float.of_string f
-      | F32 -> f32_k @@ Float.of_string f
-      | F64 -> f64_k @@ Float.of_string f
-      | F128 -> f128_k @@ Float.of_string f)
+      match (Svalue.precision_of_f v.node.ty, f) with
+      | F16, F16 f -> f16_k f
+      | F32, F32 f -> f32_k f
+      | F64, F64 f -> f64_k f
+      | F128, F128 f -> f128_k f
+      | _, _ -> failwith "float precision/type mismatch")
   | Bool b -> bool_k b
   | BitVec z ->
       let n = Svalue.size_of v.node.ty in

@@ -1,9 +1,10 @@
 open Hc
 open Soteria_std
+open Floatml
 module Var = Symex.Var
 
 module FloatPrecision = struct
-  type t = F16 | F32 | F64 | F128
+  type t = AnyFloat.precision = F16 | F32 | F64 | F128
   [@@deriving eq, show { with_path = false }, ord]
 
   let size = function F16 -> 16 | F32 -> 32 | F64 -> 64 | F128 -> 128
@@ -195,7 +196,7 @@ let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 type t_kind =
   | Var of Var.t
   | Bool of bool
-  | Float of string
+  | Float of AnyFloat.t
   | Ptr of t * t
   | BitVec of Z.t [@printer Fmt.of_to_string (Z.format "%#x")]
   | Seq of t list
@@ -239,7 +240,7 @@ let rec pp ft t =
   match t.node.kind with
   | Var v -> pf ft "V%a" Var.pp v
   | Bool b -> pf ft "%b" b
-  | Float f -> pf ft "%sf" f
+  | Float f -> pf ft "%af" AnyFloat.pp f
   | BitVec bv ->
       let size = size_of t.node.ty in
       if size mod 4 <> 0 then
@@ -445,7 +446,9 @@ end
 
 module type Float = sig
   (* constructors *)
-  val mk : FloatPrecision.t -> string -> t
+  val mk : FloatPrecision.t -> AnyFloat.t -> t
+  val mk_s : FloatPrecision.t -> string -> t
+  val mk_f : FloatPrecision.t -> float -> t
   val f16 : float -> t
   val f32 : float -> t
   val f64 : float -> t
@@ -2055,17 +2058,16 @@ end
 
 (** {2 Floating point} *)
 and Float : Float = struct
-  let f2str = Stdlib.Float.to_string
-  let str2f = Stdlib.Float.of_string
   let mk fp f = Float f <| t_float fp
-  let mk_f fp f = Float (f2str f) <| t_float fp
-  let like v f = Float (f2str f) <| v.node.ty
+  let mk_s fp s = Float (AnyFloat.of_string fp s) <| t_float fp
+  let mk_f fp f = mk_s fp (Stdlib.Float.to_string f)
 
   let fp_of v =
     match v.node.ty with
     | TFloat fp -> fp
     | _ -> Fmt.failwith "Unsupported float type"
 
+  let like v f = mk_f (fp_of v) f
   let f16 f = mk_f F16 f
   let f32 f = mk_f F32 f
   let f64 f = mk_f F64 f
@@ -2074,7 +2076,7 @@ and Float : Float = struct
   let[@inline] is_floatclass fc =
    fun sv ->
     match sv.node.kind with
-    | Float f -> Bool.bool (FloatClass.as_fpclass fc = classify_float (str2f f))
+    | Float f -> Bool.bool (FloatClass.as_fpclass fc = AnyFloat.fpclass f)
     | _ -> Unop (FIs fc, sv) <| TBool
 
   let is_normal = is_floatclass Normal
@@ -2089,12 +2091,12 @@ and Float : Float = struct
 
   let lt v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | Float f1, Float f2 -> Bool.bool (str2f f1 < str2f f2)
+    | Float f1, Float f2 -> Bool.bool AnyFloat.(f1 < f2)
     | _ -> Binop (FLt, v1, v2) <| TBool
 
   let leq v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | Float f1, Float f2 -> Bool.bool (str2f f1 <= str2f f2)
+    | Float f1, Float f2 -> Bool.bool AnyFloat.(f1 <= f2)
     | _ -> Binop (FLeq, v1, v2) <| TBool
 
   let gt v1 v2 = lt v2 v1
@@ -2112,7 +2114,7 @@ and Float : Float = struct
 
   let neg v =
     let fp = fp_of v in
-    Binop (FSub, mk fp "0.0", v) <| v.node.ty
+    Binop (FSub, mk_f fp 0.0, v) <| v.node.ty
 
   let round rm sv = Unop (FRound rm, sv) <| sv.node.ty
 end

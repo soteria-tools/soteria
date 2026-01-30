@@ -336,7 +336,7 @@ module Make (State : State_intf.S) = struct
                 Fmt_ail.pp_constant c Fmt_ail.pp_ty ty Fmt_ail.pp_loc
                 (get_loc ())
         in
-        let f = Typed.Float.mk precision str in
+        let f = Typed.Float.mk_s precision str in
         Agv.Basic f
     | ConstantInteger ci -> (
         let res_opt =

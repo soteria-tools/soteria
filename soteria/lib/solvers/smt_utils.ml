@@ -1,4 +1,5 @@
 open Simple_smt
+open Floatml
 
 (* Float types and constants *)
 (* Helpful: https://smt-lib.org/theories-FloatingPoint.shtml *)
@@ -33,42 +34,55 @@ let t_f16 = atom "Float16"
 let t_f32 = atom "Float32"
 let t_f64 = atom "Float64"
 let t_f128 = atom "Float128"
+let z_of_bool b = if b then Z.one else Z.zero
+let z_u32 = Z.of_int32_unsigned
+let z_u64 = Z.of_int64_unsigned
 
 let f32_k f =
-  let bin = Int32.bits_of_float f in
+  let bin = F32.to_bits f in
   (* a Float32 has 8 exponent bits, 23 explicit mantissa bits *)
   app_ "fp"
     [
-      bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
+      bv_nat_bin 1 (z_of_bool (Int32.logand bin 0x80000000l <> 0l));
       bv_nat_bin 8
-        (Z.of_int32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
-      bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
+        (z_u32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
+      bv_nat_bin 23 (z_u32 @@ Int32.logand bin 0x7fffffl);
     ]
 
 let f64_k f =
-  let bin = Int64.bits_of_float f in
+  let bin = F64.to_bits f in
   (* a Float64 has 11 exponent bits, 52 mantissa bits, with a 53rd implicit 1 *)
   app_ "fp"
     [
-      bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
+      bv_nat_bin 1 (z_of_bool (Int64.logand bin 0x8000000000000000L <> 0L));
       bv_nat_bin 11
-        (Z.of_int64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
-      bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
+        (z_u64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
+      bv_nat_bin 52 (z_u64 @@ Int64.logand bin 0xfffffffffffffL);
     ]
 
 let f128_k f =
-  (* a Float128 has 15 exponent bits, 112 explicit mantissa bits *)
-  (* we let Z3 handle the conversion *)
-  let f64 = f64_k f in
-  let fam = ifam "to_fp" (float_shape 128) in
-  app fam [ rm; f64 ]
+  let lo, hi = F128.to_bits f in
+  (* a Float128 has 15 exponent bits, 112 mantissa bits, with a 113th implicit 1 *)
+  app_ "fp"
+    [
+      bv_nat_bin 1 (z_of_bool (Int64.logand hi 0x8000000000000000L <> 0L));
+      bv_nat_bin 15
+        (z_u64 @@ Int64.logand 0x7fffL @@ Int64.shift_right_logical hi 48);
+      bv_nat_bin 112
+        (Z.logor
+           (Z.shift_left (z_u64 @@ Int64.logand hi 0xffffffffffffL) 64)
+           (z_u64 lo));
+    ]
 
 let f16_k f =
-  (* a Float16 has 5 exponent bits, 10 explicit mantissa bits *)
-  (* we let Z3 handle the conversion *)
-  let f32 = f32_k f in
-  let fam = ifam "to_fp" (float_shape 16) in
-  app fam [ rm; f32 ]
+  let bin : int = F16.to_bits f in
+  (* a Float16 has 5 exponent bits, 10 mantissa bits, with an 11th implicit 1 *)
+  app_ "fp"
+    [
+      bv_nat_bin 1 (z_of_bool (bin land 0x8000 <> 0));
+      bv_nat_bin 5 (Z.of_int ((bin land 0x7c00) lsr 10));
+      bv_nat_bin 10 (Z.of_int (bin land 0x03ff));
+    ]
 
 (* Float ops *)
 
