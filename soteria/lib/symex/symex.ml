@@ -25,12 +25,14 @@ module Or_gave_up = struct
     | Gave_up reason -> raise (Gave_up reason)
 end
 
-module type Base = sig
+module type Core = sig
   module Value : Value.S
 
   (** Represents a yet-to-be-executed symbolic process which terminates with a
       value of type ['a]. *)
   type 'a t
+
+  include Monad.Base with type 'a t := 'a t
 
   (** Type of error that corresponds to a logical failure (i.e. a logical
       mismatch during consumption).
@@ -115,6 +117,20 @@ module type Base = sig
     else_:(unit -> 'a t) ->
     'a t
 
+  (** Gives up on this path of execution for incompleteness reason. For
+      instance, if a give feature is unsupported. *)
+  val give_up : string -> 'a t
+
+  val branches : (unit -> 'a t) list -> 'a t
+
+  (** {2 Fuel} *)
+
+  val consume_fuel_steps : int -> unit t
+end
+
+module type Base = sig
+  include Core
+
   (** [assert_or_error guard err] asserts [guard] is true, and otherwise returns
       [Compo_res.Error err]. Biased towards the assertion being [false] to
       reduce SAT-checks.
@@ -125,19 +141,8 @@ module type Base = sig
           ~then_:(fun () -> return (Compo_res.error err))
           ~else_:(fun () -> return (Compo_res.ok ()))
       ]} *)
-  val assert_or_error : sbool v -> 'err -> (unit, 'err, 'f) Compo_res.t t
-
-  val branches : (unit -> 'a t) list -> 'a t
-
-  (** {2 Fuel} *)
-
-  val consume_fuel_steps : int -> unit t
-
-  include Monad.Base with type 'a t := 'a t
-
-  (** Gives up on this path of execution for incompleteness reason. For
-      instance, if a give feature is unsupported. *)
-  val give_up : string -> 'a t
+  val assert_or_error :
+    Value.(sbool t) -> 'err -> (unit, 'err, 'f) Compo_res.t t
 
   (** If the given option is None, gives up execution, otherwise continues,
       unwrapping the option. *)
@@ -365,8 +370,7 @@ module StatKeys = struct
         default_printer)
 end
 
-module Make (Sol : Solver.Mutable_incremental) :
-  S with module Value = Sol.Value = struct
+module Make_core (Sol : Solver.Mutable_incremental) = struct
   module Solver = struct
     include Solver.Mutable_to_pooled (Sol)
 
@@ -576,12 +580,6 @@ module Make (Sol : Solver.Mutable_incremental) :
         ~else_ f
     else branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ f
 
-  let assert_or_error guard err =
-    branch_on
-      Value.(not guard)
-      ~then_:(fun () -> return (Compo_res.Error err))
-      ~else_:(fun () -> return (Compo_res.Ok ()))
-
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
     let brs = Fuel.take_branches brs in
@@ -618,6 +616,76 @@ module Make (Sol : Solver.Mutable_incremental) :
         (with_section @@ fun () -> a () f);
         loop r
 
+  let vanish () _f = ()
+
+  let give_up reason _f =
+    (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
+    L.info (fun m -> m "%s" reason);
+    Stats.As_ctx.push_str StatKeys.give_up_reasons reason;
+    if
+      Approx.As_ctx.is_ox ()
+      && Solver_result.admissible ~mode:OX (Solver.sat ())
+    then Give_up.perform reason
+end
+
+module Base_extension (Core : Core) = struct
+  open Core
+
+  let assert_or_error guard err =
+    branch_on
+      Value.(not guard)
+      ~then_:(fun () -> return (Compo_res.Error err))
+      ~else_:(fun () -> return (Compo_res.Ok ()))
+
+  let all fn xs = Monad.all ~bind ~return fn xs
+
+  let some_or_give_up reason = function
+    | Some x -> return x
+    | None -> give_up reason
+
+  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
+  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
+  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
+  let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+
+  module Result = struct
+    include Compo_res.T (Core)
+
+    let miss_no_fix ~reason () =
+      bind (ok ()) @@ fun () ->
+      Stats.As_ctx.push_str StatKeys.miss_without_fix reason;
+      L.debug (fun m -> m "Missing without fix: %s" reason);
+      miss []
+
+    let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
+    let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
+    let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
+    let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+  end
+
+  module Syntax = struct
+    let ( let* ) = bind
+    let ( let+ ) = map
+    let ( let** ) = Result.bind
+    let ( let++ ) = Result.map
+    let ( let+- ) = Result.map_error
+    let ( let+? ) = Result.map_missing
+
+    module Symex_syntax = struct
+      let branch_on = branch_on
+      let branch_on_take_one = branch_on_take_one
+      let if_sure = if_sure
+    end
+  end
+end
+
+module Make (Sol : Solver.Mutable_incremental) :
+  S with module Value = Sol.Value = struct
+  (* TODO: CORE this can go away when `include functors` land (https://github.com/ocaml/ocaml/pull/14177) *)
+  module CORE = Make_core (Sol)
+  include CORE
+  include Base_extension (CORE)
+
   let run_needs_stats_iter ?(fuel = Fuel_gauge.infinite) ~mode iter :
       ('a * Value.(sbool t) list) Iter.t =
    fun continue ->
@@ -639,29 +707,8 @@ module Make (Sol : Solver.Mutable_incremental) :
     let@ () = Stats.As_ctx.with_stats () in
     run_needs_stats ?fuel ~mode iter
 
-  let vanish () _f = ()
-  let all fn xs = Monad.all ~bind ~return fn xs
-
-  let give_up reason _f =
-    (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
-    L.info (fun m -> m "%s" reason);
-    Stats.As_ctx.push_str StatKeys.give_up_reasons reason;
-    if
-      Approx.As_ctx.is_ox ()
-      && Solver_result.admissible ~mode:OX (Solver.sat ())
-    then Give_up.perform reason
-
-  let some_or_give_up reason = function
-    | Some x -> return x
-    | None -> give_up reason
-
-  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
-  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
-  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
-  let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
-
   module Result = struct
-    include Compo_res.T (MONAD)
+    include Result
 
     let run_needs_stats ?(fuel = Fuel_gauge.infinite) ?(fail_fast = false) ~mode
         iter =
@@ -694,32 +741,6 @@ module Make (Sol : Solver.Mutable_incremental) :
     let run_with_stats ?fuel ?fail_fast ~mode iter =
       let@ () = Stats.As_ctx.with_stats () in
       run_needs_stats ?fuel ?fail_fast ~mode iter
-
-    let miss_no_fix ~reason () =
-      bind (ok ()) @@ fun () ->
-      Stats.As_ctx.push_str StatKeys.miss_without_fix reason;
-      L.debug (fun m -> m "Missing without fix: %s" reason);
-      miss []
-
-    let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
-    let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
-    let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
-    let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
-  end
-
-  module Syntax = struct
-    let ( let* ) = bind
-    let ( let+ ) = map
-    let ( let** ) = Result.bind
-    let ( let++ ) = Result.map
-    let ( let+- ) = Result.map_error
-    let ( let+? ) = Result.map_missing
-
-    module Symex_syntax = struct
-      let branch_on = branch_on
-      let branch_on_take_one = branch_on_take_one
-      let if_sure = if_sure
-    end
   end
 end
 
