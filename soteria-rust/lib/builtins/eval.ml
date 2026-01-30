@@ -21,7 +21,8 @@ type rusteria_fn = Assert | Assume | NondetBytes | Panic
 (* Miri builtin functions *)
 type miri_fn = AllocId | PromiseAlignement | Nop
 
-(* Functions related to the allocator, see https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
+(* Functions related to the allocator, see
+   https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
 type alloc_fn =
   | Alloc of { zeroed : bool }
   | Dealloc
@@ -55,7 +56,8 @@ let std_fun_pair_list =
     ("miristd::miri_pointer_name", Miri Nop);
     ("miristd::miri_print_borrow_state", Miri Nop);
     ("std::intrinsics::miri_promise_symbolic_alignment", Miri PromiseAlignement);
-    (* Obol is quite bad at parsing names so this is how they're called there... *)
+    (* Obol is quite bad at parsing names so this is how they're called
+       there... *)
     ("utils::miri_extern::miri_get_alloc_id", Miri AllocId);
     ("utils::miri_extern::miri_pointer_name", Miri Nop);
     ("utils::miri_extern::miri_print_borrow_state", Miri Nop);
@@ -78,9 +80,10 @@ let std_fun_pair_list =
     ("core::ptr::drop_in_place", DropInPlace);
     (* Core *)
     ("std::alloc::Global::alloc_impl", Optim AllocImpl);
-    (* FIXME(OCaml): all float operations could be removed, but we lack bit precision when
-       getting the const floats from Rust, meaning these don't really work. Either way,
-       performance wise it is much preferable to override these and use SMTLib builtins. *)
+    (* FIXME(OCaml): all float operations could be removed, but we lack bit
+       precision when getting the const floats from Rust, meaning these don't
+       really work. Either way, performance wise it is much preferable to
+       override these and use SMTLib builtins. *)
     ("core::f16::_::is_finite", Optim FloatIsFinite);
     ("core::f16::_::is_infinite", Optim (FloatIs Infinite));
     ("core::f16::_::is_nan", Optim (FloatIs NaN));
@@ -109,8 +112,8 @@ let std_fun_pair_list =
     ("core::f128::_::is_sign_negative", Optim (FloatIsSign { positive = false }));
     ("core::f128::_::is_sign_positive", Optim (FloatIsSign { positive = true }));
     ("core::f128::_::is_subnormal", Optim (FloatIs Subnormal));
-    (* Compiling these would import a lot of formatting code, so we
-       override them *)
+    (* Compiling these would import a lot of formatting code, so we override
+       them *)
     ("alloc::raw_vec::handle_error", Optim Panic);
     ("core::panicking::panic", Optim Panic);
     ("core::panicking::panic_fmt", Optim Panic);
@@ -170,14 +173,11 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     | DropInPlace -> nop
 
   let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =
-    (* Rust allows defining functions and marking them as intrinsics within a module,
-       and the compiler will treat them as the intrinsic of the same name; e.g.
-       mod Foo {
-        #[rustc_intrinsic]
-        unsafe fn copy_nonoverlapping<T>(src: *const T, dst: *mut T, count: usize);
-       }
-       This means their path doesn't match the one we expect for the patterns; so instead of
-       matching on a path, we only consider intrinsics from their name. *)
+    (* Rust allows defining functions and marking them as intrinsics within a
+       module, and the compiler will treat them as the intrinsic of the same
+       name. This means their path doesn't match the one we expect for the
+       patterns; so instead of matching on a path, we only consider intrinsics
+       from their name. *)
     if Charon_util.decl_has_attr f "rustc_intrinsic" then
       let name, generics =
         match List.rev f.item_meta.name with

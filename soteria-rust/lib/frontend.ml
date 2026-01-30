@@ -52,8 +52,8 @@ module Exe = struct
         (if !out_open then [ out_fd ] else [])
         @ if !err_open then [ err_fd ] else []
       in
-      (* Wait until one of the file descriptor is ready to be read.
-         Note: the -1.0 means that there is no timeout, we wait as long as needed.*)
+      (* Wait until one of the file descriptor is ready to be read. Note: the
+         -1.0 means that there is no timeout, we wait as long as needed.*)
       let ready, _, _ = Unix.select fd_to_read [] [] (-1.0) in
       List.iter
         (fun fd ->
@@ -193,10 +193,10 @@ module Cmd = struct
     in
     match mode with
     | Rustc ->
-        (* If these arguments are passed to the command line, we need to quote them
-           appropriately (since crate-attr) has parenthesis. We don't need to do this for
-           Cargo since they go in the environment, and adding quotes there would make
-           them wrong! This is lovely!  *)
+        (* If these arguments are passed to the command line, we need to quote
+           them appropriately (since crate-attr) has parenthesis. We don't need
+           to do this for Cargo since they go in the environment, and adding
+           quotes there would make them wrong! This is lovely! *)
         let rustc =
           List.map
             (fun arg ->

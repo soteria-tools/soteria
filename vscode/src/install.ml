@@ -12,8 +12,8 @@ let url =
     match !computed with
     | Some url -> url
     | None ->
-        (* We might have a complex computation involving github requests at some point.
-           We only do it the first time. *)
+        (* We might have a complex computation involving github requests at some
+           point. We only do it the first time. *)
         let url =
           "https://www.doc.ic.ac.uk/~sja3417/artifact/"
           ^ archive_name ()

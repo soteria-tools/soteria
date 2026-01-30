@@ -139,14 +139,16 @@ struct
   (* Initialise and reset *)
 
   let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the declarations *)
+    (* We want to go back to 1, meaning after the first push which saved the
+       declarations *)
     let save_counter = !(solver.save_counter) in
     if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
     Save_counter.reset solver.save_counter;
     Var_counter.reset solver.var_counter;
     Solver_state.reset solver.state;
     Analysis.reset solver.analysis;
-    (* We need to pop the initial push, so we go back to the state before the first push *)
+    (* We need to pop the initial push, so we go back to the state before the
+       first push *)
     Intf.pop solver.z3_exe (save_counter + 1);
     (* Make sure the basic definitions are saved again *)
     Intf.pop solver.z3_exe 1
@@ -224,7 +226,8 @@ struct
     type slot = { value : slot_content; mutable checked : bool }
     [@@deriving show]
 
-    (* Invariants: the PC only has checked things, and then only unchecked things. *)
+    (* Invariants: the PC only has checked things, and then only unchecked
+       things. *)
 
     type t = slot Dynarray.t Dynarray.t [@@deriving show]
 
@@ -248,7 +251,8 @@ struct
         | Some last ->
             if Typed.equal v Typed.v_false then (
               Dynarray.clear last;
-              (* We mark false as unchecked to make sure trivial_truthiness doesn't infer the wrong thing. *)
+              (* We mark false as unchecked to make sure trivial_truthiness
+                 doesn't infer the wrong thing. *)
               Dynarray.add_last last
                 { value = Asrt Typed.v_false; checked = false })
             else Dynarray.add_last last { value = Asrt v; checked = false }
@@ -402,7 +406,8 @@ struct
   (* Initialise and reset *)
 
   let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the declarations *)
+    (* We want to go back to 1, meaning after the first push which saved the
+       declarations *)
     let save_counter = !(solver.save_counter) in
     if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
     Save_counter.reset solver.save_counter;
@@ -442,8 +447,8 @@ struct
           let max = Z.(shift_left one n) in
           fun () -> Svalue.BitVec.mk n (Z.random_int max)
       | TBool -> fun () -> Svalue.Bool.bool (Random.bool ())
-      (* TODO: because we can't evaluate floats, we can never do a
-         trivial check for them. *)
+      (* TODO: because we can't evaluate floats, we can never do a trivial check
+         for them. *)
       | TFloat _ -> raise No_model
       (* TODO: figure this out *)
       | TPointer _ | TSeq _ -> raise No_model
@@ -513,7 +518,8 @@ struct
         let to_check, relevant_vars =
           Solver_state.unchecked_constraints solver.state
         in
-        (* This will put the check in a somewhat-normal form, to increase cache hits. *)
+        (* This will put the check in a somewhat-normal form, to increase cache
+           hits. *)
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let to_check =
           Iter.fold Typed.and_ to_check

@@ -183,7 +183,8 @@ module M (State : State_intf.S) = struct
         let* c2, _ = Typed.cast_int c2 |> of_opt_not_impl ~msg:"strcmp c2" in
         let c1 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c1 in
         let c2 = BV.fit_to ~signed:true (Layout.c_int_size * 8) c2 in
-        (* This cannot overflow because they were chars and operation happens in integer world *)
+        (* This cannot overflow because they were chars and operation happens in
+           integer world *)
         let res = c1 -!@ c2 in
         Result.ok (Basic res)
     in
@@ -269,9 +270,9 @@ module M (State : State_intf.S) = struct
       | Some f -> List.filteri (fun i _ -> f i) args
   end
 
-  (* FIXME: make this more global when concurrency is added.
-     Also, it cannot be made local to the function without heavy type annotation
-    because of non-generalisable type vars. *)
+  (* FIXME: make this more global when concurrency is added. Also, it cannot be
+     made local to the function without heavy type annotation because of
+     non-generalisable type vars. *)
   let signaled_cbmc = ref false
 
   let with_cbmc_support x =
@@ -315,13 +316,15 @@ module M (State : State_intf.S) = struct
         | "free" -> Some (free, None)
         | "memcpy" -> Some (memcpy, None)
         | "memmove" ->
-            (* We model memmove as memcpy, we should do non-overlapping checks but heh. *)
+            (* We model memmove as memcpy, we should do non-overlapping checks
+               but heh. *)
             Some (memcpy, None)
         | "strcmp" -> Some (strcmp, None)
         | "memset" -> Some (memset, None)
         | "__builtin___memset_chk" -> Some (memset, Some (( <> ) 3))
         | "__builtin___memcpy_chk" ->
-            (* See definition of this builtin, the last argument is not useful to us. *)
+            (* See definition of this builtin, the last argument is not useful
+               to us. *)
             Some (memcpy, Some (( <> ) 3))
         | "__soteria___nondet_int" ->
             Some (nondet (Basic (Integer (Signed Int_))), None)
@@ -349,8 +352,8 @@ module M (State : State_intf.S) = struct
             with_testcomp_support
               (nondet (Basic (Integer (Unsigned (IntN_t 128)))), None)
         (* | "__VERIFIER_nondet_charp" ->
-            with_testcomp_support 
-              (nondet (Basic (Typed.TPointer Typed.t_char)), None) *)
+         *     with_testcomp_support
+         *       (nondet (Basic (Typed.TPointer Typed.t_char)), None) *)
         | "__VERIFIER_nondet_long" ->
             with_testcomp_support (nondet (Basic (Integer (Signed Long))), None)
         | "__VERIFIER_nondet_ulong" ->
@@ -372,7 +375,8 @@ module M (State : State_intf.S) = struct
         | "__assert_fail" -> with_testcomp_support (assert_fail, None)
         | "abort" | "exit" -> with_testcomp_support (vanish_fn, None)
         | "__CPROVER_assert" ->
-            (* CPROVER_assert receives two arguments, we don't care about the second one for now. *)
+            (* CPROVER_assert receives two arguments, we don't care about the
+               second one for now. *)
             with_cbmc_support (assert_, Some (( == ) 0))
         | "__CPROVER_assume" -> with_cbmc_support (assume_, None)
         | _ -> None)

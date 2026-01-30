@@ -28,11 +28,10 @@ module StateKey = struct
     return (Ptr.loc_of_int !i)
 
   let distinct _ = v_true
-  let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
   let simplify = DecayMapMonad.simplify
-
+  let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
   (* The above only works in WPST -- otherwise, use:
-  let fresh () = nondet (Typed.t_sloc ()) *)
+   * let fresh () = nondet (Typed.t_sloc ()) *)
 end
 
 module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
@@ -402,7 +401,7 @@ let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
   Block.with_tree_block @@ Tree_block.uninit_range ofs size
 
 let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
-  (* The expected alignment of a dyn pointer is stored inside the VTable  *)
+  (* The expected alignment of a dyn pointer is stored inside the VTable *)
   let** exp_align =
     match (ty, meta) with
     | TDynTrait _, VTable vt ->
@@ -442,12 +441,12 @@ and load_discriminant ((ptr, _) as fptr) ty =
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns [Some error] if an error occurred, and [None]
     otherwise *)
-(* We can't return a [Rustsymex.Result.t] here, because it's used in [load] which
-   expects a [Tree_block.serialized_atom list] for the [Missing] case, while the
-   external signature expects a [serialized].
-   This could be fixed by lifting all misses individually inside [handler] and
-   [get_all] in [apply_parser], but that's kind of a mess to change and not really
-   worth it I believe; I don't think these misses matter at all (TBD). *)
+(* We can't return a [Rustsymex.Result.t] here, because it's used in [load]
+   which expects a [Tree_block.serialized_atom list] for the [Missing] case,
+   while the external signature expects a [serialized]. This could be fixed by
+   lifting all misses individually inside [handler] and [get_all] in
+   [apply_parser], but that's kind of a mess to change and not really worth it I
+   believe; I don't think these misses matter at all (TBD). *)
 and fake_read ((_, meta) as ptr) ty =
   let open Syntax in
   let is_uncheckable_dst =
@@ -510,9 +509,9 @@ let store ((ptr, _) as fptr) ty sval :
   else
     let** () = check_ptr_align fptr ty in
     (* L.debug (fun f ->
-        f "Parsed to parts [%a]"
-          Fmt.(list ~sep:comma Encoder.pp_cval_info)
-          parts); *)
+     *   f "Parsed to parts [%a]"
+     *     Fmt.(list ~sep:comma Encoder.pp_cval_info)
+     *     parts); *)
     let@ () = with_error_loc_as_call_trace () in
     let@ () = with_loc_err () in
     let* () = log "store" ptr in
@@ -521,12 +520,10 @@ let store ((ptr, _) as fptr) ty sval :
     Block.with_tree_block_read_tb (fun tb ->
         let open Tree_block.SM in
         let open Tree_block.SM.Syntax in
-        (* We uninitialise the whole range before writing, to ensure padding bytes are copied if
-           there are any. *)
+        (* We uninitialise the whole range before writing, to ensure padding
+           bytes are copied if there are any. *)
         let** () = Tree_block.uninit_range ofs size in
         Result.fold_iter parts ~init:() ~f:(fun () (value, offset) ->
-            (* L.warn (fun f ->
-            f "Storing part %a: %a" Typed.ppa offset (pp_rust_val Sptr.pp) value); *)
             Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
@@ -544,11 +541,12 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
   Block.with_tree_block
     (let open Tree_block.SM in
      let open Tree_block.SM.Syntax in
-     (* We need to be careful about tree borrows; the tree we copy has a tree borrow state inside,
-     but we cannot copy that, since those tags don't belong to this allocation!
-     Instead, we must first get the tree borrow states for the original area of memory,
-     and update the copied tree with them.
-     We only want to update the values in the tree, not the tree borrow state. *)
+     (* We need to be careful about tree borrows; the tree we copy has a tree
+        borrow state inside, but we cannot copy that, since those tags don't
+        belong to this allocation! Instead, we must first get the tree borrow
+        states for the original area of memory, and update the copied tree with
+        them. We only want to update the values in the tree, not the tree borrow
+        state. *)
      let module Tree = Tree_block.Tree in
      let** original_tree =
        let* state = get_state () in
@@ -581,8 +579,8 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
        try DecayMapMonad.Result.ok (aux tb t)
        with Failure msg -> DecayMapMonad.lift @@ not_impl msg
      in
-     (* Applies all the tree borrow ranges to the tree we're writing, overwriting all
-     previous states. *)
+     (* Applies all the tree borrow ranges to the tree we're writing,
+        overwriting all previous states. *)
      let** tree_to_write =
        lift
        @@ DecayMapMonad.Result.fold_iter collect_tb_states ~init:tree_to_write

@@ -446,7 +446,7 @@ struct
     let[@inline] apply_attributes v attrs = lift_err (apply_attributes v attrs)
 
     (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
-        without having to re-define. *)
+       without having to re-define. *)
     let update_ref_tys_in
         ~(f :
            'acc ->
@@ -457,7 +457,8 @@ struct
         (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
      fun env state ->
       let open Rustsymex.Syntax in
-      (* The inner function operates in Rustsymex.Result.t, carrying (acc, env, state) as accumulator *)
+      (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
+         state) as accumulator *)
       let f_inner (acc, env, state) ptr ty rk =
         let+ (res, new_env), new_state = f acc ptr ty rk env state in
         Compo_res.map res (fun (ptr, acc) -> (ptr, (acc, new_env, new_state)))

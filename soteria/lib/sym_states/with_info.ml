@@ -10,7 +10,8 @@ module Make
     end)
     (B : Base.M(Symex).S) =
 struct
-  (* TODO: this could probably all be generated using a deriver, instead of having a module in the library *)
+  (* TODO: this could probably all be generated using a deriver, instead of
+     having a module in the library *)
 
   type ('a, 'info) with_info = { node : 'a; info : 'info option }
   [@@deriving show { with_path = false }]
@@ -63,12 +64,12 @@ struct
     SM.set_state (lift ~info node)
 
   (* let consume consume_inner serialized t =
-    let node, info = of_opt t in
-    let+ res = consume_inner serialized.node node in
-    match res with
-    | Compo_res.Ok (Some node) -> Compo_res.Ok (Some { node; info })
-    | Ok None -> Ok None
-    | Error e -> Error e
-    | Missing fixes ->
-        Missing (List.map (fun fix -> { node = fix; info }) fixes) *)
+   *   let node, info = of_opt t in
+   *   let+ res = consume_inner serialized.node node in
+   *   match res with
+   *   | Compo_res.Ok (Some node) -> Compo_res.Ok (Some { node; info })
+   *   | Ok None -> Ok None
+   *   | Error e -> Error e
+   *   | Missing fixes ->
+   *       Missing (List.map (fun fix -> { node = fix; info }) fixes) *)
 end

@@ -201,7 +201,8 @@ module Make (State : State_intf.S) = struct
         match ptr_opt with
         | Some v -> ok (Ptr v)
         | None ->
-            (* We "cheat" and model strings as an array of chars, with &str a slice *)
+            (* We "cheat" and model strings as an array of chars, with &str a
+               slice *)
             let len = String.length str in
             let chars =
               String.to_bytes str
@@ -219,7 +220,8 @@ module Make (State : State_intf.S) = struct
             Ptr ptr)
     | CFnDef _ -> ok (Tuple [])
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
-    (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
+    (* FIXME: this is hacky, but until we get proper monomorphisation this isn't
+       too bad *)
     | CTraitConst (tref, name) -> (
         let* tref = Poly.subst_tref tref in
         match tref.kind with
@@ -272,7 +274,8 @@ module Make (State : State_intf.S) = struct
           | Some (p, from_, ofs) ->
               `Ptr (p, from_, List.length bytes - ofs, ofs) :: blocks
         in
-        (* Map the smaller blocks to actual rust values, ie. pointers or integers *)
+        (* Map the smaller blocks to actual rust values, ie. pointers or
+           integers *)
         let ptr_size = Crate.pointer_size () in
         let ptr_of_provenance : Types.provenance -> full_ptr t = function
           | Global g -> resolve_global g
@@ -448,8 +451,8 @@ module Make (State : State_intf.S) = struct
               (`InvalidFnArgCount
                  (List.length in_tys, List.length fn.signature.inputs))
       in
-      (* a bit hacky, but we don't want to compare the dyn parameter with
-             the expected input; the mismatch is intended here. *)
+      (* a bit hacky, but we don't want to compare the dyn parameter with the
+         expected input; the mismatch is intended here. *)
       let in_tys, sig_ins =
         if is_dyn then (List.tl in_tys, List.tl fn.signature.inputs)
         else (in_tys, fn.signature.inputs)
@@ -476,11 +479,13 @@ module Make (State : State_intf.S) = struct
     (* Handle builtins separately *)
     | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics, in_tys)
-    (* For static calls we don't need to check types, that's what the type checker does. *)
+    (* For static calls we don't need to check types, that's what the type
+       checker does. *)
     | FnOpRegular fn_ptr ->
         let* fn = resolve_fn_ptr fn_ptr in
         perform_call fn
-    (* Here we need to check the type of the actual function, as it could have been cast. *)
+    (* Here we need to check the type of the actual function, as it could have
+       been cast. *)
     | FnOpDynamic op ->
         let* fn_ptr = eval_operand op in
         let fn_ptr = as_ptr fn_ptr in
@@ -497,13 +502,14 @@ module Make (State : State_intf.S) = struct
     match v_opt with
     | Some v -> ok v
     | None ->
-        (* Same as with strings -- here we need to somehow cache where we store the globals *)
+        (* Same as with strings -- here we need to somehow cache where we store
+           the globals *)
         let fundef = Crate.get_fun decl.init in
         L.info (fun g ->
             g "Resolved global init call to %a" Crate.pp_name
               fundef.item_meta.name);
         let global_fn = Std_funs.std_fun_eval fundef glob.generics exec_fun in
-        (* First we allocate the global and store it in the State  *)
+        (* First we allocate the global and store it in the State *)
         let* ptr =
           State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
             decl.ty
@@ -521,8 +527,9 @@ module Make (State : State_intf.S) = struct
     match op with
     | Constant c -> resolve_constant c
     | Move loc | Copy loc ->
-        (* I don't think the operand being [Move] matters at all, aside from function calls.
-           See: https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
+        (* I don't think the operand being [Move] matters at all, aside from
+           function calls. See:
+           https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
         let* layout = Layout.layout_of loc.ty in
         if layout.uninhabited then error `RefToUninhabited
         else
@@ -708,8 +715,8 @@ module Make (State : State_intf.S) = struct
                 let ty = TypesUtils.ty_as_literal ty in
                 ok (Core.cmp ~signed:(Layout.is_signed ty) v1 v2)
             | Offset ->
-                (* non-zero offset on integer pointer is not permitted, as these are always
-                   dangling *)
+                (* non-zero offset on integer pointer is not permitted, as these
+                   are always dangling *)
                 let v2 = Typed.cast_i Usize v2 in
                 let ty = Charon_util.get_pointee (type_of_operand e1) in
                 let* size = Layout.size_of ty in
@@ -769,12 +776,14 @@ module Make (State : State_intf.S) = struct
         match op with
         | UbChecks ->
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
-               Our execution already checks for UB, so we should return
-               false, to indicate runtime UB checks aren't needed. *)
+               Our execution already checks for UB, so we should return false,
+               to indicate runtime UB checks aren't needed. *)
             ok (Int (BV.of_bool Typed.v_false))
         | OverflowChecks ->
-            (* See https://doc.rust-lang.org/nightly/std/intrinsics/fn.overflow_checks.html
-               Our execution already checks for overflows, so we don't need them at runtime. *)
+            (* See
+               https://doc.rust-lang.org/nightly/std/intrinsics/fn.overflow_checks.html
+               Our execution already checks for overflows, so we don't need them
+               at runtime. *)
             ok (Int (BV.of_bool Typed.v_false))
         | ContractChecks ->
             (* For now we don't do contracts. *)
@@ -866,7 +875,8 @@ module Make (State : State_intf.S) = struct
               Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
                 pp_rust_val ptr
         in
-        (* we flatten the meta, to simplify processing stuff like [std::ptr::DynMetadata] *)
+        (* we flatten the meta, to simplify processing stuff like
+           [std::ptr::DynMetadata] *)
         let+ meta =
           match Rust_val.flatten meta with
           | [] -> ok Thin
@@ -973,8 +983,8 @@ module Make (State : State_intf.S) = struct
         let* exec_fun, exp_tys =
           resolve_function ~in_tys ~out_ty:dest.ty func
         in
-        (* the expected types of the function may differ to those passed, e.g. with
-           function pointers or dyn calls, so we transmute here. *)
+        (* the expected types of the function may differ to those passed, e.g.
+           with function pointers or dyn calls, so we transmute here. *)
         let* args =
           fold_list (List.combine3 args in_tys exp_tys) ~init:[]
             ~f:(fun acc (arg, from_ty, to_ty) ->
@@ -1074,8 +1084,8 @@ module Make (State : State_intf.S) = struct
     | Drop (drop_kind, place, trait_ref, target, on_unwind) -> (
         assert (drop_kind = Precise);
         let* place_ptr = resolve_place place in
-        (* Try to find a drop function that exists; it may be opaque if the
-           drop contains polymorphic types. *)
+        (* Try to find a drop function that exists; it may be opaque if the drop
+           contains polymorphic types. *)
         let drop_fn : Fun_kind.t option =
           match trait_ref.kind with
           | TraitImpl impl_ref ->

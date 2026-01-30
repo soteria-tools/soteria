@@ -76,16 +76,17 @@ struct
     type query = Types.ty * T.sint Typed.t
     type 'a res = ('a, Error.t, fix) SM.Result.t
 
-    (* size * offset  *)
+    (* size * offset *)
     type get_all_query = T.nonzero Typed.t * T.sint Typed.t
 
-    (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t
-         where StateResult = StateT (Result), but I need StateT1of3 urgh. *)
+    (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t where
+       StateResult = StateT (Result), but I need StateT1of3 urgh. *)
     type handler = query -> rust_val res
     type get_all_handler = get_all_query -> (rust_val * T.sint Typed.t) list res
 
-    (* A parser monad is an object such that, given a query handler with state ['state],
-      returns a state monad-ish for that state which may fail or branch *)
+    (* A parser monad is an object such that, given a query handler with state
+       ['state], returns a state monad-ish for that state which may fail or
+       branch *)
     type 'a t = handler -> get_all_handler -> 'a res
 
     let parse ~(handler : handler) ~(get_all : get_all_handler) scheduler :
@@ -214,9 +215,9 @@ struct
           (* FIXME: this isn't exactly correct; union actually doesn't copy the
              padding bytes (i.e. the intersection of the padding bytes of all
              fields). It is quite painful to actually calculate these padding
-             bytes so we just copy the whole thing for now.
-             See https://github.com/rust-lang/unsafe-code-guidelines/issues/518
-             And a proper implementation is here:
+             bytes so we just copy the whole thing for now. See
+             https://github.com/rust-lang/unsafe-code-guidelines/issues/518 And
+             a proper implementation is here:
              https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
           let+ blocks = get_all (Typed.cast layout.size, offset) in
           Union blocks
@@ -392,8 +393,8 @@ module Encoder (Sptr : Sptr.S) = struct
     | TFloat _, _ | _, TFloat _ ->
         Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_literal_ty
           from_ty pp_literal_ty to_ty
-    (* here we know we're only handling scalars: bool, char, or int/uint, so we can just
-       resize the value as needed! *)
+    (* here we know we're only handling scalars: bool, char, or int/uint, so we
+       can just resize the value as needed! *)
     | _ ->
         let from_bits = 8 * Layout.size_of_literal_ty from_ty in
         let from_signed = Layout.is_signed from_ty in
@@ -419,7 +420,8 @@ module Encoder (Sptr : Sptr.S) = struct
     let size = Svalue.FloatPrecision.size fp in
     let* bv = nondet (Typed.t_int size) in
     let bv_f = BV.to_float_raw bv in
-    (* here we use structural equality rather than float equality; this is intended. *)
+    (* here we use structural equality rather than float equality; this is
+       intended. *)
     let+ () = assume [ bv_f ==@ f ] in
     bv
 
@@ -590,9 +592,10 @@ module Encoder (Sptr : Sptr.S) = struct
             | None -> [])
         | None -> [])
     | Union _, TAdt { id = TAdtId _; _ } ->
-        (* FIXME: figure out if references inside unions get reborrowed. They could, but I
-           suspect they don't because there's no guarantee the reference isn't some other field,
-           e.g. in [union { a: &u8, b: &u16 }]  *)
+        (* FIXME: figure out if references inside unions get reborrowed. They
+           could, but I suspect they don't because there's no guarantee the
+           reference isn't some other field, e.g. in [union { a: &u8, b: &u16
+           }] *)
         []
     | _ -> []
 
@@ -647,9 +650,10 @@ module Encoder (Sptr : Sptr.S) = struct
             (Enum (d, vs), acc)
         | None -> Result.ok (v, init))
     | (Union _ as v), TAdt { id = TAdtId _; _ } ->
-        (* FIXME: figure out if references inside unions get reborrowed. They could, but I
-           suspect they don't because there's no guarantee the reference isn't some other field,
-           e.g. in [union { a: &u8, b: &u16 }]  *)
+        (* FIXME: figure out if references inside unions get reborrowed. They
+           could, but I suspect they don't because there's no guarantee the
+           reference isn't some other field, e.g. in [union { a: &u8, b: &u16
+           }] *)
         Result.ok (v, init)
     | v, _ -> Result.ok (v, init)
 end

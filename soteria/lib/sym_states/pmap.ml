@@ -141,23 +141,23 @@ module Build_from_find_opt_sym
     SM.set_state (to_opt st)
 
   (* let consume
-      (cons :
-        'inner_serialized ->
-        'inner_st option ->
-        ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
-      (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-      ( 'inner_st t option,
-        [> Symex.lfail ],
-        'inner_serialized serialized )
-      Symex.Result.t =
-    let st = of_opt st in
-    let++ st =
-      Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
-          let* key, codom = Find_opt_sym.f key st in
-          let++ codom = cons inner_ser codom |> lift_fix_s ~key in
-          add_opt key codom st)
-    in
-    to_opt st *)
+   *    (cons :
+   *      'inner_serialized ->
+   *      'inner_st option ->
+   *      ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
+   *    (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
+   *    ( 'inner_st t option,
+   *      [> Symex.lfail ],
+   *      'inner_serialized serialized )
+   *    Symex.Result.t =
+   *  let st = of_opt st in
+   *  let++ st =
+   *    Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
+   *        let* key, codom = Find_opt_sym.f key st in
+   *        let++ codom = cons inner_ser codom |> lift_fix_s ~key in
+   *        add_opt key codom st)
+   *  in
+   *  to_opt st *)
 
   let fold (type acc)
       (f :
@@ -183,7 +183,8 @@ struct
       | (k, v) :: tl ->
           if%sat Key.sem_eq key k then Symex.return (k, Some v)
           else find_bindings tl
-      (* TODO: Investigate: this is not a tailcall, because if%sat is not an if. *)
+      (* TODO: Investigate: this is not a tailcall, because if%sat is not an
+         if. *)
     in
     match M.find_opt key st with
     | Some v -> Symex.return (key, Some v)

@@ -113,12 +113,12 @@ module DecayMap : DecayMapS = struct
       Soteria.Symex.Compo_res.get_ok res
 
   let from_exposed (loc_int : [< sint ] Typed.t) =
-    (* UX: we only consider the first one; this is more or less correct, as per the
-       documentation of [with_exposed_provenance]: "The provenance of the returned pointer is
-       that of some pointer that was previously exposed"
+    (* UX: we only consider the first one; this is more or less correct, as per
+       the documentation of [with_exposed_provenance]: "The provenance of the
+       returned pointer is that of some pointer that was previously exposed"
 
-       See https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html
-       *)
+       See
+       https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html *)
     let usize_ty = Typed.t_usize () in
     let* st = SM.get_state () in
     let bindings = syntactic_bindings (of_opt st) in

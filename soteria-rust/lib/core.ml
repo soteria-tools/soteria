@@ -77,8 +77,8 @@ module M (Rust_state_m : Rust_state_m.S) = struct
             State.assert_ (not (l ==@ min &&@ (r ==@ m_one))) `Overflow
           else ok ()
       | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
-          (* at this point, the size of the right-hand side might not match the given literal
-             type, so we must be careful. *)
+          (* at this point, the size of the right-hand side might not match the
+             given literal type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
           State.assert_
             (BV.mki_lit ty 0 <=$@ r &&@ (r <$@ BV.mki_lit ty size))
@@ -172,11 +172,11 @@ module M (Rust_state_m : Rust_state_m.S) = struct
 
   let transmute ~from_ty ~to_ty v =
     (* Some fun details:
-       - we need to use [get_state] and re-use the current state, rather than
-         using an empty state, because if the [load] does any reference validity
-         checks we need the current state to have these addresses!
-       - we need to take the max of either types for the alignment, to ensure that
-         transmuting e.g. from [u16; 2] to (u32) works. *)
+     *  - we need to use [get_state] and re-use the current state, rather than
+     *    using an empty state, because if the [load] does any reference
+     *    validity checks we need the current state to have these addresses!
+     *  - we need to take the max of either types for the alignment, to ensure
+     *    that transmuting e.g. from [u16; 2] to (u32) works. *)
     L.debug (fun m ->
         m "Transmuting %a: %a -> %a" pp_rust_val v Charon_util.pp_ty from_ty
           Charon_util.pp_ty to_ty);

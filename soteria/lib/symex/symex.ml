@@ -505,8 +505,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
    fun f ->
     let guard = Solver.simplify guard in
     match Value.as_bool guard with
-    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
-       if we remove the Some true and Some false optimisation. *)
+    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
+       remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
@@ -522,7 +522,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         L.with_section ~is_branch:true right_branch_name (fun () ->
             Solver.add_constraints [ Value.(not guard) ];
             if !left_unsat then
-              (* Right must be sat since left was not! We didn't branch so we don't consume the counter *)
+              (* Right must be sat since left was not! We didn't branch so we
+                 don't consume the counter *)
               else_ () f
             else
               match Fuel.consume_branching 1 with
@@ -540,8 +541,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
    fun f ->
     let guard = Solver.simplify guard in
     match Value.as_bool guard with
-    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
-       if we remove the Some true and Some false optimisation. *)
+    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
+       remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
@@ -551,8 +552,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         if neg_unsat then then_ () f;
         Symex_state.backtrack_n 1;
         if not neg_unsat then (
-          (* Adding this constraint is technically redundant,
-             but it's still worth having it in the PC for simplifications. *)
+          (* Adding this constraint is technically redundant, but it's still
+             worth having it in the PC for simplifications. *)
           Solver.add_constraints [ guard ];
           else_ () f)
 
@@ -583,8 +584,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
     let brs = Fuel.take_branches brs in
-    (* If there are 0 or 1 branches, we don't do anything,
-       else we add how many *new* branches we take. *)
+    (* If there are 0 or 1 branches, we don't do anything, else we add how many
+       {new} branches we take. *)
     Stats.As_ctx.add_int StatKeys.branches (max (List.length brs - 1) 0);
     match brs with
     | [] -> ()
@@ -619,7 +620,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let vanish () _f = ()
 
   let give_up reason _f =
-    (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
+    (* The bind ensures that the side effect will not be enacted before the
+       whole process is ran. *)
     L.info (fun m -> m "%s" reason);
     Stats.As_ctx.push_str StatKeys.give_up_reasons reason;
     if
@@ -681,7 +683,8 @@ end
 
 module Make (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = struct
-  (* TODO: CORE this can go away when `include functors` land (https://github.com/ocaml/ocaml/pull/14177) *)
+  (* TODO: CORE this can go away when `include functors` land
+     (https://github.com/ocaml/ocaml/pull/14177) *)
   module CORE = Make_core (Sol)
   include CORE
   include Base_extension (CORE)
@@ -721,7 +724,8 @@ module Make (Sol : Solver.Mutable_incremental) :
         try
           iter @@ fun x ->
           if Solver_result.admissible ~mode (Solver.sat ()) then (
-            (* Make sure to drop branche that have leftover assumes with unsatisfiable PCs. *)
+            (* Make sure to drop branche that have leftover assumes with
+               unsatisfiable PCs. *)
             let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
             l := (x, Solver.as_values ()) :: !l;
             if fail_fast && Compo_res.is_error x then raise Fail_fast)

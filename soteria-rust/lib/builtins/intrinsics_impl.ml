@@ -19,7 +19,7 @@ module M (Rust_state_m : Rust_state_m.S) :
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
   let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
 
-  (* the intrinsics  *)
+  (* the intrinsics *)
 
   let abort : unit ret = error (`Panic (Some "aborted"))
 
@@ -114,10 +114,10 @@ module M (Rust_state_m : Rust_state_m.S) :
     let addend = double_bv @@ as_base t addend in
     let carry = double_bv @@ as_base t carry in
     (* This cannot overflow:
-       MAX * MAX + MAX + MAX
-       => (2ⁿ-1) × (2ⁿ-1) + (2ⁿ-1) + (2ⁿ-1)
-       => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
-       => 2²ⁿ - 1 *)
+     *   MAX * MAX + MAX + MAX
+     *   => (2ⁿ-1) × (2ⁿ-1) + (2ⁿ-1) + (2ⁿ-1)
+     *   => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
+     *   => 2²ⁿ - 1 *)
     let res = (multiplier *!!@ multiplicand) +!!@ addend +!!@ carry in
     let res_l, res_h =
       ( BV.extract 0 ((size_t * 8) - 1) res,
@@ -217,9 +217,10 @@ module M (Rust_state_m : Rust_state_m.S) :
       in
       let size, overflowed = ty_size *?@ count in
       let* () = State.assert_not overflowed `Overflow in
-      (* Here we can cheat a little: for copy_nonoverlapping we need to check for overlap,
-         but otherwise the copy is the exact same; since the State makes a copy of the src tree
-         before storing into dst, the semantics are that of copy. *)
+      (* Here we can cheat a little: for copy_nonoverlapping we need to check
+         for overlap, but otherwise the copy is the exact same; since the State
+         makes a copy of the src tree before storing into dst, the semantics are
+         that of copy. *)
       let* () =
         if not nonoverlapping then ok ()
         else check_overlap "copy_nonoverlapping" src dst size
@@ -284,10 +285,10 @@ module M (Rust_state_m : Rust_state_m.S) :
       BV.u32i @@ if Z.equal x Z.zero then bits else Z.trailing_zeros x
     in
     (* we construct the following, from inside out:
-      ite(x[0] == 1 ? 0 :
-        ite(x[1] == 1 ? 1 :
-          ...
-          ite(x[bits-1] == 1 ? bits-1 : bits))) *)
+     *   ite(x[0] == 1 ? 0 :
+     *     ite(x[1] == 1 ? 1 :
+     *       ...
+     *       ite(x[bits-1] == 1 ? bits-1 : bits))) *)
     let symbolic bits x =
       Iter.fold
         (fun acc off ->
@@ -319,10 +320,10 @@ module M (Rust_state_m : Rust_state_m.S) :
       BV.u32i @@ aux 0
     in
     (* we construct the following, from inside out:
-      ite(x[bits-1] == 1 ? 0 :
-        ite(x[bits-2] == 1 ? 1 :
-          ...
-          ite(x[0] == 1 ? bits-1 : bits))) *)
+     *   ite(x[bits-1] == 1 ? 0 :
+     *     ite(x[bits-2] == 1 ? 1 :
+     *       ...
+     *       ite(x[0] == 1 ? bits-1 : bits))) *)
     let symbolic bits x =
       Iter.fold
         (fun acc off ->
@@ -430,8 +431,8 @@ module M (Rust_state_m : Rust_state_m.S) :
     let min = Z.pred @@ Layout.min_value_z ity in
     let max = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float max in
     let min = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float min in
-    (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
-       issues in cases of float precision loss (I think?) *)
+    (* we use min-1 and max+1, to be able to have a strict inequality, which
+       avoids issues in cases of float precision loss (I think?) *)
     let+ () =
       State.assert_
         (min <.@ f &&@ (f <.@ max))
@@ -451,7 +452,8 @@ module M (Rust_state_m : Rust_state_m.S) :
   let forget ~t:_ ~arg:_ = ok ()
 
   let is_val_statically_known ~t:_ ~_arg:_ =
-    (* see: https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
+    (* see:
+       https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
     lift_symex @@ Rustsymex.nondet Typed.t_bool
 
   let likely ~b = ok (b :> T.sbool Typed.t)
@@ -495,14 +497,15 @@ module M (Rust_state_m : Rust_state_m.S) :
         `UBDanglingPointer
     in
     (* UB conditions:
-       1. must be at the same address, OR derived from the same allocation
-       2. the distance must be a multiple of sizeof(T) *)
+     * 1. must be at the same address, OR derived from the same allocation
+     * 2. the distance must be a multiple of sizeof(T) *)
     let* () =
       State.assert_
         (off ==@ zero ||@ Sptr.is_same_loc ptr base &&@ (off %$@ size ==@ zero))
         `UBPointerComparison
     in
-    (* we cast to ignore the overflow for MIN/-1, since the size can never be -1 *)
+    (* we cast to ignore the overflow for MIN/-1, since the size can never be
+       -1 *)
     if not unsigned then ok (Typed.cast (off /$@ size))
     else
       let+ () =
@@ -521,9 +524,9 @@ module M (Rust_state_m : Rust_state_m.S) :
       of_opt_not_impl "raw_eq with nondet size" @@ BV.to_z layout.size
     in
     let bytes = mk_array_ty (TLiteral (TUInt U8)) size in
-    (* TODO: figure out if for these two reads we should ignore the modified state,
-       as its leaves may be split in bytes which will require ugly transmutations
-       to be read from again later. *)
+    (* TODO: figure out if for these two reads we should ignore the modified
+       state, as its leaves may be split in bytes which will require ugly
+       transmutations to be read from again later. *)
     let* l = State.load a bytes in
     let* r = State.load b bytes in
     let byte_pairs =
@@ -599,8 +602,9 @@ module M (Rust_state_m : Rust_state_m.S) :
   let size_of ~t = Layout.size_of t
 
   let rec size_and_align_of_val ~t ~meta =
-    (* Takes inspiration from rustc, to calculate the size and alignment of DSTs.
-     https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
+    (* Takes inspiration from rustc, to calculate the size and alignment of
+       DSTs.
+       https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
     if not (Layout.is_dst t) then
       let+ layout = Layout.layout_of t in
       (layout.size, layout.align)
@@ -743,7 +747,8 @@ module M (Rust_state_m : Rust_state_m.S) :
     let* () = State.assert_not overflowed `Overflow in
     if%sat size ==@ zero then ok ()
     else
-      (* if v == 0, then we can replace this mess by initialising a Zeros subtree *)
+      (* if v == 0, then we can replace this mess by initialising a Zeros
+         subtree *)
       let val_ : [> T.sint ] Typed.t = Typed.cast val_ in
       if%sure val_ ==@ U8.(0s) then State.zeros dst size
       else

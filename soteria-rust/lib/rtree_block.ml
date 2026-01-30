@@ -30,8 +30,9 @@ module Make (Sptr : Sptr.S) = struct
       let ( <@ ) = Typed.Infix.( <$@ )
       let ( <=@ ) = Typed.Infix.( <=$@ )
 
-      (* We assume addition/overflow within the range of an allocation may never overflow.
-         This allows extremely good reductions around inequalities, which Tree_block relies on.  *)
+      (* We assume addition/overflow within the range of an allocation may never
+         overflow. This allows extremely good reductions around inequalities,
+         which Tree_block relies on. *)
       let ( +@ ) = Typed.Infix.( +!!@ )
       let ( -@ ) = Typed.Infix.( -!!@ )
 
@@ -84,7 +85,8 @@ module Make (Sptr : Sptr.S) = struct
             match BV.to_z at with
             | Some at -> return (Z.to_int at)
             | _ -> (
-                (* as per the contract of [split], we assume [at] is in [[1, size)] *)
+                (* as per the contract of [split], we assume [at] is in [[1,
+                   size)] *)
                 let options = List.init (size - 1) (( + ) 1) in
                 let* res =
                   match_on options ~constr:(fun x ->
@@ -205,17 +207,16 @@ module Make (Sptr : Sptr.S) = struct
         Encoder.transmute_one ~to_ty:ty (Int zero)
     | Uninit _ -> Result.error `UninitializedMemoryAccess
     | Any ->
-        (* We don't know if this read is valid, as memory could be uninitialised.
-         We have to approximate and vanish. *)
+        (* We don't know if this read is valid, as memory could be
+           uninitialised. We have to approximate and vanish. *)
         not_impl "Reading from Any memory, vanishing."
     | Lazy -> failwith "Should have been handled earlier"
 
   let decode_lazy ~ty (t : Tree.t) =
-    (* The tree spans the entire type we're interested in.
-       Furthermore, we only read/write scalars (int, float, pointers...) which
-       cover the whole range with no gaps.
-       For lazy nodes, we convert all of these to bitvectors, the concatenate
-       them and call the encoder to decode the full value. *)
+    (* The tree spans the entire type we're interested in. Furthermore, we only
+       read/write scalars (int, float, pointers...) which cover the whole range
+       with no gaps. For lazy nodes, we convert all of these to bitvectors, the
+       concatenate them and call the encoder to decode the full value. *)
     let** leaves = collect_leaves t in
     let** leaves =
       fold_list leaves ~init:[] ~f:(fun acc (v, _) ->
@@ -368,8 +369,9 @@ module Make (Sptr : Sptr.S) = struct
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ v, tb_st = as_owned t in
-          (* We need to do two things: protect this tag for the block, and perform a read, as
-         all function calls perform one on the parameters. *)
+          (* We need to do two things: protect this tag for the block, and
+             perform a read, as all function calls perform one on the
+             parameters. *)
           let tb_st' = Tree_borrow.set_protector ~protected:true tag tb tb_st in
           let++^ tb_st' = Tree_borrow.access tag Read tb tb_st' in
           { t with node = Owned (v, tb_st') }
@@ -386,8 +388,9 @@ module Make (Sptr : Sptr.S) = struct
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ v, tb_st = as_owned t in
-          (* We need to do two things: protect this tag for the block, and perform a read, as
-         all function calls perform one on the parameters. *)
+          (* We need to do two things: protect this tag for the block, and
+             perform a read, as all function calls perform one on the
+             parameters. *)
           let tb_st' =
             Tree_borrow.set_protector ~protected:false tag tb tb_st
           in

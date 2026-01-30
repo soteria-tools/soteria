@@ -28,10 +28,10 @@ let pp ft t = pp ft t
 (* The Concrete_map [pp] function has an option ?ignore parameter *)
 
 let get sym =
-  (* TODO: This is correct, but a tiny bit of a hack.
-           We need to enforce the invariant that all symbols are different.
-           It'd be nice to enforce this modularly, but right now we do it as a wrapper.
-           Unless one has hundreds of globals, the cost is negligeable, but still. *)
+  (* TODO: This is correct, but a tiny bit of a hack. We need to enforce the
+     invariant that all symbols are different. It'd be nice to enforce this
+     modularly, but right now we do it as a wrapper. Unless one has hundreds of
+     globals, the cost is negligeable, but still. *)
   let open SM.Syntax in
   let* st = SM.get_state () in
   let existed = Option.fold ~none:false ~some:(syntactic_mem sym) st in
@@ -40,7 +40,8 @@ let get sym =
   let+ () =
     if existed then (* We haven't created a new location *) SM.return ()
     else
-      (* We learn that the new location is distinct from all other global locations *)
+      (* We learn that the new location is distinct from all other global
+         locations *)
       syntactic_bindings (Option.value ~default:empty st)
       |> Seq.filter_map (fun (k, v) ->
           let open Typed.Infix in

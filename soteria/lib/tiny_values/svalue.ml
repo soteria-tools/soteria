@@ -136,8 +136,8 @@ module Hcons = Hc.Make (struct
 
   let equal = equal_t_node
 
-  (* We could do a lot more efficient in terms of hashing probably,
-     if this ever becomes a bottleneck. *)
+  (* We could do a lot more efficient in terms of hashing probably, if this ever
+     becomes a bottleneck. *)
   let hash { kind; ty } =
     let hty = Hashtbl.hash ty in
     match kind with

@@ -57,6 +57,6 @@ module type S = sig
     t option ->
     (unit * t option) Csymex.t
 
-  (* val consume :
-    serialized -> t -> (t, [> Csymex.lfail ] err, serialized) Csymex.Result.t *)
+  (* val consume : serialized -> t -> (t, [> Csymex.lfail ] err, serialized)
+     Csymex.Result.t *)
 end

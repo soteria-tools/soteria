@@ -105,14 +105,14 @@ struct
     val produce : serialized -> t option -> (unit * t option) Symex.t
 
     (* val consume :
-      ('inner_serialized ->
-      'inner_st option ->
-      ( 'inner_st option,
-        ([> Symex.lfail ] as 'a),
-        'inner_serialized )
-      Symex.Result.t) ->
-      'inner_serialized serialized ->
-      'inner_st t option ->
-      ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t *)
+     *  ('inner_serialized ->
+     *  'inner_st option ->
+     *  ( 'inner_st option,
+     *    ([> Symex.lfail ] as 'a),
+     *    'inner_serialized )
+     *  Symex.Result.t) ->
+     *  'inner_serialized serialized ->
+     *  'inner_st t option ->
+     *  ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t *)
   end
 end

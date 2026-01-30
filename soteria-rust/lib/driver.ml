@@ -132,7 +132,8 @@ let exec_crate
     exec_fun fun_decl
   in
   let branches =
-    (* If any of the results were "Gave_up", we raise an exception to be caught by [print_outcomes] *)
+    (* If any of the results were "Gave_up", we raise an exception to be caught
+       by [print_outcomes] *)
     let map_first f (x, y) = (f x, y) in
     List.map
       (map_first

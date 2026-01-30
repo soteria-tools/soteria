@@ -63,11 +63,9 @@ class soteria_lsp_server generate_errors =
 
     method spawn_query_handler f = Linol_eio.spawn f
 
-    (* We define here a helper method that will:
-       - process a document
-       - store the state resulting from the processing
-       - return the diagnostics from the new state
-    *)
+    (* We define here a helper method that will: - process a document - store
+       the state resulting from the processing - return the diagnostics from the
+       new state *)
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
         (uri : Lsp.Types.DocumentUri.t) (contents : string) =
       let { Soteria.Stats.res = errors; stats } = generate_errors contents in
@@ -82,14 +80,14 @@ class soteria_lsp_server generate_errors =
     method on_notif_doc_did_open ~notify_back d ~content : unit Linol_eio.t =
       self#_on_doc ~notify_back d.uri content
 
-    (* Similarly, we also override the [on_notify_doc_did_change] method that will be called
-       by the server each time a new document is opened. *)
+    (* Similarly, we also override the [on_notify_doc_did_change] method that
+       will be called by the server each time a new document is opened. *)
     method on_notif_doc_did_change ~notify_back d _c ~old_content:_old
         ~new_content =
       self#_on_doc ~notify_back d.uri new_content
 
-    (* On document closes, we remove the state associated to the file from the global
-       hashtable state, to avoid leaking memory. *)
+    (* On document closes, we remove the state associated to the file from the
+       global hashtable state, to avoid leaking memory. *)
     method on_notif_doc_did_close ~notify_back:_ _d : unit Linol_eio.t = ()
 
     method! on_unknown_notification ~notify_back notif =

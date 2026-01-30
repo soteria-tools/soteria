@@ -109,8 +109,7 @@ end
 
 (* It's a good occasion to play with effects: we have a global immutable state,
    and want to avoid passing it to every single function in the interpreter.
-   TODO: If this works well, do the same thing for prog.
-   *)
+   TODO: If this works well, do the same thing for prog. *)
 type _ Effect.t += Get_fun_ctx : Fun_ctx.t Effect.t
 
 let get_fun_ctx () = Effect.perform Get_fun_ctx
@@ -135,7 +134,8 @@ module Make (State : State_intf.S) = struct
     let* x = Agv.basic_or_unsupported ~msg:"cast_aggregate_to_ptr" x in
     match Typed.get_ty x with
     | TBitVector _ ->
-        (* We can cast an integer to a pointer by assigning the "null" location *)
+        (* We can cast an integer to a pointer by assigning the "null"
+           location *)
         Csymex.return (Typed.Ptr.mk Typed.Ptr.null_loc (Typed.cast x))
     | TPointer _ ->
         (* Already a pointer *)
@@ -205,7 +205,8 @@ module Make (State : State_intf.S) = struct
     fold_bindings bindings ~init:store ~f:(fun store (pname, _) ->
         Store.remove pname store)
 
-  (* We're assuming all bindings declared, and they have already been removed from the store. *)
+  (* We're assuming all bindings declared, and they have already been removed
+     from the store. *)
   let free_bindings (bindings : AilSyntax.bindings) : unit InterpM.t =
     let open InterpM.Syntax in
     InterpM.fold_list bindings ~init:()
@@ -423,11 +424,11 @@ module Make (State : State_intf.S) = struct
   let rec equality_check ~ty (v1, t1) (v2, t2) =
     match (Typed.get_ty v1, Typed.get_ty v2) with
     | TBitVector _, TBitVector _ ->
-        (* Here we need a cast because we may compare e.g. a [size_t] with [0], which
-           will have type [int].
-           We can't do this conversion earlier (in [eval_expr]) because we don't want
-           to cast integers to pointers or pointers to integers, loosing information;
-           this case only matters for BitVector values specifically. *)
+        (* Here we need a cast because we may compare e.g. a [size_t] with [0],
+           which will have type [int]. We can't do this conversion earlier (in
+           [eval_expr]) because we don't want to cast integers to pointers or
+           pointers to integers, loosing information; this case only matters for
+           BitVector values specifically. *)
         let^ v1 = cast_basic ~old_ty:t1 ~new_ty:ty v1 in
         let^ v2 = cast_basic ~old_ty:t2 ~new_ty:ty v2 in
         ok (v1 ==@ v2 |> BV.of_bool)
@@ -554,8 +555,8 @@ module Make (State : State_intf.S) = struct
         let^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
         arith_add ~signed v1 v2
     | Sub, Basic (Integer inty) -> (
-        (* an integer could be the result of a pointer subtraction,
-           so we handle this separately *)
+        (* an integer could be the result of a pointer subtraction, so we handle
+           this separately *)
         match (unwrap_ctype t1, unwrap_ctype t2) with
         | Pointer (_, _), Pointer (_, _) ->
             let signed = Layout.is_int_ty_signed inty in
@@ -848,10 +849,10 @@ module Make (State : State_intf.S) = struct
             Fmt.kstr not_impl "Unsupported unary operator %a" Fmt_ail.pp_unop op
         )
     | AilEbinary (e1, Or, e2) ->
-        (* Or is short-circuiting. In case of side-effects on the RHS,
-           not doing this properly might lead to unsoundnesses.
-           We still optimize by returning a disjunction of the two
-           expressions if the RHS is side-effect free. *)
+        (* Or is short-circuiting. In case of side-effects on the RHS, not doing
+           this properly might lead to unsoundnesses. We still optimize by
+           returning a disjunction of the two expressions if the RHS is
+           side-effect free. *)
         let* v1 = eval_expr e1 in
         if Ail_helpers.sure_side_effect_free e2 then
           let* v2 = eval_expr e2 in
@@ -892,7 +893,8 @@ module Make (State : State_intf.S) = struct
         in
         let ty_v1 = type_of e1 in
         let ty_v2 = type_of e2 in
-        (* we avoid doing type conversion and trust Ail, except when we cant use it *)
+        (* we avoid doing type conversion and trust Ail, except when we cant use
+           it *)
         let* v1 = eval_expr e1 in
         let* v2 = eval_expr e2 in
         let* v1, v2 =
@@ -936,8 +938,8 @@ module Make (State : State_intf.S) = struct
         | Comma -> ok v2)
     | AilErvalue e -> (
         (* Optimisation: If the expression to load is a variable that is
-           immediately in the store (without heap indirection),
-           we can just access it without heap shenanigans. *)
+           immediately in the store (without heap indirection), we can just
+           access it without heap shenanigans. *)
         let* v_opt = try_immediate_load e in
         match v_opt with
         | Some v -> ok v
@@ -945,7 +947,8 @@ module Make (State : State_intf.S) = struct
             (* The value is not an immediate store load *)
             let* lvalue = eval_expr e in
             let ty = type_of e in
-            (* At this point, lvalue must be a pointer (including to the stack) *)
+            (* At this point, lvalue must be a pointer (including to the
+               stack) *)
             let^ lvalue = cast_aggregate_to_ptr lvalue in
             load lvalue ty)
     | AilEident id -> (
@@ -957,7 +960,8 @@ module Make (State : State_intf.S) = struct
             let v = (v :> T.cval Typed.t) in
             ok (Agv.Basic v)
         | None ->
-            (* If the variable isn't in the store, it must be a global variable. *)
+            (* If the variable isn't in the store, it must be a global
+               variable. *)
             get_global id)
     | AilEassign (lvalue, rvalue) -> (
         (* Evaluate rvalue first *)
@@ -965,9 +969,9 @@ module Make (State : State_intf.S) = struct
         let^ rval =
           cast ~old_ty:(type_of rvalue) ~new_ty:(type_of lvalue) rval
         in
-        (* Optimisation: if the lvalue is a variable to which we assign directly,
-           we don't need to do anything with the heap, we can simply immediately assign,
-           obtaining a new store.  *)
+        (* Optimisation: if the lvalue is a variable to which we assign
+           directly, we don't need to do anything with the heap, we can simply
+           immediately assign, obtaining a new store. *)
         let* im_store_res = try_immediate_store lvalue rval in
         match im_store_res with
         | `Success -> ok rval
@@ -993,7 +997,8 @@ module Make (State : State_intf.S) = struct
         | None ->
             (* Otherwise we proceed as normal *)
             let* ptr = eval_expr lvalue in
-            (* At this point, lvalue must be a pointer (including to the stack) *)
+            (* At this point, lvalue must be a pointer (including to the
+               stack) *)
             let^ ptr = cast_aggregate_to_ptr ptr in
             let* operand = load ptr lty in
             let* res = apply_op operand in
@@ -1237,9 +1242,9 @@ module Make (State : State_intf.S) = struct
             if%sat guard_bool then exec_stmt astmt else ok Normal)
     | AilSmarker (_, stmt) -> exec_case guard stmt
     | AilSswitch (_, _stmt) ->
-        (* We make this case explicitly separate for clarity:
-           If one has a nested switch, we don't look for the case
-           in the nested switch, as the cases in there are for the nested switch's guard. *)
+        (* We make this case explicitly separate for clarity: If one has a
+           nested switch, we don't look for the case in the nested switch, as
+           the cases in there are for the nested switch's guard. *)
         ok (Case guard)
     | _ -> ok (Case guard)
 
@@ -1265,12 +1270,14 @@ module Make (State : State_intf.S) = struct
     | AilSreturnVoid -> ok (Returned (Agv.void, Ctype.void))
     | AilSblock (bindings, stmtl) ->
         let* () = attach_bindings bindings in
-        (* Second result, corresponding to the block-scoped store, is discarded *)
+        (* Second result, corresponding to the block-scoped store, is
+           discarded *)
         let* res = exec_stmt_list Normal stmtl in
-        (* Cerberus is nice here, symbols inside the block have different names than
-           the ones outside the block if there is shadowing going on.
-           I.e. int x = 12; { int x = 13; }, the two `x`s have different symbols.
-           So we can just remove the bindings of the inner block from the store entirely. *)
+        (* Cerberus is nice here, symbols inside the block have different names
+           than the ones outside the block if there is shadowing going on. I.e.
+           int x = 12; { int x = 13; }, the two `x`s have different symbols. So
+           we can just remove the bindings of the inner block from the store
+           entirely. *)
         let+ () = remove_and_free_bindings bindings in
         res
     | AilSexpr e ->
@@ -1335,7 +1342,8 @@ module Make (State : State_intf.S) = struct
         | Continue | Returned _ | Normal | Goto _ -> ok res
         | Break -> ok Normal
         | Case _ ->
-            (* Case statement finished without finding a match: continue without executing anything *)
+            (* Case statement finished without finding a match: continue without
+               executing anything *)
             ok Normal)
     | AilScase_rangeGNU (_, _, _)
     | AilSdefault _ | AilSpar _
@@ -1372,7 +1380,8 @@ module Make (State : State_intf.S) = struct
       let+ (res, _), state = eval_expr expr Store.empty state in
       (res, state)
     in
-    (* Produce_zero will be useful when Cerberus allows for knowing when no declaration is given. *)
+    (* Produce_zero will be useful when Cerberus allows for knowing when no
+       declaration is given. *)
     let _produce_zero (ptr : [< T.sptr ] Typed.t) ty =
       let loc = Typed.Ptr.loc ptr in
       let offset = Typed.Ptr.ofs ptr in
