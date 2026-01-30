@@ -130,6 +130,10 @@ soteria-rust/scripts/test.py kani
 soteria-rust/scripts/test.py miri
 ```
 
+## Upgrading versions
+
+If you want to upgrade a version, say of OCaml, see `./scripts/versionsync.py list` to see current versions and `./scripts/versionsync.py set OCAML_VERSION X.Y.Z` to update it accross all its references in the repo.
+
 ## Submitting Changes
 
 ### Before Submitting

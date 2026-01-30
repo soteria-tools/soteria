@@ -18,6 +18,7 @@ path = [
   "packaging/**",
   "demo/**",
   "doc/**",
+  "scripts/**",
   "*.opam",
   "*.opam.template",
   "dune-project",
