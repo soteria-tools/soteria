@@ -82,6 +82,8 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | Rem true -> bv_srem
   | Rem false -> bv_urem
   | Mod -> bv_smod
+  | AddOvf true -> bv_saddo
+  | AddOvf false -> bv_uaddo
   | MulOvf true -> bv_smulo
   | MulOvf false -> bv_umulo
   | Lt true -> bv_slt

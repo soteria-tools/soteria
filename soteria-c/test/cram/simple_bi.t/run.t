@@ -219,8 +219,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
         pc =
-        [(0x0000000000000000 == V|2|); (0x00000001 <=u V|1|);
-          (V|1| <=u 0x7fffffff)];
+        [(0x00000001 <=u V|1|); (V|1| <=u 0x7fffffff);
+          (0x0000000000000000 == V|2|)];
         post = [];
         ret =
         (Error (Null pointer dereference,
@@ -272,8 +272,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       raw =
       { args = [&(V|1|, V|2|); V|3|]; pre = [];
         pc =
-        [(0x0000000000000000 == V|1|); (0x00000001 <=u V|3|);
-          (V|3| <=u 0x7fffffff)];
+        [(0x00000001 <=u V|3|); (V|3| <=u 0x7fffffff);
+          (0x0000000000000000 == V|1|)];
         post = [];
         ret =
         (Error (Null pointer dereference,
@@ -292,8 +292,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
                info = None }))
           ];
         pc =
-        [(0x0000000000000000 != V|1|); (V|3| == 0x00000001);
-          (V|2| <=u 0x7ffffffffffffffb); (V|3| == 0x00000001)];
+        [(0x0000000000000000 != V|1|); (V|2| <=u 0x7ffffffffffffffb);
+          (V|3| == 0x00000001); (V|3| == 0x00000001)];
         post =
         [(Ser_heap
             (V|1|,
@@ -322,10 +322,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
                 info = None }))
           ];
         pc =
-        [(0x0000000000000000 != V|1|);
-          (0x0000000000000000 <=s (V|2| + 0x0000000000000004));
-          ((V|4| <s 0x00000000) != ((V|4| + V|5|) <s 0x00000000));
-          ((V|4| <s 0x00000000) == (V|5| <s 0x00000000));
+        [(0x0000000000000000 != V|1|); (V|4| +s_ovf V|5|);
           (V|2| <=u 0x7ffffffffffffff7); (0x00000002 <=u V|3|);
           (V|3| <=u 0x7fffffff)];
         post =
@@ -365,10 +362,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
                 info = None }))
           ];
         pc =
-        [(0x0000000000000000 != V|1|);
-          (0x0000000000000000 <=s (V|2| + 0x0000000000000004));
-          (((V|4| <s 0x00000000) == ((V|4| + V|5|) <s 0x00000000)) || ((V|4| <s 0x00000000) != (V|5| <s 0x00000000)));
-          (V|3| == 0x00000002); (V|2| <=u 0x7ffffffffffffff7);
+        [(0x0000000000000000 != V|1|); !((V|4| +s_ovf V|5|));
+          (V|2| <=u 0x7ffffffffffffff7); (V|3| == 0x00000002);
           (V|3| == 0x00000002)];
         post =
         [(Ser_heap
@@ -396,11 +391,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
   Summaries for add_561:
     Analysed {
       raw =
-      { args = [V|1|; V|2|]; pre = [];
-        pc =
-        [((V|1| <s 0x00000000) != ((V|1| + V|2|) <s 0x00000000));
-          ((V|1| <s 0x00000000) == (V|2| <s 0x00000000))];
-        post = [];
+      { args = [V|1|; V|2|]; pre = []; pc = [(V|1| +s_ovf V|2|)]; post = [];
         ret =
         (Error (Integer overflow,
                 [• Triggering operation: overflow.c:3:10-15 (cursor: 3:12)]))
@@ -408,11 +399,8 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       manifest_bugs = []}
     Analysed {
       raw =
-      { args = [V|1|; V|2|]; pre = [];
-        pc =
-        [(((V|1| <s 0x00000000) == ((V|1| + V|2|) <s 0x00000000)) || ((V|1| <s 0x00000000) != (V|2| <s 0x00000000)))
-          ];
-        post = []; ret = (Ok (V|1| +ck V|2|)) };
+      { args = [V|1|; V|2|]; pre = []; pc = [!((V|1| +s_ovf V|2|))]; post = [];
+        ret = (Ok (V|1| +ck V|2|)) };
       manifest_bugs = []}
   
   Summaries for add_ovf_manifest_564:

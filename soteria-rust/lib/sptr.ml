@@ -103,7 +103,7 @@ module DecayMap : DecayMapS = struct
                  assume
                    [
                      (addr %@ align ==@ Usize.(0s));
-                     Usize.(0s) <@ addr;
+                     align <=@ addr;
                      addr <@ Typed.BitVec.usize isize_max -!@ size;
                    ]
                in

@@ -9,8 +9,8 @@ Test memory leaks
       │   │
       │   Leaking function
       │   1: Entry point
-  PC 1: (extract[0-1](V|1|) == 0b00) /\ (0x0000000000000001 <=u V|1|) /\
-        (V|1| <=u 0x7ffffffffffffffa)
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
   
   [1]
 
@@ -53,11 +53,11 @@ Test that we properly handle the niche optimisation
   $ soteria-rust rustc niche_optim.rs --ignore-leaks
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
-  PC 1: (extract[0-1](V|1|) == 0b00) /\ (0b00 == extract[0-1](V|2|)) /\
-        (0b00 == extract[0-1](V|3|)) /\ (0x0000000000000001 <=u V|1|) /\
-        (V|1| <=u 0x7ffffffffffffffa) /\ (0x0000000000000001 <=u V|2|) /\
-        (V|2| <=u 0x7ffffffffffffff6) /\ (0x0000000000000001 <=u V|3|) /\
-        (V|3| <=u 0x7ffffffffffffffa)
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00) /\ (0b00 == extract[0-1](V|2|)) /\
+        (0b00 == extract[0-1](V|3|))
   
 Test function calls on function pointers
   $ soteria-rust rustc fn_ptr.rs
@@ -169,12 +169,12 @@ Test transmutations keeping the bit-patterns the same
   $ soteria-rust rustc transmute_roundtrip.rs
   Compiling... done in <time>
   note: one_way_u32_f32: done in <time>, ran 1 branch
-  PC 1: (bv2f[F32](V|1|) == bv2f[F32](V|2|)) /\ !(fis(NaN)(bv2f[F32](V|1|))) /\
-        (V|1| == V|2|)
+  PC 1: !(fis(NaN)(bv2f[F32](V|1|))) /\ (V|1| == V|2|) /\
+        (bv2f[F32](V|1|) == bv2f[F32](V|2|))
   
   note: one_way_f32_u32: done in <time>, ran 2 branches
-  PC 1: (bv2f[F32](V|2|) == V|1|) /\ fis(NaN)(V|1|)
-  PC 2: (bv2f[F32](V|2|) == V|1|) /\ !(fis(NaN)(V|1|))
+  PC 1: fis(NaN)(V|1|) /\ (bv2f[F32](V|2|) == V|1|)
+  PC 2: !(fis(NaN)(V|1|)) /\ (bv2f[F32](V|2|) == V|1|)
   
   note: two_way_u32_i32: done in <time>, ran 1 branch
   PC 1: empty
@@ -214,15 +214,15 @@ Test exposing function pointers
   $ soteria-rust rustc expose_fn_ptr.rs
   Compiling... done in <time>
   note: main: done in <time>, ran 1 branch
-  PC 1: (extract[0-3](V|1|) == 0x0) /\ (0x0000000000000001 <=u V|1|) /\
-        (V|1| <=u 0x7ffffffffffffffe)
+  PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffe) /\
+        (extract[0-3](V|1|) == 0x0)
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
   $ soteria-rust rustc thread_local.rs
   Compiling... done in <time>
   note: pub_static_cell: done in <time>, ran 1 branch
-  PC 1: (extract[0-1](V|1|) == 0b00) /\ (0x0000000000000001 <=u V|1|) /\
-        (V|1| <=u 0x7ffffffffffffffa)
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
   
   warning: static_ref_cell (<time>): unsupported feature, Function std::sys::thread_local::destructors::list::register is opaque
   
