@@ -14,7 +14,7 @@
   Soteria.Sym_states
   Soteria.Logs
   Soteria.Tiny_values
-  Soteria.BV_values
+  Soteria.Bv_values
   Soteria.Terminal
   Soteria.Stats
   Soteria.Soteria_std}

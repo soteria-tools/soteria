@@ -1,14 +1,21 @@
-module MonoSymex =
-  Soteria.Symex.Make
-    (struct
-      module Range = struct
-        type t = Charon.Meta.span_data
+module StatKeys = struct
+  let load_accesses = "soteria-rust.loads"
+  let loads_from_store = "soteria-rust.loads_from_store"
+  let function_calls = "soteria-rust.function_calls"
 
-        let to_yojson _ = `Null
-        let of_yojson _ = Ok Charon_util.empty_span_data
-      end
-    end)
-    (Bv_solver.Z3_solver)
+  let () =
+    let open Soteria.Stats in
+    let open Soteria.Logs.Printers in
+    disable_printer loads_from_store;
+    register_int_printer ~name:"Load accesses" load_accesses (fun stats ft n ->
+        let store_loads = get_int stats loads_from_store in
+        Fmt.pf ft "%d (%a through store)" n pp_percent
+          (Float.of_int n, Float.of_int store_loads));
+    register_int_printer ~name:"Function calls" function_calls (fun _ ->
+        Fmt.int)
+end
+
+module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver)
 
 module TypeMap = Map.Make (struct
   type t = Charon.Types.ty
@@ -105,5 +112,5 @@ let[@inline] with_loc_err () f =
   Result.map_error (f ()) (fun e -> (e, loc))
 
 let error e = Result.error (e, get_loc ())
-let not_impl msg = give_up ~loc:(get_loc ()) msg
-let of_opt_not_impl msg = some_or_give_up ~loc:(get_loc ()) msg
+let not_impl = give_up
+let of_opt_not_impl = some_or_give_up

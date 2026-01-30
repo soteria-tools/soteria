@@ -1,13 +1,26 @@
 Test printing stats to stdout (ensure this looks somewhat nice)
   $ ./print_stats.exe
   Statistics:
-   • Steps: 0
-   • Branches: 4 (0 unexplored)
-   • Total time: <time>
-   • Execution time: <time> (<%>)
-   • Solver time: <time> (<%>)
-   • SAT checks: 9 (0 unknowns)
-   • Give up reasons:
-     - give up reason
-   • Misses without fixes:
-     - miss no fix
+  • Z3 check-sat calls: 8
+  • Execution time: <time>
+  • Give up reasons: 
+    - give up reason
+  • Misses without fix: 
+    - miss no fix
+    - other miss no fix
+  • SAT checks: 12 (0 unknowns)
+  • SAT solving time: <time> (<%>)
+  • Branches: 4 (0 unexplored)
+  
+  
+  {
+    "solvers.z3.check_sats": 8,
+    "soteria.exec-time": "<float>",
+    "soteria.give-up-reasons": [ "give up reason" ],
+    "soteria.miss-without-fix": [ "miss no fix", "other miss no fix" ],
+    "soteria.sat-checks": 12,
+    "soteria.sat-time": "<float>",
+    "soteria.branches": 4
+  }
+  
+  Serialization round-trip successful.

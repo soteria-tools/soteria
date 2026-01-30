@@ -19,7 +19,6 @@ module type S = sig
        and type st = t option
        and module Symex.Value = Csymex.Value
        and module Value = Csymex.Value
-       and module Stats = Csymex.Stats
 
   type 'a res := ('a, Error.with_trace, serialized list) SM.Result.t
 

@@ -1,4 +1,4 @@
-open Soteria.Symex.Make (Soteria.Symex.Meta.Dummy) (Tiny_solver.Z3_solver)
+open Soteria.Symex.Make (Tiny_solver.Z3_solver)
 open Syntax
 module Compo_res = Soteria.Symex.Compo_res
 module Or_gave_up = Soteria.Symex.Or_gave_up
@@ -55,7 +55,7 @@ let process =
 
 let process_give_up =
   let* b = nondet Typed.t_bool in
-  if%sat b then give_up ~loc:() "Left gave up" else Result.error "Right error"
+  if%sat b then give_up "Left gave up" else Result.error "Right error"
 
 let test_fail_fast () =
   let results =

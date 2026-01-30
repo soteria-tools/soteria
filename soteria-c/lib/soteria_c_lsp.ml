@@ -1,27 +1,19 @@
 module Lsp = Linol.Lsp
 
-let cerb_loc_to_range loc =
-  let open Lsp.Types in
-  let (start_l, start_c), (end_l, end_c) =
-    Option.value ~default:((0, 0), (0, 0)) (Cerb_location.to_cartesian_user loc)
-  in
-  Range.
-    {
-      start = { character = start_c; line = start_l };
-      end_ = { character = end_c; line = end_l };
-    }
-
-let get_abort_diagnostics (stats : Csymex.Stats.t) =
+let get_abort_diagnostics (stats : Soteria.Stats.t) =
   let open Syntaxes.List in
   let list_reasons =
-    stats.give_up_reasons
+    Soteria.Stats.get_map stats Csymex.StatKeys.give_up_reasons
     |> Hashtbl.Hstring.to_seq
     |> Seq.concat_map (fun (reason, locs) ->
-        Seq.map (fun loc -> (reason, loc)) (Dynarray.to_seq locs))
+        Soteria.Stats.as_yojson locs
+        |> Yojson.Safe.Util.to_list
+        |> List.to_seq
+        |> Seq.map (fun loc -> (reason, loc)))
     |> List.of_seq
   in
   let+ msg, loc = list_reasons in
-  let range = cerb_loc_to_range loc in
+  let range = Ail_helpers.yojson_loc_to_range loc in
   Lsp.Types.Diagnostic.create ~message:(`String msg) ~severity:Information
     ~range ~source:"soteria" ()
 
@@ -41,19 +33,22 @@ let error_to_diagnostic_opt ~uri (err, call_trace) =
   let parens_if_non_empty = function "" -> "" | s -> " (" ^ s ^ ")" in
   let range, relatedInformation, msg_addendum =
     match (call_trace : Cerb_location.t Soteria.Terminal.Call_trace.t) with
-    | [] -> (cerb_loc_to_range Cerb_location.unknown, None, "")
-    | [ { loc; msg } ] -> (cerb_loc_to_range loc, None, parens_if_non_empty msg)
+    | [] -> (Ail_helpers.cerb_loc_to_range Cerb_location.unknown, None, "")
+    | [ { loc; msg } ] ->
+        (Ail_helpers.cerb_loc_to_range loc, None, parens_if_non_empty msg)
     | { loc; msg } :: locs ->
         let related_info =
           List.map
             (fun Soteria.Terminal.Call_trace.{ loc; msg } ->
               let location =
-                Location.create ~range:(cerb_loc_to_range loc) ~uri
+                Location.create ~range:(Ail_helpers.cerb_loc_to_range loc) ~uri
               in
               DiagnosticRelatedInformation.create ~location ~message:msg)
             locs
         in
-        (cerb_loc_to_range loc, Some related_info, parens_if_non_empty msg)
+        ( Ail_helpers.cerb_loc_to_range loc,
+          Some related_info,
+          parens_if_non_empty msg )
   in
   Lsp.Types.Diagnostic.create
     ~message:(`String (message ^ msg_addendum))

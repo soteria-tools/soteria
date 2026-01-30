@@ -538,7 +538,7 @@ module Encoder (Sptr : Sptr.S) = struct
     let open Syntax in
     match (v, attr) with
     | ( Int v,
-        Meta.AttrUnknown
+        Charon.Meta.AttrUnknown
           { path = "rustc_layout_scalar_valid_range_start"; args = Some min } )
       ->
         let min = Z.of_string min in

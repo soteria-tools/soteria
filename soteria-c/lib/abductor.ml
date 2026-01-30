@@ -11,7 +11,7 @@ let default_abductor_fuel =
   Soteria.Symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 (** Generates summaries for a function given a function definitions. Has to be
-    run within {{!Soteria_c_lib.Csymex.Stats.As_ctx.with_stats}with_stats} *)
+    run within {{!Soteria.Stats.As_ctx.with_stats}with_stats} *)
 let generate_summaries_for (fundef : fundef) =
   let open Syntaxes.List in
   let fid, (floc, _, _, _, _) = fundef in
@@ -73,7 +73,7 @@ let generate_all_summaries ~functions_to_analyse prog =
   in
   let@ () = Progress_bar.run ~msg:"Generating summaries" ~total:!count () in
 
-  let@ () = Csymex.Stats.As_ctx.with_stats () in
+  let@ () = Soteria.Stats.As_ctx.with_stats () in
   ListLabels.filter_map to_analyse ~f:(fun fid ->
       let open Syntaxes.Option in
       let res =
