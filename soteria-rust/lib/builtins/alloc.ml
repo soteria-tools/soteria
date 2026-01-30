@@ -17,7 +17,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let max_size = Layout.max_value_z (TInt Isize) in
     let max_size = Typed.BitVec.usize max_size in
     let* () =
-      State.assert_ (Usize.(1s) <=@ align &&@ (size <@ max_size)) `InvalidAlloc
+      assert_ (Usize.(1s) <=@ align &&@ (size <@ max_size)) `InvalidAlloc
     in
     let align = Typed.cast align in
     let+ ptr = State.alloc_untyped ~zeroed ~size ~align () in
@@ -35,9 +35,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     in
     let alloc_size, alloc_align = Sptr.allocation_info ptr_in in
     let* () =
-      State.assert_
-        (alloc_align ==?@ align &&@ (alloc_size ==?@ size))
-        `InvalidFree
+      assert_ (alloc_align ==?@ align &&@ (alloc_size ==?@ size)) `InvalidFree
     in
     let+ () = State.free ptr in
     Tuple []
@@ -52,7 +50,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let ptr_in, _ = ptr in
     let prev_size, prev_align = Sptr.allocation_info ptr_in in
     let* () =
-      State.assert_
+      assert_
         (prev_align ==?@ align &&@ (prev_size ==?@ old_size))
         `InvalidAlloc
     in

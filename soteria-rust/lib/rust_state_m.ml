@@ -49,6 +49,8 @@ module type S = sig
   val ok : 'a -> ('a, 'env) t
   val error : Error.t -> ('a, 'env) t
   val error_raw : Error.with_trace -> ('a, 'env) t
+  val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
+  val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val miss : serialized list list -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
@@ -238,9 +240,6 @@ module type S = sig
       ('b, 'env) t
 
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
-    val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-    val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-    val lift_err : ('a, Error.t, serialized list) Result.t -> ('a, 'env) t
   end
 
   module Syntax : sig
@@ -313,8 +312,16 @@ struct
   type ('a, 'env) monad = ('a, 'env) t
 
   let ok x : ('a, 'env) t = ESM.Result.ok x
-  let error err : ('a, 'env) t = ESM.lift @@ State.error err
+  let error err : ('a, 'env) t = ESM.Result.error (decorate_error err)
   let error_raw err : ('a, 'env) t = ESM.Result.error err
+
+  let lift_err sym : ('a, 'env) t =
+    ESM.lift @@ State.SM.lift @@ Result.map_error sym decorate_error
+
+  let assert_ cond err =
+    lift_err (assert_or_error (cond :> Typed.T.sbool Typed.t) err)
+
+  let assert_not cond err = assert_ (Typed.not cond) err
   let miss f : ('a, 'env) t = ESM.Result.miss f
 
   let not_impl str : ('a, 'env) t =
@@ -348,15 +355,10 @@ struct
     let+ res, _ = f env in
     (res, old_env)
 
-  let[@inline] lift_err sym = ESM.lift (State.lift_err sym)
-
   let[@inline] with_decay_map_res
       (f : ('a, Error.t, serialized list) Sptr.DecayMapMonad.Result.t) :
       ('a, 'env) t =
-    ESM.lift
-      (let open State.SM.Syntax in
-       let* res = State.with_decay_map f in
-       State.lift_err (Rustsymex.return res))
+    ESM.lift (State.SM.Result.map_error (State.with_decay_map f) decorate_error)
 
   let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
     ESM.lift
@@ -543,20 +545,7 @@ struct
       let* is_valid = fake_read ptr ty in
       match is_valid with
       | None -> SM.return (Compo_res.Ok (), env)
-      | Some err ->
-          (* Convert Error.t to Error.with_trace by adding location *)
-          let+ res = State.error err in
-          (res, env)
-
-    let[@inline] lift_err
-        (sym : ('a, Error.t, serialized list) Rustsymex.Result.t) :
-        ('a, 'env) monad =
-      ESM.lift (State.lift_err sym)
-
-    let[@inline] assert_ guard err : (unit, 'env) monad =
-      ESM.lift (State.assert_ (guard :> Typed.T.sbool Typed.t) err)
-
-    let[@inline] assert_not guard err = assert_ (Typed.not guard) err
+      | Some err -> error err env
   end
 
   module Syntax = struct

@@ -1,6 +1,5 @@
 open Typed
 open T
-open Rustsymex
 open Charon
 open Rust_val
 open Sptr
@@ -61,10 +60,7 @@ module type S = sig
 
   val uninit : full_ptr -> Types.ty -> unit ret
   val zeros : full_ptr -> sint Typed.t -> unit ret
-  val error : Error.t -> 'ok ret
-  val lift_err : ('ok, Error.t, serialized list) Result.t -> 'ok ret
   val with_decay_map : 'a DecayMapMonad.t -> 'a SM.t
-  val assert_ : sbool Typed.t -> Error.t -> unit ret
   val store_str_global : string -> full_ptr -> unit ret
   val store_global : Types.global_decl_id -> full_ptr -> unit ret
   val load_str_global : string -> full_ptr option ret

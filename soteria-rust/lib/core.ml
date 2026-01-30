@@ -58,29 +58,27 @@ module M (Rust_state_m : Rust_state_m.S) = struct
       match bop with
       | Add (OUB | OPanic) ->
           let overflows = BV.add_overflows ~signed l r in
-          State.assert_ (not overflows) `Overflow
+          assert_not overflows `Overflow
       | Sub (OUB | OPanic) ->
           let overflows = BV.sub_overflows ~signed l r in
-          State.assert_ (not overflows) `Overflow
+          assert_not overflows `Overflow
       | Mul (OUB | OPanic) ->
           let overflows = BV.mul_overflows ~signed l r in
-          State.assert_ (not overflows) `Overflow
+          assert_not overflows `Overflow
       | Div _ | Rem _ ->
-          let* () =
-            State.assert_ (not (r ==@ BV.mki_lit ty 0)) `DivisionByZero
-          in
+          let* () = assert_not (r ==@ BV.mki_lit ty 0) `DivisionByZero in
           if signed then
             (* overflow on rem/div is UB even when wrapping *)
             let min = Layout.min_value_z ty in
             let min = BV.mk_lit ty min in
             let m_one = BV.mki_lit ty (-1) in
-            State.assert_ (not (l ==@ min &&@ (r ==@ m_one))) `Overflow
+            assert_ (not (l ==@ min &&@ (r ==@ m_one))) `Overflow
           else ok ()
       | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
           (* at this point, the size of the right-hand side might not match the
              given literal type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
-          State.assert_
+          assert_
             (BV.mki_lit ty 0 <=$@ r &&@ (r <$@ BV.mki_lit ty size))
             `InvalidShift
       | _ -> ok ()

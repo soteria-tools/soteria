@@ -100,17 +100,23 @@ let with_loc ~loc f =
   current_loc := old_loc;
   return res
 
-let with_loc_immediate ~loc f =
-  let old_loc = !current_loc in
-  current_loc := loc;
-  let res = f () in
-  current_loc := old_loc;
-  res
-
-let[@inline] with_loc_err () f =
+let decorate_error ?(trace = "Triggering operation") (e : Error.t) :
+    Error.with_trace =
   let loc = get_loc () in
-  Result.map_error (f ()) (fun e -> (e, loc))
+  let call_trace = Soteria.Terminal.Call_trace.singleton ~loc ~msg:trace () in
+  (e, call_trace)
 
-let error e = Result.error (e, get_loc ())
+let rename_trace trace (f : unit -> ('a, Error.with_trace, 'f) Result.t) :
+    ('a, Error.with_trace, 'f) Result.t =
+  let open Syntax in
+  let+- err : Error.with_trace = f () in
+  match err with
+  | e, { loc; msg = _ } :: stack ->
+      let new_elem =
+        Soteria.Terminal.Call_trace.mk_element ~loc ~msg:trace ()
+      in
+      (e, new_elem :: stack)
+  | _, [] -> failwith "Impossible: rename_trace on an empty trace?"
+
 let not_impl = give_up
 let of_opt_not_impl = some_or_give_up

@@ -378,7 +378,7 @@ module Make (State : State_intf.S) = struct
         let idx = as_base_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
         let* () =
-          State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
+          assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
         let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty ptr idx in
         L.debug (fun f ->
@@ -402,7 +402,7 @@ module Make (State : State_intf.S) = struct
         let to_ = as_base_i Usize to_ in
         let to_ = if from_end then len -!@ to_ else to_ in
         let* () =
-          State.assert_
+          assert_
             (Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len))
             `OutOfBounds
         in
@@ -573,7 +573,7 @@ module Make (State : State_intf.S) = struct
             | TLiteral ((TInt _ | TUInt _) as ty) ->
                 let v = as_base ty v in
                 let res, overflowed = ~-?v in
-                let+ () = State.assert_not overflowed `Overflow in
+                let+ () = assert_not overflowed `Overflow in
                 Int res
             | TLiteral (TFloat fty) ->
                 let v = as_base_f fty v in
@@ -721,7 +721,7 @@ module Make (State : State_intf.S) = struct
                 let ty = Charon_util.get_pointee (type_of_operand e1) in
                 let* size = Layout.size_of ty in
                 let+ () =
-                  State.assert_
+                  assert_
                     (v2 ==@ Usize.(0s) ||@ (size ==@ Usize.(0s)))
                     `UBDanglingPointer
                 in

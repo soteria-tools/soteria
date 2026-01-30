@@ -328,32 +328,8 @@ let log action ptr =
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st)
 
-let with_loc_err () (f : unit -> ('a, 'b, 'c) Result.t) : ('a, 'k, 'c) Result.t
-    =
-  let loc = Rustsymex.get_loc () in
-  Result.map_error (f ()) (fun e -> (e, loc))
-
-let with_error_loc_as_call_trace ?(msg = "Triggering memory operation") ()
-    (f : unit -> ('a, 'b, 'c) Result.t) =
-  let+- err, loc = f () in
-  (err, Soteria.Terminal.Call_trace.singleton ~loc ~msg ())
-
-let error err =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  Result.error err
-
-let lift_err (symex : ('a, 'e, 'f) Rustsymex.Result.t) =
-  let*^ res = symex in
-  match res with
-  | Error e -> error e
-  | Ok ok -> Result.ok ok
-  | Missing fix -> Result.miss fix
-
-let assert_ guard (err : Error.t) =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  assert_or_error guard err
+let[@inline] with_loc_err ?trace () f =
+  Result.map_error (f ()) (decorate_error ?trace)
 
 let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
   let* st = SM.get_state () in
@@ -393,9 +369,8 @@ let with_ptr ptr f = with_heap @@ Heap.with_ptr ptr f
 
 let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
     (unit, 'err, 'fix) Result.t =
+  let@ () = with_loc_err ~trace:"Uninitialising memory" () in
   let* () = log "uninit" ptr in
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
   let**^ size = Layout.size_of ty in
   let@ ofs = with_ptr ptr in
   Block.with_tree_block @@ Tree_block.uninit_range ofs size
@@ -470,31 +445,15 @@ and fake_read ((_, meta) as ptr) ty =
     | Error e -> Some e
     | Missing _ -> failwith "Miss in fake_read")
 
-let check_ptr_align ptr ty =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  check_ptr_align ptr ty
-
-let load ?ignore_borrow ptr ty =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  load ?ignore_borrow ptr ty
-
-let load_discriminant ptr ty =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  load_discriminant ptr ty
-
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
     accesses; all of these are ignored. *)
 let tb_load ((ptr : Sptr.t), _) ty =
+  let@ () = with_loc_err ~trace:"Tree Borrow access" () in
   let open SM in
   match ptr.tag with
   | None -> Result.ok ()
   | Some tag ->
-      let@ () = with_error_loc_as_call_trace () in
-      let@ () = with_loc_err () in
       let**^ size = Layout.size_of ty in
       if%sat size ==@ Usize.(0s) then Result.ok ()
       else
@@ -504,7 +463,8 @@ let tb_load ((ptr : Sptr.t), _) ty =
 
 let store ((ptr, _) as fptr) ty sval :
     (unit, Error.with_trace, serialized list) Result.t =
-  let** parts = lift_err @@ Encoder.encode ~offset:Usize.(0s) sval ty in
+  let@ () = with_loc_err ~trace:"Memory store" () in
+  let**^ parts = Encoder.encode ~offset:Usize.(0s) sval ty in
   if Iter.is_empty parts then Result.ok ()
   else
     let** () = check_ptr_align fptr ty in
@@ -512,8 +472,6 @@ let store ((ptr, _) as fptr) ty sval :
      *   f "Parsed to parts [%a]"
      *     Fmt.(list ~sep:comma Encoder.pp_cval_info)
      *     parts); *)
-    let@ () = with_error_loc_as_call_trace () in
-    let@ () = with_loc_err () in
     let* () = log "store" ptr in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
@@ -526,10 +484,21 @@ let store ((ptr, _) as fptr) ty sval :
         Result.fold_iter parts ~init:() ~f:(fun () (value, offset) ->
             Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
 
+let check_ptr_align ptr ty =
+  let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
+  check_ptr_align ptr ty
+
+let load ?ignore_borrow ptr ty =
+  let@ () = with_loc_err ~trace:"Memory load" () in
+  load ?ignore_borrow ptr ty
+
+let load_discriminant ptr ty =
+  let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
+  load_discriminant ptr ty
+
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
     (unit, Error.with_trace, serialized list) Result.t =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
   let** tree_to_write =
     let@ ofs = with_ptr src in
     Block.with_tree_block (fun tree_block ->
@@ -596,9 +565,6 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
      Tree_block.put_raw_tree ofs tree_to_write)
 
 let alloc ?kind ?span ?zeroed size align =
-  (* Commenting this out as alloc cannot fail *)
-  (* let@ () = with_loc_err () in*)
-  let@ () = with_error_loc_as_call_trace () in
   with_heap
     (let open Heap.SM in
      let open Heap.SM.Syntax in
@@ -616,14 +582,16 @@ let alloc_untyped ?kind ?span ~zeroed ~size ~align =
   alloc ?kind ?span ~zeroed size align
 
 let alloc_ty ?kind ?span ty =
-  let** layout = lift_err @@ Layout.layout_of ty in
+  let@ () = with_loc_err ~trace:"Allocation" () in
+  let**^ layout = Layout.layout_of ty in
   alloc ?kind ?span layout.size layout.align
 
 let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
     =
+  let@ () = with_loc_err ~trace:"Allocation" () in
   let** layouts =
     Result.fold_list tys ~init:[] ~f:(fun acc ty ->
-        let++ layout = lift_err @@ Layout.layout_of ty in
+        let++^ layout = Layout.layout_of ty in
         layout :: acc)
   in
   let layouts = List.rev layouts in
@@ -643,18 +611,21 @@ let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
          return ((ptr, Thin), block)))
 
 let free (({ ptr; _ } : Sptr.t), _) =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Freeing memory" () in
   let** () = assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree in
   with_heap
     (L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
-     (* TODO: does the tag not play a role in freeing? *)
+     (* TODO: freeing encurs a write access on the whole allocation, and also
+        requires there to be no strong protectors in the tree. We currently
+        don't have a notion of strong or weak protector.
+
+        See:
+        https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
      Heap.wrap (Typed.Ptr.loc ptr)
        (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
 let zeros (ptr, _) size =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Memory store (0s)" () in
   let* () = log "zeroes" ptr in
   let@ ofs = with_ptr ptr in
   Block.with_tree_block (Tree_block.zero_range ofs size)
@@ -688,39 +659,35 @@ let load_global g =
 
 let borrow ((ptr : Sptr.t), meta) (ty : Types.ty)
     (kind : Expressions.borrow_kind) =
+  let@ () = with_loc_err ~trace:"Borrow" () in
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
   if Option.is_none ptr.tag || (kind = BShared && Layout.is_unsafe_cell ty) then
     Result.ok (ptr, meta)
   else
-    let@ () = with_error_loc_as_call_trace () in
-    let@ () = with_loc_err () in
     let@ _ = with_ptr ptr in
     Block.borrow (ptr, meta) ty kind
 
 let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) =
+  let@ () = with_loc_err ~trace:"Reference protection" () in
   if Option.is_none ptr.tag || Layout.is_unsafe_cell ty then
     Result.ok (ptr, meta)
   else
-    let@ () = with_error_loc_as_call_trace () in
-    let@ () = with_loc_err () in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
     Block.protect (ptr, meta) mut ofs size
 
 let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) =
+  let@ () = with_loc_err ~trace:"Reference unprotection" () in
   match ptr.tag with
   | None -> Result.ok ()
   | Some tag ->
-      let@ () = with_error_loc_as_call_trace () in
-      let@ () = with_loc_err () in
       let**^ size = Layout.size_of ty in
       let@ ofs = with_ptr ptr in
       L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
       Block.unprotect ofs tag size
 
 let with_exposed addr =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Casting integer to pointer" () in
   match (Config.get ()).provenance with
   | Strict -> Result.error `UBIntToPointerStrict
   | Permissive ->
@@ -743,8 +710,7 @@ let with_exposed addr =
                  Result.ok (ptr, Thin)))
 
 let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
-  let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Leaking function" () in
   let* st = SM.get_state () in
   let st = of_opt st in
   let** global_addresses =
@@ -859,24 +825,24 @@ let declare_fn fn_def =
       Result.ok (ptr, meta)
 
 let lookup_fn (({ ptr; _ } : Sptr.t), _) =
+  let@ () = with_loc_err ~trace:"Accessing function pointer" () in
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
-  let** () = assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer in
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let** () =
+    assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer
+  in
   let loc = Typed.Ptr.loc ptr in
   match FunBiMap.get_fn loc st.functions with
   | Some fn -> Result.ok fn
   | None -> Result.error `NotAFnPointer
 
 let lookup_const_generic id ty =
+  let@ () = with_loc_err ~trace:"Accessing const generic" () in
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
   match Types.ConstGenericVarId.Map.find_opt id st.const_generics with
   | Some v -> Result.ok v
   | None ->
-      let@ () = with_error_loc_as_call_trace () in
-      let@ () = with_loc_err () in
       let**^ v = Encoder.nondet ty in
       let const_generics =
         Types.ConstGenericVarId.Map.add id v st.const_generics

@@ -59,8 +59,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     if res then ok ()
     else error (`Panic (Some "core::intrinsics::assert_zero_valid"))
 
-  let assume ~b =
-    State.assert_ b (`StdErr "core::intrinsics::assume with false")
+  let assume ~b = assert_ b (`StdErr "core::intrinsics::assume with false")
 
   (* TODO: atomics are, for now, single-threaded *)
   let atomic_load ~t ~ord:_ ~src = State.load src t
@@ -194,7 +193,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let* dist1 = Sptr.distance l r_end in
     let* dist2 = Sptr.distance r l_end in
     let zero = Usize.(0s) in
-    State.assert_not
+    assert_not
       (Sptr.is_same_loc l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
       (`StdErr (name ^ " overlapped"))
 
@@ -211,12 +210,12 @@ module M (Rust_state_m : Rust_state_m.S) :
     if%sat ty_size ==@ zero ||@ (count ==@ zero) then ok ()
     else
       let* () =
-        State.assert_not
+        assert_not
           (Sptr.is_at_null_loc src ||@ Sptr.is_at_null_loc dst)
           `NullDereference
       in
       let size, overflowed = ty_size *?@ count in
-      let* () = State.assert_not overflowed `Overflow in
+      let* () = assert_not overflowed `Overflow in
       (* Here we can cheat a little: for copy_nonoverlapping we need to check
          for overlap, but otherwise the copy is the exact same; since the State
          makes a copy of the src tree before storing into dst, the semantics are
@@ -236,7 +235,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let* () = State.check_ptr_align to_ t in
     let* size = Layout.size_of t in
     let* () =
-      State.assert_not
+      assert_not
         (Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr)
         `NullDereference
     in
@@ -304,7 +303,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let tlit = TypesUtils.ty_as_literal t in
     let x_int = as_base tlit x in
     let* () =
-      State.assert_not
+      assert_not
         (x_int ==@ BV.mki_lit tlit 0)
         (`StdErr "core::intrinsics::cttz_nonzero on zero")
     in
@@ -339,7 +338,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let tlit = TypesUtils.ty_as_literal t in
     let x_int = as_base tlit x in
     let* () =
-      State.assert_not
+      assert_not
         (x_int ==@ BV.mki_lit tlit 0)
         (`StdErr "core::intrinsics::ctlz_nonzero on zero")
     in
@@ -361,7 +360,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let ty = TypesUtils.ty_as_literal t in
     let a, b = (as_base ty a, as_base ty b) in
     let+ () =
-      State.assert_
+      assert_
         (a &@ b ==@ BV.mki_lit ty 0)
         (`StdErr "core::intrinsics::disjoint_bitor with overlapping bits")
     in
@@ -374,7 +373,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let zero = BV.mki_lit lit 0 in
     let ( %@ ) = BV.rem ~signed:(Layout.is_signed lit) in
     let+ () =
-      State.assert_
+      assert_
         (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))
         (`StdErr "core::intrinsics::exact_div on non divisible")
     in
@@ -404,7 +403,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     in
     let res = bop l r in
     let+ () =
-      State.assert_
+      assert_
         (is_finite l &&@ is_finite r &&@ is_finite (bop l r))
         (`StdErr (name ^ ": operands and result must be finite"))
     in
@@ -421,7 +420,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let ity = TypesUtils.ty_as_literal int in
     let f = as_base_f fty value in
     let* () =
-      State.assert_not
+      assert_not
         (Typed.Float.is_nan f ||@ Typed.Float.is_infinite f)
         (`StdErr "float_to_int_unchecked with NaN or infinite value")
     in
@@ -434,7 +433,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     (* we use min-1 and max+1, to be able to have a strict inequality, which
        avoids issues in cases of float precision loss (I think?) *)
     let+ () =
-      State.assert_
+      assert_
         (min <.@ f &&@ (f <.@ max))
         (`StdErr "float_to_int_unchecked out of int range")
     in
@@ -485,14 +484,13 @@ module M (Rust_state_m : Rust_state_m.S) :
     let zero = Usize.(0s) in
     let* size = Layout.size_of t in
     let* () =
-      State.assert_not (size ==@ zero)
-        (`Panic (Some "ptr_offset_from with ZST"))
+      assert_not (size ==@ zero) (`Panic (Some "ptr_offset_from with ZST"))
     in
     let size = Typed.cast size in
     let* off = Sptr.distance ptr base in
     (* If the pointers are not equal, they mustn't be dangling *)
     let* () =
-      State.assert_
+      assert_
         (off ==@ zero ||@ (Sptr.constraints ptr &&@ Sptr.constraints base))
         `UBDanglingPointer
     in
@@ -500,7 +498,7 @@ module M (Rust_state_m : Rust_state_m.S) :
      * 1. must be at the same address, OR derived from the same allocation
      * 2. the distance must be a multiple of sizeof(T) *)
     let* () =
-      State.assert_
+      assert_
         (off ==@ zero ||@ Sptr.is_same_loc ptr base &&@ (off %$@ size ==@ zero))
         `UBPointerComparison
     in
@@ -509,7 +507,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     if not unsigned then ok (Typed.cast (off /$@ size))
     else
       let+ () =
-        State.assert_
+        assert_
           (Typed.cast (off >=$@ zero))
           (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
       in
@@ -620,7 +618,7 @@ module M (Rust_state_m : Rust_state_m.S) :
           let* layout = Layout.layout_of sub_ty in
           let len = Typed.cast_i Usize meta in
           let size, ovf_mul = layout.size *?@ len in
-          let+ () = State.assert_not ovf_mul `Overflow in
+          let+ () = assert_not ovf_mul `Overflow in
           (size, layout.align)
       | TDynTrait _, (Thin | Len _) ->
           failwith "size_and_align_of_val: Invalid metadata for dyn type"
@@ -744,7 +742,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let* () = State.check_ptr_align dst t in
     let* size = Layout.size_of t in
     let size, overflowed = size *?@ count in
-    let* () = State.assert_not overflowed `Overflow in
+    let* () = assert_not overflowed `Overflow in
     if%sat size ==@ zero then ok ()
     else
       (* if v == 0, then we can replace this mess by initialising a Zeros

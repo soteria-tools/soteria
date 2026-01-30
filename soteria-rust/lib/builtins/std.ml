@@ -44,14 +44,12 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let ty = List.hd gen_args.types in
     let* ptr' = Sptr.offset ~signed:false ~ty ptr idx in
     if not idx_op.is_range then
-      let+ () =
-        State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ size)) `OutOfBounds
-      in
+      let+ () = assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ size)) `OutOfBounds in
       Ptr (ptr', Thin)
     else
       let range_end = as_base_i Usize (List.nth args 2) in
       let+ () =
-        State.assert_
+        assert_
           (Usize.(0s)
           <=$@ idx
           &&@ (idx <=$@ range_end)
