@@ -30,7 +30,12 @@ module FloatClass = struct
 end
 
 module RoundingMode = struct
-  type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
+  type t = Floatml.rounding_mode =
+    | NearestTiesToEven
+    | Truncate
+    | Ceil
+    | Floor
+    | NearestTiesToAway
   [@@deriving eq, show { with_path = false }, ord]
 end
 
@@ -447,6 +452,7 @@ end
 module type Float = sig
   (* constructors *)
   val mk : FloatPrecision.t -> AnyFloat.t -> t
+  val mk_z : FloatPrecision.t -> Z.t -> t
   val mk_s : FloatPrecision.t -> string -> t
   val mk_f : FloatPrecision.t -> float -> t
   val f16 : float -> t
@@ -576,6 +582,11 @@ module rec Bool : Bool = struct
     | Bool b1, Bool b2 -> bool (b1 = b2)
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
     | BitVec b1, BitVec b2 -> bool (Z.equal b1 b2)
+    | Float f1, Float f2 ->
+        (* Two NaNs are always equal, to match SMT-lib's behaviour  *)
+        if AnyFloat.fpclass f1 = FP_nan && AnyFloat.fpclass f2 = FP_nan then
+          v_true
+        else bool (AnyFloat.bits_equal f1 f2)
     (* Arithmetics *)
     | BitVec _, Unop (Neg, v2) -> sem_eq (BitVec.neg v1) v2
     | Unop (Neg, v1), BitVec _ -> sem_eq v1 (BitVec.neg v2)
@@ -2045,20 +2056,40 @@ and BitVec : BitVec = struct
       let add_ovf = add_overflows ~signed v1 neg_v2 in
       Bool.or_ neg_ovf add_ovf
 
+  let size_to_floatml_int : int -> Floatml.int_size option = function
+    | 8 -> Some Int8
+    | 16 -> Some Int16
+    | 32 -> Some Int32
+    | 64 -> Some Int64
+    | 128 -> Some Int128
+    | _ -> None
+
   let of_float ~rounding ~signed ~size v =
-    Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size
+    match (v.node.kind, size_to_floatml_int size) with
+    | Float f, Some int ->
+        let bv = AnyFloat.float2int f int rounding ~signed in
+        let bv = Option.get ~msg:"BV.of_float for NaN/out of bounds" bv in
+        BitVec bv <| t_bv size
+    | _ -> Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size
 
   let to_float ~rounding ~signed ~fp v =
-    Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp
+    match (v.node.kind, size_to_floatml_int (size_of v.node.ty)) with
+    | BitVec bv, Some int ->
+        let f = AnyFloat.int2float bv int fp rounding ~signed in
+        Float f <| t_float fp
+    | _ -> Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp
 
   let to_float_raw v =
     let fp = FloatPrecision.of_size (size_of v.node.ty) in
-    Unop (FloatOfBvRaw fp, v) <| t_float fp
+    match v.node.kind with
+    | BitVec bv -> Float (AnyFloat.of_bits_z fp bv) <| t_float fp
+    | _ -> Unop (FloatOfBvRaw fp, v) <| t_float fp
 end
 
 (** {2 Floating point} *)
 and Float : Float = struct
   let mk fp f = Float f <| t_float fp
+  let mk_z fp z = Float (AnyFloat.of_bits_z fp z) <| t_float fp
   let mk_s fp s = Float (AnyFloat.of_string fp s) <| t_float fp
   let mk_f fp f = mk_s fp (Stdlib.Float.to_string f)
 
@@ -2086,8 +2117,10 @@ and Float : Float = struct
   let is_zero = is_floatclass Zero
 
   let eq v1 v2 =
-    if equal v1 v2 then Bool.not (is_nan v1)
-    else mk_commut_binop FEq v1 v2 <| TBool
+    match (v1.node.kind, v2.node.kind) with
+    | Float f1, Float f2 -> Bool.bool AnyFloat.(f1 = f2)
+    | _ when equal v1 v2 -> Bool.not (is_nan v1)
+    | _ -> mk_commut_binop FEq v1 v2 <| TBool
 
   let lt v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -2097,18 +2130,40 @@ and Float : Float = struct
   let leq v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | Float f1, Float f2 -> Bool.bool AnyFloat.(f1 <= f2)
+    | _ when equal v1 v2 -> Bool.not (is_nan v1)
     | _ -> Binop (FLeq, v1, v2) <| TBool
 
   let gt v1 v2 = lt v2 v1
   let geq v1 v2 = leq v2 v1
-  let add v1 v2 = mk_commut_binop FAdd v1 v2 <| v1.node.ty
-  let sub v1 v2 = Binop (FSub, v1, v2) <| v1.node.ty
-  let div v1 v2 = Binop (FDiv, v1, v2) <| v1.node.ty
-  let mul v1 v2 = mk_commut_binop FMul v1 v2 <| v1.node.ty
-  let rem v1 v2 = Binop (FRem, v1, v2) <| v1.node.ty
+
+  let add v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Float f1, Float f2 -> mk (fp_of v1) AnyFloat.(f1 + f2)
+    | _ -> mk_commut_binop FAdd v1 v2 <| v1.node.ty
+
+  let sub v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Float f1, Float f2 -> mk (fp_of v1) AnyFloat.(f1 - f2)
+    | _ -> Binop (FSub, v1, v2) <| v1.node.ty
+
+  let div v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Float f1, Float f2 -> mk (fp_of v1) AnyFloat.(f1 / f2)
+    | _ -> Binop (FDiv, v1, v2) <| v1.node.ty
+
+  let mul v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Float f1, Float f2 -> mk (fp_of v1) AnyFloat.(f1 * f2)
+    | _ -> mk_commut_binop FMul v1 v2 <| v1.node.ty
+
+  let rem v1 v2 =
+    match (v1.node.kind, v2.node.kind) with
+    | Float f1, Float f2 -> mk (fp_of v1) AnyFloat.(f1 mod f2)
+    | _ -> Binop (FRem, v1, v2) <| v1.node.ty
 
   let abs v =
     match v.node.kind with
+    | Float f -> mk (fp_of v) AnyFloat.(abs f)
     | Unop (FAbs, _) -> v
     | _ -> Unop (FAbs, v) <| v.node.ty
 
@@ -2116,7 +2171,10 @@ and Float : Float = struct
     let fp = fp_of v in
     Binop (FSub, mk_f fp 0.0, v) <| v.node.ty
 
-  let round rm sv = Unop (FRound rm, sv) <| sv.node.ty
+  let round rm v =
+    match v.node.kind with
+    | Float f -> mk (fp_of v) AnyFloat.(round rm f)
+    | _ -> Unop (FRound rm, v) <| v.node.ty
 end
 
 (** {2 Pointers} *)
