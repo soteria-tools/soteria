@@ -99,7 +99,7 @@ struct
       | None -> SInt.greater_or_equal ofs (SInt.of_int 0)
       | Some b -> SInt.in_range ofs (SInt.of_int 0, b)
     in
-    SM.lift @@ Symex.assert_or_error cond `OutOfBounds
+    SM.assert_or_error cond `OutOfBounds
 
   let create (size : int) ~(new_codom : Elem.t) : t =
     if size <= 0 then
