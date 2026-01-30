@@ -1,3 +1,4 @@
+# [versionsync: OCAML_VERSION]
 OCAML_VERSION=5.4.0
 OPAM=opam
 OPAMX=$(OPAM) exec --
@@ -58,12 +59,13 @@ packaging/macOS_dylibs.txt:
 .PHONY: switch
 switch:
 	$(OPAM) switch create . ocaml-base-compiler.$(OCAML_VERSION) --deps-only --with-test --with-doc -y
+	# [versionsync: OCAMLFORMAT_VERSION] install ocamlformat
 	$(OPAM) install ocaml-lsp-server odig ocamlformat.0.28.1 -y
 
 .PHONY: ocaml-deps
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc
-	$(OPAM) install ocamlformat.0.28.1
+	$(OPAM) install ocamlformat.0.28.1 # [versionsync: OCAMLFORMAT_VERSION]
 	$(OPAM) install sherlodoc
 
 ##### JavaScript stuff #####

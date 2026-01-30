@@ -20,10 +20,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # [versionsync: OCAML_VERSION]
   OCAML_VERSION: 5.4.0
   OBOL_REPO: soteria-tools/obol
   OBOL_COMMIT_HASH: 45f2f95cf034c5daa448b64945e721839a57bb22
+  # [versionsync: CHARON_REPO]
   CHARON_REPO: soteria-tools/charon
+  # [versionsync: CHARON_COMMIT_HASH]
   CHARON_COMMIT_HASH: a71b958e7127c99ed85cbc520f85a155e38991be
 
 jobs:

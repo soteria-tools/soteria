@@ -1,0 +1,7 @@
+{
+  "_comment": "Central version configuration for Soteria. Run `scripts/versionsync.py check` to verify versions are in sync, or `scripts/versionsync.py update` to update versions everywhere.",
+  "CHARON_REPO": "soteria-tools/charon",
+  "CHARON_COMMIT_HASH": "a71b958e7127c99ed85cbc520f85a155e38991be",
+  "OCAMLFORMAT_VERSION": "0.28.1",
+  "OCAML_VERSION": "5.4.0"
+}
