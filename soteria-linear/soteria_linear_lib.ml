@@ -41,7 +41,7 @@ let exec file =
   in
   let process =
     let@@ () = Exec_interp.SM.Result.run_with_state ~state:State.empty in
-    Exec_interp.run_function main []
+    Exec_interp.eval_function main []
   in
   let results =
     let@ () = Interp.with_program program in
@@ -67,7 +67,7 @@ let generate_summaries file =
               v :: acc)
         in
         let args = List.rev args in
-        Bi_interp.run_function func_dec args
+        Bi_interp.eval_function func_dec args
       in
       let results =
         let@ () = Interp.with_program program in
