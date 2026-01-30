@@ -241,6 +241,40 @@ Extend (struct
     (f x', s')
 end)
 
+module StateT_base
+    (State : sig
+      type t
+    end)
+    (M : Base) =
+struct
+  type 'a t = State.t -> ('a * State.t) M.t
+
+  let[@inline] return x s = M.return (x, s)
+  let[@inline] bind x f s = M.bind (x s) (fun (x', s') -> f x' s')
+  let[@inline] map x f s = M.map (x s) (fun (x', s') -> (f x', s'))
+  let[@inline] get_state () : State.t t = fun s -> M.return (s, s)
+  let[@inline] set_state (s : State.t) : unit t = fun _ -> M.return ((), s)
+
+  let[@inline] map_state (f : State.t -> State.t) : unit t =
+   fun s -> M.return ((), f s)
+
+  let[@inline] run_with_state ~(state : State.t) (x : 'a t) : ('a * State.t) M.t
+      =
+    x state
+
+  let[@inline] with_state ~(state : State.t) (x : 'a t) : 'a t =
+   fun st -> M.map (x state) (fun (res, _) -> (res, st))
+
+  let[@inline] lift (m : 'a M.t) : 'a t = fun s -> M.map m (fun x -> (x, s))
+end
+
+module StateT
+    (State : sig
+      type t
+    end)
+    (M : Base) =
+  Extend (StateT_base (State) (M))
+
 module StateT_p (M : Base) = struct
   type ('a, 'state) t = 'state -> ('a * 'state) M.t
 

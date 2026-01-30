@@ -1,17 +1,20 @@
 open Aux
 
-type err = [ `Interp of string | `UseAfterFree ]
-
 module type S = sig
   type t [@@deriving show]
   type serialized
 
-  type 'a state_res :=
-    t option ->
-    (('a, err, serialized list) Soteria.Symex.Compo_res.t * t option) Symex.t
+  module SM :
+    Soteria.Sym_states.State_monad.S
+      with type 'a Symex.t = 'a Symex.t
+       and type st = t option
+       and module Symex.Value = Symex.Value
+       and module Value = Symex.Value
 
-  val load : S_int.t -> S_val.t state_res
-  val store : S_int.t -> S_val.t -> unit state_res
-  val alloc : unit -> S_int.t state_res
-  val free : S_int.t -> unit state_res
+  type 'a res := ('a, Error.t, serialized list) SM.Result.t
+
+  val load : S_int.t -> S_val.t res
+  val store : S_int.t -> S_val.t -> unit res
+  val alloc : unit -> S_int.t res
+  val free : S_int.t -> unit res
 end
