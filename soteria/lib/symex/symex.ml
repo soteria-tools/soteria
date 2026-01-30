@@ -31,6 +31,7 @@ module type Core = sig
   (** Represents a yet-to-be-executed symbolic process which terminates with a
       value of type ['a]. *)
   type 'a t
+  include Monad.Base with type 'a t := 'a t
 
   (** Type of error that corresponds to a logical failure (i.e. a logical
       mismatch during consumption).
@@ -124,8 +125,6 @@ module type Core = sig
   (** {2 Fuel} *)
 
   val consume_fuel_steps : int -> unit t
-
-  include Monad.Base with type 'a t := 'a t
 end
 
 module type Base = sig

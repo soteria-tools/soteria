@@ -8,14 +8,15 @@ module type S = sig
   type st
 
   module Symex : Base_sig
-  include Base_sig with type 'a t = st -> ('a * st) Symex.t
 
-  val lift : 'a Symex.t -> 'a t
-  val get_state : unit -> st t
-  val set_state : st -> unit t
-  val map_state : (st -> st) -> unit t
-  val with_state : state:st -> 'a t -> 'a t
-  val run_with_state : state:st -> 'a t -> ('a * st) Symex.t
+  include module type of
+      Monad.StateT_base
+        (struct
+          type t = st
+        end)
+        (Symex)
+
+  include Base_sig with type 'a t := 'a t
 
   module Result : sig
     include
