@@ -127,6 +127,8 @@ def check_file(
     all_ok = True
 
     tags = find_tags_in_file(content)
+    # prepare tag line boundaries so we don't search past the next tag
+    tag_lines = sorted({t[0] for t in tags})
 
     for line_num, _, name, tag_value, _, filters in tags:
         # Check 1: Does the version exist in config?
@@ -153,7 +155,10 @@ def check_file(
 
         # Check 3: Does the tag value appear in the following lines?
         found_in_file = False
-        for j in range(line_num + 1, min(line_num + 1 + LINES_TO_SEARCH, len(lines))):
+        # determine next tag line (if any) to avoid crossing tag boundaries
+        next_tag_line = next((ln for ln in tag_lines if ln > line_num), len(lines))
+        search_end = min(line_num + 1 + LINES_TO_SEARCH, next_tag_line)
+        for j in range(line_num + 1, search_end):
             if tag_value in lines[j]:
                 found_in_file = True
                 break
@@ -182,6 +187,7 @@ def update_file(
     modified = False
 
     tags = find_tags_in_file(content)
+    tag_lines = sorted({t[0] for t in tags})
 
     for line_num, col, name, old_tag_value, full_line, filters in tags:
         if name not in versions:
@@ -207,10 +213,10 @@ def update_file(
             lines[line_num] = tag_line.replace(old_tag, new_tag, 1)
             modified = True
 
-        # Update the value in following lines
-        for j in range(
-            line_num + 1, min(line_num + 1 + LINES_TO_SEARCH, len(lines))
-        ):
+        # Update the value in following lines, but don't cross into next tag
+        next_tag_line = next((ln for ln in tag_lines if ln > line_num), len(lines))
+        search_end = min(line_num + 1 + LINES_TO_SEARCH, next_tag_line)
+        for j in range(line_num + 1, search_end):
             if old_tag_value in lines[j]:
                 lines[j] = lines[j].replace(old_tag_value, new_tag_value, 1)
                 modified = True
