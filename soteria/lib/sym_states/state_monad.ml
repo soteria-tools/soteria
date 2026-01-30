@@ -98,10 +98,7 @@ module Make
   let[@inline] branches b st = Sym.branches (List.map (fun f () -> f () st) b)
   let[@inline] consume_fuel_steps n = lift (Sym.consume_fuel_steps n)
   let[@inline] give_up msg = lift (Sym.give_up msg)
-
-  let[@inline] some_or_give_up ~loc msg x =
-    lift (Sym.some_or_give_up ~loc msg x)
-
+  let[@inline] some_or_give_up msg x = lift (Sym.some_or_give_up msg x)
   let[@inline] all fn xs = Monad.all fn xs ~return ~bind
 
   let[@inline] foldM ~fold x ~init ~f =
