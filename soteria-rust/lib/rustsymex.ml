@@ -94,10 +94,7 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
   in
   aux elements
 
-let with_loc ~loc f =
-  let open Syntax in
-  let* st = get_state () in
-  with_state ~state:{ st with loc } f
+let with_loc ~loc (f : 'a t) : 'a t = fun st -> f { st with loc }
 
 let get_loc () =
   let open Syntax in
