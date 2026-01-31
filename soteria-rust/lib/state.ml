@@ -199,13 +199,16 @@ module Freeable_block_with_meta = struct
     Soteria.Sym_states.With_info.Make (DecayMapMonad) (Meta) (Freeable_block)
 
   let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
-      t * Tree_borrow.tag option =
+      (t * Tree_borrow.tag option) DecayMapMonad.t =
+    let open DecayMapMonad.Syntax in
     let tb, tag = Tree_borrow.init ~state:Unique () in
     let block = Tree_block.alloc ?zeroed size in
-    let span = Option.value span ~default:(get_loc ()) in
+    let+^ span =
+      match span with Some span -> return span | None -> get_loc ()
+    in
     let info : Meta.t = { align; size; kind; span; tb_root = tag } in
     let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
-    ({ node = Alive (Some block, tb); info = Some info }, tag)
+    (({ node = Alive (Some block, tb); info = Some info } : t), tag)
 end
 
 module Heap = struct
@@ -321,13 +324,16 @@ open SM.Syntax
 let log action ptr =
   let+ st = SM.get_state () in
   L.trace (fun m ->
-      m "About to execute action: %s at %a (%a)@\n@[<2>STATE:@ %a@]" action
-        Sptr.pp ptr Charon_util.pp_span_data (get_loc ())
+      m "About to execute action: %s (%a)@\n@[<2>STATE:@ %a@]" action Sptr.pp
+        ptr
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st)
 
-let[@inline] with_loc_err ?trace () f =
-  Result.map_error (f ()) (decorate_error ?trace)
+let[@inline] with_loc_err ?trace () (f : unit -> ('a, Error.t, 'f) SM.Result.t)
+    : ('a, Error.with_trace, 'f) SM.Result.t =
+  let*- err = f () in
+  let+^ loc = get_loc () in
+  Error (decorate_error ?trace err loc)
 
 let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
   let* st = SM.get_state () in
@@ -565,7 +571,7 @@ let alloc ?kind ?span ?zeroed size align =
   with_heap
     (let open Heap.SM in
      let open Heap.SM.Syntax in
-     let block, tag =
+     let*^ block, tag =
        Freeable_block_with_meta.make ?kind ?span ?zeroed ~align ~size ()
      in
      let** loc = Heap.alloc ~new_codom:block in
@@ -594,7 +600,7 @@ let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
          let open DecayMapMonad.Syntax in
          (* make Tree_block *)
          let { size; align; _ } : Layout.t = layout in
-         let block, tag =
+         let* block, tag =
            Freeable_block_with_meta.make ?kind ?span ~align ~size ()
          in
          (* create pointer *)

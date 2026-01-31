@@ -126,7 +126,7 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
       ~_catch_fn:catch_fn_ptr =
-    let loc = !Rustsymex.current_loc in
+    let* loc = get_loc () in
     let[@inline] exec_fun msg fn args =
       with_extra_call_trace ~loc ~msg @@ exec_fun fn args
     in

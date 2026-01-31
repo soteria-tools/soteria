@@ -25,12 +25,17 @@ end)
 
 module MonadState = struct
   type t = {
+    loc : Charon.Meta.span_data;
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
   }
 
   let empty =
-    { subst = Charon.Substitute.empty_subst; generic_layouts = TypeMap.empty }
+    {
+      loc = Charon_util.empty_span_data;
+      subst = Charon.Substitute.empty_subst;
+      generic_layouts = TypeMap.empty;
+    }
 end
 
 include Soteria.Sym_states.State_monad.Make (MonoSymex) (MonadState)
@@ -89,22 +94,23 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
   in
   aux elements
 
-let current_loc = ref Charon_util.empty_span_data
-let get_loc () = !current_loc
-
 let with_loc ~loc f =
   let open Syntax in
-  let old_loc = !current_loc in
-  current_loc := loc;
-  let* res = f () in
-  current_loc := old_loc;
-  return res
+  let* st = get_state () in
+  with_state ~state:{ st with loc } f
 
-let decorate_error ?(trace = "Triggering operation") (e : Error.t) :
-    Error.with_trace =
-  let loc = get_loc () in
-  let call_trace = Soteria.Terminal.Call_trace.singleton ~loc ~msg:trace () in
-  (e, call_trace)
+let get_loc () =
+  let open Syntax in
+  let+ { loc; _ } = get_state () in
+  loc
+
+let decorate_error ?(trace = "Triggering operation") e loc =
+  (e, Soteria.Terminal.Call_trace.singleton ~loc ~msg:trace ())
+
+let error ?trace e : ('a, Error.with_trace, 'f) Result.t =
+  let open Syntax in
+  let+ loc = get_loc () in
+  Soteria.Symex.Compo_res.Error (decorate_error ?trace e loc)
 
 let rename_trace trace (f : unit -> ('a, Error.with_trace, 'f) Result.t) :
     ('a, Error.with_trace, 'f) Result.t =

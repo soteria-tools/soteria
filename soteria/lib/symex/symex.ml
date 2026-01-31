@@ -178,6 +178,9 @@ module type Base = sig
       fe:('err -> ('a, 'b, 'fix) t) ->
       ('a, 'b, 'fix) t
 
+    val bind_error :
+      ('ok, 'err, 'fix) t -> ('err -> ('ok, 'a, 'fix) t) -> ('ok, 'a, 'fix) t
+
     val map_error : ('ok, 'err, 'fix) t -> ('err -> 'a) -> ('ok, 'a, 'fix) t
     val map_missing : ('ok, 'err, 'fix) t -> ('fix -> 'a) -> ('ok, 'err, 'a) t
 
@@ -206,6 +209,12 @@ module type Base = sig
 
     val ( let++ ) : ('a, 'c, 'd) Result.t -> ('a -> 'b) -> ('b, 'c, 'd) Result.t
     val ( let+- ) : ('a, 'b, 'd) Result.t -> ('b -> 'c) -> ('a, 'c, 'd) Result.t
+
+    val ( let*- ) :
+      ('a, 'b, 'c) Result.t ->
+      ('b -> ('a, 'd, 'c) Result.t) ->
+      ('a, 'd, 'c) Result.t
+
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax : sig
@@ -698,6 +707,7 @@ module Base_extension (Core : Core) = struct
     let ( let** ) = Result.bind
     let ( let++ ) = Result.map
     let ( let+- ) = Result.map_error
+    let ( let*- ) = Result.bind_error
     let ( let+? ) = Result.map_missing
 
     module Symex_syntax = struct
