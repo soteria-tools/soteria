@@ -101,7 +101,8 @@ let rec sure_side_effect_free (e : Ail_tys.expr) =
       && Option.fold ~none:true ~some:sure_side_effect_free e2opt
       && sure_side_effect_free e3
   | AilEconst _ | AilEident _
-  (* Loading from a stack variable is side-effect free, it supposedly cannot fail. *)
+  (* Loading from a stack variable is side-effect free, it supposedly cannot
+     fail. *)
   | AilErvalue (AnnotatedExpression (_, _, _, AilEident _)) ->
       true
   | AilEcast (_, _, e) -> sure_side_effect_free e

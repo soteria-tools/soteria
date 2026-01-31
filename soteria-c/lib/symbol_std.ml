@@ -1,5 +1,5 @@
-(*** More standard interface to [Symbol], making it nicer for 
-   using with Stdlib functors *)
+(*** More standard interface to [Symbol], making it nicer for using with Stdlib
+  functors *)
 
 open Cerb_frontend.Symbol
 

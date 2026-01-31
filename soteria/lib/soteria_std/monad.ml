@@ -295,7 +295,7 @@ module StateT_p (M : Base) = struct
   module Syntax = struct
     let ( let* ) x f = bind x f
     let ( let+ ) x f = map x f
-    let ( let*^ ) x f = bind x f
-    let ( let+^ ) x f = map x f
+    let ( let*^ ) x f = bind (lift x) f
+    let ( let+^ ) x f = map (lift x) f
   end
 end

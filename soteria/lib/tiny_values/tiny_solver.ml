@@ -103,14 +103,16 @@ struct
   (* Initialise and reset *)
 
   let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the declarations *)
+    (* We want to go back to 1, meaning after the first push which saved the
+       declarations *)
     let save_counter = !(solver.save_counter) in
     if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
     Save_counter.reset solver.save_counter;
     Var_counter.reset solver.var_counter;
     Solver_state.reset solver.state;
     Analysis.reset solver.analysis;
-    (* We need to pop the initial push, so we go back to the state before the first push *)
+    (* We need to pop the initial push, so we go back to the state before the
+       first push *)
     Intf.pop solver.z3_exe (save_counter + 1);
     (* Make sure the basic definitions are saved again *)
     Intf.pop solver.z3_exe 1
@@ -209,7 +211,8 @@ struct
     type slot = { value : slot_content; mutable checked : bool }
     [@@deriving show]
 
-    (* Invariants: the PC only has checked things, and then only unchecked things. *)
+    (* Invariants: the PC only has checked things, and then only unchecked
+       things. *)
 
     type t = slot Dynarray.t Dynarray.t [@@deriving show]
 
@@ -233,7 +236,8 @@ struct
         | Some last ->
             if Typed.equal v Typed.v_false then (
               Dynarray.clear last;
-              (* We mark false as unchecked to make sure trivial_truthiness doesn't infer the wrong thing. *)
+              (* We mark false as unchecked to make sure trivial_truthiness
+                 doesn't infer the wrong thing. *)
               Dynarray.add_last last
                 { value = Asrt Typed.v_false; checked = false })
             else Dynarray.add_last last { value = Asrt v; checked = false }
@@ -358,7 +362,8 @@ struct
       let start_at = 1
     end)
 
-    (* Since we start addresses at one to improve trivial model hits, we need to offset to obtain an index. *)
+    (* Since we start addresses at one to improve trivial model hits, we need to
+       offset to obtain an index. *)
     let var_to_index v = Var.to_int v - 1
 
     type t = {
@@ -423,7 +428,8 @@ struct
   (* Initialise and reset *)
 
   let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the declarations *)
+    (* We want to go back to 1, meaning after the first push which saved the
+       declarations *)
     let save_counter = !(solver.save_counter) in
     if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
     Save_counter.reset solver.save_counter;
@@ -491,10 +497,10 @@ struct
     Hashtbl.Hint.create 1023
 
   let trivial_model_works to_check =
-    (* We try a trivial model where replacing each variable with name
-    [|n|] with the corresponding integer [n]; except if an assertion
-    [|n| == v] exists, in which case we replace it with the value [v].
-    If the constraint evaluates to true, then it is satisfiable. *)
+    (* We try a trivial model where replacing each variable with name [|n|] with
+       the corresponding integer [n]; except if an assertion [|n| == v] exists,
+       in which case we replace it with the value [v]. If the constraint
+       evaluates to true, then it is satisfiable. *)
     let v_eqs = Var.Hashtbl.create 8 in
     Svalue.split_ands to_check (fun v ->
         match v.node.kind with
@@ -554,7 +560,8 @@ struct
         let to_check, relevant_vars =
           Solver_state.unchecked_constraints solver.state
         in
-        (* This will put the check in a somewhat-normal form, to increase cache hits. *)
+        (* This will put the check in a somewhat-normal form, to increase cache
+           hits. *)
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let to_check =
           Iter.fold Typed.and_ to_check

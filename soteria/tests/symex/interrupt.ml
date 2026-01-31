@@ -4,8 +4,8 @@ open Syntax
 let branching_process =
   let* b = nondet Typed.t_bool in
   if%sat b then
-    (* At this stage there is no available solver, they're both used.
-       This branch should return 0! *)
+    (* At this stage there is no available solver, they're both used. This
+       branch should return 0! *)
     return (Solver_pool.total_available ())
   else
     return
@@ -15,9 +15,8 @@ let branching_process =
 let interrupted_process =
   let* b = nondet Typed.t_bool in
   if%sat b then
-    (* We have run our first query.
-       Therefore, we have one solver created and zero available
-       (used in the current execution.) *)
+    (* We have run our first query. Therefore, we have one solver created and
+       zero available (used in the current execution.) *)
     let one = Solver_pool.total_created () in
     let zero = Solver_pool.total_available () in
     return (one + 1, [ zero ])

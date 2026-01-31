@@ -22,8 +22,9 @@ module MemVal = struct
     let ( ==@ ) = Typed.Infix.( ==@ )
     let ( &&@ ) = Typed.Infix.( &&@ )
 
-    (* We assume addition/overflow within the range of an allocation may never overflow.
-       This allows extremely good reductions around inequalities, which Tree_block relies on.  *)
+    (* We assume addition/overflow within the range of an allocation may never
+       overflow. This allows extremely good reductions around inequalities,
+       which Tree_block relies on. *)
     let ( +@ ) = Typed.Infix.( +!!@ )
     let ( -@ ) = Typed.Infix.( -!!@ )
 
@@ -100,8 +101,8 @@ module MemVal = struct
           Fmt.kstr not_impl "Type mismatch when decoding value: %a vs %a"
             Fmt_ail.pp_ty ty Fmt_ail.pp_ty tyw
     | Any ->
-        (* We don't know if this read is valid, as memory could be uninitialised.
-           We have to approximate and vanish. *)
+        (* We don't know if this read is valid, as memory could be
+           uninitialised. We have to approximate and vanish. *)
         Csymex.not_impl "Reading from Any memory, vanishing."
 
   type serialized =

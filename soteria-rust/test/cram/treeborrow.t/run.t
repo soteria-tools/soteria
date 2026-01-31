@@ -18,7 +18,7 @@ Simple tree borrow violation
     6 │      let (x, y) = unsafe { (&mut *ptr, &mut *ptr) };
     7 │      *x = 13;
     8 │      *y = 20; // UB: y is disabled
-      │       ^^^^^^^ Triggering memory operation
+      │       ^^^^^^^ Memory store
   PC 1: empty
   
   [1]

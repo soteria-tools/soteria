@@ -79,7 +79,8 @@ let pp_pretty ~ignore_freed ft st =
   match st.heap with
   | None -> Fmt.pf ft "Empty Heap"
   | Some st ->
-      (* FIXME: This used to call [Ctree_block.pp_pretty], but I can't parametrise the heap printer anymore... *)
+      (* FIXME: This used to call [Ctree_block.pp_pretty], but I can't
+         parametrise the heap printer anymore... *)
       Heap.pp' ~ignore ~codom:Block.pp_pretty ft st
 
 let empty = None
@@ -313,25 +314,26 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) =
       aux layout.members_ofs members values
 
 (* let consume (serialized : serialized) (st : t) :
-    (t, [> Csymex.lfail ] err, serialized) Csymex.Result.t =
-  let@ () = with_error_loc_as_call_trace () in
-  L.debug (fun m -> m "Consuming state from %a" pp_serialized serialized);
-  let** globs =
-    let+ res = Globs.consume serialized.globs st.globs in
-    match res with
-    | Ok globs -> Soteria.Symex.Compo_res.Ok globs
-    | Error e -> Error e
-    | Missing fixes ->
-        let fixes = List.map (fun fix -> { heap = []; globs = fix }) fixes in
-        Missing fixes
-  in
-  let+ res = SPmap.consume Block.consume serialized.heap st.heap in
-  match res with
-  | Ok heap -> Soteria.Symex.Compo_res.Ok { heap; globs }
-  | Error e -> Error e
-  | Missing fixes ->
-      let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
-      Missing fixes *)
+ *     (t, [> Csymex.lfail ] err, serialized) Csymex.Result.t =
+ *   let@ () = with_error_loc_as_call_trace () in
+ *   L.debug (fun m -> m "Consuming state from %a" pp_serialized serialized);
+ *   let** globs =
+ *     let+ res = Globs.consume serialized.globs st.globs in
+ *     match res with
+ *     | Ok globs -> Soteria.Symex.Compo_res.Ok globs
+ *     | Error e -> Error e
+ *     | Missing fixes ->
+ *         let fixes = List.map (fun fix -> { heap = []; globs = fix }) fixes in
+ *         Missing fixes
+ *   in
+ *   let+ res = SPmap.consume Block.consume serialized.heap st.heap in
+ *   match res with
+ *   | Ok heap -> Soteria.Symex.Compo_res.Ok { heap; globs }
+ *   | Error e -> Error e
+ *   | Missing fixes ->
+ *       let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
+ *       Missing fixes
+ *)
 
 let get_global (sym : Cerb_frontend.Symbol.sym) =
   let* st_opt = SM.get_state () in

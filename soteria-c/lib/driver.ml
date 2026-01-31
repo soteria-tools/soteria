@@ -316,7 +316,8 @@ let print_states result =
 (* Entry point function *)
 let exec_and_print log_config term_config solver_config stats_config config fuel
     includes file_names entry_point : Error.Exit_code.t =
-  (* The following line is not set as an initialiser so that it is executed before initialising z3 *)
+  (* The following line is not set as an initialiser so that it is executed
+     before initialising z3 *)
   let fuel = Soteria.Symex.Fuel_gauge.Cli.validate_or_exit fuel in
   let@ () =
     initialise ~log_config ~term_config ~solver_config ~stats_config config
@@ -455,7 +456,8 @@ let show_ail log_config term_config config (includes : string list)
 (* Entry point function *)
 let generate_all_summaries log_config term_config solver_config stats_config
     config includes functions_to_analyse file_names =
-  (* TODO: generate a compilation database directly, to simplify the interface in this file. *)
+  (* TODO: generate a compilation database directly, to simplify the interface
+     in this file. *)
   let@ () = with_tool_errors_caught () in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
   let@ () =

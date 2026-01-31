@@ -78,10 +78,9 @@ let real_index_str (content : string) ((line, col) : pos) =
 let mk_range_file ?filename ?content file from_ to_ =
   let open Grace.Range in
   let bi = Grace.Byte_index.of_int in
-  (* Could be optimised if indexes are in the same file,
-   but I don't think printing errors is what's going to take time.
-   Also, it shouldn't be required anyway, see https://github.com/johnyob/grace/issues/46
-*)
+  (* Could be optimised if indexes are in the same file, but I don't think
+     printing errors is what's going to take time. Also, it shouldn't be
+     required anyway, see https://github.com/johnyob/grace/issues/46 *)
   try
     let index_fn =
       Option.fold ~none:(real_index file) ~some:real_index_str content

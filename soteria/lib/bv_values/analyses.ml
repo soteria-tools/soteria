@@ -73,7 +73,7 @@ module Interval : S = struct
   (** An interval analysis for bitvectors inspired by
       https://ceur-ws.org/Vol-1617/paper8.pdf *)
 
-  (* we only include stuff from Z we want  *)
+  (* we only include stuff from Z we want *)
   open struct
     let one = Z.one
     let zero = Z.zero
@@ -145,7 +145,8 @@ module Interval : S = struct
       && List.for_all2 Range.eq d1.negs d2.negs
 
     let apply_negs size pos negs =
-      (* First, try filtering out negations that are included in others, and join them *)
+      (* First, try filtering out negations that are included in others, and
+         join them *)
       let aux_merge_filter negs r =
         let negs, r =
           List.fold_left
@@ -203,9 +204,10 @@ module Interval : S = struct
 
     (** Whether the interval data represents an empty set. *)
     let is_empty data =
-      (* TODO: take into account the negative ranges! Maybe we can do a small optimisation
-         where we automatically clear data and set a RangeData to be empty when we find it
-         is after an add_pos/add_neg, rather than computing it here too. *)
+      (* TODO: take into account the negative ranges! Maybe we can do a small
+         optimisation where we automatically clear data and set a RangeData to
+         be empty when we find it is after an add_pos/add_neg, rather than
+         computing it here too. *)
       Range.is_empty data.pos
 
     (** Whether the data represents a singleton set. *)
@@ -288,19 +290,20 @@ module Interval : S = struct
         (* The range is empty, so this cannot be true *)
         (Svalue.Bool.v_false, Var.Set.empty, st)
       else
-        (* We could cleanly absorb the range, so the PC doesn't need to store it -- however
-           we must mark this variable as dirty, as maybe the modified range still renders
-           the branch infeasible, e.g. because of some additional PC assertions. *)
+        (* We could cleanly absorb the range, so the PC doesn't need to store it
+           -- however we must mark this variable as dirty, as maybe the modified
+           range still renders the branch infeasible, e.g. because of some
+           additional PC assertions. *)
         (Svalue.Bool.v_true, Var.Set.singleton var, st)
 
   let rec as_range (v : Svalue.t) =
-    match v.node.kind with
     (* For the inequalities, see https://ceur-ws.org/Vol-1617/paper8.pdf *)
+    match v.node.kind with
     (*
-       Case 2: c1 <=u c2 + x
-       • c1 < c2 => ~[ -c2; c1 - c2 - 1 ]
-       • c1 >= c2 => [ c1 - c2; -c2 - 1 ]
-    *)
+     *  Case 2: c1 <=u c2 + x
+     *  • c1 < c2 => ~[ -c2; c1 - c2 - 1 ]
+     *  • c1 >= c2 => [ c1 - c2; -c2 - 1 ]
+     *)
     | Binop
         ( ((Lt false | Leq false) as bop),
           { node = { kind = BitVec c1; ty = TBitVector size }; _ },
@@ -333,10 +336,10 @@ module Interval : S = struct
         if c1 < c2 then Some (v, size, (Neg, (~-size c2, c1 - c2 - one)))
         else Some (v, size, (Pos, (c1 - c2, ~-size c2 - one)))
     (*
-       Case 3: c1 + x <=u c2
-       • c1 <= c2 => ~[ c2 - c1 + 1; -c1 - 1 ]
-       • c1 > c2 => [ -c1; -c1 + c2 ]
-    *)
+     *  Case 3: c1 + x <=u c2
+     *  • c1 <= c2 => ~[ c2 - c1 + 1; -c1 - 1 ]
+     *  • c1 > c2 => [ -c1; -c1 + c2 ]
+     *)
     | Binop
         ( ((Lt false | Leq false) as bop),
           {
@@ -369,10 +372,10 @@ module Interval : S = struct
         if c1 <= c2 then Some (v, size, (Neg, (c2 - c1 + one, ~-size one)))
         else Some (v, size, (Pos, (~-size c1, ~-size c1 + c2)))
     (*
-       Case 4: x <=s c1
-       • c1 < 2^{n-1} => ~[ c1 + 1; 2^{n-1} - 1 ]
-       • c1 >= 2^{n-1} => [ 2^{n-1}; c1 ]
-    *)
+     *  Case 4: x <=s c1
+     *  • c1 < 2^{n-1} => ~[ c1 + 1; 2^{n-1} - 1 ]
+     *  • c1 >= 2^{n-1} => [ 2^{n-1}; c1 ]
+     *)
     | Binop
         ( ((Lt true | Leq true) as binop),
           { node = { kind = Var v; _ }; _ },
@@ -382,10 +385,10 @@ module Interval : S = struct
         if c1 < mid then Some (v, size, (Neg, (c1 + one, mid - one)))
         else Some (v, size, (Pos, (mid, c1)))
     (*
-       Case 5: c1 <=s x
-       • c1 < 2^{n-1} => [ c1; 2^{n-1} - 1 ]
-       • c1 >= 2^{n-1} => ~[ 2^{n-1}; c1 - 1 ]
-    *)
+     *  Case 5: c1 <=s x
+     *  • c1 < 2^{n-1} => [ c1; 2^{n-1} - 1 ]
+     *  • c1 >= 2^{n-1} => ~[ 2^{n-1}; c1 - 1 ]
+     *)
     | Binop
         ( ((Lt true | Leq true) as binop),
           { node = { kind = BitVec c1; ty = TBitVector size }; _ },
@@ -405,8 +408,8 @@ module Interval : S = struct
           { node = { kind = Var v; _ }; _ },
           { node = { kind = BitVec x; ty = TBitVector size }; _ } ) ->
         Some (v, size, (Pos, (x, x)))
-    (* This only works for a single fact; we can't apply this to [!(A && B)], since that's
-       a disjunction! *)
+    (* This only works for a single fact; we can't apply this to [!(A && B)],
+       since that's a disjunction! *)
     | Unop (Not, v) ->
         Option.map
           (fun (v1, size, (sign, range)) ->
@@ -450,8 +453,8 @@ module Interval : S = struct
             m "checking %a / %a / %a /@.1. %a@.2. %a"
               Fmt.(list Var.pp)
               (Var.Set.to_list vars) Svalue.pp v1 Svalue.pp v2 pp st pp st');
-        (* If the state is unchanged, then the conjunction covers all possible states and
-           this is always true. (I think.) *)
+        (* If the state is unchanged, then the conjunction covers all possible
+           states and this is always true. (I think.) *)
         if
           Svalue.equal v1' Svalue.Bool.v_true
           && Svalue.equal v2' Svalue.Bool.v_true
@@ -499,9 +502,10 @@ module Interval : S = struct
         match range_opt with
         | None -> vs
         | Some range ->
-            (* In sparsely populated ranges (e.g. [0, 1000] - [1, 999]), filtering
-               can be very slow since the odds of getting a valid integer is so low.
-               Because of this, we reset the iterator and generate values ourselves. *)
+            (* In sparsely populated ranges (e.g. [0, 1000] - [1, 999]),
+               filtering can be very slow since the odds of getting a valid
+               integer is so low. Because of this, we reset the iterator and
+               generate values ourselves. *)
             let l, h = range.Data.pos in
             let rec iter z f =
               f (Svalue.BitVec.mk n z);
@@ -549,7 +553,7 @@ module Equality : S = struct
     let default = (UnionFind.new_store (), VMap.empty)
   end)
 
-  (* override to account for UnionFind  *)
+  (* override to account for UnionFind *)
   let save d =
     let uf, st = Dynarray.get_last d in
     Dynarray.add_last d (UnionFind.copy uf, st)

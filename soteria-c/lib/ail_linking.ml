@@ -46,9 +46,10 @@ let link_extern (ext_cur : extern_idmap) (ext_oth : extern_idmap)
               if (Config.current ()).no_ignore_duplicate_symbols then
                 Error (Fmt.str "Duplicate external name %a" Fmt_ail.pp_id k)
               else
-                (* There's no clear semantics for duplicate symbols, since it's not legal in C.
-                   We only accept in case the build we inferred is somewhat invalid.
-                   We make one choice, which is to treat the definition as a declaration. *)
+                (* There's no clear semantics for duplicate symbols, since it's
+                   not legal in C. We only accept in case the build we inferred
+                   is somewhat invalid. We make one choice, which is to treat
+                   the definition as a declaration. *)
                 Ok
                   ( Pmap.add k (cur_def, IK_definition) acc_ext,
                     acc_tent,
@@ -162,7 +163,8 @@ let merge_globs (globs_1 : 'a sigma_object_definition list)
     (redundant_globs : (Symbol.sym * Symbol.sym) list) =
   let catch f = try Ok (f ()) with LinkError s -> Error s in
   catch @@ fun () ->
-  (* globs_1 is the accumulator, so it is potentially much bigger than globs_2. *)
+  (* globs_1 is the accumulator, so it is potentially much bigger than
+     globs_2. *)
   let globs = List.rev_append globs_2 globs_1 in
   (* Create an associate list of the dependencies for each global *)
   let dep_map =
@@ -194,12 +196,12 @@ let merge_globs (globs_1 : 'a sigma_object_definition list)
         (* TODO: should the None case be allowed to happen? *)
         Option.map (fun g -> (k, g)) (Sym_map.find_opt k gs_map)
         (* match Sym_map.find_opt k gs_map with
-        | None ->
-            None
-            (* Fmt.kstr
-              (fun s -> raise (LinkError s))
-              "merge_globs: %a not found" Fmt_ail.pp_sym k *)
-        | Some g -> Some (k, g) *))
+         * | None ->
+         *    None
+         *    (* Fmt.kstr
+         *      (fun s -> raise (LinkError s))
+         *      "merge_globs: %a not found" Fmt_ail.pp_sym k *)
+         * | Some g -> Some (k, g) *))
       ordered_syms
   in
   (* We have now ordered the globs *)

@@ -61,12 +61,9 @@ let generate_summaries file =
         let open Bi_interp in
         let@@ () = SM.Result.run_with_state ~state:Bi_state.empty in
         let open SM.Syntax in
-        let* args =
-          SM.fold_list func_dec.args ~init:[] ~f:(fun acc _ ->
-              let+^ v = Interp.S_val.fresh () in
-              v :: acc)
+        let*^ args =
+          SM.Symex.map_list func_dec.args ~f:(fun _ -> Interp.S_val.fresh ())
         in
-        let args = List.rev args in
         Bi_interp.eval_function func_dec args
       in
       let results =

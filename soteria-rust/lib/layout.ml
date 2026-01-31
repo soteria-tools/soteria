@@ -53,8 +53,8 @@ let size_of_literal_ty = size_of_literal_ty
 let is_signed = is_signed
 
 (* TODO: this is not really if we want to properly emulate different platforms,
-   but this is good enough for now.
-   See https://doc.rust-lang.org/reference/type-layout.html#r-layout.primitive.align *)
+   but this is good enough for now. See
+   https://doc.rust-lang.org/reference/type-layout.html#r-layout.primitive.align *)
 let align_of_literal_ty = size_of_literal_ty
 
 type meta_kind = LenKind | VTableKind | NoneKind
@@ -125,11 +125,11 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
     ->
       let ptr_size = Crate.pointer_size () in
       ok (mk_concrete ~size:ptr_size ~align:ptr_size ())
-  (* Dynamically sized types -- we assume they have a size of 0. In truth, these types should
-     simply never be allocated directly, and instead can only be obtained hidden behind
-     references; however we must be able to compute their layout, to get e.g. the offset of
-     the tail in a DST struct.
-     FIXME: Maybe we should mark the layout as a DST, and ensure a DST layout's size is never
+  (* Dynamically sized types -- we assume they have a size of 0. In truth, these
+     types should simply never be allocated directly, and instead can only be
+     obtained hidden behind references; however we must be able to compute their
+     layout, to get e.g. the offset of the tail in a DST struct. FIXME: Maybe we
+     should mark the layout as a DST, and ensure a DST layout's size is never
      used for an allocation. *)
   | TAdt { id = TBuiltin TStr; _ } | TSlice _ ->
       let sub_ty = match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8) in
@@ -160,7 +160,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   (* Arrays *)
   | TArray (subty, size) ->
       let max_array_len sub_size =
-        (* We calculate the max array size for a 32bit architecture, like Miri does. *)
+        (* We calculate the max array size for a 32bit architecture, like Miri
+           does. *)
         let isize_bits = 32 - 1 in
         BV.usize Z.(one lsl isize_bits) /@ Typed.cast sub_size
       in
@@ -182,17 +183,17 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Type variables : non-deterministically generate a layout *)
   | TVar (Free _) ->
-      (* FIXME: we need to scope these type variables, as the T in foo<T> and
-         in bar<T> are "different" Ts. *)
+      (* FIXME: we need to scope these type variables, as the T in foo<T> and in
+         bar<T> are "different" Ts. *)
       let* size = nondet (Typed.t_usize ()) in
       let* () = assume Usize.[ 0s <=$@ size; size <$@ 1024s ] in
       (* this is real non-determinism of the alignment; we don't do it because
-         it creates quite expensive formulae that we want to avoid.
-         We make the assumption the biggest possible alignment is 16, which
-         is that of u128.
-      let* align_shift = nondet (Typed.t_usize ()) in
-      let* () = assume Usize.[ 0s <=$@ align_shift; align_shift <=$@ 4s ] in
-      let align = Typed.cast (Usize.(1s) <<@ align_shift) in *)
+         it creates quite expensive formulae that we want to avoid. We make the
+         assumption the biggest possible alignment is 16, which is that of
+         u128. *)
+      (* let* align_shift = nondet (Typed.t_usize ()) in
+       * let* () = assume Usize.[ 0s <=$@ align_shift; align_shift <=$@ 4s ] in
+       * let align = Typed.cast (Usize.(1s) <<@ align_shift) in *)
       let align = Usize.(1s) in
       ok (mk ~size ~align ())
   | TVar (Bound _) -> failwith "escaping bound type variable found in layout_of"
@@ -433,11 +434,11 @@ let constraints :
         let x = Typed.cast_lit TBool x in
         [ U8.(0s) <=@ x; (x <=@ U8.(1s)) ]
   | TChar ->
-      (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’ other than
-       a surrogate code point. This has a fixed numerical definition: code points are in
-       the range 0 to 0x10FFFF, inclusive. Surrogate code points, used by UTF-16, are in
-       the range 0xD800 to 0xDFFF.
-       https://doc.rust-lang.org/std/primitive.char.html *)
+      (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’
+         other than a surrogate code point. This has a fixed numerical
+         definition: code points are in the range 0 to 0x10FFFF, inclusive.
+         Surrogate code points, used by UTF-16, are in the range 0xD800 to
+         0xDFFF. See https://doc.rust-lang.org/std/primitive.char.html *)
       let codepoint_min = U32.(0s) in
       let codepoint_max = U32.(0x10FFFFs) in
       let surrogate_min = U32.(0xD800s) in
@@ -500,12 +501,13 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
     | _ -> false
   in
   match (ty1, ty2) with
-  (* Hack: &dyn is always compatible  *)
+  (* Hack: &dyn is always compatible *)
   | TDynTrait _, _
   | ( (TRef (_, TDynTrait _, _) | TRawPtr (TDynTrait _, _)),
       (TRef (_, _, _) | TRawPtr (_, _)) ) ->
       ok Typed.v_true
-  (* Refs and raw pointers are ABI-compatible if they have the same metadata type *)
+  (* Refs and raw pointers are ABI-compatible if they have the same metadata
+     type *)
   | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
     ->
       ok (Typed.bool (dst_kind ty1 = dst_kind ty2))
@@ -518,7 +520,8 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
       ok Typed.v_true
   (* We keep this later down to avoid the check for everything *)
   | ty1, ty2 when is_ptr_like ty1 && is_ptr_like ty2 -> ok Typed.v_true
-  (* FIXME: Function pointers are compatible if they have the same ABI-string (unsupported) *)
+  (* FIXME: Function pointers are compatible if they have the same ABI-string
+     (unsupported) *)
   | TFnPtr _, TFnPtr _ -> ok Typed.v_true
   | ty1, ty2 when Types.equal_ty ty1 ty2 -> ok Typed.v_true
   | _ ->
@@ -528,5 +531,6 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
       in
       let** ty1_1zst = is_1zst ty1 in
       let++ ty2_1zst = is_1zst ty2 in
-      (* 1ZSTs are exclusively compatible with themselves; otherwise type equality! *)
+      (* 1ZSTs are exclusively compatible with themselves; otherwise type
+         equality! *)
       ty1_1zst &&@ ty2_1zst

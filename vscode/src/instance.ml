@@ -54,7 +54,8 @@ let toggle_debug_mode instance =
   match !(instance.server) with
   | None -> show_message `Warn "Server is not running"
   | Some server ->
-      (* TODO: Put constant in a common library shared between frontend and backend *)
+      (* TODO: Put constant in a common library shared between frontend and
+         backend *)
       LanguageClient.sendNotification server "soteria/toggleDebugMode" Ojs.null
 
 let disposable instance =

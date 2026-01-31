@@ -71,7 +71,8 @@ module Make (Value : Value) :
       Some oc
 
     let channel () =
-      (* We only open if current file is not None and its different from current config *)
+      (* We only open if current file is not None and its different from current
+         config *)
       match ((Config.get ()).dump_smt_file, !current_channel) with
       | None, None -> None
       | Some f, None -> open_channel f

@@ -58,29 +58,27 @@ module M (Rust_state_m : Rust_state_m.S) = struct
       match bop with
       | Add (OUB | OPanic) ->
           let overflows = BV.add_overflows ~signed l r in
-          State.assert_ (not overflows) `Overflow
+          assert_not overflows `Overflow
       | Sub (OUB | OPanic) ->
           let overflows = BV.sub_overflows ~signed l r in
-          State.assert_ (not overflows) `Overflow
+          assert_not overflows `Overflow
       | Mul (OUB | OPanic) ->
           let overflows = BV.mul_overflows ~signed l r in
-          State.assert_ (not overflows) `Overflow
+          assert_not overflows `Overflow
       | Div _ | Rem _ ->
-          let* () =
-            State.assert_ (not (r ==@ BV.mki_lit ty 0)) `DivisionByZero
-          in
+          let* () = assert_not (r ==@ BV.mki_lit ty 0) `DivisionByZero in
           if signed then
             (* overflow on rem/div is UB even when wrapping *)
             let min = Layout.min_value_z ty in
             let min = BV.mk_lit ty min in
             let m_one = BV.mki_lit ty (-1) in
-            State.assert_ (not (l ==@ min &&@ (r ==@ m_one))) `Overflow
+            assert_ (not (l ==@ min &&@ (r ==@ m_one))) `Overflow
           else ok ()
       | Shl (OUB | OPanic) | Shr (OUB | OPanic) ->
-          (* at this point, the size of the right-hand side might not match the given literal
-             type, so we must be careful. *)
+          (* at this point, the size of the right-hand side might not match the
+             given literal type, so we must be careful. *)
           let size = 8 * Layout.size_of_literal_ty ty in
-          State.assert_
+          assert_
             (BV.mki_lit ty 0 <=$@ r &&@ (r <$@ BV.mki_lit ty size))
             `InvalidShift
       | _ -> ok ()
@@ -172,11 +170,11 @@ module M (Rust_state_m : Rust_state_m.S) = struct
 
   let transmute ~from_ty ~to_ty v =
     (* Some fun details:
-       - we need to use [get_state] and re-use the current state, rather than
-         using an empty state, because if the [load] does any reference validity
-         checks we need the current state to have these addresses!
-       - we need to take the max of either types for the alignment, to ensure that
-         transmuting e.g. from [u16; 2] to (u32) works. *)
+     *  - we need to use [get_state] and re-use the current state, rather than
+     *    using an empty state, because if the [load] does any reference
+     *    validity checks we need the current state to have these addresses!
+     *  - we need to take the max of either types for the alignment, to ensure
+     *    that transmuting e.g. from [u16; 2] to (u32) works. *)
     L.debug (fun m ->
         m "Transmuting %a: %a -> %a" pp_rust_val v Charon_util.pp_ty from_ty
           Charon_util.pp_ty to_ty);
@@ -190,7 +188,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     v
 
   let zero_valid ~ty =
-    let^+ res =
+    let+^ res =
       let@ () = run ~env:() ~state:State.empty in
       let* { size; align; _ } = Layout.layout_of ty in
       let* ptr = State.alloc_untyped ~zeroed:true ~size ~align () in

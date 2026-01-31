@@ -28,11 +28,10 @@ module StateKey = struct
     return (Ptr.loc_of_int !i)
 
   let distinct _ = v_true
-  let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
   let simplify = DecayMapMonad.simplify
-
+  let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
   (* The above only works in WPST -- otherwise, use:
-  let fresh () = nondet (Typed.t_sloc ()) *)
+   * let fresh () = nondet (Typed.t_sloc ()) *)
 end
 
 module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
@@ -127,9 +126,7 @@ module Block = struct
       | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
       | BUniqueImmutable -> return @@ Tree_borrow.Reserved false
       | BShallow ->
-          SM.lift
-          @@ DecayMapMonad.lift
-          @@ Fmt.kstr not_impl "Unhandled borrow kind: BShallow"
+          SM.lift @@ DecayMapMonad.not_impl "Unhandled borrow kind: BShallow"
     in
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
@@ -202,13 +199,16 @@ module Freeable_block_with_meta = struct
     Soteria.Sym_states.With_info.Make (DecayMapMonad) (Meta) (Freeable_block)
 
   let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
-      t * Tree_borrow.tag option =
+      (t * Tree_borrow.tag option) DecayMapMonad.t =
+    let open DecayMapMonad.Syntax in
     let tb, tag = Tree_borrow.init ~state:Unique () in
     let block = Tree_block.alloc ?zeroed size in
-    let span = Option.value span ~default:(get_loc ()) in
+    let+^ span =
+      match span with Some span -> return span | None -> get_loc ()
+    in
     let info : Meta.t = { align; size; kind; span; tb_root = tag } in
     let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
-    ({ node = Alive (Some block, tb); info = Some info }, tag)
+    (({ node = Alive (Some block, tb); info = Some info } : t), tag)
 end
 
 module Heap = struct
@@ -324,37 +324,16 @@ open SM.Syntax
 let log action ptr =
   let+ st = SM.get_state () in
   L.trace (fun m ->
-      m "About to execute action: %s at %a (%a)@\n@[<2>STATE:@ %a@]" action
-        Sptr.pp ptr Charon_util.pp_span_data (get_loc ())
+      m "About to execute action: %s (%a)@\n@[<2>STATE:@ %a@]" action Sptr.pp
+        ptr
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st)
 
-let with_loc_err () (f : unit -> ('a, 'b, 'c) Result.t) : ('a, 'k, 'c) Result.t
-    =
-  let loc = Rustsymex.get_loc () in
-  Result.map_error (f ()) (fun e -> (e, loc))
-
-let with_error_loc_as_call_trace ?(msg = "Triggering memory operation") ()
-    (f : unit -> ('a, 'b, 'c) Result.t) =
-  let+- err, loc = f () in
-  (err, Soteria.Terminal.Call_trace.singleton ~loc ~msg ())
-
-let error err =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  Result.error err
-
-let lift_err (symex : ('a, 'e, 'f) Rustsymex.Result.t) =
-  let*^ res = symex in
-  match res with
-  | Error e -> error e
-  | Ok ok -> Result.ok ok
-  | Missing fix -> Result.miss fix
-
-let assert_ guard (err : Error.t) =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  assert_or_error guard err
+let[@inline] with_loc_err ?trace () (f : unit -> ('a, Error.t, 'f) SM.Result.t)
+    : ('a, Error.with_trace, 'f) SM.Result.t =
+  let*- err = f () in
+  let+^ loc = get_loc () in
+  Error (decorate_error ?trace err loc)
 
 let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
   let* st = SM.get_state () in
@@ -394,15 +373,14 @@ let with_ptr ptr f = with_heap @@ Heap.with_ptr ptr f
 
 let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
     (unit, 'err, 'fix) Result.t =
+  let@ () = with_loc_err ~trace:"Uninitialising memory" () in
   let* () = log "uninit" ptr in
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
   let**^ size = Layout.size_of ty in
   let@ ofs = with_ptr ptr in
   Block.with_tree_block @@ Tree_block.uninit_range ofs size
 
 let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
-  (* The expected alignment of a dyn pointer is stored inside the VTable  *)
+  (* The expected alignment of a dyn pointer is stored inside the VTable *)
   let** exp_align =
     match (ty, meta) with
     | TDynTrait _, VTable vt ->
@@ -442,12 +420,12 @@ and load_discriminant ((ptr, _) as fptr) ty =
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns [Some error] if an error occurred, and [None]
     otherwise *)
-(* We can't return a [Rustsymex.Result.t] here, because it's used in [load] which
-   expects a [Tree_block.serialized_atom list] for the [Missing] case, while the
-   external signature expects a [serialized].
-   This could be fixed by lifting all misses individually inside [handler] and
-   [get_all] in [apply_parser], but that's kind of a mess to change and not really
-   worth it I believe; I don't think these misses matter at all (TBD). *)
+(* We can't return a [Rustsymex.Result.t] here, because it's used in [load]
+   which expects a [Tree_block.serialized_atom list] for the [Missing] case,
+   while the external signature expects a [serialized]. This could be fixed by
+   lifting all misses individually inside [handler] and [get_all] in
+   [apply_parser], but that's kind of a mess to change and not really worth it I
+   believe; I don't think these misses matter at all (TBD). *)
 and fake_read ((_, meta) as ptr) ty =
   let open Syntax in
   let is_uncheckable_dst =
@@ -471,31 +449,15 @@ and fake_read ((_, meta) as ptr) ty =
     | Error e -> Some e
     | Missing _ -> failwith "Miss in fake_read")
 
-let check_ptr_align ptr ty =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  check_ptr_align ptr ty
-
-let load ?ignore_borrow ptr ty =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  load ?ignore_borrow ptr ty
-
-let load_discriminant ptr ty =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
-  load_discriminant ptr ty
-
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
     accesses; all of these are ignored. *)
 let tb_load ((ptr : Sptr.t), _) ty =
+  let@ () = with_loc_err ~trace:"Tree Borrow access" () in
   let open SM in
   match ptr.tag with
   | None -> Result.ok ()
   | Some tag ->
-      let@ () = with_error_loc_as_call_trace () in
-      let@ () = with_loc_err () in
       let**^ size = Layout.size_of ty in
       if%sat size ==@ Usize.(0s) then Result.ok ()
       else
@@ -505,34 +467,42 @@ let tb_load ((ptr : Sptr.t), _) ty =
 
 let store ((ptr, _) as fptr) ty sval :
     (unit, Error.with_trace, serialized list) Result.t =
-  let** parts = lift_err @@ Encoder.encode ~offset:Usize.(0s) sval ty in
+  let@ () = with_loc_err ~trace:"Memory store" () in
+  let**^ parts = Encoder.encode ~offset:Usize.(0s) sval ty in
   if Iter.is_empty parts then Result.ok ()
   else
     let** () = check_ptr_align fptr ty in
     (* L.debug (fun f ->
-        f "Parsed to parts [%a]"
-          Fmt.(list ~sep:comma Encoder.pp_cval_info)
-          parts); *)
-    let@ () = with_error_loc_as_call_trace () in
-    let@ () = with_loc_err () in
+     *   f "Parsed to parts [%a]"
+     *     Fmt.(list ~sep:comma Encoder.pp_cval_info)
+     *     parts); *)
     let* () = log "store" ptr in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
     Block.with_tree_block_read_tb (fun tb ->
         let open Tree_block.SM in
         let open Tree_block.SM.Syntax in
-        (* We uninitialise the whole range before writing, to ensure padding bytes are copied if
-           there are any. *)
+        (* We uninitialise the whole range before writing, to ensure padding
+           bytes are copied if there are any. *)
         let** () = Tree_block.uninit_range ofs size in
-        Result.fold_iter parts ~init:() ~f:(fun () (value, offset) ->
-            (* L.warn (fun f ->
-            f "Storing part %a: %a" Typed.ppa offset (pp_rust_val Sptr.pp) value); *)
+        Result.iter_iter parts ~f:(fun (value, offset) ->
             Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
+
+let check_ptr_align ptr ty =
+  let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
+  check_ptr_align ptr ty
+
+let load ?ignore_borrow ptr ty =
+  let@ () = with_loc_err ~trace:"Memory load" () in
+  load ?ignore_borrow ptr ty
+
+let load_discriminant ptr ty =
+  let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
+  load_discriminant ptr ty
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
     (unit, Error.with_trace, serialized list) Result.t =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
   let** tree_to_write =
     let@ ofs = with_ptr src in
     Block.with_tree_block (fun tree_block ->
@@ -544,11 +514,12 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
   Block.with_tree_block
     (let open Tree_block.SM in
      let open Tree_block.SM.Syntax in
-     (* We need to be careful about tree borrows; the tree we copy has a tree borrow state inside,
-     but we cannot copy that, since those tags don't belong to this allocation!
-     Instead, we must first get the tree borrow states for the original area of memory,
-     and update the copied tree with them.
-     We only want to update the values in the tree, not the tree borrow state. *)
+     (* We need to be careful about tree borrows; the tree we copy has a tree
+        borrow state inside, but we cannot copy that, since those tags don't
+        belong to this allocation! Instead, we must first get the tree borrow
+        states for the original area of memory, and update the copied tree with
+        them. We only want to update the values in the tree, not the tree borrow
+        state. *)
      let module Tree = Tree_block.Tree in
      let** original_tree =
        let* state = get_state () in
@@ -579,32 +550,28 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
              { t with children; node = Owned (v, tb) }
        in
        try DecayMapMonad.Result.ok (aux tb t)
-       with Failure msg -> DecayMapMonad.lift @@ not_impl msg
+       with Failure msg -> DecayMapMonad.not_impl msg
      in
-     (* Applies all the tree borrow ranges to the tree we're writing, overwriting all
-     previous states. *)
-     let** tree_to_write =
-       lift
-       @@ DecayMapMonad.Result.fold_iter collect_tb_states ~init:tree_to_write
-            ~f:(fun tree (tb, range) ->
-              let open DecayMapMonad.Syntax in
-              let replace_node = put_tb tb in
-              let rebuild_parent = Tree.of_children in
-              let++ _, tree =
-                Tree.frame_range tree ~rebuild_parent ~replace_node range
-              in
-              tree)
+     (* Applies all the tree borrow ranges to the tree we're writing,
+        overwriting all previous states. *)
+     let**^ tree_to_write =
+       DecayMapMonad.Result.fold_iter collect_tb_states ~init:tree_to_write
+         ~f:(fun tree (tb, range) ->
+           let open DecayMapMonad.Syntax in
+           let replace_node = put_tb tb in
+           let rebuild_parent = Tree.of_children in
+           let++ _, tree =
+             Tree.frame_range tree ~rebuild_parent ~replace_node range
+           in
+           tree)
      in
      Tree_block.put_raw_tree ofs tree_to_write)
 
 let alloc ?kind ?span ?zeroed size align =
-  (* Commenting this out as alloc cannot fail *)
-  (* let@ () = with_loc_err () in*)
-  let@ () = with_error_loc_as_call_trace () in
   with_heap
     (let open Heap.SM in
      let open Heap.SM.Syntax in
-     let block, tag =
+     let*^ block, tag =
        Freeable_block_with_meta.make ?kind ?span ?zeroed ~align ~size ()
      in
      let** loc = Heap.alloc ~new_codom:block in
@@ -618,16 +585,14 @@ let alloc_untyped ?kind ?span ~zeroed ~size ~align =
   alloc ?kind ?span ~zeroed size align
 
 let alloc_ty ?kind ?span ty =
-  let** layout = lift_err @@ Layout.layout_of ty in
+  let@ () = with_loc_err ~trace:"Allocation" () in
+  let**^ layout = Layout.layout_of ty in
   alloc ?kind ?span layout.size layout.align
 
 let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
     =
-  let** layouts =
-    Result.fold_list tys ~init:[] ~f:(fun acc ty ->
-        let++ layout = lift_err @@ Layout.layout_of ty in
-        layout :: acc)
-  in
+  let@ () = with_loc_err ~trace:"Allocation" () in
+  let**^ layouts = Rustsymex.Result.map_list tys ~f:Layout.layout_of in
   let layouts = List.rev layouts in
   with_heap
     (Heap.allocs ~els:layouts ~fn:(fun layout loc ->
@@ -635,7 +600,7 @@ let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
          let open DecayMapMonad.Syntax in
          (* make Tree_block *)
          let { size; align; _ } : Layout.t = layout in
-         let block, tag =
+         let* block, tag =
            Freeable_block_with_meta.make ?kind ?span ~align ~size ()
          in
          (* create pointer *)
@@ -645,18 +610,21 @@ let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
          return ((ptr, Thin), block)))
 
 let free (({ ptr; _ } : Sptr.t), _) =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Freeing memory" () in
   let** () = assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree in
   with_heap
     (L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
-     (* TODO: does the tag not play a role in freeing? *)
+     (* TODO: freeing encurs a write access on the whole allocation, and also
+        requires there to be no strong protectors in the tree. We currently
+        don't have a notion of strong or weak protector.
+
+        See:
+        https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
      Heap.wrap (Typed.Ptr.loc ptr)
        (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
 let zeros (ptr, _) size =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Memory store (0s)" () in
   let* () = log "zeroes" ptr in
   let@ ofs = with_ptr ptr in
   Block.with_tree_block (Tree_block.zero_range ofs size)
@@ -690,39 +658,35 @@ let load_global g =
 
 let borrow ((ptr : Sptr.t), meta) (ty : Types.ty)
     (kind : Expressions.borrow_kind) =
+  let@ () = with_loc_err ~trace:"Borrow" () in
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
   if Option.is_none ptr.tag || (kind = BShared && Layout.is_unsafe_cell ty) then
     Result.ok (ptr, meta)
   else
-    let@ () = with_error_loc_as_call_trace () in
-    let@ () = with_loc_err () in
     let@ _ = with_ptr ptr in
     Block.borrow (ptr, meta) ty kind
 
 let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) =
+  let@ () = with_loc_err ~trace:"Reference protection" () in
   if Option.is_none ptr.tag || Layout.is_unsafe_cell ty then
     Result.ok (ptr, meta)
   else
-    let@ () = with_error_loc_as_call_trace () in
-    let@ () = with_loc_err () in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
     Block.protect (ptr, meta) mut ofs size
 
 let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) =
+  let@ () = with_loc_err ~trace:"Reference unprotection" () in
   match ptr.tag with
   | None -> Result.ok ()
   | Some tag ->
-      let@ () = with_error_loc_as_call_trace () in
-      let@ () = with_loc_err () in
       let**^ size = Layout.size_of ty in
       let@ ofs = with_ptr ptr in
       L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
       Block.unprotect ofs tag size
 
 let with_exposed addr =
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Casting integer to pointer" () in
   match (Config.get ()).provenance with
   | Strict -> Result.error `UBIntToPointerStrict
   | Permissive ->
@@ -745,8 +709,7 @@ let with_exposed addr =
                  Result.ok (ptr, Thin)))
 
 let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
-  let@ () = with_error_loc_as_call_trace ~msg:"Leaking function" () in
-  let@ () = with_loc_err () in
+  let@ () = with_loc_err ~trace:"Leaking function" () in
   let* st = SM.get_state () in
   let st = of_opt st in
   let** global_addresses =
@@ -817,10 +780,6 @@ let pop_error () =
   in
   Result.error error
 
-let unwind_with ~f ~fe symex =
-  Result.bind_2 symex ~f ~fe:(fun ((err_ty, _) as err) ->
-      if Error.is_unwindable err_ty then fe err else Result.error err)
-
 let with_functions (type a) (f : FunBiMap.t -> a * FunBiMap.t) : a SM.t =
   let* st = SM.get_state () in
   let st = of_opt st in
@@ -861,24 +820,24 @@ let declare_fn fn_def =
       Result.ok (ptr, meta)
 
 let lookup_fn (({ ptr; _ } : Sptr.t), _) =
+  let@ () = with_loc_err ~trace:"Accessing function pointer" () in
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
-  let** () = assert_ (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer in
-  let@ () = with_error_loc_as_call_trace () in
-  let@ () = with_loc_err () in
+  let** () =
+    assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer
+  in
   let loc = Typed.Ptr.loc ptr in
   match FunBiMap.get_fn loc st.functions with
   | Some fn -> Result.ok fn
   | None -> Result.error `NotAFnPointer
 
 let lookup_const_generic id ty =
+  let@ () = with_loc_err ~trace:"Accessing const generic" () in
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
   match Types.ConstGenericVarId.Map.find_opt id st.const_generics with
   | Some v -> Result.ok v
   | None ->
-      let@ () = with_error_loc_as_call_trace () in
-      let@ () = with_loc_err () in
       let**^ v = Encoder.nondet ty in
       let const_generics =
         Types.ConstGenericVarId.Map.add id v st.const_generics

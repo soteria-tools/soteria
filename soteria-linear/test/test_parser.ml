@@ -5,8 +5,8 @@ let test_parse_program s =
   print_endline ("Parsed program successfully: " ^ s)
 
 (* let test_parse_assertion s =
-  let _ = parse_assertion s in
-  print_endline ("Parsed assertion successfully: " ^ s) *)
+ *   let _ = parse_assertion s in
+ *   print_endline ("Parsed assertion successfully: " ^ s) *)
 
 let () =
   test_parse_program "let main arg = [arg] <- 1; 0";

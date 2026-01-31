@@ -46,7 +46,8 @@ let init () =
     match (Config.get ()).kind with
     | Html ->
         at_exit (fun () ->
-            (* If program is interrupted and not all sections have been closed, close them all! *)
+            (* If program is interrupted and not all sections have been closed,
+               close them all! *)
             for _ = 0 to logger.depth_counter - 1 do
               Out_channel.output_string oc Html.section_closing;
               Out_channel.output_char oc '\n'
@@ -66,8 +67,8 @@ let write_string str =
     Out_channel.output_char logger.oc '\n';
     Out_channel.flush logger.oc
   in
-  (* We could avoid the below by defining loggers à la Logs,
-     so that interject would be part of a given logger. *)
+  (* We could avoid the below by defining loggers à la Logs, so that interject
+     would be part of a given logger. *)
   match (Config.get ()).kind with
   | Html -> do_ ()
   | Stderr -> !Config.cur_interject do_
@@ -109,7 +110,8 @@ module L = struct
       Format.kasprintf
         (fun msg ->
           let msg =
-            (* TODO: Write a different logger for each kind, instead of pattern matching in each function *)
+            (* TODO: Write a different logger for each kind, instead of pattern
+               matching in each function *)
             match (Config.get ()).kind with
             | Html -> Html.message level msg
             | Stderr -> Printf.sprintf "%s %s" (format_level level) msg
