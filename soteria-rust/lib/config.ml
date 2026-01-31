@@ -1,5 +1,5 @@
-(* Cmdliner.deriving opens Cmdliner.Arg for the frontend argument, without using it.
-   We ignore the warning here. *)
+(* Cmdliner.deriving opens Cmdliner.Arg for the frontend argument, without using
+   it. We ignore the warning here. *)
 [@@@warning "-unused-open"]
 
 type frontend = Charon | Obol
@@ -8,9 +8,7 @@ type frontend = Charon | Obol
 type provenance = Strict | Permissive [@@deriving subliner_enum]
 
 type t = {
-  (*
-     Compilation flags
-   *)
+  (* Compilation flags *)
   cleanup : bool;
       [@make.default false] [@names [ "clean" ]] [@env "SOTERIA_RUST_CLEANUP"]
       (** Clean up compiled files after execution *)
@@ -44,16 +42,12 @@ type t = {
   sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
       (** The sysroot to use for compilation. If not provided, the default
           sysroot is used. *)
-  (*
-     Plugins
-   *)
+  (* Plugins *)
   with_kani : bool; [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
       (** Use the Miri library *)
-  (*
-     Printing settings
-   *)
+  (* Printing settings *)
   filter : string list; [@default []] [@names [ "filter" ]]
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided; tests matching any will be
@@ -61,9 +55,7 @@ type t = {
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
-  (*
-     Symbolic execution behaviour
-   *)
+  (* Symbolic execution behaviour *)
   ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
       (** Ignore memory leaks *)
   ignore_aliasing : bool; [@make.default false] [@names [ "ignore-aliasing" ]]

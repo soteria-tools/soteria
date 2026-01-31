@@ -23,10 +23,9 @@ type t = {
   branching : Fuel_value.t;
       (** Number of times branching happens. Careful, the total number of
           branches is potentially exponential in the number of branchings *)
-      (* TODO:
-          Realised that we could just have the symex monad do a
-          [Iter.take branches] and we wouldn't ever have to keep track of
-          branching inside execution since everything is lazily executed *)
+      (* TODO: Realised that we could just have the symex monad do a [Iter.take
+         branches] and we wouldn't ever have to keep track of branching inside
+         execution since everything is lazily executed *)
 }
 [@@deriving show { with_path = false }]
 

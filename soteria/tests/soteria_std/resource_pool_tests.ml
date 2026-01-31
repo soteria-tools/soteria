@@ -182,7 +182,8 @@ let old_auth_invalid_after_reacquire =
   let t, auth1 = Counter_pool.acquire pool in
   Counter_pool.release pool auth1 t;
   let _t2, _auth2 = Counter_pool.acquire pool in
-  (* t and _t2 point to the same underlying resource, but auth1 is now invalid *)
+  (* t and _t2 point to the same underlying resource, but auth1 is now
+     invalid *)
   Alcotest.check_raises "old auth invalid" Resource_pool.Pool_invalid_auth
     (fun () -> ignore (Counter_pool.apply ~auth:auth1 t (fun r -> r.id)))
 

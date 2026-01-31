@@ -96,11 +96,8 @@ module Make (State : State_intf.S) = struct
         if%sat v_guard then eval_expr subst then_ else eval_expr subst else_
     | Call (fname, arg_exprs) ->
         let** arg_values =
-          SM.Result.fold_list arg_exprs ~init:[] ~f:(fun acc e ->
-              let++ res = eval_pure_expr subst e in
-              res :: acc)
+          SM.Result.map_list arg_exprs ~f:(eval_pure_expr subst)
         in
-        let arg_values = List.rev arg_values in
         let func = get_function fname in
         eval_function func arg_values
     | Load addr ->

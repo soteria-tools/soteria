@@ -197,7 +197,8 @@ module Interval : S = struct
       match new_range with
       (* We couldn't compute anything from this update *)
       | None -> ((v, Var.Set.empty), st)
-      (* We found an inequality, but we learnt nothing from it; we can discard it *)
+      (* We found an inequality, but we learnt nothing from it; we can discard
+         it *)
       | Some new_range when range = new_range ->
           log (fun m ->
               m "Useless range  %a: %a %s %a = %a" Var.pp var Range.pp range
@@ -215,20 +216,23 @@ module Interval : S = struct
           (* We narrowed the range to one value! *)
           | Some m, Some n when Z.equal m n ->
               let eq = Svalue.int_z m ==@ mk_var var in
-              (* this is hacky; we found the exact value, but we can't return the equality
-                 if we're negating, since that equality will otherwise be negated. *)
+              (* this is hacky; we found the exact value, but we can't return
+                 the equality if we're negating, since that equality will
+                 otherwise be negated. *)
               (((if neg then Svalue.not eq else eq), Var.Set.empty), st')
           (* The range is empty, so this cannot be true *)
           | _ when Range.is_empty new_range ->
               ((Svalue.v_false, Var.Set.empty), st')
-          (* We got a new range, but this is a negation, meaning we can' be sure we didn't lose
-             some information; to be safe, we let the PC keep the value.
-             Also take this case if we do not absorb this information (e.g. in a disjunction),
-             as in that case the PC must keep track of the assertion.  *)
+          (* We got a new range, but this is a negation, meaning we can' be sure
+             we didn't lose some information; to be safe, we let the PC keep the
+             value. Also take this case if we do not absorb this information
+             (e.g. in a disjunction), as in that case the PC must keep track of
+             the assertion. *)
           | _ when not absorb -> ((v, Var.Set.empty), st')
-          (* We could cleanly absorb the range, so the PC doesn't need to store it -- however
-             we must mark this variable as dirty, as maybe the modified range still renders
-             the branch infeasible, e.g. because of some additional PC assertions. *)
+          (* We could cleanly absorb the range, so the PC doesn't need to store
+             it -- however we must mark this variable as dirty, as maybe the
+             modified range still renders the branch infeasible, e.g. because of
+             some additional PC assertions. *)
           | _ -> ((Svalue.bool (not neg), Var.Set.singleton var), st'))
     in
     match v.node.kind with
@@ -253,11 +257,13 @@ module Interval : S = struct
           { node = { kind = Var var; _ }; _ },
           { node = { kind = Int x; _ }; _ } ) ->
         update var (Some x, Some x)
-    (* We conservatively explore negations; we're only interested in simple (in)equalities *)
+    (* We conservatively explore negations; we're only interested in simple
+       (in)equalities *)
     | Unop (Not, nv) ->
         let (nv', vars), st' = add_constraint ~absorb ~neg:(not neg) nv st in
         ((Svalue.not nv', vars), st')
-    (* We don't explore && and || within negations, because that becomes messy. *)
+    (* We don't explore && and || within negations, because that becomes
+       messy. *)
     | Binop (And, v1, v2) when not neg ->
         let (v1', vars1), st' = add_constraint ~absorb v1 st in
         let (v2', vars2), st'' = add_constraint ~absorb v2 st' in

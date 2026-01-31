@@ -90,14 +90,14 @@ end)
 (** Removes any bit of the state that does not any "relevant variables". i.e.,
     bits that are not reachable from the precondition. *)
 let filter_serialized_state relevant_vars (state : State.serialized list) =
-  (* leak_origins tracks the source code location of allocation for each heap location that was detected to leak.
-     If empty, no leak is detected. *)
+  (* leak_origins tracks the source code location of allocation for each heap
+     location that was detected to leak. If empty, no leak is detected. *)
   let leak_origins = Leak_set.with_capacity 0 in
   let resulting_state =
     ListLabels.filter state ~f:(function
       | State_intf.Ser_globs _ ->
-          (* Globals are not filtered:
-             if they are in the spec,they were bi-abduced and necessary *)
+          (* Globals are not filtered: if they are in the spec,they were
+             bi-abduced and necessary *)
           true
       | State_intf.Ser_heap (loc, b) ->
           let relevant =
@@ -107,7 +107,8 @@ let filter_serialized_state relevant_vars (state : State.serialized list) =
           in
           if relevant then true
           else
-            (* If the block is not freed, we record where the object was allocated *)
+            (* If the block is not freed, we record where the object was
+               allocated *)
             let leaked = not (Block.serialized_is_freed b) in
             if leaked then Leak_set.add leak_origins b.info;
             L.trace (fun m ->
@@ -141,8 +142,9 @@ let init_reachable_vars summary =
 
 let make ~args ~pre ~pc ~post ~ret () = After_exec { args; pre; pc; post; ret }
 
-(* TODO: for below: do we only need to compute reachability of variables of type Loc, since
-   they are the only one that cannot be created out of the blue, and need provenance? e*)
+(* TODO: for below: do we only need to compute reachability of variables of type
+   Loc, since they are the only one that cannot be created out of the blue, and
+   need provenance? e*)
 
 (** This function prunes the summary by removing anything that isn't reachable
     from the arguments or the return value. It returns the updated summary, as
@@ -154,18 +156,19 @@ let prune (summary : after_exec t) : pruned t =
   let module Var_graph = Graph.Make_in_place (Var) in
   let graph = Var_graph.with_node_capacity 0 in
   let init_reachable = init_reachable_vars summary in
-  (* For each equality [e1 = e2] in the path condition,
-     we add a double edge from all variables of [e1] to all variables of [e2] *)
+  (* For each equality [e1 = e2] in the path condition, we add a double edge
+     from all variables of [e1] to all variables of [e2] *)
   ListLabels.iter summary.pc ~f:(fun v ->
       match Typed.kind v with
       | Binop (Eq, el, er) ->
-          (* We make the second iterator peristent to avoid going over the structure too many times if there are many *)
+          (* We make the second iterator peristent to avoid going over the
+             structure too many times if there are many *)
           let r_iter = Iter.persistent_lazy (Svalue.iter_vars er) in
           let product = Iter.product (Svalue.iter_vars el) r_iter in
           product (fun ((x, _), (y, _)) -> Var_graph.add_double_edge graph x y)
       | _ -> ());
-  (* For each block $l -> B in the pre and post state, we add a single-sided arrow
-     from all variables in $l to all variables contained in B. *)
+  (* For each block $l -> B in the pre and post state, we add a single-sided
+     arrow from all variables in $l to all variables contained in B. *)
   let all_points_tos =
     let get_heaps =
       List.filter_map (function State_intf.Ser_heap h -> Some h | _ -> None)
@@ -176,8 +179,8 @@ let prune (summary : after_exec t) : pruned t =
       let b_iter = Block.iter_vars_serialized b in
       Iter.product (Typed.iter_vars l) (Iter.persistent_lazy b_iter)
         (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));
-  (* [init_reachable] is the set of initially-reachable variables, and we have a reachability [graph].
-     We can compute all reachable values. *)
+  (* [init_reachable] is the set of initially-reachable variables, and we have a
+     reachability [graph]. We can compute all reachable values. *)
   let reachable = Var_graph.reachable_from graph init_reachable in
   (* We can now filter the summary to keep only the reachable values *)
   let new_pc = filter_pc reachable summary.pc in

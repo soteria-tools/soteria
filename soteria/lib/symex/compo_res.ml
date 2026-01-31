@@ -73,6 +73,12 @@ module T (M : Monad.Base) = struct
       | Error z -> fe z
       | Missing fix -> M.return (Missing fix))
 
+  let bind_error x f =
+    M.bind x (function
+      | Ok x -> M.return (Ok x)
+      | Error e -> f e
+      | Missing fix -> M.return (Missing fix))
+
   let map x f = M.map x (fun x -> map x f)
   let map_error x f = M.map x (fun x -> map_error x f)
   let map_missing x f = M.map x (fun x -> map_missing x f)

@@ -29,9 +29,9 @@ let rec eval (x : t) : t =
       let nv = eval v in
       if v == nv then x else eval_unop unop nv
   | Binop (binop, v1, v2) ->
-      (* TODO: for binops that may short-circuit such as || or &&,
-    we could do this without evaluating both sides, and deciding if any
-      of either side evaluates properly to e.g. true/false *)
+      (* TODO: for binops that may short-circuit such as || or &&, we could do
+         this without evaluating both sides, and deciding if any of either side
+         evaluates properly to e.g. true/false *)
       let nv1 = eval v1 in
       let nv2 = eval v2 in
       if v1 == nv1 && v2 == nv2 then x else eval_binop binop nv1 nv2

@@ -136,11 +136,10 @@ module Make (State : State_intf.S) = struct
       function's entry. *)
   let dealloc_stack ?protected_address protected =
     let* () =
-      fold_list protected ~init:() ~f:(fun () (ptr, ty) ->
-          State.unprotect ptr ty)
+      iter_list protected ~f:(fun (ptr, ty) -> State.unprotect ptr ty)
     in
     let* store = get_env () in
-    fold_list (Store.bindings store) ~init:() ~f:(fun () (_, binding) ->
+    iter_list (Store.bindings store) ~f:(fun (_, binding) ->
         match (binding.kind, protected_address) with
         | (Dead | Uninit | Value _), _ -> ok ()
         | Stackptr ptr, None -> State.free ptr
@@ -201,7 +200,8 @@ module Make (State : State_intf.S) = struct
         match ptr_opt with
         | Some v -> ok (Ptr v)
         | None ->
-            (* We "cheat" and model strings as an array of chars, with &str a slice *)
+            (* We "cheat" and model strings as an array of chars, with &str a
+               slice *)
             let len = String.length str in
             let chars =
               String.to_bytes str
@@ -219,7 +219,8 @@ module Make (State : State_intf.S) = struct
             Ptr ptr)
     | CFnDef _ -> ok (Tuple [])
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
-    (* FIXME: this is hacky, but until we get proper monomorphisation this isn't too bad *)
+    (* FIXME: this is hacky, but until we get proper monomorphisation this isn't
+       too bad *)
     | CTraitConst (tref, name) -> (
         let* tref = Poly.subst_tref tref in
         match tref.kind with
@@ -272,7 +273,8 @@ module Make (State : State_intf.S) = struct
           | Some (p, from_, ofs) ->
               `Ptr (p, from_, List.length bytes - ofs, ofs) :: blocks
         in
-        (* Map the smaller blocks to actual rust values, ie. pointers or integers *)
+        (* Map the smaller blocks to actual rust values, ie. pointers or
+           integers *)
         let ptr_size = Crate.pointer_size () in
         let ptr_of_provenance : Types.provenance -> full_ptr t = function
           | Global g -> resolve_global g
@@ -280,19 +282,19 @@ module Make (State : State_intf.S) = struct
           | Unknown -> not_impl "Unknown provenance in RawMemory"
         in
         let+ blocks =
-          fold_list blocks ~init:[] ~f:(fun acc block ->
+          map_list blocks ~f:(fun block ->
               match block with
-              | `Byte (b, ofs) -> ok ((Int b, BV.usizei ofs) :: acc)
+              | `Byte (b, ofs) -> ok (Int b, BV.usizei ofs)
               | `Ptr (p, from_, size, ofs) ->
                   let* ptr, _ = ptr_of_provenance p in
                   if from_ = 0 && size = ptr_size then
-                    ok ((Ptr (ptr, Thin), BV.usizei ofs) :: acc)
+                    ok (Ptr (ptr, Thin), BV.usizei ofs)
                   else
                     let+ ptr_int = Sptr.decay ptr in
                     let ptr_frag =
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
                     in
-                    (Int ptr_frag, BV.usizei ofs) :: acc)
+                    (Int ptr_frag, BV.usizei ofs))
         in
         Union blocks
     | CVar (Free id) -> State.lookup_const_generic id const.ty
@@ -375,7 +377,7 @@ module Make (State : State_intf.S) = struct
         let idx = as_base_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
         let* () =
-          State.assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
+          assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
         let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty ptr idx in
         L.debug (fun f ->
@@ -399,7 +401,7 @@ module Make (State : State_intf.S) = struct
         let to_ = as_base_i Usize to_ in
         let to_ = if from_end then len -!@ to_ else to_ in
         let* () =
-          State.assert_
+          assert_
             (Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len))
             `OutOfBounds
         in
@@ -448,8 +450,8 @@ module Make (State : State_intf.S) = struct
               (`InvalidFnArgCount
                  (List.length in_tys, List.length fn.signature.inputs))
       in
-      (* a bit hacky, but we don't want to compare the dyn parameter with
-             the expected input; the mismatch is intended here. *)
+      (* a bit hacky, but we don't want to compare the dyn parameter with the
+         expected input; the mismatch is intended here. *)
       let in_tys, sig_ins =
         if is_dyn then (List.tl in_tys, List.tl fn.signature.inputs)
         else (in_tys, fn.signature.inputs)
@@ -476,11 +478,13 @@ module Make (State : State_intf.S) = struct
     (* Handle builtins separately *)
     | FnOpRegular { kind = FunId (FBuiltin fn); generics } ->
         ok (Std_funs.builtin_fun_eval fn generics, in_tys)
-    (* For static calls we don't need to check types, that's what the type checker does. *)
+    (* For static calls we don't need to check types, that's what the type
+       checker does. *)
     | FnOpRegular fn_ptr ->
         let* fn = resolve_fn_ptr fn_ptr in
         perform_call fn
-    (* Here we need to check the type of the actual function, as it could have been cast. *)
+    (* Here we need to check the type of the actual function, as it could have
+       been cast. *)
     | FnOpDynamic op ->
         let* fn_ptr = eval_operand op in
         let fn_ptr = as_ptr fn_ptr in
@@ -497,13 +501,14 @@ module Make (State : State_intf.S) = struct
     match v_opt with
     | Some v -> ok v
     | None ->
-        (* Same as with strings -- here we need to somehow cache where we store the globals *)
+        (* Same as with strings -- here we need to somehow cache where we store
+           the globals *)
         let fundef = Crate.get_fun decl.init in
         L.info (fun g ->
             g "Resolved global init call to %a" Crate.pp_name
               fundef.item_meta.name);
         let global_fn = Std_funs.std_fun_eval fundef glob.generics exec_fun in
-        (* First we allocate the global and store it in the State  *)
+        (* First we allocate the global and store it in the State *)
         let* ptr =
           State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
             decl.ty
@@ -521,21 +526,16 @@ module Make (State : State_intf.S) = struct
     match op with
     | Constant c -> resolve_constant c
     | Move loc | Copy loc ->
-        (* I don't think the operand being [Move] matters at all, aside from function calls.
-           See: https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
+        (* I don't think the operand being [Move] matters at all, aside from
+           function calls. See:
+           https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
         let* layout = Layout.layout_of loc.ty in
         if layout.uninhabited then error `RefToUninhabited
         else
           let* ptr = resolve_place_lazy loc in
           load_lazy ptr loc.ty
 
-  and eval_operand_list ops =
-    let+ vs =
-      fold_list ops ~init:[] ~f:(fun acc op ->
-          let+ new_res = eval_operand op in
-          new_res :: acc)
-    in
-    List.rev vs
+  and eval_operand_list = map_list ~f:eval_operand
 
   and eval_rvalue (expr : Expressions.rvalue) =
     match expr with
@@ -566,7 +566,7 @@ module Make (State : State_intf.S) = struct
             | TLiteral ((TInt _ | TUInt _) as ty) ->
                 let v = as_base ty v in
                 let res, overflowed = ~-?v in
-                let+ () = State.assert_not overflowed `Overflow in
+                let+ () = assert_not overflowed `Overflow in
                 Int res
             | TLiteral (TFloat fty) ->
                 let v = as_base_f fty v in
@@ -708,13 +708,13 @@ module Make (State : State_intf.S) = struct
                 let ty = TypesUtils.ty_as_literal ty in
                 ok (Core.cmp ~signed:(Layout.is_signed ty) v1 v2)
             | Offset ->
-                (* non-zero offset on integer pointer is not permitted, as these are always
-                   dangling *)
+                (* non-zero offset on integer pointer is not permitted, as these
+                   are always dangling *)
                 let v2 = Typed.cast_i Usize v2 in
                 let ty = Charon_util.get_pointee (type_of_operand e1) in
                 let* size = Layout.size_of ty in
                 let+ () =
-                  State.assert_
+                  assert_
                     (v2 ==@ Usize.(0s) ||@ (size ==@ Usize.(0s)))
                     `UBDanglingPointer
                 in
@@ -731,7 +731,7 @@ module Make (State : State_intf.S) = struct
         | ((Ptr _ | Int _) as p1), ((Ptr _ | Int _) as p2) -> (
             match op with
             | Offset ->
-                let^ p, meta, v =
+                let*^ p, meta, v =
                   match (p1, p2) with
                   | Ptr (p, meta), Int v -> return (p, meta, v)
                   | _ -> Rustsymex.not_impl "Invalid operands in offset"
@@ -769,12 +769,14 @@ module Make (State : State_intf.S) = struct
         match op with
         | UbChecks ->
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
-               Our execution already checks for UB, so we should return
-               false, to indicate runtime UB checks aren't needed. *)
+               Our execution already checks for UB, so we should return false,
+               to indicate runtime UB checks aren't needed. *)
             ok (Int (BV.of_bool Typed.v_false))
         | OverflowChecks ->
-            (* See https://doc.rust-lang.org/nightly/std/intrinsics/fn.overflow_checks.html
-               Our execution already checks for overflows, so we don't need them at runtime. *)
+            (* See
+               https://doc.rust-lang.org/nightly/std/intrinsics/fn.overflow_checks.html
+               Our execution already checks for overflows, so we don't need them
+               at runtime. *)
             ok (Int (BV.of_bool Typed.v_false))
         | ContractChecks ->
             (* For now we don't do contracts. *)
@@ -866,7 +868,8 @@ module Make (State : State_intf.S) = struct
               Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
                 pp_rust_val ptr
         in
-        (* we flatten the meta, to simplify processing stuff like [std::ptr::DynMetadata] *)
+        (* we flatten the meta, to simplify processing stuff like
+           [std::ptr::DynMetadata] *)
         let+ meta =
           match Rust_val.flatten meta with
           | [] -> ok Thin
@@ -961,8 +964,8 @@ module Make (State : State_intf.S) = struct
 
   and exec_block ~(body : UllbcAst.expr_body)
       ({ statements; terminator } : UllbcAst.block) =
-    let^ () = Rustsymex.consume_fuel_steps 1 in
-    let* () = fold_list statements ~init:() ~f:(fun () -> exec_stmt) in
+    let*^ () = Rustsymex.consume_fuel_steps 1 in
+    let* () = iter_list statements ~f:exec_stmt in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
     L.trace (fun m ->
         m "Terminator full:@.%a" UllbcAst.pp_terminator_kind terminator.kind);
@@ -973,18 +976,15 @@ module Make (State : State_intf.S) = struct
         let* exec_fun, exp_tys =
           resolve_function ~in_tys ~out_ty:dest.ty func
         in
-        (* the expected types of the function may differ to those passed, e.g. with
-           function pointers or dyn calls, so we transmute here. *)
+        (* the expected types of the function may differ to those passed, e.g.
+           with function pointers or dyn calls, so we transmute here. *)
         let* args =
-          fold_list (List.combine3 args in_tys exp_tys) ~init:[]
-            ~f:(fun acc (arg, from_ty, to_ty) ->
+          map_list (List.combine3 args in_tys exp_tys)
+            ~f:(fun (arg, from_ty, to_ty) ->
               let* arg = eval_operand arg in
-              if Types.equal_ty from_ty to_ty then ok (arg :: acc)
-              else
-                let+ arg = Core.transmute ~from_ty ~to_ty arg in
-                arg :: acc)
+              if Types.equal_ty from_ty to_ty then ok arg
+              else Core.transmute ~from_ty ~to_ty arg)
         in
-        let args = List.rev args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:(any ", ") pp_rust_val)
@@ -994,7 +994,7 @@ module Make (State : State_intf.S) = struct
           @@ with_env ~env:()
           @@ exec_fun args
         in
-        State.unwind_with fun_exec
+        unwind_with fun_exec
           ~f:(fun v ->
             let* ptr = resolve_place_lazy dest in
             L.info (fun m ->
@@ -1016,8 +1016,7 @@ module Make (State : State_intf.S) = struct
         let* value = load_lazy ptr ty in
         let ptr_tys = Encoder.ref_tys_in value ty in
         let+ () =
-          fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
-              State.tb_load ptr ty)
+          iter_list ptr_tys ~f:(fun (ptr, ty) -> State.tb_load ptr ty)
         in
         value
     | Switch (discr, switch) -> (
@@ -1067,15 +1066,15 @@ module Make (State : State_intf.S) = struct
                       pp_rust_val discr
                       (PrintValues.literal_to_string v)
             in
-            let^ block = match_on options ~constr:compare_discr in
+            let*^ block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~body block)
     | Drop (drop_kind, place, trait_ref, target, on_unwind) -> (
         assert (drop_kind = Precise);
         let* place_ptr = resolve_place place in
-        (* Try to find a drop function that exists; it may be opaque if the
-           drop contains polymorphic types. *)
+        (* Try to find a drop function that exists; it may be opaque if the drop
+           contains polymorphic types. *)
         let drop_fn : Fun_kind.t option =
           match trait_ref.kind with
           | TraitImpl impl_ref ->
@@ -1096,7 +1095,7 @@ module Make (State : State_intf.S) = struct
               @@ with_env ~env:()
               @@ exec_fun drop [ Ptr place_ptr ]
             in
-            State.unwind_with fun_exec
+            unwind_with fun_exec
               ~f:(fun _ ->
                 let block = UllbcAst.BlockId.nth body.body target in
                 L.info (fun m -> m "Dropped with %a" Fun_kind.pp drop);
@@ -1138,7 +1137,7 @@ module Make (State : State_intf.S) = struct
     let* protected = alloc_stack body.locals args in
     let starting_block = List.hd body.body in
     let exec_block = exec_block ~body starting_block in
-    State.unwind_with exec_block
+    unwind_with exec_block
       ~f:(fun value ->
         let protected_address =
           match (fundef.signature.output, value) with

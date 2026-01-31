@@ -52,11 +52,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
               (List.map
                  (fun fix ->
                    fun () ->
-                    let*^ (), st'' =
-                      B.SM.fold_list fix ~init:()
-                        ~f:(fun () fix -> B.produce fix)
-                        st
-                    in
+                    let*^ (), st'' = B.SM.iter_list fix ~f:B.produce st in
                     let* () = SM.set_state (to_opt (st'', fix @ fixes)) in
                     with_fuel (fuel - 1))
                  fix_choices)
@@ -77,28 +73,28 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
     SM.set_state (to_opt (st, fixes))
 
   (* let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)
-      (cons : 'ser -> 't -> ('t, 'err, 'ser) Symex.Result.t) (inner_ser : 'ser)
-      (bi_st : ('t, 'ser) t) :
-      (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser) Symex.Result.t =
-    let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
-    let rec with_fuel fuel bi_st =
-      let st, fixes = bi_st in
-      let* res = cons inner_ser st in
-      match res with
-      | Ok st -> Result.ok (st, fixes)
-      | Error _e ->
-          L.info (fun m -> m "Bi_abd.consume: vanishing an error");
-          Symex.vanish ()
-      | Missing fix_choices ->
-          if fuel <= 0 then Symex.vanish ()
-          else
-            Symex.branches
-              (List.map
-                 (fun fix ->
-                   fun () ->
-                    let* st = produce fix st in
-                    with_fuel (fuel - 1) (st, fix :: fixes))
-                 fix_choices)
-    in
-    with_fuel fuel bi_st *)
+   *    (cons : 'ser -> 't -> ('t, 'err, 'ser) Symex.Result.t) (inner_ser : 'ser)
+   *    (bi_st : ('t, 'ser) t) :
+   *    (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser) Symex.Result.t =
+   *  let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
+   *  let rec with_fuel fuel bi_st =
+   *    let st, fixes = bi_st in
+   *    let* res = cons inner_ser st in
+   *    match res with
+   *    | Ok st -> Result.ok (st, fixes)
+   *    | Error _e ->
+   *        L.info (fun m -> m "Bi_abd.consume: vanishing an error");
+   *        Symex.vanish ()
+   *    | Missing fix_choices ->
+   *        if fuel <= 0 then Symex.vanish ()
+   *        else
+   *          Symex.branches
+   *            (List.map
+   *               (fun fix ->
+   *                 fun () ->
+   *                  let* st = produce fix st in
+   *                  with_fuel (fuel - 1) (st, fix :: fixes))
+   *               fix_choices)
+   *  in
+   *  with_fuel fuel bi_st *)
 end

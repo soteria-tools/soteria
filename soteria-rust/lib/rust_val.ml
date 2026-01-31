@@ -105,7 +105,8 @@ let size_of =
   | Ptr (_, Thin) -> ok (BV.usizei (Crate.pointer_size ()))
   | Ptr (_, (Len _ | VTable _)) -> ok (BV.usizei (Crate.pointer_size () * 2))
   | PolyVal tid -> Layout.size_of (TVar (Free tid))
-  (* We can't know the size of a union/tuple/enum, because of e.g. niches, or padding *)
+  (* We can't know the size of a union/tuple/enum, because of e.g. niches, or
+     padding *)
   | Union _ | Enum _ | Tuple _ ->
       failwith "Impossible to get size of Enum/Tuple rust_val"
 

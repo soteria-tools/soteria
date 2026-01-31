@@ -49,6 +49,8 @@ module type S = sig
   val ok : 'a -> ('a, 'env) t
   val error : Error.t -> ('a, 'env) t
   val error_raw : Error.with_trace -> ('a, 'env) t
+  val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
+  val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val miss : serialized list list -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
@@ -63,6 +65,12 @@ module type S = sig
     f:('b -> 'a -> ('b, 'env) t) ->
     ('b, 'env) t
 
+  val iter_list : 'a list -> f:('a -> (unit, 'env) t) -> (unit, 'env) t
+
+  val iter_iter :
+    'a Foldable.Iter.t -> f:('a -> (unit, 'env) t) -> (unit, 'env) t
+
+  val map_list : 'a list -> f:('a -> ('b, 'env) t) -> ('b list, 'env) t
   val get_state : unit -> (st, 'env) t
   val get_env : unit -> ('env, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
@@ -70,9 +78,16 @@ module type S = sig
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
   val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+  val get_loc : unit -> (Meta.span_data, 'env) t
 
   val with_extra_call_trace :
     loc:Meta.span_data -> msg:string -> ('a, 'env) t -> ('a, 'env) t
+
+  val unwind_with :
+    f:('a -> ('b, 'env) t) ->
+    fe:(Error.with_trace -> ('b, 'env) t) ->
+    ('a, 'env) t ->
+    ('b, 'env) t
 
   val run :
     env:'env ->
@@ -230,24 +245,14 @@ module type S = sig
     val add_error : Error.with_trace -> (unit, 'env) t
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
-
-    val unwind_with :
-      f:('a -> ('b, 'env) t) ->
-      fe:(Error.with_trace -> ('b, 'env) t) ->
-      ('a, 'env) t ->
-      ('b, 'env) t
-
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
-    val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-    val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-    val lift_err : ('a, Error.t, serialized list) Result.t -> ('a, 'env) t
   end
 
   module Syntax : sig
     val ( let* ) : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
     val ( let+ ) : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
-    val ( let^ ) : 'a Rustsymex.t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
-    val ( let^+ ) : 'a Rustsymex.t -> ('a -> 'b) -> ('b, 'env) t
+    val ( let*^ ) : 'a Rustsymex.t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
+    val ( let+^ ) : 'a Rustsymex.t -> ('a -> 'b) -> ('b, 'env) t
 
     module Symex_syntax : sig
       val branch_on :
@@ -313,8 +318,25 @@ struct
   type ('a, 'env) monad = ('a, 'env) t
 
   let ok x : ('a, 'env) t = ESM.Result.ok x
-  let error err : ('a, 'env) t = ESM.lift @@ State.error err
   let error_raw err : ('a, 'env) t = ESM.Result.error err
+
+  let error err : ('a, 'env) t =
+    ESM.lift
+      (let open State.SM.Syntax in
+       let+^ loc = get_loc () in
+       Error (decorate_error err loc))
+
+  let lift_err (sym : ('a, Error.t, 'f) Rustsymex.Result.t) : ('a, 'env) t =
+    ESM.lift
+      (let open State.SM.Syntax in
+       let*- err = State.SM.lift sym in
+       let+^ loc = get_loc () in
+       Compo_res.Error (decorate_error err loc))
+
+  let assert_ cond err =
+    lift_err (assert_or_error (cond :> Typed.T.sbool Typed.t) err)
+
+  let assert_not cond err = assert_ (Typed.not cond) err
   let miss f : ('a, 'env) t = ESM.Result.miss f
 
   let not_impl str : ('a, 'env) t =
@@ -331,11 +353,19 @@ struct
   let map (x : ('a, 'env) t) (f : 'a -> 'b) : ('b, 'env) t =
     ESM.map x (Fun.flip Compo_res.map f)
 
-  let fold_list x ~init ~f =
-    Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold x ~init ~f
+  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
+  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
+  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
+  let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
+  let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
+  let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
 
-  let fold_iter x ~init ~f =
-    Monad.foldM ~bind ~return:ok ~fold:Foldable.Iter.fold x ~init ~f
+  let mapM ~fold ~rev ~cons ~init x ~f =
+    foldM ~fold x ~init ~f:(fun acc a -> map (f a) (fun b -> cons b acc))
+    |> Fun.flip map rev
+
+  let map_list x ~f =
+    mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
 
   let map_env f =
     let open ESM.Syntax in
@@ -348,21 +378,17 @@ struct
     let+ res, _ = f env in
     (res, old_env)
 
-  let[@inline] lift_err sym = ESM.lift (State.lift_err sym)
-
   let[@inline] with_decay_map_res
       (f : ('a, Error.t, serialized list) Sptr.DecayMapMonad.Result.t) :
       ('a, 'env) t =
     ESM.lift
       (let open State.SM.Syntax in
-       let* res = State.with_decay_map f in
-       State.lift_err (Rustsymex.return res))
+       let*- err = State.with_decay_map f in
+       let+^ loc = get_loc () in
+       Compo_res.Error (decorate_error err loc))
 
   let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
-    ESM.lift
-      (let open State.SM.Syntax in
-       let+ res = State.with_decay_map f in
-       Compo_res.Ok res)
+    ESM.lift (State.SM.map (State.with_decay_map f) Compo_res.ok)
 
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =
     ESM.Result.lift_state @@ State.SM.lift s
@@ -370,12 +396,10 @@ struct
   let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
   let assume x = lift_symex (assume x)
 
-  let with_loc ~loc f =
-    let old_loc = !current_loc in
-    current_loc := loc;
-    map (f ()) @@ fun res ->
-    current_loc := old_loc;
-    res
+  let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
+   fun env state -> with_loc ~loc (f () env state)
+
+  let get_loc () : (Meta.span_data, 'env) t = lift_symex @@ Rustsymex.get_loc ()
 
   let with_extra_call_trace ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
     let open ESM.Syntax in
@@ -386,6 +410,10 @@ struct
         let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
         Compo_res.Error (Error.add_to_call_trace e elem)
     | Missing f -> Missing f
+
+  let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
+    ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->
+        if Error.is_unwindable err_ty then fe err else error_raw err)
 
   (** Run the state monad, with the given initial state and environment; the
       environment is discarded at the end of the execution. *)
@@ -446,7 +474,7 @@ struct
     let[@inline] apply_attributes v attrs = lift_err (apply_attributes v attrs)
 
     (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
-        without having to re-define. *)
+       without having to re-define. *)
     let update_ref_tys_in
         ~(f :
            'acc ->
@@ -457,7 +485,8 @@ struct
         (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
      fun env state ->
       let open Rustsymex.Syntax in
-      (* The inner function operates in Rustsymex.Result.t, carrying (acc, env, state) as accumulator *)
+      (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
+         state) as accumulator *)
       let f_inner (acc, env, state) ptr ty rk =
         let+ (res, new_env), new_state = f acc ptr ty rk env state in
         Compo_res.map res (fun (ptr, acc) -> (ptr, (acc, new_env, new_state)))
@@ -524,17 +553,11 @@ struct
 
     let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =
       let unlifted () : (unit, Error.with_trace, serialized list) SM.Result.t =
-        SM.Result.bind_2
-          (SM.map (f () ()) fst)
-          ~f:SM.Result.ok ~fe:SM.Result.error
+        SM.map (f () ()) fst
       in
       ESM.lift (register_thread_exit unlifted)
 
     let[@inline] run_thread_exits () = ESM.lift (run_thread_exits ())
-
-    let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
-      ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->
-          if Error.is_unwindable err_ty then fe err else error_raw err)
 
     let[@inline] fake_read ptr ty : (unit, 'env) monad =
      fun env ->
@@ -542,27 +565,14 @@ struct
       let* is_valid = fake_read ptr ty in
       match is_valid with
       | None -> SM.return (Compo_res.Ok (), env)
-      | Some err ->
-          (* Convert Error.t to Error.with_trace by adding location *)
-          let+ res = State.error err in
-          (res, env)
-
-    let[@inline] lift_err
-        (sym : ('a, Error.t, serialized list) Rustsymex.Result.t) :
-        ('a, 'env) monad =
-      ESM.lift (State.lift_err sym)
-
-    let[@inline] assert_ guard err : (unit, 'env) monad =
-      ESM.lift (State.assert_ (guard :> Typed.T.sbool Typed.t) err)
-
-    let[@inline] assert_not guard err = assert_ (Typed.not guard) err
+      | Some err -> error err env
   end
 
   module Syntax = struct
     let ( let* ) = bind
     let ( let+ ) = map
-    let ( let^ ) x f = bind (lift_symex x) f
-    let ( let^+ ) x f = map (lift_symex x) f
+    let ( let*^ ) x f = bind (lift_symex x) f
+    let ( let+^ ) x f = map (lift_symex x) f
 
     module Symex_syntax = struct
       let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =

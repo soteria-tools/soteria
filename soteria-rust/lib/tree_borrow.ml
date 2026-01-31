@@ -143,7 +143,8 @@ let access accessed e (root : t) (st : tb_state) =
         let rel =
           if List.mem tag accessed_node.parents then Local else Foreign
         in
-        (* if the tag has a protector and is accessed, this toggles the protector! *)
+        (* if the tag has a protector and is accessed, this toggles the
+           protector! *)
         let protected = (tag = accessed || protected) && protector in
         let st' = transition ~protected st (rel, e) in
         if st' = UB then (

@@ -152,6 +152,9 @@ module type Base = sig
   val fold_list : 'a list -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
   val fold_iter : 'a Iter.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
   val fold_seq : 'a Seq.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
+  val iter_list : 'a list -> f:('a -> unit t) -> unit t
+  val iter_iter : 'a Iter.t -> f:('a -> unit t) -> unit t
+  val map_list : 'a list -> f:('a -> 'b t) -> 'b list t
 
   module Result : sig
     type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
@@ -175,6 +178,9 @@ module type Base = sig
       fe:('err -> ('a, 'b, 'fix) t) ->
       ('a, 'b, 'fix) t
 
+    val bind_error :
+      ('ok, 'err, 'fix) t -> ('err -> ('ok, 'a, 'fix) t) -> ('ok, 'a, 'fix) t
+
     val map_error : ('ok, 'err, 'fix) t -> ('err -> 'a) -> ('ok, 'a, 'fix) t
     val map_missing : ('ok, 'err, 'fix) t -> ('fix -> 'a) -> ('ok, 'err, 'a) t
 
@@ -186,6 +192,10 @@ module type Base = sig
 
     val fold_seq :
       'a Seq.t -> init:'b -> f:('b -> 'a -> ('b, 'c, 'd) t) -> ('b, 'c, 'd) t
+
+    val iter_list : 'a list -> f:('a -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
+    val iter_iter : 'a Iter.t -> f:('a -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
+    val map_list : 'a list -> f:('a -> ('b, 'c, 'd) t) -> ('b list, 'c, 'd) t
   end
 
   module Syntax : sig
@@ -199,6 +209,12 @@ module type Base = sig
 
     val ( let++ ) : ('a, 'c, 'd) Result.t -> ('a -> 'b) -> ('b, 'c, 'd) Result.t
     val ( let+- ) : ('a, 'b, 'd) Result.t -> ('b -> 'c) -> ('a, 'c, 'd) Result.t
+
+    val ( let*- ) :
+      ('a, 'b, 'c) Result.t ->
+      ('b -> ('a, 'd, 'c) Result.t) ->
+      ('a, 'd, 'c) Result.t
+
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax : sig
@@ -505,8 +521,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
    fun f ->
     let guard = Solver.simplify guard in
     match Value.as_bool guard with
-    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
-       if we remove the Some true and Some false optimisation. *)
+    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
+       remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
@@ -522,7 +538,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         L.with_section ~is_branch:true right_branch_name (fun () ->
             Solver.add_constraints [ Value.(not guard) ];
             if !left_unsat then
-              (* Right must be sat since left was not! We didn't branch so we don't consume the counter *)
+              (* Right must be sat since left was not! We didn't branch so we
+                 don't consume the counter *)
               else_ () f
             else
               match Fuel.consume_branching 1 with
@@ -540,8 +557,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
    fun f ->
     let guard = Solver.simplify guard in
     match Value.as_bool guard with
-    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t],
-       if we remove the Some true and Some false optimisation. *)
+    (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
+       remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
@@ -551,8 +568,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         if neg_unsat then then_ () f;
         Symex_state.backtrack_n 1;
         if not neg_unsat then (
-          (* Adding this constraint is technically redundant,
-             but it's still worth having it in the PC for simplifications. *)
+          (* Adding this constraint is technically redundant, but it's still
+             worth having it in the PC for simplifications. *)
           Solver.add_constraints [ guard ];
           else_ () f)
 
@@ -583,8 +600,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
    fun f ->
     let brs = Fuel.take_branches brs in
-    (* If there are 0 or 1 branches, we don't do anything,
-       else we add how many *new* branches we take. *)
+    (* If there are 0 or 1 branches, we don't do anything, else we add how many
+       {new} branches we take. *)
     Stats.As_ctx.add_int StatKeys.branches (max (List.length brs - 1) 0);
     match brs with
     | [] -> ()
@@ -619,7 +636,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let vanish () _f = ()
 
   let give_up reason _f =
-    (* The bind ensures that the side effect will not be enacted before the whole process is ran. *)
+    (* The bind ensures that the side effect will not be enacted before the
+       whole process is ran. *)
     L.info (fun m -> m "%s" reason);
     Stats.As_ctx.push_str StatKeys.give_up_reasons reason;
     if
@@ -647,6 +665,16 @@ module Base_extension (Core : Core) = struct
   let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
   let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
   let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+  let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
+  let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
+  let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
+
+  let mapM ~fold ~rev ~cons ~init x ~f =
+    foldM ~fold x ~init ~f:(fun acc a -> map (f a) (fun b -> cons b acc))
+    |> Fun.flip map rev
+
+  let map_list x ~f =
+    mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
 
   module Result = struct
     include Compo_res.T (Core)
@@ -661,6 +689,16 @@ module Base_extension (Core : Core) = struct
     let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
     let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
     let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+    let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
+    let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
+    let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
+
+    let mapM ~fold ~rev ~cons ~init x ~f =
+      foldM ~fold x ~init ~f:(fun acc a -> map (f a) (fun b -> cons b acc))
+      |> Fun.flip map rev
+
+    let map_list x ~f =
+      mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
   end
 
   module Syntax = struct
@@ -669,6 +707,7 @@ module Base_extension (Core : Core) = struct
     let ( let** ) = Result.bind
     let ( let++ ) = Result.map
     let ( let+- ) = Result.map_error
+    let ( let*- ) = Result.bind_error
     let ( let+? ) = Result.map_missing
 
     module Symex_syntax = struct
@@ -681,7 +720,8 @@ end
 
 module Make (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = struct
-  (* TODO: CORE this can go away when `include functors` land (https://github.com/ocaml/ocaml/pull/14177) *)
+  (* TODO: CORE this can go away when `include functors` land
+     (https://github.com/ocaml/ocaml/pull/14177) *)
   module CORE = Make_core (Sol)
   include CORE
   include Base_extension (CORE)
@@ -721,7 +761,8 @@ module Make (Sol : Solver.Mutable_incremental) :
         try
           iter @@ fun x ->
           if Solver_result.admissible ~mode (Solver.sat ()) then (
-            (* Make sure to drop branche that have leftover assumes with unsatisfiable PCs. *)
+            (* Make sure to drop branche that have leftover assumes with
+               unsatisfiable PCs. *)
             let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
             l := (x, Solver.as_values ()) :: !l;
             if fail_fast && Compo_res.is_error x then raise Fail_fast)

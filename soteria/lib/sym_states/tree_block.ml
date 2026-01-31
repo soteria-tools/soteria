@@ -310,13 +310,14 @@ struct
         let+ right = of_split_tree right_span right_node in
         (right.node, left, right)
       else
-        (* We're first splitting on the left then splitting again on the right *)
+        (* We're first splitting on the left then splitting again on the
+           right *)
         let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
         let left_span, right_span = Range.split_at old_span nl in
         let* left = of_split_tree left_span left_node in
         let* full_right = of_split_tree right_span right_node in
         (* we need to first extract the relevant part of the right subtree; as
-             constructing it may have yielded a complex tree *)
+           constructing it may have yielded a complex tree *)
         let* sub_right, right_extra = extract full_right range in
         let* node, right_left, right_right = split ~range sub_right in
         let* right =
@@ -568,7 +569,8 @@ struct
 
   let to_opt t = if is_empty t then None else Some t
 
-  (* Bit of a hack here, we lift the [StateT (Result)] to [ResultT (State)] by propagating the input state to erroneous outcomes. *)
+  (* Bit of a hack here, we lift the [StateT (Result)] to [ResultT (State)] by
+     propagating the input state to erroneous outcomes. *)
   let with_bound_check ?mk_fixes (ofs : sint)
       (f : Tree.t -> ('a * Tree.t, 'err, serialized list) Symex.Result.t) :
       ('a, 'err, serialized list) SM.Result.t =
@@ -611,8 +613,8 @@ struct
           Result.ok (tree, t)
         else Result.miss_no_fix ~reason:"get_raw_tree_owned" ())
 
-  (* This is used for copy_nonoverapping.
-   It is an action on the destination block, and assumes the received tree is at offset 0 *)
+  (* This is used for copy_nonoverapping. It is an action on the destination
+     block, and assumes the received tree is at offset 0 *)
   let put_raw_tree ofs (tree : Tree.t) :
       (unit, 'err, serialized list) SM.Result.t =
     let size = Range.size tree.range in
@@ -717,11 +719,11 @@ struct
     to_opt { t with root }
 
   (* let consume (list : serialized) (t : t option) =
-    Symex.Result.fold_list
-      ~f:(fun acc -> function
-        | Bound bound -> consume_bound bound acc
-        | MemVal { offset; len; v } -> consume_mem_val offset len v acc)
-      ~init:t list *)
+   *   Symex.Result.fold_list
+   *     ~f:(fun acc -> function
+   *       | Bound bound -> consume_bound bound acc
+   *       | MemVal { offset; len; v } -> consume_mem_val offset len v acc)
+   *     ~init:t list *)
 
   let produce (ser : serialized) : unit SM.t =
     match ser with

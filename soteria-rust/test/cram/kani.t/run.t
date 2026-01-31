@@ -37,7 +37,7 @@ Test kani::assert
     4 │      kani::assert(b, "Expected true!");
       │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │       │
-      │       Triggering memory operation
+      │       Triggering operation
       │       2: Call trace
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
@@ -50,7 +50,7 @@ Test kani::assert
    10 │      kani::assert(b, "👻 unicode is 𝒮𝒞𝒜ℛ𝒴");
       │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │       │
-      │       Triggering memory operation
+      │       Triggering operation
       │       2: Call trace
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
@@ -60,7 +60,7 @@ Test kani::assert
    23 │          rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
       │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │           │
-      │           Triggering memory operation
+      │           Triggering operation
       │           2: Call trace
       ┌─ $TESTCASE_ROOT/assert.rs:14:2
    14 │  fn override_assert_macro() {
@@ -73,7 +73,7 @@ Test kani::assert
    23 │          rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
       │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │           │
-      │           Triggering memory operation
+      │           Triggering operation
       │           2: Call trace
       ┌─ $TESTCASE_ROOT/assert.rs:20:2
    20 │  fn override_asserteq_macro() {
@@ -168,7 +168,7 @@ Test our simple Kani demo works
     9 │      let a: u32 = kani::any();
    10 │      let b: u32 = kani::any();
    11 │      if a + b < u32::MAX {
-      │          ^^^^^ Triggering memory operation
+      │          ^^^^^ Triggering operation
   PC 1: (V|1| +u_ovf V|2|)
   
   note: saturating_add: done in <time>, ran 2 branches
@@ -196,7 +196,7 @@ Test our simple Kani demo works
    61 │      unsafe {
    62 │          let addr_value = addr.offset(1);
    63 │          let value: u32 = *addr_value;
-      │                            ^^^^^^^^^^^ Triggering memory operation
+      │                            ^^^^^^^^^^^ Memory load
   PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   [1]

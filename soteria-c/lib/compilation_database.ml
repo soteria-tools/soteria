@@ -61,8 +61,8 @@ let cmd_of_yojson json =
     |> String.split_on_char ' '
   in
   let c_files, command = split_c_files_args [] [] command in
-  (* TODO: This is kind of rough parsing of the compilation_commands. 
-               Let's see if we find examples that are different. *)
+  (* TODO: This is kind of rough parsing of the compilation_commands. Let's see
+     if we find examples that are different. *)
   let () =
     match c_files with
     | [ c ] when c = file -> ()

@@ -40,7 +40,7 @@ Try creating a generic vec
    20 │            rusteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
       │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │            │
-      │            Triggering memory operation
+      │            Triggering operation
       │            2: Call trace
       ┌─ $TESTCASE_ROOT/vec.rs:14:1
    13 │    #[rusteria::test]

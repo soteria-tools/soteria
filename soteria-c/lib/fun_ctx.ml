@@ -6,11 +6,11 @@ module Bidirectional_map = struct
   let get_sym = find_r
 end
 
-(* FIXME: This is slightly off because we could have a location that is already assigned.
-          This will cause an unsoundness when testing pointer equality with other objects.
-          But, if you do this, you already have a bug! We will merely signal the wrong bug.
-          In any case, we will fix this when we have native support for disjoint addresses.
-*)
+(* FIXME: This is slightly off because we could have a location that is already
+   assigned. This will cause an unsoundness when testing pointer equality with
+   other objects. But, if you do this, you already have a bug! We will merely
+   signal the wrong bug. In any case, we will fix this when we have native
+   support for disjoint addresses. *)
 type t = { counter : Z.t; bmap : Bidirectional_map.t }
 
 let empty = { counter = Z.one; bmap = Bidirectional_map.empty }
@@ -26,7 +26,8 @@ let of_linked_program (prog : Ail_tys.linked_program) =
     ListLabels.fold_left prog.sigma.function_definitions ~init:empty
       ~f:(fun ctx (sym, _) -> declare_fn sym ctx)
   in
-  (* We also add all *declarations* of a builtin function for which there is no *definition*. *)
+  (* We also add all {declarations} of a builtin function for which there is no
+     {definition}. *)
   ListLabels.fold_left prog.sigma.declarations ~init:first_pass
     ~f:(fun ctx (sym, (_, _, decl)) ->
       match decl with

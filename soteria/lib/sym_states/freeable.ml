@@ -73,32 +73,32 @@ struct
     in
     SM.Result.set_state (Some Freed)
 
-  (* In the context of UX, using a non-matching spec will simply vanish
-  let consume
-      (cons :
-        'inner_ser ->
-        'inner_st option ->
-        ('inner_st option, [> Symex.lfail ], 'inner_ser) Symex.Result.t)
-      (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
-      ( 'inner_st t option,
-        [> Symex.lfail ],
-        'inner_ser serialized )
-      Symex.Result.t =
-    match serialized with
-    | Freed -> (
-        match st with
-        | None -> Symex.Result.miss [ Freed ]
-        | Some Freed -> Symex.Result.ok None
-        | Some (Alive _) -> Symex.consume_false ())
-    | Alive ser -> (
-        match st with
-        | None ->
-            let++ st' = cons ser None |> lift_fix_s in
-            Option.map (fun x -> Alive x) st'
-        | Some Freed -> Symex.vanish ()
-        | Some (Alive st) ->
-            let++ st' = cons ser (Some st) |> lift_fix_Us in
-            Option.map (fun x -> Alive x) st') *)
+  (* In the context of UX, using a non-matching spec will simply vanish *)
+  (* let consume
+   *    (cons :
+   *      'inner_ser ->
+   *      'inner_st option ->
+   *      ('inner_st option, [> Symex.lfail ], 'inner_ser) Symex.Result.t)
+   *    (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
+   *    ( 'inner_st t option,
+   *      [> Symex.lfail ],
+   *      'inner_ser serialized )
+   *    Symex.Result.t =
+   *  match serialized with
+   *  | Freed -> (
+   *      match st with
+   *      | None -> Symex.Result.miss [ Freed ]
+   *      | Some Freed -> Symex.Result.ok None
+   *      | Some (Alive _) -> Symex.consume_false ())
+   *  | Alive ser -> (
+   *      match st with
+   *      | None ->
+   *          let++ st' = cons ser None |> lift_fix_s in
+   *          Option.map (fun x -> Alive x) st'
+   *      | Some Freed -> Symex.vanish ()
+   *      | Some (Alive st) ->
+   *          let++ st' = cons ser (Some st) |> lift_fix_Us in
+   *          Option.map (fun x -> Alive x) st') *)
 
   let produce (serialize : serialized) : unit SM.t =
     let* st = SM.get_state () in

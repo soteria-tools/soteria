@@ -65,6 +65,7 @@ module Make_in_place (Node : Hashset.PrintableHashedType) = struct
       |> List.of_seq
     in
     let sorted_components = Tsort.sort_strongly_connected_components cg_list in
-    (* We could order the components themselves a bit better, but let's ignore it for now. *)
+    (* We could order the components themselves a bit better, but let's ignore
+       it for now. *)
     List.concat sorted_components
 end

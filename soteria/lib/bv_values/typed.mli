@@ -260,9 +260,9 @@ module Infix : sig
   val ( &&@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
   val ( ||@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 
-  (* arithmetic -- [$] indicates signed
-     unsigned division and remainder cannot overflow so we consider they
-     always result in-bounds (can overflow for signed with [MIN / -1]) *)
+  (* arithmetic -- [$] indicates signed unsigned division and remainder cannot
+     overflow so we consider they always result in-bounds (can overflow for
+     signed with [MIN / -1]) *)
   val ( +@ ) : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val ( -@ ) : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val ( ~- ) : [< sint ] t -> [> sint_ovf ] t

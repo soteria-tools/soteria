@@ -56,8 +56,9 @@ module Diagnostic = struct
   let to_loc pos =
     let col = Cerb_position.column pos in
     let col =
-      (* FIXME: This is a hack to overcome https://github.com/johnyob/grace/issues/49...
-         We just need to avoid having column 0, which will crash grace. *)
+      (* FIXME: This is a hack to overcome
+         https://github.com/johnyob/grace/issues/49... We just need to avoid
+         having column 0, which will crash grace. *)
       if col <= 1 then col else col - 1
     in
     (Cerb_position.line pos - 1, col)

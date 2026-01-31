@@ -25,12 +25,17 @@ end)
 
 module MonadState = struct
   type t = {
+    loc : Charon.Meta.span_data;
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
   }
 
   let empty =
-    { subst = Charon.Substitute.empty_subst; generic_layouts = TypeMap.empty }
+    {
+      loc = Charon_util.empty_span_data;
+      subst = Charon.Substitute.empty_subst;
+      generic_layouts = TypeMap.empty;
+    }
 end
 
 include Soteria.Sym_states.State_monad.Make (MonoSymex) (MonadState)
@@ -89,28 +94,32 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
   in
   aux elements
 
-let current_loc = ref Charon_util.empty_span_data
-let get_loc () = !current_loc
+let with_loc ~loc (f : 'a t) : 'a t = fun st -> f { st with loc }
 
-let with_loc ~loc f =
+let get_loc () =
   let open Syntax in
-  let old_loc = !current_loc in
-  current_loc := loc;
-  let* res = f () in
-  current_loc := old_loc;
-  return res
+  let+ { loc; _ } = get_state () in
+  loc
 
-let with_loc_immediate ~loc f =
-  let old_loc = !current_loc in
-  current_loc := loc;
-  let res = f () in
-  current_loc := old_loc;
-  res
+let decorate_error ?(trace = "Triggering operation") e loc =
+  (e, Soteria.Terminal.Call_trace.singleton ~loc ~msg:trace ())
 
-let[@inline] with_loc_err () f =
-  let loc = get_loc () in
-  Result.map_error (f ()) (fun e -> (e, loc))
+let error ?trace e : ('a, Error.with_trace, 'f) Result.t =
+  let open Syntax in
+  let+ loc = get_loc () in
+  Soteria.Symex.Compo_res.Error (decorate_error ?trace e loc)
 
-let error e = Result.error (e, get_loc ())
+let rename_trace trace (f : unit -> ('a, Error.with_trace, 'f) Result.t) :
+    ('a, Error.with_trace, 'f) Result.t =
+  let open Syntax in
+  let+- err : Error.with_trace = f () in
+  match err with
+  | e, { loc; msg = _ } :: stack ->
+      let new_elem =
+        Soteria.Terminal.Call_trace.mk_element ~loc ~msg:trace ()
+      in
+      (e, new_elem :: stack)
+  | _, [] -> failwith "Impossible: rename_trace on an empty trace?"
+
 let not_impl = give_up
 let of_opt_not_impl = some_or_give_up

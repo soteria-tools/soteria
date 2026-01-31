@@ -87,7 +87,8 @@ struct
       | (k, v) :: tl ->
           if%sat SInt.sem_eq ofs k then Symex.return (k, Some v)
           else find_bindings tl
-      (* TODO: Investigate: this is not a tailcall, because if%sat is not an if. *)
+      (* TODO: Investigate: this is not a tailcall, because if%sat is not an
+         if. *)
     in
     match M.find_opt ofs m with
     | Some v -> Symex.return (ofs, Some v)
@@ -137,39 +138,39 @@ struct
     | Missing fixes -> SM.Result.miss (lift_fixes ~ofs fixes)
 
   (* let consume
-      (cons :
-        'inner_serialized ->
-        'inner_st option ->
-        ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
-      (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-      ( 'inner_st t option,
-        [> Symex.lfail ],
-        'inner_serialized serialized )
-      Symex.Result.t =
-    let m, b = of_opt st in
-    let l, b_ser = serialized in
-    let** new_b =
-      match (b, b_ser) with
-      | None, None -> Result.ok None
-      | (Some _ as x), None | None, (Some _ as x) -> Result.ok x
-      | Some _, Some _ -> Symex.consume_false ()
-    in
-    let in_bounds_opt x =
-      match new_b with
-      | None -> SInt.greater_or_equal x (SInt.of_int 0)
-      | Some b -> SInt.in_range x (SInt.of_int 0, b)
-    in
-    let++ m =
-      Symex.Result.fold_list l ~init:m ~f:(fun m (ofs, inner_ser) ->
-          let** () = Symex.consume_pure (in_bounds_opt ofs) in
-          let* ofs, codom = find_opt_sym ofs m in
-          let++ codom =
-            let+? fix = cons inner_ser codom in
-            lift_fix ~ofs fix
-          in
-          add_opt ofs codom m)
-    in
-    to_opt (m, new_b) *)
+   *    (cons :
+   *      'inner_serialized ->
+   *      'inner_st option ->
+   *      ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
+   *    (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
+   *    ( 'inner_st t option,
+   *      [> Symex.lfail ],
+   *      'inner_serialized serialized )
+   *    Symex.Result.t =
+   *  let m, b = of_opt st in
+   *  let l, b_ser = serialized in
+   *  let** new_b =
+   *    match (b, b_ser) with
+   *    | None, None -> Result.ok None
+   *    | (Some _ as x), None | None, (Some _ as x) -> Result.ok x
+   *    | Some _, Some _ -> Symex.consume_false ()
+   *  in
+   *  let in_bounds_opt x =
+   *    match new_b with
+   *    | None -> SInt.greater_or_equal x (SInt.of_int 0)
+   *    | Some b -> SInt.in_range x (SInt.of_int 0, b)
+   *  in
+   *  let++ m =
+   *    Symex.Result.fold_list l ~init:m ~f:(fun m (ofs, inner_ser) ->
+   *        let** () = Symex.consume_pure (in_bounds_opt ofs) in
+   *        let* ofs, codom = find_opt_sym ofs m in
+   *        let++ codom =
+   *          let+? fix = cons inner_ser codom in
+   *          lift_fix ~ofs fix
+   *        in
+   *        add_opt ofs codom m)
+   *  in
+   *  to_opt (m, new_b) *)
 
   let produce (serialized : serialized) : unit SM.t =
     let* st = SM.get_state () in

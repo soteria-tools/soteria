@@ -135,8 +135,8 @@ let rec layout_of ty =
       None
 
 and union_layout_of_members members =
-  (* Note that members will not contain end-padding,
-     because it contains depends on the variant.. *)
+  (* Note that members will not contain end-padding, because it contains depends
+     on the variant.. *)
   let open Syntaxes.Option in
   let+ size, align, members_ofs =
     List.fold_left
@@ -321,7 +321,8 @@ let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
           | None -> [ Typed.v_false ]
           | Some (x, _) -> constrs x))
   | Basic (Floating _) ->
-      (* Floating constraints are already included in the floating type itself (bitvectors) *)
+      (* Floating constraints are already included in the floating type itself
+         (bitvectors) *)
       []
   | _ ->
       Fmt.kstr unsupported "No constraints implemented for type %a"
