@@ -147,7 +147,7 @@ struct
     module Syntax = struct
       let ( let* ) x f = bind x f
       let ( let+ ) x f = map x f
-      let ( let^ ) x f = bind (lift x) f
+      let ( let*^ ) x f = bind (lift x) f
 
       module Symex_syntax = struct
         let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
@@ -173,7 +173,7 @@ struct
         let* tag = query (TLiteral tag_layout.ty, offset) in
         let tag = as_base tag_layout.ty tag in
         let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
-        let^ res =
+        let*^ res =
           match_on tags ~constr:(function
             | _, None -> Typed.v_false
             | _, Some t -> tag ==@ t)

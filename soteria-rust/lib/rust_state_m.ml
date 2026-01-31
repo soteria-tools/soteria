@@ -251,8 +251,8 @@ module type S = sig
   module Syntax : sig
     val ( let* ) : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
     val ( let+ ) : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
-    val ( let^ ) : 'a Rustsymex.t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
-    val ( let^+ ) : 'a Rustsymex.t -> ('a -> 'b) -> ('b, 'env) t
+    val ( let*^ ) : 'a Rustsymex.t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
+    val ( let+^ ) : 'a Rustsymex.t -> ('a -> 'b) -> ('b, 'env) t
 
     module Symex_syntax : sig
       val branch_on :
@@ -571,8 +571,8 @@ struct
   module Syntax = struct
     let ( let* ) = bind
     let ( let+ ) = map
-    let ( let^ ) x f = bind (lift_symex x) f
-    let ( let^+ ) x f = map (lift_symex x) f
+    let ( let*^ ) x f = bind (lift_symex x) f
+    let ( let+^ ) x f = map (lift_symex x) f
 
     module Symex_syntax = struct
       let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =

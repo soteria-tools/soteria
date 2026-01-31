@@ -731,7 +731,7 @@ module Make (State : State_intf.S) = struct
         | ((Ptr _ | Int _) as p1), ((Ptr _ | Int _) as p2) -> (
             match op with
             | Offset ->
-                let^ p, meta, v =
+                let*^ p, meta, v =
                   match (p1, p2) with
                   | Ptr (p, meta), Int v -> return (p, meta, v)
                   | _ -> Rustsymex.not_impl "Invalid operands in offset"
@@ -964,7 +964,7 @@ module Make (State : State_intf.S) = struct
 
   and exec_block ~(body : UllbcAst.expr_body)
       ({ statements; terminator } : UllbcAst.block) =
-    let^ () = Rustsymex.consume_fuel_steps 1 in
+    let*^ () = Rustsymex.consume_fuel_steps 1 in
     let* () = iter_list statements ~f:exec_stmt in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
     L.trace (fun m ->
@@ -1066,7 +1066,7 @@ module Make (State : State_intf.S) = struct
                       pp_rust_val discr
                       (PrintValues.literal_to_string v)
             in
-            let^ block = match_on options ~constr:compare_discr in
+            let*^ block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~body block)

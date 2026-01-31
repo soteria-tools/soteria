@@ -188,7 +188,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     v
 
   let zero_valid ~ty =
-    let^+ res =
+    let+^ res =
       let@ () = run ~env:() ~state:State.empty in
       let* { size; align; _ } = Layout.layout_of ty in
       let* ptr = State.alloc_untyped ~zeroed:true ~size ~align () in
