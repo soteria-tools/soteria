@@ -20,10 +20,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # [versionsync: OCAML_VERSION=5.4.0]
   OCAML_VERSION: 5.4.0
   OBOL_REPO: soteria-tools/obol
+  # [versionsync: OBOL_COMMIT_HASH=45f2f95cf034c5daa448b64945e721839a57bb22]
   OBOL_COMMIT_HASH: 45f2f95cf034c5daa448b64945e721839a57bb22
+  # [versionsync: CHARON_REPO=soteria-tools/charon]
   CHARON_REPO: soteria-tools/charon
+  # [versionsync: CHARON_COMMIT_HASH=a71b958e7127c99ed85cbc520f85a155e38991be]
   CHARON_COMMIT_HASH: a71b958e7127c99ed85cbc520f85a155e38991be
 
 jobs:
@@ -36,6 +40,8 @@ jobs:
     steps:
       # Setup steps: checkout, z3, node, ocaml and opam
       - uses: actions/checkout@v4
+      - name: Check versions.json sync
+        run: python3 scripts/versionsync.py check
       - name: Setup Z3
         uses: cda-tum/setup-z3@v1
         id: z3

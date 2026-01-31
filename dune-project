@@ -30,6 +30,7 @@
  (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools")
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
    (>= 5.4.0))
   (tsort
@@ -60,6 +61,7 @@
    (< 3.0))
   unionFind
   ppx_deriving_yojson
+  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
   (ocamlformat
    (and
     :with-dev-setup
@@ -73,6 +75,7 @@
  (sites
   (share includes))
  (depends
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
    (>= 5.4.0))
   (shexp :build)
@@ -101,6 +104,7 @@
    (and
     :build
     (>= 3.14.0)))
+  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
   (ocamlformat
    (and
     :with-dev-setup
@@ -113,6 +117,7 @@
  (synopsis "VSCode extension for Soteria-C")
  (description "VSCode extension for Soteria-C")
  (depends
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
    (>= 5.4.0))
   (dune
@@ -120,6 +125,7 @@
     :build
     (>= 3.14.0)))
   (ocaml-lsp-server :with-dev-setup)
+  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
   (ocamlformat
    (and
     :with-dev-setup
@@ -139,6 +145,7 @@
  (sites
   (share plugins))
  (depends
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
    (>= 5.4.0))
   (shexp :build)
@@ -162,6 +169,7 @@
    (and
     :build
     (>= 3.14.0)))
+  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
   (ocamlformat
    (and
     :with-dev-setup
