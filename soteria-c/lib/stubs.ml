@@ -228,7 +228,7 @@ module M (State : State_intf.S) = struct
       loop dest count
 
   let havoc ~return_ty ~args =
-    let rec havoc_aggregate () (v : Agv.t) =
+    let rec havoc_aggregate (v : Agv.t) =
       match v with
       | Basic v -> (
           match Typed.cast_checked v Typed.t_ptr with
@@ -237,10 +237,10 @@ module M (State : State_intf.S) = struct
               @@ Csymex.not_impl
                    "Havocking input pointer for undefined function"
           | None -> Result.ok ())
-      | Struct fields -> Result.fold_list fields ~init:() ~f:havoc_aggregate
-      | Array elements -> Result.fold_list elements ~init:() ~f:havoc_aggregate
+      | Struct fields -> Result.iter_list fields ~f:havoc_aggregate
+      | Array elements -> Result.iter_list elements ~f:havoc_aggregate
     in
-    let** () = Result.fold_list args ~init:() ~f:havoc_aggregate in
+    let** () = Result.iter_list args ~f:havoc_aggregate in
     let* ret =
       match return_ty with
       | Some return_ty -> SM.lift @@ Layout.nondet_c_ty_aggregate return_ty

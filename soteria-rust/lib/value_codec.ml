@@ -147,6 +147,7 @@ struct
     module Syntax = struct
       let ( let* ) x f = bind x f
       let ( let+ ) x f = map x f
+      let ( let^ ) x f = bind (lift x) f
 
       module Symex_syntax = struct
         let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
@@ -172,9 +173,8 @@ struct
         let* tag = query (TLiteral tag_layout.ty, offset) in
         let tag = as_base tag_layout.ty tag in
         let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
-        let* res =
-          lift
-          @@ match_on tags ~constr:(function
+        let^ res =
+          match_on tags ~constr:(function
             | _, None -> Typed.v_false
             | _, Some t -> tag ==@ t)
         in
@@ -525,14 +525,7 @@ module Encoder (Sptr : Sptr.S) = struct
     | TVar (Free id) -> Result.ok (PolyVal id)
     | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
 
-  and nondets tys =
-    let open Rustsymex.Syntax in
-    let++ l =
-      Rustsymex.Result.fold_list tys ~init:[] ~f:(fun fields ty ->
-          let++ f = nondet ty in
-          f :: fields)
-    in
-    List.rev l
+  and nondets tys = Rustsymex.Result.map_list tys ~f:nondet
 
   (** Apply the compiler-attribute to the given value *)
   let apply_attribute v attr =
@@ -558,9 +551,7 @@ module Encoder (Sptr : Sptr.S) = struct
     | _ -> Result.ok ()
 
   let apply_attributes v attributes =
-    Rustsymex.Result.fold_list attributes
-      ~f:(fun () -> apply_attribute v)
-      ~init:()
+    Rustsymex.Result.iter_list attributes ~f:(apply_attribute v)
 
   (** Traverses the given type and rust value, and returns all findable
       references with their type (ignores pointers, except if [include_ptrs] is

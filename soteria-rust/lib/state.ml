@@ -126,9 +126,7 @@ module Block = struct
       | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
       | BUniqueImmutable -> return @@ Tree_borrow.Reserved false
       | BShallow ->
-          SM.lift
-          @@ DecayMapMonad.lift
-          @@ Fmt.kstr not_impl "Unhandled borrow kind: BShallow"
+          SM.lift @@ DecayMapMonad.not_impl "Unhandled borrow kind: BShallow"
     in
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
@@ -481,7 +479,7 @@ let store ((ptr, _) as fptr) ty sval :
         (* We uninitialise the whole range before writing, to ensure padding
            bytes are copied if there are any. *)
         let** () = Tree_block.uninit_range ofs size in
-        Result.fold_iter parts ~init:() ~f:(fun () (value, offset) ->
+        Result.iter_iter parts ~f:(fun (value, offset) ->
             Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
 
 let check_ptr_align ptr ty =
@@ -546,21 +544,20 @@ let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
              { t with children; node = Owned (v, tb) }
        in
        try DecayMapMonad.Result.ok (aux tb t)
-       with Failure msg -> DecayMapMonad.lift @@ not_impl msg
+       with Failure msg -> DecayMapMonad.not_impl msg
      in
      (* Applies all the tree borrow ranges to the tree we're writing,
         overwriting all previous states. *)
-     let** tree_to_write =
-       lift
-       @@ DecayMapMonad.Result.fold_iter collect_tb_states ~init:tree_to_write
-            ~f:(fun tree (tb, range) ->
-              let open DecayMapMonad.Syntax in
-              let replace_node = put_tb tb in
-              let rebuild_parent = Tree.of_children in
-              let++ _, tree =
-                Tree.frame_range tree ~rebuild_parent ~replace_node range
-              in
-              tree)
+     let**^ tree_to_write =
+       DecayMapMonad.Result.fold_iter collect_tb_states ~init:tree_to_write
+         ~f:(fun tree (tb, range) ->
+           let open DecayMapMonad.Syntax in
+           let replace_node = put_tb tb in
+           let rebuild_parent = Tree.of_children in
+           let++ _, tree =
+             Tree.frame_range tree ~rebuild_parent ~replace_node range
+           in
+           tree)
      in
      Tree_block.put_raw_tree ofs tree_to_write)
 
@@ -589,11 +586,7 @@ let alloc_ty ?kind ?span ty =
 let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
     =
   let@ () = with_loc_err ~trace:"Allocation" () in
-  let** layouts =
-    Result.fold_list tys ~init:[] ~f:(fun acc ty ->
-        let++^ layout = Layout.layout_of ty in
-        layout :: acc)
-  in
+  let**^ layouts = Rustsymex.Result.map_list tys ~f:Layout.layout_of in
   let layouts = List.rev layouts in
   with_heap
     (Heap.allocs ~els:layouts ~fn:(fun layout loc ->

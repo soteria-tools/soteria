@@ -65,6 +65,12 @@ module type S = sig
     f:('b -> 'a -> ('b, 'env) t) ->
     ('b, 'env) t
 
+  val iter_list : 'a list -> f:('a -> (unit, 'env) t) -> (unit, 'env) t
+
+  val iter_iter :
+    'a Foldable.Iter.t -> f:('a -> (unit, 'env) t) -> (unit, 'env) t
+
+  val map_list : 'a list -> f:('a -> ('b, 'env) t) -> ('b list, 'env) t
   val get_state : unit -> (st, 'env) t
   val get_env : unit -> ('env, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
@@ -337,11 +343,19 @@ struct
   let map (x : ('a, 'env) t) (f : 'a -> 'b) : ('b, 'env) t =
     ESM.map x (Fun.flip Compo_res.map f)
 
-  let fold_list x ~init ~f =
-    Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold x ~init ~f
+  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
+  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
+  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
+  let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
+  let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
+  let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
 
-  let fold_iter x ~init ~f =
-    Monad.foldM ~bind ~return:ok ~fold:Foldable.Iter.fold x ~init ~f
+  let mapM ~fold ~rev ~cons ~init x ~f =
+    foldM ~fold x ~init ~f:(fun acc a -> map (f a) (fun b -> cons b acc))
+    |> Fun.flip map rev
+
+  let map_list x ~f =
+    mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
 
   let map_env f =
     let open ESM.Syntax in
@@ -360,10 +374,7 @@ struct
     ESM.lift (State.SM.Result.map_error (State.with_decay_map f) decorate_error)
 
   let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
-    ESM.lift
-      (let open State.SM.Syntax in
-       let+ res = State.with_decay_map f in
-       Compo_res.Ok res)
+    ESM.lift (State.SM.map (State.with_decay_map f) Compo_res.ok)
 
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =
     ESM.Result.lift_state @@ State.SM.lift s
@@ -530,9 +541,7 @@ struct
 
     let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =
       let unlifted () : (unit, Error.with_trace, serialized list) SM.Result.t =
-        SM.Result.bind_2
-          (SM.map (f () ()) fst)
-          ~f:SM.Result.ok ~fe:SM.Result.error
+        SM.map (f () ()) fst
       in
       ESM.lift (register_thread_exit unlifted)
 

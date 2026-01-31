@@ -152,6 +152,9 @@ module type Base = sig
   val fold_list : 'a list -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
   val fold_iter : 'a Iter.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
   val fold_seq : 'a Seq.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
+  val iter_list : 'a list -> f:('a -> unit t) -> unit t
+  val iter_iter : 'a Iter.t -> f:('a -> unit t) -> unit t
+  val map_list : 'a list -> f:('a -> 'b t) -> 'b list t
 
   module Result : sig
     type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
@@ -186,6 +189,10 @@ module type Base = sig
 
     val fold_seq :
       'a Seq.t -> init:'b -> f:('b -> 'a -> ('b, 'c, 'd) t) -> ('b, 'c, 'd) t
+
+    val iter_list : 'a list -> f:('a -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
+    val iter_iter : 'a Iter.t -> f:('a -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
+    val map_list : 'a list -> f:('a -> ('b, 'c, 'd) t) -> ('b list, 'c, 'd) t
   end
 
   module Syntax : sig
@@ -649,6 +656,16 @@ module Base_extension (Core : Core) = struct
   let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
   let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
   let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+  let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
+  let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
+  let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
+
+  let mapM ~fold ~rev ~cons ~init x ~f =
+    foldM ~fold x ~init ~f:(fun acc a -> map (f a) (fun b -> cons b acc))
+    |> Fun.flip map rev
+
+  let map_list x ~f =
+    mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
 
   module Result = struct
     include Compo_res.T (Core)
@@ -663,6 +680,16 @@ module Base_extension (Core : Core) = struct
     let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
     let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
     let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
+    let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
+    let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
+    let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
+
+    let mapM ~fold ~rev ~cons ~init x ~f =
+      foldM ~fold x ~init ~f:(fun acc a -> map (f a) (fun b -> cons b acc))
+      |> Fun.flip map rev
+
+    let map_list x ~f =
+      mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
   end
 
   module Syntax = struct

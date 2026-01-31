@@ -44,6 +44,12 @@ module InterpM (State : State_intf.S) = struct
   let fold_list (l : 'a list) ~(init : 'b) ~(f : 'b -> 'a -> 'b t) : 'b t =
     Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold l ~init ~f
 
+  let iter_list x ~f = fold_list x ~init:() ~f:(fun () -> f)
+
+  let map_list x ~f =
+    fold_list x ~init:[] ~f:(fun acc x -> map (f x) (fun y -> y :: acc))
+    |> Fun.flip map List.rev
+
   let map_store f =
     let open SSM.Syntax in
     let* store = SSM.get_state () in
@@ -209,8 +215,7 @@ module Make (State : State_intf.S) = struct
      from the store. *)
   let free_bindings (bindings : AilSyntax.bindings) : unit InterpM.t =
     let open InterpM.Syntax in
-    InterpM.fold_list bindings ~init:()
-      ~f:(fun () (pname, ((loc, _, _), _, _, _)) ->
+    InterpM.iter_list bindings ~f:(fun (pname, ((loc, _, _), _, _, _)) ->
         let@ () = InterpM.with_loc ~loc in
         let* binding = InterpM.IStore.find_opt pname in
         match binding with
@@ -234,8 +239,7 @@ module Make (State : State_intf.S) = struct
 
   let dealloc_store () : unit InterpM.t =
     let* store = InterpM.get_store () in
-    InterpM.fold_list (Store.bindings store) ~init:()
-      ~f:(fun () (_, { kind; _ }) ->
+    InterpM.iter_list (Store.bindings store) ~f:(fun (_, { kind; _ }) ->
         match kind with
         | Stackptr ptr -> InterpM.IState.free ptr
         | _ -> InterpM.ok ())
@@ -727,13 +731,7 @@ module Make (State : State_intf.S) = struct
               Fmt.kstr not_impl "Cannot call external function: %a"
                 Fmt_ail.pp_sym fname)
 
-  and eval_expr_list (el : expr list) =
-    let+ vs =
-      InterpM.fold_list el ~init:[] ~f:(fun acc e ->
-          let+ new_res = eval_expr e in
-          new_res :: acc)
-    in
-    List.rev vs
+  and eval_expr_list = InterpM.map_list ~f:eval_expr
 
   and eval_expr (aexpr : expr) : Agv.t InterpM.t =
     let open InterpM.IState in
@@ -752,13 +750,9 @@ module Make (State : State_intf.S) = struct
           | Some arg_tys ->
               let arg_tys = Stubs.Arg_filter.apply filter arg_tys in
               let args = List.combine args arg_tys in
-              let+ args =
-                InterpM.fold_list args ~init:[] ~f:(fun acc (arg, ty) ->
-                    let* v = eval_expr arg in
-                    let^ v = cast ~old_ty:(type_of arg) ~new_ty:ty v in
-                    ok (v :: acc))
-              in
-              List.rev args
+              InterpM.map_list args ~f:(fun (arg, ty) ->
+                  let* v = eval_expr arg in
+                  lift_symex @@ cast ~old_ty:(type_of arg) ~new_ty:ty v)
         in
         let+ v =
           with_extra_call_trace ~loc ~msg:"Called from here"
@@ -1065,29 +1059,24 @@ module Make (State : State_intf.S) = struct
         in
         let fields = List.combine members fields in
         let+ fields_rev =
-          fold_list fields ~init:[]
-            ~f:(fun acc ((_, (_, _, _, new_ty)), (_, e_opt)) ->
+          map_list fields ~f:(fun ((_, (_, _, _, new_ty)), (_, e_opt)) ->
               match e_opt with
               | None -> not_impl "Partial field initialization"
               | Some e ->
                   let* new_res = eval_expr e in
-                  let^ new_res = cast ~old_ty:(type_of e) ~new_ty new_res in
-                  ok (new_res :: acc))
+                  lift_symex @@ cast ~old_ty:(type_of e) ~new_ty new_res)
         in
-        Agv.Struct (List.rev fields_rev)
+        Agv.Struct fields_rev
     | AilEarray (_is_str_literal, elem_ty, expr_opt_list) ->
         let+ elems_rev =
-          fold_list expr_opt_list ~init:[] ~f:(fun acc e_opt ->
+          map_list expr_opt_list ~f:(fun e_opt ->
               match e_opt with
               | None -> not_impl "Partial array initialization"
               | Some e ->
                   let* new_res = eval_expr e in
-                  let^ new_res =
-                    cast ~old_ty:(type_of e) ~new_ty:elem_ty new_res
-                  in
-                  ok (new_res :: acc))
+                  lift_symex @@ cast ~old_ty:(type_of e) ~new_ty:elem_ty new_res)
         in
-        Agv.Array (List.rev elems_rev)
+        Agv.Array elems_rev
     | AilEarray_decay e -> (
         match unwrap_expr e with
         | AilEident id -> (
@@ -1143,7 +1132,7 @@ module Make (State : State_intf.S) = struct
   and exec_stmt_list (init : Stmt_exec_result.t) (stmtl : stmt list) :
       Stmt_exec_result.t InterpM.t =
     let open Stmt_exec_result in
-    InterpM.fold_list stmtl ~init ~f:(fun res stmt ->
+    fold_list stmtl ~init ~f:(fun res stmt ->
         match res with
         | Normal -> exec_stmt stmt
         | Goto label -> exec_goto label stmt
@@ -1321,7 +1310,7 @@ module Make (State : State_intf.S) = struct
     | AilSdeclaration decls ->
         let* store = get_store () in
         let+ () =
-          fold_list decls ~init:() ~f:(fun () (pname, expr) ->
+          iter_list decls ~f:(fun (pname, expr) ->
               match expr with
               | None -> (* The thing is already declared *) ok ()
               | Some expr ->
@@ -1403,8 +1392,7 @@ module Make (State : State_intf.S) = struct
       let* () = State.produce_aggregate ptr ty v in
       StateM.Result.ok ()
     in
-    StateM.Result.fold_list prog.sigma.object_definitions ~init:()
-      ~f:(fun () def ->
+    StateM.Result.iter_list prog.sigma.object_definitions ~f:(fun def ->
         let id, e = def in
         let* ty =
           match Ail_helpers.find_obj_decl ~prog id with

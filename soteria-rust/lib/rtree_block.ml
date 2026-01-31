@@ -218,21 +218,17 @@ module Make (Sptr : Sptr.S) = struct
        with no gaps. For lazy nodes, we convert all of these to bitvectors, the
        concatenate them and call the encoder to decode the full value. *)
     let** leaves = collect_leaves t in
-    let** leaves =
-      fold_list leaves ~init:[] ~f:(fun acc (v, _) ->
+    let* leaves =
+      DecayMapMonad.map_list leaves ~f:(fun (v, _) ->
           match v with
-          | Int bv -> ok (bv :: acc)
-          | Ptr (ptr, Thin) ->
-              let+ bv = Sptr.decay ptr in
-              Ok (bv :: acc)
-          | Float f ->
-              let+ bv = Encoder.float_to_bv_bits f in
-              Ok (bv :: acc)
+          | Int bv -> return bv
+          | Ptr (ptr, Thin) -> Sptr.decay ptr
+          | Float f -> Encoder.float_to_bv_bits f
           | _ ->
               Fmt.kstr not_impl "Unexpected rust_val in lazy decoding: %a"
                 pp_rust_val v)
     in
-    match leaves with
+    match List.rev leaves with
     | hd :: tl ->
         let bv = List.fold_left BV.concat hd tl in
         Encoder.transmute_one ~to_ty:ty (Int bv)

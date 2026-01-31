@@ -136,11 +136,10 @@ module Make (State : State_intf.S) = struct
       function's entry. *)
   let dealloc_stack ?protected_address protected =
     let* () =
-      fold_list protected ~init:() ~f:(fun () (ptr, ty) ->
-          State.unprotect ptr ty)
+      iter_list protected ~f:(fun (ptr, ty) -> State.unprotect ptr ty)
     in
     let* store = get_env () in
-    fold_list (Store.bindings store) ~init:() ~f:(fun () (_, binding) ->
+    iter_list (Store.bindings store) ~f:(fun (_, binding) ->
         match (binding.kind, protected_address) with
         | (Dead | Uninit | Value _), _ -> ok ()
         | Stackptr ptr, None -> State.free ptr
@@ -283,19 +282,19 @@ module Make (State : State_intf.S) = struct
           | Unknown -> not_impl "Unknown provenance in RawMemory"
         in
         let+ blocks =
-          fold_list blocks ~init:[] ~f:(fun acc block ->
+          map_list blocks ~f:(fun block ->
               match block with
-              | `Byte (b, ofs) -> ok ((Int b, BV.usizei ofs) :: acc)
+              | `Byte (b, ofs) -> ok (Int b, BV.usizei ofs)
               | `Ptr (p, from_, size, ofs) ->
                   let* ptr, _ = ptr_of_provenance p in
                   if from_ = 0 && size = ptr_size then
-                    ok ((Ptr (ptr, Thin), BV.usizei ofs) :: acc)
+                    ok (Ptr (ptr, Thin), BV.usizei ofs)
                   else
                     let+ ptr_int = Sptr.decay ptr in
                     let ptr_frag =
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
                     in
-                    (Int ptr_frag, BV.usizei ofs) :: acc)
+                    (Int ptr_frag, BV.usizei ofs))
         in
         Union blocks
     | CVar (Free id) -> State.lookup_const_generic id const.ty
@@ -536,13 +535,7 @@ module Make (State : State_intf.S) = struct
           let* ptr = resolve_place_lazy loc in
           load_lazy ptr loc.ty
 
-  and eval_operand_list ops =
-    let+ vs =
-      fold_list ops ~init:[] ~f:(fun acc op ->
-          let+ new_res = eval_operand op in
-          new_res :: acc)
-    in
-    List.rev vs
+  and eval_operand_list = map_list ~f:eval_operand
 
   and eval_rvalue (expr : Expressions.rvalue) =
     match expr with
@@ -972,7 +965,7 @@ module Make (State : State_intf.S) = struct
   and exec_block ~(body : UllbcAst.expr_body)
       ({ statements; terminator } : UllbcAst.block) =
     let^ () = Rustsymex.consume_fuel_steps 1 in
-    let* () = fold_list statements ~init:() ~f:(fun () -> exec_stmt) in
+    let* () = iter_list statements ~f:exec_stmt in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
     L.trace (fun m ->
         m "Terminator full:@.%a" UllbcAst.pp_terminator_kind terminator.kind);
@@ -986,15 +979,12 @@ module Make (State : State_intf.S) = struct
         (* the expected types of the function may differ to those passed, e.g.
            with function pointers or dyn calls, so we transmute here. *)
         let* args =
-          fold_list (List.combine3 args in_tys exp_tys) ~init:[]
-            ~f:(fun acc (arg, from_ty, to_ty) ->
+          map_list (List.combine3 args in_tys exp_tys)
+            ~f:(fun (arg, from_ty, to_ty) ->
               let* arg = eval_operand arg in
-              if Types.equal_ty from_ty to_ty then ok (arg :: acc)
-              else
-                let+ arg = Core.transmute ~from_ty ~to_ty arg in
-                arg :: acc)
+              if Types.equal_ty from_ty to_ty then ok arg
+              else Core.transmute ~from_ty ~to_ty arg)
         in
-        let args = List.rev args in
         L.info (fun g ->
             g "Executing function with arguments [%a]"
               Fmt.(list ~sep:(any ", ") pp_rust_val)
@@ -1026,8 +1016,7 @@ module Make (State : State_intf.S) = struct
         let* value = load_lazy ptr ty in
         let ptr_tys = Encoder.ref_tys_in value ty in
         let+ () =
-          fold_list ptr_tys ~init:() ~f:(fun () (ptr, ty) ->
-              State.tb_load ptr ty)
+          iter_list ptr_tys ~f:(fun (ptr, ty) -> State.tb_load ptr ty)
         in
         value
     | Switch (discr, switch) -> (

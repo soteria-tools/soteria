@@ -100,9 +100,8 @@ module Build_from_find_opt_sym
       ~(els : a list) : (k list, 'err, serialized list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
-    let* bindings, out_keys =
-      lift
-      @@ Symex.fold_list els ~init:(Seq.empty, []) ~f:(fun (b, ks') e ->
+    let*^ bindings, out_keys =
+      Symex.fold_list els ~init:(Seq.empty, []) ~f:(fun (b, ks') e ->
           let open Symex.Syntax in
           let* k = Key.fresh () in
           let+ k', v = fn e k in

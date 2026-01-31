@@ -752,10 +752,9 @@ module M (Rust_state_m : Rust_state_m.S) :
       else
         match BV.to_z size with
         | Some bytes ->
-            fold_iter
+            iter_iter
               Iter.(0 -- (Z.to_int bytes - 1))
-              ~init:()
-              ~f:(fun () i ->
+              ~f:(fun i ->
                 let off = BV.usizei i in
                 let* ptr = Sptr.offset ~signed:false ptr off in
                 State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))
