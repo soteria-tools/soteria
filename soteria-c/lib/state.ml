@@ -41,12 +41,10 @@ module SM =
 
 open SM.Syntax
 
-let[@inline] with_error_loc_as_call_trace ?(msg = "Triggering operation") ()
-    (f : unit -> ('a, 'b, 'c) SM.Result.t) =
-  let loc = Csymex.get_loc () in
+let[@inline] with_error_loc ?msg () (f : unit -> ('a, 'b, 'c) SM.Result.t) =
+  let*^ loc = Csymex.get_loc () in
   let+- e = f () in
-  let call_trace = Soteria.Terminal.Call_trace.singleton ~loc ~msg () in
-  (e, call_trace)
+  Error.with_trace ?msg e loc
 
 let serialize (st : t) : serialized list =
   let heaps =
@@ -87,13 +85,13 @@ let empty = None
 
 let log action ptr =
   let open SM.Syntax in
-  let+ st = SM.get_state () in
+  let* st = SM.get_state () in
+  let+^ loc = Csymex.get_loc () in
   L.debug (fun m ->
       m "About to execute action: %s at %a (%a)@\n@[<2>HEAP:@ %a@]" action
-        Typed.ppa ptr Fmt_ail.pp_loc (get_loc ())
+        Typed.ppa ptr Fmt_ail.pp_loc loc
         (Fmt.option ~none:(Fmt.any "Empty heap") (pp_pretty ~ignore_freed:true))
-        st);
-  ()
+        st)
 
 let with_heap (f : ('a, 'err, Heap.serialized list) Heap.SM.Result.t) :
     ('a, 'err, serialized list) SM.Result.t =
@@ -123,7 +121,7 @@ let with_ptr (ptr : [< T.sptr ] Typed.t)
     (Heap.wrap loc (Block.wrap (Block.Freeable_ctree_block.wrap (f ~ofs))))
 
 let load_basic ptr ty =
-  let@ () = with_error_loc_as_call_trace ~msg:"Triggering read" () in
+  let@ () = with_error_loc ~msg:"Invalid memory load" () in
   let load_msg = Fmt.str "load of type %a" Fmt_ail.pp_ty ty in
   let* () = log load_msg ptr in
   with_ptr ptr (fun ~ofs -> Ctree_block.load ofs ty)
@@ -134,18 +132,18 @@ let load (ptr : [< T.sptr ] Typed.t) ty :
   Agv.Basic v
 
 let store_basic ptr ty sval =
-  let@ () = with_error_loc_as_call_trace ~msg:"Triggering write" () in
+  let@ () = with_error_loc ~msg:"Invalid memory write" () in
   let* () = log "store" ptr in
   with_ptr ptr (fun ~ofs -> Ctree_block.store ofs ty sval)
 
 let zero_range ptr len =
-  let@ () = with_error_loc_as_call_trace ~msg:"Triggering zero_range" () in
+  let@ () = with_error_loc ~msg:"Invalid memory write (zeroing)" () in
   let* () = log "zero_range" ptr in
   if%sat len ==@ Usize.(0s) then SM.Result.ok ()
   else with_ptr ptr (fun ~ofs -> Ctree_block.zero_range ofs len)
 
 let deinit ptr len =
-  let@ () = with_error_loc_as_call_trace ~msg:"Triggering deinit" () in
+  let@ () = with_error_loc ~msg:"Invalid memory write (deinitialising)" () in
   let* () = log "deinit" ptr in
   with_ptr ptr (fun ~ofs -> Ctree_block.deinit ofs len)
 
@@ -197,7 +195,7 @@ let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size =
   L.trace (fun m ->
       m "copy_nonoverlapping: copying %a bytes from %a to %a" Typed.ppa size
         Typed.ppa src Typed.ppa dst);
-  let@ () = with_error_loc_as_call_trace ~msg:"Triggering copy" () in
+  let@ () = with_error_loc ~msg:"Triggering copy" () in
   let** () =
     SM.assert_or_error
       Typed.(not (Ptr.is_at_null_loc dst ||@ Ptr.is_at_null_loc src))
@@ -211,7 +209,7 @@ let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size =
     with_ptr dst (fun ~ofs -> Ctree_block.put_raw_tree ofs tree_to_write)
 
 let alloc ?(zeroed = false) size =
-  let loc = Csymex.get_loc () in
+  let*^ loc = Csymex.get_loc () in
   with_heap
     (let open Heap.SM.Syntax in
      let block = Block.alloc ~loc ~zeroed size in
@@ -227,15 +225,10 @@ let alloc_ty ty =
 
 let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, serialized list) SM.Result.t
     =
-  let@ () = with_error_loc_as_call_trace () in
+  let@ () = with_error_loc ~msg:"Invalid free" () in
   if%sat Typed.Ptr.ofs ptr ==@ Usize.(0s) then
     with_heap @@ Heap.wrap (Typed.Ptr.loc ptr) (Block.free ())
   else SM.Result.error `InvalidFree
-
-let error (err : Error.t) =
-  L.trace (fun m -> m "Using state to error!");
-  let@ () = with_error_loc_as_call_trace () in
-  SM.Result.error err
 
 let produce (serialized : serialized) : unit SM.t =
   L.debug (fun m -> m "Producing: %a" pp_serialized serialized);

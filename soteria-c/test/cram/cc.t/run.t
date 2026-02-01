@@ -2,7 +2,7 @@
   error: Buffer overflow or underflow in main
       ┌─ array_add.c:104:5
   104 │      ar->buffer[ar->size] = element;
-      │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering write
+      │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Invalid memory write
   105 │      ar->size++;
   106 │      return CC_OK;
   107 │  }

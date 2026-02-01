@@ -22,6 +22,7 @@ module M (State : State_intf.S) = struct
   open SM
   open SM.Syntax
 
+  let error e = SM.lift @@ Csymex.Result.error_with_loc e
   let not_impl s = SM.lift @@ not_impl s
   let of_opt_not_impl ~msg x = SM.lift @@ of_opt_not_impl ~msg x
 
@@ -127,10 +128,10 @@ module M (State : State_intf.S) = struct
           |> SM.lift
       | _ -> not_impl "to_assert with non-one arguments"
     in
-    if%sat to_assert ==@ Typed.BitVec.zero size then State.error `FailedAssert
+    if%sat to_assert ==@ Typed.BitVec.zero size then error `FailedAssert
     else Result.ok Agv.void
 
-  let assert_fail ~args:_ = State.error `FailedAssert
+  let assert_fail ~args:_ = error `FailedAssert
 
   let assume_ ~(args : Agv.t list) =
     let* to_assume, _ =
