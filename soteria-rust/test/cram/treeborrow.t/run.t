@@ -10,15 +10,15 @@ Simple tree borrow violation
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Aliasing error in main
-      ┌─ $TESTCASE_ROOT/simple-fail.rs:8:6
+      ┌─ $TESTCASE_ROOT/simple-fail.rs:8:5
     3 │  fn main() {
-      │   --------- 1: Entry point
+      │  --------- 1: Entry point
     4 │      let mut root = 42;
     5 │      let ptr = &mut root as *mut i32;
     6 │      let (x, y) = unsafe { (&mut *ptr, &mut *ptr) };
     7 │      *x = 13;
     8 │      *y = 20; // UB: y is disabled
-      │       ^^^^^^^ Memory store
+      │      ^^^^^^^ Memory store
   PC 1: empty
   
   [1]

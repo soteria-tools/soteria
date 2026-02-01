@@ -30,54 +30,54 @@ Test kani::assert
   Compiling... done in <time>
   error: assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: Expected true! in assert_false
-      ┌─ $TESTCASE_ROOT/assert.rs:4:6
+      ┌─ $TESTCASE_ROOT/assert.rs:4:5
     2 │  fn assert_false() {
-      │   ----------------- 1: Entry point
+      │  ----------------- 1: Entry point
     3 │      let b: bool = kani::any();
     4 │      kani::assert(b, "Expected true!");
-      │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      │       │
-      │       Triggering operation
-      │       2: Call trace
+      │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │      │
+      │      Triggering operation
+      │      2: Call trace
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
   error: fancy_assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 in fancy_assert_false
-      ┌─ $TESTCASE_ROOT/assert.rs:10:6
+      ┌─ $TESTCASE_ROOT/assert.rs:10:5
     8 │  fn fancy_assert_false() {
-      │   ----------------------- 1: Entry point
+      │  ----------------------- 1: Entry point
     9 │      let b: bool = kani::any();
    10 │      kani::assert(b, "👻 unicode is 𝒮𝒞𝒜ℛ𝒴");
-      │       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      │       │
-      │       Triggering operation
-      │       2: Call trace
+      │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │      │
+      │      Triggering operation
+      │      2: Call trace
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
   error: override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert!" in override_assert_macro
-      ┌─ $SOTERIA-RUST/std/src/lib.rs:23:10
+      ┌─ $SOTERIA-RUST/std/src/lib.rs:23:9
    23 │          rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
-      │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      │           │
-      │           Triggering operation
-      │           2: Call trace
-      ┌─ $TESTCASE_ROOT/assert.rs:14:2
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │          │
+      │          Triggering operation
+      │          2: Call trace
+      ┌─ $TESTCASE_ROOT/assert.rs:14:1
    14 │  fn override_assert_macro() {
-      │   -------------------------- 1: Entry point
+      │  -------------------------- 1: Entry point
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
   error: override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert_eq!" in override_asserteq_macro
-      ┌─ $SOTERIA-RUST/std/src/lib.rs:23:10
+      ┌─ $SOTERIA-RUST/std/src/lib.rs:23:9
    23 │          rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
-      │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      │           │
-      │           Triggering operation
-      │           2: Call trace
-      ┌─ $TESTCASE_ROOT/assert.rs:20:2
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │          │
+      │          Triggering operation
+      │          2: Call trace
+      ┌─ $TESTCASE_ROOT/assert.rs:20:1
    20 │  fn override_asserteq_macro() {
-      │   ---------------------------- 1: Entry point
+      │  ---------------------------- 1: Entry point
   PC 1: (V|1| != V|2|)
   
   [1]
@@ -162,13 +162,13 @@ Test our simple Kani demo works
   Compiling... done in <time>
   error: saturating_add_overflow: found issues in <time>, errors in 1 branch (out of 3)
   error: Overflow in saturating_add_overflow
-      ┌─ $TESTCASE_ROOT/demo.rs:11:9
+      ┌─ $TESTCASE_ROOT/demo.rs:11:8
     8 │  fn saturating_add_overflow() -> u32 {
-      │   ----------------------------------- 1: Entry point
+      │  ----------------------------------- 1: Entry point
     9 │      let a: u32 = kani::any();
    10 │      let b: u32 = kani::any();
    11 │      if a + b < u32::MAX {
-      │          ^^^^^ Triggering operation
+      │         ^^^^^ Triggering operation
   PC 1: (V|1| +u_ovf V|2|)
   
   note: saturating_add: done in <time>, ran 2 branches
@@ -177,26 +177,26 @@ Test our simple Kani demo works
   
   error: memory_leak: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak at ../alloc/src/alloc.rs:<range> in memory_leak
-      ┌─ $TESTCASE_ROOT/demo.rs:32:2
+      ┌─ $TESTCASE_ROOT/demo.rs:32:1
    32 │  fn memory_leak() {
-      │   ^^^^^^^^^^^^^^^^
-      │   │
-      │   Leaking function
-      │   1: Entry point
+      │  ^^^^^^^^^^^^^^^^
+      │  │
+      │  Leaking function
+      │  1: Entry point
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
         (extract[0-1](V|1|) == 0b00)
   
   error: uninit_access: found issues in <time>, errors in 1 branch (out of 2)
   bug: Uninitialized memory access in uninit_access
-      ┌─ $TESTCASE_ROOT/demo.rs:63:27
+      ┌─ $TESTCASE_ROOT/demo.rs:63:26
    58 │  fn uninit_access() {
-      │   ------------------ 1: Entry point
+      │  ------------------ 1: Entry point
    59 │      let any_option: MyOption<u32> = kani::any();
    60 │      let addr: *const u32 = &any_option as *const MyOption<u32> as *const u32;
    61 │      unsafe {
    62 │          let addr_value = addr.offset(1);
    63 │          let value: u32 = *addr_value;
-      │                            ^^^^^^^^^^^ Memory load
+      │                           ^^^^^^^^^^^ Memory load
   PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   [1]
