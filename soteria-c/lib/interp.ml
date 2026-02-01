@@ -75,12 +75,8 @@ module InterpM (State : State_intf.S) = struct
     | Missing v -> SSM.Result.miss v
     | Error e -> lift_state_op (State.error e)
 
-  let with_loc ~loc f =
-    let old_loc = !Csymex.current_loc in
-    Csymex.current_loc := loc;
-    map (f ()) @@ fun res ->
-    current_loc := old_loc;
-    res
+  let with_loc ~(loc : Cerb_location.t) (f : 'a t) : 'a t =
+   fun store state -> Csymex.with_loc ~loc (f store state)
 
   let with_extra_call_trace ~loc ~msg (x : 'a t) : 'a t =
     SSM.Result.map_error x @@ fun e ->
@@ -198,7 +194,7 @@ module Make (State : State_intf.S) = struct
    fun store state ->
     try InterpM.map_store f store state
     with Unsupported (msg, loc) ->
-      let@ () = with_loc ~loc in
+      let@@ () = with_loc ~loc in
       Csymex.not_impl msg
 
   let attach_bindings (bindings : AilSyntax.bindings) =
@@ -216,7 +212,7 @@ module Make (State : State_intf.S) = struct
   let free_bindings (bindings : AilSyntax.bindings) : unit InterpM.t =
     let open InterpM.Syntax in
     InterpM.iter_list bindings ~f:(fun (pname, ((loc, _, _), _, _, _)) ->
-        let@ () = InterpM.with_loc ~loc in
+        let@@ () = InterpM.with_loc ~loc in
         let* binding = InterpM.IStore.find_opt pname in
         match binding with
         | Some { kind = Stackptr ptr; _ } -> InterpM.IState.free ptr
@@ -290,9 +286,9 @@ module Make (State : State_intf.S) = struct
         | _ -> ok `NotImmediate)
     | _ -> ok `NotImmediate
 
-  let rec aggregate_of_constant_exn ~ty (c : constant) : Agv.t =
+  let rec aggregate_of_constant_exn ~loc ~ty (c : constant) : Agv.t =
     let unsupported fmt =
-      Fmt.kstr (fun msg -> raise (Unsupported (msg, get_loc ()))) fmt
+      Fmt.kstr (fun msg -> raise (Unsupported (msg, loc))) fmt
     in
     match c with
     | ConstantInteger (IConstant (z, _basis, _suff)) ->
@@ -328,7 +324,8 @@ module Make (State : State_intf.S) = struct
         in
         let fields =
           List.map2
-            (fun (_, (_, _, _, ty)) (_, v) -> aggregate_of_constant_exn ~ty v)
+            (fun (_, (_, _, _, ty)) (_, v) ->
+              aggregate_of_constant_exn ~loc ~ty v)
             members fields
         in
         Struct fields
@@ -338,8 +335,7 @@ module Make (State : State_intf.S) = struct
           | Ctype.Ctype (_, Basic (Floating fty)) -> Layout.precision fty
           | _ ->
               Fmt.failwith "float is not of float type: %a of type %a at %a"
-                Fmt_ail.pp_constant c Fmt_ail.pp_ty ty Fmt_ail.pp_loc
-                (get_loc ())
+                Fmt_ail.pp_constant c Fmt_ail.pp_ty ty Fmt_ail.pp_loc loc
         in
         let f = Typed.Float.mk precision str in
         Agv.Basic f
@@ -367,9 +363,11 @@ module Make (State : State_intf.S) = struct
         unsupported "value of constant? %a" Fmt_ail.pp_constant c
 
   let aggregate_of_constant ~ty (c : constant) : Agv.t Csymex.t =
-    try Csymex.return (aggregate_of_constant_exn ~ty c)
+    let open Csymex.Syntax in
+    let* loc = Csymex.get_loc () in
+    try Csymex.return (aggregate_of_constant_exn ~loc ~ty c)
     with Unsupported (msg, loc) ->
-      let@ () = with_loc ~loc in
+      let@@ () = Csymex.with_loc ~loc in
       Csymex.not_impl msg
 
   let unwrap_expr (AnnotatedExpression (_, _, _, e) : expr) = e
@@ -715,7 +713,7 @@ module Make (State : State_intf.S) = struct
           let*^ sym = Fun_ctx.get_sym (Typed.Ptr.loc fptr) fctx in
           ok (loc, sym)
     in
-    let@ () = with_loc ~loc in
+    let@@ () = with_loc ~loc in
     let input_tys = Ail_helpers.get_param_tys fname in
     let fundef_opt = Ail_helpers.find_fun_def fname in
     match fundef_opt with
@@ -736,7 +734,7 @@ module Make (State : State_intf.S) = struct
   and eval_expr (aexpr : expr) : Agv.t InterpM.t =
     let open InterpM.IState in
     let (AnnotatedExpression (_, _, loc, expr)) = aexpr in
-    let@ () = with_loc ~loc in
+    let@@ () = with_loc ~loc in
     match expr with
     | AilEconst c ->
         let ty = type_of aexpr in
@@ -1249,7 +1247,7 @@ module Make (State : State_intf.S) = struct
       L.debug (fun m -> m "@[<v 2>STORE:@ %a@]" Store.pp store)
     in
     let AilSyntax.{ loc; node = stmt; _ } = astmt in
-    let@ () = with_loc ~loc in
+    let@@ () = with_loc ~loc in
     match stmt with
     | AilSskip -> ok Normal
     | AilSreturn e ->

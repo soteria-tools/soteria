@@ -1,5 +1,14 @@
 module SYMEX = Soteria.Symex.Make (Bv_solver.Z3_solver)
-include SYMEX
+
+(* Adding the current location being executed to the general execution state *)
+module CSYMEX =
+  Soteria.Sym_states.State_monad.Make
+    (SYMEX)
+    (struct
+      type t = Cerb_location.t
+    end)
+
+include CSYMEX
 include Syntaxes.FunctionWrap
 
 module StatKeys = struct
@@ -20,50 +29,58 @@ let check_nonzero (t : Typed.T.sint Typed.t) :
     Result.error `NonZeroIsZero
   else Result.ok (Typed.cast t)
 
-let current_loc = ref Cerb_location.unknown
-let get_loc () = !current_loc
+let get_loc () = get_state ()
 
 (* FIXME: this is actually wrong because of branching. the loc should probably
    be carried in the monad itself? *)
-let with_loc ~(loc : Cerb_location.t) f =
-  let open Syntax in
-  let old_loc = !current_loc in
-  current_loc := loc;
-  let* res = f () in
-  current_loc := old_loc;
-  return res
-
-let with_loc_immediate ~loc f =
-  let old_loc = !current_loc in
-  current_loc := loc;
-  let res = f () in
-  current_loc := old_loc;
-  res
+let with_loc ~(loc : Cerb_location.t) f = with_state ~state:loc f
 
 let not_impl msg =
-  Soteria.Stats.As_ctx.push_binding StatKeys.give_up_reasons msg
-    (Yojson (Ail_helpers.cerb_loc_to_yojson (get_loc ())));
+  let open Syntax in
+  let* loc = get_loc () in
+  let json = Ail_helpers.cerb_loc_to_yojson loc in
+  Soteria.Stats.As_ctx.push_binding StatKeys.give_up_reasons msg (Yojson json);
   give_up ("Unsupported: " ^ msg)
 
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 
+let run ?fuel ~mode process =
+  run_with_state ~state:Cerb_location.unknown process
+  |> (Fun.flip SYMEX.map) fst
+  |> SYMEX.run ?fuel ~mode
+
+let run_needs_stats ?fuel ~mode process =
+  run_with_state ~state:Cerb_location.unknown process
+  |> (Fun.flip SYMEX.map) fst
+  |> SYMEX.run_needs_stats ?fuel ~mode
+
+module Result = struct
+  include CSYMEX.Result
+
+  let run_with_stats ?fuel ?fail_fast ~mode
+      (process : ('a, 'b, 'c) CSYMEX.Result.t) =
+    CSYMEX.run_with_state ~state:Cerb_location.unknown process
+    |> (Fun.flip SYMEX.map) fst
+    |> SYMEX.Result.run_with_stats ?fuel ?fail_fast ~mode
+end
+
 module With_origin =
   Soteria.Sym_states.With_info.Make
-    (SYMEX)
+    (CSYMEX)
     (struct
       type t = Cerb_location.t
 
       let pp = Fmt_ail.pp_loc
     end)
 
-module Freeable = Soteria.Sym_states.Freeable.Make (SYMEX)
+module Freeable = Soteria.Sym_states.Freeable.Make (CSYMEX)
 
 module Pmap_direct_access =
-  Soteria.Sym_states.Pmap.Direct_access_patricia_tree (SYMEX)
+  Soteria.Sym_states.Pmap.Direct_access_patricia_tree (CSYMEX)
 
-module Pmap = Soteria.Sym_states.Pmap.Make_patricia_tree (SYMEX)
-module Tree_block = Soteria.Sym_states.Tree_block.Make (SYMEX)
-module Concrete_map = Soteria.Sym_states.Pmap.Concrete (SYMEX)
-module Bi = Soteria.Sym_states.Bi_abd.Make (SYMEX)
-module Pure_fun = Soteria.Sym_states.Pure_fun.Make (SYMEX)
+module Pmap = Soteria.Sym_states.Pmap.Make_patricia_tree (CSYMEX)
+module Tree_block = Soteria.Sym_states.Tree_block.Make (CSYMEX)
+module Concrete_map = Soteria.Sym_states.Pmap.Concrete (CSYMEX)
+module Bi = Soteria.Sym_states.Bi_abd.Make (CSYMEX)
+module Pure_fun = Soteria.Sym_states.Pure_fun.Make (CSYMEX)

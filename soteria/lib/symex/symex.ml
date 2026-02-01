@@ -821,7 +821,7 @@ module Substs = struct
 
     let to_fn subst x = find x subst
 
-    module From_iter (Symex : S) :
+    module From_iter (Symex : Base) :
       From_iter
         with type t := Var.t t
          and type 'a ty := 'a Symex.Value.ty
