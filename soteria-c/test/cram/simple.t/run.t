@@ -44,11 +44,11 @@ Symbolic execution of a simple program with symbolic values that fails because o
                  { node = Bound(0x0000000000000400);
                    info = (Some err.c:5:12-24) }))]);
      Error: (Null pointer dereference with trace
-             [• Triggering write: err.c:6:3-10 (cursor: 6:6)], None)]
+             [• Invalid memory write: err.c:6:3-10 (cursor: 6:6)], None)]
   error: Null pointer dereference in main
       ┌─ err.c:6:3
     6 │    *x = 12;
-      │    ^^^^^^^ Triggering write
+      │    ^^^^^^^ Invalid memory write
   Executed 5 statements
   Verification Failure!
   [13]
@@ -1621,7 +1621,8 @@ Does find UB but says Verification Success!
                  { node = Bound(0x0000000000000004);
                    info = (Some ignore_ub.c:5:19-38) }))]);
      Error: (Null pointer dereference with trace
-             [• Triggering write: ignore_ub.c:7:3-10 (cursor: 7:6)], None)]
+             [• Invalid memory write: ignore_ub.c:7:3-10 (cursor: 7:6)], 
+             None)]
   
   Executed 5 statements
   Verification Success!

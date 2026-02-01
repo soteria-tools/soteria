@@ -11,7 +11,6 @@ let zero_range dst size = wrap (State.zero_range dst size)
 let free ptr = wrap (State.free ptr)
 let alloc ?zeroed size = wrap (State.alloc ?zeroed size)
 let alloc_ty ty = wrap (State.alloc_ty ty)
-let error e = wrap (State.error e)
 let get_global sym st = wrap_no_fail (State.get_global sym) st
 
 let copy_nonoverlapping ~dst ~src ~size =

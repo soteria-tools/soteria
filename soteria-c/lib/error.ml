@@ -49,6 +49,9 @@ let severity : t -> Soteria.Terminal.Diagnostic.severity = function
 
 type with_trace = t * Cerb_location.t Soteria.Terminal.Call_trace.t
 
+let with_trace ?(msg = "Triggering operation") e loc =
+  (e, Soteria.Terminal.Call_trace.singleton ~loc ~msg ())
+
 let add_to_call_trace ((err, trace_elem) : with_trace) trace_elem' =
   (err, trace_elem' :: trace_elem)
 
