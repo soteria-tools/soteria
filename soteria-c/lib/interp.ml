@@ -31,7 +31,6 @@ module InterpM (State : State_intf.S) = struct
   end
 
   let[@inline] ok (x : 'a) : 'a t = Result.ok x
-  let[@inline] error (err : Error.t) : 'a t = SSM.lift @@ State.error err
 
   let[@inline] not_impl str : 'a t =
     SSM.lift @@ StateM.lift @@ Csymex.not_impl str
@@ -65,6 +64,9 @@ module InterpM (State : State_intf.S) = struct
       (s : (a, Error.with_trace, State.serialized list) Csymex.Result.t) : a t =
     SSM.lift @@ StateM.lift s
 
+  let[@inline] error (err : Error.t) : 'a t =
+    lift_symex_res @@ Csymex.Result.error_with_loc err
+
   let of_opt_not_impl ~msg x = lift_symex (of_opt_not_impl ~msg x)
 
   let assert_or_error cond (err : Error.t) : unit t =
@@ -73,7 +75,7 @@ module InterpM (State : State_intf.S) = struct
     match res with
     | Ok v -> ok v
     | Missing v -> SSM.Result.miss v
-    | Error e -> lift_state_op (State.error e)
+    | Error e -> error e
 
   let with_loc ~(loc : Cerb_location.t) (f : 'a t) : 'a t =
    fun store state -> Csymex.with_loc ~loc (f store state)
@@ -91,7 +93,6 @@ module InterpM (State : State_intf.S) = struct
     let alloc ?zeroed size = lift_state_op (State.alloc ?zeroed size)
     let alloc_ty ty = lift_state_op (State.alloc_ty ty)
     let free ptr = lift_state_op (State.free ptr)
-    let error err = lift_state_op (State.error err)
 
     let get_global id =
       lift_state_op
@@ -266,7 +267,7 @@ module Make (State : State_intf.S) = struct
         | Some { kind = Value v; _ } ->
             L.trace (fun m -> m "Immediate load: %a" Agv.pp v);
             ok (Some v)
-        | Some { kind = Uninit; _ } -> IState.error `UninitializedMemoryAccess
+        | Some { kind = Uninit; _ } -> InterpM.error `UninitializedMemoryAccess
         | _ -> ok None)
     | _ -> ok None
 

@@ -63,6 +63,12 @@ module Result = struct
     CSYMEX.run_with_state ~state:Cerb_location.unknown process
     |> (Fun.flip SYMEX.map) fst
     |> SYMEX.Result.run_with_stats ?fuel ?fail_fast ~mode
+
+  let error_with_loc ?msg err =
+    let open Syntax in
+    let* loc = get_loc () in
+    let err = Error.with_trace ?msg err loc in
+    Result.error err
 end
 
 module With_origin =

@@ -46,10 +46,6 @@ let[@inline] with_error_loc ?msg () (f : unit -> ('a, 'b, 'c) SM.Result.t) =
   let+- e = f () in
   Error.with_trace ?msg e loc
 
-let[@inline] error err =
-  let@ () = with_error_loc () in
-  SM.Result.error err
-
 let serialize (st : t) : serialized list =
   let heaps =
     Option.fold ~none:[] ~some:Heap.serialize st.heap

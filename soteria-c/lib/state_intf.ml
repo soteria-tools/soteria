@@ -47,7 +47,6 @@ module type S = sig
     size:sint Typed.t ->
     unit res
 
-  val error : Error.t -> 'ok res
   val produce : serialized -> t option -> (unit * t option) Csymex.t
 
   val produce_aggregate :
