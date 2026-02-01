@@ -3,12 +3,12 @@ Test memory leaks
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak at ../alloc/src/alloc.rs:<range> in main
-      ┌─ $TESTCASE_ROOT/leak.rs:1:2
+      ┌─ $TESTCASE_ROOT/leak.rs:1:1
     1 │  fn main() {
-      │   ^^^^^^^^^
-      │   │
-      │   Leaking function
-      │   1: Entry point
+      │  ^^^^^^^^^
+      │  │
+      │  Leaking function
+      │  1: Entry point
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
         (extract[0-1](V|1|) == 0b00)
   
@@ -37,15 +37,15 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: assertion failed: result.is_err() in main
-      ┌─ $SOTERIA-RUST/std/src/lib.rs:20:10
+      ┌─ $SOTERIA-RUST/std/src/lib.rs:20:9
    20 │          rusteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
-      │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      │           │
-      │           Triggering operation
-      │           2: Call trace
-      ┌─ $TESTCASE_ROOT/unwind.rs:1:2
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │          │
+      │          Triggering operation
+      │          2: Call trace
+      ┌─ $TESTCASE_ROOT/unwind.rs:1:1
     1 │  fn main() {
-      │   --------- 1: Entry point
+      │  --------- 1: Entry point
   PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   [1]
@@ -67,26 +67,26 @@ Test function calls on function pointers
   
   error: fn_ptr_read: found issues in <time>, errors in 1 branch (out of 1)
   bug: Accessed function pointer's pointee in fn_ptr_read
-      ┌─ $TESTCASE_ROOT/fn_ptr.rs:25:19
+      ┌─ $TESTCASE_ROOT/fn_ptr.rs:25:18
    21 │  fn fn_ptr_read() {
-      │   ---------------- 1: Entry point
+      │  ---------------- 1: Entry point
    22 │      let add: fn(u8, u8) -> u8 = add;
    23 │      let ptr = add as *const u8;
    24 │      unsafe {
    25 │          let _b = *ptr;
-      │                    ^^^^ Memory load
+      │                   ^^^^ Memory load
   PC 1: empty
   
   error: fn_ptr_write: found issues in <time>, errors in 1 branch (out of 1)
   bug: Accessed function pointer's pointee in fn_ptr_write
-      ┌─ $TESTCASE_ROOT/fn_ptr.rs:34:10
+      ┌─ $TESTCASE_ROOT/fn_ptr.rs:34:9
    30 │  fn fn_ptr_write() {
-      │   ----------------- 1: Entry point
+      │  ----------------- 1: Entry point
    31 │      let add: fn(u8, u8) -> u8 = add;
    32 │      let ptr = add as *mut u8;
    33 │      unsafe {
    34 │          *ptr = 0;
-      │           ^^^^^^^^ Memory store
+      │          ^^^^^^^^ Memory store
   PC 1: empty
   
   [1]
@@ -96,17 +96,17 @@ Check strict provenance disables int to ptr casts
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Attempted ot cast integer to pointer with strict provenance in main
-      ┌─ $RUSTLIB/src/rust/library/core/src/ptr/mod.rs:986:6
+      ┌─ $RUSTLIB/src/rust/library/core/src/ptr/mod.rs:986:5
   986 │      addr as *const T
-      │       ^^^^^^^^^^^^^^^ Casting integer to pointer
-      ┌─ $TESTCASE_ROOT/provenance.rs:5:19
+      │      ^^^^^^^^^^^^^^^^ Casting integer to pointer
+      ┌─ $TESTCASE_ROOT/provenance.rs:5:18
     1 │  fn main() {
-      │   --------- 1: Entry point
+      │  --------- 1: Entry point
     2 │      let mut x: u8 = 0;
     3 │      let p = &mut x as *mut u8;
     4 │      let p_int = p.expose_provenance();
     5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
-      │                    ---------------------------------------------- 2: Call trace
+      │                   ---------------------------------------------- 2: Call trace
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
   [1]
@@ -116,16 +116,16 @@ Check permissive provenance allows int to ptr casts
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
   bug: UB: dangling pointer in main
-      ┌─ $TESTCASE_ROOT/provenance.rs:7:10
+      ┌─ $TESTCASE_ROOT/provenance.rs:7:9
     1 │  fn main() {
-      │   --------- 1: Entry point
+      │  --------- 1: Entry point
     2 │      let mut x: u8 = 0;
     3 │      let p = &mut x as *mut u8;
     4 │      let p_int = p.expose_provenance();
     5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
     6 │      unsafe {
     7 │          *p_back = 1;
-      │           ^^^^^^^^^^^ Memory store
+      │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
   [1]
@@ -135,9 +135,9 @@ Check corner cases with permissive provenance, around transmutes
   Compiling... done in <time>
   error: addr_doesnt_expose: found issues in <time>, errors in 1 branch (out of 1)
   bug: UB: dangling pointer in addr_doesnt_expose
-      ┌─ $TESTCASE_ROOT/provenance_transmute.rs:9:10
+      ┌─ $TESTCASE_ROOT/provenance_transmute.rs:9:9
     2 │  fn addr_doesnt_expose() {
-      │   ----------------------- 1: Entry point
+      │  ----------------------- 1: Entry point
     3 │      let mut x: u8 = 0;
     4 │      let p = &mut x as *mut u8;
     5 │      let p_int = p.addr();
@@ -145,14 +145,14 @@ Check corner cases with permissive provenance, around transmutes
     7 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
     8 │      unsafe {
     9 │          *p_back = 1;
-      │           ^^^^^^^^^^^ Memory store
+      │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
   error: transmute_doesnt_restore_provenance: found issues in <time>, errors in 1 branch (out of 1)
   bug: UB: dangling pointer in transmute_doesnt_restore_provenance
-      ┌─ $TESTCASE_ROOT/provenance_transmute.rs:22:10
+      ┌─ $TESTCASE_ROOT/provenance_transmute.rs:22:9
    15 │  fn transmute_doesnt_restore_provenance() {
-      │   ---------------------------------------- 1: Entry point
+      │  ---------------------------------------- 1: Entry point
    16 │      let mut x: u8 = 0;
    17 │      let p = &mut x as *mut u8;
    18 │      let p_int = p.expose_provenance();
@@ -160,7 +160,7 @@ Check corner cases with permissive provenance, around transmutes
    20 │      let p_back = unsafe { std::mem::transmute::<usize, *mut u8>(p_int) };
    21 │      unsafe {
    22 │          *p_back = 1;
-      │           ^^^^^^^^^^^ Memory store
+      │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
   [1]
@@ -190,22 +190,22 @@ Test null and dangling pointers
   
   error: null_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
   error: Null dereference in null_ptr_not_zst
-      ┌─ $TESTCASE_ROOT/dangling_ptrs.rs:11:31
+      ┌─ $TESTCASE_ROOT/dangling_ptrs.rs:11:30
     9 │  fn null_ptr_not_zst() {
-      │   --------------------- 1: Entry point
+      │  --------------------- 1: Entry point
    10 │      let ptr: *const u32 = std::ptr::null();
    11 │      let _val: u32 = unsafe { *ptr };
-      │                                ^^^^ Memory load
+      │                               ^^^^ Memory load
   PC 1: empty
   
   error: dangling_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
   bug: UB: dangling pointer in dangling_ptr_not_zst
-      ┌─ $TESTCASE_ROOT/dangling_ptrs.rs:17:30
+      ┌─ $TESTCASE_ROOT/dangling_ptrs.rs:17:29
    15 │  fn dangling_ptr_not_zst() {
-      │   ------------------------- 1: Entry point
+      │  ------------------------- 1: Entry point
    16 │      let ptr: *const u8 = 0xdeadbeef as *const u8;
    17 │      let _val: u8 = unsafe { *ptr };
-      │                               ^^^^ Memory load
+      │                              ^^^^ Memory load
   PC 1: empty
   
   [1]
@@ -241,15 +241,15 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   Compiling... done in <time>
   error: main: found an issue in <time> after exploring 1 branch -- stopped immediately (fail-fast)
   error: Panic: ok in main
-      ┌─ $SOTERIA-RUST/std/src/lib.rs:103:10
+      ┌─ $SOTERIA-RUST/std/src/lib.rs:103:9
   103 │          rusteria::panic(concat!($msg))
-      │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      │           │
-      │           Triggering operation
-      │           2: Call trace
-      ┌─ $TESTCASE_ROOT/fail_fast.rs:1:2
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │          │
+      │          Triggering operation
+      │          2: Call trace
+      ┌─ $TESTCASE_ROOT/fail_fast.rs:1:1
     1 │  fn main() {
-      │   --------- 1: Entry point
+      │  --------- 1: Entry point
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
   
   [1]

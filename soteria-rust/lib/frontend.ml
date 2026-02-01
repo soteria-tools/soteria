@@ -527,7 +527,7 @@ let parse_ullbc_of_crate crate_dir =
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
 
 module Diagnostic = struct
-  let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col)
+  let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col - 1)
 
   let as_ranges (span : Charon.Meta.span_data) =
     match span.file.name with
