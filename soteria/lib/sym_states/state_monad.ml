@@ -60,7 +60,8 @@ module Make
     module Symex = Sym
     module Value = Sym.Value
 
-    type lfail = Sym.lfail
+    type lfail = Sym.lfail [@@deriving show { with_path = false }]
+    type cons_fail = Sym.cons_fail [@@deriving show { with_path = false }]
     type st = State.t
 
     include Monad.StateT_base (State) (Sym)

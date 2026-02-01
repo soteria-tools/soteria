@@ -43,6 +43,10 @@ module type Core = sig
       potential typos such as [`LFail] which will take precious time to debug...
       trust me. *)
   type lfail = [ `Lfail of Value.(sbool t) ]
+  [@@deriving show { with_path = false }]
+
+  type cons_fail = [ lfail | `Missing_subst of Var.t ]
+  [@@deriving show { with_path = false }]
 
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
@@ -441,7 +445,12 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   end
 
   type 'a t = 'a Iter.t
-  type lfail = [ `Lfail of Value.(sbool t) ]
+
+  type lfail = [ `Lfail of (Value.(sbool t)[@printer Value.ppa]) ]
+  [@@deriving show { with_path = false }]
+
+  type cons_fail = [ lfail | `Missing_subst of Var.t ]
+  [@@deriving show { with_path = false }]
 
   module Symex_state = struct
     let backtrack_n n =
