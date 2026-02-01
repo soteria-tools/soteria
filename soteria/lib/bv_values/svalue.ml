@@ -2194,6 +2194,60 @@ module SSeq = struct
     match ty with TSeq ty -> ty | _ -> failwith "Expected a sequence type"
 end
 
+(** {2 General constructors} *)
+
+let mk_unop (op : Unop.t) v =
+  match op with
+  | Unop.Not -> Bool.not v
+  | Unop.GetPtrLoc -> Ptr.loc v
+  | Unop.GetPtrOfs -> Ptr.ofs v
+  | Unop.BvOfBool sz -> BitVec.of_bool sz v
+  | Unop.BvOfFloat (rounding, signed, size) ->
+      BitVec.of_float ~rounding ~signed ~size v
+  | Unop.FloatOfBv (rounding, signed, size) ->
+      BitVec.to_float ~rounding ~signed ~fp:size v
+  | Unop.FloatOfBvRaw _ -> BitVec.to_float_raw v
+  | Unop.BvExtract (from, to_) -> BitVec.extract from to_ v
+  | Unop.BvExtend (signed, l) -> BitVec.extend ~signed l v
+  | Unop.BvNot -> BitVec.not v
+  | Unop.Neg -> BitVec.neg v
+  | Unop.FAbs -> Float.abs v
+  | Unop.FIs fc -> Float.is_floatclass fc v
+  | Unop.FRound rounding -> Float.round rounding v
+
+let mk_binop (op : Binop.t) v1 v2 =
+  match op with
+  | Binop.And -> Bool.and_ v1 v2
+  | Binop.Or -> Bool.or_ v1 v2
+  | Binop.Eq -> Bool.sem_eq v1 v2
+  | Binop.FEq -> Float.eq v1 v2
+  | Binop.FLeq -> Float.leq v1 v2
+  | Binop.FLt -> Float.lt v1 v2
+  | Binop.FAdd -> Float.add v1 v2
+  | Binop.FSub -> Float.sub v1 v2
+  | Binop.FMul -> Float.mul v1 v2
+  | Binop.FDiv -> Float.div v1 v2
+  | Binop.FRem -> Float.rem v1 v2
+  | Binop.Add { checked } -> BitVec.add ~checked v1 v2
+  | Binop.AddOvf signed -> BitVec.add_overflows ~signed v1 v2
+  | Binop.Sub { checked } -> BitVec.sub ~checked v1 v2
+  | Binop.Mul { checked } -> BitVec.mul ~checked v1 v2
+  | Binop.Div signed -> BitVec.div ~signed v1 v2
+  | Binop.Rem signed -> BitVec.rem ~signed v1 v2
+  | Binop.Mod -> BitVec.mod_ v1 v2
+  | Binop.MulOvf signed -> BitVec.mul_overflows ~signed v1 v2
+  | Binop.Lt signed -> BitVec.lt ~signed v1 v2
+  | Binop.Leq signed -> BitVec.leq ~signed v1 v2
+  | Binop.BvConcat -> BitVec.concat v1 v2
+  | Binop.BitAnd -> BitVec.and_ v1 v2
+  | Binop.BitOr -> BitVec.or_ v1 v2
+  | Binop.BitXor -> BitVec.xor v1 v2
+  | Binop.Shl -> BitVec.shl v1 v2
+  | Binop.LShr -> BitVec.lshr v1 v2
+  | Binop.AShr -> BitVec.ashr v1 v2
+
+let mk_nop (op : Nop.t) vs = match op with Nop.Distinct -> Bool.distinct vs
+
 (** {2 Infix operators} *)
 
 module Infix = struct

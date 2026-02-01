@@ -1,0 +1,59 @@
+open Svalue
+
+type t = Svalue.t [@@deriving show { with_path = false }]
+type ty = Svalue.ty [@@deriving show { with_path = false }]
+
+let ty (s : t) : ty = s.node.ty
+let[@inline] of_value v = v
+
+module Subst = struct
+  module Raw_map = Map.Make (Svalue)
+
+  type t = Svalue.t Raw_map.t
+
+  let empty = Raw_map.empty
+end
+
+let rec subst ~missing_var (s : Subst.t) (v : Svalue.t) =
+  match Subst.Raw_map.find_opt v s with
+  | Some v -> (v, s)
+  | None -> (
+      match v.node.kind with
+      | Var x ->
+          let v' = missing_var x v.node.ty in
+          let s = Subst.Raw_map.add v v' s in
+          (v', s)
+      | Bool _ | Float _ | BitVec _ -> (v, s)
+      | Seq elements ->
+          let elements, s = subst_list ~missing_var s elements in
+          (Svalue.SSeq.mk ~seq_ty:v.node.ty elements, s)
+      | Ptr (loc, ofs) ->
+          let loc, s = subst ~missing_var s loc in
+          let ofs, s = subst ~missing_var s ofs in
+          (Ptr.mk loc ofs, s)
+      | Unop (unop, v1) ->
+          let v1, s = subst ~missing_var s v1 in
+          (Svalue.mk_unop unop v1, s)
+      | Binop (binop, v1, v2) ->
+          let v1, s = subst ~missing_var s v1 in
+          let v2, s = subst ~missing_var s v2 in
+          (Svalue.mk_binop binop v1 v2, s)
+      | Ite (cond, v1, v2) ->
+          let cond, s = subst ~missing_var s cond in
+          let v1, s = subst ~missing_var s v1 in
+          let v2, s = subst ~missing_var s v2 in
+          (Svalue.Bool.ite cond v1 v2, s)
+      | Nop (nop, vs) ->
+          let vs, s = subst_list ~missing_var s vs in
+          (Svalue.mk_nop nop vs, s))
+
+and subst_list ~missing_var s vs =
+  match vs with
+  | [] -> ([], s)
+  | v :: vs ->
+      let v, s = subst ~missing_var s v in
+      let vs, s = subst_list ~missing_var s vs in
+      (v :: vs, s)
+
+let learn (_s : Subst.t) (_syn : t) (_v : t) : Subst.t option =
+  failwith "TODO: bv_values.syn.learn"
