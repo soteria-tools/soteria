@@ -5,6 +5,7 @@
  (public_name soteria)
  (libraries
   cmdliner
+  flamegraphs
   fmt
   grace
   grace.ansi_renderer
