@@ -29,6 +29,7 @@ FILES_TO_SCAN = [
     "dune-project",
     ".ocamlformat",
     "Makefile",
+    "README.md",
 ]
 
 # How many lines after the tag to search for the value
@@ -328,7 +329,7 @@ Examples:
 Filters:
   Tags can include filters to transform values:
   [versionsync: NAME=value] [versionsync.slice: 0..3]
-  
+
   Slice examples:
     0..3   - first 3 characters
     0..-1  - all but last character
