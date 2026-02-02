@@ -113,7 +113,7 @@ let pp ft : [> t ] -> unit = function
       Fmt.pf ft "UB: int to pointer without exposed address: %a" Typed.ppa addr
   | `UBIntToPointerStrict ->
       Fmt.string ft
-        "Attempted ot cast integer to pointer with strict provenance"
+        "Attempted to cast an integer to an pointer with strict provenance"
   | `UBTransmute msg -> Fmt.pf ft "UB: Transmute: %s" msg
   | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
   | `UseAfterFree -> Fmt.string ft "Use after free"
