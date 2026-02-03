@@ -1,8 +1,6 @@
 type t = {
-  record_flamegraph : bool;
-      [@names [ "record-flamegraph"; "flamegraph" ]]
-      [@env "SOTERIA_PROFILING_ENABLED"]
-      [@make.default false]
+  flamegraphs_folder : string option;
+      [@names [ "flamegraphs-folder" ]] [@env "SOTERIA_FLAMEGRAPHS_FOLDER"]
 }
 [@@deriving make, subliner]
 

@@ -35,7 +35,7 @@ module Make () = struct
           r)
   end
 
-  let run f =
+  let run ~flamegraph_svg f =
     let flamegraph = ref Flamegraph.empty in
     let current_stack : Flamegraph.stack Dynarray.t = Dynarray.create () in
     let () = Dynarray.add_last current_stack (Flamegraph.stack []) in
@@ -54,25 +54,41 @@ module Make () = struct
     in
     let open Effect.Deep in
     let res =
-      try f () with
-      | effect Map_stack f, k ->
+      Fun.protect
+        ~finally:(fun () ->
           checkpoint ();
-          map_stack f;
-          continue k ()
-      | effect Backtrack_n n, k ->
-          checkpoint ();
-          let len = Dynarray.length current_stack in
-          Dynarray.truncate current_stack (len - n);
-          continue k ()
-      | effect Save, k ->
-          Dynarray.add_last current_stack (Dynarray.get_last current_stack);
-          continue k ()
-      | effect Checkpoint, k ->
-          checkpoint ();
-          continue k ()
+          Result.get_ok @@ Flamegraphs.Svg.to_file flamegraph_svg !flamegraph)
+        (fun () ->
+          try f () with
+          | effect Map_stack f, k ->
+              checkpoint ();
+              map_stack f;
+              continue k ()
+          | effect Backtrack_n n, k ->
+              checkpoint ();
+              let len = Dynarray.length current_stack in
+              Dynarray.truncate current_stack (len - n);
+              continue k ()
+          | effect Save, k ->
+              Dynarray.add_last current_stack (Dynarray.get_last current_stack);
+              continue k ()
+          | effect Checkpoint, k ->
+              checkpoint ();
+              continue k ())
     in
-    checkpoint ();
-    Result.get_ok @@ Flamegraphs.Folded.to_file "test.pl" !flamegraph;
-    Result.get_ok @@ Flamegraphs.Svg.to_file "test.svg" !flamegraph;
     res
+
+  let run_ignored f =
+    let open Effect.Deep in
+    try f () with
+    | effect Map_stack _, k -> continue k ()
+    | effect Backtrack_n _, k -> continue k ()
+    | effect Save, k -> continue k ()
+    | effect Checkpoint, k -> continue k ()
+
+  (** is [run] if [flamegraph_svg] is [Some _] and [run_ignored] otherwise *)
+  let run_if_file ~flamegraph_svg f =
+    match flamegraph_svg with
+    | Some flamegraph_svg -> run ~flamegraph_svg f
+    | None -> run_ignored f
 end
