@@ -121,6 +121,10 @@ module type Core = sig
       instance, if a give feature is unsupported. *)
   val give_up : string -> 'a t
 
+  (** Runs the process within a section of execution with given name.
+      Corresponds to frames in the flamegraph. *)
+  val with_frame : string -> (unit -> 'a t) -> 'a t
+
   val branches : (unit -> 'a t) list -> 'a t
 
   (** {2 Fuel} *)
@@ -410,6 +414,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     let take_branches list = wrap (Fuel_gauge.take_branches list) ()
   end
 
+  module Flamegraph = Profiling.Flamegraph.Make ()
   module Value = Solver.Value
   module MONAD = Monad.IterM
   include MONAD
@@ -432,13 +437,16 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   module Symex_state = struct
     let backtrack_n n =
       Solver.backtrack_n n;
-      Fuel.backtrack_n n
+      Fuel.backtrack_n n;
+      Flamegraph.backtrack_n n
 
     let save () =
       Solver.save ();
-      Fuel.save ()
+      Fuel.save ();
+      Flamegraph.save ()
 
     let run ~init_fuel f =
+      Flamegraph.run @@ fun () ->
       Solver.run @@ fun () ->
       Fuel.run ~init:init_fuel @@ fun () -> f ()
   end
@@ -633,7 +641,9 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         (with_section @@ fun () -> a () f);
         loop r
 
-  let vanish () _f = ()
+  let vanish () _f =
+    Flamegraph.checkpoint ();
+    ()
 
   let give_up reason _f =
     (* The bind ensures that the side effect will not be enacted before the
@@ -643,7 +653,14 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     if
       Approx.As_ctx.is_ox ()
       && Solver_result.admissible ~mode:OX (Solver.sat ())
-    then Give_up.perform reason
+    then (
+      Flamegraph.checkpoint ();
+      Give_up.perform reason)
+    else Flamegraph.checkpoint ()
+
+  module Flamegraph_with_frame = Flamegraph.With_frame (MONAD)
+
+  let with_frame name f = Flamegraph_with_frame.with_frame name f
 end
 
 module Base_extension (Core : Core) = struct
