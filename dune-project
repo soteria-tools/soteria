@@ -49,6 +49,7 @@
   fmt
   printbox-text
   htmlit
+  flamegraphs
   (progress
    (>= 0.5.0))
   (grace
