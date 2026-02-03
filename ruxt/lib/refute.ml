@@ -23,16 +23,22 @@ let exec_crate (crate : Crate.t) =
   in
   (* Collect statistics from all the runs *)
   let Soteria.Stats.{ res; stats } =
-    Rustsymex.Stats.As_ctx.with_stats () (fun () ->
+    let@ () = Layout.Session.with_layout_cache in
+    Soteria.Stats.As_ctx.with_stats () (fun () ->
         (* Run the algorithm starting from the base summary context *)
         let* summ_ctx = Library.init_summaries ~fuel library in
         find_unsoundness config.pass_fuel summ_ctx)
   in
-  Rustsymex.Stats.output stats;
+  Soteria.Stats.output stats;
   res
 
+let set_config config =
+  try Config.set_and_lock_global config
+  with Exn.Config_error err ->
+    Driver.fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
+
 let exec_ruxt config file_name =
-  Config.set_and_lock_global config;
+  set_config config;
   let compile () = fst @@ Frontend.parse_ullbc_of_file file_name in
   match Driver.wrap_step "Compiling" compile |> exec_crate with
   | soundness_res ->

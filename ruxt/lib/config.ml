@@ -1,11 +1,9 @@
-(* Cmdliner.deriving opens Cmdliner.Arg for the frontend argument, without using it.
-   We ignore the warning here. *)
+(* Cmdliner.deriving opens Cmdliner.Arg for the frontend argument, without using
+   it. We ignore the warning here. *)
 [@@@warning "-unused-open"]
 
 type t = {
-  (*
-     Compilation flags
-   *)
+  (* Compilation flags *)
   cleanup : bool;
       [@make.default false] [@names [ "clean" ]] [@env "SOTERIA_RUST_CLEANUP"]
       (** Clean up compiled files after execution *)
@@ -32,16 +30,12 @@ type t = {
   sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
       (** The sysroot to use for compilation. If not provided, the default
           sysroot is used. *)
-  (*
-     Plugins
-   *)
+  (* Plugins *)
   with_kani : bool; [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
       (** Use the Miri library *)
-  (*
-     Printing settings
-   *)
+  (* Printing settings *)
   filter : string list; [@default []] [@names [ "filter" ]]
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided; tests matching any will be
@@ -49,9 +43,7 @@ type t = {
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
-  (*
-     Symbolic execution behaviour
-   *)
+  (* Symbolic execution behaviour *)
   ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
       (** Ignore memory leaks *)
   only_public : bool; [@make.default false] [@names [ "only-public" ]]
@@ -83,12 +75,7 @@ let get, set_and_lock =
   Soteria.Soteria_std.Write_once.make ~name:"RUXt" ~default ()
 
 type global = {
-  logs : (Soteria.Logs.Config.t, string) result; [@term Soteria.Logs.Cli.term]
-  terminal : Soteria.Terminal.Config.t;
-      [@term Soteria.Terminal.Config.cmdliner_term ()]
-  solver : Soteria.Solvers.Config.t;
-      [@term Soteria.Solvers.Config.cmdliner_term ()]
-  stats : Soteria.Stats.Config.t; [@term Soteria.Stats.Config.cmdliner_term ()]
+  soteria : Soteria.Config.t; [@term Soteria.Config.cmdliner_term ()]
   ruxt : t; [@term term]
 }
 [@@deriving make, subliner]
@@ -99,10 +86,7 @@ let set_and_lock_global (config : global) =
   set_and_lock config.ruxt;
   let (config : Soteria_rust_lib.Config.global) =
     {
-      logs = config.logs;
-      terminal = config.terminal;
-      solver = config.solver;
-      stats = config.stats;
+      soteria = config.soteria;
       soteria_rust =
         {
           cleanup = config.ruxt.cleanup;
@@ -111,6 +95,7 @@ let set_and_lock_global (config : global) =
           no_compile_plugins = config.ruxt.no_compile_plugins;
           plugin_directory = config.ruxt.plugin_directory;
           target = config.ruxt.target;
+          polymorphic = true;
           output_crate = config.ruxt.output_crate;
           rustc_flags = config.ruxt.rustc_flags;
           (* Default to Charon for compositionality *)
@@ -128,6 +113,7 @@ let set_and_lock_global (config : global) =
           provenance = config.ruxt.provenance;
           step_fuel = config.ruxt.step_fuel;
           branch_fuel = config.ruxt.branch_fuel;
+          fail_fast = false;
         };
     }
   in

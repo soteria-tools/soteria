@@ -48,7 +48,7 @@ let get () =
   { constructors = wrap constructors; fun_decls = wrap fun_decls }
 
 let infer_summaries ~fuel summ_ctx wrappers =
-  (* Infer summaries and prune summary context  *)
+  (* Infer summaries and prune summary context *)
   let+ summ_ctx =
     Result.fold_list wrappers ~init:summ_ctx ~f:(fun summ_ctx (wrapper, tys) ->
         (* Iterate over snapshot of current summary context *)

@@ -4,47 +4,37 @@ module Meta : sig
   type t
 end
 
-module With_meta : sig
-  type 'a t = { node : 'a; info : Meta.t option }
-  type 'a serialized = 'a t
-
-  val iter_vars_serialized : ('a -> 'b) -> 'a serialized -> 'b
-end
-
-module Freeable : sig
-  type 'a serialized = 'a Soteria.Sym_states.Freeable.t
-
-  val iter_vars_serialized : ('a -> 'b -> unit) -> 'a serialized -> 'b -> unit
-end
-
-module Tree_block : sig
+module Block : sig
   type serialized
+end
+
+module Freeable_block_with_meta : sig
+  type ('a, 'info) with_info = { node : 'a; info : 'info option }
+
+  type serialized =
+    (Block.serialized Soteria.Sym_states.Freeable.freeable, Meta.t) with_info
 
   val iter_vars_serialized :
     serialized -> (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit
 end
 
-type serialized_atom =
-  Typed.T.sloc Typed.t
-  * Tree_block.serialized Freeable.serialized With_meta.serialized
-
 include
   State_intf.S
-    with type 'a err = 'a * Charon.Meta.span_data Soteria.Terminal.Call_trace.t
-     and type serialized = serialized_atom list * Typed.T.sloc Typed.t list
+    with type serialized =
+      Typed.T.sloc Typed.t * Freeable_block_with_meta.serialized
 
-val serialize : t -> serialized
-val pp_serialized : Format.formatter -> serialized -> unit
+type serialized_globals = serialized list * Typed.T.sloc Typed.t list
+
+val serialize : t option -> serialized_globals
+val pp_serialized_globals : Format.formatter -> serialized_globals -> unit
 
 val iter_vars_serialized :
-  serialized -> (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) -> unit
+  serialized_globals ->
+  (Svalue.Var.t * [< Typed.T.cval ] Typed.ty -> unit) ->
+  unit
 
 val subst_serialized :
-  (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
+  (Svalue.Var.t -> Svalue.Var.t) -> serialized_globals -> serialized_globals
 
-val consume :
-  serialized_atom ->
-  t ->
-  (t, [> Rustsymex.lfail ], serialized) Rustsymex.Result.t
-
-val produce : serialized -> t -> t Rustsymex.t
+val consume : serialized -> (unit, [> Rustsymex.lfail ], serialized) SM.Result.t
+val produce : serialized -> unit SM.t
