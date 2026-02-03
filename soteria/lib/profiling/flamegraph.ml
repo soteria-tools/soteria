@@ -57,7 +57,10 @@ module Make () = struct
       Fun.protect
         ~finally:(fun () ->
           checkpoint ();
-          Result.get_ok @@ Flamegraphs.Svg.to_file flamegraph_svg !flamegraph)
+          match Flamegraphs.Svg.to_file flamegraph_svg !flamegraph with
+          | Ok () -> ()
+          | Error e ->
+              Logs.L.error (fun m -> m "Could not write flamegraph: %s" e))
         (fun () ->
           try f () with
           | effect Map_stack f, k ->
@@ -87,8 +90,8 @@ module Make () = struct
     | effect Checkpoint, k -> continue k ()
 
   (** is [run] if [flamegraph_svg] is [Some _] and [run_ignored] otherwise *)
-  let run_if_file ~flamegraph_svg f =
+  let run_if_file ~flamegraph_svg =
     match flamegraph_svg with
-    | Some flamegraph_svg -> run ~flamegraph_svg f
-    | None -> run_ignored f
+    | Some flamegraph_svg -> fun f -> run ~flamegraph_svg f
+    | None -> fun f -> run_ignored f
 end

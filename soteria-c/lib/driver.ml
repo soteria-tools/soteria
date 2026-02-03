@@ -258,8 +258,13 @@ let exec_function ~includes ~fuel file_names function_name =
         [%l.debug "@[<2>Initial state:@ %a@]" (Fmt.Dump.option SState.pp) state];
         Wpst_interp.exec_fun entry_point ~args:[]
       in
+      let flamegraph_svg =
+        Option.map
+          (fun d -> Filename.concat d (function_name ^ ".svg"))
+          (Soteria.Profiling.Config.get ()).flamegraphs_dir
+      in
       let@ () = with_function_context linked in
-      Ok (Csymex.Result.run_needs_stats ~mode:OX ~fuel symex)
+      Ok (Csymex.Result.run_needs_stats ?flamegraph_svg ~mode:OX ~fuel symex)
   in
   match result with
   | Ok v -> v
