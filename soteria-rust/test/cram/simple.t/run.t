@@ -95,7 +95,7 @@ Check strict provenance disables int to ptr casts
   $ soteria-rust rustc provenance.rs --provenance strict
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
-  bug: Attempted ot cast integer to pointer with strict provenance in main
+  bug: Attempted to cast an integer to an pointer with strict provenance in main
       ┌─ $RUSTLIB/src/rust/library/core/src/ptr/mod.rs:986:5
   986 │      addr as *const T
       │      ^^^^^^^^^^^^^^^^ Casting integer to pointer
