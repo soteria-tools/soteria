@@ -41,10 +41,10 @@ end
 include Soteria.Sym_states.State_monad.Make (MonoSymex) (MonadState)
 include Syntaxes.FunctionWrap
 
-let run_with_stats ?fuel ?fail_fast ~mode symex =
+let run_with_stats ?flamegraph_svg ?fuel ?fail_fast ~mode symex =
   run_with_state ~state:MonadState.empty symex
   |> (Fun.flip MonoSymex.map) fst
-  |> MonoSymex.Result.run_with_stats ?fuel ?fail_fast ~mode
+  |> MonoSymex.Result.run_with_stats ?flamegraph_svg ?fuel ?fail_fast ~mode
 
 module Poly = struct
   open Charon

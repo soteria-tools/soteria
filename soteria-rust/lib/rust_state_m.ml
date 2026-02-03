@@ -83,6 +83,8 @@ module type S = sig
   val with_extra_call_trace :
     loc:Meta.span_data -> msg:string -> ('a, 'env) t -> ('a, 'env) t
 
+  val with_frame : string -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+
   val unwind_with :
     f:('a -> ('b, 'env) t) ->
     fe:(Error.with_trace -> ('b, 'env) t) ->
@@ -410,6 +412,9 @@ struct
         let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
         Compo_res.Error (Error.add_to_call_trace e elem)
     | Missing f -> Missing f
+
+  let with_frame name (f : unit -> ('a, 'env) t) : ('a, 'env) t =
+   fun env state -> Rustsymex.with_frame name (fun () -> f () env state)
 
   let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
     ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->

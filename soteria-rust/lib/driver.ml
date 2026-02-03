@@ -122,11 +122,16 @@ let exec_crate
   (* execute! *)
   let entry_name = Fmt.to_to_string Crate.pp_name fun_decl.item_meta.name in
   let@ () = print_outcomes entry_name in
+  let flamegraph_svg =
+    Option.map
+      (fun dirname -> Filename.concat dirname (entry_name ^ ".svg"))
+      (Soteria.Profiling.Config.get ()).flamegraphs_dir
+  in
   let { res = branches; stats } : 'res Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
     let@@ () =
-      Rustsymex.run_with_stats ~mode:OX ~fuel
+      Rustsymex.run_with_stats ?flamegraph_svg ~mode:OX ~fuel
         ~fail_fast:(Config.get ()).fail_fast
     in
     exec_fun fun_decl

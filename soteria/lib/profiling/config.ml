@@ -1,6 +1,7 @@
 type t = {
-  flamegraphs_folder : string option;
-      [@names [ "flamegraphs-folder" ]] [@env "SOTERIA_FLAMEGRAPHS_FOLDER"]
+  flamegraphs_dir : string option;
+      [@names [ "flamegraphs-dir"; "flamegraph-dir" ]]
+      [@env "SOTERIA_FLAMEGRAPHS_DIR"]
 }
 [@@deriving make, subliner]
 
