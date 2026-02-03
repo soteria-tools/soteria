@@ -84,12 +84,7 @@ let get, set_and_lock =
   Soteria.Soteria_std.Write_once.make ~name:"Soteria-Rust" ~default ()
 
 type global = {
-  logs : Soteria.Logs.Config.cli; [@term Soteria.Logs.Config.cmdliner_term ()]
-  terminal : Soteria.Terminal.Config.t;
-      [@term Soteria.Terminal.Config.cmdliner_term ()]
-  solver : Soteria.Solvers.Config.t;
-      [@term Soteria.Solvers.Config.cmdliner_term ()]
-  stats : Soteria.Stats.Config.t; [@term Soteria.Stats.Config.cmdliner_term ()]
+  soteria : Soteria.Config.t; [@term Soteria.Config.cmdliner_term ()]
   soteria_rust : t; [@term term]
 }
 [@@deriving make, subliner]
@@ -97,10 +92,7 @@ type global = {
 let global_term = global_cmdliner_term ()
 
 let set_and_lock_global (config : global) =
-  Soteria.Solvers.Config.set_and_lock config.solver;
-  Soteria.Logs.Config.check_set_and_lock config.logs;
-  Soteria.Terminal.Config.set_and_lock config.terminal;
-  Soteria.Stats.Config.set_and_lock config.stats;
+  Soteria.Config.set_and_lock config.soteria;
   if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
     Exn.config_error
       "Obol does not support polymorphic analyses; use --frontend charon";
