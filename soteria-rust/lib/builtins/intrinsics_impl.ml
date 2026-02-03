@@ -597,6 +597,11 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let saturating_add = saturating (Add OUB)
   let saturating_sub = saturating (Sub OUB)
+
+  let select_unpredictable ~t:_ ~b ~true_val ~false_val : rust_val ret =
+    let b = (b :> T.sbool Typed.t) in
+    if%sat b then ok true_val else ok false_val
+
   let size_of ~t = Layout.size_of t
 
   let rec size_and_align_of_val ~t ~meta =
