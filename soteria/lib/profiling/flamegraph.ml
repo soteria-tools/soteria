@@ -27,8 +27,8 @@ module Make () = struct
   let backtrack_n n = Effect.perform (Backtrack_n n)
   let checkpoint () = Effect.perform Checkpoint
 
-  module With_stack (M : Monad.Base) = struct
-    let with_stack (name : string) (f : unit -> 'a M.t) : 'a M.t =
+  module With_frame (M : Monad.Base) = struct
+    let with_frame (name : string) (f : unit -> 'a M.t) : 'a M.t =
       push_frame name;
       M.map (f ()) (fun r ->
           pop_frame ();
@@ -38,7 +38,12 @@ module Make () = struct
   let run f =
     let flamegraph = ref Flamegraph.empty in
     let current_stack : Flamegraph.stack Dynarray.t = Dynarray.create () in
+    let () = Dynarray.add_last current_stack (Flamegraph.stack []) in
     let last_checkpoint = ref (Unix.gettimeofday ()) in
+    let map_stack (f : Flamegraph.stack -> Flamegraph.stack) =
+      let last = Dynarray.pop_last current_stack in
+      Dynarray.add_last current_stack (f last)
+    in
     let checkpoint () =
       let current_time = Unix.gettimeofday () in
       let elapsed = current_time -. !last_checkpoint in
@@ -47,22 +52,27 @@ module Make () = struct
       let stack = { stack with weight = elapsed } in
       flamegraph := Flamegraph.add_stack stack !flamegraph
     in
-    let map_stack (f : Flamegraph.stack -> Flamegraph.stack) =
-      let last = Dynarray.pop_last current_stack in
-      Dynarray.add_last current_stack (f last)
-    in
     let open Effect.Deep in
-    try f () with
-    | effect Map_stack f, k ->
-        checkpoint ();
-        map_stack f;
-        continue k ()
-    | effect Backtrack_n n, k ->
-        checkpoint ();
-        let len = Dynarray.length current_stack in
-        Dynarray.truncate current_stack (len - n);
-        continue k ()
-    | effect Save, k ->
-        Dynarray.add_last current_stack (Dynarray.get_last current_stack);
-        continue k ()
+    let res =
+      try f () with
+      | effect Map_stack f, k ->
+          checkpoint ();
+          map_stack f;
+          continue k ()
+      | effect Backtrack_n n, k ->
+          checkpoint ();
+          let len = Dynarray.length current_stack in
+          Dynarray.truncate current_stack (len - n);
+          continue k ()
+      | effect Save, k ->
+          Dynarray.add_last current_stack (Dynarray.get_last current_stack);
+          continue k ()
+      | effect Checkpoint, k ->
+          checkpoint ();
+          continue k ()
+    in
+    checkpoint ();
+    Result.get_ok @@ Flamegraphs.Folded.to_file "test.pl" !flamegraph;
+    Result.get_ok @@ Flamegraphs.Svg.to_file "test.svg" !flamegraph;
+    res
 end
