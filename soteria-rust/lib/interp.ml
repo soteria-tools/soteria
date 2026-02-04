@@ -1133,7 +1133,7 @@ module Make (State : State_intf.S) = struct
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in
     L.info (fun m ->
-        m "Calling %s with %a" string_name
+        m "Calling %s with %a" name_str
           Fmt.(hbox @@ brackets @@ list ~sep:comma pp_rust_val)
           args);
     let* protected = alloc_stack body.locals args in
