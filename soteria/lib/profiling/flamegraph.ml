@@ -53,33 +53,30 @@ module Make () = struct
       flamegraph := Flamegraph.add_stack stack !flamegraph
     in
     let open Effect.Deep in
-    let res =
-      Fun.protect
-        ~finally:(fun () ->
-          checkpoint ();
-          match Flamegraphs.Svg.to_file flamegraph_svg !flamegraph with
-          | Ok () -> ()
-          | Error e ->
-              Logs.L.error (fun m -> m "Could not write flamegraph: %s" e))
-        (fun () ->
-          try f () with
-          | effect Map_stack f, k ->
-              checkpoint ();
-              map_stack f;
-              continue k ()
-          | effect Backtrack_n n, k ->
-              checkpoint ();
-              let len = Dynarray.length current_stack in
-              Dynarray.truncate current_stack (len - n);
-              continue k ()
-          | effect Save, k ->
-              Dynarray.add_last current_stack (Dynarray.get_last current_stack);
-              continue k ()
-          | effect Checkpoint, k ->
-              checkpoint ();
-              continue k ())
-    in
-    res
+    Fun.protect
+      ~finally:(fun () ->
+        checkpoint ();
+        match Flamegraphs.Svg.to_file flamegraph_svg !flamegraph with
+        | Ok () -> ()
+        | Error e ->
+            Logs.L.error (fun m -> m "Could not write flamegraph: %s" e))
+      (fun () ->
+        try f () with
+        | effect Map_stack f, k ->
+            checkpoint ();
+            map_stack f;
+            continue k ()
+        | effect Backtrack_n n, k ->
+            checkpoint ();
+            let len = Dynarray.length current_stack in
+            Dynarray.truncate current_stack (len - n);
+            continue k ()
+        | effect Save, k ->
+            Dynarray.add_last current_stack (Dynarray.get_last current_stack);
+            continue k ()
+        | effect Checkpoint, k ->
+            checkpoint ();
+            continue k ())
 
   let run_ignored f =
     let open Effect.Deep in
