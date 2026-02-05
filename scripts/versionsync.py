@@ -375,25 +375,32 @@ def run_command(cmd: list[str], cwd: Path) -> tuple[bool, str]:
         sys.exit(1)
 
 
-def validate_git_repo(target_dir: Path, project: str, expected_repo: str) -> str:
+def validate_git_repo(target_dir: Path, project: str, expected_repo: str, allow_init: bool) -> str | None:
     """
     Validate that the directory exists, is a git repo, and has the correct remote.
-    Returns the name of the remote to use.
-    Exits the program if validation fails.
+    Returns the name of the remote to use, or None if initialization is needed.
+    If allow_init is True, will return None when repo needs initialization.
+    Exits the program if validation fails and allow_init is False.
     """
     # Check if directory exists
     if not target_dir.exists():
+        if allow_init:
+            return None  # Signal that we need to initialize
         error(f"Directory does not exist: {target_dir}")
         info(f"Please clone {project} first:")
-        info(f"  git clone https://github.com/{expected_repo}.git {target_dir}")
+        info(f"  scripts/versionsync.py pull {project} --init")
+        info(f"Or manually: git clone https://github.com/{expected_repo}.git {target_dir}")
         sys.exit(1)
 
     # Check if it's a git repository
     git_dir = target_dir / ".git"
     if not git_dir.exists():
+        if allow_init:
+            return None  # Signal that we need to initialize
         error(f"Directory is not a git repository: {target_dir}")
         info(f"Please clone {project} first:")
-        info(f"  git clone https://github.com/{expected_repo}.git {target_dir}")
+        info(f"  scripts/versionsync.py pull {project} --init")
+        info(f"Or manually: git clone https://github.com/{expected_repo}.git {target_dir}")
         sys.exit(1)
 
     # Get all remotes
@@ -446,7 +453,26 @@ def validate_git_repo(target_dir: Path, project: str, expected_repo: str) -> str
     return new_remote_name
 
 
-def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, build_cmd: str) -> None:
+def get_make_command() -> str:
+    """
+    Get the appropriate make command (gmake if available, otherwise make).
+    Obol and Charon require GNU make, which is 'gmake' on macOS.
+    """
+    try:
+        result = subprocess.run(
+            ["which", "gmake"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return "gmake"
+    except Exception:
+        pass
+    return "make"
+
+
+def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, build_cmd: str, allow_init: bool) -> None:
     """
     Pull and build a single project.
     
@@ -456,17 +482,38 @@ def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, bu
         commit_hash: Commit hash to checkout
         repo: Expected repository (e.g., 'soteria-tools/obol')
         build_cmd: Build command to run
+        allow_init: If True, will clone the repo if it doesn't exist
     """
     step(f"Processing {project}...")
     
     # Validate the repository and get the remote name to use
-    remote_name = validate_git_repo(target_dir, project, repo)
-    success(f"Validated {project} repository at {target_dir}")
+    remote_name = validate_git_repo(target_dir, project, repo, allow_init)
     
-    # Fetch from the specific remote
-    info(f"Running git fetch {remote_name}...")
-    run_command(["git", "fetch", remote_name], target_dir)
-    success(f"Fetched from {remote_name}")
+    # If remote_name is None, we need to initialize the repository
+    if remote_name is None:
+        info(f"Initializing {project} repository at {target_dir}")
+        
+        # Create parent directory if needed
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize git repo
+        target_dir.mkdir(parents=True, exist_ok=True)
+        run_command(["git", "init"], target_dir)
+        
+        # Add the remote
+        remote_name = "origin"
+        run_command(
+            ["git", "remote", "add", remote_name, f"https://github.com/{repo}.git"],
+            target_dir
+        )
+        success(f"Initialized git repository with remote '{remote_name}'")
+    else:
+        success(f"Validated {project} repository at {target_dir}")
+    
+    # Fetch only the specific commit with depth 1
+    info(f"Fetching commit {commit_hash[:8]} from {remote_name}...")
+    run_command(["git", "fetch", "--depth=1", remote_name, commit_hash], target_dir)
+    success(f"Fetched commit {commit_hash[:8]}")
     
     # Force checkout the target commit
     info(f"Checking out commit {commit_hash[:8]}...")
@@ -474,9 +521,14 @@ def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, bu
     success(f"Checked out {commit_hash[:8]}")
     
     # Run the build command
-    info(f"Running build command: {build_cmd}")
-    build_parts = build_cmd.split()
-    run_command(build_parts, target_dir)
+    make_cmd = get_make_command()
+    build_cmd_parts = build_cmd.split()
+    # Replace 'make' with the detected make command (gmake or make)
+    if build_cmd_parts[0] == "make":
+        build_cmd_parts[0] = make_cmd
+    
+    info(f"Running build command: {' '.join(build_cmd_parts)}")
+    run_command(build_cmd_parts, target_dir)
     success(f"Build completed successfully")
     
     color_print(f"\n✓ {project} updated and built successfully!\n", Colors.GREEN + Colors.BOLD)
@@ -529,7 +581,7 @@ def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> 
         commit_hash = versions[config["version_key"]]
         
         try:
-            pull_project(project, target_dir, commit_hash, repo, config["build_cmd"])
+            pull_project(project, target_dir, commit_hash, repo, config["build_cmd"], args.init)
         except SystemExit:
             # Error already printed
             return 1
@@ -550,6 +602,7 @@ Examples:
   %(prog)s pull obol               Pull and build obol from configured commit
   %(prog)s pull charon             Pull and build charon from configured commit
   %(prog)s pull all                Pull and build both obol and charon
+  %(prog)s pull all --init         Initialize and pull both repos (first time setup)
   %(prog)s pull obol --dir ~/code/obol  Pull obol from custom directory
 
 Filters:
@@ -594,6 +647,11 @@ Filters:
     pull_parser.add_argument(
         "--dir",
         help="Override default directory (only for single project pulls)",
+    )
+    pull_parser.add_argument(
+        "--init",
+        action="store_true",
+        help="Initialize (clone) the repository if it doesn't exist",
     )
 
     args = parser.parse_args()

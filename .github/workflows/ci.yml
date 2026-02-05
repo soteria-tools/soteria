@@ -87,14 +87,8 @@ jobs:
         run: |
           brew install make
           cd ..
-          mkdir obol
-          cd obol
-          git init
-          git remote add origin https://github.com/$OBOL_REPO.git
-          git fetch --depth=1 origin $OBOL_COMMIT_HASH
-          git checkout $OBOL_COMMIT_HASH
-          gmake build-dev
-          cp -r bin ../soteria/obol-bin
+          ../soteria/scripts/versionsync.py pull obol --init
+          cp -r obol/bin soteria/obol-bin
         if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
       - name: Add Obol to path
         run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
@@ -110,14 +104,8 @@ jobs:
         run: |
           brew install make
           cd ..
-          mkdir charon
-          cd charon
-          git init
-          git remote add origin https://github.com/$CHARON_REPO.git
-          git fetch --depth=1 origin $CHARON_COMMIT_HASH
-          git checkout $CHARON_COMMIT_HASH
-          gmake build-dev-charon-rust
-          cp -r bin ../soteria/charon-bin
+          ../soteria/scripts/versionsync.py pull charon --init
+          cp -r charon/bin soteria/charon-bin
         if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
       - name: Add Charon to path
         run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
