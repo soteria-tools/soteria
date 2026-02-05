@@ -3,6 +3,7 @@ module SState = State (* Clashes with Cerb_frontend.State *)
 open Cerb_frontend
 open Syntaxes.FunctionWrap
 open Soteria.Logs.Printers
+open Soteria.Terminal.Warn
 module Wpst_interp = Interp.Make (SState)
 
 exception Tool_error
@@ -95,7 +96,7 @@ module Frontend = struct
         in
         if Sys.file_exists filename then "-include " ^ filename ^ " "
         else (
-          L.warn (fun m -> m "%s not found" filename);
+          warn_once (filename ^ " not found");
           "")
       in
       let ( let* ) = Exception.except_bind in
@@ -193,9 +194,9 @@ let parse_and_link_ail ~includes files =
                       | `ParsingError s -> s
                       | _ -> "Unknown error"
                     in
-                    L.warn (fun m ->
-                        m "Ignoring file that did not parse correctly: %s@\n%s"
-                          file msg);
+                    Fmt.kstr warn_once
+                      "Ignoring file that did not parse correctly: %s@\n%s" file
+                      msg;
                     None)
               files
           in
@@ -501,11 +502,9 @@ let capture_db soteria_config config json_file functions_to_analyse =
       let () =
         let parsed = List.length ails in
         if parsed < db_size then
-          L.warn (fun m ->
-              m
-                "Some files failed to parse, successfully parsed %d out of %d \
-                 files"
-                parsed db_size)
+          Fmt.kstr warn
+            "Some files failed to parse, successfully parsed %d out of %d files"
+            parsed db_size
       in
       Ok ails
     in
