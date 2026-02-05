@@ -355,7 +355,15 @@ let kani =
     let@ _ = Lib.with_compiled Kani in
     Cmd.make ~features:[ "kani" ]
       ~obol:[ "--entry-attribs"; "kanitool::proof" ]
-      ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)"; "--extern"; "kani" ]
+      ~rustc:
+        [
+          "-Z";
+          "crate-attr=register_tool(kanitool)";
+          "--extern";
+          "kani";
+          "--cfg";
+          "kani";
+        ]
       ()
   in
   let get_entry_point (decl : fun_decl) =
