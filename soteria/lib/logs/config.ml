@@ -20,9 +20,9 @@ let v_list =
     & info [ "v"; "verbose" ] ~docv:"v" ~doc:"Verbosity level, clashes with -q")
 
 type cli = {
-  v_list : bool list; [@term v_list]  (** Verbosity level, clashes with -q *)
-  silent : bool; [@names [ "q"; "silent"; "quiet" ]]
-      (** Silent mode, clashes with -v *)
+  v_list : bool list; [@term v_list]
+      (** Verbosity level. One -v includes ERROR, WARN, INFO, and every
+          subsequent -v then includes DEBUG, TRACE and SMT respectively *)
   log_kind : (log_kind[@conv log_kind_cmdliner_conv ()]) option;
       [@names [ "l"; "log_kind" ]]
       (** Log kind, clashes with --html *)
@@ -44,14 +44,12 @@ let get, set_and_lock = Soteria_std.Write_once.make ~name:"Logs" ~default ()
 
 let check_set_and_lock args =
   let level =
-    match (List.length args.v_list, args.silent) with
-    | 0, true -> None
-    | _, true -> Exn.config_error "Cannot use -v and --silent at the same time"
-    | 0, false -> Some Warn
-    | 1, false -> Some Info
-    | 2, false -> Some Debug
-    | 3, false -> Some Trace
-    | _, false -> Some Smt
+    match List.length args.v_list with
+    | 0 -> None
+    | 1 -> Some Info
+    | 2 -> Some Debug
+    | 3 -> Some Trace
+    | _ -> Some Smt
   in
   let kind =
     match (args.log_kind, args.html) with

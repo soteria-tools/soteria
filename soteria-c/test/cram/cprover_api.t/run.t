@@ -1,6 +1,6 @@
 Warning and unspported with CBMC enabled 
   $ soteria-c exec test.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
-  [WARN ] CBMC support is not enabled, but detected use of the __CPROVER API. Soteria will consider the function as missing a body.
+  warning: CBMC support is not enabled, but detected use of the __CPROVER API. Soteria will consider the function as missing a body.
   error: Analysis gave up: Unsupported: Cannot call external function: __CPROVER_assume_563 in main
   Executed 2 statements
   Verification Failure! (Unsupported features)

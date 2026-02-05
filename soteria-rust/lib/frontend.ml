@@ -23,7 +23,7 @@ module Exe = struct
       (fun () ->
         Unix.chdir path;
         if (Config.get ()).log_compilation then
-          L.app (fun g -> g "Changed working directory to %s" path);
+          L.info (fun g -> g "Changed working directory to %s" path);
         f ())
 
   let pp_status ft = function
@@ -80,12 +80,12 @@ module Exe = struct
     let env = Array.append current_env (Array.of_list env) in
     let cmd = String.concat " " (cmd :: args) in
     if (Config.get ()).log_compilation then
-      L.app (fun g -> g "Running command: %s" cmd);
+      L.info (fun g -> g "Running command: %s" cmd);
     let out, inp, err = Unix.open_process_full cmd env in
     let output, error = read_both_nonblocking out err in
     let status = Unix.close_process_full (out, inp, err) in
     if (Config.get ()).log_compilation then
-      L.app (fun g ->
+      L.info (fun g ->
           g "Command finished with status: %a@.stdout:@.%a@.stderr:@.%a"
             pp_status status
             Fmt.(list ~sep:(any "@\n") string)

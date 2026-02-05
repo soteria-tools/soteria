@@ -102,6 +102,8 @@ let get_loc () =
   loc
 
 let decorate_error ?(trace = "Triggering operation") e loc =
+  L.error (fun m ->
+      m "Error %a at %a due to %s" Error.pp e Charon_util.pp_span_data loc trace);
   (e, Soteria.Terminal.Call_trace.singleton ~loc ~msg:trace ())
 
 let error ?trace e : ('a, Error.with_trace, 'f) Result.t =

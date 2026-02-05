@@ -13,8 +13,7 @@ module Level : sig
     | Debug  (** Debugging messages, helpful when something goes wrong *)
     | Info  (** Information that is not crucial to the execution. *)
     | Warn  (** Warnings *)
-    | App  (** User-facing messages *)
-    | Error  (** User-facing messages when something went wrong. *)
+    | Error  (** Something went wrong. *)
 end
 
 module Config : sig
@@ -100,9 +99,6 @@ module L : sig
 
   (** [warn] is [log ~level:Warn] *)
   val warn : ('a, unit) msgf -> unit
-
-  (** [app] is [log ~level:App] *)
-  val app : ('a, unit) msgf -> unit
 
   (** [error] is [log ~level:Error] *)
   val error : ('a, unit) msgf -> unit

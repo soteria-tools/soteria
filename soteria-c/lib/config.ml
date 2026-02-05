@@ -92,9 +92,7 @@ let current () =
 
 let with_config ~(config : t) f =
   if config.testcomp_compat then
-    L.warn (fun m ->
-        m
-          "Test-Comp compatibility mode enabled. Note that Soteria-C is *not* \
-           optimised for this test suite, and does not aim to be performant on \
-           it.");
+    Soteria.Terminal.Warn.warn_once
+      "Test-Comp compatibility mode enabled. Note that Soteria-C is *not* \
+       optimised for this test suite, and does not aim to be performant on it.";
   try f () with effect GetConfig, k -> Effect.Deep.continue k config
