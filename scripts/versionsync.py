@@ -19,6 +19,7 @@ Filters can be applied to transform values:
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -40,6 +41,41 @@ TAG_PATTERN = re.compile(r"\[versionsync:\s*(\w+)=([^\]]+)\]")
 
 # Regex to match slice filter: [versionsync.slice: a..b]
 SLICE_PATTERN = re.compile(r"\[versionsync\.slice:\s*(-?\d*)\.\.(-?\d*)\]")
+
+
+# ANSI color codes for pretty output
+class Colors:
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    BLUE = "\033[94m"
+    YELLOW = "\033[93m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+
+
+def color_print(message: str, color: str = "") -> None:
+    """Print a message with optional color."""
+    print(f"{color}{message}{Colors.RESET}")
+
+
+def info(message: str) -> None:
+    """Print an info message in blue."""
+    color_print(f"ℹ {message}", Colors.BLUE)
+
+
+def success(message: str) -> None:
+    """Print a success message in green."""
+    color_print(f"✓ {message}", Colors.GREEN)
+
+
+def error(message: str) -> None:
+    """Print an error message in red."""
+    color_print(f"✗ {message}", Colors.RED)
+
+
+def step(message: str) -> None:
+    """Print a step message in bold."""
+    color_print(f"▶ {message}", Colors.BOLD)
 
 
 def parse_slice(slice_str: str) -> tuple[int | None, int | None]:
@@ -315,6 +351,192 @@ def cmd_set(
     return cmd_update(args, root, versions)
 
 
+def run_command(cmd: list[str], cwd: Path) -> tuple[bool, str]:
+    """
+    Run a command and return (success, output).
+    Exits the program on failure.
+    """
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            error(f"Command failed: {' '.join(cmd)}")
+            error(f"Error output: {result.stderr.strip()}")
+            sys.exit(1)
+        return True, result.stdout.strip()
+    except Exception as e:
+        error(f"Failed to run command: {' '.join(cmd)}")
+        error(f"Exception: {str(e)}")
+        sys.exit(1)
+
+
+def validate_git_repo(target_dir: Path, project: str, expected_repo: str) -> str:
+    """
+    Validate that the directory exists, is a git repo, and has the correct remote.
+    Returns the name of the remote to use.
+    Exits the program if validation fails.
+    """
+    # Check if directory exists
+    if not target_dir.exists():
+        error(f"Directory does not exist: {target_dir}")
+        info(f"Please clone {project} first:")
+        info(f"  git clone https://github.com/{expected_repo}.git {target_dir}")
+        sys.exit(1)
+
+    # Check if it's a git repository
+    git_dir = target_dir / ".git"
+    if not git_dir.exists():
+        error(f"Directory is not a git repository: {target_dir}")
+        info(f"Please clone {project} first:")
+        info(f"  git clone https://github.com/{expected_repo}.git {target_dir}")
+        sys.exit(1)
+
+    # Get all remotes
+    result = subprocess.run(
+        ["git", "remote", "-v"],
+        cwd=target_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    
+    if result.returncode != 0:
+        error(f"Failed to list remotes for {project}")
+        error(f"Error: {result.stderr.strip()}")
+        sys.exit(1)
+    
+    # Parse remotes output: "remote_name\turl (fetch)"
+    remotes = {}
+    for line in result.stdout.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            remote_name = parts[0]
+            remote_url = parts[1]
+            # Normalize remote URLs (handle both https and git@ formats)
+            normalized = remote_url.replace("https://github.com/", "").replace("git@github.com:", "").replace(".git", "")
+            remotes[remote_name] = normalized
+    
+    normalized_expected = expected_repo.replace(".git", "")
+    
+    # Check if any remote matches the expected repo
+    for remote_name, normalized_url in remotes.items():
+        if normalized_url == normalized_expected:
+            info(f"Found matching remote '{remote_name}' for {expected_repo}")
+            return remote_name
+    
+    # No matching remote found - add one
+    # Use a safe remote name based on the repo (e.g., 'soteria-obol')
+    org_name = expected_repo.split('/')[0]
+    repo_name = expected_repo.split('/')[1]
+    new_remote_name = f"{org_name}-{repo_name}".replace("_", "-")
+    
+    info(f"No remote found for {expected_repo}, adding remote '{new_remote_name}'")
+    run_command(
+        ["git", "remote", "add", new_remote_name, f"https://github.com/{expected_repo}.git"],
+        target_dir
+    )
+    success(f"Added remote '{new_remote_name}' -> https://github.com/{expected_repo}.git")
+    return new_remote_name
+
+
+def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, build_cmd: str) -> None:
+    """
+    Pull and build a single project.
+    
+    Args:
+        project: Project name (obol or charon)
+        target_dir: Directory where the project is located
+        commit_hash: Commit hash to checkout
+        repo: Expected repository (e.g., 'soteria-tools/obol')
+        build_cmd: Build command to run
+    """
+    step(f"Processing {project}...")
+    
+    # Validate the repository and get the remote name to use
+    remote_name = validate_git_repo(target_dir, project, repo)
+    success(f"Validated {project} repository at {target_dir}")
+    
+    # Fetch from the specific remote
+    info(f"Running git fetch {remote_name}...")
+    run_command(["git", "fetch", remote_name], target_dir)
+    success(f"Fetched from {remote_name}")
+    
+    # Force checkout the target commit
+    info(f"Checking out commit {commit_hash[:8]}...")
+    run_command(["git", "checkout", "-f", commit_hash], target_dir)
+    success(f"Checked out {commit_hash[:8]}")
+    
+    # Run the build command
+    info(f"Running build command: {build_cmd}")
+    build_parts = build_cmd.split()
+    run_command(build_parts, target_dir)
+    success(f"Build completed successfully")
+    
+    color_print(f"\n✓ {project} updated and built successfully!\n", Colors.GREEN + Colors.BOLD)
+
+
+def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> int:
+    """Pull and build obol and/or charon."""
+    projects_config = {
+        "obol": {
+            "repo_key": "OBOL_REPO",
+            "version_key": "OBOL_COMMIT_HASH",
+            "default_dir": root.parent / "obol",
+            "build_cmd": "make build",
+        },
+        "charon": {
+            "repo_key": "CHARON_REPO",
+            "version_key": "CHARON_COMMIT_HASH",
+            "default_dir": root.parent / "charon",
+            "build_cmd": "make build-charon-rust",
+        },
+    }
+    
+    # Determine which projects to pull
+    projects = []
+    if args.project == "all":
+        projects = ["obol", "charon"]
+    else:
+        projects = [args.project]
+    
+    # Process each project
+    for project in projects:
+        config = projects_config[project]
+        
+        # Check if required keys exist in versions
+        if config["repo_key"] not in versions:
+            error(f"Missing {config['repo_key']} in versions.json")
+            return 1
+        if config["version_key"] not in versions:
+            error(f"Missing {config['version_key']} in versions.json")
+            return 1
+        
+        # Determine target directory
+        if args.dir and len(projects) == 1:
+            # Only use custom dir if pulling a single project
+            target_dir = Path(args.dir).expanduser().resolve()
+        else:
+            target_dir = config["default_dir"]
+        
+        repo = versions[config["repo_key"]]
+        commit_hash = versions[config["version_key"]]
+        
+        try:
+            pull_project(project, target_dir, commit_hash, repo, config["build_cmd"])
+        except SystemExit:
+            # Error already printed
+            return 1
+    
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Version synchronization script for Soteria",
@@ -325,6 +547,10 @@ Examples:
   %(prog)s check                   Check if all versions are in sync
   %(prog)s update                  Update all version occurrences
   %(prog)s set OCAML_VERSION 5.5.0 Set a version and update everywhere
+  %(prog)s pull obol               Pull and build obol from configured commit
+  %(prog)s pull charon             Pull and build charon from configured commit
+  %(prog)s pull all                Pull and build both obol and charon
+  %(prog)s pull obol --dir ~/code/obol  Pull obol from custom directory
 
 Filters:
   Tags can include filters to transform values:
@@ -356,6 +582,20 @@ Filters:
     set_parser.add_argument("name", metavar="NAME", help="Version name to set")
     set_parser.add_argument("value", metavar="VALUE", help="New version value")
 
+    # pull command
+    pull_parser = subparsers.add_parser(
+        "pull", help="Pull and build obol and/or charon from configured commits"
+    )
+    pull_parser.add_argument(
+        "project",
+        choices=["obol", "charon", "all"],
+        help="Project to pull (obol, charon, or all)",
+    )
+    pull_parser.add_argument(
+        "--dir",
+        help="Override default directory (only for single project pulls)",
+    )
+
     args = parser.parse_args()
 
     # Find repository root
@@ -377,6 +617,8 @@ Filters:
         return cmd_update(args, root, versions)
     elif args.command == "set":
         return cmd_set(args, versions_path, root, versions)
+    elif args.command == "pull":
+        return cmd_pull(args, root, versions)
 
     return 1
 
