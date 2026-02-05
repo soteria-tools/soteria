@@ -22,6 +22,7 @@ concurrency:
 env:
   # [versionsync: OCAML_VERSION=5.4.0]
   OCAML_VERSION: 5.4.0
+  # [versionsync: OBOL_REPO=soteria-tools/obol]
   OBOL_REPO: soteria-tools/obol
   # [versionsync: OBOL_COMMIT_HASH=98a37d10561827570e6a0cbccae2dbf432cffefa]
   OBOL_COMMIT_HASH: 98a37d10561827570e6a0cbccae2dbf432cffefa
