@@ -44,7 +44,7 @@ module Meta = struct
     size : Typed.T.sint Typed.t;
     tb_root : Tree_borrow.tag;
     kind : Alloc_kind.t;
-    where : Where.t;
+    where : Trace.t;
   }
   [@@deriving show { with_path = false }]
 end
@@ -204,7 +204,7 @@ module Freeable_block_with_meta = struct
     let tb, tag = Tree_borrow.init ~state:Unique () in
     let block = Tree_block.alloc ?zeroed size in
     let+^ where = get_where () in
-    let where = Where.move_to_opt span where in
+    let where = Trace.move_to_opt span where in
     let info : Meta.t = { align; size; kind; where; tb_root = tag } in
     let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
     (({ node = Alive (Some block, tb); info = Some info } : t), tag)
@@ -333,7 +333,7 @@ let[@inline] with_loc_err ?trace () (f : unit -> ('a, Error.t, 'f) SM.Result.t)
   let*- err = f () in
   let+^ where = get_where () in
   let where =
-    Option.fold ~none:where ~some:(fun t -> Where.set_op t where) trace
+    Option.fold ~none:where ~some:(fun t -> Trace.set_op t where) trace
   in
   Error (Error.decorate where err)
 
@@ -754,7 +754,7 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
      else (
        L.info (fun m ->
            let pp_leak ft (k, where) =
-             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Where.pp where
+             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp where
            in
            m "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks);
        let wheres = List.map snd leaks in

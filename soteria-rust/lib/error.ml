@@ -4,7 +4,7 @@ open Charon_util
 type t =
   [ `DoubleFree  (** Tried freeing the same allocation twice *)
   | `InvalidFree  (** Tried freeing memory at a non-0 offset *)
-  | `MemoryLeak of Where.t list
+  | `MemoryLeak of Trace.t list
     (** Dynamically allocated memory was not freed *)
   | `MisalignedPointer of
     Typed.T.nonzero Typed.t * Typed.T.nonzero Typed.t * Typed.T.sint Typed.t
@@ -88,7 +88,7 @@ let pp ft : [> t ] -> unit = function
   | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
   | `MemoryLeak wheres ->
-      Fmt.pf ft "Memory leak at %a" Fmt.(list ~sep:comma Where.pp) wheres
+      Fmt.pf ft "Memory leak at %a" Fmt.(list ~sep:comma Trace.pp) wheres
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
   | `MisalignedPointer (exp, got, ofs) ->
@@ -133,7 +133,7 @@ type with_trace = t * Meta.span_data Soteria.Terminal.Call_trace.t
 let add_to_call_trace ((err, trace_elem) : with_trace) trace_elem' =
   (err, trace_elem' :: trace_elem)
 
-let log_at (where : Where.t) error =
+let log_at (where : Trace.t) error =
   let pp_loc ft = function
     | Some loc -> Fmt.pf ft " at %a" Charon_util.pp_span_data loc
     | None -> Fmt.string ft ""
@@ -144,7 +144,7 @@ let log_at (where : Where.t) error =
   in
   L.error (fun m -> m "Error %a%a%a" pp error pp_loc where.loc pp_op where.op)
 
-let decorate (where : Where.t) (e : t) : with_trace =
+let decorate (where : Trace.t) (e : t) : with_trace =
   let msg = Option.value ~default:"Triggering operation" where.op in
   match where.loc with
   (* FIXME: Right now, C and Rust generate traces in reverse order. Once they

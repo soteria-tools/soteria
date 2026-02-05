@@ -78,7 +78,7 @@ module type S = sig
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
   val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
-  val get_where : unit -> (Where.t, 'env) t
+  val get_where : unit -> (Trace.t, 'env) t
 
   val with_extra_call_trace :
     loc:Meta.span_data -> msg:string -> ('a, 'env) t -> ('a, 'env) t
@@ -396,7 +396,7 @@ struct
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> with_loc ~loc (f () env state)
 
-  let get_where () : (Where.t, 'env) t = lift_symex @@ Rustsymex.get_where ()
+  let get_where () : (Trace.t, 'env) t = lift_symex @@ Rustsymex.get_where ()
 
   let with_extra_call_trace ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
    fun env state -> Rustsymex.with_extra_call_trace ~loc ~msg (x env state)

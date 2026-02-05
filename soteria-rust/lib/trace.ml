@@ -28,7 +28,7 @@ let move_to_opt loc where =
 
 let set_op op where = { where with op = Some op }
 
-let add_to_stack ~loc ~msg where =
+let push_to_stack ~loc ~msg where =
   let call = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
   { where with stack = call :: where.stack }
 
