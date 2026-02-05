@@ -95,9 +95,11 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
   aux elements
 
 let with_loc ~loc (f : 'a t) : 'a t =
-  let open Syntax in
-  let* st = get_state () in
-  with_state ~state:{ st with where = Where.move_to loc st.where } f
+ fun st ->
+  let open MonoSymex.Syntax in
+  let current_loc = st.where.loc in
+  let+ result, state = f { st with where = Where.move_to loc st.where } in
+  (result, { state with where = Where.move_to_opt current_loc state.where })
 
 let get_where () : Where.t t =
   let open Syntax in
