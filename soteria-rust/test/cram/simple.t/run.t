@@ -2,7 +2,9 @@ Test memory leaks
   $ soteria-rust rustc leak.rs
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
-  warning: Memory leak at ../alloc/src/alloc.rs:<range> in main
+  warning: Memory leak at <loc> with trace
+                                  [• Call trace: <loc>; • Call trace: <loc>;
+                                   • Call trace: <loc>; • Entry point: <loc>] in main
       ┌─ $TESTCASE_ROOT/leak.rs:1:1
     1 │  fn main() {
       │  ^^^^^^^^^

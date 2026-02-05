@@ -176,7 +176,9 @@ Test our simple Kani demo works
   PC 2: ((0xffffffff -ck V|2|) <=u V|1|)
   
   error: memory_leak: found issues in <time>, errors in 1 branch (out of 1)
-  warning: Memory leak at ../alloc/src/alloc.rs:<range> in memory_leak
+  warning: Memory leak at <loc> with trace
+                                  [• Call trace: <loc>; • Call trace: <loc>;
+                                   • Call trace: <loc>; • Entry point: <loc>] in memory_leak
       ┌─ $TESTCASE_ROOT/demo.rs:32:1
    32 │  fn memory_leak() {
       │  ^^^^^^^^^^^^^^^^

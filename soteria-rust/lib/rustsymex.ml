@@ -25,14 +25,14 @@ end)
 
 module MonadState = struct
   type t = {
-    loc : Charon.Meta.span_data;
+    where : Where.t;
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
   }
 
   let empty =
     {
-      loc = Charon_util.empty_span_data;
+      where = Where.nowhere;
       subst = Charon.Substitute.empty_subst;
       generic_layouts = TypeMap.empty;
     }
@@ -94,22 +94,28 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
   in
   aux elements
 
-let with_loc ~loc (f : 'a t) : 'a t = fun st -> f { st with loc }
-
-let get_loc () =
+let with_loc ~loc (f : 'a t) : 'a t =
   let open Syntax in
-  let+ { loc; _ } = get_state () in
-  loc
+  let* st = get_state () in
+  with_state ~state:{ st with where = Where.move_to loc st.where } f
 
-let decorate_error ?(trace = "Triggering operation") e loc =
-  L.error (fun m ->
-      m "Error %a at %a due to %s" Error.pp e Charon_util.pp_span_data loc trace);
-  (e, Soteria.Terminal.Call_trace.singleton ~loc ~msg:trace ())
+let get_where () : Where.t t =
+  let open Syntax in
+  let+ { where; _ } = get_state () in
+  where
 
 let error ?trace e : ('a, Error.with_trace, 'f) Result.t =
   let open Syntax in
-  let+ loc = get_loc () in
-  Soteria.Symex.Compo_res.Error (decorate_error ?trace e loc)
+  let+ where = get_where () in
+  let where = Option.fold trace ~some:Where.set_op ~none:Fun.id where in
+  Error.log_at where e;
+  let e = Error.decorate where e in
+  Soteria.Symex.Compo_res.Error e
+
+let with_extra_call_trace ~loc ~msg (f : 'a t) : 'a t =
+  let open Syntax in
+  let* st = get_state () in
+  with_state ~state:{ st with where = Where.add_to_stack ~loc ~msg st.where } f
 
 let rename_trace trace (f : unit -> ('a, Error.with_trace, 'f) Result.t) :
     ('a, Error.with_trace, 'f) Result.t =

@@ -44,7 +44,7 @@ module Meta = struct
     size : Typed.T.sint Typed.t;
     tb_root : Tree_borrow.tag;
     kind : Alloc_kind.t;
-    span : Meta.span_data;
+    where : Where.t;
   }
   [@@deriving show { with_path = false }]
 end
@@ -203,10 +203,9 @@ module Freeable_block_with_meta = struct
     let open DecayMapMonad.Syntax in
     let tb, tag = Tree_borrow.init ~state:Unique () in
     let block = Tree_block.alloc ?zeroed size in
-    let+^ span =
-      match span with Some span -> return span | None -> get_loc ()
-    in
-    let info : Meta.t = { align; size; kind; span; tb_root = tag } in
+    let+^ where = get_where () in
+    let where = Where.move_to_opt span where in
+    let info : Meta.t = { align; size; kind; where; tb_root = tag } in
     let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
     (({ node = Alive (Some block, tb); info = Some info } : t), tag)
 end
@@ -332,8 +331,11 @@ let log action ptr =
 let[@inline] with_loc_err ?trace () (f : unit -> ('a, Error.t, 'f) SM.Result.t)
     : ('a, Error.with_trace, 'f) SM.Result.t =
   let*- err = f () in
-  let+^ loc = get_loc () in
-  Error (decorate_error ?trace err loc)
+  let+^ where = get_where () in
+  let where =
+    Option.fold ~none:where ~some:(fun t -> Where.set_op t where) trace
+  in
+  Error (Error.decorate where err)
 
 let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
   let* st = SM.get_state () in
@@ -742,22 +744,21 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
            (* FIXME: This only works because our addresses are concrete *)
            let open DecayMapMonad in
            match v with
-           | { node = Alive _; info = Some { kind = Heap; span; _ }; _ }
+           | { node = Alive _; info = Some { kind = Heap; where; _ }; _ }
              when not (List.mem k global_addresses) ->
-               Result.ok ((k, span) :: leaks)
+               Result.ok ((k, where) :: leaks)
            | _ -> Result.ok leaks)
          [] heap
      in
      if List.is_empty leaks then Result.ok ()
      else (
        L.info (fun m ->
-           let pp_leak ft (k, span) =
-             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k
-               Charon_util.pp_span_data span
+           let pp_leak ft (k, where) =
+             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Where.pp where
            in
            m "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks);
-       let spans = List.map snd leaks in
-       Result.error (`MemoryLeak spans)))
+       let wheres = List.map snd leaks in
+       Result.error (`MemoryLeak wheres)))
 
 let with_errors () (f : Error.with_trace list -> 'a * Error.with_trace list) :
     ('a, Error.with_trace, serialized list) Result.t =
