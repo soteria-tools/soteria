@@ -1,4 +1,4 @@
-type t = Smt | Trace | Debug | Info | Warn | App | Error
+type t = Smt | Trace | Debug | Info | Warn | Error
 
 let to_string = function
   | Smt -> "SMT  "
@@ -7,7 +7,6 @@ let to_string = function
   | Info -> "INFO "
   | Warn -> "WARN "
   | Error -> "ERROR"
-  | App -> "APP  "
 
 let ( >= ) l r =
   match (l, r) with
@@ -22,8 +21,6 @@ let ( >= ) l r =
   | _, Info -> true
   | Warn, _ -> false
   | _, Warn -> true
-  | App, _ -> false
-  | _, App -> true
   | Error, _ -> true
 
 let geq = ( >= )
