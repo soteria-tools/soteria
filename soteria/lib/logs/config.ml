@@ -21,8 +21,8 @@ let v_list =
 
 type cli = {
   v_list : bool list; [@term v_list]
-      (** Verbosity level. One -v includes ERROR, WARN, APP, and every
-          subsequent -v then includes INFO, DEBUG, TRACE and SMT respectively *)
+      (** Verbosity level. One -v includes ERROR, WARN, INFO, and every
+          subsequent -v then includes DEBUG, TRACE and SMT respectively *)
   log_kind : (log_kind[@conv log_kind_cmdliner_conv ()]) option;
       [@names [ "l"; "log_kind" ]]
       (** Log kind, clashes with --html *)
@@ -46,10 +46,9 @@ let check_set_and_lock args =
   let level =
     match List.length args.v_list with
     | 0 -> None
-    | 1 -> Some Warn
-    | 2 -> Some Info
-    | 3 -> Some Debug
-    | 4 -> Some Trace
+    | 1 -> Some Info
+    | 2 -> Some Debug
+    | 3 -> Some Trace
     | _ -> Some Smt
   in
   let kind =

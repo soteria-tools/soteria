@@ -10,7 +10,6 @@ let level_color : Level.t -> Color.t = function
   | Debug -> `DarkBlue
   | Info -> `Teal
   | Warn -> `Orange
-  | App -> `Forest
   | Error -> `Maroon
 
 let format_level level =
@@ -123,7 +122,6 @@ module L = struct
   let debug msgf = log ~level:Level.Debug msgf
   let info msgf = log ~level:Level.Info msgf
   let warn msgf = log ~level:Level.Warn msgf
-  let app msgf = log ~level:Level.App msgf
   let error msgf = log ~level:Level.Error msgf
   let smt msgf = log ~level:Level.Smt msgf
 end
