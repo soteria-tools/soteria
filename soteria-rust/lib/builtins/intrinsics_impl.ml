@@ -62,8 +62,33 @@ module M (Rust_state_m : Rust_state_m.S) :
   let assume ~b = assert_ b (`StdErr "core::intrinsics::assume with false")
 
   (* TODO: atomics are, for now, single-threaded *)
-  let atomic_load ~t ~ord:_ ~src = State.load src t
-  let atomic_store ~t ~ord:_ ~dst ~val_ = State.store dst t val_
+  let atomic_warn () =
+    Soteria.Terminal.Warn.warn_once
+      "An atomic intrinsic was encountered; it will be executed as sequential \
+       code"
+
+  let atomic_fence ~ord:_ =
+    atomic_warn ();
+    ok ()
+
+  let atomic_load ~t ~ord:_ ~src =
+    atomic_warn ();
+    State.load src t
+
+  let atomic_singlethreadfence ~ord:_ =
+    atomic_warn ();
+    ok ()
+
+  let atomic_store ~t ~ord:_ ~dst ~val_ =
+    atomic_warn ();
+    State.store dst t val_
+
+  let atomic_xchg ~t ~ord:_ ~dst ~src =
+    atomic_warn ();
+    let* old = State.load dst t in
+    let+ () = State.store dst t src in
+    old
+
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint : unit ret = error `Breakpoint
 
