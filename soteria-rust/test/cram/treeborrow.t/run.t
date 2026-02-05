@@ -13,10 +13,7 @@ Simple tree borrow violation
       ┌─ $TESTCASE_ROOT/simple-fail.rs:8:5
     3 │  fn main() {
       │  --------- 1: Entry point
-    4 │      let mut root = 42;
-    5 │      let ptr = &mut root as *mut i32;
-    6 │      let (x, y) = unsafe { (&mut *ptr, &mut *ptr) };
-    7 │      *x = 13;
+  ... ·  
     8 │      *y = 20; // UB: y is disabled
       │      ^^^^^^^ Memory store
   PC 1: empty

@@ -70,9 +70,7 @@ Test function calls on function pointers
       ┌─ $TESTCASE_ROOT/fn_ptr.rs:25:18
    21 │  fn fn_ptr_read() {
       │  ---------------- 1: Entry point
-   22 │      let add: fn(u8, u8) -> u8 = add;
-   23 │      let ptr = add as *const u8;
-   24 │      unsafe {
+  ... ·  
    25 │          let _b = *ptr;
       │                   ^^^^ Memory load
   PC 1: empty
@@ -82,9 +80,7 @@ Test function calls on function pointers
       ┌─ $TESTCASE_ROOT/fn_ptr.rs:34:9
    30 │  fn fn_ptr_write() {
       │  ----------------- 1: Entry point
-   31 │      let add: fn(u8, u8) -> u8 = add;
-   32 │      let ptr = add as *mut u8;
-   33 │      unsafe {
+  ... ·  
    34 │          *ptr = 0;
       │          ^^^^^^^^ Memory store
   PC 1: empty
@@ -102,9 +98,7 @@ Check strict provenance disables int to ptr casts
       ┌─ $TESTCASE_ROOT/provenance.rs:5:18
     1 │  fn main() {
       │  --------- 1: Entry point
-    2 │      let mut x: u8 = 0;
-    3 │      let p = &mut x as *mut u8;
-    4 │      let p_int = p.expose_provenance();
+  ... ·  
     5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
       │                   ---------------------------------------------- 2: Call trace
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
@@ -119,11 +113,7 @@ Check permissive provenance allows int to ptr casts
       ┌─ $TESTCASE_ROOT/provenance.rs:7:9
     1 │  fn main() {
       │  --------- 1: Entry point
-    2 │      let mut x: u8 = 0;
-    3 │      let p = &mut x as *mut u8;
-    4 │      let p_int = p.expose_provenance();
-    5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
-    6 │      unsafe {
+  ... ·  
     7 │          *p_back = 1;
       │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
@@ -138,12 +128,7 @@ Check corner cases with permissive provenance, around transmutes
       ┌─ $TESTCASE_ROOT/provenance_transmute.rs:9:9
     2 │  fn addr_doesnt_expose() {
       │  ----------------------- 1: Entry point
-    3 │      let mut x: u8 = 0;
-    4 │      let p = &mut x as *mut u8;
-    5 │      let p_int = p.addr();
-    6 │      // this will not return the provenance information, since it was never exposed!
-    7 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
-    8 │      unsafe {
+  ... ·  
     9 │          *p_back = 1;
       │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
@@ -153,12 +138,7 @@ Check corner cases with permissive provenance, around transmutes
       ┌─ $TESTCASE_ROOT/provenance_transmute.rs:22:9
    15 │  fn transmute_doesnt_restore_provenance() {
       │  ---------------------------------------- 1: Entry point
-   16 │      let mut x: u8 = 0;
-   17 │      let p = &mut x as *mut u8;
-   18 │      let p_int = p.expose_provenance();
-   19 │      // this will not return the provenance information, because it's a transmute!
-   20 │      let p_back = unsafe { std::mem::transmute::<usize, *mut u8>(p_int) };
-   21 │      unsafe {
+  ... ·  
    22 │          *p_back = 1;
       │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
