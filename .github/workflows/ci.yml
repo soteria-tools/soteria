@@ -71,6 +71,8 @@ jobs:
         run: make ocaml
       - name: Check formatting
         run: make ocaml-format-check
+      - name: Check that opam files were up to date
+        run: make check-opam-files
 
       # Install Rust and Obol
       - name: Get Rust toolchain

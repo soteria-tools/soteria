@@ -23,8 +23,14 @@ VSCODE_DIST=dist
 ocaml:
 	$(DUNE) build
 
+.PHONY: ocaml-format-check
 ocaml-format-check:
 	$(DUNE) build @fmt
+	
+.PHONY: check-opam-files
+check-opam-files:
+	python3 scripts/check-opam-files.py
+	
 
 .PHONY: ocaml-test
 ocaml-test:
