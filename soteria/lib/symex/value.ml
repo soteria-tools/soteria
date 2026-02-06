@@ -68,6 +68,8 @@ module type S = sig
       [f (var, ty)] for each variable with its type. *)
   val iter_vars : 'a t -> 'b ty Var.iter_vars
 
+  val sem_eq_untyped : 'a t -> 'b t -> sbool t
+
   (** [subst f v] substitutes variables in [v] using function [f]. Each variable
       [x] is replaced with [f x]. *)
   val subst : (Var.t -> Var.t) -> 'a t -> 'a t
