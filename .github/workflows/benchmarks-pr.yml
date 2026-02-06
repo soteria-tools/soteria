@@ -1,0 +1,260 @@
+name: PR Benchmarks
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  pull-requests: write
+  actions: read
+
+env:
+  OCAML_VERSION: 5.4.0
+  OBOL_REPO: soteria-tools/obol
+  OBOL_COMMIT_HASH: bf524f4242a874d716ab3964dd344cda833ba3f8
+
+jobs:
+  benchmark-pr:
+    name: Run PR Benchmarks
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '!benchmarks') &&
+      contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.comment.author_association)
+    runs-on: macos-latest
+    steps:
+      # === React with eyes ===
+      - name: Add eyes reaction
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+
+      # === Get PR details ===
+      - name: Get PR details
+        id: pr
+        run: |
+          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json headRefOid,headRefName)
+          SHA=$(echo "$PR_DATA" | jq -r .headRefOid)
+          BRANCH=$(echo "$PR_DATA" | jq -r .headRefName)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # === Find and wait for CI ===
+      - name: Find CI workflow run
+        id: find-run
+        run: |
+          # Wait up to 5 minutes for a CI run to appear for this commit
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            RUN_ID=$(gh run list --repo ${{ github.repository }} \
+              --commit ${{ steps.pr.outputs.sha }} \
+              --workflow ci.yml \
+              --json databaseId,status \
+              --jq '.[0].databaseId // empty')
+            
+            if [ -n "$RUN_ID" ]; then
+              echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            echo "Waiting for CI workflow to start... (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)"
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "No CI workflow run found for commit ${{ steps.pr.outputs.sha }}"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for CI workflow to complete
+        id: wait-ci
+        run: |
+          gh run watch ${{ steps.find-run.outputs.run_id }} --repo ${{ github.repository }} --exit-status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # === Checkout PR branch ===
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+
+      # === Setup Z3 ===
+      - name: Setup Z3
+        uses: cda-tum/setup-z3@v1
+        id: z3
+
+      # === Setup Node ===
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          cache: "yarn"
+
+      # === Setup OCaml ===
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: ${{ env.OCAML_VERSION }}
+          dune-cache: true
+          opam-pin: false
+
+      - name: Restore opam cache
+        uses: actions/cache@v4
+        with:
+          path: _opam
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-
+
+      - run: opam update
+
+      # === Install OCaml dependencies ===
+      - name: Setup dependencies
+        run: make ocaml-deps
+
+      # === Build OCaml ===
+      - name: Build OCaml
+        run: make ocaml
+
+      # === Install Rust and Obol ===
+      - name: Get Rust toolchain
+        run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Restore Obol cache
+        uses: actions/cache@v4
+        id: restore-obol-cache
+        with:
+          path: obol-bin
+          key: ${{ runner.os }}-${{ runner.arch }}-obol-${{ env.OBOL_COMMIT_HASH }}
+
+      - name: Install Obol if not cached
+        run: |
+          brew install make
+          cd ..
+          mkdir obol
+          cd obol
+          git init
+          git remote add origin https://github.com/$OBOL_REPO.git
+          git fetch --depth=1 origin $OBOL_COMMIT_HASH
+          git checkout $OBOL_COMMIT_HASH
+          gmake build-dev
+          cp -r bin ../soteria/obol-bin
+        if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
+
+      - name: Add Obol to path
+        run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
+
+      # === Install hyperfine ===
+      - name: Install hyperfine
+        run: brew install hyperfine
+
+      # === Run benchmarks ===
+      - name: Run benchmarks
+        run: |
+          python3 scripts/run_benchmarks.py \
+            "${{ steps.pr.outputs.sha }}" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            benchmark-results.json
+
+      # === Checkout gh-pages ===
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      # === Generate PR benchmark page ===
+      - name: Generate PR benchmark page
+        run: |
+          mkdir -p gh-pages/benchmarks
+          python3 scripts/generate_benchmark_page.py \
+            --new-results benchmark-results.json \
+            --history gh-pages/benchmarks/main-history.json \
+            --output gh-pages/benchmarks/pr-${{ github.event.issue.number }}.html \
+            --mode pr \
+            --pr-number ${{ github.event.issue.number }} \
+            --repo-url "https://github.com/${{ github.repository }}"
+
+      # === Deploy to gh-pages ===
+      - name: Commit and push
+        working-directory: gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/
+          git commit -m "Add benchmarks for PR #${{ github.event.issue.number }}"
+          git push
+
+      # === React with rocket on success ===
+      - name: Add rocket reaction on success
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+      # === Post comment with URL ===
+      - name: Post benchmark URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.issue.number;
+            const url = `https://${owner}.github.io/${repo}/benchmarks/pr-${prNumber}.html`;
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: `Benchmarks published at: ${url}. It should appear online in a few minutes.`
+            });
+
+      # === Failure handling ===
+      - name: Add failure reaction
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: '-1'
+            });
+
+      - name: Post failure comment
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.issue.number;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${{ github.run_id }}`;
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: `Failed to run benchmarks. See [workflow run](${runUrl}) for details.`
+            });
+
+      - name: Opam Cleanup
+        run: opam clean -a -r
