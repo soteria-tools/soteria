@@ -58,11 +58,11 @@ let run_needs_stats ?fuel ~mode process =
 module Result = struct
   include CSYMEX.Result
 
-  let run_with_stats ?fuel ?fail_fast ~mode
+  let run_with_stats ?flamegraph_svg ?fuel ?fail_fast ~mode
       (process : ('a, 'b, 'c) CSYMEX.Result.t) =
     CSYMEX.run_with_state ~state:Cerb_location.unknown process
     |> (Fun.flip SYMEX.map) fst
-    |> SYMEX.Result.run_with_stats ?fuel ?fail_fast ~mode
+    |> SYMEX.Result.run_with_stats ?flamegraph_svg ?fuel ?fail_fast ~mode
 
   let error_with_loc ?msg err =
     let open Syntax in

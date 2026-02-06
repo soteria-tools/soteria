@@ -34,13 +34,14 @@ This process has type [int Symex.t], that is, a symbolic process that returns a 
 Executing a symbolic process is done using the {{!Soteria.Symex.S.run}run} function:
 {@ocaml[
 # Symex.run
-- : ?fuel:Symex.Fuel_gauge.t ->
+- : ?flamegraph_svg:string ->
+    ?fuel:Symex.Fuel_gauge.t ->
     mode:Symex.Approx.t ->
     'a Symex.t -> ('a * Symex.Value.sbool Typed.t list) list
 = <fun>
 ]}
 
-The function receives a symbolic process to execute, an {{!Soteria.Symex.Approx.t}approximation mode}, and an optional {{!Soteria.Symex.Fuel_gauge.t}fuel gauge} should the user desire to limit the breadth or depth of execution. It returns a list of branches, where each branch is a pair of the value returned by the symbolic process and the path condition that leads to this branch (in the form of a list of symbolic booleans).
+The function receives a symbolic process to execute, an {{!Soteria.Symex.Approx.t}approximation mode}; an optional {{!Soteria.Symex.Fuel_gauge.t}fuel gauge} should the user desire to limit the breadth or depth of execution; and an optional path to write down a flamegraph `svg` file (will not generate any svg if [None]) summarising where is execution time spent across the analysed functions. It returns a list of branches, where each branch is a pair of the value returned by the symbolic process and the path condition that leads to this branch (in the form of a list of symbolic booleans).
 
 For instance, let's execute the symbolic process we just created, using the {{!Soteria.Symex.Approx.OX}over-approximation} mode, and without providing any fuel limitation. Both fuel and approximation mode are irrelevant for the simple processes we will be writing in this tutorial, and become interesting when analyzing real-world programs.
 

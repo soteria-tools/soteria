@@ -10,7 +10,6 @@ upload_package.sh
 ### Node ###
 # Logs
 *.log
-soteria_logs.html
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -231,6 +230,8 @@ __pycache__/
 ### Produced by Soteria ###
 json_dump/
 soteria-rust/scripts/**/*.csv
+soteria_logs.html
+.soteria
 
 ### Misc ###
 *.temp
@@ -242,6 +243,8 @@ soteria-rust/scripts/**/*.csv
 *.type_map.json
 *.kani-metadata.json
 *.rlib
+
+
 
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
 # and modified by hand afterwards

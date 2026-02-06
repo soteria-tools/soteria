@@ -97,6 +97,9 @@ module Make
       Sym.if_sure ?left_branch_name ?right_branch_name guard
         ~then_:(fun () -> then_ () st)
         ~else_:(fun () -> else_ () st)
+
+    let[@inline] with_frame (name : string) (f : unit -> 'a t) : 'a t =
+     fun st -> Sym.with_frame name (fun () -> f () st)
   end
 
   include CORE

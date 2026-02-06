@@ -120,3 +120,6 @@ and[@tail_mod_cons] prepend_concat_map2 zs f xs ys =
 (** [sub ~from ~len l] returns the sublist of [l], from index [from]
     (inclusive), of length [n]. *)
 let sub ~from ~len l = l |> drop from |> take len
+
+let[@tail_mod_cons] rec remove_last l =
+  match l with [] | [ _ ] -> [] | x :: r -> x :: remove_last r
