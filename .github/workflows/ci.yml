@@ -86,9 +86,8 @@ jobs:
       - name: Install Obol if not cached
         run: |
           brew install make
-          cd ..
           ../soteria/scripts/versionsync.py pull obol --init
-          cp -r obol/bin soteria/obol-bin
+          cp -r ../obol/bin obol-bin
         if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
       - name: Add Obol to path
         run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
@@ -103,9 +102,8 @@ jobs:
       - name: Install Charon if not cached
         run: |
           brew install make
-          cd ..
           ../soteria/scripts/versionsync.py pull charon --init
-          cp -r charon/bin soteria/charon-bin
+          cp -r ../charon/bin charon-bin
         if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
       - name: Add Charon to path
         run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
