@@ -2,13 +2,21 @@ Test memory leaks
   $ soteria-rust rustc leak.rs
   Compiling... done in <time>
   error: main: found issues in <time>, errors in 1 branch (out of 1)
-  warning: Memory leak at ../alloc/src/alloc.rs:<range> in main
-      ┌─ $TESTCASE_ROOT/leak.rs:1:1
+  warning: Memory leak in main
+      ┌─ $RUSTLIB/src/rust/library/alloc/src/alloc.rs:251:9
+  251 │          self.alloc_impl(layout, false)
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │          │
+      │          Triggering operation
+      │          4: Allocation
+      ┌─ $RUSTLIB/src/rust/library/alloc/src/boxed.rs:266:16
+  266 │          return box_new(x);
+      │                 ---------- 3: Call trace
+      ┌─ $TESTCASE_ROOT/leak.rs:2:22
     1 │  fn main() {
-      │  ^^^^^^^^^
-      │  │
-      │  Leaking function
-      │  1: Entry point
+      │  --------- 1: Leaking function
+    2 │      std::mem::forget(Box::new(11));
+      │                       ------------ 2: Call trace
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
         (extract[0-1](V|1|) == 0b00)
   

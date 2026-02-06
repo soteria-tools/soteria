@@ -148,6 +148,7 @@ module DecayMapMonad = struct
   let not_impl msg = lift @@ not_impl msg
   let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
   let match_on xs ~constr = lift @@ match_on xs ~constr
+  let get_where () = lift @@ get_trace ()
 end
 
 module type S = sig

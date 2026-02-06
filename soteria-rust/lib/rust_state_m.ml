@@ -78,7 +78,7 @@ module type S = sig
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
   val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
-  val get_loc : unit -> (Meta.span_data, 'env) t
+  val get_trace : unit -> (Trace.t, 'env) t
 
   val with_extra_call_trace :
     loc:Meta.span_data -> msg:string -> ('a, 'env) t -> ('a, 'env) t
@@ -319,19 +319,15 @@ struct
 
   let ok x : ('a, 'env) t = ESM.Result.ok x
   let error_raw err : ('a, 'env) t = ESM.Result.error err
-
-  let error err : ('a, 'env) t =
-    ESM.lift
-      (let open State.SM.Syntax in
-       let+^ loc = get_loc () in
-       Error (decorate_error err loc))
+  let error err : ('a, 'env) t = ESM.lift @@ State.SM.lift @@ error err
 
   let lift_err (sym : ('a, Error.t, 'f) Rustsymex.Result.t) : ('a, 'env) t =
     ESM.lift
-      (let open State.SM.Syntax in
-       let*- err = State.SM.lift sym in
-       let+^ loc = get_loc () in
-       Compo_res.Error (decorate_error err loc))
+    @@ State.SM.lift
+         (let open Rustsymex.Syntax in
+          let* trace = Rustsymex.get_trace () in
+          let+- err = sym in
+          Error.decorate trace err)
 
   let assert_ cond err =
     lift_err (assert_or_error (cond :> Typed.T.sbool Typed.t) err)
@@ -384,8 +380,9 @@ struct
     ESM.lift
       (let open State.SM.Syntax in
        let*- err = State.with_decay_map f in
-       let+^ loc = get_loc () in
-       Compo_res.Error (decorate_error err loc))
+       let+^ where = get_trace () in
+
+       Compo_res.Error (Error.decorate where err))
 
   let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
     ESM.lift (State.SM.map (State.with_decay_map f) Compo_res.ok)
@@ -399,17 +396,10 @@ struct
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> with_loc ~loc (f () env state)
 
-  let get_loc () : (Meta.span_data, 'env) t = lift_symex @@ Rustsymex.get_loc ()
+  let get_trace () : (Trace.t, 'env) t = lift_symex @@ Rustsymex.get_trace ()
 
   let with_extra_call_trace ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
-    let open ESM.Syntax in
-    let+ res = x in
-    match res with
-    | Ok v -> Compo_res.Ok v
-    | Error e ->
-        let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
-        Compo_res.Error (Error.add_to_call_trace e elem)
-    | Missing f -> Missing f
+   fun env state -> Rustsymex.with_extra_call_trace ~loc ~msg (x env state)
 
   let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
     ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->

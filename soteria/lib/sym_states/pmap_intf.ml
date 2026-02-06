@@ -97,10 +97,10 @@ struct
     val wrap : Key.t -> ('a, 'err) codom_res -> ('a, 'err) res
 
     val fold :
-      ('acc -> Key.t * codom -> ('acc, 'err, serialized list) Symex.Result.t) ->
+      ('acc -> Key.t * codom -> 'acc Symex.t) ->
       'acc ->
       t option ->
-      ('acc, 'err, serialized list) Symex.Result.t
+      'acc Symex.t
 
     val produce : serialized -> t option -> (unit * t option) Symex.t
 
