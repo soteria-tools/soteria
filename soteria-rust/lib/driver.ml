@@ -236,15 +236,15 @@ let exec_and_output_crate compile_fn =
   | exception ExecutionError e -> fatal e
 
 let exec_rustc config file_name =
-  set_config config;
+  set_config Rustc config;
   let compile () = Frontend.parse_ullbc_of_file file_name in
   exec_and_output_crate compile
 
 let exec_cargo config crate_dir =
-  set_config config;
+  set_config Cargo config;
   let compile () = Frontend.parse_ullbc_of_crate crate_dir in
   exec_and_output_crate compile
 
 let build_plugins config =
-  set_config config;
+  set_config BuildPlugins config;
   wrap_step "Compiling plugins" Frontend.compile_all_plugins

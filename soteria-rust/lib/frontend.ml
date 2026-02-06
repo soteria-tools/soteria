@@ -76,11 +76,14 @@ module Exe = struct
 
   let exec ?(env = []) cmd args =
     (* let args = Array.of_list args in *)
-    let current_env = Unix.environment () in
-    let env = Array.append current_env (Array.of_list env) in
     let cmd = String.concat " " (cmd :: args) in
     if (Config.get ()).log_compilation then
-      L.info (fun g -> g "Running command: %s" cmd);
+      L.info (fun g ->
+          g "Running command: %s@.With environment:@.%a" cmd
+            Fmt.(list ~sep:(any "@\n") string)
+            env);
+    let current_env = Unix.environment () in
+    let env = Array.append current_env (Array.of_list env) in
     let out, inp, err = Unix.open_process_full cmd env in
     let output, error = read_both_nonblocking out err in
     let status = Unix.close_process_full (out, inp, err) in
@@ -210,8 +213,13 @@ module Cmd = struct
     | Cargo ->
         (* Cargo already specifies the edition *)
         let rustc = flags_for_cargo rustc in
+        let cargo =
+          match (Config.get ()).test with
+          | Some test -> [ "--test"; test ]
+          | None -> []
+        in
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
-        (cmd, "cargo" :: args, env)
+        (cmd, ("cargo" :: args) @ [ "--" ] @ cargo, env)
 
   let exec_in ~mode folder cmd =
     let cmd, args, env = build_cmd ~mode cmd in

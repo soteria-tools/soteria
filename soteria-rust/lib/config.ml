@@ -2,6 +2,9 @@
    it. We ignore the warning here. *)
 [@@@warning "-unused-open"]
 
+(** Used to detect mismatches between configuration and execution modes *)
+type cmd = Cargo | Rustc | BuildPlugins
+
 type frontend = Charon | Obol
 [@@deriving subliner_enum, show { with_path = false }]
 
@@ -56,6 +59,10 @@ type t = {
   sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
       (** The sysroot to use for compilation. If not provided, the default
           sysroot is used. *)
+  test : string option; [@names [ "test" ]]
+      (** Whether to run on test code (i.e. code in #[cfg(test)] modules), and
+          if used the name of the tests to run (as defined in Cargo.toml). Only
+          supported when in Cargo mode. *)
   (* Plugins *)
   with_kani : bool; [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)
@@ -105,9 +112,11 @@ type global = {
 
 let global_term = global_cmdliner_term ()
 
-let set_and_lock_global (config : global) =
+let set_and_lock_global (cmd : cmd) (config : global) =
   Soteria.Config.set_and_lock config.soteria;
   if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
     Exn.config_error
       "Obol does not support polymorphic analyses; use --frontend charon";
+  if cmd <> Cargo && Option.is_some config.soteria_rust.test then
+    Exn.config_error "The --test option is only supported in Cargo mode";
   set_and_lock config.soteria_rust
