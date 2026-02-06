@@ -34,27 +34,50 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
 
 - OCaml >= 5.4.0 with opam
 - Z3 (SMT solver)
-- For Soteria Rust: Rust nightly and Obol or Charon (see [README](./README.md#installing-rust-frontends))
+- For Soteria Rust: Rust nightly and Obol or Charon
 
 ### Setting Up the Environment
 
-Create a local opam switch with all development dependencies:
+1. **Install OCaml dependencies:**
 
-```sh
-make switch
-```
+   Create a local opam switch with all development dependencies:
 
-This installs:
-- All project dependencies
-- `ocamlformat` (code formatter)
-- `ocaml-lsp-server` (IDE support)
-- `odig` (documentation tools)
+   ```sh
+   make switch
+   ```
 
-If you already have a switch, install dependencies with:
+   This installs:
+   - All project dependencies
+   - `ocamlformat` (code formatter)
+   - `ocaml-lsp-server` (IDE support)
+   - `odig` (documentation tools)
 
-```sh
-make ocaml-deps
-```
+   If you already have a switch, install dependencies with:
+
+   ```sh
+   make ocaml-deps
+   ```
+
+2. **Install Rust frontends (for Soteria Rust development):**
+
+   Use the versionsync script to automatically install both Obol and Charon at the correct commits:
+
+   ```sh
+   ./scripts/versionsync.py pull all --init
+   ```
+
+   This will:
+   - Clone the repositories in `../obol` and `../charon`
+   - Check out the correct commit hashes from `scripts/versions.json`
+   - Build both frontends
+
+   To update the frontends to the latest configured versions:
+
+   ```sh
+   ./scripts/versionsync.py pull all
+   ```
+
+   See the [README](./README.md#installing-rust-frontends) for manual installation instructions.
 
 ### Building
 

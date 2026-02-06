@@ -87,13 +87,26 @@ For **Soteria Rust**, you will also need:
 
 To use Soteria Rust, you need a frontend to translate Rust code to an intermediate representation. We support two frontends:
 
+> **Quick Setup:** Use the versionsync script to automatically install both frontends:
+> ```sh
+> ./scripts/versionsync.py pull all --init
+> ```
+> This will clone and build both Obol and Charon at the correct commits.
+
 #### Installing Obol
 
 [Obol](https://github.com/soteria-tools/obol) is the default frontend (recommended for most use cases).
 
+**Using the versionsync script (recommended):**
+```sh
+./scripts/versionsync.py pull obol --init
+```
+
+**Manual installation:**
 1. **Clone Obol at the correct commit:**
    <!-- [versionsync: OBOL_COMMIT_HASH=6495682bbc9115ba56b20878ee57a8094947b42a] -->
    ```sh
+   cd ..
    git clone https://github.com/soteria-tools/obol.git
    cd obol
    git checkout 6495682bbc9115ba56b20878ee57a8094947b42a
@@ -115,9 +128,16 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
 
 [Charon](https://github.com/AeneasVerif/charon) is an alternative frontend. To use it, pass `--frontend charon` to `soteria-rust`.
 
+**Using the versionsync script (recommended):**
+```sh
+./scripts/versionsync.py pull charon --init
+```
+
+**Manual installation:**
 1. **Clone Charon at the correct commit:**
    <!-- [versionsync: CHARON_COMMIT_HASH=126fc54ed11288561c015c2cae05d48fdeb20584] -->
    ```sh
+   cd ..
    git clone https://github.com/soteria-tools/charon.git
    cd charon
    git checkout 126fc54ed11288561c015c2cae05d48fdeb20584
