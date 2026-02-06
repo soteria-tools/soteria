@@ -36,3 +36,7 @@ let loc_or_default where =
   match where.loc with Some loc -> loc | None -> Charon_util.empty_span_data
 
 let empty = { op = None; loc = None; stack = Soteria.Terminal.Call_trace.empty }
+
+let rename ?rev idx msg trace =
+  let stack = Soteria.Terminal.Call_trace.rename ?rev idx msg trace.stack in
+  { trace with stack }

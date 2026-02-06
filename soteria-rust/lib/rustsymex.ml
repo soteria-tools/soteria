@@ -122,17 +122,5 @@ let with_extra_call_trace ~loc ~msg (f : 'a t) : 'a t =
   let+ result, st = f { st with trace = new_trace } in
   (result, { st with trace = cur_trace })
 
-let rename_trace trace (f : unit -> ('a, Error.with_trace, 'f) Result.t) :
-    ('a, Error.with_trace, 'f) Result.t =
-  let open Syntax in
-  let+- err : Error.with_trace = f () in
-  match err with
-  | e, { loc; msg = _ } :: stack ->
-      let new_elem =
-        Soteria.Terminal.Call_trace.mk_element ~loc ~msg:trace ()
-      in
-      (e, new_elem :: stack)
-  | _, [] -> failwith "Impossible: rename_trace on an empty trace?"
-
 let not_impl = give_up
 let of_opt_not_impl = some_or_give_up

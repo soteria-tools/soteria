@@ -158,13 +158,11 @@ module Build_from_find_opt_sym
    *  in
    *  to_opt st *)
 
-  let fold (type acc)
-      (f :
-        acc -> Key.t * Codom.t -> (acc, 'err, serialized list) Symex.Result.t)
-      (init : acc) st : (acc, 'err, serialized list) Symex.Result.t =
+  let fold (type acc) (f : acc -> Key.t * Codom.t -> acc Symex.t) (init : acc)
+      st : acc Symex.t =
     let open Symex in
     let st = of_opt st in
-    Result.fold_seq (M.to_seq st) ~init ~f
+    fold_seq (M.to_seq st) ~init ~f
 end
 
 module Build_base

@@ -4,8 +4,7 @@ open Charon_util
 type t =
   [ `DoubleFree  (** Tried freeing the same allocation twice *)
   | `InvalidFree  (** Tried freeing memory at a non-0 offset *)
-  | `MemoryLeak of Trace.t list
-    (** Dynamically allocated memory was not freed *)
+  | `MemoryLeak  (** Dynamically allocated memory was not freed *)
   | `MisalignedPointer of
     Typed.T.nonzero Typed.t * Typed.T.nonzero Typed.t * Typed.T.sint Typed.t
     (** Tried accessing memory with a misaligned pointer
@@ -87,8 +86,7 @@ let pp ft : [> t ] -> unit = function
   | `InvalidFree -> Fmt.string ft "Invalid free"
   | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
-  | `MemoryLeak wheres ->
-      Fmt.pf ft "Memory leak at %a" Fmt.(list ~sep:comma Trace.pp) wheres
+  | `MemoryLeak -> Fmt.string ft "Memory leak"
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
   | `MisalignedPointer (exp, got, ofs) ->
@@ -124,7 +122,7 @@ let pp_err_and_call_trace ft (err, call_trace) =
     call_trace
 
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
-  | `MemoryLeak _ -> Warning
+  | `MemoryLeak -> Warning
   | e when is_unwindable e -> Error
   | _ -> Bug
 

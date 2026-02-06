@@ -204,6 +204,7 @@ module Freeable_block_with_meta = struct
     let tb, tag = Tree_borrow.init ~state:Unique () in
     let block = Tree_block.alloc ?zeroed size in
     let+^ trace = get_trace () in
+    let trace = Trace.rename 0 "Allocation" trace in
     let trace = Trace.move_to_opt span trace in
     let info : Meta.t = { align; size; kind; trace; tb_root = tag } in
     let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
@@ -712,15 +713,18 @@ let with_exposed addr =
                  Result.ok (ptr, Thin)))
 
 let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
-  let@ () = with_loc_err ~trace:"Leaking function" () in
+  (* FIXME: this is an unnecessarily complicated function; what we should do is
+     properly track what allocations come from a const/static (with Alloc_kind),
+     and then simply iterate over all allocations and look for non-const/static
+     allocations. *)
   let* st = SM.get_state () in
   let st = of_opt st in
-  let** global_addresses =
-    Result.fold_list (GlobMap.bindings st.globals) ~init:[]
+  let* global_addresses =
+    fold_list (GlobMap.bindings st.globals) ~init:[]
       ~f:(fun acc (g, ((ptr : Sptr.t), _)) ->
         let loc = Typed.Ptr.loc ptr.ptr in
         match g with
-        | String _ -> Result.ok (loc :: acc)
+        | String _ -> return (loc :: acc)
         | Global g -> (
             let glob = Crate.get_global g in
             let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty in
@@ -732,14 +736,14 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
                     (fun (((p : Sptr.t), _), _) -> Typed.Ptr.loc p.ptr)
                     ptrs
                 in
-                Result.ok (loc :: (ptrs @ acc))
-            | _ -> Result.ok acc))
+                return (loc :: (ptrs @ acc))
+            | _ -> return acc))
   in
   with_heap
     (let open Heap.SM in
      let open Heap.SM.Syntax in
      let* heap = get_state () in
-     let**^ leaks =
+     let*^ leaks =
        Heap.fold
          (fun leaks (k, (v : Freeable_block_with_meta.t)) ->
            (* FIXME: This only works because our addresses are concrete *)
@@ -747,8 +751,8 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
            match v with
            | { node = Alive _; info = Some { kind = Heap; trace; _ }; _ }
              when not (List.mem k global_addresses) ->
-               Result.ok ((k, trace) :: leaks)
-           | _ -> Result.ok leaks)
+               return ((k, trace) :: leaks)
+           | _ -> return leaks)
          [] heap
      in
      if List.is_empty leaks then Result.ok ()
@@ -759,7 +763,11 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
            in
            m "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks);
        let wheres = List.map snd leaks in
-       Result.error (`MemoryLeak wheres)))
+       let* leak_trace = branches (List.map (fun t () -> return t) wheres) in
+       let leak_trace =
+         Trace.rename ~rev:true 0 "Leaking function" leak_trace
+       in
+       Result.error (Error.decorate leak_trace `MemoryLeak)))
 
 let with_errors () (f : Error.with_trace list -> 'a * Error.with_trace list) :
     ('a, Error.with_trace, serialized list) Result.t =
