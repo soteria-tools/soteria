@@ -44,7 +44,7 @@ module Meta = struct
     size : Typed.T.sint Typed.t;
     tb_root : Tree_borrow.tag;
     kind : Alloc_kind.t;
-    span : Meta.span_data;
+    trace : Trace.t;
   }
   [@@deriving show { with_path = false }]
 end
@@ -203,10 +203,10 @@ module Freeable_block_with_meta = struct
     let open DecayMapMonad.Syntax in
     let tb, tag = Tree_borrow.init ~state:Unique () in
     let block = Tree_block.alloc ?zeroed size in
-    let+^ span =
-      match span with Some span -> return span | None -> get_loc ()
-    in
-    let info : Meta.t = { align; size; kind; span; tb_root = tag } in
+    let+^ trace = get_trace () in
+    let trace = Trace.rename 0 "Allocation" trace in
+    let trace = Trace.move_to_opt span trace in
+    let info : Meta.t = { align; size; kind; trace; tb_root = tag } in
     let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
     (({ node = Alive (Some block, tb); info = Some info } : t), tag)
 end
@@ -329,11 +329,15 @@ let log action ptr =
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st)
 
-let[@inline] with_loc_err ?trace () (f : unit -> ('a, Error.t, 'f) SM.Result.t)
-    : ('a, Error.with_trace, 'f) SM.Result.t =
+let[@inline] with_loc_err ?trace:msg ()
+    (f : unit -> ('a, Error.t, 'f) SM.Result.t) :
+    ('a, Error.with_trace, 'f) SM.Result.t =
   let*- err = f () in
-  let+^ loc = get_loc () in
-  Error (decorate_error ?trace err loc)
+  let+^ trace = get_trace () in
+  let trace =
+    Option.fold ~none:trace ~some:(fun t -> Trace.set_op t trace) msg
+  in
+  Error (Error.decorate trace err)
 
 let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
   let* st = SM.get_state () in
@@ -709,15 +713,18 @@ let with_exposed addr =
                  Result.ok (ptr, Thin)))
 
 let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
-  let@ () = with_loc_err ~trace:"Leaking function" () in
+  (* FIXME: this is an unnecessarily complicated function; what we should do is
+     properly track what allocations come from a const/static (with Alloc_kind),
+     and then simply iterate over all allocations and look for non-const/static
+     allocations. *)
   let* st = SM.get_state () in
   let st = of_opt st in
-  let** global_addresses =
-    Result.fold_list (GlobMap.bindings st.globals) ~init:[]
+  let* global_addresses =
+    fold_list (GlobMap.bindings st.globals) ~init:[]
       ~f:(fun acc (g, ((ptr : Sptr.t), _)) ->
         let loc = Typed.Ptr.loc ptr.ptr in
         match g with
-        | String _ -> Result.ok (loc :: acc)
+        | String _ -> return (loc :: acc)
         | Global g -> (
             let glob = Crate.get_global g in
             let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty in
@@ -729,35 +736,38 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
                     (fun (((p : Sptr.t), _), _) -> Typed.Ptr.loc p.ptr)
                     ptrs
                 in
-                Result.ok (loc :: (ptrs @ acc))
-            | _ -> Result.ok acc))
+                return (loc :: (ptrs @ acc))
+            | _ -> return acc))
   in
   with_heap
     (let open Heap.SM in
      let open Heap.SM.Syntax in
      let* heap = get_state () in
-     let**^ leaks =
+     let*^ leaks =
        Heap.fold
          (fun leaks (k, (v : Freeable_block_with_meta.t)) ->
            (* FIXME: This only works because our addresses are concrete *)
            let open DecayMapMonad in
            match v with
-           | { node = Alive _; info = Some { kind = Heap; span; _ }; _ }
+           | { node = Alive _; info = Some { kind = Heap; trace; _ }; _ }
              when not (List.mem k global_addresses) ->
-               Result.ok ((k, span) :: leaks)
-           | _ -> Result.ok leaks)
+               return ((k, trace) :: leaks)
+           | _ -> return leaks)
          [] heap
      in
      if List.is_empty leaks then Result.ok ()
      else (
        L.info (fun m ->
-           let pp_leak ft (k, span) =
-             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k
-               Charon_util.pp_span_data span
+           let pp_leak ft (k, trace) =
+             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp trace
            in
            m "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks);
-       let spans = List.map snd leaks in
-       Result.error (`MemoryLeak spans)))
+       let wheres = List.map snd leaks in
+       let* leak_trace = branches (List.map (fun t () -> return t) wheres) in
+       let leak_trace =
+         Trace.rename ~rev:true 0 "Leaking function" leak_trace
+       in
+       Result.error (Error.decorate leak_trace `MemoryLeak)))
 
 let with_errors () (f : Error.with_trace list -> 'a * Error.with_trace list) :
     ('a, Error.with_trace, serialized list) Result.t =

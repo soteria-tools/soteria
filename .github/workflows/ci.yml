@@ -22,13 +22,14 @@ concurrency:
 env:
   # [versionsync: OCAML_VERSION=5.4.0]
   OCAML_VERSION: 5.4.0
+  # [versionsync: OBOL_REPO=soteria-tools/obol]
   OBOL_REPO: soteria-tools/obol
-  # [versionsync: OBOL_COMMIT_HASH=98a37d10561827570e6a0cbccae2dbf432cffefa]
-  OBOL_COMMIT_HASH: 98a37d10561827570e6a0cbccae2dbf432cffefa
+  # [versionsync: OBOL_COMMIT_HASH=bd47db0c3a7092cccac25b9432c9db82a3c18e38]
+  OBOL_COMMIT_HASH: bd47db0c3a7092cccac25b9432c9db82a3c18e38
   # [versionsync: CHARON_REPO=soteria-tools/charon]
   CHARON_REPO: soteria-tools/charon
-  # [versionsync: CHARON_COMMIT_HASH=e14bbcfb90e2ccf38222ef59fb3276f1bf235872]
-  CHARON_COMMIT_HASH: e14bbcfb90e2ccf38222ef59fb3276f1bf235872
+  # [versionsync: CHARON_COMMIT_HASH=79077103ea9d0493bc72315462a1c84fcdf014e0]
+  CHARON_COMMIT_HASH: 79077103ea9d0493bc72315462a1c84fcdf014e0
 
 jobs:
   build:
@@ -70,6 +71,8 @@ jobs:
         run: make ocaml
       - name: Check formatting
         run: make ocaml-format-check
+      - name: Check that opam files were up to date
+        run: make check-opam-files
 
       # Install Rust and Obol
       - name: Get Rust toolchain
@@ -85,15 +88,8 @@ jobs:
       - name: Install Obol if not cached
         run: |
           brew install make
-          cd ..
-          mkdir obol
-          cd obol
-          git init
-          git remote add origin https://github.com/$OBOL_REPO.git
-          git fetch --depth=1 origin $OBOL_COMMIT_HASH
-          git checkout $OBOL_COMMIT_HASH
-          gmake build-dev
-          cp -r bin ../soteria/obol-bin
+          ../soteria/scripts/versionsync.py pull obol --init
+          cp -r ../obol/bin obol-bin
         if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
       - name: Add Obol to path
         run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
@@ -108,15 +104,8 @@ jobs:
       - name: Install Charon if not cached
         run: |
           brew install make
-          cd ..
-          mkdir charon
-          cd charon
-          git init
-          git remote add origin https://github.com/$CHARON_REPO.git
-          git fetch --depth=1 origin $CHARON_COMMIT_HASH
-          git checkout $CHARON_COMMIT_HASH
-          gmake build-dev-charon-rust
-          cp -r bin ../soteria/charon-bin
+          ../soteria/scripts/versionsync.py pull charon --init
+          cp -r ../charon/bin charon-bin
         if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
       - name: Add Charon to path
         run: echo "$PWD/charon-bin/" >> $GITHUB_PATH

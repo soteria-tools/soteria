@@ -87,16 +87,29 @@ For **Soteria Rust**, you will also need:
 
 To use Soteria Rust, you need a frontend to translate Rust code to an intermediate representation. We support two frontends:
 
+> **Quick Setup:** Use the versionsync script to automatically install both frontends:
+> ```sh
+> ./scripts/versionsync.py pull all --init
+> ```
+> This will clone and build both Obol and Charon at the correct commits.
+
 #### Installing Obol
 
 [Obol](https://github.com/soteria-tools/obol) is the default frontend (recommended for most use cases).
 
+**Using the versionsync script (recommended):**
+```sh
+./scripts/versionsync.py pull obol --init
+```
+
+**Manual installation:**
 1. **Clone Obol at the correct commit:**
-   <!-- [versionsync: OBOL_COMMIT_HASH=98a37d10561827570e6a0cbccae2dbf432cffefa] -->
+   <!-- [versionsync: OBOL_COMMIT_HASH=bd47db0c3a7092cccac25b9432c9db82a3c18e38] -->
    ```sh
+   cd ..
    git clone https://github.com/soteria-tools/obol.git
    cd obol
-   git checkout 98a37d10561827570e6a0cbccae2dbf432cffefa
+   git checkout bd47db0c3a7092cccac25b9432c9db82a3c18e38
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `OBOL_COMMIT_HASH`.
 
@@ -115,12 +128,19 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
 
 [Charon](https://github.com/AeneasVerif/charon) is an alternative frontend. To use it, pass `--frontend charon` to `soteria-rust`.
 
+**Using the versionsync script (recommended):**
+```sh
+./scripts/versionsync.py pull charon --init
+```
+
+**Manual installation:**
 1. **Clone Charon at the correct commit:**
-   <!-- [versionsync: CHARON_COMMIT_HASH=e14bbcfb90e2ccf38222ef59fb3276f1bf235872] -->
+   <!-- [versionsync: CHARON_COMMIT_HASH=79077103ea9d0493bc72315462a1c84fcdf014e0] -->
    ```sh
+   cd ..
    git clone https://github.com/soteria-tools/charon.git
    cd charon
-   git checkout e14bbcfb90e2ccf38222ef59fb3276f1bf235872
+   git checkout 79077103ea9d0493bc72315462a1c84fcdf014e0
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `CHARON_COMMIT_HASH`.
 

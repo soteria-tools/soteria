@@ -300,7 +300,7 @@ module Make (State : State_intf.S) = struct
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
-    | CAdt _ | CArray _ | CSlice _ | CGlobal _ | CRef _ | CPtr _ | CFnPtr _
+    | CAdt _ | CArray _ | CGlobal _ | CRef _ | CPtr _ | CFnPtr _
     | CPtrNoProvenance _ ->
         Fmt.kstr not_impl "TODO: complex constant %a" Crate.pp_constant_expr
           const

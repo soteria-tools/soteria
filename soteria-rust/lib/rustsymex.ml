@@ -25,14 +25,14 @@ end)
 
 module MonadState = struct
   type t = {
-    loc : Charon.Meta.span_data;
+    trace : Trace.t;
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
   }
 
   let empty =
     {
-      loc = Charon_util.empty_span_data;
+      trace = Trace.empty;
       subst = Charon.Substitute.empty_subst;
       generic_layouts = TypeMap.empty;
     }
@@ -94,32 +94,33 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
   in
   aux elements
 
-let with_loc ~loc (f : 'a t) : 'a t = fun st -> f { st with loc }
+let with_loc ~loc (f : 'a t) : 'a t =
+ fun st ->
+  let open MonoSymex.Syntax in
+  let current_loc = st.trace.loc in
+  let+ result, state = f { st with trace = Trace.move_to loc st.trace } in
+  (result, { state with trace = Trace.move_to_opt current_loc state.trace })
 
-let get_loc () =
+let get_trace () : Trace.t t =
   let open Syntax in
-  let+ { loc; _ } = get_state () in
-  loc
-
-let decorate_error ?(trace = "Triggering operation") e loc =
-  (e, Soteria.Terminal.Call_trace.singleton ~loc ~msg:trace ())
+  let+ { trace; _ } = get_state () in
+  trace
 
 let error ?trace e : ('a, Error.with_trace, 'f) Result.t =
   let open Syntax in
-  let+ loc = get_loc () in
-  Soteria.Symex.Compo_res.Error (decorate_error ?trace e loc)
+  let+ where = get_trace () in
+  let where = Option.fold trace ~some:Trace.set_op ~none:Fun.id where in
+  Error.log_at where e;
+  let e = Error.decorate where e in
+  Soteria.Symex.Compo_res.Error e
 
-let rename_trace trace (f : unit -> ('a, Error.with_trace, 'f) Result.t) :
-    ('a, Error.with_trace, 'f) Result.t =
-  let open Syntax in
-  let+- err : Error.with_trace = f () in
-  match err with
-  | e, { loc; msg = _ } :: stack ->
-      let new_elem =
-        Soteria.Terminal.Call_trace.mk_element ~loc ~msg:trace ()
-      in
-      (e, new_elem :: stack)
-  | _, [] -> failwith "Impossible: rename_trace on an empty trace?"
+let with_extra_call_trace ~loc ~msg (f : 'a t) : 'a t =
+ fun st ->
+  let open MonoSymex.Syntax in
+  let cur_trace = st.trace in
+  let new_trace = Trace.push_to_stack ~loc ~msg cur_trace in
+  let+ result, st = f { st with trace = new_trace } in
+  (result, { st with trace = cur_trace })
 
 let not_impl = give_up
 let of_opt_not_impl = some_or_give_up

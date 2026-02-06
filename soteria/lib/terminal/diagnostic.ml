@@ -11,6 +11,7 @@ type severity = Grace.Diagnostic.Severity.t =
   | Warning
   | Error
   | Bug
+[@@deriving eq, ord, show { with_path = false }]
 
 let pp_severity ft = function
   | Help -> Logs.Printers.pp_clr2 `Cyan `Bold ft "help"
@@ -155,4 +156,4 @@ let print_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
 let print_diagnostic_simple ~severity msg =
   with_unaltered_geo @@ fun () ->
   let msg = Grace.Diagnostic.Message.create msg in
-  Grace.Diagnostic.create severity msg |> Fmt.pr "%a@?" pp
+  Grace.Diagnostic.create severity msg |> Fmt.pr "%a@\n@?" pp

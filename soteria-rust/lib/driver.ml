@@ -43,8 +43,8 @@ let print_pcs pcs =
       pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
   in
   if not @@ (Soteria.Terminal.Config.get ()).compact then
-    List.mapi (fun i pc -> (pc, i + 1)) pcs
-    |> Fmt.pr "@\n%a" (list ~sep:(any "@\n") pp_pc)
+    let pcs_indexed = List.mapi (fun i pc -> (pc, i + 1)) pcs in
+    (list ~sep:(any "@\n") pp_pc) Fmt.stdout pcs_indexed
 
 let print_outcomes entry_name f =
   let time = Unix.gettimeofday () in
@@ -74,11 +74,11 @@ let print_outcomes entry_name f =
           (Diagnostic.print_diagnostic_simple ~severity:Error)
           "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
           time pp_branches err_branches ntotal;
-      Fmt.pr "@.";
       let () =
         let@ error, call_trace, pcs = Fun.flip List.iter errs in
         Frontend.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace
           ~error;
+        Fmt.pr "@.";
         print_pcs pcs;
         Fmt.pr "@.@."
       in
@@ -95,7 +95,7 @@ let print_outcomes entry_name f =
       in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.@.@." entry_name pp_time time error msg;
+        "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
 let print_outcomes_summary outcomes =
@@ -166,11 +166,10 @@ let exec_crate
   in
   if unexplored > 0 then
     if Option.is_some (Config.get ()).branch_fuel then
-      L.warn (fun m ->
-          m
-            "Note that %a were left unexplored due to branch fuel. Errors may \
-             have been missed."
-            pp_branches unexplored)
+      Fmt.kstr Soteria.Terminal.Warn.warn
+        "Note that %a were left unexplored due to branch fuel. Errors may have \
+         been missed."
+        pp_branches unexplored
     else Fmt.kstr execution_err "Missed %a" pp_branches unexplored
   else if List.exists Compo_res.is_missing outcomes then
     execution_err "Miss encountered in WPST";

@@ -23,8 +23,14 @@ VSCODE_DIST=dist
 ocaml:
 	$(DUNE) build
 
+.PHONY: ocaml-format-check
 ocaml-format-check:
 	$(DUNE) build @fmt
+	
+.PHONY: check-opam-files
+check-opam-files:
+	@git diff --name-only HEAD | grep -q '\.opam$$' && echo "Error: .opam files have changed since last commit" && exit 1 || exit 0
+	
 
 .PHONY: ocaml-test
 ocaml-test:
